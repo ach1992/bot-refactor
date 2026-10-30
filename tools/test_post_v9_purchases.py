@@ -16,6 +16,7 @@ import test_v8_native as purchase
 import v9_contract as v9
 import package_post_v9 as current_runtime
 import catalog_owner_r5 as r5_catalog
+import notification_fixture
 
 ROOT=Path(__file__).resolve().parents[1]
 HISTORY='7eb077fd8e6d0a303421626d1500f69e295a6664'
@@ -398,11 +399,13 @@ def stage_source(stage:Path,current:bool)->dict:
             ['git','-C',str(ROOT),'show',HISTORY+':'+rel])
         dest.write_bytes(raw)
     if current:
+        notification_fixture.stage_router(stage)
         # Fragment fixture executes the real common provider seam too.
         for rel in ['src/Panel/ProviderRuntime.php','src/Panel/ProviderImport.php','src/Panel/ProviderAdmin.php','src/Panel/ProviderStorage.php','src/Panel/PasarGuard.php','src/Subscription/Presentation.php']:
             dest=stage/rel;dest.parent.mkdir(parents=True,exist_ok=True);dest.write_bytes((ROOT/rel).read_bytes())
     fixture=(ROOT/'tests/v7/native-purchase.php').read_text()
     if current:
+        fixture=fixture.replace('<?php','<?php\nrequire_once __DIR__ . "/notifications-under-test.php";',1)
         # Adapt only the disposable current-source driver to the retired path.
         # Original V0-V9 PHP fixture and the historical source stage stay exact.
         legacy_import="require __DIR__.'/buy_helpers.php';"

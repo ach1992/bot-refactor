@@ -444,5 +444,10 @@ def main():
     print(json.dumps(report, ensure_ascii=False))
 
 
+
+# Current domain fixture imports the real event-aware notification router.
+import notification_fixture
+DRIVER=notification_fixture.with_router(DRIVER)
+
 if __name__ == "__main__":
     main()

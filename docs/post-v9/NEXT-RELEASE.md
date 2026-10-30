@@ -1,4 +1,26 @@
-# RC19 simple display, QR and invitation settings
+# Current RC20 source/release contract
+
+## RC20 API payments, native gifts and notification routing
+
+This section describes [v0.10.0-rc.20](https://github.com/ach1992/bot-refactor/releases/tag/v0.10.0-rc.20). The release record and its manifest establish publication and exact source identity; they do not establish installation. Implementation, exact-candidate checks and independent review are tracked in [PR101](https://github.com/ach1992/bot-refactor/pull/101) and [Issue57](https://github.com/ach1992/bot-refactor/issues/57). PR100 retains superseded component history.
+
+The runtime contains **119 members / 118 PHP files**, four modules more than RC19: PaymentEvidence, PaymentApiAdmin, ApiPayments and its API route module. RC20 retains RC19 display, QR, managed invitation and root-helper retirement behavior below.
+
+| Area | RC20 behavior |
+| --- | --- |
+| Manual bank transfer | Optional authenticated SMS evidence; match the complete original amount including all three randomized trailing digits; initially offer Check payment, then add receipt submission after 600 seconds while checking continues |
+| Manual gift card | Optional code verification and consumption; canonical redeem_amount in an explicitly configured unit, one exact-value card; unknown/outage/uncertain results use genuine manual review |
+| Existing automatic bank path | Separate legacy automatic card-transfer behavior is unchanged |
+| Administrator gift | Independent of purchase plan, including genuine planless imports; one physical native increment, one notice per admitted current customer; native panel supplies displayed expiry/quota |
+| Notifications | Owner receives general/report events except backup; receiving-on Manager gets the same general events; receiving-on Operator/Support get actionable manual receipt/code reviews only; existing valid receipt copies still converge even with new-copy receiving OFF |
+
+Both API switches default OFF. The full [API contract](API-PAYMENT-EVIDENCE.md) covers pinned profiles, exact matching, human/API races, delayed evidence-only consumption, typed code review, role routing and recovery. A settings-complete indicator is not a live authentication or payment test. Existing plugin APIs are used without dependency changes; optional filters are not activation prerequisites.
+
+RC20 supplies source-only [014_api_payment_evidence.sql](../../migrations/post-v9/014_api_payment_evidence.sql): 19 nullable fields on payment_attempts, 5 on payment_transactions, a due-work index and an operation-uniqueness index. No new table or historical invoice backfill is introduced. Missing/partial schema fails the API path closed. Apply014 only during a separately authorized, backed-up target cutover, before enabling either API mode; never replay completed 012/013. [RC19 → RC20](RC19-TO-RC20.md) defines ordering, partial-state stops and the recovery boundary after new writes.
+
+Customer and financial/native history, original quote pins, source/batch holds and the Cron lease/inode remain protected. Never replay request69 or erase its evidence. Its actual installed version, provider attribution, root cause and native outcome remain unverified. Neither RC19 ZIP staging nor RC20 publication proves installation or real Telegram/provider/payment acceptance.
+
+## Published RC19 simple display, QR and invitation settings
 
 [RC19](https://github.com/ach1992/bot-refactor/releases/tag/v0.10.0-rc.19) publishes reviewed source `9451ef306be34bc224d57645d7b7394b8bea3a99` through merged [PR98](https://github.com/ach1992/bot-refactor/pull/98). It keeps 115 runtime members / 114 PHP files, retires root buy_helpers.php in favor of canonical domain implementations, and adds no SQL migration. Follow [RC18 → RC19](RC18-TO-RC19.md). Publication does not install or certify a live bot.
 

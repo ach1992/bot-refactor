@@ -573,12 +573,21 @@ if (!function_exists('achbotApplyServiceEdit')) {
                             'msg'=>'service_edit_invalid_outcome'];
         $outcome=is_array($outcome)?(object)$outcome:$outcome;
         if (($outcome->success??false)!==true) return $outcome;
+        // Native Marzban preserves literal zero expiry on a quota-only gift.
+        // Admit that exact verified observation only for the already pinned
+        // gift transport; other edits and financial callers retain the guard.
+        $zeroExpiryQuotaGift=$giftTarget!==null && $type==='marzban' &&
+            array_diff(array_keys($change),['remark','plus_volume','operation_key'])===[] &&
+            is_int($change['plus_volume']??null) && $change['plus_volume']>0 &&
+            ($outcome->verified??false)===true && ($outcome->uncertain??false)===false &&
+            ($outcome->before_expire??null)===0 && ($outcome->applied_expire??null)===0 &&
+            is_int($outcome->applied_bytes??null) && $outcome->applied_bytes>0;
         // Every adapter must expose a verified, absolute remote readback.
         if (($outcome->verified??false)!==true ||
             !isset($outcome->applied_expire,$outcome->applied_bytes) ||
             !is_numeric($outcome->applied_expire) ||
             !is_numeric($outcome->applied_bytes) ||
-            (int)$outcome->applied_expire<=0 ||
+            ((int)$outcome->applied_expire<=0 && !$zeroExpiryQuotaGift) ||
             (int)$outcome->applied_bytes<0)
             return (object)['success'=>false,'uncertain'=>true,
                             'msg'=>'service_edit_unverified_outcome'];

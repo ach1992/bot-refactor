@@ -269,6 +269,8 @@ function achbotPayUxUnclaimedDraftUsable(mysqli $db, array $pay,
 function achbotPayUxExpireUnstartedManual(mysqli $db, int $payId): bool {
     if ($payId<=0 || !achbotPayUxTable($db,'payment_attempts') ||
         !achbotPayUxTable($db,'payment_transactions')) return false;
+    // A pinned API invoice is never declared unpaid by a manual UI timer.
+    if (function_exists('achbotApiPaymentPinned') && achbotApiPaymentPinned($db,$payId)) return false;
     $started=false;
     try {
         if (!$db->begin_transaction()) return false;
@@ -361,11 +363,15 @@ function achbotPayUxStartManualReceipt(mysqli $db, int $payId,
             !is_array(achbotManualIntentDecode((string)$a['checkout_url'],$method))) {
             $db->rollback();return false;
         }
+        $api=function_exists('achbotApiPaymentReady') && achbotApiPaymentReady($db)
+            ? achbotPaymentEvidenceSnapshot(achbotApiPaymentAttempt($db,$payId,true)??[]) : null;
+        if (function_exists('achbotApiPaymentPinned') && achbotApiPaymentPinned($db,$payId) && $api===null) {$db->rollback();return false;}
+        if ($api!==null && ($method!=='bank_transfer' || (int)$a['age_seconds']<600)) {$db->rollback();return false;}
         if ((string)($a['provider_status']??'')==='receipt_started') {
             $db->commit();return true;
         }
         if ((string)($a['provider_status']??'')!=='' ||
-            (int)$a['age_seconds']>=achbotPayUxManualDeadlineSeconds()) {
+            ($api===null && (int)$a['age_seconds']>=achbotPayUxManualDeadlineSeconds())) {
             $db->rollback();return false;
         }
         $aid=(int)$a['id'];
@@ -727,6 +733,12 @@ function achbotPayUxSyncMessages(mysqli $db, int $payId): int {
                 FROM payment_attempts WHERE pay_row_id=? LIMIT 1');
             $stmt->bind_param('i',$payId);$stmt->execute();
             $attempt=$stmt->get_result()->fetch_assoc()?:null;$stmt->close();
+        }
+        if (function_exists('achbotApiPaymentContext')) {
+            $api=achbotApiPaymentContext($db,(string)$pay['hash_id']);
+            if ($api && in_array($pay['state'],['pending','have_sent'],true)) {
+                achbotApiPaymentSyncInvoice($db,$api);return 0;
+            }
         }
         try { $pay['superseded']=achbotPayUxHasNewer($db,$pay); }
         catch (Throwable $ignored) { $pay['superseded']=true; }

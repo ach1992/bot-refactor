@@ -51,15 +51,9 @@ if (!function_exists('notifyAllAdminsSimple')) {
             $rewardChannel = $botState['rewardChannel'] ?? null;
         }
 
-        if (!empty($admin)) {
-            sendMessage($text, $replyMarkup, $parseMode, $admin);
-        }
-
-        // sendToAllAdmins('sendMessage', ['text' => $text, 'reply_markup' => $replyMarkup, 'parse_mode' => $parseMode]);
-
-        if (!empty($rewardChannel)) {
-            sendMessage($text, $replyMarkup, $parseMode, $rewardChannel);
-        }
+        achbotNotifyAdmins('sendMessage', [
+            'text'=>$text,'reply_markup'=>$replyMarkup,'parse_mode'=>$parseMode
+        ], ['primary'=>$admin,'report_channel'=>$rewardChannel]);
     }
 }
 
@@ -1318,7 +1312,9 @@ function achbotManualServiceApprovalAllowedLocked(mysqli $connection, ?array $pa
         if (!in_array($method, ['bank_transfer','gift_card','manual_usdt','manual_trx'], true) ||
             (string)$attempt['stage'] !== 'review') return false;
         $intent = achbotManualIntentDecode((string)($attempt['checkout_url'] ?? ''), $method);
-        return is_array($intent) && !empty($intent['receipt_file_id']);
+        return (is_array($intent) && !empty($intent['receipt_file_id'])) ||
+            (function_exists('achbotPaymentEvidenceHasTypedReviewLocked') &&
+             achbotPaymentEvidenceHasTypedReviewLocked($connection,$pay));
     } catch (Throwable $error) {
         // Invalid SQL or lost permissions after topology inspection
         // can never reactivate a historical manual receipt.
@@ -1330,6 +1326,16 @@ function achbotManualClaim(mysqli $connection, array $payInfo, string $method, i
                            ?string $chosenNetwork = null): bool {
     if (!in_array($method, ['bank_transfer', 'gift_card', 'manual_usdt','manual_trx'], true) ||
         (int)$payInfo['user_id'] !== $userId) return false;
+    // API issuance observes the complete provider/native subject before the
+    // existing issuer transaction. Existing attempts keep their original pins.
+    $apiSubjectPreflight=null;
+    if (function_exists('achbotPaymentEvidenceProfile') && achbotPaymentEvidenceProfile($method)!==null) {
+        try {$apiExisting=achbotApiPaymentAttempt($connection,(int)$payInfo['id']);}catch(Throwable $e){return false;}
+        if ($apiExisting===null && ($payInfo['state']??'')==='pending') {
+            $apiSubjectPreflight=achbotApiPaymentSubjectPreflight($connection,$payInfo);
+            if(empty($apiSubjectPreflight['valid']))return false;
+        }
+    }
     try {
         if (!$connection->begin_transaction()) return false;
         require_once __DIR__ . '/PaymentLifecycle.php';
@@ -1360,7 +1366,8 @@ function achbotManualClaim(mysqli $connection, array $payInfo, string $method, i
         if ($existing !== null) {
             require_once __DIR__ . '/PaymentLifecycle.php';
             if ((string)$existing['provider_status']==='' &&
-                (int)$existing['age_seconds']>=achbotPayUxManualDeadlineSeconds()) {
+                (int)$existing['age_seconds']>=achbotPayUxManualDeadlineSeconds() &&
+                !(function_exists('achbotApiPaymentPinned') && achbotApiPaymentPinned($connection,(int)$current['id']))) {
                 $connection->rollback(); return false;
             }
             if (($current['type']??'')==='BUY_SUB' && $method==='bank_transfer') {
@@ -1403,7 +1410,9 @@ function achbotManualClaim(mysqli $connection, array $payInfo, string $method, i
         }
         if (!achbotManualEnabled($method) ||
             !achbotPayUxAudienceAllowed($connection,$method,$userId,true) ||
-            !achbotSupportsPaymentSubject($connection,$current,true)) {
+            ($apiSubjectPreflight!==null
+                ? !achbotApiPaymentLocalSubjectAllowed($connection,$current,$apiSubjectPreflight)
+                : !achbotSupportsPaymentSubject($connection,$current,true))) {
             $connection->rollback();
             return false;
         }
@@ -1479,6 +1488,11 @@ function achbotManualClaim(mysqli $connection, array $payInfo, string $method, i
             if (!$issuedAttempt) throw new RuntimeException('bank_buy_issue_attempt_missing');
             achbotBankBuyRecordIssuedIntent($connection,$current,$issuedAttempt);
         }
+        if (function_exists('achbotApiPaymentPinLocked')) {
+            $apiAttempt=achbotApiPaymentAttempt($connection,$id,true);
+            if (!$apiAttempt) throw new RuntimeException('api_issuance_attempt_missing');
+            achbotApiPaymentPinLocked($connection,$current,$apiAttempt);
+        }
         if (!$connection->commit())
             throw new RuntimeException('manual_claim_commit_unverified');
         return true;
@@ -1497,6 +1511,9 @@ function achbotManualReceiptAllowed(mysqli $connection, array $payInfo, string $
         !in_array($method, ['bank_transfer','gift_card','manual_usdt','manual_trx'], true)) return false;
     try {
         require_once __DIR__ . '/PaymentLifecycle.php';
+        $api=function_exists('achbotApiPaymentContext') ? achbotApiPaymentContext($connection,(string)$payInfo['hash_id'],$userId) : null;
+        if (function_exists('achbotApiPaymentPinned') && achbotApiPaymentPinned($connection,(int)$payInfo['id']) && !$api) return false;
+        if ($api && ($method!=='bank_transfer' || (int)$api['attempt']['age_seconds']<600)) return false;
         $stmt = $connection->prepare('SELECT provider,stage,checkout_url,provider_status,
             TIMESTAMPDIFF(SECOND,created_at,NOW()) AS age_seconds
             FROM payment_attempts WHERE pay_row_id=? LIMIT 1');
@@ -1506,7 +1523,7 @@ function achbotManualReceiptAllowed(mysqli $connection, array $payInfo, string $
         $attempt = $stmt->get_result()->fetch_assoc();
         $stmt->close();
         $validWindow=$attempt && (
-            $attempt['stage']==='receiving' ||
+            $api!==null || $attempt['stage']==='receiving' ||
             (string)($attempt['provider_status']??'')==='receipt_started' ||
             ((string)($attempt['provider_status']??'')==='' &&
              (int)$attempt['age_seconds']<achbotPayUxManualDeadlineSeconds())
@@ -1553,7 +1570,10 @@ function achbotManualBeginEvidence(mysqli $connection, array $payInfo, string $m
             $connection->rollback(); return null;
         }
         require_once __DIR__ . '/PaymentLifecycle.php';
-        if ($attempt['stage']==='pending' &&
+        $api=function_exists('achbotApiPaymentContext') ? achbotApiPaymentContext($connection,(string)$payInfo['hash_id'],$userId) : null;
+        if (function_exists('achbotApiPaymentPinned') && achbotApiPaymentPinned($connection,(int)$payInfo['id']) && !$api) {$connection->rollback();return null;}
+        if ($api && ($method!=='bank_transfer' || (int)$api['attempt']['age_seconds']<600)) {$connection->rollback();return null;}
+        if (!$api && $attempt['stage']==='pending' &&
             (string)($attempt['provider_status']??'')!== 'receipt_started' &&
             (int)$attempt['age_seconds']>=achbotPayUxManualDeadlineSeconds()) {
             $connection->rollback(); return null;
@@ -1722,6 +1742,11 @@ function achbotManualReceiptPrompt(array $mainValues, string $method): string {
 
 function achbotManualAcknowledgement(array $payInfo, string $method): string {
     require_once __DIR__.'/PaymentLifecycle.php';
+    $db=$GLOBALS['connection']??null;
+    if ($db instanceof mysqli && function_exists('achbotApiPaymentContext')) {
+        $api=achbotApiPaymentContext($db,(string)$payInfo['hash_id']);
+        if ($api && achbotApiPaymentTerminal($api['pay'])) return achbotMessage('payment.api_payment.confirmed');
+    }
     return \achbotMessage('manual_payment.receipt_helpers.manual_acknowledgement.label.a5f27211f7') . achbotManualLabel($method) . \achbotMessage('manual_payment.receipt_helpers.manual_acknowledgement.text.29e14cf62e') .
         achbotPayUxReference($payInfo) .
         \achbotMessage('manual_payment.receipt_helpers.manual_acknowledgement.text.62e569e922');
@@ -1755,6 +1780,10 @@ function buildCartToCartInfoMessage(array $paymentKeys, array $mainValues, int $
         if (!$attempt || (int)$attempt['local_amount_toman'] !== $priceToman) return '';
         $intent = achbotManualIntentDecode((string)$attempt['checkout_url'], $method);
         if (!$intent) return '';
+        if(function_exists('achbotApiPaymentContext')) {
+            $api=achbotApiPaymentContext($connection,$hashId,$userId);
+            if($api)return achbotApiPaymentInvoiceText($api);
+        }
         if (in_array($method, ['manual_usdt','manual_trx'], true)) {
             $network = (string)($intent['network'] ?? '');
             $wallet = (string)($intent['wallet'] ?? '');
@@ -1802,6 +1831,8 @@ function buildCartToCartInfoMessage(array $paymentKeys, array $mainValues, int $
 function kbSendReceiptAndCancel(string $sendPrefix, string $cancelPrefix, string $hashId, string $method = 'bank_transfer'): string {
     global $connection;
     require_once dirname(__DIR__, 2) . '/src/Telegram/Markup.php';
+    $api=$connection instanceof mysqli && function_exists('achbotApiPaymentContext') ? achbotApiPaymentContext($connection,$hashId) : null;
+    if ($api) return achbotApiPaymentKeyboard($api,$sendPrefix,$cancelPrefix);
     $url = null;
     if ($method === 'gift_card' && $connection instanceof mysqli) {
         try {
@@ -2042,6 +2073,13 @@ function sendReceiptToAdminsAndUpdatePay(
             !achbotManualFinishEvidence($connection, $hashId, $fileid, $claimToken,
                                         $msgId, $adminChatId)) {
             achbotManualReleaseEvidenceLease($connection, $hashId, $claimToken);
+            if ($msgId>0 && function_exists('achbotApiPaymentContext')) {
+                $api=achbotApiPaymentContext($connection,$hashId);
+                if ($api && achbotApiPaymentTerminal($api['pay'])) {
+                    achbotApiPaymentNotice($connection,array_replace($api['pay'],['chat_id'=>$adminChatId,'message_id'=>$msgId]),'confirmed',false);
+                    return true;
+                }
+            }
             return false;
         }
     } catch (Throwable $error) {
@@ -2054,9 +2092,13 @@ function sendReceiptToAdminsAndUpdatePay(
             'caption' => $caption,
             'reply_markup' => $adminKeyboard,
             'parse_mode' => 'HTML'
-        ], $hashId);
+        ], $hashId, ['event'=>'manual_review']);
     } catch (Throwable $ignored) {
         // The primary operator message and protected DB transition succeeded.
+    }
+    if (function_exists('achbotApiPaymentContext')) {
+        $api=achbotApiPaymentContext($connection,$hashId);
+        if ($api && achbotApiPaymentTerminal($api['pay'])) achbotApiPaymentNotice($connection,$api['pay'],'confirmed',false);
     }
     return true;
 }

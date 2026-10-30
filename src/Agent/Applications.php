@@ -30,13 +30,7 @@ if($data=="requestAgency"){
 					]
 				]
 			]);
-			sendMessage($msg, $keys, "html", $admin);
-			//sendToAllAdmins('sendMessage', ['text' => $msg,'reply_markup' => $keys,'parse_mode' => "html"]);
-			// ارسال پیام به کانال گزارشات
-			$rewardChannel = $botState['rewardChannel'];
-				if (!empty($rewardChannel)) {
-				sendMessage($msg, $keys, "html", $rewardChannel);
-			}
+			achbotNotifyAdmins('sendMessage', ['text'=>$msg, 'reply_markup'=>$keys, 'parse_mode'=>'HTML']);
         setUser(2, 'is_agent');
         alert($mainValues['agency_request_sent']);
     }elseif($userInfo['is_agent'] == -1) alert($mainValues['agency_request_declined']);

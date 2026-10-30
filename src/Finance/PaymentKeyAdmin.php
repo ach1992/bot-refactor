@@ -7,14 +7,16 @@ if (realpath($_SERVER['SCRIPT_FILENAME']??'')===__FILE__) {
     http_response_code(404);exit;
 }
 require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
+require_once __DIR__.'/PaymentApiAdmin.php';
 
 
 function achbotPaymentKeyAdminFields(): array {
-    return [
+    return array_merge([
         'nowpayment','nextpay','zarinpal','bankAccount','holderName','giftCardUrl',
         'manualUsdtWalletBEP20','manualUsdtWalletTRC20','manualUsdtWalletERC20',
         'manualTrxWallet','manualUsdtRateToman','manualTrxRateToman','inviteReward'
-    ];
+    ],array_values(array_intersect(array_keys(achbotPaymentApiAdminFieldMap()),
+        achbotPaymentEvidenceSettingFields())));
 }
 
 /** Invitation gift uses managed PAYMENT_KEYS; retained private values are ignored. */
@@ -63,6 +65,8 @@ function achbotPaymentKeyAdminStep(string $step): ?array {
 /** Keep original network/rate semantics, with no untrusted echo of secrets. */
 function achbotPaymentKeyAdminNormalize(string $field,string $input): ?string {
     if (!in_array($field,achbotPaymentKeyAdminFields(),true)) return null;
+    if (achbotPaymentApiAdminIsField($field))
+        return achbotPaymentEvidenceNormalizeSetting($field,$input);
     if ($field==='inviteReward') {
         $value=trim($input);
         if ($value==='/clear') return '0';
@@ -106,6 +110,7 @@ function achbotPaymentKeyAdminNormalize(string $field,string $input): ?string {
 /** Human-friendly validation feedback without echoing merchant credentials. */
 function achbotPaymentKeyAdminInputHint(string $field,string $input): ?string {
     if (achbotPaymentKeyAdminNormalize($field,$input)!==null) return null;
+    if (achbotPaymentApiAdminIsField($field)) return achbotPaymentApiAdminPrompt($field);
     if ($field==='inviteReward') return \achbotMessage('payment_settings.invite_reward_hint');
     if ($field==='giftCardUrl')
         return \achbotMessage('payment_settings.payment_key_admin.payment_key_admin_input_hint.label.7fa91d9aaf');
@@ -257,7 +262,8 @@ function achbotAdminPaymentKeyChange($update,int $actor,int $chat,int $message,
                 $baseline=achbotPaymentKeyAdminBaseline($keys,$field,$revisions[$field]??0);
                 if (!hash_equals($startStep['baseline'],$baseline))
                     throw new RuntimeException('payment_key_field_changed_since_editor');
-                $keys[$field]=$normalized;
+                $keys[$field]=achbotPaymentApiAdminIsField($field)
+                    ? achbotPaymentApiAdminStoredValue($field,$normalized) : $normalized;
                 $revisions[$field]=$sourceId;
                 $json=json_encode($keys,JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
                 if ($row) {

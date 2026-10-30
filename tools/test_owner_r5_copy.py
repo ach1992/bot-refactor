@@ -28,6 +28,7 @@ def main():
     args=ap.parse_args()
     sides=current();old,counts=r5.verify_and_restore(sides);merged={**sides['user'],**sides['admin']}
     controls=r5.negative_controls(sides)
+    gift_controls=r5.gift_catalog_negative_controls(sides)
     check(not any('🆔'in r5.text(e)or compositions.numeric_id_variant(r5.text(e))for e in merged.values()),'obsolete_id_wording_or_marker')
     # Data-only code/URI/native labels and continuation fragments stay intact.
     # These four intentionally stable units are composed inside Persian sentences.
@@ -88,5 +89,5 @@ $reports=[];foreach(['marzban','pasarguard']as$provider){
         check(sum('PRICE'in l for l in value.splitlines())==1,'receipt_PRICE_line_drift:'+name)
         check('MANUAL-QUOTE'not in value,'new_receipt_parser_token')
     composed=compositions.audit(args.composition_source_root,ROOT)
-    print(json.dumps({'status':'PASS',**counts,**composed,'r5_negative_controls':controls,'persian_prose_start_violations':0,'duplicate_heading_markers':0,'preserved_unit_fragments':len(expected_fragments),'guide_provider_cases':2,'guide_JSON_examples':blocks,'actual_HTML_transport_cases':2,'archived_wrong_parse_RED':True,'receipt_PRICE_template_cases':6,'real_Telegram_rendering':'NOT_TESTED'},ensure_ascii=False))
+    print(json.dumps({'status':'PASS',**counts,**composed,'r5_negative_controls':controls,'gift_catalog_negative_controls':gift_controls,'persian_prose_start_violations':0,'duplicate_heading_markers':0,'preserved_unit_fragments':len(expected_fragments),'guide_provider_cases':2,'guide_JSON_examples':blocks,'actual_HTML_transport_cases':2,'archived_wrong_parse_RED':True,'receipt_PRICE_template_cases':6,'real_Telegram_rendering':'NOT_TESTED'},ensure_ascii=False))
 if __name__=='__main__':main()

@@ -300,7 +300,8 @@ if ((str_starts_with($transferStep,'achbotTransferAmount:') ||
         $reported = false;
         if (isset($admin) && (int)$admin > 0) {
             try {
-                $reply = sendMessage($adminReport, null, 'HTML', $admin);
+                $notices=achbotNotifyAdmins('sendMessage', ['text'=>$adminReport,'parse_mode'=>'HTML'], ['report_channel'=>null]);
+                $reply=$notices[0]['response']??null;
                 $reported = is_object($reply) && isset($reply->ok) && $reply->ok === true;
             } catch (Throwable $notifyError) {
                 // A missing Telegram notification must not hide the failure.
@@ -364,13 +365,9 @@ if ((str_starts_with($transferStep,'achbotTransferAmount:') ||
             . \achbotMessage('wallet.wallet_transfer.wallet_transfer_restart.text.f7c8f1486f')
             . \achbotMessage('wallet.wallet_transfer.wallet_transfer_restart.text.431f74945a') . number_format($amount) . \achbotMessage('wallet.wallet_transfer.wallet_transfer_restart.text.b971f2d37a');
 
-        // ارسال به ادمین
-        $sendTransferNotice($channelMessage, null, "html", $admin, 'admin');
-
-        // ارسال به کانال گزارشات (در صورت تنظیم)
-        $reportChannel = $botState['rewardChannel'] ?? null;
-        if (!empty($reportChannel)) {
-            $sendTransferNotice($channelMessage, null, "html", $reportChannel, 'report_channel');
+        foreach (achbotNotifyAdmins('sendMessage', ['text'=>$channelMessage,'parse_mode'=>'html']) as $notice) {
+            if (!is_object($notice['response']) || ($notice['response']->ok??false)!==true)
+                $deliveryProblems[]=(int)$notice['chat_id']===(int)$admin?'admin':'report_destination';
         }
 
         // پیام برای مبدأ؛ قدم قبلاً در همان تراکنش مصرف شده است.
@@ -397,7 +394,8 @@ if ((str_starts_with($transferStep,'achbotTransferAmount:') ||
         $operatorNotified = false;
         if (!in_array('admin', $deliveryProblems, true) && isset($admin) && (int)$admin > 0) {
             try {
-                $reply = sendMessage($notice, null, 'HTML', $admin);
+                $notices=achbotNotifyAdmins('sendMessage', ['text'=>$notice,'parse_mode'=>'HTML'], ['report_channel'=>null]);
+                $reply=$notices[0]['response']??null;
                 $operatorNotified = is_object($reply) && isset($reply->ok) && $reply->ok === true;
             } catch (Throwable $noticeError) {
                 // Non-financial notification failure must not invalidate the payment.

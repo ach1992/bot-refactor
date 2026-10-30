@@ -1,12 +1,12 @@
 # Direct administrator gift — source safety and recovery (Issue #78)
 
-**Published source status (2026-10-29):** This direct-gift source is already included in the published runtime; current [RC16](RC15-TO-RC16.md) is integrated through PR #93 following completed source acceptance and publication. The pending source-review/merge language below records an earlier development stage. Installed/operator acceptance and activation remain separate; publication supplies no new live financial or provider acceptance. See the [README](../../README.md) for current scope.
+This guide describes the RC20 administrator-gift contract from [PR101](https://github.com/ach1992/bot-refactor/pull/101) and the retained ingress/replay hardening from [Issue78](https://github.com/ach1992/bot-refactor/issues/78). Use the [current release contract](NEXT-RELEASE.md) and [RC19 → RC20](RC19-TO-RC20.md) for exact source and rollout prerequisites. Publication establishes no installed/operator or real provider result.
 
-**Scope:** new post-V9 single-account administrator gift. Source-only, pending
-fresh independent high-assurance review, separate Owner merge authorization,
-operator installation acceptance, and separate activation authorization. This
-does not change the merged bulk-gift Cron worker in PR #66. Frozen V0–V9
-history and the original 23-table database remain unchanged.
+Administrator gifts are independent of purchase plans, including genuine planless imports. One physical gift may have several admitted current local references; each distinct linked customer gets a notice attempt. The panel supplies displayed expiry/quota. Purchase/cache expiry and financial history remain unchanged, with only positive-day warning re-arm and durable operation evidence. The [current gift contract](API-PAYMENT-EVIDENCE.md#native-gift-correction-and-owner-policy) specifies shared-reference identity, cohort, locking and uncertainty controls.
+
+Gift changes introduce no new SQL schema. The separate source 014 migration belongs to optional payment API evidence, not administrator-gift eligibility. RC20 also updates the existing bulk worker to use the shared current-reference/notice rules. Frozen V0–V9 history and its original 23-table schema remain unchanged.
+
+The Owner's screenshots/request69 do not have verified installed-version/provider/root-cause/native-outcome attribution. Do not replay that gift or erase its evidence.
 
 ## Supported flow
 
@@ -31,12 +31,15 @@ history and the original 23-table database remain unchanged.
    broadcast step writers are conditionally fenced so stale/automatic
    transitions do not erase a newer gift. Ordinary fresh non-direct CANCEL
    remains supported.
-2. Remark resolution requires exactly one active orders_list primary-key
-   identity for the selected logical server. It pins order id, userid,
-   server_id, inbound_id, fileid, remark, uuid, status and old expire_date.
+2. Exact remark resolution chooses a deterministic current orders_list
+   anchor and freezes the admitted current-reference cohort for the native
+   account. Shared registrations are supported, including established explicit
+   same-provider/panel-group aliases; URL/credential resemblance is not proof.
+   Pin each reference's identity and genuine import/native-incarnation evidence.
+   No purchase plan is required, but `fileid=0` alone is not import proof.
    At least one of days and MB must be positive. Days must be whole units;
    nonzero MB must be a multiple of 1024. Zero plus_* properties are omitted.
-3. Before potentially non-idempotent Marzban effects, one committed InnoDB
+3. Before potentially non-idempotent native effects, one committed InnoDB
    transaction creates a permanent source journal and physical-account hold
    in setting and consumes the exact admin wizard step. The original
    setting.type and users.userid are NOT unique. Unindexed userid-to-PK
@@ -49,14 +52,24 @@ history and the original 23-table database remain unchanged.
    otherwise the pinned physical endpoint plus remark. The target credential hash is
    captured, but no cleartext credential is stored in the journal.
 4. The verified service-edit seam must return true success, true verified,
-   no uncertainty, and exact absolute integer expire and quota readback.
-   Provider HTTP success alone is insufficient. A guarded order identity
-   CAS and local expiry persistence commit with source and hold completion
-   before success notification.
-5. An uncertain remote response, lost acknowledgment, local SQL failure,
-   ambiguous order, target drift, crash, and notice failure never rearm a
-   remote relative increment. A pending/review hold remains durable until
-   an authorized manual investigation. No automatic retry or refund occurs.
+   no uncertainty, and exact absolute integer expiry/quota readback. Compare
+   a time increase with the verified native baseline, not stale local expiry.
+   Numeric-zero Marzban expiry is accepted only for the narrowly pinned,
+   finite-quota volume-only gift; other existing guards remain. Imported
+   Marzban identity is checked through existing native GETs; PasarGuard retains
+   its account/incarnation anchor. No SQL transaction spans a native request.
+   Completion locks all admitted order PKs in ascending order before the
+   anchor/journal/provider fences. It preserves purchase expiry/financial
+   fields, re-arms notif only for positive-day gifts, and records native
+   results and reference/recipient identities with source/hold completion.
+5. An uncertain remote response, lost effect/SQL acknowledgment, changed
+   reference/target, or crash never rearms a native relative increment.
+   Pending/review holds remain for authorized manual investigation. Customer
+   and general administrator/channel notices run after completion. Failed or
+   missing notice acknowledgments are recorded separately; a completed gift
+   stays completed and cannot be repeated to resend its message. Telegram
+   transport cannot guarantee exactly-once delivery after a lost acknowledgment.
+   No automatic refund or generic hold-unlock/retry operation is provided.
 
 ## Critical webhook authentication prerequisite
 
@@ -78,8 +91,10 @@ Only the trusted private variables are loaded first, in global include scope;
 the subsequent `config.php` require_once retains its original DB bindings.
 **An installation without this provisioned secret will not receive any
 webhook updates after source deployment.** Validate each bot's private field
-and matching Telegram secret separately. Secret rotation invalidates pending
-payment-key editor HMAC baselines; restart those editor flows.
+and matching Telegram secret separately. RC20 also derives API-profile/code
+encryption from this existing secret. Do not rotate it during a source upgrade;
+rotation requires a separate plan for pinned invoices and encrypted evidence,
+as well as pending payment-key editor HMAC baselines.
 Do not put the secret in public code, test data, logs or screenshots.
 
 The formerly pre-check config.php toggleBan_*/toggleAgent_* callbacks now
@@ -157,13 +172,16 @@ On the message indicating an uncertain outcome or an already-held account,
 record the displayed immutable numeric setting.id. Authorized operators can
 inspect the source record, its state, original order snapshot, target URL
 and credential fingerprint, operator/source identity and requested units.
-The account hold links back to the source id.
+The account hold links back to the source id. RC20 source records also retain `reference_ids`, `recipient_userids` and native result evidence. Completed bulk holds become ACHBOT_GIFT_RESULT_<batch_id>_<index> records in the existing setting table. Their `customer_notices` distinguish acknowledged/unconfirmed recipients, send exceptions and report acknowledgement; a missing notice field is not proof that the provider effect failed.
 
 An example for a separately authorized **read-only** SQL session:
 
     SELECT id, type,
            JSON_UNQUOTE(JSON_EXTRACT(value, '$.state')) AS state,
            JSON_EXTRACT(value, '$.order.id') AS order_id,
+           JSON_EXTRACT(value, '$.reference_ids') AS `reference_ids`,
+           JSON_EXTRACT(value, '$.recipient_userids') AS `recipient_userids`,
+           JSON_EXTRACT(value, '$.customer_notices') AS `customer_notices`,
            JSON_UNQUOTE(JSON_EXTRACT(value, '$.review_reason')) AS review_reason
     FROM setting
     WHERE type LIKE 'ACHBOT_DIRECT_GIFT_%'
@@ -186,8 +204,9 @@ accepted additive schema decision, not an unreviewed migration.
 
 ## Compatibility and rollback
 
-- Current post-V9 runtime ZIP adds one DirectGift PHP file and has 99
-  source-only members, not the previous 98. Frozen V0–V9 evidence is untouched.
+- The RC20 runtime has 119 members / 118 PHP files. DirectGift was already
+  present in RC19; RC20 adds four payment API modules. Frozen V0–V9 evidence
+  and published RC19 source remain untouched.
 - Old non-nonced giftToUserRemark, giftUserDay and giftUserVolume steps are
   inert in this runtime. Restart them through the new menu after reconciliation.
 - Rolling back to an older bot may expose the unsafe old direct gift route
@@ -214,8 +233,8 @@ accepted additive schema decision, not an unreviewed migration.
   behavior. Source-real acceptance additionally executes the actual
   config.php channel-exemption handler, the actual bot.php mainMenu route,
   their lost-commit, revoked-admin, stale-frame, synchronized stale-worker,
-  explicit-unban and nonce-preservation regressions. It requires at least
-  152 cases, including R3 current-privileged-Ban global CANCEL rejection,
+  explicit-unban and nonce-preservation regressions. It includes
+  R3 current-privileged-Ban global CANCEL rejection,
   revoked delegated administrator text/receipt Ban and Unban, cross-actor
   stale-Unban versus newer-Ban ordering, legitimate fresh Unban, duplicate
   identities, and unknown-COMMIT no-success/no-replay. It also checks

@@ -93,6 +93,7 @@ if (is_string($data) && preg_match(
     }
 }
 
+if (($achbotApiPaymentResult = require __DIR__.'/src/Finance/Routes/ApiPayments.php') === null) return;
 if (($achbotV8Result = require __DIR__ . '/src/Finance/Routes/PrePayment.php') === null) return;
 if (($achbotManualCryptoResult = require __DIR__ . '/src/Finance/Routes/ManualCrypto.php') === null) return;
 // END Pre Pay Check By ACh
@@ -195,12 +196,7 @@ if(strstr($text, "/start ")){
 						. \achbotMessage('bot.bot.webhook_ingress_authenticated.text.5f8f2b70e9') . number_format($inviteReward) . \achbotMessage('bot.bot.webhook_ingress_authenticated.text.81a62ff6c6')
 						. \achbotMessage('bot.bot.webhook_ingress_authenticated.text.87d0794e8e') . number_format($oldWallet) . \achbotMessage('bot.bot.webhook_ingress_authenticated.text.81a62ff6c6')
 						. \achbotMessage('bot.bot.webhook_ingress_authenticated.text.447278518a') . number_format($newWallet) . \achbotMessage('bot.bot.webhook_ingress_authenticated.text.2cc98f7f7c');
-					sendMessage($adminMsg, null, "html", $admin);
-
-					// ارسال به کانال گزارشات
-				if (!empty($botState['rewardChannel'])) {
-					sendMessage($adminMsg, null, "html", $botState['rewardChannel']);
-				}
+					achbotNotifyAdmins('sendMessage', ['text'=>$adminMsg,'parse_mode'=>'HTML']);
 			}
 
             setUser("referedBy" . $inviter);
@@ -306,13 +302,7 @@ if (preg_match('/^\/([Ss]tart)/', $text) || $text == $buttonValues['back_to_main
                 $mainValues['new_member_joined']
             );
 
-            sendMessage($msg, $keys, "html", $admin);
-			//sendToAllAdmins('sendMessage', ['text' => $msg,'reply_markup' => $keys,'parse_mode' => "html"]);
-
-            $rewardChannel = $botState['rewardChannel'] ?? '';
-            if (!empty($rewardChannel)) {
-                sendMessage($msg, $keys, "html", $rewardChannel);
-            }
+            achbotNotifyAdmins('sendMessage', ['text'=>$msg, 'reply_markup'=>$keys, 'parse_mode'=>'HTML']);
         }
 
         sendMessage($mainValues['start_message'], getMainKeys(), 'HTML');
@@ -500,7 +490,7 @@ if(($data=="gateWays_Channels" or preg_match('/^changeGateWays([A-Za-z0-9_]+)$/D
         $editableGatewayToggles=[
             'giftCardState','manualUsdtState','cartToCartState',
             'nextpay','zarinpal','nowPaymentWallet','nowPaymentOther',
-            'walletState'
+            'walletState','smsApiVerifyState','giftApiVerifyState'
         ];
         if (!in_array($match[1],$editableGatewayToggles,true)) {
             answerCallbackQuery($callbackId,\achbotMessage('bot.bot.webhook_ingress_authenticated.alert.9eac3467d5'),true);
@@ -510,7 +500,9 @@ if(($data=="gateWays_Channels" or preg_match('/^changeGateWays([A-Za-z0-9_]+)$/D
                 (int)$chat_id,(int)$message_id,(int)$admin,
                 'toggle',$match[1])) {
             answerCallbackQuery($callbackId,
-                \achbotMessage('bot.bot.webhook_ingress_authenticated.alert.31513d032b'),true);
+                in_array($match[1],['smsApiVerifyState','giftApiVerifyState'],true)
+                    ? \achbotMessage('payment_settings.api.change_unconfirmed')
+                    : \achbotMessage('bot.bot.webhook_ingress_authenticated.alert.31513d032b'),true);
             return;
         }
     }
@@ -675,6 +667,20 @@ if($data=="changeConfigRemarkType"){
     setSettings('remark', $newValue);
     editText($message_id,$mainValues['change_bot_settings_message'],getBotSettingKeys());
 }
+// Existing API settings use the same current private gateway authority.
+if (is_string($data??null) &&
+    preg_match('/\AchangePaymentKeysApi(Sms|Gift)(Advanced)?\z/D',$data,$apiPage)) {
+    if (!achbotGatewayAdminCanView($update,(int)$from_id,(int)$chat_id,
+            (int)$message_id,(int)$admin,$data)) {
+        answerCallbackQuery($callbackId,\achbotMessage('payment_settings.api.denied'),true);
+        return;
+    }
+    $page=achbotPaymentApiAdminPage($apiPage[1]==='Sms'?'bank_transfer':'gift_card',
+        isset($apiPage[2]));
+    answerCallbackQuery($callbackId);
+    editText($message_id,$page['text'],$page['keyboard'],'HTML',(int)$from_id);
+    return;
+}
 // Privileged PAYMENT_KEYS editor: signed private source + current actor
 // role, current owned step, field-level CAS, and a serialized atomic write.
 // Cached $userInfo / $paymentKeys are NEVER authorization/write authority.
@@ -691,6 +697,10 @@ if (is_string($data??null) && str_starts_with($data,'changePaymentKeys')) {
         return;
     }
     delMessage();
+    if (achbotPaymentApiAdminIsField($match[1])) {
+        sendMessage(achbotPaymentApiAdminPrompt($match[1]),$cancelKey,'HTML');
+        return;
+    }
     switch($match[1]){
         case "nextpay":
             $gate = \achbotMessage('bot.bot.change_config_remark_type.gate.44b818af28');
@@ -763,7 +773,11 @@ if (str_starts_with($paymentKeyStep,'achbotPaymentKey|') ||
     } else {
         sendMessage($mainValues['saved_successfuly'],$removeKeyboard);
     }
-    sendMessage($mainValues['change_bot_settings_message'],getGateWaysKeys());
+    if (achbotPaymentApiAdminIsField($ownedStep['field'])) {
+        achbotPaymentApiAdminReturn($ownedStep['field']);
+    } else {
+        sendMessage($mainValues['change_bot_settings_message'],getGateWaysKeys());
+    }
     return;
 }
 require __DIR__ . '/src/Agent/Discounts.php';
@@ -1711,6 +1725,8 @@ if (is_string($userInfo['step']??null) &&
         return;
     }
     $directChange=['remark'=>$directClaim['order']['remark']];
+    if (($directClaim['target']['provider']??'marzban')==='pasarguard')
+        $directChange['order_id']=$directClaim['order']['id'];
     if ($directClaim['days']>0) $directChange['plus_day']=$directClaim['days'];
     if ($directClaim['volume_mb']>0)
         $directChange['plus_volume']=intdiv($directClaim['volume_mb'],1024);
@@ -1731,13 +1747,6 @@ if (is_string($userInfo['step']??null) &&
             preg_match('/\A[a-z0-9_]{1,70}\z/D',$directProviderCode)===1)
             $directFailure='provider_'.$directProviderCode;
         achbotDirectGiftComplete($connection,$directClaim,$directResult);
-        try {
-            sendMessage(\achbotMessage('bot.bot.gift_volume_and_day.message.df8d2180ae').
-                $directClaim['id'].').',$removeKeyboard);
-            sendMessage($mainValues['reached_main_menu'], getMainKeys(), 'HTML');
-        } catch (Throwable $noticeFailure) {
-            error_log('direct_gift_success_notice_unconfirmed');
-        }
     } catch (Throwable $e) {
         if ($e->getMessage()==='direct_gift_result_unverified' &&
             $directFailure!=='direct_gift_provider_unverified') {
@@ -1760,6 +1769,17 @@ if (is_string($userInfo['step']??null) &&
         } catch (Throwable $ignored) {
             error_log('direct_gift_review_notice_unconfirmed');
         }
+        return;
+    }
+    achbotGiftDeliverNotices($connection,$directClaim['id'],'direct:'.$directClaim['id'],
+        $directClaim['references'],$directClaim['order']['remark'],
+        $directClaim['volume_mb'],$directClaim['days']);
+    try {
+        sendMessage(\achbotMessage('bot.bot.gift_volume_and_day.message.df8d2180ae').
+            $directClaim['id'].').',$removeKeyboard);
+        sendMessage($mainValues['reached_main_menu'], getMainKeys(), 'HTML');
+    } catch (Throwable $noticeFailure) {
+        error_log('direct_gift_success_notice_unconfirmed');
     }
     return;
 }

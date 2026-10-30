@@ -765,7 +765,8 @@ function achbotPgServiceEdit(mysqli $db,int $serverId,array $change,?array $gift
         if (($r['success']??false)!==true || $r['user']['group_ids']!==$read['user']['group_ids'])
             throw new RuntimeException('pg_edit_readback_requires_review');
         achbotPgFinishMutation($db,$ctx,$intent,$r);
-        return (object)['success'=>true,'verified'=>true,'applied_expire'=>$r['user']['expire'],
+        return (object)['success'=>true,'verified'=>true,
+            'before_expire'=>$read['user']['expire'],'applied_expire'=>$r['user']['expire'],
             'applied_bytes'=>$r['user']['data_limit']];
     } catch (Throwable $error) {return achbotProviderFailure('pg_edit_requires_review');}
 }

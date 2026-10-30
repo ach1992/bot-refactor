@@ -276,10 +276,103 @@ foreach($r5['added_keys']as$key=>$record){$audience=$record['audience'];
  if(isset($current[$key])||empty($record['source_paths'])||empty($record['reason']))throw new RuntimeException('r5_addition_identity');
  $r5Expected[$audience][$key]=$record['entry'];
 }
-foreach(['user','admin']as$audience){$actual=[];$groups=require dirname(__DIR__).'/messages/fa/'.$audience.'.php';
- foreach($groups as$topic=>$entries)foreach($entries as$name=>$value)$actual[$topic.'.'.$name]=$value;
- ksort($actual);$expected=$r5Expected[$audience];ksort($expected);
- if($actual!==$expected)throw new RuntimeException('r5_undeclared_copy_or_recipient_change');
+// Independently verify the exact accepted API additions before projecting back
+// to R5. The shipping array above remains complete for every native loader test.
+$api=json_decode(file_get_contents(__DIR__.'/text_catalog_owner_r6_api.json'),true,512,JSON_THROW_ON_ERROR);
+$apiBase='2d0ad0826d594adac49f5a83f0a9d47f6df5b264';
+$apiRefs=['2633ac3c21c539635c228dd31df2e07caee491d0','2c685f5a9621a808c44a4c012b04c8ccd97102af','df00c13da1e38e2ba364ab48e31db66f8705b2c2'];
+if(($api['version']??null)!==1||($api['authorization']??null)!=='https://github.com/ach1992/bot-refactor/issues/57#issuecomment-6514754219'||
+ ($api['baseline_commit']??null)!==$apiBase||($api['accepted_commits']??null)!==$apiRefs||
+ ($api['result_catalog_commit']??null)!==$apiRefs[2]||($api['scope']??null)!=='additions_only')
+ throw new RuntimeException('api_catalog_amendment_identity');
+$apiSnapshots=[];
+foreach([$apiBase,...$apiRefs]as$ref)foreach(['user','admin']as$audience){
+ $source=shell_exec('git -C '.escapeshellarg(dirname(__DIR__)).' show '.escapeshellarg($ref.':messages/fa/'.$audience.'.php'));
+ $begin=is_string($source)?strpos($source,'return ['):false;if($begin===false)throw new RuntimeException('api_catalog_source_missing');
+ $groups=eval(substr($source,$begin));$apiSnapshots[$ref][$audience]=[];
+ foreach($groups as$topic=>$entries)foreach($entries as$name=>$value)$apiSnapshots[$ref][$audience][$topic.'.'.$name]=$value;
+}
+$apiDelta=[];
+foreach(['user','admin']as$audience){
+ $prior=$apiSnapshots[$apiBase][$audience];$accepted=$apiSnapshots[$apiRefs[2]][$audience];
+ $expected=$r5Expected[$audience];ksort($prior);ksort($expected);
+ if($prior!==$expected)throw new RuntimeException('api_prior_r5_catalog_drift');
+ foreach($prior as$key=>$value)if(!array_key_exists($key,$accepted)||$accepted[$key]!==$value)throw new RuntimeException('api_changed_prior_copy');
+ foreach(array_diff_key($accepted,$prior)as$key=>$value){
+  if(isset($apiDelta[$key]))throw new RuntimeException('api_duplicate_audience_key');
+  $apiDelta[$key]=['audience'=>$audience,'entry'=>$value];
+ }
+}
+$apiAdded=$api['added_keys']??[];$apiKeys=array_keys($apiAdded);$apiExpectedKeys=array_keys($apiDelta);sort($apiKeys);sort($apiExpectedKeys);
+if(count($apiDelta)!==86||$apiKeys!==$apiExpectedKeys)throw new RuntimeException('api_exact_addition_scope');
+$apiUserCount=0;
+foreach($apiDelta as$key=>$expected){
+ $record=$apiAdded[$key];$audience=$expected['audience'];
+ if(($record['audience']??null)!==$audience||($record['entry']??null)!==$expected['entry']||empty($record['reason']))
+  throw new RuntimeException('api_accepted_copy_or_audience_drift:'.$key);
+ $introduced=null;foreach($apiRefs as$ref)if(array_key_exists($key,$apiSnapshots[$ref][$audience])){$introduced=$ref;break;}
+ if(($record['introduced_in']??null)!==$introduced)throw new RuntimeException('api_entry_lineage_drift:'.$key);
+ if($audience==='user')$apiUserCount++;
+}
+if($apiUserCount!==22)throw new RuntimeException('api_audience_counts_drift');
+// One explicit current administrator gift report is admitted before restoring
+// the unchanged API/R5 stages. Never project arbitrary keys or prefixes away.
+$giftKey='gifts.completed_report';
+$giftEntry=['text'=>'🎁 هدیهٔ اشتراک اعمال شد'."\n".
+ '🔖 شناسه عملیات: <code>{reference}</code>'."\n".
+ '👤 اشتراک: <code>{remark}</code>'."\n".
+ '📅 زمان هدیه: {days} روز'."\n".
+ '📦 حجم هدیه: {volume_mb} مگابایت'."\n".
+ '👥 ثبت‌های مرتبط: {reference_count}'."\n".
+ '✉️ کاربران مرتبط: {recipient_count}'."\n".
+ '⚠️ پیام‌های بدون تأیید ارسال: {notice_unconfirmed_count}',
+ 'parameters'=>['reference','remark','days','volume_mb','reference_count','recipient_count','notice_unconfirmed_count']];
+$shippingSides=[];
+foreach(['user','admin']as$audience){$groups=require dirname(__DIR__).'/messages/fa/'.$audience.'.php';
+ $shippingSides[$audience]=[];
+ foreach($groups as$topic=>$entries)foreach($entries as$name=>$value)$shippingSides[$audience][$topic.'.'.$name]=$value;
+}
+$verifyCurrentAudienceCatalogs=static function(array $sides) use($giftKey,$giftEntry,$apiDelta,$r5Expected): void {
+ if(array_key_exists($giftKey,$sides['user'])||($sides['admin'][$giftKey]??null)!==$giftEntry)
+  throw new RuntimeException('gift_report_value_parameter_or_audience_drift');
+ unset($sides['admin'][$giftKey]);
+ foreach(['user','admin']as$audience){$actual=$sides[$audience];
+  foreach($apiDelta as$key=>$record)if($record['audience']===$audience){
+   if(!array_key_exists($key,$actual)||$actual[$key]!==$record['entry'])throw new RuntimeException('api_actual_copy_or_parameters_drift:'.$key);
+   unset($actual[$key]);
+  }
+  ksort($actual);$expected=$r5Expected[$audience];ksort($expected);
+  if($actual!==$expected)throw new RuntimeException('r5_undeclared_copy_or_recipient_change');
+ }
+};
+// Positive admission first ensures the new legitimate entry cannot make every
+// mutation below pass merely because the unmodified shipping catalog fails.
+$verifyCurrentAudienceCatalogs($shippingSides);
+$giftControls=[];
+$bad=$shippingSides;unset($bad['admin'][$giftKey]);
+$giftControls['missing_report']=[$bad,'gift_report_value_parameter_or_audience_drift'];
+$bad=$shippingSides;$bad['user'][$giftKey]=$bad['admin'][$giftKey];unset($bad['admin'][$giftKey]);
+$giftControls['wrong_audience']=[$bad,'gift_report_value_parameter_or_audience_drift'];
+$bad=$shippingSides;$bad['admin'][$giftKey]['text'].=' changed';
+$giftControls['changed_value']=[$bad,'gift_report_value_parameter_or_audience_drift'];
+$bad=$shippingSides;array_pop($bad['admin'][$giftKey]['parameters']);
+$giftControls['missing_parameter']=[$bad,'gift_report_value_parameter_or_audience_drift'];
+$bad=$shippingSides;$bad['admin'][$giftKey]['parameters']=array_reverse($bad['admin'][$giftKey]['parameters']);
+$giftControls['reordered_parameters']=[$bad,'gift_report_value_parameter_or_audience_drift'];
+$bad=$shippingSides;$bad['admin']['gifts.unapproved']='changed';
+$giftControls['unapproved_extra_key']=[$bad,'r5_undeclared_copy_or_recipient_change'];
+$bad=$shippingSides;$bad['user'][$giftKey]=$bad['admin'][$giftKey];
+$giftControls['duplicate_cross_audience_key']=[$bad,'gift_report_value_parameter_or_audience_drift'];
+$bad=$shippingSides;$bad['user']['legacy_messages.banned']='changed';
+$giftControls['prior_catalog_mutation']=[$bad,'r5_undeclared_copy_or_recipient_change'];
+foreach($giftControls as$name=>[$candidate,$expectedReason]){
+ try {$verifyCurrentAudienceCatalogs($candidate);}
+ catch(RuntimeException $error){
+  if($error->getMessage()!==$expectedReason)
+   throw new RuntimeException('gift_catalog_negative_wrong_reason:'.$name,0,$error);
+  continue;
+ }
+ throw new RuntimeException('gift_catalog_negative_control_missed:'.$name);
 }
 
 $management=json_decode(file_get_contents(__DIR__.'/text_catalog_management_amendment.json'),true,512,JSON_THROW_ON_ERROR);
@@ -461,7 +554,7 @@ echo json_encode(['status'=>'PASS',
     'repeated_interpolation_string_conversion'=>'PASS','actual_traffic_helper_parity_cases'=>$trafficCases,
     'traffic_relocation_source_ref'=>CATALOG_MANAGEMENT_BASE,'current_traffic_shared_observation_cases'=>$currentTrafficCases,
     'editable_catalog_files'=>count($files),'logical_topics'=>count(achbotMessageTopics()),
-    'current_catalog_keys'=>count($shipping),'current_byte_preserved_keys'=>$preserved,
+    'current_catalog_keys'=>count($shipping),'current_gift_admin_additions'=>1,'current_gift_catalog_negative_controls'=>count($giftControls),'current_gift_catalog_negative_scenarios'=>array_keys($giftControls),'current_api_additions'=>count($apiDelta),'current_api_user_additions'=>$apiUserCount,'current_api_admin_additions'=>count($apiDelta)-$apiUserCount,'current_r5_catalog_keys'=>2685,'current_byte_preserved_keys'=>$preserved,
     'current_style_changes'=>count($changes),'current_retired_implementation_keys'=>count($retired),'current_retired_feature_keys'=>count($featureRetired),
     'current_added_admin_keys'=>count($added),'current_management_added_keys'=>count($managementAdded),'current_owner_followup_changes'=>count($ownerChanges),'current_parameter_privacy_changes'=>$parameterChanges,
     'current_r5_changes'=>count($r5['changes']),'current_r5_retired_keys'=>count($r5['retired_keys']),'current_r5_added_keys'=>count($r5['added_keys']),

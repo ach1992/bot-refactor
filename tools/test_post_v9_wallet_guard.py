@@ -266,4 +266,9 @@ def main():
     print(json.dumps({k:v for k,v in report.items() if k!='cases_detail'}))
 
 
+
+# Current domain fixture imports the real event-aware notification router.
+import notification_fixture
+PHP=notification_fixture.with_router(PHP)
+
 if __name__=='__main__':main()

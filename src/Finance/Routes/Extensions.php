@@ -162,8 +162,9 @@ if (is_string($data) && (strlen($data) <= 64 || ($GLOBALS['achbotManualCryptoVer
     $delivered = sendMessage($msg, $keyboard, "HTML");
     require_once __DIR__ . '/../PaymentLifecycle.php';
     achbotPayUxTrackByHash($connection,(string)$payInfo['hash_id'],(int)$from_id,$delivered);
+    if (function_exists('achbotApiPaymentTrackInvoice')) achbotApiPaymentTrackInvoice($connection,(string)$payInfo['hash_id'],(int)$from_id,$delivered);
     if (is_object($delivered) && !empty($delivered->ok)) {
-    setUser("payIncreaseDayWith" . (in_array($method, ['manual_usdt','manual_trx'], true) ? 'ManualUsdt' : ($method === 'gift_card' ? 'GiftCard' : 'CartToCart')) . $match[1]);
+    setUser(function_exists('achbotApiPaymentInitialStep') ? achbotApiPaymentInitialStep($connection,(string)$match[1],"payIncreaseDayWith" . (in_array($method, ['manual_usdt','manual_trx'], true) ? 'ManualUsdt' : ($method === 'gift_card' ? 'GiftCard' : 'CartToCart')) . $match[1]) : "payIncreaseDayWith" . (in_array($method, ['manual_usdt','manual_trx'], true) ? 'ManualUsdt' : ($method === 'gift_card' ? 'GiftCard' : 'CartToCart')) . $match[1]);
         delMessage();
     } else {
         // The pinned attempt may be reopened. Never erase the selection menu
@@ -301,6 +302,7 @@ if (preg_match('/wait(?:IncreaseDay|IncreaseDayGift|IncreaseDayUsdt)Receipt(.*)/
 }
 
 if (preg_match('/^approveIncreaseDay(.*)/', $data, $match) && achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'payments')) {
+    $apiManualSeen=function_exists('achbotApiPaymentManualAddonPreflight') ? achbotApiPaymentManualAddonPreflight($connection,(string)$match[1]) : null;
     $connection->begin_transaction();
     $localCommitted=false;
     try {
@@ -310,7 +312,7 @@ if (preg_match('/^approveIncreaseDay(.*)/', $data, $match) && achbotAdminCanFor(
         $stmt->bind_param("s", $hash_id);
         $stmt->execute();
         $payParam = $stmt->get_result()->fetch_assoc();
-        if (!achbotSupportsPaymentSubject($connection, $payParam, true)) {
+        if (!(function_exists('achbotApiPaymentManualAddonAllowedLocked') ? achbotApiPaymentManualAddonAllowedLocked($connection,$payParam,$apiManualSeen) : achbotSupportsPaymentSubject($connection, $payParam, true))) {
             $connection->rollback();
             alert(\achbotMessage('renewal.extensions.alert.135aa8877f'), true);
             return;
@@ -482,7 +484,7 @@ if (preg_match('/^approveIncreaseDay(.*)/', $data, $match) && achbotAdminCanFor(
              . \achbotMessage('renewal.extensions.hash__i_d_match_1.3abb834966', ['match_1' => $match[1]])
              . \achbotMessage('renewal.extensions.admin_from_id.748897de00', ['from_id' => $from_id])
              . \achbotMessage('renewal.extensions.external_effect_unverified_verify_before.10e2ccf8a3') . achbotFinanceDiagnosticReason($e);
-        sendMessage($err, null, null, $admin);
+        achbotNotifyAdmins('sendMessage', ['text'=>$err], ['report_channel'=>null]);
 
         alert(\achbotMessage('renewal.extensions.alert.ba92f03500'), true);
         return;
@@ -693,14 +695,7 @@ if(is_string($data) && strlen($data) <= 64 && preg_match('/\ApayIncreaseDayWithW
         ]]);
 
         $msg = \achbotMessage('renewal.extensions.msg.bfc1b46322', ['from_id' => $from_id, 'first_name' => $first_name, 'username' => $username, 'remark' => $remark, 'volume' => $volume, 'price' => $price]);
-        sendMessage($msg, $keys,"html", $admin);
-        //sendToAllAdmins('sendMessage', ['text' => $msg,'reply_markup' => $keys,'parse_mode' => "html"]);
-		
-		// ارسال پیام به کانال گزارشات
-        $rewardChannel = $botState['rewardChannel'];
-        if (!empty($rewardChannel)) {
-            sendMessage($msg, $keys, "html", $rewardChannel);
-        }
+        achbotNotifyAdmins('sendMessage', ['text'=>$msg, 'reply_markup'=>$keys, 'parse_mode'=>'HTML']);
 
         return;
 
@@ -716,7 +711,7 @@ if(is_string($data) && strlen($data) <= 64 && preg_match('/\ApayIncreaseDayWithW
                   . \achbotMessage('renewal.extensions.hash__i_d_match_1.3abb834966', ['match_1' => $match[1]])
                   . \achbotMessage('renewal.extensions.user_from_id.45aa9ea684', ['from_id' => $from_id])
                   . \achbotMessage('renewal.extensions.external_effect_unverified_verify_before.10e2ccf8a3').achbotFinanceDiagnosticReason($e);
-        sendMessage($adminErr, null, null, $admin);
+        achbotNotifyAdmins('sendMessage', ['text'=>$adminErr], ['report_channel'=>null]);
 
         sendMessage(\achbotMessage('renewal.extensions.message.ba8adc7121'), null, null, $uid);
 
@@ -813,9 +808,7 @@ if (is_string($data) && preg_match('/^confirmChangePlan_([1-9][0-9]{0,9})_([1-9]
         'orderInfo_userid'=>$orderInfo['userid'],'first_name'=>$escape($first_name),
         'username'=>$escape($username),'orderInfo_remark'=>$escape($orderInfo['remark']),
         'planTitle'=>$escape($plan['title']),'newPlanId'=>$newPlanId]);
-    sendMessage($channelMessage,null,'HTML',$admin);
-    $rewardChannel=$botState['rewardChannel']??'';
-    if ($rewardChannel!=='') sendMessage($channelMessage,null,'HTML',$rewardChannel);
+    achbotNotifyAdmins('sendMessage', ['text'=>$channelMessage,'parse_mode'=>'HTML']);
     return;
 }
 if (preg_match('/^increaseAVolume([1-9][0-9]{0,9})$/D', $data, $match)) {
@@ -985,8 +978,9 @@ if (is_string($data) && (strlen($data) <= 64 || ($GLOBALS['achbotManualCryptoVer
     $delivered = sendMessage($msg, $keyboard, "HTML");
     require_once __DIR__ . '/../PaymentLifecycle.php';
     achbotPayUxTrackByHash($connection,(string)$payInfo['hash_id'],(int)$from_id,$delivered);
+    if (function_exists('achbotApiPaymentTrackInvoice')) achbotApiPaymentTrackInvoice($connection,(string)$payInfo['hash_id'],(int)$from_id,$delivered);
     if (is_object($delivered) && !empty($delivered->ok)) {
-    setUser("payIncreaseWith" . (in_array($method, ['manual_usdt','manual_trx'], true) ? 'ManualUsdt' : ($method === 'gift_card' ? 'GiftCard' : 'CartToCart')) . $match[1]);
+    setUser(function_exists('achbotApiPaymentInitialStep') ? achbotApiPaymentInitialStep($connection,(string)$match[1],"payIncreaseWith" . (in_array($method, ['manual_usdt','manual_trx'], true) ? 'ManualUsdt' : ($method === 'gift_card' ? 'GiftCard' : 'CartToCart')) . $match[1]) : "payIncreaseWith" . (in_array($method, ['manual_usdt','manual_trx'], true) ? 'ManualUsdt' : ($method === 'gift_card' ? 'GiftCard' : 'CartToCart')) . $match[1]);
         delMessage();
     } else {
         // The pinned attempt may be reopened. Never erase the selection menu
@@ -1124,6 +1118,7 @@ if (preg_match('/wait(?:IncreaseVolume|IncreaseVolumeGift|IncreaseVolumeUsdt)Rec
 }
 
 if (preg_match('/^approveIncreaseVolume(.*)/', $data, $match) && achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'payments')) {
+    $apiManualSeen=function_exists('achbotApiPaymentManualAddonPreflight') ? achbotApiPaymentManualAddonPreflight($connection,(string)$match[1]) : null;
     $connection->begin_transaction();
     $localCommitted=false;
     try {
@@ -1133,7 +1128,7 @@ if (preg_match('/^approveIncreaseVolume(.*)/', $data, $match) && achbotAdminCanF
         $stmt->bind_param("s", $hash_id);
         $stmt->execute();
         $payParam = $stmt->get_result()->fetch_assoc();
-        if (!achbotSupportsPaymentSubject($connection, $payParam, true)) {
+        if (!(function_exists('achbotApiPaymentManualAddonAllowedLocked') ? achbotApiPaymentManualAddonAllowedLocked($connection,$payParam,$apiManualSeen) : achbotSupportsPaymentSubject($connection, $payParam, true))) {
             $connection->rollback();
             alert(\achbotMessage('renewal.extensions.alert.135aa8877f'), true);
             return;
@@ -1305,7 +1300,7 @@ if (preg_match('/^approveIncreaseVolume(.*)/', $data, $match) && achbotAdminCanF
              . \achbotMessage('renewal.extensions.hash__i_d_match_1.3abb834966', ['match_1' => $match[1]])
              . \achbotMessage('renewal.extensions.admin_from_id.748897de00', ['from_id' => $from_id])
              . \achbotMessage('renewal.extensions.external_effect_unverified_verify_before.10e2ccf8a3') . achbotFinanceDiagnosticReason($e);
-        sendMessage($err, null, null, $admin);
+        achbotNotifyAdmins('sendMessage', ['text'=>$err], ['report_channel'=>null]);
 
         alert(\achbotMessage('renewal.extensions.alert.36f9c089de'), true);
         return;
@@ -1516,14 +1511,7 @@ if(is_string($data) && strlen($data) <= 64 && preg_match('/\ApayIncreaseWithWall
         ]]);
 
         $msg = \achbotMessage('renewal.extensions.msg.0e12e9ce3d', ['from_id' => $from_id, 'first_name' => $first_name, 'username' => $username, 'remark' => $remark, 'volume' => $volume, 'price' => $price]);
-        sendMessage($msg, $keys,"html", $admin);
-        //sendToAllAdmins('sendMessage', ['text' => $msg,'reply_markup' => $keys,'parse_mode' => "html"]);
-		
-		// ارسال پیام به کانال گزارشات
-        $rewardChannel = $botState['rewardChannel'];
-        if (!empty($rewardChannel)) {
-            sendMessage($msg, $keys, "html", $rewardChannel);
-        }
+        achbotNotifyAdmins('sendMessage', ['text'=>$msg, 'reply_markup'=>$keys, 'parse_mode'=>'HTML']);
 
         return;
 
@@ -1539,7 +1527,7 @@ if(is_string($data) && strlen($data) <= 64 && preg_match('/\ApayIncreaseWithWall
                   . \achbotMessage('renewal.extensions.hash__i_d_match_1.3abb834966', ['match_1' => $match[1]])
                   . \achbotMessage('renewal.extensions.user_from_id.45aa9ea684', ['from_id' => $from_id])
                   . \achbotMessage('renewal.extensions.external_effect_unverified_verify_before.10e2ccf8a3').achbotFinanceDiagnosticReason($e);
-        sendMessage($adminErr, null, null, $admin);
+        achbotNotifyAdmins('sendMessage', ['text'=>$adminErr], ['report_channel'=>null]);
 
         sendMessage(\achbotMessage('renewal.extensions.message.ba8adc7121'), null, null, $uid);
 

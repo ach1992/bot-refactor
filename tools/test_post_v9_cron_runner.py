@@ -58,6 +58,30 @@ echo "owned fixture success\n";
 """
 
 
+# Only the coordinator is under test. Keep both domain boundaries local,
+# silent, and database-free; reuse the existing trace without a new env input.
+API_MAINTENANCE_PHP = r"""<?php
+function achbotApiPaymentMaintain($db) {
+    $trace = getenv('ACHBOT_TEST_ONLY_TRACE');
+    if (is_string($trace) && $trace !== '') {
+        file_put_contents($trace . '.maintenance', "api\n", FILE_APPEND | LOCK_EX);
+        if (is_file($trace . '.api-failure')) {
+            throw new RuntimeException('owned fixture controlled API maintenance failure');
+        }
+    }
+    return [];
+}
+"""
+PAYUX_MAINTENANCE_PHP = r"""<?php
+function achbotPayUxMaintain($db) {
+    $trace = getenv('ACHBOT_TEST_ONLY_TRACE');
+    if (is_string($trace) && $trace !== '') {
+        file_put_contents($trace . '.maintenance', "payux\n", FILE_APPEND | LOCK_EX);
+    }
+}
+"""
+
+
 def cmd(php: str, entrypoint: Path, cwd: Path, env: dict[str, str],
         *args: str, disable_proc: bool = False,
         disable_flock: bool = False) -> subprocess.CompletedProcess:
@@ -90,7 +114,8 @@ def setup(root: Path) -> tuple[Path, Path]:
     (root/'src/Jobs/BroadcastSend.php').write_text('<?php /* owned fixture */')
     (root/'src/Notifications/Warnings.php').write_text(CHILD_PHP.replace('$name = basename(__FILE__);',"$name = 'services';"))
     (root/'src/Finance/AutomaticRenewal.php').write_text('<?php /* owned fixture */')
-    (root/'src/Finance/PaymentLifecycle.php').write_text('<?php function achbotPayUxMaintain($db) {}')
+    (root/'src/Finance/PaymentLifecycle.php').write_text(PAYUX_MAINTENANCE_PHP)
+    (root/'src/Finance/ApiPayments.php').write_text(API_MAINTENANCE_PHP)
 
     work = root / "owned-cwd"
     work.mkdir()
@@ -178,6 +203,9 @@ def main() -> None:
         check("successful_workers_preserve_outputs",
               clean.stdout.count("owned fixture success") == len(JOBS)
               and clean.stderr == "")
+        maintenance_trace = Path(str(trace) + '.maintenance')
+        api_order = maintenance_trace.read_text().splitlines() == ['api', 'payux']
+        check('api_payment_maintenance_precedes_payux', api_order)
         check("per_installation_private_lock_created",
               lock_file.exists() and lock_file.stat().st_mode & 0o777 == 0o600)
         check("first_create_then_reuse_same_inode",
@@ -627,6 +655,25 @@ def main() -> None:
               and "baseInfo.php" not in parent_prefix and "config.php" not in parent_prefix)
 
 
+        # The owned API spy throws before returning. The actual coordinator's
+        # finally block must still invoke PayUX, preserving all four outputs.
+        maintenance_trace.unlink()
+        api_failure = Path(str(trace) + '.api-failure')
+        api_failure.write_text('owned controlled failure', encoding='utf-8')
+        try:
+            api_failed = cmd(php, entrypoint, work, env)
+        finally:
+            api_failure.unlink()
+        api_finally = (
+            api_failed.returncode == 0
+            and api_failed.stdout == 'owned fixture success\n' * len(JOBS)
+            and api_failed.stderr.strip() == 'achbot_payment_lifecycle_deferred'
+            and maintenance_trace.read_text().splitlines() == ['api', 'payux']
+            and [line.split('|')[0] for line in trace.read_text().splitlines()] == list(JOBS)
+        )
+        check('api_payment_failure_preserves_payux_finally', api_finally)
+
+
     report = {
         "complete": True,
         "cases": len(result_names),
@@ -634,6 +681,9 @@ def main() -> None:
         "source_only": True,
         "actual_current_runner_executed": True,
         "isolated_child_php_processes": True,
+        "actual_api_maintenance_boundary": True,
+        "api_before_payux": api_order,
+        "api_failure_payux_finally": api_finally,
         "actual_cron_or_bot_job_executed": False,
         "production_database_or_service_modified": False,
     }

@@ -29,6 +29,7 @@ if (!empty($spec['no_throw'])) {
 }
 $db=new mysqli('localhost','root','',$argv[3],0,$argv[2]);
 $db->set_charset('utf8mb4');
+$connection=$db;$admin=9001;$botState=['rewardChannel'=>9003];
 $events=[];
 function sendMessage($message=null,$keys=null,$format=null,$to=null) {
     global $events,$spec;
@@ -216,6 +217,11 @@ def main():
                  'native_php_mariadb':True,'socket_only':True,'production_mutations':0}
         if args.report:args.report.write_text(json.dumps(payload,indent=2)+'\n')
         print(json.dumps(payload))
+
+
+# Current domain fixture imports the real event-aware notification router.
+import notification_fixture
+PHP=notification_fixture.with_router(PHP)
 
 if __name__=='__main__':
     main()

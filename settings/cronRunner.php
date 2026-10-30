@@ -174,7 +174,8 @@ try {
     } finally {
         try {
             require_once __DIR__ . '/../src/Finance/PaymentLifecycle.php';
-            achbotPayUxMaintain($connection);
+            require_once __DIR__ . '/../src/Finance/ApiPayments.php';
+            try {achbotApiPaymentMaintain($connection);} finally {achbotPayUxMaintain($connection);}
         } catch (Throwable $ignored) {
             error_log('achbot_payment_lifecycle_deferred');
         }

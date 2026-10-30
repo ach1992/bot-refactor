@@ -75,6 +75,8 @@ NEW_RUNTIME_MEMBERS = ("src/Subscription/Delivery.php", "pay/checkout.php", "set
                        "src/Finance/Routes/ManualCrypto.php", "src/Finance/PaymentLifecycle.php",
                        "src/Finance/GatewayRules.php", "src/Finance/GatewayRuleAdmin.php",
                        "src/Finance/PaymentKeyAdmin.php",
+                       "src/Finance/PaymentEvidence.php", "src/Finance/PaymentApiAdmin.php",
+                       "src/Finance/ApiPayments.php", "src/Finance/Routes/ApiPayments.php",
                        "src/Finance/ServiceEffects.php", "src/Finance/BankPurchase.php",
                        "src/Finance/RecoveryInspection.php",
                        "src/Finance/RecoveryTransport.php", "src/Finance/WalletAdjustments.php", "src/Finance/WalletTransferFlow.php",

@@ -4535,4 +4535,9 @@ def main():
        'scenarios':records}
     if args.report:args.report.write_text(json.dumps(report,indent=2,ensure_ascii=False)+'\n')
     print(json.dumps({k:v for k,v in report.items() if k!='scenarios'}))
+
+# Current domain fixture imports the real event-aware notification router.
+import notification_fixture
+PHP_DRIVER=notification_fixture.with_router(PHP_DRIVER)
+
 if __name__=='__main__':main()

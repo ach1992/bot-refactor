@@ -2,25 +2,29 @@
 /** AChBot administrator levels stored in existing setting rows; users.isAdmin remains boolean. */
 if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) { http_response_code(404); exit; }
 
-function achbotAdminLevel(?int $actor=null,?mysqli $db=null,?int $primary=null,bool $lock=false): string {
+function achbotAdminLevel(?int $actor=null,?mysqli $db=null,?int $primary=null,bool $lock=false,bool $notificationRead=false,?bool &$complete=null): string {
+    $complete=true;
     $actor=$actor??(int)($GLOBALS['from_id']??0);
     $primary=$primary??(int)($GLOBALS['admin']??0);
     if ($actor<=0 || $primary<=0) return 'none';
     if ($actor===$primary) return 'owner';
     $db=$db??($GLOBALS['connection']??null);
-    if (!($db instanceof mysqli)) return 'none';
+    if (!($db instanceof mysqli)) {$complete=false;return 'none';}
+    // Only unsolicited-copy admission opts into compatible, nonblocking reads.
+    // Financial, administrator-write and stored-receipt callers keep FOR UPDATE.
+    $lockClause=$lock?($notificationRead?' LOCK IN SHARE MODE NOWAIT':' FOR UPDATE'):'';
     try {
-        $s=$db->prepare('SELECT id,isAdmin,step FROM users WHERE userid=? LIMIT 2'.($lock?' FOR UPDATE':''));
+        $s=$db->prepare('SELECT id,isAdmin,step FROM users WHERE userid=? LIMIT 2'.$lockClause);
         $s->bind_param('i',$actor);$s->execute();$rows=$s->get_result()->fetch_all(MYSQLI_ASSOC);$s->close();
         if (count($rows)!==1 || (int)$rows[0]['isAdmin']!==1 || $rows[0]['step']==='banned') return 'none';
         $key='ADMIN_ROLE_'.$actor;
-        $s=$db->prepare('SELECT value FROM setting WHERE type=? LIMIT 2'.($lock?' FOR UPDATE':''));
+        $s=$db->prepare('SELECT value FROM setting WHERE type=? LIMIT 2'.$lockClause);
         $s->bind_param('s',$key);$s->execute();$roles=$s->get_result()->fetch_all(MYSQLI_ASSOC);$s->close();
         if (count($roles)>1) return 'none';
         if ($roles) return in_array($roles[0]['value'],['manager','operator','support'],true)?$roles[0]['value']:'none';
         // Legacy staff have Operator scope until Owner assigns a persisted level.
         return 'operator';
-    } catch (Throwable $ignored) {return 'none';}
+    } catch (Throwable $ignored) {$complete=false;return 'none';}
 }
 function achbotAdminLevelCan(string $level,string $capability): bool {
     if (!in_array($capability,['admin','admins','stats','servers','plans','bot_settings','gateways',
@@ -54,25 +58,32 @@ function achbotAdminCanLocked(mysqli $db,int $actor,int $primary,string $capabil
 }
 /** Same persisted membership as the administrator list, using a current read.
  * A conflicting older RR snapshot fails closed and may defer copies until the
- * next ordinary delivery. No caller transaction or isolation mode is changed. */
-function achbotAdminRecipientCandidates(mysqli $db,int $primary): array {
+ * next ordinary delivery. Shared current reads do not conflict with another
+ * notifier. NOWAIT prevents writers from stalling financial error handling.
+ * Callers can observe deferred discovery;
+ * no caller transaction, financial lock or isolation mode is changed. */
+function achbotAdminRecipientCandidates(mysqli $db,int $primary,?bool &$complete=null): array {
+    $complete=false;
     if ($primary<=0) return [];
     try {
-        $q=$db->prepare('SELECT userid FROM users WHERE isAdmin=1 AND userid<>? ORDER BY id FOR UPDATE');
+        $q=$db->prepare('SELECT userid FROM users WHERE isAdmin=1 AND userid<>? ORDER BY id LOCK IN SHARE MODE NOWAIT');
         $q->bind_param('i',$primary);$q->execute();$rows=$q->get_result()->fetch_all(MYSQLI_ASSOC);$q->close();
+        $complete=true;
         return array_values(array_unique(array_column($rows,'userid'),SORT_STRING));
     } catch (Throwable $ignored) {return [];}
 }
 /** Missing preferences default ON; ambiguous or malformed values deny copies. */
-function achbotAdminNotifyEnabled(mysqli $db,int $target,int $primary,bool $lock=false): bool {
+function achbotAdminNotifyEnabled(mysqli $db,int $target,int $primary,bool $lock=false,bool $notificationRead=false,?bool &$complete=null): bool {
+    $complete=true;
     if ($target<=0 || $primary<=0) return false;
     if ($target===$primary) return true;
+    $lockClause=$lock?($notificationRead?' LOCK IN SHARE MODE NOWAIT':' FOR UPDATE'):'';
     try {
         $key='ADMIN_NOTIFY_'.$target;
-        $q=$db->prepare('SELECT value FROM setting WHERE type=? LIMIT 2'.($lock?' FOR UPDATE':''));
+        $q=$db->prepare('SELECT value FROM setting WHERE type=? LIMIT 2'.$lockClause);
         $q->bind_param('s',$key);$q->execute();$rows=$q->get_result()->fetch_all(MYSQLI_ASSOC);$q->close();
         return $rows===[] || (count($rows)===1 && $rows[0]['value']==='on');
-    } catch (Throwable $ignored) {return false;}
+    } catch (Throwable $ignored) {$complete=false;return false;}
 }
 /** Owner-only notification preference, independent of the target's role. */
 function achbotAdminSetNotify(mysqli $db,int $owner,int $primary,int $target,bool $enabled): bool {
@@ -101,18 +112,28 @@ function achbotAdminSetNotify(mysqli $db,int $owner,int $primary,int $target,boo
 }
 /** Previously delivered receipt keyboards stay current for genuine staff;
  * the notification preference only filters new copies. */
-function achbotAdminStoredRecipientAllowed(mysqli $db,$recipient,int $primary): bool {
+function achbotAdminStoredRecipientAllowed(mysqli $db,$recipient,int $primary,bool $notificationRead=false,?bool &$complete=null): bool {
+    $complete=true;
     if (is_int($recipient)) $actor=$recipient;
     elseif (is_string($recipient) && preg_match('/^[1-9][0-9]*$/D',$recipient))
         $actor=filter_var($recipient,FILTER_VALIDATE_INT,['options'=>['min_range'=>1]]);
     else return false;
     return is_int($actor) && $actor>0 &&
-        in_array(achbotAdminLevel($actor,$db,$primary,true),['owner','manager','operator','support'],true);
+        in_array(achbotAdminLevel($actor,$db,$primary,true,$notificationRead,$complete),['owner','manager','operator','support'],true);
 }
-/** New copies require both genuine current staff and an enabled preference. */
-function achbotAdminRecipientAllowed(mysqli $db,$recipient,int $primary): bool {
-    return achbotAdminStoredRecipientAllowed($db,$recipient,$primary) &&
-        achbotAdminNotifyEnabled($db,(int)$recipient,$primary,true);
+/** New copies require both genuine current staff and an enabled preference.
+ * An unreadable current record is deferred, unlike a definitive exclusion. */
+function achbotAdminRecipientAllowed(mysqli $db,$recipient,int $primary,?bool &$complete=null): bool {
+    return achbotAdminStoredRecipientAllowed($db,$recipient,$primary,true,$complete) &&
+        achbotAdminNotifyEnabled($db,(int)$recipient,$primary,true,true,$complete);
+}
+/** Unsolicited delivery policy; it never grants the recipient action rights. */
+function achbotAdminNotificationAllowed(mysqli $db,$recipient,int $primary,string $event='general',?bool &$complete=null): bool {
+    $complete=true;
+    if (!in_array($event,['general','manual_review'],true) ||
+        !achbotAdminRecipientAllowed($db,$recipient,$primary,$complete)) return false;
+    return $event==='manual_review' ||
+        in_array(achbotAdminLevel((int)$recipient,$db,$primary,true,true,$complete),['owner','manager'],true);
 }
 function achbotAdminButtonCapability(string $key): string {
     return match($key) {
@@ -142,7 +163,7 @@ function achbotAdminRequestCapability(string $value): ?string {
         'customers'=>'~^(?:userReports|userInfoDetails|quickUserDetails)~D',
         'moderation'=>'~^(?:banUser|unbanUser|toggleBan_)~D',
         'orders'=>'~^(?:manageorderdatabase|showUserSubscriptions|selectOrderByRemark_userid_|returnToPanel_|deleteOrder_|confirmDeleteOrder_|toggleNotif_|orderWarningStatus_|changeExpireDate_|changeToken_|changeUUID_|changeServerId_|selectServerId_|changeFileId_|selectFileId_|quickUserOrderDetails_|userOrderDetails|searchUsersConfig|adminToggleAutoRenew|awaitingOrderRemarkOnly|awaitingUserIdSelection_|manageOrderById_|awaitingExpireChange_|awaitingToken_|awaitingUUID_)~D',
-        'payments'=>'~^(?:accept[A-Za-z0-9_-]|accCustom|approveRenewAcc|approveIncreaseDay|approveIncreaseVolume|approvePayment|declineAction)~D',
+        'payments'=>'~^(?:accept[A-Za-z0-9_-]|accCustom|approveRenewAcc|approveIncreaseDay|approveIncreaseVolume|approvePayment|declineAction|apiReview_)~D',
         'operations'=>'~^(?:managePanel|messageToSpeceficUser|sendMessageToUser|increaseUserWallet|decreaseUserWallet|achbotWalletAdmin|increaseWalletUser|decreaseWalletUser|debtWalletUser|achbotWalletReason:|achbotWalletDebt:|createUserWalletDebt|walletDebt|addSubscriptionToCustomer|createMultipleAccounts|createAcc|awaiting_userid_input|giftVolumeAndDay|giftTo|giftServer|achbotDirectGift|mainMenuButtons|delMainButton|addNewMainButton|setMainButtonAnswer|discount_codes|addDiscount|editDiscount|delDiscount|editD|setDiscount|removeDiscountUser|toggleDiscount|copyHash|message2All|broadcast|editBroadcastAsk_|chooseSendGroup_|cancelBroadcast|noDontSend2all|yesSend2All|pinManageAll|pinManageSelect_|jobCancel_|jobCreate_|jobsStatus|s2a_|bc_edit_|ticketsList|ticketsCategory|addTicketCategory|delTicketCat_|allTickets|newTickets|openTickets|reply_|answer_|changeCustomPort|changeCustomSni|changeCustomPath|pgResetAccount)~D',
     ];
     foreach ($groups as $capability=>$pattern) if (preg_match($pattern,$value)) return $capability;

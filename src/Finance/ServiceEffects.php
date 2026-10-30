@@ -63,7 +63,7 @@ function achbotEffectRequireUniqueLine(mysqli $db): void {
  * transaction, rather than deducting it a second time in ordinal 1.
  * An uncertain COMMIT never authorizes a remote CREATE or hold restoration.
  */
-function achbotEffectRecordManualCapacityLocked(mysqli $db,array $pay,int $count): void {
+function achbotEffectRecordManualCapacityLocked(mysqli $db,array $pay,int $count,?array $apiProof=null): void {
     achbotEffectRequireUniqueLine($db);
     $tx=$db->query('SELECT @@in_transaction AS tx');
     if (!$tx || (int)($tx->fetch_assoc()['tx']??0)!==1)
@@ -75,7 +75,9 @@ function achbotEffectRecordManualCapacityLocked(mysqli $db,array $pay,int $count
     if ($expectedCount===0) $expectedCount=1;
     if ($payId<=0 || $planId<=0 || $serverId<=0 || $count<=0 ||
         $expectedCount!==$count || ($pay['type']??'')!=='BUY_SUB' ||
-        ($pay['state']??'')!=='have_sent')
+        (($pay['state']??'')!=='have_sent' && !($apiProof!==null &&
+            ($pay['state']??'')==='pending' && function_exists('achbotPaymentEvidenceValidateProofLocked') &&
+            achbotPaymentEvidenceValidateProofLocked($db,$pay,$apiProof))))
         throw new RuntimeException('manual_hold_payment_mismatch');
     $stmt=$db->prepare("SELECT i.panel_group_id,c.panel_url,c.type,
          s.server_id,s.inbound_id,g.id AS valid_group
@@ -223,7 +225,9 @@ function achbotCreatePaidAccount(mysqli $db, int $payId, int $ordinal, array $p)
 
         $wallet=$claim['state']==='processing_wallet';
         $manual=$claim['state']==='processing' &&
-            (int)($claim['approved_by']??0)>0;
+            ((int)($claim['approved_by']??0)>0 ||
+             (function_exists('achbotApiPaymentProcessingProofLocked') &&
+              achbotApiPaymentProcessingProofLocked($db,$payId)));
         if ($wallet && $manual)
             throw new RuntimeException('effect_capacity_ownership_ambiguous');
         $requiredKind=$wallet?'wallet_hold':($manual?'manual_hold':null);

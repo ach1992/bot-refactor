@@ -181,8 +181,9 @@ if (is_string($data) && (strlen($data) <= 64 || ($GLOBALS['achbotManualCryptoVer
     $delivered = sendMessage($msg, $keyboard, "HTML");
     require_once __DIR__ . '/../PaymentLifecycle.php';
     achbotPayUxTrackByHash($connection,(string)$payInfo['hash_id'],(int)$from_id,$delivered);
+    if (function_exists('achbotApiPaymentTrackInvoice')) achbotApiPaymentTrackInvoice($connection,(string)$payInfo['hash_id'],(int)$from_id,$delivered);
     if (is_object($delivered) && !empty($delivered->ok)) {
-    setUser("payRenewWith" . (in_array($method, ['manual_usdt','manual_trx'], true) ? 'ManualUsdt' : ($method === 'gift_card' ? 'GiftCard' : 'CartToCart')) . $match[1]);
+    setUser(function_exists('achbotApiPaymentInitialStep') ? achbotApiPaymentInitialStep($connection,(string)$match[1],"payRenewWith" . (in_array($method, ['manual_usdt','manual_trx'], true) ? 'ManualUsdt' : ($method === 'gift_card' ? 'GiftCard' : 'CartToCart')) . $match[1]) : "payRenewWith" . (in_array($method, ['manual_usdt','manual_trx'], true) ? 'ManualUsdt' : ($method === 'gift_card' ? 'GiftCard' : 'CartToCart')) . $match[1]);
         delMessage();
     } else {
         // The pinned attempt may be reopened. Never erase the selection menu
@@ -267,7 +268,7 @@ if (preg_match('/wait(?:RenewCart|RenewGift|RenewUsdt)Receipt(.*)/', $userInfo['
 
     $now = time();
     $requestTime = (int)$payInfo['request_date'];
-    if ($now - $requestTime > 10800) {
+    if ($now - $requestTime > 10800 && !(function_exists('achbotApiPaymentPinned') && achbotApiPaymentPinned($connection,(int)$payInfo['id']))) {
         delMessage();
         sendMessage(\achbotMessage('renewal.renewal_checkout.message.2c9a5e948c'));
 
@@ -344,6 +345,7 @@ if (preg_match('/wait(?:RenewCart|RenewGift|RenewUsdt)Receipt(.*)/', $userInfo['
 }
 
 if(preg_match('/^approveRenewAcc(.*)/',$data,$match) && achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'payments')){
+    $apiManualSeen=function_exists('achbotApiPaymentManualAddonPreflight') ? achbotApiPaymentManualAddonPreflight($connection,(string)$match[1]) : null;
     $connection->begin_transaction();
     $localCommitted=false;
     try {
@@ -351,7 +353,7 @@ if(preg_match('/^approveRenewAcc(.*)/',$data,$match) && achbotAdminCanFor($conne
         $stmt->bind_param("s", $match[1]); 
         $stmt->execute(); 
         $payInfo = $stmt->get_result()->fetch_assoc();
-        if (!achbotSupportsPaymentSubject($connection, $payInfo, true)) {
+        if (!(function_exists('achbotApiPaymentManualAddonAllowedLocked') ? achbotApiPaymentManualAddonAllowedLocked($connection,$payInfo,$apiManualSeen) : achbotSupportsPaymentSubject($connection, $payInfo, true))) {
             $connection->rollback();
             alert(\achbotMessage('renewal.renewal_checkout.alert.fbaa266905'), true);
             return;
@@ -522,7 +524,7 @@ if(preg_match('/^approveRenewAcc(.*)/',$data,$match) && achbotAdminCanFor($conne
              . \achbotMessage('renewal.extensions.hash__i_d_match_1.3abb834966', ['match_1' => $match[1]])
              . \achbotMessage('renewal.extensions.admin_from_id.748897de00', ['from_id' => $from_id])
              . \achbotMessage('renewal.extensions.external_effect_unverified_verify_before.10e2ccf8a3') . achbotFinanceDiagnosticReason($e);
-        sendMessage($err, null, null, $admin);
+        achbotNotifyAdmins('sendMessage', ['text'=>$err], ['report_channel'=>null]);
 
         alert(\achbotMessage('renewal.renewal_checkout.alert.3955ffc5de'), true);
         return;
@@ -744,14 +746,7 @@ if(is_string($data) && strlen($data) <= 64 && preg_match('/\ApayRenewWithWallet(
             [\achbotMessage('renewal.renewal_checkout.text.6295c35212'), $from_id, $username, $first_name, $price, $remark, $volume, $days],
             $mainValues['renew_account_request_message']
         );
-        sendMessage($msg, $keys, "html", $admin);
-		//sendToAllAdmins('sendMessage', ['text' => $msg, 'reply_markup' => $keys, 'parse_mode' => "html"]);
-		
-		// ارسال پیام به کانال گزارشات
-        $rewardChannel = $botState['rewardChannel'];
-        if (!empty($rewardChannel)) {
-            sendMessage($msg, $keys, "html", $rewardChannel);
-        }
+        achbotNotifyAdmins('sendMessage', ['text'=>$msg, 'reply_markup'=>$keys, 'parse_mode'=>'HTML']);
 
         return;
 
@@ -767,7 +762,7 @@ if(is_string($data) && strlen($data) <= 64 && preg_match('/\ApayRenewWithWallet(
                   . \achbotMessage('renewal.extensions.hash__i_d_match_1.3abb834966', ['match_1' => $match[1]])
                   . \achbotMessage('renewal.extensions.user_from_id.45aa9ea684', ['from_id' => $from_id])
                   . \achbotMessage('renewal.extensions.external_effect_unverified_verify_before.10e2ccf8a3').achbotFinanceDiagnosticReason($e);
-        sendMessage($adminErr, null, null, $admin);
+        achbotNotifyAdmins('sendMessage', ['text'=>$adminErr], ['report_channel'=>null]);
 
         sendMessage(\achbotMessage('renewal.extensions.message.ba8adc7121'), null, null, $uid);
 

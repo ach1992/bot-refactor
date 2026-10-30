@@ -244,4 +244,9 @@ def main():
         result['display_baseline']=DISPLAY_BASELINE
     if args.report:args.report.write_text(json.dumps(result,indent=2,ensure_ascii=False)+'\n')
     print(json.dumps({key:value for key,value in result.items() if key!='checks'}))
+
+# Current domain fixture imports the real event-aware notification router.
+import notification_fixture
+PHP=notification_fixture.with_router(PHP)
+
 if __name__=='__main__':main()

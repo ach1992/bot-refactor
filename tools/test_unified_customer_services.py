@@ -431,4 +431,10 @@ echo json_encode($out,JSON_THROW_ON_ERROR);
  result={'complete':True,'cases':len(checks),'checks':checks,'actual_php':True,'obsolete_order_columns_absent':True,'native_disposable_mariadb':True,'canonical_catalog_bindings':True,'real_JDF_no_date_stubs':True,'fresh_each_render_same_process':True,'same_packet_observation_and_presentation':True,'imported_actions_hide_ineligible_autorenew':True,'existing_consent_withdrawal_visible_when_plan_global_or_observation_unavailable':True,'genuine_import_origin_writer_fixture':True,'actual_service_unit_helpers':True,'native_plan_admission_seam':'controlled_read_only_SQL_fixture','actual_native_plan_eligibility_checked_here':False,'actual_URL_import_checked_here':False,'unlimited_actions_hide_unsupported_relative_changes':True,'native_HTTP_count_checked_here':False,'actual_composed_ASCII_Jalali_Tehran_proofs':date_proofs,'baseline_date_ref':date_baseline_ref,'baseline_date_jdf_sha256':hashlib.sha256(archived_jdf).hexdigest(),'baseline_dates_already_ASCII':True,'baseline_date_RED':False,'archived_warning_toggle_RED':baseline_red,'archived_warning_toggle_ref':archived_ref,'archived_warning_toggle_sha256':hashlib.sha256(archived_toggle.encode()).hexdigest(),'external_provider_calls':0,'production_mutations':0}
  if a.report:a.report.write_text(json.dumps(result,ensure_ascii=False,indent=2)+'\n')
  print(json.dumps(result,ensure_ascii=False))
+
+# Current domain fixture imports the real event-aware notification router.
+import notification_fixture
+PHP=notification_fixture.with_router(PHP)
+ORDER_PHP=notification_fixture.with_router(ORDER_PHP)
+
 if __name__=='__main__':main()

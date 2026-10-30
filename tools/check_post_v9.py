@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import argparse
+import copy
+from collections import Counter
 import hashlib
 import json
 import os
@@ -55,6 +57,259 @@ def owner_r5_proof_mismatches(name: str, proof: dict, minimum: int, required: di
         if mode not in modes:
             mismatches['old_snapshot_membership_mode']={
                 'expected_one_of':list(modes),'actual':bounded(mode)}
+    return mismatches
+
+
+def exact_current_proof_mismatches(proof: dict, required: dict,
+                                   scenario_key: str, expected: list[str],
+                                   count_key: str | None = 'cases') -> dict:
+    """Bind new current-source suites to named proofs and typed risk fields."""
+    fields={**required,**({count_key:len(expected)} if count_key else {})}
+    mismatches={key:'required exact '+repr(value)
+                for key,value in fields.items()
+                if type(proof.get(key)) is not type(value) or proof.get(key)!=value}
+    scenarios=proof.get(scenario_key)
+    # Notification checks deliberately repeat per-recipient payload/transaction
+    # assertions; preserve their multiplicity as well as every named scenario.
+    if not (type(scenarios) is list and all(type(item) is str for item in scenarios)
+            and Counter(scenarios)==Counter(expected)):
+        mismatches[scenario_key]='required exact known checks, including multiplicity'
+    return mismatches
+
+
+def owner_gift_policy_scenarios() -> list[str]:
+    """Owner revision5: one native gift, genuine references and separate notices."""
+    providers=['marzban','pasarguard']
+    names=['baseline_'+provider+'_'+label+'_RED'
+           for provider in providers for label in ['shared','planless']]
+    for provider in providers:
+        names += [provider+'_'+label+suffix
+            for label in ['shared','same_user_dedup','planless','planless_shared',
+                          'archived_reference','large_cohort','customer_fail',
+                          'report_fail','quota_only']
+            for suffix in ['_one_native_gift_preserves_purchase',
+                           '_authenticated_replay_no_second_native',
+                           '_repeat_sql_finish_cannot_reopen']]
+        names += [provider+'_'+label+'_no_native_write'
+            for label in ['unproven_planless','foreign_current_reference',
+                          'native_incarnation_changed','noncanonical_userid']]
+    names += ['marzban_getter_baseline_race_RED']
+    names += ['marzban_'+label+suffix
+        for label in ['before_effect_incarnation_race','readback_incarnation_race',
+                      'late_attachment'] for suffix in ['','_no_replay']]
+    names += [provider+'_'+label for provider in providers
+        for label in ['bulk_shared_once_dedup_native_journal',
+                      'bulk_completion_and_replay_no_second_native']]
+    names += [
+        'baseline_pasarguard_bulk_lower_id_alias_anchor_RED',
+        'pasarguard_bulk_lower_id_alias_prefers_batchserver_anchor',
+        'pasarguard_bulk_lower_id_alias_completion_replay_no_second_write',
+        'pasarguard_bulk_initial_alias_only_remains_outside_selected_server_roster',
+        'pasarguard_bulk_frozen_member_moved_to_alias_preserves_missing_member_hold',
+        'pasarguard_bulk_frozen_alias_hold_restored_reference_cannot_rearm',
+    ]
+    return names
+
+
+def owner_gift_policy_mismatches(proof: dict, source_head: str,
+                                 runtime_hashes: dict) -> dict:
+    expected=owner_gift_policy_scenarios()
+    mismatches=exact_current_proof_mismatches(proof,{
+        'complete':True,'actual_bot_route':True,'actual_bulk_worker':True,
+        'actual_native_adapters':True,'actual_notification_router':True,
+        'original_source':'a0785dca3e46f031ca9a0a4500a71bf3ea11ee8e',
+        'baseline_red_cases':6,
+        'alias_regression_source':'a32ec0178b7e1d11a8e8191279b7ef932b93c725','real_provider_requests':0,
+        'owned_mariadb_only':True,'loopback_only':True,'production_operations':0,
+        'source_head':source_head,'source_head_after':source_head,
+        'source_unchanged':True,'source_clean_at_start':True,'source_clean_at_end':True,
+        'runtime_sha256':runtime_hashes,'runtime_sha256_after':runtime_hashes,
+    },'scenarios',expected)
+    if proof.get('scenarios')!=expected:
+        mismatches['scenario_order']='required exact ordered Owner gift scenarios'
+    observations=proof.get('observations')
+    if type(observations) is not list or len(observations)!=len(expected):
+        mismatches['observations']='required complete actual observations'
+    else:
+        for index,(name,observation) in enumerate(zip(expected,observations)):
+            if not (type(observation) is dict
+                    and set(observation)=={'scenario','passed','actual'}
+                    and observation['scenario']==name
+                    and observation['passed'] is True
+                    and type(observation['actual']) is dict
+                    and observation['actual']):
+                mismatches['observation_'+str(index)]='required named successful actual observation'
+    return mismatches
+
+
+def owner_gift_policy_negative_controls(proof: dict, source_head: str,
+                                        runtime_hashes: dict) -> int:
+    if owner_gift_policy_mismatches(proof,source_head,runtime_hashes):
+        raise RuntimeError('Gift proof positive admission failed before negative controls')
+    controls=[]
+    for key,value in [('complete',False),('cases',True),('actual_native_adapters',False),
+                      ('baseline_red_cases',4),('real_provider_requests',1),
+                      ('source_head_after','0'*40),('source_unchanged',False),
+                      ('source_clean_at_end',False)]:
+        bad=copy.deepcopy(proof);bad[key]=value;controls.append(bad)
+    bad=copy.deepcopy(proof);bad['runtime_sha256_after'].pop('bot.php');controls.append(bad)
+    bad=copy.deepcopy(proof);bad['runtime_sha256']['bot.php']='0'*64;controls.append(bad)
+    bad=copy.deepcopy(proof);bad['scenarios'].reverse();controls.append(bad)
+    bad=copy.deepcopy(proof);bad['observations'].pop();controls.append(bad)
+    bad=copy.deepcopy(proof);bad['observations'][0]['passed']=1;controls.append(bad)
+    bad=copy.deepcopy(proof);bad['observations'][0]['actual']=[];controls.append(bad)
+    for bad in controls:
+        if not owner_gift_policy_mismatches(bad,source_head,runtime_hashes):
+            raise RuntimeError('Malformed Owner gift proof accepted')
+    return len(controls)
+
+
+def gift_lock_scenarios() -> list[str]:
+    phases=['advance','claim','preeffect','complete','bulk']
+    return ([prefix+'_pg_'+phase+'_lock_scope'
+             for prefix in ['baseline','current'] for phase in phases]
+        + ['baseline_direct_bulk_completion_order','current_direct_bulk_completion_order']
+        + ['current_rr_'+mode+'_'+case for mode in ['on','off']
+           for case in ['native_id','effect_marker','notif_only','effect_timestamp_only']])
+
+
+def gift_lock_proof_mismatches(proof: dict, head: str, hashes: dict,
+                               bulk_hash: str) -> dict:
+    expected=gift_lock_scenarios()
+    errors=exact_current_proof_mismatches(proof,{
+        'complete':True,'actual_direct_phases':True,'actual_bulk_finish_closure':True,
+        'owned_socket_mariadb':True,'owned_children_cleaned':True,
+        'transports_disabled':True,'default_rr_preserved':True,
+        'explicit_snapshot_modes':[1,0],'snapshot_settings_scope':'owned_fixture_session_only',
+        'baseline_source':'a32ec0178b7e1d11a8e8191279b7ef932b93c725',
+        'baseline_red_cases':6,'native_redispatches':0,'production_operations':0,
+        'source_head':head,'source_head_after':head,'source_unchanged':True,
+        'source_clean_at_start':True,'source_clean_at_end':True,
+        'runtime_sha256':hashes,'runtime_sha256_after':hashes,
+        'bulk_finish_sha256':bulk_hash},'scenarios',expected)
+    if proof.get('scenarios')!=expected: errors['scenario_order']='required exact ordered lock cases'
+    default=proof.get('default_observation')
+    if not (type(default) is dict and type(default.get('server_version')) is str
+            and default['server_version'] and type(default.get('snapshot_mode')) is int
+            and default['snapshot_mode'] in [0,1] and default.get('tx_isolation')=='REPEATABLE-READ'
+            and default.get('sql_error_codes')==[]):
+        errors['default_observation']='required actual owned engine/isolation observation'
+    observations=proof.get('observations')
+    if type(observations) is not list or len(observations)!=len(expected):
+        errors['observations']='required complete actual lock observations'
+        return errors
+    for index,(name,observation) in enumerate(zip(expected,observations)):
+        if not (type(observation) is dict and set(observation)=={'scenario','passed','actual'}
+                and observation['scenario']==name and observation['passed'] is True
+                and type(observation['actual']) is dict):
+            errors[name]='required named successful actual observation'
+            continue
+        actual=observation['actual']
+        if index<10:
+            probes=actual.get('probes',{});result=actual.get('result',{})
+            current=index>=5;phase=index%5
+            wanted_first=91 if phase==0 or (not current and phase<4) else 90
+            valid=(actual.get('first_order')==wanted_first and result.get('ok') is True
+                   and result.get('native_redispatches')==0 and result.get('tx_isolation')=='REPEATABLE-READ')
+            for table in ['orders_list','service_effects','setting']:
+                probe=probes.get(table,{})
+                wanted_ok=current and table=='setting'
+                valid=valid and probe.get('ok') is wanted_ok and type(probe.get('code')) is int
+                valid=valid and probe.get('code')==(0 if wanted_ok else 1205)
+            if not valid: errors[name]='required retained intended locks and unrelated-setting availability'
+        elif index in [10,11]:
+            direct=actual.get('direct',{});bulk=actual.get('bulk',{})
+            valid=(actual.get('verified_native_results_supplied')==2
+                   and direct.get('native_redispatches')==0 and bulk.get('native_redispatches')==0
+                   and direct.get('snapshot_mode')==1 and bulk.get('snapshot_mode')==1)
+            if index==11:
+                valid=valid and direct.get('ok') is True and bulk.get('ok') is True
+                valid=valid and actual.get('source_state')=='completed' and actual.get('cursor')=='1'
+            else:
+                valid=valid and (direct.get('code')==1213 or bulk.get('code')==1213)
+            if not valid: errors[name]='required actual baseline deadlock or current two completed outcomes'
+        else:
+            mode=1 if index<16 else 0;material=index%4 in [0,1]
+            deferred=(actual.get('ok') is False and actual.get('sql_error_codes')==[1020]
+                      and ((actual.get('class')=='mysqli_sql_exception' and actual.get('code')==1020)
+                           or (actual.get('class')=='RuntimeException'
+                               and actual.get('reason')=='provider_storage_unavailable')))
+            rejected=(actual.get('ok') is False and actual.get('reason') in [
+                'gift_pg_current_order_changed','gift_pg_current_account_changed',
+                'gift_pg_current_identity_changed'])
+            valid=(actual.get('native_redispatches')==0 and actual.get('snapshot_mode')==mode
+                   and actual.get('tx_isolation')=='REPEATABLE-READ')
+            valid=valid and ((rejected or (mode==1 and deferred)) if material
+                             else (actual.get('ok') is True or (mode==1 and deferred)))
+            if not valid: errors[name]='required material rejection and compatible harmless-metadata handling'
+    return errors
+
+
+def gift_lock_negative_controls(proof: dict, head: str, hashes: dict, bulk_hash: str) -> int:
+    if gift_lock_proof_mismatches(proof,head,hashes,bulk_hash):
+        raise RuntimeError('Gift lock positive proof admission failed')
+    controls=[]
+    for key,value in [('native_redispatches',1),('owned_children_cleaned',False),
+                      ('snapshot_settings_scope','global'),('bulk_finish_sha256','0'*64)]:
+        bad=copy.deepcopy(proof);bad[key]=value;controls.append(bad)
+    bad=copy.deepcopy(proof);bad['runtime_sha256_after'].pop('settings/gift2all.php');controls.append(bad)
+    bad=copy.deepcopy(proof);bad['observations'][5]['actual']['probes']['setting']['ok']=False;controls.append(bad)
+    bad=copy.deepcopy(proof);bad['observations'][11]['actual']['direct']['ok']=False;controls.append(bad)
+    bad=copy.deepcopy(proof);bad['explicit_snapshot_modes']=[0,0];controls.append(bad)
+    bad=copy.deepcopy(proof);bad['observations'][16]['actual']['ok']=True;controls.append(bad)
+    for candidate in controls:
+        if not gift_lock_proof_mismatches(candidate,head,hashes,bulk_hash):
+            raise RuntimeError('Malformed gift lock proof accepted')
+    return len(controls)
+
+
+def api_native_observation_mismatches(proof: dict, expected: list[str]) -> dict:
+    """Require successful named actual-native observations and SQL-free HTTP."""
+    observations=proof.get('observations')
+    if type(observations) is not list or len(observations)!=len(expected):
+        return {'observations':'required one actual observation per named scenario'}
+    replay={
+        'volume_expired_replay_no_second_write',
+        'volume_unreadable_replay_no_second_write',
+        'volume_live_replay_no_second_write',
+        'volume_slow_replay_no_second_write',
+    }
+    local_recovery={
+        'volume_verified_recovery_after_expired_local_only',
+        'renew_verified_recovery_after_unreadable_local_only',
+    }
+    mismatches={}
+    for name,row in zip(expected,observations):
+        if (type(row) is not dict or row.get('scenario')!=name or
+                row.get('passed') is not True or type(row.get('actual')) is not dict):
+            mismatches[name]='required ordered successful actual observation'
+            continue
+        pending=[row['actual']]
+        events=[]
+        results=[]
+        while pending:
+            value=pending.pop()
+            if type(value) is dict:
+                if value.get('event')=='PG_HTTP':
+                    events.append(value)
+                if 'events' in value and 'fatal' in value:
+                    results.append(value)
+                pending.extend(value.values())
+            elif type(value) is list:
+                pending.extend(value)
+        if not results or any(type(value['events']) is not list or
+                value['fatal'] is not None or value.get('stderr')!='' for value in results):
+            mismatches[name+'.php_result']='required clean actual PHP result'
+        if name not in replay|local_recovery and not events:
+            mismatches[name+'.native_http']='required actual native preflight HTTP'
+        if any(type(event.get('tx')) is not int or event['tx']!=0 or
+                event.get('method') not in ('GET','PUT','POST') or
+                type(event.get('path')) is not str for event in events):
+            mismatches[name+'.native_http_context']='required typed HTTP outside SQL'
+        if name in replay and any(event.get('method')!='GET' for event in events):
+            mismatches[name+'.native_replay']='replay must not repeat native writes'
+        if name in local_recovery and events:
+            mismatches[name+'.local_recovery']='verified recovery must perform no native HTTP'
     return mismatches
 
 
@@ -200,7 +455,7 @@ def main():
               'archived_two_staff_assignments_red':True,
               'staff_reintroduction_red':['admins_list','special_admins'],
               'unrelated_template_mutation_red':['primary_owner','synthetic_database_user'],
-              'runtime_members':115,'private_config_read':False,'external_calls':0}),
+              'runtime_members':119,'private_config_read':False,'external_calls':0}),
             ('instance_content','test_owner_instance_content.py',99,
              {'result':'PASS','cases':99,'source_real':True,'socket_only_original_schema':True,'no_external_calls':True,
               'lock_join_baseline_red':True,'lock_join_baseline_source':'4548705609518f741d14375c9d47739eb302c3b6'}),
@@ -222,10 +477,11 @@ def main():
             ('receipt_presentation','test_owner_r5_receipt_presentation.py',13,
              {'complete':True,'source_real':True,'owned_original_schema_mariadb':True,
               'baseline_red':True,'external_calls':0,'financial_mutations_by_caption':0}),
-            ('admin_fanout','test_owner_r5_admin_fanout.py',272,
-             {'complete':True,'cases':272,'source_real':True,'owned_original_schema_mariadb':True,
+            ('admin_fanout','test_owner_r5_admin_fanout.py',264,
+             {'complete':True,'cases':264,'source_real':True,'owned_original_schema_mariadb':True,
               'network_calls':0,'recipient_matrix':True,'raw_text_photo_markup_preserved':True,
-              'notification_recipient_matrix':True,'notifications_independent_of_role':True,
+              'notification_recipient_matrix':True,'receiving_preference_independent_of_role':True,
+              'general_reports_manager_only':True,'manual_review_all_staff':True,
               'notification_default_on':True,'owner_only_notification_ui':True,
               'notification_preference_preserved':True,'uniform_receipt_authority_all_tiers':True,
               'notification_never_grants_or_revokes_actions':True,
@@ -282,7 +538,7 @@ def main():
         copy_run=subprocess.run(['python3',str(ROOT/'tools/test_owner_r5_copy.py')],
                                 cwd=ROOT,check=True,timeout=180,capture_output=True,text=True)
         copy_proof=json.loads(copy_run.stdout)
-        required_copy={'status':'PASS','changes':273,'retired':10,'added':60,'current_keys':2685,
+        required_copy={'status':'PASS','changes':273,'retired':10,'added':60,'current_keys':2772,
                        'r5_negative_controls':5,'persian_prose_start_violations':0,
                        'duplicate_heading_markers':0,'guide_provider_cases':2,'guide_JSON_examples':3,
                        'actual_HTML_transport_cases':2,'archived_wrong_parse_RED':True,
@@ -301,7 +557,393 @@ def main():
                        'composition_scope':'source_expression_wallet_finance_receipt_support_admin_stats_matrix'}
         if any(copy_proof.get(key)!=value for key,value in required_copy.items()):
             raise RuntimeError('Owner R5 Persian copy/HTML proof incomplete')
+        required_api_copy={
+            'r5_current_keys':2685,
+            'gift_added_admin_keys':1,
+            'gift_catalog_baseline_keys':2771,
+            'gift_catalog_current_keys':2772,
+            'gift_report_parameter_count':7,
+            'gift_catalog_negative_controls':8,
+            'gift_report_authorization':'https://github.com/ach1992/bot-refactor/issues/57#issuecomment-6521312639',
+            'api_added_keys':86,
+            'api_added_user_keys':22,
+            'api_added_admin_keys':64,
+            'api_baseline_keys':2685,
+            'api_current_keys':2771,
+            'api_retained_unreferenced_keys':4,
+            'api_catalog_negative_controls':14,
+            'routed_message_expression_cases':6,
+            'routed_message_expression_negative_controls':12,
+            'routed_checkout_expression_preserved':True,
+        }
+        if any(type(copy_proof.get(key)) is not type(value) or copy_proof.get(key)!=value
+               for key,value in required_api_copy.items()):
+            raise RuntimeError('Current API catalog additions or retained R5 copy proof incomplete')
         owner_r5['copy']=copy_proof
+        # Issue #57: current event-aware notification routing and existing
+        # receipt convergence, after every unaffected Owner R5 proof above.
+        notifications_path=Path(tmp)/'owner-r6-notifications.json'
+        subprocess.run(['python3',str(ROOT/'tools/test_owner_r6_notifications.py'),
+                        '--report',str(notifications_path)],
+                       cwd=ROOT,check=True,timeout=180,capture_output=True)
+        notifications=json.loads(notifications_path.read_text())
+        required_notification_checks=[
+            'general helper delivers Owner Manager channel, excludes Operator and Support',
+            *['general raw body and markup preserved']*3,
+            'archived exclusive discovery RED suppresses overlapping current reader',
+            'archived notification admission RED conflicts with overlapping discovery',
+            'overlapping actual current discovery readers both return complete membership',
+            'overlapping actual role preference admission and discovery remain compatible',
+            'notification membership read fails closed without waiting for writer',
+            'notification role read fails closed without waiting for writer',
+            'notification preference read fails closed without waiting for writer',
+            'notification admission observes current committed values after writer releases',
+            'financial and administrator current-lock default remains exclusive',
+            'stored receipt maintenance lock default remains exclusive',
+            'all overlap proof locks released before any outbound delivery',
+            'full actionable review preserves Owner and staff without adding a report-channel receipt',
+            'secondary helper defaults to informational Manager-only event',
+            'actionable manual receipt reaches valid enabled Operator Manager Support',
+            *['notification matrix preserves existing receipt action authority '+str(actor)
+              for actor in [9001,9002,9003,9004,9005,9006]],
+            'Support receives manual review without gaining independent operations',
+            *['invalid or suppressed recipient excluded '+actor for actor in
+              ['9007','9008','9009','9010','9011','9012','9013','1001','-1','"9003bad"','true']],
+            *['unsupported '+kind+' event has no delivery '+event
+              for event in ['unknown','backup'] for kind in ['full','secondary']],
+            'backup document cannot enter generic fanout',
+            'caller cannot redirect primary identity',
+            'primary channel identity deduplicated and payload cannot redirect Owner',
+            'Manager channel identity deduplicated',
+            'private report adds Managers without exposing channel',
+            'existing per-channel parse mode is preserved',
+            'primary ACK failure remains observable and does not suppress independent copies',
+            'throwing secondary delivery preserves primary ACK and continues to report channel',
+            'throwing primary delivery fails primary ACK and continues every independent copy',
+            *['router holds no transaction across outbound delivery']*3,
+            'recipient preference refreshed after earlier target delivery',
+            'later recipient role refreshed after candidate list and earlier staff delivery',
+            'contended customer row cannot block Owner or channel delivery',
+            'incomplete recipient discovery remains observable after primary acknowledgement',
+            'next ordinary delivery retries fresh membership after contention clears',
+            'actual router role writer preserves complete discovery and nonblocking independent delivery',
+            'actual router role admission contention defers aggregate delivery acknowledgement',
+            'next ordinary router delivery includes Manager after role writer releases',
+            'actual router preference writer preserves complete discovery and nonblocking independent delivery',
+            'actual router preference admission contention defers aggregate delivery acknowledgement',
+            'next ordinary router delivery includes Manager after preference writer releases',
+            'explicit notification OFF is a complete exclusion with successful acknowledgement',
+            'revoked staff is a complete exclusion with successful acknowledgement',
+            'receipt pins existing original quote',
+            'receipt acquires original evidence lease',
+            'actual receipt helper preserves primary evidence confirmation',
+            'actual actionable receipt Owner once plus eligible staff, no report channel',
+            'receipt refs store every successful secondary copy only',
+            'receipt lease cannot replay',
+            'Support OFF only suppresses new delivery',
+            'muted Support retains actual receipt approval',
+            'receipt approval still credits exactly once',
+            'new automatic success report excludes all Operator Support',
+            *[prefix+' '+file+' '+str(index) for index,file in enumerate([
+                'Routes/Checkout.php','Routes/RenewalCheckout.php',
+                'Routes/Extensions.php','Routes/Extensions.php',
+                'Routes/ManualApproval.php','Routes/ManualApproval.php',
+                'Routes/ManualReceipts.php','Routes/ManualReceipts.php',
+                'AutomaticReceipts.php'],1) for prefix in [
+                'stored receipt converges for current muted staff and excludes revoked invalid',
+                'stored receipt rechecks current membership']],
+            'all nine real stored receipt loops exercised',
+            'receipt convergence preserves historical financial rows',
+            'actual thrown transport continues to independent targets with sanitized structured metadata',
+            'exception diagnostics contain no outgoing payload or raw exception text',
+        ]
+        notification_mismatches=exact_current_proof_mismatches(notifications,
+            {'complete':True,'owned_original_schema_mariadb':True,'network_calls':0,
+             'stored_receipt_loops':9,'source_ref':'current-source',
+             'sanitized_exception_metadata':True,'exception_continuation':True,
+             'concurrent_current_discovery_readers':True,
+             'concurrent_notification_admission_discovery':True,
+             'notification_writer_contention_nonblocking':True,
+             'exclusive_financial_admin_lock_defaults_preserved':True,
+             'exclusive_stored_receipt_lock_default_preserved':True,
+             'archived_exclusive_reader_red':True,
+             'unreadable_admission_defers_ack':True,
+             'role_preference_writer_deferred_fanout':True,
+             'next_ordinary_delivery_after_admission_contention':True,
+             'definitive_exclusion_complete':True,
+             'exclusive_reader_baseline_source':'463c2593e86d717f5fd54886f23d4d54a3606c9c'},
+            'checks',required_notification_checks)
+        if notification_mismatches:
+            raise RuntimeError('Owner R6 notification source proof incomplete: '+
+                               json.dumps(notification_mismatches,sort_keys=True))
+        # Durable financial alerts must acknowledge the complete eligible fanout.
+        alerts_path=Path(tmp)/'owner-r6-financial-alerts.json'
+        subprocess.run(['python3',str(ROOT/'tools/test_owner_r6_financial_alert_ack.py'),
+                        '--report',str(alerts_path)],
+                       cwd=ROOT,check=True,timeout=90,capture_output=True)
+        financial_alerts=json.loads(alerts_path.read_text())
+        required_financial_alert_checks=[
+            'renewal manager_failure incomplete fanout retains retryable marker releases lease and preserves financial evidence',
+            'renewal manager_failure next ordinary call reaches Manager acknowledges complete fanout without financial replay',
+            'renewal manager_failure completed fanout remains quiet on unchanged evidence',
+            'renewal owner_failure incomplete fanout retains retryable marker releases lease and preserves financial evidence',
+            'renewal owner_failure next ordinary call reaches Manager acknowledges complete fanout without financial replay',
+            'renewal owner_failure completed fanout remains quiet on unchanged evidence',
+            'renewal discovery_writer incomplete fanout retains retryable marker releases lease and preserves financial evidence',
+            'renewal discovery_writer next ordinary call reaches Manager acknowledges complete fanout without financial replay',
+            'renewal discovery_writer completed fanout remains quiet on unchanged evidence',
+            'renewal role_writer incomplete fanout retains retryable marker releases lease and preserves financial evidence',
+            'renewal role_writer next ordinary call reaches Manager acknowledges complete fanout without financial replay',
+            'renewal role_writer completed fanout remains quiet on unchanged evidence',
+            'renewal preference_writer incomplete fanout retains retryable marker releases lease and preserves financial evidence',
+            'renewal preference_writer next ordinary call reaches Manager acknowledges complete fanout without financial replay',
+            'renewal preference_writer completed fanout remains quiet on unchanged evidence',
+            'renewal primary_mismatch incomplete fanout retains retryable marker releases lease and preserves financial evidence',
+            'renewal primary_mismatch next ordinary call reaches Manager acknowledges complete fanout without financial replay',
+            'renewal primary_mismatch completed fanout remains quiet on unchanged evidence',
+            'renewal nonboolean_success incomplete fanout retains retryable marker releases lease and preserves financial evidence',
+            'renewal nonboolean_success next ordinary call reaches Manager acknowledges complete fanout without financial replay',
+            'renewal nonboolean_success completed fanout remains quiet on unchanged evidence',
+            'renewal off is a definitive complete exclusion preserving private payload destination',
+            'renewal off successful exclusion retains existing notification throttle',
+            'renewal revoked is a definitive complete exclusion preserving private payload destination',
+            'renewal revoked successful exclusion retains existing notification throttle',
+            'renewal concurrent evidence generation preserves exact acknowledgement CAS and lease ownership',
+            'renewal next ordinary call acknowledges fresh evidence generation without financial effects',
+            'gateway manager_failure incomplete fanout retains retryable marker releases lease and preserves financial evidence',
+            'gateway manager_failure next ordinary call reaches Manager acknowledges complete fanout without financial replay',
+            'gateway manager_failure completed fanout remains quiet on unchanged evidence',
+            'gateway owner_failure incomplete fanout retains retryable marker releases lease and preserves financial evidence',
+            'gateway owner_failure next ordinary call reaches Manager acknowledges complete fanout without financial replay',
+            'gateway owner_failure completed fanout remains quiet on unchanged evidence',
+            'gateway discovery_writer incomplete fanout retains retryable marker releases lease and preserves financial evidence',
+            'gateway discovery_writer next ordinary call reaches Manager acknowledges complete fanout without financial replay',
+            'gateway discovery_writer completed fanout remains quiet on unchanged evidence',
+            'gateway role_writer incomplete fanout retains retryable marker releases lease and preserves financial evidence',
+            'gateway role_writer next ordinary call reaches Manager acknowledges complete fanout without financial replay',
+            'gateway role_writer completed fanout remains quiet on unchanged evidence',
+            'gateway preference_writer incomplete fanout retains retryable marker releases lease and preserves financial evidence',
+            'gateway preference_writer next ordinary call reaches Manager acknowledges complete fanout without financial replay',
+            'gateway preference_writer completed fanout remains quiet on unchanged evidence',
+            'gateway primary_mismatch incomplete fanout retains retryable marker releases lease and preserves financial evidence',
+            'gateway primary_mismatch next ordinary call reaches Manager acknowledges complete fanout without financial replay',
+            'gateway primary_mismatch completed fanout remains quiet on unchanged evidence',
+            'gateway nonboolean_success incomplete fanout retains retryable marker releases lease and preserves financial evidence',
+            'gateway nonboolean_success next ordinary call reaches Manager acknowledges complete fanout without financial replay',
+            'gateway nonboolean_success completed fanout remains quiet on unchanged evidence',
+            'gateway off is a definitive complete exclusion preserving private payload destination',
+            'gateway off successful exclusion retains existing notification throttle',
+            'gateway revoked is a definitive complete exclusion preserving private payload destination',
+            'gateway revoked successful exclusion retains existing notification throttle',
+            'gateway concurrent evidence generation preserves exact acknowledgement CAS and lease ownership',
+            'gateway next ordinary call acknowledges fresh evidence generation without financial effects',
+        ]
+        alert_mismatches=exact_current_proof_mismatches(financial_alerts,
+            {'complete':True,'network_calls':0,'source_ref':'current-source',
+             'baseline_source':'62eb06d164224947f1cda84144d08ff88d3a0c8e',
+             'actual_domain_callers':True,
+             'shared_ledger_owned_mariadb':True,
+             'complete_eligible_fanout_ack':True,
+             'failed_or_deferred_manager_retryable':True,
+             'next_ordinary_delivery_no_financial_replay':True,
+             'off_revoked_complete_exclusion':True,
+             'evidence_generation_cas_preserved':True,
+             'private_channel_policy_preserved':True,
+             'nonempty_fanout_required':True,
+             'strict_transport_success_required':True,
+            },'checks',required_financial_alert_checks)
+        if alert_mismatches:
+            raise RuntimeError('Durable financial alert fanout proof incomplete: '+
+                               json.dumps(alert_mismatches,sort_keys=True))
+        # Issue #57 existing-API proof: use this integrated source only, with
+        # actual guarded routes and owned socket/loopback fixtures, never live APIs.
+        api_settings_path=Path(tmp)/'payment-api-settings.json'
+        subprocess.run(['python3',str(ROOT/'tools/test_post_v9_payment_api_admin.py'),
+                        '--run-disposable','--report',str(api_settings_path)],
+                       cwd=ROOT,check=True,timeout=180,capture_output=True)
+        api_settings=json.loads(api_settings_path.read_text())
+        required_api_settings=[
+            'off_existing_manual_bank_and_gift_photo_prompts_and_buttons_preserved',
+            'absent_modes_off_adjacent_rows_incomplete_activation_denied',
+            'encrypted_token_explicit_horizon_guarded_enable_disable_preserves_other_flags',
+            'gift_canonical_amount_only_explicit_unit_required_optional_scope_unset',
+            'actual_private_pages_mask_secrets_and_bound_callbacks',
+            'cancel_one_action_returns_to_api_page_without_deleting_admin_input',
+            'real_normalizer_rejects_bad_money_horizon_urls_clear_blocks_enable',
+            'current_manager_authority_required_revocation_forged_frames_malformed_denied',
+            'field_revision_conflict_and_replayed_message_cannot_overwrite',
+            'clear_secret_unsets_status_no_payment_rows_or_external_effects',
+            'malformed_stored_secret_invalid_owner_allowed_duplicate_toggle_unknown_flag_denied',
+        ]
+        api_settings_mismatches=exact_current_proof_mismatches(api_settings,
+            {'status':'PASS','evidence_module':str((ROOT/'src/Finance/PaymentEvidence.php').resolve()),
+             'evidence_sha256':hashlib.sha256((ROOT/'src/Finance/PaymentEvidence.php').read_bytes()).hexdigest()},
+            'checks',required_api_settings,count_key=None)
+        if api_settings_mismatches:
+            raise RuntimeError('Existing API settings source proof incomplete: '+
+                               json.dumps(api_settings_mismatches,sort_keys=True))
+        api_evidence_run=subprocess.run(
+            ['python3',str(ROOT/'tools/test_post_v9_api_payment_evidence.py')],
+            cwd=ROOT,check=True,timeout=180,capture_output=True,text=True)
+        api_evidence=json.loads(api_evidence_run.stdout)
+        required_api_evidence=[
+            'partial_schema',
+            'encrypted_config',
+            'explicit_mapping',
+            'stable_namespace',
+            'full_exact_quote',
+            'exact_rial_conversion',
+            'ready_only',
+            'original_time',
+            'sql_collision_fence',
+            'pre_dispatch_intent',
+            'sms_same_key_recovery',
+            'sms_expired_recovery',
+            'manual_settled_evidence_only',
+            'typed_review_authenticity',
+            'gift_single_code',
+            'gift_exact_redeem_amount',
+            'gift_partial_commit',
+            'gift_nonce_reference',
+            'gift_uncertain_active_hold',
+            'bounded_transport',
+            'rotation_fails_closed',
+        ]
+        api_evidence_mismatches=exact_current_proof_mismatches(api_evidence,
+            {'complete':True,'exact_quote':True,'replay_and_partial_commit':True,
+             'no_http_transaction':True,'scope':'owned socket MariaDB and loopback only'},
+            'contracts',required_api_evidence,count_key=None)
+        # The suite proves a transaction-free native observation at each request;
+        # require its meaningful coverage floor, not a timing-sensitive call total.
+        if (type(api_evidence.get('loopback_dispatches')) is not int or
+                api_evidence['loopback_dispatches']<10):
+            api_evidence_mismatches['loopback_dispatches']='required at least 10 native observations'
+        if api_evidence_mismatches:
+            raise RuntimeError('Existing API evidence source proof incomplete: '+
+                               json.dumps(api_evidence_mismatches,sort_keys=True))
+        api_evidence_red_run=subprocess.run(
+            ['python3',str(ROOT/'tools/test_post_v9_api_payment_evidence.py'),'--negative-controls'],
+            cwd=ROOT,check=True,timeout=240,capture_output=True,text=True)
+        api_evidence_red=json.loads(api_evidence_red_run.stdout)
+        api_evidence_red_mismatches=exact_current_proof_mismatches(api_evidence_red,
+            {'complete':True,'source_unchanged':True},'expected_RED',
+            ['suffix_only','fresh_retry_key','gift_active_retry'],count_key=None)
+        if api_evidence_red_mismatches:
+            raise RuntimeError('Existing API evidence regression controls incomplete: '+
+                               json.dumps(api_evidence_red_mismatches,sort_keys=True))
+        api_flow_path=Path(tmp)/'payment-api-flow.json'
+        subprocess.run(['python3',str(ROOT/'tools/test_owner_r6_api_flow.py'),
+                        '--run-disposable','--report',str(api_flow_path)],
+                       cwd=ROOT,check=True,timeout=240,capture_output=True)
+        api_flow=json.loads(api_flow_path.read_text())
+        required_api_flow=[
+            'off_manual_original_unpinned',
+            'full_exact_quote_only_and_wallet_replay',
+            'complete_report_uses_original_random_quote_and_durable_dedup',
+            'proven_terminal_excluded_new_same_quote_distinct_sms',
+            'full_quote_collision_no_first_match_or_consumption',
+            'exact600_fallback_original_reference_and_no_unpaid_timeout',
+            'offline_bank_keeps_genuine_manual_receipt',
+            'bank_submitted_receipt_text_retains_check_without_new_receipt_invitation',
+            'late_ready_sms_manual_settlement_consumption_only',
+            'concurrent_real_human_api_wallet_at_most_once',
+            'proof_backed_standard_existing_create_journal',
+            'proof_backed_custom_existing_create_journal',
+            'proof_backed_bulk_existing_create_journal',
+            'proof_backed_renew_existing_edit_finisher',
+            'proof_backed_day_existing_edit_finisher',
+            'proof_backed_volume_existing_edit_finisher',
+            'proof_backed_external_existing_edit_finisher',
+            'concurrent_real_human_api_rstandard_at_most_once',
+            'concurrent_real_human_api_rcustom_at_most_once',
+            'concurrent_real_human_api_rbulk_at_most_once',
+            'concurrent_real_human_api_rrenew_at_most_once',
+            'concurrent_real_human_api_rday_at_most_once',
+            'concurrent_real_human_api_rvolume_at_most_once',
+            'concurrent_real_human_api_rexternal_at_most_once',
+            'restart_after_local_claim_reuses_capacity_hold_once',
+            'restart_verified_edit_finishes_without_native_redispatch',
+            'admitted_maintenance_recovers_proven_processing_reserved_and_verified',
+            'uncertain_create_journal_never_redispatched',
+            'configured_horizon_stops_new_scans_without_financial_expiry',
+            'queued_invoice_edit_human_winner_converges_final',
+            'queued_photo_copy_converges_after_api_settlement',
+            'actual_ingress_review_owner_operator_support_current_revoked_customer',
+            'staff_final_copy_retry_after_failure_ignores_receiving_off',
+            'staff_unreadable_current_authority_retries_in_ordinary_maintenance_receiving_off',
+            'staff_definitive_revoked_copy_excluded_without_indefinite_retry',
+            'bounded_projection_fairness_more_than_one_batch',
+            'gift_canonical_redeem_exact_single_code_replacement',
+            'giftstandard_proof_uses_genuine_create_without_bank009',
+            'giftcustom_proof_uses_genuine_create_without_bank009',
+            'giftbulk_proof_uses_genuine_create_without_bank009',
+            'gift_used_distinct_same_code_reads_state',
+            'gift_revoked_distinct_same_code_reads_state',
+            'gift_expired_distinct_same_code_reads_state',
+            'gift_inflight_review_status_has_no_fresh_code_invitation',
+            'unknown_code_encrypted_review_different_code_fenced',
+            'actual_gift_issuer_binds_initial_code_prompt',
+            'gift_navigation_start_back_cancel_and_callbacks_never_become_code',
+            'callback_ack_precedes_slow_api_and_has_no_expired_second_answer',
+            'monotonic_expired_and_remaining_api_budget_no_new_http_context_restored',
+        ]
+        current_api_head=cmd('rev-parse','HEAD').decode().strip()
+        api_flow_mismatches=exact_current_proof_mismatches(api_flow,
+            {'complete':True,'source_real_php':True,'socket_mariadb':True,
+             'live_requests':0,'installed_tested':False,
+             'migrations_executed':['001','003','006','007','008','009','014'],
+             'flow_head':current_api_head,'evidence_head':current_api_head,'settings_head':current_api_head},
+            'scenarios',required_api_flow)
+        if api_flow.get('scenarios')!=required_api_flow:
+            api_flow_mismatches['scenario_order']='required original ordered scenarios and adopted additions'
+        if (type(api_flow.get('authenticated_loopback_requests')) is not int or
+                api_flow['authenticated_loopback_requests']<80):
+            api_flow_mismatches['authenticated_loopback_requests']='required at least 80 authenticated fixture requests'
+        if api_flow_mismatches:
+            raise RuntimeError('Existing API payment flow source proof incomplete: '+
+                               json.dumps(api_flow_mismatches,sort_keys=True))
+        api_native_path=Path(tmp)/'payment-api-native-preflight.json'
+        subprocess.run(['python3',str(ROOT/'tools/test_owner_r6_api_native_preflight.py'),
+                        '--run-disposable','--report',str(api_native_path)],
+                       cwd=ROOT,check=True,timeout=240,capture_output=True)
+        api_native=json.loads(api_native_path.read_text())
+        required_api_native=[
+            'volume_issuance_native_http_outside_sql',
+            'renew_issuance_native_http_outside_sql',
+            'day_issuance_native_http_outside_sql',
+            'unreadable_issuance_no_attempt_no_locked_http',
+            'local_identity_drift_after_preflight_before_locked_claim_denied',
+            'volume_expired_native_preflight_and_no_locked_http',
+            'volume_expired_replay_no_second_write',
+            'volume_unreadable_native_preflight_and_no_locked_http',
+            'volume_unreadable_replay_no_second_write',
+            'volume_live_native_preflight_and_no_locked_http',
+            'volume_live_replay_no_second_write',
+            'volume_slow_native_preflight_and_no_locked_http',
+            'volume_slow_replay_no_second_write',
+            'human_volume_actual_route_native_http_outside_sql',
+            'human_day_actual_route_native_http_outside_sql',
+            'human_renew_live_actual_route_native_http_outside_sql',
+            'human_renew_unreadable_actual_route_native_http_outside_sql',
+            'human_renew_drift_actual_route_native_http_outside_sql',
+            'issue_coherent_native_identity_drift_during_preflight_denied',
+            'settle_coherent_native_identity_drift_during_preflight_denied',
+            'volume_verified_recovery_after_expired_local_only',
+            'renew_verified_recovery_after_unreadable_local_only',
+        ]
+        api_native_mismatches=exact_current_proof_mismatches(api_native,
+            {'complete':True,'source_real_php':True,'actual_pasarguard_http':True,
+             'socket_mariadb':True,'live_requests':0,'installed_tested':False,
+             'migrations_executed':['001_marzban_panel_group_id.sql', '003_payment_attempts.sql', '004_automatic_renewal_attempts.sql', '006_payment_message_refs.sql', '007_service_effects.sql', '008_referral_awards.sql', '009_bank_buy_invoice_claims.sql', '011_provider_identity.sql', '012_shared_provider_storage.sql', '014_api_payment_evidence.sql'],
+             'source_head':current_api_head},
+            'scenarios',required_api_native)
+        if api_native.get('scenarios')!=required_api_native:
+            api_native_mismatches['scenario_order']='required exact ordered native scenarios'
+        api_native_mismatches.update(
+            api_native_observation_mismatches(api_native,required_api_native))
+        if api_native_mismatches:
+            raise RuntimeError('Existing API actual native preflight proof incomplete: '+
+                               json.dumps(api_native_mismatches,sort_keys=True))
         unified={}
         suites=[
             ('management_wizard','test_unified_management_wizard.py','cases',362,
@@ -399,6 +1041,8 @@ def main():
                        cwd=ROOT,check=True,timeout=65,capture_output=True)
         cron=json.loads(cron_path.read_text())
         required_cron_cases = {
+            "api_payment_maintenance_precedes_payux",
+            "api_payment_failure_preserves_payux_finally",
             "per_installation_private_lock_created",
             "first_create_then_reuse_same_inode",
             "later_run_reuses_stable_lock_inode",
@@ -423,10 +1067,13 @@ def main():
             "permissive_lock_file_fails_closed",
             "unavailable_php_flock_fails_closed",
         }
-        if not (cron.get("complete") and cron.get("cases")>=50
+        if not (cron.get("complete") and cron.get("cases")>=52
                 and required_cron_cases.issubset(cron.get("scenarios", []))
                 and cron.get("actual_current_runner_executed")
                 and cron.get("isolated_child_php_processes")
+                and cron.get("actual_api_maintenance_boundary") is True
+                and cron.get("api_before_payux") is True
+                and cron.get("api_failure_payux_finally") is True
                 and cron.get("actual_cron_or_bot_job_executed") is False
                 and cron.get("production_database_or_service_modified") is False):
             raise RuntimeError("Optional CLI Cron coordinator native execution assurance incomplete")
@@ -561,7 +1208,9 @@ def main():
                 and edits.get('null_expiry_baseline_source')=='2408982797af15bc99e1df2909c13be3976cb1f4'
                 and edits.get('null_expiry_baseline_adapter_sha256')=='a4fedde0b77ffb6a18995eda0b9309364fb9ee853a1cc951ee3e55d79d86c188'
                 and edits.get('null_expiry_invalid_no_partial_effect') is True
-                and edits.get('null_expiry_zero_semantics_preserved') is True):
+                and edits.get('null_expiry_zero_semantics_preserved') is True
+                and edits.get('verified_native_before_expire') is True
+                and edits.get('native_before_expire_negative_controls') is True):
             raise RuntimeError('Provider-neutral service edit native assurance incomplete')
         purchase_path=Path(tmp)/"marzban-purchase.json"
         subprocess.run(["python3",str(ROOT/"tools/test_post_v9_purchases.py"),
@@ -871,15 +1520,21 @@ def main():
                 and text_catalog.get("native",{}).get("pre_style_privacy_corrections")==3
                 and text_catalog.get("native",{}).get("actual_traffic_helper_parity_cases")==18
                 and text_catalog.get("editable_catalog_files")==2
-                and text_catalog.get("logical_topics")==26
+                and text_catalog.get("logical_topics")==27
                 and text_catalog.get("current_authorized_source_edits")==26
                 and text_catalog.get("retired_parser_tokens")==23
                 and text_catalog.get("relocation_source_ref")=="ecd30ba9192ed374703118a6c131be8809cc7b06"
                 and text_catalog.get("native",{}).get("current_retired_feature_keys")==3
-                and text_catalog.get("catalog_keys")==2685
+                and text_catalog.get("catalog_keys")==2772
                 and text_catalog.get("native",{}).get("editable_catalog_files")==2
-                and text_catalog.get("native",{}).get("logical_topics")==26
-                and text_catalog.get("native",{}).get("current_catalog_keys")==2685
+                and text_catalog.get("native",{}).get("logical_topics")==27
+                and text_catalog.get("native",{}).get("current_catalog_keys")==2772
+                and text_catalog.get("native",{}).get("current_gift_admin_additions")==1
+                and text_catalog.get("native",{}).get("current_gift_catalog_negative_controls")==8
+                and text_catalog.get("native",{}).get("current_gift_catalog_negative_scenarios")==[
+                    'missing_report','wrong_audience','changed_value','missing_parameter',
+                    'reordered_parameters','unapproved_extra_key',
+                    'duplicate_cross_audience_key','prior_catalog_mutation']
                 and text_catalog.get("native",{}).get("current_management_added_keys")==112
                 and text_catalog.get("native",{}).get("current_catalog_binding_paths")==2
                 and text_catalog.get("native",{}).get("current_catalog_binding_entries")==4
@@ -893,10 +1548,10 @@ def main():
                 and text_catalog["native"]["current_byte_preserved_keys"]
                     +text_catalog["native"]["current_style_changes"]
                     +text_catalog["native"]["current_added_admin_keys"]==2523
-                and text_catalog.get("native",{}).get("current_native_template_assertions")==3985
-                and text_catalog.get("native",{}).get("current_object_conversion_templates")==260
-                and text_catalog.get("native",{}).get("current_shared_multi_parameter_templates")==61
-                and text_catalog.get("native",{}).get("current_one_pass_templates")==260
+                and text_catalog.get("native",{}).get("current_native_template_assertions")==4107
+                and text_catalog.get("native",{}).get("current_object_conversion_templates")==267
+                and text_catalog.get("native",{}).get("current_shared_multi_parameter_templates")==66
+                and text_catalog.get("native",{}).get("current_one_pass_templates")==267
                 and text_catalog.get("native",{}).get("current_r5_changes")==273
                 and text_catalog.get("native",{}).get("current_r5_retired_keys")==10
                 and text_catalog.get("native",{}).get("current_r5_added_keys")==60
@@ -904,7 +1559,7 @@ def main():
                 and text_catalog.get("native",{}).get("current_non_ascii_digit_templates")==0
                 and text_catalog.get("presentation",{}).get("status")=="PASS"
                 and text_catalog.get("presentation",{}).get("editable_files")==2
-                and text_catalog.get("presentation",{}).get("current_keys")==2685
+                and text_catalog.get("presentation",{}).get("current_keys")==2772
                 and text_catalog.get("presentation",{}).get("numeric_template_changes")==23
                 and text_catalog.get("presentation",{}).get("adjacent_emoji_violations")==0
                 and text_catalog.get("presentation",{}).get("parameter_exception_count")==3
@@ -925,6 +1580,25 @@ def main():
                 and text_catalog.get("presentation",{}).get("recipient_staff_layer_negative_controls")==4
                 and text_catalog.get("presentation",{}).get("recipient_total_source_layer_negative_controls")==14):
             raise RuntimeError("Pre-style relocation or current two-file/audience/presentation proof incomplete")
+        required_api_catalog={
+            'runtime_references':2459,
+            'api_referenced_keys':82,
+            'api_dynamic_source_paths':3,
+            'api_reference_source_commit':'67aba2527f58c0efd844b3c52cd2469143fe9113',
+            'api_retained_unreferenced_keys':4,
+            'api_reference_negative_controls':6,
+        }
+        required_api_native_catalog={
+            'current_api_additions':86,
+            'current_api_user_additions':22,
+            'current_api_admin_additions':64,
+            'current_r5_catalog_keys':2685,
+        }
+        for section,proof,required in [('references',text_catalog,required_api_catalog),
+                ('native',text_catalog.get('native',{}),required_api_native_catalog)]:
+            if any(type(proof.get(key)) is not type(value) or proof.get(key)!=value
+                   for key,value in required.items()):
+                raise RuntimeError('Current API catalog source proof incomplete: '+section)
         copy_audience_output=subprocess.run(
             ["python3",str(ROOT/"tools/test_next_copy_audience.py")],
             cwd=ROOT,check=True,timeout=60,capture_output=True,text=True)
@@ -1789,6 +2463,32 @@ def main():
             'mismatched_source_precedes_invalid_database_environment',
             'missing_manifest_precedes_invalid_database_environment',
         })
+        required_readiness.update([
+            'api014_missing_switches_off_legacy_pass',
+            'api014_missing_bank_on_blocks',
+            'api014_missing_gift_on_blocks',
+            'api014_partial_switches_off_legacy_warn',
+            'api014_partial_bank_on_blocks',
+            'api014_partial_gift_on_blocks',
+            'api014_complete_switches_off_detected',
+            'api014_complete_bank_on_credentials_not_verified',
+            'api014_complete_gift_on_credentials_not_verified',
+            'api014_missing_unique_switches_off_legacy_warn',
+            'api014_missing_unique_bank_on_blocks',
+            'api014_missing_fulfillment_switches_off_legacy_warn',
+            'api014_missing_fulfillment_gift_on_blocks',
+            'api014_restored_complete_both_switches_on',
+            'api014_non_on_switch_values_remain_off',
+            'api_inventory_omission_blocks__src_Finance_PaymentEvidence_php',
+            'api_inventory_substitution_blocks__src_Finance_PaymentEvidence_php',
+            'api_inventory_omission_blocks__src_Finance_PaymentApiAdmin_php',
+            'api_inventory_substitution_blocks__src_Finance_PaymentApiAdmin_php',
+            'api_inventory_omission_blocks__src_Finance_ApiPayments_php',
+            'api_inventory_substitution_blocks__src_Finance_ApiPayments_php',
+            'api_inventory_omission_blocks__src_Finance_Routes_ApiPayments_php',
+            'api_inventory_substitution_blocks__src_Finance_Routes_ApiPayments_php',
+            'api_readiness_historical_financial_rows_and_private_sentinel_unchanged',
+        ])
         if not (readiness.get('complete') is True and
                 readiness.get('cases')==len(required_readiness) and
                 set(readiness.get('details',[]))==required_readiness and
@@ -1802,6 +2502,10 @@ def main():
                 readiness.get('source_policy_production_helper_compared') is True and
                 readiness.get('source_members_verified')==package.EXPECTED_RUNTIME_COUNT and
                 readiness.get('all_eight_additive_shapes_exercised') is True and
+                readiness.get('api_schema_capability_compared') is True and
+                readiness.get('api_credentials_not_decrypted') is True and
+                readiness.get('api_schema_014_disposable_only') is True and
+                type(readiness.get('api_readiness_cases')) is int and readiness['api_readiness_cases']==24 and
                 readiness.get('no_real_provider_or_telegram_calls') is True and
                 readiness.get('installed_operator_acceptance') is False):
             raise RuntimeError('Payment readiness read-only native preflight incomplete')
@@ -2362,6 +3066,8 @@ def main():
             "f2_zero_row_step_transition_rolls_back_all_records",
             "f2_delegated_admin_consumes_only_own_step",
             "f2_parallel_distinct_actors_consumed_only_respective_steps",
+            "gift_source_completed_worker_private_owner_manager_once_excludes_operator_support",
+            "gift_source_uncertain_worker_private_manager_hold_preserves_source_and_no_replay",
         }
         if not (gift_source.get("complete") is True and
                 gift_source.get("cases")==len(required_gift_source) and
@@ -2372,6 +3078,9 @@ def main():
                 gift_source.get("owned_original_schema_mariadb") is True and
                 gift_source.get("parallel_php_sessions") is True and
                 gift_source.get("atomic_admin_step_and_source_commit") is True and
+                gift_source.get("actual_notification_router") is True and
+                gift_source.get("private_owner_manager_gift_notices") is True and
+                gift_source.get("operator_support_gift_excluded") is True and
                 gift_source.get("production_mutations")==0 and
                 gift_source.get("real_provider_requests")==0):
             raise RuntimeError("Gift Telegram source idempotency contract incomplete")
@@ -2405,7 +3114,7 @@ def main():
             'provider_or_local_failure_hold_config_drift',
             'delegated_admin_revoked_before_step',
             'fresh_delegated_admin_private_gift',
-            'duplicate_remark_order_rejected',
+            'shared_remark_distinct_cached_uuid_one_gift_one_customer_notice',
             'changed_order_identity_before_claim_denied',
             'callback_text_never_used_as_gift_input',
             'concurrent_workers_one_unique_durable_claim',
@@ -2525,9 +3234,14 @@ def main():
             'r3_receipt_ban_unknown_commit_no_false_notice',
             'r3_legacy_target_nonunique_userid_denied',
             'r3_newer_verified_moderation_outorders_legacy_ban',
+            # R6: native before-expiry is mandatory and must prove an increase.
+            *['provider_or_local_failure_hold_'+mode for mode in [
+                'provider_missing_before','provider_null_before','provider_string_before',
+                'provider_negative_before','provider_float_before','provider_overflow_before',
+                'provider_unchanged_before','provider_decreased_after']],
         }
         if not (direct_gift.get('complete') is True and
-                direct_gift.get('cases')>=153 and
+                direct_gift.get('cases')>=161 and
                 required_direct_gift.issubset(set(direct_gift.get('scenarios',[]))) and
                 direct_gift.get('real_bot_php_route') is True and
                 direct_gift.get('actual_global_cancel_fallback') is True and
@@ -2547,6 +3261,107 @@ def main():
                 direct_gift.get('tenant_migrations')==0 and
                 direct_gift.get('production_operations')==0):
             raise RuntimeError('Issue #78 direct administrator gift safety assurance incomplete')
+        # R6 native proof complements the original synthetic service seam:
+        # actual bot route, actual two-provider adapters, socket/loopback only.
+        native_direct_path=Path(tmp)/'direct-gift-native.json'
+        subprocess.run(['python3',str(ROOT/'tools/test_post_v9_direct_gift_native.py'),
+                        '--run-disposable','--report',str(native_direct_path)],
+                       cwd=ROOT,check=True,timeout=240,capture_output=True)
+        native_direct_gift=json.loads(native_direct_path.read_text())
+        native_successes=['combined','days_only','volume_only',
+            'volume_stale_local_future','volume_stale_local_past',
+            'days_stale_local_future','combined_stale_local_future']
+        native_negatives={
+            'marzban':['credentials_rotated','endpoint_rotated','native_expiry_drift',
+                       'readback_lost','next_plan','unlimited_time','unlimited_volume'],
+            'pasarguard':['native_identity_drift','readback_unverified','write_lost',
+                         'scheduled_reset','unlimited_time','unlimited_volume'],
+        }
+        required_native_direct=[provider+'_'+scenario+suffix
+            for provider,negative in native_negatives.items()
+            for scenario in native_successes+negative
+            for suffix in (['','_replay','_new_source_hold']
+                           if scenario in negative else ['','_replay'])]
+        required_native_direct += [
+            'marzban_zero_expiry_quota_active',
+            'marzban_zero_expiry_quota_active_authenticated_replay_no_second_mutation',
+            'marzban_zero_expiry_quota_limited',
+            'marzban_zero_expiry_quota_limited_authenticated_replay_no_second_mutation',
+            'marzban_null_expiry_quota_held',
+            'marzban_null_expiry_quota_held_authenticated_replay_no_second_mutation',
+            'marzban_null_expiry_quota_held_fresh_source_hold',
+            'marzban_missing_expiry_quota_held',
+            'marzban_missing_expiry_quota_held_authenticated_replay_no_second_mutation',
+            'marzban_missing_expiry_quota_held_fresh_source_hold',
+            'marzban_fractional_expiry_quota_held',
+            'marzban_fractional_expiry_quota_held_authenticated_replay_no_second_mutation',
+            'marzban_fractional_expiry_quota_held_fresh_source_hold',
+            'marzban_boolean_expiry_quota_held',
+            'marzban_boolean_expiry_quota_held_authenticated_replay_no_second_mutation',
+            'marzban_boolean_expiry_quota_held_fresh_source_hold',
+            'marzban_malformed_expiry_quota_held',
+            'marzban_malformed_expiry_quota_held_authenticated_replay_no_second_mutation',
+            'marzban_malformed_expiry_quota_held_fresh_source_hold',
+            'marzban_zero_expiry_unlimited_quota_held',
+            'marzban_zero_expiry_unlimited_quota_held_authenticated_replay_no_second_mutation',
+            'marzban_zero_expiry_unlimited_quota_held_fresh_source_hold',
+            'marzban_positive_day_zero_readback_held',
+            'marzban_positive_day_zero_readback_held_authenticated_replay_no_second_mutation',
+            'marzban_positive_day_zero_readback_held_fresh_source_hold',
+            'pasarguard_zero_expiry_quota_held',
+            'pasarguard_zero_expiry_quota_held_authenticated_replay_no_second_mutation',
+            'pasarguard_zero_expiry_quota_held_fresh_source_hold',
+            'non_gift_native_zero_expiry_result_guard_preserved',
+        ]
+        native_direct_mismatches=exact_current_proof_mismatches(native_direct_gift,
+            {'complete':True,'actual_bot_route':True,'actual_native_adapters':True,
+             'owned_mariadb_only':True,'loopback_only':True,
+             'real_provider_requests':0,'production_operations':0,
+             'zero_expiry_quota_only_native_verified':True,
+             'positive_day_zero_expiry_rejected':True,
+             'zero_expiry_authenticated_replay_no_second_mutation':True,
+             'pasarguard_zero_expiry_semantics_preserved':True},
+            'scenarios',required_native_direct)
+        if native_direct_mismatches:
+            raise RuntimeError('Owner R6 native direct gift proof incomplete: '+
+                               json.dumps(native_direct_mismatches,sort_keys=True))
+        # Owner revision5: actual direct/bulk/native shared and planless gifts.
+        owner_gift_policy_path=Path(tmp)/'owner-gift-policy.json'
+        subprocess.run(['python3',str(ROOT/'tools/test_owner_r7_gift_policy.py'),
+                        '--run-disposable','--report',str(owner_gift_policy_path)],
+                       cwd=ROOT,check=True,timeout=300,capture_output=True)
+        owner_gift_policy=json.loads(owner_gift_policy_path.read_text())
+        gift_policy_head=cmd('rev-parse','HEAD').decode().strip()
+        gift_policy_hashes={path:hashlib.sha256(cmd('show','HEAD:'+path)).hexdigest()
+            for path in ['bot.php','src/Subscription/GiftBatch.php',
+                         'src/Subscription/DirectGift.php','settings/gift2all.php',
+                         'src/Panel/Accounts.php']}
+        gift_policy_mismatches=owner_gift_policy_mismatches(
+            owner_gift_policy,gift_policy_head,gift_policy_hashes)
+        if gift_policy_mismatches:
+            raise RuntimeError('Owner revision5 gift proof incomplete: '+
+                               json.dumps(gift_policy_mismatches,sort_keys=True))
+        gift_policy_negative_controls=owner_gift_policy_negative_controls(
+            owner_gift_policy,gift_policy_head,gift_policy_hashes)
+        gift_lock_path=Path(tmp)/'owner-gift-locks.json'
+        subprocess.run(['python3',str(ROOT/'tools/test_owner_r7_gift_locking.py'),
+                        '--run-disposable','--report',str(gift_lock_path)],
+                       cwd=ROOT,check=True,timeout=300,capture_output=True)
+        gift_locks=json.loads(gift_lock_path.read_text())
+        gift_lock_hashes={path:hashlib.sha256(cmd('show','HEAD:'+path)).hexdigest()
+            for path in ['src/Subscription/GiftBatch.php','src/Subscription/DirectGift.php',
+                         'settings/gift2all.php']}
+        bulk_source=cmd('show','HEAD:settings/gift2all.php').decode()
+        bulk_body=bulk_source[bulk_source.index('$finish=static function('):
+                              bulk_source.index('$closeRoster=static function(')]
+        bulk_finish_hash=hashlib.sha256(bulk_body.encode()).hexdigest()
+        gift_lock_errors=gift_lock_proof_mismatches(
+            gift_locks,gift_policy_head,gift_lock_hashes,bulk_finish_hash)
+        if gift_lock_errors:
+            raise RuntimeError('Owner gift SQL lock proof incomplete: '+
+                               json.dumps(gift_lock_errors,sort_keys=True))
+        gift_lock_controls=gift_lock_negative_controls(
+            gift_locks,gift_policy_head,gift_lock_hashes,bulk_finish_hash)
         # Whole-main review R1: run actual owned gift worker on disposable
         # original 23-table MariaDB, no live Telegram/Marzban service.
         gift_path=Path(tmp)/"gift-worker-verified-state.json"
@@ -2602,11 +3417,19 @@ def main():
             "r1a3_invalid_total_negative_no_roster_no_false_completion",
             "r1a3_invalid_total_float_no_roster_no_false_completion",
             "r1a3_empty_bad_total_no_roster_no_false_completion",
+            "gift_private_progress_and_verified_general_summary_destinations",
+            "gift_private_hold_owner_manager_no_replay",
+            "gift_private_hold_manager_receiving_off_owner_only",
+            "gift_private_manager_notice_failure_preserves_effect_cursor_and_cleanup",
         }
         if not (gift.get("complete") is True and
                 set(gift.get("scenarios",[]))==required_gift and
                 gift.get("cases")==len(required_gift) and
                 gift.get("actual_gift_worker") is True and
+                gift.get("actual_notification_router") is True and
+                gift.get("actual_admin_access") is True and
+                gift.get("private_owner_manager_gift_notices") is True and
+                gift.get("operator_support_gift_excluded") is True and
                 gift.get("owned_mariadb_only") is True and
                 gift.get("real_provider_requests")==0 and
                 gift.get("customer_money_effects")==0):
@@ -3466,7 +4289,11 @@ def main():
                 and swap.get("synthetic_private_files_untouched")):
             raise RuntimeError("Physical post-V9/V9 source-only overlay or private-state check failed")
         if a.report:a.report.write_text(json.dumps({"complete":True,
-                    "source":result,"owner_ux_r5":owner_r5,"marzban":marzban,"purchases":purchases,
+                    "source":result,"owner_ux_r5":owner_r5,
+                    "owner_r6_notifications":notifications,"owner_r6_financial_alerts":financial_alerts,"marzban":marzban,"purchases":purchases,
+                    "existing_payment_apis":{"settings":api_settings,"evidence":api_evidence,
+                        "evidence_negative_controls":api_evidence_red,"flow":api_flow,
+                        "native_preflight":api_native},
                      "unsupported_wallet_preflight":wallet_guard,
                      "wallet_transfer_safety":wallet_transfer,
                      "wallet_replay_freshness_and_operation_identity":wallet_replay,
@@ -3505,6 +4332,11 @@ def main():
                     "strict_effect_transport_pin":pinned_effects,
                     "gift_source_enqueue_idempotency":gift_source,
                     "direct_admin_gift_verified":direct_gift,
+                    "direct_admin_gift_native":native_direct_gift,
+                    "owner_gift_policy":owner_gift_policy,
+                    "owner_gift_locks":gift_locks,
+                    "owner_gift_lock_negative_controls":gift_lock_controls,
+                    "owner_gift_policy_negative_controls":gift_policy_negative_controls,
                     "gift_worker_safe_continuation":gift,
                     "gift_physical_target_continuity":physical_gift,
                     "wallet_paid_create":wallet_create,
@@ -3567,6 +4399,18 @@ def main():
                       "strict_effect_transport_pin_cases":pinned_effects["cases"],
                       "gift_source_enqueue_cases":gift_source["cases"],
                       "direct_admin_gift_cases":direct_gift["cases"],
+                      "direct_admin_gift_native_cases":native_direct_gift["cases"],
+                      "owner_gift_policy_cases":owner_gift_policy["cases"],
+                      "owner_gift_lock_cases":gift_locks["cases"],
+                      "owner_gift_lock_negative_controls":gift_lock_controls,
+                      "owner_gift_policy_negative_controls":gift_policy_negative_controls,
+                      "owner_r6_notification_cases":notifications["cases"],
+                      "owner_r6_financial_alert_cases":financial_alerts["cases"],
+                      "payment_api_settings_cases":len(api_settings["checks"]),
+                      "payment_api_evidence_contracts":len(api_evidence["contracts"]),
+                      "payment_api_evidence_negative_controls":len(api_evidence_red["expected_RED"]),
+                      "payment_api_flow_cases":api_flow["cases"],
+                      "payment_api_native_preflight_cases":api_native["cases"],
                       "gift_worker_reconciliation_cases":gift["cases"],
                       "gift_physical_target_cases":physical_gift["cases"],
                       "wallet_paid_create_cases":wallet_create["cases"],

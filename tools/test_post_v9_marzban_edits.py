@@ -161,6 +161,15 @@ INITIAL={
     'subscription_url':'/sub/fixture'
 }
 
+def assert_verified_native_before(result,expected):
+    # Presence and exact type matter: a missing field is not native NULL,
+    # and Python's bool/int equality must not bless False as native zero.
+    assert result.get('success') is True and result.get('verified') is True,result
+    assert 'before_expire' in result,result
+    assert type(result['before_expire']) is type(expected),result
+    assert result['before_expire']==expected,(expected,result)
+
+
 def main():
     parser=argparse.ArgumentParser()
     parser.add_argument('--run-disposable',action='store_true',required=True)
@@ -212,6 +221,7 @@ def main():
             if want in ('verified','reconciled','repaired'):
                 if value.get('success') is not True or value.get('verified') is not True:
                     raise RuntimeError('Provider confirmed without verified GET: '+repr((mode,value)))
+                assert_verified_native_before(value,INITIAL['expire'])
                 if want=='reconciled' and value.get('reconciled') is not True:
                     raise RuntimeError('Lost response was not reconciled: '+repr((mode,value)))
                 if want=='repaired' and value.get('repaired') is not True:
@@ -254,6 +264,8 @@ def main():
                 'function':'editMarzbanConfig','args':[2,{'remark':'fixture-user',**change}]})
             assert outcome['exception'] is None and not outcome['warnings'] and not outcome['stdout'],outcome
             assert financial_snapshot()==before,'direct adapter changed local financial records'
+            if stage==source and outcome['result'].get('success') is True:
+                assert_verified_native_before(outcome['result'],expiry)
             return outcome['result']
         red=nullable_edit(baseline,{'days':30,'volume':3})
         assert red['success'] is False and red['uncertain'] is True and red['msg']=='marzban_account_unverified',red
@@ -329,7 +341,27 @@ def main():
         # the old adapter's exact volume-only result/remote request semantics.
         old_zero=nullable_edit(baseline,{'volume':3},expiry=0)
         current_zero=nullable_edit(source,{'volume':3},expiry=0)
-        assert old_zero==current_zero and current_zero['success'] is True and current_zero['applied_expire']==0,(old_zero,current_zero)
+        # Compare every unchanged archived field explicitly. The new native
+        # observation is independently verified, never discarded as arbitrary
+        # extra response data; unexpected response fields still fail closed.
+        prior_fields=('success','verified','applied_expire','applied_bytes','reconciled','repaired')
+        assert set(old_zero)==set(prior_fields),old_zero
+        assert set(current_zero)==set(prior_fields)|{'before_expire'},current_zero
+        current_prior={field:current_zero[field] for field in prior_fields}
+        assert old_zero==current_prior,(old_zero,current_prior)
+        assert current_zero['success'] is True and current_zero['applied_expire']==0,current_zero
+        assert_verified_native_before(current_zero,0)
+        # These controls prove the new observation check rejects missing,
+        # wrong-valued and wrong-typed evidence while old fields stay equal.
+        for label,invalid in (
+            ('missing',{field:current_zero[field] for field in prior_fields}),
+            ('wrong_value',dict(current_zero,before_expire=1)),
+            ('boolean_zero',dict(current_zero,before_expire=False)),
+            ('string_zero',dict(current_zero,before_expire='0')),
+        ):
+            try:assert_verified_native_before(invalid,0)
+            except AssertionError:pass
+            else:raise AssertionError('Native before-expiry check accepted '+label)
         assert panel.edit_reset_count==1 and panel.edit_put_count==1,panel.trace
         cases.append('null_expiry_existing_zero_api_semantics_preserved_against_exact_240')
         panel.expiry_change_on_get=None
@@ -355,6 +387,7 @@ def main():
             assert outcome['exception'] is None and not outcome['warnings'],(label,outcome)
             result=outcome['result']
             assert result['success'] is True and result['verified'] is True,(label,result)
+            assert_verified_native_before(result,INITIAL['expire'])
             assert result['applied_bytes']==expected,(label,result)
             assert panel.edit_put_count==1 and panel.edit_reset_count==reset,(label,panel.trace)
             remote_want=(None if expected==0 else expected) if 'volume' in change else base
@@ -845,7 +878,8 @@ def main():
         'null_expiry_full_replacement_verified':True,'null_expiry_baseline_red':True,
         'null_expiry_baseline_source':NULL_EXPIRY_BASELINE,
         'null_expiry_baseline_adapter_sha256':hashlib.sha256(old_adapter).hexdigest(),
-        'null_expiry_invalid_no_partial_effect':True,'null_expiry_zero_semantics_preserved':True}
+        'null_expiry_invalid_no_partial_effect':True,'null_expiry_zero_semantics_preserved':True,
+        'verified_native_before_expire':True,'native_before_expire_negative_controls':True}
     if args.report:
         args.report.parent.mkdir(parents=True,exist_ok=True)
         args.report.write_text(json.dumps(report,indent=2)+'\n')

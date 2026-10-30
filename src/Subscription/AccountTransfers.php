@@ -83,6 +83,6 @@ if (preg_match('/^switchServer([0-9]+)_([0-9]+)$/D', (string)($data ?? ''), $mat
         . \achbotMessage('subscription.account_transfers.user_i_d.6590a1ba5e') . (int)$result['userid'] . "\n"
         . \achbotMessage('subscription.account_transfers.order_i_d.98a7867ccd') . (int)$result['id'] . "\n"
         . \achbotMessage('subscription.account_transfers.server.84a150954c') . (int)$result['source_id'] . \achbotMessage('subscription.account_transfers.text.592f6fd075') . (int)$result['target_id'];
-    sendToAllAdmins('sendMessage', ['text'=>$adminMessage]);
+    achbotNotifyAdmins('sendMessage', ['text'=>$adminMessage], ['report_channel'=>null]);
     return;
 }

@@ -14,6 +14,7 @@ from pathlib import Path
 
 import test_access_state as owned
 import test_v6_native as native
+import notification_fixture
 
 ROOT=Path(__file__).resolve().parents[1]
 DB=native.DBS[1]
@@ -24,6 +25,8 @@ CONFIG=r'''<?php
 $connection=new mysqli('localhost','root','',getenv('ACHBOT_GIFT_DB'),0,getenv('ACHBOT_GIFT_SOCKET'));
 $connection->set_charset('utf8mb4');
 $admin=9001;
+$botState=['rewardChannel'=>'@fixture-gift-private-channel'];
+require_once __DIR__.'/notifications-under-test.php';
 function giftLog(string $kind,array $values=[]): void {
     file_put_contents(getenv('ACHBOT_GIFT_LOG'),json_encode(
         ['kind'=>$kind]+$values,JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE)."\n",FILE_APPEND);
@@ -87,17 +90,28 @@ function editMarzbanConfig($serverId,$change) {
                     'applied_bytes'=>4294967296];
 }
 function sendMessage(...$args){ giftLog('MESSAGE',['text'=>(string)$args[0],
-    'recipient'=>$args[3]??null]);
+    'recipient'=>$args[3]??null,'parse_mode'=>$args[2]??null,
+    'reply_markup'=>$args[1]??null]);
+    if (getenv('ACHBOT_GIFT_MODE')==='manager_notice_fail' &&
+        ($args[3]??null)===9101)
+        throw new RuntimeException('synthetic_manager_delivery_failure');
     if (getenv('ACHBOT_GIFT_MODE')==='notify_fail' &&
         ($args[3]??null)===1001)
         throw new RuntimeException('synthetic_telegram_delivery_failure');
+    if (getenv('ACHBOT_GIFT_MODE')==='notify_unacknowledged' &&
+        ($args[3]??null)===1001)
+        return (object)['ok'=>false];
     // Exit from the actual worker's post-COMMIT notification boundary.
     // This process terminates before next recipient/cleanup, with no code
     // mutation of the source PHP worker.
     if (getenv('ACHBOT_GIFT_MODE')==='interrupt_after_commit' &&
         ($args[3]??null)===1001) exit(0);
     return (object)['ok'=>true]; }
-function sendToAllAdmins(...$args){giftLog('ADMINS');return true;}
+function bot($method,$data=[]) {
+    if ($method!=='sendMessage') throw new RuntimeException('fixture_message_transport_only');
+    return sendMessage($data['text']??'', $data['reply_markup']??null,
+        $data['parse_mode']??null, $data['chat_id']??null);
+}
 '''
 ENQUEUE=r'''<?php
 error_reporting(E_ALL);
@@ -138,6 +152,39 @@ def q(work,env,sql):
 def require(condition, message):
     if not condition: raise RuntimeError(message)
 
+def stage_notifications(stage):
+    notification_fixture.stage_router(stage)
+    # Historical worker controls still call the actual current secondary
+    # facade. Only its Telegram transport is spied; no routing substitute.
+    definition=subprocess.check_output(['php','-r',
+        "require $argv[1]; echo achbotExtractFunction($argv[2], 'sendToAllAdmins');",
+        str(ROOT/'tools/source_scan.php'),str(ROOT/'config.php')],cwd=ROOT,text=True)
+    with (stage/'notifications-under-test.php').open('a') as stream:
+        stream.write('\n'+definition+'\n')
+
+
+def seed_notification_staff(work,env):
+    for actor,role in [(9101,'manager'),(9102,'manager'),(9103,'operator'),(9104,'support')]:
+        q(work,env,"INSERT INTO users(userid,name,username,refcode,wallet,date,isAdmin,first_start,step) "
+          "VALUES("+str(actor)+",'Fixture Staff','staff','0',0,'1700000000',1,'sent','none')")
+        q(work,env,"INSERT INTO setting(type,value) VALUES('ADMIN_ROLE_"+str(actor)+"','"+role+"')")
+    q(work,env,"INSERT INTO setting(type,value) VALUES('ADMIN_NOTIFY_9102','off')")
+
+
+def assert_private_fanout(events,expected=(9001,9101)):
+    notices=[e for e in events if e['kind']=='MESSAGE' and e['recipient'] not in (1001,1002)\
+        and not e['text'].startswith('🎁 هدیهٔ اشتراک اعمال شد')]
+    require(notices,'No administrator notices observed')
+    groups={}
+    for notice in notices:
+        require(notice.get('parse_mode') is None and notice.get('reply_markup') is None,
+                'Private gift notice changed formatting')
+        groups.setdefault(notice['text'],[]).append(notice['recipient'])
+    require(all(sorted(recipients)==sorted(expected) for recipients in groups.values()),
+            'Private gift fanout changed text, duplicated a Manager or reached excluded staff/channel: '+repr(groups))
+    return groups
+
+
 def _php_command(stage,work):
     return [
         'php','-n','-d','extension=mysqlnd','-d','extension=mysqli',
@@ -169,7 +216,13 @@ def run_tick(work,env,stage,log,mode,status='active',members=None,old=False):
          if old else _php_command(stage,work)),cwd=stage,
         env=_run_env(env,work,log,roster,mode,status),
         capture_output=True,text=True,timeout=45)
-    require(process.returncode==0 and not process.stdout and not process.stderr,
+    stderr_lines=process.stderr.splitlines()
+    allowed_diagnostics=(bool(stderr_lines) and all(
+        (mode=='manager_notice_fail' and (notification_fixture.sanitized_exception_line(line) or\
+         __import__('re').fullmatch(r'achbot_gift_completion_report_unconfirmed reference=batch:[1-9][0-9]*:[0-9]+',line))) or
+        (mode in ('notify_fail','notify_unacknowledged') and line.strip()=='achbot_gift_customer_notice_unconfirmed order_id=91 userid=1001')
+        for line in stderr_lines))
+    require(process.returncode==0 and not process.stdout and (not process.stderr or allowed_diagnostics),
             f"Worker PHP failed mode={mode}: {process.returncode} {process.stdout[-800:]} {process.stderr[-1600:]}")
     return [json.loads(line) for line in log.read_text().splitlines()] if log.exists() else []
 
@@ -254,7 +307,8 @@ def exercise_roster_cases(work,env,stage,log,cases):
     event=run_tick(work,env,stage,log,'verified',members=added)
     require(effect_names(event)==['bob'] and state(work,env,gift)[0]==2 and
             manifest(work,env,gift)['cursor']==2 and
-            int(q(work,env,'SELECT expire_date FROM orders_list WHERE id=92'))==VERIFIED_EXPIRY,
+            int(q(work,env,'SELECT expire_date FROM orders_list WHERE id=92'))==ORIGINAL_EXPIRY and
+            q(work,env,'SELECT notif FROM orders_list WHERE id=92')=='0',
             'Prepending a new user retargeted or repeated a completed account')
     cases.append('r1a_insert_prepend_only_original_pending_username_edited')
     require('carol' not in effect_names(event) and 'fixture-user' not in effect_names(event),
@@ -370,6 +424,9 @@ def main():
     cases=[]
     with owned.owned_database() as (work,env):
         native.seed(work,env,'http://127.0.0.1:9')
+        # Roster fixture references a second real customer; notices now verify
+        # exact persisted recipient identity instead of sending to orphan IDs.
+        q(work,env,"INSERT INTO users(userid,name,username,refcode,wallet,date) VALUES(1002,'Second','fixture-second','0',0,'1700000000')")
         # Legacy real worker dereferences server_info.title directly; the
         # original 23-table isolated native.seed fixture only populated
         # server_config and orders_list.
@@ -388,8 +445,11 @@ def main():
         (stage/'src/Subscription').mkdir(parents=True)
         shutil.copyfile(ROOT/'src/Subscription/GiftBatch.php',
                         stage/'src/Subscription/GiftBatch.php')
+        (stage/'src/Purchase').mkdir(parents=True)
+        shutil.copyfile(ROOT/'src/Purchase/OrderWrites.php',stage/'src/Purchase/OrderWrites.php')
         shutil.copytree(ROOT/'messages',stage/'messages')
         (stage/'baseInfo.php').write_text('<?php // owned test\n')
+        stage_notifications(stage)
         (stage/'config.php').write_text(CONFIG)
         (stage/'run.php').write_text(RUNNER)
         (stage/'enqueue.php').write_text(ENQUEUE)
@@ -400,17 +460,18 @@ def main():
         (stage/'run-legacy.php').write_text(RUNNER.replace(
             "settings/gift2all.php","settings/legacy-gift2all.php"))
         log=work/'gift-worker-events.jsonl'
+        seed_notification_staff(work,env)
 
         for mode,volume,day,want_offset,want_hold,want_expiry in [
-            ('verified',2048,2,2,0,VERIFIED_EXPIRY),
+            ('verified',2048,2,2,0,ORIGINAL_EXPIRY),
             ('refused',2048,2,2,0,ORIGINAL_EXPIRY),
             ('uncertain',2048,2,-1,1,ORIGINAL_EXPIRY),
             ('throw',2048,2,-1,1,ORIGINAL_EXPIRY),
             ('unverified',2048,2,-1,1,ORIGINAL_EXPIRY),
             ('bad_expire',2048,2,-1,1,ORIGINAL_EXPIRY),
-            ('verified',0,2,2,0,VERIFIED_EXPIRY),
+            ('verified',0,2,2,0,ORIGINAL_EXPIRY),
             ('verified',2048,0,2,0,ORIGINAL_EXPIRY),
-            ('notify_fail',2048,2,2,0,VERIFIED_EXPIRY),
+            ('notify_fail',2048,2,2,0,ORIGINAL_EXPIRY),
             ('verified',1536,2,-1,1,ORIGINAL_EXPIRY),
             ('verified',0,0,-1,1,ORIGINAL_EXPIRY),
         ]:
@@ -435,8 +496,13 @@ def main():
             if mode=='notify_fail':
                 notices=[x for x in events if x['kind']=='MESSAGE'
                          and x['recipient']==9001 and 'اعلان' in x['text']]
-                require(notices and holds==0 and offset==2,
-                        'Postcommit Telegram failure changed gift truth')
+                require(notices and holds==0 and offset==2 and
+                        any('ارسال اعلان کاربر ناموفق بود' in item['text'] for item in notices),
+                        'Postcommit Telegram exception changed gift truth or lost its specific diagnostic')
+                result=json.loads(q(work,env,"SELECT value FROM setting WHERE type='ACHBOT_GIFT_RESULT_"+str(gift_id)+"_0'"))
+                require(result['customer_notices']['send_exceptions']==[1001] and
+                        result['customer_notices']['unconfirmed']==[1001],
+                        'Customer transport exception was not retained separately from unconfirmed ACK')
             if want_hold:
                 require(detail is not None and detail['gift_id']==gift_id and
                         detail['recipient_index']==0 and
@@ -453,6 +519,22 @@ def main():
                         'Cron re-edited prior recipient')
                 require(state(work,env,gift_id)[0] is None,
                         f'Completed job was not removed: {continuation}')
+            if mode=='notify_fail':
+                # The same failure contract distinguishes a returned negative
+                # ACK from an actual thrown send, without repeating native work.
+                ack_id=setup_gift(work,env,stage,2048,2)
+                ack_events=run_tick(work,env,stage,log,'notify_unacknowledged')
+                ack_result=json.loads(q(work,env,"SELECT value FROM setting WHERE type='ACHBOT_GIFT_RESULT_"+str(ack_id)+"_0'"))
+                ack_notices=[item for item in ack_events if item['kind']=='MESSAGE' and item['recipient']==9001 and 'اعلان' in item['text']]
+                require(len(effect_names(ack_events))==1 and state(work,env,ack_id)[0]==2 and
+                        ack_result['customer_notices']['send_exceptions']==[] and
+                        ack_result['customer_notices']['unconfirmed']==[1001] and
+                        any('تأیید' in item['text'] for item in ack_notices) and
+                        not any('ارسال اعلان کاربر ناموفق بود' in item['text'] for item in ack_notices),
+                        'Returned unconfirmed ACK was mislabeled as a transport exception')
+                ack_replay=run_tick(work,env,stage,log,'verified')
+                require(not effect_names(ack_replay) and state(work,env,ack_id)[0] is None,
+                        'Unconfirmed customer ACK rearmed the completed native gift')
             cases.append(f'gift_{mode}_volume_{volume}_days_{day}')
 
         gift_id=setup_gift(work,env,stage,2048,2)
@@ -621,6 +703,53 @@ def main():
             q(work,env,'ALTER TABLE gift_list ENGINE=InnoDB')
         cases.append('r1a_nontransactional_installed_table_fails_closed')
 
+        gift_id=setup_gift(work,env,stage,2048,2)
+        event=run_tick(work,env,stage,log,'verified')
+        groups=assert_private_fanout(event)
+        summaries=[e for e in event if e['kind']=='MESSAGE' and e['text'].startswith('🎁 هدیهٔ اشتراک اعمال شد')]
+        require(sorted(str(e['recipient']) for e in summaries)==sorted(map(str,[9001,9101,'@fixture-gift-private-channel']))
+                and all(e['parse_mode']=='HTML' for e in summaries),
+                'Verified physical gift summary did not reach exact general report destinations once')
+        require(len(groups)==1 and effect_names(event)==['fixture-user'] and
+                state(work,env,gift_id)[0]==2,
+                'Start fanout changed committed gift effect/cursor')
+        end=run_tick(work,env,stage,log,'verified')
+        require(len(assert_private_fanout(end))==1 and not effect_names(end) and
+                state(work,env,gift_id)[0] is None,
+                'Completion fanout changed cleanup or repeated effect')
+        require(not run_tick(work,env,stage,log,'verified'),
+                'Empty queue repeated a completion notice')
+        cases.append('gift_private_progress_and_verified_general_summary_destinations')
+
+        gift_id=setup_gift(work,env,stage,2048,2)
+        event=run_tick(work,env,stage,log,'uncertain')
+        require(len(assert_private_fanout(event))==2 and state(work,env,gift_id)[0]==-1 and
+                len(effect_names(event))==1,
+                'Uncertain gift hold/fanout lost the exact first mutation fence')
+        require(not run_tick(work,env,stage,log,'verified'),
+                'Held gift repeated a notification or provider edit')
+        cases.append('gift_private_hold_owner_manager_no_replay')
+
+        q(work,env,"INSERT INTO setting(type,value) VALUES('ADMIN_NOTIFY_9101','off')")
+        try:
+            gift_id=setup_gift(work,env,stage,2048,2)
+            event=run_tick(work,env,stage,log,'uncertain')
+            require(len(assert_private_fanout(event,(9001,)))==2 and
+                    state(work,env,gift_id)[0]==-1,
+                    'Explicit Manager receiving-off changed hold or leaked a copy')
+        finally:q(work,env,"DELETE FROM setting WHERE type='ADMIN_NOTIFY_9101'")
+        cases.append('gift_private_hold_manager_receiving_off_owner_only')
+
+        gift_id=setup_gift(work,env,stage,2048,2)
+        event=run_tick(work,env,stage,log,'manager_notice_fail')
+        require(len(assert_private_fanout(event))==1 and effect_names(event)==['fixture-user'] and
+                state(work,env,gift_id)[0]==2,
+                'Manager transport failure changed successful gift or cursor')
+        end=run_tick(work,env,stage,log,'manager_notice_fail')
+        require(not effect_names(end) and state(work,env,gift_id)[0] is None,
+                'Manager notification failure replayed the native effect')
+        cases.append('gift_private_manager_notice_failure_preserves_effect_cursor_and_cleanup')
+
         gift_id=setup_gift(work,env,stage,2048,0)
         events=run_tick(work,env,stage,log,'order_vanish_after_provider')
         offset,_,hold,detail=state(work,env,gift_id)
@@ -632,7 +761,9 @@ def main():
         cases.append('r1a_volume_only_local_identity_lost_after_provider_held')
     result={'complete':True,'cases':len(cases),'scenarios':cases,
         'actual_gift_worker':True,'owned_mariadb_only':True,
-        'real_provider_requests':0,'customer_money_effects':0}
+        'real_provider_requests':0,'customer_money_effects':0,
+        'actual_notification_router':True,'actual_admin_access':True,
+        'private_owner_manager_gift_notices':True,'operator_support_gift_excluded':True}
     if args.report:args.report.write_text(json.dumps(result,ensure_ascii=False,indent=2)+'\n')
     print(json.dumps(result,ensure_ascii=False))
 if __name__=='__main__':main()

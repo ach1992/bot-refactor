@@ -32,6 +32,7 @@ require_once __DIR__ . '/src/Purchase/Core.php';
 require_once __DIR__ . '/src/Finance/PaymentLifecycle.php';
 require_once __DIR__ . '/src/Finance/GatewayRuleAdmin.php';
 require_once __DIR__ . '/src/Finance/PaymentKeyAdmin.php';
+require_once __DIR__.'/src/Finance/ApiPayments.php';
 require_once __DIR__.'/src/Admin/Access.php';
 
 function tgRetryAfter($res){
@@ -655,7 +656,8 @@ function achbotAdminGatewayChange($update,int $actor,int $chat,int $message,
     global $connection;
     static $flags=[
         'giftCardState','manualUsdtState','cartToCartState','nextpay',
-        'zarinpal','nowPaymentWallet','nowPaymentOther','walletState'
+        'zarinpal','nowPaymentWallet','nowPaymentOther','walletState',
+        'smsApiVerifyState','giftApiVerifyState'
     ];
     try {
         if ($actor<=0 || $primary<=0 || $chat!==$actor || $message<=0 ||
@@ -743,6 +745,10 @@ function achbotAdminGatewayChange($update,int $actor,int $chat,int $message,
                 $current=$state[$key]??'off';
                 if (!in_array($current,['on','off'],true))
                     throw new RuntimeException('gateway_flag_invalid');
+                if ($current==='off' && in_array($key,
+                    ['smsApiVerifyState','giftApiVerifyState'],true) &&
+                    !achbotPaymentApiAdminToggleAllowed($connection,$key))
+                    throw new RuntimeException('payment_api_configuration_incomplete');
                 $state[$key]=$current==='on'?'off':'on';
             } elseif ($kind==='audience') {
                 if (isset($state['gatewayRules'])) {
@@ -1274,6 +1280,7 @@ function getGateWaysKeys(){
             ['text'=>$giftCardState,'callback_data'=>"changeGateWaysgiftCardState"],
             ['text'=>\achbotMessage('admin_settings.config.get_gate_ways_keys.button.d71108ddb3'),'callback_data'=>"wizwizch"]
         ],
+        ...achbotPaymentApiAdminRows('gift_card',$paymentKeys,$botState),
         [
             ['text'=>$manualUsdtState,'callback_data'=>"changeGateWaysmanualUsdtState"],
             ['text'=>\achbotMessage('admin_settings.config.get_gate_ways_keys.button.986ea8b25b'),'callback_data'=>"wizwizch"]
@@ -1282,6 +1289,7 @@ function getGateWaysKeys(){
             ['text'=>$cartToCartState,'callback_data'=>"changeGateWayscartToCartState"],
             ['text'=>\achbotMessage('admin_settings.config.get_gate_ways_keys.button.04029e7ea7'),'callback_data'=>"wizwizch"]
         ],
+        ...achbotPaymentApiAdminRows('bank_transfer',$paymentKeys,$botState),
         [
             ['text'=>$nextpay,'callback_data'=>"changeGateWaysnextpay"],
             ['text'=>\achbotMessage('admin_settings.config.get_gate_ways_keys.button.26003a476f'),'callback_data'=>"wizwizch"]
@@ -3759,14 +3767,95 @@ function changeMarzbanState($server_id,$remark) {
 }
 // Added by ACh
 
+/** Owner/general reports plus enabled Managers and the existing report channel.
+ * Manual review requests may reach every enabled current staff level. Backup
+ * deliberately has no route here. Each response is independent; index zero
+ * is always the primary Owner, so existing acknowledgement fences can retain
+ * their primary-delivery condition without coupling it to secondary failures.
+ */
+function achbotNotifyAdmins($method, array $data, array $options = []): array {
+    global $admin, $connection, $botState;
+    $primary=(int)($admin??0);
+    $event=$options['event']??'general';
+    if ($primary<=0 || !in_array($event,['general','manual_review'],true) ||
+        !in_array($method,['sendMessage','sendPhoto'],true) ||
+        (isset($options['primary']) && (string)$options['primary']!==(string)$primary)) return [];
+    $channel=array_key_exists('report_channel',$options)
+        ? $options['report_channel'] : ($event==='general'?($botState['rewardChannel']??null):null);
+    $key=static function($recipient): string {
+        $value=(string)$recipient;
+        return preg_match('/^-?[0-9]+$/D',$value) ? (string)(int)$value : strtolower($value);
+    };
+    $sent=[];$results=[];
+    $deliver=static function($recipient,string $kind,?array $override=null) use ($method,$data,$key,$event,&$sent,&$results): void {
+        $payload=$override??$data;
+        $identity=$key($recipient);
+        if ($identity==='' || isset($sent[$identity])) return;
+        $sent[$identity]=true;$response=null;
+        try {
+            $args=$method==='sendMessage'
+                ? [$payload['text']??'', $payload['reply_markup']??null,
+                    $payload['parse_mode']??null, $recipient]
+                : [$payload['photo']??'', $payload['caption']??null,
+                    $payload['reply_markup']??null, $payload['parse_mode']??null, $recipient];
+            if (array_key_exists('reply_to_message_id',$payload)) $args[]=$payload['reply_to_message_id'];
+            $response=$method==='sendMessage'?sendMessage(...$args):sendPhoto(...$args);
+        } catch (Throwable $error) {
+            $class=get_class($error);
+            if (!preg_match('/^[A-Za-z_\\\\][A-Za-z0-9_\\\\]{0,119}$/D',$class)) $class='Throwable';
+            $update=$GLOBALS['update']??null;
+            $updateId=is_object($update)?($update->update_id??null):null;
+            $context=is_int($updateId)&&$updateId>0?' update_id='.$updateId:'';
+            error_log('achbot_admin_notice_exception event='.$event.' method='.$method.
+                ' target='.$kind.' class='.$class.$context);
+        }
+        $results[]=['chat_id'=>$recipient,'response'=>$response];
+    };
+    $deliver($primary,'owner');
+    if ($connection instanceof mysqli) {
+        $complete=false;
+        $candidates=achbotAdminRecipientCandidates($connection,$primary,$complete);
+        foreach ($candidates as $recipient) {
+            $admissionComplete=true;
+            if (achbotAdminNotificationAllowed($connection,$recipient,$primary,$event,$admissionComplete))
+                $deliver((int)$recipient,'staff');
+            if (!$admissionComplete) $complete=false;
+        }
+        // Keep primary acknowledgement first. Durable report callers must not
+        // mistake a contended recipient read for a fully delivered fanout.
+        if (!$complete) $results[]=['chat_id'=>null,'response'=>null,
+            'deferred'=>'recipient_discovery'];
+    }
+    if (is_int($channel) || is_string($channel)) {
+        if (trim((string)$channel)!=='') {
+            $reportData=array_key_exists('report_parse_mode',$options)
+                ? array_replace($data,['parse_mode'=>$options['report_parse_mode']]) : $data;
+            $deliver($channel,'channel',$reportData);
+        }
+    }
+    return $results;
+}
+
+/** Durable notice markers acknowledge only the complete eligible fanout. */
+function achbotAdminFanoutAcknowledged(array $notices): bool {
+    if ($notices===[]) return false;
+    foreach ($notices as $notice) {
+        $response=$notice['response']??null;
+        if (!is_object($response) || ($response->ok??false)!==true) return false;
+    }
+    return true;
+}
+
 function sendToAllAdmins($method, $data, $pay_hash_id = null, $options = []){
     global $admin, $connection;
 
     $adminMessages = [];
+    $event=$options['event']??'general';
+    if (!in_array($event,['general','manual_review'],true)) return;
 
     foreach (achbotAdminRecipientCandidates($connection,(int)$admin) as $adminId) {
         if ($adminId != $admin &&
-            achbotAdminRecipientAllowed($connection,$adminId,(int)$admin)) {
+            achbotAdminNotificationAllowed($connection,$adminId,(int)$admin,$event)) {
             $data['chat_id'] = $adminId;
 
             // اگر بخوایم پیام ریپلای باشه (اختیاری)

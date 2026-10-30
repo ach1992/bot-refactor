@@ -62,13 +62,24 @@ function achbotRecoveryAttentionSql(mysqli $db): string {
               AND NOT (p.state='paid' AND a.stage='review' AND a.provider IN ('bank_transfer','gift_card','manual_usdt','manual_trx')
                 AND COALESCE(a.provider_status,'') NOT IN ('fulfillment_started','fulfillment_unconfirmed','fulfillment_failed','fulfillment_needs_review')))))";
     }
+    // API evidence is separate from photo receipt stage: uncertainty must
+    // surface without removing the customer's still-valid manual fallback.
+    $api='0';
+    if (function_exists('achbotApiPaymentReady') && achbotApiPaymentReady($db)) {
+        $api="EXISTS (SELECT 1 FROM payment_attempts a WHERE a.pay_row_id=p.id
+            AND a.evidence_profile IS NOT NULL AND
+            (a.evidence_state IN ('review','uncertain') OR p.state='processing' OR EXISTS
+             (SELECT 1 FROM payment_transactions t WHERE t.attempt_id=a.id
+              AND t.evidence_state IN ('review','uncertain'))))";
+    }
     $create=achbotRecoveryCreateAttentionSql($db);
     $renewal=achbotPayUxTable($db,'automatic_renewal_attempts')
         ? "EXISTS (SELECT 1 FROM automatic_renewal_attempts r WHERE r.pay_row_id=p.id
             AND r.stage IN ('reserved','remote_started','review'))" : '0';
     return "(p.type IN ('BUY_SUB','RENEW_ACCOUNT','INCREASE_WALLET')
-        OR p.type LIKE 'INCREASE_DAY\_%' OR p.type LIKE 'INCREASE_VOLUME\_%')
-        AND (($ledger) OR ($create) OR ($renewal) OR p.state IN ('processing','processing_wallet'))";
+        OR p.type LIKE 'INCREASE_DAY\_%' OR p.type LIKE 'INCREASE_VOLUME\_%'
+        OR (p.type='RENEW_SCONFIG' AND ($api)))
+        AND (($ledger) OR ($api) OR ($create) OR ($renewal) OR p.state IN ('processing','processing_wallet'))";
 }
 
 function achbotRecoveryAttentionCases(mysqli $db, int $before=0): array {

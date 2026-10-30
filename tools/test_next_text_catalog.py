@@ -107,17 +107,21 @@ def main():
     check(not violations,'UI literals outside catalog: '+json.dumps(violations,ensure_ascii=False))
     ascii_ui=catalog_ui.ui_candidates(ROOT,runtime_paths())
     check(not ascii_ui,'ASCII UI copy outside catalog: '+json.dumps(ascii_ui,ensure_ascii=False))
+    sources={path:(ROOT/path).read_text() for path in runtime_paths()}
     refs=set()
-    for path in runtime_paths():
-        refs.update(re.findall(r"\\?achbotMessage(?:Html)?\('([^']+)'",(ROOT/path).read_text()))
+    for path,source in sources.items():
+        refs.update(catalog_owner_r5.api_source_references(path,source))
     catalog=json.loads(command('php','-r',
         'require "messages/loader.php";$r=[];foreach(achbotMessageTopics() as $t){foreach(achbotMessages($t) as $k=>$v)$r[]=$t.".".$k;}echo json_encode($r);'))
+    refs,api_references=catalog_owner_r5.api_reference_proof(sources,catalog)
+    api_reference_controls=catalog_owner_r5.api_reference_negative_controls(sources,catalog)
     entries=set(catalog)
     check(len(entries)==len(catalog),'duplicate catalog keys')
     check(refs<=entries,'unknown catalog references: '+str(refs-entries))
     unused={k for k in entries-refs if not k.startswith(('legacy_messages.','legacy_buttons.'))}
     management=json.loads((ROOT/'tools/text_catalog_management_amendment.json').read_text())
-    check(unused==set(management['retained_legacy_keys'])|catalog_owner_r5.verify_retained_display_keys(),'unrecorded legacy/orphan copy entries: '+str(unused^(set(management['retained_legacy_keys'])|catalog_owner_r5.verify_retained_display_keys())))
+    expected_unused=set(management['retained_legacy_keys'])|catalog_owner_r5.verify_retained_display_keys()|catalog_owner_r5.API_RETAINED
+    check(unused==expected_unused,'unrecorded legacy/orphan copy entries: '+str(unused^expected_unused))
     with tempfile.TemporaryDirectory(prefix='achbot-catalog-audit-') as scratch:
         fixture=pathlib.Path(scratch)/'fixture.php'
         fixture.write_text("<?php $message='Receipt accepted'; $message.=' Reference: '.$id; sendMessage($message); $keys=[['text'=>'Continue','callback_data'=>'keep_protocol']]; sendPhoto('file.png','Visible caption'); ?><p>Visible page title</p>")
@@ -167,13 +171,13 @@ def main():
     presentation=json.loads(command('python3','tools/test_text_catalog_style.py'))
     check(presentation.get('status')=='PASS' and presentation.get('editable_files')==2
           and presentation.get('canonical_binding_paths')==2 and presentation.get('canonical_binding_entries')==4 and presentation.get('canonical_binding_negative_controls')==4
-          and presentation.get('current_keys')==2523+len(management['added_keys'])-len(catalog_owner_r5.manifest()['retired_keys'])+len(catalog_owner_r5.manifest()['added_keys'])
+          and presentation.get('current_keys')==2523+len(management['added_keys'])-len(catalog_owner_r5.manifest()['retired_keys'])+len(catalog_owner_r5.manifest()['added_keys'])+len(catalog_owner_r5.api_manifest()['added_keys'])+1  # Explicit gifts.completed_report addition (validated by verify_and_restore).
           and presentation.get('management_added_keys')==len(management['added_keys'])
           and presentation.get('management_baseline_keys')==2523
           and presentation.get('management_negative_controls')==5
           and presentation.get('management_provider_label_cases')==11
           and presentation.get('management_facade_cases')==sum(record.get('facade')is True for record in management['added_keys'].values()) and presentation.get('retired_keys')==23
-          and presentation.get('added_keys')==1 and presentation.get('logical_topics')==26
+          and presentation.get('added_keys')==1 and presentation.get('logical_topics')==27
           and presentation.get('numeric_template_changes')==23
           and presentation.get('adjacent_emoji_violations')==0
           and presentation.get('parameter_exception_count')==3
@@ -207,8 +211,8 @@ def main():
     finally:
         process.terminate();process.wait(timeout=5)
     print(json.dumps({'status':'PASS','pre_style_source_equivalent_occurrences':reverse,'source_files':len(inventory['files']),
-      'catalog_keys':len(entries),'management_added_keys':len(management['added_keys']),'management_retained_legacy_keys':len(management['retained_legacy_keys']),'runtime_references':len(refs),'static_ui_violations':len(violations),'ascii_ui_violations':len(ascii_ui),'ascii_audit_negative_controls':8,'management_ascii_audit_controls':2,'machine_predicate_audit_controls':2,'migrated_machine_fields_or_sql_arguments':0,
+      'catalog_keys':len(entries),**api_references,'api_reference_negative_controls':api_reference_controls,'management_added_keys':len(management['added_keys']),'management_retained_legacy_keys':len(management['retained_legacy_keys']),'runtime_references':len(refs),'static_ui_violations':len(violations),'ascii_ui_violations':len(ascii_ui),'ascii_audit_negative_controls':8,'management_ascii_audit_controls':2,'machine_predicate_audit_controls':2,'migrated_machine_fields_or_sql_arguments':0,
       'authorized_source_dependency_files':len(amendments['source_dependencies']),'authorized_bootstrap_flow_changes':1,'approved_public_copy_corrections':len(amendments['approved_copy']),
-      'direct_http_guards':len(guarded),'editable_catalog_files':2,'logical_topics':26,
+      'direct_http_guards':len(guarded),'editable_catalog_files':2,'logical_topics':27,
       'current_authorized_source_edits':len(style_source['edits']),'retired_parser_tokens':len(style_source['retired_keys']),'relocation_source_ref':RELOCATION_SOURCE,'presentation':presentation,'native':native},ensure_ascii=False))
 if __name__=='__main__':main()

@@ -243,10 +243,13 @@ def seed(work,env,name,*,capacity=10,count=1,renew=False,inviter=False):
     return name
 
 def check():
+    import notification_fixture
     cases=[]
     with owned.owned_database() as (work,env):
         driver=work/'native-manual-standard-integrity.php'
-        driver.write_text(PHP)
+        # Keep exported PHP untouched for historical-source fixture imports.
+        # Only this current standalone run needs the real notification router.
+        driver.write_text(notification_fixture.with_router(PHP))
         # The new paid-service runtime requires 001 physical group schema
         # and 007 exact-effect journal before ANY Marzban CREATE. The
         # historical 23-table checks run separately below with it absent.
