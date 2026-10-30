@@ -172,7 +172,7 @@ function achbotGiftCompletionReport(string $reference,string $remark,int $days,i
 
 function achbotGiftDeliverNotices(mysqli $db,int $journalId,string $reference,
     array $orders,string $remark,int $volume,int $days): array {
-    $notices=['acknowledged'=>[],'unconfirmed'=>achbotGiftReferenceProof($orders)['recipient_userids']];
+    $notices=['acknowledged'=>[],'unconfirmed'=>achbotGiftReferenceProof($orders)['recipient_userids'],'send_exceptions'=>[]];
     try {$notices=achbotGiftNotifyCustomers($db,$orders,$remark,achbotGiftCustomerText($volume,$days));}
     catch (Throwable $error) {error_log('achbot_gift_customer_text_unconfirmed source_id='.$journalId);}
     $notices['report_acknowledged']=achbotGiftCompletionReport($reference,$remark,$days,$volume,$orders,$notices);
@@ -229,7 +229,7 @@ function achbotGiftFinishReferences(mysqli $db,array $expected,bool $resetWarnin
 
 /** A failed/lost Telegram acknowledgement never reopens native gift admission. */
 function achbotGiftNotifyCustomers(mysqli $db,array $orders,string $remark,string $giftText): array {
-    $sent=[];$failed=[];
+    $sent=[];$failed=[];$sendExceptions=[];
     foreach ($orders as $order) {
         $uid=$order['userid'];
         if (isset($sent[$uid]) || isset($failed[$uid])) continue;
@@ -242,9 +242,13 @@ function achbotGiftNotifyCustomers(mysqli $db,array $orders,string $remark,strin
             $stmt->bind_param('s',$uidText);$ok=$stmt->execute();
             $rows=$ok?$stmt->get_result()->fetch_all(MYSQLI_ASSOC):[];$stmt->close();
             if (count($rows)!==1) throw new RuntimeException('gift_notice_customer_ambiguous');
-            $response=sendMessage(\achbotMessage('jobs.gift2all.message.1bf0942a3d',[
-                'remark'=>htmlspecialchars($remark,ENT_QUOTES|ENT_SUBSTITUTE,'UTF-8'),'giftText'=>$giftText]),
-                null,'HTML',$uid);
+            $customerMessage=\achbotMessage('jobs.gift2all.message.1bf0942a3d',[
+                'remark'=>htmlspecialchars($remark,ENT_QUOTES|ENT_SUBSTITUTE,'UTF-8'),'giftText'=>$giftText]);
+            try {$response=sendMessage($customerMessage,null,'HTML',$uid);}
+            catch (Throwable $sendError) {
+                $sendExceptions[$uid]=true;
+                throw $sendError;
+            }
             if (!is_object($response) || ($response->ok??false)!==true)
                 throw new RuntimeException('gift_notice_unacknowledged');
             $sent[$uid]=true;
@@ -253,7 +257,8 @@ function achbotGiftNotifyCustomers(mysqli $db,array $orders,string $remark,strin
             error_log('achbot_gift_customer_notice_unconfirmed order_id='.$order['id'].' userid='.$uid);
         }
     }
-    return ['acknowledged'=>array_keys($sent),'unconfirmed'=>array_keys($failed)];
+    return ['acknowledged'=>array_keys($sent),'unconfirmed'=>array_keys($failed),
+        'send_exceptions'=>array_keys($sendExceptions)];
 }
 if (!function_exists('achbotGiftPhysicalTarget')) {
     function achbotGiftPhysicalTarget(mysqli $db, int $serverId,

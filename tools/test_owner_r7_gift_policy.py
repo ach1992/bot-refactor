@@ -203,7 +203,8 @@ def main():
                     expire==direct.OLD_EXPIRY+days*86400 and native_user['data_limit']==3221225472 and
                     sorted(actual['recipients'])==acknowledged and journal['reference_ids']==refs and
                     journal['recipient_userids']==expected and sorted(notices.get('acknowledged',[]))==acknowledged and
-                    notices.get('unconfirmed')==unconfirmed and notices.get('report_acknowledged')==(label!='report_fail') and
+                    notices.get('unconfirmed')==unconfirmed and notices.get('send_exceptions')==unconfirmed and
+                    notices.get('report_acknowledged')==(label!='report_fail') and
                     direct.q(work,env,'SELECT userid,wallet FROM users ORDER BY id; SELECT * FROM pays ORDER BY id')==money and
                     direct.q(work,env,'SELECT COUNT(*) FROM orders_list WHERE status=1 AND notif<>0')==('0' if days else str(len(refs))))
                 # General success goes Owner/receiving-on Manager/channel only.

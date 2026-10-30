@@ -646,7 +646,10 @@ foreach ($rosterNames as $index=>$remark) {
         $orders,$remark,$volume,$day);
     if ($notices['unconfirmed']) {
         try {
-            $notifyAdmin(\achbotMessage('jobs.gift2all.message.07c38a54a9').
+            $noticeFailure=$notices['send_exceptions']
+                ? \achbotMessage('jobs.gift2all.message.4ba0cee07a')
+                : \achbotMessage('jobs.gift2all.message.07c38a54a9');
+            $notifyAdmin($noticeFailure.
                 \achbotMessage('jobs.gift2all.message.9b87258e16',['rowId'=>$rowId,'remark'=>$remark]));
         } catch (Throwable $ignored) {}
     }

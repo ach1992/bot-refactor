@@ -98,6 +98,9 @@ function sendMessage(...$args){ giftLog('MESSAGE',['text'=>(string)$args[0],
     if (getenv('ACHBOT_GIFT_MODE')==='notify_fail' &&
         ($args[3]??null)===1001)
         throw new RuntimeException('synthetic_telegram_delivery_failure');
+    if (getenv('ACHBOT_GIFT_MODE')==='notify_unacknowledged' &&
+        ($args[3]??null)===1001)
+        return (object)['ok'=>false];
     // Exit from the actual worker's post-COMMIT notification boundary.
     // This process terminates before next recipient/cleanup, with no code
     // mutation of the source PHP worker.
@@ -217,7 +220,7 @@ def run_tick(work,env,stage,log,mode,status='active',members=None,old=False):
     allowed_diagnostics=(bool(stderr_lines) and all(
         (mode=='manager_notice_fail' and (notification_fixture.sanitized_exception_line(line) or\
          __import__('re').fullmatch(r'achbot_gift_completion_report_unconfirmed reference=batch:[1-9][0-9]*:[0-9]+',line))) or
-        (mode=='notify_fail' and line.strip()=='achbot_gift_customer_notice_unconfirmed order_id=91 userid=1001')
+        (mode in ('notify_fail','notify_unacknowledged') and line.strip()=='achbot_gift_customer_notice_unconfirmed order_id=91 userid=1001')
         for line in stderr_lines))
     require(process.returncode==0 and not process.stdout and (not process.stderr or allowed_diagnostics),
             f"Worker PHP failed mode={mode}: {process.returncode} {process.stdout[-800:]} {process.stderr[-1600:]}")
@@ -493,8 +496,13 @@ def main():
             if mode=='notify_fail':
                 notices=[x for x in events if x['kind']=='MESSAGE'
                          and x['recipient']==9001 and 'اعلان' in x['text']]
-                require(notices and holds==0 and offset==2,
-                        'Postcommit Telegram failure changed gift truth')
+                require(notices and holds==0 and offset==2 and
+                        any('ارسال اعلان کاربر ناموفق بود' in item['text'] for item in notices),
+                        'Postcommit Telegram exception changed gift truth or lost its specific diagnostic')
+                result=json.loads(q(work,env,"SELECT value FROM setting WHERE type='ACHBOT_GIFT_RESULT_"+str(gift_id)+"_0'"))
+                require(result['customer_notices']['send_exceptions']==[1001] and
+                        result['customer_notices']['unconfirmed']==[1001],
+                        'Customer transport exception was not retained separately from unconfirmed ACK')
             if want_hold:
                 require(detail is not None and detail['gift_id']==gift_id and
                         detail['recipient_index']==0 and
@@ -511,6 +519,22 @@ def main():
                         'Cron re-edited prior recipient')
                 require(state(work,env,gift_id)[0] is None,
                         f'Completed job was not removed: {continuation}')
+            if mode=='notify_fail':
+                # The same failure contract distinguishes a returned negative
+                # ACK from an actual thrown send, without repeating native work.
+                ack_id=setup_gift(work,env,stage,2048,2)
+                ack_events=run_tick(work,env,stage,log,'notify_unacknowledged')
+                ack_result=json.loads(q(work,env,"SELECT value FROM setting WHERE type='ACHBOT_GIFT_RESULT_"+str(ack_id)+"_0'"))
+                ack_notices=[item for item in ack_events if item['kind']=='MESSAGE' and item['recipient']==9001 and 'اعلان' in item['text']]
+                require(len(effect_names(ack_events))==1 and state(work,env,ack_id)[0]==2 and
+                        ack_result['customer_notices']['send_exceptions']==[] and
+                        ack_result['customer_notices']['unconfirmed']==[1001] and
+                        any('تأیید' in item['text'] for item in ack_notices) and
+                        not any('ارسال اعلان کاربر ناموفق بود' in item['text'] for item in ack_notices),
+                        'Returned unconfirmed ACK was mislabeled as a transport exception')
+                ack_replay=run_tick(work,env,stage,log,'verified')
+                require(not effect_names(ack_replay) and state(work,env,ack_id)[0] is None,
+                        'Unconfirmed customer ACK rearmed the completed native gift')
             cases.append(f'gift_{mode}_volume_{volume}_days_{day}')
 
         gift_id=setup_gift(work,env,stage,2048,2)
