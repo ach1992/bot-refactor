@@ -570,7 +570,9 @@ function achbotDirectGiftClaim(mysqli $db,array $source,int $primary,
         return [
             'claimed'=>true,'id'=>$sourceId,'type'=>$type,
             'marker_type'=>$markerType,'order'=>$order,
-            'target'=>$publicTarget,
+            // Native transport needs the exact captured credentials. Keep them
+            // only in this transient claim; the immutable journal stays public.
+            'target'=>$target,
             'days'=>$days,'volume_mb'=>$volume
         ];
     } catch (Throwable $e) {
@@ -591,7 +593,7 @@ function achbotDirectGiftJournalLocked(mysqli $db,array $claim): array {
         ($record['version']??null)!==1 ||
         ($record['state']??null)!=='pending' ||
         ($record['order']??null)!==$claim['order'] ||
-        ($record['target']??null)!==$claim['target'] ||
+        ($record['target']??null)!==achbotGiftPublicTarget($claim['target']) ||
         ($record['days']??null)!==$claim['days'] ||
         ($record['volume_mb']??null)!==$claim['volume_mb'] ||
         ($mark['state']??null)!=='pending' ||
@@ -636,7 +638,15 @@ function achbotDirectGiftComplete(mysqli $db,array $claim,object $result): void 
         $result->applied_bytes<0)
         throw new RuntimeException('direct_gift_result_unverified');
     $old=$claim['order']['expire_date'];$new=$result->applied_expire;
-    if ($new<$old || ($claim['days']>0 && $new===$old))
+    // A quota-only gift does not change time. Its verified native expiry can
+    // differ from this local reference's cached expiry without invalidating
+    // the quota effect; preserve the local expiry and notification checkpoint.
+    // Duration increases are proved against the adapter's already-verified
+    // native observation, not a potentially stale local expiry checkpoint.
+    $before=$result->before_expire??null;
+    if ($claim['days']>0 && (!is_int($before) || $before<0 || $before>2147483647))
+        throw new RuntimeException('direct_gift_result_unverified');
+    if ($claim['days']>0 && $new<=$before)
         throw new RuntimeException('direct_gift_expiry_did_not_increase');
     achbotDirectGiftEngines($db);
     if (!$db->begin_transaction()) throw new RuntimeException('direct_gift_begin_failed');
@@ -646,7 +656,7 @@ function achbotDirectGiftComplete(mysqli $db,array $claim,object $result): void 
             !achbotGiftTargetMatches($db,$order['server_id'],$claim['target']))
             throw new RuntimeException('direct_gift_local_identity_changed');
         [$record,$marker,$markerId]=achbotDirectGiftJournalLocked($db,$claim);
-        if ($new!==$old) {
+        if ($claim['days']>0 && $new!==$old) {
             $stmt=$db->prepare('UPDATE orders_list SET expire_date=?,notif=0
                 WHERE id=? AND userid=? AND server_id=? AND inbound_id=?
                   AND fileid=? AND remark=? AND uuid <=> ? AND status=1 AND expire_date=?');
@@ -660,6 +670,7 @@ function achbotDirectGiftComplete(mysqli $db,array $claim,object $result): void 
                 throw new RuntimeException('direct_gift_local_update_unconfirmed');
         }
         $record['state']='completed';
+        if ($claim['days']>0) $record['before_expire']=$before;
         $record['applied_expire']=$new;
         $record['applied_bytes']=$result->applied_bytes;
         $record['completed_at']=gmdate('c');

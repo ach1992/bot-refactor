@@ -790,6 +790,7 @@ function editMarzbanConfig($server_id,$info,?array $giftTarget=null){
         if ($matches($observed,$expire,$volume,true) &&
             (string)($observed->status??'')==='active') {
             return (object)['success'=>true,'verified'=>true,
+                'before_expire'=>$oldExpire,
                 'applied_expire'=>$expire,'applied_bytes'=>$volume,
                 'reconciled'=>!$firstReply['valid'],'repaired'=>false];
         }
@@ -803,6 +804,7 @@ function editMarzbanConfig($server_id,$info,?array $giftTarget=null){
             if ($matches($verified,$expire,$volume,true) &&
                 (string)($verified->status??'')==='active') {
                 return (object)['success'=>true,'verified'=>true,
+                    'before_expire'=>$oldExpire,
                     'applied_expire'=>$expire,'applied_bytes'=>$volume,
                     'reconciled'=>true,'repaired'=>true];
             }
