@@ -117,6 +117,7 @@ def main():
         fixture=w/'instance-fixture';(fixture/'src/Admin').mkdir(parents=True);(fixture/'src/Presentation').mkdir();(fixture/'messages/fa').mkdir(parents=True)
         for rel in ['src/Admin/InstanceContent.php','src/Presentation/Text.php','messages/loader.php',
                     'src/Finance/ReceiptHelpers.php','src/Finance/PaymentKeyAdmin.php',
+                    'src/Finance/PaymentApiAdmin.php','src/Finance/PaymentEvidence.php',
                     'src/Panel/ProviderRuntime.php','src/Panel/ProviderImport.php','src/Purchase/OrderWrites.php']:
             (fixture/rel).parent.mkdir(parents=True,exist_ok=True)
             shutil.copy2(ROOT/rel,fixture/rel)
