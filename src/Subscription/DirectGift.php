@@ -633,7 +633,8 @@ function achbotDirectGiftComplete(mysqli $db,array $claim,object $result): void 
         ($result->verified??false)!==true ||
         ($result->uncertain??false)===true ||
         !is_int($result->applied_expire??null) ||
-        $result->applied_expire<=0 || $result->applied_expire>2147483647 ||
+        $result->applied_expire<0 || $result->applied_expire>2147483647 ||
+        ($result->applied_expire===0 && ($claim['days']!==0 || $claim['volume_mb']<=0)) ||
         !is_int($result->applied_bytes??null) ||
         $result->applied_bytes<0)
         throw new RuntimeException('direct_gift_result_unverified');
