@@ -16,7 +16,15 @@ def php(root,code):
     try:return json.loads(p.stdout)
     except json.JSONDecodeError as exc:raise AssertionError('invalid source-native JSON: '+p.stdout[:400]) from exc
 def order_failure(root,throw=False,success=False):
-    return php(root,"""$r=['customer'=>[],'admin'=>[]];
+    router=''
+    if 'achbotNotifyAdmins(' in (root/'src/Purchase/OrderWrites.php').read_text():
+        # This pure audience fixture has one configured Owner and no staff DB.
+        # Execute the actual current router; only sendMessage is a transport spy.
+        router=subprocess.check_output(['php','-r',
+            "require $argv[1]; echo achbotExtractFunction($argv[2], 'achbotNotifyAdmins');",
+            str(ROOT/'tools/source_scan.php'),str(root/'config.php')],cwd=root,text=True)
+        router+="\nrequire_once 'src/Admin/Access.php'; $admin=999;$connection=null;$botState=[];\n"
+    return php(root,router+"""$r=['customer'=>[],'admin'=>[]];
 function alert($text){$GLOBALS['r']['customer'][]=$text;}
 function sendMessage($text,$keys=null,$parse=null,$chat=null){$GLOBALS['r']['admin'][]=['text'=>$text,'chat'=>$chat,'parse'=>$parse];}
 register_shutdown_function(function(){echo json_encode($GLOBALS['r'],JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);});
