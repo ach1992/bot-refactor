@@ -1,5 +1,7 @@
 # Direct administrator gift — source safety and recovery (Issue #78)
 
+**Unreleased Owner gift extension (2026-10-30):** [PR101](https://github.com/ach1992/bot-refactor/pull/101) supersedes the single-local-reference admission and local-expiry persistence described in steps2 and4 below. Administrator gifts are independent of plans, including genuine planless imports. One physical gift may have several current local references; notify each linked customer once. Preserve purchase/cache expiry and financial history, with only positive-day warning re-arm and existing operation evidence. Read the [current gift contract](API-PAYMENT-EVIDENCE.md#native-gift-correction-and-owner-policy) for identity, cohort, locking and uncertainty controls. This extension is source-only and is not included in the published RC19 release; see [current release status](NEXT-RELEASE.md).
+
 **Published source status (2026-10-29):** This direct-gift source is already included in the published runtime; current [RC16](RC15-TO-RC16.md) is integrated through PR #93 following completed source acceptance and publication. The pending source-review/merge language below records an earlier development stage. Installed/operator acceptance and activation remain separate; publication supplies no new live financial or provider acceptance. See the [README](../../README.md) for current scope.
 
 **Scope:** new post-V9 single-account administrator gift. Source-only, pending
