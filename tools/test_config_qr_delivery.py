@@ -24,7 +24,8 @@ $connection=new mysqli('localhost','root','',$argv[3],0,$argv[2]);$connection->s
 $events=[];$qr_payloads=[];$files=[];$from_id=(int)($spec['actor']??1001);$admin=9001;
 $botUrl='https://bot.example.invalid/';$message_id=1;$data=$spec['data']??'showQrConfig91';$text='';
 $mainValues=['config_not_found'=>'QR delivery was not confirmed'];$buttonValues=['back_to_main'=>'Back'];
-$botState=['configLinkState'=>'on','subLinkState'=>'on'];$userInfo=['isAdmin'=>0,'step'=>'none'];
+$botState=['configLinkState'=>'on','subLinkState'=>'on','qrConfigState'=>'on','qrSubState'=>'on'];$userInfo=['isAdmin'=>0,'step'=>'none'];
+$botState=array_replace($botState,$spec['bot_state']??[]);
 class QRcode {
  public static function png($payload,$path,...$rest){
   $GLOBALS['qr_payloads'][]=$payload;$GLOBALS['files'][]=$path;file_put_contents($path,'owned-qr-fixture');
@@ -45,7 +46,7 @@ function sendMessage($text,$keys=null,$parse=null,$to=null,...$rest){
  return $mode==='null'?null:(object)['ok'=>$mode!=='false'];
 }
 function alert($text,$modal=false){$GLOBALS['events'][]=['kind'=>'alert','text'=>$text,'modal'=>$modal];}
-require $root.'/buy_helpers.php';
+require_once $root.'/src/Purchase/Core.php';
 require __DIR__.'/actual-presentation-facade.php';
 try {
  if(($spec['op']??'route')==='pure'){
@@ -122,6 +123,29 @@ def main():
     yes(len(out['qr_payloads'])==2 and out['temp_files_remaining']==0 and
         [e['text']for e in out['events']if e['kind']=='alert']==[delivery_notice] and snapshot()==before,
         target+'_'+mode+'_truthful_delivery_notice_once_without_retry_financial_write_or_temp_leak')
+  # Explicit QR settings remain bot-wide, independent of per-server inline policy.
+  many=['vless://opaque-'+str(i)+'@host.invalid:443?type=ws#Name-'+str(i)for i in range(40)]
+  seed(many);before=snapshot();out=call()
+  yes(out['qr_payloads']==many and len(out['events'])==80 and out['temp_files_remaining']==0,
+      'explicit_order_QR_sends_all_forty_configs_individually_without_3_10_or_aggregate_budget_cap')
+  yes([html.unescape(e['text'][11:-13])for e in out['events']if e['kind']=='text']==many and snapshot()==before,
+      'all_forty_copyable_config_bytes_and_financial_rows_preserved')
+  display={'version':1,'server_id':2,'provider':'marzban','updated_source':100,
+    'display':{'mode':'native','policy':{'view':{'show_configs':False,'show_subscription':False,'names':['Name-3']},'delivery':{'qr':'none'}}}}
+  raw=json.dumps(display).encode().hex()
+  sql("DELETE FROM setting WHERE type='ACHBOT_SERVER_DISPLAY_2';INSERT INTO setting(type,value)VALUES('ACHBOT_SERVER_DISPLAY_2',CONVERT(UNHEX('"+raw+"')USING utf8mb4))")
+  out=call()
+  yes(out['qr_payloads']==many,'inline_off_and_one_named_config_and_delivery_QR_off_do_not_limit_explicit_config_QR')
+  denied=call(bot_state={'qrConfigState':'off'})
+  yes(not denied['qr_payloads'] and all(e['kind']=='alert'for e in denied['events']),'global_config_QR_off_denies_stale_or_forged_button')
+  sub=call(data='showQrSub91',bot_state={'qrConfigState':'off'})
+  yes(sub['qr_payloads']==['http://127.0.0.1:1/sub/owned-token'] and sub['temp_files_remaining']==0,
+      'global_subscription_QR_independent_of_inline_primary_text_and_config_QR_flag')
+  denied=call(data='showQrSub91',bot_state={'qrSubState':'off'})
+  yes(not denied['qr_payloads'] and all(e['kind']=='alert'for e in denied['events']),'global_subscription_QR_off_denies_stale_or_forged_button')
+  for provider in ['marzban','pasarguard']:
+   out=call(op='pure',provider=provider,links=many)['out']
+   yes([r['uri']for r in out]==many and len(out)==40,provider+'_all_forty_native_QR_records_not_text_selection')
  report=dict(complete=True,cases=len(checks),checks=checks,actual_php=True,owned_socket_mariadb=True,
   actual_Checkout_dispatch=True,actual_sendQrFromLink=True,provider_neutral_native_names_both=True,
   actual_PasarGuard_identity_HTTP_here=False,archived_route_RED=True,baseline=BASE,

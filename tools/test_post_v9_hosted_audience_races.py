@@ -79,6 +79,14 @@ def driver_text(baseline=None):
                 for target in node.targets)]
         assert len(constants)==1 and isinstance(constants[0],str),baseline
         t=constants[0]
+        # Adapt only bootstrap imports in this disposable post-V9 RED driver.
+        # Core now owns shared ReceiptHelpers; archived source/route assertions
+        # remain exact, including every revocation race and original RED case.
+        for module in ['src/Purchase/Core.php','src/Finance/ReceiptHelpers.php',
+                       'src/Finance/GatewayClient.php']:
+            old_import="require $root . '/"+module+"';"
+            assert t.count(old_import)==1,(baseline,module)
+            t=t.replace(old_import,"require_once $root . '/"+module+"';",1)
     a="$GLOBALS['events'] = [];"
     assert t.count(a)==1
     t=t.replace(a,a+"""

@@ -1,8 +1,9 @@
 <?php
-/** AChBot V6: exact V5 internal src/Subscription/AccountDetails.php bodies; keep legacy effects. */
+/** Shared native order details and guarded customer/administrator actions. */
 namespace AchBot\Subscription\AccountDetails;
 require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
 require_once __DIR__.'/../Purchase/OrderWrites.php';
+require_once __DIR__.'/Presentation.php';
 
 
 if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
@@ -216,14 +217,14 @@ function getUserOrderDetailKeys($id, $offset = 0){
 
     $presentation=$uncertain?['config_html'=>'','subscription_html'=>'','backup_html'=>'','notice_html'=>'']:
         achbotOrderPresentation($GLOBALS['connection'],$order,$server,$botState,$renderRemote);
-    $configLinks=$presentation['config_html'];
-    $subLink=$presentation['subscription_html'];
-    $backup=$presentation['backup_html'];
-
-    $msg = buildConfigMessage($enableText, $remark, $configLinks, $subLink, $backup, $serverType);
-    if ($presentation['notice_html'] !== '') $msg .= "\n\n" . $presentation['notice_html'];
-    if ($uncertain && !str_contains($msg,$enableText)) $msg.="\n\n".$enableText;
-    if (!$planActions['certain']) $msg.="\n\n".\achbotMessage('subscription.account_details.get_order_status_text.label.ff02acf7a2');
+    $msg = \AchBot\Subscription\Presentation\fitMessage($presentation,
+        static function(array $p) use ($enableText,$remark,$serverType,$uncertain,$planActions): string {
+            $msg=buildConfigMessage($enableText,$remark,$p['config_html'],$p['subscription_html'],$p['backup_html'],$serverType);
+            if ($p['notice_html']!=='') $msg.="\n\n".$p['notice_html'];
+            if ($uncertain && !str_contains($msg,$enableText)) $msg.="\n\n".$enableText;
+            if (!$planActions['certain']) $msg.="\n\n".\achbotMessage('subscription.account_details.get_order_status_text.label.ff02acf7a2');
+            return $msg;
+        });
 
     // ---- Admin Keyboard ----
     $keyboard = [];
@@ -353,14 +354,14 @@ function getOrderDetailKeys($from_id, $id, $offset = 0){
 
     $presentation=$uncertain?['config_html'=>'','subscription_html'=>'','backup_html'=>'','notice_html'=>'']:
         achbotOrderPresentation($GLOBALS['connection'],$order,$server,$botState,$renderRemote);
-    $configLinks=$presentation['config_html'];
-    $subLink=$presentation['subscription_html'];
-    $backup=$presentation['backup_html'];
-
-    $msg = buildConfigMessage($enableText, $remark, $configLinks, $subLink, $backup, $serverType);
-    if ($presentation['notice_html'] !== '') $msg .= "\n\n" . $presentation['notice_html'];
-    if ($uncertain && !str_contains($msg,$enableText)) $msg.="\n\n".$enableText;
-    if (!$planActions['certain']) $msg.="\n\n".\achbotMessage('subscription.account_details.get_order_status_text.label.ff02acf7a2');
+    $msg = \AchBot\Subscription\Presentation\fitMessage($presentation,
+        static function(array $p) use ($enableText,$remark,$serverType,$uncertain,$planActions): string {
+            $msg=buildConfigMessage($enableText,$remark,$p['config_html'],$p['subscription_html'],$p['backup_html'],$serverType);
+            if ($p['notice_html']!=='') $msg.="\n\n".$p['notice_html'];
+            if ($uncertain && !str_contains($msg,$enableText)) $msg.="\n\n".$enableText;
+            if (!$planActions['certain']) $msg.="\n\n".\achbotMessage('subscription.account_details.get_order_status_text.label.ff02acf7a2');
+            return $msg;
+        });
 
     // ---- User Keyboard ----
     $keyboard = [];
@@ -456,7 +457,7 @@ function getOrderDetailKeys($from_id, $id, $offset = 0){
         if (($botState['qrConfigState'] ?? "off") == "on" && !empty($presentation['qr_config_links']))
             $flatButtons[] = ['text' => $buttonValues['qr_config'], 'callback_data' => "showQrConfig{$id}"];
 
-        if (($botState['qrSubState'] ?? "off") == "on" && !empty($presentation['subscription_url']))
+        if (($botState['qrSubState'] ?? "off") == "on" && !empty($presentation['qr_subscription_url']))
             $flatButtons[] = ['text' => $buttonValues['qr_sub'], 'callback_data' => "showQrSub{$id}"];
 
         // همکار enable/disable
@@ -494,3 +495,16 @@ function getOrderDetailKeys($from_id, $id, $offset = 0){
     ];
 }
 
+
+/** The complete order message may contain protected links longer than one part. */
+function showMessage(array $payload, ?int $messageId = null): bool {
+    $parts=\AchBot\Subscription\Presentation\messageParts($payload['msg']);
+    $confirmed=true;
+    foreach ($parts as $index=>$part) {
+        $keys=$index===count($parts)-1?$payload['keyboard']:json_encode(['inline_keyboard'=>[]]);
+        $response=$index===0 && $messageId!==null
+            ? \editText($messageId,$part,$keys,'HTML') : \sendMessage($part,$keys,'HTML');
+        if (!is_object($response) || ($response->ok??false)!==true) $confirmed=false;
+    }
+    return $confirmed;
+}

@@ -41,7 +41,7 @@ function sendMessage($message=null,$keys=null,$format=null,$to=null) {
         return null;
     return (object)['ok'=>true];
 }
-require $root.'/src/Finance/ReferralReward.php';
+require_once $root.'/src/Finance/ReferralReward.php';
 $pay=(int)($spec['pay']??0);
 if (($spec['operation']??'')==='status') {
     $result=achbotReferralAwardStatus($db,$pay);

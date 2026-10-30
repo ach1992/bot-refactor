@@ -2856,6 +2856,18 @@
         ]
       },
       "reason": "Owner revision5: distinct relevant icons for different headings in actual source-linked composed messages; preserve financial meaning, parameters, markup and repeated identical labels."
+    },
+    "admin_settings.config.get_server_config_keys.button.3a95407812": {
+      "audience": "admin",
+      "before": "⚙️ نمایش لینک و QR",
+      "after": "⚙️ نمایش کانفیگ‌ها و لینک اشتراک",
+      "reason": "Owner simple per-server display navigation label; Issue37 comment6507182633."
+    },
+    "provider.provider_admin.pg_server_admin_keys.button.3a95407812": {
+      "audience": "admin",
+      "before": "⚙️ نمایش لینک و QR",
+      "after": "⚙️ نمایش کانفیگ‌ها و لینک اشتراک",
+      "reason": "Owner simple per-server display navigation label; Issue37 comment6507182633."
     }
   },
   "retired_keys": {
@@ -3408,6 +3420,286 @@
         "src/Subscription/ServerDisplaySettings.php"
       ],
       "reason": "Owner shared-selection follow-up: independent optional after-purchase and order-page config selections reuse the existing native selectors and shared fallback."
+    },
+    "admin_settings.display.simple_aux": {
+      "audience": "admin",
+      "entry": "🔗 لینک کمکی",
+      "reason": "Owner simple display/explicit QR decision; Issue37 comment6507182633, correction6507342963.",
+      "source_paths": [
+        "src/Subscription/ServerDisplaySettings.php"
+      ]
+    },
+    "admin_settings.display.simple_cfg": {
+      "audience": "admin",
+      "entry": "📄 کانفیگ",
+      "reason": "Owner simple display/explicit QR decision; Issue37 comment6507182633, correction6507342963.",
+      "source_paths": [
+        "src/Subscription/ServerDisplaySettings.php"
+      ]
+    },
+    "admin_settings.display.simple_choose": {
+      "audience": "admin",
+      "entry": "✏️ انتخاب کانفیگ‌ها",
+      "reason": "Owner simple display/explicit QR decision; Issue37 comment6507182633, correction6507342963.",
+      "source_paths": [
+        "src/Subscription/ServerDisplaySettings.php"
+      ]
+    },
+    "admin_settings.display.simple_delivery": {
+      "audience": "admin",
+      "entry": "🛍 تنظیمات ارسال و نمایش بعد از خرید",
+      "reason": "Owner simple display/explicit QR decision; Issue37 comment6507182633, correction6507342963.",
+      "source_paths": [
+        "src/Subscription/ServerDisplaySettings.php"
+      ]
+    },
+    "admin_settings.display.simple_guide": {
+      "audience": "admin",
+      "entry": "⚙️ هر بخش مستقل است؛ برای تغییر وضعیت روی دکمهٔ روبه‌روی عنوان بزنید.\nاگر انتخابی ذخیره نشده باشد، 3 کانفیگ اول نمایش داده می‌شود. دکمه‌های دریافت QR در صفحه سفارش از تنظیمات ربات پیروی می‌کنند.",
+      "reason": "Owner simple display/explicit QR decision; Issue37 comment6507182633, correction6507342963.",
+      "source_paths": [
+        "src/Subscription/ServerDisplaySettings.php"
+      ]
+    },
+    "admin_settings.display.simple_names": {
+      "audience": "admin",
+      "entry": "✏️ نام دقیق هر کانفیگ را در یک خط بنویسید؛ حداکثر 10 نام، به ترتیب دلخواه.\nمثال:\nآلمان\nهلند\n\nبرای بازگشت به انتخاب خودکار 3 کانفیگ اول، /auto را بفرستید.\nاگر اندازهٔ کل پیام کافی نباشد، از انتهای فهرست کانفیگ‌ها کم می‌شود تا لینک اشتراک، لینک‌های کمکی و اطلاعات سفارش کامل بمانند. هیچ کانفیگی ناقص ارسال نمی‌شود.\nدکمهٔ انصراف، انتخاب قبلی را نگه می‌دارد.",
+      "reason": "Owner simple display/explicit QR decision; Issue37 comment6507182633, correction6507342963.",
+      "source_paths": [
+        "src/Subscription/ServerDisplaySettings.php"
+      ]
+    },
+    "admin_settings.display.simple_off": {
+      "audience": "admin",
+      "entry": "⛔ خاموش",
+      "reason": "Owner simple display/explicit QR decision; Issue37 comment6507182633, correction6507342963.",
+      "source_paths": [
+        "src/Subscription/ServerDisplaySettings.php"
+      ]
+    },
+    "admin_settings.display.simple_on": {
+      "audience": "admin",
+      "entry": "✅ روشن",
+      "reason": "Owner simple display/explicit QR decision; Issue37 comment6507182633, correction6507342963.",
+      "source_paths": [
+        "src/Subscription/ServerDisplaySettings.php"
+      ]
+    },
+    "admin_settings.display.simple_qr": {
+      "audience": "admin",
+      "entry": "🔳 ارسال QR کد",
+      "reason": "Owner simple display/explicit QR decision; Issue37 comment6507182633, correction6507342963.",
+      "source_paths": [
+        "src/Subscription/ServerDisplaySettings.php"
+      ]
+    },
+    "admin_settings.display.simple_sub": {
+      "audience": "admin",
+      "entry": "🔗 لینک اشتراک",
+      "reason": "Owner simple display/explicit QR decision; Issue37 comment6507182633, correction6507342963.",
+      "source_paths": [
+        "src/Subscription/ServerDisplaySettings.php"
+      ]
+    },
+    "admin_settings.display.simple_view": {
+      "audience": "admin",
+      "entry": "📋 تنظیمات ارسال و نمایش صفحه سفارش",
+      "reason": "Owner simple display/explicit QR decision; Issue37 comment6507182633, correction6507342963.",
+      "source_paths": [
+        "src/Subscription/ServerDisplaySettings.php"
+      ]
+    },
+    "admin_settings.invite_reward_label": {
+      "audience": "admin",
+      "entry": "🎁 پاداش هر دعوت",
+      "reason": "Owner managed invitation gift decision; Issue37 comment6507501884.",
+      "source_paths": [
+        "config.php"
+      ]
+    },
+    "payment_settings.invite_reward_hint": {
+      "audience": "admin",
+      "entry": "🎁 مبلغ پاداش را با عدد صحیح انگلیسی از 0 تا 999999999 به تومان وارد کنید؛ برای غیرفعال‌کردن 0 یا /clear را بفرستید.",
+      "reason": "Owner managed invitation gift decision; Issue37 comment6507501884.",
+      "source_paths": [
+        "src/Finance/PaymentKeyAdmin.php"
+      ]
+    },
+    "payment_settings.invite_reward_prompt": {
+      "audience": "admin",
+      "entry": "پاداش هر دعوت به تومان (عدد صحیح از 0 تا 999999999؛ مقدار 0 یا /clear برای غیرفعال‌کردن)",
+      "reason": "Owner managed invitation gift decision; Issue37 comment6507501884.",
+      "source_paths": [
+        "bot.php"
+      ]
+    }
+  },
+  "retained_display_source_keys": {
+    "admin_settings.display.delivery_selection": {
+      "entry": {
+        "text": "🛒 کانفیگ‌های بعد از خرید: {selection}",
+        "parameters": [
+          "selection"
+        ]
+      },
+      "source": "src/Subscription/ServerDisplaySettings.php",
+      "baseline": "ec171d5bdd2d4487b8bc2c5782015f25c703cce6",
+      "reason": "Prior simple/advanced menu and summary label retained as catalog lineage; ordinary UI no longer renders it. Owner scope Issue37 comment6507182633."
+    },
+    "admin_settings.display.view_selection": {
+      "entry": {
+        "text": "📋 کانفیگ‌های صفحهٔ سفارش: {selection}",
+        "parameters": [
+          "selection"
+        ]
+      },
+      "source": "src/Subscription/ServerDisplaySettings.php",
+      "baseline": "ec171d5bdd2d4487b8bc2c5782015f25c703cce6",
+      "reason": "Prior simple/advanced menu and summary label retained as catalog lineage; ordinary UI no longer renders it. Owner scope Issue37 comment6507182633."
+    },
+    "subscription.server_display_settings.server_display_keys.button.3ca7cc1405": {
+      "entry": "🔳 انتخاب کد QR تحویل",
+      "source": "src/Subscription/ServerDisplaySettings.php",
+      "baseline": "ec171d5bdd2d4487b8bc2c5782015f25c703cce6",
+      "reason": "Prior simple/advanced menu and summary label retained as catalog lineage; ordinary UI no longer renders it. Owner scope Issue37 comment6507182633."
+    },
+    "subscription.server_display_settings.server_display_keys.button.6b77433ae2": {
+      "entry": "آستانه مخفی‌سازی",
+      "source": "src/Subscription/ServerDisplaySettings.php",
+      "baseline": "ec171d5bdd2d4487b8bc2c5782015f25c703cce6",
+      "reason": "Prior simple/advanced menu and summary label retained as catalog lineage; ordinary UI no longer renders it. Owner scope Issue37 comment6507182633."
+    },
+    "subscription.server_display_settings.server_display_keys.button.9508cf3453": {
+      "entry": "اشتراک: ",
+      "source": "src/Subscription/ServerDisplaySettings.php",
+      "baseline": "ec171d5bdd2d4487b8bc2c5782015f25c703cce6",
+      "reason": "Prior simple/advanced menu and summary label retained as catalog lineage; ordinary UI no longer renders it. Owner scope Issue37 comment6507182633."
+    },
+    "subscription.server_display_settings.server_display_keys.button.9eea37f5f0": {
+      "entry": "موقعیت‌های نمایش",
+      "source": "src/Subscription/ServerDisplaySettings.php",
+      "baseline": "ec171d5bdd2d4487b8bc2c5782015f25c703cce6",
+      "reason": "Prior simple/advanced menu and summary label retained as catalog lineage; ordinary UI no longer renders it. Owner scope Issue37 comment6507182633."
+    },
+    "subscription.server_display_settings.server_display_keys.button.a4c3ef092e": {
+      "entry": "انتخاب کانفیگ‌ها",
+      "source": "src/Subscription/ServerDisplaySettings.php",
+      "baseline": "ec171d5bdd2d4487b8bc2c5782015f25c703cce6",
+      "reason": "Prior simple/advanced menu and summary label retained as catalog lineage; ordinary UI no longer renders it. Owner scope Issue37 comment6507182633."
+    },
+    "subscription.server_display_settings.server_display_keys.button.b3ba57d81a": {
+      "entry": "⚙️ روش انتخاب مرزبان",
+      "source": "src/Subscription/ServerDisplaySettings.php",
+      "baseline": "ec171d5bdd2d4487b8bc2c5782015f25c703cce6",
+      "reason": "Prior simple/advanced menu and summary label retained as catalog lineage; ordinary UI no longer renders it. Owner scope Issue37 comment6507182633."
+    },
+    "subscription.server_display_settings.server_display_keys.button.b71d77fe36": {
+      "entry": "مخفی‌کردن بالای 10: ",
+      "source": "src/Subscription/ServerDisplaySettings.php",
+      "baseline": "ec171d5bdd2d4487b8bc2c5782015f25c703cce6",
+      "reason": "Prior simple/advanced menu and summary label retained as catalog lineage; ordinary UI no longer renders it. Owner scope Issue37 comment6507182633."
+    },
+    "subscription.server_display_settings.server_display_keys.button.c0668ff5b5": {
+      "entry": "موقعیت‌های تحویل",
+      "source": "src/Subscription/ServerDisplaySettings.php",
+      "baseline": "ec171d5bdd2d4487b8bc2c5782015f25c703cce6",
+      "reason": "Prior simple/advanced menu and summary label retained as catalog lineage; ordinary UI no longer renders it. Owner scope Issue37 comment6507182633."
+    },
+    "subscription.server_display_settings.server_display_keys.button.d087c68a83": {
+      "entry": "کانفیگ: ",
+      "source": "src/Subscription/ServerDisplaySettings.php",
+      "baseline": "ec171d5bdd2d4487b8bc2c5782015f25c703cce6",
+      "reason": "Prior simple/advanced menu and summary label retained as catalog lineage; ordinary UI no longer renders it. Owner scope Issue37 comment6507182633."
+    },
+    "subscription.server_display_settings.server_display_keys.button.f4c0c5cd38": {
+      "entry": "مخفی‌کردن متن نمایش: ",
+      "source": "src/Subscription/ServerDisplaySettings.php",
+      "baseline": "ec171d5bdd2d4487b8bc2c5782015f25c703cce6",
+      "reason": "Prior simple/advanced menu and summary label retained as catalog lineage; ordinary UI no longer renders it. Owner scope Issue37 comment6507182633."
+    },
+    "subscription.server_display_settings.server_display_keys.button.f86223c190": {
+      "entry": "⚠️ سقف لینک‌ها",
+      "source": "src/Subscription/ServerDisplaySettings.php",
+      "baseline": "ec171d5bdd2d4487b8bc2c5782015f25c703cce6",
+      "reason": "Prior simple/advanced menu and summary label retained as catalog lineage; ordinary UI no longer renders it. Owner scope Issue37 comment6507182633."
+    },
+    "subscription.server_display_settings.server_display_keys.text.841b8cb341": {
+      "entry": "خاموش",
+      "source": "src/Subscription/ServerDisplaySettings.php",
+      "baseline": "ec171d5bdd2d4487b8bc2c5782015f25c703cce6",
+      "reason": "Prior simple/advanced menu and summary label retained as catalog lineage; ordinary UI no longer renders it. Owner scope Issue37 comment6507182633."
+    },
+    "subscription.server_display_settings.server_display_keys.text.be9fd3bd1b": {
+      "entry": "روشن",
+      "source": "src/Subscription/ServerDisplaySettings.php",
+      "baseline": "ec171d5bdd2d4487b8bc2c5782015f25c703cce6",
+      "reason": "Prior simple/advanced menu and summary label retained as catalog lineage; ordinary UI no longer renders it. Owner scope Issue37 comment6507182633."
+    },
+    "subscription.server_display_settings.server_display_summary.body.8fc24cefa6": {
+      "entry": "\nانتخاب بومی: ",
+      "source": "src/Subscription/ServerDisplaySettings.php",
+      "baseline": "ec171d5bdd2d4487b8bc2c5782015f25c703cce6",
+      "reason": "Prior simple/advanced menu and summary label retained as catalog lineage; ordinary UI no longer renders it. Owner scope Issue37 comment6507182633."
+    },
+    "subscription.server_display_settings.server_display_summary.body.d15b654a37": {
+      "entry": "⚙️ نمایش لینک‌های این سرور\nکانفیگ: ",
+      "source": "src/Subscription/ServerDisplaySettings.php",
+      "baseline": "ec171d5bdd2d4487b8bc2c5782015f25c703cce6",
+      "reason": "Prior simple/advanced menu and summary label retained as catalog lineage; ordinary UI no longer renders it. Owner scope Issue37 comment6507182633."
+    },
+    "subscription.server_display_settings.server_display_summary.body.f97693c9e9": {
+      "entry": "\nروش سازگار مرزبان\nموقعیت‌های نمایش (از 1): ",
+      "source": "src/Subscription/ServerDisplaySettings.php",
+      "baseline": "ec171d5bdd2d4487b8bc2c5782015f25c703cce6",
+      "reason": "Prior simple/advanced menu and summary label retained as catalog lineage; ordinary UI no longer renders it. Owner scope Issue37 comment6507182633."
+    },
+    "subscription.server_display_settings.server_display_summary.text.2496192b9b": {
+      "entry": " شرط انتخاب",
+      "source": "src/Subscription/ServerDisplaySettings.php",
+      "baseline": "ec171d5bdd2d4487b8bc2c5782015f25c703cce6",
+      "reason": "Prior simple/advanced menu and summary label retained as catalog lineage; ordinary UI no longer renders it. Owner scope Issue37 comment6507182633."
+    },
+    "subscription.server_display_settings.server_display_summary.text.3305f8a04f": {
+      "entry": "\nسقف لینک‌ها: ",
+      "source": "src/Subscription/ServerDisplaySettings.php",
+      "baseline": "ec171d5bdd2d4487b8bc2c5782015f25c703cce6",
+      "reason": "Prior simple/advanced menu and summary label retained as catalog lineage; ordinary UI no longer renders it. Owner scope Issue37 comment6507182633."
+    },
+    "subscription.server_display_settings.server_display_summary.text.3623a042e1": {
+      "entry": " | اشتراک: ",
+      "source": "src/Subscription/ServerDisplaySettings.php",
+      "baseline": "ec171d5bdd2d4487b8bc2c5782015f25c703cce6",
+      "reason": "Prior simple/advanced menu and summary label retained as catalog lineage; ordinary UI no longer renders it. Owner scope Issue37 comment6507182633."
+    },
+    "subscription.server_display_settings.server_display_summary.text.4e67bd8e34": {
+      "entry": "غیرفعال",
+      "source": "src/Subscription/ServerDisplaySettings.php",
+      "baseline": "ec171d5bdd2d4487b8bc2c5782015f25c703cce6",
+      "reason": "Prior simple/advanced menu and summary label retained as catalog lineage; ordinary UI no longer renders it. Owner scope Issue37 comment6507182633."
+    },
+    "subscription.server_display_settings.server_display_summary.text.5f5512eac0": {
+      "entry": "\nکد QR تحویل: ",
+      "source": "src/Subscription/ServerDisplaySettings.php",
+      "baseline": "ec171d5bdd2d4487b8bc2c5782015f25c703cce6",
+      "reason": "Prior simple/advanced menu and summary label retained as catalog lineage; ordinary UI no longer renders it. Owner scope Issue37 comment6507182633."
+    },
+    "subscription.server_display_settings.server_display_summary.text.7724fb5e57": {
+      "entry": "\nاین انتخاب فقط نمایش را تغییر می‌دهد؛ محتوای لینک کامل اشتراک را محدود نمی‌کند.",
+      "source": "src/Subscription/ServerDisplaySettings.php",
+      "baseline": "ec171d5bdd2d4487b8bc2c5782015f25c703cce6",
+      "reason": "Prior simple/advanced menu and summary label retained as catalog lineage; ordinary UI no longer renders it. Owner scope Issue37 comment6507182633."
+    },
+    "subscription.server_display_settings.server_display_summary.text.9453bf36b1": {
+      "entry": "\nموقعیت‌های تحویل (از 0): ",
+      "source": "src/Subscription/ServerDisplaySettings.php",
+      "baseline": "ec171d5bdd2d4487b8bc2c5782015f25c703cce6",
+      "reason": "Prior simple/advanced menu and summary label retained as catalog lineage; ordinary UI no longer renders it. Owner scope Issue37 comment6507182633."
+    },
+    "subscription.server_display_settings.server_display_summary.text.ae2383a123": {
+      "entry": " | آستانه مخفی‌سازی: ",
+      "source": "src/Subscription/ServerDisplaySettings.php",
+      "baseline": "ec171d5bdd2d4487b8bc2c5782015f25c703cce6",
+      "reason": "Prior simple/advanced menu and summary label retained as catalog lineage; ordinary UI no longer renders it. Owner scope Issue37 comment6507182633."
     }
   }
 }

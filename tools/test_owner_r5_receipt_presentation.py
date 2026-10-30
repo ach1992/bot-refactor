@@ -22,7 +22,7 @@ set_error_handler(static function($severity,$message){throw new ErrorException($
 $_SERVER['SCRIPT_FILENAME']=__FILE__;
 $root=$argv[1];$db=new mysqli('localhost','root','',$argv[3],0,$argv[2]);
 $db->set_charset('utf8mb4');
-require $root.'/src/Finance/ReceiptHelpers.php';
+require_once $root.'/src/Finance/ReceiptHelpers.php';
 require_once $root.'/messages/loader.php';
 $s=$db->prepare('SELECT * FROM pays WHERE hash_id=?');$s->bind_param('s',$argv[4]);
 $s->execute();$pay=$s->get_result()->fetch_assoc();$s->close();

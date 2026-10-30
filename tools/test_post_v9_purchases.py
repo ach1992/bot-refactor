@@ -403,6 +403,12 @@ def stage_source(stage:Path,current:bool)->dict:
             dest=stage/rel;dest.parent.mkdir(parents=True,exist_ok=True);dest.write_bytes((ROOT/rel).read_bytes())
     fixture=(ROOT/'tests/v7/native-purchase.php').read_text()
     if current:
+        # Adapt only the disposable current-source driver to the retired path.
+        # Original V0-V9 PHP fixture and the historical source stage stay exact.
+        legacy_import="require __DIR__.'/buy_helpers.php';"
+        canonical_import="require_once __DIR__ . '/src/Purchase/Core.php';"
+        assert fixture.count(legacy_import)==1
+        fixture=fixture.replace(legacy_import,canonical_import,1)
         (stage/'presentation-under-test.php').write_bytes(panel_functions.function_bodies((ROOT/'config.php').read_bytes(),['buildSubscriptionPresentation']))
         # Production config loads the real Jalali/date helpers before admin redraws.
         # Bootstrap that candidate dependency here; the frozen V7 driver stays byte-identical.
@@ -444,7 +450,7 @@ PLAN_DRAFT_PHP=r'''<?php
 error_reporting(E_ALL);
 set_error_handler(static function($n,$m){if($n===E_DEPRECATED)return true;throw new ErrorException($m,0,$n);});
 $_SERVER['SCRIPT_FILENAME']=__FILE__;
-require $argv[1].'/src/Purchase/Core.php';
+require_once $argv[1].'/src/Purchase/Core.php';
 require $argv[1].'/src/Admin/ManagementFlow.php';
 $connection=new mysqli('localhost','root','',$argv[3],0,$argv[2]);$connection->set_charset('utf8mb4');
 $spec=json_decode($argv[4],true,64,JSON_THROW_ON_ERROR);

@@ -98,7 +98,14 @@ require $menu;
 require $root.'/src/Admin/InstanceContent.php';
 require $root.'/src/Finance/PaymentKeyAdmin.php';
 require $root.'/src/Finance/GatewayRuleAdmin.php';
-if ($kind==='menu') {
+if ($kind==='reward_value') {
+    $inviteReward=777777; // Retired private value must never authorize a gift.
+    $source=file_get_contents($root.'/bot.php');
+    $binding='$inviteReward = achbotInviteReward($connection);';
+    if (substr_count($source,$binding)!==1) throw new RuntimeException('managed_reward_binding_missing');
+    eval($binding);
+    $GLOBALS['events'][]=['reward',$inviteReward];
+} elseif ($kind==='menu') {
     $GLOBALS['events'][]=['menu',getGateWaysKeys()];
 } elseif ($kind==='menu_callback') {
     require $argv[8];
@@ -565,6 +572,58 @@ def main():
         assert ADDRESS in str(menu) and 'Test public holder' in str(menu)
         assert 'changePaymentKeysnowpayment' in str(menu)
         checks.append('hosted_secret_labels_masked_public_fields_preserved')
+        # Invitation gift uses this existing exact-source editor and amount source.
+        def amount():
+            return call(kind='reward_value')['events'][0][1]
+        protected=sql(w,e,'SELECT * FROM orders_list ORDER BY id;SELECT * FROM pays ORDER BY id;SELECT userid,wallet FROM users ORDER BY id')
+        reset({'nextpay':'KEEP','inviteReward':'4500'})
+        assert amount()==4500
+        menu=call(kind='menu')['events'][0][1]
+        rows=json.loads(menu)['inline_keyboard']
+        wallet=next(i for i,row in enumerate(rows)if any(b.get('callback_data')=='changeGateWayswalletState'for b in row))
+        assert rows[wallet+1][0]['callback_data']=='changePaymentKeysinviteReward' and len(rows[wallet+1])==2
+        assert '4,500' in rows[wallet+1][0]['text']
+        checks.append('invitation_amount_managed_Toman_pair_immediately_after_wallet')
+        opened('inviteReward');saved('6000')
+        assert state(w,e)=={'nextpay':'KEEP','inviteReward':'6000'} and amount()==6000
+        checks.append('invitation_save_preserves_peer_payment_keys_and_ignores_private_amount')
+        opened('inviteReward');before_state=state(w,e);before_marker=marker(w,e)
+        for bad in ['-1','1.5','1e4','1,000','۱۰۰۰','1000000000','true','']:
+            denied(saved(bad))
+            assert state(w,e)==before_state and marker(w,e)==before_marker and step(w,e).startswith('achbotPaymentKey|inviteReward|')
+            checks.append('invitation_invalid_amount_no_write_'+repr(bad))
+        for value in ['999999999','1','0','/clear']:
+            opened('inviteReward');saved(value)
+            assert state(w,e)['inviteReward']==('0'if value=='/clear'else value)
+            assert amount()==(0 if value=='/clear'else int(value))
+            checks.append('invitation_amount_boundary_'+value)
+        reset({'inviteReward':'10'});opened('inviteReward');opened('inviteReward',actor=9003);saved('20',actor=9003)
+        before_marker=marker(w,e);denied(saved('30'))
+        assert amount()==20 and marker(w,e)==before_marker
+        checks.append('invitation_same_field_stale_editor_denied')
+        reset({'inviteReward':'10'});opened('inviteReward')
+        sql(w,e,'UPDATE users SET isAdmin=0 WHERE userid=9002')
+        denied(saved('30',cached_admin=1));assert amount()==10
+        checks.append('invitation_revoked_editor_cannot_change_gift')
+        for level in ['operator','support']:
+            reset({'inviteReward':'10'})
+            sql(w,e,"UPDATE setting SET value='"+level+"' WHERE type='ADMIN_ROLE_9002'")
+            denied(call(data='changePaymentKeysinviteReward'));assert step(w,e)=='none' and amount()==10
+            checks.append('invitation_'+level+'_cannot_edit')
+        sql(w,e,"UPDATE setting SET value='manager' WHERE type='ADMIN_ROLE_9002'")
+        for invalid in [None,False,True,1.5,{},[],'-1','01','1000000000']:
+            reset({'inviteReward':invalid});assert amount()==0
+            checks.append('invitation_invalid_stored_amount_disables_'+repr(invalid))
+        reset();assert amount()==0
+        sql(w,e,"INSERT INTO setting(type,value)VALUES('PAYMENT_KEYS','{}')")
+        assert amount()==0
+        checks.append('invitation_missing_or_duplicate_document_never_uses_private_fallback')
+        sql(w,e,"DELETE FROM setting WHERE type='PAYMENT_KEYS'")
+        assert amount()==0
+        checks.append('invitation_absent_document_disables_gift')
+        assert b'$inviteReward =' not in (ROOT/'baseInfo.example.php').read_bytes()
+        assert sql(w,e,'SELECT * FROM orders_list ORDER BY id;SELECT * FROM pays ORDER BY id;SELECT userid,wallet FROM users ORDER BY id')==protected
+        checks.append('invitation_editor_no_financial_effect_and_synthetic_private_assignment_retired')
         log=(w/'synthetic-key-admin.log').read_text()
         for value in (SECRET,'NOW_LATEST','B_WINNER','A_STALE','NEXT_LATEST'):
             assert value not in log,'credential leaked to diagnostic log'

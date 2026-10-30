@@ -153,7 +153,7 @@ if(($userInfo['step'] == "searchAgentConfig" || $userInfo['step'] == "searchMyCo
 
     if($keys == null) sendMessage($mainValues['no_order_found'], cancelSearchKeyboard()); 
     else {
-        sendMessage($keys['msg'], $keys['keyboard'], "HTML");
+        \AchBot\Subscription\AccountDetails\showMessage($keys);
         setUser();
     }
 }
@@ -185,8 +185,8 @@ if(($userInfo['step'] == "searchUsersConfig" && $text != $buttonValues['cancel']
 
         if($keys == null) sendMessage($mainValues['no_order_found'], cancelSearchKeyboard()); 
         else{
-            if(!$adminOrderDetailCallback) sendMessage($keys['msg'], $keys['keyboard'], "HTML");
-            else editText($message_id, $keys['msg'], $keys['keyboard'], "HTML");
+            if(!$adminOrderDetailCallback) \AchBot\Subscription\AccountDetails\showMessage($keys);
+            else \AchBot\Subscription\AccountDetails\showMessage($keys,(int)$message_id);
             setUser();
         }
     }
@@ -203,7 +203,7 @@ if(preg_match('/^orderDetails(\d+)(_|)(?<offset>\d+|)/', $data, $match)){
         alert($mainValues['no_order_found'], true);
         exit;
     } else {
-        editText($message_id, $keys['msg'], $keys['keyboard'], "HTML");
+        \AchBot\Subscription\AccountDetails\showMessage($keys,(int)$message_id);
         exit;
     }
 }
@@ -342,7 +342,7 @@ if(preg_match('/updateConfigConnectionLink(\d+)/', $data,$match)){
     if (!is_array($keys)) {
         alert(\achbotMessage('subscription.customer_routes.cancel_search_keyboard.alert.001c06ff23'),true);return;
     }
-    editText($message_id,$keys['msg'],$keys['keyboard'],'HTML');
+    \AchBot\Subscription\AccountDetails\showMessage($keys,(int)$message_id);
 }
 
 if(preg_match('/changAccountConnectionLink(\d+)/', $data,$match)){ 
@@ -417,7 +417,7 @@ if(preg_match('/changAccountConnectionLink(\d+)/', $data,$match)){
     if (!is_array($keys)) {
         alert(\achbotMessage('subscription.customer_routes.cancel_search_keyboard.alert.001c06ff23'),true);return;
     }
-    editText($message_id,$keys['msg'],$keys['keyboard'],'HTML');
+    \AchBot\Subscription\AccountDetails\showMessage($keys,(int)$message_id);
 }
 
 if(preg_match('/changeUserConfigState(\d+)/', $data,$match)){
@@ -462,7 +462,7 @@ if(preg_match('/changeUserConfigState(\d+)/', $data,$match)){
         alert($mainValues['please_wait_message']);
     
         $keys = $stateActorAdmin?getUserOrderDetailKeys($oid):getOrderDetailKeys((int)$from_id,$oid);
-        editText($message_id, $keys['msg'], $keys['keyboard'], "HTML");
+        \AchBot\Subscription\AccountDetails\showMessage($keys,(int)$message_id);
     }else sendMessage(\achbotMessage('subscription.customer_routes.cancel_search_keyboard.message.b63b579845'));
 }
 
@@ -525,7 +525,7 @@ if (preg_match('/agentChangeUserConfigState(\d+)/', $data, $match)) {
 
         $keys = getOrderDetailKeys($order['userid'], $oid);
 
-        editText($message_id, $keys['msg'], $keys['keyboard'], "HTML");
+        \AchBot\Subscription\AccountDetails\showMessage($keys,(int)$message_id);
 
     } else {
         sendMessage(\achbotMessage('subscription.customer_routes.cancel_search_keyboard.message.b63b579845'));

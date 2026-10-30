@@ -647,7 +647,7 @@ if (preg_match('/^quickUserOrderDetails_(\d+)$/D', $data, $match)) {
         return;
     }
 
-    sendMessage($keys['msg'], $keys['keyboard'], "HTML");
+    \AchBot\Subscription\AccountDetails\showMessage($keys);
 }
 
 // End of Manage a specific order

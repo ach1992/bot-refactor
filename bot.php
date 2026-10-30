@@ -29,7 +29,7 @@ if (!achbotWebhookIngressAuthenticated()) {
 define('ACHBOT_VERIFIED_WEBHOOK_ENTRYPOINT', true);
 
 require_once 'config.php';
-require_once 'buy_helpers.php';
+require_once __DIR__.'/src/Purchase/Core.php';
 check();
 if (!achbotAdminRequestAllowed(is_string($data??null)?$data:null,is_string($text??null)?$text:null,(string)($userInfo['step']??''))) {achbotAdminDeny();return;}
 
@@ -63,6 +63,8 @@ file_put_contents(__DIR__ . "/full_log.txt", $log_data, FILE_APPEND);
 */
 
 $robotState = $botState['botState']??"on";
+// Ignore the retired private invitation amount; resolve current managed settings.
+$inviteReward = achbotInviteReward($connection);
 
 GOTOSTART:
 if ($userInfo['step'] == "banned" && $from_id != $admin && $userInfo['isAdmin'] != true) {
@@ -719,6 +721,9 @@ if (is_string($data??null) && str_starts_with($data,'changePaymentKeys')) {
             break;
         case "manualUsdtRateToman":
             $gate = \achbotMessage('bot.bot.change_config_remark_type.gate.e152f81bc6');
+            break;
+        case "inviteReward":
+            $gate = \achbotMessage('payment_settings.invite_reward_prompt');
             break;
         case "manualTrxRateToman":
             $gate = \achbotMessage('bot.bot.change_config_remark_type.gate.4f73f2daea');

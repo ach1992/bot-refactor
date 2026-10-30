@@ -95,7 +95,7 @@ def source_checks():
     if sorted(definitions)!=sorted(MARZBAN_NAMES):
         raise RuntimeError("Panel module still exposes legacy or lacks required Marzban methods: "+str(definitions))
     source_paths=[
-        ROOT/"bot.php", ROOT/"config.php", ROOT/"buy_helpers.php",
+        ROOT/"bot.php", ROOT/"config.php",
         *ROOT.joinpath("src").rglob("*.php"),
         *ROOT.joinpath("settings").glob("*.php"),
         *ROOT.joinpath("pay").glob("*.php"),
@@ -193,9 +193,9 @@ def main():
               'actual_customer_wallet_draft_paths':['1001:increaseWallet_100000','1001:increaseWalletCustom','1002:increaseWallet_100000','1002:increaseWalletCustom'],
               'actual_customer_ticket_actors':[1001,1002,9004],
               'forbidden_admin_wallet_effects':{'financial_reads':0,'sql_writes':0,'transactions':0,'native_calls':0}}),
-            ('staff_example','test_owner_db_staff_example.py',6,
-             {'complete':True,'cases':6,'actual_package_members':True,'source_real':True,
-              'authorized_assignment_removals':8,'additional_staff_assignment_removals':2,
+            ('staff_example','test_owner_db_staff_example.py',7,
+             {'complete':True,'cases':7,'actual_package_members':True,'source_real':True,
+              'authorized_assignment_removals':9,'invitation_assignment_removals':1,'additional_staff_assignment_removals':2,
               'baseline_source':'f570db225beac9e429f11fbc73d84acaf3750cf6',
               'archived_two_staff_assignments_red':True,
               'staff_reintroduction_red':['admins_list','special_admins'],
@@ -206,10 +206,10 @@ def main():
               'lock_join_baseline_red':True,'lock_join_baseline_source':'4548705609518f741d14375c9d47739eb302c3b6'}),
             ('display_contexts','test_server_display_contexts.py',216,
              {'complete':True,'cases':216,'source_real':True,'owned_original_schema_mariadb':True,
-              'actual_buy_helpers_delivery':True,'actual_order_presentation':True,
+              'actual_canonical_delivery':True,'actual_order_presentation':True,
               'actual_checkout_config_qr':True,'loopback_native_pasarguard_readonly':True,
               'native_providers':['pasarguard','marzban'],'disjoint_delivery_view':True,
-              'explicit_none_isolated':True,'shared_selector_fallback':True,'absent_selectors_all':True,
+              'explicit_none_isolated':True,'shared_selector_fallback':True,'absent_selectors_first_three':True,
               'context_all_preserves_other_effective_selection':True,'single_existing_setting_row':True,
               'other_rows_and_financial_state_unchanged':True,'current_authority_revision_guards':True,
               'native_uri_bytes_preserved':True,'legacy_marzban_indices_unchanged':True,
@@ -282,14 +282,14 @@ def main():
         copy_run=subprocess.run(['python3',str(ROOT/'tools/test_owner_r5_copy.py')],
                                 cwd=ROOT,check=True,timeout=180,capture_output=True,text=True)
         copy_proof=json.loads(copy_run.stdout)
-        required_copy={'status':'PASS','changes':271,'retired':10,'added':46,'current_keys':2671,
+        required_copy={'status':'PASS','changes':273,'retired':10,'added':60,'current_keys':2685,
                        'r5_negative_controls':5,'persian_prose_start_violations':0,
                        'duplicate_heading_markers':0,'guide_provider_cases':2,'guide_JSON_examples':3,
                        'actual_HTML_transport_cases':2,'archived_wrong_parse_RED':True,
                        'receipt_PRICE_template_cases':6,'real_Telegram_rendering':'NOT_TESTED',
                        'composed_catalog_correction_keys':22,'composed_heading_cases':42,
                        'settings_navigation_label_amendments':3,'settings_navigation_retired_keys':4,
-                       'display_context_catalog_additions':7,'display_context_catalog_negative_controls':6,
+                       'display_context_catalog_additions':7,'display_context_catalog_negative_controls':9,'simple_display_catalog_additions':14,'simple_display_label_changes':2,
                        'notification_catalog_additions':4,'staff_role_description_amendments':1,
                        'staff_catalog_negative_controls':6,
                        'telegram_update_id_label_cases':1,'telegram_update_id_numeric_value_preserved':True,
@@ -308,7 +308,7 @@ def main():
                 {'actual_php':True,'owned_socket_mariadb':True,'loopback_provider_http':True,'provider_mutations':0,'production_mutations':0,'actual_rc13_cancel_RED':True,'older_same_flow_cancel':True,'unique_actor_primary_writes':True,'busy_delete_preserves_editor':True,'administrator_input_history_preserved':True,'same_message_group_selection':True,'actual_rc14_group_message_flood_RED':True,'actual_rc14_admin_input_deletion_RED':True}),
             ('financial_live_state','test_financial_live_state.py','cases',86,
                 {'native_two_provider': True, 'agent_discount': True, 'absent_agent_discount_configuration_compatible': True, 'explicit_invalid_agent_discount_rejected': True, 'own_order_only': True, 'fresh_addon_eligibility': True, 'statistics_compatibility': True, 'external_requests': 0, 'production_mutations': 0}),
-            ('config_qr_delivery','test_config_qr_delivery.py','cases',17,
+            ('config_qr_delivery','test_config_qr_delivery.py','cases',25,
                 {'actual_php': True, 'owned_socket_mariadb': True, 'actual_Checkout_dispatch': True, 'actual_sendQrFromLink': True, 'provider_neutral_native_names_both': True, 'actual_PasarGuard_identity_HTTP_here': False, 'archived_route_RED': True, 'unchanged_URI_bytes': True, 'temp_cleanup': True, 'financial_mutations': 0, 'external_requests': 0, 'production_mutations': 0, 'real_telegram_rendering_tested': False}),
             ('shared_provider_storage','test_post_v9_shared_provider_storage.py','cases',91,
                 {'populated_migration':True,'actual_backup_restore':True,'disposable_socket_mariadb':True,'native_runtime':True,'real_provider_calls':0,'tenant_mutation':False}),
@@ -316,11 +316,11 @@ def main():
                 {'actual_php':True,'owned_socket_mariadb':True,'populated_migration':True,'previous_writer_RED':True,'production_mutations':0,'external_calls':0}),
             ('management_menus','test_unified_management_menus.py','checks',322,
                 {'database':'owned socket MariaDB','network_calls':0,'optional_011_missing_cancel_proven':True}),
-            ('customer_services','test_unified_customer_services.py','cases',592,
+            ('customer_services','test_unified_customer_services.py','cases',596,
                 {'actual_php':True,'obsolete_order_columns_absent':True,'native_disposable_mariadb':True,'external_provider_calls':0,'production_mutations':0,'real_JDF_no_date_stubs':True,'fresh_each_render_same_process':True,'same_packet_observation_and_presentation':True,'genuine_import_origin_writer_fixture':True,'actual_service_unit_helpers':True,'native_plan_admission_seam':'controlled_read_only_SQL_fixture','actual_native_plan_eligibility_checked_here':False,'actual_URL_import_checked_here':False,'imported_actions_hide_ineligible_autorenew':True,'existing_consent_withdrawal_visible_when_plan_global_or_observation_unavailable':True,'unlimited_actions_hide_unsupported_relative_changes':True,'native_HTTP_count_checked_here':False,'actual_composed_ASCII_Jalali_Tehran_proofs':{key:['marzban','pasarguard'] for key in ['customer_remote_expiry','admin_remote_expiry','admin_recorded_expiry','admin_warning_grace']},'baseline_date_ref':'2408982797af15bc99e1df2909c13be3976cb1f4','baseline_date_jdf_sha256':'e32da43aafb6548fa746492a9d3181ef796083fa618af2c84f6a7bb4e857337d','baseline_dates_already_ASCII':True,'baseline_date_RED':False,'archived_warning_toggle_RED':2}),
             ('service_lifecycle','test_unified_service_lifecycle.py','cases',118,
                 {'native_php':True,'disposable_mariadb':True,'actual_delete_transports':True,'import_warning_planless_and_assigned':True,'import_warning_retry_once':True,'amount0_trial_warning_policy_preserved':True,'malformed_origin_warning_row_isolated':True,'automatic_known_refusal_predebit':True,'scheduled_known_refusal_prefence':True,'production_mutations':0,'external_provider_calls':0,'notification_delivery_regression_red':True,'grace_integrity':True,'deletion_fairness_red':True,'deletion_fairness_source':'5568e5e24ecc595c371c4710bf41db51bb78125d','scheduled_deletion_cursor':'deleteLastOrderId','deletion_fairness_deferred_batch':50,'deletion_fairness_cross_provider_directions':2,'deletion_fairness_financial_hold':True}),
-            ('runtime_cleanup','test_unified_runtime_cleanup.py','assertions',143,
+            ('runtime_cleanup','test_unified_runtime_cleanup.py','assertions',144,
                 {'actual_php':True,'owned_socket_mariadb':True,'provider_mutations':0,'production_mutations':0,'composed_native_reader_unique':True,'domain_independent_verified_token_import':True}),
             ('provider_registry','test_unified_provider_registry.py','cases',89,
                 {'actual_php':True,'owned_socket_mariadb':True,'closed_native_adapters':2,'fixture_adapter_only':True,'external_requests':0,'production_mutations':0,'new_schema':False,'authoritative_subject_resolution':True,'sid_only_dispatch_RED':True,'explicit_subject_server_mismatch_rejected':True,'pasarguard_native_quote_pins_preserved':True,'subject_preflight_readonly':True,'action_preflight_readonly':True,'quote_current_read_after_RR_snapshot':True,'quote_lock_forwarding_RED':True,'network_functions_disabled':False,'uncontrolled_network_functions_disabled':True,'native_quote_loopback_readonly':True,'native_quote_read_requests':17,'native_quote_write_requests':0}),
@@ -369,7 +369,7 @@ def main():
             ('allowance_admin','test_unified_allowance_admin.py','cases',89,
                 {'actual_plan_screen':True,'actual_admin_subscription_report':True,'actual_order_management_screen':True,'real_disposable_mariadb':True,'real_JDF':True,'finite_remaining_zero_not_unlimited':True,'read_only_screens':True,'archived_current_baseline_RED':3,'network_calls':0,'production_mutations':0,'display_baseline':'f4731de2922adb96d005e523f75ec067907b2e05'}),
             ('canonical_checkout','test_canonical_checkout.py','cases',143,
-                {'native_http':True,'actual_public_controller':True,'owned_socket_mariadb':True,'complete_issuance_body_preserved':True,'pay_back_bytes_unchanged':True,'retired_routes_absent':True,'GET_only':True,'no_database_failure_private':True,'indirect_include_preserved':True,'external_requests':0,'production_mutations':0}),
+                {'native_http':True,'actual_public_controller':True,'owned_socket_mariadb':True,'complete_issuance_body_preserved':True,'pay_back_only_canonical_import_changed':True,'retired_routes_absent':True,'GET_only':True,'no_database_failure_private':True,'indirect_include_preserved':True,'external_requests':0,'production_mutations':0}),
         ]
         for name,script,counter,minimum,proofs in suites:
             path=Path(tmp)/(name+'.json')
@@ -593,7 +593,7 @@ def main():
                 purchases.get("actor_owned_plan_draft_entry_verified") is True and
                 draft_amendments==[draft_proof] and
                 purchases.get("ui_projection_baseline")=="7faac9b067f8a171e5e26d6aea5aaf9f4088a3e7" and
-                purchases.get("verified_literal_style_pairs")==581 and
+                purchases.get("verified_literal_style_pairs")==582 and
                 purchases.get("authorized_ui_field_differences")==3 and
                 purchases.get("ui_projection_negative_controls")==17 and
                 len(purchases.get("rejected_projection_mutations",[]))==17 and
@@ -876,10 +876,10 @@ def main():
                 and text_catalog.get("retired_parser_tokens")==23
                 and text_catalog.get("relocation_source_ref")=="ecd30ba9192ed374703118a6c131be8809cc7b06"
                 and text_catalog.get("native",{}).get("current_retired_feature_keys")==3
-                and text_catalog.get("catalog_keys")==2671
+                and text_catalog.get("catalog_keys")==2685
                 and text_catalog.get("native",{}).get("editable_catalog_files")==2
                 and text_catalog.get("native",{}).get("logical_topics")==26
-                and text_catalog.get("native",{}).get("current_catalog_keys")==2671
+                and text_catalog.get("native",{}).get("current_catalog_keys")==2685
                 and text_catalog.get("native",{}).get("current_management_added_keys")==112
                 and text_catalog.get("native",{}).get("current_catalog_binding_paths")==2
                 and text_catalog.get("native",{}).get("current_catalog_binding_entries")==4
@@ -893,18 +893,18 @@ def main():
                 and text_catalog["native"]["current_byte_preserved_keys"]
                     +text_catalog["native"]["current_style_changes"]
                     +text_catalog["native"]["current_added_admin_keys"]==2523
-                and text_catalog.get("native",{}).get("current_native_template_assertions")==3971
+                and text_catalog.get("native",{}).get("current_native_template_assertions")==3985
                 and text_catalog.get("native",{}).get("current_object_conversion_templates")==260
                 and text_catalog.get("native",{}).get("current_shared_multi_parameter_templates")==61
                 and text_catalog.get("native",{}).get("current_one_pass_templates")==260
-                and text_catalog.get("native",{}).get("current_r5_changes")==271
+                and text_catalog.get("native",{}).get("current_r5_changes")==273
                 and text_catalog.get("native",{}).get("current_r5_retired_keys")==10
-                and text_catalog.get("native",{}).get("current_r5_added_keys")==46
+                and text_catalog.get("native",{}).get("current_r5_added_keys")==60
                 and text_catalog.get("presentation",{}).get("r5_negative_controls")==5
                 and text_catalog.get("native",{}).get("current_non_ascii_digit_templates")==0
                 and text_catalog.get("presentation",{}).get("status")=="PASS"
                 and text_catalog.get("presentation",{}).get("editable_files")==2
-                and text_catalog.get("presentation",{}).get("current_keys")==2671
+                and text_catalog.get("presentation",{}).get("current_keys")==2685
                 and text_catalog.get("presentation",{}).get("numeric_template_changes")==23
                 and text_catalog.get("presentation",{}).get("adjacent_emoji_violations")==0
                 and text_catalog.get("presentation",{}).get("parameter_exception_count")==3
@@ -999,6 +999,22 @@ def main():
         if not re.search(r"PASS subscription presentation: 251 checks \(158 context checks\);",presentation_output):
             raise RuntimeError("Native subscription presentation proof incomplete")
         presentation={"complete":True,"checks":251,"retained_checks":93,"context_checks":158,"real_network":False}
+        simple_display=json.loads(subprocess.check_output(
+            ["php",str(ROOT/"tools/test_simple_server_display.php")],cwd=ROOT,text=True,timeout=30))
+        if simple_display!={"complete":True,"cases":157,"source_real":True,"two_native_providers":True,
+                "whole_message_budget":True,"all_explicit_config_qrs":True,"production_effects":0}:
+            raise RuntimeError("Simple display/context/complete-message boundary proof incomplete")
+        # Reproduce the new behavioral RED against the unchanged RC18/main source.
+        import io,tarfile
+        simple_baseline="ec171d5bdd2d4487b8bc2c5782015f25c703cce6"
+        simple_old=Path(tmp)/"simple-display-baseline";simple_old.mkdir()
+        with tarfile.open(fileobj=io.BytesIO(cmd("archive",simple_baseline))) as archive:
+            archive.extractall(simple_old,filter="data")
+        simple_red=subprocess.run(["php",str(ROOT/"tools/test_simple_server_display.php"),str(simple_old)],
+                                  cwd=ROOT,capture_output=True,text=True,timeout=30)
+        if simple_red.returncode==0 or "marzbandelivery_default_first_three" not in simple_red.stderr:
+            raise RuntimeError("Prior unconfigured-display regression RED missing")
+        simple_display.update({"baseline":simple_baseline,"baseline_red":True})
         provider_path=Path(tmp)/"provider-integration.json"
         subprocess.run(["python3",str(ROOT/"tools/test_post_v9_provider_integration.py"),
                         "--run-disposable","--report",str(provider_path)],
@@ -1073,9 +1089,10 @@ def main():
                         "--run-disposable","--report",str(display_path)],
                        cwd=ROOT,check=True,timeout=180,capture_output=True)
         server_display=json.loads(display_path.read_text())
-        if not (server_display.get("pass") is True and server_display.get("checks")==519
+        if not (server_display.get("pass") is True and server_display.get("checks")==673
                 and server_display.get("database")=="owned socket only"
                 and server_display.get("network_calls")==0
+                and server_display.get("simple_editor")=={'providers':['marzban','pasarguard'],'checks':154}
                 and server_display.get("native_context_editor")=={
                     'providers':['marzban','pasarguard'],'checks':377}
                 and server_display.get("summary_baseline_source")=="748994636f9fc2cf4c0ea4c7c810093c0dd108ef"):
@@ -1609,6 +1626,36 @@ def main():
                  'independent_writers_repeatable_read_preserve_fields',
                  'operator_crypto_destination_visible_merchant_secret_hidden',
                  'hosted_secret_labels_masked_public_fields_preserved',
+                 'invitation_amount_managed_Toman_pair_immediately_after_wallet',
+                 'invitation_save_preserves_peer_payment_keys_and_ignores_private_amount',
+                 "invitation_invalid_amount_no_write_'-1'",
+                 "invitation_invalid_amount_no_write_'1.5'",
+                 "invitation_invalid_amount_no_write_'1e4'",
+                 "invitation_invalid_amount_no_write_'1,000'",
+                 "invitation_invalid_amount_no_write_'۱۰۰۰'",
+                 "invitation_invalid_amount_no_write_'1000000000'",
+                 "invitation_invalid_amount_no_write_'true'",
+                 "invitation_invalid_amount_no_write_''",
+                 'invitation_amount_boundary_999999999',
+                 'invitation_amount_boundary_1',
+                 'invitation_amount_boundary_0',
+                 'invitation_amount_boundary_/clear',
+                 'invitation_same_field_stale_editor_denied',
+                 'invitation_revoked_editor_cannot_change_gift',
+                 'invitation_operator_cannot_edit',
+                 'invitation_support_cannot_edit',
+                 'invitation_invalid_stored_amount_disables_None',
+                 'invitation_invalid_stored_amount_disables_False',
+                 'invitation_invalid_stored_amount_disables_True',
+                 'invitation_invalid_stored_amount_disables_1.5',
+                 'invitation_invalid_stored_amount_disables_{}',
+                 'invitation_invalid_stored_amount_disables_[]',
+                 "invitation_invalid_stored_amount_disables_'-1'",
+                 "invitation_invalid_stored_amount_disables_'01'",
+                 "invitation_invalid_stored_amount_disables_'1000000000'",
+                 'invitation_missing_or_duplicate_document_never_uses_private_fallback',
+                 'invitation_absent_document_disables_gift',
+                 'invitation_editor_no_financial_effect_and_synthetic_private_assignment_retired',
                  'operational_log_excludes_merchant_values',
              },('source_real','original_schema_mariadb','baseline_red',
                 'current_source_green','two_authenticated_admins',
@@ -3438,7 +3485,7 @@ def main():
                      "currency_settings":currency,
                      "server_display_settings":server_display,
                      "optional_cleanup":cleanup,
-                     "subscription_presentation":presentation,
+                     "subscription_presentation":presentation,"simple_server_display":simple_display,
                      "customer_error_privacy":audience,
                      "telegram_transport_log_privacy":transport_privacy,
                     "source_only_overlays":swap,

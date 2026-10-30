@@ -192,7 +192,7 @@ require_once $root.'/src/Admin/InstanceContent.php';
 $mainValues=achbotInstanceContentValues(achbotMessages('legacy_messages'),$botState,
     $from_id??($spec['user']??''));
 $buttonValues=achbotMessages('legacy_buttons');
-require $root.'/src/Finance/ReceiptHelpers.php';
+require_once $root.'/src/Finance/ReceiptHelpers.php';
 function achbotSupportsPaymentSubject(...$args){return true;}
 function achbotFinanceDiagnosticReason(Throwable $e){return get_class($e);}
 $GLOBALS['events']=[];
@@ -403,7 +403,7 @@ require_once $root.'/src/Purchase/Core.php';
 // Fixture insertOrder() is a deliberate transport/SQL spy; the shared
 // production integer amount allocator must still be loaded from real source.
 require_once $root.'/src/Purchase/OrderWrites.php';
-// Production buy_helpers.php loads this module before route dispatch.
+// Production src/Purchase/Core.php loads this module before route dispatch.
 // Earlier fixtures did not need it until referral registration moved
 // ahead of Telegram delivery; exercise the real payment-scoped module.
 require_once $root.'/src/Finance/ReferralReward.php';
@@ -446,7 +446,7 @@ if (($spec['route']??'wallet') === 'manual_crypto') {
         $userInfo=$stmt->get_result()->fetch_assoc() ?: ['step'=>'none','userid'=>$from_id];
         $stmt->close();
         // Exercise actual payment insertion and draft cleanup.
-        require $root.'/src/Purchase/Core.php';
+        require_once $root.'/src/Purchase/Core.php';
         require $root.'/src/Finance/WalletStart.php';
     }
     require $root.'/src/Finance/Routes/WalletRecharge.php';

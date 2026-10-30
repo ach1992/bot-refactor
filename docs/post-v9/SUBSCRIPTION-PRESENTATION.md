@@ -1,175 +1,148 @@
 # Subscription presentation and per-server settings
 
-Current shared presentation contract for supported Marzban and PasarGuard. This does not
-establish installed provider acceptance or authorize tenant/config/schema,
-deployment, payment, or real provider changes.
+Current **unreleased source** contract for native Marzban and PasarGuard, accepted
+in [Issue37](https://github.com/ach1992/bot-refactor/issues/37#issuecomment-6507182633)
+with the [order QR correction](https://github.com/ach1992/bot-refactor/issues/37#issuecomment-6507342963).
+Published RC18 retains its original behavior. Source/isolated tests do not
+establish installed Telegram/provider acceptance or authorize deployment.
 
-## Administrator configuration
+## Ordinary administrator journey
 
-Open **server settings → نمایش لینک و QR** for the desired logical Marzban or
-PasarGuard server, then use the config/subscription toggles, QR choices, link limits and guided
-protocol/name selections. Native selection first chooses **کانفیگ‌های بعد از خرید** or **کانفیگ‌های صفحهٔ سفارش** through the same editor for both providers. Marzban compatibility has guided index lists. A concise
-Persian summary shows current values. Optional **ویرایش پیشرفته** accepts a full
-JSON document in the administrator's private chat.
-Logical servers sharing a physical panel have independent display documents.
+Open **selected server → نمایش کانفیگ‌ها و لینک اشتراک**. Both providers use the
+same controls and existing per-server settings:
+
+| Section | Paired rows and actions |
+| --- | --- |
+| تنظیمات ارسال و نمایش بعد از خرید | Subscription on/off; configs on/off; choose configs when on; QR cycle (subscription / first selected config / off); auxiliary links on/off |
+| تنظیمات ارسال و نمایش صفحه سفارش | Subscription on/off; configs on/off; choose configs when on; auxiliary links on/off. No QR selector. |
+
+Toggles edit only the current bot keyboard and refresh its revision. Each
+section is independent. The config editor takes one exact native display name
+per line, in the desired order, with at most **10** distinct names. Name matches
+are exact; native order breaks ties. Duplicate config URIs are removed from
+inline text, and at most 10 configs can appear. Missing names never select a
+different config. Send /auto to restore automatic first-three selection; cancel
+retains the prior selection and returns to this server's display controls.
+Incoming administrator messages remain in history, including invalid input.
+
+With no saved settings: subscription text on, available auxiliary links on,
+config text on with the first **3** native configs, purchase QR for the native
+subscription URL. Auxiliary visibility and subscription-QR availability are
+independent of primary subscription text visibility.
+
+Both native adapters supply unchanged config URIs. Names come from explicit
+native metadata, the URI fragment, or vmess ps. No vendor config is generated,
+no arbitrary subscription host is fetched, and native Groups/access are not
+changed by presentation choices.
+
+## Explicit order-page QR actions
+
+The two existing **Bot Settings** switches remain authoritative:
+
+- qrConfigState enables the order-page config-QR button and its actual action.
+  It sends **every valid native config**, individually: native name on the QR
+  photo, then that unchanged config in a copyable preformatted message.
+- qrSubState independently enables the subscription-QR button and action,
+  using the native subscription URL even when inline subscription text is off.
+
+Inline first-three/ten-name selection, text visibility, message size and
+purchase-delivery QR mode never filter these explicit config-QR actions.
+Large sets are delivered sequentially in separate photo/text pairs. No new
+count cap, aggregate QR budget or automatic replay is introduced. Foreign
+orders, disabled/stale actions and unsupported/uncertain native identity remain
+denied. Every required photo/text acknowledgement is checked; ambiguous
+delivery is reported without falsely claiming completion or retrying it.
+Opening or refreshing order details does not send QR photos automatically.
+
+## Complete message size
+
+Selection and HTML assembly happen before measuring the **complete final**
+purchase/order message, including order facts, template text, notices,
+subscription and auxiliary URLs. The renderer removes complete trailing
+configs until the message fits Telegram's 4096-character parsed-text limit,
+counting supplementary Unicode conservatively as UTF-16 units. It never
+truncates a URI, alters a token, or removes a protected subscription/auxiliary
+link to fit more configs. The selection prompt explains this automatic limit.
+
+If protected content alone exceeds one message, the delivery/order-output
+boundary splits it into bounded HTML parts while preserving entities, balanced
+tags and complete native URI code blocks. The final part carries navigation.
+Ordinary messages remain byte-identical. This does not change the global
+Telegram transport or financial message handling. Native config validation
+still omits malformed/overlong (>2048-byte) URI records whole.
+
+## Existing storage and compatibility
+
+One existing setting row uses type ACHBOT_SERVER_DISPLAY_<server_id> and the
+version1 envelope with exact server_id, provider, updated_source and display:
 
 ~~~json
 {
   "mode": "native",
   "policy": {
-    "selectors": [{"protocol": "vless"}],
-    "delivery_selectors": [{"protocol": "vless", "name": "Fast"}],
-    "view_selectors": [{"protocol": "trojan"}],
-    "show_configs": true,
-    "show_subscription": true,
-    "max_links": 4,
-    "hide_if_more_than": 20,
-    "qr": "auto"
+    "delivery": {
+      "show_subscription": true,
+      "show_configs": true,
+      "show_auxiliary": true,
+      "names": ["Germany", "Netherlands"],
+      "qr": "subscription"
+    },
+    "view": {
+      "show_subscription": true,
+      "show_configs": true,
+      "show_auxiliary": true,
+      "names": null
+    }
   }
 }
 ~~~
 
-An absent setting defaults to native mode, visible configs and subscription,
-at most ten configs, and automatic QR selection. Defaults do not read/import
-old private globals or global bot display switches. Open display management
-inside the selected server; Bot Settings has no display shortcut. Retired global display callbacks and persistence
-keys remain rejected. Other bot/service/payment availability controls are unchanged.
+The simple controls overlay only their own context/field. Valid previous flat
+visibility, protocol/name/tag selectors, delivery_selectors/view_selectors and
+explicit limits remain readable until deliberately replaced. Explicit empty
+old selectors still select no inline configs. Old shared-selector fallback and
+peer preservation remain, without startup rewrites or a second settings registry.
+An explicit new config switch overrides retired hide/zero controls only in that
+context, so ON cannot remain hidden by an obsolete invisible setting.
+Native matching and final rendering are shared by both providers.
 
-All fields in one selector must match; records are alternatives, processed in
-configured order with native order within a match. Protocol is case insensitive;
-name/tag are exact. Tags require upstream metadata, never an inferred name or
-provider Group. The pinned PasarGuard client supplies native links without tags.
-Duplicate native URIs are removed. The active context uses delivery_selectors
-for purchase delivery or view_selectors for order details/config QR. An explicit
-context list wins, including an empty list selecting none; otherwise selectors
-applies, then the existing all-config default. A miss never falls back to an
-unselected config. The same matching code, grammar and limits serve both native
-providers. Reads do not rewrite existing documents.
+The retired automatic QR choice maps to subscription QR in the three-state UI.
+Stored managed Marzban positional mode remains a read-compatibility path;
+PasarGuard never consumes those indices. Editing names explicitly replaces the
+positional selection for that context, leaving the other context intact.
+Ordinary screens expose neither legacy mode/index/protocol/threshold menus nor
+JSON editing. Explicit advanced repair remains available for one malformed
+record. Duplicate rows require separately authorized reconciliation.
 
-On an explicit context ALL edit with an old shared list, the editor first copies
-that list to the other context if it was inheriting, then removes the shared list
-and selected-context override. This preserves the other effective choice using
-the same selector grammar; no sentinel, new table or startup migration is used.
+Malformed documents, unknown keys/types/providers, deleted servers and provider
+mismatch suppress config/subscription/QR data. Editing requires an authenticated
+private webhook frame, current unique actor/capability, fresh source revision,
+owned persisted step, unchanged baseline and serialized transaction/lease.
+Logs contain no settings, URLs, raw exceptions or customer values.
 
-| Native policy field | Valid values |
-| --- | --- |
-| selectors | Shared fallback: up to 50 records with protocol/name/tag; bounded nonempty strings |
-| delivery_selectors | Optional purchase-delivery override, same grammar and bounds |
-| view_selectors | Optional order-page/config-QR override, same grammar and bounds |
-| show_configs | Boolean; inline configs and native config QR data |
-| show_subscription | Boolean; subscription, backups and named subscription QR |
-| max_links | Integer 0–1000; zero selects none |
-| hide_if_more_than | Integer 0–1000; hide configs above native-count threshold |
-| qr | auto, subscription, first_config, none |
+No DDL, private-file import or automatic migration occurs. Do not rerun012/013.
+Older runtimes do not understand the nested context fields; preserve paired
+source/settings during recovery instead of stripping keys or downgrading blindly.
 
-A first-config QR uses the active context’s selected configs; named
-subscription QR still uses the subscription.
-The configuration expands the existing version1 JSON policy without DDL. RC16
-does not understand the new keys: preserve paired runtime/display settings or
-roll forward instead of downgrading source or stripping keys blindly. Read
-[RC16 → RC17 recovery](RC16-TO-RC17.md#recovery).
+## Canonical modules and verification
 
-The qr field controls the single delivery QR. Automatic selection uses the
-visible subscription then first visible config; subscription mode has no config
-fallback. A named subscription QR always uses subscription_url; a config QR
-action uses qr_config_links. The none mode is valid text-only delivery and does
-not prevent an otherwise verified account from being recorded. Text requires an
-independent Telegram acknowledgement. Ambiguous effects are never retried.
+The root buy_helpers.php is retired with no alias. Purchase Core bootstraps
+canonical dependencies; Subscription/Delivery.php owns actual purchase/QR
+delivery, Purchase/OrderWrites.php owns createIncreaseOrder, and Purchase/Core.php
+owns finance diagnostic classification. Public entrypoints use these modules.
+Tuple positions, function signatures, stored full native links, identities,
+order writes and financial guards remain.
 
-Hard transport bounds apply even to larger explicit limits: at most ten
-inline/config-QR links and 2200 bytes of rendered link content, prioritizing the
-subscription URL; at most two backup URLs within the remaining budget. Overlong
-native configs/URLs are omitted whole, never truncated or rewritten. A safe
-notice explains limits and directs the customer to their subscription/support.
-These are display limits, not provider entitlement controls.
-
-## Explicit managed Marzban compatibility
-
-This opt-in document preserves established positional selection without
-reading baseInfo.php:
-
-~~~json
-{
-  "mode": "marzban_legacy",
-  "policy": {},
-  "legacy": {
-    "showIndexes": [2, 4],
-    "linkIndices": [0, 2],
-    "hideConfigIfMany": false,
-    "hideConnectLinkForMarzban": false
-  }
-}
-~~~
-
-showIndexes is one based, native-order membership only when view has more than
-three configs. linkIndices is zero based and configured-order for delivery;
-missing positions fall back to the first config and an empty list uses first.
-Delivery without native configs may use the visible subscription URL.
-hideConfigIfMany hides delivery configs above ten; hideConnectLinkForMarzban
-hides view configs. Small delivery uses second config (first if only one);
-above three use the visible subscription, then first-config fallback.
-
-Legacy policy may contain only show_configs, show_subscription, and qr.
-Omitting qr preserves the legacy automatic rule. An explicit compatibility
-exception keeps raw Marzban config-QR data, including duplicates and hidden
-inline configs, subject to hard bounds. PasarGuard rejects this mode; it never
-consumes Marzban positions or a synthesized vendor subscription path.
-
-## Storage, validation and migration
-
-The cohesive src/Subscription/ServerDisplaySettings.php module owns the resolver,
-transactional editor and authorization. Existing setting stores one row per
-logical server: type ACHBOT_SERVER_DISPLAY_<server_id>; value is a version 1
-envelope with exact server_id, provider, updated_source, and display document.
-
-No DDL or automatic data migration is involved. setting.type is not unique,
-so duplicates fail closed. Unknown/deleted servers, provider mismatch,
-malformed envelopes, unknown keys, wrong types and unsupported modes suppress
-config, subscription and QR output. Administrators can explicitly repair one
-malformed row through the editor; duplicate rows require reviewed operator
-reconciliation. No automatic deletion or repair occurs.
-
-Edits require a verified webhook, exact private sender/chat/frame, current unique
-administrator identity, fresh source order, owned persisted step and unchanged
-baseline. A named writer lock and transaction serialize writes and role checks.
-Stale/replayed saves cannot overwrite another editor. Logs contain no settings,
-URLs, credentials, raw exceptions, or customer values.
-
-Before rollout, configure each desired logical server explicitly. Copy old
-values deliberately into native or managed legacy mode. Runtime no longer reads
-subscriptionPresentation, showIndexes, linkIndices, hideConfigIfMany,
-hideConnectLinkForMarzban, or retired global subLinkState/configLinkState values.
-No private file was read/edited. The current synthetic example removes obsolete
-lines; frozen V0–V9 source/tests/schema remain unchanged.
-
-Display settings do not filter the full subscription response. Native provider
-Groups/Hosts must enforce actual access.
-
-## Runtime and evidence
-
-- Pure renderer: AchBot\Subscription\Presentation\present(...).
-- Runtime facade: buildSubscriptionPresentation(provider, native, botState,
-  options, context, serverId); sixth argument binds the logical server. The
-  old options position remains compatible but cannot override stored settings.
-- Delivery resolves the existing server_id fifth argument of
-  buildLinksAndSendQr(...). Tuple positions/native persisted links remain.
-- Paid/nonpayment CREATE helpers preflight settings before reserving/dispatching
-  a remote CREATE. Later presentation changes never authorize replay.
-
-Run the following source-only checks:
+Focused source checks:
 
 ~~~sh
 php tools/test_subscription_presentation.php
+php tools/test_simple_server_display.php
 python3 tools/test_server_display_settings.py --run-disposable
-python3 tools/test_post_v9_bank_buy.py --run-disposable
+python3 tools/test_server_display_contexts.py --run-disposable
+python3 tools/test_config_qr_delivery.py --run-disposable
 ~~~
 
-They cover pure selection and transport acknowledgement/cleanup; actual resolver,
-facade, delivery, per-server isolation, authenticated admin frames, forged/stale
-operations, role revocation, malformed/duplicate rows, retired global controls
-and meaningful text-only delivery. The bank suite proves text-only account
-recording and invalid-display preflight before remote creation/capacity changes.
-Only disposable socket MariaDB, synthetic data and local spies are used.
-
-Master owns aggregate call sites/inventory, exact-candidate PHP 8.1/8.4,
-package/history gates, independent review and installed/operator acceptance.
+Final acceptance additionally requires the complete stable PHP8.1/PHP8.4
+current/history gates and fresh author-separated independent review. Merge,
+publication, deployment and actual installed acceptance remain separate.

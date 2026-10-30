@@ -2,13 +2,73 @@
 
 [RC18](https://github.com/ach1992/bot-refactor/releases/tag/v0.10.0-rc.18) is the current source-only prerelease. [PR #96](https://github.com/ach1992/bot-refactor/pull/96) restores the established two-button rows for cooperation URL, help channel and private mandatory-membership invite URL. The status/edit button retains its existing callback; the adjacent localized label uses the same informational callback as neighboring settings. Existing validation, BOT_STATES persistence, permissions and save/clear/cancel navigation remain unchanged. No new table, schema, setting or management mechanism is introduced. Read [RC17 → RC18](RC17-TO-RC18.md).
 
+## Unreleased source follow-up
+
+The Owner accepted one source batch for simple per-server display, complete
+buy_helpers.php removal and managed invitation gift. [Issue37](https://github.com/ach1992/bot-refactor/issues/37#issuecomment-6507182633)
+holds the scope and later QR/invitation clarifications. No new version is assigned.
+
+Selected server → **نمایش کانفیگ‌ها و لینک اشتراک** now contains independent
+purchase and order sections with subscription/config/auxiliary toggles. Config-on
+reveals an exact-name editor (one per line, maximum10; /auto restores first3).
+Only purchase delivery has the subscription/first-selected-config/off QR cycle.
+Order-page QR uses the existing two Bot Settings switches; config QR sends all
+native configs individually, independently of inline choices. The complete
+final message reserves protected facts/links before reducing inline configs.
+Read [presentation semantics](SUBSCRIPTION-PRESENTATION.md).
+
+Gateway/Channel Settings → **پاداش هر دعوت**, immediately after Wallet, edits
+PAYMENT_KEYS.inviteReward using the existing authenticated, revision-bound
+payment-settings editor. Amounts are integer Toman from0 through999999999;
+0 or /clear disables future gifts. Unset/invalid/duplicate configuration uses0,
+never a retained private value. Existing invitation messages and gift behavior
+otherwise remain. During a separately authorized rollout, configure the desired
+gift through the new managed UI before reopening public invitations. Until then,
+the new runtime uses0 and ignores the old private $inviteReward assignment;
+it does not import it. Remove that private assignment
+only as part of the paired new-runtime rollout; this source work touches only
+the synthetic example. Downgrading would revive the old private source, so
+reconcile gift settings deliberately before any approved recovery.
+
+The root buy_helpers.php is removed, with actual bodies in existing purchase
+and subscription domains and public consumers updated. A full manifest-based
+source replacement must remove the retired installed file during an authorized
+rollout; no alias wrapper, new table, migration or live operation is introduced.
+Frozen V0–V9 evidence and published RC18 assets stay unchanged.
+
+Current implementation, exact-candidate CI, review and integration evidence
+are recorded in [PR98](https://github.com/ach1992/bot-refactor/pull/98) and
+[Issue37](https://github.com/ach1992/bot-refactor/issues/37). Exact-source full
+PHP8.1/PHP8.4 CI, author-separated review and action-specific approvals are
+required before their corresponding integration/publication actions. Deployment
+and actual Telegram/provider acceptance remain separate; source work does not
+authorize installed-target inspection.
+
+## Fresh installation and independent Cron locks
+
+Follow [fresh installation](FRESH-INSTALL.md) for a new bot: matching verified
+runtime/setup source, empty-database SQL order, private per-bot webhook secret,
+Owner configuration, one-minute CLI coordinator and readiness/acceptance. It is
+not an upgrade or automatic installer. Existing tenants use their exact release
+transition and never replay completed012/013.
+
+The private lock directory remains outside served/install paths. Its default is
+/var/lib/achbot/cron-locks; each canonical bot directory has a distinct hashed
+lock file. Same-UID Cron installations may share that directory; different UIDs
+need separately owned private0700 directories using ACHBOT_CRON_LOCK_DIR. The
+current runner's four processes are gift2all.php, admitted broadcast,
+rewardReport.php and admitted services; old standalone broadcast/warning paths
+are retired. Do not delete or replace an active lock inode.
+
 ## Inherited RC17 shared settings and native display selection
 
 [RC17](https://github.com/ach1992/bot-refactor/releases/tag/v0.10.0-rc.17) delivered the following shared settings and native display behavior through [PR #95](https://github.com/ach1992/bot-refactor/pull/95); RC18 preserves it. Its package contains **115 runtime members / 114 PHP files**. Read [RC16 → RC17](RC16-TO-RC17.md) and verify the official assets before rollout. Source merge/publication does not install files or certify real Telegram/provider/merchant/wallet/Cron acceptance.
 
 The release consolidates destination editors in gateway/channel settings and keeps only four message bodies in Bot Settings. Native Marzban and PasarGuard share independent purchase-delivery/order-view config selection through the same renderer, editor and existing per-server JSON in setting. Existing choices/defaults remain until edited; managed Marzban positional compatibility is unchanged. A compatible RC16 installation needs **no new SQL**; do not rerun completed012/013. Inherited RC16 staff, receipt, profile, Persian-copy and private-configuration boundaries below remain.
 
-## Independent native display contexts
+## Published RC17/RC18 display contexts
+
+The following describes the published RC17/RC18 UI. The unreleased simple controls above supersede this journey in the current candidate.
 
 Open the selected server’s display settings and choose purchase delivery or order details before selecting configs by the existing protocol/name controls. Each explicit context list overrides the shared selectors, including an empty list selecting none. Otherwise the shared list and then the existing all-config default apply. Visibility, subscription and limits remain common. The editor preserves the other effective choice when explicitly selecting ALL; reads perform no backfill. The same code/storage/management serves both native providers. See [presentation semantics](SUBSCRIPTION-PRESENTATION.md) and the [RC16 downgrade boundary](RC16-TO-RC17.md#recovery).
 

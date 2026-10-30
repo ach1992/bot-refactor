@@ -192,7 +192,8 @@ class QRcode {
                 if kind=='qrcheckout' else old(kind,modern)
             )
             report=check_no_effects(work,env,panel,stage,db,'qrcheckout',
-                                     dict(data='showQrSub'+str(oid),actor=1001),'marzban_qr')
+                                     dict(data='showQrSub'+str(oid),actor=1001,
+                                          states={'qrSubState':'on'}),'marzban_qr')
         finally:
             purchase.block=old
         value=(stage/'owned-qr-payload.txt').read_text()

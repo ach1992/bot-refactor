@@ -1,5 +1,42 @@
 # Diagnose AChBot runtime version before changing a live bot
 
+## Current-release verification
+
+For a new installation, start with [fresh installation](FRESH-INSTALL.md). Use
+the **selected release's own** trusted manifest and matching verification tool.
+Published RC18 and current unreleased runtime each have 115 members; their
+source hashes differ. Do not use the historical RC1/RC2 hashes below for them.
+
+Obtain the expected source commit and manifest SHA256 through a trusted
+release/CI channel independently of the downloaded JSON, then run from the
+matching private setup checkout:
+
+```sh
+python3 tools/verify_installed_runtime.py \
+  --install-dir /actual/webhook/serving/directory \
+  --manifest /private/setup/runtime.zip.manifest.json \
+  --expect-commit EXPECTED_EXACT_SOURCE_COMMIT \
+  --trusted-manifest-sha256 INDEPENDENT_TRUSTED_MANIFEST_SHA256
+```
+
+Replace both uppercase placeholders with actual verified values. Exit 0 means
+all manifest-listed on-disk files match; exit 1 reports mismatches and exit 2
+invalid/untrusted inputs. The tool does not read baseInfo.php, contact a service
+or prove which compiled PHP bytes the webhook currently serves. It does not
+detect unexpected extra files; reconcile retired paths using the selected
+release's inventory and rollout guide. Matching file count alone proves neither
+source identity nor complete installation.
+
+Check actual webhook hostname/path, the serving PHP handler/OPcache and a newly
+opened bot menu independently, keeping token/secret/private configuration
+private. Do not rerun SQL to diagnose old inline keyboards. Any runtime/cache,
+webhook or scheduler changes on an existing target require its own scoped
+operational decision.
+
+## Historical RC1/RC2 incident and examples
+
+The remaining release-specific examples preserve the earlier incident evidence.
+
 **Historical incident baseline:** The RC2 release description and menu incident below record the earlier RC2 checkpoint; “current” in that description refers to that checkpoint. For RC16, use its trusted full manifest and [RC15 → RC16 guide](RC15-TO-RC16.md), with current scope in the [README](../../README.md). The read-only provenance method remains applicable; release-specific hashes and inventories belong to their recorded version.
 
 AChBot **v0.10.0-rc.2** is the current source-only Marzban security-hotfix release; RC1 remains an immutable historical reference. It really contains **Server Management → 🏷 مدیریت گروه‌های پنل مرزبان** and the **➕ ثبت سرور مرزبان** button, not X-UI onboarding. Its server admin keyboard is constructed in the released `config.php`; the `manageMarzbanPanelGroups` callback is in `bot.php`. The separate `panel_group_id` SQL migration does **not** update PHP files, Telegram inline keyboards or webhook paths.

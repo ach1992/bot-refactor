@@ -53,3 +53,18 @@ def negative_controls(sides):
         except AssertionError:continue
         raise AssertionError('r5_negative_control_missed')
     return len(controls)
+
+def verify_retained_display_keys():
+    """Exact former display keys remain editable lineage, never an orphan exemption."""
+    records=manifest().get('retained_display_source_keys',{})
+    check(len(records)==26,'retained_display_key_count_drift')
+    current=json.loads(command('php','-r','$g=require "messages/fa/admin.php";$r=[];foreach($g as$t=>$es)foreach($es as$k=>$v)$r[$t.".".$k]=$v;echo json_encode($r);'))
+    decode='$s=stream_get_contents(STDIN);$p=strpos($s,"return [");echo json_encode(eval(substr($s,$p)));'
+    baseline=flatten(json.loads(command('php','-r',decode,input=command('git','show','ec171d5bdd2d4487b8bc2c5782015f25c703cce6:messages/fa/admin.php'))))
+    source=command('git','show','ec171d5bdd2d4487b8bc2c5782015f25c703cce6:src/Subscription/ServerDisplaySettings.php').decode()
+    for key,item in records.items():
+        check(item.get('baseline')=='ec171d5bdd2d4487b8bc2c5782015f25c703cce6'
+              and item.get('source')=='src/Subscription/ServerDisplaySettings.php' and item.get('reason')
+              and key in source and current.get(key)==baseline.get(key)==item.get('entry'),
+              'retained_display_source_lineage_drift:'+key)
+    return set(records)

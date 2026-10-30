@@ -163,12 +163,10 @@ function sendToAllAdmins(...$args){return true;}
 def prepare(work):
     stage=work/'real-gift'
     (stage/'settings').mkdir(parents=True)
-    for filename in ['src/Admin/Access.php','settings/gift2all.php','src/Subscription/GiftBatch.php',
-                     'src/Panel/Accounts.php','src/Purchase/Core.php',
-                     'src/Panel/ProviderRuntime.php','src/Panel/ProviderImport.php','src/Panel/ProviderStorage.php','src/Panel/PasarGuard.php']:
-        target=stage/filename
-        target.parent.mkdir(parents=True,exist_ok=True)
-        shutil.copyfile(ROOT/filename,target)
+    # Core's actual common bootstrap spans purchase/subscription/finance.
+    # Stage the full real module tree; keep the isolated config/transports below.
+    shutil.copytree(ROOT/'src',stage/'src')
+    shutil.copyfile(ROOT/'settings/gift2all.php',stage/'settings/gift2all.php')
     shutil.copytree(ROOT/'messages',stage/'messages')
     (stage/'config.php').write_text(CONFIG)
     (stage/'baseInfo.php').write_text('<?php // disposable isolated harness\n')

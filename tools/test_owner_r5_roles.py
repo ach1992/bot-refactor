@@ -465,7 +465,7 @@ def main():
         app=work/'app';app.mkdir()
         for name in ['src','settings']:shutil.copytree(ROOT/name,app/name)
         shutil.copytree(a.catalog_source/'messages',app/'messages')
-        for name in ['config.php','bot.php','buy_helpers.php']:shutil.copy2(ROOT/name,app/name)
+        for name in ['config.php','bot.php']:shutil.copy2(ROOT/name,app/name)
         baseline=work/'archived-current-admin-menu.php';baseline.write_text('<?php\n'+policy+'\n'+menu)
         # Integrated ancestor: approval body is byte-identical to the worker RED checkpoint.
         prior='82861ac0b17aa7a0c494c564cdf4674cb6eb505d'

@@ -60,7 +60,7 @@ DRIVER=existing.PHP.replace("$botState['rewardChannel']='';",
 DRIVER=DRIVER.replace("try {\n $out=null;$op=$spec['op'];",r"""function sendQrFromLink(...$args){
  $GLOBALS['events'][]=['kind'=>'delivery','owner'=>$args[4]??null];return true;
 }
-require_once $root.'/buy_helpers.php';
+require_once $root.'/src/Purchase/Core.php';
 require_once $root.'/src/Purchase/AgentPricing.php';
 try {
  $out=null;$op=$spec['op'];""",1)

@@ -77,7 +77,7 @@ $native=['links'=>$all,'subscription_url'=>$sub];
 $on=['configLinkState'=>'on','subLinkState'=>'on'];
 equal(achbotServerDisplayOptions($connection,1,'marzban'),achbotServerDisplayDefault(),'missing_setting_native_default');
 equal(achbotServerDisplayOptions($connection,3,'pasarguard'),achbotServerDisplayDefault(),'pg_default_native');
-equal(present('pasarguard',$native,['configLinkState'=>'off','subLinkState'=>'off'],achbotServerDisplayDefault())['links'],$all,'retired_global_switches_do_not_compete');
+equal(present('pasarguard',$native,['configLinkState'=>'off','subLinkState'=>'off'],achbotServerDisplayDefault())['links'],array_slice($all,0,3),'retired_global_switches_do_not_compete');
 equal(achbotServerDisplayOptions($connection,0,'marzban'),['policy'=>false],'zero_server_closed');
 equal(achbotServerDisplayOptions($connection,4,'retired'),['policy'=>false],'retired_closed');
 equal(achbotServerDisplayOptions($connection,5,'marzban'),['policy'=>false],'deleted_closed');
@@ -121,9 +121,9 @@ function message($body,$source,$actor=9001,$forge='') {
 $policyA=['mode'=>'native','policy'=>['selectors'=>[['protocol'=>'trojan']],'qr'=>'first_config']];
 $policyB=['mode'=>'native','policy'=>['selectors'=>[['name'=>'Fast']],'show_subscription'=>false]];
 callback('serverDisplay1',10);
-verify(str_contains(json_encode($events,JSON_UNESCAPED_UNICODE),'serverDisplayEdit1'),'marzban_admin_editor_visible');
+verify(str_contains(json_encode($events,JSON_UNESCAPED_UNICODE),'serverDisplayValue1_dconfigs_0'),'marzban_simple_editor_visible');
 callback('serverDisplay3',11);
-verify(str_contains(json_encode($events,JSON_UNESCAPED_UNICODE),'serverDisplayEdit3'),'pg_admin_editor_visible');
+verify(str_contains(json_encode($events,JSON_UNESCAPED_UNICODE),'serverDisplayValue3_dconfigs_0'),'pg_simple_editor_visible');
 callback('serverDisplayEdit1',20);message(json_encode($policyA),21);
 callback('serverDisplayEdit2',30);message(json_encode($policyB),31);
 equal(present('marzban',$native,$on,achbotServerDisplayOptions($connection,1,'marzban'))['links'],[$two],
@@ -236,7 +236,7 @@ equal(buildSubscriptionPresentation('marzban',$native,$on,[],'view',0)['reason']
     'missing_server_identity_fails_closed');
 function achbotSupportsPanel($provider) {return in_array($provider,['marzban','pasarguard'],true);}
 function RandomString() {return bin2hex(random_bytes(7));}
-require_once $root.'/buy_helpers.php';
+require_once $root.'/src/Purchase/Core.php';
 function delivery($provider,$sid,$response,$backupBases='https://backup.invalid') {
     global $on;
     return buildLinksAndSendQr($provider,['panel_url'=>'https://panel.invalid','sub_links'=>$backupBases],
@@ -275,7 +275,7 @@ noChange(static fn()=>rejects(static fn()=>achbotRequireServerDisplay($connectio
 // Normal administrator controls require no JSON and bind the visible revision.
 $serverOneBefore=achbotServerDisplayOptions($connection,1,'marzban');
 callback('serverDisplay2',300);
-verify(str_contains(json_encode($events,JSON_UNESCAPED_UNICODE),'serverDisplaySet2_cfg_flip_31') &&
+verify(str_contains(json_encode($events,JSON_UNESCAPED_UNICODE),'serverDisplaySet2_dcfg_flip_31') &&
     !str_contains($events[0][0],'<pre>'),'friendly_summary_and_normal_controls');
 callback('serverDisplaySet2_cfg_flip_31',301);
 equal(achbotServerDisplayOptions($connection,2,'marzban')['policy']['show_configs'],false,'normal_config_toggle');
@@ -343,11 +343,11 @@ $wrongProof=clone $proven;$wrongProof->provider_render_proof['server_id']=2;
 equal(achbotOrderPresentation($connection,$pgOrder,$pgServer,$on,$wrongProof)['backup_html'],'',
     'pg_details_unverified_native_packet_has_no_alias');
 removeSetting(3);settingRow(3,['mode'=>'native','policy'=>['show_subscription'=>false]],'pasarguard',401);
-equal(achbotOrderPresentation($connection,$pgOrder,$pgServer,$on,$proven)['backup_html'],'',
-    'pg_details_hidden_subscription_hides_auxiliary');
+verify(str_contains(achbotOrderPresentation($connection,$pgOrder,$pgServer,$on,$proven)['backup_html'],'https://backup.invalid'),
+    'pg_details_auxiliary_independent_of_primary_text');
 $hiddenDelivery=delivery('pasarguard',3,['links'=>[$one],'subscription_url'=>$opaque]);
-verify(!str_contains($hiddenDelivery[3],'https://backup.invalid') && !str_contains($hiddenDelivery[3],'https://native.invalid/deployment'),
-    'pg_delivery_hidden_subscription_hides_primary_and_auxiliary');
+verify(str_contains($hiddenDelivery[3],'https://backup.invalid') && !str_contains($hiddenDelivery[3],'https://native.invalid/deployment'),
+    'pg_delivery_hidden_primary_preserves_enabled_auxiliary');
 removeSetting(3);settingRow(3,achbotServerDisplayDefault(),'pasarguard',402);
 // Current refresh and administrator account-list paths consume the same resolver.
 $a=strpos($cfg,'function getServerConfigById(');$b=strpos($cfg,'function getOrderTrafficInfo(',$a);
@@ -370,7 +370,7 @@ require $root.'/src/Subscription/ConfigRefresh.php';
 equal($native_reads,1,'refresh_uses_native_provider_data_once');
 $rendered=json_encode($events,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES);
 verify(str_contains($rendered,htmlspecialchars($one,ENT_QUOTES,'UTF-8')) &&
-    !str_contains($rendered,$two),'refresh_applies_managed_native_selection_to_qr_and_text');
+    str_contains($rendered,$two),'explicit_refresh_includes_every_native_config_independently_of_inline_selection');
 verify(count(glob(getcwd().'/*.png'))===0,'refresh_qr_files_cleaned');
 function jdate(...$args) {return 'fixture-date';}
 $links=$connection->real_escape_string(json_encode($all));
@@ -389,7 +389,7 @@ verify(str_contains($rendered,htmlspecialchars($one,ENT_QUOTES,'UTF-8')) &&
 $tooMany=['links'=>array_map(static fn($i)=>'vless://native.invalid/'.$i,range(1,200)),
     'subscription_url'=>$sub];
 $bounded=present('pasarguard',$tooMany,$on,achbotServerDisplayDefault());
-verify(count($bounded['qr_config_links'])<=10 && strlen($bounded['config_html'].$bounded['subscription_html'].$bounded['backup_html'])<=2200
+verify(count($bounded['links'])===3 && count($bounded['qr_config_links'])===200
     && $bounded['limited'] && $bounded['notice_html']!=='','large_native_result_bounded_without_uri_truncation');
 // Context selections share the existing document, writer and native controls.
 $beforeContextChecks=$checks;$contextSource=10000;
@@ -433,7 +433,7 @@ $protectedBefore=protectedRows();
 foreach ([achbotServerDisplayDefault(),$policyA,$policyB,
     ['mode'=>'native','policy'=>['selectors'=>[]]],
     ['mode'=>'marzban_legacy','policy'=>[],'legacy'=>['showIndexes'=>[2],'linkIndices'=>[0]]]]as $document)
-    equal(achbotServerDisplaySummary($document),achbotServerDisplayBaselineSummary($document),'old_no_override_summary_byte_parity');
+    equal(achbotServerDisplaySummary($document),achbotMessage('admin_settings.display.simple_guide'),'simple_summary_independent_of_legacy_representation');
 foreach ([1=>'marzban',3=>'pasarguard']as $sid=>$provider){
     removeSetting($sid);
     noChange(static fn()=>callback('serverDisplaySelect'.$sid,contextSource()),'context_picker_no_automatic_setting_backfill');
@@ -465,8 +465,7 @@ foreach ([1=>'marzban',3=>'pasarguard']as $sid=>$provider){
     equal(present($provider,$native,$on,$document,'delivery')['links'],[$one,$two],'delivery_named_selection_independent');
     equal(present($provider,$native,$on,$document,'view')['links'],[$four],'view_named_selection_independent');
     $summary=achbotServerDisplaySummary($document);
-    verify(str_contains($summary,achbotMessage('admin_settings.display.delivery_selection',['selection'=>'2'.achbotMessage('subscription.server_display_settings.server_display_summary.text.2496192b9b')])) &&
-        str_contains($summary,achbotMessage('admin_settings.display.view_selection',['selection'=>'1'.achbotMessage('subscription.server_display_settings.server_display_summary.text.2496192b9b')])),'both_effective_context_summaries_shown');
+    verify($summary===achbotMessage('admin_settings.display.simple_guide'),'simple_summary_directs_to_independent_controls');
     foreach(['dprotocols','vprotocols','dnames','vnames']as $field)
         verify(str_contains(achbotServerDisplayPrompt($field),achbotMessage('admin_settings.display.editing_context',['context'=>achbotMessage($field[0]==='d'?'admin_settings.display.delivery_configs':'admin_settings.display.view_configs')])),'context_title_in_reused_input_prompt');
     foreach(['d'=>'delivery','v'=>'view']as $prefix=>$context){
@@ -551,8 +550,61 @@ contextSet(1,'mode','native');equal(currentDisplay(1)['policy']['max_links'],10,
 verify(!array_key_exists('delivery_selectors',currentDisplay(1)['policy'])&&!array_key_exists('view_selectors',currentDisplay(1)['policy']),'existing_mode_change_does_not_invent_context_state');
 equal(protectedRows(),$protectedBefore,'context_editing_preserves_all_other_table_rows_and_fields');
 $contextChecks=$checks-$beforeContextChecks;
+// Current Owner's simple UI runs through the same authenticated DB writer.
+$beforeSimpleChecks=$checks;
+function editKeys(...$args){$GLOBALS['events'][]=['edit_keys'=>$args];return(object)['ok'=>true];}
+foreach([1=>'marzban',3=>'pasarguard'] as $sid=>$provider){
+    removeSetting($sid);$connection->query("UPDATE users SET step='none' WHERE userid IN(9001,9002)");
+    callback('serverDisplay'.$sid,contextSource());
+    $rows=json_decode($events[0][1],true)['inline_keyboard'];
+    verify(count($rows)===12,'simple_two_sections_expected_rows');
+    $callbacks=array_merge(...array_map(static fn($r)=>array_column($r,'callback_data'),$rows));
+    verify(count(array_filter($callbacks,static fn($s)=>str_contains($s,'_dqr_')))===1 &&
+        !array_filter($callbacks,static fn($s)=>str_contains($s,'_vqr_')),'simple_delivery_only_qr');
+    foreach(['dcfg','dsub','daux','vcfg','vsub','vaux','dqr'] as $field){
+        $peer=$field[0]==='d'?'view':'delivery';
+        $before=currentDisplay($sid);$peerBefore=present($provider,$native,$on,$before,$peer);
+        $revision=achbotServerDisplayRevision(achbotServerDisplayRow($connection,$sid));
+        $choice=$field==='dqr'?'cycle':'flip';$source=contextSource();
+        callback("serverDisplaySet{$sid}_{$field}_{$choice}_{$revision}",$source);
+        verify(count($events)===1 && isset($events[0]['edit_keys']),'toggle_edits_only_existing_keyboard');
+        equal($events[0]['edit_keys'][1],80,'toggle_uses_original_bot_message');
+        equal(present($provider,$native,$on,currentDisplay($sid),$peer),$peerBefore,'simple_toggle_preserves_peer');
+        $keys=$events[0]['edit_keys'][0];
+        verify(str_contains($keys,'_'.$source),'toggle_refreshes_source_revision');
+        noChange(static fn()=>callback("serverDisplaySet{$sid}_{$field}_{$choice}_{$revision}",$source),'simple_callback_replay_no_write');
+    }
+    foreach(['dconfigs'=>"Fourth\nFast",'vconfigs'=>"Backup"] as $field=>$body){
+        $before=currentDisplay($sid);$peer=$field[0]==='d'?'view':'delivery';
+        $peerBefore=present($provider,$native,$on,$before,$peer);
+        contextInput($sid,$field,$body);
+        equal(currentDisplay($sid)['policy'][$field[0]==='d'?'delivery':'view']['names'],explode("\n",$body),'simple_names_order_persisted');
+        equal(present($provider,$native,$on,currentDisplay($sid),$peer),$peerBefore,'simple_names_preserve_peer');
+        verify(str_contains(json_encode($events,JSON_UNESCAPED_UNICODE),'serverDisplay'.$sid) ||
+            str_contains(json_encode($events,JSON_UNESCAPED_UNICODE),'serverDisplaySet'.$sid),'simple_save_returns_to_same_server');
+    }
+    $revision=achbotServerDisplayRevision(achbotServerDisplayRow($connection,$sid));
+    callback("serverDisplayValue{$sid}_dconfigs_{$revision}",contextSource());
+    foreach([implode("\n",array_fill(0,11,'Fast')),"Fast\nFast","Fast\x00","Fast\n\nBackup",str_repeat('x',301)] as $bad)
+        noChange(static fn()=>message($bad,contextSource()),'simple_invalid_names_leave_editor_and_settings_intact');
+    message('Cancel',contextSource());
+    equal($connection->query('SELECT step FROM users WHERE userid=9001')->fetch_assoc()['step'],'none','simple_cancel_ends_editor_once');
+    verify(str_contains(json_encode($events),'serverDisplaySet'.$sid),'simple_cancel_returns_to_display_controls');
+    $revision=achbotServerDisplayRevision(achbotServerDisplayRow($connection,$sid));
+    callback("serverDisplayValue{$sid}_dconfigs_{$revision}",contextSource());
+    contextSet($sid,'vaux','flip',9002);
+    noChange(static fn()=>message('Third',contextSource()),'simple_names_baseline_conflict_denied');
+    $connection->query("UPDATE users SET step='none' WHERE userid=9001");
+    foreach(['operator','support'] as $level){
+        $connection->query("UPDATE setting SET value='".$level."' WHERE type='ADMIN_ROLE_9002'");
+        $revision=achbotServerDisplayRevision(achbotServerDisplayRow($connection,$sid));
+        noChange(static fn()=>callback("serverDisplaySet{$sid}_daux_flip_{$revision}",contextSource(),9002),'simple_lower_role_denied');
+    }
+    $connection->query("UPDATE setting SET value='manager' WHERE type='ADMIN_ROLE_9002'");
+}
+$simpleChecks=$checks-$beforeSimpleChecks;
 equal(preg_replace("/AUTO_INCREMENT=[0-9]+/", "", $connection->query("SHOW CREATE TABLE setting")->fetch_row()[1]),$beforeSchema,'no_ddl_or_schema_change');
-echo json_encode(['pass'=>true,'checks'=>$checks,'database'=>'owned socket only','network_calls'=>0,'native_context_editor'=>['providers'=>['marzban','pasarguard'],'checks'=>$contextChecks]],JSON_THROW_ON_ERROR);
+echo json_encode(['pass'=>true,'checks'=>$checks,'database'=>'owned socket only','network_calls'=>0,'native_context_editor'=>['providers'=>['marzban','pasarguard'],'checks'=>$contextChecks],'simple_editor'=>['providers'=>['marzban','pasarguard'],'checks'=>$simpleChecks]],JSON_THROW_ON_ERROR);
 '''
 def main():
     p=argparse.ArgumentParser()

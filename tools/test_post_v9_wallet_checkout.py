@@ -171,7 +171,9 @@ $connection->set_charset('utf8mb4');
 $admin=9001;$from_id=1001;$chat_id=1001;$message_id=101;
 $data='';$text=(string)($spec['username']??'');$match=[];
 $botState=['sellState'=>'on','remark'=>'manual','gbPrice'=>100,'dayPrice'=>10,
- 'walletState'=>'on','nowPaymentOther'=>'off','zarinpal'=>'off','nextpay'=>'off'];
+ 'walletState'=>'on','nowPaymentOther'=>'off','zarinpal'=>'off','nextpay'=>'off',
+ 'cartToCartState'=>'off','giftCardState'=>'off','manualUsdtState'=>'off'];
+$paymentKeys=[]; // Actual common helpers see explicitly disabled manual methods.
 $mainValues=['incorrect_config_name'=>'Invalid account username',
  'buy_subscription_detail'=>'Account PRICE VOLUME DAYS PLAN-NAME DESCRIPTION'];
 $buttonValues=['cancel'=>'cancel','pay_with_wallet'=>'Wallet'];
@@ -191,8 +193,6 @@ function sendMessage(...$args) {
 function RandomString(){return (string)$GLOBALS['spec']['hash'];}
 function setUser(...$args){$GLOBALS['events'][]=['name'=>'STEP'];}
 function achbotSupportsMarzbanPlan($db,$id){return (int)$id===7;}
-function achbotManualEnabled(...$args){return false;}
-function achbotManualCryptoEnabled(...$args){return false;}
 require_once $root.'/src/Purchase/Core.php';
 require $root.'/src/Purchase/Catalogue.php';
 '''

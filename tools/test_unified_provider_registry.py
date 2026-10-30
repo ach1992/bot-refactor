@@ -49,7 +49,7 @@ function fixtureTarget(...$a){return['group'=>null,'endpoint'=>str_repeat('a',64
 function fixtureReserve(...$a){$GLOBALS['events'][]='fixture_reserve';}
 function fixtureDispatch(...$a){$GLOBALS['events'][]=['fixture_dispatch'=>[$a[1],$a[2],$a[5],$a[6],$a[7],$a[8],$a[9],$a[10],$a[11],$a[13]]];return[(object)['success'=>true,'verified'=>true],$a[5],0,$a[1]];}
 function fixtureLink(...$a){$GLOBALS['events'][]=['fixture_link'=>[$a[1],$a[2],$a[3]]];}
-require $root.'/src/Purchase/Core.php';
+require_once $root.'/src/Purchase/Core.php';
 require $root.'/src/Finance/ServiceEffects.php';
 require $root.'/src/Finance/PaymentLifecycle.php';
 $connection=new mysqli('localhost','root','',$argv[3],0,$argv[2]);$connection->set_charset('utf8mb4');

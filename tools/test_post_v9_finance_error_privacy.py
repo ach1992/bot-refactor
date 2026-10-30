@@ -104,9 +104,9 @@ function editMarzbanConfig($server_id, $info) {
         'applied_expire'=>2000000000,'applied_bytes'=>10737418240];
 }
 try {
-    require $root . '/buy_helpers.php';
+    require_once $root . '/src/Purchase/Core.php';
     if ($case['module'] === 'WalletSettlement.php') {
-        require $root . '/src/Finance/WalletSettlement.php';
+        require_once $root . '/src/Finance/WalletSettlement.php';
         $result = processWalletPayment($connection, 'privacyhash',
             function ($payment, $account) {
                 privacyDispatchSnapshot();

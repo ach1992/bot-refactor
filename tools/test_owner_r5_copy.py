@@ -73,7 +73,7 @@ $reports=[];foreach(['marzban','pasarguard']as$provider){
         guide=item['guide'];check(len(guide)<4096,'guide_exceeds_message_limit')
         parser=GuideParser();parser.feed(guide);parser.close();check(not parser.stack,'unclosed_guide_markup')
         check(len(parser.blocks)==(2 if provider=='marzban'else 1),'guide_example_count')
-        first=json.loads(parser.blocks[0]);check(first=={'mode':'native','policy':{'max_links':10}},'native_example_semantics')
+        first=json.loads(parser.blocks[0]);check(first=={'mode':'native','policy':[]},'native_example_semantics')
         if provider=='marzban':
             second=json.loads(parser.blocks[1]);check(second['mode']=='marzban_legacy'and second['legacy']['showIndexes']==[2,4]and second['legacy']['linkIndices']==[0,2],'legacy_example_semantics')
         blocks+=len(parser.blocks)

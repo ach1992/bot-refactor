@@ -28,9 +28,9 @@ def check() -> dict:
     retired = (b'$hideConnectLinkForMarzban =', b'$showIndexes =',
                b'$hideConfigIfMany =', b'$linkIndices =',
                b'$USDTPrice =', b'$USDTPriceagent =',
-               b'$admins_list =', b'$special_admins =')
+               b'$admins_list =', b'$special_admins =', b'$inviteReward =')
     removed = [line for line in original_lines if line.startswith(retired)]
-    assert len(removed) == 8
+    assert len(removed) == 9
     assert example == b''.join(line for line in original_lines if not line.startswith(retired))
     assert previous != example and all(previous.count(line) == 1 for line in STAFF_LINES.values())
     assert example.count(b'$admin = 0;\n') == 1
@@ -39,6 +39,7 @@ def check() -> dict:
     mutations.update({key+'_reintroduced': example.replace(
         b'$admin = 0;\n', b'$admin = 0;\n'+line, 1)
         for key, line in STAFF_LINES.items()})
+    mutations['invitation_reintroduced'] = example.replace(b'$admin = 0;\n', b'$admin = 0;\n$inviteReward = 0;\n',1)
     mutations['unrelated_primary_owner'] = example.replace(b'$admin = 0;', b'$admin = 73;', 1)
     mutations['unrelated_synthetic_database_user'] = example.replace(
         b"$dbUserName = 'REPLACE_WITH_DB_USER';",
@@ -57,7 +58,7 @@ def check() -> dict:
         try:
             package.ROOT = stage
             assert package.members() == names
-            cases.append('new_example_exact_eight_authorized_removals_green')
+            cases.append('new_example_exact_nine_authorized_removals_green')
             for label, raw in mutations.items():
                 (stage/'baseInfo.example.php').write_bytes(raw)
                 try:
@@ -75,7 +76,7 @@ def check() -> dict:
     return {
         'complete': True, 'cases': len(cases), 'scenarios': cases,
         'actual_package_members': True, 'source_real': True,
-        'authorized_assignment_removals': 8, 'additional_staff_assignment_removals': 2,
+        'authorized_assignment_removals': 9, 'invitation_assignment_removals': 1, 'additional_staff_assignment_removals': 2,
         'baseline_source': BASE, 'archived_two_staff_assignments_red': True,
         'staff_reintroduction_red': sorted(STAFF_LINES),
         'unrelated_template_mutation_red': ['primary_owner', 'synthetic_database_user'],

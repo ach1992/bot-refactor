@@ -17,7 +17,7 @@ DB=purchase.SIDE[1]
 
 # Reuse the current payment-route fixture's REAL application PHP and actual
 # MySQLi writes; extend only the synthetic Telegram boundary and include the
-# real reward module exactly as the production buy_helpers.php does.
+# real reward module exactly as the production src/Purchase/Core.php does.
 OLD_SEND="""function sendMessage(...$args){
     global $spec;
     $GLOBALS['events'][]=['name'=>'sendMessage','args'=>$args];"""

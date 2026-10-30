@@ -53,6 +53,7 @@ function checkSpam(){return false;}
 function createServerAccount(...$a){throw new RuntimeException('forbidden_provider_write');}
 function achbotApplyServiceEdit(...$a){throw new RuntimeException('forbidden_provider_write');}
 require_once $root.'/src/Purchase/Core.php';require_once $root.'/src/Finance/ReceiptHelpers.php';require_once $root.'/src/Finance/PaymentLifecycle.php';
+require_once $root.'/src/Finance/PaymentKeyAdmin.php';
 if (($spec['route']??'volume')==='home') {
  $telegramWebhookSecret='owned-fixture-Telegram-2026';$_SERVER['HTTP_X_TELEGRAM_BOT_API_SECRET_TOKEN']=$telegramWebhookSecret;$_SERVER['REQUEST_METHOD']='POST';require $root.'/bot.php';
 } elseif ($spec['route']==='status') {require $root.'/src/Finance/Routes/PrePayment.php'; $GLOBALS['events'][]=['event'=>'DISPATCH','data'=>$data];}
@@ -144,7 +145,14 @@ def check():
         assert sql(w,e,"SELECT state FROM pays WHERE hash_id='"+draft+"'")=='pending'
         checks.append('selected_agent_draft_enters_real_guarded_prepayment_without_settlement')
         pid=pay(w,e,'evidenceinvoice',state='expired')
-        oldbot=app/'bot.php';newbot=oldbot.read_bytes();oldbot.write_bytes(subprocess.check_output(['git','show',BASE+':bot.php'],cwd=ROOT))
+        oldbot=app/'bot.php';newbot=oldbot.read_bytes()
+        baseline_bot=subprocess.check_output(['git','show',BASE+':bot.php'],cwd=ROOT)
+        # Only the disposable historical route copy uses the current bootstrap.
+        # The archived source bytes and home/evidence comparison stay unchanged.
+        old_import=b"require_once 'buy_helpers.php';"
+        assert baseline_bot.count(old_import)==1
+        oldbot.write_bytes(baseline_bot.replace(old_import,
+            b"require_once __DIR__.'/src/Purchase/Core.php';",1))
         assert event(call(w,e,app,route='home',data='mainMenu'),'EDIT')
         oldbot.write_bytes(newbot)
         before=purchase.snapshot(w,e,DB)

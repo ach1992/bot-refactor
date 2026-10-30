@@ -9,6 +9,5 @@ $dbName = 'REPLACE_WITH_EXISTING_DB_NAME';
 $botUrl = 'https://example.invalid/your/bot';
 $admin = 0;
 $botUsername = 'REPLACE_WITH_BOT_USERNAME';
-$inviteReward = 0;
 $joinLink = 'https://t.me/REPLACE_WITH_PRIVATE_CHANNEL';
 ?>
