@@ -2167,6 +2167,9 @@ return [
         // database.send
         'database.send.bot__database__backup__time_now.f5b56afb9a' => ['text' => '' . "\n" . '📦 نسخه پشتیبان دیتابیس ربات' . "\n" . '' . "\n" . '📅 زمان: {now}' . "\n" . '👤 کاربران: {userCount}' . "\n" . '📋 اشتراک‌ها: {orderCount}' . "\n" . '', 'parameters' => ['now', 'userCount', 'orderCount']],
     ],
+    'gifts' => [
+        'completed_report' => ['text' => '🎁 هدیهٔ اشتراک اعمال شد' . "\n" . '🔖 شناسه عملیات: <code>{reference}</code>' . "\n" . '👤 اشتراک: <code>{remark}</code>' . "\n" . '📅 زمان هدیه: {days} روز' . "\n" . '📦 حجم هدیه: {volume_mb} مگابایت' . "\n" . '👥 ثبت‌های مرتبط: {reference_count}' . "\n" . '✉️ کاربران مرتبط: {recipient_count}' . "\n" . '⚠️ پیام‌های بدون تأیید ارسال: {notice_unconfirmed_count}', 'parameters' => ['reference', 'remark', 'days', 'volume_mb', 'reference_count', 'recipient_count', 'notice_unconfirmed_count']],
+    ],
     // متن‌ها و نشانی‌های قابل تنظیم هر ربات
     'instance_content' => [
         'title' => '📝 متن‌های ربات' . "\n" . 'متن موردنظر را برای ویرایش انتخاب کنید.',
