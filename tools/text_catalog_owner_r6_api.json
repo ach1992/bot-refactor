@@ -17,8 +17,8 @@
       "source_paths": [
         "src/Finance/ApiPayments.php"
       ],
-      "usage": "pending_flow",
-      "reason": "Accepted payment/invoice/report copy for the separately composed API flow; no active source binding is claimed at this amendment base."
+      "usage": "flow_source",
+      "reason": "Accepted API invoice/payment/report label bound to the exact adopted source consumer inventory."
     },
     "payment.api_payment.bank_invoice": {
       "audience": "user",
@@ -35,8 +35,8 @@
       "source_paths": [
         "src/Finance/ApiPayments.php"
       ],
-      "usage": "pending_flow",
-      "reason": "Accepted payment/invoice/report copy for the separately composed API flow; no active source binding is claimed at this amendment base."
+      "usage": "flow_source",
+      "reason": "Accepted API invoice/payment/report label bound to the exact adopted source consumer inventory."
     },
     "payment.api_payment.bank_pending": {
       "audience": "user",
@@ -46,19 +46,18 @@
         "src/Finance/ApiPayments.php",
         "src/Finance/Routes/ApiPayments.php"
       ],
-      "usage": "pending_flow",
-      "reason": "Accepted payment/invoice/report copy for the separately composed API flow; no active source binding is claimed at this amendment base."
+      "usage": "flow_source",
+      "reason": "Accepted API invoice/payment/report label bound to the exact adopted source consumer inventory."
     },
     "payment.api_payment.check": {
       "audience": "user",
       "entry": "بررسی پرداخت",
       "introduced_in": "2633ac3c21c539635c228dd31df2e07caee491d0",
       "source_paths": [
-        "src/Finance/ApiPayments.php",
-        "src/Finance/Routes/ApiPayments.php"
+        "src/Finance/ApiPayments.php"
       ],
-      "usage": "pending_flow",
-      "reason": "Accepted payment/invoice/report copy for the separately composed API flow; no active source binding is claimed at this amendment base."
+      "usage": "flow_source",
+      "reason": "Accepted API invoice/payment/report label bound to the exact adopted source consumer inventory."
     },
     "payment.api_payment.code": {
       "audience": "user",
@@ -67,8 +66,8 @@
       "source_paths": [
         "src/Finance/ApiPayments.php"
       ],
-      "usage": "pending_flow",
-      "reason": "Accepted payment/invoice/report copy for the separately composed API flow; no active source binding is claimed at this amendment base."
+      "usage": "flow_source",
+      "reason": "Accepted API invoice/payment/report label bound to the exact adopted source consumer inventory."
     },
     "payment.api_payment.code_prompt": {
       "audience": "user",
@@ -78,18 +77,19 @@
         "src/Finance/ApiPayments.php",
         "src/Finance/Routes/ApiPayments.php"
       ],
-      "usage": "pending_flow",
-      "reason": "Accepted payment/invoice/report copy for the separately composed API flow; no active source binding is claimed at this amendment base."
+      "usage": "flow_source",
+      "reason": "Accepted API invoice/payment/report label bound to the exact adopted source consumer inventory."
     },
     "payment.api_payment.code_received": {
       "audience": "user",
       "entry": "کد دریافت شد. ثبت درخواست بررسی در حال انجام است؛ منتظر نتیجه بمانید.",
       "introduced_in": "2633ac3c21c539635c228dd31df2e07caee491d0",
       "source_paths": [
+        "src/Finance/ApiPayments.php",
         "src/Finance/Routes/ApiPayments.php"
       ],
-      "usage": "pending_flow",
-      "reason": "Accepted payment/invoice/report copy for the separately composed API flow; no active source binding is claimed at this amendment base."
+      "usage": "flow_source",
+      "reason": "Accepted API invoice/payment/report label bound to the exact adopted source consumer inventory."
     },
     "payment.api_payment.completed": {
       "audience": "user",
@@ -108,8 +108,8 @@
         "src/Finance/Routes/ApiPayments.php",
         "src/Finance/ReceiptHelpers.php"
       ],
-      "usage": "pending_flow",
-      "reason": "Accepted payment/invoice/report copy for the separately composed API flow; no active source binding is claimed at this amendment base."
+      "usage": "flow_source",
+      "reason": "Accepted API invoice/payment/report label bound to the exact adopted source consumer inventory."
     },
     "payment.api_payment.denied": {
       "audience": "user",
@@ -118,18 +118,19 @@
       "source_paths": [
         "src/Finance/Routes/ApiPayments.php"
       ],
-      "usage": "pending_flow",
-      "reason": "Accepted payment/invoice/report copy for the separately composed API flow; no active source binding is claimed at this amendment base."
+      "usage": "flow_source",
+      "reason": "Accepted API invoice/payment/report label bound to the exact adopted source consumer inventory."
     },
     "payment.api_payment.expired": {
       "audience": "user",
       "entry": "مهلت این گیفت‌کارت پایان یافته است. برای پیگیری با پشتیبانی تماس بگیرید.",
       "introduced_in": "2633ac3c21c539635c228dd31df2e07caee491d0",
       "source_paths": [
+        "src/Finance/ApiPayments.php",
         "src/Finance/Routes/ApiPayments.php"
       ],
-      "usage": "pending_flow",
-      "reason": "Accepted payment/invoice/report copy for the separately composed API flow; no active source binding is claimed at this amendment base."
+      "usage": "flow_source",
+      "reason": "Accepted API invoice/payment/report label bound to the exact adopted source consumer inventory."
     },
     "payment.api_payment.gift_invoice": {
       "audience": "user",
@@ -143,8 +144,8 @@
       "source_paths": [
         "src/Finance/ApiPayments.php"
       ],
-      "usage": "pending_flow",
-      "reason": "Accepted payment/invoice/report copy for the separately composed API flow; no active source binding is claimed at this amendment base."
+      "usage": "flow_source",
+      "reason": "Accepted API invoice/payment/report label bound to the exact adopted source consumer inventory."
     },
     "payment.api_payment.locked_code": {
       "audience": "user",
@@ -153,28 +154,30 @@
       "source_paths": [
         "src/Finance/Routes/ApiPayments.php"
       ],
-      "usage": "pending_flow",
-      "reason": "Accepted payment/invoice/report copy for the separately composed API flow; no active source binding is claimed at this amendment base."
+      "usage": "flow_source",
+      "reason": "Accepted API invoice/payment/report label bound to the exact adopted source consumer inventory."
     },
     "payment.api_payment.mismatch": {
       "audience": "user",
       "entry": "مبلغ گیفت‌کارت با مبلغ کامل فاکتور برابر نیست. کارت مصرف نشد؛ می‌توانید کد دیگری بفرستید.",
       "introduced_in": "2633ac3c21c539635c228dd31df2e07caee491d0",
       "source_paths": [
+        "src/Finance/ApiPayments.php",
         "src/Finance/Routes/ApiPayments.php"
       ],
-      "usage": "pending_flow",
-      "reason": "Accepted payment/invoice/report copy for the separately composed API flow; no active source binding is claimed at this amendment base."
+      "usage": "flow_source",
+      "reason": "Accepted API invoice/payment/report label bound to the exact adopted source consumer inventory."
     },
     "payment.api_payment.pending": {
       "audience": "user",
       "entry": "بررسی پرداخت ادامه دارد. کد، رسید یا وجه را دوباره ارسال نکنید.",
       "introduced_in": "2633ac3c21c539635c228dd31df2e07caee491d0",
       "source_paths": [
+        "src/Finance/ApiPayments.php",
         "src/Finance/Routes/ApiPayments.php"
       ],
-      "usage": "pending_flow",
-      "reason": "Accepted payment/invoice/report copy for the separately composed API flow; no active source binding is claimed at this amendment base."
+      "usage": "flow_source",
+      "reason": "Accepted API invoice/payment/report label bound to the exact adopted source consumer inventory."
     },
     "payment.api_payment.receipt": {
       "audience": "user",
@@ -183,16 +186,18 @@
       "source_paths": [
         "src/Finance/ApiPayments.php"
       ],
-      "usage": "pending_flow",
-      "reason": "Accepted payment/invoice/report copy for the separately composed API flow; no active source binding is claimed at this amendment base."
+      "usage": "flow_source",
+      "reason": "Accepted API invoice/payment/report label bound to the exact adopted source consumer inventory."
     },
     "payment.api_payment.receipt_review": {
       "audience": "user",
       "entry": "رسید دریافت شد و در انتظار بررسی است. بررسی خودکار پرداخت نیز ادامه دارد؛ وجه یا رسید را دوباره ارسال نکنید.",
       "introduced_in": "2633ac3c21c539635c228dd31df2e07caee491d0",
-      "source_paths": [],
-      "usage": "retained_accepted",
-      "reason": "Preserve this exact accepted initial API label without claiming an active consumer."
+      "source_paths": [
+        "src/Finance/ApiPayments.php"
+      ],
+      "usage": "flow_source",
+      "reason": "Accepted API invoice/payment/report label bound to the exact adopted source consumer inventory."
     },
     "payment.api_payment.review": {
       "audience": "user",
@@ -202,18 +207,19 @@
         "src/Finance/ApiPayments.php",
         "src/Finance/Routes/ApiPayments.php"
       ],
-      "usage": "pending_flow",
-      "reason": "Accepted payment/invoice/report copy for the separately composed API flow; no active source binding is claimed at this amendment base."
+      "usage": "flow_source",
+      "reason": "Accepted API invoice/payment/report label bound to the exact adopted source consumer inventory."
     },
     "payment.api_payment.revoked": {
       "audience": "user",
       "entry": "این گیفت‌کارت باطل شده است. برای پیگیری با پشتیبانی تماس بگیرید.",
       "introduced_in": "2633ac3c21c539635c228dd31df2e07caee491d0",
       "source_paths": [
+        "src/Finance/ApiPayments.php",
         "src/Finance/Routes/ApiPayments.php"
       ],
-      "usage": "pending_flow",
-      "reason": "Accepted payment/invoice/report copy for the separately composed API flow; no active source binding is claimed at this amendment base."
+      "usage": "flow_source",
+      "reason": "Accepted API invoice/payment/report label bound to the exact adopted source consumer inventory."
     },
     "payment.api_payment.single_code": {
       "audience": "user",
@@ -222,8 +228,8 @@
       "source_paths": [
         "src/Finance/Routes/ApiPayments.php"
       ],
-      "usage": "pending_flow",
-      "reason": "Accepted payment/invoice/report copy for the separately composed API flow; no active source binding is claimed at this amendment base."
+      "usage": "flow_source",
+      "reason": "Accepted API invoice/payment/report label bound to the exact adopted source consumer inventory."
     },
     "payment.api_payment.unavailable": {
       "audience": "user",
@@ -232,18 +238,19 @@
       "source_paths": [
         "src/Finance/Routes/ApiPayments.php"
       ],
-      "usage": "pending_flow",
-      "reason": "Accepted payment/invoice/report copy for the separately composed API flow; no active source binding is claimed at this amendment base."
+      "usage": "flow_source",
+      "reason": "Accepted API invoice/payment/report label bound to the exact adopted source consumer inventory."
     },
     "payment.api_payment.used": {
       "audience": "user",
       "entry": "این گیفت‌کارت قبلاً استفاده شده است. وضعیت سفارش را بررسی کنید؛ برای پیگیری با پشتیبانی تماس بگیرید.",
       "introduced_in": "2633ac3c21c539635c228dd31df2e07caee491d0",
       "source_paths": [
+        "src/Finance/ApiPayments.php",
         "src/Finance/Routes/ApiPayments.php"
       ],
-      "usage": "pending_flow",
-      "reason": "Accepted payment/invoice/report copy for the separately composed API flow; no active source binding is claimed at this amendment base."
+      "usage": "flow_source",
+      "reason": "Accepted API invoice/payment/report label bound to the exact adopted source consumer inventory."
     },
     "manual_payment.api_payment.automatic_status": {
       "audience": "admin",
@@ -278,8 +285,8 @@
       "source_paths": [
         "src/Finance/ApiPayments.php"
       ],
-      "usage": "pending_flow",
-      "reason": "Accepted payment/invoice/report copy for the separately composed API flow; no active source binding is claimed at this amendment base."
+      "usage": "flow_source",
+      "reason": "Accepted API invoice/payment/report label bound to the exact adopted source consumer inventory."
     },
     "manual_payment.api_payment.review_staff": {
       "audience": "admin",
@@ -301,8 +308,8 @@
       "source_paths": [
         "src/Finance/ApiPayments.php"
       ],
-      "usage": "pending_flow",
-      "reason": "Accepted payment/invoice/report copy for the separately composed API flow; no active source binding is claimed at this amendment base."
+      "usage": "flow_source",
+      "reason": "Accepted API invoice/payment/report label bound to the exact adopted source consumer inventory."
     },
     "manual_payment.api_payment.status_evidence_only": {
       "audience": "admin",
@@ -311,8 +318,8 @@
       "source_paths": [
         "src/Finance/ApiPayments.php"
       ],
-      "usage": "pending_flow",
-      "reason": "Accepted payment/invoice/report copy for the separately composed API flow; no active source binding is claimed at this amendment base."
+      "usage": "flow_source",
+      "reason": "Accepted API invoice/payment/report label bound to the exact adopted source consumer inventory."
     },
     "manual_payment.api_payment.status_monitoring": {
       "audience": "admin",
@@ -329,8 +336,8 @@
       "source_paths": [
         "src/Finance/ApiPayments.php"
       ],
-      "usage": "pending_flow",
-      "reason": "Accepted payment/invoice/report copy for the separately composed API flow; no active source binding is claimed at this amendment base."
+      "usage": "flow_source",
+      "reason": "Accepted API invoice/payment/report label bound to the exact adopted source consumer inventory."
     },
     "manual_payment.api_payment.status_settled": {
       "audience": "admin",
@@ -339,8 +346,8 @@
       "source_paths": [
         "src/Finance/ApiPayments.php"
       ],
-      "usage": "pending_flow",
-      "reason": "Accepted payment/invoice/report copy for the separately composed API flow; no active source binding is claimed at this amendment base."
+      "usage": "flow_source",
+      "reason": "Accepted API invoice/payment/report label bound to the exact adopted source consumer inventory."
     },
     "manual_payment.api_payment.status_uncertain": {
       "audience": "admin",
@@ -349,8 +356,8 @@
       "source_paths": [
         "src/Finance/ApiPayments.php"
       ],
-      "usage": "pending_flow",
-      "reason": "Accepted payment/invoice/report copy for the separately composed API flow; no active source binding is claimed at this amendment base."
+      "usage": "flow_source",
+      "reason": "Accepted API invoice/payment/report label bound to the exact adopted source consumer inventory."
     },
     "manual_payment.api_payment.typed_evidence": {
       "audience": "admin",
@@ -365,8 +372,8 @@
       "source_paths": [
         "src/Finance/ApiPayments.php"
       ],
-      "usage": "pending_flow",
-      "reason": "Accepted payment/invoice/report copy for the separately composed API flow; no active source binding is claimed at this amendment base."
+      "usage": "flow_source",
+      "reason": "Accepted API invoice/payment/report label bound to the exact adopted source consumer inventory."
     },
     "manual_payment.api_payment.view_code": {
       "audience": "admin",
@@ -375,8 +382,8 @@
       "source_paths": [
         "src/Finance/ApiPayments.php"
       ],
-      "usage": "pending_flow",
-      "reason": "Accepted payment/invoice/report copy for the separately composed API flow; no active source binding is claimed at this amendment base."
+      "usage": "flow_source",
+      "reason": "Accepted API invoice/payment/report label bound to the exact adopted source consumer inventory."
     },
     "payment_settings.api.advanced": {
       "audience": "admin",
@@ -913,7 +920,7 @@
     "manual_payment.api_payment.automatic_status",
     "manual_payment.api_payment.review_staff",
     "manual_payment.api_payment.status_monitoring",
-    "payment.api_payment.completed",
-    "payment.api_payment.receipt_review"
-  ]
+    "payment.api_payment.completed"
+  ],
+  "source_binding_commit": "fba6ec52db6052e90f3f8308602d93278fe655c0"
 }

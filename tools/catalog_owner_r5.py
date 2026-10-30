@@ -78,7 +78,7 @@ API_RESULT='df00c13da1e38e2ba364ab48e31db66f8705b2c2'
 API_COMMITS=['2633ac3c21c539635c228dd31df2e07caee491d0',
              '2c685f5a9621a808c44a4c012b04c8ccd97102af',API_RESULT]
 API_AUTH='https://github.com/ach1992/bot-refactor/issues/57#issuecomment-6514754219'
-API_RETAINED={'payment.api_payment.completed','payment.api_payment.receipt_review',
+API_RETAINED={'payment.api_payment.completed',
               'manual_payment.api_payment.review_staff','manual_payment.api_payment.automatic_status',
               'manual_payment.api_payment.status_monitoring'}
 def api_manifest():return json.loads((ROOT/'tools/text_catalog_owner_r6_api.json').read_text())
@@ -91,7 +91,8 @@ def verify_api_and_restore(sides,definition=None):
     record=api_manifest()if definition is None else definition
     check(record.get('version')==1 and record.get('baseline_commit')==API_BASE
           and record.get('result_catalog_commit')==API_RESULT and record.get('accepted_commits')==API_COMMITS
-          and record.get('authorization')==API_AUTH and record.get('scope')=='additions_only',
+          and record.get('authorization')==API_AUTH and record.get('scope')=='additions_only'
+          and record.get('source_binding_commit')==API_SOURCE,
           'api_catalog_amendment_identity')
     before=api_catalog_snapshot(API_BASE);accepted=api_catalog_snapshot(API_RESULT)
     check(sum(map(len,before.values()))==2685,'api_prior_r5_catalog_identity')
@@ -117,8 +118,10 @@ def verify_api_and_restore(sides,definition=None):
         paths=item.get('source_paths');usage=item.get('usage')
         check(isinstance(paths,list) and len(paths)==len(set(paths)) and set(paths)<=allowed_sources,'api_catalog_source_inventory:'+key)
         check((key in API_RETAINED and usage=='retained_accepted' and not paths) or
-              (key not in API_RETAINED and usage in ['settings_source','pending_flow'] and paths),
+              (key not in API_RETAINED and usage in ['settings_source','flow_source'] and paths),
               'api_catalog_usage_identity:'+key)
+        expected_paths=[path for path in API_REFERENCE_PATHS if key in api_source_references(path,api_consumer_snapshot(path))]
+        check(paths==expected_paths,'api_catalog_actual_source_binding:'+key)
         check(isinstance(text(value),str) and isinstance(params(value),list) and
               len(set(params(value)))==len(params(value)) and
               set(re.findall(r'\{([A-Za-z_][A-Za-z0-9_]*)\}',text(value)))==set(params(value)),
@@ -149,4 +152,64 @@ def api_negative_controls(sides):
         try:verify_api_and_restore(candidate,record)
         except AssertionError:continue
         raise AssertionError('api_catalog_negative_control_missed')
+    return len(controls)
+
+# Dynamic lookups are resolved only for these exact adopted consumer sources.
+# This is not a prefix exemption: source bytes and every expanded key are pinned.
+API_SOURCE='fba6ec52db6052e90f3f8308602d93278fe655c0'
+API_FIELDS=['smsApiUrl','smsApiToken','smsApiHorizonHours','smsApiProvider','smsApiSender',
+            'smsApiMobileSource','smsApiRuleId','smsApiBankKey','smsApiTimezone','smsApiCalendar',
+            'giftApiUrl','giftApiKeyId','giftApiSecret','giftApiAmountUnit','giftApiGameKey','giftApiValueId']
+API_DYNAMIC={
+ 'src/Finance/PaymentApiAdmin.php':{
+    'payment_settings.api.':['payment_settings.api.'+s for s in ['sms_verify','gift_verify','sms_settings','gift_settings','sms_title','gift_title','sms_guidance','gift_guidance']],
+    'payment_settings.api.field.':['payment_settings.api.field.'+f for f in API_FIELDS],
+    'payment_settings.api.hint.':['payment_settings.api.hint.'+f for f in API_FIELDS]},
+ 'src/Finance/ApiPayments.php':{
+    'payment.api_payment.':['payment.api_payment.'+s for s in ['code','check','code_prompt','used','revoked','expired','mismatch','code_received','review','pending','receipt_review','bank_fallback','bank_pending']],
+    'manual_payment.api_payment.status_':['manual_payment.api_payment.status_'+s for s in ['confirmed','settled','review','uncertain','evidence_only']]},
+ 'src/Finance/Routes/ApiPayments.php':{
+    'payment.api_payment.':['payment.api_payment.'+s for s in ['confirmed','review','unavailable','pending','bank_pending','locked_code','single_code','used','revoked','expired','mismatch']]}
+}
+API_CONDITIONAL_REFS={'src/Finance/PaymentApiAdmin.php':[
+    'payment_settings.api.configured','payment_settings.api.incomplete',
+    'payment_settings.api.complete_guidance','payment_settings.api.incomplete_guidance']}
+API_REFERENCE_PATHS=[*API_DYNAMIC,'bot.php','src/Finance/ReceiptHelpers.php']
+@functools.lru_cache(maxsize=None)
+def api_consumer_snapshot(path):
+    check(path in API_REFERENCE_PATHS,'api_consumer_source_identity')
+    return command('git','show',API_SOURCE+':'+path).decode()
+def api_source_references(path,source):
+    refs=set(re.findall(r"\\?achbotMessage(?:Html)?\('([^']+)'",source))
+    if path in API_DYNAMIC:
+        check(source==api_consumer_snapshot(path),'api_dynamic_consumer_source_drift:'+path)
+        for key in API_CONDITIONAL_REFS.get(path,[]):
+            check(repr(key) in source,'api_conditional_literal_missing:'+path+':'+key)
+            refs.add(key)
+        for literal,expanded in API_DYNAMIC[path].items():
+            check(literal in refs,'api_dynamic_literal_missing:'+path+':'+literal)
+            refs.remove(literal);refs.update(expanded)
+    return refs
+def api_reference_proof(sources,entries):
+    check(set(API_DYNAMIC)<=set(sources),'api_consumer_source_missing')
+    refs=set()
+    for path,source in sources.items():refs.update(api_source_references(path,source))
+    check(refs<=set(entries),'unknown_catalog_reference:'+str(sorted(refs-set(entries))))
+    added=set(api_manifest()['added_keys'])
+    check(added-refs==API_RETAINED,'api_unreferenced_key_inventory_drift:'+str(sorted(added-refs)))
+    return refs,{'api_referenced_keys':len(added&refs),'api_dynamic_source_paths':len(API_DYNAMIC),
+                 'api_reference_source_commit':API_SOURCE,'api_retained_unreferenced_keys':len(API_RETAINED)}
+def api_reference_negative_controls(sources,entries):
+    controls=[]
+    path='src/Finance/ApiPayments.php'
+    bad=dict(sources);bad[path]+="\nachbotMessage('payment.api_payment.unapproved');";controls.append(bad)
+    bad=dict(sources);bad[path]=bad[path].replace("'bank_pending'","'unapproved_state'");controls.append(bad)
+    bad=dict(sources);bad['unapproved.php']="<?php achbotMessage('payment.api_payment.unapproved');";controls.append(bad)
+    bad=dict(sources);bad['unapproved.php']="<?php achbotMessage('payment.api_payment.'.$state);";controls.append(bad)
+    bad=dict(sources);bad.pop('src/Finance/PaymentApiAdmin.php');controls.append(bad)
+    bad=dict(sources);bad['unapproved.php']="<?php achbotMessage('payment.api_payment.completed');";controls.append(bad)
+    for candidate in controls:
+        try:api_reference_proof(candidate,entries)
+        except AssertionError:continue
+        raise AssertionError('api_reference_negative_control_missed')
     return len(controls)
