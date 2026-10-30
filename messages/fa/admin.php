@@ -760,6 +760,14 @@ return [
 
     // ── رسیدهای پرداخت دستی ──
     'manual_payment' => [
+        'api_payment.report' => ['text' => "گزارش بررسی پرداخت\nشناسه پیگیری: {reference}\nمشتری: {userId}\nمبلغ دقیق: {amount} {unit}\nروش پرداخت: {method}\nمرجع بررسی: {evidence}\nموضوع: {subject}\nنتیجه: {status}", 'parameters' => ["reference", "userId", "amount", "unit", "method", "evidence", "subject", "status"]],
+        'api_payment.status_confirmed' => "پرداخت و عملیات مربوط تأیید شد",
+        'api_payment.status_settled' => "پرداخت قبلاً نهایی شده است",
+        'api_payment.status_review' => "نیازمند بررسی مدیر",
+        'api_payment.status_uncertain' => "نتیجهٔ عملیات بیرونی نامشخص است",
+        'api_payment.status_monitoring' => "بررسی ادامه دارد",
+        'api_payment.status_evidence_only' => "پیامک دیررس ثبت شد؛ پرداخت قبلاً نهایی بود و عملیات مالی تکرار نشد",
+        'api_payment.view_code' => "مشاهده کد گیفت‌کارت",
         // Existing API-assisted payments.
         'api_payment.review_staff' => ['text' => "پرداخت نیازمند بررسی کد یا نتیجهٔ نامشخص است.\nشناسه پیگیری: {reference}", 'parameters' => ["reference"]],
         'api_payment.automatic_status' => ['text' => "وضعیت بررسی خودکار پرداخت\nشناسه پیگیری: {reference}\nنتیجه: {status}", 'parameters' => ["reference", "status"]],
