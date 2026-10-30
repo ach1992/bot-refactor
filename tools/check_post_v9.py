@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+from collections import Counter
 import hashlib
 import json
 import os
@@ -55,6 +56,21 @@ def owner_r5_proof_mismatches(name: str, proof: dict, minimum: int, required: di
         if mode not in modes:
             mismatches['old_snapshot_membership_mode']={
                 'expected_one_of':list(modes),'actual':bounded(mode)}
+    return mismatches
+
+
+def exact_current_proof_mismatches(proof: dict, required: dict,
+                                   scenario_key: str, expected: list[str]) -> dict:
+    """Bind new current-source suites to named proofs and typed risk fields."""
+    mismatches={key:'required exact '+repr(value)
+                for key,value in {**required,'cases':len(expected)}.items()
+                if type(proof.get(key)) is not type(value) or proof.get(key)!=value}
+    scenarios=proof.get(scenario_key)
+    # Notification checks deliberately repeat per-recipient payload/transaction
+    # assertions; preserve their multiplicity as well as every named scenario.
+    if not (type(scenarios) is list and all(type(item) is str for item in scenarios)
+            and Counter(scenarios)==Counter(expected)):
+        mismatches[scenario_key]='required exact known checks, including multiplicity'
     return mismatches
 
 
@@ -222,10 +238,11 @@ def main():
             ('receipt_presentation','test_owner_r5_receipt_presentation.py',13,
              {'complete':True,'source_real':True,'owned_original_schema_mariadb':True,
               'baseline_red':True,'external_calls':0,'financial_mutations_by_caption':0}),
-            ('admin_fanout','test_owner_r5_admin_fanout.py',272,
-             {'complete':True,'cases':272,'source_real':True,'owned_original_schema_mariadb':True,
+            ('admin_fanout','test_owner_r5_admin_fanout.py',264,
+             {'complete':True,'cases':264,'source_real':True,'owned_original_schema_mariadb':True,
               'network_calls':0,'recipient_matrix':True,'raw_text_photo_markup_preserved':True,
-              'notification_recipient_matrix':True,'notifications_independent_of_role':True,
+              'notification_recipient_matrix':True,'receiving_preference_independent_of_role':True,
+              'general_reports_manager_only':True,'manual_review_all_staff':True,
               'notification_default_on':True,'owner_only_notification_ui':True,
               'notification_preference_preserved':True,'uniform_receipt_authority_all_tiers':True,
               'notification_never_grants_or_revokes_actions':True,
@@ -302,6 +319,69 @@ def main():
         if any(copy_proof.get(key)!=value for key,value in required_copy.items()):
             raise RuntimeError('Owner R5 Persian copy/HTML proof incomplete')
         owner_r5['copy']=copy_proof
+        # Issue #57: current event-aware notification routing and existing
+        # receipt convergence, after every unaffected Owner R5 proof above.
+        notifications_path=Path(tmp)/'owner-r6-notifications.json'
+        subprocess.run(['python3',str(ROOT/'tools/test_owner_r6_notifications.py'),
+                        '--report',str(notifications_path)],
+                       cwd=ROOT,check=True,timeout=180,capture_output=True)
+        notifications=json.loads(notifications_path.read_text())
+        required_notification_checks=[
+            'general helper delivers Owner Manager channel, excludes Operator and Support',
+            *['general raw body and markup preserved']*3,
+            'full actionable review preserves Owner and staff without adding a report-channel receipt',
+            'secondary helper defaults to informational Manager-only event',
+            'actionable manual receipt reaches valid enabled Operator Manager Support',
+            *['notification matrix preserves existing receipt action authority '+str(actor)
+              for actor in [9001,9002,9003,9004,9005,9006]],
+            'Support receives manual review without gaining independent operations',
+            *['invalid or suppressed recipient excluded '+actor for actor in
+              ['9007','9008','9009','9010','9011','9012','9013','1001','-1','"9003bad"','true']],
+            *['unsupported '+kind+' event has no delivery '+event
+              for event in ['unknown','backup'] for kind in ['full','secondary']],
+            'backup document cannot enter generic fanout',
+            'caller cannot redirect primary identity',
+            'primary channel identity deduplicated and payload cannot redirect Owner',
+            'Manager channel identity deduplicated',
+            'private report adds Managers without exposing channel',
+            'existing per-channel parse mode is preserved',
+            'primary ACK failure remains observable and does not suppress independent copies',
+            'throwing secondary delivery preserves primary ACK and continues to report channel',
+            'throwing primary delivery fails primary ACK and continues every independent copy',
+            *['router holds no transaction across outbound delivery']*3,
+            'recipient preference refreshed after earlier target delivery',
+            'later recipient role refreshed after candidate list and earlier staff delivery',
+            'receipt pins existing original quote',
+            'receipt acquires original evidence lease',
+            'actual receipt helper preserves primary evidence confirmation',
+            'actual actionable receipt Owner once plus eligible staff, no report channel',
+            'receipt refs store every successful secondary copy only',
+            'receipt lease cannot replay',
+            'Support OFF only suppresses new delivery',
+            'muted Support retains actual receipt approval',
+            'receipt approval still credits exactly once',
+            'new automatic success report excludes all Operator Support',
+            *[prefix+' '+file+' '+str(index) for index,file in enumerate([
+                'Routes/Checkout.php','Routes/RenewalCheckout.php',
+                'Routes/Extensions.php','Routes/Extensions.php',
+                'Routes/ManualApproval.php','Routes/ManualApproval.php',
+                'Routes/ManualReceipts.php','Routes/ManualReceipts.php',
+                'AutomaticReceipts.php'],1) for prefix in [
+                'stored receipt converges for current muted staff and excludes revoked invalid',
+                'stored receipt rechecks current membership']],
+            'all nine real stored receipt loops exercised',
+            'receipt convergence preserves historical financial rows',
+            'actual thrown transport continues to independent targets with sanitized structured metadata',
+            'exception diagnostics contain no outgoing payload or raw exception text',
+        ]
+        notification_mismatches=exact_current_proof_mismatches(notifications,
+            {'complete':True,'owned_original_schema_mariadb':True,'network_calls':0,
+             'stored_receipt_loops':9,'source_ref':'current-source',
+             'sanitized_exception_metadata':True,'exception_continuation':True},
+            'checks',required_notification_checks)
+        if notification_mismatches:
+            raise RuntimeError('Owner R6 notification source proof incomplete: '+
+                               json.dumps(notification_mismatches,sort_keys=True))
         unified={}
         suites=[
             ('management_wizard','test_unified_management_wizard.py','cases',362,
@@ -2525,9 +2605,14 @@ def main():
             'r3_receipt_ban_unknown_commit_no_false_notice',
             'r3_legacy_target_nonunique_userid_denied',
             'r3_newer_verified_moderation_outorders_legacy_ban',
+            # R6: native before-expiry is mandatory and must prove an increase.
+            *['provider_or_local_failure_hold_'+mode for mode in [
+                'provider_missing_before','provider_null_before','provider_string_before',
+                'provider_negative_before','provider_float_before','provider_overflow_before',
+                'provider_unchanged_before','provider_decreased_after']],
         }
         if not (direct_gift.get('complete') is True and
-                direct_gift.get('cases')>=153 and
+                direct_gift.get('cases')>=161 and
                 required_direct_gift.issubset(set(direct_gift.get('scenarios',[]))) and
                 direct_gift.get('real_bot_php_route') is True and
                 direct_gift.get('actual_global_cancel_fallback') is True and
@@ -2547,6 +2632,35 @@ def main():
                 direct_gift.get('tenant_migrations')==0 and
                 direct_gift.get('production_operations')==0):
             raise RuntimeError('Issue #78 direct administrator gift safety assurance incomplete')
+        # R6 native proof complements the original synthetic service seam:
+        # actual bot route, actual two-provider adapters, socket/loopback only.
+        native_direct_path=Path(tmp)/'direct-gift-native.json'
+        subprocess.run(['python3',str(ROOT/'tools/test_post_v9_direct_gift_native.py'),
+                        '--run-disposable','--report',str(native_direct_path)],
+                       cwd=ROOT,check=True,timeout=240,capture_output=True)
+        native_direct_gift=json.loads(native_direct_path.read_text())
+        native_successes=['combined','days_only','volume_only',
+            'volume_stale_local_future','volume_stale_local_past',
+            'days_stale_local_future','combined_stale_local_future']
+        native_negatives={
+            'marzban':['credentials_rotated','endpoint_rotated','native_expiry_drift',
+                       'readback_lost','next_plan','unlimited_time','unlimited_volume'],
+            'pasarguard':['native_identity_drift','readback_unverified','write_lost',
+                         'scheduled_reset','unlimited_time','unlimited_volume'],
+        }
+        required_native_direct=[provider+'_'+scenario+suffix
+            for provider,negative in native_negatives.items()
+            for scenario in native_successes+negative
+            for suffix in (['','_replay','_new_source_hold']
+                           if scenario in negative else ['','_replay'])]
+        native_direct_mismatches=exact_current_proof_mismatches(native_direct_gift,
+            {'complete':True,'actual_bot_route':True,'actual_native_adapters':True,
+             'owned_mariadb_only':True,'loopback_only':True,
+             'real_provider_requests':0,'production_operations':0},
+            'scenarios',required_native_direct)
+        if native_direct_mismatches:
+            raise RuntimeError('Owner R6 native direct gift proof incomplete: '+
+                               json.dumps(native_direct_mismatches,sort_keys=True))
         # Whole-main review R1: run actual owned gift worker on disposable
         # original 23-table MariaDB, no live Telegram/Marzban service.
         gift_path=Path(tmp)/"gift-worker-verified-state.json"
@@ -3466,7 +3580,8 @@ def main():
                 and swap.get("synthetic_private_files_untouched")):
             raise RuntimeError("Physical post-V9/V9 source-only overlay or private-state check failed")
         if a.report:a.report.write_text(json.dumps({"complete":True,
-                    "source":result,"owner_ux_r5":owner_r5,"marzban":marzban,"purchases":purchases,
+                    "source":result,"owner_ux_r5":owner_r5,
+                    "owner_r6_notifications":notifications,"marzban":marzban,"purchases":purchases,
                      "unsupported_wallet_preflight":wallet_guard,
                      "wallet_transfer_safety":wallet_transfer,
                      "wallet_replay_freshness_and_operation_identity":wallet_replay,
@@ -3505,6 +3620,7 @@ def main():
                     "strict_effect_transport_pin":pinned_effects,
                     "gift_source_enqueue_idempotency":gift_source,
                     "direct_admin_gift_verified":direct_gift,
+                    "direct_admin_gift_native":native_direct_gift,
                     "gift_worker_safe_continuation":gift,
                     "gift_physical_target_continuity":physical_gift,
                     "wallet_paid_create":wallet_create,
@@ -3567,6 +3683,8 @@ def main():
                       "strict_effect_transport_pin_cases":pinned_effects["cases"],
                       "gift_source_enqueue_cases":gift_source["cases"],
                       "direct_admin_gift_cases":direct_gift["cases"],
+                      "direct_admin_gift_native_cases":native_direct_gift["cases"],
+                      "owner_r6_notification_cases":notifications["cases"],
                       "gift_worker_reconciliation_cases":gift["cases"],
                       "gift_physical_target_cases":physical_gift["cases"],
                       "wallet_paid_create_cases":wallet_create["cases"],
