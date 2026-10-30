@@ -1768,7 +1768,7 @@ function achbotManualAcknowledgement(array $payInfo, string $method): string {
         $api=achbotApiPaymentContext($db,(string)$payInfo['hash_id']);
         if ($api && achbotApiPaymentTerminal($api['pay'])) return achbotMessage('payment.api_payment.confirmed');
     }
-    if($db instanceof mysqli && achbotManualTypedGift($db,$payInfo,$method))return achbotMessage('payment.api_payment.code_acknowledgement',['reference'=>achbotPayUxReference($payInfo)]);
+    if($db instanceof mysqli && achbotManualTypedGift($db,$payInfo,$method))return achbotMessage('payment.api_payment.code_acknowledgement')."\n".achbotPayUxReference($payInfo);
     return \achbotMessage('manual_payment.receipt_helpers.manual_acknowledgement.label.a5f27211f7') . achbotManualLabel($method) . \achbotMessage('manual_payment.receipt_helpers.manual_acknowledgement.text.29e14cf62e') .
         achbotPayUxReference($payInfo) .
         \achbotMessage('manual_payment.receipt_helpers.manual_acknowledgement.text.62e569e922');
