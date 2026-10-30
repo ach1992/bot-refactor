@@ -839,6 +839,7 @@ def main():
         required_api_flow=[
             'no_bank_api_or_consumption_before_receipt_delivery',
             'failed_primary_receipt_delivery_keeps_pending_and_no_http',
+            'customer_manual_ack_precedes_api_without_duplicate_confirmation',
             'receipt_retry_same_evidence_delivers_before_sms_auto_approval',
             'gift_api_off_still_requires_original_image_without_http',
             'gift_generated_button_original_caption_copyable_private_wallet',
@@ -856,6 +857,8 @@ def main():
             'saved_code_and_failed_primary_delivery_never_verify_or_consume',
             'gift_real_code_review_precedes_auto_approval_and_stale_human_no_recredit',
             'unsubmitted_invoices_do_not_starve_reviewed_background_work',
+            'customer_ack_exception_does_not_block_api_settlement',
+            'cron_winner_before_ack_does_not_repeat_customer_confirmation',
             'off_manual_original_unpinned',
             'full_exact_quote_only_and_wallet_replay',
             'complete_report_uses_original_random_quote_and_durable_dedup',

@@ -419,7 +419,7 @@ if (preg_match('/wait(?:IncreaseWallet|IncreaseWalletGift|IncreaseWalletUsdt)Rec
         $msg, $adminKeyboard, $admin, $match[1],
         $deliveryToken)) {
         setUser();
-        sendWithStartButton(achbotManualAcknowledgement($receiptPay, $method), $buttonValues['start_bot'], $botUsername, 'mainMenu', 'HTML', (string)$receiptPay['hash_id']);
+        achbotManualAcknowledgeAndVerify($connection,$receiptPay,$method,$buttonValues['start_bot'],$botUsername);
     } else {
         sendMessage(\achbotMessage('wallet.wallet_recharge.wallet_topup_amount_problem.message.c346a0d62e'));
     }

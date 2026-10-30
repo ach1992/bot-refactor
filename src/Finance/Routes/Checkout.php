@@ -451,7 +451,7 @@ if (preg_match('/wait(?:CustomCart|CustomGift|CustomUsdt)Receipt(.*)/', $userInf
         $msg, $adminKeyboard, $admin, $match[1],
         $deliveryToken)) {
         setUser();
-        sendWithStartButton(achbotManualAcknowledgement($receiptPay, $method), $buttonValues['start_bot'], $botUsername, 'mainMenu', 'HTML', (string)$receiptPay['hash_id']);
+        achbotManualAcknowledgeAndVerify($connection,$receiptPay,$method,$buttonValues['start_bot'],$botUsername);
     } else {
         sendMessage(\achbotMessage('payment.checkout.message.c346a0d62e'));
     }
@@ -1323,7 +1323,7 @@ if (sendReceiptToAdminsAndUpdatePay($connection, $fileid,
         $msg, $adminKeyboard, $admin, $match[1],
         $deliveryToken)) {
         setUser();
-        sendWithStartButton(achbotManualAcknowledgement($receiptPay, $method), $buttonValues['start_bot'], $botUsername, 'mainMenu', 'HTML', (string)$receiptPay['hash_id']);
+        achbotManualAcknowledgeAndVerify($connection,$receiptPay,$method,$buttonValues['start_bot'],$botUsername);
     } else {
         sendMessage(\achbotMessage('payment.checkout.message.c346a0d62e'));
     }

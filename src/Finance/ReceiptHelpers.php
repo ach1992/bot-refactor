@@ -2131,10 +2131,21 @@ function sendReceiptToAdminsAndUpdatePay(
         $api=achbotApiPaymentContext($connection,$hashId);
         if ($api) {
             if(achbotApiPaymentTerminal($api['pay']))achbotApiPaymentNotice($connection,$api['pay'],'confirmed',false);
-            else achbotApiPaymentCheck($connection,(int)$api['pay']['id']);
         }
     }
     return true;
+}
+
+/** Keep the familiar customer acknowledgement before optional verification. */
+function achbotManualAcknowledgeAndVerify(mysqli $db,array $pay,string $method,string $buttonText,string $botUsername): void {
+    $current=function_exists('achbotApiPaymentContext')?achbotApiPaymentContext($db,(string)$pay['hash_id']):null;
+    if($current && !in_array($current['pay']['state'],['pending','have_sent'],true)){achbotApiPaymentSyncInvoice($db,$current);return;}
+    try {
+        sendWithStartButton(achbotManualAcknowledgement($pay,$method),$buttonText,$botUsername,'mainMenu','HTML',(string)$pay['hash_id']);
+    } finally {
+        $api=function_exists('achbotApiPaymentContext')?achbotApiPaymentContext($db,(string)$pay['hash_id']):null;
+        if($api && !achbotApiPaymentTerminal($api['pay']))achbotApiPaymentCheck($db,(int)$pay['id']);
+    }
 }
 
 function sendWithStartButton($text, $buttonText, $botUsername, $startPayload = 'mainMenu', $parseMode = 'HTML', string $paymentHash = '')

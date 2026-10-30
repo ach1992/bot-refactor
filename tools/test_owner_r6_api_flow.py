@@ -91,6 +91,7 @@ if($op==='issue')$value=achbotManualClaim($connection,$pay,$spec['method']??'ban
 elseif($op==='route'){$from_id=(int)($spec['actor']??1001);$chat_id=(int)($spec['chat']??$from_id);$data=(string)($spec['data']??'');$text=$spec['text']??null;$callbackId='fixture-callback';$userInfo=['step'=>$spec['step']??'none'];$value=require $root.'/src/Finance/Routes/ApiPayments.php';}
 elseif($op==='initial_step')$value=achbotApiPaymentInitialStep($connection,$pay['hash_id'],'legacy-gift-step');
 elseif($op==='budget'){$deadline=hrtime(true)/1000000000+(float)$spec['seconds'];$GLOBALS['achbotPaymentEvidenceDeadline']=$deadline;$value=['status'=>achbotApiPaymentCheck($connection,$id),'restored'=>($GLOBALS['achbotPaymentEvidenceDeadline']??null)===$deadline];unset($GLOBALS['achbotPaymentEvidenceDeadline']);}
+elseif($op==='ack'){if(!empty($spec['pre_check']))achbotApiPaymentCheck($connection,$id);try{achbotManualAcknowledgeAndVerify($connection,$pay,(string)achbotApiPaymentAttempt($connection,$id)['provider'],'Start','FixtureBot');$value=['threw'=>false];}catch(Throwable $e){$value=['threw'=>true];}}
 elseif($op==='review_keys')$value=json_decode(achbotApiPaymentReviewKeyboard($pay),true);
 elseif($op==='fits')$value=achbotManualGiftReviewFits($spec['caption'],$spec['code']);
 elseif($op==='rawsave')$value=achbotPaymentEvidenceSaveGiftCode($connection,$id,1001,$spec['code']);
@@ -107,7 +108,7 @@ elseif($op==='notice'){achbotApiPaymentNotice($connection,$pay,$spec['status']??
 elseif($op==='access'){$from_id=(int)$spec['actor'];$value=achbotAdminRequestAllowed('apiReview_'.$pay['hash_id'],null,'none');}
 elseif($op==='attention'){require_once $root.'/src/Finance/RecoveryInspection.php';$q=$connection->query('SELECT p.id FROM pays p WHERE p.id='.$id.' AND '.achbotRecoveryAttentionSql($connection));$value=$q->num_rows===1;}
 elseif($op==='profile_shift'){$a=achbotApiPaymentAttempt($connection,$id);$p=achbotPaymentEvidenceSnapshot($a);$p['issued_at']=time()-(int)($spec['age']??90000);unset($p['profile_sha256']);$sealed=achbotPaymentEvidenceProtect('profile:'.$a['id'].':'.$id,$p);$q=$connection->prepare('UPDATE payment_attempts SET evidence_profile=? WHERE id=?');$q->bind_param('si',$sealed,$a['id']);$q->execute();$q->close();$value=true;}
-elseif($op==='photo_race'){$v=achbotManualBeginEvidence($connection,$pay,'bank_transfer',1001,'race-photo');$value=$v?sendReceiptToAdminsAndUpdatePay($connection,'race-photo','رسید تست',achbotApiPaymentReviewKeyboard($pay),9001,$pay['hash_id'],$v):false;}
+elseif($op==='photo_race'){$v=achbotManualBeginEvidence($connection,$pay,'bank_transfer',1001,'race-photo');$value=$v?sendReceiptToAdminsAndUpdatePay($connection,'race-photo','رسید تست',achbotApiPaymentReviewKeyboard($pay),9001,$pay['hash_id'],$v):false;if($value)achbotManualAcknowledgeAndVerify($connection,$pay,'bank_transfer','Start','FixtureBot');}
 else throw new RuntimeException('unknown fixture op');
 echo json_encode(['result'=>$value,'events'=>$GLOBALS['events']],JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE);
 '''
@@ -162,6 +163,7 @@ function sendPhoto(...$args){$GLOBALS['events'][]=['event'=>'PHOTO'];if(!empty($
  }
 }
 return !empty($GLOBALS['spec']['fail_staff'])?null:(object)['ok'=>true];}""")
+        php=php.replace("function sendMessage($text=null,$keys=null,$mode=null,$to=null) {","function sendMessage($text=null,$keys=null,$mode=null,$to=null) {if(!empty($GLOBALS['spec']['fail_customer_ack']) && $to===null)throw new RuntimeException('fixture_customer_ack_failure');")
         php=php.replace("return (object)['ok'=>true];\n}\nfunction editKeys", "return (object)['ok'=>true,'result'=>(object)['message_id'=>456]];\n}\nfunction editKeys")
         php=php.replace("    if ($strict!==true) throw new RuntimeException('non_strict_remote_get');", "    if((int)$GLOBALS['connection']->query('SELECT @@in_transaction')->fetch_row()[0]!==0)throw new RuntimeException('fixture_native_get_under_financial_lock');\n    if(str_starts_with($name,'api_edit'))return(object)['username'=>$name,'status'=>'active','expire'=>1900000000,'data_limit'=>10737418240,'used_traffic'=>0];\n    if ($strict!==true) throw new RuntimeException('non_strict_remote_get');")
         # Controlled process-loss injection in disposable source, never runtime hooks.
@@ -206,6 +208,9 @@ return !empty($GLOBALS['spec']['fail_staff'])?null:(object)['ok'=>true];}""")
         assert not r.get('fatal') and state(n)=='approved' and APIs.rows[rid]['status']=='used',r
         photos=[e for e in r['events'] if e.get('name')=='sendPhoto' and e['args'][4]==9001]
         assert len(photos)==1 and APIs.received[offset:] and photos[0]['at']<APIs.received[offset],r
+        customer=[e for e in r['events'] if e.get('name')=='sendMessage' and (len(e['args'])<4 or e['args'][3] in [None,1001])]
+        assert customer and customer[0]['at']<APIs.received[offset] and len([e['args'][0] for e in customer])==len(set(e['args'][0] for e in customer)),r
+        cases.append('customer_manual_ack_precedes_api_without_duplicate_confirmation')
         assert any(e.get('name')=='editKeys' and 'تایید خودکار توسط API' in str(e.get('args')) for e in r['events']),r
         cases.append('receipt_retry_same_evidence_delivers_before_sms_auto_approval')
         APIs.rows={}
@@ -285,6 +290,13 @@ return !empty($GLOBALS['spec']['fail_staff'])?null:(object)['ok'=>true];}""")
         APIs.rows={};n=seed('batchready');rid=sms(n);r=call(op='maintain',pay=n)
         assert state(n)=='approved' and APIs.rows[rid]['status']=='used',r
         cases.append('unsubmitted_invoices_do_not_starve_reviewed_background_work')
+        n=seed('ackfailure');sms(n);r=call(op='ack',pay=n,fail_customer_ack=True)
+        assert r['result']['threw'] and state(n)=='approved',r
+        cases.append('customer_ack_exception_does_not_block_api_settlement')
+        APIs.rows={};n=seed('ackwinner');sms(n);r=call(op='ack',pay=n,pre_check=True)
+        customer=[e['text'] for e in r['events'] if e.get('event')=='MESSAGE' and e.get('to') in [None,1001]]
+        assert state(n)=='approved' and len(customer)==len(set(customer))==1,r
+        cases.append('cron_winner_before_ack_does_not_repeat_customer_confirmation')
         # OFF preserves original screenshot choice and no pin.
         query(work,env,"INSERT INTO pays(hash_id,user_id,type,price,request_date,state) VALUES('offmanual',1001,'INCREASE_WALLET',101,UNIX_TIMESTAMP(),'pending')")
         off=int(query(work,env,"SELECT id FROM pays WHERE hash_id='offmanual'"));r=call(op='issue',pay=off,off=True);assert r['result'] is True,r

@@ -298,7 +298,7 @@ if (preg_match('/wait(?:IncreaseDay|IncreaseDayGift|IncreaseDayUsdt)Receipt(.*)/
         $msg, $adminKeyboard, $admin, $match[1],
         $deliveryToken)) {
         setUser();
-        sendWithStartButton(achbotManualAcknowledgement($receiptPay, $method), $buttonValues['start_bot'], $botUsername, 'mainMenu', 'HTML', (string)$receiptPay['hash_id']);
+        achbotManualAcknowledgeAndVerify($connection,$receiptPay,$method,$buttonValues['start_bot'],$botUsername);
     } else {
         sendMessage(\achbotMessage('renewal.extensions.message.c346a0d62e'));
     }
@@ -1118,7 +1118,7 @@ if (preg_match('/wait(?:IncreaseVolume|IncreaseVolumeGift|IncreaseVolumeUsdt)Rec
         $msg, $adminKeyboard, $admin, $match[1],
         $deliveryToken)) {
         setUser();
-        sendWithStartButton(achbotManualAcknowledgement($receiptPay, $method), $buttonValues['start_bot'], $botUsername, 'mainMenu', 'HTML', (string)$receiptPay['hash_id']);
+        achbotManualAcknowledgeAndVerify($connection,$receiptPay,$method,$buttonValues['start_bot'],$botUsername);
     } else {
         sendMessage(\achbotMessage('renewal.extensions.message.c346a0d62e'));
     }
