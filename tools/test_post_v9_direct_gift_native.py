@@ -53,12 +53,12 @@ def migration_setup(work,env):
         direct.q(work,env,(ROOT/'migrations/post-v9'/name).read_text())
 
 
-def wizard(work,env,stage,days,volume):
-    for spec in [dict(kind='callback',update_id=500,message_id=50,text='giftToUser2'),
-                 dict(kind='message',update_id=501,message_id=51,text='fixture-user'),
-                 dict(kind='message',update_id=502,message_id=52,text=str(days))]:
+def wizard(work,env,stage,days,volume,update=500,message=50):
+    for spec in [dict(kind='callback',update_id=update,message_id=message,text='giftToUser2'),
+                 dict(kind='message',update_id=update+1,message_id=message+1,text='fixture-user'),
+                 dict(kind='message',update_id=update+2,message_id=message+2,text=str(days))]:
         call(work,env,stage,**spec)
-    return call(work,env,stage,kind='message',update_id=503,message_id=53,text=str(volume))
+    return call(work,env,stage,kind='message',update_id=update+3,message_id=message+3,text=str(volume))
 
 
 def main():
@@ -69,10 +69,17 @@ def main():
         stage=direct.setup(work,env);native_driver(stage)
         for provider in ['marzban','pasarguard']:
             if provider=='pasarguard':migration_setup(work,env)
-            for name,days,volume,local_delta in [
+            cases=[
                 ('combined',2,1024,0),('days_only',2,0,0),('volume_only',0,1024,0),
                 ('volume_stale_local_future',0,1024,100),
-                ('volume_stale_local_past',0,1024,-100)]:
+                ('volume_stale_local_past',0,1024,-100),
+                ('days_stale_local_future',2,0,2000000),
+                ('combined_stale_local_future',2,1024,2000000)]
+            negative=(['credentials_rotated','endpoint_rotated','native_expiry_drift','readback_lost','next_plan']
+                if provider=='marzban' else ['native_identity_drift','readback_unverified','write_lost','scheduled_reset'])
+            negative+=['unlimited_time','unlimited_volume']
+            cases += [(name,2,1024,0) for name in negative]
+            for name,days,volume,local_delta in cases:
                 direct.reset(work,env)
                 local_expire=direct.OLD_EXPIRY+local_delta
                 direct.q(work,env,'UPDATE orders_list SET expire_date='+str(local_expire)+',notif=1 WHERE id=91')
@@ -90,6 +97,26 @@ def main():
                     direct.q(work,env,storage.identity(1,91,1,url_pg,17,
                         '2026-10-26T05:00:00.123456Z','fixture-user',pg.MARKER,
                         dict(data_limit=2147483648,expire=direct.OLD_EXPIRY,group_ids=[2,5],status='active')))
+                if name in negative:
+                    if provider=='marzban':
+                        if name=='credentials_rotated':
+                            a.hook_at='after_login'
+                            a.hook=lambda:direct.q(work,env,"UPDATE server_config SET password='fixture-rotated-password' WHERE id=2")
+                        elif name=='endpoint_rotated':
+                            a.hook_at='after_user_get'
+                            a.hook=lambda:direct.q(work,env,"UPDATE server_config SET panel_url='"+url_b+"' WHERE id=2")
+                        elif name=='native_expiry_drift':
+                            a.hook_at='after_user_get'
+                            a.hook=lambda:a.accounts['fixture-user'].update(expire=direct.OLD_EXPIRY+100)
+                        elif name=='readback_lost':a.fail_readback=True
+                        elif name=='next_plan':a.accounts['fixture-user']['next_plan']={'data_limit':1073741824}
+                        elif name=='unlimited_time':a.accounts['fixture-user']['expire']=None
+                        elif name=='unlimited_volume':a.accounts['fixture-user']['data_limit']=None
+                    else:
+                        server.mode={'native_identity_drift':'foreign_created',
+                            'readback_unverified':'modify_lie'}.get(name,name)
+                        if name=='unlimited_time':server.user['expire']=None;server.mode='ok'
+                        elif name=='unlimited_volume':server.user['data_limit']=None;server.mode='ok'
                 before_money=direct.q(work,env,'SELECT userid,wallet FROM users ORDER BY id;SELECT * FROM pays ORDER BY id')
                 result=wizard(work,env,stage,days,volume)
                 journals=direct.rows(work,env,'SOURCE');markers=direct.rows(work,env,'ACCOUNT')
@@ -114,7 +141,14 @@ def main():
                     'SELECT userid,wallet FROM users ORDER BY id;SELECT * FROM pays ORDER BY id')==before_money and
                     ('fixture-password' not in json.dumps(journals)) and
                     ('fixture-private-key' not in json.dumps(journals)))
-                if not days:ok=ok and actual['notif']=='1'
+                if days:ok=ok and journals[0].get('before_expire')==direct.OLD_EXPIRY
+                else:ok=ok and actual['notif']=='1'
+                if name in negative:
+                    expected_writes=1 if name in ['readback_lost','readback_unverified','write_lost'] else 0
+                    ok=(actual['state']=='review' and markers[0]['state']=='review' and
+                        writes==expected_writes and actual['local_expire']==str(local_expire) and
+                        not any('✅' in event for event in result['events']) and
+                        direct.q(work,env,'SELECT userid,wallet FROM users ORDER BY id;SELECT * FROM pays ORDER BY id')==before_money)
                 scenario=provider+'_'+name
                 observations.append(dict(scenario=scenario,passed=ok,actual=actual))
                 if ok:checks.append(scenario)
@@ -124,6 +158,16 @@ def main():
                 replay_ok=current_writes==writes
                 observations.append(dict(scenario=scenario+'_replay',passed=replay_ok,actual=dict(writes=current_writes)))
                 if replay_ok:checks.append(scenario+'_replay')
+                if name in negative:
+                    if name=='endpoint_rotated':
+                        # Retry the original physical account, whose hold owns
+                        # the old endpoint scope; a new endpoint is not that account.
+                        direct.q(work,env,"UPDATE server_config SET panel_url='"+url_a+"' WHERE id=2")
+                    wizard(work,env,stage,days,volume,update=600,message=60)
+                    hold_writes=a.put_count if provider=='marzban' else server.write_count
+                    hold_ok=hold_writes==writes and len(direct.rows(work,env,'SOURCE'))==1
+                    observations.append(dict(scenario=scenario+'_new_source_hold',passed=hold_ok,actual=dict(writes=hold_writes)))
+                    if hold_ok:checks.append(scenario+'_new_source_hold')
     report=dict(complete=len(checks)==len(observations),cases=len(checks),scenarios=checks,
         observations=observations,actual_bot_route=True,actual_native_adapters=True,
         owned_mariadb_only=True,loopback_only=True,real_provider_requests=0,production_operations=0)

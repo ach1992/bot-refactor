@@ -207,8 +207,16 @@ function editMarzbanConfig($sid,$change,?array $target=null): object {
         return (object)['success'=>true,'verified'=>true,
             'applied_expire'=>1802000100,'applied_bytes'=>-1];
     $expire=isset($change['plus_day']) ? 1802000100 : 1800000100;
-    return (object)['success'=>true,'verified'=>true,'uncertain'=>false,
-        'applied_expire'=>$expire,'applied_bytes'=>4294967296];
+    $before=match($mode) {
+        'provider_null_before'=>null,'provider_string_before'=>'1800000100',
+        'provider_negative_before'=>-1,'provider_float_before'=>1800000100.5,
+        'provider_overflow_before'=>2147483648,'provider_unchanged_before'=>1802000100,
+        'provider_decreased_after'=>1802000101,default=>1800000100
+    };
+    $result=(object)['success'=>true,'verified'=>true,'uncertain'=>false,
+        'before_expire'=>$before,'applied_expire'=>$expire,'applied_bytes'=>4294967296];
+    if ($mode==='provider_missing_before') unset($result->before_expire);
+    return $result;
 }
 require_once __DIR__.'/src/Purchase/Core.php';
 require __DIR__.'/ingress-source.php';
@@ -1604,7 +1612,9 @@ def main() -> None:
         for mode in ['provider_false','provider_unknown','provider_throw',
                      'provider_unverified','provider_ambiguous_success',
                      'provider_bad_expiry','provider_bad_bytes','sql_drift',
-                     'config_drift']:
+                     'config_drift','provider_missing_before','provider_null_before',
+                     'provider_string_before','provider_negative_before','provider_float_before',
+                     'provider_overflow_before','provider_unchanged_before','provider_decreased_after']:
             reset(work,env);stage.joinpath('effects.jsonl').unlink(missing_ok=True)
             prepare_final(work,env,stage)
             failed=volume(work,env,stage,mode=mode)

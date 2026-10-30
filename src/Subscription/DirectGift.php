@@ -641,7 +641,12 @@ function achbotDirectGiftComplete(mysqli $db,array $claim,object $result): void 
     // A quota-only gift does not change time. Its verified native expiry can
     // differ from this local reference's cached expiry without invalidating
     // the quota effect; preserve the local expiry and notification checkpoint.
-    if ($claim['days']>0 && $new<=$old)
+    // Duration increases are proved against the adapter's already-verified
+    // native observation, not a potentially stale local expiry checkpoint.
+    $before=$result->before_expire??null;
+    if ($claim['days']>0 && (!is_int($before) || $before<0 || $before>2147483647))
+        throw new RuntimeException('direct_gift_result_unverified');
+    if ($claim['days']>0 && $new<=$before)
         throw new RuntimeException('direct_gift_expiry_did_not_increase');
     achbotDirectGiftEngines($db);
     if (!$db->begin_transaction()) throw new RuntimeException('direct_gift_begin_failed');
@@ -665,6 +670,7 @@ function achbotDirectGiftComplete(mysqli $db,array $claim,object $result): void 
                 throw new RuntimeException('direct_gift_local_update_unconfirmed');
         }
         $record['state']='completed';
+        if ($claim['days']>0) $record['before_expire']=$before;
         $record['applied_expire']=$new;
         $record['applied_bytes']=$result->applied_bytes;
         $record['completed_at']=gmdate('c');
