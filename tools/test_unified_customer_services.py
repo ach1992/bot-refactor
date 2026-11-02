@@ -169,7 +169,12 @@ def main():
   (baseline_root/'settings/jdf.php').write_bytes(archived_jdf)
   probe="require $argv[1];$out=[];foreach([1700000000,1800000000,1800003600,1900000000] as $ts)$out[$ts]=[jdate('Y-m-d H:i',$ts),jdate('Y-m-d H:i',$ts,'','Asia/Tehran','en')];echo json_encode($out,JSON_THROW_ON_ERROR);"
   baseline_dates=json.loads(subprocess.check_output(['php','-r',probe,str(baseline_root/'settings/jdf.php')],text=True))
-  yes(archived_jdf==(ROOT/'settings/jdf.php').read_bytes(),'baseline240_actual_JDF_source_unchanged_no_global_digit_change')
+  # PHP 8.5 deprecates the old case-label semicolon; allow exactly that
+  # source-syntax substitution, while preserving every other historic byte.
+  old_case=b"case 'k';"
+  yes(archived_jdf.count(old_case)==1 and
+      archived_jdf.replace(old_case,b"case 'k':",1)==(ROOT/'settings/jdf.php').read_bytes(),
+      'baseline240_JDF_only_case_delimiter_modernized_no_global_digit_change')
   yes(all(baseline_dates[str(ts)]==[expected,expected] for ts,expected in dates.items()),'baseline240_actual_JDF_default_and_explicit_already_ASCII_Jalali_no_date_RED')
   purchase.init(work,env,'http://127.0.0.1:9')
   db=purchase.SIDE[1];script=work/'customer-unified.php';script.write_text(PHP)

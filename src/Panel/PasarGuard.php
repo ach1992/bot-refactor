@@ -67,7 +67,7 @@ function achbotPgRequest(array $panel,string $method,string $path,?array $payloa
     if ($body!==null) curl_setopt($curl,CURLOPT_POSTFIELDS,$body);
     $ok=curl_exec($curl);$errno=curl_errno($curl);
     $http=(int)curl_getinfo($curl,CURLINFO_HTTP_CODE);
-    $contentType=(string)curl_getinfo($curl,CURLINFO_CONTENT_TYPE);curl_close($curl);
+    $contentType=(string)curl_getinfo($curl,CURLINFO_CONTENT_TYPE);
     if ($ok===false || $errno!==0) return achbotPgFailure($tooLarge?'pg_response_too_large':
         ($errno===CURLE_OPERATION_TIMEDOUT?'pg_timeout':'pg_transport_unavailable'),$write,$http);
     if ($http<200 || $http>=300) {

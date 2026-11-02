@@ -78,7 +78,8 @@ class ShardContractTests(unittest.TestCase):
 
     def test_php85_noop_close_and_case_label_regressions(self):
         # Native PHP8.5 tests revealed these deprecations in live sources.
-        for path in ("src/Finance/PaymentEvidence.php", "src/Panel/Accounts.php"):
+        for path in ("src/Finance/PaymentEvidence.php", "src/Panel/Accounts.php",
+                     "src/Panel/PasarGuard.php"):
             with self.subTest(path=path):
                 self.assertNotIn("curl_close(", (shard.ROOT / path).read_text())
         self.assertNotIn("case 'k';", (shard.ROOT / "settings/jdf.php").read_text())
