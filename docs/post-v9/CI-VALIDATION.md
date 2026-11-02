@@ -4,15 +4,17 @@ This document applies to **new development after RC21** in `ach1992/bot-refactor
 
 ## Decision and selection
 
-`tools/ci_plan.py` chooses exactly one current-source scope from the Git base/head of a clean checkout:
+`tools/ci_plan.py` chooses exactly one current-source scope from the Git base/head of a clean checkout. For PR validation it runs the classifier from the **trusted base Git object**, never the potentially modified PR checkout. If base proof is unavailable, a fixed workflow fallback forces full validation:
 
 | Scope | Accepted changes | Executed checks | Claim |
 | --- | --- | --- | --- |
-| `source` | Ordinary root README and post-V9 documentation only | Runtime inventory, pinned source/schema invariants and PHP lint | Targeted only; `complete: false` |
+| `docs` | Ordinary root README and non-policy post-V9 Markdown only; regular unchanged file modes and no renames | Verified Git identity, ancestry and lightweight required status; no PHP, MariaDB, shards or ZIP | Documentation provenance only; no runtime tests executed |
+| `none` | Clean, same-tree/no-effective-diff commit with verified base ancestry | Verified Git identity, ancestry and lightweight required status; no PHP, MariaDB, shards or ZIP | No source-impact attestation; no runtime tests executed |
+| `source` | Compatibility with earlier bounded selection (not returned for ordinary docs by the new classifier) | Runtime source checks and PHP lint, if selected by trusted classifier | Targeted only; `complete: false` |
 | `cron` | Only the precisely delimited lock-directory preparation region in `settings/cronRunner.php`, the dedicated Cron regression file and ordinary documentation | Source checks plus actual isolated Cron coordinator regression | Targeted only; `complete: false` |
 | `full` | Shared/runtime worker changes, CI/tooling, tests outside the dedicated Cron suite, migrations, policy, unknown or unprovable diffs | Source/payment/privacy foundation plus all eight native families | Full current acceptance only after strict aggregation |
 
-The classifier verifies exact Git SHAs, ancestry, a clean checkout, the original and changed bytes outside the Cron preparation region, and the event/checkout identity. Missing evidence fails closed to `full`; an untrusted or mismatched checkout fails the plan. Manual `workflow_dispatch` always requests `full`. There is no file-name-only exemption for Cron workers.
+The classifier verifies exact Git SHAs, ancestry, a clean checkout, regular file modes (not symlinks), renames, the original and changed bytes outside the Cron preparation region, and the event/checkout identity. Missing evidence selects `full`; an untrusted or mismatched checkout fails the plan. Manual `workflow_dispatch` always requests `full`. There is no file-name-only exemption for Cron workers. Policy/security/CI documentation, source changes, ambiguous renames and missing evidence continue to select `full`. The protected `php85-validation` status always runs; `docs` and `none` verify a source-bound receipt and never claim skipped PHP suites were executed.
 
 The checker keeps its default complete serial entrypoint (`python3 tools/check_post_v9.py --report <path>`). Targeted modes are `--suite source` and `--suite cron`. Historical V0–V9 execution is not claimed by either mode.
 
@@ -28,7 +30,7 @@ The protected aggregate job is `php85-validation`. It verifies upstream job outc
 
 After integration into `main`, `tools/ci_reuse.py` may avoid rerunning the identical accepted source pipeline **only if** read-only GitHub evidence unambiguously establishes the same full source tree, matching merged PR/main SHA, original successful exact-source PR workflow/run/attempt, and a successful single `php85-validation` job. Any ambiguity, API error, workflow change or partial result means ordinary current validation runs.
 
-A reused result is an **attestation of the original PR pipeline**, not a newly executed native/full run. Its receipt contains the original source/run identity and the new `main` identity; current-`main` source ZIP is rebuilt and verified independently.
+A reused result is an **attestation of the original PR pipeline**, not a newly executed native/full run. Its receipt contains the original source/run identity and the new `main` identity; current-`main` source ZIP is rebuilt and verified independently when runtime-relevant validation or reused acceptance actually requires a package. For trusted `docs`/`none` changes no runtime ZIP is rebuilt; explicit `workflow_dispatch` continues to require full PHP 8.5 acceptance and exact-head packaging.
 
 The read-only REST client pins `X-GitHub-Api-Version: 2022-11-28` deliberately. Verified against merged PR #105/main: the newer `2026-03-10` representation returns `merge_commit_sha: null` for an already merged PR, disabling attestation and redundantly triggering the full PHP 8.5 suite. The pinned version supplies the verified exact merge SHA. Never infer a missing merge identity or relax any other evidence checks; verify live API behavior before changing the pin.
 

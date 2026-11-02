@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Conservative source/Cron/full selection from immutable Git objects.
+"""Conservative no-impact/docs/source/Cron/full selection from immutable Git objects.
 
 This plans coverage only. It neither runs tests nor attests reused acceptance.
 Unknown inputs select all eight current PHP 8.5 native families.
@@ -72,7 +72,7 @@ def ordinary_doc(path: str) -> bool:
 
 def changes(repo: Path, base: str, head: str) -> list[tuple[str, str]]:
     raw = git(repo, "diff", "--no-ext-diff", "--no-textconv", "--no-renames",
-              "--name-status", "-z", base, head, "--")
+              "--find-renames", "--name-status", "-z", base, head, "--")
     if not raw:
         return []
     if not raw.endswith(b"\0"):
@@ -134,7 +134,7 @@ def outside_preparation(source: bytes):
 def classify(repo: Path, base: str, head: str,
              changed: list[tuple[str, str]]) -> tuple[str, str]:
     if not changed:
-        return "full", "no_changed_paths"
+        return "none", "no_effective_changes"
     cron = False
     for status, path in changed:
         if path not in (CRON, CRON_TEST) and not ordinary_doc(path):
@@ -156,7 +156,7 @@ def classify(repo: Path, base: str, head: str,
             after = outside_preparation(git(repo,"cat-file","blob",new[2]))
             if before is None or after is None or before != after:
                 return "full", "cron_outside_preparation_changed_or_ambiguous"
-    return ("cron","cron_preparation_or_dedicated_test") if cron else ("source","ordinary_docs_only")
+    return ("cron","cron_preparation_or_dedicated_test") if cron else ("docs","ordinary_docs_only")
 
 
 def plan(repo: Path, base, head, *, force_full: bool = False) -> dict:

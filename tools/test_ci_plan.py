@@ -68,16 +68,16 @@ class ImpactPlanTests(unittest.TestCase):
         head = self.commit("candidate")
         return ci_plan.plan(self.repo, self.base, head, force_full=force_full)
 
-    def test_docs_only_are_source_not_full(self):
+    def test_docs_only_are_lightweight_not_full(self):
         result = self.decide("README.md", "Updated guide\n")
-        self.assertEqual(result["scope"], "source")
+        self.assertEqual(result["scope"], "docs")
         self.assertEqual(result["shards"], [])
         self.assertEqual(result["changed_paths"], ["README.md"])
         self.assertEqual(result["head"], self.git("rev-parse", "HEAD"))
 
-    def test_doc_under_post_v9_is_source(self):
+    def test_doc_under_post_v9_is_lightweight(self):
         result = self.decide("docs/post-v9/FRESH-INSTALL.md", "Revised guide\n")
-        self.assertEqual(result["scope"], "source")
+        self.assertEqual(result["scope"], "docs")
 
     def test_cron_preparation_only_selects_cron(self):
         updated = CRON_BASE.replace(
@@ -116,11 +116,42 @@ class ImpactPlanTests(unittest.TestCase):
         result = self.decide("docs/post-v9/CI-VALIDATION.md", "new validation policy\n")
         self.assertEqual(result["scope"], "full")
 
+    def test_empty_effective_tree_and_identical_commit_are_no_impact(self):
+        self.assertEqual(ci_plan.plan(self.repo, self.base, self.base)["scope"], "none")
+        self.git("commit", "--allow-empty", "-qm", "empty source change")
+        head = self.git("rev-parse", "HEAD")
+        result = ci_plan.plan(self.repo, self.base, head)
+        self.assertEqual(result["scope"], "none")
+        self.assertEqual(result["reason"], "no_effective_changes")
+        self.assertEqual(result["changed_paths"], [])
+        self.assertEqual(result["shards"], [])
+
+    def test_renamed_document_requires_full_evidence(self):
+        self.git("mv", "README.md", "docs/post-v9/RENAMED.md")
+        head = self.commit("rename document")
+        self.assertEqual(ci_plan.plan(self.repo, self.base, head)["scope"], "full")
+
+    def test_document_symlink_and_mode_change_are_not_lightweight(self):
+        target = self.repo / "README.md"
+        target.unlink()
+        target.symlink_to("docs/post-v9/FRESH-INSTALL.md")
+        head = self.commit("symlink document")
+        self.assertEqual(ci_plan.plan(self.repo, self.base, head)["scope"], "full")
+
+    def test_policy_and_security_document_paths_require_full(self):
+        for path in ("docs/post-v9/CI.md", "docs/post-v9/SECURITY.md",
+                     "docs/post-v9/TESTING.md", "docs/post-v9/flow-policy.md",
+                     "docs/post-v9/policies/intro.md", "docs/post-v9/validation/intro.md"):
+            with self.subTest(path=path):
+                self.set_file(path, "policy text\n")
+                head = self.commit("policy " + path)
+                self.assertEqual(ci_plan.plan(self.repo, self.base, head)["scope"], "full")
+
     def test_missing_invalid_and_nonancestor_base_are_full(self):
         head = self.decide("README.md", "Some docs\n")["head"]
         self.assertEqual(ci_plan.plan(self.repo, None, head)["scope"], "full")
         self.assertEqual(ci_plan.plan(self.repo, "0" * 40, head)["scope"], "full")
-        self.assertEqual(ci_plan.plan(self.repo, head, head)["scope"], "full")
+        self.assertEqual(ci_plan.plan(self.repo, head, head)["scope"], "none")
         self.assertEqual(ci_plan.plan(self.repo, self.base, head,
                                      force_full=True)["reason"], "forced_full")
 
@@ -170,8 +201,8 @@ class ImpactPlanTests(unittest.TestCase):
         with contextlib.redirect_stdout(io.StringIO()):
             actual = ci_plan.main(["--github-event", "--github-output"], repo=self.repo,
                                   environ=environ)
-        self.assertEqual(actual["scope"], "source")
-        self.assertEqual(output.read_text().splitlines(), ["scope=source", "shards=[]"])
+        self.assertEqual(actual["scope"], "docs")
+        self.assertEqual(output.read_text().splitlines(), ["scope=docs", "shards=[]"])
         event["pull_request"]["head"]["sha"] = self.base
         event_path.write_text(json.dumps(event))
         with self.assertRaises(ci_plan.PlanError):
