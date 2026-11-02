@@ -255,9 +255,8 @@ def main():
                 # executable copy, remove exactly 11 deprecated no-op closes;
                 # the getter/race implementation and wire behavior remain old.
                 legacy_close=b'curl_close($curl);'
-                check('marzban_baseline_only_11_inert_closes_present',
-                      historical.count(legacy_close)==11,
-                      {'historic_count':historical.count(legacy_close)})
+                if historical.count(legacy_close)!=11:
+                    raise RuntimeError('Unexpected historical Marzban getter fixture')
                 (stage/'src/Panel/Accounts.php').write_bytes(
                     historical.replace(legacy_close,b''))
             a.hook_at='after_put' if label=='readback_incarnation_race' else 'after_user_get'
