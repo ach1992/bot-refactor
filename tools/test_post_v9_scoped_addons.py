@@ -209,6 +209,27 @@ def test(php:bool)->dict:
                 "FROM pays WHERE type='INCREASE_VOLUME_41_301' ORDER BY id DESC LIMIT 1")
             yes(pinned=='10:0:120:1','new_customer_quote_pins_units_amount_and_scope')
 
+            # The same issued quote must reach the real shared financial
+            # subject validator used by wallet, hosted, manual and API paths.
+            # These checks do not debit or call a provider; they verify the
+            # exact subject gate against the installed scoped SQL fields.
+            scoped_hash=q("SELECT hash_id FROM pays WHERE type='INCREASE_VOLUME_41_301' "
+                "ORDER BY id DESC LIMIT 1")
+            subject=actor(route='subject',hash=scoped_hash)
+            yes(any(ev.get('event')=='SUBJECT' and ev.get('value') is True
+                for ev in subject['events']) and subject['provider_writes']==0,
+                'scoped_customer_quote_passes_shared_finance_subject_gate')
+            q("UPDATE increase_plan SET server_id=4,scope_hash='"+sha('S:4')+"' WHERE id=301")
+            stale_subject=actor(route='subject',hash=scoped_hash)
+            yes(any(ev.get('event')=='SUBJECT' and ev.get('value') is False
+                for ev in stale_subject['events']) and stale_subject['provider_writes']==0,
+                'shared_finance_subject_rejects_reassigned_server_scope')
+            q("UPDATE increase_plan SET server_id=2,scope_hash='"+sha('S:2')+"' WHERE id=301")
+            restored_subject=actor(route='subject',hash=scoped_hash)
+            yes(any(ev.get('event')=='SUBJECT' and ev.get('value') is True
+                for ev in restored_subject['events']),
+                'shared_finance_subject_accepts_only_restored_original_scope')
+
             # Stop users from forging an administrative scope edit.
             pre=q('SELECT COUNT(*) FROM increase_day')
             callback('addonScopeGlobal',actor_id=1001)
@@ -221,8 +242,9 @@ def test(php:bool)->dict:
             blocked_filter=callback('addonFilterDayGlobal',seq=802)
             yes(q("SELECT step FROM users WHERE userid=9001")=='addon:scope' and
                 'deleteDayPlan101' not in json.dumps(blocked_filter['events']) and
+                any('ویرایش فعال' in (ev.get('text') or '') for ev in blocked_filter['events']) and
                 blocked_filter['provider_writes']==0,
-                'read_only_filter_cannot_interrupt_admin_edit_wizard')
+                'read_only_filter_prompts_to_finish_active_editor_without_mutation')
             callback('addonScopeServer',seq=802)
             yes(q("SELECT step FROM users WHERE userid=9001")=='addon:server',
                 'admin_wizard_server_selection')

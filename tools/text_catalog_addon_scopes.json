@@ -17,6 +17,12 @@
         "src/Plans/AddonAdmin.php"
       ]
     },
+    "filter_blocked": {
+      "value": "⚠️ یک ویرایش فعال دارید؛ ابتدا آن را ثبت یا لغو کنید، سپس فهرست را فیلتر کنید.",
+      "source_paths": [
+        "src/Plans/AddonAdmin.php"
+      ]
+    },
     "global": {
       "value": "🌐 همهٔ سرورها (Global)",
       "source_paths": [

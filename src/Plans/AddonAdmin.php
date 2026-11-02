@@ -127,9 +127,12 @@ function achbotAddonAdminHandle(mysqli $db): bool {
         if (!achbotAdminCanFor($db,(int)$from_id,(int)$admin,'plans'))
             throw new RuntimeException('addon_admin_denied');
         if ($filterOwned) {
-            // Catalog navigation does not mutate plans and cannot interrupt a
-            // pending monetary edit. The same access and frame gate applies.
-            if ($step!=='none') throw new RuntimeException('addon_admin_editor_in_progress');
+            // Catalog navigation is read-only. A pending editor is ordinary
+            // UX state, not an operational error or a failed financial write.
+            if ($step!=='none') {
+                sendMessage(\achbotMessage('addon_scopes.filter_blocked'),$cancelKey);
+                return true;
+            }
             $kind=$filterMatch[1]==='Day'?'day':'volume';
             $part=$filterMatch[1];$mode=$filterMatch[2];
             if ($mode==='All') {achbotIntervalShow($db,$kind);return true;}
