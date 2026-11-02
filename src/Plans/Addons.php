@@ -18,11 +18,63 @@ function achbotAddonSchema(mysqli $db): bool {
     }
     if ($count===0) return false;
     if ($count!==7) throw new RuntimeException('addon_schema_partial');
+    // Missing/altered DB uniqueness is not a usable migration: two concurrent
+    // admins could insert competing prices for the same quantity and scope.
+    $requiredIndexes=['increase_day'=>'uq_addon_day_units_scope',
+        'increase_plan'=>'uq_addon_volume_units_scope'];
+    $q=$db->query("SELECT TABLE_NAME,INDEX_NAME,NON_UNIQUE,SEQ_IN_INDEX,
+        COLUMN_NAME,SUB_PART,INDEX_TYPE FROM information_schema.STATISTICS
+        WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME IN ('increase_day','increase_plan')
+        AND INDEX_NAME IN ('uq_addon_day_units_scope','uq_addon_volume_units_scope')");
+    if (!$q) throw new RuntimeException('addon_schema_unavailable');
+    $indexes=[];
+    while ($row=$q->fetch_assoc())
+        $indexes[$row['TABLE_NAME']][$row['INDEX_NAME']][(int)$row['SEQ_IN_INDEX']]=$row;
+    $q->free();
+    foreach ($requiredIndexes as $table=>$name) {
+        $parts=$indexes[$table][$name]??[];
+        ksort($parts,SORT_NUMERIC);
+        if (array_keys($parts)!==[1,2]) throw new RuntimeException('addon_schema_incompatible');
+        foreach (['volume','scope_hash'] as $i=>$column) {
+            $part=$parts[$i+1];
+            if ($part['COLUMN_NAME']!==$column || (int)$part['NON_UNIQUE']!==0 ||
+                $part['SUB_PART']!==null || strtoupper((string)$part['INDEX_TYPE'])!=='BTREE')
+                throw new RuntimeException('addon_schema_incompatible');
+        }
+    }
+    $q=$db->query("SELECT TABLE_NAME,ENGINE FROM information_schema.TABLES
+        WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME IN ('increase_day','increase_plan','pays')");
+    if (!$q) throw new RuntimeException('addon_schema_unavailable');
+    $engines=[];while($row=$q->fetch_assoc()) $engines[$row['TABLE_NAME']]=$row['ENGINE'];
+    $q->free();
+    foreach (['increase_day','increase_plan','pays'] as $table)
+        if (strcasecmp((string)($engines[$table]??''),'InnoDB')!==0)
+            throw new RuntimeException('addon_schema_incompatible');
     return true;
 }
 function achbotAddonTable(string $kind): string {
     return match($kind) {'day'=>'increase_day','volume'=>'increase_plan',
         default=>throw new InvalidArgumentException('addon_kind_invalid')};
+}
+/** Compact, content-bound revision for the row the administrator actually saw.
+ * Rechecks all pricing/scope fields before any old inline-button write.
+ * A 20-hex token fits Telegram's 64-byte callback_data with the longest route.
+ */
+function achbotAddonOfferRevision(string $kind,array $row): string {
+    achbotAddonTable($kind);
+    if (!isset($row['id'],$row['volume'],$row['price']) || (int)$row['id']<=0)
+        throw new RuntimeException('addon_admin_offer_invalid');
+    $scope=achbotAddonScopeRow($row,true);
+    return substr(hash('sha256',json_encode([$kind,(int)$row['id'],
+        (string)$row['volume'],(string)$row['price'],$scope['scope_hash']],
+        JSON_THROW_ON_ERROR)),0,20);
+}
+function achbotAddonOfferCallback(string $prefix,string $kind,array $row): string {
+    $callback=$prefix.(int)$row['id'];
+    if (array_key_exists('scope_hash',$row))
+        $callback.='_'.achbotAddonOfferRevision($kind,$row);
+    if (strlen($callback)>64) throw new RuntimeException('addon_admin_callback_too_long');
+    return $callback;
 }
 function achbotAddonGroups(array $groups,bool $requireNonempty=false): array {
     require_once __DIR__.'/../Panel/PasarGuard.php';
@@ -85,11 +137,12 @@ function achbotAddonCatalog(mysqli $db,string $kind,array $context,?array $rows=
                 } else {
                     if (!is_array($context['pg_panel']??null))
                         throw new RuntimeException('addon_native_group_catalog_unavailable');
-                    $check=achbotPgGroups($context['pg_panel']);
+                    // The same provider-authorized Group set governs scope
+                    // creation, catalog visibility, quote and settlement.
+                    $check=achbotPgCheck($context['pg_panel']);
                     if (($check['success']??false)!==true)
                         throw new RuntimeException('addon_native_group_catalog_unverified');
-                    $verifiedPgGroups=[];
-                    foreach($check['groups'] as $g) if (!$g['is_disabled']) $verifiedPgGroups[]=$g['id'];
+                    $verifiedPgGroups=achbotPgEligibleGroupIds($check);
                 }
             }
             if (array_diff($scope['groups'],$verifiedPgGroups)) continue;
@@ -125,6 +178,16 @@ function achbotAddonContext(mysqli $db,array $order): array {
         $read=achbotPgRead($ctx['panel'],$ctx['identity']);
         if (($read['success']??false)!==true) throw new RuntimeException('addon_native_unverified');
         $groups=achbotAddonGroups($read['user']['group_ids']);
+        // A native account whose current Groups exceed this credential's
+        // effective access cannot be safely extended, even via a less
+        // specific server/global fallback. Validate once per owned account,
+        // then reuse the authoritative set while resolving its offer list.
+        $access=achbotPgCheck($ctx['panel']);
+        if (($access['success']??false)!==true)
+            throw new RuntimeException('addon_native_group_authority_unverified');
+        $eligible=achbotPgEligibleGroupIds($access);
+        if (array_diff($groups,$eligible))
+            throw new RuntimeException('addon_native_group_access_changed');
         $native=achbotServiceObservation((object)$read['user'],$remark);
         $identity=hash('sha256',json_encode($ctx['identity'],JSON_THROW_ON_ERROR));
     } elseif ($provider==='marzban') {
@@ -137,6 +200,7 @@ function achbotAddonContext(mysqli $db,array $order): array {
     return ['server_id'=>$sid,'order_id'=>$oid,'remark'=>$remark,
         'provider'=>$provider,'groups'=>$groups,'identity'=>$identity,
         'pg_panel'=>$provider==='pasarguard'?$ctx['panel']:null,
+        'pg_groups_checked'=>$provider==='pasarguard'?$eligible:null,
         'observation'=>$native];
 }
 function achbotAddonOfferById(mysqli $db,string $kind,array $context,int $offerId): ?array {

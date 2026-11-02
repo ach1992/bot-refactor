@@ -37,8 +37,19 @@ The list provides All, Global and Server filters for both day and volume;
 the Server view shows this server's own offers (including all of its native
 Group-set variants), rather than unrelated servers or Global-only entries.
 Filters are read-only and cannot interrupt an active admin editor.
-New steps use the existing transaction, role and Telegram update-ID fences.
-Incorrect or stale input does not change pricing.
+Every scoped-editor session now carries a fresh, server-stored 16-hex nonce
+in its Scope and Server picker callbacks. A newer Telegram update ID alone
+never authorizes an old keyboard from another editing session. Every offer
+edit/delete/scope button in a migrated catalog also contains a 20-hex
+content revision for the exact displayed kind, ID, scope, quantity and
+price. The existing authenticated SQL transaction locks and checks that
+row before any write; deleted or changed rows are rejected, not silently
+reinterpreted. Older unbound migrated callbacks are refused. Legacy
+unmigrated global catalogs keep the pre-015 path without weakening migrated
+state checks. All callback payloads stay inside Telegram's 64-byte limit.
+
+New steps retain the existing role, private Telegram frame and update-ID
+fences. Incorrect or stale input does not change pricing.
 
 ## Financial invariants and race handling
 
@@ -51,7 +62,13 @@ units. Agent discount is calculated before this quote is issued.
 
 Every entry point must verify ownership and local provider identity before
 claim, and the exact native Group-set and provider identity before payment
-or remote provider effects. Stale callbacks, removed Groups, changed
+or remote provider effects. PasarGuard account Group membership must still
+be active AND allowed by the current credential; only Group existence and
+historical server defaults are insufficient. Disallowed native Group
+membership fails closed even when a Server/Global price is available,
+rather than accepting money for an unfulfillable fallback. The trusted
+current Group eligibility result is reused during one catalog resolution,
+not inferred from arbitrary callback-supplied IDs. Stale callbacks, removed Groups, changed
 server/provider identity, deleted offers or altered scopes fail closed
 for a refreshed quote or reconciliation, never automatic repricing.
 An already-issued quote must never silently change amount because of
@@ -76,6 +93,10 @@ remain authoritative. Never retry an uncertain external effect blindly.
    a SHA-256-verified 015 SQL sidecar, never an automatic migration.
 4. Only when separately authorized, apply 015 once and verify original
    row IDs, prices, legacy pay snapshots and both new indexes/columns.
+   Runtime readiness requires both exact unique (volume,scope_hash) BTREE
+   definitions, their declared order and transactional InnoDB tables, not
+   merely a complete-looking column list. Partial/index-drifted
+   installations remain non-operational until separately reconciled.
 5. Deploy the paired compatible source, verify readbacks and isolated
    financial scenarios before resuming the bot.
 
@@ -94,9 +115,16 @@ PHP8.5-only real PHP+isolated MariaDB fixture:
   PYTHONPATH=tools python3 tools/test_post_v9_scoped_addons.py --run-disposable
 
 The latter runs only on the existing current-runtime native fifth shard
-in full CI, with its own evidence artifact. No new native, payment or
+in full CI, with its own evidence artifact. The review-remediation
+candidate extends it with stale multi-admin callbacks, index drift,
+current credential Group authority and a controlled native HTTP identity
+readback, and financial claim/dispatch/finalization/replay checks. Any new
+financial adapter in the test is local-only; full acceptance must be
+supported by the artifact actually produced for the exact candidate,
+never by this description. The fixture rejects unbounded current-runtime
+PHP deprecations rather than silently treating them as successes. No new native, payment or
 Telegram API endpoints are contacted. Historical accepted Persian copy
-proofs remain intact; the 12 new scoped editor keys have a separately
+proofs remain intact; the 14 current-only scoped editor keys have a separately
 pinned current-only text manifest.
 
 No actual operator installation, release, live group mutation, real

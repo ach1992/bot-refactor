@@ -347,6 +347,32 @@ function achbotPgCheck(array $panel): array {
         'allowed_group_ids'=>$role['access']['allowed_group_ids']??null];
 }
 
+/** The *current credential's* Group permissions are authoritative, not
+ * server defaults or Group existence alone. Null means unrestricted.
+ */
+function achbotPgEligibleGroupIds(array $check): array {
+    if (($check['success']??false)!==true || !is_array($check['groups']??null) ||
+        !array_is_list($check['groups'])) throw new RuntimeException('pg_group_authority_unverified');
+    $allowed=$check['allowed_group_ids']??null;
+    if ($allowed!==null) {
+        if (!is_array($allowed) || !array_is_list($allowed))
+            throw new RuntimeException('pg_group_authority_invalid');
+        foreach($allowed as $id)
+            if (!is_int($id) || $id<=0) throw new RuntimeException('pg_group_authority_invalid');
+        $allowed=achbotPgGroupsCanonical($allowed);
+    }
+    $eligible=[];
+    foreach($check['groups'] as $group) {
+        if (!is_int($group['id']??null) || $group['id']<=0 ||
+            !is_bool($group['is_disabled']??null))
+            throw new RuntimeException('pg_group_authority_invalid');
+        if (!$group['is_disabled'] &&
+            ($allowed===null || in_array($group['id'],$allowed,true)))
+            $eligible[]=$group['id'];
+    }
+    return achbotPgGroupsCanonical($eligible);
+}
+
 /** Native signature proof shares only the bounded credential-free transport. */
 function achbotPgSubscriptionInfo(array $panel,string $trustedUrl): array {
     if (!achbotPgPanelValid($panel)) return achbotPgFailure('pg_panel_config_invalid');

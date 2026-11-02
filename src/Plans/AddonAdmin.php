@@ -15,15 +15,17 @@ function achbotAddonAdminFlow(): array {
     $flow=is_array($temp)?($temp['flow']??null):null;
     if (!is_array($flow) || !in_array($flow['kind']??null,['day','volume'],true) ||
         !in_array($flow['action']??null,['create','edit'],true) ||
+        !is_string($flow['session']??null) ||
+        preg_match('/^[a-f0-9]{16}$/D',$flow['session'])!==1 ||
         ($flow['action']==='edit' && !is_array($flow['original']??null)))
         throw new RuntimeException('addon_admin_state_invalid');
     return $flow;
 }
-function achbotAddonAdminScopeKeys(): string {
+function achbotAddonAdminScopeKeys(string $session): string {
     return json_encode(['inline_keyboard'=>[
-        [['text'=>\achbotMessage('addon_scopes.global'),'callback_data'=>'addonScopeGlobal']],
-        [['text'=>\achbotMessage('addon_scopes.server'),'callback_data'=>'addonScopeServer']],
-        [['text'=>\achbotMessage('addon_scopes.groups'),'callback_data'=>'addonScopeGroups']]
+        [['text'=>\achbotMessage('addon_scopes.global'),'callback_data'=>'addonScopeGlobal_'.$session]],
+        [['text'=>\achbotMessage('addon_scopes.server'),'callback_data'=>'addonScopeServer_'.$session]],
+        [['text'=>\achbotMessage('addon_scopes.groups'),'callback_data'=>'addonScopeGroups_'.$session]]
     ]],JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE);
 }
 /** Read-only catalog filters; the label still comes from the admin catalog. */
@@ -119,7 +121,7 @@ function achbotAddonAdminHandle(mysqli $db): bool {
         $cb,$filterMatch)===1;
     $owned=in_array($cb,['dayPlanSettings','volumePlanSettings','addNewDayPlan','addNewVolumePlan'],true) ||
         $filterOwned ||
-        preg_match('/^addon(?:EditScope(?:Day|Volume)[1-9][0-9]*|Scope(?:Global|Server|Groups)|PickServer[1-9][0-9]*)$/D',$cb) ||
+        preg_match('/^addon(?:EditScope(?:Day|Volume)[1-9][0-9]*_[a-f0-9]{20}|Scope(?:Global|Server|Groups)_[a-f0-9]{16}|PickServer[1-9][0-9]*_[a-f0-9]{16})$/D',$cb) ||
         str_starts_with($step,'addon:');
     if (!$owned) return false;
     try {
@@ -160,15 +162,18 @@ function achbotAddonAdminHandle(mysqli $db): bool {
             achbotIntervalShow($db,$cb==='dayPlanSettings'?'day':'volume');return true;
         }
         if ($cb==='addNewDayPlan' || $cb==='addNewVolumePlan' ||
-            preg_match('/^addonEditScope(Day|Volume)([1-9][0-9]*)$/D',$cb,$edit)) {
+            preg_match('/^addonEditScope(Day|Volume)([1-9][0-9]*)_([a-f0-9]{20})$/D',$cb,$edit)) {
             if ($step!=='none') throw new RuntimeException('addon_admin_other_editor_active');
             $kind=($cb==='addNewDayPlan' || ($edit[1]??null)==='Day')?'day':'volume';
-            $flow=['action'=>isset($edit[2])?'edit':'create','kind'=>$kind];
+            $flow=['action'=>isset($edit[2])?'edit':'create','kind'=>$kind,
+                'session'=>bin2hex(random_bytes(8))];
             if ($flow['action']==='edit') {
                 $table=achbotAddonTable($kind);$id=(int)$edit[2];
                 $q=$db->prepare("SELECT * FROM $table WHERE id=?");
                 $q->bind_param('i',$id);$q->execute();$row=$q->get_result()->fetch_assoc();$q->close();
                 if (!$row) throw new RuntimeException('addon_admin_offer_missing');
+                if (!hash_equals(achbotAddonOfferRevision($kind,$row),$edit[3]))
+                    throw new RuntimeException('addon_admin_stale_callback');
                 $scope=achbotAddonScopeRow($row,true);
                 $units=achbotWholeServiceUnits($row['volume'],$kind==='day'?36500:achbotServiceVolumeMax());
                 if ($units===null || (int)$row['price']<0) throw new RuntimeException('addon_admin_offer_invalid');
@@ -178,12 +183,13 @@ function achbotAddonAdminHandle(mysqli $db): bool {
             if (!achbotIntervalWrite($db,'','',[],false,'addon:scope',$flow)) {
                 achbotIntervalWriteNotice();return true;
             }
-            sendMessage(\achbotMessage('addon_scopes.choose_scope'),achbotAddonAdminScopeKeys());
+            sendMessage(\achbotMessage('addon_scopes.choose_scope'),achbotAddonAdminScopeKeys($flow['session']));
             return true;
         }
         $flow=achbotAddonAdminFlow();
-        if (preg_match('/^addonScope(Global|Server|Groups)$/D',$cb,$m)) {
-            if ($step!=='addon:scope') throw new RuntimeException('addon_admin_stale_callback');
+        if (preg_match('/^addonScope(Global|Server|Groups)_([a-f0-9]{16})$/D',$cb,$m)) {
+            if ($step!=='addon:scope' || !hash_equals($flow['session'],$m[2]))
+                throw new RuntimeException('addon_admin_stale_callback');
             $flow['scope']=strtolower($m[1]);
             $flow['server_id']=null;$flow['groups']=null;
             if ($flow['scope']==='global') achbotAddonAdminNext($db,$flow);
@@ -196,14 +202,15 @@ function achbotAddonAdminHandle(mysqli $db): bool {
                 $keys=[];
                 foreach($list as $server)
                     $keys[]=[['text'=>(int)$server['id'].' - '.$server['title'].' ('.$server['type'].')',
-                        'callback_data'=>'addonPickServer'.$server['id']]];
+                        'callback_data'=>'addonPickServer'.$server['id'].'_'.$flow['session']]];
                 sendMessage(\achbotMessage('addon_scopes.choose_server'),json_encode(
                     ['inline_keyboard'=>$keys],JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR));
             }
             return true;
         }
-        if (preg_match('/^addonPickServer([1-9][0-9]*)$/D',$cb,$m)) {
-            if ($step!=='addon:server') throw new RuntimeException('addon_admin_stale_callback');
+        if (preg_match('/^addonPickServer([1-9][0-9]*)_([a-f0-9]{16})$/D',$cb,$m)) {
+            if ($step!=='addon:server' || !hash_equals($flow['session'],$m[2]))
+                throw new RuntimeException('addon_admin_stale_callback');
             $sid=(int)$m[1];
             if (!achbotAddonAdminValidServer($db,$sid,$flow['scope']??'')) throw new RuntimeException('addon_admin_server_missing');
             $flow['server_id']=$sid;

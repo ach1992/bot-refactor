@@ -10,28 +10,46 @@ import argparse
 import hashlib
 import json
 import subprocess
+import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 import test_access_state as owned
 import test_v6_native as native
 import test_v8_native as purchase
 import test_post_v9_service_unit_guards as unit_routes
+import test_post_v9_pasarguard_client as pg
 
 ROOT=Path(__file__).resolve().parents[1]
 DB=purchase.SIDE[1]
 PHP=r'''<?php
 error_reporting(E_ALL);
-set_error_handler(static function($n,$m){if($n===E_DEPRECATED)return true;throw new ErrorException($m,0,$n);});
+set_error_handler(static function($n,$m){throw new ErrorException($m,0,$n);});
 if (PHP_VERSION_ID < 80500 || PHP_VERSION_ID >= 80600) throw new RuntimeException('requires_php85');
 $_SERVER['SCRIPT_FILENAME']=__FILE__;
+define('ACHBOT_PG_TEST_LOOPBACK',true);
 require_once $argv[1].'/src/Purchase/Core.php';
 require_once $argv[1].'/src/Plans/Addons.php';
-$db=new mysqli('localhost','root','',$argv[3],0,$argv[2]);
-$db->set_charset('utf8mb4');
 $spec=json_decode($argv[4],true,64,JSON_THROW_ON_ERROR);
+$db=new mysqli('localhost','root','',$spec['database']??$argv[3],0,$argv[2]);
+$db->set_charset('utf8mb4');
 $context=['server_id'=>(int)($spec['server']??2),'provider'=>$spec['provider']??'marzban',
  'groups'=>$spec['groups']??[],'pg_groups_checked'=>$spec['eligible_groups']??($spec['groups']??[])];
 try {
 switch($spec['op']) {
+case 'schema': $value=achbotAddonSchema($db);break;
+case 'groups':
+  require_once $argv[1].'/src/Panel/PasarGuard.php';
+  $value=achbotPgEligibleGroupIds($spec['check']);break;
+case 'pg_http':
+  require_once $argv[1].'/src/Panel/PasarGuard.php';
+  $panel=['id'=>1,'instance_key'=>str_repeat('b',32),'api_url'=>$spec['url'],
+    'api_key'=>'fixture-private-key','version'=>'5.5.1'];
+  $check=achbotPgCheck($panel);
+  $read=achbotPgRead($panel,$spec['identity']);
+  $value=['eligible'=>($check['success']??false)?
+    achbotPgEligibleGroupIds($check):null,
+    'check_success'=>$check['success'],'read_success'=>$read['success'],
+    'native_groups'=>$read['user']['group_ids']??null];break;
 case 'catalog': $value=achbotAddonCatalog($db,$spec['kind']??'volume',$context);break;
 case 'quote':
   $order=['id'=>41,'server_id'=>2];$context['order_id']=41;
@@ -93,6 +111,17 @@ def test(php:bool)->dict:
               f"VALUES({offer},{10 if kind=='volume' else 20},{price},{server},{groups},'{sha(scope)}')")
         yes(q("SELECT COUNT(*) FROM increase_plan WHERE volume=10")=='5',
             'global_and_scoped_identical_units_coexist')
+        def race_insert(_):
+            try:
+                native.sql(w,e,"INSERT INTO increase_plan(volume,price,server_id,scope_hash)"
+                    f" VALUES(777,42,2,'{sha('S:2')}')",DB)
+                return True
+            except Exception:return False
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            claims=list(pool.map(race_insert,range(2)))
+        yes(claims.count(True)==1 and q("SELECT COUNT(*) FROM increase_plan "
+                "WHERE volume=777 AND server_id=2")=='1',
+            'concurrent_duplicate_scoped_offer_insert_one_unique_winner')
         try:
             q("INSERT INTO increase_plan(volume,price,server_id,scope_hash) "
               f"VALUES(10,121,2,'{sha('S:2')}')")
@@ -112,6 +141,72 @@ def test(php:bool)->dict:
                 if result.returncode or result.stderr:raise RuntimeError(
                     f'fixture error {spec}: {result.returncode}, {result.stderr}, {result.stdout}')
                 return json.loads(result.stdout)
+            # Migration readiness must reject drift in the actual database
+            # protection, not just check that columns happen to exist.
+            yes(call(op='schema',database=purchase.SIDE[0])=={'ok':True,'value':False},
+                'unmigrated_legacy_schema_remains_global_compatible')
+            yes(call(op='schema')=={'ok':True,'value':True},
+                'complete_015_schema_indexes_and_engine_ready')
+            for table,key in [('increase_day','uq_addon_day_units_scope'),
+                              ('increase_plan','uq_addon_volume_units_scope')]:
+                q(f"ALTER TABLE {table} DROP INDEX {key}")
+                yes(call(op='schema')['ok'] is False,
+                    table+'_missing_unique_index_rejected')
+                q(f"ALTER TABLE {table} ADD INDEX {key} (volume,scope_hash)")
+                yes(call(op='schema')['ok'] is False,
+                    table+'_nonunique_replacement_rejected')
+                q(f"ALTER TABLE {table} DROP INDEX {key}")
+                q(f"ALTER TABLE {table} ADD UNIQUE KEY {key} (scope_hash,volume)")
+                yes(call(op='schema')['ok'] is False,
+                    table+'_wrong_index_order_rejected')
+                q(f"ALTER TABLE {table} DROP INDEX {key}")
+                q(f"ALTER TABLE {table} ADD UNIQUE KEY {key} (volume,scope_hash)")
+            q('ALTER TABLE increase_day ENGINE=MyISAM')
+            yes(call(op='schema')['ok'] is False,
+                'nontransactional_catalog_engine_rejected')
+            q('ALTER TABLE increase_day ENGINE=InnoDB')
+            q('ALTER TABLE pays DROP COLUMN addon_scope_snapshot')
+            yes(call(op='schema')['ok'] is False,
+                'interrupted_015_payment_column_rejected')
+            q('ALTER TABLE pays ADD COLUMN addon_scope_snapshot LONGTEXT COLLATE utf8mb4_bin DEFAULT NULL')
+            yes(call(op='schema')=={'ok':True,'value':True},
+                'restored_015_schema_ready_after_disposable_repair')
+            def pg_groups(allowed,disabled=None):
+                return call(op='groups',check={'success':True,'allowed_group_ids':allowed,
+                    'groups':[{'id':i,'is_disabled':i in (disabled or [])} for i in (1,2,3)]})
+            yes(pg_groups([1,2])=={'ok':True,'value':[1,2]},
+                'native_group_authority_enforces_allowed_subset')
+            yes(pg_groups([2,3],[2])=={'ok':True,'value':[3]},
+                'native_group_authority_enforces_active_and_allowed')
+            yes(pg_groups([])=={'ok':True,'value':[]},
+                'native_group_authority_empty_allowed_is_not_unrestricted')
+            yes(pg_groups(None)=={'ok':True,'value':[1,2,3]},
+                'native_group_authority_null_unrestricted')
+            yes(pg_groups('invalid')['ok'] is False,
+                'malformed_group_permissions_fail_closed')
+            # Real current PasarGuard HTTP adapter, but an owned local-only
+            # server. This also proves native account identity readback.
+            with pg.panel() as (server,url):
+                def provider_check():
+                    return call(op='pg_http',url=url,identity=pg.IDENTITY)
+                proof=provider_check()
+                yes(proof['ok'] and proof['value']=={
+                    'eligible':[2,5],'check_success':True,'read_success':True,
+                    'native_groups':[2,5]},
+                    'local_pasarguard_http_readback_checks_native_identity_and_groups')
+                server.allowed_group_ids=[5]
+                proof=provider_check()
+                yes(proof['ok'] and proof['value']['eligible']==[5] and
+                    proof['value']['native_groups']==[2,5],
+                    'current_http_allowed_groups_override_still_active_native_groups')
+                server.disabled_group_ids=[5]
+                yes(provider_check()['value']['eligible']==[],
+                    'current_http_disabled_allowed_group_is_rejected')
+                server.available_group_ids=[5]
+                yes(provider_check()['value']['eligible']==[],
+                    'current_http_deleted_group_fails_current_authority')
+                yes(server.write_count==0 and all(t[0]=='GET' for t in server.trace),
+                    'group_authority_and_identity_readback_never_dispatch_provider_writes')
             def ids(**spec):
                 ret=call(op='catalog',kind='volume',**spec)
                 yes(ret['ok'],'catalog_fail_'+str(spec))
@@ -129,6 +224,8 @@ def test(php:bool)->dict:
                 'unconfigured_server_inherits_global')
             yes(ids(server=2,provider='pasarguard',groups=[1],eligible_groups=[])=={10:301},
                 'deleted_native_group_uses_safe_server_fallback')
+            yes(ids(server=2,provider='pasarguard',groups=[1],eligible_groups=[2])=={10:301},
+                'active_but_credential_disallowed_group_uses_safe_server_fallback')
             for offer,scope in [(201,{'server_id':None,'groups':None,'scope_hash':sha('G')}),
                                 (303,{'server_id':2,'groups':[1,2],'scope_hash':sha('P:2:1,2')})]:
                 check=call(op='row',offer_id=offer)
@@ -181,6 +278,14 @@ def test(php:bool)->dict:
                 if result.returncode or result.stderr:raise RuntimeError(
                     f'current route failed {spec}: {result.returncode} {result.stderr} {result.stdout}')
                 return json.loads(result.stdout)
+            def key(events,prefix):
+                for event in events:
+                    for line in (event.get('keys') or {}).get('inline_keyboard',[]):
+                        for button in line:
+                            data=button.get('callback_data','')
+                            if data.startswith(prefix):
+                                return data
+                raise AssertionError('no_callback_'+prefix)
             def callback(data,actor_id=9001,seq=801,route='admin'):
                 return actor(route=route,actor=actor_id,data=data,frame={
                     'update_id':seq,'callback_query':{'id':'testcallback','data':data,
@@ -245,10 +350,11 @@ def test(php:bool)->dict:
                 any('ویرایش فعال' in (ev.get('text') or '') for ev in blocked_filter['events']) and
                 blocked_filter['provider_writes']==0,
                 'read_only_filter_prompts_to_finish_active_editor_without_mutation')
-            callback('addonScopeServer',seq=802)
+            server_choose=callback(key(first['events'],'addonScopeServer_'),seq=802)
             yes(q("SELECT step FROM users WHERE userid=9001")=='addon:server',
                 'admin_wizard_server_selection')
-            callback('addonPickServer2',seq=803)
+            old_picker=key(server_choose['events'],'addonPickServer2_')
+            callback(old_picker,seq=803)
             yes(q("SELECT step FROM users WHERE userid=9001")=='addon:units',
                 'admin_wizard_persists_verified_server_choice')
             stale=message('15-1234',seq=803)
@@ -304,8 +410,216 @@ def test(php:bool)->dict:
             yes('deleteDayPlan401' not in json.dumps(rejected_filter['events']) and
                 rejected_filter['provider_writes']==0,
                 'customer_cannot_use_read_only_admin_scope_filter')
+            # Old keyboards are not current editor sessions, even with a NEW
+            # Telegram update_id and exactly the same editor step.
+            newer=callback('addNewVolumePlan',seq=811)
+            new_scope=key(newer['events'],'addonScopeServer_')
+            stale_scope=callback(key(first['events'],'addonScopeServer_'),seq=812)
+            yes(q("SELECT step FROM users WHERE userid=9001")=='addon:scope' and
+                not any('addonPickServer' in json.dumps(e) for e in stale_scope['events']),
+                'old_scope_prompt_new_update_does_not_advance_new_session')
+            stale_group=callback(key(first['events'],'addonScopeGroups_'),seq=812)
+            yes(q("SELECT step FROM users WHERE userid=9001")=='addon:scope' and
+                not any('addonPickServer' in json.dumps(e) for e in stale_group['events']),
+                'old_group_scope_prompt_cannot_change_new_editor')
+            new_servers=callback(new_scope,seq=813)
+            stale_picker=callback(old_picker,seq=814)
+            yes(q("SELECT step FROM users WHERE userid=9001")=='addon:server' and
+                not any('addon_scopes.units_price' in json.dumps(e) for e in stale_picker['events']),
+                'old_server_picker_new_update_does_not_select_new_offer')
+            callback(key(new_servers['events'],'addonPickServer2_'),seq=815)
+            yes(q("SELECT step FROM users WHERE userid=9001")=='addon:units',
+                'current_session_server_picker_still_works')
+            message('Cancel',seq=816)
+            yes(q("SELECT step FROM users WHERE userid=9001")=='none',
+                'cancel_current_session_clears_editor')
+
+            # Row-level CAS is independent of editor-session protection.
+            # Another administrator can change the visible offer between
+            # rendering and a subsequent Telegram update.
+            old_delete=key(filtered_day['events'],'deleteDayPlan401_')
+            old_price=key(filtered_day['events'],'changeDayPlanPrice401_')
+            q("UPDATE increase_day SET server_id=4,scope_hash='"+sha('S:4')+"' WHERE id=401")
+            stale_delete=callback(old_delete,seq=817)
+            yes(q("SELECT COUNT(*) FROM increase_day WHERE id=401 AND server_id=4")=='1',
+                'stale_day_delete_after_rescope_cannot_remove_new_offer')
+            stale_start=callback(old_price,seq=818)
+            yes(q("SELECT step FROM users WHERE userid=9001")=='none',
+                'stale_day_price_button_after_server_change_cannot_start_edit')
+            q("UPDATE increase_day SET server_id=2,scope_hash='"+sha('S:2')+"' WHERE id=401")
+            fresh_view=callback('addonFilterDayServer2',seq=819)
+            fresh_price=key(fresh_view['events'],'changeDayPlanPrice401_')
+            callback(fresh_price,seq=820)
+            q("UPDATE increase_day SET server_id=4,scope_hash='"+sha('S:4')+"' WHERE id=401")
+            typed=message('5555',seq=821)
+            yes(q("SELECT price FROM increase_day WHERE id=401")=='1100' and
+                q("SELECT step FROM users WHERE userid=9001")!='none',
+                'stale_day_price_completion_does_not_overwrite_changed_scope')
+            message('Cancel',seq=822)
+            q("UPDATE increase_day SET server_id=2,scope_hash='"+sha('S:2')+"' WHERE id=401")
+            fresh_day=callback('addonFilterDayServer2',seq=823)
+            callback(key(fresh_day['events'],'changeDayPlanPrice401_'),seq=824)
+            message('5555',seq=825)
+            yes(q("SELECT price FROM increase_day WHERE id=401")=='5555',
+                'fresh_day_price_edit_updates_exact_current_revision')
+            fresh_day=callback('addonFilterDayServer2',seq=826)
+            callback(key(fresh_day['events'],'deleteDayPlan401_'),seq=827)
+            yes(q("SELECT COUNT(*) FROM increase_day WHERE id=401")=='0',
+                'fresh_day_delete_removes_only_current_revision')
+            fresh_volume=callback('addonFilterVolumeServer2',seq=828)
+            volume_update=key(fresh_volume['events'],'changeVolumePlanVolume301_')
+            callback(volume_update,seq=829)
+            q("UPDATE increase_plan SET price=777 WHERE id=301")
+            message('22',seq=830)
+            yes(q("SELECT volume FROM increase_plan WHERE id=301")=='10',
+                'stale_volume_quantity_after_offer_repricing_is_refused')
+            message('Cancel',seq=831)
+            fresh_volume=callback('addonFilterVolumeServer2',seq=832)
+            callback(key(fresh_volume['events'],'changeVolumePlanVolume301_'),seq=833)
+            message('22',seq=834)
+            yes(q("SELECT volume FROM increase_plan WHERE id=301")=='22',
+                'fresh_volume_quantity_edit_succeeds')
+            fresh_volume=callback('addonFilterVolumeServer2',seq=835)
+            callback(key(fresh_volume['events'],'deleteVolumePlan301_'),seq=836)
+            yes(q("SELECT COUNT(*) FROM increase_plan WHERE id=301")=='0',
+                'fresh_volume_delete_succeeds')
+            # Full current financial route: real owner/claim/debit/payment and
+            # audit/terminal SQL, real common provider-dispatch guard, fake ONLY
+            # the final Marzban HTTP adapter. No network is reachable.
+            # Never substitute a green eligibility-only check for this effect.
+            stub="function achbotApplyServiceEdit(...$args){++$GLOBALS['writes'];throw new RuntimeException('forbidden_provider_effect');}"
+            adapter=r'''function editMarzbanConfig($sid,array $change,$gift=null){
+  ++$GLOBALS['writes'];
+  global $connection;
+  if (!achbotServiceEditMatchesPay($connection,(int)($change['pay_id']??0),$change))
+    throw new RuntimeException('owned_effect_quote_mismatch');
+  if (($GLOBALS['spec']['remote_mode']??'ok')==='lost_ack')
+    throw new RuntimeException('owned_remote_ack_lost');
+  $s=$connection->prepare('SELECT expire_date FROM orders_list WHERE server_id=? AND remark=?');
+  $remark=$change['remark'];$s->bind_param('is',$sid,$remark);$s->execute();
+  $row=$s->get_result()->fetch_assoc();$s->close();
+  if (!$row) throw new RuntimeException('owned_remote_subject_missing');
+  $days=(int)($change['plus_day']??0);$volume=(int)($change['plus_volume']??0);
+  return (object)['success'=>true,'verified'=>true,'uncertain'=>false,
+    'applied_expire'=>(int)$row['expire_date']+$days*86400,
+    'applied_bytes'=>2147483648+$volume*1073741824];
+}'''
+            yes(stub in unit_routes.PHP,'current_finance_adapter_spy_contract_identified')
+            settle_driver=w/'scoped-addon-settlement.php'
+            strict=unit_routes.PHP.replace(
+                'if($n===E_DEPRECATED)return true;','')
+            settle_driver.write_text(strict.replace(stub,adapter))
+            def settle(kind,method,key_name,mode='ok'):
+                cb=('payIncrease'+('Day' if kind=='day' else '')+'WithWallet'
+                    if method=='wallet' and kind=='day' else
+                    'payIncreaseWithWallet' if method=='wallet' else
+                    'approveIncrease'+('Day' if kind=='day' else 'Volume'))+key_name
+                who=1001 if method=='wallet' else 9001
+                spec={'route':'extensions','actor':who,'data':cb,'remote_mode':mode,
+                    'frame':{'update_id':1000,'callback_query':{
+                        'id':'settle-fixture','data':cb,'from':{'id':who},
+                        'message':{'message_id':721,'chat':{'id':who,'type':'private'}}}}}
+                proc=subprocess.run(['php','-d','display_errors=0','-d','log_errors=0',
+                    '-d','disable_functions=curl_init,curl_exec',
+                    str(settle_driver),str(ROOT),str(w/'mysql.sock'),DB,
+                    json.dumps(spec)],capture_output=True,text=True,timeout=30)
+                if proc.returncode or proc.stderr:
+                    raise AssertionError(('scoped_finance_route_php85',proc.returncode,
+                        proc.stderr[-1200:],proc.stdout[-1200:]))
+                return json.loads(proc.stdout)
+            q((ROOT/'migrations/post-v9/003_payment_attempts.sql').read_text())
+            now=int(time.time())
+            q(f"UPDATE orders_list SET expire_date={now+2*86400} WHERE id=41")
+            for kind,offer,units,price in [('day',701,4,120),('volume',702,5,220)]:
+                table='increase_day' if kind=='day' else 'increase_plan'
+                q(f"INSERT INTO {table}(id,volume,price,server_id,group_ids,scope_hash) "
+                  f"VALUES({offer},{units},{price},2,NULL,'{sha('S:2')}')")
+            def issue(kind,method,key_name,offer=None,mode='ok',price=None,groups=None):
+                offer=offer or (701 if kind=='day' else 702)
+                units=4 if kind=='day' else 5
+                final_price=price or (120 if kind=='day' else 220)
+                snapshot={'version':1,'kind':kind,'offer_id':offer,'order_id':41,
+                    'server_id':2,'provider':'marzban','remark':'owned-native-fixture',
+                    'native_identity':None,'native_groups':groups or [],'scope_hash':sha('S:2'),
+                    'units':units,'base_price':final_price,'final_price':final_price}
+                snap=json.dumps(snapshot,separators=(',',':'))
+                statement=("INSERT INTO pays(hash_id,user_id,type,plan_id,server_id,order_id,volume,"
+                    "day,price,request_date,state,message_id,chat_id,addon_scope_snapshot) "
+                    f"VALUES('{key_name}',1001,'INCREASE_{kind.upper()}_41_{offer}',7,2,")
+                statement+=f"41,{units if kind=='volume' else 0},{units if kind=='day' else 0},"
+                statement+=f"{final_price},{now},'{ 'pending' if method=='wallet' else 'have_sent' }',"
+                statement+=f"703,'9001','{snap}')"
+                q(statement)
+            finance_checked=0
+            provider_dispatches=0
+            for kind in ('day','volume'):
+                for method in ('wallet','manual'):
+                    key_name='scoped_'+kind+'_'+method
+                    issue(kind,method,key_name)
+                    wallet_before=int(q('SELECT wallet FROM users WHERE userid=1001'))
+                    before=int(q('SELECT COUNT(*) FROM increase_order'))
+                    result=settle(kind,method,key_name)
+                    expected_state='paid_with_wallet' if method=='wallet' else 'approved'
+                    expected_amount=120 if kind=='day' else 220
+                    expected_wallet=wallet_before-expected_amount if method=='wallet' else wallet_before
+                    yes(q(f"SELECT state FROM pays WHERE hash_id='{key_name}'")==expected_state and
+                        int(q('SELECT wallet FROM users WHERE userid=1001'))==expected_wallet and
+                        int(q('SELECT COUNT(*) FROM increase_order'))==before+1 and
+                        result['provider_writes']==1,
+                        'actual_'+method+'_'+kind+'_claim_dispatch_verify_audit_terminal')
+                    second=settle(kind,method,key_name)
+                    yes(q(f"SELECT state FROM pays WHERE hash_id='{key_name}'")==expected_state and
+                        int(q('SELECT wallet FROM users WHERE userid=1001'))==expected_wallet and
+                        int(q('SELECT COUNT(*) FROM increase_order'))==before+1 and
+                        second['provider_writes']==0,
+                        'settled_'+method+'_'+kind+'_replay_never_double_applies')
+                    finance_checked+=1;provider_dispatches+=result['provider_writes']
+            # An ambiguous remote acknowledgement is NOT grounds to replay or
+            # refund an already durable local wallet reservation.
+            for kind in ('day','volume'):
+                key_name='scoped_'+kind+'_uncertain'
+                issue(kind,'wallet',key_name)
+                wallet_before=int(q('SELECT wallet FROM users WHERE userid=1001'))
+                first=settle(kind,'wallet',key_name,'lost_ack')
+                held_wallet=int(q('SELECT wallet FROM users WHERE userid=1001'))
+                held_state=q(f"SELECT state FROM pays WHERE hash_id='{key_name}'")
+                second=settle(kind,'wallet',key_name,'ok')
+                yes(held_state=='processing_wallet' and
+                    held_wallet==wallet_before-(120 if kind=='day' else 220) and
+                    int(q('SELECT wallet FROM users WHERE userid=1001'))==held_wallet and
+                    q(f"SELECT state FROM pays WHERE hash_id='{key_name}'")=='processing_wallet' and
+                    first['provider_writes']==1 and second['provider_writes']==0,
+                    'ambiguous_'+kind+'_remote_ack_held_without_refund_or_replay')
+                finance_checked+=1;provider_dispatches+=first['provider_writes']
+            # A changed admin scope can never turn a pending quote into a
+            # different effective offer, even when the user has funds.
+            issue('day','wallet','scoped_scope_drift')
+            before=int(q('SELECT wallet FROM users WHERE userid=1001'))
+            q("UPDATE increase_day SET server_id=4,scope_hash='"+sha('S:4')+"' WHERE id=701")
+            drift=settle('day','wallet','scoped_scope_drift')
+            yes(drift['provider_writes']==0 and
+                int(q('SELECT wallet FROM users WHERE userid=1001'))==before and
+                q("SELECT state FROM pays WHERE hash_id='scoped_scope_drift'")=='pending',
+                'scope_drift_before_financial_claim_refuses_debit_effect')
+            q("UPDATE increase_day SET server_id=2,scope_hash='"+sha('S:2')+"' WHERE id=701")
+            # Concurrent claims operate on the same real locked pays and
+            # wallet rows. At most one can reach the fake network boundary.
+            issue('volume','wallet','scoped_race_claim')
+            before_wallet=int(q('SELECT wallet FROM users WHERE userid=1001'))
+            before_records=int(q('SELECT COUNT(*) FROM increase_order'))
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                racing=list(pool.map(lambda _:settle('volume','wallet','scoped_race_claim'),
+                    range(2)))
+            yes(sum(r['provider_writes'] for r in racing)==1 and
+                q("SELECT state FROM pays WHERE hash_id='scoped_race_claim'")=='paid_with_wallet' and
+                int(q('SELECT wallet FROM users WHERE userid=1001'))==before_wallet-220 and
+                int(q('SELECT COUNT(*) FROM increase_order'))==before_records+1,
+                'simultaneous_wallet_claim_only_one_effect_and_single_debit')
+            finance_checked+=1;provider_dispatches+=1
     return {'status':'PASS','cases':len(checks),'checks':checks,
             'sql_only':not php,'actual_provider_calls':0,'actual_payment_calls':0,
+            'local_financial_claims_tested':finance_checked if php else 0,
+            'controlled_provider_dispatches_tested':provider_dispatches if php else 0,
             'production_database_modified':False}
 
 def main():
