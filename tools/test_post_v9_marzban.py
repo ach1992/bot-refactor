@@ -202,6 +202,7 @@ def main():
     # This contains positive and negative Marzban authentication, user
     # creation/deletion, usage, renewals and state transition API exercises.
     records = []
+    legacy_curl_deprecation_count=0
     minimal_edit_wire_verified=False
     with owned.owned_database() as (work, env), native.owned_provider() as (panel, url):
         native.seed(work, env, url)
@@ -226,6 +227,19 @@ def main():
                 panel.trace.clear()
                 result=native.run(work,env,stage,db,{"function":fn,"args":arguments})
                 results.append(result);traces.append(list(panel.trace))
+            # Frozen V9 has 47 curl_close() calls, all no-ops since PHP 8.0.
+            # PHP 8.5 reports this one deprecation; it is NOT a functional
+            # differential. Preserve strict parity for every other warning,
+            # result, exception, stdout byte, SQL effect and HTTP wire byte.
+            legacy_curl_warning=('8192: Function curl_close() is deprecated since 8.5, '
+                                 'as it has no effect since PHP 8.0')
+            historic_warnings=results[0].get('warnings') or []
+            if historic_warnings:
+                if not all(item==legacy_curl_warning for item in historic_warnings):
+                    raise RuntimeError('Unexpected historical PHP warning: '+name+
+                                       repr(historic_warnings[:2]))
+                legacy_curl_deprecation_count+=len(historic_warnings)
+                results[0]={**results[0],'warnings':[]}
             # The historical loopback PUT fixture returns only
             # {"status":"ok"}, not Marzban's UserResponse containing applied
             # expiry/traffic. Legacy incorrectly interpreted it as success.
@@ -356,6 +370,7 @@ def main():
          "marzban_http_wire_sql_parity":True,
          "minimal_service_edit_payload_verified":minimal_edit_wire_verified,
          "private_state_preserved":True,
+         "historical_only_curl_close_deprecations":legacy_curl_deprecation_count,
          "retired_subscription":sub,
          "unsupported_purchase_guard":core,
          "scenarios":records,
