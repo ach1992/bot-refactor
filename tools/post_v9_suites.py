@@ -1155,16 +1155,20 @@ def run_wallet(tmp: str) -> tuple[dict, dict]:
             and text_catalog.get("retired_parser_tokens")==23
             and text_catalog.get("relocation_source_ref")=="ecd30ba9192ed374703118a6c131be8809cc7b06"
             and text_catalog.get("native",{}).get("current_retired_feature_keys")==3
-            and text_catalog.get("catalog_keys")==2780
+            and text_catalog.get("catalog_keys")==2780+12
             and text_catalog.get("native",{}).get("editable_catalog_files")==2
             and text_catalog.get("native",{}).get("logical_topics")==27
-            and text_catalog.get("native",{}).get("current_catalog_keys")==2780
+            and text_catalog.get("native",{}).get("current_catalog_keys")==2780+12
             and text_catalog.get("native",{}).get("current_gift_admin_additions")==1
             and text_catalog.get("native",{}).get("current_gift_catalog_negative_controls")==8
             and text_catalog.get("native",{}).get("current_gift_catalog_negative_scenarios")==[
                 'missing_report','wrong_audience','changed_value','missing_parameter',
                 'reordered_parameters','unapproved_extra_key',
                 'duplicate_cross_audience_key','prior_catalog_mutation']
+            and text_catalog.get("native",{}).get("current_addon_catalog_additions")==12
+            and text_catalog.get("native",{}).get("current_addon_catalog_negative_controls")==4
+            and text_catalog.get("native",{}).get("current_addon_catalog_negative_scenarios")==[
+                'addon_missing_key','addon_changed_value','addon_cross_audience','addon_extra_key']
             and text_catalog.get("native",{}).get("current_management_added_keys")==112
             and text_catalog.get("native",{}).get("current_catalog_binding_paths")==2
             and text_catalog.get("native",{}).get("current_catalog_binding_entries")==4
