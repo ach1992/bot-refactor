@@ -246,7 +246,14 @@ def main():
         baseline=work/'nullable-expiry-baseline-240'
         shutil.copytree(source,baseline)
         old_adapter=subprocess.check_output(['git','show',NULL_EXPIRY_BASELINE+':src/Panel/Accounts.php'],cwd=ROOT)
-        (baseline/'src/Panel/Accounts.php').write_bytes(old_adapter)
+        # The exact historical adapter remains pinned by Git/hash/report. Its
+        # eleven curl_close() calls have no effect since PHP 8.0, but PHP 8.5
+        # warns about them. Remove ONLY these calls in this disposable RED
+        # executable copy, not in the original or the current candidate.
+        old_noop=b'curl_close($curl);'
+        if old_adapter.count(old_noop)!=11:
+            raise RuntimeError('Unexpected nullable-expiry historical cURL baseline')
+        (baseline/'src/Panel/Accounts.php').write_bytes(old_adapter.replace(old_noop,b''))
         def financial_snapshot():
             return native.sql(work,env,'SELECT * FROM users ORDER BY id;SELECT * FROM pays ORDER BY id;'
                 'SELECT * FROM orders_list ORDER BY id;SELECT * FROM increase_order ORDER BY id',native.DBS[1])

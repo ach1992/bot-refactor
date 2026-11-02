@@ -66,7 +66,6 @@ function getMarzbanToken($server_id, ?string $expectedPanelUrl = null,
     $response = curl_exec($curl);
     $curlError=curl_error($curl);
     $http=(int)curl_getinfo($curl,CURLINFO_HTTP_CODE);
-    curl_close($curl);
     if ($curlError!=='' || $response===false)
         return (object)['success'=>false,'detail'=>'marzban_auth_transport_unavailable'];
     if ($effectTarget!==null && $http!==200)
@@ -122,7 +121,6 @@ function getMarzbanJson($server_id, $token = null, ?array $giftTarget = null){
     $raw=curl_exec($curl);
     $error=curl_error($curl);
     $http=(int)curl_getinfo($curl,CURLINFO_HTTP_CODE);
-    curl_close($curl);
     // Historical list callers retain their original response surface.
     // Only a gift with an explicit original physical-target contract
     // requires strict complete-list and same-panel semantics.
@@ -167,7 +165,6 @@ function getMarzbanUserInfo($server_id, $remark){
         }
 		if($i == 10) $configInfo = $info;
     }
-    curl_close($curl);
 
     return (object) $configInfo;
 }
@@ -225,7 +222,6 @@ function getMarzbanUser($server_id, $remark, $token = null, bool $strict = false
     }
     $raw=curl_exec($curl);
     $http=(int)curl_getinfo($curl,CURLINFO_HTTP_CODE);
-    curl_close($curl);
     // In an effect readback, HTTP 404, transport failure and invalid JSON
     // are UNKNOWN evidence, not proof that CREATE was never applied.
     if ($strict && ($raw===false || $http!==200))
@@ -285,7 +281,6 @@ function getMarzbanHosts($server_id){
 
     $response = json_decode(curl_exec($curl));
     
-    curl_close($curl);
     return $response;
 }
 
@@ -388,7 +383,6 @@ function addMarzbanUser($server_id, $remark, $volume, $days, $plan_id,
     }
     $raw=curl_exec($curl);
     $http=(int)curl_getinfo($curl,CURLINFO_HTTP_CODE);
-    curl_close($curl);
     $response=json_decode((string)$raw);
     if ($operationNote !== null && ($raw===false || $http!==200 || !is_object($response) ||
                                      isset($response->detail) || !isset($response->links))) {
@@ -766,7 +760,6 @@ function editMarzbanConfig($server_id,$info,?array $giftTarget=null){
             $raw=curl_exec($curl);
             $error=curl_error($curl);
             $http=(int)curl_getinfo($curl,CURLINFO_HTTP_CODE);
-            curl_close($curl);
             // The provider's reply is useful evidence, but never enough to
             // mark a paid renewal/extension as delivered on its own.
             $retryable=($raw===false || $error!=='' ||
@@ -880,7 +873,6 @@ function resetMarzbanTraffic($server_id, $remark, $token, ?string $pinnedPanelUr
     $raw=curl_exec($curl);
     $error=curl_error($curl);
     $http=(int)curl_getinfo($curl,CURLINFO_HTTP_CODE);
-    curl_close($curl);
     if ($raw===false || $error!=='' || $http!==200) {
         return (object)['success'=>false,'uncertain'=>true,'msg'=>'marzban_reset_unconfirmed'];
     }
@@ -915,7 +907,6 @@ function renewMarzbanUUID($server_id,$remark){
     ));
 
     $response = json_decode(curl_exec($curl));
-    curl_close($curl);
     if(isset($response->detail)){
 		$detail = $response->detail;
         return (object) ['success'=>false, 'msg' => is_object($detail)?implode("-", (array) $detail):$detail];
@@ -972,7 +963,6 @@ function deleteMarzban($server_id,$remark,?array $expectedTarget=null){
     $raw=curl_exec($curl);
     $error=curl_error($curl);
     $http=(int)curl_getinfo($curl,CURLINFO_HTTP_CODE);
-    curl_close($curl);
     if ($raw===false || $error!=='' || $http<200 || $http>=300) {
         return (object)['success'=>false,'uncertain'=>true,
                         'msg'=>'remote_delete_response_unconfirmed'];
@@ -1035,7 +1025,6 @@ function changeMarzbanState($server_id,$remark){
     curl_setopt($curl, CURLOPT_POSTFIELDS, json_encode($postFields));
 
     $response = json_decode(curl_exec($curl));
-    curl_close($curl);
 
     if(isset($response->detail)){
 		$detail = $response->detail;

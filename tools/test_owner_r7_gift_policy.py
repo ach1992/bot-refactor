@@ -250,7 +250,15 @@ def main():
             attach(work,env,92,1002,'marzban',imported=True,uuid='stale-but-valid-proxy-cache')
             old_accounts=(stage/'src/Panel/Accounts.php').read_bytes()
             if label=='getter_baseline_race_RED':
-                (stage/'src/Panel/Accounts.php').write_bytes(subprocess.check_output(['git','show',BASE+':src/Panel/Accounts.php'],cwd=ROOT))
+                historical=subprocess.check_output(['git','show',BASE+':src/Panel/Accounts.php'],cwd=ROOT)
+                # Source history stays SHA-pinned. Only for the PHP8.5 RED
+                # executable copy, remove exactly 11 deprecated no-op closes;
+                # the getter/race implementation and wire behavior remain old.
+                legacy_close=b'curl_close($curl);'
+                if historical.count(legacy_close)!=11:
+                    raise RuntimeError('Unexpected historical Marzban getter fixture')
+                (stage/'src/Panel/Accounts.php').write_bytes(
+                    historical.replace(legacy_close,b''))
             a.hook_at='after_put' if label=='readback_incarnation_race' else 'after_user_get'
             if label=='late_attachment':
                 a.hook=lambda:attach(work,env,93,1003,'marzban',imported=True)

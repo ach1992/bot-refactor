@@ -10,8 +10,14 @@ INBOUND='INBOUND_PRIVATE_CANARY_987'
 TITLE='PRIVATE_PANEL_TITLE_CANARY'
 def check(ok,label):
     if not ok:raise AssertionError(label)
-def php(root,code):
-    p=subprocess.run(['php','-n','-d','allow_url_fopen=0','-d','display_errors=1','-r',code],cwd=root,capture_output=True,text=True,timeout=5)
+def php(root,code,*,archived_jdf=False):
+    argv=['php','-n','-d','allow_url_fopen=0','-d','display_errors=1']
+    # The frozen earlier JDF uses deprecated case-label syntax on PHP 8.5.
+    # Ignore deprecation noise for this one archival comparison only; the
+    # current runtime under test retains strict unsuppressed diagnostics.
+    if archived_jdf:
+        argv+=['-d','error_reporting=E_ALL & ~E_DEPRECATED']
+    p=subprocess.run(argv+['-r',code],cwd=root,capture_output=True,text=True,timeout=5)
     check(p.returncode==0 and not p.stderr,'isolated PHP failed: '+p.stderr[:400])
     try:return json.loads(p.stdout)
     except json.JSONDecodeError as exc:raise AssertionError('invalid source-native JSON: '+p.stdout[:400]) from exc
@@ -97,7 +103,7 @@ def main():
         require(parsed['invalid'] is False and parsed['normalized']=='2026-05-09','actual_stats_invalid_date_and_normalization')
         require(parsed==parser_tests(old),'actual_stats_helpers_byte_equivalent_outputs')
         dates=php(ROOT,"require 'settings/jdf.php';echo json_encode([jdate('Y-m-d H:i:s',1800000000),jstrftime('%Y-%m-%d %H:%M:%S',1800000000),jgetdate(1800000000)],JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);")
-        old_dates=php(old,"require 'settings/jdf.php';echo json_encode([jdate('Y-m-d H:i:s',1800000000),jstrftime('%Y-%m-%d %H:%M:%S',1800000000),jgetdate(1800000000)],JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);")
+        old_dates=php(old,"require 'settings/jdf.php';echo json_encode([jdate('Y-m-d H:i:s',1800000000),jstrftime('%Y-%m-%d %H:%M:%S',1800000000),jgetdate(1800000000)],JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);",archived_jdf=True)
         require(dates==old_dates and not re.search('[\u0660-\u0669\u06f0-\u06f9]',json.dumps(dates,ensure_ascii=False)),'actual_jdf_ascii_dates_and_calendar_unchanged')
         # Preserve the last shipped retirement response as immutable evidence;
         # the fully retired X-UI-only endpoint no longer belongs in runtime.

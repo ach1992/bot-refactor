@@ -19,7 +19,7 @@ AChBot is a PHP Telegram bot for VPN subscriptions, plans, customer support, adm
 
 ## Requirements
 
-- A Linux host with HTTPS, a PHP web handler and PHP CLI. Compatibility CI runs on **PHP 8.1 and 8.4** with `mysqli`/mysqlnd, `curl`, `zip` and `gd`.
+- A Linux host with HTTPS, a PHP web handler and PHP CLI. **New source validation uses PHP 8.5 only**, with `mysqli`/mysqlnd, `curl`, `zip` and `gd`. Previously released RC21 was validated under its own historical toolchain; this CI policy is not a claim of installed PHP 8.5 acceptance.
 - MariaDB and a dedicated database/account for each bot. Prepare the matching current schema; the historical 23-table DDL alone is insufficient.
 - A Telegram bot token, its numeric Owner ID and a unique per-bot webhook secret. API evidence additionally needs OpenSSL AES-256-GCM support; preserve the existing secret on upgrades because it protects pinned credentials and recoverable codes.
 - A supported panel. Native PasarGuard **5.5.1** needs its [Group/Host, subscription URL and API prerequisites](docs/post-v9/PASARGUARD-CONTRACT.md); other versions and retired X-UI variants are not implied.
@@ -75,6 +75,6 @@ For upgrades, inventory the actual source, schema, private configuration and act
 
 ## Development
 
-Run `python3 tools/check_post_v9.py --report /tmp/achbot-post-v9.json` for the current isolated suite. It uses disposable MariaDB and loopback provider fixtures. Build source packages with `tools/package_post_v9.py create` and check them with its `verify` command. Required CI separately exercises immutable original V0–V9 history; do not run those historical parity contracts directly against the changed current runtime.
+Run `python3 tools/check_post_v9.py --suite source` for fast source/inventory/PHP-lint feedback or `--suite cron` for that coverage plus isolated Cron coordinator regression. Neither selected mode claims full current-runtime acceptance. The default `python3 tools/check_post_v9.py --report /tmp/achbot-post-v9.json` is the complete serial current suite under **PHP 8.5**; CI distributes its eight native families across isolated runners, then strictly aggregates all reports. Native tests use disposable MariaDB and loopback provider fixtures; no production services are contacted. Build source packages with `tools/package_post_v9.py create` and check them with `verify`. Immutable original V0–V9 source/schema pins remain guarded, but their old PHP 8.1/8.4 executions are archived rather than falsely rerun or relabelled PHP 8.5. See [CI validation policy](docs/post-v9/CI-VALIDATION.md).
 
 Source tests, independent review and publication do not establish installed Telegram/provider/payment acceptance. Those open boundaries remain tracked in Issues [26](https://github.com/ach1992/bot-refactor/issues/26), [37](https://github.com/ach1992/bot-refactor/issues/37), [51](https://github.com/ach1992/bot-refactor/issues/51) and [81](https://github.com/ach1992/bot-refactor/issues/81).

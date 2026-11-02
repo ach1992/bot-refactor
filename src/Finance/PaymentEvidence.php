@@ -327,7 +327,6 @@ function achbotPaymentEvidenceHttp(array $profile,string $method,string $path,?a
             }]);
         if ($method==='POST') curl_setopt($ch,CURLOPT_POSTFIELDS,$raw);
         $done=curl_exec($ch); $http=(int)curl_getinfo($ch,CURLINFO_RESPONSE_CODE);
-        curl_close($ch);
         if ($done===false || $overflow || $http<200 || $http>=600) return $bad;
         $json=json_decode($buffer,true,32,JSON_THROW_ON_ERROR|JSON_BIGINT_AS_STRING);
         if (!is_array($json)) return $bad;
