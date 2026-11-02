@@ -2188,7 +2188,7 @@ return [
         'scope_global' => '🌐 Global',
         'scope_server' => ['text' => '🖥 Server {server}', 'parameters' => ['server']],
         'scope_groups' => ['text' => '👥 Server {server} · Groups {groups}', 'parameters' => ['server','groups']],
-        'saved' => '✅ پیشنهاد تمدید و محدودهٔ آن ثبت شد.',
+        'offer_saved' => '✅ پیشنهاد تمدید و محدودهٔ آن ثبت شد.',
         'unavailable' => '⚠️ ذخیره یا بررسی دامنه تأیید نشد؛ تغییر مالی اعمال نشده است. وضعیت را بررسی کرده و دوباره تلاش کنید.',
     ],
     // متن‌ها و نشانی‌های قابل تنظیم هر ربات

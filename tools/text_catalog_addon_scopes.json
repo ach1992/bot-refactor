@@ -76,7 +76,7 @@
         "src/Plans/AddonAdmin.php"
       ]
     },
-    "saved": {
+    "offer_saved": {
       "value": "✅ پیشنهاد تمدید و محدودهٔ آن ثبت شد.",
       "source_paths": [
         "src/Plans/AddonAdmin.php"

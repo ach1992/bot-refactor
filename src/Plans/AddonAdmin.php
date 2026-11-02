@@ -79,7 +79,7 @@ function achbotAddonAdminSave(mysqli $db,array $flow,?int $units=null,?int $pric
     // The financial write has already committed; rendering must never turn
     // a confirmed save into a misleading "no change" failure notification.
     try {
-        sendMessage(\achbotMessage('addon_scopes.saved'),$GLOBALS['removeKeyboard']??null);
+        sendMessage(\achbotMessage('addon_scopes.offer_saved'),$GLOBALS['removeKeyboard']??null);
         achbotIntervalShow($db,$flow['kind']);
     } catch (Throwable $error) {
         error_log('achbot_addon_admin_postcommit_ui_deferred class='.get_class($error));

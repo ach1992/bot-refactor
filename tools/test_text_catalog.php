@@ -406,11 +406,11 @@ $bad=$shippingSides;$bad['user']['legacy_messages.banned']='changed';
 $giftControls['prior_catalog_mutation']=[$bad,'r5_undeclared_copy_or_recipient_change'];
 // Separate current scoped-addon controls preserve the accepted gift proof count.
 $addonControls=[];
-$bad=$shippingSides;unset($bad['admin']['addon_scopes.saved']);
+$bad=$shippingSides;unset($bad['admin']['addon_scopes.offer_saved']);
 $addonControls['addon_missing_key']=[$bad,'addon_catalog_exact_key_inventory'];
-$bad=$shippingSides;$bad['admin']['addon_scopes.saved'].=' changed';
+$bad=$shippingSides;$bad['admin']['addon_scopes.offer_saved'].=' changed';
 $addonControls['addon_changed_value']=[$bad,'addon_catalog_value_or_source_drift'];
-$bad=$shippingSides;$bad['user']['addon_scopes.saved']=$bad['admin']['addon_scopes.saved'];
+$bad=$shippingSides;$bad['user']['addon_scopes.offer_saved']=$bad['admin']['addon_scopes.offer_saved'];
 $addonControls['addon_cross_audience']=[$bad,'addon_catalog_cross_audience'];
 $bad=$shippingSides;$bad['admin']['addon_scopes.unapproved']='undocumented';
 $addonControls['addon_extra_key']=[$bad,'addon_catalog_exact_key_inventory'];
