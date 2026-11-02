@@ -769,6 +769,7 @@ function achbotPgServiceEdit(mysqli $db,int $serverId,array $change,?array $gift
         // The durable account fence is already owned. Compare fresh native
         // Groups again before composing ANY remote mutation; a change after
         // quote preflight must be deferred for reconciliation, not repriced.
+        $scopedGroups=null;
         if ((int)($change['pay_id']??0)>0 && achbotAddonSchema($db)) {
             $pid=(int)$change['pay_id'];
             $q=$db->prepare('SELECT addon_scope_snapshot FROM pays WHERE id=?');
@@ -778,9 +779,11 @@ function achbotPgServiceEdit(mysqli $db,int $serverId,array $change,?array $gift
             if (($lockedQuote['addon_scope_snapshot']??null)!==null) {
                 $scoped=json_decode($lockedQuote['addon_scope_snapshot'],true,32,JSON_THROW_ON_ERROR);
                 if (!is_array($scoped) || ($scoped['version']??null)!==1 ||
+                    ($scoped['provider']??null)!=='pasarguard' ||
                     !is_array($scoped['native_groups']??null) ||
                     $scoped['native_groups']!==$read['user']['group_ids'])
                     throw new RuntimeException('pg_addon_groups_changed_after_claim');
+                $scopedGroups=$scoped['native_groups'];
             }
         }
         $absolute=achbotPgEditChanges($read['user'],$change);
@@ -791,7 +794,7 @@ function achbotPgServiceEdit(mysqli $db,int $serverId,array $change,?array $gift
             $reset=achbotPgReset($ctx['panel'],$ctx['identity']);
             if (($reset['success']??false)!==true) throw new RuntimeException('pg_reset_requires_review');
         }
-        $r=achbotPgModify($ctx['panel'],$ctx['identity'],$absolute);
+        $r=achbotPgModify($ctx['panel'],$ctx['identity'],$absolute,$scopedGroups);
         if (($r['success']??false)!==true || $r['user']['group_ids']!==$read['user']['group_ids'])
             throw new RuntimeException('pg_edit_readback_requires_review');
         achbotPgFinishMutation($db,$ctx,$intent,$r);

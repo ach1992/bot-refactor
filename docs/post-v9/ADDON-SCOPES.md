@@ -64,7 +64,16 @@ Every entry point must verify ownership and local provider identity before
 claim, and the exact native Group-set and provider identity before payment
 or remote provider effects. PasarGuard account Group membership must still
 be active AND allowed by the current credential; only Group existence and
-historical server defaults are insufficient. Disallowed native Group
+historical server defaults are insufficient. The final native PasarGuard PUT for a scoped invoice additionally
+rechecks the entire native Group-set and current enabled/credential-allowed
+Group authority after the durable account mutation claim. The adapter does
+this after its own last identity readback and before the first write; a
+changed Group or unavailable authority holds the already-claimed operation
+for reconciliation without PUT, repricing, refund or replay. This cannot
+make provider-credential revocation atomic with a network dispatch; it
+minimizes the application-side check-to-write window.
+
+Disallowed native Group
 membership fails closed even when a Server/Global price is available,
 rather than accepting money for an unfulfillable fallback. The trusted
 current Group eligibility result is reused during one catalog resolution,

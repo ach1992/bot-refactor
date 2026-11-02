@@ -201,7 +201,8 @@ function achbotPgCreate(array $panel,array $request): array {
         return $read;
     } catch (Throwable $e) { return achbotPgFailure($dispatched?'pg_create_unconfirmed':'pg_create_invalid',$dispatched); }
 }
-function achbotPgModify(array $panel,array $identity,array $absoluteChanges): array {
+function achbotPgModify(array $panel,array $identity,array $absoluteChanges,
+                         ?array $requiredCurrentGroups=null): array {
     $dispatched=false;
     try {
         if (!$absoluteChanges || array_diff(array_keys($absoluteChanges),['data_limit','expire','status','group_ids']))
@@ -221,6 +222,22 @@ function achbotPgModify(array $panel,array $identity,array $absoluteChanges): ar
         $before=achbotPgRead($panel,$identity);
         if (!$before['success']) return $before;
         if (!achbotPgManaged($before['user'])) return achbotPgFailure('pg_native_schedule_conflict');
+        if ($requiredCurrentGroups!==null) {
+            // Scoped financial effects own their durable account mutation
+            // fence already. Reverify the complete native Group membership
+            // AND the credential's current enabled/allowed Groups at the
+            // last local boundary immediately before an outbound PUT.
+            // An earlier menu, quote or payment preflight is not authority.
+            $expected=achbotPgGroupsCanonical($requiredCurrentGroups);
+            if (!$expected || $before['user']['group_ids']!==$expected)
+                return achbotPgFailure('pg_addon_groups_changed_before_write');
+            $current=achbotPgCheck($panel);
+            if (($current['success']??false)!==true)
+                return achbotPgFailure('pg_addon_authority_unverified');
+            $eligible=achbotPgEligibleGroupIds($current);
+            if (array_diff($expected,$eligible))
+                return achbotPgFailure('pg_addon_authority_changed_before_write');
+        }
         $dispatched=true;
         $r=achbotPgRequest($panel,'PUT','/api/user/by-id/'.$identity['remote_user_id'],$payload);
         if (!$r['success']) return $r;
