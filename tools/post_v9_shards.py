@@ -8,6 +8,7 @@ import json
 import math
 import re
 import subprocess
+import sys
 import tempfile
 import time
 from pathlib import Path
@@ -299,4 +300,17 @@ def main(argv=None) -> None:
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except subprocess.CalledProcessError as error:
+        # Only synthetic/disposable native tests run here. Preserve useful
+        # bounded child diagnostics instead of masking the actual failure.
+        print("Native acceptance child failed (exit %s)" % error.returncode,
+              file=sys.stderr)
+        for label, output in (("stderr", error.stderr), ("stdout", error.stdout)):
+            if output:
+                if isinstance(output, bytes):
+                    output = output.decode("utf-8", "replace")
+                print("Fixture %s (last 12000 chars):\n%s" % (label, output[-12000:]),
+                      file=sys.stderr)
+        raise
