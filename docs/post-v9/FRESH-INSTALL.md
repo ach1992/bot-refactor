@@ -107,7 +107,11 @@ Before public use, configure:
 
 ## 6. Configure Cron and its private lock
 
-First identify the effective OS account that will run Cron and the correct PHP CLI. Provision a private local directory **outside all served webroots**, owned by that exact account with mode 0700. The coordinator does not create this directory and refuses a directory inside the bot installation.
+First identify the effective OS account that will run Cron and the correct PHP CLI. The private local lock directory must stay **outside all served webroots and the bot installation**, owned by that exact account with mode `0700`.
+
+**Unreleased source after RC21:** the first top-level CLI coordinator run creates missing components with mode `0700` under trusted existing parents. Concurrent first runs still admit only one batch for that bot. An existing valid directory/file is reused without chmod, chown or inode replacement; unsafe paths stop with a diagnostic before any worker. There is no privileged creation or fallback inside the bot: a non-root Cron user unable to create `/var/lib/achbot/cron-locks` must select an external path beneath a trusted writable parent with `ACHBOT_CRON_LOCK_DIR`, or use administrator provisioning. Child modes, HTTP requests and includes do not create these directories.
+
+**Published RC21 and earlier releases** require manual provisioning. The following commands also provide an explicit provisioning option for the new source.
 
 The default is `/var/lib/achbot/cron-locks`. For a **fresh host with verified root-run Cron**, inspect existing paths/owners/symlinks first. Only when these directories are absent and their parents trusted, a system administrator can provision:
 
@@ -131,11 +135,11 @@ For a custom lock directory, the command form is:
 cd /absolute/bot/path && ACHBOT_CRON_LOCK_DIR=/private/cron-user/bot-locks /absolute/path/to/php /absolute/bot/path/settings/cronRunner.php >> /private/log/path/cron.log 2>&1
 ```
 
-The CLI working directory must be that bot's root. Verify the actual scheduled account, PHP extensions/functions and private path/log permissions. A missing/unsafe lock stops before workers with exit 78. Do not run the real runner manually as a harmless readiness check: its workers have service, reward and financial effects.
+The CLI working directory must be that bot's root. Verify the actual scheduled account, PHP extensions/functions and private path/log permissions. An unavailable or unsafe lock stops before workers with exit `78`; the unreleased coordinator includes the failing path and reason in its private Cron diagnostic. Do not run the real runner manually as a harmless readiness check: its workers have service, reward and financial effects.
 
 The coordinator runs four separate processes, in order: `gift2all.php`, admitted `broadcast`, `rewardReport.php`, admitted `services`. Schedule none of those separately alongside it. Old `messagewizwiz.php`, `warnusers.php`, `tronChecker.php` and WeSwap schedules are not part of current runtime. Do not rely on aaPanel's saved `flock` checkbox as evidence that external locking is active; the coordinator enforces its own lease.
 
-**Multiple bots:** same server + same effective OS user may provision the private lock directory once. Each canonical absolute bot directory hashes to its own `achbot-cron-<hash>.lock`, so bots do not block each other's Cron. Different OS users need separate owned directories; a new server needs its own provisioning. An overlapping invocation of the same bot is skipped, not queued. Never delete, rotate or recreate its lock file while any coordinator/child is active. Moving an active installation or changing its lock directory requires a coordinated stop/cutover so old and new paths cannot run together. The lease prevents overlapping batches, not every duplicate financial effect after an uncertain partial operation.
+**Multiple bots:** same server + same effective OS user may share one private lock directory. Each canonical absolute bot directory hashes to its own `achbot-cron-<hash>.lock`, so bots do not block each other's Cron. Different OS users need separate owned directories. On a new server the unreleased coordinator creates missing paths when its OS user has permission; published RC21 still needs provisioning. An overlapping invocation of the same bot is skipped, not queued. Never delete, rotate or recreate its lock file while any coordinator/child is active. Moving an active installation or changing its lock directory requires a coordinated stop/cutover so old and new paths cannot run together. The lease prevents overlapping batches, not every duplicate financial effect after an uncertain partial operation.
 
 ## 7. Verify before customer use
 

@@ -35,7 +35,7 @@ Follow the complete [fresh installation guide](docs/post-v9/FRESH-INSTALL.md). I
 4. Create private `baseInfo.php` from that version's example. Fill its bot/database/Owner fields and add a unique `$telegramWebhookSecret` (the example does not supply it).
 5. Register the HTTPS `<bot-url>/bot.php` webhook using the same `secret_token`. Opening that URL in a browser is not a webhook health test.
 6. Start the bot as Owner and configure servers, plans, instance text, destinations and intended payment methods through the administrator UI. Configure invitation gifts there; unset or zero disables them. Keep both API switches OFF until 014 and their actual profiles are verified; see the [API setup requirements](docs/post-v9/API-PAYMENT-EVIDENCE.md#configuration-before-api-enablement).
-7. Provision the private Cron lock directory, then schedule **one** `settings/cronRunner.php` invocation per minute using the correct PHP CLI and bot working directory.
+7. Prepare the private Cron lock directory for the selected release, then schedule **one** `settings/cronRunner.php` invocation per minute using the correct PHP CLI and bot working directory. The unreleased source after RC21 can create a missing directory on its first run; published RC21 still requires provisioning.
 8. Verify source/schema readiness, Owner access, ordinary-user behavior, webhook delivery and scheduled operations on the selected isolated installation before customer use.
 
 Each installation needs its own `baseInfo.php`, token/webhook, database and Cron task. Do not copy another bot's live secrets or point a second bot at its database.
@@ -44,7 +44,9 @@ Each installation needs its own `baseInfo.php`, token/webhook, database and Cron
 
 The default `/var/lib/achbot/cron-locks` is a private **lock directory**, not the bot installation path. The coordinator creates a distinct `achbot-cron-<hash>.lock` for each canonical absolute installation path. Bots in different real directories therefore have independent locks, even when the directory is shared.
 
-Bots running Cron under the **same effective OS user** may reuse that user's private directory. Different OS users need separate directories owned by the corresponding user, mode `0700`, selected with `ACHBOT_CRON_LOCK_DIR`. The application does not provision the directory or accept a lock directory inside the installation. Never delete, rotate or recreate an active lock file.
+Bots running Cron under the **same effective OS user** may reuse that user's private directory. Different OS users need separate directories owned by the corresponding user, mode `0700`, selected with `ACHBOT_CRON_LOCK_DIR`. The directory must remain outside the installation and all served webroots. Never delete, rotate or recreate an active lock file.
+
+**Unreleased source after RC21:** the top-level CLI coordinator creates missing lock-directory components as its current OS user with mode `0700`, after checking each existing parent. Existing valid directories and lock files are reused without permission or inode changes. Unsafe existing paths fail closed rather than being repaired. This grants no extra OS permissions: if that user cannot create the default path, select an external path under a trusted writable parent with `ACHBOT_CRON_LOCK_DIR`, or have an administrator provision it. Child modes, HTTP requests and includes cannot provision directories. Published RC21 retains the manual provisioning requirement.
 
 The coordinator runs `gift2all.php`, its admitted `broadcast` mode, `rewardReport.php`, and its admitted `services` mode as separate sequential PHP processes. An overlapping minute is skipped, not queued. Schedule the coordinator only; the old `messagewizwiz.php`, `warnusers.php` and automatic TRON checker paths are retired. See [Cron setup and examples](docs/post-v9/FRESH-INSTALL.md#6-configure-cron-and-its-private-lock).
 

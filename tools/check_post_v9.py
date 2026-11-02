@@ -1081,6 +1081,20 @@ def main():
             "orphaned_worker_retains_lock_after_parent_kill",
             "new_run_recovers_after_orphan_worker_exit",
             "stale_lock_file_does_not_block_next_tick",
+            "missing_nested_external_directories_created_private_current_uid",
+            "existing_directories_and_lock_reused_without_chmod_or_inode_repair",
+            "missing_directory_with_mkdir_disabled_denied_without_creation",
+            "valid_existing_directory_runs_with_mkdir_disabled_without_repair",
+            "missing_below_world_writable_parent_denied_unchanged",
+            "missing_below_symlink_parent_denied_without_target_creation",
+            "missing_inside_installation_denied_without_directory_creation",
+            "child_broadcast_cannot_create_missing_directories",
+            "child_services_cannot_create_missing_directories",
+            "cli_include_cannot_autoprovision_missing_directory",
+            "http_cannot_autoprovision_missing_directory",
+            "five_missing_directory_starts_admit_only_one_batch",
+            "independent_bots_share_autocreated_directory_without_global_exclusion",
+            "five_first_directory_starts_finish_one_exact_batch",
             "unavailable_lock_directory_fails_closed",
             "lock_directory_inside_webroot_fails_closed",
             "symlinked_lock_directory_alias_denied",
@@ -1094,9 +1108,11 @@ def main():
             "permissive_lock_file_fails_closed",
             "unavailable_php_flock_fails_closed",
         }
-        if not (cron.get("complete") and cron.get("cases")>=52
+        if not (cron.get("complete") and cron.get("cases")>=95
                 and required_cron_cases.issubset(cron.get("scenarios", []))
                 and cron.get("actual_current_runner_executed")
+                and cron.get("actual_directory_autoprovisioning") is True
+                and cron.get("runner_sha256") == hashlib.sha256((ROOT/"settings/cronRunner.php").read_bytes()).hexdigest()
                 and cron.get("isolated_child_php_processes")
                 and cron.get("actual_api_maintenance_boundary") is True
                 and cron.get("api_before_payux") is True

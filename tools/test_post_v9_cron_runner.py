@@ -160,6 +160,231 @@ def http_rejection(php: str, root: Path, env: dict[str, str],path: str="settings
                 server.wait(timeout=3)
 
 
+def directory_provisioning_cases(php: str, check) -> None:
+    """Execute the actual coordinator against disposable filesystem boundaries."""
+    def metadata(path: Path) -> tuple:
+        s = path.lstat()
+        return (s.st_dev, s.st_ino, s.st_mode, s.st_uid, s.st_gid,
+                s.st_nlink, s.st_size, s.st_mtime_ns, s.st_ctime_ns)
+
+    def snapshot(root: Path) -> dict:
+        # Never follow directory symlinks. Ignore access time from inspection.
+        result = {}
+        for parent, directories, files in os.walk(root, followlinks=False):
+            for name in directories + files:
+                path = Path(parent) / name
+                result[str(path.relative_to(root))] = (
+                    metadata(path), os.readlink(path) if path.is_symlink() else None
+                )
+        return result
+
+    with tempfile.TemporaryDirectory(prefix="achbot-cron-directory-") as tmp:
+        owned = Path(tmp)
+        bot = owned / "bot"
+        bot.mkdir()
+        entry, cwd = setup(bot)
+        trace = owned / "jobs.log"
+        parent = owned / "trusted-parent"
+        parent.mkdir(mode=0o750)
+        parent.chmod(0o750)
+        parent_before = parent.stat()
+        lock_dir = parent / "first" / "second" / "locks"
+        env = {
+            **os.environ, "ACHBOT_CRON_LOCK_DIR": str(lock_dir),
+            "ACHBOT_TEST_ONLY_TRACE": str(trace), "ACHBOT_TEST_ONLY_FAIL": "",
+            "ACHBOT_TEST_ONLY_PAUSE": "", "ACHBOT_TEST_ONLY_RELEASE": "",
+            "http_proxy": "http://127.0.0.1:9",
+            "https_proxy": "http://127.0.0.1:9",
+            "all_proxy": "http://127.0.0.1:9",
+            "no_proxy": "127.0.0.1,localhost",
+        }
+        # A permissive caller umask must not expose any newly created component.
+        old_umask = os.umask(0)
+        try:
+            first = cmd(php, entry, cwd, env)
+        finally:
+            os.umask(old_umask)
+        created = [parent / "first", parent / "first" / "second", lock_dir]
+        check("missing_nested_external_directories_created_private_current_uid",
+              first.returncode == 0 and all(
+                  p.is_dir() and p.stat().st_mode & 0o777 == 0o700
+                  and p.stat().st_uid == os.geteuid() for p in created))
+        check("first_directory_creation_runs_exact_four_standins",
+              first.stdout == "owned fixture success\n" * len(JOBS)
+              and first.stderr == ""
+              and [line.split("|")[0] for line in trace.read_text().splitlines()] == list(JOBS))
+        check("trusted_existing_parent_inode_mode_owner_preserved",
+              (parent.stat().st_ino, parent.stat().st_mode, parent.stat().st_uid)
+              == (parent_before.st_ino, parent_before.st_mode, parent_before.st_uid))
+        lock_file = lock_dir / (
+            "achbot-cron-" + hashlib.sha256(str(bot.resolve()).encode()).hexdigest()[:24] + ".lock")
+        check("autoprovisioned_directory_uses_private_installation_lock",
+              lock_file.is_file() and lock_file.stat().st_mode & 0o777 == 0o600
+              and lock_file.stat().st_uid == os.geteuid() and lock_file.stat().st_nlink == 1)
+        stable = {str(p): metadata(p) for p in created + [lock_file]}
+        reuse = cmd(php, entry, cwd, env)
+        check("existing_directories_and_lock_reused_without_chmod_or_inode_repair",
+              reuse.returncode == 0
+              and stable == {str(p): metadata(p) for p in created + [lock_file]}
+              and len(trace.read_text().splitlines()) == 2 * len(JOBS))
+        trace.unlink()
+
+        mkdir_missing = parent / "disabled-mkdir" / "locks"
+        before_missing = snapshot(owned)
+        disabled_mkdir = subprocess.run(
+            [php, *PHP_CLI_OPTS, "-d", "disable_functions=mkdir", str(entry)],
+            cwd=cwd, env={**env, "ACHBOT_CRON_LOCK_DIR": str(mkdir_missing)},
+            capture_output=True, text=True, timeout=18)
+        check("missing_directory_with_mkdir_disabled_denied_without_creation",
+              disabled_mkdir.returncode == 78
+              and "AChBot Cron: secure lock directory unavailable" in disabled_mkdir.stderr
+              and "reason=mkdir_unavailable" in disabled_mkdir.stderr
+              and "path=" in disabled_mkdir.stderr and "no tasks started" in disabled_mkdir.stderr
+              and not trace.exists() and snapshot(owned) == before_missing)
+        disabled_existing = subprocess.run(
+            [php, *PHP_CLI_OPTS, "-d", "disable_functions=mkdir", str(entry)],
+            cwd=cwd, env=env, capture_output=True, text=True, timeout=18)
+        check("valid_existing_directory_runs_with_mkdir_disabled_without_repair",
+              disabled_existing.returncode == 0
+              and disabled_existing.stdout == "owned fixture success\n" * len(JOBS)
+              and disabled_existing.stderr == ""
+              and [line.split("|")[0] for line in trace.read_text().splitlines()] == list(JOBS)
+              and stable == {str(p): metadata(p) for p in created + [lock_file]})
+        trace.unlink()
+
+        def denied(name: str, requested: str, *arguments: str) -> None:
+            before = snapshot(owned)
+            result = cmd(php, entry, cwd, {**env, "ACHBOT_CRON_LOCK_DIR": requested}, *arguments)
+            check(name, result.returncode == 78 and "no tasks started" in result.stderr
+                  and not trace.exists() and snapshot(owned) == before)
+            if not arguments:
+                check(name + "_has_actionable_directory_context",
+                      "AChBot Cron: secure lock directory unavailable" in result.stderr
+                      and "reason=" in result.stderr and "path=" in result.stderr)
+
+        unsafe = owned / "unsafe-parent"
+        unsafe.mkdir()
+        unsafe.chmod(0o777)
+        denied("missing_below_world_writable_parent_denied_unchanged",
+               str(unsafe / "missing" / "locks"))
+        unsafe.chmod(0o770)
+        denied("missing_below_group_writable_parent_denied_unchanged",
+               str(unsafe / "missing" / "locks"))
+        unsafe.chmod(0o500)
+        try:
+            denied("missing_below_unwritable_parent_denied_unchanged",
+                   str(unsafe / "missing" / "locks"))
+        finally:
+            unsafe.chmod(0o700)
+        alias = owned / "directory-alias"
+        alias.symlink_to(parent, target_is_directory=True)
+        denied("missing_below_symlink_parent_denied_without_target_creation",
+               str(alias / "never-created" / "locks"))
+        ordinary_file = owned / "ordinary-file"
+        ordinary_file.write_text("owned marker remains unchanged", encoding="utf-8")
+        denied("missing_below_regular_file_denied_without_mutation",
+               str(ordinary_file / "never-created" / "locks"))
+        permissive = owned / "permissive-leaf"
+        permissive.mkdir()
+        for mode, name in ((0o777, "world_writable"), (0o750, "nonprivate"), (0o500, "unwritable")):
+            permissive.chmod(mode)
+            denied("existing_" + name + "_leaf_denied_without_chmod_repair", str(permissive))
+        permissive.chmod(0o700)
+        denied("missing_inside_installation_denied_without_directory_creation",
+               str(bot / "never-created" / "locks"))
+        denied("relative_missing_directory_denied_without_creation", "relative/missing/locks")
+        denied("dot_component_denied_without_creation", str(parent) + "/./dot-missing/locks")
+        denied("parent_alias_component_denied_without_creation",
+               str(parent) + "/../parent-missing/locks")
+        denied("repeated_separator_denied_without_creation", str(parent) + "//alias-missing/locks")
+        denied("root_path_denied_without_bootstrap", "/")
+        for mode in ("broadcast", "services"):
+            denied("child_" + mode + "_cannot_create_missing_directories",
+                   str(parent / ("child-" + mode) / "locks"), "--job=" + mode)
+
+        missing_entry = parent / "entry-must-not-create" / "locks"
+        entry_env = {**env, "ACHBOT_CRON_LOCK_DIR": str(missing_entry)}
+        before = snapshot(owned)
+        included = subprocess.run(
+            [php, "-n", "-r", "include $argv[1];", str(entry)], cwd=cwd,
+            env=entry_env, capture_output=True, text=True, timeout=12)
+        check("cli_include_cannot_autoprovision_missing_directory",
+              included.returncode == 0 and not trace.exists() and snapshot(owned) == before)
+        check("http_cannot_autoprovision_missing_directory",
+              http_rejection(php, bot, entry_env) and not trace.exists()
+              and snapshot(owned) == before)
+
+        # Five first starts race on MISSING directories and the initial inode.
+        race_dir = parent / "race-first" / "nested" / "locks"
+        release = owned / "release-directory-race"
+        race_env = {**env, "ACHBOT_CRON_LOCK_DIR": str(race_dir),
+                    "ACHBOT_TEST_ONLY_PAUSE": JOBS[0],
+                    "ACHBOT_TEST_ONLY_RELEASE": str(release)}
+        contenders = [
+            subprocess.Popen([php, *PHP_CLI_OPTS, str(entry)], cwd=cwd, env=race_env,
+                             stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            for _ in range(5)
+        ]
+        try:
+            for _ in range(200):
+                if trace.exists() and len(trace.read_text().splitlines()) >= 1:
+                    break
+                if all(p.poll() is not None for p in contenders):
+                    raise RuntimeError("No first-start directory contender acquired lease")
+                time.sleep(.02)
+            else:
+                raise RuntimeError("First-start directory race did not reach stand-in")
+            # Keep the winner held until all four losing ticks have skipped.
+            for _ in range(150):
+                if sum(p.poll() is not None for p in contenders) == 4:
+                    break
+                time.sleep(.02)
+            check("five_missing_directory_starts_admit_only_one_batch",
+                  len(trace.read_text().splitlines()) == 1
+                  and sum(p.poll() is not None for p in contenders) == 4)
+            check("concurrent_created_components_remain_private",
+                  all(p.is_dir() and p.stat().st_mode & 0o777 == 0o700
+                      and p.stat().st_uid == os.geteuid()
+                      for p in (parent / "race-first", parent / "race-first" / "nested", race_dir)))
+            race_lock = race_dir / lock_file.name
+            race_inode = race_lock.stat().st_ino
+
+            # A separate canonical installation shares the newly created dir,
+            # while the first installation's batch is still holding its lease.
+            other_bot = owned / "other-bot"
+            other_bot.mkdir()
+            other_entry, other_cwd = setup(other_bot)
+            other_trace = owned / "other-jobs.log"
+            other_env = {**env, "ACHBOT_CRON_LOCK_DIR": str(race_dir),
+                         "ACHBOT_TEST_ONLY_TRACE": str(other_trace)}
+            other = cmd(php, other_entry, other_cwd, other_env)
+            other_lock = race_dir / (
+                "achbot-cron-" + hashlib.sha256(str(other_bot.resolve()).encode()).hexdigest()[:24] + ".lock")
+            check("independent_bots_share_autocreated_directory_without_global_exclusion",
+                  other.returncode == 0
+                  and [line.split("|")[0] for line in other_trace.read_text().splitlines()] == list(JOBS)
+                  and other_lock.is_file() and other_lock.stat().st_ino != race_inode
+                  and len(list(race_dir.iterdir())) == 2
+                  and len(trace.read_text().splitlines()) == 1)
+            release.touch()
+            results = [p.communicate(timeout=12) for p in contenders]
+            check("five_first_directory_starts_finish_one_exact_batch",
+                  all(p.returncode == 0 for p in contenders)
+                  and sum(out == "owned fixture success\n" * len(JOBS) and err == ""
+                          for out, err in results) == 1
+                  and sum(out == "" and "previous invocation active; skipping" in err
+                          for out, err in results) == 4
+                  and [line.split("|")[0] for line in trace.read_text().splitlines()] == list(JOBS)
+                  and race_lock.stat().st_ino == race_inode)
+        finally:
+            release.touch()
+            for proc in contenders:
+                if proc.poll() is None:
+                    proc.terminate()
+                proc.communicate(timeout=5)
+
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--report", type=Path)
@@ -171,6 +396,8 @@ def main() -> None:
         if not condition:
             raise RuntimeError("Cron runner regression: " + name)
         result_names.append(name)
+
+    directory_provisioning_cases(php, check)
 
     with tempfile.TemporaryDirectory(prefix="achbot-owned-cron-runner-") as tmp:
         root = Path(tmp) / "bot"
@@ -426,6 +653,8 @@ def main() -> None:
               alias_denied.returncode == 78
               and "no tasks started" in alias_denied.stderr
               and not trace.exists())
+        # Missing INSIDE the served installation remains forbidden; missing
+        # trusted external paths are exercised by directory_provisioning_cases.
         bad_env = {**env, "ACHBOT_CRON_LOCK_DIR": str(root / "absent-lock-dir")}
         invalid = cmd(php, entrypoint, work, bad_env)
         check("unavailable_lock_directory_fails_closed",
@@ -679,6 +908,8 @@ def main() -> None:
         "cases": len(result_names),
         "scenarios": result_names,
         "source_only": True,
+        "runner_sha256": hashlib.sha256(RUNNER.read_bytes()).hexdigest(),
+        "actual_directory_autoprovisioning": True,
         "actual_current_runner_executed": True,
         "isolated_child_php_processes": True,
         "actual_api_maintenance_boundary": True,
