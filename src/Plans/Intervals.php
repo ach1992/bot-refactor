@@ -8,6 +8,10 @@ require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
 
 require_once __DIR__ . '/../Admin/Access.php';
 require_once __DIR__ . '/Addons.php';
+// The cancellation branch below can render a scoped catalogue before the
+// normal admin dispatcher is reached. Load its pure helpers first, not only
+// after completing the cancellation transaction.
+require_once __DIR__ . '/AddonAdmin.php';
 if (!achbotAdminRequestAllowed(is_string($data??null)?$data:null,is_string($text??null)?$text:null,(string)($userInfo['step']??''))) {achbotAdminDeny();return;}
 
 /** Shared add-on catalogue: no provider-specific plan or pricing branches. */
@@ -174,8 +178,6 @@ function achbotIntervalWriteNotice(): void {
         \achbotMessage('admin_settings.management.review_required'):
         \achbotMessage('admin_settings.management.management_stale'),$cancelKey);
 }
-
-require_once __DIR__.'/AddonAdmin.php';
 
 function achbotIntervalShow(mysqli $db,string $kind,?string $filter=null,?int $serverId=null): void {
     global $buttonValues;
