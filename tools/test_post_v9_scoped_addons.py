@@ -710,11 +710,29 @@ function achbotNotifyAdmins(...$args){$GLOBALS['events'][]=['event'=>'ADMIN_NOTI
                 row=q("SELECT p.state,a.stage,a.provider_status FROM pays p "
                     "JOIN payment_attempts a ON a.pay_row_id=p.id "
                     f"WHERE p.hash_id='{ref}'")
-                yes(result==['delivered'] and row=='paid\tdone\tdelivered' and
-                    int(q("SELECT COUNT(*) FROM increase_order"))==before_audit+1 and
-                    int(q("SELECT wallet FROM users WHERE userid=1001"))==before_wallet and
-                    any('/api/user/' in str(path) for path in res['network_calls']),
-                    'scoped_hosted_'+provider+'_'+kind+'_verified_effect_terminal_ledger')
+                hosted_observed={
+                    'outcome':result,'row':row,
+                    'audit':int(q("SELECT COUNT(*) FROM increase_order")),
+                    'wallet':int(q("SELECT wallet FROM users WHERE userid=1001")),
+                    'native_read_or_edit_count':sum('/api/user/' in str(path)
+                        for path in res['network_calls']),
+                    'output_kind': ('review' if 'review' in res.get('form','').lower()
+                        else 'other'),
+                    'events':[ev.get('name') for ev in res['events'][-10:]],
+                }
+                confirmed=(result==['delivered'] and row=='paid\tdone\tdelivered' and
+                    hosted_observed['audit']==before_audit+1 and
+                    hosted_observed['wallet']==before_wallet and
+                    hosted_observed['native_read_or_edit_count']>0)
+                if not confirmed:
+                    raise AssertionError('scoped_hosted_'+provider+'_'+kind+
+                        '_verified_effect_terminal_ledger observed='+repr(hosted_observed)+
+                        ' expected='+repr({'outcome':['delivered'],
+                            'row':'paid\tdone\tdelivered',
+                            'audit':before_audit+1,'wallet':before_wallet,
+                            'native_read_or_edit_count_min':1}))
+                yes(True,'scoped_hosted_'+provider+'_'+kind+
+                    '_verified_effect_terminal_ledger')
                 repeated=hosted_call(ref,provider)
                 yes(not repeated['network_calls'] and
                     int(q("SELECT COUNT(*) FROM increase_order"))==before_audit+1,
