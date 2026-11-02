@@ -1182,10 +1182,13 @@ def run_wallet(tmp: str) -> tuple[dict, dict]:
             and text_catalog["native"]["current_byte_preserved_keys"]
                 +text_catalog["native"]["current_style_changes"]
                 +text_catalog["native"]["current_added_admin_keys"]==2523
-            and text_catalog.get("native",{}).get("current_native_template_assertions")==4120
-            and text_catalog.get("native",{}).get("current_object_conversion_templates")==268
-            and text_catalog.get("native",{}).get("current_shared_multi_parameter_templates")==66
-            and text_catalog.get("native",{}).get("current_one_pass_templates")==268
+            # 12 exact new scoped admin keys: 10 literal messages (1 test
+            # each), 2 parameterized (6 adversarial inputs each); two object
+            # conversions, one multi-parameter case, two one-pass cases.
+            and text_catalog.get("native",{}).get("current_native_template_assertions")==4120+22
+            and text_catalog.get("native",{}).get("current_object_conversion_templates")==268+2
+            and text_catalog.get("native",{}).get("current_shared_multi_parameter_templates")==66+1
+            and text_catalog.get("native",{}).get("current_one_pass_templates")==268+2
             and text_catalog.get("native",{}).get("current_r5_changes")==273
             and text_catalog.get("native",{}).get("current_r5_retired_keys")==10
             and text_catalog.get("native",{}).get("current_r5_added_keys")==60
@@ -1213,9 +1216,28 @@ def run_wallet(tmp: str) -> tuple[dict, dict]:
             and text_catalog.get("presentation",{}).get("recipient_staff_capability_conditions")==2
             and text_catalog.get("presentation",{}).get("recipient_staff_layer_negative_controls")==4
             and text_catalog.get("presentation",{}).get("recipient_total_source_layer_negative_controls")==14):
-        raise RuntimeError("Pre-style relocation or current two-file/audience/presentation proof incomplete")
+        # The historical proof deliberately checks dozens of counters. When
+        # one diverges, preserve the values as diagnostic metadata instead of
+        # a generic RED that costs another complete native CI run to locate.
+        # Only scalar attestations/counts are included, never message bodies.
+        def metadata_only(block):
+            return {key:value for key,value in block.items()
+                    if type(value) in (bool,int,float) or
+                    (type(value) is str and len(value)<130 and
+                     (key=='status' or key.endswith(('_ref','_commit','_sha')))) or
+                    (key in ('current_gift_catalog_negative_scenarios',
+                             'current_addon_catalog_negative_scenarios') and
+                     isinstance(value,list) and len(value)<=20 and
+                     all(isinstance(item,str) and len(item)<65 for item in value))}
+        evidence={
+            'top':metadata_only(text_catalog),
+            'native':metadata_only(text_catalog.get('native',{})),
+            'presentation':metadata_only(text_catalog.get('presentation',{})),
+        }
+        raise RuntimeError('Pre-style/current catalog proof mismatch: '+
+            json.dumps(evidence,sort_keys=True,ensure_ascii=True))
     required_api_catalog={
-        'runtime_references':2453,
+        'runtime_references':2453+12,
         'api_referenced_keys':68,
         'api_dynamic_source_paths':2,
         'api_reference_source_commit':'16c1558322b578b8ca817f3c4b42818d57dcf161',
@@ -1232,7 +1254,10 @@ def run_wallet(tmp: str) -> tuple[dict, dict]:
             ('native',text_catalog.get('native',{}),required_api_native_catalog)]:
         if any(type(proof.get(key)) is not type(value) or proof.get(key)!=value
                for key,value in required.items()):
-            raise RuntimeError('Current API catalog source proof incomplete: '+section)
+            raise RuntimeError('Current API catalog source proof incomplete: '+section+
+                ' mismatches='+json.dumps({key:{'expected':value,'observed':proof.get(key)}
+                for key,value in required.items() if type(proof.get(key)) is not type(value)
+                or proof.get(key)!=value},sort_keys=True,ensure_ascii=True))
     copy_audience_output=subprocess.run(
         ["python3",str(ROOT/"tools/test_next_copy_audience.py")],
         cwd=ROOT,check=True,timeout=60,capture_output=True,text=True)
