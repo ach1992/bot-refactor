@@ -68,6 +68,9 @@ $paymentKeys=['bankAccount'=>'fixture-bank','holderName'=>'Fixture',
 $mainValues=achbotMessages('legacy_messages');
 require_once $root.'/src/Finance/ApiPayments.php';
 require_once $root.'/src/Panel/ProviderRuntime.php';
+// The production dispatcher loads this native storage layer lazily. The
+// isolated bootstrap invokes its storage primitives directly.
+achbotPgLoad();
 $result=null;
 try {
  $op=$spec['op'];
