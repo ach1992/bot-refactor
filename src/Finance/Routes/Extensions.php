@@ -487,7 +487,9 @@ if (preg_match('/^approveIncreaseDay(.*)/', $data, $match) && achbotAdminCanFor(
         editKeys($keys, $payParam['message_id'], $payParam['chat_id']);
 
         // ویرایش پیام سایر ادمین‌ها
-        $adminMessages = json_decode($payParam['admins_messages'], true);
+        // A valid primary-only receipt may have no secondary administrators.
+        // Avoid PHP 8.5 deprecations after the irreversible effect commits.
+        $adminMessages = json_decode((string)($payParam['admins_messages']??''), true);
         if (is_array($adminMessages)) {
             foreach ($adminMessages as $msgInfo) {
                 if (isset($msgInfo['chat_id'], $msgInfo['message_id']) && $msgInfo['chat_id'] != $payParam['chat_id'] &&
@@ -1332,7 +1334,9 @@ if (preg_match('/^approveIncreaseVolume(.*)/', $data, $match) && achbotAdminCanF
         editKeys($keys, $payParam['message_id'], $payParam['chat_id']);
 
         // ویرایش پیام سایر ادمین‌ها
-        $adminMessages = json_decode($payParam['admins_messages'], true);
+        // A valid primary-only receipt may have no secondary administrators.
+        // Avoid PHP 8.5 deprecations after the irreversible effect commits.
+        $adminMessages = json_decode((string)($payParam['admins_messages']??''), true);
         if (is_array($adminMessages)) {
             foreach ($adminMessages as $msgInfo) {
                 if (isset($msgInfo['chat_id'], $msgInfo['message_id']) && $msgInfo['chat_id'] != $payParam['chat_id'] &&
@@ -1347,7 +1351,7 @@ if (preg_match('/^approveIncreaseVolume(.*)/', $data, $match) && achbotAdminCanF
 
     } catch (Throwable $e) {
         if ($localCommitted) {
-            error_log('achbot_manual_day_notice_unconfirmed pay_id='.(int)($payId??0));
+            error_log('achbot_manual_volume_notice_unconfirmed pay_id='.(int)($payId??0));
             return;
         }
         try {$connection->rollback();} catch (Throwable $ignored) {}
