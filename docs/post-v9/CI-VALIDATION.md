@@ -43,3 +43,9 @@ Keep the Cron first-run behavior in the separate stabilized PR #103 until author
 Repository branch protection settings were not readable with the current GitHub integration. Before replacing any required contexts, a repository administrator must verify whether legacy job names `phase1-php81-compatibility` / `phase1-php84-full-history` are required and, if so, replace only those with `php85-validation`. Do not change unrelated protections, bypass checks or auto-merge an unreviewed candidate.
 
 Live target installation, scheduler changes, PHP/FPM compatibility, external provider behavior, bank settlement and manual operator acceptance remain **unverified by CI**.
+
+## Actual PHP 8.5 compatibility findings (issue #104)
+
+The first full PHP 8.5 matrix runs [41462988501](https://github.com/ach1992/bot-refactor/actions/runs/41462988501) and [41463994951](https://github.com/ach1992/bot-refactor/actions/runs/41463994951) exposed **real E_DEPRECATED failures**, not a CI routing defect: PHP 8.5 deprecates curl_close() (an inert no-op since PHP 8.0) and case 'k'; in the JDF switch. Only the current exercised HTTP/Marzban paths have the redundant no-op calls removed and the current JDF case syntax corrected. Frozen history remains byte-identical. The archived date comparison, which executes the older JDF only as fixture, omits only E_DEPRECATED; all other errors and the current live-source JDF path remain strict.
+
+Do **not** claim that every PHP runtime code path is proven PHP 8.5 compatible: other curl_close() calls remain, including the exact byte-guarded canonical checkout flow. Any changes to frozen byte-parity paths require a separate explicit contract/review decision, not test suppression or silent rewrite. Full current acceptance remains blocked until the actual matrix and aggregator succeed.
