@@ -26,6 +26,9 @@ REQUIRED_JOB = "php85-validation"
 LEGACY_JOBS = {"phase1-php81-compatibility", "phase1-php84-full-history"}
 _SHA = re.compile(r"[0-9a-f]{40}")
 MAX_RESPONSE_BYTES = 2 * 1024 * 1024
+# REST 2026-03-10 omits merge_commit_sha for merged PRs; this supported
+# version retains the exact identity required for a fail-closed attestation.
+GITHUB_API_VERSION = "2022-11-28"
 _FAILURE_REASONS = frozenset({
     "invalid_run",
     "run_identity_mismatch",
@@ -248,7 +251,7 @@ class ReadOnlyGitHub:
         self.calls += 1
         headers = {"Accept": "application/vnd.github+json",
                    "User-Agent": "AChBot-ci-reuse",
-                   "X-GitHub-Api-Version": "2026-03-10"}
+                   "X-GitHub-Api-Version": GITHUB_API_VERSION}
         if self.token:
             headers["Authorization"] = "Bearer " + self.token
         request = urllib.request.Request("https://api.github.com/" + endpoint,

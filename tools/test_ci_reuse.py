@@ -144,6 +144,10 @@ class AttestationTests(unittest.TestCase):
                 self.data[ASSOCIATED_PATH] = rows
                 self.denied(reason)
 
+    def test_missing_merge_sha_in_associated_pr_fails_closed(self):
+        self.data[ASSOCIATED_PATH][0]["merge_commit_sha"] = None
+        self.denied("merged_pull_request_missing_or_ambiguous")
+
     def test_authoritative_pr_must_still_be_exact_merged_main_pr(self):
         for field, value in [("merged", False), ("merge_commit_sha", SOURCE),
                              ("number", NUMBER + 1),
@@ -306,6 +310,9 @@ class BoundaryTests(unittest.TestCase):
         self.assertEqual(client("repos/" + reuse.REPOSITORY), {"ok": True})
         request, timeout = seen[0]
         self.assertEqual(request.get_method(), "GET")
+        headers = {key.lower(): value for key, value in request.header_items()}
+        self.assertEqual(headers["x-github-api-version"], "2022-11-28")
+        self.assertEqual(headers["x-github-api-version"], reuse.GITHUB_API_VERSION)
         self.assertEqual(request.full_url, "https://api.github.com/repos/" + reuse.REPOSITORY)
         self.assertLessEqual(timeout, 5)
         with self.assertRaises(reuse.NoReuse):
