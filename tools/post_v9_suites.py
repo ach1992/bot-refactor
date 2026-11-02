@@ -1150,14 +1150,14 @@ def run_wallet(tmp: str) -> tuple[dict, dict]:
             and text_catalog.get("native",{}).get("pre_style_privacy_corrections")==3
             and text_catalog.get("native",{}).get("actual_traffic_helper_parity_cases")==18
             and text_catalog.get("editable_catalog_files")==2
-            and text_catalog.get("logical_topics")==27
+            and text_catalog.get("logical_topics")==27+1
             and text_catalog.get("current_authorized_source_edits")==26
             and text_catalog.get("retired_parser_tokens")==23
             and text_catalog.get("relocation_source_ref")=="ecd30ba9192ed374703118a6c131be8809cc7b06"
             and text_catalog.get("native",{}).get("current_retired_feature_keys")==3
             and text_catalog.get("catalog_keys")==2780+12
             and text_catalog.get("native",{}).get("editable_catalog_files")==2
-            and text_catalog.get("native",{}).get("logical_topics")==27
+            and text_catalog.get("native",{}).get("logical_topics")==27+1
             and text_catalog.get("native",{}).get("current_catalog_keys")==2780+12
             and text_catalog.get("native",{}).get("current_gift_admin_additions")==1
             and text_catalog.get("native",{}).get("current_gift_catalog_negative_controls")==8
