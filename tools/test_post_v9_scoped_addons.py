@@ -237,6 +237,9 @@ def test(php:bool)->dict:
             yes('selectPlanDayIncrease41_' in json.dumps(customer_days['events'])
                 and customer_days['provider_writes']==0,
                 'customer_day_menu_uses_scoped_catalogue_without_remote_edit')
+            yes(any('inline_keyboard' in ev.get('keys',{}) for ev in final['events']) and
+                not any('تغییر مالی اعمال نشده' in (ev.get('text') or '') for ev in final['events']),
+                'successful_scoped_offer_save_renders_list_without_false_failure')
             yes(final['provider_writes']==0 and stale['provider_writes']==0,
                 'admin_and_stale_telegram_frames_have_zero_provider_writes')
     return {'status':'PASS','cases':len(checks),'checks':checks,

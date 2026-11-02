@@ -76,8 +76,14 @@ function achbotAddonAdminSave(mysqli $db,array $flow,?int $units=null,?int $pric
             $original['volume'],$original['price']],true,null,null,true);
     }
     if (!$ok) return false;
-    sendMessage(\achbotMessage('addon_scopes.saved'),$GLOBALS['removeKeyboard']??null);
-    achbotIntervalShow($db,$flow['kind']);
+    // The financial write has already committed; rendering must never turn
+    // a confirmed save into a misleading "no change" failure notification.
+    try {
+        sendMessage(\achbotMessage('addon_scopes.saved'),$GLOBALS['removeKeyboard']??null);
+        achbotIntervalShow($db,$flow['kind']);
+    } catch (Throwable $error) {
+        error_log('achbot_addon_admin_postcommit_ui_deferred class='.get_class($error));
+    }
     return true;
 }
 function achbotAddonAdminNext(mysqli $db,array $flow): void {
@@ -145,7 +151,7 @@ function achbotAddonAdminHandle(mysqli $db): bool {
                 }
                 $keys=[];
                 foreach($list as $server)
-                    $keys[]=[['text'=>(int)$server['id'].' — '.$server['title'].' ('.$server['type'].')',
+                    $keys[]=[['text'=>(int)$server['id'].' - '.$server['title'].' ('.$server['type'].')',
                         'callback_data'=>'addonPickServer'.$server['id']]];
                 sendMessage(\achbotMessage('addon_scopes.choose_server'),json_encode(
                     ['inline_keyboard'=>$keys],JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR));

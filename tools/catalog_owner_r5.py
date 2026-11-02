@@ -272,11 +272,24 @@ REVIEW_DYNAMIC={
  'src/Finance/ApiPayments.php':{'manual_payment.api_payment.code_':['manual_payment.api_payment.code_'+s for s in ['used','revoked','expired','mismatch']],'manual_payment.api_payment.status_':['manual_payment.api_payment.status_'+s for s in ['confirmed','settled','review','uncertain','evidence_only']]},
  'src/Finance/Routes/ApiPayments.php':{},
 }
+# Issue #107 changes an API payment *eligibility fence*, not any accepted copy.
+# Preserve the old dynamic-message source proof byte-for-byte by admitting only
+# this explicit non-copy insertion; arbitrary edits still fail source binding.
+SCOPED_ADDON_API_INSERTION="""            if ($type!=='RENEW_ACCOUNT') {
+                require_once __DIR__.'/../Plans/Addons.php';
+                if (achbotAddonSchema($db) && !achbotAddonPayLocal($db,$pay,$order)) return null;
+                $context['addon_scope_snapshot']=(string)($pay['addon_scope_snapshot']??'');
+            }
+"""
 def api_source_references(path,source):
     refs=set(re.findall(r"\\?achbotMessage(?:Html)?\('([^']+)'",source))
     if path in API_DYNAMIC:
         original=source==api_consumer_snapshot(path)
-        check(original or source==api_consumer_snapshot(path,REVIEW_SOURCE),'api_dynamic_consumer_source_drift:'+path)
+        reviewed=source==api_consumer_snapshot(path,REVIEW_SOURCE)
+        if path=='src/Finance/ApiPayments.php' and not original and not reviewed:
+            reviewed=(source.count(SCOPED_ADDON_API_INSERTION)==1 and
+                source.replace(SCOPED_ADDON_API_INSERTION,'')==api_consumer_snapshot(path,REVIEW_SOURCE))
+        check(original or reviewed,'api_dynamic_consumer_source_drift:'+path)
         for key in API_CONDITIONAL_REFS.get(path,[]):
             check(repr(key) in source,'api_conditional_literal_missing:'+path+':'+key)
             refs.add(key)

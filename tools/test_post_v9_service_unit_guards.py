@@ -16,7 +16,7 @@ $connection=new mysqli('localhost','root','',$argv[3],0,$argv[2]);$connection->s
 $from_id=(int)($spec['actor']??1001);$admin=9001;$chat_id=$from_id;$message_id=702;$callbackId='fixture';
 $data=$spec['data']??'';$text=$spec['text']??'';$time=time();$first_name='Fixture';$username='fixture';$agentBought=false;
 $botState=['walletState'=>'on','nowPaymentOther'=>'off','zarinpal'=>'off','nextpay'=>'off','agencyPlanDiscount'=>'on'];
-$buttonValues=['cancel'=>'Cancel','back_to_main'=>'Home','pay_with_wallet'=>'Wallet'];$mainValues=['reached_main_menu'=>'fixture-home'];$paymentKeys=[];$botUrl='https://bot.example.invalid/';
+$buttonValues=['cancel'=>'Cancel','back_to_main'=>'Home','back_button'=>'Back','pay_with_wallet'=>'Wallet'];$mainValues=['reached_main_menu'=>'fixture-home'];$paymentKeys=[];$botUrl='https://bot.example.invalid/';
 $update=json_decode(json_encode($spec['frame']??($data!==''?
  ['update_id'=>801,'callback_query'=>['id'=>'fixture','data'=>$data,'from'=>['id'=>$from_id],'message'=>['message_id'=>$message_id,'chat'=>['id'=>$from_id,'type'=>'private']]]]:
  ['update_id'=>801,'message'=>['message_id'=>$message_id,'text'=>$text,'from'=>['id'=>$from_id],'chat'=>['id'=>$from_id,'type'=>'private']]])));
