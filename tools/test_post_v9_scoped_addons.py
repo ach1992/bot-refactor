@@ -493,10 +493,10 @@ def test(php:bool)->dict:
             # Another administrator can reassign a native Group-set between
             # message rendering and a stale deletion, without touching the ID.
             old_group_delete=key(filtered_volume['events'],'deleteVolumePlan302_')
-            q("UPDATE increase_plan SET group_ids='[3]',scope_hash='"+sha('P:2:3')+"' "
+            q("UPDATE increase_plan SET group_ids='[9]',scope_hash='"+sha('P:2:9')+"' "
                 "WHERE id=302")
             rejected_group=callback(old_group_delete,seq=838)
-            yes(q("SELECT COUNT(*) FROM increase_plan WHERE id=302 AND group_ids='[3]'")=='1' and
+            yes(q("SELECT COUNT(*) FROM increase_plan WHERE id=302 AND group_ids='[9]'")=='1' and
                 rejected_group['provider_writes']==0,
                 'stale_group_set_delete_after_other_admin_reassignment_rejected')
             q("UPDATE increase_plan SET group_ids='[1]',scope_hash='"+sha('P:2:1')+"' "

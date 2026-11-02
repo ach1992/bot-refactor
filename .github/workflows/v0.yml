@@ -228,13 +228,6 @@ jobs:
           set -euo pipefail
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends mariadb-server
-      - name: Execute one disjoint catalog family on PHP 8.5
-        env:
-          SHARD_INDEX: ${{ matrix.index }}
-        run: |
-          set -euo pipefail
-          php -r 'exit(PHP_VERSION_ID >= 80500 && PHP_VERSION_ID < 80600 ? 0 : 1);'
-          python3 tools/post_v9_shards.py run --index "$SHARD_INDEX" --count 8 --report "$RUNNER_TEMP/shard-$SHARD_INDEX.json"
       - name: Scoped extensions native contract on the existing MariaDB shard
         if: matrix.index == 5
         run: |
@@ -249,6 +242,16 @@ jobs:
           path: ${{ runner.temp }}/scoped-addons.json
           if-no-files-found: error
           retention-days: 14
+      # Run the focused new scoped contract first: repeated schema/admin
+      # regressions should fail before the unrelated two-minute shard, while
+      # the required eight-family matrix and aggregate stay unchanged.
+      - name: Execute one disjoint catalog family on PHP 8.5
+        env:
+          SHARD_INDEX: ${{ matrix.index }}
+        run: |
+          set -euo pipefail
+          php -r 'exit(PHP_VERSION_ID >= 80500 && PHP_VERSION_ID < 80600 ? 0 : 1);'
+          python3 tools/post_v9_shards.py run --index "$SHARD_INDEX" --count 8 --report "$RUNNER_TEMP/shard-$SHARD_INDEX.json"
       - name: Upload exact family evidence
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
