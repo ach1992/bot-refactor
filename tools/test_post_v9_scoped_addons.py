@@ -548,6 +548,21 @@ function achbotNotifyAdmins(...$args){$GLOBALS['events'][]=['event'=>'ADMIN_NOTI
                         proc.stderr[-1200:],proc.stdout[-1200:]))
                 return json.loads(proc.stdout)
             q((ROOT/'migrations/post-v9/003_payment_attempts.sql').read_text())
+            # Financial callbacks do not trust preview-only $botState. The
+            # definitive current policy is the owner-locked, unique persisted
+            # BOT_STATES row. Seed it explicitly on the disposable database.
+            finance_states={
+                'walletState':'on','cartToCartState':'on',
+                'giftCardState':'on','manualUsdtState':'on',
+                'nowPaymentOther':'on','nowPaymentWallet':'on',
+                'nextpay':'on','zarinpal':'on',
+            }
+            q("INSERT INTO setting(type,value) VALUES ('BOT_STATES','"+
+                json.dumps(finance_states,separators=(',',':'))+"')")
+            yes(q("SELECT JSON_UNQUOTE(JSON_EXTRACT(value,'$.walletState')) "
+                  "FROM setting WHERE type='BOT_STATES'")=='on' and
+                q("SELECT COUNT(*) FROM setting WHERE type='BOT_STATES'")=='1',
+                'owned_finance_fixture_persists_authoritative_wallet_policy')
             now=int(time.time())
             q(f"UPDATE orders_list SET expire_date={now+2*86400} WHERE id=41")
             for kind,offer,units,price in [('day',701,4,120),('volume',702,5,220)]:
@@ -582,11 +597,29 @@ function achbotNotifyAdmins(...$args){$GLOBALS['events'][]=['event'=>'ADMIN_NOTI
                     expected_state='paid_with_wallet' if method=='wallet' else 'approved'
                     expected_amount=120 if kind=='day' else 220
                     expected_wallet=wallet_before-expected_amount if method=='wallet' else wallet_before
-                    yes(q(f"SELECT state FROM pays WHERE hash_id='{key_name}'")==expected_state and
-                        int(q('SELECT wallet FROM users WHERE userid=1001'))==expected_wallet and
-                        int(q('SELECT COUNT(*) FROM increase_order'))==before+1 and
-                        result['provider_writes']==1,
-                        'actual_'+method+'_'+kind+'_claim_dispatch_verify_audit_terminal')
+                    observed={
+                        'state':q(f"SELECT state FROM pays WHERE hash_id='{key_name}'"),
+                        'wallet':int(q('SELECT wallet FROM users WHERE userid=1001')),
+                        'audit_count':int(q('SELECT COUNT(*) FROM increase_order')),
+                        'provider_writes':result['provider_writes'],
+                        # Isolated fake Telegram transport only; no actual
+                        # user text, payment credentials or provider URLs.
+                        'events':[{'kind':event.get('event'),
+                                   'text':str(event.get('text',''))[:160]}
+                                  for event in result['events'][-8:]],
+                    }
+                    terminal=(observed['state']==expected_state and
+                        observed['wallet']==expected_wallet and
+                        observed['audit_count']==before+1 and
+                        observed['provider_writes']==1)
+                    if not terminal:
+                        raise AssertionError('actual_'+method+'_'+kind+
+                            '_claim_dispatch_verify_audit_terminal observed='+
+                            repr(observed)+' expected='+repr({
+                                'state':expected_state,'wallet':expected_wallet,
+                                'audit_count':before+1,'provider_writes':1}))
+                    yes(True,'actual_'+method+'_'+kind+
+                        '_claim_dispatch_verify_audit_terminal')
                     second=settle(kind,method,key_name)
                     yes(q(f"SELECT state FROM pays WHERE hash_id='{key_name}'")==expected_state and
                         int(q('SELECT wallet FROM users WHERE userid=1001'))==expected_wallet and
