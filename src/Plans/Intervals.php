@@ -49,6 +49,7 @@ if ($achbotIntervalOwned) {
     $achbotIntervalEditor=preg_match('/^(?:addNewDayPlan|addNewVolumePlan|changeDayPlan(?:Price|Day)[1-9][0-9]*(?:_[a-f0-9]{20})?|changeVolumePlan(?:Price|Volume)[1-9][0-9]*(?:_[a-f0-9]{20})?|addon:[a-z]+)$/D',(string)($userInfo['step']??''));
     if ($achbotIntervalEditor && $achbotIntervalActors[0]['step']!==($userInfo['step']??null)) return;
     if ($achbotIntervalEditor && $achbotIntervalMessage && $text===($buttonValues['cancel']??null)) {
+        $cancelCommitted=false;
         try {
             require_once __DIR__.'/../Subscription/GiftBatch.php';
             achbotGiftTelegramSource($update,$from_id,$chat_id,$message_id,$text);
@@ -62,6 +63,7 @@ if ($achbotIntervalOwned) {
             $q=$connection->prepare("UPDATE users SET step='none',temp=NULL WHERE userid=?");
             $q->bind_param('i',$achbotIntervalActor);$q->execute();$q->close();
             if (!$connection->commit()) throw new RuntimeException('interval_cancel_unknown');
+            $cancelCommitted=true;
             $editor=json_decode((string)($userInfo['temp']??''),true);
             $kind=str_starts_with((string)$userInfo['step'],'addon:')?
                 (string)($editor['flow']['kind']??'day'):
@@ -70,8 +72,20 @@ if ($achbotIntervalOwned) {
             sendMessage(\achbotMessage('admin_settings.management.canceled'),$removeKeyboard);
             achbotIntervalShow($connection,$kind);return;
         } catch (Throwable $error) {
-            try {$connection->rollback();} catch (Throwable $ignored) {}
-            error_log('achbot_interval_cancel_deferred');return;
+            // A completed cancellation must never be rolled back or reported
+            // as an unsuccessful financial/editor write just because a later
+            // Telegram response or read-only list failed.
+            if (!$cancelCommitted)
+                try {$connection->rollback();} catch (Throwable $ignored) {}
+            $safe=$error instanceof RuntimeException &&
+                preg_match('/^[a-z][a-z0-9_]{0,96}$/D',$error->getMessage())===1
+                ?$error->getMessage():get_class($error);
+            error_log(($cancelCommitted?'achbot_interval_cancel_notice_unconfirmed':
+                'achbot_interval_cancel_deferred').
+                ' reason='.$safe.' source='.basename($error->getFile()).':'.
+                $error->getLine().' actor='.$achbotIntervalActor.
+                ' update='.(int)($update->update_id??0));
+            return;
         }
     }
 
