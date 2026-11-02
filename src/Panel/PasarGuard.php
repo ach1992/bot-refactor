@@ -228,14 +228,14 @@ function achbotPgModify(array $panel,array $identity,array $absoluteChanges,
             // AND the credential's current enabled/allowed Groups at the
             // last local boundary immediately before an outbound PUT.
             // An earlier menu, quote or payment preflight is not authority.
-            $expected=achbotPgGroupsCanonical($requiredCurrentGroups);
-            if (!$expected || $before['user']['group_ids']!==$expected)
+            $expectedGroups=achbotPgGroupsCanonical($requiredCurrentGroups);
+            if (!$expectedGroups || $before['user']['group_ids']!==$expectedGroups)
                 return achbotPgFailure('pg_addon_groups_changed_before_write');
             $current=achbotPgCheck($panel);
             if (($current['success']??false)!==true)
                 return achbotPgFailure('pg_addon_authority_unverified');
             $eligible=achbotPgEligibleGroupIds($current);
-            if (array_diff($expected,$eligible))
+            if (array_diff($expectedGroups,$eligible))
                 return achbotPgFailure('pg_addon_authority_changed_before_write');
         }
         $dispatched=true;

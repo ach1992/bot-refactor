@@ -11,6 +11,7 @@ import contextlib
 import datetime as dt
 import hashlib
 import json
+import re
 import subprocess
 import threading
 from pathlib import Path
@@ -323,7 +324,11 @@ def sandbox():
                     except json.JSONDecodeError as error:
                         raise AssertionError(("php85_invalid_json", op,
                             proc.stdout[-1000:], proc.stderr[-1000:])) from error
-                    lines = proc.stderr.strip().splitlines()
+                    lines = [
+                        re.sub(r'^\[\d{2}-[A-Za-z]{3}-\d{4} '
+                               r'\d{2}:\d{2}:\d{2} UTC\] ', '', line)
+                        for line in proc.stderr.strip().splitlines()
+                    ]
                     if any(not line.startswith((
                             "achbot_api_claim_review pay_id=",
                             "achbot_api_effect_review pay_id=",
