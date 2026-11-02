@@ -327,6 +327,7 @@ def sandbox():
                     if any(not line.startswith((
                             "achbot_api_claim_review pay_id=",
                             "achbot_api_effect_review pay_id=",
+                            "achbot_pg_edit_needs_review pay_id=",
                             "achbot_api_paid_delivery_review pay_id=",
                             "achbot_api_invoice_edit_deferred pay_id=",
                             "achbot_api_invoice_reference_deferred")) for line in lines):
@@ -334,6 +335,11 @@ def sandbox():
                     if not response["ok"]:
                         raise AssertionError(("native_source_exception",
                             op, response["error"]))
+                    if op == "settle":
+                        run.last_diagnostic = [
+                            line.split(" code=", 1)[-1][:128]
+                            for line in lines
+                            if line.startswith("achbot_pg_edit_needs_review pay_id=")]
                     return response["result"]
 
                 linked = run("bootstrap")
@@ -410,7 +416,8 @@ def test():
                    audit == "1" and mutation == "linked" and
                    sql("SELECT wallet FROM users WHERE userid=1001") == before_wallet)
             observed={'result':settled,'payment':current,'audit':audit,
-                'native_journal':mutation,'writes':writes}
+                'native_journal':mutation,'writes':writes,
+                'internal_reason':getattr(run, 'last_diagnostic', [])}
             if not terminal_ok:
                 # Only synthetic loopback state and fixed field names: never
                 # print provider credentials, customer identifiers or raw API.

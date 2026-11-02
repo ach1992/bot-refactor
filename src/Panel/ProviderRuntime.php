@@ -801,7 +801,19 @@ function achbotPgServiceEdit(mysqli $db,int $serverId,array $change,?array $gift
         return (object)['success'=>true,'verified'=>true,
             'before_expire'=>$read['user']['expire'],'applied_expire'=>$r['user']['expire'],
             'applied_bytes'=>$r['user']['data_limit']];
-    } catch (Throwable $error) {return achbotProviderFailure('pg_edit_requires_review');}
+    } catch (Throwable $error) {
+        // A post-claim provider edit may already have crossed the remote
+        // boundary. Keep the held result; preserve only bounded internal
+        // diagnostics for the operator, not remote bodies or credentials.
+        if ((int)($change['pay_id']??0)>0) {
+            $reason=(string)$error->getMessage();
+            if (preg_match('/\\A(?:pg|provider|addon|service|effect|api|payment)_[a-z0-9_]{2,90}\\z/D',$reason)!==1)
+                $reason='internal_exception';
+            error_log('achbot_pg_edit_needs_review pay_id='.(int)$change['pay_id'].
+                ' code='.$reason.' class='.get_class($error));
+        }
+        return achbotProviderFailure('pg_edit_requires_review');
+    }
 }
 function achbotProviderRelocationTargets(mysqli $db,int $sourceId): array {
     if (achbotProviderType($db,$sourceId)==='marzban') return achbotMarzbanRelocationTargets($db,$sourceId);
