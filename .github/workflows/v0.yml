@@ -4,129 +4,342 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+
 permissions:
   contents: read
+  actions: read
+  pull-requests: read
+
 concurrency:
   group: compatibility-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
+
 jobs:
-  phase1-php81-compatibility:
+  plan:
+    name: validation-plan
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: 10
+    outputs:
+      scope: ${{ steps.impact.outputs.scope }}
+      shards: ${{ steps.impact.outputs.shards }}
+      reuse: ${{ steps.reuse.outputs.reuse }}
     steps:
-      - name: Checkout exact candidate without retained credentials
+      - name: Checkout exact source without retained credentials
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 0
           persist-credentials: false
-      - name: PHP 8.1 native compatibility
-        uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # v2
+      - name: Classify exact source impact conservatively
+        id: impact
+        run: |
+          set -euo pipefail
+          python3 tools/ci_plan.py --github-event --github-output --output "$RUNNER_TEMP/validation-plan.json"
+      - name: Attest a prior successful same-tree PR run on main only
+        id: reuse
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          reuse=false
+          if [[ "$GITHUB_EVENT_NAME" == push && "$GITHUB_REF" == refs/heads/main ]]; then
+            if python3 tools/ci_reuse.py --head "$(git rev-parse HEAD)" --repo "$GITHUB_REPOSITORY" --output "$RUNNER_TEMP/ci-reuse-receipt.json"; then
+              if python3 - "$RUNNER_TEMP/ci-reuse-receipt.json" <<'PY'
+          import json
+          import sys
+          receipt = json.load(open(sys.argv[1], encoding="utf-8"))
+          if receipt.get("reused") is not True:
+              raise SystemExit(1)
+          PY
+              then
+                reuse=true
+              fi
+            fi
+          fi
+          echo "reuse=$reuse" >> "$GITHUB_OUTPUT"
+          echo "Validation scope: ${{ steps.impact.outputs.scope }}; accepted source reuse: $reuse" >> "$GITHUB_STEP_SUMMARY"
+      - name: Preserve original acceptance receipt when reused
+        if: steps.reuse.outputs.reuse == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          php-version: '8.1'
-          extensions: mysqli, tokenizer, curl, zip, gd
-          coverage: none
-          tools: none
-      - name: Install disposable MariaDB test requirements
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends mariadb-server
-      - name: Verify immutable historical V9 PHP 8.1 from pinned original checkout
-        run: |
-          set -euo pipefail
-          ref="$RUNNER_TEMP/frozen-v9-php81"
-          git worktree add --detach "$ref" 7eb077fd8e6d0a303421626d1500f69e295a6664
-          (cd "$ref" && python3 tools/check_v9.py --php81 --report "$RUNNER_TEMP/frozen-v9-php81.json")
-          git worktree remove "$ref"
-      - name: Verify NEW current provider runtime under actual PHP 8.1
-        run: |
-          set -euo pipefail
-          python3 tools/check_post_v9.py --report "$RUNNER_TEMP/post-v9-php81.json"
-      - name: Record candidate-vs-history PHP 8.1 evidence
-        run: |
-          printf '## AChBot post-V9 current provider PHP 8.1\n\n' >> "$GITHUB_STEP_SUMMARY"
-          printf 'New HEAD: `%s`\n\n' "$(git rev-parse HEAD)" >> "$GITHUB_STEP_SUMMARY"
-          printf 'New tree: `%s`\n\n' "$(git rev-parse HEAD^{tree})" >> "$GITHUB_STEP_SUMMARY"
-          printf 'Original V9 frozen baseline exercised in its own pinned checkout; new runtime current provider tests separate. No real operator/deploy/finance approval.\n' >> "$GITHUB_STEP_SUMMARY"
-  phase1-php84-full-history:
+          name: ci-reuse-receipt
+          path: ${{ runner.temp }}/ci-reuse-receipt.json
+          if-no-files-found: error
+          retention-days: 14
+
+  selected:
+    name: selected-current-php85
+    needs: [plan]
+    if: needs.plan.outputs.scope != 'full' && needs.plan.outputs.reuse != 'true'
     runs-on: ubuntu-24.04
-    timeout-minutes: 65
+    timeout-minutes: 25
     steps:
-      - name: Checkout exact candidate without retained credentials
+      - name: Checkout exact source
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 0
           persist-credentials: false
-      - name: PHP 8.4 full acceptance with native extensions
+      - name: Setup PHP 8.5 only
         uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # v2
         with:
-          php-version: '8.4'
+          php-version: '8.5'
           extensions: mysqli, tokenizer, curl, zip, gd
           coverage: none
           tools: none
-      - name: Install disposable MariaDB test requirements
+      - name: Execute bounded source or Cron checks without claiming full acceptance
+        env:
+          CHECK_SCOPE: ${{ needs.plan.outputs.scope }}
         run: |
+          set -euo pipefail
+          php -r 'exit(PHP_VERSION_ID >= 80500 && PHP_VERSION_ID < 80600 ? 0 : 1);'
+          case "$CHECK_SCOPE" in source|cron) ;; *) echo "Invalid selected scope" >&2; exit 1;; esac
+          python3 tools/check_post_v9.py --suite "$CHECK_SCOPE" --report "$RUNNER_TEMP/selected-current.json"
+      - name: Upload explicit incomplete-scope report
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: selected-current-report
+          path: ${{ runner.temp }}/selected-current.json
+          if-no-files-found: error
+          retention-days: 14
+
+  foundation:
+    name: current-php85-foundation
+    needs: [plan]
+    if: needs.plan.outputs.scope == 'full' && needs.plan.outputs.reuse != 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - name: Checkout exact source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Setup PHP 8.5 only
+        uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # v2
+        with:
+          php-version: '8.5'
+          extensions: mysqli, tokenizer, curl, zip, gd
+          coverage: none
+          tools: none
+      - name: Assert PHP runtime and test validation infrastructure
+        run: |
+          set -euo pipefail
+          php -r 'exit(PHP_VERSION_ID >= 80500 && PHP_VERSION_ID < 80600 ? 0 : 1);'
+          python3 -m py_compile tools/check_post_v9.py tools/post_v9_suites.py tools/post_v9_shards.py tools/ci_plan.py tools/ci_reuse.py
+          PYTHONPATH=tools python3 -m unittest tools.test_ci_plan tools.test_ci_reuse tools.test_post_v9_sharding tools.test_post_v9_validation_modes tools.test_verify_installed_runtime -v
+          python3 tools/test_post_v9_zip_timestamp.py -v
+      - name: Execute shared current source/payment/privacy foundation
+        run: python3 tools/post_v9_shards.py foundation --report "$RUNNER_TEMP/foundation.json"
+      - name: Upload version-bound foundation proof
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: php85-foundation
+          path: ${{ runner.temp }}/foundation.json
+          if-no-files-found: error
+          retention-days: 14
+
+  families:
+    name: php85-family-${{ matrix.index }}
+    needs: [plan]
+    if: needs.plan.outputs.scope == 'full' && needs.plan.outputs.reuse != 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        index: [1, 2, 3, 4, 5, 6, 7, 8]
+    steps:
+      - name: Checkout exact source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Setup PHP 8.5 only
+        uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # v2
+        with:
+          php-version: '8.5'
+          extensions: mysqli, tokenizer, curl, zip, gd
+          coverage: none
+          tools: none
+      - name: Install isolated native MariaDB fixtures
+        run: |
+          set -euo pipefail
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends mariadb-server
-      - name: Verify original frozen V9 source and full historical V0-V8 under PHP 8.4
+      - name: Execute one disjoint catalog family on PHP 8.5
+        env:
+          SHARD_INDEX: ${{ matrix.index }}
         run: |
           set -euo pipefail
-          ref="$RUNNER_TEMP/frozen-v9-php84"
-          git worktree add --detach "$ref" 7eb077fd8e6d0a303421626d1500f69e295a6664
-          (cd "$ref" && python3 tools/check_v9.py --report "$RUNNER_TEMP/frozen-v9-php84.json" --evidence-dir "$RUNNER_TEMP/frozen-v9-evidence")
-          git worktree remove "$ref"
-      - name: Verify NEW current provider runtime and native HTTP/MariaDB tests under PHP 8.4
+          php -r 'exit(PHP_VERSION_ID >= 80500 && PHP_VERSION_ID < 80600 ? 0 : 1);'
+          python3 tools/post_v9_shards.py run --index "$SHARD_INDEX" --count 8 --report "$RUNNER_TEMP/shard-$SHARD_INDEX.json"
+      - name: Upload exact family evidence
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: php85-shard-${{ matrix.index }}
+          path: ${{ runner.temp }}/shard-${{ matrix.index }}.json
+          if-no-files-found: error
+          retention-days: 14
+
+  php85-validation:
+    name: php85-validation
+    needs: [plan, selected, foundation, families]
+    if: always() && !cancelled()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - name: Checkout exact source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Fail closed on missing or contradictory job results
+        env:
+          PLAN_RESULT: ${{ needs.plan.result }}
+          SELECTED_RESULT: ${{ needs.selected.result }}
+          FOUNDATION_RESULT: ${{ needs.foundation.result }}
+          FAMILIES_RESULT: ${{ needs.families.result }}
+          SCOPE: ${{ needs.plan.outputs.scope }}
+          REUSED: ${{ needs.plan.outputs.reuse }}
         run: |
           set -euo pipefail
-          python3 tools/check_post_v9.py --report "$RUNNER_TEMP/post-v9-php84.json"
-      - name: Validate read-only installed-release verifier and negative controls
-        run: |
-          python3 -m py_compile tools/verify_installed_runtime.py tools/test_verify_installed_runtime.py
-          python3 -m unittest tools.test_verify_installed_runtime -v
-      - name: Regression check for reproducible, release-specific ZIP timestamps
-        run: python3 tools/test_post_v9_zip_timestamp.py -v
-      - name: Package and verify NEW exact-head current provider runtime
+          python3 - <<'PY'
+          import os
+          env = os.environ
+          if env["PLAN_RESULT"] != "success":
+              raise SystemExit("Validation plan did not succeed")
+          statuses = (env["SELECTED_RESULT"], env["FOUNDATION_RESULT"], env["FAMILIES_RESULT"])
+          if env["REUSED"] == "true":
+              expected = ("skipped", "skipped", "skipped")
+          elif env["REUSED"] == "false" and env["SCOPE"] in ("source", "cron"):
+              expected = ("success", "skipped", "skipped")
+          elif env["REUSED"] == "false" and env["SCOPE"] == "full":
+              expected = ("skipped", "success", "success")
+          else:
+              raise SystemExit("Unknown acceptance branch")
+          if statuses != expected:
+              raise SystemExit(f"Missing or failed required evidence: {statuses!r} != {expected!r}")
+          PY
+      - name: Retrieve selected source/Cron evidence
+        if: needs.plan.outputs.reuse != 'true' && needs.plan.outputs.scope != 'full'
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: selected-current-report
+          path: ${{ runner.temp }}/selected-evidence
+      - name: Validate selected evidence and source identity
+        if: needs.plan.outputs.reuse != 'true' && needs.plan.outputs.scope != 'full'
+        env:
+          EXPECTED_SCOPE: ${{ needs.plan.outputs.scope }}
         run: |
           set -euo pipefail
-          mkdir -p "$RUNNER_TEMP/achbot-current"
-          python3 tools/package_post_v9.py create --output "$RUNNER_TEMP/achbot-current/runtime.zip"
-          python3 tools/package_post_v9.py verify --zip "$RUNNER_TEMP/achbot-current/runtime.zip" --manifest "$RUNNER_TEMP/achbot-current/runtime.zip.manifest.json"
-          cp migrations/post-v9/001_marzban_panel_group_id.sql "$RUNNER_TEMP/achbot-current/panel-group-migration.sql"
-          (cd "$RUNNER_TEMP/achbot-current" && sha256sum panel-group-migration.sql > panel-group-migration.sha256)
-          # The shared migration supersedes RC4's provider-specific 002 source.
-          # SQL assets remain separate from runtime.zip, never auto-applied.
-          cp migrations/post-v9/003_payment_attempts.sql "$RUNNER_TEMP/achbot-current/payment-attempt-migration.sql"
-          (cd "$RUNNER_TEMP/achbot-current" && sha256sum payment-attempt-migration.sql > payment-attempt-migration.sha256)
-          # Independent, separately approved source-only migrations.
-          # These assets never execute as part of CI/package installation.
-          for id in 004_automatic_renewal_attempts 005_wallet_adjustments 006_payment_message_refs 007_service_effects 008_referral_awards 009_bank_buy_invoice_claims; do
-            cp "migrations/post-v9/${id}.sql" "$RUNNER_TEMP/achbot-current/${id}.sql"
-            (cd "$RUNNER_TEMP/achbot-current" && sha256sum "${id}.sql" > "${id}.sha256")
+          python3 - "$RUNNER_TEMP/selected-evidence/selected-current.json" <<'PY'
+          import json, os, subprocess, sys
+          report = json.load(open(sys.argv[1], encoding="utf-8"))
+          head = subprocess.check_output(["git","rev-parse","HEAD"], text=True).strip()
+          tree = subprocess.check_output(["git","rev-parse","HEAD^{tree}"], text=True).strip()
+          assert report.get("complete") is False and report.get("targeted_complete") is True
+          assert report.get("scope") == os.environ["EXPECTED_SCOPE"]
+          assert report.get("identity",{}).get("head") == head
+          assert report.get("identity",{}).get("tree") == tree
+          assert report.get("identity",{}).get("dirty") is False
+          assert report.get("historical_suite_executed_by_this_script") is False
+          assert report.get("source",{}).get("current_additive_migration_separately_tested") is False
+          assert "full_current_acceptance" in report.get("omitted",[])
+          if os.environ["EXPECTED_SCOPE"] == "cron":
+              assert report.get("optional_cron_runner",{}).get("complete") is True
+              assert "cron" in report.get("executed", [])
+          PY
+          cp "$RUNNER_TEMP/selected-evidence/selected-current.json" "$RUNNER_TEMP/selected-validation.json"
+      - name: Retrieve full PHP 8.5 foundation
+        if: needs.plan.outputs.reuse != 'true' && needs.plan.outputs.scope == 'full'
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: php85-foundation
+          path: ${{ runner.temp }}/foundation-evidence
+      - name: Retrieve all eight disjoint PHP 8.5 families
+        if: needs.plan.outputs.reuse != 'true' && needs.plan.outputs.scope == 'full'
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          pattern: php85-shard-*
+          merge-multiple: true
+          path: ${{ runner.temp }}/family-evidence
+      - name: Strictly aggregate all current PHP 8.5 evidence
+        if: needs.plan.outputs.reuse != 'true' && needs.plan.outputs.scope == 'full'
+        run: |
+          set -euo pipefail
+          python3 tools/post_v9_shards.py aggregate --source "$RUNNER_TEMP/foundation-evidence/foundation.json" --reports "$RUNNER_TEMP/family-evidence" --report "$RUNNER_TEMP/post-v9-acceptance.json"
+      - name: Retrieve read-only prior PR acceptance receipt
+        if: needs.plan.outputs.reuse == 'true'
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: ci-reuse-receipt
+          path: ${{ runner.temp }}/reuse-evidence
+      - name: Validate reuse receipt is explicit and matches current main
+        if: needs.plan.outputs.reuse == 'true'
+        run: |
+          set -euo pipefail
+          python3 - "$RUNNER_TEMP/reuse-evidence/ci-reuse-receipt.json" <<'PY'
+          import json, subprocess, sys
+          receipt = json.load(open(sys.argv[1], encoding="utf-8"))
+          head = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
+          tree = subprocess.check_output(["git", "rev-parse", "HEAD^{tree}"], text=True).strip()
+          assert receipt.get("reused") is True
+          assert receipt.get("repository") == "ach1992/bot-refactor"
+          assert receipt.get("main_head") == head
+          assert receipt.get("main_tree") == tree
+          PY
+      - name: Rebuild and verify current HEAD source package, never reuse a prior ZIP
+        run: |
+          set -euo pipefail
+          bundle="$RUNNER_TEMP/achbot-current"
+          mkdir -p "$bundle"
+          python3 tools/package_post_v9.py create --output "$bundle/runtime.zip"
+          python3 tools/package_post_v9.py verify --zip "$bundle/runtime.zip" --manifest "$bundle/runtime.zip.manifest.json"
+          for id in 001_marzban_panel_group_id 003_payment_attempts 004_automatic_renewal_attempts 005_wallet_adjustments 006_payment_message_refs 007_service_effects 008_referral_awards 009_bank_buy_invoice_claims 011_provider_identity 012_shared_provider_storage 013_remove_obsolete_order_columns; do
+            cp "migrations/post-v9/$id.sql" "$bundle/$id.sql"
+            (cd "$bundle" && sha256sum "$id.sql" > "$id.sha256")
           done
-          for id in 011_provider_identity 012_shared_provider_storage 013_remove_obsolete_order_columns; do
-            cp "migrations/post-v9/${id}.sql" "$RUNNER_TEMP/achbot-current/${id}.sql"
-            (cd "$RUNNER_TEMP/achbot-current" && sha256sum "${id}.sql" > "${id}.sha256")
-          done
-          mkdir -p "$RUNNER_TEMP/achbot-current/optional-cleanup/tools" "$RUNNER_TEMP/achbot-current/optional-cleanup/migrations/post-v9"
-          cp tools/cleanup_post_v9.php "$RUNNER_TEMP/achbot-current/optional-cleanup/tools/"
-          cp migrations/post-v9/010_cleanup_manifest.json "$RUNNER_TEMP/achbot-current/optional-cleanup/migrations/post-v9/"
-          (cd "$RUNNER_TEMP/achbot-current/optional-cleanup" && sha256sum tools/cleanup_post_v9.php migrations/post-v9/010_cleanup_manifest.json > SHA256SUMS)
-          cp migrations/post-v9/legacy_rc4_nowpayments_import.sql "$RUNNER_TEMP/achbot-current/legacy-rc4-import.sql"
-          (cd "$RUNNER_TEMP/achbot-current" && sha256sum legacy-rc4-import.sql > legacy-rc4-import.sha256)
-          cp "$RUNNER_TEMP/post-v9-php84.json" "$RUNNER_TEMP/achbot-current/post-v9-acceptance.json"
-          cp "$RUNNER_TEMP/frozen-v9-php84.json" "$RUNNER_TEMP/achbot-current/frozen-v9-historical.json"
-          cp -R "$RUNNER_TEMP/frozen-v9-evidence" "$RUNNER_TEMP/achbot-current/frozen-v9-evidence"
-      - name: Record exact candidate identity and distinct frozen historical evidence
+          mkdir -p "$bundle/optional-cleanup/tools" "$bundle/optional-cleanup/migrations/post-v9"
+          cp tools/cleanup_post_v9.php "$bundle/optional-cleanup/tools/"
+          cp migrations/post-v9/010_cleanup_manifest.json "$bundle/optional-cleanup/migrations/post-v9/"
+          (cd "$bundle/optional-cleanup" && sha256sum tools/cleanup_post_v9.php migrations/post-v9/010_cleanup_manifest.json > SHA256SUMS)
+          cp migrations/post-v9/legacy_rc4_nowpayments_import.sql "$bundle/legacy-rc4-import.sql"
+          (cd "$bundle" && sha256sum legacy-rc4-import.sql > legacy-rc4-import.sha256)
+          if [[ -f "$RUNNER_TEMP/post-v9-acceptance.json" ]]; then
+            cp "$RUNNER_TEMP/post-v9-acceptance.json" "$bundle/post-v9-acceptance.json"
+          elif [[ -f "$RUNNER_TEMP/selected-validation.json" ]]; then
+            cp "$RUNNER_TEMP/selected-validation.json" "$bundle/post-v9-targeted.json"
+          elif [[ -f "$RUNNER_TEMP/reuse-evidence/ci-reuse-receipt.json" ]]; then
+            cp "$RUNNER_TEMP/reuse-evidence/ci-reuse-receipt.json" "$bundle/ci-reuse-receipt.json"
+          else
+            echo "Missing actual acceptance or honest reuse evidence" >&2
+            exit 1
+          fi
+      - name: Record exact-head validation category and timing
+        env:
+          SCOPE: ${{ needs.plan.outputs.scope }}
+          REUSED: ${{ needs.plan.outputs.reuse }}
         run: |
-          printf '## AChBot post-V9 current provider acceptance\n\n' >> "$GITHUB_STEP_SUMMARY"
-          printf 'New candidate HEAD: `%s`\n\n' "$(git rev-parse HEAD)" >> "$GITHUB_STEP_SUMMARY"
-          printf 'New candidate tree: `%s`\n\n' "$(git rev-parse HEAD^{tree})" >> "$GITHUB_STEP_SUMMARY"
-          printf 'The current exact-candidate runtime ZIP is separately reproducibly verified; source does not modify the frozen 23-table historical V9 schema. Optional 001, 003, 004, 005, 006, revised 007, 008 referral awards 009 bank invoice claim provider011, shared-storage012 and obsolete-column013 SQL migrations are distinct checksum-shipped sidecars, never automatically installed. Cleanup010 is a guarded optional tool with its manifest, never an automatic SQL DROP. CI exercises proposed migrations only against isolated disposable MariaDB. Frozen historical V9 source/schema exercised independently at pinned commit 7eb077fd. Source ZIP does NOT apply SQL; separately shipped migrations require independent backup, Owner approval and operator proof. No financial/production deployment approval.\n\n' >> "$GITHUB_STEP_SUMMARY"
-          printf '```json\n' >> "$GITHUB_STEP_SUMMARY"
-          cat "$RUNNER_TEMP/post-v9-php84.json" >> "$GITHUB_STEP_SUMMARY"
-          printf '\n```\n' >> "$GITHUB_STEP_SUMMARY"
-      - name: Upload post-V9 exact-candidate source and separate historical evidence
+          set -euo pipefail
+          echo "## AChBot PHP 8.5 current-source verification" >> "$GITHUB_STEP_SUMMARY"
+          echo "Head: $(git rev-parse HEAD)" >> "$GITHUB_STEP_SUMMARY"
+          echo "Tree: $(git rev-parse HEAD^{tree})" >> "$GITHUB_STEP_SUMMARY"
+          echo "Selected scope: $SCOPE, source-pipeline reuse: $REUSED" >> "$GITHUB_STEP_SUMMARY"
+          echo "Only complete eight-family PHP 8.5 aggregation is full current-runtime acceptance. Prior frozen V0-V9 PHP 8.1/8.4 execution results remain separate historical evidence; not executed or relabelled by this workflow. No live bot, provider, or financial operation is authorized." >> "$GITHUB_STEP_SUMMARY"
+          if [[ -f "$RUNNER_TEMP/post-v9-acceptance.json" ]]; then
+            python3 - "$RUNNER_TEMP/post-v9-acceptance.json" >> "$GITHUB_STEP_SUMMARY" <<'PY'
+          import json,sys
+          data=json.load(open(sys.argv[1],encoding="utf-8"))
+          meta=data.get("validation",{})
+          print("Family seconds: "+json.dumps(meta.get("family_seconds",{}),sort_keys=True))
+          print("Maximum family seconds: "+str(meta.get("maximum_family_seconds")))
+          PY
+          fi
+      - name: Upload independently rebuilt exact-HEAD source and truthful evidence
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: achbot-current-${{ github.event.pull_request.head.sha || github.sha }}
