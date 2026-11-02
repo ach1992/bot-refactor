@@ -405,12 +405,25 @@ def test():
             audit = sql("SELECT COUNT(*) FROM increase_order")
             mutation = sql("SELECT provider_state FROM service_effects WHERE id=1")
             writes = provider.write_count
-            passed(settled == "confirmed" and writes == 1 and
+            terminal_ok=(settled == "confirmed" and writes == 1 and
                    current.startswith("auto_cart_approved|done|") and
                    audit == "1" and mutation == "linked" and
-                   sql("SELECT wallet FROM users WHERE userid=1001")
-                   == before_wallet, kind + "_api_proof_native_put_audit_terminal",
-                   [settled, current, audit, mutation, writes])
+                   sql("SELECT wallet FROM users WHERE userid=1001") == before_wallet)
+            observed={'result':settled,'payment':current,'audit':audit,
+                'native_journal':mutation,'writes':writes}
+            if not terminal_ok:
+                # Only synthetic loopback state and fixed field names: never
+                # print provider credentials, customer identifiers or raw API.
+                observed['http_sequence']=[(method, urlsplit(path).path)
+                    for method,path,_ in provider.trace[-15:]]
+                observed['native_entitlement']={k:provider.user.get(k)
+                    for k in ['expire','data_limit','group_ids','status']}
+                observed['intent']=sql("SELECT CONCAT(COALESCE(JSON_UNQUOTE("
+                    "JSON_EXTRACT(provider_mutation_snapshot,'$.phase')),'NULL'),"
+                    "'|',COALESCE(JSON_UNQUOTE(JSON_EXTRACT("
+                    "provider_mutation_snapshot,'$.result')),'NULL')) "
+                    "FROM service_effects WHERE id=1")
+            passed(terminal_ok,kind + "_api_proof_native_put_audit_terminal",observed)
             assert provider.user["group_ids"] == [2, 5]
             if kind == "day":
                 passed(provider.user["expire"] == dt.datetime.fromtimestamp(
