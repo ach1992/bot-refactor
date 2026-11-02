@@ -30,6 +30,8 @@ After integration into `main`, `tools/ci_reuse.py` may avoid rerunning the ident
 
 A reused result is an **attestation of the original PR pipeline**, not a newly executed native/full run. Its receipt contains the original source/run identity and the new `main` identity; current-`main` source ZIP is rebuilt and verified independently.
 
+The read-only REST client pins `X-GitHub-Api-Version: 2022-11-28` deliberately. Verified against merged PR #105/main: the newer `2026-03-10` representation returns `merge_commit_sha: null` for an already merged PR, disabling attestation and redundantly triggering the full PHP 8.5 suite. The pinned version supplies the verified exact merge SHA. Never infer a missing merge identity or relax any other evidence checks; verify live API behavior before changing the pin.
+
 ## Historical constraints and interpretation
 
 The frozen V9 full historical driver requires PHP 8.4. It cannot provide an honest new PHP 8.5 full-history result without changing frozen artifacts. The Owner explicitly retired new PHP 8.1/8.4 executions: the older successful V0–V9 runs remain archived as **historical evidence only** and existing byte/schema pins still protect history. Never alter old fixtures or invoke `--focused` to imply historical full acceptance.
