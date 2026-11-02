@@ -11,13 +11,9 @@ if (!achbotAdminRequestAllowed(is_string($data??null)?$data:null,is_string($text
 
 
 require_once __DIR__ . '/../PaymentLifecycle.php';
+require_once __DIR__ . '/../../Plans/Addons.php';
 
 if(preg_match('/increaseADay(.*)/', $data, $match)){
-    $stmt = $connection->prepare("SELECT * FROM `increase_day`");
-    $stmt->execute();
-    $res = $stmt->get_result();
-    $stmt->close();
-
     $stmt = $connection->prepare("SELECT * FROM `orders_list` WHERE `id` = ?");
     $stmt->bind_param("i", $match[1]);
     $stmt->execute();
@@ -28,19 +24,29 @@ if(preg_match('/increaseADay(.*)/', $data, $match)){
         return;
     }
 
-    if (!achbotOrderAddonEligibility($connection,$orderInfo,'day')['eligible']) {
+    try {
+        $scoped=achbotAddonSchema($connection);
+        $addonContext=$scoped?achbotAddonContext($connection,$orderInfo):null;
+        if (!achbotOrderAddonEligibility($connection,$orderInfo,'day',$addonContext)['eligible']) {
+            alert(\achbotMessage('payment.pre_payment.alert.fa55f5201f'),true);
+            return;
+        }
+        if ($scoped) $catalog=achbotAddonCatalog($connection,'day',$addonContext);
+        else {
+            $q=$connection->prepare("SELECT * FROM increase_day ORDER BY id");
+            $q->execute();$catalog=$q->get_result()->fetch_all(MYSQLI_ASSOC);$q->close();
+        }
+    } catch (Throwable $error) {
         alert(\achbotMessage('payment.pre_payment.alert.fa55f5201f'),true);
         return;
     }
-
     $agentBought = $orderInfo['agent_bought'];
-
-    if($res->num_rows == 0){
+    if(!$catalog){
         alert(\achbotMessage('renewal.extensions.alert.6732b29e55'));
         exit;
     }
     $keyboard = [];
-    while ($cat = $res->fetch_assoc()){
+    foreach ($catalog as $cat){
         if (achbotWholeServiceUnits($cat['volume'],36500)===null) continue;
         $id = $cat['id'];
         $title = $cat['volume'];
@@ -83,11 +89,22 @@ if(preg_match('/selectPlanDayIncrease(?<orderId>.+)_(?<dayId>.+)/',$data,$match)
         return;
     }
 
-    if (!achbotOrderAddonEligibility($connection,$orderInfo,'day')['eligible']) {
+    try {
+        $scoped=achbotAddonSchema($connection);
+        $addonContext=$scoped?achbotAddonContext($connection,$orderInfo):null;
+        if (!achbotOrderAddonEligibility($connection,$orderInfo,'day',$addonContext)['eligible']) {
+            alert(\achbotMessage('payment.pre_payment.alert.fa55f5201f'),true);
+            return;
+        }
+        if ($scoped) {
+            $res=achbotAddonOfferById($connection,'day',$addonContext,(int)$pid);
+            if (!$res) throw new RuntimeException('addon_offer_not_applicable');
+            $quotedUnits=$res['volume'];$planprice=$res['price'];
+        }
+    } catch (Throwable $error) {
         alert(\achbotMessage('payment.pre_payment.alert.fa55f5201f'),true);
         return;
     }
-
     $agentBought = $orderInfo['agent_bought'];
 
     if($agentBought == true){
@@ -107,11 +124,18 @@ if(preg_match('/selectPlanDayIncrease(?<orderId>.+)_(?<dayId>.+)/',$data,$match)
 	$server_id = $orderInfo['server_id'];
 	$order_id = $match['orderId'];
 
-	$stmt = $connection->prepare("INSERT INTO `pays` (`hash_id`, `user_id`, `type`, `plan_id`, `server_id`, `order_id`, `volume`, `day`, `price`, `request_date`, `state`)
-								VALUES (?, ?, ?, ?, ?, ?, '0', ?, ?, ?, 'pending')");
     $type = "INCREASE_DAY_$data";
-	$stmt->bind_param("sisiiiiii", $hash_id, $from_id, $type, $plan_id, $server_id, $order_id, $quotedUnits, $planprice, $time);
-    $newDraftId=achbotPayUxInsertDraft($connection,(int)$from_id,$stmt);
+    if ($scoped) {
+        $addonQuote=achbotAddonQuote($orderInfo,$addonContext,'day',$res,(int)$planprice);
+        $stmt=$connection->prepare("INSERT INTO pays (hash_id,user_id,type,plan_id,server_id,order_id,volume,day,price,request_date,state,addon_scope_snapshot)
+            VALUES (?,?,?,?,?,?,'0',?,?,?,'pending',?)");
+        $stmt->bind_param("sisiiiiiis",$hash_id,$from_id,$type,$plan_id,$server_id,$order_id,$quotedUnits,$planprice,$time,$addonQuote);
+    } else {
+        $stmt=$connection->prepare("INSERT INTO pays (hash_id,user_id,type,plan_id,server_id,order_id,volume,day,price,request_date,state)
+            VALUES (?,?,?,?,?,?,'0',?,?,?,'pending')");
+        $stmt->bind_param("sisiiiiii",$hash_id,$from_id,$type,$plan_id,$server_id,$order_id,$quotedUnits,$planprice,$time);
+    }
+    $newDraftId=achbotPayUxInsertDraft($connection,(int)$from_id,$stmt,$scoped);
     $stmt->close();
     if ($newDraftId<=0) {
         alert(\achbotMessage('renewal.extensions.alert.ae271a2d1d'),true);
@@ -830,24 +854,30 @@ if (preg_match('/^increaseAVolume([1-9][0-9]{0,9})$/D', $data, $match)) {
 
 
     $agentBought = (bool)$orderInfo['agent_bought'];
-    $eligibility=achbotOrderAddonEligibility($connection,$orderInfo,'volume');
-    if (!$eligibility['eligible']) {
-        alert(\achbotMessage($eligibility['reason']==='expired'
-            ? 'renewal.extensions.alert.96762b5a42' : 'payment.pre_payment.alert.fa55f5201f'),true);
+    try {
+        $scoped=achbotAddonSchema($connection);
+        $addonContext=$scoped?achbotAddonContext($connection,$orderInfo):null;
+        $eligibility=achbotOrderAddonEligibility($connection,$orderInfo,'volume',$addonContext);
+        if (!$eligibility['eligible']) {
+            alert(\achbotMessage($eligibility['reason']==='expired'
+                ? 'renewal.extensions.alert.96762b5a42' : 'payment.pre_payment.alert.fa55f5201f'),true);
+            return;
+        }
+        if ($scoped) $catalog=achbotAddonCatalog($connection,'volume',$addonContext);
+        else {
+            $q=$connection->prepare("SELECT * FROM increase_plan ORDER BY id");
+            $q->execute();$catalog=$q->get_result()->fetch_all(MYSQLI_ASSOC);$q->close();
+        }
+    } catch(Throwable $error) {
+        alert(\achbotMessage('payment.pre_payment.alert.fa55f5201f'),true);
         return;
     }
-
-    $stmt = $connection->prepare("SELECT * FROM `increase_plan`");
-    $stmt->execute();
-    $res = $stmt->get_result();
-    $stmt->close();
-
-    if ($res->num_rows == 0) {
+    if (!$catalog) {
         alert(\achbotMessage('renewal.extensions.alert.e6c27b8039'));
         exit;
     }
     $keyboard = [];
-    while ($cat = $res->fetch_assoc()) {
+    foreach ($catalog as $cat) {
         if ((int)$cat['price']<0 || achbotWholeServiceUnits($cat['volume'],achbotServiceVolumeMax())===null) continue;
         $id = $cat['id'];
         $title = $cat['volume'];
@@ -899,10 +929,22 @@ if(preg_match('/^increaseVolumePlan(?<orderId>[1-9][0-9]{0,9})_(?<volumeId>[1-9]
         return;
     }
 
-    $eligibility=achbotOrderAddonEligibility($connection,$orderInfo,'volume');
-    if (!$eligibility['eligible']) {
-        alert(\achbotMessage($eligibility['reason']==='expired'
-            ? 'renewal.extensions.alert.f5aab191db' : 'payment.pre_payment.alert.fa55f5201f'),true);
+    try {
+        $scoped=achbotAddonSchema($connection);
+        $addonContext=$scoped?achbotAddonContext($connection,$orderInfo):null;
+        $eligibility=achbotOrderAddonEligibility($connection,$orderInfo,'volume',$addonContext);
+        if (!$eligibility['eligible']) {
+            alert(\achbotMessage($eligibility['reason']==='expired'
+                ? 'renewal.extensions.alert.f5aab191db' : 'payment.pre_payment.alert.fa55f5201f'),true);
+            return;
+        }
+        if ($scoped) {
+            $res=achbotAddonOfferById($connection,'volume',$addonContext,(int)$match['volumeId']);
+            if (!$res) throw new RuntimeException('addon_offer_not_applicable');
+            $planprice=$res['price'];$plangb=$res['volume'];
+        }
+    } catch(Throwable $error) {
+        alert(\achbotMessage('payment.pre_payment.alert.fa55f5201f'),true);
         return;
     }
     $agentBought = $orderInfo['agent_bought'];
@@ -923,11 +965,18 @@ if(preg_match('/^increaseVolumePlan(?<orderId>[1-9][0-9]{0,9})_(?<volumeId>[1-9]
 	$server_id = $orderInfo['server_id'];
 	$order_id = $match['orderId'];
 	
-	$stmt = $connection->prepare("INSERT INTO `pays` (`hash_id`, `user_id`, `type`, `plan_id`, `server_id`, `order_id`, `volume`, `day`, `price`, `request_date`, `state`)
-								VALUES (?, ?, ?, ?, ?, ?, ?, '0', ?, ?, 'pending')");
-	$type = "INCREASE_VOLUME_$data";
-	$stmt->bind_param("sisiiiiii", $hash_id, $from_id, $type, $plan_id, $server_id, $order_id, $plangb, $planprice, $time);
-	$newDraftId=achbotPayUxInsertDraft($connection,(int)$from_id,$stmt);
+    $type = "INCREASE_VOLUME_$data";
+    if ($scoped) {
+        $addonQuote=achbotAddonQuote($orderInfo,$addonContext,'volume',$res,(int)$planprice);
+        $stmt=$connection->prepare("INSERT INTO pays (hash_id,user_id,type,plan_id,server_id,order_id,volume,day,price,request_date,state,addon_scope_snapshot)
+            VALUES (?,?,?,?,?,?,?,'0',?,?,'pending',?)");
+        $stmt->bind_param("sisiiiiiis",$hash_id,$from_id,$type,$plan_id,$server_id,$order_id,$plangb,$planprice,$time,$addonQuote);
+    } else {
+        $stmt=$connection->prepare("INSERT INTO pays (hash_id,user_id,type,plan_id,server_id,order_id,volume,day,price,request_date,state)
+            VALUES (?,?,?,?,?,?,?,'0',?,?,'pending')");
+        $stmt->bind_param("sisiiiiii",$hash_id,$from_id,$type,$plan_id,$server_id,$order_id,$plangb,$planprice,$time);
+    }
+    $newDraftId=achbotPayUxInsertDraft($connection,(int)$from_id,$stmt,$scoped);
 	$stmt->close();
 	if ($newDraftId<=0) {
 	    alert(\achbotMessage('renewal.extensions.alert.ae271a2d1d'),true);

@@ -1,0 +1,92 @@
+{
+  "version": 1,
+  "project_issue": "https://github.com/ach1992/bot-refactor/issues/107",
+  "purpose": "Current-only scoped extension admin UI; no modification of historical V0-V9 or accepted post-V9 copy",
+  "audience": "admin",
+  "topic": "addon_scopes",
+  "entries": {
+    "choose_scope": {
+      "value": "دامنهٔ این بستهٔ تمدید را انتخاب کنید:",
+      "source_paths": [
+        "src/Plans/AddonAdmin.php"
+      ]
+    },
+    "global": {
+      "value": "🌐 همهٔ سرورها (Global)",
+      "source_paths": [
+        "src/Plans/AddonAdmin.php"
+      ]
+    },
+    "server": {
+      "value": "🖥 سرور مشخص",
+      "source_paths": [
+        "src/Plans/AddonAdmin.php"
+      ]
+    },
+    "groups": {
+      "value": "👥 گروه‌های PasarGuard در یک سرور",
+      "source_paths": [
+        "src/Plans/AddonAdmin.php"
+      ]
+    },
+    "choose_server": {
+      "value": "سرور موردنظر را انتخاب کنید:",
+      "source_paths": [
+        "src/Plans/AddonAdmin.php"
+      ]
+    },
+    "choose_groups": {
+      "value": "شناسهٔ گروه‌های فعال PasarGuard را با ویرگول بفرستید؛ نمونه: 3,7\nاین پیشنهاد فقط برای اشتراک‌هایی با دقیقاً همین مجموعهٔ گروه اعمال می‌شود.",
+      "source_paths": [
+        "src/Plans/AddonAdmin.php"
+      ]
+    },
+    "units_price": {
+      "value": "مقدار و قیمت را به صورت «تعداد-قیمت» بفرستید؛ نمونه: 10-25000",
+      "source_paths": [
+        "src/Plans/AddonAdmin.php"
+      ]
+    },
+    "scope_global": {
+      "value": "🌐 Global",
+      "source_paths": [
+        "src/Plans/AddonAdmin.php"
+      ]
+    },
+    "scope_server": {
+      "value": {
+        "text": "🖥 Server {server}",
+        "parameters": [
+          "server"
+        ]
+      },
+      "source_paths": [
+        "src/Plans/AddonAdmin.php"
+      ]
+    },
+    "scope_groups": {
+      "value": {
+        "text": "👥 Server {server} · Groups {groups}",
+        "parameters": [
+          "server",
+          "groups"
+        ]
+      },
+      "source_paths": [
+        "src/Plans/AddonAdmin.php"
+      ]
+    },
+    "saved": {
+      "value": "✅ پیشنهاد تمدید و محدودهٔ آن ثبت شد.",
+      "source_paths": [
+        "src/Plans/AddonAdmin.php"
+      ]
+    },
+    "unavailable": {
+      "value": "⚠️ ذخیره یا بررسی دامنه تأیید نشد؛ تغییر مالی اعمال نشده است. وضعیت را بررسی کرده و دوباره تلاش کنید.",
+      "source_paths": [
+        "src/Plans/AddonAdmin.php"
+      ]
+    }
+  }
+}

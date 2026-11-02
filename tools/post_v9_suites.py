@@ -83,7 +83,7 @@ def run_admin(tmp: str) -> tuple[dict, dict]:
           'archived_two_staff_assignments_red':True,
           'staff_reintroduction_red':['admins_list','special_admins'],
           'unrelated_template_mutation_red':['primary_owner','synthetic_database_user'],
-          'runtime_members':119,'private_config_read':False,'external_calls':0}),
+          'runtime_members':121,'private_config_read':False,'external_calls':0}),
         ('instance_content','test_owner_instance_content.py',99,
          {'result':'PASS','cases':99,'source_real':True,'socket_only_original_schema':True,'no_external_calls':True,
           'lock_join_baseline_red':True,'lock_join_baseline_source':'4548705609518f741d14375c9d47739eb302c3b6'}),

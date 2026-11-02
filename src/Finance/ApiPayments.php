@@ -281,6 +281,11 @@ function achbotApiPaymentLocalSubjectContext(mysqli $db,array $pay,bool $locked=
                 ($type!=='RENEW_ACCOUNT'&&achbotPinnedAddonUnits($pay)===null)||
                 !achbotSupportsOrder($db,$oid,$pid>0?$pid:null,$uid>0?$uid:null,$locked))return null;
             $order=$read('orders_list',$oid);if(!$order)return null;
+            if ($type!=='RENEW_ACCOUNT') {
+                require_once __DIR__.'/../Plans/Addons.php';
+                if (achbotAddonSchema($db) && !achbotAddonPayLocal($db,$pay,$order)) return null;
+                $context['addon_scope_snapshot']=(string)($pay['addon_scope_snapshot']??'');
+            }
         } else return null;
         $context['server']=$server;
         // Capacity and display metadata are not provider/quote identity.

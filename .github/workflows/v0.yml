@@ -235,6 +235,20 @@ jobs:
           set -euo pipefail
           php -r 'exit(PHP_VERSION_ID >= 80500 && PHP_VERSION_ID < 80600 ? 0 : 1);'
           python3 tools/post_v9_shards.py run --index "$SHARD_INDEX" --count 8 --report "$RUNNER_TEMP/shard-$SHARD_INDEX.json"
+      - name: Scoped extensions native contract on the existing MariaDB shard
+        if: matrix.index == 5
+        run: |
+          set -euo pipefail
+          python3 tools/test_post_v9_scoped_addons.py --run-disposable > "$RUNNER_TEMP/scoped-addons.json"
+          cat "$RUNNER_TEMP/scoped-addons.json"
+      - name: Preserve standalone scoped-extension evidence
+        if: matrix.index == 5
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: php85-scoped-addons
+          path: ${{ runner.temp }}/scoped-addons.json
+          if-no-files-found: error
+          retention-days: 14
       - name: Upload exact family evidence
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -395,7 +409,7 @@ jobs:
           mkdir -p "$bundle"
           python3 tools/package_post_v9.py create --output "$bundle/runtime.zip"
           python3 tools/package_post_v9.py verify --zip "$bundle/runtime.zip" --manifest "$bundle/runtime.zip.manifest.json"
-          for id in 001_marzban_panel_group_id 003_payment_attempts 004_automatic_renewal_attempts 005_wallet_adjustments 006_payment_message_refs 007_service_effects 008_referral_awards 009_bank_buy_invoice_claims 011_provider_identity 012_shared_provider_storage 013_remove_obsolete_order_columns; do
+          for id in 001_marzban_panel_group_id 003_payment_attempts 004_automatic_renewal_attempts 005_wallet_adjustments 006_payment_message_refs 007_service_effects 008_referral_awards 009_bank_buy_invoice_claims 011_provider_identity 012_shared_provider_storage 013_remove_obsolete_order_columns 014_api_payment_evidence 015_scoped_addons; do
             cp "migrations/post-v9/$id.sql" "$bundle/$id.sql"
             (cd "$bundle" && sha256sum "$id.sql" > "$id.sha256")
           done

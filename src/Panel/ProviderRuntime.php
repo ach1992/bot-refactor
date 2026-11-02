@@ -431,7 +431,12 @@ function achbotPgPinPayment(mysqli $db,int $payId): void {
 }
 function achbotPgQuote(mysqli $db,int $payId,bool $lock=false): array {
     achbotPgLoad();
-    $s=$db->prepare('SELECT provider_snapshot,server_id,plan_id,type,order_id FROM pays WHERE id=?'.($lock?' FOR UPDATE':''));$s->bind_param('i',$payId);$s->execute();$p=$s->get_result()->fetch_assoc();$s->close();
+    require_once __DIR__.'/../Plans/Addons.php';
+    $migrated=achbotAddonSchema($db);
+    $columns='provider_snapshot,server_id,plan_id,type,order_id'.
+        ($migrated?',addon_scope_snapshot':'');
+    $s=$db->prepare('SELECT '.$columns.' FROM pays WHERE id=?'.($lock?' FOR UPDATE':''));
+    $s->bind_param('i',$payId);$s->execute();$p=$s->get_result()->fetch_assoc();$s->close();
     $snap=json_decode((string)($p['provider_snapshot']??''),true,64,JSON_THROW_ON_ERROR);
     if (!is_array($snap) || ($snap['provider']??'')!=='pasarguard') throw new RuntimeException('pg_quote_snapshot_missing');
     $panel=achbotProviderPanelForSnapshot($db,$snap);$current=achbotPgServerPanel($db,(int)$p['server_id']);
@@ -452,6 +457,14 @@ function achbotPgQuote(mysqli $db,int $payId,bool $lock=false): array {
         $preflight=achbotPgRead($ctx['panel'],$ctx['identity']);
         if (($preflight['success']??false)!==true) throw new RuntimeException('pg_quote_read_unverified');
         if (!achbotPgManaged($preflight['user'])) throw new RuntimeException('pg_native_schedule_conflict');
+        if (preg_match('/^INCREASE_(?:DAY|VOLUME)_[1-9][0-9]*_[1-9][0-9]*$/D',(string)$p['type']) &&
+            ($p['addon_scope_snapshot']??null)!==null) {
+            $addon=json_decode($p['addon_scope_snapshot'],true,32,JSON_THROW_ON_ERROR);
+            if (!is_array($addon) || ($addon['version']??null)!==1 ||
+                !is_array($addon['native_groups']??null) ||
+                $addon['native_groups']!==$preflight['user']['group_ids'])
+                throw new RuntimeException('pg_addon_native_groups_changed');
+        }
     }
     return $snap;
 }
@@ -753,6 +766,23 @@ function achbotPgServiceEdit(mysqli $db,int $serverId,array $change,?array $gift
         $intent=achbotPgBeginMutation($db,$ctx,$key,'edit',['phase'=>'claimed','requested_units'=>$requestUnits]);
         $read=achbotPgRead($ctx['panel'],$ctx['identity']);
         if (($read['success']??false)!==true) throw new RuntimeException('pg_edit_read_unverified');
+        // The durable account fence is already owned. Compare fresh native
+        // Groups again before composing ANY remote mutation; a change after
+        // quote preflight must be deferred for reconciliation, not repriced.
+        if ((int)($change['pay_id']??0)>0 && achbotAddonSchema($db)) {
+            $pid=(int)$change['pay_id'];
+            $q=$db->prepare('SELECT addon_scope_snapshot FROM pays WHERE id=?');
+            $q->bind_param('i',$pid);$q->execute();
+            $lockedQuote=$q->get_result()->fetch_assoc();$q->close();
+            if (!$lockedQuote) throw new RuntimeException('pg_addon_quote_unavailable');
+            if (($lockedQuote['addon_scope_snapshot']??null)!==null) {
+                $scoped=json_decode($lockedQuote['addon_scope_snapshot'],true,32,JSON_THROW_ON_ERROR);
+                if (!is_array($scoped) || ($scoped['version']??null)!==1 ||
+                    !is_array($scoped['native_groups']??null) ||
+                    $scoped['native_groups']!==$read['user']['group_ids'])
+                    throw new RuntimeException('pg_addon_groups_changed_after_claim');
+            }
+        }
         $absolute=achbotPgEditChanges($read['user'],$change);
         $intent=achbotPgPersistMutationIntent($db,$ctx,$intent,[
             'absolute'=>$absolute,'reset_usage'=>isset($change['volume']),
