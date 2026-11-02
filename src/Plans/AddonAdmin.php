@@ -219,9 +219,9 @@ function achbotAddonAdminHandle(mysqli $db): bool {
                 require_once __DIR__.'/../Panel/ProviderAdmin.php';
                 $panel=achbotPgServerPanel($db,$sid);$result=achbotPgCheck($panel);
                 if (($result['success']??false)!==true) throw new RuntimeException('addon_admin_groups_unverified');
+                $eligible=achbotPgEligibleGroupIds($result);
                 $list=[];foreach($result['groups'] as $g)
-                    if (!$g['is_disabled'] && (!is_array($result['allowed_group_ids']) ||
-                        in_array($g['id'],$result['allowed_group_ids'],true)))
+                    if (in_array($g['id'],$eligible,true))
                         $list[]=$g['id'].' = '.$g['name'];
                 if (!$list) throw new RuntimeException('addon_admin_no_groups');
                 if (!achbotIntervalWrite($db,'','',[],false,'addon:groups',$flow)) {
@@ -258,6 +258,14 @@ function achbotAddonAdminHandle(mysqli $db): bool {
         $reason=$error instanceof RuntimeException &&
             preg_match('/^addon_[a-z_]+$/D',$error->getMessage())===1
             ?$error->getMessage():get_class($error);
+        // A prior Telegram prompt clicked after this editor advanced is
+        // normal user navigation, not a failed database write. Avoid noisy
+        // operational errors or a false financial failure report.
+        if ($reason==='addon_admin_stale_callback') {
+            sendMessage(\achbotMessage($step==='none'
+                ?'addon_scopes.unavailable':'addon_scopes.filter_blocked'),$cancelKey);
+            return true;
+        }
         $update=$GLOBALS['update']??null;
         error_log('achbot_addon_admin_deferred reason='.$reason.
             ' actor='.(int)$from_id.' update='.(int)($update->update_id??0).' step='.$step);

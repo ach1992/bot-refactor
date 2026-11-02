@@ -18,6 +18,8 @@ import test_v6_native as native
 import test_v8_native as purchase
 import test_post_v9_service_unit_guards as unit_routes
 import test_post_v9_pasarguard_client as pg
+import test_post_v9_finance_routes as hosted_routes
+import test_post_v9_purchases as source_stages
 
 ROOT=Path(__file__).resolve().parents[1]
 DB=purchase.SIDE[1]
@@ -423,19 +425,19 @@ def test(php:bool)->dict:
             yes(q("SELECT step FROM users WHERE userid=9001")=='addon:scope' and
                 not any('addonPickServer' in json.dumps(e) for e in stale_scope['events']),
                 'old_scope_prompt_new_update_does_not_advance_new_session')
-            stale_group=callback(key(first['events'],'addonScopeGroups_'),seq=812)
+            stale_group=callback(key(first['events'],'addonScopeGroups_'),seq=813)
             yes(q("SELECT step FROM users WHERE userid=9001")=='addon:scope' and
                 not any('addonPickServer' in json.dumps(e) for e in stale_group['events']),
                 'old_group_scope_prompt_cannot_change_new_editor')
-            new_servers=callback(new_scope,seq=813)
-            stale_picker=callback(old_picker,seq=814)
+            new_servers=callback(new_scope,seq=814)
+            stale_picker=callback(old_picker,seq=815)
             yes(q("SELECT step FROM users WHERE userid=9001")=='addon:server' and
                 not any('addon_scopes.units_price' in json.dumps(e) for e in stale_picker['events']),
                 'old_server_picker_new_update_does_not_select_new_offer')
-            callback(key(new_servers['events'],'addonPickServer2_'),seq=815)
+            callback(key(new_servers['events'],'addonPickServer2_'),seq=816)
             yes(q("SELECT step FROM users WHERE userid=9001")=='addon:units',
                 'current_session_server_picker_still_works')
-            message('Cancel',seq=816)
+            message('Cancel',seq=817)
             yes(q("SELECT step FROM users WHERE userid=9001")=='none',
                 'cancel_current_session_clears_editor')
 
@@ -445,47 +447,47 @@ def test(php:bool)->dict:
             old_delete=key(filtered_day['events'],'deleteDayPlan401_')
             old_price=key(filtered_day['events'],'changeDayPlanPrice401_')
             q("UPDATE increase_day SET server_id=4,scope_hash='"+sha('S:4')+"' WHERE id=401")
-            stale_delete=callback(old_delete,seq=817)
+            stale_delete=callback(old_delete,seq=818)
             yes(q("SELECT COUNT(*) FROM increase_day WHERE id=401 AND server_id=4")=='1',
                 'stale_day_delete_after_rescope_cannot_remove_new_offer')
-            stale_start=callback(old_price,seq=818)
+            stale_start=callback(old_price,seq=819)
             yes(q("SELECT step FROM users WHERE userid=9001")=='none',
                 'stale_day_price_button_after_server_change_cannot_start_edit')
             q("UPDATE increase_day SET server_id=2,scope_hash='"+sha('S:2')+"' WHERE id=401")
-            fresh_view=callback('addonFilterDayServer2',seq=819)
+            fresh_view=callback('addonFilterDayServer2',seq=820)
             fresh_price=key(fresh_view['events'],'changeDayPlanPrice401_')
-            callback(fresh_price,seq=820)
+            callback(fresh_price,seq=821)
             q("UPDATE increase_day SET server_id=4,scope_hash='"+sha('S:4')+"' WHERE id=401")
-            typed=message('5555',seq=821)
+            typed=message('5555',seq=822)
             yes(q("SELECT price FROM increase_day WHERE id=401")=='1100' and
                 q("SELECT step FROM users WHERE userid=9001")!='none',
                 'stale_day_price_completion_does_not_overwrite_changed_scope')
-            message('Cancel',seq=822)
+            message('Cancel',seq=823)
             q("UPDATE increase_day SET server_id=2,scope_hash='"+sha('S:2')+"' WHERE id=401")
-            fresh_day=callback('addonFilterDayServer2',seq=823)
-            callback(key(fresh_day['events'],'changeDayPlanPrice401_'),seq=824)
-            message('5555',seq=825)
+            fresh_day=callback('addonFilterDayServer2',seq=824)
+            callback(key(fresh_day['events'],'changeDayPlanPrice401_'),seq=825)
+            message('5555',seq=826)
             yes(q("SELECT price FROM increase_day WHERE id=401")=='5555',
                 'fresh_day_price_edit_updates_exact_current_revision')
-            fresh_day=callback('addonFilterDayServer2',seq=826)
-            callback(key(fresh_day['events'],'deleteDayPlan401_'),seq=827)
+            fresh_day=callback('addonFilterDayServer2',seq=827)
+            callback(key(fresh_day['events'],'deleteDayPlan401_'),seq=828)
             yes(q("SELECT COUNT(*) FROM increase_day WHERE id=401")=='0',
                 'fresh_day_delete_removes_only_current_revision')
-            fresh_volume=callback('addonFilterVolumeServer2',seq=828)
+            fresh_volume=callback('addonFilterVolumeServer2',seq=829)
             volume_update=key(fresh_volume['events'],'changeVolumePlanVolume301_')
-            callback(volume_update,seq=829)
+            callback(volume_update,seq=830)
             q("UPDATE increase_plan SET price=777 WHERE id=301")
-            message('22',seq=830)
+            message('22',seq=831)
             yes(q("SELECT volume FROM increase_plan WHERE id=301")=='10',
                 'stale_volume_quantity_after_offer_repricing_is_refused')
-            message('Cancel',seq=831)
-            fresh_volume=callback('addonFilterVolumeServer2',seq=832)
-            callback(key(fresh_volume['events'],'changeVolumePlanVolume301_'),seq=833)
-            message('22',seq=834)
+            message('Cancel',seq=832)
+            fresh_volume=callback('addonFilterVolumeServer2',seq=833)
+            callback(key(fresh_volume['events'],'changeVolumePlanVolume301_'),seq=834)
+            message('22',seq=835)
             yes(q("SELECT volume FROM increase_plan WHERE id=301")=='22',
                 'fresh_volume_quantity_edit_succeeds')
-            fresh_volume=callback('addonFilterVolumeServer2',seq=835)
-            callback(key(fresh_volume['events'],'deleteVolumePlan301_'),seq=836)
+            fresh_volume=callback('addonFilterVolumeServer2',seq=836)
+            callback(key(fresh_volume['events'],'deleteVolumePlan301_'),seq=837)
             yes(q("SELECT COUNT(*) FROM increase_plan WHERE id=301")=='0',
                 'fresh_volume_delete_succeeds')
             # Full current financial route: real owner/claim/debit/payment and
@@ -552,7 +554,7 @@ def test(php:bool)->dict:
                     "day,price,request_date,state,message_id,chat_id,addon_scope_snapshot) "
                     f"VALUES('{key_name}',1001,'INCREASE_{kind.upper()}_41_{offer}',7,2,")
                 statement+=f"41,{units if kind=='volume' else 0},{units if kind=='day' else 0},"
-                statement+=f"{final_price},{now},'{ 'pending' if method=='wallet' else 'have_sent' }',"
+                statement+=f"{final_price},{now},'{ 'pending' if method in ('wallet','hosted') else 'have_sent' }',"
                 statement+=f"703,'9001','{snap}')"
                 q(statement)
             finance_checked=0
@@ -621,6 +623,85 @@ def test(php:bool)->dict:
                 int(q('SELECT COUNT(*) FROM increase_order'))==before_records+1,
                 'simultaneous_wallet_claim_only_one_effect_and_single_debit')
             finance_checked+=1;provider_dispatches+=1
+
+            # Run the REAL hosted doAction payment/claim/service-effect/
+            # audit/ledger-closure path. Its existing owned finance driver
+            # intercepts only payment/provider/Telegram transports. The
+            # native account is resolved through the controlled Marzban HTTP
+            # adapter; there is no real payment or remote network traffic.
+            stage=w/'scoped-hosted-source'
+            source_stages.stage_source(stage,True)
+            hosted_driver=w/'owned-finance-guard.php'
+            hosted_source=hosted_routes.PHP_DRIVER.replace(
+                'error_reporting(E_ALL & ~E_DEPRECATED);','error_reporting(E_ALL);')
+            yes(hosted_source!=hosted_routes.PHP_DRIVER,
+                'hosted_scoped_native_driver_deprecations_strict')
+            hosted_driver.write_text(hosted_source)
+            def hosted_call(hash_name,provider,**options):
+                pay_id=int(q(f"SELECT id FROM pays WHERE hash_id='{hash_name}'"))
+                return hosted_routes.run_php(w,e,stage,dict(route='do_action',get={},
+                    pay_row_id=pay_id,provider=provider,
+                    marzban_username='owned-native-fixture',
+                    existing_native_accounts=['owned-native-fixture'],
+                    **options))
+            def hosted_invoice(kind,provider,ref):
+                issue(kind,'hosted',ref)
+                q(f"UPDATE pays SET payid='{ref}-external' WHERE hash_id='{ref}'")
+                q("INSERT INTO payment_attempts "
+                    "(pay_row_id,provider,order_hash,provider_reference,"
+                    "checkout_url,quote_amount,quote_currency,local_amount_toman,stage) "
+                    f"SELECT id,'{provider}',hash_id,'{ref}-external',"
+                    f"'https://fixture.invalid/pay/{ref}',price,'toman',price,'pending' "
+                    f"FROM pays WHERE hash_id='{ref}'")
+            for kind,provider in [('day','nextpay'),('volume','zarinpal')]:
+                ref='scoped_'+kind+'_'+provider+'_hosted'
+                hosted_invoice(kind,provider,ref)
+                before_wallet=int(q("SELECT wallet FROM users WHERE userid=1001"))
+                before_audit=int(q("SELECT COUNT(*) FROM increase_order"))
+                res=hosted_call(ref,provider)
+                result=[v['result'] for v in res['events']
+                        if v['name']=='do_action_result']
+                row=q("SELECT p.state,a.stage,a.provider_status FROM pays p "
+                    "JOIN payment_attempts a ON a.pay_row_id=p.id "
+                    f"WHERE p.hash_id='{ref}'")
+                yes(result==['delivered'] and row=='paid\tdone\tdelivered' and
+                    int(q("SELECT COUNT(*) FROM increase_order"))==before_audit+1 and
+                    int(q("SELECT wallet FROM users WHERE userid=1001"))==before_wallet and
+                    any('/api/user/' in str(path) for path in res['network_calls']),
+                    'scoped_hosted_'+provider+'_'+kind+'_verified_effect_terminal_ledger')
+                repeated=hosted_call(ref,provider)
+                yes(not repeated['network_calls'] and
+                    int(q("SELECT COUNT(*) FROM increase_order"))==before_audit+1,
+                    'scoped_hosted_'+provider+'_'+kind+'_replay_does_not_dispatch')
+                finance_checked+=1
+            # A verified upstream hosted charge whose remote effect loses
+            # acknowledgement remains PAID / REVIEW, not silently retried.
+            held_ref='scoped_day_hosted_uncertain'
+            hosted_invoice('day','nextpay',held_ref)
+            pre_audit=int(q("SELECT COUNT(*) FROM increase_order"))
+            result=hosted_call(held_ref,'nextpay',
+                marzban_transport_failure=True)
+            state=q("SELECT p.state,a.stage FROM pays p JOIN payment_attempts a "
+                f"ON a.pay_row_id=p.id WHERE p.hash_id='{held_ref}'")
+            repeated=hosted_call(held_ref,'nextpay')
+            yes(state=='paid\treview' and
+                int(q("SELECT COUNT(*) FROM increase_order"))==pre_audit and
+                not repeated['network_calls'],
+                'hosted_unknown_remote_ack_preserves_durable_paid_review_hold')
+            finance_checked+=1
+            # A newly invalid offer is rejected *before* a hosted claim,
+            # while preserving all original frozen quote accounting fields.
+            drift_ref='scoped_volume_hosted_scope_drift'
+            hosted_invoice('volume','zarinpal',drift_ref)
+            q("UPDATE increase_plan SET server_id=4,scope_hash='"+sha('S:4')+"' WHERE id=702")
+            blocked=hosted_call(drift_ref,'zarinpal')
+            drift_state=q("SELECT p.state,a.stage FROM pays p JOIN payment_attempts a "
+                f"ON a.pay_row_id=p.id WHERE p.hash_id='{drift_ref}'")
+            yes(drift_state=='pending\tpending' and
+                not any('/api/user/' in str(path) for path in blocked['network_calls']),
+                'hosted_offer_scope_drift_stops_before_paid_claim_or_provider_edit')
+            q("UPDATE increase_plan SET server_id=2,scope_hash='"+sha('S:2')+"' WHERE id=702")
+            finance_checked+=1
     return {'status':'PASS','cases':len(checks),'checks':checks,
             'sql_only':not php,'actual_provider_calls':0,'actual_payment_calls':0,
             'local_financial_claims_tested':finance_checked if php else 0,
