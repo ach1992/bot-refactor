@@ -30,11 +30,70 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 0
           persist-credentials: false
-      - name: Classify exact source impact conservatively
+      - name: Classify exact source impact using trusted base code
         id: impact
         run: |
           set -euo pipefail
-          python3 tools/ci_plan.py --github-event --github-output --output "$RUNNER_TEMP/validation-plan.json"
+          # The PR's checkout can modify the classifier. Use original base source.
+          base_sha="$(python3 - <<'PYBASE'
+          import json, os
+          with open(os.environ["GITHUB_EVENT_PATH"], encoding="utf-8") as fp:
+              event = json.load(fp)
+          if os.environ["GITHUB_EVENT_NAME"] == "pull_request":
+              print(event.get("pull_request", {}).get("base", {}).get("sha", ""))
+          elif os.environ["GITHUB_EVENT_NAME"] == "push":
+              print(event.get("before", ""))
+          PYBASE
+          )"
+          if [[ "$base_sha" =~ ^[0-9a-f]{40}$ ]] &&
+             git merge-base --is-ancestor "$base_sha" HEAD &&
+             git cat-file -e "$base_sha:tools/ci_plan.py"; then
+            git show "$base_sha:tools/ci_plan.py" > "$RUNNER_TEMP/trusted-ci-plan.py"
+            python3 - "$RUNNER_TEMP/trusted-ci-plan.py" <<'PYTRUST'
+          import importlib.util, os, pathlib, sys
+          spec = importlib.util.spec_from_file_location("achbot_trusted_ci_plan", sys.argv[1])
+          module = importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(module)
+          module.main(["--github-event", "--github-output", "--output",
+                       os.path.join(os.environ["RUNNER_TEMP"], "validation-plan.json")],
+                      repo=pathlib.Path.cwd())
+          PYTRUST
+          else
+            # Missing base means full validation; never execute the candidate's classifier.
+            python3 - <<'PYFULL'
+          import json, os, pathlib, re, subprocess
+          with open(os.environ["GITHUB_EVENT_PATH"], encoding="utf-8") as fp:
+              event = json.load(fp)
+          if event.get("repository", {}).get("full_name") != os.environ["GITHUB_REPOSITORY"]:
+              raise SystemExit("Untrusted repository identity")
+          name = os.environ["GITHUB_EVENT_NAME"]
+          head = (event.get("pull_request", {}).get("head", {}).get("sha")
+                  if name == "pull_request" else
+                  event.get("after") if name == "push" else os.environ["GITHUB_SHA"])
+          checkout = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
+          tree = subprocess.check_output(["git", "rev-parse", "HEAD^{tree}"], text=True).strip()
+          if not isinstance(head, str) or not re.fullmatch(r"[0-9a-f]{40}", head) or checkout != head:
+              raise SystemExit("Source identity mismatch on full fallback")
+          if name == "push" and os.environ["GITHUB_SHA"] != head:
+              raise SystemExit("Push source mismatch")
+          result = {"scope":"full", "head":head, "tree":tree, "base":None,
+                    "changed_paths":[], "reason":"trusted_base_unavailable",
+                    "shards":list(range(1,9))}
+          pathlib.Path(os.environ["RUNNER_TEMP"], "validation-plan.json").write_text(
+              json.dumps(result, sort_keys=True) + "\n", encoding="utf-8")
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as fp:
+              fp.write("scope=full\nshards=[1,2,3,4,5,6,7,8]\n")
+          print(json.dumps(result, sort_keys=True))
+          PYFULL
+          fi
+      - name: Keep exact-source docs or no-impact classification receipt
+        if: steps.impact.outputs.scope == 'docs' || steps.impact.outputs.scope == 'none'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: docs-no-impact-plan
+          path: ${{ runner.temp }}/validation-plan.json
+          if-no-files-found: error
+          retention-days: 14
       - name: Attest a prior successful same-tree PR run on main only
         id: reuse
         env:
@@ -70,7 +129,7 @@ jobs:
   selected:
     name: selected-current-php85
     needs: [plan]
-    if: needs.plan.outputs.scope != 'full' && needs.plan.outputs.reuse != 'true'
+    if: (needs.plan.outputs.scope == 'source' || needs.plan.outputs.scope == 'cron') && needs.plan.outputs.reuse != 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     steps:
@@ -217,6 +276,8 @@ jobs:
               expected = ("skipped", "skipped", "skipped")
           elif env["REUSED"] == "false" and env["SCOPE"] in ("source", "cron"):
               expected = ("success", "skipped", "skipped")
+          elif env["REUSED"] == "false" and env["SCOPE"] in ("docs", "none"):
+              expected = ("skipped", "skipped", "skipped")
           elif env["REUSED"] == "false" and env["SCOPE"] == "full":
               expected = ("skipped", "success", "success")
           else:
@@ -225,13 +286,13 @@ jobs:
               raise SystemExit(f"Missing or failed required evidence: {statuses!r} != {expected!r}")
           PY
       - name: Retrieve selected source/Cron evidence
-        if: needs.plan.outputs.reuse != 'true' && needs.plan.outputs.scope != 'full'
+        if: needs.plan.outputs.reuse != 'true' && (needs.plan.outputs.scope == 'source' || needs.plan.outputs.scope == 'cron')
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: selected-current-report
           path: ${{ runner.temp }}/selected-evidence
       - name: Validate selected evidence and source identity
-        if: needs.plan.outputs.reuse != 'true' && needs.plan.outputs.scope != 'full'
+        if: needs.plan.outputs.reuse != 'true' && (needs.plan.outputs.scope == 'source' || needs.plan.outputs.scope == 'cron')
         env:
           EXPECTED_SCOPE: ${{ needs.plan.outputs.scope }}
         run: |
@@ -254,6 +315,40 @@ jobs:
               assert "cron" in report.get("executed", [])
           PY
           cp "$RUNNER_TEMP/selected-evidence/selected-current.json" "$RUNNER_TEMP/selected-validation.json"
+      - name: Retrieve trusted lightweight provenance receipt
+        if: needs.plan.outputs.scope == 'docs' || needs.plan.outputs.scope == 'none'
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: docs-no-impact-plan
+          path: ${{ runner.temp }}/lightweight-evidence
+      - name: Verify docs/no-impact acceptance without runtime tests
+        if: needs.plan.outputs.scope == 'docs' || needs.plan.outputs.scope == 'none'
+        env:
+          EXPECTED_SCOPE: ${{ needs.plan.outputs.scope }}
+        run: |
+          set -euo pipefail
+          python3 - "$RUNNER_TEMP/lightweight-evidence/validation-plan.json" <<'PYLIGHT'
+          import json, os, subprocess, sys
+          with open(sys.argv[1], encoding="utf-8") as fp:
+              receipt = json.load(fp)
+          head = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
+          tree = subprocess.check_output(["git", "rev-parse", "HEAD^{tree}"], text=True).strip()
+          scope = os.environ["EXPECTED_SCOPE"]
+          if (scope not in ("docs", "none") or receipt.get("scope") != scope
+                  or receipt.get("head") != head or receipt.get("tree") != tree
+                  or receipt.get("shards") != []
+                  or not isinstance(receipt.get("changed_paths"), list)):
+              raise SystemExit("Untrusted or mismatched lightweight acceptance receipt")
+          if scope == "docs" and (
+                  receipt.get("reason") != "ordinary_docs_only"
+                  or not receipt["changed_paths"]):
+              raise SystemExit("Documentation change not proven")
+          if scope == "none" and (
+                  receipt.get("reason") != "no_effective_changes"
+                  or receipt["changed_paths"]):
+              raise SystemExit("No-impact tree identity not proven")
+          print(f"Attested {scope}: HEAD={head}, tree={tree}; PHP/native tests not executed")
+          PYLIGHT
       - name: Retrieve full PHP 8.5 foundation
         if: needs.plan.outputs.reuse != 'true' && needs.plan.outputs.scope == 'full'
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
@@ -293,6 +388,7 @@ jobs:
           assert receipt.get("main_tree") == tree
           PY
       - name: Rebuild and verify current HEAD source package, never reuse a prior ZIP
+        if: needs.plan.outputs.scope != 'docs' && needs.plan.outputs.scope != 'none'
         run: |
           set -euo pipefail
           bundle="$RUNNER_TEMP/achbot-current"
@@ -329,6 +425,9 @@ jobs:
           echo "Head: $(git rev-parse HEAD)" >> "$GITHUB_STEP_SUMMARY"
           echo "Tree: $(git rev-parse HEAD^{tree})" >> "$GITHUB_STEP_SUMMARY"
           echo "Selected scope: $SCOPE, source-pipeline reuse: $REUSED" >> "$GITHUB_STEP_SUMMARY"
+          if [[ "$SCOPE" == docs || "$SCOPE" == none ]]; then
+            echo "Trusted Git provenance only: no PHP tests, native shards, MariaDB or runtime package executed." >> "$GITHUB_STEP_SUMMARY"
+          fi
           echo "Only complete eight-family PHP 8.5 aggregation is full current-runtime acceptance. Prior frozen V0-V9 PHP 8.1/8.4 execution results remain separate historical evidence; not executed or relabelled by this workflow. No live bot, provider, or financial operation is authorized." >> "$GITHUB_STEP_SUMMARY"
           if [[ -f "$RUNNER_TEMP/post-v9-acceptance.json" ]]; then
             python3 - "$RUNNER_TEMP/post-v9-acceptance.json" >> "$GITHUB_STEP_SUMMARY" <<'PY'
@@ -340,6 +439,7 @@ jobs:
           PY
           fi
       - name: Upload independently rebuilt exact-HEAD source and truthful evidence
+        if: needs.plan.outputs.scope != 'docs' && needs.plan.outputs.scope != 'none'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: achbot-current-${{ github.event.pull_request.head.sha || github.sha }}
