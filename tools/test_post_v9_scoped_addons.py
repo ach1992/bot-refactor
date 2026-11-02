@@ -682,6 +682,14 @@ function achbotNotifyAdmins(...$args){$GLOBALS['events'][]=['event'=>'ADMIN_NOTI
                 'error_reporting(E_ALL & ~E_DEPRECATED);','error_reporting(E_ALL);')
             yes(hosted_source!=hosted_routes.PHP_DRIVER,
                 'hosted_scoped_native_driver_deprecations_strict')
+            # A fresh native GET is a legitimate eligibility preflight.
+            # Detect only outbound PUT effects with a dedicated transport
+            # spy; URL-only counters cannot distinguish GET from PUT.
+            put_hook="    if (str_contains($handle->url, '/api/user/') && $handle->method==='PUT') {"
+            yes(hosted_source.count(put_hook)==1,
+                'hosted_effect_transport_spy_attaches_once')
+            hosted_source=hosted_source.replace(put_hook,put_hook+
+                "\n        $GLOBALS['events'][]=['name'=>'marzban_put_attempt'];",1)
             hosted_driver.write_text(hosted_source)
             def hosted_call(hash_name,provider,**options):
                 pay_id=int(q(f"SELECT id FROM pays WHERE hash_id='{hash_name}'"))
@@ -758,12 +766,25 @@ function achbotNotifyAdmins(...$args){$GLOBALS['events'][]=['event'=>'ADMIN_NOTI
             drift_ref='scoped_volume_hosted_scope_drift'
             hosted_invoice('volume','zarinpal',drift_ref)
             q("UPDATE increase_plan SET server_id=4,scope_hash='"+sha('S:4')+"' WHERE id=702")
+            drift_audit_before=int(q('SELECT COUNT(*) FROM increase_order'))
+            drift_wallet_before=int(q('SELECT wallet FROM users WHERE userid=1001'))
             blocked=hosted_call(drift_ref,'zarinpal')
             drift_state=q("SELECT p.state,a.stage FROM pays p JOIN payment_attempts a "
                 f"ON a.pay_row_id=p.id WHERE p.hash_id='{drift_ref}'")
-            yes(drift_state=='pending\tpending' and
-                not any('/api/user/' in str(path) for path in blocked['network_calls']),
-                'hosted_offer_scope_drift_stops_before_paid_claim_or_provider_edit')
+            put_events=[ev for ev in blocked['events']
+                        if ev.get('name')=='marzban_put_attempt']
+            drift_confirmed=(drift_state=='pending\tpending' and
+                not put_events and
+                int(q('SELECT COUNT(*) FROM increase_order'))==drift_audit_before and
+                int(q('SELECT wallet FROM users WHERE userid=1001'))==drift_wallet_before)
+            if not drift_confirmed:
+                raise AssertionError('hosted_offer_scope_drift_failed_closed observed='+
+                    repr({'state':drift_state,'put_attempts':len(put_events),
+                          'audit_before':drift_audit_before,
+                          'audit_after':int(q('SELECT COUNT(*) FROM increase_order')),
+                          'wallet_before':drift_wallet_before,
+                          'wallet_after':int(q('SELECT wallet FROM users WHERE userid=1001'))}))
+            yes(True,'hosted_offer_scope_drift_stops_before_paid_claim_or_provider_edit')
             q("UPDATE increase_plan SET server_id=2,scope_hash='"+sha('S:2')+"' WHERE id=702")
             finance_checked+=1
     return {'status':'PASS','cases':len(checks),'checks':checks,
