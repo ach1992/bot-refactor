@@ -40,60 +40,101 @@ if (!function_exists('proc_open') || !is_file(PHP_BINARY) || !is_executable(PHP_
 // A per-installation flock covers the ENTIRE four-worker batch. Never unlink
 // the lock: replacing its inode would let overlapping invocations run at once.
 //
-// Pre-provision this private directory OUTSIDE the served site (mode 0700,
-// owned by the account executing Cron). It is not created at runtime. The
-// stock /run/lock is shared/writable, so it cannot safely hold this lock.
+// Missing directories are provisioned by the top-level CLI coordinator only.
+// Keep locks outside the installation and preserve every existing inode/mode.
+// The stock /run/lock is shared/writable and is not a private lock directory.
 $installDirectory = realpath(dirname(__DIR__));
 $requestedLockDirectory = getenv('ACHBOT_CRON_LOCK_DIR') ?: '/var/lib/achbot/cron-locks';
-$lockDirectory = realpath($requestedLockDirectory);
 $effectiveUid = function_exists('posix_geteuid') ? posix_geteuid() : false;
-$directoryStat = ($lockDirectory !== false) ? @lstat($lockDirectory) : false;
-$trusted = (
-    $installDirectory !== false
-    && $lockDirectory !== false
-    // Use an absolute canonical configured path: do not follow a preempted
-    // directory alias in a shared ancestor into an unintended lock location.
-    && rtrim($requestedLockDirectory, DIRECTORY_SEPARATOR) === $lockDirectory
-    && $effectiveUid !== false
-    && $directoryStat !== false
-    && is_dir($lockDirectory)
-    && is_writable($lockDirectory)
-    && $lockDirectory !== $installDirectory
-    && !str_starts_with($lockDirectory, $installDirectory . DIRECTORY_SEPARATOR)
-    && $directoryStat['uid'] === $effectiveUid
-    && ($directoryStat['mode'] & 0170000) === 0040000
-    && ($directoryStat['mode'] & 0700) === 0700
-    && ($directoryStat['mode'] & 0077) === 0
-);
-
-// Verify every canonical ancestor: only root or the Cron user may own it.
-// An ancestor writable by others is trusted only if it is root-owned and
-// sticky (e.g. /tmp used by isolated tests). The final lock directory is
-// ALWAYS private, even when its parent is root-owned and sticky.
-if ($trusted) {
-    $parent = $lockDirectory;
-    while (true) {
-        $entry = @lstat($parent);
-        if (
-            $entry === false
-            || ($entry['mode'] & 0170000) !== 0040000
-            || ($entry['uid'] !== 0 && $entry['uid'] !== $effectiveUid)
-            || (
-                ($entry['mode'] & 0022) !== 0
-                && !($entry['uid'] === 0 && ($entry['mode'] & 01000) !== 0)
-            )
-        ) {
-            $trusted = false;
-            break;
+$normalizedLockDirectory = rtrim($requestedLockDirectory, DIRECTORY_SEPARATOR);
+$lockDirectory = false;
+$trusted = false;
+$cronLockDirectoryFailure = 'invalid_absolute_path';
+$cronLockFailurePath = $requestedLockDirectory;
+$cronLockDirectoryTrusted = static function ($entry, bool $private = false) use ($effectiveUid): bool {
+    if (!is_array($entry) || ($entry['mode'] & 0170000) !== 0040000)
+        return false; // lstat rejects symlinks as well as non-directories.
+    if ($private)
+        return $entry['uid'] === $effectiveUid
+            && ($entry['mode'] & 0700) === 0700
+            && ($entry['mode'] & 0077) === 0;
+    return ($entry['uid'] === 0 || $entry['uid'] === $effectiveUid)
+        && (($entry['mode'] & 0022) === 0
+            || ($entry['uid'] === 0 && ($entry['mode'] & 01000) !== 0));
+};
+if ($effectiveUid === false) {
+    $cronLockDirectoryFailure = 'effective_uid_unavailable';
+} elseif (!function_exists('flock')) {
+    $cronLockDirectoryFailure = 'flock_unavailable';
+} elseif ($installDirectory !== false
+    && str_starts_with($normalizedLockDirectory, DIRECTORY_SEPARATOR)
+    && !preg_match('~//|(?:^|/)\.{1,2}(?:/|$)|[\x00-\x1f\x7f]~D', $normalizedLockDirectory)
+    && $normalizedLockDirectory !== $installDirectory
+    && !str_starts_with($normalizedLockDirectory, $installDirectory . DIRECTORY_SEPARATOR)
+) {
+    clearstatcache(true, DIRECTORY_SEPARATOR);
+    $trusted = $cronLockDirectoryTrusted(@lstat(DIRECTORY_SEPARATOR));
+    $cronLockPreparationPath = '';
+    foreach (explode(DIRECTORY_SEPARATOR, substr($normalizedLockDirectory, 1)) as $cronLockPreparationPart) {
+        if (!$trusted) break;
+        $cronLockPreparationPath .= DIRECTORY_SEPARATOR . $cronLockPreparationPart;
+        $cronLockFailurePath = $cronLockPreparationPath;
+        clearstatcache(true, $cronLockPreparationPath);
+        $entry = @lstat($cronLockPreparationPath);
+        if ($entry === false) {
+            if ($workerMode !== null) {
+                $trusted = false;
+                $cronLockDirectoryFailure = 'child_cannot_create_directory';
+                break;
+            }
+            if (!function_exists('mkdir')) {
+                $trusted = false;
+                $cronLockDirectoryFailure = 'mkdir_unavailable';
+                break;
+            }
+            // Validate one parent at a time, never recursive mkdir through an
+            // unchecked existing directory. Concurrent first runs may win mkdir.
+            $oldUmask = umask(0077);
+            try {
+                @mkdir($cronLockPreparationPath, 0700);
+            } finally {
+                umask($oldUmask);
+            }
+            clearstatcache(true, $cronLockPreparationPath);
+            $entry = @lstat($cronLockPreparationPath);
+            if ($entry === false) {
+                $trusted = false;
+                $cronLockDirectoryFailure = 'cannot_create_missing_directory';
+                break;
+            }
         }
-        if ($parent === DIRECTORY_SEPARATOR) {
-            break;
+        $private = $cronLockPreparationPath === $normalizedLockDirectory;
+        $trusted = $cronLockDirectoryTrusted($entry, $private);
+        $cronLockDirectoryFailure = $private ? 'unsafe_private_directory' : 'unsafe_ancestor';
+    }
+    if ($trusted) {
+        clearstatcache();
+        $lockDirectory = realpath($normalizedLockDirectory);
+        $trusted = $lockDirectory === $normalizedLockDirectory && is_writable($lockDirectory);
+        $cronLockDirectoryFailure = 'noncanonical_or_unwritable_directory';
+        // Revalidate the entire chain after creation, before opening a lease.
+        $parent = $normalizedLockDirectory;
+        while ($trusted) {
+            clearstatcache(true, $parent);
+            $trusted = $cronLockDirectoryTrusted(@lstat($parent), $parent === $normalizedLockDirectory);
+            if (!$trusted) {
+                $cronLockFailurePath = $parent;
+                $cronLockDirectoryFailure = 'directory_changed_during_preparation';
+                break;
+            }
+            if ($parent === DIRECTORY_SEPARATOR) break;
+            $parent = dirname($parent);
         }
-        $parent = dirname($parent);
     }
 }
-if (!$trusted || !function_exists('flock')) {
-    fwrite(STDERR, "AChBot Cron: secure lock directory unavailable; no tasks started\n");
+if (!$trusted) {
+    $safePath = json_encode($cronLockFailurePath, JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE);
+    fwrite(STDERR, "AChBot Cron: secure lock directory unavailable (reason={$cronLockDirectoryFailure}, path={$safePath}); no tasks started\n");
     exit(78);
 }
 $lockFile = $lockDirectory . DIRECTORY_SEPARATOR . 'achbot-cron-'
