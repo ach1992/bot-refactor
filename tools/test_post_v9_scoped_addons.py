@@ -300,7 +300,7 @@ def test(php:bool)->dict:
                     'chat':{'id':actor_id,'type':'private'}}}})
             def message(text,actor_id=9001,seq=804,route='admin'):
                 return actor(route=route,actor=actor_id,data='',text=text,frame={
-                    'update_id':seq,'message':{'message_id':701,'text':text,
+                    'update_id':seq,'message':{'message_id':702,'text':text,
                     'from':{'id':actor_id},'chat':{'id':actor_id,'type':'private'}}})
             listing=callback('increaseAVolume41',actor_id=1001,route='extensions')
             events=json.dumps(listing['events'])
@@ -490,6 +490,17 @@ def test(php:bool)->dict:
             callback(key(fresh_volume['events'],'deleteVolumePlan301_'),seq=837)
             yes(q("SELECT COUNT(*) FROM increase_plan WHERE id=301")=='0',
                 'fresh_volume_delete_succeeds')
+            # Another administrator can reassign a native Group-set between
+            # message rendering and a stale deletion, without touching the ID.
+            old_group_delete=key(filtered_volume['events'],'deleteVolumePlan302_')
+            q("UPDATE increase_plan SET group_ids='[3]',scope_hash='"+sha('P:2:3')+"' "
+                "WHERE id=302")
+            rejected_group=callback(old_group_delete,seq=838)
+            yes(q("SELECT COUNT(*) FROM increase_plan WHERE id=302 AND group_ids='[3]'")=='1' and
+                rejected_group['provider_writes']==0,
+                'stale_group_set_delete_after_other_admin_reassignment_rejected')
+            q("UPDATE increase_plan SET group_ids='[1]',scope_hash='"+sha('P:2:1')+"' "
+                "WHERE id=302")
             # Full current financial route: real owner/claim/debit/payment and
             # audit/terminal SQL, real common provider-dispatch guard, fake ONLY
             # the final Marzban HTTP adapter. No network is reachable.
@@ -515,7 +526,9 @@ def test(php:bool)->dict:
             settle_driver=w/'scoped-addon-settlement.php'
             strict=unit_routes.PHP.replace(
                 'if($n===E_DEPRECATED)return true;','')
-            settle_driver.write_text(strict.replace(stub,adapter))
+            delivery_spy='''function editKeys(...$args){$GLOBALS['events'][]=['event'=>'DELIVERY_KEYS'];}
+function achbotNotifyAdmins(...$args){$GLOBALS['events'][]=['event'=>'ADMIN_NOTICE'];}'''
+            settle_driver.write_text(strict.replace(stub,adapter+"\n"+delivery_spy))
             def settle(kind,method,key_name,mode='ok'):
                 cb=('payIncrease'+('Day' if kind=='day' else '')+'WithWallet'
                     if method=='wallet' and kind=='day' else

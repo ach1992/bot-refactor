@@ -421,8 +421,8 @@ if (preg_match('/^approveIncreaseDay(.*)/', $data, $match) && achbotAdminCanFor(
         if (!$claimed || $connection->commit()!==true)
             throw new RuntimeException('day_extension_claim_unconfirmed');
 
-        unset($markup[count($markup)-1]);
-
+        // The old markup keyboard is not part of this settlement path.
+        // Its unset() used an uninitialized variable after a durable claim.
         if (achbotSupportsPanel($serverType)) {
             $response = achbotApplyServiceEdit($connection,$server_id, ['pay_id'=>(int)$payId, 'remark' => $remark, 'plus_day' => $volume]);
         } else {
@@ -1266,8 +1266,8 @@ if (preg_match('/^approveIncreaseVolume(.*)/', $data, $match) && achbotAdminCanF
         if (!$claimed || $connection->commit()!==true)
             throw new RuntimeException('volume_extension_claim_unconfirmed');
 
-        unset($markup[count($markup)-1]);
-
+        // The old markup keyboard is not part of this settlement path.
+        // Its unset() used an uninitialized variable after a durable claim.
         if (achbotSupportsPanel($serverType)) {
             $response = achbotApplyServiceEdit($connection,$server_id, ['pay_id'=>(int)$payId, 'remark' => $remark, 'plus_volume' => $volume]);
         } else {
