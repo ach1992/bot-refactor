@@ -12,7 +12,7 @@ import os
 import re
 import subprocess
 import sys
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SHA = re.compile(r"[0-9a-f]{40}\Z")
@@ -20,11 +20,13 @@ CRON = "settings/cronRunner.php"
 CRON_TEST = "tools/test_post_v9_cron_runner.py"
 PREPARATION_START = b"$installDirectory = realpath(dirname(__DIR__));\n"
 PREPARATION_END = b"$lockFile = $lockDirectory . DIRECTORY_SEPARATOR . 'achbot-cron-'\n"
-POLICY_NAMES = {
-    "agents.md", "skill.md", "project-spec.md", "refactor-stages.md",
-    "security.md", "testing.md", "validation.md", "policy.md", "ci.md",
-    "contributing.md", "codeowners",
-}
+# Only explicitly reviewed informational entrypoints can use the fast docs gate.
+# Existing post-V9 contracts, installation guides and migration/release notes
+# are intentionally NOT exempted; newly introduced paths default to full.
+ORDINARY_DOC_PATHS = frozenset({
+    "README.md",
+    "docs/post-v9/README.md",
+})
 
 
 class PlanError(RuntimeError):
@@ -57,21 +59,11 @@ def exact_sha(value) -> bool:
 
 
 def ordinary_doc(path: str) -> bool:
-    parts = PurePosixPath(path).parts
-    if not parts or any(part in (".", "..") or part.startswith(".") for part in parts):
-        return False
-    lowered = [part.lower() for part in parts]
-    if any(part in POLICY_NAMES or part in {"policy","policies","ci","validation"}
-           or part.endswith(("-policy.md","-testing.md","-validation.md"))
-           for part in lowered):
-        return False
-    return path == "README.md" or (
-        path.startswith("docs/post-v9/") and path.endswith(".md")
-    )
+    return path in ORDINARY_DOC_PATHS
 
 
 def changes(repo: Path, base: str, head: str) -> list[tuple[str, str]]:
-    raw = git(repo, "diff", "--no-ext-diff", "--no-textconv", "--no-renames",
+    raw = git(repo, "diff", "--no-ext-diff", "--no-textconv",
               "--find-renames", "--name-status", "-z", base, head, "--")
     if not raw:
         return []
@@ -135,12 +127,21 @@ def classify(repo: Path, base: str, head: str,
              changed: list[tuple[str, str]]) -> tuple[str, str]:
     if not changed:
         return "none", "no_effective_changes"
+    # Git rename heuristics may report a moved-and-rewritten document as
+    # independent D+A records. Never grant lightweight acceptance to a pair.
+    statuses = {status for status, _ in changed}
+    if "A" in statuses and "D" in statuses:
+        return "full", "ambiguous_add_delete"
     cron = False
     for status, path in changed:
         if path not in (CRON, CRON_TEST) and not ordinary_doc(path):
             return "full", "shared_policy_or_unknown_path"
         if status not in ("A","M","D"):
             return "full", "file_type_or_ambiguous_change"
+        # A standalone addition/removal can hide an undetected rename; a
+        # readme must already exist at the same path on both sides.
+        if ordinary_doc(path) and status != "M":
+            return "full", "document_added_or_removed"
         old = entry(repo,base,path)
         new = entry(repo,head,path)
         if ((status != "A" and not regular(old))

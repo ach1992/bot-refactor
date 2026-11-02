@@ -2,13 +2,25 @@
 
 This document applies to **new development after RC21** in `ach1992/bot-refactor`. Published releases and immutable historical commits retain their original evidence. It does not authorize installation, database changes, payments or production Cron operations.
 
+## Documentation boundary
+
+The lightweight `docs` scope uses a **positive exact-path allowlist**, not
+an extension or directory-wide exemption. Existing post-V9 financial contracts,
+security and safety requirements, installation instructions, release and
+migration guides, provider agreements, validation criteria and unknown Markdown
+remain `full` even when only their prose changes. Both informational README
+entrypoints must be modified in place; new/deleted documents and ambiguous
+delete/add pairs (including low-similarity moves that Git cannot recognize as
+renames) also require `full`. Changing this classification policy itself
+requires full validation.
+
 ## Decision and selection
 
 `tools/ci_plan.py` chooses exactly one current-source scope from the Git base/head of a clean checkout. For PR validation it runs the classifier from the **trusted base Git object**, never the potentially modified PR checkout. If base proof is unavailable, a fixed workflow fallback forces full validation:
 
 | Scope | Accepted changes | Executed checks | Claim |
 | --- | --- | --- | --- |
-| `docs` | Ordinary root README and non-policy post-V9 Markdown only; regular unchanged file modes and no renames | Verified Git identity, ancestry and lightweight required status; no PHP, MariaDB, shards or ZIP | Documentation provenance only; no runtime tests executed |
+| `docs` | Only explicitly allowlisted informational entrypoints (`README.md` and `docs/post-v9/README.md`) modified in place; no additions, deletions, renames or mode changes | Verified Git identity, ancestry and lightweight required status; no PHP, MariaDB, shards or ZIP | Documentation provenance only; no runtime tests executed |
 | `none` | Clean, same-tree/no-effective-diff commit with verified base ancestry | Verified Git identity, ancestry and lightweight required status; no PHP, MariaDB, shards or ZIP | No source-impact attestation; no runtime tests executed |
 | `source` | Compatibility with earlier bounded selection (not returned for ordinary docs by the new classifier) | Runtime source checks and PHP lint, if selected by trusted classifier | Targeted only; `complete: false` |
 | `cron` | Only the precisely delimited lock-directory preparation region in `settings/cronRunner.php`, the dedicated Cron regression file and ordinary documentation | Source checks plus actual isolated Cron coordinator regression | Targeted only; `complete: false` |
