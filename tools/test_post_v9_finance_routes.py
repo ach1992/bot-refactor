@@ -735,8 +735,11 @@ def run_php(work, env, stage, spec, db=DB):
     script=work/'owned-finance-guard.php'
     if not script.exists():
         script.write_text(PHP_DRIVER)
+    # PHP -n disables production's standard ctype extension as well as the
+    # outbound transports. Scoped quote validation calls ctype_digit(), so
+    # load ctype explicitly without exposing real curl functions/network.
     cmd=['php','-n','-d','extension=mysqlnd','-d','extension=mysqli',
-         '-d','extension=curl','-d','allow_url_fopen=0',
+         '-d','extension=curl','-d','extension=ctype','-d','allow_url_fopen=0',
          '-d','disable_functions=curl_init,curl_setopt,curl_setopt_array,curl_exec,curl_close,curl_error,curl_getinfo,exec,shell_exec,system,passthru,popen,proc_open,mail',
          str(script),str(stage),db,str(work/'mysql.sock'),json.dumps(spec)]
     p=subprocess.run(cmd,env=env,cwd=work,capture_output=True,timeout=20)

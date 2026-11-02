@@ -682,12 +682,6 @@ function achbotNotifyAdmins(...$args){$GLOBALS['events'][]=['event'=>'ADMIN_NOTI
                 'error_reporting(E_ALL & ~E_DEPRECATED);','error_reporting(E_ALL);')
             yes(hosted_source!=hosted_routes.PHP_DRIVER,
                 'hosted_scoped_native_driver_deprecations_strict')
-            # Strict, read-only predicate inspector for failed synthetic
-            # hosted claims. No claims, debits, updates or remote writes.
-            anchor="    } elseif ($spec['route'] === 'do_action') {"
-            yes(hosted_source.count(anchor)==1,
-                'hosted_probe_bound_to_exact_financial_route')
-            hosted_source=hosted_source.replace(anchor,"    } elseif ($spec['route'] === 'scoped_probe') {\n        require_once $root.'/src/Plans/Addons.php';\n        $id=(int)$spec['pay_row_id'];\n        $q=$connection->prepare('SELECT * FROM pays WHERE id=?');\n        $q->bind_param('i',$id);$q->execute();\n        $pay=$q->get_result()->fetch_assoc();$q->close();\n        $oid=(int)($pay['order_id']??0);\n        $q=$connection->prepare('SELECT * FROM orders_list WHERE id=?');\n        $q->bind_param('i',$oid);$q->execute();\n        $order=$q->get_result()->fetch_assoc();$q->close();\n        $facts=['pay_found'=>(bool)$pay,'order_found'=>(bool)$order];\n        if ($pay && $order) {\n            $kind=str_starts_with($pay['type'],'INCREASE_DAY_')?'day':'volume';\n            $facts['order_plan_ok']=achbotSupportsOrder($connection,$oid,\n                (int)$pay['plan_id'],(int)$pay['user_id']);\n            $facts['local_quote']=achbotAddonPayLocal($connection,$pay,$order);\n            try {\n                $ctx=achbotAddonContext($connection,$order);\n                $facts['context_provider']=$ctx['provider'];\n                $facts['context_verified']=$ctx['observation']['verified']??null;\n                $facts['base_eligible']=achbotOrderAddonEligibility(\n                    $connection,$order,$kind,$ctx);\n                $facts['scoped_quote_eligible']=achbotAddonPayEligible(\n                    $connection,$pay,$order,$ctx);\n            } catch (Throwable $problem) {\n                $facts['context_error']=get_class($problem).':'.$problem->getMessage();\n            }\n            $facts['subject']=achbotSupportsPaymentSubject($connection,$pay);\n        }\n        $GLOBALS['events'][]=['name'=>'scoped_probe','facts'=>$facts];\n"+anchor,1)
             hosted_driver.write_text(hosted_source)
             def hosted_call(hash_name,provider,**options):
                 pay_id=int(q(f"SELECT id FROM pays WHERE hash_id='{hash_name}'"))
@@ -731,16 +725,8 @@ function achbotNotifyAdmins(...$args){$GLOBALS['events'][]=['event'=>'ADMIN_NOTI
                     hosted_observed['wallet']==before_wallet and
                     hosted_observed['native_read_or_edit_count']>0)
                 if not confirmed:
-                    probe=hosted_routes.run_php(w,e,stage,dict(
-                        route='scoped_probe',get={},
-                        pay_row_id=int(q("SELECT id FROM pays WHERE hash_id='"+ref+"'")),
-                        marzban_username='owned-native-fixture',
-                        existing_native_accounts=['owned-native-fixture']))
-                    details=[event.get('facts') for event in probe['events']
-                             if event.get('name')=='scoped_probe']
                     raise AssertionError('scoped_hosted_'+provider+'_'+kind+
                         '_verified_effect_terminal_ledger observed='+repr(hosted_observed)+
-                        ' probe='+repr(details)+
                         ' expected='+repr({'outcome':['delivered'],
                             'row':'paid\tdone\tdelivered',
                             'audit':before_audit+1,'wallet':before_wallet,
