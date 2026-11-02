@@ -122,6 +122,11 @@ def test(php:bool)->dict:
         yes(claims.count(True)==1 and q("SELECT COUNT(*) FROM increase_plan "
                 "WHERE volume=777 AND server_id=2")=='1',
             'concurrent_duplicate_scoped_offer_insert_one_unique_winner')
+        # The concurrency case is not a customer offer fixture. Keep the
+        # subsequent exact per-quantity catalog assertions independent.
+        q("DELETE FROM increase_plan WHERE volume=777 AND server_id=2")
+        yes(q("SELECT COUNT(*) FROM increase_plan WHERE volume=777")=='0',
+            'concurrent_offer_fixture_isolation_restored')
         try:
             q("INSERT INTO increase_plan(volume,price,server_id,scope_hash) "
               f"VALUES(10,121,2,'{sha('S:2')}')")
