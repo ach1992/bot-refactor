@@ -28,7 +28,7 @@ def scoped_addon_restore(sides):
           manifest.get('audience')=='admin' and manifest.get('topic')=='addon_scopes',
           'addon_catalog_manifest_identity')
     expected=manifest.get('entries')
-    check(type(expected) is dict and len(expected)==12,'addon_catalog_key_inventory')
+    check(type(expected) is dict and len(expected)==13,'addon_catalog_key_inventory')
     check(type(sides) is dict and set(sides)=={'user','admin'},'addon_catalog_audiences')
     check(all('addon_scopes.' not in key for key in sides['user']), 'addon_catalog_cross_audience')
     real={key:value for key,value in sides['admin'].items() if key.startswith('addon_scopes.')}

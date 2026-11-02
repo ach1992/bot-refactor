@@ -26,6 +26,17 @@ function achbotAddonAdminScopeKeys(): string {
         [['text'=>\achbotMessage('addon_scopes.groups'),'callback_data'=>'addonScopeGroups']]
     ]],JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE);
 }
+/** Read-only catalog filters; the label still comes from the admin catalog. */
+function achbotAddonAdminFilterKeys(string $kind): array {
+    if (!in_array($kind,['day','volume'],true)) throw new InvalidArgumentException('addon_kind_invalid');
+    $part=$kind==='day'?'Day':'Volume';
+    return [[
+        ['text'=>\achbotMessage('addon_scopes.filter_all'),'callback_data'=>"addonFilter{$part}All"],
+        ['text'=>\achbotMessage('addon_scopes.global'),'callback_data'=>"addonFilter{$part}Global"],
+        ['text'=>\achbotMessage('addon_scopes.server'),'callback_data'=>"addonFilter{$part}Servers"]
+    ]];
+}
+
 function achbotAddonAdminServers(mysqli $db,string $scope): array {
     $where=$scope==='groups'?" AND c.type='pasarguard'":'';
     $rows=$db->query("SELECT i.id,i.title,c.type FROM server_info i INNER JOIN server_config c ON c.id=i.id
@@ -103,7 +114,11 @@ function achbotAddonAdminNext(mysqli $db,array $flow): void {
 function achbotAddonAdminHandle(mysqli $db): bool {
     global $data,$text,$from_id,$admin,$userInfo,$cancelKey;
     $cb=(string)($data??'');$step=(string)($userInfo['step']??'');
+    $filterMatch=[];
+    $filterOwned=preg_match('/^addonFilter(Day|Volume)(All|Global|Servers|Server[1-9][0-9]*)$/D',
+        $cb,$filterMatch)===1;
     $owned=in_array($cb,['dayPlanSettings','volumePlanSettings','addNewDayPlan','addNewVolumePlan'],true) ||
+        $filterOwned ||
         preg_match('/^addon(?:EditScope(?:Day|Volume)[1-9][0-9]*|Scope(?:Global|Server|Groups)|PickServer[1-9][0-9]*)$/D',$cb) ||
         str_starts_with($step,'addon:');
     if (!$owned) return false;
@@ -111,6 +126,32 @@ function achbotAddonAdminHandle(mysqli $db): bool {
         if (!achbotAddonSchema($db)) return false;
         if (!achbotAdminCanFor($db,(int)$from_id,(int)$admin,'plans'))
             throw new RuntimeException('addon_admin_denied');
+        if ($filterOwned) {
+            // Catalog navigation does not mutate plans and cannot interrupt a
+            // pending monetary edit. The same access and frame gate applies.
+            if ($step!=='none') throw new RuntimeException('addon_admin_editor_in_progress');
+            $kind=$filterMatch[1]==='Day'?'day':'volume';
+            $part=$filterMatch[1];$mode=$filterMatch[2];
+            if ($mode==='All') {achbotIntervalShow($db,$kind);return true;}
+            if ($mode==='Global') {achbotIntervalShow($db,$kind,'global');return true;}
+            if ($mode==='Servers') {
+                $list=achbotAddonAdminServers($db,'server');
+                if (!$list) throw new RuntimeException('addon_admin_no_servers');
+                $keys=[];
+                foreach($list as $server)
+                    $keys[]=[['text'=>(int)$server['id'].' - '.$server['title'].' ('.$server['type'].')',
+                        'callback_data'=>"addonFilter{$part}Server".$server['id']]];
+                $keys[]=[['text'=>\achbotMessage('addon_scopes.filter_all'),
+                    'callback_data'=>"addonFilter{$part}All"]];
+                sendMessage(\achbotMessage('addon_scopes.choose_server'),json_encode(
+                    ['inline_keyboard'=>$keys],JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE));
+                return true;
+            }
+            if (!preg_match('/^Server([1-9][0-9]*)$/D',$mode,$m) ||
+                !achbotAddonAdminValidServer($db,(int)$m[1],'server'))
+                throw new RuntimeException('addon_admin_server_missing');
+            achbotIntervalShow($db,$kind,'server',(int)$m[1]);return true;
+        }
         if ($cb==='dayPlanSettings' || $cb==='volumePlanSettings') {
             if ($step!=='none') throw new RuntimeException('addon_admin_editor_in_progress');
             achbotIntervalShow($db,$cb==='dayPlanSettings'?'day':'volume');return true;

@@ -33,7 +33,7 @@ function achbotIntervalFrame($update,int $actor,string $callback,?string $text):
 }
 
 // Persisted permissions decide whether an old admin keyboard/editor may write.
-$achbotIntervalOwned=preg_match('/^(?:dayPlanSettings|volumePlanSettings|addNewDayPlan|addNewVolumePlan|deleteDayPlan[1-9][0-9]*|deleteVolumePlan[1-9][0-9]*|changeDayPlan(?:Price|Day)[1-9][0-9]*|changeVolumePlan(?:Price|Volume)[1-9][0-9]*|addon(?:Scope(?:Global|Server|Groups)|PickServer[1-9][0-9]*|EditScope(?:Day|Volume)[1-9][0-9]*))$/D',(string)($data??'')) ||
+$achbotIntervalOwned=preg_match('/^(?:dayPlanSettings|volumePlanSettings|addNewDayPlan|addNewVolumePlan|deleteDayPlan[1-9][0-9]*|deleteVolumePlan[1-9][0-9]*|changeDayPlan(?:Price|Day)[1-9][0-9]*|changeVolumePlan(?:Price|Volume)[1-9][0-9]*|addon(?:Scope(?:Global|Server|Groups)|PickServer[1-9][0-9]*|EditScope(?:Day|Volume)[1-9][0-9]*|Filter(?:Day|Volume)(?:All|Global|Servers|Server[1-9][0-9]*)))$/D',(string)($data??'')) ||
     preg_match('/^(?:addNewDayPlan|addNewVolumePlan|changeDayPlan(?:Price|Day)[1-9][0-9]*|changeVolumePlan(?:Price|Volume)[1-9][0-9]*|addon:[a-z]+)$/D',(string)($userInfo['step']??''));
 $achbotIntervalMessage=(string)($data??'')==='';
 if ($achbotIntervalOwned) {
@@ -139,11 +139,21 @@ function achbotIntervalWriteNotice(): void {
 
 require_once __DIR__.'/AddonAdmin.php';
 
-function achbotIntervalShow(mysqli $db,string $kind): void {
+function achbotIntervalShow(mysqli $db,string $kind,?string $filter=null,?int $serverId=null): void {
     global $buttonValues;
     $day=$kind==='day';$table=$day?'increase_day':'increase_plan';
     $migrated=achbotAddonSchema($db);
-    $q=$db->prepare("SELECT * FROM $table ORDER BY id");$q->execute();$rows=$q->get_result()->fetch_all(MYSQLI_ASSOC);$q->close();
+    if (($filter!==null && (!$migrated || !in_array($filter,['global','server'],true))) ||
+        ($filter==='server' && ($serverId===null || $serverId<=0)))
+        throw new RuntimeException('addon_admin_filter_invalid');
+    // Filter in SQL rather than rendering the entire catalog and hiding
+    // unrelated offers after the query. Both kinds share the same scopes.
+    $sql="SELECT * FROM $table";
+    if ($filter==='global') $sql.=' WHERE server_id IS NULL';
+    elseif ($filter==='server') $sql.=' WHERE server_id=?';
+    $q=$db->prepare($sql.' ORDER BY id');
+    if ($filter==='server') $q->bind_param('i',$serverId);
+    $q->execute();$rows=$q->get_result()->fetch_all(MYSQLI_ASSOC);$q->close();
     $keys=[];
     foreach ($rows as $row) {
         $id=(int)$row['id'];
@@ -156,9 +166,13 @@ function achbotIntervalShow(mysqli $db,string $kind): void {
                 'callback_data'=>'addonEditScope'.($day?'Day':'Volume').$id]];
         }
     }
+    if ($migrated) foreach (achbotAddonAdminFilterKeys($kind) as $row) $keys[]=$row;
     $keys[]=[['text'=>$day?\achbotMessage('plans.intervals.day_plan_settings.button.4e0a1e41c8'):\achbotMessage('plans.intervals.volume_plan_settings.button.a3524cb835'),'callback_data'=>$day?'addNewDayPlan':'addNewVolumePlan']];
     $keys[]=[['text'=>$buttonValues['back_button'],'callback_data'=>'backplan']];
-    sendMessage($day?\achbotMessage('plans.intervals.day_plan_settings.msg.0eb1f0debf'):\achbotMessage('plans.intervals.volume_plan_settings.msg.573ae79cf6'),json_encode(['inline_keyboard'=>$keys],JSON_UNESCAPED_UNICODE));
+    $title=$day?\achbotMessage('plans.intervals.day_plan_settings.msg.0eb1f0debf'):\achbotMessage('plans.intervals.volume_plan_settings.msg.573ae79cf6');
+    if ($filter!==null) $title.="\n".achbotAddonAdminScopeLabel([
+        'server_id'=>$filter==='global'?null:$serverId,'groups'=>null]);
+    sendMessage($title,json_encode(['inline_keyboard'=>$keys],JSON_UNESCAPED_UNICODE));
 }
 
 if (achbotAddonAdminHandle($connection)) return;

@@ -2179,6 +2179,7 @@ return [
     // Scope-aware day/volume extension offers (post-V9 migration 015).
     'addon_scopes' => [
         'choose_scope' => 'دامنهٔ این بستهٔ تمدید را انتخاب کنید:',
+        'filter_all' => '📋 همهٔ پیشنهادها',
         'global' => '🌐 همهٔ سرورها (Global)',
         'server' => '🖥 سرور مشخص',
         'groups' => '👥 گروه‌های PasarGuard در یک سرور',

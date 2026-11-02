@@ -1155,17 +1155,17 @@ def run_wallet(tmp: str) -> tuple[dict, dict]:
             and text_catalog.get("retired_parser_tokens")==23
             and text_catalog.get("relocation_source_ref")=="ecd30ba9192ed374703118a6c131be8809cc7b06"
             and text_catalog.get("native",{}).get("current_retired_feature_keys")==3
-            and text_catalog.get("catalog_keys")==2780+12
+            and text_catalog.get("catalog_keys")==2780+13
             and text_catalog.get("native",{}).get("editable_catalog_files")==2
             and text_catalog.get("native",{}).get("logical_topics")==27+1
-            and text_catalog.get("native",{}).get("current_catalog_keys")==2780+12
+            and text_catalog.get("native",{}).get("current_catalog_keys")==2780+13
             and text_catalog.get("native",{}).get("current_gift_admin_additions")==1
             and text_catalog.get("native",{}).get("current_gift_catalog_negative_controls")==8
             and text_catalog.get("native",{}).get("current_gift_catalog_negative_scenarios")==[
                 'missing_report','wrong_audience','changed_value','missing_parameter',
                 'reordered_parameters','unapproved_extra_key',
                 'duplicate_cross_audience_key','prior_catalog_mutation']
-            and text_catalog.get("native",{}).get("current_addon_catalog_additions")==12
+            and text_catalog.get("native",{}).get("current_addon_catalog_additions")==13
             and text_catalog.get("native",{}).get("current_addon_catalog_negative_controls")==4
             and text_catalog.get("native",{}).get("current_addon_catalog_negative_scenarios")==[
                 'addon_missing_key','addon_changed_value','addon_cross_audience','addon_extra_key']
@@ -1182,10 +1182,10 @@ def run_wallet(tmp: str) -> tuple[dict, dict]:
             and text_catalog["native"]["current_byte_preserved_keys"]
                 +text_catalog["native"]["current_style_changes"]
                 +text_catalog["native"]["current_added_admin_keys"]==2523
-            # 12 exact new scoped admin keys: 10 literal messages (1 test
+            # 13 exact new scoped admin keys: 11 literal messages (1 test
             # each), 2 parameterized (6 adversarial inputs each); two object
             # conversions, one multi-parameter case, two one-pass cases.
-            and text_catalog.get("native",{}).get("current_native_template_assertions")==4120+22
+            and text_catalog.get("native",{}).get("current_native_template_assertions")==4120+23
             and text_catalog.get("native",{}).get("current_object_conversion_templates")==268+2
             and text_catalog.get("native",{}).get("current_shared_multi_parameter_templates")==66+1
             and text_catalog.get("native",{}).get("current_one_pass_templates")==268+2
@@ -1196,7 +1196,7 @@ def run_wallet(tmp: str) -> tuple[dict, dict]:
             and text_catalog.get("native",{}).get("current_non_ascii_digit_templates")==0
             and text_catalog.get("presentation",{}).get("status")=="PASS"
             and text_catalog.get("presentation",{}).get("editable_files")==2
-            and text_catalog.get("presentation",{}).get("current_keys")==2780+12
+            and text_catalog.get("presentation",{}).get("current_keys")==2780+13
             and text_catalog.get("presentation",{}).get("numeric_template_changes")==23
             and text_catalog.get("presentation",{}).get("adjacent_emoji_violations")==0
             and text_catalog.get("presentation",{}).get("parameter_exception_count")==3
@@ -1237,7 +1237,7 @@ def run_wallet(tmp: str) -> tuple[dict, dict]:
         raise RuntimeError('Pre-style/current catalog proof mismatch: '+
             json.dumps(evidence,sort_keys=True,ensure_ascii=True))
     required_api_catalog={
-        'runtime_references':2453+12,
+        'runtime_references':2453+13,
         'api_referenced_keys':68,
         'api_dynamic_source_paths':2,
         'api_reference_source_commit':'16c1558322b578b8ca817f3c4b42818d57dcf161',

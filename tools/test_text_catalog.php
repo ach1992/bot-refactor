@@ -339,14 +339,14 @@ foreach(['user'=>['payment.api_payment.code_acknowledgement','payment.api_paymen
  $groups=eval(substr($source,$begin));$flat=[];foreach($groups as$topic=>$entries)foreach($entries as$name=>$value)$flat[$topic.'.'.$name]=$value;
  foreach($keys as$key)$reviewEntries[$audience][$key]=$flat[$key];
 }
-// Issue #107 introduces only 12 explicit current admin templates. Validate
+// Issue #107 introduces only 13 explicit current admin templates. Validate
 // the entire known addition set before restoring the original frozen proofs.
 $addonManifest=json_decode(file_get_contents(__DIR__.'/text_catalog_addon_scopes.json'),true,512,JSON_THROW_ON_ERROR);
 if(($addonManifest['version']??null)!==1 ||
    ($addonManifest['project_issue']??null)!=='https://github.com/ach1992/bot-refactor/issues/107' ||
    ($addonManifest['audience']??null)!=='admin' ||
    ($addonManifest['topic']??null)!=='addon_scopes' ||
-   !is_array($addonManifest['entries']??null) || count($addonManifest['entries'])!==12)
+   !is_array($addonManifest['entries']??null) || count($addonManifest['entries'])!==13)
  throw new RuntimeException('addon_catalog_manifest_identity_drift');
 $addonEntries=$addonManifest['entries'];
 $verifyCurrentAudienceCatalogs=static function(array $sides) use($giftKey,$giftEntry,$apiDelta,$r5Expected,$reviewEntries,$addonEntries): void {

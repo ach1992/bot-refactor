@@ -218,6 +218,11 @@ def test(php:bool)->dict:
             yes(q("SELECT step FROM users WHERE userid=9001")=='addon:scope'
                 and 'addonScopeServer' in json.dumps(first['events']),
                 'admin_wizard_starts_with_scope_selection')
+            blocked_filter=callback('addonFilterDayGlobal',seq=802)
+            yes(q("SELECT step FROM users WHERE userid=9001")=='addon:scope' and
+                'deleteDayPlan101' not in json.dumps(blocked_filter['events']) and
+                blocked_filter['provider_writes']==0,
+                'read_only_filter_cannot_interrupt_admin_edit_wizard')
             callback('addonScopeServer',seq=802)
             yes(q("SELECT step FROM users WHERE userid=9001")=='addon:server',
                 'admin_wizard_server_selection')
@@ -242,6 +247,41 @@ def test(php:bool)->dict:
                 'successful_scoped_offer_save_renders_list_without_false_failure')
             yes(final['provider_writes']==0 and stale['provider_writes']==0,
                 'admin_and_stale_telegram_frames_have_zero_provider_writes')
+
+            # Read-only list filters for BOTH kinds; no stale global offer
+            # or other server is exposed in a selected server's admin list.
+            q("INSERT INTO increase_day (id,volume,price,server_id,group_ids,scope_hash) "
+              "VALUES (503,15,1400,3,NULL,'"+sha('S:3')+"')")
+            filter_picker=callback('addonFilterDayServers',seq=805)
+            yes('addonFilterDayServer2' in json.dumps(filter_picker['events']) and
+                'addonFilterDayAll' in json.dumps(filter_picker['events']),
+                'admin_can_choose_server_filter_for_day_offers')
+            filtered_day=callback('addonFilterDayServer2',seq=806)
+            filtered_text=json.dumps(filtered_day['events'])
+            yes('deleteDayPlan401' in filtered_text and 'deleteDayPlan101' not in filtered_text and
+                'deleteDayPlan503' not in filtered_text and
+                'addonFilterDayGlobal' in filtered_text,
+                'admin_server_filter_shows_only_this_servers_day_scopes')
+            global_day=callback('addonFilterDayGlobal',seq=807)
+            global_text=json.dumps(global_day['events'])
+            yes('deleteDayPlan101' in global_text and 'deleteDayPlan401' not in global_text and
+                'deleteDayPlan503' not in global_text,
+                'admin_global_day_filter_excludes_server_scopes')
+            all_day=callback('addonFilterDayAll',seq=808)
+            all_text=json.dumps(all_day['events'])
+            yes('deleteDayPlan101' in all_text and 'deleteDayPlan401' in all_text and
+                'deleteDayPlan503' in all_text,
+                'admin_all_day_filter_restores_both_scope_classes')
+            filtered_volume=callback('addonFilterVolumeServer2',seq=809)
+            vol_text=json.dumps(filtered_volume['events'])
+            yes('deleteVolumePlan301' in vol_text and 'deleteVolumePlan302' in vol_text and
+                'deleteVolumePlan201' not in vol_text and
+                'addonFilterVolumeAll' in vol_text,
+                'admin_server_volume_filter_includes_scoped_excludes_global')
+            rejected_filter=callback('addonFilterDayServer2',actor_id=1001,seq=810)
+            yes('deleteDayPlan401' not in json.dumps(rejected_filter['events']) and
+                rejected_filter['provider_writes']==0,
+                'customer_cannot_use_read_only_admin_scope_filter')
     return {'status':'PASS','cases':len(checks),'checks':checks,
             'sql_only':not php,'actual_provider_calls':0,'actual_payment_calls':0,
             'production_database_modified':False}

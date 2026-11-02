@@ -33,6 +33,10 @@ separated set, for example 3,7; the server must be PasarGuard and the
 Group lookup must verify active/allowed Groups. Enter units-price,
 for example 10-25000. Existing offers display scope and can change
 scope; existing legacy edit/delete and administrator permissions remain.
+The list provides All, Global and Server filters for both day and volume;
+the Server view shows this server's own offers (including all of its native
+Group-set variants), rather than unrelated servers or Global-only entries.
+Filters are read-only and cannot interrupt an active admin editor.
 New steps use the existing transaction, role and Telegram update-ID fences.
 Incorrect or stale input does not change pricing.
 
