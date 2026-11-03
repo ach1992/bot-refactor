@@ -21,5 +21,9 @@
       "after_sha256": "c2876d6149de7a33ec0e8d964b64126452ba56040d36db02a70cfc767e6f4765",
       "reason": "Confirm kept connection and subscription access after sales retirement"
     }
-  }
+  },
+  "retained_unreferenced_keys": [
+    "bot.bot.addserver_name.alert.601504ae47",
+    "bot.bot.addserver_name.message.756c3005d3"
+  ]
 }

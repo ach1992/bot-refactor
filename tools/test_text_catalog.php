@@ -342,6 +342,10 @@ $removalKeys=[
 ];
 $removalManifest=json_decode(file_get_contents(__DIR__.'/text_catalog_server_removal_safety.json'),true,512,JSON_THROW_ON_ERROR);
 if (($removalManifest['version']??null)!==1 ||
+    array_keys($removalManifest)!==['version','owner_issue','previous_candidate','entries','retained_unreferenced_keys'] ||
+    ($removalManifest['retained_unreferenced_keys']??null)!==[
+      'bot.bot.addserver_name.alert.601504ae47',
+      'bot.bot.addserver_name.message.756c3005d3'] ||
     ($removalManifest['previous_candidate']??null)!==$removalParent ||
     ($removalManifest['owner_issue']??null)!=='https://github.com/ach1992/bot-refactor/issues/112' ||
     !is_array($removalManifest['entries']??null) ||

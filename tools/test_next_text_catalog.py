@@ -150,9 +150,29 @@ def main():
     }
     check(retired_shared_transfer<=entries and not
           (retired_shared_transfer & refs),'retired_shared_transfer_copy_reintroduced')
+    # R1 removed the legacy unguarded bot.php server-deletion branch.
+    # Keep only its two historical UI keys as explicit, source-proven orphans
+    # rather than deleting frozen translations or admitting arbitrary unused
+    # labels. The three new/changed live messages are independently pinned.
+    removal=json.loads((ROOT/'tools/text_catalog_server_removal_safety.json').read_text())
+    legacy_delete_keys={
+        'bot.bot.addserver_name.alert.601504ae47',
+        'bot.bot.addserver_name.message.756c3005d3',
+    }
+    check(removal.get('version')==1 and
+          removal.get('previous_candidate')==catalog_owner_r5.SERVER_REMOVAL_PARENT and
+          set(removal.get('retained_unreferenced_keys',[]))==legacy_delete_keys and
+          len(removal['retained_unreferenced_keys'])==len(legacy_delete_keys),
+          'legacy_server_removal_copy_lineage_invalid')
+    original_bot=command('git','show',catalog_owner_r5.SERVER_REMOVAL_PARENT+':bot.php').decode()
+    current_bot=sources['bot.php']
+    check(all(key in original_bot and key not in current_bot for key in legacy_delete_keys) and
+          legacy_delete_keys<=entries and not (legacy_delete_keys&refs),
+          'obsolete_unguarded_server_deletion_copy_still_in_use_or_missing')
     expected_unused=(retired_shared_transfer|set(management['retained_legacy_keys'])|
         catalog_owner_r5.verify_retained_display_keys()|
-        catalog_owner_r5.API_REVIEW_RETAINED|obsolete_filter|obsolete_postwrite)
+        catalog_owner_r5.API_REVIEW_RETAINED|obsolete_filter|obsolete_postwrite|
+        legacy_delete_keys)
     check(unused==expected_unused,'unrecorded legacy/orphan copy entries: '+str(unused^expected_unused))
     with tempfile.TemporaryDirectory(prefix='achbot-catalog-audit-') as scratch:
         fixture=pathlib.Path(scratch)/'fixture.php'
@@ -203,7 +223,7 @@ def main():
     presentation=json.loads(command('python3','tools/test_text_catalog_style.py'))
     check(presentation.get('status')=='PASS' and presentation.get('editable_files')==2
           and presentation.get('canonical_binding_paths')==2 and presentation.get('canonical_binding_entries')==4 and presentation.get('canonical_binding_negative_controls')==4
-          and presentation.get('current_keys')==2523+len(management['added_keys'])-len(catalog_owner_r5.manifest()['retired_keys'])+len(catalog_owner_r5.manifest()['added_keys'])+len(catalog_owner_r5.api_manifest()['added_keys'])+1+8+14  # Existing gift/evidence layers plus the exactly verified 14 current-only scoped addon entries.
+          and presentation.get('current_keys')==2523+len(management['added_keys'])-len(catalog_owner_r5.manifest()['retired_keys'])+len(catalog_owner_r5.manifest()['added_keys'])+len(catalog_owner_r5.api_manifest()['added_keys'])+1+8+14+1  # Gift/evidence layers, 14 scoped addons and exactly one new server-retired message.
           and presentation.get('management_added_keys')==len(management['added_keys'])
           and presentation.get('management_baseline_keys')==2523
           and presentation.get('management_negative_controls')==5

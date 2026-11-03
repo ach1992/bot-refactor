@@ -199,6 +199,10 @@ def server_removal_copy_restore(sides):
     record=json.loads((ROOT/'tools/text_catalog_server_removal_safety.json').read_text())
     entries=record.get('entries')
     check(record.get('version')==1 and
+          set(record)=={'version','owner_issue','previous_candidate','entries','retained_unreferenced_keys'} and
+          record.get('retained_unreferenced_keys')==[
+              'bot.bot.addserver_name.alert.601504ae47',
+              'bot.bot.addserver_name.message.756c3005d3'] and
           record.get('previous_candidate')==SERVER_REMOVAL_PARENT and
           record.get('owner_issue')=='https://github.com/ach1992/bot-refactor/issues/112' and
           type(entries) is dict and tuple(entries)==SERVER_REMOVAL_KEYS,
