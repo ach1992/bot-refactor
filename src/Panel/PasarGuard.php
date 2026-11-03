@@ -201,7 +201,8 @@ function achbotPgCreate(array $panel,array $request): array {
         return $read;
     } catch (Throwable $e) { return achbotPgFailure($dispatched?'pg_create_unconfirmed':'pg_create_invalid',$dispatched); }
 }
-function achbotPgModify(array $panel,array $identity,array $absoluteChanges): array {
+function achbotPgModify(array $panel,array $identity,array $absoluteChanges,
+                         ?array $requiredCurrentGroups=null): array {
     $dispatched=false;
     try {
         if (!$absoluteChanges || array_diff(array_keys($absoluteChanges),['data_limit','expire','status','group_ids']))
@@ -221,6 +222,25 @@ function achbotPgModify(array $panel,array $identity,array $absoluteChanges): ar
         $before=achbotPgRead($panel,$identity);
         if (!$before['success']) return $before;
         if (!achbotPgManaged($before['user'])) return achbotPgFailure('pg_native_schedule_conflict');
+        if ($requiredCurrentGroups!==null) {
+            // Scoped financial effects own their durable account mutation
+            // fence already. Reverify the complete native Group membership
+            // AND the credential's current enabled/allowed Groups at the
+            // last local boundary immediately before an outbound PUT.
+            // An earlier menu, quote or payment preflight is not authority.
+            // [] is a verified empty native membership (e.g. an adopted
+            // account), distinct from null which opts out of the scoped
+            // contract. Never invent Groups for Server/Global offers.
+            $expectedGroups=achbotPgGroupsCanonical($requiredCurrentGroups);
+            if ($before['user']['group_ids']!==$expectedGroups)
+                return achbotPgFailure('pg_addon_groups_changed_before_write');
+            $current=achbotPgCheck($panel);
+            if (($current['success']??false)!==true)
+                return achbotPgFailure('pg_addon_authority_unverified');
+            $eligible=achbotPgEligibleGroupIds($current);
+            if (array_diff($expectedGroups,$eligible))
+                return achbotPgFailure('pg_addon_authority_changed_before_write');
+        }
         $dispatched=true;
         $r=achbotPgRequest($panel,'PUT','/api/user/by-id/'.$identity['remote_user_id'],$payload);
         if (!$r['success']) return $r;
@@ -345,6 +365,32 @@ function achbotPgCheck(array $panel): array {
     return ['success'=>true,'uncertain'=>false,'reason'=>'','http'=>200,
         'version'=>'5.5.1','groups'=>$groups['groups'],
         'allowed_group_ids'=>$role['access']['allowed_group_ids']??null];
+}
+
+/** The *current credential's* Group permissions are authoritative, not
+ * server defaults or Group existence alone. Null means unrestricted.
+ */
+function achbotPgEligibleGroupIds(array $check): array {
+    if (($check['success']??false)!==true || !is_array($check['groups']??null) ||
+        !array_is_list($check['groups'])) throw new RuntimeException('pg_group_authority_unverified');
+    $allowed=$check['allowed_group_ids']??null;
+    if ($allowed!==null) {
+        if (!is_array($allowed) || !array_is_list($allowed))
+            throw new RuntimeException('pg_group_authority_invalid');
+        foreach($allowed as $id)
+            if (!is_int($id) || $id<=0) throw new RuntimeException('pg_group_authority_invalid');
+        $allowed=achbotPgGroupsCanonical($allowed);
+    }
+    $eligible=[];
+    foreach($check['groups'] as $group) {
+        if (!is_int($group['id']??null) || $group['id']<=0 ||
+            !is_bool($group['is_disabled']??null))
+            throw new RuntimeException('pg_group_authority_invalid');
+        if (!$group['is_disabled'] &&
+            ($allowed===null || in_array($group['id'],$allowed,true)))
+            $eligible[]=$group['id'];
+    }
+    return achbotPgGroupsCanonical($eligible);
 }
 
 /** Native signature proof shares only the bounded credential-free transport. */

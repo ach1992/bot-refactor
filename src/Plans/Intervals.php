@@ -7,6 +7,11 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
 require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
 
 require_once __DIR__ . '/../Admin/Access.php';
+require_once __DIR__ . '/Addons.php';
+// The cancellation branch below can render a scoped catalogue before the
+// normal admin dispatcher is reached. Load its pure helpers first, not only
+// after completing the cancellation transaction.
+require_once __DIR__ . '/AddonAdmin.php';
 if (!achbotAdminRequestAllowed(is_string($data??null)?$data:null,is_string($text??null)?$text:null,(string)($userInfo['step']??''))) {achbotAdminDeny();return;}
 
 /** Shared add-on catalogue: no provider-specific plan or pricing branches. */
@@ -32,8 +37,8 @@ function achbotIntervalFrame($update,int $actor,string $callback,?string $text):
 }
 
 // Persisted permissions decide whether an old admin keyboard/editor may write.
-$achbotIntervalOwned=preg_match('/^(?:dayPlanSettings|volumePlanSettings|addNewDayPlan|addNewVolumePlan|deleteDayPlan[1-9][0-9]*|deleteVolumePlan[1-9][0-9]*|changeDayPlan(?:Price|Day)[1-9][0-9]*|changeVolumePlan(?:Price|Volume)[1-9][0-9]*)$/D',(string)($data??'')) ||
-    preg_match('/^(?:addNewDayPlan|addNewVolumePlan|changeDayPlan(?:Price|Day)[1-9][0-9]*|changeVolumePlan(?:Price|Volume)[1-9][0-9]*)$/D',(string)($userInfo['step']??''));
+$achbotIntervalOwned=preg_match('/^(?:dayPlanSettings|volumePlanSettings|addNewDayPlan|addNewVolumePlan|deleteDayPlan[1-9][0-9]*(?:_[a-f0-9]{20})?|deleteVolumePlan[1-9][0-9]*(?:_[a-f0-9]{20})?|changeDayPlan(?:Price|Day)[1-9][0-9]*(?:_[a-f0-9]{20})?|changeVolumePlan(?:Price|Volume)[1-9][0-9]*(?:_[a-f0-9]{20})?|addon(?:Scope(?:Global|Server|Groups)_[a-f0-9]{16}|PickServer[1-9][0-9]*_[a-f0-9]{16}|EditScope(?:Day|Volume)[1-9][0-9]*_[a-f0-9]{20}|Filter(?:Day|Volume)(?:All|Global|Servers|Server[1-9][0-9]*)))$/D',(string)($data??'')) ||
+    preg_match('/^(?:addNewDayPlan|addNewVolumePlan|changeDayPlan(?:Price|Day)[1-9][0-9]*(?:_[a-f0-9]{20})?|changeVolumePlan(?:Price|Volume)[1-9][0-9]*(?:_[a-f0-9]{20})?|addon:[a-z]+)$/D',(string)($userInfo['step']??''));
 $achbotIntervalMessage=(string)($data??'')==='';
 if ($achbotIntervalOwned) {
     if (!achbotIntervalFrame($update??null,(int)$from_id,(string)($data??''),is_string($text??null)?$text:null)) return;
@@ -45,9 +50,10 @@ if ($achbotIntervalOwned) {
         ($achbotIntervalActor!==(int)$admin && (int)$achbotIntervalActors[0]['isAdmin']!==1)) {
         alert(\achbotMessage('subscription.manual_accounts.alert.03aea25611'));return;
     }
-    $achbotIntervalEditor=preg_match('/^(?:addNewDayPlan|addNewVolumePlan|changeDayPlan(?:Price|Day)[1-9][0-9]*|changeVolumePlan(?:Price|Volume)[1-9][0-9]*)$/D',(string)($userInfo['step']??''));
+    $achbotIntervalEditor=preg_match('/^(?:addNewDayPlan|addNewVolumePlan|changeDayPlan(?:Price|Day)[1-9][0-9]*(?:_[a-f0-9]{20})?|changeVolumePlan(?:Price|Volume)[1-9][0-9]*(?:_[a-f0-9]{20})?|addon:[a-z]+)$/D',(string)($userInfo['step']??''));
     if ($achbotIntervalEditor && $achbotIntervalActors[0]['step']!==($userInfo['step']??null)) return;
     if ($achbotIntervalEditor && $achbotIntervalMessage && $text===($buttonValues['cancel']??null)) {
+        $cancelCommitted=false;
         try {
             require_once __DIR__.'/../Subscription/GiftBatch.php';
             achbotGiftTelegramSource($update,$from_id,$chat_id,$message_id,$text);
@@ -61,13 +67,29 @@ if ($achbotIntervalOwned) {
             $q=$connection->prepare("UPDATE users SET step='none',temp=NULL WHERE userid=?");
             $q->bind_param('i',$achbotIntervalActor);$q->execute();$q->close();
             if (!$connection->commit()) throw new RuntimeException('interval_cancel_unknown');
-            $kind=str_contains($userInfo['step'],'Volume')?'volume':'day';
+            $cancelCommitted=true;
+            $editor=json_decode((string)($userInfo['temp']??''),true);
+            $kind=str_starts_with((string)$userInfo['step'],'addon:')?
+                (string)($editor['flow']['kind']??'day'):
+                (str_contains($userInfo['step'],'Volume')?'volume':'day');
             $userInfo['step']='none';$userInfo['temp']=null;
             sendMessage(\achbotMessage('admin_settings.management.canceled'),$removeKeyboard);
             achbotIntervalShow($connection,$kind);return;
         } catch (Throwable $error) {
-            try {$connection->rollback();} catch (Throwable $ignored) {}
-            error_log('achbot_interval_cancel_deferred');return;
+            // A completed cancellation must never be rolled back or reported
+            // as an unsuccessful financial/editor write just because a later
+            // Telegram response or read-only list failed.
+            if (!$cancelCommitted)
+                try {$connection->rollback();} catch (Throwable $ignored) {}
+            $safe=$error instanceof RuntimeException &&
+                preg_match('/^[a-z][a-z0-9_]{0,96}$/D',$error->getMessage())===1
+                ?$error->getMessage():get_class($error);
+            error_log(($cancelCommitted?'achbot_interval_cancel_notice_unconfirmed':
+                'achbot_interval_cancel_deferred').
+                ' reason='.$safe.' source='.basename($error->getFile()).':'.
+                $error->getLine().' actor='.$achbotIntervalActor.
+                ' update='.(int)($update->update_id??0));
+            return;
         }
     }
 
@@ -78,7 +100,8 @@ if ($achbotIntervalOwned) {
 
 
 /** Serialize add-on writes with a fresh admin and the exact current editor. */
-function achbotIntervalWrite(mysqli $db,string $sql,string $types,array $params,bool $clear=true,?string $next=null): bool {
+function achbotIntervalWrite(mysqli $db,string $sql,string $types,array $params,bool $clear=true,?string $next=null,
+                             ?array $flow=null,bool $requireAffected=false): bool {
     global $from_id,$admin,$userInfo,$update;
     $actor=(int)$from_id;$GLOBALS['achbotIntervalWriteUncertain']=false;
     try {
@@ -87,6 +110,7 @@ function achbotIntervalWrite(mysqli $db,string $sql,string $types,array $params,
         $q->bind_param('i',$actor);$q->execute();$rows=$q->get_result()->fetch_all(MYSQLI_ASSOC);$q->close();
         if (count($rows)!==1 || $rows[0]['step']==='banned' ||
             ($actor!==(int)$admin && (int)$rows[0]['isAdmin']!==1) ||
+            !achbotAdminCanLocked($db,$actor,(int)$admin,'plans') ||
             $rows[0]['step']!==($userInfo['step']??null) || $rows[0]['temp']!==($userInfo['temp']??null)) {
             $db->rollback();return false;
         }
@@ -96,17 +120,44 @@ function achbotIntervalWrite(mysqli $db,string $sql,string $types,array $params,
             $db->rollback();return false;
         }
         $step=$rows[0]['step'];
-        if ($step!=='none' && !preg_match('/^(?:addNewDayPlan|addNewVolumePlan|changeDayPlan(?:Price|Day)[1-9][0-9]*|changeVolumePlan(?:Price|Volume)[1-9][0-9]*)$/D',$step)) {
+        if ($step!=='none' && !preg_match('/^(?:addNewDayPlan|addNewVolumePlan|changeDayPlan(?:Price|Day)[1-9][0-9]*(?:_[a-f0-9]{20})?|changeVolumePlan(?:Price|Volume)[1-9][0-9]*(?:_[a-f0-9]{20})?|addon:[a-z]+)$/D',$step)) {
             $db->rollback();return false;
+        }
+        // A stored edit prompt or delete button MUST refer to the precise
+        // priced/scope row displayed earlier. The row lock and SQL write
+        // share this transaction, closing cross-admin update/delete races.
+        $candidate=(string)($GLOBALS['data']??'');
+        $pattern='/^(delete(?:Day|Volume)Plan|change(?:DayPlan(?:Price|Day)|VolumePlan(?:Price|Volume)))([1-9][0-9]*)(?:_([a-f0-9]{20}))?$/D';
+        $isButton=preg_match($pattern,$candidate,$button)===1;
+        if (!$isButton) $candidate=$step;
+        if (preg_match($pattern,$candidate,$target)===1) {
+            if ($isButton && $step!=='none') {$db->rollback();return false;}
+            $kind=str_contains($target[1],'Day')?'day':'volume';
+            $migrated=achbotAddonSchema($db);
+            if ($migrated) {
+                if (!isset($target[3])) {$db->rollback();return false;}
+                $table=achbotAddonTable($kind);
+                $offerId=(int)$target[2];
+                $row=$db->prepare("SELECT * FROM $table WHERE id=? FOR UPDATE");
+                $row->bind_param('i',$offerId);$row->execute();
+                $offer=$row->get_result()->fetch_assoc();$row->close();
+                if (!$offer || !hash_equals(achbotAddonOfferRevision($kind,$offer),$target[3])) {
+                    $db->rollback();return false;
+                }
+                if ($sql!=='') $requireAffected=true;
+            } elseif (isset($target[3])) {$db->rollback();return false;}
         }
         if ($sql!=='') {
             $q=$db->prepare($sql);
             if (!$q || !$q->bind_param($types,...$params) || !$q->execute()) throw new RuntimeException('interval_write_failed');
-            $q->close();
+            $affected=$q->affected_rows;$q->close();
+            if ($requireAffected && $affected!==1) throw new RuntimeException('interval_write_stale');
         }
         $nextStep=$next??'none';$id=(int)$rows[0]['id'];
         if ($clear || $next!==null) {
-            $nextTemp=$next!==null?json_encode(['version'=>1,'kind'=>'addon','source'=>$update->update_id],JSON_THROW_ON_ERROR):null;
+            $state=['version'=>1,'kind'=>'addon','source'=>$update->update_id];
+            if ($flow!==null) $state['flow']=$flow;
+            $nextTemp=$next!==null?json_encode($state,JSON_THROW_ON_ERROR):null;
             $q=$db->prepare('UPDATE users SET step=?,temp=? WHERE id=? AND userid=?');
             $q->bind_param('ssii',$nextStep,$nextTemp,$id,$actor);$q->execute();$q->close();
         }
@@ -128,21 +179,43 @@ function achbotIntervalWriteNotice(): void {
         \achbotMessage('admin_settings.management.management_stale'),$cancelKey);
 }
 
-function achbotIntervalShow(mysqli $db,string $kind): void {
+function achbotIntervalShow(mysqli $db,string $kind,?string $filter=null,?int $serverId=null): void {
     global $buttonValues;
     $day=$kind==='day';$table=$day?'increase_day':'increase_plan';
-    $q=$db->prepare("SELECT id,volume,price FROM $table ORDER BY id");$q->execute();$rows=$q->get_result()->fetch_all(MYSQLI_ASSOC);$q->close();
+    $migrated=achbotAddonSchema($db);
+    if (($filter!==null && (!$migrated || !in_array($filter,['global','server'],true))) ||
+        ($filter==='server' && ($serverId===null || $serverId<=0)))
+        throw new RuntimeException('addon_admin_filter_invalid');
+    // Filter in SQL rather than rendering the entire catalog and hiding
+    // unrelated offers after the query. Both kinds share the same scopes.
+    $sql="SELECT * FROM $table";
+    if ($filter==='global') $sql.=' WHERE server_id IS NULL';
+    elseif ($filter==='server') $sql.=' WHERE server_id=?';
+    $q=$db->prepare($sql.' ORDER BY id');
+    if ($filter==='server') $q->bind_param('i',$serverId);
+    $q->execute();$rows=$q->get_result()->fetch_all(MYSQLI_ASSOC);$q->close();
     $keys=[];
     foreach ($rows as $row) {
         $id=(int)$row['id'];
-        $keys[]=[['text'=>\achbotMessage('plans.intervals.day_plan_settings.button.2b2966a54e'),'callback_data'=>($day?'deleteDayPlan':'deleteVolumePlan').$id],
-            ['text'=>number_format($row['price']).\achbotMessage('plans.administration.edit_custom_plan.text.2cc98f7f7c'),'callback_data'=>($day?'changeDayPlanPrice':'changeVolumePlanPrice').$id],
-            ['text'=>(string)$row['volume'],'callback_data'=>($day?'changeDayPlanDay':'changeVolumePlanVolume').$id]];
+        $keys[]=[['text'=>\achbotMessage('plans.intervals.day_plan_settings.button.2b2966a54e'),'callback_data'=>achbotAddonOfferCallback($day?'deleteDayPlan':'deleteVolumePlan',$kind,$row)],
+            ['text'=>number_format($row['price']).\achbotMessage('plans.administration.edit_custom_plan.text.2cc98f7f7c'),'callback_data'=>achbotAddonOfferCallback($day?'changeDayPlanPrice':'changeVolumePlanPrice',$kind,$row)],
+            ['text'=>(string)$row['volume'],'callback_data'=>achbotAddonOfferCallback($day?'changeDayPlanDay':'changeVolumePlanVolume',$kind,$row)]];
+        if ($migrated) {
+            $scope=achbotAddonScopeRow($row,true);
+            $keys[]=[['text'=>achbotAddonAdminScopeLabel($scope),
+                'callback_data'=>achbotAddonOfferCallback('addonEditScope'.($day?'Day':'Volume'),$kind,$row)]];
+        }
     }
+    if ($migrated) foreach (achbotAddonAdminFilterKeys($kind) as $row) $keys[]=$row;
     $keys[]=[['text'=>$day?\achbotMessage('plans.intervals.day_plan_settings.button.4e0a1e41c8'):\achbotMessage('plans.intervals.volume_plan_settings.button.a3524cb835'),'callback_data'=>$day?'addNewDayPlan':'addNewVolumePlan']];
     $keys[]=[['text'=>$buttonValues['back_button'],'callback_data'=>'backplan']];
-    sendMessage($day?\achbotMessage('plans.intervals.day_plan_settings.msg.0eb1f0debf'):\achbotMessage('plans.intervals.volume_plan_settings.msg.573ae79cf6'),json_encode(['inline_keyboard'=>$keys],JSON_UNESCAPED_UNICODE));
+    $title=$day?\achbotMessage('plans.intervals.day_plan_settings.msg.0eb1f0debf'):\achbotMessage('plans.intervals.volume_plan_settings.msg.573ae79cf6');
+    if ($filter!==null) $title.="\n".achbotAddonAdminScopeLabel([
+        'server_id'=>$filter==='global'?null:$serverId,'groups'=>null]);
+    sendMessage($title,json_encode(['inline_keyboard'=>$keys],JSON_UNESCAPED_UNICODE));
 }
+
+if (achbotAddonAdminHandle($connection)) return;
 
 if($data == 'dayPlanSettings' and ($from_id == $admin || $userInfo['isAdmin'] == true)){
     $stmt = $connection->prepare("SELECT * FROM `increase_day`");
@@ -166,7 +239,7 @@ if($data == 'dayPlanSettings' and ($from_id == $admin || $userInfo['isAdmin'] ==
         $title = $cat['volume'];
         $price=number_format($cat['price']) . \achbotMessage('plans.administration.edit_custom_plan.text.2cc98f7f7c');
 
-        $keyboard[] = [['text'=>\achbotMessage('plans.intervals.day_plan_settings.button.2b2966a54e'),'callback_data'=>"deleteDayPlan" . $id],['text'=>$price,'callback_data'=>"changeDayPlanPrice" . $id],['text'=>$title,'callback_data'=>"changeDayPlanDay" . $id]];
+        $keyboard[] = [['text'=>\achbotMessage('plans.intervals.day_plan_settings.button.2b2966a54e'),'callback_data'=>achbotAddonOfferCallback('deleteDayPlan','day',$cat)],['text'=>$price,'callback_data'=>achbotAddonOfferCallback('changeDayPlanPrice','day',$cat)],['text'=>$title,'callback_data'=>achbotAddonOfferCallback('changeDayPlanDay','day',$cat)]];
     }
     $keyboard[] = [['text' => \achbotMessage('plans.intervals.day_plan_settings.button.4e0a1e41c8'), 'callback_data' =>"addNewDayPlan"]];
     $keyboard[] = [['text' => $buttonValues['back_button'], 'callback_data' => "backplan"]];
@@ -195,7 +268,7 @@ if($achbotIntervalMessage && $userInfo['step'] == "addNewDayPlan" and $text != $
     sendMessage(\achbotMessage('plans.intervals.add_new_day_plan.message.9acd097b34'),$removeKeyboard);
     sendMessage($mainValues['reached_main_menu'], getAdminKeys(), 'HTML');
 }
-if(preg_match('/^deleteDayPlan([1-9][0-9]*)$/D',$data,$match) and ($from_id == $admin || $userInfo['isAdmin'] == true)){
+if(preg_match('/^deleteDayPlan([1-9][0-9]*)(?:_[a-f0-9]{20})?$/D',$data,$match) and ($from_id == $admin || $userInfo['isAdmin'] == true)){
     if (!achbotIntervalWrite($connection,"DELETE FROM `increase_day` WHERE `id` = ?",'i',[(int)$match[1]],false)) {achbotIntervalWriteNotice();return;}
     alert(\achbotMessage('plans.intervals.add_new_day_plan.alert.b7bba0b0c0'));
 
@@ -221,7 +294,7 @@ if(preg_match('/^deleteDayPlan([1-9][0-9]*)$/D',$data,$match) and ($from_id == $
         $title = $cat['volume'];
         $price=number_format($cat['price']) . \achbotMessage('plans.administration.edit_custom_plan.text.2cc98f7f7c');
 
-        $keyboard[] = [['text'=>\achbotMessage('plans.intervals.day_plan_settings.button.2b2966a54e'),'callback_data'=>"deleteDayPlan" . $id],['text'=>$price,'callback_data'=>"changeDayPlanPrice" . $id],['text'=>$title,'callback_data'=>"changeDayPlanDay" . $id]];
+        $keyboard[] = [['text'=>\achbotMessage('plans.intervals.day_plan_settings.button.2b2966a54e'),'callback_data'=>achbotAddonOfferCallback('deleteDayPlan','day',$cat)],['text'=>$price,'callback_data'=>achbotAddonOfferCallback('changeDayPlanPrice','day',$cat)],['text'=>$title,'callback_data'=>achbotAddonOfferCallback('changeDayPlanDay','day',$cat)]];
     }
     $keyboard[] = [['text' => \achbotMessage('plans.intervals.day_plan_settings.button.4e0a1e41c8'), 'callback_data' =>"addNewDayPlan"]];
     $keyboard[] = [['text' => $buttonValues['back_button'], 'callback_data' => "backplan"]];
@@ -233,13 +306,13 @@ if(preg_match('/^deleteDayPlan([1-9][0-9]*)$/D',$data,$match) and ($from_id == $
 
     exit;
 }
-if(preg_match('/^changeDayPlanPrice([1-9][0-9]*)$/D',$data,$match) and ($from_id == $admin || $userInfo['isAdmin'] == true)){
+if(preg_match('/^changeDayPlanPrice([1-9][0-9]*)(?:_[a-f0-9]{20})?$/D',$data,$match) and ($from_id == $admin || $userInfo['isAdmin'] == true)){
     if (!achbotIntervalWrite($connection,'','',[],true,(string)$data)) {achbotIntervalWriteNotice();return;}
     delMessage();
     sendMessage(\achbotMessage('plans.intervals.add_new_day_plan.message.b9989bb7c2'), $cancelKey);
     exit;
 }
-if($achbotIntervalMessage && preg_match('/^changeDayPlanPrice([1-9][0-9]*)$/D',$userInfo['step'],$match) and $text != $buttonValues['cancel'] && ($from_id == $admin || $userInfo['isAdmin'] == true)){
+if($achbotIntervalMessage && preg_match('/^changeDayPlanPrice([1-9][0-9]*)(?:_[a-f0-9]{20})?$/D',$userInfo['step'],$match) and $text != $buttonValues['cancel'] && ($from_id == $admin || $userInfo['isAdmin'] == true)){
     $price=achbotIntervalPrice($text);
     if($price!==null){
     if (!achbotIntervalWrite($connection,"UPDATE `increase_day` SET `price` = ? WHERE `id` = ?",'ii',[$price,(int)$match[1]],true)) {achbotIntervalWriteNotice();return;}
@@ -267,7 +340,7 @@ if($achbotIntervalMessage && preg_match('/^changeDayPlanPrice([1-9][0-9]*)$/D',$
             $title = $cat['volume'];
             $price=number_format($cat['price']) . \achbotMessage('plans.administration.edit_custom_plan.text.2cc98f7f7c');
 
-            $keyboard[] = [['text'=>\achbotMessage('plans.intervals.day_plan_settings.button.2b2966a54e'),'callback_data'=>"deleteDayPlan" . $id],['text'=>$price,'callback_data'=>"changeDayPlanPrice" . $id],['text'=>$title,'callback_data'=>"changeDayPlanDay" . $id]];
+            $keyboard[] = [['text'=>\achbotMessage('plans.intervals.day_plan_settings.button.2b2966a54e'),'callback_data'=>achbotAddonOfferCallback('deleteDayPlan','day',$cat)],['text'=>$price,'callback_data'=>achbotAddonOfferCallback('changeDayPlanPrice','day',$cat)],['text'=>$title,'callback_data'=>achbotAddonOfferCallback('changeDayPlanDay','day',$cat)]];
         }
         $keyboard[] = [['text' => \achbotMessage('plans.intervals.day_plan_settings.button.4e0a1e41c8'), 'callback_data' =>"addNewDayPlan"]];
         $keyboard[] = [['text' => $buttonValues['back_button'], 'callback_data' => "backplan"]];
@@ -282,13 +355,13 @@ if($achbotIntervalMessage && preg_match('/^changeDayPlanPrice([1-9][0-9]*)$/D',$
         sendMessage(\achbotMessage('admin_settings.management.interval_price'),$cancelKey);
     }
 }
-if(preg_match('/^changeDayPlanDay([1-9][0-9]*)$/D',$data,$match) and ($from_id == $admin || $userInfo['isAdmin'] == true)){
+if(preg_match('/^changeDayPlanDay([1-9][0-9]*)(?:_[a-f0-9]{20})?$/D',$data,$match) and ($from_id == $admin || $userInfo['isAdmin'] == true)){
     if (!achbotIntervalWrite($connection,'','',[],true,(string)$data)) {achbotIntervalWriteNotice();return;}
     delMessage();
     sendMessage(\achbotMessage('plans.intervals.add_new_day_plan.message.395f467a7d'), $cancelKey);
     exit;
 }
-if($achbotIntervalMessage && preg_match('/^changeDayPlanDay([1-9][0-9]*)$/D',$userInfo['step'],$match) && ($from_id == $admin || $userInfo['isAdmin'] == true) and $text != $buttonValues['cancel']) {
+if($achbotIntervalMessage && preg_match('/^changeDayPlanDay([1-9][0-9]*)(?:_[a-f0-9]{20})?$/D',$userInfo['step'],$match) && ($from_id == $admin || $userInfo['isAdmin'] == true) and $text != $buttonValues['cancel']) {
     $days=achbotWholeServiceUnits($text,36500);
     if ($days===null) {sendMessage(\achbotMessage('plans.intervals.add_new_day_plan.message.a2684ce4cc'),$cancelKey);return;}
     if (!achbotIntervalWrite($connection,"UPDATE `increase_day` SET `volume` = ? WHERE `id` = ?",'ii',[$days,(int)$match[1]],true)) {achbotIntervalWriteNotice();return;}
@@ -316,7 +389,7 @@ if($achbotIntervalMessage && preg_match('/^changeDayPlanDay([1-9][0-9]*)$/D',$us
         $title = $cat['volume'];
         $price=number_format($cat['price']) . \achbotMessage('plans.administration.edit_custom_plan.text.2cc98f7f7c');
 
-        $keyboard[] = [['text'=>\achbotMessage('plans.intervals.day_plan_settings.button.2b2966a54e'),'callback_data'=>"deleteDayPlan" . $id],['text'=>$price,'callback_data'=>"changeDayPlanPrice" . $id],['text'=>$title,'callback_data'=>"changeDayPlanDay" . $id]];
+        $keyboard[] = [['text'=>\achbotMessage('plans.intervals.day_plan_settings.button.2b2966a54e'),'callback_data'=>achbotAddonOfferCallback('deleteDayPlan','day',$cat)],['text'=>$price,'callback_data'=>achbotAddonOfferCallback('changeDayPlanPrice','day',$cat)],['text'=>$title,'callback_data'=>achbotAddonOfferCallback('changeDayPlanDay','day',$cat)]];
     }
     $keyboard[] = [['text' => \achbotMessage('plans.intervals.day_plan_settings.button.4e0a1e41c8'), 'callback_data' =>"addNewDayPlan"]];
     $keyboard[] = [['text' => $buttonValues['back_button'], 'callback_data' => "backplan"]];
@@ -349,7 +422,7 @@ if($data == 'volumePlanSettings' and ($from_id == $admin || $userInfo['isAdmin']
         $title = $cat['volume'];
         $price=number_format($cat['price']) . \achbotMessage('plans.administration.edit_custom_plan.text.2cc98f7f7c');
 
-        $keyboard[] = [['text'=>\achbotMessage('plans.intervals.day_plan_settings.button.2b2966a54e'),'callback_data'=>"deleteVolumePlan" . $id],['text'=>$price,'callback_data'=>"changeVolumePlanPrice" . $id],['text'=>$title,'callback_data'=>"changeVolumePlanVolume" . $id]];
+        $keyboard[] = [['text'=>\achbotMessage('plans.intervals.day_plan_settings.button.2b2966a54e'),'callback_data'=>achbotAddonOfferCallback('deleteVolumePlan','volume',$cat)],['text'=>$price,'callback_data'=>achbotAddonOfferCallback('changeVolumePlanPrice','volume',$cat)],['text'=>$title,'callback_data'=>achbotAddonOfferCallback('changeVolumePlanVolume','volume',$cat)]];
     }
     $keyboard[] = [['text' => \achbotMessage('plans.intervals.volume_plan_settings.button.a3524cb835'), 'callback_data' =>"addNewVolumePlan"]];
     $keyboard[] = [['text' =>$buttonValues['back_button'], 'callback_data' => "backplan"]];
@@ -378,7 +451,7 @@ if($achbotIntervalMessage && $userInfo['step'] == "addNewVolumePlan" and $text !
     sendMessage(\achbotMessage('plans.intervals.add_new_volume_plan.message.b003cdcfab'),$removeKeyboard);
     sendMessage($mainValues['reached_main_menu'], getAdminKeys(), 'HTML');
 }
-if(preg_match('/^deleteVolumePlan([1-9][0-9]*)$/D',$data,$match) and ($from_id == $admin || $userInfo['isAdmin'] == true)){
+if(preg_match('/^deleteVolumePlan([1-9][0-9]*)(?:_[a-f0-9]{20})?$/D',$data,$match) and ($from_id == $admin || $userInfo['isAdmin'] == true)){
     if (!achbotIntervalWrite($connection,"DELETE FROM `increase_plan` WHERE `id` = ?",'i',[(int)$match[1]],false)) {achbotIntervalWriteNotice();return;}
     alert(\achbotMessage('plans.intervals.add_new_volume_plan.alert.d5009733f9'));
 
@@ -403,7 +476,7 @@ if(preg_match('/^deleteVolumePlan([1-9][0-9]*)$/D',$data,$match) and ($from_id =
         $title = $cat['volume'];
         $price=number_format($cat['price']) . \achbotMessage('plans.administration.edit_custom_plan.text.2cc98f7f7c');
 
-        $keyboard[] = [['text'=>\achbotMessage('plans.intervals.day_plan_settings.button.2b2966a54e'),'callback_data'=>"deleteVolumePlan" . $id],['text'=>$price,'callback_data'=>"changeVolumePlanPrice" . $id],['text'=>$title,'callback_data'=>"changeVolumePlanVolume" . $id]];
+        $keyboard[] = [['text'=>\achbotMessage('plans.intervals.day_plan_settings.button.2b2966a54e'),'callback_data'=>achbotAddonOfferCallback('deleteVolumePlan','volume',$cat)],['text'=>$price,'callback_data'=>achbotAddonOfferCallback('changeVolumePlanPrice','volume',$cat)],['text'=>$title,'callback_data'=>achbotAddonOfferCallback('changeVolumePlanVolume','volume',$cat)]];
     }
     $keyboard[] = [['text' => \achbotMessage('plans.intervals.volume_plan_settings.button.a3524cb835'), 'callback_data' =>"addNewVolumePlan"]];
     $keyboard[] = [['text' =>$buttonValues['back_button'], 'callback_data' => "backplan"]];
@@ -413,13 +486,13 @@ if(preg_match('/^deleteVolumePlan([1-9][0-9]*)$/D',$data,$match) and ($from_id =
             'inline_keyboard' => $keyboard
         ]));
 }
-if(preg_match('/^changeVolumePlanPrice([1-9][0-9]*)$/D',$data,$match) and ($from_id == $admin || $userInfo['isAdmin'] == true)){
+if(preg_match('/^changeVolumePlanPrice([1-9][0-9]*)(?:_[a-f0-9]{20})?$/D',$data,$match) and ($from_id == $admin || $userInfo['isAdmin'] == true)){
     if (!achbotIntervalWrite($connection,'','',[],true,(string)$data)) {achbotIntervalWriteNotice();return;}
     delMessage();
     sendMessage(\achbotMessage('plans.intervals.add_new_day_plan.message.b9989bb7c2'), $cancelKey);
     exit;
 }
-if($achbotIntervalMessage && preg_match('/^changeVolumePlanPrice([1-9][0-9]*)$/D',$userInfo['step'],$match) and $text != $buttonValues['cancel'] and ($from_id == $admin || $userInfo['isAdmin'] == true)) {
+if($achbotIntervalMessage && preg_match('/^changeVolumePlanPrice([1-9][0-9]*)(?:_[a-f0-9]{20})?$/D',$userInfo['step'],$match) and $text != $buttonValues['cancel'] and ($from_id == $admin || $userInfo['isAdmin'] == true)) {
     $pid=$match[1];
     $price=achbotIntervalPrice($text);
     if($price!==null){
@@ -446,7 +519,7 @@ if($achbotIntervalMessage && preg_match('/^changeVolumePlanPrice([1-9][0-9]*)$/D
             $title = $cat['volume'];
             $price=number_format($cat['price']) . \achbotMessage('plans.administration.edit_custom_plan.text.2cc98f7f7c');
 
-            $keyboard[] = [['text'=>\achbotMessage('plans.intervals.day_plan_settings.button.2b2966a54e'),'callback_data'=>"deleteVolumePlan" . $id],['text'=>$price,'callback_data'=>"changeVolumePlanPrice" . $id],['text'=>$title,'callback_data'=>"changeVolumePlanVolume" . $id]];
+            $keyboard[] = [['text'=>\achbotMessage('plans.intervals.day_plan_settings.button.2b2966a54e'),'callback_data'=>achbotAddonOfferCallback('deleteVolumePlan','volume',$cat)],['text'=>$price,'callback_data'=>achbotAddonOfferCallback('changeVolumePlanPrice','volume',$cat)],['text'=>$title,'callback_data'=>achbotAddonOfferCallback('changeVolumePlanVolume','volume',$cat)]];
         }
         $keyboard[] = [['text' => \achbotMessage('plans.intervals.volume_plan_settings.button.a3524cb835'), 'callback_data' =>"addNewVolumePlan"]];
         $keyboard[] = [['text' =>$buttonValues['back_button'], 'callback_data' => "backplan"]];
@@ -459,13 +532,13 @@ if($achbotIntervalMessage && preg_match('/^changeVolumePlanPrice([1-9][0-9]*)$/D
         sendMessage(\achbotMessage('admin_settings.management.interval_price'),$cancelKey);
     }
 }
-if(preg_match('/^changeVolumePlanVolume([1-9][0-9]*)$/D',$data) and ($from_id == $admin || $userInfo['isAdmin'] == true)){
+if(preg_match('/^changeVolumePlanVolume([1-9][0-9]*)(?:_[a-f0-9]{20})?$/D',$data) and ($from_id == $admin || $userInfo['isAdmin'] == true)){
     if (!achbotIntervalWrite($connection,'','',[],true,(string)$data)) {achbotIntervalWriteNotice();return;}
     delMessage();
     sendMessage(\achbotMessage('plans.intervals.add_new_volume_plan.message.149e31d927'),$cancelKey);
     exit;
 }
-if($achbotIntervalMessage && preg_match('/^changeVolumePlanVolume([1-9][0-9]*)$/D',$userInfo['step'], $match) and $text != $buttonValues['cancel'] && ($from_id == $admin || $userInfo['isAdmin'] == true)) {
+if($achbotIntervalMessage && preg_match('/^changeVolumePlanVolume([1-9][0-9]*)(?:_[a-f0-9]{20})?$/D',$userInfo['step'], $match) and $text != $buttonValues['cancel'] && ($from_id == $admin || $userInfo['isAdmin'] == true)) {
     $pid=$match[1];
     $volume=achbotWholeServiceUnits($text,achbotServiceVolumeMax());
     if ($volume===null) {sendMessage(\achbotMessage('plans.intervals.add_new_day_plan.message.a2684ce4cc'),$cancelKey);return;}
@@ -492,7 +565,7 @@ if($achbotIntervalMessage && preg_match('/^changeVolumePlanVolume([1-9][0-9]*)$/
         $title = $cat['volume'];
         $price=number_format($cat['price']) . \achbotMessage('plans.administration.edit_custom_plan.text.2cc98f7f7c');
 
-        $keyboard[] = [['text'=>\achbotMessage('plans.intervals.day_plan_settings.button.2b2966a54e'),'callback_data'=>"deleteVolumePlan" . $id],['text'=>$price,'callback_data'=>"changeVolumePlanPrice" . $id],['text'=>$title,'callback_data'=>"changeVolumePlanVolume" . $id]];
+        $keyboard[] = [['text'=>\achbotMessage('plans.intervals.day_plan_settings.button.2b2966a54e'),'callback_data'=>achbotAddonOfferCallback('deleteVolumePlan','volume',$cat)],['text'=>$price,'callback_data'=>achbotAddonOfferCallback('changeVolumePlanPrice','volume',$cat)],['text'=>$title,'callback_data'=>achbotAddonOfferCallback('changeVolumePlanVolume','volume',$cat)]];
     }
     $keyboard[] = [['text' => \achbotMessage('plans.intervals.volume_plan_settings.button.a3524cb835'), 'callback_data' =>"addNewVolumePlan"]];
     $keyboard[] = [['text' =>$buttonValues['back_button'], 'callback_data' => "backplan"]];

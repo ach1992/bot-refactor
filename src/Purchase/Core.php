@@ -7,6 +7,7 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
 require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
 
 require_once __DIR__.'/../Panel/ProviderRuntime.php';
+require_once __DIR__.'/../Plans/Addons.php';
 
 /**
  * Compatibility hook called before new payment-draft INSERTs. It MUST remain
@@ -455,13 +456,13 @@ if (!function_exists('achbotSupportsMarzbanOrder')) {
 
 /** Fresh native baseline shared by add-on selection and pre-payment checks. */
 if (!function_exists('achbotOrderAddonEligibility')) {
-function achbotOrderAddonEligibility($connection,array $order,string $kind): array {
+function achbotOrderAddonEligibility($connection,array $order,string $kind,?array $nativeContext=null): array {
     $out=['eligible'=>false,'reason'=>'unknown'];
     if (!($connection instanceof mysqli) || !in_array($kind,['day','volume'],true) ||
         (int)($order['id']??0)<=0 || (int)($order['server_id']??0)<=0 ||
         !is_string($order['remark']??null) || $order['remark']==='') return $out;
     require_once __DIR__.'/../Panel/ServiceLifecycle.php';
-    $native=achbotServiceObserve((int)$order['server_id'],$order['remark']);
+    $native=$nativeContext===null?achbotServiceObserve((int)$order['server_id'],$order['remark']):($nativeContext['observation']??[]);
     if (!$native['verified'] || !in_array($native['status'],['active','disabled','expired','limited'],true)) return $out;
     if ($native['expire']===null) return ['eligible'=>false,'reason'=>'unlimited_time'];
     // Existing day extensions may revive an expired finite account. Volume
@@ -514,9 +515,16 @@ if (!function_exists('achbotSupportsPaymentSubject')) {
             )) return false;
             if (!empty($pay['order_id']) && (int)$pay['order_id'] !== $oid) return false;
             if (achbotPinnedAddonUnits($pay)===null) return false;
-            $stmt=$connection->prepare('SELECT id,server_id,remark FROM orders_list WHERE id=?'.($lock?' FOR UPDATE':''));
+            $stmt=$connection->prepare('SELECT id,server_id,remark,userid FROM orders_list WHERE id=?'.($lock?' FOR UPDATE':''));
             $stmt->bind_param('i',$oid);$stmt->execute();$order=$stmt->get_result()->fetch_assoc();$stmt->close();
-            return $order && achbotOrderAddonEligibility($connection,$order,strtolower($match[1]))['eligible'];
+            if (!$order) return false;
+            try {
+                if (!achbotAddonSchema($connection))
+                    return achbotOrderAddonEligibility($connection,$order,strtolower($match[1]))['eligible'];
+                $context=achbotAddonContext($connection,$order);
+                return achbotOrderAddonEligibility($connection,$order,strtolower($match[1]),$context)['eligible'] &&
+                    achbotAddonPayEligible($connection,$pay,$order,$context);
+            } catch (Throwable $error) {return false;}
         }
         return false;
     }

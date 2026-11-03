@@ -15,9 +15,41 @@ def baseline():
     decode='$s=stream_get_contents(STDIN);$p=strpos($s,"return [");if($p===false)throw new RuntimeException("array_missing");echo json_encode(eval(substr($s,$p)),JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);'
     return {a:flatten(json.loads(command('php','-r',decode,input=command('git','show',BASE+':messages/fa/'+a+'.php'))))for a in ['user','admin']}
 def manifest():return json.loads((ROOT/'tools/text_catalog_owner_r5.json').read_text())
+def scoped_addon_restore(sides):
+    """Strict additive/current-only scoped-addon copy layer; preserve accepted proof totals.
+
+    Only exactly declared admin keys are removed from a *copy*. The historical
+    R5/API/Gift/Review snapshots and all previously accepted catalog keys remain
+    fully compared against their original immutable references.
+    """
+    manifest=json.loads((ROOT/"tools/text_catalog_addon_scopes.json").read_text())
+    check(manifest.get('version')==1 and
+          manifest.get('project_issue')=='https://github.com/ach1992/bot-refactor/issues/107' and
+          manifest.get('audience')=='admin' and manifest.get('topic')=='addon_scopes',
+          'addon_catalog_manifest_identity')
+    expected=manifest.get('entries')
+    check(type(expected) is dict and len(expected)==14,'addon_catalog_key_inventory')
+    check(type(sides) is dict and set(sides)=={'user','admin'},'addon_catalog_audiences')
+    check(all('addon_scopes.' not in key for key in sides['user']), 'addon_catalog_cross_audience')
+    real={key:value for key,value in sides['admin'].items() if key.startswith('addon_scopes.')}
+    check(set(real)=={'addon_scopes.'+key for key in expected},'addon_catalog_additions_only')
+    for key,item in expected.items():
+        check(type(item) is dict and set(item)=={'value','source_paths'} and
+              item['source_paths']==['src/Plans/AddonAdmin.php'], 'addon_catalog_source:'+key)
+        value=item['value']
+        check(real['addon_scopes.'+key]==value and
+              isinstance(text(value),str) and isinstance(params(value),list) and
+              len(set(params(value)))==len(params(value)) and
+              set(re.findall(r'\{([A-Za-z_][A-Za-z0-9_]*)\}',text(value)))==set(params(value)) and
+              re.search(r'[\u0660-\u0669\u06f0-\u06f9]',text(value)) is None,
+              'addon_catalog_value_or_parameters:'+key)
+    restored={audience:dict(rows) for audience,rows in sides.items()}
+    for key in real:restored['admin'].pop(key)
+    return restored
+
 def verify_and_restore(sides,definition=None):
-    current=sides
-    sides,api_proof=verify_api_and_restore(sides)
+    current=scoped_addon_restore(sides)
+    sides,api_proof=verify_api_and_restore(current)
     record=manifest()if definition is None else definition
     check(record.get('version')==1 and record.get('baseline_commit')==BASE and record.get('authorization')==AUTH,'r5_amendment_identity')
     old=baseline();check(sum(map(len,old.values()))==2635,'r5_baseline_identity')
@@ -138,6 +170,8 @@ def review_catalog_restore(sides):
     return restored,{'review_added_keys':8,'review_added_user_keys':2,'review_added_admin_keys':6,'review_source':REVIEW_SOURCE}
 
 def verify_api_and_restore(sides,definition=None):
+    sides=scoped_addon_restore(sides) if any(key.startswith('addon_scopes.')
+        for key in sides.get('admin',{})) else sides
     sides,review_proof=review_catalog_restore(sides)
     sides,gift_proof=gift_catalog_restore(sides)
     record=api_manifest()if definition is None else definition
@@ -238,11 +272,24 @@ REVIEW_DYNAMIC={
  'src/Finance/ApiPayments.php':{'manual_payment.api_payment.code_':['manual_payment.api_payment.code_'+s for s in ['used','revoked','expired','mismatch']],'manual_payment.api_payment.status_':['manual_payment.api_payment.status_'+s for s in ['confirmed','settled','review','uncertain','evidence_only']]},
  'src/Finance/Routes/ApiPayments.php':{},
 }
+# Issue #107 changes an API payment *eligibility fence*, not any accepted copy.
+# Preserve the old dynamic-message source proof byte-for-byte by admitting only
+# this explicit non-copy insertion; arbitrary edits still fail source binding.
+SCOPED_ADDON_API_INSERTION="""            if ($type!=='RENEW_ACCOUNT') {
+                require_once __DIR__.'/../Plans/Addons.php';
+                if (achbotAddonSchema($db) && !achbotAddonPayLocal($db,$pay,$order)) return null;
+                $context['addon_scope_snapshot']=(string)($pay['addon_scope_snapshot']??'');
+            }
+"""
 def api_source_references(path,source):
     refs=set(re.findall(r"\\?achbotMessage(?:Html)?\('([^']+)'",source))
     if path in API_DYNAMIC:
         original=source==api_consumer_snapshot(path)
-        check(original or source==api_consumer_snapshot(path,REVIEW_SOURCE),'api_dynamic_consumer_source_drift:'+path)
+        reviewed=source==api_consumer_snapshot(path,REVIEW_SOURCE)
+        if path=='src/Finance/ApiPayments.php' and not original and not reviewed:
+            reviewed=(source.count(SCOPED_ADDON_API_INSERTION)==1 and
+                source.replace(SCOPED_ADDON_API_INSERTION,'')==api_consumer_snapshot(path,REVIEW_SOURCE))
+        check(original or reviewed,'api_dynamic_consumer_source_drift:'+path)
         for key in API_CONDITIONAL_REFS.get(path,[]):
             check(repr(key) in source,'api_conditional_literal_missing:'+path+':'+key)
             refs.add(key)

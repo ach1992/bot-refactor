@@ -2176,6 +2176,23 @@ return [
     'gifts' => [
         'completed_report' => ['text' => '🎁 هدیهٔ اشتراک اعمال شد' . "\n" . '🔖 شناسه عملیات: <code>{reference}</code>' . "\n" . '👤 اشتراک: <code>{remark}</code>' . "\n" . '📅 زمان هدیه: {days} روز' . "\n" . '📦 حجم هدیه: {volume_mb} مگابایت' . "\n" . '👥 ثبت‌های مرتبط: {reference_count}' . "\n" . '✉️ کاربران مرتبط: {recipient_count}' . "\n" . '⚠️ پیام‌های بدون تأیید ارسال: {notice_unconfirmed_count}', 'parameters' => ['reference', 'remark', 'days', 'volume_mb', 'reference_count', 'recipient_count', 'notice_unconfirmed_count']],
     ],
+    // Scope-aware day/volume extension offers (post-V9 migration 015).
+    'addon_scopes' => [
+        'choose_scope' => 'دامنهٔ این بستهٔ تمدید را انتخاب کنید:',
+        'filter_all' => '📋 همهٔ پیشنهادها',
+        'filter_blocked' => '⚠️ یک ویرایش فعال دارید؛ ابتدا آن را ثبت یا لغو کنید، سپس فهرست را فیلتر کنید.',
+        'global' => '🌐 همهٔ سرورها (Global)',
+        'server' => '🖥 سرور مشخص',
+        'groups' => '👥 گروه‌های PasarGuard در یک سرور',
+        'choose_server' => 'سرور موردنظر را انتخاب کنید:',
+        'choose_groups' => 'شناسهٔ گروه‌های فعال PasarGuard را با ویرگول بفرستید؛ نمونه: 3,7' . "\n" . 'این پیشنهاد فقط برای اشتراک‌هایی با دقیقاً همین مجموعهٔ گروه اعمال می‌شود.',
+        'units_price' => 'مقدار و قیمت را به صورت «تعداد-قیمت» بفرستید؛ نمونه: 10-25000',
+        'scope_global' => '🌐 Global',
+        'scope_server' => ['text' => '🖥 Server {server}', 'parameters' => ['server']],
+        'scope_groups' => ['text' => '👥 Server {server} · Groups {groups}', 'parameters' => ['server','groups']],
+        'offer_saved' => '✅ پیشنهاد تمدید و محدودهٔ آن ثبت شد.',
+        'unavailable' => '⚠️ ذخیره یا بررسی دامنه تأیید نشد؛ تغییر مالی اعمال نشده است. وضعیت را بررسی کرده و دوباره تلاش کنید.',
+    ],
     // متن‌ها و نشانی‌های قابل تنظیم هر ربات
     'instance_content' => [
         'title' => '📝 متن‌های ربات' . "\n" . 'متن موردنظر را برای ویرایش انتخاب کنید.',

@@ -43,12 +43,16 @@ class Handler(BaseHTTPRequestHandler):
         if path=='/api/system': value={'version':'5.5.1' if mode!='wrong_version' else '5.5.2'}
         elif path=='/api/admin':
             actions={a:{'scope':1} for a in ['read','create','update','delete','reset_usage','revoke_sub']}
-            value={'role':{'is_owner':False,'access':{'require_template':mode=='template_only','allowed_group_ids':[2,5]},
+            value={'role':{'is_owner':False,'access':{'require_template':mode=='template_only','allowed_group_ids':getattr(s,'allowed_group_ids',[2,5])},
                 'permissions':{'users':actions,'groups':{'read':True,'read_simple':True}}}}
             if mode=='permission_missing': del value['role']['permissions']['users']['revoke_sub']
         elif path=='/api/groups':
             offset=int(parse_qs(urlsplit(self.path).query)['offset'][0])
-            value={'groups':[{'id':i,'name':'fixture_group','is_disabled':False,'inbound_tags':['native_tag']} for i in [2,5]][offset:offset+1], 'total':2}
+            group_ids=getattr(s,'available_group_ids',[2,5])
+            value={'groups':[{'id':i,'name':'fixture_group',
+                'is_disabled':i in getattr(s,'disabled_group_ids',[]),
+                'inbound_tags':['native_tag']} for i in group_ids][offset:offset+1],
+                'total':len(group_ids)}
             if mode=='groups_truncated' and offset: value['groups']=[]
             if mode=='groups_duplicate' and offset: value['groups'][0]['id']=2
             if mode=='groups_null_tags': value['groups'][0]['inbound_tags']=None

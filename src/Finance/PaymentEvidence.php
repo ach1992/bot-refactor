@@ -166,6 +166,10 @@ function achbotPaymentEvidencePayFingerprint(array $pay): string {
     foreach (['id','hash_id','user_id','type','plan_id','server_id','order_id',
         'price','day','volume','agent_count','description','agent_bought'] as $field)
         $out[$field]=(string)($pay[$field]??'');
+    // Old issued financial evidence keeps its exact historical fingerprint.
+    // A new scoped quote binds its immutable metadata to every API receipt.
+    if (isset($pay['addon_scope_snapshot']))
+        $out['addon_scope_snapshot']=(string)$pay['addon_scope_snapshot'];
     return hash('sha256',json_encode($out,JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE));
 }
 function achbotPaymentEvidenceQuoteFingerprint(array $attempt): string {

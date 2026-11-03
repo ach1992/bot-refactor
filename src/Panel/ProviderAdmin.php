@@ -12,12 +12,8 @@ function achbotPgAdminGroupIds(string $text,array $panel): array {
     $groups=achbotPgGroupsCanonical(array_map('intval',preg_split('/\s*,\s*/',trim($text))));
     $check=achbotPgCheck($panel);
     if (($check['success']??false)!==true) throw new RuntimeException('pg_setup_check_unverified');
-    $eligible=[];
-    foreach ($check['groups'] as $g)
-        if (!$g['is_disabled']) $eligible[]=$g['id'];
+    $eligible=achbotPgEligibleGroupIds($check);
     if (array_diff($groups,$eligible)) throw new RuntimeException('pg_groups_unavailable');
-    if (is_array($check['allowed_group_ids']??null) && array_diff($groups,$check['allowed_group_ids']))
-        throw new RuntimeException('pg_groups_not_permitted');
     return $groups;
 }
 function achbotPgServerAdminKeys(array $info,array $config,int $offset): string {

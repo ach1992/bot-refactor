@@ -160,7 +160,7 @@ function achbotPayUxLockDraftOwner(mysqli $db, int $userId): void {
 }
 
 /** Execute a NEW customer draft under the same lock held by all issuers. */
-function achbotPayUxInsertDraft(mysqli $db, int $actor, mysqli_stmt $insert): int {
+function achbotPayUxInsertDraft(mysqli $db, int $actor, mysqli_stmt $insert, bool $scopedAddon = false): int {
     $started=false;
     try {
         if (!$db->begin_transaction()) throw new RuntimeException('draft_begin_failed');
@@ -171,6 +171,11 @@ function achbotPayUxInsertDraft(mysqli $db, int $actor, mysqli_stmt $insert): in
         $draftId=(int)$insert->insert_id;
         require_once __DIR__.'/../Panel/ProviderRuntime.php';
         achbotProviderPinPayment($db,$draftId);
+        if ($scopedAddon) {
+            require_once __DIR__.'/../Plans/Addons.php';
+            if (!achbotAddonDraftCurrent($db,$draftId))
+                throw new RuntimeException('addon_draft_scope_or_price_changed');
+        }
         if ($draftId<=0 || !$db->commit())
             throw new RuntimeException('draft_commit_unknown');
         return $draftId;

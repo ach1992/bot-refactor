@@ -339,7 +339,34 @@ foreach(['user'=>['payment.api_payment.code_acknowledgement','payment.api_paymen
  $groups=eval(substr($source,$begin));$flat=[];foreach($groups as$topic=>$entries)foreach($entries as$name=>$value)$flat[$topic.'.'.$name]=$value;
  foreach($keys as$key)$reviewEntries[$audience][$key]=$flat[$key];
 }
-$verifyCurrentAudienceCatalogs=static function(array $sides) use($giftKey,$giftEntry,$apiDelta,$r5Expected,$reviewEntries): void {
+// Issue #107 introduces only 14 explicit current admin templates. Validate
+// the entire known addition set before restoring the original frozen proofs.
+$addonManifest=json_decode(file_get_contents(__DIR__.'/text_catalog_addon_scopes.json'),true,512,JSON_THROW_ON_ERROR);
+if(($addonManifest['version']??null)!==1 ||
+   ($addonManifest['project_issue']??null)!=='https://github.com/ach1992/bot-refactor/issues/107' ||
+   ($addonManifest['audience']??null)!=='admin' ||
+   ($addonManifest['topic']??null)!=='addon_scopes' ||
+   !is_array($addonManifest['entries']??null) || count($addonManifest['entries'])!==14)
+ throw new RuntimeException('addon_catalog_manifest_identity_drift');
+$addonEntries=$addonManifest['entries'];
+$verifyCurrentAudienceCatalogs=static function(array $sides) use($giftKey,$giftEntry,$apiDelta,$r5Expected,$reviewEntries,$addonEntries): void {
+ if(!isset($sides['user'],$sides['admin']) || !is_array($sides['user']) || !is_array($sides['admin']))
+  throw new RuntimeException('addon_catalog_audiences_invalid');
+ foreach($sides['user']as$key=>$value)if(str_starts_with($key,'addon_scopes.'))
+  throw new RuntimeException('addon_catalog_cross_audience');
+ $actualAddonKeys=array_values(array_filter(array_keys($sides['admin']),
+  static fn(string $key):bool=>str_starts_with($key,'addon_scopes.')));
+ $expectedAddonKeys=array_map(static fn(string $name):string=>'addon_scopes.'.$name,array_keys($addonEntries));
+ sort($actualAddonKeys,SORT_STRING);sort($expectedAddonKeys,SORT_STRING);
+ if($actualAddonKeys!==$expectedAddonKeys)throw new RuntimeException('addon_catalog_exact_key_inventory');
+ foreach($addonEntries as$name=>$item) {
+  $key='addon_scopes.'.$name;
+  if(!is_array($item) || array_keys($item)!==['value','source_paths'] ||
+     ($item['source_paths']??null)!==['src/Plans/AddonAdmin.php'] ||
+     !array_key_exists($key,$sides['admin']) || $sides['admin'][$key]!==$item['value'])
+   throw new RuntimeException('addon_catalog_value_or_source_drift');
+  unset($sides['admin'][$key]);
+ }
  foreach($reviewEntries as$audience=>$entries)foreach($entries as$key=>$value){
   if(($sides[$audience][$key]??null)!==$value || array_key_exists($key,$sides[$audience==='user'?'admin':'user']))throw new RuntimeException('review_catalog_value_parameters_or_audience_drift');
   unset($sides[$audience][$key]);
@@ -377,7 +404,17 @@ $bad=$shippingSides;$bad['user'][$giftKey]=$bad['admin'][$giftKey];
 $giftControls['duplicate_cross_audience_key']=[$bad,'gift_report_value_parameter_or_audience_drift'];
 $bad=$shippingSides;$bad['user']['legacy_messages.banned']='changed';
 $giftControls['prior_catalog_mutation']=[$bad,'r5_undeclared_copy_or_recipient_change'];
-foreach($giftControls as$name=>[$candidate,$expectedReason]){
+// Separate current scoped-addon controls preserve the accepted gift proof count.
+$addonControls=[];
+$bad=$shippingSides;unset($bad['admin']['addon_scopes.offer_saved']);
+$addonControls['addon_missing_key']=[$bad,'addon_catalog_exact_key_inventory'];
+$bad=$shippingSides;$bad['admin']['addon_scopes.offer_saved'].=' changed';
+$addonControls['addon_changed_value']=[$bad,'addon_catalog_value_or_source_drift'];
+$bad=$shippingSides;$bad['user']['addon_scopes.offer_saved']=$bad['admin']['addon_scopes.offer_saved'];
+$addonControls['addon_cross_audience']=[$bad,'addon_catalog_cross_audience'];
+$bad=$shippingSides;$bad['admin']['addon_scopes.unapproved']='undocumented';
+$addonControls['addon_extra_key']=[$bad,'addon_catalog_exact_key_inventory'];
+foreach($giftControls + $addonControls as$name=>[$candidate,$expectedReason]){
  try {$verifyCurrentAudienceCatalogs($candidate);}
  catch(RuntimeException $error){
   if($error->getMessage()!==$expectedReason)
@@ -566,7 +603,7 @@ echo json_encode(['status'=>'PASS',
     'repeated_interpolation_string_conversion'=>'PASS','actual_traffic_helper_parity_cases'=>$trafficCases,
     'traffic_relocation_source_ref'=>CATALOG_MANAGEMENT_BASE,'current_traffic_shared_observation_cases'=>$currentTrafficCases,
     'editable_catalog_files'=>count($files),'logical_topics'=>count(achbotMessageTopics()),
-    'current_catalog_keys'=>count($shipping),'current_gift_admin_additions'=>1,'current_gift_catalog_negative_controls'=>count($giftControls),'current_gift_catalog_negative_scenarios'=>array_keys($giftControls),'current_api_additions'=>count($apiDelta),'current_api_user_additions'=>$apiUserCount,'current_api_admin_additions'=>count($apiDelta)-$apiUserCount,'current_r5_catalog_keys'=>2685,'current_byte_preserved_keys'=>$preserved,
+    'current_catalog_keys'=>count($shipping),'current_gift_admin_additions'=>1,'current_gift_catalog_negative_controls'=>count($giftControls),'current_gift_catalog_negative_scenarios'=>array_keys($giftControls),'current_addon_catalog_additions'=>count($addonEntries),'current_addon_catalog_negative_controls'=>count($addonControls),'current_addon_catalog_negative_scenarios'=>array_keys($addonControls),'current_api_additions'=>count($apiDelta),'current_api_user_additions'=>$apiUserCount,'current_api_admin_additions'=>count($apiDelta)-$apiUserCount,'current_r5_catalog_keys'=>2685,'current_byte_preserved_keys'=>$preserved,
     'current_style_changes'=>count($changes),'current_retired_implementation_keys'=>count($retired),'current_retired_feature_keys'=>count($featureRetired),
     'current_added_admin_keys'=>count($added),'current_management_added_keys'=>count($managementAdded),'current_owner_followup_changes'=>count($ownerChanges),'current_parameter_privacy_changes'=>$parameterChanges,
     'current_r5_changes'=>count($r5['changes']),'current_r5_retired_keys'=>count($r5['retired_keys']),'current_r5_added_keys'=>count($r5['added_keys']),
