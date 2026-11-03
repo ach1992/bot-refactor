@@ -554,7 +554,15 @@ def test():
                    policy)
             catalogue=run("catalog",kind=kind)
             ids=[r["id"] for r in catalogue["offers"]]
-            passed(catalogue["context_groups"]==[] and ids==[offer_id],
+            # Different unit quantities remain independent visible offers:
+            # the historical Global 3-day row is also valid alongside the
+            # newly scoped Server 4-day row. The native Group-specific rows
+            # 701/702 must not be admitted for an empty membership.
+            visible=([703,704] if kind=="day" else [705])
+            selected=next((r for r in catalogue["offers"] if r["id"]==offer_id),None)
+            passed(catalogue["context_groups"]==[] and ids==visible and
+                   selected is not None and selected["scope_groups"] is None and
+                   selected["scope_server_id"]==(2 if kind=="day" else None),
                    "imported_empty_groups_"+kind+"_only_"+scope+"_scope_visible",
                    catalogue)
             passed(provider.write_count==0 and
