@@ -817,10 +817,9 @@ function achbotPgServiceEdit(mysqli $db,int $serverId,array $change,?array $gift
         return achbotProviderFailure('pg_edit_requires_review');
     }
 }
-require_once __DIR__.'/../Subscription/PhysicalService.php';
-
 /** One explicit physical-group admission rule for both supported providers. */
 function achbotProviderRelocationTargets(mysqli $db,int $sourceId): array {
+    require_once __DIR__.'/../Subscription/PhysicalService.php';
     try {
         $source=achbotPanelGroup($db,$sourceId);
         $type=achbotProviderType($db,$sourceId);
@@ -840,6 +839,7 @@ function achbotProviderRelocationTargets(mysqli $db,int $sourceId): array {
 }
 
 function achbotReassignLogicalServer(mysqli $db,int $orderId,int $targetId,int $actor,bool $adminAllowed=false): ?array {
+    require_once __DIR__.'/../Subscription/PhysicalService.php';
     // A single transaction moves every ACTIVE reference to this exact
     // physical subscription. Native access does not change here: it changes
     // only after the admin selects a new destination-server plan.
@@ -900,8 +900,17 @@ function achbotReassignLogicalServer(mysqli $db,int $orderId,int $targetId,int $
             'provider'=>achbotProviderType($db,$targetId),'shared_count'=>$count];
     } catch (Throwable $error) {
         if ($started) {try{$db->rollback();}catch(Throwable $ignored){}}
-        error_log('achbot_shared_transfer_'.($commitAttempted?'requires_review':'rejected').
-            ' order_id='.$orderId.' code='.$error->getMessage());
+        $reason=(string)$error->getMessage();
+        // Invalid or replayed callbacks are ordinary expected denial. Do not
+        // flood the error log or reveal private panel/user details for them.
+        $expected=['physical_transfer_unavailable','physical_transfer_denied',
+            'physical_transfer_group_invalid','physical_transfer_target_unavailable',
+            'physical_transfer_reference_group_conflict',
+            'physical_transfer_pending_plan_review',
+            'physical_pending_financial_effect','physical_operation_busy'];
+        if ($commitAttempted || !in_array($reason,$expected,true))
+            error_log('achbot_shared_transfer_'.($commitAttempted?'requires_review':'rejected').
+                ' order_id='.$orderId.' code='.$reason);
         return null;
     } finally {
         if ($lease!==null) achbotPhysicalReleaseLock($db,$lease);

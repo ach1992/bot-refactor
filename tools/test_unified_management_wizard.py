@@ -509,7 +509,7 @@ def main():
         r=call(callback='pgAddConnection',actor=9002)
         for value in ['PRIVATE-ROLE-DENIAL-DRAFT','10','denialfixture','FIXTURE',url,'fixture-private-key']:
             r=call(text=value,actor=9002)
-        r=action(r,'pick','0',actor=9002);r=action(r,'done',actor=9002)
+        r=action(r,'group','0',actor=9002);stage(r,'review')
         before=all_state()
         denied=action(r,'save',actor=9002,revoke_second_actor_lookup=True)
         yes(all_state()==before,'role_denial_after_initial_claim_rolls_back_all_entity_and_actor_changes')

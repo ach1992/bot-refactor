@@ -355,14 +355,15 @@ def check() -> dict:
         baseline={surface:set(re.findall(
             r"'callback_data'\s*=>\s*[\"']"+surface+r"([A-Za-z0-9_]+)[\"']",
             baseline_source)) for surface in advertised}
-        # The Owner moved ONLY these two display controls into per-server
-        # management. Keep every other original toggle and test its real writer.
-        moved_display={'configLinkState','subLinkState'}
+        # Native config/link display controls moved to server settings; the
+        # admin transfer action is always available and its obsolete global
+        # BOT_STATES toggle must never be advertised or editable.
+        moved_display={'configLinkState','subLinkState','switchLocationState'}
         assert len(baseline['changeBot'])==25 and len(baseline['changeGateWays'])==8
         assert advertised['changeBot']==baseline['changeBot']-moved_display,advertised
         assert advertised['changeGateWays']==baseline['changeGateWays'],advertised
         assert not moved_display.intersection(advertised['changeBot'])
-        cases.append('managed_display_replaces_only_two_legacy_global_toggles')
+        cases.append('obsolete_transfer_and_display_toggles_absent')
         assert not {'weSwapState','tronWallet'}.intersection(
             advertised['changeBot']|advertised['changeGateWays'])
         for surface,keys in advertised.items():
