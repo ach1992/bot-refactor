@@ -131,7 +131,9 @@ try {
     $profile=achbotPaymentEvidenceSnapshot($a);
     $e=achbotPaymentEvidenceSmsNormalize($spec['sms'],$profile);
     $result=$e===null?null:achbotPaymentEvidenceReserve($connection,$id,$e,'settle');
-    if($result!==null)$result=['reserved'=>true];
+    if($result!==null)$result=['reserved'=>true,
+        'transaction_id'=>(int)$result['transaction_id'],
+        'operation'=>(string)$result['operation']];
  } elseif ($op==='consume') {
     $id=(int)$spec['pay_id'];$pending=achbotPaymentEvidencePending($connection,$id);
     $result=$pending?achbotPaymentEvidenceConsume($connection,$pending):null;
@@ -409,8 +411,10 @@ def test():
             payment_id = issued["pay_id"]
             passed(run("preflight", pay_id=payment_id)["valid"],
                    kind + "_native_scoped_api_preflight")
-            passed(run("reserve", pay_id=payment_id, sms=message) == {
-                "reserved": True}, kind + "_evidence_reserved")
+            reservation=run("reserve", pay_id=payment_id, sms=message)
+            passed(reservation is not None and reservation["reserved"]
+                   and reservation["transaction_id"]>0,
+                   kind + "_evidence_reserved")
             passed(run("consume", pay_id=payment_id)["status"] == "proven"
                    and bank.consumes.get("1") == 1,
                    kind + "_original_bank_evidence_consumed_once")
@@ -541,11 +545,29 @@ def test():
             responses = list(pool.map(
                 lambda _: run("reserve", pay_id=pay, sms=message),
                 (1, 2)))
-        passed(sum(r is not None for r in responses) == 1 and
+        # The original API reservation deliberately supports idempotent
+        # repeated handles for the SAME proof/invoice. The durable invariant
+        # is one operation/transaction, not exactly one successful caller.
+        handles=[r for r in responses if r is not None]
+        identities={(r["transaction_id"],r["operation"]) for r in handles}
+        passed(len(handles)>=1 and len(identities)==1 and
+               all(r["reserved"] for r in handles) and
                sql("SELECT COUNT(*) FROM payment_transactions") == "1" and
                provider.write_count == 0,
-               "scoped_api_evidence_reservation_concurrent_single_winner",
+               "scoped_api_concurrent_idempotent_single_evidence_operation",
                responses)
+
+    with sandbox() as (sql, run, provider, bank, _):
+        original, message = claim_proof(
+            run, bank, "day", "scoped_api_proof_original_owner")
+        competing=run("issue", kind="day", offer_id=701,
+                      hash="scoped_api_proof_foreign_invoice")
+        source=run("reserve", pay_id=original["pay_id"], sms=message)
+        stolen=run("reserve", pay_id=competing["pay_id"], sms=message)
+        passed(source is not None and stolen is None and
+               sql("SELECT COUNT(*) FROM payment_transactions") == "1" and
+               provider.write_count == 0,
+               "scoped_api_bank_evidence_cannot_be_reassigned_to_other_invoice")
 
     return {
         "status": "PASS", "cases": len(checks), "checks": checks,
