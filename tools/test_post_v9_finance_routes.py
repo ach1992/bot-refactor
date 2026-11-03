@@ -533,6 +533,10 @@ function curl_error($handle) {
         $GLOBALS['fake_marzban_transport_failure']) return 'synthetic_timeout';
     return '';
 }
+function curl_errno($handle) {
+    // The real native plan transport checks both cURL error surfaces.
+    return curl_error($handle)!=='' ? 28 : 0;
+}
 function curl_getinfo($handle,$option) {
     if (str_contains($handle->url,'/api/user/') &&
         str_ends_with($handle->url,'/reset')) return $GLOBALS['fake_marzban_reset_http'];

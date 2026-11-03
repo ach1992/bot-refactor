@@ -342,13 +342,13 @@ achEvent('probe',[
             if not has(z,'[true, false]'):raise RuntimeError('Old source-server plan remains available after transfer: '+str(z))
             passed('old_source_plan_unavailable_until_destination_plan_selected')
             refuse('replayed_admin_callback','transfer',f'switchServer3_{oid}')
-            # No previous plan is attached after transfer. Changing the
-            # server group no longer strands an old renewal product.
-            assign(3,g2)
-            if sql(work,env,'SELECT panel_group_id FROM server_info WHERE id=3').strip()!=str(g2):
-                raise RuntimeError('Planless group edit was not accepted')
+            # Even with the old plan cleared, changing the declared physical
+            # panel while shared active references remain would strand them.
+            assign(3,g2,success=False)
+            if sql(work,env,'SELECT panel_group_id FROM server_info WHERE id=3').strip()!=str(g1):
+                raise RuntimeError('Active shared account group was changed despite physical fence')
             assign(3,g1)
-            passed('planless_group_assignment_has_no_stale_plan_dependency')
+            passed('active_planless_shared_refs_fence_cross_panel_group_change')
             z=do('admin_transfer',f'changeServerId_{oid}',actor=9001)
             if not has(z,f'selectServerId_{oid}_2') or has(z,f'selectServerId_{oid}_4'):
                 raise RuntimeError('Admin selector leaked other groups')

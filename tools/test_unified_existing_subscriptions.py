@@ -157,6 +157,9 @@ class ExistingMarzbanHandler(mb.EditProviderHandler):
   self.send_header('Content-Length',str(len(raw)));self.end_headers();self.wfile.write(raw)
  def handle_request(self):
   s=self.server
+  if self.path=='/api/core/config'and self.command=='GET':
+   s.trace.append(dict(method=self.command,path=self.path,body='',headers=dict(self.headers)))
+   self.reply(200,{'inbounds':[{'protocol':'vless','tag':'inbound'}]});return
   if self.path.startswith('/api/user/')and self.command=='GET'and not s.deleted:
    s.trace.append(dict(method=self.command,path=self.path,body='',headers=dict(self.headers)))
    value=copy.deepcopy(s.edit_account);s.sequence+=1
@@ -423,7 +426,9 @@ def main():
       "DELETE FROM setting WHERE type='BOT_STATES';"
       "INSERT INTO setting(type,value)VALUES(\'BOT_STATES\',CONVERT(UNHEX(\'7b2277616c6c65745374617465223a226f6e222c226761746577617941756469656e6365223a7b2277616c6c6574223a22616c6c227d7d\') USING utf8mb4))")
    if provider=='pasarguard':
-    db("UPDATE server_info SET provider_group_ids='[2,5]' WHERE id=2;"+shared_storage.connection(2,1,vendor_url))
+    # Native access Groups belong to plans, never server_info defaults.
+    db("UPDATE server_plans SET provider_group_ids='[2,5]' WHERE server_id=2;"+
+       shared_storage.connection(2,1,vendor_url))
     remark='existing_user_41';credential=vendor.users[41]['subscription_url']
     # Native scheduling is allowed for import/read; only existing mutation
     # eligibility is restricted, and must be checked before money/fence claims.
@@ -434,22 +439,29 @@ def main():
     raw=lambda:vendor.users[41]
     def remote_writes():return [r for r in vendor.trace if r[0]!='GET']
    else:
+    db("UPDATE server_plans SET custom_sni='"+
+       json.dumps({'inbounds':{'vless':['inbound']},'proxies':{'vless':{'flow':''}}})+
+       "' WHERE id=7")
     vendor.mode='edit-reset-verified';vendor.edit_put_count=0;vendor.edit_reset_count=0
     vendor.edit_account=copy.deepcopy(mb.INITIAL)
     remark='shared_native_user';token=mb_mint(remark,int(time.time())-60)
     vendor.edit_account.update(username=remark,created_at='2026-10-26T05:00:00.123456',
        subscription_url='/sub/'+token,proxies={'vless':{'id':'aaaaaaaa-1111-4111-8111-111111111111','flow':'xtls-rprx-vision'}},
+       inbounds={'vless':['inbound']},
        links=['vless://aaaaaaaa-1111-4111-8111-111111111111@host.invalid:443'],
        excluded_inbounds={},next_plan=None,auto_delete_in_days=None,on_hold_expire_duration=None,on_hold_timeout=None)
     credential=vendor_url+'/sub/'+token;raw=lambda:vendor.edit_account
     def remote_writes():
      return [r for r in vendor.trace if r['method']in('PUT','DELETE')or
          (r['method']=='POST'and not r['path'].endswith('/api/admin/token'))]
+   # Use the real Native host catalog facade for strict plan readback.
    facade=bodies.function_bodies((ROOT/'config.php').read_bytes(),[
        'buildSubscriptionPresentation','buildConfigMessage','setUser','sumerize',
        'getOrderDetailKeys','getUserOrderDetailKeys','renewMarzbanUUID','deleteMarzban',
-       'changeMarzbanState','getMarzbanToken','RandomString'])
+       'changeMarzbanState','getMarzbanToken','getMarzbanHosts','RandomString'])
    (shared_work/'facades.php').write_bytes(facade.replace(b'__DIR__',repr(str(ROOT)).encode()))
+   for migration in ['016_remove_pasarguard_server_groups.sql','017_shared_plan_changes.sql']:
+    db((ROOT/'migrations/post-v9'/migration).read_text())
    config_source=(ROOT/'config.php').read_text()
    consent_start=config_source.index("if (preg_match('/^(toggleAutoRenew|adminToggleAutoRenew)")
    consent_end=config_source.index('// END create user and admin get order detail',consent_start)
@@ -466,7 +478,10 @@ def main():
         (op=='delete'and re.fullmatch(r'achbot_(?:account|admin)_delete_observation_deferred order_id=[0-9]+',line)is not None)or
         line.startswith(('achbot_existing_subscription_import_deferred reason=',
         'achbot_existing_subscription_lookup_deferred','achbot_customer_draft_creation_deferred',
-        'achbot_server_display_unavailable'))for line in process.stderr.splitlines())
+        'achbot_server_display_unavailable')) or
+        (op=='extensions' and re.fullmatch(
+         r'achbot_shared_plan_committed journal_id=[1-9][0-9]* source_order_id=[1-9][0-9]* active_refs=3',
+         line) is not None) for line in process.stderr.splitlines())
     if process.returncode or not allowed:raise AssertionError((provider,'shared_native_child',process.returncode,process.stdout,process.stderr))
     result=json.loads(process.stdout)
     if 'fixture_error'in result:raise AssertionError((provider,result))
@@ -546,9 +561,12 @@ def main():
    yes('confirmChangePlan_'+str(current)+'_7'in json.dumps(offered),
        provider+'_genuine_import_can_open_real_change_plan_menu_without_trial_misclassification')
    invoke('extensions',data='confirmChangePlan_'+str(current)+'_7')
-   yes(db(f'SELECT fileid,amount FROM orders_list WHERE id={current}')=='7\t0'and
+   selected=db('SELECT userid,fileid,amount FROM orders_list WHERE id IN ('+
+       ','.join(map(str,links.values()))+') ORDER BY userid').splitlines()
+   yes(selected==['1001\t7\t0','1002\t7\t0','1003\t7\t0']and
+       db('SELECT state FROM service_plan_changes ORDER BY id DESC LIMIT 1')=='committed'and
        finance()==before and len(remote_writes())==writes,
-       provider+'_actual_plan_confirmation_assigns_real_catalogue_plan_without_faking_purchase_or_amount')
+       provider+'_verified_native_plan_confirmation_syncs_all_three_shared_refs_without_payment_or_quota_change')
    visible=invoke('view',owner=1001,order=current)['out']
    yes('renewAccountAsk'+str(current)in json.dumps(visible),
        provider+'_assigned_import_exposes_actual_paid_renewal_entry')
