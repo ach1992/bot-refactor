@@ -43,8 +43,10 @@ For ungrouped Marzban the lock uses the immutable logical server ID,
 **not** its editable URL; for grouped Marzban it uses the explicitly assigned
 group ID. Active subscriptions cannot change their physical-group
 classification, including from ungrouped to grouped. Administrator changes to
-Marzban URL/credentials are denied for a referenced server/group and blocked
-by any outstanding journal even if active local orders have disappeared.
+Marzban endpoints are denied for a referenced server/group. Credential
+rotation without an endpoint change remains possible on an active server,
+but all connection changes are blocked by outstanding journals even if
+active local orders have disappeared.
 PasarGuard API-key rotation likewise cannot bypass an unfinished plan journal.
 The old journal identity remains visible for manual reconciliation.
 

@@ -442,7 +442,9 @@ def main():
   yes(call('edit',pay=2,change={'plus_day':3})['out']['success'] is False and server.write_count==writes,'same_mutation_key_cannot_repeat')
   # Group switch verifies native PUT before SQL routing changes.
   sql("UPDATE server_info SET active=1,state=1,ucount=10 WHERE id=3;"
-      "UPDATE pays SET state='paid' WHERE order_id=91 AND state='processing'")
+      # The verified native renewal effect is complete in this disposable
+      # fixture; never call an unfulfilled paid payment 'settled'.
+      "UPDATE pays SET state='approved' WHERE order_id=91 AND state='processing'")
   before_switch=sql('SELECT * FROM orders_list WHERE id=91');writes_before_switch=server.write_count
   denied_switch=call('switch',source=99,actor=1001,admin_allowed=True)
   yes(denied_switch['out']is None and sql('SELECT * FROM orders_list WHERE id=91')==before_switch and server.write_count==writes_before_switch,'forged_admin_flag_never_grants_customer_server_switch')

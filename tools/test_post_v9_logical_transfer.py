@@ -303,7 +303,15 @@ achEvent('probe',[
             do('wizard',data='addMarzbanPanelGroup',actor=1001)
             if snapshot(work,env)!=initial:raise RuntimeError('Customer wrote group')
             passed('only_admin_may_create_group')
+            # A physically active ungrouped Marzban account cannot be
+            # silently reclassified. For this disposable fixture alone,
+            # stage the initial panel-group map while the synthetic orders
+            # are inactive, then reactivate them for every real transfer.
+            assign(2,g1,success=False)
+            passed('null_to_group_active_subscription_reclassification_refused')
+            sql(work,env,f'UPDATE orders_list SET status=0 WHERE id IN ({oid},{peer})')
             for sid,gid in [(2,g1),(3,g1),(4,g2),(5,g2),(6,g1)]:assign(sid,gid)
+            sql(work,env,f'UPDATE orders_list SET status=1 WHERE id IN ({oid},{peer})')
             passed('groups_persist_in_server_info_column')
             menu=do('transfer',f'switchLocation{oid}_2_0_0')
             if not has(menu,f'switchServer3_{oid}') or any(

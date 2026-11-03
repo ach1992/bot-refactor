@@ -401,11 +401,15 @@ function achbotHandleManagementFields(): bool {
                 if (!$row || !hash_equals($d['baseline'],achbotManagementFieldBaseline($row,$field))) throw new RuntimeException('management_stale');
                 if ($field==='login') {
                     $v=$d['values'];
-                    if ($v['url']!==$row['panel_url'] ||
+                    $endpointChanged=$v['url']!==$row['panel_url'];
+                    if ($endpointChanged ||
                         $v['username']!==$row['username'] ||
                         $v['password']!==$row['password']) {
                         require_once __DIR__.'/../Subscription/PhysicalService.php';
-                        try {achbotPhysicalAssertRebindSafe($connection,$entity,true);}
+                        // Rebinding an endpoint is unsafe for active references.
+                        // Safe credential rotation on an unchanged endpoint is
+                        // still permitted when no plan journal is outstanding.
+                        try {achbotPhysicalAssertRebindSafe($connection,$entity,true,$endpointChanged);}
                         catch (RuntimeException $e) {
                             if ($e->getMessage()==='physical_rebind_active_references')
                                 throw new RuntimeException('server_referenced');

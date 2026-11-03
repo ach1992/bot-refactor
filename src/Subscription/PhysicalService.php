@@ -89,9 +89,11 @@ function achbotPhysicalAssertRebindSafe(mysqli $db,int $serverId,
 /** Exact connected target evidence, persisted as a digest rather than secrets. */
 function achbotPhysicalTargetFingerprint(mysqli $db,array $order): string {
     $server=(int)$order['server_id'];
+    // Marzban stays usable on its own post-V9 schema: optional PasarGuard
+    // provider_identity columns are NOT a prerequisite for this target pin.
     $s=$db->prepare('SELECT c.id,c.type,c.panel_url,c.username,c.password,
-        c.provider_connection_id,c.provider_instance_key,i.panel_group_id
-        FROM server_config c JOIN server_info i ON i.id=c.id WHERE c.id=? FOR UPDATE');
+        i.panel_group_id FROM server_config c JOIN server_info i ON i.id=c.id
+        WHERE c.id=? FOR UPDATE');
     $s->bind_param('i',$server);$s->execute();$row=$s->get_result()->fetch_assoc();$s->close();
     if (!$row || !in_array($row['type'],['marzban','pasarguard'],true))
         throw new RuntimeException('physical_target_unavailable');

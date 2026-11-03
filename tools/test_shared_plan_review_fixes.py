@@ -230,11 +230,18 @@ def main():
             denied(h,'other_owner_automatic_renewal_review_attempt')
             db(f'DELETE FROM automatic_renewal_attempts WHERE pay_row_id={renewed};DELETE FROM pays WHERE id={renewed}')
 
-            effects=db(f"SELECT id FROM service_effects WHERE BINARY remote_username=BINARY '{h['remark']}' AND state='local_recorded' ORDER BY id LIMIT 1")
-            yes(bool(effects),provider+'_native_existing_account_has_auditable_effect')
-            db(f"UPDATE service_effects SET state='dispatching' WHERE id={effects}")
+            # Inject an independent, in-flight service effect tied to this
+            # exact physical identity. Do not mutate the imported account's
+            # actual creation/adoption provenance to model a foreign job.
+            db("INSERT INTO service_effects(source_kind,source_ref,ordinal,operation_id,"
+               "target_server_id,target_key,endpoint_sha256,plan_id,remote_username,"
+               "requested_expire,requested_bytes,request_sha256,state) VALUES("
+               f"'review','held-{provider}',99,'{'a'*32}',2,'review-f2-{provider}',"
+               f"'{'b'*64}',119,'{h['remark']}',1800000000,1024,'{'c'*64}','dispatching')")
+            effects=db(f"SELECT id FROM service_effects WHERE source_ref='held-{provider}'")
+            yes(bool(effects),provider+'_cross_account_native_service_effect_fixture_present')
             denied(h,'other_owner_native_service_effect_dispatching')
-            db(f"UPDATE service_effects SET state='local_recorded' WHERE id={effects}")
+            db(f'DELETE FROM service_effects WHERE id={effects}')
 
             legacy=invoice(h,'legacyaddon','pending',f'INCREASE_DAY_{h["peer"]}_3',0)
             denied(h,'legacy_type_encoded_addon_unclaimed')
