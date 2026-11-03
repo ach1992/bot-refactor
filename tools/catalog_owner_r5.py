@@ -113,12 +113,11 @@ def shared_transfer_copy_restore(sides):
           all(isinstance(item,dict) and set(item)=={'audience','before_sha256','after_sha256'}
               for item in entries.values()),'shared_transfer_catalogue_shape')
     baseline=shared_transfer_baseline()
-    check(type(sides) is dict and set(sides)=={'user','admin'},'shared_transfer_catalogue_audiences')
-    differences=set()
-    for audience in ['user','admin']:
-        all_keys=set(sides[audience])|set(baseline[audience])
-        differences.update(key for key in all_keys if sides[audience].get(key)!=baseline[audience].get(key))
-    check(differences==set(entries),'shared_transfer_undeclared_key_value_or_audience_delta')
+    check(type(sides) is dict and set(sides)=={'user','admin'},
+          'shared_transfer_catalogue_audiences')
+    # Restore only the eleven exact Owner-approved copy changes. Unknown
+    # mutations stay visible to the unchanged API/R5 whole-catalogue proof;
+    # this also preserves its original negative-control failure categories.
     restored=copy.deepcopy(sides)
     for key,item in entries.items():
         audience=item['audience']
@@ -130,8 +129,20 @@ def shared_transfer_copy_restore(sides):
             line=shared_transfer_source_lines(path,original).get(key)
             digest=hashlib.sha256(line.encode()).hexdigest() if line is not None else None
             check(digest==item[field],'shared_transfer_source_value_drift:'+key)
-        if key in baseline[audience]:restored[audience][key]=baseline[audience][key]
-        else:restored[audience].pop(key,None)
+        before=baseline[audience].get(key)
+        if key in baseline[audience]:
+            check(item['before_sha256'] is not None,
+                  'shared_transfer_baseline_missing_hash:'+key)
+            restored[audience][key]=before
+        else:
+            check(item['before_sha256'] is None,
+                  'shared_transfer_added_key_baseline:'+key)
+            restored[audience].pop(key,None)
+        # All new/changed keys must be present in their approved audience.
+        # Obsolete keys must remain absent. Unknown unrelated mutations are
+        # intentionally handled by the older whole-catalogue check below.
+        check((key in sides[audience])==(item['after_sha256'] is not None),
+              'shared_transfer_key_presence:'+key)
     return restored
 
 def verify_and_restore(sides,definition=None):

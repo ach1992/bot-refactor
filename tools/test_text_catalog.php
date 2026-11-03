@@ -376,9 +376,69 @@ foreach($selectionEntries as$key=>$item){
     ($item['before']??null)===($item['after']??null))
   throw new RuntimeException('addon_selection_parent_value_or_source_drift:'.$key);
 }
-$verifyCurrentAudienceCatalogs=static function(array $sides) use($giftKey,$giftEntry,$apiDelta,$r5Expected,$reviewEntries,$addonEntries,$selectionEntries): void {
+// #112: independently pin and restore ONLY the Owner-approved common-panel
+// transfer copy. Keep the original whole-catalogue API/R5/Gift checks and
+// their negative-control error classifications unchanged.
+$transferManifest=json_decode(file_get_contents(__DIR__.'/text_catalog_shared_transfer.json'),true,512,JSON_THROW_ON_ERROR);
+$transferBase='b654336d92a7e8e994e24d32144e995b5dba1407';
+if(($transferManifest['version']??null)!==1 ||
+   ($transferManifest['accepted_source_commit']??null)!==$transferBase ||
+   ($transferManifest['owner_issue']??null)!=='https://github.com/ach1992/bot-refactor/issues/112' ||
+   !is_array($transferManifest['entries']??null) ||
+   count($transferManifest['entries'])!==11)
+ throw new RuntimeException('shared_transfer_catalog_identity');
+$transferBaseline=[];
+$transferSource=[];
+foreach(['admin','user']as$audience){
+ $path='messages/fa/'.$audience.'.php';
+ $source=shell_exec('git -C '.escapeshellarg(dirname(__DIR__)).
+    ' show '.escapeshellarg($transferBase.':'.$path));
+ $begin=is_string($source)?strpos($source,'return ['):false;
+ if($begin===false)throw new RuntimeException('shared_transfer_baseline_unavailable');
+ $groups=eval(substr($source,$begin));$transferBaseline[$audience]=[];
+ foreach($groups as$topic=>$values)foreach($values as$name=>$value)
+  $transferBaseline[$audience][$topic.'.'.$name]=$value;
+ $transferSource[$audience]=[
+    'before'=>explode("\n",$source),
+    'after'=>explode("\n",file_get_contents(dirname(__DIR__).'/'.$path))
+ ];
+}
+foreach($transferManifest['entries']as$key=>$item){
+ $audience=$item['audience']??'';
+ if(!in_array($audience,['admin','user'],true) ||
+    array_keys($item)!==['audience','before_sha256','after_sha256'] ||
+    array_key_exists($key,$shippingSides[$audience==='admin'?'user':'admin']))
+  throw new RuntimeException('shared_transfer_key_audience_invalid');
+ foreach(['before','after']as$revision){
+  $match=[];
+  $pattern='~^\s*'.preg_quote("'".$key."'","~").'\s*=>~u';
+  foreach($transferSource[$audience][$revision]as$line)
+   if(preg_match($pattern,$line))$match[]=$line;
+  if(count($match)>1)throw new RuntimeException('shared_transfer_source_duplicate:'.$key);
+  $hash=count($match)===1?hash('sha256',$match[0]):null;
+  if($hash!==$item[$revision.'_sha256'])
+   throw new RuntimeException('shared_transfer_source_sha256_mismatch:'.$key);
+ }
+}
+$restoreSharedTransfer=static function(array $sides) use($transferManifest,$transferBaseline,$shippingSides):array {
+ foreach($transferManifest['entries']as$key=>$item){
+  $audience=$item['audience'];
+  $newExists=$item['after_sha256']!==null;
+  if(array_key_exists($key,$sides[$audience])!==$newExists ||
+     ($newExists && $sides[$audience][$key]!==$shippingSides[$audience][$key]))
+   throw new RuntimeException('shared_transfer_approved_value_drift:'.$key);
+  if($item['before_sha256']!==null){
+   if(!array_key_exists($key,$transferBaseline[$audience]))
+    throw new RuntimeException('shared_transfer_before_baseline_missing:'.$key);
+   $sides[$audience][$key]=$transferBaseline[$audience][$key];
+  } else unset($sides[$audience][$key]);
+ }
+ return $sides;
+};
+$verifyCurrentAudienceCatalogs=static function(array $sides) use($giftKey,$giftEntry,$apiDelta,$r5Expected,$reviewEntries,$addonEntries,$selectionEntries,$restoreSharedTransfer): void {
  if(!isset($sides['user'],$sides['admin']) || !is_array($sides['user']) || !is_array($sides['admin']))
   throw new RuntimeException('addon_catalog_audiences_invalid');
+ $sides=$restoreSharedTransfer($sides);
  foreach($sides['user']as$key=>$value)if(str_starts_with($key,'addon_scopes.'))
   throw new RuntimeException('addon_catalog_cross_audience');
  foreach($selectionEntries as$key=>$item){

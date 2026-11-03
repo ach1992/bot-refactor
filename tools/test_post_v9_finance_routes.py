@@ -87,6 +87,7 @@ $GLOBALS['fake_zarin_throw'] = $spec['zarin_throw'] ?? false;
 $GLOBALS['fake_zarin_malformed'] = $spec['zarin_malformed'] ?? false;
 $GLOBALS['fake_marzban_http'] = $spec['marzban_http'] ?? 200;
 $GLOBALS['fake_marzban_raw'] = $spec['marzban_raw'] ?? null;
+$GLOBALS['fake_marzban_host_mode'] = ($spec['marzban_host_mode'] ?? false) === true;
 $GLOBALS['fake_marzban_transport_failure'] = $spec['marzban_transport_failure'] ?? false;
 $GLOBALS['fake_marzban_reset_http'] = $spec['marzban_reset_http'] ?? 200;
 $GLOBALS['fake_marzban_username'] = $spec['marzban_username'] ?? 'syntheticMarzban';
@@ -377,6 +378,12 @@ function curl_exec($handle) {
     if (str_contains($handle->url, '/api/admin/token')) {
         return json_encode(['access_token'=>'TEST-ONLY']);
     }
+    if ($GLOBALS['fake_marzban_host_mode'] && str_contains($handle->url,'/api/core/config')) {
+        return json_encode(['inbounds'=>[
+            ['protocol'=>'vless','tag'=>'fake-inbound'],
+            ['protocol'=>'vless','tag'=>'inbound']
+        ]]);
+    }
     if (str_contains($handle->url, '/api/user/') &&
         str_ends_with($handle->url, '/reset')) {
         if ($GLOBALS['fake_marzban_reset_http'] !== 200) return '{"detail":"reset rejected"}';
@@ -384,6 +391,13 @@ function curl_exec($handle) {
         return json_encode(['username'=>$GLOBALS['fake_marzban_username']]);
     }
     if (str_contains($handle->url, '/api/user/') && $handle->method==='PUT') {
+        if ($GLOBALS['fake_marzban_host_mode']) {
+            $post=json_decode($handle->fields ?? '{}',true,64,JSON_THROW_ON_ERROR);
+            if (array_keys($post)!==['inbounds'] || !isset($post['inbounds']['vless']))
+                throw new RuntimeException('test_native_plan_payload_drift');
+            $GLOBALS['fake_marzban_applied']=$post;
+            return json_encode(['username'=>$GLOBALS['fake_marzban_username']]);
+        }
         if ($GLOBALS['fake_marzban_transport_failure']) return false;
         if ($GLOBALS['fake_marzban_raw'] !== null) return $GLOBALS['fake_marzban_raw'];
         $post=json_decode($handle->fields ?? '{}',true);
@@ -405,6 +419,19 @@ function curl_exec($handle) {
     }
     if (str_contains($handle->url, '/api/user/')) {
         $applied=$GLOBALS['fake_marzban_applied'];
+        if ($GLOBALS['fake_marzban_host_mode'])
+            return json_encode([
+                'username'=>$GLOBALS['fake_marzban_username'],
+                'created_at'=>'2026-10-26T05:00:00.123456',
+                'expire'=>2000000000,
+                'data_limit'=>1073741824,
+                'used_traffic'=>$GLOBALS['fake_marzban_used'],
+                'inbounds'=>$applied['inbounds'] ?? ['vless'=>['fake-inbound']],
+                'proxies'=>['vless'=>['id'=>'fixture-native-uuid','flow'=>'']],
+                'note'=>'fixture',
+                'data_limit_reset_strategy'=>'no_reset',
+                'next_plan'=>null,'status'=>'active'
+            ]);
         return json_encode([
             'username'=>$GLOBALS['fake_marzban_username'],
             'expire'=>$applied['expire']??(time()+86400),
@@ -3657,6 +3684,16 @@ def main():
         VALUES (1001,'admin-callback-token','',7,2,0,'admin-fixture','id','vless',
                 2000000000,'[]',100,1,'synthetic')''',DB)
         oid=int(sql(work,env,"SELECT id FROM orders_list WHERE remark='admin-fixture'").strip())
+        # This suite now exercises the actual same-physical two-customer
+        # contract, not the retired one-row fileid-only admin update.
+        sql(work,env,f"""INSERT INTO orders_list
+            (userid,token,transid,fileid,server_id,inbound_id,
+             remark,uuid,protocol,expire_date,link,amount,status,date)
+            SELECT 1002,'admin-fixture-peer','',fileid,server_id,inbound_id,
+                   remark,uuid,protocol,expire_date,link,amount,status,date
+            FROM orders_list WHERE id={oid}""")
+        peer=int(sql(work,env,"SELECT id FROM orders_list WHERE remark='admin-fixture' AND userid=1002").strip())
+        sql(work,env,(ROOT/'migrations/post-v9/017_shared_plan_changes.sql').read_text())
         sql(work,env,'''INSERT INTO server_plans
             (id,fileid,catid,server_id,inbound_id,acount,title,protocol,days,
              volume,type,price,descr,pic,active,step,date,custom_sni)
@@ -3669,6 +3706,10 @@ def main():
             SELECT 11,'11',catid,3,0,acount,'Wrong server plan',protocol,
                    days,volume,type,price,descr,pic,active,step,date,custom_sni
             FROM server_plans WHERE id=7;''')
+        # Target plan contains explicit Inbounds and proxy declarations.
+        sql(work,env,"""UPDATE server_plans SET custom_sni=
+            '{"inbounds":{"vless":["inbound"]},"proxies":{"vless":{"flow":""}}}'
+            WHERE id=8""")
         old=purchase.block
         try:
             purchase.block=lambda kind,modern: (
@@ -3710,12 +3751,20 @@ def main():
                 raise RuntimeError('Supported Marzban plan absent from admin selector')
             records.append(dict(case='admin_supported_plan_catalogue',pass_=True,external_requests=0))
             obs=purchase.run(work,env,stage,DB,'order_management',
-                dict(data=f'selectFileId_{oid}_8',actor=9001),modern=True)
+                dict(data=f'selectFileId_{oid}_8',actor=9001,
+                     marzban_host_mode=True,marzban_username='admin-fixture'),modern=True)
             if obs.get('exception') or obs.get('warnings'):
-                raise RuntimeError('Supported same-server plan change error: '+repr(obs)[:650])
-            if sql(work,env,f'SELECT fileid FROM orders_list WHERE id={oid}').strip()!='8':
-                raise RuntimeError('Supported admin plan change was not committed')
-            records.append(dict(case='admin_supported_plan_change',pass_=True,external_requests=0))
+                raise RuntimeError('Supported native plan update error: '+repr(obs)[:900])
+            changed=sql(work,env,f'''SELECT fileid FROM orders_list
+                WHERE id IN ({oid},{peer}) ORDER BY id''').splitlines()
+            if changed!=['8','8']:
+                raise RuntimeError('Shared physical plan change did not update both customers: '+repr(changed))
+            if sql(work,env,'SELECT state FROM service_plan_changes ORDER BY id DESC LIMIT 1').strip()!='committed':
+                raise RuntimeError('Native plan journal was not committed')
+            if not any('/api/user/admin-fixture' in url for url in obs['network_calls']):
+                raise RuntimeError('Expected synthetic Native Marzban API was not exercised')
+            records.append(dict(case='admin_supported_native_plan_change_updates_all_references',
+                                pass_=True,external_requests=0))
             for name,profile in [
                 ('external_renew_other_server',{'marzban':True,'remark':'external-fixture',
                                                 'uuid':'id','server_id':3}),
