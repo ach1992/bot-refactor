@@ -43,6 +43,12 @@ DRIVER = plans.DRIVER.replace(" } elseif($op==='toggle'){", """ } elseif($op==='
   require_once $root.'/src/Subscription/PhysicalService.php';
   $record=$connection->query('SELECT * FROM orders_list WHERE id='.(int)$spec['order'])->fetch_assoc();
   $out=achbotPhysicalLockName($connection,$record);
+ } elseif($op==='review_pg_key'){
+  require_once $root.'/src/Subscription/PhysicalService.php';
+  $connection->begin_transaction();
+  try {achbotPhysicalAssertRebindSafe($connection,(int)$spec['server'],false,false);
+   $connection->commit();$out='allowed';}
+  catch(Throwable $error){$connection->rollback();$out='denied:'.$error->getMessage();}
  } elseif($op==='toggle'){""", 1)
 assert DRIVER != plans.DRIVER, 'review test route not added'
 
@@ -127,7 +133,6 @@ def harness(provider: str):
             call('manual', actor=actor, data='addToOrders2')
             return int(db('SELECT id FROM orders_list WHERE userid=' + str(actor)
                     + " AND BINARY remark=BINARY '" + remark + "'"))
-        # call default actor above cannot also take actor keyword; override via separate caller.
         yield dict(db=db, call=call, attach=attach, vendor=vendor, url=url,
                    remark=remark, writes=writes, provider=provider)
 
@@ -204,6 +209,16 @@ def main():
                 provider+'_completed_historical_payment_allows_verified_no_put_plan')
             plan(h,119)
             db(f'DELETE FROM pays WHERE id={approved}')
+            settled=invoice(h,'donehistorical','paid')
+            db('INSERT INTO payment_attempts(pay_row_id,provider,order_hash,quote_amount,quote_currency,stage)'
+               f" VALUES({settled},'nowpayments','settled-{provider}',137,'USD','done')")
+            puts=len(h['writes']())
+            plan(h,7)
+            plan(h,119)
+            yes(len(h['writes']())==puts and outstanding(h)=='committed' and
+                db(f"SELECT fileid FROM orders_list WHERE id IN ({h['oid']},{h['peer']}) ORDER BY id")=='119\n119',
+                provider+'_paid_with_done_fulfillment_evidence_allows_noop_plan_changes')
+            db(f'DELETE FROM payment_attempts WHERE pay_row_id={settled};DELETE FROM pays WHERE id={settled}')
 
             paid=invoice(h,'paidunfinished')
             denied(h,'paid_unfinished_without_payment_attempt')
@@ -284,6 +299,9 @@ def main():
                     db('SELECT IFNULL(panel_group_id,0) FROM server_info WHERE id=2')=='0',
                     'marzban_old_held_journal_blocks_group_and_admin_url_change_even_without_active_rows')
                 db(f"UPDATE orders_list SET status=1 WHERE id IN ({h['oid']},{h['peer']})")
+            else:
+                yes(h['call']('review_pg_key',server=2)=='denied:physical_rebind_pending_journal',
+                    'pasarguard_key_rotation_rejects_held_plan_journal_even_when_active')
 
         # F3 actual-access-change: mutate the original endpoint only after
         # the adapter's second strict Native GET and BEFORE the single PUT.
@@ -306,6 +324,31 @@ def main():
             plan(h,120)
             yes(before==subject(h) and len(h['writes']())==puts,
                 provider+'_changed_access_rebind_replay_never_admits_native_put')
+
+        # Specific PasarGuard connection incarnation, not just its URL:
+        # changing provider_panels.instance_key during either observation
+        # window must hold the original journal with zero Native write.
+        if provider=='pasarguard':
+            for variant in ('noop','changed'):
+                with harness(provider) as h:
+                    seeded(h)
+                    db=h['db']
+                    def change_incarnation():
+                        db("UPDATE provider_panels SET instance_key=REPEAT('c',32) WHERE id=1")
+                    if variant=='noop':
+                        h['vendor'].on_read=change_incarnation
+                    else:
+                        def delay_change():
+                            h['vendor'].on_read=change_incarnation
+                        h['vendor'].on_read=delay_change
+                    before=subject(h);money=finance(h);puts=len(h['writes']())
+                    plan(h,7 if variant=='noop' else 120)
+                    yes(before==subject(h) and finance(h)==money and
+                        len(h['writes']())==puts and outstanding(h)!='committed',
+                        'pasarguard_'+variant+'_provider_instance_change_during_native_get_fails_closed')
+                    plan(h,7 if variant=='noop' else 120)
+                    yes(subject(h)==before and len(h['writes']())==puts,
+                        'pasarguard_'+variant+'_provider_instance_mismatch_cannot_retry_native_put')
 
         # F4 real Native wire PUT with legitimate usage growth (positive)
         # followed by the faulty vendor resetting usage (negative).
@@ -340,7 +383,7 @@ def main():
                 outstanding(h)!='committed',
                 provider+'_usage_reset_held_journal_never_repeats_native_put')
 
-    yes('achbotPhysicalAssertRebindSafe($connection,$entity,true)' in
+    yes('achbotPhysicalAssertRebindSafe($connection,$entity,true,$endpointChanged)' in
         (ROOT/'src/Admin/ManagementFlow.php').read_text(),
         'production_admin_marzban_login_editor_uses_same_safe_rebind_fence')
     result=dict(complete=True,cases=len(checks),checks=checks,
