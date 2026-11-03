@@ -172,7 +172,7 @@ def main():
     with owned.owned_database() as (work,env),panels() as (server,url):
         purchase.init(work,env,url+'/mb')
         def sql(query):return native.sql(work,env,query,DB)
-        for name in ['001_marzban_panel_group_id.sql','004_automatic_renewal_attempts.sql','007_service_effects.sql','011_provider_identity.sql','012_shared_provider_storage.sql']:
+        for name in ['001_marzban_panel_group_id.sql','004_automatic_renewal_attempts.sql','007_service_effects.sql','011_provider_identity.sql','012_shared_provider_storage.sql','016_remove_pasarguard_server_groups.sql','017_shared_plan_changes.sql']:
             sql((ROOT/'migrations/post-v9'/name).read_text())
         # Delegated positive server/plan scenarios explicitly use the Manager
         # tier. Revocation cases still remove users.isAdmin and must fail.
@@ -206,7 +206,7 @@ def main():
             yes(any(e.get('keys')=='{"remove_keyboard":true}' for e in r['events']),'cancel_removes_reply_keyboard')
             return r
         def counts():return sql("SELECT (SELECT COUNT(*) FROM server_info),(SELECT COUNT(*) FROM server_config),(SELECT COUNT(*) FROM server_plans),(SELECT COUNT(DISTINCT provider_connection_id) FROM server_config WHERE type='pasarguard')")
-        def rows():return sql("SELECT id,title,ucount,remark,flag,active,provider_group_ids FROM server_info ORDER BY id;SELECT id,type,panel_url FROM server_config ORDER BY id;SELECT id,server_id,title,active,custom_sni,provider_group_ids FROM server_plans ORDER BY id")
+        def rows():return sql("SELECT id,title,ucount,remark,flag,active,panel_group_id FROM server_info ORDER BY id;SELECT id,type,panel_url FROM server_config ORDER BY id;SELECT id,server_id,title,active,custom_sni,provider_group_ids FROM server_plans ORDER BY id")
         def no_secrets(r):
             shown=json.dumps(r['events'],ensure_ascii=False)
             yes('fixture-password'not in shown and 'fixture-private-key'not in shown,'credentials_not_echoed')
@@ -262,9 +262,9 @@ def main():
                 yes(not any(e.get('deleted')for e in r['events']),'password_message_preserved')
                 r=action(r,'group','0');stage(r,'review')
             else:
-                stage(r,'api_key');r=text(r,'fixture-private-key');stage(r,'groups');no_secrets(r)
+                stage(r,'api_key');r=text(r,'fixture-private-key');stage(r,'panelgroup');no_secrets(r)
                 yes(not any(e.get('deleted')for e in r['events']),'api_key_message_preserved')
-                r=action(r,'pick','0');r=action(r,'done');stage(r,'review')
+                r=action(r,'group','0');stage(r,'review')
             before=counts();save_callback='am|'+draft(r)['nonce']+'|'+str(draft(r)['rev'])+'|save|0'
             r=call(callback=save_callback);yes(draft(r)is None,'server_confirmed_'+provider)
             after=counts();yes(before!=after,'server_inserted_'+provider)
@@ -336,8 +336,8 @@ def main():
             saved=sql("SELECT custom_sni,IFNULL(provider_group_ids,'NULL') FROM server_plans ORDER BY id DESC LIMIT 1").strip()
             yes(('fixture-vless'in saved)==(provider=='marzban') and ('[2]'in saved)==(provider=='pasarguard'),'plan_native_entitlement_persisted_'+provider)
             snapshot=counts();call(callback=save);yes(counts()==snapshot,'plan_save_replay_no_duplicate_'+provider)
-        r=plan_to_targets('pasarguard',pg_id);r=action(r,'inherit');stage(r,'review')
-        r=action(r,'save');yes(draft(r)is None and sql("SELECT IFNULL(provider_group_ids,'NULL') FROM server_plans ORDER BY id DESC LIMIT 1").strip()=='NULL','plan_inherits_groups')
+        r=plan_to_targets('pasarguard',pg_id);r=action(r,'pick','0');r=action(r,'done');stage(r,'review')
+        r=action(r,'save');yes(draft(r)is None and sql("SELECT provider_group_ids FROM server_plans ORDER BY id DESC LIMIT 1").strip()=='[2]','plan_requires_explicit_groups')
         yes(sql("SELECT COUNT(*) FROM server_plans WHERE title='SENTINEL-INACTIVE' AND active=0").strip()=='1','unrelated_inactive_plan_not_deleted')
         # Native access revocation while a confirmation is pending fails without partial inserts.
         r=plan_to_targets('pasarguard',pg_id);r=action(r,'pick','0');r=action(r,'done');stage(r,'review')
@@ -347,7 +347,7 @@ def main():
         # SQL failure after a server_info insert must rollback all three related rows.
         r=call(callback='pgAddConnection')
         for value in ['Rollback fixture','10','rollback','FIXTURE',url,'fixture-private-key']:r=text(r,value)
-        stage(r,'groups');r=action(r,'pick','0');r=action(r,'done');stage(r,'review')
+        stage(r,'panelgroup');r=action(r,'group','0');stage(r,'review')
         before=counts()
         sql("CREATE TRIGGER fixture_reject_config BEFORE INSERT ON server_config FOR EACH ROW SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='fixture-reject'")
         failed=action(r,'save');sql('DROP TRIGGER fixture_reject_config')
@@ -361,16 +361,15 @@ def main():
             for current,value in steps:
                 if current==target:return r
                 r=text(r,value)
-            if target in ['panelgroup','groups']:return r
-            if provider=='marzban':r=action(r,'group','0')
-            else:r=action(action(r,'pick','0'),'done')
+            if target=='panelgroup':return r
+            r=action(r,'group','0')
             return r
         def one_edit(r,label,message_id=575):
             yes(len(r['events'])==1 and r['events'][0].get('method')=='editMessageText' and r['events'][0].get('edited_message')==message_id,label)
             return json.loads(r['events'][0]['keys'])['inline_keyboard']
         server.extra_groups=True
-        for kind in ['server','plan']:
-            r=server_to_stage('pasarguard','groups') if kind=='server' else plan_to_targets('pasarguard',pg_id)
+        for kind in ['plan']:
+            r=plan_to_targets('pasarguard',pg_id)
             yes(any(e.get('method')=='sendMessage'for e in r['events']) and not any(e.get('method')=='editMessageText'for e in r['events']),'typed_input_sends_next_prompt_'+kind)
             axis='groups' if kind=='server' else 'targets'
             yes(len(draft(r)['choices'])==10,'native_paginated_choices_'+kind)
@@ -395,7 +394,7 @@ def main():
             yes(any(e.get('method')=='sendMessage'for e in legacy['events']) and not any(e.get('method')=='editMessageText'for e in legacy['events']),'actual_rc14_group_message_flood_RED_'+kind)
             cancel(legacy)
         server.extra_groups=False
-        for provider,targets in [('marzban',['username','password','panelgroup','review']),('pasarguard',['api_key','groups','review'])]:
+        for provider,targets in [('marzban',['username','password','panelgroup','review']),('pasarguard',['api_key','panelgroup','review'])]:
             for target in targets:
                 r=server_to_stage(provider,target);stage(r,target);before=counts();cancel(r)
                 yes(counts()==before,'later_stage_cancel_no_rows_'+provider+'_'+target)
@@ -411,7 +410,7 @@ def main():
                 elif current=='days':r=text(r,'30')
                 elif current=='volume':r=text(r,'5')
                 elif current=='description':r=text(r,'Cancel description')
-                elif current=='targets':r=action(r,'inherit')
+                elif current=='targets':r=action(r,'pick','0');r=action(r,'done')
                 else:raise AssertionError(current)
             before=counts();cancel(r);yes(counts()==before,'plan_cancel_no_rows_'+target)
         # Contextual field editors use persisted role/row revision and never accept another provider's credentials.
@@ -443,7 +442,7 @@ def main():
         yes(r['state']['step']=='none' and not any(e.get('deleted')for e in r['events']),'credential_edit_preserves_input_and_saves')
         no_secrets(r)
         # Independent HTTP requests racing the same final confirmation produce exactly one row.
-        r=plan_to_targets('pasarguard',pg_id);r=action(r,'inherit');stage(r,'review')
+        r=plan_to_targets('pasarguard',pg_id);r=action(r,'pick','0');r=action(r,'done');stage(r,'review')
         save='am|'+draft(r)['nonce']+'|'+str(draft(r)['rev'])+'|save|0'
         before=int(sql('SELECT COUNT(*) FROM server_plans').strip())
         with ThreadPoolExecutor(max_workers=2)as pool:results=list(pool.map(lambda _:call(callback=save),range(2)))
@@ -453,11 +452,11 @@ def main():
         r=call(callback='addManagedServer');r=action(r,'provider','pasarguard')
         for value in ['Reuse fixture','10','reusefixture','FIXTURE']:r=text(r,value)
         stage(r,'url');panel_id=int(sql("SELECT MIN(provider_connection_id) FROM server_config WHERE type='pasarguard'").strip())
-        r=action(r,'panel',str(panel_id));stage(r,'groups');r=action(action(r,'pick','0'),'done')
+        r=action(r,'panel',str(panel_id));stage(r,'panelgroup');r=action(r,'group','0')
         before=int(sql("SELECT COUNT(DISTINCT provider_connection_id) FROM server_config WHERE type='pasarguard'").strip());r=action(r,'save')
         yes(r['state']['step']=='none'and int(sql("SELECT COUNT(DISTINCT provider_connection_id) FROM server_config WHERE type='pasarguard'").strip())==before,'saved_connection_reused_without_duplicate_panel')
         # COMMIT can succeed while its acknowledgment is lost; surface uncertainty and make replay inert.
-        r=plan_to_targets('pasarguard',pg_id);r=action(r,'inherit');stage(r,'review')
+        r=plan_to_targets('pasarguard',pg_id);r=action(r,'pick','0');r=action(r,'done');stage(r,'review')
         save='am|'+draft(r)['nonce']+'|'+str(draft(r)['rev'])+'|save|0'
         before=int(sql('SELECT COUNT(*) FROM server_plans').strip())
         r=call(callback=save,commit_ack_lost=True)

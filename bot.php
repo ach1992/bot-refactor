@@ -454,7 +454,7 @@ if(($data=="botSettings" or preg_match('/^changeBot([A-Za-z0-9_]+)$/D',$data,$ma
             'agencyState','agencyPlanDiscount','individualExistence',
             'sharedExistence','testAccount','changeProtocolState',
             'renewAccountState','renewAutoState','plandelkhahState',
-            'switchLocationState','increaseTimeState','increaseVolumeState',
+            'increaseTimeState','increaseVolumeState',
             'requirePhone','requireIranPhone','sellState','botState',
             'searchState',
             'renewConfigLinkState','updateConfigLinkState','qrConfigState',
@@ -1931,7 +1931,7 @@ if(preg_match('/^(?:changeServerType\d+|chhangeServerType\w+_\d+)$/', (string)$d
 // Define real-panel identity groups centrally, before assigning them to
 // logical server entries. A group is trusted admin configuration, never
 // inferred from endpoint aliases or Marzban admin credential equality.
-if ($data === 'manageMarzbanPanelGroups' &&
+if (in_array($data,['managePanelGroups','manageMarzbanPanelGroups'],true) &&
     ($from_id == $admin || ($userInfo['isAdmin'] ?? false))) {
     editText($message_id, \achbotMessage('bot.bot.manage_marzban_panel_groups.message.59d5170317'),
         getMarzbanPanelGroupsManagementKeys());
@@ -1993,7 +1993,7 @@ if (preg_match('/^deleteMarzbanPanelGroup_(\d+)$/D', (string)($data ?? ''), $gro
 // addNewMarzbanPanel and addManagedServer use the actor-owned management wizard above.
 // Admin server settings: select an EXISTING panel group, never a
 // free-text value or automatic URL/username-based identity.
-if (preg_match('/^editMarzbanGroup(\d+)$/D', (string)($data ?? ''), $groupMatch) &&
+if (preg_match('/^(?:editPanelGroup|editMarzbanGroup)(\d+)$/D', (string)($data ?? ''), $groupMatch) &&
     ($from_id == $admin || ($userInfo['isAdmin'] ?? false))) {
     $id = (int)$groupMatch[1];
     $stmt = $connection->prepare("SELECT type FROM server_config WHERE id = ?");
@@ -2029,7 +2029,7 @@ if (preg_match('/^setServerPanelGroup_(\d+)_(\d+)$/D', (string)($data ?? ''), $g
             alert(\achbotMessage('bot.bot.addserver_name.alert.9ee9f25355'), true);
             return;
         }
-        achbotSetMarzbanGroup($connection, $id, $groupId);
+        achbotSetPanelGroup($connection, $id, $groupId);
         $connection->commit();
     } catch (\Throwable $e) {
         $connection->rollback();

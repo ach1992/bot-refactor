@@ -160,3 +160,15 @@ Display fixture assignment owner-simplification-20261028-r3/display-fixture, rev
 Verification fixture publication correction owner-simplification-20261028-r3/verification-barrier, revision3: Worker /root/display_fixture_port; repository ach1992/bot-refactor; Base SHAa776938aff1b12d1abe6a8ff0073417325bef573; Start HEAD7d14fbe94dcf854d4c036fb895151f1fc244be96 (intentional display-fixture stack); branch worker/verification-fixture-r3; integration target fix/admin-message-history. Own only test_post_v9_create_verification_locking.py test-owned ready-file publication: parallel diagnostics observed an empty created PID file before its write completed. Make producer publication atomic, retaining strict integer readers, native lock witnesses, timeouts, both archived RED/actual GREEN cases and unchanged runtime. No runtime/frozen/main/release/prod.
 
 Remaining-finance assignment revision5, same owner-simplification-20261028-r3/remaining-finance generation/Worker/branch/Base/Start and integration target as revision4, Checkpoint HEADa6238160b5ed81209396b2e512e319008ecc05c4: explicitly add tools/test_post_v9_manual_payments.py order-writer fixture argument composition. Diagnostics proved its standard bulk spy still reads removed-column-era amount index11 and records0 instead of the actual current amount. Preserve current exact allocation, archived source-owned signatures and uncertainty/compensation controls. Port only the test seam and related already-owned test fixtures; runtime remains out of scope.
+
+## 2026-11-03 owner clarification: physical subscriptions and plan-native access
+
+The earlier historical sections that say plan selection only changes one order's
+`fileid`, that a PasarGuard logical transfer adopts a server-default Group,
+or that sharing implies zero peer-order updates are superseded specifically for
+the accepted physical subscription transfer and plan-selection workflows.
+See [SHARED-SERVICE-TRANSFER.md](SHARED-SERVICE-TRANSFER.md) and [Issue #112](https://github.com/ach1992/bot-refactor/issues/112).
+The current contract synchronizes all active local references; native access is
+changed once from the selected plan and verified before committing the shared
+orders. Routine paid renewal and extension retain their separately accepted
+financial cycle contracts and must not be conflated with plan selection.

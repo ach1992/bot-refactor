@@ -49,8 +49,6 @@ function achbotPlanWizardView(mysqli $db,array $d): array {
         if (!$keys) return [achbotManagementText('no_servers'),[]];
     } elseif ($stage==='targets') {
         $keys=achbotManagementChoices($d,$v['targets']??[]);
-        if ($v['provider']==='pasarguard') $keys[]=[[
-            'text'=>achbotManagementText('inherit_groups'),'callback_data'=>achbotManagementButton($d,'inherit')]];
         $keys[]=[['text'=>achbotManagementText('selection_done'),'callback_data'=>achbotManagementButton($d,'done')]];
         return [achbotManagementText($v['provider']==='pasarguard'?'plan_groups':'plan_inbounds'),$keys];
     } elseif ($stage==='review') {
@@ -59,7 +57,7 @@ function achbotPlanWizardView(mysqli $db,array $d): array {
             'category'=>achbotManagementEscape($v['category_name']),'server'=>achbotManagementEscape($v['server_name']),
             'days'=>(string)$v['days'],'volume'=>(string)$v['volume'],
             'description'=>achbotManagementEscape($v['description']),
-            'access'=>achbotManagementEscape(!empty($v['inherit'])?achbotManagementText('inherit_groups'):
+            'access'=>achbotManagementEscape(
                 achbotManagementSelectionSummary(array_column(array_filter($d['choices'],static fn($c)=>in_array($c['id'],$v['targets']??[],true)),'name')))]);
         $keys[]=[['text'=>achbotManagementText('confirm_plan'),'callback_data'=>achbotManagementButton($d,'save')]];
         return [$body,$keys];
@@ -114,15 +112,9 @@ function achbotPlanWizardAdvance(mysqli $db,array &$d,string $action,string $inp
             if (!$choice) throw new RuntimeException('management_targets');
             $ids=$v['targets']??[];$id=$choice['id'];
             $v['targets']=in_array($id,$ids,true)?array_values(array_diff($ids,[$id])):array_merge($ids,[$id]);
-            $v['inherit']=false;return null;
+            return null;
         }
-        if ($action==='inherit' && $v['provider']==='pasarguard') {
-            // Validate the actual inherited Group defaults before showing a confirmation.
-            $snapshot=achbotPgPlanSnapshot($db,(int)$v['server'],0);
-            if (!$snapshot['group_ids']) throw new RuntimeException('management_targets');
-            $v['inherit']=true;$d['stage']='review';return null;
-        }
-        if ($action==='done' && !empty($v['targets'])) {$v['inherit']=false;$d['stage']='review';return null;}
+        if ($action==='done' && !empty($v['targets'])) {$d['stage']='review';return null;}
     }
     if ($stage!=='review' || $action!=='save') throw new RuntimeException('management_input');
     $server=achbotPlanWizardServer($db,(int)$v['server'],true);
@@ -132,14 +124,11 @@ function achbotPlanWizardAdvance(mysqli $db,array &$d,string $action,string $inp
         throw new RuntimeException('management_targets');
     $choices=achbotPlanWizardChoices($db,$server);$allowed=array_column($choices,'id');
     $selected=$v['targets']??[];
-    if (empty($v['inherit']) && (!$selected || array_diff($selected,$allowed)))
+    if (!$selected || array_diff($selected,$allowed))
         throw new RuntimeException('management_targets');
     $custom='';$groups=null;
     if ($server['type']==='pasarguard') {
-        if (!empty($v['inherit'])) {
-            $snapshot=achbotPgPlanSnapshot($db,(int)$v['server'],0);
-            if (array_diff($snapshot['group_ids'],$allowed)) throw new RuntimeException('management_targets');
-        } else $groups=json_encode(achbotPgGroupsCanonical($selected),JSON_THROW_ON_ERROR);
+        $groups=json_encode(achbotPgGroupsCanonical($selected),JSON_THROW_ON_ERROR);
     } else {
         $inbounds=[];$proxies=[];
         foreach ($choices as $choice) if (in_array($choice['id'],$selected,true)) {

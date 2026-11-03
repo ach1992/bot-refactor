@@ -49,7 +49,6 @@ function achbotManagementText(string $key,array $params=[]): string {
         'selection_done'=>achbotMessage('admin_settings.management.selection_done',$params),
         'reuse_connection'=>achbotMessage('admin_settings.management.reuse_connection',$params),
         'no_shared_group'=>achbotMessage('admin_settings.management.no_shared_group',$params),
-        'inherit_groups'=>achbotMessage('admin_settings.management.inherit_groups',$params),
         'server_provider'=>achbotMessage('admin_settings.management.server_provider',$params),
         'server_title'=>achbotMessage('admin_settings.management.server_title',$params),
         'server_capacity'=>achbotMessage('admin_settings.management.server_capacity',$params),

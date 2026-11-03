@@ -80,7 +80,8 @@ foreach ([1,2] as $sid) {
     noCallbacks($keys,'/^(?:pgConnections|addNewMarzbanPanel)$/','server settings do not divert to physical connection list');
 }
 $pg=callbacks(getServerConfigKeys(2));
-containsAll($pg,['pgServerGroups2','pgRotateServerKey2'],'native configuration remains in server context');
+containsAll($pg,['editPanelGroup2','pgRotateServerKey2'],'physical group shared; native groups only on plan');
+noCallbacks($pg,'/^pgServerGroups/','PG server-native group selector retired');
 noCallbacks($pg,'/^(?:changesServerLoginInfo|editSubLinks)/','PG omits Marzban-only credentials and backup-link synthesis');
 $mb=callbacks(getPlanDetailsKeys(41));$pg=callbacks(getPlanDetailsKeys(42));
 foreach ([$mb,$pg] as $index=>$keys) {
@@ -100,7 +101,6 @@ $events=[];achbotServerDisplayShow($connection,2);
 yes(str_contains($events[0][0],'PG &lt;title&gt;') && !str_contains($events[0][0],'PG <title>') &&
     $events[0][2]==='HTML','display editor identifies and escapes the server');
 foreach ([
-    ['pg:groups:server:2','serverDisplay2'],
     ['pg:groups:plan:42','planDays42'],
     ['pg:key:10:2','serverDisplay2'],
     ['pg:server:10','addManagedServer'],

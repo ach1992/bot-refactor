@@ -786,48 +786,31 @@ if (is_string($data) && preg_match('/^changePlan_([1-9][0-9]{0,9})$/D', $data, $
 
 if (is_string($data) && preg_match('/^confirmChangePlan_([1-9][0-9]{0,9})_([1-9][0-9]{0,9})$/D', $data, $match)) {
     require_once __DIR__.'/../../Subscription/AccountDetails.php';
-    $orderId=(int)$match[1];$newPlanId=(int)$match[2];$begun=false;$commitAttempted=false;
+    $orderId=(int)$match[1];$newPlanId=(int)$match[2];
+    require_once __DIR__.'/../../Subscription/PhysicalService.php';
     try {
         $actor=\AchBot\Subscription\AccountDetails\currentOrderDetailActor();
         if ($actor===null || $orderId>2147483647 || $newPlanId>2147483647)
             throw new RuntimeException('plan_actor_unavailable');
-        $actorId=(int)$actor['userid'];$actorPk=(int)$actor['id'];
-        if (!$connection->begin_transaction()) throw new RuntimeException('plan_begin_failed');
-        $begun=true;
-        $stmt=$connection->prepare('SELECT * FROM orders_list WHERE id=? AND status=1 FOR UPDATE');
-        $stmt->bind_param('i',$orderId);$stmt->execute();
-        $orderInfo=$stmt->get_result()->fetch_assoc();$stmt->close();
-        $stmt=$connection->prepare('SELECT id,userid,isAdmin,step FROM users WHERE id=? AND userid=? FOR UPDATE');
-        $stmt->bind_param('ii',$actorPk,$actorId);$stmt->execute();$freshActor=$stmt->get_result()->fetch_assoc();$stmt->close();
-        $isAdmin=$freshActor!==null && ($actorId===(int)$admin || (int)$freshActor['isAdmin']===1);
-        if (!$freshActor || $freshActor['step']==='banned' || !$orderInfo ||
-            (!$isAdmin && (int)$orderInfo['userid']!==$actorId) ||
-            !achbotSupportsOrder($connection,$orderId,null,(int)$orderInfo['userid'],true))
+        $actorId=(int)$actor['userid'];
+        $s=$connection->prepare('SELECT * FROM orders_list WHERE id=? AND status=1');
+        $s->bind_param('i',$orderId);$s->execute();$orderInfo=$s->get_result()->fetch_assoc();$s->close();
+        if (!$orderInfo) throw new RuntimeException('plan_order_unavailable');
+        $isAdmin=achbotAdminCanFor($connection,$actorId,(int)$admin,'orders');
+        if (!$isAdmin && (int)$orderInfo['userid']!==$actorId)
+            throw new RuntimeException('plan_actor_denied');
+        if (!achbotOrderMayUsePaidPlan($connection,$orderInfo))
             throw new RuntimeException('plan_order_unavailable');
-        if (!achbotOrderMayUsePaidPlan($connection,$orderInfo,true)) {
-            $connection->rollback();$begun=false;
-            alert(\achbotMessage('renewal.extensions.alert.65fc393064'),true);return;
-        }
-        $plan=\AchBot\Subscription\AccountDetails\paidPlanForOrder($connection,$orderInfo,$newPlanId,true);
+        $plan=\AchBot\Subscription\AccountDetails\paidPlanForOrder($connection,$orderInfo,$newPlanId);
         if ($plan===null) throw new RuntimeException('plan_target_unavailable');
-        if ((int)$orderInfo['fileid']===$newPlanId) {
-            $connection->rollback();$begun=false;
-            sendMessage(\achbotMessage('renewal.extensions.message.dee2da49f3'));return;
-        }
-        // Choosing a future renewal product changes only local fileid. It is
-        // not a purchase, remote entitlement change, debit or paid receipt.
-        $oldPlan=(int)$orderInfo['fileid'];$serverId=(int)$orderInfo['server_id'];$ownerId=(int)$orderInfo['userid'];
-        $stmt=$connection->prepare('UPDATE orders_list SET fileid=? WHERE id=? AND userid=? AND server_id=? AND fileid=? AND status=1');
-        $stmt->bind_param('iiiii',$newPlanId,$orderId,$ownerId,$serverId,$oldPlan);
-        if (!$stmt->execute() || $stmt->affected_rows!==1) {$stmt->close();throw new RuntimeException('plan_update_unconfirmed');}
-        $stmt->close();$commitAttempted=true;
-        if (!$connection->commit()) throw new RuntimeException('plan_commit_unknown');
-        $begun=false;
+        $result=achbotPhysicalSelectPlan($connection,$orderId,$newPlanId,$actorId,$isAdmin);
+        if (!$result['success']) throw new RuntimeException($result['reason']);
+        $shared=(int)$result['shared_count'];
     } catch (Throwable $error) {
-        if ($begun) {try {$connection->rollback();}catch(Throwable $ignored) {}}
-        error_log('achbot_plan_selection_unverified order_id='.$orderId);
-        alert($commitAttempted?\achbotMessage('renewal.extensions.plan_selection_review'):
-            \achbotMessage('renewal.extensions.plan_selection_unavailable'),true);
+        $reason=(string)$error->getMessage();
+        error_log('achbot_plan_selection_unverified order_id='.$orderId.
+            ' reason='.(preg_match('/\A[a-z0-9_]{5,100}\z/D',$reason)?$reason:'internal_exception'));
+        alert(\achbotMessage('renewal.extensions.plan_selection_review'),true);
         return;
     }
     // Failed notifications cannot change a committed product selection.

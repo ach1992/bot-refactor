@@ -228,10 +228,10 @@ return [
         'bot.add_new_server.alert.e9e9974e92' => '⚠️ تنظیمات پنل‌های قدیمی دیگر پشتیبانی نمی‌شود.',
         'bot.add_new_server.alert.3340eb9465' => '🗑 پنل‌های قدیمی حذف شده‌اند؛ تنها مرزبان پشتیبانی می‌شود.',
         // bot.manage_marzban_panel_groups
-        'bot.manage_marzban_panel_groups.message.59d5170317' => '🏷 گروه‌های پنل مرزبان؛ فقط سرورهایی که به یک پنل واقعی متصل‌اند باید گروه مشترک داشته باشند.',
+        'bot.manage_marzban_panel_groups.message.59d5170317' => '🗂 گروه‌های مشترک پنل: فقط سرورهای متصل به یک پنل واقعی و از یک نوع (مرزبان یا پاسارگارد) را هم‌گروه کنید. صرفاً مشابه بودن آدرس، نام یا نوع پنل به‌تنهایی دلیل یکسان بودن پنل فیزیکی نیست. تشخیص پنل واقعی برعهده ادمین است.',
         // bot.add_marzban_panel_group
         'bot.add_marzban_panel_group.message.01f02c2ac6' => 'نام گروه پنل جدید را وارد کنید (1 تا 60 حرف؛ فارسی مجاز است).' . "\n" . '',
-        'bot.add_marzban_panel_group.message.31116063c0' => 'توجه: این گروه صرفاً برای ورودی‌های متعلق به یک پنل واقعی مرزبان استفاده شود.',
+        'bot.add_marzban_panel_group.message.31116063c0' => 'توجه: گروه مشترک فقط برای سرورهایی است که واقعاً به یک پنل فیزیکی با همان نوع متصل‌اند؛ بین پنل‌های متفاوت یا بین مرزبان و پاسارگارد نباید یک گروه انتخاب شود.',
         'bot.add_marzban_panel_group.message.c697bdb683' => '⚠️ نام گروه نامعتبر است؛ حداکثر 60 کاراکتر و بدون خط جدید.',
         'bot.add_marzban_panel_group.message.cfb10ede6f' => '⚠️ این نام قبلاً تعریف شده است یا معتبر نیست؛ نام دیگری وارد کنید.',
         'bot.add_marzban_panel_group.message.7c6b361e59' => '⚠️ ذخیره گروه پنل انجام نشد.',
@@ -239,7 +239,7 @@ return [
         'bot.add_marzban_panel_group.alert.a77f2c705d' => '❌ حذف گروه پنل ناموفق بود.',
         'bot.add_marzban_panel_group.alert.2b2b180a96' => 'گروه استفاده‌نشده حذف شد.',
         'bot.add_marzban_panel_group.alert.cc8538eba9' => 'گروه پیدا نشد یا هنوز به سرور متصل است؛ ابتدا سرورها را از آن خارج کنید.',
-        'bot.add_marzban_panel_group.message.def9f141f2' => '🏷 مدیریت گروه‌های پنل مرزبان',
+        'bot.add_marzban_panel_group.message.def9f141f2' => '🗂 مدیریت گروه‌های مشترک پنل',
         // bot.add_new_marzban_panel
         'bot.add_new_marzban_panel.message.2dcf34731e' => '📝 مرحله اول:' . "\n" . '▪️ یه اسم برا سرورت انتخاب کن:',
         // bot.addserver_name
@@ -1326,7 +1326,6 @@ return [
         'management.selection_done' => "✅ تأیید انتخاب‌ها",
         'management.reuse_connection' => ['text'=>"🔗 استفاده از اتصال {name}",'parameters'=>["name"]],
         'management.no_shared_group' => "بدون گروه پنل مشترک",
-        'management.inherit_groups' => "🔗 استفاده از گروه‌های پیش‌فرض سرور",
         'management.server_provider' => "🌐 افزودن سرور\nنوع پنل این سرور را انتخاب کنید:",
         'management.server_title' => "📝 نام سرور را وارد کنید؛ این نام در فهرست خرید به کاربر نمایش داده می‌شود:",
         'management.server_capacity' => "👥 ظرفیت فروش سرور را با یک عدد صحیح مثبت وارد کنید:",
@@ -1336,8 +1335,8 @@ return [
         'management.server_username' => '🔖 نام کاربری مدیر پنل را وارد کنید:',
         'management.server_password' => "🔑 رمز عبور مدیر پنل را وارد کنید.",
         'management.server_api_key' => '🔑 کلید API پاسارگارد را وارد کنید؛ فقط خود کلید، بدون Bearer یا X-Api-Key.' . "\n" . 'نسخه پشتیبانی‌شده 5.5.1 است. کلید باید دسترسی مدیریت کاربران و خواندن گروه‌های دسترسی داشته باشد.',
-        'management.server_panelgroup' => "🗂 در صورت اشتراک چند سرور منطقی در یک پنل مرزبان، گروه پنل مشترک را انتخاب کنید. اگر گروهی تعیین نکنید، جابه‌جایی سرویس بین سرورها غیرفعال می‌ماند:",
-        'management.server_groups' => "🗂 گروه‌های دسترسی این سرور را انتخاب کنید. انتخاب چند گروه ممکن است؛ سپس «تأیید انتخاب‌ها» را بزنید:",
+        'management.server_panelgroup' => "🗂 گروه مشترک پنل را انتخاب کنید؛ فقط سرورهای یک نوع که واقعاً به همان پنل فیزیکی وصل هستند باید گروه یکسان داشته باشند. تشخیص با ادمین است. بدون گروه مشترک، انتقال سرویس ممکن نیست:",
+        'management.server_groups' => "🗂 گروه‌های Native پاسارگارد فقط هنگام ساخت یا ویرایش پلن تعیین می‌شوند.",
         'management.server_review' => ['text'=>"🌐 تأیید نهایی سرور\n\nنام: {title}\nنوع پنل: {provider}\nظرفیت: {capacity}\nپیشوند: {remark}\nنشانه: {flag}\nآدرس: <code>{url}</code>\nگروه‌ها: {access}\n\nاطلاعات ورود در این خلاصه نمایش داده نمی‌شود.",'parameters'=>["title", "provider", "capacity", "remark", "flag", "url", "access"]],
         'management.confirm_server' => "✅ ثبت سرور",
         'management.confirm_plan' => "✅ ثبت پلن",
@@ -1350,7 +1349,7 @@ return [
         'management.plan_description' => "📝 توضیح قابل نمایش به خریدار را وارد کنید:",
         'management.no_categories' => "ℹ️ هنوز دسته‌بندی فعالی وجود ندارد. ابتدا از مدیریت دسته‌ها یک دسته بسازید.",
         'management.no_servers' => "ℹ️ هنوز سرور فعالی ثبت نشده است. ابتدا یک سرور اضافه کنید.",
-        'management.plan_groups' => "🗂 گروه‌های دسترسی پلن را انتخاب کنید یا از گروه‌های پیش‌فرض سرور استفاده کنید. سپس انتخاب‌ها را تأیید کنید:",
+        'management.plan_groups' => "🗂 گروه‌های Native این پلن پاسارگارد را انتخاب کنید و سپس «تأیید انتخاب‌ها» را بزنید. این گروه‌ها مستقل از گروه مشترک پنل هستند.",
         'management.plan_inbounds' => "🗂 اینباندهای مرزبان برای این پلن را انتخاب کنید؛ سپس انتخاب‌ها را تأیید کنید:",
         'management.plan_review' => ['text'=>"📋 تأیید نهایی پلن\n\nنام: {title}\nقیمت: {price} تومان\nدسته: {category}\nسرور: {server}\nاعتبار: {days} روز\nحجم: {volume} گیگابایت\nدسترسی: {access}\nتوضیح: {description}",'parameters'=>["title", "price", "category", "server", "days", "volume", "access", "description"]],
         'management.add_server' => "➕ افزودن سرور",
@@ -1441,7 +1440,7 @@ return [
         'config.get_server_list_keys.text.3d978ef5e3' => 'پشتیبانی نمی‌شود',
         'config.get_server_list_keys.button.a4f3f3f06a' => '➕ ثبت سرور مرزبان',
         'config.get_server_list_keys.button.a600a38b6f' => '➕ اتصال و سرور PasarGuard',
-        'config.get_server_list_keys.button.def9f141f2' => '🏷 مدیریت گروه‌های پنل مرزبان',
+        'config.get_server_list_keys.button.def9f141f2' => '🗂 مدیریت گروه‌های مشترک پنل',
         // config.get_categories_keys
         'config.get_categories_keys.button.47ccdcb5f1' => '🗂 اسم دسته',
         'config.get_categories_keys.button.fba2c6927b' => '⚠️ دسته بندی یافت نشد.',

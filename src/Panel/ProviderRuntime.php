@@ -817,50 +817,95 @@ function achbotPgServiceEdit(mysqli $db,int $serverId,array $change,?array $gift
         return achbotProviderFailure('pg_edit_requires_review');
     }
 }
+require_once __DIR__.'/../Subscription/PhysicalService.php';
+
+/** One explicit physical-group admission rule for both supported providers. */
 function achbotProviderRelocationTargets(mysqli $db,int $sourceId): array {
-    if (achbotProviderType($db,$sourceId)==='marzban') return achbotMarzbanRelocationTargets($db,$sourceId);
     try {
-        $panel=achbotPgServerPanel($db,$sourceId);
-        $s=$db->prepare("SELECT i.id,i.title FROM server_info i JOIN server_config c ON c.id=i.id WHERE c.provider_connection_id=? AND i.id<>? AND c.type='pasarguard' AND i.active=1 AND i.state=1 AND i.ucount>0 ORDER BY i.id");
-        $pid=(int)$panel['id'];$s->bind_param('ii',$pid,$sourceId);$s->execute();$rows=$s->get_result()->fetch_all(MYSQLI_ASSOC);$s->close();
-        return array_values(array_filter($rows,fn($r)=>achbotSameProviderPanel($db,$sourceId,(int)$r['id'])));
+        $source=achbotPanelGroup($db,$sourceId);
+        $type=achbotProviderType($db,$sourceId);
+        if ($source===null || !in_array($type,['marzban','pasarguard'],true)) return [];
+        $gid=(int)$source['id'];
+        $s=$db->prepare('SELECT i.id,i.title FROM server_info i JOIN server_config c ON c.id=i.id
+            WHERE i.panel_group_id=? AND i.id<>? AND c.type=?
+              AND i.active=1 AND i.state=1 AND i.ucount>0 ORDER BY i.id');
+        $s->bind_param('iis',$gid,$sourceId,$type);$s->execute();
+        $rows=$s->get_result()->fetch_all(MYSQLI_ASSOC);$s->close();
+        // PasarGuard physical account evidence is tied to the existing
+        // provider_connection_id / instance. A manually assigned group does
+        // not rebind that evidence to an unrelated connection.
+        return array_values(array_filter($rows,static fn($row)=>
+            achbotSameProviderPanel($db,$sourceId,(int)$row['id'])));
     } catch (Throwable $error) {return [];}
 }
+
 function achbotReassignLogicalServer(mysqli $db,int $orderId,int $targetId,int $actor,bool $adminAllowed=false): ?array {
-    // Server reassignment is a current administrator action, never customer consent.
-    if (!$adminAllowed || $actor<=0) return null;
-    $s=$db->prepare('SELECT userid,isAdmin,step FROM users WHERE userid=? LIMIT 2');
-    $s->bind_param('i',$actor);$s->execute();$actors=$s->get_result()->fetch_all(MYSQLI_ASSOC);$s->close();
-    if (count($actors)!==1 || $actors[0]['step']==='banned' ||
-        ($actor!==(int)($GLOBALS['admin']??0) && (int)$actors[0]['isAdmin']!==1)) return null;
-    $s=$db->prepare('SELECT * FROM orders_list WHERE id=? AND status=1');$s->bind_param('i',$orderId);$s->execute();$o=$s->get_result()->fetch_assoc();$s->close();
-    if (!$o || (!$adminAllowed && (int)$o['userid']!==$actor)) return null;
-    if (achbotProviderType($db,(int)$o['server_id'])==='marzban')
-        return achbotReassignMarzbanLogicalServer($db,$orderId,$targetId,$actor,$adminAllowed);
+    // A single transaction moves every ACTIVE reference to this exact
+    // physical subscription. Native access does not change here: it changes
+    // only after the admin selects a new destination-server plan.
+    if (!$adminAllowed || min($orderId,$targetId,$actor)<=0) return null;
+    require_once __DIR__.'/../Admin/Access.php';
+    $started=false;$commitAttempted=false;$lease=null;
     try {
-        $old=(int)$o['server_id'];$ctx=achbotPgOrderContext($db,$orderId);
-        if ($old===$targetId || !achbotSameProviderPanel($db,$old,$targetId)) throw new RuntimeException('pg_switch_panel_mismatch');
-        $targets=achbotProviderRelocationTargets($db,$old);
-        $target=null;foreach ($targets as $row) if ((int)$row['id']===$targetId) $target=$row;
-        if ($target===null) throw new RuntimeException('pg_switch_target_ineligible');
-        $snap=achbotPgPlanSnapshot($db,$targetId,0); // explicit logical switch adopts destination defaults
-        $key=achbotPgOperationKey('switch');
-        $intent=achbotPgBeginMutation($db,$ctx,$key,'switch',['server_id'=>$targetId,'group_ids'=>$snap['group_ids']]);
-        $r=achbotPgModify($ctx['panel'],$ctx['identity'],['group_ids'=>$snap['group_ids']]);
-        if (($r['success']??false)!==true) throw new RuntimeException('pg_switch_requires_review');
-        if (!$db->begin_transaction()) throw new RuntimeException('pg_switch_finish_begin');
-        try {
-            if (!achbotSameProviderPanel($db,$old,$targetId) || achbotPgPlanSnapshot($db,$targetId,0)!==$snap)
-                throw new RuntimeException('pg_switch_target_changed');
-            $s=$db->prepare('UPDATE orders_list SET server_id=? WHERE id=? AND server_id=? AND userid=? AND status=1');
-            $uid=(int)$o['userid'];$s->bind_param('iiii',$targetId,$orderId,$old,$uid);
-            if (!$s->execute() || $s->affected_rows!==1) throw new RuntimeException('pg_switch_local_unconfirmed');$s->close();
-            achbotPgFinishMutation($db,$ctx,$intent,$r);
-            if (!$db->commit()) throw new RuntimeException('pg_switch_commit_unknown');
-        } catch (Throwable $error) {try{$db->rollback();}catch(Throwable $ignored){}throw $error;}
-        return ['id'=>$orderId,'userid'=>$o['userid'],'remark'=>$o['remark'],'title'=>$target['title'],
-            'source_id'=>$old,'target_id'=>$targetId,'provider'=>'pasarguard'];
-    } catch (Throwable $error) {return null;}
+        $pre=$db->prepare('SELECT * FROM orders_list WHERE id=? AND status=1');
+        $pre->bind_param('i',$orderId);$pre->execute();
+        $initial=$pre->get_result()->fetch_assoc();$pre->close();
+        if (!$initial) throw new RuntimeException('physical_transfer_unavailable');
+        $lease=achbotPhysicalLockName($db,$initial);
+        achbotPhysicalAcquireLock($db,$lease);
+        if (!$db->begin_transaction()) throw new RuntimeException('physical_transfer_begin');
+        $started=true;
+        $s=$db->prepare('SELECT id,userid,isAdmin,step FROM users WHERE userid=? LIMIT 2 FOR UPDATE');
+        $s->bind_param('i',$actor);$s->execute();$users=$s->get_result()->fetch_all(MYSQLI_ASSOC);$s->close();
+        if (count($users)!==1 || $users[0]['step']==='banned' ||
+            !achbotAdminCanLocked($db,$actor,(int)($GLOBALS['admin']??0),'orders'))
+            throw new RuntimeException('physical_transfer_denied');
+        $s=$db->prepare('SELECT * FROM orders_list WHERE id=? AND status=1 FOR UPDATE');
+        $s->bind_param('i',$orderId);$s->execute();$order=$s->get_result()->fetch_assoc();$s->close();
+        if (!$order || (int)$order['server_id']===$targetId ||
+            achbotPhysicalLockName($db,$order)!==$lease)
+            throw new RuntimeException('physical_transfer_unavailable');
+        $old=(int)$order['server_id'];
+        $s=$db->prepare('SELECT id FROM server_config WHERE id IN (?,?) ORDER BY id FOR UPDATE');
+        $s->bind_param('ii',$old,$targetId);$s->execute();$found=$s->get_result()->num_rows;$s->close();
+        if ($found!==2 || !achbotSamePanelGroup($db,$old,$targetId) ||
+            achbotProviderType($db,$old)!==achbotProviderType($db,$targetId) ||
+            !achbotSameProviderPanel($db,$old,$targetId))
+            throw new RuntimeException('physical_transfer_group_invalid');
+        $eligible=achbotProviderRelocationTargets($db,$old);
+        $target=null;foreach ($eligible as $candidate) if ((int)$candidate['id']===$targetId) $target=$candidate;
+        if ($target===null) throw new RuntimeException('physical_transfer_target_unavailable');
+        $all=achbotPhysicalActiveOrders($db,$order,true);
+        // A plan PUT with unknown local/native completion cannot be bypassed
+        // through a transfer. Ignore completed audit receipts only.
+        $held=$db->prepare("SELECT id FROM service_plan_changes
+            WHERE lock_key=? AND state<>'committed' LIMIT 1 FOR UPDATE");
+        $held->bind_param('s',$lease);$held->execute();
+        $blocked=$held->get_result()->num_rows!==0;$held->close();
+        if ($blocked) throw new RuntimeException('physical_transfer_pending_plan_review');
+        achbotPhysicalNoPendingPayments($db,$all);
+        foreach ($all as $peer) {
+            if (!achbotSamePanelGroup($db,(int)$peer['server_id'],$targetId) ||
+                !achbotSameProviderPanel($db,(int)$peer['server_id'],$targetId))
+                throw new RuntimeException('physical_transfer_reference_group_conflict');
+        }
+        $count=achbotPhysicalUpdateOrders($db,$all,$targetId,0,true);
+        $commitAttempted=true;
+        if (!$db->commit()) throw new RuntimeException('physical_transfer_commit_unknown');
+        $started=false;
+        error_log('achbot_shared_transfer_committed order_id='.$orderId.
+            ' target_id='.$targetId.' active_refs='.$count);
+        return ['id'=>$orderId,'userid'=>$order['userid'],'remark'=>$order['remark'],
+            'title'=>$target['title'],'source_id'=>$old,'target_id'=>$targetId,
+            'provider'=>achbotProviderType($db,$targetId),'shared_count'=>$count];
+    } catch (Throwable $error) {
+        if ($started) {try{$db->rollback();}catch(Throwable $ignored){}}
+        error_log('achbot_shared_transfer_'.($commitAttempted?'requires_review':'rejected').
+            ' order_id='.$orderId.' code='.$error->getMessage());
+        return null;
+    } finally {
+        if ($lease!==null) achbotPhysicalReleaseLock($db,$lease);
+    }
 }
 
 /** PG gifts operate only on the bot's exact owned identities; never a vendor username search. */

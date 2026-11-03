@@ -379,11 +379,12 @@ return [
         // account_transfers.text
         'account_transfers.text.b233883d0d' => 'بازگشت',
         // account_transfers.message
-        'account_transfers.message.3f6bd6c3c8' => '📍 سرور مقصد را انتخاب کنید. تنظیمات مقصد پس از بررسی اشتراک اعمال می‌شود.',
+        'account_transfers.message.3f6bd6c3c8' => '📍 سرور مقصد را انتخاب کنید. انتقال فقط بین سرورهای یک گروه مشترک متعلق به همان پنل واقعی مجاز است. پس از انتقال پلن قبلی همه کاربران این اشتراک خالی می‌شود؛ سپس پلن جدید مقصد را انتخاب کنید.',
         // account_transfers.alert
         'account_transfers.alert.4da40d7d6f' => '⛔️ انتقال این اشتراک به مقصد انتخاب‌شده امکان‌پذیر نیست.',
         // account_transfers.message
-        'account_transfers.message.9d93daa0a7' => ['text' => '✅ سرویس {remark} در ربات به سرور {title} اختصاص یافت. در صورت نیاز، لینک‌های اشتراک را به‌روزرسانی کنید.', 'parameters' => ['remark', 'title']],
+        'account_transfers.message.9d93daa0a7' => ['text' => '✅ اشتراک {remark} برای همه کاربران متصل به سرور {title} منتقل شد. پلن قدیمی همه آن‌ها خالی و تمدید خودکار غیرفعال شد. اکنون پلن مقصد را انتخاب کنید تا دسترسی Native بر اساس همان پلن تنظیم شود.', 'parameters' => ['remark', 'title']],
+        'account_transfers.choose_destination_plan' => '📋 انتخاب پلن سرور جدید',
         // config_refresh.alert
         'config_refresh.alert.55dda26482' => '⛔️ این دکمه معتبر نیست؛ اشتراک را دوباره باز کنید.',
         'config_refresh.alert.8cc7d4da88' => '⛔️ اطلاعات اشتراک را دوباره باز کنید.',

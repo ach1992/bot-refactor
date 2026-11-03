@@ -289,7 +289,7 @@ function achbotApiPaymentLocalSubjectContext(mysqli $db,array $pay,bool $locked=
         } else return null;
         $context['server']=$server;
         // Capacity and display metadata are not provider/quote identity.
-        $context['server_identity']=array_intersect_key($info,array_flip(['id','panel_group_id','provider_group_ids']));
+        $context['server_identity']=array_intersect_key($info,array_flip(['id','panel_group_id']));
         $context['plan']=$plan;
         $context['order']=$order;
         if($server['type']==='pasarguard') {

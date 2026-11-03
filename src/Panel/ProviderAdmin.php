@@ -27,7 +27,9 @@ function achbotPgServerAdminKeys(array $info,array $config,int $offset): string 
          ['text'=>\achbotMessage('admin_settings.config.get_server_config_keys.button.d004e8d654'),'callback_data'=>'wizwizch']],
         [['text'=>\achbotMessage('admin_settings.management.capacity',['value'=>$info['ucount']]),'callback_data'=>'editServerMax'.$id]],
         [['text'=>\achbotMessage('admin_settings.management.remark',['value'=>$info['remark']]),'callback_data'=>'editServerRemark'.$id]],
-        [['text'=>\achbotMessage('admin_settings.management.groups'),'callback_data'=>'pgServerGroups'.$id]],
+        [['text'=>achbotPanelGroup($GLOBALS['connection'],$id)['name']??
+             \achbotMessage('admin_settings.config.get_server_config_keys.text.176dbab285'),
+             'callback_data'=>'editPanelGroup'.$id]],
         [['text'=>\achbotMessage('admin_settings.management.shared_key'),'callback_data'=>'pgRotateServerKey'.$id]],
         [['text'=>\achbotMessage('admin_settings.management.display'),'callback_data'=>'serverDisplay'.$id]],
         [['text'=>\achbotMessage('admin_settings.management.plans'),'callback_data'=>'plansList'.$id],
@@ -132,13 +134,18 @@ function achbotHandleProviderAdmin(): bool {
                 sendMessage(\achbotMessage('admin_settings.management.shared_key_notice'),$cancelKey);return true;
             }
             if ($mode==='RotateKey') {achbotProviderPanel($connection,$id);setUser('pg:key:'.$id);sendMessage(\achbotMessage('provider.provider_admin.handle_provider_admin.message.bf4b28ea45'),$cancelKey);return true;}
+            if ($mode==='ServerGroups') {
+                // Legacy cached button: no native Groups are editable at server level.
+                sendMessage(\achbotMessage('admin_settings.management.plan_groups'));
+                return true;
+            }
             $sid=$id;
             if ($mode==='PlanGroups') {
                 $s=$connection->prepare('SELECT server_id FROM server_plans WHERE id=?');$s->bind_param('i',$id);$s->execute();$sid=(int)($s->get_result()->fetch_assoc()['server_id']??0);$s->close();
             }
             $p=achbotPgServerPanel($connection,$sid);$r=achbotPgGroups($p);
             if (($r['success']??false)!==true) throw new RuntimeException('pg_groups_unverified');
-            setUser('pg:groups:'.($mode==='PlanGroups'?'plan':'server').':'.$id);
+            setUser('pg:groups:plan:'.$id);
             $names=[];foreach ($r['groups'] as $g) if (!$g['is_disabled']) $names[]=$g['id'].' = '.$g['name'];
             sendMessage(\achbotMessage('provider.provider_admin.handle_provider_admin.message.254f747510').implode("\n",$names),$cancelKey);return true;
         }
@@ -168,30 +175,28 @@ function achbotHandleProviderAdmin(): bool {
             achbotPgAdminReturn($step,\achbotMessage('provider.provider_admin.handle_provider_admin.message.7a19204ab5'));return true;
         }
         if (preg_match('/^pg:groups:(plan|server):([1-9][0-9]*)$/D',$step,$m)) {
+            if ($m[1]!=='plan') throw new RuntimeException('pg_server_native_groups_retired');
             $id=(int)$m[2];$sid=$id;
             if ($m[1]==='plan') {
                 $s=$connection->prepare('SELECT server_id FROM server_plans WHERE id=?');$s->bind_param('i',$id);$s->execute();$sid=(int)($s->get_result()->fetch_assoc()['server_id']??0);$s->close();
             }
             $panel=achbotPgServerPanel($connection,$sid);
-            $table=$m[1]==='plan'?'server_plans':'server_info';
+            $table='server_plans';
             $s=$connection->prepare("SELECT provider_group_ids FROM $table WHERE id=?");
             $s->bind_param('i',$id);$s->execute();$beforeRow=$s->get_result()->fetch_assoc();$s->close();
             if (!$beforeRow) throw new RuntimeException('pg_group_target_missing');
             $beforeGroups=$beforeRow['provider_group_ids'];
-            if ($m[1]==='plan' && $text==='/inherit') {
-                $defaults=achbotPgPlanSnapshot($connection,$sid,0);
-                achbotPgAdminGroupIds(implode(',',$defaults['group_ids']),$panel);
-                $json=null;
-            } else $json=json_encode(achbotPgAdminGroupIds($text,$panel),JSON_THROW_ON_ERROR);
+            // All Native Group selections are explicit plan properties.
+            $json=json_encode(achbotPgAdminGroupIds($text,$panel),JSON_THROW_ON_ERROR);
             if (!$connection->begin_transaction()) throw new RuntimeException('pg_group_begin');
             try {
                 achbotPgAdminActor($connection,$step,true);
                 // Pin the edited row and the logical server before applying its selection.
-                $fields=$m[1]==='plan'?'server_id,provider_group_ids':'provider_group_ids';
+                $fields='server_id,provider_group_ids';
                 $s=$connection->prepare("SELECT $fields FROM $table WHERE id=? FOR UPDATE");
                 $s->bind_param('i',$id);$s->execute();$target=$s->get_result()->fetch_assoc();$s->close();
                 if (!$target || $target['provider_group_ids']!==$beforeGroups ||
-                    ($m[1]==='plan' && (int)$target['server_id']!==$sid))
+                    (int)$target['server_id']!==$sid)
                     throw new RuntimeException('pg_group_target_changed');
                 $s=$connection->prepare('SELECT c.provider_connection_id,c.type,c.panel_url FROM server_info i JOIN server_config c ON c.id=i.id WHERE i.id=? FOR UPDATE');
                 $s->bind_param('i',$sid);$s->execute();$logical=$s->get_result()->fetch_assoc();$s->close();

@@ -264,8 +264,13 @@ function getUserOrderDetailKeys($id, $offset = 0){
         ['text' => $buttonValues['volume_left'], 'callback_data' => "wizwizch"],
     ];
 
-    // Physical relocation is held by Issue #31 until cross-panel transfer
-    // and failure recovery are proved; never expose the DB-only legacy route.
+    // Admin always sees transfer, even when there is no eligible destination
+    // or the remote panel is temporarily unavailable. The callback gives a
+    // reason and rechecks current group/order/authority, never a silent hide.
+    if (canReadAdminOrderDetails()) $keyboard[] = [[
+        'text'=>\achbotMessage('subscription.account_details.get_order_detail_keys.button.5c38085697'),
+        'callback_data'=>"switchLocation{$id}_{$server_id}_0_0"
+    ]];
     if (!$uncertain && $actionable) $keyboard[] = [
         ['text' => $buttonValues['change_plan'], 'callback_data' => "changePlan_{$id}"],
     ];
@@ -398,7 +403,14 @@ function getOrderDetailKeys($from_id, $id, $offset = 0){
         ]];
     }
 
-    // ---- Renewal + SwitchLocation
+    // Administrator transfer is available independently of panel health and
+    // legacy BOT_STATES switches, including when no target can be offered.
+    if (canReadAdminOrderDetails()) $keyboard[] = [[
+        'text'=>\achbotMessage('subscription.account_details.get_order_detail_keys.button.5c38085697'),
+        'callback_data'=>"switchLocation{$id}_{$server_id}_0_0"
+    ]];
+
+    // ---- Renewal
     if ($found && $actionable) {
         $temp = [];
 
@@ -408,14 +420,6 @@ function getOrderDetailKeys($from_id, $id, $offset = 0){
             ($botState['renewAccountState'] ?? "off") == "on"
         ) {
             $temp[] = ['text' => $buttonValues['renew_config'], 'callback_data' => "renewAccountAsk{$id}"];
-        }
-
-        if (canReadAdminOrderDetails() && ($botState['switchLocationState'] ?? 'off') === 'on' &&
-            achbotSupportsAccount($serverType,$inbound_id) &&
-            achbotProviderRelocationTargets($GLOBALS['connection'],(int)$server_id)!==[]) {
-            // The callback carries the old shape but never grants authority.
-            $temp[] = ['text' => \achbotMessage('subscription.account_details.get_order_detail_keys.button.5c38085697'),
-                       'callback_data' => "switchLocation{$id}_{$server_id}_0_0"];
         }
 
         if (!empty($temp)) {
