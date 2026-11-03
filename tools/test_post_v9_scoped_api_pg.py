@@ -76,7 +76,7 @@ $result=null;
 try {
  $op=$spec['op'];
  if($op==='bootstrap') {
-    $snap=achbotProviderSnapshot($connection,2,7);
+    $imported=($spec['imported_empty']??false)===true;
     $panel=achbotPgServerPanel($connection,2);
     $identity=['remote_user_id'=>17,
         'remote_created_at'=>'2026-10-26T05:00:00.123456+00:00',
@@ -87,11 +87,28 @@ try {
     $ent=['data_limit'=>$user['data_limit'],'expire'=>$user['expire'],
         'group_ids'=>$user['group_ids'],'status'=>$user['status']];
     if($connection->begin_transaction()!==true)throw new RuntimeException('fixture_begin');
-    achbotProviderReserveAccount($connection,1,$snap,'fixture_user',$identity['operation_marker'],$ent);
+    if ($imported) {
+        // Real source adoption, not a fabricated CREATE entitlement: the
+        // source requires exact order, actor, bearer credential and
+        // external-import provenance. Imported accounts may have Groups=[].
+        require_once $root.'/src/Panel/ProviderImport.php';
+        $token='fixture-import-token';
+        $proof=['target'=>achbotPgImportTarget($panel),'token'=>$token,
+            'input_sha256'=>hash('sha256','https://alias.invalid/import/'.$token)];
+        achbotProviderAdoptAccount($connection,2,$user,$proof,1001,41,1001,9001);
+    } else {
+        $snap=achbotProviderSnapshot($connection,2,7);
+        achbotProviderReserveAccount($connection,1,$snap,'fixture_user',$identity['operation_marker'],$ent);
+    }
     if(!$connection->commit())throw new RuntimeException('fixture_commit');
-    achbotProviderVerifyAccount($connection,1,$user);
-    achbotProviderLinkAccount($connection,1,41);
-    $result=['linked'=>achbotPgOrderContext($connection,41)['account']['state']==='linked',
+    if (!$imported) {
+        achbotProviderVerifyAccount($connection,1,$user);
+        achbotProviderLinkAccount($connection,1,41);
+    }
+    $context=achbotPgOrderContext($connection,41);
+    $result=['linked'=>$context['account']['state']==='linked',
+        'imported'=>$imported,
+        'identity_mode'=>$context['identity']['identity_mode']??null,
         'groups'=>$user['group_ids']];
  } elseif ($op==='issue') {
     $kind=$spec['kind'];$id=(int)$spec['offer_id'];
@@ -107,10 +124,11 @@ try {
     $hash=$spec['hash'];
     $type='INCREASE_'.strtoupper($kind).'_41_'.$id;
     $vol=$kind==='volume'?$units:0;$day=$kind==='day'?$units:0;
+    $planId=(int)$order['fileid']; // Real imported references remain planless.
     $stmt=$connection->prepare("INSERT INTO pays(hash_id,user_id,type,plan_id,server_id,
         order_id,volume,day,price,request_date,state,addon_scope_snapshot)
-        VALUES (?,1001,?,7,2,41,?,?,?,UNIX_TIMESTAMP(),'pending',?)");
-    $stmt->bind_param('ssiiis',$hash,$type,$vol,$day,$price,$snap);
+        VALUES (?,1001,?,?,2,41,?,?,?,UNIX_TIMESTAMP(),'pending',?)");
+    $stmt->bind_param('ssiiiis',$hash,$type,$planId,$vol,$day,$price,$snap);
     $stmt->execute();$payId=(int)$stmt->insert_id;$stmt->close();
     achbotPgPinPayment($connection,$payId);
     $stmt=$connection->prepare("INSERT INTO payment_attempts
@@ -128,6 +146,24 @@ try {
     $stmt->bind_param('i',$payId);$stmt->execute();$stmt->close();
     $result=['pay_id'=>$payId,'price'=>$price,'units'=>$units,
         'profile'=>achbotPaymentEvidenceSnapshot(achbotApiPaymentAttempt($connection,$payId))!==null];
+ } elseif ($op==='policy_probe') {
+    $createSnap=achbotProviderSnapshot($connection,2,7);
+    $createSnap['group_ids']=[];
+    $refused=false;
+    try {achbotProviderCanonicalSnapshot($createSnap);}
+    catch(RuntimeException $e) {$refused=$e->getMessage()==='provider_groups_invalid';}
+    $panel=achbotPgServerPanel($connection,2);
+    $created=achbotPgCreate($panel,['username'=>'never_create_empty',
+        'operation_marker'=>'achbot:v1:'.str_repeat('d',32),
+        'data_limit'=>2147483648,'expire'=>2000000000,'group_ids'=>[]]);
+    $result=['empty_create_snapshot_rejected'=>$refused,
+        'native_create_denied'=>($created['success']??null)===false &&
+            ($created['reason']??null)==='pg_groups_required'];
+ } elseif ($op==='catalog') {
+    $order=$connection->query('SELECT * FROM orders_list WHERE id=41')->fetch_assoc();
+    $context=achbotAddonContext($connection,$order);
+    $result=['context_groups'=>$context['groups'],
+        'offers'=>achbotAddonCatalog($connection,(string)$spec['kind'],$context)];
  } elseif ($op==='reserve') {
     $id=(int)$spec['pay_id'];
     $a=achbotApiPaymentAttempt($connection,$id);
@@ -185,6 +221,10 @@ class DriftHandler(pg.Handler):
                 s.available_group_ids = [5]
             elif s.drift == "membership":
                 s.user["group_ids"] = [5]
+            elif s.drift == "empty_to_nonempty":
+                s.user["group_ids"] = [2]
+            elif s.drift == "authority_fail":
+                s.mode = "permission_missing"
             elif s.drift == "foreign":
                 s.user["created_at"] = "2026-10-25T05:00:00Z"
         super().handle_request()
@@ -218,7 +258,7 @@ def quote_sql(value):
 
 
 @contextlib.contextmanager
-def sandbox():
+def sandbox(*, imported_empty=False):
     # Every scenario owns its own MariaDB socket and fresh native/API state;
     # a durable failed mutation in one case can never be silently repaired to
     # make a later test pass.
@@ -261,6 +301,11 @@ def sandbox():
 
         try:
             with native_panel(mutation_claimed) as (provider, provider_url):
+                if imported_empty:
+                    provider.user["group_ids"] = []
+                    # No enabled Group must be invented for a Group-less
+                    # imported subscription, even if credentials allow none.
+                    provider.allowed_group_ids = []
                 provider_hash = hashlib.sha256(provider_url.encode()).hexdigest()
                 snapshot = json.dumps({
                     "provider": "pasarguard", "panel_id": 1,
@@ -277,20 +322,29 @@ def sandbox():
                     f"{quote_sql(INSTANCE)},provider_version='5.5.1',"
                     "provider_enabled=1 WHERE id=2")
                 sql("UPDATE server_info SET provider_group_ids='[2,5]' WHERE id=2")
-                sql("INSERT INTO orders_list "
-                    "(id,userid,token,transid,fileid,server_id,inbound_id,remark,"
-                    "uuid,expire_date,link,amount,status,date) VALUES "
-                    f"(41,1001,'fixture-token','',7,2,0,'fixture_user',"
-                    f"'fixture-native-uuid',{epoch},'[]',100,1,'fixture')")
-                sql("INSERT INTO service_effects "
-                    "(id,source_kind,source_ref,actor_userid,ordinal,operation_id,"
-                    "target_server_id,target_key,endpoint_sha256,plan_id,"
-                    "remote_username,requested_expire,requested_bytes,"
-                    "request_sha256,provider_snapshot) VALUES ("
-                    f"1,'trial','fixture-native-identity',1001,1,"
-                    f"{quote_sql(OPERATION)},2,'pg:fixture',"
-                    f"{quote_sql(provider_hash)},7,'fixture_user',{epoch},"
-                    f"{pg.USER['data_limit']},REPEAT('c',64),{quote_sql(snapshot)})")
+                if imported_empty:
+                    sql("INSERT INTO add_link(remark,token,added_by) "
+                        "VALUES ('fixture_user','fixture-import-token',1001)")
+                    sql("INSERT INTO orders_list "
+                        "(id,userid,token,transid,fileid,server_id,inbound_id,remark,"
+                        "uuid,expire_date,link,amount,status,date,autoRenew) VALUES "
+                        f"(41,1001,'fixture-import-token','',0,2,0,'fixture_user',"
+                        f"'fixture-native-uuid',{epoch},'[]',0,1,'fixture','off')")
+                else:
+                    sql("INSERT INTO orders_list "
+                        "(id,userid,token,transid,fileid,server_id,inbound_id,remark,"
+                        "uuid,expire_date,link,amount,status,date) VALUES "
+                        f"(41,1001,'fixture-token','',7,2,0,'fixture_user',"
+                        f"'fixture-native-uuid',{epoch},'[]',100,1,'fixture')")
+                    sql("INSERT INTO service_effects "
+                        "(id,source_kind,source_ref,actor_userid,ordinal,operation_id,"
+                        "target_server_id,target_key,endpoint_sha256,plan_id,"
+                        "remote_username,requested_expire,requested_bytes,"
+                        "request_sha256,provider_snapshot) VALUES ("
+                        f"1,'trial','fixture-native-identity',1001,1,"
+                        f"{quote_sql(OPERATION)},2,'pg:fixture',"
+                        f"{quote_sql(provider_hash)},7,'fixture_user',{epoch},"
+                        f"{pg.USER['data_limit']},REPEAT('c',64),{quote_sql(snapshot)})")
                 sql("INSERT INTO increase_day(id,volume,price) "
                     "VALUES (703,3,300)")
                 for kind, offer, units, price in [
@@ -303,6 +357,18 @@ def sandbox():
                         "(id,volume,price,server_id,group_ids,scope_hash) "
                         f"VALUES ({offer},{units},{price},2,'[2,5]',"
                         f"'{group_hash}')")
+
+                if imported_empty:
+                    # Exact Server day and Global volume fallbacks. Group-only
+                    # rows 701/702 must remain ineligible for Groups=[].
+                    server_scope=hashlib.sha256(b"S:2").hexdigest()
+                    global_scope=hashlib.sha256(b"G").hexdigest()
+                    sql("INSERT INTO increase_day "
+                        "(id,volume,price,server_id,scope_hash) VALUES "
+                        f"(704,{DAY},{DAY_PRICE},2,'{server_scope}')")
+                    sql("INSERT INTO increase_plan "
+                        "(id,volume,price,scope_hash) VALUES "
+                        f"(705,{VOLUME},{VOLUME_PRICE},'{global_scope}')")
 
                 driver = work / "scoped-api-pg.php"
                 driver.write_text(PHP)
@@ -358,8 +424,11 @@ def sandbox():
                             if line.startswith("achbot_pg_edit_needs_review pay_id=")]
                     return response["result"]
 
-                linked = run("bootstrap")
-                assert linked["linked"] and linked["groups"] == [2, 5], linked
+                linked = run("bootstrap", imported_empty=imported_empty)
+                assert linked["linked"] and linked["groups"] == (
+                    [] if imported_empty else [2, 5]), linked
+                assert linked["imported"] is imported_empty, linked
+                assert linked["identity_mode"] == ("adopted" if imported_empty else None), linked
                 assert provider.write_count == 0
                 yield sql, run, provider, sms_server, epoch
         finally:
@@ -382,8 +451,8 @@ def evidence_sms(message_id, price, wrong_amount=0):
     }
 
 
-def claim_proof(run, bank, kind, key, *, wrong_amount=0):
-    offer = 701 if kind == "day" else 702
+def claim_proof(run, bank, kind, key, *, wrong_amount=0, offer_id=None):
+    offer = offer_id if offer_id is not None else (701 if kind == "day" else 702)
     issued = run("issue", kind=kind, offer_id=offer, hash=key)
     assert issued["profile"] and issued["price"] == (
         DAY_PRICE if kind == "day" else VOLUME_PRICE), issued
@@ -470,6 +539,109 @@ def test():
             passed(sql("SELECT provider_mutation_key FROM service_effects WHERE id=1")
                    == "pay:" + str(payment_id),
                    kind + "_native_account_mutation_journal_pinned")
+
+    # Imported, not CREATE-originated, physical PG accounts may legitimately
+    # have zero Groups. Server/Global pricing is still available and cannot
+    # be upgraded to an invented Group-specific offer.
+    for kind, offer_id, scope in (
+        ("day", 704, "server"),
+        ("volume", 705, "global"),
+    ):
+        with sandbox(imported_empty=True) as (sql, run, provider, bank, old_expiry):
+            policy=run("policy_probe")
+            passed(all(policy.values()) and provider.write_count==0,
+                   "imported_empty_groups_create_must_still_require_groups",
+                   policy)
+            catalogue=run("catalog",kind=kind)
+            ids=[r["id"] for r in catalogue["offers"]]
+            passed(catalogue["context_groups"]==[] and ids==[offer_id],
+                   "imported_empty_groups_"+kind+"_only_"+scope+"_scope_visible",
+                   catalogue)
+            passed(provider.write_count==0 and
+                   sql("SELECT CONCAT(fileid,':',amount,':',autoRenew) "
+                       "FROM orders_list WHERE id=41")=="0:0:off" and
+                   sql("SELECT effect_kind FROM service_effects WHERE id=1")=="adopt",
+                   "imported_empty_groups_"+kind+"_real_adoption_provenance")
+            key="scoped_api_pg_imported_empty_"+kind
+            issued,message=claim_proof(run,bank,kind,key,offer_id=offer_id)
+            pay=issued["pay_id"]
+            pinned=json.loads(sql("SELECT addon_scope_snapshot "
+                                  f"FROM pays WHERE id={pay}"))
+            passed(pinned["native_groups"]==[] and
+                   pinned["offer_id"]==offer_id and
+                   pinned["provider"]=="pasarguard" and
+                   pinned["scope_hash"]==hashlib.sha256(
+                       (b"S:2" if kind=="day" else b"G")).hexdigest() and
+                   sql(f"SELECT plan_id FROM pays WHERE id={pay}")=="0",
+                   "imported_empty_groups_"+kind+"_immutable_scoped_quote",
+                   pinned)
+            passed(issued["price"]==(DAY_PRICE if kind=="day" else VOLUME_PRICE)
+                   and run("preflight",pay_id=pay)["valid"],
+                   "imported_empty_groups_"+kind+"_original_price_preflight")
+            reservation=run("reserve",pay_id=pay,sms=message)
+            passed(reservation is not None and reservation["reserved"] and
+                   run("consume",pay_id=pay)["status"]=="proven" and
+                   bank.consumes.get("1")==1,
+                   "imported_empty_groups_"+kind+"_exact_api_evidence")
+            wallet=sql("SELECT wallet FROM users WHERE userid=1001")
+            settled=run("settle",pay_id=pay)
+            outcome=terminal_state(sql,pay)
+            writes=[e for e in provider.trace if e[0]=="PUT"]
+            passed(settled=="confirmed" and
+                   outcome.startswith("auto_cart_approved|done|") and
+                   len(writes)==1 and provider.write_count==1 and
+                   provider.user["group_ids"]==[] and
+                   sql("SELECT COUNT(*) FROM increase_order")=="1" and
+                   sql("SELECT provider_state FROM service_effects WHERE id=1")
+                   =="linked" and
+                   sql("SELECT provider_mutation_key FROM service_effects "
+                       "WHERE id=1")==f"pay:{pay}" and
+                   sql("SELECT wallet FROM users WHERE userid=1001")==wallet,
+                   "imported_empty_groups_"+kind+"_native_put_readback_and_terminal",
+                   [settled,outcome,len(writes)])
+            if kind=="day":
+                passed(int(dt.datetime.fromisoformat(
+                    provider.user["expire"].replace("Z","+00:00")
+                ).timestamp())==old_expiry+DAY*86400,
+                       "imported_empty_groups_day_absolute_extension")
+            else:
+                passed(provider.user["data_limit"]==
+                       pg.USER["data_limit"]+VOLUME*1073741824,
+                       "imported_empty_groups_volume_absolute_extension")
+            passed(run("settle",pay_id=pay)=="settled" and
+                   provider.write_count==1 and
+                   bank.consumes.get("1")==1 and
+                   sql("SELECT COUNT(*) FROM increase_order")=="1",
+                   "imported_empty_groups_"+kind+"_terminal_replay_no_second_put")
+
+    for scenario in ("empty_to_nonempty","authority_fail"):
+        with sandbox(imported_empty=True) as (sql,run,provider,bank,_):
+            issued,message=claim_proof(run,bank,"day",
+                "scoped_api_pg_empty_drift_"+scenario,offer_id=704)
+            pay=issued["pay_id"]
+            pinned=json.loads(sql("SELECT addon_scope_snapshot "
+                                  f"FROM pays WHERE id={pay}"))
+            assert pinned["native_groups"]==[]
+            assert run("reserve",pay_id=pay,sms=message) is not None
+            assert run("consume",pay_id=pay)["status"]=="proven"
+            wallet=sql("SELECT wallet FROM users WHERE userid=1001")
+            provider.drift=scenario
+            status=run("settle",pay_id=pay)
+            audit=sql("SELECT COUNT(*) FROM increase_order")
+            held=terminal_state(sql,pay)
+            mutation=sql("SELECT provider_state FROM service_effects WHERE id=1")
+            passed(provider.drift_fired and status=="review" and
+                   provider.write_count==0 and
+                   not any(x[0]=="PUT" for x in provider.trace) and
+                   held.startswith("processing|dispatched|") and
+                   mutation=="mutating" and audit=="0" and
+                   sql("SELECT wallet FROM users WHERE userid=1001")==wallet,
+                   "postclaim_empty_groups_"+scenario+"_held_before_any_put",
+                   [status,held,mutation,audit])
+            passed(run("settle",pay_id=pay)=="review" and
+                   provider.write_count==0 and
+                   sql("SELECT COUNT(*) FROM increase_order")=="0",
+                   "postclaim_empty_groups_"+scenario+"_cannot_replay")
 
     with sandbox() as (sql, run, provider, bank, old_expiry):
         # A pre-015 globally quoted payment has no addon_scope_snapshot.

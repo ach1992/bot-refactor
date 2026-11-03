@@ -99,7 +99,21 @@ function achbotProviderCanonicalTarget(array $snapshot): array {
 }
 /** Resolve one shared connection from the actual server connection rows. */
 function achbotProviderCanonicalSnapshot(array $snapshot): array {
-    return achbotProviderCanonicalTarget($snapshot)+['group_ids'=>achbotProviderGroups($snapshot['group_ids']??null)];
+    $target=achbotProviderCanonicalTarget($snapshot);
+    $groups=$snapshot['group_ids']??null;
+    // CREATE/plan defaults require nonempty Groups. An already-owned native
+    // account instead pins its EXISTING membership, which can be empty for
+    // imported accounts. Require a persisted account reference and explicit
+    // preserve_current identity before accepting [] at the quote boundary;
+    // subsequent order/identity and credential-authority reads remain required.
+    if ($groups===[] && ($snapshot['group_policy']??null)==='preserve_current' &&
+        is_int($snapshot['provider_account_id']??null) && $snapshot['provider_account_id']>0 &&
+        is_int($snapshot['remote_user_id']??null) && $snapshot['remote_user_id']>0 &&
+        is_string($snapshot['remote_created_at']??null) &&
+        is_string($snapshot['operation_marker']??null) &&
+        achbotPgIdentityValid($snapshot))
+        return $target+['group_ids'=>[]];
+    return $target+['group_ids'=>achbotProviderGroups($groups)];
 }
 function achbotProviderPanel(mysqli $db,int $panelId,bool $lock=false): array {
     achbotProviderRequireSchema($db);

@@ -228,8 +228,11 @@ function achbotPgModify(array $panel,array $identity,array $absoluteChanges,
             // AND the credential's current enabled/allowed Groups at the
             // last local boundary immediately before an outbound PUT.
             // An earlier menu, quote or payment preflight is not authority.
+            // [] is a verified empty native membership (e.g. an adopted
+            // account), distinct from null which opts out of the scoped
+            // contract. Never invent Groups for Server/Global offers.
             $expectedGroups=achbotPgGroupsCanonical($requiredCurrentGroups);
-            if (!$expectedGroups || $before['user']['group_ids']!==$expectedGroups)
+            if ($before['user']['group_ids']!==$expectedGroups)
                 return achbotPgFailure('pg_addon_groups_changed_before_write');
             $current=achbotPgCheck($panel);
             if (($current['success']??false)!==true)

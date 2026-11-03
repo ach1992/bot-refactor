@@ -21,7 +21,16 @@ quantity+scope pairs. Do not confuse native PasarGuard groups with Marzban
 panel_group_id. For a given extension kind and integer unit count,
 priority is exact native PasarGuard Group-set > server > Global.
 Multiple native Groups are one exact set, never a cheapest matching
-individual Group. Show at most one offer per quantity. Ambiguous/corrupt
+individual Group. Imported PasarGuard accounts with an authenticated,
+unchanged empty native Group-set ([]) can use eligible Server/Global
+offers, but cannot match a Group-specific offer or invent Group membership.
+Such a newly issued scoped quote pins native_groups: []; null instead
+means no new scoped Group contract (the historical invoice path).
+CREATE/plan defaults still require nonempty native Groups. A pinned
+existing-account snapshot may preserve [] only with valid account/identity
+references and must pass the usual current provider-authority checks both
+before payment and again after the durable effect claim, before PUT.
+Show at most one offer per quantity. Ambiguous/corrupt
 catalog entries fail closed.
 
 ## Administrator workflow
