@@ -120,7 +120,15 @@ def main():
     check(refs<=entries,'unknown catalog references: '+str(refs-entries))
     unused={k for k in entries-refs if not k.startswith(('legacy_messages.','legacy_buttons.'))}
     management=json.loads((ROOT/'tools/text_catalog_management_amendment.json').read_text())
-    expected_unused=set(management['retained_legacy_keys'])|catalog_owner_r5.verify_retained_display_keys()|catalog_owner_r5.API_REVIEW_RETAINED
+    # The scoped admin catalogue no longer renders the three scope-filter
+    # buttons. Preserve the previously accepted, editable copy key without
+    # quietly treating arbitrary new orphan labels as acceptable.
+    obsolete_filter={'addon_scopes.filter_all'}
+    check(obsolete_filter<=entries and not (obsolete_filter & refs),
+          'retired_scope_filter_label_is_rendered_or_missing')
+    expected_unused=(set(management['retained_legacy_keys'])|
+        catalog_owner_r5.verify_retained_display_keys()|
+        catalog_owner_r5.API_REVIEW_RETAINED|obsolete_filter)
     check(unused==expected_unused,'unrecorded legacy/orphan copy entries: '+str(unused^expected_unused))
     with tempfile.TemporaryDirectory(prefix='achbot-catalog-audit-') as scratch:
         fixture=pathlib.Path(scratch)/'fixture.php'
