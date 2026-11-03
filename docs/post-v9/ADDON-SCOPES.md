@@ -100,6 +100,29 @@ reconciliation, not an invented alternative price or scope.
 Existing idempotency journals, wallet protections and gateway records
 remain authoritative. Never retry an uncertain external effect blindly.
 
+### Imported planless non-API financial completion
+
+orders_list.fileid=0 and pays.plan_id=0 can be valid for a real
+imported existing PasarGuard subscription. A successful native
+PUT/readback alone does not authorize the local payment/order/audit
+transition: the shared locked expiry finisher must preserve its complete
+original-vs-current order CAS, verify the immutable external_import
+origin, and rebind the exact current PasarGuard physical account identity,
+native incarnation, endpoint, logical server, owner and remark under the
+finalization SQL transaction. Only this verified existing-account case may
+retain a zero plan ID. Normal plan-backed orders keep their strict checks;
+zero/invalid references without verified import provenance fail closed.
+
+This finalization check is shared by Wallet and operator-approved Manual
+day/volume callbacks and Hosted day fulfillment. A post-PUT failure is
+held for operator reconciliation: it never triggers automatic refund,
+reprice or native replay. The PHP 8.5 fifth-family native acceptance now
+includes test_post_v9_scoped_pg_payments.py on disposable MariaDB and
+an owned loopback PasarGuard emulator, verifying the non-API financial
+paths and durable replay protections in addition to the separate API
+source-real checks. CI retains an independent
+php85-scoped-pg-payments artifact for exact candidate review.
+
 ## Operator migration and rollback (separate authorization required)
 
 1. Quiesce the bot webhook and Cron, verify no in-flight payment effects,

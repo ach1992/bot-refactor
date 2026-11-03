@@ -131,21 +131,28 @@ try {
     $stmt->bind_param('ssiiiis',$hash,$type,$planId,$vol,$day,$price,$snap);
     $stmt->execute();$payId=(int)$stmt->insert_id;$stmt->close();
     achbotPgPinPayment($connection,$payId);
-    $stmt=$connection->prepare("INSERT INTO payment_attempts
-       (pay_row_id,provider,order_hash,quote_amount,quote_currency,
-        local_amount_toman,checkout_url,stage)
-       VALUES (?,'bank_transfer',?,?,'toman',?,'{\"v\":1,\"method\":\"bank_transfer\"}','review')");
-    $stmt->bind_param('isii',$payId,$hash,$price,$price);$stmt->execute();$stmt->close();
-    if(!$connection->begin_transaction())throw new RuntimeException('fixture_pin_begin');
-    $pay=achbotApiPaymentRow($connection,$payId,true);
-    $attempt=achbotApiPaymentAttempt($connection,$payId,true);
-    achbotApiPaymentPinLocked($connection,$pay,$attempt);
-    if(!$connection->commit())throw new RuntimeException('fixture_pin_commit');
-    $stmt=$connection->prepare("UPDATE pays SET state='have_sent',
+    $channel=(string)($spec['channel']??'api');
+    if ($channel==='api') {
+        $stmt=$connection->prepare("INSERT INTO payment_attempts
+           (pay_row_id,provider,order_hash,quote_amount,quote_currency,
+            local_amount_toman,checkout_url,stage)
+           VALUES (?,'bank_transfer',?,?,'toman',?,'{\"v\":1,\"method\":\"bank_transfer\"}','review')");
+        $stmt->bind_param('isii',$payId,$hash,$price,$price);$stmt->execute();$stmt->close();
+        if(!$connection->begin_transaction())throw new RuntimeException('fixture_pin_begin');
+        $pay=achbotApiPaymentRow($connection,$payId,true);
+        $attempt=achbotApiPaymentAttempt($connection,$payId,true);
+        achbotApiPaymentPinLocked($connection,$pay,$attempt);
+        if(!$connection->commit())throw new RuntimeException('fixture_pin_commit');
+    } elseif (!in_array($channel,['wallet','manual','hosted'],true)) {
+        throw new RuntimeException('fixture_channel_invalid');
+    }
+    $state=$channel==='api'||$channel==='manual'?'have_sent':'pending';
+    $stmt=$connection->prepare("UPDATE pays SET state=?,
        message_id=222,chat_id='9001' WHERE id=?");
-    $stmt->bind_param('i',$payId);$stmt->execute();$stmt->close();
+    $stmt->bind_param('si',$state,$payId);$stmt->execute();$stmt->close();
     $result=['pay_id'=>$payId,'price'=>$price,'units'=>$units,
-        'profile'=>achbotPaymentEvidenceSnapshot(achbotApiPaymentAttempt($connection,$payId))!==null];
+        'profile'=>$channel==='api'
+            && achbotPaymentEvidenceSnapshot(achbotApiPaymentAttempt($connection,$payId))!==null];
  } elseif ($op==='policy_probe') {
     $createSnap=achbotProviderSnapshot($connection,2,7);
     $createSnap['group_ids']=[];
@@ -424,6 +431,12 @@ def sandbox(*, imported_empty=False):
                             if line.startswith("achbot_pg_edit_needs_review pay_id=")]
                     return response["result"]
 
+                # Let sibling source-real finance fixtures reuse this exact
+                # task-owned MariaDB/socket and loopback provider instance.
+                # No second database, remote server or shared host resource.
+                run.fixture_work = work
+                run.fixture_env = env
+                run.fixture_socket = work / "mysql.sock"
                 linked = run("bootstrap", imported_empty=imported_empty)
                 assert linked["linked"] and linked["groups"] == (
                     [] if imported_empty else [2, 5]), linked

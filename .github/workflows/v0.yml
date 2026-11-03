@@ -240,6 +240,20 @@ jobs:
           set -euo pipefail
           python3 tools/test_post_v9_scoped_api_pg.py --run-disposable --report "$RUNNER_TEMP/scoped-api-pg.json"
           cat "$RUNNER_TEMP/scoped-api-pg.json"
+      - name: Imported planless PasarGuard non-API financial settlement acceptance
+        if: matrix.index == 5
+        run: |
+          set -euo pipefail
+          python3 tools/test_post_v9_scoped_pg_payments.py --run-disposable --report "$RUNNER_TEMP/scoped-pg-payments.json"
+          cat "$RUNNER_TEMP/scoped-pg-payments.json"
+      - name: Preserve imported PasarGuard non-API financial evidence
+        if: matrix.index == 5
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: php85-scoped-pg-payments
+          path: ${{ runner.temp }}/scoped-pg-payments.json
+          if-no-files-found: error
+          retention-days: 14
       - name: Preserve scoped API and PasarGuard source-real evidence
         if: matrix.index == 5
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

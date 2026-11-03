@@ -801,7 +801,7 @@ function achbotStoreVerifiedServiceExpiryLocked(mysqli $db, array $original,
     $remark=(string)$original['remark'];
     $uuid=$original['uuid']??null;
     $old=(int)$original['expire_date'];
-    if ($orderId<=0 || $owner<=0 || $server<=0 || $fileId<=0 ||
+    if ($orderId<=0 || $owner<=0 || $server<=0 || $fileId<0 ||
         $inbound!==0 || $remark==='' || (int)$original['status']!==1 ||
         $old<0 || $old>2147483647)
         throw new RuntimeException('day_extension_original_order_invalid');
@@ -823,6 +823,30 @@ function achbotStoreVerifiedServiceExpiryLocked(mysqli $db, array $original,
         $current['uuid']!==$uuid ||
         (int)$current['expire_date']!==$old)
         throw new RuntimeException('day_extension_order_stale');
+
+    // Planless (fileid=0) is legal ONLY for a genuinely imported existing
+    // PasarGuard account. Under the caller's payment/order transaction, bind
+    // its immutable nonfinancial origin to the same locked order and current
+    // physically verified native account, endpoint and logical server.
+    // Neither a zero plan ID nor a matching remark alone is authorization.
+    if ($fileId===0) {
+        try {
+            $origin=achbotOrderImportOrigin($db,$original,true);
+            $native=achbotPgOrderContext($db,$orderId,true);
+            if ($origin===null || $origin['provider']!=='pasarguard' ||
+                $origin['provider_account_id']!==$native['account']['id'] ||
+                $native['order_server_id']!==$server ||
+                (int)$native['order']['fileid']!==0 ||
+                (int)$native['order']['userid']!==$owner ||
+                (string)$native['order']['remark']!==$remark ||
+                $origin['native_identity']['remote_user_id']!==$native['identity']['remote_user_id'] ||
+                $origin['native_identity']['remote_created_at']!==$native['identity']['remote_created_at'] ||
+                $origin['native_identity']['remote_username']!==$native['account']['remote_username'])
+                throw new RuntimeException('planless_origin_mismatch');
+        } catch (Throwable $error) {
+            throw new RuntimeException('day_extension_planless_import_unverified',0,$error);
+        }
+    }
     $expiry=$verified->applied_expire;
     $stmt=$db->prepare('UPDATE orders_list SET expire_date=?,notif=0
         WHERE id=? AND userid=? AND server_id=? AND inbound_id=?
