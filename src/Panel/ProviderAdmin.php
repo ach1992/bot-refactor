@@ -165,6 +165,16 @@ function achbotHandleProviderAdmin(): bool {
                 if ($locked['instance_key']!==$p['instance_key'] || $locked['api_url']!==$p['api_url'] ||
                     $locked['version']!==$p['version'] || !hash_equals($before,$locked['api_key']))
                     throw new RuntimeException('pg_key_target_changed');
+                // Shared PG API-key rotation must not rebind an in-flight
+                // plan's captured target. Rotation for otherwise healthy
+                // active accounts remains permitted (no Native mutation).
+                require_once __DIR__.'/../Subscription/PhysicalService.php';
+                $s=$connection->prepare("SELECT id FROM server_config
+                    WHERE provider_connection_id=? AND type='pasarguard' ORDER BY id FOR UPDATE");
+                $s->bind_param('i',$id);$s->execute();
+                $logicalServers=$s->get_result()->fetch_all(MYSQLI_ASSOC);$s->close();
+                foreach ($logicalServers as $logical)
+                    achbotPhysicalAssertRebindSafe($connection,(int)$logical['id'],false,false);
                 $s=$connection->prepare("UPDATE server_config SET password=? WHERE provider_connection_id=?
                     AND type='pasarguard' AND BINARY password=BINARY ?");
                 $s->bind_param('sis',$p['api_key'],$id,$before);

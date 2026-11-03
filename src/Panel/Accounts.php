@@ -481,7 +481,8 @@ function editMarzbanConfig($server_id,$info,?array $giftTarget=null){
          $hasGroupColumn!==($giftTarget['has_group_column']??null)))
         return (object)['success'=>false,'uncertain'=>true,
                         'msg'=>'gift_group_identity_changed'];
-    $scope=$groupId===null?'endpoint:'.$panelUrl:'group:'.$groupId;
+    // Share an immutable ungrouped lock identity with shared-plan selection.
+    $scope=$groupId===null?'server:'.(int)$server_id:'group:'.$groupId;
     // A bounded advisory lock is released even if Marzban times out.
     $lockName='achbot-edit-'.substr(hash('sha256',$scope."\n".$remark),0,40);
     $lock=$connection->prepare("SELECT GET_LOCK(?,3) AS acquired");

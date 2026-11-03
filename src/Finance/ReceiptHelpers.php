@@ -2362,7 +2362,7 @@ function achbotSharedAccountReferencesLocked(mysqli $db,int $orderId,int $server
 
 /** Pending claims serialize a shared account; completed references are not an ownership restriction. */
 function achbotSharedAccountWorkSettledLocked(mysqli $db,array $peers,int $ownAttempt=0,
-    int $ownPay=0,bool $blockUnclaimedQuotes=false): bool {
+    int $ownPay=0,bool $blockUnclaimedQuotes=false,bool $strictCompletion=false): bool {
     $ids=[];
     foreach ($peers as $row) {
         if ((int)($row['id']??0)<=0 || (int)($row['status']??0)!==1) return false;
@@ -2385,12 +2385,20 @@ function achbotSharedAccountWorkSettledLocked(mysqli $db,array $peers,int $ownAt
         (order_id IN ($list) OR type REGEXP ?) ORDER BY id FOR UPDATE");
     $q->bind_param('is',$ownPay,$pattern);$q->execute();$payments=$q->get_result()->fetch_all(MYSQLI_ASSOC);$q->close();
     foreach ($payments as $payment) {
-        if (in_array($payment['state'],['approved','paid_with_wallet'],true)) continue;
         $attempt=null;
         if ($mode==='current') {
             $id=(int)$payment['id'];
             $q=$db->prepare('SELECT stage FROM payment_attempts WHERE pay_row_id=? FOR UPDATE');
             $q->bind_param('i',$id);$q->execute();$attempt=$q->get_result()->fetch_assoc();$q->close();
+        }
+        // Even paid/approved evidence cannot release an account if a gateway
+        // attempt still claims fulfillment/review. Historical completed rows
+        // and normal automatic-renewal semantics remain unchanged.
+        if ($strictCompletion && $attempt!==null &&
+            !in_array($attempt['stage'],['done','expired'],true)) return false;
+        if (in_array($payment['state'],['approved','paid_with_wallet'],true)) {
+            if ($strictCompletion && ($attempt['stage']??null)==='expired') return false;
+            continue;
         }
         if ($payment['state']==='paid' && ($attempt['stage']??null)==='done') continue;
         if (in_array($payment['state'],['canceled','cancelled','rejected','expired'],true) &&

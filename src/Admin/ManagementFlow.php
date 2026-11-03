@@ -400,7 +400,19 @@ function achbotHandleManagementFields(): bool {
                     achbotManagementRow($connection,'SELECT i.*,c.type,c.panel_url,c.username,c.password FROM server_info i JOIN server_config c ON c.id=i.id WHERE i.id=? FOR UPDATE','i',[$entity]);
                 if (!$row || !hash_equals($d['baseline'],achbotManagementFieldBaseline($row,$field))) throw new RuntimeException('management_stale');
                 if ($field==='login') {
-                    $v=$d['values'];achbotManagementSql($connection,'UPDATE server_config SET panel_url=?,username=?,password=? WHERE id=? AND type=\'marzban\'','sssi',[$v['url'],$v['username'],$v['password'],$entity])->close();
+                    $v=$d['values'];
+                    if ($v['url']!==$row['panel_url'] ||
+                        $v['username']!==$row['username'] ||
+                        $v['password']!==$row['password']) {
+                        require_once __DIR__.'/../Subscription/PhysicalService.php';
+                        try {achbotPhysicalAssertRebindSafe($connection,$entity,true);}
+                        catch (RuntimeException $e) {
+                            if ($e->getMessage()==='physical_rebind_active_references')
+                                throw new RuntimeException('server_referenced');
+                            throw new RuntimeException('management_rebind_requires_review');
+                        }
+                    }
+                    achbotManagementSql($connection,'UPDATE server_config SET panel_url=?,username=?,password=? WHERE id=? AND type=\'marzban\'','sssi',[$v['url'],$v['username'],$v['password'],$entity])->close();
                 } else {
                     $column=['name'=>'title','flag'=>'flag','remark'=>'remark','max'=>'ucount','days'=>'days','volume'=>'volume'][$field]??null;
                     if ($column===null) throw new RuntimeException('management_input');
@@ -427,9 +439,11 @@ function achbotHandleManagementFields(): bool {
         if ($begun) {try{$connection->rollback();}catch(Throwable $ignored){}}
         $code=$error instanceof RuntimeException?$error->getMessage():'management_unavailable';
         if (in_array($code,['management_frame','management_private_required'],true)) return true;
-        $allowed=['management_stale','management_targets','management_input','management_other_flow','management_other_action','management_connection','management_admin_required','server_referenced'];
+        $allowed=['management_stale','management_targets','management_input','management_other_flow','management_other_action','management_connection','management_admin_required','server_referenced','management_rebind_requires_review'];
         error_log('achbot_management_field_deferred reason='.(in_array($code,$allowed,true)?$code:'management_unavailable'));
-        sendMessage(achbotManagementText($code==='management_commit_unknown'?'review_required':(in_array($code,$allowed,true)?$code:'management_unavailable')));
+        sendMessage(achbotManagementText(in_array($code,['management_commit_unknown',
+            'management_rebind_requires_review'],true)?'review_required':
+            (in_array($code,$allowed,true)?$code:'management_unavailable')));
     }
     return true;
 }

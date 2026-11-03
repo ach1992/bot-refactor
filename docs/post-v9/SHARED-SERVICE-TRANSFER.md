@@ -39,6 +39,35 @@ not an installation or authorization for real native/provider effects.
 ## Failure and reconciliation contract
 
 The same named physical-account lock serializes transfer and plan changes.
+For ungrouped Marzban the lock uses the immutable logical server ID,
+**not** its editable URL; for grouped Marzban it uses the explicitly assigned
+group ID. Active subscriptions cannot change their physical-group
+classification, including from ungrouped to grouped. Administrator changes to
+Marzban URL/credentials are denied for a referenced server/group and blocked
+by any outstanding journal even if active local orders have disappeared.
+PasarGuard API-key rotation likewise cannot bypass an unfinished plan journal.
+The old journal identity remains visible for manual reconciliation.
+
+Before claiming a plan change or logical transfer, verify that every active
+shared order reference is financially settled across pays, payment_attempts,
+automatic_renewal_attempts, type-encoded legacy add-ons and service_effects.
+Unlike normal auto-renewal reservations, a plan/server reassignment cannot
+ignore an unclaimed payment quote; unfulfilled paid payments also block.
+Previously settled historical receipts remain unmodified and do not block.
+Revalidate the financial fence immediately before a provider write and again
+before the atomic local finalization.
+
+Each intent includes a cryptographic fingerprint of the exact source
+connection, administrator credential binding, group and provider identity;
+secrets themselves are not persisted in that journal. Revalidate it in a
+locked final transaction even for a Native no-op. A changed-access request
+also checks the original target and financial work at the last local
+pre-PUT boundary. Marzban and PasarGuard Host/Group-only writes must preserve
+used_traffic monotonically (ordinary concurrent usage growth is allowed);
+an unexpected counter reduction leaves the journal in review without another
+PUT. Native effect uncertainty always requires operator reconciliation.
+
+
 For PasarGuard, existing service-effects native mutation evidence also fences
 the remote write. A service_plan_changes journal row must be committed before
 a network PUT. On success, all still-current local references and the journal

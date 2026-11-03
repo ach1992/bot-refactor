@@ -44,12 +44,15 @@ function achbotMarzbanNativeAccessSnapshot(object $account,string $username): ar
             $account->data_limit_reset_strategy,$account->created_at) ||
         !property_exists($account,'data_limit') ||
         !property_exists($account,'expire') ||
+        !property_exists($account,'used_traffic') ||
+        !is_int($account->used_traffic) || $account->used_traffic<0 ||
         isset($account->next_plan))
         throw new RuntimeException('marzban_account_unverified');
     return [
         'username'=>$username,'created_at'=>$account->created_at,
         'status'=>$account->status,'data_limit'=>$account->data_limit,
         'expire'=>$account->expire,'reset'=>$account->data_limit_reset_strategy,
+        'used_traffic'=>$account->used_traffic,
         'note'=>$account->note??null,
         'proxies'=>json_encode($account->proxies,JSON_THROW_ON_ERROR),
         'inbounds'=>achbotMarzbanNativeHosts($account->inbounds)
@@ -57,7 +60,8 @@ function achbotMarzbanNativeAccessSnapshot(object $account,string $username): ar
 }
 
 /** Account-level lock and durable cross-provider receipt belong to caller. */
-function achbotMarzbanApplyPlanHosts(int $serverId,string $username,array $wanted): array {
+function achbotMarzbanApplyPlanHosts(int $serverId,string $username,array $wanted,
+    ?callable $beforeWrite=null): array {
     global $connection;
     $dispatched=false;
     try {
@@ -105,7 +109,14 @@ function achbotMarzbanApplyPlanHosts(int $serverId,string $username,array $wante
             return $fresh;
         };
         $fresh=achbotMarzbanNativeAccessSnapshot($read(),$username);
-        if ($fresh!==$before) throw new RuntimeException('marzban_before_access_changed');
+        if ($fresh['used_traffic']<$before['used_traffic'])
+            throw new RuntimeException('marzban_usage_reduced_before_put');
+        $freshUsage=$fresh['used_traffic'];
+        unset($fresh['used_traffic']);
+        $beforeWithoutUsage=$before;unset($beforeWithoutUsage['used_traffic']);
+        if ($fresh!==$beforeWithoutUsage)
+            throw new RuntimeException('marzban_before_access_changed');
+        if ($beforeWrite!==null) $beforeWrite();
         $json=json_encode(['inbounds'=>$wanted],JSON_THROW_ON_ERROR);
         $curl=curl_init($url.'/api/user/'.rawurlencode($username));
         curl_setopt_array($curl,[
@@ -131,7 +142,9 @@ function achbotMarzbanApplyPlanHosts(int $serverId,string $username,array $wante
             throw new RuntimeException('marzban_plan_ack_unverified');
         $after=achbotMarzbanNativeAccessSnapshot($read(),$username);
         if ($after['inbounds']!==$wanted) throw new RuntimeException('marzban_plan_hosts_unverified');
-        unset($after['inbounds'],$before['inbounds']);
+        if ($after['used_traffic']<$freshUsage)
+            throw new RuntimeException('marzban_plan_usage_reduced');
+        unset($after['inbounds'],$before['inbounds'],$after['used_traffic'],$before['used_traffic']);
         if ($after!==$before) throw new RuntimeException('marzban_plan_other_fields_changed');
         return ['success'=>true,'changed'=>true,'verified'=>true];
     } catch (Throwable $error) {

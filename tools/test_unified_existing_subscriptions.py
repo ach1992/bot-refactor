@@ -138,6 +138,11 @@ class ExistingHandler(BaseHTTPRequestHandler):
    if set(payload)-{'data_limit','expire','status','group_ids'}:
     s.violations.append('unexpected_modify_field');self.reply(400,{});return
    user.update(payload)
+   if 'group_ids' in payload and getattr(s,'access_put_usage_override',None) is not None:
+    # Post-V9 opt-in negative Native fixture: simulate a broken vendor
+    # resetting consumption as a side effect of a Group-only PUT.
+    user['used_traffic']=s.access_put_usage_override
+    s.access_put_usage_override=None
   elif self.command=='POST':
    if path.endswith('/reset'):user['used_traffic']=0
    elif path.endswith('/revoke_sub'):
@@ -181,6 +186,10 @@ class ExistingMarzbanHandler(mb.EditProviderHandler):
        {'protocol':'vless','tag':'fake-inbound'}]});return
   if self.path.startswith('/api/user/')and self.command=='GET'and not s.deleted:
    s.trace.append(dict(method=self.command,path=self.path,body='',headers=dict(self.headers)))
+   hook=getattr(s,'on_account_get',None)
+   if hook is not None:
+    s.on_account_get=None
+    hook()
    value=copy.deepcopy(s.edit_account);s.sequence+=1
    issued=s.fixed_clock if s.fixed_clock else int(time.time())+s.sequence
    value['subscription_url']=s.url+'/sub/'+mb_mint(value['username'],issued)
@@ -215,6 +224,12 @@ class ExistingMarzbanHandler(mb.EditProviderHandler):
    s.trace.append(dict(method=self.command,path=self.path,body='',headers=dict(self.headers)))
    self.reply(404,{'detail':'User not found'});return
   super().handle_request()
+  if self.command=='PUT' and self.path.startswith('/api/user/') and (
+      getattr(s,'access_put_usage_override',None) is not None):
+   # The upstream fixture has finished persisting the Native access
+   # change; inject a vendor counter regression before the final GET.
+   s.edit_account['used_traffic']=s.access_put_usage_override
+   s.access_put_usage_override=None
 
 @contextlib.contextmanager
 def existing_marzban():

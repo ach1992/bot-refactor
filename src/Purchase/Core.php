@@ -252,12 +252,17 @@ if (!function_exists('achbotSetMarzbanGroup')) {
         $groupRow=$groupStmt->get_result()->fetch_assoc();$groupStmt->close();
         if (!$groupRow) throw new \RuntimeException('group_target_unavailable');
         $oldGroup=$groupRow['panel_group_id']===null?null:(int)$groupRow['panel_group_id'];
-        if ($oldGroup!==null && $oldGroup!==$groupId) {
-            $guard=$connection->prepare(
-                'SELECT id FROM orders_list WHERE server_id=? AND status=1 LIMIT 1 FOR UPDATE');
-            $guard->bind_param('i',$serverId);$guard->execute();
-            $active=$guard->get_result()->num_rows!==0;$guard->close();
-            if ($active) throw new \RuntimeException('group_change_would_strand_order');
+        if ($oldGroup!==$groupId) {
+            require_once __DIR__.'/../Subscription/PhysicalService.php';
+            // Also forbid NULL -> group when active; it changes the journal
+            // namespace even though no Native account needs to be modified.
+            // Check outstanding intent receipts even if active rows disappeared.
+            try {achbotPhysicalAssertRebindSafe($connection,$serverId);}
+            catch (\RuntimeException $error) {
+                if ($error->getMessage()==='physical_rebind_active_references')
+                    throw new \RuntimeException('group_change_would_strand_order');
+                throw new \RuntimeException('group_change_requires_review');
+            }
         }
         $stmt = $connection->prepare(
             "SELECT o.server_id AS order_server, p.server_id AS plan_server,

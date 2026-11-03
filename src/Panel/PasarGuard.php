@@ -202,7 +202,7 @@ function achbotPgCreate(array $panel,array $request): array {
     } catch (Throwable $e) { return achbotPgFailure($dispatched?'pg_create_unconfirmed':'pg_create_invalid',$dispatched); }
 }
 function achbotPgModify(array $panel,array $identity,array $absoluteChanges,
-                         ?array $requiredCurrentGroups=null): array {
+                         ?array $requiredCurrentGroups=null,?callable $beforeWrite=null): array {
     $dispatched=false;
     try {
         if (!$absoluteChanges || array_diff(array_keys($absoluteChanges),['data_limit','expire','status','group_ids']))
@@ -241,6 +241,7 @@ function achbotPgModify(array $panel,array $identity,array $absoluteChanges,
             if (array_diff($expectedGroups,$eligible))
                 return achbotPgFailure('pg_addon_authority_changed_before_write');
         }
+        if ($beforeWrite!==null) $beforeWrite();
         $dispatched=true;
         $r=achbotPgRequest($panel,'PUT','/api/user/by-id/'.$identity['remote_user_id'],$payload);
         if (!$r['success']) return $r;
@@ -256,6 +257,9 @@ function achbotPgModify(array $panel,array $identity,array $absoluteChanges,
             if ($key==='status' && !array_key_exists('status',$expected)) continue;
             if ($read['user'][$key]!==$value) return achbotPgFailure('pg_modify_entitlement_unconfirmed',true,$read['http']);
         }
+        if (array_keys($absoluteChanges)===['group_ids'] &&
+            $read['user']['used_traffic']<$before['user']['used_traffic'])
+            return achbotPgFailure('pg_group_change_usage_reduced',true,$read['http']);
         if (!achbotPgManaged($read['user'])) return achbotPgFailure('pg_native_schedule_conflict',true,$read['http']);
         return $read;
     } catch (Throwable $e) {return achbotPgFailure($dispatched?'pg_modify_unconfirmed':'pg_modify_invalid',$dispatched);}
