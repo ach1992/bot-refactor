@@ -7,6 +7,9 @@ function achbotPhysicalLockName(mysqli $db,array $order): string {
     $server=(int)$order['server_id'];
     $type=achbotProviderType($db,$server);
     if ($type==='pasarguard') {
+        // Direct admin transfer entrypoints load the shared provider runtime
+        // without opening PG storage until needed. Resolve it lazily here.
+        achbotPgLoad();
         $account=achbotProviderAccountByOrder($db,(int)$order['id']);
         if (!$account) throw new RuntimeException('physical_account_unverified');
         return 'achbot-plan-'.substr(hash('sha256','pg:'.$account['id']),0,40);
@@ -51,6 +54,7 @@ function achbotPhysicalActiveOrders(mysqli $db,array $selected,bool $lock=false)
         throw new RuntimeException('physical_order_unavailable');
     $type=achbotProviderType($db,$server);
     if ($type==='pasarguard') {
+        achbotPgLoad();
         $anchor=achbotProviderAccountByOrder($db,$orderId,$lock);
         if (!$anchor || !in_array($anchor['state'],['linked','verified'],true))
             throw new RuntimeException('physical_account_unverified');
@@ -323,8 +327,20 @@ function achbotPhysicalSelectPlan(mysqli $db,int $orderId,int $newPlanId,int $ac
                 $s->bind_param('i',$journalId);$s->execute();$s->close();
             } catch (Throwable $ignored) {}
         }
-        error_log('achbot_shared_plan_requires_review order_id='.$orderId.
-            ' journal_id='.$journalId.' code='.$safe);
+        // Rejected stale/forged plan callbacks are normal expected denials;
+        // do not emit an error for them. A durable journal, ambiguous write,
+        // unusual exception, or unknown native effect always emits a bounded
+        // reconciliation diagnostic with its real journal ID.
+        $denials=['physical_order_unavailable','physical_order_changed',
+            'physical_actor_unavailable','physical_admin_intent_denied',
+            'physical_actor_denied','physical_service_unavailable',
+            'physical_plan_unavailable','physical_plan_not_eligible',
+            'physical_peer_server_mismatch','physical_pending_financial_effect',
+            'physical_plan_requires_review','physical_operation_busy'];
+        if ($journalId>0 || $commitAttempted || $dispatch ||
+            !in_array($safe,$denials,true))
+            error_log('achbot_shared_plan_requires_review order_id='.$orderId.
+                ' journal_id='.$journalId.' code='.$safe);
         return achbotPhysicalPlanResult(false,$journalId>0?
             'physical_plan_requires_review':$safe);
     } finally {

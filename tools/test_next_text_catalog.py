@@ -140,7 +140,17 @@ def main():
     interval_source=(ROOT/'src/Plans/Intervals.php').read_text()
     check(obsolete_postwrite<=entries and not (obsolete_postwrite & refs) and
           'wizwizch' not in interval_source,'retired_postwrite_catalogue_reintroduced')
-    expected_unused=(set(management['retained_legacy_keys'])|
+    # #112 deliberately retains four historical copy keys while retiring
+    # the global transfer toggle and obsolete DB-only plan messages.
+    retired_shared_transfer={
+        'renewal.extensions.message.dee2da49f3',
+        'admin_settings.config.get_bot_setting_keys.button.c6b7f26615',
+        'subscription.order_management.show_order_management_panel.alert.f19b5510c6',
+        'subscription.account_transfers.alert.6b5b63fb0f',
+    }
+    check(retired_shared_transfer<=entries and not
+          (retired_shared_transfer & refs),'retired_shared_transfer_copy_reintroduced')
+    expected_unused=(retired_shared_transfer|set(management['retained_legacy_keys'])|
         catalog_owner_r5.verify_retained_display_keys()|
         catalog_owner_r5.API_REVIEW_RETAINED|obsolete_filter|obsolete_postwrite)
     check(unused==expected_unused,'unrecorded legacy/orphan copy entries: '+str(unused^expected_unused))

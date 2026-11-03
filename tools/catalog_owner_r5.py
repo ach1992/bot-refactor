@@ -1,6 +1,6 @@
 """Owner revision5 current-copy proof layered over immutable accepted catalog history."""
 from __future__ import annotations
-import copy,functools,json,pathlib,re,subprocess
+import copy,functools,hashlib,json,pathlib,re,subprocess
 ROOT=pathlib.Path(__file__).resolve().parents[1]
 BASE='64feca4b777a442023676122e315c68ad26e902d'
 AUTH='https://github.com/ach1992/bot-refactor/issues/26#issuecomment-6486592777'
@@ -83,8 +83,59 @@ def scoped_addon_restore(sides):
     for key in real:restored['admin'].pop(key)
     return restored
 
+# #112: tightly pinned new Transfer and shared-panel wizard copy. The old
+# independently accepted R5/API/Gift/RC22 catalog proofs remain unchanged.
+SHARED_TRANSFER_SOURCE='b654336d92a7e8e994e24d32144e995b5dba1407'
+@functools.lru_cache(maxsize=1)
+def shared_transfer_baseline():
+    decode='$s=stream_get_contents(STDIN);$p=strpos($s,"return [");if($p===false)throw new RuntimeException("array_missing");echo json_encode(eval(substr($s,$p)),JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);'
+    return {a:flatten(json.loads(command('php','-r',decode,
+        input=command('git','show',SHARED_TRANSFER_SOURCE+':messages/fa/'+a+'.php'))))
+        for a in ['user','admin']}
+
+@functools.lru_cache(maxsize=2)
+def shared_transfer_source_lines(path,original=False):
+    raw=command('git','show',SHARED_TRANSFER_SOURCE+':'+path).decode() if original else (ROOT/path).read_text()
+    lines={}
+    for line in raw.splitlines():
+        hit=re.match(r"^\\s*'([^']+)'\\s*=>",line)
+        if hit: lines.setdefault(hit.group(1),line)
+    return lines
+
+def shared_transfer_copy_restore(sides):
+    record=json.loads((ROOT/'tools/text_catalog_shared_transfer.json').read_text())
+    check(record.get('version')==1 and
+          record.get('accepted_source_commit')==SHARED_TRANSFER_SOURCE and
+          record.get('owner_issue')=='https://github.com/ach1992/bot-refactor/issues/112',
+          'shared_transfer_catalogue_identity')
+    entries=record.get('entries')
+    check(isinstance(entries,dict) and len(entries)==11 and
+          all(isinstance(item,dict) and set(item)=={'audience','before_sha256','after_sha256'}
+              for item in entries.values()),'shared_transfer_catalogue_shape')
+    baseline=shared_transfer_baseline()
+    check(type(sides) is dict and set(sides)=={'user','admin'},'shared_transfer_catalogue_audiences')
+    differences=set()
+    for audience in ['user','admin']:
+        all_keys=set(sides[audience])|set(baseline[audience])
+        differences.update(key for key in all_keys if sides[audience].get(key)!=baseline[audience].get(key))
+    check(differences==set(entries),'shared_transfer_undeclared_key_value_or_audience_delta')
+    restored=copy.deepcopy(sides)
+    for key,item in entries.items():
+        audience=item['audience']
+        check(audience in ['user','admin'] and
+              key not in sides['admin' if audience=='user' else 'user'],
+              'shared_transfer_audience_invalid:'+key)
+        path='messages/fa/'+audience+'.php'
+        for original,field in [(True,'before_sha256'),(False,'after_sha256')]:
+            line=shared_transfer_source_lines(path,original).get(key)
+            digest=hashlib.sha256(line.encode()).hexdigest() if line is not None else None
+            check(digest==item[field],'shared_transfer_source_value_drift:'+key)
+        if key in baseline[audience]:restored[audience][key]=baseline[audience][key]
+        else:restored[audience].pop(key,None)
+    return restored
+
 def verify_and_restore(sides,definition=None):
-    current=scoped_addon_restore(sides)
+    current=scoped_addon_restore(shared_transfer_copy_restore(sides))
     sides,api_proof=verify_api_and_restore(current)
     record=manifest()if definition is None else definition
     check(record.get('version')==1 and record.get('baseline_commit')==BASE and record.get('authorization')==AUTH,'r5_amendment_identity')

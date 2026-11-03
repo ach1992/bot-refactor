@@ -684,7 +684,13 @@ def run_services(tmp: str) -> tuple[dict, dict]:
             cwd=ROOT,check=True,timeout=300,capture_output=True)
         evidence=json.loads(path.read_text())
         if evidence.get('complete') is not True or evidence.get(counter,0)<minimum or any(evidence.get(k)!=v for k,v in proofs.items()):
-            raise RuntimeError('Unified service-management evidence incomplete: '+name)
+            diff={k:(evidence.get(k),v) for k,v in proofs.items()
+                  if evidence.get(k)!=v}
+            raise RuntimeError('Unified service-management evidence incomplete: '+name+
+                               ' '+json.dumps({'actual':evidence.get(counter),
+                                   'minimum':minimum,'missing_or_mismatched':diff,
+                                   'complete':evidence.get('complete')},
+                                  ensure_ascii=False,sort_keys=True))
         unified[name]=evidence
     result['unified_service_management']=unified
     webhook_path=Path(tmp)/"webhook-file-config.json"
@@ -3857,7 +3863,7 @@ def run_funding(tmp: str) -> tuple[dict, dict]:
         'no_financial_effects_from_admin_settings_or_editors',
         'final_persistence_denies_retired_key_weSwapState',
         'final_persistence_denies_retired_key_tronWallet',
-        'managed_display_replaces_only_two_legacy_global_toggles',
+        'obsolete_transfer_and_display_toggles_absent',
     }
     if not (crypto_guard.get('complete')
             and crypto_guard.get('cases')>=135
@@ -3870,8 +3876,8 @@ def run_funding(tmp: str) -> tuple[dict, dict]:
             and crypto_guard.get('retired_flags_preserved_not_mutated')
             and crypto_guard.get('retired_keys_denied_at_persistence_boundary')
             and crypto_guard.get('all_advertised_current_admin_toggles_work')
-            and crypto_guard.get('moved_display_global_toggles')==['configLinkState','subLinkState']
-            and crypto_guard.get('retained_original_bot_toggles')==23
+            and crypto_guard.get('moved_display_global_toggles')==['configLinkState','subLinkState','switchLocationState']
+            and crypto_guard.get('retained_original_bot_toggles')==22
             and crypto_guard.get('retained_original_gateway_toggles')==8
             and crypto_guard.get('schema_tables')==23
             and crypto_guard.get('isolated_socket_only')

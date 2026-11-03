@@ -364,6 +364,50 @@ def main():
             if target=='panelgroup':return r
             r=action(r,'group','0')
             return r
+        # The removed PG server-level Native Group selector is replaced by a
+        # provider-neutral shared-panel-group selector on BOTH providers.
+        # Exercise its two real admin flows, including attempted old callback
+        # protocols, actor separation and no pre-confirmation persistence.
+        sql("INSERT INTO setting(type,value) VALUES('ACHBOT_MARZBAN_PANEL_GROUP','Fixture shared real panel')")
+        group_id=int(sql("SELECT id FROM setting WHERE type='ACHBOT_MARZBAN_PANEL_GROUP' AND value='Fixture shared real panel'").strip())
+        for provider in ('marzban','pasarguard'):
+            r=server_to_stage(provider,'panelgroup')
+            stage(r,'panelgroup')
+            no_secrets(r)
+            before=draft(r);before_counts=counts()
+            yes(any('گروه مشترک پنل' in str(e.get('body','')) for e in r['events']),
+                'physical_panel_group_header_explains_manual_identity_'+provider)
+            yes(not before['values'].get('groups'),
+                'server_wizard_never_contains_native_group_defaults_'+provider)
+            yes(not before.get('choices'),
+                'physical_group_selector_has_no_native_paginated_choices_'+provider)
+            for action_name,value in [('pick','0'),('done','0'),('group','999999999')]:
+                denied=action(r,action_name,value)
+                yes(draft(denied)==before,
+                    'obsolete_or_unknown_shared_panel_action_refused_'+provider+'_'+action_name)
+            foreign=action(r,'group',str(group_id),actor=9002)
+            yes(draft(foreign)is None and counts()==before_counts,
+                'foreign_administrator_cannot_reuse_panel_group_draft_'+provider)
+            denied=action(r,'group',str(group_id),chat_type='group')
+            yes(draft(denied)==before and counts()==before_counts,
+                'shared_panel_group_requires_private_callback_'+provider)
+            denied=call(callback='am|'+before['nonce']+'|999|group|'+str(group_id))
+            yes(draft(denied)==before,
+                'stale_shared_panel_group_revision_refused_'+provider)
+            yes(counts()==before_counts,
+                'shared_panel_group_wizard_has_no_early_database_insert_'+provider)
+            selected=action(r,'group',str(group_id))
+            stage(selected,'review')
+            yes(draft(selected)['values']['panel_group_id']==group_id,
+                'shared_panel_group_id_selected_'+provider)
+            yes(any('Fixture shared real panel' in str(e.get('body',''))
+                    for e in selected['events']),
+                'shared_panel_name_visible_in_review_'+provider)
+            yes(counts()==before_counts,
+                'shared_panel_selection_does_not_write_before_confirm_'+provider)
+            cancel(selected)
+            yes(counts()==before_counts,
+                'shared_panel_wizard_cancel_is_atomic_'+provider)
         def one_edit(r,label,message_id=575):
             yes(len(r['events'])==1 and r['events'][0].get('method')=='editMessageText' and r['events'][0].get('edited_message')==message_id,label)
             return json.loads(r['events'][0]['keys'])['inline_keyboard']
