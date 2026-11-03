@@ -550,7 +550,7 @@ def test():
         with sandbox(imported_empty=True) as (sql, run, provider, bank, old_expiry):
             policy=run("policy_probe")
             passed(all(policy.values()) and provider.write_count==0,
-                   "imported_empty_groups_create_must_still_require_groups",
+                   "imported_empty_groups_"+kind+"_create_must_still_require_groups",
                    policy)
             catalogue=run("catalog",kind=kind)
             ids=[r["id"] for r in catalogue["offers"]]
@@ -788,6 +788,8 @@ def test():
                provider.write_count == 0,
                "scoped_api_bank_evidence_cannot_be_reassigned_to_other_invoice")
 
+    if len(checks)!=len(set(checks)):
+        raise AssertionError("duplicate_scoped_api_pg_acceptance_names")
     return {
         "status": "PASS", "cases": len(checks), "checks": checks,
         "php85": True, "scoped_api_proof_settlement": True,
