@@ -1,10 +1,16 @@
 # Current source and published release contracts
 
-## Unreleased Cron lock-directory creation after RC21
+## Published RC22 — scoped offers and safe Cron initialization
+
+[RC22](https://github.com/ach1992/bot-refactor/releases/tag/v0.10.0-rc.22) ships the reviewed, merged source of PRs [#103](https://github.com/ach1992/bot-refactor/pull/103) and [#109](https://github.com/ach1992/bot-refactor/pull/109), plus the current PHP 8.5 validation system. The 121-file source-only runtime introduces two plan modules and preserves existing Marzban/PasarGuard, financial and administrator behavior. This published source is **not** evidence of installed-host acceptance.
+
+Optional [migration 015](../../migrations/post-v9/015_scoped_addons.sql) enables global/server/native PasarGuard Group-set day/volume offers; it changes only existing add-on and payment tables (seven columns, two unique indexes). The source still handles pre-015 legacy global offers when 015 is absent. Partially applied 015 is incompatible; installed migration, restore rehearsal, rollout and live payments need independent target-specific authorization. Read [RC21 → RC22](RC21-TO-RC22.md) before preparing an upgrade and [scoped add-ons](ADDON-SCOPES.md) for runtime safeguards. RC22 also enables trusted first-run Cron lock-directory creation when the scheduler OS user is permitted to do so.
+
+## RC22 Cron lock-directory creation (RC21 did not include it)
 
 [Issue14](https://github.com/ach1992/bot-refactor/issues/14) tracks the Owner-accepted first-run behavior. The top-level CLI coordinator creates missing external lock-directory components with mode `0700` after validating their existing parents. Valid existing directory/file permissions and inodes are preserved; unsafe paths fail closed without repair. Concurrent first starts remain single-flight, and distinct canonical bot paths retain independent hashed leases. Child modes, HTTP and includes cannot bootstrap directories.
 
-The default remains `/var/lib/achbot/cron-locks`; creation uses the current Cron OS user's permissions. A non-root user without permission there needs `ACHBOT_CRON_LOCK_DIR` beneath a trusted writable external parent, or administrator provisioning. No SQL, runtime-member or four-worker contract change is required. This is unreleased source work: it does not change published RC21 assets or establish installation. See [Cron setup](FRESH-INSTALL.md#6-configure-cron-and-its-private-lock).
+The default remains `/var/lib/achbot/cron-locks`; creation uses the current Cron OS user's permissions. A non-root user without permission there needs `ACHBOT_CRON_LOCK_DIR` beneath a trusted writable external parent, or administrator provisioning. No SQL, runtime-member or four-worker contract change is required. This behavior is part of RC22 source; it does not modify immutable RC21 assets or establish installation. See [Cron setup](FRESH-INSTALL.md#6-configure-cron-and-its-private-lock).
 
 ## RC21 evidence-first payment review
 

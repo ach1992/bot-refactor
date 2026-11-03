@@ -1,6 +1,6 @@
 # Scoped day and volume extension offers (Issue #107)
 
-Status: SOURCE-DEVELOPMENT CANDIDATE ONLY. Not a release or installation authorization.
+Status: RELEASED AS SOURCE-ONLY RC22. Release and source review are not installation, schema-migration or live-financial authorization.
 Applies to current post-V9 source; historical accepted V0-V9 schema remains frozen.
 
 ## Eligibility and price precedence
@@ -130,7 +130,7 @@ php85-scoped-pg-payments artifact for exact candidate review.
 2. Confirm earlier approved migrations and an audited original Global
    catalogue. Inspect duplicate quantities and invalid legacy units.
 3. Rehearse migration 015 on a disposable DB copy. It checks old columns
-   are absent and refuses duplicate or malformed legacy offers. CI ships
+   are absent and refuses duplicate or malformed legacy offers. RC22 ships
    a SHA-256-verified 015 SQL sidecar, never an automatic migration.
 4. Only when separately authorized, apply 015 once and verify original
    row IDs, prices, legacy pay snapshots and both new indexes/columns.
@@ -168,6 +168,4 @@ Telegram API endpoints are contacted. Historical accepted Persian copy
 proofs remain intact; the 14 current-only scoped editor keys have a separately
 pinned current-only text manifest.
 
-No actual operator installation, release, live group mutation, real
-gateway-money operation or production migration is tested/authorized here.
-Independent high-assurance review and Owner approval remain mandatory.
+RC22 publication does not execute the optional migration, install the runtime, activate payment APIs or prove live Group mutations or real gateway-money operations. Any operator installation, migration and live financial validation require their own specific approval and evidence; source integration was independently reviewed under PR #109.
