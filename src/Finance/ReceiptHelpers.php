@@ -755,8 +755,11 @@ function achbotAutoBankEditPreflight(mysqli $db, array $pay, string $kind,
             (string)$record['remark']===$remark &&
             // Real Core authorization, not a shortcut from the plan's old
             // logical server ID. Cross-panel aliases fail before HTTP.
+            // A genuinely imported PG subscription keeps fileid/plan_id=0.
+            // The exact stored order and payment IDs were checked above;
+            // pass NULL to Core's planless-order contract, never a fake plan.
             achbotSupportsOrder($db,$orderId,
-                (int)$paid['plan_id'],$owner);
+                (int)$paid['plan_id']>0?(int)$paid['plan_id']:null,$owner);
     } catch (Throwable $error) {
         error_log('achbot_auto_service_preflight_deferred pay_id='.$payId.
             ' class='.get_class($error).' code='.(int)$error->getCode());
@@ -959,7 +962,8 @@ function achbotAutoBankFinishEdit(mysqli $db, array $pay,
                 // remote verification. A revoked alias cannot finalize a
                 // previously valid preflight; do not trust its old snapshot.
                 !achbotSupportsOrder($db,$orderId,
-                    (int)$locked['plan_id'],$userId,true) ||
+                    (int)$locked['plan_id']>0?(int)$locked['plan_id']:null,
+                    $userId,true) ||
                 // B may have finalized a newer edit after this payment's
                 // original pre-remote snapshot. Never let A restore old
                 // absolute expiry just because its own payment row is locked.
