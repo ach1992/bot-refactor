@@ -178,11 +178,12 @@ achEvent('probe',[
 """
             return prev(kind,modern)
         purchase.block=block
-        def do(kind,data='',actor=None,**extra):
+        def do(kind,data='',actor=None,expected_stderr='',**extra):
             actor=(9001 if kind=='transfer' else 1001) if actor is None else actor
             panel.trace.clear()
             z=purchase.run(work,env,stage,DB,kind,
-                {'actor':actor,'data':data,**extra},modern=True)
+                {'actor':actor,'data':data,**extra},modern=True,
+                expected_stderr=expected_stderr)
             if z['exception'] or z['warnings'] or z['stdout']:
                 raise RuntimeError('Actual PHP failed: '+repr((kind,data,z))[:1400])
             if panel.trace and (kind!='wizard' or
@@ -320,7 +321,8 @@ achEvent('probe',[
             refuse('forged_admin_callback_denied','admin_transfer',f'selectServerId_{oid}_3',actor=1001)
             before=snapshot(work,env)
             fields=sql(work,env,f'SELECT token,remark,uuid,link,amount,status FROM orders_list WHERE id={oid}')
-            z=do('transfer',f'switchServer3_{oid}')
+            z=do('transfer',f'switchServer3_{oid}',
+                expected_stderr=f'achbot_shared_transfer_committed order_id={oid} target_id=3 active_refs=2\n')
             if getid()!=3 or not has(z,'editText'):raise RuntimeError('Administrator remapping failed')
             if fields!=sql(work,env,
                 f'SELECT token,remark,uuid,link,amount,status FROM orders_list WHERE id={oid}'):
@@ -351,7 +353,8 @@ achEvent('probe',[
             if not has(z,f'selectServerId_{oid}_2') or has(z,f'selectServerId_{oid}_4'):
                 raise RuntimeError('Admin selector leaked other groups')
             passed('admin_selector_group_filtered')
-            do('admin_transfer',f'selectServerId_{oid}_2',actor=9001)
+            do('admin_transfer',f'selectServerId_{oid}_2',actor=9001,
+                expected_stderr=f'achbot_shared_transfer_committed order_id={oid} target_id=2 active_refs=2\n')
             if getid()!=2 or sql(work,env,f"SELECT server_id,fileid FROM orders_list WHERE id={peer}").strip()!='2\t0':
                 raise RuntimeError('Admin same-panel switch did not update both references')
             passed('admin_same_panel_shared_switch_plan_reset')

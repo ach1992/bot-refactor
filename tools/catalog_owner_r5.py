@@ -110,6 +110,15 @@ def shared_transfer_source_lines(path,original=False):
             lines[key]=line
     return lines
 
+@functools.lru_cache(maxsize=1)
+def shared_transfer_shipped_values():
+    # Compare synthetic negative controls to the actual pinned shipping copy,
+    # never just to the key inventory. The source line hash is verified below.
+    return {audience:flatten(json.loads(command(
+        'php','-r',
+        '$g=require "messages/fa/'+audience+'.php";echo json_encode($g,JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);'
+    ))) for audience in ['user','admin']}
+
 def shared_transfer_copy_restore(sides):
     record=json.loads((ROOT/'tools/text_catalog_shared_transfer.json').read_text())
     check(record.get('version')==1 and
@@ -121,6 +130,7 @@ def shared_transfer_copy_restore(sides):
           all(isinstance(item,dict) and set(item)=={'audience','before_sha256','after_sha256'}
               for item in entries.values()),'shared_transfer_catalogue_shape')
     baseline=shared_transfer_baseline()
+    shipped=shared_transfer_shipped_values()
     check(type(sides) is dict and set(sides)=={'user','admin'},
           'shared_transfer_catalogue_audiences')
     # Restore only the eleven exact Owner-approved copy changes. Unknown
@@ -151,6 +161,9 @@ def shared_transfer_copy_restore(sides):
         # intentionally handled by the older whole-catalogue check below.
         check((key in sides[audience])==(item['after_sha256'] is not None),
               'shared_transfer_key_presence:'+key)
+        if item['after_sha256'] is not None:
+            check(sides[audience][key]==shipped[audience][key],
+                  'shared_transfer_approved_value_drift:'+key)
     return restored
 
 def verify_and_restore(sides,definition=None):
@@ -276,6 +289,12 @@ def review_catalog_restore(sides):
     return restored,{'review_added_keys':8,'review_added_user_keys':2,'review_added_admin_keys':6,'review_source':REVIEW_SOURCE}
 
 def verify_api_and_restore(sides,definition=None):
+    # Historical composition proofs enter directly at this API layer. They
+    # must first undo the exact #112 copy delta, while the normal R5 pipeline
+    # has already restored its historical inheritance key.
+    if ('admin_settings.management.server_groups' in sides.get('admin',{}) and
+        'admin_settings.management.inherit_groups' not in sides['admin']):
+        sides=shared_transfer_copy_restore(sides)
     sides=scoped_addon_restore(sides) if any(key.startswith('addon_scopes.')
         for key in sides.get('admin',{})) else sides
     sides,review_proof=review_catalog_restore(sides)

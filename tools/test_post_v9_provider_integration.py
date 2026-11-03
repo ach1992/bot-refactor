@@ -564,13 +564,15 @@ def main():
   # Stale pre-refactor server-native group input must be rejected.
   sql("UPDATE users SET step='pg:groups:server:2' WHERE userid=9001")
   before=sql("SELECT * FROM server_plans WHERE id=7")
-  call('admin',source=2003,text='2,5')
+  call('admin',source=2003,text='2,5',
+       expected_stderr='achbot_pg_admin_action_deferred class=RuntimeException\n')
   yes(sql("SELECT * FROM server_plans WHERE id=7")==before,
       'retired_server_native_group_editor_cannot_change_plans')
   sql("UPDATE users SET step='pg:groups:plan:7' WHERE userid=9001")
   # Explicit plans no longer support server-level Group inheritance.
   before=sql("SELECT provider_group_ids FROM server_plans WHERE id=7")
-  call('admin',source=2004,text='/inherit')
+  call('admin',source=2004,text='/inherit',
+       expected_stderr='achbot_pg_admin_action_deferred class=RuntimeException\n')
   yes(sql("SELECT provider_group_ids FROM server_plans WHERE id=7")==before,
       'retired_plan_native_group_inheritance_denied')
   sql("UPDATE users SET step='pg:groups:plan:7' WHERE userid=9001")

@@ -189,7 +189,7 @@ def main():
   # claim. Only valid native probes enable cURL against this owned loopback
   # fixture; invalid/unknown dispatch probes keep network functions disabled.
   original_config=sql('SELECT HEX(panel_url) FROM server_config WHERE id=2').strip()
-  sql(shared_storage.connection(2,1,panel_url)+"UPDATE server_info SET provider_group_ids='[2,5]' WHERE id=2")
+  sql(shared_storage.connection(2,1,panel_url)+"UPDATE server_plans SET provider_group_ids='[2,5]' WHERE id=7")
   sql(shared_storage.identity(987,91,1,panel_url,17,'2026-01-01T00:00:00.000000Z','fixture_user','achbot:v1:'+'c'*32,
       dict(group_ids=[2,5],data_limit=2147483648,expire=2000000000,status='active')))
   sql("INSERT INTO pays(id,hash_id,user_id,type,plan_id,server_id,order_id,volume,day,price,request_date,state) VALUES(2,'registry_renew',1001,'RENEW_ACCOUNT',7,2,91,0,0,100,1700000000,'pending'),(3,'registry_day',1001,'INCREASE_DAY_91_9970',7,2,91,0,7,100,1700000000,'pending')")

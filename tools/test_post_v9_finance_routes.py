@@ -371,7 +371,7 @@ if (!class_exists('SoapClient')) {
         }
     }
 }
-function curl_init() { return (object)['url'=>'','method'=>'GET','fields'=>null]; }
+function curl_init($url='') { return (object)['url'=>(string)$url,'method'=>'GET','fields'=>null]; }
 function curl_setopt($handle,$option,$value) {
     if ($option === CURLOPT_URL) $handle->url = (string)$value;
     if ($option === CURLOPT_CUSTOMREQUEST) $handle->method=(string)$value;

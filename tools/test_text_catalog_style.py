@@ -365,7 +365,16 @@ foreach($records as$key=>$record){
  $entry=$record['entry'];$parameters=is_array($entry)?$entry['parameters']:[];
  $values=[];foreach($parameters as$name)$values[$name]='fixture <&> {'.$name.'}';
  $short=substr($key,strlen('admin_settings.management.'));
- if(achbotManagementText($short,$values)!==achbotMessage($key,$values))
+ if($short==='inherit_groups'){
+  // Historical source declared this server-default group shortcut, but #112
+  // explicitly retired it. Assert the new runtime rejects this exact key.
+  try{
+   achbotManagementText($short,$values);
+   throw new RuntimeException('retired_management_inherit_groups_still_active');
+  }catch(RuntimeException $error){
+   if($error->getMessage()!=='management_copy_missing')throw $error;
+  }
+ }elseif(achbotManagementText($short,$values)!==achbotMessage($key,$values))
   throw new RuntimeException('management_facade_payload_drift:'.$key);
  ++$count;
 }
