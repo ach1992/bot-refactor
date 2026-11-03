@@ -131,7 +131,8 @@ function achbotPhysicalNoPendingPayments(mysqli $db,array $rows): void {
     $ids=array_map(static fn($r)=>(int)$r['id'],$rows);
     if (!$ids) throw new RuntimeException('physical_order_unavailable');
     $sql="SELECT id FROM pays WHERE order_id IN (".implode(',',$ids).
-        ") AND state IN ('pending','processing','waiting','in_progress') LIMIT 1 FOR UPDATE";
+        ") AND state IN ('pending','send','have_sent','processing',".
+        "'processing_wallet','waiting','in_progress') LIMIT 1 FOR UPDATE";
     $r=$db->query($sql);
     if (!$r || $r->num_rows>0) throw new RuntimeException('physical_pending_financial_effect');
     $r->free();
@@ -173,8 +174,11 @@ function achbotPhysicalSelectPlan(mysqli $db,int $orderId,int $newPlanId,int $ac
         $s->bind_param('i',$orderId);$s->execute();$order=$s->get_result()->fetch_assoc();$s->close();
         if (!$order || achbotPhysicalLockName($db,$order)!==$lease)
             throw new RuntimeException('physical_order_changed');
-        $admin=$adminAllowed &&
-            achbotAdminCanLocked($db,$actorId,(int)($GLOBALS['admin']??0),'orders');
+        $admin=achbotAdminCanLocked($db,$actorId,(int)($GLOBALS['admin']??0),'orders');
+        // Admin UI callbacks must never silently fall back to customer-own
+        // access merely because the same customer owns this order.
+        if ($adminAllowed && !$admin)
+            throw new RuntimeException('physical_admin_intent_denied');
         if (!$admin && (int)$order['userid']!==$actorId)
             throw new RuntimeException('physical_actor_denied');
         $server=(int)$order['server_id'];
