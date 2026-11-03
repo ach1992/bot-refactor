@@ -334,6 +334,10 @@ def sandbox():
                             "achbot_api_effect_review pay_id=",
                             "achbot_pg_edit_needs_review pay_id=",
                             "achbot_api_paid_delivery_review pay_id=",
+                            # No real Telegram delivery exists in this isolated
+                            # source-real financial acceptance; the separate
+                            # notification path must report deferred delivery.
+                            "achbot_api_report_delivery_deferred pay_id=",
                             "achbot_api_invoice_edit_deferred pay_id=",
                             "achbot_api_invoice_reference_deferred")) for line in lines):
                         raise AssertionError(("unexpected_php_error", op, lines[-8:]))
