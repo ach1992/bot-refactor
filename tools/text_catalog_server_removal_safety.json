@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "owner_issue": "https://github.com/ach1992/bot-refactor/issues/112",
+  "previous_candidate": "218319313fdbd9cee8aeea15e1c073997f4485e7",
+  "entries": {
+    "admin_settings.management.server_delete_confirm": {
+      "audience": "admin",
+      "before_sha256": "d0ff438f215195cac6c9af6617167d6494208dded6e368ea6c2935b3d088b652",
+      "after_sha256": "eb6d3749e3f0be804cd4f68d134fc5586b2f6b87634f33d977d3c081e4ff526c",
+      "reason": "Correctly disclose retirement, removal and unsettled recovery holds"
+    },
+    "admin_settings.management.server_removed": {
+      "audience": "admin",
+      "before_sha256": "19ca1d481dad1f2521660e1be3025bae075bb53ebb678504c01e8645f80ede87",
+      "after_sha256": "9348e72d283f94d2f27b7b91bc4884794aa84adf547765057cd07dfeeb4f3f38",
+      "reason": "Clearly distinguish unreferenced physical removal from retirement"
+    },
+    "admin_settings.management.server_retired": {
+      "audience": "admin",
+      "before_sha256": null,
+      "after_sha256": "c2876d6149de7a33ec0e8d964b64126452ba56040d36db02a70cfc767e6f4765",
+      "reason": "Confirm kept connection and subscription access after sales retirement"
+    }
+  }
+}

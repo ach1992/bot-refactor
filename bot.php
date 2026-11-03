@@ -2143,25 +2143,9 @@ if(preg_match('/^wizwizdeleteserver(\d+)/',$data,$match) and ($from_id == $admin
         [['text'=>\achbotMessage('bot.bot.addserver_name.button.13159f8c74'),'callback_data'=>"yesDeleteServer" . $match[1]],['text'=>\achbotMessage('bot.bot.addserver_name.button.f47dddc181'),'callback_data'=>"showServerSettings" . $match[1] . "_0"]]
         ]]));
 }
-if(preg_match('/^yesDeleteServer(\d+)/',$data,$match) && ($from_id == $admin || ($userInfo['isAdmin'] == true && achbotAdminCan('servers')))){
-    $stmt = $connection->prepare("DELETE FROM `server_info` WHERE `id`=?");
-    $stmt->bind_param("i", $match[1]);
-    $stmt->execute();
-    $stmt->close();
-
-    $stmt = $connection->prepare("DELETE FROM `server_config` WHERE `id`=?");
-    $stmt->bind_param("i", $match[1]);
-    $stmt->execute();
-    $stmt->close();
-    // The group is a nullable server_info field and is removed with its row.
-
-    alert(\achbotMessage('bot.bot.addserver_name.alert.601504ae47'));
-
-
-    $keys = getServerListKeys();
-    if($keys == null) editText($message_id,\achbotMessage('bot.bot.addserver_name.message.756c3005d3'));
-    else editText($message_id,\achbotMessage('bot.bot.servers_setting.message.4c0e6ed6fc'),$keys);
-}
+// Confirmed server deletion is handled exclusively by achbotHandleManagementFields()
+// at ingress. Never retain a broader legacy fallback that can bypass the
+// physical-account, payment and journal recovery admission checks.
 if(preg_match('/^editServer(\D+)(\d+)/',$data,$match) && $text != $buttonValues['cancel'] && ($from_id == $admin || $userInfo['isAdmin'] == true)){
     switch($match[1]){
         case "Name":

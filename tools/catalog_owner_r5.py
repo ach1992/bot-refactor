@@ -166,8 +166,88 @@ def shared_transfer_copy_restore(sides):
                   'shared_transfer_approved_value_drift:'+key)
     return restored
 
+
+# #112 reviewer R1: the server-confirmation UX must describe the new
+# service-preserving retirement semantics. Keep the accepted transfer/API/R5
+# copy and its negative controls immutable by projecting ONLY three exact
+# admin entries back to the previous candidate before older proofs run.
+SERVER_REMOVAL_PARENT='218319313fdbd9cee8aeea15e1c073997f4485e7'
+SERVER_REMOVAL_KEYS=(
+    'admin_settings.management.server_delete_confirm',
+    'admin_settings.management.server_removed',
+    'admin_settings.management.server_retired',
+)
+
+@functools.lru_cache(maxsize=1)
+def server_removal_baseline():
+    path='messages/fa/admin.php'
+    raw=command('git','show',SERVER_REMOVAL_PARENT+':'+path)
+    decode='$s=stream_get_contents(STDIN);$p=strpos($s,"return [");if($p===false)throw new RuntimeException("array_missing");echo json_encode(eval(substr($s,$p)),JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);'
+    values=flatten(json.loads(command('php','-r',decode,input=raw)))
+    lines={};topic=None
+    for line in raw.decode().splitlines():
+        heading=re.match(r"^    '([^']+)'\s*=>\s*\[$",line)
+        if heading:topic=heading.group(1);continue
+        entry=re.match(r"^        '([^']+)'\s*=>",line)
+        if entry and topic is not None:
+            key=topic+'.'+entry.group(1)
+            check(key not in lines,'server_removal_baseline_source_duplicate:'+key)
+            lines[key]=line
+    return values,lines
+
+def server_removal_copy_restore(sides):
+    record=json.loads((ROOT/'tools/text_catalog_server_removal_safety.json').read_text())
+    entries=record.get('entries')
+    check(record.get('version')==1 and
+          record.get('previous_candidate')==SERVER_REMOVAL_PARENT and
+          record.get('owner_issue')=='https://github.com/ach1992/bot-refactor/issues/112' and
+          type(entries) is dict and tuple(entries)==SERVER_REMOVAL_KEYS,
+          'server_removal_catalog_identity')
+    prior,original=server_removal_baseline()
+    actual=shared_transfer_shipped_values()
+    current=shared_transfer_source_lines('messages/fa/admin.php',False)
+    result=copy.deepcopy(sides)
+    for key,item in entries.items():
+        check(type(item) is dict and
+              set(item)=={'audience','before_sha256','after_sha256','reason'} and
+              item['audience']=='admin' and bool(item['reason']) and
+              key not in sides.get('user',{}),
+              'server_removal_catalog_scope_or_audience:'+key)
+        for lines,field in [(original,'before_sha256'),(current,'after_sha256')]:
+            raw=lines.get(key)
+            digest=hashlib.sha256(raw.encode()).hexdigest() if raw is not None else None
+            check(digest==item[field] and (field!='after_sha256' or raw is not None),
+                  'server_removal_catalog_source_drift:'+key)
+        check(key in sides['admin'] and
+              sides['admin'][key]==actual['admin'][key],
+              'server_removal_catalog_copy_or_audience_drift:'+key)
+        if key in prior:
+            check(item['before_sha256'] is not None,
+                  'server_removal_catalog_prior_identity:'+key)
+            result['admin'][key]=prior[key]
+        else:
+            check(item['before_sha256'] is None,
+                  'server_removal_catalog_added_identity:'+key)
+            result['admin'].pop(key)
+    return result
+
+def server_removal_copy_negative_controls(sides):
+    # A valid shipping catalog must pass BEFORE the mutations; otherwise a
+    # permanently failing check would falsely prove every negative control.
+    server_removal_copy_restore(sides)
+    cases=[]
+    missing=copy.deepcopy(sides);missing['admin'].pop(SERVER_REMOVAL_KEYS[2]);cases.append(missing)
+    changed=copy.deepcopy(sides);changed['admin'][SERVER_REMOVAL_KEYS[0]]+=' changed';cases.append(changed)
+    wrong=copy.deepcopy(sides);wrong['user'][SERVER_REMOVAL_KEYS[2]]=wrong['admin'].pop(SERVER_REMOVAL_KEYS[2]);cases.append(wrong)
+    duplicated=copy.deepcopy(sides);duplicated['user'][SERVER_REMOVAL_KEYS[1]]=duplicated['admin'][SERVER_REMOVAL_KEYS[1]];cases.append(duplicated)
+    for candidate in cases:
+        try:server_removal_copy_restore(candidate)
+        except AssertionError:continue
+        raise AssertionError('server_removal_copy_negative_control_missed')
+    return len(cases)
+
 def verify_and_restore(sides,definition=None):
-    current=scoped_addon_restore(shared_transfer_copy_restore(sides))
+    current=scoped_addon_restore(shared_transfer_copy_restore(server_removal_copy_restore(sides)))
     sides,api_proof=verify_api_and_restore(current)
     record=manifest()if definition is None else definition
     check(record.get('version')==1 and record.get('baseline_commit')==BASE and record.get('authorization')==AUTH,'r5_amendment_identity')
@@ -294,6 +374,8 @@ def verify_api_and_restore(sides,definition=None):
     # has already restored its historical inheritance key.
     if ('admin_settings.management.server_groups' in sides.get('admin',{}) and
         'admin_settings.management.inherit_groups' not in sides['admin']):
+        if 'admin_settings.management.server_retired' in sides['admin']:
+            sides=server_removal_copy_restore(sides)
         sides=shared_transfer_copy_restore(sides)
     sides=scoped_addon_restore(sides) if any(key.startswith('addon_scopes.')
         for key in sides.get('admin',{})) else sides

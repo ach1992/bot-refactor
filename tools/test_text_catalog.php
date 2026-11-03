@@ -332,6 +332,75 @@ foreach(['user','admin']as$audience){$groups=require dirname(__DIR__).'/messages
  $shippingSides[$audience]=[];
  foreach($groups as$topic=>$entries)foreach($entries as$name=>$value)$shippingSides[$audience][$topic.'.'.$name]=$value;
 }
+// #112 R1: pin exactly three corrected server-removal messages against the
+// previous reviewed candidate before reusing the untouched full R5/API proofs.
+$removalParent='218319313fdbd9cee8aeea15e1c073997f4485e7';
+$removalKeys=[
+ 'admin_settings.management.server_delete_confirm',
+ 'admin_settings.management.server_removed',
+ 'admin_settings.management.server_retired'
+];
+$removalManifest=json_decode(file_get_contents(__DIR__.'/text_catalog_server_removal_safety.json'),true,512,JSON_THROW_ON_ERROR);
+if (($removalManifest['version']??null)!==1 ||
+    ($removalManifest['previous_candidate']??null)!==$removalParent ||
+    ($removalManifest['owner_issue']??null)!=='https://github.com/ach1992/bot-refactor/issues/112' ||
+    !is_array($removalManifest['entries']??null) ||
+    array_keys($removalManifest['entries'])!==$removalKeys)
+ throw new RuntimeException('server_removal_catalog_identity');
+$removalBeforeSource=shell_exec('git -C '.escapeshellarg(dirname(__DIR__)).
+ ' show '.escapeshellarg($removalParent.':messages/fa/admin.php'));
+$begin=is_string($removalBeforeSource)?strpos($removalBeforeSource,'return ['):false;
+if($begin===false)throw new RuntimeException('server_removal_parent_unavailable');
+$removalBeforeGroups=eval(substr($removalBeforeSource,$begin));
+$removalBefore=[];
+foreach($removalBeforeGroups as$topic=>$entries)foreach($entries as$key=>$value)
+ $removalBefore[$topic.'.'.$key]=$value;
+$removalSourceLines=static function(string $source):array {
+ $topic=null;$lines=[];
+ foreach(explode("\n",$source)as$line){
+  if(preg_match("~^    '([^']+)'\\s*=>\\s*\\[$~u",$line,$head)){
+   $topic=$head[1];continue;
+  }
+  if($topic!==null && preg_match("~^        '([^']+)'\\s*=>~u",$line,$item)){
+   $key=$topic.'.'.$item[1];
+   if(isset($lines[$key]))throw new RuntimeException('server_removal_source_duplicate:'.$key);
+   $lines[$key]=$line;
+  }
+ }
+ return $lines;
+};
+$removalOriginalLines=$removalSourceLines($removalBeforeSource);
+$removalCurrentLines=$removalSourceLines(file_get_contents(dirname(__DIR__).'/messages/fa/admin.php'));
+foreach($removalManifest['entries']as$key=>$item){
+ if(!is_array($item) ||
+    array_keys($item)!==['audience','before_sha256','after_sha256','reason'] ||
+    $item['audience']!=='admin' || empty($item['reason']) ||
+    array_key_exists($key,$shippingSides['user']))
+  throw new RuntimeException('server_removal_catalog_scope_or_audience:'.$key);
+ foreach([[$removalOriginalLines,'before_sha256'],[$removalCurrentLines,'after_sha256']]as[$lines,$field]){
+  $sha=isset($lines[$key])?hash('sha256',$lines[$key]):null;
+  if($sha!==$item[$field] || ($field==='after_sha256' && $sha===null))
+   throw new RuntimeException('server_removal_catalog_source_drift:'.$key);
+ }
+}
+$restoreServerRemoval=static function(array $sides) use($removalManifest,$removalBefore,$shippingSides):array {
+ foreach($removalManifest['entries']as$key=>$item){
+  if(!array_key_exists($key,$sides['admin']) ||
+     $sides['admin'][$key]!==$shippingSides['admin'][$key] ||
+     array_key_exists($key,$sides['user']))
+   throw new RuntimeException('server_removal_catalog_copy_or_audience_drift:'.$key);
+  if(array_key_exists($key,$removalBefore)){
+   if($item['before_sha256']===null)
+    throw new RuntimeException('server_removal_catalog_parent_identity:'.$key);
+   $sides['admin'][$key]=$removalBefore[$key];
+  }else{
+   if($item['before_sha256']!==null)
+    throw new RuntimeException('server_removal_catalog_added_identity:'.$key);
+   unset($sides['admin'][$key]);
+  }
+ }
+ return $sides;
+};
 $reviewSource='16c1558322b578b8ca817f3c4b42818d57dcf161';$reviewEntries=[];
 foreach(['user'=>['payment.api_payment.code_acknowledgement','payment.api_payment.code_too_long'],'admin'=>['manual_payment.api_payment.auto_approved','manual_payment.api_payment.code_evidence','manual_payment.api_payment.code_used','manual_payment.api_payment.code_revoked','manual_payment.api_payment.code_expired','manual_payment.api_payment.code_mismatch']]as$audience=>$keys){
  $source=shell_exec('git show '.escapeshellarg($reviewSource.':messages/fa/'.$audience.'.php'));
@@ -442,10 +511,10 @@ $restoreSharedTransfer=static function(array $sides) use($transferManifest,$tran
  }
  return $sides;
 };
-$verifyCurrentAudienceCatalogs=static function(array $sides) use($giftKey,$giftEntry,$apiDelta,$r5Expected,$reviewEntries,$addonEntries,$selectionEntries,$restoreSharedTransfer): void {
+$verifyCurrentAudienceCatalogs=static function(array $sides) use($giftKey,$giftEntry,$apiDelta,$r5Expected,$reviewEntries,$addonEntries,$selectionEntries,$restoreSharedTransfer,$restoreServerRemoval): void {
  if(!isset($sides['user'],$sides['admin']) || !is_array($sides['user']) || !is_array($sides['admin']))
   throw new RuntimeException('addon_catalog_audiences_invalid');
- $sides=$restoreSharedTransfer($sides);
+ $sides=$restoreSharedTransfer($restoreServerRemoval($sides));
  foreach($sides['user']as$key=>$value)if(str_starts_with($key,'addon_scopes.'))
   throw new RuntimeException('addon_catalog_cross_audience');
  foreach($selectionEntries as$key=>$item){
@@ -522,6 +591,30 @@ foreach($giftControls + $addonControls as$name=>[$candidate,$expectedReason]){
   continue;
  }
  throw new RuntimeException('gift_catalog_negative_control_missed:'.$name);
+}
+
+// Negative controls prove the new bounded R1 copy layer is not a blanket
+// exception for removed keys, changed values, or cross-audience injection.
+$removalControls=[];
+$changed=$shippingSides;unset($changed['admin']['admin_settings.management.server_retired']);
+$removalControls['missing_retire_confirmation']=$changed;
+$changed=$shippingSides;$changed['admin']['admin_settings.management.server_delete_confirm'].=' unexpected';
+$removalControls['changed_delete_warning']=$changed;
+$changed=$shippingSides;
+$changed['user']['admin_settings.management.server_retired']=$changed['admin']['admin_settings.management.server_retired'];
+unset($changed['admin']['admin_settings.management.server_retired']);
+$removalControls['wrong_audience']=$changed;
+$changed=$shippingSides;
+$changed['user']['admin_settings.management.server_removed']=$changed['admin']['admin_settings.management.server_removed'];
+$removalControls['duplicate_audience']=$changed;
+foreach($removalControls as$name=>$candidate){
+ try{$verifyCurrentAudienceCatalogs($candidate);}
+ catch(RuntimeException $error){
+  if(str_starts_with($error->getMessage(),'server_removal_catalog_copy_or_audience_drift:'))
+   continue;
+  throw new RuntimeException('server_removal_negative_wrong_reason:'.$name,0,$error);
+ }
+ throw new RuntimeException('server_removal_negative_control_missed:'.$name);
 }
 
 $management=json_decode(file_get_contents(__DIR__.'/text_catalog_management_amendment.json'),true,512,JSON_THROW_ON_ERROR);

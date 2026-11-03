@@ -677,6 +677,7 @@ def run_services(tmp: str) -> tuple[dict, dict]:
              'f4_usage_preservation_positive_and_negative':True,
              'import_singleflight_and_held_journal_admission':True,
              'r1_confirmed_server_removal_native_journal_and_retirement':True,
+             'r1_legacy_delete_callback_bypass_removed':True,
              'r2_terminal_payment_attempt_and_child_fences':True,
              'held_journal_replay_blocked':True,'production_mutations':0,
              'live_provider_calls':0}),

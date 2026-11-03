@@ -131,10 +131,10 @@ def harness(provider: str):
             if 'fixture_error' in output:
                 raise AssertionError((provider, op, output))
             return output['out']
-        def delete(server: int = 2):
+        def delete(server: int = 2, callback: str | None = None):
             nonlocal counter
             counter += 1
-            spec = dict(actor=9001, callback=f'yesDeleteServer{server}',
+            spec = dict(actor=9001, callback=callback or f'yesDeleteServer{server}',
                         source=counter, message_id=575, field=True)
             run = subprocess.run(['php', '-d', 'display_errors=0', '-d', 'log_errors=0',
                 str(admin_driver), str(ROOT), str(work / 'mysql.sock'), DB,
@@ -456,6 +456,12 @@ def main():
             db=h['db']
             identity=db('SELECT * FROM server_config WHERE id=2')
             before=subject(h); money=finance(h); puts=len(h['writes']())
+            for variant in ('yesDeleteServer02','yesDeleteServer2suffix','yesDeleteServer0'):
+                bad=h['delete'](callback=variant)
+                yes(db('SELECT active FROM server_info WHERE id=2')=='1' and
+                    db('SELECT * FROM server_config WHERE id=2')==identity and
+                    not any(e.get('method')=='editMessageText' for e in bad['events']),
+                    provider+'_malformed_confirm_callback_does_not_delete_'+variant)
             result=h['delete']()
             edits=[e for e in result['events'] if e.get('method')=='editMessageText']
             yes(db('SELECT active FROM server_info WHERE id=2')=='0' and
@@ -582,6 +588,9 @@ def main():
                 outstanding(h)=='review',
                 provider+'_held_review_journal_blocks_late_import_after_lock_released')
 
+    bot=(ROOT/'bot.php').read_text()
+    yes("if(preg_match('/^yesDeleteServer(\\d+)/'" not in bot,
+        'legacy_unanchored_server_delete_fallback_removed_at_bot_entry')
     yes('achbotPhysicalAssertRebindSafe($connection,$entity,true,$endpointChanged)' in
         (ROOT/'src/Admin/ManagementFlow.php').read_text(),
         'production_admin_marzban_login_editor_uses_same_safe_rebind_fence')
@@ -594,6 +603,7 @@ def main():
         f4_usage_preservation_positive_and_negative=True,
         import_singleflight_and_held_journal_admission=True,
         r1_confirmed_server_removal_native_journal_and_retirement=True,
+        r1_legacy_delete_callback_bypass_removed=True,
         r2_terminal_payment_attempt_and_child_fences=True,
         held_journal_replay_blocked=True,production_mutations=0,live_provider_calls=0)
     if args.report:
