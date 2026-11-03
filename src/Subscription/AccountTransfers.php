@@ -42,7 +42,7 @@ if (preg_match('/^switchLocation([0-9]+)_([0-9]+)_[^_]{1,40}_[^_]{1,40}$/D', (st
             json_encode(['inline_keyboard'=>[[[
                 'text'=>$buttonValues['back_button'],
                 'callback_data'=>'quickUserOrderDetails_'.$orderId
-            ]]],JSON_UNESCAPED_UNICODE));
+            ]]]],JSON_UNESCAPED_UNICODE));
         return;
     }
     $buttons = [];
