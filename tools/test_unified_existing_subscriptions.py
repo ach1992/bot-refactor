@@ -13,7 +13,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime,timezone
 from http.server import BaseHTTPRequestHandler,ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import unquote,urlsplit
+from urllib.parse import unquote,urlsplit,parse_qs
 import test_access_state as owned
 import test_v6_native as native
 import test_v8_native as purchase
@@ -100,6 +100,24 @@ class ExistingHandler(BaseHTTPRequestHandler):
    self.reply(200,value);return
   if self.headers.get('X-Api-Key')!='fixture-private-key':
    s.violations.append('missing_api_key');self.reply(403,{});return
+  # Live PasarGuard plan access verifies current version, administrator
+  # authority and active Group catalogue before approving a selected plan.
+  # Use the same 5.5.1 schema as the independent native panel fixture.
+  if path=='/api/system':
+   self.reply(200,{'version':'5.5.1'});return
+  if path=='/api/admin':
+   actions={action:{'scope':1} for action in
+     ['read','create','update','delete','reset_usage','revoke_sub']}
+   self.reply(200,{'role':{'is_owner':False,'access':{'require_template':False,
+       'allowed_group_ids':getattr(s,'allowed_group_ids',[2,5])},
+       'permissions':{'users':actions,'groups':{'read':True,'read_simple':True}}}});return
+  if path=='/api/groups':
+   query=parse_qs(urlsplit(self.path).query)
+   offset=int(query.get('offset',['0'])[0]);limit=int(query.get('limit',['50'])[0])
+   ids=getattr(s,'available_group_ids',[2,5])
+   self.reply(200,{'groups':[{'id':gid,'name':'fixture_group',
+       'is_disabled':False,'inbound_tags':['native_tag']}
+       for gid in ids[offset:offset+limit]],'total':len(ids)});return
   if path in('/api/users','/api/users/simple')or(self.command=='POST'and path=='/api/user'):
    s.violations.append('list_or_create');self.reply(409,{});return
   if path.startswith('/api/user/by-id/'):

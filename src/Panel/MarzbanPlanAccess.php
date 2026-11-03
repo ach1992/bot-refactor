@@ -114,8 +114,11 @@ function achbotMarzbanApplyPlanHosts(int $serverId,string $username,array $wante
         $dispatched=true;
         $response=curl_exec($curl);
         $http=(int)curl_getinfo($curl,CURLINFO_HTTP_CODE);
-        $curlError=curl_errno($curl);curl_close($curl);
-        if ($response===false || $curlError!==0 || $http<200 || $http>=300)
+        // A failed transfer has a non-empty standard cURL error string.
+        // This also keeps the HTTP/transport failure contract consistent
+        // with the same native adapter's existing checked cURL surfaces.
+        $curlError=curl_error($curl);curl_close($curl);
+        if ($response===false || $curlError!=='' || $http<200 || $http>=300)
             throw new RuntimeException('marzban_plan_put_unverified');
         $ack=json_decode((string)$response,true,64);
         if (!is_array($ack) || ($ack['username']??null)!==$username)

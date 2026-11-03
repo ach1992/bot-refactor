@@ -41,15 +41,20 @@ def main():
                "DELETE FROM setting WHERE type='BOT_STATES';"
                "INSERT INTO setting(type,value)VALUES('BOT_STATES','{\"walletState\":\"on\",\"gatewayAudience\":{\"wallet\":\"all\"}}')")
             if provider=='pasarguard':
-                db("UPDATE server_info SET provider_group_ids='[2,5]' WHERE id=2;"+shared_storage.connection(2,1,url))
+                db("UPDATE server_plans SET provider_group_ids='[2,5]' WHERE server_id=2;"+
+                   shared_storage.connection(2,1,url))
                 remark='existing_user_41';credential=vendor.users[41]['subscription_url']
                 def writes():return [r for r in vendor.trace if r[0]!='GET']
             else:
                 vendor.mode='edit-reset-verified';vendor.edit_put_count=0;vendor.edit_reset_count=0
+                db("UPDATE server_plans SET custom_sni='"+
+                   json.dumps({'inbounds':{'vless':['inbound']},'proxies':{'vless':{'flow':''}}})+
+                   "' WHERE id=7")
                 vendor.edit_account=copy.deepcopy(mb.INITIAL);remark='existing_plan_user'
                 token=imports.mb_mint(remark,int(time.time())-60)
                 vendor.edit_account.update(username=remark,created_at='2026-10-26T05:00:00.123456',
                     subscription_url='/sub/'+token,proxies={'vless':{'id':'aaaaaaaa-1111-4111-8111-111111111111','flow':'xtls-rprx-vision'}},
+                    inbounds={'vless':['inbound']},
                     links=['vless://aaaaaaaa-1111-4111-8111-111111111111@host.invalid:443'],
                     excluded_inbounds={},next_plan=None,auto_delete_in_days=None,
                     on_hold_expire_duration=None,on_hold_timeout=None)
@@ -59,9 +64,11 @@ def main():
                         (r['method']=='POST'and not r['path'].endswith('/api/admin/token'))]
             facade=bodies.function_bodies((ROOT/'config.php').read_bytes(),[
                 'buildSubscriptionPresentation','buildConfigMessage','setUser','sumerize',
-                'getOrderDetailKeys','getUserOrderDetailKeys','getMarzbanToken',
+                'getOrderDetailKeys','getUserOrderDetailKeys','getMarzbanToken','getMarzbanHosts',
                 'renewMarzbanUUID','deleteMarzban','changeMarzbanState','RandomString'])
             (work/'facades.php').write_bytes(facade.replace(b'__DIR__',repr(str(ROOT)).encode()))
+            for migration in ['016_remove_pasarguard_server_groups.sql','017_shared_plan_changes.sql']:
+                db((ROOT/'migrations/post-v9'/migration).read_text())
             config=(ROOT/'config.php').read_text()
             begin=config.index("if (preg_match('/^(toggleAutoRenew|adminToggleAutoRenew)")
             end=config.index('// END create user and admin get order detail',begin)
@@ -79,7 +86,11 @@ def main():
                     'achbot_plan_selection_unavailable','achbot_plan_selection_unverified',
                     'achbot_order_plan_actions_unverified','achbot_renew_consent_unverified',
                     'achbot_customer_draft_creation_deferred')
-                if result.returncode or not all(line.startswith(allowed) for line in result.stderr.splitlines()):
+                if result.returncode or not all(
+                    line.startswith(allowed) or
+                    (op=='extensions' and re.fullmatch(
+                       r'achbot_shared_plan_committed journal_id=[1-9][0-9]* source_order_id=[1-9][0-9]* active_refs=2',line) is not None)
+                    for line in result.stderr.splitlines()):
                     raise AssertionError((provider,op,result.returncode,result.stdout,result.stderr))
                 parsed=json.loads(result.stdout)
                 if 'fixture_error'in parsed:raise AssertionError((provider,op,parsed))
@@ -107,7 +118,7 @@ def main():
             # supported native profile and positive whole service units are eligible.
             db("INSERT INTO server_info(id,title,ucount,remark,flag,active,state) VALUES(5,'Other',10,'other','',1,1);"
                +shared_storage.clone(5,2))
-            if provider=='pasarguard':db("UPDATE server_info SET provider_group_ids='[2,5]' WHERE id=5")
+            # Logical server Groups never carry provider Native Group defaults.
             for pid in range(110,118):
                 db("INSERT INTO server_plans(id,fileid,catid,server_id,inbound_id,acount,limitip,title,protocol,days,volume,type,price,descr,pic,active,step,date,custom_sni,provider_group_ids)"
                    f" SELECT {pid},fileid,catid,server_id,inbound_id,acount,limitip,'Plan{pid}',protocol,days,volume,type,price,descr,pic,active,step,date,custom_sni,provider_group_ids FROM server_plans WHERE id=7")
@@ -154,15 +165,18 @@ def main():
                 finances()==before and len(writes())==remote,
                 provider+'_fresh_primary_administrator_opens_familiar_foreign_order_plan_selector')
             call('extensions',actor=9001,data='confirmChangePlan_'+str(oid)+'_119')
-            yes(db(f'SELECT userid,fileid,amount FROM orders_list WHERE id={oid}')=='1001\t119\t0' and
+            yes(db('SELECT userid,fileid,amount FROM orders_list WHERE id IN ('+
+                str(oid)+','+str(foreign_oid)+') ORDER BY userid')=='1001\t119\t0\n1002\t119\t0' and
+                db('SELECT state FROM service_plan_changes ORDER BY id DESC LIMIT 1')=='committed' and
                 finances()==before and len(writes())==remote and
                 db("SELECT value FROM setting WHERE type='"+origin_key+"'")==origin,
-                provider+'_fresh_primary_administrator_confirmation_updates_only_foreign_order_fileid')
+                provider+'_admin_plan_change_verifies_native_access_and_updates_both_shared_refs')
             before=finances();remote=len(writes())
             call('extensions',actor=9002,data='confirmChangePlan_'+str(foreign_oid)+'_119')
-            yes(db(f'SELECT userid,fileid,amount FROM orders_list WHERE id={foreign_oid}')=='1002\t119\t0' and
+            yes(db('SELECT userid,fileid,amount FROM orders_list WHERE id IN ('+
+                str(oid)+','+str(foreign_oid)+') ORDER BY userid')=='1001\t119\t0\n1002\t119\t0' and
                 finances()==before and len(writes())==remote,
-                provider+'_fresh_delegated_administrator_can_confirm_foreign_order_without_funds_or_native_effect')
+                provider+'_delegated_admin_same_plan_verified_without_finance_or_native_write')
             for changed,restore,label in [
                 ("UPDATE orders_list SET server_id=5 WHERE id="+str(oid),
                  "UPDATE orders_list SET server_id=2 WHERE id="+str(oid),'stale_logical_server'),
@@ -179,10 +193,11 @@ def main():
                 db(restore)
             before=finances();remote=len(writes())
             call('extensions',data='confirmChangePlan_'+str(oid)+'_7')
-            yes(db(f'SELECT fileid,amount FROM orders_list WHERE id={oid}')=='7\t0' and
+            yes(db('SELECT userid,fileid,amount FROM orders_list WHERE id IN ('+
+                str(oid)+','+str(foreign_oid)+') ORDER BY userid')=='1001\t7\t0\n1002\t7\t0' and
                 finances()==before and len(writes())==remote and
                 db("SELECT value FROM setting WHERE type='"+origin_key+"'")==origin,
-                provider+'_actual_confirm_changes_only_fileid_and_preserves_nonfinancial_origin')
+                provider+'_native_plan_reset_synchronizes_all_shared_rows_without_finance_change')
             screen=call('view',owner=1001,order=oid)['out'];keys=screen['keyboard']
             yes(all(action+str(oid)in keys for action in ['renewAccountAsk','increaseADay','increaseAVolume','toggleAutoRenew']),
                 provider+'_selected_import_exposes_paid_renewal_finite_addons_and_owner_consent')
