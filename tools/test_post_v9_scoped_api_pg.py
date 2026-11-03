@@ -100,7 +100,10 @@ try {
     $offer=achbotAddonOfferById($connection,$kind,$ctx,$id);
     if(!$offer)throw new RuntimeException('fixture_offer_missing');
     $price=(int)$offer['price'];$units=(int)$offer['volume'];
-    $snap=achbotAddonQuote($order,$ctx,$kind,$offer,$price);
+    $legacy=($spec['legacy']??false)===true;
+    if ($legacy && ($offer['server_id']??null)!==null)
+        throw new RuntimeException('fixture_historical_must_be_global');
+    $snap=$legacy?null:achbotAddonQuote($order,$ctx,$kind,$offer,$price);
     $hash=$spec['hash'];
     $type='INCREASE_'.strtoupper($kind).'_41_'.$id;
     $vol=$kind==='volume'?$units:0;$day=$kind==='day'?$units:0;
@@ -288,6 +291,8 @@ def sandbox():
                     f"{quote_sql(OPERATION)},2,'pg:fixture',"
                     f"{quote_sql(provider_hash)},7,'fixture_user',{epoch},"
                     f"{pg.USER['data_limit']},REPEAT('c',64),{quote_sql(snapshot)})")
+                sql("INSERT INTO increase_day(id,volume,price) "
+                    "VALUES (703,3,300)")
                 for kind, offer, units, price in [
                     ("day", 701, DAY, DAY_PRICE),
                     ("volume", 702, VOLUME, VOLUME_PRICE),
@@ -465,6 +470,40 @@ def test():
             passed(sql("SELECT provider_mutation_key FROM service_effects WHERE id=1")
                    == "pay:" + str(payment_id),
                    kind + "_native_account_mutation_journal_pinned")
+
+    with sandbox() as (sql, run, provider, bank, old_expiry):
+        # A pre-015 globally quoted payment has no addon_scope_snapshot.
+        # Existing pinned amount/units survive catalog repricing, and API
+        # verification must not turn it into a new Group-scoped offer.
+        issued=run("issue", kind="day", offer_id=703, legacy=True,
+                   hash="legacy_global_api_day")
+        pay=issued["pay_id"]
+        original=issued["price"]
+        message=evidence_sms(1, original)
+        bank.messages["1"]=dict(message)
+        passed(original==300 and issued["units"]==3 and
+               sql("SELECT addon_scope_snapshot IS NULL FROM pays "
+                   f"WHERE id={pay}")=="1",
+               "historical_global_payment_still_has_no_scoped_snapshot")
+        reservation=run("reserve", pay_id=pay, sms=message)
+        passed(reservation is not None and
+               run("consume", pay_id=pay)["status"]=="proven",
+               "historical_global_quote_api_evidence_matches_original_amount")
+        sql("UPDATE increase_day SET price=997 WHERE id=703")
+        state=run("settle", pay_id=pay)
+        passed(state=="confirmed" and
+               terminal_state(sql,pay).startswith("auto_cart_approved|done|") and
+               sql("SELECT price FROM pays "
+                   f"WHERE id={pay}")==str(original) and
+               sql("SELECT amount FROM increase_order ORDER BY id DESC LIMIT 1")
+                   ==str(original) and provider.write_count==1 and
+               sql("SELECT provider_state FROM service_effects WHERE id=1")=="linked" and
+               sql("SELECT expire_date FROM orders_list WHERE id=41")
+                   ==str(old_expiry+3*86400),
+               "historical_global_api_settlement_uses_pinned_legacy_quote",
+               [state,terminal_state(sql,pay),provider.write_count])
+        passed(run("settle",pay_id=pay)=="settled" and provider.write_count==1,
+               "historical_global_api_settlement_replay_no_extra_native_put")
 
     for change in ("revoke", "disable", "remove", "membership", "foreign"):
         with sandbox() as (sql, run, provider, bank, _):
