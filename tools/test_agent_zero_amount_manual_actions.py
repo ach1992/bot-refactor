@@ -94,7 +94,13 @@ def main():
                "INSERT INTO increase_day(id,volume,price)VALUES(21,2,31);"
                "INSERT INTO increase_plan(id,volume,price)VALUES(22,1,47)")
             if provider=='pasarguard':
-                db("UPDATE server_info SET provider_group_ids='[2,5]' WHERE id=2;"+shared_storage.connection(2,1,url))
+                # Native PasarGuard access is plan-owned, not inherited from
+                # the now-retired test-era logical server default.
+                db("UPDATE server_plans SET provider_group_ids='[2,5]' WHERE server_id=2;"+
+                   shared_storage.connection(2,1,url))
+            for migration in ['016_remove_pasarguard_server_groups.sql',
+                              '017_shared_plan_changes.sql']:
+                db((ROOT/'migrations/post-v9'/migration).read_text())
             facades=bodies.function_bodies((ROOT/'config.php').read_bytes(),[
                 'buildSubscriptionPresentation','buildConfigMessage','setUser','sumerize',
                 'getOrderDetailKeys','getUserOrderDetailKeys','getMarzbanToken','addMarzbanUser',

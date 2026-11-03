@@ -8,6 +8,7 @@ no payment, Marzban, Telegram or internet request is possible.
 from __future__ import annotations
 
 import argparse
+import copy
 import json
 import re
 import subprocess
@@ -18,6 +19,7 @@ import test_access_state as owned
 import test_v6_native as native
 import test_v8_native as purchase
 import test_post_v9_purchases as stages
+import test_unified_existing_subscriptions as native_shared
 
 ROOT = Path(__file__).resolve().parents[1]
 DB = purchase.SIDE[1]
@@ -3723,7 +3725,7 @@ def main():
         old=purchase.block
         try:
             purchase.block=lambda kind,modern: (
-               b"<?php\nrequire __DIR__ . '/src/Subscription/OrderManagement.php';\n"
+               b"<?php\nfunction getMarzbanUser(...$a){return \\AchBot\\Panel\\Accounts\\getMarzbanUser(...$a);}\nfunction getMarzbanHosts(...$a){return \\AchBot\\Panel\\Accounts\\getMarzbanHosts(...$a);}\nrequire __DIR__ . '/src/Subscription/OrderManagement.php';\n"
                if kind=='order_management' else
                b"<?php\nrequire __DIR__ . '/src/Finance/Routes/RenewalPlan.php';\n"
                if kind=='external_renew' else old(kind,modern)
@@ -3760,20 +3762,46 @@ def main():
             if f'selectFileId_{oid}_7' not in wire:
                 raise RuntimeError('Supported Marzban plan absent from admin selector')
             records.append(dict(case='admin_supported_plan_catalogue',pass_=True,external_requests=0))
-            obs=purchase.run(work,env,stage,DB,'order_management',
-                dict(data=f'selectFileId_{oid}_8',actor=9001,
-                     marzban_host_mode=True,marzban_username='admin-fixture',
-                     existing_native_accounts=['admin-fixture']),modern=True)
-            if obs.get('exception') or obs.get('warnings'):
-                raise RuntimeError('Supported native plan update error: '+repr(obs)[:900])
+            # The V8 compatibility harness uses real cURL, unlike the hosted
+            # finance transport spies. Give it a genuine loopback Native
+            # Marzban API instead of the intentionally unreachable :9 port.
+            # This scope changes only the owned MariaDB fixture endpoint.
+            original_panel_url=sql(work,env,
+                'SELECT panel_url FROM server_config WHERE id=2').strip()
+            with native_shared.existing_marzban() as (panel,panel_url):
+                panel.mode='edit-reset-verified'
+                panel.edit_account=copy.deepcopy(native_shared.mb.INITIAL)
+                panel.edit_account.update(username='admin-fixture',
+                    created_at='2026-10-26T05:00:00.123456',
+                    inbounds={'vless':['fake-inbound']},
+                    proxies={'vless':{'id':'aaaaaaaa-1111-4111-8111-111111111111',
+                                      'flow':'xtls-rprx-vision'}},
+                    next_plan=None)
+                sql(work,env,"UPDATE server_config SET panel_url='"+panel_url+
+                    "' WHERE id=2")
+                try:
+                    obs=purchase.run(work,env,stage,DB,'order_management',
+                        dict(data=f'selectFileId_{oid}_8',actor=9001),modern=True,
+                        expected_stderr=(f'achbot_shared_plan_committed journal_id=1 '
+                                         f'source_order_id={oid} active_refs=2\n'))
+                    if obs.get('exception') or obs.get('warnings'):
+                        raise RuntimeError('Supported native plan update error: '+repr(obs)[:900])
+                    native_puts=[req for req in panel.trace if req['method']=='PUT' and
+                        req['path'].startswith('/api/user/admin-fixture')]
+                    if len(native_puts)!=1 or panel.edit_account['inbounds']!= {'vless':['inbound']}:
+                        raise RuntimeError('Native Marzban access change did not use exactly one verified PUT')
+                finally:
+                    sql(work,env,"UPDATE server_config SET panel_url='"+
+                        original_panel_url+"' WHERE id=2")
             changed=sql(work,env,f'''SELECT fileid FROM orders_list
                 WHERE id IN ({oid},{peer}) ORDER BY id''').splitlines()
             if changed!=['8','8']:
                 raise RuntimeError('Shared physical plan change did not update both customers: '+repr(changed))
             if sql(work,env,'SELECT state FROM service_plan_changes ORDER BY id DESC LIMIT 1').strip()!='committed':
                 raise RuntimeError('Native plan journal was not committed')
-            if not any('/api/user/admin-fixture' in url for url in obs['network_calls']):
-                raise RuntimeError('Expected synthetic Native Marzban API was not exercised')
+            if not any(req['method']=='GET' and req['path'].startswith('/api/user/admin-fixture')
+                       for req in panel.trace):
+                raise RuntimeError('Expected loopback Native Marzban GET/readback was not exercised')
             records.append(dict(case='admin_supported_native_plan_change_updates_all_references',
                                 pass_=True,external_requests=0))
             for name,profile in [
