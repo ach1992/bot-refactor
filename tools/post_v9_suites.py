@@ -1245,7 +1245,7 @@ def run_wallet(tmp: str) -> tuple[dict, dict]:
             "achbotMessage('addon_scopes.filter_all')" in addon_admin_source):
         raise RuntimeError('Retired scope filter is unexpectedly rendered')
     required_api_catalog={
-        'runtime_references':2453+14-1,
+        'runtime_references':2453+14-1-6,
         'api_referenced_keys':68,
         'api_dynamic_source_paths':2,
         'api_reference_source_commit':'16c1558322b578b8ca817f3c4b42818d57dcf161',
