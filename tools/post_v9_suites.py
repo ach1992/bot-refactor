@@ -1236,8 +1236,16 @@ def run_wallet(tmp: str) -> tuple[dict, dict]:
         }
         raise RuntimeError('Pre-style/current catalog proof mismatch: '+
             json.dumps(evidence,sort_keys=True,ensure_ascii=True))
+    # The Owner removed the redundant add-on filter row; its previously
+    # published admin-only text remains editable but is intentionally not
+    # referenced by the runtime. The exact retired key is already audited
+    # in test_next_text_catalog.py; no other reference count is relaxed.
+    addon_admin_source=(ROOT/'src/Plans/AddonAdmin.php').read_text()
+    if ("achbotAddonAdminFilterKeys" in addon_admin_source or
+            "achbotMessage('addon_scopes.filter_all')" in addon_admin_source):
+        raise RuntimeError('Retired scope filter is unexpectedly rendered')
     required_api_catalog={
-        'runtime_references':2453+14,
+        'runtime_references':2453+14-1-6,
         'api_referenced_keys':68,
         'api_dynamic_source_paths':2,
         'api_reference_source_commit':'16c1558322b578b8ca817f3c4b42818d57dcf161',

@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import re
 import subprocess
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -302,8 +303,52 @@ def test(php:bool)->dict:
                 return actor(route=route,actor=actor_id,data='',text=text,frame={
                     'update_id':seq,'message':{'message_id':702,'text':text,
                     'from':{'id':actor_id},'chat':{'id':actor_id,'type':'private'}}})
+            def verify_admin_catalogue(result,kind,scopes,transport):
+                # Validate actual PHP route output, including both rows of
+                # every scoped offer, stable row revision and Telegram mode.
+                part='Day' if kind=='day' else 'Volume'
+                add='addNew'+part+'Plan'
+                candidates=[ev for ev in result['events']
+                    if ev.get('event') in ('SEND','EDIT') and
+                    any(b.get('callback_data')==add
+                        for row in (ev.get('keys') or {}).get('inline_keyboard',[])
+                        for b in row)]
+                assert len(candidates)==1,('catalogue_count',kind,candidates)
+                ev=candidates[0]
+                assert ev['event']==transport,('catalogue_transport',kind,ev)
+                rows=ev['keys']['inline_keyboard']
+                assert len(rows)==2*len(scopes)+2,('catalogue_rows',kind,rows)
+                raw=json.dumps(rows,ensure_ascii=False)
+                assert all(bad not in raw for bad in
+                    ('wizwizch','addonFilter','addonPickServer')),raw
+                for index,(offer_id,label) in enumerate(sorted(scopes.items())):
+                    trio=rows[2*index];scope=rows[2*index+1]
+                    assert len(trio)==3 and len(scope)==1,(kind,offer_id,trio,scope)
+                    prefixes=['delete'+part+'Plan','change'+part+'PlanPrice',
+                        'change'+part+'Plan'+('Day' if kind=='day' else 'Volume'),
+                        'addonEditScope'+part]
+                    revisions=[]
+                    for button,prefix in zip(trio+scope,prefixes):
+                        match=re.fullmatch(re.escape(prefix+str(offer_id))+r'_([a-f0-9]{20})',
+                            button['callback_data'])
+                        assert match,('button_revision',kind,offer_id,button)
+                        revisions.append(match.group(1))
+                    assert len(set(revisions))==1,('revision_mismatch',kind,offer_id)
+                    assert scope[0]['text']==label,('scope_label',kind,offer_id,scope)
+                assert len(rows[-2])==1 and rows[-2][0]['callback_data']==add,rows[-2]
+                assert rows[-1]==[{'text':'Back','callback_data':'backplan'}],rows[-1]
+                assert result['provider_writes']==0,result
+                return True
+
             listing=callback('increaseAVolume41',actor_id=1001,route='extensions')
             events=json.dumps(listing['events'])
+            volume_keyboard=next(ev['keys']['inline_keyboard'] for ev in listing['events']
+                if ev.get('event')=='EDIT' and 'inline_keyboard' in (ev.get('keys') or {}))
+            yes(all(len(row)==1 for row in volume_keyboard) and
+                volume_keyboard[-1]==[{'text':'🔙 بازگشت','callback_data':'orderDetails41'}] and
+                any(row[0].get('callback_data')=='increaseVolumePlan41_301' and
+                    row[0].get('text')=='10 گیگ ← 120 تومان' for row in volume_keyboard),
+                'customer_volume_catalog_one_column_exact_price_and_order_back')
             yes('increaseVolumePlan41_301' in events and
                 'increaseVolumePlan41_201' not in events and
                 'increaseVolumePlan41_302' not in events,
@@ -374,6 +419,12 @@ def test(php:bool)->dict:
                 and q("SELECT step FROM users WHERE userid=9001")=='none',
                 'admin_wizard_persists_server_scoped_day_offer_and_clears_editor')
             customer_days=callback('increaseADay41',actor_id=1001,route='extensions')
+            day_keyboard=next(ev['keys']['inline_keyboard'] for ev in customer_days['events']
+                if ev.get('event')=='EDIT' and 'inline_keyboard' in (ev.get('keys') or {}))
+            yes(all(len(row)==1 for row in day_keyboard) and
+                day_keyboard[-1]==[{'text':'🔙 بازگشت','callback_data':'orderDetails41'}] and
+                any(row[0].get('text')=='15 روز ← 1234 تومان' for row in day_keyboard),
+                'customer_day_catalog_one_column_exact_price_and_order_back')
             yes('selectPlanDayIncrease41_' in json.dumps(customer_days['events'])
                 and customer_days['provider_writes']==0,
                 'customer_day_menu_uses_scoped_catalogue_without_remote_edit')
@@ -383,40 +434,60 @@ def test(php:bool)->dict:
             yes(final['provider_writes']==0 and stale['provider_writes']==0,
                 'admin_and_stale_telegram_frames_have_zero_provider_writes')
 
-            # Read-only list filters for BOTH kinds; no stale global offer
-            # or other server is exposed in a selected server's admin list.
+            # Both administrator lists always show all offers, including
+            # Global, other servers and native Group-set variants. The scope
+            # stays an editable property of each offer, not a navigation row.
             q("INSERT INTO increase_day (id,volume,price,server_id,group_ids,scope_hash) "
               "VALUES (503,15,1400,3,NULL,'"+sha('S:3')+"')")
-            filter_picker=callback('addonFilterDayServers',seq=805)
-            yes('addonFilterDayServer2' in json.dumps(filter_picker['events']) and
-                'addonFilterDayAll' in json.dumps(filter_picker['events']),
-                'admin_can_choose_server_filter_for_day_offers')
-            filtered_day=callback('addonFilterDayServer2',seq=806)
-            filtered_text=json.dumps(filtered_day['events'])
-            yes('deleteDayPlan401' in filtered_text and 'deleteDayPlan101' not in filtered_text and
-                'deleteDayPlan503' not in filtered_text and
-                'addonFilterDayGlobal' in filtered_text,
-                'admin_server_filter_shows_only_this_servers_day_scopes')
-            global_day=callback('addonFilterDayGlobal',seq=807)
-            global_text=json.dumps(global_day['events'])
-            yes('deleteDayPlan101' in global_text and 'deleteDayPlan401' not in global_text and
-                'deleteDayPlan503' not in global_text,
-                'admin_global_day_filter_excludes_server_scopes')
-            all_day=callback('addonFilterDayAll',seq=808)
-            all_text=json.dumps(all_day['events'])
-            yes('deleteDayPlan101' in all_text and 'deleteDayPlan401' in all_text and
-                'deleteDayPlan503' in all_text,
-                'admin_all_day_filter_restores_both_scope_classes')
-            filtered_volume=callback('addonFilterVolumeServer2',seq=809)
-            vol_text=json.dumps(filtered_volume['events'])
-            yes('deleteVolumePlan301' in vol_text and 'deleteVolumePlan302' in vol_text and
-                'deleteVolumePlan201' not in vol_text and
-                'addonFilterVolumeAll' in vol_text,
-                'admin_server_volume_filter_includes_scoped_excludes_global')
+            new_day_id=int(q("SELECT id FROM increase_day WHERE volume=15 AND price=1234 AND server_id=2"))
+            day_scopes={101:'🌐 Global',401:'🖥 Server 2',503:'🖥 Server 3',
+                new_day_id:'🖥 Server 2'}
+            volume_scopes={201:'🌐 Global',301:'🖥 Server 2',
+                302:'👥 Server 2 · Groups 1',303:'👥 Server 2 · Groups 3',
+                304:'🖥 Server 3'}
+            list_day=callback('dayPlanSettings',seq=805)
+            yes(verify_admin_catalogue(list_day,'day',day_scopes,'SEND'),
+                'initial_day_full_scope_actions_no_legacy_header')
+            day_text=json.dumps(list_day['events'],ensure_ascii=False)
+            yes(all('deleteDayPlan'+str(i)+'_' in day_text for i in (101,401,503)) and
+                'addonEditScopeDay401_' in day_text and 'addonEditScopeDay503_' in day_text and
+                'addonFilterDay' not in day_text,
+                'admin_day_catalogue_unfiltered_and_scope_editable')
+            list_volume=callback('volumePlanSettings',seq=806)
+            yes(verify_admin_catalogue(list_volume,'volume',volume_scopes,'SEND'),
+                'initial_volume_full_scope_actions_no_legacy_header')
+            vol_text=json.dumps(list_volume['events'],ensure_ascii=False)
+            yes(all('deleteVolumePlan'+str(i)+'_' in vol_text
+                    for i in (201,301,302,303,304)) and
+                'addonEditScopeVolume302_' in vol_text and
+                'addonEditScopeVolume201_' in vol_text and
+                'addonFilterVolume' not in vol_text,
+                'admin_volume_catalogue_unfiltered_and_scope_editable')
+            for cb in ('addonFilterDayAll','addonFilterDayGlobal',
+                       'addonFilterDayServers','addonFilterDayServer2'):
+                legacy=callback(cb,seq=807)
+                legacy_text=json.dumps(legacy['events'],ensure_ascii=False)
+                yes('deleteDayPlan101_' in legacy_text and
+                    'deleteDayPlan401_' in legacy_text and
+                    'deleteDayPlan503_' in legacy_text and
+                    'addonFilterDay' not in legacy_text and
+                    'addonPickServer' not in legacy_text and
+                    legacy['provider_writes']==0,
+                    'retired_'+cb+'_converges_to_all_offers_without_mutation')
+            for cb in ('addonFilterVolumeAll','addonFilterVolumeGlobal',
+                       'addonFilterVolumeServers','addonFilterVolumeServer2'):
+                legacy=callback(cb,seq=808)
+                legacy_text=json.dumps(legacy['events'],ensure_ascii=False)
+                yes('deleteVolumePlan201_' in legacy_text and
+                    'deleteVolumePlan301_' in legacy_text and
+                    'deleteVolumePlan302_' in legacy_text and
+                    'addonFilterVolume' not in legacy_text and
+                    legacy['provider_writes']==0,
+                    'retired_'+cb+'_converges_to_all_offers_without_mutation')
             rejected_filter=callback('addonFilterDayServer2',actor_id=1001,seq=810)
             yes('deleteDayPlan401' not in json.dumps(rejected_filter['events']) and
                 rejected_filter['provider_writes']==0,
-                'customer_cannot_use_read_only_admin_scope_filter')
+                'customer_cannot_use_retired_admin_scope_callback')
             # Old keyboards are not current editor sessions, even with a NEW
             # Telegram update_id and exactly the same editor step.
             newer=callback('addNewVolumePlan',seq=811)
@@ -444,8 +515,8 @@ def test(php:bool)->dict:
             # Row-level CAS is independent of editor-session protection.
             # Another administrator can change the visible offer between
             # rendering and a subsequent Telegram update.
-            old_delete=key(filtered_day['events'],'deleteDayPlan401_')
-            old_price=key(filtered_day['events'],'changeDayPlanPrice401_')
+            old_delete=key(list_day['events'],'deleteDayPlan401_')
+            old_price=key(list_day['events'],'changeDayPlanPrice401_')
             q("UPDATE increase_day SET server_id=4,scope_hash='"+sha('S:4')+"' WHERE id=401")
             stale_delete=callback(old_delete,seq=818)
             yes(q("SELECT COUNT(*) FROM increase_day WHERE id=401 AND server_id=4")=='1',
@@ -454,7 +525,7 @@ def test(php:bool)->dict:
             yes(q("SELECT step FROM users WHERE userid=9001")=='none',
                 'stale_day_price_button_after_server_change_cannot_start_edit')
             q("UPDATE increase_day SET server_id=2,scope_hash='"+sha('S:2')+"' WHERE id=401")
-            fresh_view=callback('addonFilterDayServer2',seq=820)
+            fresh_view=callback('dayPlanSettings',seq=820)
             fresh_price=key(fresh_view['events'],'changeDayPlanPrice401_')
             callback(fresh_price,seq=821)
             q("UPDATE increase_day SET server_id=4,scope_hash='"+sha('S:4')+"' WHERE id=401")
@@ -464,16 +535,23 @@ def test(php:bool)->dict:
                 'stale_day_price_completion_does_not_overwrite_changed_scope')
             message('Cancel',seq=823)
             q("UPDATE increase_day SET server_id=2,scope_hash='"+sha('S:2')+"' WHERE id=401")
-            fresh_day=callback('addonFilterDayServer2',seq=824)
+            fresh_day=callback('dayPlanSettings',seq=824)
             callback(key(fresh_day['events'],'changeDayPlanPrice401_'),seq=825)
-            message('5555',seq=826)
+            day_price=message('5555',seq=826)
+            yes(verify_admin_catalogue(day_price,'day',day_scopes,'SEND') and
+                len(day_price['events'])==2,
+                'day_price_postwrite_one_complete_catalogue')
             yes(q("SELECT price FROM increase_day WHERE id=401")=='5555',
                 'fresh_day_price_edit_updates_exact_current_revision')
-            fresh_day=callback('addonFilterDayServer2',seq=827)
-            callback(key(fresh_day['events'],'deleteDayPlan401_'),seq=828)
+            fresh_day=callback('dayPlanSettings',seq=827)
+            day_deleted=callback(key(fresh_day['events'],'deleteDayPlan401_'),seq=828)
+            day_scopes.pop(401)
+            yes(verify_admin_catalogue(day_deleted,'day',day_scopes,'EDIT') and
+                [ev['event'] for ev in day_deleted['events']]==['ALERT','EDIT'],
+                'day_delete_postwrite_one_complete_catalogue')
             yes(q("SELECT COUNT(*) FROM increase_day WHERE id=401")=='0',
                 'fresh_day_delete_removes_only_current_revision')
-            fresh_volume=callback('addonFilterVolumeServer2',seq=829)
+            fresh_volume=callback('volumePlanSettings',seq=829)
             volume_update=key(fresh_volume['events'],'changeVolumePlanVolume301_')
             callback(volume_update,seq=830)
             q("UPDATE increase_plan SET price=777 WHERE id=301")
@@ -481,18 +559,25 @@ def test(php:bool)->dict:
             yes(q("SELECT volume FROM increase_plan WHERE id=301")=='10',
                 'stale_volume_quantity_after_offer_repricing_is_refused')
             message('Cancel',seq=832)
-            fresh_volume=callback('addonFilterVolumeServer2',seq=833)
+            fresh_volume=callback('volumePlanSettings',seq=833)
             callback(key(fresh_volume['events'],'changeVolumePlanVolume301_'),seq=834)
-            message('22',seq=835)
+            volume_units=message('22',seq=835)
+            yes(verify_admin_catalogue(volume_units,'volume',volume_scopes,'SEND') and
+                len(volume_units['events'])==2,
+                'volume_quantity_postwrite_one_complete_catalogue')
             yes(q("SELECT volume FROM increase_plan WHERE id=301")=='22',
                 'fresh_volume_quantity_edit_succeeds')
-            fresh_volume=callback('addonFilterVolumeServer2',seq=836)
-            callback(key(fresh_volume['events'],'deleteVolumePlan301_'),seq=837)
+            fresh_volume=callback('volumePlanSettings',seq=836)
+            volume_deleted=callback(key(fresh_volume['events'],'deleteVolumePlan301_'),seq=837)
+            volume_scopes.pop(301)
+            yes(verify_admin_catalogue(volume_deleted,'volume',volume_scopes,'EDIT') and
+                [ev['event'] for ev in volume_deleted['events']]==['ALERT','EDIT'],
+                'volume_delete_postwrite_one_complete_catalogue')
             yes(q("SELECT COUNT(*) FROM increase_plan WHERE id=301")=='0',
                 'fresh_volume_delete_succeeds')
             # Another administrator can reassign a native Group-set between
             # message rendering and a stale deletion, without touching the ID.
-            old_group_delete=key(filtered_volume['events'],'deleteVolumePlan302_')
+            old_group_delete=key(list_volume['events'],'deleteVolumePlan302_')
             q("UPDATE increase_plan SET group_ids='[9]',scope_hash='"+sha('P:2:9')+"' "
                 "WHERE id=302")
             rejected_group=callback(old_group_delete,seq=838)
@@ -501,6 +586,22 @@ def test(php:bool)->dict:
                 'stale_group_set_delete_after_other_admin_reassignment_rejected')
             q("UPDATE increase_plan SET group_ids='[1]',scope_hash='"+sha('P:2:1')+"' "
                 "WHERE id=302")
+            # Complete the six post-write cases without changing payment fixtures.
+            day_quantity_view=callback('dayPlanSettings',seq=839)
+            callback(key(day_quantity_view['events'],'changeDayPlanDay503_'),seq=840)
+            day_quantity=message('16',seq=841)
+            yes(q("SELECT volume FROM increase_day WHERE id=503")=='16' and
+                verify_admin_catalogue(day_quantity,'day',day_scopes,'SEND') and
+                len(day_quantity['events'])==2,
+                'day_quantity_postwrite_one_complete_catalogue')
+            volume_price_view=callback('volumePlanSettings',seq=842)
+            callback(key(volume_price_view['events'],'changeVolumePlanPrice304_'),seq=843)
+            volume_price=message('191',seq=844)
+            yes(q("SELECT price FROM increase_plan WHERE id=304")=='191' and
+                verify_admin_catalogue(volume_price,'volume',volume_scopes,'SEND') and
+                len(volume_price['events'])==2,
+                'volume_price_postwrite_one_complete_catalogue')
+
             # Full current financial route: real owner/claim/debit/payment and
             # audit/terminal SQL, real common provider-dispatch guard, fake ONLY
             # the final Marzban HTTP adapter. No network is reachable.
@@ -787,6 +888,29 @@ function achbotNotifyAdmins(...$args){$GLOBALS['events'][]=['event'=>'ADMIN_NOTI
             yes(True,'hosted_offer_scope_drift_stops_before_paid_claim_or_provider_edit')
             q("UPDATE increase_plan SET server_id=2,scope_hash='"+sha('S:2')+"' WHERE id=702")
             finance_checked+=1
+
+            # At the end of the disposable fixture, exercise deleting the
+            # final offer and re-opening an empty administrator catalogue.
+            q("DELETE FROM increase_day WHERE id<>101")
+            q("DELETE FROM increase_plan WHERE id<>201")
+            last_day=callback('dayPlanSettings',seq=9201)
+            yes(verify_admin_catalogue(last_day,'day',{101:'🌐 Global'},'SEND'),
+                'day_single_offer_full_scope_controls')
+            empty_day=callback(key(last_day['events'],'deleteDayPlan101_'),seq=9202)
+            yes(verify_admin_catalogue(empty_day,'day',{},'EDIT') and
+                q("SELECT COUNT(*) FROM increase_day")=='0',
+                'day_last_delete_empty_create_back')
+            yes(verify_admin_catalogue(callback('dayPlanSettings',seq=9203),
+                'day',{},'SEND'),'day_empty_reopen_uses_same_catalogue')
+            last_volume=callback('volumePlanSettings',seq=9204)
+            yes(verify_admin_catalogue(last_volume,'volume',{201:'🌐 Global'},'SEND'),
+                'volume_single_offer_full_scope_controls')
+            empty_volume=callback(key(last_volume['events'],'deleteVolumePlan201_'),seq=9205)
+            yes(verify_admin_catalogue(empty_volume,'volume',{},'EDIT') and
+                q("SELECT COUNT(*) FROM increase_plan")=='0',
+                'volume_last_delete_empty_create_back')
+            yes(verify_admin_catalogue(callback('volumePlanSettings',seq=9206),
+                'volume',{},'SEND'),'volume_empty_reopen_uses_same_catalogue')
     return {'status':'PASS','cases':len(checks),'checks':checks,
             'sql_only':not php,'actual_provider_calls':0,'actual_payment_calls':0,
             'local_financial_claims_tested':finance_checked if php else 0,

@@ -97,7 +97,7 @@ def check():
         path.write_bytes(subprocess.check_output(['git','show',BASE+':src/Finance/Routes/Extensions.php'],cwd=ROOT))
         assert event(call(w,e,app,route='volume',data='increaseAVolume41',baseline=True),'ALERT')
         path.write_bytes(current);r=call(w,e,app,route='volume',data='increaseAVolume41')
-        assert '2 گیگ' in str(r) and '1,000' in str(r) and 'increaseVolumePlan41_51' in str(r)
+        assert '2 گیگ' in str(r) and '1000' in str(r) and '1,000' not in str(r) and 'orderDetails41' in str(r) and 'increaseVolumePlan41_51' in str(r)
         assert 'increaseVolumePlan41_52' not in str(r),r
         checks.append('baseline_RED_missing_order_identity_then_actual_volume_entry_GREEN')
         before=purchase.snapshot(w,e,DB)

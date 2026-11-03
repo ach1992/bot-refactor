@@ -120,7 +120,29 @@ def main():
     check(refs<=entries,'unknown catalog references: '+str(refs-entries))
     unused={k for k in entries-refs if not k.startswith(('legacy_messages.','legacy_buttons.'))}
     management=json.loads((ROOT/'tools/text_catalog_management_amendment.json').read_text())
-    expected_unused=set(management['retained_legacy_keys'])|catalog_owner_r5.verify_retained_display_keys()|catalog_owner_r5.API_REVIEW_RETAINED
+    # The scoped admin catalogue no longer renders the three scope-filter
+    # buttons. Preserve the previously accepted, editable copy key without
+    # quietly treating arbitrary new orphan labels as acceptable.
+    obsolete_filter={'addon_scopes.filter_all'}
+    check(obsolete_filter<=entries and not (obsolete_filter & refs),
+          'retired_scope_filter_label_is_rendered_or_missing')
+    # The canonical renderer also retires six legacy post-edit only
+    # messages/placeholder headers. Preserve exact provenance while ensuring
+    # none silently reappear in current UI; no other orphan is admitted.
+    obsolete_postwrite={
+        'plans.intervals.add_new_day_plan.msg.34a6e4ec60',
+        'plans.intervals.add_new_volume_plan.msg.9725f12c7b',
+        'plans.intervals.day_plan_settings.button.59ca629220',
+        'plans.intervals.day_plan_settings.button.7d2c8a1926',
+        'plans.intervals.day_plan_settings.button.be0d8f0892',
+        'plans.intervals.volume_plan_settings.button.57fa83c28f',
+    }
+    interval_source=(ROOT/'src/Plans/Intervals.php').read_text()
+    check(obsolete_postwrite<=entries and not (obsolete_postwrite & refs) and
+          'wizwizch' not in interval_source,'retired_postwrite_catalogue_reintroduced')
+    expected_unused=(set(management['retained_legacy_keys'])|
+        catalog_owner_r5.verify_retained_display_keys()|
+        catalog_owner_r5.API_REVIEW_RETAINED|obsolete_filter|obsolete_postwrite)
     check(unused==expected_unused,'unrecorded legacy/orphan copy entries: '+str(unused^expected_unused))
     with tempfile.TemporaryDirectory(prefix='achbot-catalog-audit-') as scratch:
         fixture=pathlib.Path(scratch)/'fixture.php'

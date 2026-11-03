@@ -474,7 +474,7 @@ return [
         // extensions.text
         'extensions.text.2cc98f7f7c' => ' تومان',
         // extensions.button
-        'extensions.button.fbb9f61105' => ['text' => 'مدت: {title} روز؛ قیمت: {price}', 'parameters' => ['title', 'price']],
+        'extensions.button.fbb9f61105' => ['text' => '{title} روز ← {price}', 'parameters' => ['title', 'price']],
         // extensions.message
         'extensions.message.c2bde2a3e0' => 'لطفا یکی از پلن های افزایشی را انتخاب کنید:',
         // extensions.alert
@@ -528,8 +528,8 @@ return [
         'extensions.alert.96762b5a42' => '📆 اشتراک شما منقضی شده است. لطفاً آن را تمدید کنید تا بتوانید افزایش حجم دهید.',
         'extensions.alert.e6c27b8039' => '⚠️ در حال حاضر هیچ پلن حجمی وجود ندارد.',
         // extensions.button
-        'extensions.button.249377f2b7' => ['text' => 'حجم: {title} گیگ؛ قیمت: {price}', 'parameters' => ['title', 'price']],
-        'extensions.button.8405a4154f' => '⤵️ برگرد به منوی اصلی',
+        'extensions.button.249377f2b7' => ['text' => '{title} گیگ ← {price}', 'parameters' => ['title', 'price']],
+        'extensions.button.8405a4154f' => '🔙 بازگشت',
         // extensions.message
         'extensions.message.ab954c63e6' => 'لطفا یکی از پلن های حجمی را انتخاب کنید:',
         // extensions.alert

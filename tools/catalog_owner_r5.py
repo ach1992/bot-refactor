@@ -15,6 +15,41 @@ def baseline():
     decode='$s=stream_get_contents(STDIN);$p=strpos($s,"return [");if($p===false)throw new RuntimeException("array_missing");echo json_encode(eval(substr($s,$p)),JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);'
     return {a:flatten(json.loads(command('php','-r',decode,input=command('git','show',BASE+':messages/fa/'+a+'.php'))))for a in ['user','admin']}
 def manifest():return json.loads((ROOT/'tools/text_catalog_owner_r5.json').read_text())
+def addon_selection_restore(sides):
+    """Revert only the newly Owner-approved RC22 customer add-on copy in a copy.
+
+    Retain the previously accepted R5/API text proofs unchanged, including
+    their historical exact values. Unknown catalog mutations still fail.
+    """
+    record=json.loads((ROOT/'tools/text_catalog_addon_selection_ui.json').read_text())
+    parent='4d7d1c04f15e5d58eb9c8030fc086b8658ba6c49'
+    check(record.get('version')==1 and record.get('accepted_parent')==parent and
+          record.get('owner_decision')==
+          'https://github.com/ach1992/bot-refactor/issues/107#issuecomment-6594462582'
+          and record.get('audience')=='user', 'addon_selection_manifest_identity')
+    changes=record.get('entries')
+    expected_keys={'renewal.extensions.button.fbb9f61105',
+                   'renewal.extensions.button.249377f2b7',
+                   'renewal.extensions.button.8405a4154f'}
+    check(type(changes) is dict and set(changes)==expected_keys,
+          'addon_selection_exact_keys')
+    decode='$s=stream_get_contents(STDIN);$p=strpos($s,"return [");if($p===false)throw new RuntimeException("array_missing");echo json_encode(eval(substr($s,$p)),JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);'
+    original=flatten(json.loads(command('php','-r',decode,
+        input=command('git','show',parent+':messages/fa/user.php'))))
+    result=copy.deepcopy(sides)
+    for key,item in changes.items():
+        before=item.get('before');after=item.get('after')
+        check(item.get('source_paths')==['src/Finance/Routes/Extensions.php'] and
+              before==original.get(key) and before!=after and
+              result['user'].get(key)==after and key not in result['admin'],
+              'addon_selection_copy_or_baseline_drift:'+key)
+        check(isinstance(text(after),str) and params(after)==params(before) and
+              set(re.findall(r'\{([A-Za-z_][A-Za-z0-9_]*)\}',text(after)))==set(params(after))
+              and not re.search(r'[\u0660-\u0669\u06f0-\u06f9]',text(after)),
+              'addon_selection_slots_or_digits:'+key)
+        result['user'][key]=before
+    return result
+
 def scoped_addon_restore(sides):
     """Strict additive/current-only scoped-addon copy layer; preserve accepted proof totals.
 
@@ -30,6 +65,7 @@ def scoped_addon_restore(sides):
     expected=manifest.get('entries')
     check(type(expected) is dict and len(expected)==14,'addon_catalog_key_inventory')
     check(type(sides) is dict and set(sides)=={'user','admin'},'addon_catalog_audiences')
+    sides=addon_selection_restore(sides)
     check(all('addon_scopes.' not in key for key in sides['user']), 'addon_catalog_cross_audience')
     real={key:value for key,value in sides['admin'].items() if key.startswith('addon_scopes.')}
     check(set(real)=={'addon_scopes.'+key for key in expected},'addon_catalog_additions_only')

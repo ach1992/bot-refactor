@@ -34,7 +34,17 @@ def main():
     # These four intentionally stable units are composed inside Persian sentences.
     expected_fragments=['notifications.warnings.send.1e5349d9b2','notifications.warnings.send.0458ad0612','jobs.gift2all.gift_text.8f714dee13','jobs.gift2all.text.b70363d685']
     check(all(merged[k]=={**old['user'],**old['admin']}[k]for k in expected_fragments),'stable_unit_fragment_changed')
+    # Owner-approved quantity-first labels intentionally begin with {title},
+    # which resolves to ASCII digits (e.g. 10 گیگ). Admit only these exact
+    # customer templates, not other arbitrary non-Persian-starting prose.
+    quantity_first={
+      'renewal.extensions.button.fbb9f61105': '{title} روز ← {price}',
+      'renewal.extensions.button.249377f2b7': '{title} گیگ ← {price}',
+    }
+    check(all(r5.text(merged[k])==value for k,value in quantity_first.items()),
+          'owner_addon_quantity_first_templates_must_match_exact_copy')
     line_exceptions={
+      *quantity_first,
       'legacy_messages.config_details_message','subscription.presentation.config_message.text.2953f9a4ad',
       'subscription.buy_helpers.build_links_and_send_qr.acc_text.698f512161',
       'bot.bot.webhook_ingress_authenticated.message.312da09ba8',
