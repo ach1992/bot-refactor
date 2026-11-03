@@ -38,9 +38,12 @@ are preserved with their original IDs, units and amounts. Pre-015 payment
 snapshots remain NULL and previously issued quotes retain their original
 pinned prices/identity. No invoice backfill is performed.
 
-015 performs a preflight using a temporary stored procedure which the
-script drops before its ALTER statements. This procedure is **not**
-a permanent application dependency. The preflight rejects any existing
+015 creates a named preflight helper procedure which the script drops
+**after a successful preflight**, before its ALTER statements. This
+procedure is **not** a permanent application dependency; if preflight
+signals an error, execution may stop **before its DROP statement**,
+leaving the helper procedure behind for operator-audited cleanup.
+Never call a partially completed script safe to retry. The preflight rejects any existing
 new columns, duplicate legacy quantities, non-positive/invalid units
 or negative prices. Do not silently deduplicate or rewrite old prices
 to make an install pass. Once the preflight succeeds, three ALTER TABLE
