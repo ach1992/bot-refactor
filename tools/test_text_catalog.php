@@ -349,11 +349,44 @@ if(($addonManifest['version']??null)!==1 ||
    !is_array($addonManifest['entries']??null) || count($addonManifest['entries'])!==14)
  throw new RuntimeException('addon_catalog_manifest_identity_drift');
 $addonEntries=$addonManifest['entries'];
-$verifyCurrentAudienceCatalogs=static function(array $sides) use($giftKey,$giftEntry,$apiDelta,$r5Expected,$reviewEntries,$addonEntries): void {
+// Current-only Owner-requested quantity-first labels are a strict 3-key
+// overlay, not permission to rewrite frozen R5/API catalog values. Check
+// against the exact previously accepted RC22 source before restoration.
+$selectionManifest=json_decode(file_get_contents(__DIR__.'/text_catalog_addon_selection_ui.json'),true,512,JSON_THROW_ON_ERROR);
+$selectionParent='4d7d1c04f15e5d58eb9c8030fc086b8658ba6c49';
+$selectionKeys=['renewal.extensions.button.fbb9f61105',
+ 'renewal.extensions.button.249377f2b7','renewal.extensions.button.8405a4154f'];
+$selectionEntries=$selectionManifest['entries']??null;
+if(($selectionManifest['version']??null)!==1 ||
+   ($selectionManifest['accepted_parent']??null)!==$selectionParent ||
+   ($selectionManifest['owner_decision']??null)!==
+    'https://github.com/ach1992/bot-refactor/issues/107#issuecomment-6594462582' ||
+   ($selectionManifest['audience']??null)!=='user' ||
+   !is_array($selectionEntries) || array_keys($selectionEntries)!==$selectionKeys)
+ throw new RuntimeException('addon_selection_manifest_identity');
+$oldSelectionSource=shell_exec('git show '.escapeshellarg($selectionParent.':messages/fa/user.php'));
+$oldSelectionStart=is_string($oldSelectionSource)?strpos($oldSelectionSource,'return ['):false;
+if($oldSelectionStart===false)throw new RuntimeException('addon_selection_parent_source_unavailable');
+$oldSelectionGroups=eval(substr($oldSelectionSource,$oldSelectionStart));$oldSelection=[];
+foreach($oldSelectionGroups as$topic=>$entries)foreach($entries as$name=>$value)
+ $oldSelection[$topic.'.'.$name]=$value;
+foreach($selectionEntries as$key=>$item){
+ if(!is_array($item) || ($item['source_paths']??null)!==['src/Finance/Routes/Extensions.php'] ||
+    ($item['before']??null)!==($oldSelection[$key]??null) ||
+    ($item['before']??null)===($item['after']??null))
+  throw new RuntimeException('addon_selection_parent_value_or_source_drift:'.$key);
+}
+$verifyCurrentAudienceCatalogs=static function(array $sides) use($giftKey,$giftEntry,$apiDelta,$r5Expected,$reviewEntries,$addonEntries,$selectionEntries): void {
  if(!isset($sides['user'],$sides['admin']) || !is_array($sides['user']) || !is_array($sides['admin']))
   throw new RuntimeException('addon_catalog_audiences_invalid');
  foreach($sides['user']as$key=>$value)if(str_starts_with($key,'addon_scopes.'))
   throw new RuntimeException('addon_catalog_cross_audience');
+ foreach($selectionEntries as$key=>$item){
+  if(!array_key_exists($key,$sides['user']) || $sides['user'][$key]!==$item['after'] ||
+     array_key_exists($key,$sides['admin']))
+   throw new RuntimeException('addon_selection_copy_or_audience_drift:'.$key);
+  $sides['user'][$key]=$item['before'];
+ }
  $actualAddonKeys=array_values(array_filter(array_keys($sides['admin']),
   static fn(string $key):bool=>str_starts_with($key,'addon_scopes.')));
  $expectedAddonKeys=array_map(static fn(string $name):string=>'addon_scopes.'.$name,array_keys($addonEntries));
