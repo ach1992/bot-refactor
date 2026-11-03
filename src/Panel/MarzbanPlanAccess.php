@@ -122,7 +122,8 @@ function achbotMarzbanApplyPlanHosts(int $serverId,string $username,array $wante
         // A failed transfer has a non-empty standard cURL error string.
         // This also keeps the HTTP/transport failure contract consistent
         // with the same native adapter's existing checked cURL surfaces.
-        $curlError=curl_error($curl);curl_close($curl);
+        $curlError=curl_error($curl);
+        unset($curl); // PHP 8.5 deprecates curl_close(); release CurlHandle instead.
         if ($response===false || $curlError!=='' || $http<200 || $http>=300)
             throw new RuntimeException('marzban_plan_put_unverified');
         $ack=json_decode((string)$response,true,64);
