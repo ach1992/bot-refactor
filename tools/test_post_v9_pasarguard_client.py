@@ -230,7 +230,7 @@ try {
    if (($spec['snapshot_compat']??false) && $db->query("SHOW VARIABLES LIKE 'innodb_snapshot_isolation'")->num_rows)
        $db->query('SET SESSION innodb_snapshot_isolation=OFF');
    $db->begin_transaction();
-   $snap=achbotProviderSnapshot($db,2,0);
+   $snap=achbotProviderSnapshot($db,2,7);
    // Both sessions establish a read view before serializing on the effect.
    usleep(250000);
    $r=achbotProviderReserveAccount($db,2,$snap,'fixture_race','achbot:v1:'.str_repeat('d',32),
@@ -239,11 +239,12 @@ try {
    echo json_encode(['newly_reserved'=>$r['newly_reserved']]);exit;
  }elseif($spec['op']==='all'){
    $snap=achbotProviderSnapshot($db,2,7);
-   ok($snap['group_ids']===[2,5],'nullable_plan_inherits_default');
+   ok($snap['group_ids']===[2,5],'explicit_plan_groups_authoritative');
+   $db->query("UPDATE server_plans SET provider_group_ids=NULL WHERE id=7");
+   denied(fn()=>achbotProviderSnapshot($db,2,7),'provider_groups_invalid');
+   denied(fn()=>achbotProviderSnapshot($db,2,0),'provider_plan_required');
    $db->query("UPDATE server_plans SET provider_group_ids='[9]' WHERE id=7");
-   ok(achbotProviderSnapshot($db,2,7)['group_ids']===[9],'explicit_groups_replace_default');
-   ok(achbotProviderSnapshot($db,2,0)['group_ids']===[2,5],'trial_uses_server_default');
-   $db->query("UPDATE server_info SET provider_group_ids='[8]' WHERE id=2");
+   ok(achbotProviderSnapshot($db,2,7)['group_ids']===[9],'plan_groups_replace_explicitly');
    ok($snap['group_ids']===[2,5],'quoted_snapshot_immutable');
    ok(achbotProviderPanelForSnapshot($db,$snap)['id']===1,'quoted_groups_do_not_reinherit');
    $db->query("UPDATE server_config SET panel_url='https://changed.invalid' WHERE id=2");
@@ -301,7 +302,7 @@ def storage_checks(work,env):
     native.sql(work,env,"""
 UPDATE server_config SET type='pasarguard',panel_url='https://panel.example.invalid',password='fixture-private-key',
  provider_connection_id=1,provider_instance_key=REPEAT('b',32),provider_version='5.5.1' WHERE id=2;
-UPDATE server_info SET provider_group_ids='[5,2,2]' WHERE id=2;
+UPDATE server_plans SET provider_group_ids='[2,5]' WHERE id IN (7,8);
 INSERT INTO service_effects (id,source_kind,source_ref,actor_userid,ordinal,operation_id,
  target_server_id,target_key,endpoint_sha256,plan_id,remote_username,requested_expire,
  requested_bytes,request_sha256,provider_snapshot)
@@ -312,6 +313,10 @@ INSERT INTO orders_list(id,userid,token,transid,fileid,server_id,inbound_id,rema
  uuid,protocol,expire_date,link,amount,status,date)
  VALUES(91,1001,'fixture-token','',7,2,0,'fixture_user','native-placeholder','vless',2000000000,'[]',100,1,'fixture');
 """,db)
+    # Test retired test-era server defaults and durable physical plan journal.
+    for name in ['016_remove_pasarguard_server_groups.sql','017_shared_plan_changes.sql']:
+        native.sql(work,env,(ROOT/'migrations/post-v9'/name).read_text(),db)
+    assert not native.sql(work,env,"SHOW COLUMNS FROM server_info LIKE 'provider_group_ids'",db)
     # Deliberately construct incompatible storage in this disposable DB only;
     # the real FK otherwise prevents converting the payment/effect pair.
     native.sql(work,env,'ALTER TABLE service_effects DROP FOREIGN KEY fk_effect_pay',db)
@@ -344,6 +349,7 @@ INSERT INTO orders_list(id,userid,token,transid,fileid,server_id,inbound_id,rema
         finally:native.sql(work,env,restore,db)
     r=php(script,ROOT,work/'mysql.sock',db,json.dumps({'op':'all','user':USER}));cases+=r['cases']
     native.sql(work,env,"ALTER TABLE service_effects ADD UNIQUE KEY uq_effect_provider_reference(provider_reference_id);",db)
+    native.sql(work,env,"UPDATE server_plans SET provider_group_ids='[8]' WHERE id=7",db)
     snap['group_ids']=[8]
     race_snapshot=json.dumps(snap,separators=(',',':'))
     native.sql(work,env,"""INSERT INTO service_effects (id,source_kind,source_ref,actor_userid,ordinal,operation_id,
