@@ -331,6 +331,17 @@ achEvent('probe',[
             refuse('nonadmin_nonowner_cannot_switch','transfer',f'switchServer3_{oid}',actor=9002)
             refuse('admin_cannot_cross_panel','admin_transfer',f'selectServerId_{oid}_4',actor=9001)
             refuse('forged_admin_callback_denied','admin_transfer',f'selectServerId_{oid}_3',actor=1001)
+            # R2: normal finance workflows can leave historical terminal
+            # rejected receipts and unclaimed invalidated renewal drafts.
+            # Both owners must remain transferable without rewriting them.
+            sql(work,env,
+                "INSERT INTO pays(hash_id,user_id,type,plan_id,server_id,order_id,"
+                "price,request_date,state) VALUES"
+                f"('transfer-declined',1001,'RENEW_ACCOUNT',7,2,{oid},137,UNIX_TIMESTAMP(),'declined'),"
+                f"('transfer-mismatched',9002,'RENEW_ACCOUNT',7,2,{peer},137,UNIX_TIMESTAMP(),'mismatched_plan')")
+            old_receipts=sql(work,env,
+                "SELECT id,hash_id,state,payid FROM pays WHERE hash_id IN "
+                "('transfer-declined','transfer-mismatched') ORDER BY id")
             before=snapshot(work,env)
             fields=sql(work,env,f'SELECT token,remark,uuid,link,amount,status FROM orders_list WHERE id={oid}')
             z=do('transfer',f'switchServer3_{oid}',
@@ -350,6 +361,11 @@ achEvent('probe',[
                    ('payments','capacity','users','plans','categories')):
                 raise RuntimeError('Logical transfer touched finance or catalogue')
             passed('same_group_transfer_clears_plan_and_renewal_without_native_payment_mutation')
+            if old_receipts!=sql(work,env,
+                "SELECT id,hash_id,state,payid FROM pays WHERE hash_id IN "
+                "('transfer-declined','transfer-mismatched') ORDER BY id"):
+                raise RuntimeError('Terminal historical receipt altered during shared logical transfer')
+            passed('declined_and_unissued_mismatched_payment_history_allows_shared_transfer')
             z=do('probe',oid=oid)
             if not has(z,'[true, false]'):raise RuntimeError('Old source-server plan remains available after transfer: '+str(z))
             passed('old_source_plan_unavailable_until_destination_plan_selected')
@@ -544,6 +560,7 @@ achEvent('probe',[
             'pinned_v9_source_on_migrated_schema_verified':True,
             'unicode_group_name_contract_verified':True,
             'no_real_provider_or_payment_calls':True,'administrator_only_switching':True,
+            'terminal_payment_history_survives_shared_transfer':True,
             'current_unified_onboarding':onboarding_proof,'scenarios':checks}
     if args.report:args.report.write_text(json.dumps(report,indent=2,ensure_ascii=False)+'\n')
     print(json.dumps({k:v for k,v in report.items() if k!='scenarios'},ensure_ascii=False))

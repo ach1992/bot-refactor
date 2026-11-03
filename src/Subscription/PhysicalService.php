@@ -86,6 +86,40 @@ function achbotPhysicalAssertRebindSafe(mysqli $db,int $serverId,
     $r->free();
 }
 
+/**
+ * Administrator removal must preserve the original connection while
+ * active accounts or unresolved Native obligations may still need it.
+ * The caller owns the server_info/server_config FOR UPDATE transaction.
+ * No provider or financial side effect is performed here.
+ */
+function achbotPhysicalServerRemovalDecision(mysqli $db,int $serverId): string {
+    achbotPhysicalAssertRebindSafe($db,$serverId,false,false);
+    $s=$db->prepare('SELECT id FROM orders_list WHERE server_id=? AND status=1
+        ORDER BY id LIMIT 1 FOR UPDATE');
+    $s->bind_param('i',$serverId);$s->execute();
+    $active=$s->get_result()->num_rows>0;$s->close();
+    if ($active) return 'retire';
+
+    // Even with no active reference, an unfinished provider effect can
+    // require this connection for recovery. Optional schema absence is safe;
+    // a malformed or unreadable present table is never considered empty.
+    $r=$db->query("SELECT TABLE_TYPE,ENGINE FROM information_schema.TABLES
+        WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='service_effects'");
+    if (!($r instanceof mysqli_result)) throw new RuntimeException('physical_removal_effects_unavailable');
+    $shape=$r->fetch_assoc();$count=$r->num_rows;$r->free();
+    if ($shape!==null) {
+        if ($count!==1 || $shape['TABLE_TYPE']!=='BASE TABLE' ||
+            strcasecmp((string)$shape['ENGINE'],'InnoDB')!==0)
+            throw new RuntimeException('physical_removal_effects_unavailable');
+        $s=$db->prepare("SELECT id FROM service_effects WHERE target_server_id=?
+            AND state<>'local_recorded' ORDER BY id LIMIT 1 FOR UPDATE");
+        $s->bind_param('i',$serverId);$s->execute();
+        $pending=$s->get_result()->num_rows>0;$s->close();
+        if ($pending) throw new RuntimeException('physical_removal_pending_effect');
+    }
+    return 'delete';
+}
+
 /** Exact connected target evidence, persisted as a digest rather than secrets. */
 function achbotPhysicalTargetFingerprint(mysqli $db,array $order): string {
     $server=(int)$order['server_id'];

@@ -2360,6 +2360,24 @@ function achbotSharedAccountReferencesLocked(mysqli $db,int $orderId,int $server
     return $peers;
 }
 
+/**
+ * Shared non-payable terminal classification, reused by plan/transfer and
+ * scheduled deletion. Manual "declined" and invalidated RENEW_ACCOUNT drafts
+ * can be final without payment, but ONLY if no issued payid and no provider
+ * attempt exists. A current-schema attempt also owns all child transactions
+ * through its restrictive FK; absence proves no child claim is present.
+ * Retain the established behavior of other canceled/expired outcomes.
+ */
+function achbotNonPayablePaymentSettledLocked(array $payment,?array $attempt): bool {
+    $state=(string)($payment['state']??'');
+    if (in_array($state,['canceled','cancelled','rejected','expired'],true))
+        return $attempt===null || in_array((string)($attempt['stage']??''),['expired','done'],true);
+    if ((string)($payment['payid']??'')!=='' || $attempt!==null) return false;
+    if ($state==='declined') return true;
+    return $state==='mismatched_plan' &&
+        (string)($payment['type']??'')==='RENEW_ACCOUNT';
+}
+
 /** Pending claims serialize a shared account; completed references are not an ownership restriction. */
 function achbotSharedAccountWorkSettledLocked(mysqli $db,array $peers,int $ownAttempt=0,
     int $ownPay=0,bool $blockUnclaimedQuotes=false,bool $strictCompletion=false): bool {
@@ -2381,7 +2399,7 @@ function achbotSharedAccountWorkSettledLocked(mysqli $db,array $peers,int $ownAt
     $mode=achbotManualLedgerMode($db);
     if ($mode==='invalid') return false;
     $pattern='^INCREASE_(DAY|VOLUME)_('.implode('|',$ids).')_';
-    $q=$db->prepare("SELECT id,state FROM pays WHERE id<>? AND
+    $q=$db->prepare("SELECT id,state,type,payid FROM pays WHERE id<>? AND
         (order_id IN ($list) OR type REGEXP ?) ORDER BY id FOR UPDATE");
     $q->bind_param('is',$ownPay,$pattern);$q->execute();$payments=$q->get_result()->fetch_all(MYSQLI_ASSOC);$q->close();
     foreach ($payments as $payment) {
@@ -2396,13 +2414,12 @@ function achbotSharedAccountWorkSettledLocked(mysqli $db,array $peers,int $ownAt
         // and normal automatic-renewal semantics remain unchanged.
         if ($strictCompletion && $attempt!==null &&
             !in_array($attempt['stage'],['done','expired'],true)) return false;
-        if (in_array($payment['state'],['approved','paid_with_wallet'],true)) {
+        if (in_array($payment['state'],['approved','auto_cart_approved','paid_with_wallet'],true)) {
             if ($strictCompletion && ($attempt['stage']??null)==='expired') return false;
             continue;
         }
         if ($payment['state']==='paid' && ($attempt['stage']??null)==='done') continue;
-        if (in_array($payment['state'],['canceled','cancelled','rejected','expired'],true) &&
-            ($attempt===null || in_array($attempt['stage'],['expired','done'],true))) continue;
+        if (achbotNonPayablePaymentSettledLocked($payment,$attempt)) continue;
         // An unclaimed bot quote has no money/native effect. A chosen/issued
         // attempt may still settle and therefore retains the account fence.
         if (!$blockUnclaimedQuotes && $payment['state']==='pending' && $attempt===null) continue;
@@ -2442,7 +2459,7 @@ function achbotScheduledDeletionEffectsSettled(mysqli $db,array $order): bool {
     if ($mode==='invalid') return false;
     $id=(int)$order['id'];
     $pattern='^INCREASE_(DAY|VOLUME)_'.$id.'_';
-    $stmt=$db->prepare("SELECT id,state FROM pays WHERE (order_id=? OR type REGEXP ?) AND state NOT IN ('approved','paid_with_wallet') ORDER BY id FOR UPDATE");
+    $stmt=$db->prepare("SELECT id,state,type,payid FROM pays WHERE (order_id=? OR type REGEXP ?) AND state NOT IN ('approved','paid_with_wallet') ORDER BY id FOR UPDATE");
     if (!$stmt) return false;
     $stmt->bind_param('is',$id,$pattern);
     if (!$stmt->execute()) {$stmt->close();return false;}
@@ -2461,8 +2478,7 @@ function achbotScheduledDeletionEffectsSettled(mysqli $db,array $order): bool {
             $attempt=$stmt->get_result()->fetch_assoc();$stmt->close();
         }
         if ($payment['state']==='paid' && ($attempt['stage']??null)==='done') continue;
-        if (in_array($payment['state'],['canceled','cancelled','rejected','expired'],true) &&
-            ($attempt===null || in_array($attempt['stage'],['expired','done'],true))) continue;
+        if (achbotNonPayablePaymentSettledLocked($payment,$attempt)) continue;
         // Pending quotes, receipt review, processing and uncertain outcomes
         // retain the service until their owner resolves the payment.
         return false;

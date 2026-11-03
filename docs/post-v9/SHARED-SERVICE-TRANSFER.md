@@ -57,12 +57,28 @@ active local orders have disappeared.
 PasarGuard API-key rotation likewise cannot bypass an unfinished plan journal.
 The old journal identity remains visible for manual reconciliation.
 
+Confirmed administrator deletion uses the same locked journal guard. Any
+prepared, dispatching or review journal vetoes deletion even after its last
+active order disappears. With active subscriptions and no held journal,
+confirmation retires the server from active catalogues (`active=0`), retaining
+its connection/credentials, plans, orders and effects for existing subscribers
+and recovery. Fully unreferenced servers with no pending Native effects or
+journals can still be physically deleted. Stale confirmations for retired
+servers are rejected. No Native DELETE or financial mutation occurs.
+
 Before claiming a plan change or logical transfer, verify that every active
 shared order reference is financially settled across pays, payment_attempts,
 automatic_renewal_attempts, type-encoded legacy add-ons and service_effects.
 Unlike normal auto-renewal reservations, a plan/server reassignment cannot
 ignore an unclaimed payment quote; unfulfilled paid payments also block.
 Previously settled historical receipts remain unmodified and do not block.
+Historical `declined` manual receipts and verified unclaimed `mismatched_plan`
+renewal drafts are non-payable only with no `payid` or provider attempt (and
+therefore no child provider transaction). Unfinished attempts, unknown payment
+evidence and Native effects still block even under a terminal-looking state.
+Fully fulfilled `auto_cart_approved` follows existing successful payment rules.
+A sent-receipt `expired_have_sent` remains uncertain and is not silently
+classified as harmless. No historical financial record is rewritten.
 Revalidate the financial fence immediately before a provider write and again
 before the atomic local finalization.
 

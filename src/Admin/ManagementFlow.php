@@ -97,6 +97,7 @@ function achbotManagementText(string $key,array $params=[]): string {
         'shared_key_notice'=>achbotMessage('admin_settings.management.shared_key_notice',$params),
         'server_referenced'=>achbotMessage('admin_settings.management.server_referenced',$params),
         'server_removed'=>achbotMessage('admin_settings.management.server_removed',$params),
+        'server_retired'=>achbotMessage('admin_settings.management.server_retired',$params),
         'settings_saved'=>achbotMessage('admin_settings.management.settings_saved',$params),
         'server_delete_confirm'=>achbotMessage('admin_settings.management.server_delete_confirm',$params),
         'server_choice'=>achbotMessage('admin_settings.management.server_choice',$params),
@@ -285,8 +286,9 @@ function achbotHandleManagement(): bool {
     } catch (Throwable $error) {
         if ($begun) {try {$connection->rollback();} catch (Throwable $ignored) {}}
         $reason=$error instanceof RuntimeException?$error->getMessage():'management_unavailable';
-        $public=in_array($reason,['management_input','management_connection','management_targets','management_stale',
-            'management_other_flow','management_other_action','management_admin_required'],true)?$reason:'management_unavailable';
+        $public=$reason==='management_server_review'?'review_required':
+            (in_array($reason,['management_input','management_connection','management_targets','management_stale',
+            'management_other_flow','management_other_action','management_admin_required'],true)?$reason:'management_unavailable');
         error_log('achbot_management_deferred reason='.$public);
         // A failed/unknown COMMIT is not safe to present as a failed save or retry.
         if ($reason==='management_commit_unknown') {
@@ -340,16 +342,27 @@ function achbotHandleManagementFields(): bool {
         if ($delete) {
             if (!achbotAdminCanLocked($connection,$actor,(int)$admin,'servers')) throw new RuntimeException('management_admin_required');
             $entity=(int)$deletion[1];
-            $server=achbotManagementRow($connection,'SELECT i.id,c.type FROM server_info i JOIN server_config c ON c.id=i.id WHERE i.id=? FOR UPDATE','i',[$entity]);
+            $server=achbotManagementRow($connection,'SELECT i.id,c.type FROM server_info i JOIN server_config c ON c.id=i.id WHERE i.id=? AND i.active=1 FOR UPDATE','i',[$entity]);
             if (!$server || !achbotSupportsAccount($server['type'],0)) throw new RuntimeException('management_targets');
-            // Explicit administrator confirmation removes this connection only.
-            // Dependent orders/plans and financial/effect history remain intact.
-            achbotManagementSql($connection,'DELETE FROM server_config WHERE id=?','i',[$entity])->close();
-            achbotManagementSql($connection,'DELETE FROM server_info WHERE id=?','i',[$entity])->close();
+            require_once __DIR__.'/../Subscription/PhysicalService.php';
+            try {$removal=achbotPhysicalServerRemovalDecision($connection,$entity);}
+            catch (RuntimeException $error) {
+                // A pending journal/effect must never look like a successful removal.
+                throw new RuntimeException('management_server_review');
+            }
+            if ($removal==='retire') {
+                // Stop new sales while keeping the connection for subscribers.
+                $s=achbotManagementSql($connection,'UPDATE server_info SET active=0 WHERE id=? AND active=1','i',[$entity]);
+                $changed=$s->affected_rows;$s->close();
+                if ($changed!==1) throw new RuntimeException('management_stale');
+            } elseif ($removal==='delete') {
+                achbotManagementSql($connection,'DELETE FROM server_config WHERE id=?','i',[$entity])->close();
+                achbotManagementSql($connection,'DELETE FROM server_info WHERE id=?','i',[$entity])->close();
+            } else throw new RuntimeException('management_server_review');
             if (!achbotManagementCommit($connection)) throw new RuntimeException('management_commit_unknown');$begun=false;
             $keys=getServerListKeys();
             editText((int)$update->callback_query->message->message_id,
-                achbotManagementText('server_removed')."\n\n".achbotManagementText('server_list'),
+                achbotManagementText($removal==='retire'?'server_retired':'server_removed')."\n\n".achbotManagementText('server_list'),
                 $keys??json_encode(['inline_keyboard'=>[]]),'HTML');
             return true;
         }

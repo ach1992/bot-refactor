@@ -19,6 +19,7 @@ import test_access_state as owned
 import test_imported_plan_selection as plans
 import test_post_v9_marzban_edits as mb
 import test_unified_existing_subscriptions as imports
+import test_unified_management_wizard as management
 import test_v6_native as native
 import test_v6_panels as bodies
 import test_v8_native as purchase
@@ -107,6 +108,8 @@ def harness(provider: str):
             db((ROOT / 'migrations/post-v9' / name).read_text())
         driver = work / 'review-plan-controller.php'
         driver.write_text(DRIVER)
+        admin_driver = work / 'review-admin-confirmed-delete.php'
+        admin_driver.write_text(management.PHP)
         counter = 900000
         def call(op: str, **spec):
             nonlocal counter
@@ -128,13 +131,31 @@ def harness(provider: str):
             if 'fixture_error' in output:
                 raise AssertionError((provider, op, output))
             return output['out']
+        def delete(server: int = 2):
+            nonlocal counter
+            counter += 1
+            spec = dict(actor=9001, callback=f'yesDeleteServer{server}',
+                        source=counter, message_id=575, field=True)
+            run = subprocess.run(['php', '-d', 'display_errors=0', '-d', 'log_errors=0',
+                str(admin_driver), str(ROOT), str(work / 'mysql.sock'), DB,
+                json.dumps(spec)], cwd=work, env=env, capture_output=True,
+                text=True, timeout=30)
+            if run.returncode or any(not re.fullmatch(
+                    r'achbot_management_field_deferred reason=[a-z_]+', line)
+                    for line in run.stderr.splitlines()):
+                raise AssertionError(('confirmed_delete', provider,
+                    run.returncode, run.stdout, run.stderr))
+            result = json.loads(run.stdout)
+            if 'exception' in result:
+                raise AssertionError(('confirmed_delete', provider, result))
+            return result
         def attach(actor: int):
             call('external', actor=actor, data='showUUIDLeft')
             call('external', actor=actor, text=credential)
             call('manual', actor=actor, data='addToOrders2')
             return int(db('SELECT id FROM orders_list WHERE userid=' + str(actor)
                     + " AND BINARY remark=BINARY '" + remark + "'"))
-        yield dict(db=db, call=call, attach=attach, vendor=vendor, url=url,
+        yield dict(db=db, call=call, delete=delete, attach=attach, vendor=vendor, url=url,
                    remark=remark, credential=credential, writes=writes, provider=provider)
 
 
@@ -220,6 +241,49 @@ def main():
                 db(f"SELECT fileid FROM orders_list WHERE id IN ({h['oid']},{h['peer']}) ORDER BY id")=='119\n119',
                 provider+'_paid_with_done_fulfillment_evidence_allows_noop_plan_changes')
             db(f'DELETE FROM payment_attempts WHERE pay_row_id={settled};DELETE FROM pays WHERE id={settled}')
+
+            # R2: payment decisions already final, never stale forever.
+            # The native account is unchanged, and both owners' plans move
+            # together without mutating a payment, wallet or provider.
+            for state in ('declined','mismatched_plan','auto_cart_approved',
+                          'canceled','rejected','expired'):
+                historical=invoice(h,'terminal'+state,state)
+                money=finance(h);puts=len(h['writes']())
+                plan(h,7)
+                plan(h,119)
+                yes(finance(h)==money and len(h['writes']())==puts and
+                    outstanding(h)=='committed' and
+                    db(f'SELECT state FROM pays WHERE id={historical}')==state,
+                    provider+'_terminal_'+state+'_historical_payment_allows_noop_plan')
+                db(f'DELETE FROM pays WHERE id={historical}')
+
+            for state, label in (('declined','declined_receipt'),
+                                 ('mismatched_plan','unclaimed_renewal')):
+                issued=invoice(h,'issued'+state,state)
+                db(f"UPDATE pays SET payid='provider-issued' WHERE id={issued}")
+                denied(h,label+'_issued_id_remains_uncertain')
+                db(f'UPDATE pays SET payid=NULL WHERE id={issued}')
+                db('INSERT INTO payment_attempts(pay_row_id,provider,order_hash,'
+                   'quote_amount,quote_currency,stage)'
+                   f" VALUES({issued},'nowpayments','held-{provider}-{state}',137,'USD','review')")
+                denied(h,label+'_unfinished_gateway_attempt_still_blocks')
+                db(f"UPDATE payment_attempts SET stage='expired' WHERE pay_row_id={issued}")
+                denied(h,label+'_expired_attempt_not_sufficient_to_prove_nonpayable')
+                # A recorded child provider transaction cannot be ignored
+                # even when an invoice looks like a terminal declined row.
+                attempt_id=int(db(f'SELECT id FROM payment_attempts WHERE pay_row_id={issued}'))
+                db('INSERT INTO payment_transactions(attempt_id,provider,payment_id)'
+                   f" VALUES({attempt_id},'nowpayments','child-{provider}-{state}')")
+                denied(h,label+'_provider_child_transaction_blocks')
+                db(f'DELETE FROM payment_transactions WHERE attempt_id={attempt_id};'
+                   f'DELETE FROM payment_attempts WHERE id={attempt_id};'
+                   f'DELETE FROM pays WHERE id={issued}')
+            invalid=invoice(h,'othermismatch','mismatched_plan','BUY_SUB')
+            denied(h,'mismatched_nonrenewal_state_not_proven_terminal')
+            db(f'DELETE FROM pays WHERE id={invalid}')
+            sent=invoice(h,'sentexpired','expired_have_sent')
+            denied(h,'expired_sent_receipt_still_needs_review')
+            db(f'DELETE FROM pays WHERE id={sent}')
 
             paid=invoice(h,'paidunfinished')
             denied(h,'paid_unfinished_without_payment_attempt')
@@ -385,6 +449,97 @@ def main():
                 provider+'_usage_reset_held_journal_never_repeats_native_put')
 
     for provider in ('marzban','pasarguard'):
+        # R1: source-real confirmed administrator deletion cannot strand any
+        # active shared Native account. Retire from sales, preserve credentials.
+        with harness(provider) as h:
+            seeded(h)
+            db=h['db']
+            identity=db('SELECT * FROM server_config WHERE id=2')
+            before=subject(h); money=finance(h); puts=len(h['writes']())
+            result=h['delete']()
+            edits=[e for e in result['events'] if e.get('method')=='editMessageText']
+            yes(db('SELECT active FROM server_info WHERE id=2')=='0' and
+                db('SELECT * FROM server_config WHERE id=2')==identity and
+                subject(h)==before and finance(h)==money and
+                len(h['writes']())==puts and len(edits)==1 and
+                'کنار گذاشته شد' in edits[0]['body'],
+                provider+'_confirmed_delete_with_active_shared_refs_only_retires')
+            again=h['delete']()
+            yes(db('SELECT active FROM server_info WHERE id=2')=='0' and
+                db('SELECT * FROM server_config WHERE id=2')==identity and
+                not any(e.get('method')=='editMessageText' for e in again['events']),
+                provider+'_stale_delete_confirmation_retains_retired_connection')
+
+        with harness(provider) as h:
+            seeded(h)
+            db=h['db']
+            identity=db('SELECT * FROM server_config WHERE id=2')
+            journal=int(db('SELECT MAX(id) FROM service_plan_changes'))
+            for state in ('prepared','dispatching','review'):
+                db(f"UPDATE service_plan_changes SET state='{state}' WHERE id={journal}")
+                refused=h['delete']()
+                yes(db('SELECT active FROM server_info WHERE id=2')=='1' and
+                    db('SELECT * FROM server_config WHERE id=2')==identity and
+                    not any(e.get('method')=='editMessageText' for e in refused['events']),
+                    provider+'_confirmed_delete_refuses_'+state+'_journal')
+            db(f"UPDATE orders_list SET status=0 WHERE id IN ({h['oid']},{h['peer']})")
+            refused=h['delete']()
+            yes(db('SELECT active FROM server_info WHERE id=2')=='1' and
+                db('SELECT * FROM server_config WHERE id=2')==identity and
+                not any(e.get('method')=='editMessageText' for e in refused['events']),
+                provider+'_held_journal_denies_delete_after_last_active_ref')
+            db(f"UPDATE service_plan_changes SET state='committed' WHERE id={journal}")
+            db("INSERT INTO service_effects(source_kind,source_ref,ordinal,operation_id,"
+               "target_server_id,target_key,endpoint_sha256,plan_id,remote_username,"
+               "requested_expire,requested_bytes,request_sha256,state) VALUES("
+               f"'review','server-removal-{provider}',91,'{'d'*32}',2,'remove-{provider}',"
+               f"'{'e'*64}',119,'{h['remark']}',1800000000,1024,'{'f'*64}','dispatching')")
+            effects=int(db(f"SELECT id FROM service_effects WHERE source_ref='server-removal-{provider}'"))
+            refused=h['delete']()
+            yes(db('SELECT * FROM server_config WHERE id=2')==identity and
+                not any(e.get('method')=='editMessageText' for e in refused['events']),
+                provider+'_pending_native_effect_denies_delete_without_active_refs')
+            db(f'DELETE FROM service_effects WHERE id={effects}')
+            finances=db('SELECT id,state FROM pays ORDER BY id;'
+                        'SELECT id,source_kind,source_ref,state FROM service_effects ORDER BY id')
+            deleted=h['delete']()
+            yes(db('SELECT COUNT(*) FROM server_config WHERE id=2')=='0' and
+                db('SELECT COUNT(*) FROM server_info WHERE id=2')=='0' and
+                db('SELECT id,state FROM pays ORDER BY id;'
+                   'SELECT id,source_kind,source_ref,state FROM service_effects ORDER BY id')==finances and
+                len([e for e in deleted['events'] if e.get('method')=='editMessageText'])==1,
+                provider+'_settled_unreferenced_confirmed_delete_succeeds_history_preserved')
+
+        # Interleave the real confirmed callback *inside* the Native PUT
+        # request handler. This is a real loopback request to the test
+        # provider while the committed dispatching journal owns recovery.
+        with harness(provider) as h:
+            seeded(h)
+            attempts=[]
+            def concurrent_delete():
+                if not attempts:
+                    attempts.append(h['delete']())
+            baseline_handler=h['vendor'].RequestHandlerClass
+            class ReviewerPutHook(baseline_handler):
+                def handle_request(self):
+                    if self.command=='PUT' and getattr(self.server,'on_reviewer_put',None):
+                        hook=self.server.on_reviewer_put
+                        self.server.on_reviewer_put=None
+                        hook()
+                    return super().handle_request()
+            h['vendor'].RequestHandlerClass=ReviewerPutHook
+            h['vendor'].on_reviewer_put=concurrent_delete
+            identity=h['db']('SELECT * FROM server_config WHERE id=2')
+            puts=len(h['writes']())
+            plan(h,120)
+            yes(len(attempts)==1 and len(h['writes']())==puts+1 and
+                h['db']('SELECT active FROM server_info WHERE id=2')=='1' and
+                h['db']('SELECT * FROM server_config WHERE id=2')==identity and
+                outstanding(h)=='committed' and
+                not any(e.get('method')=='editMessageText' for e in attempts[0]['events']),
+                provider+'_confirmed_deletion_during_native_plan_change_retains_target')
+
+    for provider in ('marzban','pasarguard'):
         # A third customer obtains a valid imported-subscription preview before
         # the administrator's Native plan change. Attempt the real import
         # *during* the native account GET while the physical lease is owned
@@ -438,6 +593,8 @@ def main():
         f3_native_get_to_commit_and_pre_put_races=True,
         f4_usage_preservation_positive_and_negative=True,
         import_singleflight_and_held_journal_admission=True,
+        r1_confirmed_server_removal_native_journal_and_retirement=True,
+        r2_terminal_payment_attempt_and_child_fences=True,
         held_journal_replay_blocked=True,production_mutations=0,live_provider_calls=0)
     if args.report:
         args.report.write_text(json.dumps(result,ensure_ascii=False,indent=2)+'\n')

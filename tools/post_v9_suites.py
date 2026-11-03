@@ -668,7 +668,7 @@ def run_services(tmp: str) -> tuple[dict, dict]:
              'archived_renderer_sha256':'4a34ed56370842e75ddb16563908c7c0497736851bbbc0da81c17b686e29fb9c',
              'actual_archived_renderer_RED':['marzban','pasarguard'],'synthetic_Telegram_delivery':True,
              'production_mutations':0,'live_provider_calls':0}),
-        ('shared_plan_review_regressions','test_shared_plan_review_fixes.py','cases',42,
+        ('shared_plan_review_regressions','test_shared_plan_review_fixes.py','cases',82,
             {'actual_php':True,'disposable_mariadb':True,
              'native_providers':['marzban','pasarguard'],
              'f1_mutable_lock_and_reclassification':True,
@@ -676,6 +676,8 @@ def run_services(tmp: str) -> tuple[dict, dict]:
              'f3_native_get_to_commit_and_pre_put_races':True,
              'f4_usage_preservation_positive_and_negative':True,
              'import_singleflight_and_held_journal_admission':True,
+             'r1_confirmed_server_removal_native_journal_and_retirement':True,
+             'r2_terminal_payment_attempt_and_child_fences':True,
              'held_journal_replay_blocked':True,'production_mutations':0,
              'live_provider_calls':0}),
         ('shared_account_lifecycle','test_shared_account_lifecycle.py','cases',24,
@@ -3963,6 +3965,7 @@ def run_funding(tmp: str) -> tuple[dict, dict]:
     logical=json.loads(logical_path.read_text())
     if not (logical.get("complete") and logical.get("cases")>=45
             and logical.get("administrator_only_switching") is True
+            and logical.get("terminal_payment_history_survives_shared_transfer") is True
             and logical.get("schema_tables")==23
             and logical.get("additive_server_info_column_verified")
             and logical.get("original_historical_schema_file_unchanged")
