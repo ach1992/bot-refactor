@@ -3785,7 +3785,10 @@ def main():
                         expected_stderr=(f'achbot_shared_plan_committed journal_id=1 '
                                          f'source_order_id={oid} active_refs=2\n'))
                     if obs.get('exception') or obs.get('warnings'):
-                        raise RuntimeError('Supported native plan update error: '+repr(obs)[:900])
+                        raise RuntimeError('Supported native plan update error: '+
+                            repr({'exception':obs.get('exception'),
+                                  'warnings':obs.get('warnings'),
+                                  'event_names':[e.get('name') for e in obs.get('events',[])]})[:1800])
                     native_puts=[req for req in panel.trace if req['method']=='PUT' and
                         req['path'].startswith('/api/user/admin-fixture')]
                     if len(native_puts)!=1 or panel.edit_account['inbounds']!= {'vless':['inbound']}:
