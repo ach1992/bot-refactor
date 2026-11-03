@@ -143,7 +143,16 @@ try {
         $attempt=achbotApiPaymentAttempt($connection,$payId,true);
         achbotApiPaymentPinLocked($connection,$pay,$attempt);
         if(!$connection->commit())throw new RuntimeException('fixture_pin_commit');
-    } elseif (!in_array($channel,['wallet','manual','hosted'],true)) {
+    } elseif ($channel==='manual') {
+        // New non-API manual receipts keep the original actual ledger and
+        // operator-reviewed stored photo. A missing ledger is legacy only.
+        $stmt=$connection->prepare("INSERT INTO payment_attempts
+           (pay_row_id,provider,order_hash,quote_amount,quote_currency,
+            local_amount_toman,checkout_url,stage)
+           VALUES (?,'bank_transfer',?,?,'toman',?,
+             '{\"v\":1,\"method\":\"bank_transfer\",\"receipt_file_id\":\"fixture-photo-id\"}','review')");
+        $stmt->bind_param('isii',$payId,$hash,$price,$price);$stmt->execute();$stmt->close();
+    } elseif (!in_array($channel,['wallet','hosted'],true)) {
         throw new RuntimeException('fixture_channel_invalid');
     }
     $state=$channel==='api'||$channel==='manual'?'have_sent':'pending';
@@ -191,6 +200,23 @@ try {
  } elseif ($op==='settle') {
     $id=(int)$spec['pay_id'];$proof=achbotPaymentEvidenceGetProof($connection,$id);
     $result=$proof?achbotApiPaymentSettle($connection,$id,$proof):'missing_proof';
+ } elseif ($op==='finisher_probe') {
+    // Deliberately synthetic remote-verification object only for a negative
+    // AUTHORIZATION test. This never dispatches provider traffic or commits
+    // a service effect. Positive financial tests use actual native PUT.
+    $order=$connection->query('SELECT * FROM orders_list WHERE id=41')->fetch_assoc();
+    if(!$connection->begin_transaction())throw new RuntimeException('probe_begin');
+    $verified=(object)['success'=>true,'verified'=>true,
+        'applied_expire'=>(int)$order['expire_date']+86400,
+        'applied_bytes'=>2147483648];
+    try {
+        achbotStoreVerifiedServiceExpiryLocked($connection,$order,$verified);
+        $result=['allowed'=>true];
+    } catch(Throwable $error) {
+        $result=['allowed'=>false,'reason'=>$error->getMessage()];
+    } finally {
+        $connection->rollback();
+    }
  } elseif ($op==='direct_edit') {
     $id=(int)$spec['pay_id'];
     $kind=(string)$spec['kind'];

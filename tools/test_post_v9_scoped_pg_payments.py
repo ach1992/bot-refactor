@@ -223,6 +223,29 @@ def test() -> dict:
             "pg_imported_day_hosted_replay_no_new_put_audit_or_debit")
         yes(checks,provider.write_count==5,
             "pg_five_nonapi_settlements_five_native_puts")
+        # The newly shared locked finisher must never treat fileid=0 alone
+        # as authorization. Probe it directly with only a synthetic verified
+        # response after corrupting the disposable import metadata. No PUT.
+        saved_expiry=sql("SELECT expire_date FROM orders_list WHERE id=41")
+        saved_wallet=sql("SELECT wallet FROM users WHERE userid=1001")
+        saved_audits=sql("SELECT COUNT(*) FROM increase_order")
+        saved_writes=provider.write_count
+        sql("UPDATE setting SET value=JSON_SET(value,'$.provider_account_id',99999) "
+            "WHERE type='ACHBOT_SERVICE_ORIGIN:41'")
+        mismatch=run("finisher_probe")
+        yes(checks,mismatch=={'allowed':False,
+            'reason':'day_extension_planless_import_unverified'},
+            "pg_finisher_rejects_mismatched_import_account_provenance")
+        sql("DELETE FROM setting WHERE type='ACHBOT_SERVICE_ORIGIN:41'")
+        missing=run("finisher_probe")
+        yes(checks,missing=={'allowed':False,
+            'reason':'day_extension_planless_import_unverified'},
+            "pg_finisher_rejects_missing_import_origin_even_after_readback")
+        yes(checks,sql("SELECT expire_date FROM orders_list WHERE id=41")==saved_expiry
+            and sql("SELECT wallet FROM users WHERE userid=1001")==saved_wallet
+            and sql("SELECT COUNT(*) FROM increase_order")==saved_audits
+            and provider.write_count==saved_writes,
+            "pg_invalid_finisher_never_changes_local_or_native_effect")
     return dict(status="PASS", cases=len(checks), checks=checks,
                 php85_source_real=True, owned_socket_mariadb=True,
                 native_pg_put_readback=True, real_payment_calls=0,
