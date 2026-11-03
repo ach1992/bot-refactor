@@ -253,11 +253,14 @@ function achbotPhysicalSelectPlan(mysqli $db,int $orderId,int $newPlanId,int $ac
             $current=achbotPgRead($pgContext['panel'],$pgContext['identity']);
             if (($current['success']??false)!==true || !achbotPgManaged($current['user']))
                 throw new RuntimeException('physical_pg_remote_unavailable');
-            $check=achbotPgCheck($pgContext['panel']);
-            if (($check['success']??false)!==true ||
-                array_diff($groups,achbotPgEligibleGroupIds($check)))
-                throw new RuntimeException('physical_pg_group_authority_unavailable');
             if ($current['user']['group_ids']!==$groups) {
+                // Identical current Native Groups require no mutation. For
+                // real changes, re-check current admin Group permissions and
+                // enabled Groups before the single fenced Native PUT.
+                $check=achbotPgCheck($pgContext['panel']);
+                if (($check['success']??false)!==true ||
+                    array_diff($groups,achbotPgEligibleGroupIds($check)))
+                    throw new RuntimeException('physical_pg_group_authority_unavailable');
                 // The durable Native account fence survives any interrupted
                 // HTTP response. Never automatically call it a second time.
                 $pgMutation=achbotPgBeginMutation($db,$pgContext,'plan:'.$journalId,
@@ -273,8 +276,14 @@ function achbotPhysicalSelectPlan(mysqli $db,int $orderId,int $newPlanId,int $ac
         } else {
             $result=achbotMarzbanApplyPlanHosts($server,(string)$order['remark'],$inbounds);
             if (($result['success']??false)!==true ||
-                ($result['verified']??false)!==true)
-                throw new RuntimeException('physical_marzban_access_unverified');
+                ($result['verified']??false)!==true) {
+                // Only known, bounded adapter reason codes enter diagnostics.
+                // No remote response, account data or credentials are logged.
+                $detail=(string)($result['reason']??'');
+                if (!preg_match('/\Amarzban_[a-z0-9_]{3,72}\z/D',$detail))
+                    $detail='physical_marzban_access_unverified';
+                throw new RuntimeException($detail);
+            }
         }
         if (!$db->begin_transaction()) throw new RuntimeException('physical_plan_finalize_begin');
         $tx=true;

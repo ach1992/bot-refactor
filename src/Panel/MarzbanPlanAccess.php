@@ -78,6 +78,13 @@ function achbotMarzbanApplyPlanHosts(int $serverId,string $username,array $wante
         foreach ($wanted as $protocol=>$tags)
             if (!property_exists($account->proxies,$protocol))
                 throw new RuntimeException('marzban_plan_protocol_requires_review');
+        // A different priced plan may choose exactly the Hosts already
+        // assigned to this verified native account. No Native write, and no
+        // redundant catalog or second account read is needed in that case.
+        // The initial authenticated strict GET still rejects missing/drifted
+        // native identity, unsupported protocols and queued future plans.
+        if ($before['inbounds']===$wanted)
+            return ['success'=>true,'changed'=>false,'verified'=>true];
         $catalog=getMarzbanHosts($serverId);
         if (!is_object($catalog) || !is_array($catalog->inbounds??null))
             throw new RuntimeException('marzban_hosts_unavailable');
@@ -99,8 +106,6 @@ function achbotMarzbanApplyPlanHosts(int $serverId,string $username,array $wante
         };
         $fresh=achbotMarzbanNativeAccessSnapshot($read(),$username);
         if ($fresh!==$before) throw new RuntimeException('marzban_before_access_changed');
-        if ($before['inbounds']===$wanted)
-            return ['success'=>true,'changed'=>false,'verified'=>true];
         $json=json_encode(['inbounds'=>$wanted],JSON_THROW_ON_ERROR);
         $curl=curl_init($url.'/api/user/'.rawurlencode($username));
         curl_setopt_array($curl,[

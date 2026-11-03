@@ -177,7 +177,8 @@ class ExistingMarzbanHandler(mb.EditProviderHandler):
   s=self.server
   if self.path=='/api/core/config'and self.command=='GET':
    s.trace.append(dict(method=self.command,path=self.path,body='',headers=dict(self.headers)))
-   self.reply(200,{'inbounds':[{'protocol':'vless','tag':'inbound'}]});return
+   self.reply(200,{'inbounds':[{'protocol':'vless','tag':'inbound'},
+       {'protocol':'vless','tag':'fake-inbound'}]});return
   if self.path.startswith('/api/user/')and self.command=='GET'and not s.deleted:
    s.trace.append(dict(method=self.command,path=self.path,body='',headers=dict(self.headers)))
    value=copy.deepcopy(s.edit_account);s.sequence+=1
@@ -578,13 +579,26 @@ def main():
    offered=invoke('extensions',data='changePlan_'+str(current))
    yes('confirmChangePlan_'+str(current)+'_7'in json.dumps(offered),
        provider+'_genuine_import_can_open_real_change_plan_menu_without_trial_misclassification')
+   native_before=len(vendor.trace)
    invoke('extensions',data='confirmChangePlan_'+str(current)+'_7')
+   native_requests=vendor.trace[native_before:]
+   if provider=='pasarguard':
+    native_read=any(method=='GET' and path.startswith('/api/user/by-id/')
+        for method,path,*_ in native_requests)
+    redundant_catalog=any(path in ('/api/system','/api/admin') or
+        path.startswith('/api/groups') for _,path,*_ in native_requests)
+   else:
+    native_read=any(req['method']=='GET' and req['path'].startswith('/api/user/')
+        for req in native_requests)
+    redundant_catalog=any(req['path'].startswith('/api/core/config')
+        for req in native_requests)
    selected=db('SELECT userid,fileid,amount FROM orders_list WHERE id IN ('+
        ','.join(map(str,links.values()))+') ORDER BY userid').splitlines()
    yes(selected==['1001\t7\t0','1002\t7\t0','1003\t7\t0']and
        db('SELECT state FROM service_plan_changes ORDER BY id DESC LIMIT 1')=='committed'and
-       finance()==before and len(remote_writes())==writes,
-       provider+'_verified_native_plan_confirmation_syncs_all_three_shared_refs_without_payment_or_quota_change')
+       finance()==before and len(remote_writes())==writes and native_read and
+       not redundant_catalog,
+       provider+'_verified_noop_native_plan_syncs_three_refs_without_write_or_redundant_catalog')
    visible=invoke('view',owner=1001,order=current)['out']
    yes('renewAccountAsk'+str(current)in json.dumps(visible),
        provider+'_assigned_import_exposes_actual_paid_renewal_entry')

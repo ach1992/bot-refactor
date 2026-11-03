@@ -2,7 +2,7 @@
 """Actual imported-origin plan selection and consent controllers, with native loopback providers."""
 from __future__ import annotations
 import provider_storage_fixture as shared_storage
-import argparse,copy,json,subprocess,time
+import argparse,copy,json,re,subprocess,time
 from pathlib import Path
 import test_access_state as owned
 import test_v6_native as native
@@ -164,19 +164,58 @@ def main():
             yes('confirmChangePlan_'+str(oid)+'_119'in json.dumps(offered) and
                 finances()==before and len(writes())==remote,
                 provider+'_fresh_primary_administrator_opens_familiar_foreign_order_plan_selector')
+            native_before=len(vendor.trace)
             call('extensions',actor=9001,data='confirmChangePlan_'+str(oid)+'_119')
+            native_requests=vendor.trace[native_before:]
+            if provider=='pasarguard':
+                strict_read=any(method=='GET' and path.startswith('/api/user/by-id/')
+                    for method,path,*_ in native_requests)
+                redundant_catalog=any(path in ('/api/system','/api/admin') or
+                    path.startswith('/api/groups') for _,path,*_ in native_requests)
+            else:
+                strict_read=any(req['method']=='GET' and req['path'].startswith('/api/user/')
+                    for req in native_requests)
+                redundant_catalog=any(req['path'].startswith('/api/core/config')
+                    for req in native_requests)
             yes(db('SELECT userid,fileid,amount FROM orders_list WHERE id IN ('+
                 str(oid)+','+str(foreign_oid)+') ORDER BY userid')=='1001\t119\t0\n1002\t119\t0' and
                 db('SELECT state FROM service_plan_changes ORDER BY id DESC LIMIT 1')=='committed' and
-                finances()==before and len(writes())==remote and
+                finances()==before and len(writes())==remote and strict_read and
+                not redundant_catalog and
                 db("SELECT value FROM setting WHERE type='"+origin_key+"'")==origin,
-                provider+'_admin_plan_change_verifies_native_access_and_updates_both_shared_refs')
+                provider+'_different_plan_same_native_access_uses_readback_without_put_or_redundant_catalog')
             before=finances();remote=len(writes())
             call('extensions',actor=9002,data='confirmChangePlan_'+str(foreign_oid)+'_119')
             yes(db('SELECT userid,fileid,amount FROM orders_list WHERE id IN ('+
                 str(oid)+','+str(foreign_oid)+') ORDER BY userid')=='1001\t119\t0\n1002\t119\t0' and
                 finances()==before and len(writes())==remote,
                 provider+'_delegated_admin_same_plan_verified_without_finance_or_native_write')
+            # Real native-access delta: one fenced PUT shared by both users.
+            # This also exercises the re-check of current provider authority.
+            db("INSERT INTO server_plans(id,fileid,catid,server_id,inbound_id,acount,limitip,title,protocol,days,volume,type,price,descr,pic,active,step,date,custom_sni,provider_group_ids)"
+               " SELECT 120,fileid,catid,server_id,inbound_id,acount,limitip,'Different native access',protocol,days,volume,type,price,descr,pic,active,step,date,custom_sni,provider_group_ids FROM server_plans WHERE id=7")
+            if provider=='pasarguard':
+                db("UPDATE server_plans SET provider_group_ids='[2]' WHERE id=120")
+            else:
+                db("UPDATE server_plans SET custom_sni='"+
+                   json.dumps({'inbounds':{'vless':['fake-inbound']},'proxies':{'vless':{'flow':''}}})+
+                   "' WHERE id=120")
+            before=finances();remote=len(writes())
+            call('extensions',actor=9001,data='confirmChangePlan_'+str(oid)+'_120')
+            changed_native=(vendor.users[41]['group_ids']==[2] if provider=='pasarguard'
+                else vendor.edit_account['inbounds']=={'vless':['fake-inbound']})
+            yes(changed_native and len(writes())==remote+1 and finances()==before and
+                db('SELECT fileid FROM orders_list WHERE id IN ('+str(oid)+','+
+                   str(foreign_oid)+') ORDER BY userid')=='120\n120',
+                provider+'_different_native_access_exactly_one_write_and_two_synced_refs')
+            remote=len(writes())
+            call('extensions',actor=9001,data='confirmChangePlan_'+str(oid)+'_119')
+            restored_native=(vendor.users[41]['group_ids']==[2,5] if provider=='pasarguard'
+                else vendor.edit_account['inbounds']=={'vless':['inbound']})
+            yes(restored_native and len(writes())==remote+1 and finances()==before and
+                db('SELECT fileid FROM orders_list WHERE id IN ('+str(oid)+','+
+                   str(foreign_oid)+') ORDER BY userid')=='119\n119',
+                provider+'_native_access_restore_exactly_one_write_without_new_financial_effect')
             for changed,restore,label in [
                 ("UPDATE orders_list SET server_id=5 WHERE id="+str(oid),
                  "UPDATE orders_list SET server_id=2 WHERE id="+str(oid),'stale_logical_server'),

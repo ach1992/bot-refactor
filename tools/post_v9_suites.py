@@ -655,7 +655,7 @@ def run_services(tmp: str) -> tuple[dict, dict]:
              'no_provider_or_telegram_calls':True,'shared_reference_metadata':True,
              'malformed_origin_never_legacy':True,'atomic_order_origin_rollback':True,
              'locked_origin_current_read':True,'payment_wallet_capacity_mutations':0,'production_mutations':0}),
-        ('imported_plan_selection','test_imported_plan_selection.py','cases',94,
+        ('imported_plan_selection','test_imported_plan_selection.py','cases',98,
             {'actual_imports':True,'actual_change_plan_controller':True,
              'actual_config_consent_controller':True,'actual_native_provider_eligibility':True,'existing_consent_withdrawal_visible_and_controller_checked':True,
              'amount0_preserved_before_payment':True,'shared_native_different_bot_owners':True,

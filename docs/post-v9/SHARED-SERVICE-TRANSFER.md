@@ -26,6 +26,15 @@ not an installation or authorization for real native/provider effects.
   plan/server. This is not a new sale, a quota or expiry change, a balance
   debit, or a new native subscription. A plan requiring new Marzban proxy
   credentials that the existing account cannot supply is refused safely.
+* Selecting another local plan with the **same actual native access** is a
+  valid change to the local plan references and must not send a Native PUT,
+  reset or alter the account. Compare canonical Hosts/Inbounds or Groups to a
+  fresh strict readback of the pinned physical account; do not infer equality
+  from plan IDs or cached local configuration. Marzban skips an unnecessary
+  host-catalog and second account GET on this verified no-change path;
+  PasarGuard skips redundant administrator/Group catalog GETs. On changed
+  access, retain authorization, account-drift checks, the native mutation
+  fence and verified post-PUT readback.
 
 ## Failure and reconciliation contract
 
