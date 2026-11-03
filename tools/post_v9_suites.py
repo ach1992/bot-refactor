@@ -675,6 +675,7 @@ def run_services(tmp: str) -> tuple[dict, dict]:
              'f2_cross_ledger_and_shared_owner':True,
              'f3_native_get_to_commit_and_pre_put_races':True,
              'f4_usage_preservation_positive_and_negative':True,
+             'import_singleflight_and_held_journal_admission':True,
              'held_journal_replay_blocked':True,'production_mutations':0,
              'live_provider_calls':0}),
         ('shared_account_lifecycle','test_shared_account_lifecycle.py','cases',24,

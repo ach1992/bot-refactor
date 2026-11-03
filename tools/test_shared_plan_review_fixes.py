@@ -117,6 +117,7 @@ def harness(provider: str):
                 json.dumps(args)], cwd=work, env=env, capture_output=True,
                 text=True, timeout=40)
             allowed = ('achbot_plan_selection_unverified',
+                'achbot_existing_subscription_import_deferred',
                 'achbot_plan_selection_unavailable',
                 'achbot_shared_plan_requires_review',
                 'achbot_shared_plan_committed')
@@ -134,7 +135,7 @@ def harness(provider: str):
             return int(db('SELECT id FROM orders_list WHERE userid=' + str(actor)
                     + " AND BINARY remark=BINARY '" + remark + "'"))
         yield dict(db=db, call=call, attach=attach, vendor=vendor, url=url,
-                   remark=remark, writes=writes, provider=provider)
+                   remark=remark, credential=credential, writes=writes, provider=provider)
 
 
 def main():
@@ -383,6 +384,49 @@ def main():
                 outstanding(h)!='committed',
                 provider+'_usage_reset_held_journal_never_repeats_native_put')
 
+    for provider in ('marzban','pasarguard'):
+        # A third customer obtains a valid imported-subscription preview before
+        # the administrator's Native plan change. Attempt the real import
+        # *during* the native account GET while the physical lease is owned
+        # by the plan transaction. This must not create a new active peer
+        # between the journal snapshot and its outbound access PUT.
+        with harness(provider) as h:
+            seeded(h)
+            h['db']("INSERT INTO users(userid,name,username,refcode,wallet,date,isAdmin,first_start,step)"
+                    " VALUES(1003,'Late peer','latepeer','0',50000,'1700000000',0,'sent','none')")
+            h['call']('external',actor=1003,data='showUUIDLeft')
+            h['call']('external',actor=1003,text=h['credential'])
+            attempts=[]
+            def late_import():
+                attempts.append(h['call']('manual',actor=1003,data='addToOrders2'))
+            if provider=='pasarguard':h['vendor'].on_read=late_import
+            else:h['vendor'].on_account_get=late_import
+            before=len(h['writes']())
+            plan(h,120)
+            yes(len(attempts)==1 and
+                h['db']('SELECT COUNT(*) FROM orders_list WHERE userid=1003')=='0' and
+                len(h['writes']())==before+1 and outstanding(h)=='committed' and
+                h['db'](f"SELECT fileid FROM orders_list WHERE id IN ({h['oid']},{h['peer']}) ORDER BY id")=='120\n120',
+                provider+'_concurrent_real_import_cannot_attach_during_native_plan_singleflight')
+            # The same valid customer can attach after the completed plan has
+            # released its lock: a historical successful journal is NOT a ban.
+            h['call']('manual',actor=1003,data='addToOrders2')
+            yes(h['db']('SELECT COUNT(*) FROM orders_list WHERE userid=1003')=='1' and
+                h['db']('SELECT fileid,amount FROM orders_list WHERE userid=1003')=='0\t0',
+                provider+'_completed_plan_allows_late_valid_planless_import')
+            # A fresh fourth customer cannot bypass a deliberately held
+            # review journal after the original callback released its lease.
+            h['db']("INSERT INTO users(userid,name,username,refcode,wallet,date,isAdmin,first_start,step)"
+                    " VALUES(1004,'Held peer','heldpeer','0',50000,'1700000000',0,'sent','none')")
+            h['call']('external',actor=1004,data='showUUIDLeft')
+            h['call']('external',actor=1004,text=h['credential'])
+            h['db']("UPDATE service_plan_changes SET state='review' WHERE id=("
+                    "SELECT latest FROM (SELECT MAX(id) latest FROM service_plan_changes) x)")
+            h['call']('manual',actor=1004,data='addToOrders2')
+            yes(h['db']('SELECT COUNT(*) FROM orders_list WHERE userid=1004')=='0' and
+                outstanding(h)=='review',
+                provider+'_held_review_journal_blocks_late_import_after_lock_released')
+
     yes('achbotPhysicalAssertRebindSafe($connection,$entity,true,$endpointChanged)' in
         (ROOT/'src/Admin/ManagementFlow.php').read_text(),
         'production_admin_marzban_login_editor_uses_same_safe_rebind_fence')
@@ -393,6 +437,7 @@ def main():
         f2_cross_ledger_and_shared_owner=True,
         f3_native_get_to_commit_and_pre_put_races=True,
         f4_usage_preservation_positive_and_negative=True,
+        import_singleflight_and_held_journal_admission=True,
         held_journal_replay_blocked=True,production_mutations=0,live_provider_calls=0)
     if args.report:
         args.report.write_text(json.dumps(result,ensure_ascii=False,indent=2)+'\n')

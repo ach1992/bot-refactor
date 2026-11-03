@@ -38,7 +38,14 @@ not an installation or authorization for real native/provider effects.
 
 ## Failure and reconciliation contract
 
-The same named physical-account lock serializes transfer and plan changes.
+The same named physical-account lock serializes transfer, plan changes and
+new existing-subscription attachments when the plan journal is installed.
+Import obtains the lease before entering its SQL transaction; a pending plan
+journal rejects a new attachment even after the lease was released. This
+prevents an extra customer's reference from appearing between the original
+journal snapshot and its Native PUT. A final pre-PUT membership recheck also
+detects unexpected new references and holds the change for operator review.
+Legacy installations without migration 017 retain their existing import path.
 For ungrouped Marzban the lock uses the immutable logical server ID,
 **not** its editable URL; for grouped Marzban it uses the explicitly assigned
 group ID. Active subscriptions cannot change their physical-group

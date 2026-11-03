@@ -111,6 +111,66 @@ function achbotPhysicalPgIdentityFingerprint(array $ctx): string {
         (int)$ctx['order_server_id']
     ],JSON_THROW_ON_ERROR));
 }
+/**
+ * Import is an account attachment, not a native mutation. On installations
+ * with the source-only plan journal, serialize admission under the SAME
+ * physical single-flight lock. An already-linked PG account is identified by
+ * its persisted provider reference, never by guessed URL/credentials.
+ * Return null on older installations without migration 017.
+ */
+function achbotPhysicalImportLease(mysqli $db,int $serverId,object $remote): ?string {
+    $q=$db->query("SELECT TABLE_TYPE,ENGINE FROM information_schema.TABLES
+        WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='service_plan_changes'");
+    if (!($q instanceof mysqli_result)) throw new RuntimeException('physical_import_journal_unavailable');
+    $table=$q->fetch_assoc();$count=$q->num_rows;$q->free();
+    if ($table===null) return null;
+    if ($count!==1 || $table['TABLE_TYPE']!=='BASE TABLE' ||
+        strcasecmp((string)$table['ENGINE'],'InnoDB')!==0)
+        throw new RuntimeException('physical_import_journal_unavailable');
+    $type=achbotProviderType($db,$serverId);
+    if ($type==='marzban') {
+        $username=$remote->username??null;
+        if (!is_string($username) || $username==='')
+            throw new RuntimeException('physical_import_identity_unverified');
+        $group=achbotPanelGroup($db,$serverId);
+        $scope=$group===null?'server:'.$serverId:'group:'.$group['id'];
+        return 'achbot-edit-'.substr(hash('sha256',$scope."\n".$username),0,40);
+    }
+    if ($type==='pasarguard') {
+        achbotPgLoad();
+        $panel=achbotPgServerPanel($db,$serverId);
+        $nativeId=$remote->id??null;
+        if (!is_int($nativeId) || $nativeId<=0)
+            throw new RuntimeException('physical_import_identity_unverified');
+        $s=$db->prepare('SELECT provider_reference_id FROM service_effects
+            WHERE provider_connection_id=? AND provider_remote_user_id=?
+            AND provider_reference_id IS NOT NULL LIMIT 2');
+        $id=(int)$panel['id'];$s->bind_param('ii',$id,$nativeId);
+        $s->execute();$rows=$s->get_result()->fetch_all(MYSQLI_ASSOC);$s->close();
+        if (count($rows)>1) throw new RuntimeException('physical_import_identity_conflict');
+        if (!$rows) return null; // First registration: no linked plan could be in flight.
+        $reference=(int)$rows[0]['provider_reference_id'];
+        if ($reference<=0) throw new RuntimeException('physical_import_identity_unverified');
+        return 'achbot-plan-'.substr(hash('sha256','pg:'.$reference),0,40);
+    }
+    throw new RuntimeException('physical_import_provider_unavailable');
+}
+/** Caller owns an import transaction, with its physical lease already held. */
+function achbotPhysicalAssertImportAdmission(mysqli $db,?string $lease,
+    int $serverId,object $remote): void {
+    if ($lease===null) {
+        if (achbotPhysicalImportLease($db,$serverId,$remote)!==null)
+            throw new RuntimeException('physical_import_scope_changed');
+        return;
+    }
+    if (achbotPhysicalImportLease($db,$serverId,$remote)!==$lease)
+        throw new RuntimeException('physical_import_scope_changed');
+    $s=$db->prepare("SELECT id FROM service_plan_changes
+        WHERE lock_key=? AND state<>'committed' LIMIT 1 FOR UPDATE");
+    $s->bind_param('s',$lease);$s->execute();
+    $pending=$s->get_result()->num_rows>0;$s->close();
+    if ($pending) throw new RuntimeException('physical_import_plan_requires_review');
+}
 function achbotPhysicalAcquireLock(mysqli $db,string $name): void {
     $s=$db->prepare('SELECT GET_LOCK(?,3) AS acquired');
     $s->bind_param('s',$name);$s->execute();
@@ -260,6 +320,23 @@ function achbotPhysicalBeforeNativeWrite(mysqli $db,array $intent,int $journalId
             if ((int)$row['status']!==1 ||
                 $row['remark']!==$rows[0]['remark'])
                 throw new RuntimeException('physical_before_put_references_changed');
+        // Detect a newly attached peer *before* outbound PUT. PasarGuard
+        // cannot use linked-only active-order helpers here because its
+        // durable account is already fenced as 'mutating'.
+        if ($intent['provider']==='pasarguard') {
+            $effect=(int)($rows[0]['provider_effect_id']??0);
+            if ($effect<=0) throw new RuntimeException('physical_before_put_identity_invalid');
+            $s=$db->prepare('SELECT id FROM orders_list WHERE provider_effect_id=?
+                AND status=1 ORDER BY id FOR UPDATE');
+            $s->bind_param('i',$effect);$s->execute();
+            $present=array_map('intval',array_column(
+                $s->get_result()->fetch_all(MYSQLI_ASSOC),'id'));$s->close();
+        } else {
+            $present=array_map(static fn($r)=>(int)$r['id'],
+                achbotPhysicalActiveOrders($db,$rows[0],true));
+        }
+        if ($present!==$ids)
+            throw new RuntimeException('physical_before_put_new_reference');
         $selected=null;
         foreach ($rows as $row)
             if ((int)$row['id']===(int)$intent['source_order_id']) $selected=$row;
