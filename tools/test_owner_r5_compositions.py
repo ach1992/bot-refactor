@@ -159,6 +159,10 @@ def settings_label_followup_proof(current,archived):
         check(key not in current[audience] and key not in current[other],
               'settings_retired_entry_reintroduced:'+key)
 def correction_proof(current,archived):
+    # Strip only the three exact owner-approved RC22 user-facing add-on
+    # labels from a COPY before comparing the immutable historical R5
+    # correction contract. Runtime messages keep the new labels unchanged.
+    current=r5.addon_selection_restore(current)
     staff_followup_proof(current,archived)
     display_context_followup_proof(current)
     settings_label_followup_proof(current,archived)
