@@ -28,16 +28,6 @@ function achbotAddonAdminScopeKeys(string $session): string {
         [['text'=>\achbotMessage('addon_scopes.groups'),'callback_data'=>'addonScopeGroups_'.$session]]
     ]],JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE);
 }
-/** Read-only catalog filters; the label still comes from the admin catalog. */
-function achbotAddonAdminFilterKeys(string $kind): array {
-    if (!in_array($kind,['day','volume'],true)) throw new InvalidArgumentException('addon_kind_invalid');
-    $part=$kind==='day'?'Day':'Volume';
-    return [[
-        ['text'=>\achbotMessage('addon_scopes.filter_all'),'callback_data'=>"addonFilter{$part}All"],
-        ['text'=>\achbotMessage('addon_scopes.global'),'callback_data'=>"addonFilter{$part}Global"],
-        ['text'=>\achbotMessage('addon_scopes.server'),'callback_data'=>"addonFilter{$part}Servers"]
-    ]];
-}
 
 function achbotAddonAdminServers(mysqli $db,string $scope): array {
     $where=$scope==='groups'?" AND c.type='pasarguard'":'';
@@ -129,33 +119,16 @@ function achbotAddonAdminHandle(mysqli $db): bool {
         if (!achbotAdminCanFor($db,(int)$from_id,(int)$admin,'plans'))
             throw new RuntimeException('addon_admin_denied');
         if ($filterOwned) {
-            // Catalog navigation is read-only. A pending editor is ordinary
-            // UX state, not an operational error or a failed financial write.
+            // Previously sent Telegram keyboards can still contain filter
+            // callbacks. Preserve authorization and editor-state checks, but
+            // always converge to the complete list without presenting any
+            // further filter picker.
             if ($step!=='none') {
                 sendMessage(\achbotMessage('addon_scopes.filter_blocked'),$cancelKey);
                 return true;
             }
-            $kind=$filterMatch[1]==='Day'?'day':'volume';
-            $part=$filterMatch[1];$mode=$filterMatch[2];
-            if ($mode==='All') {achbotIntervalShow($db,$kind);return true;}
-            if ($mode==='Global') {achbotIntervalShow($db,$kind,'global');return true;}
-            if ($mode==='Servers') {
-                $list=achbotAddonAdminServers($db,'server');
-                if (!$list) throw new RuntimeException('addon_admin_no_servers');
-                $keys=[];
-                foreach($list as $server)
-                    $keys[]=[['text'=>(int)$server['id'].' - '.$server['title'].' ('.$server['type'].')',
-                        'callback_data'=>"addonFilter{$part}Server".$server['id']]];
-                $keys[]=[['text'=>\achbotMessage('addon_scopes.filter_all'),
-                    'callback_data'=>"addonFilter{$part}All"]];
-                sendMessage(\achbotMessage('addon_scopes.choose_server'),json_encode(
-                    ['inline_keyboard'=>$keys],JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE));
-                return true;
-            }
-            if (!preg_match('/^Server([1-9][0-9]*)$/D',$mode,$m) ||
-                !achbotAddonAdminValidServer($db,(int)$m[1],'server'))
-                throw new RuntimeException('addon_admin_server_missing');
-            achbotIntervalShow($db,$kind,'server',(int)$m[1]);return true;
+            achbotIntervalShow($db,$filterMatch[1]==='Day'?'day':'volume');
+            return true;
         }
         if ($cb==='dayPlanSettings' || $cb==='volumePlanSettings') {
             if ($step!=='none') throw new RuntimeException('addon_admin_editor_in_progress');

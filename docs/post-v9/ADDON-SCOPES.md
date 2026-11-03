@@ -42,10 +42,17 @@ separated set, for example 3,7; the server must be PasarGuard and the
 Group lookup must verify active/allowed Groups. Enter units-price,
 for example 10-25000. Existing offers display scope and can change
 scope; existing legacy edit/delete and administrator permissions remain.
-The list provides All, Global and Server filters for both day and volume;
-the Server view shows this server's own offers (including all of its native
-Group-set variants), rather than unrelated servers or Global-only entries.
-Filters are read-only and cannot interrupt an active admin editor.
+The day and volume administrator lists always show **every offer of the
+selected kind** in one view: Global, logical Server and native PasarGuard
+Group-set offers appear together. Each row's scope label is the entry to
+edit that precise offer's scope; price, quantity and delete actions remain
+available on the same row with revision-bound callbacks. There is **no
+scope-filter row**. Legacy Telegram messages containing now-retired filter
+callbacks safely show the same complete list to an authorized idle admin.
+The customer sees only the applicable winning offer per quantity for the
+owned subscription; it is not this unfiltered administrator catalogue.
+Customer day/volume selection uses a single-column keyboard with concise
+Persian quantity/price labels and a Back action to the owned order details.
 Every scoped-editor session now carries a fresh, server-stored 16-hex nonce
 in its Scope and Server picker callbacks. A newer Telegram update ID alone
 never authorizes an old keyboard from another editing session. Every offer
