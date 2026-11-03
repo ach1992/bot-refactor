@@ -97,9 +97,17 @@ def shared_transfer_baseline():
 def shared_transfer_source_lines(path,original=False):
     raw=command('git','show',SHARED_TRANSFER_SOURCE+':'+path).decode() if original else (ROOT/path).read_text()
     lines={}
+    topic=None
     for line in raw.splitlines():
-        hit=re.match(r"^\\s*'([^']+)'\\s*=>",line)
-        if hit: lines.setdefault(hit.group(1),line)
+        heading=re.match(r"^    '([^']+)'\s*=>\s*\[$",line)
+        if heading:
+            topic=heading.group(1)
+            continue
+        entry=re.match(r"^        '([^']+)'\s*=>",line)
+        if entry and topic is not None:
+            key=topic+'.'+entry.group(1)
+            check(key not in lines,'shared_transfer_source_duplicate:'+key)
+            lines[key]=line
     return lines
 
 def shared_transfer_copy_restore(sides):

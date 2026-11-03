@@ -161,6 +161,14 @@ function sendMessage(...$args) {
 }
 // The installed bot normally defines this in config.php. This isolated
 // finance fixture deliberately does not load production configuration.
+function getMarzbanToken($serverId,?string $expectedPanelUrl=null,?array $effectTarget=null) {
+    require_once $GLOBALS['root'].'/src/Panel/Accounts.php';
+    return \AchBot\Panel\Accounts\getMarzbanToken($serverId,$expectedPanelUrl,$effectTarget);
+}
+function getMarzbanHosts($serverId) {
+    require_once $GLOBALS['root'].'/src/Panel/Accounts.php';
+    return \AchBot\Panel\Accounts\getMarzbanHosts($serverId);
+}
 function editMarzbanConfig($id,$change) {
     // Production config.php exposes a global compatibility facade for the
     // namespaced provider; keep the real namespaced adapter under test.
@@ -301,7 +309,8 @@ function createServerAccount(...$args) {
     $GLOBALS['events'][] = ['name'=>'marzban_unknown_result'];
     return [null, $args[4] ?? '', $args[9] ?? 0];
 }
-function getMarzbanUser($serverId,$remark){
+function getMarzbanUser($serverId,$remark,$token=null,bool $strict=false,
+                        ?string $expectedPanelUrl=null,?array $effectTarget=null){
     $GLOBALS['events'][]=['name'=>'marzban_readback','username'=>$remark];
     $found=$GLOBALS['remote_accounts'][(string)$remark]??null;
     if ($found) return (object)$found;
@@ -311,7 +320,8 @@ function getMarzbanUser($serverId,$remark){
     if ((int)$serverId===2 && in_array((string)$remark,
             $GLOBALS['spec']['existing_native_accounts']??[],true)) {
         require_once $GLOBALS['root'].'/src/Panel/Accounts.php';
-        return \AchBot\Panel\Accounts\getMarzbanUser($serverId,$remark);
+        return \AchBot\Panel\Accounts\getMarzbanUser(
+            $serverId,$remark,$token,$strict,$expectedPanelUrl,$effectTarget);
     }
     return null;
 }
@@ -3752,7 +3762,8 @@ def main():
             records.append(dict(case='admin_supported_plan_catalogue',pass_=True,external_requests=0))
             obs=purchase.run(work,env,stage,DB,'order_management',
                 dict(data=f'selectFileId_{oid}_8',actor=9001,
-                     marzban_host_mode=True,marzban_username='admin-fixture'),modern=True)
+                     marzban_host_mode=True,marzban_username='admin-fixture',
+                     existing_native_accounts=['admin-fixture']),modern=True)
             if obs.get('exception') or obs.get('warnings'):
                 raise RuntimeError('Supported native plan update error: '+repr(obs)[:900])
             changed=sql(work,env,f'''SELECT fileid FROM orders_list

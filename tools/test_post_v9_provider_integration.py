@@ -447,7 +447,8 @@ def main():
   denied_switch=call('switch',source=99,actor=1001,admin_allowed=True)
   yes(denied_switch['out']is None and sql('SELECT * FROM orders_list WHERE id=91')==before_switch and server.write_count==writes_before_switch,'forged_admin_flag_never_grants_customer_server_switch')
   before_native_groups=copy.deepcopy(server.user['group_ids'])
-  r=call('switch',source=100)
+  r=call('switch',source=100,
+         expected_stderr='achbot_shared_transfer_committed order_id=91 target_id=3 active_refs=1\n')
   yes(r['out']['target_id']==3 and server.user['group_ids']==before_native_groups and
       sql("SELECT server_id,fileid,autoRenew FROM orders_list WHERE id=91").strip()=='3\t0\toff',
       'explicit_same_panel_switch_clears_plan_without_native_groups_change')

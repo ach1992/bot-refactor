@@ -325,6 +325,7 @@ def check() -> dict:
         retired=[
             'changeGateWaysweSwapState','changeGateWaystronWallet',
             'changeBotweSwapState','changeBottronWallet',
+            'changeBotswitchLocationState',
             'changeBotnotASetting','changeGateWaysnotASetting',
             'changeBotnextpay','changeGateWaysagencyState',
             'changeBotagencyState_suffix','changeGateWaysmanualUsdtState_suffix',

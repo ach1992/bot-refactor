@@ -3,57 +3,57 @@
   "accepted_source_commit": "b654336d92a7e8e994e24d32144e995b5dba1407",
   "owner_issue": "https://github.com/ach1992/bot-refactor/issues/112",
   "entries": {
-    "bot.add_marzban_panel_group.message.31116063c0": {
+    "bot.bot.add_marzban_panel_group.message.31116063c0": {
       "audience": "admin",
       "before_sha256": "f60d3ae3ec8621004d5a5c812175e07b9cb2b5ea35331687246c3420d93d2613",
       "after_sha256": "ec35f63d41091dfd538c65997db55368ca810f89e2555c694ef9c2623958b87b"
     },
-    "bot.add_marzban_panel_group.message.def9f141f2": {
+    "bot.bot.add_marzban_panel_group.message.def9f141f2": {
       "audience": "admin",
       "before_sha256": "f4fc71bf416568e735a6cbc3b740017304c479ff6eb3936d2a1621f2234a947f",
       "after_sha256": "2809843631d210d0f4ed06aa70184c1e21d15c9b8d00d0e2a5c99a5d2c539122"
     },
-    "bot.manage_marzban_panel_groups.message.59d5170317": {
+    "bot.bot.manage_marzban_panel_groups.message.59d5170317": {
       "audience": "admin",
       "before_sha256": "310cbcc981064d7f2655478d0e392faa028201c6f3bc6476058d562ab2545286",
       "after_sha256": "85708d8bda036698ea4aaeac491b33db4dd5af94feb5717ffb9385aa3fcdaabf"
     },
-    "config.get_server_list_keys.button.def9f141f2": {
+    "admin_settings.config.get_server_list_keys.button.def9f141f2": {
       "audience": "admin",
       "before_sha256": "e6bf26e9d0197b6b32425280174f4b99319b8fa749a2ab9c60a7b7817f5c01b6",
       "after_sha256": "758b355098a25dc55cfe7cb396d4dbaee903d836a6b233f9509c2ea169affe61"
     },
-    "management.inherit_groups": {
+    "admin_settings.management.inherit_groups": {
       "audience": "admin",
       "before_sha256": "0bccd1142c4f991b14f90d0a445ea9278f2c31689cdc25a3fde186077fe6ce48",
       "after_sha256": null
     },
-    "management.plan_groups": {
+    "admin_settings.management.plan_groups": {
       "audience": "admin",
       "before_sha256": "fd41d16983c358f68d956fd0a254ffb993dc285b75c8f973f8d615f1a351161a",
       "after_sha256": "53df0f595341d946326d0c53ef3cb53b5c1ffc7c7dea62b91a71bbd40405ead7"
     },
-    "management.server_groups": {
+    "admin_settings.management.server_groups": {
       "audience": "admin",
       "before_sha256": "884e9e6431572a0d1dea49b1a2b04c866db4bc7046a8e7bea5645e6968d03cd9",
       "after_sha256": "3123b9e2c85e02bb58ba86f86e0838ad1e1ff144171ae4bbea74afb388823071"
     },
-    "management.server_panelgroup": {
+    "admin_settings.management.server_panelgroup": {
       "audience": "admin",
       "before_sha256": "19be236bd5e4d49b5f75fd41cfbcf48eb3879f2ec34689869890262b8f927e7f",
       "after_sha256": "733109580881486fe394a74a2f9207366c01ae60fd420702f06debb9187a5553"
     },
-    "account_transfers.choose_destination_plan": {
+    "subscription.account_transfers.choose_destination_plan": {
       "audience": "user",
       "before_sha256": null,
       "after_sha256": "90a77a71e59a7ade10beaa3f4e93006dc2feb7fc0e0ac03c9eebe156320315c1"
     },
-    "account_transfers.message.3f6bd6c3c8": {
+    "subscription.account_transfers.message.3f6bd6c3c8": {
       "audience": "user",
       "before_sha256": "bb0c63668f8cd12bb489f9be5f54add6481f7911ee513ed1fe0ddbdd220cdcb3",
       "after_sha256": "fc097d2dabc5ede517005b2073947d3a2de8b409bcd29509af91bdf8af70d080"
     },
-    "account_transfers.message.9d93daa0a7": {
+    "subscription.account_transfers.message.9d93daa0a7": {
       "audience": "user",
       "before_sha256": "51f47189112954028f8442693ef7d519ed6dff4d6fcbfb3b7ffaec065f7fbf2c",
       "after_sha256": "02829c5ba5927c1786204e36f4a1bca15c8d98f78deb0f99857cc45545da3ad9"

@@ -409,11 +409,18 @@ foreach($transferManifest['entries']as$key=>$item){
     array_keys($item)!==['audience','before_sha256','after_sha256'] ||
     array_key_exists($key,$shippingSides[$audience==='admin'?'user':'admin']))
   throw new RuntimeException('shared_transfer_key_audience_invalid');
+ [$sourceTopic,$sourceKey]=explode('.',$key,2);
  foreach(['before','after']as$revision){
-  $match=[];
-  $pattern='~^\s*'.preg_quote("'".$key."'","~").'\s*=>~u';
-  foreach($transferSource[$audience][$revision]as$line)
-   if(preg_match($pattern,$line))$match[]=$line;
+  $match=[];$currentTopic=null;
+  foreach($transferSource[$audience][$revision]as$line){
+   if(preg_match("~^    '([^']+)'\\s*=>\\s*\\[$~u",$line,$heading)){
+    $currentTopic=$heading[1];
+    continue;
+   }
+   if($currentTopic===$sourceTopic &&
+      preg_match('~^        '.preg_quote("'".$sourceKey."'","~").'\s*=>~u',$line))
+    $match[]=$line;
+  }
   if(count($match)>1)throw new RuntimeException('shared_transfer_source_duplicate:'.$key);
   $hash=count($match)===1?hash('sha256',$match[0]):null;
   if($hash!==$item[$revision.'_sha256'])
