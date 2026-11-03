@@ -1,0 +1,54 @@
+{
+  "version": 1,
+  "accepted_parent": "4d7d1c04f15e5d58eb9c8030fc086b8658ba6c49",
+  "owner_decision": "https://github.com/ach1992/bot-refactor/issues/107#issuecomment-6594462582",
+  "purpose": "Current-only customer day/volume selection text and order-local Back; preserve original R5 and API catalog comparison.",
+  "audience": "user",
+  "entries": {
+    "renewal.extensions.button.fbb9f61105": {
+      "before": {
+        "text": "مدت: {title} روز؛ قیمت: {price}",
+        "parameters": [
+          "title",
+          "price"
+        ]
+      },
+      "after": {
+        "text": "{title} روز ← {price}",
+        "parameters": [
+          "title",
+          "price"
+        ]
+      },
+      "source_paths": [
+        "src/Finance/Routes/Extensions.php"
+      ]
+    },
+    "renewal.extensions.button.249377f2b7": {
+      "before": {
+        "text": "حجم: {title} گیگ؛ قیمت: {price}",
+        "parameters": [
+          "title",
+          "price"
+        ]
+      },
+      "after": {
+        "text": "{title} گیگ ← {price}",
+        "parameters": [
+          "title",
+          "price"
+        ]
+      },
+      "source_paths": [
+        "src/Finance/Routes/Extensions.php"
+      ]
+    },
+    "renewal.extensions.button.8405a4154f": {
+      "before": "⤵️ برگرد به منوی اصلی",
+      "after": "🔙 بازگشت",
+      "source_paths": [
+        "src/Finance/Routes/Extensions.php"
+      ]
+    }
+  }
+}
