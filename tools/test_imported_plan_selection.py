@@ -290,9 +290,36 @@ def main():
             yes(db(f'SELECT autoRenew FROM orders_list WHERE id={oid}')=='off' and
                 finances()==before and len(writes())==remote,
                 provider+'_owner_can_withdraw_consent_after_plan_is_retired')
-            before=snapshot();call('toggle',data='toggleAutoRenew'+str(oid))
-            yes(snapshot()==before,provider+'_retired_selected_plan_cannot_reenable_automatic_renewal')
-            db("UPDATE server_plans SET active=1 WHERE id=7")
+            # Owner Rev4: inactive plans block new customers, not renewal
+            # consent for this exact previously assigned subscription. Check
+            # real controller, separate customer rights, and zero Native/finance.
+            before=finances();remote=len(writes())
+            call('toggle',data='toggleAutoRenew'+str(oid))
+            yes(db(f'SELECT autoRenew FROM orders_list WHERE id={oid}')=='on' and
+                finances()==before and len(writes())==remote,
+                provider+'_inactive_saved_plan_allows_existing_subscription_auto_renewal')
+            call('toggle',data='toggleAutoRenew'+str(oid))
+            yes(db(f'SELECT autoRenew FROM orders_list WHERE id={oid}')=='off' and
+                finances()==before and len(writes())==remote,
+                provider+'_inactive_saved_plan_consent_remains_revocable')
+            # State 0 disallows new renewal consent even for the saved plan.
+            db("UPDATE server_info SET state=0 WHERE id=2")
+            before=snapshot();remote=len(writes())
+            call('toggle',data='toggleAutoRenew'+str(oid))
+            yes(snapshot()==before and len(writes())==remote,
+                provider+'_disabled_server_blocks_new_renewal_consent')
+            # State 2 preserves existing subscribers' renewals but not sales.
+            db("UPDATE server_info SET state=2 WHERE id=2")
+            before=finances();remote=len(writes())
+            call('toggle',data='toggleAutoRenew'+str(oid))
+            yes(db(f'SELECT autoRenew FROM orders_list WHERE id={oid}')=='on' and
+                finances()==before and len(writes())==remote,
+                provider+'_renew_only_server_accepts_saved_inactive_plan_consent')
+            call('toggle',data='toggleAutoRenew'+str(oid))
+            yes(db(f'SELECT autoRenew FROM orders_list WHERE id={oid}')=='off' and
+                finances()==before and len(writes())==remote,
+                provider+'_renew_only_consent_can_always_be_withdrawn')
+            db("UPDATE server_info SET state=1 WHERE id=2;UPDATE server_plans SET active=1 WHERE id=7")
             for op,actor,callback in [('view',1001,'toggleAutoRenew'),('admin_view',9001,'adminToggleAutoRenew')]:
                 call('toggle',actor=actor,data=callback+str(oid))
                 before=snapshot();remote=len(writes())
@@ -329,7 +356,8 @@ def main():
     result=dict(complete=True,cases=len(checks),checks=checks,actual_imports=True,
         actual_change_plan_controller=True,actual_config_consent_controller=True,
         actual_native_provider_eligibility=True,existing_consent_withdrawal_visible_and_controller_checked=True,amount0_preserved_before_payment=True,
-        shared_native_different_bot_owners=True,fresh_administrator_common_plan_override=True,revoked_cached_admin_refused=True,production_mutations=0,live_provider_calls=0)
+        shared_native_different_bot_owners=True,fresh_administrator_common_plan_override=True,revoked_cached_admin_refused=True,
+        owner_rev4_saved_inactive_plan_consent_and_server_state=True,production_mutations=0,live_provider_calls=0)
     if args.report:args.report.write_text(json.dumps(result,indent=2,ensure_ascii=False)+'\n')
     print(json.dumps({key:value for key,value in result.items()if key!='checks'}))
 if __name__=='__main__':main()
