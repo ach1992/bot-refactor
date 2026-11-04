@@ -163,7 +163,9 @@ function selectedPaidPlan(\mysqli $db,array $order,bool $lock=false): ?array {
 /** Missing/malformed origin evidence is not a free-trial inference. */
 function orderPlanActions(\mysqli $db,array $order): array {
     try {
-        $mayChoose=(int)($order['status']??0)===1 && achbotOrderMayUsePaidPlan($db,$order);
+        $mayChoose=(int)($order['status']??0)===1 &&
+            achbotServerCommerceAvailable($db,(int)$order['server_id'],false) &&
+            achbotOrderMayUsePaidPlan($db,$order);
         $paid=$mayChoose?selectedPaidPlan($db,$order):null;
         // A fully discounted agent purchase keeps its established manual
         // renewal/add-on path, without becoming an import or new consent.

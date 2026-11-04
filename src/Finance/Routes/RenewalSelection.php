@@ -12,6 +12,10 @@ if(preg_match('/sConfigRenew(\d+)/', $data,$match)){
     
     alert($mainValues['please_wait_message']);
     $server_id = $match[1];
+    if (!achbotServerCommerceAvailable($connection,(int)$server_id,false)) {
+        alert(\achbotMessage('payment.pre_payment.alert.fa55f5201f'),true);
+        return;
+    }
     if(empty($userInfo['temp'])){delMessage(); exit();}
     
     $configInfo = json_decode($userInfo['temp'],true);

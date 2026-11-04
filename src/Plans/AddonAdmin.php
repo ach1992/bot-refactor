@@ -32,14 +32,14 @@ function achbotAddonAdminScopeKeys(string $session): string {
 function achbotAddonAdminServers(mysqli $db,string $scope): array {
     $where=$scope==='groups'?" AND c.type='pasarguard'":'';
     $rows=$db->query("SELECT i.id,i.title,c.type FROM server_info i INNER JOIN server_config c ON c.id=i.id
-        WHERE i.state=1 AND c.type IN ('marzban','pasarguard')".$where." ORDER BY i.id");
+        WHERE i.active=1 AND i.state IN (1,2) AND c.type IN ('marzban','pasarguard')".$where." ORDER BY i.id");
     if (!$rows) throw new RuntimeException('addon_admin_servers_unavailable');
     $list=$rows->fetch_all(MYSQLI_ASSOC);$rows->free();return $list;
 }
 function achbotAddonAdminValidServer(mysqli $db,int $id,string $scope): bool {
     if ($id<=0) return false;
     $q=$db->prepare("SELECT c.type FROM server_info i INNER JOIN server_config c ON c.id=i.id
-        WHERE i.id=? AND i.state=1");
+        WHERE i.id=? AND i.active=1 AND i.state IN (1,2)");
     $q->bind_param('i',$id);$q->execute();$server=$q->get_result()->fetch_assoc();$q->close();
     return $server && ($scope==='groups'?
         $server['type']==='pasarguard':in_array($server['type'],['marzban','pasarguard'],true));

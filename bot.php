@@ -1898,6 +1898,9 @@ if(preg_match('/^setServerState([1-9][0-9]*)_([012])_([0-9]+)$/D',(string)$data,
     if (!$saved || (int)$saved['state']!==$mode) {
         alert(\achbotMessage('admin_settings.management.management_stale'),true);return;
     }
+    if ($mode===2) alert(\achbotMessage('admin_settings.management.server_retired'));
+    elseif ($mode===1) alert(\achbotMessage('admin_settings.management.server_state_full'));
+    else alert(\achbotMessage('admin_settings.management.server_state_off'));
     editText($message_id,\achbotMessage('bot.bot.servers_setting.message.4c0e6ed6fc'),
         getServerListKeys($offset));
 }

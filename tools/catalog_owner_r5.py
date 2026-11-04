@@ -500,14 +500,22 @@ SCOPED_ADDON_API_INSERTION="""            if ($type!=='RENEW_ACCOUNT') {
                 $context['addon_scope_snapshot']=(string)($pay['addon_scope_snapshot']??'');
             }
 """
+OWNER_REV4_API_PREVIOUS="if (!$plan || (int)$plan['active']!==1 || (int)$plan['inbound_id']!==0 ||"
+OWNER_REV4_API_GUARD="if (!$plan || ($type!=='RENEW_ACCOUNT' && (int)$plan['active']!==1) ||\n            (int)$plan['inbound_id']!==0 ||"
 def api_source_references(path,source):
     refs=set(re.findall(r"\\?achbotMessage(?:Html)?\('([^']+)'",source))
     if path in API_DYNAMIC:
-        original=source==api_consumer_snapshot(path)
-        reviewed=source==api_consumer_snapshot(path,REVIEW_SOURCE)
+        # Owner Rev4 replaces exactly one pre-issuance plan-visibility guard
+        # for an existing RENEW_ACCOUNT. Undo only that non-copy delta before
+        # checking the same pinned API source and previously accepted #107 insertion.
+        audited=source
+        if path=='src/Finance/ApiPayments.php' and source.count(OWNER_REV4_API_GUARD)==1:
+            audited=source.replace(OWNER_REV4_API_GUARD,OWNER_REV4_API_PREVIOUS,1)
+        original=audited==api_consumer_snapshot(path)
+        reviewed=audited==api_consumer_snapshot(path,REVIEW_SOURCE)
         if path=='src/Finance/ApiPayments.php' and not original and not reviewed:
-            reviewed=(source.count(SCOPED_ADDON_API_INSERTION)==1 and
-                source.replace(SCOPED_ADDON_API_INSERTION,'')==api_consumer_snapshot(path,REVIEW_SOURCE))
+            reviewed=(audited.count(SCOPED_ADDON_API_INSERTION)==1 and
+                audited.replace(SCOPED_ADDON_API_INSERTION,'')==api_consumer_snapshot(path,REVIEW_SOURCE))
         check(original or reviewed,'api_dynamic_consumer_source_drift:'+path)
         for key in API_CONDITIONAL_REFS.get(path,[]):
             check(repr(key) in source,'api_conditional_literal_missing:'+path+':'+key)

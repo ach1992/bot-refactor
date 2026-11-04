@@ -12,12 +12,15 @@ function achbotProviderType(mysqli $db,int $serverId): string {
 }
 /** state=1: sales + renewals, state=2: existing renewals only, state=0: neither.
  * A disabled server retains native read capability for existing order details.
+ * A nonlocking observation must not invert the existing Native CREATE
+ * server_config-first lock order. Final effect/capacity admission still
+ * rechecks current state under its own durable transaction.
  */
 function achbotServerCommerceAvailable(mysqli $db,int $serverId,bool $newPurchase,bool $lock=false): bool {
     if ($serverId<=0) return false;
     try {
         $s=$db->prepare("SELECT i.active,i.state FROM server_info i JOIN server_config c ON c.id=i.id
-            WHERE i.id=? AND c.type IN ('marzban','pasarguard')".($lock?' FOR UPDATE':''));
+            WHERE i.id=? AND c.type IN ('marzban','pasarguard')");
         $s->bind_param('i',$serverId);$s->execute();$row=$s->get_result()->fetch_assoc();$s->close();
         return $row && (int)$row['active']===1 &&
             ($newPurchase ? (int)$row['state']===1 : in_array((int)$row['state'],[1,2],true));

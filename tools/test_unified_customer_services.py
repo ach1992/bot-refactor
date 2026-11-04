@@ -29,10 +29,15 @@ function achbotSupportsAccount($type,$inbound){return in_array($type,['marzban',
 // This composition harness controls native packets and the plan-admission
 // seam. Actual adapter eligibility/import/payment are tested separately by
 // test_imported_plan_selection.py and the native existing-subscription suite.
-function achbotSupportsPlan($db,$id,$inbound=0,$server=null,$lock=false) {
+function achbotServerCommerceAvailable($db,$serverId,$newPurchase,$lock=false) {
+ $q=$db->prepare('SELECT active,state FROM server_info WHERE id=?');
+ $q->bind_param('i',$serverId);$q->execute();$row=$q->get_result()->fetch_assoc();$q->close();
+ return $row && (int)$row['active']===1 && ($newPurchase?(int)$row['state']===1:in_array((int)$row['state'],[1,2],true));
+}
+function achbotSupportsPlan($db,$id,$inbound=0,$server=null,$lock=false,$allowInactive=false) {
  $q=$db->prepare('SELECT p.server_id,p.inbound_id,p.active,c.type FROM server_plans p JOIN server_config c ON c.id=p.server_id WHERE p.id=?');
  $id=(int)$id;$q->bind_param('i',$id);$q->execute();$row=$q->get_result()->fetch_assoc();$q->close();
- return $row && (int)$row['active']===1 && achbotSupportsAccount($row['type'],$row['inbound_id']) &&
+ return $row && ($allowInactive || (int)$row['active']===1) && achbotSupportsAccount($row['type'],$row['inbound_id']) &&
   (int)$inbound===0 && ($server===null || (int)$server===(int)$row['server_id']);
 }
 function achbotSameProviderPanel($db,$first,$second){return (int)$first===(int)$second;}
