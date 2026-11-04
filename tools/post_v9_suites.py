@@ -1282,7 +1282,7 @@ def run_wallet(tmp: str) -> tuple[dict, dict]:
         'api_dynamic_source_paths':2,
         'api_reference_source_commit':'16c1558322b578b8ca817f3c4b42818d57dcf161',
         'api_retained_unreferenced_keys':18,
-        'api_reference_negative_controls':6,
+        'api_reference_negative_controls':8,
     }
     required_api_native_catalog={
         'current_api_additions':86,
