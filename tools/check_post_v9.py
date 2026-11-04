@@ -279,6 +279,13 @@ def api_native_observation_mismatches(proof: dict, expected: list[str]) -> dict:
         'volume_verified_recovery_after_expired_local_only',
         'renew_verified_recovery_after_unreadable_local_only',
     }
+    # BUY_SUB has no existing native account. Its SQL claim must not
+    # contact a provider; only existing-account paths can require native
+    # preflight HTTP. Bind these two specific new-buy race observations.
+    local_buy_claim={
+        'local_server_state_new_buy_1_to_0_after_preflight_before_locked_claim_denied',
+        'local_server_state_new_buy_1_to_2_after_preflight_before_locked_claim_denied',
+    }
     mismatches={}
     for name,row in zip(expected,observations):
         if (type(row) is not dict or row.get('scenario')!=name or
@@ -301,8 +308,10 @@ def api_native_observation_mismatches(proof: dict, expected: list[str]) -> dict:
         if not results or any(type(value['events']) is not list or
                 value['fatal'] is not None or value.get('stderr')!='' for value in results):
             mismatches[name+'.php_result']='required clean actual PHP result'
-        if name not in replay|local_recovery and not events:
+        if name not in replay|local_recovery|local_buy_claim and not events:
             mismatches[name+'.native_http']='required actual native preflight HTTP'
+        if name in local_buy_claim and events:
+            mismatches[name+'.new_buy_local_claim']='new buy claim must remain SQL-only'
         if any(type(event.get('tx')) is not int or event['tx']!=0 or
                 event.get('method') not in ('GET','PUT','POST') or
                 type(event.get('path')) is not str for event in events):

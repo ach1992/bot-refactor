@@ -503,6 +503,23 @@ SCOPED_ADDON_API_INSERTION="""            if ($type!=='RENEW_ACCOUNT') {
                 $context['addon_scope_snapshot']=(string)($pay['addon_scope_snapshot']??'');
             }
 """
+# Reviewer F3 fix: explicitly reverse ONLY the two scoped non-copy
+# final-local-claim policy edits before requiring the immutable original
+# dynamic-message consumer source. Neither arbitrary PHP nor copy edits pass.
+FINAL_COMMERCE_POLICY_INSERTION="""        // A committed processing claim is recovery evidence, NOT a new
+        // authorization to charge or mutate an account. New claims must obey
+        // the CURRENT locked server policy even if remote preflight passed.
+        $alreadyClaimed=($pay['state']??'')==='processing' &&
+            (int)($pay['approved_by']??-1)===0;
+        if (!$alreadyClaimed && ((int)$info['active']!==1 ||
+            ($type==='BUY_SUB' ? (int)$info['state']!==1 :
+                !in_array((int)$info['state'],[1,2],true))))return null;
+"""
+FINAL_COMMERCE_IDENTITY_BEFORE="""        $context['server_identity']=array_intersect_key($info,array_flip(['id','panel_group_id','provider_group_ids']));"""
+FINAL_COMMERCE_IDENTITY_AFTER="""        // Bind preflight to the actual commerce policy; a state flip after
+        // native HTTP invalidates this fingerprint at the final SQL claim.
+        $context['server_identity']=array_intersect_key($info,array_flip(
+            ['id','panel_group_id','provider_group_ids','active','state']));"""
 OWNER_REV4_API_PREVIOUS="if (!$plan || (int)$plan['active']!==1 || (int)$plan['inbound_id']!==0 ||"
 OWNER_REV4_API_GUARD="if (!$plan || ($type!=='RENEW_ACCOUNT' && (int)$plan['active']!==1) ||\n            (int)$plan['inbound_id']!==0 ||"
 def api_source_references(path,source):
@@ -512,8 +529,16 @@ def api_source_references(path,source):
         # for an existing RENEW_ACCOUNT. Undo only that non-copy delta before
         # checking the same pinned API source and previously accepted #107 insertion.
         audited=source
-        if path=='src/Finance/ApiPayments.php' and source.count(OWNER_REV4_API_GUARD)==1:
-            audited=source.replace(OWNER_REV4_API_GUARD,OWNER_REV4_API_PREVIOUS,1)
+        if path=='src/Finance/ApiPayments.php':
+            # Full-content equality below fails closed if any edit falls
+            # outside these independently exact source-text allowances.
+            if (audited.count(FINAL_COMMERCE_POLICY_INSERTION)==1 and
+                audited.count(FINAL_COMMERCE_IDENTITY_AFTER)==1):
+                audited=audited.replace(FINAL_COMMERCE_POLICY_INSERTION,'',1)
+                audited=audited.replace(FINAL_COMMERCE_IDENTITY_AFTER,
+                    FINAL_COMMERCE_IDENTITY_BEFORE,1)
+            if audited.count(OWNER_REV4_API_GUARD)==1:
+                audited=audited.replace(OWNER_REV4_API_GUARD,OWNER_REV4_API_PREVIOUS,1)
         original=audited==api_consumer_snapshot(path)
         reviewed=audited==api_consumer_snapshot(path,REVIEW_SOURCE)
         if path=='src/Finance/ApiPayments.php' and not original and not reviewed:
@@ -546,6 +571,14 @@ def api_reference_negative_controls(sources,entries):
     bad=dict(sources);bad['unapproved.php']="<?php achbotMessage('payment.api_payment.'.$state);";controls.append(bad)
     bad=dict(sources);bad.pop('src/Finance/PaymentApiAdmin.php');controls.append(bad)
     bad=dict(sources);bad['unapproved.php']="<?php achbotMessage('payment.api_payment.completed');";controls.append(bad)
+    if sources[path].count(FINAL_COMMERCE_POLICY_INSERTION)==1:
+        bad=dict(sources)
+        bad[path]=bad[path].replace("(int)$info['state']!==1", "(int)$info['state']===1",1)
+        controls.append(bad)
+        bad=dict(sources)
+        bad[path]=bad[path].replace("'provider_group_ids','active','state'",
+            "'provider_group_ids','active'",1)
+        controls.append(bad)
     for candidate in controls:
         try:api_reference_proof(candidate,entries)
         except AssertionError:continue
