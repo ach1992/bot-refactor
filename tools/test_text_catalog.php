@@ -332,13 +332,21 @@ foreach(['user','admin']as$audience){$groups=require dirname(__DIR__).'/messages
  $shippingSides[$audience]=[];
  foreach($groups as$topic=>$entries)foreach($entries as$name=>$value)$shippingSides[$audience][$topic.'.'.$name]=$value;
 }
-// #112 R1: pin exactly three corrected server-removal messages against the
-// previous reviewed candidate before reusing the untouched full R5/API proofs.
+// #112 Owner Rev 4: pin each hard-delete, state and plan-visibility message
+// against its prior source before reusing the untouched full R5/API proofs.
 $removalParent='218319313fdbd9cee8aeea15e1c073997f4485e7';
 $removalKeys=[
  'admin_settings.management.server_delete_confirm',
  'admin_settings.management.server_removed',
- 'admin_settings.management.server_retired'
+ 'admin_settings.management.server_retired',
+ 'admin_settings.management.server_state_prompt',
+ 'admin_settings.management.server_state_full',
+ 'admin_settings.management.server_state_renew_only',
+ 'admin_settings.management.server_state_off',
+ 'admin_settings.management.plan_hide_from_sale',
+ 'admin_settings.management.plan_offer_for_sale',
+ 'admin_settings.management.plan_delete_confirm',
+ 'admin_settings.management.plan_deleted'
 ];
 $removalManifest=json_decode(file_get_contents(__DIR__.'/text_catalog_server_removal_safety.json'),true,512,JSON_THROW_ON_ERROR);
 if (($removalManifest['version']??null)!==1 ||

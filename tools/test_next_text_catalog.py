@@ -153,7 +153,7 @@ def main():
     # R1 removed the legacy unguarded bot.php server-deletion branch.
     # Keep only its two historical UI keys as explicit, source-proven orphans
     # rather than deleting frozen translations or admitting arbitrary unused
-    # labels. The three new/changed live messages are independently pinned.
+    # labels. The Owner Rev4 live delete/state/plan copy is source pinned.
     removal=json.loads((ROOT/'tools/text_catalog_server_removal_safety.json').read_text())
     legacy_delete_keys={
         'bot.bot.addserver_name.alert.601504ae47',

@@ -167,15 +167,23 @@ def shared_transfer_copy_restore(sides):
     return restored
 
 
-# #112 reviewer R1: the server-confirmation UX must describe the new
-# service-preserving retirement semantics. Keep the accepted transfer/API/R5
-# copy and its negative controls immutable by projecting ONLY three exact
-# admin entries back to the previous candidate before older proofs run.
+# #112 Owner Revision 4 supersedes forced retirement: the policy is
+# admin-confirmed hard deletion plus explicit server-sale/renewal states and
+# plan visibility. Pin each changed/additive admin key against source while
+# restoring only the evidenced delta for immutable historical R5/API proofs.
 SERVER_REMOVAL_PARENT='218319313fdbd9cee8aeea15e1c073997f4485e7'
 SERVER_REMOVAL_KEYS=(
     'admin_settings.management.server_delete_confirm',
     'admin_settings.management.server_removed',
     'admin_settings.management.server_retired',
+    'admin_settings.management.server_state_prompt',
+    'admin_settings.management.server_state_full',
+    'admin_settings.management.server_state_renew_only',
+    'admin_settings.management.server_state_off',
+    'admin_settings.management.plan_hide_from_sale',
+    'admin_settings.management.plan_offer_for_sale',
+    'admin_settings.management.plan_delete_confirm',
+    'admin_settings.management.plan_deleted',
 )
 
 @functools.lru_cache(maxsize=1)

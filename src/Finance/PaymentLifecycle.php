@@ -171,6 +171,19 @@ function achbotPayUxInsertDraft(mysqli $db, int $actor, mysqli_stmt $insert, boo
         $draftId=(int)$insert->insert_id;
         require_once __DIR__.'/../Panel/ProviderRuntime.php';
         achbotProviderPinPayment($db,$draftId);
+        // Stale buttons cannot issue new invoices on disabled/deleted servers.
+        $s=$db->prepare('SELECT type,server_id,plan_id FROM pays WHERE id=? FOR UPDATE');
+        $s->bind_param('i',$draftId);$s->execute();$pay=$s->get_result()->fetch_assoc();$s->close();
+        if (!$pay) throw new RuntimeException('draft_service_missing');
+        if ((string)$pay['type']!=='INCREASE_WALLET') {
+            require_once __DIR__.'/../Panel/ProviderRuntime.php';
+            $buy=(string)$pay['type']==='BUY_SUB';
+            if (!achbotServerCommerceAvailable($db,(int)$pay['server_id'],$buy,true))
+                throw new RuntimeException('draft_server_disabled');
+            if (($buy || (string)$pay['type']==='RENEW_SCONFIG') &&
+                !achbotSupportsPlan($db,(int)$pay['plan_id'],0,(int)$pay['server_id'],true))
+                throw new RuntimeException('draft_new_plan_unavailable');
+        }
         if ($scopedAddon) {
             require_once __DIR__.'/../Plans/Addons.php';
             if (!achbotAddonDraftCurrent($db,$draftId))

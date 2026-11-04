@@ -32,7 +32,8 @@ function achbotApiPaymentPinLocked(mysqli $db,array $pay,array $attempt): void {
         $id=(int)$pay['plan_id'];
         $q=$db->prepare('SELECT server_id,inbound_id,days,volume,active FROM server_plans WHERE id=? FOR UPDATE');
         $q->bind_param('i',$id);$q->execute();$plan=$q->get_result()->fetch_assoc();$q->close();
-        if (!$plan || (int)$plan['active']!==1 || (int)$plan['inbound_id']!==0 ||
+        if (!$plan || ($type!=='RENEW_ACCOUNT' && (int)$plan['active']!==1) ||
+            (int)$plan['inbound_id']!==0 ||
             ($type!=='RENEW_ACCOUNT' && (int)$plan['server_id']!==(int)$pay['server_id']))
             throw new RuntimeException('api_payment_subject_unavailable');
         $custom=$type==='BUY_SUB' && ((int)$pay['day']>0 || (int)$pay['volume']>0);

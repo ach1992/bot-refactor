@@ -57,14 +57,36 @@ active local orders have disappeared.
 PasarGuard API-key rotation likewise cannot bypass an unfinished plan journal.
 The old journal identity remains visible for manual reconciliation.
 
-Confirmed administrator deletion uses the same locked journal guard. Any
-prepared, dispatching or review journal vetoes deletion even after its last
-active order disappears. With active subscriptions and no held journal,
-confirmation retires the server from active catalogues (`active=0`), retaining
-its connection/credentials, plans, orders and effects for existing subscribers
-and recovery. Fully unreferenced servers with no pending Native effects or
-journals can still be physically deleted. Stale confirmations for retired
-servers are rejected. No Native DELETE or financial mutation occurs.
+**Owner Revision 4 (2026-11-04) supersedes the earlier forced retirement.**
+Server deletion, server sales state, and plan availability are distinct operations.
+After an explicit consequence warning, an authorized administrator may hard-delete
+a local server connection (the server_info/server_config rows) even while linked
+subscriptions, invoices, Native effects, or plan-change journals exist. The
+historical orders, plan rows, payments and durable operation evidence remain
+unchanged; no Native account is deleted or refund invented. The administrator
+accepts that previously linked bot order details, pending renewal/checkout,
+and recovery may be unavailable and require manual reconciliation. In-flight
+operations must fail safely without replaying uncertain Native effects.
+
+An existing server's `state` is three-valued without a schema migration:
+`1` = new sales and existing renewals/add-ons allowed;
+`2` = no new sales, existing renewals/add-ons allowed;
+`0` = no new sales and no renewals/add-ons (default inactive behavior).
+The existing `active` column continues to identify a configured server row;
+it is NOT the sales switch. A configured server can still serve read-only
+order details in all three sale states. Unrecognized states fail closed.
+The server list opens an explicit three-option state selector rather than a
+misleading binary switch.
+
+Plans have independent `active` visibility. An inactive plan remains hidden
+from all new-purchase and new plan-selection paths. An existing order with
+that exact saved plan can still renew and purchase add-ons when its server
+allows existing-service commerce. The plan can be reactivated; explicit
+administrator plan deletion removes only the local plan row with a warning
+that historical orders remain but may lose renewal capability. Receipt
+state, Native identities, refunds and order rows are never mutated by
+plan or server deletion. Quote, draft issuance, hosted/manual/wallet and
+automatic renewal run the same current server-state admission checks.
 
 Before claiming a plan change or logical transfer, verify that every active
 shared order reference is financially settled across pays, payment_attempts,

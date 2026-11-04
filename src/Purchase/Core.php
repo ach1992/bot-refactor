@@ -94,21 +94,21 @@ if (!function_exists('ensureServerCapacity')) {
 // Shared read-only preflight for current purchase/manual approval/wallet.
 // Type + inbound are validated as one provider contract before settlement.
 if (!function_exists('achbotSupportsMarzbanPlan')) {
-    function achbotSupportsMarzbanPlan($connection, $planId, $requestedInboundId = 0, $requiredServerId = null, bool $lock = false)
+    function achbotSupportsMarzbanPlan($connection, $planId, $requestedInboundId = 0, $requiredServerId = null, bool $lock = false, bool $allowInactive = false)
     {
         $planId = (int)$planId;
         $stmt = $connection->prepare(
-            "SELECT p.`inbound_id`, p.`server_id`, c.`type`
+            "SELECT p.`inbound_id`, p.`server_id`, p.`active`, c.`type`
              FROM `server_plans` p
              INNER JOIN `server_config` c ON c.`id` = p.`server_id`
-             WHERE p.`id` = ? AND p.active=1 LIMIT 1".($lock ? ' FOR UPDATE' : '')
+             WHERE p.`id` = ? LIMIT 1".($lock ? ' FOR UPDATE' : '')
         );
         $stmt->bind_param("i", $planId);
         $stmt->execute();
         $row = $stmt->get_result()->fetch_assoc();
         $stmt->close();
         return $planId > 0 && (int)$requestedInboundId === 0 &&
-            $row && $row['type'] === 'marzban' &&
+            $row && ($allowInactive || (int)$row['active']===1) && $row['type'] === 'marzban' &&
             (int)$row['inbound_id'] === 0 &&
             ($requiredServerId === null || (int)$requiredServerId === 0 ||
              (int)$requiredServerId === (int)$row['server_id']);
@@ -443,6 +443,8 @@ function achbotOrderAddonEligibility($connection,array $order,string $kind,?arra
         (int)($order['id']??0)<=0 || (int)($order['server_id']??0)<=0 ||
         !is_string($order['remark']??null) || $order['remark']==='') return $out;
     require_once __DIR__.'/../Panel/ServiceLifecycle.php';
+    if (!achbotServerCommerceAvailable($connection,(int)$order['server_id'],false))
+        return ['eligible'=>false,'reason'=>'server_renewal_disabled'];
     $native=$nativeContext===null?achbotServiceObserve((int)$order['server_id'],$order['remark']):($nativeContext['observation']??[]);
     if (!$native['verified'] || !in_array($native['status'],['active','disabled','expired','limited'],true)) return $out;
     if ($native['expire']===null) return ['eligible'=>false,'reason'=>'unlimited_time'];

@@ -10,24 +10,39 @@ function achbotProviderType(mysqli $db,int $serverId): string {
     $r=$ok?$s->get_result()->fetch_assoc():null;$s->close();
     return (string)($r['type']??'');
 }
+/** state=1: sales + renewals, state=2: existing renewals only, state=0: neither.
+ * A disabled server retains native read capability for existing order details.
+ */
+function achbotServerCommerceAvailable(mysqli $db,int $serverId,bool $newPurchase,bool $lock=false): bool {
+    if ($serverId<=0) return false;
+    try {
+        $s=$db->prepare("SELECT i.active,i.state FROM server_info i JOIN server_config c ON c.id=i.id
+            WHERE i.id=? AND c.type IN ('marzban','pasarguard')".($lock?' FOR UPDATE':''));
+        $s->bind_param('i',$serverId);$s->execute();$row=$s->get_result()->fetch_assoc();$s->close();
+        return $row && (int)$row['active']===1 &&
+            ($newPurchase ? (int)$row['state']===1 : in_array((int)$row['state'],[1,2],true));
+    } catch (Throwable $error) {return false;}
+}
+
 function achbotSupportsAccount($type,$inbound): bool {
     return achbotSupportsProviderType($type) && (int)$inbound===0;
 }
-function achbotSupportsPlan($db,$planId,$inbound=0,$serverId=null,bool $lock=false): bool {
+function achbotSupportsPlan($db,$planId,$inbound=0,$serverId=null,bool $lock=false,bool $allowInactive=false): bool {
     if (!($db instanceof mysqli) || (int)$planId<=0 || (int)$inbound!==0) return false;
     try {
         $s=$db->prepare('SELECT c.type FROM server_plans p JOIN server_config c ON c.id=p.server_id WHERE p.id=?');
         $s->bind_param('i',$planId);$s->execute();$row=$s->get_result()->fetch_assoc();$s->close();
         $adapter=achbotProviderDefinition($row['type']??null);
-        return $adapter!==null && ($adapter['plan'])($db,$planId,$inbound,$serverId,$lock)===true;
+        return $adapter!==null && ($adapter['plan'])($db,$planId,$inbound,$serverId,$lock,$allowInactive)===true;
     } catch (Throwable $error) {return false;}
 }
-function achbotPasarGuardSupportsPlan($db,$planId,$inbound=0,$serverId=null,bool $lock=false): bool {
+function achbotPasarGuardSupportsPlan($db,$planId,$inbound=0,$serverId=null,bool $lock=false,bool $allowInactive=false): bool {
     if ((int)$planId<=0 || (int)$inbound!==0) return false;
     try {
-        $s=$db->prepare('SELECT p.server_id,p.inbound_id,c.type FROM server_plans p JOIN server_config c ON c.id=p.server_id WHERE p.id=? AND p.active=1'.($lock?' FOR UPDATE':''));
+        $s=$db->prepare('SELECT p.server_id,p.inbound_id,p.active,c.type FROM server_plans p JOIN server_config c ON c.id=p.server_id WHERE p.id=?'.($lock?' FOR UPDATE':''));
         $s->bind_param('i',$planId);$s->execute();$r=$s->get_result()->fetch_assoc();$s->close();
-        if (!$r || $r['type']!=='pasarguard' || (int)$r['inbound_id']!==0 ||
+        if (!$r || (!$allowInactive && (int)$r['active']!==1) ||
+            $r['type']!=='pasarguard' || (int)$r['inbound_id']!==0 ||
             ($serverId!==null && (int)$serverId!==0 && (int)$serverId!==(int)$r['server_id'])) return false;
         achbotPgPlanSnapshot($db,(int)$r['server_id'],(int)$planId,$lock);
         return true;
@@ -1074,8 +1089,8 @@ function achbotProviderLabel($type): string {
     $adapter=achbotProviderDefinition($type);
     return $adapter===null?'':achbotMessage($adapter['label']);
 }
-function achbotMarzbanPlanAdapter($db,$planId,$inbound=0,$serverId=null,bool $lock=false): bool {
-    return achbotSupportsMarzbanPlan($db,$planId,$inbound,$serverId,$lock);
+function achbotMarzbanPlanAdapter($db,$planId,$inbound=0,$serverId=null,bool $lock=false,bool $allowInactive=false): bool {
+    return achbotSupportsMarzbanPlan($db,$planId,$inbound,$serverId,$lock,$allowInactive);
 }
 function achbotMarzbanOrderAdapter($db,$orderId,$planId=null,$userId=null,bool $lock=false): bool {
     return achbotSupportsMarzbanOrder($db,$orderId,$planId,$userId,$lock);
@@ -1135,6 +1150,12 @@ function achbotProviderQuoteEligible(mysqli $db,array $pay,bool $lock=false): bo
     try {
         $sid=achbotProviderPaymentSubjectServer($db,$pay,$lock);
         if ($sid===null) return false;
+        $type=(string)($pay['type']??'');
+        if (!achbotServerCommerceAvailable($db,$sid,$type==='BUY_SUB',$lock)) return false;
+        // A new purchase or external-plan checkout cannot select an inactive plan.
+        // Existing RENEW_ACCOUNT uses its already-bound order and saved plan.
+        if (in_array($type,['BUY_SUB','RENEW_SCONFIG'],true) &&
+            !achbotSupportsPlan($db,(int)($pay['plan_id']??0),0,$sid,$lock)) return false;
         $adapter=achbotProviderDefinition(achbotProviderType($db,$sid));
         $pay['server_id']=$sid;
         return $adapter!==null && ($adapter['quote'])($db,$pay,$lock)===true;

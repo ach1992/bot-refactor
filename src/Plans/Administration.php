@@ -160,14 +160,53 @@ if(preg_match('/^wizwizplanacclist(\d+)/',$data,$match) and achbotAdminCanFor($c
         sendMessage($txt, null, "HTML");
     }
 }
-if(preg_match('/^wizwizplandelete(\d+)/',$data,$match) and achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'plans')){
-    $stmt = $connection->prepare("DELETE FROM `server_plans` WHERE `id`=?");
-    $stmt->bind_param("i", $match[1]);
-    $stmt->execute();
-    $stmt->close();
-    alert(\achbotMessage('plans.administration.edit_custom_plan.alert.3064bbd794'));
-
-    editText($message_id,\achbotMessage('plans.administration.edit_custom_plan.message.b059640ccc'),getMainKeys());
+if(preg_match('/^togglePlanState([1-9][0-9]*)$/D',(string)$data,$match) &&
+    achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'plans')){
+    $planId=(int)$match[1];$begun=false;
+    try {
+        if (!$connection->begin_transaction()) throw new RuntimeException('plan_state_begin');
+        $begun=true;
+        $s=$connection->prepare('SELECT active FROM server_plans WHERE id=? FOR UPDATE');
+        $s->bind_param('i',$planId);$s->execute();$plan=$s->get_result()->fetch_assoc();$s->close();
+        if (!$plan || !in_array((int)$plan['active'],[0,1],true))
+            throw new RuntimeException('plan_state_stale');
+        $mode=(int)$plan['active']===1?0:1;
+        $s=$connection->prepare('UPDATE server_plans SET active=? WHERE id=?');
+        $s->bind_param('ii',$mode,$planId);$s->execute();$n=$s->affected_rows;$s->close();
+        if ($n!==1 || !$connection->commit()) throw new RuntimeException('plan_state_commit');
+        $begun=false;
+        editText($message_id,\achbotMessage('plans.administration.edit_custom_plan.message.06d5c646c1'),
+            getPlanDetailsKeys($planId),'HTML');
+    } catch (Throwable $error) {
+        if ($begun) {try {$connection->rollback();} catch (Throwable $ignored) {}}
+        error_log('achbot_admin_plan_visibility_deferred');
+        alert(\achbotMessage('admin_settings.management.management_stale'),true);
+    }
+    return;
+}
+if(preg_match('/^wizwizplandelete([1-9][0-9]*)$/D',(string)$data,$match) &&
+    achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'plans')){
+    $planId=(int)$match[1];
+    $stmt=$connection->prepare('SELECT id FROM server_plans WHERE id=?');
+    $stmt->bind_param('i',$planId);$stmt->execute();$plan=$stmt->get_result()->fetch_assoc();$stmt->close();
+    if (!$plan) {alert(\achbotMessage('admin_settings.management.management_stale'),true);return;}
+    $keys=json_encode(['inline_keyboard'=>[
+        [['text'=>\achbotMessage('admin_settings.config.get_plan_details_keys.button.c3a5bc0cbd'),
+          'callback_data'=>'confirmDeletePlan'.$planId]],
+        [['text'=>$buttonValues['back_button'],'callback_data'=>'planDetails'.$planId]]
+    ]],JSON_UNESCAPED_UNICODE);
+    editText($message_id,\achbotMessage('admin_settings.management.plan_delete_confirm'),$keys,'HTML');
+    return;
+}
+if(preg_match('/^confirmDeletePlan([1-9][0-9]*)$/D',(string)$data,$match) &&
+    achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'plans')){
+    // Intentionally local: historical orders and finance are kept unchanged.
+    $planId=(int)$match[1];
+    $stmt=$connection->prepare('DELETE FROM server_plans WHERE id=?');
+    $stmt->bind_param('i',$planId);$stmt->execute();$deleted=$stmt->affected_rows;$stmt->close();
+    if ($deleted!==1) {alert(\achbotMessage('admin_settings.management.management_stale'),true);return;}
+    editText($message_id,\achbotMessage('admin_settings.management.plan_deleted'),getMainKeys());
+    return;
 }
 if(preg_match('/^wizwizplanname(\d+)/',$data) and achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'plans') && $text != $buttonValues['cancel']){
     setUser($data);

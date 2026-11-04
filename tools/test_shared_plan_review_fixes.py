@@ -50,6 +50,28 @@ DRIVER = plans.DRIVER.replace(" } elseif($op==='toggle'){", """ } elseif($op==='
   try {achbotPhysicalAssertRebindSafe($connection,(int)$spec['server'],false,false);
    $connection->commit();$out='allowed';}
   catch(Throwable $error){$connection->rollback();$out='denied:'.$error->getMessage();}
+ } elseif($op==='review_commerce'){
+  require_once $root.'/src/Panel/ProviderRuntime.php';
+  require_once $root.'/src/Subscription/AccountDetails.php';
+  $server=(int)$spec['server'];$plan=(int)$spec['plan'];
+  $q=$connection->prepare('SELECT * FROM orders_list WHERE id=?');
+  $oid=(int)$spec['order'];$q->bind_param('i',$oid);$q->execute();
+  $order=$q->get_result()->fetch_assoc();$q->close();
+  $out=['buy'=>achbotServerCommerceAvailable($connection,$server,true),
+    'renew'=>achbotServerCommerceAvailable($connection,$server,false),
+    'new_plan'=>achbotSupportsPlan($connection,$plan,0,$server),
+    'saved_plan'=>achbotSupportsPlan($connection,$plan,0,$server,false,true),
+    'selected_renew_plan'=>\\AchBot\\Subscription\\AccountDetails\\selectedPaidPlan($connection,$order)!==null];
+ } elseif($op==='review_invoice'){
+  require_once $root.'/src/Finance/PaymentLifecycle.php';
+  $hash='state'.bin2hex(random_bytes(10));$actor=(int)$spec['actor'];
+  $type=(string)$spec['type'];$plan=(int)$spec['plan'];$server=(int)$spec['server'];
+  $order=(int)$spec['order'];$now=time();$price=137;
+  $q=$connection->prepare("INSERT INTO pays(hash_id,user_id,type,plan_id,server_id,order_id,price,request_date,state)
+    VALUES(?,?,?,?,?,?,?,?,'pending')");
+  $q->bind_param('sisiiiii',$hash,$actor,$type,$plan,$server,$order,$price,$now);
+  $id=achbotPayUxInsertDraft($connection,$actor,$q);$q->close();
+  $out=$id>0?'issued':'denied';
  } elseif($op==='toggle'){""", 1)
 assert DRIVER != plans.DRIVER, 'review test route not added'
 
@@ -123,7 +145,9 @@ def harness(provider: str):
                 'achbot_existing_subscription_import_deferred',
                 'achbot_plan_selection_unavailable',
                 'achbot_shared_plan_requires_review',
-                'achbot_shared_plan_committed')
+                'achbot_shared_plan_committed',
+                'achbot_customer_draft_creation_deferred',
+                'achbot_order_plan_actions_unverified')
             if run.returncode or not all(line.startswith(allowed)
                 for line in run.stderr.splitlines()):
                 raise AssertionError((provider, op, run.returncode, run.stdout, run.stderr))
@@ -449,76 +473,55 @@ def main():
                 provider+'_usage_reset_held_journal_never_repeats_native_put')
 
     for provider in ('marzban','pasarguard'):
-        # R1: source-real confirmed administrator deletion cannot strand any
-        # active shared Native account. Retire from sales, preserve credentials.
+        # Owner Rev 4 explicitly chooses hard LOCAL deletion, accepting broken
+        # order details and unresolved payment/effect recovery. No bot ledger
+        # or Native data may be rewritten as an unintended side effect.
         with harness(provider) as h:
             seeded(h)
             db=h['db']
-            identity=db('SELECT * FROM server_config WHERE id=2')
-            before=subject(h); money=finance(h); puts=len(h['writes']())
+            before=subject(h);puts=len(h['writes']())
             for variant in ('yesDeleteServer02','yesDeleteServer2suffix','yesDeleteServer0'):
                 bad=h['delete'](callback=variant)
-                yes(db('SELECT active FROM server_info WHERE id=2')=='1' and
-                    db('SELECT * FROM server_config WHERE id=2')==identity and
+                yes(db('SELECT COUNT(*) FROM server_info WHERE id=2')=='1' and
                     not any(e.get('method')=='editMessageText' for e in bad['events']),
-                    provider+'_malformed_confirm_callback_does_not_delete_'+variant)
-            result=h['delete']()
-            edits=[e for e in result['events'] if e.get('method')=='editMessageText']
-            yes(db('SELECT active FROM server_info WHERE id=2')=='0' and
-                db('SELECT * FROM server_config WHERE id=2')==identity and
-                subject(h)==before and finance(h)==money and
-                len(h['writes']())==puts and len(edits)==1 and
-                'کنار گذاشته شد' in edits[0]['body'],
-                provider+'_confirmed_delete_with_active_shared_refs_only_retires')
-            again=h['delete']()
-            yes(db('SELECT active FROM server_info WHERE id=2')=='0' and
-                db('SELECT * FROM server_config WHERE id=2')==identity and
-                not any(e.get('method')=='editMessageText' for e in again['events']),
-                provider+'_stale_delete_confirmation_retains_retired_connection')
-
-        with harness(provider) as h:
-            seeded(h)
-            db=h['db']
-            identity=db('SELECT * FROM server_config WHERE id=2')
-            journal=int(db('SELECT MAX(id) FROM service_plan_changes'))
-            for state in ('prepared','dispatching','review'):
-                db(f"UPDATE service_plan_changes SET state='{state}' WHERE id={journal}")
-                refused=h['delete']()
-                yes(db('SELECT active FROM server_info WHERE id=2')=='1' and
-                    db('SELECT * FROM server_config WHERE id=2')==identity and
-                    not any(e.get('method')=='editMessageText' for e in refused['events']),
-                    provider+'_confirmed_delete_refuses_'+state+'_journal')
-            db(f"UPDATE orders_list SET status=0 WHERE id IN ({h['oid']},{h['peer']})")
-            refused=h['delete']()
-            yes(db('SELECT active FROM server_info WHERE id=2')=='1' and
-                db('SELECT * FROM server_config WHERE id=2')==identity and
-                not any(e.get('method')=='editMessageText' for e in refused['events']),
-                provider+'_held_journal_denies_delete_after_last_active_ref')
-            db(f"UPDATE service_plan_changes SET state='committed' WHERE id={journal}")
+                    provider+'_malformed_confirmation_denied_'+variant)
+            issued=invoice(h,'deletepending','processing','BUY_SUB')
+            db('INSERT INTO payment_attempts(pay_row_id,provider,order_hash,quote_amount,quote_currency,stage)'
+               f" VALUES({issued},'nowpayments','server-delete-{provider}',137,'USD','review')")
             db("INSERT INTO service_effects(source_kind,source_ref,ordinal,operation_id,"
                "target_server_id,target_key,endpoint_sha256,plan_id,remote_username,"
                "requested_expire,requested_bytes,request_sha256,state) VALUES("
-               f"'review','server-removal-{provider}',91,'{'d'*32}',2,'remove-{provider}',"
+               f"'review','force-remove-{provider}',91,'{'d'*32}',2,'remove-{provider}',"
                f"'{'e'*64}',119,'{h['remark']}',1800000000,1024,'{'f'*64}','dispatching')")
-            effects=int(db(f"SELECT id FROM service_effects WHERE source_ref='server-removal-{provider}'"))
-            refused=h['delete']()
-            yes(db('SELECT * FROM server_config WHERE id=2')==identity and
-                not any(e.get('method')=='editMessageText' for e in refused['events']),
-                provider+'_pending_native_effect_denies_delete_without_active_refs')
-            db(f'DELETE FROM service_effects WHERE id={effects}')
-            finances=db('SELECT id,state FROM pays ORDER BY id;'
-                        'SELECT id,source_kind,source_ref,state FROM service_effects ORDER BY id')
-            deleted=h['delete']()
-            yes(db('SELECT COUNT(*) FROM server_config WHERE id=2')=='0' and
-                db('SELECT COUNT(*) FROM server_info WHERE id=2')=='0' and
+            journal=int(db('SELECT MAX(id) FROM service_plan_changes'))
+            db(f"UPDATE service_plan_changes SET state='review' WHERE id={journal}")
+            stored=db('SELECT id,state FROM pays ORDER BY id;'
+                      'SELECT id,stage FROM payment_attempts ORDER BY id;'
+                      'SELECT id,source_kind,source_ref,state FROM service_effects ORDER BY id;'
+                      'SELECT id,state,intent_json FROM service_plan_changes ORDER BY id;'
+                      'SELECT * FROM server_plans ORDER BY id')
+            result=h['delete']()
+            edits=[e for e in result['events'] if e.get('method')=='editMessageText']
+            yes(db('SELECT COUNT(*) FROM server_info WHERE id=2')=='0' and
+                db('SELECT COUNT(*) FROM server_config WHERE id=2')=='0' and
+                subject(h)==before and len(h['writes']())==puts and
                 db('SELECT id,state FROM pays ORDER BY id;'
-                   'SELECT id,source_kind,source_ref,state FROM service_effects ORDER BY id')==finances and
-                len([e for e in deleted['events'] if e.get('method')=='editMessageText'])==1,
-                provider+'_settled_unreferenced_confirmed_delete_succeeds_history_preserved')
+                   'SELECT id,stage FROM payment_attempts ORDER BY id;'
+                   'SELECT id,source_kind,source_ref,state FROM service_effects ORDER BY id;'
+                   'SELECT id,state,intent_json FROM service_plan_changes ORDER BY id;'
+                   'SELECT * FROM server_plans ORDER BY id')==stored and
+                len(edits)==1 and 'حذف شد' in edits[0]['body'],
+                provider+'_admin_hard_delete_preserves_all_order_finance_native_journal_evidence')
+            replay=h['delete']()
+            yes(not any(e.get('method')=='editMessageText' for e in replay['events']),
+                provider+'_deleted_server_old_confirmation_is_stale')
+            plan(h,120)
+            yes(len(h['writes']())==puts and outstanding(h)=='review',
+                provider+'_pending_plan_change_after_deleted_connection_never_replays_put')
 
-        # Interleave the real confirmed callback *inside* the Native PUT
-        # request handler. This is a real loopback request to the test
-        # provider while the committed dispatching journal owns recovery.
+        # Full local deletion is allowed even with noncommitted Native change.
+        # The real loopback PUT may have reached Native already, so its journal
+        # must remain reviewable rather than pretending a successful commit.
         with harness(provider) as h:
             seeded(h)
             attempts=[]
@@ -535,15 +538,62 @@ def main():
                     return super().handle_request()
             h['vendor'].RequestHandlerClass=ReviewerPutHook
             h['vendor'].on_reviewer_put=concurrent_delete
-            identity=h['db']('SELECT * FROM server_config WHERE id=2')
             puts=len(h['writes']())
             plan(h,120)
             yes(len(attempts)==1 and len(h['writes']())==puts+1 and
-                h['db']('SELECT active FROM server_info WHERE id=2')=='1' and
-                h['db']('SELECT * FROM server_config WHERE id=2')==identity and
-                outstanding(h)=='committed' and
-                not any(e.get('method')=='editMessageText' for e in attempts[0]['events']),
-                provider+'_confirmed_deletion_during_native_plan_change_retains_target')
+                h['db']('SELECT COUNT(*) FROM server_config WHERE id=2')=='0' and
+                h['db']('SELECT COUNT(*) FROM server_info WHERE id=2')=='0' and
+                outstanding(h)!='committed' and
+                any(e.get('method')=='editMessageText' for e in attempts[0]['events']),
+                provider+'_admin_delete_during_native_put_requires_review_no_false_commit')
+            plan(h,120)
+            yes(len(h['writes']())==puts+1 and outstanding(h)!='committed',
+                provider+'_deleted_native_target_never_replayed_after_ambiguous_put')
+
+        with harness(provider) as h:
+            seeded(h)
+            db=h['db']
+            yes(h['call']('review_invoice',server=2,plan=119,
+                         order=h['oid'],type='BUY_SUB')=='issued',
+                provider+'_state1_allows_new_purchase_invoice')
+            yes(h['call']('review_invoice',server=2,plan=119,
+                         order=h['oid'],type='RENEW_ACCOUNT')=='issued',
+                provider+'_state1_allows_existing_renewal_invoice')
+
+        with harness(provider) as h:
+            seeded(h)
+            db=h['db']
+            db("UPDATE server_info SET state=0 WHERE id=2")
+            status=h['call']('review_commerce',server=2,plan=119,order=h['oid'])
+            yes(status['buy'] is False and status['renew'] is False and
+                status['selected_renew_plan'] is False,
+                provider+'_state0_disables_sales_and_existing_service_actions')
+            yes(h['call']('review_invoice',server=2,plan=119,
+                         order=h['oid'],type='BUY_SUB')=='denied' and
+                h['call']('review_invoice',server=2,plan=119,
+                          order=h['oid'],type='RENEW_ACCOUNT')=='denied',
+                provider+'_state0_financial_draft_admission_denied')
+
+            db("UPDATE server_info SET state=2 WHERE id=2;UPDATE server_plans SET active=0 WHERE id=119")
+            status=h['call']('review_commerce',server=2,plan=119,order=h['oid'])
+            yes(status['buy'] is False and status['renew'] is True and
+                status['new_plan'] is False and status['saved_plan'] is True and
+                status['selected_renew_plan'] is True,
+                provider+'_state2_inactive_saved_plan_remains_renewable_only')
+            yes(h['call']('review_invoice',server=2,plan=119,
+                         order=h['oid'],type='BUY_SUB')=='denied' and
+                h['call']('review_invoice',server=2,plan=119,
+                          order=h['oid'],type='RENEW_ACCOUNT')=='issued',
+                provider+'_state2_inactive_plan_blocks_new_invoice_but_allows_own_renewal')
+            db("UPDATE server_info SET state=1 WHERE id=2")
+            status=h['call']('review_commerce',server=2,plan=119,order=h['oid'])
+            yes(status['buy'] is True and status['new_plan'] is False and
+                status['selected_renew_plan'] is True,
+                provider+'_inactive_plan_does_not_block_existing_on_enabled_server')
+            db("UPDATE server_plans SET active=1 WHERE id=119")
+            status=h['call']('review_commerce',server=2,plan=119,order=h['oid'])
+            yes(status['new_plan'] is True and status['selected_renew_plan'] is True,
+                provider+'_reactivated_plan_restores_new_selection')
 
     for provider in ('marzban','pasarguard'):
         # A third customer obtains a valid imported-subscription preview before
@@ -602,7 +652,7 @@ def main():
         f3_native_get_to_commit_and_pre_put_races=True,
         f4_usage_preservation_positive_and_negative=True,
         import_singleflight_and_held_journal_admission=True,
-        r1_confirmed_server_removal_native_journal_and_retirement=True,
+        owner_rev4_hard_delete_and_state_policy=True,
         r1_legacy_delete_callback_bypass_removed=True,
         r2_terminal_payment_attempt_and_child_fences=True,
         held_journal_replay_blocked=True,production_mutations=0,live_provider_calls=0)

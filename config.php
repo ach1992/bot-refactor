@@ -1059,7 +1059,11 @@ function getServerListKeys($offset = 0){
             $cname = $cty['title'];
             $flagwizwiz = $cty['flag'];
             $remarkwizwiz = $cty['remark'];
-            $state = $cty['state'] == "1"?$buttonValues['active']:$buttonValues['deactive'];
+            $state = match((int)$cty['state']) {
+                1=>\achbotMessage('admin_settings.management.server_state_full'),
+                2=>\achbotMessage('admin_settings.management.server_state_renew_only'),
+                default=>\achbotMessage('admin_settings.management.server_state_off')
+            };
             $ucount = $cty['ucount'];
             $stmt = $connection->prepare("SELECT * FROM `server_config` WHERE `id`=?");
             $stmt->bind_param("i", $id);
@@ -3470,6 +3474,10 @@ function getPlanDetailsKeys($planId){
         $server['type']==='marzban'?
             [['text'=>\achbotMessage('admin_settings.config.get_plan_details_keys.button.51a75fa72c'),'callback_data'=>'marzbanHostSettings'.$planId]]:
             [['text'=>\achbotMessage('admin_settings.config.get_plan_details_keys.button.6399e067cb'),'callback_data'=>'pgPlanGroups'.$planId]],
+        [['text'=>(int)$plan['active']===1?
+            \achbotMessage('admin_settings.management.plan_hide_from_sale'):
+            \achbotMessage('admin_settings.management.plan_offer_for_sale'),
+            'callback_data'=>'togglePlanState'.$planId]],
         [['text'=>\achbotMessage('admin_settings.config.get_plan_details_keys.button.c3a5bc0cbd'),'callback_data'=>'wizwizplandelete'.$planId]],
         [['text'=>$buttonValues['back_button'],'callback_data'=>'plansList'.$serverId]]
     ];

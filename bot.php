@@ -1868,17 +1868,38 @@ if(($data=='serversSetting' || preg_match('/^nextServerPage(\d+)/',$data,$match)
 
     editText($message_id,\achbotMessage('bot.bot.servers_setting.message.4c0e6ed6fc'),$keys);
 }
-if(preg_match('/^toggleServerState(\d+)_(\d+)/',$data,$match) && ($from_id == $admin || $userInfo['isAdmin'] == true)){
-    $stmt = $connection->prepare("UPDATE `server_info` SET `state` = IF(`state` = 0,1,0) WHERE `id`=?");
-    $stmt->bind_param("i", $match[1]);
-    $stmt->execute();
-    $cats= $stmt->get_result();
+if(preg_match('/^toggleServerState([1-9][0-9]*)_([0-9]+)$/D',(string)$data,$match) &&
+    achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'servers')){
+    $serverId=(int)$match[1];$offset=(int)$match[2];
+    $stmt=$connection->prepare('SELECT id FROM server_info WHERE id=? AND active=1');
+    $stmt->bind_param('i',$serverId);$stmt->execute();$exists=$stmt->get_result()->fetch_assoc();$stmt->close();
+    if (!$exists) {alert(\achbotMessage('admin_settings.management.management_stale'),true);return;}
+    $choices=[
+        [1,'admin_settings.management.server_state_full'],
+        [2,'admin_settings.management.server_state_renew_only'],
+        [0,'admin_settings.management.server_state_off'],
+    ];
+    $keys=[];
+    foreach ($choices as [$mode,$label]) $keys[]=[[
+        'text'=>\achbotMessage($label),'callback_data'=>"setServerState{$serverId}_{$mode}_{$offset}"
+    ]];
+    $keys[]=[['text'=>$buttonValues['back_button'],'callback_data'=>'nextServerPage'.$offset]];
+    editText($message_id,\achbotMessage('admin_settings.management.server_state_prompt'),
+        json_encode(['inline_keyboard'=>$keys],JSON_UNESCAPED_UNICODE),'HTML');
+}
+if(preg_match('/^setServerState([1-9][0-9]*)_([012])_([0-9]+)$/D',(string)$data,$match) &&
+    achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'servers')){
+    $serverId=(int)$match[1];$mode=(int)$match[2];$offset=(int)$match[3];
+    $stmt=$connection->prepare('UPDATE server_info SET state=? WHERE id=? AND active=1');
+    $stmt->bind_param('ii',$mode,$serverId);$stmt->execute();
     $stmt->close();
-
-    alert(\achbotMessage('bot.bot.servers_setting.alert.9f4e68eda7'));
-
-    $keys = getServerListKeys($match[2]);
-    editText($message_id,\achbotMessage('bot.bot.servers_setting.message.4c0e6ed6fc'),$keys);
+    $stmt=$connection->prepare('SELECT state FROM server_info WHERE id=? AND active=1');
+    $stmt->bind_param('i',$serverId);$stmt->execute();$saved=$stmt->get_result()->fetch_assoc();$stmt->close();
+    if (!$saved || (int)$saved['state']!==$mode) {
+        alert(\achbotMessage('admin_settings.management.management_stale'),true);return;
+    }
+    editText($message_id,\achbotMessage('bot.bot.servers_setting.message.4c0e6ed6fc'),
+        getServerListKeys($offset));
 }
 if(preg_match('/^showServerSettings(\d+)_(\d+)/',$data,$match) and ($from_id == $admin || $userInfo['isAdmin'] == true)){
     $keys = getServerConfigKeys($match[1], $match[2]);

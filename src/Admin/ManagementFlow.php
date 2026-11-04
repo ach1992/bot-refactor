@@ -344,25 +344,18 @@ function achbotHandleManagementFields(): bool {
             $entity=(int)$deletion[1];
             $server=achbotManagementRow($connection,'SELECT i.id,c.type FROM server_info i JOIN server_config c ON c.id=i.id WHERE i.id=? AND i.active=1 FOR UPDATE','i',[$entity]);
             if (!$server || !achbotSupportsAccount($server['type'],0)) throw new RuntimeException('management_targets');
-            require_once __DIR__.'/../Subscription/PhysicalService.php';
-            try {$removal=achbotPhysicalServerRemovalDecision($connection,$entity);}
-            catch (RuntimeException $error) {
-                // A pending journal/effect must never look like a successful removal.
-                throw new RuntimeException('management_server_review');
-            }
-            if ($removal==='retire') {
-                // Stop new sales while keeping the connection for subscribers.
-                $s=achbotManagementSql($connection,'UPDATE server_info SET active=0 WHERE id=? AND active=1','i',[$entity]);
-                $changed=$s->affected_rows;$s->close();
-                if ($changed!==1) throw new RuntimeException('management_stale');
-            } elseif ($removal==='delete') {
-                achbotManagementSql($connection,'DELETE FROM server_config WHERE id=?','i',[$entity])->close();
-                achbotManagementSql($connection,'DELETE FROM server_info WHERE id=?','i',[$entity])->close();
-            } else throw new RuntimeException('management_server_review');
+            // Administrator confirmed a LOCAL hard delete, accepting that
+            // existing orders and pending claims can no longer reach this server.
+            // Do not rewrite historical orders, payments, plans, or Native effects.
+            $s=achbotManagementSql($connection,'DELETE FROM server_config WHERE id=?','i',[$entity]);
+            $configRemoved=$s->affected_rows;$s->close();
+            $s=achbotManagementSql($connection,'DELETE FROM server_info WHERE id=?','i',[$entity]);
+            $infoRemoved=$s->affected_rows;$s->close();
+            if ($configRemoved!==1 || $infoRemoved!==1) throw new RuntimeException('management_stale');
             if (!achbotManagementCommit($connection)) throw new RuntimeException('management_commit_unknown');$begun=false;
             $keys=getServerListKeys();
             editText((int)$update->callback_query->message->message_id,
-                achbotManagementText($removal==='retire'?'server_retired':'server_removed')."\n\n".achbotManagementText('server_list'),
+                achbotManagementText('server_removed')."\n\n".achbotManagementText('server_list'),
                 $keys??json_encode(['inline_keyboard'=>[]]),'HTML');
             return true;
         }
