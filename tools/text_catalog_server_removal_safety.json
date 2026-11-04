@@ -72,6 +72,9 @@
   },
   "retained_unreferenced_keys": [
     "bot.bot.addserver_name.alert.601504ae47",
-    "bot.bot.addserver_name.message.756c3005d3"
+    "bot.bot.addserver_name.message.756c3005d3",
+    "bot.bot.servers_setting.alert.9f4e68eda7",
+    "plans.administration.edit_custom_plan.alert.3064bbd794",
+    "plans.administration.edit_custom_plan.message.b059640ccc"
   ]
 }

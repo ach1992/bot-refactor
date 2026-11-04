@@ -66,7 +66,7 @@ DRIVER = plans.DRIVER.replace(" } elseif($op==='toggle'){", """ } elseif($op==='
   require_once $root.'/src/Finance/PaymentLifecycle.php';
   $hash='state'.bin2hex(random_bytes(10));$actor=(int)$spec['actor'];
   $type=(string)$spec['type'];$plan=(int)$spec['plan'];$server=(int)$spec['server'];
-  $order=(int)$spec['order'];$now=time();$price=137;
+  $order=$type==='BUY_SUB'?null:(int)$spec['order'];$now=time();$price=137;
   $q=$connection->prepare("INSERT INTO pays(hash_id,user_id,type,plan_id,server_id,order_id,price,request_date,state)
     VALUES(?,?,?,?,?,?,?,?,'pending')");
   $q->bind_param('sisiiiii',$hash,$actor,$type,$plan,$server,$order,$price,$now);

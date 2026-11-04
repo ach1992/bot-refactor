@@ -159,20 +159,30 @@ def main():
         'bot.bot.addserver_name.alert.601504ae47',
         'bot.bot.addserver_name.message.756c3005d3',
     }
+    historical_labels={
+        'bot.bot.servers_setting.alert.9f4e68eda7':'bot.php',
+        'plans.administration.edit_custom_plan.alert.3064bbd794':'src/Plans/Administration.php',
+        'plans.administration.edit_custom_plan.message.b059640ccc':'src/Plans/Administration.php',
+    }
+    retired_keys=legacy_delete_keys|set(historical_labels)
     check(removal.get('version')==1 and
           removal.get('previous_candidate')==catalog_owner_r5.SERVER_REMOVAL_PARENT and
-          set(removal.get('retained_unreferenced_keys',[]))==legacy_delete_keys and
-          len(removal['retained_unreferenced_keys'])==len(legacy_delete_keys),
+          set(removal.get('retained_unreferenced_keys',[]))==retired_keys and
+          len(removal['retained_unreferenced_keys'])==len(retired_keys),
           'legacy_server_removal_copy_lineage_invalid')
     original_bot=command('git','show',catalog_owner_r5.SERVER_REMOVAL_PARENT+':bot.php').decode()
     current_bot=sources['bot.php']
     check(all(key in original_bot and key not in current_bot for key in legacy_delete_keys) and
           legacy_delete_keys<=entries and not (legacy_delete_keys&refs),
           'obsolete_unguarded_server_deletion_copy_still_in_use_or_missing')
+    for key,path in historical_labels.items():
+        ancestor=command('git','show',catalog_owner_r5.SERVER_REMOVAL_PARENT+':'+path).decode()
+        check(key in ancestor and key not in sources[path] and key in entries and key not in refs,
+              'retired_owner_rev4_status_plan_label_invalid:'+key)
     expected_unused=(retired_shared_transfer|set(management['retained_legacy_keys'])|
         catalog_owner_r5.verify_retained_display_keys()|
         catalog_owner_r5.API_REVIEW_RETAINED|obsolete_filter|obsolete_postwrite|
-        legacy_delete_keys)
+        retired_keys)
     check(unused==expected_unused,'unrecorded legacy/orphan copy entries: '+str(unused^expected_unused))
     with tempfile.TemporaryDirectory(prefix='achbot-catalog-audit-') as scratch:
         fixture=pathlib.Path(scratch)/'fixture.php'

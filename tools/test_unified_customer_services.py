@@ -293,8 +293,12 @@ echo json_encode($out,JSON_THROW_ON_ERROR);
       sql("UPDATE orders_list SET autoRenew='"+consent+"' WHERE id=91")
       keys=call(op,actor=9001 if op=='admin' else 1001,remote=remote,renew_auto_state=global_state)['out']['keyboard']
       buttons=[button for row in json.loads(keys)['inline_keyboard'] for button in row if button.get('callback_data')==toggle]
-      yes((len(buttons)==1 and buttons[0]['text']==original_label) if consent=='on' else buttons==[],
-          provider+'_'+op+'_'+label+'_'+consent+'_existing_consent_withdrawal_visible_without_enabling_ineligible_renewal')
+      # Owner Rev4: a plan hidden from new purchases still permits the
+      # existing subscriber to newly enable renewal of that exact plan.
+      expected=(len(buttons)==1 and buttons[0]['text']==original_label) if consent=='on' else (
+          (len(buttons)==1 and buttons[0]['text']!=original_label)
+          if label=='retired_plan' else buttons==[])
+      yes(expected,provider+'_'+op+'_'+label+'_'+consent+'_existing_consent_and_hidden_plan_renewal_policy')
     sql("UPDATE server_plans SET active=1 WHERE id=7;UPDATE orders_list SET autoRenew='on' WHERE id=91")
    sql("UPDATE orders_list SET autoRenew='off' WHERE id=91")
    for unlimited in [None,0]:

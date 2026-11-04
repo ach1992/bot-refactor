@@ -210,7 +210,10 @@ def server_removal_copy_restore(sides):
           set(record)=={'version','owner_issue','previous_candidate','entries','retained_unreferenced_keys'} and
           record.get('retained_unreferenced_keys')==[
               'bot.bot.addserver_name.alert.601504ae47',
-              'bot.bot.addserver_name.message.756c3005d3'] and
+              'bot.bot.addserver_name.message.756c3005d3',
+              'bot.bot.servers_setting.alert.9f4e68eda7',
+              'plans.administration.edit_custom_plan.alert.3064bbd794',
+              'plans.administration.edit_custom_plan.message.b059640ccc'] and
           record.get('previous_candidate')==SERVER_REMOVAL_PARENT and
           record.get('owner_issue')=='https://github.com/ach1992/bot-refactor/issues/112' and
           type(entries) is dict and tuple(entries)==SERVER_REMOVAL_KEYS,

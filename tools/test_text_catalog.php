@@ -353,7 +353,10 @@ if (($removalManifest['version']??null)!==1 ||
     array_keys($removalManifest)!==['version','owner_issue','previous_candidate','entries','retained_unreferenced_keys'] ||
     ($removalManifest['retained_unreferenced_keys']??null)!==[
       'bot.bot.addserver_name.alert.601504ae47',
-      'bot.bot.addserver_name.message.756c3005d3'] ||
+      'bot.bot.addserver_name.message.756c3005d3',
+      'bot.bot.servers_setting.alert.9f4e68eda7',
+      'plans.administration.edit_custom_plan.alert.3064bbd794',
+      'plans.administration.edit_custom_plan.message.b059640ccc'] ||
     ($removalManifest['previous_candidate']??null)!==$removalParent ||
     ($removalManifest['owner_issue']??null)!=='https://github.com/ach1992/bot-refactor/issues/112' ||
     !is_array($removalManifest['entries']??null) ||
