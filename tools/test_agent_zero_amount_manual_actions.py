@@ -174,9 +174,29 @@ def main():
             ]:
                 db(mutation);before=stable();writes=native_writes()
                 keys=call('view',owner=1001,order=oid)['out']['keyboard']
-                yes(all(callback+str(oid)not in keys for callback in manual+['changePlan_','toggleAutoRenew'])and
-                    stable()==before and native_writes()==writes,provider+'_'+label+'_does_not_gain_paid_action_visibility')
+                if label=='retired_plan':
+                    # Owner Rev4: a hidden plan no longer accepts new buyers,
+                    # but its existing fully-discounted agent subscriber keeps
+                    # manual renewal/add-ons, without gaining paid-plan change
+                    # or auto-renew consent intended for imported/paid orders.
+                    yes(all(callback+str(oid)in keys for callback in manual) and
+                        all(callback+str(oid)not in keys for callback in ['changePlan_','toggleAutoRenew']) and
+                        stable()==before and native_writes()==writes,
+                        provider+'_inactive_saved_agent_plan_keeps_only_manual_existing_actions')
+                else:
+                    yes(all(callback+str(oid)not in keys for callback in manual+['changePlan_','toggleAutoRenew'])and
+                        stable()==before and native_writes()==writes,
+                        provider+'_'+label+'_does_not_gain_paid_action_visibility')
                 db(undo)
+            for state,may_extend,label in [(0,False,'fully_off'),(2,True,'renew_only')]:
+                db('UPDATE server_info SET state='+str(state)+' WHERE id=2')
+                before=stable();writes=native_writes()
+                keys=call('view',owner=1001,order=oid)['out']['keyboard']
+                yes(all((callback+str(oid)in keys)==may_extend for callback in manual) and
+                    all(callback+str(oid)not in keys for callback in ['changePlan_','toggleAutoRenew']) and
+                    stable()==before and native_writes()==writes,
+                    provider+'_agent_existing_actions_follow_server_'+label+'_without_financial_or_native_effect')
+            db("UPDATE server_info SET state=1 WHERE id=2")
             saved=copy.deepcopy(panel.user)
             for patch,time_action,volume_action,label in [
                 ({'expire':None,'data_limit':None},False,False,'unlimited_native_time_and_quota'),
@@ -209,6 +229,7 @@ def main():
     result=dict(complete=True,cases=len(checks),checks=checks,actual_SelectPlan_TrialProvision=True,
         actual_agent_pricing=True,actual_native_CREATE_and_readback=True,actual_renderer=True,
         actual_manual_renewal_day_volume_quotes=True,zero_amount_agent_not_import_or_new_consent=True,
+        owner_rev4_agent_saved_plan_and_server_modes=True,
         regression_ref=REGRESSION_REF,archived_renderer_sha256=hashlib.sha256(archived).hexdigest(),
         actual_archived_renderer_RED=red,production_mutations=0,live_provider_calls=0,synthetic_Telegram_delivery=True)
     if args.report:args.report.write_text(json.dumps(result,indent=2,ensure_ascii=False)+'\n')
