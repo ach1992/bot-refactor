@@ -2477,6 +2477,11 @@ function achbotScheduledDeletionEffectsSettled(mysqli $db,array $order): bool {
             if (!$stmt->execute()) {$stmt->close();return false;}
             $attempt=$stmt->get_result()->fetch_assoc();$stmt->close();
         }
+        // Unlike historical manual approvals, an auto-cart result needs
+        // matching completed provider-attempt evidence if an attempt exists.
+        // A contradictory unfinished attempt remains an actual deletion hold.
+        if ($payment['state']==='auto_cart_approved' &&
+            ($attempt===null || ($attempt['stage']??null)==='done'))continue;
         if ($payment['state']==='paid' && ($attempt['stage']??null)==='done') continue;
         if (achbotNonPayablePaymentSettledLocked($payment,$attempt)) continue;
         // Pending quotes, receipt review, processing and uncertain outcomes

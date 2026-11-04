@@ -62,6 +62,22 @@ DRIVER = plans.DRIVER.replace(" } elseif($op==='toggle'){", """ } elseif($op==='
     'new_plan'=>achbotSupportsPlan($connection,$plan,0,$server),
     'saved_plan'=>achbotSupportsPlan($connection,$plan,0,$server,false,true),
     'selected_renew_plan'=>\\AchBot\\Subscription\\AccountDetails\\selectedPaidPlan($connection,$order)!==null];
+ } elseif($op==='review_api_state'){
+  require_once $root.'/src/Finance/ApiPayments.php';
+  $pay=achbotApiPaymentRow($connection,(int)$spec['pay']);
+  $seen=achbotApiPaymentSubjectPreflight($connection,$pay);
+  $other=new mysqli('localhost','root','',$argv[3],0,$argv[2]);
+  if (array_key_exists('new_state',$spec)) {
+   $state=(int)$spec['new_state'];
+   $q=$other->prepare('UPDATE server_info SET state=? WHERE id=2');
+   $q->bind_param('i',$state);$q->execute();$q->close();
+  }
+  $other->close();
+  $connection->begin_transaction();
+  $locked=achbotApiPaymentRow($connection,(int)$spec['pay'],true);
+  $out=['preflight'=>$seen['valid'],
+   'allowed'=>achbotApiPaymentLocalSubjectAllowed($connection,$locked,$seen)];
+  $connection->rollback();
  } elseif($op==='review_invoice'){
   require_once $root.'/src/Finance/PaymentLifecycle.php';
   $hash='state'.bin2hex(random_bytes(10));$actor=(int)$spec['actor'];
@@ -155,11 +171,7 @@ def harness(provider: str):
             if 'fixture_error' in output:
                 raise AssertionError((provider, op, output))
             return output['out']
-        def delete(server: int = 2, callback: str | None = None):
-            nonlocal counter
-            counter += 1
-            spec = dict(actor=9001, callback=callback or f'yesDeleteServer{server}',
-                        source=counter, message_id=575, field=True)
+        def admin(spec):
             run = subprocess.run(['php', '-d', 'display_errors=0', '-d', 'log_errors=0',
                 str(admin_driver), str(ROOT), str(work / 'mysql.sock'), DB,
                 json.dumps(spec)], cwd=work, env=env, capture_output=True,
@@ -167,19 +179,35 @@ def harness(provider: str):
             if run.returncode or any(not re.fullmatch(
                     r'achbot_management_field_deferred reason=[a-z_]+', line)
                     for line in run.stderr.splitlines()):
-                raise AssertionError(('confirmed_delete', provider,
-                    run.returncode, run.stdout, run.stderr))
+                raise AssertionError(('admin_intent', provider, run.returncode, run.stdout, run.stderr))
             result = json.loads(run.stdout)
             if 'exception' in result:
-                raise AssertionError(('confirmed_delete', provider, result))
+                raise AssertionError(('admin_intent', provider, result))
             return result
+        def warn(server: int = 2, actor: int = 9001, message_id: int = 575):
+            nonlocal counter
+            counter += 1
+            result = admin(dict(actor=actor, source=counter, message_id=message_id,
+                callback=f'wizwizdeleteserver{server}', issue_delete='server', entity=server))
+            issued = result['issued']
+            if not isinstance(issued,str) or not re.fullmatch(
+                    rf'yesDeleteServer{server}_[a-f0-9]{{16}}', issued):
+                raise AssertionError(('server_warning_missing', provider, result))
+            return issued
+        def delete(server: int = 2, callback: str | None = None, actor: int = 9001,
+                   message_id: int = 575):
+            nonlocal counter
+            if callback is None: callback=warn(server, actor, message_id)
+            counter += 1
+            return admin(dict(actor=actor, callback=callback, source=counter,
+                message_id=message_id, field=True))
         def attach(actor: int):
             call('external', actor=actor, data='showUUIDLeft')
             call('external', actor=actor, text=credential)
             call('manual', actor=actor, data='addToOrders2')
             return int(db('SELECT id FROM orders_list WHERE userid=' + str(actor)
                     + " AND BINARY remark=BINARY '" + remark + "'"))
-        yield dict(db=db, call=call, delete=delete, attach=attach, vendor=vendor, url=url,
+        yield dict(db=db, work=work, env=env, call=call, delete=delete, warn=warn, attach=attach, vendor=vendor, url=url,
                    remark=remark, credential=credential, writes=writes, provider=provider)
 
 
@@ -415,7 +443,7 @@ def main():
                 provider+'_changed_access_rebind_replay_never_admits_native_put')
 
         # Specific PasarGuard connection incarnation, not just its URL:
-        # changing provider_panels.instance_key during either observation
+        # changing the consolidated server_config provider_instance_key during either observation
         # window must hold the original journal with zero Native write.
         if provider=='pasarguard':
             for variant in ('noop','changed'):
@@ -423,7 +451,7 @@ def main():
                     seeded(h)
                     db=h['db']
                     def change_incarnation():
-                        db("UPDATE provider_panels SET instance_key=REPEAT('c',32) WHERE id=1")
+                        db("UPDATE server_config SET provider_instance_key=REPEAT('c',32) WHERE id=2")
                     if variant=='noop':
                         h['vendor'].on_read=change_incarnation
                     else:
@@ -473,6 +501,42 @@ def main():
                 provider+'_usage_reset_held_journal_never_repeats_native_put')
 
     for provider in ('marzban','pasarguard'):
+        # Every destructive intent is private, one-use, latest-warning-only,
+        # and tied to the exact server snapshot and Telegram message.
+        with harness(provider) as h:
+            seeded(h)
+            db=h['db']; initial=subject(h);puts=len(h['writes']())
+            cancelled=h['warn']()
+            back=h['delete'](callback=cancelled.replace('yesDeleteServer','cancelDeleteServer'))
+            yes(db('SELECT COUNT(*) FROM server_info WHERE id=2')=='1' and
+                any(e.get('method')=='editMessageText' for e in back['events']),
+                provider+'_server_back_cancels_pending_warning')
+            after_back=h['delete'](callback=cancelled)
+            yes(db('SELECT COUNT(*) FROM server_info WHERE id=2')=='1' and
+                not any(e.get('method')=='editMessageText' for e in after_back['events']),
+                provider+'_server_old_warning_after_back_denied')
+            first=h['warn']()
+            old=h['delete'](callback=first,message_id=576)
+            yes(db('SELECT COUNT(*) FROM server_info WHERE id=2')=='1' and
+                not any(e.get('method')=='editMessageText' for e in old['events']),
+                provider+'_server_delete_wrong_message_denied')
+            second=h['warn']()
+            old=h['delete'](callback=first)
+            yes(db('SELECT COUNT(*) FROM server_info WHERE id=2')=='1' and
+                not any(e.get('method')=='editMessageText' for e in old['events']),
+                provider+'_server_delete_older_warning_denied')
+            db("UPDATE server_info SET title=CONCAT(title,' altered') WHERE id=2")
+            changed=h['delete'](callback=second)
+            yes(db('SELECT COUNT(*) FROM server_info WHERE id=2')=='1' and
+                not any(e.get('method')=='editMessageText' for e in changed['events']),
+                provider+'_server_delete_after_edit_denied')
+            fresh=h['warn']()
+            foreign=h['delete'](callback=fresh,actor=9002)
+            yes(db('SELECT COUNT(*) FROM server_info WHERE id=2')=='1' and
+                not any(e.get('method')=='editMessageText' for e in foreign['events']),
+                provider+'_server_delete_wrong_actor_denied')
+            yes(subject(h)==initial and len(h['writes']())==puts,
+                provider+'_invalid_server_confirmations_no_financial_or_native_effect')
         # Owner Rev 4 explicitly chooses hard LOCAL deletion, accepting broken
         # order details and unresolved payment/effect recovery. No bot ledger
         # or Native data may be rewritten as an unintended side effect.
@@ -500,7 +564,8 @@ def main():
                       'SELECT id,source_kind,source_ref,state FROM service_effects ORDER BY id;'
                       'SELECT id,state,intent_json FROM service_plan_changes ORDER BY id;'
                       'SELECT * FROM server_plans ORDER BY id')
-            result=h['delete']()
+            valid_confirmation=h['warn']()
+            result=h['delete'](callback=valid_confirmation)
             edits=[e for e in result['events'] if e.get('method')=='editMessageText']
             yes(db('SELECT COUNT(*) FROM server_info WHERE id=2')=='0' and
                 db('SELECT COUNT(*) FROM server_config WHERE id=2')=='0' and
@@ -512,7 +577,7 @@ def main():
                    'SELECT * FROM server_plans ORDER BY id')==stored and
                 len(edits)==1 and 'حذف شد' in edits[0]['body'],
                 provider+'_admin_hard_delete_preserves_all_order_finance_native_journal_evidence')
-            replay=h['delete']()
+            replay=h['delete'](callback=valid_confirmation)
             yes(not any(e.get('method')=='editMessageText' for e in replay['events']),
                 provider+'_deleted_server_old_confirmation_is_stale')
             plan(h,120)
@@ -638,6 +703,19 @@ def main():
                 outstanding(h)=='review',
                 provider+'_held_review_journal_blocks_late_import_after_lock_released')
 
+    # F3: independent real Marzban API admission evidence complements
+    # PasarGuard's authenticated native preflight exact-SQL-claim proof.
+    for state,label in [(0,'disabled'),(2,'existing_only')]:
+        with harness('marzban') as h:
+            before=len(h['writes']());db=h['db']
+            yes(h['call']('review_invoice',server=2,plan=7,order=0,type='BUY_SUB')=='issued',
+                'marzban_api_buy_invoice_issued_at_state1_'+label)
+            pay=int(db('SELECT MAX(id) FROM pays'))
+            result=h['call']('review_api_state',pay=pay,new_state=state)
+            yes(result=={'preflight':True,'allowed':False} and
+                db(f'SELECT state FROM pays WHERE id={pay}')=='pending' and
+                len(h['writes']())==before,
+                'marzban_api_final_locked_buy_claim_denies_1_to_'+str(state))
     bot=(ROOT/'bot.php').read_text()
     yes("if(preg_match('/^yesDeleteServer(\\d+)/'" not in bot,
         'legacy_unanchored_server_delete_fallback_removed_at_bot_entry')

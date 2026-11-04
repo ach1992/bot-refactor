@@ -68,6 +68,16 @@ accepts that previously linked bot order details, pending renewal/checkout,
 and recovery may be unavailable and require manual reconciliation. In-flight
 operations must fail safely without replaying uncertain Native effects.
 
+Destructive server and plan confirmations are actor- and Telegram-message-bound,
+expire after 10 minutes, and carry a fresh one-use token and a digest of the
+local entity state shown in the warning. A newer warning replaces the earlier
+one; Back cancels its own warning. A stale, replayed, wrong-actor or
+post-edit confirmation cannot delete. Confirmation consumption and local
+hard deletion commit together. Plan visibility uses explicit desired-state
+callbacks and a persisted revision token, so a duplicate or older button
+cannot reverse the administrator's latest choice. These protections use the
+existing `setting` table without an additional migration.
+
 An existing server's `state` is three-valued without a schema migration:
 `1` = new sales and existing renewals/add-ons allowed;
 `2` = no new sales, existing renewals/add-ons allowed;
@@ -86,7 +96,13 @@ administrator plan deletion removes only the local plan row with a warning
 that historical orders remain but may lose renewal capability. Receipt
 state, Native identities, refunds and order rows are never mutated by
 plan or server deletion. Quote, draft issuance, hosted/manual/wallet and
-automatic renewal run the same current server-state admission checks.
+automatic renewal run the same current server-state admission checks. In
+particular, API-backed service claims recheck the server's current commerce
+policy at the final SQL-only financial admission boundary even when earlier
+Native preflight was valid; already-committed effects retain their recovery
+holds and immutable payment evidence. A completed `auto_cart_approved`
+renewal/add-on does not by itself block scheduled deletion, but an unfinished
+provider attempt, ambiguous payment or Native effect still does.
 
 Before claiming a plan change or logical transfer, verify that every active
 shared order reference is financially settled across pays, payment_attempts,

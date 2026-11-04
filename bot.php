@@ -2162,10 +2162,19 @@ if(preg_match('/^editServerPanePassword(.*)/',$userInfo['step'],$match) and $tex
 
 if ((require __DIR__ . '/src/Subscription/SubLinkSettings.php') === null) return;
 
-if(preg_match('/^wizwizdeleteserver(\d+)/',$data,$match) and ($from_id == $admin || ($userInfo['isAdmin'] == true && achbotAdminCan('servers')))){
-    editText($message_id,\achbotMessage('admin_settings.management.server_delete_confirm'),json_encode(['inline_keyboard'=>[
-        [['text'=>\achbotMessage('bot.bot.addserver_name.button.13159f8c74'),'callback_data'=>"yesDeleteServer" . $match[1]],['text'=>\achbotMessage('bot.bot.addserver_name.button.f47dddc181'),'callback_data'=>"showServerSettings" . $match[1] . "_0"]]
-        ]]));
+if(preg_match('/^wizwizdeleteserver([1-9][0-9]*)$/D',(string)$data,$match)){
+    try {
+        $confirmation=achbotAdminIntentIssue($connection,(int)$from_id,(int)$admin,
+            'server',(int)$match[1],$update,(string)$data);
+        editText($message_id,\achbotMessage('admin_settings.management.server_delete_confirm'),json_encode(['inline_keyboard'=>[
+            [['text'=>\achbotMessage('bot.bot.addserver_name.button.13159f8c74'),'callback_data'=>$confirmation],
+             ['text'=>\achbotMessage('bot.bot.addserver_name.button.f47dddc181'),'callback_data'=>str_replace('yesDeleteServer','cancelDeleteServer',$confirmation)]]
+        ]],JSON_UNESCAPED_UNICODE));
+    } catch (Throwable $error) {
+        error_log('achbot_server_delete_warning_deferred');
+        alert(achbotManagementText('management_stale'),true);
+    }
+    return;
 }
 // Confirmed server deletion is handled exclusively by achbotHandleManagementFields()
 // at ingress. Never retain a broader legacy fallback that can bypass the

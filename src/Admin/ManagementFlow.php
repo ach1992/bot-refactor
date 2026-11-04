@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__.'/Access.php';
+require_once __DIR__.'/IntentSafety.php';
 /** AChBot actor-owned management drafts; no global inactive server/plan rows. */
 if (realpath($_SERVER['SCRIPT_FILENAME']??'')===__FILE__) {http_response_code(404);exit;}
 require_once __DIR__.'/../../messages/loader.php';
@@ -326,22 +327,34 @@ function achbotHandleManagementFields(): bool {
     $start=preg_match('/^(editServer(Name|Flag|Remark|Max)|plan(Days|Volume)|changesServerLoginInfo)([1-9][0-9]*)$/D',$cb,$match)===1;
     $legacyCancel=is_string($text??null) && $text===($buttonValues['cancel']??null) &&
         preg_match('/^(?:editServer(?:Name|Flag|Remark|Max)|plan(?:Days|Volume)|changesServerLoginInfo)([1-9][0-9]*)$/D',$step,$old);
-    $delete=preg_match('/^yesDeleteServer([1-9][0-9]*)$/D',$cb,$deletion)===1;
-    if (!$start && !$active && !$legacyCancel && !$delete) return false;
+    $delete=preg_match('/^yesDeleteServer([1-9][0-9]*)_([a-f0-9]{16})$/D',$cb,$deletion)===1;
+    $cancelDelete=preg_match('/^cancelDeleteServer([1-9][0-9]*)_([a-f0-9]{16})$/D',$cb,$cancellation)===1;
+    if (!$start && !$active && !$legacyCancel && !$delete && !$cancelDelete) return false;
     $begun=false;$context='server';$entity=0;
     try {
         $actor=(int)$from_id;$source=achbotManagementFrame($update,$actor,$cb,is_string($text??null)?$text:null);
         if (!$connection->begin_transaction()) throw new RuntimeException('management_begin');$begun=true;
         $u=achbotManagementActor($connection,$actor,(int)$admin);
         $actorRowId=(int)$u['id'];
-        if ($delete && !in_array((string)$u['step'],['none',''],true))
+        if (($delete || $cancelDelete) && !in_array((string)$u['step'],['none',''],true))
             throw new RuntimeException('management_other_flow');
         $d=str_starts_with($u['step'],'achbotField|')?json_decode((string)$u['temp'],true):null;
         if ($active && (!is_array($d) || $u['step']!=='achbotField|'.($d['nonce']??'') ||
             $source<=(int)($d['source']??PHP_INT_MAX))) throw new RuntimeException('management_stale');
+        if ($cancelDelete) {
+            $entity=(int)$cancellation[1];
+            achbotAdminIntentCancelLocked($connection,$actor,(int)$admin,'server',
+                $entity,$cancellation[2],$update,$cb);
+            if (!achbotManagementCommit($connection)) throw new RuntimeException('management_commit_unknown');$begun=false;
+            editText((int)$update->callback_query->message->message_id,
+                achbotManagementText('server_list'),getServerConfigKeys($entity),'HTML');
+            return true;
+        }
         if ($delete) {
             if (!achbotAdminCanLocked($connection,$actor,(int)$admin,'servers')) throw new RuntimeException('management_admin_required');
             $entity=(int)$deletion[1];
+            achbotAdminIntentConsumeLocked($connection,$actor,(int)$admin,'server',
+                $entity,$deletion[2],$update,$cb);
             $server=achbotManagementRow($connection,'SELECT i.id,c.type FROM server_info i JOIN server_config c ON c.id=i.id WHERE i.id=? AND i.active=1 FOR UPDATE','i',[$entity]);
             if (!$server || !achbotSupportsAccount($server['type'],0)) throw new RuntimeException('management_targets');
             // Administrator confirmed a LOCAL hard delete, accepting that

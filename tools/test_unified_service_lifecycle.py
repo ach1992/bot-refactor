@@ -99,6 +99,12 @@ if ($action==='policy') {
  $row=$connection->query('SELECT * FROM orders_list WHERE id='.(int)$spec['order'])->fetch_assoc();
  if (!empty($spec['change_cycle'])) $connection->query('UPDATE orders_list SET expire_date=expire_date+1 WHERE id='.(int)$spec['order']);
  $out=achbotAutoRenewPrepareDeletion($connection,(int)$spec['order'],$row);
+} elseif ($action==='deletion_settled') {
+ $id=(int)$spec['order'];
+ $connection->begin_transaction();
+ $row=$connection->query('SELECT * FROM orders_list WHERE id='.$id.' FOR UPDATE')->fetch_assoc();
+ $out=$row!==null && achbotScheduledDeletionEffectsSettled($connection,$row);
+ $connection->rollback();
 } elseif ($action==='auto_reserve') {
  require_once __DIR__.'/reserve-under-test.php';
  $out=achbotAutoRenewReserve($connection,(int)$spec['order'],1001);
@@ -234,6 +240,50 @@ def main():
         for name,order,expected in grace_matrix:
             yes(call('grace',order=order) is expected,'grace_integrity_'+name)
         seed(remark='mb_user');seed(102,3,'fixture_user');pg_identity()
+        # Final payments with completed Native edits must not be mistaken for
+        # unsettled payments. Unknown claims and outstanding Native effects
+        # still block scheduled deletion, across both native providers.
+        for provider,oid,sid,remark in [('marzban',101,2,'mb_user'),
+                                         ('pasarguard',102,3,'fixture_user')]:
+            before=(len(mb.trace),len(pguard.trace))
+            for label,typ,state in [
+                ('renew','RENEW_ACCOUNT','auto_cart_approved'),
+                ('addon',f'INCREASE_VOLUME_{oid}_1','auto_cart_approved'),
+                ('approved_renew','RENEW_ACCOUNT','approved'),
+                ('wallet_addon',f'INCREASE_DAY_{oid}_1','paid_with_wallet')]:
+                key=f'finish_{provider}_{label}'
+                sql("INSERT INTO pays(hash_id,user_id,type,order_id,state,price,request_date) "
+                    f"VALUES('{key}',1001,'{typ}',{oid},'{state}',100,1700000000)")
+                yes(call('deletion_settled',order=oid) is True,
+                    provider+'_scheduled_delete_settled_'+label)
+            sql("INSERT INTO pays(hash_id,user_id,type,order_id,state,price,request_date) "
+                f"VALUES('unfinished_{provider}',1001,'RENEW_ACCOUNT',{oid},'auto_cart_approved',100,1700000000)")
+            unfinished=int(sql(f"SELECT id FROM pays WHERE hash_id='unfinished_{provider}'"))
+            sql("INSERT INTO payment_attempts(pay_row_id,provider,order_hash,quote_amount,quote_currency,stage) "
+                f"VALUES({unfinished},'nowpayments','unfinished-{provider}',100,'USD','review')")
+            yes(call('deletion_settled',order=oid) is False,
+                provider+'_scheduled_delete_contradictory_unfinished_attempt_blocks')
+            sql(f"UPDATE payment_attempts SET stage='done' WHERE pay_row_id={unfinished}")
+            yes(call('deletion_settled',order=oid) is True,
+                provider+'_scheduled_delete_completed_attempt_releases')
+            sql("INSERT INTO pays(hash_id,user_id,type,order_id,state,price,request_date) "
+                f"VALUES('pending_{provider}',1001,'RENEW_ACCOUNT',{oid},'processing',100,1700000000)")
+            yes(call('deletion_settled',order=oid) is False,
+                provider+'_scheduled_delete_unknown_processing_claim_blocks')
+            sql(f"DELETE FROM pays WHERE hash_id='pending_{provider}'")
+            sql("INSERT INTO service_effects(source_kind,source_ref,ordinal,operation_id,target_server_id,"
+                "target_key,endpoint_sha256,plan_id,remote_username,requested_expire,requested_bytes,request_sha256,state) VALUES("
+                f"'review','delete-guard-{provider}',33,REPEAT('f',32),{sid},'guard-{provider}',REPEAT('a',64),"
+                f"{7 if provider=='marzban' else 8},'{remark}',1900000000,1024,REPEAT('b',64),'dispatching')")
+            yes(call('deletion_settled',order=oid) is False,
+                provider+'_scheduled_delete_outstanding_native_effect_blocks')
+            sql(f"DELETE FROM service_effects WHERE source_ref='delete-guard-{provider}'")
+            yes(call('deletion_settled',order=oid) is True,
+                provider+'_scheduled_delete_only_after_all_evidence_settles')
+            yes(before==(len(mb.trace),len(pguard.trace)),
+                provider+'_scheduled_delete_preflight_performs_zero_native_requests')
+            sql(f'DELETE FROM payment_attempts WHERE pay_row_id={unfinished};'
+                f"DELETE FROM pays WHERE hash_id LIKE '%_{provider}'")
         for provider,sid,remark in [('marzban',2,'mb_user'),('pasarguard',3,'fixture_user')]:
             if provider=='marzban':mb.user.update(expire=None,data_limit=1073741824,used_traffic=1000000000,status='active')
             else:pguard.user.update(expire=None,data_limit=1073741824,used_traffic=1000000000,status='active')

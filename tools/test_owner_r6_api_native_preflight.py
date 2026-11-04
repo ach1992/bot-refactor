@@ -55,6 +55,21 @@ elseif($op==='locked_drift') {
   $connection->rollback();
  }
 }
+elseif($op==='locked_commerce') {
+ $seen=achbotApiPaymentSubjectPreflight($connection,$pay);
+ $other=new mysqli('localhost','root','',$dbName,0,$socket);
+ if (array_key_exists('new_state',$spec)) {
+  $next=(int)$spec['new_state'];
+  $s=$other->prepare('UPDATE server_info SET state=? WHERE id=2');
+  $s->bind_param('i',$next);$s->execute();$s->close();
+ }
+ $other->close();
+ $connection->begin_transaction();
+ $locked=achbotApiPaymentRow($connection,$id,true);
+ $value=['preflight'=>$seen['valid'],
+  'allowed'=>achbotApiPaymentLocalSubjectAllowed($connection,$locked,$seen)];
+ $connection->rollback();
+}
 elseif($op==='human') {
  $from_id=9001;$chat_id=9001;$message_id=222;$text=null;$userInfo=['step'=>'none'];$markup=[[]];
  $data=($pay['type']==='RENEW_ACCOUNT'?'approveRenewAcc':(str_starts_with($pay['type'],'INCREASE_DAY_')?'approveIncreaseDay':'approveIncreaseVolume')).$pay['hash_id'];
@@ -144,7 +159,7 @@ def check(progress_path=None):
             count+=1
             q('DELETE FROM payment_transactions;DELETE FROM bank_buy_invoice_claims;DELETE FROM payment_attempts;DELETE FROM service_effects;DELETE FROM orders_list;DELETE FROM pays')
             q(storage.connection(2,1,pg_url))
-            q("UPDATE server_info SET ucount=100,provider_group_ids='[2,5]' WHERE id=2;UPDATE server_plans SET provider_group_ids='[2,5]',days=30,volume=2,price=101,active=1 WHERE id=7")
+            q("UPDATE server_info SET ucount=100,state=1,active=1,provider_group_ids='[2,5]' WHERE id=2;UPDATE server_plans SET provider_group_ids='[2,5]',days=30,volume=2,price=101,active=1 WHERE id=7")
             q("INSERT INTO orders_list(id,userid,token,transid,fileid,server_id,inbound_id,remark,uuid,expire_date,link,amount,status,date) VALUES(91,1001,'fixture-token','',7,2,0,'fixture_user','fixture-uuid',1900000000,'[]',101,1,'1700000000')")
             panel.user=copy.deepcopy(pg.USER);panel.user['expire']=int(time.time())+3600
             panel.mode='ok';panel.trace=[];panel.write_count=0;panel.links_requested=False
@@ -179,6 +194,30 @@ def check(progress_path=None):
         record('local_identity_drift_after_preflight_before_locked_claim_denied',
             r['result'].get('supported') and r['result']['preflight'] and not r['result']['allowed'] and
             state(n)=='pending' and panel.write_count==0 and tx_ok(r),r)
+        # The issuer may have accepted a Native snapshot, but final SQL
+        # admission must reject a subsequently forbidden commerce policy.
+        for kind,old_state,new_state,label in [
+            ('buy',1,0,'new_buy_1_to_0'),
+            ('buy',1,2,'new_buy_1_to_2'),
+            ('renew',2,0,'existing_renew_2_to_0'),
+            ('volume',1,0,'existing_addon_1_to_0'),
+        ]:
+            n,key=reset(kind)
+            q(f'UPDATE server_info SET state={old_state} WHERE id=2')
+            assert issue(n)['result'] is True,(kind,old_state)
+            panel.trace=[];before=panel.write_count
+            r=call(op='locked_commerce',pay=n,new_state=new_state)
+            record('local_server_state_'+label+'_after_preflight_before_locked_claim_denied',
+                r['result']=={'preflight':True,'allowed':False} and
+                state(n)=='pending' and panel.write_count==before and tx_ok(r),r)
+        n,key=reset('renew')
+        assert issue(n)['result'] is True
+        q('UPDATE server_info SET state=2 WHERE id=2')
+        q('UPDATE server_plans SET active=0 WHERE id=7')
+        r=call(op='locked_commerce',pay=n)
+        record('state2_existing_renewal_saved_inactive_plan_allowed_at_locked_claim',
+            r['result']=={'preflight':True,'allowed':True} and
+            state(n)=='pending' and tx_ok(r),r)
         for mode in ['expired','unreadable','live','slow']:
             n,key=reset();assert issue(n)['result'] is True
             if mode=='expired':panel.user['expire']=int(time.time())-5;panel.user['status']='expired'
@@ -231,6 +270,9 @@ def check(progress_path=None):
             before=panel.write_count;panel.trace=[]
             if mode=='expired':panel.user['expire']=int(time.time())-5;panel.user['status']='expired'
             else:panel.mode='http_503'
+            # Already verified/committed effects are recoverable even if the
+            # administrator subsequently disables all new commerce.
+            q('UPDATE server_info SET state=0 WHERE id=2')
             q(f'UPDATE payment_attempts SET evidence_next_check_at=NULL WHERE pay_row_id={n}')
             r=call(op='maintain',pay=n)
             record(kind+'_verified_recovery_after_'+mode+'_local_only',state(n)=='auto_cart_approved' and panel.write_count==before and not panel.trace and not pg_events(r),dict(result=r,state=state(n),writes=panel.write_count,trace=panel.trace))

@@ -85,7 +85,7 @@ NEW_RUNTIME_MEMBERS = ("src/Subscription/Delivery.php", "pay/checkout.php", "set
                        "src/Panel/ProviderRuntime.php", "src/Panel/ProviderImport.php", "src/Panel/ProviderAdmin.php",
                        "src/Panel/MarzbanPlanAccess.php", "src/Subscription/PhysicalService.php",
                        "src/Subscription/ServerDisplaySettings.php",
-                       "src/Admin/ManagementFlow.php", "src/Admin/ServerWizard.php",
+                       "src/Admin/ManagementFlow.php", "src/Admin/IntentSafety.php", "src/Admin/ServerWizard.php",
                        "src/Plans/Wizard.php", "src/Plans/Addons.php", "src/Plans/AddonAdmin.php",
                        "src/Panel/ServiceLifecycle.php",
                        "src/Admin/Access.php", "src/Admin/InstanceContent.php",

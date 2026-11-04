@@ -3437,6 +3437,7 @@ function getMainMenuButtonsKeys(){
 }
 function getPlanDetailsKeys($planId){
     global $connection,$buttonValues;
+    require_once __DIR__.'/src/Admin/IntentSafety.php';
     require_once __DIR__.'/src/Presentation/Text.php';
     $planId=(int)$planId;
     $stmt=$connection->prepare("SELECT * FROM server_plans WHERE id=?");
@@ -3460,6 +3461,7 @@ function getPlanDetailsKeys($planId){
         'finite'=>\achbotMessage('admin_settings.management.plan_volume_label',['value'=>$volume['display']]),
         default=>\achbotMessage('admin_settings.management.plan_volume_unknown')
     };
+    $revision=achbotAdminPlanStateRevision($connection,$planId);
     $keys=[
         [['text'=>$plan['title'],'callback_data'=>'wizwizplanname'.$planId],
          ['text'=>\achbotMessage('admin_settings.config.get_plan_details_keys.button.e1615aff08'),'callback_data'=>'wizwizch']],
@@ -3477,7 +3479,7 @@ function getPlanDetailsKeys($planId){
         [['text'=>(int)$plan['active']===1?
             \achbotMessage('admin_settings.management.plan_hide_from_sale'):
             \achbotMessage('admin_settings.management.plan_offer_for_sale'),
-            'callback_data'=>'togglePlanState'.$planId]],
+            'callback_data'=>'setPlanSale'.$planId.'_' . ((int)$plan['active']===1?0:1).'_'.$revision]],
         [['text'=>\achbotMessage('admin_settings.config.get_plan_details_keys.button.c3a5bc0cbd'),'callback_data'=>'wizwizplandelete'.$planId]],
         [['text'=>$buttonValues['back_button'],'callback_data'=>'plansList'.$serverId]]
     ];

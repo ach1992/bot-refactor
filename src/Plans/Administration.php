@@ -7,6 +7,7 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
 require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
 
 require_once __DIR__.'/../Admin/Access.php';
+require_once __DIR__.'/../Admin/IntentSafety.php';
 if (!achbotAdminRequestAllowed(is_string($data??null)?$data:null,is_string($text??null)?$text:null,(string)($userInfo['step']??''))) {achbotAdminDeny();return;}
 
 
@@ -160,25 +161,15 @@ if(preg_match('/^wizwizplanacclist(\d+)/',$data,$match) and achbotAdminCanFor($c
         sendMessage($txt, null, "HTML");
     }
 }
-if(preg_match('/^togglePlanState([1-9][0-9]*)$/D',(string)$data,$match) &&
+if(preg_match('/^setPlanSale([1-9][0-9]*)_([01])_([a-f0-9]{16})$/D',(string)$data,$match) &&
     achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'plans')){
-    $planId=(int)$match[1];$begun=false;
+    $planId=(int)$match[1];
     try {
-        if (!$connection->begin_transaction()) throw new RuntimeException('plan_state_begin');
-        $begun=true;
-        $s=$connection->prepare('SELECT active FROM server_plans WHERE id=? FOR UPDATE');
-        $s->bind_param('i',$planId);$s->execute();$plan=$s->get_result()->fetch_assoc();$s->close();
-        if (!$plan || !in_array((int)$plan['active'],[0,1],true))
-            throw new RuntimeException('plan_state_stale');
-        $mode=(int)$plan['active']===1?0:1;
-        $s=$connection->prepare('UPDATE server_plans SET active=? WHERE id=?');
-        $s->bind_param('ii',$mode,$planId);$s->execute();$n=$s->affected_rows;$s->close();
-        if ($n!==1 || !$connection->commit()) throw new RuntimeException('plan_state_commit');
-        $begun=false;
+        achbotAdminPlanStateSet($connection,(int)$from_id,(int)$admin,
+            $planId,(int)$match[2],$match[3],$update,(string)$data);
         editText($message_id,\achbotMessage('plans.administration.edit_custom_plan.message.06d5c646c1'),
             getPlanDetailsKeys($planId),'HTML');
     } catch (Throwable $error) {
-        if ($begun) {try {$connection->rollback();} catch (Throwable $ignored) {}}
         error_log('achbot_admin_plan_visibility_deferred');
         alert(\achbotMessage('admin_settings.management.management_stale'),true);
     }
@@ -187,25 +178,61 @@ if(preg_match('/^togglePlanState([1-9][0-9]*)$/D',(string)$data,$match) &&
 if(preg_match('/^wizwizplandelete([1-9][0-9]*)$/D',(string)$data,$match) &&
     achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'plans')){
     $planId=(int)$match[1];
-    $stmt=$connection->prepare('SELECT id FROM server_plans WHERE id=?');
-    $stmt->bind_param('i',$planId);$stmt->execute();$plan=$stmt->get_result()->fetch_assoc();$stmt->close();
-    if (!$plan) {alert(\achbotMessage('admin_settings.management.management_stale'),true);return;}
-    $keys=json_encode(['inline_keyboard'=>[
-        [['text'=>\achbotMessage('admin_settings.config.get_plan_details_keys.button.c3a5bc0cbd'),
-          'callback_data'=>'confirmDeletePlan'.$planId]],
-        [['text'=>$buttonValues['back_button'],'callback_data'=>'planDetails'.$planId]]
-    ]],JSON_UNESCAPED_UNICODE);
-    editText($message_id,\achbotMessage('admin_settings.management.plan_delete_confirm'),$keys,'HTML');
+    try {
+        $confirmation=achbotAdminIntentIssue($connection,(int)$from_id,(int)$admin,
+            'plan',$planId,$update,(string)$data);
+        $keys=json_encode(['inline_keyboard'=>[
+            [['text'=>\achbotMessage('admin_settings.config.get_plan_details_keys.button.c3a5bc0cbd'),
+              'callback_data'=>$confirmation]],
+            [['text'=>$buttonValues['back_button'],'callback_data'=>
+              str_replace('confirmDeletePlan','cancelDeletePlan',$confirmation)]]
+        ]],JSON_UNESCAPED_UNICODE);
+        editText($message_id,\achbotMessage('admin_settings.management.plan_delete_confirm'),$keys,'HTML');
+    } catch (Throwable $error) {
+        error_log('achbot_admin_plan_delete_warning_deferred');
+        alert(\achbotMessage('admin_settings.management.management_stale'),true);
+    }
     return;
 }
-if(preg_match('/^confirmDeletePlan([1-9][0-9]*)$/D',(string)$data,$match) &&
+if(preg_match('/^cancelDeletePlan([1-9][0-9]*)_([a-f0-9]{16})$/D',(string)$data,$match) &&
     achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'plans')){
-    // Intentionally local: historical orders and finance are kept unchanged.
-    $planId=(int)$match[1];
-    $stmt=$connection->prepare('DELETE FROM server_plans WHERE id=?');
-    $stmt->bind_param('i',$planId);$stmt->execute();$deleted=$stmt->affected_rows;$stmt->close();
-    if ($deleted!==1) {alert(\achbotMessage('admin_settings.management.management_stale'),true);return;}
-    editText($message_id,\achbotMessage('admin_settings.management.plan_deleted'),getMainKeys());
+    $planId=(int)$match[1];$begun=false;
+    try {
+        if (!$connection->begin_transaction())throw new RuntimeException('plan_delete_cancel_begin');$begun=true;
+        achbotAdminIntentCancelLocked($connection,(int)$from_id,(int)$admin,
+            'plan',$planId,$match[2],$update,(string)$data);
+        if (!$connection->commit())throw new RuntimeException('plan_delete_cancel_commit_unknown');$begun=false;
+        editText($message_id,\achbotMessage('plans.administration.edit_custom_plan.message.06d5c646c1'),
+            getPlanDetailsKeys($planId),'HTML');
+    } catch (Throwable $error) {
+        if ($begun) {try{$connection->rollback();}catch(Throwable $ignored){}}
+        error_log('achbot_admin_plan_delete_cancel_deferred');
+        alert(\achbotMessage('admin_settings.management.management_stale'),true);
+    }
+    return;
+}
+if(preg_match('/^confirmDeletePlan([1-9][0-9]*)_([a-f0-9]{16})$/D',(string)$data,$match) &&
+    achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'plans')){
+    $planId=(int)$match[1];$begun=false;
+    try {
+        if (!$connection->begin_transaction())throw new RuntimeException('plan_delete_begin');$begun=true;
+        achbotAdminIntentConsumeLocked($connection,(int)$from_id,(int)$admin,
+            'plan',$planId,$match[2],$update,(string)$data);
+        // Only the local plan is deleted. Referencing orders and finance remain historical.
+        $stmt=$connection->prepare('DELETE FROM server_plans WHERE id=?');
+        $stmt->bind_param('i',$planId);
+        if (!$stmt->execute() || $stmt->affected_rows!==1) {
+            $stmt->close();throw new RuntimeException('plan_delete_stale');
+        }
+        $stmt->close();
+        achbotAdminPlanStateBumpLocked($connection,$planId);
+        if (!$connection->commit())throw new RuntimeException('plan_delete_commit_unknown');$begun=false;
+        editText($message_id,\achbotMessage('admin_settings.management.plan_deleted'),getMainKeys());
+    } catch (Throwable $error) {
+        if ($begun) {try{$connection->rollback();}catch(Throwable $ignored){}}
+        error_log('achbot_admin_plan_delete_deferred');
+        alert(\achbotMessage('admin_settings.management.management_stale'),true);
+    }
     return;
 }
 if(preg_match('/^wizwizplanname(\d+)/',$data) and achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'plans') && $text != $buttonValues['cancel']){

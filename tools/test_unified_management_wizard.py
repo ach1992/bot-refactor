@@ -134,10 +134,14 @@ try {
  $deleteResult=null;
  if (array_key_exists('delete',$spec)) {
   $deleteResult=delMessage($spec['delete']['message']??null,$spec['delete']['chat']??null);$handled=true;
+ } elseif (!empty($spec['issue_delete'])) {
+  $issued=achbotAdminIntentIssue($connection,$from_id,$admin,(string)$spec['issue_delete'],
+   (int)$spec['entity'],$update,(string)$data);
+  $handled=true;
  } else $handled=!empty($spec['field'])?achbotHandleManagementFields():achbotHandleManagement();
  $s=$connection->prepare('SELECT step,temp FROM users WHERE userid=?');$s->bind_param('i',$from_id);$s->execute();
  $state=$s->get_result()->fetch_assoc();$s->close();
- echo json_encode(['handled'=>$handled,'events'=>$GLOBALS['events'],'state'=>$state,'cached_step'=>$userInfo['step']??null,'review_label'=>achbotManagementText('review_required'),'actor_writes'=>$connection->actorWrites,'delete_result_null'=>$deleteResult===null],JSON_THROW_ON_ERROR);
+ echo json_encode(['handled'=>$handled,'events'=>$GLOBALS['events'],'state'=>$state,'cached_step'=>$userInfo['step']??null,'review_label'=>achbotManagementText('review_required'),'actor_writes'=>$connection->actorWrites,'issued'=>$issued??null,'delete_result_null'=>$deleteResult===null],JSON_THROW_ON_ERROR);
 } catch(Throwable $error){echo json_encode(['exception'=>$error->getMessage()],JSON_THROW_ON_ERROR);}
 '''
 
@@ -561,33 +565,42 @@ def main():
         cancel(r,actor=9002)
         # A confirmed removal may have dependencies; their records are retained.
         clean_id=int(sql('SELECT MAX(id) FROM server_info').strip());before=rows()
-        # A stale delete confirmation may not hide an active editor or financial draft.
+        # A real issued delete token cannot bypass an active editor/financial draft.
+        pending_delete=call(callback='wizwizdeleteserver'+str(clean_id),
+            issue_delete='server',entity=clean_id)['issued']
         r=call(callback='editServerName'+str(clean_id),field=True);before_busy=all_state()
-        refused=call(callback='yesDeleteServer'+str(clean_id),field=True)
+        refused=call(callback=pending_delete,field=True)
         yes(all_state()==before_busy and not any(e.get('keys')=='{"remove_keyboard":true}'for e in refused['events']),'busy_field_editor_blocks_server_delete_without_hiding_editor')
         call(text='fixture-cancel',field=True)
         r=call(callback='addManagedPlan');before_busy=all_state()
-        refused=call(callback='yesDeleteServer'+str(clean_id))
+        refused=call(callback=pending_delete,field=True)
         yes(all_state()==before_busy,'busy_plan_wizard_blocks_server_delete')
         cancel(r)
         for pending in ['achbotWalletAmount|fixture','addNewMarzbanPlan']:
             sql("UPDATE users SET step='"+pending+"',temp='PRIVATE-FINANCIAL-DRAFT' WHERE userid=9001")
             before_busy=all_state()
-            refused=call(callback='yesDeleteServer'+str(clean_id),field=pending!='addNewMarzbanPlan')
+            refused=call(callback=pending_delete,field=True)
             yes(all_state()==before_busy and not any(e.get('keys')=='{"remove_keyboard":true}'for e in refused['events']),'busy_'+pending.split('|')[0]+'_delete_has_no_user_or_entity_mutation')
             sql("UPDATE users SET step='none',temp=NULL WHERE userid=9001")
-        # This negative deliberately removes the Manager's server capability.
+        # A Manager can receive a warning, but revoked capability cannot
+        # consume that specific valid token a moment later.
+        manager_delete=call(callback='wizwizdeleteserver'+str(clean_id),
+            issue_delete='server',entity=clean_id,actor=9002)['issued']
         sql("UPDATE setting SET value='operator' WHERE type='ADMIN_ROLE_9002'")
-        r=call(callback='yesDeleteServer'+str(clean_id),actor=9002,field=True)
+        r=call(callback=manager_delete,actor=9002,field=True)
         yes(rows()==before,'delegate_without_server_permission_cannot_delete')
         sql("UPDATE setting SET value='manager' WHERE type='ADMIN_ROLE_9002'")
         effects_before=sql("SELECT COUNT(*) FROM service_effects")
-        r=call(callback='yesDeleteServer'+str(clean_id),field=True)
+        live_delete=call(callback='wizwizdeleteserver'+str(clean_id),
+            issue_delete='server',entity=clean_id,message_id=575)['issued']
+        r=call(callback=live_delete,field=True,message_id=575)
         yes(sql('SELECT COUNT(*) FROM server_info WHERE id='+str(clean_id)).strip()=='0' and sql('SELECT COUNT(*) FROM server_config WHERE id='+str(clean_id)).strip()=='0','unreferenced_server_delete_is_atomic')
         yes(sql("SELECT COUNT(*) FROM service_effects")==effects_before,'historical_provider_effects_retained_on_server_delete')
         # Remove a populated server after its wizard has completed; only connection rows disappear.
         dependent_before=sql('SELECT * FROM server_plans ORDER BY id;SELECT * FROM orders_list ORDER BY id;SELECT * FROM pays ORDER BY id;SELECT * FROM service_effects ORDER BY id')
-        r=call(callback='yesDeleteServer'+str(pg_id),field=True,message_id=575)
+        dependent_delete=call(callback='wizwizdeleteserver'+str(pg_id),
+            issue_delete='server',entity=pg_id,message_id=575)['issued']
+        r=call(callback=dependent_delete,field=True,message_id=575)
         yes(sql('SELECT COUNT(*) FROM server_info WHERE id='+str(pg_id)).strip()=='0' and sql('SELECT COUNT(*) FROM server_config WHERE id='+str(pg_id)).strip()=='0','confirmed_referenced_server_is_removed')
         yes(sql('SELECT * FROM server_plans ORDER BY id;SELECT * FROM orders_list ORDER BY id;SELECT * FROM pays ORDER BY id;SELECT * FROM service_effects ORDER BY id')==dependent_before,'confirmed_server_removal_preserves_dependent_records')
         edits=[e for e in r['events']if e.get('method')=='editMessageText']
