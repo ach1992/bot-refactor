@@ -95,6 +95,8 @@ $GLOBALS['fake_marzban_reset_http'] = $spec['marzban_reset_http'] ?? 200;
 $GLOBALS['fake_marzban_username'] = $spec['marzban_username'] ?? 'syntheticMarzban';
 $GLOBALS['fake_marzban_applied'] = null;
 $GLOBALS['fake_marzban_used'] = 1073741824;
+// Remote expiry is persistent account state, not a moving clock on each GET.
+$GLOBALS['fake_marzban_initial_expire'] = time() + 86400;
 $GLOBALS['fake_renew_success'] = $spec['renew_success'] ?? false;
 $GLOBALS['fake_renew_applied_expire']=$spec['renew_applied_expire']??null;
 $GLOBALS['marzban_edit_drift_order_id']=(int)($spec['marzban_edit_drift_order_id']??0);
@@ -446,7 +448,7 @@ function curl_exec($handle) {
             ]);
         return json_encode([
             'username'=>$GLOBALS['fake_marzban_username'],
-            'expire'=>$applied['expire']??(time()+86400),
+            'expire'=>$applied['expire']??$GLOBALS['fake_marzban_initial_expire'],
             'data_limit'=>$applied['data_limit']??1073741824,
             'used_traffic'=>$GLOBALS['fake_marzban_used'],
             'inbounds'=>['vless'=>['fake-inbound']],
@@ -2901,7 +2903,8 @@ def main():
             out=[x for x in res['events'] if x['name']=='marzban_edit_result']
             if len(out)!=1 or out[0]['success'] is not want or not any(
                 '/reset' in c for c in res['network_calls']):
-                raise RuntimeError('Marzban reset/renew verification failed '+name)
+                raise RuntimeError('Marzban reset/renew verification failed '+name+
+                                   ': '+repr({'events':out,'calls':res['network_calls']}))
             records.append(dict(case='marzban_reset_'+name+'_native_contract',pass_=True))
 
         # Real wallet credit helper (not a test-only SQL copy) must confirm
