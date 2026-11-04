@@ -91,7 +91,7 @@ if (
         setUser();
     }else delMessage();
 
-    $stmt = $connection->prepare("SELECT * FROM `server_plans` WHERE `id` = ? AND `active` = 1");
+    $stmt = $connection->prepare("SELECT * FROM `server_plans` WHERE `id` = ?");
     $stmt->bind_param("i", $fid);
     $stmt->execute();
     $respd = $stmt->get_result()->fetch_assoc();
@@ -300,7 +300,7 @@ if (preg_match('/wait(?:RenewCart|RenewGift|RenewUsdt)Receipt(.*)/', $userInfo['
 
     $remark = $order['remark'];
 
-    $stmt = $connection->prepare("SELECT * FROM `server_plans` WHERE `id` = ? AND `active` = 1");
+    $stmt = $connection->prepare("SELECT * FROM `server_plans` WHERE `id` = ?");
     $stmt->bind_param("i", $fid);
     $stmt->execute();
     $respd = $stmt->get_result()->fetch_assoc();
@@ -394,7 +394,7 @@ if(preg_match('/^approveRenewAcc(.*)/',$data,$match) && achbotAdminCanFor($conne
         $server_id  = intval($order['server_id']); 
         $inbound_id = intval($order['inbound_id']); 
 
-        $stmt = $connection->prepare("SELECT * FROM `server_plans` WHERE `id` = ? AND `active` = 1"); 
+        $stmt = $connection->prepare("SELECT * FROM `server_plans` WHERE `id` = ?");
         $stmt->bind_param("i", $fid); 
         $stmt->execute(); 
         $respd = $stmt->get_result()->fetch_assoc(); 
@@ -600,7 +600,7 @@ if(is_string($data) && strlen($data) <= 64 && preg_match('/\ApayRenewWithWallet(
         $server_id   = intval($order['server_id']);
         $inbound_id  = intval($order['inbound_id']);
 
-        $stmt = $connection->prepare("SELECT * FROM `server_plans` WHERE `id` = ? AND `active` = 1");
+        $stmt = $connection->prepare("SELECT * FROM `server_plans` WHERE `id` = ?");
         $stmt->bind_param("i", $fid);
         $stmt->execute();
         $plan = $stmt->get_result()->fetch_assoc();

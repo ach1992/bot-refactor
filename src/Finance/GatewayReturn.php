@@ -1484,7 +1484,7 @@ function achbotPerformPaymentEffect($payRowId, $gateType, &$effectStage = null) 
         $server_id = (int)$order['server_id'];
         $inbound_id = (int)$order['inbound_id'];
 
-        $stmt = $connection->prepare("SELECT * FROM `server_plans` WHERE `id` = ? AND `active` = 1");
+        $stmt = $connection->prepare("SELECT * FROM `server_plans` WHERE `id` = ?");
         $stmt->bind_param("i", $fid);
         $stmt->execute();
         $respd = $stmt->get_result()->fetch_assoc();

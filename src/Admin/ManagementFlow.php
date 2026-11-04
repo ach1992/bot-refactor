@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__.'/Access.php';
+require_once __DIR__.'/IntentSafety.php';
 /** AChBot actor-owned management drafts; no global inactive server/plan rows. */
 if (realpath($_SERVER['SCRIPT_FILENAME']??'')===__FILE__) {http_response_code(404);exit;}
 require_once __DIR__.'/../../messages/loader.php';
@@ -49,7 +50,6 @@ function achbotManagementText(string $key,array $params=[]): string {
         'selection_done'=>achbotMessage('admin_settings.management.selection_done',$params),
         'reuse_connection'=>achbotMessage('admin_settings.management.reuse_connection',$params),
         'no_shared_group'=>achbotMessage('admin_settings.management.no_shared_group',$params),
-        'inherit_groups'=>achbotMessage('admin_settings.management.inherit_groups',$params),
         'server_provider'=>achbotMessage('admin_settings.management.server_provider',$params),
         'server_title'=>achbotMessage('admin_settings.management.server_title',$params),
         'server_capacity'=>achbotMessage('admin_settings.management.server_capacity',$params),
@@ -98,6 +98,7 @@ function achbotManagementText(string $key,array $params=[]): string {
         'shared_key_notice'=>achbotMessage('admin_settings.management.shared_key_notice',$params),
         'server_referenced'=>achbotMessage('admin_settings.management.server_referenced',$params),
         'server_removed'=>achbotMessage('admin_settings.management.server_removed',$params),
+        'server_retired'=>achbotMessage('admin_settings.management.server_retired',$params),
         'settings_saved'=>achbotMessage('admin_settings.management.settings_saved',$params),
         'server_delete_confirm'=>achbotMessage('admin_settings.management.server_delete_confirm',$params),
         'server_choice'=>achbotMessage('admin_settings.management.server_choice',$params),
@@ -286,8 +287,9 @@ function achbotHandleManagement(): bool {
     } catch (Throwable $error) {
         if ($begun) {try {$connection->rollback();} catch (Throwable $ignored) {}}
         $reason=$error instanceof RuntimeException?$error->getMessage():'management_unavailable';
-        $public=in_array($reason,['management_input','management_connection','management_targets','management_stale',
-            'management_other_flow','management_other_action','management_admin_required'],true)?$reason:'management_unavailable';
+        $public=$reason==='management_server_review'?'review_required':
+            (in_array($reason,['management_input','management_connection','management_targets','management_stale',
+            'management_other_flow','management_other_action','management_admin_required'],true)?$reason:'management_unavailable');
         error_log('achbot_management_deferred reason='.$public);
         // A failed/unknown COMMIT is not safe to present as a failed save or retry.
         if ($reason==='management_commit_unknown') {
@@ -325,28 +327,44 @@ function achbotHandleManagementFields(): bool {
     $start=preg_match('/^(editServer(Name|Flag|Remark|Max)|plan(Days|Volume)|changesServerLoginInfo)([1-9][0-9]*)$/D',$cb,$match)===1;
     $legacyCancel=is_string($text??null) && $text===($buttonValues['cancel']??null) &&
         preg_match('/^(?:editServer(?:Name|Flag|Remark|Max)|plan(?:Days|Volume)|changesServerLoginInfo)([1-9][0-9]*)$/D',$step,$old);
-    $delete=preg_match('/^yesDeleteServer([1-9][0-9]*)$/D',$cb,$deletion)===1;
-    if (!$start && !$active && !$legacyCancel && !$delete) return false;
+    $delete=preg_match('/^yesDeleteServer([1-9][0-9]*)_([a-f0-9]{16})$/D',$cb,$deletion)===1;
+    $cancelDelete=preg_match('/^cancelDeleteServer([1-9][0-9]*)_([a-f0-9]{16})$/D',$cb,$cancellation)===1;
+    if (!$start && !$active && !$legacyCancel && !$delete && !$cancelDelete) return false;
     $begun=false;$context='server';$entity=0;
     try {
         $actor=(int)$from_id;$source=achbotManagementFrame($update,$actor,$cb,is_string($text??null)?$text:null);
         if (!$connection->begin_transaction()) throw new RuntimeException('management_begin');$begun=true;
         $u=achbotManagementActor($connection,$actor,(int)$admin);
         $actorRowId=(int)$u['id'];
-        if ($delete && !in_array((string)$u['step'],['none',''],true))
+        if (($delete || $cancelDelete) && !in_array((string)$u['step'],['none',''],true))
             throw new RuntimeException('management_other_flow');
         $d=str_starts_with($u['step'],'achbotField|')?json_decode((string)$u['temp'],true):null;
         if ($active && (!is_array($d) || $u['step']!=='achbotField|'.($d['nonce']??'') ||
             $source<=(int)($d['source']??PHP_INT_MAX))) throw new RuntimeException('management_stale');
+        if ($cancelDelete) {
+            $entity=(int)$cancellation[1];
+            achbotAdminIntentCancelLocked($connection,$actor,(int)$admin,'server',
+                $entity,$cancellation[2],$update,$cb);
+            if (!achbotManagementCommit($connection)) throw new RuntimeException('management_commit_unknown');$begun=false;
+            editText((int)$update->callback_query->message->message_id,
+                achbotManagementText('server_list'),getServerConfigKeys($entity),'HTML');
+            return true;
+        }
         if ($delete) {
             if (!achbotAdminCanLocked($connection,$actor,(int)$admin,'servers')) throw new RuntimeException('management_admin_required');
             $entity=(int)$deletion[1];
-            $server=achbotManagementRow($connection,'SELECT i.id,c.type FROM server_info i JOIN server_config c ON c.id=i.id WHERE i.id=? FOR UPDATE','i',[$entity]);
+            achbotAdminIntentConsumeLocked($connection,$actor,(int)$admin,'server',
+                $entity,$deletion[2],$update,$cb);
+            $server=achbotManagementRow($connection,'SELECT i.id,c.type FROM server_info i JOIN server_config c ON c.id=i.id WHERE i.id=? AND i.active=1 FOR UPDATE','i',[$entity]);
             if (!$server || !achbotSupportsAccount($server['type'],0)) throw new RuntimeException('management_targets');
-            // Explicit administrator confirmation removes this connection only.
-            // Dependent orders/plans and financial/effect history remain intact.
-            achbotManagementSql($connection,'DELETE FROM server_config WHERE id=?','i',[$entity])->close();
-            achbotManagementSql($connection,'DELETE FROM server_info WHERE id=?','i',[$entity])->close();
+            // Administrator confirmed a LOCAL hard delete, accepting that
+            // existing orders and pending claims can no longer reach this server.
+            // Do not rewrite historical orders, payments, plans, or Native effects.
+            $s=achbotManagementSql($connection,'DELETE FROM server_config WHERE id=?','i',[$entity]);
+            $configRemoved=$s->affected_rows;$s->close();
+            $s=achbotManagementSql($connection,'DELETE FROM server_info WHERE id=?','i',[$entity]);
+            $infoRemoved=$s->affected_rows;$s->close();
+            if ($configRemoved!==1 || $infoRemoved!==1) throw new RuntimeException('management_stale');
             if (!achbotManagementCommit($connection)) throw new RuntimeException('management_commit_unknown');$begun=false;
             $keys=getServerListKeys();
             editText((int)$update->callback_query->message->message_id,
@@ -401,7 +419,23 @@ function achbotHandleManagementFields(): bool {
                     achbotManagementRow($connection,'SELECT i.*,c.type,c.panel_url,c.username,c.password FROM server_info i JOIN server_config c ON c.id=i.id WHERE i.id=? FOR UPDATE','i',[$entity]);
                 if (!$row || !hash_equals($d['baseline'],achbotManagementFieldBaseline($row,$field))) throw new RuntimeException('management_stale');
                 if ($field==='login') {
-                    $v=$d['values'];achbotManagementSql($connection,'UPDATE server_config SET panel_url=?,username=?,password=? WHERE id=? AND type=\'marzban\'','sssi',[$v['url'],$v['username'],$v['password'],$entity])->close();
+                    $v=$d['values'];
+                    $endpointChanged=$v['url']!==$row['panel_url'];
+                    if ($endpointChanged ||
+                        $v['username']!==$row['username'] ||
+                        $v['password']!==$row['password']) {
+                        require_once __DIR__.'/../Subscription/PhysicalService.php';
+                        // Rebinding an endpoint is unsafe for active references.
+                        // Safe credential rotation on an unchanged endpoint is
+                        // still permitted when no plan journal is outstanding.
+                        try {achbotPhysicalAssertRebindSafe($connection,$entity,true,$endpointChanged);}
+                        catch (RuntimeException $e) {
+                            if ($e->getMessage()==='physical_rebind_active_references')
+                                throw new RuntimeException('server_referenced');
+                            throw new RuntimeException('management_rebind_requires_review');
+                        }
+                    }
+                    achbotManagementSql($connection,'UPDATE server_config SET panel_url=?,username=?,password=? WHERE id=? AND type=\'marzban\'','sssi',[$v['url'],$v['username'],$v['password'],$entity])->close();
                 } else {
                     $column=['name'=>'title','flag'=>'flag','remark'=>'remark','max'=>'ucount','days'=>'days','volume'=>'volume'][$field]??null;
                     if ($column===null) throw new RuntimeException('management_input');
@@ -428,9 +462,11 @@ function achbotHandleManagementFields(): bool {
         if ($begun) {try{$connection->rollback();}catch(Throwable $ignored){}}
         $code=$error instanceof RuntimeException?$error->getMessage():'management_unavailable';
         if (in_array($code,['management_frame','management_private_required'],true)) return true;
-        $allowed=['management_stale','management_targets','management_input','management_other_flow','management_other_action','management_connection','management_admin_required','server_referenced'];
+        $allowed=['management_stale','management_targets','management_input','management_other_flow','management_other_action','management_connection','management_admin_required','server_referenced','management_rebind_requires_review'];
         error_log('achbot_management_field_deferred reason='.(in_array($code,$allowed,true)?$code:'management_unavailable'));
-        sendMessage(achbotManagementText($code==='management_commit_unknown'?'review_required':(in_array($code,$allowed,true)?$code:'management_unavailable')));
+        sendMessage(achbotManagementText(in_array($code,['management_commit_unknown',
+            'management_rebind_requires_review'],true)?'review_required':
+            (in_array($code,$allowed,true)?$code:'management_unavailable')));
     }
     return true;
 }

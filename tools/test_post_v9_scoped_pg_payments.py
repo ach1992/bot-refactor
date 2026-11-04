@@ -151,10 +151,10 @@ def test() -> dict:
         hosted_source=hosted_source.replace(
             "function achbotSupportsPanel($type) { return $type==='marzban'; }",
             "function achbotSupportsPanel($type) { return in_array($type,['marzban','pasarguard'],true); }")
-        start=hosted_source.index('function curl_init()')
+        start=hosted_source.index('function curl_init(')
         end=hosted_source.index('ob_start();',start)
         hosted_source=hosted_source[:start]+hosted_source[end:]
-        assert "function curl_init()" not in hosted_source
+        assert "function curl_init(" not in hosted_source
         hosted_driver=run.fixture_work/"scoped-pg-hosted.php"
         hosted_driver.write_text(hosted_source)
         def hosted_call(pay_id):

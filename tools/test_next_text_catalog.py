@@ -140,9 +140,49 @@ def main():
     interval_source=(ROOT/'src/Plans/Intervals.php').read_text()
     check(obsolete_postwrite<=entries and not (obsolete_postwrite & refs) and
           'wizwizch' not in interval_source,'retired_postwrite_catalogue_reintroduced')
-    expected_unused=(set(management['retained_legacy_keys'])|
+    # #112 deliberately retains four historical copy keys while retiring
+    # the global transfer toggle and obsolete DB-only plan messages.
+    retired_shared_transfer={
+        'renewal.extensions.message.dee2da49f3',
+        'admin_settings.config.get_bot_setting_keys.button.c6b7f26615',
+        'subscription.order_management.show_order_management_panel.alert.f19b5510c6',
+        'subscription.account_transfers.alert.6b5b63fb0f',
+    }
+    check(retired_shared_transfer<=entries and not
+          (retired_shared_transfer & refs),'retired_shared_transfer_copy_reintroduced')
+    # R1 removed the legacy unguarded bot.php server-deletion branch.
+    # Keep only its two historical UI keys as explicit, source-proven orphans
+    # rather than deleting frozen translations or admitting arbitrary unused
+    # labels. The Owner Rev4 live delete/state/plan copy is source pinned.
+    removal=json.loads((ROOT/'tools/text_catalog_server_removal_safety.json').read_text())
+    legacy_delete_keys={
+        'bot.bot.addserver_name.alert.601504ae47',
+        'bot.bot.addserver_name.message.756c3005d3',
+    }
+    historical_labels={
+        'bot.bot.servers_setting.alert.9f4e68eda7':'bot.php',
+        'plans.administration.edit_custom_plan.alert.3064bbd794':'src/Plans/Administration.php',
+        'plans.administration.edit_custom_plan.message.b059640ccc':'src/Plans/Administration.php',
+    }
+    retired_keys=legacy_delete_keys|set(historical_labels)
+    check(removal.get('version')==1 and
+          removal.get('previous_candidate')==catalog_owner_r5.SERVER_REMOVAL_PARENT and
+          set(removal.get('retained_unreferenced_keys',[]))==retired_keys and
+          len(removal['retained_unreferenced_keys'])==len(retired_keys),
+          'legacy_server_removal_copy_lineage_invalid')
+    original_bot=command('git','show',catalog_owner_r5.SERVER_REMOVAL_PARENT+':bot.php').decode()
+    current_bot=sources['bot.php']
+    check(all(key in original_bot and key not in current_bot for key in legacy_delete_keys) and
+          legacy_delete_keys<=entries and not (legacy_delete_keys&refs),
+          'obsolete_unguarded_server_deletion_copy_still_in_use_or_missing')
+    for key,path in historical_labels.items():
+        ancestor=command('git','show',catalog_owner_r5.SERVER_REMOVAL_PARENT+':'+path).decode()
+        check(key in ancestor and key not in sources[path] and key in entries and key not in refs,
+              'retired_owner_rev4_status_plan_label_invalid:'+key)
+    expected_unused=(retired_shared_transfer|set(management['retained_legacy_keys'])|
         catalog_owner_r5.verify_retained_display_keys()|
-        catalog_owner_r5.API_REVIEW_RETAINED|obsolete_filter|obsolete_postwrite)
+        catalog_owner_r5.API_REVIEW_RETAINED|obsolete_filter|obsolete_postwrite|
+        retired_keys)
     check(unused==expected_unused,'unrecorded legacy/orphan copy entries: '+str(unused^expected_unused))
     with tempfile.TemporaryDirectory(prefix='achbot-catalog-audit-') as scratch:
         fixture=pathlib.Path(scratch)/'fixture.php'
@@ -193,7 +233,7 @@ def main():
     presentation=json.loads(command('python3','tools/test_text_catalog_style.py'))
     check(presentation.get('status')=='PASS' and presentation.get('editable_files')==2
           and presentation.get('canonical_binding_paths')==2 and presentation.get('canonical_binding_entries')==4 and presentation.get('canonical_binding_negative_controls')==4
-          and presentation.get('current_keys')==2523+len(management['added_keys'])-len(catalog_owner_r5.manifest()['retired_keys'])+len(catalog_owner_r5.manifest()['added_keys'])+len(catalog_owner_r5.api_manifest()['added_keys'])+1+8+14  # Existing gift/evidence layers plus the exactly verified 14 current-only scoped addon entries.
+          and presentation.get('current_keys')==2523+len(management['added_keys'])-len(catalog_owner_r5.manifest()['retired_keys'])+len(catalog_owner_r5.manifest()['added_keys'])+len(catalog_owner_r5.api_manifest()['added_keys'])+1+8+14+9  # Gift/evidence layers, 14 scoped addons and exactly one new server-retired message.
           and presentation.get('management_added_keys')==len(management['added_keys'])
           and presentation.get('management_baseline_keys')==2523
           and presentation.get('management_negative_controls')==5

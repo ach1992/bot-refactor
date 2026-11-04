@@ -78,7 +78,7 @@ def snapshot(work,env,db):
     }
     return {k:native.sql(work,env,q,db) for k,q in queries.items()}
 
-def run(work,env,root:Path,db,kind,spec,modern=None,execution_cwd=None):
+def run(work,env,root:Path,db,kind,spec,modern=None,execution_cwd=None,expected_stderr=b''):
     (root/'case.json').write_text(json.dumps(spec,ensure_ascii=False))
     (root/'access-sequence.php').write_bytes(block(kind,db==SIDE[1] if modern is None else modern))
     output=root/'result.json'
@@ -90,7 +90,8 @@ def run(work,env,root:Path,db,kind,spec,modern=None,execution_cwd=None):
          '-d','disable_functions=exec,shell_exec,system,passthru,popen,proc_open,pcntl_exec,pcntl_fork,mail,dl',
          str(root/'native-purchase.php')]
     p=subprocess.run(cmd,cwd=execution_cwd or root,env=e,capture_output=True,timeout=25)
-    if p.returncode or p.stdout or p.stderr or not output.exists():
+    expected_stderr=expected_stderr.encode() if isinstance(expected_stderr,str) else expected_stderr
+    if p.returncode or p.stdout or p.stderr!=expected_stderr or not output.exists():
         raise RuntimeError('PHP native runner failed: '+repr((kind,spec,p.returncode,p.stdout[-550:],p.stderr[-550:])))
     result=json.loads(output.read_text())
     if result['exception'] or any(x.startswith(('FATAL:','EXCEPTION:')) for x in result['warnings']):

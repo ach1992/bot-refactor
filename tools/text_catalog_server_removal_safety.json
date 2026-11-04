@@ -1,0 +1,80 @@
+{
+  "version": 1,
+  "owner_issue": "https://github.com/ach1992/bot-refactor/issues/112",
+  "previous_candidate": "218319313fdbd9cee8aeea15e1c073997f4485e7",
+  "entries": {
+    "admin_settings.management.server_delete_confirm": {
+      "audience": "admin",
+      "before_sha256": "d0ff438f215195cac6c9af6617167d6494208dded6e368ea6c2935b3d088b652",
+      "after_sha256": "d99336b424cc0b5396acdcb4f29b064e337b278f442ee7cb8eeb2bd5aadd1d1c",
+      "reason": "Owner Rev4: administrator-controlled local removal and independent server/plan visibility policy"
+    },
+    "admin_settings.management.server_removed": {
+      "audience": "admin",
+      "before_sha256": "19ca1d481dad1f2521660e1be3025bae075bb53ebb678504c01e8645f80ede87",
+      "after_sha256": "777826908f76b6a24020a1c0084079fc0e7de484bca2edae0e77c29983507dbb",
+      "reason": "Owner Rev4: administrator-controlled local removal and independent server/plan visibility policy"
+    },
+    "admin_settings.management.server_retired": {
+      "audience": "admin",
+      "before_sha256": null,
+      "after_sha256": "4396ed20f6575b4970c8909b00b9231c86ee6bb7a3f9c15e6c4c9234668e201d",
+      "reason": "Owner Rev4: administrator-controlled local removal and independent server/plan visibility policy"
+    },
+    "admin_settings.management.server_state_prompt": {
+      "audience": "admin",
+      "before_sha256": null,
+      "after_sha256": "9a624df41abda718b4ab017ecc305577a5a9ae5fd3575beab99e2c1baf1a4266",
+      "reason": "Owner Rev4: pinned administrator control and consequence copy"
+    },
+    "admin_settings.management.server_state_full": {
+      "audience": "admin",
+      "before_sha256": null,
+      "after_sha256": "f1a599551fa1baf37c2135379c6aaa2c600d76d31c7e6662b1edeb69d2cb95ae",
+      "reason": "Owner Rev4: pinned administrator control and consequence copy"
+    },
+    "admin_settings.management.server_state_renew_only": {
+      "audience": "admin",
+      "before_sha256": null,
+      "after_sha256": "df53bf78370c99d68d9215f543812017bb0bb41aa9f1106e4563753d5f3a0cd3",
+      "reason": "Owner Rev4: pinned administrator control and consequence copy"
+    },
+    "admin_settings.management.server_state_off": {
+      "audience": "admin",
+      "before_sha256": null,
+      "after_sha256": "0d58abde998684f93db6877bae86cfe029f1041414052db8be4b0e5ba5dbe7d6",
+      "reason": "Owner Rev4: pinned administrator control and consequence copy"
+    },
+    "admin_settings.management.plan_hide_from_sale": {
+      "audience": "admin",
+      "before_sha256": null,
+      "after_sha256": "fddbf93ebb71800ef34c54a9d8a541bcb87f934fc424a14f572b2a03edbfa801",
+      "reason": "Owner Rev4: pinned administrator control and consequence copy"
+    },
+    "admin_settings.management.plan_offer_for_sale": {
+      "audience": "admin",
+      "before_sha256": null,
+      "after_sha256": "34aca6ee9c02b4d106946f40440aab20637879e391a17a1b0011dfd75048fd0f",
+      "reason": "Owner Rev4: pinned administrator control and consequence copy"
+    },
+    "admin_settings.management.plan_delete_confirm": {
+      "audience": "admin",
+      "before_sha256": null,
+      "after_sha256": "95be0c19ae10336d2945acc23a68a31181e7e58519460347e5343a0097763d83",
+      "reason": "Owner Rev4: pinned administrator control and consequence copy"
+    },
+    "admin_settings.management.plan_deleted": {
+      "audience": "admin",
+      "before_sha256": null,
+      "after_sha256": "433f805586784785af09faef276b9db691c10bbb9d6831a21fdaef34562a4159",
+      "reason": "Owner Rev4: pinned administrator control and consequence copy"
+    }
+  },
+  "retained_unreferenced_keys": [
+    "bot.bot.addserver_name.alert.601504ae47",
+    "bot.bot.addserver_name.message.756c3005d3",
+    "bot.bot.servers_setting.alert.9f4e68eda7",
+    "plans.administration.edit_custom_plan.alert.3064bbd794",
+    "plans.administration.edit_custom_plan.message.b059640ccc"
+  ]
+}

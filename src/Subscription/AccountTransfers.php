@@ -19,10 +19,6 @@ if ($achbotServerSwitch && !\AchBot\Subscription\AccountDetails\canReadAdminOrde
 // used as authority; user ownership, current source and panel identity
 // are re-read from the database each time.
 if (preg_match('/^switchLocation([0-9]+)_([0-9]+)_[^_]{1,40}_[^_]{1,40}$/D', (string)($data ?? ''), $match)) {
-    if (($botState['switchLocationState'] ?? 'off') !== 'on') {
-        alert(\achbotMessage('subscription.account_transfers.alert.6b5b63fb0f'), true);
-        return;
-    }
     $orderId = (int)$match[1];
     $sourceId = (int)$match[2];
     $stmt = $connection->prepare(
@@ -42,7 +38,11 @@ if (preg_match('/^switchLocation([0-9]+)_([0-9]+)_[^_]{1,40}_[^_]{1,40}$/D', (st
 
     $targets = achbotProviderRelocationTargets($connection, $sourceId);
     if (!$targets) {
-        alert(\achbotMessage('subscription.account_transfers.alert.33278b6a77'), true);
+        editText($message_id,\achbotMessage('subscription.account_transfers.alert.33278b6a77'),
+            json_encode(['inline_keyboard'=>[[[
+                'text'=>$buttonValues['back_button'],
+                'callback_data'=>'quickUserOrderDetails_'.$orderId
+            ]]]],JSON_UNESCAPED_UNICODE));
         return;
     }
     $buttons = [];
@@ -60,10 +60,6 @@ if (preg_match('/^switchLocation([0-9]+)_([0-9]+)_[^_]{1,40}_[^_]{1,40}$/D', (st
 }
 
 if (preg_match('/^switchServer([0-9]+)_([0-9]+)$/D', (string)($data ?? ''), $match)) {
-    if (($botState['switchLocationState'] ?? 'off') !== 'on') {
-        alert(\achbotMessage('subscription.account_transfers.alert.6b5b63fb0f'), true);
-        return;
-    }
     $targetId = (int)$match[1];
     $orderId = (int)$match[2];
     $result = achbotReassignLogicalServer(
@@ -77,8 +73,12 @@ if (preg_match('/^switchServer([0-9]+)_([0-9]+)$/D', (string)($data ?? ''), $mat
     $title = htmlspecialchars((string)$result['title'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
     $remark = htmlspecialchars((string)$result['remark'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
     editText($message_id, \achbotMessage('subscription.account_transfers.message.9d93daa0a7', ['remark' => $remark, 'title' => $title]),
-        json_encode(['inline_keyboard'=>[[['text'=>$buttonValues['back_button'] ?? \achbotMessage('subscription.account_transfers.text.b233883d0d'),
-        'callback_data'=>'quickUserOrderDetails_' . $orderId]]]], JSON_UNESCAPED_UNICODE));
+        json_encode(['inline_keyboard'=>[
+            [['text'=>\achbotMessage('subscription.account_transfers.choose_destination_plan'),
+              'callback_data'=>'changeFileId_'.$orderId.'_'.$targetId]],
+            [['text'=>$buttonValues['back_button'] ?? \achbotMessage('subscription.account_transfers.text.b233883d0d'),
+              'callback_data'=>'quickUserOrderDetails_'.$orderId]]
+        ]],JSON_UNESCAPED_UNICODE));
     $adminMessage = \achbotMessage('subscription.account_transfers.admin_message.6645c1fd4d')
         . \achbotMessage('subscription.account_transfers.user_i_d.6590a1ba5e') . (int)$result['userid'] . "\n"
         . \achbotMessage('subscription.account_transfers.order_i_d.98a7867ccd') . (int)$result['id'] . "\n"

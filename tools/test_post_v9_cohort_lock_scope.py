@@ -191,7 +191,9 @@ def case(w,e,holder,worker,dist,iso,mode,positive,index):
         # distinct customer rows remain X-locked. A broad scan blocks here.
         await_file(b_ready,p)
         assert h.poll() is None,'unrelated_transaction_finished_too_early'
-        assert b_ready.read_text()==('allowed' if positive else 'denied')
+        actual_cohort=b_ready.read_text()
+        assert actual_cohort==('allowed' if positive else 'denied'),(
+            'cohort_policy_mismatch',dist,iso,mode,positive,actual_cohort)
         b_release.write_text('commit')
         report=json.loads(finish(p))
         assert report['owner_and_pay_locked'] is True and report['allowed'] is positive

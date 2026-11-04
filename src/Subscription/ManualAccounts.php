@@ -226,6 +226,7 @@ function detectServerIdFromRemark($connection, $remark, $defaultServerId = 0) {
 
 if (preg_match('/^addToOrders([1-9][0-9]*)$/D',(string)$data,$match)) {
     $actor=(int)$from_id;$serverId=(int)$match[1];$begun=false;$committed=false;
+    $physicalImportLease=null;
     try {
         if (!function_exists('achbotExternalImportFrame') ||
             !achbotExternalImportFrame($update,$actor,(string)$data)) return;
@@ -248,6 +249,13 @@ if (preg_match('/^addToOrders([1-9][0-9]*)$/D',(string)$data,$match)) {
         $remote=achbotProviderExistingUser($connection,$serverId,$input,$remark);
         $proof=is_object($remote) && ($remote->username??null)===$remark?achbotExternalImportProof($server,$remote,$input):null;
         if (!$proof) throw new RuntimeException('import_proof');
+        // Acquire BEFORE the import SQL transaction. A same-panel plan PUT
+        // holds this same advisory lease across native GET/PUT and final COMMIT;
+        // never wait on that lease while holding configuration/owner row locks.
+        require_once __DIR__.'/PhysicalService.php';
+        $physicalImportLease=achbotPhysicalImportLease($connection,$serverId,$remote);
+        if ($physicalImportLease!==null)
+            achbotPhysicalAcquireLock($connection,$physicalImportLease);
         // Exact token/endpoint proof is rechecked at import; prefixes and default
         // server IDs are never identity, and native expiry is never invented.
         if (!$connection->begin_transaction()) throw new RuntimeException('import_begin');$begun=true;
@@ -265,6 +273,9 @@ if (preg_match('/^addToOrders([1-9][0-9]*)$/D',(string)$data,$match)) {
         if (!$currentServer || $currentServer['type']!==$server['type'] || $currentServer['panel_url']!==$server['panel_url'] ||
             $currentServer['username']!==$server['username'] || $currentServer['password']!==$server['password'] ||
             (string)($currentServer['sub_links']??'')!==(string)($server['sub_links']??'')) throw new RuntimeException('import_server_changed');
+        // A Native plan journal is an account-wide admission hold, even if
+        // this new local reference belongs to a third customer.
+        achbotPhysicalAssertImportAdmission($connection,$physicalImportLease,$serverId,$remote);
         $q=$connection->prepare('SELECT id FROM orders_list WHERE server_id=? AND remark=? AND userid=? LIMIT 1 FOR UPDATE');
         $q->bind_param('isi',$serverId,$remark,$finalUserId);$q->execute();$exists=$q->get_result()->num_rows>0;$q->close();
         if ($exists) throw new RuntimeException('import_already_attached');
@@ -314,6 +325,9 @@ if (preg_match('/^addToOrders([1-9][0-9]*)$/D',(string)$data,$match)) {
         if ($error instanceof RuntimeException && $error->getMessage()==='import_commit_unknown')
             sendMessage(\achbotMessage('subscription.manual_accounts.import_under_review'));
         else alert(\achbotMessage('subscription.manual_accounts.import_unverified'),true);
+    } finally {
+        if ($physicalImportLease!==null)
+            achbotPhysicalReleaseLock($connection,$physicalImportLease);
     }
     return;
 }

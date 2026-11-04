@@ -134,10 +134,14 @@ try {
  $deleteResult=null;
  if (array_key_exists('delete',$spec)) {
   $deleteResult=delMessage($spec['delete']['message']??null,$spec['delete']['chat']??null);$handled=true;
+ } elseif (!empty($spec['issue_delete'])) {
+  $issued=achbotAdminIntentIssue($connection,$from_id,$admin,(string)$spec['issue_delete'],
+   (int)$spec['entity'],$update,(string)$data);
+  $handled=true;
  } else $handled=!empty($spec['field'])?achbotHandleManagementFields():achbotHandleManagement();
  $s=$connection->prepare('SELECT step,temp FROM users WHERE userid=?');$s->bind_param('i',$from_id);$s->execute();
  $state=$s->get_result()->fetch_assoc();$s->close();
- echo json_encode(['handled'=>$handled,'events'=>$GLOBALS['events'],'state'=>$state,'cached_step'=>$userInfo['step']??null,'review_label'=>achbotManagementText('review_required'),'actor_writes'=>$connection->actorWrites,'delete_result_null'=>$deleteResult===null],JSON_THROW_ON_ERROR);
+ echo json_encode(['handled'=>$handled,'events'=>$GLOBALS['events'],'state'=>$state,'cached_step'=>$userInfo['step']??null,'review_label'=>achbotManagementText('review_required'),'actor_writes'=>$connection->actorWrites,'issued'=>$issued??null,'delete_result_null'=>$deleteResult===null],JSON_THROW_ON_ERROR);
 } catch(Throwable $error){echo json_encode(['exception'=>$error->getMessage()],JSON_THROW_ON_ERROR);}
 '''
 
@@ -172,7 +176,7 @@ def main():
     with owned.owned_database() as (work,env),panels() as (server,url):
         purchase.init(work,env,url+'/mb')
         def sql(query):return native.sql(work,env,query,DB)
-        for name in ['001_marzban_panel_group_id.sql','004_automatic_renewal_attempts.sql','007_service_effects.sql','011_provider_identity.sql','012_shared_provider_storage.sql']:
+        for name in ['001_marzban_panel_group_id.sql','004_automatic_renewal_attempts.sql','007_service_effects.sql','011_provider_identity.sql','012_shared_provider_storage.sql','016_remove_pasarguard_server_groups.sql','017_shared_plan_changes.sql']:
             sql((ROOT/'migrations/post-v9'/name).read_text())
         # Delegated positive server/plan scenarios explicitly use the Manager
         # tier. Revocation cases still remove users.isAdmin and must fail.
@@ -206,7 +210,7 @@ def main():
             yes(any(e.get('keys')=='{"remove_keyboard":true}' for e in r['events']),'cancel_removes_reply_keyboard')
             return r
         def counts():return sql("SELECT (SELECT COUNT(*) FROM server_info),(SELECT COUNT(*) FROM server_config),(SELECT COUNT(*) FROM server_plans),(SELECT COUNT(DISTINCT provider_connection_id) FROM server_config WHERE type='pasarguard')")
-        def rows():return sql("SELECT id,title,ucount,remark,flag,active,provider_group_ids FROM server_info ORDER BY id;SELECT id,type,panel_url FROM server_config ORDER BY id;SELECT id,server_id,title,active,custom_sni,provider_group_ids FROM server_plans ORDER BY id")
+        def rows():return sql("SELECT id,title,ucount,remark,flag,active,panel_group_id FROM server_info ORDER BY id;SELECT id,type,panel_url FROM server_config ORDER BY id;SELECT id,server_id,title,active,custom_sni,provider_group_ids FROM server_plans ORDER BY id")
         def no_secrets(r):
             shown=json.dumps(r['events'],ensure_ascii=False)
             yes('fixture-password'not in shown and 'fixture-private-key'not in shown,'credentials_not_echoed')
@@ -262,9 +266,9 @@ def main():
                 yes(not any(e.get('deleted')for e in r['events']),'password_message_preserved')
                 r=action(r,'group','0');stage(r,'review')
             else:
-                stage(r,'api_key');r=text(r,'fixture-private-key');stage(r,'groups');no_secrets(r)
+                stage(r,'api_key');r=text(r,'fixture-private-key');stage(r,'panelgroup');no_secrets(r)
                 yes(not any(e.get('deleted')for e in r['events']),'api_key_message_preserved')
-                r=action(r,'pick','0');r=action(r,'done');stage(r,'review')
+                r=action(r,'group','0');stage(r,'review')
             before=counts();save_callback='am|'+draft(r)['nonce']+'|'+str(draft(r)['rev'])+'|save|0'
             r=call(callback=save_callback);yes(draft(r)is None,'server_confirmed_'+provider)
             after=counts();yes(before!=after,'server_inserted_'+provider)
@@ -336,8 +340,8 @@ def main():
             saved=sql("SELECT custom_sni,IFNULL(provider_group_ids,'NULL') FROM server_plans ORDER BY id DESC LIMIT 1").strip()
             yes(('fixture-vless'in saved)==(provider=='marzban') and ('[2]'in saved)==(provider=='pasarguard'),'plan_native_entitlement_persisted_'+provider)
             snapshot=counts();call(callback=save);yes(counts()==snapshot,'plan_save_replay_no_duplicate_'+provider)
-        r=plan_to_targets('pasarguard',pg_id);r=action(r,'inherit');stage(r,'review')
-        r=action(r,'save');yes(draft(r)is None and sql("SELECT IFNULL(provider_group_ids,'NULL') FROM server_plans ORDER BY id DESC LIMIT 1").strip()=='NULL','plan_inherits_groups')
+        r=plan_to_targets('pasarguard',pg_id);r=action(r,'pick','0');r=action(r,'done');stage(r,'review')
+        r=action(r,'save');yes(draft(r)is None and sql("SELECT provider_group_ids FROM server_plans ORDER BY id DESC LIMIT 1").strip()=='[2]','plan_requires_explicit_groups')
         yes(sql("SELECT COUNT(*) FROM server_plans WHERE title='SENTINEL-INACTIVE' AND active=0").strip()=='1','unrelated_inactive_plan_not_deleted')
         # Native access revocation while a confirmation is pending fails without partial inserts.
         r=plan_to_targets('pasarguard',pg_id);r=action(r,'pick','0');r=action(r,'done');stage(r,'review')
@@ -347,7 +351,7 @@ def main():
         # SQL failure after a server_info insert must rollback all three related rows.
         r=call(callback='pgAddConnection')
         for value in ['Rollback fixture','10','rollback','FIXTURE',url,'fixture-private-key']:r=text(r,value)
-        stage(r,'groups');r=action(r,'pick','0');r=action(r,'done');stage(r,'review')
+        stage(r,'panelgroup');r=action(r,'group','0');stage(r,'review')
         before=counts()
         sql("CREATE TRIGGER fixture_reject_config BEFORE INSERT ON server_config FOR EACH ROW SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='fixture-reject'")
         failed=action(r,'save');sql('DROP TRIGGER fixture_reject_config')
@@ -361,16 +365,59 @@ def main():
             for current,value in steps:
                 if current==target:return r
                 r=text(r,value)
-            if target in ['panelgroup','groups']:return r
-            if provider=='marzban':r=action(r,'group','0')
-            else:r=action(action(r,'pick','0'),'done')
+            if target=='panelgroup':return r
+            r=action(r,'group','0')
             return r
+        # The removed PG server-level Native Group selector is replaced by a
+        # provider-neutral shared-panel-group selector on BOTH providers.
+        # Exercise its two real admin flows, including attempted old callback
+        # protocols, actor separation and no pre-confirmation persistence.
+        sql("INSERT INTO setting(type,value) VALUES('ACHBOT_MARZBAN_PANEL_GROUP','Fixture shared real panel')")
+        group_id=int(sql("SELECT id FROM setting WHERE type='ACHBOT_MARZBAN_PANEL_GROUP' AND value='Fixture shared real panel'").strip())
+        for provider in ('marzban','pasarguard'):
+            r=server_to_stage(provider,'panelgroup')
+            stage(r,'panelgroup')
+            no_secrets(r)
+            before=draft(r);before_counts=counts()
+            yes(any('گروه مشترک پنل' in str(e.get('body','')) for e in r['events']),
+                'physical_panel_group_header_explains_manual_identity_'+provider)
+            yes(not before['values'].get('groups'),
+                'server_wizard_never_contains_native_group_defaults_'+provider)
+            yes(not before.get('choices'),
+                'physical_group_selector_has_no_native_paginated_choices_'+provider)
+            for action_name,value in [('pick','0'),('done','0'),('group','999999999')]:
+                denied=action(r,action_name,value)
+                yes(draft(denied)==before,
+                    'obsolete_or_unknown_shared_panel_action_refused_'+provider+'_'+action_name)
+            foreign=action(r,'group',str(group_id),actor=9002)
+            yes(draft(foreign)is None and counts()==before_counts,
+                'foreign_administrator_cannot_reuse_panel_group_draft_'+provider)
+            denied=action(r,'group',str(group_id),chat_type='group')
+            yes(draft(denied)==before and counts()==before_counts,
+                'shared_panel_group_requires_private_callback_'+provider)
+            denied=call(callback='am|'+before['nonce']+'|999|group|'+str(group_id))
+            yes(draft(denied)==before,
+                'stale_shared_panel_group_revision_refused_'+provider)
+            yes(counts()==before_counts,
+                'shared_panel_group_wizard_has_no_early_database_insert_'+provider)
+            selected=action(r,'group',str(group_id))
+            stage(selected,'review')
+            yes(draft(selected)['values']['panel_group_id']==group_id,
+                'shared_panel_group_id_selected_'+provider)
+            yes(any('Fixture shared real panel' in str(e.get('body',''))
+                    for e in selected['events']),
+                'shared_panel_name_visible_in_review_'+provider)
+            yes(counts()==before_counts,
+                'shared_panel_selection_does_not_write_before_confirm_'+provider)
+            cancel(selected)
+            yes(counts()==before_counts,
+                'shared_panel_wizard_cancel_is_atomic_'+provider)
         def one_edit(r,label,message_id=575):
             yes(len(r['events'])==1 and r['events'][0].get('method')=='editMessageText' and r['events'][0].get('edited_message')==message_id,label)
             return json.loads(r['events'][0]['keys'])['inline_keyboard']
         server.extra_groups=True
-        for kind in ['server','plan']:
-            r=server_to_stage('pasarguard','groups') if kind=='server' else plan_to_targets('pasarguard',pg_id)
+        for kind in ['plan']:
+            r=plan_to_targets('pasarguard',pg_id)
             yes(any(e.get('method')=='sendMessage'for e in r['events']) and not any(e.get('method')=='editMessageText'for e in r['events']),'typed_input_sends_next_prompt_'+kind)
             axis='groups' if kind=='server' else 'targets'
             yes(len(draft(r)['choices'])==10,'native_paginated_choices_'+kind)
@@ -395,7 +442,7 @@ def main():
             yes(any(e.get('method')=='sendMessage'for e in legacy['events']) and not any(e.get('method')=='editMessageText'for e in legacy['events']),'actual_rc14_group_message_flood_RED_'+kind)
             cancel(legacy)
         server.extra_groups=False
-        for provider,targets in [('marzban',['username','password','panelgroup','review']),('pasarguard',['api_key','groups','review'])]:
+        for provider,targets in [('marzban',['username','password','panelgroup','review']),('pasarguard',['api_key','panelgroup','review'])]:
             for target in targets:
                 r=server_to_stage(provider,target);stage(r,target);before=counts();cancel(r)
                 yes(counts()==before,'later_stage_cancel_no_rows_'+provider+'_'+target)
@@ -411,7 +458,7 @@ def main():
                 elif current=='days':r=text(r,'30')
                 elif current=='volume':r=text(r,'5')
                 elif current=='description':r=text(r,'Cancel description')
-                elif current=='targets':r=action(r,'inherit')
+                elif current=='targets':r=action(r,'pick','0');r=action(r,'done')
                 else:raise AssertionError(current)
             before=counts();cancel(r);yes(counts()==before,'plan_cancel_no_rows_'+target)
         # Contextual field editors use persisted role/row revision and never accept another provider's credentials.
@@ -443,7 +490,7 @@ def main():
         yes(r['state']['step']=='none' and not any(e.get('deleted')for e in r['events']),'credential_edit_preserves_input_and_saves')
         no_secrets(r)
         # Independent HTTP requests racing the same final confirmation produce exactly one row.
-        r=plan_to_targets('pasarguard',pg_id);r=action(r,'inherit');stage(r,'review')
+        r=plan_to_targets('pasarguard',pg_id);r=action(r,'pick','0');r=action(r,'done');stage(r,'review')
         save='am|'+draft(r)['nonce']+'|'+str(draft(r)['rev'])+'|save|0'
         before=int(sql('SELECT COUNT(*) FROM server_plans').strip())
         with ThreadPoolExecutor(max_workers=2)as pool:results=list(pool.map(lambda _:call(callback=save),range(2)))
@@ -453,11 +500,11 @@ def main():
         r=call(callback='addManagedServer');r=action(r,'provider','pasarguard')
         for value in ['Reuse fixture','10','reusefixture','FIXTURE']:r=text(r,value)
         stage(r,'url');panel_id=int(sql("SELECT MIN(provider_connection_id) FROM server_config WHERE type='pasarguard'").strip())
-        r=action(r,'panel',str(panel_id));stage(r,'groups');r=action(action(r,'pick','0'),'done')
+        r=action(r,'panel',str(panel_id));stage(r,'panelgroup');r=action(r,'group','0')
         before=int(sql("SELECT COUNT(DISTINCT provider_connection_id) FROM server_config WHERE type='pasarguard'").strip());r=action(r,'save')
         yes(r['state']['step']=='none'and int(sql("SELECT COUNT(DISTINCT provider_connection_id) FROM server_config WHERE type='pasarguard'").strip())==before,'saved_connection_reused_without_duplicate_panel')
         # COMMIT can succeed while its acknowledgment is lost; surface uncertainty and make replay inert.
-        r=plan_to_targets('pasarguard',pg_id);r=action(r,'inherit');stage(r,'review')
+        r=plan_to_targets('pasarguard',pg_id);r=action(r,'pick','0');r=action(r,'done');stage(r,'review')
         save='am|'+draft(r)['nonce']+'|'+str(draft(r)['rev'])+'|save|0'
         before=int(sql('SELECT COUNT(*) FROM server_plans').strip())
         r=call(callback=save,commit_ack_lost=True)
@@ -510,7 +557,7 @@ def main():
         r=call(callback='pgAddConnection',actor=9002)
         for value in ['PRIVATE-ROLE-DENIAL-DRAFT','10','denialfixture','FIXTURE',url,'fixture-private-key']:
             r=call(text=value,actor=9002)
-        r=action(r,'pick','0',actor=9002);r=action(r,'done',actor=9002)
+        r=action(r,'group','0',actor=9002);stage(r,'review')
         before=all_state()
         denied=action(r,'save',actor=9002,revoke_second_actor_lookup=True)
         yes(all_state()==before,'role_denial_after_initial_claim_rolls_back_all_entity_and_actor_changes')
@@ -518,33 +565,42 @@ def main():
         cancel(r,actor=9002)
         # A confirmed removal may have dependencies; their records are retained.
         clean_id=int(sql('SELECT MAX(id) FROM server_info').strip());before=rows()
-        # A stale delete confirmation may not hide an active editor or financial draft.
+        # A real issued delete token cannot bypass an active editor/financial draft.
+        pending_delete=call(callback='wizwizdeleteserver'+str(clean_id),
+            issue_delete='server',entity=clean_id)['issued']
         r=call(callback='editServerName'+str(clean_id),field=True);before_busy=all_state()
-        refused=call(callback='yesDeleteServer'+str(clean_id),field=True)
+        refused=call(callback=pending_delete,field=True)
         yes(all_state()==before_busy and not any(e.get('keys')=='{"remove_keyboard":true}'for e in refused['events']),'busy_field_editor_blocks_server_delete_without_hiding_editor')
         call(text='fixture-cancel',field=True)
         r=call(callback='addManagedPlan');before_busy=all_state()
-        refused=call(callback='yesDeleteServer'+str(clean_id))
+        refused=call(callback=pending_delete,field=True)
         yes(all_state()==before_busy,'busy_plan_wizard_blocks_server_delete')
         cancel(r)
         for pending in ['achbotWalletAmount|fixture','addNewMarzbanPlan']:
             sql("UPDATE users SET step='"+pending+"',temp='PRIVATE-FINANCIAL-DRAFT' WHERE userid=9001")
             before_busy=all_state()
-            refused=call(callback='yesDeleteServer'+str(clean_id),field=pending!='addNewMarzbanPlan')
+            refused=call(callback=pending_delete,field=True)
             yes(all_state()==before_busy and not any(e.get('keys')=='{"remove_keyboard":true}'for e in refused['events']),'busy_'+pending.split('|')[0]+'_delete_has_no_user_or_entity_mutation')
             sql("UPDATE users SET step='none',temp=NULL WHERE userid=9001")
-        # This negative deliberately removes the Manager's server capability.
+        # A Manager can receive a warning, but revoked capability cannot
+        # consume that specific valid token a moment later.
+        manager_delete=call(callback='wizwizdeleteserver'+str(clean_id),
+            issue_delete='server',entity=clean_id,actor=9002)['issued']
         sql("UPDATE setting SET value='operator' WHERE type='ADMIN_ROLE_9002'")
-        r=call(callback='yesDeleteServer'+str(clean_id),actor=9002,field=True)
+        r=call(callback=manager_delete,actor=9002,field=True)
         yes(rows()==before,'delegate_without_server_permission_cannot_delete')
         sql("UPDATE setting SET value='manager' WHERE type='ADMIN_ROLE_9002'")
         effects_before=sql("SELECT COUNT(*) FROM service_effects")
-        r=call(callback='yesDeleteServer'+str(clean_id),field=True)
+        live_delete=call(callback='wizwizdeleteserver'+str(clean_id),
+            issue_delete='server',entity=clean_id,message_id=575)['issued']
+        r=call(callback=live_delete,field=True,message_id=575)
         yes(sql('SELECT COUNT(*) FROM server_info WHERE id='+str(clean_id)).strip()=='0' and sql('SELECT COUNT(*) FROM server_config WHERE id='+str(clean_id)).strip()=='0','unreferenced_server_delete_is_atomic')
         yes(sql("SELECT COUNT(*) FROM service_effects")==effects_before,'historical_provider_effects_retained_on_server_delete')
         # Remove a populated server after its wizard has completed; only connection rows disappear.
         dependent_before=sql('SELECT * FROM server_plans ORDER BY id;SELECT * FROM orders_list ORDER BY id;SELECT * FROM pays ORDER BY id;SELECT * FROM service_effects ORDER BY id')
-        r=call(callback='yesDeleteServer'+str(pg_id),field=True,message_id=575)
+        dependent_delete=call(callback='wizwizdeleteserver'+str(pg_id),
+            issue_delete='server',entity=pg_id,message_id=575)['issued']
+        r=call(callback=dependent_delete,field=True,message_id=575)
         yes(sql('SELECT COUNT(*) FROM server_info WHERE id='+str(pg_id)).strip()=='0' and sql('SELECT COUNT(*) FROM server_config WHERE id='+str(pg_id)).strip()=='0','confirmed_referenced_server_is_removed')
         yes(sql('SELECT * FROM server_plans ORDER BY id;SELECT * FROM orders_list ORDER BY id;SELECT * FROM pays ORDER BY id;SELECT * FROM service_effects ORDER BY id')==dependent_before,'confirmed_server_removal_preserves_dependent_records')
         edits=[e for e in r['events']if e.get('method')=='editMessageText']

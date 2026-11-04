@@ -94,21 +94,21 @@ if (!function_exists('ensureServerCapacity')) {
 // Shared read-only preflight for current purchase/manual approval/wallet.
 // Type + inbound are validated as one provider contract before settlement.
 if (!function_exists('achbotSupportsMarzbanPlan')) {
-    function achbotSupportsMarzbanPlan($connection, $planId, $requestedInboundId = 0, $requiredServerId = null, bool $lock = false)
+    function achbotSupportsMarzbanPlan($connection, $planId, $requestedInboundId = 0, $requiredServerId = null, bool $lock = false, bool $allowInactive = false)
     {
         $planId = (int)$planId;
         $stmt = $connection->prepare(
-            "SELECT p.`inbound_id`, p.`server_id`, c.`type`
+            "SELECT p.`inbound_id`, p.`server_id`, p.`active`, c.`type`
              FROM `server_plans` p
              INNER JOIN `server_config` c ON c.`id` = p.`server_id`
-             WHERE p.`id` = ? AND p.active=1 LIMIT 1".($lock ? ' FOR UPDATE' : '')
+             WHERE p.`id` = ? LIMIT 1".($lock ? ' FOR UPDATE' : '')
         );
         $stmt->bind_param("i", $planId);
         $stmt->execute();
         $row = $stmt->get_result()->fetch_assoc();
         $stmt->close();
         return $planId > 0 && (int)$requestedInboundId === 0 &&
-            $row && $row['type'] === 'marzban' &&
+            $row && ($allowInactive || (int)$row['active']===1) && $row['type'] === 'marzban' &&
             (int)$row['inbound_id'] === 0 &&
             ($requiredServerId === null || (int)$requiredServerId === 0 ||
              (int)$requiredServerId === (int)$row['server_id']);
@@ -243,6 +243,27 @@ if (!function_exists('achbotSetMarzbanGroup')) {
             $stmt->close();
             if (!$exists) throw new \RuntimeException('unknown_panel_group');
         }
+        // A configured physical group becomes part of active account
+        // identity. Do not silently reclassify live references into a new
+        // physical panel (including when a transfer has cleared fileid).
+        $groupStmt=$connection->prepare(
+            'SELECT panel_group_id FROM server_info WHERE id=? FOR UPDATE');
+        $groupStmt->bind_param('i',$serverId);$groupStmt->execute();
+        $groupRow=$groupStmt->get_result()->fetch_assoc();$groupStmt->close();
+        if (!$groupRow) throw new \RuntimeException('group_target_unavailable');
+        $oldGroup=$groupRow['panel_group_id']===null?null:(int)$groupRow['panel_group_id'];
+        if ($oldGroup!==$groupId) {
+            require_once __DIR__.'/../Subscription/PhysicalService.php';
+            // Also forbid NULL -> group when active; it changes the journal
+            // namespace even though no Native account needs to be modified.
+            // Check outstanding intent receipts even if active rows disappeared.
+            try {achbotPhysicalAssertRebindSafe($connection,$serverId);}
+            catch (\RuntimeException $error) {
+                if ($error->getMessage()==='physical_rebind_active_references')
+                    throw new \RuntimeException('group_change_would_strand_order');
+                throw new \RuntimeException('group_change_requires_review');
+            }
+        }
         $stmt = $connection->prepare(
             "SELECT o.server_id AS order_server, p.server_id AS plan_server,
                     os.panel_group_id AS order_group, ps.panel_group_id AS plan_group
@@ -316,6 +337,40 @@ if (!function_exists('achbotSameMarzbanPanel')) {
 
 // Panel grouping is a permission to remap the bot's logical server label,
 // not an authorization to modify or migrate the actual Marzban account.
+// Physical panel membership is administrator-declared, provider-neutral.
+// Keep the original setting.type and nullable column to preserve all installed
+// group IDs and pre-existing Marzban API compatibility without a data migration.
+if (!function_exists('achbotPanelGroups')) {
+    function achbotPanelGroups($db): array { return achbotMarzbanPanelGroups($db); }
+    function achbotPanelGroupValid($name): bool { return achbotMarzbanGroupValid($name); }
+    function achbotCreatePanelGroup($db,$name): ?int { return achbotCreateMarzbanPanelGroup($db,$name); }
+    function achbotDeletePanelGroup($db,int $id): bool { return achbotDeleteMarzbanPanelGroup($db,$id); }
+    function achbotPanelGroup($db,int $serverId): ?array {
+        if ($serverId<=0) return null;
+        $s=$db->prepare("SELECT g.id,g.value AS name FROM server_info i
+            JOIN server_config c ON c.id=i.id
+            JOIN setting g ON g.id=i.panel_group_id AND g.type='ACHBOT_MARZBAN_PANEL_GROUP'
+            WHERE i.id=? AND c.type IN ('marzban','pasarguard') LIMIT 1");
+        $s->bind_param('i',$serverId);$s->execute();
+        $row=$s->get_result()->fetch_assoc();$s->close();
+        return $row ? ['id'=>(int)$row['id'],'name'=>(string)$row['name']] : null;
+    }
+    function achbotSetPanelGroup($db,int $serverId,int $groupId): void {
+        $s=$db->prepare("SELECT c.type FROM server_config c
+            JOIN server_info i ON i.id=c.id WHERE c.id=? FOR UPDATE");
+        $s->bind_param('i',$serverId);$s->execute();$row=$s->get_result()->fetch_assoc();$s->close();
+        if (!$row || !in_array($row['type'],['marzban','pasarguard'],true))
+            throw new \RuntimeException('panel_group_server_unavailable');
+        achbotSetMarzbanGroup($db,$serverId,$groupId);
+    }
+    function achbotSamePanelGroup($db,int $sourceId,int $targetId): bool {
+        if ($sourceId<1 || $targetId<1 || $sourceId===$targetId) return false;
+        $a=achbotPanelGroup($db,$sourceId);
+        $b=achbotPanelGroup($db,$targetId);
+        return $a!==null && $b!==null && $a['id']===$b['id'];
+    }
+}
+
 if (!function_exists('achbotMarzbanRelocationTargets')) {
     function achbotMarzbanRelocationTargets($connection, $sourceId)
     {
@@ -341,82 +396,8 @@ if (!function_exists('achbotMarzbanRelocationTargets')) {
 }
 
 if (!function_exists('achbotReassignMarzbanLogicalServer')) {
-    function achbotReassignMarzbanLogicalServer($connection, $orderId, $targetId, $actorId, $adminAllowed = false)
-    {
-        $orderId = (int)$orderId;
-        $targetId = (int)$targetId;
-        if ($orderId <= 0 || $targetId <= 0) return null;
-        $connection->begin_transaction();
-        try {
-            $stmt = $connection->prepare(
-                "SELECT `id`, `userid`, `server_id`, `inbound_id`, `remark`
-                 FROM `orders_list` WHERE `id` = ? AND `status` = 1 FOR UPDATE"
-            );
-            $stmt->bind_param('i', $orderId);
-            $stmt->execute();
-            $order = $stmt->get_result()->fetch_assoc();
-            $stmt->close();
-            if (!$order || (!$adminAllowed && (int)$order['userid'] !== (int)$actorId) ||
-                (int)$order['inbound_id'] !== 0 ||
-                (int)$order['server_id'] === $targetId) {
-                $connection->rollback();
-                return null;
-            }
-
-            $oldId = (int)$order['server_id'];
-            // Serialize an in-flight reassignment with admin panel/group edits
-            // and concurrent reassignments. Always lock panel IDs in order.
-            $stmt = $connection->prepare(
-                "SELECT `id` FROM `server_config`
-                 WHERE `id` IN (?, ?) ORDER BY `id` FOR UPDATE"
-            );
-            $stmt->bind_param('ii', $oldId, $targetId);
-            $stmt->execute();
-            $count = $stmt->get_result()->num_rows;
-            $stmt->close();
-            if ($count !== 2 ||
-                !achbotSupportsMarzbanOrder($connection, $orderId) ||
-                !achbotSameMarzbanPanel($connection, $oldId, $targetId)) {
-                $connection->rollback();
-                return null;
-            }
-
-            $stmt = $connection->prepare(
-                "SELECT s.`title` FROM `server_info` s
-                 INNER JOIN `server_config` c ON c.`id` = s.`id`
-                 WHERE s.`id` = ? AND s.`active` = 1 AND s.`state` = 1
-                   AND s.`ucount` > 0 AND c.`type` = 'marzban' FOR UPDATE"
-            );
-            $stmt->bind_param('i', $targetId);
-            $stmt->execute();
-            $server = $stmt->get_result()->fetch_assoc();
-            $stmt->close();
-            if (!$server) {
-                $connection->rollback();
-                return null;
-            }
-
-            // Preserve V9's DB-only logical reassignment. No capacity,
-            // fileid, money, token, remote panel, proxy or link mutation.
-            $stmt = $connection->prepare(
-                "UPDATE `orders_list` SET `server_id` = ? WHERE `id` = ? AND `server_id` = ?"
-            );
-            $stmt->bind_param('iii', $targetId, $orderId, $oldId);
-            $stmt->execute();
-            $changed = $stmt->affected_rows === 1;
-            $stmt->close();
-            if (!$changed) {
-                $connection->rollback();
-                return null;
-            }
-            $connection->commit();
-            return ['id'=>$orderId, 'userid'=>$order['userid'],
-                    'remark'=>$order['remark'], 'title'=>$server['title'],
-                    'source_id'=>$oldId, 'target_id'=>$targetId];
-        } catch (\Throwable $e) {
-            $connection->rollback();
-            return null;
-        }
+    function achbotReassignMarzbanLogicalServer($connection,$orderId,$targetId,$actorId,$adminAllowed=false) {
+        return achbotReassignLogicalServer($connection,(int)$orderId,(int)$targetId,(int)$actorId,(bool)$adminAllowed);
     }
 }
 
@@ -462,6 +443,8 @@ function achbotOrderAddonEligibility($connection,array $order,string $kind,?arra
         (int)($order['id']??0)<=0 || (int)($order['server_id']??0)<=0 ||
         !is_string($order['remark']??null) || $order['remark']==='') return $out;
     require_once __DIR__.'/../Panel/ServiceLifecycle.php';
+    if (!achbotServerCommerceAvailable($connection,(int)$order['server_id'],false))
+        return ['eligible'=>false,'reason'=>'server_renewal_disabled'];
     $native=$nativeContext===null?achbotServiceObserve((int)$order['server_id'],$order['remark']):($nativeContext['observation']??[]);
     if (!$native['verified'] || !in_array($native['status'],['active','disabled','expired','limited'],true)) return $out;
     if ($native['expire']===null) return ['eligible'=>false,'reason'=>'unlimited_time'];

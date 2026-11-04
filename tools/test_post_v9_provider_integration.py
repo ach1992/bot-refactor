@@ -245,7 +245,10 @@ def main():
   if shared_native_storage:migrations.append('012_shared_provider_storage.sql')
   for name in migrations:sql((ROOT/'migrations/post-v9'/name).read_text())
   if shared_native_storage:
-   sql(shared_storage.connection(2,1,url)+"UPDATE server_info SET provider_group_ids='[2,5]' WHERE id=2;")
+   sql(shared_storage.connection(2,1,url)+
+       "UPDATE server_plans SET provider_group_ids='[2,5]' WHERE id IN (7,8);")
+   for migration in ['016_remove_pasarguard_server_groups.sql','017_shared_plan_changes.sql']:
+    sql((ROOT/'migrations/post-v9'/migration).read_text())
   else:
    # The pinned authorization RED executes its actual historical schema/runtime.
    sql("INSERT INTO provider_panels(id,provider,instance_key,name,api_url,api_key,version)"
@@ -254,9 +257,9 @@ def main():
        "UPDATE server_info SET provider_panel_id=1,provider_group_ids='[2,5]' WHERE id=2;")
   sql("INSERT INTO pays(id,hash_id,user_id,plan_id,server_id,type,state,price,request_date) VALUES(1,'pgbuy',1001,7,2,'BUY_SUB','paid',100,1700000000)")
   snap=call('pin',pay=1)['out'];yes(snap['group_ids']==[2,5],'quote_pins_native_groups')
-  sql("UPDATE server_info SET provider_group_ids='[5]' WHERE id=2;UPDATE server_plans SET provider_group_ids='[5]' WHERE id=7")
+  sql("UPDATE server_plans SET provider_group_ids='[5]' WHERE id=7")
   r=call('create');yes('error' not in r,'paid_create_committed_native_identity')
-  effect=r['out'][3];yes(server.user['group_ids']==[2,5],'create_uses_quoted_groups_after_defaults_change')
+  effect=r['out'][3];yes(server.user['group_ids']==[2,5],'create_uses_quoted_groups_after_plan_changed')
   expire=r['out'][0]['expire']
   sql("INSERT INTO orders_list(id,userid,token,transid,fileid,server_id,inbound_id,remark,uuid,protocol,expire_date,link,amount,status,date) VALUES(91,1001,'','',7,2,0,'fixture_user','native-placeholder','vless',"+str(expire)+",'[]',100,1,'fixture')")
   r=call('link',effect=effect);yes(r['out']['id']==17 and r['out']['provider']=='pasarguard','verified_account_links_order_by_native_id')
@@ -311,7 +314,10 @@ def main():
    result=call('rawedit',source=5000+index,field=field,value=value)
    yes(result['out']['success'] is False and len(server.trace)==requests and server.write_count==writes and sql("SELECT * FROM service_effects WHERE provider_reference_id IS NOT NULL AND order_id=91;SELECT userid,wallet FROM users ORDER BY userid;SELECT id,state,price FROM pays ORDER BY id")==before,'invalid_unit_'+str(index)+'_rejects_before_native_GET_claim_or_money_change')
   # A relocation action is shown only when a real eligible destination exists.
-  sql("INSERT INTO server_info(id,title,ucount,remark,flag,active,state,provider_group_ids) VALUES(3,'Destination',10,'pgdst','',1,1,'[5]');DELETE FROM server_config WHERE id=3;"+shared_storage.clone(3,2))
+  sql("INSERT INTO server_info(id,title,ucount,remark,flag,active,state) VALUES(3,'Destination',10,'pgdst','',1,1);DELETE FROM server_config WHERE id=3;"+
+      shared_storage.clone(3,2)+
+      "INSERT INTO setting(type,value) VALUES ('ACHBOT_MARZBAN_PANEL_GROUP','Fixture physical PG');"
+      "UPDATE server_info SET panel_group_id=LAST_INSERT_ID() WHERE id IN (2,3);")
   view=call('view',buttons=buttons)['out'];keys=view['keyboard']
   yes('https://sub.example.invalid/token' in view['msg'] and 'vless://native-identity' in view['msg'],'actual_pg_view_uses_native_subscription_and_links')
   for callback in ['renewAccountAsk91','increaseAVolume91','increaseADay91','changAccountConnectionLink91','showQrConfig91','showQrSub91']:
@@ -435,13 +441,22 @@ def main():
   writes=server.write_count
   yes(call('edit',pay=2,change={'plus_day':3})['out']['success'] is False and server.write_count==writes,'same_mutation_key_cannot_repeat')
   # Group switch verifies native PUT before SQL routing changes.
-  sql("UPDATE server_info SET provider_group_ids='[5]',active=1,state=1,ucount=10 WHERE id=3")
+  sql("UPDATE server_info SET active=1,state=1,ucount=10 WHERE id=3;"
+      # The verified native renewal effect is complete in this disposable
+      # fixture; never call an unfulfilled paid payment 'settled'.
+      "UPDATE pays SET state='approved' WHERE order_id=91 AND state='processing'")
   before_switch=sql('SELECT * FROM orders_list WHERE id=91');writes_before_switch=server.write_count
   denied_switch=call('switch',source=99,actor=1001,admin_allowed=True)
   yes(denied_switch['out']is None and sql('SELECT * FROM orders_list WHERE id=91')==before_switch and server.write_count==writes_before_switch,'forged_admin_flag_never_grants_customer_server_switch')
-  r=call('switch',source=100);yes(r['out']['target_id']==3 and server.user['group_ids']==[5],'explicit_switch_updates_groups_then_local_route')
-  # Switch back for remaining exact local-context checks.
-  sql("UPDATE orders_list SET server_id=2 WHERE id=91")
+  before_native_groups=copy.deepcopy(server.user['group_ids'])
+  r=call('switch',source=100,
+         expected_stderr='achbot_shared_transfer_committed order_id=91 target_id=3 active_refs=1\n')
+  yes(r['out']['target_id']==3 and server.user['group_ids']==before_native_groups and
+      sql("SELECT server_id,fileid,autoRenew FROM orders_list WHERE id=91").strip()=='3\t0\toff',
+      'explicit_same_panel_switch_clears_plan_without_native_groups_change')
+  # Restore a synthetic local fixture for the independent later financial
+  # scenarios; this is fixture SQL only, not runtime re-provisioning.
+  sql("UPDATE orders_list SET server_id=2,fileid=7 WHERE id=91")
   sql("INSERT INTO pays(id,hash_id,user_id,plan_id,server_id,order_id,type,state,price,request_date) VALUES(6,'pgmanualgroupsbefore',1001,7,2,91,'RENEW_ACCOUNT','processing',100,1700000000),(7,'pgmanualgroupsafter',1001,7,2,91,'RENEW_ACCOUNT','processing',100,1700000000)")
   server.user['group_ids']=[2]
   call('pin',pay=6)
@@ -548,12 +563,20 @@ def main():
   sql("UPDATE users SET step='pg:key:1:2' WHERE userid=9001")
   r=call('admin',source=2002,text='fixture-rotated-key')
   yes(sql("SELECT COUNT(*) FROM server_config WHERE provider_connection_id=1 AND BINARY password<>BINARY 'fixture-rotated-key'").strip()=='0' and 'fixture-rotated-key' not in json.dumps(r),'actual_admin_shared_server_key_rotation_validated_without_echo')
+  # Stale pre-refactor server-native group input must be rejected.
   sql("UPDATE users SET step='pg:groups:server:2' WHERE userid=9001")
-  call('admin',source=2003,text='2,5')
-  yes(sql("SELECT provider_group_ids FROM server_info WHERE id=2").strip()=='[2,5]','actual_admin_server_default_groups')
+  before=sql("SELECT * FROM server_plans WHERE id=7")
+  call('admin',source=2003,text='2,5',
+       expected_stderr='achbot_pg_admin_action_deferred class=RuntimeException\n')
+  yes(sql("SELECT * FROM server_plans WHERE id=7")==before,
+      'retired_server_native_group_editor_cannot_change_plans')
   sql("UPDATE users SET step='pg:groups:plan:7' WHERE userid=9001")
-  call('admin',source=2004,text='/inherit')
-  yes(sql("SELECT provider_group_ids IS NULL FROM server_plans WHERE id=7").strip()=='1','actual_admin_plan_groups_inherit')
+  # Explicit plans no longer support server-level Group inheritance.
+  before=sql("SELECT provider_group_ids FROM server_plans WHERE id=7")
+  call('admin',source=2004,text='/inherit',
+       expected_stderr='achbot_pg_admin_action_deferred class=RuntimeException\n')
+  yes(sql("SELECT provider_group_ids FROM server_plans WHERE id=7")==before,
+      'retired_plan_native_group_inheritance_denied')
   sql("UPDATE users SET step='pg:groups:plan:7' WHERE userid=9001")
   call('admin',source=2005,text='5')
   yes(sql("SELECT provider_group_ids FROM server_plans WHERE id=7").strip()=='[5]','actual_admin_plan_groups_replace')

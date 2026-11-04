@@ -41,6 +41,10 @@ function achbotAutoRenewReserve(mysqli $db, int $orderId, int $userId): array {
             !achbotSupportsOrder($db,$orderId,(int)$order['fileid'],$userId)) {
             $db->rollback(); return ['status'=>'ineligible'];
         }
+        // Existing-service operations follow the administrator's server policy.
+        if (!achbotServerCommerceAvailable($db,(int)$order['server_id'],false,true)) {
+            $db->rollback();return ['status'=>'server_renewal_disabled'];
+        }
         // Mandatory durable schema: never bypass a missing or damaged journal.
         $stmt=$db->prepare("SELECT id FROM automatic_renewal_attempts
             WHERE order_id=? AND stage<>'done' LIMIT 2 FOR UPDATE");
@@ -61,7 +65,7 @@ function achbotAutoRenewReserve(mysqli $db, int $orderId, int $userId): array {
 
         $planId=(int)$order['fileid'];
         $stmt=$db->prepare("SELECT price,days,volume,server_id,inbound_id
-            FROM server_plans WHERE id=? AND active=1 LIMIT 1");
+            FROM server_plans WHERE id=? LIMIT 1");
         $stmt->bind_param('i',$planId);
         $stmt->execute();
         $plan=$stmt->get_result()->fetch_assoc();

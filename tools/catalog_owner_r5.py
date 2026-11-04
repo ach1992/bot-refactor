@@ -1,6 +1,6 @@
 """Owner revision5 current-copy proof layered over immutable accepted catalog history."""
 from __future__ import annotations
-import copy,functools,json,pathlib,re,subprocess
+import copy,functools,hashlib,json,pathlib,re,subprocess
 ROOT=pathlib.Path(__file__).resolve().parents[1]
 BASE='64feca4b777a442023676122e315c68ad26e902d'
 AUTH='https://github.com/ach1992/bot-refactor/issues/26#issuecomment-6486592777'
@@ -83,8 +83,186 @@ def scoped_addon_restore(sides):
     for key in real:restored['admin'].pop(key)
     return restored
 
+# #112: tightly pinned new Transfer and shared-panel wizard copy. The old
+# independently accepted R5/API/Gift/RC22 catalog proofs remain unchanged.
+SHARED_TRANSFER_SOURCE='b654336d92a7e8e994e24d32144e995b5dba1407'
+@functools.lru_cache(maxsize=1)
+def shared_transfer_baseline():
+    decode='$s=stream_get_contents(STDIN);$p=strpos($s,"return [");if($p===false)throw new RuntimeException("array_missing");echo json_encode(eval(substr($s,$p)),JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);'
+    return {a:flatten(json.loads(command('php','-r',decode,
+        input=command('git','show',SHARED_TRANSFER_SOURCE+':messages/fa/'+a+'.php'))))
+        for a in ['user','admin']}
+
+@functools.lru_cache(maxsize=2)
+def shared_transfer_source_lines(path,original=False):
+    raw=command('git','show',SHARED_TRANSFER_SOURCE+':'+path).decode() if original else (ROOT/path).read_text()
+    lines={}
+    topic=None
+    for line in raw.splitlines():
+        heading=re.match(r"^    '([^']+)'\s*=>\s*\[$",line)
+        if heading:
+            topic=heading.group(1)
+            continue
+        entry=re.match(r"^        '([^']+)'\s*=>",line)
+        if entry and topic is not None:
+            key=topic+'.'+entry.group(1)
+            check(key not in lines,'shared_transfer_source_duplicate:'+key)
+            lines[key]=line
+    return lines
+
+@functools.lru_cache(maxsize=1)
+def shared_transfer_shipped_values():
+    # Compare synthetic negative controls to the actual pinned shipping copy,
+    # never just to the key inventory. The source line hash is verified below.
+    return {audience:flatten(json.loads(command(
+        'php','-r',
+        '$g=require "messages/fa/'+audience+'.php";echo json_encode($g,JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);'
+    ))) for audience in ['user','admin']}
+
+def shared_transfer_copy_restore(sides):
+    record=json.loads((ROOT/'tools/text_catalog_shared_transfer.json').read_text())
+    check(record.get('version')==1 and
+          record.get('accepted_source_commit')==SHARED_TRANSFER_SOURCE and
+          record.get('owner_issue')=='https://github.com/ach1992/bot-refactor/issues/112',
+          'shared_transfer_catalogue_identity')
+    entries=record.get('entries')
+    check(isinstance(entries,dict) and len(entries)==11 and
+          all(isinstance(item,dict) and set(item)=={'audience','before_sha256','after_sha256'}
+              for item in entries.values()),'shared_transfer_catalogue_shape')
+    baseline=shared_transfer_baseline()
+    shipped=shared_transfer_shipped_values()
+    check(type(sides) is dict and set(sides)=={'user','admin'},
+          'shared_transfer_catalogue_audiences')
+    # Restore only the eleven exact Owner-approved copy changes. Unknown
+    # mutations stay visible to the unchanged API/R5 whole-catalogue proof;
+    # this also preserves its original negative-control failure categories.
+    restored=copy.deepcopy(sides)
+    for key,item in entries.items():
+        audience=item['audience']
+        check(audience in ['user','admin'] and
+              key not in sides['admin' if audience=='user' else 'user'],
+              'shared_transfer_audience_invalid:'+key)
+        path='messages/fa/'+audience+'.php'
+        for original,field in [(True,'before_sha256'),(False,'after_sha256')]:
+            line=shared_transfer_source_lines(path,original).get(key)
+            digest=hashlib.sha256(line.encode()).hexdigest() if line is not None else None
+            check(digest==item[field],'shared_transfer_source_value_drift:'+key)
+        before=baseline[audience].get(key)
+        if key in baseline[audience]:
+            check(item['before_sha256'] is not None,
+                  'shared_transfer_baseline_missing_hash:'+key)
+            restored[audience][key]=before
+        else:
+            check(item['before_sha256'] is None,
+                  'shared_transfer_added_key_baseline:'+key)
+            restored[audience].pop(key,None)
+        # All new/changed keys must be present in their approved audience.
+        # Obsolete keys must remain absent. Unknown unrelated mutations are
+        # intentionally handled by the older whole-catalogue check below.
+        check((key in sides[audience])==(item['after_sha256'] is not None),
+              'shared_transfer_key_presence:'+key)
+        if item['after_sha256'] is not None:
+            check(sides[audience][key]==shipped[audience][key],
+                  'shared_transfer_approved_value_drift:'+key)
+    return restored
+
+
+# #112 Owner Revision 4 supersedes forced retirement: the policy is
+# admin-confirmed hard deletion plus explicit server-sale/renewal states and
+# plan visibility. Pin each changed/additive admin key against source while
+# restoring only the evidenced delta for immutable historical R5/API proofs.
+SERVER_REMOVAL_PARENT='218319313fdbd9cee8aeea15e1c073997f4485e7'
+SERVER_REMOVAL_KEYS=(
+    'admin_settings.management.server_delete_confirm',
+    'admin_settings.management.server_removed',
+    'admin_settings.management.server_retired',
+    'admin_settings.management.server_state_prompt',
+    'admin_settings.management.server_state_full',
+    'admin_settings.management.server_state_renew_only',
+    'admin_settings.management.server_state_off',
+    'admin_settings.management.plan_hide_from_sale',
+    'admin_settings.management.plan_offer_for_sale',
+    'admin_settings.management.plan_delete_confirm',
+    'admin_settings.management.plan_deleted',
+)
+
+@functools.lru_cache(maxsize=1)
+def server_removal_baseline():
+    path='messages/fa/admin.php'
+    raw=command('git','show',SERVER_REMOVAL_PARENT+':'+path)
+    decode='$s=stream_get_contents(STDIN);$p=strpos($s,"return [");if($p===false)throw new RuntimeException("array_missing");echo json_encode(eval(substr($s,$p)),JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);'
+    values=flatten(json.loads(command('php','-r',decode,input=raw)))
+    lines={};topic=None
+    for line in raw.decode().splitlines():
+        heading=re.match(r"^    '([^']+)'\s*=>\s*\[$",line)
+        if heading:topic=heading.group(1);continue
+        entry=re.match(r"^        '([^']+)'\s*=>",line)
+        if entry and topic is not None:
+            key=topic+'.'+entry.group(1)
+            check(key not in lines,'server_removal_baseline_source_duplicate:'+key)
+            lines[key]=line
+    return values,lines
+
+def server_removal_copy_restore(sides):
+    record=json.loads((ROOT/'tools/text_catalog_server_removal_safety.json').read_text())
+    entries=record.get('entries')
+    check(record.get('version')==1 and
+          set(record)=={'version','owner_issue','previous_candidate','entries','retained_unreferenced_keys'} and
+          record.get('retained_unreferenced_keys')==[
+              'bot.bot.addserver_name.alert.601504ae47',
+              'bot.bot.addserver_name.message.756c3005d3',
+              'bot.bot.servers_setting.alert.9f4e68eda7',
+              'plans.administration.edit_custom_plan.alert.3064bbd794',
+              'plans.administration.edit_custom_plan.message.b059640ccc'] and
+          record.get('previous_candidate')==SERVER_REMOVAL_PARENT and
+          record.get('owner_issue')=='https://github.com/ach1992/bot-refactor/issues/112' and
+          type(entries) is dict and tuple(entries)==SERVER_REMOVAL_KEYS,
+          'server_removal_catalog_identity')
+    prior,original=server_removal_baseline()
+    actual=shared_transfer_shipped_values()
+    current=shared_transfer_source_lines('messages/fa/admin.php',False)
+    result=copy.deepcopy(sides)
+    for key,item in entries.items():
+        check(type(item) is dict and
+              set(item)=={'audience','before_sha256','after_sha256','reason'} and
+              item['audience']=='admin' and bool(item['reason']) and
+              key not in sides.get('user',{}),
+              'server_removal_catalog_scope_or_audience:'+key)
+        for lines,field in [(original,'before_sha256'),(current,'after_sha256')]:
+            raw=lines.get(key)
+            digest=hashlib.sha256(raw.encode()).hexdigest() if raw is not None else None
+            check(digest==item[field] and (field!='after_sha256' or raw is not None),
+                  'server_removal_catalog_source_drift:'+key)
+        check(key in sides['admin'] and
+              sides['admin'][key]==actual['admin'][key],
+              'server_removal_catalog_copy_or_audience_drift:'+key)
+        if key in prior:
+            check(item['before_sha256'] is not None,
+                  'server_removal_catalog_prior_identity:'+key)
+            result['admin'][key]=prior[key]
+        else:
+            check(item['before_sha256'] is None,
+                  'server_removal_catalog_added_identity:'+key)
+            result['admin'].pop(key)
+    return result
+
+def server_removal_copy_negative_controls(sides):
+    # A valid shipping catalog must pass BEFORE the mutations; otherwise a
+    # permanently failing check would falsely prove every negative control.
+    server_removal_copy_restore(sides)
+    cases=[]
+    missing=copy.deepcopy(sides);missing['admin'].pop(SERVER_REMOVAL_KEYS[2]);cases.append(missing)
+    changed=copy.deepcopy(sides);changed['admin'][SERVER_REMOVAL_KEYS[0]]+=' changed';cases.append(changed)
+    wrong=copy.deepcopy(sides);wrong['user'][SERVER_REMOVAL_KEYS[2]]=wrong['admin'].pop(SERVER_REMOVAL_KEYS[2]);cases.append(wrong)
+    duplicated=copy.deepcopy(sides);duplicated['user'][SERVER_REMOVAL_KEYS[1]]=duplicated['admin'][SERVER_REMOVAL_KEYS[1]];cases.append(duplicated)
+    for candidate in cases:
+        try:server_removal_copy_restore(candidate)
+        except AssertionError:continue
+        raise AssertionError('server_removal_copy_negative_control_missed')
+    return len(cases)
+
 def verify_and_restore(sides,definition=None):
-    current=scoped_addon_restore(sides)
+    current=scoped_addon_restore(shared_transfer_copy_restore(server_removal_copy_restore(sides)))
     sides,api_proof=verify_api_and_restore(current)
     record=manifest()if definition is None else definition
     check(record.get('version')==1 and record.get('baseline_commit')==BASE and record.get('authorization')==AUTH,'r5_amendment_identity')
@@ -206,6 +384,14 @@ def review_catalog_restore(sides):
     return restored,{'review_added_keys':8,'review_added_user_keys':2,'review_added_admin_keys':6,'review_source':REVIEW_SOURCE}
 
 def verify_api_and_restore(sides,definition=None):
+    # Historical composition proofs enter directly at this API layer. They
+    # must first undo the exact #112 copy delta, while the normal R5 pipeline
+    # has already restored its historical inheritance key.
+    if ('admin_settings.management.server_groups' in sides.get('admin',{}) and
+        'admin_settings.management.inherit_groups' not in sides['admin']):
+        if 'admin_settings.management.server_retired' in sides['admin']:
+            sides=server_removal_copy_restore(sides)
+        sides=shared_transfer_copy_restore(sides)
     sides=scoped_addon_restore(sides) if any(key.startswith('addon_scopes.')
         for key in sides.get('admin',{})) else sides
     sides,review_proof=review_catalog_restore(sides)
@@ -317,14 +503,47 @@ SCOPED_ADDON_API_INSERTION="""            if ($type!=='RENEW_ACCOUNT') {
                 $context['addon_scope_snapshot']=(string)($pay['addon_scope_snapshot']??'');
             }
 """
+# Reviewer F3 fix: explicitly reverse ONLY the two scoped non-copy
+# final-local-claim policy edits before requiring the immutable original
+# dynamic-message consumer source. Neither arbitrary PHP nor copy edits pass.
+FINAL_COMMERCE_POLICY_INSERTION="""        // A committed processing claim is recovery evidence, NOT a new
+        // authorization to charge or mutate an account. New claims must obey
+        // the CURRENT locked server policy even if remote preflight passed.
+        $alreadyClaimed=($pay['state']??'')==='processing' &&
+            (int)($pay['approved_by']??-1)===0;
+        if (!$alreadyClaimed && ((int)$info['active']!==1 ||
+            ($type==='BUY_SUB' ? (int)$info['state']!==1 :
+                !in_array((int)$info['state'],[1,2],true))))return null;
+"""
+FINAL_COMMERCE_IDENTITY_BEFORE="""        $context['server_identity']=array_intersect_key($info,array_flip(['id','panel_group_id','provider_group_ids']));"""
+FINAL_COMMERCE_IDENTITY_AFTER="""        // Bind preflight to the actual commerce policy; a state flip after
+        // native HTTP invalidates this fingerprint at the final SQL claim.
+        $context['server_identity']=array_intersect_key($info,array_flip(
+            ['id','panel_group_id','provider_group_ids','active','state']));"""
+OWNER_REV4_API_PREVIOUS="if (!$plan || (int)$plan['active']!==1 || (int)$plan['inbound_id']!==0 ||"
+OWNER_REV4_API_GUARD="if (!$plan || ($type!=='RENEW_ACCOUNT' && (int)$plan['active']!==1) ||\n            (int)$plan['inbound_id']!==0 ||"
 def api_source_references(path,source):
     refs=set(re.findall(r"\\?achbotMessage(?:Html)?\('([^']+)'",source))
     if path in API_DYNAMIC:
-        original=source==api_consumer_snapshot(path)
-        reviewed=source==api_consumer_snapshot(path,REVIEW_SOURCE)
+        # Owner Rev4 replaces exactly one pre-issuance plan-visibility guard
+        # for an existing RENEW_ACCOUNT. Undo only that non-copy delta before
+        # checking the same pinned API source and previously accepted #107 insertion.
+        audited=source
+        if path=='src/Finance/ApiPayments.php':
+            # Full-content equality below fails closed if any edit falls
+            # outside these independently exact source-text allowances.
+            if (audited.count(FINAL_COMMERCE_POLICY_INSERTION)==1 and
+                audited.count(FINAL_COMMERCE_IDENTITY_AFTER)==1):
+                audited=audited.replace(FINAL_COMMERCE_POLICY_INSERTION,'',1)
+                audited=audited.replace(FINAL_COMMERCE_IDENTITY_AFTER,
+                    FINAL_COMMERCE_IDENTITY_BEFORE,1)
+            if audited.count(OWNER_REV4_API_GUARD)==1:
+                audited=audited.replace(OWNER_REV4_API_GUARD,OWNER_REV4_API_PREVIOUS,1)
+        original=audited==api_consumer_snapshot(path)
+        reviewed=audited==api_consumer_snapshot(path,REVIEW_SOURCE)
         if path=='src/Finance/ApiPayments.php' and not original and not reviewed:
-            reviewed=(source.count(SCOPED_ADDON_API_INSERTION)==1 and
-                source.replace(SCOPED_ADDON_API_INSERTION,'')==api_consumer_snapshot(path,REVIEW_SOURCE))
+            reviewed=(audited.count(SCOPED_ADDON_API_INSERTION)==1 and
+                audited.replace(SCOPED_ADDON_API_INSERTION,'')==api_consumer_snapshot(path,REVIEW_SOURCE))
         check(original or reviewed,'api_dynamic_consumer_source_drift:'+path)
         for key in API_CONDITIONAL_REFS.get(path,[]):
             check(repr(key) in source,'api_conditional_literal_missing:'+path+':'+key)
@@ -352,6 +571,14 @@ def api_reference_negative_controls(sources,entries):
     bad=dict(sources);bad['unapproved.php']="<?php achbotMessage('payment.api_payment.'.$state);";controls.append(bad)
     bad=dict(sources);bad.pop('src/Finance/PaymentApiAdmin.php');controls.append(bad)
     bad=dict(sources);bad['unapproved.php']="<?php achbotMessage('payment.api_payment.completed');";controls.append(bad)
+    if sources[path].count(FINAL_COMMERCE_POLICY_INSERTION)==1:
+        bad=dict(sources)
+        bad[path]=bad[path].replace("(int)$info['state']!==1", "(int)$info['state']===1",1)
+        controls.append(bad)
+        bad=dict(sources)
+        bad[path]=bad[path].replace("'provider_group_ids','active','state'",
+            "'provider_group_ids','active'",1)
+        controls.append(bad)
     for candidate in controls:
         try:api_reference_proof(candidate,entries)
         except AssertionError:continue

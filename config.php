@@ -966,7 +966,7 @@ require_once __DIR__ . '/src/Finance/GatewayClient.php';
 function getMarzbanPanelGroupKeys($mode, $serverId = 0) {
     global $connection, $buttonValues;
     $keys = [];
-    foreach (achbotMarzbanPanelGroups($connection) as $group) {
+    foreach (achbotPanelGroups($connection) as $group) {
         $id = (int)$group['id'];
         $cb = $mode === 'add'
             ? "selectNewPanelGroup_$id"
@@ -984,7 +984,7 @@ function getMarzbanPanelGroupKeys($mode, $serverId = 0) {
 function getMarzbanPanelGroupsManagementKeys() {
     global $connection, $buttonValues;
     $keys = [];
-    foreach (achbotMarzbanPanelGroups($connection) as $group) {
+    foreach (achbotPanelGroups($connection) as $group) {
         $id = (int)$group['id'];
         $keys[] = [
             ['text'=>\achbotMessage('admin_settings.config.get_marzban_panel_group_keys.button.62b58eccfe') . $group['name'], 'callback_data'=>'wizwizch'],
@@ -1015,7 +1015,7 @@ function getServerConfigKeys($serverId,$offset = 0){
         require_once __DIR__.'/src/Panel/ProviderAdmin.php';
         return achbotPgServerAdminKeys($info,$config,$offset);
     }
-    $id=(int)$info['id'];$group=achbotMarzbanGroup($connection,$id);
+    $id=(int)$info['id'];$group=achbotPanelGroup($connection,$id);
     $keys=[
         [['text'=>$config['panel_url'],'callback_data'=>'wizwizch']],
         [['text'=>$info['title'],'callback_data'=>'editServerName'.$id],
@@ -1024,7 +1024,7 @@ function getServerConfigKeys($serverId,$offset = 0){
          ['text'=>\achbotMessage('admin_settings.config.get_server_config_keys.button.d004e8d654'),'callback_data'=>'wizwizch']],
         [['text'=>\achbotMessage('admin_settings.management.capacity',['value'=>$info['ucount']]),'callback_data'=>'editServerMax'.$id]],
         [['text'=>\achbotMessage('admin_settings.management.remark',['value'=>$info['remark']]),'callback_data'=>'editServerRemark'.$id]],
-        [['text'=>$group['name']??\achbotMessage('admin_settings.config.get_server_config_keys.text.176dbab285'),'callback_data'=>'editMarzbanGroup'.$id],
+        [['text'=>$group['name']??\achbotMessage('admin_settings.config.get_server_config_keys.text.176dbab285'),'callback_data'=>'editPanelGroup'.$id],
          ['text'=>\achbotMessage('admin_settings.config.get_server_config_keys.button.e2c055db59'),'callback_data'=>'wizwizch']],
         [['text'=>\achbotMessage('admin_settings.management.connection'),'callback_data'=>'changesServerLoginInfo'.$id]],
         [['text'=>\achbotMessage('admin_settings.management.display'),'callback_data'=>'serverDisplay'.$id]],
@@ -1059,7 +1059,11 @@ function getServerListKeys($offset = 0){
             $cname = $cty['title'];
             $flagwizwiz = $cty['flag'];
             $remarkwizwiz = $cty['remark'];
-            $state = $cty['state'] == "1"?$buttonValues['active']:$buttonValues['deactive'];
+            $state = match((int)$cty['state']) {
+                1=>\achbotMessage('admin_settings.management.server_state_full'),
+                2=>\achbotMessage('admin_settings.management.server_state_renew_only'),
+                default=>\achbotMessage('admin_settings.management.server_state_off')
+            };
             $ucount = $cty['ucount'];
             $stmt = $connection->prepare("SELECT * FROM `server_config` WHERE `id`=?");
             $stmt->bind_param("i", $id);
@@ -1084,7 +1088,7 @@ function getServerListKeys($offset = 0){
         $keys[] = [['text'=>\achbotMessage('admin_settings.config.get_agents_list.button.78d753bffb'),'callback_data'=>"nextServerPage" . ($offset - $limit)]];
     }
     $keys[] = [['text'=>\achbotMessage('admin_settings.management.add_server'),'callback_data'=>'addManagedServer']];
-    $keys[] = [['text'=>\achbotMessage('admin_settings.config.get_server_list_keys.button.def9f141f2'), 'callback_data'=>'manageMarzbanPanelGroups']];
+    $keys[] = [['text'=>\achbotMessage('admin_settings.config.get_server_list_keys.button.def9f141f2'), 'callback_data'=>'managePanelGroups']];
     $keys[] = [['text' => $buttonValues['back_button'], 'callback_data' => "managePanel"]];
     return json_encode(['inline_keyboard'=>$keys]);
 }
@@ -1350,7 +1354,6 @@ function getBotSettingKeys(){
     $changeProtocole = $botState['changeProtocolState']=="on"?$buttonValues['on']:$buttonValues['off'];
     $renewAccount = $botState['renewAccountState']=="on"?$buttonValues['on']:$buttonValues['off'];
     $plandelkhahwiz = $botState['plandelkhahState']=="on"?$buttonValues['on']:$buttonValues['off'];
-    $switchLocation = $botState['switchLocationState']=="on"?$buttonValues['on']:$buttonValues['off'];
     $increaseTime = $botState['increaseTimeState']=="on"?$buttonValues['on']:$buttonValues['off'];
     $increaseVolume = $botState['increaseVolumeState']=="on"?$buttonValues['on']:$buttonValues['off'];
     $renewConfigLink = $botState['renewConfigLinkState']=="on"?$buttonValues['on']:$buttonValues['off'];
@@ -1432,10 +1435,6 @@ function getBotSettingKeys(){
         [
             ['text'=>$plandelkhahwiz,'callback_data'=>"changeBotplandelkhahState"],
             ['text'=>\achbotMessage('admin_settings.config.get_bot_setting_keys.button.8ef9c2184e'),'callback_data'=>"wizwizch"]
-        ],
-        [
-            ['text'=>$switchLocation,'callback_data'=>"changeBotswitchLocationState"],
-            ['text'=>\achbotMessage('admin_settings.config.get_bot_setting_keys.button.c6b7f26615'),'callback_data'=>"wizwizch"]
         ],
         [
             ['text'=>$increaseTime,'callback_data'=>"changeBotincreaseTimeState"],
@@ -3438,6 +3437,7 @@ function getMainMenuButtonsKeys(){
 }
 function getPlanDetailsKeys($planId){
     global $connection,$buttonValues;
+    require_once __DIR__.'/src/Admin/IntentSafety.php';
     require_once __DIR__.'/src/Presentation/Text.php';
     $planId=(int)$planId;
     $stmt=$connection->prepare("SELECT * FROM server_plans WHERE id=?");
@@ -3461,6 +3461,7 @@ function getPlanDetailsKeys($planId){
         'finite'=>\achbotMessage('admin_settings.management.plan_volume_label',['value'=>$volume['display']]),
         default=>\achbotMessage('admin_settings.management.plan_volume_unknown')
     };
+    $revision=achbotAdminPlanStateRevision($connection,$planId);
     $keys=[
         [['text'=>$plan['title'],'callback_data'=>'wizwizplanname'.$planId],
          ['text'=>\achbotMessage('admin_settings.config.get_plan_details_keys.button.e1615aff08'),'callback_data'=>'wizwizch']],
@@ -3475,6 +3476,10 @@ function getPlanDetailsKeys($planId){
         $server['type']==='marzban'?
             [['text'=>\achbotMessage('admin_settings.config.get_plan_details_keys.button.51a75fa72c'),'callback_data'=>'marzbanHostSettings'.$planId]]:
             [['text'=>\achbotMessage('admin_settings.config.get_plan_details_keys.button.6399e067cb'),'callback_data'=>'pgPlanGroups'.$planId]],
+        [['text'=>(int)$plan['active']===1?
+            \achbotMessage('admin_settings.management.plan_hide_from_sale'):
+            \achbotMessage('admin_settings.management.plan_offer_for_sale'),
+            'callback_data'=>'setPlanSale'.$planId.'_' . ((int)$plan['active']===1?0:1).'_'.$revision]],
         [['text'=>\achbotMessage('admin_settings.config.get_plan_details_keys.button.c3a5bc0cbd'),'callback_data'=>'wizwizplandelete'.$planId]],
         [['text'=>$buttonValues['back_button'],'callback_data'=>'plansList'.$serverId]]
     ];

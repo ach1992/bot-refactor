@@ -26,7 +26,6 @@ function achbotProviderRequireSchema(mysqli $db): void {
             'provider_version'=>['varchar(32)',true],'provider_enabled'=>['tinyint unsigned',false]],
         'orders_list'=>['provider_effect_id'=>['bigint unsigned',true],
             'provider_remote_user_id'=>['bigint unsigned',true],'provider_remote_created_at'=>['varchar(40)',true]],
-        'server_info'=>['provider_group_ids'=>['text',true]],
         'server_plans'=>['provider_group_ids'=>['text',true]],
         'pays'=>['provider_snapshot'=>['longtext',true]],
         'service_effects'=>['provider_snapshot'=>['longtext',true],
@@ -142,20 +141,21 @@ function achbotProviderConnections(mysqli $db): array {
 }
 function achbotProviderSnapshot(mysqli $db,int $serverId,?int $planId=null): array {
     achbotProviderRequireSchema($db);
-    $r=achbotProviderRow($db,'SELECT c.provider_connection_id,i.provider_group_ids,c.type,c.panel_url
+    if ($planId===null || $planId<=0)
+        throw new RuntimeException('provider_plan_required');
+    $r=achbotProviderRow($db,'SELECT c.provider_connection_id,c.type,c.panel_url
         FROM server_info i JOIN server_config c ON c.id=i.id WHERE i.id=?','i',[$serverId]);
     if (!$r || $r['type']!=='pasarguard' || $r['provider_connection_id']===null)
         throw new RuntimeException('provider_server_invalid');
     $panel=achbotProviderPanel($db,achbotProviderPositiveInt($r['provider_connection_id']));
     if (rtrim((string)$r['panel_url'],'/')!==rtrim($panel['api_url'],'/'))
         throw new RuntimeException('provider_endpoint_changed');
-    $groups=$r['provider_group_ids'];
-    if ($planId!==null && $planId!==0) {
-        $p=achbotProviderRow($db,'SELECT server_id,inbound_id,provider_group_ids FROM server_plans WHERE id=?','i',[$planId]);
-        if (!$p || (int)$p['server_id']!==$serverId || (int)$p['inbound_id']!==0)
-            throw new RuntimeException('provider_plan_invalid');
-        if ($p['provider_group_ids']!==null) $groups=$p['provider_group_ids'];
-    }
+    $p=achbotProviderRow($db,'SELECT server_id,inbound_id,provider_group_ids FROM server_plans WHERE id=?','i',[$planId]);
+    if (!$p || (int)$p['server_id']!==$serverId || (int)$p['inbound_id']!==0)
+        throw new RuntimeException('provider_plan_invalid');
+    // Every PG plan owns a nonempty explicit native Group set. The obsolete
+    // server defaults are never used as a fallback.
+    $groups=achbotProviderGroups($p['provider_group_ids']);
     return ['provider'=>'pasarguard','panel_id'=>$panel['id'],'instance_key'=>$panel['instance_key'],
         'endpoint_sha256'=>hash('sha256',rtrim($panel['api_url'],'/')),
         'group_ids'=>achbotProviderGroups($groups)];

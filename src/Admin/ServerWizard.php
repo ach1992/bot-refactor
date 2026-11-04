@@ -51,12 +51,7 @@ function achbotManagementMarzbanCheck(array $v): void {
         $r['access_token']==='') throw new RuntimeException('management_connection');
 }
 function achbotServerWizardPrepare(mysqli $db,array &$d): void {
-    if ($d['stage']==='groups' && !isset($d['choices'])) {
-        $p=achbotServerWizardPanel($db,$d['values']);
-        $d['choices']=achbotManagementPgChoices($p);
-        $d['values']['groups']=array_values(array_intersect($d['values']['groups']??[],array_column($d['choices'],'id')));
-        $d['values']['panel_fingerprint']=hash('sha256',json_encode($p,JSON_THROW_ON_ERROR));
-    }
+    // Native PasarGuard Groups are configured only at plan level.
 }
 function achbotManagementChoices(array $d,array $selected,string $action='pick'): array {
     $rows=[];$choices=$d['choices']??[];
@@ -85,18 +80,15 @@ function achbotServerWizardView(mysqli $db,array $d): array {
                     'callback_data'=>achbotManagementButton($d,'panel',(string)$p['id'])]];
         } catch (Throwable $ignored) {}
     } elseif ($stage==='panelgroup') {
-        foreach (achbotMarzbanPanelGroups($db) as $g) $keys[]=[[
+        foreach (achbotPanelGroups($db) as $g) $keys[]=[[
             'text'=>$g['name'],'callback_data'=>achbotManagementButton($d,'group',(string)$g['id'])]];
         $keys[]=[['text'=>achbotManagementText('no_shared_group'),'callback_data'=>achbotManagementButton($d,'group','0')]];
-    } elseif ($stage==='groups') {
-        $keys=achbotManagementChoices($d,$v['groups']??[]);
-        $keys[]=[['text'=>achbotManagementText('selection_done'),'callback_data'=>achbotManagementButton($d,'done')]];
     } elseif ($stage==='review') {
         $body=achbotManagementText('server_review',[
             'title'=>achbotManagementEscape($v['title']),'provider'=>achbotManagementText($v['provider']),
             'capacity'=>(string)$v['capacity'],'remark'=>achbotManagementEscape($v['remark']),
             'flag'=>achbotManagementEscape($v['flag']),'url'=>achbotManagementEscape($v['url']),
-            'access'=>achbotManagementEscape($v['provider']==='pasarguard'?achbotManagementSelectionSummary(array_map('strval',$v['groups'])):($v['panel_group_name']??achbotManagementText('no_shared_group')))]);
+            'access'=>achbotManagementEscape($v['panel_group_name']??achbotManagementText('no_shared_group'))]);
         $keys[]=[['text'=>achbotManagementText('confirm_server'),'callback_data'=>achbotManagementButton($d,'save')]];
         return [$body,$keys];
     }
@@ -109,16 +101,17 @@ function achbotServerWizardAdvance(mysqli $db,array &$d,string $action,string $i
     }
     if (in_array($stage,['title','remark','flag','url','username','password','api_key','capacity'],true)) {
         if ($stage==='url' && $v['provider']==='pasarguard' && $action==='panel') {
-            unset($v['groups'],$v['panel_fingerprint'],$d['choices'],$d['page']);
+            unset($v['panel_fingerprint'],$d['choices'],$d['page']);
             $v['panel_id']=achbotManagementInteger($input);
-            $p=achbotServerWizardPanel($db,$v);$v['url']=$p['api_url'];$d['stage']='groups';
-            unset($d['choices']);return null;
+            $p=achbotServerWizardPanel($db,$v);$v['url']=$p['api_url'];
+            $v['panel_fingerprint']=hash('sha256',json_encode($p,JSON_THROW_ON_ERROR));
+            $d['stage']='panelgroup';return null;
         }
         if ($action!=='text') throw new RuntimeException('management_input');
         $input=$stage==='password'?$input:trim($input);
         if ($stage==='capacity') $v['capacity']=achbotManagementInteger($input,1,100000000);
         elseif ($stage==='url') {
-            $v['url']=achbotManagementUrl($input,$v['provider']==='pasarguard'?1000:254);unset($v['panel_id'],$v['api_key'],$v['password'],$v['username'],$v['groups'],$v['panel_fingerprint'],$d['choices'],$d['page']);
+            $v['url']=achbotManagementUrl($input,$v['provider']==='pasarguard'?1000:254);unset($v['panel_id'],$v['api_key'],$v['password'],$v['username'],$v['panel_fingerprint'],$d['choices'],$d['page']);
         } elseif ($stage==='remark') {
             if (preg_match('/^[a-zA-Z0-9_-]{1,60}$/D',$input)!==1) throw new RuntimeException('management_input');
             $v['remark']=$input;
@@ -130,45 +123,38 @@ function achbotServerWizardAdvance(mysqli $db,array &$d,string $action,string $i
         }
         $next=['title'=>'capacity','capacity'=>'remark','remark'=>'flag','flag'=>'url',
             'url'=>$v['provider']==='pasarguard'?'api_key':'username','username'=>'password',
-            'password'=>'panelgroup','api_key'=>'groups'];
+            'password'=>'panelgroup','api_key'=>'panelgroup'];
         if (in_array($stage,['password','api_key'],true)) {
             if ($stage==='password') achbotManagementMarzbanCheck($v);
-            else { $v['instance_key']=bin2hex(random_bytes(16));unset($d['choices'],$v['groups'],$v['panel_fingerprint']); }
+            else {
+                $v['instance_key']=bin2hex(random_bytes(16));
+                $p=achbotServerWizardPanel($db,$v);
+                $v['panel_fingerprint']=hash('sha256',json_encode($p,JSON_THROW_ON_ERROR));
+            }
         }
         if ($stage==='flag' && !empty($v['panel_id'])) {
-            $v['url']=achbotServerWizardPanel($db,$v)['api_url'];$d['stage']='groups';
+            $p=achbotServerWizardPanel($db,$v);
+            $v['url']=$p['api_url'];
+            $v['panel_fingerprint']=hash('sha256',json_encode($p,JSON_THROW_ON_ERROR));
+            $d['stage']='panelgroup';
         } else $d['stage']=$next[$stage];
         return null;
     }
     if ($stage==='panelgroup' && $action==='group') {
         $id=achbotManagementInteger($input,0);$name=null;
-        foreach (achbotMarzbanPanelGroups($db) as $g) if ((int)$g['id']===$id) $name=$g['name'];
+        foreach (achbotPanelGroups($db) as $g) if ((int)$g['id']===$id) $name=$g['name'];
         if ($id!==0 && $name===null) throw new RuntimeException('management_targets');
         $v['panel_group_id']=$id;$v['panel_group_name']=$name;$d['stage']='review';return null;
     }
-    if ($stage==='groups') {
-        if ($action==='page') {
-            $page=achbotManagementInteger($input,0);
-            if ($page*8>=count($d['choices'])) throw new RuntimeException('management_input');
-            $d['page']=$page;return null;
-        }
-        if ($action==='pick') {
-            $choice=$d['choices'][achbotManagementInteger($input,0)]??null;
-            if (!$choice) throw new RuntimeException('management_targets');
-            $ids=$v['groups']??[];$id=$choice['id'];
-            $v['groups']=in_array($id,$ids,true)?array_values(array_diff($ids,[$id])):array_merge($ids,[$id]);return null;
-        }
-        if ($action==='done' && !empty($v['groups'])) {$d['stage']='review';return null;}
-    }
     if ($stage!=='review' || $action!=='save') throw new RuntimeException('management_input');
-    $provider=$v['provider'];$pid=null;$groupJson=null;
+    $provider=$v['provider'];$pid=null;
     if ($provider==='pasarguard') {
         $p=achbotServerWizardPanel($db,$v);
         if (!hash_equals($v['panel_fingerprint']??'',hash('sha256',json_encode($p,JSON_THROW_ON_ERROR))))
             throw new RuntimeException('management_connection');
-        $allowed=array_column(achbotManagementPgChoices($p),'id');
-        if (!$v['groups'] || array_diff($v['groups'],$allowed)) throw new RuntimeException('management_targets');
-        $groupJson=json_encode(achbotPgGroupsCanonical($v['groups']),JSON_THROW_ON_ERROR);
+        // Verify API authentication; native Group membership is plan-scoped.
+        $check=achbotPgCheck($p);
+        if (($check['success']??false)!==true) throw new RuntimeException('management_connection');
         if (!empty($v['panel_id'])) {
             $pid=(int)$v['panel_id'];
             // Pin the exact credential/instance row against concurrent rotation.
@@ -178,14 +164,9 @@ function achbotServerWizardAdvance(mysqli $db,array &$d,string $action,string $i
         }
     } elseif ($provider==='marzban') achbotManagementMarzbanCheck($v);
     else throw new RuntimeException('management_input');
-    if ($provider==='pasarguard') {
-        $s=achbotManagementSql($db,'INSERT INTO server_info(title,ucount,remark,flag,active,provider_group_ids) VALUES(?,?,?,?,1,?)',
-            'sisss',[$v['title'],$v['capacity'],$v['remark'],$v['flag'],$groupJson]);
-    } else {
-        // Marzban onboarding remains usable without migration 011.
-        $s=achbotManagementSql($db,'INSERT INTO server_info(title,ucount,remark,flag,active) VALUES(?,?,?,?,1)',
-            'siss',[$v['title'],$v['capacity'],$v['remark'],$v['flag']]);
-    }
+    // Both providers use the same logical server row; native access stays on plans.
+    $s=achbotManagementSql($db,'INSERT INTO server_info(title,ucount,remark,flag,active) VALUES(?,?,?,?,1)',
+        'siss',[$v['title'],$v['capacity'],$v['remark'],$v['flag']]);
     $id=(int)$s->insert_id;$s->close();
     if ($provider==='pasarguard') {
         // Each logical server owns its connection; reused aliases keep the same stable instance.
@@ -198,6 +179,6 @@ function achbotServerWizardAdvance(mysqli $db,array &$d,string $action,string $i
         $s=achbotManagementSql($db,"INSERT INTO server_config(id,panel_url,ip,sni,header_type,request_header,response_header,security,tlsSettings,username,password,type)
             VALUES(?,?,'','','none','','','none','',?,?,?)",'issss',[$id,$v['url'],$v['username']??'',$v['password']??'',$provider]);$s->close();
     }
-    if ($provider==='marzban') achbotSetMarzbanGroup($db,$id,(int)$v['panel_group_id']);
+    achbotSetPanelGroup($db,$id,(int)$v['panel_group_id']);
     return $id;
 }

@@ -32,7 +32,8 @@ function achbotApiPaymentPinLocked(mysqli $db,array $pay,array $attempt): void {
         $id=(int)$pay['plan_id'];
         $q=$db->prepare('SELECT server_id,inbound_id,days,volume,active FROM server_plans WHERE id=? FOR UPDATE');
         $q->bind_param('i',$id);$q->execute();$plan=$q->get_result()->fetch_assoc();$q->close();
-        if (!$plan || (int)$plan['active']!==1 || (int)$plan['inbound_id']!==0 ||
+        if (!$plan || ($type!=='RENEW_ACCOUNT' && (int)$plan['active']!==1) ||
+            (int)$plan['inbound_id']!==0 ||
             ($type!=='RENEW_ACCOUNT' && (int)$plan['server_id']!==(int)$pay['server_id']))
             throw new RuntimeException('api_payment_subject_unavailable');
         $custom=$type==='BUY_SUB' && ((int)$pay['day']>0 || (int)$pay['volume']>0);
@@ -265,6 +266,14 @@ function achbotApiPaymentLocalSubjectContext(mysqli $db,array $pay,bool $locked=
         $pid=(int)($pay['plan_id']??0);$uid=(int)($pay['user_id']??0);
         $plan=$pid>0?$read('server_plans',$pid):null;$order=null;$oid=0;
         if(!$server||!$info||!achbotSupportsAccount($server['type'],0))return null;
+        // A committed processing claim is recovery evidence, NOT a new
+        // authorization to charge or mutate an account. New claims must obey
+        // the CURRENT locked server policy even if remote preflight passed.
+        $alreadyClaimed=($pay['state']??'')==='processing' &&
+            (int)($pay['approved_by']??-1)===0;
+        if (!$alreadyClaimed && ((int)$info['active']!==1 ||
+            ($type==='BUY_SUB' ? (int)$info['state']!==1 :
+                !in_array((int)$info['state'],[1,2],true))))return null;
         if($type==='BUY_SUB') {
             if($pid<=0||!achbotSupportsPlan($db,$pid,0,$sid,$locked))return null;
         } elseif($type==='RENEW_SCONFIG') {
@@ -289,7 +298,10 @@ function achbotApiPaymentLocalSubjectContext(mysqli $db,array $pay,bool $locked=
         } else return null;
         $context['server']=$server;
         // Capacity and display metadata are not provider/quote identity.
-        $context['server_identity']=array_intersect_key($info,array_flip(['id','panel_group_id','provider_group_ids']));
+        // Bind preflight to the actual commerce policy; a state flip after
+        // native HTTP invalidates this fingerprint at the final SQL claim.
+        $context['server_identity']=array_intersect_key($info,array_flip(
+            ['id','panel_group_id','provider_group_ids','active','state']));
         $context['plan']=$plan;
         $context['order']=$order;
         if($server['type']==='pasarguard') {

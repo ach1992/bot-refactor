@@ -2,7 +2,7 @@
 """Actual imported-origin plan selection and consent controllers, with native loopback providers."""
 from __future__ import annotations
 import provider_storage_fixture as shared_storage
-import argparse,copy,json,subprocess,time
+import argparse,copy,json,re,subprocess,time
 from pathlib import Path
 import test_access_state as owned
 import test_v6_native as native
@@ -41,15 +41,20 @@ def main():
                "DELETE FROM setting WHERE type='BOT_STATES';"
                "INSERT INTO setting(type,value)VALUES('BOT_STATES','{\"walletState\":\"on\",\"gatewayAudience\":{\"wallet\":\"all\"}}')")
             if provider=='pasarguard':
-                db("UPDATE server_info SET provider_group_ids='[2,5]' WHERE id=2;"+shared_storage.connection(2,1,url))
+                db("UPDATE server_plans SET provider_group_ids='[2,5]' WHERE server_id=2;"+
+                   shared_storage.connection(2,1,url))
                 remark='existing_user_41';credential=vendor.users[41]['subscription_url']
                 def writes():return [r for r in vendor.trace if r[0]!='GET']
             else:
                 vendor.mode='edit-reset-verified';vendor.edit_put_count=0;vendor.edit_reset_count=0
+                db("UPDATE server_plans SET custom_sni='"+
+                   json.dumps({'inbounds':{'vless':['inbound']},'proxies':{'vless':{'flow':''}}})+
+                   "' WHERE id=7")
                 vendor.edit_account=copy.deepcopy(mb.INITIAL);remark='existing_plan_user'
                 token=imports.mb_mint(remark,int(time.time())-60)
                 vendor.edit_account.update(username=remark,created_at='2026-10-26T05:00:00.123456',
                     subscription_url='/sub/'+token,proxies={'vless':{'id':'aaaaaaaa-1111-4111-8111-111111111111','flow':'xtls-rprx-vision'}},
+                    inbounds={'vless':['inbound']},
                     links=['vless://aaaaaaaa-1111-4111-8111-111111111111@host.invalid:443'],
                     excluded_inbounds={},next_plan=None,auto_delete_in_days=None,
                     on_hold_expire_duration=None,on_hold_timeout=None)
@@ -59,9 +64,11 @@ def main():
                         (r['method']=='POST'and not r['path'].endswith('/api/admin/token'))]
             facade=bodies.function_bodies((ROOT/'config.php').read_bytes(),[
                 'buildSubscriptionPresentation','buildConfigMessage','setUser','sumerize',
-                'getOrderDetailKeys','getUserOrderDetailKeys','getMarzbanToken',
+                'getOrderDetailKeys','getUserOrderDetailKeys','getMarzbanToken','getMarzbanHosts',
                 'renewMarzbanUUID','deleteMarzban','changeMarzbanState','RandomString'])
             (work/'facades.php').write_bytes(facade.replace(b'__DIR__',repr(str(ROOT)).encode()))
+            for migration in ['016_remove_pasarguard_server_groups.sql','017_shared_plan_changes.sql']:
+                db((ROOT/'migrations/post-v9'/migration).read_text())
             config=(ROOT/'config.php').read_text()
             begin=config.index("if (preg_match('/^(toggleAutoRenew|adminToggleAutoRenew)")
             end=config.index('// END create user and admin get order detail',begin)
@@ -79,7 +86,11 @@ def main():
                     'achbot_plan_selection_unavailable','achbot_plan_selection_unverified',
                     'achbot_order_plan_actions_unverified','achbot_renew_consent_unverified',
                     'achbot_customer_draft_creation_deferred')
-                if result.returncode or not all(line.startswith(allowed) for line in result.stderr.splitlines()):
+                if result.returncode or not all(
+                    line.startswith(allowed) or
+                    (op=='extensions' and re.fullmatch(
+                       r'achbot_shared_plan_committed journal_id=[1-9][0-9]* source_order_id=[1-9][0-9]* active_refs=2',line) is not None)
+                    for line in result.stderr.splitlines()):
                     raise AssertionError((provider,op,result.returncode,result.stdout,result.stderr))
                 parsed=json.loads(result.stdout)
                 if 'fixture_error'in parsed:raise AssertionError((provider,op,parsed))
@@ -107,7 +118,7 @@ def main():
             # supported native profile and positive whole service units are eligible.
             db("INSERT INTO server_info(id,title,ucount,remark,flag,active,state) VALUES(5,'Other',10,'other','',1,1);"
                +shared_storage.clone(5,2))
-            if provider=='pasarguard':db("UPDATE server_info SET provider_group_ids='[2,5]' WHERE id=5")
+            # Logical server Groups never carry provider Native Group defaults.
             for pid in range(110,118):
                 db("INSERT INTO server_plans(id,fileid,catid,server_id,inbound_id,acount,limitip,title,protocol,days,volume,type,price,descr,pic,active,step,date,custom_sni,provider_group_ids)"
                    f" SELECT {pid},fileid,catid,server_id,inbound_id,acount,limitip,'Plan{pid}',protocol,days,volume,type,price,descr,pic,active,step,date,custom_sni,provider_group_ids FROM server_plans WHERE id=7")
@@ -153,16 +164,58 @@ def main():
             yes('confirmChangePlan_'+str(oid)+'_119'in json.dumps(offered) and
                 finances()==before and len(writes())==remote,
                 provider+'_fresh_primary_administrator_opens_familiar_foreign_order_plan_selector')
+            native_before=len(vendor.trace)
             call('extensions',actor=9001,data='confirmChangePlan_'+str(oid)+'_119')
-            yes(db(f'SELECT userid,fileid,amount FROM orders_list WHERE id={oid}')=='1001\t119\t0' and
-                finances()==before and len(writes())==remote and
+            native_requests=vendor.trace[native_before:]
+            if provider=='pasarguard':
+                strict_read=any(method=='GET' and path.startswith('/api/user/by-id/')
+                    for method,path,*_ in native_requests)
+                redundant_catalog=any(path in ('/api/system','/api/admin') or
+                    path.startswith('/api/groups') for _,path,*_ in native_requests)
+            else:
+                strict_read=any(req['method']=='GET' and req['path'].startswith('/api/user/')
+                    for req in native_requests)
+                redundant_catalog=any(req['path'].startswith('/api/core/config')
+                    for req in native_requests)
+            yes(db('SELECT userid,fileid,amount FROM orders_list WHERE id IN ('+
+                str(oid)+','+str(foreign_oid)+') ORDER BY userid')=='1001\t119\t0\n1002\t119\t0' and
+                db('SELECT state FROM service_plan_changes ORDER BY id DESC LIMIT 1')=='committed' and
+                finances()==before and len(writes())==remote and strict_read and
+                not redundant_catalog and
                 db("SELECT value FROM setting WHERE type='"+origin_key+"'")==origin,
-                provider+'_fresh_primary_administrator_confirmation_updates_only_foreign_order_fileid')
+                provider+'_different_plan_same_native_access_uses_readback_without_put_or_redundant_catalog')
             before=finances();remote=len(writes())
             call('extensions',actor=9002,data='confirmChangePlan_'+str(foreign_oid)+'_119')
-            yes(db(f'SELECT userid,fileid,amount FROM orders_list WHERE id={foreign_oid}')=='1002\t119\t0' and
+            yes(db('SELECT userid,fileid,amount FROM orders_list WHERE id IN ('+
+                str(oid)+','+str(foreign_oid)+') ORDER BY userid')=='1001\t119\t0\n1002\t119\t0' and
                 finances()==before and len(writes())==remote,
-                provider+'_fresh_delegated_administrator_can_confirm_foreign_order_without_funds_or_native_effect')
+                provider+'_delegated_admin_same_plan_verified_without_finance_or_native_write')
+            # Real native-access delta: one fenced PUT shared by both users.
+            # This also exercises the re-check of current provider authority.
+            db("INSERT INTO server_plans(id,fileid,catid,server_id,inbound_id,acount,limitip,title,protocol,days,volume,type,price,descr,pic,active,step,date,custom_sni,provider_group_ids)"
+               " SELECT 120,fileid,catid,server_id,inbound_id,acount,limitip,'Different native access',protocol,days,volume,type,price,descr,pic,active,step,date,custom_sni,provider_group_ids FROM server_plans WHERE id=7")
+            if provider=='pasarguard':
+                db("UPDATE server_plans SET provider_group_ids='[2]' WHERE id=120")
+            else:
+                db("UPDATE server_plans SET custom_sni='"+
+                   json.dumps({'inbounds':{'vless':['fake-inbound']},'proxies':{'vless':{'flow':''}}})+
+                   "' WHERE id=120")
+            before=finances();remote=len(writes())
+            call('extensions',actor=9001,data='confirmChangePlan_'+str(oid)+'_120')
+            changed_native=(vendor.users[41]['group_ids']==[2] if provider=='pasarguard'
+                else vendor.edit_account['inbounds']=={'vless':['fake-inbound']})
+            yes(changed_native and len(writes())==remote+1 and finances()==before and
+                db('SELECT fileid FROM orders_list WHERE id IN ('+str(oid)+','+
+                   str(foreign_oid)+') ORDER BY userid')=='120\n120',
+                provider+'_different_native_access_exactly_one_write_and_two_synced_refs')
+            remote=len(writes())
+            call('extensions',actor=9001,data='confirmChangePlan_'+str(oid)+'_119')
+            restored_native=(vendor.users[41]['group_ids']==[2,5] if provider=='pasarguard'
+                else vendor.edit_account['inbounds']=={'vless':['inbound']})
+            yes(restored_native and len(writes())==remote+1 and finances()==before and
+                db('SELECT fileid FROM orders_list WHERE id IN ('+str(oid)+','+
+                   str(foreign_oid)+') ORDER BY userid')=='119\n119',
+                provider+'_native_access_restore_exactly_one_write_without_new_financial_effect')
             for changed,restore,label in [
                 ("UPDATE orders_list SET server_id=5 WHERE id="+str(oid),
                  "UPDATE orders_list SET server_id=2 WHERE id="+str(oid),'stale_logical_server'),
@@ -179,10 +232,11 @@ def main():
                 db(restore)
             before=finances();remote=len(writes())
             call('extensions',data='confirmChangePlan_'+str(oid)+'_7')
-            yes(db(f'SELECT fileid,amount FROM orders_list WHERE id={oid}')=='7\t0' and
+            yes(db('SELECT userid,fileid,amount FROM orders_list WHERE id IN ('+
+                str(oid)+','+str(foreign_oid)+') ORDER BY userid')=='1001\t7\t0\n1002\t7\t0' and
                 finances()==before and len(writes())==remote and
                 db("SELECT value FROM setting WHERE type='"+origin_key+"'")==origin,
-                provider+'_actual_confirm_changes_only_fileid_and_preserves_nonfinancial_origin')
+                provider+'_native_plan_reset_synchronizes_all_shared_rows_without_finance_change')
             screen=call('view',owner=1001,order=oid)['out'];keys=screen['keyboard']
             yes(all(action+str(oid)in keys for action in ['renewAccountAsk','increaseADay','increaseAVolume','toggleAutoRenew']),
                 provider+'_selected_import_exposes_paid_renewal_finite_addons_and_owner_consent')
@@ -236,9 +290,36 @@ def main():
             yes(db(f'SELECT autoRenew FROM orders_list WHERE id={oid}')=='off' and
                 finances()==before and len(writes())==remote,
                 provider+'_owner_can_withdraw_consent_after_plan_is_retired')
-            before=snapshot();call('toggle',data='toggleAutoRenew'+str(oid))
-            yes(snapshot()==before,provider+'_retired_selected_plan_cannot_reenable_automatic_renewal')
-            db("UPDATE server_plans SET active=1 WHERE id=7")
+            # Owner Rev4: inactive plans block new customers, not renewal
+            # consent for this exact previously assigned subscription. Check
+            # real controller, separate customer rights, and zero Native/finance.
+            before=finances();remote=len(writes())
+            call('toggle',data='toggleAutoRenew'+str(oid))
+            yes(db(f'SELECT autoRenew FROM orders_list WHERE id={oid}')=='on' and
+                finances()==before and len(writes())==remote,
+                provider+'_inactive_saved_plan_allows_existing_subscription_auto_renewal')
+            call('toggle',data='toggleAutoRenew'+str(oid))
+            yes(db(f'SELECT autoRenew FROM orders_list WHERE id={oid}')=='off' and
+                finances()==before and len(writes())==remote,
+                provider+'_inactive_saved_plan_consent_remains_revocable')
+            # State 0 disallows new renewal consent even for the saved plan.
+            db("UPDATE server_info SET state=0 WHERE id=2")
+            before=snapshot();remote=len(writes())
+            call('toggle',data='toggleAutoRenew'+str(oid))
+            yes(snapshot()==before and len(writes())==remote,
+                provider+'_disabled_server_blocks_new_renewal_consent')
+            # State 2 preserves existing subscribers' renewals but not sales.
+            db("UPDATE server_info SET state=2 WHERE id=2")
+            before=finances();remote=len(writes())
+            call('toggle',data='toggleAutoRenew'+str(oid))
+            yes(db(f'SELECT autoRenew FROM orders_list WHERE id={oid}')=='on' and
+                finances()==before and len(writes())==remote,
+                provider+'_renew_only_server_accepts_saved_inactive_plan_consent')
+            call('toggle',data='toggleAutoRenew'+str(oid))
+            yes(db(f'SELECT autoRenew FROM orders_list WHERE id={oid}')=='off' and
+                finances()==before and len(writes())==remote,
+                provider+'_renew_only_consent_can_always_be_withdrawn')
+            db("UPDATE server_info SET state=1 WHERE id=2;UPDATE server_plans SET active=1 WHERE id=7")
             for op,actor,callback in [('view',1001,'toggleAutoRenew'),('admin_view',9001,'adminToggleAutoRenew')]:
                 call('toggle',actor=actor,data=callback+str(oid))
                 before=snapshot();remote=len(writes())
@@ -275,7 +356,8 @@ def main():
     result=dict(complete=True,cases=len(checks),checks=checks,actual_imports=True,
         actual_change_plan_controller=True,actual_config_consent_controller=True,
         actual_native_provider_eligibility=True,existing_consent_withdrawal_visible_and_controller_checked=True,amount0_preserved_before_payment=True,
-        shared_native_different_bot_owners=True,fresh_administrator_common_plan_override=True,revoked_cached_admin_refused=True,production_mutations=0,live_provider_calls=0)
+        shared_native_different_bot_owners=True,fresh_administrator_common_plan_override=True,revoked_cached_admin_refused=True,
+        owner_rev4_saved_inactive_plan_consent_and_server_state=True,production_mutations=0,live_provider_calls=0)
     if args.report:args.report.write_text(json.dumps(result,indent=2,ensure_ascii=False)+'\n')
     print(json.dumps({key:value for key,value in result.items()if key!='checks'}))
 if __name__=='__main__':main()

@@ -48,6 +48,7 @@ $config=file_get_contents($root.'/config.php');
 foreach ([
     ['function getServerConfigKeys(','function getServerListKeys('],
     ['function getServerListKeys(','function getCategoriesKeys('],
+    ['function getMarzbanPanelGroupKeys(','function getServerConfigKeys('],
     ['function getPlanDetailsKeys(','// BEGIN create user and admin get order detail'],
 ] as [$start,$end]) {
     $a=strpos($config,$start);$b=strpos($config,$end,$a);
@@ -80,7 +81,8 @@ foreach ([1,2] as $sid) {
     noCallbacks($keys,'/^(?:pgConnections|addNewMarzbanPanel)$/','server settings do not divert to physical connection list');
 }
 $pg=callbacks(getServerConfigKeys(2));
-containsAll($pg,['pgServerGroups2','pgRotateServerKey2'],'native configuration remains in server context');
+containsAll($pg,['editPanelGroup2','pgRotateServerKey2'],'physical group shared; native groups only on plan');
+noCallbacks($pg,'/^pgServerGroups/','PG server-native group selector retired');
 noCallbacks($pg,'/^(?:changesServerLoginInfo|editSubLinks)/','PG omits Marzban-only credentials and backup-link synthesis');
 $mb=callbacks(getPlanDetailsKeys(41));$pg=callbacks(getPlanDetailsKeys(42));
 foreach ([$mb,$pg] as $index=>$keys) {
@@ -95,12 +97,90 @@ containsAll($pg,['pgPlanGroups42'],'PG offers native Groups');
 noCallbacks($pg,'/^marzbanHostSettings/','PG never offers Marzban inbounds');
 yes(getPlanDetailsKeys(999)===null && getPlanDetailsKeys(43)===null && getPlanDetailsKeys(44)===null,
     'missing unsupported and retired-inbound plans fail closed');
+// Shared physical-panel grouping is independent of native plan access and
+// has a single provider-neutral administrator selector (not a PG server Group).
+$connection->query("INSERT INTO setting(type,value) VALUES
+    ('ACHBOT_MARZBAN_PANEL_GROUP','Physical Marzban fixture'),
+    ('ACHBOT_MARZBAN_PANEL_GROUP','Physical PasarGuard fixture')");
+$marzbanGroup=(int)$connection->query("SELECT id FROM setting
+    WHERE type='ACHBOT_MARZBAN_PANEL_GROUP' AND value='Physical Marzban fixture'")->fetch_row()[0];
+$pgGroup=(int)$connection->query("SELECT id FROM setting
+    WHERE type='ACHBOT_MARZBAN_PANEL_GROUP' AND value='Physical PasarGuard fixture'")->fetch_row()[0];
+yes($marzbanGroup>0 && $pgGroup>0 && $marzbanGroup!==$pgGroup,
+    'two_distinct_manual_physical_panel_groups');
+$connection->query("UPDATE server_info SET panel_group_id=$marzbanGroup WHERE id=1");
+$connection->query("UPDATE server_info SET panel_group_id=$pgGroup WHERE id=2");
+yes(achbotPanelGroup($connection,1)['name']==='Physical Marzban fixture',
+    'marzban_group_membership_is_visible');
+yes(achbotPanelGroup($connection,2)['name']==='Physical PasarGuard fixture',
+    'pasarguard_group_membership_is_visible');
+yes(achbotPanelGroup($connection,3)===null,
+    'unsupported_panel_cannot_acquire_shared_group_identity');
+$addGroups=callbacks(getMarzbanPanelGroupKeys('add'));
+containsAll($addGroups,['selectNewPanelGroup_'.$marzbanGroup,
+    'selectNewPanelGroup_'.$pgGroup,'selectNewPanelGroup_0','serversSetting'],
+    'common_add_server_group_selector_has_both_group_choices_and_none');
+noCallbacks($addGroups,'/^setServerPanelGroup_/',
+    'new_server_group_selector_has_no_existing_server_mutation');
+foreach ([1,2] as $sid) {
+    $assigned=$sid===1?$marzbanGroup:$pgGroup;
+    $groupMenu=callbacks(getMarzbanPanelGroupKeys('edit',$sid));
+    containsAll($groupMenu,[
+        'setServerPanelGroup_'.$sid.'_'.$marzbanGroup,
+        'setServerPanelGroup_'.$sid.'_'.$pgGroup,
+        'setServerPanelGroup_'.$sid.'_0','showServerSettings'.$sid.'_0'],
+        'shared_group_editor_lists_groups_none_and_back_'.$sid);
+    noCallbacks($groupMenu,'/^selectNewPanelGroup_/',
+        'existing_server_group_editor_cannot_start_new_server_'.$sid);
+    noCallbacks($groupMenu,'/^pg(?:ServerGroups|PlanGroups)/',
+        'logical_group_editor_never_edits_native_pg_entitlements_'.$sid);
+    $serverKeyboard=json_decode(getServerConfigKeys($sid),true,64,JSON_THROW_ON_ERROR);
+    $matched=array_values(array_filter(array_merge(...$serverKeyboard['inline_keyboard']),
+        static fn($button)=>($button['callback_data']??'')==='editPanelGroup'.$sid));
+    yes(count($matched)===1,'exactly_one_shared_group_editor_'.$sid);
+    yes($matched[0]['text']===($sid===1?'Physical Marzban fixture':'Physical PasarGuard fixture'),
+        'saved_group_name_visible_on_real_provider_server_'.$sid);
+    $keys=callbacks($serverKeyboard);
+    containsAll($keys,['editPanelGroup'.$sid],
+        'provider_server_keyboard_keeps_shared_group_editor_'.$sid);
+    noCallbacks($keys,'/^pgServerGroups/',
+        'native_pg_server_group_stays_retired_on_both_providers_'.$sid);
+}
+$groupManagement=callbacks(getMarzbanPanelGroupsManagementKeys());
+containsAll($groupManagement,[
+    'deleteMarzbanPanelGroup_'.$marzbanGroup,
+    'deleteMarzbanPanelGroup_'.$pgGroup,
+    'addMarzbanPanelGroup','serversSetting'],
+    'shared_group_management_can_add_remove_and_return');
+noCallbacks($groupManagement,'/^pgServerGroups/',
+    'common_group_management_has_no_legacy_native_server_groups');
+$unsupported=callbacks(getServerConfigKeys(3));
+$missing=callbacks(getServerConfigKeys(999));
+containsAll($unsupported,['nextServerPage0'],
+    'unsupported_native_provider_still_has_safe_navigation');
+containsAll($missing,['nextServerPage0'],
+    'unknown_server_still_has_safe_navigation');
+noCallbacks($unsupported,'/^(?:editPanelGroup|pgServerGroups|pgPlanGroups)/',
+    'unsupported_provider_never_offers_logical_or_native_group_edit');
+noCallbacks($missing,'/^(?:editPanelGroup|pgServerGroups|pgPlanGroups)/',
+    'missing_server_never_offers_logical_or_native_group_edit');
+noCallbacks($list,'/^switchLocationState/',
+    'admin_server_listing_does_not_expose_retired_transfer_toggle');
+$pgPlanKeyboard=callbacks(getPlanDetailsKeys(42));
+$mbPlanKeyboard=callbacks(getPlanDetailsKeys(41));
+containsAll($pgPlanKeyboard,['pgPlanGroups42'],
+    'native_pg_groups_remain_plan_only_even_when_panel_group_assigned');
+containsAll($mbPlanKeyboard,['marzbanHostSettings41'],
+    'native_marzban_hosts_remain_plan_only_even_when_panel_group_assigned');
+noCallbacks($pgPlanKeyboard,'/^editPanelGroup/',
+    'physical_group_changes_never_start_from_pg_plan_access');
+noCallbacks($mbPlanKeyboard,'/^editPanelGroup/',
+    'physical_group_changes_never_start_from_marzban_plan_access');
 $before=$connection->query('SHOW CREATE TABLE server_info')->fetch_row()[1];
 $events=[];achbotServerDisplayShow($connection,2);
 yes(str_contains($events[0][0],'PG &lt;title&gt;') && !str_contains($events[0][0],'PG <title>') &&
     $events[0][2]==='HTML','display editor identifies and escapes the server');
 foreach ([
-    ['pg:groups:server:2','serverDisplay2'],
     ['pg:groups:plan:42','planDays42'],
     ['pg:key:10:2','serverDisplay2'],
     ['pg:server:10','addManagedServer'],

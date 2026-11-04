@@ -576,43 +576,20 @@ if (preg_match('/^changeFileId_(\\d+)_(\\d+)$/', (string) ($data ?? ''), $match)
     sendMessage(\achbotMessage('subscription.order_management.show_order_management_panel.message.877fdebc48'), json_encode(['inline_keyboard' => $keyboard]));
 }
 
-if (preg_match('/^selectFileId_(\\d+)_(\\d+)$/', (string) ($data ?? ''), $match)) {
-    $id = (int)$match[1];
-    $newFileId = (int)$match[2];
-    // Lock the order before rechecking its server and destination plan:
-    // no forged/stale callback may attach an obsolete inbound or another
-    // server's plan to an otherwise supported Marzban account.
-    $connection->begin_transaction();
-    try {
-        $stmt = $connection->prepare("SELECT `server_id` FROM `orders_list` WHERE `id` = ? FOR UPDATE");
-        $stmt->bind_param("i", $id);
-        $stmt->execute();
-        $locked = $stmt->get_result()->fetch_assoc();
-        $stmt->close();
-        if (!$locked || !achbotSupportsOrder($connection, $id) ||
-            !achbotSupportsPlan($connection, $newFileId, 0, $locked['server_id'])) {
-            $connection->rollback();
-            alert(\achbotMessage('subscription.order_management.show_order_management_panel.alert.f19b5510c6'), true);
-            return;
-        }
-        $stmt = $connection->prepare("UPDATE `orders_list` SET `fileid` = ? WHERE `id` = ?");
-        $stmt->bind_param("ii", $newFileId, $id);
-        $stmt->execute();
-        $stmt->close();
-        $connection->commit();
-    } catch (\Throwable $e) {
-        $connection->rollback();
-        alert(\achbotMessage('subscription.order_management.show_order_management_panel.alert.99d247fc18'), true);
+if (preg_match('/^selectFileId_(\d+)_(\d+)$/', (string) ($data ?? ''), $match)) {
+    $id=(int)$match[1];$newFileId=(int)$match[2];
+    require_once __DIR__.'/PhysicalService.php';
+    $result=achbotPhysicalSelectPlan($connection,$id,$newFileId,(int)$from_id,true);
+    if (!$result['success']) {
+        alert(\achbotMessage('subscription.order_management.show_order_management_panel.alert.99d247fc18'),true);
         return;
     }
     sendMessage(\achbotMessage('subscription.order_management.show_order_management_panel.message.75785b37ae'));
-    $stmt = $connection->prepare("SELECT * FROM `orders_list` WHERE `id` = ?");
-    $stmt->bind_param("i", $id);
-    $stmt->execute();
-    $order = $stmt->get_result()->fetch_assoc();
-    $stmt->close();
-    showOrderManagementPanel($order, $message_id);
+    $s=$connection->prepare('SELECT * FROM orders_list WHERE id=?');
+    $s->bind_param('i',$id);$s->execute();$order=$s->get_result()->fetch_assoc();$s->close();
+    if ($order) showOrderManagementPanel($order,$message_id);
     setUser();
+    return;
 }
 
 if (preg_match('/^quickUserOrderDetails_(\d+)$/D', $data, $match)) {

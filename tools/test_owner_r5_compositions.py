@@ -165,8 +165,8 @@ def correction_proof(current,archived):
     # not before those checks (which would restore them twice).
     staff_followup_proof(current,archived)
     display_context_followup_proof(current)
-    settings_label_followup_proof(current,archived)
-    current=r5.addon_selection_restore(current)
+    settings_label_followup_proof(r5.shared_transfer_copy_restore(r5.server_removal_copy_restore(current)),archived)
+    current=r5.addon_selection_restore(r5.shared_transfer_copy_restore(r5.server_removal_copy_restore(current)))
     changed={k for a,rows in current.items()for k,e in rows.items()if k in archived[a]and e!=archived[a][k]}
     check(changed==set(CORRECTIONS)|{STAFF_GUIDE_KEY}|set(SETTINGS_LABEL_AMENDMENTS)|set(SIMPLE_DISPLAY_LABELS),'composed_catalog_correction_scope_drift')
     for key,(before,after)in CORRECTIONS.items():

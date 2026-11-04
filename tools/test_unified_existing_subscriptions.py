@@ -13,7 +13,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime,timezone
 from http.server import BaseHTTPRequestHandler,ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import unquote,urlsplit
+from urllib.parse import unquote,urlsplit,parse_qs
 import test_access_state as owned
 import test_v6_native as native
 import test_v8_native as purchase
@@ -100,6 +100,24 @@ class ExistingHandler(BaseHTTPRequestHandler):
    self.reply(200,value);return
   if self.headers.get('X-Api-Key')!='fixture-private-key':
    s.violations.append('missing_api_key');self.reply(403,{});return
+  # Live PasarGuard plan access verifies current version, administrator
+  # authority and active Group catalogue before approving a selected plan.
+  # Use the same 5.5.1 schema as the independent native panel fixture.
+  if path=='/api/system':
+   self.reply(200,{'version':'5.5.1'});return
+  if path=='/api/admin':
+   actions={action:{'scope':1} for action in
+     ['read','create','update','delete','reset_usage','revoke_sub']}
+   self.reply(200,{'role':{'is_owner':False,'access':{'require_template':False,
+       'allowed_group_ids':getattr(s,'allowed_group_ids',[2,5])},
+       'permissions':{'users':actions,'groups':{'read':True,'read_simple':True}}}});return
+  if path=='/api/groups':
+   query=parse_qs(urlsplit(self.path).query)
+   offset=int(query.get('offset',['0'])[0]);limit=int(query.get('limit',['50'])[0])
+   ids=getattr(s,'available_group_ids',[2,5])
+   self.reply(200,{'groups':[{'id':gid,'name':'fixture_group',
+       'is_disabled':False,'inbound_tags':['native_tag']}
+       for gid in ids[offset:offset+limit]],'total':len(ids)});return
   if path in('/api/users','/api/users/simple')or(self.command=='POST'and path=='/api/user'):
    s.violations.append('list_or_create');self.reply(409,{});return
   if path.startswith('/api/user/by-id/'):
@@ -120,6 +138,11 @@ class ExistingHandler(BaseHTTPRequestHandler):
    if set(payload)-{'data_limit','expire','status','group_ids'}:
     s.violations.append('unexpected_modify_field');self.reply(400,{});return
    user.update(payload)
+   if 'group_ids' in payload and getattr(s,'access_put_usage_override',None) is not None:
+    # Post-V9 opt-in negative Native fixture: simulate a broken vendor
+    # resetting consumption as a side effect of a Group-only PUT.
+    user['used_traffic']=s.access_put_usage_override
+    s.access_put_usage_override=None
   elif self.command=='POST':
    if path.endswith('/reset'):user['used_traffic']=0
    elif path.endswith('/revoke_sub'):
@@ -157,8 +180,16 @@ class ExistingMarzbanHandler(mb.EditProviderHandler):
   self.send_header('Content-Length',str(len(raw)));self.end_headers();self.wfile.write(raw)
  def handle_request(self):
   s=self.server
+  if self.path=='/api/core/config'and self.command=='GET':
+   s.trace.append(dict(method=self.command,path=self.path,body='',headers=dict(self.headers)))
+   self.reply(200,{'inbounds':[{'protocol':'vless','tag':'inbound'},
+       {'protocol':'vless','tag':'fake-inbound'}]});return
   if self.path.startswith('/api/user/')and self.command=='GET'and not s.deleted:
    s.trace.append(dict(method=self.command,path=self.path,body='',headers=dict(self.headers)))
+   hook=getattr(s,'on_account_get',None)
+   if hook is not None:
+    s.on_account_get=None
+    hook()
    value=copy.deepcopy(s.edit_account);s.sequence+=1
    issued=s.fixed_clock if s.fixed_clock else int(time.time())+s.sequence
    value['subscription_url']=s.url+'/sub/'+mb_mint(value['username'],issued)
@@ -193,6 +224,12 @@ class ExistingMarzbanHandler(mb.EditProviderHandler):
    s.trace.append(dict(method=self.command,path=self.path,body='',headers=dict(self.headers)))
    self.reply(404,{'detail':'User not found'});return
   super().handle_request()
+  if self.command=='PUT' and self.path.startswith('/api/user/') and (
+      getattr(s,'access_put_usage_override',None) is not None):
+   # The upstream fixture has finished persisting the Native access
+   # change; inject a vendor counter regression before the final GET.
+   s.edit_account['used_traffic']=s.access_put_usage_override
+   s.access_put_usage_override=None
 
 @contextlib.contextmanager
 def existing_marzban():
@@ -423,7 +460,9 @@ def main():
       "DELETE FROM setting WHERE type='BOT_STATES';"
       "INSERT INTO setting(type,value)VALUES(\'BOT_STATES\',CONVERT(UNHEX(\'7b2277616c6c65745374617465223a226f6e222c226761746577617941756469656e6365223a7b2277616c6c6574223a22616c6c227d7d\') USING utf8mb4))")
    if provider=='pasarguard':
-    db("UPDATE server_info SET provider_group_ids='[2,5]' WHERE id=2;"+shared_storage.connection(2,1,vendor_url))
+    # Native access Groups belong to plans, never server_info defaults.
+    db("UPDATE server_plans SET provider_group_ids='[2,5]' WHERE server_id=2;"+
+       shared_storage.connection(2,1,vendor_url))
     remark='existing_user_41';credential=vendor.users[41]['subscription_url']
     # Native scheduling is allowed for import/read; only existing mutation
     # eligibility is restricted, and must be checked before money/fence claims.
@@ -434,22 +473,29 @@ def main():
     raw=lambda:vendor.users[41]
     def remote_writes():return [r for r in vendor.trace if r[0]!='GET']
    else:
+    db("UPDATE server_plans SET custom_sni='"+
+       json.dumps({'inbounds':{'vless':['inbound']},'proxies':{'vless':{'flow':''}}})+
+       "' WHERE id=7")
     vendor.mode='edit-reset-verified';vendor.edit_put_count=0;vendor.edit_reset_count=0
     vendor.edit_account=copy.deepcopy(mb.INITIAL)
     remark='shared_native_user';token=mb_mint(remark,int(time.time())-60)
     vendor.edit_account.update(username=remark,created_at='2026-10-26T05:00:00.123456',
        subscription_url='/sub/'+token,proxies={'vless':{'id':'aaaaaaaa-1111-4111-8111-111111111111','flow':'xtls-rprx-vision'}},
+       inbounds={'vless':['inbound']},
        links=['vless://aaaaaaaa-1111-4111-8111-111111111111@host.invalid:443'],
        excluded_inbounds={},next_plan=None,auto_delete_in_days=None,on_hold_expire_duration=None,on_hold_timeout=None)
     credential=vendor_url+'/sub/'+token;raw=lambda:vendor.edit_account
     def remote_writes():
      return [r for r in vendor.trace if r['method']in('PUT','DELETE')or
          (r['method']=='POST'and not r['path'].endswith('/api/admin/token'))]
+   # Use the real Native host catalog facade for strict plan readback.
    facade=bodies.function_bodies((ROOT/'config.php').read_bytes(),[
        'buildSubscriptionPresentation','buildConfigMessage','setUser','sumerize',
        'getOrderDetailKeys','getUserOrderDetailKeys','renewMarzbanUUID','deleteMarzban',
-       'changeMarzbanState','getMarzbanToken','RandomString'])
+       'changeMarzbanState','getMarzbanToken','getMarzbanHosts','RandomString'])
    (shared_work/'facades.php').write_bytes(facade.replace(b'__DIR__',repr(str(ROOT)).encode()))
+   for migration in ['016_remove_pasarguard_server_groups.sql','017_shared_plan_changes.sql']:
+    db((ROOT/'migrations/post-v9'/migration).read_text())
    config_source=(ROOT/'config.php').read_text()
    consent_start=config_source.index("if (preg_match('/^(toggleAutoRenew|adminToggleAutoRenew)")
    consent_end=config_source.index('// END create user and admin get order detail',consent_start)
@@ -466,7 +512,10 @@ def main():
         (op=='delete'and re.fullmatch(r'achbot_(?:account|admin)_delete_observation_deferred order_id=[0-9]+',line)is not None)or
         line.startswith(('achbot_existing_subscription_import_deferred reason=',
         'achbot_existing_subscription_lookup_deferred','achbot_customer_draft_creation_deferred',
-        'achbot_server_display_unavailable'))for line in process.stderr.splitlines())
+        'achbot_server_display_unavailable')) or
+        (op=='extensions' and re.fullmatch(
+         r'achbot_shared_plan_committed journal_id=[1-9][0-9]* source_order_id=[1-9][0-9]* active_refs=3',
+         line) is not None) for line in process.stderr.splitlines())
     if process.returncode or not allowed:raise AssertionError((provider,'shared_native_child',process.returncode,process.stdout,process.stderr))
     result=json.loads(process.stdout)
     if 'fixture_error'in result:raise AssertionError((provider,result))
@@ -545,10 +594,26 @@ def main():
    offered=invoke('extensions',data='changePlan_'+str(current))
    yes('confirmChangePlan_'+str(current)+'_7'in json.dumps(offered),
        provider+'_genuine_import_can_open_real_change_plan_menu_without_trial_misclassification')
+   native_before=len(vendor.trace)
    invoke('extensions',data='confirmChangePlan_'+str(current)+'_7')
-   yes(db(f'SELECT fileid,amount FROM orders_list WHERE id={current}')=='7\t0'and
-       finance()==before and len(remote_writes())==writes,
-       provider+'_actual_plan_confirmation_assigns_real_catalogue_plan_without_faking_purchase_or_amount')
+   native_requests=vendor.trace[native_before:]
+   if provider=='pasarguard':
+    native_read=any(method=='GET' and path.startswith('/api/user/by-id/')
+        for method,path,*_ in native_requests)
+    redundant_catalog=any(path in ('/api/system','/api/admin') or
+        path.startswith('/api/groups') for _,path,*_ in native_requests)
+   else:
+    native_read=any(req['method']=='GET' and req['path'].startswith('/api/user/')
+        for req in native_requests)
+    redundant_catalog=any(req['path'].startswith('/api/core/config')
+        for req in native_requests)
+   selected=db('SELECT userid,fileid,amount FROM orders_list WHERE id IN ('+
+       ','.join(map(str,links.values()))+') ORDER BY userid').splitlines()
+   yes(selected==['1001\t7\t0','1002\t7\t0','1003\t7\t0']and
+       db('SELECT state FROM service_plan_changes ORDER BY id DESC LIMIT 1')=='committed'and
+       finance()==before and len(remote_writes())==writes and native_read and
+       not redundant_catalog,
+       provider+'_verified_noop_native_plan_syncs_three_refs_without_write_or_redundant_catalog')
    visible=invoke('view',owner=1001,order=current)['out']
    yes('renewAccountAsk'+str(current)in json.dumps(visible),
        provider+'_assigned_import_exposes_actual_paid_renewal_entry')

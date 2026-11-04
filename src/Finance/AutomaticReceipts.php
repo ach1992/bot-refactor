@@ -140,7 +140,7 @@ if($botState['cartToCartAutoAcceptState']=="on"){
             $expire_date = $order['expire_date'];
             $expire_date = ($expire_date > $time) ? $expire_date : $time;
             
-            $stmt = $connection->prepare("SELECT * FROM `server_plans` WHERE `id` = ? AND `active` = 1");
+            $stmt = $connection->prepare("SELECT * FROM `server_plans` WHERE `id` = ?");
             $stmt->bind_param("i", $fid);
             $stmt->execute();
             $respd = $stmt->get_result()->fetch_assoc();

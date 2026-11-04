@@ -55,7 +55,7 @@ if(($data == "agentOneBuy" || $data=='buySubscription' || $data == "agentMuchBuy
 }
 
 if($data=='createMultipleAccounts' && ($from_id == $admin || $userInfo['isAdmin'] == true)){
-    $stmt = $connection->prepare("SELECT si.* FROM `server_info` si INNER JOIN `server_config` sc ON sc.`id`=si.`id` AND sc.`type` IN (".achbotProviderSqlTypes().") WHERE si.`active`=1 and si.`ucount` > 0 ORDER BY si.`id` ASC");
+    $stmt = $connection->prepare("SELECT si.* FROM `server_info` si INNER JOIN `server_config` sc ON sc.`id`=si.`id` AND sc.`type` IN (".achbotProviderSqlTypes().") WHERE si.`active`=1 and si.`state`=1 and si.`ucount` > 0 ORDER BY si.`id` ASC");
     $stmt->execute();
     $respd = $stmt->get_result();
     $stmt->close();
@@ -205,6 +205,10 @@ if (
     }
     $planDetails = getPlanDetails($connection, $fidFromStep);
     $plan        = $planDetails['plan'];
+    if (!achbotServerCommerceAvailable($connection,(int)$plan['server_id'],true)) {
+        alert(\achbotMessage('purchase.entry_and_bulk.create_multiple_accounts.alert.d3fb64c4d9'),true);
+        return;
+    }
 
     $days   = $daysFromStep;
     $volume = $volumeFromStep;

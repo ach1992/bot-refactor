@@ -33,7 +33,7 @@ function findOrder($id, $userId = null) {
 function getPlanFullName($fid, $fallbackId) {
     global $connection;
 
-    $stmt = $connection->prepare("SELECT * FROM server_plans WHERE id=? AND active=1");
+    $stmt = $connection->prepare("SELECT * FROM server_plans WHERE id=?");
     $stmt->bind_param("i", $fid);
     $stmt->execute();
     $plan = $stmt->get_result()->fetch_assoc();
@@ -126,18 +126,20 @@ function canReadAdminOrderDetails(): bool {
  * retain their original plan only within the already verified physical panel.
  */
 function validPlanForOrder(\mysqli $db,array $order,int $planId,bool $lock=false,
-    bool $sameLogicalServer=true): ?array {
+    bool $sameLogicalServer=true,bool $allowCurrentInactive=false): ?array {
     if ($planId<=0 || (int)($order['status']??0)!==1) return null;
+    $historical=$allowCurrentInactive && (int)($order['fileid']??0)===$planId;
     $stmt=$db->prepare('SELECT p.*,c.type AS provider_type,i.active AS server_active
         FROM server_plans p JOIN server_info i ON i.id=p.server_id
         JOIN server_config c ON c.id=p.server_id
-        WHERE p.id=? AND p.active=1 AND p.price>0'.($lock?' FOR UPDATE':''));
+        WHERE p.id=? AND p.price>0'.($historical?'':' AND p.active=1').($lock?' FOR UPDATE':''));
     $stmt->bind_param('i',$planId);$stmt->execute();$plan=$stmt->get_result()->fetch_assoc();$stmt->close();
     if (!$plan || (int)$plan['server_active']!==1 ||
         !achbotSupportsAccount($plan['provider_type'], $plan['inbound_id']) ||
         achbotWholeServiceUnits($plan['days'],36500)===null ||
         achbotWholeServiceUnits($plan['volume'],achbotServiceVolumeMax())===null ||
-        !achbotSupportsPlan($db,$planId,0,(int)$plan['server_id'],$lock))
+        !achbotSupportsPlan($db,$planId,0,(int)$plan['server_id'],$lock,$historical) ||
+        !achbotServerCommerceAvailable($db,(int)$plan['server_id'],false,$lock))
         return null;
     $orderServer=(int)($order['server_id']??0);$planServer=(int)$plan['server_id'];
     if ($orderServer!==$planServer &&
@@ -145,28 +147,31 @@ function validPlanForOrder(\mysqli $db,array $order,int $planId,bool $lock=false
     $stmt=$db->prepare('SELECT i.active,c.type FROM server_info i JOIN server_config c ON c.id=i.id WHERE i.id=?'.($lock?' FOR UPDATE':''));
     $stmt->bind_param('i',$orderServer);$stmt->execute();$server=$stmt->get_result()->fetch_assoc();$stmt->close();
     if (!$server || (int)$server['active']!==1 ||
-        !achbotSupportsAccount($server['type'],$order['inbound_id']??null)) return null;
+        !achbotSupportsAccount($server['type'],$order['inbound_id']??null) ||
+        !achbotServerCommerceAvailable($db,$orderServer,false,$lock)) return null;
     return $plan;
 }
 function paidPlanForOrder(\mysqli $db,array $order,int $planId,bool $lock=false,
-    bool $sameLogicalServer=true): ?array {
+    bool $sameLogicalServer=true,bool $allowCurrentInactive=false): ?array {
     if ($planId<=0 || (int)($order['status']??0)!==1 ||
         !achbotOrderMayUsePaidPlan($db,$order,$lock)) return null;
-    return validPlanForOrder($db,$order,$planId,$lock,$sameLogicalServer);
+    return validPlanForOrder($db,$order,$planId,$lock,$sameLogicalServer,$allowCurrentInactive);
 }
 function selectedPaidPlan(\mysqli $db,array $order,bool $lock=false): ?array {
-    return paidPlanForOrder($db,$order,(int)($order['fileid']??0),$lock,false);
+    return paidPlanForOrder($db,$order,(int)($order['fileid']??0),$lock,false,true);
 }
 /** Missing/malformed origin evidence is not a free-trial inference. */
 function orderPlanActions(\mysqli $db,array $order): array {
     try {
-        $mayChoose=(int)($order['status']??0)===1 && achbotOrderMayUsePaidPlan($db,$order);
+        $mayChoose=(int)($order['status']??0)===1 &&
+            achbotServerCommerceAvailable($db,(int)$order['server_id'],false) &&
+            achbotOrderMayUsePaidPlan($db,$order);
         $paid=$mayChoose?selectedPaidPlan($db,$order):null;
         // A fully discounted agent purchase keeps its established manual
         // renewal/add-on path, without becoming an import or new consent.
         $manual=$paid;
         if (!$mayChoose && (int)($order['agent_bought']??0)===1)
-            $manual=validPlanForOrder($db,$order,(int)($order['fileid']??0),false,false);
+            $manual=validPlanForOrder($db,$order,(int)($order['fileid']??0),false,false,true);
         return ['certain'=>true,'choose'=>$mayChoose,'paid'=>$paid,'manual'=>$manual];
     } catch (\Throwable $error) {
         error_log('achbot_order_plan_actions_unverified order_id='.(int)($order['id']??0));
@@ -264,8 +269,13 @@ function getUserOrderDetailKeys($id, $offset = 0){
         ['text' => $buttonValues['volume_left'], 'callback_data' => "wizwizch"],
     ];
 
-    // Physical relocation is held by Issue #31 until cross-panel transfer
-    // and failure recovery are proved; never expose the DB-only legacy route.
+    // Admin always sees transfer, even when there is no eligible destination
+    // or the remote panel is temporarily unavailable. The callback gives a
+    // reason and rechecks current group/order/authority, never a silent hide.
+    if (canReadAdminOrderDetails()) $keyboard[] = [[
+        'text'=>\achbotMessage('subscription.account_details.get_order_detail_keys.button.5c38085697'),
+        'callback_data'=>"switchLocation{$id}_{$server_id}_0_0"
+    ]];
     if (!$uncertain && $actionable) $keyboard[] = [
         ['text' => $buttonValues['change_plan'], 'callback_data' => "changePlan_{$id}"],
     ];
@@ -398,7 +408,14 @@ function getOrderDetailKeys($from_id, $id, $offset = 0){
         ]];
     }
 
-    // ---- Renewal + SwitchLocation
+    // Administrator transfer is available independently of panel health and
+    // legacy BOT_STATES switches, including when no target can be offered.
+    if (canReadAdminOrderDetails()) $keyboard[] = [[
+        'text'=>\achbotMessage('subscription.account_details.get_order_detail_keys.button.5c38085697'),
+        'callback_data'=>"switchLocation{$id}_{$server_id}_0_0"
+    ]];
+
+    // ---- Renewal
     if ($found && $actionable) {
         $temp = [];
 
@@ -408,14 +425,6 @@ function getOrderDetailKeys($from_id, $id, $offset = 0){
             ($botState['renewAccountState'] ?? "off") == "on"
         ) {
             $temp[] = ['text' => $buttonValues['renew_config'], 'callback_data' => "renewAccountAsk{$id}"];
-        }
-
-        if (canReadAdminOrderDetails() && ($botState['switchLocationState'] ?? 'off') === 'on' &&
-            achbotSupportsAccount($serverType,$inbound_id) &&
-            achbotProviderRelocationTargets($GLOBALS['connection'],(int)$server_id)!==[]) {
-            // The callback carries the old shape but never grants authority.
-            $temp[] = ['text' => \achbotMessage('subscription.account_details.get_order_detail_keys.button.5c38085697'),
-                       'callback_data' => "switchLocation{$id}_{$server_id}_0_0"];
         }
 
         if (!empty($temp)) {

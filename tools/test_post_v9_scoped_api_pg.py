@@ -354,7 +354,12 @@ def sandbox(*, imported_empty=False):
                     "provider_connection_id=1,provider_instance_key="
                     f"{quote_sql(INSTANCE)},provider_version='5.5.1',"
                     "provider_enabled=1 WHERE id=2")
-                sql("UPDATE server_info SET provider_group_ids='[2,5]' WHERE id=2")
+                # Current PG native access is explicit on each plan, never
+                # inherited from a server-level default.
+                sql("UPDATE server_plans SET provider_group_ids='[2,5]' WHERE id IN (7,8)")
+                for migration in ("016_remove_pasarguard_server_groups.sql",
+                                  "017_shared_plan_changes.sql"):
+                    sql((ROOT / "migrations/post-v9" / migration).read_text())
                 if imported_empty:
                     sql("INSERT INTO add_link(remark,token,added_by) "
                         "VALUES ('fixture_user','fixture-import-token',1001)")

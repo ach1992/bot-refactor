@@ -83,7 +83,7 @@ def run_admin(tmp: str) -> tuple[dict, dict]:
           'archived_two_staff_assignments_red':True,
           'staff_reintroduction_red':['admins_list','special_admins'],
           'unrelated_template_mutation_red':['primary_owner','synthetic_database_user'],
-          'runtime_members':121,'private_config_read':False,'external_calls':0}),
+          'runtime_members':package.EXPECTED_RUNTIME_COUNT,'private_config_read':False,'external_calls':0}),
         ('instance_content','test_owner_instance_content.py',99,
          {'result':'PASS','cases':99,'source_real':True,'socket_only_original_schema':True,'no_external_calls':True,
           'lock_join_baseline_red':True,'lock_join_baseline_source':'4548705609518f741d14375c9d47739eb302c3b6'}),
@@ -572,6 +572,11 @@ def run_api(tmp: str) -> tuple[dict, dict]:
         'day_issuance_native_http_outside_sql',
         'unreadable_issuance_no_attempt_no_locked_http',
         'local_identity_drift_after_preflight_before_locked_claim_denied',
+        'local_server_state_new_buy_1_to_0_after_preflight_before_locked_claim_denied',
+        'local_server_state_new_buy_1_to_2_after_preflight_before_locked_claim_denied',
+        'local_server_state_existing_renew_2_to_0_after_preflight_before_locked_claim_denied',
+        'local_server_state_existing_addon_1_to_0_after_preflight_before_locked_claim_denied',
+        'state2_existing_renewal_saved_inactive_plan_allowed_at_locked_claim',
         'volume_expired_native_preflight_and_no_locked_http',
         'volume_expired_replay_no_second_write',
         'volume_unreadable_native_preflight_and_no_locked_http',
@@ -611,7 +616,7 @@ def run_services(tmp: str) -> tuple[dict, dict]:
     result = {}
     unified={}
     suites=[
-        ('management_wizard','test_unified_management_wizard.py','cases',362,
+        ('management_wizard','test_unified_management_wizard.py','cases',381,
             {'actual_php':True,'owned_socket_mariadb':True,'loopback_provider_http':True,'provider_mutations':0,'production_mutations':0,'actual_rc13_cancel_RED':True,'older_same_flow_cancel':True,'unique_actor_primary_writes':True,'busy_delete_preserves_editor':True,'administrator_input_history_preserved':True,'same_message_group_selection':True,'actual_rc14_group_message_flood_RED':True,'actual_rc14_admin_input_deletion_RED':True}),
         ('financial_live_state','test_financial_live_state.py','cases',86,
             {'native_two_provider': True, 'agent_discount': True, 'absent_agent_discount_configuration_compatible': True, 'explicit_invalid_agent_discount_rejected': True, 'own_order_only': True, 'fresh_addon_eligibility': True, 'statistics_compatibility': True, 'external_requests': 0, 'production_mutations': 0}),
@@ -621,11 +626,11 @@ def run_services(tmp: str) -> tuple[dict, dict]:
             {'populated_migration':True,'actual_backup_restore':True,'disposable_socket_mariadb':True,'native_runtime':True,'real_provider_calls':0,'tenant_mutation':False}),
         ('order_schema','test_order_schema_simplification.py','cases',10,
             {'actual_php':True,'owned_socket_mariadb':True,'populated_migration':True,'previous_writer_RED':True,'production_mutations':0,'external_calls':0}),
-        ('management_menus','test_unified_management_menus.py','checks',322,
+        ('management_menus','test_unified_management_menus.py','checks',473,
             {'database':'owned socket MariaDB','network_calls':0,'optional_011_missing_cancel_proven':True}),
         ('customer_services','test_unified_customer_services.py','cases',596,
             {'actual_php':True,'obsolete_order_columns_absent':True,'native_disposable_mariadb':True,'external_provider_calls':0,'production_mutations':0,'real_JDF_no_date_stubs':True,'fresh_each_render_same_process':True,'same_packet_observation_and_presentation':True,'genuine_import_origin_writer_fixture':True,'actual_service_unit_helpers':True,'native_plan_admission_seam':'controlled_read_only_SQL_fixture','actual_native_plan_eligibility_checked_here':False,'actual_URL_import_checked_here':False,'imported_actions_hide_ineligible_autorenew':True,'existing_consent_withdrawal_visible_when_plan_global_or_observation_unavailable':True,'unlimited_actions_hide_unsupported_relative_changes':True,'native_HTTP_count_checked_here':False,'actual_composed_ASCII_Jalali_Tehran_proofs':{key:['marzban','pasarguard'] for key in ['customer_remote_expiry','admin_remote_expiry','admin_recorded_expiry','admin_warning_grace']},'baseline_date_ref':'2408982797af15bc99e1df2909c13be3976cb1f4','baseline_date_jdf_sha256':'e32da43aafb6548fa746492a9d3181ef796083fa618af2c84f6a7bb4e857337d','baseline_dates_already_ASCII':True,'baseline_date_RED':False,'archived_warning_toggle_RED':2}),
-        ('service_lifecycle','test_unified_service_lifecycle.py','cases',118,
+        ('service_lifecycle','test_unified_service_lifecycle.py','cases',138,
             {'native_php':True,'disposable_mariadb':True,'actual_delete_transports':True,'import_warning_planless_and_assigned':True,'import_warning_retry_once':True,'amount0_trial_warning_policy_preserved':True,'malformed_origin_warning_row_isolated':True,'automatic_known_refusal_predebit':True,'scheduled_known_refusal_prefence':True,'production_mutations':0,'external_provider_calls':0,'notification_delivery_regression_red':True,'grace_integrity':True,'deletion_fairness_red':True,'deletion_fairness_source':'5568e5e24ecc595c371c4710bf41db51bb78125d','scheduled_deletion_cursor':'deleteLastOrderId','deletion_fairness_deferred_batch':50,'deletion_fairness_cross_provider_directions':2,'deletion_fairness_financial_hold':True}),
         ('runtime_cleanup','test_unified_runtime_cleanup.py','assertions',144,
             {'actual_php':True,'owned_socket_mariadb':True,'provider_mutations':0,'production_mutations':0,'composed_native_reader_unique':True,'domain_independent_verified_token_import':True}),
@@ -655,19 +660,37 @@ def run_services(tmp: str) -> tuple[dict, dict]:
              'no_provider_or_telegram_calls':True,'shared_reference_metadata':True,
              'malformed_origin_never_legacy':True,'atomic_order_origin_rollback':True,
              'locked_origin_current_read':True,'payment_wallet_capacity_mutations':0,'production_mutations':0}),
-        ('imported_plan_selection','test_imported_plan_selection.py','cases',94,
+        ('imported_plan_selection','test_imported_plan_selection.py','cases',106,
             {'actual_imports':True,'actual_change_plan_controller':True,
              'actual_config_consent_controller':True,'actual_native_provider_eligibility':True,'existing_consent_withdrawal_visible_and_controller_checked':True,
+             'owner_rev4_saved_inactive_plan_consent_and_server_state':True,
              'amount0_preserved_before_payment':True,'shared_native_different_bot_owners':True,
              'production_mutations':0,'live_provider_calls':0}),
-        ('agent_zero_amount_manual_actions','test_agent_zero_amount_manual_actions.py','cases',42,
+        ('agent_zero_amount_manual_actions','test_agent_zero_amount_manual_actions.py','cases',46,
             {'actual_SelectPlan_TrialProvision':True,'actual_agent_pricing':True,
              'actual_native_CREATE_and_readback':True,'actual_renderer':True,
              'actual_manual_renewal_day_volume_quotes':True,'zero_amount_agent_not_import_or_new_consent':True,
+             'owner_rev4_agent_saved_plan_and_server_modes':True,
              'regression_ref':'4458f3d9f7b7f1e8a7e9e09bca4b97300650eb5f',
              'archived_renderer_sha256':'4a34ed56370842e75ddb16563908c7c0497736851bbbc0da81c17b686e29fb9c',
              'actual_archived_renderer_RED':['marzban','pasarguard'],'synthetic_Telegram_delivery':True,
              'production_mutations':0,'live_provider_calls':0}),
+        ('shared_plan_review_regressions','test_shared_plan_review_fixes.py','cases',175,
+            {'actual_php':True,'disposable_mariadb':True,
+             'native_providers':['marzban','pasarguard'],
+             'f1_mutable_lock_and_reclassification':True,
+             'f2_cross_ledger_and_shared_owner':True,
+             'f3_native_get_to_commit_and_pre_put_races':True,
+             'f4_usage_preservation_positive_and_negative':True,
+             'import_singleflight_and_held_journal_admission':True,
+             'owner_rev4_hard_delete_and_state_policy':True,
+             'r1_legacy_delete_callback_bypass_removed':True,
+             'r2_terminal_payment_attempt_and_child_fences':True,
+             'held_journal_replay_blocked':True,'production_mutations':0,
+             'live_provider_calls':0}),
+        ('owner_r4_admin_intents','test_owner_r4_admin_intents.py','cases',50,
+            {'actual_php':True,'owned_mariadb':True,'providers':['marzban','pasarguard'],
+             'external_calls':0,'production_mutations':0}),
         ('shared_account_lifecycle','test_shared_account_lifecycle.py','cases',24,
             {'actual_php':True,'owned_socket_mariadb':True,'two_distinct_users':True,
              'concurrent_workers':2,'shared_cycle_one_payer':True,'paying_order_only':True,'full_peer_row_unchanged':True,'fresh_native_shared_cycle_refusal':True,'stale_callback_safe':True,
@@ -684,7 +707,13 @@ def run_services(tmp: str) -> tuple[dict, dict]:
             cwd=ROOT,check=True,timeout=300,capture_output=True)
         evidence=json.loads(path.read_text())
         if evidence.get('complete') is not True or evidence.get(counter,0)<minimum or any(evidence.get(k)!=v for k,v in proofs.items()):
-            raise RuntimeError('Unified service-management evidence incomplete: '+name)
+            diff={k:(evidence.get(k),v) for k,v in proofs.items()
+                  if evidence.get(k)!=v}
+            raise RuntimeError('Unified service-management evidence incomplete: '+name+
+                               ' '+json.dumps({'actual':evidence.get(counter),
+                                   'minimum':minimum,'missing_or_mismatched':diff,
+                                   'complete':evidence.get('complete')},
+                                  ensure_ascii=False,sort_keys=True))
         unified[name]=evidence
     result['unified_service_management']=unified
     webhook_path=Path(tmp)/"webhook-file-config.json"
@@ -1155,10 +1184,10 @@ def run_wallet(tmp: str) -> tuple[dict, dict]:
             and text_catalog.get("retired_parser_tokens")==23
             and text_catalog.get("relocation_source_ref")=="ecd30ba9192ed374703118a6c131be8809cc7b06"
             and text_catalog.get("native",{}).get("current_retired_feature_keys")==3
-            and text_catalog.get("catalog_keys")==2780+14
+            and text_catalog.get("catalog_keys")==2780+14+9
             and text_catalog.get("native",{}).get("editable_catalog_files")==2
             and text_catalog.get("native",{}).get("logical_topics")==27+1
-            and text_catalog.get("native",{}).get("current_catalog_keys")==2780+14
+            and text_catalog.get("native",{}).get("current_catalog_keys")==2780+14+9
             and text_catalog.get("native",{}).get("current_gift_admin_additions")==1
             and text_catalog.get("native",{}).get("current_gift_catalog_negative_controls")==8
             and text_catalog.get("native",{}).get("current_gift_catalog_negative_scenarios")==[
@@ -1185,7 +1214,7 @@ def run_wallet(tmp: str) -> tuple[dict, dict]:
             # 14 exact new scoped admin keys: 12 literal messages (1 test
             # each), 2 parameterized (6 adversarial inputs each); two object
             # conversions, one multi-parameter case, two one-pass cases.
-            and text_catalog.get("native",{}).get("current_native_template_assertions")==4120+24
+            and text_catalog.get("native",{}).get("current_native_template_assertions")==4120+24+9
             and text_catalog.get("native",{}).get("current_object_conversion_templates")==268+2
             and text_catalog.get("native",{}).get("current_shared_multi_parameter_templates")==66+1
             and text_catalog.get("native",{}).get("current_one_pass_templates")==268+2
@@ -1196,7 +1225,7 @@ def run_wallet(tmp: str) -> tuple[dict, dict]:
             and text_catalog.get("native",{}).get("current_non_ascii_digit_templates")==0
             and text_catalog.get("presentation",{}).get("status")=="PASS"
             and text_catalog.get("presentation",{}).get("editable_files")==2
-            and text_catalog.get("presentation",{}).get("current_keys")==2780+14
+            and text_catalog.get("presentation",{}).get("current_keys")==2780+14+9
             and text_catalog.get("presentation",{}).get("numeric_template_changes")==23
             and text_catalog.get("presentation",{}).get("adjacent_emoji_violations")==0
             and text_catalog.get("presentation",{}).get("parameter_exception_count")==3
@@ -1245,12 +1274,15 @@ def run_wallet(tmp: str) -> tuple[dict, dict]:
             "achbotMessage('addon_scopes.filter_all')" in addon_admin_source):
         raise RuntimeError('Retired scope filter is unexpectedly rendered')
     required_api_catalog={
-        'runtime_references':2453+14-1-6,
+        # Four retired #112 references and the additional old direct-delete
+        # callback reference are proven absent by test_next_text_catalog.py.
+        # Keep complete current-reference equality, never a lower bound.
+        'runtime_references':2453+14-1-6-4-1+8-3,
         'api_referenced_keys':68,
         'api_dynamic_source_paths':2,
         'api_reference_source_commit':'16c1558322b578b8ca817f3c4b42818d57dcf161',
         'api_retained_unreferenced_keys':18,
-        'api_reference_negative_controls':6,
+        'api_reference_negative_controls':8,
     }
     required_api_native_catalog={
         'current_api_additions':86,
@@ -3857,7 +3889,7 @@ def run_funding(tmp: str) -> tuple[dict, dict]:
         'no_financial_effects_from_admin_settings_or_editors',
         'final_persistence_denies_retired_key_weSwapState',
         'final_persistence_denies_retired_key_tronWallet',
-        'managed_display_replaces_only_two_legacy_global_toggles',
+        'obsolete_transfer_and_display_toggles_absent',
     }
     if not (crypto_guard.get('complete')
             and crypto_guard.get('cases')>=135
@@ -3870,8 +3902,8 @@ def run_funding(tmp: str) -> tuple[dict, dict]:
             and crypto_guard.get('retired_flags_preserved_not_mutated')
             and crypto_guard.get('retired_keys_denied_at_persistence_boundary')
             and crypto_guard.get('all_advertised_current_admin_toggles_work')
-            and crypto_guard.get('moved_display_global_toggles')==['configLinkState','subLinkState']
-            and crypto_guard.get('retained_original_bot_toggles')==23
+            and crypto_guard.get('moved_display_global_toggles')==['configLinkState','subLinkState','switchLocationState']
+            and crypto_guard.get('retained_original_bot_toggles')==22
             and crypto_guard.get('retained_original_gateway_toggles')==8
             and crypto_guard.get('schema_tables')==23
             and crypto_guard.get('isolated_socket_only')
@@ -3944,6 +3976,7 @@ def run_funding(tmp: str) -> tuple[dict, dict]:
     logical=json.loads(logical_path.read_text())
     if not (logical.get("complete") and logical.get("cases")>=45
             and logical.get("administrator_only_switching") is True
+            and logical.get("terminal_payment_history_survives_shared_transfer") is True
             and logical.get("schema_tables")==23
             and logical.get("additive_server_info_column_verified")
             and logical.get("original_historical_schema_file_unchanged")

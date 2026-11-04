@@ -53,7 +53,7 @@ def main():
             "function getServerListKeys(")
         fixture.write_text(stub)
         source=(stage/'bot.php').read_text()
-        a=source.index("if ($data === 'manageMarzbanPanelGroups'")
+        a=source.index("if (in_array($data,['managePanelGroups','manageMarzbanPanelGroups'],true)")
         b=source.index("if(preg_match('/^changesServerLoginInfo",a)
         wizard=b'<?php\n'+source[a:b].encode()
         purchase.init(work,env,url)
@@ -95,6 +95,12 @@ def main():
                                '; server/catalog SQL delta '+repr(pre_v9[1:]!=post_v9[1:]))
         sql(work,env,"UPDATE users SET step='none',temp=NULL WHERE userid=1001")
         passed('pinned_v9_native_source_on_additive_column')
+        # The current transfer protocol consults its held-plan journal even
+        # on a Marzban-only fixture. This isolated table is additive.
+        sql(work,env,(ROOT/'migrations/post-v9/017_shared_plan_changes.sql').read_text())
+        if len(sql(work,env,'SHOW TABLES').splitlines())!=24:
+            raise RuntimeError('Physical-plan journal migration not installed in fixture')
+        passed('shared_plan_journal_present_before_transfer')
         sql(work,env,"""
         DELETE FROM server_config WHERE id IN (3,4,5,6);
         INSERT INTO server_info (id,title,ucount,remark,flag,active,state)
@@ -128,6 +134,14 @@ def main():
                     'vless',2000000000,'[]',100,1,'fake');
         """)
         oid=int(sql(work,env,"SELECT id FROM orders_list WHERE remark='r4-order'").strip())
+        # Two different customers referencing the same physical Marzban user
+        # must be updated together, never only the initiating order.
+        sql(work,env,"INSERT INTO orders_list (userid,token,transid,fileid,server_id,inbound_id,"
+            "remark,uuid,protocol,expire_date,link,amount,status,date)"
+            f" SELECT 9002,token,transid,fileid,server_id,inbound_id,remark,uuid,protocol,"
+            f"expire_date,link,amount,status,date FROM orders_list WHERE id={oid}")
+        peer=int(sql(work,env,f"SELECT MAX(id) FROM orders_list WHERE remark='r4-order'").strip())
+        assert peer!=oid and peer>0
         prev=purchase.block
         def block(kind,modern):
             if kind=='transfer': return b"<?php require __DIR__.'/src/Subscription/AccountTransfers.php';"
@@ -164,11 +178,12 @@ achEvent('probe',[
 """
             return prev(kind,modern)
         purchase.block=block
-        def do(kind,data='',actor=None,**extra):
+        def do(kind,data='',actor=None,expected_stderr='',**extra):
             actor=(9001 if kind=='transfer' else 1001) if actor is None else actor
             panel.trace.clear()
             z=purchase.run(work,env,stage,DB,kind,
-                {'actor':actor,'data':data,**extra},modern=True)
+                {'actor':actor,'data':data,**extra},modern=True,
+                expected_stderr=expected_stderr)
             if z['exception'] or z['warnings'] or z['stdout']:
                 raise RuntimeError('Actual PHP failed: '+repr((kind,data,z))[:1400])
             if panel.trace and (kind!='wizard' or
@@ -246,9 +261,9 @@ achEvent('probe',[
             passed('concurrent_two_admin_same_normalized_name_one_group')
             refuse('same_url_without_group_blocked','transfer',f'switchServer5_{oid}')
             refused=do('transfer',f'switchLocation{oid}_2_0_0')
-            if not any(x['name']=='alert' for x in refused['events']):
-                raise RuntimeError('Unassigned logical server offered transfers')
-            passed('ungrouped_transfer_menu_empty')
+            if not has(refused,'در حال حاضر گزینه') or has(refused,f'switchServer3_{oid}'):
+                raise RuntimeError('Ungrouped transfer must explain empty destinations')
+            passed('ungrouped_transfer_menu_explains_no_destinations')
             manager=do('wizard',data='manageMarzbanPanelGroups',actor=9001)
             if not has(manager,'addMarzbanPanelGroup'):raise RuntimeError('Group management missing')
             passed('admin_catalogue_manager_available')
@@ -288,7 +303,19 @@ achEvent('probe',[
             do('wizard',data='addMarzbanPanelGroup',actor=1001)
             if snapshot(work,env)!=initial:raise RuntimeError('Customer wrote group')
             passed('only_admin_may_create_group')
-            for sid,gid in [(2,g1),(3,g1),(4,g2),(5,g2),(6,g1)]:assign(sid,gid)
+            # A physically active ungrouped Marzban account cannot be
+            # silently reclassified. For this disposable fixture alone,
+            # stage the initial panel-group map while the synthetic orders
+            # are inactive, then reactivate them for every real transfer.
+            assign(2,g1,success=False)
+            passed('null_to_group_active_subscription_reclassification_refused')
+            sql(work,env,f'UPDATE orders_list SET status=0 WHERE id IN ({oid},{peer})')
+            for sid,gid in [(2,g1),(3,g1),(4,g2),(5,g2)]:assign(sid,gid)
+            # Deliberately preserve an old/invalid group assignment on the
+            # retired NORMAL-provider server to test the transfer refusal.
+            # The actual group setter must not reclassify a non-native panel.
+            sql(work,env,f'UPDATE server_info SET panel_group_id={g1} WHERE id=6')
+            sql(work,env,f'UPDATE orders_list SET status=1 WHERE id IN ({oid},{peer})')
             passed('groups_persist_in_server_info_column')
             menu=do('transfer',f'switchLocation{oid}_2_0_0')
             if not has(menu,f'switchServer3_{oid}') or any(
@@ -304,32 +331,61 @@ achEvent('probe',[
             refuse('nonadmin_nonowner_cannot_switch','transfer',f'switchServer3_{oid}',actor=9002)
             refuse('admin_cannot_cross_panel','admin_transfer',f'selectServerId_{oid}_4',actor=9001)
             refuse('forged_admin_callback_denied','admin_transfer',f'selectServerId_{oid}_3',actor=1001)
+            # R2: normal finance workflows can leave historical terminal
+            # rejected receipts and unclaimed invalidated renewal drafts.
+            # Both owners must remain transferable without rewriting them.
+            sql(work,env,
+                "INSERT INTO pays(hash_id,user_id,type,plan_id,server_id,order_id,"
+                "price,request_date,state) VALUES"
+                f"('transfer-declined',1001,'RENEW_ACCOUNT',7,2,{oid},137,UNIX_TIMESTAMP(),'declined'),"
+                f"('transfer-mismatched',9002,'RENEW_ACCOUNT',7,2,{peer},137,UNIX_TIMESTAMP(),'mismatched_plan')")
+            old_receipts=sql(work,env,
+                "SELECT id,hash_id,state,payid FROM pays WHERE hash_id IN "
+                "('transfer-declined','transfer-mismatched') ORDER BY id")
             before=snapshot(work,env)
-            fields=sql(work,env,f'SELECT fileid,token,remark,uuid,link,amount,status FROM orders_list WHERE id={oid}')
-            z=do('transfer',f'switchServer3_{oid}')
+            fields=sql(work,env,f'SELECT token,remark,uuid,link,amount,status FROM orders_list WHERE id={oid}')
+            z=do('transfer',f'switchServer3_{oid}',
+                expected_stderr=f'achbot_shared_transfer_committed order_id={oid} target_id=3 active_refs=2\n')
             if getid()!=3 or not has(z,'editText'):raise RuntimeError('Administrator remapping failed')
             if fields!=sql(work,env,
-                f'SELECT fileid,token,remark,uuid,link,amount,status FROM orders_list WHERE id={oid}'):
+                f'SELECT token,remark,uuid,link,amount,status FROM orders_list WHERE id={oid}'):
                 raise RuntimeError('Logical transfer modified physical account or payment')
+            if sql(work,env,f'SELECT fileid,autoRenew FROM orders_list WHERE id={oid}').strip()!='0\toff':
+                raise RuntimeError('Transfer did not clear stale source plan and renewal consent')
+            shared=sql(work,env,f"SELECT COUNT(*) FROM orders_list "
+                f"WHERE id IN ({oid},{peer}) AND server_id=3 AND fileid=0 AND autoRenew='off'").strip()
+            if shared!='2':
+                raise RuntimeError('Transfer did not update every linked customer reference')
+            passed('physical_marzban_two_customer_references_moved_atomically')
             if any(before[0][k]!=snapshot(work,env)[0][k] for k in
                    ('payments','capacity','users','plans','categories')):
                 raise RuntimeError('Logical transfer touched finance or catalogue')
-            passed('server_id_only_no_financial_or_provider_mutation')
+            passed('same_group_transfer_clears_plan_and_renewal_without_native_payment_mutation')
+            if old_receipts!=sql(work,env,
+                "SELECT id,hash_id,state,payid FROM pays WHERE hash_id IN "
+                "('transfer-declined','transfer-mismatched') ORDER BY id"):
+                raise RuntimeError('Terminal historical receipt altered during shared logical transfer')
+            passed('declined_and_unissued_mismatched_payment_history_allows_shared_transfer')
             z=do('probe',oid=oid)
-            if not has(z,'[true, true]'):raise RuntimeError('Renewal blocked after group move: '+str(z))
-            passed('original_plan_renewal_still_valid')
+            if not has(z,'[true, false]'):raise RuntimeError('Old source-server plan remains available after transfer: '+str(z))
+            passed('old_source_plan_unavailable_until_destination_plan_selected')
             refuse('replayed_admin_callback','transfer',f'switchServer3_{oid}')
-            reject=assign(3,g2,False)
-            if not has(reject,'group_change_would_strand_order'):
-                raise RuntimeError('Group edit stranded existing order')
-            passed('group_change_cannot_strand_existing_renewal')
+            # Even with the old plan cleared, changing the declared physical
+            # panel while shared active references remain would strand them.
+            assign(3,g2,success=False)
+            if sql(work,env,'SELECT panel_group_id FROM server_info WHERE id=3').strip()!=str(g1):
+                raise RuntimeError('Active shared account group was changed despite physical fence')
+            assign(3,g1)
+            passed('active_planless_shared_refs_fence_cross_panel_group_change')
             z=do('admin_transfer',f'changeServerId_{oid}',actor=9001)
             if not has(z,f'selectServerId_{oid}_2') or has(z,f'selectServerId_{oid}_4'):
                 raise RuntimeError('Admin selector leaked other groups')
             passed('admin_selector_group_filtered')
-            do('admin_transfer',f'selectServerId_{oid}_2',actor=9001)
-            if getid()!=2:raise RuntimeError('Admin same-panel switch failed')
-            passed('admin_same_panel_id_only_switch')
+            do('admin_transfer',f'selectServerId_{oid}_2',actor=9001,
+                expected_stderr=f'achbot_shared_transfer_committed order_id={oid} target_id=2 active_refs=2\n')
+            if getid()!=2 or sql(work,env,f"SELECT server_id,fileid FROM orders_list WHERE id={peer}").strip()!='2\t0':
+                raise RuntimeError('Admin same-panel switch did not update both references')
+            passed('admin_same_panel_shared_switch_plan_reset')
             assign(3,0)
             refuse('unassigned_destination_denied','transfer',f'switchServer3_{oid}')
             assign(3,g1)
@@ -342,7 +398,11 @@ achEvent('probe',[
             orig=fixture.read_text()
             fixture.write_text(orig.replace("'switchLocationState'=>'on'",
                 "'switchLocationState'=>'off'"))
-            try:refuse('bot_toggle_off_denies_transfer','transfer',f'switchServer3_{oid}')
+            try:
+                visible=do('transfer',f'switchLocation{oid}_2_0_0')
+                if not has(visible,f'switchServer3_{oid}'):
+                    raise RuntimeError('Legacy toggle improperly gates administrator transfer')
+                passed('legacy_bot_toggle_cannot_hide_admin_transfer')
             finally:fixture.write_text(orig)
 
             picker=do('wizard',data='editMarzbanGroup3',actor=9001)
@@ -485,8 +545,10 @@ achEvent('probe',[
             if sql(work,env,f'SELECT COUNT(*) FROM setting WHERE id={unused}').strip()!='0':
                 raise RuntimeError('Unassigned group could not be removed')
             passed('unassigned_group_deletion')
-            if len(sql(work,env,'SHOW TABLES').splitlines())!=23 or stages.ddl(work,env,DB,tables)!=after:
-                raise RuntimeError('Application mutated schema beyond migration')
+            if (len(sql(work,env,'SHOW TABLES').splitlines())!=24 or
+                    stages.ddl(work,env,DB,tables)!=after or
+                    sql(work,env,'SELECT COUNT(*) FROM service_plan_changes').strip()!='0'):
+                raise RuntimeError('Application mutated schema or journal during logical-only transfer')
             passed('post_migration_schema_stable')
         finally:
             purchase.block=prev
@@ -498,6 +560,7 @@ achEvent('probe',[
             'pinned_v9_source_on_migrated_schema_verified':True,
             'unicode_group_name_contract_verified':True,
             'no_real_provider_or_payment_calls':True,'administrator_only_switching':True,
+            'terminal_payment_history_survives_shared_transfer':True,
             'current_unified_onboarding':onboarding_proof,'scenarios':checks}
     if args.report:args.report.write_text(json.dumps(report,indent=2,ensure_ascii=False)+'\n')
     print(json.dumps({k:v for k,v in report.items() if k!='scenarios'},ensure_ascii=False))

@@ -29,10 +29,15 @@ function achbotSupportsAccount($type,$inbound){return in_array($type,['marzban',
 // This composition harness controls native packets and the plan-admission
 // seam. Actual adapter eligibility/import/payment are tested separately by
 // test_imported_plan_selection.py and the native existing-subscription suite.
-function achbotSupportsPlan($db,$id,$inbound=0,$server=null,$lock=false) {
+function achbotServerCommerceAvailable($db,$serverId,$newPurchase,$lock=false) {
+ $q=$db->prepare('SELECT active,state FROM server_info WHERE id=?');
+ $q->bind_param('i',$serverId);$q->execute();$row=$q->get_result()->fetch_assoc();$q->close();
+ return $row && (int)$row['active']===1 && ($newPurchase?(int)$row['state']===1:in_array((int)$row['state'],[1,2],true));
+}
+function achbotSupportsPlan($db,$id,$inbound=0,$server=null,$lock=false,$allowInactive=false) {
  $q=$db->prepare('SELECT p.server_id,p.inbound_id,p.active,c.type FROM server_plans p JOIN server_config c ON c.id=p.server_id WHERE p.id=?');
  $id=(int)$id;$q->bind_param('i',$id);$q->execute();$row=$q->get_result()->fetch_assoc();$q->close();
- return $row && (int)$row['active']===1 && achbotSupportsAccount($row['type'],$row['inbound_id']) &&
+ return $row && ($allowInactive || (int)$row['active']===1) && achbotSupportsAccount($row['type'],$row['inbound_id']) &&
   (int)$inbound===0 && ($server===null || (int)$server===(int)$row['server_id']);
 }
 function achbotSameProviderPanel($db,$first,$second){return (int)$first===(int)$second;}
@@ -288,8 +293,12 @@ echo json_encode($out,JSON_THROW_ON_ERROR);
       sql("UPDATE orders_list SET autoRenew='"+consent+"' WHERE id=91")
       keys=call(op,actor=9001 if op=='admin' else 1001,remote=remote,renew_auto_state=global_state)['out']['keyboard']
       buttons=[button for row in json.loads(keys)['inline_keyboard'] for button in row if button.get('callback_data')==toggle]
-      yes((len(buttons)==1 and buttons[0]['text']==original_label) if consent=='on' else buttons==[],
-          provider+'_'+op+'_'+label+'_'+consent+'_existing_consent_withdrawal_visible_without_enabling_ineligible_renewal')
+      # Owner Rev4: a plan hidden from new purchases still permits the
+      # existing subscriber to newly enable renewal of that exact plan.
+      expected=(len(buttons)==1 and buttons[0]['text']==original_label) if consent=='on' else (
+          (len(buttons)==1 and buttons[0]['text']!=original_label)
+          if label=='retired_plan' else buttons==[])
+      yes(expected,provider+'_'+op+'_'+label+'_'+consent+'_existing_consent_and_hidden_plan_renewal_policy')
     sql("UPDATE server_plans SET active=1 WHERE id=7;UPDATE orders_list SET autoRenew='on' WHERE id=91")
    sql("UPDATE orders_list SET autoRenew='off' WHERE id=91")
    for unlimited in [None,0]:

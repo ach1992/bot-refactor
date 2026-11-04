@@ -454,7 +454,7 @@ if(($data=="botSettings" or preg_match('/^changeBot([A-Za-z0-9_]+)$/D',$data,$ma
             'agencyState','agencyPlanDiscount','individualExistence',
             'sharedExistence','testAccount','changeProtocolState',
             'renewAccountState','renewAutoState','plandelkhahState',
-            'switchLocationState','increaseTimeState','increaseVolumeState',
+            'increaseTimeState','increaseVolumeState',
             'requirePhone','requireIranPhone','sellState','botState',
             'searchState',
             'renewConfigLinkState','updateConfigLinkState','qrConfigState',
@@ -1868,17 +1868,41 @@ if(($data=='serversSetting' || preg_match('/^nextServerPage(\d+)/',$data,$match)
 
     editText($message_id,\achbotMessage('bot.bot.servers_setting.message.4c0e6ed6fc'),$keys);
 }
-if(preg_match('/^toggleServerState(\d+)_(\d+)/',$data,$match) && ($from_id == $admin || $userInfo['isAdmin'] == true)){
-    $stmt = $connection->prepare("UPDATE `server_info` SET `state` = IF(`state` = 0,1,0) WHERE `id`=?");
-    $stmt->bind_param("i", $match[1]);
-    $stmt->execute();
-    $cats= $stmt->get_result();
+if(preg_match('/^toggleServerState([1-9][0-9]*)_([0-9]+)$/D',(string)$data,$match) &&
+    achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'servers')){
+    $serverId=(int)$match[1];$offset=(int)$match[2];
+    $stmt=$connection->prepare('SELECT id FROM server_info WHERE id=? AND active=1');
+    $stmt->bind_param('i',$serverId);$stmt->execute();$exists=$stmt->get_result()->fetch_assoc();$stmt->close();
+    if (!$exists) {alert(\achbotMessage('admin_settings.management.management_stale'),true);return;}
+    $choices=[
+        [1,'admin_settings.management.server_state_full'],
+        [2,'admin_settings.management.server_state_renew_only'],
+        [0,'admin_settings.management.server_state_off'],
+    ];
+    $keys=[];
+    foreach ($choices as [$mode,$label]) $keys[]=[[
+        'text'=>\achbotMessage($label),'callback_data'=>"setServerState{$serverId}_{$mode}_{$offset}"
+    ]];
+    $keys[]=[['text'=>$buttonValues['back_button'],'callback_data'=>'nextServerPage'.$offset]];
+    editText($message_id,\achbotMessage('admin_settings.management.server_state_prompt'),
+        json_encode(['inline_keyboard'=>$keys],JSON_UNESCAPED_UNICODE),'HTML');
+}
+if(preg_match('/^setServerState([1-9][0-9]*)_([012])_([0-9]+)$/D',(string)$data,$match) &&
+    achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'servers')){
+    $serverId=(int)$match[1];$mode=(int)$match[2];$offset=(int)$match[3];
+    $stmt=$connection->prepare('UPDATE server_info SET state=? WHERE id=? AND active=1');
+    $stmt->bind_param('ii',$mode,$serverId);$stmt->execute();
     $stmt->close();
-
-    alert(\achbotMessage('bot.bot.servers_setting.alert.9f4e68eda7'));
-
-    $keys = getServerListKeys($match[2]);
-    editText($message_id,\achbotMessage('bot.bot.servers_setting.message.4c0e6ed6fc'),$keys);
+    $stmt=$connection->prepare('SELECT state FROM server_info WHERE id=? AND active=1');
+    $stmt->bind_param('i',$serverId);$stmt->execute();$saved=$stmt->get_result()->fetch_assoc();$stmt->close();
+    if (!$saved || (int)$saved['state']!==$mode) {
+        alert(\achbotMessage('admin_settings.management.management_stale'),true);return;
+    }
+    if ($mode===2) alert(\achbotMessage('admin_settings.management.server_retired'));
+    elseif ($mode===1) alert(\achbotMessage('admin_settings.management.server_state_full'));
+    else alert(\achbotMessage('admin_settings.management.server_state_off'));
+    editText($message_id,\achbotMessage('bot.bot.servers_setting.message.4c0e6ed6fc'),
+        getServerListKeys($offset));
 }
 if(preg_match('/^showServerSettings(\d+)_(\d+)/',$data,$match) and ($from_id == $admin || $userInfo['isAdmin'] == true)){
     $keys = getServerConfigKeys($match[1], $match[2]);
@@ -1931,7 +1955,7 @@ if(preg_match('/^(?:changeServerType\d+|chhangeServerType\w+_\d+)$/', (string)$d
 // Define real-panel identity groups centrally, before assigning them to
 // logical server entries. A group is trusted admin configuration, never
 // inferred from endpoint aliases or Marzban admin credential equality.
-if ($data === 'manageMarzbanPanelGroups' &&
+if (in_array($data,['managePanelGroups','manageMarzbanPanelGroups'],true) &&
     ($from_id == $admin || ($userInfo['isAdmin'] ?? false))) {
     editText($message_id, \achbotMessage('bot.bot.manage_marzban_panel_groups.message.59d5170317'),
         getMarzbanPanelGroupsManagementKeys());
@@ -1993,7 +2017,7 @@ if (preg_match('/^deleteMarzbanPanelGroup_(\d+)$/D', (string)($data ?? ''), $gro
 // addNewMarzbanPanel and addManagedServer use the actor-owned management wizard above.
 // Admin server settings: select an EXISTING panel group, never a
 // free-text value or automatic URL/username-based identity.
-if (preg_match('/^editMarzbanGroup(\d+)$/D', (string)($data ?? ''), $groupMatch) &&
+if (preg_match('/^(?:editPanelGroup|editMarzbanGroup)(\d+)$/D', (string)($data ?? ''), $groupMatch) &&
     ($from_id == $admin || ($userInfo['isAdmin'] ?? false))) {
     $id = (int)$groupMatch[1];
     $stmt = $connection->prepare("SELECT type FROM server_config WHERE id = ?");
@@ -2029,7 +2053,7 @@ if (preg_match('/^setServerPanelGroup_(\d+)_(\d+)$/D', (string)($data ?? ''), $g
             alert(\achbotMessage('bot.bot.addserver_name.alert.9ee9f25355'), true);
             return;
         }
-        achbotSetMarzbanGroup($connection, $id, $groupId);
+        achbotSetPanelGroup($connection, $id, $groupId);
         $connection->commit();
     } catch (\Throwable $e) {
         $connection->rollback();
@@ -2138,30 +2162,23 @@ if(preg_match('/^editServerPanePassword(.*)/',$userInfo['step'],$match) and $tex
 
 if ((require __DIR__ . '/src/Subscription/SubLinkSettings.php') === null) return;
 
-if(preg_match('/^wizwizdeleteserver(\d+)/',$data,$match) and ($from_id == $admin || ($userInfo['isAdmin'] == true && achbotAdminCan('servers')))){
-    editText($message_id,\achbotMessage('admin_settings.management.server_delete_confirm'),json_encode(['inline_keyboard'=>[
-        [['text'=>\achbotMessage('bot.bot.addserver_name.button.13159f8c74'),'callback_data'=>"yesDeleteServer" . $match[1]],['text'=>\achbotMessage('bot.bot.addserver_name.button.f47dddc181'),'callback_data'=>"showServerSettings" . $match[1] . "_0"]]
-        ]]));
+if(preg_match('/^wizwizdeleteserver([1-9][0-9]*)$/D',(string)$data,$match)){
+    try {
+        $confirmation=achbotAdminIntentIssue($connection,(int)$from_id,(int)$admin,
+            'server',(int)$match[1],$update,(string)$data);
+        editText($message_id,\achbotMessage('admin_settings.management.server_delete_confirm'),json_encode(['inline_keyboard'=>[
+            [['text'=>\achbotMessage('bot.bot.addserver_name.button.13159f8c74'),'callback_data'=>$confirmation],
+             ['text'=>\achbotMessage('bot.bot.addserver_name.button.f47dddc181'),'callback_data'=>str_replace('yesDeleteServer','cancelDeleteServer',$confirmation)]]
+        ]],JSON_UNESCAPED_UNICODE));
+    } catch (Throwable $error) {
+        error_log('achbot_server_delete_warning_deferred');
+        alert(achbotManagementText('management_stale'),true);
+    }
+    return;
 }
-if(preg_match('/^yesDeleteServer(\d+)/',$data,$match) && ($from_id == $admin || ($userInfo['isAdmin'] == true && achbotAdminCan('servers')))){
-    $stmt = $connection->prepare("DELETE FROM `server_info` WHERE `id`=?");
-    $stmt->bind_param("i", $match[1]);
-    $stmt->execute();
-    $stmt->close();
-
-    $stmt = $connection->prepare("DELETE FROM `server_config` WHERE `id`=?");
-    $stmt->bind_param("i", $match[1]);
-    $stmt->execute();
-    $stmt->close();
-    // The group is a nullable server_info field and is removed with its row.
-
-    alert(\achbotMessage('bot.bot.addserver_name.alert.601504ae47'));
-
-
-    $keys = getServerListKeys();
-    if($keys == null) editText($message_id,\achbotMessage('bot.bot.addserver_name.message.756c3005d3'));
-    else editText($message_id,\achbotMessage('bot.bot.servers_setting.message.4c0e6ed6fc'),$keys);
-}
+// Confirmed server deletion is handled exclusively by achbotHandleManagementFields()
+// at ingress. Never retain a broader legacy fallback that can bypass the
+// physical-account, payment and journal recovery admission checks.
 if(preg_match('/^editServer(\D+)(\d+)/',$data,$match) && $text != $buttonValues['cancel'] && ($from_id == $admin || $userInfo['isAdmin'] == true)){
     switch($match[1]){
         case "Name":

@@ -232,7 +232,13 @@ def main():
     if a.source_ref and (len(a.source_ref)!=40 or any(c not in '0123456789abcdef' for c in a.source_ref)):
         raise ValueError('source-ref must be an exact SHA')
     original=subprocess.check_output(['git','show',BASE+':src/Finance/AutomaticReceipts.php'],cwd=ROOT)
-    assert (ROOT/'src/Finance/AutomaticReceipts.php').read_bytes()==original,'excluded legacy automatic bank runtime changed'
+    # Owner Rev4 changes ONLY the old renewal-plan active filter; preserve the
+    # exact previously frozen source and all other notification semantics.
+    before=b"WHERE `id` = ? AND `active` = 1"
+    after=b"WHERE `id` = ?"
+    assert original.count(before)==1,'historical automatic renewal guard identity changed'
+    expected=original.replace(before,after,1)
+    assert (ROOT/'src/Finance/AutomaticReceipts.php').read_bytes()==expected,'unapproved automatic bank runtime change'
     current=(ROOT/'settings/rewardReport.php').read_text()
     old=subprocess.check_output(['git','show',BASE+':settings/rewardReport.php'],cwd=ROOT,text=True)
     def backup_block(source):
