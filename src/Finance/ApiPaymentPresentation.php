@@ -128,6 +128,68 @@ function achbotApiPaymentRichReport(array $pay,string $body,array $presentation)
     return $body."\n\n".$details;
 }
 
+/**
+ * Customer success is the existing MANUAL path copy, never an API-specific
+ * confirmation. This module only renders/notifies; financial and native
+ * effects have already committed under the original payment identity.
+ * A failed or ambiguous Telegram acknowledgement is NOT successful delivery.
+ */
+function achbotApiPaymentManualCustomerText(mysqli $db,array $pay): ?string {
+    $type=(string)($pay['type']??'');
+    $uid=(int)($pay['user_id']??0);
+    if($uid<=0)return null;
+    if($type==='INCREASE_WALLET') {
+        return achbotMessage('manual_payment.manual_receipts.message.f568baa065').
+            number_format((int)$pay['price']).
+            achbotMessageHtml('manual_payment.manual_receipts.message.f6331b33af',
+                ['supportID'=>(string)($GLOBALS['supportID']??'')]);
+    }
+    $remark='';
+    if($type==='RENEW_SCONFIG') {
+        $data=json_decode((string)($pay['description']??''),true);
+        $remark=is_array($data)?(string)($data['remark']??''):'';
+    } else {
+        $orderId=(int)($pay['order_id']??0);
+        if(preg_match('/^INCREASE_(?:DAY|VOLUME)_([1-9][0-9]*)_[1-9][0-9]*$/D',$type,$match))
+            $orderId=(int)$match[1];
+        if($orderId<=0)return null;
+        try {
+            $stmt=$db->prepare('SELECT remark FROM orders_list WHERE id=? AND userid=? LIMIT 1');
+            $stmt->bind_param('ii',$orderId,$uid);
+            $stmt->execute();
+            $row=$stmt->get_result()->fetch_assoc();$stmt->close();
+            $remark=(string)($row['remark']??'');
+        } catch(Throwable $error) {
+            error_log('achbot_api_customer_subject_read_deferred pay_id='.(int)($pay['id']??0));
+            return null;
+        }
+    }
+    if($remark==='')return null;
+    if($type==='RENEW_SCONFIG')
+        return achbotMessage('manual_payment.automatic_receipts.message.cca1075329',['remark'=>$remark]);
+    if($type==='RENEW_ACCOUNT')
+        return achbotMessage('renewal.renewal_checkout.message.47b1149fb0',['remark'=>$remark]);
+    $units=achbotPinnedAddonUnits($pay);
+    if(!is_int($units)||$units<=0)return null;
+    if(str_starts_with($type,'INCREASE_DAY_'))
+        return achbotMessage('renewal.extensions.message.24dea9b122',['volume'=>$units,'remark'=>$remark]);
+    if(str_starts_with($type,'INCREASE_VOLUME_'))
+        return achbotMessage('renewal.extensions.message.d5b6a4e6e7',['volume'=>$units,'remark'=>$remark]);
+    return null;
+}
+function achbotApiPaymentDeliverManualCustomer(mysqli $db,array $pay): bool {
+    $text=achbotApiPaymentManualCustomerText($db,$pay);
+    if($text===null)return false;
+    try {
+        $mode=(string)$pay['type']==='RENEW_SCONFIG'?null:'HTML';
+        return achbotApiPaymentAck(sendMessage($text,null,$mode,(int)$pay['user_id']));
+    } catch(Throwable $error) {
+        error_log('achbot_api_customer_delivery_unconfirmed pay_id='.(int)$pay['id'].
+            ' class='.get_class($error));
+        return false;
+    }
+}
+
 function achbotApiPaymentFinalKeyboard(array $pay,string $fallback,bool $automatic,array $presentation): string {
     $hash=(string)($pay['hash_id']??'');
     $actor=(int)($pay['approved_by']??0);

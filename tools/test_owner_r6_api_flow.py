@@ -106,6 +106,7 @@ elseif($op==='track'){achbotApiPaymentTrackInvoice($connection,$pay['hash_id'],1
 elseif($op==='expire')$value=achbotPayUxExpireUnstartedManual($connection,$id);
 elseif($op==='maintain')$value=achbotApiPaymentMaintain($connection,(int)($spec['limit']??12));
 elseif($op==='notice'){achbotApiPaymentNotice($connection,$pay,$spec['status']??'confirmed');$value=true;}
+elseif($op==='manual_text')$value=achbotApiPaymentManualCustomerText($connection,$pay);
 elseif($op==='presentation'){
  $a=achbotApiPaymentAttempt($connection,$id);$d=achbotApiPaymentPresentation($connection,$pay,$a);
  $proof=achbotPaymentEvidenceGetProof($connection,$id);
@@ -170,7 +171,7 @@ function sendPhoto(...$args){$GLOBALS['events'][]=['event'=>'PHOTO'];if(!empty($
  }
 }
 return !empty($GLOBALS['spec']['fail_staff'])?null:(object)['ok'=>true];}""")
-        php=php.replace("function sendMessage($text=null,$keys=null,$mode=null,$to=null) {","function sendMessage($text=null,$keys=null,$mode=null,$to=null) {if(!empty($GLOBALS['spec']['fail_customer_ack']) && $to===null)throw new RuntimeException('fixture_customer_ack_failure');")
+        php=php.replace("function sendMessage($text=null,$keys=null,$mode=null,$to=null) {","function sendMessage($text=null,$keys=null,$mode=null,$to=null) {if(!empty($GLOBALS['spec']['fail_customer_ack']) && $to===null)throw new RuntimeException('fixture_customer_ack_failure');if(!empty($GLOBALS['spec']['fail_terminal_customer']) && (int)$to===1001 && in_array(fixtureState(),['approved','auto_cart_approved'],true))return(object)['ok'=>false];")
         php=php.replace("return (object)['ok'=>true];\n}\nfunction editKeys", "return (object)['ok'=>true,'result'=>(object)['message_id'=>456]];\n}\nfunction editKeys")
         php=php.replace("    if ($strict!==true) throw new RuntimeException('non_strict_remote_get');", "    if((int)$GLOBALS['connection']->query('SELECT @@in_transaction')->fetch_row()[0]!==0)throw new RuntimeException('fixture_native_get_under_financial_lock');\n    if(str_starts_with($name,'api_edit'))return(object)['username'=>$name,'status'=>'active','expire'=>1900000000,'data_limit'=>10737418240,'used_traffic'=>0];\n    if ($strict!==true) throw new RuntimeException('non_strict_remote_get');")
         # Controlled process-loss injection in disposable source, never runtime hooks.
@@ -334,14 +335,20 @@ return !empty($GLOBALS['spec']['fail_staff'])?null:(object)['ok'=>true];}""")
         assert int(query(work,env,'SELECT wallet FROM users WHERE userid=1001'))==before+int(query(work,env,f'SELECT price FROM pays WHERE id={n}'))
         assert call(op='settle',pay=n)['result']=='settled';assert APIs.rows[bad]['status']=='ready';cases.append('full_exact_quote_only_and_wallet_replay')
         quote=query(work,env,f'SELECT quote_amount FROM payment_attempts WHERE pay_row_id={n}').split('.')[0];local=query(work,env,f'SELECT price FROM pays WHERE id={n}');assert quote!=local
-        reports=[e.get('text',e.get('data',{}).get('text','')) for e in r['events'] if e['event'] in ['MESSAGE','BOT'] and 'مبلغ دقیق' in e.get('text',e.get('data',{}).get('text',''))];assert reports and any('مبلغ دقیق: '+quote+' تومان' in text for text in reports),r
-        again=call(op='notice',pay=n);assert not any('مبلغ دقیق' in e.get('text',e.get('data',{}).get('text','')) for e in again['events']);cases.append('complete_report_uses_original_random_quote_and_durable_dedup')
+        reports=[e.get('text',e.get('data',{}).get('text','')) for e in r['events'] if e['event'] in ['MESSAGE','BOT'] and 'مبلغ دقیق' in e.get('text',e.get('data',{}).get('text',''))]
+        assert not reports,r
+        again=call(op='notice',pay=n)
+        assert not any('مبلغ دقیق' in e.get('text',e.get('data',{}).get('text','')) for e in again['events']),again
+        assert query(work,env,f'SELECT evidence_report_digest IS NULL FROM payment_attempts WHERE pay_row_id={n}')=='1'
+        cases.append('no_standalone_admin_payment_reports_from_settlement_or_repeated_projection')
+        wallet_copy=call(op='manual_text',pay=n)['result']
+        delivered=[e['text'] for e in r['events'] if e['event']=='MESSAGE' and e.get('to')==1001]
+        assert len(delivered)==1 and delivered[0]==wallet_copy and quote!=local,r
+        cases.append('bank_wallet_uses_original_manual_success_copy_once')
         buttons=call(op='presentation',pay=n)['result']['keys']['inline_keyboard']
         assert len(buttons)==3 and 'تایید خودکار توسط API' in buttons[0][0]['text']
         assert not any('approve' in b[0]['callback_data'] for b in buttons),buttons
         assert 'exactbank' in buttons[2][0]['text']
-        assert any('درخواست (افزایش موجودی)' in text and 'fixture_user' in text
-            for text in reports),reports
         cases.append('bank_terminal_receipt_three_rows_and_wallet_report_subject')
 
         # A terminal invoice with consumed proof cannot claim a second ready SMS.
@@ -381,16 +388,59 @@ return !empty($GLOBALS['spec']['fail_staff'])?null:(object)['ok'=>true];}""")
             assert 'نام اشتراک یا پلن' in notice['details']['details'] and 'حجم اشتراک' in notice['details']['details']
             assert len(notice['keys']['inline_keyboard'])==3
             if label=='bulk':assert notice['details']['confirmed_accounts']==3 and '(#' in notice['details']['details']
+            deliveries=[e for e in r['events'] if e['event']=='DELIVER']
+            assert len(deliveries)==count and all(e['has_text'] for e in deliveries),r
+            assert not any(e['event']=='MESSAGE' and e.get('to')==1001 for e in r['events']),r
+            assert query(work,env,f'SELECT evidence_fulfillment_state FROM payment_attempts WHERE pay_row_id={n}')=='done'
             assert query(work,env,f'SELECT approved_by FROM pays WHERE id={n}')=='0';assert call(op='settle',pay=n)['result']=='settled';cases.append('proof_backed_'+label+'_existing_create_journal')
             APIs.rows={}
         cases.append('verified_purchase_report_contains_native_account_names_and_pinned_terms')
+        # Telegram ACK failure MUST NOT become successful delivery or replay
+        # the financial claim/native CREATE. The provider evidence stays spent.
+        APIs.rows={};n=seed('deliveryfailed','BUY_SUB');rid=sms(n)
+        reserved=int(query(work,env,'SELECT ucount FROM server_info WHERE id=2'))
+        r=call(pay=n,mode='telegram_unconfirmed')
+        assert r['result']=='settled' and state(n)=='auto_cart_approved',r
+        assert query(work,env,f'SELECT evidence_fulfillment_state FROM payment_attempts WHERE pay_row_id={n}')=='delivery_unconfirmed',r
+        assert int(query(work,env,'SELECT ucount FROM server_info WHERE id=2'))==reserved-1
+        assert query(work,env,f"SELECT COUNT(*) FROM service_effects WHERE pay_row_id={n} AND effect_kind='create' AND state='local_recorded'")=='1'
+        replay=call(op='settle',pay=n)
+        assert replay['result']=='settled' and not any(e['event'] in ['DELIVER','POST','EDIT'] for e in replay['events']),replay
+        cases.append('qr_ack_failure_financial_and_native_once_delivery_unconfirmed_no_create_replay')
         # Every edit subject uses pinned quantities and the same real local finisher.
         query(work,env,"INSERT INTO orders_list(userid,token,transid,fileid,server_id,inbound_id,remark,uuid,expire_date,link,amount,status,date) VALUES(1001,'fixture-token','',7,2,0,'api_edit_order','fixture-uuid',1900000000,'[]',101,1,'1700000000')")
         oid=int(query(work,env,"SELECT id FROM orders_list WHERE remark='api_edit_order'"))
         for label,kind,days,vol in [('renew','RENEW_ACCOUNT',0,0),('day',f'INCREASE_DAY_{oid}_1',4,0),('volume',f'INCREASE_VOLUME_{oid}_1',0,5),('external','RENEW_SCONFIG',0,0)]:
             APIs.rows={};n=seed(label,kind,days=days,volume=vol,order=oid if label!='external' else 0);sms(n);r=call(pay=n);assert r['result']=='confirmed',(label,r)
             edits=[e for e in r['events'] if e['event']=='EDIT'];assert len(edits)==1 and edits[0]['tx']==0,(label,r)
+            expected=call(op='manual_text',pay=n)['result']
+            messages=[e['text'] for e in r['events'] if e['event']=='MESSAGE' and e.get('to')==1001]
+            assert expected and len(messages)==1 and messages[0]==expected,(label,r)
+            assert query(work,env,f'SELECT evidence_fulfillment_state FROM payment_attempts WHERE pay_row_id={n}')=='done'
             assert call(op='settle',pay=n)['result']=='settled';cases.append('proof_backed_'+label+'_existing_edit_finisher')
+            cases.append('bank_'+label+'_exact_manual_customer_copy_once')
+        # Gift approval uses the exact same manual success copy for every edit
+        # subject, not just BUY_SUB or wallet, and never sends an extra API notice.
+        for label,kind,days,vol in [('giftrenew','RENEW_ACCOUNT',0,0),('giftday',f'INCREASE_DAY_{oid}_1',4,0),('giftvolume',f'INCREASE_VOLUME_{oid}_1',0,5),('giftstandard','RENEW_SCONFIG',0,0)]:
+            n=seed(label,kind,method='gift_card',days=days,volume=vol,order=oid if label!='giftstandard' else 0)
+            gift(label);assert call(op='save',pay=n,code=label)['result']['status']=='saved'
+            r=call(pay=n);assert r['result']=='confirmed',(label,r)
+            expected=call(op='manual_text',pay=n)['result']
+            messages=[e['text'] for e in r['events'] if e['event']=='MESSAGE' and e.get('to')==1001]
+            assert expected and messages==[expected],(label,r)
+            assert len([e for e in r['events'] if e['event']=='EDIT'])==1
+            assert call(op='settle',pay=n)['result']=='settled'
+            cases.append(label+'_manual_customer_copy_once_no_replayed_edit')
+        # A failed customer Telegram response after a VERIFIED edit must not
+        # rewrite native state or declare delivery complete.
+        n=seed('editunconfirmed','RENEW_ACCOUNT',order=oid);sms(n)
+        r=call(pay=n,fail_terminal_customer=True)
+        assert r['result']=='settled' and state(n)=='auto_cart_approved',r
+        assert query(work,env,f'SELECT evidence_fulfillment_state FROM payment_attempts WHERE pay_row_id={n}')=='delivery_unconfirmed'
+        assert len([e for e in r['events'] if e['event']=='EDIT'])==1,r
+        replay=call(op='settle',pay=n)
+        assert replay['result']=='settled' and not any(e['event']=='EDIT' for e in replay['events']),replay
+        cases.append('edit_telegram_ack_failure_leaves_funds_and_native_once_delivery_unconfirmed')
         # Real human route/API contenders share one actual local claim for every subject.
         subjects=[('rstandard','BUY_SUB',0,0,1,'standard_approval','accept',0),('rcustom','BUY_SUB',12,3,1,'checkout','accCustom',0),('rbulk','BUY_SUB',0,0,3,'standard_approval','accept',0),('rrenew','RENEW_ACCOUNT',0,0,1,'renewal','approveRenewAcc',oid),('rday',f'INCREASE_DAY_{oid}_1',4,0,1,'extension','approveIncreaseDay',oid),('rvolume',f'INCREASE_VOLUME_{oid}_1',0,5,1,'extension','approveIncreaseVolume',oid),('rexternal','RENEW_SCONFIG',0,0,1,'standard_approval','accept',0)]
         for label,kind,days,vol,count,route,prefix,order in subjects:
@@ -458,6 +508,8 @@ return !empty($GLOBALS['spec']['fail_staff'])?null:(object)['ok'=>true];}""")
         assert call(op='save',pay=n,code='right')['result']['status']=='locked';n=seed('giftcorrect',method='gift_card');gift('right');assert call(op='save',pay=n,code='right')['result']['status']=='saved';due(n);r=call(pay=n);assert r['result']=='confirmed' and APIs.cards['right']['status']=='redeemed',r;cases.append('gift_exact_single_code_review_fences_replacement_after_delivery')
         for label,days,vol,count in [('giftstandard',0,0,1),('giftcustom',12,3,1),('giftbulk',0,0,2)]:
             n=seed(label,'BUY_SUB',method='gift_card',days=days,volume=vol,count=count);gift(label);assert call(op='save',pay=n,code=label)['result']['status']=='saved';r=call(pay=n);assert r['result']=='confirmed',(label,r)
+            assert len([e for e in r['events'] if e['event']=='DELIVER'])==count and not any(e['event']=='MESSAGE' and e.get('to')==1001 for e in r['events']),(label,r)
+            assert query(work,env,f'SELECT evidence_fulfillment_state FROM payment_attempts WHERE pay_row_id={n}')=='done'
             assert int(query(work,env,f"SELECT COUNT(*) FROM service_effects WHERE pay_row_id={n} AND effect_kind='create' AND state='local_recorded'"))==count;assert query(work,env,f'SELECT COUNT(*) FROM bank_buy_invoice_claims WHERE pay_row_id={n}')=='0';cases.append(label+'_proof_uses_genuine_create_without_bank009')
         for label in ['used','revoked','expired']:
             n=seed('gift'+label,method='gift_card');gift(label,status='redeemed' if label=='used' else label);assert call(op='save',pay=n,code=label)['result']['status']=='saved';invalid=call(pay=n);assert invalid['result']==label
