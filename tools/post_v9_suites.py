@@ -3492,6 +3492,10 @@ def run_funding(tmp: str) -> tuple[dict, dict]:
     recovery=json.loads(recovery_path.read_text())
     required_recovery={
         "unresolved_bank_case_reads_exact_local_identity_without_sql_writes",
+        "provider_readback_failure_logs_exact_effect_and_trusted_cause",
+        "provider_raw_exception_credentials_never_logged",
+        "pasarguard_nested_transport_reason_not_lost",
+        "provider_diagnostic_indices_and_stage_fail_closed",
         "owner_private_wallet_debit_capacity_hold_visible_no_unissued_get",
         "strict_one_account_get_only_matching_observation_no_replay",
         "no_financial_write_remote_missing",

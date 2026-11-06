@@ -115,6 +115,10 @@ if ($op==='route') {
         'inspect'=>achbotRecoveryInspectLine($connection,$id,$n,
             static fn(string $url,string $u,string $p,string $name) =>
                 achbotRecoveryStrictAccountGet($url,$u,$p,$name)),
+        'diagnostic'=>achbotEffectOperatorDiagnostic(
+            new RuntimeException($spec['outer']??'effect_requires_operator_reconciliation',0,
+                new RuntimeException((string)($spec['cause']??'effect_remote_readback_unverified'))),
+            $id,24,$n,(string)($spec['stage']??'remote_readback')),
         default=>throw new RuntimeException('unknown_fixture_mode')
     };
 }
@@ -205,6 +209,24 @@ def check():
         driver.write_text(DRIVER)
         pay=create_case(work,env,'revinspector')
         baseline=unchanged(work,env,pay)
+        diagnostic=call(work,env,driver,op='diagnostic',pay=pay)
+        message=diagnostic['value']
+        assert f'pay_id={pay}' in message and 'effect_id=24 ordinal=1' in message
+        assert 'stage=remote_readback reason=effect_remote_readback_unverified' in message,message
+        assert not diagnostic['events'] and unchanged(work,env,pay)==baseline
+        cases.append('provider_readback_failure_logs_exact_effect_and_trusted_cause')
+        secret=call(work,env,driver,op='diagnostic',pay=pay,
+            cause='Bearer sensitive-token! password=private',stage='anything')
+        assert 'sensitive' not in secret['value'] and 'password' not in secret['value']
+        assert 'stage=unknown reason=runtime_error' in secret['value']
+        cases.append('provider_raw_exception_credentials_never_logged')
+        pg=call(work,env,driver,op='diagnostic',pay=pay,
+            outer='pg_create_requires_review',cause='pg_timeout',stage='remote_create')
+        assert 'reason=pg_timeout' in pg['value'] and 'stage=remote_create' in pg['value']
+        cases.append('pasarguard_nested_transport_reason_not_lost')
+        bad=call(work,env,driver,op='diagnostic',pay=-7,ordinal=-1,cause='server secrets',stage='new')
+        assert 'pay_id=0 effect_id=24 ordinal=0' in bad['value']
+        cases.append('provider_diagnostic_indices_and_stage_fail_closed')
         result=call(work,env,driver,op='case',pay=pay)
         assert result['value']['pay_id']==pay and result['value']['requested_accounts']==1
         assert result['value']['method']=='bank_transfer'
