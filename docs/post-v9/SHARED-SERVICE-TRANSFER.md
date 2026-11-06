@@ -5,11 +5,23 @@ not an installation or authorization for real native/provider effects.
 
 ## Owner-accepted behavior
 
-* The admin assigns a shared logical-panel group only when server entries
-  point at **the same real native panel and the same provider type**. The group
-  chooser explains this rule. The admin declares real identity; we do not
-  infer it from URLs, usernames or API keys. Keep the legacy internal
-  setting.type ACHBOT_MARZBAN_PANEL_GROUP for stable stored group IDs.
+* Panel Group is an **administrator-owned physical-panel declaration**, not
+  an account or order operation. The admin assigns, reassigns or clears the
+  group of any configured Marzban/PasarGuard logical server, including when
+  there are active or historical orders, different plans, pending payments,
+  unsettled native effects or plan journals. Assignment validates only the
+  existing group (or unassigned choice), configured supported server and
+  administrator authority. It changes only `server_info.panel_group_id`.
+  It does not edit orders, plans, finance, native accounts or credentials,
+  query the provider, or transfer a service.
+* The admin declares two logical servers to be on the **same actual physical
+  panel** when assigning one group, even if endpoint URLs, administrator
+  usernames, API credentials or provider connection records differ. These
+  differences never block assigning the group; the chooser describes the
+  admin's responsibility. Provider type and real Native account identity are
+  still validated by later consumer operations; a group is not a permit to
+  mutate an unverified account. Retain the historical storage
+  `setting.type = ACHBOT_MARZBAN_PANEL_GROUP` for stable group IDs.
 * Logical panel groups and PasarGuard native access Group IDs are different
   concepts. Native PasarGuard Groups are chosen per **plan only**, not in
   server onboarding/server configuration.
@@ -48,12 +60,17 @@ detects unexpected new references and holds the change for operator review.
 Legacy installations without migration 017 retain their existing import path.
 For ungrouped Marzban the lock uses the immutable logical server ID,
 **not** its editable URL; for grouped Marzban it uses the explicitly assigned
-group ID. Active subscriptions cannot change their physical-group
-classification, including from ungrouped to grouped. Administrator changes to
-Marzban endpoints are denied for a referenced server/group. Credential
-rotation without an endpoint change remains possible on an active server,
-but all connection changes are blocked by outstanding journals even if
-active local orders have disappeared.
+group ID. **Changing group membership is never blocked by an active order,
+an unfinished journal or a different endpoint/credential binding.** This
+does not grant an existing Native operation permission to proceed with its
+stale source-group identity: outstanding attempts must revalidate their
+current pinned identity and fail/hold safely if it changed; never replay an
+uncertain remote effect. This independent group assignment rule does not
+relax the separate rule that administrator **endpoint changes** to Marzban
+are denied for a referenced server/group. Credential rotation without an
+endpoint change remains possible on an active server, but all connection
+changes are blocked by outstanding journals even if active local orders
+have disappeared.
 PasarGuard API-key rotation likewise cannot bypass an unfinished plan journal.
 The old journal identity remains visible for manual reconciliation.
 

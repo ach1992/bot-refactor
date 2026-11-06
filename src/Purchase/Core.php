@@ -243,51 +243,16 @@ if (!function_exists('achbotSetMarzbanGroup')) {
             $stmt->close();
             if (!$exists) throw new \RuntimeException('unknown_panel_group');
         }
-        // A configured physical group becomes part of active account
-        // identity. Do not silently reclassify live references into a new
-        // physical panel (including when a transfer has cleared fileid).
+        // Panel Group is the administrator's declaration of real physical-panel
+        // identity. Assigning it is configuration only: existing orders,
+        // plans, invoices, provider effects and unfinished journals never
+        // restrict this editor and are not mutated by it. The downstream
+        // operations must independently recheck their own pinned identities.
         $groupStmt=$connection->prepare(
-            'SELECT panel_group_id FROM server_info WHERE id=? FOR UPDATE');
+            'SELECT id FROM server_info WHERE id=? FOR UPDATE');
         $groupStmt->bind_param('i',$serverId);$groupStmt->execute();
         $groupRow=$groupStmt->get_result()->fetch_assoc();$groupStmt->close();
         if (!$groupRow) throw new \RuntimeException('group_target_unavailable');
-        $oldGroup=$groupRow['panel_group_id']===null?null:(int)$groupRow['panel_group_id'];
-        if ($oldGroup!==$groupId) {
-            require_once __DIR__.'/../Subscription/PhysicalService.php';
-            // Also forbid NULL -> group when active; it changes the journal
-            // namespace even though no Native account needs to be modified.
-            // Check outstanding intent receipts even if active rows disappeared.
-            try {achbotPhysicalAssertRebindSafe($connection,$serverId);}
-            catch (\RuntimeException $error) {
-                if ($error->getMessage()==='physical_rebind_active_references')
-                    throw new \RuntimeException('group_change_would_strand_order');
-                throw new \RuntimeException('group_change_requires_review');
-            }
-        }
-        $stmt = $connection->prepare(
-            "SELECT o.server_id AS order_server, p.server_id AS plan_server,
-                    os.panel_group_id AS order_group, ps.panel_group_id AS plan_group
-             FROM orders_list o
-             INNER JOIN server_plans p ON p.id = o.fileid
-             INNER JOIN server_info os ON os.id = o.server_id
-             INNER JOIN server_info ps ON ps.id = p.server_id
-             WHERE o.status = 1 AND (o.server_id = ? OR p.server_id = ?)
-                   AND o.server_id != p.server_id"
-        );
-        $stmt->bind_param('ii', $serverId, $serverId);
-        $stmt->execute();
-        $affected = $stmt->get_result();
-        while ($row = $affected->fetch_assoc()) {
-            $orderGroup = (int)$row['order_server'] === $serverId
-                ? $groupId : ($row['order_group'] === null ? null : (int)$row['order_group']);
-            $planGroup = (int)$row['plan_server'] === $serverId
-                ? $groupId : ($row['plan_group'] === null ? null : (int)$row['plan_group']);
-            if ($orderGroup === null || $planGroup === null || $orderGroup !== $planGroup) {
-                $stmt->close();
-                throw new \RuntimeException('group_change_would_strand_order');
-            }
-        }
-        $stmt->close();
         $stmt = $connection->prepare("UPDATE server_info SET panel_group_id = ? WHERE id = ?");
         $stmt->bind_param('ii', $groupId, $serverId);
         $stmt->execute();
