@@ -306,13 +306,13 @@ achEvent('probe',[
             # Owner #114: an administrator's physical-panel declaration is
             # not gated by active orders. The two active, shared subscriptions
             # stay intact while the server's local group is assigned.
-            before=snapshot(work,env)
+            group_before=snapshot(work,env)
             assign(2,g1)
-            after=snapshot(work,env)
+            group_after=snapshot(work,env)
             if sql(work,env,'SELECT panel_group_id FROM server_info WHERE id=2').strip()!=str(g1):
                 raise RuntimeError('Admin group assignment not persisted')
             for key in ('orders','plans','payments','users','capacity','categories'):
-                if before[0].get(key)!=after[0].get(key):
+                if group_before[0].get(key)!=group_after[0].get(key):
                     raise RuntimeError('Group assignment touched unrelated data: '+key)
             passed('active_orders_do_not_block_admin_group_assignment')
             for sid,gid in [(3,g1),(4,g2),(5,g2)]:assign(sid,gid)
