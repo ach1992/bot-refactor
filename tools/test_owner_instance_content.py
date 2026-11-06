@@ -183,7 +183,7 @@ def main():
         old_destinations=['editSupportID','editRewardChannel','editLockChannel']
         gateway_callbacks=callback_list(menus['gateways'])
         expected_destination_rows=[
-            ('cooperationUrl','نشانی دریافت پنل همکاری','✅ تنظیم‌شده'),
+            ('cooperationUrl','نشانی دکمه پشتیبانی','✅ تنظیم‌شده'),
             ('helpChannel','نشانی کانال آموزش','✅ تنظیم‌شده'),
             ('lockChannelJoinUrl','پیوند عضویت کانال اجباری','⚠️ تنظیم‌نشده')
         ]

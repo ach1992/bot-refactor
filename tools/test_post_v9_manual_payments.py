@@ -657,7 +657,7 @@ def check():
 
         assert base('giftfixture','claim','gift_card') is True
         gift=base('giftfixture','read','gift_card')
-        assert '100,000' in gift['body'] and 'گیفت‌کارت' in gift['body']
+        assert '100,000' in gift['body'] and 'گیفت کارت' in gift['body']
         assert 'https://example.org/gift-card' in str(gift['keys']) and 'USDT' not in gift['body']
         cases.append('gift_distinct_quote_link_and_photo_action')
 
@@ -735,9 +735,9 @@ def check():
         # Execute the real current WalletRecharge PHP: buttons, receipt
         # prompts, Telegram photo, operator delivery and persisted review.
         for key,choice,receipt,wait,label in [
-            ('routebank','CartToCart','IncreaseWallet','waitIncreaseWalletReceipt','کارت‌به‌کارت'),
+            ('routebank','CartToCart','IncreaseWallet','waitIncreaseWalletReceipt','شماره کارت'),
             ('routegift','GiftCard','IncreaseWalletGift','waitIncreaseWalletGiftReceipt','گیفت‌کارت'),
-            ('routeusdt','ManualUsdt','IncreaseWalletUsdt','waitIncreaseWalletUsdtReceipt','تتر دستی')
+            ('routeusdt','ManualUsdt','IncreaseWalletUsdt','waitIncreaseWalletUsdtReceipt','مقدار تتر')
         ]:
             seed(work,env,key)
             started=run_route(work,env,route_driver,
@@ -1768,7 +1768,7 @@ def check():
             reread=base(name,'read','gift_card',keys={
                 'giftCardUrl':'https://new.example.org/gift'})
             rows=reread['keys']['inline_keyboard']
-            assert rows[0]==[{'text':'📤 ارسال تصویر گیفت‌کارت',
+            assert rows[0]==[{'text':'📤 ارسال گیفت کارت',
                               'callback_data':'sendBuyGiftReceipt'+name}],(name,rows)
             assert rows[1]==[{'text':'❌ لغو عملیات',
                               'callback_data':'cancelBuyCartReceipt'+name}]
@@ -2641,7 +2641,7 @@ def check():
             assert any(e['name']=='sendPhoto' for e in failed),repr((mode,failed))
             assert any(e['name']=='sendMessage' and 'دوباره بفرستید' in str(e.get('args'))
                        for e in failed),repr((mode,failed))
-            assert not any(e['name']=='sendMessage' and 'در انتظار بررسی مدیر است' in str(e.get('args'))
+            assert not any(e['name']=='sendMessage' and '⏳ رسید در انتظار بررسی است؛' in str(e.get('args'))
                            for e in failed)
             assert not any(e['name']=='setUser' for e in failed)
             assert query(work,env,f"SELECT state FROM pays WHERE hash_id='{key}'")=='pending'
@@ -2661,7 +2661,7 @@ def check():
 
             retried=run_route(work,env,route_driver,step=wait+key)
             assert any(e['name']=='sendPhoto' for e in retried)
-            assert any(e['name']=='sendMessage' and 'در انتظار بررسی مدیر است' in str(e.get('args'))
+            assert any(e['name']=='sendMessage' and '⏳ رسید در انتظار بررسی است؛' in str(e.get('args'))
                        for e in retried)
             assert query(work,env,f"SELECT state FROM pays WHERE hash_id='{key}'")=='have_sent'
             assert query(work,env,f"SELECT stage FROM payment_attempts WHERE order_hash='{key}'")=='review'
@@ -2770,7 +2770,7 @@ def check():
         finally:
             query(work,env,'DROP TRIGGER test_receipt_db_failure')
         recovered=run_route(work,env,route_driver,step='waitIncreaseWalletReceiptphotodbfail')
-        assert any(e['name']=='sendMessage' and 'در انتظار بررسی مدیر است' in str(e.get('args'))
+        assert any(e['name']=='sendMessage' and '⏳ رسید در انتظار بررسی است؛' in str(e.get('args'))
                    for e in recovered)
         assert query(work,env,"SELECT state FROM pays WHERE hash_id='photodbfail'")=='have_sent'
         cases.append('database_transition_failure_retries_same_durable_photo')

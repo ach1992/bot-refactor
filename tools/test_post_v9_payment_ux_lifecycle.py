@@ -218,7 +218,7 @@ def main():
         claimedLater=add(w,e,'claimed-newer-quote',who=9026,
                          kind='INCREASE_WALLET',old=now+1)
         protected=run(w,e,dict(action='state',id=claimedBefore))['result']
-        assert protected['state']=='needs_review' and 'دوباره پرداخت نکنید' in protected['body']
+        assert protected['state']=='needs_review' and 'پرداخت را تکرار نکنید' in protected['body']
         assert run(w,e,dict(action='expire',id=claimedBefore,clock=now+1801))['result'] is False
         cases.append('newer_provider_claim_held_for_review_not_cancelled')
         stale=add(w,e,'selectable-stale',who=9022,kind='INCREASE_WALLET',
