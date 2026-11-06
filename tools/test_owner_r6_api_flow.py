@@ -307,7 +307,7 @@ return !empty($GLOBALS['spec']['fail_staff'])?null:(object)['ok'=>true];}""")
         buttons=call(op='presentation',pay=n)['result']['keys']['inline_keyboard']
         assert len(buttons)==3 and all(len(row)==1 for row in buttons),buttons
         assert 'تایید خودکار توسط API' in buttons[0][0]['text']
-        assert 'شناسه' in buttons[2][0]['text'] and 'giftlivecaption' in buttons[2][0]['text']
+        assert buttons[2][0]['text']=='🆔 giftlivecaption',buttons
         assert not any(b[0]['callback_data'].startswith(('approve','decline','accept')) for b in buttons)
         cases.append('gift_terminal_receipt_three_information_rows_no_financial_actions')
         for i in range(14):seed('unsubmitted'+str(i),reviewed=False)
