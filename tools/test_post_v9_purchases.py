@@ -84,7 +84,13 @@ def _authorized_ui_pairs(manifest,followups,definitions,r5):
     # This also recovers the exact accepted pre-R5 catalog for prior proofs.
     prior_sides,_=r5_catalog.verify_and_restore(sides,r5)
     prior={**prior_sides['user'],**prior_sides['admin']}
-    current={**sides['user'],**sides['admin']}
+    # Issue #114's four exact, source-hash-verified group-editor strings do
+    # not belong to this frozen V9 purchase UI-parity baseline. Verify their
+    # approved delta above, then compare a local copy with just those four
+    # values restored; do not normalize any other native, financial or UI
+    # behavior in actual source-real test execution.
+    old_group_copy=r5_catalog.panel_group_copy_restore(sides)
+    current={**old_group_copy['user'],**old_group_copy['admin']}
     literal={key:record for key,record in manifest['changes'].items()
              if record.get('parameters')==[] and record.get('before_parameters',[])==[]}
     pairs={}
