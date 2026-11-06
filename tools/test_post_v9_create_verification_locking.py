@@ -418,18 +418,51 @@ def concurrency(old):
 
 
 
-def wait_owned_lock(work,env,requestor,blocker,table):
-    end=time.monotonic()+5
+def wait_owned_lock(work,env,requestor,blocker,table,requestor_proc,blocker_proc):
+    """Witness the actual concurrent SQL wait, not only one metadata view.
+
+    MariaDB can omit a real row waiter from INNODB_LOCK_WAITS while the
+    contender's active transaction is in LOCK WAIT. In that case use its
+    exact executing SQL together with an independently verified target PK
+    lock. Never infer a wait merely from a process being alive or a marker.
+    """
+    held=probe_pk_lock(work,env,table)
+    assert held['errno']==1205,('blocker_did_not_hold_target_pk',table,held)
+    end=time.monotonic()+10
+    diagnostic={}
     while time.monotonic()<end:
+        if blocker_proc.poll() is not None or requestor_proc.poll() is not None:
+            raise AssertionError(('owned_wait_actor_exited',requestor,blocker,
+                requestor_proc.poll(),blocker_proc.poll(),diagnostic))
         rows=sql(work,env,"SELECT r.trx_mysql_thread_id,b.trx_mysql_thread_id,l.lock_table "
             "FROM information_schema.INNODB_LOCK_WAITS w "
             "JOIN information_schema.INNODB_TRX r ON r.trx_id=w.requesting_trx_id "
             "JOIN information_schema.INNODB_TRX b ON b.trx_id=w.blocking_trx_id "
             "JOIN information_schema.INNODB_LOCKS l ON l.lock_id=w.requested_lock_id")
         if any(r.split('\t')[:2]==[str(requestor),str(blocker)] and table in r
-               for r in rows.splitlines()):return
+               for r in rows.splitlines()):
+            return {'mode':'innodb_lock_waits','held_pk_errno':held['errno']}
+        # An empty INNODB_LOCK_WAITS is not proof of no waiter. The
+        # independent blocker PK probe above and a lock-waiting SQL statement
+        # against this SAME table give a second, actual SQL witness.
+        trx=sql(work,env,"SELECT JSON_OBJECT('state',trx_state,'query',trx_query) "
+            "FROM information_schema.INNODB_TRX WHERE trx_mysql_thread_id="
+            +str(int(requestor)))
+        process=sql(work,env,"SELECT JSON_OBJECT('state',STATE,'query',INFO) "
+            "FROM information_schema.PROCESSLIST WHERE ID="+str(int(requestor)))
+        tx=json.loads(trx) if trx else {}
+        proc=json.loads(process) if process else {}
+        query=tx.get('query') or proc.get('query')
+        diagnostic={'lock_waits':rows,'trx':tx,'process':proc}
+        if (tx.get('state')=='LOCK WAIT' and isinstance(query,str)
+                and table in query and
+                ('FOR UPDATE' in query.upper() or 'UPDATE ' in query.upper()
+                 or 'INSERT ' in query.upper())):
+            return {'mode':'trx_lock_wait_with_exact_sql',
+                    'held_pk_errno':held['errno']}
         time.sleep(.02)
-    raise AssertionError(('missing_owned_lock',requestor,blocker,table,rows))
+    diagnostic['held_pk_final']=probe_pk_lock(work,env,table)
+    raise AssertionError(('missing_owned_lock',requestor,blocker,table,diagnostic))
 
 
 def prepare_link(work,env,stage):
@@ -465,7 +498,7 @@ def cross_caller(kind,old):
             cid=wait_file(gates/'info-locked',c)
             b=launch(work,env,stage,driver,hash='claim_a',role=kind,effect=effect,barrier_dir=str(gates));processes.append(b)
             bid=wait_file(gates/'contender-start',b)
-            wait_owned_lock(work,env,bid,cid,'server_info')
+            wait_witness=wait_owned_lock(work,env,bid,cid,'server_info',b,c)
             (gates/'release-verifier').write_text('go')
             end=time.monotonic()+5
             while time.monotonic()<end:
@@ -508,7 +541,8 @@ def cross_caller(kind,old):
         assert sql(work,env,'SELECT userid,wallet FROM users ORDER BY userid')==wallet
         return {'case':kind+('_prior_7dca_expected_RED' if old else '_canonical_target_locks_GREEN'),
                 'pass':True,'source_deadlock_observed':bool(graph),'verifier_creates':1,
-                'orders':orders,'replay_creates':0,'old_deadlock_graph':graph if old else None}
+                'orders':orders,'replay_creates':0,'old_deadlock_graph':graph if old else None,
+                'owned_wait_witness':wait_witness}
 
 
 def boundaries():
