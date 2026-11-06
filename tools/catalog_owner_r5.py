@@ -367,6 +367,52 @@ def verify_retained_display_keys():
               'retained_display_source_lineage_drift:'+key)
     return set(records)
 
+# The approved Chili RC25 hot-copy is a *specific* 83-value revision on top
+# of main, not a blanket exception to the historical whole-audience checks.
+# Both Git objects and shipping catalog bytes are verified; restore is only
+# in-memory for the older immutable proofs and never edits a user template.
+CHILI_COPY_BASE='ed0338baa3b006759ef9fdab66ca6e68defdc9ef'
+CHILI_COPY_HEAD='4c4004d9b85bc6b1c7297788675d0e917c1f26d0'
+CHILI_COPY_FILES={
+    'user':'ebc2195d535cc3f3b1cd233ac04b2ef7db22dd6c2a4d8d1ac399f085fdf086e1',
+    'admin':'0c3e8afb70387969bc7cddc286644d8ce6798e65c4116050c77beccbb1c79b62',
+}
+@functools.lru_cache(maxsize=1)
+def chili_copy_values():
+    decode='$s=stream_get_contents(STDIN);$p=strpos($s,"return [");if($p===false)throw new RuntimeException("catalog_missing");echo json_encode(eval(substr($s,$p)),JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);'
+    before={};after={};changed={}
+    for audience,digest in CHILI_COPY_FILES.items():
+        path='messages/fa/'+audience+'.php'
+        raw=command('git','show',CHILI_COPY_HEAD+':'+path)
+        check(hashlib.sha256(raw).hexdigest()==digest and
+              hashlib.sha256((ROOT/path).read_bytes()).hexdigest()==digest,
+              'chili_copy_exact_source_identity:'+path)
+        old=command('git','show',CHILI_COPY_BASE+':'+path)
+        before[audience]=flatten(json.loads(command('php','-r',decode,input=old)))
+        after[audience]=flatten(json.loads(command('php','-r',decode,input=raw)))
+        check(set(before[audience])==set(after[audience]),
+              'chili_copy_catalog_inventory:'+audience)
+        changed[audience]={key for key in before[audience]
+            if before[audience][key]!=after[audience][key]}
+    check(sum(map(len,changed.values()))==83 and
+          len(changed['user'])==61 and len(changed['admin'])==22,
+          'chili_copy_exact_value_change_count')
+    return before,after,changed
+def chili_copy_restore(sides):
+    before,after,changed=chili_copy_values()
+    # An all-before input comes from a caller that already restored the
+    # approved layer; a mixed before/after copy is never a valid revision.
+    current=all(sides.get(a,{}).get(k)==after[a][k]
+                for a in changed for k in changed[a])
+    old=all(sides.get(a,{}).get(k)==before[a][k]
+            for a in changed for k in changed[a])
+    check(current or old,'chili_copy_value_or_audience_drift')
+    restored=copy.deepcopy(sides)
+    if current:
+        for a in changed:
+            for k in changed[a]:restored[a][k]=before[a][k]
+    return restored
+
 # Current API copy is a separately reviewed additions-only layer. The original
 # R5 baseline and its amendment file remain byte-for-byte historical evidence.
 API_BASE='2d0ad0826d594adac49f5a83f0a9d47f6df5b264'
@@ -443,6 +489,7 @@ def verify_api_and_restore(sides,definition=None):
         sides=shared_transfer_copy_restore(sides)
     sides=scoped_addon_restore(sides) if any(key.startswith('addon_scopes.')
         for key in sides.get('admin',{})) else sides
+    sides=chili_copy_restore(sides)
     sides,review_proof=review_catalog_restore(sides)
     sides,gift_proof=gift_catalog_restore(sides)
     record=api_manifest()if definition is None else definition
