@@ -119,6 +119,9 @@ class Server(http.server.ThreadingHTTPServer):
         self.nonces=set();self.fail_once=False;self.gift_fail_once=False
         self.redirect=False;self.overflow=False;self.dbcheck=dbcheck;self.lock_checks=0
         self.gift_idempotent_first=False
+        self.read_faults=[];self.read_requests=0
+        self.verify_faults=[];self.verify_requests=0
+        self.direct_not_found=set();self.direct_reads={}
 class Handler(http.server.BaseHTTPRequestHandler):
     def log_message(self,*args):pass
     def send(self,status,data):
@@ -129,6 +132,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
         s=self.server
         if self.headers.get('Authorization')!='Bearer fixture-sms-secret':
             return self.send(401,{'code':'auth'})
+        s.read_requests+=1
+        if s.read_faults:
+            status=s.read_faults.pop(0)
+            if status==429:
+                self.send_response(429);self.send_header('Retry-After','1')
+                self.end_headers();return
+            return self.send(status,{'code':'fixture_read_failed'})
         if s.redirect:
             self.send_response(302);self.send_header('Location','http://127.0.0.1:9/unowned')
             self.end_headers();return
@@ -139,6 +149,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return self.send(200,{'data':rows,'pagination':{'has_more':False,
                 'next_after_id':max([int(v['id']) for v in rows],default=0)}})
         ident=path.rsplit('/',1)[-1]
+        s.direct_reads[ident]=s.direct_reads.get(ident,0)+1
+        if ident in s.direct_not_found:
+            return self.send(404,{'code':'ach_pay_not_found'})
         row=s.messages.get(ident)
         return self.send(200,{'data':row,'request_id':'read-fixture'}) if row else self.send(404,{'code':'not_found'})
     def do_POST(self):
@@ -168,6 +181,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
         assert self.headers.get('X-ACH-Key-Id')=='fixture-client'
         assert nonce not in s.nonces;s.nonces.add(nonce)
         if self.path.endswith('/verify'):
+            s.verify_requests+=1
+            if s.verify_faults:
+                status=s.verify_faults.pop(0)
+                return self.send(status,{'code':'fixture_verify_failed'})
             if body['code']=='unknown-code':
                 return self.send(404,{'api_version':'2','ok':False,'code':'card_not_found','data':None})
             return self.send(200,{'api_version':'2','ok':True,'code':'card_verified','data':dict(s.card),
@@ -302,6 +319,20 @@ def run(module):
                 f"WHERE attempt_id=(SELECT id FROM payment_attempts WHERE pay_row_id={p4})")
             count=len(server.posts)
             assert php('consume',pay_id=p4)['status']=='review' and len(server.posts)==count
+            # A list-visible SMS with a consistently 404 exact-ID GET can
+            # never be blindly consumed. The same original journal is reused
+            # once the provider's exact-ID admission is repaired.
+            pn=seed('smsnotfound');rn=sms(55);server.messages['55']=dict(rn)
+            assert php('reserve',pay_id=pn,row=rn)
+            server.direct_not_found.add('55')
+            assert php('consume',pay_id=pn)['status']=='pending'
+            assert server.direct_reads['55']==1
+            assert '55' not in server.consumes
+            assert sql(f"SELECT evidence_state FROM payment_transactions WHERE attempt_id="
+                f"(SELECT id FROM payment_attempts WHERE pay_row_id={pn})")=='uncertain'
+            server.direct_not_found.remove('55')
+            assert php('consume',pay_id=pn)['status']=='proven'
+            assert server.consumes['55']==1
             # Late ready SMS after manual approval is consumption-only, proof is not settlement authority.
             late=seed('smslate');rl=sms(5);server.messages['5']=dict(rl)
             sql(f"UPDATE pays SET state='approved',approved_by=9001 WHERE id={late}")
@@ -365,6 +396,28 @@ def run(module):
             # Transport does not follow redirects or accept unbounded bodies.
             server.redirect=True;assert not php('http')['ok'];server.redirect=False
             server.overflow=True;assert not php('http')['ok'];server.overflow=False
+            # The retry policy applies only to read-only HTTP and uses a shared
+            # short deadline; credentials/auth/invalid identity are not retried.
+            before_reads=server.read_requests
+            server.read_faults=[503]
+            assert php('http')['ok'] and server.read_requests==before_reads+2
+            before_reads=server.read_requests
+            server.read_faults=[429]
+            assert php('http')['ok'] and server.read_requests==before_reads+2
+            before_reads=server.read_requests
+            server.read_faults=[404]
+            assert php('http')['http']==404 and server.read_requests==before_reads+1
+            before_reads=server.read_requests
+            server.read_faults=[503,503]
+            assert php('http')['ok'] and server.read_requests==before_reads+3
+            # Gift verify is an authenticated non-consuming check. A new HMAC
+            # nonce is required on each read retry; redeem is never retried here.
+            before_verifies=server.verify_requests
+            before_consumes=server.gift_consumes
+            server.verify_faults=[503]
+            assert php('giftverify',pay_id=g1,method='gift_card')['status']=='active'
+            assert server.verify_requests==before_verifies+2
+            assert server.gift_consumes==before_consumes
             # Rotation/tampering closes old snapshots; never changes the namespace or erases intent.
             assert php('snapshot',pay_id=g3,webhook='different-webhook-key-1234567890')['valid'] is False
             assert php('snapshot',pay_id=g3)['valid'] is True
