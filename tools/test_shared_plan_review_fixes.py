@@ -776,6 +776,17 @@ def main():
             h['call']('external',actor=1004,text=h['credential'])
             h['db']("UPDATE service_plan_changes SET state='review' WHERE id=("
                     "SELECT latest FROM (SELECT MAX(id) latest FROM service_plan_changes) x)")
+            if provider=='marzban':
+                group=int(h['db']("INSERT INTO setting(type,value) VALUES"
+                    "('ACHBOT_MARZBAN_PANEL_GROUP','Import Reassigned Group');"
+                    "SELECT id FROM setting WHERE type='ACHBOT_MARZBAN_PANEL_GROUP' ORDER BY id DESC LIMIT 1"))
+                before=subject(h);money=finance(h);puts=len(h['writes']())
+                changed=h['call']('review_group',server=2,group=group)
+                yes(changed=='assigned' and
+                    h['db']('SELECT panel_group_id FROM server_info WHERE id=2')==str(group) and
+                    before==subject(h) and money==finance(h) and
+                    puts==len(h['writes']) and outstanding(h)=='review',
+                    'marzban_group_change_allowed_before_held_journal_import_admission')
             h['call']('manual',actor=1004,data='addToOrders2')
             yes(h['db']('SELECT COUNT(*) FROM orders_list WHERE userid=1004')=='0' and
                 outstanding(h)=='review',

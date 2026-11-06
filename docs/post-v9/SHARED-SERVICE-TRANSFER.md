@@ -65,7 +65,12 @@ an unfinished journal or a different endpoint/credential binding.** This
 does not grant an existing Native operation permission to proceed with its
 stale source-group identity: outstanding attempts must revalidate their
 current pinned identity and fail/hold safely if it changed; never replay an
-uncertain remote effect. This independent group assignment rule does not
+uncertain remote effect. A new native plan/import/transfer admission also
+checks noncommitted historical plan intents by stable order-reference identity
+(and Marzban's currently declared physical group plus native username)
+independently of the mutable group-derived lease; changing a Panel Group must
+never let a pending journal be bypassed with a fresh lock key. This independent
+group assignment rule does not
 relax the separate rule that administrator **endpoint changes** to Marzban
 are denied for a referenced server/group. Credential rotation without an
 endpoint change remains possible on an active server, but all connection

@@ -303,19 +303,23 @@ achEvent('probe',[
             do('wizard',data='addMarzbanPanelGroup',actor=1001)
             if snapshot(work,env)!=initial:raise RuntimeError('Customer wrote group')
             passed('only_admin_may_create_group')
-            # A physically active ungrouped Marzban account cannot be
-            # silently reclassified. For this disposable fixture alone,
-            # stage the initial panel-group map while the synthetic orders
-            # are inactive, then reactivate them for every real transfer.
-            assign(2,g1,success=False)
-            passed('null_to_group_active_subscription_reclassification_refused')
-            sql(work,env,f'UPDATE orders_list SET status=0 WHERE id IN ({oid},{peer})')
-            for sid,gid in [(2,g1),(3,g1),(4,g2),(5,g2)]:assign(sid,gid)
+            # Owner #114: an administrator's physical-panel declaration is
+            # not gated by active orders. The two active, shared subscriptions
+            # stay intact while the server's local group is assigned.
+            before=snapshot(work,env)
+            assign(2,g1)
+            after=snapshot(work,env)
+            if sql(work,env,'SELECT panel_group_id FROM server_info WHERE id=2').strip()!=str(g1):
+                raise RuntimeError('Admin group assignment not persisted')
+            for key in ('orders','plans','payments','users','capacity','categories'):
+                if before[0].get(key)!=after[0].get(key):
+                    raise RuntimeError('Group assignment touched unrelated data: '+key)
+            passed('active_orders_do_not_block_admin_group_assignment')
+            for sid,gid in [(3,g1),(4,g2),(5,g2)]:assign(sid,gid)
             # Deliberately preserve an old/invalid group assignment on the
             # retired NORMAL-provider server to test the transfer refusal.
             # The actual group setter must not reclassify a non-native panel.
             sql(work,env,f'UPDATE server_info SET panel_group_id={g1} WHERE id=6')
-            sql(work,env,f'UPDATE orders_list SET status=1 WHERE id IN ({oid},{peer})')
             passed('groups_persist_in_server_info_column')
             menu=do('transfer',f'switchLocation{oid}_2_0_0')
             if not has(menu,f'switchServer3_{oid}') or any(
@@ -370,13 +374,18 @@ achEvent('probe',[
             if not has(z,'[true, false]'):raise RuntimeError('Old source-server plan remains available after transfer: '+str(z))
             passed('old_source_plan_unavailable_until_destination_plan_selected')
             refuse('replayed_admin_callback','transfer',f'switchServer3_{oid}')
-            # Even with the old plan cleared, changing the declared physical
-            # panel while shared active references remain would strand them.
-            assign(3,g2,success=False)
-            if sql(work,env,'SELECT panel_group_id FROM server_info WHERE id=3').strip()!=str(g1):
-                raise RuntimeError('Active shared account group was changed despite physical fence')
+            # Reassignment is also permitted for an active, planless shared
+            # subscription. The operator can restore the previous group;
+            # neither assignment edits orders nor requests a Native action.
+            before=snapshot(work,env)
+            assign(3,g2)
+            if sql(work,env,'SELECT panel_group_id FROM server_info WHERE id=3').strip()!=str(g2):
+                raise RuntimeError('Active shared account group reassignment not persisted')
+            for key in ('orders','plans','payments','users','capacity','categories'):
+                if before[0].get(key)!=snapshot(work,env)[0].get(key):
+                    raise RuntimeError('Group reassignment touched unrelated data: '+key)
             assign(3,g1)
-            passed('active_planless_shared_refs_fence_cross_panel_group_change')
+            passed('active_planless_shared_refs_allow_admin_group_reassignment')
             z=do('admin_transfer',f'changeServerId_{oid}',actor=9001)
             if not has(z,f'selectServerId_{oid}_2') or has(z,f'selectServerId_{oid}_4'):
                 raise RuntimeError('Admin selector leaked other groups')

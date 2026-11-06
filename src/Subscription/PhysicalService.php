@@ -170,6 +170,13 @@ function achbotPhysicalAssertImportAdmission(mysqli $db,?string $lease,
     $s->bind_param('s',$lease);$s->execute();
     $pending=$s->get_result()->num_rows>0;$s->close();
     if ($pending) throw new RuntimeException('physical_import_plan_requires_review');
+    if (achbotProviderType($db,$serverId)==='marzban') {
+        $username=$remote->username??null;
+        if (!is_string($username) || $username==='')
+            throw new RuntimeException('physical_import_identity_unverified');
+        achbotPhysicalAssertMarzbanGroupJournalClear($db,$serverId,$username,
+            [],'physical_import_plan_requires_review');
+    }
 }
 function achbotPhysicalAcquireLock(mysqli $db,string $name): void {
     $s=$db->prepare('SELECT GET_LOCK(?,3) AS acquired');
@@ -284,6 +291,72 @@ function achbotPhysicalNoPendingPayments(mysqli $db,array $rows): void {
     // automatic renewal they require a fully quiet physical subscription.
     if (!achbotSharedAccountWorkSettledLocked($db,$rows,0,0,true,true))
         throw new RuntimeException('physical_pending_financial_effect');
+}
+
+/**
+ * An administrator can change Panel Group even with a held old journal.
+ * The group's derived advisory lock may therefore change, but a held intent
+ * must still fence the same native subscription. Compare immutable order IDs
+ * and (for Marzban) the current trusted physical-group + native username,
+ * not the old mutable lock_key alone. Call under the consumer's SQL transaction
+ * after locking current subject rows; never run this check in group editing.
+ */
+function achbotPhysicalAssertMarzbanGroupJournalClear(mysqli $db,int $serverId,
+    string $remark,array $orderIds,string $error): void {
+    if ($serverId<=0 || $remark==='')
+        throw new RuntimeException('physical_journal_identity_invalid');
+    $ids=[];
+    foreach ($orderIds as $id) {
+        if (!is_int($id) || $id<=0) throw new RuntimeException('physical_journal_identity_invalid');
+        $ids[$id]=true;
+    }
+    // Historical committed receipts are not holds. Pending rows are rare;
+    // do not take global FOR UPDATE locks on an unindexed state scan.
+    $s=$db->prepare("SELECT id,source_order_id,intent_json FROM service_plan_changes
+        WHERE provider='marzban' AND state<>'committed' ORDER BY id");
+    $s->execute();
+    $pending=$s->get_result()->fetch_all(MYSQLI_ASSOC);$s->close();
+    if (!$pending) return;
+    $source=$db->prepare("SELECT o.server_id,o.remark FROM orders_list o
+        JOIN server_config c ON c.id=o.server_id AND c.type='marzban'
+        WHERE o.id=? LIMIT 1");
+    $confirm=$db->prepare("SELECT state FROM service_plan_changes WHERE id=? FOR UPDATE");
+    try {
+        foreach ($pending as $row) {
+            $conflict=isset($ids[(int)$row['source_order_id']]);
+            try {$intent=json_decode((string)$row['intent_json'],true,64,JSON_THROW_ON_ERROR);}
+            catch (Throwable $ignored) {
+                throw new RuntimeException('physical_journal_identity_unverified');
+            }
+            if (!is_array($intent) || !is_array($intent['old_rows']??null))
+                throw new RuntimeException('physical_journal_identity_unverified');
+            foreach ($intent['old_rows'] as $ref) {
+                if (!is_array($ref) || !is_int($ref['id']??null) || $ref['id']<=0)
+                    throw new RuntimeException('physical_journal_identity_unverified');
+                if (isset($ids[$ref['id']])) $conflict=true;
+            }
+            // An old source order may be inactive while an import attaches
+            // its native account again under the admin's new group.
+            if (!$conflict) {
+                $old=(int)$row['source_order_id'];
+                $source->bind_param('i',$old);$source->execute();
+                $previous=$source->get_result()->fetch_assoc();
+                if ($previous && (string)$previous['remark']===$remark) {
+                    $oldServer=(int)$previous['server_id'];
+                    if ($oldServer===$serverId || achbotSamePanelGroup($db,$oldServer,$serverId))
+                        $conflict=true;
+                }
+            }
+            if (!$conflict) continue;
+            $id=(int)$row['id'];
+            $confirm->bind_param('i',$id);$confirm->execute();
+            $current=$confirm->get_result()->fetch_assoc();
+            if ($current && $current['state']!=='committed')
+                throw new RuntimeException($error);
+        }
+    } finally {
+        $confirm->close();$source->close();
+    }
 }
 
 /**
@@ -426,6 +499,9 @@ function achbotPhysicalSelectPlan(mysqli $db,int $orderId,int $newPlanId,int $ac
                 throw new RuntimeException('physical_peer_server_mismatch');
         }
         achbotPhysicalNoPendingPayments($db,$all);
+        if ($provider==='marzban')
+            achbotPhysicalAssertMarzbanGroupJournalClear($db,$server,(string)$order['remark'],
+                array_map(static fn($r)=>(int)$r['id'],$all),'physical_plan_requires_review');
         $targetSha=achbotPhysicalTargetFingerprint($db,$order);
         $pgIdentitySha=$provider==='pasarguard'?
             achbotPhysicalPgIdentityFingerprint(achbotPgOrderContext($db,$orderId,true)):null;

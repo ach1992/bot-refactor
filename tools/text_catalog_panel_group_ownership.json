@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "owner_issue": "https://github.com/ach1992/bot-refactor/issues/114",
+  "accepted_parent": "8c0af0899051ed60253fe5d40301dfdbb1d2e5de",
+  "audience": "admin",
+  "entries": {
+    "bot.bot.addserver_name.message.c31e264971": {
+      "before_sha256": "717d067de6aeb6d98fdb279de02f306d8336531e783f4a3f2a03a03e31783354",
+      "after_sha256": "5a2af86698f17827815cb7c85dc0b74e4e3b3f224b231b3a3aa3f986c861734a",
+      "reason": "Describe physical grouping for any supported panel and different admin endpoints."
+    },
+    "bot.bot.addserver_name.alert.9ee9f25355": {
+      "before_sha256": "2b461a1279d446ab7375771a4ee2633f1519820169ebccc0015bd26e2c6f320b",
+      "after_sha256": "99ca9368dbd97ca77ec74c906fe67ab448afdae196b6da7e4280de6ef9126d49",
+      "reason": "Replace obsolete Marzban-only server type wording."
+    },
+    "bot.bot.addserver_name.alert.a5625b915f": {
+      "before_sha256": "c7a4c8c3df66e8304c2de261b3cd35c99ec687d56e53ead38699b4f78005408b",
+      "after_sha256": "390818f71ecdaa53a088762704f759e4922fec958f208aaa3a336c5984da8453",
+      "reason": "Remove the false claim that orders block administrative group selection."
+    }
+  }
+}

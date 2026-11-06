@@ -894,6 +894,9 @@ function achbotReassignLogicalServer(mysqli $db,int $orderId,int $targetId,int $
         $target=null;foreach ($eligible as $candidate) if ((int)$candidate['id']===$targetId) $target=$candidate;
         if ($target===null) throw new RuntimeException('physical_transfer_target_unavailable');
         $all=achbotPhysicalActiveOrders($db,$order,true);
+        if (achbotProviderType($db,$old)==='marzban')
+            achbotPhysicalAssertMarzbanGroupJournalClear($db,$old,(string)$order['remark'],
+                array_map(static fn($r)=>(int)$r['id'],$all),'physical_transfer_pending_plan_review');
         // A plan PUT with unknown local/native completion cannot be bypassed
         // through a transfer. Ignore completed audit receipts only.
         $held=$db->prepare("SELECT id FROM service_plan_changes
