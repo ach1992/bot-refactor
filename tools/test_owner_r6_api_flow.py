@@ -145,6 +145,7 @@ def check(evidence_root,settings_root,source_root=ROOT):
         for f in ['001_marzban_panel_group_id.sql','003_payment_attempts.sql','006_payment_message_refs.sql','007_service_effects.sql','008_referral_awards.sql','009_bank_buy_invoice_claims.sql']:
             query(work,env,(ROOT/'migrations/post-v9'/f).read_text())
         query(work,env,(evidence_root/'migrations/post-v9/014_api_payment_evidence.sql').read_text())
+        query(work,env,(ROOT/'migrations/post-v9/018_payment_delivery_intents.sql').read_text())
         query(work,env,"UPDATE server_info SET ucount=100 WHERE id=2")
         query(work,env,"INSERT INTO setting(type,value) VALUES('BOT_STATES','{\"cartToCartState\":\"on\",\"giftCardState\":\"on\"}')")
         php=bank.PHP[:bank.PHP.index("$op=$spec['op']??'auto';")]+PREP+OPS
@@ -549,7 +550,7 @@ return !empty($GLOBALS['spec']['fail_staff'])?null:(object)['ok'=>true];}""")
         ack=[e for e in r['events'] if e['event']=='ACK'];assert len(ack)==1 and len(APIs.received)==offset,r;cases.append('old_check_callback_acknowledged_without_customer_api_polling')
         n=seed('deadline');start=time.monotonic();r=call(op='budget',pay=n,seconds=.15);elapsed=time.monotonic()-start;assert elapsed<.9 and r['result']['restored'] and r['result']['status']=='unavailable',(elapsed,r)
         APIs.mode='ok';due(n);offset=len(APIs.received);r=call(op='budget',pay=n,seconds=-1);assert r['result']['status']=='unavailable' and r['result']['restored'] and len(APIs.received)==offset,r;cases.append('monotonic_expired_and_remaining_api_budget_no_new_http_context_restored')
-        return {'complete':True,'cases':len(cases),'scenarios':cases,'source_real_php':True,'socket_mariadb':True,'authenticated_loopback_requests':len(APIs.events),'live_requests':0,'migrations_executed':['001','003','006','007','008','009','014'],'installed_tested':False,'flow_head':subprocess.check_output(['git','rev-parse','HEAD'],cwd=ROOT,text=True).strip(),'evidence_head':subprocess.check_output(['git','rev-parse','HEAD'],cwd=evidence_root,text=True).strip(),'settings_head':subprocess.check_output(['git','rev-parse','HEAD'],cwd=settings_root,text=True).strip()}
+        return {'complete':True,'cases':len(cases),'scenarios':cases,'source_real_php':True,'socket_mariadb':True,'authenticated_loopback_requests':len(APIs.events),'live_requests':0,'migrations_executed':['001','003','006','007','008','009','014','018'],'installed_tested':False,'flow_head':subprocess.check_output(['git','rev-parse','HEAD'],cwd=ROOT,text=True).strip(),'evidence_head':subprocess.check_output(['git','rev-parse','HEAD'],cwd=evidence_root,text=True).strip(),'settings_head':subprocess.check_output(['git','rev-parse','HEAD'],cwd=settings_root,text=True).strip()}
     finally:srv.shutdown();srv.server_close();thread.join()
 
 def main():

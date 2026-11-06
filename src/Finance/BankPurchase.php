@@ -8,6 +8,7 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
     http_response_code(404);
     exit;
 }
+require_once __DIR__.'/DeliveryLedger.php';
 
 /**
  * All locally recorded account lines, capacity and payment finality must
@@ -79,7 +80,8 @@ function achbotAutoBankFinishBuySub(mysqli $db, array $pay, array $lines, ?array
             throw new RuntimeException('bank_buy_plan_changed');
 
         $stmt=$db->prepare("SELECT id,ordinal,state,order_id,plan_id,target_server_id,
-            remote_username,requested_expire,requested_bytes,reserved_count
+            remote_username,requested_expire,requested_bytes,reserved_count,
+            operation_id,target_key,endpoint_sha256,request_sha256
             FROM service_effects WHERE pay_row_id=? AND effect_kind='create'
             ORDER BY ordinal FOR UPDATE");
         if (!$stmt) throw new RuntimeException('bank_buy_effect_prepare');
@@ -124,6 +126,10 @@ function achbotAutoBankFinishBuySub(mysqli $db, array $pay, array $lines, ?array
                 (int)$line['date'],
                 (int)$line['agent_bought'],true);
             achbotLinkPaidAccountEffect($db,(int)$e['id'],(int)$orderId);
+            if (!is_array($line['delivery']??null))
+                throw new RuntimeException('bank_buy_delivery_missing');
+            achbotDeliveryInsertBuyLocked($db,$locked,$attempt,$e,$n,(int)$orderId,
+                $line['delivery'],(string)$claim['invoice_sha256']);
         }
 
         // The committed first service_effects line already reserved all
@@ -158,6 +164,9 @@ function achbotAutoBankProvisionBuySub(
     array $unusedLinkIndices, bool $unusedHideConfigIfMany, string $botUrl, ?array $apiProof=null
 ): array {
     achbotEffectRequireAutocommit($db);
+    // Stop BEFORE a remote CREATE if the forward delivery schema is absent.
+    if (!achbotDeliverySchemaReady($db))
+        throw new RuntimeException('bank_buy_delivery_schema_missing');
     $payId=(int)($pay['id']??0); $owner=(int)($pay['user_id']??0);
     $planId=(int)($pay['plan_id']??0); $server=(int)($pay['server_id']??0);
     if ($payId<=0 || $owner<=0 || $planId<=0 || $server<=0)
@@ -214,7 +223,7 @@ function achbotAutoBankProvisionBuySub(
     if ($volume<=0 || $days<=0)
         throw new RuntimeException('bank_buy_invalid_claimed_units');
 
-    $lines=[]; $deliveries=[];
+    $lines=[];
     for ($i=1;$i<=$count;$i++) {
         $uniqid=generateRandomString(42,(string)$p['protocol']);
         // Marzban does not consume the legacy per-file port allocator.
@@ -246,13 +255,14 @@ function achbotAutoBankProvisionBuySub(
             !is_string($qr) || !is_string($caption) || trim($caption)==='' ||
             !is_string($links) || $links==='')
             throw new RuntimeException('bank_buy_links_missing');
+        $packet=['qr'=>$qr,'caption'=>$caption,'keys'=>$keys,
+            'uid'=>$owner,'bot_url'=>$botUrl];
         $lines[]=['effect_id'=>$effectId,'remark'=>$remark,'volume'=>$volume,
             'days'=>$days,'token'=>$token,'uniqid'=>$uuid?:$uniqid,
             'vray_link'=>$links,'date'=>time(),
-            'agent_bought'=>(int)$p['agent_bought']];
-        $deliveries[]=['qr'=>$qr,'caption'=>$caption,'keys'=>$keys,'uid'=>$owner];
+            'agent_bought'=>(int)$p['agent_bought'],'delivery'=>$packet];
     }
 
     $committed=achbotAutoBankFinishBuySub($db,$pay,$lines,$apiProof);
-    return ['committed'=>$committed,'deliveries'=>$committed?$deliveries:[]];
+    return ['committed'=>$committed];
 }

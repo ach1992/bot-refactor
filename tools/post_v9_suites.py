@@ -566,7 +566,7 @@ def run_api(tmp: str) -> tuple[dict, dict]:
     api_flow_mismatches=exact_current_proof_mismatches(api_flow,
         {'complete':True,'source_real_php':True,'socket_mariadb':True,
          'live_requests':0,'installed_tested':False,
-         'migrations_executed':['001','003','006','007','008','009','014'],
+         'migrations_executed':['001','003','006','007','008','009','014','018'],
          'flow_head':current_api_head,'evidence_head':current_api_head,'settings_head':current_api_head},
         'scenarios',required_api_flow)
     if api_flow.get('scenarios')!=required_api_flow:
@@ -614,7 +614,7 @@ def run_api(tmp: str) -> tuple[dict, dict]:
     api_native_mismatches=exact_current_proof_mismatches(api_native,
         {'complete':True,'source_real_php':True,'actual_pasarguard_http':True,
          'socket_mariadb':True,'live_requests':0,'installed_tested':False,
-         'migrations_executed':['001_marzban_panel_group_id.sql', '003_payment_attempts.sql', '004_automatic_renewal_attempts.sql', '006_payment_message_refs.sql', '007_service_effects.sql', '008_referral_awards.sql', '009_bank_buy_invoice_claims.sql', '011_provider_identity.sql', '012_shared_provider_storage.sql', '014_api_payment_evidence.sql'],
+         'migrations_executed':['001_marzban_panel_group_id.sql', '003_payment_attempts.sql', '004_automatic_renewal_attempts.sql', '006_payment_message_refs.sql', '007_service_effects.sql', '008_referral_awards.sql', '009_bank_buy_invoice_claims.sql', '011_provider_identity.sql', '012_shared_provider_storage.sql', '014_api_payment_evidence.sql', '018_payment_delivery_intents.sql'],
          'source_head':current_api_head},
         'scenarios',required_api_native)
     if api_native.get('scenarios')!=required_api_native:
@@ -3467,11 +3467,18 @@ def run_funding(tmp: str) -> tuple[dict, dict]:
         "unknown_wrong_note_no_refund_success_or_replay",
         "unknown_fraction_no_refund_success_or_replay",
         "multi_line_atomic_orders_and_integer_amount_allocation",
+        "first_success_atomic_encrypted_manifest_and_ack_history",
+        "crash_postterminal_before_telegram_resumes_pending_only_once",
+        "multi_line_each_ordinal_ack_is_durable",
+        "partial_bulk_unknown_owner_challenge_and_exact_one_line_resend",
+        "stale_dispatch_lease_preserves_unknown_audit_before_warned_resend",
+        "corrupted_immutable_delivery_payload_blocks_send_without_replay",
+        "concurrent_telegram_pending_cas_exactly_one_dispatch",
         "multi_line_partial_unknown_requires_review_not_refund",
         "sql_failure_after_remote_verified_fails_closed",
         "failed_local_commit_operator_receives_payment_identity",
-        "postcommit_telegram_failure_alerts_operator_without_recreate",
-        "postcommit_telegram_unconfirmed_alerts_operator_without_recreate",
+        "postcommit_telegram_failure_quiet_unknown_ledger_without_recreate",
+        "postcommit_telegram_unconfirmed_quiet_unknown_ledger_without_recreate",
         "nonbank_attempt_never_auto_provisions",
         "two_simultaneous_bank_workers_one_remote_create",
         "postverified_plan_dimensions_edit_keeps_standard_quote_and_order",

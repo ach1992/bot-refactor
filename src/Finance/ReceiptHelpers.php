@@ -621,6 +621,13 @@ function achbotAutoBankClaim(mysqli $connection, array $seen): bool {
             $connection->rollback();
             return false;
         }
+        if ($attempt && (string)$pay['type']==='INCREASE_WALLET') {
+            // New bank wallet credits have atomic delivery intent as well.
+            // Historical attempts absent from 003 retain existing legacy flow.
+            require_once __DIR__.'/DeliveryLedger.php';
+            if (!achbotDeliverySchemaReady($connection))
+                throw new RuntimeException('bank_wallet_delivery_schema_missing');
+        }
         if ($pay['type']==='BUY_SUB') {
             // Only an original customer-issued 009 can authorize a NEW
             // provider CREATE. Missing records (including legacy receipts)
@@ -648,6 +655,13 @@ function achbotAutoBankClaim(mysqli $connection, array $seen): bool {
                 $connection->rollback();
                 return false;
             }
+        }
+        if ($pay['type']==='INCREASE_WALLET' && $attempt) {
+            $text=achbotMessage('manual_payment.automatic_receipts.message.38dd599e83').
+                number_format((int)$pay['price']).
+                achbotMessage('manual_payment.automatic_receipts.message.6f42cf1050');
+            achbotDeliveryInsertTextLocked($connection,$pay,$attempt,$text,'plain',0,0,
+                hash('sha256','wallet:'.(int)$attempt['id']));
         }
         // For remote service edits the bank receipt claim is NOT service
         // fulfillment. Keep it nonterminal until verified GET + local effects.
@@ -890,7 +904,8 @@ function achbotAutoBankFinishEdit(mysqli $db, array $pay,
                                   object $verified, string $kind,
                                   int $serverId, int $orderId,
                                   string $remark, int $amount,
-                                  int $units=0, ?int $expectedOrderExpiry=null): bool {
+                                  int $units=0, ?int $expectedOrderExpiry=null,
+                                  ?array $deliveryIntent=null): bool {
     $id=(int)($pay['id']??0);
     $userId=(int)($pay['user_id']??0);
     if ($id<=0 || $userId<=0 || $amount<=0 || $serverId<=0 ||
@@ -915,9 +930,7 @@ function achbotAutoBankFinishEdit(mysqli $db, array $pay,
     };
     try {
         if ($db->begin_transaction()!==true) return false;
-        $stmt=$db->prepare("SELECT p.id,p.type,p.state,p.user_id,p.order_id,
-                p.price,p.server_id,p.plan_id,p.description,p.volume,p.day,
-                sp.server_id AS current_plan_server
+        $stmt=$db->prepare("SELECT p.*,sp.server_id AS current_plan_server
             FROM pays p LEFT JOIN server_plans sp ON sp.id=p.plan_id
             WHERE p.id=? FOR UPDATE");
         if (!$stmt) throw new RuntimeException('auto_service_pay_lock_missing');
@@ -1036,6 +1049,22 @@ function achbotAutoBankFinishEdit(mysqli $db, array $pay,
         if (!$stmt->execute() || $stmt->affected_rows!==1)
             throw new RuntimeException('auto_service_audit_insert_failed');
         $stmt->close();
+        if ($deliveryIntent!==null) {
+            require_once __DIR__.'/DeliveryLedger.php';
+            $q=$db->prepare('SELECT * FROM payment_attempts WHERE pay_row_id=? FOR UPDATE');
+            $q->bind_param('i',$id);$q->execute();
+            $a=$q->get_result()->fetch_assoc();$q->close();
+            if (!$a || (string)$a['evidence_fulfillment_state']!=='verified' ||
+                !is_string($a['evidence_fulfillment_payload']??null) ||
+                !hash_equals((string)$deliveryIntent['source_digest'],
+                    hash('sha256',(string)$a['evidence_fulfillment_payload'])) ||
+                (int)$deliveryIntent['order']!==$orderId ||
+                (int)$deliveryIntent['server']!==$serverId)
+                throw new RuntimeException('api_edit_delivery_proof_changed');
+            achbotDeliveryInsertTextLocked($db,$locked,$a,(string)$deliveryIntent['text'],
+                (string)$deliveryIntent['mode'],$orderId,$serverId,
+                (string)$deliveryIntent['source_digest']);
+        }
         $stmt=$db->prepare("UPDATE pays SET state='auto_cart_approved'
             WHERE id=? AND user_id=? AND state='processing'");
         $stmt->bind_param('ii',$id,$userId);

@@ -72,14 +72,22 @@ function achbotRecoveryAttentionSql(mysqli $db): string {
              (SELECT 1 FROM payment_transactions t WHERE t.attempt_id=a.id
               AND t.evidence_state IN ('review','uncertain'))))";
     }
+    // Delivery is a distinct post-payment concern. A terminal paid order
+    // remains visible if one or more immutable packets need attention.
+    $delivery='0';
+    if (achbotPayUxTable($db,'payment_delivery_intents')) {
+        $delivery="EXISTS (SELECT 1 FROM payment_delivery_intents d WHERE d.pay_row_id=p.id
+            AND d.state IN ('pending','dispatching','unknown'))";
+    }
     $create=achbotRecoveryCreateAttentionSql($db);
     $renewal=achbotPayUxTable($db,'automatic_renewal_attempts')
         ? "EXISTS (SELECT 1 FROM automatic_renewal_attempts r WHERE r.pay_row_id=p.id
             AND r.stage IN ('reserved','remote_started','review'))" : '0';
     return "(p.type IN ('BUY_SUB','RENEW_ACCOUNT','INCREASE_WALLET')
         OR p.type LIKE 'INCREASE_DAY\_%' OR p.type LIKE 'INCREASE_VOLUME\_%'
-        OR (p.type='RENEW_SCONFIG' AND ($api)))
-        AND (($ledger) OR ($api) OR ($create) OR ($renewal) OR p.state IN ('processing','processing_wallet'))";
+        OR (p.type='RENEW_SCONFIG' AND (($api) OR ($delivery))))
+        AND (($ledger) OR ($api) OR ($create) OR ($renewal) OR ($delivery)
+            OR p.state IN ('processing','processing_wallet'))";
 }
 
 function achbotRecoveryAttentionCases(mysqli $db, int $before=0): array {

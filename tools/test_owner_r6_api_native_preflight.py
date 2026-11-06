@@ -25,7 +25,8 @@ DB=purchase.SIDE[1]
 MIGRATIONS=['001_marzban_panel_group_id.sql','003_payment_attempts.sql',
  '004_automatic_renewal_attempts.sql','006_payment_message_refs.sql',
  '007_service_effects.sql','008_referral_awards.sql','009_bank_buy_invoice_claims.sql',
- '011_provider_identity.sql','012_shared_provider_storage.sql','014_api_payment_evidence.sql']
+ '011_provider_identity.sql','012_shared_provider_storage.sql','014_api_payment_evidence.sql',
+ '018_payment_delivery_intents.sql']
 
 OPS=r'''
 $id=(int)$spec['pay'];$pay=achbotApiPaymentRow($connection,$id);$value=null;

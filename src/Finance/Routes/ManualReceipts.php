@@ -10,6 +10,12 @@ require_once __DIR__ . '/../../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
 if (!achbotAdminRequestAllowed(is_string($data??null)?$data:null,is_string($text??null)?$text:null,(string)($userInfo['step']??''))) {achbotAdminDeny();return;}
 
 
+// Owner-private, current-authority delivery journal. No financial/native replay.
+if (is_string($data??null) && str_starts_with($data,'delivery')) {
+    require __DIR__.'/DeliveryRecovery.php';
+    return;
+}
+
 // Unified read-only attention hub. Existing NP child inquiry and exact
 // BUY_SUB CREATE readback remain specialized, separately gated tools.
 $attentionMatch=[];
@@ -53,6 +59,15 @@ if (preg_match('/^attention(Inbox|Case)(?:_([1-9][0-9]{0,17}))?$/D',(string)$dat
                 $stmt=$connection->prepare('SELECT id FROM payment_attempts WHERE pay_row_id=? LIMIT 1');
                 $stmt->bind_param('i',$id);$stmt->execute();$attemptId=(int)($stmt->get_result()->fetch_assoc()['id']??0);$stmt->close();
                 if ($attemptId>0) $rows[]=[['text'=>\achbotMessage('manual_payment.manual_receipts.button.8b5b783029'),'callback_data'=>'npReviewCase_'.$attemptId]];
+            }
+            if ((int)$from_id===(int)$admin) {
+                require_once __DIR__.'/../DeliveryLedger.php';
+                if (achbotDeliverySchemaReady($connection)) {
+                    $delivery=achbotDeliveryAggregate($connection,$id);
+                    if ($delivery && (int)$delivery['total']>0)
+                        $rows[]=[['text'=>achbotMessage('delivery_recovery.open'),
+                            'callback_data'=>'deliveryCase_'.$id]];
+                }
             }
             if ((int)$from_id===(int)$admin && $pay['type']==='BUY_SUB' && in_array($pay['state'],['processing','processing_wallet','paid'],true))
                 $rows[]=[['text'=>\achbotMessage('manual_payment.manual_receipts.button.ea309dff23'),'callback_data'=>'bankReviewCase_'.$id]];

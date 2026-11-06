@@ -2201,6 +2201,36 @@ return [
         'offer_saved' => '✅ پیشنهاد تمدید و محدودهٔ آن ثبت شد.',
         'unavailable' => '⚠️ ذخیره یا بررسی دامنه تأیید نشد؛ تغییر مالی اعمال نشده است. وضعیت را بررسی کرده و دوباره تلاش کنید.',
     ],
+    'delivery_recovery' => [
+        'title' => ['text'=>'📦 بازیابی تحویل پرداخت <code>#{pay}</code>' . "\n" .
+            '👤 شناسه عددی کاربر: <code>{user}</code>' . "\n" .
+            '💰 مبلغ: {amount} تومان | وضعیت پرداخت: <code>{state}</code>' . "\n",
+            'parameters'=>['pay','user','amount','state']],
+        'summary' => ['text'=>'📊 تحویل‌ها: {total} | تأیید: {ack} | آماده: {pending} | نامشخص: {unknown} | در حال ارسال: {dispatching}' . "\n",
+            'parameters'=>['total','ack','pending','unknown','dispatching']],
+        'line' => ['text'=>'🔹 ردیف {ordinal}: <code>{state}</code> | تلاش: {attempts} | اثر: {effect} | سفارش: {order}',
+            'parameters'=>['ordinal','state','attempts','effect','order']],
+        'warning' => ['text'=>'⚠️ تأیید آگاهانهٔ ارسال تحویل برای پرداخت <code>#{pay}</code>، حساب {ordinal}' . "\n" .
+            'وضعیت پیشین: <code>{state}</code>' . "\n" .
+            'پیام ممکن است قبلاً به کاربر رسیده باشد؛ ارسال مجدد می‌تواند پیام تکراری بسازد. این اقدام فقط پیام همان حساب را ارسال می‌کند، نه پرداخت یا ساخت سرویس را.',
+            'parameters'=>['pay','ordinal','state']],
+        'check_result' => ['text'=>'🔍 بررسی صحت ردیف {ordinal}: <code>{result}</code>',
+            'parameters'=>['ordinal','result']],
+        'send_result' => ['text'=>'📤 نتیجهٔ تلاش ارسال ردیف {ordinal}: <code>{result}</code>',
+            'parameters'=>['ordinal','result']],
+        'check_ack'=>'🔍 وضعیت تحویل بررسی می‌شود.',
+        'check'=>'🔍 بررسی',
+        'request_send'=>'📤 درخواست ارسال',
+        'send_confirm'=>'⚠️ تأیید نهایی ارسال',
+        'back'=>'↩️ بازگشت',
+        'back_inbox'=>'📥 فهرست بررسی‌ها',
+        'next'=>'صفحهٔ بعد',
+        'first'=>'صفحهٔ اول',
+        'missing'=>'⚠️ سند تحویل قابل بازیابی برای این پرداخت وجود ندارد؛ اطلاعات تاریخی را حدس نمی‌زنیم.',
+        'not_eligible'=>'⚠️ تحویل مجدد مجاز نیست؛ ابتدا وضعیت پرداخت، سفارش و سند رمزگذاری‌شده را بررسی کنید.',
+        'unavailable'=>'⚠️ وضعیت تحویل فعلاً قابل بررسی نیست. بدون اقدام مالی یا ساخت مجدد سرویس، بعداً از فهرست تلاش کنید.',
+        'open'=>'📦 تحویل مشتری: بررسی و بازیابی',
+    ],
     // متن‌ها و نشانی‌های قابل تنظیم هر ربات
     'instance_content' => [
         'title' => '📝 متن‌های ربات' . "\n" . 'متن موردنظر را برای ویرایش انتخاب کنید.',
