@@ -737,7 +737,7 @@ def check():
         for key,choice,receipt,wait,label in [
             ('routebank','CartToCart','IncreaseWallet','waitIncreaseWalletReceipt','شماره کارت'),
             ('routegift','GiftCard','IncreaseWalletGift','waitIncreaseWalletGiftReceipt','گیفت‌کارت'),
-            ('routeusdt','ManualUsdt','IncreaseWalletUsdt','waitIncreaseWalletUsdtReceipt','تتر دستی')
+            ('routeusdt','ManualUsdt','IncreaseWalletUsdt','waitIncreaseWalletUsdtReceipt','مقدار تتر')
         ]:
             seed(work,env,key)
             started=run_route(work,env,route_driver,
