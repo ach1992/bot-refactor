@@ -562,6 +562,8 @@ function achbotPaymentEvidenceReviewReady(array $pay,array $attempt): bool {
          in_array($pay['state'],['approved','paid','auto_cart_approved','paid_with_wallet'],true));
 }
 function achbotPaymentEvidenceClaim(mysqli $db,int $payId): ?array {
+    // Scope a transient provider backoff hint to this one admitted attempt.
+    $GLOBALS['achbotPaymentEvidenceRetryAfterSeconds']=0;
     if ($payId<=0 || !achbotPaymentEvidenceSchemaReady($db)) return null;
     try {
         achbotPaymentEvidenceRequireAutocommit($db); $db->begin_transaction();
@@ -591,7 +593,9 @@ function achbotPaymentEvidenceDefer(mysqli $db,int $payId,string $token,string $
     if (!preg_match('/\A[a-f0-9]{32}\z/D',$token) ||
         !in_array($status,['monitoring','manual','review','invalid_code','proven','reserved','dispatched','uncertain'],true))
         return false;
-    $seconds=max(1,min(3600,$seconds));
+    $seconds=max(1,min(3600,max($seconds,
+        (int)($GLOBALS['achbotPaymentEvidenceRetryAfterSeconds']??0))));
+    unset($GLOBALS['achbotPaymentEvidenceRetryAfterSeconds']);
     try {
         $q=$db->prepare("UPDATE payment_attempts SET
             evidence_state=CASE WHEN evidence_state IN ('proven','invalid_code') THEN evidence_state ELSE ? END,
