@@ -767,9 +767,9 @@ def main() -> dict:
         code, result, _ = report_run(d)
         require(code==2 and has(result,'schema_018','BLOCK',
             'partial_or_incompatible_schema_requires_audit'),
-            'delivery_018_attempt_uniqueness_missing_blocks')
+            'delivery_018_token_uniqueness_missing_blocks')
         statement(d,'ALTER TABLE payment_delivery_attempts ADD UNIQUE KEY uq_delivery_dispatch_token(dispatch_token)')
-        cases.append('delivery_018_attempt_uniqueness_missing_blocks')
+        cases.append('delivery_018_token_uniqueness_missing_blocks')
         source_failures=source_failure_regressions(d)
         cases.extend(r['case'] for r in source_failures)
         # Keep the original 54-case assertion independent of canonical-path

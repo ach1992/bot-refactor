@@ -2168,6 +2168,7 @@ def run_authorization(tmp: str) -> tuple[dict, dict]:
         'retired_runtime_member_blocks',
         *('retired_runtime_member_blocks__'+name.replace('/','_').replace('.','_') for name in package.RETIRED_RUNTIME_MEMBERS-{'settings/tronChecker.php'}),
         'partial_003_unique_index_missing_blocks',
+        'delivery_018_token_uniqueness_missing_blocks',
         'wallet_telegram_event_key_missing_blocks',
         'wallet_telegram_event_key_nonunique_blocks',
         'wallet_cursor_nontransactional_storage_blocks',
