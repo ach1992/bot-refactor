@@ -332,6 +332,62 @@ foreach(['user','admin']as$audience){$groups=require dirname(__DIR__).'/messages
  $shippingSides[$audience]=[];
  foreach($groups as$topic=>$entries)foreach($entries as$name=>$value)$shippingSides[$audience][$topic.'.'.$name]=$value;
 }
+// Exactly the Owner-approved Chili RC25 copy; preserve the old full-catalog
+// proofs by undoing ONLY its exact values in a comparison copy. Source PHP
+// is not modified; foreign copy or mixed revisions fail before old checks.
+$chiliCopyBase='ed0338baa3b006759ef9fdab66ca6e68defdc9ef';
+$chiliCopyHead='4c4004d9b85bc6b1c7297788675d0e917c1f26d0';
+$chiliCopyHash=[
+ 'user'=>'ebc2195d535cc3f3b1cd233ac04b2ef7db22dd6c2a4d8d1ac399f085fdf086e1',
+ 'admin'=>'0c3e8afb70387969bc7cddc286644d8ce6798e65c4116050c77beccbb1c79b62'
+];
+$chiliCopyBefore=[];$chiliCopyAfter=[];$chiliCopyChanged=[];
+$flattenChili=static function(string $source):array {
+ $start=strpos($source,'return [');
+ if($start===false)throw new RuntimeException('chili_copy_catalog_missing');
+ $groups=eval(substr($source,$start));$flat=[];
+ foreach($groups as$topic=>$entries)foreach($entries as$key=>$value)$flat[$topic.'.'.$key]=$value;
+ return $flat;
+};
+foreach($chiliCopyHash as$audience=>$digest){
+ $path='messages/fa/'.$audience.'.php';
+ $source=shell_exec('git -C '.escapeshellarg(dirname(__DIR__)).' show '.
+    escapeshellarg($chiliCopyHead.':'.$path));
+ $parent=shell_exec('git -C '.escapeshellarg(dirname(__DIR__)).' show '.
+    escapeshellarg($chiliCopyBase.':'.$path));
+ if(!is_string($source)||!is_string($parent)||
+    hash('sha256',$source)!==$digest ||
+    hash_file('sha256',dirname(__DIR__).'/'.$path)!==$digest)
+    throw new RuntimeException('chili_copy_exact_source_identity:'.$path);
+ $chiliCopyBefore[$audience]=$flattenChili($parent);
+ $chiliCopyAfter[$audience]=$flattenChili($source);
+ if(array_keys($chiliCopyBefore[$audience])!==array_keys($chiliCopyAfter[$audience]))
+    throw new RuntimeException('chili_copy_catalog_inventory');
+ $chiliCopyChanged[$audience]=[];
+ foreach($chiliCopyBefore[$audience] as$key=>$value)
+    if($value!==$chiliCopyAfter[$audience][$key])$chiliCopyChanged[$audience][]=$key;
+}
+if(count($chiliCopyChanged['user'])!==61 || count($chiliCopyChanged['admin'])!==22)
+    throw new RuntimeException('chili_copy_exact_value_change_count');
+$restoreChiliCopy=static function(array $sides)use($chiliCopyBefore,$chiliCopyAfter,$chiliCopyChanged):array {
+ $isCurrent=true;$isBefore=true;
+ foreach($chiliCopyChanged as$audience=>$keys)foreach($keys as$key){
+    if(($sides[$audience][$key]??null)!==$chiliCopyAfter[$audience][$key])$isCurrent=false;
+    if(($sides[$audience][$key]??null)!==$chiliCopyBefore[$audience][$key])$isBefore=false;
+ }
+ if(!$isCurrent && !$isBefore)throw new RuntimeException('chili_copy_value_or_audience_drift');
+ if($isCurrent)foreach($chiliCopyChanged as$audience=>$keys)foreach($keys as$key)
+    $sides[$audience][$key]=$chiliCopyBefore[$audience][$key];
+ return $sides;
+};
+// Explicit negative controls: no mixed versions or modified copy values.
+$testCopy=$shippingSides;$alterKey=$chiliCopyChanged['user'][0];
+$testCopy['user'][$alterKey]='an-unapproved-value';
+try{$restoreChiliCopy($testCopy);throw new RuntimeException('chili_copy_negative_control_missed');}
+catch(RuntimeException $error){
+ if($error->getMessage()!=='chili_copy_value_or_audience_drift')throw $error;
+}
+
 // #112 Owner Rev 4: pin each hard-delete, state and plan-visibility message
 // against its prior source before reusing the untouched full R5/API proofs.
 $removalParent='218319313fdbd9cee8aeea15e1c073997f4485e7';
@@ -593,9 +649,10 @@ $restorePanelGroup=static function(array $sides) use($panelGroupManifest,$priorP
  return $sides;
 };
 
-$verifyCurrentAudienceCatalogs=static function(array $sides) use($giftKey,$giftEntry,$apiDelta,$r5Expected,$reviewEntries,$addonEntries,$selectionEntries,$restoreSharedTransfer,$restoreServerRemoval,$restorePanelGroup): void {
+$verifyCurrentAudienceCatalogs=static function(array $sides) use($giftKey,$giftEntry,$apiDelta,$r5Expected,$reviewEntries,$addonEntries,$selectionEntries,$restoreSharedTransfer,$restoreServerRemoval,$restorePanelGroup,$restoreChiliCopy): void {
  if(!isset($sides['user'],$sides['admin']) || !is_array($sides['user']) || !is_array($sides['admin']))
   throw new RuntimeException('addon_catalog_audiences_invalid');
+ $sides=$restoreChiliCopy($sides);
  $sides=$restoreSharedTransfer($restoreServerRemoval($restorePanelGroup($sides)));
  foreach($sides['user']as$key=>$value)if(str_starts_with($key,'addon_scopes.'))
   throw new RuntimeException('addon_catalog_cross_audience');
