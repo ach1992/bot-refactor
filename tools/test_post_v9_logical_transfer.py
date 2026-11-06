@@ -318,13 +318,17 @@ achEvent('probe',[
             for sid,gid in [(3,g1),(4,g2),(5,g2)]:assign(sid,gid)
             # Review #115 F2: actual bot.php administrator callback, with
             # real mysqli transaction and deterministic MariaDB write fault.
+            # Earlier group-name validation intentionally left the fixture
+            # administrator in a text-input step; exit that unrelated editor
+            # so the callback reaches the real SQL group writer.
+            sql(work,env,"UPDATE users SET step='none' WHERE userid=9001")
             # Both supported provider types must roll back the entire local
             # declaration and succeed on the next ordinary callback.
             for native_type in ('marzban','pasarguard'):
                 if native_type=='pasarguard':
                     sql(work,env,"UPDATE server_config SET type='pasarguard' WHERE id=2")
                 before=snapshot(work,env)
-                group_before=sql(work,env,'SELECT panel_group_id FROM server_info WHERE id=2')
+                group_before=sql(work,env,'SELECT panel_group_id FROM server_info WHERE id=2').strip()
                 sql(work,env,"CREATE TRIGGER achbot_group_sql_fault BEFORE UPDATE "
                     "ON server_info FOR EACH ROW SIGNAL SQLSTATE '45000' "
                     "SET MESSAGE_TEXT='achbot_group_injected_failure'")
@@ -332,7 +336,7 @@ achEvent('probe',[
                     rejected=do('wizard',data=f'setServerPanelGroup_2_{g2}',actor=9001)
                     alert_seen=has(rejected,'ذخیره گروه پنل انجام نشد')
                     state_ok=snapshot(work,env)==before
-                    group_after=sql(work,env,'SELECT panel_group_id FROM server_info WHERE id=2')
+                    group_after=sql(work,env,'SELECT panel_group_id FROM server_info WHERE id=2').strip()
                     if not (alert_seen and state_ok and group_after==group_before):
                         raise RuntimeError(native_type+
                             ' SQL failure did not atomically roll back Group callback: '+
@@ -344,10 +348,10 @@ achEvent('probe',[
                     sql(work,env,'DROP TRIGGER IF EXISTS achbot_group_sql_fault')
                 accepted=do('wizard',data=f'setServerPanelGroup_2_{g2}',actor=9001)
                 if (not has(accepted,'✅') or
-                    sql(work,env,'SELECT panel_group_id FROM server_info WHERE id=2')!=str(g2)):
+                    sql(work,env,'SELECT panel_group_id FROM server_info WHERE id=2').strip()!=str(g2)):
                     raise RuntimeError(native_type+' Group callback did not retry after SQL fault')
                 assign(2,g1)
-                if (sql(work,env,'SELECT panel_group_id FROM server_info WHERE id=2')!=str(g1) or
+                if (sql(work,env,'SELECT panel_group_id FROM server_info WHERE id=2').strip()!=str(g1) or
                     snapshot(work,env)!=before):
                     raise RuntimeError(native_type+' Group did not restore all state after fault retry')
                 passed(native_type+'_actual_admin_group_retry_succeeds_without_financial_or_native_mutation')
