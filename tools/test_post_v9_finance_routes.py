@@ -804,10 +804,15 @@ def run_php(work, env, stage, spec, db=DB):
         # The pre-dispatch per-account journal supplies its own *bounded*
         # diagnostic before doAction's existing operator-review diagnostic.
         lines=p.stderr.splitlines(keepends=True)
-        diagnostic=(b'achbot_effect_needs_review pay_id='+
-                    str(spec['pay_row_id']).encode()+b' effect_id=')
-        if len(lines)==2 and lines[0].startswith(diagnostic) and (
-             b' cause=' in lines[0]) and lines[1]==expected_log:
+        # Exact structured source log is a required predecessor to the
+        # existing hosted-review line, not arbitrary allowed stderr.
+        diagnostic=(rb'achbot_paid_effect_needs_reconciliation pay_id='+
+            str(spec['pay_row_id']).encode()+
+            rb' effect_id=[1-9][0-9]* ordinal=[1-9][0-9]* '+
+            rb'stage=(?:preflight|remote_create|remote_readback|verify_local|unknown) '+
+            rb'reason=[a-z][a-z0-9_]* cause=(?:runtime_exception|mysqli_sql_exception|runtime|php_error) '+
+            rb'depth=[1-8]\n')
+        if len(lines)==2 and re.fullmatch(diagnostic,lines[0]) and lines[1]==expected_log:
             expected_log=p.stderr
     if p.returncode or p.stderr != expected_log:
         raise RuntimeError('native finance php error: '+

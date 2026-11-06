@@ -7,6 +7,7 @@ Source is exercised by real PHP against the existing additive shared ledger.
 from __future__ import annotations
 import argparse
 import json
+import re
 import subprocess
 import time
 from pathlib import Path
@@ -510,8 +511,21 @@ def run_route(work,env,driver,data='',step='none',actor=1001,update=None,route='
             accepted_log_codes.append('achbot_manual_standard_delivery_summary_failed')
     intentional_notice_failure=(expected_warning and
         spec.get('message_transport') in ('throw','throw_once'))
+    # Only in the already-expected uncertain CREATE case, admit the
+    # tightly shaped, bounded native-effect diagnostic as a separate line.
+    # Arbitrary provider/SQL/fixture text still fails this test.
+    native_log=re.compile(
+        r'achbot_paid_effect_needs_reconciliation pay_id=[1-9][0-9]*'
+        r' effect_id=[1-9][0-9]* ordinal=[1-9][0-9]*'
+        r' stage=(?:preflight|remote_create|remote_readback|verify_local|unknown)'
+        r' reason=[a-z][a-z0-9_]*'
+        r' cause=(?:runtime_exception|mysqli_sql_exception|runtime|php_error)'
+        r' depth=[1-8]$')
     safe_review=(accepted_log_codes and p.stderr and all(
         ((any(code in line for code in accepted_log_codes) and
+          'fixture_' not in line and 'SQL' not in line) or
+         ('achbot_manual_standard_effect_needs_review' in accepted_log_codes and
+          native_log.search(line) is not None and
           'fixture_' not in line and 'SQL' not in line) or
          (intentional_notice_failure and notification_fixture.sanitized_exception_line(line)))
         for line in p.stderr.splitlines()))
