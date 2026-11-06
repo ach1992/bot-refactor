@@ -2641,7 +2641,7 @@ def check():
             assert any(e['name']=='sendPhoto' for e in failed),repr((mode,failed))
             assert any(e['name']=='sendMessage' and 'دوباره بفرستید' in str(e.get('args'))
                        for e in failed),repr((mode,failed))
-            assert not any(e['name']=='sendMessage' and 'در انتظار بررسی مدیر است' in str(e.get('args'))
+            assert not any(e['name']=='sendMessage' and '⏳ رسید در انتظار بررسی است؛' in str(e.get('args'))
                            for e in failed)
             assert not any(e['name']=='setUser' for e in failed)
             assert query(work,env,f"SELECT state FROM pays WHERE hash_id='{key}'")=='pending'
@@ -2661,7 +2661,7 @@ def check():
 
             retried=run_route(work,env,route_driver,step=wait+key)
             assert any(e['name']=='sendPhoto' for e in retried)
-            assert any(e['name']=='sendMessage' and 'در انتظار بررسی مدیر است' in str(e.get('args'))
+            assert any(e['name']=='sendMessage' and '⏳ رسید در انتظار بررسی است؛' in str(e.get('args'))
                        for e in retried)
             assert query(work,env,f"SELECT state FROM pays WHERE hash_id='{key}'")=='have_sent'
             assert query(work,env,f"SELECT stage FROM payment_attempts WHERE order_hash='{key}'")=='review'
@@ -2770,7 +2770,7 @@ def check():
         finally:
             query(work,env,'DROP TRIGGER test_receipt_db_failure')
         recovered=run_route(work,env,route_driver,step='waitIncreaseWalletReceiptphotodbfail')
-        assert any(e['name']=='sendMessage' and 'در انتظار بررسی مدیر است' in str(e.get('args'))
+        assert any(e['name']=='sendMessage' and '⏳ رسید در انتظار بررسی است؛' in str(e.get('args'))
                    for e in recovered)
         assert query(work,env,"SELECT state FROM pays WHERE hash_id='photodbfail'")=='have_sent'
         cases.append('database_transition_failure_retries_same_durable_photo')
