@@ -332,6 +332,37 @@ foreach(['user','admin']as$audience){$groups=require dirname(__DIR__).'/messages
  $shippingSides[$audience]=[];
  foreach($groups as$topic=>$entries)foreach($entries as$name=>$value)$shippingSides[$audience][$topic.'.'.$name]=$value;
 }
+// #117 adds one 18-key Owner-only recovery topic. Preserve all historical
+// native whole-catalogue identity gates: remove ONLY this exact source block
+// for their original byte/array proofs. Neither arbitrary new translations,
+// missing/reordered placeholders, cross-audience entries nor changes to any
+// existing approved catalog can pass this strict overlay.
+$deliveryNames=[
+ 'title','summary','line','warning','check_result','send_result',
+ 'check_ack','check','request_send','send_confirm','back','back_inbox',
+ 'next','first','missing','not_eligible','unavailable','open'
+];
+$sourceAdmin=file_get_contents(dirname(__DIR__).'/messages/fa/admin.php');
+$deliveryBlocks=[];
+if(!is_string($sourceAdmin) ||
+   preg_match_all("~(?ms)^    'delivery_recovery' => \[\n.*?^    \],\n~",
+       $sourceAdmin,$deliveryBlocks,PREG_OFFSET_CAPTURE)!==1 ||
+   hash('sha256',$deliveryBlocks[0][0][0])!==
+       'd10cb333f3576f5386a3f18226f569941a1488de7fae648822c507f8b1e9d4d8')
+ throw new RuntimeException('delivery_recovery_exact_additive_source_identity');
+$start=$deliveryBlocks[0][0][1];$length=strlen($deliveryBlocks[0][0][0]);
+$preDeliveryAdmin=substr($sourceAdmin,0,$start).substr($sourceAdmin,$start+$length);
+$deliverySourceCatalog=require dirname(__DIR__).'/messages/fa/admin.php';
+if(!isset($deliverySourceCatalog['delivery_recovery']) ||
+   array_keys($deliverySourceCatalog['delivery_recovery'])!==$deliveryNames)
+ throw new RuntimeException('delivery_recovery_exact_key_inventory');
+foreach($deliveryNames as$name){
+ $key='delivery_recovery.'.$name;
+ if(!array_key_exists($key,$shippingSides['admin']) ||
+    array_key_exists($key,$shippingSides['user']))
+  throw new RuntimeException('delivery_recovery_owner_only_addition');
+ unset($shippingSides['admin'][$key]);
+}
 // Exactly the Owner-approved Chili RC25 copy; preserve the old full-catalog
 // proofs by undoing ONLY its exact values in a comparison copy. Source PHP
 // is not modified; foreign copy or mixed revisions fail before old checks.
@@ -357,7 +388,8 @@ foreach($chiliCopyHash as$audience=>$digest){
     escapeshellarg($chiliCopyBase.':'.$path));
  if(!is_string($source)||!is_string($parent)||
     hash('sha256',$source)!==$digest ||
-    hash_file('sha256',dirname(__DIR__).'/'.$path)!==$digest)
+    hash('sha256',$audience==='admin'?$preDeliveryAdmin:
+         file_get_contents(dirname(__DIR__).'/'.$path))!==$digest)
     throw new RuntimeException('chili_copy_exact_source_identity:'.$path);
  $chiliCopyBefore[$audience]=$flattenChili($parent);
  $chiliCopyAfter[$audience]=$flattenChili($source);

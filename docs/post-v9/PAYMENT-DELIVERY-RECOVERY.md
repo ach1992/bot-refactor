@@ -33,6 +33,12 @@ The inbox is quiet: no new unsolicited delivery-recovery admin push.
 
 ## Forward migration 018: blocked until separate Owner approval
 
+The source-only CLI payment-readiness tool now blocks for an absent, partial or
+index-incompatible 018 ledger, in addition to its previous 001–009 checks.
+A passing read-only schema inspection is NOT proof that migration happened or
+that installed Chili has been authorized to run it.
+
+
 File: migrations/post-v9/018_payment_delivery_intents.sql
 
 Before touching Chili, require ALL:

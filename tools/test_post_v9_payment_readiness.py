@@ -335,7 +335,8 @@ def main() -> dict:
                      '006_payment_message_refs.sql',
                      '007_service_effects.sql',
                      '008_referral_awards.sql',
-                     '009_bank_buy_invoice_claims.sql'):
+                     '009_bank_buy_invoice_claims.sql',
+                     '018_payment_delivery_intents.sql'):
             statement(d, (ROOT/'migrations/post-v9'/name).read_text())
         state = {
             'botState':'on', 'sellState':'on',
@@ -351,7 +352,7 @@ def main() -> dict:
         require((code == 0), 'line_142')
         require((result['source_file_count'] == package.EXPECTED_RUNTIME_COUNT), 'line_143')
         require((all(result['schema'][k] == 'columns_and_named_unique_indexes_detected_not_ddl_certified'
-                   for k in ('001','003','004','005','006','007','008','009'))), 'line_144')
+                   for k in ('001','003','004','005','006','007','008','009','018'))), 'line_144')
         require((has(result,'gateway_policies','PASS')), 'line_146')
         require(has(result,'wallet_transfer_storage','PASS'), 'wallet_cursor_storage_ready')
         require((result['methods']['wallet']['switch'] == 'on'), 'line_147')
@@ -760,6 +761,15 @@ def main() -> dict:
                                   "SELECT type,value FROM setting ORDER BY id;")), 'line_214')
         cases.append('private_sentinel_and_financial_rows_untouched')
         require(len(cases)==54,'original_54_cases_preserved')
+        # The new 018 gate has its OWN exact-key negative control and is not
+        # substituted for the previous 54 read-only readiness tests.
+        statement(d,'ALTER TABLE payment_delivery_attempts DROP INDEX uq_delivery_dispatch_token')
+        code, result, _ = report_run(d)
+        require(code==2 and has(result,'schema_018','BLOCK',
+            'partial_or_incompatible_schema_requires_audit'),
+            'delivery_018_attempt_uniqueness_missing_blocks')
+        statement(d,'ALTER TABLE payment_delivery_attempts ADD UNIQUE KEY uq_delivery_dispatch_token(dispatch_token)')
+        cases.append('delivery_018_attempt_uniqueness_missing_blocks')
         source_failures=source_failure_regressions(d)
         cases.extend(r['case'] for r in source_failures)
         # Keep the original 54-case assertion independent of canonical-path

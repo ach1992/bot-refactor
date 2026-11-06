@@ -70,7 +70,7 @@ function verifyManifest(string $manifestPath, string $runtimePath): bool {
         if ($json === false || strlen($json) > 500000) return false;
         $manifest = json_decode($json, true, 512, JSON_THROW_ON_ERROR);
         if (!is_array($manifest) || !isset($manifest['files']) ||
-            !is_array($manifest['files']) || count($manifest['files']) !== 125 ||
+            !is_array($manifest['files']) || count($manifest['files']) !== 127 ||
             ($manifest['file_count'] ?? null) !== count($manifest['files']) ||
             ($manifest['schema_migration_included'] ?? null) !== false ||
             ($manifest['private_config_included'] ?? null) !== false ||
@@ -78,11 +78,11 @@ function verifyManifest(string $manifestPath, string $runtimePath): bool {
         // The expected current runtime inventory is pinned independently of
         // supplied manifest bytes. Without this guard an attacker-controlled
         // file list could request hashes of an installed private file.
-        // Canonical-path current inventory: 125 explicit runtime paths.
+        // Canonical-path current inventory: 127 explicit runtime paths.
         // SHA-256 of newline-joined sorted package_post_v9.members() paths.
         $members = array_keys($manifest['files']);
         sort($members, SORT_STRING);
-        if (!hash_equals('e4e0ff48d7088bb0cea9e401d1b5d0a31531ecd450ce23f7a34d64b7c0a86356',
+        if (!hash_equals('4e61e2e6ef33312123801f7b02e7eca5918e00a48fbb2e3f0c0f6f40af950bf2',
                          hash('sha256', implode("\n", $members))) ||
             in_array('baseInfo.php', $members, true)) return false;
         // All tool-side runtime source is bound before any helper executes.
@@ -451,6 +451,24 @@ try {
         '009' => ['bank_buy_invoice_claims'=>['columns'=>['pay_row_id','invoice_sha256','bank_attempt_id','quoted_days','entitled_days'],
             'unique'=>['PRIMARY'=>['pay_row_id'],
                        'uq_bank_claim_attempt'=>['bank_attempt_id']]]],
+        // #117: without this journal a new terminal order cannot commit a
+        // recoverable customer delivery. Block installed readiness before
+        // any attempt to use the new source with an old (003-only) database.
+        '018' => [
+            'payment_delivery_intents'=>['columns'=>[
+                'id','pay_row_id','ordinal','attempt_id','effect_id','order_id',
+                'user_id','server_id','pay_type','pay_fingerprint','source_digest',
+                'native_operation','native_target_key','sealed_payload','payload_sha256',
+                'state','attempt_count','dispatch_token','dispatched_at',
+                'acknowledged_at','last_actor','last_result'],
+                'unique'=>['uq_delivery_pay_ordinal'=>['pay_row_id','ordinal'],
+                    'uq_delivery_effect'=>['effect_id']]],
+            'payment_delivery_attempts'=>['columns'=>[
+                'id','intent_id','attempt_no','dispatch_token','actor_userid',
+                'result','started_at','finished_at'],
+                'unique'=>['uq_delivery_attempt_no'=>['intent_id','attempt_no'],
+                    'uq_delivery_dispatch_token'=>['dispatch_token']]],
+        ],
     ];
     foreach ($specs as $migration => $schema) {
         $present = count(array_filter(array_keys($schema),
