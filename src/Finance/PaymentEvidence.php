@@ -480,6 +480,12 @@ function achbotPaymentEvidenceSmsNormalize(array $row,array $profile,bool $allow
         (int)$amount>intdiv(PHP_INT_MAX,10)) return null;
     $when=achbotPaymentEvidenceSmsTime($row,$profile);
     if ($when===null) return null;
+    // A source reporting only HH:MM identifies a 60-second interval,
+    // not an exact event at second :00. Offset timestamps are exact.
+    $minutePrecision=!preg_match('/\A[0-9]{4}-[0-9]{2}-[0-9]{2}T/',(string)($row['sms_date']??'')) &&
+        preg_match('/\A[0-9]{1,2}:[0-9]{2}\z/D',(string)($row['sms_time']??''))===1;
+    $precision=$minutePrecision?59:0;
+    if ($when>PHP_INT_MAX-$precision) return null;
     $snapshot=[];
     foreach (['provider','provider_sms_id','sender','mobile_source','bank_key','rule_id',
         'sms_date','sms_time'] as $field) {
@@ -496,7 +502,8 @@ function achbotPaymentEvidenceSmsNormalize(array $row,array $profile,bool $allow
     return ['kind'=>'sms','identity'=>hash('sha256',$source."\0sms\0".$uid),
         'remote_id'=>(string)$id,'public_uid'=>$uid,'status'=>$row['status'],
         'amount_toman'=>$amount,'amount_rial'=>(string)((int)$amount*10),
-        'transfer_at'=>$when,'source_key'=>$source,
+        'transfer_at'=>$when,'time_precision_seconds'=>$precision,
+        'source_key'=>$source,
         'fingerprint'=>hash('sha256',json_encode($semantic,JSON_THROW_ON_ERROR))];
 }
 function achbotPaymentEvidenceSmsMatches(array $evidence,array $attempt,array $profile,?int $issuedUnix=null): bool {
@@ -508,8 +515,14 @@ function achbotPaymentEvidenceSmsMatches(array $evidence,array $attempt,array $p
         $quote!==null && ($evidence['amount_toman']??null)===$quote &&
         ($evidence['source_key']??null)===($profile['source_key']??'') &&
         is_int($issued) && is_int($horizon) && $horizon>0 && $issued>0 &&
-        $horizon<=PHP_INT_MAX-$issued && is_int($evidence['transfer_at']??null) &&
-        $evidence['transfer_at']>=$issued && $evidence['transfer_at']<=$issued+$horizon;
+        $horizon<=PHP_INT_MAX-$issued && $issued>180 &&
+        is_int($evidence['transfer_at']??null) &&
+        in_array($evidence['time_precision_seconds']??0,[0,59],true) &&
+        $evidence['transfer_at']<=PHP_INT_MAX-($evidence['time_precision_seconds']??0) &&
+        // Three minutes before ORIGINAL issuance, never before receipt upload;
+        // no extension to the original post-issuance quote horizon.
+        $evidence['transfer_at']+($evidence['time_precision_seconds']??0)>=$issued-180 &&
+        $evidence['transfer_at']<=$issued+$horizon;
 }
 function achbotPaymentEvidenceGiftVerify(array $profile,string $code): array {
     $bad=['ok'=>false,'status'=>'unavailable','data'=>null];

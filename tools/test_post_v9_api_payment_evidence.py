@@ -54,7 +54,8 @@ case 'profile':
   'amount_field'=>$p['amount_field']??null];break;
 case 'normalize':
  $n=achbotPaymentEvidenceSmsNormalize($spec['row'],$profile??$p);
- $result=['evidence'=>$n,'matches'=>$n && achbotPaymentEvidenceSmsMatches($n,$a,$profile)];break;
+ $issue=isset($spec['issued_unix'])?(int)$spec['issued_unix']:null;
+ $result=['evidence'=>$n,'matches'=>$n && achbotPaymentEvidenceSmsMatches($n,$a,$profile,$issue)];break;
 case 'jalali':$result=achbotPaymentEvidenceJalaliGregorian(...$spec['date']);break;
 case 'pin':
  $p['subject']=['days'=>30,'volume'=>50,'provider'=>'fixture'];
@@ -276,6 +277,37 @@ def run(module):
             assert php('normalize',pay_id=p1,row=dict(r,status='used'))['evidence'] is None
             assert php('normalize',pay_id=p1,row=dict(r,sms_date=''))['evidence'] is None
             assert php('normalize',pay_id=p1,row=dict(r,direction='withdrawal'))['evidence'] is None
+            # Bank timestamps: original quote issue, not receipt-upload time.
+            # Precision is part of the observation, not the SMS fingerprint.
+            invoice=dt.datetime(2026,11,6,16,5,17,tzinfo=dt.timezone.utc)
+            issued_ts=int(invoice.timestamp())
+            def source_stamp(day,clock):
+                return dict(r,id=101,public_uid='UID101',sms_date=day,sms_time=clock)
+            for time_text,expected in [
+                ('16:05',True),   # minute covering original issue
+                ('16:02',True),   # minute-only source within the 3-minute grace
+                ('16:01',False),  # cannot extend grace arbitrarily
+                ('16:02:17',True), ('16:02:16',False), # exact +/-180s
+            ]:
+                got=php('normalize',pay_id=p1,issued_unix=issued_ts,
+                        row=source_stamp('2026-11-06',time_text))
+                assert got['matches'] is expected,(time_text,got)
+                assert got['evidence']['time_precision_seconds']==(0 if time_text.count(':')==2 else 59)
+            assert php('normalize',pay_id=p1,issued_unix=issued_ts,
+                row=source_stamp('2026-11-07','16:05:17'))['matches']
+            assert not php('normalize',pay_id=p1,issued_unix=issued_ts,
+                row=source_stamp('2026-11-07','16:05:18'))['matches']
+            # Gregorian absolute timestamps stay second-precise (no invented
+            # minute tolerance). The legacy Jalali minute is an interval.
+            assert not php('normalize',pay_id=p1,issued_unix=issued_ts,
+                row=source_stamp('2026-11-06T16:02:16Z','16:02'))['matches']
+            jalali=seed('smsjalaliminute',keys={
+                'smsApiTimezone':'Asia/Tehran','smsApiCalendar':'jalali'})
+            tehran=dt.timezone(dt.timedelta(hours=3,minutes=30))
+            local_ts=int(dt.datetime(2026,11,6,16,5,17,tzinfo=tehran).timestamp())
+            check=php('normalize',pay_id=jalali,issued_unix=local_ts,
+                row=source_stamp('1405/08/15','16:05'))
+            assert check['matches'] and check['evidence']['time_precision_seconds']==59,check
             before=sql(f"SELECT quote_amount,provider_reference,payment_id,checkout_url FROM payment_attempts WHERE pay_row_id={p1}")
             assert php('reserve',pay_id=p1,row=r,guard=False) is None
             handle=php('reserve',pay_id=p1,row=r);assert handle
@@ -424,7 +456,7 @@ def run(module):
             assert server.lock_checks>=10
             return {'complete':True,'contracts':['partial_schema','encrypted_config','explicit_mapping','stable_namespace',
                 'full_exact_quote','exact_rial_conversion','ready_only','original_time',
-                'sql_collision_fence','pre_dispatch_intent','sms_same_key_recovery','sms_expired_recovery',
+                'bank_preissue_grace_and_minute_precision','sql_collision_fence','pre_dispatch_intent','sms_same_key_recovery','sms_expired_recovery',
                 'manual_settled_evidence_only','typed_review_authenticity','gift_single_code','gift_exact_redeem_amount',
                 'gift_partial_commit','gift_nonce_reference','gift_uncertain_active_hold',
                 'bounded_transport','rotation_fails_closed'],'loopback_dispatches':server.lock_checks,
