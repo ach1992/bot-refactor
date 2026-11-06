@@ -40,6 +40,15 @@ def main():
         stages.stage_source(stage,True)
         fixture=stage/'native-purchase.php'
         stub=fixture.read_text()
+        # The old purchase-parity harness deliberately shadowed the
+        # provider registry with a Marzban-only stub. This test instead
+        # exercises the current real administrator Group callback for BOTH
+        # native providers, so use the production provider-neutral predicate
+        # within its isolated fixture. The historical V9 fixture is untouched.
+        old_support="function achbotSupportsPanel($type) { return $type === 'marzban'; }"
+        current_support="function achbotSupportsPanel($type) { return achbotSupportsProviderType($type); }"
+        assert stub.count(old_support)==1
+        stub=stub.replace(old_support,current_support,1)
         assert stub.count("'subLinkState'=>'on',")==1
         stub=stub.replace("'subLinkState'=>'on',",
                           "'subLinkState'=>'on','switchLocationState'=>'on',")
