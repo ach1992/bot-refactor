@@ -553,9 +553,32 @@ function achbotPgDispatchReserved(mysqli $db,int $effectId,int $serverId,string 
     if (!$s->execute() || $s->affected_rows!==1) throw new RuntimeException('pg_dispatch_claim_unconfirmed');$s->close();
     $r=achbotPgCreate($panel,['username'=>$remark,'data_limit'=>$bytes,'expire'=>$expiry,
         'group_ids'=>$snap['group_ids'],'operation_marker'=>'achbot:v1:'.$operation]);
-    if (($r['success']??false)!==true) throw new RuntimeException('pg_create_requires_review');
-    if (!$db->begin_transaction()) throw new RuntimeException('pg_verify_begin');
+    if (($r['success']??false)!==true) {
+        // The adapter returns a bounded machine reason, not response text.
+        // A failed POST response may still have created the native account.
+        $reason=(string)($r['reason']??'');
+        // The native adapter marks validation rejection as not dispatched;
+        // an uncertain remote POST remains remote_create regardless of HTTP.
+        $preflight=($r['uncertain']??null)===false &&
+            in_array($reason,['pg_create_invalid','pg_groups_required'],true);
+        $known=['pg_create_unconfirmed','pg_create_readback_unconfirmed',
+            'pg_create_entitlement_unconfirmed','pg_create_identity_unconfirmed',
+            'pg_create_invalid','pg_groups_required',
+            'pg_timeout','pg_transport_unavailable','pg_auth_denied',
+            'pg_permission_denied','pg_conflict','pg_request_rejected',
+            'pg_rate_limited','pg_vendor_unavailable','pg_create_status_invalid'];
+        if (!in_array($reason,$known,true)) $reason='pg_create_unconfirmed';
+        if (function_exists('achbotEffectOperatorDiagnostic'))
+            error_log(achbotEffectOperatorDiagnostic(
+                new RuntimeException('pg_create_requires_review',0,new RuntimeException($reason)),
+                (int)($e['pay_row_id']??0),$effectId,(int)($e['ordinal']??0),
+                $preflight?'preflight':'remote_create'));
+        throw new RuntimeException('pg_create_requires_review');
+    }
     try {
+        // A native account may already exist when beginning local verification
+        // fails. Capture this boundary with the same immutable effect identity.
+        if (!$db->begin_transaction()) throw new RuntimeException('pg_verify_begin');
         $after=achbotProviderPanelForSnapshot($db,$snap);
         if (!hash_equals($credentials,hash('sha256',$after['api_key']))) throw new RuntimeException('pg_credentials_changed');
         achbotProviderVerifyAccount($db,$effectId,$r['user']);
@@ -563,7 +586,13 @@ function achbotPgDispatchReserved(mysqli $db,int $effectId,int $serverId,string 
         $s->bind_param('i',$effectId);
         if (!$s->execute() || $s->affected_rows!==1) throw new RuntimeException('pg_effect_verification_unconfirmed');$s->close();
         if (!$db->commit()) throw new RuntimeException('pg_verify_commit_unknown');
-    } catch (Throwable $error) {try{$db->rollback();}catch(Throwable $ignored){} throw $error;}
+    } catch (Throwable $error) {
+        try{$db->rollback();}catch(Throwable $ignored){}
+        if (function_exists('achbotEffectOperatorDiagnostic'))
+            error_log(achbotEffectOperatorDiagnostic($error,
+                (int)($e['pay_row_id']??0),$effectId,(int)($e['ordinal']??0),'verify_local'));
+        throw $error;
+    }
     $identity=achbotProviderAccountIdentity($db,achbotProviderAccountByEffect($db,$effectId));
     $links=achbotPgLinks($panel,$identity);
     $user=$r['user'];$user['links']=($links['success']??false)===true?($links['links']??[]):[];

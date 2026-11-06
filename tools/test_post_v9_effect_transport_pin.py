@@ -10,6 +10,7 @@ import argparse
 import contextlib
 import hashlib
 import json
+import re
 import shutil
 import threading
 import time
@@ -119,6 +120,7 @@ def main():
             target=stage/f;target.parent.mkdir(parents=True,exist_ok=True)
             shutil.copyfile(ROOT/f,target)
         with (stage/'functions-under-test.php').open('a') as output:
+            output.write("ini_set('error_log',__DIR__.'/effect-diagnostic.log');\n")
             output.write("""
 function achbotSupportsPanel($type) { return $type==='marzban'; }
 require_once __DIR__.'/src/Purchase/Core.php';
@@ -155,10 +157,28 @@ function ownedStrictEffectDispatch($effectId,$serverId,$group,$endpoint,$remark,
             credential_hash=hashlib.sha256(json.dumps(
                 ['fixture-admin','fixture-password'],ensure_ascii=False,separators=(',',':')
             ).encode()).hexdigest()
+            owned_log=stage/'effect-diagnostic.log'
+            previous=owned_log.read_text() if owned_log.exists() else ''
             result=native.run(work,env,stage,DB,{
                 'function':'ownedStrictEffectDispatch',
                 'args':[effect_id,2,group,hashlib.sha256(url.encode()).hexdigest(),
                         'fixture-user',expires,credential_hash]})
+            current=owned_log.read_text() if owned_log.exists() else ''
+            expect(current.startswith(previous),'owned_effect_log_cannot_be_rewritten')
+            delta=current[len(previous):]
+            if result['exception'] is None:
+                expect(delta=='','successful_native_create_logged_unknown_effect')
+            else:
+                bounded=(r'achbot_paid_effect_needs_reconciliation pay_id=0'
+                         r' effect_id='+str(effect_id)+r' ordinal=1'
+                         r' stage=(?:preflight|remote_create|remote_readback|verify_local)'
+                         r' reason=[A-Za-z0-9_]+'
+                         r' cause=(?:runtime_exception|mysqli_sql_exception|runtime|php_error)'
+                         r' depth=[1-8]$')
+                expect(len(delta.splitlines())==1 and
+                       re.search(bounded,delta.strip()) is not None and
+                       'fixture' not in delta and 'password' not in delta,
+                       'native_effect_diagnostic_not_bounded_to_original_line')
             expect(not result['warnings'] and result['stdout']=='',f'Unexpected PHP warnings: {result}')
             return result
         def journal(group=None):

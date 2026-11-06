@@ -2699,6 +2699,30 @@ def run_effects(tmp: str) -> tuple[dict, dict]:
             pinned_effects.get("external_network_requests")==0 and
             pinned_effects.get("installed_changes")==0):
         raise RuntimeError("Pinned physical CREATE source/HTTP assurance incomplete")
+    # #117 independent review remediation: execute the real PasarGuard native
+    # CREATE / MariaDB transaction boundaries, not only format-unit assertions.
+    pg_diag_path=Path(tmp)/"pg-unknown-create-diagnostics.json"
+    subprocess.run(
+        ["python3",str(ROOT/"tools/test_post_v9_pg_effect_diagnostics.py"),
+         "--run-disposable","--report",str(pg_diag_path)],
+        cwd=ROOT,check=True,timeout=180,capture_output=True)
+    pg_diag=json.loads(pg_diag_path.read_text())
+    expected_pg_diag={
+        name+"_source_real_diagnostic_and_no_replay" for name in (
+            "normal","begin_failure","credential_drift","invalid_username",
+            "post_lost","provider_503")
+    } | {"native_group_preflight_no_post_and_safe_reason",
+         "untrusted_provider_error_text_sanitized"}
+    if not (pg_diag.get("complete") is True
+            and set(pg_diag.get("checks",[]))==expected_pg_diag
+            and pg_diag.get("cases")==len(expected_pg_diag)
+            and pg_diag.get("php85_source_real") is True
+            and pg_diag.get("owned_socket_mariadb") is True
+            and pg_diag.get("actual_pasarguard_post_and_readback") is True
+            and pg_diag.get("native_post_replays")==0
+            and pg_diag.get("production_and_external_effects")==0):
+        raise RuntimeError("PasarGuard unknown CREATE diagnostic boundaries unverified")
+    pinned_effects["pasarguard_diagnostics"]=pg_diag
     # High-assurance R1-A2: source PHP -> Core -> Accounts, real cURL
     # over two isolated loopback Marzban account stores.
     physical_gift_path=Path(tmp)/"gift-physical-target.json"
@@ -3508,6 +3532,10 @@ def run_funding(tmp: str) -> tuple[dict, dict]:
     recovery=json.loads(recovery_path.read_text())
     required_recovery={
         "unresolved_bank_case_reads_exact_local_identity_without_sql_writes",
+        "provider_readback_failure_logs_exact_effect_and_trusted_cause",
+        "provider_raw_exception_credentials_never_logged",
+        "pasarguard_nested_transport_reason_not_lost",
+        "provider_diagnostic_indices_and_stage_fail_closed",
         "owner_private_wallet_debit_capacity_hold_visible_no_unissued_get",
         "strict_one_account_get_only_matching_observation_no_replay",
         "no_financial_write_remote_missing",

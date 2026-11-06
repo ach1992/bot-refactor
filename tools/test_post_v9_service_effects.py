@@ -7,6 +7,7 @@ This tests the real PHP helper with local provider spies and real DB keys.
 from __future__ import annotations
 import argparse
 import json
+import re
 import subprocess
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -260,9 +261,28 @@ def run_php(work,env,driver,**spec):
          '-d','disable_functions=curl_init,curl_exec,exec,shell_exec,system,passthru,popen,proc_open,mail',
          str(driver),str(ROOT),str(work/'mysql.sock'),db,json.dumps(spec)]
     p=subprocess.run(cmd,cwd=work,env=env,capture_output=True,text=True,timeout=20)
-    if p.returncode or p.stderr not in allowed_stderr:
+    try:output=json.loads(p.stdout)
+    except ValueError as exc:
+        raise RuntimeError('native_effect_fixture_invalid_json') from exc
+    if p.stderr not in allowed_stderr:
+        # An attempted original CREATE that failed has ONE source-owned
+        # diagnostic; never accept arbitrary stderr or an error on success.
+        matched=re.fullmatch(
+            r'achbot_paid_effect_needs_reconciliation pay_id=[0-9]+'
+            r' effect_id=[1-9][0-9]* ordinal=[1-9][0-9]*'
+            r' stage=(?:preflight|remote_create|remote_readback|verify_local|unknown)'
+            r' reason=[a-zA-Z0-9_]+'
+            r' cause=(?:runtime_exception|mysqli_sql_exception|runtime|php_error)'
+            r' depth=[1-8]\n',p.stderr)
+        if not (matched and
+                output.get('error')=='effect_requires_operator_reconciliation' and
+                any(e.get('event')=='POST' for e in output.get('events',[])) and
+                'fixture_' not in p.stderr and 'SQL' not in p.stderr):
+            raise RuntimeError('unexpected_native_create_diagnostic '+
+                repr((p.returncode,p.stderr[-900:]))[:1100])
+    if p.returncode:
         raise RuntimeError('local PHP helper failed '+repr((p.returncode,p.stderr[-900:]))[:1100])
-    return json.loads(p.stdout)
+    return output
 
 def pay(work,env,key,count=1,db=DB):
     query(work,env,

@@ -14,6 +14,62 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
 require_once __DIR__.'/../Panel/ProviderRuntime.php';
 require_once __DIR__.'/../Subscription/ServerDisplaySettings.php';
 
+/**
+ * Operator diagnostic for an UNKNOWN native effect. Do not serialize arbitrary
+ * provider or SQL exception messages: those can contain credentials or URLs.
+ * First trusted cause wins; the outer no-replay wrapper is not the cause.
+ */
+function achbotEffectSafeFailure(Throwable $error): array {
+    $allowed=[
+        'effect_target_changed_pre_post','effect_remote_create_unconfirmed',
+        'effect_remote_readback_unverified','effect_verification_commit_unknown',
+        'effect_verification_unconfirmed','effect_credentials_changed_post',
+        'effect_subscription_unverified','effect_get_unconfirmed',
+        'effect_get_invalid','effect_create_response_unconfirmed',
+        'effect_provider_changed_pre_dispatch','effect_target_snapshot_required',
+        'effect_requires_operator_reconciliation','effect_order_id_unconfirmed',
+        'effect_link_unconfirmed','pg_create_requires_review',
+        'pg_create_readback_unconfirmed','pg_create_identity_unconfirmed',
+        'pg_create_entitlement_unconfirmed','pg_create_status_invalid',
+        'pg_create_unconfirmed','pg_timeout','pg_transport_unavailable',
+        'pg_auth_denied','pg_permission_denied','pg_not_found','pg_conflict',
+        'pg_rate_limited','pg_vendor_unavailable','pg_request_rejected',
+        'pg_dispatch_target_changed','pg_verify_begin','pg_verify_commit_unknown',
+        'pg_effect_verification_unconfirmed','pg_credentials_changed',
+        'pg_create_invalid','pg_groups_required'
+    ];
+    $fallback='runtime_error';$depth=0;$source='runtime';
+    for ($current=$error;$current!==null && $depth<8;$current=$current->getPrevious()) {
+        $depth++;
+        if ($current instanceof mysqli_sql_exception) {
+            $state=$current->getSqlState();
+            return ['reason'=>preg_match('/^[A-Z0-9]{5}$/D',$state)
+                ?'database_error_'.$state:'database_error',
+                'class'=>'mysqli_sql_exception','chain_depth'=>$depth];
+        }
+        $reason=$current->getMessage();
+        if (in_array($reason,$allowed,true) &&
+            !in_array($reason,['effect_requires_operator_reconciliation','pg_create_requires_review'],true)) {
+            return ['reason'=>$reason,'class'=>'runtime_exception','chain_depth'=>$depth];
+        }
+        if ($current instanceof TypeError || $current instanceof ErrorException)
+            {$fallback='php_error';$source='php_error';}
+    }
+    return ['reason'=>$fallback,'class'=>$source,'chain_depth'=>$depth];
+}
+
+function achbotEffectOperatorDiagnostic(
+    Throwable $error,int $payId,int $effectId,int $ordinal,string $stage
+): string {
+    $stages=['preflight','remote_create','remote_readback','verify_local','unknown'];
+    if (!in_array($stage,$stages,true)) $stage='unknown';
+    $d=achbotEffectSafeFailure($error);
+    return 'achbot_paid_effect_needs_reconciliation pay_id='.max(0,$payId).
+        ' effect_id='.max(0,$effectId).' ordinal='.max(0,$ordinal).
+        ' stage='.$stage.' reason='.$d['reason'].
+        ' cause='.$d['class'].' depth='.$d['chain_depth'];
+}
+
 /** Fail closed if the caller would roll back the pre-dispatch marker. */
 function achbotEffectRequireAutocommit(mysqli $db): void {
     $res=$db->query('SELECT @@autocommit AS ac, @@in_transaction AS tx');
@@ -475,6 +531,7 @@ function achbotMarzbanEffectDispatchReservedAccount(
 ): array {
     // Anything after this point may have reached Marzban, even if the reply
     // is lost. No SQL rollback or failed GET may unlock another CREATE.
+    $stage='preflight';
     try {
         // A route reconfigured since the reservation must not be used.
         $check=$db->prepare("SELECT i.panel_group_id,c.type,c.panel_url,c.username,c.password
@@ -499,6 +556,7 @@ function achbotMarzbanEffectDispatchReservedAccount(
             'password'=>(string)$target['password'],
             'panel_group_id'=>$group
         ];
+        $stage='remote_create';
         [$response,$actualRemark,$port]=createServerAccount(
             'marzban',$serverId,0,$planId,$remark,$volume,$days,
             (string)($p['uniqid']??''),(string)($p['protocol']??''),
@@ -510,6 +568,7 @@ function achbotMarzbanEffectDispatchReservedAccount(
             $actualRemark!==$remark) {
             throw new RuntimeException('effect_remote_create_unconfirmed');
         }
+        $stage='remote_readback';
         $remote=getMarzbanUser($serverId,$remark,null,true,
             $pinnedTarget['panel_url'],$pinnedTarget);
         // Marzban must prove exact integer seconds and bytes. PHP's (int)
@@ -532,13 +591,22 @@ function achbotMarzbanEffectDispatchReservedAccount(
             $exactNonnegative($remote->data_limit)!==$bytes) {
             throw new RuntimeException('effect_remote_readback_unverified');
         }
+        $stage='verify_local';
         achbotVerifyMarzbanCreatedEffect($db,$effectId,$serverId,$group,
             $endpoint,$operation,$pinnedTarget);
         return [$response,$remark,$port,$effectId];
     } catch (Throwable $e) {
-        // The original payment route owns the operator alert. The effect ID
-        // and dispatching marker remain durably queryable by pay_row_id;
-        // emitting a second log here would duplicate its alert semantics.
+        // One protected structured log bridges the generic staff alert to
+        // the original durable effect. Never emit provider response text.
+        $pay=0;$ordinal=0;
+        try {
+            $q=$db->prepare('SELECT pay_row_id,ordinal FROM service_effects WHERE id=?');
+            $q->bind_param('i',$effectId);$q->execute();
+            $owner=$q->get_result()->fetch_assoc();$q->close();
+            $pay=(int)($owner['pay_row_id']??0);
+            $ordinal=(int)($owner['ordinal']??0);
+        } catch (Throwable $ignored) {}
+        error_log(achbotEffectOperatorDiagnostic($e,$pay,$effectId,$ordinal,$stage));
         throw new RuntimeException('effect_requires_operator_reconciliation',0,$e);
     }
 }
