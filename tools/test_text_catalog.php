@@ -531,6 +531,7 @@ $restoreSharedTransfer=static function(array $sides) use($transferManifest,$tran
 // a local comparison copy, retaining all immutable R5/API negative controls.
 $panelGroupManifest=json_decode(file_get_contents(__DIR__.'/text_catalog_panel_group_ownership.json'),true,512,JSON_THROW_ON_ERROR);
 $panelGroupKeys=['bot.bot.addserver_name.message.c31e264971',
+ 'bot.bot.addserver_name.alert.27e6f9c466',
  'bot.bot.addserver_name.alert.9ee9f25355',
  'bot.bot.addserver_name.alert.a5625b915f'];
 $panelGroupParent='8c0af0899051ed60253fe5d40301dfdbb1d2e5de';
@@ -539,7 +540,7 @@ if(($panelGroupManifest['version']??null)!==1 ||
    ($panelGroupManifest['owner_issue']??null)!=='https://github.com/ach1992/bot-refactor/issues/114' ||
    ($panelGroupManifest['audience']??null)!=='admin' ||
    !is_array($panelGroupManifest['entries']??null) ||
-   count($panelGroupManifest['entries'])!==3 ||
+   count($panelGroupManifest['entries'])!==4 ||
    array_diff(array_keys($panelGroupManifest['entries']),$panelGroupKeys) ||
    array_diff($panelGroupKeys,array_keys($panelGroupManifest['entries'])))
  throw new RuntimeException('panel_group_catalog_manifest_identity');

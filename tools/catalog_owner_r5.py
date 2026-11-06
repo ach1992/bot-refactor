@@ -175,6 +175,7 @@ def panel_group_copy_restore(sides):
     record=json.loads((ROOT/'tools/text_catalog_panel_group_ownership.json').read_text())
     entries=record.get('entries')
     keys={'bot.bot.addserver_name.message.c31e264971',
+          'bot.bot.addserver_name.alert.27e6f9c466',
           'bot.bot.addserver_name.alert.9ee9f25355',
           'bot.bot.addserver_name.alert.a5625b915f'}
     check(record.get('version')==1 and

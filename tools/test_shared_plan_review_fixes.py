@@ -785,7 +785,7 @@ def main():
                 yes(changed=='assigned' and
                     h['db']('SELECT panel_group_id FROM server_info WHERE id=2')==str(group) and
                     before==subject(h) and money==finance(h) and
-                    puts==len(h['writes']) and outstanding(h)=='review',
+                    puts==len(h['writes']()) and outstanding(h)=='review',
                     'marzban_group_change_allowed_before_held_journal_import_admission')
             h['call']('manual',actor=1004,data='addToOrders2')
             yes(h['db']('SELECT COUNT(*) FROM orders_list WHERE userid=1004')=='0' and
