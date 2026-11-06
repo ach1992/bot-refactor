@@ -340,7 +340,7 @@ return !empty($GLOBALS['spec']['fail_staff'])?null:(object)['ok'=>true];}""")
         assert len(buttons)==3 and 'تایید خودکار توسط API' in buttons[0][0]['text']
         assert not any('approve' in b[0]['callback_data'] for b in buttons),buttons
         assert 'exactbank' in buttons[2][0]['text']
-        assert any('درخواست (افزایش موجودی)' in text and 'synthetic_user' in text
+        assert any('درخواست (افزایش موجودی)' in text and 'fixture_user' in text
             for text in reports),reports
         cases.append('bank_terminal_receipt_three_rows_and_wallet_report_subject')
 
