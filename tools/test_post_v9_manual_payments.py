@@ -524,7 +524,9 @@ def run_route(work,env,driver,data='',step='none',actor=1001,update=None,route='
     safe_review=(accepted_log_codes and p.stderr and all(
         ((any(code in line for code in accepted_log_codes) and
           'fixture_' not in line and 'SQL' not in line) or
-         ('achbot_manual_standard_effect_needs_review' in accepted_log_codes and
+         (any(k in accepted_log_codes for k in
+              ('achbot_manual_standard_effect_needs_review',
+               'achbot_custom_receipt_review')) and
           native_log.search(line) is not None and
           'fixture_' not in line and 'SQL' not in line) or
          (intentional_notice_failure and notification_fixture.sanitized_exception_line(line)))
