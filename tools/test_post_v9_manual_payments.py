@@ -34,6 +34,7 @@ $paymentKeys=$spec['keys']??[
     'manualUsdtNetwork'=>'BEP20','manualUsdtRateToman'=>'100000',
 ];
 $admin=9001;
+$GLOBALS['telegramWebhookSecret']='fixture-manual-payment-delivery-key-2026';
 require_once $root.'/src/Finance/ReceiptHelpers.php';
 require_once $root.'/src/Panel/ProviderRuntime.php';
 function achbotSupportsPaymentSubject(...$args) {return true;}
@@ -628,6 +629,7 @@ def check():
         query(work,env,(ROOT/'migrations/post-v9/007_service_effects.sql').read_text())
         query(work,env,(ROOT/'migrations/post-v9/008_referral_awards.sql').read_text())
         query(work,env,(ROOT/'migrations/post-v9/009_bank_buy_invoice_claims.sql').read_text())
+        query(work,env,(ROOT/'migrations/post-v9/018_payment_delivery_intents.sql').read_text())
         # Each isolated standard receipt now holds capacity before POST.
         # Supply independent test headroom; focused exhaustion is checked
         # in actual ServiceEffects concurrency and reservation regressions.

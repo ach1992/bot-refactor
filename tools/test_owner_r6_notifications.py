@@ -249,7 +249,7 @@ def main():
     assert mainline==expected,'previous approved automatic bank source changed'
     candidate=(ROOT/'src/Finance/AutomaticReceipts.php').read_bytes()
     assert hashlib.sha256(candidate).hexdigest()==(
-        'd0a27e3004832b2219a945e0b58dfc3ca8a808ecddbfc9ef4f704e18bd6cae50'
+        '5239677edb72c3b6a0aabca8f8c5a588d3337208eeebb9b7794b9f29eb93bedb'
     ),'issue117_delivery_candidate_bank_runtime_changed'
     assert (b'achbotDeliverySchemaReady' in candidate and
             b'achbotDeliveryDispatchPending' in candidate and

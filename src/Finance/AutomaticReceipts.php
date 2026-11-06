@@ -80,9 +80,25 @@ if($botState['cartToCartAutoAcceptState']=="on"){
             if ($ledger && (int)$ledger['total']>0) {
                 achbotDeliveryDispatchPending($connection,(int)$rowId);
             } else {
-                sendMessage(\achbotMessage('manual_payment.automatic_receipts.message.38dd599e83') .
-                    number_format($price). \achbotMessage('manual_payment.automatic_receipts.message.6f42cf1050'),
-                    null, null, $user_id);
+                // Only genuinely pre-003 historical wallet payments may use
+                // the old direct send. A modern 003-backed credit may have
+                // a temporarily unreadable, missing or corrupt 018 ledger:
+                // never bypass it and create an untracked duplicate send.
+                $knownAttempt=true;
+                try {
+                    $q=$connection->prepare('SELECT id FROM payment_attempts WHERE pay_row_id=? LIMIT 1');
+                    $q->bind_param('i',$rowId);$q->execute();
+                    $knownAttempt=(bool)$q->get_result()->fetch_assoc();$q->close();
+                } catch (Throwable $e) {
+                    error_log('achbot_bank_wallet_delivery_attempt_lookup_unavailable pay_id='.(int)$rowId);
+                }
+                if ($knownAttempt) {
+                    error_log('achbot_bank_wallet_delivery_ledger_unavailable pay_id='.(int)$rowId);
+                } else {
+                    sendMessage(\achbotMessage('manual_payment.automatic_receipts.message.38dd599e83') .
+                        number_format($price). \achbotMessage('manual_payment.automatic_receipts.message.6f42cf1050'),
+                        null, null, $user_id);
+                }
             }
         }
         elseif($payType == "BUY_SUB"){

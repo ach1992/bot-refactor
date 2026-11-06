@@ -179,10 +179,27 @@ def main():
         ancestor=command('git','show',catalog_owner_r5.SERVER_REMOVAL_PARENT+':'+path).decode()
         check(key in ancestor and key not in sources[path] and key in entries and key not in refs,
               'retired_owner_rev4_status_plan_label_invalid:'+key)
+    # #117 deliberately removes the unsolicited BUY_SUB Telegram-delivery
+    # alert to the Owner. Preserve the already-accepted three catalog strings
+    # and their history for existing installations, but require proof that
+    # no other new orphan is admitted by this exact retirement.
+    retired_bank_delivery_push={
+        'manual_payment.automatic_receipts.text.d828bce37f',
+        'manual_payment.automatic_receipts.message.9b88994424',
+        'manual_payment.automatic_receipts.text.38146cb4da',
+    }
+    bank_source=sources['src/Finance/AutomaticReceipts.php']
+    old_bank_source=command('git','show',
+        '17af1e55dc4cb8db6751a731bb223d93dc6f902f:src/Finance/AutomaticReceipts.php').decode()
+    check(retired_bank_delivery_push<=entries and
+          not (retired_bank_delivery_push&refs) and
+          all(key in old_bank_source and key not in bank_source
+              for key in retired_bank_delivery_push),
+          'issue117_quiet_delivery_retired_copy_provenance_invalid')
     expected_unused=(retired_shared_transfer|set(management['retained_legacy_keys'])|
         catalog_owner_r5.verify_retained_display_keys()|
         catalog_owner_r5.API_REVIEW_RETAINED|obsolete_filter|obsolete_postwrite|
-        retired_keys)
+        retired_keys|retired_bank_delivery_push)
     check(unused==expected_unused,'unrecorded legacy/orphan copy entries: '+str(unused^expected_unused))
     with tempfile.TemporaryDirectory(prefix='achbot-catalog-audit-') as scratch:
         fixture=pathlib.Path(scratch)/'fixture.php'
