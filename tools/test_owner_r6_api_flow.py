@@ -421,8 +421,8 @@ return !empty($GLOBALS['spec']['fail_staff'])?null:(object)['ok'=>true];}""")
             cases.append('bank_'+label+'_exact_manual_customer_copy_once')
         # Gift approval uses the exact same manual success copy for every edit
         # subject, not just BUY_SUB or wallet, and never sends an extra API notice.
-        for label,kind,days,vol in [('giftrenew','RENEW_ACCOUNT',0,0),('giftday',f'INCREASE_DAY_{oid}_1',4,0),('giftvolume',f'INCREASE_VOLUME_{oid}_1',0,5),('giftstandard','RENEW_SCONFIG',0,0)]:
-            n=seed(label,kind,method='gift_card',days=days,volume=vol,order=oid if label!='giftstandard' else 0)
+        for label,kind,days,vol in [('giftrenew','RENEW_ACCOUNT',0,0),('giftday',f'INCREASE_DAY_{oid}_1',4,0),('giftvolume',f'INCREASE_VOLUME_{oid}_1',0,5),('giftstandardrenew','RENEW_SCONFIG',0,0)]:
+            n=seed(label,kind,method='gift_card',days=days,volume=vol,order=oid if label!='giftstandardrenew' else 0)
             gift(label);assert call(op='save',pay=n,code=label)['result']['status']=='saved'
             r=call(pay=n);assert r['result']=='confirmed',(label,r)
             expected=call(op='manual_text',pay=n)['result']
