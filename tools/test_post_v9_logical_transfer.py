@@ -330,11 +330,15 @@ achEvent('probe',[
                     "SET MESSAGE_TEXT='achbot_group_injected_failure'")
                 try:
                     rejected=do('wizard',data=f'setServerPanelGroup_2_{g2}',actor=9001)
-                    if (not has(rejected,'ذخیره گروه پنل انجام نشد') or
-                        snapshot(work,env)!=before or
-                        sql(work,env,'SELECT panel_group_id FROM server_info WHERE id=2')!=group_before):
+                    alert_seen=has(rejected,'ذخیره گروه پنل انجام نشد')
+                    state_ok=snapshot(work,env)==before
+                    group_after=sql(work,env,'SELECT panel_group_id FROM server_info WHERE id=2')
+                    if not (alert_seen and state_ok and group_after==group_before):
                         raise RuntimeError(native_type+
-                            ' SQL failure did not atomically roll back Group callback')
+                            ' SQL failure did not atomically roll back Group callback: '+
+                            repr({'alert_seen':alert_seen,'snapshot_equal':state_ok,
+                                  'previous_group':group_before,'current_group':group_after,
+                                  'events':rejected['events'][:3]})[:1400])
                     passed(native_type+'_actual_admin_group_write_fault_rolls_back_all_local_state')
                 finally:
                     sql(work,env,'DROP TRIGGER IF EXISTS achbot_group_sql_fault')
