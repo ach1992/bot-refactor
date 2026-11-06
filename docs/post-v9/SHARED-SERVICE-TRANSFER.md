@@ -67,9 +67,18 @@ stale source-group identity: outstanding attempts must revalidate their
 current pinned identity and fail/hold safely if it changed; never replay an
 uncertain remote effect. A new native plan/import/transfer admission also
 checks noncommitted historical plan intents by stable order-reference identity
-(and Marzban's currently declared physical group plus native username)
-independently of the mutable group-derived lease; changing a Panel Group must
-never let a pending journal be bypassed with a fresh lock key. This independent
+and their persisted original logical server IDs. New Marzban intents additionally
+pin the exact native username and original administrator-declared physical
+Group in the existing intent JSON (no new migration, no password/API-secret
+storage). The fence survives deletion of the source order and a new registration
+with a different local order ID; it does not trust today's Group-derived lock
+or mutable order rows as historical proof. Older unsettled 017 intents without
+a pinned native username **conservatively hold the affected server/current
+Group's Native admissions for all usernames** until reconciled; unrelated
+servers and committed journals remain usable. Admin Group editing and local
+order deletion themselves are not blocked by this consumption-only fence.
+Changing a Panel Group must never let a pending journal be bypassed with a
+fresh lock key. This independent
 group assignment rule does not
 relax the separate rule that administrator **endpoint changes** to Marzban
 are denied for a referenced server/group. Credential rotation without an
