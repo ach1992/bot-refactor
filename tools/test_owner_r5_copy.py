@@ -31,7 +31,16 @@ def main():
     check(removal_controls==4,'server_removal_unsafe_copy_negative_control_missing')
     controls=r5.negative_controls(sides)
     gift_controls=r5.gift_catalog_negative_controls(sides)
-    check(not any('🆔'in r5.text(e)or compositions.numeric_id_variant(r5.text(e))for e in merged.values()),'obsolete_id_wording_or_marker')
+    # Two specific RC25 approved tracking-hash buttons now deliberately use
+    # the compact ID symbol; numeric-user-ID headers remain prohibited.
+    rc25_hash_buttons={
+      'manual_payment.receipt_helpers.build_admin_keyboard_with_stats.hash_id.286c7d3faf':'🆔 {hashId}',
+      'manual_payment.manual_approval.manual_standard_report_delivery.hash_id.2899228604':'🆔 {hash_id}'
+    }
+    check(all(r5.text(merged.get(k,''))==v for k,v in rc25_hash_buttons.items()) and
+          {k for k,e in merged.items() if '🆔' in r5.text(e)}==set(rc25_hash_buttons) and
+          not any(compositions.numeric_id_variant(r5.text(e)) for e in merged.values()),
+          'approved_tracking_hash_buttons_only_no_numeric_user_id_header')
     # Data-only code/URI/native labels and continuation fragments stay intact.
     # These four intentionally stable units are composed inside Persian sentences.
     expected_fragments=['notifications.warnings.send.1e5349d9b2','notifications.warnings.send.0458ad0612','jobs.gift2all.gift_text.8f714dee13','jobs.gift2all.text.b70363d685']
