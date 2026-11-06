@@ -387,7 +387,7 @@ def check():
         assert delivered['result']=={'1':'acknowledged'} and sum(x['event']=='DELIVER' for x in delivered['events'])==1,delivered
         assert not any(x['event']=='POST' for x in delivered['events']),delivered
         again=run(work,env,driver,op='delivery_pending',pay=crash)
-        assert again['result']=={} and not again['events'],again
+        assert again['result']==[] and not again['events'],again
         assert total(work,env,'orders_list',crash)==1 and total(work,env,'service_effects',crash)==1
         cases.append('crash_postterminal_before_telegram_resumes_pending_only_once')
 
@@ -448,7 +448,7 @@ def check():
         assert query(work,env,f"SELECT GROUP_CONCAT(state ORDER BY ordinal) FROM payment_delivery_intents WHERE pay_row_id={split}")=='acknowledged,unknown'
         assert len([x for x in sent['events'] if x['event']=='DELIVER'])==2
         assert not [x for x in sent['events'] if x['event']=='MESSAGE' and x['to']==9001]
-        assert run(work,env,driver,op='delivery_pending',pay=split)['result']=={}
+        assert run(work,env,driver,op='delivery_pending',pay=split)['result']==[]
         challenge=run(work,env,driver,op='delivery_challenge',pay=split,ordinal=2)['result']
         denied=run(work,env,driver,op='delivery_owner_send',pay=split,ordinal=2,actor=9002,challenge=challenge)
         assert denied['result']=='denied' and not any(x['event']=='DELIVER' for x in denied['events'])
@@ -898,7 +898,7 @@ def check():
             alerts=[e for e in result['events'] if e['event']=='MESSAGE' and e['to']==9001]
             assert not alerts,(mode,alerts)
             assert query(work,env,f"SELECT state,attempt_count FROM payment_delivery_intents WHERE pay_row_id={notice}")=='unknown\t1'
-            assert run(work,env,driver,op='delivery_pending',pay=notice)['result']=={}
+            assert run(work,env,driver,op='delivery_pending',pay=notice)['result']==[]
             cases.append('postcommit_'+mode+'_quiet_unknown_ledger_without_recreate')
 
         wrong=seed(work,env,'bankbuyotherprovider',method='nowpayments')

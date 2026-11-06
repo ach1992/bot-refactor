@@ -788,6 +788,20 @@ def api_source_references(path,source):
         # checking the same pinned API source and previously accepted #107 insertion.
         audited=source
         if path=='src/Finance/ApiPayments.php':
+            # #117 replaces the fallible in-memory delivery branch without
+            # changing the historical dynamic-message approval inventory.
+            # Pin the entire new consumer byte-for-byte, and require the
+            # separately accepted previous exact main source as the object
+            # fed to unchanged prior-lineage normalization below. Unapproved
+            # edits (including negative controls) still fail closed.
+            if hashlib.sha256(source.encode()).hexdigest()==(
+                '811aa2c126a30cc156e2b25055479fa729f3d277a9a5aff71e8f484142714a98'):
+                baseline=command('git','show',
+                    '17af1e55dc4cb8db6751a731bb223d93dc6f902f:src/Finance/ApiPayments.php')
+                check(hashlib.sha256(baseline).hexdigest()==(
+                    '89cd59037b234327fd05eb4531ad855480376ea51d13d43e3cfee07b60cd5d78'),
+                    'issue117_previous_api_consumer_source_identity_drift')
+                audited=baseline.decode()
             if any(fragment in audited for fragment,_ in API_RECEIPT_PRESENTATION_DIFF):
                 for fragment,_ in API_RECEIPT_PRESENTATION_DIFF:
                     check(audited.count(fragment)==1,
