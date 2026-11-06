@@ -546,6 +546,21 @@ REVIEW_DYNAMIC={
 # Issue #107 changes an API payment *eligibility fence*, not any accepted copy.
 # Preserve the old dynamic-message source proof byte-for-byte by admitting only
 # this explicit non-copy insertion; arbitrary edits still fail source binding.
+# Issue #117: the new receipt/report presenter adds only these exact
+# non-catalog source fragments, preserving every established literal and
+# dynamic catalog key. Removing the complete recognized delta must yield the
+# prior byte-pinned consumer; a partial, arbitrary or changed hook fails.
+API_RECEIPT_PRESENTATION_DIFF = [
+    ("require_once __DIR__.'/ApiPaymentPresentation.php';\n", ""),
+    ("    $presentation=achbotApiPaymentPresentation($db,$pay,$a);\n", ""),
+    ("'reference'=>$hash.' (#'.$id.')'", "'reference'=>$hash"),
+    ("""        'subject'=>payTypeToDescription((string)$pay['type']).
+            ($presentation['details']==='' && $presentation['subject']!==payTypeToDescription((string)$pay['type'])
+                ?' — '.$presentation['subject']:''),'status'=>$label]);""",
+     """        'subject'=>payTypeToDescription((string)$pay['type']),'status'=>$label]);"""),
+    ("    $body=achbotApiPaymentRichReport($pay,$body,$presentation);\n", ""),
+    ("    if(achbotApiPaymentTerminal($pay))$keys=achbotApiPaymentFinalKeyboard($pay,$label,$automatic,$presentation);\n", ""),
+]
 SCOPED_ADDON_API_INSERTION="""            if ($type!=='RENEW_ACCOUNT') {
                 require_once __DIR__.'/../Plans/Addons.php';
                 if (achbotAddonSchema($db) && !achbotAddonPayLocal($db,$pay,$order)) return null;
@@ -579,6 +594,12 @@ def api_source_references(path,source):
         # checking the same pinned API source and previously accepted #107 insertion.
         audited=source
         if path=='src/Finance/ApiPayments.php':
+            if any(fragment in audited for fragment,_ in API_RECEIPT_PRESENTATION_DIFF):
+                for fragment,_ in API_RECEIPT_PRESENTATION_DIFF:
+                    check(audited.count(fragment)==1,
+                          'api_receipt_presentation_incomplete_or_duplicate')
+                for before,after in API_RECEIPT_PRESENTATION_DIFF:
+                    audited=audited.replace(before,after,1)
             # Full-content equality below fails closed if any edit falls
             # outside these independently exact source-text allowances.
             if (audited.count(FINAL_COMMERCE_POLICY_INSERTION)==1 and

@@ -106,6 +106,12 @@ elseif($op==='track'){achbotApiPaymentTrackInvoice($connection,$pay['hash_id'],1
 elseif($op==='expire')$value=achbotPayUxExpireUnstartedManual($connection,$id);
 elseif($op==='maintain')$value=achbotApiPaymentMaintain($connection,(int)($spec['limit']??12));
 elseif($op==='notice'){achbotApiPaymentNotice($connection,$pay,$spec['status']??'confirmed');$value=true;}
+elseif($op==='presentation'){
+ $a=achbotApiPaymentAttempt($connection,$id);$d=achbotApiPaymentPresentation($connection,$pay,$a);
+ $proof=achbotPaymentEvidenceGetProof($connection,$id);
+ $automatic=achbotApiPaymentTerminal($pay) && (int)($pay['approved_by']??-1)===0 && ($proof['mode']??'')==='settle';
+ $value=['details'=>$d,'keys'=>json_decode(achbotApiPaymentFinalKeyboard($pay,'settled',$automatic,$d),true)];
+}
 elseif($op==='access'){$from_id=(int)$spec['actor'];$value=achbotAdminRequestAllowed('apiReview_'.$pay['hash_id'],null,'none');}
 elseif($op==='attention'){require_once $root.'/src/Finance/RecoveryInspection.php';$q=$connection->query('SELECT p.id FROM pays p WHERE p.id='.$id.' AND '.achbotRecoveryAttentionSql($connection));$value=$q->num_rows===1;}
 elseif($op==='profile_shift'){$a=achbotApiPaymentAttempt($connection,$id);$p=achbotPaymentEvidenceSnapshot($a);$p['issued_at']=time()-(int)($spec['age']??90000);unset($p['profile_sha256']);$sealed=achbotPaymentEvidenceProtect('profile:'.$a['id'].':'.$id,$p);$q=$connection->prepare('UPDATE payment_attempts SET evidence_profile=? WHERE id=?');$q->bind_param('si',$sealed,$a['id']);$q->execute();$q->close();$value=true;}
@@ -297,6 +303,12 @@ return !empty($GLOBALS['spec']['fail_staff'])?null:(object)['ok'=>true];}""")
         assert any(e.get('name')=='editKeys' and 'تایید خودکار توسط API' in str(e.get('args')) for e in r['events']),r
         assert call(op='human',pay=n)['result'] is None and int(query(work,env,'SELECT wallet FROM users WHERE userid=1001'))==before+101
         cases.append('gift_real_code_review_precedes_auto_approval_and_stale_human_no_recredit')
+        buttons=call(op='presentation',pay=n)['result']['keys']['inline_keyboard']
+        assert len(buttons)==3 and all(len(row)==1 for row in buttons),buttons
+        assert 'تایید خودکار توسط API' in buttons[0][0]['text']
+        assert 'شناسه' in buttons[2][0]['text'] and 'giftlivecaption' in buttons[2][0]['text']
+        assert not any(b[0]['callback_data'].startswith(('approve','decline','accept')) for b in buttons)
+        cases.append('gift_terminal_receipt_three_information_rows_no_financial_actions')
         for i in range(14):seed('unsubmitted'+str(i),reviewed=False)
         APIs.rows={};n=seed('batchready');rid=sms(n);r=call(op='maintain',pay=n)
         assert state(n)=='approved' and APIs.rows[rid]['status']=='used',r
@@ -324,6 +336,13 @@ return !empty($GLOBALS['spec']['fail_staff'])?null:(object)['ok'=>true];}""")
         quote=query(work,env,f'SELECT quote_amount FROM payment_attempts WHERE pay_row_id={n}').split('.')[0];local=query(work,env,f'SELECT price FROM pays WHERE id={n}');assert quote!=local
         reports=[e.get('text',e.get('data',{}).get('text','')) for e in r['events'] if e['event'] in ['MESSAGE','BOT'] and 'مبلغ دقیق' in e.get('text',e.get('data',{}).get('text',''))];assert reports and any('مبلغ دقیق: '+quote+' تومان' in text for text in reports),r
         again=call(op='notice',pay=n);assert not any('مبلغ دقیق' in e.get('text',e.get('data',{}).get('text','')) for e in again['events']);cases.append('complete_report_uses_original_random_quote_and_durable_dedup')
+        buttons=call(op='presentation',pay=n)['result']['keys']['inline_keyboard']
+        assert len(buttons)==3 and 'تایید خودکار توسط API' in buttons[0][0]['text']
+        assert not any('approve' in b[0]['callback_data'] for b in buttons),buttons
+        assert 'exactbank' in buttons[2][0]['text']
+        assert any('درخواست (افزایش موجودی)' in text and 'synthetic_user' in text
+            for text in reports),reports
+        cases.append('bank_terminal_receipt_three_rows_and_wallet_report_subject')
 
         # A terminal invoice with consumed proof cannot claim a second ready SMS.
         first=seed('sequential1');old=sms(first);assert call(pay=first)['result']=='confirmed'
@@ -343,6 +362,10 @@ return !empty($GLOBALS['spec']['fail_staff'])?null:(object)['ok'=>true];}""")
         view=call(op='view',pay=n)['result'];assert 'بررسی' in view['text'] and 'خودکار' not in view['text'] and 'apiCheck_' not in json.dumps(view);cases.append('bank_submitted_receipt_same_manual_customer_acknowledgement')
         # Late SMS after real manual approval consumes only, never credits again.
         assert call(op='human',pay=n)['result'] is not None;balance=query(work,env,'SELECT wallet FROM users WHERE userid=1001');rid=sms(n);due(n);assert call(pay=n)['result']=='settled';assert APIs.rows[rid]['status']=='used' and query(work,env,'SELECT wallet FROM users WHERE userid=1001')==balance;cases.append('late_ready_sms_manual_settlement_consumption_only')
+        buttons=call(op='presentation',pay=n)['result']['keys']['inline_keyboard']
+        assert len(buttons)==3 and 'تایید خودکار توسط API' not in buttons[0][0]['text']
+        assert '9001' in buttons[0][0]['text'] and not any('approve' in b[0]['callback_data'] for b in buttons),buttons
+        cases.append('manual_first_late_api_evidence_keeps_human_approver_three_rows')
         # Real simultaneous human/API wallet claim on one pays row.
         APIs.rows={};n=seed('racewallet',reviewed=False);query(work,env,f'UPDATE payment_attempts SET created_at=NOW()-INTERVAL 601 SECOND WHERE pay_row_id={n}');assert call(op='receipt',pay=n)['result'];rid=sms(n);before=int(query(work,env,'SELECT wallet FROM users WHERE userid=1001'))
         with ThreadPoolExecutor(2) as pool:out=list(pool.map(lambda op:call(pay=n,op=op),['human','check']))
@@ -353,8 +376,14 @@ return !empty($GLOBALS['spec']['fail_staff'])?null:(object)['ok'=>true];}""")
         for label,days,vol,count in [('standard',0,0,1),('custom',12,3,1),('bulk',0,0,3)]:
             n=seed(label,'BUY_SUB',days=days,volume=vol,count=count);rid=sms(n);r=call(pay=n);assert r['result']=='confirmed',(label,r)
             assert int(query(work,env,f"SELECT COUNT(*) FROM service_effects WHERE pay_row_id={n} AND effect_kind='create' AND state='local_recorded'"))==count,(label,r)
+            notice=call(op='presentation',pay=n)['result']
+            assert notice['details']['confirmed_accounts']>0 and notice['details']['account_count']==count
+            assert 'نام اشتراک یا پلن' in notice['details']['details'] and 'حجم اشتراک' in notice['details']['details']
+            assert len(notice['keys']['inline_keyboard'])==3
+            if label=='bulk':assert notice['details']['confirmed_accounts']==3 and '(#' in notice['details']['details']
             assert query(work,env,f'SELECT approved_by FROM pays WHERE id={n}')=='0';assert call(op='settle',pay=n)['result']=='settled';cases.append('proof_backed_'+label+'_existing_create_journal')
             APIs.rows={}
+        cases.append('verified_purchase_report_contains_native_account_names_and_pinned_terms')
         # Every edit subject uses pinned quantities and the same real local finisher.
         query(work,env,"INSERT INTO orders_list(userid,token,transid,fileid,server_id,inbound_id,remark,uuid,expire_date,link,amount,status,date) VALUES(1001,'fixture-token','',7,2,0,'api_edit_order','fixture-uuid',1900000000,'[]',101,1,'1700000000')")
         oid=int(query(work,env,"SELECT id FROM orders_list WHERE remark='api_edit_order'"))

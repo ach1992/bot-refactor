@@ -3,6 +3,7 @@
 if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) { http_response_code(404); exit; }
 require_once __DIR__.'/ReceiptHelpers.php';
 require_once __DIR__.'/PaymentLifecycle.php';
+require_once __DIR__.'/ApiPaymentPresentation.php';
 if (is_file(__DIR__.'/PaymentEvidence.php')) require_once __DIR__.'/PaymentEvidence.php';
 
 function achbotApiPaymentReady(mysqli $db): bool {
@@ -161,11 +162,15 @@ function achbotApiPaymentNotice(mysqli $db,array $pay,string $status,bool $repor
     $automatic=achbotApiPaymentTerminal($pay) && (int)($pay['approved_by']??-1)===0 && ($proof['mode']??'')==='settle';
     if($automatic)$label=achbotMessage('manual_payment.api_payment.auto_approved');
     if($pay['state']==='declined')$label=achbotMessage('manual_payment.manual_receipts.button.51fdc91d69',['from_id'=>(int)$pay['approved_by']]);
+    $presentation=achbotApiPaymentPresentation($db,$pay,$a);
     $amount=achbotPaymentEvidenceIntegralQuote($a['quote_amount'])??(string)$a['quote_amount'];
     $body=achbotMessageHtml('manual_payment.api_payment.report',[
-        'reference'=>$hash,'userId'=>(string)$pay['user_id'],'amount'=>$amount,'unit'=>trim(achbotMessage('bot.bot.webhook_ingress_authenticated.text.2cc98f7f7c')),
+        'reference'=>$hash.' (#'.$id.')','userId'=>(string)$pay['user_id'],'amount'=>$amount,'unit'=>trim(achbotMessage('bot.bot.webhook_ingress_authenticated.text.2cc98f7f7c')),
         'method'=>achbotManualLabel((string)$a['provider']),'evidence'=>$evidence,
-        'subject'=>payTypeToDescription((string)$pay['type']),'status'=>$label]);
+        'subject'=>payTypeToDescription((string)$pay['type']).
+            ($presentation['details']==='' && $presentation['subject']!==payTypeToDescription((string)$pay['type'])
+                ?' — '.$presentation['subject']:''),'status'=>$label]);
+    $body=achbotApiPaymentRichReport($pay,$body,$presentation);
     $digest=hash('sha256',$body);
     if($report && ($a['evidence_report_digest']??null)!==$digest && function_exists('achbotNotifyAdmins')) {
         try {
@@ -177,6 +182,7 @@ function achbotApiPaymentNotice(mysqli $db,array $pay,string $status,bool $repor
     $refs=json_decode((string)($pay['admins_messages']??''),true);$refs=is_array($refs)?$refs:[];
     $refs[]=['chat_id'=>$pay['chat_id']??0,'message_id'=>$pay['message_id']??0];$seen=[];
     $keys=inlineKeyboard([[['text'=>$label,'callback_data'=>'noop_'.$hash]]]);
+    if(achbotApiPaymentTerminal($pay))$keys=achbotApiPaymentFinalKeyboard($pay,$label,$automatic,$presentation);
     if($invalidCode && $pay['state']==='have_sent'){
         $rows=json_decode(achbotApiPaymentReviewKeyboard($pay),true)['inline_keyboard'];
         $rows[]=[['text'=>$label,'callback_data'=>'noop_'.$hash]];$keys=inlineKeyboard($rows);
