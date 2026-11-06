@@ -11,6 +11,11 @@ require_once __DIR__.'/../Admin/Access.php';
 /** Fail closed before ANY new external service effect if 018 is unavailable. */
 function achbotDeliverySchemaReady(mysqli $db): bool {
     try {
+        // The pre-CREATE gate must prove crypto readiness, not just the
+        // presence of tables. Never CREATE a paid remote account when the
+        // original packet cannot be sealed before terminal COMMIT.
+        if (!function_exists('openssl_encrypt') || !function_exists('openssl_decrypt') ||
+            strlen(achbotPaymentEvidenceKey())!==32) return false;
         $probe=$db->query('SELECT id,pay_row_id,ordinal,attempt_id,effect_id,order_id,user_id,server_id,'.
             'pay_type,pay_fingerprint,source_digest,native_operation,native_target_key,'.
             'sealed_payload,payload_sha256,state,attempt_count,dispatch_token,dispatched_at,'.
@@ -183,7 +188,7 @@ function achbotDeliveryValidateLocked(mysqli $db,array $pay,array $d): ?array {
                 (int)$proof['attempt_id']!==(int)$attempt['id'])
                 return null;
         }
-        if ($attempt['evidence_profile']!==null) {
+        if (($attempt['evidence_profile']??null)!==null) {
             $proof=achbotPaymentEvidenceGetProof($db,$id);
             if (!$proof || !achbotPaymentEvidenceValidateProofLocked($db,$pay,$proof))
                 return null;

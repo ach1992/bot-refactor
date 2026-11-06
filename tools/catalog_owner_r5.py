@@ -311,6 +311,8 @@ def server_removal_copy_negative_controls(sides):
     return len(cases)
 
 def verify_and_restore(sides,definition=None):
+    if any(key.startswith('delivery_recovery.') for audience in sides.values() for key in audience):
+        sides=delivery_recovery_copy_restore(sides)
     current=scoped_addon_restore(shared_transfer_copy_restore(server_removal_copy_restore(panel_group_copy_restore(sides))))
     sides,api_proof=verify_api_and_restore(current)
     record=manifest()if definition is None else definition
@@ -367,6 +369,66 @@ def verify_retained_display_keys():
               'retained_display_source_lineage_drift:'+key)
     return set(records)
 
+# #117: exact, additive, owner-private delivery-recovery copy. Old R5/RC25
+# catalogs retain their exact hashes and approved copy baseline. The only
+# source difference must be this explicitly enumerated 18-entry topic.
+DELIVERY_RECOVERY_BASE='17af1e55dc4cb8db6751a731bb223d93dc6f902f'
+DELIVERY_RECOVERY_BLOCK_SHA256='d10cb333f3576f5386a3f18226f569941a1488de7fae648822c507f8b1e9d4d8'
+DELIVERY_RECOVERY_NAMES={
+    'title','summary','line','warning','check_result','send_result',
+    'check_ack','check','request_send','send_confirm','back','back_inbox',
+    'next','first','missing','not_eligible','unavailable','open'
+}
+def delivery_recovery_original_bytes(current:bytes) -> bytes:
+    import re
+    block=re.search(rb"(?ms)^    'delivery_recovery' => \[\n.*?^    \],\n",current)
+    check(block is not None and
+          hashlib.sha256(block.group()).hexdigest()==DELIVERY_RECOVERY_BLOCK_SHA256,
+          'delivery_recovery_exact_additive_block_changed')
+    original=current[:block.start()]+current[block.end():]
+    check(original==command('git','show',DELIVERY_RECOVERY_BASE+':messages/fa/admin.php'),
+          'delivery_recovery_preexisting_catalog_bytes_changed')
+    return original
+def delivery_recovery_copy_restore(sides:dict) -> dict:
+    delivery_recovery_original_bytes((ROOT/'messages/fa/admin.php').read_bytes())
+    check(set(sides)=={'user','admin'},'delivery_recovery_catalog_audiences')
+    expected={'delivery_recovery.'+name for name in DELIVERY_RECOVERY_NAMES}
+    actual={key for key in sides['admin'] if key.startswith('delivery_recovery.')}
+    check(actual==expected and not any(key.startswith('delivery_recovery.')
+        for key in sides['user']),'delivery_recovery_exact_owner_copy_inventory')
+    for key in expected:
+        entry=sides['admin'][key]
+        value=text(entry)
+        check(isinstance(value,str) and len(value)>0 and
+              isinstance(params(entry),list) and
+              len(params(entry))==len(set(params(entry))) and
+              set(re.findall(r'\{([a-zA-Z_][a-zA-Z0-9_]*)\}',value))==set(params(entry)) and
+              not re.search(r'[\u06f0-\u06f9\u0660-\u0669]',value),
+              'delivery_recovery_exact_copy_slots_or_digits:'+key)
+    for key in ['title','summary','line','warning','check_result','send_result',
+                'check_ack','check','request_send','send_confirm','back_inbox','next',
+                'first','missing','not_eligible','unavailable','open']:
+        check("'delivery_recovery."+key+"'" in (
+            ROOT/'src/Finance/Routes/DeliveryRecovery.php').read_text() or
+            "'delivery_recovery."+key+"'" in (
+            ROOT/'src/Finance/Routes/ManualReceipts.php').read_text(),
+            'delivery_recovery_copy_unbound_to_owner_route:'+key)
+    restored=copy.deepcopy(sides)
+    for key in actual:restored['admin'].pop(key)
+    return restored
+def delivery_recovery_copy_negative_controls(sides:dict) -> int:
+    delivery_recovery_copy_restore(sides)
+    cases=[]
+    bad=copy.deepcopy(sides);bad['admin'].pop('delivery_recovery.title');cases.append(bad)
+    bad=copy.deepcopy(sides);bad['user']['delivery_recovery.open']=bad['admin'].pop('delivery_recovery.open');cases.append(bad)
+    bad=copy.deepcopy(sides);bad['admin']['delivery_recovery.extra']='Injected';cases.append(bad)
+    bad=copy.deepcopy(sides);bad['admin']['delivery_recovery.title']['parameters'].pop();cases.append(bad)
+    for candidate in cases:
+        try:delivery_recovery_copy_restore(candidate)
+        except AssertionError:continue
+        raise AssertionError('delivery_recovery_copy_negative_control_missed')
+    return len(cases)
+
 # The approved Chili RC25 hot-copy is a *specific* 83-value revision on top
 # of main, not a blanket exception to the historical whole-audience checks.
 # Both Git objects and shipping catalog bytes are verified; restore is only
@@ -384,8 +446,14 @@ def chili_copy_values():
     for audience,digest in CHILI_COPY_FILES.items():
         path='messages/fa/'+audience+'.php'
         raw=command('git','show',CHILI_COPY_HEAD+':'+path)
+        current=(ROOT/path).read_bytes()
+        if audience=='admin':
+            # #117 has one separately pinned additive topic. Removing only
+            # that exact byte block must restore the approved, historical
+            # RC25 source byte for byte; no preexisting copy can drift.
+            current=delivery_recovery_original_bytes(current)
         check(hashlib.sha256(raw).hexdigest()==digest and
-              hashlib.sha256((ROOT/path).read_bytes()).hexdigest()==digest,
+              hashlib.sha256(current).hexdigest()==digest,
               'chili_copy_exact_source_identity:'+path)
         old=command('git','show',CHILI_COPY_BASE+':'+path)
         before[audience]=flatten(json.loads(command('php','-r',decode,input=old)))
@@ -479,6 +547,8 @@ def review_catalog_restore(sides):
     return restored,{'review_added_keys':8,'review_added_user_keys':2,'review_added_admin_keys':6,'review_source':REVIEW_SOURCE}
 
 def verify_api_and_restore(sides,definition=None):
+    if any(key.startswith('delivery_recovery.') for audience in sides.values() for key in audience):
+        sides=delivery_recovery_copy_restore(sides)
     # Historical composition proofs enter directly at this API layer. They
     # must first undo the exact #112 copy delta, while the normal R5 pipeline
     # has already restored its historical inheritance key.
