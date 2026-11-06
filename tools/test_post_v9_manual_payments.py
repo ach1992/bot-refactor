@@ -735,7 +735,7 @@ def check():
         # Execute the real current WalletRecharge PHP: buttons, receipt
         # prompts, Telegram photo, operator delivery and persisted review.
         for key,choice,receipt,wait,label in [
-            ('routebank','CartToCart','IncreaseWallet','waitIncreaseWalletReceipt','کارت‌به‌کارت'),
+            ('routebank','CartToCart','IncreaseWallet','waitIncreaseWalletReceipt','شماره کارت'),
             ('routegift','GiftCard','IncreaseWalletGift','waitIncreaseWalletGiftReceipt','گیفت‌کارت'),
             ('routeusdt','ManualUsdt','IncreaseWalletUsdt','waitIncreaseWalletUsdtReceipt','تتر دستی')
         ]:
