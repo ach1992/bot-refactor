@@ -289,54 +289,105 @@ function achbotPaymentEvidenceHttp(array $profile,string $method,string $path,?a
             if (!is_string($token) || $token==='' || preg_match('/[\r\n]/',$token)) return $bad;
             $headers[]='Authorization: Bearer '.$token;
         } elseif ($kind==='gift_card') {
-            $ts=(string)time(); $nonce=bin2hex(random_bytes(20));
             $key=$profile['key_id']??''; $secret=$profile['secret']??'';
             if (!is_string($key) || !is_string($secret) || $key==='' || $secret==='' ||
                 preg_match('/[\r\n]/',$key.$secret)) return $bad;
-            $route='/ach-gcw/v2'.$path;
-            $sig=rtrim(strtr(base64_encode(hash_hmac('sha256',
-                implode("\n",[$ts,$nonce,$method,$route,$raw]),$secret,true)),'+/','-_'),'=');
-            $headers[]='X-ACH-Key-Id: '.$key;
-            $headers[]='X-ACH-Timestamp: '.$ts;
-            $headers[]='X-ACH-Nonce: '.$nonce;
-            $headers[]='X-ACH-Signature: '.$sig;
         } else return $bad;
         foreach ($extra as $name=>$value) {
             if ($name!=='Idempotency-Key' || !is_string($value) ||
                 !preg_match('/\A[a-f0-9]{64}\z/D',$value)) return $bad;
             $headers[]=$name.': '.$value;
         }
-        // Ephemeral coordinator MONOTONIC budget; never a sealed financial pin.
-        $timeoutMs=12000;$deadline=$GLOBALS['achbotPaymentEvidenceDeadline']??null;
-        if((is_int($deadline)||is_float($deadline)) && is_finite((float)$deadline)) {
-            $remainingMs=(int)floor(((float)$deadline-hrtime(true)/1000000000)*1000);
-            if($remainingMs<=0)return $bad;
-            $timeoutMs=min($timeoutMs,$remainingMs);
+
+        // These operations inspect external evidence; redeem/actions mutate it.
+        // Only reads may be retried in this request. The durable operation journal
+        // owns all later attempts to consume SMS or gift cards.
+        $readOnly=$method==='GET' || ($kind==='gift_card' && $method==='POST' && $path==='/verify');
+        $maxAttempts=$readOnly?3:1;
+        $deadline=hrtime(true)/1000000000+12.0;
+        $coordinator=$GLOBALS['achbotPaymentEvidenceDeadline']??null;
+        if ((is_float($coordinator)||is_int($coordinator)) && is_finite((float)$coordinator))
+            $deadline=min($deadline,(float)$coordinator);
+        $result=$bad;
+        for ($attempt=1;$attempt<=$maxAttempts;$attempt++) {
+            $remainingMs=(int)floor(($deadline-hrtime(true)/1000000000)*1000);
+            if ($remainingMs<=0)return $result;
+            $timeoutMs=min(12000,$remainingMs);
+            if ($readOnly && $attempt<$maxAttempts) {
+                $reserveMs=($maxAttempts-$attempt)*1200+400;
+                if ($remainingMs>=$reserveMs+1000)
+                    $timeoutMs=min($timeoutMs,$remainingMs-$reserveMs);
+            }
+            $requestHeaders=$headers;
+            if ($kind==='gift_card') {
+                // /verify is retried with a fresh authenticated nonce, never a
+                // replayed signed request. /redeem remains a single HTTP call.
+                $ts=(string)time();$nonce=bin2hex(random_bytes(20));
+                $route='/ach-gcw/v2'.$path;
+                $sig=rtrim(strtr(base64_encode(hash_hmac('sha256',
+                    implode("\n",[$ts,$nonce,$method,$route,$raw]),$secret,true)),'+/','-_'),'=');
+                $requestHeaders[]='X-ACH-Key-Id: '.$key;
+                $requestHeaders[]='X-ACH-Timestamp: '.$ts;
+                $requestHeaders[]='X-ACH-Nonce: '.$nonce;
+                $requestHeaders[]='X-ACH-Signature: '.$sig;
+            }
+            $buffer='';$overflow=false;$retryAfter=0;
+            $ch=curl_init($base.$path);
+            if ($ch===false)return $result;
+            $loopback=str_starts_with($base,'http://127.0.0.1:');
+            curl_setopt_array($ch,[
+                CURLOPT_CUSTOMREQUEST=>$method,CURLOPT_HTTPHEADER=>$requestHeaders,
+                CURLOPT_FOLLOWLOCATION=>false,CURLOPT_MAXREDIRS=>0,
+                CURLOPT_SSL_VERIFYPEER=>true,CURLOPT_SSL_VERIFYHOST=>2,
+                CURLOPT_CONNECTTIMEOUT_MS=>min(4000,$timeoutMs),CURLOPT_TIMEOUT_MS=>$timeoutMs,
+                CURLOPT_PROTOCOLS=>$loopback?CURLPROTO_HTTP:CURLPROTO_HTTPS,
+                CURLOPT_REDIR_PROTOCOLS=>CURLPROTO_HTTPS,
+                CURLOPT_PROXY=>'',CURLOPT_HEADER=>false,
+                CURLOPT_HEADERFUNCTION=>static function($handle,string $line) use (&$retryAfter): int {
+                    if (preg_match('/^Retry-After:\s*([0-9]{1,5})\s*\r?\n$/iD',$line,$m))
+                        $retryAfter=min(3600,(int)$m[1]);
+                    return strlen($line);
+                },
+                CURLOPT_WRITEFUNCTION=>static function($handle,string $chunk) use (&$buffer,&$overflow): int {
+                    if (strlen($buffer)+strlen($chunk)>131072) {$overflow=true;return 0;}
+                    $buffer.=$chunk;return strlen($chunk);
+                }]);
+            if ($method==='POST')curl_setopt($ch,CURLOPT_POSTFIELDS,$raw);
+            $done=curl_exec($ch);$http=(int)curl_getinfo($ch,CURLINFO_RESPONSE_CODE);
+            $errno=(int)curl_errno($ch);
+            $json=null;
+            if ($done!==false && !$overflow && $http>=200 && $http<600) {
+                try {
+                    $parsed=json_decode($buffer,true,32,JSON_THROW_ON_ERROR|JSON_BIGINT_AS_STRING);
+                    if (is_array($parsed))$json=$parsed;
+                } catch (Throwable $ignored) {}
+            }
+            $result=['ok'=>$done!==false && !$overflow && $http>=200 && $http<300 && $json!==null,
+                'http'=>$http>=200 && $http<600?$http:0,
+                'status'=>'unavailable','json'=>$json];
+            if ($result['ok']){$result['status']='ok';return $result;}
+
+            // A 404, rejected scope/credential, bad identity or incompatible
+            // response cannot be repaired by repeatedly hitting the provider.
+            $temporary= !$overflow && (
+                in_array($http,[408,429],true) ||
+                ($http>=500 && $http<600) ||
+                ($http>=200 && $http<300 && $json===null) ||
+                ($http===0 && in_array($errno,[
+                    CURLE_COULDNT_RESOLVE_HOST,CURLE_COULDNT_CONNECT,
+                    CURLE_OPERATION_TIMEDOUT,CURLE_SSL_CONNECT_ERROR,
+                    CURLE_GOT_NOTHING,CURLE_RECV_ERROR],true)));
+            if ($http===429 && $retryAfter>0)
+                $GLOBALS['achbotPaymentEvidenceRetryAfterSeconds']=max(
+                    (int)($GLOBALS['achbotPaymentEvidenceRetryAfterSeconds']??0),$retryAfter);
+            if (!$readOnly || !$temporary || $attempt===$maxAttempts)return $result;
+            $pauseMs=max($retryAfter*1000,(200*(1<<($attempt-1)))+random_int(0,150));
+            if (($deadline-hrtime(true)/1000000000)*1000<=$pauseMs+1000)
+                return $result;
+            usleep($pauseMs*1000);
         }
-        $buffer=''; $overflow=false;
-        $ch=curl_init($base.$path);
-        if ($ch===false) return $bad;
-        $loopback=str_starts_with($base,'http://127.0.0.1:');
-        curl_setopt_array($ch,[
-            CURLOPT_CUSTOMREQUEST=>$method,CURLOPT_HTTPHEADER=>$headers,
-            CURLOPT_FOLLOWLOCATION=>false,CURLOPT_MAXREDIRS=>0,
-            CURLOPT_SSL_VERIFYPEER=>true,CURLOPT_SSL_VERIFYHOST=>2,
-            CURLOPT_CONNECTTIMEOUT_MS=>min(4000,$timeoutMs),CURLOPT_TIMEOUT_MS=>$timeoutMs,
-            CURLOPT_PROTOCOLS=>$loopback?CURLPROTO_HTTP:CURLPROTO_HTTPS,
-            CURLOPT_REDIR_PROTOCOLS=>CURLPROTO_HTTPS,
-            CURLOPT_PROXY=>'',CURLOPT_HEADER=>false,
-            CURLOPT_WRITEFUNCTION=>static function($handle,string $chunk) use (&$buffer,&$overflow): int {
-                if (strlen($buffer)+strlen($chunk)>131072) { $overflow=true; return 0; }
-                $buffer.=$chunk; return strlen($chunk);
-            }]);
-        if ($method==='POST') curl_setopt($ch,CURLOPT_POSTFIELDS,$raw);
-        $done=curl_exec($ch); $http=(int)curl_getinfo($ch,CURLINFO_RESPONSE_CODE);
-        if ($done===false || $overflow || $http<200 || $http>=600) return $bad;
-        $json=json_decode($buffer,true,32,JSON_THROW_ON_ERROR|JSON_BIGINT_AS_STRING);
-        if (!is_array($json)) return $bad;
-        return ['ok'=>$http>=200 && $http<300,'http'=>$http,
-            'status'=>$http>=200 && $http<300?'ok':'unavailable','json'=>$json];
-    } catch (Throwable $error) { return $bad; }
+        return $result;
+    } catch (Throwable $error) {return $bad;}
 }
 function achbotPaymentEvidenceSmsList(array $profile,int $after=0): array {
     $bad=['ok'=>false,'status'=>'unavailable','data'=>[],'next_after_id'=>$after,'has_more'=>false];
@@ -429,6 +480,12 @@ function achbotPaymentEvidenceSmsNormalize(array $row,array $profile,bool $allow
         (int)$amount>intdiv(PHP_INT_MAX,10)) return null;
     $when=achbotPaymentEvidenceSmsTime($row,$profile);
     if ($when===null) return null;
+    // A source reporting only HH:MM identifies a 60-second interval,
+    // not an exact event at second :00. Offset timestamps are exact.
+    $minutePrecision=!preg_match('/\A[0-9]{4}-[0-9]{2}-[0-9]{2}T/',(string)($row['sms_date']??'')) &&
+        preg_match('/\A[0-9]{1,2}:[0-9]{2}\z/D',(string)($row['sms_time']??''))===1;
+    $precision=$minutePrecision?59:0;
+    if ($when>PHP_INT_MAX-$precision) return null;
     $snapshot=[];
     foreach (['provider','provider_sms_id','sender','mobile_source','bank_key','rule_id',
         'sms_date','sms_time'] as $field) {
@@ -445,7 +502,8 @@ function achbotPaymentEvidenceSmsNormalize(array $row,array $profile,bool $allow
     return ['kind'=>'sms','identity'=>hash('sha256',$source."\0sms\0".$uid),
         'remote_id'=>(string)$id,'public_uid'=>$uid,'status'=>$row['status'],
         'amount_toman'=>$amount,'amount_rial'=>(string)((int)$amount*10),
-        'transfer_at'=>$when,'source_key'=>$source,
+        'transfer_at'=>$when,'time_precision_seconds'=>$precision,
+        'source_key'=>$source,
         'fingerprint'=>hash('sha256',json_encode($semantic,JSON_THROW_ON_ERROR))];
 }
 function achbotPaymentEvidenceSmsMatches(array $evidence,array $attempt,array $profile,?int $issuedUnix=null): bool {
@@ -457,8 +515,14 @@ function achbotPaymentEvidenceSmsMatches(array $evidence,array $attempt,array $p
         $quote!==null && ($evidence['amount_toman']??null)===$quote &&
         ($evidence['source_key']??null)===($profile['source_key']??'') &&
         is_int($issued) && is_int($horizon) && $horizon>0 && $issued>0 &&
-        $horizon<=PHP_INT_MAX-$issued && is_int($evidence['transfer_at']??null) &&
-        $evidence['transfer_at']>=$issued && $evidence['transfer_at']<=$issued+$horizon;
+        $horizon<=PHP_INT_MAX-$issued && $issued>180 &&
+        is_int($evidence['transfer_at']??null) &&
+        in_array($evidence['time_precision_seconds']??0,[0,59],true) &&
+        $evidence['transfer_at']<=PHP_INT_MAX-($evidence['time_precision_seconds']??0) &&
+        // Three minutes before ORIGINAL issuance, never before receipt upload;
+        // no extension to the original post-issuance quote horizon.
+        $evidence['transfer_at']+($evidence['time_precision_seconds']??0)>=$issued-180 &&
+        $evidence['transfer_at']<=$issued+$horizon;
 }
 function achbotPaymentEvidenceGiftVerify(array $profile,string $code): array {
     $bad=['ok'=>false,'status'=>'unavailable','data'=>null];
@@ -511,6 +575,8 @@ function achbotPaymentEvidenceReviewReady(array $pay,array $attempt): bool {
          in_array($pay['state'],['approved','paid','auto_cart_approved','paid_with_wallet'],true));
 }
 function achbotPaymentEvidenceClaim(mysqli $db,int $payId): ?array {
+    // Scope a transient provider backoff hint to this one admitted attempt.
+    $GLOBALS['achbotPaymentEvidenceRetryAfterSeconds']=0;
     if ($payId<=0 || !achbotPaymentEvidenceSchemaReady($db)) return null;
     try {
         achbotPaymentEvidenceRequireAutocommit($db); $db->begin_transaction();
@@ -540,7 +606,9 @@ function achbotPaymentEvidenceDefer(mysqli $db,int $payId,string $token,string $
     if (!preg_match('/\A[a-f0-9]{32}\z/D',$token) ||
         !in_array($status,['monitoring','manual','review','invalid_code','proven','reserved','dispatched','uncertain'],true))
         return false;
-    $seconds=max(1,min(3600,$seconds));
+    $seconds=max(1,min(3600,max($seconds,
+        (int)($GLOBALS['achbotPaymentEvidenceRetryAfterSeconds']??0))));
+    unset($GLOBALS['achbotPaymentEvidenceRetryAfterSeconds']);
     try {
         $q=$db->prepare("UPDATE payment_attempts SET
             evidence_state=CASE WHEN evidence_state IN ('proven','invalid_code') THEN evidence_state ELSE ? END,
@@ -828,8 +896,24 @@ function achbotPaymentEvidenceConsume(mysqli $db,array $handle): array {
             $current=$before['ok'] && is_array($before['json']['data']??null)
                 ?achbotPaymentEvidenceSmsNormalize($before['json']['data'],$p,true):null;
             if ($current===null || $current['fingerprint']!==$expected['fingerprint']) {
+                $http=(int)($before['http']??0);
                 $state=$before['ok']?'review':'uncertain';
-                achbotPaymentEvidenceStoreOutcome($db,$handle,$state,['reason'=>'sms_readback_unproven']);
+                $reason=match($http) {
+                    404=>'sms_readback_http_404',
+                    401,403=>'sms_readback_access_denied',
+                    default=>'sms_readback_unproven'
+                };
+                // Persistent authorization/not-found responses are not
+                // network retries. Back off the existing due time instead of
+                // hammering an unchanged provider contract every minute.
+                if (in_array($http,[401,403,404],true)) {
+                    $age=max(0,(int)($t['dispatch_age']??0));
+                    $backoff=$http===404?($age<300?120:($age<3600?300:900)):900;
+                    $GLOBALS['achbotPaymentEvidenceRetryAfterSeconds']=max(
+                        (int)($GLOBALS['achbotPaymentEvidenceRetryAfterSeconds']??0),$backoff);
+                }
+                achbotPaymentEvidenceStoreOutcome($db,$handle,$state,
+                    ['reason'=>$reason,'last_http'=>$http]);
                 return ['status'=>$state==='uncertain'?'pending':'review','proof'=>null];
             }
             if (!$retry && $current['status']!=='ready') {

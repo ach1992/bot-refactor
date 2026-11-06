@@ -427,6 +427,7 @@ def run_api(tmp: str) -> tuple[dict, dict]:
         'exact_rial_conversion',
         'ready_only',
         'original_time',
+        'bank_preissue_grace_and_minute_precision',
         'sql_collision_fence',
         'pre_dispatch_intent',
         'sms_same_key_recovery',
