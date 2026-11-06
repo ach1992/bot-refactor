@@ -557,8 +557,13 @@ function achbotPgDispatchReserved(mysqli $db,int $effectId,int $serverId,string 
         // The adapter returns a bounded machine reason, not response text.
         // A failed POST response may still have created the native account.
         $reason=(string)($r['reason']??'');
+        // The native adapter marks validation rejection as not dispatched;
+        // an uncertain remote POST remains remote_create regardless of HTTP.
+        $preflight=($r['uncertain']??null)===false &&
+            in_array($reason,['pg_create_invalid','pg_groups_required'],true);
         $known=['pg_create_unconfirmed','pg_create_readback_unconfirmed',
             'pg_create_entitlement_unconfirmed','pg_create_identity_unconfirmed',
+            'pg_create_invalid','pg_groups_required',
             'pg_timeout','pg_transport_unavailable','pg_auth_denied',
             'pg_permission_denied','pg_conflict','pg_request_rejected',
             'pg_rate_limited','pg_vendor_unavailable','pg_create_status_invalid'];
@@ -566,11 +571,14 @@ function achbotPgDispatchReserved(mysqli $db,int $effectId,int $serverId,string 
         if (function_exists('achbotEffectOperatorDiagnostic'))
             error_log(achbotEffectOperatorDiagnostic(
                 new RuntimeException('pg_create_requires_review',0,new RuntimeException($reason)),
-                (int)($e['pay_row_id']??0),$effectId,(int)($e['ordinal']??0),'remote_create'));
+                (int)($e['pay_row_id']??0),$effectId,(int)($e['ordinal']??0),
+                $preflight?'preflight':'remote_create'));
         throw new RuntimeException('pg_create_requires_review');
     }
-    if (!$db->begin_transaction()) throw new RuntimeException('pg_verify_begin');
     try {
+        // A native account may already exist when beginning local verification
+        // fails. Capture this boundary with the same immutable effect identity.
+        if (!$db->begin_transaction()) throw new RuntimeException('pg_verify_begin');
         $after=achbotProviderPanelForSnapshot($db,$snap);
         if (!hash_equals($credentials,hash('sha256',$after['api_key']))) throw new RuntimeException('pg_credentials_changed');
         achbotProviderVerifyAccount($db,$effectId,$r['user']);

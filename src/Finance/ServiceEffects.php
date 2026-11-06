@@ -34,8 +34,9 @@ function achbotEffectSafeFailure(Throwable $error): array {
         'pg_create_unconfirmed','pg_timeout','pg_transport_unavailable',
         'pg_auth_denied','pg_permission_denied','pg_not_found','pg_conflict',
         'pg_rate_limited','pg_vendor_unavailable','pg_request_rejected',
-        'pg_dispatch_target_changed','pg_verify_commit_unknown',
-        'pg_effect_verification_unconfirmed','pg_create_invalid'
+        'pg_dispatch_target_changed','pg_verify_begin','pg_verify_commit_unknown',
+        'pg_effect_verification_unconfirmed','pg_credentials_changed',
+        'pg_create_invalid','pg_groups_required'
     ];
     $fallback='runtime_error';$depth=0;$source='runtime';
     for ($current=$error;$current!==null && $depth<8;$current=$current->getPrevious()) {
