@@ -657,7 +657,7 @@ def check():
 
         assert base('giftfixture','claim','gift_card') is True
         gift=base('giftfixture','read','gift_card')
-        assert '100,000' in gift['body'] and 'گیفت‌کارت' in gift['body']
+        assert '100,000' in gift['body'] and 'گیفت کارت' in gift['body']
         assert 'https://example.org/gift-card' in str(gift['keys']) and 'USDT' not in gift['body']
         cases.append('gift_distinct_quote_link_and_photo_action')
 

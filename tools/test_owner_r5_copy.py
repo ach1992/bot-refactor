@@ -79,9 +79,23 @@ def main():
     check(not bad,'non_persian_prose_start:'+str(bad))
     # Global raw-template scan; separately test bounded actual compositions.
     # Repeated identical field labels are deliberate in sender/recipient sections.
-    duplicate_markers=[key+':'+str(problem)for key,entry in merged.items()
+    duplicate_markers=[(key,problem)for key,entry in merged.items()
                        for problem in compositions.heading_collisions(r5.text(entry))]
-    check(not duplicate_markers,'duplicate_heading_marker:'+str(duplicate_markers))
+    # RC25 explicitly gives Toman and Rial the same currency glyph, but
+    # their distinct full labels must both remain; every other collision
+    # remains a regression.
+    expected_shared_currency={
+       ('legacy_messages.brw_cart_to_cart_detail',
+        ('💵','مبلغ به تومان','مبلغ به ریال')),
+       ('payment.api_payment.bank_invoice',
+        ('💵','مبلغ به تومان','مبلغ به ریال'))
+    }
+    check(set(duplicate_markers)==expected_shared_currency and
+          len(duplicate_markers)==2 and
+          all('💵 مبلغ به تومان' in r5.text(merged[k]) and
+              '💵 مبلغ به ریال' in r5.text(merged[k])
+              for k,_ in expected_shared_currency),
+          'duplicate_heading_marker_outside_two_RC25_currency_templates:'+str(duplicate_markers))
     native=r'''require 'src/Subscription/ServerDisplaySettings.php';require 'src/Telegram/Messages.php';
 $reports=[];foreach(['marzban','pasarguard']as$provider){
  $guide=achbotServerDisplayGuide($provider);$calls=[];
