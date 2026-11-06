@@ -1,5 +1,15 @@
 # Current source and published release contracts
 
+## Published RC25 — independent administrative Panel Groups
+
+[RC25](https://github.com/ach1992/bot-refactor/releases/tag/v0.10.0-rc.25) publishes the independently approved [Issue #114](https://github.com/ach1992/bot-refactor/issues/114) and [PR #115](https://github.com/ach1992/bot-refactor/pull/115). Marzban/PasarGuard logical Panel Groups are administrator-declared physical backend membership: the admin can change/clear a valid Group even with active orders, payment effects, unfinished journals or different credentials/URLs. The operation changes only local Panel Group metadata, not Native access, plan references, orders or money. Subsequent plan/import/transfer operations independently verify Native identity and persistent journal holds, including surviving orphaned-order journals. See the [product contract](SHARED-SERVICE-TRANSFER.md) and [RC24 -> RC25 upgrade/rollback](RC24-TO-RC25.md).
+
+The 124-member source-only runtime has no new SQL requirement or installed-host certification. It reuses RC24's 016/017 schema when present and does not replay 015/016/017. Full exact-source PHP 8.5 [CI](https://github.com/ach1992/bot-refactor/actions/runs/42192558708) and [post-merge same-tree check](https://github.com/ach1992/bot-refactor/actions/runs/42196043404) succeeded. Release publication is not authorization to deploy Chili or perform Native/payment effects.
+
+## Published RC24 — shared service access and plan journal
+
+[RC24](https://github.com/ach1992/bot-refactor/releases/tag/v0.10.0-rc.24) introduced guarded shared-physical subscription transfer/plan management and one-time schema sidecars 016 (retire obsolete server-level PasarGuard Native Groups, with preconditions) and 017 (durable plan-change journal). It retained optional RC22 migration 015. Read the [RC23 -> RC24 upgrade guide](https://github.com/ach1992/bot-refactor/releases/download/v0.10.0-rc.24/RC23-TO-RC24.md) before older upgrades. The RC25 administrator Group-assignment rule supersedes only RC24's old order-dependent group reassignment gate; the Native consumption safeguards remain.
+
 ## Published RC22 — scoped offers and safe Cron initialization
 
 [RC22](https://github.com/ach1992/bot-refactor/releases/tag/v0.10.0-rc.22) ships the reviewed, merged source of PRs [#103](https://github.com/ach1992/bot-refactor/pull/103) and [#109](https://github.com/ach1992/bot-refactor/pull/109), plus the current PHP 8.5 validation system. The 121-file source-only runtime introduces two plan modules and preserves existing Marzban/PasarGuard, financial and administrator behavior. This published source is **not** evidence of installed-host acceptance.

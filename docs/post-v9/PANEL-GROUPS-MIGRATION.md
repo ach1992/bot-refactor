@@ -29,7 +29,7 @@ This keeps the same 23 tables. No previous row is reclassified: every old server
 - **Before applying SQL:** leave database and old source untouched; no cleanup is needed.
 - **After adding the nullable column:** rolling back to historical V9 or an earlier source-only build can leave the extra column in place. Do **not** drop it automatically: dropping would discard group assignments and can require a table rebuild. A destructive reverse DDL or database restoration needs its own owner approval and data reconciliation.
 - **Partial rollout:** if the DB column is missing, R4 switching/group management must remain disabled; install migration before using those features. Existing ordinary purchase paths should not silently pick an arbitrary group.
-- **Unassigned/invalid group:** all cross-server switches are refused until a real administrator corrects group assignment. A reassignment that would strand an active order whose original plan belongs to another group is refused.
+- **Unassigned/invalid group:** cross-server transfers require a valid administrator-declared shared Panel Group; unknown/unsupported group IDs fail closed. **RC25 supersedes the historical refusal of administrative Group reassignment when active orders exist:** authorized assignment/reassignment/clearing is local metadata only, independent of orders, plans, payments, journals or endpoint/credential differences. Native plan/import/transfer operations separately enforce current identity and historical unresolved-journal safety; see [RC24 -> RC25](RC24-TO-RC25.md).
 - **Actual physical migrations** between distinct panels, rewrites of real account profile/inbounds/proxy and future PasarGuard changes are **not part of this migration**.
 
 ## Evidence boundary

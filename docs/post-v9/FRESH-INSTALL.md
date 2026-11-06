@@ -2,7 +2,7 @@
 
 This guide is for a **new bot with a new, empty database**. An existing bot, a copied live database or a partly migrated database must use its exact release's upgrade/recovery guide instead. There is no browser installer or automatic schema upgrade.
 
-This guide covers RC22 and its 121-member runtime. It includes the RC21 evidence-first bank receipt / optional API workflow, global and scoped day/volume offers, and safe top-level Cron lock-directory first-run creation. A fresh installation must apply **015 only after 014** to enable scoped offers; existing installations use the [RC21 → RC22 upgrade guide](RC21-TO-RC22.md) instead of replaying the baseline. Use one exact release, manifest, setup checkout and SQL set throughout; [current scope](NEXT-RELEASE.md) identifies the boundary. Publication does not authorize a target installation, migration, API activation or live payment.
+This guide covers **RC25** and its **124-member** source-only runtime. It retains the RC21 evidence-first bank receipt / optional API workflow, scoped add-on offers, safe Cron lock-directory creation and RC24 shared-service plan journal. An empty-database setup applies **015 after 014, then 016 and 017 in order**. Existing installations use the [RC24 -> RC25 upgrade guide](RC24-TO-RC25.md), not the fresh schema sequence. Use one exact release, manifest, setup checkout and SQL set throughout; [current scope](NEXT-RELEASE.md) identifies the boundary. Publication does not authorize a target installation, migration, API activation or live payment.
 
 ## 1. Prepare the installation
 
@@ -24,7 +24,7 @@ python3 tools/package_post_v9.py verify \
   --manifest /private/setup/runtime.zip.manifest.json
 ```
 
-Expected: `verified:true`, the intended candidate/tree and 121 runtime members / 120 PHP files. Verify every extracted runtime member against the same manifest using the [installed-runtime verifier](INSTALL-DIAGNOSTICS.md), not just a file count. The runtime ZIP has no `baseInfo.php` or database installer. CI migration sidecars are source files, not instructions to run every attached SQL against an existing tenant.
+Expected: `verified:true`, the intended candidate/tree and 124 runtime members / 123 PHP files. Verify every extracted runtime member against the same manifest using the [installed-runtime verifier](INSTALL-DIAGNOSTICS.md), not just a file count. The runtime ZIP has no `baseInfo.php` or database installer. CI migration sidecars are source files, not instructions to run every attached SQL against an existing tenant.
 
 ## 3. Initialize only the new empty database
 
@@ -48,6 +48,8 @@ Import `database/legacy-schema.sql` exactly once into that empty database, then 
 | 11 | `migrations/post-v9/013_remove_obsolete_order_columns.sql` | Retire unused order columns |
 | 12 | `migrations/post-v9/014_api_payment_evidence.sql` | Nullable API evidence fields/indexes on the shared ledger; required before either API mode is enabled |
 | 13 | `migrations/post-v9/015_scoped_addons.sql` | Seven add-on scope columns across three existing tables and two unique indexes; enables server/native Group-set day/volume prices without a new permanent table |
+| 14 | `migrations/post-v9/016_remove_pasarguard_server_groups.sql` | Guarded removal of obsolete server-level PasarGuard Native Group column, after verifying active plans use explicit plan-level Native Groups |
+| 15 | `migrations/post-v9/017_shared_plan_changes.sql` | Durable service_plan_changes journal for reconciled Native plan changes; must follow 016 |
 
 For example, the MariaDB client can import the baseline with a prompted password:
 
@@ -55,11 +57,11 @@ For example, the MariaDB client can import the baseline with a prompted password
 mariadb --user=INSTALL_DB_USER --password NEW_EMPTY_DB < database/legacy-schema.sql
 ```
 
-Replace the account/database placeholders and repeat the import form for each subsequent table entry. These paths are relative to the private checkout, not the runtime ZIP. The release may name001 `panel-group-migration.sql` and003 `payment-attempt-migration.sql`; use the contents/checksums matching the selected source. Do not use `--force` to ignore errors or a wildcard SQL loop. Migration 014 has two ALTER TABLE statements; 015 creates a preflight helper procedure, normally drops it after successful validation, then executes three ALTER TABLE statements. Failed preflight may leave the helper procedure pending audited cleanup. Neither is a retry script. 015 rejects duplicate legacy quantities or malformed offers and must run after 012 and 014 on a genuinely empty, correctly initialized database. A partly applied file requires an exact schema audit and an authorized completion plan; do not use `--force` or rerun completed migrations.
+Replace the account/database placeholders and repeat the import form for each subsequent table entry. These paths are relative to the private checkout, not the runtime ZIP. The release may name001 `panel-group-migration.sql` and003 `payment-attempt-migration.sql`; use the contents/checksums matching the selected source. Do not use `--force` to ignore errors or a wildcard SQL loop. Migration 014 has two ALTER TABLE statements; 015 creates a preflight helper procedure, normally drops it after successful validation, then executes three ALTER TABLE statements. Failed preflight may leave the helper procedure pending audited cleanup. Neither is a retry script. 015 rejects duplicate legacy quantities or malformed offers and must run after 012 and 014 on a genuinely empty, correctly initialized database. 016 is a guarded one-time column drop and 017 a one-time journal creation; neither may be rerun after success. A partly applied file requires an exact schema audit and an authorized completion plan; do not use `--force` or rerun completed migrations.
 
 Do **not** run historical002, `legacy_rc4_nowpayments_import.sql`, or optional cleanup010 for a fresh installation. Cleanup010 is separate guarded maintenance, not a startup requirement; original unused tables may remain. Do not insert another bot's settings/users or synthetic test fixtures. The ordinary Owner settings journeys initialize the intended configuration.
 
-If a step fails or any expected object already exists, keep the error and inspect the state before continuing. MariaDB DDL can commit independently; replaying the whole sequence is not recovery. Never run this fresh sequence against an existing installation, and never rerun its completed 012/013. Existing-data consolidation and paired restore are documented in [shared storage](SHARED-PROVIDER-STORAGE.md).
+If a step fails or any expected object already exists, keep the error and inspect the state before continuing. MariaDB DDL can commit independently; replaying the whole sequence is not recovery. Never run this fresh sequence against an existing installation, and never rerun any completed 012-017 migration. Existing-data consolidation and paired restore are documented in [shared storage](SHARED-PROVIDER-STORAGE.md).
 
 ## 4. Create private per-bot configuration
 
@@ -144,7 +146,7 @@ The coordinator runs four separate processes, in order: `gift2all.php`, admitted
 
 ## 7. Verify before customer use
 
-Confirm the exact runtime/manifest, expected schema and intended settings. The [read-only readiness preflight](PAYMENT-READINESS-PREFLIGHT.md) uses a dedicated SELECT-only account and does not load private configuration or invoke workers/providers. It expects configured `BOT_STATES`/`PAYMENT_KEYS` documents and a potentially usable payment method; an untouched new database is not yet payment-ready. Its PASS is local readiness, not proof of a real payment. For 014 it reports runtime schema capability rather than full DDL certification; it never decrypts API credentials or verifies their live authentication. Audit exact column/index definitions and target history separately before API activation. After 015, also verify both scoped add-on UNIQUE indexes, their exact key order, all seven columns and InnoDB as documented in [scoped add-ons](ADDON-SCOPES.md); do not treat a successful ZIP extraction as schema readiness.
+Confirm the exact runtime/manifest, expected schema and intended settings. The [read-only readiness preflight](PAYMENT-READINESS-PREFLIGHT.md) uses a dedicated SELECT-only account and does not load private configuration or invoke workers/providers. It expects configured `BOT_STATES`/`PAYMENT_KEYS` documents and a potentially usable payment method; an untouched new database is not yet payment-ready. Its PASS is local readiness, not proof of a real payment. For 014 it reports runtime schema capability rather than full DDL certification; it never decrypts API credentials or verifies their live authentication. Audit exact column/index definitions and target history separately before API activation. After 016/017, additionally verify the obsolete server-level PasarGuard Native Group column is absent, active plans have valid plan-level Native Groups and the service_plan_changes table has the expected schema; never infer this from a successful ZIP extraction. After 015, also verify both scoped add-on UNIQUE indexes, their exact key order, all seven columns and InnoDB as documented in [scoped add-ons](ADDON-SCOPES.md); do not treat a successful ZIP extraction as schema readiness.
 
 On the selected isolated bot, verify Owner access, ordinary-user restrictions, current server/config display, explicit QR actions, cancellation and safe invalid-input behavior. Observe the actual scheduler's private logs and absence of overlapping batches. Follow the [operator acceptance checklist](MARZBAN-OPERATOR-ACCEPTANCE.md) for provider/payment tests with their own controlled accounts and funds. A successful browser payment return is not settlement proof; never automatically retry a transaction or provider mutation after an ambiguous result.
 
