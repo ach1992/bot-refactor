@@ -1768,7 +1768,7 @@ def check():
             reread=base(name,'read','gift_card',keys={
                 'giftCardUrl':'https://new.example.org/gift'})
             rows=reread['keys']['inline_keyboard']
-            assert rows[0]==[{'text':'📤 ارسال تصویر گیفت‌کارت',
+            assert rows[0]==[{'text':'📤 ارسال گیفت کارت',
                               'callback_data':'sendBuyGiftReceipt'+name}],(name,rows)
             assert rows[1]==[{'text':'❌ لغو عملیات',
                               'callback_data':'cancelBuyCartReceipt'+name}]
