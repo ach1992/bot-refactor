@@ -101,7 +101,7 @@ def main():
         manual=call(kind='manual_ui')['events'][0]
         assert 'تصویر' in manual[1] and 'تصویر' in manual[2],manual
         assert 'ارسال رسید بانکی' in json.loads(manual[3])['inline_keyboard'][0][0]['text']
-        assert 'ارسال تصویر گیفت‌کارت' in json.loads(manual[4])['inline_keyboard'][0][0]['text']
+        assert '📤 ارسال گیفت کارت' in json.loads(manual[4])['inline_keyboard'][0][0]['text']
         assert 'ارسال کد' not in str(manual)
         checks.append('off_existing_manual_bank_and_gift_photo_prompts_and_buttons_preserved')
         before=states()

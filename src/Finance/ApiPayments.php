@@ -3,6 +3,7 @@
 if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) { http_response_code(404); exit; }
 require_once __DIR__.'/ReceiptHelpers.php';
 require_once __DIR__.'/PaymentLifecycle.php';
+require_once __DIR__.'/ApiPaymentPresentation.php';
 if (is_file(__DIR__.'/PaymentEvidence.php')) require_once __DIR__.'/PaymentEvidence.php';
 
 function achbotApiPaymentReady(mysqli $db): bool {
@@ -161,22 +162,23 @@ function achbotApiPaymentNotice(mysqli $db,array $pay,string $status,bool $repor
     $automatic=achbotApiPaymentTerminal($pay) && (int)($pay['approved_by']??-1)===0 && ($proof['mode']??'')==='settle';
     if($automatic)$label=achbotMessage('manual_payment.api_payment.auto_approved');
     if($pay['state']==='declined')$label=achbotMessage('manual_payment.manual_receipts.button.51fdc91d69',['from_id'=>(int)$pay['approved_by']]);
+    $presentation=achbotApiPaymentPresentation($db,$pay,$a);
     $amount=achbotPaymentEvidenceIntegralQuote($a['quote_amount'])??(string)$a['quote_amount'];
     $body=achbotMessageHtml('manual_payment.api_payment.report',[
-        'reference'=>$hash,'userId'=>(string)$pay['user_id'],'amount'=>$amount,'unit'=>trim(achbotMessage('bot.bot.webhook_ingress_authenticated.text.2cc98f7f7c')),
+        'reference'=>$hash.' (#'.$id.')','userId'=>(string)$pay['user_id'],'amount'=>$amount,'unit'=>trim(achbotMessage('bot.bot.webhook_ingress_authenticated.text.2cc98f7f7c')),
         'method'=>achbotManualLabel((string)$a['provider']),'evidence'=>$evidence,
-        'subject'=>payTypeToDescription((string)$pay['type']),'status'=>$label]);
-    $digest=hash('sha256',$body);
-    if($report && ($a['evidence_report_digest']??null)!==$digest && function_exists('achbotNotifyAdmins')) {
-        try {
-            $results=achbotNotifyAdmins('sendMessage',['text'=>$body,'parse_mode'=>'HTML']);$ack=count($results)>0;
-            foreach($results as $result)if(!achbotApiPaymentAck($result['response']??null))$ack=false;
-            if($ack){$q=$db->prepare('UPDATE payment_attempts SET evidence_report_digest=? WHERE pay_row_id=?');$q->bind_param('si',$digest,$id);$q->execute();$q->close();}
-        }catch(Throwable $e){error_log('achbot_api_report_delivery_deferred pay_id='.$id);}
-    }
+        'subject'=>payTypeToDescription((string)$pay['type']).
+            ($presentation['details']==='' && $presentation['subject']!==payTypeToDescription((string)$pay['type'])
+                ?' | '.$presentation['subject']:''),'status'=>$label]);
+    $body=achbotApiPaymentRichReport($pay,$body,$presentation);
+    // Review details remain available from the original evidence/report
+    // presenter. Owner opens the review workbench voluntarily: a background
+    // provider poll must not send additional standalone admin messages.
+    // Original receipt keyboards are still edited in place below.
     $refs=json_decode((string)($pay['admins_messages']??''),true);$refs=is_array($refs)?$refs:[];
     $refs[]=['chat_id'=>$pay['chat_id']??0,'message_id'=>$pay['message_id']??0];$seen=[];
     $keys=inlineKeyboard([[['text'=>$label,'callback_data'=>'noop_'.$hash]]]);
+    if(achbotApiPaymentTerminal($pay))$keys=achbotApiPaymentFinalKeyboard($pay,$label,$automatic,$presentation);
     if($invalidCode && $pay['state']==='have_sent'){
         $rows=json_decode(achbotApiPaymentReviewKeyboard($pay),true)['inline_keyboard'];
         $rows[]=[['text'=>$label,'callback_data'=>'noop_'.$hash]];$keys=inlineKeyboard($rows);
@@ -416,15 +418,49 @@ function achbotApiPaymentSettle(mysqli $db,int $id,array $proof): string {
             $delivery=achbotAutoBankProvisionBuySub($db,$pay,$GLOBALS['botState']??[],$GLOBALS['buttonValues']??[],[],false,(string)($GLOBALS['botUrl']??''),$proof);
             if (!$delivery['committed']) return 'review';
             achbotReferralAfterCompletedPurchase($db,(int)$pay['user_id'],$id,(int)($GLOBALS['admin']??0),$GLOBALS['botState']??[]);
-            foreach($delivery['deliveries'] as $packet)try{sendQrFromLink($packet['qr'],$packet['caption'],$packet['keys'],(string)($GLOBALS['botUrl']??''),(int)$packet['uid']);}catch(Throwable $e){error_log('achbot_api_paid_delivery_review pay_id='.$id);}
+            $deliveryPackets=$delivery['deliveries'];
         } elseif($type!=='INCREASE_WALLET') {
             if (!achbotApiPaymentFulfillEdit($db,$pay,$proof)) return 'review';
         }
         $fresh=achbotApiPaymentRow($db,$id);if(!$fresh || !achbotApiPaymentTerminal($fresh))return 'review';
-        $done=$db->prepare("UPDATE payment_attempts SET evidence_fulfillment_state='done' WHERE pay_row_id=?");$done->bind_param('i',$id);$done->execute();$done->close();
-        achbotApiPaymentNotice($db,$fresh,'confirmed');
-        try{sendMessage(achbotMessage('payment.api_payment.confirmed'),null,'HTML',(int)$pay['user_id']);}catch(Throwable $e){}
-        return 'confirmed';
+        // Durable delivery fence precedes every fallible Telegram call.
+        // A lost response, process crash, or unconfirmed QR is never a reason
+        // to replay payment, capacity, CREATE or native account edits.
+        $claim=$db->prepare("UPDATE payment_attempts SET evidence_fulfillment_state='delivery_dispatching'
+            WHERE pay_row_id=? AND (evidence_fulfillment_state IS NULL OR
+              evidence_fulfillment_state IN ('reserved','verified'))");
+        $claim->bind_param('i',$id);
+        $claimed=$claim->execute() && $claim->affected_rows===1;$claim->close();
+        if(!$claimed)return 'review';
+        $deliveryAcknowledged=true;
+        if($type==='BUY_SUB') {
+            $deliveryAcknowledged=!empty($deliveryPackets);
+            foreach(($deliveryPackets??[]) as $index=>$packet) {
+                try {
+                    if(sendQrFromLink($packet['qr'],$packet['caption'],$packet['keys'],
+                        (string)($GLOBALS['botUrl']??''),(int)$packet['uid'])!==true) {
+                        $deliveryAcknowledged=false;
+                        error_log('achbot_api_paid_delivery_unconfirmed pay_id='.$id.' line='.($index+1));
+                    }
+                } catch(Throwable $error) {
+                    $deliveryAcknowledged=false;
+                    error_log('achbot_api_paid_delivery_exception pay_id='.$id.' line='.($index+1).
+                        ' class='.get_class($error));
+                }
+            }
+        } else {
+            // The funds/native edit have already committed. Customer copy is
+            // identical to the successful manual path for the same subject.
+            $deliveryAcknowledged=achbotApiPaymentDeliverManualCustomer($db,$fresh);
+        }
+        $deliveryState=$deliveryAcknowledged?'done':'delivery_unconfirmed';
+        $done=$db->prepare("UPDATE payment_attempts SET evidence_fulfillment_state=?
+            WHERE pay_row_id=? AND evidence_fulfillment_state='delivery_dispatching'");
+        $done->bind_param('si',$deliveryState,$id);
+        $marked=$done->execute() && $done->affected_rows===1;$done->close();
+        if(!$marked)return 'review';
+        achbotApiPaymentNotice($db,$fresh,$deliveryAcknowledged?'confirmed':'settled');
+        return $deliveryAcknowledged?'confirmed':'settled';
     } catch(Throwable $e) {error_log('achbot_api_effect_review pay_id='.$id);$fresh=achbotApiPaymentRow($db,$id);if($fresh)achbotApiPaymentNotice($db,$fresh,'review');return 'review';}
 }
 /** Reuse actual panel edit and exact local finisher, with pinned quantities. */

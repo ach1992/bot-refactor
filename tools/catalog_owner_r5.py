@@ -367,6 +367,52 @@ def verify_retained_display_keys():
               'retained_display_source_lineage_drift:'+key)
     return set(records)
 
+# The approved Chili RC25 hot-copy is a *specific* 83-value revision on top
+# of main, not a blanket exception to the historical whole-audience checks.
+# Both Git objects and shipping catalog bytes are verified; restore is only
+# in-memory for the older immutable proofs and never edits a user template.
+CHILI_COPY_BASE='ed0338baa3b006759ef9fdab66ca6e68defdc9ef'
+CHILI_COPY_HEAD='4c4004d9b85bc6b1c7297788675d0e917c1f26d0'
+CHILI_COPY_FILES={
+    'user':'ebc2195d535cc3f3b1cd233ac04b2ef7db22dd6c2a4d8d1ac399f085fdf086e1',
+    'admin':'0c3e8afb70387969bc7cddc286644d8ce6798e65c4116050c77beccbb1c79b62',
+}
+@functools.lru_cache(maxsize=1)
+def chili_copy_values():
+    decode='$s=stream_get_contents(STDIN);$p=strpos($s,"return [");if($p===false)throw new RuntimeException("catalog_missing");echo json_encode(eval(substr($s,$p)),JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);'
+    before={};after={};changed={}
+    for audience,digest in CHILI_COPY_FILES.items():
+        path='messages/fa/'+audience+'.php'
+        raw=command('git','show',CHILI_COPY_HEAD+':'+path)
+        check(hashlib.sha256(raw).hexdigest()==digest and
+              hashlib.sha256((ROOT/path).read_bytes()).hexdigest()==digest,
+              'chili_copy_exact_source_identity:'+path)
+        old=command('git','show',CHILI_COPY_BASE+':'+path)
+        before[audience]=flatten(json.loads(command('php','-r',decode,input=old)))
+        after[audience]=flatten(json.loads(command('php','-r',decode,input=raw)))
+        check(set(before[audience])==set(after[audience]),
+              'chili_copy_catalog_inventory:'+audience)
+        changed[audience]={key for key in before[audience]
+            if before[audience][key]!=after[audience][key]}
+    check(sum(map(len,changed.values()))==83 and
+          len(changed['user'])==61 and len(changed['admin'])==22,
+          'chili_copy_exact_value_change_count')
+    return before,after,changed
+def chili_copy_restore(sides):
+    before,after,changed=chili_copy_values()
+    # An all-before input comes from a caller that already restored the
+    # approved layer; a mixed before/after copy is never a valid revision.
+    current=all(sides.get(a,{}).get(k)==after[a][k]
+                for a in changed for k in changed[a])
+    old=all(sides.get(a,{}).get(k)==before[a][k]
+            for a in changed for k in changed[a])
+    check(current or old,'chili_copy_value_or_audience_drift')
+    restored=copy.deepcopy(sides)
+    if current:
+        for a in changed:
+            for k in changed[a]:restored[a][k]=before[a][k]
+    return restored
+
 # Current API copy is a separately reviewed additions-only layer. The original
 # R5 baseline and its amendment file remain byte-for-byte historical evidence.
 API_BASE='2d0ad0826d594adac49f5a83f0a9d47f6df5b264'
@@ -443,6 +489,7 @@ def verify_api_and_restore(sides,definition=None):
         sides=shared_transfer_copy_restore(sides)
     sides=scoped_addon_restore(sides) if any(key.startswith('addon_scopes.')
         for key in sides.get('admin',{})) else sides
+    sides=chili_copy_restore(sides)
     sides,review_proof=review_catalog_restore(sides)
     sides,gift_proof=gift_catalog_restore(sides)
     record=api_manifest()if definition is None else definition
@@ -546,6 +593,98 @@ REVIEW_DYNAMIC={
 # Issue #107 changes an API payment *eligibility fence*, not any accepted copy.
 # Preserve the old dynamic-message source proof byte-for-byte by admitting only
 # this explicit non-copy insertion; arbitrary edits still fail source binding.
+# Issue #117: the new receipt/report presenter adds only these exact
+# non-catalog source fragments, preserving every established literal and
+# dynamic catalog key. Removing the complete recognized delta must yield the
+# prior byte-pinned consumer; a partial, arbitrary or changed hook fails.
+# Issue #117 Owner final acceptance: allow only TWO source-exact deltas:
+# quiet pull-only review (no pushed report) and manual-copy/ACK-aware
+# customer delivery. Each pair is fully reversible to the independently
+# pinned PR #120 source; all original provenance checks stay enabled.
+API_OWNER117_CHANGE_1_AFTER = """    // Review details remain available from the original evidence/report
+    // presenter. Owner opens the review workbench voluntarily: a background
+    // provider poll must not send additional standalone admin messages.
+    // Original receipt keyboards are still edited in place below.
+"""
+API_OWNER117_CHANGE_1_BEFORE = """    $digest=hash('sha256',$body);
+    if($report && ($a['evidence_report_digest']??null)!==$digest && function_exists('achbotNotifyAdmins')) {
+        try {
+            $results=achbotNotifyAdmins('sendMessage',['text'=>$body,'parse_mode'=>'HTML']);$ack=count($results)>0;
+            foreach($results as $result)if(!achbotApiPaymentAck($result['response']??null))$ack=false;
+            if($ack){$q=$db->prepare('UPDATE payment_attempts SET evidence_report_digest=? WHERE pay_row_id=?');$q->bind_param('si',$digest,$id);$q->execute();$q->close();}
+        }catch(Throwable $e){error_log('achbot_api_report_delivery_deferred pay_id='.$id);}
+    }
+"""
+API_OWNER117_CHANGE_2_AFTER = """            achbotReferralAfterCompletedPurchase($db,(int)$pay['user_id'],$id,(int)($GLOBALS['admin']??0),$GLOBALS['botState']??[]);
+            $deliveryPackets=$delivery['deliveries'];
+        } elseif($type!=='INCREASE_WALLET') {
+            if (!achbotApiPaymentFulfillEdit($db,$pay,$proof)) return 'review';
+        }
+        $fresh=achbotApiPaymentRow($db,$id);if(!$fresh || !achbotApiPaymentTerminal($fresh))return 'review';
+        // Durable delivery fence precedes every fallible Telegram call.
+        // A lost response, process crash, or unconfirmed QR is never a reason
+        // to replay payment, capacity, CREATE or native account edits.
+        $claim=$db->prepare("UPDATE payment_attempts SET evidence_fulfillment_state='delivery_dispatching'
+            WHERE pay_row_id=? AND (evidence_fulfillment_state IS NULL OR
+              evidence_fulfillment_state IN ('reserved','verified'))");
+        $claim->bind_param('i',$id);
+        $claimed=$claim->execute() && $claim->affected_rows===1;$claim->close();
+        if(!$claimed)return 'review';
+        $deliveryAcknowledged=true;
+        if($type==='BUY_SUB') {
+            $deliveryAcknowledged=!empty($deliveryPackets);
+            foreach(($deliveryPackets??[]) as $index=>$packet) {
+                try {
+                    if(sendQrFromLink($packet['qr'],$packet['caption'],$packet['keys'],
+                        (string)($GLOBALS['botUrl']??''),(int)$packet['uid'])!==true) {
+                        $deliveryAcknowledged=false;
+                        error_log('achbot_api_paid_delivery_unconfirmed pay_id='.$id.' line='.($index+1));
+                    }
+                } catch(Throwable $error) {
+                    $deliveryAcknowledged=false;
+                    error_log('achbot_api_paid_delivery_exception pay_id='.$id.' line='.($index+1).
+                        ' class='.get_class($error));
+                }
+            }
+        } else {
+            // The funds/native edit have already committed. Customer copy is
+            // identical to the successful manual path for the same subject.
+            $deliveryAcknowledged=achbotApiPaymentDeliverManualCustomer($db,$fresh);
+        }
+        $deliveryState=$deliveryAcknowledged?'done':'delivery_unconfirmed';
+        $done=$db->prepare("UPDATE payment_attempts SET evidence_fulfillment_state=?
+            WHERE pay_row_id=? AND evidence_fulfillment_state='delivery_dispatching'");
+        $done->bind_param('si',$deliveryState,$id);
+        $marked=$done->execute() && $done->affected_rows===1;$done->close();
+        if(!$marked)return 'review';
+        achbotApiPaymentNotice($db,$fresh,$deliveryAcknowledged?'confirmed':'settled');
+        return $deliveryAcknowledged?'confirmed':'settled';
+"""
+API_OWNER117_CHANGE_2_BEFORE = """            achbotReferralAfterCompletedPurchase($db,(int)$pay['user_id'],$id,(int)($GLOBALS['admin']??0),$GLOBALS['botState']??[]);
+            foreach($delivery['deliveries'] as $packet)try{sendQrFromLink($packet['qr'],$packet['caption'],$packet['keys'],(string)($GLOBALS['botUrl']??''),(int)$packet['uid']);}catch(Throwable $e){error_log('achbot_api_paid_delivery_review pay_id='.$id);}
+        } elseif($type!=='INCREASE_WALLET') {
+            if (!achbotApiPaymentFulfillEdit($db,$pay,$proof)) return 'review';
+        }
+        $fresh=achbotApiPaymentRow($db,$id);if(!$fresh || !achbotApiPaymentTerminal($fresh))return 'review';
+        $done=$db->prepare("UPDATE payment_attempts SET evidence_fulfillment_state='done' WHERE pay_row_id=?");$done->bind_param('i',$id);$done->execute();$done->close();
+        achbotApiPaymentNotice($db,$fresh,'confirmed');
+        try{sendMessage(achbotMessage('payment.api_payment.confirmed'),null,'HTML',(int)$pay['user_id']);}catch(Throwable $e){}
+        return 'confirmed';
+"""
+
+API_RECEIPT_PRESENTATION_DIFF = [
+    (API_OWNER117_CHANGE_1_AFTER, API_OWNER117_CHANGE_1_BEFORE),
+    (API_OWNER117_CHANGE_2_AFTER, API_OWNER117_CHANGE_2_BEFORE),
+    ("require_once __DIR__.'/ApiPaymentPresentation.php';\n", ""),
+    ("    $presentation=achbotApiPaymentPresentation($db,$pay,$a);\n", ""),
+    ("'reference'=>$hash.' (#'.$id.')'", "'reference'=>$hash"),
+    ("""        'subject'=>payTypeToDescription((string)$pay['type']).
+            ($presentation['details']==='' && $presentation['subject']!==payTypeToDescription((string)$pay['type'])
+                ?' | '.$presentation['subject']:''),'status'=>$label]);""",
+     """        'subject'=>payTypeToDescription((string)$pay['type']),'status'=>$label]);"""),
+    ("    $body=achbotApiPaymentRichReport($pay,$body,$presentation);\n", ""),
+    ("    if(achbotApiPaymentTerminal($pay))$keys=achbotApiPaymentFinalKeyboard($pay,$label,$automatic,$presentation);\n", ""),
+]
 SCOPED_ADDON_API_INSERTION="""            if ($type!=='RENEW_ACCOUNT') {
                 require_once __DIR__.'/../Plans/Addons.php';
                 if (achbotAddonSchema($db) && !achbotAddonPayLocal($db,$pay,$order)) return null;
@@ -579,6 +718,12 @@ def api_source_references(path,source):
         # checking the same pinned API source and previously accepted #107 insertion.
         audited=source
         if path=='src/Finance/ApiPayments.php':
+            if any(fragment in audited for fragment,_ in API_RECEIPT_PRESENTATION_DIFF):
+                for fragment,_ in API_RECEIPT_PRESENTATION_DIFF:
+                    check(audited.count(fragment)==1,
+                          'api_receipt_presentation_incomplete_or_duplicate')
+                for before,after in API_RECEIPT_PRESENTATION_DIFF:
+                    audited=audited.replace(before,after,1)
             # Full-content equality below fails closed if any edit falls
             # outside these independently exact source-text allowances.
             if (audited.count(FINAL_COMMERCE_POLICY_INSERTION)==1 and

@@ -89,7 +89,10 @@ def _authorized_ui_pairs(manifest,followups,definitions,r5):
     # approved delta above, then compare a local copy with just those four
     # values restored; do not normalize any other native, financial or UI
     # behavior in actual source-real test execution.
-    old_group_copy=r5_catalog.panel_group_copy_restore(sides)
+    # Catalog identity/negative controls run on the actual RC25 copy above.
+    # Only the exact approved values are reversed for historical V9 UI
+    # parity; native, payment and callback fields are not normalized.
+    old_group_copy=r5_catalog.chili_copy_restore(r5_catalog.panel_group_copy_restore(sides))
     current={**old_group_copy['user'],**old_group_copy['admin']}
     literal={key:record for key,record in manifest['changes'].items()
              if record.get('parameters')==[] and record.get('before_parameters',[])==[]}
