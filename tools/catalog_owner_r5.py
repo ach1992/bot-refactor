@@ -556,7 +556,7 @@ API_RECEIPT_PRESENTATION_DIFF = [
     ("'reference'=>$hash.' (#'.$id.')'", "'reference'=>$hash"),
     ("""        'subject'=>payTypeToDescription((string)$pay['type']).
             ($presentation['details']==='' && $presentation['subject']!==payTypeToDescription((string)$pay['type'])
-                ?' — '.$presentation['subject']:''),'status'=>$label]);""",
+                ?' | '.$presentation['subject']:''),'status'=>$label]);""",
      """        'subject'=>payTypeToDescription((string)$pay['type']),'status'=>$label]);"""),
     ("    $body=achbotApiPaymentRichReport($pay,$body,$presentation);\n", ""),
     ("    if(achbotApiPaymentTerminal($pay))$keys=achbotApiPaymentFinalKeyboard($pay,$label,$automatic,$presentation);\n", ""),

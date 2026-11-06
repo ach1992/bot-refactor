@@ -138,7 +138,7 @@ function achbotApiPaymentFinalKeyboard(array $pay,string $fallback,bool $automat
     // A Telegram button is limited to 64 UTF-8 characters. Prefer a
     // short, readable subject and preserve the complete hash on row three.
     if (preg_match('/\A.{57}/us',$subject)) {
-        if (preg_match('/\A(.{1,55})/us',$subject,$short))$subject=$short[1].'…';
+        if (preg_match('/\A(.{1,55})/us',$subject,$short))$subject=$short[1].'...';
     }
     $subjectButton=($pay['type']??'')==='INCREASE_WALLET'?$subject:
         achbotMessage('manual_payment.manual_approval.manual_standard_report_delivery.last_remark_for_admin_msg.2b262756e6',

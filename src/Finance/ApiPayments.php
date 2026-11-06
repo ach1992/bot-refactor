@@ -169,7 +169,7 @@ function achbotApiPaymentNotice(mysqli $db,array $pay,string $status,bool $repor
         'method'=>achbotManualLabel((string)$a['provider']),'evidence'=>$evidence,
         'subject'=>payTypeToDescription((string)$pay['type']).
             ($presentation['details']==='' && $presentation['subject']!==payTypeToDescription((string)$pay['type'])
-                ?' — '.$presentation['subject']:''),'status'=>$label]);
+                ?' | '.$presentation['subject']:''),'status'=>$label]);
     $body=achbotApiPaymentRichReport($pay,$body,$presentation);
     $digest=hash('sha256',$body);
     if($report && ($a['evidence_report_digest']??null)!==$digest && function_exists('achbotNotifyAdmins')) {
