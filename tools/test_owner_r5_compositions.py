@@ -69,7 +69,7 @@ def display_context_baseline():
 def display_context_followup_proof(current):
     # Exactly seven new admin entries relative to the accepted 7489946 source.
     # Existing entries, audiences, params and earlier amendment layers stay exact.
-    current,_=r5.verify_api_and_restore(current)
+    current,_=r5.verify_api_and_restore(r5.panel_group_copy_restore(current))
     baseline=display_context_baseline();record=r5.manifest()
     check(set(current['user'])==set(baseline['user'])
           and set(current['admin'])==set(baseline['admin'])|set(DISPLAY_CONTEXT_ENTRIES)|set(SIMPLE_DISPLAY_ENTRIES),
@@ -115,7 +115,7 @@ def staff_followup_proof(current,archived):
     # New notification entries and this one role sentence have separate,
     # explicit lineage; they never change the 22 historical corrections.
     record=r5.manifest();r5.verify_and_restore(current,record)
-    current,_=r5.verify_api_and_restore(current)
+    current,_=r5.verify_api_and_restore(r5.panel_group_copy_restore(current))
     added={key for audience,rows in current.items()for key in rows if key not in archived[audience]}
     check(added==NOTIFICATION_KEYS|set(DISPLAY_CONTEXT_ENTRIES)|set(SIMPLE_DISPLAY_ENTRIES),'notification_catalog_addition_scope_drift')
     check(all(set(archived[a])-set(SETTINGS_RETIRED_ENTRIES)<=set(current[a])for a in archived),'staff_followup_removed_historical_entry')
@@ -165,8 +165,8 @@ def correction_proof(current,archived):
     # not before those checks (which would restore them twice).
     staff_followup_proof(current,archived)
     display_context_followup_proof(current)
-    settings_label_followup_proof(r5.shared_transfer_copy_restore(r5.server_removal_copy_restore(current)),archived)
-    current=r5.addon_selection_restore(r5.shared_transfer_copy_restore(r5.server_removal_copy_restore(current)))
+    settings_label_followup_proof(r5.shared_transfer_copy_restore(r5.server_removal_copy_restore(r5.panel_group_copy_restore(current))),archived)
+    current=r5.addon_selection_restore(r5.shared_transfer_copy_restore(r5.server_removal_copy_restore(r5.panel_group_copy_restore(current))))
     changed={k for a,rows in current.items()for k,e in rows.items()if k in archived[a]and e!=archived[a][k]}
     check(changed==set(CORRECTIONS)|{STAFF_GUIDE_KEY}|set(SETTINGS_LABEL_AMENDMENTS)|set(SIMPLE_DISPLAY_LABELS),'composed_catalog_correction_scope_drift')
     for key,(before,after)in CORRECTIONS.items():
@@ -410,8 +410,8 @@ def audit(source_root=ROOT,catalog_root=ROOT):
         archived=render(expressions,stage)
         current_catalogs=load_catalogs(catalog_root);archived_catalogs=load_catalogs(stage)
         correction_count=correction_proof(current_catalogs,archived_catalogs)
-        _,api_proof=r5.verify_api_and_restore(current_catalogs)
-        api_controls=r5.api_negative_controls(current_catalogs)
+        _,api_proof=r5.verify_api_and_restore(r5.panel_group_copy_restore(current_catalogs))
+        api_controls=r5.api_negative_controls(r5.panel_group_copy_restore(current_catalogs))
         staff_controls=staff_followup_negative_controls(current_catalogs,archived_catalogs)
         display_context_controls=display_context_negative_controls(current_catalogs)
     # Existing private-failure composition: this value comes from update_id,

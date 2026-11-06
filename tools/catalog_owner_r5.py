@@ -167,6 +167,55 @@ def shared_transfer_copy_restore(sides):
     return restored
 
 
+# #114: owner-approved group chooser/failure copy without changing the
+# immutable R5/API and #112 catalog evidence. Restore exactly the known
+# values in a validation copy, never in the actual source.
+PANEL_GROUP_PARENT='8c0af0899051ed60253fe5d40301dfdbb1d2e5de'
+def panel_group_copy_restore(sides):
+    record=json.loads((ROOT/'tools/text_catalog_panel_group_ownership.json').read_text())
+    entries=record.get('entries')
+    keys={'bot.bot.addserver_name.message.c31e264971',
+          'bot.bot.addserver_name.alert.27e6f9c466',
+          'bot.bot.addserver_name.alert.9ee9f25355',
+          'bot.bot.addserver_name.alert.a5625b915f'}
+    check(record.get('version')==1 and
+          record.get('owner_issue')=='https://github.com/ach1992/bot-refactor/issues/114' and
+          record.get('accepted_parent')==PANEL_GROUP_PARENT and
+          record.get('audience')=='admin' and
+          type(entries) is dict and set(entries)==keys,
+          'panel_group_copy_manifest_identity')
+    path='messages/fa/admin.php'
+    original=command('git','show',PANEL_GROUP_PARENT+':'+path).decode('utf-8')
+    current=(ROOT/path).read_text()
+    def lines(source):
+        topic=None;out={}
+        for line in source.splitlines():
+            heading=re.match(r"^    '([^']+)'\s*=>\s*\[$",line)
+            if heading:topic=heading.group(1);continue
+            entry=re.match(r"^        '([^']+)'\s*=>",line)
+            if entry and topic is not None:out[topic+'.'+entry.group(1)]=line
+        return out
+    old_lines,new_lines=lines(original),lines(current)
+    decode='$s=stream_get_contents(STDIN);$p=strpos($s,"return [");if($p===false)throw new RuntimeException("array_missing");echo json_encode(eval(substr($s,$p)),JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);'
+    prior=flatten(json.loads(command('php','-r',decode,input=original.encode('utf-8'))))
+    restored=copy.deepcopy(sides)
+    check(set(restored)=={'user','admin'},'panel_group_copy_audiences')
+    for key,item in entries.items():
+        check(set(item)=={'before_sha256','after_sha256','reason'} and bool(item['reason']),
+              'panel_group_copy_entry_shape:'+key)
+        expected_old=hashlib.sha256(old_lines[key].encode()).hexdigest()
+        expected_new=hashlib.sha256(new_lines[key].encode()).hexdigest()
+        check(item['before_sha256']==expected_old and
+              item['after_sha256']==expected_new and
+              expected_old!=expected_new and
+              key in prior and key in restored['admin'] and key not in restored['user'],
+              'panel_group_copy_source_drift:'+key)
+        check(isinstance(restored['admin'][key],str) and
+              re.search(r'[\u06f0-\u06f9\u0660-\u0669]',restored['admin'][key]) is None,
+              'panel_group_copy_value_invalid:'+key)
+        restored['admin'][key]=prior[key]
+    return restored
+
 # #112 Owner Revision 4 supersedes forced retirement: the policy is
 # admin-confirmed hard deletion plus explicit server-sale/renewal states and
 # plan visibility. Pin each changed/additive admin key against source while
@@ -262,7 +311,7 @@ def server_removal_copy_negative_controls(sides):
     return len(cases)
 
 def verify_and_restore(sides,definition=None):
-    current=scoped_addon_restore(shared_transfer_copy_restore(server_removal_copy_restore(sides)))
+    current=scoped_addon_restore(shared_transfer_copy_restore(server_removal_copy_restore(panel_group_copy_restore(sides))))
     sides,api_proof=verify_api_and_restore(current)
     record=manifest()if definition is None else definition
     check(record.get('version')==1 and record.get('baseline_commit')==BASE and record.get('authorization')==AUTH,'r5_amendment_identity')

@@ -170,6 +170,13 @@ function achbotPhysicalAssertImportAdmission(mysqli $db,?string $lease,
     $s->bind_param('s',$lease);$s->execute();
     $pending=$s->get_result()->num_rows>0;$s->close();
     if ($pending) throw new RuntimeException('physical_import_plan_requires_review');
+    if (achbotProviderType($db,$serverId)==='marzban') {
+        $username=$remote->username??null;
+        if (!is_string($username) || $username==='')
+            throw new RuntimeException('physical_import_identity_unverified');
+        achbotPhysicalAssertMarzbanGroupJournalClear($db,$serverId,$username,
+            [],'physical_import_plan_requires_review');
+    }
 }
 function achbotPhysicalAcquireLock(mysqli $db,string $name): void {
     $s=$db->prepare('SELECT GET_LOCK(?,3) AS acquired');
@@ -284,6 +291,95 @@ function achbotPhysicalNoPendingPayments(mysqli $db,array $rows): void {
     // automatic renewal they require a fully quiet physical subscription.
     if (!achbotSharedAccountWorkSettledLocked($db,$rows,0,0,true,true))
         throw new RuntimeException('physical_pending_financial_effect');
+}
+
+/**
+ * An administrator may freely reassign a Panel Group, but no consumer
+ * may escape an unresolved Marzban plan intent by using a new group-derived
+ * lock or by deleting/re-importing its original local order. Intent creation
+ * persists the original Native username and group. Older 017 journals have
+ * neither field: if the current operation touches one of their recorded
+ * logical servers (or a currently declared peer), conservatively hold it
+ * regardless of username; live order rows are NOT historical evidence.
+ * This fence is consumption-only, never an admin Group assignment gate.
+ */
+function achbotPhysicalAssertMarzbanGroupJournalClear(mysqli $db,int $serverId,
+    string $remark,array $orderIds,string $error): void {
+    if ($serverId<=0 || $remark==='')
+        throw new RuntimeException('physical_journal_identity_invalid');
+    $ids=[];
+    foreach ($orderIds as $id) {
+        if (!is_int($id) || $id<=0)
+            throw new RuntimeException('physical_journal_identity_invalid');
+        $ids[$id]=true;
+    }
+    // Scan is intentionally current-state read. A matching unresolved row is
+    // then rechecked with FOR UPDATE inside the consumer transaction.
+    $s=$db->prepare("SELECT id,server_id,source_order_id,intent_json
+        FROM service_plan_changes WHERE provider='marzban'
+        AND state<>'committed' ORDER BY id");
+    $s->execute();$pending=$s->get_result()->fetch_all(MYSQLI_ASSOC);$s->close();
+    if (!$pending) return;
+    $group=achbotPanelGroup($db,$serverId);
+    $groupId=$group===null?null:(int)$group['id'];
+    $confirm=$db->prepare("SELECT state FROM service_plan_changes WHERE id=? FOR UPDATE");
+    try {
+        foreach ($pending as $row) {
+            try {$intent=json_decode((string)$row['intent_json'],true,64,JSON_THROW_ON_ERROR);}
+            catch (Throwable $ignored) {
+                throw new RuntimeException('physical_journal_identity_unverified');
+            }
+            if (!is_array($intent) || !is_array($intent['old_rows']??null))
+                throw new RuntimeException('physical_journal_identity_unverified');
+            $oldServer=(int)$row['server_id'];
+            if ($oldServer<=0) throw new RuntimeException('physical_journal_identity_unverified');
+            $oldServers=[$oldServer=>true];
+            $conflict=isset($ids[(int)$row['source_order_id']]);
+            foreach ($intent['old_rows'] as $ref) {
+                if (!is_array($ref) || !is_int($ref['id']??null) ||
+                    $ref['id']<=0 || !is_int($ref['server_id']??null) ||
+                    $ref['server_id']<=0)
+                    throw new RuntimeException('physical_journal_identity_unverified');
+                $oldServers[$ref['server_id']]=true;
+                if (isset($ids[$ref['id']])) $conflict=true;
+            }
+            if (!$conflict) {
+                // The original server ID remains in the journal even after
+                // all orders_list rows have been locally deleted.
+                $scope=isset($oldServers[$serverId]);
+                if (!$scope)
+                    foreach (array_keys($oldServers) as $oldServer)
+                        if ($oldServer>0 && achbotSamePanelGroup($db,$oldServer,$serverId)) {
+                            $scope=true;break;
+                        }
+                // New intents pin the ORIGINAL physical Group, so moving the
+                // old server later does not free other entries left in A.
+                if (array_key_exists('physical_group_id',$intent) &&
+                    $intent['physical_group_id']!==null &&
+                    (!is_int($intent['physical_group_id']) ||
+                     $intent['physical_group_id']<=0))
+                    throw new RuntimeException('physical_journal_identity_unverified');
+                if (!$scope && $groupId!==null &&
+                    ($intent['physical_group_id']??null)===$groupId)
+                    $scope=true;
+                if (!$scope) continue;
+                if (array_key_exists('native_username',$intent)) {
+                    if (!is_string($intent['native_username']) ||
+                        $intent['native_username']==='')
+                        throw new RuntimeException('physical_journal_identity_unverified');
+                    if ($intent['native_username']!==$remark) continue;
+                }
+                // Legacy journal with no immutable username: a current order
+                // lookup cannot prove a negative after local deletion or edit.
+                // Fence only the historical server/group scope until reviewed.
+            }
+            $id=(int)$row['id'];
+            $confirm->bind_param('i',$id);$confirm->execute();
+            $current=$confirm->get_result()->fetch_assoc();
+            if ($current && $current['state']!=='committed')
+                throw new RuntimeException($error);
+        }
+    } finally {$confirm->close();}
 }
 
 /**
@@ -426,6 +522,9 @@ function achbotPhysicalSelectPlan(mysqli $db,int $orderId,int $newPlanId,int $ac
                 throw new RuntimeException('physical_peer_server_mismatch');
         }
         achbotPhysicalNoPendingPayments($db,$all);
+        if ($provider==='marzban')
+            achbotPhysicalAssertMarzbanGroupJournalClear($db,$server,(string)$order['remark'],
+                array_map(static fn($r)=>(int)$r['id'],$all),'physical_plan_requires_review');
         $targetSha=achbotPhysicalTargetFingerprint($db,$order);
         $pgIdentitySha=$provider==='pasarguard'?
             achbotPhysicalPgIdentityFingerprint(achbotPgOrderContext($db,$orderId,true)):null;
@@ -447,6 +546,12 @@ function achbotPhysicalSelectPlan(mysqli $db,int $orderId,int $newPlanId,int $ac
             ],$all),
             'native_target'=>$provider==='pasarguard'?['groups'=>$groups]:['inbounds'=>$inbounds],
             'created_at'=>gmdate('c')];
+        if ($provider==='marzban') {
+            // Durable native identity without a schema migration or an URL/
+            // credential equality assumption. Survives local order deletion.
+            $intent['native_username']=(string)$order['remark'];
+            $intent['physical_group_id']=achbotPanelGroup($db,$server)['id']??null;
+        }
         $json=json_encode($intent,JSON_THROW_ON_ERROR);
         $s=$db->prepare("INSERT INTO service_plan_changes
             (lock_key,source_order_id,plan_id,server_id,provider,state,intent_json)

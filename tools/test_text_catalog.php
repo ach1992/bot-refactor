@@ -526,10 +526,77 @@ $restoreSharedTransfer=static function(array $sides) use($transferManifest,$tran
  }
  return $sides;
 };
-$verifyCurrentAudienceCatalogs=static function(array $sides) use($giftKey,$giftEntry,$apiDelta,$r5Expected,$reviewEntries,$addonEntries,$selectionEntries,$restoreSharedTransfer,$restoreServerRemoval): void {
+// #114: exact, Owner-approved new group administration wording. Validate
+// original and shipping line hashes and restore these three values ONLY in
+// a local comparison copy, retaining all immutable R5/API negative controls.
+$panelGroupManifest=json_decode(file_get_contents(__DIR__.'/text_catalog_panel_group_ownership.json'),true,512,JSON_THROW_ON_ERROR);
+$panelGroupKeys=['bot.bot.addserver_name.message.c31e264971',
+ 'bot.bot.addserver_name.alert.27e6f9c466',
+ 'bot.bot.addserver_name.alert.9ee9f25355',
+ 'bot.bot.addserver_name.alert.a5625b915f'];
+$panelGroupParent='8c0af0899051ed60253fe5d40301dfdbb1d2e5de';
+if(($panelGroupManifest['version']??null)!==1 ||
+   ($panelGroupManifest['accepted_parent']??null)!==$panelGroupParent ||
+   ($panelGroupManifest['owner_issue']??null)!=='https://github.com/ach1992/bot-refactor/issues/114' ||
+   ($panelGroupManifest['audience']??null)!=='admin' ||
+   !is_array($panelGroupManifest['entries']??null) ||
+   count($panelGroupManifest['entries'])!==4 ||
+   array_diff(array_keys($panelGroupManifest['entries']),$panelGroupKeys) ||
+   array_diff($panelGroupKeys,array_keys($panelGroupManifest['entries'])))
+ throw new RuntimeException('panel_group_catalog_manifest_identity');
+$panelGroupOld=shell_exec('git -C '.escapeshellarg(dirname(__DIR__)).' show '.
+    escapeshellarg($panelGroupParent.':messages/fa/admin.php'));
+$panelGroupNew=file_get_contents(dirname(__DIR__).'/messages/fa/admin.php');
+$groupStart=is_string($panelGroupOld)?strpos($panelGroupOld,'return ['):false;
+if($groupStart===false || !is_string($panelGroupNew))
+ throw new RuntimeException('panel_group_catalog_baseline_missing');
+$priorGroups=eval(substr($panelGroupOld,$groupStart));
+$priorPanelCopy=[];
+foreach($priorGroups as$topic=>$values)foreach($values as$name=>$value)
+ $priorPanelCopy[$topic.'.'.$name]=$value;
+$extractPanelLines=static function(string $source):array {
+ $topic=null;$lines=[];
+ foreach(explode("\n",$source)as$line){
+  if(preg_match("~^    '([^']+)'\\s*=>\\s*\\[$~u",$line,$match)){
+   $topic=$match[1];continue;
+  }
+  if($topic!==null && preg_match("~^        '([^']+)'\\s*=>~u",$line,$match)){
+   $key=$topic.'.'.$match[1];
+   if(isset($lines[$key]))throw new RuntimeException('panel_group_catalog_duplicate_source_key');
+   $lines[$key]=$line;
+  }
+ }
+ return $lines;
+};
+$panelOldLines=$extractPanelLines($panelGroupOld);
+$panelNewLines=$extractPanelLines($panelGroupNew);
+foreach($panelGroupManifest['entries']as$key=>$item){
+ if(!is_array($item) || array_keys($item)!==['before_sha256','after_sha256','reason'] ||
+    !is_string($item['reason']) || $item['reason']==='' ||
+    !array_key_exists($key,$priorPanelCopy) ||
+    !array_key_exists($key,$shippingSides['admin']) ||
+    array_key_exists($key,$shippingSides['user']))
+  throw new RuntimeException('panel_group_catalog_approved_entry_shape:'.$key);
+ $beforeHash=isset($panelOldLines[$key])?hash('sha256',$panelOldLines[$key]):null;
+ $afterHash=isset($panelNewLines[$key])?hash('sha256',$panelNewLines[$key]):null;
+ if($beforeHash!==$item['before_sha256'] || $afterHash!==$item['after_sha256'] ||
+    $beforeHash===$afterHash)
+  throw new RuntimeException('panel_group_catalog_approved_line_drift:'.$key);
+}
+$restorePanelGroup=static function(array $sides) use($panelGroupManifest,$priorPanelCopy,$shippingSides):array {
+ foreach($panelGroupManifest['entries']as$key=>$item){
+  if(!array_key_exists($key,$sides['admin']) || array_key_exists($key,$sides['user']) ||
+     $sides['admin'][$key]!==$shippingSides['admin'][$key])
+   throw new RuntimeException('panel_group_catalog_approved_value_drift:'.$key);
+  $sides['admin'][$key]=$priorPanelCopy[$key];
+ }
+ return $sides;
+};
+
+$verifyCurrentAudienceCatalogs=static function(array $sides) use($giftKey,$giftEntry,$apiDelta,$r5Expected,$reviewEntries,$addonEntries,$selectionEntries,$restoreSharedTransfer,$restoreServerRemoval,$restorePanelGroup): void {
  if(!isset($sides['user'],$sides['admin']) || !is_array($sides['user']) || !is_array($sides['admin']))
   throw new RuntimeException('addon_catalog_audiences_invalid');
- $sides=$restoreSharedTransfer($restoreServerRemoval($sides));
+ $sides=$restoreSharedTransfer($restoreServerRemoval($restorePanelGroup($sides)));
  foreach($sides['user']as$key=>$value)if(str_starts_with($key,'addon_scopes.'))
   throw new RuntimeException('addon_catalog_cross_audience');
  foreach($selectionEntries as$key=>$item){

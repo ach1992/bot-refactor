@@ -27,6 +27,20 @@ import test_v8_native as purchase
 ROOT = Path(__file__).resolve().parents[1]
 DB = purchase.SIDE[1]
 
+# Exact reviewed prior candidate is a RED control, not a runtime dependency.
+# Run its old fence under a different function name against the SAME SQL
+# state as the fixed guard, so the orphan-source defect is observable.
+PREVIOUS_REVIEWED_HEAD = '904760d14e510193668fdeb9c0b53b566fec96b9'
+old_source = subprocess.check_output(['git', 'show',
+    PREVIOUS_REVIEWED_HEAD+':src/Subscription/PhysicalService.php'],cwd=ROOT,text=True)
+start = old_source.index('function achbotPhysicalAssertMarzbanGroupJournalClear(')
+end = old_source.index('\n/**\n * Recheck source rows, target',start)
+old_function = old_source[start:end]
+assert 'SELECT o.server_id,o.remark FROM orders_list o' in old_function
+old_function = old_function.replace(
+    'function achbotPhysicalAssertMarzbanGroupJournalClear(',
+    'function achbotPhysicalAssertMarzbanGroupJournalClearPreReview(',1)
+
 # Test-only invocation of the exact production group setter and the guard
 # installed in the actual Marzban administrator login editor.
 DRIVER = plans.DRIVER.replace(" } elseif($op==='toggle'){", """ } elseif($op==='review_group'){
@@ -34,6 +48,25 @@ DRIVER = plans.DRIVER.replace(" } elseif($op==='toggle'){", """ } elseif($op==='
   try {achbotSetPanelGroup($connection,(int)$spec['server'],(int)$spec['group']);
    $connection->commit();$out='assigned';}
   catch(Throwable $error){$connection->rollback();$out='denied:'.$error->getMessage();}
+ } elseif($op==='review_old_fence' || $op==='review_new_fence'){
+  require_once $root.'/src/Subscription/PhysicalService.php';
+  $connection->begin_transaction();
+  try {
+   $fn=$op==='review_old_fence'?
+    'achbotPhysicalAssertMarzbanGroupJournalClearPreReview':
+    'achbotPhysicalAssertMarzbanGroupJournalClear';
+   $fn($connection,(int)$spec['server'],(string)$spec['remark'],
+    $spec['orders']??[],'physical_import_plan_requires_review');
+   $connection->commit();$out='allowed';
+  } catch(Throwable $error) {
+   $connection->rollback();$out='denied:'.$error->getMessage();
+  }
+ } elseif($op==='review_local_delete'){
+  require_once $root.'/src/Finance/ReceiptHelpers.php';
+  $id=(int)$spec['order'];$server=(int)$spec['server'];
+  if (!achbotAutoRenewPrepareDeletion($connection,$id)) $out='denied';
+  else $out=achbotAutoRenewFinalizeDeletion($connection,$id,$server,false)?
+   'deleted':'deferred';
  } elseif($op==='review_url'){
   require_once $root.'/src/Subscription/PhysicalService.php';
   $connection->begin_transaction();
@@ -90,6 +123,8 @@ DRIVER = plans.DRIVER.replace(" } elseif($op==='toggle'){", """ } elseif($op==='
   $out=$id>0?'issued':'denied';
  } elseif($op==='toggle'){""", 1)
 assert DRIVER != plans.DRIVER, 'review test route not added'
+assert DRIVER.count('<?php\n')==1
+DRIVER=DRIVER.replace('<?php\n','<?php\n'+old_function+'\n',1)
 
 @contextlib.contextmanager
 def harness(provider: str):
@@ -379,14 +414,61 @@ def main():
             denied(h,'legacy_type_encoded_addon_unclaimed')
             db(f'DELETE FROM pays WHERE id={legacy}')
 
-            if provider=='marzban':
-                group=db("INSERT INTO setting(type,value) VALUES('ACHBOT_MARZBAN_PANEL_GROUP','Owned Review Group');"
-                         "SELECT id FROM setting WHERE type='ACHBOT_MARZBAN_PANEL_GROUP' ORDER BY id DESC LIMIT 1")
-                outcome=h['call']('review_group',server=2,group=int(group))
-                yes(outcome.startswith('denied:group_change_would_strand_order') and
-                    db('SELECT IFNULL(panel_group_id,0) FROM server_info WHERE id=2')=='0',
-                    'marzban_null_to_group_active_account_denied_without_rebinding')
-                h['group']=int(group)
+            # A Panel Group is the administrator's independent declaration
+            # of physical-panel membership. Neither two active customer
+            # orders nor the provider/plan/finance rows constrain its edit.
+            # Different connection addresses are also permitted, since one
+            # physical backend may be reachable through distinct endpoints.
+            group=int(db("INSERT INTO setting(type,value) VALUES"
+                "('ACHBOT_MARZBAN_PANEL_GROUP','Owned Review Group');"
+                "SELECT id FROM setting WHERE type='ACHBOT_MARZBAN_PANEL_GROUP' ORDER BY id DESC LIMIT 1"))
+            other=int(db("INSERT INTO setting(type,value) VALUES"
+                "('ACHBOT_MARZBAN_PANEL_GROUP','Owned Review Group B');"
+                "SELECT id FROM setting WHERE type='ACHBOT_MARZBAN_PANEL_GROUP' ORDER BY id DESC LIMIT 1"))
+            before=subject(h);money=finance(h);puts=len(h['writes']())
+            # The current server may use entirely different API and admin
+            # credentials from another logical entry in the same declared
+            # physical panel. Group editing must not validate those values.
+            original_connection=db('SELECT HEX(panel_url),HEX(username),HEX(password) '
+                                   'FROM server_config WHERE id=2').split('\t')
+            yes(len(original_connection)==3 and all(original_connection),
+                provider+'_synthetic_connection_metadata_available')
+            db("UPDATE server_config SET panel_url='https://another-panel-alias.invalid',"
+               "username='another-admin',password='another-password' WHERE id=2")
+            changed_connection=db('SELECT HEX(panel_url),HEX(username),HEX(password) '
+                                  'FROM server_config WHERE id=2')
+            for chosen in (group,other,0,group):
+                outcome=h['call']('review_group',server=2,group=chosen)
+                expected=str(chosen)
+                yes(outcome=='assigned' and
+                    db('SELECT IFNULL(panel_group_id,0) FROM server_info WHERE id=2')==expected and
+                    subject(h)==before and finance(h)==money and
+                    db('SELECT HEX(panel_url),HEX(username),HEX(password) '
+                       'FROM server_config WHERE id=2')==changed_connection and
+                    len(h['writes']())==puts,
+                    provider+'_panel_group_is_local_admin_metadata_with_active_orders_'+str(chosen))
+            db("UPDATE server_config SET panel_url=UNHEX('"+original_connection[0]+"'),"
+               "username=UNHEX('"+original_connection[1]+"'),"
+               "password=UNHEX('"+original_connection[2]+"') WHERE id=2")
+            # The callback must still reject an unregistered group, missing
+            # server and unsupported provider type without making changes.
+            invalid=h['call']('review_group',server=2,group=2147483647)
+            missing=h['call']('review_group',server=999999,group=group)
+            yes(invalid=='denied:unknown_panel_group' and
+                missing=='denied:panel_group_server_unavailable' and
+                db('SELECT IFNULL(panel_group_id,0) FROM server_info WHERE id=2')==str(group) and
+                subject(h)==before and finance(h)==money and
+                len(h['writes']())==puts,
+                provider+'_panel_group_invalid_target_denied_without_side_effect')
+            db("UPDATE server_config SET type='other-provider' WHERE id=2")
+            unsupported=h['call']('review_group',server=2,group=other)
+            db("UPDATE server_config SET type='"+provider+"' WHERE id=2")
+            yes(unsupported=='denied:panel_group_server_unavailable' and
+                db('SELECT IFNULL(panel_group_id,0) FROM server_info WHERE id=2')==str(group) and
+                subject(h)==before and finance(h)==money and
+                len(h['writes']())==puts,
+                provider+'_panel_group_unsupported_provider_denied')
+            h['group']=group
             # F3 no-op: actual provider GET completes, then an administrator
             # connection is swapped before the SQL local finalization.
             current_lock=h['call']('review_lock',order=h['oid'])
@@ -407,18 +489,26 @@ def main():
             yes(before==subject(h) and len(h['writes']())==puts and
                 outstanding(h)!='committed',
                 provider+'_held_journal_cannot_retry_after_restored_connection')
+            # Even an outstanding review journal cannot freeze the independent
+            # admin group editor. Endpoint/API-key mutation remains a separate,
+            # stricter operation and is still rejected while the journal holds.
+            db(f"UPDATE orders_list SET status=0 WHERE id IN ({h['oid']},{h['peer']})")
+            before=subject(h);money=finance(h);puts=len(h['writes']())
+            held=h['call']('review_group',server=2,group=0)
+            yes(held=='assigned' and
+                db('SELECT IFNULL(panel_group_id,0) FROM server_info WHERE id=2')=='0' and
+                before==subject(h) and money==finance(h) and
+                len(h['writes']())==puts and outstanding(h)!='committed',
+                provider+'_admin_group_unassign_allowed_with_held_plan_journal_no_native_put')
             if provider=='marzban':
-                db(f"UPDATE orders_list SET status=0 WHERE id IN ({h['oid']},{h['peer']})")
-                held=h['call']('review_group',server=2,group=h['group'])
-                url_denial=h['call']('review_url',server=2)
-                yes(held=='denied:group_change_requires_review' and
-                    url_denial=='denied:physical_rebind_pending_journal' and
-                    db('SELECT IFNULL(panel_group_id,0) FROM server_info WHERE id=2')=='0',
-                    'marzban_old_held_journal_blocks_group_and_admin_url_change_even_without_active_rows')
-                db(f"UPDATE orders_list SET status=1 WHERE id IN ({h['oid']},{h['peer']})")
+                denial=h['call']('review_url',server=2)
+                yes(denial=='denied:physical_rebind_pending_journal',
+                    'marzban_held_journal_still_blocks_endpoint_change')
             else:
-                yes(h['call']('review_pg_key',server=2)=='denied:physical_rebind_pending_journal',
-                    'pasarguard_key_rotation_rejects_held_plan_journal_even_when_active')
+                denial=h['call']('review_pg_key',server=2)
+                yes(denial=='denied:physical_rebind_pending_journal',
+                    'pasarguard_held_journal_still_blocks_key_rotation')
+            db(f"UPDATE orders_list SET status=1 WHERE id IN ({h['oid']},{h['peer']})")
 
         # F3 actual-access-change: mutate the original endpoint only after
         # the adapter's second strict Native GET and BEFORE the single PUT.
@@ -441,6 +531,29 @@ def main():
             plan(h,120)
             yes(before==subject(h) and len(h['writes']())==puts,
                 provider+'_changed_access_rebind_replay_never_admits_native_put')
+
+        # Assignment stays independent, but an in-flight Native operation
+        # must not silently continue with a stale physical-panel identity.
+        # Change only the local Group after its first pinned provider read.
+        with harness(provider) as h:
+            seeded(h)
+            db=h['db']
+            assigned=int(db("INSERT INTO setting(type,value) VALUES"
+                "('ACHBOT_MARZBAN_PANEL_GROUP','Concurrent physical panel');"
+                "SELECT id FROM setting WHERE type='ACHBOT_MARZBAN_PANEL_GROUP' ORDER BY id DESC LIMIT 1"))
+            def change_group():db(f"UPDATE server_info SET panel_group_id={assigned} WHERE id=2")
+            if provider=='marzban':h['vendor'].on_account_get=change_group
+            else:h['vendor'].on_read=change_group
+            before=subject(h);money=finance(h);puts=len(h['writes']())
+            plan(h,7)
+            yes(db('SELECT panel_group_id FROM server_info WHERE id=2')==str(assigned) and
+                before==subject(h) and money==finance(h) and
+                len(h['writes']())==puts and outstanding(h)!='committed',
+                provider+'_group_changed_during_native_read_holds_old_intent_without_put')
+            plan(h,7)
+            yes(before==subject(h) and len(h['writes']())==puts and
+                outstanding(h)!='committed',
+                provider+'_group_changed_held_journal_replay_has_no_native_put')
 
         # Specific PasarGuard connection incarnation, not just its URL:
         # changing the consolidated server_config provider_instance_key during either observation
@@ -668,6 +781,12 @@ def main():
         # between the journal snapshot and its outbound access PUT.
         with harness(provider) as h:
             seeded(h)
+            if provider=='marzban':
+                first_group=int(h['db']("INSERT INTO setting(type,value) VALUES"
+                    "('ACHBOT_MARZBAN_PANEL_GROUP','Historical Group A');"
+                    "SELECT id FROM setting WHERE type='ACHBOT_MARZBAN_PANEL_GROUP' ORDER BY id DESC LIMIT 1"))
+                yes(h['call']('review_group',server=2,group=first_group)=='assigned',
+                    'marzban_native_journal_group_A_declared_before_intent')
             h['db']("INSERT INTO users(userid,name,username,refcode,wallet,date,isAdmin,first_start,step)"
                     " VALUES(1003,'Late peer','latepeer','0',50000,'1700000000',0,'sent','none')")
             h['call']('external',actor=1003,data='showUUIDLeft')
@@ -698,10 +817,96 @@ def main():
             h['call']('external',actor=1004,text=h['credential'])
             h['db']("UPDATE service_plan_changes SET state='review' WHERE id=("
                     "SELECT latest FROM (SELECT MAX(id) latest FROM service_plan_changes) x)")
+            if provider=='marzban':
+                group=int(h['db']("INSERT INTO setting(type,value) VALUES"
+                    "('ACHBOT_MARZBAN_PANEL_GROUP','Import Reassigned Group');"
+                    "SELECT id FROM setting WHERE type='ACHBOT_MARZBAN_PANEL_GROUP' ORDER BY id DESC LIMIT 1"))
+                before=subject(h);money=finance(h);puts=len(h['writes']())
+                changed=h['call']('review_group',server=2,group=group)
+                yes(changed=='assigned' and
+                    h['db']('SELECT panel_group_id FROM server_info WHERE id=2')==str(group) and
+                    before==subject(h) and money==finance(h) and
+                    puts==len(h['writes']()) and outstanding(h)=='review',
+                    'marzban_group_change_allowed_before_held_journal_import_admission')
             h['call']('manual',actor=1004,data='addToOrders2')
             yes(h['db']('SELECT COUNT(*) FROM orders_list WHERE userid=1004')=='0' and
                 outstanding(h)=='review',
                 provider+'_held_review_journal_blocks_late_import_after_lock_released')
+            if provider=='marzban':
+                # F1: exact reviewer sequence, with the actual previously
+                # registered third customer not in the saved old_rows. The
+                # original two local references are deleted via their REAL
+                # local deletion implementation, leaving an orphan journal.
+                fresh=int(h['db']('SELECT id FROM orders_list WHERE userid=1003'))
+                intent=json.loads(h['db']("SELECT intent_json FROM service_plan_changes "
+                    "WHERE state='review' ORDER BY id DESC LIMIT 1"))
+                old_ids={int(row['id']) for row in intent['old_rows']}
+                yes(h['oid'] in old_ids and h['peer'] in old_ids and
+                    fresh not in old_ids and
+                    intent['native_username']==h['remark'] and
+                    intent['physical_group_id']==first_group,
+                    'marzban_held_intent_pins_original_native_username_and_group_A')
+                puts=len(h['writes']())
+                for oid in (h['oid'],h['peer']):
+                    deletion=h['call']('review_local_delete',server=2,order=oid)
+                    yes(deletion=='deleted',
+                        'marzban_held_intent_source_order_local_delete_'+str(oid))
+                yes(h['db'](f"SELECT COUNT(*) FROM orders_list WHERE id IN "
+                    f"({h['oid']},{h['peer']})")=='0' and
+                    h['db']('SELECT COUNT(*) FROM orders_list WHERE id='+str(fresh))=='1' and
+                    outstanding(h)=='review',
+                    'marzban_source_order_deleted_journal_stays_uncommitted')
+                # Execute the exact previous reviewed helper under a separate
+                # name against this identical source-real SQL state. It
+                # incorrectly allows the orphaned journal with no overlap.
+                old=h['call']('review_old_fence',server=2,
+                    remark=h['remark'],orders=[fresh])
+                current=h['call']('review_new_fence',server=2,
+                    remark=h['remark'],orders=[fresh])
+                yes(old=='allowed' and
+                    current=='denied:physical_import_plan_requires_review',
+                    'marzban_f1_previous_candidate_RED_current_identity_fence_GREEN')
+                yes(h['call']('review_new_fence',server=2,
+                    remark='different_native_username',orders=[])=='allowed',
+                    'marzban_durable_username_allows_unrelated_subscription')
+                # A truly fresh native import is rejected after the source
+                # order's local deletion AND after A->B group reassignment.
+                h['db']("INSERT INTO users(userid,name,username,refcode,wallet,date,isAdmin,first_start,step)"
+                    " VALUES(1005,'Orphan late peer','orphanlate','0',50000,'1700000000',0,'sent','none')")
+                h['call']('external',actor=1005,data='showUUIDLeft')
+                h['call']('external',actor=1005,text=h['credential'])
+                h['call']('manual',actor=1005,data='addToOrders2')
+                yes(h['db']('SELECT COUNT(*) FROM orders_list WHERE userid=1005')=='0' and
+                    len(h['writes']())==puts and outstanding(h)=='review',
+                    'marzban_orphaned_group_A_journal_blocks_real_group_B_import')
+                # The post-journal customer has a NEW local ID, so even the
+                # matching-old-ID check alone would miss a Native plan PUT.
+                h['call']('extensions',actor=9001,
+                    data=f'confirmChangePlan_{fresh}_120')
+                yes(h['db']('SELECT fileid FROM orders_list WHERE id='+str(fresh))=='0' and
+                    len(h['writes']())==puts and outstanding(h)=='review',
+                    'marzban_orphaned_group_A_journal_blocks_new_order_native_put')
+                # Existing installations already have journals without the
+                # new immutable fields. Such an orphan must conservatively
+                # fence this server, not silently pass after both deletions.
+                h['db']("UPDATE service_plan_changes SET intent_json="
+                    "JSON_REMOVE(intent_json,'$.native_username','$.physical_group_id') "
+                    "WHERE provider='marzban' AND state='review'")
+                yes(h['call']('review_new_fence',server=2,
+                        remark=h['remark'],orders=[])==
+                    'denied:physical_import_plan_requires_review' and
+                    h['call']('review_new_fence',server=2,
+                        remark='different_native_username',orders=[])==
+                    'denied:physical_import_plan_requires_review',
+                    'marzban_legacy_orphan_journal_conservative_scope_hold')
+                # A resolved receipt is not a permanent lockout. Leave the
+                # source-only test data in its own disposable MariaDB scope.
+                h['db']("UPDATE service_plan_changes SET state='committed' "
+                    "WHERE provider='marzban' AND state='review'")
+                yes(h['call']('review_new_fence',server=2,
+                        remark=h['remark'],orders=[])=='allowed' and
+                    len(h['writes']())==puts,
+                    'marzban_resolved_historical_journal_does_not_block_native_admission')
 
     # F3: independent real Marzban API admission evidence complements
     # PasarGuard's authenticated native preflight exact-SQL-claim proof.
@@ -725,7 +930,7 @@ def main():
     result=dict(complete=True,cases=len(checks),checks=checks,
         actual_php=True,disposable_mariadb=True,
         native_providers=['marzban','pasarguard'],
-        f1_mutable_lock_and_reclassification=True,
+        panel_group_admin_independent=True,
         f2_cross_ledger_and_shared_owner=True,
         f3_native_get_to_commit_and_pre_put_races=True,
         f4_usage_preservation_positive_and_negative=True,

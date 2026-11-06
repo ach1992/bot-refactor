@@ -40,6 +40,15 @@ def main():
         stages.stage_source(stage,True)
         fixture=stage/'native-purchase.php'
         stub=fixture.read_text()
+        # The old purchase-parity harness deliberately shadowed the
+        # provider registry with a Marzban-only stub. This test instead
+        # exercises the current real administrator Group callback for BOTH
+        # native providers, so use the production provider-neutral predicate
+        # within its isolated fixture. The historical V9 fixture is untouched.
+        old_support="function achbotSupportsPanel($type) { return $type === 'marzban'; }"
+        current_support="function achbotSupportsPanel($type) { return achbotSupportsProviderType($type); }"
+        assert stub.count(old_support)==1
+        stub=stub.replace(old_support,current_support,1)
         assert stub.count("'subLinkState'=>'on',")==1
         stub=stub.replace("'subLinkState'=>'on',",
                           "'subLinkState'=>'on','switchLocationState'=>'on',")
@@ -303,19 +312,64 @@ achEvent('probe',[
             do('wizard',data='addMarzbanPanelGroup',actor=1001)
             if snapshot(work,env)!=initial:raise RuntimeError('Customer wrote group')
             passed('only_admin_may_create_group')
-            # A physically active ungrouped Marzban account cannot be
-            # silently reclassified. For this disposable fixture alone,
-            # stage the initial panel-group map while the synthetic orders
-            # are inactive, then reactivate them for every real transfer.
-            assign(2,g1,success=False)
-            passed('null_to_group_active_subscription_reclassification_refused')
-            sql(work,env,f'UPDATE orders_list SET status=0 WHERE id IN ({oid},{peer})')
-            for sid,gid in [(2,g1),(3,g1),(4,g2),(5,g2)]:assign(sid,gid)
+            # Owner #114: an administrator's physical-panel declaration is
+            # not gated by active orders. The two active, shared subscriptions
+            # stay intact while the server's local group is assigned.
+            group_before=snapshot(work,env)
+            assign(2,g1)
+            group_after=snapshot(work,env)
+            if sql(work,env,'SELECT panel_group_id FROM server_info WHERE id=2').strip()!=str(g1):
+                raise RuntimeError('Admin group assignment not persisted')
+            for key in ('orders','plans','payments','users','capacity','categories'):
+                if group_before[0].get(key)!=group_after[0].get(key):
+                    raise RuntimeError('Group assignment touched unrelated data: '+key)
+            passed('active_orders_do_not_block_admin_group_assignment')
+            for sid,gid in [(3,g1),(4,g2),(5,g2)]:assign(sid,gid)
+            # Review #115 F2: actual bot.php administrator callback, with
+            # real mysqli transaction and deterministic MariaDB write fault.
+            # Earlier group-name validation intentionally left the fixture
+            # administrator in a text-input step; exit that unrelated editor
+            # so the callback reaches the real SQL group writer.
+            sql(work,env,"UPDATE users SET step='none' WHERE userid=9001")
+            # Both supported provider types must roll back the entire local
+            # declaration and succeed on the next ordinary callback.
+            for native_type in ('marzban','pasarguard'):
+                if native_type=='pasarguard':
+                    sql(work,env,"UPDATE server_config SET type='pasarguard' WHERE id=2")
+                before=snapshot(work,env)
+                group_before=sql(work,env,'SELECT panel_group_id FROM server_info WHERE id=2').strip()
+                sql(work,env,"CREATE TRIGGER achbot_group_sql_fault BEFORE UPDATE "
+                    "ON server_info FOR EACH ROW SIGNAL SQLSTATE '45000' "
+                    "SET MESSAGE_TEXT='achbot_group_injected_failure'")
+                try:
+                    rejected=do('wizard',data=f'setServerPanelGroup_2_{g2}',actor=9001)
+                    alert_seen=has(rejected,'ذخیره گروه پنل انجام نشد')
+                    state_ok=snapshot(work,env)==before
+                    group_after=sql(work,env,'SELECT panel_group_id FROM server_info WHERE id=2').strip()
+                    if not (alert_seen and state_ok and group_after==group_before):
+                        raise RuntimeError(native_type+
+                            ' SQL failure did not atomically roll back Group callback: '+
+                            repr({'alert_seen':alert_seen,'snapshot_equal':state_ok,
+                                  'previous_group':group_before,'current_group':group_after,
+                                  'events':rejected['events'][:3]})[:1400])
+                    passed(native_type+'_actual_admin_group_write_fault_rolls_back_all_local_state')
+                finally:
+                    sql(work,env,'DROP TRIGGER IF EXISTS achbot_group_sql_fault')
+                accepted=do('wizard',data=f'setServerPanelGroup_2_{g2}',actor=9001)
+                if (not has(accepted,'✅') or
+                    sql(work,env,'SELECT panel_group_id FROM server_info WHERE id=2').strip()!=str(g2)):
+                    raise RuntimeError(native_type+' Group callback did not retry after SQL fault')
+                assign(2,g1)
+                if (sql(work,env,'SELECT panel_group_id FROM server_info WHERE id=2').strip()!=str(g1) or
+                    snapshot(work,env)!=before):
+                    raise RuntimeError(native_type+' Group did not restore all state after fault retry')
+                passed(native_type+'_actual_admin_group_retry_succeeds_without_financial_or_native_mutation')
+                if native_type=='pasarguard':
+                    sql(work,env,"UPDATE server_config SET type='marzban' WHERE id=2")
             # Deliberately preserve an old/invalid group assignment on the
             # retired NORMAL-provider server to test the transfer refusal.
             # The actual group setter must not reclassify a non-native panel.
             sql(work,env,f'UPDATE server_info SET panel_group_id={g1} WHERE id=6')
-            sql(work,env,f'UPDATE orders_list SET status=1 WHERE id IN ({oid},{peer})')
             passed('groups_persist_in_server_info_column')
             menu=do('transfer',f'switchLocation{oid}_2_0_0')
             if not has(menu,f'switchServer3_{oid}') or any(
@@ -370,13 +424,18 @@ achEvent('probe',[
             if not has(z,'[true, false]'):raise RuntimeError('Old source-server plan remains available after transfer: '+str(z))
             passed('old_source_plan_unavailable_until_destination_plan_selected')
             refuse('replayed_admin_callback','transfer',f'switchServer3_{oid}')
-            # Even with the old plan cleared, changing the declared physical
-            # panel while shared active references remain would strand them.
-            assign(3,g2,success=False)
-            if sql(work,env,'SELECT panel_group_id FROM server_info WHERE id=3').strip()!=str(g1):
-                raise RuntimeError('Active shared account group was changed despite physical fence')
+            # Reassignment is also permitted for an active, planless shared
+            # subscription. The operator can restore the previous group;
+            # neither assignment edits orders nor requests a Native action.
+            before=snapshot(work,env)
+            assign(3,g2)
+            if sql(work,env,'SELECT panel_group_id FROM server_info WHERE id=3').strip()!=str(g2):
+                raise RuntimeError('Active shared account group reassignment not persisted')
+            for key in ('orders','plans','payments','users','capacity','categories'):
+                if before[0].get(key)!=snapshot(work,env)[0].get(key):
+                    raise RuntimeError('Group reassignment touched unrelated data: '+key)
             assign(3,g1)
-            passed('active_planless_shared_refs_fence_cross_panel_group_change')
+            passed('active_planless_shared_refs_allow_admin_group_reassignment')
             z=do('admin_transfer',f'changeServerId_{oid}',actor=9001)
             if not has(z,f'selectServerId_{oid}_2') or has(z,f'selectServerId_{oid}_4'):
                 raise RuntimeError('Admin selector leaked other groups')
