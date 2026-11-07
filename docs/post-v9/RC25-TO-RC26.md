@@ -20,13 +20,21 @@
   An already `processing` or final order cannot be rejected to reverse a
   possible remote effect.
 - For standard, manually reviewed `BUY_SUB`, the **original 003 receipt,
-  007 per-payment account identity and 018 delivery ledger** are mandatory
-  before the first native CREATE. Processing retries must use the pinned
+  007 per-payment account identity, and ready 008/018/020 ledger schemas**
+  are mandatory before the first native CREATE. The frozen 008 referral claim
+  is actually **inserted in the final local order/payment COMMIT**, after
+  native identity verification, not before contacting the provider. Processing
+  retries must use the pinned
   account/operation readback, not issue a second CREATE. Only verified local
-  account/order records and immutable sealed customer packets are committed
-  together; Telegram dispatch occurs **after** this final transaction.
-  Reapproval of an already completed local order only retries eligible
-  pending/Owner-authorized unknown customer packets, never grants new service.
+  account/order records, frozen referral decision and immutable sealed
+  customer/report packets are committed together; Telegram dispatch occurs
+  **after** this final transaction. The eligible referral credit and its
+  reports commit in their own uniquely fenced local transaction.
+  Reapproval of an already completed local order dispatches only never-attempted
+  `pending` sealed customer packets and 020 reports, never an `unknown` ACK.
+  The separate Owner-private `deliveryInbox` requires an explicit warned
+  confirmation before resending the **same** sealed packet with an ambiguous
+  prior Telegram result; it cannot grant new service or credit.
 - An unreachable/mismatched Marzban or PasarGuard native account leaves the
   original processing state unresolved, with the pinned effect preserved.
   Never infer failure from HTTP 404, timeout or Telegram errors and issue

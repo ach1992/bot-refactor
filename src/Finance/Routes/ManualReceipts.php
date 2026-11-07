@@ -1080,13 +1080,20 @@ if (preg_match('/^declineActionReason_(.+)_(\d+)$/', (string)($userInfo['step']?
             'receipt_primary','edit',(string)(int)$locked['chat_id'],
             (int)$locked['message_id'],['text'=>$keys,'keys'=>null,'mode'=>null]);
         $adminMessages=json_decode((string)($locked['admins_messages']??''),true);
+        $seenMirrors=[];
         if (is_array($adminMessages)) foreach ($adminMessages as $msgInfo) {
-            if (isset($msgInfo['chat_id'],$msgInfo['message_id']) &&
-                (int)$msgInfo['chat_id']!==(int)$locked['chat_id'] &&
-                achbotAdminStoredRecipientAllowed($connection,$msgInfo['chat_id'],(int)$admin))
-                achbotFollowupInsertLocked($connection,$locked,'manual_reject',
-                    'receipt_mirror','edit',(string)(int)$msgInfo['chat_id'],
-                    (int)$msgInfo['message_id'],['text'=>$keys,'keys'=>null,'mode'=>null]);
+            if (!is_array($msgInfo) ||
+                !isset($msgInfo['chat_id'],$msgInfo['message_id'])) continue;
+            $chat=(int)$msgInfo['chat_id'];$msg=(int)$msgInfo['message_id'];
+            if ($chat===(int)$locked['chat_id'] || $chat<=0 || $msg<=0 ||
+                !achbotAdminStoredRecipientAllowed($connection,$msgInfo['chat_id'],
+                    (int)$admin)) continue;
+            $ref=$chat.':'.$msg;
+            if (isset($seenMirrors[$ref])) continue;
+            achbotFollowupInsertLocked($connection,$locked,'manual_reject',
+                'receipt_mirror','edit',(string)$chat,$msg,
+                ['text'=>$keys,'keys'=>null,'mode'=>null]);
+            $seenMirrors[$ref]=true;
         }
         achbotFollowupInsertLocked($connection,$locked,'manual_reject',
             'customer','send',(string)(int)$uid,null,

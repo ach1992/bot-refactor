@@ -214,9 +214,14 @@ def run_admin(tmp: str) -> tuple[dict, dict]:
     # Issue #57: current event-aware notification routing and existing
     # receipt convergence, after every unaffected Owner R5 proof above.
     notifications_path=Path(tmp)/'owner-r6-notifications.json'
-    subprocess.run(['python3',str(ROOT/'tools/test_owner_r6_notifications.py'),
-                    '--report',str(notifications_path)],
-                   cwd=ROOT,check=True,timeout=180,capture_output=True)
+    try:
+        subprocess.run(['python3',str(ROOT/'tools/test_owner_r6_notifications.py'),
+                        '--report',str(notifications_path)],
+                       cwd=ROOT,check=True,timeout=180,capture_output=True)
+    except subprocess.CalledProcessError as exc:
+        error=((exc.stderr or b'')+b'\n'+(exc.stdout or b''))[-6000:]
+        raise RuntimeError('Required R6 notification proof: '+
+            error.decode(errors='replace')) from exc
     notifications=json.loads(notifications_path.read_text())
     required_notification_checks=[
         'general helper delivers Owner Manager channel, excludes Operator and Support',
@@ -278,19 +283,24 @@ def run_admin(tmp: str) -> tuple[dict, dict]:
         *[prefix+' '+file+' '+str(index) for index,file in enumerate([
             'Routes/Checkout.php','Routes/RenewalCheckout.php',
             'Routes/Extensions.php','Routes/Extensions.php',
-            'Routes/ManualApproval.php','Routes/ManualApproval.php',
-            'Routes/ManualReceipts.php','Routes/ManualReceipts.php',
+            'Routes/ManualApproval.php','Routes/ManualReceipts.php',
             'AutomaticReceipts.php'],1) for prefix in [
             'stored receipt converges for current muted staff and excludes revoked invalid',
             'stored receipt rechecks current membership']],
-        'all nine real stored receipt loops exercised',
+        'seven direct stored receipt loops exercised',
+        'outbox mirror source is genuine recorded receipt',
+        '020 stored receipt preserves authorized Support with notifications OFF',
+        '020 mirror rejects arbitrary original message id',
+        '020 revoked staff cannot recover historical keyboard',
+        '020 recipient revoked after manifest is excluded',
         'receipt convergence preserves historical financial rows',
         'actual thrown transport continues to independent targets with sanitized structured metadata',
         'exception diagnostics contain no outgoing payload or raw exception text',
     ]
     notification_mismatches=exact_current_proof_mismatches(notifications,
         {'complete':True,'owned_original_schema_mariadb':True,'network_calls':0,
-         'stored_receipt_loops':9,'source_ref':'current-source',
+         'stored_receipt_loops':7,'durable_outbox_recipient_authority':True,
+         'source_ref':'current-source',
          'sanitized_exception_metadata':True,'exception_continuation':True,
          'concurrent_current_discovery_readers':True,
          'concurrent_notification_admission_discovery':True,
@@ -1179,15 +1189,15 @@ def run_wallet(tmp: str) -> tuple[dict, dict]:
             and text_catalog["native"]["current_byte_preserved_keys"]
                 +text_catalog["native"]["current_style_changes"]
                 +text_catalog["native"]["current_added_admin_keys"]==2523
-            # #117 now has six source-hash-pinned workbench topics. The
-            # additional 17 keys include five multi-parameter templates;
-            # their native loader proof adds 12 single-run and 5*6
-            # adversarial substitutions (42 total), plus five object,
-            # multi-parameter and one-pass checks. Keep exact parity.
-            and text_catalog.get("native",{}).get("current_native_template_assertions")==4120+24+9+139+42
-            and text_catalog.get("native",{}).get("current_object_conversion_templates")==268+2+15+5
-            and text_catalog.get("native",{}).get("current_shared_multi_parameter_templates")==66+1+14+5
-            and text_catalog.get("native",{}).get("current_one_pass_templates")==268+2+15+5
+            # #117 has six source-hash-pinned workbench topics. Two added
+            # owner-only financial-exception labels include one three-slot
+            # report and one zero-slot warning. Their native proof adds
+            # seven interpolation assertions and one object/multi-parameter/
+            # one-pass template, while preserving the original negative tests.
+            and text_catalog.get("native",{}).get("current_native_template_assertions")==4120+24+9+139+42+7
+            and text_catalog.get("native",{}).get("current_object_conversion_templates")==268+2+15+5+1
+            and text_catalog.get("native",{}).get("current_shared_multi_parameter_templates")==66+1+14+5+1
+            and text_catalog.get("native",{}).get("current_one_pass_templates")==268+2+15+5+1
             and text_catalog.get("native",{}).get("current_r5_changes")==273
             and text_catalog.get("native",{}).get("current_r5_retired_keys")==10
             and text_catalog.get("native",{}).get("current_r5_added_keys")==60
@@ -3755,6 +3765,7 @@ def run_funding(tmp: str) -> tuple[dict, dict]:
         "manual_direct_reject_one_click_no_wallet_native_or_duplicate_reports",
         "manual_reject_customer_unknown_other_recipients_acked_no_unwarned_replay",
         "manual_reject_edit_exception_does_not_suppress_customer_or_operator",
+        "manual_reject_duplicate_historical_mirror_refs_deduped_without_rollback",
         "manual_standard_paid_order_delivery_sealed_and_ack_once",
         "manual_standard_telegram_unknown_reapproval_never_resends_unwarned",
         "manual_wallet_nonadmin_callback_denied_bank_transfer",
@@ -3997,6 +4008,7 @@ def run_funding(tmp: str) -> tuple[dict, dict]:
         'r3_real_qr_helper_photo_ok_account_text_qr_text_throw_reported',
         'r3_three_accounts_second_text_failed_third_still_attempted_and_reward_credited',
         'r3_multiple_admin_refs_one_edit_fails_later_edit_still_attempted',
+        'r3_historical_duplicate_receipt_ref_one_journal_and_one_edit',
         'r4_referral_decision_not_skipped_when_QR_photo_fails',
         'r5_valid_attempts_only_no_child_table_denied',
         'r5_valid_attempts_only_with_reviewed_attempt_denied',

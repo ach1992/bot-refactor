@@ -945,6 +945,43 @@ def check():
                        for e in repeated),repeated
         cases.append('manual_direct_reject_one_click_no_wallet_native_or_duplicate_reports')
 
+        # R4: historical repeated refs to the same admin Telegram message
+        # must not violate 020's unique key and roll back a valid rejection.
+        assert query(work,env,'SELECT COUNT(*) FROM users WHERE userid=9003')=='0'
+        query(work,env,"INSERT INTO users(userid,name,username,refcode,wallet,date,isAdmin,step,first_start) "
+             "VALUES(9003,'Fixture other reviewer','reviewer','0',50000,'1700000000',1,'none','sent');"
+             "INSERT INTO setting(type,value) VALUES('ADMIN_ROLE_9003','operator')")
+        try:
+            standard_pay('standardrejectduplicateref',method='gift_card')
+            copies=json.dumps([{'chat_id':9003,'message_id':333},
+                               {'chat_id':9003,'message_id':333},
+                               {'chat_id':9003,'message_id':334}],separators=(',',':'))
+            query(work,env,"UPDATE pays SET admins_messages='"+copies+"' "
+                  "WHERE hash_id='standardrejectduplicateref'")
+            before_wallet=query(work,env,'SELECT userid,wallet FROM users ORDER BY userid')
+            result=run_route(work,env,route_driver,
+                             data='declineAction_standardrejectduplicateref',
+                             actor=9001,route='manual_admin')
+            assert query(work,env,"SELECT state FROM pays WHERE "
+                         "hash_id='standardrejectduplicateref'")=='declined',result
+            assert query(work,env,'SELECT userid,wallet FROM users ORDER BY userid')==before_wallet
+            mirror=query(work,env,"SELECT GROUP_CONCAT(CONCAT(f.message_id,':',f.state) "
+                "ORDER BY f.message_id) FROM payment_followup_intents f JOIN pays p "
+                "ON p.id=f.pay_row_id WHERE p.hash_id='standardrejectduplicateref' "
+                "AND f.role='receipt_mirror'")
+            assert mirror=='333:acknowledged,334:acknowledged',(mirror,result)
+            edits=[e for e in result if e['name']=='editKeys']
+            assert len([e for e in edits if e['args'][2]==9003])==2,(edits,result)
+            replay=run_route(work,env,route_driver,
+                             data='declineAction_standardrejectduplicateref',
+                             actor=9001,route='manual_admin')
+            assert not any(e['name'] in ('editKeys','sendMessage','remote_create')
+                           for e in replay),replay
+            cases.append('manual_reject_duplicate_historical_mirror_refs_deduped_without_rollback')
+        finally:
+            query(work,env,"DELETE FROM setting WHERE type='ADMIN_ROLE_9003';"
+                  "DELETE FROM users WHERE userid=9003")
+
         # R4 lost Telegram ACK: business rejection commits once with its
         # own independent 020 customer/operator/receipt journal. The staff
         # report must NOT claim that the customer was notified successfully.

@@ -482,6 +482,7 @@ def check():
             "(9004,'Revoked fixture support','fixture_support','0',50000,'1700000000',0,'none','sent');"
             "INSERT INTO setting(type,value) VALUES ('ADMIN_ROLE_9003','operator'),('ADMIN_ROLE_9004','support')")
         refs=json.dumps([{'chat_id':9002,'message_id':222},
+                         {'chat_id':9002,'message_id':222},  # historic duplicate
                          {'chat_id':9003,'message_id':333},
                          {'chat_id':9004,'message_id':444}],separators=(',',':'))
         try:
@@ -507,6 +508,11 @@ def check():
             assert sql(work,env,"SELECT f.state FROM payment_followup_intents f "
                     "JOIN pays p ON p.id=f.pay_row_id WHERE p.hash_id='multiple_admin_edits' "
                     "AND f.role='receipt_mirror' AND f.recipient='9003'").strip()=='acknowledged'
+            assert sql(work,env,"SELECT COUNT(*) FROM payment_followup_intents f "
+                    "JOIN pays p ON p.id=f.pay_row_id WHERE p.hash_id='multiple_admin_edits' "
+                    "AND f.role='receipt_mirror'").strip()=='2'
+            assert len([e for e in edits if int(e['to'])==9002])==1
+            cases.append('r3_historical_duplicate_receipt_ref_one_journal_and_one_edit')
             assert len(named(ev,'CREATE'))==1 and orders()==1 and capacity()==9
             assert sql(work,env,'SELECT wallet FROM users WHERE userid=1001')=='50000'
             assert sql(work,env,'SELECT wallet FROM users WHERE userid=9002')=='51000'

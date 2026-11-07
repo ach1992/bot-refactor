@@ -204,7 +204,11 @@ function storedLoops(string $path):array{
  $source=file_get_contents($path);$tokens=achbotTokens($source);$out=[];
  preg_match_all('/foreach\s*\(\$adminMessages\s+as\s+\$msgInfo\)\s*\{/',$source,$matches,PREG_OFFSET_CAPTURE);
  foreach($matches[0] as [$head,$offset])foreach($tokens as $i=>$t)if($t[3]>=$offset&&$t[0]==='{'){
-  $end=achbotBodyEnd($tokens,$i);$out[]=substr($source,$offset,$tokens[$end][3]+1-$offset);break;
+  $end=achbotBodyEnd($tokens,$i);$block=substr($source,$offset,$tokens[$end][3]+1-$offset);
+  // SQL-only staging of 020 is not a direct network loop and must never
+  // be evaluated without its locked payment transaction.
+  if(!str_contains($block,'achbotFollowupInsertLocked('))$out[]=$block;
+  break;
  }
  return $out;
 }
@@ -219,9 +223,31 @@ foreach(['Routes/Checkout.php','Routes/RenewalCheckout.php','Routes/Extensions.p
   $connection->query('UPDATE users SET isAdmin=0 WHERE userid=9002');$events=[];eval($body);
   yes($targets()===[9003,9004,9005,9006],'stored receipt rechecks current membership '.$file.' '.$loopCount);$connection->query('UPDATE users SET isAdmin=1 WHERE userid=9002');
  }
-yes($loopCount===9,'all nine real stored receipt loops exercised');
-yes($connection->query('SELECT * FROM pays ORDER BY id')->fetch_all(MYSQLI_ASSOC)===$financialBefore,'receipt convergence preserves historical financial rows');
-echo json_encode(['complete'=>true,'cases'=>count($checks),'checks'=>$checks,'owned_original_schema_mariadb'=>true,'network_calls'=>0,'stored_receipt_loops'=>$loopCount],JSON_THROW_ON_ERROR);
+yes($loopCount===7,'seven direct stored receipt loops exercised');
+// The former two direct loops are now independent 020 recipients, which
+// cannot bypass identity, original message reference or current staff roles.
+require_once $root.'/src/Finance/FollowupOutbox.php';
+$approved=dbFetchPayByHash($connection,'r6receipt');
+$stored=json_decode($approved['admins_messages'],true);
+$mirror=null;
+foreach($stored as $item)if((int)$item['chat_id']===9004)$mirror=$item;
+yes(is_array($mirror),'outbox mirror source is genuine recorded receipt');
+$ref=['role'=>'receipt_mirror','recipient'=>'9004','message_id'=>$mirror['message_id']];
+yes(achbotFollowupRecipientAllowed($connection,$approved,$ref),
+    '020 stored receipt preserves authorized Support with notifications OFF');
+yes(!achbotFollowupRecipientAllowed($connection,$approved,
+    ['role'=>'receipt_mirror','recipient'=>'9004','message_id'=>999999]),
+    '020 mirror rejects arbitrary original message id');
+yes(!achbotFollowupRecipientAllowed($connection,$approved,
+    ['role'=>'receipt_mirror','recipient'=>'9011','message_id'=>$mirror['message_id']]),
+    '020 revoked staff cannot recover historical keyboard');
+$connection->query('UPDATE users SET isAdmin=0 WHERE userid=9004');
+yes(!achbotFollowupRecipientAllowed($connection,$approved,$ref),
+    '020 recipient revoked after manifest is excluded');
+$connection->query('UPDATE users SET isAdmin=1 WHERE userid=9004');
+yes($connection->query('SELECT * FROM pays ORDER BY id')->fetch_all(MYSQLI_ASSOC)===$financialBefore,
+    'receipt convergence preserves historical financial rows');
+echo json_encode(['complete'=>true,'cases'=>count($checks),'checks'=>$checks,'owned_original_schema_mariadb'=>true,'network_calls'=>0,'stored_receipt_loops'=>$loopCount,'durable_outbox_recipient_authority'=>true],JSON_THROW_ON_ERROR);
 '''
 
 def main():

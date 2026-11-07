@@ -277,13 +277,20 @@ function achbotFollowupStageManualPurchaseLocked(mysqli $db,array $pay,int $owne
         (string)(int)$pay['chat_id'],(int)$pay['message_id'],
         ['text'=>$keys,'keys'=>null,'mode'=>null]);
     $copies=json_decode((string)($pay['admins_messages']??''),true);
+    $seenMirrors=[];
     if (is_array($copies)) foreach ($copies as $copy) {
-        if (isset($copy['chat_id'],$copy['message_id']) &&
-            (int)$copy['chat_id']!==(int)$pay['chat_id'] &&
-            achbotAdminStoredRecipientAllowed($db,$copy['chat_id'],$owner))
-            achbotFollowupInsertLocked($db,$pay,'approved_purchase',
-                'receipt_mirror','edit',(string)(int)$copy['chat_id'],
-                (int)$copy['message_id'],['text'=>$keys,'keys'=>null,'mode'=>null]);
+        if (!is_array($copy) || !isset($copy['chat_id'],$copy['message_id'])) continue;
+        $chat=(int)$copy['chat_id'];$msg=(int)$copy['message_id'];
+        if ($chat===(int)$pay['chat_id'] || $chat<=0 || $msg<=0 ||
+            !achbotAdminStoredRecipientAllowed($db,$copy['chat_id'],$owner)) continue;
+        // Historical fan-out may contain repeated references to the SAME
+        // Telegram message. Journal it once, preserving different messages.
+        $ref=$chat.':'.$msg;
+        if (isset($seenMirrors[$ref])) continue;
+        achbotFollowupInsertLocked($db,$pay,'approved_purchase',
+            'receipt_mirror','edit',(string)$chat,$msg,
+            ['text'=>$keys,'keys'=>null,'mode'=>null]);
+        $seenMirrors[$ref]=true;
     }
     $notice=str_replace(
         ['USERID','REMARK','VOLUME','DAYS','PRICE','HASHID'],

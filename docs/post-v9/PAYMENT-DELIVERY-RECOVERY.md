@@ -268,11 +268,14 @@ another merchant payment inquiry.
   QR/text/keyboard packets sealed in 018 **inside the same transaction** as
   the original final `pays.approved` claim. A late SQL error can roll back
   this finalization without losing the already pinned remote effect.
-- Only after this COMMIT may Telegram delivery begin. A duplicate click after
-  `approved` can dispatch pending packets, or — for the primary Owner's
-  explicit click — resend a previously `unknown` **identical sealed packet**
-  under a locked challenge; no financial, capacity or native mutation occurs.
-  Sending account details again is not a grant of another account.
+- Only after this COMMIT may Telegram delivery begin. A duplicate approval
+  click after `approved` dispatches **only `pending`** customer packets and
+  unattempted original receipt/report notices. Neither a staff callback nor
+  the Owner's repeat approval authorizes resending an `unknown` Telegram ACK.
+  The Owner can inspect each original packet in the separate, private
+  `deliveryInbox`, read its duplicate-delivery warning and explicitly confirm
+  a time-limited sealed-packet resend under locked provenance checks. No
+  financial, capacity or native operation is performed by this recovery.
 - The historical `RENEW_SCONFIG` and additive day/volume/renewal routes are
   **not** covered by this one-shot native CREATE journal; they must remain
   fenced under `processing` until a separate original-operation proof/resume
@@ -291,9 +294,11 @@ native `service_effects` row). Neither proves installed Chili acceptance.
 The ordinary «Reject» admin callback for bank/gift/manual-crypto receipts
 commits rejection immediately using the **existing** `have_sent -> declined`
 compare-and-swap; it does not request an extra reason entry or merchant
-provider GET. The same existing customer rejection and normal administrative
-report are emitted once by the winning transition, with no wallet, order or
-native mutation. A button clicked after `processing` or a terminal outcome
+provider GET. The same existing customer rejection and truthful administrative
+business-result report are staged atomically in 020 with the financial
+transition. Each recipient is attempted separately after COMMIT; an ambiguous
+Telegram ACK remains `unknown` and is **not** a claim of completed delivery.
+A button clicked after `processing` or a terminal outcome
 cannot erase payment or undo a remote service operation. Old reason-editor
 messages from the previous installed version are still accepted only when
 the original payment is unfulfilled; a replayed editor cannot reject twice.
@@ -311,8 +316,11 @@ transaction, using the original frozen award identity. Repeated Approve
 resumes only never-attempted PENDING reports and paid delivery; UNKNOWN
 Telegram deliveries need a separate explicit Owner warning/confirmation.
 The original manual Reject similarly commits its full customer/staff/receipt
-notification manifest atomically with `have_sent -> declined`. One failing
-Telegram edit does not prevent independent notifications. Once an outbox
+notification manifest atomically with `have_sent -> declined`. Repeated legacy
+references to the **same** chat/message ID create one intent, but distinct
+historical admin messages remain independent; duplicates never roll back the
+financial outcome. One failing Telegram edit does not prevent independent
+notifications. Once an outbox
 recipient has been attempted, an ambiguous ACK is UNKNOWN and never
 authorizes an automatic repeated message. Human-rejected NOWPayments primary
 funds remain visible in the Owner-private financial exceptions inbox until
