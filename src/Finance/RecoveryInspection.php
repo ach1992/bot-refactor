@@ -56,7 +56,7 @@ function achbotRecoveryAttentionSql(mysqli $db): string {
     if (achbotPayUxTable($db,'payment_attempts')) {
         $journal=achbotPayUxTable($db,'payment_review_decisions')
             ? "OR (a.stage='fulfilling'
-                AND a.provider_status='operator_verified_finished'
+                AND a.provider_status IN ('operator_verified_finished','operator_attested')
                 AND EXISTS (SELECT 1 FROM payment_review_decisions d
                     WHERE d.attempt_id=a.id
                       AND d.state IN ('dispatching','unknown')))"

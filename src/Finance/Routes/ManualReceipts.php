@@ -314,49 +314,18 @@ if ($npPreview || $npCommit) {
         answerCallbackQuery($callbackId,achbotMessage('finance_workbench.checking'));
         if (!achbotNpDecisionSchemaReady($connection))
             throw new RuntimeException('review_decision_schema_missing');
-        // A fresh provider GET is necessary, but the GET is not itself a
-        // settlement command; it never holds local SQL locks.
-        $q=$connection->prepare("SELECT payment_id FROM payment_attempts
-            WHERE id=? AND provider='nowpayments' LIMIT 1");
-        $q->bind_param('i',$id);$q->execute();
-        $attempt=$q->get_result()->fetch_assoc();$q->close();
-        $apiKey=(string)($paymentKeys['nowpayment']??'');
-        if (!$attempt || $apiKey==='')
-            throw new RuntimeException('review_decision_provider_unavailable');
-        $remote=achbotNpGetVerifiedPayment((string)$attempt['payment_id'],$apiKey);
-        if (!is_array($remote)) throw new RuntimeException('review_decision_get_unconfirmed');
-        $match=achbotNpDecisionEligible($connection,$id,$remote,$mode);
-        if (!$match) {
-            $reply(achbotMessage('finance_workbench.not_safe'),$back);
-            return;
-        }
-        $digest=$match['digest'];
-        if ($npPreview) {
-            $until=time()+120;
-            $signature=achbotNpDecisionToken((int)$from_id,$id,$mode,$until,$digest);
-            $tag=$mode==='approve'?'A':'R';
-            $button=$mode==='approve'
-                ?achbotMessage('finance_workbench.commit_approve')
-                :achbotMessage('finance_workbench.commit_reject');
-            $copy=['id'=>$id,'amount'=>number_format((int)$match['pay']['price']),
-                'payment'=>$match['attempt']['payment_id']];
-            $body=$mode==='approve'
-                ?achbotMessageHtml('finance_workbench.preview_approve',$copy)
-                :achbotMessageHtml('finance_workbench.preview_reject',$copy);
-            $reply($body,[[['text'=>$button,
-                'callback_data'=>'npDecisionC'.$tag.'_'.$id.'_'.$until.'_'.$signature]],...$back]);
-            return;
-        }
-        $until=(int)$parts[3];$signature=(string)$parts[4];
-        if ($until<time() || $until>time()+120 ||
-            !hash_equals(achbotNpDecisionToken((int)$from_id,$id,$mode,$until,$digest),$signature)) {
+        // The Owner already checked the payment. This callback IS the
+        // decision: no merchant GET and no second operator confirmation.
+        // Retired two-step callbacks may outlive deployment in Telegram;
+        // do not execute a stale confirmation using a changed evidence basis.
+        if ($npCommit) {
             $reply(achbotMessage('finance_workbench.challenge_expired'),$back);
             return;
         }
-        $result=achbotNpDecisionCommit($connection,(int)$from_id,$id,$mode,$remote);
+        $result=achbotNpDecisionCommit($connection,(int)$from_id,$id,$mode,null);
         $status=(string)($result['status']??'unavailable');
         // This is the normal terminal business outcome, not a review alert.
-        // An API-verified refund is the ONLY hosted rejection supported here.
+        // Human rejection closes business fulfillment without claiming refund.
         if ($status==='rejected') {
             $pay=$result['pay'];
             $params=['id'=>$id,'user'=>(int)$pay['user_id'],

@@ -2388,6 +2388,22 @@ def run_effects(tmp: str) -> tuple[dict, dict]:
         "ambiguous_remote_fenced_as_unknown",
         "unknown_remote_effect_never_replayed",
         "multiple_funded_child_not_fake_single_invoice",
+        "owner_can_attest_saved_nonfinal_provider_evidence",
+        "owner_direct_approve_runs_original_effect",
+        "owner_direct_approve_wallet_once",
+        "human_attestation_not_fabricated_provider_finished",
+        "owner_repeat_callback_no_second_credit",
+        "owner_can_reject_without_provider_refunded",
+        "owner_reject_closes_unfulfilled_order",
+        "owner_reject_no_wallet_credit",
+        "owner_rejection_preserves_financial_evidence",
+        "unfunded_invoice_not_accidentally_decidable",
+        "owner_approve_refunded_only_funds_fails_closed",
+        "owner_multi_child_decides_original_order_once",
+        "owner_multi_child_never_credits_twice",
+        "additional_child_remains_in_financial_exception_ledger",
+        "owner_unknown_original_effect_held",
+        "owner_unknown_must_reconcile_not_repeat_effect",
     }
     if not (decision.get("complete") is True
             and set(decision.get("checks",[]))==required_decisions

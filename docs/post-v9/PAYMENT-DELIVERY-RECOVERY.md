@@ -212,3 +212,35 @@ Source-only tests or a green CI must never be described as production
 readiness or as authority to merge/deploy. A new Owner decision after an
 independent APPROVE is required for Merge; migration/deploy need separate
 authorization and verified backup/restore.
+
+
+## 2026-11-07 Owner decision — one-click attestation and safe resume (post-PR #122)
+
+The newer Owner contract is recorded in Issue #117 comment #6701412070 and
+**supersedes** the two-step merchant-GET requirement in the historical 019
+section above **for current human decisions only**. The automatic merchant
+settlement policy is unchanged and still requires verified provider finality.
+
+An authenticated Owner's Approve/Reject is the action, not a request to
+re-query the merchant. Source implementation in the **new, separately
+reviewable development candidate** makes the existing NOWPayments decision
+callback use local signed child evidence and a unique audited pay-scoped
+019 decision without another merchant GET or extra confirmation click.
+Provider status is recorded as `operator_attested` or `operator_rejected`,
+never falsified as merchant `finished`/`refunded`. Stored financial evidence
+survives a human business rejection. Local payment/subject identity, exact
+quoted amount, current pay stage, existing remote effects, and duplicate
+claims remain fenced; only the original one-shot business-effect path runs.
+The primary invoice's additional funded children remain separate financial
+exceptions, never second wallet credits or service CREATE operations. The
+old two-step signed callback is rejected as stale after upgrade.
+
+**Current source-only LIMIT:** Human decision for NextPay, Zarinpal and API
+bank/gift remains to be unified. More importantly, this first slice DOES NOT
+yet implement automatic safe resume of a previously remote-started `processing`
+CREATE, renewal, day or volume effect. The current one-shot journal retains
+an ambiguous outcome without replaying money/native effects; a follow-up
+package must complete state- and ordinal-keyed native readback/attach and
+report/Telegram delivery convergence. An unedited Telegram button alone
+MUST NOT authorize a second native mutation. Neither this development
+candidate nor prior PR #122 is installed on Chili, and 018/019 remain unapplied.

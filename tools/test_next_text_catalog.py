@@ -251,11 +251,31 @@ def main():
               'manual_final_retired_source_provenance:'+path)
     check(retained_manual_terminal<=entries and not (retained_manual_terminal&refs),
           'manual_final_retired_catalog_unknown_or_still_live')
+    # #117 newer Owner decision removed the extra merchant-GET preview and
+    # second-click confirmation. Retain these five approved historical copy
+    # entries (old Telegram screens may still exist) without allowing any
+    # other unreferenced catalog key to slip into the inventory.
+    retired_decision_preview={
+        'finance_workbench.not_safe',
+        'finance_workbench.commit_approve',
+        'finance_workbench.commit_reject',
+        'finance_workbench.preview_approve',
+        'finance_workbench.preview_reject',
+    }
+    old_decisions=command('git','show',
+        '569b2dfaee6658598aaf527fe6a389bd8685aa66:src/Finance/Routes/ManualReceipts.php').decode()
+    current_decisions=sources['src/Finance/Routes/ManualReceipts.php']
+    check(retired_decision_preview<=entries and
+          all("'"+key+"'" in old_decisions and "'"+key+"'" not in current_decisions
+              for key in retired_decision_preview) and
+          not (retired_decision_preview & refs),
+          'owner_direct_decision_retired_preview_provenance')
     expected_unused=(retired_shared_transfer|set(management['retained_legacy_keys'])|
         catalog_owner_r5.verify_retained_display_keys()|
         catalog_owner_r5.API_REVIEW_RETAINED|obsolete_filter|obsolete_postwrite|
         retired_keys|retired_bank_delivery_push|
-        retired_review_push|retained_delivery_back|retained_manual_terminal)
+        retired_review_push|retained_delivery_back|retained_manual_terminal|
+        retired_decision_preview)
     check(unused==expected_unused,'unrecorded legacy/orphan copy entries: '+str(unused^expected_unused))
     with tempfile.TemporaryDirectory(prefix='achbot-catalog-audit-') as scratch:
         fixture=pathlib.Path(scratch)/'fixture.php'

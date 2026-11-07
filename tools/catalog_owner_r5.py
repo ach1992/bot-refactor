@@ -386,7 +386,7 @@ WORKBENCH_BLOCKS={
    'next','first','checked','unavailable'}
  },
  'finance_workbench':{
-  'sha':'b2ca5ebb7ac2e77948f3d952edab9b4cc563385ef9d0fcf2bcb2b7798014aedb',
+  'sha':'b11588cdef53897b22a6786eca96df74b2527b0855ec7bf85d26a00257d34ff5',
   'names':{'denied','checking','back','not_safe','challenge_expired',
    'unavailable','migration_required','preview_button','reject_button',
    'commit_approve','commit_reject','preview_approve','preview_reject',
