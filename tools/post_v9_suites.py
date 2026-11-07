@@ -1249,7 +1249,7 @@ def run_wallet(tmp: str) -> tuple[dict, dict]:
             # and one five-slot message: 3 + 6 native samples, one object,
             # one multi-parameter object and one one-pass sample.
             # Preserve all prior counts and negative controls.
-            and text_catalog.get("native",{}).get("current_native_template_assertions")==4120+24+9+139+42+7+2+3+9
+            and text_catalog.get("native",{}).get("current_native_template_assertions")==4120+24+9+139+42+7+2+3+9+1
             and text_catalog.get("native",{}).get("current_object_conversion_templates")==268+2+15+5+1+1
             and text_catalog.get("native",{}).get("current_shared_multi_parameter_templates")==66+1+14+5+1+1
             and text_catalog.get("native",{}).get("current_one_pass_templates")==268+2+15+5+1+1
