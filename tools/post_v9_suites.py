@@ -1257,10 +1257,12 @@ def run_wallet(tmp: str) -> tuple[dict, dict]:
         # Four retired #112 references and the additional old direct-delete
         # callback reference are proven absent by test_next_text_catalog.py.
         # Keep complete current-reference equality, never a lower bound.
-        'runtime_references':2453+14-1-6-4-1+8-3+28+12-5,
+        'runtime_references':2453+14-1-6-4-1+8-3+28+12-5+2,
         # +28 owner financial/service/delivery copy keys, +12 net
         # referenced tokens from R2 financial exception and R3 final
-        # receipt topics. The five new retired second-confirmation labels
+        # receipt topics. The two exact-pinned service_recovery_action
+        # buttons/warnings are now statically referenced as well. The five
+        # new retired second-confirmation labels
         # are proven absent by test_next_text_catalog.py's exact inherited
         # source check, not removed from the editable catalog.
         # The exact orphan/source inventory proof remains mandatory.
