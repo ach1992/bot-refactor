@@ -316,7 +316,6 @@ SPECS=[
  spec('referral_customer_balances','src/Finance/ReferralReward.php','assign','$buyerMsg','give_referral_reward.buyer_msg.51caba68b5'),
  spec('referral_operator','src/Finance/ReferralReward.php','assign','$operatorMsg','give_referral_reward.operator_msg.7c8cfd9d4f'),
  spec('payment_reference','src/Finance/PaymentLifecycle.php','return','return','pay_ux_reference.label.edb6e627ea'),
- spec('merchant_operator_review','src/Finance/GatewayReturn.php','assign','$message','np_alert_operator.message.00aa2f3ddb'),
  spec('wallet_uncertain_effect','src/Finance/WalletSettlement.php','assign','$adminErr','process_wallet_payment.admin_err.51996ec850'),
  spec('manual_operator_review','src/Finance/Routes/ManualReceipts.php','assign','$body','manual_receipts.body.8725ef87b4'),
  spec('manual_approved_balances','src/Finance/Routes/ManualReceipts.php','assign','$adminMessages','manual_receipts.admin_messages.31d90c5e69'),
@@ -368,7 +367,7 @@ echo json_encode($out,JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);'''
 def render(expressions,catalog_root):
     return json.loads(command('php','-r',PHP,str(catalog_root),input=json.dumps(expressions).encode()))
 def audit(source_root=ROOT,catalog_root=ROOT):
-    paths={s['path']for s in SPECS}|{'config.php','src/Finance/ReceiptHelpers.php'}
+    paths={s['path']for s in SPECS}|{'config.php','src/Finance/ReceiptHelpers.php','src/Finance/GatewayReturn.php'}
     source={p:(source_root/p).read_text()for p in paths}
     source['prior_direct_checkout']=command('git','show','68e94b5f90b13cab88835421d83afb78eb573c0d:src/Finance/Routes/Checkout.php').decode()
     tokenized=json.loads(command('php','-r',TOKENIZE,input=json.dumps(source).encode()))
@@ -391,6 +390,16 @@ def audit(source_root=ROOT,catalog_root=ROOT):
         expressions[name]='(static function(){ $userId=1001;$totalOrders=3;$totalPaid="150,000";$formattedDate="2026-10-29";$planName="پلن نمونه";$planCount=3;return '+pieces[0]+'.('+'.'.join(pieces[1:])+').('+'.'.join(pieces[1:])+');})()'
     current=render(expressions,catalog_root)
     for name,value in current.items():check(not heading_collisions(value),'composed_heading_collision:'+name+':'+str(heading_collisions(value)))
+    merchant=source['src/Finance/GatewayReturn.php']
+    # Retired payment-review push is not restored merely to satisfy an
+    # archived wording specimen. Preserve the ORIGINAL business report.
+    notice=merchant.split('function achbotNpAlertOperator',1)[1].split('function achbotNpReconcileBatch',1)[0]
+    check('achbotNotifyAdmins(' not in notice and 'sendMessage(' not in notice and
+          'return [\'examined\'=>0,\'notified\'=>0,\'failed\'=>0];' in notice,
+          'operator_payment_review_push_must_be_retired')
+    check('notifyAllAdminsSimple($msg, $admin, "html", $keys, $rewardChannel)' in merchant and
+          'gateway.gateway_return.perform_payment_effect.msg.8205ac68fa' in merchant,
+          'original_purchase_result_report_channel_must_remain')
     # Pure source quote expressions plus the actual insertion tail cover all six
     # existing receipt templates without dispatching payment or querying a DB.
     # Ledger-pinning/recipient/mutation proof remains in the dedicated receipt test.
@@ -425,14 +434,13 @@ def audit(source_root=ROOT,catalog_root=ROOT):
     check('شناسه پیام تلگرام:' not in current['wallet_private_failure'],'telegram_update_id_mislabeled_as_message')
     check('شناسه پیام تلگرام: <code>9001</code>\n' in archived['wallet_private_failure'],'archived_wrong_telegram_update_label_RED_missing')
     reds=[name for name,value in archived.items()if heading_collisions(value)]
-    expected_red={s['name']for s in SPECS[:2]+SPECS[3:19]}
+    expected_red={s['name']for s in SPECS[:2]+SPECS[3:18]}
     check(set(reds)==expected_red,'archived_composed_RED_scope_drift:'+str(reds))
     # Actual combined output negatives: template-only tests cannot catch these.
     report=current['wallet_transfer_report']
     mutations=[('wallet_after_marker',report,report.replace('🔄 بعد:','💼 بعد:')),
                ('wallet_destination_marker',report,report.replace('📥 <b>مقصد','🎫 <b>مقصد')),
                ('manual_new_balance',current['manual_approved_balances'],current['manual_approved_balances'].replace('💼 موجودی جدید:','💰 موجودی جدید:')),
-               ('merchant_invoice',current['merchant_operator_review'],current['merchant_operator_review'].replace('💵 <b>مبلغ فاکتور:','💰 <b>مبلغ فاکتور:')),
                ('discount_distinct_fields',current['discount_details'],current['discount_details'].replace('👥 گروه کاربران:','👤 گروه کاربران:')),
                ('warning_followup',current['wallet_uncertain_effect'],current['wallet_uncertain_effect'].replace('🔎 نتیجه عملیات','⚠️ نتیجه عملیات'))]
     for name,original,value in mutations:

@@ -59,3 +59,72 @@ The telegramWebhookSecret must be present for existing payment-evidence AEAD. Ba
 ## Remaining Issue #117 work
 
 This package does NOT close #117. Separately verify installed Chili backups/migration/deployment and Owner acceptance; native CREATE uncertainty/replacement policies; the five-provider financial review workbench; bank SMS exact-ID GET contract; legacy/unbackfilled paid history; and consistent durable delivery for non-API service-edit/manual approvals with their own provider/effect invariants. No real payment, provider mutation, production migration or real Telegram send is authorized by this source package.
+
+## 2026-11-07 owner clarification — quiet finance workbench
+
+**Controlling product rule:** Payment review is an **admin-initiated** list, not
+an automatic message. Legacy scheduled NOWPayments and automatic-renewal
+review push functions now return without Telegram, notifications, or lease
+mutations. Existing **business outcome reports** (actual purchase/subscription
+details, renewal, wallet credit, manual receipt approval/rejection) must continue
+through their existing report channel. No generic approved-payment push or
+already-finalized review message is added.
+
+Payment review shows nonterminal payments only if an authenticated provider
+child indicates incoming money, a positive NextPay/Zarinpal settlement hold is
+recorded, a saved manual receipt awaits human review, or the API evidence
+ledger has proven evidence. A waiting/expired/unfunded invoice, a paid/declined
+terminal row, native CREATE uncertainty, and Telegram-delivery uncertainty
+must **not** be re-labelled as a fresh payment awaiting approval.
+
+Native account recovery and customer delivery each have separate Owner-only
+workbenches. Review decisions already recorded in the 019 ledger show their
+audit/status rather than offering another irreversible approval. The pending
+delivery workbench lists only existing 018 intents awaiting ACK or inspection.
+Historical records without an encrypted delivery intent are not fabricated.
+
+### NOWPayments operator decisions — additive migration 019
+
+- **Owner only, current private chat, signed short-lived two-step challenge.**
+  Each approval performs one fresh authenticated provider GET and requires
+  exact invoice/order/payment ID identity, quoted USD amount, merchant
+  settlement evidence and provider status **finished**. A locally observed
+  confirmed/sending/partially_paid result is **not** authority to settle.
+  A refusal requires provider **refunded** and cannot override completed orders.
+  A second positively funded child blocks treating one child as the invoice.
+- Insert a unique, pay-scoped decision audit and claim attempt
+  operator_verified_finished in **one InnoDB transaction** before running
+  the original doAction effect path. The standard customer/business
+  output is preserved, including the report channel. Cron must not turn
+  this operator-owned fulfilling claim back into review.
+- If the process exits after the journal COMMIT, the status remains
+  dispatching (unknown until reconciled). An ambiguous provider/native or
+  Telegram outcome stays unknown; **never auto-repeat** the same financial,
+  remote CREATE or customer-delivery effect. Duplicate callbacks are rejected.
+- The provider's refunded result may be closed as a rejected payment, with
+  the final customer state and normal report. Unknown/short-funded/multiple
+  paid children are *not* blindly rejected or credited.
+- Migration 019_payment_review_decisions.sql is **source-only and unapplied**,
+  additionally required by read-only preflight. Explicit backup, staging
+  restore, separate Owner migration authorization, and exact source/CI/
+  independent review gates apply as to 018.
+
+Scope remaining for Issue #117: a genuine multi-provider override with
+explicit human attestation/reference/reason for verified positive funds when
+provider is not finished, cross-provider manual decisions beyond NOWPayments,
+full native Marzban/PasarGuard readback/replacement workflow, and controlled
+Chili acceptance. Do not describe this source slice as deployed or approved.
+
+### Isolated proof
+
+- tools/test_owner_r6_financial_alert_ack.py: owned MariaDB proves no automatic
+  finance/renewal review Telegram fanout or financial/lease changes.
+- tools/test_post_v9_review_decisions.py: owned MariaDB and original decision
+  source, 019 uniqueness, short decision token binding, valid finished,
+  negative identity/amount/confirmed, provider refund, duplicate approve,
+  ambiguous remote no replay, concurrent real Cron operator-fence, and queue
+  separation for completed, unfunded and positively evidenced cases.
+- Existing finance route suite tests unchanged provider/API outcomes and
+  original purchase copy; retired notification expectations now test no push.
+- Local Dev PHP 8.4 can catch defects early but **required acceptance remains
+  the exact candidate's full PHP 8.5 CI**.

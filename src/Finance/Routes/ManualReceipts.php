@@ -72,6 +72,36 @@ if (preg_match('/^attention(Inbox|Case)(?:_([1-9][0-9]{0,17}))?$/D',(string)$dat
             if ((int)$from_id===(int)$admin && $pay['type']==='BUY_SUB' && in_array($pay['state'],['processing','processing_wallet','paid'],true))
                 $rows[]=[['text'=>\achbotMessage('manual_payment.manual_receipts.button.ea309dff23'),'callback_data'=>'bankReviewCase_'.$id]];
             $manual=achbotPayUxManualProvider((string)($a['provider']??''));
+            // The quiet queue is a second entrypoint into the ORIGINAL
+            // receipt decision handlers. Never invent a shortcut settlement:
+            // those handlers re-lock pays, validate the submitted evidence,
+            // pin service/capacity and keep their original outcome reports.
+            if ($manual && $pay['state']==='have_sent' &&
+                (int)($pay['message_id']??0)>0 && (int)($pay['chat_id']??0)>0 &&
+                achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'payments')) {
+                $kind=(string)$pay['type'];
+                $approve=match(true) {
+                    $kind==='INCREASE_WALLET'=>'approvePayment',
+                    $kind==='RENEW_ACCOUNT'=>'approveRenewAcc',
+                    $kind==='RENEW_SCONFIG'=>'accept',
+                    str_starts_with($kind,'INCREASE_DAY_')=>'approveIncreaseDay',
+                    str_starts_with($kind,'INCREASE_VOLUME_')=>'approveIncreaseVolume',
+                    $kind==='BUY_SUB' && ((int)$pay['day']>0 ||
+                        (int)$pay['volume']>0)=>'accCustom',
+                    $kind==='BUY_SUB'=>'accept',
+                    default=>null
+                };
+                if ($approve!==null && preg_match('/^[A-Za-z0-9_-]{1,50}$/D',
+                    (string)$pay['hash_id'])) {
+                    $rows[]=[[
+                        ['text'=>achbotMessage('finance_workbench.approve_original'),
+                            'callback_data'=>$approve.$pay['hash_id']],
+                        ['text'=>achbotMessage('finance_workbench.reject_original'),
+                            'callback_data'=>'declineAction_'.$pay['hash_id']],
+                    ]];
+                    $body.=achbotMessage('finance_workbench.manual_evidence_warning');
+                }
+            }
             if ($manual && $pay['state']==='have_sent') $body.=\achbotMessage('manual_payment.manual_receipts.body.189e0e519d');
             elseif ($pay['type']==='INCREASE_WALLET') $body.=\achbotMessage('manual_payment.manual_receipts.body.12b390893d');
             elseif ($pay['type']!=='BUY_SUB') $body.=\achbotMessage('manual_payment.manual_receipts.body.6c27eff9db');
@@ -82,7 +112,14 @@ if (preg_match('/^attention(Inbox|Case)(?:_([1-9][0-9]{0,17}))?$/D',(string)$dat
             !achbotPayUxTable($connection,'automatic_renewal_attempts'))
             $body.=\achbotMessage('manual_payment.manual_receipts.body.75381485c2');
         $body.=\achbotMessage('manual_payment.manual_receipts.body.2d8dc82a81');
-        if ((int)$from_id===(int)$admin) $rows[]=[['text'=>\achbotMessage('manual_payment.manual_receipts.button.3d941bcb15'),'callback_data'=>'npReviewInbox']];
+        if ((int)$from_id===(int)$admin) {
+            $rows[]=[['text'=>achbotMessage('delivery_workbench.open_inbox'),
+                'callback_data'=>'deliveryInbox']];
+            $rows[]=[['text'=>achbotMessage('delivery_workbench.native_inbox'),
+                'callback_data'=>'bankReviewInbox']];
+            $rows[]=[['text'=>\achbotMessage('manual_payment.manual_receipts.button.3d941bcb15'),
+                'callback_data'=>'npReviewInbox']];
+        }
         $rows[]=[['text'=>\achbotMessage('manual_payment.manual_crypto.button.1121ffbf88'),'callback_data'=>'evidenceHome']];
         answerCallbackQuery($callbackId,\achbotMessage('manual_payment.manual_receipts.alert.c3fb4bd548'));
         $markup=json_encode(['inline_keyboard'=>$rows],JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
@@ -91,6 +128,108 @@ if (preg_match('/^attention(Inbox|Case)(?:_([1-9][0-9]{0,17}))?$/D',(string)$dat
     } catch (Throwable $error) {
         error_log('achbot_attention_inspection_unavailable class='.get_class($error));
         sendMessage(\achbotMessage('manual_payment.manual_receipts.message.c46e102fab'),null,'HTML',(int)$from_id);
+    }
+    return;
+}
+
+// Explicit, verified NOWPayments financial decisions. No unsolicited
+// notice, no shortcut around the original wallet/service/report path.
+$npDecisionPreview=[];$npDecisionCommit=[];
+$npPreview=preg_match('/^npDecisionP([AR])_([1-9][0-9]{0,17})$/D',
+    (string)$data,$npDecisionPreview)===1;
+$npCommit=preg_match('/^npDecisionC([AR])_([1-9][0-9]{0,17})_([1-9][0-9]{9})_([a-f0-9]{20})$/D',
+    (string)$data,$npDecisionCommit)===1;
+if ($npPreview || $npCommit) {
+    if ((int)$admin<=0 || (int)$from_id!==(int)$admin ||
+        (int)($chat_id??0)!==(int)$admin) {
+        answerCallbackQuery($callbackId,achbotMessage('finance_workbench.denied'),true);
+        return;
+    }
+    require_once __DIR__.'/../ReviewDecisions.php';
+    if (!defined('ACHBOT_NP_RECONCILE_ONLY')) define('ACHBOT_NP_RECONCILE_ONLY',true);
+    require_once __DIR__.'/../GatewayReturn.php';
+    $parts=$npPreview?$npDecisionPreview:$npDecisionCommit;
+    $mode=$parts[1]==='A'?'approve':'reject';
+    $id=(int)$parts[2];
+    $reply=static function(string $body,array $buttons) use ($message_id,$admin): void {
+        $keys=json_encode(['inline_keyboard'=>$buttons],
+            JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
+        $result=editText($message_id,$body,$keys,'HTML',(int)$admin);
+        if (!is_object($result) || ($result->ok??false)!==true)
+            sendMessage($body,$keys,'HTML',(int)$admin);
+    };
+    $back=[[['text'=>achbotMessage('finance_workbench.back'),
+        'callback_data'=>'npReviewCase_'.$id]]];
+    try {
+        answerCallbackQuery($callbackId,achbotMessage('finance_workbench.checking'));
+        if (!achbotNpDecisionSchemaReady($connection))
+            throw new RuntimeException('review_decision_schema_missing');
+        // A fresh provider GET is necessary, but the GET is not itself a
+        // settlement command; it never holds local SQL locks.
+        $q=$connection->prepare("SELECT payment_id FROM payment_attempts
+            WHERE id=? AND provider='nowpayments' LIMIT 1");
+        $q->bind_param('i',$id);$q->execute();
+        $attempt=$q->get_result()->fetch_assoc();$q->close();
+        $apiKey=(string)($paymentKeys['nowpayment']??'');
+        if (!$attempt || $apiKey==='')
+            throw new RuntimeException('review_decision_provider_unavailable');
+        $remote=achbotNpGetVerifiedPayment((string)$attempt['payment_id'],$apiKey);
+        if (!is_array($remote)) throw new RuntimeException('review_decision_get_unconfirmed');
+        $match=achbotNpDecisionEligible($connection,$id,$remote,$mode);
+        if (!$match) {
+            $reply(achbotMessage('finance_workbench.not_safe'),$back);
+            return;
+        }
+        $digest=$match['digest'];
+        if ($npPreview) {
+            $until=time()+120;
+            $signature=achbotNpDecisionToken((int)$from_id,$id,$mode,$until,$digest);
+            $tag=$mode==='approve'?'A':'R';
+            $button=achbotMessage($mode==='approve'
+                ?'finance_workbench.commit_approve':'finance_workbench.commit_reject');
+            $body=achbotMessageHtml($mode==='approve'
+                ?'finance_workbench.preview_approve':'finance_workbench.preview_reject',[
+                    'id'=>$id,'amount'=>number_format((int)$match['pay']['price']),
+                    'payment'=>$match['attempt']['payment_id']]);
+            $reply($body,[[['text'=>$button,
+                'callback_data'=>'npDecisionC'.$tag.'_'.$id.'_'.$until.'_'.$signature]],...$back]);
+            return;
+        }
+        $until=(int)$parts[3];$signature=(string)$parts[4];
+        if ($until<time() || $until>time()+120 ||
+            !hash_equals(achbotNpDecisionToken((int)$from_id,$id,$mode,$until,$digest),$signature)) {
+            $reply(achbotMessage('finance_workbench.challenge_expired'),$back);
+            return;
+        }
+        $result=achbotNpDecisionCommit($connection,(int)$from_id,$id,$mode,$remote);
+        $status=(string)($result['status']??'unavailable');
+        // This is the normal terminal business outcome, not a review alert.
+        // An API-verified refund is the ONLY hosted rejection supported here.
+        if ($status==='rejected') {
+            $pay=$result['pay'];
+            $params=['id'=>$id,'user'=>(int)$pay['user_id'],
+                'amount'=>number_format((int)$pay['price']),'hash'=>(string)$pay['hash_id']];
+            try {
+                sendMessage(achbotMessageHtml('finance_workbench.rejected_customer',$params),
+                    null,'HTML',(int)$pay['user_id']);
+            } catch(Throwable $error) {
+                error_log('achbot_np_reject_customer_notice_unknown pay_id='.(int)$pay['id']);
+            }
+            try {
+                $report=achbotMessageHtml('finance_workbench.rejected_report',$params);
+                notifyAllAdminsSimple($report,(int)$admin,'html',null,
+                    $botState['rewardChannel']??null);
+            } catch(Throwable $error) {
+                error_log('achbot_np_reject_business_report_unknown pay_id='.(int)$pay['id']);
+            }
+        }
+        $reply(achbotMessageHtml('finance_workbench.result',['result'=>achbotMessage(
+            'finance_workbench.status_'.$status)]),$back);
+    } catch (Throwable $error) {
+        error_log('achbot_np_review_decision_unavailable attempt_id='.$id.
+            ' class='.get_class($error));
+        try {$reply(achbotMessage('finance_workbench.unavailable'),$back);}
+        catch(Throwable $ignored) {}
     }
     return;
 }
@@ -512,6 +651,34 @@ if ($isInbox ||
         if ($nextCursor>0) {
             $buttons[]=[['text'=>\achbotMessage('manual_payment.manual_receipts.button.af4b7d7113'),
                 'callback_data'=>'npReviewCase_'.$attemptId.'_0_'.$nextCursor]];
+        }
+        if (in_array((string)$case['pay_state'],['pending','send'],true) &&
+            (in_array((string)$case['stage'],['review','fulfilling'],true))) {
+            require_once __DIR__.'/../ReviewDecisions.php';
+            $decisionRecord=null;
+            if (achbotNpDecisionSchemaReady($connection)) {
+                $record=$connection->prepare('SELECT decision,state,outcome
+                    FROM payment_review_decisions WHERE attempt_id=? LIMIT 1');
+                $record->bind_param('i',$attemptId);$record->execute();
+                $decisionRecord=$record->get_result()->fetch_assoc()?:null;
+                $record->close();
+            }
+            if ($decisionRecord) {
+                $body.=achbotMessageHtml('finance_workbench.prior_decision',[
+                    'decision'=>$decisionRecord['decision'],
+                    'state'=>$decisionRecord['state'],
+                    'outcome'=>$decisionRecord['outcome']??'unknown']);
+            } elseif ((string)$case['stage']==='review' &&
+                      achbotNpDecisionSchemaReady($connection)) {
+                $buttons[]=[[
+                    ['text'=>achbotMessage('finance_workbench.preview_button'),
+                        'callback_data'=>'npDecisionPA_'.$attemptId],
+                    ['text'=>achbotMessage('finance_workbench.reject_button'),
+                        'callback_data'=>'npDecisionPR_'.$attemptId],
+                ]];
+            } else {
+                $body.=achbotMessage('finance_workbench.migration_required');
+            }
         }
         $buttons[]=[['text'=>\achbotMessage('manual_payment.manual_receipts.button.014e4e047f'),
                      'callback_data'=>'npReviewInbox']];

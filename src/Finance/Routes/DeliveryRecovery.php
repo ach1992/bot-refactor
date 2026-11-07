@@ -7,6 +7,8 @@
 if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) { http_response_code(404); exit; }
 
 $deliveryRoute=(string)($data??'');
+$inboxParts=[];$isInbox=preg_match('/^deliveryInbox(?:_([1-9][0-9]{0,9}))?$/D',
+    $deliveryRoute,$inboxParts)===1;
 $caseParts=[];$checkParts=[];$confirmParts=[];$sendParts=[];
 $isCase=preg_match('/^deliveryCase_([1-9][0-9]{0,9})(?:_([1-9][0-9]{0,9}))?$/D',
     $deliveryRoute,$caseParts)===1;
@@ -16,7 +18,7 @@ $isConfirm=preg_match('/^deliveryConfirm_([1-9][0-9]{0,9})_([1-9][0-9]{0,9})$/D'
     $deliveryRoute,$confirmParts)===1;
 $isSend=preg_match('/^deliverySend_([1-9][0-9]{0,9})_([1-9][0-9]{0,9})_([1-9][0-9]{0,10})_([a-f0-9]{12})$/D',
     $deliveryRoute,$sendParts)===1;
-if (!$isCase && !$isCheck && !$isConfirm && !$isSend) {
+if (!$isInbox && !$isCase && !$isCheck && !$isConfirm && !$isSend) {
     achbotAdminDeny();
     return;
 }
@@ -26,7 +28,7 @@ if ((int)($admin??0)<=0 || (int)($from_id??0)!==(int)$admin ||
     return;
 }
 require_once __DIR__.'/../DeliveryLedger.php';
-$payId=(int)($isCase?$caseParts[1]:($isCheck?$checkParts[1]:
+$payId=$isInbox?0:(int)($isCase?$caseParts[1]:($isCheck?$checkParts[1]:
     ($isConfirm?$confirmParts[1]:$sendParts[1])));
 $ordinal=(int)($isCheck?$checkParts[2]:($isConfirm?$confirmParts[2]:
     ($isSend?$sendParts[2]:0)));
@@ -46,6 +48,40 @@ try {
     answerCallbackQuery($callbackId,achbotMessage('delivery_recovery.check_ack'));
     if (!achbotDeliverySchemaReady($connection))
         throw new RuntimeException('delivery_schema_missing');
+    if ($isInbox) {
+        $before=(int)($inboxParts[1]??0);
+        $q=$connection->prepare("SELECT p.id,p.user_id,p.price,p.state
+            FROM pays p WHERE p.state IN
+              ('approved','auto_cart_approved','paid','paid_with_wallet')
+            AND EXISTS (SELECT 1 FROM payment_delivery_intents d
+                WHERE d.pay_row_id=p.id AND d.state IN ('pending','dispatching','unknown'))
+            AND (?=0 OR p.id<?) ORDER BY p.id DESC LIMIT 13");
+        if (!$q) throw new RuntimeException('delivery_inbox_prepare');
+        $q->bind_param('ii',$before,$before);
+        if (!$q->execute()) throw new RuntimeException('delivery_inbox_query');
+        $items=$q->get_result()->fetch_all(MYSQLI_ASSOC);$q->close();
+        $more=count($items)>12;$items=array_slice($items,0,12);
+        $body=achbotMessage('delivery_workbench.inbox_title');
+        $buttons=[];
+        foreach ($items as $item) {
+            $buttons[]=[['text'=>achbotMessageHtml('delivery_workbench.inbox_case',[
+                'pay'=>$item['id'],'user'=>$item['user_id']]),
+                'callback_data'=>'deliveryCase_'.(int)$item['id']]];
+        }
+        if (!$items) $body.="\n".achbotMessage('delivery_workbench.inbox_empty');
+        if ($more && $items)
+            $buttons[]=[['text'=>achbotMessage('delivery_recovery.next'),
+                'callback_data'=>'deliveryInbox_'.(int)end($items)['id']]];
+        if ($before>0)
+            $buttons[]=[['text'=>achbotMessage('delivery_recovery.first'),
+                'callback_data'=>'deliveryInbox']];
+        $buttons[]=[['text'=>achbotMessage('delivery_workbench.native_inbox'),
+            'callback_data'=>'bankReviewInbox']];
+        $buttons[]=[['text'=>achbotMessage('delivery_workbench.back_finance'),
+            'callback_data'=>'attentionInbox']];
+        $reply($body,$buttons);
+        return;
+    }
     $q=$connection->prepare('SELECT id,user_id,type,price,state FROM pays WHERE id=? LIMIT 1');
     $q->bind_param('i',$payId);$q->execute();$pay=$q->get_result()->fetch_assoc();$q->close();
     if (!$pay) throw new RuntimeException('delivery_payment_not_found');
@@ -114,16 +150,16 @@ try {
     }
     if ($cursor>0) $buttons[]=[['text'=>achbotMessage('delivery_recovery.first'),
         'callback_data'=>'deliveryCase_'.$payId]];
-    $buttons[]=[['text'=>achbotMessage('delivery_recovery.back_inbox'),
-        'callback_data'=>'attentionInbox']];
+    $buttons[]=[['text'=>achbotMessage('delivery_workbench.back_inbox'),
+        'callback_data'=>'deliveryInbox']];
     $reply($body,$buttons);
 } catch(Throwable $error) {
     error_log('achbot_delivery_operator_unavailable pay_id='.$payId.' ordinal='.$ordinal.
         ' class='.get_class($error));
     try {
         $reply(achbotMessage('delivery_recovery.unavailable'),
-            [[['text'=>achbotMessage('delivery_recovery.back_inbox'),
-                'callback_data'=>'attentionInbox']]]);
+            [[['text'=>achbotMessage('delivery_workbench.back_inbox'),
+                'callback_data'=>'deliveryInbox']]]);
     } catch(Throwable $ignored) {
         error_log('achbot_delivery_operator_ui_unconfirmed pay_id='.$payId);
     }

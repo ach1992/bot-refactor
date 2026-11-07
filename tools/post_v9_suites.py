@@ -19,7 +19,7 @@ from check_post_v9 import (
     owner_gift_policy_negative_controls, owner_r5_proof_mismatches,
 )
 
-FAMILY_FIELDS = {'admin': ('owner_ux_r5', 'owner_r6_notifications', 'owner_r6_financial_alerts'), 'api': ('existing_payment_apis',), 'services': ('marzban', 'purchases', 'webhook_file_configuration', 'telegram_transport_log_privacy', 'optional_cron_runner', 'marzban_service_modifications'), 'wallet': ('unsupported_wallet_preflight', 'wallet_transfer_safety', 'wallet_replay_freshness_and_operation_identity', 'wallet_transfer_generation', 'admin_wallet_adjustment_safety', 'admin_wallet_ux', 'next_payment_ux', 'central_text_catalog', 'copy_audience_and_numeric_source', 'public_bootstrap_privacy', 'public_gateway_privacy', 'service_unit_quote_guards', 'pasarguard_client', 'optional_cleanup'), 'presentation': ('provider_integration', 'currency_settings', 'server_display_settings', 'subscription_presentation', 'simple_server_display', 'financial_subject_preflight', 'catalogue_and_subscription_qr', 'payment_ux_lifecycle', 'payment_browser_feedback', 'checkout_serialization', 'customer_method_serialization'), 'authorization': ('automatic_renewal_ledger', 'payment_readiness_preflight', 'wallet_authorization_freshness', 'latest_review_f1_f4'), 'effects': ('financial_native_route_guards', 'service_effects', 'create_verification_lock_order', 'strict_effect_transport_pin', 'gift_source_enqueue_idempotency', 'direct_admin_gift_verified', 'direct_admin_gift_native', 'owner_gift_policy', 'owner_gift_locks', 'owner_gift_lock_negative_controls', 'owner_gift_policy_negative_controls', 'gift_worker_safe_continuation', 'gift_physical_target_continuity'), 'funding': ('source_only_overlays', 'wallet_paid_create', 'wallet_checkout_routes', 'wallet_callback_framing', 'manual_choice_callback_framing', 'nonpaid_trial_bulk', 'referral_awards', 'referral_postcommit_routes', 'bank_auto_buy_sub', 'bank_recovery_inspection', 'bank_recovery_transport', 'manual_payment_method_isolation', 'manual_standard_real_helper_review_remediation', 'manual_crypto_destination_and_admin_guards', 'shared_payment_ledger_rc4_import', 'agency_state_regression', 'marzban_logical_transfer')}
+FAMILY_FIELDS = {'admin': ('owner_ux_r5', 'owner_r6_notifications', 'owner_r6_financial_alerts'), 'api': ('existing_payment_apis',), 'services': ('marzban', 'purchases', 'webhook_file_configuration', 'telegram_transport_log_privacy', 'optional_cron_runner', 'marzban_service_modifications'), 'wallet': ('unsupported_wallet_preflight', 'wallet_transfer_safety', 'wallet_replay_freshness_and_operation_identity', 'wallet_transfer_generation', 'admin_wallet_adjustment_safety', 'admin_wallet_ux', 'next_payment_ux', 'central_text_catalog', 'copy_audience_and_numeric_source', 'public_bootstrap_privacy', 'public_gateway_privacy', 'service_unit_quote_guards', 'pasarguard_client', 'optional_cleanup'), 'presentation': ('provider_integration', 'currency_settings', 'server_display_settings', 'subscription_presentation', 'simple_server_display', 'financial_subject_preflight', 'catalogue_and_subscription_qr', 'payment_ux_lifecycle', 'payment_browser_feedback', 'checkout_serialization', 'customer_method_serialization'), 'authorization': ('automatic_renewal_ledger', 'payment_readiness_preflight', 'wallet_authorization_freshness', 'latest_review_f1_f4'), 'effects': ('financial_native_route_guards', 'review_decision_idempotency', 'service_effects', 'create_verification_lock_order', 'strict_effect_transport_pin', 'gift_source_enqueue_idempotency', 'direct_admin_gift_verified', 'direct_admin_gift_native', 'owner_gift_policy', 'owner_gift_locks', 'owner_gift_lock_negative_controls', 'owner_gift_policy_negative_controls', 'gift_worker_safe_continuation', 'gift_physical_target_continuity'), 'funding': ('source_only_overlays', 'wallet_paid_create', 'wallet_checkout_routes', 'wallet_callback_framing', 'manual_choice_callback_framing', 'nonpaid_trial_bulk', 'referral_awards', 'referral_postcommit_routes', 'bank_auto_buy_sub', 'bank_recovery_inspection', 'bank_recovery_transport', 'manual_payment_method_isolation', 'manual_standard_real_helper_review_remediation', 'manual_crypto_destination_and_admin_guards', 'shared_payment_ledger_rc4_import', 'agency_state_regression', 'marzban_logical_transfer')}
 
 SOURCE_UPDATES = {'admin': (), 'api': (), 'services': ('unified_service_management',), 'wallet': (), 'presentation': (), 'authorization': (), 'effects': (), 'funding': ('current_additive_migration_separately_tested',)}
 
@@ -311,74 +311,18 @@ def run_admin(tmp: str) -> tuple[dict, dict]:
                    cwd=ROOT,check=True,timeout=90,capture_output=True)
     financial_alerts=json.loads(alerts_path.read_text())
     required_financial_alert_checks=[
-        'renewal manager_failure incomplete fanout retains retryable marker releases lease and preserves financial evidence',
-        'renewal manager_failure next ordinary call reaches Manager acknowledges complete fanout without financial replay',
-        'renewal manager_failure completed fanout remains quiet on unchanged evidence',
-        'renewal owner_failure incomplete fanout retains retryable marker releases lease and preserves financial evidence',
-        'renewal owner_failure next ordinary call reaches Manager acknowledges complete fanout without financial replay',
-        'renewal owner_failure completed fanout remains quiet on unchanged evidence',
-        'renewal discovery_writer incomplete fanout retains retryable marker releases lease and preserves financial evidence',
-        'renewal discovery_writer next ordinary call reaches Manager acknowledges complete fanout without financial replay',
-        'renewal discovery_writer completed fanout remains quiet on unchanged evidence',
-        'renewal role_writer incomplete fanout retains retryable marker releases lease and preserves financial evidence',
-        'renewal role_writer next ordinary call reaches Manager acknowledges complete fanout without financial replay',
-        'renewal role_writer completed fanout remains quiet on unchanged evidence',
-        'renewal preference_writer incomplete fanout retains retryable marker releases lease and preserves financial evidence',
-        'renewal preference_writer next ordinary call reaches Manager acknowledges complete fanout without financial replay',
-        'renewal preference_writer completed fanout remains quiet on unchanged evidence',
-        'renewal primary_mismatch incomplete fanout retains retryable marker releases lease and preserves financial evidence',
-        'renewal primary_mismatch next ordinary call reaches Manager acknowledges complete fanout without financial replay',
-        'renewal primary_mismatch completed fanout remains quiet on unchanged evidence',
-        'renewal nonboolean_success incomplete fanout retains retryable marker releases lease and preserves financial evidence',
-        'renewal nonboolean_success next ordinary call reaches Manager acknowledges complete fanout without financial replay',
-        'renewal nonboolean_success completed fanout remains quiet on unchanged evidence',
-        'renewal off is a definitive complete exclusion preserving private payload destination',
-        'renewal off successful exclusion retains existing notification throttle',
-        'renewal revoked is a definitive complete exclusion preserving private payload destination',
-        'renewal revoked successful exclusion retains existing notification throttle',
-        'renewal concurrent evidence generation preserves exact acknowledgement CAS and lease ownership',
-        'renewal next ordinary call acknowledges fresh evidence generation without financial effects',
-        'gateway manager_failure incomplete fanout retains retryable marker releases lease and preserves financial evidence',
-        'gateway manager_failure next ordinary call reaches Manager acknowledges complete fanout without financial replay',
-        'gateway manager_failure completed fanout remains quiet on unchanged evidence',
-        'gateway owner_failure incomplete fanout retains retryable marker releases lease and preserves financial evidence',
-        'gateway owner_failure next ordinary call reaches Manager acknowledges complete fanout without financial replay',
-        'gateway owner_failure completed fanout remains quiet on unchanged evidence',
-        'gateway discovery_writer incomplete fanout retains retryable marker releases lease and preserves financial evidence',
-        'gateway discovery_writer next ordinary call reaches Manager acknowledges complete fanout without financial replay',
-        'gateway discovery_writer completed fanout remains quiet on unchanged evidence',
-        'gateway role_writer incomplete fanout retains retryable marker releases lease and preserves financial evidence',
-        'gateway role_writer next ordinary call reaches Manager acknowledges complete fanout without financial replay',
-        'gateway role_writer completed fanout remains quiet on unchanged evidence',
-        'gateway preference_writer incomplete fanout retains retryable marker releases lease and preserves financial evidence',
-        'gateway preference_writer next ordinary call reaches Manager acknowledges complete fanout without financial replay',
-        'gateway preference_writer completed fanout remains quiet on unchanged evidence',
-        'gateway primary_mismatch incomplete fanout retains retryable marker releases lease and preserves financial evidence',
-        'gateway primary_mismatch next ordinary call reaches Manager acknowledges complete fanout without financial replay',
-        'gateway primary_mismatch completed fanout remains quiet on unchanged evidence',
-        'gateway nonboolean_success incomplete fanout retains retryable marker releases lease and preserves financial evidence',
-        'gateway nonboolean_success next ordinary call reaches Manager acknowledges complete fanout without financial replay',
-        'gateway nonboolean_success completed fanout remains quiet on unchanged evidence',
-        'gateway off is a definitive complete exclusion preserving private payload destination',
-        'gateway off successful exclusion retains existing notification throttle',
-        'gateway revoked is a definitive complete exclusion preserving private payload destination',
-        'gateway revoked successful exclusion retains existing notification throttle',
-        'gateway concurrent evidence generation preserves exact acknowledgement CAS and lease ownership',
-        'gateway next ordinary call acknowledges fresh evidence generation without financial effects',
+        domain+' '+target+' '+outcome
+        for domain in ('gateway','renewal')
+        for target in ('owner','none','delegated')
+        for outcome in ('quiet no-op','zero sends no financial or lease mutation')
     ]
     alert_mismatches=exact_current_proof_mismatches(financial_alerts,
         {'complete':True,'network_calls':0,'source_ref':'current-source',
          'baseline_source':'62eb06d164224947f1cda84144d08ff88d3a0c8e',
-         'actual_domain_callers':True,
-         'shared_ledger_owned_mariadb':True,
-         'complete_eligible_fanout_ack':True,
-         'failed_or_deferred_manager_retryable':True,
-         'next_ordinary_delivery_no_financial_replay':True,
-         'off_revoked_complete_exclusion':True,
-         'evidence_generation_cas_preserved':True,
-         'private_channel_policy_preserved':True,
-         'nonempty_fanout_required':True,
-         'strict_transport_success_required':True,
+         'actual_domain_callers':True,'shared_ledger_owned_mariadb':True,
+         'review_push_retired':True,
+         'financial_and_claim_state_unchanged':True,
+         'customer_and_business_outcome_routes_untouched':True,
         },'checks',required_financial_alert_checks)
     if alert_mismatches:
         raise RuntimeError('Durable financial alert fanout proof incomplete: '+
@@ -2223,7 +2167,7 @@ def run_authorization(tmp: str) -> tuple[dict, dict]:
             readiness.get('source_usdt_production_helper_compared') is True and
             readiness.get('source_policy_production_helper_compared') is True and
             readiness.get('source_members_verified')==package.EXPECTED_RUNTIME_COUNT and
-            readiness.get('all_eight_additive_shapes_exercised') is True and
+            readiness.get('all_nine_additive_shapes_exercised') is True and
             readiness.get('api_schema_capability_compared') is True and
             readiness.get('api_credentials_not_decrypted') is True and
             readiness.get('api_schema_014_disposable_only') is True and
@@ -2381,6 +2325,52 @@ def run_effects(tmp: str) -> tuple[dict, dict]:
         raise RuntimeError("Financial native source regression failed:\n"+
             (finance_run.stderr or finance_run.stdout)[-5000:])
     finance=json.loads(finance_path.read_text())
+    decision_path=Path(tmp)/"review-decision-idempotency.json"
+    worker=subprocess.run([
+        "python3",str(ROOT/"tools/test_post_v9_review_decisions.py"),
+        "--run-disposable","--report",str(decision_path)],
+        cwd=ROOT,timeout=90,capture_output=True,text=True)
+    if worker.returncode:
+        raise RuntimeError("Owned manual payment review decision regression failed:\n"+
+            (worker.stderr or worker.stdout)[-4000:])
+    decision=json.loads(decision_path.read_text())
+    required_decisions={
+        "decision_schema_unique_innodb",
+        "verified_finished_complete_single_child_eligible",
+        "not_finished_must_not_fake_payout",
+        "wrong_order_identity_rejected",
+        "underpaid_rejected",
+        "decision_token_binds_actor",
+        "decision_token_binds_action",
+        "decision_token_binds_expiry",
+        "decision_token_binds_provider_digest",
+        "approve_effect_completes",
+        "exact_ledger_closes_after_effect",
+        "exactly_one_wallet_credit",
+        "one_original_business_report",
+        "repeated_or_raced_approve_never_dispatches_second_effect",
+        "not_refunded_cannot_be_rejected",
+        "refunded_reject_commits",
+        "refund_audit_terminal",
+        "rejection_cannot_dispatch_service_or_wallet",
+        "ambiguous_remote_fenced_as_unknown",
+        "unknown_remote_effect_never_replayed",
+        "multiple_funded_child_not_fake_single_invoice",
+    }
+    if not (decision.get("complete") is True
+            and set(decision.get("checks",[]))==required_decisions
+            and decision.get("owned_mariadb") is True
+            and decision.get("real_review_decision_source") is True
+            and decision.get("test_effect_is_synthetic") is True
+            and decision.get("provider_http_calls")==0
+            and decision.get("telegram_calls")==0
+            and decision.get("audit_exactly_once") is True
+            and decision.get("financial_double_credit") is False
+            and decision.get("cron_operator_claim_survived") is True
+            and decision.get("inbox_only_unfinalized_with_funds_or_receipt") is True
+            and decision.get("api_module_loaded_on_first_entry") is True
+            and decision.get("examined")>=5):
+        raise RuntimeError("Manual review journal, queue or concurrent Cron fence unproven")
     # Current R10 financial contract: preserve authenticated settlement,
     # durable compensation proof and concurrency-safe operator recovery.
     mandatory_finance = {
@@ -2419,12 +2409,12 @@ def run_effects(tmp: str) -> tuple[dict, dict]:
         # Owner #26/#51: preserve retry-on-send-failure but never
         # equate an unpaid second child ID with received funds or
         # send a daily unchanged-evidence finance warning.
-        "nowpayments_evidenced_review_persian_inbox_retry_once",
-        "nowpayments_review_without_24_hour_resends",
+        "nowpayments_funded_review_quiet_no_push",
+        "nowpayments_repeat_review_quiet",
         "nowpayments_second_unpaid_child_is_not_payment",
         "nowpayments_unpaid_failed_child_no_operator_case",
         "nowpayments_same_child_funds_reopen_once_no_downgrade",
-        "nowpayments_funded_secondary_one_actionable_alert",
+        "nowpayments_secondary_paid_child_quiet",
         "nowpayments_operator_inbox_details_private_auth",
         "nowpayments_operator_provider_inquiry_readonly",
         "nowpayments_operator_unauthorized_callbacks_refused",
@@ -2506,8 +2496,8 @@ def run_effects(tmp: str) -> tuple[dict, dict]:
         "prepayment_stale_zarinpal_preserves_np_invoice",
         "prepayment_stale_button_allows_later_ipn",
         "prepayment_stale_button_preserves_creating",
-        "nowpayments_concurrent_alert_child_highwater_cas",
-        "nowpayments_concurrent_alert_worker_lease_exclusive",
+        "nowpayments_quiet_review_no_nested_send",
+        "nowpayments_quiet_review_no_alert_lease",
         "prepayment_renewal_terminal_paid_immutable",
         "prepayment_renewal_terminal_canceled_immutable",
         "prepayment_renewal_terminal_expired_immutable",
@@ -3187,7 +3177,7 @@ def run_effects(tmp: str) -> tuple[dict, dict]:
             gift.get("customer_money_effects")==0):
         raise RuntimeError("Gift-worker verified outcome/hold assurance incomplete")
 
-    return {'financial_native_route_guards': finance, 'service_effects': effects, 'create_verification_lock_order': verification_locking, 'strict_effect_transport_pin': pinned_effects, 'gift_source_enqueue_idempotency': gift_source, 'direct_admin_gift_verified': direct_gift, 'direct_admin_gift_native': native_direct_gift, 'owner_gift_policy': owner_gift_policy, 'owner_gift_locks': gift_locks, 'owner_gift_lock_negative_controls': gift_lock_controls, 'owner_gift_policy_negative_controls': gift_policy_negative_controls, 'gift_worker_safe_continuation': gift, 'gift_physical_target_continuity': physical_gift}, result
+    return {'financial_native_route_guards': finance, 'review_decision_idempotency': decision, 'service_effects': effects, 'create_verification_lock_order': verification_locking, 'strict_effect_transport_pin': pinned_effects, 'gift_source_enqueue_idempotency': gift_source, 'direct_admin_gift_verified': direct_gift, 'direct_admin_gift_native': native_direct_gift, 'owner_gift_policy': owner_gift_policy, 'owner_gift_locks': gift_locks, 'owner_gift_lock_negative_controls': gift_lock_controls, 'owner_gift_policy_negative_controls': gift_policy_negative_controls, 'gift_worker_safe_continuation': gift, 'gift_physical_target_continuity': physical_gift}, result
 
 
 def run_funding(tmp: str) -> tuple[dict, dict]:

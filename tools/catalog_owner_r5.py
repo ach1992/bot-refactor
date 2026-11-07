@@ -374,6 +374,23 @@ def verify_retained_display_keys():
 # source difference must be this explicitly enumerated 18-entry topic.
 DELIVERY_RECOVERY_BASE='17af1e55dc4cb8db6751a731bb223d93dc6f902f'
 DELIVERY_RECOVERY_BLOCK_SHA256='d10cb333f3576f5386a3f18226f569941a1488de7fae648822c507f8b1e9d4d8'
+WORKBENCH_BLOCKS={
+ 'finance_workbench':{
+  'sha':'b2ca5ebb7ac2e77948f3d952edab9b4cc563385ef9d0fcf2bcb2b7798014aedb',
+  'names':{'denied','checking','back','not_safe','challenge_expired',
+   'unavailable','migration_required','preview_button','reject_button',
+   'commit_approve','commit_reject','preview_approve','preview_reject',
+   'rejected_customer','rejected_report','result','status_completed',
+   'status_rejected','status_unknown','status_unavailable','status_stale',
+   'status_already','status_unsupported','approve_original','reject_original',
+   'manual_evidence_warning','prior_decision'}
+ },
+ 'delivery_workbench':{
+  'sha':'0ac67e667fe6669be3a8dae1a90de94dc7347dcb6bc129052f61d190bbf144f3',
+  'names':{'inbox_title','inbox_empty','inbox_case','open_inbox',
+    'native_inbox','back_finance','back_inbox'}
+ }
+}
 DELIVERY_RECOVERY_NAMES={
     'title','summary','line','warning','check_result','send_result',
     'check_ack','check','request_send','send_confirm','back','back_inbox',
@@ -386,12 +403,34 @@ def delivery_recovery_original_bytes(current:bytes) -> bytes:
           hashlib.sha256(block.group()).hexdigest()==DELIVERY_RECOVERY_BLOCK_SHA256,
           'delivery_recovery_exact_additive_block_changed')
     original=current[:block.start()]+current[block.end():]
+    for topic,proof in WORKBENCH_BLOCKS.items():
+        pattern=(rb"(?ms)^    '"+topic.encode()+rb"' => \[\n.*?^    \],\n")
+        matches=list(re.finditer(pattern,original))
+        check(len(matches)==1 and hashlib.sha256(matches[0].group()).hexdigest()==proof['sha'],
+              'workbench_exact_additive_source_identity:'+topic)
+        original=original[:matches[0].start()]+original[matches[0].end():]
     check(original==command('git','show',DELIVERY_RECOVERY_BASE+':messages/fa/admin.php'),
           'delivery_recovery_preexisting_catalog_bytes_changed')
     return original
 def delivery_recovery_copy_restore(sides:dict) -> dict:
     delivery_recovery_original_bytes((ROOT/'messages/fa/admin.php').read_bytes())
     check(set(sides)=={'user','admin'},'delivery_recovery_catalog_audiences')
+    restored=copy.deepcopy(sides)
+    for topic,proof in WORKBENCH_BLOCKS.items():
+        keys={topic+'.'+name for name in proof['names']}
+        found={key for key in restored['admin'] if key.startswith(topic+'.')}
+        check(found==keys and not any(k.startswith(topic+'.') for k in restored['user']),
+              'workbench_exact_owner_only_copy:'+topic)
+        for key in keys:
+            entry=restored['admin'][key];value=text(entry)
+            check(isinstance(value,str) and value.strip() and
+                  isinstance(params(entry),list) and
+                  len(params(entry))==len(set(params(entry))) and
+                  set(re.findall(r'\{([a-zA-Z_][a-zA-Z0-9_]*)\}',value))==set(params(entry)) and
+                  not re.search(r'[\u06f0-\u06f9\u0660-\u0669]',value),
+                  'workbench_copy_parameters_or_digits:'+key)
+            restored['admin'].pop(key)
+    sides=restored
     expected={'delivery_recovery.'+name for name in DELIVERY_RECOVERY_NAMES}
     actual={key for key in sides['admin'] if key.startswith('delivery_recovery.')}
     check(actual==expected and not any(key.startswith('delivery_recovery.')
@@ -411,7 +450,9 @@ def delivery_recovery_copy_restore(sides:dict) -> dict:
         check("'delivery_recovery."+key+"'" in (
             ROOT/'src/Finance/Routes/DeliveryRecovery.php').read_text() or
             "'delivery_recovery."+key+"'" in (
-            ROOT/'src/Finance/Routes/ManualReceipts.php').read_text(),
+            ROOT/'src/Finance/Routes/ManualReceipts.php').read_text() or
+            (key=='back_inbox' and "'delivery_workbench.back_inbox'" in
+             (ROOT/'src/Finance/Routes/DeliveryRecovery.php').read_text()),
             'delivery_recovery_copy_unbound_to_owner_route:'+key)
     restored=copy.deepcopy(sides)
     for key in actual:restored['admin'].pop(key)

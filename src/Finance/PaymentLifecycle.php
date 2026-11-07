@@ -14,7 +14,8 @@ require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
 
 function achbotPayUxTable(mysqli $db, string $name): bool {
     if (!in_array($name, ['payment_attempts','payment_transactions',
-                          'payment_message_refs','service_effects','automatic_renewal_attempts'], true)) return false;
+                          'payment_message_refs','service_effects','automatic_renewal_attempts',
+                          'payment_delivery_intents','payment_review_decisions'], true)) return false;
     try {
         $result = $db->query("SHOW TABLES LIKE '".$name."'");
         return $result instanceof mysqli_result && $result->num_rows === 1;

@@ -336,7 +336,8 @@ def main() -> dict:
                      '007_service_effects.sql',
                      '008_referral_awards.sql',
                      '009_bank_buy_invoice_claims.sql',
-                     '018_payment_delivery_intents.sql'):
+                     '018_payment_delivery_intents.sql',
+                     '019_payment_review_decisions.sql'):
             statement(d, (ROOT/'migrations/post-v9'/name).read_text())
         state = {
             'botState':'on', 'sellState':'on',
@@ -352,7 +353,7 @@ def main() -> dict:
         require((code == 0), 'line_142')
         require((result['source_file_count'] == package.EXPECTED_RUNTIME_COUNT), 'line_143')
         require((all(result['schema'][k] == 'columns_and_named_unique_indexes_detected_not_ddl_certified'
-                   for k in ('001','003','004','005','006','007','008','009','018'))), 'line_144')
+                   for k in ('001','003','004','005','006','007','008','009','018','019'))), 'line_144')
         require((has(result,'gateway_policies','PASS')), 'line_146')
         require(has(result,'wallet_transfer_storage','PASS'), 'wallet_cursor_storage_ready')
         require((result['methods']['wallet']['switch'] == 'on'), 'line_147')
@@ -795,7 +796,7 @@ def main() -> dict:
         'source_policy_production_helper_compared':True,
         'source_members_verified':package.EXPECTED_RUNTIME_COUNT,
         'original_23_table_schema_used':True,
-        'all_eight_additive_shapes_exercised':True,
+        'all_nine_additive_shapes_exercised':True,
         'api_schema_capability_compared':True,
         'api_credentials_not_decrypted':True,
         'api_schema_014_disposable_only':True,

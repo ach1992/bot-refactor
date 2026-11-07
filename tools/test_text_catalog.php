@@ -363,6 +363,43 @@ foreach($deliveryNames as$name){
   throw new RuntimeException('delivery_recovery_owner_only_addition');
  unset($shippingSides['admin'][$key]);
 }
+// #117's two additional, owner-private workbench topics are strictly
+// additive. Hash exact source blocks and prove their complete inventories;
+// never rebaseline or weaken the older whole-catalogue controls.
+$workbench = [
+ 'finance_workbench'=>[
+  'digest'=>'b2ca5ebb7ac2e77948f3d952edab9b4cc563385ef9d0fcf2bcb2b7798014aedb',
+  'names'=>['denied','checking','back','not_safe','challenge_expired','unavailable',
+   'migration_required','preview_button','reject_button','commit_approve','commit_reject',
+   'preview_approve','preview_reject','rejected_customer','rejected_report','result',
+   'status_completed','status_rejected','status_unknown','status_unavailable',
+   'status_stale','status_already','status_unsupported','approve_original',
+   'reject_original','manual_evidence_warning','prior_decision']],
+ 'delivery_workbench'=>[
+  'digest'=>'0ac67e667fe6669be3a8dae1a90de94dc7347dcb6bc129052f61d190bbf144f3',
+  'names'=>['inbox_title','inbox_empty','inbox_case','open_inbox','native_inbox',
+   'back_finance','back_inbox']],
+];
+foreach ($workbench as $topic=>$proof) {
+ $pattern="~(?ms)^    '".preg_quote($topic,'~')."' => \[\n.*?^    \],\n~";
+ $matches=[];
+ if(preg_match_all($pattern,$preDeliveryAdmin,$matches,PREG_OFFSET_CAPTURE)!==1 ||
+    hash('sha256',$matches[0][0][0])!==$proof['digest'])
+    throw new RuntimeException('workbench_exact_additive_source_identity:'.$topic);
+ $start=$matches[0][0][1];$length=strlen($matches[0][0][0]);
+ $preDeliveryAdmin=substr($preDeliveryAdmin,0,$start).
+     substr($preDeliveryAdmin,$start+$length);
+ if(!isset($deliverySourceCatalog[$topic]) ||
+    array_keys($deliverySourceCatalog[$topic])!==$proof['names'])
+    throw new RuntimeException('workbench_exact_owner_only_key_inventory:'.$topic);
+ foreach($proof['names'] as $name) {
+    $key=$topic.'.'.$name;
+    if(!array_key_exists($key,$shippingSides['admin']) ||
+       array_key_exists($key,$shippingSides['user']))
+       throw new RuntimeException('workbench_owner_only_key:'.$key);
+    unset($shippingSides['admin'][$key]);
+ }
+}
 // Exactly the Owner-approved Chili RC25 copy; preserve the old full-catalog
 // proofs by undoing ONLY its exact values in a comparison copy. Source PHP
 // is not modified; foreign copy or mixed revisions fail before old checks.
