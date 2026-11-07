@@ -90,15 +90,15 @@ class ShardContractTests(unittest.TestCase):
             "admin", "api", "services", "wallet", "presentation",
             "authorization", "effects", "funding"))
         owned = [field for group in catalog.values() for field in group["fields"]]
-        self.assertEqual(len(owned), 69)
+        self.assertEqual(len(owned), 70)
         self.assertEqual(len(owned), len(set(owned)))
         self.assertEqual(set(owned) & set(shard.FOUNDATION_FIELDS), set())
 
     def test_complete_aggregate_requires_real_validated_family_proofs(self):
         result = shard.aggregate(self.source, self.reports)
         self.assertIs(result["complete"], True)
-        # All 77 pre-sharding fields remain, plus the explicit validation record.
-        self.assertEqual(len(result), 78)
+        # All 78 current fields remain, plus the explicit validation record.
+        self.assertEqual(len(result), 79)
         self.assertIs(result["historical_suite_requires_separate_pinned_ci_execution"], False)
         self.assertEqual(result["validation"]["scope"], "full_current_php85")
         self.assertEqual(result["validation"]["families"], list(shard.FAMILIES))

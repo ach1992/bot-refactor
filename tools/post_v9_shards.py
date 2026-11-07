@@ -53,7 +53,7 @@ def catalog() -> dict:
     if len(FAMILIES) != COUNT or set(FAMILIES) != set(suites.FAMILY_FIELDS):
         raise RuntimeError("Acceptance family catalog is incomplete")
     fields = [field for family in FAMILIES for field in suites.FAMILY_FIELDS[family]]
-    if len(fields) != len(set(fields)) or len(fields) != 69:
+    if len(fields) != len(set(fields)) or len(fields) != 70:
         raise RuntimeError("Acceptance field ownership is incomplete or overlapping")
     return {family: {"index": index, "fields": list(suites.FAMILY_FIELDS[family]),
                      "source_updates": list(suites.SOURCE_UPDATES[family])}

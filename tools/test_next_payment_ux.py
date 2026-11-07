@@ -185,6 +185,9 @@ def check():
             ids.append(pay(w,e,'uncertain'+str(n),kind,state='paid',provider='zarinpal',order=41 if n in (1,2,3) else 0))
         wallet_uncertain=pay(w,e,'wallet-volume-hold','INCREASE_VOLUME_41_51',state='processing_wallet',order=41)
         manual=pay(w,e,'manualreview','INCREASE_WALLET',state='have_sent',provider='bank_transfer',status='receipt_received')
+        # A human receipt must have a persisted original Telegram
+        # message to be actionable; an arbitrary have_sent label is not proof.
+        sql(w,e,f"UPDATE pays SET message_id=501,chat_id=9001 WHERE id={manual}")
         auto=pay(w,e,'autorenew','RENEW_ACCOUNT',state='processing_wallet',order=41)
         sql(w,e,f"INSERT INTO automatic_renewal_attempts (order_id,cycle_expire,pay_row_id,user_id,plan_id,server_id,account_remark,price_toman,duration_days,volume_gb,new_expire,stage,reason_code) VALUES (41,1,{auto},1001,7,2,'fixture41',100,30,2,{future},'review','remote_unconfirmed')")
         sql(w,e,"INSERT INTO payment_transactions(attempt_id,provider,payment_id,observed_status) SELECT id,provider,'local-child-proof','finished' FROM payment_attempts WHERE order_hash='uncertain4'")
@@ -192,8 +195,10 @@ def check():
         r=recovery.call(w,e,driver,op='route',callback='attentionInbox')
         keys={b['callback_data'] for row in event(r,'EDIT')[0]['buttons']['inline_keyboard'] for b in row}
         assert not ({f'attentionCase_{historic}',f'attentionCase_{completed}',f'attentionCase_{recorded}'} & keys)
-        assert all(f'attentionCase_{i}' in keys for i in ids+[manual,auto,unresolved,wallet_uncertain]),(keys,ids,manual,auto,r)
-        checks.append('attention_covers_all_subjects_and_automatic_renewal_excludes_completed_and_historical_paid')
+        assert f'attentionCase_{manual}' in keys,('original_receipt_missing',keys,manual)
+        assert not ({f'attentionCase_{i}' for i in ids+[auto,unresolved,wallet_uncertain]} & keys),(
+            'finalized_or_service_only_leaked_to_finance_review',keys,ids,manual,auto,r)
+        checks.append('payment_review_quiet_includes_actual_manual_receipt_excludes_terminal_service_only')
         specialist=recovery.call(w,e,driver,op='list')['value']
         assert historic not in [int(x['id']) for x in specialist] and recorded not in [int(x['id']) for x in specialist]
         assert unresolved in [int(x['id']) for x in specialist]

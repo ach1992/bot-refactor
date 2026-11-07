@@ -1756,6 +1756,10 @@ function doAction($payRowId, $gateType) {
  * Rendering a return page is never itself merchant settlement evidence.
  */
 function showForm($msg, $type = "", $state = false, $presentation = null) {
+    // A merchant browser return is a presentation context; Cron and the
+    // owner's private Telegram callback are not. Suppress BOTH body and
+    // payment-page HTTP headers at this boundary, not only output buffering.
+    if (defined('ACHBOT_NP_RECONCILE_ONLY')) return;
     require_once __DIR__ . '/PaymentPage.php';
     // $presentation is derived from the caller's already-trusted outcome.
     // The legacy $state and browser-facing message are not proof of delivery.

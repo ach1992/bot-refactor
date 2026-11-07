@@ -171,15 +171,15 @@ def run_admin(tmp: str) -> tuple[dict, dict]:
                    'duplicate_heading_markers':0,'guide_provider_cases':2,'guide_JSON_examples':3,
                    'actual_HTML_transport_cases':2,'archived_wrong_parse_RED':True,
                    'receipt_PRICE_template_cases':6,'real_Telegram_rendering':'NOT_TESTED',
-                   'composed_catalog_correction_keys':22,'composed_heading_cases':42,
+                   'composed_catalog_correction_keys':22,'composed_heading_cases':41,
                    'settings_navigation_label_amendments':3,'settings_navigation_retired_keys':4,
                    'display_context_catalog_additions':7,'display_context_catalog_negative_controls':9,'simple_display_catalog_additions':14,'simple_display_label_changes':2,
                    'notification_catalog_additions':4,'staff_role_description_amendments':1,
                    'staff_catalog_negative_controls':6,
                    'telegram_update_id_label_cases':1,'telegram_update_id_numeric_value_preserved':True,
                    'archived_wrong_telegram_update_label_RED':True,
-                   'composed_heading_source_paths':16,'composed_heading_archived_RED':18,
-                   'composed_heading_negative_controls':6,'identical_heading_reuse_cases':1,
+                   'composed_heading_source_paths':16,'composed_heading_archived_RED':17,
+                   'composed_heading_negative_controls':5,'identical_heading_reuse_cases':1,
                    'raw_code_heading_exclusions':1,'numeric_id_variant_negative_controls':5,
                    'preserved_telegram_object_id_cases':3,'preserved_numeric_id_cases':1,
                    'composition_scope':'source_expression_wallet_finance_receipt_support_admin_stats_matrix'}
@@ -2253,7 +2253,7 @@ def run_authorization(tmp: str) -> tuple[dict, dict]:
         "ambiguous_remote_result_never_replayed_or_refunded",
         "remote_success_database_drift_held_for_review",
         "crashed_worker_remote_marker_blocks_retry",
-        "private_operator_notice_retry_and_once_per_day_ack",
+        "quiet_operator_review_no_push_or_lease_mutation",
         "two_real_php_mysql_clients_exactly_one_debit_and_remote",
         "nonunique_legacy_identity_cannot_fund_renewal",
         "real_cron_sweep_one_eligible_marzban_order",
@@ -2276,7 +2276,7 @@ def run_authorization(tmp: str) -> tuple[dict, dict]:
         "f1_real_expiry_cron_cleanup_blocks_unresolved_journal",
         "f1_real_expired_cron_cleanup_single_verified_delete",
         "f1_real_cron_remote_failure_does_not_repeat_destructive_effect",
-        "f1_real_cron_entrypoint_warning_exception_cannot_skip_renewal_alert",
+        "f1_real_cron_entrypoint_warning_exception_cannot_skip_renewal_reconciliation",
         "f1_real_marzban_delete_http_failure_not_falsely_successful",
         "f1_official_http_200_guarded_customer_once_full_evidence",
         "f1_official_http_200_guarded_admin_once_full_evidence",
@@ -2367,6 +2367,7 @@ def run_effects(tmp: str) -> tuple[dict, dict]:
             and decision.get("audit_exactly_once") is True
             and decision.get("financial_double_credit") is False
             and decision.get("cron_operator_claim_survived") is True
+            and decision.get("internal_payment_page_suppressed") is True
             and decision.get("inbox_only_unfinalized_with_funds_or_receipt") is True
             and decision.get("api_module_loaded_on_first_entry") is True
             and decision.get("examined")>=5):

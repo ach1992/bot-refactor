@@ -198,7 +198,9 @@ def main():
   if cron.returncode or cron.stderr:
    raise RuntimeError('cron operator race: '+cron.stderr[-1800:])
   assert json.loads(cron.stdout)['cron_operator_claim_survived']
+  assert json.loads(cron.stdout)['internal_payment_page_suppressed']
   out['cron_operator_claim_survived']=True
+  out['internal_payment_page_suppressed']=True
   inbox=d/'review-inbox.php';inbox.write_text(INBOX)
   inc=subprocess.run(['php','-d','disable_functions=curl_init,curl_exec',
       str(inbox),str(ROOT),str(d/'mysql.sock'),DB],
@@ -227,7 +229,13 @@ if(!$row || $row['stage']!=='fulfilling' ||
    $row['provider_status']!=='operator_verified_finished' ||
    $row['state']!=='pending' || $res['completed']!==0 || $res['review']!==0)
  throw new RuntimeException('concurrent_cron_clobbered_operator_fulfillment');
-echo json_encode(['cron_operator_claim_survived'=>true],JSON_THROW_ON_ERROR);
+ob_start();
+showForm('internal-agent-must-not-render','internal',true,'review');
+$html=ob_get_clean();
+if($html!=='' || headers_list())
+ throw new RuntimeException('internal_payment_page_leaked_to_webhook');
+echo json_encode(['cron_operator_claim_survived'=>true,
+ 'internal_payment_page_suppressed'=>true],JSON_THROW_ON_ERROR);
 '''
 INBOX=r'''<?php
 error_reporting(E_ALL & ~E_DEPRECATED);
