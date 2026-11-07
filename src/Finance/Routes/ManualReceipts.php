@@ -413,6 +413,24 @@ if (preg_match('/^serviceRecovery(Inbox|Case)(?:_([1-9][0-9]{0,17}))?$/D',
             $attempt=$pay['attempt']??null;
             $canResume=achbotRecoveryCanResumeManualPurchase($connection,$pay) ||
                 achbotRecoveryCanResumeBankPurchase($connection,$pay);
+            $pendingEdit=null;
+            if (($pay['state']??null)==='approved' &&
+                preg_match('/^[A-Za-z0-9_-]{1,50}$/D',(string)($pay['hash_id']??''))) {
+                require_once __DIR__.'/../ManualEditRecovery.php';
+                if (achbotManualPgEditPending($connection,$pay)) {
+                    $type=(string)$pay['type'];
+                    $prefix=$type==='RENEW_ACCOUNT'?'approveRenewAcc':
+                        (str_starts_with($type,'INCREASE_DAY_')?'approveIncreaseDay':
+                         (str_starts_with($type,'INCREASE_VOLUME_')?'approveIncreaseVolume':null));
+                    if ($prefix!==null) $pendingEdit=$prefix.(string)$pay['hash_id'];
+                }
+            }
+            $editDelivery=[];
+            if (($pay['state']??null)==='approved' &&
+                achbotPayUxTable($connection,'payment_followup_intents')) {
+                require_once __DIR__.'/../FollowupOutbox.php';
+                $editDelivery=achbotFollowupSummary($connection,$id,'approved_edit');
+            }
             $body=achbotMessageHtml('service_workbench.case_title',[
                 'pay'=>$id,'user'=>$pay['user_id'],
                 'state'=>$pay['state'],'type'=>$pay['type']])."
@@ -423,12 +441,44 @@ if (preg_match('/^serviceRecovery(Inbox|Case)(?:_([1-9][0-9]{0,17}))?$/D',
 ".($canResume
                     ?achbotMessage('service_recovery_action.resume_warning')
                     :achbotMessage('service_workbench.readonly_warning'));
+            if ($editDelivery) {
+                // Unresolved original recipients first; show acknowledged
+                // peers for context. This is an Owner-private SQL-only view.
+                $unresolved=[];$acknowledged=[];
+                foreach ($editDelivery as $packet) {
+                    if (in_array((string)$packet['state'],
+                            ['pending','dispatching','unknown'],true))
+                        $unresolved[]=$packet;
+                    elseif ($packet['state']==='acknowledged')
+                        $acknowledged[]=$packet;
+                }
+                $visible=array_slice(array_merge($unresolved,$acknowledged),0,10);
+                $body.="\n\n".achbotMessage('service_edit_delivery.header');
+                foreach ($visible as $packet)
+                    $body.="\n".achbotMessageHtml('service_edit_delivery.line',[
+                        'role'=>(string)$packet['role'],
+                        'state'=>(string)$packet['state'],
+                        'attempts'=>(int)$packet['attempt_count'],
+                        'recipient'=>(string)$packet['recipient'],
+                        'message_id'=>$packet['message_id']===null?'-':
+                            (int)$packet['message_id']]);
+                if (count($editDelivery)>count($visible))
+                    $body.="\n".achbotMessage('service_edit_delivery.more');
+                $body.="\n".achbotMessage('service_edit_delivery.warning');
+            }
             if ($canResume) {
                 // The existing accept handler is the only financial/native
                 // continuation; its original proof and once-only journals
                 // are rechecked under locks. No new recovery state machine.
                 $buttons[]=[['text'=>achbotMessage('service_recovery_action.resume_purchase'),
                     'callback_data'=>'accept'.$pay['hash_id']]];
+            }
+            if ($pendingEdit!==null) {
+                // The original payments callback dispatches PENDING 020
+                // packets only; approved means there is no financial/native
+                // operation to repeat. UNKNOWN remains a read-only case.
+                $buttons[]=[['text'=>achbotMessage('service_recovery_action.resume_verified_edit'),
+                    'callback_data'=>$pendingEdit]];
             }
             if ($pay['type']==='BUY_SUB') {
                 $buttons[]=[['text'=>achbotMessage('delivery_workbench.native_inbox'),

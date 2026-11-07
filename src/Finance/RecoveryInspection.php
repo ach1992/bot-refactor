@@ -184,11 +184,18 @@ function achbotRecoveryTechnicalSql(mysqli $db): string {
                   'fulfillment_failed','fulfillment_needs_review',
                   'operator_fulfillment_unconfirmed')
               AND p.state='paid')" : '0';
+    // Once-local approved PasarGuard edits can retain PENDING or UNKNOWN
+    // sealed notices. Display them as delivery cases, never unpaid funds.
+    $editNotices=achbotPayUxTable($db,'payment_followup_intents')
+        ? "EXISTS (SELECT 1 FROM payment_followup_intents f
+             WHERE f.pay_row_id=p.id AND f.stage='approved_edit'
+               AND f.state IN ('pending','dispatching','unknown'))" : '0';
     // These nonterminal processing states are themselves an incident if
     // the expected journal is missing. Surface for read-only diagnosis,
     // never silently drop a potentially debited wallet or remote CREATE.
     return "(p.state IN ('processing','processing_wallet')
-        OR (p.state='paid' AND (($renewals) OR ($effects) OR ($hosted))))";
+        OR (p.state='paid' AND (($renewals) OR ($effects) OR ($hosted)))
+        OR (p.state='approved' AND ($editNotices)))";
 }
 
 /** Only offer the ORIGINAL approval callback when its original manual BUY_SUB

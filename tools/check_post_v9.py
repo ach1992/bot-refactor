@@ -284,6 +284,18 @@ def api_native_observation_mismatches(proof: dict, expected: list[str]) -> dict:
         *[f'manual_{kind}_{phase}' for kind in ('renew','day','volume')
           for phase in ('resume_verified_local_only_once',
                         'repeat_never_reapplies_or_audits')],
+        *[f'manual_{kind}_{phase}' for kind in ('renew','day','volume')
+          for phase in ('postcommit_before_telegram_staged',
+                        'delivery_only_resume_pending_once',
+                        'delivery_only_repeat_never_resends')],
+        'manual_volume_unknown_customer_ack_not_automatically_resent',
+        'manual_day_missing_followup_schema_rolls_back_local_finish',
+        'manual_edit_owner_case_customer_pending_primary_acknowledged',
+        'manual_edit_owner_case_customer_unknown_no_replay',
+        'manual_edit_owner_case_mirror_dispatching_original_message',
+        'manual_edit_owner_case_fully_acknowledged_not_recoverable',
+        'manual_edit_owner_case_61st_customer_pending_before_limit',
+        'manual_edit_owner_case_61st_customer_unknown_without_replay',
         *[f'manual_volume_resume_refuses_{reason}' for reason in (
             'unverified','wrong_key','wrong_quote','wrong_identity',
             'nonmanual_claim')],
@@ -293,8 +305,9 @@ def api_native_observation_mismatches(proof: dict, expected: list[str]) -> dict:
                          'missing_original_actor')],
     }
     expected_review_stderr={
-        name for name in local_recovery if '_resume_refuses_' in name
+        name for name in local_recovery if '_resume_refuses_' in name or name=='manual_day_missing_followup_schema_rolls_back_local_finish'
     }
+    expected_notice_stderr={'manual_volume_unknown_customer_ack_not_automatically_resent'}
     # BUY_SUB has no existing native account. Its SQL claim must not
     # contact a provider; only existing-account paths can require native
     # preflight HTTP. Bind these two specific new-buy race observations.
@@ -321,14 +334,21 @@ def api_native_observation_mismatches(proof: dict, expected: list[str]) -> dict:
                 pending.extend(value.values())
             elif type(value) is list:
                 pending.extend(value)
-        # Expected failed-proof callbacks emit their real bounded internal
-        # recovery diagnostic. Do not erase source diagnostics merely to get
-        # a green assertion; reject any other stderr and ALL PHP fatals.
+        # Expected failed-proof callbacks emit one bounded diagnostic, while
+        # other callbacks in the SAME multi-phase observation must remain
+        # clean. Enforce the exact number AND content of warning streams,
+        # reject any other stderr and all PHP fatals.
         def acceptable_stderr(stderr):
             if stderr=='':
-                return name not in expected_review_stderr
-            if name not in expected_review_stderr or type(stderr) is not str:
-                return False
+                return True
+            if type(stderr) is not str: return False
+            if name in expected_notice_stderr:
+                return re.fullmatch(
+                    r'\[\d{2}-[A-Za-z]{3}-\d{4} \d{2}:\d{2}:\d{2} UTC\] '
+                    r'achbot_manual_pg_edit_notice_pending pay_id=[1-9][0-9]* count=[1-9][0-9]*\n',
+                    stderr
+                ) is not None
+            if name not in expected_review_stderr: return False
             return re.fullmatch(
                 r'\[\d{2}-[A-Za-z]{3}-\d{4} \d{2}:\d{2}:\d{2} UTC\] '
                 r'achbot_manual_pg_edit_recovery_needs_review '
@@ -337,10 +357,14 @@ def api_native_observation_mismatches(proof: dict, expected: list[str]) -> dict:
                 r'class=[A-Za-z][A-Za-z0-9_]* code=[0-9]+\n',
                 stderr
             ) is not None
-        if not results or any(type(value['events']) is not list or
-                value['fatal'] is not None or
-                not acceptable_stderr(value.get('stderr')) for value in results):
-            mismatches[name+'.php_result']='required clean PHP result or exact bounded review diagnostic'
+        expected_warnings=1 if name in expected_review_stderr|expected_notice_stderr else 0
+        actual_warnings=sum(isinstance(value.get('stderr'),str) and
+                            bool(value['stderr']) for value in results)
+        if (not results or actual_warnings!=expected_warnings or
+                any(type(value['events']) is not list or
+                    value['fatal'] is not None or
+                    not acceptable_stderr(value.get('stderr')) for value in results)):
+            mismatches[name+'.php_result']='required clean PHP results and exact bounded diagnostic count'
         if name not in replay|local_recovery|local_buy_claim and not events:
             mismatches[name+'.native_http']='required actual native preflight HTTP'
         if name in local_buy_claim and events:

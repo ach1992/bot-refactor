@@ -404,6 +404,10 @@ WORKBENCH_BLOCKS={
   'sha':'37c23110bf7b6696eef5b2c8a552d9bccb519ac830a0094aa876adb57a656360',
   'names':{'resume_purchase','resume_warning','resume_verified_edit','edit_warning','edit_unverified'}
  },
+ 'service_edit_delivery':{
+  'sha':'32355d7bacf05d19b252482f21c2ea382723a63f44ddb7fb3e89c9e24fa9a8fa',
+  'names':{'header','line','more','warning'}
+ },
  'delivery_workbench':{
   'sha':'0ac67e667fe6669be3a8dae1a90de94dc7347dcb6bc129052f61d190bbf144f3',
   'names':{'inbox_title','inbox_empty','inbox_case','open_inbox',

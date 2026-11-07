@@ -573,6 +573,25 @@ def run_api(tmp: str) -> tuple[dict, dict]:
         'manual_volume_verified_native_crash_leaves_processing',
         'manual_volume_resume_verified_local_only_once',
         'manual_volume_repeat_never_reapplies_or_audits',
+        # Durable original 020 receipt/customer sends for verified native edits.
+        'manual_renew_postcommit_before_telegram_staged',
+        'manual_renew_delivery_only_resume_pending_once',
+        'manual_renew_delivery_only_repeat_never_resends',
+        'manual_day_postcommit_before_telegram_staged',
+        'manual_day_delivery_only_resume_pending_once',
+        'manual_day_delivery_only_repeat_never_resends',
+        'manual_volume_postcommit_before_telegram_staged',
+        'manual_volume_delivery_only_resume_pending_once',
+        'manual_volume_delivery_only_repeat_never_resends',
+        'manual_volume_unknown_customer_ack_not_automatically_resent',
+        'manual_day_missing_followup_schema_rolls_back_local_finish',
+        # Independent review REQUIRED-1: actual Owner-private UI evidence.
+        'manual_edit_owner_case_customer_pending_primary_acknowledged',
+        'manual_edit_owner_case_customer_unknown_no_replay',
+        'manual_edit_owner_case_mirror_dispatching_original_message',
+        'manual_edit_owner_case_fully_acknowledged_not_recoverable',
+        'manual_edit_owner_case_61st_customer_pending_before_limit',
+        'manual_edit_owner_case_61st_customer_unknown_without_replay',
         # Reviewer R1/R2: original approver and immutable amount, all kinds.
         'manual_renew_resume_refuses_changed_payment_amount',
         'manual_renew_resume_refuses_changed_attempt_amount',
@@ -599,7 +618,7 @@ def run_api(tmp: str) -> tuple[dict, dict]:
     api_native_mismatches=exact_current_proof_mismatches(api_native,
         {'complete':True,'source_real_php':True,'actual_pasarguard_http':True,
          'socket_mariadb':True,'live_requests':0,'installed_tested':False,
-         'migrations_executed':['001_marzban_panel_group_id.sql', '003_payment_attempts.sql', '004_automatic_renewal_attempts.sql', '006_payment_message_refs.sql', '007_service_effects.sql', '008_referral_awards.sql', '009_bank_buy_invoice_claims.sql', '011_provider_identity.sql', '012_shared_provider_storage.sql', '014_api_payment_evidence.sql', '018_payment_delivery_intents.sql'],
+         'migrations_executed':['001_marzban_panel_group_id.sql', '003_payment_attempts.sql', '004_automatic_renewal_attempts.sql', '006_payment_message_refs.sql', '007_service_effects.sql', '008_referral_awards.sql', '009_bank_buy_invoice_claims.sql', '011_provider_identity.sql', '012_shared_provider_storage.sql', '014_api_payment_evidence.sql', '018_payment_delivery_intents.sql', '020_payment_followup_intents.sql'],
          'source_head':current_api_head},
         'scenarios',required_api_native)
     if api_native.get('scenarios')!=required_api_native:
@@ -1185,15 +1204,15 @@ def run_wallet(tmp: str) -> tuple[dict, dict]:
             and text_catalog.get("native",{}).get("pre_style_privacy_corrections")==3
             and text_catalog.get("native",{}).get("actual_traffic_helper_parity_cases")==18
             and text_catalog.get("editable_catalog_files")==2
-            and text_catalog.get("logical_topics")==28+7
+            and text_catalog.get("logical_topics")==28+8
             and text_catalog.get("current_authorized_source_edits")==26
             and text_catalog.get("retired_parser_tokens")==23
             and text_catalog.get("relocation_source_ref")=="ecd30ba9192ed374703118a6c131be8809cc7b06"
             and text_catalog.get("native",{}).get("current_retired_feature_keys")==3
-            and text_catalog.get("catalog_keys")==2780+14+9+18+27+12+7+17+2+2+3
+            and text_catalog.get("catalog_keys")==2780+14+9+18+27+12+7+17+2+2+3+4
             and text_catalog.get("native",{}).get("editable_catalog_files")==2
-            and text_catalog.get("native",{}).get("logical_topics")==28+7
-            and text_catalog.get("native",{}).get("current_catalog_keys")==2780+14+9+18+27+12+7+17+2+2+3
+            and text_catalog.get("native",{}).get("logical_topics")==28+8
+            and text_catalog.get("native",{}).get("current_catalog_keys")==2780+14+9+18+27+12+7+17+2+2+3+4
             and text_catalog.get("native",{}).get("current_gift_admin_additions")==1
             and text_catalog.get("native",{}).get("current_gift_catalog_negative_controls")==8
             and text_catalog.get("native",{}).get("current_gift_catalog_negative_scenarios")==[
@@ -1217,15 +1236,16 @@ def run_wallet(tmp: str) -> tuple[dict, dict]:
             and text_catalog["native"]["current_byte_preserved_keys"]
                 +text_catalog["native"]["current_style_changes"]
                 +text_catalog["native"]["current_added_admin_keys"]==2523
-            # #117 has seven source-hash-pinned workbench topics. Two added
-            # owner-only financial-exception labels include one three-slot
-            # report and one zero-slot warning. Their native proof adds
-            # seven interpolation assertions and one object/multi-parameter/
-            # one-pass template, while preserving the original negative tests.
-            and text_catalog.get("native",{}).get("current_native_template_assertions")==4120+24+9+139+42+7+2+3
-            and text_catalog.get("native",{}).get("current_object_conversion_templates")==268+2+15+5+1
-            and text_catalog.get("native",{}).get("current_shared_multi_parameter_templates")==66+1+14+5+1
-            and text_catalog.get("native",{}).get("current_one_pass_templates")==268+2+15+5+1
+            # #117 now has eight strictly source-hash-pinned additive topics:
+            # the original seven remain byte-identical, and the new four-entry
+            # Owner-private delivery view contributes three zero-slot messages
+            # and one five-slot message: 3 + 6 native samples, one object,
+            # one multi-parameter object and one one-pass sample.
+            # Preserve all prior counts and negative controls.
+            and text_catalog.get("native",{}).get("current_native_template_assertions")==4120+24+9+139+42+7+2+3+9
+            and text_catalog.get("native",{}).get("current_object_conversion_templates")==268+2+15+5+1+1
+            and text_catalog.get("native",{}).get("current_shared_multi_parameter_templates")==66+1+14+5+1+1
+            and text_catalog.get("native",{}).get("current_one_pass_templates")==268+2+15+5+1+1
             and text_catalog.get("native",{}).get("current_r5_changes")==273
             and text_catalog.get("native",{}).get("current_r5_retired_keys")==10
             and text_catalog.get("native",{}).get("current_r5_added_keys")==60
@@ -1233,7 +1253,7 @@ def run_wallet(tmp: str) -> tuple[dict, dict]:
             and text_catalog.get("native",{}).get("current_non_ascii_digit_templates")==0
             and text_catalog.get("presentation",{}).get("status")=="PASS"
             and text_catalog.get("presentation",{}).get("editable_files")==2
-            and text_catalog.get("presentation",{}).get("current_keys")==2780+14+9+18+27+12+7+17+2+2+3
+            and text_catalog.get("presentation",{}).get("current_keys")==2780+14+9+18+27+12+7+17+2+2+3+4
             and text_catalog.get("presentation",{}).get("numeric_template_changes")==23
             and text_catalog.get("presentation",{}).get("adjacent_emoji_violations")==0
             and text_catalog.get("presentation",{}).get("parameter_exception_count")==3
@@ -1285,11 +1305,13 @@ def run_wallet(tmp: str) -> tuple[dict, dict]:
         # Four retired #112 references and the additional old direct-delete
         # callback reference are proven absent by test_next_text_catalog.py.
         # Keep complete current-reference equality, never a lower bound.
-        'runtime_references':2453+14-1-6-4-1+8-3+28+12-5+2+3,
+        'runtime_references':2453+14-1-6-4-1+8-3+28+12-5+2+3+4,
         # +28 owner financial/service/delivery copy keys; +12 net from R2
         # financial exception and R3 final receipt. Two earlier recovery
-        # labels and three new original-edit recovery labels are statically
-        # referenced. The five retired second-confirmation labels remain
+        # labels and three original-edit recovery labels are statically
+        # referenced, plus the four new SHA-pinned Owner delivery evidence
+        # labels in the same existing recovery view. The five retired
+        # second-confirmation labels remain
         # absent under the exact inherited source checks, but are retained
         # in the editable historical catalog.
         # The exact orphan/source inventory proof remains mandatory.

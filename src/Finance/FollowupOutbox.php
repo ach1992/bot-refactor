@@ -41,7 +41,7 @@ function achbotFollowupIntentKey(string $stage,string $role,string $kind,
 function achbotFollowupInsertLocked(mysqli $db,array $pay,string $stage,string $role,
                                     string $kind,string $recipient,?int $messageId,
                                     array $content): void {
-    if (!in_array($stage,['approved_purchase','manual_reject','referral_reward'],true) ||
+    if (!in_array($stage,['approved_purchase','approved_edit','manual_reject','referral_reward'],true) ||
         !in_array($role,['customer','operator','receipt_primary','receipt_mirror',
                           'referral_admin','referral_channel','referral_inviter'],true) ||
         !in_array($kind,['send','edit'],true) ||
@@ -57,6 +57,11 @@ function achbotFollowupInsertLocked(mysqli $db,array $pay,string $stage,string $
     $payId=(int)($pay['id']??0);
     if ($payId<=0 || (int)($pay['user_id']??0)<=0 ||
         ($stage==='approved_purchase' && ($pay['type']??'')!=='BUY_SUB') ||
+        ($stage==='approved_edit' &&
+            (($pay['state']??null)!=='approved' ||
+             !((string)($pay['type']??'')==='RENEW_ACCOUNT' ||
+               preg_match('/^INCREASE_(?:DAY|VOLUME)_[1-9][0-9]*_[1-9][0-9]*$/D',
+                          (string)($pay['type']??''))===1))) ||
         ($role==='customer' && $recipient!==(string)(int)$pay['user_id']) ||
         ($role==='receipt_primary' &&
             ($recipient!==(string)(int)$pay['chat_id'] ||
@@ -118,11 +123,16 @@ function achbotFollowupRecipientAllowed(mysqli $db,array $pay,array $r): bool {
 }
 function achbotFollowupValidateLocked(mysqli $db,array $pay,array $r): ?array {
     if ((int)$pay['id']!==(int)$r['pay_row_id'] ||
-        !in_array((string)$r['stage'],['approved_purchase','manual_reject','referral_reward'],true) ||
+        !in_array((string)$r['stage'],['approved_purchase','approved_edit','manual_reject','referral_reward'],true) ||
         !in_array((string)$r['kind'],['send','edit'],true) ||
         ($r['stage']==='manual_reject' && $pay['state']!=='declined') ||
         (in_array($r['stage'],['approved_purchase','referral_reward'],true) &&
             ($pay['state']!=='approved' || $pay['type']!=='BUY_SUB')) ||
+        ($r['stage']==='approved_edit' &&
+            ($pay['state']!=='approved' ||
+             !((string)$pay['type']==='RENEW_ACCOUNT' ||
+               preg_match('/^INCREASE_(?:DAY|VOLUME)_[1-9][0-9]*_[1-9][0-9]*$/D',
+                          (string)$pay['type'])===1))) ||
         (int)$pay['approved_by']<=0 ||
         !hash_equals((string)$r['pay_fingerprint'],
             achbotPaymentEvidencePayFingerprint($pay)) ||
@@ -233,7 +243,7 @@ function achbotFollowupDispatchOne(mysqli $db,int $id): string {
 /** All pending rows only, including previous-crash rows. UNKNOWN untouched. */
 function achbotFollowupDispatchPending(mysqli $db,int $payId,string $stage): array {
     if (!achbotFollowupSchemaReady($db) || $payId<=0 ||
-        !in_array($stage,['approved_purchase','manual_reject','referral_reward'],true)) return [];
+        !in_array($stage,['approved_purchase','approved_edit','manual_reject','referral_reward'],true)) return [];
     $cursor=0;$out=[];
     while (true) {
         $q=$db->prepare("SELECT id FROM payment_followup_intents
@@ -251,9 +261,13 @@ function achbotFollowupDispatchPending(mysqli $db,int $payId,string $stage): arr
 }
 function achbotFollowupSummary(mysqli $db,int $payId,string $stage): array {
     if (!achbotFollowupSchemaReady($db)) return [];
-    $q=$db->prepare('SELECT kind,role,recipient,message_id,state,attempt_count
+    // Prioritize uncertain original edit notices before the bounded read,
+    // not after it. Other follow-up stages retain their original ID order.
+    $q=$db->prepare("SELECT kind,role,recipient,message_id,state,attempt_count
         FROM payment_followup_intents WHERE pay_row_id=? AND stage=?
-        ORDER BY id LIMIT 60');
+        ORDER BY CASE WHEN stage='approved_edit' AND
+            state IN ('pending','dispatching','unknown') THEN 0 ELSE 1 END,
+            id LIMIT 60");
     $q->bind_param('is',$payId,$stage);$q->execute();
     $rows=$q->get_result()->fetch_all(MYSQLI_ASSOC);$q->close();
     return $rows;

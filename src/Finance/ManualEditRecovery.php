@@ -8,6 +8,7 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) { http_response_co
 require_once __DIR__.'/../Panel/ProviderRuntime.php';
 require_once __DIR__.'/ApiPaymentPresentation.php';
 require_once __DIR__.'/ReceiptHelpers.php';
+require_once __DIR__.'/FollowupOutbox.php';
 
 /** Local, immutable evidence only; neither provider HTTP nor SQL mutation. */
 function achbotManualPgVerifiedEdit(mysqli $db,array $pay,string $kind,bool $locked=false): array {
@@ -138,16 +139,99 @@ function achbotManualPgEditRecoverable(mysqli $db,array $pay): bool {
     catch (Throwable $ignored) { return false; }
 }
 
+
+/**
+ * Seal each ORIGINAL recipient before the local terminal COMMIT. The verified
+ * native mutation was already completed; any follow-up failure rolls back only
+ * the local finalization and never authorizes another native PUT/reset.
+ */
+function achbotManualPgStageEditNoticesLocked(mysqli $db,array $e,
+                                              array $mainValues,int $owner): void {
+    $pay=$e['pay'];$id=(int)$pay['id'];$actor=(int)$pay['approved_by'];
+    $kind=(string)$e['kind'];$remark=(string)$e['order']['remark'];
+    if (!achbotFollowupSchemaReady($db) || $owner<=0 || $actor<=0 ||
+        $pay['state']!=='approved' || !in_array($kind,['renew','day','volume'],true))
+        throw new RuntimeException('manual_edit_recovery_followup_unavailable');
+    $subject=$kind==='renew'?$remark:achbotMessage(
+        $kind==='day'?'manual_receipt_final.day_subject':'manual_receipt_final.volume_subject',
+        ['remark'=>$remark,'units'=>$e['units']]);
+    $keys=achbotManualFinalReceiptKeyboard($db,$id,$subject);
+    achbotFollowupInsertLocked($db,$pay,'approved_edit','receipt_primary','edit',
+        (string)(int)$pay['chat_id'],(int)$pay['message_id'],
+        ['text'=>$keys,'keys'=>null,'mode'=>null]);
+
+    // Distinct message IDs in the same chat are distinct original receipts.
+    // An exact historical pair is staged only once; revoked staff excluded.
+    $seen=[];
+    $copies=json_decode((string)($pay['admins_messages']??''),true);
+    if (is_array($copies)) foreach ($copies as $copy) {
+        if (!is_array($copy) || !isset($copy['chat_id'],$copy['message_id'])) continue;
+        $chat=(int)$copy['chat_id'];$message=(int)$copy['message_id'];
+        if ($chat<=0 || $message<=0 ||
+            ($chat===(int)$pay['chat_id'] && $message===(int)$pay['message_id']) ||
+            !achbotAdminStoredRecipientAllowed($db,$copy['chat_id'],$owner)) continue;
+        $key=$chat.':'.$message;
+        if (isset($seen[$key])) continue;
+        $seen[$key]=true;
+        achbotFollowupInsertLocked($db,$pay,'approved_edit','receipt_mirror','edit',
+            (string)$chat,$message,['text'=>$keys,'keys'=>null,'mode'=>null]);
+    }
+
+    if ($kind==='renew') {
+        if (!is_string($mainValues['renewed_config_to_user']??null))
+            throw new RuntimeException('manual_edit_recovery_notice_template_missing');
+        $operator=str_replace(
+            ['USERID','REMARK','VOLUME','DAYS','PRICE','HASHID'],
+            [(int)$pay['user_id'],$remark,$e['volume'],$e['days'],
+             (int)$pay['price'],$pay['hash_id']],
+            $mainValues['renewed_config_to_user']);
+        achbotFollowupInsertLocked($db,$pay,'approved_edit','operator','send',
+            (string)$actor,null,
+            ['text'=>$operator,'keys'=>getMainKeys(),'mode'=>null]);
+        $customer=achbotMessage('renewal.renewal_checkout.message.47b1149fb0',
+            ['remark'=>$remark]);
+    } else {
+        $customer=achbotMessage(
+            $kind==='day'?'renewal.extensions.message.24dea9b122':
+                'renewal.extensions.message.d5b6a4e6e7',
+            ['volume'=>$e['units'],'remark'=>$remark]);
+    }
+    achbotFollowupInsertLocked($db,$pay,'approved_edit','customer','send',
+        (string)(int)$pay['user_id'],null,
+        ['text'=>$customer,'keys'=>null,'mode'=>'HTML']);
+}
+
+/** Only an existing sealed pending follow-up may be continued post-COMMIT. */
+function achbotManualPgEditPending(mysqli $db,array $pay): bool {
+    if (($pay['state']??null)!=='approved' ||
+        (int)($pay['approved_by']??0)<=0 ||
+        !achbotFollowupSchemaReady($db)) return false;
+    $id=(int)($pay['id']??0);
+    if ($id<=0) return false;
+    $q=$db->prepare("SELECT id FROM payment_followup_intents
+        WHERE pay_row_id=? AND stage='approved_edit' AND state='pending' LIMIT 1");
+    $q->bind_param('i',$id);$q->execute();
+    $exists=$q->get_result()->num_rows===1;$q->close();
+    return $exists;
+}
+
 /**
  * NULL: not a processing claim (run original handler).
  * review: no reliable completed native edit (keep claim; NO remote retry).
  * approved: single local payment, order-expiry and audit COMMIT.
  */
-function achbotManualPgResumeEdit(mysqli $db,string $hash,int $actor,string $kind): ?array {
+function achbotManualPgResumeEdit(mysqli $db,string $hash,int $actor,string $kind,
+                                      array $mainValues=[],int $owner=0): ?array {
     if ($actor<=0 || preg_match('/^[A-Za-z0-9_-]{1,50}$/D',$hash)!==1)
         return ['status'=>'review'];
     $s=$db->prepare('SELECT * FROM pays WHERE hash_id=? LIMIT 1');
     $s->bind_param('s',$hash);$s->execute();$pay=$s->get_result()->fetch_assoc();$s->close();
+    if ($pay && $pay['state']==='approved' &&
+        (($kind==='renew' && $pay['type']==='RENEW_ACCOUNT') ||
+         ($kind==='day' && str_starts_with((string)$pay['type'],'INCREASE_DAY_')) ||
+         ($kind==='volume' && str_starts_with((string)$pay['type'],'INCREASE_VOLUME_'))) &&
+        achbotManualPgEditPending($db,$pay))
+        return ['status'=>'delivery_only','pay_id'=>(int)$pay['id']];
     if (!$pay || $pay['state']!=='processing') return null;
     // Other providers retain their original processing/no-replay guards; this
     // path is strictly a PasarGuard VERIFIED-journal local finisher.
@@ -193,12 +277,14 @@ function achbotManualPgResumeEdit(mysqli $db,string $hash,int $actor,string $kin
         $originalApprover=$current['original_approver_id'];
         $s->bind_param('ii',$originalApprover,$id);
         $ok=$s->execute() && $s->affected_rows===1;$s->close();
-        if (!$ok || $db->commit()!==true)
-            throw new RuntimeException('manual_edit_recovery_commit_unconfirmed');
-        $started=false;
+        if (!$ok) throw new RuntimeException('manual_edit_recovery_payment_unconfirmed');
         $current['pay']['approved_by']=$originalApprover;
         $current['pay']['state']='approved';
-        return ['status'=>'approved','evidence'=>$current];
+        achbotManualPgStageEditNoticesLocked($db,$current,$mainValues,$owner);
+        if ($db->commit()!==true)
+            throw new RuntimeException('manual_edit_recovery_commit_unconfirmed');
+        $started=false;
+        return ['status'=>'approved','pay_id'=>$id];
     } catch (Throwable $error) {
         if ($started) try {$db->rollback();}catch(Throwable $ignored){}
         // Log the precise internal recovery stage, never raw provider/SQL
@@ -214,53 +300,13 @@ function achbotManualPgResumeEdit(mysqli $db,string $hash,int $actor,string $kin
     }
 }
 
-/** Original receipt destinations and subject-specific customer notices, post-COMMIT. */
-function achbotManualPgEditNotify(mysqli $db,array $e,array $mainValues,int $admin): void {
-    $pay=$e['pay'];$kind=$e['kind'];$id=(int)$pay['id'];
-    $remark=(string)$e['order']['remark'];$units=$e['units'];
-    $subject=$kind==='renew'?$remark:achbotMessage(
-        $kind==='day'?'manual_receipt_final.day_subject':'manual_receipt_final.volume_subject',
-        ['remark'=>$remark,'units'=>$units]);
-    $keys=null;
-    try {
-        $keys=achbotManualFinalReceiptKeyboard($db,$id,$subject);
-    } catch (Throwable $error) {
-        // A stale Telegram/admin receipt must not prevent the committed
-        // successful service edit from reaching its original customer.
-        error_log('achbot_manual_pg_edit_keyboard_unavailable pay_id='.$id.
-            ' class='.get_class($error));
-    }
-    $refs=[['chat_id'=>$pay['chat_id'],'message_id'=>$pay['message_id']]];
-    $copies=json_decode((string)($pay['admins_messages']??''),true);
-    if (is_array($copies)) foreach ($copies as $item) {
-        if (isset($item['chat_id'],$item['message_id']) &&
-            (string)$item['chat_id']!==(string)$pay['chat_id'] &&
-            achbotAdminStoredRecipientAllowed($db,$item['chat_id'],$admin))
-            $refs[]=$item;
-    }
-    if ($keys!==null) foreach ($refs as $ref) {
-        try { editKeys($keys,$ref['message_id'],$ref['chat_id']); }
-        catch (Throwable $error) {
-            error_log('achbot_manual_pg_edit_receipt_unconfirmed pay_id='.$id.
-                ' chat='.(int)$ref['chat_id'].' class='.get_class($error));
-        }
-    }
-    try {
-        if ($kind==='renew') {
-            sendMessage(str_replace(
-                ['USERID','REMARK','VOLUME','DAYS','PRICE','HASHID'],
-                [(int)$pay['user_id'],$remark,$e['volume'],$e['days'],(int)$pay['price'],$pay['hash_id']],
-                $mainValues['renewed_config_to_user']),getMainKeys(),null,null);
-            sendMessage(achbotMessage('renewal.renewal_checkout.message.47b1149fb0',
-                ['remark'=>$remark]),null,'HTML',(int)$pay['user_id']);
-        } else {
-            sendMessage(achbotMessage(
-                $kind==='day'?'renewal.extensions.message.24dea9b122':
-                    'renewal.extensions.message.d5b6a4e6e7',
-                ['volume'=>$units,'remark'=>$remark]),null,'HTML',(int)$pay['user_id']);
-        }
-    } catch (Throwable $error) {
-        error_log('achbot_manual_pg_edit_customer_unconfirmed pay_id='.$id.
-            ' class='.get_class($error));
-    }
+/**
+ * Dispatch only sealed PENDING intents after payment COMMIT. UNKNOWN and
+ * dispatching transport results are never resent from the original callback.
+ */
+function achbotManualPgEditNotify(mysqli $db,int $payId): void {
+    $results=achbotFollowupDispatchPending($db,$payId,'approved_edit');
+    $pending=array_filter($results,static fn($status)=>$status!=='acknowledged');
+    if ($pending) error_log('achbot_manual_pg_edit_notice_pending pay_id='.$payId.
+        ' count='.count($pending));
 }
