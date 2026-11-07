@@ -73,7 +73,12 @@ if ($spec['op']==='native_resume') {
         $result=['status'=>'verified','effect_id'=>$answer[3],
             'remark'=>$answer[1],'subscription'=>$answer[0]->sub_link];
     } catch(Throwable $error) {
-        $result=['status'=>'deferred','error'=>get_class($error)];
+        // Synthetic fixture only: a bounded native reason code makes a
+        // failed login/identity witness actionable in exact PHP85 CI.
+        $reason=(string)$error->getMessage();
+        if (preg_match('/^[a-z][a-z0-9_]{2,90}$/D',$reason)!==1)
+            $reason='unexpected_fixture_error';
+        $result=['status'=>'deferred','error'=>get_class($error),'reason'=>$reason];
     }
     echo json_encode(['result'=>$result,'events'=>$GLOBALS['events']],JSON_THROW_ON_ERROR);
     exit;
@@ -322,7 +327,7 @@ def check():
             scenarios.append('native_resume_'+mode+'_never_reposts_or_forges_commit')
         server.mode='ok';server.trace.clear()
         recovered=call(work,env,driver,op='native_resume',pay=pay)
-        assert recovered['result']['status']=='verified',recovered
+        assert recovered['result']['status']=='verified',(recovered,server.trace)
         assert recovered['result']['remark']==server.username
         assert recovered['result']['subscription']=='/sub/fixture-native-token'
         assert len(server.trace)==2 and server.trace[0][0:2]==('POST','/api/admin/token')

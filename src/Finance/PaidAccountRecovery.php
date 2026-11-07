@@ -57,6 +57,9 @@ function achbotContinuePaidAccount(mysqli $db,int $payId,int $ordinal,array $req
 function achbotContinueMarzbanPaidAccount(mysqli $db,int $payId,int $ordinal,array $e,
                                          ?callable $exactAccountGet=null): array {
     require_once __DIR__.'/RecoveryInspection.php';
+    // This helper is also called directly from manual Approval.php, without
+    // entering the operator read-only route that normally loads transport.
+    require_once __DIR__.'/RecoveryTransport.php';
     // A strict pinned login+GET and second local read are performed before
     // any local state transition, with no SQL lock during network traffic.
     $remote=null;
