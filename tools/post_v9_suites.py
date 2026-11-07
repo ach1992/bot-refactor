@@ -1312,7 +1312,7 @@ def run_wallet(tmp: str) -> tuple[dict, dict]:
         # Four retired #112 references and the additional old direct-delete
         # callback reference are proven absent by test_next_text_catalog.py.
         # Keep complete current-reference equality, never a lower bound.
-        'runtime_references':2453+14-1-6-4-1+8-3+28+12-5+2+3+4,
+        'runtime_references':2453+14-1-6-4-1+8-3+28+12-5+2+3+4+1,
         # +28 owner financial/service/delivery copy keys; +12 net from R2
         # financial exception and R3 final receipt. Two earlier recovery
         # labels and three original-edit recovery labels are statically
