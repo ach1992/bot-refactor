@@ -294,6 +294,8 @@ def api_native_observation_mismatches(proof: dict, expected: list[str]) -> dict:
         'manual_edit_owner_case_customer_unknown_no_replay',
         'manual_edit_owner_case_mirror_dispatching_original_message',
         'manual_edit_owner_case_fully_acknowledged_not_recoverable',
+        'manual_edit_owner_case_61st_customer_pending_before_limit',
+        'manual_edit_owner_case_61st_customer_unknown_without_replay',
         *[f'manual_volume_resume_refuses_{reason}' for reason in (
             'unverified','wrong_key','wrong_quote','wrong_identity',
             'nonmanual_claim')],

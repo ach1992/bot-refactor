@@ -590,6 +590,8 @@ def run_api(tmp: str) -> tuple[dict, dict]:
         'manual_edit_owner_case_customer_unknown_no_replay',
         'manual_edit_owner_case_mirror_dispatching_original_message',
         'manual_edit_owner_case_fully_acknowledged_not_recoverable',
+        'manual_edit_owner_case_61st_customer_pending_before_limit',
+        'manual_edit_owner_case_61st_customer_unknown_without_replay',
         # Reviewer R1/R2: original approver and immutable amount, all kinds.
         'manual_renew_resume_refuses_changed_payment_amount',
         'manual_renew_resume_refuses_changed_attempt_amount',

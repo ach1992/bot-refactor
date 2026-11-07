@@ -441,15 +441,18 @@ def check(progress_path=None):
             return [button['callback_data'] for line in
                     (rendered or {}).get('buttons',{}).get('inline_keyboard',[])
                     for button in line if 'callback_data' in button]
-        def make_delivery(kind='volume',mirror=False):
+        def make_delivery(kind='volume',mirrors=0):
             n,key=reset(kind)
             assert issue(n,'bank_transfer')['result'] is True
             q(f'UPDATE payment_attempts SET created_at=NOW()-INTERVAL 601 SECOND WHERE pay_row_id={n}')
             assert call(op='receipt',pay=n)['result'] is True
             call(op='human',pay=n,actor=9001,crash_after_native=True)
-            if mirror:
-                q(f"""UPDATE pays SET admins_messages='[{{"chat_id":9001,"message_id":223}}]'
-                    WHERE id={n}""")
+            if mirrors:
+                # Distinct real original receipt pairs in the allowed Owner
+                # chat, not fabricated rows in the sealed 020 outbox.
+                original=[{'chat_id':9001,'message_id':223+i}
+                    for i in range(mirrors)]
+                q(f"UPDATE pays SET admins_messages='{json.dumps(original)}' WHERE id={n}")
             done=call(op='human',pay=n,actor=9002,skip_followup_dispatch=True)
             assert state(n)=='approved' and q('SELECT COUNT(*) FROM increase_order')=='1',done
             panel.trace=[]
@@ -489,7 +492,7 @@ def check(progress_path=None):
             dict(view=b,buttons=buttons,text=text,write_count=writes))
 
         # C: uncertain stored administrator receipt, exact original pair.
-        n,key,writes=make_delivery(mirror=True)
+        n,key,writes=make_delivery(mirrors=1)
         q(f"UPDATE payment_followup_intents SET state='acknowledged',attempt_count=1 "
           f"WHERE pay_row_id={n} AND role IN ('receipt_primary','customer')")
         q(f"UPDATE payment_followup_intents SET state='dispatching',attempt_count=1 "
@@ -522,6 +525,72 @@ def check(progress_path=None):
             q('SELECT COUNT(*) FROM increase_order')=='1' and panel.write_count==writes and
             panel.trace==[] and not pg_events(d),
             dict(view=d,technical_open=not all_done,write_count=writes))
+
+        # R1A: 60 original receipt messages precede the original customer
+        # packet in the durable outbox. The SQL summary must select that
+        # unresolved 61st packet BEFORE its LIMIT 60, and the actual Owner
+        # callback must show it first rather than only acknowledged peers.
+        n,key,writes=make_delivery(mirrors=59)
+        initial=q(f"SELECT CONCAT(role, ':', IFNULL(message_id,0), ':', state) "
+                  f"FROM payment_followup_intents WHERE pay_row_id={n} "
+                  f"AND stage='approved_edit' ORDER BY id").splitlines()
+        assert len(initial)==61 and initial[0]=='receipt_primary:222:pending' and (
+            initial[1]=='receipt_mirror:223:pending') and (
+            initial[-1]=='customer:0:pending'),initial
+        q(f"UPDATE payment_followup_intents SET state='acknowledged',attempt_count=1 "
+          f"WHERE pay_row_id={n} AND role IN ('receipt_primary','receipt_mirror')")
+        assert q(f"SELECT COUNT(*) FROM payment_followup_intents WHERE pay_row_id={n} "
+                 f"AND state='acknowledged'")=='60'
+        open_pending=call(op='technical',pay=n)['result'] is True
+        a,shown=view(n);text=(shown or {}).get('text','');buttons=actions(shown)
+        cutoff_notice='\u0641\u0642\u0637 10 \u0645\u0648\u0631\u062f \u0627\u0648\u0644'
+        packet_line_count=(text.count('<code>customer</code>')+
+                           text.count('<code>receipt_primary</code>')+
+                           text.count('<code>receipt_mirror</code>'))
+        record('manual_edit_owner_case_61st_customer_pending_before_limit',
+            open_pending and shown is not None and shown['chat']==9001 and
+            packet_line_count==10 and text.count('<code>customer</code>')==1 and
+            text.count('<code>receipt_primary</code>')==1 and
+            text.count('<code>receipt_mirror</code>')==8 and
+            text.index('<code>customer</code>')<text.index('<code>receipt_primary</code>') and
+            '<code>pending</code>' in text and '<code>1001</code>' in text and
+            cutoff_notice in text and
+            buttons.count('approveIncreaseVolume'+key)==1 and
+            not any(t.startswith(('accept','npDecision','reject','approveRenewAcc'))
+                    for t in buttons) and
+            q('SELECT COUNT(*) FROM increase_order')=='1' and
+            q(f"SELECT COUNT(*) FROM payment_followup_intents WHERE pay_row_id={n}")=='61' and
+            panel.write_count==writes and not panel.trace and not pg_events(a) and
+            not [e for e in a['events'] if e.get('event') in ('MESSAGE','EDIT_KEYS')],
+            dict(view=a,visible_lines=packet_line_count,
+                 outbox_count=len(initial),writes=writes))
+
+        # Same 61 genuine packets, but no PENDING remaining: an unknown
+        # customer ACK must be visible and must NOT acquire a replay button.
+        q(f"UPDATE payment_followup_intents SET state='unknown',attempt_count=1 "
+          f"WHERE pay_row_id={n} AND role='customer'")
+        open_unknown=call(op='technical',pay=n)['result'] is True
+        b,shown=view(n);text=(shown or {}).get('text','');buttons=actions(shown)
+        packet_line_count=(text.count('<code>customer</code>')+
+                           text.count('<code>receipt_primary</code>')+
+                           text.count('<code>receipt_mirror</code>'))
+        record('manual_edit_owner_case_61st_customer_unknown_without_replay',
+            open_unknown and shown is not None and shown['chat']==9001 and
+            packet_line_count==10 and text.count('<code>customer</code>')==1 and
+            text.count('<code>receipt_primary</code>')==1 and
+            text.count('<code>receipt_mirror</code>')==8 and
+            text.index('<code>customer</code>')<text.index('<code>receipt_primary</code>') and
+            '<code>unknown</code>' in text and '<code>1001</code>' in text and
+            cutoff_notice in text and
+            'approveIncreaseVolume'+key not in buttons and
+            not any(t.startswith(('accept','npDecision','reject','approve'))
+                    for t in buttons) and
+            q('SELECT COUNT(*) FROM increase_order')=='1' and
+            q(f"SELECT COUNT(*) FROM payment_followup_intents WHERE pay_row_id={n}")=='61' and
+            panel.write_count==writes and not panel.trace and not pg_events(b) and
+            not [e for e in b['events'] if e.get('event') in ('MESSAGE','EDIT_KEYS')],
+            dict(view=b,visible_lines=packet_line_count,
+                 outbox_count=len(initial),writes=writes))
 
         # R1/R2 regression: a distinct authorized recovery Operator never
         # replaces the first human approver. The *original* issued 003 local

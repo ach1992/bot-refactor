@@ -261,9 +261,13 @@ function achbotFollowupDispatchPending(mysqli $db,int $payId,string $stage): arr
 }
 function achbotFollowupSummary(mysqli $db,int $payId,string $stage): array {
     if (!achbotFollowupSchemaReady($db)) return [];
-    $q=$db->prepare('SELECT kind,role,recipient,message_id,state,attempt_count
+    // Prioritize uncertain original edit notices before the bounded read,
+    // not after it. Other follow-up stages retain their original ID order.
+    $q=$db->prepare("SELECT kind,role,recipient,message_id,state,attempt_count
         FROM payment_followup_intents WHERE pay_row_id=? AND stage=?
-        ORDER BY id LIMIT 60');
+        ORDER BY CASE WHEN stage='approved_edit' AND
+            state IN ('pending','dispatching','unknown') THEN 0 ELSE 1 END,
+            id LIMIT 60");
     $q->bind_param('is',$payId,$stage);$q->execute();
     $rows=$q->get_result()->fetch_all(MYSQLI_ASSOC);$q->close();
     return $rows;
