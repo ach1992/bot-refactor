@@ -55,6 +55,23 @@
   are exhausted. Missing or mismatched native evidence stays unresolved.
   Custom terms and multi-account quantity remain subject to original immutable
   invoice and per-ordinal verification. This is not a refund or new approval.
+- **Bank-Cron processing recovery:** the normal timer deliberately only
+  claims original `have_sent` receipts; it does not revisit the resulting
+  `processing` cases after a crash. For **non-API bank receipts** with an
+  unchanged original `003` attempt and `009` issued invoice, an authorized
+  administrator uses the **existing payment approval permission** from the
+  original `attentionInbox` technical view (`attentionInboxService`),
+  and the existing `accept{hash}` callback to continue the original purchase.
+  This does not change `Access.php`, role levels or owner-only specialist tools.
+  Only original `007` CREATE ordinals with a valid full-count inventory origin
+  are eligible. The original provisioner and native readback are reused;
+  after a verified terminal COMMIT, only
+  pending 018 delivery and payment-keyed 008 referral work may be performed.
+  Unmatched/unknown native effects or changed invoices stay `processing`
+  and never authorize an extra CREATE or automatic message resend.
+  The 003 stage may remain `pending` after the original Cron claim; its
+  immutable 009 fingerprint, not the mutable stage, owns bank identity.
+  No new background reprocessing loop is introduced.
 
 ## Prerequisites and one-way migration
 

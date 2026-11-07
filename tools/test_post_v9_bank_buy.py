@@ -187,6 +187,14 @@ function sendMessage($text=null,$keys=null,$mode=null,$to=null) {
 function editKeys(...$args) {
     $GLOBALS['events'][]=['event'=>'EDIT_KEYS','state'=>fixtureState()];
 }
+function answerCallbackQuery(...$args) {
+    $GLOBALS['events'][]=['event'=>'ACK','text'=>(string)($args[1]??'')];
+}
+function editText(...$args) {
+    $GLOBALS['events'][]=['event'=>'EDIT','state'=>fixtureState(),
+        'buttons'=>json_decode((string)($args[2]??''),true)];
+    return (object)['ok'=>true];
+}
 function getMainKeys() {return '{}';}
 function sendToAllAdmins(...$args) {return null;}
 function giveReferralReward(...$args) {$GLOBALS['events'][]=['event'=>'REFERRAL'];}
@@ -220,6 +228,23 @@ if ($op==='claim') {
     require_once $root.'/src/Finance/DeliveryLedger.php';
     $value=achbotDeliveryDispatch($connection,(int)$spec['pay'],(int)$spec['ordinal'],
         (int)($spec['actor']??9001),(string)($spec['challenge']??''));
+} elseif ($op==='accept_resume') {
+    $id=(int)($spec['pay']??0);
+    $p=$connection->query('SELECT hash_id FROM pays WHERE id='.$id)->fetch_assoc();
+    $data='accept'.(string)($p['hash_id']??'');
+    $from_id=(int)($spec['actor']??9001);
+    $chat_id=(int)($spec['chat']??9001);
+    $callbackId='fixture-bank-owner';$message_id=550;$text='';
+    $userInfo=['step'=>''];
+    if (($spec['debug_preview']??false)===true) {
+        require_once $root.'/src/Finance/RecoveryInspection.php';
+        $item=achbotRecoveryTechnicalCase($connection,$id);
+        $GLOBALS['events'][]=['event'=>'PREVIEW','case'=>is_array($item),
+          'state'=>$item['state']??null,'stage'=>$item['attempt']['stage']??null,
+          'bank_resume'=>$item?achbotRecoveryCanResumeBankPurchase($connection,$item):false];
+    }
+    require $root.'/src/Finance/Routes/ManualReceipts.php';
+    $value=true;
 } elseif ($op==='break_attempt') {
     fixtureAlterOriginalBankAttempt((int)($spec['pay']??0),
         ($spec['mode']??'delete')==='replace'?'replace':'delete');
@@ -361,6 +386,8 @@ def check():
                   '003_payment_attempts.sql','007_service_effects.sql',
                   '009_bank_buy_invoice_claims.sql','018_payment_delivery_intents.sql'):
             query(work,env,(ROOT/'migrations/post-v9'/f).read_text())
+        query(work,env,'UPDATE users SET isAdmin=1 WHERE userid=9002')
+        query(work,env,"INSERT INTO setting(type,value) VALUES('ADMIN_ROLE_9002','manager')")
         driver=work/'bank-buy-driver.php';driver.write_text(PHP)
         _issuer_driver=issuer_driver(work)
         query(work,env,"INSERT INTO setting(type,value) VALUES "
@@ -404,6 +431,56 @@ def check():
         assert again['result']==[] and not again['events'],again
         assert total(work,env,'orders_list',crash)==1 and total(work,env,'service_effects',crash)==1
         cases.append('crash_postterminal_before_telegram_resumes_pending_only_once')
+
+        # The timer only scans have_sent. A durable processing claim with
+        # no remote line must be actionable through the Owner's real
+        # technical recovery callback, using precisely that old 003/009
+        # invoice. Opening a route is NOT another financial approval.
+        owner=seed(work,env,'ownerbankresume')
+        assert run(work,env,driver,op='claim',pay=owner)['result'] is True
+        assert state(work,env,owner)=='processing'
+        denied=run(work,env,driver,op='accept_resume',pay=owner,actor=1001,chat=1001)
+        assert not any(x['event']=='POST' for x in denied['events']),denied
+        assert state(work,env,owner)=='processing'
+        assert total(work,env,'service_effects',owner)==0
+        cases.append('bank_original_accept_denies_customer_without_native_effect')
+        finished=run(work,env,driver,op='accept_resume',pay=owner,
+                     actor=9002,chat=9002,debug_preview=True)
+        assert state(work,env,owner)=='auto_cart_approved',finished
+        assert any(e['event']=='PREVIEW' and e['bank_resume'] is True and
+                   e['stage']=='pending' for e in finished['events']),finished
+        assert sum(e['event']=='POST' for e in finished['events'])==1,finished
+        assert sum(e['event']=='DELIVER' for e in finished['events'])==1,finished
+        assert all(e['state']=='auto_cart_approved' for e in finished['events']
+                   if e['event']=='DELIVER')
+        assert effects(work,env,owner)=='local_recorded'
+        assert total(work,env,'orders_list',owner)==1
+        assert total(work,env,'payment_delivery_intents',owner)==1
+        assert any(e['event']=='ACK' for e in finished['events'])
+        cases.append('bank_manager_original_accept_resume_once_native_then_delivery')
+        repeated=run(work,env,driver,op='accept_resume',pay=owner,actor=9002,chat=9002)
+        assert not any(e['event'] in ('POST','DELIVER') for e in repeated['events'])
+        assert total(work,env,'orders_list',owner)==1
+        cases.append('bank_manager_repeat_callback_never_reissues_account_or_delivery')
+        forged=seed(work,env,'ownerbankdrift')
+        assert run(work,env,driver,op='claim',pay=forged)['result'] is True
+        query(work,env,f'UPDATE payment_attempts SET local_amount_toman=777 WHERE pay_row_id={forged}')
+        bad=run(work,env,driver,op='accept_resume',pay=forged)
+        assert state(work,env,forged)=='processing' and total(work,env,'service_effects',forged)==0
+        assert not any(e['event']=='POST' for e in bad['events'])
+        cases.append('bank_owner_changed_original_attempt_cannot_start_native')
+        uncertain=seed(work,env,'ownerbanknativeunknown')
+        assert run(work,env,driver,op='claim',pay=uncertain)['result'] is True
+        initial=run(work,env,driver,op='provision_claimed',pay=uncertain,mode='lost')
+        assert state(work,env,uncertain)=='processing'
+        assert effects(work,env,uncertain)=='dispatching'
+        assert sum(e['event']=='POST' for e in initial['events'])==1
+        retry=run(work,env,driver,op='accept_resume',pay=uncertain)
+        assert state(work,env,uncertain)=='processing'
+        assert effects(work,env,uncertain)=='dispatching'
+        assert not any(e['event'] in ('POST','DELIVER') for e in retry['events'])
+        assert total(work,env,'orders_list',uncertain)==0
+        cases.append('owner_bank_unknown_native_effect_no_blind_second_create')
 
         # A valid per-server qr:none is a text-only delivery, not a failed CREATE.
         query(work,env,"INSERT INTO setting(type,value) VALUES ('ACHBOT_SERVER_DISPLAY_2'," +

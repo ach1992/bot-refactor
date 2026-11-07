@@ -202,6 +202,8 @@ def check():
     cases=[]
     with owned.owned_database() as (work,env):
         purchase.init(work,env,'http://127.0.0.1:9')
+        sql(work,env,'UPDATE users SET isAdmin=1 WHERE userid=9002')
+        sql(work,env,"INSERT INTO setting(type,value) VALUES('ADMIN_ROLE_9002','manager')")
         # Issuance consults the CURRENT BOT_STATES row under SQL lock.
         # A read-only recovery fixture must still issue a valid prior bank
         # intent before simulating a later incomplete CREATE.
@@ -292,6 +294,20 @@ def check():
             b.get('text')=='▶️ ادامهٔ خرید تأییدشده' for b in buttons(displayed))
         assert not events(displayed,'GET') and unchanged(work,env,resumable)==original
         cases.append('processing_standard_manual_buy_has_original_safe_resume_button_no_effect_on_view')
+        delegated=call(work,env,driver,op='route',
+                       callback=f'attentionCase_{resumable}',actor=9002,chat=9002)
+        assert action in [b['callback_data'] for b in buttons(delegated)],delegated
+        assert not events(delegated,'GET') and unchanged(work,env,resumable)==original
+        delegated_list=call(work,env,driver,op='route',
+                            callback='attentionInboxService',actor=9002,chat=9002)
+        assert f'attentionCase_{resumable}' in [b['callback_data'] for b in buttons(delegated_list)]
+        assert not events(delegated_list,'GET') and unchanged(work,env,resumable)==original
+        cases.append('manager_with_existing_approval_permission_sees_manual_processing_in_review_hub')
+        for actor,chat in [(1001,1001),(9002,9001),(9001,9002)]:
+            denied=call(work,env,driver,op='route',
+                        callback='attentionInboxService',actor=actor,chat=chat)
+            assert events(denied,'ACK') and not events(denied,'EDIT') and not events(denied,'GET')
+        cases.append('review_hub_existing_permission_excludes_customer_and_foreign_chat')
         for actor,chat in [(9002,9002),(9001,9002),(9002,9001)]:
             denied=call(work,env,driver,op='route',
                         callback=f'serviceRecoveryCase_{resumable}',actor=actor,chat=chat)
@@ -318,6 +334,55 @@ def check():
         sql(work,env,f"UPDATE payment_attempts SET provider='bank_transfer' WHERE pay_row_id={resumable}")
         assert unchanged(work,env,resumable)==original
         cases.append('original_manual_resume_requires_hold_subject_provider_and_receipt_identity')
+
+        # The actual bank timer claims the original 003/009 receipt with
+        # stage still 'pending'. An empty 007 journal is the valid window
+        # after its processing COMMIT, before the first native CREATE.
+        bank_processing=bank.seed(work,env,'owner-bank-inbox',count=2)
+        sql(work,env,f"UPDATE pays SET state='processing' WHERE id={bank_processing} AND state='have_sent'")
+        assert sql(work,env,f'SELECT stage FROM payment_attempts WHERE pay_row_id={bank_processing}')=='pending'
+        old=unchanged(work,env,bank_processing)
+        bank_ui=call(work,env,driver,op='route',
+                     callback=f'serviceRecoveryCase_{bank_processing}')
+        original_cb='accept'+sql(work,env,
+            f'SELECT hash_id FROM pays WHERE id={bank_processing}')
+        assert original_cb in [b['callback_data'] for b in buttons(bank_ui)],bank_ui
+        manager_bank=call(work,env,driver,op='route',
+            callback=f'attentionCase_{bank_processing}',actor=9002,chat=9002)
+        assert original_cb in [b['callback_data'] for b in buttons(manager_bank)]
+        assert not events(manager_bank,'GET') and unchanged(work,env,bank_processing)==old
+        cases.append('manager_original_accept_reuses_bank_cron_processing_invoice')
+        assert not events(bank_ui,'GET') and not events(bank_ui,'SEND')
+        assert unchanged(work,env,bank_processing)==old
+        cases.append('bank_timer_processing_pending_stage_original_invoice_actionable_readonly')
+        for actor,chat in [(9002,9002),(9002,9001),(9001,9002)]:
+            denied=call(work,env,driver,op='route',
+                        callback=f'serviceRecoveryCase_{bank_processing}',
+                        actor=actor,chat=chat)
+            assert events(denied,'ACK') and not events(denied,'GET') and not events(denied,'SEND')
+            assert unchanged(work,env,bank_processing)==old
+        cases.append('original_owner_only_diagnostic_route_unchanged_after_manager_resume')
+        sql(work,env,f'UPDATE payment_attempts SET local_amount_toman=777 WHERE pay_row_id={bank_processing}')
+        invalid=call(work,env,driver,op='route',
+                     callback=f'serviceRecoveryCase_{bank_processing}')
+        assert original_cb not in [b['callback_data'] for b in buttons(invalid)]
+        sql(work,env,f'UPDATE payment_attempts SET local_amount_toman=101 WHERE pay_row_id={bank_processing}')
+        cases.append('bank_timer_corrupted_003_never_offered_native_continuation')
+        # Original claimed count is pinned in 009 and already reserved by
+        # 007 ordinal 1. An incomplete ordinal may be surfaced, but a wrong
+        # capacity count cannot be treated as a safely resumable purchase.
+        partial_bank=create_case(work,env,'bank-held-inbox',count=2,
+                                 state='processing',number_of_effects=1)
+        sql(work,env,f'UPDATE service_effects SET reserved_count=2 WHERE pay_row_id={partial_bank} AND ordinal=1')
+        partial_ui=call(work,env,driver,op='route',
+                        callback=f'serviceRecoveryCase_{partial_bank}')
+        partial_cb='accept'+sql(work,env,f'SELECT hash_id FROM pays WHERE id={partial_bank}')
+        assert partial_cb in [b['callback_data'] for b in buttons(partial_ui)]
+        sql(work,env,f'UPDATE service_effects SET reserved_count=1 WHERE pay_row_id={partial_bank} AND ordinal=1')
+        bad_hold=call(work,env,driver,op='route',
+                      callback=f'serviceRecoveryCase_{partial_bank}')
+        assert partial_cb not in [b['callback_data'] for b in buttons(bad_hold)]
+        cases.append('bank_timer_partial_batch_resume_requires_original_full_quantity_hold')
 
         matched=call(work,env,driver,op='inspect',pay=pay)
         assert matched['value']['status']=='matching_observation',matched
