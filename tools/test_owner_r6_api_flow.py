@@ -115,6 +115,19 @@ elseif($op==='presentation'){
 }
 elseif($op==='access'){$from_id=(int)$spec['actor'];$value=achbotAdminRequestAllowed('apiReview_'.$pay['hash_id'],null,'none');}
 elseif($op==='attention'){require_once $root.'/src/Finance/RecoveryInspection.php';$q=$connection->query('SELECT p.id FROM pays p WHERE p.id='.$id.' AND '.achbotRecoveryAttentionSql($connection));$value=$q->num_rows===1;}
+elseif($op==='resume_hint'){
+ require_once $root.'/src/Finance/RecoveryInspection.php';
+ $pay['attempt']=achbotApiPaymentAttempt($connection,$id);
+ $value=achbotRecoveryApiCanResume($connection,$pay);
+}
+elseif($op==='review_resume'){
+ // Actual admin callback, without requiring an earlier inbox visit.
+ $from_id=(int)($spec['actor']??9001);$chat_id=(int)($spec['chat']??$from_id);
+ $callbackId='fixture-api-review';$message_id=456;$data='apiEvidenceResume_'.$id;
+ $userInfo=['step'=>'none'];$text=null;
+ require $root.'/src/Finance/Routes/ManualReceipts.php';
+ $value='routed';
+}
 elseif($op==='profile_shift'){$a=achbotApiPaymentAttempt($connection,$id);$p=achbotPaymentEvidenceSnapshot($a);$p['issued_at']=time()-(int)($spec['age']??90000);unset($p['profile_sha256']);$sealed=achbotPaymentEvidenceProtect('profile:'.$a['id'].':'.$id,$p);$q=$connection->prepare('UPDATE payment_attempts SET evidence_profile=? WHERE id=?');$q->bind_param('si',$sealed,$a['id']);$q->execute();$q->close();$value=true;}
 elseif($op==='photo_race'){$v=achbotManualBeginEvidence($connection,$pay,'bank_transfer',1001,'race-photo');$value=$v?sendReceiptToAdminsAndUpdatePay($connection,'race-photo','رسید تست',achbotApiPaymentReviewKeyboard($pay),9001,$pay['hash_id'],$v):false;if($value)achbotManualAcknowledgeAndVerify($connection,$pay,'bank_transfer','Start','FixtureBot');}
 else throw new RuntimeException('unknown fixture op');
@@ -150,6 +163,12 @@ def check(evidence_root,settings_root,source_root=ROOT):
         query(work,env,"UPDATE server_info SET ucount=100 WHERE id=2")
         query(work,env,"INSERT INTO setting(type,value) VALUES('BOT_STATES','{\"cartToCartState\":\"on\",\"giftCardState\":\"on\"}')")
         php=bank.PHP[:bank.PHP.index("$op=$spec['op']??'auto';")]+PREP+OPS
+        # The composed original Telegram spy must capture the actual admin
+        # reply body, not only its keyboard, to prove source UI semantics.
+        spy_before="'buttons'=>json_decode((string)($args[2]??''),true)];"
+        assert php.count(spy_before)==1
+        php=php.replace(spy_before,
+            "'buttons'=>json_decode((string)($args[2]??''),true),'text'=>(string)($args[1]??'')];")
         php=php.replace("function achbotApplyServiceEdit(...$args) {throw new RuntimeException('unexpected_edit');}","function achbotApplyServiceEdit($db,$sid,$change) {$GLOBALS['events'][]=['event'=>'EDIT','change'=>$change,'tx'=>(int)$db->query('SELECT @@in_transaction')->fetch_row()[0]];return(object)['success'=>true,'verified'=>true,'applied_expire'=>1802000000,'applied_bytes'=>3221225472];}")
         php=php.replace("function getMainKeys() {return '{}';}",r"""function getMainKeys() {return '{}';}
 function bot($method,$data){
@@ -409,6 +428,58 @@ return !empty($GLOBALS['spec']['fail_staff'])?null:(object)['ok'=>true];}""")
         replay=call(op='settle',pay=n)
         assert replay['result']=='settled' and not any(e['event'] in ['DELIVER','POST','EDIT'] for e in replay['events']),replay
         cases.append('qr_ack_failure_financial_and_native_once_delivery_unconfirmed_no_create_replay')
+        # Exercise the actual apiEvidenceResume admin callback on real owned
+        # proof/intent rows; terminal delivery must never replay native CREATE.
+        beforeDeliveries=int(query(work,env,f'SELECT attempt_count FROM payment_delivery_intents WHERE pay_row_id={n}'))
+        callback=call(op='review_resume',pay=n)
+        edits=[e['text'] for e in callback['events'] if e['event']=='EDIT']
+        assert callback['result']=='routed' and len(edits)==1 and 'دریافت همهٔ پیام‌های مشتری هنوز تأیید نشده' in edits[0],callback
+        assert not any(e['event'] in ['DELIVER','POST','MESSAGE'] for e in callback['events']),callback
+        assert int(query(work,env,f'SELECT attempt_count FROM payment_delivery_intents WHERE pay_row_id={n}'))==beforeDeliveries
+        cases.append('actual_api_resume_telegram_unknown_native_create_not_replayed_or_misreported')
+        # A valid terminal wallet payment is still owned by the original user,
+        # and an existing Owner callback is delivery-only even after settlement.
+        APIs.rows={};n=seed('api-route-acked');sms(n)
+        assert call(pay=n)['result']=='confirmed' and state(n)=='approved'
+        customer=query(work,env,f'SELECT user_id FROM payment_delivery_intents WHERE pay_row_id={n}')
+        assert customer=='1001'
+        walletAfter=int(query(work,env,'SELECT wallet FROM users WHERE userid=1001'))
+        assert call(op='resume_hint',pay=n)['result'] is False
+        settled=call(op='review_resume',pay=n)
+        edits=[e['text'] for e in settled['events'] if e['event']=='EDIT']
+        assert len(edits)==1 and 'نتیجه عادی سفارش از مسیر اصلی ارسال شده' in edits[0],settled
+        assert not any(e['event'] in ['MESSAGE','DELIVER','POST'] for e in settled['events']),settled
+        assert int(query(work,env,'SELECT wallet FROM users WHERE userid=1001'))==walletAfter
+        assert query(work,env,f'SELECT state FROM payment_delivery_intents WHERE pay_row_id={n}')=='acknowledged'
+        cases.append('actual_api_resume_terminal_all_acknowledged_true_delivery_result')
+        # A previously committed terminal invoice can have a remaining PENDING
+        # message. This synthetic crash snapshot tests pending-only dispatch.
+        query(work,env,f"UPDATE payment_delivery_intents SET state='pending',acknowledged_at=NULL WHERE pay_row_id={n}")
+        pending=call(op='review_resume',pay=n)
+        edits=[e['text'] for e in pending['events'] if e['event']=='EDIT']
+        sends=[e for e in pending['events'] if e['event']=='MESSAGE']
+        assert len(sends)==1 and sends[0]['to']==1001 and len(edits)==1 and 'نتیجه عادی سفارش از مسیر اصلی ارسال شده' in edits[0],pending
+        assert query(work,env,f'SELECT state FROM payment_delivery_intents WHERE pay_row_id={n}')=='acknowledged'
+        assert int(query(work,env,'SELECT wallet FROM users WHERE userid=1001'))==walletAfter
+        cases.append('actual_api_resume_terminal_pending_only_ack_returns_complete_no_double_credit')
+        query(work,env,f"UPDATE payment_delivery_intents SET state='pending',acknowledged_at=NULL WHERE pay_row_id={n}")
+        failed=call(op='review_resume',pay=n,fail_terminal_customer=True)
+        edits=[e['text'] for e in failed['events'] if e['event']=='EDIT']
+        assert len(edits)==1 and 'دریافت همهٔ پیام‌های مشتری هنوز تأیید نشده' in edits[0],failed
+        assert query(work,env,f'SELECT state FROM payment_delivery_intents WHERE pay_row_id={n}')=='unknown'
+        attempts=int(query(work,env,f'SELECT attempt_count FROM payment_delivery_intents WHERE pay_row_id={n}'))
+        again=call(op='review_resume',pay=n)
+        edits=[e['text'] for e in again['events'] if e['event']=='EDIT']
+        assert len(edits)==1 and 'دریافت همهٔ پیام‌های مشتری هنوز تأیید نشده' in edits[0],again
+        assert not any(e['event'] in ['MESSAGE','DELIVER','POST'] for e in again['events'])
+        assert int(query(work,env,f'SELECT attempt_count FROM payment_delivery_intents WHERE pay_row_id={n}'))==attempts
+        assert int(query(work,env,'SELECT wallet FROM users WHERE userid=1001'))==walletAfter
+        cases.append('actual_api_resume_pending_failed_ack_unknown_no_automatic_resend')
+        for actor,chat in [(1001,1001),(9001,1001)]:
+            forbidden=call(op='review_resume',pay=n,actor=actor,chat=chat)
+            assert not any(e['event'] in ['EDIT','MESSAGE','POST','DELIVER'] for e in forbidden['events']),forbidden
+        assert int(query(work,env,'SELECT wallet FROM users WHERE userid=1001'))==walletAfter
+        cases.append('actual_api_resume_payment_user_chat_authority_preserved')
         # Every edit subject uses pinned quantities and the same real local finisher.
         query(work,env,"INSERT INTO orders_list(userid,token,transid,fileid,server_id,inbound_id,remark,uuid,expire_date,link,amount,status,date) VALUES(1001,'fixture-token','',7,2,0,'api_edit_order','fixture-uuid',1900000000,'[]',101,1,'1700000000')")
         oid=int(query(work,env,"SELECT id FROM orders_list WHERE remark='api_edit_order'"))
@@ -455,13 +526,20 @@ return !empty($GLOBALS['spec']['fail_staff'])?null:(object)['ok'=>true];}""")
             due(n);r=call(pay=n);assert APIs.rows[rid]['status']=='used',(label,r)
             assert call(op='settle',pay=n)['result']=='settled';cases.append('concurrent_real_human_api_'+label+'_at_most_once')
         # Crash after funded local claim before any CREATE uses its existing hold once.
-        APIs.rows={};n=seed('restartcreate','BUY_SUB');sms(n);capacity=int(query(work,env,'SELECT ucount FROM server_info WHERE id=2'));r=call(pay=n,crash_before_native=True);assert r['result']=='review' and state(n)=='processing',r
+        APIs.rows={};n=seed('restartcreate','BUY_SUB');assert call(op='resume_hint',pay=n)['result'] is False
+        sms(n);capacity=int(query(work,env,'SELECT ucount FROM server_info WHERE id=2'));r=call(pay=n,crash_before_native=True);assert r['result']=='review' and state(n)=='processing',r
+        assert call(op='attention',pay=n)['result'] is False and call(op='resume_hint',pay=n)['result'] is True
         assert int(query(work,env,'SELECT ucount FROM server_info WHERE id=2'))==capacity-1
         due(n);r=call(op='maintain',pay=n);assert state(n)=='auto_cart_approved' and sum(e['event']=='POST' for e in r['events'])==1,r
+        assert call(op='resume_hint',pay=n)['result'] is False
         assert int(query(work,env,'SELECT ucount FROM server_info WHERE id=2'))==capacity-1;cases.append('restart_after_local_claim_reuses_capacity_hold_once')
+        cases.append('api_processing_proven_resume_is_technical_only_and_terminal_hint_disappears')
         # Verified native edit survives process loss before SQL finish; restart only finishes locally.
         APIs.rows={};n=seed('restartedit','RENEW_ACCOUNT',order=oid);sms(n);r=call(pay=n,crash_after_verified=True);assert r['result']=='review' and state(n)=='processing',r
+        assert call(op='resume_hint',pay=n)['result'] is True
         due(n);r=call(op='maintain',pay=n);assert state(n)=='auto_cart_approved' and not any(e['event']=='EDIT' for e in r['events']),r;cases.append('restart_verified_edit_finishes_without_native_redispatch');cases.append('admitted_maintenance_recovers_proven_processing_reserved_and_verified')
+        assert call(op='resume_hint',pay=n)['result'] is False
+        cases.append('api_verified_edit_processing_resume_uses_original_proven_claim_once')
         # Unknown CREATE keeps existing no-replay journal and no false refund/success.
         APIs.rows={};n=seed('unknowncreate','BUY_SUB');sms(n);r=call(pay=n,mode='lost');assert r['result']=='review' and state(n)=='processing',r
         r=call(op='settle',pay=n);assert r['result']=='review' and not any(e['event']=='POST' for e in r['events']),r;cases.append('uncertain_create_journal_never_redispatched')

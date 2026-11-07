@@ -70,12 +70,23 @@ function achbotRecoveryAttentionSql(mysqli $db): string {
                           ('confirmed','sending','partially_paid','finished','refunded')))
                     $journal)"
             : '0';
-        // Positive provider authorization for NextPay/Zarinpal can be
-        // staged before local settlement. Plain pending/failed browser
-        // redirects never qualify as proven incoming funds.
+        // An exact hosted VERIFY uncertainty is a *human-review claim*, not
+        // provider proof of funds. Paid native outcomes live in service recovery.
         $hosted="a.provider IN ('nextpay','zarinpal')
-            AND a.stage='review'
-            AND a.provider_status='fulfillment_started'";
+            AND ((a.stage='review' AND a.provider_status IN
+                     ('verification_uncertain','fulfillment_started'))
+              OR (a.stage='fulfilling' AND a.provider_status='operator_attested'
+                  AND EXISTS (SELECT 1 FROM payment_review_decisions d
+                      WHERE d.pay_row_id=p.id AND d.attempt_id=a.id
+                        AND d.decision='approve'
+                        AND d.state IN ('dispatching','unknown')))
+              OR (a.stage='review' AND a.provider_status='operator_fulfillment_unconfirmed'
+                  AND EXISTS (SELECT 1 FROM payment_review_decisions d
+                      WHERE d.pay_row_id=p.id AND d.attempt_id=a.id
+                        AND d.decision='approve' AND d.state='unknown')))";
+        if (!achbotPayUxTable($db,'payment_review_decisions'))
+            $hosted="a.provider IN ('nextpay','zarinpal') AND a.stage='review'
+                AND a.provider_status IN ('verification_uncertain','fulfillment_started')";
         // A saved human receipt is a CLAIM of payment, not provider proof.
         // A provider status alone is not authority to approve a hosted charge.
         $ledger="EXISTS (SELECT 1 FROM payment_attempts a
@@ -154,6 +165,25 @@ function achbotRecoveryAdditionalFundsCase(mysqli $db,int $payId): ?array {
     $q->bind_param('i',$payId);$q->execute();
     $exists=$q->get_result()->num_rows===1;$q->close();
     return $exists?achbotRecoveryAttentionCase($db,$payId):null;
+}
+
+/** Display-only proof of a safe original API continuation; settlement
+ * repeats all immutable evidence and native-effect checks under its locks.
+ * A processing service belongs to technical recovery, not financial review.
+ */
+function achbotRecoveryApiCanResume(mysqli $db,array $pay): bool {
+    $provider=(string)($pay['attempt']['provider']??'');
+    $state=(string)($pay['state']??'');
+    $id=(int)($pay['id']??0);
+    if ($id<=0 || !in_array($provider,['bank_transfer','gift_card'],true) ||
+        !in_array($state,['pending','have_sent','processing'],true) ||
+        ($state==='processing' && (int)($pay['approved_by']??-1)!==0)) return false;
+    $proof=achbotPaymentEvidenceGetProof($db,$id);
+    if (($proof['mode']??null)!=='settle') return false;
+    if ($state!=='processing' || (string)($pay['type']??'')==='BUY_SUB') return true;
+    $attempt=achbotApiPaymentAttempt($db,$id);
+    return in_array((string)($attempt['evidence_fulfillment_state']??''),
+        ['reserved','verified'],true);
 }
 
 /** Separate paid/held SERVICE recovery queue, never a second financial inbox.
@@ -320,7 +350,9 @@ function achbotRecoveryAttentionCase(mysqli $db, int $payId): ?array {
     if (!$pay) return null;
     $attempt=null;
     if (achbotPayUxTable($db,'payment_attempts')) {
-        $stmt=$db->prepare('SELECT id,provider,stage,provider_status,payment_id,quote_amount,quote_currency,local_amount_toman FROM payment_attempts WHERE pay_row_id=? LIMIT 1');
+        $stmt=$db->prepare('SELECT id,provider,stage,provider_status,payment_id,provider_reference,
+                quote_amount,quote_currency,local_amount_toman
+            FROM payment_attempts WHERE pay_row_id=? LIMIT 1');
         $stmt->bind_param('i',$payId);$stmt->execute();
         $attempt=$stmt->get_result()->fetch_assoc()?:null;$stmt->close();
     }

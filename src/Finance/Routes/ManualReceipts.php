@@ -125,8 +125,8 @@ if (preg_match('/^financeExtra(Inbox|Case)(?:_([1-9][0-9]{0,17}))?$/D',
     return;
 }
 
-// Unified read-only attention hub. Existing NP child inquiry and exact
-// BUY_SUB CREATE readback remain specialized, separately gated tools.
+// Quiet, actionable financial-review inbox. Only existing journal-backed
+// decision routes and original fulfillment/recovery callbacks can mutate.
 $attentionMatch=[];$technicalMatch=[];
 $technicalInbox=preg_match('/^attentionInboxService(?:_([1-9][0-9]{0,17}))?$/D',
     (string)$data,$technicalMatch)===1;
@@ -191,6 +191,57 @@ if ($technicalInbox ||
                 \achbotMessage('manual_payment.manual_receipts.text.11acfb8b65').$escAttention($a['stage']??\achbotMessage('manual_payment.manual_receipts.text.8e25fa8b4c')).\achbotMessage('manual_payment.manual_receipts.text.57895a27e1').$escAttention($a['provider_status']??\achbotMessage('manual_payment.manual_receipts.text.5749a86140'))."</code>\n\n".
                 achbotRecoveryEvidenceText($pay,$a).achbotRecoverySubjectText($pay);
             if ($a && (string)($a['payment_id']??'')!=='') $body.=\achbotMessage('manual_payment.manual_receipts.body.5c0b1f20fc').$escAttention($a['payment_id'])."</code>\n";
+            if ($a && (string)($a['provider_reference']??'')!=='')
+                $body.=achbotMessage('manual_payment.manual_receipts.body.5c0b1f20fc').
+                    $escAttention($a['provider_reference'])."</code>\n";
+            // The provider's unresolved VERIFY is not a financial receipt.
+            // Owner attestation remains separate from a merchant settlement.
+            if ((int)$from_id===(int)$admin && $a &&
+                in_array((string)$a['provider'],['nextpay','zarinpal'],true) &&
+                in_array((string)$pay['state'],['pending','send'],true) &&
+                $a['stage']==='review' &&
+                $a['provider_status']==='verification_uncertain') {
+                require_once __DIR__.'/../ReviewDecisions.php';
+                if (achbotNpDecisionSchemaReady($connection)) {
+                    $q=$connection->prepare('SELECT decision,state,outcome
+                        FROM payment_review_decisions WHERE pay_row_id=? LIMIT 1');
+                    $q->bind_param('i',$id);$q->execute();
+                    $journal=$q->get_result()->fetch_assoc();$q->close();
+                    if ($journal) {
+                        $body.=achbotMessageHtml('finance_workbench.prior_decision',[
+                            'decision'=>$journal['decision'],'state'=>$journal['state'],
+                            'outcome'=>$journal['outcome']??'unknown']);
+                    } else {
+                        $aid=(int)$a['id'];
+                        $rows[]=[[
+                            ['text'=>achbotMessage('finance_workbench.preview_button'),
+                                'callback_data'=>'hostedDecisionPA_'.$aid],
+                            ['text'=>achbotMessage('finance_workbench.reject_button'),
+                                'callback_data'=>'hostedDecisionPR_'.$aid],
+                        ]];
+                        $body.=achbotMessage('finance_workbench.manual_evidence_warning');
+                    }
+                } else $body.=achbotMessage('finance_workbench.migration_required');
+            }
+            if ($a && achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'payments') &&
+                achbotRecoveryApiCanResume($connection,$pay))
+                $rows[]=[['text'=>achbotMessage('finance_workbench.preview_button'),
+                    'callback_data'=>'apiEvidenceResume_'.$id]];
+            if ((int)$from_id===(int)$admin && $a &&
+                in_array((string)$a['provider'],['nextpay','zarinpal'],true) &&
+                (($a['stage']==='fulfilling' &&
+                  $a['provider_status']==='operator_attested') ||
+                 ($a['stage']==='review' &&
+                  $a['provider_status']==='operator_fulfillment_unconfirmed')) &&
+                achbotPayUxTable($connection,'payment_review_decisions')) {
+                $q=$connection->prepare('SELECT decision,state,outcome
+                    FROM payment_review_decisions WHERE pay_row_id=? LIMIT 1');
+                $q->bind_param('i',$id);$q->execute();
+                $journal=$q->get_result()->fetch_assoc();$q->close();
+                if ($journal) $body.=achbotMessageHtml('finance_workbench.prior_decision',[
+                    'decision'=>$journal['decision'],'state'=>$journal['state'],
+                    'outcome'=>$journal['outcome']??'unknown']);
+            }
             if ((int)$from_id===(int)$admin && ($a['provider']??'')==='nowpayments') {
                 $stmt=$connection->prepare('SELECT id FROM payment_attempts WHERE pay_row_id=? LIMIT 1');
                 $stmt->bind_param('i',$id);$stmt->execute();$attemptId=(int)($stmt->get_result()->fetch_assoc()['id']??0);$stmt->close();
@@ -466,6 +517,13 @@ if (preg_match('/^serviceRecovery(Inbox|Case)(?:_([1-9][0-9]{0,17}))?$/D',
                     $body.="\n".achbotMessage('service_edit_delivery.more');
                 $body.="\n".achbotMessage('service_edit_delivery.warning');
             }
+            if ($attempt && achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'payments') &&
+                achbotRecoveryApiCanResume($connection,$pay)) {
+                // Original proven API settlement owns its reserved/verified
+                // native effect; opening the workbench alone never replays it.
+                $buttons[]=[['text'=>achbotMessage('service_recovery_action.resume_purchase'),
+                    'callback_data'=>'apiEvidenceResume_'.$id]];
+            }
             if ($canResume) {
                 // The existing accept handler is the only financial/native
                 // continuation; its original proof and once-only journals
@@ -503,14 +561,81 @@ if (preg_match('/^serviceRecovery(Inbox|Case)(?:_([1-9][0-9]{0,17}))?$/D',
     return;
 }
 
-// Explicit, verified NOWPayments financial decisions. No unsolicited
-// notice, no shortcut around the original wallet/service/report path.
-$npDecisionPreview=[];$npDecisionCommit=[];
+// An existing authenticated bank/gift API proof can finish the ORIGINAL
+// payment. No provider GET, second financial ledger, or new access grant.
+if (preg_match('/^apiEvidenceResume_([1-9][0-9]{0,17})$/D',(string)$data,$apiResume)) {
+    if (!achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'payments') ||
+        (int)($chat_id??0)!==(int)$from_id) {
+        answerCallbackQuery($callbackId,achbotMessage('manual_payment.manual_receipts.alert.0a23f88410'),true);
+        return;
+    }
+    $payId=(int)$apiResume[1];
+    try {
+        // The direct callback may be the first admin route in this process.
+        // Do not depend on having opened the attention inbox beforehand.
+        require_once __DIR__.'/../RecoveryInspection.php';
+        require_once __DIR__.'/../ApiPayments.php';
+        $pay=achbotApiPaymentRow($connection,$payId);
+        $attempt=$pay?achbotApiPaymentAttempt($connection,$payId):null;
+        $proof=$pay?achbotPaymentEvidenceGetProof($connection,$payId):null;
+        if (!$pay || !$attempt) {
+            answerCallbackQuery($callbackId,achbotMessage('finance_workbench.status_stale'),true);
+            return;
+        }
+        $pay['attempt']=$attempt;
+        // Previously issued callbacks can safely revisit an already terminal
+        // invoice: the original coordinator dispatches only PENDING delivery
+        // packets, never money/native effects or UNKNOWN Telegram sends.
+        $terminalDeliveryOnly=achbotApiPaymentTerminal($pay) &&
+            in_array((string)$attempt['provider'],['bank_transfer','gift_card'],true) &&
+            ($proof['mode']??null)==='settle';
+        if ((!achbotRecoveryApiCanResume($connection,$pay) && !$terminalDeliveryOnly) ||
+            !is_array($proof)) {
+            answerCallbackQuery($callbackId,achbotMessage('finance_workbench.status_stale'),true);
+            return;
+        }
+        answerCallbackQuery($callbackId,achbotMessage('finance_workbench.checking'));
+        $outcome=achbotApiPaymentSettle($connection,$payId,$proof);
+        // A settled invoice is not necessarily an ACKed customer message.
+        // The terminal fast-path returns 'settled' after pending-only delivery;
+        // inspect the original per-message journal before reporting success.
+        $acknowledged=false;
+        if (in_array($outcome,['confirmed','settled'],true)) {
+            $delivery=achbotDeliveryAggregate($connection,$payId);
+            $acknowledged=$delivery && (int)$delivery['total']>0 &&
+                (int)$delivery['ack']===(int)$delivery['total'];
+        }
+        $result=$acknowledged
+            ? achbotMessage('finance_workbench.status_completed')
+            : (in_array($outcome,['confirmed','settled'],true)
+                ? achbotMessage('finance_workbench.status_delivery_unconfirmed')
+                : achbotMessage('finance_workbench.status_unknown'));
+        // The former financial case is no longer in its inbox after
+        // processing/terminal completion. Return to an always-valid list.
+        $buttons=json_encode(['inline_keyboard'=>[[['text'=>achbotMessage('finance_workbench.back'),
+            'callback_data'=>'attentionInbox']]]],JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
+        $text=achbotMessageHtml('finance_workbench.result',['result'=>$result]);
+        $reply=editText($message_id,$text,$buttons,'HTML',(int)$from_id);
+        if (!is_object($reply)||($reply->ok??false)!==true)
+            sendMessage($text,$buttons,'HTML',(int)$from_id);
+    } catch(Throwable $error) {
+        error_log('achbot_api_review_resume_unavailable pay_id='.$payId.
+            ' class='.get_class($error));
+        answerCallbackQuery($callbackId,achbotMessage('finance_workbench.status_unavailable'),true);
+    }
+    return;
+}
+
+// Direct Owner gateway decisions with the existing unique 019 journal.
+// No unsolicited review notice or shortcut around normal wallet/service effects.
+$npDecisionPreview=[];$npDecisionCommit=[];$hostedDecisionPreview=[];
 $npPreview=preg_match('/^npDecisionP([AR])_([1-9][0-9]{0,17})$/D',
     (string)$data,$npDecisionPreview)===1;
+$hostedPreview=preg_match('/^hostedDecisionP([AR])_([1-9][0-9]{0,17})$/D',
+    (string)$data,$hostedDecisionPreview)===1;
 $npCommit=preg_match('/^npDecisionC([AR])_([1-9][0-9]{0,17})_([1-9][0-9]{9})_([a-f0-9]{20})$/D',
     (string)$data,$npDecisionCommit)===1;
-if ($npPreview || $npCommit) {
+if ($npPreview || $npCommit || $hostedPreview) {
     if ((int)$admin<=0 || (int)$from_id!==(int)$admin ||
         (int)($chat_id??0)!==(int)$admin) {
         answerCallbackQuery($callbackId,achbotMessage('finance_workbench.denied'),true);
@@ -519,9 +644,15 @@ if ($npPreview || $npCommit) {
     require_once __DIR__.'/../ReviewDecisions.php';
     if (!defined('ACHBOT_NP_RECONCILE_ONLY')) define('ACHBOT_NP_RECONCILE_ONLY',true);
     require_once __DIR__.'/../GatewayReturn.php';
-    $parts=$npPreview?$npDecisionPreview:$npDecisionCommit;
+    $parts=$npPreview?$npDecisionPreview:($hostedPreview?$hostedDecisionPreview:$npDecisionCommit);
     $mode=$parts[1]==='A'?'approve':'reject';
     $id=(int)$parts[2];
+    $casePayId=0;
+    if ($hostedPreview) {
+        $q=$connection->prepare('SELECT pay_row_id FROM payment_attempts WHERE id=? LIMIT 1');
+        $q->bind_param('i',$id);$q->execute();
+        $casePayId=(int)($q->get_result()->fetch_assoc()['pay_row_id']??0);$q->close();
+    }
     $reply=static function(string $body,array $buttons) use ($message_id,$admin): void {
         $keys=json_encode(['inline_keyboard'=>$buttons],
             JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
@@ -530,7 +661,7 @@ if ($npPreview || $npCommit) {
             sendMessage($body,$keys,'HTML',(int)$admin);
     };
     $back=[[['text'=>achbotMessage('finance_workbench.back'),
-        'callback_data'=>'npReviewCase_'.$id]]];
+        'callback_data'=>$hostedPreview?'attentionCase_'.$casePayId:'npReviewCase_'.$id]]];
     try {
         answerCallbackQuery($callbackId,achbotMessage('finance_workbench.checking'));
         if (!achbotNpDecisionSchemaReady($connection))

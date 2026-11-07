@@ -474,6 +474,11 @@ def run_api(tmp: str) -> tuple[dict, dict]:
         'proof_backed_bulk_existing_create_journal',
         'verified_purchase_report_contains_native_account_names_and_pinned_terms',
         'qr_ack_failure_financial_and_native_once_delivery_unconfirmed_no_create_replay',
+        'actual_api_resume_telegram_unknown_native_create_not_replayed_or_misreported',
+        'actual_api_resume_terminal_all_acknowledged_true_delivery_result',
+        'actual_api_resume_terminal_pending_only_ack_returns_complete_no_double_credit',
+        'actual_api_resume_pending_failed_ack_unknown_no_automatic_resend',
+        'actual_api_resume_payment_user_chat_authority_preserved',
         'proof_backed_renew_existing_edit_finisher',
         'bank_renew_exact_manual_customer_copy_once',
         'proof_backed_day_existing_edit_finisher',
@@ -495,8 +500,10 @@ def run_api(tmp: str) -> tuple[dict, dict]:
         'concurrent_real_human_api_rvolume_at_most_once',
         'concurrent_real_human_api_rexternal_at_most_once',
         'restart_after_local_claim_reuses_capacity_hold_once',
+        'api_processing_proven_resume_is_technical_only_and_terminal_hint_disappears',
         'restart_verified_edit_finishes_without_native_redispatch',
         'admitted_maintenance_recovers_proven_processing_reserved_and_verified',
+        'api_verified_edit_processing_resume_uses_original_proven_claim_once',
         'uncertain_create_journal_never_redispatched',
         'configured_horizon_stops_new_scans_without_financial_expiry',
         'queued_invoice_edit_human_winner_converges_final',
@@ -1209,10 +1216,10 @@ def run_wallet(tmp: str) -> tuple[dict, dict]:
             and text_catalog.get("retired_parser_tokens")==23
             and text_catalog.get("relocation_source_ref")=="ecd30ba9192ed374703118a6c131be8809cc7b06"
             and text_catalog.get("native",{}).get("current_retired_feature_keys")==3
-            and text_catalog.get("catalog_keys")==2780+14+9+18+27+12+7+17+2+2+3+4
+            and text_catalog.get("catalog_keys")==2780+14+9+18+27+12+7+17+2+2+3+4+1
             and text_catalog.get("native",{}).get("editable_catalog_files")==2
             and text_catalog.get("native",{}).get("logical_topics")==28+8
-            and text_catalog.get("native",{}).get("current_catalog_keys")==2780+14+9+18+27+12+7+17+2+2+3+4
+            and text_catalog.get("native",{}).get("current_catalog_keys")==2780+14+9+18+27+12+7+17+2+2+3+4+1
             and text_catalog.get("native",{}).get("current_gift_admin_additions")==1
             and text_catalog.get("native",{}).get("current_gift_catalog_negative_controls")==8
             and text_catalog.get("native",{}).get("current_gift_catalog_negative_scenarios")==[
@@ -1242,7 +1249,7 @@ def run_wallet(tmp: str) -> tuple[dict, dict]:
             # and one five-slot message: 3 + 6 native samples, one object,
             # one multi-parameter object and one one-pass sample.
             # Preserve all prior counts and negative controls.
-            and text_catalog.get("native",{}).get("current_native_template_assertions")==4120+24+9+139+42+7+2+3+9
+            and text_catalog.get("native",{}).get("current_native_template_assertions")==4120+24+9+139+42+7+2+3+9+1
             and text_catalog.get("native",{}).get("current_object_conversion_templates")==268+2+15+5+1+1
             and text_catalog.get("native",{}).get("current_shared_multi_parameter_templates")==66+1+14+5+1+1
             and text_catalog.get("native",{}).get("current_one_pass_templates")==268+2+15+5+1+1
@@ -1253,7 +1260,7 @@ def run_wallet(tmp: str) -> tuple[dict, dict]:
             and text_catalog.get("native",{}).get("current_non_ascii_digit_templates")==0
             and text_catalog.get("presentation",{}).get("status")=="PASS"
             and text_catalog.get("presentation",{}).get("editable_files")==2
-            and text_catalog.get("presentation",{}).get("current_keys")==2780+14+9+18+27+12+7+17+2+2+3+4
+            and text_catalog.get("presentation",{}).get("current_keys")==2780+14+9+18+27+12+7+17+2+2+3+4+1
             and text_catalog.get("presentation",{}).get("numeric_template_changes")==23
             and text_catalog.get("presentation",{}).get("adjacent_emoji_violations")==0
             and text_catalog.get("presentation",{}).get("parameter_exception_count")==3
@@ -1305,7 +1312,7 @@ def run_wallet(tmp: str) -> tuple[dict, dict]:
         # Four retired #112 references and the additional old direct-delete
         # callback reference are proven absent by test_next_text_catalog.py.
         # Keep complete current-reference equality, never a lower bound.
-        'runtime_references':2453+14-1-6-4-1+8-3+28+12-5+2+3+4,
+        'runtime_references':2453+14-1-6-4-1+8-3+28+12-5+2+3+4+1,
         # +28 owner financial/service/delivery copy keys; +12 net from R2
         # financial exception and R3 final receipt. Two earlier recovery
         # labels and three original-edit recovery labels are statically
@@ -2472,6 +2479,7 @@ def run_effects(tmp: str) -> tuple[dict, dict]:
         "decision_token_binds_provider_digest",
         "approve_effect_completes",
         "exact_ledger_closes_after_effect",
+        "authenticated_provider_finished_provenance_preserved",
         "exactly_one_wallet_credit",
         "one_original_business_report",
         "repeated_or_raced_approve_never_dispatches_second_effect",
@@ -2484,6 +2492,7 @@ def run_effects(tmp: str) -> tuple[dict, dict]:
         "multiple_funded_child_not_fake_single_invoice",
         "owner_can_attest_saved_nonfinal_provider_evidence",
         "owner_direct_approve_runs_original_effect",
+        "nowpayments_human_final_003_does_not_forge_provider_finished",
         "owner_direct_approve_wallet_once",
         "human_attestation_not_fabricated_provider_finished",
         "owner_repeat_callback_no_second_credit",
@@ -2500,11 +2509,37 @@ def run_effects(tmp: str) -> tuple[dict, dict]:
         "additional_child_remains_in_financial_exception_ledger",
         "owner_unknown_original_effect_held",
         "owner_unknown_must_reconcile_not_repeat_effect",
+        "nextpay_operator_attestation_eligible",
+        "nextpay_fake_remote_success_denied",
+        "nextpay_pending_without_review_not_decidable",
+        "nextpay_operator_approval_dispatches_original",
+        "nextpay_operator_financial_commit_once",
+        "nextpay_human_finished_business_not_merchant_finished",
+        "nextpay_single_original_wallet_effect",
+        "nextpay_attestation_distinct_from_provider_settlement",
+        "nextpay_repeat_operator_callback_no_double_credit",
+        "zarinpal_operator_attestation_eligible",
+        "zarinpal_fake_remote_success_denied",
+        "zarinpal_pending_without_review_not_decidable",
+        "zarinpal_operator_rejects_unfinished_only",
+        "zarinpal_reject_never_claims_refund_or_credits",
+        "zarinpal_reject_cannot_be_reapproved",
+        "zarinpal_operator_approval_dispatches_original",
+        "zarinpal_human_003_019_provenance_distinct_from_merchant",
+        "zarinpal_repeat_owner_callback_wallet_native_once",
+        "hosted_failed_preclaim_is_durably_unknown",
+        "hosted_unknown_payment_still_has_decision_audit",
+        "hosted_unknown_preclaim_not_blindly_replayed",
     }
     if not (decision.get("complete") is True
             and set(decision.get("checks",[]))==required_decisions
             and decision.get("owned_mariadb") is True
             and decision.get("real_review_decision_source") is True
+            and decision.get("original_gateway_review_stage_source") is True
+            and decision.get("real_hosted_original_claim_after_uncertain") is True
+            and decision.get("hosted_wallet_finalized_once_after_uncertain") is True
+            and decision.get("operator_dispatch_journal_required") is True
+            and decision.get("no_merchant_or_customer_network") is True
             and decision.get("test_effect_is_synthetic") is True
             and decision.get("provider_http_calls")==0
             and decision.get("telegram_calls")==0
