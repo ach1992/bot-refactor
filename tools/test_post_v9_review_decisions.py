@@ -273,7 +273,7 @@ foreach(['nextpay'=>216,'zarinpal'=>217] as $provider=>$payId) {
  $db->query("UPDATE payment_attempts SET provider_status='verification_uncertain'
    WHERE id=".$attemptId);
  $before=(int)$db->query('SELECT wallet FROM users WHERE userid=1001')->fetch_row()[0];
- $events=count($GLOBALS['events']);
+ $eventsBefore=count($GLOBALS['events']);
  if($provider==='nextpay') {
   check(achbotNpDecisionCommit($db,9001,$attemptId,'approve',null)['status']==='completed',
     'nextpay_operator_approval_dispatches_original');
@@ -288,14 +288,14 @@ foreach(['nextpay'=>216,'zarinpal'=>217] as $provider=>$payId) {
     $decision['payment_id']===$hash.'-authority',
     'nextpay_attestation_distinct_from_provider_settlement');
   check(achbotNpDecisionCommit($db,9001,$attemptId,'approve',null)['status']!=='completed' &&
-    count($GLOBALS['events'])===$events+2,
+    count($GLOBALS['events'])===$eventsBefore+2,
     'nextpay_repeat_operator_callback_no_double_credit');
  } else {
   check(achbotNpDecisionCommit($db,9001,$attemptId,'reject',null)['status']==='rejected',
     'zarinpal_operator_rejects_unfinished_only');
   check(row($db,$hash)['pay_state']==='declined' &&
     (int)$db->query('SELECT wallet FROM users WHERE userid=1001')->fetch_row()[0]
-       ===$before && count($GLOBALS['events'])===$events,
+       ===$before && count($GLOBALS['events'])===$eventsBefore,
     'zarinpal_reject_never_claims_refund_or_credits');
   check(achbotNpDecisionCommit($db,9001,$attemptId,'approve',null)['status']!=='completed',
     'zarinpal_reject_cannot_be_reapproved');
