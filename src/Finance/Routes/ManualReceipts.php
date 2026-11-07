@@ -251,6 +251,20 @@ if ($technicalInbox ||
                     'callback_data'=>'accept'.$pay['hash_id']]];
                 $body.="\n".achbotMessage('service_recovery_action.resume_warning');
             }
+            if ($manual && ($pay['state']??null)==='processing' &&
+                achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'payments') &&
+                preg_match('/^[A-Za-z0-9_-]{1,50}$/D',(string)($pay['hash_id']??''))) {
+                require_once __DIR__.'/../ManualEditRecovery.php';
+                if (achbotManualPgEditRecoverable($connection,$pay)) {
+                    $kind=(string)$pay['type'];
+                    $callback=$kind==='RENEW_ACCOUNT'?'approveRenewAcc':
+                        (str_starts_with($kind,'INCREASE_DAY_')?'approveIncreaseDay':'approveIncreaseVolume');
+                    $rows[]=[['text'=>achbotMessage('service_recovery_action.resume_verified_edit'),
+                        'callback_data'=>$callback.$pay['hash_id']]];
+                    $body.="
+".achbotMessage('service_recovery_action.edit_warning');
+                }
+            }
             if ($manual && $pay['state']==='have_sent') $body.=\achbotMessage('manual_payment.manual_receipts.body.189e0e519d');
             elseif ($pay['type']==='INCREASE_WALLET') $body.=\achbotMessage('manual_payment.manual_receipts.body.12b390893d');
             elseif ($pay['type']!=='BUY_SUB') $body.=\achbotMessage('manual_payment.manual_receipts.body.6c27eff9db');

@@ -329,6 +329,14 @@ if (preg_match('/wait(?:IncreaseDay|IncreaseDayGift|IncreaseDayUsdt)Receipt(.*)/
 }
 
 if (preg_match('/^approveIncreaseDay(.*)/', $data, $match) && achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'payments')) {
+    require_once __DIR__.'/../ManualEditRecovery.php';
+    $resume=achbotManualPgResumeEdit($connection,(string)$match[1],(int)$from_id,'day');
+    if ($resume!==null) {
+        if ($resume['status']==='approved') {
+            achbotManualPgEditNotify($connection,$resume['evidence'],$mainValues,(int)$admin);
+        } else alert(achbotMessage('service_recovery_action.edit_unverified'),true);
+        return;
+    }
     $apiManualSeen=function_exists('achbotApiPaymentManualAddonPreflight') ? achbotApiPaymentManualAddonPreflight($connection,(string)$match[1]) : null;
     $connection->begin_transaction();
     $localCommitted=false;
@@ -1156,6 +1164,14 @@ if (preg_match('/wait(?:IncreaseVolume|IncreaseVolumeGift|IncreaseVolumeUsdt)Rec
 }
 
 if (preg_match('/^approveIncreaseVolume(.*)/', $data, $match) && achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'payments')) {
+    require_once __DIR__.'/../ManualEditRecovery.php';
+    $resume=achbotManualPgResumeEdit($connection,(string)$match[1],(int)$from_id,'volume');
+    if ($resume!==null) {
+        if ($resume['status']==='approved') {
+            achbotManualPgEditNotify($connection,$resume['evidence'],$mainValues,(int)$admin);
+        } else alert(achbotMessage('service_recovery_action.edit_unverified'),true);
+        return;
+    }
     $apiManualSeen=function_exists('achbotApiPaymentManualAddonPreflight') ? achbotApiPaymentManualAddonPreflight($connection,(string)$match[1]) : null;
     $connection->begin_transaction();
     $localCommitted=false;

@@ -1347,10 +1347,10 @@ function achbotManualLegacyLedgerAbsent(mysqli $db): bool {
  * methods require their exclusive ledger attempt and saved original photo.
  * Ledger failures fail closed rather than impersonating historical receipts.
  */
-function achbotManualServiceApprovalAllowedLocked(mysqli $connection, ?array $pay, string $subject): bool {
+function achbotManualServiceApprovalAllowedLocked(mysqli $connection, ?array $pay, string $subject, bool $resumingVerifiedEdit=false): bool {
     if (!$pay || (int)($pay['id'] ?? 0) <= 0 ||
         (int)($pay['user_id'] ?? 0) <= 0 ||
-        (string)($pay['state'] ?? '') !== 'have_sent' ||
+        (string)($pay['state'] ?? '') !== ($resumingVerifiedEdit?'processing':'have_sent') ||
         (string)($pay['payid'] ?? '') !== '' ||
         (int)($pay['message_id'] ?? 0) <= 0 ||
         (int)($pay['chat_id'] ?? 0) === 0) return false;
