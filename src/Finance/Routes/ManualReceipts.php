@@ -293,8 +293,9 @@ if (preg_match('/^serviceRecovery(Inbox|Case)(?:_([1-9][0-9]{0,17}))?$/D',
                 achbotRecoveryEvidenceText($pay,$attempt).
                 achbotRecoverySubjectText($pay).
                 "
-".achbotMessage($canResume?'service_recovery_action.resume_warning':
-                    'service_workbench.readonly_warning');
+".($canResume
+                    ?achbotMessage('service_recovery_action.resume_warning')
+                    :achbotMessage('service_workbench.readonly_warning'));
             if ($canResume) {
                 // The existing accept handler is the only financial/native
                 // continuation; its original proof and once-only journals
