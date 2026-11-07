@@ -293,13 +293,13 @@ if (preg_match('/^serviceRecovery(Inbox|Case)(?:_([1-9][0-9]{0,17}))?$/D',
                 achbotRecoveryEvidenceText($pay,$attempt).
                 achbotRecoverySubjectText($pay).
                 "
-".achbotMessage($canResume?'service_workbench.resume_warning':
+".achbotMessage($canResume?'service_recovery_action.resume_warning':
                     'service_workbench.readonly_warning');
             if ($canResume) {
                 // The existing accept handler is the only financial/native
                 // continuation; its original proof and once-only journals
                 // are rechecked under locks. No new recovery state machine.
-                $buttons[]=[['text'=>achbotMessage('service_workbench.resume_purchase'),
+                $buttons[]=[['text'=>achbotMessage('service_recovery_action.resume_purchase'),
                     'callback_data'=>'accept'.$pay['hash_id']]];
             }
             if ($pay['type']==='BUY_SUB') {

@@ -400,6 +400,10 @@ WORKBENCH_BLOCKS={
   'names':{'title','empty','case_label','case_title','readonly_warning','open',
    'back','back_finance','next','first','checked','unavailable'}
  },
+ 'service_recovery_action':{
+  'sha':'1e5896a686f2da925875a5fcc54ba5a2bfabd17d10e6bc73513851803d9be1e0',
+  'names':{'resume_purchase','resume_warning'}
+ },
  'delivery_workbench':{
   'sha':'0ac67e667fe6669be3a8dae1a90de94dc7347dcb6bc129052f61d190bbf144f3',
   'names':{'inbox_title','inbox_empty','inbox_case','open_inbox',
@@ -844,14 +848,15 @@ def api_source_references(path,source):
         # checking the same pinned API source and previously accepted #107 insertion.
         audited=source
         if path=='src/Finance/ApiPayments.php':
-            # #117 replaces the fallible in-memory delivery branch without
-            # changing the historical dynamic-message approval inventory.
-            # Pin the entire new consumer byte-for-byte, and require the
-            # separately accepted previous exact main source as the object
-            # fed to unchanged prior-lineage normalization below. Unapproved
-            # edits (including negative controls) still fail closed.
-            if hashlib.sha256(source.encode()).hexdigest()==(
-                '811aa2c126a30cc156e2b25055479fa729f3d277a9a5aff71e8f484142714a98'):
+            # Preserve the original #117 source proof and explicitly pin
+            # the reviewed interrupted-BUY_SUB continuation delta. Neither
+            # changes the catalog's historical dynamic-message inventory.
+            # New or modified consumers are rejected until given an exact
+            # independent source identity, including in negative controls.
+            if hashlib.sha256(source.encode()).hexdigest() in {
+                '811aa2c126a30cc156e2b25055479fa729f3d277a9a5aff71e8f484142714a98',
+                '82ab48ab2e18ca7e48e67349b132df8ad77170095911dc9461a0c03b062a3208',
+            }:
                 baseline=command('git','show',
                     '17af1e55dc4cb8db6751a731bb223d93dc6f902f:src/Finance/ApiPayments.php')
                 check(hashlib.sha256(baseline).hexdigest()==(
