@@ -1171,13 +1171,14 @@ def run_wallet(tmp: str) -> tuple[dict, dict]:
             and text_catalog["native"]["current_byte_preserved_keys"]
                 +text_catalog["native"]["current_style_changes"]
                 +text_catalog["native"]["current_added_admin_keys"]==2523
-            # 14 exact new scoped admin keys: 12 literal messages (1 test
-            # each), 2 parameterized (6 adversarial inputs each); two object
-            # conversions, one multi-parameter case, two one-pass cases.
-            and text_catalog.get("native",{}).get("current_native_template_assertions")==4120+24+9
-            and text_catalog.get("native",{}).get("current_object_conversion_templates")==268+2
-            and text_catalog.get("native",{}).get("current_shared_multi_parameter_templates")==66+1
-            and text_catalog.get("native",{}).get("current_one_pass_templates")==268+2
+            # #117 has exactly four source-hash-pinned workbench topics:
+            # 64 additions, 15 parameterized and 14 multi-parameter.
+            # Recompute the native adversarial proof totals rather than
+            # interpreting the new topic entries as a weaker copy audit.
+            and text_catalog.get("native",{}).get("current_native_template_assertions")==4120+24+9+139
+            and text_catalog.get("native",{}).get("current_object_conversion_templates")==268+2+15
+            and text_catalog.get("native",{}).get("current_shared_multi_parameter_templates")==66+1+14
+            and text_catalog.get("native",{}).get("current_one_pass_templates")==268+2+15
             and text_catalog.get("native",{}).get("current_r5_changes")==273
             and text_catalog.get("native",{}).get("current_r5_retired_keys")==10
             and text_catalog.get("native",{}).get("current_r5_added_keys")==60
