@@ -113,6 +113,10 @@ function buildLinksAndSendQr(...$args) {
     // CREATE/strict GET has been durably journaled, before local finality.
     // This hook exists only in this disposable synthetic PHP fixture.
     $mode=(string)($GLOBALS['spec']['mode']??'');
+    if ($mode==='crash_before_second_ordinal' && !($GLOBALS['fixture_crashed_first']??false)) {
+        $GLOBALS['fixture_crashed_first']=true;
+        throw new RuntimeException('synthetic_crash_between_first_and_second_ordinal');
+    }
     if (in_array($mode,['plan_dimensions_drift','plan_target_drift'],true) &&
         !($GLOBALS['fixture_plan_edited']??false)) {
         global $socket,$dbName;
@@ -183,6 +187,20 @@ function sendMessage($text=null,$keys=null,$mode=null,$to=null) {
 function editKeys(...$args) {
     $GLOBALS['events'][]=['event'=>'EDIT_KEYS','state'=>fixtureState()];
 }
+// Other acceptance fixtures compose this source with their own Telegram
+// callbacks. Define local spies only when that composed driver has none.
+if (!function_exists('answerCallbackQuery')) {
+    function answerCallbackQuery(...$args) {
+        $GLOBALS['events'][]=['event'=>'ACK','text'=>(string)($args[1]??'')];
+    }
+}
+if (!function_exists('editText')) {
+    function editText(...$args) {
+        $GLOBALS['events'][]=['event'=>'EDIT','state'=>fixtureState(),
+            'buttons'=>json_decode((string)($args[2]??''),true)];
+        return (object)['ok'=>true];
+    }
+}
 function getMainKeys() {return '{}';}
 function sendToAllAdmins(...$args) {return null;}
 function giveReferralReward(...$args) {$GLOBALS['events'][]=['event'=>'REFERRAL'];}
@@ -216,6 +234,23 @@ if ($op==='claim') {
     require_once $root.'/src/Finance/DeliveryLedger.php';
     $value=achbotDeliveryDispatch($connection,(int)$spec['pay'],(int)$spec['ordinal'],
         (int)($spec['actor']??9001),(string)($spec['challenge']??''));
+} elseif ($op==='accept_resume') {
+    $id=(int)($spec['pay']??0);
+    $p=$connection->query('SELECT hash_id FROM pays WHERE id='.$id)->fetch_assoc();
+    $data='accept'.(string)($p['hash_id']??'');
+    $from_id=(int)($spec['actor']??9001);
+    $chat_id=(int)($spec['chat']??9001);
+    $callbackId='fixture-bank-owner';$message_id=550;$text='';
+    $userInfo=['step'=>''];
+    if (($spec['debug_preview']??false)===true) {
+        require_once $root.'/src/Finance/RecoveryInspection.php';
+        $item=achbotRecoveryTechnicalCase($connection,$id);
+        $GLOBALS['events'][]=['event'=>'PREVIEW','case'=>is_array($item),
+          'state'=>$item['state']??null,'stage'=>$item['attempt']['stage']??null,
+          'bank_resume'=>$item?achbotRecoveryCanResumeBankPurchase($connection,$item):false];
+    }
+    require $root.'/src/Finance/Routes/ManualReceipts.php';
+    $value=true;
 } elseif ($op==='break_attempt') {
     fixtureAlterOriginalBankAttempt((int)($spec['pay']??0),
         ($spec['mode']??'delete')==='replace'?'replace':'delete');
@@ -225,8 +260,18 @@ if ($op==='claim') {
     $id=(int)($spec['pay']??0);
     $pay=$connection->query('SELECT * FROM pays WHERE id='.$id)->fetch_assoc();
     try {
+        // Inject a synthetic independent provider observation for this
+        // isolated recovery only. No production transport is replaced.
+        $nativeGet=null;
+        if (($spec['mode']??'')==='resume_proven') {
+            $nativeGet=static function(string $url,string $login,string $password,string $name) use ($spec): ?object {
+                $proof=$spec['native_accounts'][$name]??null;
+                $GLOBALS['events'][]=['event'=>'PINNED_NATIVE_GET','username'=>$name];
+                return $url==='http://127.0.0.1:9' && is_array($proof) ? (object)$proof : null;
+            };
+        }
         $value=achbotAutoBankProvisionBuySub(
-            $connection,$pay,$botState,$buttonValues,[0],false,$botUrl);
+            $connection,$pay,$botState,$buttonValues,[0],false,$botUrl,null,$nativeGet);
     } catch (Throwable $error) {
         $value=['committed'=>false,'deferred'=>true];
     }
@@ -347,7 +392,25 @@ def check():
                   '003_payment_attempts.sql','007_service_effects.sql',
                   '009_bank_buy_invoice_claims.sql','018_payment_delivery_intents.sql'):
             query(work,env,(ROOT/'migrations/post-v9'/f).read_text())
-        driver=work/'bank-buy-driver.php';driver.write_text(PHP)
+        query(work,env,'UPDATE users SET isAdmin=1 WHERE userid=9002')
+        query(work,env,"INSERT INTO setting(type,value) VALUES('ADMIN_ROLE_9002','manager')")
+        # Other owner/API suites compose the unchanged base PHP fixture and
+        # replace its minimal editKeys spy. Enrich ONLY this bank driver's
+        # own disposable copy for receipt-address/failure assertions.
+        edit_spy='''function editKeys(...$args) {
+    $GLOBALS['events'][]=['event'=>'EDIT_KEYS','state'=>fixtureState()];
+}'''
+        receipt_spy='''function editKeys(...$args) {
+    $keyboard=json_decode((string)($args[0]??''),true);
+    $chat=(int)($args[2]??0);
+    $GLOBALS['events'][]=['event'=>'EDIT_KEYS','state'=>fixtureState(),
+        'message_id'=>(int)($args[1]??0),'chat_id'=>$chat,
+        'button'=>$keyboard['inline_keyboard'][0][0]??null];
+    if (($GLOBALS['spec']['mode']??'')==='receipt_edit_fail' && $chat===9001)
+        throw new RuntimeException('synthetic_original_receipt_edit_failed');
+}'''
+        assert PHP.count(edit_spy)==1
+        driver=work/'bank-buy-driver.php';driver.write_text(PHP.replace(edit_spy,receipt_spy))
         _issuer_driver=issuer_driver(work)
         query(work,env,"INSERT INTO setting(type,value) VALUES "
             "('BOT_STATES','{\"cartToCartState\":\"on\"}')")
@@ -357,7 +420,15 @@ def check():
         assert run(work,env,driver,op='claim',pay=claim)['result'] is False
         cases.append('buy_sub_nonterminal_exclusive_claim')
 
+        # Preserve the existing administrator-copy policy: a current Manager
+        # must receive status edits even with *new* notifications switched off;
+        # unknown staff and a second message in the primary chat are excluded.
+        query(work,env,"INSERT INTO setting(type,value) VALUES('ADMIN_NOTIFY_9002','off')")
+        copies=json.dumps([{'chat_id':9002,'message_id':551},
+                           {'chat_id':9003,'message_id':552},
+                           {'chat_id':9001,'message_id':553}])
         good=seed(work,env,'bankbuygood')
+        query(work,env,f"UPDATE pays SET admins_messages='{copies}' WHERE id={good}")
         ok=run(work,env,driver,pay=good)
         assert state(work,env,good)=='auto_cart_approved',ok
         assert [e['event'] for e in ok['events']
@@ -369,6 +440,13 @@ def check():
         assert effects(work,env,good)=='local_recorded'
         assert not any(e['event']=='POST' for e in run(work,env,driver,pay=good)['events'])
         cases.append('one_verified_account_atomic_order_before_telegram_no_replay')
+        cron_edits=[e for e in ok['events'] if e['event']=='EDIT_KEYS']
+        assert [(e['chat_id'],e['message_id']) for e in cron_edits]==[(9001,550),(9002,551)],cron_edits
+        assert all(e['state']=='auto_cart_approved' and e['button']['callback_data']=='wizwizch'
+                   for e in cron_edits),cron_edits
+        original_success_label=cron_edits[0]['button']['text']
+        assert original_success_label and cron_edits[1]['button']['text']==original_success_label
+        cases.append('original_bank_cron_receipt_primary_and_eligible_mirror_still_updated')
         assert query(work,env,f"SELECT ordinal,state,attempt_count FROM payment_delivery_intents WHERE pay_row_id={good}")=='1\tacknowledged\t1'
         assert query(work,env,f"SELECT attempt_no,result,actor_userid FROM payment_delivery_attempts WHERE intent_id=(SELECT id FROM payment_delivery_intents WHERE pay_row_id={good})")=='1\tacknowledged\t0'
         protected=query(work,env,f"SELECT sealed_payload FROM payment_delivery_intents WHERE pay_row_id={good}")
@@ -390,6 +468,85 @@ def check():
         assert again['result']==[] and not again['events'],again
         assert total(work,env,'orders_list',crash)==1 and total(work,env,'service_effects',crash)==1
         cases.append('crash_postterminal_before_telegram_resumes_pending_only_once')
+
+        # The timer only scans have_sent. A durable processing claim with
+        # no remote line must be actionable through the Owner's real
+        # technical recovery callback, using precisely that old 003/009
+        # invoice. Opening a route is NOT another financial approval.
+        owner=seed(work,env,'ownerbankresume')
+        query(work,env,f"UPDATE pays SET admins_messages='{copies}' WHERE id={owner}")
+        assert run(work,env,driver,op='claim',pay=owner)['result'] is True
+        assert state(work,env,owner)=='processing'
+        denied=run(work,env,driver,op='accept_resume',pay=owner,actor=1001,chat=1001)
+        assert not any(x['event']=='POST' for x in denied['events']),denied
+        assert state(work,env,owner)=='processing'
+        assert total(work,env,'service_effects',owner)==0
+        cases.append('bank_original_accept_denies_customer_without_native_effect')
+        finished=run(work,env,driver,op='accept_resume',pay=owner,
+                     actor=9002,chat=9002,debug_preview=True)
+        assert state(work,env,owner)=='auto_cart_approved',finished
+        assert any(e['event']=='PREVIEW' and e['bank_resume'] is True and
+                   e['stage']=='pending' for e in finished['events']),finished
+        assert sum(e['event']=='POST' for e in finished['events'])==1,finished
+        assert sum(e['event']=='DELIVER' for e in finished['events'])==1,finished
+        assert all(e['state']=='auto_cart_approved' for e in finished['events']
+                   if e['event']=='DELIVER')
+        assert effects(work,env,owner)=='local_recorded'
+        assert total(work,env,'orders_list',owner)==1
+        assert total(work,env,'payment_delivery_intents',owner)==1
+        assert any(e['event']=='ACK' for e in finished['events'])
+        edits=[e for e in finished['events'] if e['event']=='EDIT_KEYS']
+        assert [(e['chat_id'],e['message_id']) for e in edits]==[(9001,550),(9002,551)],finished
+        assert all(e['state']=='auto_cart_approved' and
+                   e['button']=={'text':original_success_label,'callback_data':'wizwizch'}
+                   for e in edits),finished
+        cases.append('manager_resume_updates_original_and_eligible_stored_receipts')
+        cases.append('bank_manager_original_accept_resume_once_native_then_delivery')
+        repeated=run(work,env,driver,op='accept_resume',pay=owner,actor=9002,chat=9002)
+        assert not any(e['event'] in ('POST','DELIVER','EDIT_KEYS','REFERRAL')
+                       for e in repeated['events'])
+        assert total(work,env,'orders_list',owner)==1
+        assert total(work,env,'service_effects',owner)==1
+        assert total(work,env,'payment_delivery_intents',owner)==1
+        cases.append('manager_repeat_callback_no_order_referral_receipt_or_delivery_replay')
+        failed_edits=seed(work,env,'ownerbankeditfailure')
+        query(work,env,f"UPDATE pays SET admins_messages='{copies}' WHERE id={failed_edits}")
+        assert run(work,env,driver,op='claim',pay=failed_edits)['result'] is True
+        recovered=run(work,env,driver,op='accept_resume',pay=failed_edits,
+                      actor=9002,chat=9002,mode='receipt_edit_fail')
+        assert state(work,env,failed_edits)=='auto_cart_approved',recovered
+        assert sum(e['event']=='POST' for e in recovered['events'])==1
+        assert sum(e['event']=='DELIVER' for e in recovered['events'])==1
+        assert [(e['chat_id'],e['message_id']) for e in recovered['events']
+                if e['event']=='EDIT_KEYS']==[(9001,550)]
+        assert total(work,env,'orders_list',failed_edits)==1
+        after_edit_failure=run(work,env,driver,op='accept_resume',pay=failed_edits,
+                               actor=9002,chat=9002)
+        assert not any(e['event'] in ('POST','DELIVER','EDIT_KEYS','REFERRAL')
+                       for e in after_edit_failure['events']),after_edit_failure
+        assert total(work,env,'orders_list',failed_edits)==1
+        assert total(work,env,'payment_delivery_intents',failed_edits)==1
+        cases.append('original_receipt_edit_failure_postcommit_never_rearms_native_or_delivery')
+        cases.append('bank_manager_repeat_callback_never_reissues_account_or_delivery')
+        forged=seed(work,env,'ownerbankdrift')
+        assert run(work,env,driver,op='claim',pay=forged)['result'] is True
+        query(work,env,f'UPDATE payment_attempts SET local_amount_toman=777 WHERE pay_row_id={forged}')
+        bad=run(work,env,driver,op='accept_resume',pay=forged)
+        assert state(work,env,forged)=='processing' and total(work,env,'service_effects',forged)==0
+        assert not any(e['event']=='POST' for e in bad['events'])
+        cases.append('bank_owner_changed_original_attempt_cannot_start_native')
+        uncertain=seed(work,env,'ownerbanknativeunknown')
+        assert run(work,env,driver,op='claim',pay=uncertain)['result'] is True
+        initial=run(work,env,driver,op='provision_claimed',pay=uncertain,mode='lost')
+        assert state(work,env,uncertain)=='processing'
+        assert effects(work,env,uncertain)=='dispatching'
+        assert sum(e['event']=='POST' for e in initial['events'])==1
+        retry=run(work,env,driver,op='accept_resume',pay=uncertain)
+        assert state(work,env,uncertain)=='processing'
+        assert effects(work,env,uncertain)=='dispatching'
+        assert not any(e['event'] in ('POST','DELIVER') for e in retry['events'])
+        assert total(work,env,'orders_list',uncertain)==0
+        cases.append('owner_bank_unknown_native_effect_no_blind_second_create')
 
         # A valid per-server qr:none is a text-only delivery, not a failed CREATE.
         query(work,env,"INSERT INTO setting(type,value) VALUES ('ACHBOT_SERVER_DISPLAY_2'," +
@@ -874,6 +1031,72 @@ def check():
         assert total(work,env,'orders_list',partial)==0
         assert not any(e['event']=='DELIVER' for e in mixed['events'])
         cases.append('multi_line_partial_unknown_requires_review_not_refund')
+        # Reconcile against an explicitly supplied synthetic native GET,
+        # independent of source's 007 row. A missing account or conflicting
+        # operation marker MUST NOT trigger a second CREATE or local order.
+        native={}
+        for row in query(work,env,f'SELECT remote_username,operation_id,requested_expire,requested_bytes '
+                f'FROM service_effects WHERE pay_row_id={partial} AND effect_kind=\'create\' ORDER BY ordinal').splitlines():
+            name,op,exp,quota=row.split('\t')
+            native[name]={'username':name,'note':'achbot:v1:'+op,'expire':int(exp),
+                          'data_limit':int(quota),'status':'active',
+                          'subscription_url':'http://127.0.0.1:9/sub/fixture',
+                          'links':['vless://fixture.invalid']}
+        assert len(native)==2
+        no_native=run(work,env,driver,op='provision_claimed',pay=partial,
+                      mode='resume_proven',native_accounts={})
+        assert no_native['result']['committed'] is False
+        assert not any(x['event']=='POST' for x in no_native['events'])
+        assert effects(work,env,partial)=='verified,dispatching'
+        cases.append('partial_bank_no_native_proof_fails_closed_without_post')
+        wrong_native={k:dict(v) for k,v in native.items()}
+        wrong_native[next(reversed(wrong_native))]['note']='another-operation'
+        mismatch=run(work,env,driver,op='provision_claimed',pay=partial,
+                     mode='resume_proven',native_accounts=wrong_native)
+        assert mismatch['result']['committed'] is False
+        assert not any(x['event']=='POST' for x in mismatch['events'])
+        assert effects(work,env,partial)=='verified,dispatching'
+        cases.append('partial_bank_wrong_native_marker_fails_closed_without_post')
+        # All slots were reserved before the first POST. Remaining free
+        # capacity may legitimately be zero when a restart happens.
+        free=int(query(work,env,'SELECT ucount FROM server_info WHERE id=2'))
+        query(work,env,'UPDATE server_info SET ucount=0 WHERE id=2')
+        proven=run(work,env,driver,op='provision_claimed',pay=partial,
+                   mode='resume_proven',native_accounts=native)
+        assert proven['result']['committed'] is True,proven
+        assert state(work,env,partial)=='auto_cart_approved'
+        assert effects(work,env,partial)=='local_recorded,local_recorded'
+        assert total(work,env,'orders_list',partial)==2
+        assert query(work,env,'SELECT ucount FROM server_info WHERE id=2')=='0'
+        assert sum(x['event']=='PINNED_NATIVE_GET' for x in proven['events'])==2
+        assert not any(x['event']=='POST' for x in proven['events'])
+        assert total(work,env,'payment_delivery_intents',partial)==2
+        query(work,env,f'UPDATE server_info SET ucount={free} WHERE id=2')
+        cases.append('partial_bank_native_match_resumes_exact_ordinals_and_original_held_capacity')
+        # A process loss BEFORE ordinal 2 exists must allow exactly ONE
+        # new second CREATE; the original first ordinal is GET-only.
+        interrupted=seed(work,env,'bankmissingordinal',count=2)
+        first=run(work,env,driver,pay=interrupted,mode='crash_before_second_ordinal')
+        assert state(work,env,interrupted)=='processing'
+        assert effects(work,env,interrupted)=='verified'
+        assert sum(x['event']=='POST' for x in first['events'])==1
+        row=query(work,env,f'SELECT remote_username,operation_id,requested_expire,requested_bytes '
+                  f'FROM service_effects WHERE pay_row_id={interrupted} AND ordinal=1').split('\t')
+        name,op,exp,quota=row
+        known={name:{'username':name,'note':'achbot:v1:'+op,
+                     'expire':int(exp),'data_limit':int(quota),'status':'active',
+                     'subscription_url':'http://127.0.0.1:9/sub/fixture',
+                     'links':['vless://fixture.invalid']}}
+        resumed=run(work,env,driver,op='provision_claimed',pay=interrupted,
+                    mode='resume_proven',native_accounts=known)
+        assert resumed['result']['committed'] is True,resumed
+        assert state(work,env,interrupted)=='auto_cart_approved'
+        assert effects(work,env,interrupted)=='local_recorded,local_recorded'
+        assert total(work,env,'orders_list',interrupted)==2
+        assert sum(x['event']=='POST' for x in resumed['events'])==1,resumed
+        assert sum(x['event']=='PINNED_NATIVE_GET' for x in resumed['events'])==1
+        assert total(work,env,'payment_delivery_intents',interrupted)==2
+        cases.append('unfinished_second_bulk_ordinal_created_once_original_first_readback_only')
 
         sqlfail=seed(work,env,'bankbuysqlfail')
         query(work,env,"CREATE TRIGGER fixture_bank_order_fail BEFORE INSERT ON orders_list "

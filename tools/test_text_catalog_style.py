@@ -606,11 +606,12 @@ echo json_encode(['violations'=>$violations,'topics'=>count(achbotMessageTopics(
     # remediation adds a pinned finance exception and terminal receipt topic.
     additional={'delivery_recovery','finance_workbench',
                 'delivery_workbench','service_workbench',
+                'service_recovery_action',
                 'finance_exceptions','manual_receipt_final'}
     topics=json.loads(command('php','-r',
         'require "messages/loader.php";echo json_encode(achbotMessageTopics());'))
     check(native['topics']==28+len(additional) and additional<=set(topics),
-          'Expected six source-proven review/recovery topics')
+          'Expected seven source-proven review/recovery topics')
     # A mistaken cross-file move/copy must fail closed, never silently let
     # one audience override the other's value. Poison only an owned temporary
     # copy; the actual source and catalog remain untouched.

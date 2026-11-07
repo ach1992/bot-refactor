@@ -367,7 +367,7 @@ foreach($deliveryNames as$name){
 // evidence, not only extra SECONDARY merchant children. The exact revised
 // digest below is restricted to the two new owner-private keys and the
 // corrected category labels; source identity remains strict.
-// #117's two additional, owner-private workbench topics are strictly
+// #117's owner-private workbench topics remain strictly
 // additive. Hash exact source blocks and prove their complete inventories;
 // never rebaseline or weaken the older whole-catalogue controls.
 $workbench = [
@@ -391,6 +391,9 @@ $workbench = [
   'digest'=>'feda16d173f3d99b91d9544715c170d4c978a5763e02ffd1164a4e7dc75dbaf8',
   'names'=>['title','empty','case_label','case_title','readonly_warning',
    'open','back','back_finance','next','first','checked','unavailable']],
+ 'service_recovery_action'=>[
+  'digest'=>'1e5896a686f2da925875a5fcc54ba5a2bfabd17d10e6bc73513851803d9be1e0',
+  'names'=>['resume_purchase','resume_warning']],
  'delivery_workbench'=>[
   'digest'=>'0ac67e667fe6669be3a8dae1a90de94dc7347dcb6bc129052f61d190bbf144f3',
   'names'=>['inbox_title','inbox_empty','inbox_case','open_inbox','native_inbox',

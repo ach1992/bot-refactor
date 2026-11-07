@@ -191,6 +191,88 @@ function achbotRecoveryTechnicalSql(mysqli $db): string {
         OR (p.state='paid' AND (($renewals) OR ($effects) OR ($hosted))))";
 }
 
+/** Only offer the ORIGINAL approval callback when its original manual BUY_SUB
+ * can pass the source admission gates. The callback independently rechecks
+ * everything under pay/attempt locks; this read-only hint grants no effect.
+ */
+function achbotRecoveryCanResumeManualPurchase(mysqli $db,array $pay): bool {
+    if (($pay['type']??null)!=='BUY_SUB' || ($pay['state']??null)!=='processing' ||
+        (int)($pay['approved_by']??0)<=0 || (int)($pay['day']??0)!==0 ||
+        (int)($pay['volume']??0)!==0 || (int)($pay['message_id']??0)<=0 ||
+        (int)($pay['chat_id']??0)===0 || (string)($pay['payid']??'')!=='' ||
+        preg_match('/^[A-Za-z0-9_-]{1,50}$/D',(string)($pay['hash_id']??''))!==1)
+        return false;
+    $attempt=$pay['attempt']??null;
+    if (!is_array($attempt) || !achbotPayUxManualProvider((string)($attempt['provider']??'')) ||
+        (string)($attempt['stage']??'')!=='review' ||
+        (int)($attempt['local_amount_toman']??0)!==(int)($pay['price']??0))
+        return false;
+    require_once __DIR__.'/DeliveryLedger.php';
+    require_once __DIR__.'/FollowupOutbox.php';
+    require_once __DIR__.'/ReferralReward.php';
+    if (!achbotDeliverySchemaReady($db) || !achbotFollowupSchemaReady($db) ||
+        !achbotReferralSchemaReady($db)) return false;
+    try {
+        achbotEffectRequireUniqueLine($db);
+        $id=(int)$pay['id'];
+        $stmt=$db->prepare("SELECT state,reserved_count FROM service_effects
+            WHERE pay_row_id=? AND effect_kind='manual_hold' AND ordinal=0 LIMIT 1");
+        $stmt->bind_param('i',$id);
+        $stmt->execute();$hold=$stmt->get_result()->fetch_assoc();$stmt->close();
+        return $hold!==null && in_array((string)$hold['state'],['reserved','consumed'],true) &&
+            (int)$hold['reserved_count']===max(1,(int)($pay['agent_count']??0));
+    } catch (Throwable $error) { return false; }
+}
+
+/** A bank-Cron payment already claimed as processing has no second scan
+ * (the normal scanner only admits have_sent). This is an operator-UI *hint*,
+ * not a new financial decision or an approval of a pending bank invoice.
+ * The original per-ordinal provisioner repeats all of these checks before
+ * any native operation, independently of this read-only preview.
+ */
+function achbotRecoveryCanResumeBankPurchase(mysqli $db,array $pay): bool {
+    if (($pay['type']??null)!=='BUY_SUB' || ($pay['state']??null)!=='processing' ||
+        (int)($pay['approved_by']??0)!==0 || (int)($pay['user_id']??0)<=0 ||
+        (string)($pay['payid']??'')!=='' ||
+        preg_match('/^[A-Za-z0-9_-]{1,50}$/D',(string)($pay['hash_id']??''))!==1)
+        return false;
+    $attempt=$pay['attempt']??null;
+    // Cron claims the payment without changing the 003 stage from 'pending'.
+    // The original 009 bank_attempt_sha256 proves the 003 receipt identity;
+    // stage is intentionally not part of that immutable fingerprint.
+    if (!is_array($attempt) || ($attempt['provider']??null)!=='bank_transfer')
+        return false;
+    require_once __DIR__.'/ReceiptHelpers.php';
+    require_once __DIR__.'/DeliveryLedger.php';
+    if (!achbotDeliverySchemaReady($db)) return false;
+    try {
+        achbotEffectRequireUniqueLine($db);
+        $id=(int)$pay['id'];
+        $q=$db->prepare('SELECT * FROM payment_attempts WHERE pay_row_id=? LIMIT 1');
+        $q->bind_param('i',$id);$q->execute();$original=$q->get_result()->fetch_assoc();$q->close();
+        if (!$original || ($original['evidence_profile']??null)!==null)
+            return false; // API and manual modes have their own owner/ledger.
+        $q=$db->prepare('SELECT * FROM bank_buy_invoice_claims WHERE pay_row_id=? LIMIT 1');
+        $q->bind_param('i',$id);$q->execute();$claim=$q->get_result()->fetch_assoc();$q->close();
+        if (!achbotBankBuyClaimMatches($pay,$claim) ||
+            !achbotBankBuyAttemptMatches($pay,$original,$claim)) return false;
+        $q=$db->prepare("SELECT effect_kind,state,ordinal,reserved_count,order_id
+            FROM service_effects WHERE pay_row_id=? AND (
+                effect_kind IN ('manual_hold','wallet_hold','create')) ORDER BY ordinal");
+        $q->bind_param('i',$id);$q->execute();$effects=$q->get_result()->fetch_all(MYSQLI_ASSOC);$q->close();
+        $count=(int)$claim['account_count'];$next=1;
+        foreach ($effects as $effect) {
+            if ($effect['effect_kind']!=='create' ||
+                (int)$effect['ordinal']!==$next || $next>$count ||
+                !in_array((string)$effect['state'],['dispatching','verified'],true) ||
+                $effect['order_id']!==null ||
+                (int)$effect['reserved_count']!==($next===1?$count:0)) return false;
+            $next++;
+        }
+        return true; // No CREATE line yet is an original never-started batch.
+    } catch (Throwable $error) { return false; }
+}
+
 function achbotRecoveryTechnicalCases(mysqli $db,int $before=0): array {
     if ($before<0) throw new InvalidArgumentException('technical_recovery_cursor');
     $scope=achbotRecoveryTechnicalSql($db);

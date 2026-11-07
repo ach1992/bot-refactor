@@ -127,8 +127,12 @@ if (preg_match('/^financeExtra(Inbox|Case)(?:_([1-9][0-9]{0,17}))?$/D',
 
 // Unified read-only attention hub. Existing NP child inquiry and exact
 // BUY_SUB CREATE readback remain specialized, separately gated tools.
-$attentionMatch=[];
-if (preg_match('/^attention(Inbox|Case)(?:_([1-9][0-9]{0,17}))?$/D',(string)$data,$attentionMatch)) {
+$attentionMatch=[];$technicalMatch=[];
+$technicalInbox=preg_match('/^attentionInboxService(?:_([1-9][0-9]{0,17}))?$/D',
+    (string)$data,$technicalMatch)===1;
+if ($technicalInbox ||
+    preg_match('/^attention(Inbox|Case)(?:_([1-9][0-9]{0,17}))?$/D',
+        (string)$data,$attentionMatch)===1) {
     if (!achbotAdminCan('review',(int)$from_id) || (int)($chat_id??0)!==(int)$from_id) {
         answerCallbackQuery($callbackId,\achbotMessage('manual_payment.manual_receipts.alert.0a23f88410'),true);
         return;
@@ -139,7 +143,28 @@ if (preg_match('/^attention(Inbox|Case)(?:_([1-9][0-9]{0,17}))?$/D',(string)$dat
     $escAttention=static fn($v)=>htmlspecialchars(substr((string)$v,0,150),ENT_QUOTES|ENT_SUBSTITUTE,'UTF-8');
     $rows=[];
     try {
-        if ($attentionMatch[1]==='Inbox') {
+        if ($technicalInbox) {
+            // The existing review permission already admits this queue.
+            // This is just the technical view of the same attention hub,
+            // not a new role, permission or financial approval flow.
+            $before=(int)($technicalMatch[1]??0);
+            $items=achbotRecoveryTechnicalCases($connection,$before);
+            $more=count($items)>12;$items=array_slice($items,0,12);
+            $body=achbotMessage('service_workbench.title');
+            foreach ($items as $item) $rows[]=[['text'=>achbotMessageHtml(
+                'service_workbench.case_label',[
+                'pay'=>(int)$item['id'],'user'=>(int)$item['user_id']]),
+                'callback_data'=>'attentionCase_'.(int)$item['id']]];
+            if (!$items) $body.="\n".achbotMessage('service_workbench.empty');
+            if ($more && $items) $rows[]=[[
+                'text'=>achbotMessage('service_workbench.next'),
+                'callback_data'=>'attentionInboxService_'.(int)end($items)['id']]];
+            if ($before>0) $rows[]=[[
+                'text'=>achbotMessage('service_workbench.first'),
+                'callback_data'=>'attentionInboxService']];
+            $rows[]=[['text'=>achbotMessage('service_workbench.back_finance'),
+                'callback_data'=>'attentionInbox']];
+        } elseif ($attentionMatch[1]==='Inbox') {
             $before=(int)($attentionMatch[2]??0);
             $items=achbotRecoveryAttentionCases($connection,$before);
             $more=count($items)>12;$items=array_slice($items,0,12);
@@ -152,6 +177,8 @@ if (preg_match('/^attention(Inbox|Case)(?:_([1-9][0-9]{0,17}))?$/D',(string)$dat
             if (!$items) $body.=\achbotMessage('manual_payment.manual_receipts.body.344ad306af');
             if ($more) $rows[]=[['text'=>\achbotMessage('manual_payment.manual_receipts.button.2a07cf7022'),'callback_data'=>'attentionInbox_'.(int)end($items)['id']]];
             if ($before>0) $rows[]=[['text'=>\achbotMessage('manual_payment.manual_receipts.button.19ff81effd'),'callback_data'=>'attentionInbox']];
+            $rows[]=[['text'=>achbotMessage('service_workbench.open'),
+                'callback_data'=>'attentionInboxService']];
         } else {
             $id=(int)($attentionMatch[2]??0);
             $pay=achbotRecoveryAttentionCase($connection,$id);
@@ -211,6 +238,19 @@ if (preg_match('/^attention(Inbox|Case)(?:_([1-9][0-9]{0,17}))?$/D',(string)$dat
                     $body.=achbotMessage('finance_workbench.manual_evidence_warning');
                 }
             }
+            // A staff member who can approve the original purchase can
+            // finish its ORIGINAL processing claim via the SAME accept
+            // callback. The existing source/ledger check is only a button
+            // hint; native continuation revalidates under its own locks.
+            if (($pay['type']??'')==='BUY_SUB' &&
+                ($pay['state']??'')==='processing' &&
+                achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'payments') &&
+                (achbotRecoveryCanResumeManualPurchase($connection,$pay) ||
+                 achbotRecoveryCanResumeBankPurchase($connection,$pay))) {
+                $rows[]=[['text'=>achbotMessage('service_recovery_action.resume_purchase'),
+                    'callback_data'=>'accept'.$pay['hash_id']]];
+                $body.="\n".achbotMessage('service_recovery_action.resume_warning');
+            }
             if ($manual && $pay['state']==='have_sent') $body.=\achbotMessage('manual_payment.manual_receipts.body.189e0e519d');
             elseif ($pay['type']==='INCREASE_WALLET') $body.=\achbotMessage('manual_payment.manual_receipts.body.12b390893d');
             elseif ($pay['type']!=='BUY_SUB') $body.=\achbotMessage('manual_payment.manual_receipts.body.6c27eff9db');
@@ -243,6 +283,79 @@ if (preg_match('/^attention(Inbox|Case)(?:_([1-9][0-9]{0,17}))?$/D',(string)$dat
         sendMessage(\achbotMessage('manual_payment.manual_receipts.message.c46e102fab'),null,'HTML',(int)$from_id);
     }
     return;
+}
+
+// Re-enter an already claimed bank-Cron BUY_SUB through the SAME 'accept'
+// action and 'payments' permission used by existing administrator approvals.
+// Only the original issued 003/009 bank case is intercepted. Other accept
+// callbacks continue unchanged to ManualApproval.php (no new access rules).
+$processingAccept=[];
+if (preg_match('/^accept([A-Za-z0-9_-]{1,50})$/D',
+        (string)$data,$processingAccept)===1 &&
+    ($text??null)!==($buttonValues['cancel']??null) &&
+    achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'payments')) {
+    $hash=$processingAccept[1];
+    $q=$connection->prepare("SELECT id FROM pays WHERE hash_id=? AND type='BUY_SUB'
+        AND state='processing' AND COALESCE(approved_by,0)=0 LIMIT 1");
+    $q->bind_param('s',$hash);$q->execute();
+    $id=(int)($q->get_result()->fetch_assoc()['id']??0);$q->close();
+    if ($id>0) {
+        try {
+            require_once __DIR__.'/../RecoveryInspection.php';
+            require_once __DIR__.'/../BankPurchase.php';
+            $pay=achbotRecoveryTechnicalCase($connection,$id);
+            if (!$pay || !achbotRecoveryCanResumeBankPurchase($connection,$pay))
+                throw new RuntimeException('bank_purchase_original_claim_unavailable');
+            $result=achbotAutoBankProvisionBuySub($connection,$pay,
+                $botState,$buttonValues,[],false,(string)$botUrl);
+            if (($result['committed']??false)!==true)
+                throw new RuntimeException('bank_purchase_original_completion_unconfirmed');
+        } catch (Throwable $error) {
+            error_log('achbot_bank_purchase_resume_deferred pay_id='.$id.
+                ' class='.get_class($error));
+            answerCallbackQuery($callbackId,achbotMessage('service_workbench.unavailable'),true);
+            return;
+        }
+        // Business COMMIT precedes the independently resumable delivery
+        // and referral messages; never repeat CREATE on Telegram uncertainty.
+        try {
+            require_once __DIR__.'/../ReferralReward.php';
+            achbotReferralAfterCompletedPurchase($connection,(int)$pay['user_id'],
+                $id,(int)$from_id,$botState);
+        } catch (Throwable $error) {
+            error_log('achbot_bank_purchase_resume_referral_review pay_id='.$id.
+                ' class='.get_class($error));
+        }
+        try {
+            achbotDeliveryDispatchPending($connection,$id);
+            achbotDeliverySyncAggregate($connection,$id);
+        } catch (Throwable $error) {
+            error_log('achbot_bank_purchase_resume_delivery_review pay_id='.$id.
+                ' class='.get_class($error));
+        }
+        // The original bank-Cron receipt and existing staff copies need the
+        // same success status as a purchase completed in the first sweep.
+        // Telegram uncertainty remains a presentation issue after COMMIT.
+        try {
+            achbotAutoBankSyncReceiptButtons($connection,$pay,(int)$admin,
+                achbotMessage('manual_payment.automatic_receipts.text.2898f8f112'));
+        } catch (Throwable $error) {
+            error_log('achbot_bank_purchase_resume_receipt_edit_deferred pay_id='.$id.
+                ' class='.get_class($error));
+        }
+        answerCallbackQuery($callbackId,achbotMessage('service_workbench.checked'));
+        $keys=json_encode(['inline_keyboard'=>[
+            [['text'=>achbotMessage('service_workbench.open'),
+                'callback_data'=>'attentionInboxService']],
+            [['text'=>achbotMessage('service_workbench.back_finance'),
+                'callback_data'=>'attentionInbox']]]],
+            JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
+        $body=achbotMessage('service_workbench.checked');
+        $sent=editText($message_id,$body,$keys,'HTML',(int)$chat_id);
+        if (!is_object($sent)||($sent->ok??false)!==true)
+            sendMessage($body,$keys,'HTML',(int)$chat_id);
+        return;
+    }
 }
 
 // Paid remote/renewal uncertainty is not an unpaid transaction. Keep it in
@@ -285,6 +398,8 @@ if (preg_match('/^serviceRecovery(Inbox|Case)(?:_([1-9][0-9]{0,17}))?$/D',
             $pay=achbotRecoveryTechnicalCase($connection,$id);
             if (!$pay) throw new RuntimeException('service_recovery_not_reviewable');
             $attempt=$pay['attempt']??null;
+            $canResume=achbotRecoveryCanResumeManualPurchase($connection,$pay) ||
+                achbotRecoveryCanResumeBankPurchase($connection,$pay);
             $body=achbotMessageHtml('service_workbench.case_title',[
                 'pay'=>$id,'user'=>$pay['user_id'],
                 'state'=>$pay['state'],'type'=>$pay['type']])."
@@ -292,7 +407,16 @@ if (preg_match('/^serviceRecovery(Inbox|Case)(?:_([1-9][0-9]{0,17}))?$/D',
                 achbotRecoveryEvidenceText($pay,$attempt).
                 achbotRecoverySubjectText($pay).
                 "
-".achbotMessage('service_workbench.readonly_warning');
+".($canResume
+                    ?achbotMessage('service_recovery_action.resume_warning')
+                    :achbotMessage('service_workbench.readonly_warning'));
+            if ($canResume) {
+                // The existing accept handler is the only financial/native
+                // continuation; its original proof and once-only journals
+                // are rechecked under locks. No new recovery state machine.
+                $buttons[]=[['text'=>achbotMessage('service_recovery_action.resume_purchase'),
+                    'callback_data'=>'accept'.$pay['hash_id']]];
+            }
             if ($pay['type']==='BUY_SUB') {
                 $buttons[]=[['text'=>achbotMessage('delivery_workbench.native_inbox'),
                     'callback_data'=>'bankReviewCase_'.$id]];
