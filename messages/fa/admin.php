@@ -2334,10 +2334,10 @@ return [
     ],
     'service_edit_delivery' => [
         'header'=>'📨 وضعیت پیام‌های ثبت‌شدهٔ این تغییر سرویس:',
-        'line'=>['text'=>'• <code>{role}</code> | <code>{state}</code> | تلاش: <code>{attempts}</code> | گیرنده: <code>{recipient}</code> | پیام: <code>{message_id}</code>',
+        'line'=>['text'=>'پیام <code>{role}</code> | وضعیت: <code>{state}</code> | تلاش: <code>{attempts}</code> | گیرنده: <code>{recipient}</code> | شناسه پیام: <code>{message_id}</code>',
             'parameters'=>['role','state','attempts','recipient','message_id']],
         'more'=>'فقط 10 مورد اول نمایش داده شد؛ سوابق بیشتر در سندهای اصلی باقی است.',
-        'warning'=>'pending: هنوز ارسال نشده و فقط همین پیام‌ها قابل ادامه‌اند. dispatching/unknown: نتیجهٔ Telegram نامعلوم است و خودکار تکرار نمی‌شود. acknowledged: پاسخ موفق Telegram ثبت شده است.',
+        'warning'=>'فقط پیام‌های <code>pending</code> قابلیت ادامه دارند؛ <code>dispatching</code> و <code>unknown</code> نتیجهٔ نامعلوم Telegram هستند و خودکار تکرار نمی‌شوند. <code>acknowledged</code> یعنی پاسخ موفق Telegram ثبت شده است.',
     ],
     'delivery_workbench' => [
         'inbox_title'=>'📦 بازیابی تحویل سرویس‌های پرداخت‌شده' . "\n" .
