@@ -237,7 +237,7 @@ function storedLoops(string $path):array{
   $out[]=$block;break;}}
  return $out;
 }
-$files=['Routes/Checkout.php','Routes/RenewalCheckout.php','Routes/Extensions.php','Routes/ManualApproval.php','Routes/ManualReceipts.php','AutomaticReceipts.php'];
+$files=['Routes/Checkout.php','Routes/RenewalCheckout.php','Routes/Extensions.php','Routes/ManualApproval.php','Routes/ManualReceipts.php'];
 $loopCount=0;$historicalRefs=[['chat_id'=>9001,'message_id'=>100],['chat_id'=>9002,'message_id'=>101],['chat_id'=>9003,'message_id'=>102],['chat_id'=>9004,'message_id'=>103],['chat_id'=>9007,'message_id'=>104],['chat_id'=>9008,'message_id'=>105],['chat_id'=>9009,'message_id'=>106],['chat_id'=>9010,'message_id'=>107],['chat_id'=>9011,'message_id'=>108],['chat_id'=>9012,'message_id'=>109],['chat_id'=>1001,'message_id'=>110]];
 $connection->query("UPDATE pays SET admins_messages='".$connection->real_escape_string(json_encode($historicalRefs))."' WHERE hash_id='fanoutrefs'");
 $financialBefore=$connection->query('SELECT * FROM pays ORDER BY id')->fetch_all(MYSQLI_ASSOC);
@@ -252,10 +252,34 @@ foreach($files as $file)foreach(storedLoops($root.'/src/Finance/'.$file) as $ord
  yes(achbotAdminSetNotify($connection,9001,9001,9004,true),'restore Support notification after stored followup '.$file.' '.$ordinal);
  $connection->query("UPDATE users SET isAdmin=0 WHERE userid=9002");$events=[];eval($body);yes($targets()===[9003,9004],'stored-ref loop observes fresh revocation '.$file.' '.$ordinal);$connection->query('UPDATE users SET isAdmin=1 WHERE userid=9002');
 }
+// Bank-Cron now shares its original receipt/staff-copy projection with the
+// processing recovery route. Execute the actual shared helper rather than
+// requiring the retired inline foreach to remain inside AutomaticReceipts.
+// Compare the same authorized mirror destinations and exact raw keyboard
+// bytes to the source-real archived Cron foreach, without a new permission.
+$payInfo=dbFetchPayByHash($connection,'fanoutrefs');
+$payInfo['message_id']=100;$payInfo['chat_id']=9001;
+$adminMessages=$historicalRefs;$autoServiceLabel='وضعیت تأییدشده';
+$archivedBank=storedLoops($argv[5].'/AutomaticReceipts.php');
+yes(count($archivedBank)===1,'archived original bank receipt has one stored-copy loop');
+$events=[];eval($archivedBank[0]);$originalMirrors=$events;
+$events=[];achbotAutoBankSyncReceiptButtons($connection,$payInfo,9001,$autoServiceLabel);
+yes($targets()===[9001,9002,9003,9004],'shared bank receipt updates primary and only genuine current stored staff');
+yes(array_slice($events,1)===$originalMirrors,'shared bank status retains exact archived copy destinations and markup');
+foreach($events as $event)yes($event['in_transaction']===0,'shared bank receipt edits are outside financial transaction');
+yes(achbotAdminSetNotify($connection,9001,9001,9004,false),'bank status notification preference OFF');
+$events=[];achbotAutoBankSyncReceiptButtons($connection,$payInfo,9001,$autoServiceLabel);
+yes($targets()===[9001,9002,9003,9004],'shared bank receipt still updates previously stored muted Support copy');
+yes(achbotAdminSetNotify($connection,9001,9001,9004,true),'restore bank status notification preference');
+$connection->query('UPDATE users SET isAdmin=0 WHERE userid=9002');
+$events=[];achbotAutoBankSyncReceiptButtons($connection,$payInfo,9001,$autoServiceLabel);
+yes($targets()===[9001,9003,9004],'shared bank receipt skips revoked stored manager');
+$connection->query('UPDATE users SET isAdmin=1 WHERE userid=9002');
+$loopCount++; // Six source-real retained loops, plus the shared bank consumer.
 // The legacy reject case now uses a durable 020 recipient manifest rather
 // than two direct PHP foreach loops, preserving original delivery refs and
 // authorizing each recipient independently at the actual dispatch boundary.
-yes($loopCount===7,'seven direct source-real stored-ref consumers remain');
+yes($loopCount===7,'six direct source-real loops plus one actual shared bank receipt consumer');
 require_once $root.'/src/Finance/FollowupOutbox.php';
 $paySnapshot=dbFetchPayByHash($connection,'fanoutrefs');
 $ref=['role'=>'receipt_mirror','recipient'=>'9004','message_id'=>103];
