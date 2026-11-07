@@ -276,11 +276,15 @@ another merchant payment inquiry.
   `deliveryInbox`, read its duplicate-delivery warning and explicitly confirm
   a time-limited sealed-packet resend under locked provenance checks. No
   financial, capacity or native operation is performed by this recovery.
-- The historical `RENEW_SCONFIG` and additive day/volume/renewal routes are
-  **not** covered by this one-shot native CREATE journal; they must remain
-  fenced under `processing` until a separate original-operation proof/resume
-  can be implemented. The currently available bank/API `auto` BUY_SUB
-  completion and its 018 delivery records are distinct.
+- The historical `RENEW_SCONFIG` and uncertain Marzban additive
+  day/volume/renewal routes are **not** covered by this one-shot native
+  CREATE journal. PasarGuard manual RENEW_ACCOUNT/day/volume claims can
+  finish locally only with the positive original operation-owned verified
+  journal implemented by #125. The follow-up proposal uses existing sealed
+  020 `approved_edit` intents for post-COMMIT receipts/notices and never
+  resends UNKNOWN Telegram ACKs. Unverified native mutations remain fenced
+  under `processing`; no second remote PUT is allowed. The bank/API
+  `auto` BUY_SUB completion and its 018 delivery records are distinct.
 
 Real PHP 8.5 regression candidates live in `test_post_v9_manual_payments.py`
 (original receipt, one-shot capacity, single/multiple account ordering,

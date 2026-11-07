@@ -413,6 +413,18 @@ if (preg_match('/^serviceRecovery(Inbox|Case)(?:_([1-9][0-9]{0,17}))?$/D',
             $attempt=$pay['attempt']??null;
             $canResume=achbotRecoveryCanResumeManualPurchase($connection,$pay) ||
                 achbotRecoveryCanResumeBankPurchase($connection,$pay);
+            $pendingEdit=null;
+            if (($pay['state']??null)==='approved' &&
+                preg_match('/^[A-Za-z0-9_-]{1,50}$/D',(string)($pay['hash_id']??''))) {
+                require_once __DIR__.'/../ManualEditRecovery.php';
+                if (achbotManualPgEditPending($connection,$pay)) {
+                    $type=(string)$pay['type'];
+                    $prefix=$type==='RENEW_ACCOUNT'?'approveRenewAcc':
+                        (str_starts_with($type,'INCREASE_DAY_')?'approveIncreaseDay':
+                         (str_starts_with($type,'INCREASE_VOLUME_')?'approveIncreaseVolume':null));
+                    if ($prefix!==null) $pendingEdit=$prefix.(string)$pay['hash_id'];
+                }
+            }
             $body=achbotMessageHtml('service_workbench.case_title',[
                 'pay'=>$id,'user'=>$pay['user_id'],
                 'state'=>$pay['state'],'type'=>$pay['type']])."
@@ -429,6 +441,13 @@ if (preg_match('/^serviceRecovery(Inbox|Case)(?:_([1-9][0-9]{0,17}))?$/D',
                 // are rechecked under locks. No new recovery state machine.
                 $buttons[]=[['text'=>achbotMessage('service_recovery_action.resume_purchase'),
                     'callback_data'=>'accept'.$pay['hash_id']]];
+            }
+            if ($pendingEdit!==null) {
+                // The original payments callback dispatches PENDING 020
+                // packets only; approved means there is no financial/native
+                // operation to repeat. UNKNOWN remains a read-only case.
+                $buttons[]=[['text'=>achbotMessage('service_recovery_action.resume_verified_edit'),
+                    'callback_data'=>$pendingEdit]];
             }
             if ($pay['type']==='BUY_SUB') {
                 $buttons[]=[['text'=>achbotMessage('delivery_workbench.native_inbox'),

@@ -284,6 +284,12 @@ def api_native_observation_mismatches(proof: dict, expected: list[str]) -> dict:
         *[f'manual_{kind}_{phase}' for kind in ('renew','day','volume')
           for phase in ('resume_verified_local_only_once',
                         'repeat_never_reapplies_or_audits')],
+        *[f'manual_{kind}_{phase}' for kind in ('renew','day','volume')
+          for phase in ('postcommit_before_telegram_staged',
+                        'delivery_only_resume_pending_once',
+                        'delivery_only_repeat_never_resends')],
+        'manual_volume_unknown_customer_ack_not_automatically_resent',
+        'manual_day_missing_followup_schema_rolls_back_local_finish',
         *[f'manual_volume_resume_refuses_{reason}' for reason in (
             'unverified','wrong_key','wrong_quote','wrong_identity',
             'nonmanual_claim')],
@@ -293,8 +299,9 @@ def api_native_observation_mismatches(proof: dict, expected: list[str]) -> dict:
                          'missing_original_actor')],
     }
     expected_review_stderr={
-        name for name in local_recovery if '_resume_refuses_' in name
+        name for name in local_recovery if '_resume_refuses_' in name or name=='manual_day_missing_followup_schema_rolls_back_local_finish'
     }
+    expected_notice_stderr={'manual_volume_unknown_customer_ack_not_automatically_resent'}
     # BUY_SUB has no existing native account. Its SQL claim must not
     # contact a provider; only existing-account paths can require native
     # preflight HTTP. Bind these two specific new-buy race observations.
@@ -326,9 +333,15 @@ def api_native_observation_mismatches(proof: dict, expected: list[str]) -> dict:
         # a green assertion; reject any other stderr and ALL PHP fatals.
         def acceptable_stderr(stderr):
             if stderr=='':
-                return name not in expected_review_stderr
-            if name not in expected_review_stderr or type(stderr) is not str:
-                return False
+                return name not in expected_review_stderr|expected_notice_stderr
+            if type(stderr) is not str: return False
+            if name in expected_notice_stderr:
+                return re.fullmatch(
+                    r'\[\d{2}-[A-Za-z]{3}-\d{4} \d{2}:\d{2}:\d{2} UTC\] '
+                    r'achbot_manual_pg_edit_notice_pending pay_id=[1-9][0-9]* count=[1-9][0-9]*\n',
+                    stderr
+                ) is not None
+            if name not in expected_review_stderr: return False
             return re.fullmatch(
                 r'\[\d{2}-[A-Za-z]{3}-\d{4} \d{2}:\d{2}:\d{2} UTC\] '
                 r'achbot_manual_pg_edit_recovery_needs_review '

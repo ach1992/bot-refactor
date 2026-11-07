@@ -573,6 +573,18 @@ def run_api(tmp: str) -> tuple[dict, dict]:
         'manual_volume_verified_native_crash_leaves_processing',
         'manual_volume_resume_verified_local_only_once',
         'manual_volume_repeat_never_reapplies_or_audits',
+        # Durable original 020 receipt/customer sends for verified native edits.
+        'manual_renew_postcommit_before_telegram_staged',
+        'manual_renew_delivery_only_resume_pending_once',
+        'manual_renew_delivery_only_repeat_never_resends',
+        'manual_day_postcommit_before_telegram_staged',
+        'manual_day_delivery_only_resume_pending_once',
+        'manual_day_delivery_only_repeat_never_resends',
+        'manual_volume_postcommit_before_telegram_staged',
+        'manual_volume_delivery_only_resume_pending_once',
+        'manual_volume_delivery_only_repeat_never_resends',
+        'manual_volume_unknown_customer_ack_not_automatically_resent',
+        'manual_day_missing_followup_schema_rolls_back_local_finish',
         # Reviewer R1/R2: original approver and immutable amount, all kinds.
         'manual_renew_resume_refuses_changed_payment_amount',
         'manual_renew_resume_refuses_changed_attempt_amount',
@@ -599,7 +611,7 @@ def run_api(tmp: str) -> tuple[dict, dict]:
     api_native_mismatches=exact_current_proof_mismatches(api_native,
         {'complete':True,'source_real_php':True,'actual_pasarguard_http':True,
          'socket_mariadb':True,'live_requests':0,'installed_tested':False,
-         'migrations_executed':['001_marzban_panel_group_id.sql', '003_payment_attempts.sql', '004_automatic_renewal_attempts.sql', '006_payment_message_refs.sql', '007_service_effects.sql', '008_referral_awards.sql', '009_bank_buy_invoice_claims.sql', '011_provider_identity.sql', '012_shared_provider_storage.sql', '014_api_payment_evidence.sql', '018_payment_delivery_intents.sql'],
+         'migrations_executed':['001_marzban_panel_group_id.sql', '003_payment_attempts.sql', '004_automatic_renewal_attempts.sql', '006_payment_message_refs.sql', '007_service_effects.sql', '008_referral_awards.sql', '009_bank_buy_invoice_claims.sql', '011_provider_identity.sql', '012_shared_provider_storage.sql', '014_api_payment_evidence.sql', '018_payment_delivery_intents.sql', '020_payment_followup_intents.sql'],
          'source_head':current_api_head},
         'scenarios',required_api_native)
     if api_native.get('scenarios')!=required_api_native:

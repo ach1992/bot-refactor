@@ -45,7 +45,7 @@
   `007` capacity hold and ready 008/018/020 contracts. The original
   `accept{original_hash}` handler rechecks original proof and once-only effects
   under the existing payment-approval authority. Merely viewing is read-only.
-- **Proposed source-only PR #125 (not approved for installation):** the
+- **Integrated source-only PR #125 (not installed in Chili):** the
   original manual `approveRenewAcc`, `approveIncreaseDay` and
   `approveIncreaseVolume` buttons may finish a prior PasarGuard
   `processing` claim **only when the existing per-account mutation journal**
@@ -64,6 +64,23 @@
   No new provider GET/PUT/reset, charge or approval is authorized. Missing or
   altered evidence stays `processing` for operator investigation, not a
   repeated native mutation or fabricated customer success.
+- **Proposed source-only durable follow-up completion (Issue #117):**
+  after a verified PasarGuard manual edit is locally finished, the original
+  primary/eligible stored administrator receipt edits and subject-specific
+  customer notice (plus the original renewal operator summary, where applicable)
+  are sealed as **020 `approved_edit` intents inside the same terminal SQL
+  COMMIT**. Missing 020 schema/key, invalid original recipient or a failed
+  packet insertion rolls back the local payment/order/audit COMMIT; the native
+  verified operation remains unchanged for later local-only completion.
+  After successful COMMIT, attempt each sealed PENDING packet at most once.
+  A PHP failure between COMMIT and Telegram leaves PENDING rows available
+  through the original payment-authorized callback; the Owner-private service
+  workbench shows the pending delivery case. UNKNOWN/dispatching ACKs stay
+  under review and are **not** automatically resent or counted as delivered.
+  The existing `payment_followup_intents` table needs no new migration;
+  without a separately authorized installed 020 migration this behavior must
+  not be presented as production-ready. No second payment/native action,
+  role expansion or automatic Telegram retry is authorized.
 - **Bank-Cron / verified bank-SMS or gift API `BUY_SUB`:** an interrupted
   `processing` purchase may re-enter the existing per-ordinal continuation.
   An already journaled ordinal requires pinned read-only native confirmation
@@ -147,8 +164,10 @@
 
 ## Explicitly uncompleted acceptance
 
-PR #125 adds **only the already-verified PasarGuard original-manual edit
-continuation**. It does **not** establish that an ambiguous `mutating`
+Merged PR #125 implements **only the already-verified PasarGuard
+original-manual edit continuation**. This separate source-only
+follow-up candidate adds durable post-COMMIT presentation for those already
+verified edits, not a new remote mutation. It does **not** establish that an ambiguous `mutating`
 PasarGuard operation occurred, does not recover uncertain Marzban
 `RENEW_ACCOUNT`/day/volume/standard `RENEW_SCONFIG` remote effects, and
 does not cover every manual/hosted payment method. An already-`processing`
@@ -157,7 +176,7 @@ the exact prior verified evidence remain reviewable without falsely approving
 payment or sending duplicate entitlements. Provider-specific financial review
 parity, installed PasarGuard/Marzban/Chili, real Telegram ACK, target schema
 and migration readiness, tested database **restore** and end-to-end real
-acceptance remain open under Issue #117. This source change requires full
+acceptance remain open under Issue #117. Any new source candidate requires full
 exact-HEAD PHP 8.5 CI, **independent review**, a separate Owner Merge decision,
 and separate target-specific release/deployment authorization. Do not label
 RC26 released or deployment ready while those gates remain open.
