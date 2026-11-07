@@ -72,7 +72,7 @@ elseif($op==='locked_commerce') {
  $connection->rollback();
 }
 elseif($op==='human') {
- $from_id=9001;$chat_id=9001;$message_id=222;$text=null;$userInfo=['step'=>'none'];$markup=[[]];
+ $from_id=(int)($spec['actor']??9001);$chat_id=$from_id;$message_id=222;$text=null;$userInfo=['step'=>'none'];$markup=[[]];
  $data=($pay['type']==='RENEW_ACCOUNT'?'approveRenewAcc':(str_starts_with($pay['type'],'INCREASE_DAY_')?'approveIncreaseDay':'approveIncreaseVolume')).$pay['hash_id'];
  if($pay['type']==='RENEW_ACCOUNT')require $root.'/src/Finance/Routes/RenewalCheckout.php';
  else require $root.'/src/Finance/Routes/Extensions.php';$value=true;
@@ -105,7 +105,7 @@ def driver_source():
     php=php.replace("function achbotApplyServiceEdit(...$args) {throw new RuntimeException('unexpected_edit');}","")
     php=php.replace("function achbotSupportsPanel($type) {return $type==='marzban';}","function achbotSupportsPanel($type) {return achbotSupportsProviderType($type);}")
     php=php.replace("$root=$argv[1];", "define('ACHBOT_PG_TEST_LOOPBACK',true);\n$root=$argv[1];")
-    php=php.replace("function editKeys(...$args) {\n    $GLOBALS['events'][]=['event'=>'EDIT_KEYS','state'=>fixtureState()];\n}","function editKeys(...$args){$GLOBALS['events'][]=['event'=>'EDIT_KEYS'];return(object)['ok'=>true];}")
+    php=php.replace("function editKeys(...$args) {\n    $GLOBALS['events'][]=['event'=>'EDIT_KEYS','state'=>fixtureState()];\n}","function editKeys(...$args){$GLOBALS['events'][]=['event'=>'EDIT_KEYS','keys'=>(string)($args[0]??'')];return(object)['ok'=>true];}")
     php=php.replace("return (object)['ok'=>true];\n}\nfunction editKeys","return (object)['ok'=>true,'result'=>(object)['message_id'=>456]];\n}\nfunction editKeys")
     php+="\n"+flow.PREP+r'''
 function alert(...$args){$GLOBALS['events'][]=['event'=>'ALERT'];}
@@ -145,6 +145,24 @@ def check(progress_path=None):
         source=app/'src/Finance/ApiPayments.php'
         body=source.read_text();needle="$result=(object)($payload['result']??[]);";assert body.count(needle)==1
         source.write_text(body.replace(needle,"if(!empty($GLOBALS['spec']['crash_after_verified']))throw new RuntimeException('fixture_process_loss_after_verified');\n    "+needle))
+        # Exercise the actual manual callbacks through a controlled process
+        # interruption AFTER the provider verified/journalled the native edit
+        # and BEFORE the original local audit/payment COMMIT.
+        for path,markers in [
+            ('src/Finance/Routes/RenewalCheckout.php',
+             ['if ($connection->begin_transaction()!==true)\n            throw new RuntimeException(\'manual_renew_finish_begin_failed\');']),
+            ('src/Finance/Routes/Extensions.php',
+             ['if ($connection->begin_transaction()!==true)\n            throw new RuntimeException(\'day_extension_finalization_begin_failed\');',
+              'if ($connection->begin_transaction()!==true)\n            throw new RuntimeException(\'volume_extension_finalization_begin_failed\');'])
+        ]:
+            target=app/path
+            raw=target.read_text()
+            for marker in markers:
+                assert raw.count(marker)==1,(path,marker)
+                raw=raw.replace(marker,
+                    "if(!empty($GLOBALS['spec']['crash_after_native']))\n"
+                    "            throw new RuntimeException('fixture_manual_native_verified_before_sql');\n        "+marker,1)
+            target.write_text(raw)
         purchase.init(work,env,pg_url)
         def q(sql):return bank.query(work,env,sql)
         for migration in MIGRATIONS:q((ROOT/'migrations/post-v9'/migration).read_text())
@@ -158,7 +176,7 @@ def check(progress_path=None):
         def reset(kind='volume',method='gift_card'):
             nonlocal count
             count+=1
-            q('DELETE FROM payment_delivery_attempts;DELETE FROM payment_delivery_intents;DELETE FROM payment_transactions;DELETE FROM bank_buy_invoice_claims;DELETE FROM payment_attempts;DELETE FROM service_effects;DELETE FROM orders_list;DELETE FROM pays')
+            q('DELETE FROM payment_delivery_attempts;DELETE FROM payment_delivery_intents;DELETE FROM payment_transactions;DELETE FROM bank_buy_invoice_claims;DELETE FROM payment_attempts;DELETE FROM increase_order;DELETE FROM service_effects;DELETE FROM orders_list;DELETE FROM pays')
             q(storage.connection(2,1,pg_url))
             q("UPDATE server_info SET ucount=100,state=1,active=1,provider_group_ids='[2,5]' WHERE id=2;UPDATE server_plans SET provider_group_ids='[2,5]',days=30,volume=2,price=101,active=1 WHERE id=7")
             q("INSERT INTO orders_list(id,userid,token,transid,fileid,server_id,inbound_id,remark,uuid,expire_date,link,amount,status,date) VALUES(91,1001,'fixture-token','',7,2,0,'fixture_user','fixture-uuid',1900000000,'[]',101,1,'1700000000')")
@@ -237,6 +255,109 @@ def check(progress_path=None):
             assert call(op='receipt',pay=n)['result'] is True
             r=call(op='human',pay=n)
             record('human_'+kind+'_actual_route_native_http_outside_sql',state(n)=='approved' and panel.write_count==1 and tx_ok(r),dict(result=r,state=state(n),writes=panel.write_count))
+        # A successful PasarGuard readback was committed to the existing
+        # per-account mutation journal, but the PHP request died before its
+        # local payment/order/audit COMMIT. The same original human button
+        # finishes locally WITHOUT a second PUT/reset or provider GET.
+        for kind in ['renew','day','volume']:
+            n,key=reset(kind)
+            assert issue(n,'bank_transfer')['result'] is True
+            q(f'UPDATE payment_attempts SET created_at=NOW()-INTERVAL 601 SECOND WHERE pay_row_id={n}')
+            assert call(op='receipt',pay=n)['result'] is True
+            first=call(op='human',pay=n,actor=9001,crash_after_native=True)
+            journal=json.loads(q('SELECT provider_mutation_snapshot FROM service_effects WHERE order_id=91'))
+            writes=panel.write_count
+            no_local=q('SELECT COUNT(*) FROM increase_order')=='0'
+            record('manual_'+kind+'_verified_native_crash_leaves_processing',
+                state(n)=='processing' and no_local and
+                journal['key']=='manual:pay:'+str(n) and journal['result']=='verified' and
+                journal['changes']['original_approver_id']==9001 and
+                journal['changes']['original_amount_toman']==101 and
+                q('SELECT provider_mutation_key FROM service_effects WHERE order_id=91')=='manual:pay:'+str(n),
+                dict(state=state(n),journal=journal,writes=writes,result=first))
+            panel.mode='http_503';panel.trace=[]
+            # A approved; B (an existing authorized Operator) only finishes
+            # the already-journalled work. Audit must still attribute A.
+            done=call(op='human',pay=n,actor=9002)
+            settled=state(n)=='approved'
+            audit=q('SELECT COUNT(*) FROM increase_order')=='1'
+            audit_units=q('SELECT IFNULL(day,0),IFNULL(volume,0) FROM increase_order ORDER BY id DESC LIMIT 1').split('\t')
+            correct_units=((kind=='day' and audit_units==['2','0']) or
+                           (kind=='volume' and audit_units==['0','1']) or
+                           (kind=='renew' and audit_units==['0','0']))
+            receipt_edits=[e for e in done['events'] if e.get('event')=='EDIT_KEYS']
+            customer_notices=[e for e in done['events'] if
+                              e.get('event')=='MESSAGE' and e.get('to')==1001]
+            record('manual_'+kind+'_resume_verified_local_only_once',
+                settled and audit and correct_units and panel.write_count==writes and
+                panel.trace==[] and not pg_events(done) and
+                len(receipt_edits)>=1 and len(customer_notices)>=1 and
+                all('9001' in r.get('keys','') and '9002' not in r.get('keys','')
+                    for r in receipt_edits) and
+                q(f'SELECT approved_by FROM pays WHERE id={n}')=='9001' and
+                q('SELECT amount FROM increase_order ORDER BY id DESC LIMIT 1')=='101',
+                dict(state=state(n),audit=audit_units,result=done,writes=panel.write_count,
+                     approved_by=q(f'SELECT approved_by FROM pays WHERE id={n}')))
+            again=call(op='human',pay=n,actor=9002)
+            record('manual_'+kind+'_repeat_never_reapplies_or_audits',
+                state(n)=='approved' and q('SELECT COUNT(*) FROM increase_order')=='1' and
+                panel.write_count==writes and panel.trace==[] and not pg_events(again),
+                dict(state=state(n),writes=panel.write_count,result=again))
+        # R1/R2 regression: a distinct authorized recovery Operator never
+        # replaces the first human approver. The *original* issued 003 local
+        # quote must also match the durable verified mutation evidence.
+        for kind in ['renew','day','volume']:
+            for mutation in ['changed_payment_amount','changed_attempt_amount','missing_original_actor']:
+                n,key=reset(kind)
+                assert issue(n,'bank_transfer')['result'] is True
+                q(f'UPDATE payment_attempts SET created_at=NOW()-INTERVAL 601 SECOND WHERE pay_row_id={n}')
+                assert call(op='receipt',pay=n)['result'] is True
+                call(op='human',pay=n,actor=9001,crash_after_native=True)
+                if mutation=='changed_payment_amount':
+                    q(f'UPDATE pays SET price=202 WHERE id={n}')
+                elif mutation=='changed_attempt_amount':
+                    q(f'UPDATE payment_attempts SET local_amount_toman=202 WHERE pay_row_id={n}')
+                else:
+                    q("UPDATE service_effects SET provider_mutation_snapshot=JSON_REMOVE("
+                      "provider_mutation_snapshot,'$.changes.original_approver_id') WHERE order_id=91")
+                before=panel.write_count
+                panel.mode='http_503';panel.trace=[]
+                blocked=call(op='human',pay=n,actor=9002)
+                record('manual_'+kind+'_resume_refuses_'+mutation,
+                    state(n)=='processing' and
+                    q('SELECT COUNT(*) FROM increase_order')=='0' and
+                    q(f'SELECT IFNULL(approved_by,0) FROM pays WHERE id={n}')=='0' and
+                    panel.write_count==before and not panel.trace and not pg_events(blocked) and
+                    any(e.get('event')=='ALERT' for e in blocked['events']),
+                    dict(state=state(n),writes=panel.write_count,result=blocked))
+        # A claimed edit without exactly this final verified journal
+        # cannot be finished from an old keyboard or the quiet inbox.
+        for mutation in ['unverified','wrong_key','wrong_quote','wrong_identity','nonmanual_claim']:
+            n,key=reset('volume')
+            assert issue(n,'bank_transfer')['result'] is True
+            q(f'UPDATE payment_attempts SET created_at=NOW()-INTERVAL 601 SECOND WHERE pay_row_id={n}')
+            assert call(op='receipt',pay=n)['result'] is True
+            call(op='human',pay=n,crash_after_native=True)
+            if mutation=='unverified':
+                q("UPDATE service_effects SET provider_state='mutating' WHERE order_id=91")
+            elif mutation=='wrong_key':
+                q("UPDATE service_effects SET provider_mutation_key='pay:99999' WHERE order_id=91")
+            elif mutation=='wrong_quote':
+                q(f'UPDATE pays SET volume=2 WHERE id={n}')
+            elif mutation=='nonmanual_claim':
+                other='pay:'+str(n)
+                q("UPDATE service_effects SET provider_mutation_key='"+other+
+                  "', provider_mutation_snapshot=JSON_SET(provider_mutation_snapshot,"+
+                  "'$.key','"+other+"','$.consumed_keys',JSON_ARRAY('"+other+"')) WHERE order_id=91")
+            else:
+                q(f"UPDATE pays SET provider_snapshot=JSON_SET(provider_snapshot,'$.remote_user_id',99999) WHERE id={n}")
+            writes=panel.write_count;panel.trace=[]
+            r=call(op='human',pay=n)
+            record('manual_volume_resume_refuses_'+mutation,
+                state(n)=='processing' and q('SELECT COUNT(*) FROM increase_order')=='0' and
+                panel.write_count==writes and not panel.trace and not pg_events(r) and
+                any(e.get('event')=='ALERT' for e in r['events']),
+                dict(state=state(n),writes=panel.write_count,result=r))
         for mode in ['live','unreadable','drift']:
             n,key=reset('renew');assert issue(n,'bank_transfer')['result'] is True
             q(f'UPDATE payment_attempts SET created_at=NOW()-INTERVAL 601 SECOND WHERE pay_row_id={n}')
@@ -294,5 +415,9 @@ def main():
     report=check(args.report)
     if args.report:args.report.write_text(json.dumps(report,ensure_ascii=False,indent=2)+'\n')
     print(json.dumps({k:v for k,v in report.items() if k!='observations'}))
-    if not report['complete']:raise SystemExit(1)
+    if not report['complete']:
+        print(json.dumps({'failed_observations':[
+            {'scenario':o['scenario'],'actual':str(o['actual'])[:1800]}
+            for o in report['observations'] if not o['passed']]}))
+        raise SystemExit(1)
 if __name__=='__main__':main()

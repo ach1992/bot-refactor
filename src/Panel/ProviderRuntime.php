@@ -800,6 +800,15 @@ function achbotPgServiceEdit(mysqli $db,int $serverId,array $change,?array $gift
         if ($giftTarget!==null && !achbotGiftTargetMatches($db,$serverId,$giftTarget))
             throw new RuntimeException('pg_gift_target_changed');
         $key=achbotPgOperationKey('edit',$change);
+        $manualOrigin=[];
+        if (str_starts_with($key,'manual:pay:')) {
+            $pid=(int)($change['pay_id']??0);
+            $approver=(int)($change['manual_approver_id']??0);
+            $amount=(int)($change['manual_local_amount_toman']??0);
+            if ($pid<=0 || $key!=='manual:pay:'.$pid || $approver<=0 || $amount<=0)
+                throw new RuntimeException('pg_manual_edit_origin_missing');
+            $manualOrigin=['original_approver_id'=>$approver,'original_amount_toman'=>$amount];
+        }
         achbotPgMutationAdmission($ctx['account'],$key);
         if ((int)($change['pay_id']??0)>0) achbotPgQuote($db,(int)$change['pay_id']);
         else {
@@ -810,7 +819,8 @@ function achbotPgServiceEdit(mysqli $db,int $serverId,array $change,?array $gift
         // Own the durable account fence BEFORE calculating limits. Eligibility
         // preflight is not used for arithmetic; a completed competing edit is
         // included by the fresh observation below.
-        $intent=achbotPgBeginMutation($db,$ctx,$key,'edit',['phase'=>'claimed','requested_units'=>$requestUnits]);
+        $intent=achbotPgBeginMutation($db,$ctx,$key,'edit',
+            ['phase'=>'claimed','requested_units'=>$requestUnits]+$manualOrigin);
         $read=achbotPgRead($ctx['panel'],$ctx['identity']);
         if (($read['success']??false)!==true) throw new RuntimeException('pg_edit_read_unverified');
         // The durable account fence is already owned. Compare fresh native
@@ -835,8 +845,13 @@ function achbotPgServiceEdit(mysqli $db,int $serverId,array $change,?array $gift
         }
         $absolute=achbotPgEditChanges($read['user'],$change);
         $intent=achbotPgPersistMutationIntent($db,$ctx,$intent,[
+            // Preserve the issued operation's actual units and local order
+            // baseline in the EXISTING mutation evidence for source-only
+            // recovery if PHP dies after native verification, before pay COMMIT.
+            'requested_units'=>$requestUnits,
+            'order_expire_before'=>(int)$ctx['order']['expire_date'],
             'absolute'=>$absolute,'reset_usage'=>isset($change['volume']),
-            'before'=>array_intersect_key($read['user'],array_flip(['data_limit','expire','status','group_ids','used_traffic']))]);
+            'before'=>array_intersect_key($read['user'],array_flip(['data_limit','expire','status','group_ids','used_traffic']))]+$manualOrigin);
         if (isset($change['volume'])) {
             $reset=achbotPgReset($ctx['panel'],$ctx['identity']);
             if (($reset['success']??false)!==true) throw new RuntimeException('pg_reset_requires_review');

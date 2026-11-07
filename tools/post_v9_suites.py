@@ -563,6 +563,31 @@ def run_api(tmp: str) -> tuple[dict, dict]:
         'volume_slow_replay_no_second_write',
         'human_volume_actual_route_native_http_outside_sql',
         'human_day_actual_route_native_http_outside_sql',
+        # R7: exact-source verified local-only recovery of original human edits.
+        'manual_renew_verified_native_crash_leaves_processing',
+        'manual_renew_resume_verified_local_only_once',
+        'manual_renew_repeat_never_reapplies_or_audits',
+        'manual_day_verified_native_crash_leaves_processing',
+        'manual_day_resume_verified_local_only_once',
+        'manual_day_repeat_never_reapplies_or_audits',
+        'manual_volume_verified_native_crash_leaves_processing',
+        'manual_volume_resume_verified_local_only_once',
+        'manual_volume_repeat_never_reapplies_or_audits',
+        # Reviewer R1/R2: original approver and immutable amount, all kinds.
+        'manual_renew_resume_refuses_changed_payment_amount',
+        'manual_renew_resume_refuses_changed_attempt_amount',
+        'manual_renew_resume_refuses_missing_original_actor',
+        'manual_day_resume_refuses_changed_payment_amount',
+        'manual_day_resume_refuses_changed_attempt_amount',
+        'manual_day_resume_refuses_missing_original_actor',
+        'manual_volume_resume_refuses_changed_payment_amount',
+        'manual_volume_resume_refuses_changed_attempt_amount',
+        'manual_volume_resume_refuses_missing_original_actor',
+        'manual_volume_resume_refuses_unverified',
+        'manual_volume_resume_refuses_wrong_key',
+        'manual_volume_resume_refuses_wrong_quote',
+        'manual_volume_resume_refuses_wrong_identity',
+        'manual_volume_resume_refuses_nonmanual_claim',
         'human_renew_live_actual_route_native_http_outside_sql',
         'human_renew_unreadable_actual_route_native_http_outside_sql',
         'human_renew_drift_actual_route_native_http_outside_sql',
@@ -1165,10 +1190,10 @@ def run_wallet(tmp: str) -> tuple[dict, dict]:
             and text_catalog.get("retired_parser_tokens")==23
             and text_catalog.get("relocation_source_ref")=="ecd30ba9192ed374703118a6c131be8809cc7b06"
             and text_catalog.get("native",{}).get("current_retired_feature_keys")==3
-            and text_catalog.get("catalog_keys")==2780+14+9+18+27+12+7+17+2+2
+            and text_catalog.get("catalog_keys")==2780+14+9+18+27+12+7+17+2+2+3
             and text_catalog.get("native",{}).get("editable_catalog_files")==2
             and text_catalog.get("native",{}).get("logical_topics")==28+7
-            and text_catalog.get("native",{}).get("current_catalog_keys")==2780+14+9+18+27+12+7+17+2+2
+            and text_catalog.get("native",{}).get("current_catalog_keys")==2780+14+9+18+27+12+7+17+2+2+3
             and text_catalog.get("native",{}).get("current_gift_admin_additions")==1
             and text_catalog.get("native",{}).get("current_gift_catalog_negative_controls")==8
             and text_catalog.get("native",{}).get("current_gift_catalog_negative_scenarios")==[
@@ -1197,7 +1222,7 @@ def run_wallet(tmp: str) -> tuple[dict, dict]:
             # report and one zero-slot warning. Their native proof adds
             # seven interpolation assertions and one object/multi-parameter/
             # one-pass template, while preserving the original negative tests.
-            and text_catalog.get("native",{}).get("current_native_template_assertions")==4120+24+9+139+42+7+2
+            and text_catalog.get("native",{}).get("current_native_template_assertions")==4120+24+9+139+42+7+2+3
             and text_catalog.get("native",{}).get("current_object_conversion_templates")==268+2+15+5+1
             and text_catalog.get("native",{}).get("current_shared_multi_parameter_templates")==66+1+14+5+1
             and text_catalog.get("native",{}).get("current_one_pass_templates")==268+2+15+5+1
@@ -1208,7 +1233,7 @@ def run_wallet(tmp: str) -> tuple[dict, dict]:
             and text_catalog.get("native",{}).get("current_non_ascii_digit_templates")==0
             and text_catalog.get("presentation",{}).get("status")=="PASS"
             and text_catalog.get("presentation",{}).get("editable_files")==2
-            and text_catalog.get("presentation",{}).get("current_keys")==2780+14+9+18+27+12+7+17+2+2
+            and text_catalog.get("presentation",{}).get("current_keys")==2780+14+9+18+27+12+7+17+2+2+3
             and text_catalog.get("presentation",{}).get("numeric_template_changes")==23
             and text_catalog.get("presentation",{}).get("adjacent_emoji_violations")==0
             and text_catalog.get("presentation",{}).get("parameter_exception_count")==3
@@ -1260,14 +1285,13 @@ def run_wallet(tmp: str) -> tuple[dict, dict]:
         # Four retired #112 references and the additional old direct-delete
         # callback reference are proven absent by test_next_text_catalog.py.
         # Keep complete current-reference equality, never a lower bound.
-        'runtime_references':2453+14-1-6-4-1+8-3+28+12-5+2,
-        # +28 owner financial/service/delivery copy keys, +12 net
-        # referenced tokens from R2 financial exception and R3 final
-        # receipt topics. The two exact-pinned service_recovery_action
-        # buttons/warnings are now statically referenced as well. The five
-        # new retired second-confirmation labels
-        # are proven absent by test_next_text_catalog.py's exact inherited
-        # source check, not removed from the editable catalog.
+        'runtime_references':2453+14-1-6-4-1+8-3+28+12-5+2+3,
+        # +28 owner financial/service/delivery copy keys; +12 net from R2
+        # financial exception and R3 final receipt. Two earlier recovery
+        # labels and three new original-edit recovery labels are statically
+        # referenced. The five retired second-confirmation labels remain
+        # absent under the exact inherited source checks, but are retained
+        # in the editable historical catalog.
         # The exact orphan/source inventory proof remains mandatory.
         'api_referenced_keys':68,
         'api_dynamic_source_paths':2,
