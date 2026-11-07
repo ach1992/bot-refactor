@@ -9,6 +9,7 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
     exit;
 }
 require_once __DIR__.'/DeliveryLedger.php';
+require_once __DIR__.'/PaidAccountRecovery.php';
 
 /**
  * All locally recorded account lines, capacity and payment finality must
@@ -161,7 +162,8 @@ function achbotAutoBankFinishBuySub(mysqli $db, array $pay, array $lines, ?array
  */
 function achbotAutoBankProvisionBuySub(
     mysqli $db, array $pay, array $botState, array $buttonValues,
-    array $unusedLinkIndices, bool $unusedHideConfigIfMany, string $botUrl, ?array $apiProof=null
+    array $unusedLinkIndices, bool $unusedHideConfigIfMany, string $botUrl,
+    ?array $apiProof=null, ?callable $exactAccountGet=null
 ): array {
     achbotEffectRequireAutocommit($db);
     // Stop BEFORE a remote CREATE if the forward delivery schema is absent.
@@ -211,10 +213,20 @@ function achbotAutoBankProvisionBuySub(
         (int)$p['user_id']!==$owner || (int)$p['plan_id']!==$planId ||
         (int)$p['server_id']!==$server || (int)$p['plan_server']!==$server ||
         (int)$p['inbound_id']!==0 || !achbotSupportsPanel($p['panel_type']) ||
-        !achbotSupportsPanel($p['panel_type']) || $price<=0 || $count>$price ||
-        ($apiProof===null && (int)$p['ucount']<$count) || !is_string($p['panel_url']) ||
+        $price<=0 || $count>$price || !is_string($p['panel_url']) ||
         $p['panel_url']==='')
         throw new RuntimeException('bank_buy_preflight_unavailable');
+    if ($apiProof===null && (int)$p['ucount']<$count) {
+        // Capacity was atomically owned by ordinal 1 BEFORE the first POST.
+        // On continuation, current free slots need not still equal the paid
+        // amount. Do not release or reserve them a second time.
+        $q=$db->prepare("SELECT reserved_count FROM service_effects
+            WHERE pay_row_id=? AND effect_kind='create' AND ordinal=1 LIMIT 1");
+        $q->bind_param('i',$payId);$q->execute();
+        $hold=$q->get_result()->fetch_assoc();$q->close();
+        if (!$hold || (int)$hold['reserved_count']!==$count)
+            throw new RuntimeException('bank_buy_original_capacity_unverified');
+    }
 
     // Plan templates may change after payment. Fulfill the original
     // entitlement recorded at the durable claim, never the new template.
@@ -232,14 +244,16 @@ function achbotAutoBankProvisionBuySub(
         $remark=buildRemark($botState,(string)$p['server_remark'],
             $description,$owner,$description!==''?$description:null);
         if ($count>1 && $description!=='') $remark.='_'.$i;
-        [$response,$remark,$port,$effectId]=achbotCreatePaidAccount($db,$payId,$i,[
+        // Reuse prior dispatch only through exact native readback. A new
+        // ordinal still calls the existing unique-key CREATE owner once.
+        [$response,$remark,$port,$effectId]=achbotContinuePaidAccount($db,$payId,$i,[
             'user_id'=>$owner,'server_type'=>$p['panel_type'],'server_id'=>$server,
             'inbound_id'=>0,'plan_id'=>$planId,'remark'=>$remark,
             'volume'=>$volume,'days'=>$days,'uniqid'=>$uniqid,
             'protocol'=>(string)$p['protocol'],'port'=>$port,
             'expire_microdate'=>0,'net_type'=>(string)$p['net_type'],
             'rahgozar'=>(int)$p['rahgozar'],'limitip'=>(int)$p['limitip']
-        ]);
+        ],$exactAccountGet);
         if (!is_object($response) || ($response->success??false)!==true)
             throw new RuntimeException('bank_buy_create_unconfirmed');
 

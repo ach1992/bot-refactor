@@ -39,6 +39,22 @@
   original processing state unresolved, with the pinned effect preserved.
   Never infer failure from HTTP 404, timeout or Telegram errors and issue
   a second CREATE, PUT, credit or refund.
+- **Source candidate after PR #123 (not yet independently approved):** the
+  Owner-private `Service recovery` case now offers **Continue approved purchase**
+  only for a standard original manual `BUY_SUB` already in `processing`, with
+  the original manual attempt, source `007` capacity hold and healthy 008/018/020
+  contracts. It invokes the **existing** `accept{original_hash}` handler; merely
+  viewing the case is read-only, and the handler rechecks proof, identity and
+  once-only effects independently. Other subjects remain diagnostic-only.
+- **Bank-Cron / verified bank-SMS or gift API `BUY_SUB`:** an interrupted
+  `processing` purchase may re-enter the existing per-ordinal continuation.
+  An already journaled ordinal requires pinned read-only native confirmation
+  before local commit; it cannot reissue CREATE. A genuinely unstarted ordinal
+  may be claimed once through the original unique-key create path. An original
+  007 full-quantity capacity reservation counts even when today's free slots
+  are exhausted. Missing or mismatched native evidence stays unresolved.
+  Custom terms and multi-account quantity remain subject to original immutable
+  invoice and per-ordinal verification. This is not a refund or new approval.
 
 ## Prerequisites and one-way migration
 
@@ -93,13 +109,19 @@
 
 ## Explicitly uncompleted acceptance
 
-This candidate does **not** yet provide automatic replay-safe renewal,
-`plus_day` or `plus_volume` recovery for every payment method; these are
-additive external mutations and must not be retried without an original
-absolute target baseline. Other checkout providers, full PasarGuard recovery
-and actual installed Chili evidence require separate acceptance under
-[Issue #117](https://github.com/ach1992/bot-refactor/issues/117). Do not
-label RC26 released or deployment ready while those gates remain open.
+This source candidate still does **not** provide proven replay-safe
+`RENEW_ACCOUNT`, `RENEW_SCONFIG`, `plus_day` or `plus_volume` continuation
+for every **manually approved** payment method. These are additive external
+mutations; an already-`processing` row must not trigger another native PUT
+without a durable original baseline and a verifiable one-time effect. The
+technical inbox remains diagnostic-only for these subjects, not a fake
+reconciliation approval. Complete those contracts and their actual admin
+journeys before claiming full Issue #117 acceptance. Provider parity,
+PasarGuard installed behavior, real Chili target/migration status, actual
+backup+restore and end-to-end payment-to-Telegram acceptance also remain
+unverified. The current source change needs exact-candidate full PHP 8.5 CI,
+independent review and a separate Owner Merge decision. Do not label RC26
+released or deployment ready while those gates remain open.
 
 References: [Issue #117](https://github.com/ach1992/bot-refactor/issues/117),
 [PR #123](https://github.com/ach1992/bot-refactor/pull/123),

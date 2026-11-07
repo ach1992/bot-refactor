@@ -285,6 +285,7 @@ if (preg_match('/^serviceRecovery(Inbox|Case)(?:_([1-9][0-9]{0,17}))?$/D',
             $pay=achbotRecoveryTechnicalCase($connection,$id);
             if (!$pay) throw new RuntimeException('service_recovery_not_reviewable');
             $attempt=$pay['attempt']??null;
+            $canResume=achbotRecoveryCanResumeManualPurchase($connection,$pay);
             $body=achbotMessageHtml('service_workbench.case_title',[
                 'pay'=>$id,'user'=>$pay['user_id'],
                 'state'=>$pay['state'],'type'=>$pay['type']])."
@@ -292,7 +293,15 @@ if (preg_match('/^serviceRecovery(Inbox|Case)(?:_([1-9][0-9]{0,17}))?$/D',
                 achbotRecoveryEvidenceText($pay,$attempt).
                 achbotRecoverySubjectText($pay).
                 "
-".achbotMessage('service_workbench.readonly_warning');
+".achbotMessage($canResume?'service_workbench.resume_warning':
+                    'service_workbench.readonly_warning');
+            if ($canResume) {
+                // The existing accept handler is the only financial/native
+                // continuation; its original proof and once-only journals
+                // are rechecked under locks. No new recovery state machine.
+                $buttons[]=[['text'=>achbotMessage('service_workbench.resume_purchase'),
+                    'callback_data'=>'accept'.$pay['hash_id']]];
+            }
             if ($pay['type']==='BUY_SUB') {
                 $buttons[]=[['text'=>achbotMessage('delivery_workbench.native_inbox'),
                     'callback_data'=>'bankReviewCase_'.$id]];

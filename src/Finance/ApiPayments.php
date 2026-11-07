@@ -426,11 +426,10 @@ function achbotApiPaymentSettle(mysqli $db,int $id,array $proof): string {
     } catch(Throwable $e) {try{$db->rollback();}catch(Throwable $ignored){}error_log('achbot_api_claim_review pay_id='.$id);return 'review';}
     try {
         if ($type==='BUY_SUB') {
-            // Existing CREATE journal is authoritative after a crash. An
-            // uncertain/dispatched or partially verified batch stays manual;
-            // the no-effect pre-reservation window can resume safely.
-            $q=$db->prepare("SELECT COUNT(*) FROM service_effects WHERE pay_row_id=? AND effect_kind='create'");$q->bind_param('i',$id);$q->execute();$count=(int)$q->get_result()->fetch_row()[0];$q->close();
-            if($count>0)return 'review';
+            // Continue each original ordinal through the same pinned native
+            // observation used by manual BUY_SUB. A prior dispatch is GET-only
+            // and can never trigger a second POST; a never-started ordinal
+            // retains its original single CREATE claim and capacity hold.
             $delivery=achbotAutoBankProvisionBuySub($db,$pay,$GLOBALS['botState']??[],$GLOBALS['buttonValues']??[],[],false,(string)($GLOBALS['botUrl']??''),$proof);
             if (!$delivery['committed']) return 'review';
             achbotReferralAfterCompletedPurchase($db,(int)$pay['user_id'],$id,(int)($GLOBALS['admin']??0),$GLOBALS['botState']??[]);

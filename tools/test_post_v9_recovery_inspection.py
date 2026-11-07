@@ -33,6 +33,7 @@ $connection=new mysqli('localhost','root','',$dbName,0,$socket);
 $connection->set_charset('utf8mb4');
 if (!empty($spec['nonthrowing'])) mysqli_report(MYSQLI_REPORT_OFF);
 $GLOBALS['events']=[];$GLOBALS['spec']=$spec;
+$GLOBALS['telegramWebhookSecret']='fixture-owner-recovery-key-2026';
 $admin=9001;$from_id=(int)($spec['actor']??9001);
 $chat_id=(int)($spec['chat']??9001);
 $GLOBALS['chat_id']=$chat_id;
@@ -86,7 +87,12 @@ function achbotRecoveryStrictAccountGet($endpoint,$authUser,$authPass,$name) {
             WHERE id=".(int)$effect['pay_row_id']);
     }
     if ($mode==='drop_effects_during_get') {
-        $connection->query('DROP TABLE service_effects');
+        // 018 references 007; this synthetic broken-schema probe must
+        // actually drop the owned table even under the FK, or it proves
+        // nothing about a lost second SQL read with MYSQLI_REPORT_OFF.
+        if (!$connection->query('SET FOREIGN_KEY_CHECKS=0') ||
+            !$connection->query('DROP TABLE service_effects'))
+            throw new RuntimeException('fixture_schema_drop_failed');
     }
     $bytes=(int)$effect['requested_bytes'];
     $expiry=(int)$effect['requested_expire'];
@@ -203,7 +209,9 @@ def check():
             "('BOT_STATES','{\"cartToCartState\":\"on\"}')")
         for name in ('001_marzban_panel_group_id.sql',
                      '003_payment_attempts.sql','007_service_effects.sql',
-                     '009_bank_buy_invoice_claims.sql'):
+                     '008_referral_awards.sql','009_bank_buy_invoice_claims.sql',
+                     '018_payment_delivery_intents.sql',
+                     '020_payment_followup_intents.sql'):
             sql(work,env,(ROOT/'migrations/post-v9'/name).read_text())
         driver=work/'recovery-driver.php'
         driver.write_text(DRIVER)
@@ -261,6 +269,55 @@ def check():
         assert 'ظرفیت رزروشده' in str(wallet_panel['events'])
         assert unchanged(work,env,held)==held_before
         cases.append('owner_private_wallet_debit_capacity_hold_visible_no_unissued_get')
+
+        # A claimed standard manual BUY_SUB must be actionable from the
+        # technical queue through the original accept handler, not an
+        # operator-only SQL instruction. Opening the case is always read-only.
+        resumable=create_case(work,env,'resume-original-manual',state='processing',
+                              count=2,number_of_effects=1,method='bank_transfer')
+        sql(work,env,f'UPDATE pays SET approved_by=9001 WHERE id={resumable}')
+        sql(work,env,f"UPDATE payment_attempts SET stage='review' WHERE pay_row_id={resumable}")
+        sql(work,env,"INSERT INTO service_effects (pay_row_id,ordinal,operation_id,"
+            "effect_kind,target_server_id,target_key,endpoint_sha256,plan_id,"
+            "remote_username,requested_expire,requested_bytes,request_sha256,"
+            "reserved_count,state) VALUES ("+str(resumable)+",0,REPEAT('e',32),"
+            "'manual_hold',2,'server:2',REPEAT('a',64),7,'original_hold',0,0,"
+            "REPEAT('b',64),2,'consumed')")
+        original=unchanged(work,env,resumable)
+        action='acceptresume-original-manual'
+        displayed=call(work,env,driver,op='route',
+                       callback=f'serviceRecoveryCase_{resumable}')
+        assert action in [b['callback_data'] for b in buttons(displayed)],displayed
+        assert 'ادامهٔ خرید تأییدشده' in events(displayed,'EDIT')[0]['text'] or any(
+            b.get('text')=='▶️ ادامهٔ خرید تأییدشده' for b in buttons(displayed))
+        assert not events(displayed,'GET') and unchanged(work,env,resumable)==original
+        cases.append('processing_standard_manual_buy_has_original_safe_resume_button_no_effect_on_view')
+        for actor,chat in [(9002,9002),(9001,9002),(9002,9001)]:
+            denied=call(work,env,driver,op='route',
+                        callback=f'serviceRecoveryCase_{resumable}',actor=actor,chat=chat)
+            assert events(denied,'ACK') and not events(denied,'EDIT')
+            assert not events(denied,'GET') and not events(denied,'SEND')
+        assert unchanged(work,env,resumable)==original
+        cases.append('standard_manual_resume_button_owner_private_only')
+        # Do not suggest resuming a mismatched count, paid/hosted case,
+        # custom quote, or missing original receipt. The original accept
+        # handler separately enforces the full immutable evidence again.
+        for changed,restore in [('agent_count=3','agent_count=2'),
+                                ('day=3','day=0'),
+                                ('message_id=0','message_id=550'),
+                                ("state='paid'","state='processing'")]:
+            sql(work,env,f'UPDATE pays SET {changed} WHERE id={resumable}')
+            bad=call(work,env,driver,op='route',
+                     callback=f'serviceRecoveryCase_{resumable}')
+            assert action not in [b['callback_data'] for b in buttons(bad)],(changed,bad)
+            sql(work,env,f'UPDATE pays SET {restore} WHERE id={resumable}')
+        sql(work,env,f"UPDATE payment_attempts SET provider='nowpayments' WHERE pay_row_id={resumable}")
+        wrong=call(work,env,driver,op='route',
+                   callback=f'serviceRecoveryCase_{resumable}')
+        assert action not in [b['callback_data'] for b in buttons(wrong)]
+        sql(work,env,f"UPDATE payment_attempts SET provider='bank_transfer' WHERE pay_row_id={resumable}")
+        assert unchanged(work,env,resumable)==original
+        cases.append('original_manual_resume_requires_hold_subject_provider_and_receipt_identity')
 
         matched=call(work,env,driver,op='inspect',pay=pay)
         assert matched['value']['status']=='matching_observation',matched
@@ -494,7 +551,7 @@ def check():
         assert len(events(postget,'GET'))==1
         assert len(events(postget,'ACK'))==1
         assert len(events(postget,'EDIT'))==1
-        assert 'نتیجهٔ استعلام قابل احراز نیست' in events(postget,'EDIT')[0]['text']
+        assert 'نتیجهٔ استعلام قابل احراز نیست' in events(postget,'EDIT')[0]['text'],postget
         cases.append('mysqlireport_off_sql_failure_after_get_ends_owner_visible_uncertain')
 
         # Missing 007 or 003 is a visible operator failure, not empty SUCCESS.
