@@ -3717,6 +3717,7 @@ def run_funding(tmp: str) -> tuple[dict, dict]:
         "real_wallet_route_photo_replay_denied_bank_transfer",
         "real_wallet_route_photo_replay_denied_gift_card",
         "real_wallet_route_photo_replay_denied_manual_usdt",
+        "manual_direct_reject_one_click_no_wallet_native_or_duplicate_reports",
         "manual_standard_paid_order_delivery_sealed_and_ack_once",
         "manual_standard_telegram_unknown_owner_reapprove_resends_only_sealed_packet",
         "manual_wallet_nonadmin_callback_denied_bank_transfer",

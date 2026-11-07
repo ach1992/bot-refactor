@@ -285,3 +285,15 @@ Telegram ambiguity and duplicate Owner callback) and
 `test_post_v9_recovery_transport.py` (actual credential-bound localhost
 login/GET, no remote re-POST, local verification of precisely one original
 native `service_effects` row). Neither proves installed Chili acceptance.
+
+### Direct manual receipt rejection
+
+The ordinary «Reject» admin callback for bank/gift/manual-crypto receipts
+commits rejection immediately using the **existing** `have_sent -> declined`
+compare-and-swap; it does not request an extra reason entry or merchant
+provider GET. The same existing customer rejection and normal administrative
+report are emitted once by the winning transition, with no wallet, order or
+native mutation. A button clicked after `processing` or a terminal outcome
+cannot erase payment or undo a remote service operation. Old reason-editor
+messages from the previous installed version are still accepted only when
+the original payment is unfulfilled; a replayed editor cannot reject twice.

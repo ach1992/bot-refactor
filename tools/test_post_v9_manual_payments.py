@@ -919,6 +919,26 @@ def check():
                         amount=amount,quantity=quantity,standard=True)
             return key
 
+        standard_pay('standarddirectreject',method='gift_card')
+        wallet_before=query(work,env,'SELECT userid,wallet FROM users ORDER BY userid')
+        rejected=run_route(work,env,route_driver,data='declineAction_standarddirectreject',
+                           actor=9001,route='manual_admin')
+        assert query(work,env,"SELECT state,approved_by FROM pays WHERE "
+                     "hash_id='standarddirectreject'")=='declined\t9001',rejected
+        assert query(work,env,'SELECT userid,wallet FROM users ORDER BY userid')==wallet_before
+        assert not any(e['name'] in ('remote_create','remote_edit','qr_send') for e in rejected)
+        assert any(e['name']=='sendMessage' and len(e.get('args',[]))>=4 and
+                   e['args'][3]==1001 for e in rejected),rejected
+        assert any(e['name']=='sendMessage' and 'کاربر' in str(e['args'][0])
+                   for e in rejected),rejected
+        assert not any(e['name']=='setUser' and str(e['step']).startswith('declineActionReason_')
+                       for e in rejected),rejected
+        repeated=run_route(work,env,route_driver,data='declineAction_standarddirectreject',
+                           actor=9001,route='manual_admin')
+        assert not any(e['name'] in ('remote_create','remote_edit','qr_send','sendMessage')
+                       for e in repeated),repeated
+        cases.append('manual_direct_reject_one_click_no_wallet_native_or_duplicate_reports')
+
         standard_pay('standardwrongstage',method='gift_card')
         query(work,env,"UPDATE payment_attempts SET stage='pending' "
               "WHERE order_hash='standardwrongstage'")

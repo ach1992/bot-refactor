@@ -418,9 +418,14 @@ foreach([9002,9003,9004] as $actor){
  $hash='r5-legitimate-decline-'.$actor;$makeReceipt($hash);$wallet=(int)$connection->query('SELECT wallet FROM users WHERE userid=1001')->fetch_assoc()['wallet'];
  $from_id=$chat_id=$actor;$data='declineAction_'.$hash;$text='';$userInfo=['step'=>'none','isAdmin'=>false,'userid'=>$actor];require $root.'/src/Finance/Routes/ManualReceipts.php';
  $declineStep=$connection->query('SELECT step FROM users WHERE userid='.$actor)->fetch_assoc()['step'];
- yes(str_starts_with($declineStep,'declineActionReason_'.$hash.'_'),'all staff retain original receipt decline reason step '.$actor);
- $data='';$text='genuine human receipt decline';$userInfo=['step'=>$declineStep,'isAdmin'=>false,'userid'=>$actor];require $root.'/src/Finance/Routes/ManualReceipts.php';
- yes($connection->query("SELECT state FROM pays WHERE hash_id='$hash'")->fetch_assoc()['state']==='declined'&&(int)$connection->query('SELECT wallet FROM users WHERE userid=1001')->fetch_assoc()['wallet']===$wallet,'all staff original receipt decline preserves customer wallet '.$actor);
+ yes(!str_starts_with($declineStep,'declineActionReason_'.$hash.'_') &&
+     $connection->query("SELECT state FROM pays WHERE hash_id='$hash'")->fetch_assoc()['state']==='declined' &&
+     (int)$connection->query('SELECT wallet FROM users WHERE userid=1001')->fetch_assoc()['wallet']===$wallet,
+     'all staff one-click reject needs no reason step, no native effect or wallet credit '.$actor);
+ $data='';$text='stale old editor';$userInfo=['step'=>'declineActionReason_'.$hash.'_111','isAdmin'=>false,'userid'=>$actor];
+ require $root.'/src/Finance/Routes/ManualReceipts.php';
+ yes($connection->query("SELECT state FROM pays WHERE hash_id='$hash'")->fetch_assoc()['state']==='declined'&&(int)$connection->query('SELECT wallet FROM users WHERE userid=1001')->fetch_assoc()['wallet']===$wallet,
+     'legacy reason-editor replay cannot reopen or double-reject finalized payment '.$actor);
 
 }
 foreach([

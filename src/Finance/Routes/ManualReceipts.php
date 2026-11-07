@@ -916,18 +916,29 @@ if (preg_match('/^declineAction_(.+)$/', $data, $match) && achbotAdminCanFor($co
 		return;
 	}
 
-    if ($payInfo['state'] === 'approved' || $payInfo['state'] === 'declined') {
+    if ($payInfo['state'] !== 'have_sent') {
+        // A PROCESSING or already-finalized operation may have made an
+        // irreversible remote change; reject never reverses or replays it.
         alert(\achbotMessage('manual_payment.manual_receipts.alert.af4cc41dc0'));
         return;
     }
 
-    setUser("declineActionReason_" . $hash_id . "_" . $message_id);
-    sendMessage(\achbotMessage('manual_payment.manual_receipts.message.a757d0e2a6'), $cancelKey);
+    // Owner decision: this button IS the final rejection. Reuse the existing
+    // financial CAS, original customer message and admin report path below;
+    // no separate reason entry or provider status GET is required. A stale
+    // previously opened reason editor is still handled by the same code.
+    $userInfo['step'] = 'declineActionReason_' . $hash_id . '_' . $message_id;
+    $text = \achbotMessage('finance_workbench.status_rejected');
 }
 
-if (preg_match('/^declineActionReason_(.+)_(\d+)$/', $userInfo['step'], $match) &&
+if (preg_match('/^declineActionReason_(.+)_(\d+)$/', (string)($userInfo['step']??''), $match) &&
     $text != $buttonValues['cancel'] &&
     achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'payments')) {
+    if (!is_string($text) || trim($text)==='') {
+        // Compatibility for an editor opened before the one-click change.
+        sendMessage(\achbotMessage('manual_payment.manual_receipts.message.a757d0e2a6'),$cancelKey);
+        return;
+    }
     setUser();
     $hash_id = $match[1];
     $message_id = $match[2];
@@ -951,7 +962,7 @@ if (preg_match('/^declineActionReason_(.+)_(\d+)$/', $userInfo['step'], $match) 
 
     $uid = $payInfo['user_id'];
     $price = !empty($payInfo['price']) ? number_format($payInfo['price']) . \achbotMessage('manual_payment.automatic_receipts.text.2cc98f7f7c') : "---";
-    $reason = $text;
+    $reason = htmlspecialchars((string)$text, ENT_QUOTES|ENT_SUBSTITUTE, 'UTF-8');
 	$remark = "---";
 	
 	// تلاش برای گرفتن ریمارک دقیق

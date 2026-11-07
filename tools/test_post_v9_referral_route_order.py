@@ -61,7 +61,8 @@ def initial(work,env):
         "'marzban','fixture-admin','fixture-password','')")
     for migration in ('003_payment_attempts.sql','007_service_effects.sql',
                       '008_referral_awards.sql',
-                      '009_bank_buy_invoice_claims.sql'):
+                      '009_bank_buy_invoice_claims.sql',
+                      '018_payment_delivery_intents.sql'):
         query(work,env,(ROOT/'migrations/post-v9'/migration).read_text())
     query(work,env,"UPDATE users SET refered_by=9002 WHERE userid=1001")
 
@@ -120,7 +121,8 @@ def main():
 
         for route in ('standard','custom'):
             if route=='standard':
-                warning='achbot_manual_standard_delivery_needs_review'
+                warning=['achbot_delivery_telegram_uncertain',
+                         'achbot_manual_purchase_delivery_pending']
             else:
                 warning='achbot_custom_receipt_delivery_review'
             events=check(route,'ref'+route+'qr',{'qr_transport':'throw'},warning)
