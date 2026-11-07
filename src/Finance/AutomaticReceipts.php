@@ -369,27 +369,9 @@ if($botState['cartToCartAutoAcceptState']=="on"){
                 .\achbotMessage('manual_payment.automatic_receipts.message.ba9287d8c1').(int)$rowId.$bankReviewContext.\achbotMessage('manual_payment.automatic_receipts.message.4624bd3d02'),
                 null,null,$admin);
         }
-        // دکمه مدیر نباید قبل از اعمال سرویس، موفقیت را اعلام کند.
-        editKeys(json_encode(['inline_keyboard' => [[['text' => $autoServiceLabel, 'callback_data' => "wizwizch"]]]]), $payInfo['message_id'], $payInfo['chat_id']);
-
-		// ✅ ویرایش پیام سایر ادمین ها (در صورت وجود)
-		if (!empty($payInfo['admins_messages'])) {
-		$adminMessages = json_decode($payInfo['admins_messages'], true);
-
-			if (is_array($adminMessages)) {
-			foreach ($adminMessages as $msgInfo) {
-				if (
-					isset($msgInfo['chat_id'], $msgInfo['message_id']) &&
-					$msgInfo['chat_id'] != $payInfo['chat_id'] &&
-					achbotAdminStoredRecipientAllowed($connection,$msgInfo['chat_id'],(int)$admin) // جلوگیری از تکرار برای ادمین اصلی
-				) 	{
-					editKeys(json_encode(['inline_keyboard' => [[['text' => $autoServiceLabel, 'callback_data' => "wizwizch"]]]]),
-                    $msgInfo['message_id'],
-                    $msgInfo['chat_id']);
-					}
-				}
-			}
-		}
+        // Reuse the original receipt and staff-copy status updates after
+        // both normal completion and an interrupted BUY_SUB recovery.
+        achbotAutoBankSyncReceiptButtons($connection,$payInfo,(int)$admin,$autoServiceLabel);
 
         } catch (Throwable $error) {
             $event=($autoServiceCompleted===true)

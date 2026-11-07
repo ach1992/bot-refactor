@@ -88,6 +88,27 @@ if (!function_exists('refundToWalletAndNotify')) {
     }
 }
 
+/** Original bank-Cron receipt status presentation. This is post-commit
+ * Telegram work only: no payment settlement or native provider effect.
+ * Notification preference must not revoke updates to existing staff copies.
+ */
+function achbotAutoBankSyncReceiptButtons(mysqli $db, array $pay, int $primary, string $label): void {
+    // Keep the exact original keyboard shape and JSON encoding.
+    $keys=json_encode(['inline_keyboard'=>[[[
+        'text'=>$label,'callback_data'=>'wizwizch'
+    ]]]]);
+    editKeys($keys,$pay['message_id'],$pay['chat_id']);
+    $copies=json_decode((string)($pay['admins_messages']??''),true);
+    if (!is_array($copies)) return;
+    foreach ($copies as $copy) {
+        if (!is_array($copy) || !isset($copy['chat_id'],$copy['message_id']) ||
+            $copy['chat_id']==$pay['chat_id'] ||
+            !achbotAdminStoredRecipientAllowed($db,$copy['chat_id'],$primary))
+            continue;
+        editKeys($keys,$copy['message_id'],$copy['chat_id']);
+    }
+}
+
 function dbFetchPayByHash(mysqli $connection, string $hashId): ?array {
     $stmt = $connection->prepare("SELECT * FROM `pays` WHERE `hash_id` = ? LIMIT 1");
     $stmt->bind_param("s", $hashId);

@@ -65,8 +65,11 @@
   This does not change `Access.php`, role levels or owner-only specialist tools.
   Only original `007` CREATE ordinals with a valid full-count inventory origin
   are eligible. The original provisioner and native readback are reused;
-  after a verified terminal COMMIT, only
-  pending 018 delivery and payment-keyed 008 referral work may be performed.
+  after a verified terminal COMMIT, only pending 018 delivery,
+  payment-keyed 008 referral work, and the **original** bank-Cron
+  administrator receipt/status edits (primary plus eligible stored copies)
+  may be performed. Telegram edit failure must never reopen financial/native
+  fulfillment; the recovery Workbench message alone is not the original receipt.
   Unmatched/unknown native effects or changed invoices stay `processing`
   and never authorize an extra CREATE or automatic message resend.
   The 003 stage may remain `pending` after the original Cron claim; its

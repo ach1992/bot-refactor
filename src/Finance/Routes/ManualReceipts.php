@@ -333,6 +333,16 @@ if (preg_match('/^accept([A-Za-z0-9_-]{1,50})$/D',
             error_log('achbot_bank_purchase_resume_delivery_review pay_id='.$id.
                 ' class='.get_class($error));
         }
+        // The original bank-Cron receipt and existing staff copies need the
+        // same success status as a purchase completed in the first sweep.
+        // Telegram uncertainty remains a presentation issue after COMMIT.
+        try {
+            achbotAutoBankSyncReceiptButtons($connection,$pay,(int)$admin,
+                achbotMessage('manual_payment.automatic_receipts.text.2898f8f112'));
+        } catch (Throwable $error) {
+            error_log('achbot_bank_purchase_resume_receipt_edit_deferred pay_id='.$id.
+                ' class='.get_class($error));
+        }
         answerCallbackQuery($callbackId,achbotMessage('service_workbench.checked'));
         $keys=json_encode(['inline_keyboard'=>[
             [['text'=>achbotMessage('service_workbench.open'),

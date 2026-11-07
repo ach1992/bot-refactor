@@ -394,7 +394,23 @@ def check():
             query(work,env,(ROOT/'migrations/post-v9'/f).read_text())
         query(work,env,'UPDATE users SET isAdmin=1 WHERE userid=9002')
         query(work,env,"INSERT INTO setting(type,value) VALUES('ADMIN_ROLE_9002','manager')")
-        driver=work/'bank-buy-driver.php';driver.write_text(PHP)
+        # Other owner/API suites compose the unchanged base PHP fixture and
+        # replace its minimal editKeys spy. Enrich ONLY this bank driver's
+        # own disposable copy for receipt-address/failure assertions.
+        edit_spy='''function editKeys(...$args) {
+    $GLOBALS['events'][]=['event'=>'EDIT_KEYS','state'=>fixtureState()];
+}'''
+        receipt_spy='''function editKeys(...$args) {
+    $keyboard=json_decode((string)($args[0]??''),true);
+    $chat=(int)($args[2]??0);
+    $GLOBALS['events'][]=['event'=>'EDIT_KEYS','state'=>fixtureState(),
+        'message_id'=>(int)($args[1]??0),'chat_id'=>$chat,
+        'button'=>$keyboard['inline_keyboard'][0][0]??null];
+    if (($GLOBALS['spec']['mode']??'')==='receipt_edit_fail' && $chat===9001)
+        throw new RuntimeException('synthetic_original_receipt_edit_failed');
+}'''
+        assert PHP.count(edit_spy)==1
+        driver=work/'bank-buy-driver.php';driver.write_text(PHP.replace(edit_spy,receipt_spy))
         _issuer_driver=issuer_driver(work)
         query(work,env,"INSERT INTO setting(type,value) VALUES "
             "('BOT_STATES','{\"cartToCartState\":\"on\"}')")
@@ -404,7 +420,15 @@ def check():
         assert run(work,env,driver,op='claim',pay=claim)['result'] is False
         cases.append('buy_sub_nonterminal_exclusive_claim')
 
+        # Preserve the existing administrator-copy policy: a current Manager
+        # must receive status edits even with *new* notifications switched off;
+        # unknown staff and a second message in the primary chat are excluded.
+        query(work,env,"INSERT INTO setting(type,value) VALUES('ADMIN_NOTIFY_9002','off')")
+        copies=json.dumps([{'chat_id':9002,'message_id':551},
+                           {'chat_id':9003,'message_id':552},
+                           {'chat_id':9001,'message_id':553}])
         good=seed(work,env,'bankbuygood')
+        query(work,env,f"UPDATE pays SET admins_messages='{copies}' WHERE id={good}")
         ok=run(work,env,driver,pay=good)
         assert state(work,env,good)=='auto_cart_approved',ok
         assert [e['event'] for e in ok['events']
@@ -416,6 +440,13 @@ def check():
         assert effects(work,env,good)=='local_recorded'
         assert not any(e['event']=='POST' for e in run(work,env,driver,pay=good)['events'])
         cases.append('one_verified_account_atomic_order_before_telegram_no_replay')
+        cron_edits=[e for e in ok['events'] if e['event']=='EDIT_KEYS']
+        assert [(e['chat_id'],e['message_id']) for e in cron_edits]==[(9001,550),(9002,551)],cron_edits
+        assert all(e['state']=='auto_cart_approved' and e['button']['callback_data']=='wizwizch'
+                   for e in cron_edits),cron_edits
+        original_success_label=cron_edits[0]['button']['text']
+        assert original_success_label and cron_edits[1]['button']['text']==original_success_label
+        cases.append('original_bank_cron_receipt_primary_and_eligible_mirror_still_updated')
         assert query(work,env,f"SELECT ordinal,state,attempt_count FROM payment_delivery_intents WHERE pay_row_id={good}")=='1\tacknowledged\t1'
         assert query(work,env,f"SELECT attempt_no,result,actor_userid FROM payment_delivery_attempts WHERE intent_id=(SELECT id FROM payment_delivery_intents WHERE pay_row_id={good})")=='1\tacknowledged\t0'
         protected=query(work,env,f"SELECT sealed_payload FROM payment_delivery_intents WHERE pay_row_id={good}")
@@ -443,6 +474,7 @@ def check():
         # technical recovery callback, using precisely that old 003/009
         # invoice. Opening a route is NOT another financial approval.
         owner=seed(work,env,'ownerbankresume')
+        query(work,env,f"UPDATE pays SET admins_messages='{copies}' WHERE id={owner}")
         assert run(work,env,driver,op='claim',pay=owner)['result'] is True
         assert state(work,env,owner)=='processing'
         denied=run(work,env,driver,op='accept_resume',pay=owner,actor=1001,chat=1001)
@@ -463,10 +495,38 @@ def check():
         assert total(work,env,'orders_list',owner)==1
         assert total(work,env,'payment_delivery_intents',owner)==1
         assert any(e['event']=='ACK' for e in finished['events'])
+        edits=[e for e in finished['events'] if e['event']=='EDIT_KEYS']
+        assert [(e['chat_id'],e['message_id']) for e in edits]==[(9001,550),(9002,551)],finished
+        assert all(e['state']=='auto_cart_approved' and
+                   e['button']=={'text':original_success_label,'callback_data':'wizwizch'}
+                   for e in edits),finished
+        cases.append('manager_resume_updates_original_and_eligible_stored_receipts')
         cases.append('bank_manager_original_accept_resume_once_native_then_delivery')
         repeated=run(work,env,driver,op='accept_resume',pay=owner,actor=9002,chat=9002)
-        assert not any(e['event'] in ('POST','DELIVER') for e in repeated['events'])
+        assert not any(e['event'] in ('POST','DELIVER','EDIT_KEYS','REFERRAL')
+                       for e in repeated['events'])
         assert total(work,env,'orders_list',owner)==1
+        assert total(work,env,'service_effects',owner)==1
+        assert total(work,env,'payment_delivery_intents',owner)==1
+        cases.append('manager_repeat_callback_no_order_referral_receipt_or_delivery_replay')
+        failed_edits=seed(work,env,'ownerbankeditfailure')
+        query(work,env,f"UPDATE pays SET admins_messages='{copies}' WHERE id={failed_edits}")
+        assert run(work,env,driver,op='claim',pay=failed_edits)['result'] is True
+        recovered=run(work,env,driver,op='accept_resume',pay=failed_edits,
+                      actor=9002,chat=9002,mode='receipt_edit_fail')
+        assert state(work,env,failed_edits)=='auto_cart_approved',recovered
+        assert sum(e['event']=='POST' for e in recovered['events'])==1
+        assert sum(e['event']=='DELIVER' for e in recovered['events'])==1
+        assert [(e['chat_id'],e['message_id']) for e in recovered['events']
+                if e['event']=='EDIT_KEYS']==[(9001,550)]
+        assert total(work,env,'orders_list',failed_edits)==1
+        after_edit_failure=run(work,env,driver,op='accept_resume',pay=failed_edits,
+                               actor=9002,chat=9002)
+        assert not any(e['event'] in ('POST','DELIVER','EDIT_KEYS','REFERRAL')
+                       for e in after_edit_failure['events']),after_edit_failure
+        assert total(work,env,'orders_list',failed_edits)==1
+        assert total(work,env,'payment_delivery_intents',failed_edits)==1
+        cases.append('original_receipt_edit_failure_postcommit_never_rearms_native_or_delivery')
         cases.append('bank_manager_repeat_callback_never_reissues_account_or_delivery')
         forged=seed(work,env,'ownerbankdrift')
         assert run(work,env,driver,op='claim',pay=forged)['result'] is True
