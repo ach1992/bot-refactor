@@ -236,7 +236,7 @@ def stage_source(work, name, old=False, ref=None):
 
 def launch(work, env, stage, driver, **spec):
     return subprocess.Popen(['php','-n','-d','extension=mysqlnd','-d','extension=mysqli',
-        '-d','extension=curl','-d','extension=openssl','-d','allow_url_fopen=0',
+        '-d','extension=curl','-d','allow_url_fopen=0',
         '-d','disable_functions=exec,shell_exec,system,passthru,popen,proc_open,mail',
         str(driver),str(stage),str(work/'mysql.sock'),DB,json.dumps(spec)],
         cwd=work, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)

@@ -201,7 +201,7 @@ def sql(work,env,query):
 def php_call(work,env,driver,**spec):
     proc=subprocess.run([
         'php','-n','-d','extension=mysqlnd','-d','extension=mysqli',
-        '-d','extension=curl','-d','extension=openssl','-d','allow_url_fopen=0',
+        '-d','extension=curl','-d','allow_url_fopen=0',
         '-d','disable_functions=exec,shell_exec,system,passthru,popen,proc_open,mail',
         str(driver),str(ROOT),str(work/'mysql.sock'),DB,
         json.dumps(spec,separators=(',',':'))],

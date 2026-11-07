@@ -494,7 +494,7 @@ def run_route(work,env,driver,data='',step='none',actor=1001,update=None,route='
     if keys is not None: spec['keys']=keys
     if states is not None: spec['states']=states
     cmd=['php','-n','-d','extension=mysqlnd','-d','extension=mysqli',
-         '-d','extension=openssl','-d','allow_url_fopen=0','-d','display_errors=1',
+         '-d','allow_url_fopen=0','-d','display_errors=1',
          '-d','log_errors=1','-d','error_log=/dev/stderr','-d','open_basedir='+str(ROOT)+':'+str(work),
          '-d','disable_functions=exec,shell_exec,system,passthru,popen,proc_open,mail,dl',
          str(driver),str(ROOT),str(work/'mysql.sock'),DB,

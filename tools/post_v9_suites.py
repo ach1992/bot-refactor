@@ -1648,10 +1648,16 @@ def run_presentation(tmp: str) -> tuple[dict, dict]:
     # replacement draft INSERTs. Test both commit orders, SQL/lock faults,
     # interrupted owner FOR UPDATE and deliberate inverted-lock deadlocks.
     method_race_path=Path(tmp)/"customer-method-serialization.json"
-    subprocess.run(["python3",
-                    str(ROOT/"tools/test_post_v9_method_selection_race.py"),
-                    "--run-disposable","--report",str(method_race_path)],
-                   cwd=ROOT,check=True,timeout=160,capture_output=True)
+    try:
+        subprocess.run(["python3",
+                        str(ROOT/"tools/test_post_v9_method_selection_race.py"),
+                        "--run-disposable","--report",str(method_race_path)],
+                       cwd=ROOT,check=True,timeout=160,capture_output=True)
+    except subprocess.CalledProcessError as error:
+        # This entire suite uses synthetic data only. Preserve its exact
+        # failed action/lock witness rather than a generic shard RED.
+        detail=(error.stderr or error.stdout or b'').decode(errors='replace')[-5500:]
+        raise RuntimeError('Required customer method race evidence failed:\n'+detail) from error
     method_race=json.loads(method_race_path.read_text())
     required_method_race=set()
     for method in ("bank_transfer","gift_card","manual_usdt","manual_trx","wallet"):
