@@ -236,8 +236,10 @@ if ($technicalInbox ||
             }
             if ((int)$from_id===(int)$admin && $a &&
                 in_array((string)$a['provider'],['nextpay','zarinpal'],true) &&
-                $a['stage']==='fulfilling' &&
-                $a['provider_status']==='operator_attested' &&
+                (($a['stage']==='fulfilling' &&
+                  $a['provider_status']==='operator_attested') ||
+                 ($a['stage']==='review' &&
+                  $a['provider_status']==='operator_fulfillment_unconfirmed')) &&
                 achbotPayUxTable($connection,'payment_review_decisions')) {
                 $q=$connection->prepare('SELECT decision,state,outcome
                     FROM payment_review_decisions WHERE pay_row_id=? LIMIT 1');

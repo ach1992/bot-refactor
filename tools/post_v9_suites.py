@@ -2514,6 +2514,9 @@ def run_effects(tmp: str) -> tuple[dict, dict]:
         "zarinpal_operator_rejects_unfinished_only",
         "zarinpal_reject_never_claims_refund_or_credits",
         "zarinpal_reject_cannot_be_reapproved",
+        "hosted_failed_preclaim_is_durably_unknown",
+        "hosted_unknown_payment_still_has_decision_audit",
+        "hosted_unknown_preclaim_not_blindly_replayed",
     }
     if not (decision.get("complete") is True
             and set(decision.get("checks",[]))==required_decisions

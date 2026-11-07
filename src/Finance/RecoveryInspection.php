@@ -79,7 +79,11 @@ function achbotRecoveryAttentionSql(mysqli $db): string {
                   AND EXISTS (SELECT 1 FROM payment_review_decisions d
                       WHERE d.pay_row_id=p.id AND d.attempt_id=a.id
                         AND d.decision='approve'
-                        AND d.state IN ('dispatching','unknown'))))";
+                        AND d.state IN ('dispatching','unknown')))
+              OR (a.stage='review' AND a.provider_status='operator_fulfillment_unconfirmed'
+                  AND EXISTS (SELECT 1 FROM payment_review_decisions d
+                      WHERE d.pay_row_id=p.id AND d.attempt_id=a.id
+                        AND d.decision='approve' AND d.state='unknown')))";
         if (!achbotPayUxTable($db,'payment_review_decisions'))
             $hosted="a.provider IN ('nextpay','zarinpal') AND a.stage='review'
                 AND a.provider_status IN ('verification_uncertain','fulfillment_started')";

@@ -296,6 +296,23 @@ foreach(['nextpay'=>216,'zarinpal'=>217] as $provider=>$payId) {
  }
 }
 
+// A lost local preclaim must remain in the quiet attention inbox. A second
+// Approve cannot replay an effect with an unknown first result.
+$failedHosted=seedHosted($db,'hosted-lost-preclaim',221,'nextpay');
+$GLOBALS['effect_mode']='throw';
+$before=count($GLOBALS['events']);
+check(achbotNpDecisionCommit($db,9001,$failedHosted,'approve',null)['status']==='unknown',
+ 'hosted_failed_preclaim_is_durably_unknown');
+$failed=row($db,'hosted-lost-preclaim');
+check($failed['pay_state']==='pending' && $failed['stage']==='review' &&
+ $failed['provider_status']==='operator_fulfillment_unconfirmed' &&
+ $failed['review_state']==='unknown',
+ 'hosted_unknown_payment_still_has_decision_audit');
+$GLOBALS['effect_mode']='complete';
+check(achbotNpDecisionCommit($db,9001,$failedHosted,'approve',null)['status']!=='completed' &&
+ count($GLOBALS['events'])===$before+1,
+ 'hosted_unknown_preclaim_not_blindly_replayed');
+
 echo json_encode(['complete'=>true,'checks'=>$checks,
  'owned_mariadb'=>true,'real_review_decision_source'=>true,
  'test_effect_is_synthetic'=>true,'provider_http_calls'=>0,
@@ -529,10 +546,14 @@ $db->query("INSERT INTO payment_attempts
           (208,'nowpayments','np-unfunded',1,'usd',100000,'review','waiting')");
 $rows=achbotRecoveryAttentionCases($db);
 $ids=array_map(static fn(array $r)=>(int)$r['id'],$rows);
-foreach([203,204,205,206,207] as $id)
+foreach([203,204,205,206,207,221] as $id)
  if(!in_array($id,$ids,true))throw new RuntimeException('missing_funded_review_'.$id);
 foreach([201,202,208] as $id)
  if(in_array($id,$ids,true))throw new RuntimeException('wrong_review_inclusion_'.$id);
+$hostedUnknown=achbotRecoveryAttentionCase($db,221);
+if (!$hostedUnknown || $hostedUnknown['state']!=='pending' ||
+    $hostedUnknown['attempt']['provider_status']!=='operator_fulfillment_unconfirmed')
+ throw new RuntimeException('hosted_unknown_preclaim_dropped_from_attention');
 $extra=achbotRecoveryAdditionalFundsCases($db);
 $extraIds=array_map(static fn($r)=>(int)$r['id'],$extra);
 foreach([201,205,210,215] as $id)
