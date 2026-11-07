@@ -110,9 +110,14 @@ Historical records without an encrypted delivery intent are not fabricated.
   proven, the ordinary financial/service coordinator
   `achbotApiPaymentSettle` can be resumed from the same case; this makes no
   fresh provider verification request and reuses the already pinned identity,
-  source proof, native effect and delivery journals. Original human receipt
-  Approve/Reject callbacks remain available when their usual prerequisites
-  apply. No new staff role or payment authorization was created.
+  source proof, native effect and delivery journals. Proven cases that have
+  already reached `processing` appear in the existing technical-recovery
+  view (not as new unpaid financial cases). The button is a display-only
+  hint; source admission and native-effect journals are always rechecked.
+  Completed actions return to the inbox rather than a stale case link.
+  Original human receipt Approve/Reject callbacks remain available when
+  their usual prerequisites apply. No new staff role or payment
+  authorization was created.
 - **Hosted wallet finalization:** when a later genuinely verified hosted
   callback completes the original atomic wallet claim, the matching 003
   attempt is marked done, including a previously uncertain VERIFY; this

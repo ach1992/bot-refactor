@@ -115,6 +115,11 @@ elseif($op==='presentation'){
 }
 elseif($op==='access'){$from_id=(int)$spec['actor'];$value=achbotAdminRequestAllowed('apiReview_'.$pay['hash_id'],null,'none');}
 elseif($op==='attention'){require_once $root.'/src/Finance/RecoveryInspection.php';$q=$connection->query('SELECT p.id FROM pays p WHERE p.id='.$id.' AND '.achbotRecoveryAttentionSql($connection));$value=$q->num_rows===1;}
+elseif($op==='resume_hint'){
+ require_once $root.'/src/Finance/RecoveryInspection.php';
+ $pay['attempt']=achbotApiPaymentAttempt($connection,$id);
+ $value=achbotRecoveryApiCanResume($connection,$pay);
+}
 elseif($op==='profile_shift'){$a=achbotApiPaymentAttempt($connection,$id);$p=achbotPaymentEvidenceSnapshot($a);$p['issued_at']=time()-(int)($spec['age']??90000);unset($p['profile_sha256']);$sealed=achbotPaymentEvidenceProtect('profile:'.$a['id'].':'.$id,$p);$q=$connection->prepare('UPDATE payment_attempts SET evidence_profile=? WHERE id=?');$q->bind_param('si',$sealed,$a['id']);$q->execute();$q->close();$value=true;}
 elseif($op==='photo_race'){$v=achbotManualBeginEvidence($connection,$pay,'bank_transfer',1001,'race-photo');$value=$v?sendReceiptToAdminsAndUpdatePay($connection,'race-photo','رسید تست',achbotApiPaymentReviewKeyboard($pay),9001,$pay['hash_id'],$v):false;if($value)achbotManualAcknowledgeAndVerify($connection,$pay,'bank_transfer','Start','FixtureBot');}
 else throw new RuntimeException('unknown fixture op');
@@ -455,13 +460,20 @@ return !empty($GLOBALS['spec']['fail_staff'])?null:(object)['ok'=>true];}""")
             due(n);r=call(pay=n);assert APIs.rows[rid]['status']=='used',(label,r)
             assert call(op='settle',pay=n)['result']=='settled';cases.append('concurrent_real_human_api_'+label+'_at_most_once')
         # Crash after funded local claim before any CREATE uses its existing hold once.
-        APIs.rows={};n=seed('restartcreate','BUY_SUB');sms(n);capacity=int(query(work,env,'SELECT ucount FROM server_info WHERE id=2'));r=call(pay=n,crash_before_native=True);assert r['result']=='review' and state(n)=='processing',r
+        APIs.rows={};n=seed('restartcreate','BUY_SUB');assert call(op='resume_hint',pay=n)['result'] is False
+        sms(n);capacity=int(query(work,env,'SELECT ucount FROM server_info WHERE id=2'));r=call(pay=n,crash_before_native=True);assert r['result']=='review' and state(n)=='processing',r
+        assert call(op='attention',pay=n)['result'] is False and call(op='resume_hint',pay=n)['result'] is True
         assert int(query(work,env,'SELECT ucount FROM server_info WHERE id=2'))==capacity-1
         due(n);r=call(op='maintain',pay=n);assert state(n)=='auto_cart_approved' and sum(e['event']=='POST' for e in r['events'])==1,r
+        assert call(op='resume_hint',pay=n)['result'] is False
         assert int(query(work,env,'SELECT ucount FROM server_info WHERE id=2'))==capacity-1;cases.append('restart_after_local_claim_reuses_capacity_hold_once')
+        cases.append('api_processing_proven_resume_is_technical_only_and_terminal_hint_disappears')
         # Verified native edit survives process loss before SQL finish; restart only finishes locally.
         APIs.rows={};n=seed('restartedit','RENEW_ACCOUNT',order=oid);sms(n);r=call(pay=n,crash_after_verified=True);assert r['result']=='review' and state(n)=='processing',r
+        assert call(op='resume_hint',pay=n)['result'] is True
         due(n);r=call(op='maintain',pay=n);assert state(n)=='auto_cart_approved' and not any(e['event']=='EDIT' for e in r['events']),r;cases.append('restart_verified_edit_finishes_without_native_redispatch');cases.append('admitted_maintenance_recovers_proven_processing_reserved_and_verified')
+        assert call(op='resume_hint',pay=n)['result'] is False
+        cases.append('api_verified_edit_processing_resume_uses_original_proven_claim_once')
         # Unknown CREATE keeps existing no-replay journal and no false refund/success.
         APIs.rows={};n=seed('unknowncreate','BUY_SUB');sms(n);r=call(pay=n,mode='lost');assert r['result']=='review' and state(n)=='processing',r
         r=call(op='settle',pay=n);assert r['result']=='review' and not any(e['event']=='POST' for e in r['events']),r;cases.append('uncertain_create_journal_never_redispatched')

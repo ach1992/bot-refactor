@@ -223,22 +223,10 @@ if ($technicalInbox ||
                     }
                 } else $body.=achbotMessage('finance_workbench.migration_required');
             }
-            if ($a && in_array((string)$a['provider'],['bank_transfer','gift_card'],true) &&
-                in_array((string)$pay['state'],['pending','have_sent','processing'],true) &&
-                achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'payments')) {
-                $proof=achbotPaymentEvidenceGetProof($connection,$id);
-                // 003-only older installations lack the optional 014 columns.
-                // Read the full attempt only after a proven 014 proof exists.
-                $apiAttempt=(($proof['mode']??null)==='settle' &&
-                             $pay['state']==='processing' && $pay['type']!=='BUY_SUB')
-                    ? achbotApiPaymentAttempt($connection,$id) : null;
-                if (($proof['mode']??null)==='settle' &&
-                    ($pay['state']!=='processing' || $pay['type']==='BUY_SUB' ||
-                     in_array((string)($apiAttempt['evidence_fulfillment_state']??''),
-                         ['reserved','verified'],true)))
-                    $rows[]=[['text'=>achbotMessage('finance_workbench.preview_button'),
-                        'callback_data'=>'apiEvidenceResume_'.$id]];
-            }
+            if ($a && achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'payments') &&
+                achbotRecoveryApiCanResume($connection,$pay))
+                $rows[]=[['text'=>achbotMessage('finance_workbench.preview_button'),
+                    'callback_data'=>'apiEvidenceResume_'.$id]];
             if ((int)$from_id===(int)$admin && $a &&
                 in_array((string)$a['provider'],['nextpay','zarinpal'],true) &&
                 (($a['stage']==='fulfilling' &&
@@ -529,6 +517,13 @@ if (preg_match('/^serviceRecovery(Inbox|Case)(?:_([1-9][0-9]{0,17}))?$/D',
                     $body.="\n".achbotMessage('service_edit_delivery.more');
                 $body.="\n".achbotMessage('service_edit_delivery.warning');
             }
+            if ($attempt && achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'payments') &&
+                achbotRecoveryApiCanResume($connection,$pay)) {
+                // Original proven API settlement owns its reserved/verified
+                // native effect; opening the workbench alone never replays it.
+                $buttons[]=[['text'=>achbotMessage('service_recovery_action.resume_purchase'),
+                    'callback_data'=>'apiEvidenceResume_'.$id]];
+            }
             if ($canResume) {
                 // The existing accept handler is the only financial/native
                 // continuation; its original proof and once-only journals
@@ -580,13 +575,12 @@ if (preg_match('/^apiEvidenceResume_([1-9][0-9]{0,17})$/D',(string)$data,$apiRes
         $pay=achbotApiPaymentRow($connection,$payId);
         $attempt=$pay?achbotApiPaymentAttempt($connection,$payId):null;
         $proof=$pay?achbotPaymentEvidenceGetProof($connection,$payId):null;
-        if (!$pay || !$attempt ||
-            !in_array((string)$attempt['provider'],['bank_transfer','gift_card'],true) ||
-            !in_array((string)$pay['state'],['pending','have_sent','processing'],true) ||
-            !is_array($proof) || ($proof['mode']??'')!=='settle' ||
-            ($pay['state']==='processing' && $pay['type']!=='BUY_SUB' &&
-             !in_array((string)($attempt['evidence_fulfillment_state']??''),
-                 ['reserved','verified'],true))) {
+        if (!$pay || !$attempt) {
+            answerCallbackQuery($callbackId,achbotMessage('finance_workbench.status_stale'),true);
+            return;
+        }
+        $pay['attempt']=$attempt;
+        if (!achbotRecoveryApiCanResume($connection,$pay) || !is_array($proof)) {
             answerCallbackQuery($callbackId,achbotMessage('finance_workbench.status_stale'),true);
             return;
         }
@@ -595,8 +589,10 @@ if (preg_match('/^apiEvidenceResume_([1-9][0-9]{0,17})$/D',(string)$data,$apiRes
         $result=in_array($outcome,['confirmed','settled'],true)
             ? achbotMessage('finance_workbench.status_completed')
             : achbotMessage('finance_workbench.status_unknown');
+        // The former financial case is no longer in its inbox after
+        // processing/terminal completion. Return to an always-valid list.
         $buttons=json_encode(['inline_keyboard'=>[[['text'=>achbotMessage('finance_workbench.back'),
-            'callback_data'=>'attentionCase_'.$payId]]]],JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
+            'callback_data'=>'attentionInbox']]]],JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
         $text=achbotMessageHtml('finance_workbench.result',['result'=>$result]);
         $reply=editText($message_id,$text,$buttons,'HTML',(int)$from_id);
         if (!is_object($reply)||($reply->ok??false)!==true)
