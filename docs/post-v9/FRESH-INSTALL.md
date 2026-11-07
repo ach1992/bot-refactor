@@ -24,7 +24,7 @@ python3 tools/package_post_v9.py verify \
   --manifest /private/setup/runtime.zip.manifest.json
 ```
 
-Expected: `verified:true`, the intended candidate/tree and 124 runtime members / 123 PHP files. Verify every extracted runtime member against the same manifest using the [installed-runtime verifier](INSTALL-DIAGNOSTICS.md), not just a file count. The runtime ZIP has no `baseInfo.php` or database installer. CI migration sidecars are source files, not instructions to run every attached SQL against an existing tenant.
+Expected: `verified:true`, the intended candidate/tree and the runtime member count declared by that exact source manifest (do not rely on a historical fixed count). Verify every extracted runtime member against the same manifest using the [installed-runtime verifier](INSTALL-DIAGNOSTICS.md), not just a file count. The runtime ZIP has no `baseInfo.php` or database installer. CI migration sidecars are source files, not instructions to run every attached SQL against an existing tenant.
 
 ## 3. Initialize only the new empty database
 
@@ -50,6 +50,9 @@ Import `database/legacy-schema.sql` exactly once into that empty database, then 
 | 13 | `migrations/post-v9/015_scoped_addons.sql` | Seven add-on scope columns across three existing tables and two unique indexes; enables server/native Group-set day/volume prices without a new permanent table |
 | 14 | `migrations/post-v9/016_remove_pasarguard_server_groups.sql` | Guarded removal of obsolete server-level PasarGuard Native Group column, after verifying active plans use explicit plan-level Native Groups |
 | 15 | `migrations/post-v9/017_shared_plan_changes.sql` | Durable service_plan_changes journal for reconciled Native plan changes; must follow 016 |
+| 16 | `migrations/post-v9/018_payment_delivery_intents.sql` | Per-payment sealed delivery intents and Telegram attempt journal; requires 003 and 007, no historical backfill |
+| 17 | `migrations/post-v9/019_payment_review_decisions.sql` | One-shot Owner decision evidence for financial review; requires 003 |
+| 18 | `migrations/post-v9/020_payment_followup_intents.sql` | Once-only staff/customer follow-up presentation journal; requires 018 and reviewed payment evidence |
 
 For example, the MariaDB client can import the baseline with a prompted password:
 
@@ -58,6 +61,8 @@ mariadb --user=INSTALL_DB_USER --password NEW_EMPTY_DB < database/legacy-schema.
 ```
 
 Replace the account/database placeholders and repeat the import form for each subsequent table entry. These paths are relative to the private checkout, not the runtime ZIP. The release may name001 `panel-group-migration.sql` and003 `payment-attempt-migration.sql`; use the contents/checksums matching the selected source. Do not use `--force` to ignore errors or a wildcard SQL loop. Migration 014 has two ALTER TABLE statements; 015 creates a preflight helper procedure, normally drops it after successful validation, then executes three ALTER TABLE statements. Failed preflight may leave the helper procedure pending audited cleanup. Neither is a retry script. 015 rejects duplicate legacy quantities or malformed offers and must run after 012 and 014 on a genuinely empty, correctly initialized database. 016 is a guarded one-time column drop and 017 a one-time journal creation; neither may be rerun after success. A partly applied file requires an exact schema audit and an authorized completion plan; do not use `--force` or rerun completed migrations.
+
+The source-only CI artifact provides 018/019/020 as separately SHA256-checksummed SQL sidecars, outside the runtime ZIP; packaging is not migration approval. Each is a one-time forward DDL step. Existing installations require the distinct [RC25 to RC26 operator procedure](RC25-TO-RC26.md), not this fresh-install sequence.
 
 Do **not** run historical002, `legacy_rc4_nowpayments_import.sql`, or optional cleanup010 for a fresh installation. Cleanup010 is separate guarded maintenance, not a startup requirement; original unused tables may remain. Do not insert another bot's settings/users or synthetic test fixtures. The ordinary Owner settings journeys initialize the intended configuration.
 
