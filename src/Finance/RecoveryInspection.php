@@ -332,8 +332,7 @@ function achbotRecoveryAttentionCase(mysqli $db, int $payId): ?array {
     $attempt=null;
     if (achbotPayUxTable($db,'payment_attempts')) {
         $stmt=$db->prepare('SELECT id,provider,stage,provider_status,payment_id,provider_reference,
-                quote_amount,quote_currency,local_amount_toman,evidence_profile,
-                evidence_fulfillment_state
+                quote_amount,quote_currency,local_amount_toman
             FROM payment_attempts WHERE pay_row_id=? LIMIT 1');
         $stmt->bind_param('i',$payId);$stmt->execute();
         $attempt=$stmt->get_result()->fetch_assoc()?:null;$stmt->close();

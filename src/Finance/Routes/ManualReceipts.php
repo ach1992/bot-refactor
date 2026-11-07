@@ -227,9 +227,14 @@ if ($technicalInbox ||
                 in_array((string)$pay['state'],['pending','have_sent','processing'],true) &&
                 achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'payments')) {
                 $proof=achbotPaymentEvidenceGetProof($connection,$id);
+                // 003-only older installations lack the optional 014 columns.
+                // Read the full attempt only after a proven 014 proof exists.
+                $apiAttempt=(($proof['mode']??null)==='settle' &&
+                             $pay['state']==='processing' && $pay['type']!=='BUY_SUB')
+                    ? achbotApiPaymentAttempt($connection,$id) : null;
                 if (($proof['mode']??null)==='settle' &&
                     ($pay['state']!=='processing' || $pay['type']==='BUY_SUB' ||
-                     in_array((string)($a['evidence_fulfillment_state']??''),
+                     in_array((string)($apiAttempt['evidence_fulfillment_state']??''),
                          ['reserved','verified'],true)))
                     $rows[]=[['text'=>achbotMessage('finance_workbench.preview_button'),
                         'callback_data'=>'apiEvidenceResume_'.$id]];
