@@ -222,9 +222,12 @@ function alert(...$args){$GLOBALS['events'][]=['name'=>'alert','args'=>$args];}
 function sendMessage(...$args){
     global $spec;
     $GLOBALS['events'][]=['name'=>'sendMessage','args'=>$args];
+    // A PHP 8.5 E_WARNING on an uninitialized counter would turn EVERY
+    // simulated recipient into an error, hiding independent outbox progress.
+    $GLOBALS['message_send_count']=(int)($GLOBALS['message_send_count']??0)+1;
     if (($spec['message_transport']??'')==='throw' ||
         (($spec['message_transport']??'')==='throw_once' &&
-         ++$GLOBALS['message_send_count']===1))
+         $GLOBALS['message_send_count']===1))
         throw new RuntimeException('fixture_telegram_transport_down');
     if (($spec['message_transport']??'')==='no_id')
         return (object)['ok'=>true,'result'=>(object)[]];
@@ -971,6 +974,30 @@ def check():
                "JOIN pays p ON p.id=f.pay_row_id "
                "WHERE p.hash_id='standardrejectnoticeunknown'")=='1'
         cases.append('manual_reject_customer_unknown_other_recipients_acked_no_unwarned_replay')
+
+        # R4: a receipt-edit exception cannot suppress either customer or
+        # operator notification, nor authorize a second reply on old buttons.
+        standard_pay('standardrejecteditunknown',method='gift_card')
+        before_wallet=query(work,env,'SELECT userid,wallet FROM users ORDER BY userid')
+        edited=run_route(work,env,route_driver,
+                         data='declineAction_standardrejecteditunknown',
+                         actor=9001,route='manual_admin',
+                         message_edit_transport='throw',
+                         expected_warning='achbot_followup_telegram_uncertain')
+        assert query(work,env,"SELECT state FROM pays "
+                     "WHERE hash_id='standardrejecteditunknown'")=='declined'
+        assert query(work,env,'SELECT userid,wallet FROM users ORDER BY userid')==before_wallet
+        assert query(work,env,"SELECT GROUP_CONCAT(CONCAT(f.role,':',f.state) "
+            "ORDER BY f.role) FROM payment_followup_intents f JOIN pays p "
+            "ON p.id=f.pay_row_id WHERE p.hash_id='standardrejecteditunknown'")==(
+            'customer:acknowledged,operator:acknowledged,receipt_primary:unknown')
+        recipients=[e['args'][-1] for e in edited if e['name']=='sendMessage']
+        assert recipients==[1001,9001],(recipients,edited)
+        replay=run_route(work,env,route_driver,
+                         data='declineAction_standardrejecteditunknown',
+                         actor=9001,route='manual_admin')
+        assert not any(e['name'] in ('sendMessage','editKeys','remote_create') for e in replay),replay
+        cases.append('manual_reject_edit_exception_does_not_suppress_customer_or_operator')
 
         standard_pay('standardwrongstage',method='gift_card')
         query(work,env,"UPDATE payment_attempts SET stage='pending' "

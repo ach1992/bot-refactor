@@ -105,8 +105,10 @@ def run_admin(tmp: str) -> tuple[dict, dict]:
         ('receipt_presentation','test_owner_r5_receipt_presentation.py',13,
          {'complete':True,'source_real':True,'owned_original_schema_mariadb':True,
           'baseline_red':True,'external_calls':0,'financial_mutations_by_caption':0}),
-        ('admin_fanout','test_owner_r5_admin_fanout.py',264,
-         {'complete':True,'cases':264,'source_real':True,'owned_original_schema_mariadb':True,
+        # Two legacy direct rejection-edit loops are now an actual 020
+        # journal; their current-recipient/revocation tests are separate.
+        ('admin_fanout','test_owner_r5_admin_fanout.py',249,
+         {'complete':True,'cases':249,'source_real':True,'owned_original_schema_mariadb':True,
           'network_calls':0,'recipient_matrix':True,'raw_text_photo_markup_preserved':True,
           'notification_recipient_matrix':True,'receiving_preference_independent_of_role':True,
           'general_reports_manager_only':True,'manual_review_all_staff':True,
@@ -130,7 +132,8 @@ def run_admin(tmp: str) -> tuple[dict, dict]:
           'recorded_refs_match_delivery':True,'fresh_role_changes':True,
           'repeatable_read_notification_off_denied':True,'no_new_transaction_across_delivery':True,
           'actual_primary_receipt_evidence':True,'original_evidence_retry_preserved':True,
-          'approval_replay_preserved':True,'stored_followup_loops':9,
+          'approval_replay_preserved':True,'stored_followup_loops':7,
+          'durable_reject_mirror_followup_checked':True,
           'stored_followup_markup_preserved':True,'historical_refs_preserved':True,
           'atomic_history_append':True,'malformed_history_preserved':True,
           'concurrent_confirmed_append':True,'archived_fanout_red':True,
@@ -1149,10 +1152,10 @@ def run_wallet(tmp: str) -> tuple[dict, dict]:
             and text_catalog.get("retired_parser_tokens")==23
             and text_catalog.get("relocation_source_ref")=="ecd30ba9192ed374703118a6c131be8809cc7b06"
             and text_catalog.get("native",{}).get("current_retired_feature_keys")==3
-            and text_catalog.get("catalog_keys")==2780+14+9+18+27+12+7+17
+            and text_catalog.get("catalog_keys")==2780+14+9+18+27+12+7+17+2
             and text_catalog.get("native",{}).get("editable_catalog_files")==2
             and text_catalog.get("native",{}).get("logical_topics")==28+6
-            and text_catalog.get("native",{}).get("current_catalog_keys")==2780+14+9+18+27+12+7+17
+            and text_catalog.get("native",{}).get("current_catalog_keys")==2780+14+9+18+27+12+7+17+2
             and text_catalog.get("native",{}).get("current_gift_admin_additions")==1
             and text_catalog.get("native",{}).get("current_gift_catalog_negative_controls")==8
             and text_catalog.get("native",{}).get("current_gift_catalog_negative_scenarios")==[
@@ -1192,7 +1195,7 @@ def run_wallet(tmp: str) -> tuple[dict, dict]:
             and text_catalog.get("native",{}).get("current_non_ascii_digit_templates")==0
             and text_catalog.get("presentation",{}).get("status")=="PASS"
             and text_catalog.get("presentation",{}).get("editable_files")==2
-            and text_catalog.get("presentation",{}).get("current_keys")==2780+14+9+18+27+12+7+17
+            and text_catalog.get("presentation",{}).get("current_keys")==2780+14+9+18+27+12+7+17+2
             and text_catalog.get("presentation",{}).get("numeric_template_changes")==23
             and text_catalog.get("presentation",{}).get("adjacent_emoji_violations")==0
             and text_catalog.get("presentation",{}).get("parameter_exception_count")==3
@@ -3751,6 +3754,7 @@ def run_funding(tmp: str) -> tuple[dict, dict]:
         "real_wallet_route_photo_replay_denied_manual_usdt",
         "manual_direct_reject_one_click_no_wallet_native_or_duplicate_reports",
         "manual_reject_customer_unknown_other_recipients_acked_no_unwarned_replay",
+        "manual_reject_edit_exception_does_not_suppress_customer_or_operator",
         "manual_standard_paid_order_delivery_sealed_and_ack_once",
         "manual_standard_telegram_unknown_reapproval_never_resends_unwarned",
         "manual_wallet_nonadmin_callback_denied_bank_transfer",
