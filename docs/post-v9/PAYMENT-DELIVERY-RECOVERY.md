@@ -297,3 +297,31 @@ native mutation. A button clicked after `processing` or a terminal outcome
 cannot erase payment or undo a remote service operation. Old reason-editor
 messages from the previous installed version are still accepted only when
 the original payment is unfulfilled; a replayed editor cannot reject twice.
+
+### 2026-11-07 independent review remediation delta — DRAFT ONLY
+
+HIGH_ASSURANCE review of PR #123 at `7a8942aab7b83720f641b871c835fe520c903a27`
+returned **CHANGES_REQUIRED** for five distinct issues. Remediation source
+adds forward-only, separate Owner-gated `020_payment_followup_intents.sql`.
+The original manual BUY_SUB orders, referral decision (008), immutable
+customer delivery (018), payment and all independent purchase-report
+destinations (020) must commit in one transaction. The eligible referral
+credit and its actual-balance notifications commit in their own atomic
+transaction, using the original frozen award identity. Repeated Approve
+resumes only never-attempted PENDING reports and paid delivery; UNKNOWN
+Telegram deliveries need a separate explicit Owner warning/confirmation.
+The original manual Reject similarly commits its full customer/staff/receipt
+notification manifest atomically with `have_sent -> declined`. One failing
+Telegram edit does not prevent independent notifications. Once an outbox
+recipient has been attempted, an ambiguous ACK is UNKNOWN and never
+authorizes an automatic repeated message. Human-rejected NOWPayments primary
+funds remain visible in the Owner-private financial exceptions inbox until
+actual positive merchant refund evidence is recorded; business rejection
+never fabricates a refund nor reopens the rejected order. PasarGuard source
+verification additionally requires strict by-username lookup with real
+localhost HTTP and negative identity/entitlement cases.
+
+**Do not run 020 or deploy Chili until exact candidate CI, independent
+remediation review, migration audit/backup and TESTED restore, and separate
+Owner authorization succeed.** Older source-only 018/019 migration plans
+remain forward-only and do not backfill historical untracked notifications.

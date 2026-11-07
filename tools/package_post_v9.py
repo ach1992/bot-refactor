@@ -80,7 +80,7 @@ NEW_RUNTIME_MEMBERS = ("src/Subscription/Delivery.php", "pay/checkout.php", "set
                        "src/Finance/Routes/ApiPayments.php",
                        "src/Finance/ServiceEffects.php", "src/Finance/PaidAccountRecovery.php",
                        "src/Finance/BankPurchase.php",
-                       "src/Finance/DeliveryLedger.php", "src/Finance/ReviewDecisions.php", "src/Finance/Routes/DeliveryRecovery.php",
+                       "src/Finance/DeliveryLedger.php", "src/Finance/FollowupOutbox.php", "src/Finance/ReviewDecisions.php", "src/Finance/Routes/DeliveryRecovery.php",
                        "src/Finance/RecoveryInspection.php",
                        "src/Finance/RecoveryTransport.php", "src/Finance/WalletAdjustments.php", "src/Finance/WalletTransferFlow.php",
                        "src/Subscription/GiftBatch.php", "src/Subscription/DirectGift.php",

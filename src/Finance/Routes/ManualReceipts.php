@@ -52,6 +52,17 @@ if (preg_match('/^financeExtra(Inbox|Case)(?:_([1-9][0-9]{0,17}))?$/D',
             if (!$pay || ($pay['attempt']['provider']??'')!=='nowpayments')
                 throw new RuntimeException('extra_funds_case_not_found');
             $a=$pay['attempt'];$attemptId=(int)$a['id'];
+            if (achbotPayUxTable($connection,'payment_review_decisions')) {
+            $q=$connection->prepare("SELECT d.actor_id,d.decision,d.provider_status,
+                    d.state,a.order_hash,a.provider_reference,a.payment_id
+                FROM payment_review_decisions d
+                JOIN payment_attempts a ON a.id=d.attempt_id
+                WHERE d.pay_row_id=? AND d.attempt_id=? AND d.decision='reject'
+                AND d.provider_status='operator_rejected' AND d.state='completed' LIMIT 1");
+            $q->bind_param('ii',$payId,$attemptId);$q->execute();
+            $human=$q->get_result()->fetch_assoc();$q->close();
+            } else $human=null;
+            $primaryRejected=$pay['state']==='declined' && $human!==null;
             $q=$connection->prepare("SELECT t.payment_id,t.observed_status,t.received_at
                 FROM payment_transactions t JOIN payment_attempts a ON a.id=t.attempt_id
                 WHERE t.attempt_id=? AND t.provider='nowpayments'
@@ -70,8 +81,31 @@ if (preg_match('/^financeExtra(Inbox|Case)(?:_([1-9][0-9]{0,17}))?$/D',
                     'status'=>substr((string)$child['observed_status'],0,128),
                     'received'=>substr((string)$child['received_at'],0,128)])."\n";
             if (count($children)>8) $body.=achbotMessage('finance_exceptions.more');
+            if ($primaryRejected) {
+                $q=$connection->prepare("SELECT t.payment_id,t.observed_status,t.received_at
+                    FROM payment_transactions t
+                    WHERE t.attempt_id=? AND t.provider='nowpayments'
+                    AND BINARY t.payment_id=BINARY ? AND t.observed_status IN
+                    ('confirming','confirmed','sending','partially_paid','finished')
+                    ORDER BY t.id DESC LIMIT 1");
+                $primaryId=(string)$human['payment_id'];
+                $q->bind_param('is',$attemptId,$primaryId);$q->execute();
+                $funded=$q->get_result()->fetch_assoc();$q->close();
+                if ($funded) {
+                    $body.="\n".achbotMessageHtml('finance_exceptions.primary_rejected',[
+                        'invoice'=>substr((string)$human['provider_reference'],0,100),
+                        'order'=>substr((string)$human['order_hash'],0,100),
+                        'actor'=>(int)$human['actor_id']])."\n";
+                    $body.=achbotMessageHtml('finance_exceptions.child_line',[
+                        'id'=>substr((string)$funded['payment_id'],0,128),
+                        'status'=>substr((string)$funded['observed_status'],0,128),
+                        'received'=>substr((string)$funded['received_at'],0,128)])."\n";
+                    $body.=achbotMessage('finance_exceptions.primary_refund_unverified')."\n";
+                }
+            }
             $body.="\n".achbotMessage('finance_exceptions.readonly_warning');
-            $buttons[]=[['text'=>achbotMessage('finance_exceptions.inspect'),
+            // Never offer the old primary review action on a declined payment.
+            if (!$primaryRejected) $buttons[]=[['text'=>achbotMessage('finance_exceptions.inspect'),
                 'callback_data'=>'npReviewCase_'.$attemptId]];
             $buttons[]=[['text'=>achbotMessage('finance_exceptions.back'),
                 'callback_data'=>'financeExtraInbox']];
@@ -916,9 +950,14 @@ if (preg_match('/^declineAction_(.+)$/', $data, $match) && achbotAdminCanFor($co
 		return;
 	}
 
+    if ($payInfo['state']==='declined' && (int)$payInfo['approved_by']>0) {
+        require_once __DIR__.'/../FollowupOutbox.php';
+        if (achbotFollowupSchemaReady($connection))
+            achbotFollowupDispatchPending($connection,(int)$payInfo['id'],'manual_reject');
+        return;
+    }
     if ($payInfo['state'] !== 'have_sent') {
-        // A PROCESSING or already-finalized operation may have made an
-        // irreversible remote change; reject never reverses or replays it.
+        // Never reverse a potentially delivered Processing/native operation.
         alert(\achbotMessage('manual_payment.manual_receipts.alert.af4cc41dc0'));
         return;
     }
@@ -955,10 +994,16 @@ if (preg_match('/^declineActionReason_(.+)_(\d+)$/', (string)($userInfo['step']?
 		return;
 	}
 
-    if ($payInfo['state'] === 'approved' || $payInfo['state'] === 'declined') {
-		alert(\achbotMessage('manual_payment.manual_receipts.alert.af4cc41dc0'));
-		return;
-	}
+    if ($payInfo['state']==='declined' && (int)$payInfo['approved_by']>0) {
+        require_once __DIR__.'/../FollowupOutbox.php';
+        if (achbotFollowupSchemaReady($connection))
+            achbotFollowupDispatchPending($connection,(int)$payInfo['id'],'manual_reject');
+        return;
+    }
+    if ($payInfo['state'] !== 'have_sent') {
+        alert(\achbotMessage('manual_payment.manual_receipts.alert.af4cc41dc0'));
+        return;
+    }
 
     $uid = $payInfo['user_id'];
     $price = !empty($payInfo['price']) ? number_format($payInfo['price']) . \achbotMessage('manual_payment.automatic_receipts.text.2cc98f7f7c') : "---";
@@ -979,70 +1024,83 @@ if (preg_match('/^declineActionReason_(.+)_(\d+)$/', (string)($userInfo['step']?
 		$remark = $payInfo['description'];
 	}
 
-    // ثبت در دیتابیس
-    $stmt = $connection->prepare("UPDATE `pays` SET `state` = 'declined', `approved_by` = ?
-        WHERE `hash_id` = ? AND `state` = 'have_sent'");
-    $stmt->bind_param("is", $from_id, $hash_id);
-    $stmt->execute();
-    $declined = $stmt->affected_rows === 1;
-    $stmt->close();
-    if (!$declined) {
+    // No Telegram side effects before the financial CAS and complete original
+    // outbox are committed. A second click only resumes PENDING rows.
+    require_once __DIR__.'/../FollowupOutbox.php';
+    if (!achbotFollowupSchemaReady($connection)) {
+        error_log('achbot_manual_reject_outbox_unavailable');
         alert(\achbotMessage('manual_payment.manual_receipts.alert.872f260882'));
         return;
     }
-	
-    $keys = json_encode(['inline_keyboard' => [
-        [['text' => \achbotMessage('manual_payment.manual_receipts.button.51fdc91d69', ['from_id' => $from_id]), 'callback_data' => "wizwizch"]],
-		[['text' => \achbotMessage('manual_payment.manual_approval.manual_standard_report_delivery.hash_id.2899228604', ['hash_id' => $hash_id]), 'callback_data' => "noop_$hash_id"]]
-    ]]);
-
-    // ویرایش دکمه ادمین اصلی
-    editKeys($keys, $payInfo['message_id'], $payInfo['chat_id']);
-
-    // ویرایش دکمه سایر ادمین ها
-    $adminMessages = json_decode($payInfo['admins_messages'], true);
-    if (is_array($adminMessages)) {
-        foreach ($adminMessages as $msgInfo) {
-            if (
-                isset($msgInfo['chat_id'], $msgInfo['message_id']) &&
-                $msgInfo['chat_id'] != $payInfo['chat_id'] &&
-                achbotAdminStoredRecipientAllowed($connection,$msgInfo['chat_id'],(int)$admin)
-            ) {
-                editKeys($keys, $msgInfo['message_id'], $msgInfo['chat_id']);
-            }
+    $keys=json_encode(['inline_keyboard'=>[
+        [['text'=>\achbotMessage('manual_payment.manual_receipts.button.51fdc91d69',
+            ['from_id'=>$from_id]),'callback_data'=>'wizwizch']],
+        [['text'=>\achbotMessage('manual_payment.manual_approval.manual_standard_report_delivery.hash_id.2899228604',
+            ['hash_id'=>$hash_id]),'callback_data'=>'noop_'.$hash_id]],
+    ]],JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
+    $retryButton=json_encode(['inline_keyboard'=>[[['text'=>
+        \achbotMessage('manual_payment.manual_receipts.button.e3517e568b'),
+        'url'=>"https://t.me/$botUsername?start=restart_$hash_id"]]]],
+        JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
+    $message=\achbotMessage('manual_payment.manual_receipts.message.bc0155976d',
+        ['reason'=>$reason]).
+        \achbotMessage('manual_payment.manual_receipts.message.c4d810a7d3',['price'=>$price]).
+        \achbotMessage('manual_payment.manual_receipts.message.61d75413a2',['remark'=>$remark]).
+        \achbotMessage('manual_payment.manual_receipts.message.df4f415ed5',['hash_id'=>$hash_id]);
+    $adminAfterSendKeys=json_encode(['inline_keyboard'=>[[['text'=>
+        \achbotMessage('manual_payment.manual_receipts.button.7918a2f411'),
+        'callback_data'=>'banUserDirect_'.$uid]]]],JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
+    $adminReport=\achbotMessage('manual_payment.manual_receipts.message.667f0ab959',
+        ['uid'=>$uid,'price'=>$price,'remark'=>$remark,'hash_id'=>$hash_id]);
+    $opened=false;$payId=(int)$payInfo['id'];
+    try {
+        if (!$connection->begin_transaction()) throw new RuntimeException('manual_reject_begin');
+        $opened=true;
+        $q=$connection->prepare('SELECT * FROM pays WHERE id=? FOR UPDATE');
+        $q->bind_param('i',$payId);$q->execute();$locked=$q->get_result()->fetch_assoc();$q->close();
+        if (!$locked || $locked['state']!=='have_sent' ||
+            (string)$locked['hash_id']!==(string)$hash_id ||
+            (int)$locked['user_id']!==(int)$uid ||
+            (int)$locked['chat_id']!==(int)$payInfo['chat_id'] ||
+            (int)$locked['message_id']!==(int)$payInfo['message_id'])
+            throw new RuntimeException('manual_reject_stale');
+        $q=$connection->prepare("UPDATE pays SET state='declined',approved_by=?
+            WHERE id=? AND state='have_sent'");
+        $actor=(int)$from_id;$q->bind_param('ii',$actor,$payId);
+        $ok=$q->execute() && $q->affected_rows===1;$q->close();
+        if (!$ok) throw new RuntimeException('manual_reject_cas_failed');
+        $locked['state']='declined';$locked['approved_by']=$actor;
+        achbotFollowupInsertLocked($connection,$locked,'manual_reject',
+            'receipt_primary','edit',(string)(int)$locked['chat_id'],
+            (int)$locked['message_id'],['text'=>$keys,'keys'=>null,'mode'=>null]);
+        $adminMessages=json_decode((string)($locked['admins_messages']??''),true);
+        if (is_array($adminMessages)) foreach ($adminMessages as $msgInfo) {
+            if (isset($msgInfo['chat_id'],$msgInfo['message_id']) &&
+                (int)$msgInfo['chat_id']!==(int)$locked['chat_id'] &&
+                achbotAdminStoredRecipientAllowed($connection,$msgInfo['chat_id'],(int)$admin))
+                achbotFollowupInsertLocked($connection,$locked,'manual_reject',
+                    'receipt_mirror','edit',(string)(int)$msgInfo['chat_id'],
+                    (int)$msgInfo['message_id'],['text'=>$keys,'keys'=>null,'mode'=>null]);
         }
+        achbotFollowupInsertLocked($connection,$locked,'manual_reject',
+            'customer','send',(string)(int)$uid,null,
+            ['text'=>$message,'keys'=>$retryButton,'mode'=>'HTML']);
+        achbotFollowupInsertLocked($connection,$locked,'manual_reject',
+            'operator','send',(string)$actor,null,
+            ['text'=>$adminReport,'keys'=>$adminAfterSendKeys,'mode'=>'HTML']);
+        if (!$connection->commit()) throw new RuntimeException('manual_reject_commit_unknown');
+        $opened=false;
+    } catch(Throwable $error) {
+        if ($opened) try {$connection->rollback();} catch(Throwable $ignored) {}
+        error_log('achbot_manual_reject_claim_unconfirmed pay_id='.$payId.
+            ' class='.get_class($error));
+        alert(\achbotMessage('manual_payment.manual_receipts.alert.872f260882'));
+        return;
     }
+    // An edit exception never suppresses independent customer/staff notices.
+    // Missing ACK is UNKNOWN, not permission for a duplicate message.
+    achbotFollowupDispatchPending($connection,$payId,'manual_reject');
 
-	// ارسال پیام برای کاربر
-	$retryButton = json_encode([
-		'inline_keyboard' => [
-			[
-				[
-					'text' => \achbotMessage('manual_payment.manual_receipts.button.e3517e568b'),
-					'url'  => "https://t.me/$botUsername?start=restart_$hash_id"
-				]
-			]
-		]
-	]);
-    $message = \achbotMessage('manual_payment.manual_receipts.message.bc0155976d', ['reason' => $reason]);
-    $message .= \achbotMessage('manual_payment.manual_receipts.message.c4d810a7d3', ['price' => $price]);
-    $message .= \achbotMessage('manual_payment.manual_receipts.message.61d75413a2', ['remark' => $remark]);
-	$message .= \achbotMessage('manual_payment.manual_receipts.message.df4f415ed5', ['hash_id' => $hash_id]);
-    sendMessage($message, $retryButton, "HTML", $uid);
-
-	$adminAfterSendKeys = json_encode([
-		'inline_keyboard' => [
-			[
-				['text' => \achbotMessage('manual_payment.manual_receipts.button.7918a2f411'), 'callback_data' => "banUserDirect_$uid"]
-			]
-		]
-	]);
-
-	sendMessage(
-		\achbotMessage('manual_payment.manual_receipts.message.667f0ab959', ['uid' => $uid, 'price' => $price, 'remark' => $remark, 'hash_id' => $hash_id]),
-		$adminAfterSendKeys,
-		"html"
-	);
 }
 
 if (is_string($data) &&

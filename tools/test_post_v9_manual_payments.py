@@ -632,6 +632,7 @@ def check():
         query(work,env,(ROOT/'migrations/post-v9/008_referral_awards.sql').read_text())
         query(work,env,(ROOT/'migrations/post-v9/009_bank_buy_invoice_claims.sql').read_text())
         query(work,env,(ROOT/'migrations/post-v9/018_payment_delivery_intents.sql').read_text())
+        query(work,env,(ROOT/'migrations/post-v9/020_payment_followup_intents.sql').read_text())
         # Each isolated standard receipt now holds capacity before POST.
         # Supply independent test headroom; focused exhaustion is checked
         # in actual ServiceEffects concurrency and reservation regressions.
@@ -1067,16 +1068,16 @@ def check():
         replay=run_route(work,env,route_driver,data='acceptstandardpostcommitnotify',
                          actor=9001,route='standard_approval')
         assert [e['name'] for e in replay].count('remote_create')==0,replay
-        assert [e['name'] for e in replay].count('qr_send')==1,replay
+        assert [e['name'] for e in replay].count('qr_send')==0,replay
         assert query(work,env,"SELECT d.state FROM payment_delivery_intents d JOIN pays p "
-            "ON p.id=d.pay_row_id WHERE p.hash_id='standardpostcommitnotify'")=='acknowledged'
+            "ON p.id=d.pay_row_id WHERE p.hash_id='standardpostcommitnotify'")=='unknown'
         assert query(work,env,"SELECT COUNT(*) FROM payment_delivery_attempts a JOIN "
             "payment_delivery_intents d ON d.id=a.intent_id JOIN pays p ON p.id=d.pay_row_id "
-            "WHERE p.hash_id='standardpostcommitnotify'")=='2'
+            "WHERE p.hash_id='standardpostcommitnotify'")=='1'
         again=run_route(work,env,route_driver,data='acceptstandardpostcommitnotify',
                         actor=9001,route='standard_approval')
         assert not any(e['name'] in ('remote_create','qr_send') for e in again),again
-        cases.append('manual_standard_telegram_unknown_owner_reapprove_resends_only_sealed_packet')
+        cases.append('manual_standard_telegram_unknown_reapproval_never_resends_unwarned')
         cases.append('real_standard_postcommit_telegram_failure_approved_no_replay_truthful_review')
         standard_pay('standardeditprivacy',method='gift_card')
         edit_events=run_route(work,env,route_driver,

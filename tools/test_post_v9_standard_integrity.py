@@ -222,6 +222,8 @@ def seed(work,env,name,*,capacity=10,count=1,renew=False,inviter=False,amount=10
     # Disposable fixture teardown must respect the real 008 -> pays foreign
     # key. Never disable FK checks or mutate installed operator data.
     tables=sql(work,env,'SHOW TABLES').splitlines()
+    if 'payment_followup_intents' in tables:
+        sql(work,env,'DELETE FROM payment_followup_intents')
     if 'referral_awards' in tables:
         sql(work,env,'DELETE FROM referral_awards')
     if 'payment_delivery_intents' in tables:
@@ -272,6 +274,7 @@ def check():
         # schema is disposable here, never operator-installed or backfilled.
         sql(work,env,(ROOT/'migrations/post-v9/008_referral_awards.sql').read_text())
         sql(work,env,(ROOT/'migrations/post-v9/018_payment_delivery_intents.sql').read_text())
+        sql(work,env,(ROOT/'migrations/post-v9/020_payment_followup_intents.sql').read_text())
 
         def call(key,**spec):return php_call(work,env,driver,hash=key,**spec)
         def state(key):return sql(work,env,f"SELECT state FROM pays WHERE hash_id='{key}'")

@@ -198,6 +198,13 @@ $observed=$db->query("SELECT observed_status FROM payment_transactions
 check(($observed['observed_status']??'')==='sending',
  'owner_rejection_preserves_financial_evidence');
 
+// Another authentic primary reports finished but Owner rejects the ORDER.
+// The merchant funds remain an exception until a real refund is observed.
+$finishedReject=seed($db,'owner-finished-reject',215);
+check(achbotNpDecisionCommit($db,9001,$finishedReject,'reject',null)['status']==='rejected',
+  'owner_finished_primary_can_reject_business_without_fake_refund');
+check(row($db,'owner-finished-reject')['provider_status']==='operator_rejected',
+  'finished_primary_rejection_does_not_forge_provider_refund');
 $absent=seed($db,'owner-no-funds',211);
 $db->query("UPDATE payment_transactions SET observed_status='waiting' WHERE attempt_id=$absent");
 check(achbotNpDecisionEligible($db,$absent,null,'approve')===null
@@ -287,6 +294,7 @@ def main():
   assert selected['inbox_only_unfinalized_with_funds_or_receipt']
   assert selected['api_module_loaded_on_first_entry']
   assert selected['additional_funds_paid_and_inflight_visible']
+  assert selected['rejected_funded_primary_visible_without_reopening']
   out.update(selected)
  if args.report:args.report.write_text(json.dumps(out,ensure_ascii=False,indent=2)+'\n')
  print(json.dumps({k:v for k,v in out.items() if k!='checks'}))
@@ -378,9 +386,17 @@ foreach([201,202,208] as $id)
  if(in_array($id,$ids,true))throw new RuntimeException('wrong_review_inclusion_'.$id);
 $extra=achbotRecoveryAdditionalFundsCases($db);
 $extraIds=array_map(static fn($r)=>(int)$r['id'],$extra);
-foreach([201,205] as $id)
+foreach([201,205,210,215] as $id)
  if(!in_array($id,$extraIds,true))
-   throw new RuntimeException('missing_quiet_additional_funds_'.$id);
+   throw new RuntimeException('missing_quiet_funded_exception_'.$id);
+if(in_array(202,$extraIds,true))
+ throw new RuntimeException('refunded_primary_not_unresolved_exception');
+foreach([210,215] as $id) {
+ $case=achbotRecoveryAdditionalFundsCase($db,$id);
+ if(!$case || $case['state']!=='declined' || $case['attempt']['provider']!=='nowpayments'
+    || $case['attempt']['provider_status']!=='operator_rejected')
+  throw new RuntimeException('rejected_primary_not_owner_inspectable_'.$id);
+}
 if(in_array(202,$extraIds,true))
  throw new RuntimeException('unfunded_not_exception');
 $paidExtra=achbotRecoveryAdditionalFundsCase($db,201);
@@ -389,6 +405,7 @@ if(!$paidExtra || ($paidExtra['state']??'')!=='paid')
 echo json_encode(['inbox_only_unfinalized_with_funds_or_receipt'=>true,
   'api_module_loaded_on_first_entry'=>function_exists('achbotApiPaymentReady'),
   'additional_funds_paid_and_inflight_visible'=>true,
+  'rejected_funded_primary_visible_without_reopening'=>true,
   'examined'=>count($ids)],JSON_THROW_ON_ERROR);
 '''
 if __name__=='__main__':main()

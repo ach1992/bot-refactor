@@ -211,7 +211,7 @@ def sql(work, env, query):
 def initialize(work, env):
     for filename in ('001_marzban_panel_group_id.sql', '003_payment_attempts.sql',
                      '007_service_effects.sql', '008_referral_awards.sql',
-                     '018_payment_delivery_intents.sql'):
+                     '018_payment_delivery_intents.sql','020_payment_followup_intents.sql'):
         sql(work, env, (ROOT/'migrations/post-v9'/filename).read_text())
 
 

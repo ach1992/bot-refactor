@@ -345,3 +345,166 @@ if (!function_exists('giveReferralReward')) {
         return true;
     }
 }
+
+/**
+ * #117: A manually reviewed standard BUY_SUB reserves the 008 referral
+ * decision in the SAME COMMIT as its orders, payment and delivery manifest.
+ * A crash before the later credit transaction cannot lose the original
+ * invitation entitlement, and a later setting change cannot backfill one.
+ */
+function achbotReferralReserveManualLocked(mysqli $db,array $pay): void {
+    if (!achbotReferralSchemaReady($db))
+        throw new RuntimeException('manual_referral_schema_missing');
+    $tx=$db->query('SELECT @@in_transaction AS tx');
+    if (!$tx || (int)($tx->fetch_assoc()['tx']??0)!==1)
+        throw new RuntimeException('manual_referral_reservation_requires_transaction');
+    $pid=(int)($pay['id']??0);$buyer=(int)($pay['user_id']??0);
+    if ($pid<=0 || $buyer<=0 || ($pay['type']??null)!=='BUY_SUB')
+        throw new RuntimeException('manual_referral_payment_invalid');
+    $q=$db->prepare('SELECT refered_by FROM users WHERE userid=? LIMIT 2');
+    $q->bind_param('i',$buyer);$q->execute();
+    $rows=$q->get_result()->fetch_all(MYSQLI_ASSOC);$q->close();
+    if (count($rows)!==1) throw new RuntimeException('manual_referral_buyer_missing');
+    $inviter=(int)$rows[0]['refered_by'];
+    if ($inviter<=0 || $inviter===$buyer) return;
+    $q=$db->query("SELECT value FROM setting WHERE type='INVITE_BANNER_AMOUNT'");
+    if (!$q) throw new RuntimeException('manual_referral_policy_unavailable');
+    $settings=$q->fetch_all(MYSQLI_ASSOC);
+    $disabled=count($settings)===0 ||
+        (count($settings)===1 && (string)$settings[0]['value']==='0');
+    if (!$disabled && count($settings)!==1)
+        throw new RuntimeException('manual_referral_policy_ambiguous');
+    $amount=0;
+    if (!$disabled) {
+        $raw=(string)$settings[0]['value'];
+        if (!preg_match('/^[1-9][0-9]*$/D',$raw) ||
+            filter_var($raw,FILTER_VALIDATE_INT)===false ||
+            (int)$raw>2147483647)
+            throw new RuntimeException('manual_referral_policy_invalid');
+        $amount=(int)$raw;
+    }
+    $status=$disabled?'DISABLED':'NOT_ATTEMPTED';
+    $q=$db->prepare('INSERT INTO referral_awards
+        (pay_row_id,buyer_userid,inviter_userid,amount_toman,state)
+        VALUES (?,?,?,?,?)');
+    $q->bind_param('iiiis',$pid,$buyer,$inviter,$amount,$status);
+    $ok=$q->execute() && $q->affected_rows===1;$q->close();
+    if (!$ok) throw new RuntimeException('manual_referral_reserve_failed');
+}
+/**
+ * Credit the one previously reserved 008 claim, with any inviter/operator
+ * Telegram report intents, in ONE atomic local transaction. Previous claim
+ * state CONFIRMED means no money mutation; PENDING notices can still send.
+ */
+function achbotReferralCompleteManualReserved(mysqli $db,int $payId,int $owner): string {
+    require_once __DIR__.'/FollowupOutbox.php';
+    if ($payId<=0 || $owner<=0 || !achbotReferralSchemaReady($db) ||
+        !achbotFollowupSchemaReady($db)) return 'unavailable';
+    $started=false;
+    try {
+        if (!$db->begin_transaction()) throw new RuntimeException('manual_referral_credit_begin');
+        $started=true;
+        $q=$db->prepare('SELECT user_id,type,state,agent_count,approved_by FROM pays WHERE id=?');
+        $q->bind_param('i',$payId);$q->execute();$p=$q->get_result()->fetch_assoc();$q->close();
+        if (!$p || $p['type']!=='BUY_SUB' || $p['state']!=='approved' ||
+            (int)$p['approved_by']<=0) throw new RuntimeException('manual_referral_pay_unconfirmed');
+        $buyer=(int)$p['user_id'];
+        // Preserve ordering of the original credit helper: buyer, pay, inviter.
+        $q=$db->prepare('SELECT userid,name,username,refered_by FROM users WHERE userid=? FOR UPDATE');
+        $q->bind_param('i',$buyer);$q->execute();$b=$q->get_result()->fetch_assoc();$q->close();
+        if (!$b) throw new RuntimeException('manual_referral_buyer_missing');
+        $q=$db->prepare('SELECT * FROM pays WHERE id=? FOR UPDATE');
+        $q->bind_param('i',$payId);$q->execute();$pay=$q->get_result()->fetch_assoc();$q->close();
+        if (!$pay || $pay['state']!=='approved' || $pay['type']!=='BUY_SUB')
+            throw new RuntimeException('manual_referral_pay_changed');
+        $q=$db->prepare('SELECT * FROM referral_awards WHERE pay_row_id=? FOR UPDATE');
+        $q->bind_param('i',$payId);$q->execute();$claim=$q->get_result()->fetch_assoc();$q->close();
+        if (!$claim) {
+            if ((int)$b['refered_by']>0)
+                throw new RuntimeException('manual_referral_original_claim_missing');
+            $db->rollback();$started=false;return 'not_applicable';
+        }
+        $state=(string)$claim['state'];
+        if (!in_array($state,['NOT_ATTEMPTED','CONFIRMED','DISABLED'],true) ||
+            (int)$claim['buyer_userid']!==$buyer ||
+            (int)$claim['inviter_userid']!==(int)$b['refered_by']) {
+            throw new RuntimeException('manual_referral_identity_changed');
+        }
+        if ($state!=='NOT_ATTEMPTED') {
+            $db->rollback();$started=false;
+            return $state==='CONFIRMED'?'acknowledged':'disabled';
+        }
+        $q=$db->prepare("SELECT COUNT(*) AS count_effect FROM service_effects
+            WHERE pay_row_id=? AND effect_kind='create'
+             AND state='local_recorded' AND order_id IS NOT NULL");
+        $q->bind_param('i',$payId);$q->execute();
+        $n=(int)$q->get_result()->fetch_assoc()['count_effect'];$q->close();
+        if ($n!==max(1,(int)$pay['agent_count']))
+            throw new RuntimeException('manual_referral_original_orders_missing');
+        $q=$db->prepare("SELECT COUNT(*) AS n FROM payment_delivery_intents
+            WHERE pay_row_id=?");
+        $q->bind_param('i',$payId);$q->execute();$sealed=(int)$q->get_result()->fetch_assoc()['n'];$q->close();
+        if ($sealed!==$n) throw new RuntimeException('manual_referral_delivery_manifest_missing');
+        $q=$db->prepare("SELECT COUNT(*) AS n FROM payment_followup_intents
+            WHERE pay_row_id=? AND stage='approved_purchase'");
+        $q->bind_param('i',$payId);$q->execute();$followups=(int)$q->get_result()->fetch_assoc()['n'];$q->close();
+        if ($followups<2) throw new RuntimeException('manual_referral_business_manifest_missing');
+        $inviter=(int)$claim['inviter_userid'];$amount=(int)$claim['amount_toman'];
+        if ($amount<=0 || $amount>2147483647 || $inviter===$buyer)
+            throw new RuntimeException('manual_referral_amount_invalid');
+        $q=$db->prepare('SELECT id,wallet FROM users WHERE userid=? FOR UPDATE');
+        $q->bind_param('i',$inviter);$q->execute();$users=$q->get_result()->fetch_all(MYSQLI_ASSOC);$q->close();
+        if (count($users)!==1) throw new RuntimeException('manual_referral_inviter_missing');
+        $pk=(int)$users[0]['id'];$before=(int)$users[0]['wallet'];
+        if ($pk<=0 || $before>2147483647-$amount)
+            throw new RuntimeException('manual_referral_wallet_overflow');
+        $max=2147483647-$amount;$after=$before+$amount;
+        $q=$db->prepare('UPDATE users SET wallet=wallet+?
+            WHERE id=? AND userid=? AND wallet=? AND wallet<=?');
+        $q->bind_param('iiiii',$amount,$pk,$inviter,$before,$max);
+        $ok=$q->execute() && $q->affected_rows===1;$q->close();
+        if (!$ok) throw new RuntimeException('manual_referral_wallet_unknown');
+        $q=$db->prepare("UPDATE referral_awards
+            SET state='CONFIRMED',before_balance=?,after_balance=?,confirmed_at=NOW()
+            WHERE pay_row_id=? AND state='NOT_ATTEMPTED'");
+        $q->bind_param('iii',$before,$after,$payId);
+        $ok=$q->execute() && $q->affected_rows===1;$q->close();
+        if (!$ok) throw new RuntimeException('manual_referral_credit_unknown');
+        $buyerMsg=\achbotMessage('payment.referral_reward.give_referral_reward.buyer_msg.51caba68b5').
+            number_format($amount).
+            \achbotMessage('payment.referral_reward.give_referral_reward.text.b87aec1eb7').
+            number_format($before).
+            \achbotMessage('payment.referral_reward.give_referral_reward.text.c0780ce268').
+            number_format($after).
+            \achbotMessage('payment.discounts.apply_discount_to_pay.text.2cc98f7f7c');
+        $operatorMsg=\achbotMessage('payment.referral_reward.give_referral_reward.operator_msg.7c8cfd9d4f').
+            $payId.\achbotMessage('payment.referral_reward.give_referral_reward.text.23d0786d9b').
+            $buyer.\achbotMessage('payment.referral_reward.give_referral_reward.text.6aaba1c235').
+            $inviter.\achbotMessage('payment.referral_reward.give_referral_reward.text.534fd54cb9').
+            number_format($amount).\achbotMessage('payment.discounts.apply_discount_to_pay.text.2cc98f7f7c');
+        achbotFollowupInsertLocked($db,$pay,'referral_reward','referral_inviter',
+            'send',(string)$inviter,null,['text'=>$buyerMsg,'keys'=>null,'mode'=>null]);
+        $complete=false;$staff=achbotAdminRecipientCandidates($db,$owner,$complete);
+        if (!$complete) throw new RuntimeException('manual_referral_staff_targets_uncertain');
+        achbotFollowupInsertLocked($db,$pay,'referral_reward','referral_admin',
+            'send',(string)$owner,null,['text'=>$operatorMsg,'keys'=>null,'mode'=>'HTML']);
+        foreach ($staff as $id) {
+            $ok=true;
+            if (achbotAdminNotificationAllowed($db,$id,$owner,'general',$ok))
+                achbotFollowupInsertLocked($db,$pay,'referral_reward','referral_admin',
+                    'send',(string)(int)$id,null,['text'=>$operatorMsg,'keys'=>null,'mode'=>'HTML']);
+            if (!$ok) throw new RuntimeException('manual_referral_staff_permission_uncertain');
+        }
+        $channel=(string)($GLOBALS['botState']['rewardChannel']??'');
+        if ($channel!=='' && $channel!==(string)$owner)
+            achbotFollowupInsertLocked($db,$pay,'referral_reward','referral_channel',
+                'send',$channel,null,['text'=>$operatorMsg,'keys'=>null,'mode'=>'HTML']);
+        if (!$db->commit()) throw new RuntimeException('manual_referral_commit_unknown');
+        $started=false;return 'acknowledged';
+    } catch(Throwable $error) {
+        if ($started) try {$db->rollback();} catch(Throwable $ignored) {}
+        error_log('achbot_manual_referral_reconcile_unknown pay_id='.$payId.
+            ' class='.get_class($error));
+        return 'unknown';
+    }
+}

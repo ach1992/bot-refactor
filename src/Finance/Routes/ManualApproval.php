@@ -78,6 +78,9 @@ if (
 ) {
     require_once __DIR__ . '/../PaidAccountRecovery.php';
     require_once __DIR__ . '/../DeliveryLedger.php';
+    require_once __DIR__ . '/../FollowupOutbox.php';
+    require_once __DIR__ . '/../ReferralReward.php';
+    require_once __DIR__ . '/../ApiPaymentPresentation.php';
     $hash_id = $match[1];
     $payInfo = null;
     $claimOpen = false;
@@ -105,8 +108,10 @@ if (
             (int)($payInfo['approved_by']??0)>0) {
             // A second Approve reuses the original authorized payment claim,
             // never decrements inventory or starts a new native operation.
-            if (!achbotDeliverySchemaReady($connection))
-                throw new RuntimeException('manual_delivery_schema_missing');
+            if (!achbotDeliverySchemaReady($connection) ||
+                !achbotFollowupSchemaReady($connection) ||
+                !achbotReferralSchemaReady($connection))
+                throw new RuntimeException('manual_purchase_journal_schema_missing');
             if ($payInfo['state']==='approved') {
                 $alreadyApproved=true;
             } else {
@@ -137,8 +142,10 @@ if (
             if ($buy) {
                 // The delivery packet must be durable in the SAME local
                 // order/paid COMMIT, or no remote CREATE is allowed.
-                if (!achbotDeliverySchemaReady($connection))
-                    throw new RuntimeException('manual_delivery_schema_missing');
+                if (!achbotDeliverySchemaReady($connection) ||
+                    !achbotFollowupSchemaReady($connection) ||
+                    !achbotReferralSchemaReady($connection))
+                    throw new RuntimeException('manual_purchase_journal_schema_missing');
                 $q=$connection->prepare('SELECT * FROM payment_attempts WHERE pay_row_id=? FOR UPDATE');
                 $q->bind_param('i',$payId);$q->execute();
                 $origin=$q->get_result()->fetch_assoc();$q->close();
@@ -175,30 +182,21 @@ if (
 
     if ($alreadyApproved) {
         try {
-            require_once __DIR__.'/../ApiPaymentPresentation.php';
+            // Safe after-commit continuation: original 008 claim only,
+            // immutable PENDING notifications only and PENDING customer packets.
+            // UNKNOWN Telegram attempts require the separate warned Owner UI.
+            $reward=achbotReferralCompleteManualReserved($connection,$payId,(int)$admin);
+            if ($reward==='unknown' || $reward==='unavailable')
+                error_log('achbot_manual_reward_resume_unresolved pay_id='.$payId);
+            $reports=achbotFollowupDispatchPending($connection,$payId,'approved_purchase');
+            $referral=achbotFollowupDispatchPending($connection,$payId,'referral_reward');
             $progress=achbotResumePaidPurchaseDelivery($connection,$payId,(int)$from_id);
-            $q=$connection->prepare("SELECT remote_username FROM service_effects
-                WHERE pay_row_id=? AND effect_kind='create' ORDER BY ordinal DESC LIMIT 1");
-            $q->bind_param('i',$payId);$q->execute();
-            $last=$q->get_result()->fetch_assoc();$q->close();
-            if (!$last) throw new RuntimeException('manual_purchase_final_account_missing');
-            $n=max(1,(int)$payInfo['agent_count']);
-            $subject=(string)$last['remote_username'].($n>1?' +'.($n-1):'');
-            $keys=achbotManualFinalReceiptKeyboard($connection,$payId,$subject);
-            // Existing copies are informational, never confirmation buttons.
-            editKeys($keys,$payInfo['message_id'],$payInfo['chat_id']);
-            $copies=json_decode((string)($payInfo['admins_messages']??''),true);
-            if (is_array($copies)) foreach ($copies as $copy) {
-                if (isset($copy['chat_id'],$copy['message_id']) &&
-                    $copy['chat_id']!=$payInfo['chat_id'] &&
-                    achbotAdminStoredRecipientAllowed($connection,$copy['chat_id'],(int)$admin))
-                    editKeys($keys,$copy['message_id'],$copy['chat_id']);
-            }
-            $unknown=array_filter($progress,static fn($status)=>$status!=='acknowledged');
-            if ($unknown) error_log('achbot_manual_delivery_resume_incomplete pay_id='.$payId.
-                ' ordinals='.count($unknown));
+            $pending=array_filter($reports+$referral+$progress,
+                static fn($status)=>$status!=='acknowledged');
+            if ($pending) error_log('achbot_manual_purchase_resume_pending pay_id='.$payId.
+                ' count='.count($pending));
         } catch (Throwable $error) {
-            error_log('achbot_manual_delivery_resume_failed pay_id='.$payId.
+            error_log('achbot_manual_purchase_resume_failed pay_id='.$payId.
                 ' class='.get_class($error));
             alert(\achbotMessage('manual_payment.manual_approval.manual_standard_report_delivery.alert.fd978f1d4d'));
         }
@@ -509,6 +507,13 @@ if (
             if (!$stmt->execute() || $stmt->affected_rows !== 1)
                 throw new RuntimeException('manual_standard_finish_failed');
             $stmt->close();
+            $lockedPay['state']='approved';
+            // 008 referral decision and every original reporting target are
+            // persisted in THIS SAME local order/payment transaction.
+            achbotReferralReserveManualLocked($connection,$lockedPay);
+            achbotFollowupStageManualPurchaseLocked($connection,$lockedPay,(int)$admin,
+                $lastRemarkForAdminMsg,$accountCount,$days,$volume,$price,
+                $hash_id,$mainValues);
             if ($connection->commit() !== true)
                 throw new RuntimeException('manual_standard_finish_commit_unconfirmed');
             $serviceCommitted = true;
@@ -523,84 +528,25 @@ if (
             return;
         }
 
-        // Register the payment-keyed 008 award after the local committed
-        // order and before any fallible Telegram/QR presentation.
         $followupStage='purchase_referral_journal';
-        $user_detail=achbotReferralAfterCompletedPurchase(
-            $connection,(int)$uid,$payId,(int)$admin,$botState);
+        $reward=achbotReferralCompleteManualReserved($connection,$payId,(int)$admin);
+        if ($reward==='unknown' || $reward==='unavailable')
+            error_log('achbot_manual_reward_original_unresolved pay_id='.$payId);
 
-        foreach (achbotDeliveryDispatchPending($connection,$payId) as $ordinal=>$result) {
-            if ($result!=='acknowledged') {
-                $deliveryIssues[]=['stage'=>'purchase_account_qr',
-                    'ordinal'=>(int)$ordinal,'target'=>$uid];
+        $followupStage='purchase_original_reports';
+        foreach (achbotFollowupDispatchPending($connection,$payId,'approved_purchase') as $id=>$state)
+            if ($state!=='acknowledged')
+                error_log('achbot_manual_purchase_report_unconfirmed pay_id='.$payId.
+                    ' intent_id='.$id);
+        foreach (achbotFollowupDispatchPending($connection,$payId,'referral_reward') as $id=>$state)
+            if ($state!=='acknowledged')
+                error_log('achbot_manual_referral_report_unconfirmed pay_id='.$payId.
+                    ' intent_id='.$id);
+        $followupStage='purchase_account_delivery';
+        foreach (achbotDeliveryDispatchPending($connection,$payId) as $ordinal=>$result)
+            if ($result!=='acknowledged')
                 error_log('achbot_manual_purchase_delivery_pending pay_id='.$payId.
                     ' ordinal='.(int)$ordinal.' state='.$result);
-            }
-        }
-        $followupOrdinal=0;
-
-        $followupStage = 'purchase_operator_notice';
-        achbotManualStandardNotice(
-            static fn()=>sendMessage(str_replace(
-                ["USERID","REMARK","VOLUME","DAYS","PRICE","HASHID"],
-                [$uid,$lastRemarkForAdminMsg,$volume,$days,$price,$hash_id],
-                $mainValues['sent_config_to_user']),getMainKeys()),
-            'purchase_operator_notice',$payId,$deliveryIssues,0,(int)$from_id);
-
-        $actualSubject=$lastRemarkForAdminMsg.
-            ($accountCount>1?' +'.($accountCount-1):'');
-        $keys=achbotManualFinalReceiptKeyboard($connection,$payId,$actualSubject);
-
-        $followupStage = 'purchase_operator_buttons';
-        try {
-            achbotManualStandardRequireTelegramResult(
-                editKeys($keys, $payInfo['message_id'], $payInfo['chat_id']),
-                'purchase_operator_buttons');
-        } catch (Throwable $e) {
-            error_log('achbot_manual_standard_buttons_update_failed pay_id='.$payId.
-                ' subject=purchase exception='.get_class($e).' code='.(int)$e->getCode());
-            $deliveryIssues[]=['stage'=>'purchase_operator_buttons',
-                'ordinal'=>0,'target'=>(int)$payInfo['chat_id']];
-            achbotManualStandardNotice(
-                static fn()=>(achbotNotifyAdmins('sendMessage', ['text'=>\achbotMessage('manual_payment.manual_approval.manual_standard_report_delivery.message.76fb0b9a90', ['hash_id' => $hash_id])], ['report_channel'=>null])[0]['response']??null),
-                'purchase_buttons_operator_alert',$payId,$deliveryIssues,0,$admin);
-        }
-
-        $adminMessages = json_decode($payInfo['admins_messages'], true);
-        if (is_array($adminMessages)) {
-            foreach ($adminMessages as $msgInfo) {
-                if (isset($msgInfo['chat_id'], $msgInfo['message_id']) && $msgInfo['chat_id'] != $payInfo['chat_id'] &&
-                    achbotAdminStoredRecipientAllowed($connection,$msgInfo['chat_id'],(int)$admin)) {
-                    achbotManualStandardNotice(
-                        static fn()=>editKeys($keys,$msgInfo['message_id'],$msgInfo['chat_id']),
-                        'purchase_additional_operator_buttons',$payId,$deliveryIssues,0,
-                        (int)$msgInfo['chat_id']);
-                }
-            }
-        }
-
-        // Invitee announcement is presentation only; do not repeat any
-        // financial reward. Keep every independent target failure visible.
-        if (!empty($user_detail['refered_by']) && $admin!=$from_id) {
-            $uname=$user_detail['name'];
-            $user_name=$user_detail['username'];
-            $keys2=json_encode(['inline_keyboard'=>[[
-                ['text'=>\achbotMessage('manual_payment.manual_approval.manual_standard_report_delivery.button.e401f3d5a2'),'callback_data'=>"wizwizch"]
-            ]]]);
-            $msg=str_replace(
-                ['USER-ID','USERNAME','NAME','PRICE','REMARK','HASHID'],
-                [$uid,$user_name,$uname,$price,$lastRemarkForAdminMsg,$hash_id],
-                $mainValues['invite_buy_new_account']
-            );
-            foreach (achbotNotifyAdmins('sendMessage', ['text'=>$msg,'reply_markup'=>$keys2,'parse_mode'=>'html']) as $notice) {
-                achbotManualStandardNotice(
-                    static fn()=>$notice['response'],
-                    'referral_purchase_operator_notice',$payId,$deliveryIssues,0,
-                    (int)$notice['chat_id']);
-            }
-        }
-        achbotManualStandardReportDelivery(
-            $payId,$hash_id,$deliveryIssues,(int)$admin);
 
     } catch (Throwable $e) {
         // An error in Telegram or post-commit referral work cannot undo a

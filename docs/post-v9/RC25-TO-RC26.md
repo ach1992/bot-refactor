@@ -50,7 +50,8 @@
    Existing tables/columns or unknown partial objects are STOP conditions,
    not reasons to rerun additive SQL or drop/replace historic payment rows.
 5. Staging-only, after confirming schema and backup: apply the one-time
-   `018_payment_delivery_intents.sql`, then `019_payment_review_decisions.sql`
+   `018_payment_delivery_intents.sql`, then `019_payment_review_decisions.sql`,
+   and `020_payment_followup_intents.sql` after testing each absence and shape
    only if each is genuinely absent and the exact source/migration contract
    was reviewed. Verify InnoDB, composite unique constraints, indexes and
    recorded receipt/decision foreign keys. **Never backfill missing delivery

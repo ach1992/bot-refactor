@@ -20,6 +20,7 @@ class RoleAuditMysqli extends mysqli {
  public function resetAudit():void {$this->writes=[];$this->financialReads=[];$this->transactions=0;}
 }
 $root=$argv[1];$connection=new RoleAuditMysqli('localhost','root','',$argv[3],0,$argv[2]);$connection->set_charset('utf8mb4');
+$GLOBALS['telegramWebhookSecret']='synthetic-role-fixture-020-key-2026';
 $admin=9001;$from_id=9001;$special_admins=[9002,1001,9005,9999];$admins_list=[1001,9005,9999];$data='';$text='';$userInfo=['step'=>'none'];$checks=[];
 require $root.'/messages/loader.php';require $root.'/src/Admin/Access.php';
 $buttonValues=achbotMessages('legacy_buttons');
@@ -467,6 +468,11 @@ def main():
     start=old.index('$buttons_only_for_special_admins =');end=old.index('\n?>',start)
     policy=old[start:end].replace('function canSeeButton(','function baselineCanSeeButton(',1)
     with owned.owned_database() as (work,env):
+        db=owned.NAMES[1]
+        command=['mariadb','--no-defaults','--protocol=SOCKET',
+            '--socket='+str(work/'mysql.sock'),'-uroot',db]
+        subprocess.run(command,input=(ROOT/'migrations/post-v9/020_payment_followup_intents.sql').read_bytes(),
+            env=env,capture_output=True,check=True,timeout=20)
         app=work/'app';app.mkdir()
         for name in ['src','settings']:shutil.copytree(ROOT/name,app/name)
         shutil.copytree(a.catalog_source/'messages',app/'messages')

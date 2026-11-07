@@ -195,13 +195,13 @@ function achbotResumePaidPurchaseDelivery(mysqli $db,int $payId,int $actor): arr
     foreach ($lines as $line) {
         $ordinal=(int)$line['ordinal'];$state=(string)$line['state'];
         if ($state==='pending') $out[$ordinal]=achbotDeliveryDispatch($db,$payId,$ordinal);
-        elseif ($state==='unknown' && $actor===(int)($GLOBALS['admin']??0)) {
-            // This explicit second press is the Owner's authority to resend
-            // the SAME sealed account details, never to create another one.
-            $row=achbotDeliveryInspectOne($db,$payId,$ordinal);
-            $token=$row?achbotDeliveryChallenge($row,$actor):'';
-            $out[$ordinal]=achbotDeliveryDispatch($db,$payId,$ordinal,$actor,$token);
-        } else $out[$ordinal]=$state;
+        else {
+            // Approve is NOT a resend authorization. An unknown Telegram ACK
+            // might mean the packet was already delivered. Only the existing
+            // owner-private DeliveryRecovery warning + confirmation can issue
+            // a new attempt for this same sealed packet.
+            $out[$ordinal]=$state;
+        }
     }
     return $out;
 }
