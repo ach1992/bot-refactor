@@ -367,6 +367,14 @@ foreach($deliveryNames as$name){
 // additive. Hash exact source blocks and prove their complete inventories;
 // never rebaseline or weaken the older whole-catalogue controls.
 $workbench = [
+ 'manual_receipt_final'=>[
+  'digest'=>'3423d7b6837c1db79e0c1a6d8297f663d6244d5134c3522b98b3891b6749f1df',
+  'names'=>['day_subject','volume_subject']],
+ 'finance_exceptions'=>[
+  'digest'=>'65f9eb491c8e0d7a32916e8eda30764f75dadb4df4ebcc932fdc4898cc4d96d9',
+  'names'=>['open','title','empty','case_label','case_title',
+   'child_line','readonly_warning','inspect','more','back',
+   'back_finance','next','first','checked','unavailable']],
  'finance_workbench'=>[
   'digest'=>'b2ca5ebb7ac2e77948f3d952edab9b4cc563385ef9d0fcf2bcb2b7798014aedb',
   'names'=>['denied','checking','back','not_safe','challenge_expired','unavailable',

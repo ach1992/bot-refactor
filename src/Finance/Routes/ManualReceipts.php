@@ -28,8 +28,6 @@ if (preg_match('/^financeExtra(Inbox|Case)(?:_([1-9][0-9]{0,17}))?$/D',
     }
     require_once __DIR__.'/../RecoveryInspection.php';
     $buttons=[];$body='';
-    $escExtra=static fn($s)=>htmlspecialchars(substr((string)$s,0,128),
-        ENT_QUOTES|ENT_SUBSTITUTE,'UTF-8');
     try {
         if ($extraParts[1]==='Inbox') {
             $before=(int)($extraParts[2]??0);
@@ -67,9 +65,10 @@ if (preg_match('/^financeExtra(Inbox|Case)(?:_([1-9][0-9]{0,17}))?$/D',
                 'pay'=>$payId,'state'=>$pay['state'],'type'=>$pay['type']])."\n".
                 achbotRecoveryEvidenceText($pay,$a)."\n";
             foreach (array_slice($children,0,8) as $child)
-                $body.='• <code>'.$escExtra($child['payment_id']).'</code> | '.
-                    $escExtra($child['observed_status']).' | '.
-                    $escExtra($child['received_at'])."\n";
+                $body.=achbotMessageHtml('finance_exceptions.child_line',[
+                    'id'=>substr((string)$child['payment_id'],0,128),
+                    'status'=>substr((string)$child['observed_status'],0,128),
+                    'received'=>substr((string)$child['received_at'],0,128)])."\n";
             if (count($children)>8) $body.=achbotMessage('finance_exceptions.more');
             $body.="\n".achbotMessage('finance_exceptions.readonly_warning');
             $buttons[]=[['text'=>achbotMessage('finance_exceptions.inspect'),

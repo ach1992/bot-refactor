@@ -460,7 +460,12 @@ def check():
                 (9001,211),(9002,222),(9003,333)],edits
             assert all(x['keys']==edits[0]['keys']for x in edits),edits
             callbacks=[button['callback_data']for row in json.loads(edits[0]['keys'])['inline_keyboard']for button in row]
-            assert callbacks==['wizwizch','noop','noop_'+key],callbacks
+            assert callbacks==['noop_'+key]*3,callbacks
+            final_buttons=[row[0]['text'] for row in
+                json.loads(edits[0]['keys'])['inline_keyboard']]
+            assert '9001' in final_buttons[0] and 'multiple_admin_edits' in final_buttons[2],final_buttons
+            assert all('callback_data' in button for row in
+                json.loads(edits[0]['keys'])['inline_keyboard'] for button in row)
             assert sql(work,env,"SELECT admins_messages FROM pays WHERE hash_id='multiple_admin_edits'")==refs
             assert any('purchase_additional_operator_buttons گفت‌وگو:9002' in x['text']
                        for x in named(ev,'MESSAGE') if x['to']==9001)

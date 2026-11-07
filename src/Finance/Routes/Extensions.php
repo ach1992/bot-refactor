@@ -477,7 +477,8 @@ if (preg_match('/^approveIncreaseDay(.*)/', $data, $match) && achbotAdminCanFor(
 
         require_once __DIR__.'/../ApiPaymentPresentation.php';
         $keys=achbotManualFinalReceiptKeyboard(
-            $connection,$payId,$remark.' | افزایش '.$volume.' روز');
+            $connection,$payId,achbotMessage('manual_receipt_final.day_subject',[
+                'remark'=>$remark,'units'=>$volume]));
 
         // ویرایش پیام ادمین اصلی
         editKeys($keys, $payParam['message_id'], $payParam['chat_id']);
@@ -1303,7 +1304,8 @@ if (preg_match('/^approveIncreaseVolume(.*)/', $data, $match) && achbotAdminCanF
 
         require_once __DIR__.'/../ApiPaymentPresentation.php';
         $keys=achbotManualFinalReceiptKeyboard(
-            $connection,$payId,$remark.' | افزایش '.$volume.' گیگ');
+            $connection,$payId,achbotMessage('manual_receipt_final.volume_subject',[
+                'remark'=>$remark,'units'=>$volume]));
 
         // ویرایش پیام ادمین اصلی
         editKeys($keys, $payParam['message_id'], $payParam['chat_id']);

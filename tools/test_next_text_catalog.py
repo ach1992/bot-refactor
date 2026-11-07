@@ -227,11 +227,35 @@ def main():
           all(k in old_delivery and k not in delivery_source for k in retained_delivery_back)
           and not (retained_delivery_back&refs),
           'retired_delivery_navigation_copy_not_exact')
+    # PR #122 independent R3: original manual receipt completion now always
+    # uses the source-real three-row no-op keyboard. Preserve old editable
+    # translations without reintroducing their now-retired navigation buttons.
+    retired_manual_terminal={
+        'src/Finance/Routes/Extensions.php':{
+            'renewal.extensions.button.139c829462'},
+        'src/Finance/Routes/RenewalCheckout.php':{
+            'renewal.extensions.button.139c829462'},
+        'src/Finance/Routes/Checkout.php':{
+            'payment.checkout.button.139c829462',
+            'payment.checkout.hash_id.2899228604',
+            'payment.checkout.remark.4348a3fd9b'},
+        'src/Finance/Routes/ManualApproval.php':{
+            'manual_payment.manual_approval.manual_standard_report_delivery.remark.4348a3fd9b'},
+    }
+    retained_manual_terminal=set().union(*retired_manual_terminal.values())
+    for path,keys in retired_manual_terminal.items():
+        ancestor=command('git','show',
+            '17af1e55dc4cb8db6751a731bb223d93dc6f902f:'+path).decode()
+        current=sources[path]
+        check(all(key in ancestor and key not in current for key in keys),
+              'manual_final_retired_source_provenance:'+path)
+    check(retained_manual_terminal<=entries and not (retained_manual_terminal&refs),
+          'manual_final_retired_catalog_unknown_or_still_live')
     expected_unused=(retired_shared_transfer|set(management['retained_legacy_keys'])|
         catalog_owner_r5.verify_retained_display_keys()|
         catalog_owner_r5.API_REVIEW_RETAINED|obsolete_filter|obsolete_postwrite|
         retired_keys|retired_bank_delivery_push|
-        retired_review_push|retained_delivery_back)
+        retired_review_push|retained_delivery_back|retained_manual_terminal)
     check(unused==expected_unused,'unrecorded legacy/orphan copy entries: '+str(unused^expected_unused))
     with tempfile.TemporaryDirectory(prefix='achbot-catalog-audit-') as scratch:
         fixture=pathlib.Path(scratch)/'fixture.php'
@@ -282,13 +306,13 @@ def main():
     presentation=json.loads(command('python3','tools/test_text_catalog_style.py'))
     check(presentation.get('status')=='PASS' and presentation.get('editable_files')==2
           and presentation.get('canonical_binding_paths')==2 and presentation.get('canonical_binding_entries')==4 and presentation.get('canonical_binding_negative_controls')==4
-          and presentation.get('current_keys')==2523+len(management['added_keys'])-len(catalog_owner_r5.manifest()['retired_keys'])+len(catalog_owner_r5.manifest()['added_keys'])+len(catalog_owner_r5.api_manifest()['added_keys'])+1+8+14+9+18+27+12+7  # Preserved historical layers plus four strict owner-only review/recovery topics.
+          and presentation.get('current_keys')==2523+len(management['added_keys'])-len(catalog_owner_r5.manifest()['retired_keys'])+len(catalog_owner_r5.manifest()['added_keys'])+len(catalog_owner_r5.api_manifest()['added_keys'])+1+8+14+9+18+27+12+7+17  # Preserved history plus six strict additive owner-only topics.
           and presentation.get('management_added_keys')==len(management['added_keys'])
           and presentation.get('management_baseline_keys')==2523
           and presentation.get('management_negative_controls')==5
           and presentation.get('management_provider_label_cases')==11
           and presentation.get('management_facade_cases')==sum(record.get('facade')is True for record in management['added_keys'].values()) and presentation.get('retired_keys')==23
-          and presentation.get('added_keys')==1 and presentation.get('logical_topics')==28+4
+          and presentation.get('added_keys')==1 and presentation.get('logical_topics')==28+6
           and presentation.get('numeric_template_changes')==23
           and presentation.get('adjacent_emoji_violations')==0
           and presentation.get('parameter_exception_count')==3

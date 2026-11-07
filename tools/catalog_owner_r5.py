@@ -375,6 +375,16 @@ def verify_retained_display_keys():
 DELIVERY_RECOVERY_BASE='17af1e55dc4cb8db6751a731bb223d93dc6f902f'
 DELIVERY_RECOVERY_BLOCK_SHA256='d10cb333f3576f5386a3f18226f569941a1488de7fae648822c507f8b1e9d4d8'
 WORKBENCH_BLOCKS={
+ 'manual_receipt_final':{
+  'sha':'3423d7b6837c1db79e0c1a6d8297f663d6244d5134c3522b98b3891b6749f1df',
+  'names':{'day_subject','volume_subject'}
+ },
+ 'finance_exceptions':{
+  'sha':'65f9eb491c8e0d7a32916e8eda30764f75dadb4df4ebcc932fdc4898cc4d96d9',
+  'names':{'open','title','empty','case_label','case_title',
+   'readonly_warning','child_line','inspect','more','back','back_finance',
+   'next','first','checked','unavailable'}
+ },
  'finance_workbench':{
   'sha':'b2ca5ebb7ac2e77948f3d952edab9b4cc563385ef9d0fcf2bcb2b7798014aedb',
   'names':{'denied','checking','back','not_safe','challenge_expired',

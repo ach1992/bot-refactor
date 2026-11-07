@@ -602,14 +602,15 @@ if(!str_starts_with(achbotMessage('wallet.wallet_transfer.wallet_transfer_restar
 echo json_encode(['violations'=>$violations,'topics'=>count(achbotMessageTopics()),'native_compositions'=>6,'emoji_negative_controls'=>7,'semantic_label_icon_cases'=>count($fields),'semantic_context_icon_cases'=>$contexts,'canonical_binding_paths'=>count($bindingProof['paths']),'canonical_binding_entries'=>$bindingProof['entries'],'canonical_binding_negative_controls'=>$bindingNegatives],JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);'''
     native=json.loads(command('php','-r',php))
     check(not native['violations'],'adjacent emoji: '+str(native['violations']))
-    # The 28 accepted topics are preserved verbatim; #117 adds four
-    # source-pinned owner-private recovery topics, not extra catalog files.
+    # The 28 accepted topics remain immutable. Independent #122 review
+    # remediation adds a pinned finance exception and terminal receipt topic.
     additional={'delivery_recovery','finance_workbench',
-                'delivery_workbench','service_workbench'}
+                'delivery_workbench','service_workbench',
+                'finance_exceptions','manual_receipt_final'}
     topics=json.loads(command('php','-r',
         'require "messages/loader.php";echo json_encode(achbotMessageTopics());'))
     check(native['topics']==28+len(additional) and additional<=set(topics),
-          'Expected four source-proven review/recovery topics')
+          'Expected six source-proven review/recovery topics')
     # A mistaken cross-file move/copy must fail closed, never silently let
     # one audience override the other's value. Poison only an owned temporary
     # copy; the actual source and catalog remain untouched.

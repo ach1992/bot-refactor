@@ -1139,15 +1139,15 @@ def run_wallet(tmp: str) -> tuple[dict, dict]:
             and text_catalog.get("native",{}).get("pre_style_privacy_corrections")==3
             and text_catalog.get("native",{}).get("actual_traffic_helper_parity_cases")==18
             and text_catalog.get("editable_catalog_files")==2
-            and text_catalog.get("logical_topics")==28+4
+            and text_catalog.get("logical_topics")==28+6
             and text_catalog.get("current_authorized_source_edits")==26
             and text_catalog.get("retired_parser_tokens")==23
             and text_catalog.get("relocation_source_ref")=="ecd30ba9192ed374703118a6c131be8809cc7b06"
             and text_catalog.get("native",{}).get("current_retired_feature_keys")==3
-            and text_catalog.get("catalog_keys")==2780+14+9+18+27+12+7
+            and text_catalog.get("catalog_keys")==2780+14+9+18+27+12+7+17
             and text_catalog.get("native",{}).get("editable_catalog_files")==2
-            and text_catalog.get("native",{}).get("logical_topics")==28+4
-            and text_catalog.get("native",{}).get("current_catalog_keys")==2780+14+9+18+27+12+7
+            and text_catalog.get("native",{}).get("logical_topics")==28+6
+            and text_catalog.get("native",{}).get("current_catalog_keys")==2780+14+9+18+27+12+7+17
             and text_catalog.get("native",{}).get("current_gift_admin_additions")==1
             and text_catalog.get("native",{}).get("current_gift_catalog_negative_controls")==8
             and text_catalog.get("native",{}).get("current_gift_catalog_negative_scenarios")==[
@@ -1238,10 +1238,11 @@ def run_wallet(tmp: str) -> tuple[dict, dict]:
         # Four retired #112 references and the additional old direct-delete
         # callback reference are proven absent by test_next_text_catalog.py.
         # Keep complete current-reference equality, never a lower bound.
-        'runtime_references':2453+14-1-6-4-1+8-3+28,
-        # +28 exact newly referenced owner financial/service/delivery
-        # workbench copy keys; the negative orphan/source inventory proof
-        # in test_next_text_catalog.py remains mandatory.
+        'runtime_references':2453+14-1-6-4-1+8-3+28+12,
+        # +28 owner financial/service/delivery copy keys, +12 net
+        # referenced tokens from R2 financial exception and R3 final
+        # receipt topics minus the five proven retired legacy labels.
+        # The exact orphan/source inventory proof remains mandatory.
         'api_referenced_keys':68,
         'api_dynamic_source_paths':2,
         'api_reference_source_commit':'16c1558322b578b8ca817f3c4b42818d57dcf161',
@@ -2363,7 +2364,7 @@ def run_effects(tmp: str) -> tuple[dict, dict]:
             and pg_lock.get('target_drift_fails_closed') is True
             and pg_lock.get('native_writes')==0):
         raise RuntimeError("Required source-real PasarGuard lock boundary proof incomplete")
-    result['pasarguard_review_lock_boundary']=pg_lock
+    decision['pasarguard_review_lock_boundary']=pg_lock
     required_decisions={
         "decision_schema_unique_innodb",
         "verified_finished_complete_single_child_eligible",

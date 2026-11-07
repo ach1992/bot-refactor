@@ -2273,6 +2273,12 @@ return [
             'اجرای مجدد پرداخت یا ساخت سرویس مجاز نیست؛ نتیجه را در بخش بازیابی بررسی کنید.',
             'parameters'=>['decision','state','outcome']],
     ],
+    'manual_receipt_final' => [
+        'day_subject'=>['text'=>'حساب {remark} | افزایش {units} روز',
+            'parameters'=>['remark','units']],
+        'volume_subject'=>['text'=>'حساب {remark} | افزایش {units} گیگ',
+            'parameters'=>['remark','units']],
+    ],
     'finance_exceptions' => [
         'open'=>'💰 بررسی واریزهای اضافی درگاه',
         'title'=>'💰 استثناهای مالی: تراکنش اضافی NOWPayments' . "\n" .
@@ -2283,9 +2289,11 @@ return [
         'case_title'=>['text'=>'🔎 واریز اضافی برای پرداخت #{pay}' . "\n" .
             'وضعیت اصلی: <code>{state}</code> | موضوع: <code>{type}</code>',
             'parameters'=>['pay','state','type']],
+        'child_line'=>['text'=>'• <code>{id}</code> | {status} | {received}',
+            'parameters'=>['id','status','received']],
         'readonly_warning'=>'این شناسه‌ها شواهد مستقل درگاه هستند، نه مجوز اجرای دوبارهٔ خرید یا افزایش موجودی. شناسهٔ فرزند را با استعلام رسمی بررسی و وجه اضافی را جداگانه با سند مالی تطبیق یا مسترد کنید. تأیید/رد پرداخت اصلی مجاز نیست.',
         'inspect'=>'🔎 جزئیات و استعلام هر تراکنش',
-        'more'=>'فقط ۸ تراکنش آخر نمایش داده شد؛ سوابق بیشتر در جزئیات درگاه موجود است.' . "\n",
+        'more'=>'فقط 8 تراکنش آخر نمایش داده شد؛ سوابق بیشتر در جزئیات درگاه موجود است.' . "\n",
         'back'=>'↩️ استثناهای مالی',
         'back_finance'=>'↩️ پرداخت‌های نیازمند رسیدگی',
         'next'=>'صفحه بعد',
