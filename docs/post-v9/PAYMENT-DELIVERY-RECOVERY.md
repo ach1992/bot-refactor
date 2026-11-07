@@ -113,6 +113,11 @@ Historical records without an encrypted delivery intent are not fabricated.
   source proof, native effect and delivery journals. Original human receipt
   Approve/Reject callbacks remain available when their usual prerequisites
   apply. No new staff role or payment authorization was created.
+- **Hosted wallet finalization:** when a later genuinely verified hosted
+  callback completes the original atomic wallet claim, the matching 003
+  attempt is marked done, including a previously uncertain VERIFY; this
+  never credits the wallet a second time. An operator-owned 019 claim remains
+  journal-controlled instead of being mistaken for provider settlement.
 - **Recovery boundaries:** the original decision journal fences double
   approvals; an uncertain native CREATE/PUT is not replayed merely because a
   human presses the same button again. Verified native service and pending-only

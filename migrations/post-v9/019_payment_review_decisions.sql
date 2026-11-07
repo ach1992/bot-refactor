@@ -1,4 +1,4 @@
--- Issue #117: source-only, additive manual NOWPayments decision audit.
+-- Issue #117: source-only, additive audited gateway operator decisions.
 -- NOT applied to live Chili. Requires separate migration approval/restore.
 -- Unique pay lock forbids a second operator-driven effect after crash.
 CREATE TABLE payment_review_decisions (

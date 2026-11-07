@@ -2524,6 +2524,7 @@ def run_effects(tmp: str) -> tuple[dict, dict]:
             and decision.get("real_review_decision_source") is True
             and decision.get("original_gateway_review_stage_source") is True
             and decision.get("real_hosted_original_claim_after_uncertain") is True
+            and decision.get("hosted_wallet_finalized_once_after_uncertain") is True
             and decision.get("operator_dispatch_journal_required") is True
             and decision.get("no_merchant_or_customer_network") is True
             and decision.get("test_effect_is_synthetic") is True

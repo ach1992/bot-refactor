@@ -380,6 +380,7 @@ def main():
   assert hosted_proof['original_gateway_review_stage_source']
   assert hosted_proof['no_merchant_or_customer_network']
   assert hosted_proof['real_hosted_original_claim_after_uncertain']
+  assert hosted_proof['hosted_wallet_finalized_once_after_uncertain']
   assert hosted_proof['operator_dispatch_journal_required']
   out.update(hosted_proof)
   inbox=d/'review-inbox.php';inbox.write_text(INBOX)
@@ -471,7 +472,30 @@ foreach ([219=>true,220=>false] as $pid=>$journaled) {
  if (!$journaled && ($stage['state']!=='pending'||$stage['stage']!=='fulfilling'))
   throw new RuntimeException('forged_operator_stage_changed');
 }
+// Browser-confirmed hosted wallet credit commits atomically before the
+// previously unknown 003 verification marker is closed (no second credit).
+$db->query("INSERT INTO pays(id,hash_id,user_id,type,price,request_date,state,payid)
+ VALUES(222,'hosted-wallet-final',1001,'INCREASE_WALLET',100000,
+ UNIX_TIMESTAMP(),'pending','hosted-wallet-authority')");
+$db->query("INSERT INTO payment_attempts(pay_row_id,provider,order_hash,
+ provider_reference,quote_amount,quote_currency,local_amount_toman,stage,
+ provider_status) VALUES(222,'nextpay','hosted-wallet-final',
+ 'hosted-wallet-authority',100000,'toman',100000,'review','verification_uncertain')");
+$walletBefore=(int)$db->query('SELECT wallet FROM users WHERE userid=1001')->fetch_row()[0];
+if (!achbotClaimAndCreditWallet($db,222,1001,100000))
+ throw new RuntimeException('verified_wallet_claim_not_atomic');
+achbotFinishHostedServiceReview($db,222,'nextpay','delivered');
+$walletAttempt=$db->query('SELECT stage,provider_status FROM payment_attempts
+ WHERE pay_row_id=222')->fetch_assoc();
+if ($walletAttempt['stage']!=='done' || $walletAttempt['provider_status']!=='delivered')
+ throw new RuntimeException('wallet_verified_after_uncertain_remained_review');
+achbotFinishHostedServiceReview($db,222,'nextpay','delivered');
+if (achbotClaimAndCreditWallet($db,222,1001,100000) ||
+ (int)$db->query('SELECT wallet FROM users WHERE userid=1001')->fetch_row()[0]
+ !==$walletBefore+100000)
+ throw new RuntimeException('wallet_hosted_verified_double_credit');
 echo json_encode(['original_gateway_review_stage_source'=>true,
+ 'hosted_wallet_finalized_once_after_uncertain'=>true,
  'no_merchant_or_customer_network'=>true,
  'real_hosted_original_claim_after_uncertain'=>true,
  'operator_dispatch_journal_required'=>true,

@@ -958,9 +958,33 @@ function achbotFinishHostedServiceReview(mysqli $db, int $payId,
         $changed=$stmt->affected_rows;
         $stmt->close();
         if ($changed===1) return;
+        if ($changed===0 && $outcome==='delivered') {
+            // Hosted wallets use the original atomic pay+credit claim, not
+            // the service-review stage. When a previously uncertain VERIFY
+            // later succeeds, close only the same exact paid 003 invoice.
+            $wallet=$db->prepare("UPDATE payment_attempts a
+                JOIN pays p ON p.id=a.pay_row_id
+                SET a.stage='done',a.provider_status='delivered'
+                WHERE a.pay_row_id=? AND a.provider=?
+                  AND a.stage IN ('pending','review')
+                  AND p.state='paid' AND p.type='INCREASE_WALLET'
+                  AND BINARY p.hash_id=BINARY a.order_hash
+                  AND BINARY p.payid=BINARY a.provider_reference
+                  AND p.price=a.local_amount_toman");
+            if ($wallet===false) throw new RuntimeException('hosted_wallet_finish_prepare_failed');
+            $wallet->bind_param('is',$payId,$provider);
+            if (!$wallet->execute()) {
+                $sqlErrorCode=(int)$wallet->errno;
+                throw new RuntimeException('hosted_wallet_finish_failed');
+            }
+            $walletClosed=$wallet->affected_rows;
+            $wallet->close();
+            if ($walletClosed===1) return;
+        }
         if ($changed===0) {
             // A pre-003 service payment can have no attempt at all, and
-            // hosted wallet top-ups do not use the service-review stage.
+            // hosted wallet top-ups with operator-owned claims use 019.
+            // Neither is an unmatched service-closure defect.
             // Neither is an unmatched service-closure defect. An existing
             // service attempt with the wrong stage still needs correlation.
             $stmt=$db->prepare("SELECT p.type,a.id AS attempt_id FROM pays p
