@@ -218,7 +218,8 @@ function achbotNpDecisionCommit(mysqli $db,int $actor,int $id,string $decision,
             }
         }
         $paymentId=(string)$a['payment_id'];
-        $status=$remote===null?'operator_attested':(string)$remote['payment_status'];
+        $status=$remote===null?($decision==='approve'?'operator_attested':'operator_rejected'):
+            (string)$remote['payment_status'];
         $digest=$c['digest'];$state=$decision==='approve'?'dispatching':'completed';
         $q=$db->prepare("INSERT INTO payment_review_decisions
             (pay_row_id,attempt_id,decision,actor_id,payment_id,provider_status,

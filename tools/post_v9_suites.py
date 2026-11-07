@@ -1239,10 +1239,12 @@ def run_wallet(tmp: str) -> tuple[dict, dict]:
         # Four retired #112 references and the additional old direct-delete
         # callback reference are proven absent by test_next_text_catalog.py.
         # Keep complete current-reference equality, never a lower bound.
-        'runtime_references':2453+14-1-6-4-1+8-3+28+12,
+        'runtime_references':2453+14-1-6-4-1+8-3+28+12-5,
         # +28 owner financial/service/delivery copy keys, +12 net
         # referenced tokens from R2 financial exception and R3 final
-        # receipt topics minus the five proven retired legacy labels.
+        # receipt topics. The five new retired second-confirmation labels
+        # are proven absent by test_next_text_catalog.py's exact inherited
+        # source check, not removed from the editable catalog.
         # The exact orphan/source inventory proof remains mandatory.
         'api_referenced_keys':68,
         'api_dynamic_source_paths':2,
@@ -2599,6 +2601,13 @@ def run_effects(tmp: str) -> tuple[dict, dict]:
         'r7_hosted_day_concurrent_order_drift_atomic_remote_absolute_no_replay',
     })
     mandatory_finance.add("fresh_addon_unknown_native_refused_before_claim_or_effect")
+    mandatory_finance.update({
+        'owner_direct_approve_route_no_merchant_get_one_wallet_credit',
+        'owner_approve_route_replay_denied_no_credit',
+        'owner_direct_reject_route_preserves_funds_and_reports',
+        'owner_decision_delegated_actor_cannot_settle',
+        'retired_two_stage_callback_fail_closed',
+    })
     cases_finance = {case.get("case") for case in finance.get("scenarios",[])
                      if case.get("pass_")}
     if not (finance.get("complete") and finance.get("cases")>=153 and
