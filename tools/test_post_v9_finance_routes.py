@@ -4652,8 +4652,14 @@ def main():
             sql(work,env,"SELECT state FROM pays WHERE hash_id='owner-route-reject'").strip()!='declined' or
             sql(work,env,'SELECT decision,provider_status,state FROM payment_review_decisions '
                 'WHERE attempt_id='+str(rejected_id)).strip()!='reject\toperator_rejected\tcompleted' or
-            not any(e['name']=='sendMessage' for e in rejected['events'])):
-            raise RuntimeError('Owner direct reject callback failed: '+repr(rejected)[:800])
+            not any(e['name']=='sendMessage' and len(e['args'])>=4 and
+                        e['args'][3]==1001 and 'توسط مدیر رد شد' in e['args'][0]
+                        for e in rejected['events']) or
+            not any(e['name']=='sendMessage' and
+                        'شماره پرونده' in str(e['args'][0])
+                        for e in rejected['events'])):
+            raise RuntimeError('Owner direct reject lacked customer and original business reports: '+
+                               repr(rejected)[:800])
         records.append(dict(case='owner_direct_reject_route_preserves_funds_and_reports',
                             pass_=True,external_requests=0))
         denied_id=prepare_owner_case('owner-route-denied','confirmed')

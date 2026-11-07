@@ -331,7 +331,10 @@ if ($npPreview || $npCommit) {
             $params=['id'=>$id,'user'=>(int)$pay['user_id'],
                 'amount'=>number_format((int)$pay['price']),'hash'=>(string)$pay['hash_id']];
             try {
-                sendMessage(achbotMessageHtml('finance_workbench.rejected_customer',$params),
+                // Customer copy has TWO slots. The separate business report
+                // has all four; passing extra slots was throwing before send.
+                $customer=['hash'=>$params['hash'],'amount'=>$params['amount']];
+                sendMessage(achbotMessageHtml('finance_workbench.rejected_customer',$customer),
                     null,'HTML',(int)$pay['user_id']);
             } catch(Throwable $error) {
                 error_log('achbot_np_reject_customer_notice_unknown pay_id='.(int)$pay['id']);
