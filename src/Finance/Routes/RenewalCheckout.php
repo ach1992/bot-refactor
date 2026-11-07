@@ -451,7 +451,11 @@ if(preg_match('/^approveRenewAcc(.*)/',$data,$match) && achbotAdminCanFor($conne
         if (!$claimed || $connection->commit()!==true)
             throw new RuntimeException('manual_renew_claim_unconfirmed');
         if (achbotSupportsPanel($serverType)) {
-            $response = achbotApplyServiceEdit($connection,$server_id, ['pay_id'=>(int)$payId, 'remark'=>$remark, 'days'=>$days, 'volume' => $volume]);
+            $change=['pay_id'=>(int)$payId,'remark'=>$remark,'days'=>$days,'volume'=>$volume];
+            // The per-account journal distinguishes human-approved work
+            // from bank-Cron or hosted settlement of the same payment.
+            if ($serverType==='pasarguard') $change['operation_key']='manual:pay:'.$payId;
+            $response = achbotApplyServiceEdit($connection,$server_id,$change);
         } else {
             throw new \UnexpectedValueException('unsupported_panel');
         } 

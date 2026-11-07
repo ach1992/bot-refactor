@@ -41,7 +41,7 @@ function achbotManualPgVerifiedEdit(mysqli $db,array $pay,string $kind,bool $loc
         $requested=[$kind==='day'?'plus_day':'plus_volume'=>$units];
     }
     $ctx=achbotPgOrderContext($db,$oid,$locked);
-    $o=$ctx['order'];$a=$ctx['account'];$key='pay:'.$id;
+    $o=$ctx['order'];$a=$ctx['account'];$key='manual:pay:'.$id;
     if ((int)$o['userid']!==(int)$pay['user_id'] ||
         (int)$o['server_id']!==(int)($pay['server_id']??0) ||
         (int)$o['fileid']!==(int)($pay['plan_id']??-1) ||
@@ -140,7 +140,8 @@ function achbotManualPgResumeEdit(mysqli $db,string $hash,int $actor,string $kin
         $id=(int)$pay['id'];$s->bind_param('i',$id);$s->execute();
         $locked=$s->get_result()->fetch_assoc();$s->close();
         if (!$locked ||
-            !achbotManualServiceApprovalAllowedLocked($db,$locked,$kind,true))
+            !achbotManualServiceApprovalAllowedLocked($db,$locked,
+                $kind==='renew'?'renewal':$kind,true))
             throw new RuntimeException('manual_edit_recovery_receipt_changed');
         $current=achbotManualPgVerifiedEdit($db,$locked,$kind,true);
         if (!hash_equals($before['fingerprint'],$current['fingerprint']))

@@ -270,8 +270,8 @@ def check(progress_path=None):
             no_local=q('SELECT COUNT(*) FROM increase_order')=='0'
             record('manual_'+kind+'_verified_native_crash_leaves_processing',
                 state(n)=='processing' and no_local and
-                journal['key']=='pay:'+str(n) and journal['result']=='verified' and
-                q('SELECT provider_mutation_key FROM service_effects WHERE order_id=91')=='pay:'+str(n),
+                journal['key']=='manual:pay:'+str(n) and journal['result']=='verified' and
+                q('SELECT provider_mutation_key FROM service_effects WHERE order_id=91')=='manual:pay:'+str(n),
                 dict(state=state(n),journal=journal,writes=writes,result=first))
             panel.mode='http_503';panel.trace=[]
             done=call(op='human',pay=n)
@@ -293,7 +293,7 @@ def check(progress_path=None):
                 dict(state=state(n),writes=panel.write_count,result=again))
         # A claimed edit without exactly this final verified journal
         # cannot be finished from an old keyboard or the quiet inbox.
-        for mutation in ['unverified','wrong_key','wrong_quote','wrong_identity']:
+        for mutation in ['unverified','wrong_key','wrong_quote','wrong_identity','nonmanual_claim']:
             n,key=reset('volume')
             assert issue(n,'bank_transfer')['result'] is True
             q(f'UPDATE payment_attempts SET created_at=NOW()-INTERVAL 601 SECOND WHERE pay_row_id={n}')
@@ -305,6 +305,11 @@ def check(progress_path=None):
                 q("UPDATE service_effects SET provider_mutation_key='pay:99999' WHERE order_id=91")
             elif mutation=='wrong_quote':
                 q(f'UPDATE pays SET volume=2 WHERE id={n}')
+            elif mutation=='nonmanual_claim':
+                other='pay:'+str(n)
+                q("UPDATE service_effects SET provider_mutation_key='"+other+
+                  "', provider_mutation_snapshot=JSON_SET(provider_mutation_snapshot,"+
+                  "'$.key','"+other+"','$.consumed_keys',JSON_ARRAY('"+other+"')) WHERE order_id=91")
             else:
                 q(f"UPDATE pays SET provider_snapshot=JSON_SET(provider_snapshot,'$.remote_user_id',99999) WHERE id={n}")
             writes=panel.write_count;panel.trace=[]

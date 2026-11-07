@@ -431,7 +431,9 @@ if (preg_match('/^approveIncreaseDay(.*)/', $data, $match) && achbotAdminCanFor(
         // The old markup keyboard is not part of this settlement path.
         // Its unset() used an uninitialized variable after a durable claim.
         if (achbotSupportsPanel($serverType)) {
-            $response = achbotApplyServiceEdit($connection,$server_id, ['pay_id'=>(int)$payId, 'remark' => $remark, 'plus_day' => $volume]);
+            $change=['pay_id'=>(int)$payId,'remark'=>$remark,'plus_day'=>$volume];
+            if ($serverType==='pasarguard') $change['operation_key']='manual:pay:'.$payId;
+            $response = achbotApplyServiceEdit($connection,$server_id,$change);
         } else {
             throw new \UnexpectedValueException('unsupported_panel');
         }
@@ -1266,7 +1268,9 @@ if (preg_match('/^approveIncreaseVolume(.*)/', $data, $match) && achbotAdminCanF
         // The old markup keyboard is not part of this settlement path.
         // Its unset() used an uninitialized variable after a durable claim.
         if (achbotSupportsPanel($serverType)) {
-            $response = achbotApplyServiceEdit($connection,$server_id, ['pay_id'=>(int)$payId, 'remark' => $remark, 'plus_volume' => $volume]);
+            $change=['pay_id'=>(int)$payId,'remark'=>$remark,'plus_volume'=>$volume];
+            if ($serverType==='pasarguard') $change['operation_key']='manual:pay:'.$payId;
+            $response = achbotApplyServiceEdit($connection,$server_id,$change);
         } else {
             throw new \UnexpectedValueException('unsupported_panel');
         }
