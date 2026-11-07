@@ -118,7 +118,7 @@ function achbotFollowupRecipientAllowed(mysqli $db,array $pay,array $r): bool {
 }
 function achbotFollowupValidateLocked(mysqli $db,array $pay,array $r): ?array {
     if ((int)$pay['id']!==(int)$r['pay_row_id'] ||
-        !in_array((string)$r['stage'],['approved_purchase','manual_reject'],true) ||
+        !in_array((string)$r['stage'],['approved_purchase','manual_reject','referral_reward'],true) ||
         !in_array((string)$r['kind'],['send','edit'],true) ||
         ($r['stage']==='manual_reject' && $pay['state']!=='declined') ||
         (in_array($r['stage'],['approved_purchase','referral_reward'],true) &&

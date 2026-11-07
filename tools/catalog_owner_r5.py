@@ -380,8 +380,8 @@ WORKBENCH_BLOCKS={
   'names':{'day_subject','volume_subject'}
  },
  'finance_exceptions':{
-  'sha':'65f9eb491c8e0d7a32916e8eda30764f75dadb4df4ebcc932fdc4898cc4d96d9',
-  'names':{'open','title','empty','case_label','case_title',
+  'sha':'2b1c0aa5e61b96967b184d5b7b2c090aa6704920c15999d4b72febccb7cbaf66',
+  'names':{'open','primary_rejected','primary_refund_unverified','title','empty','case_label','case_title',
    'readonly_warning','child_line','inspect','more','back','back_finance',
    'next','first','checked','unavailable'}
  },

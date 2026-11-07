@@ -428,9 +428,26 @@ def check():
             ev=call(key,telegram=mode)
             assert state(key)=='approved' and orders()==1 and capacity()==9
             assert len(named(ev,'CREATE'))==1
-            alert=' '.join(str(x['text']) for x in named(ev,'MESSAGE') if x['to']==9001)
-            assert ('ناقص' in alert or 'تأیید نشد' in alert or 'نامطمئن' in alert),(mode,ev)
-            assert not named(call(key),'CREATE')
+            # No new unjournaled warning is allowed: the real 018/020
+            # evidence records the exact failed/ambiguous first attempt.
+            if mode.startswith('qr_'):
+                status=sql(work,env,"SELECT d.state FROM payment_delivery_intents d "
+                    "JOIN pays p ON p.id=d.pay_row_id WHERE p.hash_id='"+key+"'").strip()
+            else:
+                role='operator' if mode=='operator_false' else 'receipt_primary'
+                status=sql(work,env,"SELECT f.state FROM payment_followup_intents f "
+                    "JOIN pays p ON p.id=f.pay_row_id WHERE p.hash_id='"+key+"' "
+                    "AND f.role='"+role+"' AND f.stage='approved_purchase'").strip()
+            assert status=='unknown',(mode,status,ev)
+            replay=call(key)
+            assert not named(replay,'CREATE') and not named(replay,'PHOTO'),(mode,replay)
+            if mode.startswith('qr_'):
+                assert sql(work,env,"SELECT d.state FROM payment_delivery_intents d "
+                    "JOIN pays p ON p.id=d.pay_row_id WHERE p.hash_id='"+key+"'").strip()=='unknown'
+            else:
+                assert sql(work,env,"SELECT f.state FROM payment_followup_intents f "
+                    "JOIN pays p ON p.id=f.pay_row_id WHERE p.hash_id='"+key+"' "
+                    "AND f.role='"+role+"' AND f.stage='approved_purchase'").strip()=='unknown'
             cases.append('r3_nonthrowing_or_thrown_telegram_'+mode+'_approved_no_replay')
 
         ev=call('no_payment',op='telegram_edit_boundary')
@@ -443,8 +460,10 @@ def check():
         assert len(named(ev,'PHOTO'))==3
         assert len([x for x in named(ev,'MESSAGE') if x['to']==1001
                     and 'fixture account' in x['text']])==3
-        assert any('purchase_account_qr #2' in x['text']
-                   for x in named(ev,'MESSAGE') if x['to']==9001)
+        assert sql(work,env,"SELECT GROUP_CONCAT(CONCAT(d.ordinal,':',d.state) "
+                   "ORDER BY d.ordinal) FROM payment_delivery_intents d JOIN pays p "
+                   "ON p.id=d.pay_row_id WHERE p.hash_id='three_accounts'").strip()==(
+                   '1:acknowledged,2:unknown,3:acknowledged')
         assert sql(work,env,'SELECT wallet FROM users WHERE userid=9002')=='51000'
         assert sql(work,env,"SELECT state,amount_toman FROM referral_awards "
                    "WHERE pay_row_id=(SELECT id FROM pays WHERE hash_id='three_accounts')")==(
@@ -482,8 +501,12 @@ def check():
             assert all('callback_data' in button for row in
                 json.loads(edits[0]['keys'])['inline_keyboard'] for button in row)
             assert sql(work,env,"SELECT admins_messages FROM pays WHERE hash_id='multiple_admin_edits'")==refs
-            assert any('purchase_additional_operator_buttons گفت‌وگو:9002' in x['text']
-                       for x in named(ev,'MESSAGE') if x['to']==9001)
+            assert sql(work,env,"SELECT f.state FROM payment_followup_intents f "
+                    "JOIN pays p ON p.id=f.pay_row_id WHERE p.hash_id='multiple_admin_edits' "
+                    "AND f.role='receipt_mirror' AND f.recipient='9002'").strip()=='unknown'
+            assert sql(work,env,"SELECT f.state FROM payment_followup_intents f "
+                    "JOIN pays p ON p.id=f.pay_row_id WHERE p.hash_id='multiple_admin_edits' "
+                    "AND f.role='receipt_mirror' AND f.recipient='9003'").strip()=='acknowledged'
             assert len(named(ev,'CREATE'))==1 and orders()==1 and capacity()==9
             assert sql(work,env,'SELECT wallet FROM users WHERE userid=1001')=='50000'
             assert sql(work,env,'SELECT wallet FROM users WHERE userid=9002')=='51000'
@@ -507,7 +530,8 @@ def check():
         key=seed(work,env,'reward_on_qr_failure',inviter=True)
         ev=call(key,telegram='qr_false')
         assert state(key)=='approved' and sql(work,env,'SELECT wallet FROM users WHERE userid=9002')=='51000'
-        assert any('purchase_account_qr' in x['text'] for x in named(ev,'MESSAGE') if x['to']==9001)
+        assert sql(work,env,"SELECT d.state FROM payment_delivery_intents d "
+            "JOIN pays p ON p.id=d.pay_row_id WHERE p.hash_id='reward_on_qr_failure'").strip()=='unknown'
         assert not named(call(key),'CREATE')
         cases.append('r4_referral_decision_not_skipped_when_QR_photo_fails')
 
@@ -517,8 +541,8 @@ def check():
             ev=call(key,telegram=mode)
             assert state(key)=='approved' and len(named(ev,'CREATE'))==1
             assert len(named(ev,'PHOTO'))==1
-            assert any('purchase_account_qr #1' in x['text']
-                       for x in named(ev,'MESSAGE') if x['to']==9001),(mode,ev)
+            assert sql(work,env,"SELECT d.state FROM payment_delivery_intents d "
+                "JOIN pays p ON p.id=d.pay_row_id WHERE p.hash_id='real_"+mode+"'").strip()=='unknown',(mode,ev)
             assert not named(call(key),'CREATE')
             cases.append('r3_real_qr_helper_photo_ok_account_text_'+mode+'_reported')
 
@@ -587,8 +611,12 @@ def check():
         assert state(key)=='approved' and len(named(ev,'CREATE'))==1,ev
         assert sql(work,env,'SELECT wallet FROM users WHERE userid=9002')=='50000'
         assert sql(work,env,"SELECT state FROM referral_awards "
-            f"WHERE pay_row_id=(SELECT id FROM pays WHERE hash_id='{key}')")==(
-            'NEEDS_REVIEW')
+            f"WHERE pay_row_id=(SELECT id FROM pays WHERE hash_id='{key}')").strip()==(
+            'NOT_ATTEMPTED')
+        assert not named(call(key),'CREATE')
+        assert sql(work,env,'SELECT wallet FROM users WHERE userid=9002').strip()=='51000'
+        assert sql(work,env,"SELECT state FROM referral_awards "
+            f"WHERE pay_row_id=(SELECT id FROM pays WHERE hash_id='{key}')").strip()=='CONFIRMED'
         assert not any('پاداش معرفی شما' in x['text'] for x in named(ev,'MESSAGE'))
         assert not named(call(key),'CREATE')
         cases.append('r4_unconfirmed_sql_credit_returns_false_without_notice')
@@ -607,7 +635,7 @@ def check():
             'DROP TABLE payment_delivery_attempts; DROP TABLE payment_delivery_intents; '
             'DROP TABLE payment_transactions; DROP TABLE payment_attempts')
         tables=set(sql(work,env,'SHOW TABLES').splitlines())
-        assert len(tables)==25 and 'service_effects' in tables and 'referral_awards' in tables
+        assert len(tables)==26 and 'payment_followup_intents' in tables and 'service_effects' in tables and 'referral_awards' in tables
         assert 'payment_attempts' not in tables and 'payment_transactions' not in tables
         ev=call(key)
         assert state(key)=='have_sent' and not named(ev,'CREATE') and capacity()==10,(ev,state(key))
@@ -710,6 +738,7 @@ def check():
         # Explicit disposable rollback of NEW 008/007 tables before asserting
         # ORIGINAL frozen 23-table compatibility (never operator-installed).
         without_payment_schemas()
+        sql(work,env,'DROP TABLE payment_followup_intents')
         sql(work,env,'DROP TABLE referral_awards')
         sql(work,env,'DROP TABLE service_effects')
         sql(work,env,'ALTER TABLE server_info DROP COLUMN panel_group_id')

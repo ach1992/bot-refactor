@@ -287,39 +287,43 @@ def main():
   r=call('create');yes('error' not in r,'paid_create_committed_native_identity')
   effect=r['out'][3];yes(server.user['group_ids']==[2,5],'create_uses_quoted_groups_after_plan_changed')
   expire=r['out'][0]['expire']
-  # Model lost local verification of a genuinely source-created account in
-  # this disposable DB, without reissuing an external POST.
-  sql("UPDATE service_effects SET state='dispatching',provider_state='dispatching',"
-      "provider_remote_user_id=NULL,provider_remote_created_at=NULL,"
-      "provider_verified_at=NULL WHERE id="+str(effect))
-  before=sql("SELECT state,provider_state,IFNULL(provider_remote_user_id,0) FROM service_effects WHERE id="+str(effect))
-  for mode in ['resume_404','resume_wrong_note','resume_wrong_quota',
-               'resume_wrong_expiry','resume_wrong_groups','resume_wrong_id']:
-   server.mode=mode;server.trace=[]
-   held=call('resume')
-   yes('error' in held and sql("SELECT state,provider_state,IFNULL(provider_remote_user_id,0) FROM service_effects WHERE id="+str(effect))==before,
-       'paid_pg_resume_'+mode+'_denied_without_local_transition',held)
-   yes(sum(method=='POST' for method,path,_ in server.trace)==0 and
-       any(path=='/api/user/by-username/fixture_user' for method,path,_ in server.trace),
-       'paid_pg_resume_'+mode+'_bounded_username_get_only')
-  server.mode='ok';server.trace=[]
-  recovered=call('resume')
-  yes('error' not in recovered and recovered['out'][3]==effect and
-      recovered['out'][0]['verified'] is True,
-      'paid_pg_resume_missing_remote_id_attaches_original_account',recovered)
-  yes(sql("SELECT state,provider_state,provider_remote_user_id FROM service_effects WHERE id="+str(effect))=='verified\tverified\t17' and
-      sum(method=='POST' for method,path,_ in server.trace)==0,
-      'paid_pg_resume_verified_locally_without_native_create')
-  server.trace=[]
-  repeated=call('resume')
-  yes('error' not in repeated and repeated['out'][3]==effect and
-      sum(method=='POST' for method,path,_ in server.trace)==0,
-      'paid_pg_resume_known_id_readback_never_posts',repeated)
-  server.mode='foreign_id';server.trace=[]
-  wrong=call('resume')
-  yes('error' in wrong and sum(method=='POST' for method,path,_ in server.trace)==0,
-      'paid_pg_resume_persisted_remote_id_mismatch_denied')
-  server.mode='ok'
+  if shared_native_storage:
+    # Model lost local verification of a genuinely source-created account in
+    # this disposable DB, without reissuing an external POST.
+    sql("UPDATE service_effects SET state='dispatching',provider_state='dispatching',"
+        "provider_remote_user_id=NULL,provider_remote_created_at=NULL,"
+        "provider_verified_at=NULL WHERE id="+str(effect))
+    before=sql("SELECT state,provider_state,IFNULL(provider_remote_user_id,0) FROM service_effects WHERE id="+str(effect))
+    for mode in ['resume_404','resume_timeout','resume_wrong_note',
+                 'resume_wrong_quota','resume_wrong_expiry',
+                 'resume_wrong_groups','resume_wrong_id']:
+     server.mode=mode;server.trace=[]
+     held=call('resume')
+     yes('error' in held and sql("SELECT state,provider_state,IFNULL(provider_remote_user_id,0) FROM service_effects WHERE id="+str(effect))==before,
+         'paid_pg_resume_'+mode+'_denied_without_local_transition',held)
+     yes(sum(method=='POST' for method,path,_ in server.trace)==0 and
+         any(path=='/api/user/by-username/fixture_user' for method,path,_ in server.trace),
+         'paid_pg_resume_'+mode+'_bounded_username_get_only')
+    server.mode='ok';server.trace=[]
+    recovered=call('resume')
+    yes('error' not in recovered and recovered['out'][3]==effect and
+        recovered['out'][0]['verified'] is True,
+        'paid_pg_resume_missing_remote_id_attaches_original_account',recovered)
+    verified_row=sql("SELECT state,provider_state,provider_remote_user_id FROM service_effects WHERE id="+str(effect))
+    yes(verified_row.strip()=='verified\tverified\t17' and
+        sum(method=='POST' for method,path,_ in server.trace)==0,
+        'paid_pg_resume_verified_locally_without_native_create',
+        (verified_row,server.trace,recovered))
+    server.trace=[]
+    repeated=call('resume')
+    yes('error' not in repeated and repeated['out'][3]==effect and
+        sum(method=='POST' for method,path,_ in server.trace)==0,
+        'paid_pg_resume_known_id_readback_never_posts',repeated)
+    server.mode='foreign_id';server.trace=[]
+    wrong=call('resume')
+    yes('error' in wrong and sum(method=='POST' for method,path,_ in server.trace)==0,
+        'paid_pg_resume_persisted_remote_id_mismatch_denied')
+    server.mode='ok'
   sql("INSERT INTO orders_list(id,userid,token,transid,fileid,server_id,inbound_id,remark,uuid,protocol,expire_date,link,amount,status,date) VALUES(91,1001,'','',7,2,0,'fixture_user','native-placeholder','vless',"+str(expire)+",'[]',100,1,'fixture')")
   r=call('link',effect=effect);yes(r['out']['id']==17 and r['out']['provider']=='pasarguard','verified_account_links_order_by_native_id')
   sql("INSERT INTO users(userid,name,username,refcode,wallet,date,isAdmin,first_start,is_agent) VALUES(1011,'Foreign','foreign','0',50000,'1700000000',0,'sent',0),(1012,'Agent','agent','0',50000,'1700000000',0,'sent',1),(1013,'CurrentAdmin','currentadmin','0',50000,'1700000000',1,'sent',0),(1014,'RevokedAdmin','revokedadmin','0',50000,'1700000000',0,'sent',0)")

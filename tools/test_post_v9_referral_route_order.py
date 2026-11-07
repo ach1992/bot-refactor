@@ -113,7 +113,8 @@ def main():
             assert actual==expected,(key,actual,expected,events)
             assert [e['name'] for e in events].count('remote_create')==1,(key,events)
             repeated=manual.run_route(work,env,route_driver,data=kw['data'],actor=9001,
-                route=kw['route'])
+                route=kw['route'],
+                expected_warning='achbot_manual_purchase_resume_pending' if route=='standard' else None)
             assert not [e for e in repeated if e['name']=='remote_create'],(key,repeated)
             assert query(work,env,f"SELECT COUNT(*) FROM referral_awards WHERE pay_row_id={pid}")=='1'
             assert int(query(work,env,'SELECT wallet FROM users WHERE userid=9002'))==expected
@@ -135,7 +136,8 @@ def main():
             check(route,'ref'+route+'message',{'message_transport':'postreferral'},warning)
             cases.append('real_'+route+'_receipt_customer_message_throw_award_confirmed_no_replay')
 
-            warning=('achbot_manual_standard_buttons_update_failed'
+            warning=(['achbot_followup_telegram_uncertain',
+                      'achbot_manual_purchase_report_unconfirmed']
                      if route=='standard' else
                      'achbot_custom_receipt_postcommit_notice_review')
             check(route,'ref'+route+'buttons',{'message_edit_transport':'throw'},warning)

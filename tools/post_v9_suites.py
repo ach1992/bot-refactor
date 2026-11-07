@@ -826,9 +826,14 @@ def run_services(tmp: str) -> tuple[dict, dict]:
             and edits.get('native_before_expire_negative_controls') is True):
         raise RuntimeError('Provider-neutral service edit native assurance incomplete')
     purchase_path=Path(tmp)/"marzban-purchase.json"
-    subprocess.run(["python3",str(ROOT/"tools/test_post_v9_purchases.py"),
-                    "--run-disposable","--report",str(purchase_path)],
-                   cwd=ROOT,check=True,timeout=300,capture_output=True)
+    try:
+        subprocess.run(["python3",str(ROOT/"tools/test_post_v9_purchases.py"),
+                        "--run-disposable","--report",str(purchase_path)],
+                       cwd=ROOT,check=True,timeout=300,capture_output=True)
+    except subprocess.CalledProcessError as exc:
+        detail=((exc.stderr or b'')+b'\n'+(exc.stdout or b''))[-6000:]
+        raise RuntimeError('Required source-real purchase parity: '+
+            detail.decode(errors='replace')) from exc
     purchases=json.loads(purchase_path.read_text())
     # Seven scenarios retain exact financial/provider parity; one has the explicit R5 denial notice.
     # The owner-requested actor draft replaces the old global scratch row;
@@ -1382,17 +1387,34 @@ def run_presentation(tmp: str) -> tuple[dict, dict]:
     native_renewal_complete=all(isinstance(proof,dict) and all(
         proof.get(key)==value for key,value in native_renewal_common.items())
         for proof in native_renewal_proofs)
-    if not (provider_integration.get("complete") is True and provider_integration.get("cases",0)>=283
+    # R5: the exact real PHP cURL by-username readback must reject every
+    # negative identity/entitlement/network case without native POST. An
+    # historical baseline intentionally lacks these newer source fields.
+    pg_recovery_modes=['resume_404','resume_timeout','resume_wrong_note',
+                       'resume_wrong_quota','resume_wrong_expiry',
+                       'resume_wrong_groups','resume_wrong_id']
+    required_pg={
+        *(f'paid_pg_resume_{mode}_denied_without_local_transition'
+          for mode in pg_recovery_modes),
+        *(f'paid_pg_resume_{mode}_bounded_username_get_only'
+          for mode in pg_recovery_modes),
+        'paid_pg_resume_missing_remote_id_attaches_original_account',
+        'paid_pg_resume_verified_locally_without_native_create',
+        'paid_pg_resume_known_id_readback_never_posts',
+        'paid_pg_resume_persisted_remote_id_mismatch_denied',
+    }
+    if not (provider_integration.get("complete") is True and provider_integration.get("cases",0)>=301
+            and required_pg.issubset(provider_integration.get('checks',[]))
             and provider_integration.get("actual_php_curl") is True
             and provider_integration.get("owned_socket_mariadb") is True
             and provider_integration.get("real_provider_tested") is False
-            and provider_integration.get("lifecycle_cases")==243
+            and provider_integration.get("lifecycle_cases")==261
             and provider_integration.get("admin_read_authorization_cases")==40
             and provider_integration.get("forbidden_order_queries")==0
             and provider_integration.get("forbidden_provider_requests")==0
             and provider_integration.get("baseline_red") is True
             and provider_integration.get("baseline_red_source")=="fb138eacdc5817922cc1e1c9c200323d24c79838"
-            and provider_integration.get("original_provider_integration_cases")==220
+            and provider_integration.get("original_provider_integration_cases")==238
             and native_renewal_complete
             and [proof.get('cases') for proof in native_renewal_proofs]==[43,20,63]
             and native_renewal_proofs[0].get('loopback_native_pasar_guard') is True
@@ -2405,6 +2427,8 @@ def run_effects(tmp: str) -> tuple[dict, dict]:
         "owner_reject_closes_unfulfilled_order",
         "owner_reject_no_wallet_credit",
         "owner_rejection_preserves_financial_evidence",
+        "owner_finished_primary_can_reject_business_without_fake_refund",
+        "finished_primary_rejection_does_not_forge_provider_refund",
         "unfunded_invoice_not_accidentally_decidable",
         "owner_approve_refunded_only_funds_fails_closed",
         "owner_multi_child_decides_original_order_once",
@@ -2427,6 +2451,8 @@ def run_effects(tmp: str) -> tuple[dict, dict]:
             and decision.get("signed_ipn_postpaid_primary_preserved") is True
             and decision.get("signed_ipn_out_of_order_secondary_preserved") is True
             and decision.get("additional_funds_paid_and_inflight_visible") is True
+            and decision.get("rejected_funded_primary_visible_without_reopening") is True
+            and decision.get("real_refund_evidence_closes_rejected_primary_exception") is True
             and decision.get("internal_payment_page_suppressed") is True
             and decision.get("inbox_only_unfinalized_with_funds_or_receipt") is True
             and decision.get("api_module_loaded_on_first_entry") is True
@@ -3724,6 +3750,7 @@ def run_funding(tmp: str) -> tuple[dict, dict]:
         "real_wallet_route_photo_replay_denied_gift_card",
         "real_wallet_route_photo_replay_denied_manual_usdt",
         "manual_direct_reject_one_click_no_wallet_native_or_duplicate_reports",
+        "manual_reject_customer_unknown_other_recipients_acked_no_unwarned_replay",
         "manual_standard_paid_order_delivery_sealed_and_ack_once",
         "manual_standard_telegram_unknown_reapproval_never_resends_unwarned",
         "manual_wallet_nonadmin_callback_denied_bank_transfer",

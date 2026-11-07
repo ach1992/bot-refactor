@@ -942,6 +942,36 @@ def check():
                        for e in repeated),repeated
         cases.append('manual_direct_reject_one_click_no_wallet_native_or_duplicate_reports')
 
+        # R4 lost Telegram ACK: business rejection commits once with its
+        # own independent 020 customer/operator/receipt journal. The staff
+        # report must NOT claim that the customer was notified successfully.
+        standard_pay('standardrejectnoticeunknown',method='gift_card')
+        before_wallet=query(work,env,'SELECT userid,wallet FROM users ORDER BY userid')
+        attempts=run_route(work,env,route_driver,
+                           data='declineAction_standardrejectnoticeunknown',
+                           actor=9001,route='manual_admin',
+                           message_transport='throw_once',
+                           expected_warning='achbot_followup_telegram_uncertain')
+        assert query(work,env,"SELECT state FROM pays "
+                     "WHERE hash_id='standardrejectnoticeunknown'")=='declined'
+        assert query(work,env,'SELECT userid,wallet FROM users ORDER BY userid')==before_wallet
+        assert not any(e['name'] in ('remote_create','remote_edit','qr_send') for e in attempts)
+        observed=query(work,env,"SELECT GROUP_CONCAT(CONCAT(f.role,':',f.state) "
+            "ORDER BY f.role) FROM payment_followup_intents f JOIN pays p "
+            "ON p.id=f.pay_row_id WHERE p.hash_id='standardrejectnoticeunknown'")
+        assert observed=='customer:unknown,operator:acknowledged,receipt_primary:acknowledged',observed
+        report=[str(e['args'][0]) for e in attempts if e['name']=='sendMessage' and
+                e['args'][-1]==9001]
+        assert len(report)==1 and 'رد توسط مدیر' in report[0] and 'ارسال شد' not in report[0],report
+        replay=run_route(work,env,route_driver,
+                         data='declineAction_standardrejectnoticeunknown',
+                         actor=9001,route='manual_admin')
+        assert not any(e['name'] in ('sendMessage','editKeys','remote_create') for e in replay),replay
+        assert query(work,env,"SELECT MAX(attempt_count) FROM payment_followup_intents f "
+               "JOIN pays p ON p.id=f.pay_row_id "
+               "WHERE p.hash_id='standardrejectnoticeunknown'")=='1'
+        cases.append('manual_reject_customer_unknown_other_recipients_acked_no_unwarned_replay')
+
         standard_pay('standardwrongstage',method='gift_card')
         query(work,env,"UPDATE payment_attempts SET stage='pending' "
               "WHERE order_hash='standardwrongstage'")
@@ -1061,12 +1091,16 @@ def check():
         assert query(work,env,"SELECT state FROM pays WHERE hash_id='standardpostcommitnotify'")=='approved'
         admin_notices=[str(e['args'][0]) for e in notice if e['name']=='sendMessage'
                        and e['args'][-1]==9001]
-        assert any(('سفارش ثبت شده' in m or 'سفارش/سرویس ثبت شده' in m) and 'اطلاع‌رسانی' in m for m in admin_notices),repr(notice)
+        assert any('اشتراک' in m and 'شناسه پرداخت' in m for m in admin_notices),repr(notice)
+        assert query(work,env,"SELECT f.state FROM payment_followup_intents f JOIN pays p "
+            "ON p.id=f.pay_row_id WHERE p.hash_id='standardpostcommitnotify' "
+            "AND f.stage='approved_purchase' AND f.role='operator'")=='acknowledged'
         assert not any('نتیجهٔ تکمیل سفارش هنوز قطعی نیست' in m for m in admin_notices)
         assert query(work,env,"SELECT d.state FROM payment_delivery_intents d JOIN pays p "
             "ON p.id=d.pay_row_id WHERE p.hash_id='standardpostcommitnotify'")=='unknown'
         replay=run_route(work,env,route_driver,data='acceptstandardpostcommitnotify',
-                         actor=9001,route='standard_approval')
+                         actor=9001,route='standard_approval',
+                         expected_warning='achbot_manual_purchase_resume_pending')
         assert [e['name'] for e in replay].count('remote_create')==0,replay
         assert [e['name'] for e in replay].count('qr_send')==0,replay
         assert query(work,env,"SELECT d.state FROM payment_delivery_intents d JOIN pays p "
@@ -1075,7 +1109,8 @@ def check():
             "payment_delivery_intents d ON d.id=a.intent_id JOIN pays p ON p.id=d.pay_row_id "
             "WHERE p.hash_id='standardpostcommitnotify'")=='1'
         again=run_route(work,env,route_driver,data='acceptstandardpostcommitnotify',
-                        actor=9001,route='standard_approval')
+                        actor=9001,route='standard_approval',
+                        expected_warning='achbot_manual_purchase_resume_pending')
         assert not any(e['name'] in ('remote_create','qr_send') for e in again),again
         cases.append('manual_standard_telegram_unknown_reapproval_never_resends_unwarned')
         cases.append('real_standard_postcommit_telegram_failure_approved_no_replay_truthful_review')
@@ -1083,7 +1118,8 @@ def check():
         edit_events=run_route(work,env,route_driver,
                               data='acceptstandardeditprivacy',actor=9001,
                               route='standard_approval',message_edit_transport='throw',
-                              expected_warning='achbot_manual_standard_buttons_update_failed')
+                              expected_warning=['achbot_followup_telegram_uncertain',
+                                                'achbot_manual_purchase_report_unconfirmed'])
         assert [e['name'] for e in edit_events].count('remote_create')==1,repr(edit_events)
         assert query(work,env,"SELECT state FROM pays WHERE hash_id='standardeditprivacy'")=='approved'
         admin_text=' '.join(str(e['args'][0]) for e in edit_events

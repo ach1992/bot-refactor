@@ -1050,9 +1050,15 @@ if (preg_match('/^declineActionReason_(.+)_(\d+)$/', (string)($userInfo['step']?
     $adminAfterSendKeys=json_encode(['inline_keyboard'=>[[['text'=>
         \achbotMessage('manual_payment.manual_receipts.button.7918a2f411'),
         'callback_data'=>'banUserDirect_'.$uid]]]],JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
-    $adminReport=\achbotMessage('manual_payment.manual_receipts.message.667f0ab959',
-        ['uid'=>$uid,'price'=>$price,'remark'=>$remark,'hash_id'=>$hash_id]);
-    $opened=false;$payId=(int)$payInfo['id'];
+    // This message is staged BEFORE Telegram is called. Never assert that
+    // the customer's rejection notice was delivered: its ACK may be unknown.
+    $payId=(int)$payInfo['id'];
+    $adminReport=\achbotMessageHtml('finance_workbench.rejected_report',[
+        'id'=>$payId,'user'=>(int)$uid,
+        'amount'=>number_format((int)$payInfo['price']),'hash'=>$hash_id])."\n".
+        \achbotMessageHtml('manual_payment.manual_receipts.message.61d75413a2',
+            ['remark'=>$remark]);
+    $opened=false;
     try {
         if (!$connection->begin_transaction()) throw new RuntimeException('manual_reject_begin');
         $opened=true;

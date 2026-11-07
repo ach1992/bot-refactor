@@ -295,6 +295,7 @@ def main():
   assert selected['api_module_loaded_on_first_entry']
   assert selected['additional_funds_paid_and_inflight_visible']
   assert selected['rejected_funded_primary_visible_without_reopening']
+  assert selected['real_refund_evidence_closes_rejected_primary_exception']
   out.update(selected)
  if args.report:args.report.write_text(json.dumps(out,ensure_ascii=False,indent=2)+'\n')
  print(json.dumps({k:v for k,v in out.items() if k!='checks'}))
@@ -397,6 +398,21 @@ foreach([210,215] as $id) {
     || $case['attempt']['provider_status']!=='operator_rejected')
   throw new RuntimeException('rejected_primary_not_owner_inspectable_'.$id);
 }
+// Simulate a later authenticated refund as a saved UNIQUE merchant-child update.
+// Once that primary is genuinely refunded, the exception must close without
+// touching the rejected business order or unspent wallet balance.
+$refundedAttempt=(int)$db->query('SELECT id FROM payment_attempts WHERE pay_row_id=210')
+  ->fetch_row()[0];
+$db->query("UPDATE payment_transactions SET observed_status='refunded'
+ WHERE attempt_id=".$refundedAttempt." AND BINARY payment_id='owner-reject-child'");
+$afterRefundIds=array_map(static fn($r)=>(int)$r['id'],
+  achbotRecoveryAdditionalFundsCases($db));
+$originalAfterRefund=$db->query('SELECT state FROM pays WHERE id=210')->fetch_row()[0];
+if(achbotRecoveryAdditionalFundsCase($db,210)!==null ||
+    in_array(210,$afterRefundIds,true) || $originalAfterRefund!=='declined')
+ throw new RuntimeException('refund_evidence_must_close_original_financial_exception');
+if(achbotRecoveryAdditionalFundsCase($db,215)===null)
+ throw new RuntimeException('other_funded_exception_must_remain_open');
 if(in_array(202,$extraIds,true))
  throw new RuntimeException('unfunded_not_exception');
 $paidExtra=achbotRecoveryAdditionalFundsCase($db,201);
@@ -406,6 +422,7 @@ echo json_encode(['inbox_only_unfinalized_with_funds_or_receipt'=>true,
   'api_module_loaded_on_first_entry'=>function_exists('achbotApiPaymentReady'),
   'additional_funds_paid_and_inflight_visible'=>true,
   'rejected_funded_primary_visible_without_reopening'=>true,
+  'real_refund_evidence_closes_rejected_primary_exception'=>true,
   'examined'=>count($ids)],JSON_THROW_ON_ERROR);
 '''
 if __name__=='__main__':main()
