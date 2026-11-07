@@ -1501,9 +1501,9 @@ def main():
         records.append(dict(case='nowpayments_technical_creation_no_finance_alert',
                             pass_=True,real_provider_requests=0))
 
-        # A durable, positively evidenced provider claim with uncertain
-        # delivery is actionable. Verify send failure/retry and no daily
-        # reminder; the native fixture never issues a real payment.
+        # The finance workbench is quiet even for authenticated incoming
+        # funds. Repeated Cron clicks must not send, claim an alert lease,
+        # or change payment evidence. The owner opens the inbox explicitly.
         seed_np_attempt(work,env,'np-funded-review','np-funded-review-invoice',
                         'np-funded-review-primary')
         sql(work,env,"UPDATE payment_attempts SET stage='review',"
@@ -1513,28 +1513,19 @@ def main():
             "(attempt_id,provider,payment_id,observed_status) "
             "SELECT id,'nowpayments',payment_id,'finished' "
             "FROM payment_attempts WHERE order_hash='np-funded-review'")
-        failed_notice=run_php(work,env,stage,dict(route='alert',get={},
-            alert_send_failure=True))
-        if (failed_notice['events'][-1]['result']['failed']!=1 or
-            sql(work,env,"SELECT review_notified_at IS NULL "
-                "FROM payment_attempts WHERE order_hash='np-funded-review'").strip()!='1'):
-            raise RuntimeError('Failed funded-case notification was not retryable')
-        notices=run_php(work,env,stage,dict(route='alert',get={}))
-        sent=[e for e in notices['events'] if e['name']=='sendMessage']
-        if notices['events'][-1]['result']['notified']!=1 or len(sent)!=1 or (
-            'پرداخت نیازمند بررسی مالی' not in sent[0]['args'][0] or
-            '🎫' not in sent[0]['args'][0] or
-            'مبلغ سفارش' not in sent[0]['args'][0] or
-            'npReviewCase_' not in sent[0]['args'][1] or
-            sent[0]['args'][2]!='HTML' or sent[0]['args'][3]!=9001):
-            raise RuntimeError('Actionable Persian review alert was incomplete')
-        again=run_php(work,env,stage,dict(route='alert',get={}))
-        if again['events'][-1]['result']['notified'] or any(
-            e['name']=='sendMessage' for e in again['events']):
-            raise RuntimeError('Operator received a duplicate notice for unchanged evidence')
-        records.append(dict(case='nowpayments_evidenced_review_persian_inbox_retry_once',
+        before=snapshot(work,env)
+        for _ in range(3):
+            quiet=run_php(work,env,stage,dict(route='alert',get={},
+                alert_send_failure=True,alert_nested_worker=True))
+            if quiet['events'][-1]['result']!={
+                'examined':0,'notified':0,'failed':0} or any(
+                    e['name'] in ('sendMessage','nested_alert','inflight_ipn')
+                    for e in quiet['events']):
+                raise RuntimeError('Quiet payment review emitted unsolicited notification')
+            verify_unchanged(work,env,before,'quiet_review_no_lease_or_financial_mutation')
+        records.append(dict(case='nowpayments_funded_review_quiet_no_push',
                             pass_=True,real_provider_requests=0))
-        records.append(dict(case='nowpayments_review_without_24_hour_resends',
+        records.append(dict(case='nowpayments_repeat_review_quiet',
                             pass_=True,real_provider_requests=0))
         admin_case=int(sql(work,env,
             "SELECT id FROM payment_attempts "
@@ -2034,14 +2025,14 @@ def main():
         state=sql(work,env,"SELECT stage,provider_status "
             "FROM payment_attempts WHERE order_hash='np-idle-child'").strip()
         if funding['events'][-1]['code']!=200 or (
-            state!='review\tadditional_payment'):
+            state!='done\tfinished'):
             raise RuntimeError('Authenticated later in-flight funds were ignored')
         stale=run_php(work,env,stage,signed_ipn(idle_payload))
         if (stale['events'][-1]['code']!=200 or
             sql(work,env,"SELECT observed_status FROM payment_transactions "
                 "WHERE payment_id='np-idle-secondary'").strip()!='confirming'):
             raise RuntimeError('Out-of-order unpaid IPN erased in-flight evidence')
-        records.append(dict(case='nowpayments_same_child_funds_reopen_once_no_downgrade',
+        records.append(dict(case='nowpayments_secondary_funds_keep_terminal_claim_no_downgrade',
                             pass_=True,real_provider_requests=0))
         finish=run_php(work,env,stage,signed_ipn(dict(
             idle_payload,payment_status='finished')))
@@ -2052,15 +2043,13 @@ def main():
                 !=wallet_snapshot):
             raise RuntimeError('Secondary completed payment bypassed review/credited')
         actionable=run_php(work,env,stage,dict(route='alert',get={}))
-        sent=[e for e in actionable['events'] if e['name']=='sendMessage']
-        if actionable['events'][-1]['result']['notified']!=1 or len(sent)!=1 or (
-            'پرداخت نیازمند بررسی مالی' not in sent[0]['args'][0]):
-            raise RuntimeError('Funded secondary did not produce one admin inbox notice')
         after_alert=run_php(work,env,stage,dict(route='alert',get={}))
-        if after_alert['events'][-1]['result']['notified'] or any(
-            e['name']=='sendMessage' for e in after_alert['events']):
-            raise RuntimeError('Unchanged funded secondary caused daily re-alert')
-        records.append(dict(case='nowpayments_funded_secondary_one_actionable_alert',
+        if (actionable['events'][-1]['result']['notified']!=0 or
+            after_alert['events'][-1]['result']['notified']!=0 or
+            any(e['name']=='sendMessage' for e in
+                actionable['events']+after_alert['events'])):
+            raise RuntimeError('Finalized purchase emitted a review alert')
+        records.append(dict(case='nowpayments_secondary_paid_child_quiet',
                             pass_=True,real_provider_requests=0))
 
         # Repeated deposits create independent provider child IDs. Capture
@@ -2078,11 +2067,43 @@ def main():
         if children!=['np-extra-deposit','np-fourth-child','np-third-child']:
             raise RuntimeError('Distinct signed child identifiers were lost: '+repr(children))
         if sql(work,env,"SELECT stage,provider_status FROM payment_attempts "
-               "WHERE order_hash='wallet-init'").strip()!='review\tadditional_payment':
-            raise RuntimeError('Additional deposit not surfaced for operator review')
+               "WHERE order_hash='wallet-init'").strip()!='done\tfinished':
+            raise RuntimeError('Additional deposit overwrote terminal payment claim')
         if int(sql(work,env,'SELECT wallet FROM users WHERE userid=1001').strip())!=paid_wallet:
             raise RuntimeError('Additional child payment duplicated credit')
         records.append(dict(case='nowpayments_multiple_children_durably_stored',
+                            pass_=True,external_requests=0))
+        # Authenticated extra funds must be visible in the quiet owner-only
+        # FINANCIAL exception inbox regardless of the paid primary state.
+        finance_page=run_php(work,env,stage,dict(
+            route='admin_review',get={},actor=9001,chat_id=9001,
+            callback_data='financeExtraInbox'))
+        extra_edits=[e for e in finance_page['events'] if e['name']=='editText']
+        wallet_pay=int(sql(work,env,"SELECT id FROM pays WHERE hash_id='wallet-init'").strip())
+        if (len(extra_edits)!=1 or
+            'financeExtraCase_'+str(wallet_pay) not in str(extra_edits[0]['args']) or
+            any(e['name']=='sendMessage' for e in finance_page['events']) or
+            finance_page['network_calls']):
+            raise RuntimeError('Quiet owner financial exception list missed paid extra child')
+        detail=run_php(work,env,stage,dict(
+            route='admin_review',get={},actor=9001,chat_id=9001,
+            callback_data='financeExtraCase_'+str(wallet_pay)))
+        extra_details=[e for e in detail['events'] if e['name']=='editText']
+        if (len(extra_details)!=1 or 'np-extra-deposit' not in str(extra_details[0]['args']) or
+            'npReviewCase_' not in str(extra_details[0]['args']) or
+            'npDecisionP' in str(extra_details[0]['args']) or
+            detail['network_calls']):
+            raise RuntimeError('Owner additional-funds case lacks quiet child reconciliation')
+        records.append(dict(case='nowpayments_paid_extra_funds_visible_in_separate_owner_queue',
+                            pass_=True,external_requests=0))
+        # The quiet view does not grant any finance permission to staff
+        # delegates or cause Telegram messages.
+        denied=run_php(work,env,stage,dict(
+            route='admin_review',get={},actor=9002,chat_id=9002,
+            callback_data='financeExtraCase_'+str(wallet_pay)))
+        if any(e['name']=='editText' for e in denied['events']):
+            raise RuntimeError('Delegated actor saw owner-only additional funds')
+        records.append(dict(case='nowpayments_extra_funds_owner_only',
                             pass_=True,external_requests=0))
         # Owner provider inquiry is ONE chosen child per callback; never
         # block Telegram processing on 5 sequential 7-second API calls.
@@ -2105,9 +2126,9 @@ def main():
         records.append(dict(case='nowpayments_owner_inquiry_one_child_per_callback',
                             pass_=True,real_provider_requests=0))
 
-        # A stored extra-child replay must neither duplicate credit nor
-        # re-arm an operator alert that was already delivered. A genuinely
-        # NEW later child may re-arm the alert to surface new financial data.
+        # New provider child evidence is durable but no longer manages
+        # obsolete alert-notice marker/lease fields, and never generates a
+        # Telegram notification. Historical receipt metadata is untouched.
         sql(work,env,"UPDATE payment_attempts SET "
                      "review_notified_at='2026-10-16 01:00:00' "
                      "WHERE order_hash='wallet-init'")
@@ -2116,9 +2137,6 @@ def main():
                 payment_id=replay_id,payment_status='finished')))
             if again['events'][-1].get('code')!=200:
                 raise RuntimeError('Replay of persisted child rejected: '+replay_id)
-        if sql(work,env,"SELECT IFNULL(DATE_FORMAT(review_notified_at,'%Y-%m-%d %H:%i:%s'),'') "
-           "FROM payment_attempts WHERE order_hash='wallet-init'").strip()!='2026-10-16 01:00:00':
-            raise RuntimeError('Extra-child replay cleared already-sent operator notification')
         if int(sql(work,env,'SELECT wallet FROM users WHERE userid=1001').strip())!=paid_wallet:
             raise RuntimeError('Replay after extra deposits changed balance')
         records.append(dict(case='nowpayments_extra_child_replay_is_idempotent',
@@ -2130,46 +2148,23 @@ def main():
            "JOIN payment_attempts a ON a.id=e.attempt_id "
            "WHERE a.order_hash='wallet-init'").strip()!='5':
             raise RuntimeError('New signed child was not durably retained')
-        if sql(work,env,"SELECT review_notified_at IS NULL FROM payment_attempts "
-           "WHERE order_hash='wallet-init'").strip()!='1':
-            raise RuntimeError('New child receipt did not re-arm operator alert')
-        records.append(dict(case='nowpayments_new_child_rearms_operator_notice',
+        if sql(work,env,"SELECT IFNULL(DATE_FORMAT(review_notified_at,'%Y-%m-%d %H:%i:%s'),'') "
+           "FROM payment_attempts WHERE order_hash='wallet-init'").strip()!='2026-10-16 01:00:00':
+            raise RuntimeError('Retired notice marker was unexpectedly rewritten')
+        records.append(dict(case='nowpayments_new_child_no_review_notice_marker',
                             pass_=True,external_requests=0))
-        # Deterministically interleave a NEW signed child after an alert
-        # worker has read N children but BEFORE it acknowledges Telegram.
-        # Also simulate overlapping Cron: the nested worker must not send
-        # the same leased snapshot.
-        sql(work,env,"UPDATE payment_attempts SET "
-            "review_notified_at=NULL,review_notice_claim_token=NULL,"
-            "review_notice_claimed_at=NULL WHERE order_hash='wallet-init'")
-        overlapping=run_php(work,env,stage,dict(route='alert',get={},
-            alert_nested_worker=True,alert_inject_child='np-child-mid-notice',
-            alert_inject_order='wallet-init',alert_inject_invoice='owned-new-invoice'))
-        notice=[e for e in overlapping['events'] if e['name']=='alert_result']
-        nested=[e for e in overlapping['events'] if e['name']=='nested_alert']
-        injected=[e for e in overlapping['events'] if e['name']=='inflight_ipn']
-        sends=[e for e in overlapping['events'] if e['name']=='sendMessage']
-        if len(notice)!=1 or notice[0]['result']['notified']!=0 or len(nested)!=1 or (
-           nested[0]['result']['notified']!=0) or len(injected)!=1 or (
-           injected[0]['code']!=200) or len(sends)!=1:
-            raise RuntimeError('Concurrent alert/child interleaving was not guarded: '+
-                               repr(overlapping['events'])[:800])
-        if sql(work,env,"SELECT review_notified_at IS NULL, "
-           "review_notice_claim_token IS NULL FROM payment_attempts "
-           "WHERE order_hash='wallet-init'").strip()!='1\t1':
-            raise RuntimeError('Old alert hid a new signed child')
-        latest=run_php(work,env,stage,dict(route='alert',get={}))
-        sent=[e for e in latest['events'] if e['name']=='sendMessage']
-        if latest['events'][-1]['result']['notified']!=1 or len(sent)!=1 or not (
-            'شناسه‌های گزارش‌شده:</b> 6' in sent[0]['args'][0]):
-            raise RuntimeError('New child was not notified after stale acknowledgment')
-        quiet=run_php(work,env,stage,dict(route='alert',get={}))
-        if quiet['events'][-1]['result']['notified'] or any(
-           e['name']=='sendMessage' for e in quiet['events']):
-            raise RuntimeError('Successful new child notice was not throttled')
-        records.append(dict(case='nowpayments_concurrent_alert_child_highwater_cas',
+        before=snapshot(work,env)
+        for _ in range(2):
+            quiet=run_php(work,env,stage,dict(route='alert',get={},
+                alert_nested_worker=True,alert_inject_child='np-child-mid-notice'))
+            if quiet['events'][-1]['result']['notified']!=0 or any(
+                e['name'] in ('sendMessage','nested_alert','inflight_ipn')
+                for e in quiet['events']):
+                raise RuntimeError('Retired notification executed nested send')
+            verify_unchanged(work,env,before,'quiet_review_under_repeated_cron')
+        records.append(dict(case='nowpayments_quiet_review_no_nested_send',
                             pass_=True,external_requests=0))
-        records.append(dict(case='nowpayments_concurrent_alert_worker_lease_exclusive',
+        records.append(dict(case='nowpayments_quiet_review_no_alert_lease',
                             pass_=True,external_requests=0))
         # A finished provider payment whose deposit is smaller than the
         # promised quote is quarantined, never auto-reconciled as successful.
@@ -4563,9 +4558,9 @@ def main():
         if (healthy['error'] or healthy['fatal'] or
             'backup_reached' not in names or
             'automatic_receipts_reached' not in names or
-            'sendMessage' not in names):
-            raise RuntimeError('Owned healthy Cron did not finish local workers: '+repr(healthy))
-        records.append(dict(case='cron_complete_003_schema_alert_and_receipts_run',
+            'sendMessage' in names):
+            raise RuntimeError('Owned healthy Cron emitted payment review alert or skipped workers: '+repr(healthy))
+        records.append(dict(case='cron_complete_003_schema_quiet_and_receipts_run',
                             pass_=True,real_php=True))
 
         # Actual bot-owned URL, not a raw provider URL: a stale or

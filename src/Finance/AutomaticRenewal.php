@@ -398,64 +398,9 @@ function handleAutoRenewCallback($data): void {
     } catch (Throwable $ignored) {}
 }
 
-/** Alert authorized operator about durable reservation/reconciliation holds. */
+/** Review holds are inspected in the recovery UI, never pushed to staff. */
 function achbotAutoRenewAlertReview(mysqli $db, $adminChatId): void {
-    if (!is_scalar($adminChatId) ||
-        !preg_match('/^[1-9][0-9]*$/D',(string)$adminChatId) ||
-        achbotAutoRenewSchemaState($db)!=='ready') return;
-    try {
-        $rows=$db->query("SELECT id,order_id,stage,reason_code
-            FROM automatic_renewal_attempts
-            WHERE stage IN ('reserved','remote_started','review')
-              AND created_at < NOW() - INTERVAL 5 MINUTE
-              AND (review_notified_at IS NULL OR
-                   review_notified_at < NOW() - INTERVAL 24 HOUR)
-            ORDER BY updated_at ASC LIMIT 3");
-        while ($rows && ($item=$rows->fetch_assoc())) {
-            $id=(int)$item['id'];
-            $token=bin2hex(random_bytes(16));
-            $stmt=$db->prepare("UPDATE automatic_renewal_attempts
-                SET review_claim_token=?,review_claimed_at=NOW()
-                WHERE id=? AND stage=? AND
-                  (review_claim_token IS NULL OR
-                   review_claimed_at < NOW() - INTERVAL 5 MINUTE)
-                  AND (review_notified_at IS NULL OR
-                       review_notified_at < NOW() - INTERVAL 24 HOUR)");
-            $stmt->bind_param('sis',$token,$id,$item['stage']);
-            $stmt->execute();
-            $claimed=$stmt->affected_rows===1;
-            $stmt->close();
-            if (!$claimed) continue;
-            $reason=preg_replace('/[^a-z_]/','',(string)($item['reason_code']??'none'));
-            $msg=\achbotMessage('renewal.automatic_renewal.auto_renew_alert_review.a_ch_bot_automatic_renewal_requires_operator.bcbe5e6050').
-                \achbotMessage('renewal.automatic_renewal.auto_renew_alert_review.attempt.b7a6466686').$id.\achbotMessage('renewal.automatic_renewal.auto_renew_alert_review.order.88c68296e4').(int)$item['order_id'].
-                \achbotMessage('renewal.automatic_renewal.auto_renew_alert_review.stage.9b4e401970').$item['stage'].\achbotMessage('renewal.automatic_renewal.auto_renew_alert_review.reason.ff1f74d040').$reason.
-                \achbotMessage('renewal.automatic_renewal.auto_renew_alert_review.do_not_replay_remote_renewal.962be3fe3d');
-            $sent=false;
-            try {
-                $notices=achbotNotifyAdmins('sendMessage', ['text'=>$msg], ['primary'=>$adminChatId,'report_channel'=>null]);
-                $sent=achbotAdminFanoutAcknowledged($notices);
-            } catch (Throwable $ignored) {}
-            if ($sent) {
-                $stmt=$db->prepare("UPDATE automatic_renewal_attempts
-                    SET review_notified_at=NOW(),review_claim_token=NULL,
-                        review_claimed_at=NULL
-                    WHERE id=? AND stage=? AND review_claim_token=?");
-                $stmt->bind_param('iss',$id,$item['stage'],$token);
-                $stmt->execute();
-                $stmt->close();
-            } else {
-                $stmt=$db->prepare("UPDATE automatic_renewal_attempts
-                    SET review_claim_token=NULL,review_claimed_at=NULL
-                    WHERE id=? AND review_claim_token=?");
-                $stmt->bind_param('is',$id,$token);
-                $stmt->execute();
-                $stmt->close();
-            }
-        }
-    } catch (Throwable $ignored) {
-        error_log('achbot_auto_renew_review_alert_deferred');
-    }
+    // Intentionally empty: no review-notification Telegram side effects.
 }
 
 /**
@@ -507,9 +452,8 @@ try {
     // disabled auto-renewal default must remain inert and non-noisy.
     $state=achbotAutoRenewSchemaState($connection);
     if ($state==='ready') {
-        // Alert even with renewal OFF: an earlier reserved effect still needs
-        // reconciliation after an incident shutdown.
-        achbotAutoRenewAlertReview($connection,$admin??null);
+        // Stalled effects remain durably inspectable, without unsolicited
+        // payment-review notices or an automatic remote replay.
         achbotAutoRenewSweep($connection,$botState??[]);
     } elseif ($state==='incompatible') {
         // Pending holds still need a protected diagnostic even when an

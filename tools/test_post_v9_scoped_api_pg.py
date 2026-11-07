@@ -311,6 +311,7 @@ def sandbox(*, imported_empty=False):
             "011_provider_identity.sql",
             "012_shared_provider_storage.sql",
             "014_api_payment_evidence.sql",
+            "018_payment_delivery_intents.sql",
             "015_scoped_addons.sql",
         ):
             sql((ROOT / "migrations/post-v9" / name).read_text())

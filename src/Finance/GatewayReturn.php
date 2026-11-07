@@ -30,26 +30,19 @@ function achbotNpChildEvidenceRank($status): int {
     };
 }
 
-/** Shared operator-attention predicate for Cron notification and bot inbox. */
+/** Only unfinalized invoices with incoming-funds evidence belong to finance review.
+ * An already paid order with uncertain CREATE/Telegram delivery belongs in
+ * service recovery, never back in payment review.
+ * Callers join pays as p, payment_attempts as a.
+ */
 function achbotNpOperatorWorkSql(): string {
-    $incoming="'confirming','confirmed','sending','partially_paid','finished','refunded'";
-    $extra="EXISTS (SELECT 1 FROM payment_transactions c
-        WHERE c.attempt_id=a.id AND c.provider='nowpayments'
-          AND c.payment_id<>COALESCE(a.payment_id,'')
-          AND c.observed_status IN ($incoming))";
-    $any="EXISTS (SELECT 1 FROM payment_transactions c
-        WHERE c.attempt_id=a.id AND c.provider='nowpayments'
-          AND c.observed_status IN ($incoming))";
-    // Some trusted provider verification/remote failures predate the child
-    // transaction table; preserve them as possible funds requiring attention.
-    $effect="a.provider_status IN ('fulfillment_unconfirmed',
-        'fulfillment_failed','fulfillment_needs_review','amount_mismatch',
-        'local_amount_changed','identity_mismatch','partially_paid','refunded')";
-    return "a.provider='nowpayments' AND a.stage='review' AND (
-        (a.provider_status IN ('additional_payment','multiple_payments')
-         AND $extra)
-        OR (COALESCE(a.provider_status,'') NOT IN ('additional_payment','multiple_payments')
-            AND ($any OR $effect)))";
+    $funded="'confirmed','sending','partially_paid','finished','refunded'";
+    return "a.provider='nowpayments'
+      AND p.state IN ('pending','send','have_sent')
+      AND a.stage='review'
+      AND EXISTS (SELECT 1 FROM payment_transactions c
+          WHERE c.attempt_id=a.id AND c.provider='nowpayments'
+            AND c.observed_status IN ($funded))";
 }
 
 /**
@@ -145,20 +138,19 @@ function achbotNpIngestIpn(mysqli $connection, string $ipnSecret,
             $stmt->close();
         } elseif ((string)$attempt['payment_id']!==$paymentId &&
                   $improved && achbotNpChildEvidenceRank($status)>0) {
-            // Only NEW incoming-funds evidence (not creation of another
-            // unpaid child ID) opens or refreshes review. Existing 003
-            // children remain durable for future authenticated updates.
+            // Every authenticated child stays durable in payment_transactions.
+            // An unsettled *unclaimed* primary is held for finance review;
+            // never overwrite a done/fulfilling/owner-journal state or hijack
+            // doAction() between its operator COMMIT and fulfillment.
+            // A separate owner-only finance-exception queue reads secondary
+            // child evidence independently of the primary pay/attempt state.
             $stmt=$connection->prepare("UPDATE payment_attempts SET
-                provider_status=CASE WHEN stage='done' OR
-                    provider_status='additional_payment' THEN 'additional_payment'
-                    ELSE 'multiple_payments' END,
-                stage='review',review_notified_at=NULL,
-                review_notice_claim_token=NULL,review_notice_claimed_at=NULL WHERE id=?");
+                provider_status='multiple_payments',stage='review'
+                WHERE id=? AND stage IN ('pending','checking')
+                  AND EXISTS (SELECT 1 FROM pays p
+                    WHERE p.id=payment_attempts.pay_row_id
+                      AND p.state IN ('pending','send'))");
             $stmt->bind_param('i',$attempt['id']);
-            // An additional funded child is already a durable INSERT or a
-            // positive-state UPDATE under the locked attempt. Repeating the
-            // same review label may affect zero rows; that is not a failed
-            // transaction and must not cause a provider IPN 409.
             if (!$stmt->execute())
                 throw new RuntimeException('np_additional_evidence_unconfirmed');
             $stmt->close();
@@ -172,158 +164,13 @@ function achbotNpIngestIpn(mysqli $connection, string $ipnSecret,
 }
 
 /**
- * Send a single Persian finance notice per meaningful evidence revision,
- * never daily reminders or notices for invoice/child-ID creation alone.
- * The operator can open the verified read-only case in the bot, never
- * credit/refund/provision merely by interacting with a notification.
+ * Retired review push API. Keep a no-op for old Cron integrations while
+ * operator-initiated inbox and normal business outcome reports remain active.
+ * Never claim or acknowledge review notices for any payment state.
  */
 function achbotNpAlertOperator(mysqli $connection, $adminChatId,
                                int $maxItems=3): array {
-    $counts=['examined'=>0,'notified'=>0,'failed'=>0];
-    if (!is_scalar($adminChatId) ||
-        !preg_match('/^[1-9][0-9]*$/D',(string)$adminChatId)) return $counts;
-    $maxItems=max(1,min(5,$maxItems));
-    $scope=achbotNpOperatorWorkSql();
-    $sql="SELECT a.id,a.order_hash,a.provider_reference,a.payment_id,a.stage,
-                 a.provider_status,a.quote_amount,a.quote_currency,
-                 a.created_at,a.updated_at,p.user_id,p.type,p.plan_id,p.price,
-                 p.state AS local_pay_state,
-                 (SELECT u.name FROM users u WHERE u.userid=p.user_id
-                  ORDER BY u.id DESC LIMIT 1) AS user_name,
-                 (SELECT u.username FROM users u WHERE u.userid=p.user_id
-                  ORDER BY u.id DESC LIMIT 1) AS user_handle,
-                 (SELECT sp.title FROM server_plans sp WHERE sp.id=p.plan_id
-                  LIMIT 1) AS plan_title,
-                 (SELECT COUNT(*) FROM payment_transactions c
-                  WHERE c.attempt_id=a.id AND c.provider='nowpayments') AS child_count,
-                 (SELECT COUNT(*) FROM payment_transactions c
-                  WHERE c.attempt_id=a.id AND c.provider='nowpayments'
-                    AND c.payment_id<>COALESCE(a.payment_id,'')
-                    AND c.observed_status IN
-                       ('confirming','confirmed','sending','partially_paid',
-                        'finished','refunded')) AS extra_evidence_count
-          FROM payment_attempts a JOIN pays p ON p.id=a.pay_row_id
-          WHERE $scope
-            AND a.review_notified_at IS NULL
-            AND (a.review_notice_claim_token IS NULL OR
-                 a.review_notice_claimed_at < NOW()-INTERVAL 5 MINUTE)
-          ORDER BY a.updated_at ASC LIMIT ".$maxItems;
-    try {
-        $rows=$connection->query($sql);
-    } catch (Throwable $error) {
-        // Preserve other Cron work on a degraded financial-reporting read.
-        error_log('achbot_payment_operator_alert_query_unavailable');
-        $counts['failed']++;
-        return $counts;
-    }
-    while ($rows && ($a=$rows->fetch_assoc())) {
-        $counts['examined']++;
-        $id=(int)$a['id'];
-        $stage=(string)$a['stage'];
-        $childCount=(int)$a['child_count'];
-        // CAS lease before calling Telegram: overlapping Cron processes
-        // cannot both send the same snapshot of operator evidence.
-        $token=bin2hex(random_bytes(16));
-        $claimed=false;
-        try {
-            $stmt=$connection->prepare("UPDATE payment_attempts
-                SET review_notice_claim_token=?,review_notice_claimed_at=NOW()
-                WHERE id=? AND stage=?
-                  AND (review_notice_claim_token IS NULL OR
-                       review_notice_claimed_at < NOW()-INTERVAL 5 MINUTE)
-                  AND review_notified_at IS NULL
-                  AND (SELECT COUNT(*) FROM payment_transactions c
-                       WHERE c.attempt_id=payment_attempts.id AND c.provider='nowpayments')=?");
-            $stmt->bind_param('sisi',$token,$id,$stage,$childCount);
-            $stmt->execute();
-            $claimed=$stmt->affected_rows===1;
-            $stmt->close();
-        } catch (Throwable $error) {
-            $counts['failed']++;
-        }
-        if (!$claimed) continue;
-
-        $safe=static fn($value): string => htmlspecialchars(
-            substr((string)($value ?? ''),0,128),
-            ENT_QUOTES|ENT_SUBSTITUTE,'UTF-8');
-        $subject=match ((string)$a['type']) {
-            'INCREASE_WALLET' => \achbotMessage('gateway.gateway_initiation.mark_checkout_uncertain.type.991ae08d64'),
-            'BUY_SUB' => \achbotMessage('gateway.gateway_initiation.mark_checkout_uncertain.type.e6343571a4'),
-            'RENEW_ACCOUNT' => \achbotMessage('gateway.gateway_initiation.mark_checkout_uncertain.type.df1c62b99e'),
-            default => \achbotMessage('gateway.gateway_return.np_alert_operator.text.df83eb82dd'),
-        };
-        $reason=match ((string)$a['provider_status']) {
-            'additional_payment','multiple_payments' =>
-                \achbotMessage('gateway.gateway_return.np_alert_operator.text.cc4537b3c7'),
-            'partially_paid' => \achbotMessage('gateway.gateway_return.np_alert_operator.text.ec28d8fba7'),
-            'fulfillment_failed','fulfillment_unconfirmed',
-            'fulfillment_needs_review' => \achbotMessage('gateway.gateway_return.np_alert_operator.text.84a1e5c442'),
-            default => \achbotMessage('gateway.gateway_return.np_alert_operator.text.2d09871a1b'),
-        };
-        $username=trim((string)($a['user_handle']??''),'@');
-        $identity=$safe($a['user_name'] ?: \achbotMessage('gateway.gateway_return.np_alert_operator.text.f07a81a062')).
-            ($username!=='' ? ' (@'.$safe($username).')':'');
-        $quote=$safe($a['quote_amount']).' '.$safe($a['quote_currency']);
-        $message=\achbotMessage('gateway.gateway_return.np_alert_operator.message.00aa2f3ddb').
-                 \achbotMessage('gateway.gateway_return.np_alert_operator.text.a5c241ee14').$identity."\n".
-                 \achbotMessage('gateway.gateway_return.np_alert_operator.text.51de176d3c').(int)$a['user_id']."</code>\n".
-                 \achbotMessage('gateway.gateway_return.np_alert_operator.text.8029d14042').$subject.
-                 (!empty($a['plan_title']) ? \achbotMessage('gateway.gateway_return.np_alert_operator.text.3ecde6c863').$safe($a['plan_title']):'')."\n".
-                 \achbotMessage('gateway.gateway_return.np_alert_operator.text.ff1755f857').number_format((int)$a['price']).\achbotMessage('gateway.gateway_return.np_alert_operator.text.81a62ff6c6').
-                 \achbotMessage('gateway.gateway_return.np_alert_operator.text.7d4d150298').$quote."\n".
-                 \achbotMessage('gateway.gateway_return.np_alert_operator.text.9d6887c013').
-                 \achbotMessage('gateway.gateway_return.np_alert_operator.text.0a771c866b').$safe($a['order_hash'])."</code>\n".
-                 \achbotMessage('gateway.gateway_return.np_alert_operator.text.9c71d4bcce').$safe($a['provider_reference'])."</code>\n".
-                 \achbotMessage('gateway.gateway_return.np_alert_operator.text.64ce2f53c9').$safe($a['payment_id'] ?: \achbotMessage('gateway.gateway_return.np_alert_operator.text.5749a86140'))."</code>\n".
-                 \achbotMessage('gateway.gateway_return.np_alert_operator.text.bc5958e0ae').$childCount.
-                 \achbotMessage('gateway.gateway_return.np_alert_operator.text.daf218b959').(int)$a['extra_evidence_count'].")\n".
-                 \achbotMessage('gateway.gateway_return.np_alert_operator.text.04d4b236f8').$reason."\n".
-                 \achbotMessage('gateway.gateway_return.np_alert_operator.text.283ba2c09b').$safe($a['updated_at'])."\n\n".
-                 \achbotMessage('gateway.gateway_return.np_alert_operator.text.515a991cf3').
-                 \achbotMessage('gateway.gateway_return.np_alert_operator.text.30a0d023b8');
-        $keyboard=json_encode(['inline_keyboard'=>[[
-            ['text'=>\achbotMessage('gateway.gateway_return.np_alert_operator.button.3506f17600'),
-             'callback_data'=>'npReviewCase_'.$id],
-        ]]],JSON_UNESCAPED_UNICODE);
-        try {
-            $notices=achbotNotifyAdmins('sendMessage', ['text'=>$message,'reply_markup'=>$keyboard,'parse_mode'=>'HTML'], ['primary'=>$adminChatId,'report_channel'=>null]);
-            if (!achbotAdminFanoutAcknowledged($notices)) {
-                $counts['failed']++;
-            } else {
-                // The old notification must NOT acknowledge a later child
-                // N+1 or any newly claimed generation during the send.
-                $stmt=$connection->prepare("UPDATE payment_attempts
-                    SET review_notified_at=NOW(),
-                        review_notice_claim_token=NULL,
-                        review_notice_claimed_at=NULL
-                    WHERE id=? AND stage=? AND review_notice_claim_token=?
-                      AND (SELECT COUNT(*) FROM payment_transactions c
-                           WHERE c.attempt_id=payment_attempts.id AND c.provider='nowpayments')=?");
-                $stmt->bind_param('issi',$id,$stage,$token,$childCount);
-                $stmt->execute();
-                $acknowledged=$stmt->affected_rows===1;
-                $stmt->close();
-                if ($acknowledged) $counts['notified']++;
-            }
-        } catch (Throwable $error) {
-            $counts['failed']++;
-        } finally {
-            // Release only our own claim, never a later new-child/worker
-            // claim. Failed sends stay retryable on the next Cron tick.
-            try {
-                $stmt=$connection->prepare("UPDATE payment_attempts
-                    SET review_notice_claim_token=NULL,
-                        review_notice_claimed_at=NULL
-                    WHERE id=? AND review_notice_claim_token=?");
-                $stmt->bind_param('is',$id,$token);
-                $stmt->execute();
-                $stmt->close();
-            } catch (Throwable $ignored) {
-                // A five-minute lease expires independently if DB is unwell.
-            }
-        }
-    }
-    return $counts;
+    return ['examined'=>0,'notified'=>0,'failed'=>0];
 }
 
 /**
@@ -356,6 +203,15 @@ function achbotNpReconcileBatch(mysqli $connection, array $paymentKeys,
         // provider statuses are assessed independently below.
         // A prior run may have exited inside the inherited doAction().
         // Never trigger remote provisioning again after an ambiguous result.
+        // An authorized operator may already own the exact provider
+        // settlement through the 019 decision journal. This stage is
+        // intentionally long-lived across local or remote effects. Never
+        // make it reviewable again from a concurrently running Cron tick,
+        // even if the 019 table is temporarily unavailable.
+        if ($attempt['stage']==='fulfilling' &&
+            (string)($attempt['provider_status']??'')==='operator_verified_finished') {
+            continue;
+        }
         if ($attempt['stage']==='fulfilling' ||
             !in_array($attempt['pay_state'],['pending','send'],true)) {
             $stmt=$connection->prepare("UPDATE payment_attempts
@@ -1900,6 +1756,10 @@ function doAction($payRowId, $gateType) {
  * Rendering a return page is never itself merchant settlement evidence.
  */
 function showForm($msg, $type = "", $state = false, $presentation = null) {
+    // A merchant browser return is a presentation context; Cron and the
+    // owner's private Telegram callback are not. Suppress BOTH body and
+    // payment-page HTTP headers at this boundary, not only output buffering.
+    if (defined('ACHBOT_NP_RECONCILE_ONLY')) return;
     require_once __DIR__ . '/PaymentPage.php';
     // $presentation is derived from the caller's already-trusted outcome.
     // The legacy $state and browser-facing message are not proof of delivery.

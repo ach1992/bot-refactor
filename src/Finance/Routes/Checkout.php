@@ -653,18 +653,13 @@ if (preg_match('/^accCustom(.+)$/D', $data, $match) && $text != $buttonValues['c
             error_log('achbot_custom_receipt_owner_notice_failed pay_id='.$payRowId);
         }
     }
+    require_once __DIR__.'/../ApiPaymentPresentation.php';
     // Presentation failures after committed financial/referral outcomes must
     // remain separate owner-visible delivery problems, never reopen CREATE.
     try {
     sendMessage(\achbotMessage('payment.checkout.message.5c1a932720'), getMainKeys());
 
-    $keys = json_encode([
-        'inline_keyboard' => [
-            [['text' => \achbotMessage('payment.checkout.button.139c829462', ['from_id' => $from_id]), 'callback_data' => "wizwizch"]],
-            [['text' => \achbotMessage('payment.checkout.remark.4348a3fd9b', ['remark' => $remark]),                'callback_data' => "noop"]],
-            [['text' => \achbotMessage('payment.checkout.hash_id.2899228604', ['hash_id' => $hash_id]),              'callback_data' => "noop_$hash_id"]],
-        ]
-    ], 488);
+    $keys=achbotManualFinalReceiptKeyboard($connection,$payRowId,$remark);
 
     editKeys($keys, $payInfo['message_id'], $payInfo['chat_id']);
 

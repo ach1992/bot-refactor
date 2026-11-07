@@ -421,12 +421,7 @@ if(preg_match('/^approveRenewAcc(.*)/',$data,$match) && achbotAdminCanFor($conne
         $deferredAdminKeys = [
             'chat_id'    => $payInfo['chat_id'],
             'message_id' => $payInfo['message_id'],
-            'keys'       => json_encode([
-                'inline_keyboard' => [
-                    [['text' => \achbotMessage('renewal.extensions.button.139c829462', ['from_id' => $from_id]), 'callback_data' => "wizwizch"]],
-                    [['text' => \achbotMessage('renewal.extensions.hash_id.2899228604', ['hash_id' => $hash_id]), 'callback_data' => "noop_$hash_id"]]
-                ]
-            ], 488),
+            'keys'       => null,
             'admins_messages' => $payInfo['admins_messages']
         ];
 
@@ -498,6 +493,9 @@ if(preg_match('/^approveRenewAcc(.*)/',$data,$match) && achbotAdminCanFor($conne
             throw new RuntimeException('manual_renew_finish_unconfirmed');
         $localCommitted=true;
 
+        require_once __DIR__.'/../ApiPaymentPresentation.php';
+        $deferredAdminKeys['keys']=achbotManualFinalReceiptKeyboard(
+            $connection,$payId,$remark);
         editKeys($deferredAdminKeys['keys'], $deferredAdminKeys['message_id'], $deferredAdminKeys['chat_id']); 
         // ویرایش پیام سایر ادمین‌ها
         $adminMessages = json_decode($deferredAdminKeys['admins_messages'], true); 

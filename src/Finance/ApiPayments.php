@@ -370,8 +370,16 @@ function achbotApiPaymentManualAddonAllowedLocked(mysqli $db,?array $pay,?array 
 /** Exclusive real local financial claim. No provider or Telegram HTTP inside. */
 function achbotApiPaymentSettle(mysqli $db,int $id,array $proof): string {
     require_once __DIR__.'/ServiceEffects.php';require_once __DIR__.'/BankPurchase.php';
+    require_once __DIR__.'/DeliveryLedger.php';
     $before=achbotApiPaymentRow($db,$id);if(!$before)return 'review';
-    if(achbotApiPaymentTerminal($before))return 'settled';
+    if (achbotApiPaymentTerminal($before)) {
+        // The original invoice is final: only CAS-protected PENDING deliveries
+        // may continue. Uncertain sends never auto-resend or replay money.
+        achbotDeliveryDispatchPending($db,$id);
+        achbotDeliverySyncAggregate($db,$id);
+        return 'settled';
+    }
+    if (!achbotDeliverySchemaReady($db)) return 'review';
     $attempt=achbotApiPaymentAttempt($db,$id);
     // Already verified native effects recover solely from their sealed result.
     $verified=$before['state']==='processing'&&(int)($before['approved_by']??-1)===0&&
@@ -398,6 +406,14 @@ function achbotApiPaymentSettle(mysqli $db,int $id,array $proof): string {
             if (!addToWallet($db,(int)$pay['user_id'],(int)$pay['price'])) throw new RuntimeException('api_wallet_credit_unconfirmed');
         } elseif (!$resuming && !in_array($type,['RENEW_ACCOUNT','RENEW_SCONFIG'],true) &&
             !preg_match('/^INCREASE_(DAY|VOLUME)_[1-9][0-9]*_[1-9][0-9]*$/D',$type)) throw new RuntimeException('api_subject_unsupported');
+        if (!$resuming && $type==='INCREASE_WALLET') {
+            // A credit without an atomic customer text-intent is forbidden.
+            $a=achbotApiPaymentAttempt($db,$id,true);
+            $text=achbotApiPaymentManualCustomerText($db,$pay);
+            if (!$a || $text===null) throw new RuntimeException('api_wallet_delivery_intent_missing');
+            achbotDeliveryInsertTextLocked($db,$pay,$a,$text,'HTML',0,0,
+                hash('sha256','wallet:'.(int)$a['id']));
+        }
         if (!$resuming) {
         $state=$type==='INCREASE_WALLET'?'approved':'processing';$before=(string)$pay['state'];
         $q=$db->prepare('UPDATE pays SET state=?,approved_by=0 WHERE id=? AND state=? AND (payid IS NULL OR payid=\'\')');
@@ -418,47 +434,18 @@ function achbotApiPaymentSettle(mysqli $db,int $id,array $proof): string {
             $delivery=achbotAutoBankProvisionBuySub($db,$pay,$GLOBALS['botState']??[],$GLOBALS['buttonValues']??[],[],false,(string)($GLOBALS['botUrl']??''),$proof);
             if (!$delivery['committed']) return 'review';
             achbotReferralAfterCompletedPurchase($db,(int)$pay['user_id'],$id,(int)($GLOBALS['admin']??0),$GLOBALS['botState']??[]);
-            $deliveryPackets=$delivery['deliveries'];
         } elseif($type!=='INCREASE_WALLET') {
             if (!achbotApiPaymentFulfillEdit($db,$pay,$proof)) return 'review';
         }
         $fresh=achbotApiPaymentRow($db,$id);if(!$fresh || !achbotApiPaymentTerminal($fresh))return 'review';
-        // Durable delivery fence precedes every fallible Telegram call.
-        // A lost response, process crash, or unconfirmed QR is never a reason
-        // to replay payment, capacity, CREATE or native account edits.
-        $claim=$db->prepare("UPDATE payment_attempts SET evidence_fulfillment_state='delivery_dispatching'
-            WHERE pay_row_id=? AND (evidence_fulfillment_state IS NULL OR
-              evidence_fulfillment_state IN ('reserved','verified'))");
-        $claim->bind_param('i',$id);
-        $claimed=$claim->execute() && $claim->affected_rows===1;$claim->close();
-        if(!$claimed)return 'review';
-        $deliveryAcknowledged=true;
-        if($type==='BUY_SUB') {
-            $deliveryAcknowledged=!empty($deliveryPackets);
-            foreach(($deliveryPackets??[]) as $index=>$packet) {
-                try {
-                    if(sendQrFromLink($packet['qr'],$packet['caption'],$packet['keys'],
-                        (string)($GLOBALS['botUrl']??''),(int)$packet['uid'])!==true) {
-                        $deliveryAcknowledged=false;
-                        error_log('achbot_api_paid_delivery_unconfirmed pay_id='.$id.' line='.($index+1));
-                    }
-                } catch(Throwable $error) {
-                    $deliveryAcknowledged=false;
-                    error_log('achbot_api_paid_delivery_exception pay_id='.$id.' line='.($index+1).
-                        ' class='.get_class($error));
-                }
-            }
-        } else {
-            // The funds/native edit have already committed. Customer copy is
-            // identical to the successful manual path for the same subject.
-            $deliveryAcknowledged=achbotApiPaymentDeliverManualCustomer($db,$fresh);
-        }
-        $deliveryState=$deliveryAcknowledged?'done':'delivery_unconfirmed';
-        $done=$db->prepare("UPDATE payment_attempts SET evidence_fulfillment_state=?
-            WHERE pay_row_id=? AND evidence_fulfillment_state='delivery_dispatching'");
-        $done->bind_param('si',$deliveryState,$id);
-        $marked=$done->execute() && $done->affected_rows===1;$done->close();
-        if(!$marked)return 'review';
+        // Every per-ordinal intent was written by the SAME terminal COMMIT.
+        // Only pending lines may be dispatched automatically. ACK/unknown is
+        // per line; a split-bulk failure cannot be erased by one global flag.
+        achbotDeliveryDispatchPending($db,$id);
+        $aggregate=achbotDeliveryAggregate($db,$id);
+        if (!$aggregate || (int)$aggregate['total']===0) return 'review';
+        $deliveryAcknowledged=(int)$aggregate['ack']===(int)$aggregate['total'];
+        achbotDeliverySyncAggregate($db,$id);
         achbotApiPaymentNotice($db,$fresh,$deliveryAcknowledged?'confirmed':'settled');
         return $deliveryAcknowledged?'confirmed':'settled';
     } catch(Throwable $e) {error_log('achbot_api_effect_review pay_id='.$id);$fresh=achbotApiPaymentRow($db,$id);if($fresh)achbotApiPaymentNotice($db,$fresh,'review');return 'review';}
@@ -506,7 +493,16 @@ function achbotApiPaymentFulfillEdit(mysqli $db,array $pay,array $proof): bool {
         if(!achbotApiPaymentStoreFulfillment($db,$id,$proof,'verified',$payload,'dispatched'))return false;
     } else return false;
     $result=(object)($payload['result']??[]);
-    return achbotAutoBankFinishEdit($db,$pay,$result,(string)$payload['kind'],(int)$payload['server'],(int)$payload['order'],(string)$payload['remark'],(int)$pay['price'],(int)$payload['units'],$payload['expiry']===null?null:(int)$payload['expiry']);
+    $a=achbotApiPaymentAttempt($db,$id);
+    $text=achbotApiPaymentManualCustomerText($db,$pay);
+    if (!$a || $a['evidence_fulfillment_state']!=='verified' ||
+        !is_string($a['evidence_fulfillment_payload']??null) ||
+        $text===null) return false;
+    $deliveryIntent=[
+        'text'=>$text,'mode'=>$type==='RENEW_SCONFIG'?'plain':'HTML',
+        'order'=>(int)$payload['order'],'server'=>(int)$payload['server'],
+        'source_digest'=>hash('sha256',(string)$a['evidence_fulfillment_payload'])];
+    return achbotAutoBankFinishEdit($db,$pay,$result,(string)$payload['kind'],(int)$payload['server'],(int)$payload['order'],(string)$payload['remark'],(int)$pay['price'],(int)$payload['units'],$payload['expiry']===null?null:(int)$payload['expiry'],$deliveryIntent);
 }
 
 /** No first-match wins. A same-amount local collision is left untouched. */

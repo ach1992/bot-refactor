@@ -16,6 +16,9 @@ require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
 require_once __DIR__.'/ServiceEffects.php';
 
 require_once __DIR__.'/PaymentLifecycle.php';
+// The inbox can be the first route loaded in a bot update; API proof
+// visibility must not depend on an earlier checkout request.
+require_once __DIR__.'/ApiPayments.php';
 
 /** Current unresolved CREATE evidence only; absence never condemns paid history. */
 function achbotRecoveryCreateAttentionSql(mysqli $db, string $p='p'): string {
@@ -44,42 +47,150 @@ function achbotRecoveryPendingCases(mysqli $db, int $before=0): array {
     return $rows;
 }
 
-/** Unified LOCAL attention inventory. No provider reconciliation or repair.
- * Supported shared-ledger methods/subjects only. Pure invoice creation,
- * terminal manual approvals and completed attempts are not financial alarms.
- * Missing newer tables narrows coverage, never fabricates historical effects.
+/** Financial review only: payment not yet finalized, with positive funds
+ * evidence or an original customer receipt awaiting human verification.
+ * A paid but undelivered account is NOT an unapproved payment.
  */
 function achbotRecoveryAttentionSql(mysqli $db): string {
     $ledger='0';
     if (achbotPayUxTable($db,'payment_attempts')) {
-        // Reuse NOWPayments' funds-evidence gate, including extra-child proof.
-        $np=function_exists('achbotNpOperatorWorkSql') && achbotPayUxTable($db,'payment_transactions')
-            ? achbotNpOperatorWorkSql() : '0';
-        $ledger="EXISTS (SELECT 1 FROM payment_attempts a WHERE a.pay_row_id=p.id AND (
-            ($np) OR (a.provider='nowpayments' AND a.stage IN ('checking','fulfilling')) OR (a.provider IN ('nextpay','zarinpal','bank_transfer','gift_card','manual_usdt','manual_trx')
-              AND a.stage IN ('review','checking','fulfilling')
-              AND p.state NOT IN ('approved','auto_cart_approved','paid_with_wallet','declined','expired_have_sent')
-              AND NOT (p.state='paid' AND a.stage='review' AND a.provider IN ('bank_transfer','gift_card','manual_usdt','manual_trx')
-                AND COALESCE(a.provider_status,'') NOT IN ('fulfillment_started','fulfillment_unconfirmed','fulfillment_failed','fulfillment_needs_review')))))";
+        $journal=achbotPayUxTable($db,'payment_review_decisions')
+            ? "OR (a.stage='fulfilling'
+                AND a.provider_status='operator_verified_finished'
+                AND EXISTS (SELECT 1 FROM payment_review_decisions d
+                    WHERE d.attempt_id=a.id
+                      AND d.state IN ('dispatching','unknown')))"
+            : '';
+        $np=achbotPayUxTable($db,'payment_transactions')
+            ? "a.provider='nowpayments'
+                AND ((a.stage='review'
+                    AND EXISTS (SELECT 1 FROM payment_transactions t
+                        WHERE t.attempt_id=a.id AND t.provider='nowpayments'
+                        AND t.observed_status IN
+                          ('confirmed','sending','partially_paid','finished','refunded')))
+                    $journal)"
+            : '0';
+        // Positive provider authorization for NextPay/Zarinpal can be
+        // staged before local settlement. Plain pending/failed browser
+        // redirects never qualify as proven incoming funds.
+        $hosted="a.provider IN ('nextpay','zarinpal')
+            AND a.stage='review'
+            AND a.provider_status='fulfillment_started'";
+        // A saved human receipt is a CLAIM of payment, not provider proof.
+        // A provider status alone is not authority to approve a hosted charge.
+        $ledger="EXISTS (SELECT 1 FROM payment_attempts a
+          WHERE a.pay_row_id=p.id AND (
+            ($np) OR ($hosted) OR (
+              a.provider IN ('bank_transfer','gift_card','manual_usdt','manual_trx')
+              AND a.stage='review' AND p.state='have_sent'
+              AND p.message_id>0 AND p.chat_id<>0
+            )
+          ))";
     }
-    // API evidence is separate from photo receipt stage: uncertainty must
-    // surface without removing the customer's still-valid manual fallback.
     $api='0';
-    if (function_exists('achbotApiPaymentReady') && achbotApiPaymentReady($db)) {
-        $api="EXISTS (SELECT 1 FROM payment_attempts a WHERE a.pay_row_id=p.id
-            AND a.evidence_profile IS NOT NULL AND
-            (a.evidence_state IN ('review','uncertain') OR p.state='processing' OR EXISTS
-             (SELECT 1 FROM payment_transactions t WHERE t.attempt_id=a.id
-              AND t.evidence_state IN ('review','uncertain'))))";
+    if (function_exists('achbotApiPaymentReady') &&
+        achbotApiPaymentReady($db)) {
+        $api="EXISTS (SELECT 1 FROM payment_attempts a
+          WHERE a.pay_row_id=p.id AND a.evidence_profile IS NOT NULL
+          AND (a.evidence_state='proven' OR EXISTS
+            (SELECT 1 FROM payment_transactions t
+              WHERE t.attempt_id=a.id AND t.evidence_state='proven')))";
     }
-    $create=achbotRecoveryCreateAttentionSql($db);
-    $renewal=achbotPayUxTable($db,'automatic_renewal_attempts')
-        ? "EXISTS (SELECT 1 FROM automatic_renewal_attempts r WHERE r.pay_row_id=p.id
+    return "(p.type IN ('BUY_SUB','RENEW_ACCOUNT','RENEW_SCONFIG','INCREASE_WALLET')
+      OR p.type LIKE 'INCREASE_DAY\_%' OR p.type LIKE 'INCREASE_VOLUME\_%')
+      AND p.state IN ('pending','send','have_sent')
+      AND (($ledger) OR ($api))";
+}
+
+/**
+ * Authenticated secondary merchant funds are an independent FINANCIAL
+ * exception, even when the original pay is already paid or an operator's
+ * once-only fulfillment is running. Never reopen the original pay here.
+ * No schema or alerts: payment_transactions is the authoritative child ledger.
+ */
+function achbotRecoveryAdditionalFundsSql(mysqli $db,string $p='p'): string {
+    if (!achbotPayUxTable($db,'payment_attempts') ||
+        !achbotPayUxTable($db,'payment_transactions')) return '0';
+    return "EXISTS (SELECT 1 FROM payment_attempts a
+        JOIN payment_transactions t ON t.attempt_id=a.id
+        WHERE a.pay_row_id=$p.id AND a.provider='nowpayments'
+          AND t.provider='nowpayments' AND a.payment_id IS NOT NULL
+          AND BINARY t.payment_id<>BINARY a.payment_id
+          AND t.observed_status IN
+              ('confirming','confirmed','sending','partially_paid','finished','refunded'))";
+}
+function achbotRecoveryAdditionalFundsCases(mysqli $db,int $before=0): array {
+    if ($before<0) throw new InvalidArgumentException('additional_funds_cursor');
+    $scope=achbotRecoveryAdditionalFundsSql($db);
+    $q=$db->prepare("SELECT p.id,p.user_id,p.price,p.type,p.state
+        FROM pays p WHERE ($scope) AND (?=0 OR p.id<?)
+        ORDER BY p.id DESC LIMIT 13");
+    $q->bind_param('ii',$before,$before);$q->execute();
+    $rows=$q->get_result()->fetch_all(MYSQLI_ASSOC);$q->close();
+    return $rows;
+}
+function achbotRecoveryAdditionalFundsCase(mysqli $db,int $payId): ?array {
+    if ($payId<=0) return null;
+    $scope=achbotRecoveryAdditionalFundsSql($db);
+    $q=$db->prepare("SELECT p.id FROM pays p WHERE p.id=? AND ($scope) LIMIT 1");
+    $q->bind_param('i',$payId);$q->execute();
+    $exists=$q->get_result()->num_rows===1;$q->close();
+    return $exists?achbotRecoveryAttentionCase($db,$payId):null;
+}
+
+/** Separate paid/held SERVICE recovery queue, never a second financial inbox.
+ * A successful transaction with unresolved remote CREATE/renewal may still
+ * require an owner, but must not be offered a second money approval.
+ */
+function achbotRecoveryTechnicalSql(mysqli $db): string {
+    $renewals=achbotPayUxTable($db,'automatic_renewal_attempts')
+        ? "EXISTS (SELECT 1 FROM automatic_renewal_attempts r
+            WHERE r.pay_row_id=p.id
             AND r.stage IN ('reserved','remote_started','review'))" : '0';
-    return "(p.type IN ('BUY_SUB','RENEW_ACCOUNT','INCREASE_WALLET')
-        OR p.type LIKE 'INCREASE_DAY\_%' OR p.type LIKE 'INCREASE_VOLUME\_%'
-        OR (p.type='RENEW_SCONFIG' AND ($api)))
-        AND (($ledger) OR ($api) OR ($create) OR ($renewal) OR p.state IN ('processing','processing_wallet'))";
+    $effects=achbotPayUxTable($db,'service_effects')
+        ? "EXISTS (SELECT 1 FROM service_effects e
+            WHERE e.pay_row_id=p.id
+            AND ((e.effect_kind='create'
+                 AND e.state IN ('dispatching','verified')
+                 AND e.order_id IS NULL)
+              OR (e.effect_kind IN ('wallet_hold','manual_hold')
+                 AND e.state='reserved'
+                 AND p.state IN ('processing','processing_wallet'))))" : '0';
+    $hosted=achbotPayUxTable($db,'payment_attempts')
+        ? "EXISTS (SELECT 1 FROM payment_attempts a
+            WHERE a.pay_row_id=p.id
+              AND a.stage='review'
+              AND a.provider IN ('nowpayments','nextpay','zarinpal')
+              AND a.provider_status IN
+                 ('fulfillment_started','fulfillment_unconfirmed',
+                  'fulfillment_failed','fulfillment_needs_review',
+                  'operator_fulfillment_unconfirmed')
+              AND p.state='paid')" : '0';
+    // These nonterminal processing states are themselves an incident if
+    // the expected journal is missing. Surface for read-only diagnosis,
+    // never silently drop a potentially debited wallet or remote CREATE.
+    return "(p.state IN ('processing','processing_wallet')
+        OR (p.state='paid' AND (($renewals) OR ($effects) OR ($hosted))))";
+}
+
+function achbotRecoveryTechnicalCases(mysqli $db,int $before=0): array {
+    if ($before<0) throw new InvalidArgumentException('technical_recovery_cursor');
+    $scope=achbotRecoveryTechnicalSql($db);
+    $q=$db->prepare("SELECT p.id,p.user_id,p.price,p.type,p.state
+        FROM pays p WHERE ($scope) AND (?=0 OR p.id<?)
+        ORDER BY p.id DESC LIMIT 13");
+    $q->bind_param('ii',$before,$before);$q->execute();
+    $rows=$q->get_result()->fetch_all(MYSQLI_ASSOC);$q->close();
+    return $rows;
+}
+
+function achbotRecoveryTechnicalCase(mysqli $db,int $id): ?array {
+    if ($id<=0) return null;
+    $scope=achbotRecoveryTechnicalSql($db);
+    $q=$db->prepare("SELECT p.id FROM pays p WHERE p.id=? AND ($scope) LIMIT 1");
+    $q->bind_param('i',$id);$q->execute();
+    $eligible=$q->get_result()->num_rows===1;$q->close();
+    return $eligible?achbotRecoveryAttentionCase($db,$id):null;
 }
 
 function achbotRecoveryAttentionCases(mysqli $db, int $before=0): array {

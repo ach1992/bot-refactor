@@ -53,6 +53,13 @@ if($botState['cartToCartAutoAcceptState']=="on"){
         
         // Re-lock the original pays row: stale scans cannot override a
         // concurrent administrator decision or repeat service effects.
+        if ($payType==='BUY_SUB') {
+            require_once __DIR__.'/DeliveryLedger.php';
+            if (!achbotDeliverySchemaReady($connection)) {
+                error_log('achbot_bank_delivery_schema_unavailable pay_id='.(int)$payInfo['id']);
+                continue; // Never create a paid processing claim without 018.
+            }
+        }
         if (!achbotAutoBankClaim($connection, $payInfo)) continue;
         // One iteration must not inherit another customer's completion state.
         $autoServiceCompleted=null;
@@ -66,8 +73,33 @@ if($botState['cartToCartAutoAcceptState']=="on"){
         try {
         
         if($payType == "INCREASE_WALLET"){
-            // Wallet credit and the terminal claim already committed atomically.
-            sendMessage(\achbotMessage('manual_payment.automatic_receipts.message.38dd599e83') . number_format($price). \achbotMessage('manual_payment.automatic_receipts.message.6f42cf1050'), null, null, $user_id);
+            // 003-backed bank wallet packets were committed with the credit.
+            // Legacy rows without a new attempt retain the original flow.
+            require_once __DIR__.'/DeliveryLedger.php';
+            $ledger=achbotDeliveryAggregate($connection,(int)$rowId);
+            if ($ledger && (int)$ledger['total']>0) {
+                achbotDeliveryDispatchPending($connection,(int)$rowId);
+            } else {
+                // Only genuinely pre-003 historical wallet payments may use
+                // the old direct send. A modern 003-backed credit may have
+                // a temporarily unreadable, missing or corrupt 018 ledger:
+                // never bypass it and create an untracked duplicate send.
+                $knownAttempt=true;
+                try {
+                    $q=$connection->prepare('SELECT id FROM payment_attempts WHERE pay_row_id=? LIMIT 1');
+                    $q->bind_param('i',$rowId);$q->execute();
+                    $knownAttempt=(bool)$q->get_result()->fetch_assoc();$q->close();
+                } catch (Throwable $e) {
+                    error_log('achbot_bank_wallet_delivery_attempt_lookup_unavailable pay_id='.(int)$rowId);
+                }
+                if ($knownAttempt) {
+                    error_log('achbot_bank_wallet_delivery_ledger_unavailable pay_id='.(int)$rowId);
+                } else {
+                    sendMessage(\achbotMessage('manual_payment.automatic_receipts.message.38dd599e83') .
+                        number_format($price). \achbotMessage('manual_payment.automatic_receipts.message.6f42cf1050'),
+                        null, null, $user_id);
+                }
+            }
         }
         elseif($payType == "BUY_SUB"){
             // The bank receipt is paid evidence, not a completed subscription.
@@ -84,34 +116,13 @@ if($botState['cartToCartAutoAcceptState']=="on"){
             if ($autoServiceCompleted) {
                 // Telegram/QR is post-COMMIT only; failures never recreate
                 // accounts, debit/credit wallets or change financial finality.
-                $unconfirmedDeliveries=[];
-                foreach ($delivery['deliveries'] as $index=>$packet) {
-                    try {
-                        $sent=sendQrFromLink($packet['qr'],$packet['caption'],
-                            $packet['keys'],(string)$botUrl,(int)$packet['uid']);
-                        if (!$sent) {
-                            $unconfirmedDeliveries[]=$index+1;
-                            error_log('achbot_bank_buy_delivery_unconfirmed pay_id='.(int)$rowId.' line='.($index+1));
-                        }
-                    } catch (Throwable $deliveryError) {
-                        $unconfirmedDeliveries[]=$index+1;
-                        error_log('achbot_bank_buy_delivery_error pay_id='.(int)$rowId.
-                            ' line='.($index+1).' class='.get_class($deliveryError));
-                    }
-                }
-                if ($unconfirmedDeliveries!==[]) {
-                    // Fulfillment is already committed. Never retry CREATE just
-                    // because a Telegram acknowledgment was lost.
-                    try {
-                        sendMessage(\achbotMessage('manual_payment.automatic_receipts.message.9b88994424')
-                            .\achbotMessage('manual_payment.automatic_receipts.message.ba9287d8c1').(int)$rowId.$bankReviewContext
-                            .\achbotMessage('manual_payment.automatic_receipts.text.d828bce37f').implode(', ',$unconfirmedDeliveries)
-                            .\achbotMessage('manual_payment.automatic_receipts.text.38146cb4da'),
-                            null,null,$admin);
-                    } catch (Throwable $noticeError) {
-                        error_log('achbot_bank_buy_delivery_notice_failed pay_id='.(int)$rowId);
-                    }
-                }
+                // Dispatch from the immutable 018 ledger, never from PHP memory.
+                // A lost ACK stays unknown and is visible in the quiet workbench.
+                $deliveryStates=achbotDeliveryDispatchPending($connection,(int)$rowId);
+                foreach ($deliveryStates as $ordinal=>$deliveryState)
+                    if ($deliveryState!=='acknowledged')
+                        error_log('achbot_bank_delivery_recovery_required pay_id='.
+                            (int)$rowId.' ordinal='.(int)$ordinal);
                 // Preserve the legacy referral journey only after finality.
                 // Any uncertain bonus outcome stays an operator matter; no
                 // automatic replay of the paid service will be permitted.

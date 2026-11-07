@@ -430,14 +430,12 @@ def main():
         assert_no_remote(run(w,e,{'order_id':crash,'enabled':'on'}))
         cases.append('crashed_worker_remote_marker_blocks_retry')
         sql(w,e,f"UPDATE automatic_renewal_attempts SET created_at=NOW()-INTERVAL 10 MINUTE WHERE order_id={crash}")
-        alerts=run(w,e,{'action':'alert','order_id':crash,'telegram_ok':False})
-        assert any(x['type']=='send' for x in alerts)
-        assert sql(w,e,f"SELECT review_notified_at IS NULL FROM automatic_renewal_attempts WHERE order_id={crash}").strip()=='1'
-        success=run(w,e,{'action':'alert','order_id':crash})
-        assert any(x['type']=='send' for x in success)
-        again=run(w,e,{'action':'alert','order_id':crash})
-        assert not any(x['type']=='send' for x in again)
-        cases.append('private_operator_notice_retry_and_once_per_day_ack')
+        before=sql(w,e,f"SELECT stage,review_notified_at IS NULL,review_claim_token IS NULL,review_claimed_at IS NULL FROM automatic_renewal_attempts WHERE order_id={crash}")
+        for item in [{'telegram_ok':False},{'telegram_ok':True},{}]:
+            events=run(w,e,{'action':'alert','order_id':crash,**item})
+            assert not any(x['type'] in ('send','notify_admins','remote') for x in events),events
+            assert sql(w,e,f"SELECT stage,review_notified_at IS NULL,review_claim_token IS NULL,review_claimed_at IS NULL FROM automatic_renewal_attempts WHERE order_id={crash}")==before
+        cases.append('quiet_operator_review_no_push_or_lease_mutation')
         racing=seed(w,e,'race')
         spec={'order_id':racing,'enabled':'on','delay_ms':250}
         ps=[subprocess.Popen(cmd(w,e,spec),cwd=w,env=e,stdout=subprocess.PIPE,stderr=subprocess.PIPE) for _ in range(2)]
@@ -571,14 +569,13 @@ def main():
             sql(w,e,'UPDATE automatic_renewal_attempts '
                     'SET created_at=NOW()-INTERVAL 10 MINUTE '
                     f'WHERE order_id={held}')
+            before=sql(w,e,'SELECT stage,review_notified_at IS NULL,review_claim_token IS NULL,review_claimed_at IS NULL FROM automatic_renewal_attempts WHERE order_id='+str(held))
             alert=run(w,e,{'action':'alert','order_id':held})
-            assert any(evt['type']=='send' and evt['to']==9001
-                       for evt in alert),alert
-            assert sql(w,e,'SELECT review_notified_at IS NOT NULL '
-                           'FROM automatic_renewal_attempts '
-                           f'WHERE order_id={held}').strip()=='1'
+            assert not any(evt['type'] in ('send','notify_admins','remote')
+                           for evt in alert),alert
+            assert sql(w,e,'SELECT stage,review_notified_at IS NULL,review_claim_token IS NULL,review_claimed_at IS NULL FROM automatic_renewal_attempts WHERE order_id='+str(held))==before
             assert_no_remote(run(w,e,{'order_id':held,'enabled':'on'}))
-            cases.append(mode+'_keeps_one_hold_operator_alert_no_replay')
+            cases.append(mode+'_keeps_one_hold_without_review_push_or_replay')
 
         # A duplicate legacy userid cannot be the source of a spend.
         duplicate=seed(w,e,'duplicateuser')
@@ -1001,7 +998,7 @@ def main():
         assert proc.returncode==0 and proc.stdout==b'RECONCILIATION_EXECUTEDPAYMENT_MAINTENANCE_EXECUTED',(
             proc.returncode,proc.stdout,proc.stderr)
         assert b'achbot_warning_cleanup_deferred' in proc.stderr
-        cases.append('f1_real_cron_entrypoint_warning_exception_cannot_skip_renewal_alert')
+        cases.append('f1_real_cron_entrypoint_warning_exception_cannot_skip_renewal_reconciliation')
 
         # A real combined provider ledger and 004 may coexist. Neither
         # migration drops or rewrites the other's original payment evidence.

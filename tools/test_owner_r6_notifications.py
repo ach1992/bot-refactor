@@ -238,7 +238,22 @@ def main():
     after=b"WHERE `id` = ?"
     assert original.count(before)==1,'historical automatic renewal guard identity changed'
     expected=original.replace(before,after,1)
-    assert (ROOT/'src/Finance/AutomaticReceipts.php').read_bytes()==expected,'unapproved automatic bank runtime change'
+    # The previously approved R6 notification source remains byte-for-byte
+    # immutable at its exact Git source. #117 deliberately adds the complete
+    # delivery-ledger path: pin its entire candidate source to a distinct SHA
+    # instead of silently weakening source-change or notification proof.
+    import hashlib
+    mainline=subprocess.check_output(['git','show',
+        '17af1e55dc4cb8db6751a731bb223d93dc6f902f:src/Finance/AutomaticReceipts.php'],
+        cwd=ROOT)
+    assert mainline==expected,'previous approved automatic bank source changed'
+    candidate=(ROOT/'src/Finance/AutomaticReceipts.php').read_bytes()
+    assert hashlib.sha256(candidate).hexdigest()==(
+        '5239677edb72c3b6a0aabca8f8c5a588d3337208eeebb9b7794b9f29eb93bedb'
+    ),'issue117_delivery_candidate_bank_runtime_changed'
+    assert (b'achbotDeliverySchemaReady' in candidate and
+            b'achbotDeliveryDispatchPending' in candidate and
+            b'achbotDeliveryAggregate' in candidate), 'issue117_delivery_bank_handlers_missing'
     current=(ROOT/'settings/rewardReport.php').read_text()
     old=subprocess.check_output(['git','show',BASE+':settings/rewardReport.php'],cwd=ROOT,text=True)
     def backup_block(source):

@@ -475,12 +475,10 @@ if (preg_match('/^approveIncreaseDay(.*)/', $data, $match) && achbotAdminCanFor(
             throw new RuntimeException('day_extension_finish_unconfirmed');
         $localCommitted=true;
 
-        $keys = json_encode([
-            'inline_keyboard' => [
-                [['text' => \achbotMessage('renewal.extensions.button.139c829462', ['from_id' => $from_id]), 'callback_data' => "wizwizch"]],
-                [['text' => \achbotMessage('renewal.extensions.hash_id.2899228604', ['hash_id' => $hash_id]), 'callback_data' => "noop_$hash_id"]]
-            ]
-        ], 488);
+        require_once __DIR__.'/../ApiPaymentPresentation.php';
+        $keys=achbotManualFinalReceiptKeyboard(
+            $connection,$payId,achbotMessage('manual_receipt_final.day_subject',[
+                'remark'=>$remark,'units'=>$volume]));
 
         // ویرایش پیام ادمین اصلی
         editKeys($keys, $payParam['message_id'], $payParam['chat_id']);
@@ -1304,12 +1302,10 @@ if (preg_match('/^approveIncreaseVolume(.*)/', $data, $match) && achbotAdminCanF
             throw new RuntimeException('volume_extension_finish_unconfirmed');
         $localCommitted=true;
 
-        $keys = json_encode([
-            'inline_keyboard' => [
-                [['text' => \achbotMessage('renewal.extensions.button.139c829462', ['from_id' => $from_id]), 'callback_data' => "wizwizch"]],
-                [['text' => \achbotMessage('renewal.extensions.hash_id.2899228604', ['hash_id' => $hash_id]), 'callback_data' => "noop_$hash_id"]]
-            ]
-        ], 488);
+        require_once __DIR__.'/../ApiPaymentPresentation.php';
+        $keys=achbotManualFinalReceiptKeyboard(
+            $connection,$payId,achbotMessage('manual_receipt_final.volume_subject',[
+                'remark'=>$remark,'units'=>$volume]));
 
         // ویرایش پیام ادمین اصلی
         editKeys($keys, $payParam['message_id'], $payParam['chat_id']);

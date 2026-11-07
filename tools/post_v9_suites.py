@@ -19,7 +19,7 @@ from check_post_v9 import (
     owner_gift_policy_negative_controls, owner_r5_proof_mismatches,
 )
 
-FAMILY_FIELDS = {'admin': ('owner_ux_r5', 'owner_r6_notifications', 'owner_r6_financial_alerts'), 'api': ('existing_payment_apis',), 'services': ('marzban', 'purchases', 'webhook_file_configuration', 'telegram_transport_log_privacy', 'optional_cron_runner', 'marzban_service_modifications'), 'wallet': ('unsupported_wallet_preflight', 'wallet_transfer_safety', 'wallet_replay_freshness_and_operation_identity', 'wallet_transfer_generation', 'admin_wallet_adjustment_safety', 'admin_wallet_ux', 'next_payment_ux', 'central_text_catalog', 'copy_audience_and_numeric_source', 'public_bootstrap_privacy', 'public_gateway_privacy', 'service_unit_quote_guards', 'pasarguard_client', 'optional_cleanup'), 'presentation': ('provider_integration', 'currency_settings', 'server_display_settings', 'subscription_presentation', 'simple_server_display', 'financial_subject_preflight', 'catalogue_and_subscription_qr', 'payment_ux_lifecycle', 'payment_browser_feedback', 'checkout_serialization', 'customer_method_serialization'), 'authorization': ('automatic_renewal_ledger', 'payment_readiness_preflight', 'wallet_authorization_freshness', 'latest_review_f1_f4'), 'effects': ('financial_native_route_guards', 'service_effects', 'create_verification_lock_order', 'strict_effect_transport_pin', 'gift_source_enqueue_idempotency', 'direct_admin_gift_verified', 'direct_admin_gift_native', 'owner_gift_policy', 'owner_gift_locks', 'owner_gift_lock_negative_controls', 'owner_gift_policy_negative_controls', 'gift_worker_safe_continuation', 'gift_physical_target_continuity'), 'funding': ('source_only_overlays', 'wallet_paid_create', 'wallet_checkout_routes', 'wallet_callback_framing', 'manual_choice_callback_framing', 'nonpaid_trial_bulk', 'referral_awards', 'referral_postcommit_routes', 'bank_auto_buy_sub', 'bank_recovery_inspection', 'bank_recovery_transport', 'manual_payment_method_isolation', 'manual_standard_real_helper_review_remediation', 'manual_crypto_destination_and_admin_guards', 'shared_payment_ledger_rc4_import', 'agency_state_regression', 'marzban_logical_transfer')}
+FAMILY_FIELDS = {'admin': ('owner_ux_r5', 'owner_r6_notifications', 'owner_r6_financial_alerts'), 'api': ('existing_payment_apis',), 'services': ('marzban', 'purchases', 'webhook_file_configuration', 'telegram_transport_log_privacy', 'optional_cron_runner', 'marzban_service_modifications'), 'wallet': ('unsupported_wallet_preflight', 'wallet_transfer_safety', 'wallet_replay_freshness_and_operation_identity', 'wallet_transfer_generation', 'admin_wallet_adjustment_safety', 'admin_wallet_ux', 'next_payment_ux', 'central_text_catalog', 'copy_audience_and_numeric_source', 'public_bootstrap_privacy', 'public_gateway_privacy', 'service_unit_quote_guards', 'pasarguard_client', 'optional_cleanup'), 'presentation': ('provider_integration', 'currency_settings', 'server_display_settings', 'subscription_presentation', 'simple_server_display', 'financial_subject_preflight', 'catalogue_and_subscription_qr', 'payment_ux_lifecycle', 'payment_browser_feedback', 'checkout_serialization', 'customer_method_serialization'), 'authorization': ('automatic_renewal_ledger', 'payment_readiness_preflight', 'wallet_authorization_freshness', 'latest_review_f1_f4'), 'effects': ('financial_native_route_guards', 'review_decision_idempotency', 'service_effects', 'create_verification_lock_order', 'strict_effect_transport_pin', 'gift_source_enqueue_idempotency', 'direct_admin_gift_verified', 'direct_admin_gift_native', 'owner_gift_policy', 'owner_gift_locks', 'owner_gift_lock_negative_controls', 'owner_gift_policy_negative_controls', 'gift_worker_safe_continuation', 'gift_physical_target_continuity'), 'funding': ('source_only_overlays', 'wallet_paid_create', 'wallet_checkout_routes', 'wallet_callback_framing', 'manual_choice_callback_framing', 'nonpaid_trial_bulk', 'referral_awards', 'referral_postcommit_routes', 'bank_auto_buy_sub', 'bank_recovery_inspection', 'bank_recovery_transport', 'manual_payment_method_isolation', 'manual_standard_real_helper_review_remediation', 'manual_crypto_destination_and_admin_guards', 'shared_payment_ledger_rc4_import', 'agency_state_regression', 'marzban_logical_transfer')}
 
 SOURCE_UPDATES = {'admin': (), 'api': (), 'services': ('unified_service_management',), 'wallet': (), 'presentation': (), 'authorization': (), 'effects': (), 'funding': ('current_additive_migration_separately_tested',)}
 
@@ -171,15 +171,15 @@ def run_admin(tmp: str) -> tuple[dict, dict]:
                    'duplicate_heading_markers':0,'guide_provider_cases':2,'guide_JSON_examples':3,
                    'actual_HTML_transport_cases':2,'archived_wrong_parse_RED':True,
                    'receipt_PRICE_template_cases':6,'real_Telegram_rendering':'NOT_TESTED',
-                   'composed_catalog_correction_keys':22,'composed_heading_cases':42,
+                   'composed_catalog_correction_keys':22,'composed_heading_cases':41,
                    'settings_navigation_label_amendments':3,'settings_navigation_retired_keys':4,
                    'display_context_catalog_additions':7,'display_context_catalog_negative_controls':9,'simple_display_catalog_additions':14,'simple_display_label_changes':2,
                    'notification_catalog_additions':4,'staff_role_description_amendments':1,
                    'staff_catalog_negative_controls':6,
                    'telegram_update_id_label_cases':1,'telegram_update_id_numeric_value_preserved':True,
                    'archived_wrong_telegram_update_label_RED':True,
-                   'composed_heading_source_paths':16,'composed_heading_archived_RED':18,
-                   'composed_heading_negative_controls':6,'identical_heading_reuse_cases':1,
+                   'composed_heading_source_paths':16,'composed_heading_archived_RED':17,
+                   'composed_heading_negative_controls':5,'identical_heading_reuse_cases':1,
                    'raw_code_heading_exclusions':1,'numeric_id_variant_negative_controls':5,
                    'preserved_telegram_object_id_cases':3,'preserved_numeric_id_cases':1,
                    'composition_scope':'source_expression_wallet_finance_receipt_support_admin_stats_matrix'}
@@ -311,74 +311,18 @@ def run_admin(tmp: str) -> tuple[dict, dict]:
                    cwd=ROOT,check=True,timeout=90,capture_output=True)
     financial_alerts=json.loads(alerts_path.read_text())
     required_financial_alert_checks=[
-        'renewal manager_failure incomplete fanout retains retryable marker releases lease and preserves financial evidence',
-        'renewal manager_failure next ordinary call reaches Manager acknowledges complete fanout without financial replay',
-        'renewal manager_failure completed fanout remains quiet on unchanged evidence',
-        'renewal owner_failure incomplete fanout retains retryable marker releases lease and preserves financial evidence',
-        'renewal owner_failure next ordinary call reaches Manager acknowledges complete fanout without financial replay',
-        'renewal owner_failure completed fanout remains quiet on unchanged evidence',
-        'renewal discovery_writer incomplete fanout retains retryable marker releases lease and preserves financial evidence',
-        'renewal discovery_writer next ordinary call reaches Manager acknowledges complete fanout without financial replay',
-        'renewal discovery_writer completed fanout remains quiet on unchanged evidence',
-        'renewal role_writer incomplete fanout retains retryable marker releases lease and preserves financial evidence',
-        'renewal role_writer next ordinary call reaches Manager acknowledges complete fanout without financial replay',
-        'renewal role_writer completed fanout remains quiet on unchanged evidence',
-        'renewal preference_writer incomplete fanout retains retryable marker releases lease and preserves financial evidence',
-        'renewal preference_writer next ordinary call reaches Manager acknowledges complete fanout without financial replay',
-        'renewal preference_writer completed fanout remains quiet on unchanged evidence',
-        'renewal primary_mismatch incomplete fanout retains retryable marker releases lease and preserves financial evidence',
-        'renewal primary_mismatch next ordinary call reaches Manager acknowledges complete fanout without financial replay',
-        'renewal primary_mismatch completed fanout remains quiet on unchanged evidence',
-        'renewal nonboolean_success incomplete fanout retains retryable marker releases lease and preserves financial evidence',
-        'renewal nonboolean_success next ordinary call reaches Manager acknowledges complete fanout without financial replay',
-        'renewal nonboolean_success completed fanout remains quiet on unchanged evidence',
-        'renewal off is a definitive complete exclusion preserving private payload destination',
-        'renewal off successful exclusion retains existing notification throttle',
-        'renewal revoked is a definitive complete exclusion preserving private payload destination',
-        'renewal revoked successful exclusion retains existing notification throttle',
-        'renewal concurrent evidence generation preserves exact acknowledgement CAS and lease ownership',
-        'renewal next ordinary call acknowledges fresh evidence generation without financial effects',
-        'gateway manager_failure incomplete fanout retains retryable marker releases lease and preserves financial evidence',
-        'gateway manager_failure next ordinary call reaches Manager acknowledges complete fanout without financial replay',
-        'gateway manager_failure completed fanout remains quiet on unchanged evidence',
-        'gateway owner_failure incomplete fanout retains retryable marker releases lease and preserves financial evidence',
-        'gateway owner_failure next ordinary call reaches Manager acknowledges complete fanout without financial replay',
-        'gateway owner_failure completed fanout remains quiet on unchanged evidence',
-        'gateway discovery_writer incomplete fanout retains retryable marker releases lease and preserves financial evidence',
-        'gateway discovery_writer next ordinary call reaches Manager acknowledges complete fanout without financial replay',
-        'gateway discovery_writer completed fanout remains quiet on unchanged evidence',
-        'gateway role_writer incomplete fanout retains retryable marker releases lease and preserves financial evidence',
-        'gateway role_writer next ordinary call reaches Manager acknowledges complete fanout without financial replay',
-        'gateway role_writer completed fanout remains quiet on unchanged evidence',
-        'gateway preference_writer incomplete fanout retains retryable marker releases lease and preserves financial evidence',
-        'gateway preference_writer next ordinary call reaches Manager acknowledges complete fanout without financial replay',
-        'gateway preference_writer completed fanout remains quiet on unchanged evidence',
-        'gateway primary_mismatch incomplete fanout retains retryable marker releases lease and preserves financial evidence',
-        'gateway primary_mismatch next ordinary call reaches Manager acknowledges complete fanout without financial replay',
-        'gateway primary_mismatch completed fanout remains quiet on unchanged evidence',
-        'gateway nonboolean_success incomplete fanout retains retryable marker releases lease and preserves financial evidence',
-        'gateway nonboolean_success next ordinary call reaches Manager acknowledges complete fanout without financial replay',
-        'gateway nonboolean_success completed fanout remains quiet on unchanged evidence',
-        'gateway off is a definitive complete exclusion preserving private payload destination',
-        'gateway off successful exclusion retains existing notification throttle',
-        'gateway revoked is a definitive complete exclusion preserving private payload destination',
-        'gateway revoked successful exclusion retains existing notification throttle',
-        'gateway concurrent evidence generation preserves exact acknowledgement CAS and lease ownership',
-        'gateway next ordinary call acknowledges fresh evidence generation without financial effects',
+        domain+' '+target+' '+outcome
+        for domain in ('gateway','renewal')
+        for target in ('owner','none','delegated')
+        for outcome in ('quiet no-op','zero sends no financial or lease mutation')
     ]
     alert_mismatches=exact_current_proof_mismatches(financial_alerts,
         {'complete':True,'network_calls':0,'source_ref':'current-source',
          'baseline_source':'62eb06d164224947f1cda84144d08ff88d3a0c8e',
-         'actual_domain_callers':True,
-         'shared_ledger_owned_mariadb':True,
-         'complete_eligible_fanout_ack':True,
-         'failed_or_deferred_manager_retryable':True,
-         'next_ordinary_delivery_no_financial_replay':True,
-         'off_revoked_complete_exclusion':True,
-         'evidence_generation_cas_preserved':True,
-         'private_channel_policy_preserved':True,
-         'nonempty_fanout_required':True,
-         'strict_transport_success_required':True,
+         'actual_domain_callers':True,'shared_ledger_owned_mariadb':True,
+         'review_push_retired':True,
+         'financial_and_claim_state_unchanged':True,
+         'customer_and_business_outcome_routes_untouched':True,
         },'checks',required_financial_alert_checks)
     if alert_mismatches:
         raise RuntimeError('Durable financial alert fanout proof incomplete: '+
@@ -566,7 +510,7 @@ def run_api(tmp: str) -> tuple[dict, dict]:
     api_flow_mismatches=exact_current_proof_mismatches(api_flow,
         {'complete':True,'source_real_php':True,'socket_mariadb':True,
          'live_requests':0,'installed_tested':False,
-         'migrations_executed':['001','003','006','007','008','009','014'],
+         'migrations_executed':['001','003','006','007','008','009','014','018'],
          'flow_head':current_api_head,'evidence_head':current_api_head,'settings_head':current_api_head},
         'scenarios',required_api_flow)
     if api_flow.get('scenarios')!=required_api_flow:
@@ -614,7 +558,7 @@ def run_api(tmp: str) -> tuple[dict, dict]:
     api_native_mismatches=exact_current_proof_mismatches(api_native,
         {'complete':True,'source_real_php':True,'actual_pasarguard_http':True,
          'socket_mariadb':True,'live_requests':0,'installed_tested':False,
-         'migrations_executed':['001_marzban_panel_group_id.sql', '003_payment_attempts.sql', '004_automatic_renewal_attempts.sql', '006_payment_message_refs.sql', '007_service_effects.sql', '008_referral_awards.sql', '009_bank_buy_invoice_claims.sql', '011_provider_identity.sql', '012_shared_provider_storage.sql', '014_api_payment_evidence.sql'],
+         'migrations_executed':['001_marzban_panel_group_id.sql', '003_payment_attempts.sql', '004_automatic_renewal_attempts.sql', '006_payment_message_refs.sql', '007_service_effects.sql', '008_referral_awards.sql', '009_bank_buy_invoice_claims.sql', '011_provider_identity.sql', '012_shared_provider_storage.sql', '014_api_payment_evidence.sql', '018_payment_delivery_intents.sql'],
          'source_head':current_api_head},
         'scenarios',required_api_native)
     if api_native.get('scenarios')!=required_api_native:
@@ -1163,7 +1107,7 @@ def run_wallet(tmp: str) -> tuple[dict, dict]:
                     "--run-disposable","--report",str(next_payment_path)],
                    cwd=ROOT,check=True,timeout=180,capture_output=True)
     next_payment=json.loads(next_payment_path.read_text())
-    if not (next_payment.get("complete") is True and next_payment.get("cases")==13
+    if not (next_payment.get("complete") is True and next_payment.get("cases")==15
             and next_payment.get("fresh_native_addon_admission") is True
             and next_payment.get("unknown_native_refuses_without_draft") is True):
         raise RuntimeError("Durable payment messages, volume entry and attention proof incomplete")
@@ -1195,15 +1139,15 @@ def run_wallet(tmp: str) -> tuple[dict, dict]:
             and text_catalog.get("native",{}).get("pre_style_privacy_corrections")==3
             and text_catalog.get("native",{}).get("actual_traffic_helper_parity_cases")==18
             and text_catalog.get("editable_catalog_files")==2
-            and text_catalog.get("logical_topics")==27+1
+            and text_catalog.get("logical_topics")==28+6
             and text_catalog.get("current_authorized_source_edits")==26
             and text_catalog.get("retired_parser_tokens")==23
             and text_catalog.get("relocation_source_ref")=="ecd30ba9192ed374703118a6c131be8809cc7b06"
             and text_catalog.get("native",{}).get("current_retired_feature_keys")==3
-            and text_catalog.get("catalog_keys")==2780+14+9
+            and text_catalog.get("catalog_keys")==2780+14+9+18+27+12+7+17
             and text_catalog.get("native",{}).get("editable_catalog_files")==2
-            and text_catalog.get("native",{}).get("logical_topics")==27+1
-            and text_catalog.get("native",{}).get("current_catalog_keys")==2780+14+9
+            and text_catalog.get("native",{}).get("logical_topics")==28+6
+            and text_catalog.get("native",{}).get("current_catalog_keys")==2780+14+9+18+27+12+7+17
             and text_catalog.get("native",{}).get("current_gift_admin_additions")==1
             and text_catalog.get("native",{}).get("current_gift_catalog_negative_controls")==8
             and text_catalog.get("native",{}).get("current_gift_catalog_negative_scenarios")==[
@@ -1227,13 +1171,15 @@ def run_wallet(tmp: str) -> tuple[dict, dict]:
             and text_catalog["native"]["current_byte_preserved_keys"]
                 +text_catalog["native"]["current_style_changes"]
                 +text_catalog["native"]["current_added_admin_keys"]==2523
-            # 14 exact new scoped admin keys: 12 literal messages (1 test
-            # each), 2 parameterized (6 adversarial inputs each); two object
-            # conversions, one multi-parameter case, two one-pass cases.
-            and text_catalog.get("native",{}).get("current_native_template_assertions")==4120+24+9
-            and text_catalog.get("native",{}).get("current_object_conversion_templates")==268+2
-            and text_catalog.get("native",{}).get("current_shared_multi_parameter_templates")==66+1
-            and text_catalog.get("native",{}).get("current_one_pass_templates")==268+2
+            # #117 now has six source-hash-pinned workbench topics. The
+            # additional 17 keys include five multi-parameter templates;
+            # their native loader proof adds 12 single-run and 5*6
+            # adversarial substitutions (42 total), plus five object,
+            # multi-parameter and one-pass checks. Keep exact parity.
+            and text_catalog.get("native",{}).get("current_native_template_assertions")==4120+24+9+139+42
+            and text_catalog.get("native",{}).get("current_object_conversion_templates")==268+2+15+5
+            and text_catalog.get("native",{}).get("current_shared_multi_parameter_templates")==66+1+14+5
+            and text_catalog.get("native",{}).get("current_one_pass_templates")==268+2+15+5
             and text_catalog.get("native",{}).get("current_r5_changes")==273
             and text_catalog.get("native",{}).get("current_r5_retired_keys")==10
             and text_catalog.get("native",{}).get("current_r5_added_keys")==60
@@ -1241,7 +1187,7 @@ def run_wallet(tmp: str) -> tuple[dict, dict]:
             and text_catalog.get("native",{}).get("current_non_ascii_digit_templates")==0
             and text_catalog.get("presentation",{}).get("status")=="PASS"
             and text_catalog.get("presentation",{}).get("editable_files")==2
-            and text_catalog.get("presentation",{}).get("current_keys")==2780+14+9
+            and text_catalog.get("presentation",{}).get("current_keys")==2780+14+9+18+27+12+7+17
             and text_catalog.get("presentation",{}).get("numeric_template_changes")==23
             and text_catalog.get("presentation",{}).get("adjacent_emoji_violations")==0
             and text_catalog.get("presentation",{}).get("parameter_exception_count")==3
@@ -1293,7 +1239,11 @@ def run_wallet(tmp: str) -> tuple[dict, dict]:
         # Four retired #112 references and the additional old direct-delete
         # callback reference are proven absent by test_next_text_catalog.py.
         # Keep complete current-reference equality, never a lower bound.
-        'runtime_references':2453+14-1-6-4-1+8-3,
+        'runtime_references':2453+14-1-6-4-1+8-3+28+12,
+        # +28 owner financial/service/delivery copy keys, +12 net
+        # referenced tokens from R2 financial exception and R3 final
+        # receipt topics minus the five proven retired legacy labels.
+        # The exact orphan/source inventory proof remains mandatory.
         'api_referenced_keys':68,
         'api_dynamic_source_paths':2,
         'api_reference_source_commit':'16c1558322b578b8ca817f3c4b42818d57dcf161',
@@ -2168,6 +2118,7 @@ def run_authorization(tmp: str) -> tuple[dict, dict]:
         'retired_runtime_member_blocks',
         *('retired_runtime_member_blocks__'+name.replace('/','_').replace('.','_') for name in package.RETIRED_RUNTIME_MEMBERS-{'settings/tronChecker.php'}),
         'partial_003_unique_index_missing_blocks',
+        'delivery_018_token_uniqueness_missing_blocks',
         'wallet_telegram_event_key_missing_blocks',
         'wallet_telegram_event_key_nonunique_blocks',
         'wallet_cursor_nontransactional_storage_blocks',
@@ -2222,7 +2173,7 @@ def run_authorization(tmp: str) -> tuple[dict, dict]:
             readiness.get('source_usdt_production_helper_compared') is True and
             readiness.get('source_policy_production_helper_compared') is True and
             readiness.get('source_members_verified')==package.EXPECTED_RUNTIME_COUNT and
-            readiness.get('all_eight_additive_shapes_exercised') is True and
+            readiness.get('all_nine_additive_shapes_exercised') is True and
             readiness.get('api_schema_capability_compared') is True and
             readiness.get('api_credentials_not_decrypted') is True and
             readiness.get('api_schema_014_disposable_only') is True and
@@ -2308,7 +2259,7 @@ def run_authorization(tmp: str) -> tuple[dict, dict]:
         "ambiguous_remote_result_never_replayed_or_refunded",
         "remote_success_database_drift_held_for_review",
         "crashed_worker_remote_marker_blocks_retry",
-        "private_operator_notice_retry_and_once_per_day_ack",
+        "quiet_operator_review_no_push_or_lease_mutation",
         "two_real_php_mysql_clients_exactly_one_debit_and_remote",
         "nonunique_legacy_identity_cannot_fund_renewal",
         "real_cron_sweep_one_eligible_marzban_order",
@@ -2331,7 +2282,7 @@ def run_authorization(tmp: str) -> tuple[dict, dict]:
         "f1_real_expiry_cron_cleanup_blocks_unresolved_journal",
         "f1_real_expired_cron_cleanup_single_verified_delete",
         "f1_real_cron_remote_failure_does_not_repeat_destructive_effect",
-        "f1_real_cron_entrypoint_warning_exception_cannot_skip_renewal_alert",
+        "f1_real_cron_entrypoint_warning_exception_cannot_skip_renewal_reconciliation",
         "f1_real_marzban_delete_http_failure_not_falsely_successful",
         "f1_official_http_200_guarded_customer_once_full_evidence",
         "f1_official_http_200_guarded_admin_once_full_evidence",
@@ -2380,6 +2331,83 @@ def run_effects(tmp: str) -> tuple[dict, dict]:
         raise RuntimeError("Financial native source regression failed:\n"+
             (finance_run.stderr or finance_run.stdout)[-5000:])
     finance=json.loads(finance_path.read_text())
+    decision_path=Path(tmp)/"review-decision-idempotency.json"
+    worker=subprocess.run([
+        "python3",str(ROOT/"tools/test_post_v9_review_decisions.py"),
+        "--run-disposable","--report",str(decision_path)],
+        cwd=ROOT,timeout=90,capture_output=True,text=True)
+    if worker.returncode:
+        raise RuntimeError("Owned manual payment review decision regression failed:\n"+
+            (worker.stderr or worker.stdout)[-4000:])
+    decision=json.loads(decision_path.read_text())
+    pg_lock_path=Path(tmp)/"real-pasarguard-review-lock-boundary.json"
+    pg_lock_run=subprocess.run([
+        "python3",str(ROOT/"tools/test_post_v9_review_pg_lock.py"),
+        "--run-disposable","--report",str(pg_lock_path)],
+        cwd=ROOT,timeout=90,capture_output=True,text=True)
+    if pg_lock_run.returncode:
+        raise RuntimeError("Source-real PasarGuard loopback financial lock test failed:\n"+
+            (pg_lock_run.stderr or pg_lock_run.stdout)[-4000:])
+    pg_lock=json.loads(pg_lock_path.read_text())
+    required_pg_lock={
+        'source_real_pasar_guard_account_identity_pinned',
+        'source_real_pg_GET_no_SQL_lock_pay_terminal_drift',
+        'source_real_pg_GET_drift_fails_closed_pay_terminal_drift',
+        'source_real_pg_GET_no_SQL_lock_plan_target_drift',
+        'source_real_pg_GET_drift_fails_closed_plan_target_drift',
+    }
+    if not (pg_lock.get('complete') is True
+            and set(pg_lock.get('checks',[]))==required_pg_lock
+            and pg_lock.get('source_real_php') is True
+            and pg_lock.get('owned_mariadb') is True
+            and pg_lock.get('actual_pasar_guard_http_get') is True
+            and pg_lock.get('financial_locks_released_during_GET') is True
+            and pg_lock.get('target_drift_fails_closed') is True
+            and pg_lock.get('native_writes')==0):
+        raise RuntimeError("Required source-real PasarGuard lock boundary proof incomplete")
+    decision['pasarguard_review_lock_boundary']=pg_lock
+    required_decisions={
+        "decision_schema_unique_innodb",
+        "verified_finished_complete_single_child_eligible",
+        "not_finished_must_not_fake_payout",
+        "wrong_order_identity_rejected",
+        "underpaid_rejected",
+        "decision_token_binds_actor",
+        "decision_token_binds_action",
+        "decision_token_binds_expiry",
+        "decision_token_binds_provider_digest",
+        "approve_effect_completes",
+        "exact_ledger_closes_after_effect",
+        "exactly_one_wallet_credit",
+        "one_original_business_report",
+        "repeated_or_raced_approve_never_dispatches_second_effect",
+        "not_refunded_cannot_be_rejected",
+        "refunded_reject_commits",
+        "refund_audit_terminal",
+        "rejection_cannot_dispatch_service_or_wallet",
+        "ambiguous_remote_fenced_as_unknown",
+        "unknown_remote_effect_never_replayed",
+        "multiple_funded_child_not_fake_single_invoice",
+    }
+    if not (decision.get("complete") is True
+            and set(decision.get("checks",[]))==required_decisions
+            and decision.get("owned_mariadb") is True
+            and decision.get("real_review_decision_source") is True
+            and decision.get("test_effect_is_synthetic") is True
+            and decision.get("provider_http_calls")==0
+            and decision.get("telegram_calls")==0
+            and decision.get("audit_exactly_once") is True
+            and decision.get("financial_double_credit") is False
+            and decision.get("cron_operator_claim_survived") is True
+            and decision.get("signed_ipn_operator_claim_survived") is True
+            and decision.get("signed_ipn_postpaid_primary_preserved") is True
+            and decision.get("signed_ipn_out_of_order_secondary_preserved") is True
+            and decision.get("additional_funds_paid_and_inflight_visible") is True
+            and decision.get("internal_payment_page_suppressed") is True
+            and decision.get("inbox_only_unfinalized_with_funds_or_receipt") is True
+            and decision.get("api_module_loaded_on_first_entry") is True
+            and decision.get("examined")>=5):
+        raise RuntimeError("Manual review journal, queue or concurrent Cron fence unproven")
     # Current R10 financial contract: preserve authenticated settlement,
     # durable compensation proof and concurrency-safe operator recovery.
     mandatory_finance = {
@@ -2418,12 +2446,14 @@ def run_effects(tmp: str) -> tuple[dict, dict]:
         # Owner #26/#51: preserve retry-on-send-failure but never
         # equate an unpaid second child ID with received funds or
         # send a daily unchanged-evidence finance warning.
-        "nowpayments_evidenced_review_persian_inbox_retry_once",
-        "nowpayments_review_without_24_hour_resends",
+        "nowpayments_funded_review_quiet_no_push",
+        "nowpayments_repeat_review_quiet",
         "nowpayments_second_unpaid_child_is_not_payment",
         "nowpayments_unpaid_failed_child_no_operator_case",
-        "nowpayments_same_child_funds_reopen_once_no_downgrade",
-        "nowpayments_funded_secondary_one_actionable_alert",
+        "nowpayments_secondary_funds_keep_terminal_claim_no_downgrade",
+        "nowpayments_secondary_paid_child_quiet",
+        "nowpayments_paid_extra_funds_visible_in_separate_owner_queue",
+        "nowpayments_extra_funds_owner_only",
         "nowpayments_operator_inbox_details_private_auth",
         "nowpayments_operator_provider_inquiry_readonly",
         "nowpayments_operator_unauthorized_callbacks_refused",
@@ -2505,8 +2535,8 @@ def run_effects(tmp: str) -> tuple[dict, dict]:
         "prepayment_stale_zarinpal_preserves_np_invoice",
         "prepayment_stale_button_allows_later_ipn",
         "prepayment_stale_button_preserves_creating",
-        "nowpayments_concurrent_alert_child_highwater_cas",
-        "nowpayments_concurrent_alert_worker_lease_exclusive",
+        "nowpayments_quiet_review_no_nested_send",
+        "nowpayments_quiet_review_no_alert_lease",
         "prepayment_renewal_terminal_paid_immutable",
         "prepayment_renewal_terminal_canceled_immutable",
         "prepayment_renewal_terminal_expired_immutable",
@@ -3186,7 +3216,7 @@ def run_effects(tmp: str) -> tuple[dict, dict]:
             gift.get("customer_money_effects")==0):
         raise RuntimeError("Gift-worker verified outcome/hold assurance incomplete")
 
-    return {'financial_native_route_guards': finance, 'service_effects': effects, 'create_verification_lock_order': verification_locking, 'strict_effect_transport_pin': pinned_effects, 'gift_source_enqueue_idempotency': gift_source, 'direct_admin_gift_verified': direct_gift, 'direct_admin_gift_native': native_direct_gift, 'owner_gift_policy': owner_gift_policy, 'owner_gift_locks': gift_locks, 'owner_gift_lock_negative_controls': gift_lock_controls, 'owner_gift_policy_negative_controls': gift_policy_negative_controls, 'gift_worker_safe_continuation': gift, 'gift_physical_target_continuity': physical_gift}, result
+    return {'financial_native_route_guards': finance, 'review_decision_idempotency': decision, 'service_effects': effects, 'create_verification_lock_order': verification_locking, 'strict_effect_transport_pin': pinned_effects, 'gift_source_enqueue_idempotency': gift_source, 'direct_admin_gift_verified': direct_gift, 'direct_admin_gift_native': native_direct_gift, 'owner_gift_policy': owner_gift_policy, 'owner_gift_locks': gift_locks, 'owner_gift_lock_negative_controls': gift_lock_controls, 'owner_gift_policy_negative_controls': gift_policy_negative_controls, 'gift_worker_safe_continuation': gift, 'gift_physical_target_continuity': physical_gift}, result
 
 
 def run_funding(tmp: str) -> tuple[dict, dict]:
@@ -3467,11 +3497,18 @@ def run_funding(tmp: str) -> tuple[dict, dict]:
         "unknown_wrong_note_no_refund_success_or_replay",
         "unknown_fraction_no_refund_success_or_replay",
         "multi_line_atomic_orders_and_integer_amount_allocation",
+        "first_success_atomic_encrypted_manifest_and_ack_history",
+        "crash_postterminal_before_telegram_resumes_pending_only_once",
+        "multi_line_each_ordinal_ack_is_durable",
+        "partial_bulk_unknown_owner_challenge_and_exact_one_line_resend",
+        "stale_dispatch_lease_preserves_unknown_audit_before_warned_resend",
+        "corrupted_immutable_delivery_payload_blocks_send_without_replay",
+        "concurrent_telegram_pending_cas_exactly_one_dispatch",
         "multi_line_partial_unknown_requires_review_not_refund",
         "sql_failure_after_remote_verified_fails_closed",
         "failed_local_commit_operator_receives_payment_identity",
-        "postcommit_telegram_failure_alerts_operator_without_recreate",
-        "postcommit_telegram_unconfirmed_alerts_operator_without_recreate",
+        "postcommit_telegram_failure_quiet_unknown_ledger_without_recreate",
+        "postcommit_telegram_unconfirmed_quiet_unknown_ledger_without_recreate",
         "nonbank_attempt_never_auto_provisions",
         "two_simultaneous_bank_workers_one_remote_create",
         "postverified_plan_dimensions_edit_keeps_standard_quote_and_order",
@@ -3653,6 +3690,9 @@ def run_funding(tmp: str) -> tuple[dict, dict]:
         "manual_wallet_exactly_one_credit_bank_transfer",
         "manual_wallet_exactly_one_credit_gift_card",
         "manual_wallet_exactly_one_credit_manual_usdt",
+        "manual_wallet_original_receipt_three_non_action_rows_bank_transfer",
+        "manual_wallet_original_receipt_three_non_action_rows_gift_card",
+        "manual_wallet_original_receipt_three_non_action_rows_manual_usdt",
         "manual_wallet_approval_replay_denied_bank_transfer",
         "manual_wallet_approval_replay_denied_gift_card",
         "manual_wallet_approval_replay_denied_manual_usdt",
@@ -3683,10 +3723,13 @@ def run_funding(tmp: str) -> tuple[dict, dict]:
         "real_standard_renewal_uncertain_remote_change_no_replay",
         "real_standard_uncertain_remote_effect_stays_reconciliation_and_no_replay",
         "real_standard_verified_receipt_one_delivery_no_replay",
+        "manual_standard_original_receipt_three_non_action_rows",
+        "manual_renew_sconfig_original_receipt_three_non_action_rows",
         "real_standard_wrong_subject_denied",
         # PR #52 independent F1/F2 findings: mandatory real callback runs.
         "real_custom_nonadmin_cannot_approve_submitted_gift_receipt",
         "real_custom_authorized_review_state_approves_only_once",
+        "manual_custom_original_receipt_three_non_action_rows",
         "real_custom_replayed_operator_callback_no_remote_effect",
         "real_custom_pending_without_photo_cannot_approve",
         "real_custom_wallet_paid_invoice_cannot_approve_again",

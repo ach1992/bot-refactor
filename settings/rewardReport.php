@@ -57,9 +57,8 @@ require_once __DIR__ . '/../src/Finance/GatewayReturn.php';
 // automatic receipts below must still run during schema repair.
 if (achbotSharedPaymentTablesReady($connection)) {
     achbotNpReconcileBatch($connection, is_array($paymentKeys ?? null)?$paymentKeys:[], 3);
-    // Send bounded operator notices for unresolved payments or stalled
-    // invoice creation. No money/provisioning effects are retried here.
-    achbotNpAlertOperator($connection, $admin ?? null, 3);
+    // Review is a quiet, admin-initiated inbox. Only normal finalized
+    // business-operation reports are delivered outside the payment ledger.
 }
 
 require __DIR__ . '/../src/Finance/AutomaticReceipts.php';

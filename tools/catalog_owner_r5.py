@@ -311,6 +311,8 @@ def server_removal_copy_negative_controls(sides):
     return len(cases)
 
 def verify_and_restore(sides,definition=None):
+    if any(key.startswith('delivery_recovery.') for audience in sides.values() for key in audience):
+        sides=delivery_recovery_copy_restore(sides)
     current=scoped_addon_restore(shared_transfer_copy_restore(server_removal_copy_restore(panel_group_copy_restore(sides))))
     sides,api_proof=verify_api_and_restore(current)
     record=manifest()if definition is None else definition
@@ -367,6 +369,122 @@ def verify_retained_display_keys():
               'retained_display_source_lineage_drift:'+key)
     return set(records)
 
+# #117: exact, additive, owner-private delivery-recovery copy. Old R5/RC25
+# catalogs retain their exact hashes and approved copy baseline. The only
+# source difference must be this explicitly enumerated 18-entry topic.
+DELIVERY_RECOVERY_BASE='17af1e55dc4cb8db6751a731bb223d93dc6f902f'
+DELIVERY_RECOVERY_BLOCK_SHA256='d10cb333f3576f5386a3f18226f569941a1488de7fae648822c507f8b1e9d4d8'
+WORKBENCH_BLOCKS={
+ 'manual_receipt_final':{
+  'sha':'3423d7b6837c1db79e0c1a6d8297f663d6244d5134c3522b98b3891b6749f1df',
+  'names':{'day_subject','volume_subject'}
+ },
+ 'finance_exceptions':{
+  'sha':'65f9eb491c8e0d7a32916e8eda30764f75dadb4df4ebcc932fdc4898cc4d96d9',
+  'names':{'open','title','empty','case_label','case_title',
+   'readonly_warning','child_line','inspect','more','back','back_finance',
+   'next','first','checked','unavailable'}
+ },
+ 'finance_workbench':{
+  'sha':'b2ca5ebb7ac2e77948f3d952edab9b4cc563385ef9d0fcf2bcb2b7798014aedb',
+  'names':{'denied','checking','back','not_safe','challenge_expired',
+   'unavailable','migration_required','preview_button','reject_button',
+   'commit_approve','commit_reject','preview_approve','preview_reject',
+   'rejected_customer','rejected_report','result','status_completed',
+   'status_rejected','status_unknown','status_unavailable','status_stale',
+   'status_already','status_unsupported','approve_original','reject_original',
+   'manual_evidence_warning','prior_decision'}
+ },
+ 'service_workbench':{
+  'sha':'feda16d173f3d99b91d9544715c170d4c978a5763e02ffd1164a4e7dc75dbaf8',
+  'names':{'title','empty','case_label','case_title','readonly_warning','open',
+   'back','back_finance','next','first','checked','unavailable'}
+ },
+ 'delivery_workbench':{
+  'sha':'0ac67e667fe6669be3a8dae1a90de94dc7347dcb6bc129052f61d190bbf144f3',
+  'names':{'inbox_title','inbox_empty','inbox_case','open_inbox',
+    'native_inbox','back_finance','back_inbox'}
+ }
+}
+DELIVERY_RECOVERY_NAMES={
+    'title','summary','line','warning','check_result','send_result',
+    'check_ack','check','request_send','send_confirm','back','back_inbox',
+    'next','first','missing','not_eligible','unavailable','open'
+}
+def delivery_recovery_original_bytes(current:bytes) -> bytes:
+    import re
+    block=re.search(rb"(?ms)^    'delivery_recovery' => \[\n.*?^    \],\n",current)
+    check(block is not None and
+          hashlib.sha256(block.group()).hexdigest()==DELIVERY_RECOVERY_BLOCK_SHA256,
+          'delivery_recovery_exact_additive_block_changed')
+    original=current[:block.start()]+current[block.end():]
+    for topic,proof in WORKBENCH_BLOCKS.items():
+        pattern=(rb"(?ms)^    '"+topic.encode()+rb"' => \[\n.*?^    \],\n")
+        matches=list(re.finditer(pattern,original))
+        check(len(matches)==1 and hashlib.sha256(matches[0].group()).hexdigest()==proof['sha'],
+              'workbench_exact_additive_source_identity:'+topic)
+        original=original[:matches[0].start()]+original[matches[0].end():]
+    check(original==command('git','show',DELIVERY_RECOVERY_BASE+':messages/fa/admin.php'),
+          'delivery_recovery_preexisting_catalog_bytes_changed')
+    return original
+def delivery_recovery_copy_restore(sides:dict) -> dict:
+    delivery_recovery_original_bytes((ROOT/'messages/fa/admin.php').read_bytes())
+    check(set(sides)=={'user','admin'},'delivery_recovery_catalog_audiences')
+    restored=copy.deepcopy(sides)
+    for topic,proof in WORKBENCH_BLOCKS.items():
+        keys={topic+'.'+name for name in proof['names']}
+        found={key for key in restored['admin'] if key.startswith(topic+'.')}
+        check(found==keys and not any(k.startswith(topic+'.') for k in restored['user']),
+              'workbench_exact_owner_only_copy:'+topic)
+        for key in keys:
+            entry=restored['admin'][key];value=text(entry)
+            check(isinstance(value,str) and value.strip() and
+                  isinstance(params(entry),list) and
+                  len(params(entry))==len(set(params(entry))) and
+                  set(re.findall(r'\{([a-zA-Z_][a-zA-Z0-9_]*)\}',value))==set(params(entry)) and
+                  not re.search(r'[\u06f0-\u06f9\u0660-\u0669]',value),
+                  'workbench_copy_parameters_or_digits:'+key)
+            restored['admin'].pop(key)
+    sides=restored
+    expected={'delivery_recovery.'+name for name in DELIVERY_RECOVERY_NAMES}
+    actual={key for key in sides['admin'] if key.startswith('delivery_recovery.')}
+    check(actual==expected and not any(key.startswith('delivery_recovery.')
+        for key in sides['user']),'delivery_recovery_exact_owner_copy_inventory')
+    for key in expected:
+        entry=sides['admin'][key]
+        value=text(entry)
+        check(isinstance(value,str) and len(value)>0 and
+              isinstance(params(entry),list) and
+              len(params(entry))==len(set(params(entry))) and
+              set(re.findall(r'\{([a-zA-Z_][a-zA-Z0-9_]*)\}',value))==set(params(entry)) and
+              not re.search(r'[\u06f0-\u06f9\u0660-\u0669]',value),
+              'delivery_recovery_exact_copy_slots_or_digits:'+key)
+    for key in ['title','summary','line','warning','check_result','send_result',
+                'check_ack','check','request_send','send_confirm','back_inbox','next',
+                'first','missing','not_eligible','unavailable','open']:
+        check("'delivery_recovery."+key+"'" in (
+            ROOT/'src/Finance/Routes/DeliveryRecovery.php').read_text() or
+            "'delivery_recovery."+key+"'" in (
+            ROOT/'src/Finance/Routes/ManualReceipts.php').read_text() or
+            (key=='back_inbox' and "'delivery_workbench.back_inbox'" in
+             (ROOT/'src/Finance/Routes/DeliveryRecovery.php').read_text()),
+            'delivery_recovery_copy_unbound_to_owner_route:'+key)
+    restored=copy.deepcopy(sides)
+    for key in actual:restored['admin'].pop(key)
+    return restored
+def delivery_recovery_copy_negative_controls(sides:dict) -> int:
+    delivery_recovery_copy_restore(sides)
+    cases=[]
+    bad=copy.deepcopy(sides);bad['admin'].pop('delivery_recovery.title');cases.append(bad)
+    bad=copy.deepcopy(sides);bad['user']['delivery_recovery.open']=bad['admin'].pop('delivery_recovery.open');cases.append(bad)
+    bad=copy.deepcopy(sides);bad['admin']['delivery_recovery.extra']='Injected';cases.append(bad)
+    bad=copy.deepcopy(sides);bad['admin']['delivery_recovery.title']['parameters'].pop();cases.append(bad)
+    for candidate in cases:
+        try:delivery_recovery_copy_restore(candidate)
+        except AssertionError:continue
+        raise AssertionError('delivery_recovery_copy_negative_control_missed')
+    return len(cases)
+
 # The approved Chili RC25 hot-copy is a *specific* 83-value revision on top
 # of main, not a blanket exception to the historical whole-audience checks.
 # Both Git objects and shipping catalog bytes are verified; restore is only
@@ -384,8 +502,14 @@ def chili_copy_values():
     for audience,digest in CHILI_COPY_FILES.items():
         path='messages/fa/'+audience+'.php'
         raw=command('git','show',CHILI_COPY_HEAD+':'+path)
+        current=(ROOT/path).read_bytes()
+        if audience=='admin':
+            # #117 has one separately pinned additive topic. Removing only
+            # that exact byte block must restore the approved, historical
+            # RC25 source byte for byte; no preexisting copy can drift.
+            current=delivery_recovery_original_bytes(current)
         check(hashlib.sha256(raw).hexdigest()==digest and
-              hashlib.sha256((ROOT/path).read_bytes()).hexdigest()==digest,
+              hashlib.sha256(current).hexdigest()==digest,
               'chili_copy_exact_source_identity:'+path)
         old=command('git','show',CHILI_COPY_BASE+':'+path)
         before[audience]=flatten(json.loads(command('php','-r',decode,input=old)))
@@ -479,6 +603,8 @@ def review_catalog_restore(sides):
     return restored,{'review_added_keys':8,'review_added_user_keys':2,'review_added_admin_keys':6,'review_source':REVIEW_SOURCE}
 
 def verify_api_and_restore(sides,definition=None):
+    if any(key.startswith('delivery_recovery.') for audience in sides.values() for key in audience):
+        sides=delivery_recovery_copy_restore(sides)
     # Historical composition proofs enter directly at this API layer. They
     # must first undo the exact #112 copy delta, while the normal R5 pipeline
     # has already restored its historical inheritance key.
@@ -718,6 +844,20 @@ def api_source_references(path,source):
         # checking the same pinned API source and previously accepted #107 insertion.
         audited=source
         if path=='src/Finance/ApiPayments.php':
+            # #117 replaces the fallible in-memory delivery branch without
+            # changing the historical dynamic-message approval inventory.
+            # Pin the entire new consumer byte-for-byte, and require the
+            # separately accepted previous exact main source as the object
+            # fed to unchanged prior-lineage normalization below. Unapproved
+            # edits (including negative controls) still fail closed.
+            if hashlib.sha256(source.encode()).hexdigest()==(
+                '811aa2c126a30cc156e2b25055479fa729f3d277a9a5aff71e8f484142714a98'):
+                baseline=command('git','show',
+                    '17af1e55dc4cb8db6751a731bb223d93dc6f902f:src/Finance/ApiPayments.php')
+                check(hashlib.sha256(baseline).hexdigest()==(
+                    '89cd59037b234327fd05eb4531ad855480376ea51d13d43e3cfee07b60cd5d78'),
+                    'issue117_previous_api_consumer_source_identity_drift')
+                audited=baseline.decode()
             if any(fragment in audited for fragment,_ in API_RECEIPT_PRESENTATION_DIFF):
                 for fragment,_ in API_RECEIPT_PRESENTATION_DIFF:
                     check(audited.count(fragment)==1,

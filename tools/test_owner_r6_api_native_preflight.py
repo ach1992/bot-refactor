@@ -25,7 +25,8 @@ DB=purchase.SIDE[1]
 MIGRATIONS=['001_marzban_panel_group_id.sql','003_payment_attempts.sql',
  '004_automatic_renewal_attempts.sql','006_payment_message_refs.sql',
  '007_service_effects.sql','008_referral_awards.sql','009_bank_buy_invoice_claims.sql',
- '011_provider_identity.sql','012_shared_provider_storage.sql','014_api_payment_evidence.sql']
+ '011_provider_identity.sql','012_shared_provider_storage.sql','014_api_payment_evidence.sql',
+ '018_payment_delivery_intents.sql']
 
 OPS=r'''
 $id=(int)$spec['pay'];$pay=achbotApiPaymentRow($connection,$id);$value=null;
@@ -157,7 +158,7 @@ def check(progress_path=None):
         def reset(kind='volume',method='gift_card'):
             nonlocal count
             count+=1
-            q('DELETE FROM payment_transactions;DELETE FROM bank_buy_invoice_claims;DELETE FROM payment_attempts;DELETE FROM service_effects;DELETE FROM orders_list;DELETE FROM pays')
+            q('DELETE FROM payment_delivery_attempts;DELETE FROM payment_delivery_intents;DELETE FROM payment_transactions;DELETE FROM bank_buy_invoice_claims;DELETE FROM payment_attempts;DELETE FROM service_effects;DELETE FROM orders_list;DELETE FROM pays')
             q(storage.connection(2,1,pg_url))
             q("UPDATE server_info SET ucount=100,state=1,active=1,provider_group_ids='[2,5]' WHERE id=2;UPDATE server_plans SET provider_group_ids='[2,5]',days=30,volume=2,price=101,active=1 WHERE id=7")
             q("INSERT INTO orders_list(id,userid,token,transid,fileid,server_id,inbound_id,remark,uuid,expire_date,link,amount,status,date) VALUES(91,1001,'fixture-token','',7,2,0,'fixture_user','fixture-uuid',1900000000,'[]',101,1,'1700000000')")

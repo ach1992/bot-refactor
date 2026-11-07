@@ -329,6 +329,7 @@ def verifier_phase(work,env,verifier,old):
 def wait_config_lock(work,env,verifier,claimant,verifier_id,old):
     end=time.monotonic()+10
     diagnostic={}
+    observed_process_sql_at=None
     while time.monotonic()<end:
         assert verifier.poll() is None and claimant.poll() is None,'early_owned_worker_exit'
         active,before=verifier_phase(work,env,verifier_id,old)
@@ -430,6 +431,7 @@ def wait_owned_lock(work,env,requestor,blocker,table,requestor_proc,blocker_proc
     assert held['errno']==1205,('blocker_did_not_hold_target_pk',table,held)
     end=time.monotonic()+10
     diagnostic={}
+    observed_process_sql_at=None
     while time.monotonic()<end:
         if blocker_proc.poll() is not None or requestor_proc.poll() is not None:
             raise AssertionError(('owned_wait_actor_exited',requestor,blocker,
@@ -453,6 +455,7 @@ def wait_owned_lock(work,env,requestor,blocker,table,requestor_proc,blocker_proc
         tx=json.loads(trx) if trx else {}
         proc=json.loads(process) if process else {}
         query=tx.get('query') or proc.get('query')
+        current_sql=proc.get('query')
         diagnostic={'lock_waits':rows,'trx':tx,'process':proc}
         if (tx.get('state')=='LOCK WAIT' and isinstance(query,str)
                 and table in query and
@@ -460,6 +463,28 @@ def wait_owned_lock(work,env,requestor,blocker,table,requestor_proc,blocker_proc
                  or 'INSERT ' in query.upper())):
             return {'mode':'trx_lock_wait_with_exact_sql',
                     'held_pk_errno':held['errno']}
+        # Some MariaDB 10.11 builds keep an older INSERT ... SELECT in
+        # INNODB_TRX.trx_query while PROCESSLIST.INFO exposes the currently
+        # executing SELECT id FROM <locked table> ... FOR UPDATE. Require
+        # the exact current statement on two samples >=150 ms apart,
+        # the independently proved row lock, and both actors still alive.
+        # Neither an alive process, a stale transaction query nor an
+        # arbitrary SELECT is accepted as proof of a lock conflict.
+        exact_pk=(isinstance(current_sql,str) and
+            current_sql.strip().upper().startswith('SELECT ID FROM '+
+                table.upper()+' WHERE ID=') and
+            current_sql.strip().upper().endswith('FOR UPDATE'))
+        if exact_pk and tx and tx.get('state') in ('RUNNING','LOCK WAIT'):
+            if observed_process_sql_at is None:
+                observed_process_sql_at=time.monotonic()
+            elif time.monotonic()-observed_process_sql_at>=0.15:
+                second=probe_pk_lock(work,env,table)
+                if (second['errno']==1205 and blocker_proc.poll() is None
+                    and requestor_proc.poll() is None):
+                    return {'mode':'sustained_exact_pk_process_sql_with_independent_lock',
+                            'held_pk_errno':second['errno']}
+        else:
+            observed_process_sql_at=None
         time.sleep(.02)
     diagnostic['held_pk_final']=probe_pk_lock(work,env,table)
     raise AssertionError(('missing_owned_lock',requestor,blocker,table,diagnostic))

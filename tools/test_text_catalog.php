@@ -332,6 +332,86 @@ foreach(['user','admin']as$audience){$groups=require dirname(__DIR__).'/messages
  $shippingSides[$audience]=[];
  foreach($groups as$topic=>$entries)foreach($entries as$name=>$value)$shippingSides[$audience][$topic.'.'.$name]=$value;
 }
+// #117 adds one 18-key Owner-only recovery topic. Preserve all historical
+// native whole-catalogue identity gates: remove ONLY this exact source block
+// for their original byte/array proofs. Neither arbitrary new translations,
+// missing/reordered placeholders, cross-audience entries nor changes to any
+// existing approved catalog can pass this strict overlay.
+$deliveryNames=[
+ 'title','summary','line','warning','check_result','send_result',
+ 'check_ack','check','request_send','send_confirm','back','back_inbox',
+ 'next','first','missing','not_eligible','unavailable','open'
+];
+$sourceAdmin=file_get_contents(dirname(__DIR__).'/messages/fa/admin.php');
+$deliveryBlocks=[];
+if(!is_string($sourceAdmin) ||
+   preg_match_all("~(?ms)^    'delivery_recovery' => \[\n.*?^    \],\n~",
+       $sourceAdmin,$deliveryBlocks,PREG_OFFSET_CAPTURE)!==1 ||
+   hash('sha256',$deliveryBlocks[0][0][0])!==
+       'd10cb333f3576f5386a3f18226f569941a1488de7fae648822c507f8b1e9d4d8')
+ throw new RuntimeException('delivery_recovery_exact_additive_source_identity');
+$start=$deliveryBlocks[0][0][1];$length=strlen($deliveryBlocks[0][0][0]);
+$preDeliveryAdmin=substr($sourceAdmin,0,$start).substr($sourceAdmin,$start+$length);
+$deliverySourceCatalog=require dirname(__DIR__).'/messages/fa/admin.php';
+if(!isset($deliverySourceCatalog['delivery_recovery']) ||
+   array_keys($deliverySourceCatalog['delivery_recovery'])!==$deliveryNames)
+ throw new RuntimeException('delivery_recovery_exact_key_inventory');
+foreach($deliveryNames as$name){
+ $key='delivery_recovery.'.$name;
+ if(!array_key_exists($key,$shippingSides['admin']) ||
+    array_key_exists($key,$shippingSides['user']))
+  throw new RuntimeException('delivery_recovery_owner_only_addition');
+ unset($shippingSides['admin'][$key]);
+}
+// #117's two additional, owner-private workbench topics are strictly
+// additive. Hash exact source blocks and prove their complete inventories;
+// never rebaseline or weaken the older whole-catalogue controls.
+$workbench = [
+ 'manual_receipt_final'=>[
+  'digest'=>'3423d7b6837c1db79e0c1a6d8297f663d6244d5134c3522b98b3891b6749f1df',
+  'names'=>['day_subject','volume_subject']],
+ 'finance_exceptions'=>[
+  'digest'=>'65f9eb491c8e0d7a32916e8eda30764f75dadb4df4ebcc932fdc4898cc4d96d9',
+  'names'=>['open','title','empty','case_label','case_title',
+   'child_line','readonly_warning','inspect','more','back',
+   'back_finance','next','first','checked','unavailable']],
+ 'finance_workbench'=>[
+  'digest'=>'b2ca5ebb7ac2e77948f3d952edab9b4cc563385ef9d0fcf2bcb2b7798014aedb',
+  'names'=>['denied','checking','back','not_safe','challenge_expired','unavailable',
+   'migration_required','preview_button','reject_button','commit_approve','commit_reject',
+   'preview_approve','preview_reject','rejected_customer','rejected_report','result',
+   'status_completed','status_rejected','status_unknown','status_unavailable',
+   'status_stale','status_already','status_unsupported','approve_original',
+   'reject_original','manual_evidence_warning','prior_decision']],
+ 'service_workbench'=>[
+  'digest'=>'feda16d173f3d99b91d9544715c170d4c978a5763e02ffd1164a4e7dc75dbaf8',
+  'names'=>['title','empty','case_label','case_title','readonly_warning',
+   'open','back','back_finance','next','first','checked','unavailable']],
+ 'delivery_workbench'=>[
+  'digest'=>'0ac67e667fe6669be3a8dae1a90de94dc7347dcb6bc129052f61d190bbf144f3',
+  'names'=>['inbox_title','inbox_empty','inbox_case','open_inbox','native_inbox',
+   'back_finance','back_inbox']],
+];
+foreach ($workbench as $topic=>$proof) {
+ $pattern="~(?ms)^    '".preg_quote($topic,'~')."' => \[\n.*?^    \],\n~";
+ $matches=[];
+ if(preg_match_all($pattern,$preDeliveryAdmin,$matches,PREG_OFFSET_CAPTURE)!==1 ||
+    hash('sha256',$matches[0][0][0])!==$proof['digest'])
+    throw new RuntimeException('workbench_exact_additive_source_identity:'.$topic);
+ $start=$matches[0][0][1];$length=strlen($matches[0][0][0]);
+ $preDeliveryAdmin=substr($preDeliveryAdmin,0,$start).
+     substr($preDeliveryAdmin,$start+$length);
+ if(!isset($deliverySourceCatalog[$topic]) ||
+    array_keys($deliverySourceCatalog[$topic])!==$proof['names'])
+    throw new RuntimeException('workbench_exact_owner_only_key_inventory:'.$topic);
+ foreach($proof['names'] as $name) {
+    $key=$topic.'.'.$name;
+    if(!array_key_exists($key,$shippingSides['admin']) ||
+       array_key_exists($key,$shippingSides['user']))
+       throw new RuntimeException('workbench_owner_only_key:'.$key);
+    unset($shippingSides['admin'][$key]);
+ }
+}
 // Exactly the Owner-approved Chili RC25 copy; preserve the old full-catalog
 // proofs by undoing ONLY its exact values in a comparison copy. Source PHP
 // is not modified; foreign copy or mixed revisions fail before old checks.
@@ -357,7 +437,8 @@ foreach($chiliCopyHash as$audience=>$digest){
     escapeshellarg($chiliCopyBase.':'.$path));
  if(!is_string($source)||!is_string($parent)||
     hash('sha256',$source)!==$digest ||
-    hash_file('sha256',dirname(__DIR__).'/'.$path)!==$digest)
+    hash('sha256',$audience==='admin'?$preDeliveryAdmin:
+         file_get_contents(dirname(__DIR__).'/'.$path))!==$digest)
     throw new RuntimeException('chili_copy_exact_source_identity:'.$path);
  $chiliCopyBefore[$audience]=$flattenChili($parent);
  $chiliCopyAfter[$audience]=$flattenChili($source);

@@ -1,0 +1,445 @@
+<?php
+/**
+ * Issue #117: immutable, payment-bound customer delivery intent and
+ * one-way Telegram acknowledgement journal. No merchant/native calls here.
+ * 018 is an explicitly gated forward migration; no runtime DDL or backfill.
+ */
+if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) { http_response_code(404); exit; }
+require_once __DIR__.'/PaymentEvidence.php';
+require_once __DIR__.'/../Admin/Access.php';
+
+/** Fail closed before ANY new external service effect if 018 is unavailable. */
+function achbotDeliverySchemaReady(mysqli $db): bool {
+    try {
+        // The pre-CREATE gate must prove crypto readiness, not just the
+        // presence of tables. Never CREATE a paid remote account when the
+        // original packet cannot be sealed before terminal COMMIT.
+        if (!function_exists('openssl_encrypt') || !function_exists('openssl_decrypt') ||
+            strlen(achbotPaymentEvidenceKey())!==32) return false;
+        $probe=$db->query('SELECT id,pay_row_id,ordinal,attempt_id,effect_id,order_id,user_id,server_id,'.
+            'pay_type,pay_fingerprint,source_digest,native_operation,native_target_key,'.
+            'sealed_payload,payload_sha256,state,attempt_count,dispatch_token,dispatched_at,'.
+            'acknowledged_at,last_actor,last_result FROM payment_delivery_intents LIMIT 0');
+        if (!$probe) return false;
+        $probe->free();
+        $engine=$db->query("SHOW TABLE STATUS WHERE Name='payment_delivery_intents'");
+        if (!$engine || strtolower((string)($engine->fetch_assoc()['Engine']??''))!=='innodb')
+            return false;
+        $keys=[];
+        $indexes=$db->query('SHOW INDEX FROM payment_delivery_intents');
+        while ($indexes && ($r=$indexes->fetch_assoc())) {
+            if ((int)$r['Non_unique']===0)
+                $keys[(string)$r['Key_name']][(int)$r['Seq_in_index']]=(string)$r['Column_name'];
+        }
+        foreach (['uq_delivery_pay_ordinal'=>['pay_row_id','ordinal'],
+                  'uq_delivery_effect'=>['effect_id']] as $key=>$fields) {
+            if (!isset($keys[$key])) return false;
+            ksort($keys[$key]);
+            if (array_values($keys[$key])!==$fields) return false;
+        }
+        $probe=$db->query('SELECT id,intent_id,attempt_no,dispatch_token,actor_userid,'.
+            'result,started_at,finished_at FROM payment_delivery_attempts LIMIT 0');
+        if (!$probe) return false;
+        $probe->free();
+        $engine=$db->query("SHOW TABLE STATUS WHERE Name='payment_delivery_attempts'");
+        if (!$engine || strtolower((string)($engine->fetch_assoc()['Engine']??''))!=='innodb')
+            return false;
+        return true;
+    } catch (Throwable $error) { return false; }
+}
+function achbotDeliveryPurpose(int $payId,int $ordinal,int $effectId,int $orderId): string {
+    return "customer-delivery:v1:$payId:$ordinal:$effectId:$orderId";
+}
+/**
+ * Called with pays locked, inside the SAME financial/order COMMIT. The sealed
+ * packet is immutable; only state/attempt metadata changes afterward.
+ */
+function achbotDeliveryInsertLocked(mysqli $db,array $pay,array $attempt,int $ordinal,
+                                    int $effectId,int $orderId,int $serverId,
+                                    string $sourceDigest,string $nativeOperation,
+                                    string $nativeTargetKey,array $packet): void {
+    $id=(int)($pay['id']??0);$user=(int)($pay['user_id']??0);
+    if ($id<=0 || $user<=0 || $ordinal<=0 || $serverId<0 ||
+        ($ordinal>1 && $effectId<=0) ||
+        ($effectId>0 && ($orderId<=0 || $serverId<=0 || $nativeOperation==='' || $nativeTargetKey==='')) ||
+        (int)($attempt['pay_row_id']??0)!==$id || (int)($attempt['id']??0)<=0 ||
+        !in_array($packet['kind']??null,['qr','text'],true) ||
+        (int)($packet['uid']??0)!==$user)
+        throw new RuntimeException('delivery_intent_identity_invalid');
+    if ($packet['kind']==='qr') {
+        if ($effectId<=0 || !is_string($packet['qr']??null) ||
+            !is_string($packet['caption']??null) || trim($packet['caption'])==='' ||
+            !is_string($packet['keys']??null) || !is_string($packet['bot_url']??null))
+            throw new RuntimeException('delivery_intent_qr_missing');
+    } elseif ($effectId!==0 || !is_string($packet['text']??null) ||
+              trim($packet['text'])==='' || !in_array($packet['mode']??null,['HTML','plain'],true))
+        throw new RuntimeException('delivery_intent_text_missing');
+    $fingerprint=achbotPaymentEvidencePayFingerprint($pay);
+    $body=[
+        'v'=>1,'pay_id'=>$id,'ordinal'=>$ordinal,'attempt_id'=>(int)$attempt['id'],
+        'provider'=>(string)$attempt['provider'],'invoice'=>(string)$attempt['order_hash'],
+        'user_id'=>$user,'pay_type'=>(string)$pay['type'],
+        'pay_fingerprint'=>$fingerprint,'source_digest'=>$sourceDigest,
+        'effect_id'=>$effectId,'order_id'=>$orderId,'server_id'=>$serverId,
+        'native_operation'=>$nativeOperation,'native_target_key'=>$nativeTargetKey,
+        'packet'=>$packet,
+    ];
+    $sealed=achbotPaymentEvidenceProtect(achbotDeliveryPurpose($id,$ordinal,$effectId,$orderId),$body);
+    $digest=hash('sha256',$sealed);
+    $aid=(int)$attempt['id'];$ptype=(string)$pay['type'];
+    $e=$effectId?:null;$o=$orderId?:null;
+    $operation=$nativeOperation!==''?$nativeOperation:null;
+    $target=$nativeTargetKey!==''?$nativeTargetKey:null;
+    $q=$db->prepare("INSERT INTO payment_delivery_intents
+        (pay_row_id,ordinal,attempt_id,effect_id,order_id,user_id,server_id,pay_type,
+         pay_fingerprint,source_digest,native_operation,native_target_key,sealed_payload,
+         payload_sha256,state,attempt_count)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,'pending',0)");
+    if (!$q) throw new RuntimeException('delivery_intent_prepare');
+    $q->bind_param('iiiiiiisssssss',$id,$ordinal,$aid,$e,$o,$user,$serverId,
+        $ptype,$fingerprint,$sourceDigest,$operation,$target,$sealed,$digest);
+    if (!$q->execute() || $q->affected_rows!==1)
+        throw new RuntimeException('delivery_intent_insert');
+    $q->close();
+}
+
+/** Call after 007 CREATE is linked to a newly inserted 023 order. */
+function achbotDeliveryInsertBuyLocked(mysqli $db,array $pay,array $attempt,array $effect,
+                                       int $ordinal,int $orderId,array $packet,
+                                       string $invoiceSha): void {
+    if ($orderId<=0 || !hash_equals($invoiceSha,achbotBankBuyInvoiceFingerprint($pay)))
+        throw new RuntimeException('delivery_buy_invoice_invalid');
+    foreach (['operation_id','target_key','endpoint_sha256','request_sha256','remote_username'] as $key)
+        if (!is_string($effect[$key]??null) || $effect[$key]==='')
+            throw new RuntimeException('delivery_native_pin_missing');
+    $packet['kind']='qr';
+    achbotDeliveryInsertLocked($db,$pay,$attempt,$ordinal,(int)$effect['id'],$orderId,
+        (int)$effect['target_server_id'],
+        hash('sha256',$invoiceSha.'|'.(string)$effect['request_sha256'].'|'.
+            (string)$effect['endpoint_sha256'].'|'.(string)$effect['remote_username']),
+        (string)$effect['operation_id'],(string)$effect['target_key'],$packet);
+}
+
+/** For wallet / API service edit, invoked under the SAME terminal transaction. */
+function achbotDeliveryInsertTextLocked(mysqli $db,array $pay,array $attempt,string $text,
+                                        string $mode,int $orderId,int $serverId,
+                                        string $effectDigest): void {
+    if ($effectDigest==='' || !achbotDeliverySchemaReady($db))
+        throw new RuntimeException('delivery_text_schema_or_proof');
+    achbotDeliveryInsertLocked($db,$pay,$attempt,1,0,$orderId,$serverId,
+        $effectDigest,'','',['kind'=>'text','text'=>$text,'mode'=>$mode,'uid'=>(int)$pay['user_id']]);
+}
+/**
+ * Verify real financial, customer, account and pinned native identities under
+ * row locks before exposing encrypted material to a delivery transport.
+ * Never rebuild from mutable plan/config data.
+ */
+function achbotDeliveryValidateLocked(mysqli $db,array $pay,array $d): ?array {
+    $id=(int)$pay['id'];$ordinal=(int)$d['ordinal'];
+    if ($id!==(int)$d['pay_row_id'] || (int)$pay['user_id']!==(int)$d['user_id'] ||
+        (string)$pay['type']!==(string)$d['pay_type'] ||
+        !hash_equals((string)$d['pay_fingerprint'],achbotPaymentEvidencePayFingerprint($pay)) ||
+        !in_array((string)$pay['state'],['approved','paid','auto_cart_approved','paid_with_wallet'],true) ||
+        !hash_equals((string)$d['payload_sha256'],hash('sha256',(string)$d['sealed_payload'])))
+        return null;
+    $a=$db->prepare('SELECT * FROM payment_attempts WHERE pay_row_id=? FOR UPDATE');
+    $a->bind_param('i',$id);$a->execute();$attempt=$a->get_result()->fetch_assoc();$a->close();
+    if (!$attempt || (int)$attempt['id']!==(int)$d['attempt_id']) return null;
+    $effectId=(int)($d['effect_id']??0);$orderId=(int)($d['order_id']??0);
+    $body=achbotPaymentEvidenceUnprotect(
+        achbotDeliveryPurpose($id,$ordinal,$effectId,$orderId),(string)$d['sealed_payload']);
+    if (!$body || ($body['v']??null)!==1) return null;
+    foreach (['pay_id'=>$id,'ordinal'=>$ordinal,'attempt_id'=>(int)$attempt['id'],
+        'user_id'=>(int)$d['user_id'],'effect_id'=>$effectId,'order_id'=>$orderId,
+        'server_id'=>(int)$d['server_id']] as $k=>$v)
+        if (($body[$k]??null)!==$v) return null;
+    foreach (['provider'=>(string)$attempt['provider'],
+        'invoice'=>(string)$attempt['order_hash'],'pay_type'=>(string)$d['pay_type'],
+        'pay_fingerprint'=>(string)$d['pay_fingerprint'],
+        'source_digest'=>(string)$d['source_digest'],
+        'native_operation'=>(string)($d['native_operation']??''),
+        'native_target_key'=>(string)($d['native_target_key']??'')] as $k=>$v)
+        if (!is_string($body[$k]??null) || !hash_equals($v,$body[$k])) return null;
+    if ($effectId>0) {
+        $q=$db->prepare('SELECT id,pay_row_id,ordinal,state,order_id,target_server_id,'.
+            'operation_id,target_key,request_sha256,endpoint_sha256,remote_username '.
+            'FROM service_effects WHERE id=? FOR UPDATE');
+        $q->bind_param('i',$effectId);$q->execute();$effect=$q->get_result()->fetch_assoc();$q->close();
+        if (!$effect || (int)$effect['pay_row_id']!==$id ||
+            (int)$effect['ordinal']!==$ordinal || (string)$effect['state']!=='local_recorded' ||
+            (int)$effect['order_id']!==$orderId || (int)$effect['target_server_id']!==(int)$d['server_id'] ||
+            !hash_equals((string)$d['native_operation'],(string)$effect['operation_id']) ||
+            !hash_equals((string)$d['native_target_key'],(string)$effect['target_key']))
+            return null;
+        $claim=$db->prepare('SELECT invoice_sha256 FROM bank_buy_invoice_claims WHERE pay_row_id=? FOR UPDATE');
+        $claim->bind_param('i',$id);$claim->execute();$invoice=$claim->get_result()->fetch_assoc();$claim->close();
+        $issuedFingerprint=achbotBankBuyInvoiceFingerprint($pay);
+        if ($invoice) {
+            // Original card-transfer invoice 009 exists, never reconstruct it.
+            if (!hash_equals((string)$invoice['invoice_sha256'],$issuedFingerprint))
+                return null;
+        } else {
+            // A gift native BUY has immutable API issuance, but no bank-only
+            // 009 row. Require exact settlement proof, never inferred intent.
+            $profile=achbotPaymentEvidenceSnapshot($attempt);
+            $proof=achbotPaymentEvidenceGetProof($db,$id);
+            if (!$profile || ($profile['pay_sha256']??null)!==achbotPaymentEvidencePayFingerprint($pay) ||
+                !$proof || !achbotPaymentEvidenceValidateProofLocked($db,$pay,$proof) ||
+                (int)$proof['attempt_id']!==(int)$attempt['id'])
+                return null;
+        }
+        if (($attempt['evidence_profile']??null)!==null) {
+            $proof=achbotPaymentEvidenceGetProof($db,$id);
+            if (!$proof || !achbotPaymentEvidenceValidateProofLocked($db,$pay,$proof))
+                return null;
+        }
+        if (!hash_equals((string)$d['source_digest'],
+                hash('sha256',$issuedFingerprint.'|'.
+                    (string)$effect['request_sha256'].'|'.(string)$effect['endpoint_sha256'].'|'.
+                    (string)$effect['remote_username'])))
+            return null;
+    } elseif ((string)$d['pay_type']==='INCREASE_WALLET') {
+        if ($orderId!==0 || (int)$d['server_id']!==0 ||
+            !hash_equals((string)$d['source_digest'],
+                hash('sha256','wallet:'.(string)$attempt['id'])))
+            return null;
+    } else {
+        if ($orderId<0 || (int)$d['server_id']<=0 ||
+            (string)$attempt['evidence_fulfillment_state']==='reserved' ||
+            !is_string($attempt['evidence_fulfillment_payload']??null) ||
+            !hash_equals((string)$d['source_digest'],
+                hash('sha256',(string)$attempt['evidence_fulfillment_payload'])))
+            return null;
+    }
+    if ($orderId>0) {
+        $q=$db->prepare('SELECT id,userid,server_id FROM orders_list WHERE id=? FOR UPDATE');
+        $q->bind_param('i',$orderId);$q->execute();$order=$q->get_result()->fetch_assoc();$q->close();
+        if (!$order || (int)$order['userid']!==(int)$d['user_id'] ||
+            (int)$order['server_id']!==(int)$d['server_id'])
+            return null;
+    }
+    $packet=$body['packet']??null;
+    if (!is_array($packet) || (int)($packet['uid']??0)!==(int)$d['user_id']) return null;
+    if ($effectId>0) {
+        if (($packet['kind']??null)!=='qr' ||
+            !is_string($packet['qr']??null) ||
+            !is_string($packet['caption']??null) || trim($packet['caption'])==='' ||
+            !is_string($packet['keys']??null) || !is_string($packet['bot_url']??null))
+            return null;
+    } elseif (($packet['kind']??null)!=='text' ||
+              !is_string($packet['text']??null) || trim($packet['text'])==='' ||
+              !in_array($packet['mode']??null,['HTML','plain'],true)) return null;
+    return $packet;
+}
+/** One CAS winner is allowed to emit; ambiguous outcome is never retried. */
+function achbotDeliveryDispatch(mysqli $db,int $payId,int $ordinal,int $actor=0,
+                                ?string $challenge=null): string {
+    if (!achbotDeliverySchemaReady($db)) return 'unavailable';
+    if ($actor<0 || ($actor>0 && ($actor!==(int)($GLOBALS['admin']??0) ||
+        !achbotAdminCanFor($db,$actor,(int)$GLOBALS['admin'],'review')))) return 'denied';
+    $token='';$packet=null;$begun=false;
+    try {
+        if (!$db->begin_transaction()) return 'unavailable';$begun=true;
+        $lock=$db->prepare('SELECT * FROM pays WHERE id=? FOR UPDATE');
+        $lock->bind_param('i',$payId);$lock->execute();
+        $pay=$lock->get_result()->fetch_assoc();$lock->close();
+        $q=$db->prepare('SELECT * FROM payment_delivery_intents WHERE pay_row_id=? AND ordinal=? FOR UPDATE');
+        $q->bind_param('ii',$payId,$ordinal);$q->execute();$d=$q->get_result()->fetch_assoc();$q->close();
+        if (!$pay || !$d) throw new RuntimeException('delivery_missing');
+        if ($actor===0 && $d['state']!=='pending') throw new RuntimeException('delivery_not_pending');
+        if ($actor>0 && (!in_array($d['state'],['pending','unknown'],true) ||
+            !achbotDeliveryChallengeValid($d,$actor,(string)$challenge)))
+            throw new RuntimeException('delivery_challenge_invalid');
+        $packet=achbotDeliveryValidateLocked($db,$pay,$d);
+        if ($packet===null) throw new RuntimeException('delivery_identity_or_payload_invalid');
+        $token=bin2hex(random_bytes(16));
+        $id=(int)$d['id'];$state=(string)$d['state'];$count=(int)$d['attempt_count'];
+        $q=$db->prepare("UPDATE payment_delivery_intents SET state='dispatching',attempt_count=attempt_count+1,
+            dispatch_token=?,dispatched_at=NOW(),last_actor=?,last_result=NULL
+            WHERE id=? AND state=? AND attempt_count=? AND payload_sha256=?");
+        $digest=(string)$d['payload_sha256'];
+        $q->bind_param('siisis',$token,$actor,$id,$state,$count,$digest);
+        $ok=$q->execute() && $q->affected_rows===1;$q->close();
+        if (!$ok) throw new RuntimeException('delivery_claim_not_saved');
+        $next=$count+1;
+        $a=$db->prepare("INSERT INTO payment_delivery_attempts
+            (intent_id,attempt_no,dispatch_token,actor_userid)
+            VALUES (?,?,?,?)");
+        $a->bind_param('iisi',$id,$next,$token,$actor);
+        $ok=$a->execute() && $a->affected_rows===1;$a->close();
+        if (!$ok || !$db->commit()) throw new RuntimeException('delivery_claim_unknown');
+        $begun=false;
+    } catch(Throwable $e) {
+        if ($begun) try {$db->rollback();}catch(Throwable $ignored){}
+        error_log('achbot_delivery_claim_deferred pay_id='.$payId.' ordinal='.$ordinal.' reason='.get_class($e));
+        return 'review';
+    }
+    $ack=false;
+    try {
+        if ($packet['kind']==='qr') {
+            $ack=sendQrFromLink($packet['qr'],$packet['caption'],$packet['keys'],
+                $packet['bot_url'],(int)$packet['uid'])===true;
+        } else {
+            $mode=$packet['mode']==='plain'?null:'HTML';
+            $answer=sendMessage($packet['text'],null,$mode,(int)$packet['uid']);
+            $ack=($answer===true || (is_object($answer)&&($answer->ok??false)===true)
+                || (is_array($answer)&&($answer['ok']??false)===true));
+        }
+    } catch(Throwable $e) {
+        error_log('achbot_delivery_telegram_uncertain pay_id='.$payId.' ordinal='.$ordinal.
+            ' class='.get_class($e));
+    }
+    $result=$ack?'ack':'unknown';
+    $state=$ack?'acknowledged':'unknown';
+    $finished=false;
+    try {
+        if (!$db->begin_transaction()) return 'unknown';
+        $q=$db->prepare("UPDATE payment_delivery_intents SET
+            state=?,dispatch_token=NULL,acknowledged_at=IF(?='ack',NOW(),NULL),last_result=?
+            WHERE pay_row_id=? AND ordinal=? AND state='dispatching' AND dispatch_token=?");
+        $q->bind_param('sssiis',$state,$result,$result,$payId,$ordinal,$token);
+        $ok=$q->execute() && $q->affected_rows===1;$q->close();
+        if (!$ok) throw new RuntimeException('delivery_finalize_token_mismatch');
+        $a=$db->prepare("UPDATE payment_delivery_attempts SET result=?,finished_at=NOW()
+            WHERE dispatch_token=? AND result='dispatching'");
+        $a->bind_param('ss',$state,$token);
+        $ok=$a->execute() && $a->affected_rows===1;$a->close();
+        if (!$ok || !$db->commit()) throw new RuntimeException('delivery_finalize_unknown');
+        $finished=true;
+    } catch(Throwable $e) {
+        try {$db->rollback();} catch(Throwable $ignored) {}
+        error_log('achbot_delivery_finalize_unknown pay_id='.$payId.' ordinal='.$ordinal);
+    }
+    return $finished?$state:'unknown';
+}
+/** Safe to call on a repeated terminal callback: only PENDING emits.
+ * Page with monotone ordinals, not a hidden account-count ceiling.
+ * A future explicit coordinator may bound walltime without losing due rows.
+ */
+function achbotDeliveryDispatchPending(mysqli $db,int $payId): array {
+    if (!achbotDeliverySchemaReady($db)) return [];
+    $cursor=0;$out=[];
+    while (true) {
+        $q=$db->prepare("SELECT ordinal FROM payment_delivery_intents
+            WHERE pay_row_id=? AND state='pending' AND ordinal>?
+            ORDER BY ordinal LIMIT 100");
+        $q->bind_param('ii',$payId,$cursor);$q->execute();
+        $rows=$q->get_result()->fetch_all(MYSQLI_ASSOC);$q->close();
+        if (!$rows) break;
+        foreach ($rows as $d) {
+            $cursor=(int)$d['ordinal'];
+            $out[$cursor]=achbotDeliveryDispatch($db,$payId,$cursor);
+        }
+    }
+    return $out;
+}
+/** Bounded operator-visible projection; never return private sealed packets. */
+function achbotDeliveryInspect(mysqli $db,int $payId,int $after=0): array {
+    if (!achbotDeliverySchemaReady($db) || $after<0) return [];
+    $q=$db->prepare("SELECT pay_row_id,ordinal,user_id,effect_id,order_id,state,
+        attempt_count,dispatched_at,acknowledged_at,last_actor,last_result
+        FROM payment_delivery_intents WHERE pay_row_id=? AND ordinal>?
+        ORDER BY ordinal LIMIT 11");
+    $q->bind_param('ii',$payId,$after);$q->execute();
+    $rows=$q->get_result()->fetch_all(MYSQLI_ASSOC);$q->close();
+    return $rows;
+}
+function achbotDeliveryInspectOne(mysqli $db,int $payId,int $ordinal): ?array {
+    if (!achbotDeliverySchemaReady($db)) return null;
+    $q=$db->prepare("SELECT pay_row_id,ordinal,user_id,effect_id,order_id,state,
+        attempt_count,dispatched_at,acknowledged_at,last_actor,last_result
+        FROM payment_delivery_intents WHERE pay_row_id=? AND ordinal=?");
+    $q->bind_param('ii',$payId,$ordinal);$q->execute();
+    $row=$q->get_result()->fetch_assoc();$q->close();
+    return $row?:null;
+}
+/** Stage-specific, passive integrity check; never an evidence-free re-send. */
+function achbotDeliveryCheck(mysqli $db,int $payId,int $ordinal): string {
+    if (!achbotDeliverySchemaReady($db)) return 'unavailable';
+    try {
+        if (!$db->begin_transaction()) return 'unavailable';
+        $q=$db->prepare('SELECT * FROM pays WHERE id=? FOR UPDATE');
+        $q->bind_param('i',$payId);$q->execute();$pay=$q->get_result()->fetch_assoc();$q->close();
+        $q=$db->prepare('SELECT * FROM payment_delivery_intents WHERE pay_row_id=? AND ordinal=? FOR UPDATE');
+        $q->bind_param('ii',$payId,$ordinal);$q->execute();$d=$q->get_result()->fetch_assoc();$q->close();
+        $result=($pay && $d && achbotDeliveryValidateLocked($db,$pay,$d)!==null)
+            ? (string)$d['state']:'identity_or_payload_invalid';
+        $db->rollback();
+        return $result;
+    } catch(Throwable $e) {
+        try {$db->rollback();}catch(Throwable $ignored){}
+        error_log('achbot_delivery_integrity_check_unavailable pay_id='.$payId.' ordinal='.$ordinal);
+        return 'unavailable';
+    }
+}
+function achbotDeliveryAggregate(mysqli $db,int $payId): ?array {
+    if (!achbotDeliverySchemaReady($db)) return null;
+    $q=$db->prepare("SELECT COUNT(*) AS total,
+        COALESCE(SUM(state='acknowledged'),0) AS ack,
+        COALESCE(SUM(state='pending'),0) AS pending,
+        COALESCE(SUM(state='unknown'),0) AS unknown,
+        COALESCE(SUM(state='dispatching'),0) AS dispatching
+        FROM payment_delivery_intents WHERE pay_row_id=?");
+    $q->bind_param('i',$payId);$q->execute();
+    $row=$q->get_result()->fetch_assoc();$q->close();
+    return $row?:null;
+}
+/** Projection is advisory; independent per-line ACKs remain authoritative. */
+function achbotDeliverySyncAggregate(mysqli $db,int $payId): void {
+    $a=achbotDeliveryAggregate($db,$payId);
+    if (!$a || (int)$a['total']<1) return;
+    $state=(int)$a['ack']===(int)$a['total']?'done':'delivery_unconfirmed';
+    $q=$db->prepare("UPDATE payment_attempts a JOIN pays p ON p.id=a.pay_row_id
+        SET a.evidence_fulfillment_state=? WHERE p.id=?
+          AND p.state IN ('approved','paid','auto_cart_approved','paid_with_wallet')
+          AND a.evidence_profile IS NOT NULL
+          AND (a.evidence_fulfillment_state IS NULL OR a.evidence_fulfillment_state IN
+            ('verified','delivery_unconfirmed','delivery_dispatching','done','reserved'))");
+    $q->bind_param('si',$state,$payId);$q->execute();$q->close();
+}
+function achbotDeliveryMarkStaleUnknown(mysqli $db,int $payId,int $ordinal): void {
+    if (!achbotDeliverySchemaReady($db)) return;
+    if (!$db->begin_transaction()) return;
+    try {
+        // The exact old lease token is preserved in the attempt history,
+        // even though the summary is released to permit a warned resend.
+        $q=$db->prepare("SELECT id,dispatch_token FROM payment_delivery_intents
+            WHERE pay_row_id=? AND ordinal=? AND state='dispatching'
+            AND dispatched_at < DATE_SUB(NOW(),INTERVAL 10 MINUTE) FOR UPDATE");
+        $q->bind_param('ii',$payId,$ordinal);$q->execute();
+        $row=$q->get_result()->fetch_assoc();$q->close();
+        if ($row && is_string($row['dispatch_token']) && $row['dispatch_token']!=='') {
+            $q=$db->prepare("UPDATE payment_delivery_intents SET state='unknown',
+                dispatch_token=NULL,last_result='process_lost' WHERE id=? AND dispatch_token=?");
+            $q->bind_param('is',$row['id'],$row['dispatch_token']);$q->execute();
+            $ok=$q->affected_rows===1;$q->close();
+            $a=$db->prepare("UPDATE payment_delivery_attempts SET result='unknown',
+                finished_at=NOW() WHERE intent_id=? AND dispatch_token=? AND result='dispatching'");
+            $a->bind_param('is',$row['id'],$row['dispatch_token']);$a->execute();
+            $ok=$ok && $a->affected_rows===1;$a->close();
+            if (!$ok) throw new RuntimeException('delivery_stale_lease_audit_mismatch');
+        }
+        if (!$db->commit()) throw new RuntimeException('delivery_stale_lease_commit_unknown');
+    } catch(Throwable $e) {
+        try {$db->rollback();}catch(Throwable $ignored){}
+        error_log('achbot_delivery_stale_check_deferred pay_id='.$payId.' ordinal='.$ordinal);
+    }
+}
+/** Stateless owner-private two-step signed approval, invalidated by any attempt. */
+function achbotDeliveryChallenge(array $row,int $actor): string {
+    $minute=intdiv(time(),60);
+    $data=(int)$row['pay_row_id'].'|'.(int)$row['ordinal'].'|'.$actor.'|'.
+        (string)$row['state'].'|'.(int)$row['attempt_count'].'|'.$minute;
+    $sig=substr(hash_hmac('sha256','achbot-delivery/confirm/v1/'.$data,
+        achbotPaymentEvidenceKey()),0,12);
+    return $minute.'_'.$sig;
+}
+function achbotDeliveryChallengeValid(array $row,int $actor,string $challenge): bool {
+    if ($actor<=0 || !preg_match('/^([1-9][0-9]{0,10})_([a-f0-9]{12})$/D',$challenge,$m)) return false;
+    $minute=(int)$m[1];$now=intdiv(time(),60);
+    if ($minute>$now || $minute<$now-2) return false;
+    $data=(int)$row['pay_row_id'].'|'.(int)$row['ordinal'].'|'.$actor.'|'.
+        (string)$row['state'].'|'.(int)$row['attempt_count'].'|'.$minute;
+    return hash_equals(substr(hash_hmac('sha256','achbot-delivery/confirm/v1/'.$data,
+        achbotPaymentEvidenceKey()),0,12),$m[2]);
+}

@@ -34,6 +34,7 @@ $paymentKeys=$spec['keys']??[
     'manualUsdtNetwork'=>'BEP20','manualUsdtRateToman'=>'100000',
 ];
 $admin=9001;
+$GLOBALS['telegramWebhookSecret']='fixture-manual-payment-delivery-key-2026';
 require_once $root.'/src/Finance/ReceiptHelpers.php';
 require_once $root.'/src/Panel/ProviderRuntime.php';
 function achbotSupportsPaymentSubject(...$args) {return true;}
@@ -250,7 +251,7 @@ function sendPhoto(...$args){
 }
 function sendToAllAdmins(...$args){$GLOBALS['events'][]=['name'=>'sendToAllAdmins'];}
 function editKeys(...$args){
-    $GLOBALS['events'][]=['name'=>'editKeys'];
+    $GLOBALS['events'][]=['name'=>'editKeys','args'=>$args];
     if (($GLOBALS['spec']['message_edit_transport']??'')==='throw')
         throw new RuntimeException('fixture_secret_should_not_be_forwarded');
     return (object)['ok'=>true];
@@ -628,6 +629,7 @@ def check():
         query(work,env,(ROOT/'migrations/post-v9/007_service_effects.sql').read_text())
         query(work,env,(ROOT/'migrations/post-v9/008_referral_awards.sql').read_text())
         query(work,env,(ROOT/'migrations/post-v9/009_bank_buy_invoice_claims.sql').read_text())
+        query(work,env,(ROOT/'migrations/post-v9/018_payment_delivery_intents.sql').read_text())
         # Each isolated standard receipt now holds capacity before POST.
         # Supply independent test headroom; focused exhaustion is checked
         # in actual ServiceEffects concurrency and reservation regressions.
@@ -857,6 +859,34 @@ def check():
                 query(work,env,'SELECT COUNT(*),IFNULL(SUM(acount),0) FROM server_plans'),
             )
 
+        def assert_final_original_receipt(events,key,subject):
+            original=query(work,env,
+                "SELECT CONCAT(message_id,':',chat_id) FROM pays "
+                "WHERE hash_id='"+key+"'")
+            target_id,target_chat=map(int,original.split(':'))
+            receipts=[e['args'] for e in events if e['name']=='editKeys'
+                      and len(e.get('args',[]))>=3
+                      and int(e['args'][1])==target_id
+                      and int(e['args'][2])==target_chat]
+            if len(receipts)!=1:
+                raise RuntimeError('Original manual receipt identity not edited exactly once: '+key)
+            keys=json.loads(receipts[0][0])['inline_keyboard']
+            if subject=='@issued':
+                subject=query(work,env,
+                    "SELECT e.remote_username FROM service_effects e "
+                    "JOIN pays p ON p.id=e.pay_row_id "
+                    "WHERE p.hash_id='"+key+"' AND e.effect_kind='create' "
+                    "AND e.state='local_recorded' ORDER BY e.ordinal DESC LIMIT 1")
+                if not subject:raise RuntimeError('Missing issued account for '+key)
+            if (len(keys)!=3 or any(len(row)!=1 for row in keys) or
+                any(row[0].get('callback_data')!='noop_'+key for row in keys) or
+                '9001' not in keys[0][0]['text'] or
+                subject not in keys[1][0]['text'] or
+                key not in keys[2][0]['text']):
+                raise RuntimeError('Final manual receipt violates three informational rows: '+key+
+                    repr(keys))
+            return True
+
         def reject_service(key,route,callback,actor=9001):
             before=service_snapshot(key)
             events=run_route(work,env,route_driver,data=callback+key,actor=actor,route=route)
@@ -949,6 +979,8 @@ def check():
             "AND e.effect_kind='manual_hold' AND e.ordinal=0")=='1\tconsumed', (
                 'successful manually reviewed CREATE must consume exactly one owned capacity hold')
         reject_service('standardsuccess','standard_approval','accept')
+        assert_final_original_receipt(delivered,'standardsuccess','@issued')
+        cases.append('manual_standard_original_receipt_three_non_action_rows')
         cases.append('real_standard_verified_receipt_one_delivery_no_replay')
         # Review R2: the real ManualApproval.php source must not truncate
         # fractional shares when insertOrder() binds its integer amount.
@@ -1106,6 +1138,8 @@ def check():
         assert [e['name'] for e in renewed].count('order_insert')==1,repr(renewed)
         assert query(work,env,"SELECT state FROM pays WHERE hash_id='standardrenewsuccess'")=='approved'
         reject_service('standardrenewsuccess','standard_approval','accept')
+        assert_final_original_receipt(renewed,'standardrenewsuccess','fixture-remark')
+        cases.append('manual_renew_sconfig_original_receipt_three_non_action_rows')
         cases.append('real_standard_renewal_receipt_one_remote_change_no_replay')
         renewal_pay('standardrenewpostcommit',method='gift_card')
         notice=run_route(work,env,route_driver,
@@ -1184,6 +1218,8 @@ def check():
             "WHERE pay_row_id=(SELECT id FROM pays WHERE hash_id='customvalid') "
             "ORDER BY ordinal,effect_kind")==(
             'manual_hold\t0\tconsumed\t1\ncreate\t1\tlocal_recorded\t0')
+        assert_final_original_receipt(positive,'customvalid','@issued')
+        cases.append('manual_custom_original_receipt_three_non_action_rows')
         cases.append('real_custom_authorized_review_state_approves_only_once')
         reject_service('customvalid','checkout','accCustom')
         cases.append('real_custom_replayed_operator_callback_no_remote_effect')
@@ -1673,6 +1709,8 @@ def check():
                        for e in credited),repr((key,credited))
             assert query(work,env,f"SELECT state FROM pays WHERE hash_id='{key}'")=='approved'
             assert int(query(work,env,'SELECT wallet FROM users WHERE userid=1001'))==before+100000
+            assert_final_original_receipt(credited,key,'کیف پول')
+            cases.append('manual_wallet_original_receipt_three_non_action_rows_'+provider)
             cases.append('manual_wallet_exactly_one_credit_'+provider)
 
             repeated=run_route(work,env,route_driver,

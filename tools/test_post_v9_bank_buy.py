@@ -30,6 +30,7 @@ $root=$argv[1];$socket=$argv[2];$dbName=$argv[3];
 $spec=json_decode($argv[4],true,512,JSON_THROW_ON_ERROR);
 $connection=new mysqli('localhost','root','',$dbName,0,$socket);
 $connection->set_charset('utf8mb4');
+$GLOBALS['telegramWebhookSecret']='fixture-bank-webhook-secret-32-byte-valid';
 // Fixture-only deterministic suffixes deliberately expose cross-case name
 // reuse. Each independent invoice receives its own server remark prefix.
 mt_srand(424242);
@@ -170,6 +171,8 @@ function sendQrFromLink(...$args) {
     if (($GLOBALS['spec']['mode']??'')==='telegram_failure')
         throw new RuntimeException('synthetic_telegram_failure');
     if (($GLOBALS['spec']['mode']??'')==='telegram_unconfirmed') return false;
+    $n=(int)($GLOBALS['fixture_sends']??0)+1;$GLOBALS['fixture_sends']=$n;
+    if (($GLOBALS['spec']['mode']??'')==='telegram_second_unknown' && $n===2) return false;
     return true;
 }
 function sendMessage($text=null,$keys=null,$mode=null,$to=null) {
@@ -195,6 +198,24 @@ if ($op==='claim') {
     $id=(int)($spec['pay']??0);
     $pay=$connection->query('SELECT * FROM pays WHERE id='.$id)->fetch_assoc();
     $value=achbotAutoBankClaim($connection,$pay);
+} elseif ($op==='delivery_pending') {
+    require_once $root.'/src/Finance/DeliveryLedger.php';
+    $value=achbotDeliveryDispatchPending($connection,(int)$spec['pay']);
+} elseif ($op==='delivery_check') {
+    require_once $root.'/src/Finance/DeliveryLedger.php';
+    $value=achbotDeliveryCheck($connection,(int)$spec['pay'],(int)$spec['ordinal']);
+} elseif ($op==='delivery_stale') {
+    require_once $root.'/src/Finance/DeliveryLedger.php';
+    achbotDeliveryMarkStaleUnknown($connection,(int)$spec['pay'],(int)$spec['ordinal']);
+    $value=achbotDeliveryInspectOne($connection,(int)$spec['pay'],(int)$spec['ordinal']);
+} elseif ($op==='delivery_challenge') {
+    require_once $root.'/src/Finance/DeliveryLedger.php';
+    $value=achbotDeliveryInspectOne($connection,(int)$spec['pay'],(int)$spec['ordinal']);
+    if($value)$value=achbotDeliveryChallenge($value,(int)($spec['actor']??9001));
+} elseif ($op==='delivery_owner_send') {
+    require_once $root.'/src/Finance/DeliveryLedger.php';
+    $value=achbotDeliveryDispatch($connection,(int)$spec['pay'],(int)$spec['ordinal'],
+        (int)($spec['actor']??9001),(string)($spec['challenge']??''));
 } elseif ($op==='break_attempt') {
     fixtureAlterOriginalBankAttempt((int)($spec['pay']??0),
         ($spec['mode']??'delete')==='replace'?'replace':'delete');
@@ -324,7 +345,7 @@ def check():
         assert len(query(work,env,'SHOW TABLES').splitlines())==23
         for f in ('001_marzban_panel_group_id.sql',
                   '003_payment_attempts.sql','007_service_effects.sql',
-                  '009_bank_buy_invoice_claims.sql'):
+                  '009_bank_buy_invoice_claims.sql','018_payment_delivery_intents.sql'):
             query(work,env,(ROOT/'migrations/post-v9'/f).read_text())
         driver=work/'bank-buy-driver.php';driver.write_text(PHP)
         _issuer_driver=issuer_driver(work)
@@ -348,6 +369,27 @@ def check():
         assert effects(work,env,good)=='local_recorded'
         assert not any(e['event']=='POST' for e in run(work,env,driver,pay=good)['events'])
         cases.append('one_verified_account_atomic_order_before_telegram_no_replay')
+        assert query(work,env,f"SELECT ordinal,state,attempt_count FROM payment_delivery_intents WHERE pay_row_id={good}")=='1\tacknowledged\t1'
+        assert query(work,env,f"SELECT attempt_no,result,actor_userid FROM payment_delivery_attempts WHERE intent_id=(SELECT id FROM payment_delivery_intents WHERE pay_row_id={good})")=='1\tacknowledged\t0'
+        protected=query(work,env,f"SELECT sealed_payload FROM payment_delivery_intents WHERE pay_row_id={good}")
+        assert protected and 'vless://' not in protected and 'fixture-token' not in protected
+        cases.append('first_success_atomic_encrypted_manifest_and_ack_history')
+
+        # Native settlement may complete and crash BEFORE the first Telegram
+        # packet. Reenter only from 018, without provider CREATE or debit.
+        crash=seed(work,env,'bankdeliverycrash')
+        assert run(work,env,driver,op='claim',pay=crash)['result'] is True
+        committed=run(work,env,driver,op='provision_claimed',pay=crash)
+        assert committed['result']['committed'] is True and not any(x['event']=='DELIVER' for x in committed['events']),committed
+        assert state(work,env,crash)=='auto_cart_approved'
+        assert query(work,env,f"SELECT state,attempt_count FROM payment_delivery_intents WHERE pay_row_id={crash}")=='pending\t0'
+        delivered=run(work,env,driver,op='delivery_pending',pay=crash)
+        assert delivered['result']=={'1':'acknowledged'} and sum(x['event']=='DELIVER' for x in delivered['events'])==1,delivered
+        assert not any(x['event']=='POST' for x in delivered['events']),delivered
+        again=run(work,env,driver,op='delivery_pending',pay=crash)
+        assert again['result']==[] and not again['events'],again
+        assert total(work,env,'orders_list',crash)==1 and total(work,env,'service_effects',crash)==1
+        cases.append('crash_postterminal_before_telegram_resumes_pending_only_once')
 
         # A valid per-server qr:none is a text-only delivery, not a failed CREATE.
         query(work,env,"INSERT INTO setting(type,value) VALUES ('ACHBOT_SERVER_DISPLAY_2'," +
@@ -397,6 +439,61 @@ def check():
         assert total(work,env,'orders_list',multi)==2 and amount(work,env,multi)==101
         assert len([e for e in success['events'] if e['event']=='DELIVER'])==2
         cases.append('multi_line_atomic_orders_and_integer_amount_allocation')
+        assert query(work,env,f"SELECT GROUP_CONCAT(state ORDER BY ordinal) FROM payment_delivery_intents WHERE pay_row_id={multi}")=='acknowledged,acknowledged'
+        cases.append('multi_line_each_ordinal_ack_is_durable')
+
+        split=seed(work,env,'bankdeliverypartial',count=2)
+        sent=run(work,env,driver,pay=split,mode='telegram_second_unknown')
+        assert state(work,env,split)=='auto_cart_approved',sent
+        assert query(work,env,f"SELECT GROUP_CONCAT(state ORDER BY ordinal) FROM payment_delivery_intents WHERE pay_row_id={split}")=='acknowledged,unknown'
+        assert len([x for x in sent['events'] if x['event']=='DELIVER'])==2
+        assert not [x for x in sent['events'] if x['event']=='MESSAGE' and x['to']==9001]
+        assert run(work,env,driver,op='delivery_pending',pay=split)['result']==[]
+        challenge=run(work,env,driver,op='delivery_challenge',pay=split,ordinal=2)['result']
+        denied=run(work,env,driver,op='delivery_owner_send',pay=split,ordinal=2,actor=9002,challenge=challenge)
+        assert denied['result']=='denied' and not any(x['event']=='DELIVER' for x in denied['events'])
+        resent=run(work,env,driver,op='delivery_owner_send',pay=split,ordinal=2,actor=9001,challenge=challenge)
+        assert resent['result']=='acknowledged' and sum(x['event']=='DELIVER' for x in resent['events'])==1,resent
+        reused=run(work,env,driver,op='delivery_owner_send',pay=split,ordinal=2,actor=9001,challenge=challenge)
+        assert reused['result']=='review' and not any(x['event']=='DELIVER' for x in reused['events']),reused
+        assert query(work,env,f"SELECT GROUP_CONCAT(state ORDER BY ordinal) FROM payment_delivery_intents WHERE pay_row_id={split}")=='acknowledged,acknowledged'
+        assert query(work,env,f"SELECT GROUP_CONCAT(result ORDER BY attempt_no) FROM payment_delivery_attempts WHERE intent_id=(SELECT id FROM payment_delivery_intents WHERE pay_row_id={split} AND ordinal=2)")=='unknown,acknowledged'
+        cases.append('partial_bulk_unknown_owner_challenge_and_exact_one_line_resend')
+
+        stale=seed(work,env,'bankdeliverystale')
+        assert run(work,env,driver,op='claim',pay=stale)['result'] is True
+        assert run(work,env,driver,op='provision_claimed',pay=stale)['result']['committed']
+        lease='abcdef0123456789abcdef0123456789'
+        query(work,env,f"UPDATE payment_delivery_intents SET state='dispatching',dispatch_token='{lease}',dispatched_at=NOW()-INTERVAL 11 MINUTE,attempt_count=1 WHERE pay_row_id={stale}")
+        query(work,env,"INSERT INTO payment_delivery_attempts (intent_id,attempt_no,dispatch_token,actor_userid,started_at) "
+            f"SELECT id,1,'{lease}',0,NOW()-INTERVAL 11 MINUTE FROM payment_delivery_intents WHERE pay_row_id={stale}")
+        checked=run(work,env,driver,op='delivery_stale',pay=stale,ordinal=1)
+        assert checked['result']['state']=='unknown' and checked['result']['last_result']=='process_lost',checked
+        assert query(work,env,f"SELECT result FROM payment_delivery_attempts WHERE intent_id=(SELECT id FROM payment_delivery_intents WHERE pay_row_id={stale})")=='unknown'
+        challenge=run(work,env,driver,op='delivery_challenge',pay=stale,ordinal=1)['result']
+        recovery=run(work,env,driver,op='delivery_owner_send',pay=stale,ordinal=1,challenge=challenge)
+        assert recovery['result']=='acknowledged' and not [x for x in recovery['events'] if x['event']=='POST'],recovery
+        assert query(work,env,f"SELECT GROUP_CONCAT(result ORDER BY attempt_no) FROM payment_delivery_attempts WHERE intent_id=(SELECT id FROM payment_delivery_intents WHERE pay_row_id={stale})")=='unknown,acknowledged'
+        cases.append('stale_dispatch_lease_preserves_unknown_audit_before_warned_resend')
+
+        corrupt=seed(work,env,'bankdeliverycorrupt')
+        assert run(work,env,driver,op='claim',pay=corrupt)['result'] is True
+        assert run(work,env,driver,op='provision_claimed',pay=corrupt)['result']['committed']
+        query(work,env,f"UPDATE payment_delivery_intents SET sealed_payload=CONCAT('x',sealed_payload) WHERE pay_row_id={corrupt}")
+        assert run(work,env,driver,op='delivery_check',pay=corrupt,ordinal=1)['result']=='identity_or_payload_invalid'
+        rejected=run(work,env,driver,op='delivery_pending',pay=corrupt)
+        assert rejected['result']=={'1':'review'} and not [x for x in rejected['events'] if x['event']=='DELIVER'],rejected
+        assert query(work,env,f"SELECT state,attempt_count FROM payment_delivery_intents WHERE pay_row_id={corrupt}")=='pending\t0'
+        cases.append('corrupted_immutable_delivery_payload_blocks_send_without_replay')
+
+        concurrency=seed(work,env,'bankdeliveryrace')
+        assert run(work,env,driver,op='claim',pay=concurrency)['result'] is True
+        assert run(work,env,driver,op='provision_claimed',pay=concurrency)['result']['committed']
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            results=list(pool.map(lambda _:run(work,env,driver,op='delivery_pending',pay=concurrency),range(2)))
+        assert sum(x['event']=='DELIVER' for r in results for x in r['events'])==1,results
+        assert query(work,env,f"SELECT state,attempt_count FROM payment_delivery_intents WHERE pay_row_id={concurrency}")=='acknowledged\t1'
+        cases.append('concurrent_telegram_pending_cas_exactly_one_dispatch')
 
         # After an exact provider CREATE + readback and its durable 007
         # verified effect, an unrelated administrator can edit the plan.
@@ -799,8 +896,10 @@ def check():
             assert total(work,env,'orders_list',notice)==1
             assert not any(e['event']=='POST' for e in run(work,env,driver,pay=notice)['events'])
             alerts=[e for e in result['events'] if e['event']=='MESSAGE' and e['to']==9001]
-            assert len(alerts)==1 and 'تحویل' in alerts[0]['text'] and str(notice) in alerts[0]['text'] and '1001' in alerts[0]['text'],(mode,alerts)
-            cases.append('postcommit_'+mode+'_alerts_operator_without_recreate')
+            assert not alerts,(mode,alerts)
+            assert query(work,env,f"SELECT state,attempt_count FROM payment_delivery_intents WHERE pay_row_id={notice}")=='unknown\t1'
+            assert run(work,env,driver,op='delivery_pending',pay=notice)['result']==[]
+            cases.append('postcommit_'+mode+'_quiet_unknown_ledger_without_recreate')
 
         wrong=seed(work,env,'bankbuyotherprovider',method='nowpayments')
         blocked=run(work,env,driver,pay=wrong)
