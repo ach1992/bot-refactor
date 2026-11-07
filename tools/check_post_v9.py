@@ -328,12 +328,13 @@ def api_native_observation_mismatches(proof: dict, expected: list[str]) -> dict:
                 pending.extend(value.values())
             elif type(value) is list:
                 pending.extend(value)
-        # Expected failed-proof callbacks emit their real bounded internal
-        # recovery diagnostic. Do not erase source diagnostics merely to get
-        # a green assertion; reject any other stderr and ALL PHP fatals.
+        # Expected failed-proof callbacks emit one bounded diagnostic, while
+        # other callbacks in the SAME multi-phase observation must remain
+        # clean. Enforce the exact number AND content of warning streams,
+        # reject any other stderr and all PHP fatals.
         def acceptable_stderr(stderr):
             if stderr=='':
-                return name not in expected_review_stderr|expected_notice_stderr
+                return True
             if type(stderr) is not str: return False
             if name in expected_notice_stderr:
                 return re.fullmatch(
@@ -350,10 +351,14 @@ def api_native_observation_mismatches(proof: dict, expected: list[str]) -> dict:
                 r'class=[A-Za-z][A-Za-z0-9_]* code=[0-9]+\n',
                 stderr
             ) is not None
-        if not results or any(type(value['events']) is not list or
-                value['fatal'] is not None or
-                not acceptable_stderr(value.get('stderr')) for value in results):
-            mismatches[name+'.php_result']='required clean PHP result or exact bounded review diagnostic'
+        expected_warnings=1 if name in expected_review_stderr|expected_notice_stderr else 0
+        actual_warnings=sum(isinstance(value.get('stderr'),str) and
+                            bool(value['stderr']) for value in results)
+        if (not results or actual_warnings!=expected_warnings or
+                any(type(value['events']) is not list or
+                    value['fatal'] is not None or
+                    not acceptable_stderr(value.get('stderr')) for value in results)):
+            mismatches[name+'.php_result']='required clean PHP results and exact bounded diagnostic count'
         if name not in replay|local_recovery|local_buy_claim and not events:
             mismatches[name+'.native_http']='required actual native preflight HTTP'
         if name in local_buy_claim and events:
