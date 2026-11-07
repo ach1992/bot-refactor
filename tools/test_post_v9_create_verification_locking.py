@@ -464,25 +464,36 @@ def wait_owned_lock(work,env,requestor,blocker,table,requestor_proc,blocker_proc
                  or 'INSERT ' in query.upper())):
             return {'mode':'trx_lock_wait_with_exact_sql',
                     'held_pk_errno':held['errno']}
-        # Some MariaDB 10.11 builds keep an older INSERT ... SELECT in
-        # INNODB_TRX.trx_query while PROCESSLIST.INFO exposes the currently
-        # executing SELECT id FROM <locked table> ... FOR UPDATE. Require
-        # the exact current statement on two samples >=150 ms apart,
-        # the independently proved row lock, and both actors still alive.
-        # Neither an alive process, a stale transaction query nor an
-        # arbitrary SELECT is accepted as proof of a lock conflict.
+        # Some MariaDB 10.11 builds keep an older statement in
+        # INNODB_TRX.trx_query. Require the exact current PK locking SELECT
+        # or source-owned multi-table linker UPDATE in PROCESSLIST.INFO on
+        # sustained samples >=150 ms apart, an independent target PK conflict
+        # and both actors still alive. Arbitrary SQL/alive process is no proof.
         exact_pk=(isinstance(current_sql,str) and
             current_sql.strip().upper().startswith('SELECT ID FROM '+
                 table.upper()+' WHERE ID=') and
             current_sql.strip().upper().endswith('FOR UPDATE'))
-        if exact_pk and tx and tx.get('state') in ('RUNNING','LOCK WAIT'):
+        # The real verified-effect linker uses a JOIN UPDATE, not a standalone
+        # SELECT FOR UPDATE. MariaDB 10.11 may report its current stage as
+        # Statistics/RUNNING and omit the corresponding INNODB_LOCK_WAITS row.
+        # Only this full source-owned SQL shape qualifies for the fallback;
+        # the independent PK conflict is still mandatory on two samples.
+        normalized=(' '.join(current_sql.split()).lower()
+            if isinstance(current_sql,str) else '')
+        exact_linker=(table=='server_info' and
+            normalized.startswith('update service_effects e inner join pays p') and
+            'inner join server_info i on i.id=e.target_server_id' in normalized and
+            "set e.order_id=o.id,e.state='local_recorded'" in normalized and
+            'where e.id=? and e.state=' in normalized)
+        if (exact_pk or exact_linker) and tx and tx.get('state') in ('RUNNING','LOCK WAIT'):
             if observed_process_sql_at is None:
                 observed_process_sql_at=time.monotonic()
             elif time.monotonic()-observed_process_sql_at>=0.15:
                 second=probe_pk_lock(work,env,table)
                 if (second['errno']==1205 and blocker_proc.poll() is None
                     and requestor_proc.poll() is None):
-                    return {'mode':'sustained_exact_pk_process_sql_with_independent_lock',
+                    return {'mode':('sustained_exact_pk_process_sql_with_independent_lock'
+                                    if exact_pk else 'sustained_exact_linker_update_with_independent_lock'),
                             'held_pk_errno':second['errno']}
         else:
             observed_process_sql_at=None
