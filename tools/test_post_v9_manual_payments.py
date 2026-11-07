@@ -1136,10 +1136,19 @@ def check():
         with ThreadPoolExecutor(max_workers=2) as executor:
             decisions=list(executor.map(lambda _:run_route(
                 work,env,route_driver,data='acceptstandardrace',
-                actor=9001,route='standard_approval'),range(2)))
+                actor=9001,route='standard_approval',
+                # A concurrent loser can see the original processing line
+                # while its exact remote readback remains in-flight; only
+                # that bounded error is permitted, never a second CREATE.
+                expected_warning='achbot_manual_standard_effect_needs_review'),range(2)))
         assert sum(sum(e['name']=='remote_create' for e in result)
                    for result in decisions)==1,repr(decisions)
         assert query(work,env,"SELECT state FROM pays WHERE hash_id='standardrace'")=='approved'
+        assert query(work,env,"SELECT COUNT(*) FROM service_effects e JOIN pays p "
+              "ON p.id=e.pay_row_id WHERE p.hash_id='standardrace' "
+              "AND e.effect_kind='create'")=='1'
+        assert query(work,env,"SELECT COUNT(*) FROM payment_delivery_intents d JOIN pays p "
+              "ON p.id=d.pay_row_id WHERE p.hash_id='standardrace'")=='1'
         reject_service('standardrace','standard_approval','accept')
         cases.append('real_standard_concurrent_admins_one_remote_create')
 
