@@ -59,6 +59,25 @@ function sendMessage(...$args) {
     return (object)['ok'=>true];
 }
 function createServerAccount(...$args){throw new RuntimeException('forbidden_create');}
+// Resume executes the real paid CREATE journal source, not a test-only
+// reconstruction. The remote server in this file is loopback-only, and
+// CREATE would throw immediately if the candidate accidentally replays it.
+if ($spec['op']==='native_resume') {
+    try {
+        require_once $root.'/src/Finance/PaidAccountRecovery.php';
+        $payId=(int)$spec['pay'];
+        $n=(int)($spec['ordinal']??1);
+        $answer=achbotContinuePaidAccount($connection,$payId,$n,[
+            'user_id'=>1001,'server_type'=>'marzban','server_id'=>2,
+            'plan_id'=>7,'inbound_id'=>0,'volume'=>8,'days'=>9]);
+        $result=['status'=>'verified','effect_id'=>$answer[3],
+            'remark'=>$answer[1],'subscription'=>$answer[0]->sub_link];
+    } catch(Throwable $error) {
+        $result=['status'=>'deferred','error'=>get_class($error)];
+    }
+    echo json_encode(['result'=>$result,'events'=>$GLOBALS['events']],JSON_THROW_ON_ERROR);
+    exit;
+}
 function addMarzbanUser(...$args){throw new RuntimeException('forbidden_create');}
 function editMarzbanConfig(...$args){throw new RuntimeException('forbidden_put');}
 require $root.'/src/Finance/Routes/ManualReceipts.php';
@@ -183,6 +202,8 @@ def check():
             'data_limit':int(recovery.sql(work,env,
                 f"SELECT requested_bytes FROM service_effects WHERE pay_row_id={pay}")),
             'status':'active',
+            'subscription_url':'https://owned.example.invalid/sub/fixture-native-token',
+            'links':['vless://fixture.native.invalid?security=tls'],
         }
         driver=work/'actual-recovery-transport-driver.php';driver.write_text(PHP)
 
@@ -284,6 +305,38 @@ def check():
             scenarios.append('operator_route_http_failure_remains_unknown_'+mode)
 
         assert recovery.unchanged(work,env,pay)==baseline
+
+        # Real PHP + MariaDB + authenticated login/account GET, then the
+        # EXISTING service_effects dispatching row is advanced locally.
+        # No CREATE, refund, wallet credit, order or Telegram is permitted.
+        # Even a visible 404 is not proof of absence or re-POST authority.
+        for mode in ('get_404','get_wrong_status','login_redirect'):
+            server.mode=mode;server.trace.clear()
+            frozen=recovery.unchanged(work,env,pay)
+            held=call(work,env,driver,op='native_resume',pay=pay)
+            assert held['result']['status']=='deferred',(mode,held)
+            assert recovery.unchanged(work,env,pay)==frozen,(mode,held)
+            assert not any(method in ('PUT','DELETE') or
+                (method=='POST' and path!='/api/admin/token')
+                for method,path,_ in server.trace),(mode,server.trace)
+            scenarios.append('native_resume_'+mode+'_never_reposts_or_forges_commit')
+        server.mode='ok';server.trace.clear()
+        recovered=call(work,env,driver,op='native_resume',pay=pay)
+        assert recovered['result']['status']=='verified',recovered
+        assert recovered['result']['remark']==server.username
+        assert recovered['result']['subscription']=='/sub/fixture-native-token'
+        assert len(server.trace)==2 and server.trace[0][0:2]==('POST','/api/admin/token')
+        assert server.trace[1][0:2]==('GET','/api/user/'+server.username)
+        assert recovery.sql(work,env,f'SELECT state FROM service_effects WHERE pay_row_id={pay}')=='verified'
+        assert recovery.sql(work,env,f'SELECT state FROM pays WHERE id={pay}')=='processing'
+        assert recovery.sql(work,env,'SELECT COUNT(*) FROM orders_list')==baseline[2]
+        scenarios.append('real_native_resume_attaches_original_verified_marzban_evidence_without_post')
+        server.trace.clear()
+        repeated=call(work,env,driver,op='native_resume',pay=pay)
+        assert repeated['result']==recovered['result'] and len(server.trace)==2
+        assert recovery.sql(work,env,f'SELECT state FROM service_effects WHERE pay_row_id={pay}')=='verified'
+        assert recovery.sql(work,env,'SELECT COUNT(*) FROM orders_list')==baseline[2]
+        scenarios.append('native_resume_repeat_read_only_same_identity_no_second_create')
     return {'complete':True,'cases':len(scenarios),'scenarios':scenarios,
             'real_curl_login_and_get':True,
             'loopback_only':True,'max_account_get_per_inspection':1,

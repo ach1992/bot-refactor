@@ -244,3 +244,44 @@ package must complete state- and ordinal-keyed native readback/attach and
 report/Telegram delivery convergence. An unedited Telegram button alone
 MUST NOT authorize a second native mutation. Neither this development
 candidate nor prior PR #122 is installed on Chili, and 018/019 remain unapplied.
+
+### 2026-11-07 standard manual BUY_SUB continuation candidate (PR #123, post-owner direct decision)
+
+**Source-only work, separately gated:** an original manually reviewed standard
+BUY_SUB receipt now needs the 018 delivery schema and encryption key **before**
+claiming payment/capacity or attempting native CREATE. The original human
+confirmation stays the only financial decision; native network reads during
+subsequent processing are readback of the **already claimed account**, never
+another merchant payment inquiry.
+
+- The first click claims `have_sent -> processing` with the existing one-shot
+  007 `manual_hold`. Each paid line has exactly one `service_effects` tuple
+  `(pay_id, create, ordinal)` and one native `operation_id`/target/username.
+- If a line is already `dispatching`/`verified`, a second click uses the
+  original pinned native identity. Marzban requires strict HTTP login and
+  account GET with matching exact operation note, status, quota, expiry, URL
+  and no physical target drift. PasarGuard requires original native incarnation,
+  note, Group IDs and exact entitlements through read-only GET. Matching
+  evidence can complete only **local** verification, not another remote POST.
+  Missing, changed or unavailable remote evidence is a resumable *hold*.
+- All locally verified lines must be linked and the immutable customer
+  QR/text/keyboard packets sealed in 018 **inside the same transaction** as
+  the original final `pays.approved` claim. A late SQL error can roll back
+  this finalization without losing the already pinned remote effect.
+- Only after this COMMIT may Telegram delivery begin. A duplicate click after
+  `approved` can dispatch pending packets, or — for the primary Owner's
+  explicit click — resend a previously `unknown` **identical sealed packet**
+  under a locked challenge; no financial, capacity or native mutation occurs.
+  Sending account details again is not a grant of another account.
+- The historical `RENEW_SCONFIG` and additive day/volume/renewal routes are
+  **not** covered by this one-shot native CREATE journal; they must remain
+  fenced under `processing` until a separate original-operation proof/resume
+  can be implemented. The currently available bank/API `auto` BUY_SUB
+  completion and its 018 delivery records are distinct.
+
+Real PHP 8.5 regression candidates live in `test_post_v9_manual_payments.py`
+(original receipt, one-shot capacity, single/multiple account ordering,
+Telegram ambiguity and duplicate Owner callback) and
+`test_post_v9_recovery_transport.py` (actual credential-bound localhost
+login/GET, no remote re-POST, local verification of precisely one original
+native `service_effects` row). Neither proves installed Chili acceptance.

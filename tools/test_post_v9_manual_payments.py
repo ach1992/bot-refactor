@@ -823,7 +823,7 @@ def check():
         # Review F1/F2: execute actual service operator callback handlers, not
         # merely helper functions. Every remote action is a local spy.
         def service_pay(key,subject='BUY_SUB',method='bank_transfer',received=True,
-                        amount=100000,quantity=0,addon_units=None):
+                        amount=100000,quantity=0,addon_units=None,standard=False):
             seed(work,env,key,price=amount)
             # A physical Marzban username cannot be reused for two paid
             # identities on the same provider. Synthetic custom descriptions
@@ -832,7 +832,7 @@ def check():
                 key.startswith('servicecallbackrace')) else 'fixture'
             # Only explicitly NEW add-on scenarios get a pinned quantity.
             # Wallet/legacy seed defaults remain zero and are tested below.
-            days,volume=30,10
+            days,volume=(0,0) if standard else (30,10)
             if subject.startswith(('INCREASE_DAY_','INCREASE_VOLUME_')):
                 if addon_units is None:raise ValueError('explicit add-on quote required')
                 days,volume=((addon_units,0) if subject.startswith('INCREASE_DAY_')
@@ -889,7 +889,16 @@ def check():
 
         def reject_service(key,route,callback,actor=9001):
             before=service_snapshot(key)
-            events=run_route(work,env,route_driver,data=callback+key,actor=actor,route=route)
+            # A repeated standard confirmation on an already-claimed
+            # PROCESSING payment attempts pinned native readback only.
+            # The negative fixture has no provider HTTP transport and must
+            # report deferred rather than silently replaying a remote POST.
+            deferred=(route=='standard_approval' and callback=='accept' and
+                      query(work,env,"SELECT state FROM pays WHERE hash_id='"+key+"'")=='processing')
+            events=run_route(work,env,route_driver,data=callback+key,actor=actor,
+                             route=route,
+                             expected_warning='achbot_manual_standard_effect_needs_review'
+                                              if deferred else None)
             assert not any(event['name'] in ('remote_create','remote_edit','order_insert',
                               'capacity_decrement','qr_delivery_mock')
                            for event in events),repr((key,events))
@@ -903,9 +912,11 @@ def check():
         # tested against that real current source.
         def standard_pay(key,method='bank_transfer',received=True,
                          amount=100000,quantity=0):
+            # Original bank 009 identity is captured at invoice issuance.
+            # Standard zero units must be part of the ORIGINAL quote, not
+            # rewritten after receipt issuance (which would be forgery).
             service_pay(key,subject='BUY_SUB',method=method,received=received,
-                        amount=amount,quantity=quantity)
-            query(work,env,"UPDATE pays SET day=0,volume=0 WHERE hash_id='"+key+"'")
+                        amount=amount,quantity=quantity,standard=True)
             return key
 
         standard_pay('standardwrongstage',method='gift_card')
@@ -934,7 +945,8 @@ def check():
         assert [e['name'] for e in events].count('remote_create')==1,repr(events)
         assert query(work,env,"SELECT state FROM pays WHERE hash_id='standarduncertain'")=='processing',repr(events)
         retry=run_route(work,env,route_driver,data='acceptstandarduncertain',
-                        actor=9001,route='standard_approval',remote_mode='success')
+                        actor=9001,route='standard_approval',remote_mode='success',
+                        expected_warning='achbot_manual_standard_effect_needs_review')
         assert not any(e['name']=='remote_create' for e in retry),repr(retry)
         assert query(work,env,"SELECT state FROM pays WHERE hash_id='standarduncertain'")=='processing'
         cases.append('real_standard_uncertain_remote_effect_stays_reconciliation_and_no_replay')
@@ -980,6 +992,14 @@ def check():
                 'successful manually reviewed CREATE must consume exactly one owned capacity hold')
         reject_service('standardsuccess','standard_approval','accept')
         assert_final_original_receipt(delivered,'standardsuccess','@issued')
+        manifest=query(work,env,"SELECT d.ordinal,d.state,e.state FROM payment_delivery_intents d "
+            "JOIN service_effects e ON e.id=d.effect_id JOIN pays p ON p.id=d.pay_row_id "
+            "WHERE p.hash_id='standardsuccess' ORDER BY d.ordinal")
+        assert manifest=='1\tacknowledged\tlocal_recorded',manifest
+        assert query(work,env,"SELECT COUNT(*) FROM payment_delivery_attempts a JOIN "
+            "payment_delivery_intents d ON d.id=a.intent_id JOIN pays p ON p.id=d.pay_row_id "
+            "WHERE p.hash_id='standardsuccess'")=='1'
+        cases.append('manual_standard_paid_order_delivery_sealed_and_ack_once')
         cases.append('manual_standard_original_receipt_three_non_action_rows')
         cases.append('real_standard_verified_receipt_one_delivery_no_replay')
         # Review R2: the real ManualApproval.php source must not truncate
@@ -1011,7 +1031,8 @@ def check():
         notice=run_route(work,env,route_driver,
                          data='acceptstandardpostcommitnotify',actor=9001,
                          route='standard_approval',qr_transport='throw',
-                         expected_warning='achbot_manual_standard_delivery_needs_review')
+                         expected_warning=['achbot_delivery_telegram_uncertain',
+                                           'achbot_manual_purchase_delivery_pending'])
         assert [e['name'] for e in notice].count('remote_create')==1,repr(notice)
         assert [e['name'] for e in notice].count('qr_send')==1,repr(notice)
         assert query(work,env,"SELECT state FROM pays WHERE hash_id='standardpostcommitnotify'")=='approved'
@@ -1019,7 +1040,21 @@ def check():
                        and e['args'][-1]==9001]
         assert any(('سفارش ثبت شده' in m or 'سفارش/سرویس ثبت شده' in m) and 'اطلاع‌رسانی' in m for m in admin_notices),repr(notice)
         assert not any('نتیجهٔ تکمیل سفارش هنوز قطعی نیست' in m for m in admin_notices)
-        reject_service('standardpostcommitnotify','standard_approval','accept')
+        assert query(work,env,"SELECT d.state FROM payment_delivery_intents d JOIN pays p "
+            "ON p.id=d.pay_row_id WHERE p.hash_id='standardpostcommitnotify'")=='unknown'
+        replay=run_route(work,env,route_driver,data='acceptstandardpostcommitnotify',
+                         actor=9001,route='standard_approval')
+        assert [e['name'] for e in replay].count('remote_create')==0,replay
+        assert [e['name'] for e in replay].count('qr_send')==1,replay
+        assert query(work,env,"SELECT d.state FROM payment_delivery_intents d JOIN pays p "
+            "ON p.id=d.pay_row_id WHERE p.hash_id='standardpostcommitnotify'")=='acknowledged'
+        assert query(work,env,"SELECT COUNT(*) FROM payment_delivery_attempts a JOIN "
+            "payment_delivery_intents d ON d.id=a.intent_id JOIN pays p ON p.id=d.pay_row_id "
+            "WHERE p.hash_id='standardpostcommitnotify'")=='2'
+        again=run_route(work,env,route_driver,data='acceptstandardpostcommitnotify',
+                        actor=9001,route='standard_approval')
+        assert not any(e['name'] in ('remote_create','qr_send') for e in again),again
+        cases.append('manual_standard_telegram_unknown_owner_reapprove_resends_only_sealed_packet')
         cases.append('real_standard_postcommit_telegram_failure_approved_no_replay_truthful_review')
         standard_pay('standardeditprivacy',method='gift_card')
         edit_events=run_route(work,env,route_driver,

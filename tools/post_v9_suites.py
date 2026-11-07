@@ -3652,8 +3652,16 @@ def run_funding(tmp: str) -> tuple[dict, dict]:
         raise RuntimeError("Pinned HTTP recovery acceptance failed:\n"
                            +transport_run.stderr[-6000:])
     transport=json.loads(transport_path.read_text())
+    required_native_resume={
+        'native_resume_get_404_never_reposts_or_forges_commit',
+        'native_resume_get_wrong_status_never_reposts_or_forges_commit',
+        'native_resume_login_redirect_never_reposts_or_forges_commit',
+        'real_native_resume_attaches_original_verified_marzban_evidence_without_post',
+        'native_resume_repeat_read_only_same_identity_no_second_create',
+    }
     if not (transport.get("complete") is True and
-            transport.get("cases")>=27 and
+            required_native_resume.issubset(set(transport.get("scenarios",[]))) and
+            transport.get("cases")>=32 and
             transport.get("real_curl_login_and_get") is True and
             transport.get("loopback_only") is True and
             transport.get("max_account_get_per_inspection")==1 and
@@ -3709,6 +3717,8 @@ def run_funding(tmp: str) -> tuple[dict, dict]:
         "real_wallet_route_photo_replay_denied_bank_transfer",
         "real_wallet_route_photo_replay_denied_gift_card",
         "real_wallet_route_photo_replay_denied_manual_usdt",
+        "manual_standard_paid_order_delivery_sealed_and_ack_once",
+        "manual_standard_telegram_unknown_owner_reapprove_resends_only_sealed_packet",
         "manual_wallet_nonadmin_callback_denied_bank_transfer",
         "manual_wallet_nonadmin_callback_denied_gift_card",
         "manual_wallet_nonadmin_callback_denied_manual_usdt",
