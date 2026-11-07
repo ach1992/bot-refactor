@@ -1,7 +1,9 @@
 <?php
-/** #117: locally audited, one-shot owner decisions on gateway funds.
- * An explicit Owner action may attest the previously saved signed provider
- * evidence without a second merchant GET. Never fabricate provider 'finished'.
+/** #117: locally audited, once-only owner decisions on payment uncertainty.
+ * NOWPayments requires signed incoming-funds evidence. NextPay/Zarinpal
+ * require the exact locally issued gateway reference and a saved ambiguous
+ * verification attempt: this is human attestation, NOT provider settlement.
+ * The decision callback never makes a second merchant verification request.
  * A decision claim and journal COMMIT precede the original business effect.
  */
 if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '')===__FILE__) {http_response_code(404);exit;}
@@ -37,15 +39,16 @@ function achbotNpDecisionToken(int $actor,int $id,string $decision,int $until,st
     return substr(hash_hmac('sha256',"np-review:v1|$actor|$id|$decision|$until|$digest",
         achbotPaymentEvidenceKey()),0,20);
 }
-/** Pays first, attempt next. A null remote means Owner attestation of
- * existing signed child evidence; NOT a provider-verified final settlement.
- * Non-null remote retains strict automated/provider-finished semantics.
+/** Pays first, attempt next. A null remote is an Owner attestation of
+ * recorded evidence (signed child for NOWPayments, original locally bound
+ * uncertain VERIFY for hosted gateways), never a provider final settlement.
+ * Non-null remote retains strict NOWPayments provider-finished semantics.
  */
 function achbotNpDecisionEligible(mysqli $db,int $id,?array $remote,string $decision,
                                   bool $lock=false): ?array {
     if ($id<=0 || !in_array($decision,['approve','reject'],true)) return null;
     $q=$db->prepare("SELECT pay_row_id FROM payment_attempts WHERE id=?
-        AND provider='nowpayments' LIMIT 1");
+        AND provider IN ('nowpayments','nextpay','zarinpal') LIMIT 1");
     $q->bind_param('i',$id);$q->execute();$r=$q->get_result()->fetch_assoc();$q->close();
     if (!$r) return null;
     $payId=(int)$r['pay_row_id'];$suffix=$lock?' FOR UPDATE':'';
@@ -53,15 +56,30 @@ function achbotNpDecisionEligible(mysqli $db,int $id,?array $remote,string $deci
     $q->bind_param('i',$payId);$q->execute();$pay=$q->get_result()->fetch_assoc();$q->close();
     $q=$db->prepare('SELECT * FROM payment_attempts WHERE id=? AND pay_row_id=?'.$suffix);
     $q->bind_param('ii',$id,$payId);$q->execute();$a=$q->get_result()->fetch_assoc();$q->close();
+    $provider=(string)($a['provider']??'');
+    $hosted=in_array($provider,['nextpay','zarinpal'],true);
     if (!$pay || !$a || !in_array((string)$pay['state'],['pending','send'],true) ||
-        $a['stage']!=='review' || $a['provider']!=='nowpayments' ||
+        $a['stage']!=='review' ||
         (int)$a['local_amount_toman']<=0 ||
         (int)$a['local_amount_toman']!==(int)$pay['price'] ||
         (string)$pay['hash_id']!==(string)$a['order_hash'] ||
         (string)$pay['payid']!==(string)$a['provider_reference'] ||
-        (string)$a['provider_reference']==='' || (string)$a['payment_id']==='' ||
-        strtolower((string)$a['quote_currency'])!=='usd' ||
-        !achbotNpDecimalAtLeast($a['quote_amount']??null,'0.00000001')) return null;
+        (string)$a['provider_reference']==='') return null;
+    if ($hosted) {
+        // No signed merchant child exists for these gateways. Only the
+        // authenticated original invoice/amount and an explicitly saved
+        // uncertain verification admit a human decision. No auto proof.
+        if ($remote!==null || $a['provider_status']!=='verification_uncertain' ||
+            strtolower((string)$a['quote_currency'])!=='toman' ||
+            !achbotNpDecimalAtLeast($a['quote_amount'],(string)$pay['price']) ||
+            !achbotNpDecimalAtLeast((string)$pay['price'],$a['quote_amount']) ||
+            achbotHasUnscopedPaymentReferenceCollision($db,(string)$a['provider_reference'],$payId))
+            return null;
+    } elseif ($provider!=='nowpayments' || (string)$a['payment_id']==='' ||
+              strtolower((string)$a['quote_currency'])!=='usd' ||
+              !achbotNpDecimalAtLeast($a['quote_amount']??null,'0.00000001')) {
+        return null;
+    }
     if ($remote!==null) {
         if ((string)($remote['payment_id']??'')!==(string)$a['payment_id'] ||
             (string)($remote['invoice_id']??'')!==(string)$a['provider_reference'] ||
@@ -78,7 +96,7 @@ function achbotNpDecisionEligible(mysqli $db,int $id,?array $remote,string $deci
     }
     $q=$db->prepare('SELECT payment_id,observed_status FROM payment_transactions
         WHERE attempt_id=? AND provider=? ORDER BY id'.$suffix);
-    $provider='nowpayments';$q->bind_param('is',$id,$provider);$q->execute();
+    $q->bind_param('is',$id,$provider);$q->execute();
     $children=$q->get_result()->fetch_all(MYSQLI_ASSOC);$q->close();
     $primary=false;$positive=false;$notRefunded=false;
     foreach ($children as $child) {
@@ -94,8 +112,12 @@ function achbotNpDecisionEligible(mysqli $db,int $id,?array $remote,string $deci
             return null;
         }
     }
-    if (!$positive || ($remote!==null && !$primary) ||
-        ($remote===null && $decision==='approve' && !$notRefunded)) return null;
+    if ($hosted) {
+        // Hosted uncertainty has NO verified funding children; recording a
+        // synthetic provider transaction here would misstate funds evidence.
+        if ($children) return null;
+    } elseif (!$positive || ($remote!==null && !$primary) ||
+              ($remote===null && $decision==='approve' && !$notRefunded)) return null;
     if ($decision==='approve' && (string)$pay['type']!=='INCREASE_WALLET') {
         // Any prior native attempt could have reached the remote server.
         $q=$db->prepare('SELECT id FROM service_effects WHERE pay_row_id=? LIMIT 1'.$suffix);
@@ -105,11 +127,13 @@ function achbotNpDecisionEligible(mysqli $db,int $id,?array $remote,string $deci
     }
     $digest=$remote!==null?achbotNpDecisionDigest($remote):hash('sha256',
         json_encode(['kind'=>'human-attestation','pay_id'=>$payId,
-            'attempt_id'=>$id,'provider_reference'=>$a['provider_reference'],
+            'attempt_id'=>$id,'provider'=>$provider,'payment_id'=>$a['payment_id'],
+            'provider_status'=>$a['provider_status'],
+            'provider_reference'=>$a['provider_reference'],
             'order_hash'=>$a['order_hash'],'quote_amount'=>$a['quote_amount'],
             'quote_currency'=>$a['quote_currency'],'children'=>$children],
             JSON_THROW_ON_ERROR|JSON_UNESCAPED_SLASHES));
-    return ['pay'=>$pay,'attempt'=>$a,'digest'=>$digest];
+    return ['pay'=>$pay,'attempt'=>$a,'digest'=>$digest,'provider'=>$provider];
 }
 /**
  * SQL-only target read-set. A networked quote is verified before the financial
@@ -171,7 +195,7 @@ function achbotNpDecisionSubjectStamp(mysqli $db,array $pay,bool $lock=false): ?
 
 /**
  * A non-null provider response preserves the strict provider-verified path.
- * A null response is an Owner decision based on stored authenticated evidence.
+ * A null response is an Owner decision based on the original stored case.
  * Any concurrent terminal pay/attempt change fails closed.
  */
 function achbotNpDecisionCommit(mysqli $db,int $actor,int $id,string $decision,
@@ -217,7 +241,9 @@ function achbotNpDecisionCommit(mysqli $db,int $actor,int $id,string $decision,
                 $db->rollback();$open=false;return ['status'=>'stale'];
             }
         }
-        $paymentId=(string)$a['payment_id'];
+        $provider=(string)$c['provider'];
+        $paymentId=(string)($provider==='nowpayments'
+            ? $a['payment_id'] : $a['provider_reference']);
         $status=$remote===null?($decision==='approve'?'operator_attested':'operator_rejected'):
             (string)$remote['payment_status'];
         $digest=$c['digest'];$state=$decision==='approve'?'dispatching':'completed';
@@ -232,10 +258,10 @@ function achbotNpDecisionCommit(mysqli $db,int $actor,int $id,string $decision,
         $q->close();
         if ($decision==='approve') {
             $q=$db->prepare("UPDATE payment_attempts SET stage='fulfilling',
-                provider_status=?
-                WHERE id=? AND stage='review' AND provider='nowpayments'");
+                provider_status=? WHERE id=? AND stage='review' AND provider=?");
             $claimStatus=$remote===null?'operator_attested':'operator_verified_finished';
-            $q->bind_param('si',$claimStatus,$id);$q->execute();$ok=$q->affected_rows===1;$q->close();
+            $q->bind_param('sis',$claimStatus,$id,$provider);
+            $q->execute();$ok=$q->affected_rows===1;$q->close();
         } else {
             $q=$db->prepare("UPDATE pays SET state='declined',approved_by=?
                 WHERE id=? AND state IN ('pending','send')");
@@ -252,7 +278,7 @@ function achbotNpDecisionCommit(mysqli $db,int $actor,int $id,string $decision,
         // Single original execution of wallet/service effect and its normal
         // customer/admin/report-channel output. Never dispatch it twice.
         ob_start();
-        try {$effect=doAction($payId,'nowpayment');}
+        try {$effect=doAction($payId,$provider==='nowpayments'?'nowpayment':$provider);}
         catch(Throwable $error) {
             error_log('achbot_review_effect_unknown pay_id='.$payId.' class='.get_class($error));
             $effect='unknown';

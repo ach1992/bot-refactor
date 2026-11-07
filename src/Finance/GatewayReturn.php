@@ -533,6 +533,8 @@ if (defined('ACHBOT_NP_RECONCILE_ONLY')) {
                 'Amount'=>$amount
             ]);
         } catch (\Throwable $error) {
+            achbotHostedMarkVerificationUncertain($connection,$rowId,'zarinpal',
+                (string)$payParam['hash_id']);
             showForm(\achbotMessage('gateway.gateway_return.np_reconcile_batch.message.965bc59eaf'),
                      \achbotMessage('gateway.gateway_return.np_reconcile_batch.message.858b02ccfe'), false, 'review');
             return;
@@ -546,6 +548,8 @@ if (defined('ACHBOT_NP_RECONCILE_ONLY')) {
             // A forged/stale browser NOK cannot cancel trusted positive funds.
             doAction($rowId, "zarinpal");
         } else {
+            achbotHostedMarkVerificationUncertain($connection,$rowId,'zarinpal',
+                (string)$payParam['hash_id']);
             // WebGate error-code lists vary by API generation. 101 is an
             // already-verified result, and other codes (including 52/-52)
             // are not documented here as irreversible nonpayment. Never
@@ -691,7 +695,10 @@ if (defined('ACHBOT_NP_RECONCILE_ONLY')) {
             }
             showForm(\achbotMessage('gateway.gateway_return.np_reconcile_batch.message.4406d657a1'), \achbotMessage('gateway.gateway_return.np_reconcile_batch.message.26003a476f'), false, 'failed');
         } else {
-            // Preserve the current payment for a later trusted verification.
+            // The verifier did not prove funds. Save a recoverable *claim*,
+            // not a fabricated provider-approved charge.
+            achbotHostedMarkVerificationUncertain($connection,$rowId,'nextpay',
+                (string)$payParam['hash_id']);
             // Do not debit, credit or settle an unknown payment outcome.
             showForm(\achbotMessage('gateway.gateway_return.np_reconcile_batch.message.463d7338a5'), \achbotMessage('gateway.gateway_return.np_reconcile_batch.message.26003a476f'), false, 'review');
         }
@@ -771,6 +778,59 @@ function achbotHostedPaymentAttemptsExists(mysqli $db): bool {
     }
 }
 
+/** Save only a bound, uncertain hosted VERIFY result for an Owner decision.
+ * A browser return is NOT proof of funds. Do not call merchant GET here or
+ * overwrite a terminal/processing payment. Requires existing 019 audit.
+ */
+function achbotHostedMarkVerificationUncertain(mysqli $db,int $payId,
+                                              string $provider,string $hash): bool {
+    if ($payId<=0 || !in_array($provider,['nextpay','zarinpal'],true) ||
+        $hash==='') return false;
+    require_once __DIR__.'/ReviewDecisions.php';
+    if (!achbotNpDecisionSchemaReady($db)) return false;
+    $open=false;
+    try {
+        if (!$db->begin_transaction()) return false;
+        $open=true;
+        $q=$db->prepare('SELECT * FROM pays WHERE id=? FOR UPDATE');
+        $q->bind_param('i',$payId);$q->execute();$pay=$q->get_result()->fetch_assoc();$q->close();
+        $q=$db->prepare('SELECT * FROM payment_attempts WHERE pay_row_id=? FOR UPDATE');
+        $q->bind_param('i',$payId);$q->execute();$attempt=$q->get_result()->fetch_assoc();$q->close();
+        if (!$pay || !$attempt || !in_array($pay['state'],['pending','send'],true) ||
+            (string)$pay['hash_id']!==$hash || (int)$pay['price']<=0 ||
+            (string)$pay['payid']!== (string)$attempt['provider_reference'] ||
+            (string)$attempt['provider_reference']==='' ||
+            (string)$attempt['provider']!==$provider ||
+            (string)$attempt['order_hash']!==$hash ||
+            (int)$attempt['local_amount_toman']!==(int)$pay['price'] ||
+            strtolower((string)$attempt['quote_currency'])!=='toman' ||
+            !achbotNpDecimalAtLeast($attempt['quote_amount'],(string)$pay['price']) ||
+            !achbotNpDecimalAtLeast((string)$pay['price'],$attempt['quote_amount']) ||
+            achbotHasUnscopedPaymentReferenceCollision($db,(string)$pay['payid'],$payId)) {
+            $db->rollback();return false;
+        }
+        if ($attempt['stage']==='review' &&
+            $attempt['provider_status']==='verification_uncertain') {
+            $db->rollback();return true;
+        }
+        if ($attempt['stage']!=='pending') {$db->rollback();return false;}
+        $id=(int)$attempt['id'];
+        $q=$db->prepare("UPDATE payment_attempts
+            SET stage='review',provider_status='verification_uncertain',last_checked_at=NOW()
+            WHERE id=? AND stage='pending'");
+        $q->bind_param('i',$id);$q->execute();$ok=$q->affected_rows===1;$q->close();
+        if (!$ok) throw new RuntimeException('hosted_review_stage_unconfirmed');
+        if (!$db->commit()) throw new RuntimeException('hosted_review_commit_unconfirmed');
+        $open=false;return true;
+    } catch(Throwable $error) {
+        error_log('achbot_hosted_verification_review_unavailable pay_id='.$payId.
+            ' provider='.$provider.' class='.get_class($error));
+        return false;
+    } finally {
+        if ($open) try {$db->rollback();}catch(Throwable $ignored){}
+    }
+}
+
 /**
  * Preserve a recoverable service-fulfillment hold for *scoped* NextPay and
  * Zarinpal checkout attempts. The legacy pays row and its unique 003 attempt
@@ -816,7 +876,7 @@ function achbotClaimHostedServiceForReview(mysqli $db, int $payId, int $amount,
         if ($hasLedger) {
             // Lock pays before the attempt, matching checkout's lock order.
             $failure='attempt_read_failed';
-            $stmt=$db->prepare("SELECT id,provider,stage,order_hash,local_amount_toman
+            $stmt=$db->prepare("SELECT id,provider,stage,provider_status,order_hash,local_amount_toman
                 FROM payment_attempts WHERE pay_row_id=? FOR UPDATE");
             $stmt->bind_param('i',$payId);
             if (!$stmt->execute()) throw new RuntimeException('attempt_read_failed');
@@ -825,17 +885,34 @@ function achbotClaimHostedServiceForReview(mysqli $db, int $payId, int $amount,
             if ($attempt) {
                 $failure='attempt_mismatch';
                 if ((string)$attempt['provider']!==$provider ||
-                    (string)$attempt['stage']!=='pending' ||
                     (string)$attempt['order_hash']!==$hash ||
                     (int)$attempt['local_amount_toman']!==$amount) {
+                    throw new RuntimeException('attempt_mismatch');
+                }
+                $stage=(string)$attempt['stage'];
+                $status=(string)($attempt['provider_status']??'');
+                if ($stage==='fulfilling' && $status==='operator_attested') {
+                    // Operator journal COMMIT must exist before the original
+                    // provider effect. This is not a second attestation.
+                    $j=$db->prepare("SELECT id FROM payment_review_decisions
+                        WHERE pay_row_id=? AND attempt_id=? AND decision='approve'
+                          AND state='dispatching' FOR UPDATE");
+                    $aid=(int)$attempt['id'];
+                    $j->bind_param('ii',$payId,$aid);$j->execute();
+                    $hasDecision=$j->get_result()->num_rows===1;$j->close();
+                    if (!$hasDecision) throw new RuntimeException('operator_journal_missing');
+                } elseif ($stage!=='pending' &&
+                    !($stage==='review' && $status==='verification_uncertain')) {
                     throw new RuntimeException('attempt_mismatch');
                 }
                 $id=(int)$attempt['id'];
                 $failure='ledger_stage_failed';
                 $stmt=$db->prepare("UPDATE payment_attempts
                     SET stage='review',provider_status='fulfillment_started'
-                    WHERE id=? AND pay_row_id=? AND provider=? AND stage='pending'");
-                $stmt->bind_param('iis',$id,$payId,$provider);
+                    WHERE id=? AND pay_row_id=? AND provider=? AND stage=?
+                      AND (provider_status <=> ?)");
+                $beforeStatus=$attempt['provider_status'];
+                $stmt->bind_param('iisss',$id,$payId,$provider,$stage,$beforeStatus);
                 if (!$stmt->execute()) throw new RuntimeException('ledger_stage_failed');
                 $changed=$stmt->affected_rows;
                 $stmt->close();

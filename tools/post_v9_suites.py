@@ -2500,11 +2500,29 @@ def run_effects(tmp: str) -> tuple[dict, dict]:
         "additional_child_remains_in_financial_exception_ledger",
         "owner_unknown_original_effect_held",
         "owner_unknown_must_reconcile_not_repeat_effect",
+        "nextpay_operator_attestation_eligible",
+        "nextpay_fake_remote_success_denied",
+        "nextpay_pending_without_review_not_decidable",
+        "nextpay_operator_approval_dispatches_original",
+        "nextpay_operator_financial_commit_once",
+        "nextpay_single_original_wallet_effect",
+        "nextpay_attestation_distinct_from_provider_settlement",
+        "nextpay_repeat_operator_callback_no_double_credit",
+        "zarinpal_operator_attestation_eligible",
+        "zarinpal_fake_remote_success_denied",
+        "zarinpal_pending_without_review_not_decidable",
+        "zarinpal_operator_rejects_unfinished_only",
+        "zarinpal_reject_never_claims_refund_or_credits",
+        "zarinpal_reject_cannot_be_reapproved",
     }
     if not (decision.get("complete") is True
             and set(decision.get("checks",[]))==required_decisions
             and decision.get("owned_mariadb") is True
             and decision.get("real_review_decision_source") is True
+            and decision.get("original_gateway_review_stage_source") is True
+            and decision.get("real_hosted_original_claim_after_uncertain") is True
+            and decision.get("operator_dispatch_journal_required") is True
+            and decision.get("no_merchant_or_customer_network") is True
             and decision.get("test_effect_is_synthetic") is True
             and decision.get("provider_http_calls")==0
             and decision.get("telegram_calls")==0

@@ -83,37 +83,53 @@ audit/status rather than offering another irreversible approval. The pending
 delivery workbench lists only existing 018 intents awaiting ACK or inspection.
 Historical records without an encrypted delivery intent are not fabricated.
 
-### NOWPayments operator decisions — additive migration 019
+### Quiet financial decisions and continuations — existing migration 019
 
-- **Owner only, current private chat, signed short-lived two-step challenge.**
-  Each approval performs one fresh authenticated provider GET and requires
-  exact invoice/order/payment ID identity, quoted USD amount, merchant
-  settlement evidence and provider status **finished**. A locally observed
-  confirmed/sending/partially_paid result is **not** authority to settle.
-  A refusal requires provider **refunded** and cannot override completed orders.
-  A second positively funded child blocks treating one child as the invoice.
-- Insert a unique, pay-scoped decision audit and claim attempt
-  operator_verified_finished in **one InnoDB transaction** before running
-  the original doAction effect path. The standard customer/business
-  output is preserved, including the report channel. Cron must not turn
-  this operator-owned fulfilling claim back into review.
-- If the process exits after the journal COMMIT, the status remains
-  dispatching (unknown until reconciled). An ambiguous provider/native or
-  Telegram outcome stays unknown; **never auto-repeat** the same financial,
-  remote CREATE or customer-delivery effect. Duplicate callbacks are rejected.
-- The provider's refunded result may be closed as a rejected payment, with
-  the final customer state and normal report. Unknown/short-funded/multiple
-  paid children are *not* blindly rejected or credited.
-- Migration 019_payment_review_decisions.sql is **source-only and unapplied**,
-  additionally required by read-only preflight. Explicit backup, staging
-  restore, separate Owner migration authorization, and exact source/CI/
-  independent review gates apply as to 018.
+- **NOWPayments:** signed original IPN children provide the incoming-funds
+  evidence for the Owner's direct Approve/Reject. The callback records a unique
+  journal decision and then invokes the original once-only `doAction` path.
+  It performs **no mandatory merchant GET or second operator confirmation**.
+  Owner attestation is marked `operator_attested`, not a forged provider
+  `finished` outcome; rejecting an unfinished order is **not** a merchant
+  refund. A secondary funded child stays a separate financial exception.
+- **NextPay / Zarinpal:** an inconclusive hosted VERIFY (including transport
+  uncertainty) on an exact, previously issued provider-scoped `003` invoice can
+  save `verification_uncertain` on the same attempt. This is an unproven claim,
+  **not evidence that the merchant received money**. It does not debit, credit,
+  provision, notify or require another gateway verification. The Owner may
+  inspect the original invoice, price, provider reference and status and make
+  one direct decision. The existing **019 unique journal** records this as a
+  human choice and the original hosted `doAction` path enforces the same pays
+  CAS and attempt identity, including if a genuine verified browser callback
+  wins the race. Rejection closes an eligible unfinished business order only;
+  no refund is inferred. If 019 is unavailable no new undecidable hosted
+  review entry is staged. A positive verified hosted charge followed by
+  uncertain native execution belongs to **serviceRecoveryInbox**, not
+  financial review.
+- **API bank SMS / gift card:** if the existing `014` evidence is already
+  proven, the ordinary financial/service coordinator
+  `achbotApiPaymentSettle` can be resumed from the same case; this makes no
+  fresh provider verification request and reuses the already pinned identity,
+  source proof, native effect and delivery journals. Original human receipt
+  Approve/Reject callbacks remain available when their usual prerequisites
+  apply. No new staff role or payment authorization was created.
+- **Recovery boundaries:** the original decision journal fences double
+  approvals; an uncertain native CREATE/PUT is not replayed merely because a
+  human presses the same button again. Verified native service and pending-only
+  Telegram delivery continue under the existing specialized queues, with
+  unknown delivery left explicitly unknown. None of these operations triggers
+  unsolicited payment-review notifications.
 
-Scope remaining for Issue #117: a genuine multi-provider override with
-explicit human attestation/reference/reason for verified positive funds when
-provider is not finished, cross-provider manual decisions beyond NOWPayments,
-full native Marzban/PasarGuard readback/replacement workflow, and controlled
-Chili acceptance. Do not describe this source slice as deployed or approved.
+Migration `019_payment_review_decisions.sql` remains **source-only and
+unapplied** on Chili unless independently authorized, backed up, restored in
+staging and deployed under the separate Owner/CI/review gates. This source
+change does not grant live settlement, release or installation authority.
+
+Scope remaining for Issue #117: verified provider/native readback for the
+remaining unknown hosted service-edit and bulk cases, source-real subject-by-
+subject acceptance, legacy/unbackfilled financial evidence and installed Chili
+acceptance. Never describe a source-only PR as deployed or complete for all
+possible failure paths.
 
 ### Isolated proof
 
@@ -126,8 +142,8 @@ Chili acceptance. Do not describe this source slice as deployed or approved.
   separation for completed, unfunded and positively evidenced cases.
 - Existing finance route suite tests unchanged provider/API outcomes and
   original purchase copy; retired notification expectations now test no push.
-- Local Dev PHP 8.4 can catch defects early but **required acceptance remains
-  the exact candidate's full PHP 8.5 CI**.
+- Do **not** treat PHP 8.4 as current-runtime validation. Required acceptance
+  remains the exact candidate's full PHP 8.5 CI.
 
 ### Technical service queue after separating financial review
 
