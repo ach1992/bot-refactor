@@ -2902,6 +2902,7 @@ def run_effects(tmp: str) -> tuple[dict, dict]:
         "paid_pg_exact_marker_username_readback_no_post_no_financial_write",
         "paid_pg_partial_bulk_missing_ordinal_never_infers_absence",
         "paid_pg_other_account_marker_is_not_original_provision",
+        "paid_pg_original_groups_mismatch_is_not_proof",
         "paid_pg_native_policy_drift_is_not_proof",
         "paid_pg_404_is_uncertainty_not_create_permission",
         "paid_pg_corrupt_original_fingerprint_blocks_remote_read",

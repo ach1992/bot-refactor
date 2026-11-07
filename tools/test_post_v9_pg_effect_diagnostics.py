@@ -291,7 +291,7 @@ def test():
         assert call(op="reserve",effect=paid_effect,username=username,
                     operation=operation)=={"ok":True,"result":{"newly_reserved":True}}
         server.user=copy.deepcopy(pg.USER)
-        server.user.update(username=username,note="achbot:v1:"+operation,
+        server.user.update(id=117,username=username,note="achbot:v1:"+operation,
                            data_limit=BYTES,expire="2033-05-18T03:33:20Z",
                            group_ids=[2,5])
         baseline=(
@@ -327,6 +327,11 @@ def test():
         mismatch=inspect(mode="foreign_note")
         assert mismatch["status"]=="remote_mismatch" and mismatch["remote_gets"]==1
         checks.append("paid_pg_other_account_marker_is_not_original_provision")
+        server.user["group_ids"]=[2,7]
+        group_mismatch=inspect()
+        assert group_mismatch["status"]=="remote_mismatch" and group_mismatch["remote_gets"]==1
+        server.user["group_ids"]=[2,5]
+        checks.append("paid_pg_original_groups_mismatch_is_not_proof")
         reset=inspect(mode="scheduled_reset")
         assert reset["status"]=="remote_mismatch" and reset["remote_gets"]==1
         checks.append("paid_pg_native_policy_drift_is_not_proof")
@@ -356,7 +361,7 @@ def test():
         # An already identified original incarnation must use by-ID, not
         # silently fall back to another account with the same username.
         sql("UPDATE service_effects SET state='verified',provider_state='verified',"
-            "provider_remote_user_id=17,"
+            "provider_remote_user_id=117,"
             "provider_remote_created_at='2026-10-26T05:00:00.123456Z' "
             f"WHERE id={paid_effect}")
         baseline=(
@@ -368,7 +373,7 @@ def test():
         )
         by_id=inspect()
         assert by_id["status"]=="matching_observation" and by_id["remote_gets"]==1
-        assert len(server.trace)==1 and server.trace[0][1]=="/api/user/by-id/17"
+        assert len(server.trace)==1 and server.trace[0][1]=="/api/user/by-id/117"
         checks.append("paid_pg_verified_native_incarnation_exact_by_id_only")
         foreign_id=inspect(mode="foreign_id")
         assert foreign_id["status"]=="remote_unavailable" and foreign_id["remote_gets"]==1
