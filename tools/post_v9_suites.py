@@ -2338,6 +2338,32 @@ def run_effects(tmp: str) -> tuple[dict, dict]:
         raise RuntimeError("Owned manual payment review decision regression failed:\n"+
             (worker.stderr or worker.stdout)[-4000:])
     decision=json.loads(decision_path.read_text())
+    pg_lock_path=Path(tmp)/"real-pasarguard-review-lock-boundary.json"
+    pg_lock_run=subprocess.run([
+        "python3",str(ROOT/"tools/test_post_v9_review_pg_lock.py"),
+        "--run-disposable","--report",str(pg_lock_path)],
+        cwd=ROOT,timeout=90,capture_output=True,text=True)
+    if pg_lock_run.returncode:
+        raise RuntimeError("Source-real PasarGuard loopback financial lock test failed:\n"+
+            (pg_lock_run.stderr or pg_lock_run.stdout)[-4000:])
+    pg_lock=json.loads(pg_lock_path.read_text())
+    required_pg_lock={
+        'source_real_pasar_guard_account_identity_pinned',
+        'source_real_pg_GET_no_SQL_lock_pay_terminal_drift',
+        'source_real_pg_GET_drift_fails_closed_pay_terminal_drift',
+        'source_real_pg_GET_no_SQL_lock_plan_target_drift',
+        'source_real_pg_GET_drift_fails_closed_plan_target_drift',
+    }
+    if not (pg_lock.get('complete') is True
+            and set(pg_lock.get('checks',[]))==required_pg_lock
+            and pg_lock.get('source_real_php') is True
+            and pg_lock.get('owned_mariadb') is True
+            and pg_lock.get('actual_pasar_guard_http_get') is True
+            and pg_lock.get('financial_locks_released_during_GET') is True
+            and pg_lock.get('target_drift_fails_closed') is True
+            and pg_lock.get('native_writes')==0):
+        raise RuntimeError("Required source-real PasarGuard lock boundary proof incomplete")
+    result['pasarguard_review_lock_boundary']=pg_lock
     required_decisions={
         "decision_schema_unique_innodb",
         "verified_finished_complete_single_child_eligible",
@@ -2371,6 +2397,10 @@ def run_effects(tmp: str) -> tuple[dict, dict]:
             and decision.get("audit_exactly_once") is True
             and decision.get("financial_double_credit") is False
             and decision.get("cron_operator_claim_survived") is True
+            and decision.get("signed_ipn_operator_claim_survived") is True
+            and decision.get("signed_ipn_postpaid_primary_preserved") is True
+            and decision.get("signed_ipn_out_of_order_secondary_preserved") is True
+            and decision.get("additional_funds_paid_and_inflight_visible") is True
             and decision.get("internal_payment_page_suppressed") is True
             and decision.get("inbox_only_unfinalized_with_funds_or_receipt") is True
             and decision.get("api_module_loaded_on_first_entry") is True
@@ -2418,8 +2448,10 @@ def run_effects(tmp: str) -> tuple[dict, dict]:
         "nowpayments_repeat_review_quiet",
         "nowpayments_second_unpaid_child_is_not_payment",
         "nowpayments_unpaid_failed_child_no_operator_case",
-        "nowpayments_same_child_funds_reopen_once_no_downgrade",
+        "nowpayments_secondary_funds_keep_terminal_claim_no_downgrade",
         "nowpayments_secondary_paid_child_quiet",
+        "nowpayments_paid_extra_funds_visible_in_separate_owner_queue",
+        "nowpayments_extra_funds_owner_only",
         "nowpayments_operator_inbox_details_private_auth",
         "nowpayments_operator_provider_inquiry_readonly",
         "nowpayments_operator_unauthorized_callbacks_refused",
@@ -3656,6 +3688,9 @@ def run_funding(tmp: str) -> tuple[dict, dict]:
         "manual_wallet_exactly_one_credit_bank_transfer",
         "manual_wallet_exactly_one_credit_gift_card",
         "manual_wallet_exactly_one_credit_manual_usdt",
+        "manual_wallet_original_receipt_three_non_action_rows_bank_transfer",
+        "manual_wallet_original_receipt_three_non_action_rows_gift_card",
+        "manual_wallet_original_receipt_three_non_action_rows_manual_usdt",
         "manual_wallet_approval_replay_denied_bank_transfer",
         "manual_wallet_approval_replay_denied_gift_card",
         "manual_wallet_approval_replay_denied_manual_usdt",
@@ -3686,10 +3721,13 @@ def run_funding(tmp: str) -> tuple[dict, dict]:
         "real_standard_renewal_uncertain_remote_change_no_replay",
         "real_standard_uncertain_remote_effect_stays_reconciliation_and_no_replay",
         "real_standard_verified_receipt_one_delivery_no_replay",
+        "manual_standard_original_receipt_three_non_action_rows",
+        "manual_renew_sconfig_original_receipt_three_non_action_rows",
         "real_standard_wrong_subject_denied",
         # PR #52 independent F1/F2 findings: mandatory real callback runs.
         "real_custom_nonadmin_cannot_approve_submitted_gift_receipt",
         "real_custom_authorized_review_state_approves_only_once",
+        "manual_custom_original_receipt_three_non_action_rows",
         "real_custom_replayed_operator_callback_no_remote_effect",
         "real_custom_pending_without_photo_cannot_approve",
         "real_custom_wallet_paid_invoice_cannot_approve_again",

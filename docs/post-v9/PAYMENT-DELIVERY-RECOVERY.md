@@ -153,3 +153,62 @@ The four new catalog topics are separately source-SHA-pinned and their
 historical ancestors are preserved. The archived unsolicited-review strings
 remain in the editable catalog with exact historical source provenance but
 cannot be referenced by new Cron or owner decisions.
+
+## PR #122 independent review remediation — 2026-11-07 (source only)
+
+The original HEAD 9f4b6113b76b51666ab9ad79fc18814b30e5d6a2
+received independent HIGH_ASSURANCE / CHANGES_REQUIRED; exact-HEAD
+PHP 8.5 CI success did **not** approve Merge. The three REQUIRED findings
+are addressed in the subsequent remediation candidate, which itself
+requires new exact-HEAD PHP 8.5 CI and independent delta review.
+
+**R1 — no provider I/O under financial locks.** achbotNpDecisionCommit
+now captures a SQL-local, immutable quote/subject fingerprint *before* any
+potentially networked eligibility preflight, rechecks it after the quote,
+and checks it again inside the locked decision transaction. Only SQL-local
+table reads are permitted after InnoDB locks are acquired. The fingerprint
+includes the bound pay, logical server, plan, order, provider effect and every
+physical row sharing the provider's logical provider_connection_id (not a
+fictitious server_config.id equal to that logical ID). A changed local
+target or payment fails closed. The native mutation still has its own final
+admission/readback. tools/test_post_v9_review_pg_lock.py drives the **real**
+PasarGuard quote and HTTP GET on a controlled loopback endpoint with real
+separate MariaDB sessions; its concurrent local pay/plan updates finish
+without waiting on financial GET-held locks, and both drift cases reject
+the original decision without a provider write.
+
+**R2 — secondary NOWPayments funds.** Every authenticated child remains
+durably recorded in payment_transactions. A new funded child may mark a
+still-unclaimed pending original for review, but **never rewrites** a paid,
+terminal, owner-dispatching or fulfilling primary. The independent,
+owner-private, quiet financeExtraInbox reads additional funded-child
+evidence even when the original pay is already completed. Its case view
+shows child identifiers/statuses and links to bounded official child inquiry;
+it does not provide Approve/Reject for the paid original, invoke doAction,
+send an unsolicited review notice, or create a new schema. Merchant-funds
+reconciliation/refund remains a separate documented financial operation.
+The test suites exercise signed IPN interleavings before/after owner claim,
+out-of-order/repeated receipts, paid-wallet protection and owner-only cases.
+
+**R3 — original manual receipt final presentation.** A shared source-real
+achbotManualFinalReceiptKeyboard fetches the **committed** human approver,
+original hash and payment state, and uses the same three-row terminal,
+non-financial callback contract as API approval. The second row is the
+actual subject: issued subscription identity, bound service renewal/add-on
+or wallet payment, not an arbitrary notice/operational navigation button.
+Standard, custom, RENEW_SCONFIG, RENEW_ACCOUNT, manual day/volume and wallet
+approval routes edit the original stored receipt and authorized
+admins_messages copies in place. Existing normal customer/business outcome
+reports remain; no separate payment-review notice is added. The real
+manual payment route suite captures original editKeys keys/message IDs
+and checks the actual actor, subject, hash and no-op callbacks.
+
+**Boundaries:** Neither 018 nor 019 has been applied to Chili. No live
+NOWPayments, Marzban, PasarGuard, bank, SMS, gift, Telegram, installed Chili
+or production database operation was exercised. Live provider behavior,
+full multi-provider/manual approval, historically missing Telegram packets
+and uncertain native CREATE recovery remain Issue #117 acceptance work.
+Source-only tests or a green CI must never be described as production
+readiness or as authority to merge/deploy. A new Owner decision after an
+independent APPROVE is required for Merge; migration/deploy need separate
+authorization and verified backup/restore.

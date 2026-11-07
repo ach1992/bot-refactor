@@ -102,6 +102,42 @@ function achbotRecoveryAttentionSql(mysqli $db): string {
       AND (($ledger) OR ($api))";
 }
 
+/**
+ * Authenticated secondary merchant funds are an independent FINANCIAL
+ * exception, even when the original pay is already paid or an operator's
+ * once-only fulfillment is running. Never reopen the original pay here.
+ * No schema or alerts: payment_transactions is the authoritative child ledger.
+ */
+function achbotRecoveryAdditionalFundsSql(mysqli $db,string $p='p'): string {
+    if (!achbotPayUxTable($db,'payment_attempts') ||
+        !achbotPayUxTable($db,'payment_transactions')) return '0';
+    return "EXISTS (SELECT 1 FROM payment_attempts a
+        JOIN payment_transactions t ON t.attempt_id=a.id
+        WHERE a.pay_row_id=$p.id AND a.provider='nowpayments'
+          AND t.provider='nowpayments' AND a.payment_id IS NOT NULL
+          AND BINARY t.payment_id<>BINARY a.payment_id
+          AND t.observed_status IN
+              ('confirming','confirmed','sending','partially_paid','finished','refunded'))";
+}
+function achbotRecoveryAdditionalFundsCases(mysqli $db,int $before=0): array {
+    if ($before<0) throw new InvalidArgumentException('additional_funds_cursor');
+    $scope=achbotRecoveryAdditionalFundsSql($db);
+    $q=$db->prepare("SELECT p.id,p.user_id,p.price,p.type,p.state
+        FROM pays p WHERE ($scope) AND (?=0 OR p.id<?)
+        ORDER BY p.id DESC LIMIT 13");
+    $q->bind_param('ii',$before,$before);$q->execute();
+    $rows=$q->get_result()->fetch_all(MYSQLI_ASSOC);$q->close();
+    return $rows;
+}
+function achbotRecoveryAdditionalFundsCase(mysqli $db,int $payId): ?array {
+    if ($payId<=0) return null;
+    $scope=achbotRecoveryAdditionalFundsSql($db);
+    $q=$db->prepare("SELECT p.id FROM pays p WHERE p.id=? AND ($scope) LIMIT 1");
+    $q->bind_param('i',$payId);$q->execute();
+    $exists=$q->get_result()->num_rows===1;$q->close();
+    return $exists?achbotRecoveryAttentionCase($db,$payId):null;
+}
+
 /** Separate paid/held SERVICE recovery queue, never a second financial inbox.
  * A successful transaction with unresolved remote CREATE/renewal may still
  * require an owner, but must not be offered a second money approval.

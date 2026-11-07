@@ -2025,14 +2025,14 @@ def main():
         state=sql(work,env,"SELECT stage,provider_status "
             "FROM payment_attempts WHERE order_hash='np-idle-child'").strip()
         if funding['events'][-1]['code']!=200 or (
-            state!='review\tadditional_payment'):
+            state!='done\tfinished'):
             raise RuntimeError('Authenticated later in-flight funds were ignored')
         stale=run_php(work,env,stage,signed_ipn(idle_payload))
         if (stale['events'][-1]['code']!=200 or
             sql(work,env,"SELECT observed_status FROM payment_transactions "
                 "WHERE payment_id='np-idle-secondary'").strip()!='confirming'):
             raise RuntimeError('Out-of-order unpaid IPN erased in-flight evidence')
-        records.append(dict(case='nowpayments_same_child_funds_reopen_once_no_downgrade',
+        records.append(dict(case='nowpayments_secondary_funds_keep_terminal_claim_no_downgrade',
                             pass_=True,real_provider_requests=0))
         finish=run_php(work,env,stage,signed_ipn(dict(
             idle_payload,payment_status='finished')))
@@ -2067,11 +2067,43 @@ def main():
         if children!=['np-extra-deposit','np-fourth-child','np-third-child']:
             raise RuntimeError('Distinct signed child identifiers were lost: '+repr(children))
         if sql(work,env,"SELECT stage,provider_status FROM payment_attempts "
-               "WHERE order_hash='wallet-init'").strip()!='review\tadditional_payment':
-            raise RuntimeError('Additional deposit not surfaced for operator review')
+               "WHERE order_hash='wallet-init'").strip()!='done\tfinished':
+            raise RuntimeError('Additional deposit overwrote terminal payment claim')
         if int(sql(work,env,'SELECT wallet FROM users WHERE userid=1001').strip())!=paid_wallet:
             raise RuntimeError('Additional child payment duplicated credit')
         records.append(dict(case='nowpayments_multiple_children_durably_stored',
+                            pass_=True,external_requests=0))
+        # Authenticated extra funds must be visible in the quiet owner-only
+        # FINANCIAL exception inbox regardless of the paid primary state.
+        finance_page=run_php(work,env,stage,dict(
+            route='admin_review',get={},actor=9001,chat_id=9001,
+            callback_data='financeExtraInbox'))
+        extra_edits=[e for e in finance_page['events'] if e['name']=='editText']
+        wallet_pay=int(sql(work,env,"SELECT id FROM pays WHERE hash_id='wallet-init'").strip())
+        if (len(extra_edits)!=1 or
+            'financeExtraCase_'+str(wallet_pay) not in str(extra_edits[0]['args']) or
+            any(e['name']=='sendMessage' for e in finance_page['events']) or
+            finance_page['network_calls']):
+            raise RuntimeError('Quiet owner financial exception list missed paid extra child')
+        detail=run_php(work,env,stage,dict(
+            route='admin_review',get={},actor=9001,chat_id=9001,
+            callback_data='financeExtraCase_'+str(wallet_pay)))
+        extra_details=[e for e in detail['events'] if e['name']=='editText']
+        if (len(extra_details)!=1 or 'np-extra-deposit' not in str(extra_details[0]['args']) or
+            'npReviewCase_' not in str(extra_details[0]['args']) or
+            'npDecisionP' in str(extra_details[0]['args']) or
+            detail['network_calls']):
+            raise RuntimeError('Owner additional-funds case lacks quiet child reconciliation')
+        records.append(dict(case='nowpayments_paid_extra_funds_visible_in_separate_owner_queue',
+                            pass_=True,external_requests=0))
+        # The quiet view does not grant any finance permission to staff
+        # delegates or cause Telegram messages.
+        denied=run_php(work,env,stage,dict(
+            route='admin_review',get={},actor=9002,chat_id=9002,
+            callback_data='financeExtraCase_'+str(wallet_pay)))
+        if any(e['name']=='editText' for e in denied['events']):
+            raise RuntimeError('Delegated actor saw owner-only additional funds')
+        records.append(dict(case='nowpayments_extra_funds_owner_only',
                             pass_=True,external_requests=0))
         # Owner provider inquiry is ONE chosen child per callback; never
         # block Telegram processing on 5 sequential 7-second API calls.

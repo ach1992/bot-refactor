@@ -200,6 +200,9 @@ def main():
   assert json.loads(cron.stdout)['cron_operator_claim_survived']
   assert json.loads(cron.stdout)['internal_payment_page_suppressed']
   out['cron_operator_claim_survived']=True
+  out['signed_ipn_operator_claim_survived']=True
+  out['signed_ipn_postpaid_primary_preserved']=True
+  out['signed_ipn_out_of_order_secondary_preserved']=True
   out['internal_payment_page_suppressed']=True
   inbox=d/'review-inbox.php';inbox.write_text(INBOX)
   inc=subprocess.run(['php','-d','disable_functions=curl_init,curl_exec',
@@ -210,6 +213,7 @@ def main():
   selected=json.loads(inc.stdout)
   assert selected['inbox_only_unfinalized_with_funds_or_receipt']
   assert selected['api_module_loaded_on_first_entry']
+  assert selected['additional_funds_paid_and_inflight_visible']
   out.update(selected)
  if args.report:args.report.write_text(json.dumps(out,ensure_ascii=False,indent=2)+'\n')
  print(json.dumps({k:v for k,v in out.items() if k!='checks'}))
@@ -222,6 +226,40 @@ $connection->set_charset('utf8mb4');
 define('ACHBOT_NP_RECONCILE_ONLY',true);
 require_once $argv[1].'/src/Finance/GatewayReturn.php';
 $res=achbotNpReconcileBatch($connection,['nowpayment'=>'offline-synthetic'],5);
+function ipn(mysqli $db,string $hash,string $child,string $status): int {
+ $payload=['payment_id'=>$child,'invoice_id'=>$hash.'-invoice',
+   'order_id'=>$hash,'payment_status'=>$status,
+   'price_amount'=>'1','price_currency'=>'usd'];
+ $raw=json_encode($payload,JSON_THROW_ON_ERROR|JSON_UNESCAPED_SLASHES);
+ $canonical=json_encode(achbotNpSortedPayload($payload),
+   JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES);
+ return achbotNpIngestIpn($db,'isolated-owned-review-ipn',
+   $raw,hash_hmac('sha512',$canonical,'isolated-owned-review-ipn'));
+}
+// Signed funded child AFTER the operator journal COMMIT, BEFORE its original
+// effect executes: no stage or provider-status clobber, no second execution.
+if(ipn($connection,'operator-inflight','operator-inflight-extra','confirming')!==200 ||
+   ipn($connection,'operator-inflight','operator-inflight-extra','finished')!==200 ||
+   ipn($connection,'operator-inflight','operator-inflight-extra','waiting')!==200)
+ throw new RuntimeException('signed_operator_inflight_ipn_not_accepted');
+$claim=$connection->query("SELECT stage,provider_status FROM payment_attempts
+ WHERE order_hash='operator-inflight'")->fetch_assoc();
+if(($claim['stage']??'')!=='fulfilling' ||
+   ($claim['provider_status']??'')!=='operator_verified_finished')
+ throw new RuntimeException('signed_ipn_clobbered_operator_claim');
+// Signed post-COMMIT child on a PAID terminal wallet remains independent
+// financial evidence and never rearms the paid original.
+if(ipn($connection,'approve-pass','approve-pass-second','finished')!==200 ||
+   ipn($connection,'approve-pass','approve-pass-second','waiting')!==200)
+ throw new RuntimeException('postpaid_signed_ipn_not_accepted');
+$paid=$connection->query("SELECT a.stage,a.provider_status,p.state FROM payment_attempts a
+ JOIN pays p ON p.id=a.pay_row_id WHERE a.order_hash='approve-pass'")->fetch_assoc();
+if(($paid['state']??'')!=='paid' || ($paid['stage']??'')!=='done')
+ throw new RuntimeException('signed_ipn_reopened_paid_wallet');
+$child=$connection->query("SELECT observed_status FROM payment_transactions
+ WHERE payment_id='approve-pass-second'")->fetch_assoc();
+if(($child['observed_status']??'')!=='finished')
+ throw new RuntimeException('out_of_order_ipn_erased_secondary_funds');
 $q=$connection->query("SELECT a.stage,a.provider_status,p.state FROM payment_attempts a
  JOIN pays p ON p.id=a.pay_row_id WHERE a.order_hash='operator-inflight'");
 $row=$q->fetch_assoc();
@@ -235,6 +273,9 @@ $html=ob_get_clean();
 if($html!=='' || headers_list())
  throw new RuntimeException('internal_payment_page_leaked_to_webhook');
 echo json_encode(['cron_operator_claim_survived'=>true,
+ 'signed_ipn_operator_claim_survived'=>true,
+ 'signed_ipn_postpaid_primary_preserved'=>true,
+ 'signed_ipn_out_of_order_secondary_preserved'=>true,
  'internal_payment_page_suppressed'=>true],JSON_THROW_ON_ERROR);
 '''
 INBOX=r'''<?php
@@ -262,8 +303,19 @@ foreach([203,204,205,206,207] as $id)
  if(!in_array($id,$ids,true))throw new RuntimeException('missing_funded_review_'.$id);
 foreach([201,202,208] as $id)
  if(in_array($id,$ids,true))throw new RuntimeException('wrong_review_inclusion_'.$id);
+$extra=achbotRecoveryAdditionalFundsCases($db);
+$extraIds=array_map(static fn($r)=>(int)$r['id'],$extra);
+foreach([201,205] as $id)
+ if(!in_array($id,$extraIds,true))
+   throw new RuntimeException('missing_quiet_additional_funds_'.$id);
+if(in_array(202,$extraIds,true))
+ throw new RuntimeException('unfunded_not_exception');
+$paidExtra=achbotRecoveryAdditionalFundsCase($db,201);
+if(!$paidExtra || ($paidExtra['state']??'')!=='paid')
+ throw new RuntimeException('terminal_primary_exception_not_inspectable');
 echo json_encode(['inbox_only_unfinalized_with_funds_or_receipt'=>true,
   'api_module_loaded_on_first_entry'=>function_exists('achbotApiPaymentReady'),
+  'additional_funds_paid_and_inflight_visible'=>true,
   'examined'=>count($ids)],JSON_THROW_ON_ERROR);
 '''
 if __name__=='__main__':main()

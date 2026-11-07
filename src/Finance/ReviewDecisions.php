@@ -92,12 +92,88 @@ function achbotNpDecisionEligible(mysqli $db,int $id,array $remote,string $decis
     return ['pay'=>$pay,'attempt'=>$a,'digest'=>achbotNpDecisionDigest($remote)];
 }
 /**
+ * SQL-only target read-set. A networked quote is verified before the financial
+ * transaction; only these local rows are re-read/locked after it opens.
+ * Native mutation still performs its own final admission and readback.
+ */
+function achbotNpDecisionSubjectStamp(mysqli $db,array $pay,bool $lock=false): ?string {
+    if (($pay['type']??'')==='INCREASE_WALLET') return 'wallet';
+    if (!function_exists('achbotProviderPaymentSubjectServer')) return null;
+    $sid=achbotProviderPaymentSubjectServer($db,$pay,$lock);
+    if ($sid===null || $sid<=0) return null;
+    $type=(string)($pay['type']??'');
+    $oid=(int)($pay['order_id']??0);
+    if (preg_match('/^INCREASE_(?:DAY|VOLUME)_([1-9][0-9]*)_[1-9][0-9]*$/D',$type,$m))
+        $oid=(int)$m[1];
+    $planId=(int)($pay['plan_id']??0);
+    $read=static function(string $table,int $id) use ($db,$lock): ?array {
+        if ($id<=0) return null;
+        // Only fixed internal table names; values are bound, not interpolated.
+        if (!in_array($table,['server_config','server_info','server_plans',
+                              'orders_list','service_effects'],true)) return null;
+        $q=$db->prepare("SELECT * FROM $table WHERE id=?".($lock?' FOR UPDATE':''));
+        $q->bind_param('i',$id);$q->execute();
+        $row=$q->get_result()->fetch_assoc();$q->close();
+        return $row?:null;
+    };
+    $config=$read('server_config',$sid);
+    $info=$read('server_info',$sid);
+    if (!$config || !$info) return null;
+    $snapshot=['pay'=>$pay,'server_config'=>$config,'server_info'=>$info];
+    if ($planId>0) {
+        $plan=$read('server_plans',$planId);
+        if (!$plan) return null;
+        $snapshot['plan']=$plan;
+    }
+    if ($oid>0) {
+        $order=$read('orders_list',$oid);
+        if (!$order) return null;
+        $snapshot['order']=$order;
+        if ((int)($order['provider_effect_id']??0)>0) {
+            $effect=$read('service_effects',(int)$order['provider_effect_id']);
+            if (!$effect) return null;
+            $snapshot['provider_effect']=$effect;
+        }
+    }
+    $connectionId=(int)($config['provider_connection_id']??0);
+    if ($connectionId>0) {
+        // provider_connection_id is a LOGICAL identity, not a server_config.id.
+        // Preserve all actual rows sharing the physical provider identity.
+        $q=$db->prepare('SELECT * FROM server_config
+            WHERE provider_connection_id=? ORDER BY id'.($lock?' FOR UPDATE':''));
+        $q->bind_param('i',$connectionId);$q->execute();
+        $panels=$q->get_result()->fetch_all(MYSQLI_ASSOC);$q->close();
+        if (!$panels) return null;
+        $snapshot['provider_connections']=$panels;
+    }
+    return hash('sha256',json_encode($snapshot,JSON_THROW_ON_ERROR|JSON_UNESCAPED_SLASHES));
+}
+
+/**
  * Exact provider response is supplied by a fresh authenticated GET outside
  * the transaction. Any concurrent terminal pay/attempt change fails closed.
  */
 function achbotNpDecisionCommit(mysqli $db,int $actor,int $id,string $decision,
                                 array $remote): array {
     if ($actor<=0 || !achbotNpDecisionSchemaReady($db)) return ['status'=>'unavailable'];
+    // Service eligibility may call PasarGuard HTTP GET. Never carry payment,
+    // attempt or provider-child SQL locks across this preflight.
+    $preflight=achbotNpDecisionEligible($db,$id,$remote,$decision);
+    if (!$preflight) return ['status'=>'stale'];
+    $subjectStamp=null;
+    if ($decision==='approve') {
+        // Pin local quote/target BEFORE any network I/O. A concurrent change
+        // during the PasarGuard GET must not become the new accepted baseline.
+        try {$subjectStamp=achbotNpDecisionSubjectStamp($db,$preflight['pay']);}
+        catch(Throwable $error) {return ['status'=>'unavailable'];}
+        if ($subjectStamp===null) return ['status'=>'stale'];
+        if (!achbotSupportsPaymentSubject($db,$preflight['pay']))
+            return ['status'=>'unsupported'];
+        try {$afterPreflight=achbotNpDecisionSubjectStamp($db,$preflight['pay']);}
+        catch(Throwable $error) {return ['status'=>'unavailable'];}
+        if ($afterPreflight===null || !hash_equals($subjectStamp,$afterPreflight))
+            return ['status'=>'stale'];
+    }
     $open=false;
     try {
         if (!$db->begin_transaction()) return ['status'=>'unavailable'];
@@ -109,8 +185,14 @@ function achbotNpDecisionCommit(mysqli $db,int $actor,int $id,string $decision,
         $q->bind_param('i',$payId);$q->execute();
         $duplicate=$q->get_result()->num_rows>0;$q->close();
         if ($duplicate) {$db->rollback();$open=false;return ['status'=>'already'];}
-        if ($decision==='approve' && !achbotSupportsPaymentSubject($db,$pay)) {
-            $db->rollback();$open=false;return ['status'=>'unsupported'];
+        if ($decision==='approve') {
+            // SQL-local fingerprint includes the pinned payment, plan, order,
+            // provider credentials/endpoint and account operation evidence.
+            // No provider quote/read function is invoked with locks held.
+            $lockedStamp=achbotNpDecisionSubjectStamp($db,$pay,true);
+            if ($lockedStamp===null || !hash_equals($subjectStamp,$lockedStamp)) {
+                $db->rollback();$open=false;return ['status'=>'stale'];
+            }
         }
         $paymentId=(string)$a['payment_id'];$status=(string)$remote['payment_status'];
         $digest=$c['digest'];$state=$decision==='approve'?'dispatching':'completed';

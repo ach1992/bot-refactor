@@ -16,6 +16,82 @@ if (is_string($data??null) && str_starts_with($data,'delivery')) {
     return;
 }
 
+// Authenticated additional provider children are financial exceptions,
+// separate from primary payment approval and service/delivery recovery.
+$extraParts=[];
+if (preg_match('/^financeExtra(Inbox|Case)(?:_([1-9][0-9]{0,17}))?$/D',
+    (string)$data,$extraParts)===1) {
+    if ((int)$admin<=0 || (int)$from_id!==(int)$admin ||
+        (int)($chat_id??0)!==(int)$admin) {
+        answerCallbackQuery($callbackId,achbotMessage('finance_workbench.denied'),true);
+        return;
+    }
+    require_once __DIR__.'/../RecoveryInspection.php';
+    $buttons=[];$body='';
+    $escExtra=static fn($s)=>htmlspecialchars(substr((string)$s,0,128),
+        ENT_QUOTES|ENT_SUBSTITUTE,'UTF-8');
+    try {
+        if ($extraParts[1]==='Inbox') {
+            $before=(int)($extraParts[2]??0);
+            $items=achbotRecoveryAdditionalFundsCases($connection,$before);
+            $more=count($items)>12;$items=array_slice($items,0,12);
+            $body=achbotMessage('finance_exceptions.title');
+            foreach ($items as $item) {
+                $buttons[]=[['text'=>achbotMessageHtml('finance_exceptions.case_label',[
+                    'pay'=>(int)$item['id'],'state'=>$item['state']]),
+                    'callback_data'=>'financeExtraCase_'.(int)$item['id']]];
+            }
+            if (!$items) $body.="\n".achbotMessage('finance_exceptions.empty');
+            if ($more && $items)
+                $buttons[]=[['text'=>achbotMessage('finance_exceptions.next'),
+                    'callback_data'=>'financeExtraInbox_'.(int)end($items)['id']]];
+            if ($before>0)
+                $buttons[]=[['text'=>achbotMessage('finance_exceptions.first'),
+                    'callback_data'=>'financeExtraInbox']];
+        } else {
+            $payId=(int)($extraParts[2]??0);
+            $pay=achbotRecoveryAdditionalFundsCase($connection,$payId);
+            if (!$pay || ($pay['attempt']['provider']??'')!=='nowpayments')
+                throw new RuntimeException('extra_funds_case_not_found');
+            $a=$pay['attempt'];$attemptId=(int)$a['id'];
+            $q=$connection->prepare("SELECT t.payment_id,t.observed_status,t.received_at
+                FROM payment_transactions t JOIN payment_attempts a ON a.id=t.attempt_id
+                WHERE t.attempt_id=? AND t.provider='nowpayments'
+                    AND BINARY t.payment_id<>BINARY a.payment_id
+                    AND t.observed_status IN
+                        ('confirming','confirmed','sending','partially_paid','finished','refunded')
+                ORDER BY t.id DESC LIMIT 9");
+            $q->bind_param('i',$attemptId);$q->execute();
+            $children=$q->get_result()->fetch_all(MYSQLI_ASSOC);$q->close();
+            $body=achbotMessageHtml('finance_exceptions.case_title',[
+                'pay'=>$payId,'state'=>$pay['state'],'type'=>$pay['type']])."\n".
+                achbotRecoveryEvidenceText($pay,$a)."\n";
+            foreach (array_slice($children,0,8) as $child)
+                $body.='• <code>'.$escExtra($child['payment_id']).'</code> | '.
+                    $escExtra($child['observed_status']).' | '.
+                    $escExtra($child['received_at'])."\n";
+            if (count($children)>8) $body.=achbotMessage('finance_exceptions.more');
+            $body.="\n".achbotMessage('finance_exceptions.readonly_warning');
+            $buttons[]=[['text'=>achbotMessage('finance_exceptions.inspect'),
+                'callback_data'=>'npReviewCase_'.$attemptId]];
+            $buttons[]=[['text'=>achbotMessage('finance_exceptions.back'),
+                'callback_data'=>'financeExtraInbox']];
+        }
+        $buttons[]=[['text'=>achbotMessage('finance_exceptions.back_finance'),
+            'callback_data'=>'attentionInbox']];
+        $markup=json_encode(['inline_keyboard'=>$buttons],
+            JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
+        answerCallbackQuery($callbackId,achbotMessage('finance_exceptions.checked'));
+        $reply=editText($message_id,$body,$markup,'HTML',(int)$admin);
+        if (!is_object($reply)||($reply->ok??false)!==true)
+            sendMessage($body,$markup,'HTML',(int)$admin);
+    } catch(Throwable $error) {
+        error_log('achbot_additional_funds_inbox_unavailable class='.get_class($error));
+        answerCallbackQuery($callbackId,achbotMessage('finance_exceptions.unavailable'),true);
+    }
+    return;
+}
+
 // Unified read-only attention hub. Existing NP child inquiry and exact
 // BUY_SUB CREATE readback remain specialized, separately gated tools.
 $attentionMatch=[];
@@ -115,6 +191,8 @@ if (preg_match('/^attention(Inbox|Case)(?:_([1-9][0-9]{0,17}))?$/D',(string)$dat
         if ((int)$from_id===(int)$admin) {
             $rows[]=[['text'=>achbotMessage('delivery_workbench.open_inbox'),
                 'callback_data'=>'deliveryInbox']];
+            $rows[]=[['text'=>achbotMessage('finance_exceptions.open'),
+                'callback_data'=>'financeExtraInbox']];
             $rows[]=[['text'=>achbotMessage('service_workbench.open'),
                 'callback_data'=>'serviceRecoveryInbox']];
             $rows[]=[['text'=>achbotMessage('delivery_workbench.native_inbox'),
@@ -804,12 +882,9 @@ if (preg_match('/^approvePayment(.*)/', $data, $match) && achbotAdminCanFor($con
         achbotManualSelectedMethod($connection, $payInfo) ?? 'bank_transfer'
     );
 
-    $keys = json_encode([
-        'inline_keyboard' => [
-            [['text' => \achbotMessage('manual_payment.manual_approval.manual_standard_report_delivery.button.139c829462', ['from_id' => $from_id]), 'callback_data' => "wizwizch"]],
-            [['text' => \achbotMessage('manual_payment.manual_approval.manual_standard_report_delivery.hash_id.2899228604', ['hash_id' => $hash_id]), 'callback_data' => "noop_$hash_id"]]
-        ]
-    ], 488);
+    require_once __DIR__.'/../ApiPaymentPresentation.php';
+    $keys=achbotManualFinalReceiptKeyboard(
+        $connection,(int)$payInfo['id'],payTypeToDescription('INCREASE_WALLET'));
 
     // ویرایش پیام ادمین اصلی
     try {

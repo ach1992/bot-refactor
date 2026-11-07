@@ -138,19 +138,19 @@ function achbotNpIngestIpn(mysqli $connection, string $ipnSecret,
             $stmt->close();
         } elseif ((string)$attempt['payment_id']!==$paymentId &&
                   $improved && achbotNpChildEvidenceRank($status)>0) {
-            // Only NEW incoming-funds evidence (not creation of another
-            // unpaid child ID) opens or refreshes review. Existing 003
-            // children remain durable for future authenticated updates.
+            // Every authenticated child stays durable in payment_transactions.
+            // An unsettled *unclaimed* primary is held for finance review;
+            // never overwrite a done/fulfilling/owner-journal state or hijack
+            // doAction() between its operator COMMIT and fulfillment.
+            // A separate owner-only finance-exception queue reads secondary
+            // child evidence independently of the primary pay/attempt state.
             $stmt=$connection->prepare("UPDATE payment_attempts SET
-                provider_status=CASE WHEN stage='done' OR
-                    provider_status='additional_payment' THEN 'additional_payment'
-                    ELSE 'multiple_payments' END,
-                stage='review' WHERE id=?");
+                provider_status='multiple_payments',stage='review'
+                WHERE id=? AND stage IN ('pending','checking')
+                  AND EXISTS (SELECT 1 FROM pays p
+                    WHERE p.id=payment_attempts.pay_row_id
+                      AND p.state IN ('pending','send'))");
             $stmt->bind_param('i',$attempt['id']);
-            // An additional funded child is already a durable INSERT or a
-            // positive-state UPDATE under the locked attempt. Repeating the
-            // same review label may affect zero rows; that is not a failed
-            // transaction and must not cause a provider IPN 409.
             if (!$stmt->execute())
                 throw new RuntimeException('np_additional_evidence_unconfirmed');
             $stmt->close();

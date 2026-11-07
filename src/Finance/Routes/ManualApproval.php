@@ -7,6 +7,7 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
 require_once __DIR__ . '/../../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
 
 require_once __DIR__ . '/../../Admin/Access.php';
+require_once __DIR__.'/../ApiPaymentPresentation.php';
 if (!achbotAdminRequestAllowed(is_string($data??null)?$data:null,is_string($text??null)?$text:null,(string)($userInfo['step']??''))) {achbotAdminDeny();return;}
 
 
@@ -235,13 +236,7 @@ if (
                 static fn()=>sendMessage(\achbotMessage('manual_payment.automatic_receipts.message.cca1075329', ['remark' => $remark]),null,null,$uid),
                 'renewal_user_notice',$payId,$deliveryIssues,0,$uid);
 
-            $keys = json_encode([
-                'inline_keyboard' => [
-                    [['text' => \achbotMessage('manual_payment.manual_approval.manual_standard_report_delivery.button.139c829462', ['from_id' => $from_id]), 'callback_data' => "wizwizch"]],
-                    [['text' => \achbotMessage('manual_payment.manual_approval.manual_standard_report_delivery.remark.4348a3fd9b', ['remark' => $remark]),                'callback_data' => "noop"]],
-                    [['text' => \achbotMessage('manual_payment.manual_approval.manual_standard_report_delivery.hash_id.2899228604', ['hash_id' => $hash_id]),              'callback_data' => "noop_$hash_id"]],
-                ]
-            ], 488);
+            $keys=achbotManualFinalReceiptKeyboard($connection,$payId,$remark);
 
             $followupStage = 'renewal_operator_buttons';
             try {
@@ -472,13 +467,9 @@ if (
                 $mainValues['sent_config_to_user']),getMainKeys()),
             'purchase_operator_notice',$payId,$deliveryIssues,0,(int)$from_id);
 
-        $keys = json_encode([
-            'inline_keyboard' => [
-                [['text' => \achbotMessage('manual_payment.manual_approval.manual_standard_report_delivery.button.139c829462', ['from_id' => $from_id]), 'callback_data' => "wizwizch"]],
-                [['text' => \achbotMessage('manual_payment.manual_approval.manual_standard_report_delivery.last_remark_for_admin_msg.2b262756e6', ['lastRemarkForAdminMsg' => $lastRemarkForAdminMsg]),  'callback_data' => "noop"]],
-                [['text' => \achbotMessage('manual_payment.manual_approval.manual_standard_report_delivery.hash_id.2899228604', ['hash_id' => $hash_id]),               'callback_data' => "noop_$hash_id"]],
-            ]
-        ], 488);
+        $actualSubject=$lastRemarkForAdminMsg.
+            ($accountCount>1?' +'.($accountCount-1):'');
+        $keys=achbotManualFinalReceiptKeyboard($connection,$payId,$actualSubject);
 
         $followupStage = 'purchase_operator_buttons';
         try {
