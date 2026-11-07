@@ -72,7 +72,7 @@ elseif($op==='locked_commerce') {
  $connection->rollback();
 }
 elseif($op==='human') {
- $from_id=9001;$chat_id=9001;$message_id=222;$text=null;$userInfo=['step'=>'none'];$markup=[[]];
+ $from_id=(int)($spec['actor']??9001);$chat_id=$from_id;$message_id=222;$text=null;$userInfo=['step'=>'none'];$markup=[[]];
  $data=($pay['type']==='RENEW_ACCOUNT'?'approveRenewAcc':(str_starts_with($pay['type'],'INCREASE_DAY_')?'approveIncreaseDay':'approveIncreaseVolume')).$pay['hash_id'];
  if($pay['type']==='RENEW_ACCOUNT')require $root.'/src/Finance/Routes/RenewalCheckout.php';
  else require $root.'/src/Finance/Routes/Extensions.php';$value=true;
@@ -105,7 +105,7 @@ def driver_source():
     php=php.replace("function achbotApplyServiceEdit(...$args) {throw new RuntimeException('unexpected_edit');}","")
     php=php.replace("function achbotSupportsPanel($type) {return $type==='marzban';}","function achbotSupportsPanel($type) {return achbotSupportsProviderType($type);}")
     php=php.replace("$root=$argv[1];", "define('ACHBOT_PG_TEST_LOOPBACK',true);\n$root=$argv[1];")
-    php=php.replace("function editKeys(...$args) {\n    $GLOBALS['events'][]=['event'=>'EDIT_KEYS','state'=>fixtureState()];\n}","function editKeys(...$args){$GLOBALS['events'][]=['event'=>'EDIT_KEYS'];return(object)['ok'=>true];}")
+    php=php.replace("function editKeys(...$args) {\n    $GLOBALS['events'][]=['event'=>'EDIT_KEYS','state'=>fixtureState()];\n}","function editKeys(...$args){$GLOBALS['events'][]=['event'=>'EDIT_KEYS','keys'=>(string)($args[0]??'')];return(object)['ok'=>true];}")
     php=php.replace("return (object)['ok'=>true];\n}\nfunction editKeys","return (object)['ok'=>true,'result'=>(object)['message_id'=>456]];\n}\nfunction editKeys")
     php+="\n"+flow.PREP+r'''
 function alert(...$args){$GLOBALS['events'][]=['event'=>'ALERT'];}
@@ -264,17 +264,21 @@ def check(progress_path=None):
             assert issue(n,'bank_transfer')['result'] is True
             q(f'UPDATE payment_attempts SET created_at=NOW()-INTERVAL 601 SECOND WHERE pay_row_id={n}')
             assert call(op='receipt',pay=n)['result'] is True
-            first=call(op='human',pay=n,crash_after_native=True)
+            first=call(op='human',pay=n,actor=9001,crash_after_native=True)
             journal=json.loads(q('SELECT provider_mutation_snapshot FROM service_effects WHERE order_id=91'))
             writes=panel.write_count
             no_local=q('SELECT COUNT(*) FROM increase_order')=='0'
             record('manual_'+kind+'_verified_native_crash_leaves_processing',
                 state(n)=='processing' and no_local and
                 journal['key']=='manual:pay:'+str(n) and journal['result']=='verified' and
+                journal['changes']['original_approver_id']==9001 and
+                journal['changes']['original_amount_toman']==101 and
                 q('SELECT provider_mutation_key FROM service_effects WHERE order_id=91')=='manual:pay:'+str(n),
                 dict(state=state(n),journal=journal,writes=writes,result=first))
             panel.mode='http_503';panel.trace=[]
-            done=call(op='human',pay=n)
+            # A approved; B (an existing authorized Operator) only finishes
+            # the already-journalled work. Audit must still attribute A.
+            done=call(op='human',pay=n,actor=9002)
             settled=state(n)=='approved'
             audit=q('SELECT COUNT(*) FROM increase_order')=='1'
             audit_units=q('SELECT IFNULL(day,0),IFNULL(volume,0) FROM increase_order ORDER BY id DESC LIMIT 1').split('\t')
@@ -288,13 +292,44 @@ def check(progress_path=None):
                 settled and audit and correct_units and panel.write_count==writes and
                 panel.trace==[] and not pg_events(done) and
                 len(receipt_edits)>=1 and len(customer_notices)>=1 and
-                bool(q(f'SELECT approved_by FROM pays WHERE id={n}').strip()),
-                dict(state=state(n),audit=audit_units,result=done,writes=panel.write_count))
-            again=call(op='human',pay=n)
+                all('9001' in r.get('keys','') and '9002' not in r.get('keys','')
+                    for r in receipt_edits) and
+                q(f'SELECT approved_by FROM pays WHERE id={n}')=='9001' and
+                q('SELECT amount FROM increase_order ORDER BY id DESC LIMIT 1')=='101',
+                dict(state=state(n),audit=audit_units,result=done,writes=panel.write_count,
+                     approved_by=q(f'SELECT approved_by FROM pays WHERE id={n}')))
+            again=call(op='human',pay=n,actor=9002)
             record('manual_'+kind+'_repeat_never_reapplies_or_audits',
                 state(n)=='approved' and q('SELECT COUNT(*) FROM increase_order')=='1' and
                 panel.write_count==writes and panel.trace==[] and not pg_events(again),
                 dict(state=state(n),writes=panel.write_count,result=again))
+        # R1/R2 regression: a distinct authorized recovery Operator never
+        # replaces the first human approver. The *original* issued 003 local
+        # quote must also match the durable verified mutation evidence.
+        for kind in ['renew','day','volume']:
+            for mutation in ['changed_payment_amount','changed_attempt_amount','missing_original_actor']:
+                n,key=reset(kind)
+                assert issue(n,'bank_transfer')['result'] is True
+                q(f'UPDATE payment_attempts SET created_at=NOW()-INTERVAL 601 SECOND WHERE pay_row_id={n}')
+                assert call(op='receipt',pay=n)['result'] is True
+                call(op='human',pay=n,actor=9001,crash_after_native=True)
+                if mutation=='changed_payment_amount':
+                    q(f'UPDATE pays SET price=202 WHERE id={n}')
+                elif mutation=='changed_attempt_amount':
+                    q(f'UPDATE payment_attempts SET local_amount_toman=202 WHERE pay_row_id={n}')
+                else:
+                    q("UPDATE service_effects SET provider_mutation_snapshot=JSON_REMOVE("
+                      "provider_mutation_snapshot,'$.changes.original_approver_id') WHERE order_id=91")
+                before=panel.write_count
+                panel.mode='http_503';panel.trace=[]
+                blocked=call(op='human',pay=n,actor=9002)
+                record('manual_'+kind+'_resume_refuses_'+mutation,
+                    state(n)=='processing' and
+                    q('SELECT COUNT(*) FROM increase_order')=='0' and
+                    q(f'SELECT IFNULL(approved_by,0) FROM pays WHERE id={n}')=='0' and
+                    panel.write_count==before and not panel.trace and not pg_events(blocked) and
+                    any(e.get('event')=='ALERT' for e in blocked['events']),
+                    dict(state=state(n),writes=panel.write_count,result=blocked))
         # A claimed edit without exactly this final verified journal
         # cannot be finished from an old keyboard or the quiet inbox.
         for mutation in ['unverified','wrong_key','wrong_quote','wrong_identity','nonmanual_claim']:

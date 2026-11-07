@@ -51,7 +51,12 @@
   `processing` claim **only when the existing per-account mutation journal**
   proves the exact `manual:pay:<id>` action completed successfully with
   `provider_state=linked`, verified requested units, original local expiry,
-  immutable account/provider identity and matching original receipt. The quiet
+  **original human approver and local toman amount** (persisted before native
+  dispatch), immutable account/provider identity and matching original receipt.
+  Where the original 003 manual payment attempt is present, the immutable
+  `local_amount_toman` and payment identity must also match. A second
+  payments-authorized administrator may resume without replacing the original
+  approving actor in `approved_by` or the final administrative receipt. The quiet
   case view shows the existing button only for that verified local-only
   continuation. The callback rechecks all evidence under its transaction and
   writes the expiry, payment `approved` state and one audit row together;

@@ -287,11 +287,13 @@ def api_native_observation_mismatches(proof: dict, expected: list[str]) -> dict:
         *[f'manual_volume_resume_refuses_{reason}' for reason in (
             'unverified','wrong_key','wrong_quote','wrong_identity',
             'nonmanual_claim')],
+        *[f'manual_{kind}_resume_refuses_{reason}'
+          for kind in ('renew','day','volume')
+          for reason in ('changed_payment_amount','changed_attempt_amount',
+                         'missing_original_actor')],
     }
     expected_review_stderr={
-        f'manual_volume_resume_refuses_{reason}' for reason in (
-            'unverified','wrong_key','wrong_quote','wrong_identity',
-            'nonmanual_claim')
+        name for name in local_recovery if '_resume_refuses_' in name
     }
     # BUY_SUB has no existing native account. Its SQL claim must not
     # contact a provider; only existing-account paths can require native
@@ -330,7 +332,7 @@ def api_native_observation_mismatches(proof: dict, expected: list[str]) -> dict:
             return re.fullmatch(
                 r'\[\d{2}-[A-Za-z]{3}-\d{4} \d{2}:\d{2}:\d{2} UTC\] '
                 r'achbot_manual_pg_edit_recovery_needs_review '
-                r'pay_id=[1-9][0-9]* kind=volume actor=[1-9][0-9]* '
+                r'pay_id=[1-9][0-9]* kind=(?:renew|day|volume) actor=[1-9][0-9]* '
                 r'reason=(?:manual_edit_recovery|pg|day_extension|service_expiry)_[a-z0-9_]{2,100} '
                 r'class=[A-Za-z][A-Za-z0-9_]* code=[0-9]+\n',
                 stderr

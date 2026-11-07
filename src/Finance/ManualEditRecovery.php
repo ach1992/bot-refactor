@@ -73,6 +73,11 @@ function achbotManualPgVerifiedEdit(mysqli $db,array $pay,string $kind,bool $loc
         !is_string($proof['verified_at']??null) || $proof['verified_at']==='' ||
         ($proof['identity']??null)!==$ctx['identity'] ||
         !is_array($change) || ($change['requested_units']??null)!==$requested ||
+        !is_int($change['original_approver_id']??null) ||
+        $change['original_approver_id']<=0 ||
+        !is_int($change['original_amount_toman']??null) ||
+        $change['original_amount_toman']<=0 ||
+        $change['original_amount_toman']!==(int)$pay['price'] ||
         ($change['reset_usage']??null)!==($kind==='renew') ||
         !is_array($change['before']??null) ||
         !array_key_exists('expire',$change['before']) ||
@@ -87,6 +92,24 @@ function achbotManualPgVerifiedEdit(mysqli $db,array $pay,string $kind,bool $loc
         !is_array($proof['current_group_ids']??null))
         throw new RuntimeException('manual_edit_recovery_verified_result_missing');
 
+    // Existing 003 manual attempts pin the original local amount independently
+    // of today's pays.price. Bank-card display amounts and crypto quotes are
+    // in different currencies and must not be substituted for local toman.
+    $ledger=achbotManualLedgerMode($db);
+    if ($ledger==='invalid') throw new RuntimeException('manual_edit_recovery_ledger_invalid');
+    if ($ledger==='current') {
+        $s=$db->prepare('SELECT provider,stage,order_hash,local_amount_toman
+            FROM payment_attempts WHERE pay_row_id=? LIMIT 1'.($locked?' FOR UPDATE':''));
+        $s->bind_param('i',$id);$s->execute();
+        $attempt=$s->get_result()->fetch_assoc();$s->close();
+        if ($attempt!==null &&
+            (!in_array((string)$attempt['provider'],['bank_transfer','gift_card','manual_usdt','manual_trx'],true) ||
+             (string)$attempt['stage']!=='review' ||
+             (string)$attempt['order_hash']!==(string)$pay['hash_id'] ||
+             (int)$attempt['local_amount_toman']!==$change['original_amount_toman']))
+            throw new RuntimeException('manual_edit_recovery_original_quote_changed');
+    }
+
     $fingerprint=hash('sha256',json_encode([
         'pay'=>array_intersect_key($pay,array_flip([
             'id','hash_id','state','approved_by','user_id','type','order_id',
@@ -98,6 +121,7 @@ function achbotManualPgVerifiedEdit(mysqli $db,array $pay,string $kind,bool $loc
     ],JSON_THROW_ON_ERROR));
     return ['fingerprint'=>$fingerprint,'order'=>$o,'pay'=>$pay,'oid'=>$oid,
         'kind'=>$kind,'units'=>$units,'days'=>$days,'volume'=>$volume,
+        'original_approver_id'=>$change['original_approver_id'],
         'result'=>(object)['success'=>true,'verified'=>true,
             'applied_expire'=>$change['absolute']['expire'],
             'applied_bytes'=>$change['absolute']['data_limit']]];
@@ -166,12 +190,13 @@ function achbotManualPgResumeEdit(mysqli $db,string $hash,int $actor,string $kin
         if (!$ok) throw new RuntimeException('manual_edit_recovery_audit_unconfirmed');
         $s=$db->prepare("UPDATE pays SET state='approved',approved_by=?
             WHERE id=? AND state='processing' AND (approved_by IS NULL OR approved_by=0)");
-        $s->bind_param('ii',$actor,$id);
+        $originalApprover=$current['original_approver_id'];
+        $s->bind_param('ii',$originalApprover,$id);
         $ok=$s->execute() && $s->affected_rows===1;$s->close();
         if (!$ok || $db->commit()!==true)
             throw new RuntimeException('manual_edit_recovery_commit_unconfirmed');
         $started=false;
-        $current['pay']['approved_by']=$actor;
+        $current['pay']['approved_by']=$originalApprover;
         $current['pay']['state']='approved';
         return ['status'=>'approved','evidence'=>$current];
     } catch (Throwable $error) {

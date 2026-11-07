@@ -432,7 +432,13 @@ if (preg_match('/^approveIncreaseDay(.*)/', $data, $match) && achbotAdminCanFor(
         // Its unset() used an uninitialized variable after a durable claim.
         if (achbotSupportsPanel($serverType)) {
             $change=['pay_id'=>(int)$payId,'remark'=>$remark,'plus_day'=>$volume];
-            if ($serverType==='pasarguard') $change['operation_key']='manual:pay:'.$payId;
+            if ($serverType==='pasarguard') {
+                $change['operation_key']='manual:pay:'.$payId;
+                // The actor and monetary quote belong to the FIRST
+                // human decision, never a later recovery operator.
+                $change['manual_approver_id']=(int)$from_id;
+                $change['manual_local_amount_toman']=$price;
+            }
             $response = achbotApplyServiceEdit($connection,$server_id,$change);
         } else {
             throw new \UnexpectedValueException('unsupported_panel');
@@ -1269,7 +1275,13 @@ if (preg_match('/^approveIncreaseVolume(.*)/', $data, $match) && achbotAdminCanF
         // Its unset() used an uninitialized variable after a durable claim.
         if (achbotSupportsPanel($serverType)) {
             $change=['pay_id'=>(int)$payId,'remark'=>$remark,'plus_volume'=>$volume];
-            if ($serverType==='pasarguard') $change['operation_key']='manual:pay:'.$payId;
+            if ($serverType==='pasarguard') {
+                $change['operation_key']='manual:pay:'.$payId;
+                // The actor and monetary quote belong to the FIRST
+                // human decision, never a later recovery operator.
+                $change['manual_approver_id']=(int)$from_id;
+                $change['manual_local_amount_toman']=$price;
+            }
             $response = achbotApplyServiceEdit($connection,$server_id,$change);
         } else {
             throw new \UnexpectedValueException('unsupported_panel');
