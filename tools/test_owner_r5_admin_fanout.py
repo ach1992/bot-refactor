@@ -262,10 +262,12 @@ $payInfo['message_id']=100;$payInfo['chat_id']=9001;
 $adminMessages=$historicalRefs;$autoServiceLabel='وضعیت تأییدشده';
 $archivedBank=storedLoops($argv[5].'/AutomaticReceipts.php');
 yes(count($archivedBank)===1,'archived original bank receipt has one stored-copy loop');
-$events=[];eval($archivedBank[0]);$originalMirrors=$events;
+$events=[];eval($archivedBank[0]);
+$originalMirrors=array_values(array_filter($events,static fn($e)=>
+    in_array((int)$e['data']['chat_id'],[9002,9003,9004],true)));
 $events=[];achbotAutoBankSyncReceiptButtons($connection,$payInfo,9001,$autoServiceLabel);
 yes($targets()===[9001,9002,9003,9004],'shared bank receipt updates primary and only genuine current stored staff');
-yes(array_slice($events,1)===$originalMirrors,'shared bank status retains exact archived copy destinations and markup');
+yes(array_slice($events,1)===$originalMirrors,'shared bank status retains exact archived permitted copy destinations and markup');
 foreach($events as $event)yes($event['in_transaction']===0,'shared bank receipt edits are outside financial transaction');
 yes(achbotAdminSetNotify($connection,9001,9001,9004,false),'bank status notification preference OFF');
 $events=[];achbotAutoBankSyncReceiptButtons($connection,$payInfo,9001,$autoServiceLabel);
