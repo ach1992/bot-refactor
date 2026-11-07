@@ -363,6 +363,10 @@ foreach($deliveryNames as$name){
   throw new RuntimeException('delivery_recovery_owner_only_addition');
  unset($shippingSides['admin'][$key]);
 }
+// #117 finance exceptions now include signed, human-rejected funded PRIMARY
+// evidence, not only extra SECONDARY merchant children. The exact revised
+// digest below is restricted to the two new owner-private keys and the
+// corrected category labels; source identity remains strict.
 // #117's two additional, owner-private workbench topics are strictly
 // additive. Hash exact source blocks and prove their complete inventories;
 // never rebaseline or weaken the older whole-catalogue controls.
@@ -371,12 +375,12 @@ $workbench = [
   'digest'=>'3423d7b6837c1db79e0c1a6d8297f663d6244d5134c3522b98b3891b6749f1df',
   'names'=>['day_subject','volume_subject']],
  'finance_exceptions'=>[
-  'digest'=>'65f9eb491c8e0d7a32916e8eda30764f75dadb4df4ebcc932fdc4898cc4d96d9',
-  'names'=>['open','title','empty','case_label','case_title',
+  'digest'=>'2b1c0aa5e61b96967b184d5b7b2c090aa6704920c15999d4b72febccb7cbaf66',
+  'names'=>['open','primary_rejected','primary_refund_unverified','title','empty','case_label','case_title',
    'child_line','readonly_warning','inspect','more','back',
    'back_finance','next','first','checked','unavailable']],
  'finance_workbench'=>[
-  'digest'=>'b2ca5ebb7ac2e77948f3d952edab9b4cc563385ef9d0fcf2bcb2b7798014aedb',
+  'digest'=>'b11588cdef53897b22a6786eca96df74b2527b0855ec7bf85d26a00257d34ff5',
   'names'=>['denied','checking','back','not_safe','challenge_expired','unavailable',
    'migration_required','preview_button','reject_button','commit_approve','commit_reject',
    'preview_approve','preview_reject','rejected_customer','rejected_report','result',

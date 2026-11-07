@@ -120,6 +120,72 @@ function achbotDeliveryInsertBuyLocked(mysqli $db,array $pay,array $attempt,arra
         (string)$effect['operation_id'],(string)$effect['target_key'],$packet);
 }
 
+/** Original human receipt, not a merchant attestation. The same 003
+ * method/quote and 007 manual capacity hold must survive until delivery.
+ * Caller owns the payment transaction when lock=true. No provider HTTP.
+ */
+function achbotDeliveryManualReceiptLocked(mysqli $db,array $pay,array $attempt,
+                                               bool $allowReserved=false,
+                                               bool $preclaim=false): bool {
+    $payId=(int)($pay['id']??0);
+    if ($payId<=0 || ($pay['type']??null)!=='BUY_SUB' ||
+        !in_array((string)($pay['state']??''),
+            $preclaim?['have_sent']:['processing','approved'],true) ||
+        (!$preclaim && (int)($pay['approved_by']??0)<=0) ||
+        (int)($pay['user_id']??0)<=0 ||
+        (int)($pay['message_id']??0)<=0 || (int)($pay['chat_id']??0)===0 ||
+        (string)($pay['payid']??'')!=='' ||
+        (int)($attempt['pay_row_id']??0)!==$payId ||
+        (string)($attempt['order_hash']??'')!==(string)($pay['hash_id']??'') ||
+        (int)($attempt['local_amount_toman']??0)!==(int)($pay['price']??0) ||
+        (string)($attempt['stage']??'')!=='review' ||
+        !in_array((string)($attempt['provider']??''),
+            ['bank_transfer','gift_card','manual_usdt','manual_trx'],true) ||
+        !function_exists('achbotManualIntentDecode')) return false;
+    $provider=(string)$attempt['provider'];
+    $intent=achbotManualIntentDecode((string)($attempt['checkout_url']??''),$provider);
+    if (!is_array($intent) ||
+        (empty($intent['receipt_file_id']) &&
+         (!function_exists('achbotPaymentEvidenceHasTypedReviewLocked') ||
+          !achbotPaymentEvidenceHasTypedReviewLocked($db,$pay)))) return false;
+    if ($provider==='bank_transfer') {
+        if (!function_exists('achbotBankBuyClaimMatches') ||
+            !function_exists('achbotBankBuyAttemptMatches')) return false;
+        $q=$db->prepare('SELECT * FROM bank_buy_invoice_claims WHERE pay_row_id=? FOR UPDATE');
+        $q->bind_param('i',$payId);$q->execute();$claim=$q->get_result()->fetch_assoc();$q->close();
+        if (!achbotBankBuyClaimMatches($pay,$claim) ||
+            !achbotBankBuyAttemptMatches($pay,$attempt,$claim)) return false;
+    }
+    // Check signed/original receipt and invoice identity BEFORE capacity
+    // reservation. No remote CREATE may reach a missing 003 attempt.
+    if ($preclaim) return true;
+    $q=$db->prepare("SELECT state,reserved_count FROM service_effects
+        WHERE pay_row_id=? AND ordinal=0 AND effect_kind='manual_hold' FOR UPDATE");
+    $q->bind_param('i',$payId);$q->execute();$hold=$q->get_result()->fetch_assoc();$q->close();
+    return $hold && ($hold['state']==='consumed' || ($allowReserved && $hold['state']==='reserved')) &&
+        (int)$hold['reserved_count']===max(1,(int)($pay['agent_count']??0));
+}
+function achbotDeliveryManualBuyDigest(array $pay,array $attempt,array $effect): string {
+    return hash('sha256','manual-buy:v1|'.achbotPaymentEvidencePayFingerprint($pay).'|'.
+        achbotPaymentEvidenceQuoteFingerprint($attempt).'|'.
+        (string)$effect['request_sha256'].'|'.(string)$effect['endpoint_sha256'].'|'.
+        (string)$effect['remote_username']);
+}
+/** Insert in the SAME COMMIT as the linked order and approved pay row. */
+function achbotDeliveryInsertManualBuyLocked(mysqli $db,array $pay,array $attempt,
+        array $effect,int $ordinal,int $orderId,array $packet): void {
+    if ($orderId<=0 || !achbotDeliveryManualReceiptLocked($db,$pay,$attempt))
+        throw new RuntimeException('delivery_manual_receipt_invalid');
+    foreach (['operation_id','target_key','endpoint_sha256','request_sha256','remote_username'] as $key)
+        if (!is_string($effect[$key]??null) || $effect[$key]==='')
+            throw new RuntimeException('delivery_manual_effect_invalid');
+    $packet['kind']='qr';
+    achbotDeliveryInsertLocked($db,$pay,$attempt,$ordinal,(int)$effect['id'],$orderId,
+        (int)$effect['target_server_id'],
+        achbotDeliveryManualBuyDigest($pay,$attempt,$effect),
+        (string)$effect['operation_id'],(string)$effect['target_key'],$packet);
+}
+
 /** For wallet / API service edit, invoked under the SAME terminal transaction. */
 function achbotDeliveryInsertTextLocked(mysqli $db,array $pay,array $attempt,string $text,
                                         string $mode,int $orderId,int $serverId,
@@ -171,6 +237,13 @@ function achbotDeliveryValidateLocked(mysqli $db,array $pay,array $d): ?array {
             !hash_equals((string)$d['native_operation'],(string)$effect['operation_id']) ||
             !hash_equals((string)$d['native_target_key'],(string)$effect['target_key']))
             return null;
+        if (in_array((string)$attempt['provider'],
+                ['bank_transfer','gift_card','manual_usdt','manual_trx'],true) &&
+            (int)($pay['approved_by']??0)>0) {
+            if (!achbotDeliveryManualReceiptLocked($db,$pay,$attempt) ||
+                !hash_equals((string)$d['source_digest'],
+                    achbotDeliveryManualBuyDigest($pay,$attempt,$effect))) return null;
+        } else {
         $claim=$db->prepare('SELECT invoice_sha256 FROM bank_buy_invoice_claims WHERE pay_row_id=? FOR UPDATE');
         $claim->bind_param('i',$id);$claim->execute();$invoice=$claim->get_result()->fetch_assoc();$claim->close();
         $issuedFingerprint=achbotBankBuyInvoiceFingerprint($pay);
@@ -198,6 +271,7 @@ function achbotDeliveryValidateLocked(mysqli $db,array $pay,array $d): ?array {
                     (string)$effect['request_sha256'].'|'.(string)$effect['endpoint_sha256'].'|'.
                     (string)$effect['remote_username'])))
             return null;
+        }
     } elseif ((string)$d['pay_type']==='INCREASE_WALLET') {
         if ($orderId!==0 || (int)$d['server_id']!==0 ||
             !hash_equals((string)$d['source_digest'],

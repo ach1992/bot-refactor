@@ -20,6 +20,7 @@ class RoleAuditMysqli extends mysqli {
  public function resetAudit():void {$this->writes=[];$this->financialReads=[];$this->transactions=0;}
 }
 $root=$argv[1];$connection=new RoleAuditMysqli('localhost','root','',$argv[3],0,$argv[2]);$connection->set_charset('utf8mb4');
+$GLOBALS['telegramWebhookSecret']='synthetic-role-fixture-020-key-2026';
 $admin=9001;$from_id=9001;$special_admins=[9002,1001,9005,9999];$admins_list=[1001,9005,9999];$data='';$text='';$userInfo=['step'=>'none'];$checks=[];
 require $root.'/messages/loader.php';require $root.'/src/Admin/Access.php';
 $buttonValues=achbotMessages('legacy_buttons');
@@ -418,9 +419,14 @@ foreach([9002,9003,9004] as $actor){
  $hash='r5-legitimate-decline-'.$actor;$makeReceipt($hash);$wallet=(int)$connection->query('SELECT wallet FROM users WHERE userid=1001')->fetch_assoc()['wallet'];
  $from_id=$chat_id=$actor;$data='declineAction_'.$hash;$text='';$userInfo=['step'=>'none','isAdmin'=>false,'userid'=>$actor];require $root.'/src/Finance/Routes/ManualReceipts.php';
  $declineStep=$connection->query('SELECT step FROM users WHERE userid='.$actor)->fetch_assoc()['step'];
- yes(str_starts_with($declineStep,'declineActionReason_'.$hash.'_'),'all staff retain original receipt decline reason step '.$actor);
- $data='';$text='genuine human receipt decline';$userInfo=['step'=>$declineStep,'isAdmin'=>false,'userid'=>$actor];require $root.'/src/Finance/Routes/ManualReceipts.php';
- yes($connection->query("SELECT state FROM pays WHERE hash_id='$hash'")->fetch_assoc()['state']==='declined'&&(int)$connection->query('SELECT wallet FROM users WHERE userid=1001')->fetch_assoc()['wallet']===$wallet,'all staff original receipt decline preserves customer wallet '.$actor);
+ yes(!str_starts_with($declineStep,'declineActionReason_'.$hash.'_') &&
+     $connection->query("SELECT state FROM pays WHERE hash_id='$hash'")->fetch_assoc()['state']==='declined' &&
+     (int)$connection->query('SELECT wallet FROM users WHERE userid=1001')->fetch_assoc()['wallet']===$wallet,
+     'all staff one-click reject needs no reason step, no native effect or wallet credit '.$actor);
+ $data='';$text='stale old editor';$userInfo=['step'=>'declineActionReason_'.$hash.'_111','isAdmin'=>false,'userid'=>$actor];
+ require $root.'/src/Finance/Routes/ManualReceipts.php';
+ yes($connection->query("SELECT state FROM pays WHERE hash_id='$hash'")->fetch_assoc()['state']==='declined'&&(int)$connection->query('SELECT wallet FROM users WHERE userid=1001')->fetch_assoc()['wallet']===$wallet,
+     'legacy reason-editor replay cannot reopen or double-reject finalized payment '.$actor);
 
 }
 foreach([
@@ -462,6 +468,11 @@ def main():
     start=old.index('$buttons_only_for_special_admins =');end=old.index('\n?>',start)
     policy=old[start:end].replace('function canSeeButton(','function baselineCanSeeButton(',1)
     with owned.owned_database() as (work,env):
+        db=owned.NAMES[1]
+        command=['mariadb','--no-defaults','--protocol=SOCKET',
+            '--socket='+str(work/'mysql.sock'),'-uroot',db]
+        subprocess.run(command,input=(ROOT/'migrations/post-v9/020_payment_followup_intents.sql').read_bytes(),
+            env=env,capture_output=True,check=True,timeout=20)
         app=work/'app';app.mkdir()
         for name in ['src','settings']:shutil.copytree(ROOT/name,app/name)
         shutil.copytree(a.catalog_source/'messages',app/'messages')

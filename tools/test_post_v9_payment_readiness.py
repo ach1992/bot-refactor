@@ -337,7 +337,8 @@ def main() -> dict:
                      '008_referral_awards.sql',
                      '009_bank_buy_invoice_claims.sql',
                      '018_payment_delivery_intents.sql',
-                     '019_payment_review_decisions.sql'):
+                     '019_payment_review_decisions.sql',
+                     '020_payment_followup_intents.sql'):
             statement(d, (ROOT/'migrations/post-v9'/name).read_text())
         state = {
             'botState':'on', 'sellState':'on',

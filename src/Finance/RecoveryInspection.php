@@ -56,7 +56,7 @@ function achbotRecoveryAttentionSql(mysqli $db): string {
     if (achbotPayUxTable($db,'payment_attempts')) {
         $journal=achbotPayUxTable($db,'payment_review_decisions')
             ? "OR (a.stage='fulfilling'
-                AND a.provider_status='operator_verified_finished'
+                AND a.provider_status IN ('operator_verified_finished','operator_attested')
                 AND EXISTS (SELECT 1 FROM payment_review_decisions d
                     WHERE d.attempt_id=a.id
                       AND d.state IN ('dispatching','unknown')))"
@@ -111,13 +111,31 @@ function achbotRecoveryAttentionSql(mysqli $db): string {
 function achbotRecoveryAdditionalFundsSql(mysqli $db,string $p='p'): string {
     if (!achbotPayUxTable($db,'payment_attempts') ||
         !achbotPayUxTable($db,'payment_transactions')) return '0';
-    return "EXISTS (SELECT 1 FROM payment_attempts a
+    $secondary="EXISTS (SELECT 1 FROM payment_attempts a
         JOIN payment_transactions t ON t.attempt_id=a.id
         WHERE a.pay_row_id=$p.id AND a.provider='nowpayments'
           AND t.provider='nowpayments' AND a.payment_id IS NOT NULL
           AND BINARY t.payment_id<>BINARY a.payment_id
           AND t.observed_status IN
               ('confirming','confirmed','sending','partially_paid','finished','refunded'))";
+    // A human rejection closes the BUSINESS order, not the merchant refund.
+    // Keep a signed funded PRIMARY visible as an independent exception until
+    // evidence actually shows refunded. No approval/rejection is offered here.
+    $primary=achbotPayUxTable($db,'payment_review_decisions')
+        ? "EXISTS (SELECT 1 FROM payment_attempts a
+           JOIN payment_review_decisions d ON d.pay_row_id=a.pay_row_id
+             AND d.attempt_id=a.id AND d.decision='reject'
+             AND d.provider_status='operator_rejected'
+             AND d.state='completed'
+           JOIN payment_transactions t ON t.attempt_id=a.id
+             AND t.provider='nowpayments' AND BINARY t.payment_id=BINARY a.payment_id
+           WHERE a.pay_row_id=$p.id AND a.provider='nowpayments'
+             AND a.provider_status='operator_rejected'
+             AND $p.state='declined'
+             AND t.observed_status IN
+                ('confirming','confirmed','sending','partially_paid','finished'))"
+        : '0';
+    return "(($secondary) OR ($primary))";
 }
 function achbotRecoveryAdditionalFundsCases(mysqli $db,int $before=0): array {
     if ($before<0) throw new InvalidArgumentException('additional_funds_cursor');

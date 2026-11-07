@@ -380,13 +380,13 @@ WORKBENCH_BLOCKS={
   'names':{'day_subject','volume_subject'}
  },
  'finance_exceptions':{
-  'sha':'65f9eb491c8e0d7a32916e8eda30764f75dadb4df4ebcc932fdc4898cc4d96d9',
-  'names':{'open','title','empty','case_label','case_title',
+  'sha':'2b1c0aa5e61b96967b184d5b7b2c090aa6704920c15999d4b72febccb7cbaf66',
+  'names':{'open','primary_rejected','primary_refund_unverified','title','empty','case_label','case_title',
    'readonly_warning','child_line','inspect','more','back','back_finance',
    'next','first','checked','unavailable'}
  },
  'finance_workbench':{
-  'sha':'b2ca5ebb7ac2e77948f3d952edab9b4cc563385ef9d0fcf2bcb2b7798014aedb',
+  'sha':'b11588cdef53897b22a6786eca96df74b2527b0855ec7bf85d26a00257d34ff5',
   'names':{'denied','checking','back','not_safe','challenge_expired',
    'unavailable','migration_required','preview_button','reject_button',
    'commit_approve','commit_reject','preview_approve','preview_reject',

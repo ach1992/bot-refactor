@@ -146,6 +146,7 @@ def check(evidence_root,settings_root,source_root=ROOT):
             query(work,env,(ROOT/'migrations/post-v9'/f).read_text())
         query(work,env,(evidence_root/'migrations/post-v9/014_api_payment_evidence.sql').read_text())
         query(work,env,(ROOT/'migrations/post-v9/018_payment_delivery_intents.sql').read_text())
+        query(work,env,(ROOT/'migrations/post-v9/020_payment_followup_intents.sql').read_text())
         query(work,env,"UPDATE server_info SET ucount=100 WHERE id=2")
         query(work,env,"INSERT INTO setting(type,value) VALUES('BOT_STATES','{\"cartToCartState\":\"on\",\"giftCardState\":\"on\"}')")
         php=bank.PHP[:bank.PHP.index("$op=$spec['op']??'auto';")]+PREP+OPS

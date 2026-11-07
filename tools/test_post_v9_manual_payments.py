@@ -156,6 +156,8 @@ $root=$argv[1];
 $spec=json_decode($argv[4],true,512,JSON_THROW_ON_ERROR);
 $connection=new mysqli('localhost','root','',$argv[3],0,$argv[2]);
 $connection->set_charset('utf8mb4');
+// 018 uses AEAD with this isolated synthetic fixture key only.
+$GLOBALS['telegramWebhookSecret']='fixture-manual-route-delivery-key-2026';
 if (($spec['mysqli_report_off']??false)===true) mysqli_report(MYSQLI_REPORT_OFF);
 $from_id=(int)($spec['actor']??1001);
 $chat_id=$from_id;
@@ -220,9 +222,12 @@ function alert(...$args){$GLOBALS['events'][]=['name'=>'alert','args'=>$args];}
 function sendMessage(...$args){
     global $spec;
     $GLOBALS['events'][]=['name'=>'sendMessage','args'=>$args];
+    // A PHP 8.5 E_WARNING on an uninitialized counter would turn EVERY
+    // simulated recipient into an error, hiding independent outbox progress.
+    $GLOBALS['message_send_count']=(int)($GLOBALS['message_send_count']??0)+1;
     if (($spec['message_transport']??'')==='throw' ||
         (($spec['message_transport']??'')==='throw_once' &&
-         ++$GLOBALS['message_send_count']===1))
+         $GLOBALS['message_send_count']===1))
         throw new RuntimeException('fixture_telegram_transport_down');
     if (($spec['message_transport']??'')==='no_id')
         return (object)['ok'=>true,'result'=>(object)[]];
@@ -630,6 +635,7 @@ def check():
         query(work,env,(ROOT/'migrations/post-v9/008_referral_awards.sql').read_text())
         query(work,env,(ROOT/'migrations/post-v9/009_bank_buy_invoice_claims.sql').read_text())
         query(work,env,(ROOT/'migrations/post-v9/018_payment_delivery_intents.sql').read_text())
+        query(work,env,(ROOT/'migrations/post-v9/020_payment_followup_intents.sql').read_text())
         # Each isolated standard receipt now holds capacity before POST.
         # Supply independent test headroom; focused exhaustion is checked
         # in actual ServiceEffects concurrency and reservation regressions.
@@ -823,7 +829,7 @@ def check():
         # Review F1/F2: execute actual service operator callback handlers, not
         # merely helper functions. Every remote action is a local spy.
         def service_pay(key,subject='BUY_SUB',method='bank_transfer',received=True,
-                        amount=100000,quantity=0,addon_units=None):
+                        amount=100000,quantity=0,addon_units=None,standard=False):
             seed(work,env,key,price=amount)
             # A physical Marzban username cannot be reused for two paid
             # identities on the same provider. Synthetic custom descriptions
@@ -832,7 +838,7 @@ def check():
                 key.startswith('servicecallbackrace')) else 'fixture'
             # Only explicitly NEW add-on scenarios get a pinned quantity.
             # Wallet/legacy seed defaults remain zero and are tested below.
-            days,volume=30,10
+            days,volume=(0,0) if standard else (30,10)
             if subject.startswith(('INCREASE_DAY_','INCREASE_VOLUME_')):
                 if addon_units is None:raise ValueError('explicit add-on quote required')
                 days,volume=((addon_units,0) if subject.startswith('INCREASE_DAY_')
@@ -889,7 +895,16 @@ def check():
 
         def reject_service(key,route,callback,actor=9001):
             before=service_snapshot(key)
-            events=run_route(work,env,route_driver,data=callback+key,actor=actor,route=route)
+            # A repeated standard confirmation on an already-claimed
+            # PROCESSING payment attempts pinned native readback only.
+            # The negative fixture has no provider HTTP transport and must
+            # report deferred rather than silently replaying a remote POST.
+            deferred=(route=='standard_approval' and callback=='accept' and
+                      query(work,env,"SELECT state FROM pays WHERE hash_id='"+key+"'")=='processing')
+            events=run_route(work,env,route_driver,data=callback+key,actor=actor,
+                             route=route,
+                             expected_warning='achbot_manual_standard_effect_needs_review'
+                                              if deferred else None)
             assert not any(event['name'] in ('remote_create','remote_edit','order_insert',
                               'capacity_decrement','qr_delivery_mock')
                            for event in events),repr((key,events))
@@ -903,10 +918,197 @@ def check():
         # tested against that real current source.
         def standard_pay(key,method='bank_transfer',received=True,
                          amount=100000,quantity=0):
+            # Original bank 009 identity is captured at invoice issuance.
+            # Standard zero units must be part of the ORIGINAL quote, not
+            # rewritten after receipt issuance (which would be forgery).
             service_pay(key,subject='BUY_SUB',method=method,received=received,
-                        amount=amount,quantity=quantity)
-            query(work,env,"UPDATE pays SET day=0,volume=0 WHERE hash_id='"+key+"'")
+                        amount=amount,quantity=quantity,standard=True)
             return key
+
+        standard_pay('standarddirectreject',method='gift_card')
+        wallet_before=query(work,env,'SELECT userid,wallet FROM users ORDER BY userid')
+        rejected=run_route(work,env,route_driver,data='declineAction_standarddirectreject',
+                           actor=9001,route='manual_admin')
+        assert query(work,env,"SELECT state,approved_by FROM pays WHERE "
+                     "hash_id='standarddirectreject'")=='declined\t9001',rejected
+        assert query(work,env,'SELECT userid,wallet FROM users ORDER BY userid')==wallet_before
+        assert not any(e['name'] in ('remote_create','remote_edit','qr_send') for e in rejected)
+        assert any(e['name']=='sendMessage' and len(e.get('args',[]))>=4 and
+                   e['args'][3]==1001 for e in rejected),rejected
+        assert any(e['name']=='sendMessage' and 'کاربر' in str(e['args'][0])
+                   for e in rejected),rejected
+        assert not any(e['name']=='setUser' and str(e['step']).startswith('declineActionReason_')
+                       for e in rejected),rejected
+        repeated=run_route(work,env,route_driver,data='declineAction_standarddirectreject',
+                           actor=9001,route='manual_admin')
+        assert not any(e['name'] in ('remote_create','remote_edit','qr_send','sendMessage')
+                       for e in repeated),repeated
+        cases.append('manual_direct_reject_one_click_no_wallet_native_or_duplicate_reports')
+
+        # R4: historical repeated refs to the same admin Telegram message
+        # must not violate 020's unique key and roll back a valid rejection.
+        assert query(work,env,'SELECT COUNT(*) FROM users WHERE userid=9003')=='0'
+        query(work,env,"INSERT INTO users(userid,name,username,refcode,wallet,date,isAdmin,step,first_start) "
+             "VALUES(9003,'Fixture other reviewer','reviewer','0',50000,'1700000000',1,'none','sent');"
+             "INSERT INTO setting(type,value) VALUES('ADMIN_ROLE_9003','operator')")
+        try:
+            standard_pay('standardrejectduplicateref',method='gift_card')
+            copies=json.dumps([{'chat_id':9003,'message_id':333},
+                               {'chat_id':9003,'message_id':333},
+                               {'chat_id':9003,'message_id':334}],separators=(',',':'))
+            query(work,env,"UPDATE pays SET admins_messages='"+copies+"' "
+                  "WHERE hash_id='standardrejectduplicateref'")
+            before_wallet=query(work,env,'SELECT userid,wallet FROM users ORDER BY userid')
+            result=run_route(work,env,route_driver,
+                             data='declineAction_standardrejectduplicateref',
+                             actor=9001,route='manual_admin')
+            assert query(work,env,"SELECT state FROM pays WHERE "
+                         "hash_id='standardrejectduplicateref'")=='declined',result
+            assert query(work,env,'SELECT userid,wallet FROM users ORDER BY userid')==before_wallet
+            mirror=query(work,env,"SELECT GROUP_CONCAT(CONCAT(f.message_id,':',f.state) "
+                "ORDER BY f.message_id) FROM payment_followup_intents f JOIN pays p "
+                "ON p.id=f.pay_row_id WHERE p.hash_id='standardrejectduplicateref' "
+                "AND f.role='receipt_mirror'")
+            assert mirror=='333:acknowledged,334:acknowledged',(mirror,result)
+            edits=[e for e in result if e['name']=='editKeys']
+            assert len([e for e in edits if e['args'][2]==9003])==2,(edits,result)
+            replay=run_route(work,env,route_driver,
+                             data='declineAction_standardrejectduplicateref',
+                             actor=9001,route='manual_admin')
+            assert not any(e['name'] in ('editKeys','sendMessage','remote_create')
+                           for e in replay),replay
+            cases.append('manual_reject_duplicate_historical_mirror_refs_deduped_without_rollback')
+
+            # Independent review F1: an original copied receipt in the SAME
+            # Owner chat with a distinct message_id must not be discarded.
+            standard_pay('standardrejectsamechat',method='gift_card')
+            original=query(work,env,"SELECT CONCAT(chat_id,':',message_id) "
+                "FROM pays WHERE hash_id='standardrejectsamechat'")
+            original_chat,original_msg=map(int,original.split(':'))
+            assert original_chat==9001 and original_msg>0,original
+            distinct_msg=original_msg+1
+            # A revoked real staff identity must not receive a historical edit.
+            assert query(work,env,'SELECT COUNT(*) FROM users WHERE userid=9004')=='0'
+            query(work,env,"INSERT INTO users(userid,name,username,refcode,wallet,date,isAdmin,step,first_start) "
+                  "VALUES(9004,'Revoked F1','revoked','0',50000,'1700000000',0,'none','sent');"
+                  "INSERT INTO setting(type,value) VALUES('ADMIN_ROLE_9004','support')")
+            copies=json.dumps([{'chat_id':original_chat,'message_id':original_msg},
+                               {'chat_id':original_chat,'message_id':distinct_msg},
+                               {'chat_id':original_chat,'message_id':distinct_msg},
+                               {'chat_id':9003,'message_id':333},
+                               {'chat_id':9004,'message_id':444}],separators=(',',':'))
+            query(work,env,"UPDATE pays SET admins_messages='"+copies+"' "
+                  "WHERE hash_id='standardrejectsamechat'")
+            before_wallet=query(work,env,'SELECT userid,wallet FROM users ORDER BY userid')
+            result=run_route(work,env,route_driver,
+                             data='declineAction_standardrejectsamechat',
+                             actor=9001,route='manual_admin')
+            assert query(work,env,"SELECT state FROM pays WHERE "
+                         "hash_id='standardrejectsamechat'")=='declined',result
+            assert query(work,env,'SELECT userid,wallet FROM users ORDER BY userid')==before_wallet
+            edits=[e for e in result if e['name']=='editKeys']
+            assert [(int(e['args'][2]),int(e['args'][1])) for e in edits]==[
+                (original_chat,original_msg),(original_chat,distinct_msg),(9003,333)],edits
+            recorded=query(work,env,"SELECT f.role,f.recipient,f.message_id,f.state,f.attempt_count "
+                "FROM payment_followup_intents f JOIN pays p ON p.id=f.pay_row_id "
+                "WHERE p.hash_id='standardrejectsamechat' "
+                "AND f.role IN ('receipt_primary','receipt_mirror') ORDER BY f.id")
+            expected=(f'receipt_primary\t{original_chat}\t{original_msg}\tacknowledged\t1\n'
+                      f'receipt_mirror\t{original_chat}\t{distinct_msg}\tacknowledged\t1\n'
+                      'receipt_mirror\t9003\t333\tacknowledged\t1')
+            assert recorded==expected,(recorded,expected)
+            assert not any(e['name'] in ('remote_create','remote_edit','qr_send') for e in result)
+            replay=run_route(work,env,route_driver,
+                             data='declineAction_standardrejectsamechat',
+                             actor=9001,route='manual_admin')
+            assert not any(e['name'] in ('editKeys','sendMessage','remote_create') for e in replay)
+            assert query(work,env,'SELECT userid,wallet FROM users ORDER BY userid')==before_wallet
+            cases.append('f1_rejected_primary_chat_distinct_message_preserved_once_and_replay_safe')
+
+            # Failed local 020 INSERT must undo declined CAS and every staged
+            # notification, with no customer, staff or native side effect.
+            standard_pay('standardrejectoutboxfail',method='gift_card')
+            query(work,env,"CREATE TRIGGER fixture_f1_reject_outbox_fail BEFORE INSERT "
+                "ON payment_followup_intents FOR EACH ROW SIGNAL SQLSTATE '45000' "
+                "SET MESSAGE_TEXT='fixture_followup_reject_denied'")
+            before_wallet=query(work,env,'SELECT userid,wallet FROM users ORDER BY userid')
+            try:
+                failed=run_route(work,env,route_driver,
+                                 data='declineAction_standardrejectoutboxfail',
+                                 actor=9001,route='manual_admin',
+                                 expected_warning='achbot_manual_reject_claim_unconfirmed')
+            finally: query(work,env,'DROP TRIGGER fixture_f1_reject_outbox_fail')
+            assert query(work,env,"SELECT state FROM pays WHERE "
+                         "hash_id='standardrejectoutboxfail'")=='have_sent',failed
+            assert query(work,env,"SELECT COUNT(*) FROM payment_followup_intents f "
+                "JOIN pays p ON p.id=f.pay_row_id "
+                "WHERE p.hash_id='standardrejectoutboxfail'")=='0'
+            assert not any(e['name'] in ('editKeys','sendMessage','remote_create') for e in failed),failed
+            assert query(work,env,'SELECT userid,wallet FROM users ORDER BY userid')==before_wallet
+            retry=run_route(work,env,route_driver,
+                            data='declineAction_standardrejectoutboxfail',
+                            actor=9001,route='manual_admin')
+            assert query(work,env,"SELECT state FROM pays WHERE "
+                         "hash_id='standardrejectoutboxfail'")=='declined',retry
+            assert not any(e['name'] in ('remote_create','remote_edit') for e in retry)
+            cases.append('f1_rejected_020_sql_failure_rolls_back_and_safe_first_retry')
+        finally:
+            query(work,env,"DELETE FROM setting WHERE type IN('ADMIN_ROLE_9003','ADMIN_ROLE_9004');"
+                  "DELETE FROM users WHERE userid IN(9003,9004)")
+
+        # R4 lost Telegram ACK: business rejection commits once with its
+        # own independent 020 customer/operator/receipt journal. The staff
+        # report must NOT claim that the customer was notified successfully.
+        standard_pay('standardrejectnoticeunknown',method='gift_card')
+        before_wallet=query(work,env,'SELECT userid,wallet FROM users ORDER BY userid')
+        attempts=run_route(work,env,route_driver,
+                           data='declineAction_standardrejectnoticeunknown',
+                           actor=9001,route='manual_admin',
+                           message_transport='throw_once',
+                           expected_warning='achbot_followup_telegram_uncertain')
+        assert query(work,env,"SELECT state FROM pays "
+                     "WHERE hash_id='standardrejectnoticeunknown'")=='declined'
+        assert query(work,env,'SELECT userid,wallet FROM users ORDER BY userid')==before_wallet
+        assert not any(e['name'] in ('remote_create','remote_edit','qr_send') for e in attempts)
+        observed=query(work,env,"SELECT GROUP_CONCAT(CONCAT(f.role,':',f.state) "
+            "ORDER BY f.role) FROM payment_followup_intents f JOIN pays p "
+            "ON p.id=f.pay_row_id WHERE p.hash_id='standardrejectnoticeunknown'")
+        assert observed=='customer:unknown,operator:acknowledged,receipt_primary:acknowledged',observed
+        report=[str(e['args'][0]) for e in attempts if e['name']=='sendMessage' and
+                e['args'][-1]==9001]
+        assert len(report)==1 and 'رد توسط مدیر' in report[0] and 'ارسال شد' not in report[0],report
+        replay=run_route(work,env,route_driver,
+                         data='declineAction_standardrejectnoticeunknown',
+                         actor=9001,route='manual_admin')
+        assert not any(e['name'] in ('sendMessage','editKeys','remote_create') for e in replay),replay
+        assert query(work,env,"SELECT MAX(attempt_count) FROM payment_followup_intents f "
+               "JOIN pays p ON p.id=f.pay_row_id "
+               "WHERE p.hash_id='standardrejectnoticeunknown'")=='1'
+        cases.append('manual_reject_customer_unknown_other_recipients_acked_no_unwarned_replay')
+
+        # R4: a receipt-edit exception cannot suppress either customer or
+        # operator notification, nor authorize a second reply on old buttons.
+        standard_pay('standardrejecteditunknown',method='gift_card')
+        before_wallet=query(work,env,'SELECT userid,wallet FROM users ORDER BY userid')
+        edited=run_route(work,env,route_driver,
+                         data='declineAction_standardrejecteditunknown',
+                         actor=9001,route='manual_admin',
+                         message_edit_transport='throw',
+                         expected_warning='achbot_followup_telegram_uncertain')
+        assert query(work,env,"SELECT state FROM pays "
+                     "WHERE hash_id='standardrejecteditunknown'")=='declined'
+        assert query(work,env,'SELECT userid,wallet FROM users ORDER BY userid')==before_wallet
+        assert query(work,env,"SELECT GROUP_CONCAT(CONCAT(f.role,':',f.state) "
+            "ORDER BY f.role) FROM payment_followup_intents f JOIN pays p "
+            "ON p.id=f.pay_row_id WHERE p.hash_id='standardrejecteditunknown'")==(
+            'customer:acknowledged,operator:acknowledged,receipt_primary:unknown')
+        recipients=[e['args'][-1] for e in edited if e['name']=='sendMessage']
+        assert recipients==[1001,9001],(recipients,edited)
+        replay=run_route(work,env,route_driver,
+                         data='declineAction_standardrejecteditunknown',
+                         actor=9001,route='manual_admin')
+        assert not any(e['name'] in ('sendMessage','editKeys','remote_create') for e in replay),replay
+        cases.append('manual_reject_edit_exception_does_not_suppress_customer_or_operator')
 
         standard_pay('standardwrongstage',method='gift_card')
         query(work,env,"UPDATE payment_attempts SET stage='pending' "
@@ -934,7 +1136,8 @@ def check():
         assert [e['name'] for e in events].count('remote_create')==1,repr(events)
         assert query(work,env,"SELECT state FROM pays WHERE hash_id='standarduncertain'")=='processing',repr(events)
         retry=run_route(work,env,route_driver,data='acceptstandarduncertain',
-                        actor=9001,route='standard_approval',remote_mode='success')
+                        actor=9001,route='standard_approval',remote_mode='success',
+                        expected_warning='achbot_manual_standard_effect_needs_review')
         assert not any(e['name']=='remote_create' for e in retry),repr(retry)
         assert query(work,env,"SELECT state FROM pays WHERE hash_id='standarduncertain'")=='processing'
         cases.append('real_standard_uncertain_remote_effect_stays_reconciliation_and_no_replay')
@@ -980,6 +1183,14 @@ def check():
                 'successful manually reviewed CREATE must consume exactly one owned capacity hold')
         reject_service('standardsuccess','standard_approval','accept')
         assert_final_original_receipt(delivered,'standardsuccess','@issued')
+        manifest=query(work,env,"SELECT d.ordinal,d.state,e.state FROM payment_delivery_intents d "
+            "JOIN service_effects e ON e.id=d.effect_id JOIN pays p ON p.id=d.pay_row_id "
+            "WHERE p.hash_id='standardsuccess' ORDER BY d.ordinal")
+        assert manifest=='1\tacknowledged\tlocal_recorded',manifest
+        assert query(work,env,"SELECT COUNT(*) FROM payment_delivery_attempts a JOIN "
+            "payment_delivery_intents d ON d.id=a.intent_id JOIN pays p ON p.id=d.pay_row_id "
+            "WHERE p.hash_id='standardsuccess'")=='1'
+        cases.append('manual_standard_paid_order_delivery_sealed_and_ack_once')
         cases.append('manual_standard_original_receipt_three_non_action_rows')
         cases.append('real_standard_verified_receipt_one_delivery_no_replay')
         # Review R2: the real ManualApproval.php source must not truncate
@@ -1011,21 +1222,42 @@ def check():
         notice=run_route(work,env,route_driver,
                          data='acceptstandardpostcommitnotify',actor=9001,
                          route='standard_approval',qr_transport='throw',
-                         expected_warning='achbot_manual_standard_delivery_needs_review')
+                         expected_warning=['achbot_delivery_telegram_uncertain',
+                                           'achbot_manual_purchase_delivery_pending'])
         assert [e['name'] for e in notice].count('remote_create')==1,repr(notice)
         assert [e['name'] for e in notice].count('qr_send')==1,repr(notice)
         assert query(work,env,"SELECT state FROM pays WHERE hash_id='standardpostcommitnotify'")=='approved'
         admin_notices=[str(e['args'][0]) for e in notice if e['name']=='sendMessage'
                        and e['args'][-1]==9001]
-        assert any(('سفارش ثبت شده' in m or 'سفارش/سرویس ثبت شده' in m) and 'اطلاع‌رسانی' in m for m in admin_notices),repr(notice)
+        assert any('اشتراک' in m and 'شناسه پرداخت' in m for m in admin_notices),repr(notice)
+        assert query(work,env,"SELECT f.state FROM payment_followup_intents f JOIN pays p "
+            "ON p.id=f.pay_row_id WHERE p.hash_id='standardpostcommitnotify' "
+            "AND f.stage='approved_purchase' AND f.role='operator'")=='acknowledged'
         assert not any('نتیجهٔ تکمیل سفارش هنوز قطعی نیست' in m for m in admin_notices)
-        reject_service('standardpostcommitnotify','standard_approval','accept')
+        assert query(work,env,"SELECT d.state FROM payment_delivery_intents d JOIN pays p "
+            "ON p.id=d.pay_row_id WHERE p.hash_id='standardpostcommitnotify'")=='unknown'
+        replay=run_route(work,env,route_driver,data='acceptstandardpostcommitnotify',
+                         actor=9001,route='standard_approval',
+                         expected_warning='achbot_manual_purchase_resume_pending')
+        assert [e['name'] for e in replay].count('remote_create')==0,replay
+        assert [e['name'] for e in replay].count('qr_send')==0,replay
+        assert query(work,env,"SELECT d.state FROM payment_delivery_intents d JOIN pays p "
+            "ON p.id=d.pay_row_id WHERE p.hash_id='standardpostcommitnotify'")=='unknown'
+        assert query(work,env,"SELECT COUNT(*) FROM payment_delivery_attempts a JOIN "
+            "payment_delivery_intents d ON d.id=a.intent_id JOIN pays p ON p.id=d.pay_row_id "
+            "WHERE p.hash_id='standardpostcommitnotify'")=='1'
+        again=run_route(work,env,route_driver,data='acceptstandardpostcommitnotify',
+                        actor=9001,route='standard_approval',
+                        expected_warning='achbot_manual_purchase_resume_pending')
+        assert not any(e['name'] in ('remote_create','qr_send') for e in again),again
+        cases.append('manual_standard_telegram_unknown_reapproval_never_resends_unwarned')
         cases.append('real_standard_postcommit_telegram_failure_approved_no_replay_truthful_review')
         standard_pay('standardeditprivacy',method='gift_card')
         edit_events=run_route(work,env,route_driver,
                               data='acceptstandardeditprivacy',actor=9001,
                               route='standard_approval',message_edit_transport='throw',
-                              expected_warning='achbot_manual_standard_buttons_update_failed')
+                              expected_warning=['achbot_followup_telegram_uncertain',
+                                                'achbot_manual_purchase_report_unconfirmed'])
         assert [e['name'] for e in edit_events].count('remote_create')==1,repr(edit_events)
         assert query(work,env,"SELECT state FROM pays WHERE hash_id='standardeditprivacy'")=='approved'
         admin_text=' '.join(str(e['args'][0]) for e in edit_events
@@ -1079,10 +1311,19 @@ def check():
         with ThreadPoolExecutor(max_workers=2) as executor:
             decisions=list(executor.map(lambda _:run_route(
                 work,env,route_driver,data='acceptstandardrace',
-                actor=9001,route='standard_approval'),range(2)))
+                actor=9001,route='standard_approval',
+                # A concurrent loser can see the original processing line
+                # while its exact remote readback remains in-flight; only
+                # that bounded error is permitted, never a second CREATE.
+                expected_warning='achbot_manual_standard_effect_needs_review'),range(2)))
         assert sum(sum(e['name']=='remote_create' for e in result)
                    for result in decisions)==1,repr(decisions)
         assert query(work,env,"SELECT state FROM pays WHERE hash_id='standardrace'")=='approved'
+        assert query(work,env,"SELECT COUNT(*) FROM service_effects e JOIN pays p "
+              "ON p.id=e.pay_row_id WHERE p.hash_id='standardrace' "
+              "AND e.effect_kind='create'")=='1'
+        assert query(work,env,"SELECT COUNT(*) FROM payment_delivery_intents d JOIN pays p "
+              "ON p.id=d.pay_row_id WHERE p.hash_id='standardrace'")=='1'
         reject_service('standardrace','standard_approval','accept')
         cases.append('real_standard_concurrent_admins_one_remote_create')
 

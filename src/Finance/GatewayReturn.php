@@ -209,7 +209,8 @@ function achbotNpReconcileBatch(mysqli $connection, array $paymentKeys,
         // make it reviewable again from a concurrently running Cron tick,
         // even if the 019 table is temporarily unavailable.
         if ($attempt['stage']==='fulfilling' &&
-            (string)($attempt['provider_status']??'')==='operator_verified_finished') {
+            in_array((string)($attempt['provider_status']??''),
+                ['operator_verified_finished','operator_attested'],true)) {
             continue;
         }
         if ($attempt['stage']==='fulfilling' ||

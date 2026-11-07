@@ -161,6 +161,84 @@ $db->query("INSERT INTO payment_review_decisions
  evidence_sha256,state)
  VALUES(205,".$inflight.",'approve',9001,'operator-inflight-child','finished',
  REPEAT('a',64),'dispatching')");
+// Human decisions use previously recorded signed merchant evidence, without
+// a fresh provider call or false 'finished' assertion. A second callback
+// cannot charge again, even when original provider status was nonterminal.
+$local=seed($db,'owner-confirmed',209);
+$db->query("UPDATE payment_transactions SET observed_status='confirmed' WHERE attempt_id=$local");
+$walletBefore=(int)$db->query('SELECT wallet FROM users WHERE userid=1001')->fetch_row()[0];
+check(achbotNpDecisionEligible($db,$local,null,'approve')!==null,
+  'owner_can_attest_saved_nonfinal_provider_evidence');
+$localResult=achbotNpDecisionCommit($db,9001,$local,'approve',null);
+$localRow=row($db,'owner-confirmed');
+check($localResult['status']==='completed' && $localRow['pay_state']==='paid'
+  && $localRow['decision']==='approve','owner_direct_approve_runs_original_effect');
+check((int)$db->query('SELECT wallet FROM users WHERE userid=1001')->fetch_row()[0]
+  ===$walletBefore+100000,'owner_direct_approve_wallet_once');
+$detail=$db->query("SELECT provider_status FROM payment_review_decisions
+ WHERE pay_row_id=209")->fetch_assoc();
+check(($detail['provider_status']??'')==='operator_attested',
+ 'human_attestation_not_fabricated_provider_finished');
+$priorEvents=count($GLOBALS['events']);
+check(achbotNpDecisionCommit($db,9001,$local,'approve',null)['status']!=='completed'
+ && count($GLOBALS['events'])===$priorEvents,'owner_repeat_callback_no_second_credit');
+
+$reject=seed($db,'owner-reject',210);
+$db->query("UPDATE payment_transactions SET observed_status='sending' WHERE attempt_id=$reject");
+$beforeReject=(int)$db->query('SELECT wallet FROM users WHERE userid=1001')->fetch_row()[0];
+check(achbotNpDecisionEligible($db,$reject,null,'reject')!==null,
+  'owner_can_reject_without_provider_refunded');
+$rejected=achbotNpDecisionCommit($db,9001,$reject,'reject',null);
+check($rejected['status']==='rejected' && row($db,'owner-reject')['pay_state']==='declined',
+  'owner_reject_closes_unfulfilled_order');
+check((int)$db->query('SELECT wallet FROM users WHERE userid=1001')->fetch_row()[0]
+  ===$beforeReject,'owner_reject_no_wallet_credit');
+$observed=$db->query("SELECT observed_status FROM payment_transactions
+ WHERE attempt_id=$reject")->fetch_assoc();
+check(($observed['observed_status']??'')==='sending',
+ 'owner_rejection_preserves_financial_evidence');
+
+// Another authentic primary reports finished but Owner rejects the ORDER.
+// The merchant funds remain an exception until a real refund is observed.
+$finishedReject=seed($db,'owner-finished-reject',215);
+check(achbotNpDecisionCommit($db,9001,$finishedReject,'reject',null)['status']==='rejected',
+  'owner_finished_primary_can_reject_business_without_fake_refund');
+check(row($db,'owner-finished-reject')['provider_status']==='operator_rejected',
+  'finished_primary_rejection_does_not_forge_provider_refund');
+$absent=seed($db,'owner-no-funds',211);
+$db->query("UPDATE payment_transactions SET observed_status='waiting' WHERE attempt_id=$absent");
+check(achbotNpDecisionEligible($db,$absent,null,'approve')===null
+  && achbotNpDecisionEligible($db,$absent,null,'reject')===null,
+ 'unfunded_invoice_not_accidentally_decidable');
+
+$refunded=seed($db,'owner-refunded',214);
+$db->query("UPDATE payment_transactions SET observed_status='refunded'
+ WHERE attempt_id=$refunded");
+check(achbotNpDecisionEligible($db,$refunded,null,'approve')===null,
+ 'owner_approve_refunded_only_funds_fails_closed');
+
+$multiple=seed($db,'owner-multi-child',212);
+$db->query("INSERT INTO payment_transactions(attempt_id,provider,payment_id,observed_status)
+ VALUES ($multiple,'nowpayments','owner-multi-child-extra','confirmed')");
+$beforeMulti=(int)$db->query('SELECT wallet FROM users WHERE userid=1001')->fetch_row()[0];
+check(achbotNpDecisionCommit($db,9001,$multiple,'approve',null)['status']==='completed',
+ 'owner_multi_child_decides_original_order_once');
+check((int)$db->query('SELECT wallet FROM users WHERE userid=1001')->fetch_row()[0]
+  ===$beforeMulti+100000,'owner_multi_child_never_credits_twice');
+$childCount=(int)$db->query("SELECT COUNT(*) FROM payment_transactions
+ WHERE attempt_id=$multiple")->fetch_row()[0];
+check($childCount===2,'additional_child_remains_in_financial_exception_ledger');
+
+$unknown=seed($db,'owner-unknown',213);
+$GLOBALS['effect_mode']='throw';
+check(achbotNpDecisionCommit($db,9001,$unknown,'approve',null)['status']==='unknown',
+ 'owner_unknown_original_effect_held');
+$beforeRetry=count($GLOBALS['events']);
+$GLOBALS['effect_mode']='complete';
+check(achbotNpDecisionCommit($db,9001,$unknown,'approve',null)['status']!=='completed'
+ && count($GLOBALS['events'])===$beforeRetry,
+ 'owner_unknown_must_reconcile_not_repeat_effect');
+
 echo json_encode(['complete'=>true,'checks'=>$checks,
  'owned_mariadb'=>true,'real_review_decision_source'=>true,
  'test_effect_is_synthetic'=>true,'provider_http_calls'=>0,
@@ -184,10 +262,12 @@ def main():
       '-d','disable_functions=curl_init,curl_exec,exec,shell_exec,system,passthru,popen,proc_open,mail',
       str(driver),str(ROOT),str(d/'mysql.sock'),DB],
       env=env,capture_output=True,text=True,timeout=45)
-  # The synthetic post-COMMIT failure must produce one sanitized
-  # correlation code, never a raw payment secret or payload.
+  # Both synthetic post-COMMIT failures must emit their exact sanitized
+  # correlation codes; never suppress arbitrary stderr or private payloads.
   stderr=proc.stderr.strip()
-  allowed='achbot_review_effect_unknown pay_id=203 class=RuntimeException'
+  allowed='\n'.join([
+   'achbot_review_effect_unknown pay_id=203 class=RuntimeException',
+   'achbot_review_effect_unknown pay_id=213 class=RuntimeException'])
   if proc.returncode or (stderr and stderr!=allowed):
    raise RuntimeError(proc.stderr[-2500:]+' '+proc.stdout[-1000:])
   out=json.loads(proc.stdout)
@@ -214,6 +294,8 @@ def main():
   assert selected['inbox_only_unfinalized_with_funds_or_receipt']
   assert selected['api_module_loaded_on_first_entry']
   assert selected['additional_funds_paid_and_inflight_visible']
+  assert selected['rejected_funded_primary_visible_without_reopening']
+  assert selected['real_refund_evidence_closes_rejected_primary_exception']
   out.update(selected)
  if args.report:args.report.write_text(json.dumps(out,ensure_ascii=False,indent=2)+'\n')
  print(json.dumps({k:v for k,v in out.items() if k!='checks'}))
@@ -305,9 +387,32 @@ foreach([201,202,208] as $id)
  if(in_array($id,$ids,true))throw new RuntimeException('wrong_review_inclusion_'.$id);
 $extra=achbotRecoveryAdditionalFundsCases($db);
 $extraIds=array_map(static fn($r)=>(int)$r['id'],$extra);
-foreach([201,205] as $id)
+foreach([201,205,210,215] as $id)
  if(!in_array($id,$extraIds,true))
-   throw new RuntimeException('missing_quiet_additional_funds_'.$id);
+   throw new RuntimeException('missing_quiet_funded_exception_'.$id);
+if(in_array(202,$extraIds,true))
+ throw new RuntimeException('refunded_primary_not_unresolved_exception');
+foreach([210,215] as $id) {
+ $case=achbotRecoveryAdditionalFundsCase($db,$id);
+ if(!$case || $case['state']!=='declined' || $case['attempt']['provider']!=='nowpayments'
+    || $case['attempt']['provider_status']!=='operator_rejected')
+  throw new RuntimeException('rejected_primary_not_owner_inspectable_'.$id);
+}
+// Simulate a later authenticated refund as a saved UNIQUE merchant-child update.
+// Once that primary is genuinely refunded, the exception must close without
+// touching the rejected business order or unspent wallet balance.
+$refundedAttempt=(int)$db->query('SELECT id FROM payment_attempts WHERE pay_row_id=210')
+  ->fetch_row()[0];
+$db->query("UPDATE payment_transactions SET observed_status='refunded'
+ WHERE attempt_id=".$refundedAttempt." AND BINARY payment_id='owner-reject-child'");
+$afterRefundIds=array_map(static fn($r)=>(int)$r['id'],
+  achbotRecoveryAdditionalFundsCases($db));
+$originalAfterRefund=$db->query('SELECT state FROM pays WHERE id=210')->fetch_row()[0];
+if(achbotRecoveryAdditionalFundsCase($db,210)!==null ||
+    in_array(210,$afterRefundIds,true) || $originalAfterRefund!=='declined')
+ throw new RuntimeException('refund_evidence_must_close_original_financial_exception');
+if(achbotRecoveryAdditionalFundsCase($db,215)===null)
+ throw new RuntimeException('other_funded_exception_must_remain_open');
 if(in_array(202,$extraIds,true))
  throw new RuntimeException('unfunded_not_exception');
 $paidExtra=achbotRecoveryAdditionalFundsCase($db,201);
@@ -316,6 +421,8 @@ if(!$paidExtra || ($paidExtra['state']??'')!=='paid')
 echo json_encode(['inbox_only_unfinalized_with_funds_or_receipt'=>true,
   'api_module_loaded_on_first_entry'=>function_exists('achbotApiPaymentReady'),
   'additional_funds_paid_and_inflight_visible'=>true,
+  'rejected_funded_primary_visible_without_reopening'=>true,
+  'real_refund_evidence_closes_rejected_primary_exception'=>true,
   'examined'=>count($ids)],JSON_THROW_ON_ERROR);
 '''
 if __name__=='__main__':main()

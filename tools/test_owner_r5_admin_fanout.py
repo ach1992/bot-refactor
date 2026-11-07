@@ -229,7 +229,12 @@ $data='';$textInput='';$text='';$userInfo=['step'=>'none'];require $root.'/src/F
 function storedLoops(string $path):array{
  $source=file_get_contents($path);$tokens=achbotTokens($source);$out=[];
  preg_match_all('/foreach\s*\(\$adminMessages\s+as\s+\$msgInfo\)\s*\{/',$source,$matches,PREG_OFFSET_CAPTURE);
- foreach($matches[0] as [$head,$offset]){foreach($tokens as $i=>$t)if($t[3]>=$offset&&$t[0]==='{'){$end=achbotBodyEnd($tokens,$i);$out[]=substr($source,$offset,$tokens[$end][3]+1-$offset);break;}}
+ foreach($matches[0] as [$head,$offset]){foreach($tokens as $i=>$t)if($t[3]>=$offset&&$t[0]==='{'){$end=achbotBodyEnd($tokens,$i);$block=substr($source,$offset,$tokens[$end][3]+1-$offset);
+  // The 020 manual rejection stages an outbox row under a locked COMMIT.
+  // It is NOT a direct notification loop and cannot be evaluated by the
+  // legacy no-transaction Telegram loop test. Verify it separately below.
+  if(str_contains($block,'achbotFollowupInsertLocked('))break;
+  $out[]=$block;break;}}
  return $out;
 }
 $files=['Routes/Checkout.php','Routes/RenewalCheckout.php','Routes/Extensions.php','Routes/ManualApproval.php','Routes/ManualReceipts.php','AutomaticReceipts.php'];
@@ -247,10 +252,34 @@ foreach($files as $file)foreach(storedLoops($root.'/src/Finance/'.$file) as $ord
  yes(achbotAdminSetNotify($connection,9001,9001,9004,true),'restore Support notification after stored followup '.$file.' '.$ordinal);
  $connection->query("UPDATE users SET isAdmin=0 WHERE userid=9002");$events=[];eval($body);yes($targets()===[9003,9004],'stored-ref loop observes fresh revocation '.$file.' '.$ordinal);$connection->query('UPDATE users SET isAdmin=1 WHERE userid=9002');
 }
-yes($loopCount===9,'all nine actual stored-ref consumers covered');
+// The legacy reject case now uses a durable 020 recipient manifest rather
+// than two direct PHP foreach loops, preserving original delivery refs and
+// authorizing each recipient independently at the actual dispatch boundary.
+yes($loopCount===7,'seven direct source-real stored-ref consumers remain');
+require_once $root.'/src/Finance/FollowupOutbox.php';
+$paySnapshot=dbFetchPayByHash($connection,'fanoutrefs');
+$ref=['role'=>'receipt_mirror','recipient'=>'9004','message_id'=>103];
+yes(achbotFollowupRecipientAllowed($connection,$paySnapshot,$ref),
+    'outbox stored receipt Support mirror authorized');
+yes(!achbotFollowupRecipientAllowed($connection,$paySnapshot,
+    ['role'=>'receipt_mirror','recipient'=>'9007','message_id'=>104]),
+    'outbox stored revoked mirror denied');
+yes(!achbotFollowupRecipientAllowed($connection,$paySnapshot,
+    ['role'=>'receipt_mirror','recipient'=>'9004','message_id'=>5004]),
+    'outbox mirror must exactly match original stored message id');
+yes(achbotAdminSetNotify($connection,9001,9001,9004,false),
+    'outbox notification OFF fixture');
+yes(achbotFollowupRecipientAllowed($connection,$paySnapshot,$ref),
+    'outbox existing receipt edit survives notification disabled');
+yes(achbotAdminSetNotify($connection,9001,9001,9004,true),
+    'outbox notification restored');
+$connection->query('UPDATE users SET isAdmin=0 WHERE userid=9004');
+yes(!achbotFollowupRecipientAllowed($connection,$paySnapshot,$ref),
+    'outbox original ref never overrides revoked staff');
+$connection->query('UPDATE users SET isAdmin=1 WHERE userid=9004');
 yes($connection->query('SELECT * FROM pays ORDER BY id')->fetch_all(MYSQLI_ASSOC)===$financialBefore,'role-filtered followups preserve every historical pay/ref row');
 $legacyLoops=storedLoops($argv[5].'/Routes/ManualReceipts.php');yes(count($legacyLoops)===2,'archived source has actual manual-receipt followups');$adminMessages=$historicalRefs;$payInfo=['chat_id'=>9001];$events=[];eval($legacyLoops[0]);yes(in_array(9007,$targets(),true)&&in_array(9008,$targets(),true),'archived a070 stored-ref RED sends new markup to revoked/ambiguous staff');
-echo json_encode(['complete'=>true,'cases'=>count($checks),'checks'=>$checks,'source_real'=>true,'owned_original_schema_mariadb'=>true,'network_calls'=>0,'recipient_matrix'=>true,'notification_recipient_matrix'=>true,'receiving_preference_independent_of_role'=>true,'general_reports_manager_only'=>true,'manual_review_all_staff'=>true,'notification_default_on'=>true,'owner_only_notification_ui'=>true,'notification_preference_preserved'=>true,'uniform_receipt_authority_all_tiers'=>true,'notification_never_grants_or_revokes_actions'=>true,'notification_off_suppresses_new_copies'=>true,'stored_receipt_maintenance_ignores_notification_preference'=>true,'stored_receipt_maintenance_requires_current_staff'=>true,'archived_notification_coupling_red'=>true,'malformed_duplicate_notifications_denied'=>true,'support_receipt_approval_replay'=>true,'support_payment_followups'=>true,'support_operations_still_denied'=>true,'raw_text_photo_markup_preserved'=>true,'persisted_tiers_preserved'=>true,'db_only_staff_authority'=>true,'legacy_roleless_operator'=>true,'obsolete_staff_arrays_ignored'=>true,'explicit_manager_assignment'=>true,'actual_admin_ui_membership_delivery'=>true,'old_snapshot_membership_safe'=>true,'old_snapshot_membership_mode'=>$oldSnapshotMode,'next_normal_delivery_includes_added_staff'=>true,'no_private_bootstrap_import'=>true,'db_only_baseline_red'=>true,'primary_owner_once'=>true,'options_recipient_integrity'=>true,'recorded_refs_match_delivery'=>true,'fresh_role_changes'=>true,'repeatable_read_notification_off_denied'=>true,'no_new_transaction_across_delivery'=>true,'actual_primary_receipt_evidence'=>true,'original_evidence_retry_preserved'=>true,'approval_replay_preserved'=>true,'stored_followup_loops'=>$loopCount,'stored_followup_markup_preserved'=>true,'historical_refs_preserved'=>true,'atomic_history_append'=>true,'malformed_history_preserved'=>true,'archived_fanout_red'=>true,'archived_stored_refs_red'=>true],JSON_THROW_ON_ERROR);
+echo json_encode(['complete'=>true,'cases'=>count($checks),'checks'=>$checks,'source_real'=>true,'owned_original_schema_mariadb'=>true,'network_calls'=>0,'recipient_matrix'=>true,'notification_recipient_matrix'=>true,'receiving_preference_independent_of_role'=>true,'general_reports_manager_only'=>true,'manual_review_all_staff'=>true,'notification_default_on'=>true,'owner_only_notification_ui'=>true,'notification_preference_preserved'=>true,'uniform_receipt_authority_all_tiers'=>true,'notification_never_grants_or_revokes_actions'=>true,'notification_off_suppresses_new_copies'=>true,'stored_receipt_maintenance_ignores_notification_preference'=>true,'stored_receipt_maintenance_requires_current_staff'=>true,'archived_notification_coupling_red'=>true,'malformed_duplicate_notifications_denied'=>true,'support_receipt_approval_replay'=>true,'support_payment_followups'=>true,'support_operations_still_denied'=>true,'raw_text_photo_markup_preserved'=>true,'persisted_tiers_preserved'=>true,'db_only_staff_authority'=>true,'legacy_roleless_operator'=>true,'obsolete_staff_arrays_ignored'=>true,'explicit_manager_assignment'=>true,'actual_admin_ui_membership_delivery'=>true,'old_snapshot_membership_safe'=>true,'old_snapshot_membership_mode'=>$oldSnapshotMode,'next_normal_delivery_includes_added_staff'=>true,'no_private_bootstrap_import'=>true,'db_only_baseline_red'=>true,'primary_owner_once'=>true,'options_recipient_integrity'=>true,'recorded_refs_match_delivery'=>true,'fresh_role_changes'=>true,'repeatable_read_notification_off_denied'=>true,'no_new_transaction_across_delivery'=>true,'actual_primary_receipt_evidence'=>true,'original_evidence_retry_preserved'=>true,'approval_replay_preserved'=>true,'stored_followup_loops'=>$loopCount,'durable_reject_mirror_followup_checked'=>true,'stored_followup_markup_preserved'=>true,'historical_refs_preserved'=>true,'atomic_history_append'=>true,'malformed_history_preserved'=>true,'archived_fanout_red'=>true,'archived_stored_refs_red'=>true],JSON_THROW_ON_ERROR);
 '''
 
 PARALLEL=r'''<?php

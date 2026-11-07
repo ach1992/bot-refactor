@@ -4607,6 +4607,78 @@ def main():
         records.append(dict(case='ux_old_claimed_provider_invoice_remains_financially_unmodified',
                             pass_=True,external_requests=0))
 
+        # Owner decision integration: execute the REAL private Telegram
+        # callback route against the original PHP and disposable MariaDB.
+        # 019 is installed only in this fixture, never in installed Chili.
+        sql(work,env,(ROOT/'migrations/post-v9/019_payment_review_decisions.sql').read_text())
+        def prepare_owner_case(hash_id, status):
+            invoice='owned-'+hash_id+'-invoice'
+            child='owned-'+hash_id+'-child'
+            seed_np_attempt(work,env,hash_id,invoice,child,default_fees=True)
+            sql(work,env,"UPDATE payment_attempts SET stage='review' "
+                         f"WHERE order_hash='{hash_id}'")
+            sql(work,env,"INSERT INTO payment_transactions "
+                "(attempt_id,provider,payment_id,observed_status) "
+                f"SELECT id,'nowpayments','{child}','{status}' "
+                f"FROM payment_attempts WHERE order_hash='{hash_id}'")
+            return int(sql(work,env,'SELECT id FROM payment_attempts '
+                f"WHERE order_hash='{hash_id}'").strip())
+        approve_id=prepare_owner_case('owner-route-approve','confirmed')
+        route_args=dict(route='admin_review',get={},actor=9001,chat_id=9001,
+                        callback_data='npDecisionPA_'+str(approve_id))
+        before=int(sql(work,env,'SELECT wallet FROM users WHERE userid=1001').strip())
+        approved=run_php(work,env,stage,route_args)
+        after=int(sql(work,env,'SELECT wallet FROM users WHERE userid=1001').strip())
+        if (approved['network_calls'] or after!=before+100 or
+            sql(work,env,"SELECT state FROM pays WHERE hash_id='owner-route-approve'").strip()!='paid' or
+            sql(work,env,"SELECT decision,provider_status,state FROM payment_review_decisions "
+                "WHERE attempt_id="+str(approve_id)).strip()!='approve\toperator_attested\tcompleted' or
+            not any(e['name']=='editText' for e in approved['events'])):
+            raise RuntimeError('Original Owner direct approval callback failed without merchant GET: '+
+                               repr((approved['network_calls'],approved['events'][-4:]))[:750])
+        records.append(dict(case='owner_direct_approve_route_no_merchant_get_one_wallet_credit',
+                            pass_=True,external_requests=0))
+        replay=run_php(work,env,stage,route_args)
+        if replay['network_calls'] or int(sql(work,env,'SELECT wallet FROM users WHERE userid=1001').strip())!=after:
+            raise RuntimeError('Repeated owner callback re-credited wallet or contacted merchant')
+        records.append(dict(case='owner_approve_route_replay_denied_no_credit',
+                            pass_=True,external_requests=0))
+        rejected_id=prepare_owner_case('owner-route-reject','sending')
+        before_reject=int(sql(work,env,'SELECT wallet FROM users WHERE userid=1001').strip())
+        rejected=run_php(work,env,stage,dict(route='admin_review',get={},actor=9001,
+            chat_id=9001,callback_data='npDecisionPR_'+str(rejected_id)))
+        if (rejected['network_calls'] or
+            int(sql(work,env,'SELECT wallet FROM users WHERE userid=1001').strip())!=before_reject or
+            sql(work,env,"SELECT state FROM pays WHERE hash_id='owner-route-reject'").strip()!='declined' or
+            sql(work,env,'SELECT decision,provider_status,state FROM payment_review_decisions '
+                'WHERE attempt_id='+str(rejected_id)).strip()!='reject\toperator_rejected\tcompleted' or
+            not any(e['name']=='sendMessage' and len(e['args'])>=4 and
+                        e['args'][3]==1001 and 'توسط مدیر رد شد' in e['args'][0]
+                        for e in rejected['events']) or
+            not any(e['name']=='sendMessage' and
+                        'شماره پرونده' in str(e['args'][0])
+                        for e in rejected['events'])):
+            raise RuntimeError('Owner direct reject lacked customer and original business reports: '+
+                               repr(rejected)[:800])
+        records.append(dict(case='owner_direct_reject_route_preserves_funds_and_reports',
+                            pass_=True,external_requests=0))
+        denied_id=prepare_owner_case('owner-route-denied','confirmed')
+        start=snapshot(work,env)
+        denied=run_php(work,env,stage,dict(route='admin_review',get={},actor=9002,
+            chat_id=9002,callback_data='npDecisionPA_'+str(denied_id)))
+        verify_unchanged(work,env,start,'delegated_owner_decision')
+        if denied['network_calls']:
+            raise RuntimeError('Delegated operator contacted merchant')
+        records.append(dict(case='owner_decision_delegated_actor_cannot_settle',
+                            pass_=True,external_requests=0))
+        retired=run_php(work,env,stage,dict(route='admin_review',get={},actor=9001,
+            chat_id=9001,callback_data='npDecisionCA_'+str(denied_id)+'_1900000000_'+('a'*20)))
+        verify_unchanged(work,env,start,'retired_confirmation')
+        if retired['network_calls']:
+            raise RuntimeError('Retired two-stage action contacted merchant')
+        records.append(dict(case='retired_two_stage_callback_fail_closed',
+                            pass_=True,external_requests=0))
+
         # An interrupted/mismatched 003 migration can leave payment_attempts
         # present while payment_transactions is absent. NEVER issue a new
         # checkout that could receive funds but could not persist IPN evidence.

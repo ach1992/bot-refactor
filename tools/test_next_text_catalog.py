@@ -251,11 +251,51 @@ def main():
               'manual_final_retired_source_provenance:'+path)
     check(retained_manual_terminal<=entries and not (retained_manual_terminal&refs),
           'manual_final_retired_catalog_unknown_or_still_live')
+    # #117 newer Owner decision removed the extra merchant-GET preview and
+    # second-click confirmation. Retain these five approved historical copy
+    # entries (old Telegram screens may still exist) without allowing any
+    # other unreferenced catalog key to slip into the inventory.
+    retired_decision_preview={
+        'finance_workbench.not_safe',
+        'finance_workbench.commit_approve',
+        'finance_workbench.commit_reject',
+        'finance_workbench.preview_approve',
+        'finance_workbench.preview_reject',
+    }
+    old_decisions=command('git','show',
+        '569b2dfaee6658598aaf527fe6a389bd8685aa66:src/Finance/Routes/ManualReceipts.php').decode()
+    current_decisions=sources['src/Finance/Routes/ManualReceipts.php']
+    check(retired_decision_preview<=entries and
+          all("'"+key+"'" in old_decisions and "'"+key+"'" not in current_decisions
+              for key in retired_decision_preview) and
+          not (retired_decision_preview & refs),
+          'owner_direct_decision_retired_preview_provenance')
+    # #117 independently reviewed R2: the untracked post-commit failure
+    # notification was replaced by 020 durable, independently acknowledged
+    # report intents. Keep only this exact old copy key, not a wildcard.
+    replaced_followup={'manual_payment.manual_approval.manual_standard_report_delivery.message.76fb0b9a90'}
+    before_followup=command('git','show',
+        '7a8942aab7b83720f641b871c835fe520c903a27:src/Finance/Routes/ManualApproval.php').decode()
+    check(replaced_followup<=entries and all(
+        "'"+key+"'" in before_followup and "'"+key+"'" not in sources['src/Finance/Routes/ManualApproval.php']
+        for key in replaced_followup) and not (replaced_followup & refs),
+        'followup_outbox_retired_notice_provenance')
+    # A report staged before the recipient Telegram ACK must not claim
+    # success of customer delivery. The old pre-020 notice is retained only
+    # for byte-stable history; the truthful existing workbench report is live.
+    replaced_reject_report={'manual_payment.manual_receipts.message.667f0ab959'}
+    before_reject=command('git','show',
+        '5863fbd64fe6ee59cfddc09d5e5d9cc992f6a0cc:src/Finance/Routes/ManualReceipts.php').decode()
+    check(replaced_reject_report<=entries and all(
+        "'"+key+"'" in before_reject and "'"+key+"'" not in sources['src/Finance/Routes/ManualReceipts.php']
+        for key in replaced_reject_report) and not (replaced_reject_report & refs),
+        'manual_reject_false_delivery_claim_retired_provenance')
     expected_unused=(retired_shared_transfer|set(management['retained_legacy_keys'])|
         catalog_owner_r5.verify_retained_display_keys()|
         catalog_owner_r5.API_REVIEW_RETAINED|obsolete_filter|obsolete_postwrite|
         retired_keys|retired_bank_delivery_push|
-        retired_review_push|retained_delivery_back|retained_manual_terminal)
+        retired_review_push|retained_delivery_back|retained_manual_terminal|
+        retired_decision_preview|replaced_followup|replaced_reject_report)
     check(unused==expected_unused,'unrecorded legacy/orphan copy entries: '+str(unused^expected_unused))
     with tempfile.TemporaryDirectory(prefix='achbot-catalog-audit-') as scratch:
         fixture=pathlib.Path(scratch)/'fixture.php'
@@ -306,7 +346,7 @@ def main():
     presentation=json.loads(command('python3','tools/test_text_catalog_style.py'))
     check(presentation.get('status')=='PASS' and presentation.get('editable_files')==2
           and presentation.get('canonical_binding_paths')==2 and presentation.get('canonical_binding_entries')==4 and presentation.get('canonical_binding_negative_controls')==4
-          and presentation.get('current_keys')==2523+len(management['added_keys'])-len(catalog_owner_r5.manifest()['retired_keys'])+len(catalog_owner_r5.manifest()['added_keys'])+len(catalog_owner_r5.api_manifest()['added_keys'])+1+8+14+9+18+27+12+7+17  # Preserved history plus six strict additive owner-only topics.
+          and presentation.get('current_keys')==2523+len(management['added_keys'])-len(catalog_owner_r5.manifest()['retired_keys'])+len(catalog_owner_r5.manifest()['added_keys'])+len(catalog_owner_r5.api_manifest()['added_keys'])+1+8+14+9+18+27+12+7+17+2  # Two additional funded-primary review labels after HIGH_ASSURANCE R3.
           and presentation.get('management_added_keys')==len(management['added_keys'])
           and presentation.get('management_baseline_keys')==2523
           and presentation.get('management_negative_controls')==5

@@ -212,3 +212,124 @@ Source-only tests or a green CI must never be described as production
 readiness or as authority to merge/deploy. A new Owner decision after an
 independent APPROVE is required for Merge; migration/deploy need separate
 authorization and verified backup/restore.
+
+
+## 2026-11-07 Owner decision — one-click attestation and safe resume (post-PR #122)
+
+The newer Owner contract is recorded in Issue #117 comment #6701412070 and
+**supersedes** the two-step merchant-GET requirement in the historical 019
+section above **for current human decisions only**. The automatic merchant
+settlement policy is unchanged and still requires verified provider finality.
+
+An authenticated Owner's Approve/Reject is the action, not a request to
+re-query the merchant. Source implementation in the **new, separately
+reviewable development candidate** makes the existing NOWPayments decision
+callback use local signed child evidence and a unique audited pay-scoped
+019 decision without another merchant GET or extra confirmation click.
+Provider status is recorded as `operator_attested` or `operator_rejected`,
+never falsified as merchant `finished`/`refunded`. Stored financial evidence
+survives a human business rejection. Local payment/subject identity, exact
+quoted amount, current pay stage, existing remote effects, and duplicate
+claims remain fenced; only the original one-shot business-effect path runs.
+The primary invoice's additional funded children remain separate financial
+exceptions, never second wallet credits or service CREATE operations. The
+old two-step signed callback is rejected as stale after upgrade.
+
+**Current source-only LIMIT:** Human decision for NextPay, Zarinpal and API
+bank/gift remains to be unified. More importantly, this first slice DOES NOT
+yet implement automatic safe resume of a previously remote-started `processing`
+CREATE, renewal, day or volume effect. The current one-shot journal retains
+an ambiguous outcome without replaying money/native effects; a follow-up
+package must complete state- and ordinal-keyed native readback/attach and
+report/Telegram delivery convergence. An unedited Telegram button alone
+MUST NOT authorize a second native mutation. Neither this development
+candidate nor prior PR #122 is installed on Chili, and 018/019 remain unapplied.
+
+### 2026-11-07 standard manual BUY_SUB continuation candidate (PR #123, post-owner direct decision)
+
+**Source-only work, separately gated:** an original manually reviewed standard
+BUY_SUB receipt now needs the 018 delivery schema and encryption key **before**
+claiming payment/capacity or attempting native CREATE. The original human
+confirmation stays the only financial decision; native network reads during
+subsequent processing are readback of the **already claimed account**, never
+another merchant payment inquiry.
+
+- The first click claims `have_sent -> processing` with the existing one-shot
+  007 `manual_hold`. Each paid line has exactly one `service_effects` tuple
+  `(pay_id, create, ordinal)` and one native `operation_id`/target/username.
+- If a line is already `dispatching`/`verified`, a second click uses the
+  original pinned native identity. Marzban requires strict HTTP login and
+  account GET with matching exact operation note, status, quota, expiry, URL
+  and no physical target drift. PasarGuard requires original native incarnation,
+  note, Group IDs and exact entitlements through read-only GET. Matching
+  evidence can complete only **local** verification, not another remote POST.
+  Missing, changed or unavailable remote evidence is a resumable *hold*.
+- All locally verified lines must be linked and the immutable customer
+  QR/text/keyboard packets sealed in 018 **inside the same transaction** as
+  the original final `pays.approved` claim. A late SQL error can roll back
+  this finalization without losing the already pinned remote effect.
+- Only after this COMMIT may Telegram delivery begin. A duplicate approval
+  click after `approved` dispatches **only `pending`** customer packets and
+  unattempted original receipt/report notices. Neither a staff callback nor
+  the Owner's repeat approval authorizes resending an `unknown` Telegram ACK.
+  The Owner can inspect each original packet in the separate, private
+  `deliveryInbox`, read its duplicate-delivery warning and explicitly confirm
+  a time-limited sealed-packet resend under locked provenance checks. No
+  financial, capacity or native operation is performed by this recovery.
+- The historical `RENEW_SCONFIG` and additive day/volume/renewal routes are
+  **not** covered by this one-shot native CREATE journal; they must remain
+  fenced under `processing` until a separate original-operation proof/resume
+  can be implemented. The currently available bank/API `auto` BUY_SUB
+  completion and its 018 delivery records are distinct.
+
+Real PHP 8.5 regression candidates live in `test_post_v9_manual_payments.py`
+(original receipt, one-shot capacity, single/multiple account ordering,
+Telegram ambiguity and duplicate Owner callback) and
+`test_post_v9_recovery_transport.py` (actual credential-bound localhost
+login/GET, no remote re-POST, local verification of precisely one original
+native `service_effects` row). Neither proves installed Chili acceptance.
+
+### Direct manual receipt rejection
+
+The ordinary «Reject» admin callback for bank/gift/manual-crypto receipts
+commits rejection immediately using the **existing** `have_sent -> declined`
+compare-and-swap; it does not request an extra reason entry or merchant
+provider GET. The same existing customer rejection and truthful administrative
+business-result report are staged atomically in 020 with the financial
+transition. Each recipient is attempted separately after COMMIT; an ambiguous
+Telegram ACK remains `unknown` and is **not** a claim of completed delivery.
+A button clicked after `processing` or a terminal outcome
+cannot erase payment or undo a remote service operation. Old reason-editor
+messages from the previous installed version are still accepted only when
+the original payment is unfulfilled; a replayed editor cannot reject twice.
+
+### 2026-11-07 independent review remediation delta — DRAFT ONLY
+
+HIGH_ASSURANCE review of PR #123 at `7a8942aab7b83720f641b871c835fe520c903a27`
+returned **CHANGES_REQUIRED** for five distinct issues. Remediation source
+adds forward-only, separate Owner-gated `020_payment_followup_intents.sql`.
+The original manual BUY_SUB orders, referral decision (008), immutable
+customer delivery (018), payment and all independent purchase-report
+destinations (020) must commit in one transaction. The eligible referral
+credit and its actual-balance notifications commit in their own atomic
+transaction, using the original frozen award identity. Repeated Approve
+resumes only never-attempted PENDING reports and paid delivery; UNKNOWN
+Telegram deliveries need a separate explicit Owner warning/confirmation.
+The original manual Reject similarly commits its full customer/staff/receipt
+notification manifest atomically with `have_sent -> declined`. Repeated legacy
+references to the **same** chat/message ID create one intent, but distinct
+historical admin messages remain independent; duplicates never roll back the
+financial outcome. One failing Telegram edit does not prevent independent
+notifications. Once an outbox
+recipient has been attempted, an ambiguous ACK is UNKNOWN and never
+authorizes an automatic repeated message. Human-rejected NOWPayments primary
+funds remain visible in the Owner-private financial exceptions inbox until
+actual positive merchant refund evidence is recorded; business rejection
+never fabricates a refund nor reopens the rejected order. PasarGuard source
+verification additionally requires strict by-username lookup with real
+localhost HTTP and negative identity/entitlement cases.
+
+**Do not run 020 or deploy Chili until exact candidate CI, independent
+remediation review, migration audit/backup and TESTED restore, and separate
+Owner authorization succeed.** Older source-only 018/019 migration plans
+remain forward-only and do not backfill historical untracked notifications.

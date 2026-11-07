@@ -105,8 +105,10 @@ def run_admin(tmp: str) -> tuple[dict, dict]:
         ('receipt_presentation','test_owner_r5_receipt_presentation.py',13,
          {'complete':True,'source_real':True,'owned_original_schema_mariadb':True,
           'baseline_red':True,'external_calls':0,'financial_mutations_by_caption':0}),
-        ('admin_fanout','test_owner_r5_admin_fanout.py',264,
-         {'complete':True,'cases':264,'source_real':True,'owned_original_schema_mariadb':True,
+        # Two legacy direct rejection-edit loops are now an actual 020
+        # journal; their current-recipient/revocation tests are separate.
+        ('admin_fanout','test_owner_r5_admin_fanout.py',249,
+         {'complete':True,'cases':249,'source_real':True,'owned_original_schema_mariadb':True,
           'network_calls':0,'recipient_matrix':True,'raw_text_photo_markup_preserved':True,
           'notification_recipient_matrix':True,'receiving_preference_independent_of_role':True,
           'general_reports_manager_only':True,'manual_review_all_staff':True,
@@ -130,7 +132,8 @@ def run_admin(tmp: str) -> tuple[dict, dict]:
           'recorded_refs_match_delivery':True,'fresh_role_changes':True,
           'repeatable_read_notification_off_denied':True,'no_new_transaction_across_delivery':True,
           'actual_primary_receipt_evidence':True,'original_evidence_retry_preserved':True,
-          'approval_replay_preserved':True,'stored_followup_loops':9,
+          'approval_replay_preserved':True,'stored_followup_loops':7,
+          'durable_reject_mirror_followup_checked':True,
           'stored_followup_markup_preserved':True,'historical_refs_preserved':True,
           'atomic_history_append':True,'malformed_history_preserved':True,
           'concurrent_confirmed_append':True,'archived_fanout_red':True,
@@ -211,9 +214,14 @@ def run_admin(tmp: str) -> tuple[dict, dict]:
     # Issue #57: current event-aware notification routing and existing
     # receipt convergence, after every unaffected Owner R5 proof above.
     notifications_path=Path(tmp)/'owner-r6-notifications.json'
-    subprocess.run(['python3',str(ROOT/'tools/test_owner_r6_notifications.py'),
-                    '--report',str(notifications_path)],
-                   cwd=ROOT,check=True,timeout=180,capture_output=True)
+    try:
+        subprocess.run(['python3',str(ROOT/'tools/test_owner_r6_notifications.py'),
+                        '--report',str(notifications_path)],
+                       cwd=ROOT,check=True,timeout=180,capture_output=True)
+    except subprocess.CalledProcessError as exc:
+        error=((exc.stderr or b'')+b'\n'+(exc.stdout or b''))[-6000:]
+        raise RuntimeError('Required R6 notification proof: '+
+            error.decode(errors='replace')) from exc
     notifications=json.loads(notifications_path.read_text())
     required_notification_checks=[
         'general helper delivers Owner Manager channel, excludes Operator and Support',
@@ -275,19 +283,24 @@ def run_admin(tmp: str) -> tuple[dict, dict]:
         *[prefix+' '+file+' '+str(index) for index,file in enumerate([
             'Routes/Checkout.php','Routes/RenewalCheckout.php',
             'Routes/Extensions.php','Routes/Extensions.php',
-            'Routes/ManualApproval.php','Routes/ManualApproval.php',
-            'Routes/ManualReceipts.php','Routes/ManualReceipts.php',
+            'Routes/ManualApproval.php','Routes/ManualReceipts.php',
             'AutomaticReceipts.php'],1) for prefix in [
             'stored receipt converges for current muted staff and excludes revoked invalid',
             'stored receipt rechecks current membership']],
-        'all nine real stored receipt loops exercised',
+        'seven direct stored receipt loops exercised',
+        'outbox mirror source is genuine recorded receipt',
+        '020 stored receipt preserves authorized Support with notifications OFF',
+        '020 mirror rejects arbitrary original message id',
+        '020 revoked staff cannot recover historical keyboard',
+        '020 recipient revoked after manifest is excluded',
         'receipt convergence preserves historical financial rows',
         'actual thrown transport continues to independent targets with sanitized structured metadata',
         'exception diagnostics contain no outgoing payload or raw exception text',
     ]
     notification_mismatches=exact_current_proof_mismatches(notifications,
         {'complete':True,'owned_original_schema_mariadb':True,'network_calls':0,
-         'stored_receipt_loops':9,'source_ref':'current-source',
+         'stored_receipt_loops':7,'durable_outbox_recipient_authority':True,
+         'source_ref':'current-source',
          'sanitized_exception_metadata':True,'exception_continuation':True,
          'concurrent_current_discovery_readers':True,
          'concurrent_notification_admission_discovery':True,
@@ -826,9 +839,14 @@ def run_services(tmp: str) -> tuple[dict, dict]:
             and edits.get('native_before_expire_negative_controls') is True):
         raise RuntimeError('Provider-neutral service edit native assurance incomplete')
     purchase_path=Path(tmp)/"marzban-purchase.json"
-    subprocess.run(["python3",str(ROOT/"tools/test_post_v9_purchases.py"),
-                    "--run-disposable","--report",str(purchase_path)],
-                   cwd=ROOT,check=True,timeout=300,capture_output=True)
+    try:
+        subprocess.run(["python3",str(ROOT/"tools/test_post_v9_purchases.py"),
+                        "--run-disposable","--report",str(purchase_path)],
+                       cwd=ROOT,check=True,timeout=300,capture_output=True)
+    except subprocess.CalledProcessError as exc:
+        detail=((exc.stderr or b'')+b'\n'+(exc.stdout or b''))[-6000:]
+        raise RuntimeError('Required source-real purchase parity: '+
+            detail.decode(errors='replace')) from exc
     purchases=json.loads(purchase_path.read_text())
     # Seven scenarios retain exact financial/provider parity; one has the explicit R5 denial notice.
     # The owner-requested actor draft replaces the old global scratch row;
@@ -1144,10 +1162,10 @@ def run_wallet(tmp: str) -> tuple[dict, dict]:
             and text_catalog.get("retired_parser_tokens")==23
             and text_catalog.get("relocation_source_ref")=="ecd30ba9192ed374703118a6c131be8809cc7b06"
             and text_catalog.get("native",{}).get("current_retired_feature_keys")==3
-            and text_catalog.get("catalog_keys")==2780+14+9+18+27+12+7+17
+            and text_catalog.get("catalog_keys")==2780+14+9+18+27+12+7+17+2
             and text_catalog.get("native",{}).get("editable_catalog_files")==2
             and text_catalog.get("native",{}).get("logical_topics")==28+6
-            and text_catalog.get("native",{}).get("current_catalog_keys")==2780+14+9+18+27+12+7+17
+            and text_catalog.get("native",{}).get("current_catalog_keys")==2780+14+9+18+27+12+7+17+2
             and text_catalog.get("native",{}).get("current_gift_admin_additions")==1
             and text_catalog.get("native",{}).get("current_gift_catalog_negative_controls")==8
             and text_catalog.get("native",{}).get("current_gift_catalog_negative_scenarios")==[
@@ -1171,15 +1189,15 @@ def run_wallet(tmp: str) -> tuple[dict, dict]:
             and text_catalog["native"]["current_byte_preserved_keys"]
                 +text_catalog["native"]["current_style_changes"]
                 +text_catalog["native"]["current_added_admin_keys"]==2523
-            # #117 now has six source-hash-pinned workbench topics. The
-            # additional 17 keys include five multi-parameter templates;
-            # their native loader proof adds 12 single-run and 5*6
-            # adversarial substitutions (42 total), plus five object,
-            # multi-parameter and one-pass checks. Keep exact parity.
-            and text_catalog.get("native",{}).get("current_native_template_assertions")==4120+24+9+139+42
-            and text_catalog.get("native",{}).get("current_object_conversion_templates")==268+2+15+5
-            and text_catalog.get("native",{}).get("current_shared_multi_parameter_templates")==66+1+14+5
-            and text_catalog.get("native",{}).get("current_one_pass_templates")==268+2+15+5
+            # #117 has six source-hash-pinned workbench topics. Two added
+            # owner-only financial-exception labels include one three-slot
+            # report and one zero-slot warning. Their native proof adds
+            # seven interpolation assertions and one object/multi-parameter/
+            # one-pass template, while preserving the original negative tests.
+            and text_catalog.get("native",{}).get("current_native_template_assertions")==4120+24+9+139+42+7
+            and text_catalog.get("native",{}).get("current_object_conversion_templates")==268+2+15+5+1
+            and text_catalog.get("native",{}).get("current_shared_multi_parameter_templates")==66+1+14+5+1
+            and text_catalog.get("native",{}).get("current_one_pass_templates")==268+2+15+5+1
             and text_catalog.get("native",{}).get("current_r5_changes")==273
             and text_catalog.get("native",{}).get("current_r5_retired_keys")==10
             and text_catalog.get("native",{}).get("current_r5_added_keys")==60
@@ -1187,7 +1205,7 @@ def run_wallet(tmp: str) -> tuple[dict, dict]:
             and text_catalog.get("native",{}).get("current_non_ascii_digit_templates")==0
             and text_catalog.get("presentation",{}).get("status")=="PASS"
             and text_catalog.get("presentation",{}).get("editable_files")==2
-            and text_catalog.get("presentation",{}).get("current_keys")==2780+14+9+18+27+12+7+17
+            and text_catalog.get("presentation",{}).get("current_keys")==2780+14+9+18+27+12+7+17+2
             and text_catalog.get("presentation",{}).get("numeric_template_changes")==23
             and text_catalog.get("presentation",{}).get("adjacent_emoji_violations")==0
             and text_catalog.get("presentation",{}).get("parameter_exception_count")==3
@@ -1239,10 +1257,12 @@ def run_wallet(tmp: str) -> tuple[dict, dict]:
         # Four retired #112 references and the additional old direct-delete
         # callback reference are proven absent by test_next_text_catalog.py.
         # Keep complete current-reference equality, never a lower bound.
-        'runtime_references':2453+14-1-6-4-1+8-3+28+12,
+        'runtime_references':2453+14-1-6-4-1+8-3+28+12-5,
         # +28 owner financial/service/delivery copy keys, +12 net
         # referenced tokens from R2 financial exception and R3 final
-        # receipt topics minus the five proven retired legacy labels.
+        # receipt topics. The five new retired second-confirmation labels
+        # are proven absent by test_next_text_catalog.py's exact inherited
+        # source check, not removed from the editable catalog.
         # The exact orphan/source inventory proof remains mandatory.
         'api_referenced_keys':68,
         'api_dynamic_source_paths':2,
@@ -1380,17 +1400,34 @@ def run_presentation(tmp: str) -> tuple[dict, dict]:
     native_renewal_complete=all(isinstance(proof,dict) and all(
         proof.get(key)==value for key,value in native_renewal_common.items())
         for proof in native_renewal_proofs)
-    if not (provider_integration.get("complete") is True and provider_integration.get("cases",0)>=283
+    # R5: the exact real PHP cURL by-username readback must reject every
+    # negative identity/entitlement/network case without native POST. An
+    # historical baseline intentionally lacks these newer source fields.
+    pg_recovery_modes=['resume_404','resume_timeout','resume_wrong_note',
+                       'resume_wrong_quota','resume_wrong_expiry',
+                       'resume_wrong_groups','resume_wrong_id']
+    required_pg={
+        *(f'paid_pg_resume_{mode}_denied_without_local_transition'
+          for mode in pg_recovery_modes),
+        *(f'paid_pg_resume_{mode}_bounded_username_get_only'
+          for mode in pg_recovery_modes),
+        'paid_pg_resume_missing_remote_id_attaches_original_account',
+        'paid_pg_resume_verified_locally_without_native_create',
+        'paid_pg_resume_known_id_readback_never_posts',
+        'paid_pg_resume_persisted_remote_id_mismatch_denied',
+    }
+    if not (provider_integration.get("complete") is True and provider_integration.get("cases",0)>=301
+            and required_pg.issubset(provider_integration.get('checks',[]))
             and provider_integration.get("actual_php_curl") is True
             and provider_integration.get("owned_socket_mariadb") is True
             and provider_integration.get("real_provider_tested") is False
-            and provider_integration.get("lifecycle_cases")==243
+            and provider_integration.get("lifecycle_cases")==261
             and provider_integration.get("admin_read_authorization_cases")==40
             and provider_integration.get("forbidden_order_queries")==0
             and provider_integration.get("forbidden_provider_requests")==0
             and provider_integration.get("baseline_red") is True
             and provider_integration.get("baseline_red_source")=="fb138eacdc5817922cc1e1c9c200323d24c79838"
-            and provider_integration.get("original_provider_integration_cases")==220
+            and provider_integration.get("original_provider_integration_cases")==238
             and native_renewal_complete
             and [proof.get('cases') for proof in native_renewal_proofs]==[43,20,63]
             and native_renewal_proofs[0].get('loopback_native_pasar_guard') is True
@@ -1646,10 +1683,16 @@ def run_presentation(tmp: str) -> tuple[dict, dict]:
     # replacement draft INSERTs. Test both commit orders, SQL/lock faults,
     # interrupted owner FOR UPDATE and deliberate inverted-lock deadlocks.
     method_race_path=Path(tmp)/"customer-method-serialization.json"
-    subprocess.run(["python3",
-                    str(ROOT/"tools/test_post_v9_method_selection_race.py"),
-                    "--run-disposable","--report",str(method_race_path)],
-                   cwd=ROOT,check=True,timeout=160,capture_output=True)
+    try:
+        subprocess.run(["python3",
+                        str(ROOT/"tools/test_post_v9_method_selection_race.py"),
+                        "--run-disposable","--report",str(method_race_path)],
+                       cwd=ROOT,check=True,timeout=160,capture_output=True)
+    except subprocess.CalledProcessError as error:
+        # This entire suite uses synthetic data only. Preserve its exact
+        # failed action/lock witness rather than a generic shard RED.
+        detail=(error.stderr or error.stdout or b'').decode(errors='replace')[-5500:]
+        raise RuntimeError('Required customer method race evidence failed:\n'+detail) from error
     method_race=json.loads(method_race_path.read_text())
     required_method_race=set()
     for method in ("bank_transfer","gift_card","manual_usdt","manual_trx","wallet"):
@@ -2388,6 +2431,24 @@ def run_effects(tmp: str) -> tuple[dict, dict]:
         "ambiguous_remote_fenced_as_unknown",
         "unknown_remote_effect_never_replayed",
         "multiple_funded_child_not_fake_single_invoice",
+        "owner_can_attest_saved_nonfinal_provider_evidence",
+        "owner_direct_approve_runs_original_effect",
+        "owner_direct_approve_wallet_once",
+        "human_attestation_not_fabricated_provider_finished",
+        "owner_repeat_callback_no_second_credit",
+        "owner_can_reject_without_provider_refunded",
+        "owner_reject_closes_unfulfilled_order",
+        "owner_reject_no_wallet_credit",
+        "owner_rejection_preserves_financial_evidence",
+        "owner_finished_primary_can_reject_business_without_fake_refund",
+        "finished_primary_rejection_does_not_forge_provider_refund",
+        "unfunded_invoice_not_accidentally_decidable",
+        "owner_approve_refunded_only_funds_fails_closed",
+        "owner_multi_child_decides_original_order_once",
+        "owner_multi_child_never_credits_twice",
+        "additional_child_remains_in_financial_exception_ledger",
+        "owner_unknown_original_effect_held",
+        "owner_unknown_must_reconcile_not_repeat_effect",
     }
     if not (decision.get("complete") is True
             and set(decision.get("checks",[]))==required_decisions
@@ -2403,6 +2464,8 @@ def run_effects(tmp: str) -> tuple[dict, dict]:
             and decision.get("signed_ipn_postpaid_primary_preserved") is True
             and decision.get("signed_ipn_out_of_order_secondary_preserved") is True
             and decision.get("additional_funds_paid_and_inflight_visible") is True
+            and decision.get("rejected_funded_primary_visible_without_reopening") is True
+            and decision.get("real_refund_evidence_closes_rejected_primary_exception") is True
             and decision.get("internal_payment_page_suppressed") is True
             and decision.get("inbox_only_unfinalized_with_funds_or_receipt") is True
             and decision.get("api_module_loaded_on_first_entry") is True
@@ -2583,6 +2646,13 @@ def run_effects(tmp: str) -> tuple[dict, dict]:
         'r7_hosted_day_concurrent_order_drift_atomic_remote_absolute_no_replay',
     })
     mandatory_finance.add("fresh_addon_unknown_native_refused_before_claim_or_effect")
+    mandatory_finance.update({
+        'owner_direct_approve_route_no_merchant_get_one_wallet_credit',
+        'owner_approve_route_replay_denied_no_credit',
+        'owner_direct_reject_route_preserves_funds_and_reports',
+        'owner_decision_delegated_actor_cannot_settle',
+        'retired_two_stage_callback_fail_closed',
+    })
     cases_finance = {case.get("case") for case in finance.get("scenarios",[])
                      if case.get("pass_")}
     if not (finance.get("complete") and finance.get("cases")>=153 and
@@ -3627,8 +3697,16 @@ def run_funding(tmp: str) -> tuple[dict, dict]:
         raise RuntimeError("Pinned HTTP recovery acceptance failed:\n"
                            +transport_run.stderr[-6000:])
     transport=json.loads(transport_path.read_text())
+    required_native_resume={
+        'native_resume_get_404_never_reposts_or_forges_commit',
+        'native_resume_get_wrong_status_never_reposts_or_forges_commit',
+        'native_resume_login_redirect_never_reposts_or_forges_commit',
+        'real_native_resume_attaches_original_verified_marzban_evidence_without_post',
+        'native_resume_repeat_read_only_same_identity_no_second_create',
+    }
     if not (transport.get("complete") is True and
-            transport.get("cases")>=27 and
+            required_native_resume.issubset(set(transport.get("scenarios",[]))) and
+            transport.get("cases")>=32 and
             transport.get("real_curl_login_and_get") is True and
             transport.get("loopback_only") is True and
             transport.get("max_account_get_per_inspection")==1 and
@@ -3684,6 +3762,14 @@ def run_funding(tmp: str) -> tuple[dict, dict]:
         "real_wallet_route_photo_replay_denied_bank_transfer",
         "real_wallet_route_photo_replay_denied_gift_card",
         "real_wallet_route_photo_replay_denied_manual_usdt",
+        "manual_direct_reject_one_click_no_wallet_native_or_duplicate_reports",
+        "manual_reject_customer_unknown_other_recipients_acked_no_unwarned_replay",
+        "manual_reject_edit_exception_does_not_suppress_customer_or_operator",
+        "manual_reject_duplicate_historical_mirror_refs_deduped_without_rollback",
+        "f1_rejected_primary_chat_distinct_message_preserved_once_and_replay_safe",
+        "f1_rejected_020_sql_failure_rolls_back_and_safe_first_retry",
+        "manual_standard_paid_order_delivery_sealed_and_ack_once",
+        "manual_standard_telegram_unknown_reapproval_never_resends_unwarned",
         "manual_wallet_nonadmin_callback_denied_bank_transfer",
         "manual_wallet_nonadmin_callback_denied_gift_card",
         "manual_wallet_nonadmin_callback_denied_manual_usdt",
@@ -3908,13 +3994,14 @@ def run_funding(tmp: str) -> tuple[dict, dict]:
         'r4_confirmed_credit_independent_of_referral_channel_null',
         'r4_unconfirmed_sql_credit_returns_false_without_notice',
         'r4_missing_inviter_no_false_credit_notice',
-        'r5_original_receipt_without_003_with_007_can_fulfill_once',
+        'r5_original_receipt_without_003_or_018_refused_preclaim',
+        'r5_original_operator_receipt_with_complete_003_018_fulfilled_once',
         'r5_missing_007_operation_unique_index_refuses_preclaim_reservation',
         'r5_original_23_tables_missing_007_keeps_receipt_and_capacity_unclaimed',
         'r5_absent_original_operator_evidence_is_rejected',
         'r5_partially_installed_003_denied_under_mysqlireportoff',
         'r5_incompatible_ledger_column_SQL_failure_not_legacy_receipt',
-        'r5_complete_003_empty_attempts_historical_receipt_allowed',
+        'r5_complete_003_empty_attempts_rejected_before_create',
         'r2_after_claim_renewal_plan_inactive_no_remote_edit',
         'r2_after_claim_renewal_plan_deleted_no_remote_edit',
         'r2_after_claim_purchase_plan_inactive_no_remote_create',
@@ -3923,6 +4010,9 @@ def run_funding(tmp: str) -> tuple[dict, dict]:
         'r3_real_qr_helper_photo_ok_account_text_qr_text_throw_reported',
         'r3_three_accounts_second_text_failed_third_still_attempted_and_reward_credited',
         'r3_multiple_admin_refs_one_edit_fails_later_edit_still_attempted',
+        'r3_historical_duplicate_receipt_ref_one_journal_and_one_edit',
+        'f1_approved_primary_chat_distinct_message_preserved_once_and_replay_safe',
+        'f1_approved_020_sql_failure_rolls_back_finalization_without_second_create',
         'r4_referral_decision_not_skipped_when_QR_photo_fails',
         'r5_valid_attempts_only_no_child_table_denied',
         'r5_valid_attempts_only_with_reviewed_attempt_denied',

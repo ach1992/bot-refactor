@@ -26,6 +26,7 @@ $root=$argv[1];$spec=json_decode($argv[4],true,512,JSON_THROW_ON_ERROR);
 if (!empty($spec['nonthrowing'])) mysqli_report(MYSQLI_REPORT_OFF);
 $connection=new mysqli('localhost','root','',$argv[3],0,$argv[2]);
 $connection->set_charset('utf8mb4');
+$GLOBALS['telegramWebhookSecret']='fixture-standard-paid-purchase-AEAD-2026';
 $admin=9001;$from_id=(int)($spec['actor']??9001);
 $userInfo=['isAdmin'=>false,'userid'=>$from_id];
 $time=1800000000;
@@ -215,16 +216,22 @@ def php_call(work,env,driver,**spec):
 def named(events,name):
     return [ev for ev in events if ev.get('name')==name]
 
-def seed(work,env,name,*,capacity=10,count=1,renew=False,inviter=False):
+def seed(work,env,name,*,capacity=10,count=1,renew=False,inviter=False,amount=100):
     # Each isolated scenario resets pays, but the new 007 audit FK retains
     # its old payment references until this disposable test-only teardown.
     # Disposable fixture teardown must respect the real 008 -> pays foreign
     # key. Never disable FK checks or mutate installed operator data.
     tables=sql(work,env,'SHOW TABLES').splitlines()
+    if 'payment_followup_intents' in tables:
+        sql(work,env,'DELETE FROM payment_followup_intents')
     if 'referral_awards' in tables:
         sql(work,env,'DELETE FROM referral_awards')
+    if 'payment_delivery_intents' in tables:
+        sql(work,env,'DELETE FROM payment_delivery_attempts; DELETE FROM payment_delivery_intents')
     if 'service_effects' in tables:
         sql(work,env,'DELETE FROM service_effects')
+    if 'payment_attempts' in tables:
+        sql(work,env,'DELETE FROM payment_transactions; DELETE FROM payment_attempts')
     purchase.init(work,env,'http://127.0.0.1:9')
     sql(work,env,"DELETE FROM setting WHERE type='INVITE_BANNER_AMOUNT'")
     if inviter:
@@ -238,8 +245,15 @@ def seed(work,env,name,*,capacity=10,count=1,renew=False,inviter=False):
     typ='RENEW_SCONFIG' if renew else 'BUY_SUB'
     sql(work,env,f"INSERT INTO pays (hash_id,user_id,type,plan_id,server_id,agent_count,"
         f"day,volume,price,request_date,state,message_id,chat_id,description) VALUES"
-        f"('{name}',1001,'{typ}',7,2,{count},0,0,100,1700000000,'have_sent',"
+        f"('{name}',1001,'{typ}',7,2,{count},0,0,{int(amount)},1700000000,'have_sent',"
         f"211,9001,'{desc}')")
+    if 'payment_attempts' in tables and 'payment_transactions' in tables:
+        # Original operator-reviewed manual crypto receipt. No merchant
+        # read, bank API proof, synthetic paid provider, or post-hoc quote.
+        source='{"v":1,"method":"manual_usdt","network":"TRC20","wallet":"TNPeeaaFB7K9cmo4uQpcU32zGK8G1NYqeL","receipt_file_id":"fixture-saved-receipt"}'
+        sql(work,env,"INSERT INTO payment_attempts(pay_row_id,provider,order_hash,"
+            "checkout_url,quote_amount,quote_currency,local_amount_toman,stage) "
+            f"SELECT id,'manual_usdt',hash_id,'{source}',1,'usd',price,'review' FROM pays WHERE hash_id='{name}'")
     return name
 
 def check():
@@ -254,10 +268,13 @@ def check():
         # and 007 exact-effect journal before ANY Marzban CREATE. The
         # historical 23-table checks run separately below with it absent.
         sql(work,env,(ROOT/'migrations/post-v9/001_marzban_panel_group_id.sql').read_text())
+        sql(work,env,(ROOT/'migrations/post-v9/003_payment_attempts.sql').read_text())
         sql(work,env,(ROOT/'migrations/post-v9/007_service_effects.sql').read_text())
         # Source now requires both source-only financial journals. The 008
         # schema is disposable here, never operator-installed or backfilled.
         sql(work,env,(ROOT/'migrations/post-v9/008_referral_awards.sql').read_text())
+        sql(work,env,(ROOT/'migrations/post-v9/018_payment_delivery_intents.sql').read_text())
+        sql(work,env,(ROOT/'migrations/post-v9/020_payment_followup_intents.sql').read_text())
 
         def call(key,**spec):return php_call(work,env,driver,hash=key,**spec)
         def state(key):return sql(work,env,f"SELECT state FROM pays WHERE hash_id='{key}'")
@@ -286,9 +303,7 @@ def check():
             (100,3,'34,33,33'),(101,2,'51,50')
         ):
             key=f'r2_native_manual_{price}_{quantity}'
-            seed(work,env,key,capacity=quantity,count=quantity)
-            if price!=100:
-                sql(work,env,f"UPDATE pays SET price={price} WHERE hash_id='{key}'")
+            seed(work,env,key,capacity=quantity,count=quantity,amount=price)
             events=call(key)
             assert len(named(events,'CREATE'))==quantity,(key,events)
             assert state(key)=='approved' and capacity()==0 and orders()==quantity
@@ -413,9 +428,26 @@ def check():
             ev=call(key,telegram=mode)
             assert state(key)=='approved' and orders()==1 and capacity()==9
             assert len(named(ev,'CREATE'))==1
-            alert=' '.join(str(x['text']) for x in named(ev,'MESSAGE') if x['to']==9001)
-            assert ('ناقص' in alert or 'تأیید نشد' in alert or 'نامطمئن' in alert),(mode,ev)
-            assert not named(call(key),'CREATE')
+            # No new unjournaled warning is allowed: the real 018/020
+            # evidence records the exact failed/ambiguous first attempt.
+            if mode.startswith('qr_'):
+                status=sql(work,env,"SELECT d.state FROM payment_delivery_intents d "
+                    "JOIN pays p ON p.id=d.pay_row_id WHERE p.hash_id='"+key+"'").strip()
+            else:
+                role='operator' if mode=='operator_false' else 'receipt_primary'
+                status=sql(work,env,"SELECT f.state FROM payment_followup_intents f "
+                    "JOIN pays p ON p.id=f.pay_row_id WHERE p.hash_id='"+key+"' "
+                    "AND f.role='"+role+"' AND f.stage='approved_purchase'").strip()
+            assert status=='unknown',(mode,status,ev)
+            replay=call(key)
+            assert not named(replay,'CREATE') and not named(replay,'PHOTO'),(mode,replay)
+            if mode.startswith('qr_'):
+                assert sql(work,env,"SELECT d.state FROM payment_delivery_intents d "
+                    "JOIN pays p ON p.id=d.pay_row_id WHERE p.hash_id='"+key+"'").strip()=='unknown'
+            else:
+                assert sql(work,env,"SELECT f.state FROM payment_followup_intents f "
+                    "JOIN pays p ON p.id=f.pay_row_id WHERE p.hash_id='"+key+"' "
+                    "AND f.role='"+role+"' AND f.stage='approved_purchase'").strip()=='unknown'
             cases.append('r3_nonthrowing_or_thrown_telegram_'+mode+'_approved_no_replay')
 
         ev=call('no_payment',op='telegram_edit_boundary')
@@ -428,8 +460,10 @@ def check():
         assert len(named(ev,'PHOTO'))==3
         assert len([x for x in named(ev,'MESSAGE') if x['to']==1001
                     and 'fixture account' in x['text']])==3
-        assert any('purchase_account_qr #2' in x['text']
-                   for x in named(ev,'MESSAGE') if x['to']==9001)
+        assert sql(work,env,"SELECT GROUP_CONCAT(CONCAT(d.ordinal,':',d.state) "
+                   "ORDER BY d.ordinal) FROM payment_delivery_intents d JOIN pays p "
+                   "ON p.id=d.pay_row_id WHERE p.hash_id='three_accounts'").strip()==(
+                   '1:acknowledged,2:unknown,3:acknowledged')
         assert sql(work,env,'SELECT wallet FROM users WHERE userid=9002')=='51000'
         assert sql(work,env,"SELECT state,amount_toman FROM referral_awards "
                    "WHERE pay_row_id=(SELECT id FROM pays WHERE hash_id='three_accounts')")==(
@@ -448,6 +482,7 @@ def check():
             "(9004,'Revoked fixture support','fixture_support','0',50000,'1700000000',0,'none','sent');"
             "INSERT INTO setting(type,value) VALUES ('ADMIN_ROLE_9003','operator'),('ADMIN_ROLE_9004','support')")
         refs=json.dumps([{'chat_id':9002,'message_id':222},
+                         {'chat_id':9002,'message_id':222},  # historic duplicate
                          {'chat_id':9003,'message_id':333},
                          {'chat_id':9004,'message_id':444}],separators=(',',':'))
         try:
@@ -467,8 +502,17 @@ def check():
             assert all('callback_data' in button for row in
                 json.loads(edits[0]['keys'])['inline_keyboard'] for button in row)
             assert sql(work,env,"SELECT admins_messages FROM pays WHERE hash_id='multiple_admin_edits'")==refs
-            assert any('purchase_additional_operator_buttons گفت‌وگو:9002' in x['text']
-                       for x in named(ev,'MESSAGE') if x['to']==9001)
+            assert sql(work,env,"SELECT f.state FROM payment_followup_intents f "
+                    "JOIN pays p ON p.id=f.pay_row_id WHERE p.hash_id='multiple_admin_edits' "
+                    "AND f.role='receipt_mirror' AND f.recipient='9002'").strip()=='unknown'
+            assert sql(work,env,"SELECT f.state FROM payment_followup_intents f "
+                    "JOIN pays p ON p.id=f.pay_row_id WHERE p.hash_id='multiple_admin_edits' "
+                    "AND f.role='receipt_mirror' AND f.recipient='9003'").strip()=='acknowledged'
+            assert sql(work,env,"SELECT COUNT(*) FROM payment_followup_intents f "
+                    "JOIN pays p ON p.id=f.pay_row_id WHERE p.hash_id='multiple_admin_edits' "
+                    "AND f.role='receipt_mirror'").strip()=='2'
+            assert len([e for e in edits if int(e['to'])==9002])==1
+            cases.append('r3_historical_duplicate_receipt_ref_one_journal_and_one_edit')
             assert len(named(ev,'CREATE'))==1 and orders()==1 and capacity()==9
             assert sql(work,env,'SELECT wallet FROM users WHERE userid=1001')=='50000'
             assert sql(work,env,'SELECT wallet FROM users WHERE userid=9002')=='51000'
@@ -489,10 +533,73 @@ def check():
         assert sql(work,env,'SELECT COUNT(*) FROM users WHERE userid IN(9003,9004)')=='0'
         assert sql(work,env,"SELECT COUNT(*) FROM setting WHERE type IN('ADMIN_ROLE_9003','ADMIN_ROLE_9004')")=='0'
 
+        # Independent review F1: full (chat_id,message_id) is the identity.
+        # This exact same-chat case previously lost message 212 entirely.
+        key=seed(work,env,'primary_chat_distinct_receipt',capacity=1)
+        assert sql(work,env,"SELECT CONCAT(chat_id,':',message_id) FROM pays "
+                   "WHERE hash_id='primary_chat_distinct_receipt'")=='9001:211'
+        refs=json.dumps([{'chat_id':9001,'message_id':211},   # exact primary duplicate
+                         {'chat_id':9001,'message_id':212},   # distinct in primary chat
+                         {'chat_id':9001,'message_id':212},   # duplicate of 212
+                         {'chat_id':9002,'message_id':333},   # another valid staff chat
+                         {'chat_id':9004,'message_id':444}],separators=(',',':'))
+        assert sql(work,env,'SELECT COUNT(*) FROM users WHERE userid=9004')=='0'
+        sql(work,env,"INSERT INTO users(userid,name,username,refcode,wallet,date,isAdmin,step,first_start) "
+            "VALUES(9004,'Revoked F1','f1_revoked','0',50000,'1700000000',0,'none','sent');"
+            "INSERT INTO setting(type,value) VALUES('ADMIN_ROLE_9004','support')")
+        try:
+            sql(work,env,"UPDATE pays SET admins_messages='"+refs+"' "
+                "WHERE hash_id='primary_chat_distinct_receipt'")
+            before_wallet=sql(work,env,'SELECT userid,wallet FROM users ORDER BY userid')
+            result=call(key)
+            assert state(key)=='approved' and len(named(result,'CREATE'))==1, result
+            edits=named(result,'EDIT')
+            assert [(int(e['to']),int(e['message_id'])) for e in edits]==[
+                (9001,211),(9001,212),(9002,333)],edits
+            expected='receipt_primary\t9001\t211\tacknowledged\t1\n'+(
+                'receipt_mirror\t9001\t212\tacknowledged\t1\n'
+                'receipt_mirror\t9002\t333\tacknowledged\t1')
+            recorded=sql(work,env,"SELECT f.role,f.recipient,f.message_id,f.state,f.attempt_count "
+                "FROM payment_followup_intents f JOIN pays p ON p.id=f.pay_row_id "
+                "WHERE p.hash_id='primary_chat_distinct_receipt' "
+                "AND f.role IN ('receipt_primary','receipt_mirror') ORDER BY f.id")
+            assert recorded==expected,(recorded,expected)
+            assert orders()==1 and capacity()==0
+            replay=call(key)
+            assert not any(named(replay,n) for n in ['EDIT','CREATE','READBACK','PHOTO'])
+            assert sql(work,env,'SELECT userid,wallet FROM users ORDER BY userid')==before_wallet
+            assert sql(work,env,"SELECT COUNT(*) FROM payment_followup_intents f "
+                "JOIN pays p ON p.id=f.pay_row_id "
+                "WHERE p.hash_id='primary_chat_distinct_receipt' "
+                "AND f.role IN ('receipt_primary','receipt_mirror')")=='3'
+            cases.append('f1_approved_primary_chat_distinct_message_preserved_once_and_replay_safe')
+        finally:
+            sql(work,env,"DELETE FROM setting WHERE type='ADMIN_ROLE_9004';"
+                "DELETE FROM users WHERE userid=9004")
+
+        # Before the terminal COMMIT, an 020 insert failure must undo ALL
+        # local orders, delivery/report intents and approved state. The one
+        # original remote CREATE remains fenced from a second invocation.
+        key=seed(work,env,'f1_approved_outbox_failure',capacity=1)
+        sql(work,env,"CREATE TRIGGER owned_f1_followup_fail BEFORE INSERT "
+            "ON payment_followup_intents FOR EACH ROW SIGNAL SQLSTATE '45000' "
+            "SET MESSAGE_TEXT='fixture_followup_insert_denied'")
+        try: result=call(key,nonthrowing=True)
+        finally: sql(work,env,'DROP TRIGGER owned_f1_followup_fail')
+        assert len(named(result,'CREATE'))==1 and state(key)=='processing',result
+        assert orders()==0 and capacity()==0
+        assert sql(work,env,'SELECT COUNT(*) FROM payment_followup_intents')=='0'
+        assert sql(work,env,'SELECT COUNT(*) FROM payment_delivery_intents')=='0'
+        assert sql(work,env,'SELECT COUNT(*) FROM referral_awards')=='0'
+        repeat=call(key)
+        assert not named(repeat,'CREATE') and orders()==0 and state(key)=='processing'
+        cases.append('f1_approved_020_sql_failure_rolls_back_finalization_without_second_create')
+
         key=seed(work,env,'reward_on_qr_failure',inviter=True)
         ev=call(key,telegram='qr_false')
         assert state(key)=='approved' and sql(work,env,'SELECT wallet FROM users WHERE userid=9002')=='51000'
-        assert any('purchase_account_qr' in x['text'] for x in named(ev,'MESSAGE') if x['to']==9001)
+        assert sql(work,env,"SELECT d.state FROM payment_delivery_intents d "
+            "JOIN pays p ON p.id=d.pay_row_id WHERE p.hash_id='reward_on_qr_failure'").strip()=='unknown'
         assert not named(call(key),'CREATE')
         cases.append('r4_referral_decision_not_skipped_when_QR_photo_fails')
 
@@ -502,8 +609,8 @@ def check():
             ev=call(key,telegram=mode)
             assert state(key)=='approved' and len(named(ev,'CREATE'))==1
             assert len(named(ev,'PHOTO'))==1
-            assert any('purchase_account_qr #1' in x['text']
-                       for x in named(ev,'MESSAGE') if x['to']==9001),(mode,ev)
+            assert sql(work,env,"SELECT d.state FROM payment_delivery_intents d "
+                "JOIN pays p ON p.id=d.pay_row_id WHERE p.hash_id='real_"+mode+"'").strip()=='unknown',(mode,ev)
             assert not named(call(key),'CREATE')
             cases.append('r3_real_qr_helper_photo_ok_account_text_'+mode+'_reported')
 
@@ -572,8 +679,12 @@ def check():
         assert state(key)=='approved' and len(named(ev,'CREATE'))==1,ev
         assert sql(work,env,'SELECT wallet FROM users WHERE userid=9002')=='50000'
         assert sql(work,env,"SELECT state FROM referral_awards "
-            f"WHERE pay_row_id=(SELECT id FROM pays WHERE hash_id='{key}')")==(
-            'NEEDS_REVIEW')
+            f"WHERE pay_row_id=(SELECT id FROM pays WHERE hash_id='{key}')").strip()==(
+            'NOT_ATTEMPTED')
+        assert not named(call(key),'CREATE')
+        assert sql(work,env,'SELECT wallet FROM users WHERE userid=9002').strip()=='51000'
+        assert sql(work,env,"SELECT state FROM referral_awards "
+            f"WHERE pay_row_id=(SELECT id FROM pays WHERE hash_id='{key}')").strip()=='CONFIRMED'
         assert not any('پاداش معرفی شما' in x['text'] for x in named(ev,'MESSAGE'))
         assert not named(call(key),'CREATE')
         cases.append('r4_unconfirmed_sql_credit_returns_false_without_notice')
@@ -584,19 +695,32 @@ def check():
         assert state(key)=='approved' and not any('جایزه دریافت کردید' in x['text'] for x in named(ev,'MESSAGE'))
         cases.append('r4_missing_inviter_no_false_credit_notice')
 
-        # A historically delivered receipt may still use the original
-        # pays/operator evidence when BOTH 003 tables are absent, but new
-        # paid CREATE now independently REQUIRES an installed, valid 007.
+        # A former post-v9 install with no 003/018 cannot safely seal a paid
+        # native CREATE delivery. The new safety contract denies it BEFORE
+        # capacity, provider POST, and remote account creation.
         key=seed(work,env,'legacy_receipt_with_007')
+        sql(work,env,'DELETE FROM payment_attempts; '
+            'DROP TABLE payment_delivery_attempts; DROP TABLE payment_delivery_intents; '
+            'DROP TABLE payment_transactions; DROP TABLE payment_attempts')
         tables=set(sql(work,env,'SHOW TABLES').splitlines())
-        assert len(tables)==25 and 'service_effects' in tables and 'referral_awards' in tables
+        assert len(tables)==26 and 'payment_followup_intents' in tables and 'service_effects' in tables and 'referral_awards' in tables
         assert 'payment_attempts' not in tables and 'payment_transactions' not in tables
+        ev=call(key)
+        assert state(key)=='have_sent' and not named(ev,'CREATE') and capacity()==10,(ev,state(key))
+        cases.append('r5_original_receipt_without_003_or_018_refused_preclaim')
+
+        # Restore the current genuine ledger for the next known-good receipt.
+        sql(work,env,(ROOT/'migrations/post-v9/003_payment_attempts.sql').read_text())
+        sql(work,env,(ROOT/'migrations/post-v9/018_payment_delivery_intents.sql').read_text())
+        key=seed(work,env,'current_receipt_with_003_018')
         ev=call(key)
         assert state(key)=='approved' and len(named(ev,'CREATE'))==1,(ev,state(key))
         assert sql(work,env,"SELECT service_effects.state,IFNULL(service_effects.order_id,0) FROM service_effects "
                "JOIN pays ON pays.id=service_effects.pay_row_id "
-               "WHERE pays.hash_id='legacy_receipt_with_007'").startswith('local_recorded\t')
-        cases.append('r5_original_receipt_without_003_with_007_can_fulfill_once')
+               "WHERE pays.hash_id='current_receipt_with_003_018'").startswith('local_recorded\t')
+        assert sql(work,env,"SELECT COUNT(*) FROM payment_delivery_intents d JOIN pays p ON p.id=d.pay_row_id "
+                   "WHERE p.hash_id='current_receipt_with_003_018'")=='1'
+        cases.append('r5_original_operator_receipt_with_complete_003_018_fulfilled_once')
 
         key=seed(work,env,'old_missing_evidence')
         sql(work,env,"UPDATE pays SET message_id=0 WHERE hash_id='old_missing_evidence'")
@@ -604,7 +728,15 @@ def check():
         assert state(key)=='have_sent' and not named(ev,'CREATE')
         cases.append('r5_absent_original_operator_evidence_is_rejected')
 
+        def without_payment_schemas():
+            # Owned disposable DDL only. Do not disable FK integrity checks.
+            sql(work,env,'DELETE FROM payment_delivery_attempts; DELETE FROM payment_delivery_intents; '
+                'DELETE FROM payment_transactions; DELETE FROM payment_attempts; '
+                'DROP TABLE payment_delivery_attempts; DROP TABLE payment_delivery_intents; '
+                'DROP TABLE payment_transactions; DROP TABLE payment_attempts')
+
         key=seed(work,env,'partial_003')
+        without_payment_schemas()
         sql(work,env,'CREATE TABLE payment_transactions (id INT PRIMARY KEY) ENGINE=InnoDB')
         try:
             ev=call(key,nonthrowing=True)
@@ -613,8 +745,7 @@ def check():
             sql(work,env,'DROP TABLE payment_transactions')
         cases.append('r5_partially_installed_003_denied_under_mysqlireportoff')
 
-        # Mirror partial 003: a structurally valid payment_attempts table
-        # exists while payment_transactions has not yet been created.
+        # Partial attempts table with missing child evidence remains unsafe.
         key=seed(work,env,'partial_attempts_only')
         source=(ROOT/'migrations/post-v9/003_payment_attempts.sql').read_text()
         attempts_ddl=source.split('-- One invoice can have several',1)[0]
@@ -643,11 +774,14 @@ def check():
             sql(work,env,'DROP TABLE payment_attempts')
         cases.append('r5_incompatible_ledger_column_SQL_failure_not_legacy_receipt')
 
+        # A complete 003/018 with no ORIGINAL attempted receipt still must
+        # fail before the irreversible CREATE boundary. No fake approval.
         key=seed(work,env,'003_present')
         sql(work,env,(ROOT/'migrations/post-v9/003_payment_attempts.sql').read_text())
+        sql(work,env,(ROOT/'migrations/post-v9/018_payment_delivery_intents.sql').read_text())
         ev=call(key)
-        assert state(key)=='approved' and len(named(ev,'CREATE'))==1
-        cases.append('r5_complete_003_empty_attempts_historical_receipt_allowed')
+        assert state(key)=='have_sent' and not named(ev,'CREATE'),(ev,state(key))
+        cases.append('r5_complete_003_empty_attempts_rejected_before_create')
 
         # A 007 table is not sufficient if its critical pay/line uniqueness
         # is missing. This real DDL mutation is scoped to the owned fixture;
@@ -671,9 +805,10 @@ def check():
         key=seed(work,env,'no_007_original_receipt')
         # Explicit disposable rollback of NEW 008/007 tables before asserting
         # ORIGINAL frozen 23-table compatibility (never operator-installed).
+        without_payment_schemas()
+        sql(work,env,'DROP TABLE payment_followup_intents')
         sql(work,env,'DROP TABLE referral_awards')
         sql(work,env,'DROP TABLE service_effects')
-        sql(work,env,'DROP TABLE payment_transactions; DROP TABLE payment_attempts')
         sql(work,env,'ALTER TABLE server_info DROP COLUMN panel_group_id')
         assert len(sql(work,env,'SHOW TABLES').splitlines())==23
         before_capacity=capacity()
