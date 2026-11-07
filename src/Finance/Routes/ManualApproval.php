@@ -139,6 +139,12 @@ if (
                 // order/paid COMMIT, or no remote CREATE is allowed.
                 if (!achbotDeliverySchemaReady($connection))
                     throw new RuntimeException('manual_delivery_schema_missing');
+                $q=$connection->prepare('SELECT * FROM payment_attempts WHERE pay_row_id=? FOR UPDATE');
+                $q->bind_param('i',$payId);$q->execute();
+                $origin=$q->get_result()->fetch_assoc();$q->close();
+                if (!$origin ||
+                    !achbotDeliveryManualReceiptLocked($connection,$payInfo,$origin,true,true))
+                    throw new RuntimeException('manual_delivery_original_receipt_unavailable');
                 achbotEffectRequireUniqueLine($connection);
                 $reservedAccountCount=achbotManualStandardReserveCapacityLocked(
                     $connection,$payInfo);

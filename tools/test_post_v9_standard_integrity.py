@@ -26,6 +26,7 @@ $root=$argv[1];$spec=json_decode($argv[4],true,512,JSON_THROW_ON_ERROR);
 if (!empty($spec['nonthrowing'])) mysqli_report(MYSQLI_REPORT_OFF);
 $connection=new mysqli('localhost','root','',$argv[3],0,$argv[2]);
 $connection->set_charset('utf8mb4');
+$GLOBALS['telegramWebhookSecret']='fixture-standard-paid-purchase-AEAD-2026';
 $admin=9001;$from_id=(int)($spec['actor']??9001);
 $userInfo=['isAdmin'=>false,'userid'=>$from_id];
 $time=1800000000;
@@ -200,7 +201,7 @@ def sql(work,env,query):
 def php_call(work,env,driver,**spec):
     proc=subprocess.run([
         'php','-n','-d','extension=mysqlnd','-d','extension=mysqli',
-        '-d','extension=curl','-d','allow_url_fopen=0',
+        '-d','extension=curl','-d','extension=openssl','-d','allow_url_fopen=0',
         '-d','disable_functions=exec,shell_exec,system,passthru,popen,proc_open,mail',
         str(driver),str(ROOT),str(work/'mysql.sock'),DB,
         json.dumps(spec,separators=(',',':'))],
@@ -215,7 +216,7 @@ def php_call(work,env,driver,**spec):
 def named(events,name):
     return [ev for ev in events if ev.get('name')==name]
 
-def seed(work,env,name,*,capacity=10,count=1,renew=False,inviter=False):
+def seed(work,env,name,*,capacity=10,count=1,renew=False,inviter=False,amount=100):
     # Each isolated scenario resets pays, but the new 007 audit FK retains
     # its old payment references until this disposable test-only teardown.
     # Disposable fixture teardown must respect the real 008 -> pays foreign
@@ -223,8 +224,12 @@ def seed(work,env,name,*,capacity=10,count=1,renew=False,inviter=False):
     tables=sql(work,env,'SHOW TABLES').splitlines()
     if 'referral_awards' in tables:
         sql(work,env,'DELETE FROM referral_awards')
+    if 'payment_delivery_intents' in tables:
+        sql(work,env,'DELETE FROM payment_delivery_attempts; DELETE FROM payment_delivery_intents')
     if 'service_effects' in tables:
         sql(work,env,'DELETE FROM service_effects')
+    if 'payment_attempts' in tables:
+        sql(work,env,'DELETE FROM payment_transactions; DELETE FROM payment_attempts')
     purchase.init(work,env,'http://127.0.0.1:9')
     sql(work,env,"DELETE FROM setting WHERE type='INVITE_BANNER_AMOUNT'")
     if inviter:
@@ -238,8 +243,15 @@ def seed(work,env,name,*,capacity=10,count=1,renew=False,inviter=False):
     typ='RENEW_SCONFIG' if renew else 'BUY_SUB'
     sql(work,env,f"INSERT INTO pays (hash_id,user_id,type,plan_id,server_id,agent_count,"
         f"day,volume,price,request_date,state,message_id,chat_id,description) VALUES"
-        f"('{name}',1001,'{typ}',7,2,{count},0,0,100,1700000000,'have_sent',"
+        f"('{name}',1001,'{typ}',7,2,{count},0,0,{int(amount)},1700000000,'have_sent',"
         f"211,9001,'{desc}')")
+    if 'payment_attempts' in tables and 'payment_transactions' in tables:
+        # Original operator-reviewed manual crypto receipt. No merchant
+        # read, bank API proof, synthetic paid provider, or post-hoc quote.
+        source='{"v":1,"method":"manual_usdt","network":"TRC20","wallet":"TNPeeaaFB7K9cmo4uQpcU32zGK8G1NYqeL","receipt_file_id":"fixture-saved-receipt"}'
+        sql(work,env,"INSERT INTO payment_attempts(pay_row_id,provider,order_hash,"
+            "checkout_url,quote_amount,quote_currency,local_amount_toman,stage) "
+            f"SELECT id,'manual_usdt',hash_id,'{source}',1,'usd',price,'review' FROM pays WHERE hash_id='{name}'")
     return name
 
 def check():
@@ -254,10 +266,12 @@ def check():
         # and 007 exact-effect journal before ANY Marzban CREATE. The
         # historical 23-table checks run separately below with it absent.
         sql(work,env,(ROOT/'migrations/post-v9/001_marzban_panel_group_id.sql').read_text())
+        sql(work,env,(ROOT/'migrations/post-v9/003_payment_attempts.sql').read_text())
         sql(work,env,(ROOT/'migrations/post-v9/007_service_effects.sql').read_text())
         # Source now requires both source-only financial journals. The 008
         # schema is disposable here, never operator-installed or backfilled.
         sql(work,env,(ROOT/'migrations/post-v9/008_referral_awards.sql').read_text())
+        sql(work,env,(ROOT/'migrations/post-v9/018_payment_delivery_intents.sql').read_text())
 
         def call(key,**spec):return php_call(work,env,driver,hash=key,**spec)
         def state(key):return sql(work,env,f"SELECT state FROM pays WHERE hash_id='{key}'")
@@ -286,9 +300,7 @@ def check():
             (100,3,'34,33,33'),(101,2,'51,50')
         ):
             key=f'r2_native_manual_{price}_{quantity}'
-            seed(work,env,key,capacity=quantity,count=quantity)
-            if price!=100:
-                sql(work,env,f"UPDATE pays SET price={price} WHERE hash_id='{key}'")
+            seed(work,env,key,capacity=quantity,count=quantity,amount=price)
             events=call(key)
             assert len(named(events,'CREATE'))==quantity,(key,events)
             assert state(key)=='approved' and capacity()==0 and orders()==quantity
@@ -584,19 +596,32 @@ def check():
         assert state(key)=='approved' and not any('جایزه دریافت کردید' in x['text'] for x in named(ev,'MESSAGE'))
         cases.append('r4_missing_inviter_no_false_credit_notice')
 
-        # A historically delivered receipt may still use the original
-        # pays/operator evidence when BOTH 003 tables are absent, but new
-        # paid CREATE now independently REQUIRES an installed, valid 007.
+        # A former post-v9 install with no 003/018 cannot safely seal a paid
+        # native CREATE delivery. The new safety contract denies it BEFORE
+        # capacity, provider POST, and remote account creation.
         key=seed(work,env,'legacy_receipt_with_007')
+        sql(work,env,'DELETE FROM payment_attempts; '
+            'DROP TABLE payment_delivery_attempts; DROP TABLE payment_delivery_intents; '
+            'DROP TABLE payment_transactions; DROP TABLE payment_attempts')
         tables=set(sql(work,env,'SHOW TABLES').splitlines())
         assert len(tables)==25 and 'service_effects' in tables and 'referral_awards' in tables
         assert 'payment_attempts' not in tables and 'payment_transactions' not in tables
         ev=call(key)
+        assert state(key)=='have_sent' and not named(ev,'CREATE') and capacity()==10,(ev,state(key))
+        cases.append('r5_original_receipt_without_003_or_018_refused_preclaim')
+
+        # Restore the current genuine ledger for the next known-good receipt.
+        sql(work,env,(ROOT/'migrations/post-v9/003_payment_attempts.sql').read_text())
+        sql(work,env,(ROOT/'migrations/post-v9/018_payment_delivery_intents.sql').read_text())
+        key=seed(work,env,'current_receipt_with_003_018')
+        ev=call(key)
         assert state(key)=='approved' and len(named(ev,'CREATE'))==1,(ev,state(key))
         assert sql(work,env,"SELECT service_effects.state,IFNULL(service_effects.order_id,0) FROM service_effects "
                "JOIN pays ON pays.id=service_effects.pay_row_id "
-               "WHERE pays.hash_id='legacy_receipt_with_007'").startswith('local_recorded\t')
-        cases.append('r5_original_receipt_without_003_with_007_can_fulfill_once')
+               "WHERE pays.hash_id='current_receipt_with_003_018'").startswith('local_recorded\t')
+        assert sql(work,env,"SELECT COUNT(*) FROM payment_delivery_intents d JOIN pays p ON p.id=d.pay_row_id "
+                   "WHERE p.hash_id='current_receipt_with_003_018'")=='1'
+        cases.append('r5_original_operator_receipt_with_complete_003_018_fulfilled_once')
 
         key=seed(work,env,'old_missing_evidence')
         sql(work,env,"UPDATE pays SET message_id=0 WHERE hash_id='old_missing_evidence'")
@@ -604,7 +629,15 @@ def check():
         assert state(key)=='have_sent' and not named(ev,'CREATE')
         cases.append('r5_absent_original_operator_evidence_is_rejected')
 
+        def without_payment_schemas():
+            # Owned disposable DDL only. Do not disable FK integrity checks.
+            sql(work,env,'DELETE FROM payment_delivery_attempts; DELETE FROM payment_delivery_intents; '
+                'DELETE FROM payment_transactions; DELETE FROM payment_attempts; '
+                'DROP TABLE payment_delivery_attempts; DROP TABLE payment_delivery_intents; '
+                'DROP TABLE payment_transactions; DROP TABLE payment_attempts')
+
         key=seed(work,env,'partial_003')
+        without_payment_schemas()
         sql(work,env,'CREATE TABLE payment_transactions (id INT PRIMARY KEY) ENGINE=InnoDB')
         try:
             ev=call(key,nonthrowing=True)
@@ -613,8 +646,7 @@ def check():
             sql(work,env,'DROP TABLE payment_transactions')
         cases.append('r5_partially_installed_003_denied_under_mysqlireportoff')
 
-        # Mirror partial 003: a structurally valid payment_attempts table
-        # exists while payment_transactions has not yet been created.
+        # Partial attempts table with missing child evidence remains unsafe.
         key=seed(work,env,'partial_attempts_only')
         source=(ROOT/'migrations/post-v9/003_payment_attempts.sql').read_text()
         attempts_ddl=source.split('-- One invoice can have several',1)[0]
@@ -643,11 +675,14 @@ def check():
             sql(work,env,'DROP TABLE payment_attempts')
         cases.append('r5_incompatible_ledger_column_SQL_failure_not_legacy_receipt')
 
+        # A complete 003/018 with no ORIGINAL attempted receipt still must
+        # fail before the irreversible CREATE boundary. No fake approval.
         key=seed(work,env,'003_present')
         sql(work,env,(ROOT/'migrations/post-v9/003_payment_attempts.sql').read_text())
+        sql(work,env,(ROOT/'migrations/post-v9/018_payment_delivery_intents.sql').read_text())
         ev=call(key)
-        assert state(key)=='approved' and len(named(ev,'CREATE'))==1
-        cases.append('r5_complete_003_empty_attempts_historical_receipt_allowed')
+        assert state(key)=='have_sent' and not named(ev,'CREATE'),(ev,state(key))
+        cases.append('r5_complete_003_empty_attempts_rejected_before_create')
 
         # A 007 table is not sufficient if its critical pay/line uniqueness
         # is missing. This real DDL mutation is scoped to the owned fixture;
@@ -671,9 +706,9 @@ def check():
         key=seed(work,env,'no_007_original_receipt')
         # Explicit disposable rollback of NEW 008/007 tables before asserting
         # ORIGINAL frozen 23-table compatibility (never operator-installed).
+        without_payment_schemas()
         sql(work,env,'DROP TABLE referral_awards')
         sql(work,env,'DROP TABLE service_effects')
-        sql(work,env,'DROP TABLE payment_transactions; DROP TABLE payment_attempts')
         sql(work,env,'ALTER TABLE server_info DROP COLUMN panel_group_id')
         assert len(sql(work,env,'SHOW TABLES').splitlines())==23
         before_capacity=capacity()

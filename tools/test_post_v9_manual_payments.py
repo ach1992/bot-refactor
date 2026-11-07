@@ -156,6 +156,8 @@ $root=$argv[1];
 $spec=json_decode($argv[4],true,512,JSON_THROW_ON_ERROR);
 $connection=new mysqli('localhost','root','',$argv[3],0,$argv[2]);
 $connection->set_charset('utf8mb4');
+// 018 uses AEAD with this isolated synthetic fixture key only.
+$GLOBALS['telegramWebhookSecret']='fixture-manual-route-delivery-key-2026';
 if (($spec['mysqli_report_off']??false)===true) mysqli_report(MYSQLI_REPORT_OFF);
 $from_id=(int)($spec['actor']??1001);
 $chat_id=$from_id;
@@ -492,7 +494,7 @@ def run_route(work,env,driver,data='',step='none',actor=1001,update=None,route='
     if keys is not None: spec['keys']=keys
     if states is not None: spec['states']=states
     cmd=['php','-n','-d','extension=mysqlnd','-d','extension=mysqli',
-         '-d','allow_url_fopen=0','-d','display_errors=1',
+         '-d','extension=openssl','-d','allow_url_fopen=0','-d','display_errors=1',
          '-d','log_errors=1','-d','error_log=/dev/stderr','-d','open_basedir='+str(ROOT)+':'+str(work),
          '-d','disable_functions=exec,shell_exec,system,passthru,popen,proc_open,mail,dl',
          str(driver),str(ROOT),str(work/'mysql.sock'),DB,

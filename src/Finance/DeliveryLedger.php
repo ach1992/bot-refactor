@@ -125,11 +125,14 @@ function achbotDeliveryInsertBuyLocked(mysqli $db,array $pay,array $attempt,arra
  * Caller owns the payment transaction when lock=true. No provider HTTP.
  */
 function achbotDeliveryManualReceiptLocked(mysqli $db,array $pay,array $attempt,
-                                               bool $allowReserved=false): bool {
+                                               bool $allowReserved=false,
+                                               bool $preclaim=false): bool {
     $payId=(int)($pay['id']??0);
     if ($payId<=0 || ($pay['type']??null)!=='BUY_SUB' ||
-        !in_array((string)($pay['state']??''),['processing','approved'],true) ||
-        (int)($pay['approved_by']??0)<=0 || (int)($pay['user_id']??0)<=0 ||
+        !in_array((string)($pay['state']??''),
+            $preclaim?['have_sent']:['processing','approved'],true) ||
+        (!$preclaim && (int)($pay['approved_by']??0)<=0) ||
+        (int)($pay['user_id']??0)<=0 ||
         (int)($pay['message_id']??0)<=0 || (int)($pay['chat_id']??0)===0 ||
         (string)($pay['payid']??'')!=='' ||
         (int)($attempt['pay_row_id']??0)!==$payId ||
@@ -153,6 +156,9 @@ function achbotDeliveryManualReceiptLocked(mysqli $db,array $pay,array $attempt,
         if (!achbotBankBuyClaimMatches($pay,$claim) ||
             !achbotBankBuyAttemptMatches($pay,$attempt,$claim)) return false;
     }
+    // Check signed/original receipt and invoice identity BEFORE capacity
+    // reservation. No remote CREATE may reach a missing 003 attempt.
+    if ($preclaim) return true;
     $q=$db->prepare("SELECT state,reserved_count FROM service_effects
         WHERE pay_row_id=? AND ordinal=0 AND effect_kind='manual_hold' FOR UPDATE");
     $q->bind_param('i',$payId);$q->execute();$hold=$q->get_result()->fetch_assoc();$q->close();
