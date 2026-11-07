@@ -187,13 +187,19 @@ function sendMessage($text=null,$keys=null,$mode=null,$to=null) {
 function editKeys(...$args) {
     $GLOBALS['events'][]=['event'=>'EDIT_KEYS','state'=>fixtureState()];
 }
-function answerCallbackQuery(...$args) {
-    $GLOBALS['events'][]=['event'=>'ACK','text'=>(string)($args[1]??'')];
+// Other acceptance fixtures compose this source with their own Telegram
+// callbacks. Define local spies only when that composed driver has none.
+if (!function_exists('answerCallbackQuery')) {
+    function answerCallbackQuery(...$args) {
+        $GLOBALS['events'][]=['event'=>'ACK','text'=>(string)($args[1]??'')];
+    }
 }
-function editText(...$args) {
-    $GLOBALS['events'][]=['event'=>'EDIT','state'=>fixtureState(),
-        'buttons'=>json_decode((string)($args[2]??''),true)];
-    return (object)['ok'=>true];
+if (!function_exists('editText')) {
+    function editText(...$args) {
+        $GLOBALS['events'][]=['event'=>'EDIT','state'=>fixtureState(),
+            'buttons'=>json_decode((string)($args[2]??''),true)];
+        return (object)['ok'=>true];
+    }
 }
 function getMainKeys() {return '{}';}
 function sendToAllAdmins(...$args) {return null;}
