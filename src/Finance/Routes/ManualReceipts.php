@@ -115,6 +115,8 @@ if (preg_match('/^attention(Inbox|Case)(?:_([1-9][0-9]{0,17}))?$/D',(string)$dat
         if ((int)$from_id===(int)$admin) {
             $rows[]=[['text'=>achbotMessage('delivery_workbench.open_inbox'),
                 'callback_data'=>'deliveryInbox']];
+            $rows[]=[['text'=>achbotMessage('service_workbench.open'),
+                'callback_data'=>'serviceRecoveryInbox']];
             $rows[]=[['text'=>achbotMessage('delivery_workbench.native_inbox'),
                 'callback_data'=>'bankReviewInbox']];
             $rows[]=[['text'=>\achbotMessage('manual_payment.manual_receipts.button.3d941bcb15'),
@@ -128,6 +130,77 @@ if (preg_match('/^attention(Inbox|Case)(?:_([1-9][0-9]{0,17}))?$/D',(string)$dat
     } catch (Throwable $error) {
         error_log('achbot_attention_inspection_unavailable class='.get_class($error));
         sendMessage(\achbotMessage('manual_payment.manual_receipts.message.c46e102fab'),null,'HTML',(int)$from_id);
+    }
+    return;
+}
+
+// Paid remote/renewal uncertainty is not an unpaid transaction. Keep it in
+// a separate, owner-initiated read-only recovery queue. Never offer a second
+// financial approve/decline or dispatch a new native CREATE from this UI.
+$serviceParts=[];
+if (preg_match('/^serviceRecovery(Inbox|Case)(?:_([1-9][0-9]{0,17}))?$/D',
+    (string)$data,$serviceParts)===1) {
+    if ((int)$admin<=0 || (int)$from_id!==(int)$admin ||
+        (int)($chat_id??0)!==(int)$admin) {
+        answerCallbackQuery($callbackId,achbotMessage('finance_workbench.denied'),true);
+        return;
+    }
+    require_once __DIR__.'/../RecoveryInspection.php';
+    $buttons=[];$body='';
+    $esc=static fn($s)=>htmlspecialchars(substr((string)$s,0,100),
+        ENT_QUOTES|ENT_SUBSTITUTE,'UTF-8');
+    try {
+        if ($serviceParts[1]==='Inbox') {
+            $before=(int)($serviceParts[2]??0);
+            $items=achbotRecoveryTechnicalCases($connection,$before);
+            $more=count($items)>12;$items=array_slice($items,0,12);
+            $body=achbotMessage('service_workbench.title');
+            foreach ($items as $item) {
+                $buttons[]=[['text'=>achbotMessageHtml('service_workbench.case_label',[
+                    'pay'=>(int)$item['id'],'user'=>(int)$item['user_id']]),
+                    'callback_data'=>'serviceRecoveryCase_'.(int)$item['id']]];
+            }
+            if (!$items) $body.="
+".achbotMessage('service_workbench.empty');
+            if ($more && $items) {
+                $buttons[]=[['text'=>achbotMessage('service_workbench.next'),
+                    'callback_data'=>'serviceRecoveryInbox_'.(int)end($items)['id']]];
+            }
+            if ($before>0)
+                $buttons[]=[['text'=>achbotMessage('service_workbench.first'),
+                    'callback_data'=>'serviceRecoveryInbox']];
+        } else {
+            $id=(int)($serviceParts[2]??0);
+            $pay=achbotRecoveryTechnicalCase($connection,$id);
+            if (!$pay) throw new RuntimeException('service_recovery_not_reviewable');
+            $attempt=$pay['attempt']??null;
+            $body=achbotMessageHtml('service_workbench.case_title',[
+                'pay'=>$id,'user'=>$pay['user_id'],
+                'state'=>$pay['state'],'type'=>$pay['type']])."
+".
+                achbotRecoveryEvidenceText($pay,$attempt).
+                achbotRecoverySubjectText($pay).
+                "
+".achbotMessage('service_workbench.readonly_warning');
+            if ($pay['type']==='BUY_SUB') {
+                $buttons[]=[['text'=>achbotMessage('delivery_workbench.native_inbox'),
+                    'callback_data'=>'bankReviewCase_'.$id]];
+            }
+            $buttons[]=[['text'=>achbotMessage('service_workbench.back'),
+                'callback_data'=>'serviceRecoveryInbox']];
+        }
+        $buttons[]=[['text'=>achbotMessage('service_workbench.back_finance'),
+            'callback_data'=>'attentionInbox']];
+        $keys=json_encode(['inline_keyboard'=>$buttons],
+            JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE);
+        answerCallbackQuery($callbackId,achbotMessage('service_workbench.checked'));
+        $response=editText($message_id,$body,$keys,'HTML',(int)$admin);
+        if (!is_object($response)||($response->ok??false)!==true)
+            sendMessage($body,$keys,'HTML',(int)$admin);
+    } catch (Throwable $error) {
+        error_log('achbot_service_recovery_inbox_unavailable class='.get_class($error));
+        try {answerCallbackQuery($callbackId,achbotMessage('service_workbench.unavailable'),true);}
+        catch(Throwable $ignored) {}
     }
     return;
 }
@@ -185,12 +258,14 @@ if ($npPreview || $npCommit) {
             $until=time()+120;
             $signature=achbotNpDecisionToken((int)$from_id,$id,$mode,$until,$digest);
             $tag=$mode==='approve'?'A':'R';
-            $button=achbotMessage($mode==='approve'
-                ?'finance_workbench.commit_approve':'finance_workbench.commit_reject');
-            $body=achbotMessageHtml($mode==='approve'
-                ?'finance_workbench.preview_approve':'finance_workbench.preview_reject',[
-                    'id'=>$id,'amount'=>number_format((int)$match['pay']['price']),
-                    'payment'=>$match['attempt']['payment_id']]);
+            $button=$mode==='approve'
+                ?achbotMessage('finance_workbench.commit_approve')
+                :achbotMessage('finance_workbench.commit_reject');
+            $copy=['id'=>$id,'amount'=>number_format((int)$match['pay']['price']),
+                'payment'=>$match['attempt']['payment_id']];
+            $body=$mode==='approve'
+                ?achbotMessageHtml('finance_workbench.preview_approve',$copy)
+                :achbotMessageHtml('finance_workbench.preview_reject',$copy);
             $reply($body,[[['text'=>$button,
                 'callback_data'=>'npDecisionC'.$tag.'_'.$id.'_'.$until.'_'.$signature]],...$back]);
             return;
@@ -223,8 +298,16 @@ if ($npPreview || $npCommit) {
                 error_log('achbot_np_reject_business_report_unknown pay_id='.(int)$pay['id']);
             }
         }
-        $reply(achbotMessageHtml('finance_workbench.result',['result'=>achbotMessage(
-            'finance_workbench.status_'.$status)]),$back);
+        $statusText=match($status) {
+            'completed'=>achbotMessage('finance_workbench.status_completed'),
+            'rejected'=>achbotMessage('finance_workbench.status_rejected'),
+            'unknown'=>achbotMessage('finance_workbench.status_unknown'),
+            'stale'=>achbotMessage('finance_workbench.status_stale'),
+            'already'=>achbotMessage('finance_workbench.status_already'),
+            'unsupported'=>achbotMessage('finance_workbench.status_unsupported'),
+            default=>achbotMessage('finance_workbench.status_unavailable'),
+        };
+        $reply(achbotMessageHtml('finance_workbench.result',['result'=>$statusText]),$back);
     } catch (Throwable $error) {
         error_log('achbot_np_review_decision_unavailable attempt_id='.$id.
             ' class='.get_class($error));

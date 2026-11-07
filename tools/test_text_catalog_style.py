@@ -427,9 +427,32 @@ def management_negative_controls(sides,merged,record):
 def main():
     files=sorted(p.relative_to(ROOT).as_posix()for p in(ROOT/'messages/fa').glob('*.php'))
     check(files==['messages/fa/admin.php','messages/fa/user.php'],'editable copy must be exactly user.php/admin.php')
+    # Each topic is its own namespace. A global eight-space regex falsely
+    # forbids legitimate new topics with the same 'title'/'back' key; a
+    # repeated literal INSIDE a topic is still a PHP overwrite vulnerability.
+    def duplicate_topic_keys(source: str) -> set[tuple[str,str]]:
+        duplicates=set()
+        topics=list(re.finditer(r"(?ms)^    '([^']+)' => \[\n.*?^    \],\n",source))
+        for match in topics:
+            topic=match.group(1)
+            names=re.findall(r"^        '([^']+)'\s*=>",match.group(),re.M)
+            seen=set()
+            for key in names:
+                if key in seen: duplicates.add((topic,key))
+                seen.add(key)
+        return duplicates
     for file in files:
-        keys=re.findall(r"^        '([^']+)' =>",(ROOT/file).read_text(),re.M)
-        check(len(keys)==len(set(keys)),'duplicate literal entry in '+file)
+        check(not duplicate_topic_keys((ROOT/file).read_text()),
+              'duplicate literal entry within topic in '+file)
+    # A key may repeat across different namespaces but not in one. Keep
+    # independently tested negative controls to detect hidden PHP overrides.
+    valid=("    'first_topic' => [\n        'back' => 'A',\n    ],\n"
+           "    'second_topic' => [\n        'back' => 'B',\n    ],\n")
+    forged=("    'first_topic' => [\n        'back' => 'A',\n"
+            "        'back' => 'forged',\n    ],\n")
+    check(not duplicate_topic_keys(valid) and
+          duplicate_topic_keys(forged)=={('first_topic','back')},
+          'topic-scoped-duplicate-negative-control')
     current=json.loads(command('php','-r','$r=[];foreach(["user","admin"]as$a)$r[$a]=require "messages/fa/".$a.".php";echo json_encode($r,JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);'))
     sides={a:flatten(v)for a,v in current.items()}
     check(not set(sides['user'])&set(sides['admin']),'duplicate key across audiences')
@@ -579,7 +602,14 @@ if(!str_starts_with(achbotMessage('wallet.wallet_transfer.wallet_transfer_restar
 echo json_encode(['violations'=>$violations,'topics'=>count(achbotMessageTopics()),'native_compositions'=>6,'emoji_negative_controls'=>7,'semantic_label_icon_cases'=>count($fields),'semantic_context_icon_cases'=>$contexts,'canonical_binding_paths'=>count($bindingProof['paths']),'canonical_binding_entries'=>$bindingProof['entries'],'canonical_binding_negative_controls'=>$bindingNegatives],JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);'''
     native=json.loads(command('php','-r',php))
     check(not native['violations'],'adjacent emoji: '+str(native['violations']))
-    check(native['topics']==27+1,'Accepted instance-content topics plus the scoped-addon topic')
+    # The 28 accepted topics are preserved verbatim; #117 adds four
+    # source-pinned owner-private recovery topics, not extra catalog files.
+    additional={'delivery_recovery','finance_workbench',
+                'delivery_workbench','service_workbench'}
+    topics=json.loads(command('php','-r',
+        'require "messages/loader.php";echo json_encode(achbotMessageTopics());'))
+    check(native['topics']==28+len(additional) and additional<=set(topics),
+          'Expected four source-proven review/recovery topics')
     # A mistaken cross-file move/copy must fail closed, never silently let
     # one audience override the other's value. Poison only an owned temporary
     # copy; the actual source and catalog remain untouched.

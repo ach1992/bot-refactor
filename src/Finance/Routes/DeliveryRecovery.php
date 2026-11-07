@@ -75,6 +75,8 @@ try {
         if ($before>0)
             $buttons[]=[['text'=>achbotMessage('delivery_recovery.first'),
                 'callback_data'=>'deliveryInbox']];
+        $buttons[]=[['text'=>achbotMessage('service_workbench.open'),
+            'callback_data'=>'serviceRecoveryInbox']];
         $buttons[]=[['text'=>achbotMessage('delivery_workbench.native_inbox'),
             'callback_data'=>'bankReviewInbox']];
         $buttons[]=[['text'=>achbotMessage('delivery_workbench.back_finance'),

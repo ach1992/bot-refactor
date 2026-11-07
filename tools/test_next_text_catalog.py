@@ -196,10 +196,42 @@ def main():
           all(key in old_bank_source and key not in bank_source
               for key in retired_bank_delivery_push),
           'issue117_quiet_delivery_retired_copy_provenance_invalid')
+    # Owner explicitly retired unsolicited finance and renewal-review push
+    # deliveries. Historical translations stay in the current editable
+    # catalog for old receipts and backwards compatibility; prove their
+    # exact inventory and original source usage, with a cryptographic
+    # inventory fingerprint, rather than admitting arbitrary new orphans.
+    retired_review_push=set()
+    for topic,source_path,expected_count,digest in (
+      ('gateway.gateway_return.np_alert_operator.',
+       'src/Finance/GatewayReturn.php',26,
+       'ea2bcadd0d1fd0df23542cd19b3a5b3413edfa86066b5b1a681929430d5c3a28'),
+      ('renewal.automatic_renewal.auto_renew_alert_review.',
+       'src/Finance/AutomaticRenewal.php',6,
+       'e02164fea0fc02080bc71e35fdb3a427525a7f57dfc99f6b3422d522af4f3dab'),
+    ):
+        keys={key for key in entries if key.startswith(topic)}
+        ancestor=command('git','show',
+          '17af1e55dc4cb8db6751a731bb223d93dc6f902f:'+source_path).decode()
+        current=sources[source_path]
+        check(len(keys)==expected_count and
+              hashlib.sha256('\n'.join(sorted(keys)).encode()).hexdigest()==digest and
+              all(key in ancestor and key not in current for key in keys) and
+              not (keys&refs),'retired_review_push_proof_failed:'+topic)
+        retired_review_push|=keys
+    old_delivery=command('git','show',
+      '3e524af8003891ac6cf849fac0116c01e942ad0a:src/Finance/Routes/DeliveryRecovery.php').decode()
+    delivery_source=sources['src/Finance/Routes/DeliveryRecovery.php']
+    retained_delivery_back={'delivery_recovery.back_inbox'}
+    check(retained_delivery_back<=entries and
+          all(k in old_delivery and k not in delivery_source for k in retained_delivery_back)
+          and not (retained_delivery_back&refs),
+          'retired_delivery_navigation_copy_not_exact')
     expected_unused=(retired_shared_transfer|set(management['retained_legacy_keys'])|
         catalog_owner_r5.verify_retained_display_keys()|
         catalog_owner_r5.API_REVIEW_RETAINED|obsolete_filter|obsolete_postwrite|
-        retired_keys|retired_bank_delivery_push)
+        retired_keys|retired_bank_delivery_push|
+        retired_review_push|retained_delivery_back)
     check(unused==expected_unused,'unrecorded legacy/orphan copy entries: '+str(unused^expected_unused))
     with tempfile.TemporaryDirectory(prefix='achbot-catalog-audit-') as scratch:
         fixture=pathlib.Path(scratch)/'fixture.php'
@@ -250,13 +282,13 @@ def main():
     presentation=json.loads(command('python3','tools/test_text_catalog_style.py'))
     check(presentation.get('status')=='PASS' and presentation.get('editable_files')==2
           and presentation.get('canonical_binding_paths')==2 and presentation.get('canonical_binding_entries')==4 and presentation.get('canonical_binding_negative_controls')==4
-          and presentation.get('current_keys')==2523+len(management['added_keys'])-len(catalog_owner_r5.manifest()['retired_keys'])+len(catalog_owner_r5.manifest()['added_keys'])+len(catalog_owner_r5.api_manifest()['added_keys'])+1+8+14+9  # Gift/evidence layers, 14 scoped addons and exactly one new server-retired message.
+          and presentation.get('current_keys')==2523+len(management['added_keys'])-len(catalog_owner_r5.manifest()['retired_keys'])+len(catalog_owner_r5.manifest()['added_keys'])+len(catalog_owner_r5.api_manifest()['added_keys'])+1+8+14+9+18+27+12+7  # Preserved historical layers plus four strict owner-only review/recovery topics.
           and presentation.get('management_added_keys')==len(management['added_keys'])
           and presentation.get('management_baseline_keys')==2523
           and presentation.get('management_negative_controls')==5
           and presentation.get('management_provider_label_cases')==11
           and presentation.get('management_facade_cases')==sum(record.get('facade')is True for record in management['added_keys'].values()) and presentation.get('retired_keys')==23
-          and presentation.get('added_keys')==1 and presentation.get('logical_topics')==27+1
+          and presentation.get('added_keys')==1 and presentation.get('logical_topics')==28+4
           and presentation.get('numeric_template_changes')==23
           and presentation.get('adjacent_emoji_violations')==0
           and presentation.get('parameter_exception_count')==3
@@ -292,6 +324,6 @@ def main():
     print(json.dumps({'status':'PASS','pre_style_source_equivalent_occurrences':reverse,'source_files':len(inventory['files']),
       'catalog_keys':len(entries),**api_references,'api_reference_negative_controls':api_reference_controls,'management_added_keys':len(management['added_keys']),'management_retained_legacy_keys':len(management['retained_legacy_keys']),'runtime_references':len(refs),'static_ui_violations':len(violations),'ascii_ui_violations':len(ascii_ui),'ascii_audit_negative_controls':8,'management_ascii_audit_controls':2,'machine_predicate_audit_controls':2,'migrated_machine_fields_or_sql_arguments':0,
       'authorized_source_dependency_files':len(amendments['source_dependencies']),'authorized_bootstrap_flow_changes':1,'approved_public_copy_corrections':len(amendments['approved_copy']),
-      'direct_http_guards':len(guarded),'editable_catalog_files':2,'logical_topics':27+1,
+      'direct_http_guards':len(guarded),'editable_catalog_files':2,'logical_topics':28+4,
       'current_authorized_source_edits':len(style_source['edits']),'retired_parser_tokens':len(style_source['retired_keys']),'relocation_source_ref':RELOCATION_SOURCE,'presentation':presentation,'native':native},ensure_ascii=False))
 if __name__=='__main__':main()

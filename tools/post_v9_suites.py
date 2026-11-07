@@ -1107,7 +1107,7 @@ def run_wallet(tmp: str) -> tuple[dict, dict]:
                     "--run-disposable","--report",str(next_payment_path)],
                    cwd=ROOT,check=True,timeout=180,capture_output=True)
     next_payment=json.loads(next_payment_path.read_text())
-    if not (next_payment.get("complete") is True and next_payment.get("cases")==13
+    if not (next_payment.get("complete") is True and next_payment.get("cases")==15
             and next_payment.get("fresh_native_addon_admission") is True
             and next_payment.get("unknown_native_refuses_without_draft") is True):
         raise RuntimeError("Durable payment messages, volume entry and attention proof incomplete")
@@ -1139,15 +1139,15 @@ def run_wallet(tmp: str) -> tuple[dict, dict]:
             and text_catalog.get("native",{}).get("pre_style_privacy_corrections")==3
             and text_catalog.get("native",{}).get("actual_traffic_helper_parity_cases")==18
             and text_catalog.get("editable_catalog_files")==2
-            and text_catalog.get("logical_topics")==27+1
+            and text_catalog.get("logical_topics")==28+4
             and text_catalog.get("current_authorized_source_edits")==26
             and text_catalog.get("retired_parser_tokens")==23
             and text_catalog.get("relocation_source_ref")=="ecd30ba9192ed374703118a6c131be8809cc7b06"
             and text_catalog.get("native",{}).get("current_retired_feature_keys")==3
-            and text_catalog.get("catalog_keys")==2780+14+9
+            and text_catalog.get("catalog_keys")==2780+14+9+18+27+12+7
             and text_catalog.get("native",{}).get("editable_catalog_files")==2
-            and text_catalog.get("native",{}).get("logical_topics")==27+1
-            and text_catalog.get("native",{}).get("current_catalog_keys")==2780+14+9
+            and text_catalog.get("native",{}).get("logical_topics")==28+4
+            and text_catalog.get("native",{}).get("current_catalog_keys")==2780+14+9+18+27+12+7
             and text_catalog.get("native",{}).get("current_gift_admin_additions")==1
             and text_catalog.get("native",{}).get("current_gift_catalog_negative_controls")==8
             and text_catalog.get("native",{}).get("current_gift_catalog_negative_scenarios")==[
@@ -1185,7 +1185,7 @@ def run_wallet(tmp: str) -> tuple[dict, dict]:
             and text_catalog.get("native",{}).get("current_non_ascii_digit_templates")==0
             and text_catalog.get("presentation",{}).get("status")=="PASS"
             and text_catalog.get("presentation",{}).get("editable_files")==2
-            and text_catalog.get("presentation",{}).get("current_keys")==2780+14+9
+            and text_catalog.get("presentation",{}).get("current_keys")==2780+14+9+18+27+12+7
             and text_catalog.get("presentation",{}).get("numeric_template_changes")==23
             and text_catalog.get("presentation",{}).get("adjacent_emoji_violations")==0
             and text_catalog.get("presentation",{}).get("parameter_exception_count")==3

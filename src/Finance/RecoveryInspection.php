@@ -102,6 +102,61 @@ function achbotRecoveryAttentionSql(mysqli $db): string {
       AND (($ledger) OR ($api))";
 }
 
+/** Separate paid/held SERVICE recovery queue, never a second financial inbox.
+ * A successful transaction with unresolved remote CREATE/renewal may still
+ * require an owner, but must not be offered a second money approval.
+ */
+function achbotRecoveryTechnicalSql(mysqli $db): string {
+    $renewals=achbotPayUxTable($db,'automatic_renewal_attempts')
+        ? "EXISTS (SELECT 1 FROM automatic_renewal_attempts r
+            WHERE r.pay_row_id=p.id
+            AND r.stage IN ('reserved','remote_started','review'))" : '0';
+    $effects=achbotPayUxTable($db,'service_effects')
+        ? "EXISTS (SELECT 1 FROM service_effects e
+            WHERE e.pay_row_id=p.id
+            AND ((e.effect_kind='create'
+                 AND e.state IN ('dispatching','verified')
+                 AND e.order_id IS NULL)
+              OR (e.effect_kind IN ('wallet_hold','manual_hold')
+                 AND e.state='reserved'
+                 AND p.state IN ('processing','processing_wallet'))))" : '0';
+    $hosted=achbotPayUxTable($db,'payment_attempts')
+        ? "EXISTS (SELECT 1 FROM payment_attempts a
+            WHERE a.pay_row_id=p.id
+              AND a.stage='review'
+              AND a.provider IN ('nowpayments','nextpay','zarinpal')
+              AND a.provider_status IN
+                 ('fulfillment_started','fulfillment_unconfirmed',
+                  'fulfillment_failed','fulfillment_needs_review',
+                  'operator_fulfillment_unconfirmed')
+              AND p.state='paid')" : '0';
+    // These nonterminal processing states are themselves an incident if
+    // the expected journal is missing. Surface for read-only diagnosis,
+    // never silently drop a potentially debited wallet or remote CREATE.
+    return "(p.state IN ('processing','processing_wallet')
+        OR (p.state='paid' AND (($renewals) OR ($effects) OR ($hosted))))";
+}
+
+function achbotRecoveryTechnicalCases(mysqli $db,int $before=0): array {
+    if ($before<0) throw new InvalidArgumentException('technical_recovery_cursor');
+    $scope=achbotRecoveryTechnicalSql($db);
+    $q=$db->prepare("SELECT p.id,p.user_id,p.price,p.type,p.state
+        FROM pays p WHERE ($scope) AND (?=0 OR p.id<?)
+        ORDER BY p.id DESC LIMIT 13");
+    $q->bind_param('ii',$before,$before);$q->execute();
+    $rows=$q->get_result()->fetch_all(MYSQLI_ASSOC);$q->close();
+    return $rows;
+}
+
+function achbotRecoveryTechnicalCase(mysqli $db,int $id): ?array {
+    if ($id<=0) return null;
+    $scope=achbotRecoveryTechnicalSql($db);
+    $q=$db->prepare("SELECT p.id FROM pays p WHERE p.id=? AND ($scope) LIMIT 1");
+    $q->bind_param('i',$id);$q->execute();
+    $eligible=$q->get_result()->num_rows===1;$q->close();
+    return $eligible?achbotRecoveryAttentionCase($db,$id):null;
+}
+
 function achbotRecoveryAttentionCases(mysqli $db, int $before=0): array {
     if ($before<0) throw new InvalidArgumentException('recovery_invalid_cursor');
     $scope=achbotRecoveryAttentionSql($db);

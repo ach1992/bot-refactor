@@ -128,3 +128,28 @@ Chili acceptance. Do not describe this source slice as deployed or approved.
   original purchase copy; retired notification expectations now test no push.
 - Local Dev PHP 8.4 can catch defects early but **required acceptance remains
   the exact candidate's full PHP 8.5 CI**.
+
+### Technical service queue after separating financial review
+
+A paid transaction can have an unresolved native CREATE/service edit or
+reserved automatic renewal without being an unapproved payment. The owner
+now has a **separate** read-only serviceRecoveryInbox with status-specific
+serviceRecoveryCase_* evidence and links to existing pinned BUY_SUB native
+readback. It also surfaces nonterminal processing/processing_wallet claims
+whose expected journal is missing (diagnostic only, not proof of funds).
+
+Rows with completed payment and no concrete technical hold do **not** appear;
+customer-delivery unknown/pending stays in deliveryInbox, and genuine
+unfinalized incoming money stays in attentionInbox. No service queue view
+performs CREATE, PUT, DELETE, wallet mutation, provider request, or Telegram
+review alert. The operator cannot replay a remote effect by opening a row.
+
+Acceptance: tools/test_next_payment_ux.py asserts that manual receipt
+is visible only in financial review, completed payments are excluded, and
+the automatic renewal/native effect/processing-wallet holds remain visible
+in the technical queue with owner-only, zero-remote, zero-mutation readback.
+
+The four new catalog topics are separately source-SHA-pinned and their
+historical ancestors are preserved. The archived unsolicited-review strings
+remain in the editable catalog with exact historical source provenance but
+cannot be referenced by new Cron or owner decisions.

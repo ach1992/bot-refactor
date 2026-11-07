@@ -385,6 +385,11 @@ WORKBENCH_BLOCKS={
    'status_already','status_unsupported','approve_original','reject_original',
    'manual_evidence_warning','prior_decision'}
  },
+ 'service_workbench':{
+  'sha':'feda16d173f3d99b91d9544715c170d4c978a5763e02ffd1164a4e7dc75dbaf8',
+  'names':{'title','empty','case_label','case_title','readonly_warning','open',
+   'back','back_finance','next','first','checked','unavailable'}
+ },
  'delivery_workbench':{
   'sha':'0ac67e667fe6669be3a8dae1a90de94dc7347dcb6bc129052f61d190bbf144f3',
   'names':{'inbox_title','inbox_empty','inbox_case','open_inbox',
