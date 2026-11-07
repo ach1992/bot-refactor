@@ -26,7 +26,8 @@ $db->set_charset('utf8mb4');$connection=$db;
 $GLOBALS['telegramWebhookSecret']='syntheticReviewSecretForOwnedMariaDB2026';
 $GLOBALS['events']=[];$checks=[];
 function check($condition,$name){
- if(!$condition)throw new RuntimeException('test_failure:'.$name);
+ if(!$condition)throw new RuntimeException('test_failure:'.$name.
+  ' fixture_effect_error='.($GLOBALS['fixture_last_effect_error']??'none'));
  $GLOBALS['checks'][]=$name;
 }
 function achbotSupportsPaymentSubject($db,$pay){
@@ -38,6 +39,7 @@ function achbotNpChildEvidenceRank($status):int {
   'partially_paid'=>4,'finished'=>5,'refunded'=>6,default=>0};
 }
 function doAction($payId,$provider) {
+ try {
  $GLOBALS['events'][]=['effect',$payId,$provider];
  if(!in_array($provider,['nowpayment','nextpay','zarinpal'],true))throw new RuntimeException('invalid_provider');
  $db=$GLOBALS['connection'];
@@ -57,6 +59,10 @@ function doAction($payId,$provider) {
  } catch(Throwable $e) {$db->rollback();throw $e;}
  $GLOBALS['events'][]=['normal_result_report',$payId,'report_channel'];
  return 'delivered';
+ } catch(Throwable $error) {
+  $GLOBALS['fixture_last_effect_error']=get_class($error).':'.$error->getMessage();
+  throw $error;
+ }
 }
 require_once $root.'/src/Finance/ReviewDecisions.php';
 function seed(mysqli $db,string $hash,int $id) {
