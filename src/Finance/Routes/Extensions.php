@@ -329,6 +329,14 @@ if (preg_match('/wait(?:IncreaseDay|IncreaseDayGift|IncreaseDayUsdt)Receipt(.*)/
 }
 
 if (preg_match('/^approveIncreaseDay(.*)/', $data, $match) && achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'payments')) {
+    require_once __DIR__.'/../ManualEditRecovery.php';
+    $resume=achbotManualPgResumeEdit($connection,(string)$match[1],(int)$from_id,'day');
+    if ($resume!==null) {
+        if ($resume['status']==='approved') {
+            achbotManualPgEditNotify($connection,$resume['evidence'],$mainValues,(int)$admin);
+        } else alert(achbotMessage('service_recovery_action.edit_unverified'),true);
+        return;
+    }
     $apiManualSeen=function_exists('achbotApiPaymentManualAddonPreflight') ? achbotApiPaymentManualAddonPreflight($connection,(string)$match[1]) : null;
     $connection->begin_transaction();
     $localCommitted=false;
@@ -423,7 +431,15 @@ if (preg_match('/^approveIncreaseDay(.*)/', $data, $match) && achbotAdminCanFor(
         // The old markup keyboard is not part of this settlement path.
         // Its unset() used an uninitialized variable after a durable claim.
         if (achbotSupportsPanel($serverType)) {
-            $response = achbotApplyServiceEdit($connection,$server_id, ['pay_id'=>(int)$payId, 'remark' => $remark, 'plus_day' => $volume]);
+            $change=['pay_id'=>(int)$payId,'remark'=>$remark,'plus_day'=>$volume];
+            if ($serverType==='pasarguard') {
+                $change['operation_key']='manual:pay:'.$payId;
+                // The actor and monetary quote belong to the FIRST
+                // human decision, never a later recovery operator.
+                $change['manual_approver_id']=(int)$from_id;
+                $change['manual_local_amount_toman']=$price;
+            }
+            $response = achbotApplyServiceEdit($connection,$server_id,$change);
         } else {
             throw new \UnexpectedValueException('unsupported_panel');
         }
@@ -1156,6 +1172,14 @@ if (preg_match('/wait(?:IncreaseVolume|IncreaseVolumeGift|IncreaseVolumeUsdt)Rec
 }
 
 if (preg_match('/^approveIncreaseVolume(.*)/', $data, $match) && achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'payments')) {
+    require_once __DIR__.'/../ManualEditRecovery.php';
+    $resume=achbotManualPgResumeEdit($connection,(string)$match[1],(int)$from_id,'volume');
+    if ($resume!==null) {
+        if ($resume['status']==='approved') {
+            achbotManualPgEditNotify($connection,$resume['evidence'],$mainValues,(int)$admin);
+        } else alert(achbotMessage('service_recovery_action.edit_unverified'),true);
+        return;
+    }
     $apiManualSeen=function_exists('achbotApiPaymentManualAddonPreflight') ? achbotApiPaymentManualAddonPreflight($connection,(string)$match[1]) : null;
     $connection->begin_transaction();
     $localCommitted=false;
@@ -1250,7 +1274,15 @@ if (preg_match('/^approveIncreaseVolume(.*)/', $data, $match) && achbotAdminCanF
         // The old markup keyboard is not part of this settlement path.
         // Its unset() used an uninitialized variable after a durable claim.
         if (achbotSupportsPanel($serverType)) {
-            $response = achbotApplyServiceEdit($connection,$server_id, ['pay_id'=>(int)$payId, 'remark' => $remark, 'plus_volume' => $volume]);
+            $change=['pay_id'=>(int)$payId,'remark'=>$remark,'plus_volume'=>$volume];
+            if ($serverType==='pasarguard') {
+                $change['operation_key']='manual:pay:'.$payId;
+                // The actor and monetary quote belong to the FIRST
+                // human decision, never a later recovery operator.
+                $change['manual_approver_id']=(int)$from_id;
+                $change['manual_local_amount_toman']=$price;
+            }
+            $response = achbotApplyServiceEdit($connection,$server_id,$change);
         } else {
             throw new \UnexpectedValueException('unsupported_panel');
         }
