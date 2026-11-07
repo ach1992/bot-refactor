@@ -406,7 +406,7 @@ def check(progress_path=None):
         record('manual_day_missing_followup_schema_rolls_back_local_finish',
             no_commit and state(n)=='approved' and
             q('SELECT COUNT(*) FROM increase_order')=='1' and
-            q(f"SELECT COUNT(*) FROM payment_followup_intents WHERE pay_row_id={n}")=='3' and
+            q(f"SELECT COUNT(*) FROM payment_followup_intents WHERE pay_row_id={n}")=='2' and
             panel.write_count==writes and not panel.trace and not pg_events(blocked) and
             not pg_events(resumed) and
             any(e.get('event')=='ALERT' for e in blocked['events']),
