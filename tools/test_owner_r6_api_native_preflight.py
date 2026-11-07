@@ -281,11 +281,15 @@ def check(progress_path=None):
             correct_units=((kind=='day' and audit_units==['2','0']) or
                            (kind=='volume' and audit_units==['0','1']) or
                            (kind=='renew' and audit_units==['0','0']))
+            receipt_edits=[e for e in done['events'] if e.get('event')=='EDIT_KEYS']
+            customer_notices=[e for e in done['events'] if
+                              e.get('event')=='MESSAGE' and e.get('to')==1001]
             record('manual_'+kind+'_resume_verified_local_only_once',
                 settled and audit and correct_units and panel.write_count==writes and
                 panel.trace==[] and not pg_events(done) and
+                len(receipt_edits)>=1 and len(customer_notices)>=1 and
                 bool(q(f'SELECT approved_by FROM pays WHERE id={n}').strip()),
-                dict(state=state(n),audit= audit_units,result=done,writes=panel.write_count))
+                dict(state=state(n),audit=audit_units,result=done,writes=panel.write_count))
             again=call(op='human',pay=n)
             record('manual_'+kind+'_repeat_never_reapplies_or_audits',
                 state(n)=='approved' and q('SELECT COUNT(*) FROM increase_order')=='1' and
@@ -316,7 +320,8 @@ def check(progress_path=None):
             r=call(op='human',pay=n)
             record('manual_volume_resume_refuses_'+mutation,
                 state(n)=='processing' and q('SELECT COUNT(*) FROM increase_order')=='0' and
-                panel.write_count==writes and not panel.trace and not pg_events(r),
+                panel.write_count==writes and not panel.trace and not pg_events(r) and
+                any(e.get('event')=='ALERT' for e in r['events']),
                 dict(state=state(n),writes=panel.write_count,result=r))
         for mode in ['live','unreadable','drift']:
             n,key=reset('renew');assert issue(n,'bank_transfer')['result'] is True

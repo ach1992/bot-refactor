@@ -1212,7 +1212,7 @@ def run_wallet(tmp: str) -> tuple[dict, dict]:
             # report and one zero-slot warning. Their native proof adds
             # seven interpolation assertions and one object/multi-parameter/
             # one-pass template, while preserving the original negative tests.
-            and text_catalog.get("native",{}).get("current_native_template_assertions")==4120+24+9+139+42+7+2
+            and text_catalog.get("native",{}).get("current_native_template_assertions")==4120+24+9+139+42+7+2+3
             and text_catalog.get("native",{}).get("current_object_conversion_templates")==268+2+15+5+1
             and text_catalog.get("native",{}).get("current_shared_multi_parameter_templates")==66+1+14+5+1
             and text_catalog.get("native",{}).get("current_one_pass_templates")==268+2+15+5+1
@@ -1275,14 +1275,13 @@ def run_wallet(tmp: str) -> tuple[dict, dict]:
         # Four retired #112 references and the additional old direct-delete
         # callback reference are proven absent by test_next_text_catalog.py.
         # Keep complete current-reference equality, never a lower bound.
-        'runtime_references':2453+14-1-6-4-1+8-3+28+12-5+2,
-        # +28 owner financial/service/delivery copy keys, +12 net
-        # referenced tokens from R2 financial exception and R3 final
-        # receipt topics. The two exact-pinned service_recovery_action
-        # buttons/warnings are now statically referenced as well. The five
-        # new retired second-confirmation labels
-        # are proven absent by test_next_text_catalog.py's exact inherited
-        # source check, not removed from the editable catalog.
+        'runtime_references':2453+14-1-6-4-1+8-3+28+12-5+2+3,
+        # +28 owner financial/service/delivery copy keys; +12 net from R2
+        # financial exception and R3 final receipt. Two earlier recovery
+        # labels and three new original-edit recovery labels are statically
+        # referenced. The five retired second-confirmation labels remain
+        # absent under the exact inherited source checks, but are retained
+        # in the editable historical catalog.
         # The exact orphan/source inventory proof remains mandatory.
         'api_referenced_keys':68,
         'api_dynamic_source_paths':2,

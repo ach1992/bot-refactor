@@ -261,8 +261,7 @@ if ($technicalInbox ||
                         (str_starts_with($kind,'INCREASE_DAY_')?'approveIncreaseDay':'approveIncreaseVolume');
                     $rows[]=[['text'=>achbotMessage('service_recovery_action.resume_verified_edit'),
                         'callback_data'=>$callback.$pay['hash_id']]];
-                    $body.="
-".achbotMessage('service_recovery_action.edit_warning');
+                    $body.="\n".achbotMessage('service_recovery_action.edit_warning');
                 }
             }
             if ($manual && $pay['state']==='have_sent') $body.=\achbotMessage('manual_payment.manual_receipts.body.189e0e519d');
