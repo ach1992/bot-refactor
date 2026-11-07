@@ -314,7 +314,7 @@ foreach(['nextpay'=>216,'zarinpal'=>217] as $provider=>$payId) {
 
 // A successful Zarinpal human-approved wallet is distinct from the
 // independently tested reject branch above; both use the same 019 journal.
-$zarId=218;$zarHash='zarinpal-owner-approval';
+$zarId=250;$zarHash='zarinpal-owner-approval';
 $zarAttempt=seedHosted($db,$zarHash,$zarId,'zarinpal');
 $beforeZar=(int)$db->query('SELECT wallet FROM users WHERE userid=1001')->fetch_row()[0];
 $beforeZarEvents=count($GLOBALS['events']);

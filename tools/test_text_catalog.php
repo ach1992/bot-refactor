@@ -380,11 +380,11 @@ $workbench = [
    'child_line','readonly_warning','inspect','more','back',
    'back_finance','next','first','checked','unavailable']],
  'finance_workbench'=>[
-  'digest'=>'b11588cdef53897b22a6786eca96df74b2527b0855ec7bf85d26a00257d34ff5',
+  'digest'=>'ae4989180d45ed15f33e668a9d5e7111551fddd6b681bd10da526de670b233ea',
   'names'=>['denied','checking','back','not_safe','challenge_expired','unavailable',
    'migration_required','preview_button','reject_button','commit_approve','commit_reject',
    'preview_approve','preview_reject','rejected_customer','rejected_report','result',
-   'status_completed','status_rejected','status_unknown','status_unavailable',
+   'status_completed','status_delivery_unconfirmed','status_rejected','status_unknown','status_unavailable',
    'status_stale','status_already','status_unsupported','approve_original',
    'reject_original','manual_evidence_warning','prior_decision']],
  'service_workbench'=>[
