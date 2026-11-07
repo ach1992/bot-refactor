@@ -453,9 +453,9 @@ if (preg_match('/^serviceRecovery(Inbox|Case)(?:_([1-9][0-9]{0,17}))?$/D',
                         $acknowledged[]=$packet;
                 }
                 $visible=array_slice(array_merge($unresolved,$acknowledged),0,10);
-                $body.="\n\n".achbotMessage('service_workbench.edit_delivery_header');
+                $body.="\n\n".achbotMessage('service_edit_delivery.header');
                 foreach ($visible as $packet)
-                    $body.="\n".achbotMessageHtml('service_workbench.edit_delivery_line',[
+                    $body.="\n".achbotMessageHtml('service_edit_delivery.line',[
                         'role'=>(string)$packet['role'],
                         'state'=>(string)$packet['state'],
                         'attempts'=>(int)$packet['attempt_count'],
@@ -463,8 +463,8 @@ if (preg_match('/^serviceRecovery(Inbox|Case)(?:_([1-9][0-9]{0,17}))?$/D',
                         'message_id'=>$packet['message_id']===null?'-':
                             (int)$packet['message_id']]);
                 if (count($editDelivery)>count($visible))
-                    $body.="\n".achbotMessage('service_workbench.edit_delivery_more');
-                $body.="\n".achbotMessage('service_workbench.edit_delivery_warning');
+                    $body.="\n".achbotMessage('service_edit_delivery.more');
+                $body.="\n".achbotMessage('service_edit_delivery.warning');
             }
             if ($canResume) {
                 // The existing accept handler is the only financial/native

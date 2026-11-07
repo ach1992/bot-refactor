@@ -2317,11 +2317,6 @@ return [
             'نوع عملیات: <code>{type}</code>',
             'parameters'=>['pay','user','state','type']],
         'readonly_warning'=>'این صفحه اثبات تحویل سرویس نیست و هیچ خرید، تمدید، تسویه، ارسال مجدد یا عملیات remote انجام نمی‌دهد. تنها مطابق سند معتبر مستقل ادامه دهید.',
-        'edit_delivery_header'=>'📨 وضعیت پیام‌های ثبت‌شدهٔ این تغییر سرویس:',
-        'edit_delivery_line'=>['text'=>'• <code>{role}</code> | <code>{state}</code> | تلاش: <code>{attempts}</code> | گیرنده: <code>{recipient}</code> | پیام: <code>{message_id}</code>',
-            'parameters'=>['role','state','attempts','recipient','message_id']],
-        'edit_delivery_more'=>'فقط ۱۰ مورد اول نمایش داده شد؛ سوابق بیشتر در سندهای اصلی باقی است.',
-        'edit_delivery_warning'=>'pending: هنوز ارسال نشده و فقط همین پیام‌ها قابل ادامه‌اند. dispatching/unknown: نتیجهٔ Telegram نامعلوم است و خودکار تکرار نمی‌شود. acknowledged: پاسخ موفق Telegram ثبت شده است.',
         'open'=>'🛠 بازیابی ساخت و تمدید سرویس',
         'back'=>'↩️ فهرست بازیابی سرویس',
         'back_finance'=>'↩️ صف بررسی مالی',
@@ -2336,6 +2331,13 @@ return [
         'edit_warning'=>'🔎 عملیات قبلی پنل تأیید و ثبت شده است؛ ادامه فقط ثبت محلی نتیجه و پیام‌های همان پرونده است. هیچ تمدید یا افزایش مجددی برای پنل ارسال نمی‌شود.',
         'edit_unverified'=>'⚠️ نتیجهٔ تغییر سرویس قبلی به‌صورت قابل اتکا ثبت نشده یا اطلاعات سرویس تغییر کرده است. هیچ درخواست تازه‌ای به پنل ارسال نشد؛ پرونده نیازمند بررسی است.',
         'resume_warning'=>'مشاهدهٔ پرونده تغییری ایجاد نمی‌کند. دکمهٔ ادامه فقط مراحل ناتمام خرید اصلی را با همان پرداخت، ظرفیت و شناسه‌های قبلی پیگیری می‌کند. اثر نامعلوم یا ارسال پیام با نتیجهٔ نامشخص هرگز خودکار تکرار نمی‌شود.',
+    ],
+    'service_edit_delivery' => [
+        'header'=>'📨 وضعیت پیام‌های ثبت‌شدهٔ این تغییر سرویس:',
+        'line'=>['text'=>'• <code>{role}</code> | <code>{state}</code> | تلاش: <code>{attempts}</code> | گیرنده: <code>{recipient}</code> | پیام: <code>{message_id}</code>',
+            'parameters'=>['role','state','attempts','recipient','message_id']],
+        'more'=>'فقط ۱۰ مورد اول نمایش داده شد؛ سوابق بیشتر در سندهای اصلی باقی است.',
+        'warning'=>'pending: هنوز ارسال نشده و فقط همین پیام‌ها قابل ادامه‌اند. dispatching/unknown: نتیجهٔ Telegram نامعلوم است و خودکار تکرار نمی‌شود. acknowledged: پاسخ موفق Telegram ثبت شده است.',
     ],
     'delivery_workbench' => [
         'inbox_title'=>'📦 بازیابی تحویل سرویس‌های پرداخت‌شده' . "\n" .
