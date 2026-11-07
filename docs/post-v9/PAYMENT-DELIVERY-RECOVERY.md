@@ -166,6 +166,20 @@ possible failure paths.
 
 ### Technical service queue after separating financial review
 
+A current Owner-private `bankReviewRead_<pay>_<ordinal>_<cursor>` Check now
+routes the **original paid BUY_SUB CREATE line** by its saved native provider:
+Marzban retains its pinned login/account GET; PasarGuard uses a single
+read-only by-username GET or, where the original remote incarnation is pinned,
+a by-ID GET. The original operation marker, paid owner/plan/server/ordinal,
+reserved entitlement, provider instance, target and Group snapshot must match.
+A second local read fences concurrent drift. A missing line, 404, mismatched
+account, changed target or unavailable provider never authorizes another POST,
+payment settlement, capacity adjustment or Telegram send. A matching remote
+observation is **not** delivery ACK or proof of received merchant funds.
+Existing manual/bank continuations still own actual once-only finalization;
+this Check itself never changes a native/payment/order state. It works per
+account for partial bulk without assuming that unrecorded ordinals are absent.
+
 A paid transaction can have an unresolved native CREATE/service edit or
 reserved automatic renewal without being an unapproved payment. The owner
 now has a **separate** read-only serviceRecoveryInbox with status-specific

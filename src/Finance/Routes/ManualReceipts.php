@@ -797,7 +797,7 @@ if ($bankInbox || $bankCase || $bankRead) {
         if ($bankRead) {
             $ordinal=(int)$bankReadMatch[2];
             // Pinned, bounded authenticated login and exactly one account GET.
-            $observation=achbotRecoveryInspectLine(
+            $observation=achbotRecoveryInspectPaidLine(
                 $connection,$payId,$ordinal,
                 static fn(string $endpoint,string $user,string $password,string $username) =>
                     achbotRecoveryStrictAccountGet($endpoint,$user,$password,$username));

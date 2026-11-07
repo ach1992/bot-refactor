@@ -2898,7 +2898,18 @@ def run_effects(tmp: str) -> tuple[dict, dict]:
             "normal","begin_failure","credential_drift","invalid_username",
             "post_lost","provider_503")
     } | {"native_group_preflight_no_post_and_safe_reason",
-         "untrusted_provider_error_text_sanitized"}
+         "untrusted_provider_error_text_sanitized"} | {
+        "paid_pg_exact_marker_username_readback_no_post_no_financial_write",
+        "paid_pg_partial_bulk_missing_ordinal_never_infers_absence",
+        "paid_pg_other_account_marker_is_not_original_provision",
+        "paid_pg_native_policy_drift_is_not_proof",
+        "paid_pg_404_is_uncertainty_not_create_permission",
+        "paid_pg_corrupt_original_fingerprint_blocks_remote_read",
+        "paid_pg_other_native_instance_refuses_get",
+        "paid_pg_payment_race_during_get_fails_closed",
+        "paid_pg_verified_native_incarnation_exact_by_id_only",
+        "paid_pg_foreign_native_id_does_not_match_verified_claim",
+    }
     if not (pg_diag.get("complete") is True
             and set(pg_diag.get("checks",[]))==expected_pg_diag
             and pg_diag.get("cases")==len(expected_pg_diag)
