@@ -571,6 +571,9 @@ if (preg_match('/^apiEvidenceResume_([1-9][0-9]{0,17})$/D',(string)$data,$apiRes
     }
     $payId=(int)$apiResume[1];
     try {
+        // The direct callback may be the first admin route in this process.
+        // Do not depend on having opened the attention inbox beforehand.
+        require_once __DIR__.'/../RecoveryInspection.php';
         require_once __DIR__.'/../ApiPayments.php';
         $pay=achbotApiPaymentRow($connection,$payId);
         $attempt=$pay?achbotApiPaymentAttempt($connection,$payId):null;
@@ -580,15 +583,33 @@ if (preg_match('/^apiEvidenceResume_([1-9][0-9]{0,17})$/D',(string)$data,$apiRes
             return;
         }
         $pay['attempt']=$attempt;
-        if (!achbotRecoveryApiCanResume($connection,$pay) || !is_array($proof)) {
+        // Previously issued callbacks can safely revisit an already terminal
+        // invoice: the original coordinator dispatches only PENDING delivery
+        // packets, never money/native effects or UNKNOWN Telegram sends.
+        $terminalDeliveryOnly=achbotApiPaymentTerminal($pay) &&
+            in_array((string)$attempt['provider'],['bank_transfer','gift_card'],true) &&
+            ($proof['mode']??null)==='settle';
+        if ((!achbotRecoveryApiCanResume($connection,$pay) && !$terminalDeliveryOnly) ||
+            !is_array($proof)) {
             answerCallbackQuery($callbackId,achbotMessage('finance_workbench.status_stale'),true);
             return;
         }
         answerCallbackQuery($callbackId,achbotMessage('finance_workbench.checking'));
         $outcome=achbotApiPaymentSettle($connection,$payId,$proof);
-        $result=in_array($outcome,['confirmed','settled'],true)
+        // A settled invoice is not necessarily an ACKed customer message.
+        // The terminal fast-path returns 'settled' after pending-only delivery;
+        // inspect the original per-message journal before reporting success.
+        $acknowledged=false;
+        if (in_array($outcome,['confirmed','settled'],true)) {
+            $delivery=achbotDeliveryAggregate($connection,$payId);
+            $acknowledged=$delivery && (int)$delivery['total']>0 &&
+                (int)$delivery['ack']===(int)$delivery['total'];
+        }
+        $result=$acknowledged
             ? achbotMessage('finance_workbench.status_completed')
-            : achbotMessage('finance_workbench.status_unknown');
+            : (in_array($outcome,['confirmed','settled'],true)
+                ? achbotMessage('finance_workbench.status_delivery_unconfirmed')
+                : achbotMessage('finance_workbench.status_unknown'));
         // The former financial case is no longer in its inbox after
         // processing/terminal completion. Return to an always-valid list.
         $buttons=json_encode(['inline_keyboard'=>[[['text'=>achbotMessage('finance_workbench.back'),

@@ -294,8 +294,14 @@ function achbotNpDecisionCommit(mysqli $db,int $actor,int $id,string $decision,
                 outcome=?,resolved_at=NOW() WHERE pay_row_id=? AND state='dispatching'");
             $q->bind_param('ssi',$finish,$effect,$payId);$q->execute();$q->close();
             $next=$done?'done':'review';
-            $reason=$done?($effect==='compensated'?'compensated':'finished'):
-                'operator_fulfillment_unconfirmed';
+            // Successful local fulfillment is not proof that the merchant
+            // reported a finished payment. Keep human attestation distinct
+            // in the original 003 provider status as well as 019 audit.
+            $reason=$done
+                ? ($remote===null
+                    ? ($effect==='compensated'?'operator_compensated':'operator_fulfilled')
+                    : ($effect==='compensated'?'compensated':'finished'))
+                : 'operator_fulfillment_unconfirmed';
             $q=$db->prepare("UPDATE payment_attempts SET stage=?,provider_status=?
                 WHERE id=? AND stage='fulfilling'");
             $q->bind_param('ssi',$next,$reason,$id);$q->execute();$q->close();

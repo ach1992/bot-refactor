@@ -101,7 +101,11 @@ Historical records without an encrypted delivery intent are not fabricated.
   one direct decision. The existing **019 unique journal** records this as a
   human choice and the original hosted `doAction` path enforces the same pays
   CAS and attempt identity, including if a genuine verified browser callback
-  wins the race. Rejection closes an eligible unfinished business order only;
+  wins the race. A successful human-attested business effect closes the 003
+  attempt with local `operator_fulfilled` (or `operator_compensated`) status,
+  **not merchant `finished`**. Genuine authenticated merchant-finished evidence
+  retains its own provider-completed status; actor and decision remain in 019.
+  Rejection closes an eligible unfinished business order only;
   no refund is inferred. If 019 is unavailable no new undecidable hosted
   review entry is staged. A positive verified hosted charge followed by
   uncertain native execution belongs to **serviceRecoveryInbox**, not
@@ -115,7 +119,12 @@ Historical records without an encrypted delivery intent are not fabricated.
   view (not as new unpaid financial cases). The button is a display-only
   hint; source admission and native-effect journals are always rechecked.
   Completed actions return to the inbox rather than a stale case link.
-  Original human receipt Approve/Reject callbacks remain available when
+  A still-valid callback for an already terminal payment may continue **only
+  PENDING** original customer-delivery intents; UNKNOWN messages are never
+  automatically resent. The admin result says delivery completed only when
+  every existing intent is ACKed. Otherwise it explicitly reports financially
+  settled with customer delivery not fully acknowledged, even if the original
+  coordinator returns `settled`. Original human receipt Approve/Reject callbacks remain available when
   their usual prerequisites apply. No new staff role or payment
   authorization was created.
 - **Hosted wallet finalization:** when a later genuinely verified hosted

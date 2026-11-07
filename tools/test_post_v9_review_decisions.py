@@ -140,6 +140,10 @@ $r=row($db,'approve-pass');
 check($r['pay_state']==='paid'&&$r['stage']==='done'&&
       $r['review_state']==='completed'&&$r['decision']==='approve',
       'exact_ledger_closes_after_effect');
+check($r['provider_status']==='finished' &&
+      $db->query('SELECT actor_id,provider_status FROM payment_review_decisions WHERE pay_row_id=201')
+        ->fetch_assoc()['provider_status']==='finished',
+      'authenticated_provider_finished_provenance_preserved');
 check((int)$db->query('SELECT wallet FROM users WHERE userid=1001')->fetch_row()[0]
       ===$beforeWallet+100000,'exactly_one_wallet_credit');
 check(count($GLOBALS['events'])===2&&$GLOBALS['events'][1][0]==='normal_result_report',
@@ -192,11 +196,14 @@ $localResult=achbotNpDecisionCommit($db,9001,$local,'approve',null);
 $localRow=row($db,'owner-confirmed');
 check($localResult['status']==='completed' && $localRow['pay_state']==='paid'
   && $localRow['decision']==='approve','owner_direct_approve_runs_original_effect');
+check($localRow['stage']==='done' && $localRow['provider_status']==='operator_fulfilled',
+ 'nowpayments_human_final_003_does_not_forge_provider_finished');
 check((int)$db->query('SELECT wallet FROM users WHERE userid=1001')->fetch_row()[0]
   ===$walletBefore+100000,'owner_direct_approve_wallet_once');
-$detail=$db->query("SELECT provider_status FROM payment_review_decisions
+$detail=$db->query("SELECT provider_status,actor_id,decision FROM payment_review_decisions
  WHERE pay_row_id=209")->fetch_assoc();
-check(($detail['provider_status']??'')==='operator_attested',
+check(($detail['provider_status']??'')==='operator_attested' &&
+ (int)$detail['actor_id']===9001 && $detail['decision']==='approve',
  'human_attestation_not_fabricated_provider_finished');
 $priorEvents=count($GLOBALS['events']);
 check(achbotNpDecisionCommit($db,9001,$local,'approve',null)['status']!=='completed'
@@ -280,12 +287,15 @@ foreach(['nextpay'=>216,'zarinpal'=>217] as $provider=>$payId) {
   $row=row($db,$hash);
   check($row['pay_state']==='paid' && $row['stage']==='done' &&
     $row['review_state']==='completed','nextpay_operator_financial_commit_once');
+  check($row['provider_status']==='operator_fulfilled',
+    'nextpay_human_finished_business_not_merchant_finished');
   check((int)$db->query('SELECT wallet FROM users WHERE userid=1001')->fetch_row()[0]
     ===$before+100000,'nextpay_single_original_wallet_effect');
-  $decision=$db->query("SELECT provider_status,payment_id FROM payment_review_decisions
+  $decision=$db->query("SELECT provider_status,payment_id,actor_id,decision FROM payment_review_decisions
     WHERE pay_row_id=$payId")->fetch_assoc();
   check($decision['provider_status']==='operator_attested' &&
-    $decision['payment_id']===$hash.'-authority',
+    $decision['payment_id']===$hash.'-authority' &&
+    (int)$decision['actor_id']===9001 && $decision['decision']==='approve',
     'nextpay_attestation_distinct_from_provider_settlement');
   check(achbotNpDecisionCommit($db,9001,$attemptId,'approve',null)['status']!=='completed' &&
     count($GLOBALS['events'])===$eventsBefore+2,
@@ -301,6 +311,29 @@ foreach(['nextpay'=>216,'zarinpal'=>217] as $provider=>$payId) {
     'zarinpal_reject_cannot_be_reapproved');
  }
 }
+
+// A successful Zarinpal human-approved wallet is distinct from the
+// independently tested reject branch above; both use the same 019 journal.
+$zarId=218;$zarHash='zarinpal-owner-approval';
+$zarAttempt=seedHosted($db,$zarHash,$zarId,'zarinpal');
+$beforeZar=(int)$db->query('SELECT wallet FROM users WHERE userid=1001')->fetch_row()[0];
+$beforeZarEvents=count($GLOBALS['events']);
+check(achbotNpDecisionCommit($db,9001,$zarAttempt,'approve',null)['status']==='completed',
+ 'zarinpal_operator_approval_dispatches_original');
+$zarRow=row($db,$zarHash);
+$zarJournal=$db->query("SELECT actor_id,provider_status,decision,state FROM payment_review_decisions
+ WHERE pay_row_id=$zarId")->fetch_assoc();
+check($zarRow['pay_state']==='paid' && $zarRow['stage']==='done' &&
+ $zarRow['provider_status']==='operator_fulfilled' &&
+ $zarJournal['provider_status']==='operator_attested' &&
+ (int)$zarJournal['actor_id']===9001 && $zarJournal['decision']==='approve' &&
+ $zarJournal['state']==='completed',
+ 'zarinpal_human_003_019_provenance_distinct_from_merchant');
+check((int)$db->query('SELECT wallet FROM users WHERE userid=1001')->fetch_row()[0]
+ ===$beforeZar+100000 &&
+ achbotNpDecisionCommit($db,9001,$zarAttempt,'approve',null)['status']!=='completed' &&
+ count($GLOBALS['events'])===$beforeZarEvents+2,
+ 'zarinpal_repeat_owner_callback_wallet_native_once');
 
 // A lost local preclaim must remain in the quiet attention inbox. A second
 // Approve cannot replay an effect with an unknown first result.
