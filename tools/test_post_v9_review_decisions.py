@@ -369,7 +369,12 @@ def main():
   result=subprocess.run(['php','-d','disable_functions=curl_init,curl_exec',
       str(hosted),str(ROOT),str(d/'mysql.sock'),DB],env=env,
       capture_output=True,text=True,timeout=20)
-  if result.returncode or result.stderr:
+  # The two deliberately refused original claims preserve their precise
+  # internal diagnostic codes. Reject any extra log line or PHP warning.
+  expected_hosted_log='\n'.join([
+   'achbot_hosted_claim_unconfirmed pay_id=218 provider=nextpay code=paid_claim_unavailable',
+   'achbot_hosted_claim_unconfirmed pay_id=220 provider=nextpay code=attempt_mismatch'])
+  if result.returncode or result.stderr.strip()!=expected_hosted_log:
    raise RuntimeError('hosted verification staging: '+result.stderr[-2000:])
   hosted_proof=json.loads(result.stdout)
   assert hosted_proof['original_gateway_review_stage_source']
