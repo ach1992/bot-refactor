@@ -46,6 +46,15 @@ elseif($op==='technical') {
  require_once $root.'/src/Finance/RecoveryInspection.php';
  $value=achbotRecoveryTechnicalCase($connection,$id)!==null;
 }
+elseif($op==='owner_case' || $op==='owner_inbox') {
+ $from_id=(int)($spec['actor']??9001);
+ $chat_id=(int)($spec['chat']??$from_id);
+ $callbackId='fixture-owner-case';$message_id=222;
+ $text=null;$userInfo=['step'=>'none'];
+ $data=$op==='owner_case'?'serviceRecoveryCase_'.$id:'serviceRecoveryInbox';
+ require $root.'/src/Finance/Routes/ManualReceipts.php';
+ $value=true;
+}
 elseif($op==='receipt'){$v=achbotManualBeginEvidence($connection,$pay,'bank_transfer',1001,'native-photo');$value=$v?achbotManualFinishEvidence($connection,$pay['hash_id'],'native-photo',$v,222,9001):false;}
 elseif($op==='locked_drift') {
  if(!function_exists('achbotApiPaymentSubjectPreflight'))$value=['supported'=>false];
@@ -119,7 +128,14 @@ def driver_source():
         send_marker)
     php+="\n"+flow.PREP+r'''
 function alert(...$args){$GLOBALS['events'][]=['event'=>'ALERT'];}
-function editText(...$args){return(object)['ok'=>true];}
+function editText(...$args) {
+ if (in_array(($GLOBALS['spec']['op']??''),['owner_case','owner_inbox'],true))
+  $GLOBALS['events'][]=['event'=>'OWNER_VIEW',
+   'text'=>(string)($args[1]??''),
+   'buttons'=>json_decode((string)($args[2]??''),true),
+   'chat'=>$args[4]??null];
+ return (object)['ok'=>true];
+}
 function delMessage(...$args){}
 function setUser(...$args){}
 function bot(...$args){return(object)['ok'=>true];}
@@ -411,6 +427,101 @@ def check(progress_path=None):
             not pg_events(resumed) and
             any(e.get('event')=='ALERT' for e in blocked['events']),
             dict(blocked=blocked,resumed=resumed,no_commit=no_commit,writes=writes))
+
+        # R1: the ACTUAL Owner-private serviceRecoveryCase callback must
+        # expose role, state, attempts, original recipient and message ID.
+        # The scenario record contains its actual rendered Telegram text and
+        # inline keyboard, not just a read-only SQL helper result.
+        def view(n):
+            response=call(op='owner_case',pay=n)
+            displayed=[e for e in response['events'] if e.get('event')=='OWNER_VIEW']
+            assert len(displayed)<=1,response
+            return response,(displayed[0] if displayed else None)
+        def actions(rendered):
+            return [button['callback_data'] for line in
+                    (rendered or {}).get('buttons',{}).get('inline_keyboard',[])
+                    for button in line if 'callback_data' in button]
+        def make_delivery(kind='volume',mirror=False):
+            n,key=reset(kind)
+            assert issue(n,'bank_transfer')['result'] is True
+            q(f'UPDATE payment_attempts SET created_at=NOW()-INTERVAL 601 SECOND WHERE pay_row_id={n}')
+            assert call(op='receipt',pay=n)['result'] is True
+            call(op='human',pay=n,actor=9001,crash_after_native=True)
+            if mirror:
+                q(f"""UPDATE pays SET admins_messages='[{{"chat_id":9001,"message_id":223}}]'
+                    WHERE id={n}""")
+            done=call(op='human',pay=n,actor=9002,skip_followup_dispatch=True)
+            assert state(n)=='approved' and q('SELECT COUNT(*) FROM increase_order')=='1',done
+            panel.trace=[]
+            return n,key,panel.write_count
+
+        # A: original primary receipt acknowledged; customer message pending.
+        n,key,writes=make_delivery()
+        q(f"UPDATE payment_followup_intents SET state='acknowledged',attempt_count=1 "
+          f"WHERE pay_row_id={n} AND role='receipt_primary'")
+        a,rendered=view(n);text=(rendered or {}).get('text','');buttons=actions(rendered)
+        record('manual_edit_owner_case_customer_pending_primary_acknowledged',
+            rendered is not None and rendered['chat']==9001 and
+            'receipt_primary' in text and 'acknowledged' in text and
+            'customer' in text and 'pending' in text and
+            '<code>1001</code>' in text and '<code>222</code>' in text and
+            '<code>1</code>' in text and
+            buttons.count('approveIncreaseVolume'+key)==1 and
+            not any(t.startswith(('accept','npDecision','reject','approveRenewAcc')) for t in buttons) and
+            q('SELECT COUNT(*) FROM increase_order')=='1' and panel.write_count==writes and
+            panel.trace==[] and not pg_events(a),
+            dict(view=a,buttons=buttons,text=text,write_count=writes))
+
+        # B: unknown customer acknowledgement must be explained, not resent.
+        q(f"UPDATE payment_followup_intents SET state='unknown',attempt_count=1 "
+          f"WHERE pay_row_id={n} AND role='customer'")
+        b,rendered=view(n);text=(rendered or {}).get('text','');buttons=actions(rendered)
+        record('manual_edit_owner_case_customer_unknown_no_replay',
+            rendered is not None and rendered['chat']==9001 and
+            'customer' in text and 'unknown' in text and
+            'receipt_primary' in text and 'acknowledged' in text and
+            '<code>1001</code>' in text and
+            '<code>1</code>' in text and
+            'approveIncreaseVolume'+key not in buttons and
+            not any(t.startswith(('accept','npDecision','reject','approve')) for t in buttons) and
+            q('SELECT COUNT(*) FROM increase_order')=='1' and panel.write_count==writes and
+            panel.trace==[] and not pg_events(b),
+            dict(view=b,buttons=buttons,text=text,write_count=writes))
+
+        # C: uncertain stored administrator receipt, exact original pair.
+        n,key,writes=make_delivery(mirror=True)
+        q(f"UPDATE payment_followup_intents SET state='acknowledged',attempt_count=1 "
+          f"WHERE pay_row_id={n} AND role IN ('receipt_primary','customer')")
+        q(f"UPDATE payment_followup_intents SET state='dispatching',attempt_count=1 "
+          f"WHERE pay_row_id={n} AND role='receipt_mirror'")
+        c,rendered=view(n);text=(rendered or {}).get('text','');buttons=actions(rendered)
+        record('manual_edit_owner_case_mirror_dispatching_original_message',
+            rendered is not None and rendered['chat']==9001 and
+            'receipt_mirror' in text and 'dispatching' in text and
+            '<code>9001</code>' in text and '<code>223</code>' in text and
+            'customer' in text and 'acknowledged' in text and
+            '<code>1</code>' in text and
+            'approveIncreaseVolume'+key not in buttons and
+            not any(t.startswith(('accept','npDecision','reject','approve')) for t in buttons) and
+            q('SELECT COUNT(*) FROM increase_order')=='1' and panel.write_count==writes and
+            panel.trace==[] and not pg_events(c),
+            dict(view=c,buttons=buttons,text=text,write_count=writes))
+
+        # D: fully acknowledged delivery is not an outstanding service case.
+        q(f"UPDATE payment_followup_intents SET state='acknowledged' "
+          f"WHERE pay_row_id={n} AND stage='approved_edit'")
+        all_done=call(op='technical',pay=n)['result'] is False
+        d=call(op='owner_inbox',pay=n)
+        inboxes=[e for e in d['events'] if e.get('event')=='OWNER_VIEW']
+        inbox=inboxes[0] if len(inboxes)==1 else None
+        record('manual_edit_owner_case_fully_acknowledged_not_recoverable',
+            all_done and inbox is not None and inbox['chat']==9001 and
+            'serviceRecoveryCase_'+str(n) not in actions(inbox) and
+            not any(a.startswith(('approve','accept','npDecision','reject'))
+                for a in actions(inbox)) and
+            q('SELECT COUNT(*) FROM increase_order')=='1' and panel.write_count==writes and
+            panel.trace==[] and not pg_events(d),
+            dict(view=d,technical_open=not all_done,write_count=writes))
 
         # R1/R2 regression: a distinct authorized recovery Operator never
         # replaces the first human approver. The *original* issued 003 local

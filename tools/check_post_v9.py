@@ -290,6 +290,10 @@ def api_native_observation_mismatches(proof: dict, expected: list[str]) -> dict:
                         'delivery_only_repeat_never_resends')],
         'manual_volume_unknown_customer_ack_not_automatically_resent',
         'manual_day_missing_followup_schema_rolls_back_local_finish',
+        'manual_edit_owner_case_customer_pending_primary_acknowledged',
+        'manual_edit_owner_case_customer_unknown_no_replay',
+        'manual_edit_owner_case_mirror_dispatching_original_message',
+        'manual_edit_owner_case_fully_acknowledged_not_recoverable',
         *[f'manual_volume_resume_refuses_{reason}' for reason in (
             'unverified','wrong_key','wrong_quote','wrong_identity',
             'nonmanual_claim')],

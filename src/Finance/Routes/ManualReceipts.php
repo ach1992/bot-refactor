@@ -425,6 +425,12 @@ if (preg_match('/^serviceRecovery(Inbox|Case)(?:_([1-9][0-9]{0,17}))?$/D',
                     if ($prefix!==null) $pendingEdit=$prefix.(string)$pay['hash_id'];
                 }
             }
+            $editDelivery=[];
+            if (($pay['state']??null)==='approved' &&
+                achbotPayUxTable($connection,'payment_followup_intents')) {
+                require_once __DIR__.'/../FollowupOutbox.php';
+                $editDelivery=achbotFollowupSummary($connection,$id,'approved_edit');
+            }
             $body=achbotMessageHtml('service_workbench.case_title',[
                 'pay'=>$id,'user'=>$pay['user_id'],
                 'state'=>$pay['state'],'type'=>$pay['type']])."
@@ -435,6 +441,31 @@ if (preg_match('/^serviceRecovery(Inbox|Case)(?:_([1-9][0-9]{0,17}))?$/D',
 ".($canResume
                     ?achbotMessage('service_recovery_action.resume_warning')
                     :achbotMessage('service_workbench.readonly_warning'));
+            if ($editDelivery) {
+                // Unresolved original recipients first; show acknowledged
+                // peers for context. This is an Owner-private SQL-only view.
+                $unresolved=[];$acknowledged=[];
+                foreach ($editDelivery as $packet) {
+                    if (in_array((string)$packet['state'],
+                            ['pending','dispatching','unknown'],true))
+                        $unresolved[]=$packet;
+                    elseif ($packet['state']==='acknowledged')
+                        $acknowledged[]=$packet;
+                }
+                $visible=array_slice(array_merge($unresolved,$acknowledged),0,10);
+                $body.="\n\n".achbotMessage('service_workbench.edit_delivery_header');
+                foreach ($visible as $packet)
+                    $body.="\n".achbotMessageHtml('service_workbench.edit_delivery_line',[
+                        'role'=>(string)$packet['role'],
+                        'state'=>(string)$packet['state'],
+                        'attempts'=>(int)$packet['attempt_count'],
+                        'recipient'=>(string)$packet['recipient'],
+                        'message_id'=>$packet['message_id']===null?'-':
+                            (int)$packet['message_id']]);
+                if (count($editDelivery)>count($visible))
+                    $body.="\n".achbotMessage('service_workbench.edit_delivery_more');
+                $body.="\n".achbotMessage('service_workbench.edit_delivery_warning');
+            }
             if ($canResume) {
                 // The existing accept handler is the only financial/native
                 // continuation; its original proof and once-only journals

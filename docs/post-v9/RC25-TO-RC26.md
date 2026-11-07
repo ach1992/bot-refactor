@@ -74,9 +74,12 @@
   verified operation remains unchanged for later local-only completion.
   After successful COMMIT, attempt each sealed PENDING packet at most once.
   A PHP failure between COMMIT and Telegram leaves PENDING rows available
-  through the original payment-authorized callback; the Owner-private service
-  workbench shows the pending delivery case. UNKNOWN/dispatching ACKs stay
-  under review and are **not** automatically resent or counted as delivered.
+  through the original payment-authorized callback. The Owner-private
+  service case displays each recorded packet's role, state, attempt count
+  and original recipient/message reference (unresolved packets first);
+  the original callback button is offered only when PENDING exists.
+  UNKNOWN/dispatching ACKs remain visible for read-only diagnosis and are
+  **not** automatically resent or counted as delivered.
   The existing `payment_followup_intents` table needs no new migration;
   without a separately authorized installed 020 migration this behavior must
   not be presented as production-ready. No second payment/native action,

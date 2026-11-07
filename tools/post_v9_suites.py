@@ -585,6 +585,11 @@ def run_api(tmp: str) -> tuple[dict, dict]:
         'manual_volume_delivery_only_repeat_never_resends',
         'manual_volume_unknown_customer_ack_not_automatically_resent',
         'manual_day_missing_followup_schema_rolls_back_local_finish',
+        # Independent review REQUIRED-1: actual Owner-private UI evidence.
+        'manual_edit_owner_case_customer_pending_primary_acknowledged',
+        'manual_edit_owner_case_customer_unknown_no_replay',
+        'manual_edit_owner_case_mirror_dispatching_original_message',
+        'manual_edit_owner_case_fully_acknowledged_not_recoverable',
         # Reviewer R1/R2: original approver and immutable amount, all kinds.
         'manual_renew_resume_refuses_changed_payment_amount',
         'manual_renew_resume_refuses_changed_attempt_amount',
