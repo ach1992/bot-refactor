@@ -2336,7 +2336,7 @@ return [
         'header'=>'📨 وضعیت پیام‌های ثبت‌شدهٔ این تغییر سرویس:',
         'line'=>['text'=>'• <code>{role}</code> | <code>{state}</code> | تلاش: <code>{attempts}</code> | گیرنده: <code>{recipient}</code> | پیام: <code>{message_id}</code>',
             'parameters'=>['role','state','attempts','recipient','message_id']],
-        'more'=>'فقط ۱۰ مورد اول نمایش داده شد؛ سوابق بیشتر در سندهای اصلی باقی است.',
+        'more'=>'فقط 10 مورد اول نمایش داده شد؛ سوابق بیشتر در سندهای اصلی باقی است.',
         'warning'=>'pending: هنوز ارسال نشده و فقط همین پیام‌ها قابل ادامه‌اند. dispatching/unknown: نتیجهٔ Telegram نامعلوم است و خودکار تکرار نمی‌شود. acknowledged: پاسخ موفق Telegram ثبت شده است.',
     ],
     'delivery_workbench' => [

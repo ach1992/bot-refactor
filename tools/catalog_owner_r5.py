@@ -405,7 +405,7 @@ WORKBENCH_BLOCKS={
   'names':{'resume_purchase','resume_warning','resume_verified_edit','edit_warning','edit_unverified'}
  },
  'service_edit_delivery':{
-  'sha':'2a904ed0115030e09ebd65fe3eab72cf5bec401694074488bc121b22d1e4c64e',
+  'sha':'fe9859ea01f69c3ef99d62517ac182da34258fdecfd70ac55932e3624a43b4dc',
   'names':{'header','line','more','warning'}
  },
  'delivery_workbench':{
