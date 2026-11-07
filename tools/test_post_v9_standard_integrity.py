@@ -533,6 +533,68 @@ def check():
         assert sql(work,env,'SELECT COUNT(*) FROM users WHERE userid IN(9003,9004)')=='0'
         assert sql(work,env,"SELECT COUNT(*) FROM setting WHERE type IN('ADMIN_ROLE_9003','ADMIN_ROLE_9004')")=='0'
 
+        # Independent review F1: full (chat_id,message_id) is the identity.
+        # This exact same-chat case previously lost message 212 entirely.
+        key=seed(work,env,'primary_chat_distinct_receipt',capacity=1)
+        assert sql(work,env,"SELECT CONCAT(chat_id,':',message_id) FROM pays "
+                   "WHERE hash_id='primary_chat_distinct_receipt'")=='9001:211'
+        refs=json.dumps([{'chat_id':9001,'message_id':211},   # exact primary duplicate
+                         {'chat_id':9001,'message_id':212},   # distinct in primary chat
+                         {'chat_id':9001,'message_id':212},   # duplicate of 212
+                         {'chat_id':9002,'message_id':333},   # another valid staff chat
+                         {'chat_id':9004,'message_id':444}],separators=(',',':'))
+        assert sql(work,env,'SELECT COUNT(*) FROM users WHERE userid=9004')=='0'
+        sql(work,env,"INSERT INTO users(userid,name,username,refcode,wallet,date,isAdmin,step,first_start) "
+            "VALUES(9004,'Revoked F1','f1_revoked','0',50000,'1700000000',0,'none','sent');"
+            "INSERT INTO setting(type,value) VALUES('ADMIN_ROLE_9004','support')")
+        try:
+            sql(work,env,"UPDATE pays SET admins_messages='"+refs+"' "
+                "WHERE hash_id='primary_chat_distinct_receipt'")
+            before_wallet=sql(work,env,'SELECT userid,wallet FROM users ORDER BY userid')
+            result=call(key)
+            assert state(key)=='approved' and len(named(result,'CREATE'))==1, result
+            edits=named(result,'EDIT')
+            assert [(int(e['to']),int(e['message_id'])) for e in edits]==[
+                (9001,211),(9001,212),(9002,333)],edits
+            expected='receipt_primary\t9001\t211\tacknowledged\t1\n'+(
+                'receipt_mirror\t9001\t212\tacknowledged\t1\n'
+                'receipt_mirror\t9002\t333\tacknowledged\t1')
+            recorded=sql(work,env,"SELECT f.role,f.recipient,f.message_id,f.state,f.attempt_count "
+                "FROM payment_followup_intents f JOIN pays p ON p.id=f.pay_row_id "
+                "WHERE p.hash_id='primary_chat_distinct_receipt' "
+                "AND f.role IN ('receipt_primary','receipt_mirror') ORDER BY f.id")
+            assert recorded==expected,(recorded,expected)
+            assert orders()==1 and capacity()==0
+            replay=call(key)
+            assert not any(named(replay,n) for n in ['EDIT','CREATE','READBACK','PHOTO'])
+            assert sql(work,env,'SELECT userid,wallet FROM users ORDER BY userid')==before_wallet
+            assert sql(work,env,"SELECT COUNT(*) FROM payment_followup_intents f "
+                "JOIN pays p ON p.id=f.pay_row_id "
+                "WHERE p.hash_id='primary_chat_distinct_receipt' "
+                "AND f.role IN ('receipt_primary','receipt_mirror')")=='3'
+            cases.append('f1_approved_primary_chat_distinct_message_preserved_once_and_replay_safe')
+        finally:
+            sql(work,env,"DELETE FROM setting WHERE type='ADMIN_ROLE_9004';"
+                "DELETE FROM users WHERE userid=9004")
+
+        # Before the terminal COMMIT, an 020 insert failure must undo ALL
+        # local orders, delivery/report intents and approved state. The one
+        # original remote CREATE remains fenced from a second invocation.
+        key=seed(work,env,'f1_approved_outbox_failure',capacity=1)
+        sql(work,env,"CREATE TRIGGER owned_f1_followup_fail BEFORE INSERT "
+            "ON payment_followup_intents FOR EACH ROW SIGNAL SQLSTATE '45000' "
+            "SET MESSAGE_TEXT='fixture_followup_insert_denied'")
+        try: result=call(key,nonthrowing=True)
+        finally: sql(work,env,'DROP TRIGGER owned_f1_followup_fail')
+        assert len(named(result,'CREATE'))==1 and state(key)=='processing',result
+        assert orders()==0 and capacity()==0
+        assert sql(work,env,'SELECT COUNT(*) FROM payment_followup_intents')=='0'
+        assert sql(work,env,'SELECT COUNT(*) FROM payment_delivery_intents')=='0'
+        assert sql(work,env,'SELECT COUNT(*) FROM referral_awards')=='0'
+        repeat=call(key)
+        assert not named(repeat,'CREATE') and orders()==0 and state(key)=='processing'
+        cases.append('f1_approved_020_sql_failure_rolls_back_finalization_without_second_create')
+
         key=seed(work,env,'reward_on_qr_failure',inviter=True)
         ev=call(key,telegram='qr_false')
         assert state(key)=='approved' and sql(work,env,'SELECT wallet FROM users WHERE userid=9002')=='51000'

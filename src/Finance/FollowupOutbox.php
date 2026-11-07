@@ -281,7 +281,10 @@ function achbotFollowupStageManualPurchaseLocked(mysqli $db,array $pay,int $owne
     if (is_array($copies)) foreach ($copies as $copy) {
         if (!is_array($copy) || !isset($copy['chat_id'],$copy['message_id'])) continue;
         $chat=(int)$copy['chat_id'];$msg=(int)$copy['message_id'];
-        if ($chat===(int)$pay['chat_id'] || $chat<=0 || $msg<=0 ||
+        // Only the exact original Telegram pair is the primary receipt.
+        // Another message in that same chat is a distinct historical copy.
+        if (($chat===(int)$pay['chat_id'] && $msg===(int)$pay['message_id']) ||
+            $chat<=0 || $msg<=0 ||
             !achbotAdminStoredRecipientAllowed($db,$copy['chat_id'],$owner)) continue;
         // Historical fan-out may contain repeated references to the SAME
         // Telegram message. Journal it once, preserving different messages.

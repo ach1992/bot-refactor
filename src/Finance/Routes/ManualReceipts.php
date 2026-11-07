@@ -1085,7 +1085,11 @@ if (preg_match('/^declineActionReason_(.+)_(\d+)$/', (string)($userInfo['step']?
             if (!is_array($msgInfo) ||
                 !isset($msgInfo['chat_id'],$msgInfo['message_id'])) continue;
             $chat=(int)$msgInfo['chat_id'];$msg=(int)$msgInfo['message_id'];
-            if ($chat===(int)$locked['chat_id'] || $chat<=0 || $msg<=0 ||
+            // Distinct messages in the primary Owner chat are real copies;
+            // only the exact primary chat/message pair is redundant.
+            if (($chat===(int)$locked['chat_id'] &&
+                    $msg===(int)$locked['message_id']) ||
+                $chat<=0 || $msg<=0 ||
                 !achbotAdminStoredRecipientAllowed($connection,$msgInfo['chat_id'],
                     (int)$admin)) continue;
             $ref=$chat.':'.$msg;

@@ -978,9 +978,83 @@ def check():
             assert not any(e['name'] in ('editKeys','sendMessage','remote_create')
                            for e in replay),replay
             cases.append('manual_reject_duplicate_historical_mirror_refs_deduped_without_rollback')
+
+            # Independent review F1: an original copied receipt in the SAME
+            # Owner chat with a distinct message_id must not be discarded.
+            standard_pay('standardrejectsamechat',method='gift_card')
+            original=query(work,env,"SELECT CONCAT(chat_id,':',message_id) "
+                "FROM pays WHERE hash_id='standardrejectsamechat'")
+            original_chat,original_msg=map(int,original.split(':'))
+            assert original_chat==9001 and original_msg>0,original
+            distinct_msg=original_msg+1
+            # A revoked real staff identity must not receive a historical edit.
+            assert query(work,env,'SELECT COUNT(*) FROM users WHERE userid=9004')=='0'
+            query(work,env,"INSERT INTO users(userid,name,username,refcode,wallet,date,isAdmin,step,first_start) "
+                  "VALUES(9004,'Revoked F1','revoked','0',50000,'1700000000',0,'none','sent');"
+                  "INSERT INTO setting(type,value) VALUES('ADMIN_ROLE_9004','support')")
+            copies=json.dumps([{'chat_id':original_chat,'message_id':original_msg},
+                               {'chat_id':original_chat,'message_id':distinct_msg},
+                               {'chat_id':original_chat,'message_id':distinct_msg},
+                               {'chat_id':9003,'message_id':333},
+                               {'chat_id':9004,'message_id':444}],separators=(',',':'))
+            query(work,env,"UPDATE pays SET admins_messages='"+copies+"' "
+                  "WHERE hash_id='standardrejectsamechat'")
+            before_wallet=query(work,env,'SELECT userid,wallet FROM users ORDER BY userid')
+            result=run_route(work,env,route_driver,
+                             data='declineAction_standardrejectsamechat',
+                             actor=9001,route='manual_admin')
+            assert query(work,env,"SELECT state FROM pays WHERE "
+                         "hash_id='standardrejectsamechat'")=='declined',result
+            assert query(work,env,'SELECT userid,wallet FROM users ORDER BY userid')==before_wallet
+            edits=[e for e in result if e['name']=='editKeys']
+            assert [(int(e['args'][2]),int(e['args'][1])) for e in edits]==[
+                (original_chat,original_msg),(original_chat,distinct_msg),(9003,333)],edits
+            recorded=query(work,env,"SELECT f.role,f.recipient,f.message_id,f.state,f.attempt_count "
+                "FROM payment_followup_intents f JOIN pays p ON p.id=f.pay_row_id "
+                "WHERE p.hash_id='standardrejectsamechat' "
+                "AND f.role IN ('receipt_primary','receipt_mirror') ORDER BY f.id")
+            expected=(f'receipt_primary\t{original_chat}\t{original_msg}\tacknowledged\t1\n'
+                      f'receipt_mirror\t{original_chat}\t{distinct_msg}\tacknowledged\t1\n'
+                      'receipt_mirror\t9003\t333\tacknowledged\t1')
+            assert recorded==expected,(recorded,expected)
+            assert not any(e['name'] in ('remote_create','remote_edit','qr_send') for e in result)
+            replay=run_route(work,env,route_driver,
+                             data='declineAction_standardrejectsamechat',
+                             actor=9001,route='manual_admin')
+            assert not any(e['name'] in ('editKeys','sendMessage','remote_create') for e in replay)
+            assert query(work,env,'SELECT userid,wallet FROM users ORDER BY userid')==before_wallet
+            cases.append('f1_rejected_primary_chat_distinct_message_preserved_once_and_replay_safe')
+
+            # Failed local 020 INSERT must undo declined CAS and every staged
+            # notification, with no customer, staff or native side effect.
+            standard_pay('standardrejectoutboxfail',method='gift_card')
+            query(work,env,"CREATE TRIGGER fixture_f1_reject_outbox_fail BEFORE INSERT "
+                "ON payment_followup_intents FOR EACH ROW SIGNAL SQLSTATE '45000' "
+                "SET MESSAGE_TEXT='fixture_followup_reject_denied'")
+            before_wallet=query(work,env,'SELECT userid,wallet FROM users ORDER BY userid')
+            try:
+                failed=run_route(work,env,route_driver,
+                                 data='declineAction_standardrejectoutboxfail',
+                                 actor=9001,route='manual_admin',
+                                 expected_warning='achbot_manual_reject_claim_unconfirmed')
+            finally: query(work,env,'DROP TRIGGER fixture_f1_reject_outbox_fail')
+            assert query(work,env,"SELECT state FROM pays WHERE "
+                         "hash_id='standardrejectoutboxfail'")=='have_sent',failed
+            assert query(work,env,"SELECT COUNT(*) FROM payment_followup_intents f "
+                "JOIN pays p ON p.id=f.pay_row_id "
+                "WHERE p.hash_id='standardrejectoutboxfail'")=='0'
+            assert not any(e['name'] in ('editKeys','sendMessage','remote_create') for e in failed),failed
+            assert query(work,env,'SELECT userid,wallet FROM users ORDER BY userid')==before_wallet
+            retry=run_route(work,env,route_driver,
+                            data='declineAction_standardrejectoutboxfail',
+                            actor=9001,route='manual_admin')
+            assert query(work,env,"SELECT state FROM pays WHERE "
+                         "hash_id='standardrejectoutboxfail'")=='declined',retry
+            assert not any(e['name'] in ('remote_create','remote_edit') for e in retry)
+            cases.append('f1_rejected_020_sql_failure_rolls_back_and_safe_first_retry')
         finally:
-            query(work,env,"DELETE FROM setting WHERE type='ADMIN_ROLE_9003';"
-                  "DELETE FROM users WHERE userid=9003")
+            query(work,env,"DELETE FROM setting WHERE type IN('ADMIN_ROLE_9003','ADMIN_ROLE_9004');"
+                  "DELETE FROM users WHERE userid IN(9003,9004)")
 
         # R4 lost Telegram ACK: business rejection commits once with its
         # own independent 020 customer/operator/receipt journal. The staff
