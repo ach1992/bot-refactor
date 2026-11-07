@@ -1171,14 +1171,15 @@ def run_wallet(tmp: str) -> tuple[dict, dict]:
             and text_catalog["native"]["current_byte_preserved_keys"]
                 +text_catalog["native"]["current_style_changes"]
                 +text_catalog["native"]["current_added_admin_keys"]==2523
-            # #117 has exactly four source-hash-pinned workbench topics:
-            # 64 additions, 15 parameterized and 14 multi-parameter.
-            # Recompute the native adversarial proof totals rather than
-            # interpreting the new topic entries as a weaker copy audit.
-            and text_catalog.get("native",{}).get("current_native_template_assertions")==4120+24+9+139
-            and text_catalog.get("native",{}).get("current_object_conversion_templates")==268+2+15
-            and text_catalog.get("native",{}).get("current_shared_multi_parameter_templates")==66+1+14
-            and text_catalog.get("native",{}).get("current_one_pass_templates")==268+2+15
+            # #117 now has six source-hash-pinned workbench topics. The
+            # additional 17 keys include five multi-parameter templates;
+            # their native loader proof adds 12 single-run and 5*6
+            # adversarial substitutions (42 total), plus five object,
+            # multi-parameter and one-pass checks. Keep exact parity.
+            and text_catalog.get("native",{}).get("current_native_template_assertions")==4120+24+9+139+42
+            and text_catalog.get("native",{}).get("current_object_conversion_templates")==268+2+15+5
+            and text_catalog.get("native",{}).get("current_shared_multi_parameter_templates")==66+1+14+5
+            and text_catalog.get("native",{}).get("current_one_pass_templates")==268+2+15+5
             and text_catalog.get("native",{}).get("current_r5_changes")==273
             and text_catalog.get("native",{}).get("current_r5_retired_keys")==10
             and text_catalog.get("native",{}).get("current_r5_added_keys")==60
@@ -1186,7 +1187,7 @@ def run_wallet(tmp: str) -> tuple[dict, dict]:
             and text_catalog.get("native",{}).get("current_non_ascii_digit_templates")==0
             and text_catalog.get("presentation",{}).get("status")=="PASS"
             and text_catalog.get("presentation",{}).get("editable_files")==2
-            and text_catalog.get("presentation",{}).get("current_keys")==2780+14+9+18+27+12+7
+            and text_catalog.get("presentation",{}).get("current_keys")==2780+14+9+18+27+12+7+17
             and text_catalog.get("presentation",{}).get("numeric_template_changes")==23
             and text_catalog.get("presentation",{}).get("adjacent_emoji_violations")==0
             and text_catalog.get("presentation",{}).get("parameter_exception_count")==3
