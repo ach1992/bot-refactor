@@ -39,13 +39,26 @@
   original processing state unresolved, with the pinned effect preserved.
   Never infer failure from HTTP 404, timeout or Telegram errors and issue
   a second CREATE, PUT, credit or refund.
-- **Source candidate after PR #123 (not yet independently approved):** the
-  Owner-private `Service recovery` case now offers **Continue approved purchase**
-  only for a standard original manual `BUY_SUB` already in `processing`, with
-  the original manual attempt, source `007` capacity hold and healthy 008/018/020
-  contracts. It invokes the **existing** `accept{original_hash}` handler; merely
-  viewing the case is read-only, and the handler rechecks proof, identity and
-  once-only effects independently. Other subjects remain diagnostic-only.
+- **Already integrated original manual BUY_SUB continuation (#124):** the
+  Service recovery case offers **Continue approved purchase** for eligible
+  standard `BUY_SUB` claims in `processing` with their original receipt,
+  `007` capacity hold and ready 008/018/020 contracts. The original
+  `accept{original_hash}` handler rechecks original proof and once-only effects
+  under the existing payment-approval authority. Merely viewing is read-only.
+- **Proposed source-only PR #125 (not approved for installation):** the
+  original manual `approveRenewAcc`, `approveIncreaseDay` and
+  `approveIncreaseVolume` buttons may finish a prior PasarGuard
+  `processing` claim **only when the existing per-account mutation journal**
+  proves the exact `manual:pay:<id>` action completed successfully with
+  `provider_state=linked`, verified requested units, original local expiry,
+  immutable account/provider identity and matching original receipt. The quiet
+  case view shows the existing button only for that verified local-only
+  continuation. The callback rechecks all evidence under its transaction and
+  writes the expiry, payment `approved` state and one audit row together;
+  final administrator receipt edits and customer notices are post-COMMIT.
+  No new provider GET/PUT/reset, charge or approval is authorized. Missing or
+  altered evidence stays `processing` for operator investigation, not a
+  repeated native mutation or fabricated customer success.
 - **Bank-Cron / verified bank-SMS or gift API `BUY_SUB`:** an interrupted
   `processing` purchase may re-enter the existing per-ordinal continuation.
   An already journaled ordinal requires pinned read-only native confirmation
@@ -129,19 +142,20 @@
 
 ## Explicitly uncompleted acceptance
 
-This source candidate still does **not** provide proven replay-safe
-`RENEW_ACCOUNT`, `RENEW_SCONFIG`, `plus_day` or `plus_volume` continuation
-for every **manually approved** payment method. These are additive external
-mutations; an already-`processing` row must not trigger another native PUT
-without a durable original baseline and a verifiable one-time effect. The
-technical inbox remains diagnostic-only for these subjects, not a fake
-reconciliation approval. Complete those contracts and their actual admin
-journeys before claiming full Issue #117 acceptance. Provider parity,
-PasarGuard installed behavior, real Chili target/migration status, actual
-backup+restore and end-to-end payment-to-Telegram acceptance also remain
-unverified. The current source change needs exact-candidate full PHP 8.5 CI,
-independent review and a separate Owner Merge decision. Do not label RC26
-released or deployment ready while those gates remain open.
+PR #125 adds **only the already-verified PasarGuard original-manual edit
+continuation**. It does **not** establish that an ambiguous `mutating`
+PasarGuard operation occurred, does not recover uncertain Marzban
+`RENEW_ACCOUNT`/day/volume/standard `RENEW_SCONFIG` remote effects, and
+does not cover every manual/hosted payment method. An already-`processing`
+row must never trigger an unproven second additive native PUT. Cases without
+the exact prior verified evidence remain reviewable without falsely approving
+payment or sending duplicate entitlements. Provider-specific financial review
+parity, installed PasarGuard/Marzban/Chili, real Telegram ACK, target schema
+and migration readiness, tested database **restore** and end-to-end real
+acceptance remain open under Issue #117. This source change requires full
+exact-HEAD PHP 8.5 CI, **independent review**, a separate Owner Merge decision,
+and separate target-specific release/deployment authorization. Do not label
+RC26 released or deployment ready while those gates remain open.
 
 References: [Issue #117](https://github.com/ach1992/bot-refactor/issues/117),
 [PR #123](https://github.com/ach1992/bot-refactor/pull/123),

@@ -392,7 +392,7 @@ $workbench = [
   'names'=>['title','empty','case_label','case_title','readonly_warning',
    'open','back','back_finance','next','first','checked','unavailable']],
  'service_recovery_action'=>[
-  'digest'=>'9e33f8d0a68b78606f30f455ff9b989fa0e688003583aca2fb58e18d2b4fdafd',
+  'digest'=>'37c23110bf7b6696eef5b2c8a552d9bccb519ac830a0094aa876adb57a656360',
   'names'=>['resume_purchase','resume_verified_edit','edit_warning','edit_unverified','resume_warning']],
  'delivery_workbench'=>[
   'digest'=>'0ac67e667fe6669be3a8dae1a90de94dc7347dcb6bc129052f61d190bbf144f3',

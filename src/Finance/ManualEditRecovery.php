@@ -176,8 +176,14 @@ function achbotManualPgResumeEdit(mysqli $db,string $hash,int $actor,string $kin
         return ['status'=>'approved','evidence'=>$current];
     } catch (Throwable $error) {
         if ($started) try {$db->rollback();}catch(Throwable $ignored){}
+        // Log the precise internal recovery stage, never raw provider/SQL
+        // payloads. Operators need a resolvable reason, not just class=0.
+        $message=(string)$error->getMessage();
+        $reason=preg_match('/\A(?:manual_edit_recovery|pg|day_extension|service_expiry)_[a-z0-9_]{2,100}\z/D',$message)===1
+            ?$message:'internal_exception';
         error_log('achbot_manual_pg_edit_recovery_needs_review pay_id='.
-            (int)($pay['id']??0).' kind='.$kind.' class='.get_class($error).
+            (int)($pay['id']??0).' kind='.$kind.' actor='.$actor.
+            ' reason='.$reason.' class='.get_class($error).
             ' code='.(int)$error->getCode());
         return ['status'=>'review'];
     }
@@ -190,11 +196,14 @@ function achbotManualPgEditNotify(mysqli $db,array $e,array $mainValues,int $adm
     $subject=$kind==='renew'?$remark:achbotMessage(
         $kind==='day'?'manual_receipt_final.day_subject':'manual_receipt_final.volume_subject',
         ['remark'=>$remark,'units'=>$units]);
+    $keys=null;
     try {
         $keys=achbotManualFinalReceiptKeyboard($db,$id,$subject);
     } catch (Throwable $error) {
+        // A stale Telegram/admin receipt must not prevent the committed
+        // successful service edit from reaching its original customer.
         error_log('achbot_manual_pg_edit_keyboard_unavailable pay_id='.$id.
-            ' class='.get_class($error));return;
+            ' class='.get_class($error));
     }
     $refs=[['chat_id'=>$pay['chat_id'],'message_id'=>$pay['message_id']]];
     $copies=json_decode((string)($pay['admins_messages']??''),true);
@@ -204,7 +213,7 @@ function achbotManualPgEditNotify(mysqli $db,array $e,array $mainValues,int $adm
             achbotAdminStoredRecipientAllowed($db,$item['chat_id'],$admin))
             $refs[]=$item;
     }
-    foreach ($refs as $ref) {
+    if ($keys!==null) foreach ($refs as $ref) {
         try { editKeys($keys,$ref['message_id'],$ref['chat_id']); }
         catch (Throwable $error) {
             error_log('achbot_manual_pg_edit_receipt_unconfirmed pay_id='.$id.

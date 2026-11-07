@@ -278,6 +278,20 @@ def api_native_observation_mismatches(proof: dict, expected: list[str]) -> dict:
     local_recovery={
         'volume_verified_recovery_after_expired_local_only',
         'renew_verified_recovery_after_unreadable_local_only',
+        # The original human callback finishes ONLY the already VERIFIED
+        # local mutation journal. Neither a retry nor a blocked proof may
+        # perform a provider GET/PUT/reset or a second settlement.
+        *[f'manual_{kind}_{phase}' for kind in ('renew','day','volume')
+          for phase in ('resume_verified_local_only_once',
+                        'repeat_never_reapplies_or_audits')],
+        *[f'manual_volume_resume_refuses_{reason}' for reason in (
+            'unverified','wrong_key','wrong_quote','wrong_identity',
+            'nonmanual_claim')],
+    }
+    expected_review_stderr={
+        f'manual_volume_resume_refuses_{reason}' for reason in (
+            'unverified','wrong_key','wrong_quote','wrong_identity',
+            'nonmanual_claim')
     }
     # BUY_SUB has no existing native account. Its SQL claim must not
     # contact a provider; only existing-account paths can require native
@@ -305,9 +319,26 @@ def api_native_observation_mismatches(proof: dict, expected: list[str]) -> dict:
                 pending.extend(value.values())
             elif type(value) is list:
                 pending.extend(value)
+        # Expected failed-proof callbacks emit their real bounded internal
+        # recovery diagnostic. Do not erase source diagnostics merely to get
+        # a green assertion; reject any other stderr and ALL PHP fatals.
+        def acceptable_stderr(stderr):
+            if stderr=='':
+                return name not in expected_review_stderr
+            if name not in expected_review_stderr or type(stderr) is not str:
+                return False
+            return re.fullmatch(
+                r'\[\d{2}-[A-Za-z]{3}-\d{4} \d{2}:\d{2}:\d{2} UTC\] '
+                r'achbot_manual_pg_edit_recovery_needs_review '
+                r'pay_id=[1-9][0-9]* kind=volume actor=[1-9][0-9]* '
+                r'reason=(?:manual_edit_recovery|pg|day_extension|service_expiry)_[a-z0-9_]{2,100} '
+                r'class=[A-Za-z][A-Za-z0-9_]* code=[0-9]+\n',
+                stderr
+            ) is not None
         if not results or any(type(value['events']) is not list or
-                value['fatal'] is not None or value.get('stderr')!='' for value in results):
-            mismatches[name+'.php_result']='required clean actual PHP result'
+                value['fatal'] is not None or
+                not acceptable_stderr(value.get('stderr')) for value in results):
+            mismatches[name+'.php_result']='required clean PHP result or exact bounded review diagnostic'
         if name not in replay|local_recovery|local_buy_claim and not events:
             mismatches[name+'.native_http']='required actual native preflight HTTP'
         if name in local_buy_claim and events:
