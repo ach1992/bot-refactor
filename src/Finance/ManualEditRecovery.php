@@ -76,6 +76,8 @@ function achbotManualPgVerifiedEdit(mysqli $db,array $pay,string $kind,bool $loc
         ($change['reset_usage']??null)!==($kind==='renew') ||
         !is_array($change['before']??null) ||
         !array_key_exists('expire',$change['before']) ||
+        !is_int($change['order_expire_before']??null) ||
+        (int)$o['expire_date']!==$change['order_expire_before'] ||
         !is_int($change['before']['data_limit']??null) ||
         !is_array($change['absolute']??null) ||
         !is_int($change['absolute']['expire']??null) ||
@@ -123,6 +125,12 @@ function achbotManualPgResumeEdit(mysqli $db,string $hash,int $actor,string $kin
     $s=$db->prepare('SELECT * FROM pays WHERE hash_id=? LIMIT 1');
     $s->bind_param('s',$hash);$s->execute();$pay=$s->get_result()->fetch_assoc();$s->close();
     if (!$pay || $pay['state']!=='processing') return null;
+    // Other providers retain their original processing/no-replay guards; this
+    // path is strictly a PasarGuard VERIFIED-journal local finisher.
+    $s=$db->prepare('SELECT type FROM server_config WHERE id=?');
+    $server=(int)($pay['server_id']??0);$s->bind_param('i',$server);
+    $s->execute();$panel=$s->get_result()->fetch_assoc();$s->close();
+    if (($panel['type']??null)!=='pasarguard') return null;
     $started=false;
     try {
         $before=achbotManualPgVerifiedEdit($db,$pay,$kind);

@@ -835,6 +835,11 @@ function achbotPgServiceEdit(mysqli $db,int $serverId,array $change,?array $gift
         }
         $absolute=achbotPgEditChanges($read['user'],$change);
         $intent=achbotPgPersistMutationIntent($db,$ctx,$intent,[
+            // Preserve the issued operation's actual units and local order
+            // baseline in the EXISTING mutation evidence for source-only
+            // recovery if PHP dies after native verification, before pay COMMIT.
+            'requested_units'=>$requestUnits,
+            'order_expire_before'=>(int)$ctx['order']['expire_date'],
             'absolute'=>$absolute,'reset_usage'=>isset($change['volume']),
             'before'=>array_intersect_key($read['user'],array_flip(['data_limit','expire','status','group_ids','used_traffic']))]);
         if (isset($change['volume'])) {

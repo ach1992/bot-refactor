@@ -401,8 +401,8 @@ WORKBENCH_BLOCKS={
    'back','back_finance','next','first','checked','unavailable'}
  },
  'service_recovery_action':{
-  'sha':'1e5896a686f2da925875a5fcc54ba5a2bfabd17d10e6bc73513851803d9be1e0',
-  'names':{'resume_purchase','resume_warning'}
+  'sha':'9e33f8d0a68b78606f30f455ff9b989fa0e688003583aca2fb58e18d2b4fdafd',
+  'names':{'resume_purchase','resume_warning','resume_verified_edit','edit_warning','edit_unverified'}
  },
  'delivery_workbench':{
   'sha':'0ac67e667fe6669be3a8dae1a90de94dc7347dcb6bc129052f61d190bbf144f3',
