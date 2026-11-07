@@ -223,7 +223,25 @@ foreach(['Routes/Checkout.php','Routes/RenewalCheckout.php','Routes/Extensions.p
   $connection->query('UPDATE users SET isAdmin=0 WHERE userid=9002');$events=[];eval($body);
   yes($targets()===[9003,9004,9005,9006],'stored receipt rechecks current membership '.$file.' '.$loopCount);$connection->query('UPDATE users SET isAdmin=1 WHERE userid=9002');
  }
-yes($loopCount===7,'seven direct stored receipt loops exercised');
+// The bank-Cron seventh consumer was extracted from AutomaticReceipts to
+// the shared helper so processing recovery can update the same original
+// receipt. Exercise its actual primary and stored-copy path under the same
+// notification-off, membership and no-financial-transaction assertions.
+$payInfo=['chat_id'=>9001,'message_id'=>9101,
+          'admins_messages'=>json_encode($historicalRefs,JSON_THROW_ON_ERROR)];
+$autoServiceLabel='وضعیت تأییدشده';$events=[];
+achbotAutoBankSyncReceiptButtons($connection,$payInfo,9001,$autoServiceLabel);
+yes($targets()===[9001,9002,9003,9004,9005,9006],
+    'shared bank receipt updates primary and every eligible stored copy, including muted staff');
+foreach($events as $event)yes($event['tx']===0,
+    'shared bank receipt edits do not hold a financial transaction');
+$connection->query('UPDATE users SET isAdmin=0 WHERE userid=9002');
+$events=[];achbotAutoBankSyncReceiptButtons($connection,$payInfo,9001,$autoServiceLabel);
+yes($targets()===[9001,9003,9004,9005,9006],
+    'shared bank receipt rechecks current membership and excludes revoked staff');
+$connection->query('UPDATE users SET isAdmin=1 WHERE userid=9002');
+$loopCount++;
+yes($loopCount===7,'six direct receipt loops plus one real shared bank receipt consumer exercised');
 // The former two direct loops are now independent 020 recipients, which
 // cannot bypass identity, original message reference or current staff roles.
 require_once $root.'/src/Finance/FollowupOutbox.php';
@@ -266,8 +284,8 @@ def main():
     expected=original.replace(before,after,1)
     # The previously approved R6 notification source remains byte-for-byte
     # immutable at its exact Git source. #117 deliberately adds the complete
-    # delivery-ledger path: pin its entire candidate source to a distinct SHA
-    # instead of silently weakening source-change or notification proof.
+    # delivery-ledger path, then the original bank-receipt helper extraction:
+    # pin the full current candidate without weakening notification proof.
     import hashlib
     mainline=subprocess.check_output(['git','show',
         '17af1e55dc4cb8db6751a731bb223d93dc6f902f:src/Finance/AutomaticReceipts.php'],
@@ -275,7 +293,7 @@ def main():
     assert mainline==expected,'previous approved automatic bank source changed'
     candidate=(ROOT/'src/Finance/AutomaticReceipts.php').read_bytes()
     assert hashlib.sha256(candidate).hexdigest()==(
-        '5239677edb72c3b6a0aabca8f8c5a588d3337208eeebb9b7794b9f29eb93bedb'
+        '7f75ced893d96b979d7df60354decde306032d60f8e37d1a01694ce46fb0be5f'
     ),'issue117_delivery_candidate_bank_runtime_changed'
     assert (b'achbotDeliverySchemaReady' in candidate and
             b'achbotDeliveryDispatchPending' in candidate and

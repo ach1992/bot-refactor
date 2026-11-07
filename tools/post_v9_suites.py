@@ -283,11 +283,14 @@ def run_admin(tmp: str) -> tuple[dict, dict]:
         *[prefix+' '+file+' '+str(index) for index,file in enumerate([
             'Routes/Checkout.php','Routes/RenewalCheckout.php',
             'Routes/Extensions.php','Routes/Extensions.php',
-            'Routes/ManualApproval.php','Routes/ManualReceipts.php',
-            'AutomaticReceipts.php'],1) for prefix in [
+            'Routes/ManualApproval.php','Routes/ManualReceipts.php'],1) for prefix in [
             'stored receipt converges for current muted staff and excludes revoked invalid',
             'stored receipt rechecks current membership']],
-        'seven direct stored receipt loops exercised',
+        # The original bank-Cron consumer now uses the real shared helper.
+        'shared bank receipt updates primary and every eligible stored copy, including muted staff',
+        *['shared bank receipt edits do not hold a financial transaction']*6,
+        'shared bank receipt rechecks current membership and excludes revoked staff',
+        'six direct receipt loops plus one real shared bank receipt consumer exercised',
         'outbox mirror source is genuine recorded receipt',
         '020 stored receipt preserves authorized Support with notifications OFF',
         '020 mirror rejects arbitrary original message id',
