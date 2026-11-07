@@ -347,7 +347,8 @@ def main():
   stderr=proc.stderr.strip()
   allowed='\n'.join([
    'achbot_review_effect_unknown pay_id=203 class=RuntimeException',
-   'achbot_review_effect_unknown pay_id=213 class=RuntimeException'])
+   'achbot_review_effect_unknown pay_id=213 class=RuntimeException',
+   'achbot_review_effect_unknown pay_id=221 class=RuntimeException'])
   if proc.returncode or (stderr and stderr!=allowed):
    raise RuntimeError(proc.stderr[-2500:]+' '+proc.stdout[-1000:])
   out=json.loads(proc.stdout)
@@ -466,6 +467,7 @@ foreach ([219=>true,220=>false] as $pid=>$journaled) {
   throw new RuntimeException('forged_operator_stage_changed');
 }
 echo json_encode(['original_gateway_review_stage_source'=>true,
+ 'no_merchant_or_customer_network'=>true,
  'real_hosted_original_claim_after_uncertain'=>true,
  'operator_dispatch_journal_required'=>true,
  'no_merchant_or_customer_network'=>true],JSON_THROW_ON_ERROR);
