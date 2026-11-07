@@ -1216,10 +1216,10 @@ def run_wallet(tmp: str) -> tuple[dict, dict]:
             and text_catalog.get("retired_parser_tokens")==23
             and text_catalog.get("relocation_source_ref")=="ecd30ba9192ed374703118a6c131be8809cc7b06"
             and text_catalog.get("native",{}).get("current_retired_feature_keys")==3
-            and text_catalog.get("catalog_keys")==2780+14+9+18+27+12+7+17+2+2+3+4
+            and text_catalog.get("catalog_keys")==2780+14+9+18+27+12+7+17+2+2+3+4+1
             and text_catalog.get("native",{}).get("editable_catalog_files")==2
             and text_catalog.get("native",{}).get("logical_topics")==28+8
-            and text_catalog.get("native",{}).get("current_catalog_keys")==2780+14+9+18+27+12+7+17+2+2+3+4
+            and text_catalog.get("native",{}).get("current_catalog_keys")==2780+14+9+18+27+12+7+17+2+2+3+4+1
             and text_catalog.get("native",{}).get("current_gift_admin_additions")==1
             and text_catalog.get("native",{}).get("current_gift_catalog_negative_controls")==8
             and text_catalog.get("native",{}).get("current_gift_catalog_negative_scenarios")==[
@@ -1260,7 +1260,7 @@ def run_wallet(tmp: str) -> tuple[dict, dict]:
             and text_catalog.get("native",{}).get("current_non_ascii_digit_templates")==0
             and text_catalog.get("presentation",{}).get("status")=="PASS"
             and text_catalog.get("presentation",{}).get("editable_files")==2
-            and text_catalog.get("presentation",{}).get("current_keys")==2780+14+9+18+27+12+7+17+2+2+3+4
+            and text_catalog.get("presentation",{}).get("current_keys")==2780+14+9+18+27+12+7+17+2+2+3+4+1
             and text_catalog.get("presentation",{}).get("numeric_template_changes")==23
             and text_catalog.get("presentation",{}).get("adjacent_emoji_violations")==0
             and text_catalog.get("presentation",{}).get("parameter_exception_count")==3
