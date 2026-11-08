@@ -9,10 +9,51 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '')===__FILE__) {
 require_once __DIR__.'/GatewayClient.php';
 require_once __DIR__.'/PaymentEvidence.php';
 
+/** One source of truth for active operator-attention cases. Archival is
+ * a terminal LOCAL automation fence, not a merchant settlement or refund.
+ * Late signed IPN evidence is separate from the immutable archived attempt.
+ */
+function achbotGatewayAttentionScope(): string {
+    $threshold=achbotPayUxHostedAttentionSeconds();
+    $scope="a.review_archived_at IS NULL AND a.provider IN ('nowpayments','nextpay','zarinpal')
+        AND (
+            (p.state IN ('pending','send') AND (
+                (a.stage='review' AND (
+                    (a.provider IN ('zarinpal','nextpay') AND
+                     a.provider_status='verification_uncertain')
+                    OR (a.provider='nowpayments' AND (
+                        a.provider_status IS NULL OR a.provider_status NOT IN (
+                        'fulfillment_started','fulfillment_unconfirmed',
+                        'fulfillment_failed','fulfillment_needs_review',
+                        'operator_attested','operator_verified_finished',
+                        'operator_rejected','operator_compensated',
+                        'operator_fulfilled')))
+                    OR a.provider_status='operator_fulfillment_unconfirmed'
+                    OR (a.provider_status IN
+                         ('fulfillment_failed','fulfillment_needs_review',
+                          'fulfillment_unconfirmed')
+                        AND a.updated_at <= NOW()-INTERVAL 10 MINUTE)))
+                OR (a.stage='pending' AND a.provider_status IS NULL
+                    AND a.created_at <= NOW()-INTERVAL ".(int)$threshold." SECOND)
+                OR (a.provider='nowpayments' AND a.stage='checking'
+                    AND a.last_checked_at IS NOT NULL
+                    AND a.last_checked_at < NOW()-INTERVAL 10 MINUTE)
+                OR (a.stage='fulfilling' AND
+                    a.updated_at <= NOW()-INTERVAL 10 MINUTE)))
+            OR (p.state IN ('processing','paid') AND
+                a.stage IN ('review','fulfilling') AND
+                a.provider_status IN ('fulfillment_started',
+                    'fulfillment_unconfirmed','fulfillment_failed',
+                    'fulfillment_needs_review',
+                    'operator_fulfillment_unconfirmed') AND
+                a.updated_at <= NOW()-INTERVAL 10 MINUTE))";
+    return $scope;
+}
+
 function achbotGatewayReviewReady(mysqli $db): bool {
     try {
-        $q=$db->query('SELECT id,pay_row_id,provider,stage,provider_status
-            FROM payment_attempts LIMIT 0');
+        $q=$db->query('SELECT id,pay_row_id,provider,stage,provider_status,
+            review_archived_at,review_archived_by FROM payment_attempts LIMIT 0');
         $q->free();
         $q=$db->query("SHOW INDEX FROM payment_attempts WHERE Key_name='uq_payment_attempt_pay_row'");
         $cols=[];
@@ -44,7 +85,8 @@ function achbotGatewayReviewEligible(mysqli $db,int $attemptId,
         FROM payment_attempts WHERE id=? AND pay_row_id=?'.$suffix);
     $q->bind_param('ii',$attemptId,$payId);$q->execute();
     $a=$q->get_result()->fetch_assoc();$q->close();
-    if (!$pay || !$a || !in_array((string)$pay['state'],['pending','send'],true) ||
+    if (!$pay || !$a || ($a['review_archived_at']??null)!==null ||
+        !in_array((string)$pay['state'],['pending','send'],true) ||
         (int)$pay['price']<=0 ||
         (int)$a['local_amount_toman']!==(int)$pay['price'] ||
         !hash_equals((string)$pay['hash_id'],(string)$a['order_hash']) ||
@@ -218,7 +260,7 @@ function achbotGatewayReviewCommit(mysqli $db,int $actor,int $attemptId,
         $newStatus=$decision==='approve'?'operator_attested':'operator_rejected';
         $q=$db->prepare("UPDATE payment_attempts SET stage=?,provider_status=?
             WHERE id=? AND pay_row_id=? AND stage=?
-              AND provider_status <=> ?");
+              AND provider_status <=> ? AND review_archived_at IS NULL");
         $q->bind_param('ssiiss',$newStage,$newStatus,$attemptId,$payId,$stage,$last);
         $q->execute();$changed=$q->affected_rows;$q->close();
         if ($changed!==1) throw new RuntimeException('operator_claim_unconfirmed');
@@ -250,7 +292,8 @@ function achbotGatewayReviewCommit(mysqli $db,int $actor,int $attemptId,
         try {
             $q=$db->prepare("UPDATE payment_attempts SET
                 stage=?,provider_status=? WHERE id=? AND stage IN ('fulfilling','review')
-                AND provider_status IN ('operator_attested','fulfillment_started')");
+                AND provider_status IN ('operator_attested','fulfillment_started')
+                AND review_archived_at IS NULL");
             $state=$done?'done':'review';
             $reason=$done?($effect==='compensated'
                 ?'operator_compensated':'operator_fulfilled'):'operator_fulfillment_unconfirmed';
@@ -264,5 +307,67 @@ function achbotGatewayReviewCommit(mysqli $db,int $actor,int $attemptId,
         error_log('achbot_gateway_review_decision_unavailable attempt='.$attemptId.
             ' class='.get_class($error));
         return ['status'=>'unavailable'];
+    }
+}
+
+/** End local automated processing for an already reviewed exception.
+ * The operator action never changes the original provider/order/effect state,
+ * but all subsequent automatic financial paths must honor this terminal fence.
+ * Admission is enforced at the private, payments-capable callback route.
+ */
+function achbotGatewayReviewArchive(mysqli $db,int $actor,int $attemptId): string {
+    if ($actor<=0 || $attemptId<=0) return 'stale';
+    $open=false;
+    try {
+        // Fail closed if the separately versioned archival schema is missing.
+        $q=$db->query('SELECT review_archived_at,review_archived_by FROM payment_attempts LIMIT 0');
+        if (!$q) return 'unavailable';
+        $q->free();
+        $q=$db->prepare("SELECT pay_row_id FROM payment_attempts
+            WHERE id=? AND provider IN ('nowpayments','nextpay','zarinpal')");
+        $q->bind_param('i',$attemptId);
+        $q->execute();$source=$q->get_result()->fetch_assoc();$q->close();
+        if (!$source) return 'stale';
+        $payId=(int)$source['pay_row_id'];
+        if (!$db->begin_transaction()) return 'unavailable';
+        $open=true;
+        // Keep the same payment -> attempt lock ordering as original finance.
+        $q=$db->prepare('SELECT id FROM pays WHERE id=? FOR UPDATE');
+        $q->bind_param('i',$payId);
+        $q->execute();$pay=$q->get_result()->fetch_assoc();$q->close();
+        $q=$db->prepare('SELECT id,review_archived_at FROM payment_attempts
+            WHERE id=? AND pay_row_id=? FOR UPDATE');
+        $q->bind_param('ii',$attemptId,$payId);
+        $q->execute();$attempt=$q->get_result()->fetch_assoc();$q->close();
+        if (!$pay || !$attempt || $attempt['review_archived_at']!==null) {
+            $db->rollback();$open=false;
+            return 'stale';
+        }
+        // A finished or newly active case cannot be hidden by an old button.
+        $scope=achbotGatewayAttentionScope();
+        $q=$db->prepare("SELECT p.id FROM pays p
+            JOIN payment_attempts a ON a.pay_row_id=p.id
+            WHERE a.id=? AND $scope LIMIT 1");
+        $q->bind_param('i',$attemptId);
+        $q->execute();$visible=$q->get_result()->fetch_assoc();$q->close();
+        if (!$visible) {
+            $db->rollback();$open=false;
+            return 'stale';
+        }
+        $q=$db->prepare("UPDATE payment_attempts
+            SET review_archived_at=UTC_TIMESTAMP(),review_archived_by=?
+            WHERE id=? AND pay_row_id=? AND review_archived_at IS NULL");
+        $q->bind_param('iii',$actor,$attemptId,$payId);
+        $q->execute();$changed=$q->affected_rows;$q->close();
+        if ($changed!==1 || !$db->commit())
+            throw new RuntimeException('gateway_review_archive_commit_unknown');
+        $open=false;
+        return 'archived';
+    } catch (Throwable $error) {
+        error_log('achbot_gateway_review_archive_unavailable attempt='.$attemptId.
+            ' class='.get_class($error));
+        return 'unavailable';
+    } finally {
+        if ($open) try {$db->rollback();}catch (Throwable $ignored) {}
     }
 }

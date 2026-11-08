@@ -800,6 +800,9 @@ def run_php(work, env, stage, spec, db=DB):
             f"provider={spec['provider']} code=postclaim_effect_exception\n").encode()
     else:
         expected_log=b''
+    if spec.get('expect_archived_ipn_attempt') is not None:
+        expected_log=("achbot_archived_ipn_evidence_only attempt="+
+            str(spec['expect_archived_ipn_attempt'])+" provider=nowpayments\n").encode()
     if spec.get('expect_local_error') and p.stderr != expected_log:
         # The pre-dispatch per-account journal supplies its own *bounded*
         # diagnostic before doAction's existing operator-review diagnostic.
@@ -1005,6 +1008,7 @@ def main():
         native.sql(work,env,(ROOT/'migrations/post-v9/003_payment_attempts.sql').read_text(),DB)
         native.sql(work,env,(ROOT/'migrations/post-v9/007_service_effects.sql').read_text(),DB)
         assert len(sql(work,env,'SHOW TABLES').splitlines()) == 26
+        native.sql(work,env,(ROOT/'migrations/post-v9/022_gateway_review_archive.sql').read_text(),DB)
 
         # O1-R2: real MariaDB table privilege boundaries, not mocked error
         # strings. All grants/users live only in owned_database()'s socket-only
@@ -4444,6 +4448,116 @@ def main():
         if retired['network_calls']:
             raise RuntimeError('Retired two-stage action contacted merchant')
         records.append(dict(case='retired_two_stage_callback_fail_closed',
+                            pass_=True,external_requests=0))
+
+        # Owner archive closes the ORIGINAL operator attention case. A late
+        # signed IPN may add external child evidence but must not update the
+        # original pays row, attempt status or staff closure. Cron and
+        # provider-return paths must respect the exact same marker.
+        archive_name='owner-route-archived'
+        archive_invoice='owned-archive-invoice'
+        archive_primary='owned-archive-primary'
+        seed_np_attempt(work,env,archive_name,archive_invoice,archive_primary,default_fees=True)
+        sql(work,env,"UPDATE payment_attempts SET created_at=NOW()-INTERVAL 8 HOUR "
+            f"WHERE order_hash='{archive_name}'")
+        archived_id=int(sql(work,env,"SELECT id FROM payment_attempts "
+            f"WHERE order_hash='{archive_name}'"))
+        archived_pay=int(sql(work,env,"SELECT id FROM pays "
+            f"WHERE hash_id='{archive_name}'"))
+        original=sql(work,env,"SELECT p.state,IFNULL(a.stage,''),"
+            "IFNULL(a.provider_status,'<null>'),p.approved_by "
+            "FROM pays p JOIN payment_attempts a ON a.pay_row_id=p.id "
+            f"WHERE p.id={archived_pay}")
+        wallet=int(sql(work,env,'SELECT wallet FROM users WHERE userid=1001'))
+        archived=run_php(work,env,stage,dict(route='admin_review',get={},
+            actor=9001,chat_id=9001,callback_data='gatewayReview_H_'+str(archived_id)))
+        if (not any(e['name']=='editText' and
+            'از فهرست بررسی خارج شد' in str(e['args'][1])
+            for e in archived['events']) or archived['network_calls']):
+            raise RuntimeError('Approved operator archive did not close the original case')
+        meta=sql(work,env,f"SELECT review_archived_by,review_archived_at IS NOT NULL "
+            f"FROM payment_attempts WHERE id={archived_id}")
+        assert meta=='9001\t1' and sql(work,env,
+            "SELECT p.state,IFNULL(a.stage,''),IFNULL(a.provider_status,'<null>'),p.approved_by "
+            "FROM pays p JOIN payment_attempts a ON a.pay_row_id=p.id "
+            f"WHERE p.id={archived_pay}")==original
+        assert int(sql(work,env,'SELECT wallet FROM users WHERE userid=1001'))==wallet
+        previous=run_php(work,env,stage,dict(route='admin_review',get={},
+            actor=9001,chat_id=9001,callback_data='gatewayReview_H_'+str(archived_id)))
+        assert any(e['name']=='editText' and 'قبلاً بررسی شده' in str(e['args'][1])
+            for e in previous['events']) and not previous['network_calls']
+        records.append(dict(case='owner_archive_terminal_once_only_no_financial_action',
+                            pass_=True,external_requests=0))
+        late={
+            'payment_id':'owned-archive-late-child',
+            'invoice_id':archive_invoice,'order_id':archive_name,
+            'payment_status':'finished','price_amount':1,'price_currency':'usd'}
+        ipn=run_php(work,env,stage,dict(signed_ipn(late),
+            expect_archived_ipn_attempt=archived_id))
+        if (ipn['events'][-1].get('code')!=200 or ipn['network_calls']):
+            raise RuntimeError('Signed late IPN was not safely acknowledged as evidence-only')
+        assert sql(work,env,"SELECT observed_status FROM payment_transactions "
+            "WHERE provider='nowpayments' AND payment_id='owned-archive-late-child'")=='finished'
+        assert sql(work,env,"SELECT p.state,IFNULL(a.stage,''),"
+            "IFNULL(a.provider_status,'<null>'),p.approved_by FROM pays p "
+            f"JOIN payment_attempts a ON a.pay_row_id=p.id WHERE p.id={archived_pay}")==original
+        assert int(sql(work,env,'SELECT wallet FROM users WHERE userid=1001'))==wallet
+        records.append(dict(case='archived_nowpayments_late_signed_ipn_evidence_only_no_status_change',
+                            pass_=True,external_requests=0))
+        # The public browser return cannot re-credit the original invoice.
+        returned=run_php(work,env,stage,dict(route='return',
+            get={'nowpayment':'','hash_id':archive_name,'NP_id':archive_primary}))
+        assert sql(work,env,"SELECT p.state,IFNULL(a.stage,''),"
+            "IFNULL(a.provider_status,'<null>'),p.approved_by FROM pays p "
+            f"JOIN payment_attempts a ON a.pay_row_id=p.id WHERE p.id={archived_pay}")==original
+        assert int(sql(work,env,'SELECT wallet FROM users WHERE userid=1001'))==wallet
+        assert not returned['network_calls']
+        records.append(dict(case='archived_nowpayments_browser_return_cannot_reopen',
+                            pass_=True,external_requests=0))
+        for provider in ('zarinpal','nextpay'):
+            name='owner-archived-'+provider
+            ref='owner-archived-'+provider+'-authority'
+            seed_payment(work,env,name,'INCREASE_WALLET',0,0,ref)
+            sql(work,env,"INSERT INTO payment_attempts "
+                "(pay_row_id,provider,order_hash,provider_reference,quote_amount,"
+                "quote_currency,local_amount_toman,stage,provider_status) "
+                f"SELECT id,'{provider}',hash_id,payid,price,'toman',price,"
+                f"'review','verification_uncertain' FROM pays WHERE hash_id='{name}'")
+            attempt=int(sql(work,env,f"SELECT id FROM payment_attempts WHERE order_hash='{name}'"))
+            closed=run_php(work,env,stage,dict(route='admin_review',get={},
+                actor=9001,chat_id=9001,callback_data='gatewayReview_H_'+str(attempt)))
+            assert any(e['name']=='editText' and 'از فهرست بررسی خارج شد'
+                in str(e['args'][1]) for e in closed['events']),closed
+            before_state=sql(work,env,
+                f"SELECT p.state,a.stage,a.provider_status,p.approved_by "
+                f"FROM pays p JOIN payment_attempts a ON p.id=a.pay_row_id "
+                f"WHERE a.id={attempt}")
+            before_wallet=int(sql(work,env,'SELECT wallet FROM users WHERE userid=1001'))
+            args=(dict(route='return',get={'zarinpal':'','hash_id':name,
+                'Authority':ref,'Status':'OK'},zarin_status=100) if provider=='zarinpal'
+                else dict(route='return',get={'nextpay':'','trans_id':ref},
+                    nextpay_code=0))
+            run_php(work,env,stage,args)
+            if sql(work,env,f"SELECT p.state,a.stage,a.provider_status,p.approved_by "
+                    f"FROM pays p JOIN payment_attempts a ON p.id=a.pay_row_id "
+                    f"WHERE a.id={attempt}")!=before_state or int(sql(work,env,
+                        'SELECT wallet FROM users WHERE userid=1001'))!=before_wallet:
+                raise RuntimeError('Archived provider positive return mutated finance '+provider)
+            if provider=='nextpay':
+                run_php(work,env,stage,dict(route='return',
+                    get={'nextpay':'','trans_id':ref},nextpay_code=-2))
+                assert sql(work,env,f"SELECT p.state,a.stage,a.provider_status,p.approved_by "
+                    f"FROM pays p JOIN payment_attempts a ON p.id=a.pay_row_id "
+                    f"WHERE a.id={attempt}")==before_state
+            records.append(dict(case='archived_'+provider+'_verified_callback_cannot_credit_cancel_or_reopen',
+                                pass_=True,external_requests=0))
+        # Real Cron source never admits an archived attempt as a candidate,
+        # including a still-pending original issued invoice.
+        assert sql(work,env,"SELECT COUNT(*) FROM payment_attempts a "
+            "JOIN pays p ON p.id=a.pay_row_id WHERE a.provider='nowpayments' "
+            "AND a.review_archived_at IS NULL "
+            f"AND a.id={archived_id} AND a.stage='pending'")=='0'
+        records.append(dict(case='archived_nowpayments_original_excluded_from_cron_claim',
                             pass_=True,external_requests=0))
 
         # An interrupted/mismatched 003 migration can leave payment_attempts

@@ -343,6 +343,11 @@ def main() -> dict:
                      '020_payment_followup_intents.sql',
                      ):
             statement(d, (ROOT/'migrations/post-v9'/name).read_text())
+        # 003 alone does not support durable independent operator closure.
+        code, result, _ = report_run(d)
+        require(code==2 and has(result,'schema_022','BLOCK',
+            'partial_or_incompatible_schema_requires_audit'), 'archive_schema_required')
+        statement(d,(ROOT/'migrations/post-v9/022_gateway_review_archive.sql').read_text())
         state = {
             'botState':'on', 'sellState':'on',
             'walletState':'on', 'nowPaymentOther':'off', 'nowPaymentWallet':'off',
@@ -357,7 +362,7 @@ def main() -> dict:
         require((code == 0), 'line_142')
         require((result['source_file_count'] == package.EXPECTED_RUNTIME_COUNT), 'line_143')
         require((all(result['schema'][k] == 'columns_and_named_unique_indexes_detected_not_ddl_certified'
-                   for k in ('001','003','004','005','006','007','008','009','018'))), 'line_144')
+                   for k in ('001','003','004','005','006','007','008','009','018','020','022'))), 'line_144')
         require((has(result,'gateway_policies','PASS')), 'line_146')
         require(has(result,'wallet_transfer_storage','PASS'), 'wallet_cursor_storage_ready')
         require((result['methods']['wallet']['switch'] == 'on'), 'line_147')

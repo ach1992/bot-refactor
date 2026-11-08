@@ -132,6 +132,52 @@ check($r['pay_state']==='pending' && $r['stage']==='review' &&
  'durable_uncertain_hold');
 check(achbotGatewayReviewEligible($db,$h,'approve')===null,
  'unknown_hold_not_replayed');
+check(achbotGatewayReviewArchive($db,9001,$h)==='archived',
+ 'previously_unknown_effect_can_be_archived_without_replaying');
+$held=$db->query("SELECT review_archived_by,review_archived_at,
+ stage,provider_status FROM payment_attempts WHERE id=$h")->fetch_assoc();
+check((int)$held['review_archived_by']===9001 &&
+ is_string($held['review_archived_at']) && $held['review_archived_at']!=='' &&
+ $held['stage']==='review' &&
+ $held['provider_status']==='operator_fulfillment_unconfirmed' &&
+ state($db,308)['pay_state']==='pending',
+ 'original_uncertain_payment_untouched_when_archived');
+check(achbotGatewayReviewArchive($db,9002,$h)==='stale',
+ 'archival_is_once_only');
+check(achbotGatewayReviewEligible($db,$h,'approve')===null &&
+ achbotGatewayReviewEligible($db,$h,'reject')===null,
+ 'archived_original_never_gets_new_financial_buttons');
+$oldArchivedAt=$held['review_archived_at'];
+
+$k=seed($db,310,'nowpayments','review','confirmed','confirmed');
+check(achbotGatewayReviewArchive($db,9002,$k)==='archived',
+ 'fresh_open_case_can_be_archived_without_claiming_funds');
+$before=$db->query("SELECT review_archived_by,review_archived_at FROM payment_attempts
+ WHERE id=$k")->fetch_assoc();
+check((int)$before['review_archived_by']===9002 &&
+ $before['review_archived_at']!==null &&
+ state($db,310)['pay_state']==='pending',
+ 'original_quote_and_payment_remain_unsettled');
+check(achbotGatewayReviewCommit($db,9001,$k,'approve')['status']==='stale' &&
+ achbotGatewayReviewCommit($db,9001,$k,'reject')['status']==='stale',
+ 'late_approve_reject_cannot_change_archived_original');
+$after=$db->query("SELECT review_archived_by,review_archived_at
+ FROM payment_attempts WHERE id=$k")->fetch_assoc();
+check($after===$before && state($db,310)['stage']==='review' &&
+ state($db,310)['provider_status']==='confirmed' &&
+ achbotGatewayReviewEligible($db,$k,'approve')===null &&
+ achbotGatewayReviewArchive($db,9001,$k)==='stale',
+ 'archive_keeps_original_financial_state_and_cannot_be_reopened');
+
+$m=seed($db,311,'nowpayments','review','fulfillment_failed');
+$db->query("UPDATE pays SET state='processing' WHERE id=311");
+$db->query("UPDATE payment_attempts SET updated_at=NOW()-INTERVAL 11 MINUTE
+ WHERE id=$m");
+check(achbotGatewayReviewArchive($db,9001,$m)==='archived',
+ 'stale_processing_case_can_be_closed_from_attention_only');
+check(state($db,311)['pay_state']==='processing' &&
+ state($db,311)['provider_status']==='fulfillment_failed',
+ 'archived_processing_hold_still_requires_native_forensics_elsewhere');
 
 $j=seed($db,309,'nowpayments','review','confirmed','confirmed');
 $q=$db->prepare("INSERT INTO payment_transactions
@@ -163,7 +209,7 @@ def main():
     with fx.owned_database() as (d,env):
         client=["mariadb","--no-defaults","--protocol=SOCKET",
                 "--socket="+str(d/"mysql.sock"),"-uroot",DB]
-        for filename in ["003_payment_attempts.sql","007_service_effects.sql"]:
+        for filename in ["003_payment_attempts.sql","007_service_effects.sql", "022_gateway_review_archive.sql"]:
             sql=(ROOT/"migrations/post-v9"/filename).read_bytes()
             result=subprocess.run(client,input=sql,env=env,capture_output=True,timeout=15)
             if result.returncode:raise RuntimeError(result.stderr.decode(errors='replace')[-1400:])

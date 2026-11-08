@@ -23,29 +23,49 @@ from browser return, elapsed time or an old confirmed NOWPayments state.
 An original hosted payment can also be stranded after settlement or during
 Native fulfillment. Stale `processing`/already-paid cases with unresolved
 fulfillment evidence and an operator's previously unknown effect remain
-**visible** in the same list, **read-only**: they never receive a second
-Approve/Reject button. Short-lived active original callbacks are not
-mistaken for stale failures (ten-minute cutoff). No new technical
+**visible until explicitly archived** in the same list, **read-only for
+Approve/Reject**: they never receive a second financial decision button.
+Any listed case can be **Archived** after operator review. Archive removes
+it from the active inbox, while preserving the original payment/order
+state, provider and child evidence, and Native/Telegram replay holds.
+The archive actor and timestamp persist; later provider callbacks and
+Cron must neither change the archived original's stage/status nor mutate
+its local financial order or retry Native/Telegram effects. A late signed
+NOWPayments child event can be recorded separately as external evidence,
+without reopening the archived case or claiming a refund/settlement.
+Short-lived
+active original callbacks are not mistaken for stale failures (ten-minute cutoff). No new technical
 workbench or unsafe Native replay is introduced.
 
 ## Decisions
 
-A currently authorized payments administrator can choose Approve, Reject
-or Back. Approval claims the original unique payment_attempts row
+A currently authorized payments administrator can choose Approve, Reject,
+Archive or Back. Approval claims the original unique payment_attempts row
 and advances the original doAction; no duplicate payment/order is
 created. Rejection marks this original invoice declined **without claiming
 a merchant refund**. All callbacks re-validate user role, private chat,
 unchanged quote/invoice/target, one original claim, recorded child payments
 and pre-existing service effects under correct InnoDB lock order. An
 ambiguous native/credit effect is held; it is **never blindly replayed**.
-Fully settled, fulfilled and closed orders leave the inbox; unresolved
-previously claimed orders stay visible read-only. Approval is not proof
+Fully settled, fulfilled and rejected orders leave the inbox automatically;
+unresolved previously claimed orders stay visible read-only **until archived**.
+Approval is not proof
 of merchant payment; the operator must check the merchant dashboard.
 
 ## Schema policy
 
-No new table or column for the inbox. Reuse pays,
-payment_attempts and payment_transactions. The old experimental
+No new table for the inbox. Reuse pays, payment_attempts and
+payment_transactions. Owner clarification adds exactly two metadata columns
+on the original attempt, `review_archived_at` and `review_archived_by`,
+through one-time additive migration `022_gateway_review_archive.sql`.
+The archive marker is a terminal local automation fence distinct from provider `stage` and
+`provider_status`: neither provider callbacks nor the Cron may
+clear it. This avoids stale original cases reappearing after they have been
+archived, while original financial and service effects are untouched.
+
+Migration 022 is required before using the successor's inbox. It is not
+present in installed RC26 and requires the same separately approved,
+backup/restore-tested, versioned runtime cutover gate. The old experimental
 payment_review_decisions migration 019 is removed from *future-source*
 packaging. **Existing isolated Chili test schema still contains the table**;
 it can be dropped only once the new runtime is installed and no caller

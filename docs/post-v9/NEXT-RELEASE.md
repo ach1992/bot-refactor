@@ -6,13 +6,21 @@ The Owner explicitly rejected RC26's experimental multi-workbench payment
 review and asked for source/schema cleanup as if these extra tools had never
 been built. Draft PR #136 replaces them with one quiet incomplete automatic-
 gateway inbox and original-attempt one-shot decisions. Future fresh installs
-retain normal 018/020 delivery/follow-up journals but do not ship 019/021 or
+retain 018/020 delivery/follow-up journals and add the small 022
+operator archive columns, without shipping 019/021 or
 the specialized paid-account replacement workbench. See
 [AUTOMATIC-GATEWAY-REVIEW.md](AUTOMATIC-GATEWAY-REVIEW.md).
 **Not merged, reviewed, tested as a complete candidate, published or
 installed.** Do not confuse this prospective source with RC26 or alter its
 historical release artifacts. This is not approval to DROP a test database
 object or migrate a shared host.
+
+
+**Archive completion boundary:** User confirmed archival is a terminal
+operator handoff. The original invoice is hidden from the active queue,
+and no late automatic callback/Cron can change its local status, money or
+Native effect. Original customer/provider state and audit remain available;
+late signed child evidence is captured separately without reactivation.
 
 ## Published RC26 — source-reviewed recovery; installed acceptance open
 

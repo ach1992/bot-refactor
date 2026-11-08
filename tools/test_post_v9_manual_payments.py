@@ -1076,7 +1076,7 @@ def check():
         assert observed=='customer:unknown,operator:acknowledged,receipt_primary:acknowledged',observed
         report=[str(e['args'][0]) for e in attempts if e['name']=='sendMessage' and
                 e['args'][-1]==9001]
-        assert len(report)==1 and 'رد توسط مدیر' in report[0] and 'ارسال شد' not in report[0],report
+        assert len(report)==1 and 'رسید دستی رد شد' in report[0] and 'ارسال شد' not in report[0],report
         replay=run_route(work,env,route_driver,
                          data='declineAction_standardrejectnoticeunknown',
                          actor=9001,route='manual_admin')

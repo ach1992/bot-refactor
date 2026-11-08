@@ -84,7 +84,7 @@ def check():
     checks=[]
     with owned.owned_database() as (w,e):
         purchase.init(w,e,'http://127.0.0.1:9')
-        for name in ['001_marzban_panel_group_id.sql','003_payment_attempts.sql','004_automatic_renewal_attempts.sql','006_payment_message_refs.sql','007_service_effects.sql']:
+        for name in ['001_marzban_panel_group_id.sql','003_payment_attempts.sql','004_automatic_renewal_attempts.sql','006_payment_message_refs.sql','007_service_effects.sql','022_gateway_review_archive.sql']:
             sql(w,e,(ROOT/'migrations/post-v9'/name).read_text())
         app=w/'app';stages.stage_source(app,True);(app/'config.php').write_text('<?php // no production bootstrap\n')
         future=int(time.time())+86400*30
@@ -210,9 +210,11 @@ def check():
             assert len(edits)==1 and not event(blocked,'GET'),blocked
             controls={b['callback_data'] for row in edits[0]['buttons']['inline_keyboard']
                 for b in row}
-            assert controls=={'attentionInbox'},controls
+            assert controls=={'attentionInbox',
+                'gatewayReview_H_'+sql(w,e,
+                    f'SELECT id FROM payment_attempts WHERE pay_row_id={payid}')},controls
             assert 'عملیات قبلی' in edits[0]['text'],edits
-        checks.append('unfinished_original_effects_remain_visible_without_second_action')
+        checks.append('unfinished_original_effects_readonly_but_archive_available')
         detail=recovery.call(w,e,driver,op='route',callback=f'attentionCase_{gateway}')
         edits=event(detail,'EDIT')
         assert len(edits)==1 and 'زرین‌پال' in edits[0]['text'],detail
@@ -221,7 +223,7 @@ def check():
         choices={b['callback_data'] for row in edits[0]['buttons']['inline_keyboard'] for b in row}
         attempt=int(sql(w,e,f'SELECT id FROM payment_attempts WHERE pay_row_id={gateway}'))
         assert {'gatewayReview_A_'+str(attempt),'gatewayReview_R_'+str(attempt),
-                'attentionInbox'}.issubset(choices),choices
+                'gatewayReview_H_'+str(attempt),'attentionInbox'}.issubset(choices),choices
         assert not event(detail,'GET') and not event(detail,'SEND'),detail
         checks.append('original_invoice_details_and_two_evidence_aware_actions_are_local')
         declined=recovery.call(w,e,driver,op='route',callback=f'attentionCase_{terminal}')
@@ -235,6 +237,54 @@ def check():
         checks.append('forged_nonadmin_and_nonprivate_original_order_inbox_denied')
         assert purchase.snapshot(w,e,DB)==before
         checks.append('automatic_gateway_inbox_all_views_readonly_no_native_get_or_mutation')
+        # Simulate the ACTUAL operator archive callback; no native, wallet,
+        # settlement, customer message, child status or service mutation.
+        native_before=purchase.snapshot(w,e,DB)
+        original=sql(w,e,f"SELECT p.state,a.stage,a.provider_status "
+            f"FROM pays p JOIN payment_attempts a ON a.pay_row_id=p.id WHERE p.id={held}")
+        hold_attempt=sql(w,e,f'SELECT id FROM payment_attempts WHERE pay_row_id={held}')
+        rejected=recovery.call(w,e,driver,op='route',
+            callback='gatewayReview_H_'+hold_attempt,actor=1001,chat=1001)
+        assert event(rejected,'ACK') and not event(rejected,'EDIT') and not event(rejected,'SEND')
+        assert sql(w,e,f'SELECT review_archived_at IS NULL FROM payment_attempts WHERE id={hold_attempt}')=='1'
+        rejected=recovery.call(w,e,driver,op='route',
+            callback='gatewayReview_H_'+hold_attempt,actor=9001,chat=1001)
+        assert event(rejected,'ACK') and not event(rejected,'EDIT') and not event(rejected,'SEND')
+        assert sql(w,e,f'SELECT review_archived_at IS NULL FROM payment_attempts WHERE id={hold_attempt}')=='1'
+        checks.append('archive_requires_current_staff_and_private_chat')
+        archived=recovery.call(w,e,driver,op='route',
+            callback='gatewayReview_H_'+hold_attempt)
+        assert event(archived,'ACK') and len(event(archived,'EDIT'))==1,archived
+        assert 'از فهرست بررسی خارج شد' in event(archived,'EDIT')[0]['text'],archived
+        after=sql(w,e,f"SELECT p.state,a.stage,a.provider_status "
+            f"FROM pays p JOIN payment_attempts a ON a.pay_row_id=p.id WHERE p.id={held}")
+        assert after==original,(original,after)
+        actor=sql(w,e,f'SELECT review_archived_by FROM payment_attempts WHERE id={hold_attempt}')
+        assert actor=='9001',actor
+        reopened=recovery.call(w,e,driver,op='route',callback='attentionInbox')
+        keys={b['callback_data'] for row in event(reopened,'EDIT')[0]['buttons']['inline_keyboard']
+              for b in row}
+        assert f'attentionCase_{held}' not in keys and f'attentionCase_{unknown}' in keys,keys
+        assert f'attentionCase_{gateway}' in keys,keys
+        stale=recovery.call(w,e,driver,op='route',callback=f'attentionCase_{held}')
+        assert 'دیگر نیازمند بررسی نیست' in event(stale,'EDIT')[0]['text']
+        repeated=recovery.call(w,e,driver,op='route',
+            callback='gatewayReview_H_'+hold_attempt)
+        assert 'قبلاً بررسی شده' in event(repeated,'EDIT')[0]['text']
+        assert not event(archived,'GET') and not event(archived,'SEND')
+        checks.append('operator_archive_removes_only_selected_case_without_settlement')
+        # An old/stale callback must not reopen the original case or
+        # rewrite its financial status. Actual signed IPN/Cron probes are
+        # source-real in the finance-route suite.
+        duplicate=recovery.call(w,e,driver,op='route',
+            callback='gatewayReview_H_'+hold_attempt)
+        assert 'قبلاً بررسی شده' in event(duplicate,'EDIT')[0]['text']
+        reopened=recovery.call(w,e,driver,op='route',callback='attentionInbox')
+        keys={b['callback_data'] for row in event(reopened,'EDIT')[0]['buttons']['inline_keyboard']
+              for b in row}
+        assert f'attentionCase_{held}' not in keys,keys
+        assert sql(w,e,f'SELECT review_archived_by FROM payment_attempts WHERE id={hold_attempt}')=='9001'
+        checks.append('archived_case_stays_closed_after_stale_operator_callback')
     return {'complete':True,'cases':len(checks),'scenarios':checks,'fresh_native_addon_admission':True,'unknown_native_refuses_without_draft':True,'limits':['Fake Telegram transport; no installed/operator UI acceptance','No live tenant/provider/financial effects','PHP runtime reported by invocation; aggregate PHP matrix owned by Master']}
 
 if __name__=='__main__':

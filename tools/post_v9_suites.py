@@ -1179,7 +1179,7 @@ def run_wallet(tmp: str) -> tuple[dict, dict]:
                     "--run-disposable","--report",str(next_payment_path)],
                    cwd=ROOT,check=True,timeout=180,capture_output=True)
     next_payment=json.loads(next_payment_path.read_text())
-    if not (next_payment.get("complete") is True and next_payment.get("cases")==16
+    if not (next_payment.get("complete") is True and next_payment.get("cases")==19
             and next_payment.get("fresh_native_addon_admission") is True
             and next_payment.get("unknown_native_refuses_without_draft") is True):
         raise RuntimeError("Durable payment messages, volume entry and attention proof incomplete")
@@ -1188,10 +1188,10 @@ def run_wallet(tmp: str) -> tuple[dict, dict]:
         cwd=ROOT,check=True,timeout=180,capture_output=True,text=True)
     text_catalog=json.loads(catalog_output.stdout)
     expected_catalog={
-        'status':'PASS','current_catalog_keys':2844,
-        'current_admin_keys':1902,'current_user_keys':942,
+        'status':'PASS','current_catalog_keys':2847,
+        'current_admin_keys':1905,'current_user_keys':942,
         'retired_experimental_keys':129,'retired_experimental_topics':10,
-        'new_copy_entries':24,'current_runtime_files':131,
+        'new_copy_entries':27,'current_runtime_files':131,
         'new_copy_references_unbound':0,
         'unapproved_existing_copy_changes':0,
         'new_copy_negative_controls':5,'bare_ui_copy_violations':0,
@@ -2513,6 +2513,12 @@ def run_effects(tmp: str) -> tuple[dict, dict]:
         'owner_direct_reject_route_preserves_funds_and_reports',
         'gateway_review_nonadmin_cannot_settle',
         'retired_two_stage_callback_fail_closed',
+        'owner_archive_terminal_once_only_no_financial_action',
+        'archived_nowpayments_late_signed_ipn_evidence_only_no_status_change',
+        'archived_nowpayments_browser_return_cannot_reopen',
+        'archived_zarinpal_verified_callback_cannot_credit_cancel_or_reopen',
+        'archived_nextpay_verified_callback_cannot_credit_cancel_or_reopen',
+        'archived_nowpayments_original_excluded_from_cron_claim',
     })
     cases_finance = {case.get("case") for case in finance.get("scenarios",[])
                      if case.get("pass_")}

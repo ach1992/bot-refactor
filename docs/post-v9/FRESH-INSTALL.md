@@ -6,7 +6,7 @@ This guide is for a **new bot with a new, empty database**. An existing bot, a c
 source-only successor** under Draft PR #136 (131 runtime members). The
 published RC26 still uses 018-021 and has its own immutable
 [RC25 to RC26 upgrade guide](RC25-TO-RC26.md) and matching tag. **Never mix**
-this prospective 018 + 020 only schema with the published RC26 ZIP.
+this prospective 018 + 020 + 022 schema with the published RC26 ZIP.
 A genuinely empty database uses the ordered current-source migrations listed
 below. Existing databases, even testing installations, require an audited
 forward transition and exact-version runtime replacement before removing
@@ -60,6 +60,7 @@ Import `database/legacy-schema.sql` exactly once into that empty database, then 
 | 15 | `migrations/post-v9/017_shared_plan_changes.sql` | Durable service_plan_changes journal for reconciled Native plan changes; must follow 016 |
 | 16 | `migrations/post-v9/018_payment_delivery_intents.sql` | Per-payment sealed delivery intents and Telegram attempt journal; requires 003 and 007, no historical backfill |
 | 17 | `migrations/post-v9/020_payment_followup_intents.sql` | Once-only staff/customer follow-up presentation journal; requires 018 and reviewed payment evidence |
+| 18 | `migrations/post-v9/022_gateway_review_archive.sql` | Two audit fields on the original attempt; safely archive completed operator review without changing payment/provider state |
 
 For example, the MariaDB client can import the baseline with a prompted password:
 
@@ -70,7 +71,7 @@ mariadb --user=INSTALL_DB_USER --password NEW_EMPTY_DB < database/legacy-schema.
 Replace the account/database placeholders and repeat the import form for each subsequent table entry. These paths are relative to the private checkout, not the runtime ZIP. The release may name001 `panel-group-migration.sql` and003 `payment-attempt-migration.sql`; use the contents/checksums matching the selected source. Do not use `--force` to ignore errors or a wildcard SQL loop. Migration 014 has two ALTER TABLE statements; 015 creates a preflight helper procedure, normally drops it after successful validation, then executes three ALTER TABLE statements. Failed preflight may leave the helper procedure pending audited cleanup. Neither is a retry script. 015 rejects duplicate legacy quantities or malformed offers and must run after 012 and 014 on a genuinely empty, correctly initialized database. 016 is a guarded one-time column drop and 017 a one-time journal creation; neither may be rerun after success. A partly applied file requires an exact schema audit and an authorized completion plan; do not use `--force` or rerun completed migrations.
 
 The **future** source-only candidate distributes migration sidecars 018
-and 020, outside its runtime ZIP, as one-time checksum-bound DDL. It does
+020 and 022, outside its runtime ZIP, as one-time checksum-bound DDL. It does
 **not** require the historical experimental 019 review table or the 021 paid
 replacement extensions. Published RC26 and historical upgrade documentation
 remain version-bound; no old Release asset has been changed. Migration

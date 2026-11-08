@@ -321,7 +321,7 @@ CLEANUP_TOPICS={
     'hosted_replacement','hosted_original_recovery',
     'service_edit_delivery','delivery_workbench',
 }
-CLEANUP_NEW_KEYS={
+CLEANUP_ORIGINAL_NEW_KEYS={
     'automatic_gateway_review.'+name for name in (
         'menu','provider_nextpay','provider_nowpayments','provider_zarinpal',
         'rejected_customer','rejected_report','result','status_completed',
@@ -335,6 +335,15 @@ CLEANUP_NEW_KEYS={
         'status_stale','status_unavailable','status_unknown',
     )
 }
+
+# Owner's archive decision: these are NEW bounded UI entries, not part of
+# the exact historical 24-key delivery/review copy baseline.
+CLEANUP_ARCHIVE_NEW_KEYS={
+    'automatic_gateway_review.archive',
+    'automatic_gateway_review.archive_notice',
+    'automatic_gateway_review.status_archived',
+}
+CLEANUP_NEW_KEYS=CLEANUP_ORIGINAL_NEW_KEYS | CLEANUP_ARCHIVE_NEW_KEYS
 @functools.lru_cache(maxsize=2)
 def _cleanup_catalog(ref):
     php='$s=stream_get_contents(STDIN);$p=strpos($s,"return [");if($p===false)throw new RuntimeException("array_missing");echo json_encode(eval(substr($s,$p)),JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);'
@@ -357,8 +366,8 @@ def current_cleanup_restore(sides):
           set(current)-set(old)==CLEANUP_NEW_KEYS and
           all(current.get(k)==v for k,v in old.items() if k not in removed),
           'cleanup_unapproved_catalog_change')
-    check(set(accepted['admin'])-set(old)==CLEANUP_NEW_KEYS and
-          all(current[k]==accepted['admin'][k] for k in CLEANUP_NEW_KEYS),
+    check(set(accepted['admin'])-set(old)==CLEANUP_ORIGINAL_NEW_KEYS and
+          all(current[k]==accepted['admin'][k] for k in CLEANUP_ORIGINAL_NEW_KEYS),
           'cleanup_new_copy_byte_drift')
     for key in CLEANUP_NEW_KEYS:
         entry=current[key];value=text(entry);parameters=params(entry)
@@ -513,6 +522,9 @@ def delivery_recovery_original_bytes(current:bytes) -> bytes:
           'delivery_recovery_preexisting_catalog_bytes_changed')
     return original
 def delivery_recovery_copy_restore(sides:dict) -> dict:
+    # Historical proof may be called directly by a sibling suite; verify
+    # the present successor delta first, then restore old approved evidence.
+    sides=current_cleanup_restore(sides)
     # This feature was intentionally removed; its old approved copy must
     # still match the exact immutable published-source evidence.
     present=(ROOT/'messages/fa/admin.php').read_bytes()
@@ -706,6 +718,7 @@ def review_catalog_restore(sides):
     return restored,{'review_added_keys':8,'review_added_user_keys':2,'review_added_admin_keys':6,'review_source':REVIEW_SOURCE}
 
 def verify_api_and_restore(sides,definition=None):
+    sides=current_cleanup_restore(sides)
     sides=current_cleanup_restore(sides)
     if any(key.startswith('delivery_recovery.') for audience in sides.values() for key in audience):
         sides=delivery_recovery_copy_restore(sides)

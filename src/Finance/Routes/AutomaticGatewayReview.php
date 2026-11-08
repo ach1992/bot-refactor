@@ -22,39 +22,7 @@ if (preg_match('/^attention(?:Inbox(?:_[1-9][0-9]{0,17})?|Case_[1-9][0-9]{0,17})
 
     // An old unpaid checkout is only a review *candidate*, never proof of funds.
     // The existing configurable hosted-attention age also controls this list.
-    $threshold=achbotPayUxHostedAttentionSeconds();
-    $scope="a.provider IN ('nowpayments','nextpay','zarinpal')
-        AND (
-            (p.state IN ('pending','send') AND (
-                (a.stage='review' AND (
-                    (a.provider IN ('zarinpal','nextpay') AND
-                     a.provider_status='verification_uncertain')
-                    OR (a.provider='nowpayments' AND (
-                        a.provider_status IS NULL OR a.provider_status NOT IN (
-                        'fulfillment_started','fulfillment_unconfirmed',
-                        'fulfillment_failed','fulfillment_needs_review',
-                        'operator_attested','operator_verified_finished',
-                        'operator_rejected','operator_compensated',
-                        'operator_fulfilled')))
-                    OR a.provider_status='operator_fulfillment_unconfirmed'
-                    OR (a.provider_status IN
-                         ('fulfillment_failed','fulfillment_needs_review',
-                          'fulfillment_unconfirmed')
-                        AND a.updated_at <= NOW()-INTERVAL 10 MINUTE)))
-                OR (a.stage='pending' AND a.provider_status IS NULL
-                    AND a.created_at <= NOW()-INTERVAL ".(int)$threshold." SECOND)
-                OR (a.provider='nowpayments' AND a.stage='checking'
-                    AND a.last_checked_at IS NOT NULL
-                    AND a.last_checked_at < NOW()-INTERVAL 10 MINUTE)
-                OR (a.stage='fulfilling' AND
-                    a.updated_at <= NOW()-INTERVAL 10 MINUTE)))
-            OR (p.state IN ('processing','paid') AND
-                a.stage IN ('review','fulfilling') AND
-                a.provider_status IN ('fulfillment_started',
-                    'fulfillment_unconfirmed','fulfillment_failed',
-                    'fulfillment_needs_review',
-                    'operator_fulfillment_unconfirmed') AND
-                a.updated_at <= NOW()-INTERVAL 10 MINUTE))";
+    $scope=achbotGatewayAttentionScope();
     $inbox=[];$case=[];
     $isInbox=preg_match('/^attentionInbox(?:_([1-9][0-9]{0,17}))?$/D',
         (string)$data,$inbox)===1;
@@ -238,6 +206,9 @@ if (preg_match('/^attention(?:Inbox(?:_[1-9][0-9]{0,17})?|Case_[1-9][0-9]{0,17})
                     'callback_data'=>'gatewayReview_R_'.$attempt];
             if ($actions) $rows[]=$actions;
             else $body.="\n".achbotMessage('automatic_gateway_review.manual_hold');
+            $rows[]=[['text'=>achbotMessage('automatic_gateway_review.archive'),
+                'callback_data'=>'gatewayReview_H_'.$attempt]];
+            $body.="\n".achbotMessage('automatic_gateway_review.archive_notice');
             $rows[]=[['text'=>achbotMessage('automatic_gateway_review.back_list'),
                 'callback_data'=>'attentionInbox']];
         }
@@ -253,15 +224,19 @@ if (preg_match('/^attention(?:Inbox(?:_[1-9][0-9]{0,17})?|Case_[1-9][0-9]{0,17})
 
 // Same original financial effect, with one-shot provider-attempt claim.
 $gatewayAction=[];
-if (preg_match('/^gatewayReview_([AR])_([1-9][0-9]{0,17})$/D',
+if (preg_match('/^gatewayReview_([ARH])_([1-9][0-9]{0,17})$/D',
     (string)($data??''),$gatewayAction)===1) {
     if (!achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'payments') ||
         (int)($chat_id??0)!==(int)$from_id) {
         answerCallbackQuery($callbackId,achbotMessage('automatic_gateway_review.denied'),true);
         return;
     }
-    if (!defined('ACHBOT_NP_RECONCILE_ONLY')) define('ACHBOT_NP_RECONCILE_ONLY',true);
-    require_once __DIR__.'/../GatewayReturn.php';
+    $archive=$gatewayAction[1]==='H';
+    require_once __DIR__.'/../PaymentLifecycle.php';
+    if (!$archive) {
+        if (!defined('ACHBOT_NP_RECONCILE_ONLY')) define('ACHBOT_NP_RECONCILE_ONLY',true);
+        require_once __DIR__.'/../GatewayReturn.php';
+    }
     require_once __DIR__.'/../GatewayReview.php';
     $mode=$gatewayAction[1]==='A'?'approve':'reject';
     $attempt=(int)$gatewayAction[2];
@@ -271,7 +246,9 @@ if (preg_match('/^gatewayReview_([AR])_([1-9][0-9]{0,17})$/D',
     ]]]],JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
     try {
         answerCallbackQuery($callbackId,achbotMessage('automatic_gateway_review.checking'));
-        $result=achbotGatewayReviewCommit($connection,(int)$from_id,$attempt,$mode);
+        $result=$archive
+            ?['status'=>achbotGatewayReviewArchive($connection,(int)$from_id,$attempt)]
+            :achbotGatewayReviewCommit($connection,(int)$from_id,$attempt,$mode);
         $status=(string)($result['status']??'unavailable');
         if ($status==='rejected') {
             // Closing the business order does not refund the merchant.
@@ -297,6 +274,7 @@ if (preg_match('/^gatewayReview_([AR])_([1-9][0-9]{0,17})$/D',
         $text=match($status) {
             'completed'=>achbotMessage('automatic_gateway_review.status_completed'),
             'rejected'=>achbotMessage('automatic_gateway_review.status_rejected'),
+            'archived'=>achbotMessage('automatic_gateway_review.status_archived'),
             'unknown'=>achbotMessage('automatic_gateway_review.status_unknown'),
             'stale'=>achbotMessage('automatic_gateway_review.status_stale'),
             'unsupported'=>achbotMessage('automatic_gateway_review.status_unsupported'),

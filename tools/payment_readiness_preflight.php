@@ -479,6 +479,10 @@ try {
                 'acknowledged_at','last_result'],
                 'unique'=>['uq_followup_pay_key'=>['pay_row_id','intent_key']]],
         ],
+        // #117 archival metadata is independent of provider stage.
+        '022' => [
+            'payment_attempts'=>['columns'=>['review_archived_at','review_archived_by']],
+        ],
     ];
     foreach ($specs as $migration => $schema) {
         $present = count(array_filter(array_keys($schema),
