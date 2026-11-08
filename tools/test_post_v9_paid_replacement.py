@@ -194,6 +194,15 @@ def check():
         assert confirm(pay,ch,actor=9002)['error'] is not None
         assert rows(pay)=='1' and balance()=='19:50000'
         cases.append('manager_missing_first_007_signed_one_replacement_capacity_once')
+        pay=seed('racefirst')
+        challenge=preview(pay,actor=9002)
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            outcomes=list(executor.map(lambda _: confirm(pay,challenge,actor=9002),range(2)))
+        assert sum(item['error'] is None for item in outcomes)==1,outcomes
+        assert rows(pay)=='1' and balance()=='19:50000',outcomes
+        assert sum(ev['event']=='REPLACEMENT_POST' for item in outcomes
+                   for ev in item['events'])==1,outcomes
+        cases.append('concurrent_staff_confirmation_cannot_double_reserve_or_post')
         result=run(pay)
         assert result['error'] is None and result['orders']==1 and len(result['delivery'])==1,result
         assert result['attempt']=={'provider':'nextpay','stage':'done','provider_status':'delivered'},result
@@ -232,6 +241,10 @@ def check():
         assert sql(f"SELECT CONCAT(effect_kind,':',state,':',reserved_count) FROM service_effects WHERE pay_row_id={pay} AND effect_kind='create'")=='create:verified:1'
         assert run(pay)['error'] is None and sql(f'SELECT COUNT(*) FROM payment_delivery_intents WHERE pay_row_id={pay}')=='1'
         cases.append('foreign_original_kept_auditable_and_replacement_preserves_capacity')
+        pay=seed('nativealready',create_prefix=1,link_prefix=0)
+        original_valid=run(pay,op='replacement_preview',actor=9002,ordinal=1)
+        assert original_valid['result'] is None and rows(pay)=='0' and balance()=='19:50000',original_valid
+        cases.append('authenticated_matching_original_account_never_offered_replacement')
         # Original first CREATE already owns full bulk capacity: an absent
         # internal ordinal must never deduct that original quantity twice.
         pay=seed('bulkgap',count=2,create_prefix=1,link_prefix=0)
