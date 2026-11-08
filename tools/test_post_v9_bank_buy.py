@@ -223,38 +223,6 @@ if ($op==='claim') {
     require_once $root.'/src/Finance/DeliveryLedger.php';
     $value=achbotDeliveryMaintainPending($connection,
         (int)($spec['batch']??4),(float)($spec['budget']??8.0));
-} elseif ($op==='delivery_check') {
-    require_once $root.'/src/Finance/DeliveryLedger.php';
-    $value=achbotDeliveryCheck($connection,(int)$spec['pay'],(int)$spec['ordinal']);
-} elseif ($op==='delivery_stale') {
-    require_once $root.'/src/Finance/DeliveryLedger.php';
-    achbotDeliveryMarkStaleUnknown($connection,(int)$spec['pay'],(int)$spec['ordinal']);
-    $value=achbotDeliveryInspectOne($connection,(int)$spec['pay'],(int)$spec['ordinal']);
-} elseif ($op==='delivery_challenge') {
-    require_once $root.'/src/Finance/DeliveryLedger.php';
-    $value=achbotDeliveryInspectOne($connection,(int)$spec['pay'],(int)$spec['ordinal']);
-    if($value)$value=achbotDeliveryChallenge($value,(int)($spec['actor']??9001));
-} elseif ($op==='delivery_owner_send') {
-    require_once $root.'/src/Finance/DeliveryLedger.php';
-    $value=achbotDeliveryDispatch($connection,(int)$spec['pay'],(int)$spec['ordinal'],
-        (int)($spec['actor']??9001),(string)($spec['challenge']??''));
-} elseif ($op==='accept_resume') {
-    $id=(int)($spec['pay']??0);
-    $p=$connection->query('SELECT hash_id FROM pays WHERE id='.$id)->fetch_assoc();
-    $data='accept'.(string)($p['hash_id']??'');
-    $from_id=(int)($spec['actor']??9001);
-    $chat_id=(int)($spec['chat']??9001);
-    $callbackId='fixture-bank-owner';$message_id=550;$text='';
-    $userInfo=['step'=>''];
-    if (($spec['debug_preview']??false)===true) {
-        require_once $root.'/src/Finance/RecoveryInspection.php';
-        $item=achbotRecoveryTechnicalCase($connection,$id);
-        $GLOBALS['events'][]=['event'=>'PREVIEW','case'=>is_array($item),
-          'state'=>$item['state']??null,'stage'=>$item['attempt']['stage']??null,
-          'bank_resume'=>$item?achbotRecoveryCanResumeBankPurchase($connection,$item):false];
-    }
-    require $root.'/src/Finance/Routes/ManualReceipts.php';
-    $value=true;
 } elseif ($op==='break_attempt') {
     fixtureAlterOriginalBankAttempt((int)($spec['pay']??0),
         ($spec['mode']??'delete')==='replace'?'replace':'delete');
@@ -546,84 +514,32 @@ def check():
         assert query(work,env,f"SELECT state,attempt_count FROM payment_delivery_intents WHERE pay_row_id={racing}")=='acknowledged\t1'
         cases.append('cron_and_original_callback_compete_one_018_dispatch_claim')
 
-        # The timer only scans have_sent. A durable processing claim with
-        # no remote line must be actionable through the Owner's real
-        # technical recovery callback, using precisely that old 003/009
-        # invoice. Opening a route is NOT another financial approval.
-        owner=seed(work,env,'ownerbankresume')
-        query(work,env,f"UPDATE pays SET admins_messages='{copies}' WHERE id={owner}")
-        assert run(work,env,driver,op='claim',pay=owner)['result'] is True
-        assert state(work,env,owner)=='processing'
-        denied=run(work,env,driver,op='accept_resume',pay=owner,actor=1001,chat=1001)
-        assert not any(x['event']=='POST' for x in denied['events']),denied
-        assert state(work,env,owner)=='processing'
-        assert total(work,env,'service_effects',owner)==0
-        cases.append('bank_original_accept_denies_customer_without_native_effect')
-        finished=run(work,env,driver,op='accept_resume',pay=owner,
-                     actor=9002,chat=9002,debug_preview=True)
-        assert state(work,env,owner)=='auto_cart_approved',finished
-        assert any(e['event']=='PREVIEW' and e['bank_resume'] is True and
-                   e['stage']=='pending' for e in finished['events']),finished
-        assert sum(e['event']=='POST' for e in finished['events'])==1,finished
-        assert sum(e['event']=='DELIVER' for e in finished['events'])==1,finished
-        assert all(e['state']=='auto_cart_approved' for e in finished['events']
-                   if e['event']=='DELIVER')
-        assert effects(work,env,owner)=='local_recorded'
-        assert total(work,env,'orders_list',owner)==1
-        assert total(work,env,'payment_delivery_intents',owner)==1
-        assert any(e['event']=='ACK' for e in finished['events'])
-        edits=[e for e in finished['events'] if e['event']=='EDIT_KEYS']
-        assert [(e['chat_id'],e['message_id']) for e in edits]==[(9001,550),(9002,551)],finished
-        assert all(e['state']=='auto_cart_approved' and
-                   e['button']=={'text':original_success_label,'callback_data':'wizwizch'}
-                   for e in edits),finished
-        cases.append('manager_resume_updates_original_and_eligible_stored_receipts')
-        cases.append('bank_manager_original_accept_resume_once_native_then_delivery')
-        repeated=run(work,env,driver,op='accept_resume',pay=owner,actor=9002,chat=9002)
-        assert not any(e['event'] in ('POST','DELIVER','EDIT_KEYS','REFERRAL')
-                       for e in repeated['events'])
-        assert total(work,env,'orders_list',owner)==1
-        assert total(work,env,'service_effects',owner)==1
-        assert total(work,env,'payment_delivery_intents',owner)==1
-        cases.append('manager_repeat_callback_no_order_referral_receipt_or_delivery_replay')
-        failed_edits=seed(work,env,'ownerbankeditfailure')
-        query(work,env,f"UPDATE pays SET admins_messages='{copies}' WHERE id={failed_edits}")
-        assert run(work,env,driver,op='claim',pay=failed_edits)['result'] is True
-        recovered=run(work,env,driver,op='accept_resume',pay=failed_edits,
-                      actor=9002,chat=9002,mode='receipt_edit_fail')
-        assert state(work,env,failed_edits)=='auto_cart_approved',recovered
-        assert sum(e['event']=='POST' for e in recovered['events'])==1
-        assert sum(e['event']=='DELIVER' for e in recovered['events'])==1
-        assert [(e['chat_id'],e['message_id']) for e in recovered['events']
-                if e['event']=='EDIT_KEYS']==[(9001,550)]
-        assert total(work,env,'orders_list',failed_edits)==1
-        after_edit_failure=run(work,env,driver,op='accept_resume',pay=failed_edits,
-                               actor=9002,chat=9002)
-        assert not any(e['event'] in ('POST','DELIVER','EDIT_KEYS','REFERRAL')
-                       for e in after_edit_failure['events']),after_edit_failure
-        assert total(work,env,'orders_list',failed_edits)==1
-        assert total(work,env,'payment_delivery_intents',failed_edits)==1
-        cases.append('original_receipt_edit_failure_postcommit_never_rearms_native_or_delivery')
-        cases.append('bank_manager_repeat_callback_never_reissues_account_or_delivery')
-        forged=seed(work,env,'ownerbankdrift')
-        assert run(work,env,driver,op='claim',pay=forged)['result'] is True
-        query(work,env,f'UPDATE payment_attempts SET local_amount_toman=777 WHERE pay_row_id={forged}')
-        bad=run(work,env,driver,op='accept_resume',pay=forged)
-        assert state(work,env,forged)=='processing' and total(work,env,'service_effects',forged)==0
-        assert not any(e['event']=='POST' for e in bad['events'])
-        cases.append('bank_owner_changed_original_attempt_cannot_start_native')
-        uncertain=seed(work,env,'ownerbanknativeunknown')
+        # The experimental technical recovery menu is intentionally gone.
+        # The original Cron claims one invoice and never retries a processing
+        # invoice on the next scan. Any explicit isolated continuation must
+        # use its original 003/009 and source 007, never fake a new order.
+        held=seed(work,env,'bankordinaryprocessing')
+        assert run(work,env,driver,op='claim',pay=held)['result'] is True
+        before=run(work,env,driver,pay=held)
+        assert state(work,env,held)=='processing' and not any(
+            e['event']=='POST' for e in before['events'])
+        resumed=run(work,env,driver,op='provision_claimed',pay=held)
+        assert resumed['result']['committed'] is True and effects(work,env,held)=='local_recorded',resumed
+        assert total(work,env,'orders_list',held)==1
+        rerun=run(work,env,driver,pay=held)
+        assert not any(e['event'] in ('POST','DELIVER','REFERRAL') for e in rerun['events'])
+        cases.append('original_bank_claim_once_003_009_no_cron_reissue')
+
+        uncertain=seed(work,env,'bankoriginalunknown')
         assert run(work,env,driver,op='claim',pay=uncertain)['result'] is True
-        initial=run(work,env,driver,op='provision_claimed',pay=uncertain,mode='lost')
+        first=run(work,env,driver,op='provision_claimed',pay=uncertain,mode='lost')
         assert state(work,env,uncertain)=='processing'
         assert effects(work,env,uncertain)=='dispatching'
-        assert sum(e['event']=='POST' for e in initial['events'])==1
-        retry=run(work,env,driver,op='accept_resume',pay=uncertain)
-        assert state(work,env,uncertain)=='processing'
-        assert effects(work,env,uncertain)=='dispatching'
+        assert sum(e['event']=='POST' for e in first['events'])==1
+        retry=run(work,env,driver,pay=uncertain)
         assert not any(e['event'] in ('POST','DELIVER') for e in retry['events'])
         assert total(work,env,'orders_list',uncertain)==0
-        cases.append('owner_bank_unknown_native_effect_no_blind_second_create')
+        cases.append('bank_unknown_native_original_never_replayed')
 
         # A valid per-server qr:none is a text-only delivery, not a failed CREATE.
         query(work,env,"INSERT INTO setting(type,value) VALUES ('ACHBOT_SERVER_DISPLAY_2'," +
@@ -683,16 +599,17 @@ def check():
         assert len([x for x in sent['events'] if x['event']=='DELIVER'])==2
         assert not [x for x in sent['events'] if x['event']=='MESSAGE' and x['to']==9001]
         assert run(work,env,driver,op='delivery_pending',pay=split)['result']==[]
-        challenge=run(work,env,driver,op='delivery_challenge',pay=split,ordinal=2)['result']
-        denied=run(work,env,driver,op='delivery_owner_send',pay=split,ordinal=2,actor=9002,challenge=challenge)
-        assert denied['result']=='denied' and not any(x['event']=='DELIVER' for x in denied['events'])
-        resent=run(work,env,driver,op='delivery_owner_send',pay=split,ordinal=2,actor=9001,challenge=challenge)
-        assert resent['result']=='acknowledged' and sum(x['event']=='DELIVER' for x in resent['events'])==1,resent
-        reused=run(work,env,driver,op='delivery_owner_send',pay=split,ordinal=2,actor=9001,challenge=challenge)
-        assert reused['result']=='review' and not any(x['event']=='DELIVER' for x in reused['events']),reused
-        assert query(work,env,f"SELECT GROUP_CONCAT(state ORDER BY ordinal) FROM payment_delivery_intents WHERE pay_row_id={split}")=='acknowledged,acknowledged'
-        assert query(work,env,f"SELECT GROUP_CONCAT(result ORDER BY attempt_no) FROM payment_delivery_attempts WHERE intent_id=(SELECT id FROM payment_delivery_intents WHERE pay_row_id={split} AND ordinal=2)")=='unknown,acknowledged'
-        cases.append('partial_bulk_unknown_owner_challenge_and_exact_one_line_resend')
+        # UNKNOWN Telegram ACK remains held; no operator resend menu or
+        # synthetic repeat can turn uncertainty into a new delivery attempt.
+        after_unknown=run(work,env,driver,op='delivery_pending',pay=split)
+        assert after_unknown['result']=={} and not any(
+            e['event']=='DELIVER' for e in after_unknown['events'])
+        assert query(work,env,f"SELECT GROUP_CONCAT(state ORDER BY ordinal) "
+            f"FROM payment_delivery_intents WHERE pay_row_id={split}")=='acknowledged,unknown'
+        assert query(work,env,f"SELECT GROUP_CONCAT(result ORDER BY attempt_no) "
+            f"FROM payment_delivery_attempts WHERE intent_id="
+            f"(SELECT id FROM payment_delivery_intents WHERE pay_row_id={split} AND ordinal=2)")=='unknown'
+        cases.append('partial_bulk_unknown_telegram_once_no_resend')
 
         stale=seed(work,env,'bankdeliverystale')
         assert run(work,env,driver,op='claim',pay=stale)['result'] is True
@@ -701,20 +618,24 @@ def check():
         query(work,env,f"UPDATE payment_delivery_intents SET state='dispatching',dispatch_token='{lease}',dispatched_at=NOW()-INTERVAL 11 MINUTE,attempt_count=1 WHERE pay_row_id={stale}")
         query(work,env,"INSERT INTO payment_delivery_attempts (intent_id,attempt_no,dispatch_token,actor_userid,started_at) "
             f"SELECT id,1,'{lease}',0,NOW()-INTERVAL 11 MINUTE FROM payment_delivery_intents WHERE pay_row_id={stale}")
-        checked=run(work,env,driver,op='delivery_stale',pay=stale,ordinal=1)
-        assert checked['result']['state']=='unknown' and checked['result']['last_result']=='process_lost',checked
-        assert query(work,env,f"SELECT result FROM payment_delivery_attempts WHERE intent_id=(SELECT id FROM payment_delivery_intents WHERE pay_row_id={stale})")=='unknown'
-        challenge=run(work,env,driver,op='delivery_challenge',pay=stale,ordinal=1)['result']
-        recovery=run(work,env,driver,op='delivery_owner_send',pay=stale,ordinal=1,challenge=challenge)
-        assert recovery['result']=='acknowledged' and not [x for x in recovery['events'] if x['event']=='POST'],recovery
-        assert query(work,env,f"SELECT GROUP_CONCAT(result ORDER BY attempt_no) FROM payment_delivery_attempts WHERE intent_id=(SELECT id FROM payment_delivery_intents WHERE pay_row_id={stale})")=='unknown,acknowledged'
-        cases.append('stale_dispatch_lease_preserves_unknown_audit_before_warned_resend')
+        # A crashed process may have sent Telegram before losing the ACK.
+        # Without operator-confirmed resend policy the unresolved dispatching
+        # lease is preserved; the first-attempt maintenance job does not retry.
+        inspected=run(work,env,driver,op='delivery_pending',pay=stale)
+        maintenance=run(work,env,driver,op='delivery_maintenance',pay=stale)
+        assert inspected['result']=={} and not any(
+            e['event']=='DELIVER' for e in inspected['events']+maintenance['events'])
+        assert query(work,env,f"SELECT state,attempt_count FROM payment_delivery_intents "
+            f"WHERE pay_row_id={stale}")=='dispatching\t1'
+        assert query(work,env,f"SELECT result FROM payment_delivery_attempts "
+            f"WHERE intent_id=(SELECT id FROM payment_delivery_intents "
+            f"WHERE pay_row_id={stale})")=='dispatching'
+        cases.append('stale_dispatching_telegram_stays_held_no_replay')
 
         corrupt=seed(work,env,'bankdeliverycorrupt')
         assert run(work,env,driver,op='claim',pay=corrupt)['result'] is True
         assert run(work,env,driver,op='provision_claimed',pay=corrupt)['result']['committed']
         query(work,env,f"UPDATE payment_delivery_intents SET sealed_payload=CONCAT('x',sealed_payload) WHERE pay_row_id={corrupt}")
-        assert run(work,env,driver,op='delivery_check',pay=corrupt,ordinal=1)['result']=='identity_or_payload_invalid'
         rejected=run(work,env,driver,op='delivery_pending',pay=corrupt)
         assert rejected['result']=={'1':'review'} and not [x for x in rejected['events'] if x['event']=='DELIVER'],rejected
         assert query(work,env,f"SELECT state,attempt_count FROM payment_delivery_intents WHERE pay_row_id={corrupt}")=='pending\t0'

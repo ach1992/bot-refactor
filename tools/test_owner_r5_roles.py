@@ -132,11 +132,22 @@ foreach([9001,9002,9003,9004] as $actor)foreach(['attentionInbox','attentionCase
  $from_id=$chat_id=$actor;$data=$cb;$text=null;$userInfo=['step'=>'none'];$GLOBALS['events']=[];
  require $root.'/src/Finance/Routes/ManualReceipts.php';
  $screens=array_values(array_filter($GLOBALS['events'],fn($e)=>in_array($e['kind'],['edit','send'],true)));
- yes(count($screens)===1 && $screens[0]['chat']===$actor,'actual private read-only review delivered to allowed actor '.$actor.' '.$cb);
- $callbacks=[];foreach(json_decode($screens[0]['keys'],true)['inline_keyboard'] as $row)foreach($row as $button)$callbacks[]=$button['callback_data'];
- yes(in_array($cb==='attentionInbox'?'managePanel':'attentionInbox',$callbacks,true) &&
-    !array_filter($callbacks,fn($c)=>preg_match('/^(npReview|bankReview|serviceRecovery|financeExtra|deliveryInbox)/',$c)),
-    'one automatic gateway review with no extra workbenches '.$actor.' '.$cb);
+ if ($cb==='attentionInbox') {
+   yes(count($screens)===1 && $screens[0]['chat']===$actor,
+       'read-only original gateway inbox delivered to allowed actor '.$actor);
+   $callbacks=[];foreach(json_decode($screens[0]['keys'],true)['inline_keyboard'] as $row)
+     foreach($row as $button)$callbacks[]=$button['callback_data'];
+   yes(in_array('managePanel',$callbacks,true) &&
+       !array_filter($callbacks,fn($c)=>preg_match('/^(npReview|bankReview|serviceRecovery|financeExtra|deliveryInbox)/',$c)),
+       'one automatic gateway inbox no extra workbenches '.$actor);
+ } else {
+   // The original R5 role-only fixture deliberately has no 003 invoice
+   // for this processing BUY_SUB row. A forged case is never displayed or
+   // treated as a paid merchant invoice, even to a permitted administrator.
+   yes(count($screens)===0 && count($GLOBALS['events'])>=1 &&
+       end($GLOBALS['events'])['kind']==='ack',
+       'unissued processing order never shown as an automatic gateway invoice '.$actor);
+ }
 }
 $from_id=$chat_id=1001;$data='attentionInbox';$GLOBALS['events']=[];require $root.'/src/Finance/Routes/ManualReceipts.php';
 yes(count($GLOBALS['events'])===1 && $GLOBALS['events'][0]['kind']==='ack','ordinary customer actual review route denied');

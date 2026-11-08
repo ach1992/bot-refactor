@@ -2529,7 +2529,20 @@ def run_effects(tmp: str) -> tuple[dict, dict]:
             finance.get("original_mariadb_socket_only") and
             finance.get("synthetic_payment_spy") and
             finance.get("real_provider_requests")==0):
-        raise RuntimeError("Original-schema finance and NOWPayments finality assurance incomplete")
+        raise RuntimeError("Original-schema finance and NOWPayments finality assurance incomplete: "+
+            json.dumps({
+                'cases':finance.get('cases'),
+                'expected_minimum':153,
+                'missing_required':sorted(mandatory_finance-cases_finance),
+                'source_schema_tables':finance.get('schema_tables'),
+                'current_schema_tables':finance.get('current_schema_tables'),
+                'synthetic_only':finance.get('real_provider_requests'),
+                'key_flags':{key:finance.get(key) for key in (
+                    'complete','shared_payment_attempt_ledger_tested',
+                    'fresh_addon_existing_native_source',
+                    'unknown_native_addon_admission_refused',
+                    'original_mariadb_socket_only','synthetic_payment_spy')},
+            },sort_keys=True))
     # #26 distinct account identity: verified by source-native PHP and
     # independent socket-only MariaDB, not by changes in account totals.
     effect_path=Path(tmp)/"account-service-effects.json"
@@ -3437,6 +3450,8 @@ def run_funding(tmp: str) -> tuple[dict, dict]:
     bank_buy=json.loads(bank_path.read_text())
     required_bank={
         "buy_sub_nonterminal_exclusive_claim",
+        "original_bank_claim_once_003_009_no_cron_reissue",
+        "bank_unknown_native_original_never_replayed",
         "one_verified_account_atomic_order_before_telegram_no_replay",
         "unknown_lost_no_refund_success_or_replay",
         "unknown_exists_no_refund_success_or_replay",
@@ -3446,8 +3461,8 @@ def run_funding(tmp: str) -> tuple[dict, dict]:
         "first_success_atomic_encrypted_manifest_and_ack_history",
         "crash_postterminal_before_telegram_resumes_pending_only_once",
         "multi_line_each_ordinal_ack_is_durable",
-        "partial_bulk_unknown_owner_challenge_and_exact_one_line_resend",
-        "stale_dispatch_lease_preserves_unknown_audit_before_warned_resend",
+        "partial_bulk_unknown_telegram_once_no_resend",
+        "stale_dispatching_telegram_stays_held_no_replay",
         "corrupted_immutable_delivery_payload_blocks_send_without_replay",
         "concurrent_telegram_pending_cas_exactly_one_dispatch",
         "multi_line_partial_unknown_requires_review_not_refund",
