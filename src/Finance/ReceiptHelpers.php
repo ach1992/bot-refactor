@@ -2638,8 +2638,15 @@ function achbotOrderRestoresCapacity(mysqli $db,array $order): bool {
         if ($effect['state']!=='local_recorded') throw new RuntimeException('deletion_capacity_effect_unconfirmed');
         if ($effect['effect_kind']==='adopt' && $effect['source_kind']==='external_import' &&
             $effect['pay_row_id']===null && (int)$effect['reserved_count']===0) return false;
-        if ($effect['effect_kind']==='create' && $effect['source_kind']!=='external_import' && $origin===null)
-            return $positivePlan;
+        // Native accounts created for trials and administrative bulk work
+        // consumed one real slot despite their nonfinancial source kind.
+        // Preserve the historical CREATE rule while distinguishing the paid,
+        // auditable replacement journal from all imported/adopted accounts.
+        if ($origin===null && $positivePlan && $effect['effect_kind']==='create' &&
+            $effect['source_kind']!=='external_import') return true;
+        if ($origin===null && $positivePlan && $effect['effect_kind']==='replacement' &&
+            $effect['source_kind']===null && (int)$effect['pay_row_id']>0)
+            return true;
         throw new RuntimeException('deletion_capacity_effect_invalid');
     } catch (Throwable $error) {
         throw new RuntimeException('deletion_capacity_provenance_unavailable');

@@ -7,6 +7,45 @@
 > document and GitHub PR do not authorize Chili changes, remote provider
 > operations, real payments, Telegram sends or SQL changes.
 
+## PR #133 R1: Independent-review B1/R1/R2/R3 correction (source only)
+
+The first PR #133 candidate (`d5222c3e6702e1ea6d1e98da3d587deeb3c2faba`)
+received **CHANGES_REQUIRED** (one blocker, three required). Its previous
+PHP 8.5 success does not certify the subsequently corrected source. The
+reviewed correction preserves legitimate `free_trial` and `admin_bulk`
+Native CREATE deletion capacity, while treating source-pinned imported
+accounts as never consuming capacity; paid replacement has its own positive
+payment provenance. Both native adapters require source-real local deletion
+finalization tests.
+
+The source-only 021 migration **also adds two nullable `pays` columns**:
+`issued_entitlement_days` and `issued_entitlement_gb`. All new standard BUY_SUB
+invoices pin the actual day/GB pair in the original draft transaction while
+preserving `pays.day=0` / `pays.volume=0` for the existing standard/custom
+routing contract. Custom invoices pin their same positive custom dimensions.
+These fields join the immutable payment fingerprint for new invoices only;
+historical packets retain their original hash. An older standard invoice
+with empty 007 and no independent issued terms is **not** permission to use
+TODAY'S edited plan: confirmation refuses before capacity reservation/native
+POST and shows the original-purchase evidence deficiency. Surviving original
+007 may independently establish historical terms, which must match on
+replacement. No automatic guess/backfill or fabricated historical 007 is
+permitted.
+
+A replacement preview's signed confirmation now also pins the current
+Marzban URL/group/target and PasarGuard physical connection, instance and
+provider generation, using hashed physical target evidence. The reservation
+transaction rejects a stale target before COMMIT; the staff actor must inspect
+and confirm again. The existing private admin recovery page returns bounded
+sanitized `reason`, `stage`, and `next_action` values for each operational
+failure; credentials, arbitrary vendor responses, and SQL exception text are
+not rendered. An UNKNOWN Native POST is always handled through GET-only
+reconciliation and never a repeated CREATE.
+
+All migration/publish/installed-host effects remain separately gated. The
+source review must be repeated for the **new exact candidate** after its
+own full PHP 8.5 validation; approval of earlier PRs does not transfer.
+
 ## Scope and new contracts
 
 - Administrator approval or rejection of a NOWPayments review item is a
@@ -143,6 +182,51 @@ authorization. Preserve original 003/007/012/018/019/020 evidence; never
 delete/regenerate the journals. Further details: [Payment delivery
 recovery](PAYMENT-DELIVERY-RECOVERY.md).
 
+## Owner-reviewed paid Hosted account replacement — source-only candidate
+
+The original paid NextPay/Zarinpal claim is still governed by its saved 003
+merchant-completed evidence and frozen invoice/quote. Its **original 007
+CREATE row is never reused, overwritten, retried or relabeled**. If a Native
+account cannot be safely recovered, authorized payment-review staff in their
+**own private Telegram chat** (Owner, Manager, Operator and Support where the
+current persisted role allows `payments`) may inspect original evidence and
+then explicitly confirm one **distinct** replacement. The signed,
+actor/ordinal/source-pinned two-step warning does **not** claim that a 404 or
+timeout proves absence; an original Native account can still be orphaned.
+A linked original local order cannot be silently replaced. Stored staff role
+and payment capability are rechecked inside the reservation and final SQL
+transactions, so old keyboards cannot grant actions after demotion.
+
+New additive, **not yet installed** migration `021_paid_reconciliation_provenance.sql`
+adds optional original-effect self-reference, immutable reason/fingerprint,
+a bounded stored Native-check outcome and observed timestamp, and
+a unique source-original replacement claim to the existing 007 journal.
+A replacement gets an independent operation marker and `effect_kind=replacement`
+reservation **COMMITTED BEFORE** its first Native POST; any lost/ambiguous
+POST response requires GET-only reconciliation, never a second POST. The
+first committed original capacity claimant stays authoritative. Where there
+is genuinely no first original 007 capacity claimant, an explicitly authorized
+first replacement reserves the complete original quantity once **only
+when the original 007 CREATE history is genuinely empty** under its atomic
+reservation-before-POST contract. If first 007 is missing while later original
+ordinals survive, capacity was already owned under 007's predecessor rule.
+This route must first authenticate **every** surviving original Native account
+via strict GET and the exact immutable operation marker. Only then can staff
+explicitly approve replacement ordinal one **without any new capacity debit**,
+while preserving the damaged/orphan original history. A later Native mismatch,
+timeout, unknown physical account, or failed authenticated GET **fails closed**;
+never infer prior capacity ownership merely from a damaged SQL row. Later linked orders,
+immutable encrypted 018 packets and original 003 closure are an atomic final
+SQL transaction, with `pending` Telegram delivery only after COMMIT.
+
+This code is a proposed source increment **until its exact PHP 8.5 full CI,
+independent high-assurance review and new Owner integration authorization
+pass**. The source-only 021 schema is not contained in the runtime ZIP and
+requires a *separate* live migration approval after 018/019/020 rehearsal.
+Missing evidence, unknown payment provenance, changed provider group/endpoint,
+partial 021 shape, or unsupported history fail closed; this does not
+constitute unconditional resolution of every historical paid orphan.
+
 ## Prerequisites and one-way migration
 
 1. Determine **actual installed** source ZIP manifest, schema, PHP version,
@@ -162,11 +246,27 @@ recovery](PAYMENT-DELIVERY-RECOVERY.md).
    not reasons to rerun additive SQL or drop/replace historic payment rows.
 5. Staging-only, after confirming schema and backup: apply the one-time
    `018_payment_delivery_intents.sql`, then `019_payment_review_decisions.sql`,
-   and `020_payment_followup_intents.sql` after testing each absence and shape
-   only if each is genuinely absent and the exact source/migration contract
-   was reviewed. Verify InnoDB, composite unique constraints, indexes and
-   recorded receipt/decision foreign keys. **Never backfill missing delivery
-   packets** by guessing old subscriptions or assuming an existing account.
+   then `020_payment_followup_intents.sql`, testing each absence and shape
+   before applying it, and verifying InnoDB, composite unique constraints,
+   indexes and recorded receipt/decision foreign keys after each step.
+   **Never backfill missing delivery packets** by guessing old subscriptions
+   or assuming an existing account. Only after the complete 018/019/020
+   contract is verified, audit `service_effects` and `pays` for every object
+   introduced by `021_paid_reconciliation_provenance.sql`. Verify the
+   CI-distributed SQL sidecar against its separate checksum from the sidecar
+   directory (`sha256sum -c 021_paid_reconciliation_provenance.sha256`);
+   SQL and checksum are **outside** `runtime.zip`. If the complete 021
+   extension is absent, apply `021_paid_reconciliation_provenance.sql`
+   **once** through an audited, separately authorized staging SQL session.
+   If 021 is already complete, verify-only; any partial, unexpected or
+   incompatible 021 object is a **STOP**, not permission to rerun an ALTER,
+   drop an object or guess a historical value. Verify the five 021
+   `service_effects` columns, `uq_effect_one_replacement`, and
+   `fk_effect_original_replacement` with its restrictive FK actions; also
+   verify nullable `pays.issued_entitlement_days` and
+   `pays.issued_entitlement_gb`. Inspect actual DDL and run the read-only
+   `payment_readiness_preflight.php` against the exact candidate/manifest;
+   a PASS does not replace the schema, row and migration-history audit.
 6. Run exactly the reviewed PHP 8.5 runtime package in isolated staging with
    synthetic/unfunded payment cases and mock Marzban/PasarGuard. Prove first
    approval, double click/two staff, remote success with SQL commit failure,

@@ -608,6 +608,7 @@ echo json_encode(['violations'=>$violations,'topics'=>count(achbotMessageTopics(
     additional={'delivery_recovery','finance_workbench',
                 'delivery_workbench','service_workbench','service_edit_delivery',
                 'service_recovery_action','hosted_original_recovery',
+                'hosted_replacement',
                 'finance_exceptions','manual_receipt_final'}
     topics=json.loads(command('php','-r',
         'require "messages/loader.php";echo json_encode(achbotMessageTopics());'))

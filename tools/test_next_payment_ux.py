@@ -214,11 +214,18 @@ def check():
         auto_case=recovery.call(w,e,driver,op='route',callback=f'serviceRecoveryCase_{auto}')
         assert event(auto_case,'EDIT') and not event(auto_case,'GET'),auto_case
         assert 'remote_unconfirmed' in event(auto_case,'EDIT')[0]['text']
-        forbidden=recovery.call(w,e,driver,op='route',callback=f'serviceRecoveryCase_{auto}',
-                                 actor=9002,chat=9002)
-        assert event(forbidden,'ACK') and not event(forbidden,'EDIT') and not event(forbidden,'SEND')
+        delegated=recovery.call(w,e,driver,op='route',callback=f'serviceRecoveryCase_{auto}',
+                                  actor=9002,chat=9002)
+        # 9002 is current Operator in this source-real fixture; it has the
+        # same review permission as a payment reviewer, but viewing remains
+        # local and cannot silently create Native or send customer Telegram.
+        assert event(delegated,'EDIT') and not event(delegated,'GET') and not event(delegated,'SEND'),delegated
+        assert 'remote_unconfirmed' in event(delegated,'EDIT')[0]['text']
+        denied=recovery.call(w,e,driver,op='route',callback=f'serviceRecoveryCase_{auto}',
+                              actor=1001,chat=1001)
+        assert event(denied,'ACK') and not event(denied,'EDIT') and not event(denied,'SEND')
         assert purchase.snapshot(w,e,DB)==before
-        checks.append('service_recovery_owner_private_local_diagnostics_never_mutate_or_send_remote')
+        checks.append('service_recovery_private_current_payments_reviewer_local_diagnostics_no_mutation')
         specialist=recovery.call(w,e,driver,op='list')['value']
         assert historic not in [int(x['id']) for x in specialist] and recorded not in [int(x['id']) for x in specialist]
         assert unresolved in [int(x['id']) for x in specialist]

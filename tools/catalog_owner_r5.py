@@ -407,6 +407,10 @@ WORKBENCH_BLOCKS={
  # #117 additive new original-HOSTED first-time CREATE guidance.
  # Source bytes are independently pinned; all pre-existing sections and
  # prior Owner-approved translations remain byte-for-byte unchanged.
+ 'hosted_replacement':{
+  'sha':'71b48a3375bde58af787cbbe1b9f670ebaf6341ca1650e5b24b6842a0ec6102e',
+  'names':{'inspect','review_note','warning','confirm','reserved','unavailable','diagnostic'}
+ },
  'hosted_original_recovery':{
   'sha':'f442322538c4ebf091f8ca914667a046ad3ba7431a094de4cb794f25d6574394',
   'names':{'resume_unstarted','unstarted_warning','started'}

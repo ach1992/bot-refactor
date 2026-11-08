@@ -308,13 +308,18 @@ def check():
                         callback='attentionInboxService',actor=actor,chat=chat)
             assert events(denied,'ACK') and not events(denied,'EDIT') and not events(denied,'GET')
         cases.append('review_hub_existing_permission_excludes_customer_and_foreign_chat')
-        for actor,chat in [(9002,9002),(9001,9002),(9002,9001)]:
+        delegated_case=call(work,env,driver,op='route',
+                             callback=f'serviceRecoveryCase_{resumable}',
+                             actor=9002,chat=9002)
+        assert events(delegated_case,'EDIT') and not events(delegated_case,'GET')
+        assert action in [b['callback_data'] for b in buttons(delegated_case)]
+        for actor,chat in [(1001,1001),(9001,9002),(9002,9001)]:
             denied=call(work,env,driver,op='route',
                         callback=f'serviceRecoveryCase_{resumable}',actor=actor,chat=chat)
             assert events(denied,'ACK') and not events(denied,'EDIT')
             assert not events(denied,'GET') and not events(denied,'SEND')
         assert unchanged(work,env,resumable)==original
-        cases.append('standard_manual_resume_button_owner_private_only')
+        cases.append('standard_manual_resume_button_current_payment_staff_private_only')
         # Do not suggest resuming a mismatched count, paid/hosted case,
         # custom quote, or missing original receipt. The original accept
         # handler separately enforces the full immutable evidence again.

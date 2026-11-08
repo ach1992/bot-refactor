@@ -2,37 +2,63 @@
 
 ## Unreleased Issue #117 source — next prerelease preflight (NOT published)
 
-The integrated main after RC25 includes Owner-initiated payment-review and
-service/delivery recovery paths from PRs #118–#131. The next source candidate
-extends original paid Hosted BUY_SUB recovery to fully recorded 007 native
-manifests with partially linked or verified-but-unlinked accounts **and**
-contiguous original manifests with trailing, provably unstarted CREATE
-ordinals. Such an ordinal receives its FIRST provider CREATE only through an
-explicit Owner callback after prior GET and original identity/capacity
-checks. No replay, replacement or duplicate settlement is authorized. This is **not** an installed
-migration or release announcement. The *latest published* GitHub artifact
-remains RC25. No next-release SHA, ZIP checksum, independent review, Owner
-Merge/release approval, installed schema or Chili acceptance is asserted by
-this draft; record exact identities only when established by the required
-gates.
+The integrated main after RC25 includes the reviewed payment-review and
+service/delivery recovery paths from PRs #118–#132. Merged PR #132 preserves
+original paid Hosted BUY_SUB accounts and order links and permits only FIRST
+CREATE for a provably unstarted trailing 007 ordinal, after an authenticated
+GET and original payment/capacity checks. This is **not** a general account
+replacement or license to re-POST unknown Native effects. PR #133 is a separate subsequent source proposal described below. Its
+first candidate received a complete independent **CHANGES_REQUIRED** review;
+a remediation R1 candidate requires fresh exact-HEAD CI and independent delta
+re-review before integration. Neither 021 nor the candidate is approved,
+merged, released, migrated or installed. The *latest published* GitHub artifact remains RC25. Prior
+independent reviews and Owner merges cannot authorize this new candidate's
+Merge, release, Chili migration or live provider/payment/Telegram effects.
 
 An authorized RC25-to-next upgrade needs an actual source/DB/config and
 installed-hotfix inventory, a restored staging backup, full PHP 8.5
 eight-family candidate validation, and independent review. Verify the
 existing 001–017 history and one-time **018 delivery intents**, **019 human
-review decisions** and **020 durable follow-up intents** (in that order)
-against exact target table/index/engine shapes. Do not blindly replay them;
+review decisions**, **020 durable follow-up intents**, and then new
+**021 paid reconciliation provenance**, all in that order and only after
+verifying exact target table/index/engine shapes. Do not blindly replay them;
 read-only metadata inspection of the installed NL Chili target on
 2026-11-08 found those three tables **absent**. This is not a full schema
 preflight or permission to run SQL. Retain actual payment and Native journals, private
 `telegramWebhookSecret`, original 018/020 ciphertext and active Cron
 locks. Resolve source-versus-installed drift before exact-manifest atomic
-replacement. Reversing only PHP after new 018/019/020 or Native writes is
+replacement. Reversing only PHP after new 018/019/020/021 or Native writes is
 not a safe rollback: preserve journals and reconcile by verified
 roll-forward or whole-state restore at a quiesced, audited pre-write point.
 Follow the existing [RC25 to next prerelease staging procedure](RC25-TO-RC26.md)
 and [payment recovery contract](PAYMENT-DELIVERY-RECOVERY.md). None of
 these source steps permits a live payment, Telegram send or SQL mutation.
+
+### Proposed subsequent Issue #117 source increment (not reviewed/released)
+
+The next candidate adds a separate `021` journal provenance contract **and
+new, issuance-time frozen BUY_SUB day/GB fields on `pays`** for an
+explicitly confirmed, once-only original-Hosted paid account replacement,
+including a truly empty original 007 manifest, internal gaps with a
+surviving first capacity claimant, and foreign/orphan Native readback.
+A missing first 007 *with surviving later originals* requires strict
+GET confirmation of every surviving original operation, a distinct stored
+capacity proof and an explicit payments-authorized staff confirmation;
+that path never reserves the original capacity twice. Unverified later
+Native identities fail closed without a second account POST or capacity debit. The previous 003/007 evidence remains unchanged and
+payment permission, **not solely Owner identity**, governs the private
+review/confirm workflow (including the pre-POST and terminal transaction
+recheck). Review is not proof of Native absence and prior remote effects
+must not be replayed. New PG/Marzban tests, exact PHP 8.5 CI and independent
+review remain mandatory before any release or installed acceptance claim.
+If approved for a future Chili upgrade, the earlier 018, 019 and 020 journals
+must be verified first, then 021 (including its `pays` columns) applied
+after the same restore-tested schema/index/engine preflight. Legacy
+standard-plan invoices with neither issued terms nor a surviving 007
+entitlement fail closed before replacement CREATE; original terms must
+never be guessed from an edited current plan. Review B1 also requires
+preserving capacity restoration for real nonfinancial CREATE accounts. No production SQL or provider action is
+preauthorized by this source description.
 
 ## Published RC25 — independent administrative Panel Groups
 

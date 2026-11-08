@@ -36,7 +36,21 @@ function achbotEffectSafeFailure(Throwable $error): array {
         'pg_rate_limited','pg_vendor_unavailable','pg_request_rejected',
         'pg_dispatch_target_changed','pg_verify_begin','pg_verify_commit_unknown',
         'pg_effect_verification_unconfirmed','pg_credentials_changed',
-        'pg_create_invalid','pg_groups_required'
+        'pg_create_invalid','pg_groups_required',
+        // Explicit paid-account replacement. Keep known operational reasons
+        // intact while never serializing untrusted provider/SQL exception text.
+        'replacement_actor_not_permitted','replacement_capacity_insufficient',
+        'replacement_capacity_owner_changed','replacement_dispatch_needs_review',
+        'replacement_evidence_expired_or_invalid','replacement_first_capacity_unavailable',
+        'replacement_missing_capacity_proof',
+        'replacement_original_duration_changed_or_unverifiable',
+        'replacement_original_entitlement_changed',
+        'replacement_original_entitlement_unavailable',
+        'replacement_original_evidence_changed','replacement_plan_invalid',
+        'replacement_reservation_id_missing','replacement_reservation_unconfirmed',
+        'replacement_reserve_begin','replacement_reserve_commit_unknown',
+        'replacement_staff_permission_revoked','replacement_target_changed',
+        'replacement_unrecognized_remote_evidence','replacement_username_invalid'
     ];
     $fallback='runtime_error';$depth=0;$source='runtime';
     for ($current=$error;$current!==null && $depth<8;$current=$current->getPrevious()) {
@@ -184,7 +198,8 @@ function achbotEffectValidUsername(string $username): bool {
 }
 
 /** Reserve ONCE before outbound POST; never derive outcome from account counts. */
-function achbotCreatePaidAccount(mysqli $db, int $payId, int $ordinal, array $p): array {
+function achbotCreatePaidAccount(mysqli $db, int $payId, int $ordinal, array $p,
+                                 int $staffActor=0,int $primaryOwner=0): array {
     achbotEffectRequireAutocommit($db);
     achbotEffectRequireUniqueLine($db);
     $serverId=(int)($p['server_id']??0);
@@ -212,6 +227,15 @@ function achbotCreatePaidAccount(mysqli $db, int $payId, int $ordinal, array $p)
     try {
         // These values are owned by the committed payment claim, not callback text.
         achbotEffectLockTargetRows($db,$serverId,$planId,$payId);
+        // An explicit recovery CREATE must revalidate the current, persisted
+        // payment approval grant after acquiring transaction locks. A demoted
+        // staff member cannot rely on an old Telegram confirmation keyboard.
+        if ($staffActor>0) {
+            require_once __DIR__.'/../Admin/Access.php';
+            if ($primaryOwner<=0 ||
+                !achbotAdminCanLocked($db,$staffActor,$primaryOwner,'payments'))
+                throw new RuntimeException('effect_recovery_staff_permission_revoked');
+        }
         $stmt=$db->prepare("SELECT p.user_id,p.plan_id,p.server_id AS paid_server,p.type,p.state,p.approved_by,
             p.agent_count AS raw_count,
             CASE WHEN p.agent_count>0 THEN p.agent_count ELSE 1 END AS requested_count,
@@ -250,6 +274,21 @@ function achbotCreatePaidAccount(mysqli $db, int $payId, int $ordinal, array $p)
             throw new RuntimeException('effect_payment_identity_mismatch');
         }
 
+        // The paid replacement path has its own unique operation identity.
+        // Once any replacement belongs to this payment, do not admit a new
+        // ORIGINAL CREATE from a stale checkout/Cron/operator request.
+        // This query is compatible with legacy 007 before migration 021.
+        $replacementClaim=$db->prepare("SELECT id FROM service_effects
+            WHERE pay_row_id=? AND effect_kind='replacement' LIMIT 1 FOR UPDATE");
+        if (!$replacementClaim)
+            throw new RuntimeException('effect_replacement_guard_prepare_failed');
+        $replacementClaim->bind_param('i',$payId);
+        if (!$replacementClaim->execute())
+            throw new RuntimeException('effect_replacement_guard_read_failed');
+        $hasReplacement=$replacementClaim->get_result()->num_rows>0;
+        $replacementClaim->close();
+        if ($hasReplacement)
+            throw new RuntimeException('effect_original_create_after_replacement_denied');
         $targetIdentity=achbotEffectTargetIdentity($db,$serverId,$planId,$payId,$claim);
         $group=$targetIdentity['group'];$endpoint=$targetIdentity['endpoint'];
         $credentials=$targetIdentity['credentials'];$targetKey=$targetIdentity['key'];

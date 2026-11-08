@@ -142,26 +142,45 @@ function achbotDeliveryHostedBuyDigest(
         ($attempt['payment_id']??null)!==null ||
         ($attempt['evidence_profile']??null)!==null ||
         (int)($effect['pay_row_id']??0)!==$id ||
-        ($effect['effect_kind']??null)!=='create' ||
+        !in_array((string)($effect['effect_kind']??''),['create','replacement'],true) ||
         (int)($effect['ordinal']??0)!==$ordinal ||
         $ordinal<=0 || $ordinal>$count ||
         ($effect['state']??null)!=='local_recorded' ||
         (int)($effect['order_id']??0)<=0 ||
-        (int)($effect['reserved_count']??-1)!==($ordinal===1?$count:0) ||
+        (($effect['effect_kind']??'')==='create'
+            ?(int)($effect['reserved_count']??-1)!==($ordinal===1?$count:0)
+            :($ordinal===1
+                ?!in_array((int)($effect['reserved_count']??-1),[0,$count],true)
+                :(int)($effect['reserved_count']??-1)!==0)) ||
         (int)($effect['target_server_id']??0)!==(int)($pay['server_id']??0) ||
         (int)($effect['plan_id']??0)!==(int)($pay['plan_id']??0))
         return null;
     foreach (['operation_id','request_sha256','target_key','endpoint_sha256',
         'remote_username'] as $key)
         if (!is_string($effect[$key]??null) || $effect[$key]==='') return null;
-    return hash('sha256',json_encode([
-        'hosted-linked-buy:v1',achbotPaymentEvidencePayFingerprint($pay),
+    $replacement=(string)$effect['effect_kind']==='replacement';
+    if ($replacement && ((int)($effect['actor_userid']??0)<=0 ||
+        !in_array((string)($effect['reconciliation_reason']??''),
+            ['original_missing','original_missing_proven','original_unavailable',
+             'original_mismatch','original_invalid'],true) ||
+        preg_match('/^[a-f0-9]{64}$/D',
+            (string)($effect['reconciliation_fingerprint']??''))!==1)) return null;
+    $digestParts=[
+        $replacement?'hosted-replacement:v1':'hosted-linked-buy:v1',
+        achbotPaymentEvidencePayFingerprint($pay),
         achbotPaymentEvidenceQuoteFingerprint($attempt),
         $ordinal,$count,(string)$effect['id'],(string)$effect['operation_id'],
         (string)$effect['request_sha256'],(string)$effect['endpoint_sha256'],
         (string)$effect['target_key'],(string)$effect['remote_username'],
         (string)$effect['requested_expire'],(string)$effect['requested_bytes']
-    ],JSON_THROW_ON_ERROR));
+    ];
+    // Existing 018 packets retain their original v1 digest *exactly*.
+    // Only the distinct replacement uses the additional immutable evidence.
+    if ($replacement) $digestParts[]=[(string)$effect['replaces_effect_id'],
+        (string)$effect['reconciliation_fingerprint'],
+        (string)$effect['reconciliation_reason'],
+        (string)$effect['actor_userid']];
+    return hash('sha256',json_encode($digestParts,JSON_THROW_ON_ERROR));
 }
 function achbotDeliveryInsertHostedBuyLocked(
     mysqli $db,array $pay,array $attempt,array $effect,int $ordinal,

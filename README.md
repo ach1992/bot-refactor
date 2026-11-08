@@ -7,8 +7,10 @@ AChBot is a PHP Telegram bot for VPN subscriptions, plans, customer support, adm
 **Unreleased development:** `main` contains post-RC25 Issue #117 payment,
 Native-service and durable Telegram recovery changes. These are **not**
 included in the published RC25 ZIP. The next prerelease remains unapproved
-and its 018/019/020 schema and installed Chili state require a separate,
-restore-tested operator cutover. See the [release preflight](docs/post-v9/NEXT-RELEASE.md)
+and its 018/019/020/021 schema and installed Chili state require a
+separate, restore-tested operator cutover. Draft PR #133 additionally requires
+current `payments` staff permission for explicit, auditable paid-account
+replacement; it is not part of published RC25 or integrated `main`. See the [release preflight](docs/post-v9/NEXT-RELEASE.md)
 and [RC25 upgrade preparation](docs/post-v9/RC25-TO-RC26.md).
 Do not treat merged source, CI or an Owner recovery button as permission for
 live payment/provider/Telegram effects.
@@ -64,7 +66,7 @@ The coordinator runs `gift2all.php`, its admitted `broadcast` mode, `rewardRepor
 
 Use Bot Settings for instance welcome/home/purchase text and the two explicit order QR switches. Gateway/channel settings own payment configuration and support/report/membership/help/cooperation destinations. Owner manages staff levels and receiving preferences in the administrator list. Each server owns its display settings; static interface copy remains in the two [audience catalogs](messages/README.md).
 
-For upgrades, inventory the actual source, schema, private configuration and active schedules first. Replace the complete runtime together, reconcile retired files, preserve financial and Native journal evidence and active Cron locks, and verify restorable recovery before changing the environment. ZIP extraction never applies SQL. For the current source, use [RC24 -> RC25](docs/post-v9/RC24-TO-RC25.md) and the previous [RC23 -> RC24](https://github.com/ach1992/bot-refactor/releases/download/v0.10.0-rc.24/RC23-TO-RC24.md) guide as needed; older transitions remain linked below. Existing 015/016/017 migrations must never be replayed. After new financial or Native writes, use evidence-preserving reconciliation or operator-approved roll-forward rather than a blind downgrade.
+For upgrades, inventory the actual source, schema, private configuration and active schedules first. Replace the complete runtime together, reconcile retired files, preserve financial and Native journal evidence and active Cron locks, and verify restorable recovery before changing the environment. ZIP extraction never applies SQL. For the published RC25, use [RC24 -> RC25](docs/post-v9/RC24-TO-RC25.md); for the newer unreleased source first review [RC25 -> RC26 draft](docs/post-v9/RC25-TO-RC26.md) and the previous [RC23 -> RC24](https://github.com/ach1992/bot-refactor/releases/download/v0.10.0-rc.24/RC23-TO-RC24.md) guide as needed; older transitions remain linked below. Existing 015/016/017 migrations must never be replayed. After new financial or Native writes, use evidence-preserving reconciliation or operator-approved roll-forward rather than a blind downgrade.
 
 ## Documentation
 

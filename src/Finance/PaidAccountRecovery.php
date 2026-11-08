@@ -11,7 +11,11 @@ require_once __DIR__.'/ServiceEffects.php';
 function achbotContinuePaidAccount(mysqli $db,int $payId,int $ordinal,array $request,
                                    ?callable $exactAccountGet=null,
                                    bool $existingOnly=false,
-                                   bool $allowLinked=false): array {
+                                   bool $allowLinked=false,
+                                   string $kind='create'): array {
+    if (!in_array($kind,['create','replacement'],true) ||
+        ($kind==='replacement' && !$existingOnly))
+        throw new RuntimeException('paid_resume_invalid_effect_kind');
     achbotEffectRequireAutocommit($db);
     achbotEffectRequireUniqueLine($db);
     if ($payId<=0 || $ordinal<=0) throw new RuntimeException('paid_resume_invalid_line');
@@ -22,8 +26,8 @@ function achbotContinuePaidAccount(mysqli $db,int $payId,int $ordinal,array $req
         FROM service_effects e JOIN pays p ON p.id=e.pay_row_id
         JOIN server_plans s ON s.id=p.plan_id
         JOIN server_config c ON c.id=e.target_server_id
-        WHERE e.pay_row_id=? AND e.effect_kind='create' AND e.ordinal=? LIMIT 1");
-    $q->bind_param('ii',$payId,$ordinal);$q->execute();
+        WHERE e.pay_row_id=? AND e.effect_kind=? AND e.ordinal=? LIMIT 1");
+    $q->bind_param('isi',$payId,$kind,$ordinal);$q->execute();
     $e=$q->get_result()->fetch_assoc();$q->close();
     if ($e===null) {
         // Recovery callers that require an already committed native operation
@@ -61,14 +65,14 @@ function achbotContinuePaidAccount(mysqli $db,int $payId,int $ordinal,array $req
         (int)$e['agent_count']<0 || $ordinal>max(1,(int)$e['agent_count']))
         throw new RuntimeException('paid_resume_original_effect_changed');
     if ($e['panel_type']==='marzban')
-        return achbotContinueMarzbanPaidAccount($db,$payId,$ordinal,$e,$exactAccountGet);
+        return achbotContinueMarzbanPaidAccount($db,$payId,$ordinal,$e,$exactAccountGet,$kind);
     if ($e['panel_type']==='pasarguard')
         return achbotContinuePasarGuardPaidAccount($db,$payId,$ordinal,$e);
     throw new RuntimeException('paid_resume_provider_unsupported');
 }
 
 function achbotContinueMarzbanPaidAccount(mysqli $db,int $payId,int $ordinal,array $e,
-                                         ?callable $exactAccountGet=null): array {
+                                         ?callable $exactAccountGet=null,string $kind='create'): array {
     require_once __DIR__.'/RecoveryInspection.php';
     // This helper is also called directly from manual Approval.php, without
     // entering the operator read-only route that normally loads transport.
@@ -81,7 +85,7 @@ function achbotContinueMarzbanPaidAccount(mysqli $db,int $payId,int $ordinal,arr
         static function(string $url,string $user,string $pass,string $name) use (&$remote,$reader): ?object {
             $remote=$reader($url,$user,$pass,$name);
             return $remote;
-        });
+        },$kind);
     if ($observed['status']!=='matching_observation' || !is_object($remote) ||
         !is_string($remote->subscription_url??null) ||
         !is_array($remote->links??null))
@@ -92,7 +96,7 @@ function achbotContinueMarzbanPaidAccount(mysqli $db,int $payId,int $ordinal,arr
     if (!is_string($path) || preg_match('#^/sub/[a-zA-Z0-9_.~%/-]{1,512}$#D',$path)!==1)
         throw new RuntimeException('paid_resume_subscription_unverified');
     if ($e['state']==='dispatching') {
-        $pin=achbotRecoveryTarget($db,$payId,$ordinal);
+        $pin=achbotRecoveryTarget($db,$payId,$ordinal,$kind);
         if (!achbotRecoveryTargetValid($pin,$payId,$ordinal) ||
             (int)$pin['id']!==(int)$e['id'] ||
             (string)$pin['operation_id']!==(string)$e['operation_id'])
@@ -418,12 +422,12 @@ function achbotWalletBuyRecoverable(mysqli $db,int $payId): bool {
 }
 
 /**
- * Owner-only caller must authenticate before invoking. Both provider paths
- * read back the ORIGINAL marker; never call CREATE for an absent ordinal.
+ * Current payments-authorized staff must authenticate before invoking. Both
+ * provider paths read the ORIGINAL marker; never CREATE an absent ordinal.
  */
 function achbotResumeWalletBuy(
     mysqli $db,int $payId,array $botState,array $buttonValues,string $botUrl,
-    ?callable $marzbanRead=null
+    ?callable $marzbanRead=null,int $staffActor=0,int $primaryOwner=0
 ): array {
     achbotEffectRequireAutocommit($db);
     $first=achbotWalletBuyRecoverySnapshot($db,$payId);
@@ -470,6 +474,12 @@ function achbotResumeWalletBuy(
         if (!$db->begin_transaction()) throw new RuntimeException('wallet_recovery_finish_begin');
         $started=true;
         $after=achbotWalletBuyRecoverySnapshot($db,$payId,true);
+        if ($staffActor>0) {
+            require_once __DIR__.'/../Admin/Access.php';
+            if ($primaryOwner<=0 ||
+                !achbotAdminCanLocked($db,$staffActor,$primaryOwner,'payments'))
+                throw new RuntimeException('wallet_recovery_staff_permission_revoked');
+        }
         if (!$after || !hash_equals($original,achbotWalletBuyRecoveryPin($after)))
             throw new RuntimeException('wallet_recovery_identity_changed');
         foreach ($after['lines'] as $ordinal=>$effect) {
@@ -541,8 +551,11 @@ function achbotResumeWalletBuy(
  * attach an already-verified original account whose order was never committed.
  * It never sends a second native CREATE or repeats settlement/capacity.
  */
-function achbotHostedLinkedBuySnapshot(
-    mysqli $db,int $payId,bool $lock=false,bool $allowIncomplete=false
+/** Strict existing paid Hosted financial admission shared with the normal
+ * recovery and any explicitly approved replacement of undeliverable native
+ * accounts. No merchant verification or financial transition occurs here. */
+function achbotHostedOriginalFundingSnapshot(
+    mysqli $db,int $payId,bool $lock=false
 ): ?array {
     require_once __DIR__.'/DeliveryLedger.php';
     require_once __DIR__.'/RecoveryInspection.php';
@@ -592,6 +605,20 @@ function achbotHostedLinkedBuySnapshot(
     $q=$db->prepare('SELECT id FROM payment_delivery_intents WHERE pay_row_id=? LIMIT 1'.$suffix);
     $q->bind_param('i',$payId);$q->execute();$existing=$q->get_result()->fetch_assoc();$q->close();
     if ($existing) return null;
+    return ['pay'=>$pay,'attempt'=>$attempt,'count'=>$count];
+}
+
+function achbotHostedLinkedBuySnapshot(
+    mysqli $db,int $payId,bool $lock=false,bool $allowIncomplete=false
+): ?array {
+    require_once __DIR__.'/DeliveryLedger.php';
+    require_once __DIR__.'/RecoveryInspection.php';
+    require_once __DIR__.'/ReviewDecisions.php';
+    require_once __DIR__.'/../Purchase/OrderWrites.php';
+    $funding=achbotHostedOriginalFundingSnapshot($db,$payId,$lock);
+    if (!$funding) return null;
+    $pay=$funding['pay'];$attempt=$funding['attempt'];$count=$funding['count'];
+    $suffix=$lock?' FOR UPDATE':'';
     $q=$db->prepare('SELECT * FROM service_effects WHERE pay_row_id=? '.
         'ORDER BY ordinal,effect_kind'.$suffix);
     $q->bind_param('i',$payId);$q->execute();$effects=$q->get_result()->fetch_all(MYSQLI_ASSOC);$q->close();
@@ -732,7 +759,8 @@ function achbotHostedLinkedBuyRecoverable(mysqli $db,int $payId): bool {
  * No merchant check/credit, replacement or Telegram send occurs here.
  */
 function achbotHostedContinueUnstartedOrdinal(
-    mysqli $db,int $payId,?callable $marzbanRead=null
+    mysqli $db,int $payId,?callable $marzbanRead=null,
+    int $staffActor=0,int $primaryOwner=0
 ): array {
     require_once __DIR__.'/../Purchase/Core.php';
     $before=achbotHostedLinkedBuySnapshot($db,$payId,false,true);
@@ -806,25 +834,33 @@ function achbotHostedContinueUnstartedOrdinal(
         'net_type'=>(string)($detail['type']??'normal'),
         'rahgozar'=>(int)($detail['rahgozar']??0),
         'limitip'=>(int)($detail['limitip']??0)
-    ]);
+    ],$staffActor,$primaryOwner);
     if (!is_object($remote) || ($remote->success??false)!==true ||
         $name!==$remark || (int)$newEffect<=0)
         throw new RuntimeException('hosted_original_new_ordinal_unverified');
     return ['started_ordinal'=>$next,'requested'=>$before['count']];
 }
 
-/** Existing Owner-only technical recovery route authenticates BEFORE entry.
+/** Current payments-authorized staff route authenticates BEFORE entry.
  * Rebuild immutable 018 packets from authenticated native GET, then close
  * the held original 003 claim in the SAME SQL commit. */
 function achbotResumeHostedLinkedBuy(
     mysqli $db,int $payId,array $botState,array $buttonValues,string $botUrl,
-    ?callable $marzbanRead=null
+    ?callable $marzbanRead=null,int $staffActor=0,int $primaryOwner=0
 ): array {
     achbotEffectRequireAutocommit($db);
-    $before=achbotHostedLinkedBuySnapshot($db,$payId,false,true);
+    require_once __DIR__.'/PaidReplacementRecovery.php';
+    $withReplacement=achbotHostedHasReplacement($db,$payId);
+    $before=$withReplacement
+        ?achbotHostedReconciliationSnapshot($db,$payId)
+        :achbotHostedLinkedBuySnapshot($db,$payId,false,true);
     if (!$before) throw new RuntimeException('hosted_recovery_manifest_unavailable');
-    if (count($before['lines'])<$before['count']) {
-        $progress=achbotHostedContinueUnstartedOrdinal($db,$payId,$marzbanRead);
+    if ($withReplacement && count(array_filter($before['lines'],
+            static fn($e): bool => is_array($e)))!==$before['count'])
+        throw new RuntimeException('hosted_recovery_replacement_manifest_incomplete');
+    if (!$withReplacement && count($before['lines'])<$before['count']) {
+        $progress=achbotHostedContinueUnstartedOrdinal($db,$payId,$marzbanRead,
+            $staffActor,$primaryOwner);
         if ($progress['started_ordinal']<$progress['requested']) return [
             'committed'=>false,'progressed'=>true,'ordinal'=>$progress['started_ordinal'],
             'count'=>$progress['requested']];
@@ -834,7 +870,8 @@ function achbotResumeHostedLinkedBuy(
         if (!$before) throw new RuntimeException('hosted_original_manifest_not_complete');
     }
     $pay=$before['pay'];$count=$before['count'];
-    $pin=achbotHostedLinkedBuyPin($before);
+    $pin=$withReplacement?achbotHostedReconciliationPin($before):
+        achbotHostedLinkedBuyPin($before);
     $owner=(int)$pay['user_id'];$server=(int)$pay['server_id'];
     [$serverInfo,$serverConfig]=getServerInfoAndConfig($db,$server);
     if ((string)($serverConfig['type']??'')!==(string)$pay['panel_type'])
@@ -851,7 +888,7 @@ function achbotResumeHostedLinkedBuy(
             'remark'=>(string)$effect['remote_username'],'volume'=>$volume,
             'days'=>$days,'uniqid'=>'','protocol'=>'','port'=>0,
             'expire_microdate'=>0,'net_type'=>'','rahgozar'=>0,'limitip'=>0
-        ],$marzbanRead,true,true);
+        ],$marzbanRead,true,true,(string)$effect['effect_kind']);
         if (!is_object($remote) || ($remote->success??false)!==true ||
             $name!==$effect['remote_username'] || $effectId!==(int)$effect['id'])
             throw new RuntimeException('hosted_recovery_original_not_proven');
@@ -879,8 +916,18 @@ function achbotResumeHostedLinkedBuy(
     try {
         if (!$db->begin_transaction()) throw new RuntimeException('hosted_recovery_finish_begin');
         $started=true;
-        $after=achbotHostedLinkedBuySnapshot($db,$payId,true);
-        if (!$after || !hash_equals($pin,achbotHostedLinkedBuyPin($after)))
+        $after=$withReplacement
+            ?achbotHostedReconciliationSnapshot($db,$payId,true)
+            :achbotHostedLinkedBuySnapshot($db,$payId,true);
+        if ($staffActor>0) {
+            require_once __DIR__.'/../Admin/Access.php';
+            if ($primaryOwner<=0 ||
+                !achbotAdminCanLocked($db,$staffActor,$primaryOwner,'payments'))
+                throw new RuntimeException('hosted_recovery_staff_permission_revoked');
+        }
+        $afterPin=$after?($withReplacement?achbotHostedReconciliationPin($after):
+            achbotHostedLinkedBuyPin($after)):null;
+        if (!$after || !is_string($afterPin) || !hash_equals($pin,$afterPin))
             throw new RuntimeException('hosted_recovery_identity_changed');
         foreach ($after['lines'] as $ordinal=>$effect) {
             $expected=$effect['order_id']===null?'verified':'local_recorded';
