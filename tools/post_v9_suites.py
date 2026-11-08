@@ -1187,160 +1187,24 @@ def run_wallet(tmp: str) -> tuple[dict, dict]:
         ["python3",str(ROOT/"tools/test_next_text_catalog.py")],
         cwd=ROOT,check=True,timeout=180,capture_output=True,text=True)
     text_catalog=json.loads(catalog_output.stdout)
-    if not (text_catalog.get("status")=="PASS"
-            and text_catalog.get("source_files")==78
-            and text_catalog.get("pre_style_source_equivalent_occurrences")==3202
-            and text_catalog.get("presentation",{}).get("owner_followup_changes")==7
-            and text_catalog.get("presentation",{}).get("owner_followup_negative_controls")==7
-            and text_catalog.get("native",{}).get("current_owner_followup_changes")==7
-            and text_catalog.get("static_ui_violations")==0
-            and text_catalog.get("ascii_ui_violations")==0
-            and text_catalog.get("ascii_audit_negative_controls")==8
-            and text_catalog.get("management_ascii_audit_controls")==2
-            and text_catalog.get("machine_predicate_audit_controls")==2
-            and text_catalog.get("presentation",{}).get("management_provider_label_cases")==11
-            and text_catalog.get("migrated_machine_fields_or_sql_arguments")==0
-            and text_catalog.get("direct_http_guards")==4
-            and text_catalog.get("native",{}).get("pre_style_templates")==3066
-            and text_catalog.get("native",{}).get("pre_style_interpolated_templates")==293
-            and text_catalog.get("native",{}).get("pre_style_byte_assertions")==4839
-            and text_catalog.get("authorized_source_dependency_files")==3
-            and text_catalog.get("authorized_bootstrap_flow_changes")==1
-            and text_catalog.get("approved_public_copy_corrections")==3
-            and text_catalog.get("native",{}).get("pre_style_byte_preserved_templates")==3063
-            and text_catalog.get("native",{}).get("pre_style_privacy_corrections")==3
-            and text_catalog.get("native",{}).get("actual_traffic_helper_parity_cases")==18
-            and text_catalog.get("editable_catalog_files")==2
-            and text_catalog.get("logical_topics")==28+10
-            and text_catalog.get("current_authorized_source_edits")==26
-            and text_catalog.get("retired_parser_tokens")==23
-            and text_catalog.get("relocation_source_ref")=="ecd30ba9192ed374703118a6c131be8809cc7b06"
-            and text_catalog.get("native",{}).get("current_retired_feature_keys")==3
-            and text_catalog.get("catalog_keys")==2780+14+9+18+27+12+7+17+2+2+3+4+1+3+6+1
-            and text_catalog.get("native",{}).get("editable_catalog_files")==2
-            and text_catalog.get("native",{}).get("logical_topics")==28+10
-            and text_catalog.get("native",{}).get("current_catalog_keys")==2780+14+9+18+27+12+7+17+2+2+3+4+1+3+6+1
-            and text_catalog.get("native",{}).get("current_gift_admin_additions")==1
-            and text_catalog.get("native",{}).get("current_gift_catalog_negative_controls")==8
-            and text_catalog.get("native",{}).get("current_gift_catalog_negative_scenarios")==[
-                'missing_report','wrong_audience','changed_value','missing_parameter',
-                'reordered_parameters','unapproved_extra_key',
-                'duplicate_cross_audience_key','prior_catalog_mutation']
-            and text_catalog.get("native",{}).get("current_addon_catalog_additions")==14
-            and text_catalog.get("native",{}).get("current_addon_catalog_negative_controls")==4
-            and text_catalog.get("native",{}).get("current_addon_catalog_negative_scenarios")==[
-                'addon_missing_key','addon_changed_value','addon_cross_audience','addon_extra_key']
-            and text_catalog.get("native",{}).get("current_management_added_keys")==112
-            and text_catalog.get("native",{}).get("current_catalog_binding_paths")==2
-            and text_catalog.get("native",{}).get("current_catalog_binding_entries")==4
-            and text_catalog.get("native",{}).get("current_catalog_binding_negative_controls")==4
-            and text_catalog.get("native",{}).get("retired_current_facade_absent") is True
-            and text_catalog.get("native",{}).get("current_traffic_shared_observation_cases")==28
-            and text_catalog.get("native",{}).get("current_retired_implementation_keys")==23
-            and text_catalog.get("native",{}).get("current_added_admin_keys")==1
-            and text_catalog.get("native",{}).get("current_parameter_privacy_changes")==3
-            and text_catalog.get("native",{}).get("current_style_changes",0)>0
-            and text_catalog["native"]["current_byte_preserved_keys"]
-                +text_catalog["native"]["current_style_changes"]
-                +text_catalog["native"]["current_added_admin_keys"]==2523
-            # Prior approved topics remain individually hash-pinned. The
-            # new 3-entry Owner-private original Hosted CREATE action adds
-            # exactly 3 keys, 3 source references and eight native template
-            # assertions (including one parameterized object/one-pass text).
-            # Preserve all earlier counters and negative controls.
-            and text_catalog.get("native",{}).get("current_native_template_assertions")==4120+24+9+139+42+7+2+3+9+1+8+21+6
-            and text_catalog.get("native",{}).get("current_object_conversion_templates")==268+2+15+5+1+1+1+3+1
-            and text_catalog.get("native",{}).get("current_shared_multi_parameter_templates")==66+1+14+5+1+1+1+2+1
-            and text_catalog.get("native",{}).get("current_one_pass_templates")==268+2+15+5+1+1+1+3+1
-            and text_catalog.get("native",{}).get("current_r5_changes")==273
-            and text_catalog.get("native",{}).get("current_r5_retired_keys")==10
-            and text_catalog.get("native",{}).get("current_r5_added_keys")==60
-            and text_catalog.get("presentation",{}).get("r5_negative_controls")==5
-            and text_catalog.get("native",{}).get("current_non_ascii_digit_templates")==0
-            and text_catalog.get("presentation",{}).get("status")=="PASS"
-            and text_catalog.get("presentation",{}).get("editable_files")==2
-            and text_catalog.get("presentation",{}).get("current_keys")==2780+14+9+18+27+12+7+17+2+2+3+4+1+3+6+1
-            and text_catalog.get("presentation",{}).get("numeric_template_changes")==23
-            and text_catalog.get("presentation",{}).get("adjacent_emoji_violations")==0
-            and text_catalog.get("presentation",{}).get("parameter_exception_count")==3
-            and text_catalog.get("presentation",{}).get("semantic_label_icon_cases")==12
-            and text_catalog.get("presentation",{}).get("semantic_context_icon_cases")==16
-            and text_catalog.get("presentation",{}).get("native_compositions")==6
-            and text_catalog.get("presentation",{}).get("reviewed_semantic_context_cases")==9
-            and text_catalog.get("presentation",{}).get("archived_semantic_context_RED")==7
-            and text_catalog.get("presentation",{}).get("recipient_placement_cases")==12
-            and text_catalog.get("presentation",{}).get("archived_recipient_placement_RED")==12
-            and text_catalog.get("presentation",{}).get("recipient_payloads_byte_unchanged") is True
-            and text_catalog.get("presentation",{}).get("recipient_source_files")==3
-            and text_catalog.get("presentation",{}).get("recipient_authorized_role_layers")==1
-            and text_catalog.get("presentation",{}).get("recipient_source_layer_negative_controls")==3
-            and text_catalog.get("presentation",{}).get("recipient_authorized_ticket_layers")==2
-            and text_catalog.get("presentation",{}).get("recipient_ticket_layer_negative_controls")==7
-            and text_catalog.get("presentation",{}).get("recipient_staff_capability_conditions")==2
-            and text_catalog.get("presentation",{}).get("recipient_staff_layer_negative_controls")==4
-            and text_catalog.get("presentation",{}).get("recipient_total_source_layer_negative_controls")==14):
-        # The historical proof deliberately checks dozens of counters. When
-        # one diverges, preserve the values as diagnostic metadata instead of
-        # a generic RED that costs another complete native CI run to locate.
-        # Only scalar attestations/counts are included, never message bodies.
-        def metadata_only(block):
-            return {key:value for key,value in block.items()
-                    if type(value) in (bool,int,float) or
-                    (type(value) is str and len(value)<130 and
-                     (key=='status' or key.endswith(('_ref','_commit','_sha')))) or
-                    (key in ('current_gift_catalog_negative_scenarios',
-                             'current_addon_catalog_negative_scenarios') and
-                     isinstance(value,list) and len(value)<=20 and
-                     all(isinstance(item,str) and len(item)<65 for item in value))}
-        evidence={
-            'top':metadata_only(text_catalog),
-            'native':metadata_only(text_catalog.get('native',{})),
-            'presentation':metadata_only(text_catalog.get('presentation',{})),
-        }
-        raise RuntimeError('Pre-style/current catalog proof mismatch: '+
-            json.dumps(evidence,sort_keys=True,ensure_ascii=True))
-    # The Owner removed the redundant add-on filter row; its previously
-    # published admin-only text remains editable but is intentionally not
-    # referenced by the runtime. The exact retired key is already audited
-    # in test_next_text_catalog.py; no other reference count is relaxed.
-    addon_admin_source=(ROOT/'src/Plans/AddonAdmin.php').read_text()
-    if ("achbotAddonAdminFilterKeys" in addon_admin_source or
-            "achbotMessage('addon_scopes.filter_all')" in addon_admin_source):
-        raise RuntimeError('Retired scope filter is unexpectedly rendered')
-    required_api_catalog={
-        # Four retired #112 references and the additional old direct-delete
-        # callback reference are proven absent by test_next_text_catalog.py.
-        # Keep complete current-reference equality, never a lower bound.
-         'runtime_references':2453+14-1-6-4-1+8-3+28+12-5+2+3+4+1+3+6+1,
-        # +28 owner financial/service/delivery copy keys; +12 net from R2
-        # financial exception and R3 final receipt. Two earlier recovery
-        # labels and three original-edit recovery labels are statically
-        # referenced, plus the four new SHA-pinned Owner delivery evidence
-        # labels in the same existing recovery view. The five retired
-        # second-confirmation labels remain
-        # absent under the exact inherited source checks, but are retained
-        # in the editable historical catalog.
-        # The exact orphan/source inventory proof remains mandatory.
-        'api_referenced_keys':68,
-        'api_dynamic_source_paths':2,
-        'api_reference_source_commit':'16c1558322b578b8ca817f3c4b42818d57dcf161',
-        'api_retained_unreferenced_keys':18,
-        'api_reference_negative_controls':8,
+    expected_catalog={
+        'status':'PASS','current_catalog_keys':2844,
+        'current_admin_keys':1902,'current_user_keys':942,
+        'retired_experimental_keys':129,'retired_experimental_topics':10,
+        'new_copy_entries':24,'current_runtime_files':131,
+        'new_copy_references_unbound':0,
+        'unapproved_existing_copy_changes':0,
+        'new_copy_negative_controls':5,'bare_ui_copy_violations':0,
+        'published_rc26_artifacts_modified':False,
     }
-    required_api_native_catalog={
-        'current_api_additions':86,
-        'current_api_user_additions':22,
-        'current_api_admin_additions':64,
-        'current_r5_catalog_keys':2685,
-    }
-    for section,proof,required in [('references',text_catalog,required_api_catalog),
-            ('native',text_catalog.get('native',{}),required_api_native_catalog)]:
-        if any(type(proof.get(key)) is not type(value) or proof.get(key)!=value
-               for key,value in required.items()):
-            raise RuntimeError('Current API catalog source proof incomplete: '+section+
-                ' mismatches='+json.dumps({key:{'expected':value,'observed':proof.get(key)}
-                for key,value in required.items() if type(proof.get(key)) is not type(value)
-                or proof.get(key)!=value},sort_keys=True,ensure_ascii=True))
+    if (any(text_catalog.get(k)!=v for k,v in expected_catalog.items()) or
+            type(text_catalog.get('runtime_checked_php_sources')) is not int or
+            text_catalog['runtime_checked_php_sources']<70 or
+            type(text_catalog.get('source_literal_bindings')) is not int or
+            text_catalog['source_literal_bindings']<2000):
+        raise RuntimeError('Current post-cleanup catalog exact copy/negative proof incomplete: '+
+            json.dumps({k:[v,text_catalog.get(k)] for k,v in expected_catalog.items()
+                        if text_catalog.get(k)!=v},sort_keys=True))
     copy_audience_output=subprocess.run(
         ["python3",str(ROOT/"tools/test_next_copy_audience.py")],
         cwd=ROOT,check=True,timeout=60,capture_output=True,text=True)

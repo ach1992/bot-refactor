@@ -98,7 +98,7 @@ class ShardContractTests(unittest.TestCase):
         result = shard.aggregate(self.source, self.reports)
         self.assertIs(result["complete"], True)
         # All 77 current fields remain, plus the explicit validation record.
-        self.assertEqual(len(result), 79)
+        self.assertEqual(len(result), 78)
         self.assertIs(result["historical_suite_requires_separate_pinned_ci_execution"], False)
         self.assertEqual(result["validation"]["scope"], "full_current_php85")
         self.assertEqual(result["validation"]["families"], list(shard.FAMILIES))

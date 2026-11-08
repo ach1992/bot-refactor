@@ -433,7 +433,7 @@ return !empty($GLOBALS['spec']['fail_staff'])?null:(object)['ok'=>true];}""")
         beforeDeliveries=int(query(work,env,f'SELECT attempt_count FROM payment_delivery_intents WHERE pay_row_id={n}'))
         callback=call(op='review_resume',pay=n)
         edits=[e['text'] for e in callback['events'] if e['event']=='EDIT']
-        assert callback['result']=='routed' and len(edits)==1 and 'دریافت همهٔ پیام‌های مشتری هنوز تأیید نشده' in edits[0],callback
+        assert callback['result']=='routed' and len(edits)==1 and 'تأیید دریافت همهٔ پیام‌های مشتری موجود نیست' in edits[0],callback
         assert not any(e['event'] in ['DELIVER','POST','MESSAGE'] for e in callback['events']),callback
         assert int(query(work,env,f'SELECT attempt_count FROM payment_delivery_intents WHERE pay_row_id={n}'))==beforeDeliveries
         cases.append('actual_api_resume_telegram_unknown_native_create_not_replayed_or_misreported')
@@ -465,12 +465,12 @@ return !empty($GLOBALS['spec']['fail_staff'])?null:(object)['ok'=>true];}""")
         query(work,env,f"UPDATE payment_delivery_intents SET state='pending',acknowledged_at=NULL WHERE pay_row_id={n}")
         failed=call(op='review_resume',pay=n,fail_terminal_customer=True)
         edits=[e['text'] for e in failed['events'] if e['event']=='EDIT']
-        assert len(edits)==1 and 'دریافت همهٔ پیام‌های مشتری هنوز تأیید نشده' in edits[0],failed
+        assert len(edits)==1 and 'تأیید دریافت همهٔ پیام‌های مشتری موجود نیست' in edits[0],failed
         assert query(work,env,f'SELECT state FROM payment_delivery_intents WHERE pay_row_id={n}')=='unknown'
         attempts=int(query(work,env,f'SELECT attempt_count FROM payment_delivery_intents WHERE pay_row_id={n}'))
         again=call(op='review_resume',pay=n)
         edits=[e['text'] for e in again['events'] if e['event']=='EDIT']
-        assert len(edits)==1 and 'دریافت همهٔ پیام‌های مشتری هنوز تأیید نشده' in edits[0],again
+        assert len(edits)==1 and 'تأیید دریافت همهٔ پیام‌های مشتری موجود نیست' in edits[0],again
         assert not any(e['event'] in ['MESSAGE','DELIVER','POST'] for e in again['events'])
         assert int(query(work,env,f'SELECT attempt_count FROM payment_delivery_intents WHERE pay_row_id={n}'))==attempts
         assert int(query(work,env,'SELECT wallet FROM users WHERE userid=1001'))==walletAfter

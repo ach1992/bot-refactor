@@ -293,6 +293,7 @@ def query(work,env,sql,db=DB):
 def run(work,env,driver,**spec):
     args=['php','-n','-d','extension=mysqlnd','-d','extension=mysqli',
           '-d','allow_url_fopen=0','-d','display_errors=0',
+          '-d','log_errors=1','-d','error_log=/dev/stderr',
           '-d','disable_functions=curl_init,curl_exec,exec,shell_exec,system,passthru,popen,proc_open,mail',
           str(driver),str(ROOT),str(work/'mysql.sock'),DB,json.dumps(spec)]
     p=subprocess.run(args,cwd=work,env=env,capture_output=True,text=True,timeout=25)

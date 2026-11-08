@@ -134,7 +134,7 @@ foreach([9001,9002,9003,9004] as $actor)foreach(['attentionInbox','attentionCase
  $screens=array_values(array_filter($GLOBALS['events'],fn($e)=>in_array($e['kind'],['edit','send'],true)));
  yes(count($screens)===1 && $screens[0]['chat']===$actor,'actual private read-only review delivered to allowed actor '.$actor.' '.$cb);
  $callbacks=[];foreach(json_decode($screens[0]['keys'],true)['inline_keyboard'] as $row)foreach($row as $button)$callbacks[]=$button['callback_data'];
- yes(in_array('attentionInbox',$callbacks,true) &&
+ yes(in_array($cb==='attentionInbox'?'managePanel':'attentionInbox',$callbacks,true) &&
     !array_filter($callbacks,fn($c)=>preg_match('/^(npReview|bankReview|serviceRecovery|financeExtra|deliveryInbox)/',$c)),
     'one automatic gateway review with no extra workbenches '.$actor.' '.$cb);
 }

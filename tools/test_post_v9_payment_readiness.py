@@ -324,7 +324,7 @@ def main() -> dict:
                            text=True,capture_output=True,timeout=8)
         require((p.returncode != 0), 'line_116')
         code, result, _ = report_run(d)
-        require((code == 2 and has(result,'schema_003','BLOCK','missing')), 'line_118')
+        require((code == 2 and has(result,'schema_003','BLOCK','missing')), 'line_118: '+repr((code,result.get('schema',{}).get('003'),result.get('findings',[])[:3])))
         require((has(result,'setting_bot_states','BLOCK','document_missing')), 'line_119')
         cases.append('missing_ledger_and_settings_fail_closed')
 
