@@ -330,8 +330,12 @@ if ($technicalInbox ||
                 'callback_data'=>'deliveryInbox']];
             $rows[]=[['text'=>achbotMessage('finance_exceptions.open'),
                 'callback_data'=>'financeExtraInbox']];
+        }
+        if (achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'review')) {
             $rows[]=[['text'=>achbotMessage('service_workbench.open'),
                 'callback_data'=>'serviceRecoveryInbox']];
+        }
+        if ((int)$from_id===(int)$admin) {
             $rows[]=[['text'=>achbotMessage('delivery_workbench.native_inbox'),
                 'callback_data'=>'bankReviewInbox']];
             $rows[]=[['text'=>\achbotMessage('manual_payment.manual_receipts.button.3d941bcb15'),
@@ -422,16 +426,71 @@ if (preg_match('/^accept([A-Za-z0-9_-]{1,50})$/D',
     }
 }
 
+// Paid Hosted replacement is a separate, explicit two-step staff decision.
+// Its original 007 operation remains immutable even if a remote 404, foreign
+// account, or lost response makes it unusable. Preview never mutates SQL.
+$replaceParts=[];
+$replacePreview=preg_match('/^hostedReplP_([1-9][0-9]{0,9})_([1-9][0-9]{0,9})$/D',
+    (string)$data,$replaceParts)===1;
+$replaceConfirm=[];
+$replaceExecute=preg_match('/^hostedReplC_([1-9][0-9]{0,9})_([1-9][0-9]{0,9})_([1-9][0-9]{0,10})_([a-f0-9]{16})$/D',
+    (string)$data,$replaceConfirm)===1;
+if ($replacePreview || $replaceExecute) {
+    if ((int)($admin??0)<=0 || (int)$from_id<=0 ||
+        (int)($chat_id??0)!==(int)$from_id ||
+        !achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'payments')) {
+        achbotAdminDeny();return;
+    }
+    require_once __DIR__.'/../PaidReplacementRecovery.php';
+    $part=$replacePreview?$replaceParts:$replaceConfirm;
+    $payId=(int)$part[1];$ordinal=(int)$part[2];
+    $body='';$buttons=[];
+    try {
+        if ($replacePreview) {
+            $evidence=achbotHostedReplacementEvidence($connection,$payId,$ordinal);
+            if (!$evidence) throw new RuntimeException('replacement_preview_ineligible');
+            $challenge=achbotHostedReplacementChallenge((int)$from_id,$payId,
+                $ordinal,$evidence);
+            $body=achbotMessageHtml('hosted_replacement.warning',[
+                'pay'=>$payId,'ordinal'=>$ordinal,
+                'status'=>$evidence['status'],'reason'=>$evidence['reason']]);
+            $buttons[]=[['text'=>achbotMessage('hosted_replacement.confirm'),
+                'callback_data'=>'hostedReplC_'.$payId.'_'.$ordinal.'_'.$challenge]];
+        } else {
+            $challenge=$replaceConfirm[3].'_'.$replaceConfirm[4];
+            $result=achbotHostedCreateReconciledReplacement($connection,$payId,
+                $ordinal,(int)$from_id,(int)$admin,$challenge);
+            $body=achbotMessageHtml('hosted_replacement.reserved',[
+                'pay'=>$payId,'ordinal'=>$ordinal,'effect'=>(int)$result['effect_id']]);
+        }
+    } catch(Throwable $error) {
+        $reason=achbotEffectSafeFailure($error);
+        error_log('achbot_hosted_replacement_deferred pay_id='.$payId.
+            ' ordinal='.$ordinal.' actor='.(int)$from_id.
+            ' reason='.$reason['reason'].' cause='.$reason['class']);
+        // Ambiguous provider POST is not an invitation to press CREATE again.
+        $body=achbotMessage('hosted_replacement.unavailable');
+    }
+    $buttons[]=[['text'=>achbotMessage('service_workbench.back'),
+        'callback_data'=>'serviceRecoveryCase_'.$payId]];
+    $keys=json_encode(['inline_keyboard'=>$buttons],JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE);
+    answerCallbackQuery($callbackId,achbotMessage('service_workbench.checked'));
+    $reply=editText($message_id,$body,$keys,'HTML',(int)$from_id);
+    if (!is_object($reply) || ($reply->ok??false)!==true)
+        sendMessage($body,$keys,'HTML',(int)$from_id);
+    return;
+}
+
 // Wallet closes a complete original debit hold. Hosted may also provision
-// ONE never-started trailing original ordinal, but only after authenticated
-// readback of the already reserved prefix and an explicit Owner callback.
+// ONE never-started trailing original ordinal after authenticated readback,
+// only via an explicit current payments-authorized staff callback.
 // Unknown existing CREATE effects can NEVER be re-POSTed as missing.
 $originalBuyResume=[];
 if (preg_match('/^(walletBuyResume|hostedBuyResume)_([1-9][0-9]{0,9})$/D',
         (string)$data,$originalBuyResume)===1) {
-    if ((int)($admin??0)<=0 || (int)$from_id!==(int)$admin ||
-        (int)($chat_id??0)!==(int)$admin ||
-        !achbotAdminCan('review',(int)$from_id)) {
+    if ((int)($admin??0)<=0 || (int)$from_id<=0 ||
+        (int)($chat_id??0)!==(int)$from_id ||
+        !achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'payments')) {
         achbotAdminDeny();return;
     }
     require_once __DIR__.'/../PaidAccountRecovery.php';
@@ -439,7 +498,8 @@ if (preg_match('/^(walletBuyResume|hostedBuyResume)_([1-9][0-9]{0,9})$/D',
     $hosted=$originalBuyResume[1]==='hostedBuyResume';
     try {
         $progress=$hosted
-            ?achbotResumeHostedLinkedBuy($connection,$id,$botState,$buttonValues,(string)$botUrl)
+            ?achbotResumeHostedLinkedBuy($connection,$id,$botState,$buttonValues,
+                (string)$botUrl,null,(int)$from_id,(int)$admin)
             :achbotResumeWalletBuy($connection,$id,$botState,$buttonValues,(string)$botUrl);
         $committed=($progress['committed']??false)===true;
         if ($committed) $summary=achbotDeliveryAggregate($connection,$id);
@@ -475,20 +535,21 @@ if (preg_match('/^(walletBuyResume|hostedBuyResume)_([1-9][0-9]{0,9})$/D',
         'callback_data'=>$committed?'serviceRecoveryInbox':'serviceRecoveryCase_'.$id]];
     $keyboard=json_encode(['inline_keyboard'=>$buttons],JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
     answerCallbackQuery($callbackId,achbotMessage('service_workbench.checked'));
-    $reply=editText($message_id,$body,$keyboard,'HTML',(int)$admin);
+    $reply=editText($message_id,$body,$keyboard,'HTML',(int)$from_id);
     if (!is_object($reply) || ($reply->ok??false)!==true)
-        sendMessage($body,$keyboard,'HTML',(int)$admin);
+        sendMessage($body,$keyboard,'HTML',(int)$from_id);
     return;
 }
 
-// Paid remote/renewal uncertainty is not an unpaid transaction. Keep it in
-// a separate, owner-initiated read-only recovery queue. Never offer a second
-// financial approve/decline or dispatch a new native CREATE from this UI.
+// Paid native uncertainty belongs to a private technical service queue.
+// Current staff with 'review' may inspect it; only 'payments' staff see
+// original once-only continuation actions. No general native privilege.
 $serviceParts=[];
 if (preg_match('/^serviceRecovery(Inbox|Case)(?:_([1-9][0-9]{0,17}))?$/D',
     (string)$data,$serviceParts)===1) {
-    if ((int)$admin<=0 || (int)$from_id!==(int)$admin ||
-        (int)($chat_id??0)!==(int)$admin) {
+    if ((int)$admin<=0 || (int)$from_id<=0 ||
+        (int)($chat_id??0)!==(int)$from_id ||
+        !achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'review')) {
         answerCallbackQuery($callbackId,achbotMessage('finance_workbench.denied'),true);
         return;
     }
@@ -583,13 +644,16 @@ if (preg_match('/^serviceRecovery(Inbox|Case)(?:_([1-9][0-9]{0,17}))?$/D',
                 $buttons[]=[['text'=>achbotMessage('service_recovery_action.resume_purchase'),
                     'callback_data'=>'apiEvidenceResume_'.$id]];
             }
-            if ($pay['type']==='BUY_SUB' &&
+            if (achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'payments') &&
+                $pay['type']==='BUY_SUB' &&
                 in_array((string)$pay['state'],['processing_wallet','paid'],true)) {
                 require_once __DIR__.'/../PaidAccountRecovery.php';
+                require_once __DIR__.'/../PaidReplacementRecovery.php';
                 $resume=(string)$pay['state']==='processing_wallet'
                     ?(achbotWalletBuyRecoverable($connection,$id)
                         ?'walletBuyResume_'.$id:null)
-                    :(achbotHostedLinkedBuyRecoverable($connection,$id)
+                    :((achbotHostedLinkedBuyRecoverable($connection,$id) ||
+                        achbotHostedReconciledBuyRecoverable($connection,$id))
                         ?'hostedBuyResume_'.$id:null);
                 if ($resume!==null) {
                     $unstarted=false;
@@ -606,21 +670,34 @@ if (preg_match('/^serviceRecovery(Inbox|Case)(?:_([1-9][0-9]{0,17}))?$/D',
                         :achbotMessage('service_recovery_action.resume_warning'));
                 }
             }
-            if ($canResume) {
+            if ((string)$pay['state']==='paid' &&
+                achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'payments')) {
+                require_once __DIR__.'/../PaidReplacementRecovery.php';
+                $replacementOrdinal=achbotHostedReplacementReviewOrdinal($connection,$id);
+                if ($replacementOrdinal!==null) {
+                    $buttons[]=[['text'=>achbotMessageHtml('hosted_replacement.inspect',[
+                        'ordinal'=>$replacementOrdinal]),
+                        'callback_data'=>'hostedReplP_'.$id.'_'.$replacementOrdinal]];
+                    $body.="\n".achbotMessage('hosted_replacement.review_note');
+                }
+            }
+            if ($canResume &&
+                achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'payments')) {
                 // The existing accept handler is the only financial/native
                 // continuation; its original proof and once-only journals
                 // are rechecked under locks. No new recovery state machine.
                 $buttons[]=[['text'=>achbotMessage('service_recovery_action.resume_purchase'),
                     'callback_data'=>'accept'.$pay['hash_id']]];
             }
-            if ($pendingEdit!==null) {
+            if ($pendingEdit!==null &&
+                achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'payments')) {
                 // The original payments callback dispatches PENDING 020
                 // packets only; approved means there is no financial/native
                 // operation to repeat. UNKNOWN remains a read-only case.
                 $buttons[]=[['text'=>achbotMessage('service_recovery_action.resume_verified_edit'),
                     'callback_data'=>$pendingEdit]];
             }
-            if ($pay['type']==='BUY_SUB') {
+            if ($pay['type']==='BUY_SUB' && (int)$from_id===(int)$admin) {
                 $buttons[]=[['text'=>achbotMessage('delivery_workbench.native_inbox'),
                     'callback_data'=>'bankReviewCase_'.$id]];
             }
@@ -632,9 +709,9 @@ if (preg_match('/^serviceRecovery(Inbox|Case)(?:_([1-9][0-9]{0,17}))?$/D',
         $keys=json_encode(['inline_keyboard'=>$buttons],
             JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE);
         answerCallbackQuery($callbackId,achbotMessage('service_workbench.checked'));
-        $response=editText($message_id,$body,$keys,'HTML',(int)$admin);
+        $response=editText($message_id,$body,$keys,'HTML',(int)$from_id);
         if (!is_object($response)||($response->ok??false)!==true)
-            sendMessage($body,$keys,'HTML',(int)$admin);
+            sendMessage($body,$keys,'HTML',(int)$from_id);
     } catch (Throwable $error) {
         error_log('achbot_service_recovery_inbox_unavailable class='.get_class($error));
         try {answerCallbackQuery($callbackId,achbotMessage('service_workbench.unavailable'),true);}

@@ -184,7 +184,8 @@ function achbotEffectValidUsername(string $username): bool {
 }
 
 /** Reserve ONCE before outbound POST; never derive outcome from account counts. */
-function achbotCreatePaidAccount(mysqli $db, int $payId, int $ordinal, array $p): array {
+function achbotCreatePaidAccount(mysqli $db, int $payId, int $ordinal, array $p,
+                                 int $staffActor=0,int $primaryOwner=0): array {
     achbotEffectRequireAutocommit($db);
     achbotEffectRequireUniqueLine($db);
     $serverId=(int)($p['server_id']??0);
@@ -212,6 +213,15 @@ function achbotCreatePaidAccount(mysqli $db, int $payId, int $ordinal, array $p)
     try {
         // These values are owned by the committed payment claim, not callback text.
         achbotEffectLockTargetRows($db,$serverId,$planId,$payId);
+        // An explicit recovery CREATE must revalidate the current, persisted
+        // payment approval grant after acquiring transaction locks. A demoted
+        // staff member cannot rely on an old Telegram confirmation keyboard.
+        if ($staffActor>0) {
+            require_once __DIR__.'/../Admin/Access.php';
+            if ($primaryOwner<=0 ||
+                !achbotAdminCanLocked($db,$staffActor,$primaryOwner,'payments'))
+                throw new RuntimeException('effect_recovery_staff_permission_revoked');
+        }
         $stmt=$db->prepare("SELECT p.user_id,p.plan_id,p.server_id AS paid_server,p.type,p.state,p.approved_by,
             p.agent_count AS raw_count,
             CASE WHEN p.agent_count>0 THEN p.agent_count ELSE 1 END AS requested_count,

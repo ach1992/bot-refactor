@@ -546,7 +546,9 @@ function achbotRecoveryCase(mysqli $db, int $payId, int $afterOrdinal=0): ?array
 }
 
 /** Inspect the current exact target identity without holding locks across HTTP. */
-function achbotRecoveryTarget(mysqli $db, int $payId, int $ordinal): ?array {
+function achbotRecoveryTarget(mysqli $db, int $payId, int $ordinal,
+                              string $kind='create'): ?array {
+    if (!in_array($kind,['create','replacement'],true)) return null;
     $stmt=$db->prepare("SELECT e.*,p.state AS pay_state,p.type AS pay_type,
             p.user_id,p.plan_id AS paid_plan,p.server_id AS paid_server,
             p.price,p.agent_count,sp.server_id AS plan_server,
@@ -561,10 +563,10 @@ function achbotRecoveryTarget(mysqli $db, int $payId, int $ordinal): ?array {
         LEFT JOIN server_config c ON c.id=e.target_server_id
         LEFT JOIN setting g ON g.id=s.panel_group_id
             AND g.type='ACHBOT_MARZBAN_PANEL_GROUP'
-        WHERE e.pay_row_id=? AND e.ordinal=? AND e.effect_kind='create'
+        WHERE e.pay_row_id=? AND e.ordinal=? AND e.effect_kind=?
         LIMIT 1");
     if (!$stmt) throw new RuntimeException('recovery_target_prepare_failed');
-    $stmt->bind_param('ii',$payId,$ordinal);
+    $stmt->bind_param('iis',$payId,$ordinal,$kind);
     if (!$stmt->execute()) throw new RuntimeException('recovery_target_read_failed');
     $row=$stmt->get_result()->fetch_assoc();
     $stmt->close();
@@ -632,12 +634,12 @@ function achbotRecoveryExactInt($value): ?int {
  * No result permits automatic repair, refund, replay or terminal transition.
  */
 function achbotRecoveryInspectLine(mysqli $db, int $payId, int $ordinal,
-                                   callable $getExactAccount): array {
+                                   callable $getExactAccount,string $kind='create'): array {
     $result=['status'=>'unknown','pay_id'=>$payId,'ordinal'=>$ordinal,
              'remote_gets'=>0,'read_only'=>true,'settlement_proven'=>false];
     if ($payId<=0 || $ordinal<=0) return $result;
     achbotEffectRequireUniqueLine($db);
-    $first=achbotRecoveryTarget($db,$payId,$ordinal);
+    $first=achbotRecoveryTarget($db,$payId,$ordinal,$kind);
     if (!achbotRecoveryTargetValid($first,$payId,$ordinal)) {
         $result['status']='target_or_identity_changed';
         return $result;
@@ -662,7 +664,7 @@ function achbotRecoveryInspectLine(mysqli $db, int $payId, int $ordinal,
         $result['status']='remote_unavailable';
         return $result;
     }
-    $last=achbotRecoveryTarget($db,$payId,$ordinal);
+    $last=achbotRecoveryTarget($db,$payId,$ordinal,$kind);
     if (!achbotRecoveryTargetValid($last,$payId,$ordinal) ||
         $first!==$last) {
         $result['status']='changed_during_inspection';

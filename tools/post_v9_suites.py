@@ -3580,6 +3580,34 @@ def run_funding(tmp: str) -> tuple[dict, dict]:
             hosted.get('original_hosted_duplicate_wallet_debits')==0):
         raise RuntimeError('Original hosted linked delivery evidence incomplete')
     wallet_create['hosted_linked_recovery']=hosted
+    replacement_path=Path(tmp)/'hosted-paid-replacement.json'
+    replacement_run=subprocess.run(
+        ['python3',str(ROOT/'tools/test_post_v9_paid_replacement.py'),
+         '--report',str(replacement_path)],
+        cwd=ROOT,capture_output=True,text=True,timeout=180)
+    if replacement_run.returncode!=0:
+        raise RuntimeError('Hosted paid reconciliation source-real acceptance failed:\n'
+            +(replacement_run.stderr or replacement_run.stdout)[-6000:])
+    replacement=json.loads(replacement_path.read_text())
+    required_replacements={
+        'manager_missing_first_007_signed_one_replacement_capacity_once',
+        'replacement_get_only_links_one_original_paid_order_and_seals_018',
+        'lost_replacement_native_response_get_only_recovery_no_repost',
+        'foreign_original_kept_auditable_and_replacement_preserves_capacity',
+        'demoted_manager_old_signed_button_cannot_claim_new_native_account',
+        'staff_private_preview_denies_nonstaff_and_nonprivate_without_side_effects',
+        'pasarguard_first_replacement_real_loopback_create_and_get_delivery',
+    }
+    if not (replacement.get('complete') is True and
+            set(replacement.get('scenarios',[]))==required_replacements and
+            replacement.get('source_real') is True and
+            replacement.get('php85_required') is True and
+            replacement.get('disposable_mariadb') is True and
+            replacement.get('native_provider_loopback') is True and
+            replacement.get('original_post_replays')==0 and
+            replacement.get('double_wallet_debits')==0):
+        raise RuntimeError('Hosted paid replacement source-real report incomplete')
+    wallet_create['hosted_replacement_recovery']=replacement
     nonpaid_path=Path(tmp)/"trial-bulk-native.json"
     native_nonpaid=subprocess.run(
         ["python3",str(ROOT/"tools/test_post_v9_nonpaid_routes.py"),

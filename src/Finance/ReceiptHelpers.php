@@ -2638,7 +2638,8 @@ function achbotOrderRestoresCapacity(mysqli $db,array $order): bool {
         if ($effect['state']!=='local_recorded') throw new RuntimeException('deletion_capacity_effect_unconfirmed');
         if ($effect['effect_kind']==='adopt' && $effect['source_kind']==='external_import' &&
             $effect['pay_row_id']===null && (int)$effect['reserved_count']===0) return false;
-        if ($effect['effect_kind']==='create' && $effect['source_kind']!=='external_import' && $origin===null)
+        if (in_array((string)$effect['effect_kind'],['create','replacement'],true) &&
+            $effect['source_kind']===null && $origin===null)
             return $positivePlan;
         throw new RuntimeException('deletion_capacity_effect_invalid');
     } catch (Throwable $error) {

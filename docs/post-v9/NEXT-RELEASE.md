@@ -34,6 +34,22 @@ Follow the existing [RC25 to next prerelease staging procedure](RC25-TO-RC26.md)
 and [payment recovery contract](PAYMENT-DELIVERY-RECOVERY.md). None of
 these source steps permits a live payment, Telegram send or SQL mutation.
 
+### Proposed subsequent Issue #117 source increment (not reviewed/released)
+
+The next candidate adds a separate `021` journal provenance contract for an
+explicitly confirmed, once-only original-Hosted paid account replacement,
+including missing first original 007, gapped originals and foreign/orphan
+Native readback. The previous 003/007 evidence remains unchanged and
+payment permission, **not solely Owner identity**, governs the private
+review/confirm workflow (including the pre-POST and terminal transaction
+recheck). Review is not proof of Native absence and prior remote effects
+must not be replayed. New PG/Marzban tests, exact PHP 8.5 CI and independent
+review remain mandatory before any release or installed acceptance claim.
+If approved for a future Chili upgrade, the earlier 018, 019 and 020 journals
+must be verified first, then 021 applied after the same restore-tested
+schema/index/engine preflight. No production SQL or provider action is
+preauthorized by this source description.
+
 ## Published RC25 — independent administrative Panel Groups
 
 [RC25](https://github.com/ach1992/bot-refactor/releases/tag/v0.10.0-rc.25) publishes the independently approved [Issue #114](https://github.com/ach1992/bot-refactor/issues/114) and [PR #115](https://github.com/ach1992/bot-refactor/pull/115). Marzban/PasarGuard logical Panel Groups are administrator-declared physical backend membership: the admin can change/clear a valid Group even with active orders, payment effects, unfinished journals or different credentials/URLs. The operation changes only local Panel Group metadata, not Native access, plan references, orders or money. Subsequent plan/import/transfer operations independently verify Native identity and persistent journal holds, including surviving orphaned-order journals. See the [product contract](SHARED-SERVICE-TRANSFER.md) and [RC24 -> RC25 upgrade/rollback](RC24-TO-RC25.md).

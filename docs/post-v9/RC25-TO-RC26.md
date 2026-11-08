@@ -143,6 +143,43 @@ authorization. Preserve original 003/007/012/018/019/020 evidence; never
 delete/regenerate the journals. Further details: [Payment delivery
 recovery](PAYMENT-DELIVERY-RECOVERY.md).
 
+## Owner-reviewed paid Hosted account replacement — source-only candidate
+
+The original paid NextPay/Zarinpal claim is still governed by its saved 003
+merchant-completed evidence and frozen invoice/quote. Its **original 007
+CREATE row is never reused, overwritten, retried or relabeled**. If a Native
+account cannot be safely recovered, authorized payment-review staff in their
+**own private Telegram chat** (Owner, Manager, Operator and Support where the
+current persisted role allows `payments`) may inspect original evidence and
+then explicitly confirm one **distinct** replacement. The signed,
+actor/ordinal/source-pinned two-step warning does **not** claim that a 404 or
+timeout proves absence; an original Native account can still be orphaned.
+A linked original local order cannot be silently replaced. Stored staff role
+and payment capability are rechecked inside the reservation and final SQL
+transactions, so old keyboards cannot grant actions after demotion.
+
+New additive, **not yet installed** migration `021_paid_reconciliation_provenance.sql`
+adds optional original-effect self-reference, immutable reason/fingerprint and
+a unique source-original replacement claim to the existing 007 journal.
+A replacement gets an independent operation marker and `effect_kind=replacement`
+reservation **COMMITTED BEFORE** its first Native POST; any lost/ambiguous
+POST response requires GET-only reconciliation, never a second POST. The
+first committed original capacity claimant stays authoritative. Where there
+is genuinely no first original 007 capacity claimant, an explicitly authorized
+first replacement may reserve the complete original quantity once. This
+cannot be inferred from an ambiguous historical object without reviewing the
+actual installed schema, metadata and earlier journals. Later linked orders,
+immutable encrypted 018 packets and original 003 closure are an atomic final
+SQL transaction, with `pending` Telegram delivery only after COMMIT.
+
+This code is a proposed source increment **until its exact PHP 8.5 full CI,
+independent high-assurance review and new Owner integration authorization
+pass**. The source-only 021 schema is not contained in the runtime ZIP and
+requires a *separate* live migration approval after 018/019/020 rehearsal.
+Missing evidence, unknown payment provenance, changed provider group/endpoint,
+partial 021 shape, or unsupported history fail closed; this does not
+constitute unconditional resolution of every historical paid orphan.
+
 ## Prerequisites and one-way migration
 
 1. Determine **actual installed** source ZIP manifest, schema, PHP version,
