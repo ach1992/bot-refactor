@@ -1,17 +1,24 @@
 # Current source and published release contracts
 
-## Unreleased Issue #117 source — next prerelease preflight (NOT published)
+## Published RC26 — source-reviewed recovery; installed acceptance open
 
-GitHub `main` now contains the independently reviewed and Owner-authorized
-merges through [PR #133](https://github.com/ach1992/bot-refactor/pull/133),
-integrated by `f0f30b1f3516bbeeed84fbd6e9e7a0ed8ce6184e` with source
-tree `830b715d3a7897913e2af3dc444d002c70cbd77b`. The approved
-[exact R2 full PHP 8.5 CI](https://github.com/ach1992/bot-refactor/actions/runs/42510873278)
-and the [same-tree main check](https://github.com/ach1992/bot-refactor/actions/runs/42512841787)
-passed. The latter explicitly reuses the earlier full-suite evidence; it did
-not rerun eight PHP families. Merge does **not** publish RC26 or certify
-installed payment, Native, MariaDB or Telegram behavior. Published RC25 remains
-the only distributable named prerelease.
+[RC26](https://github.com/ach1992/bot-refactor/releases/tag/v0.10.0-rc.26)
+publishes the independently reviewed and Owner-approved Issue #117 source
+through [PR #133](https://github.com/ach1992/bot-refactor/pull/133) and
+[PR #134](https://github.com/ach1992/bot-refactor/pull/134).
+Release tag and verified source manifest bind exact merged HEAD
+`390f7ac5cb99285864d019e3ee0ee0b5fad05bec`, TREE
+`a9d677eae76794e47ad4ae88b3ae60520a1a1ef0`, identical to the
+independently approved PR #134 R2 candidate TREE. The
+[exact-candidate full PHP 8.5 CI](https://github.com/ach1992/bot-refactor/actions/runs/42518405396)
+passed all eight families, foundation and protected aggregate. The
+[post-merge CI](https://github.com/ach1992/bot-refactor/actions/runs/42519667946)
+passed with a verified **same-TREE source-acceptance reuse** receipt, not a
+second full eight-family execution. The main ZIP was freshly built and its
+SHA256-bound manifest separately verified. RC26 has **132 runtime members**
+without private configuration or SQL. Published source **does not** certify
+installed payment, Native, MariaDB, Telegram or database migration behavior.
+See [RC25 -> RC26](RC25-TO-RC26.md) and [Issue #117](https://github.com/ach1992/bot-refactor/issues/117).
 
 The reviewed source now includes the original paid Hosted BUY_SUB
 NextPay/Zarinpal linked-account/delivery continuation, first-ever
@@ -30,7 +37,7 @@ filled from today's mutable plan. A surviving later 007 Native account must
 be strictly authenticated before claiming an original first-ordinal
 replacement without an additional original capacity reservation.
 
-The subsequent source-only Issue #117 delivery-maintenance change adds a
+RC26 also includes the reviewed delivery-maintenance change, which adds a
 bounded, first-attempt-only sweep inside the existing four-worker Cron
 services worker: it sends only proven terminal-payment, fully sealed 018
 `pending` packets, with at least two minutes of quiet time,
@@ -42,7 +49,7 @@ This neither settles money nor creates/mutates a Native account and does
 
 ### Installed upgrade / remaining acceptance boundary
 
-A separately authorized RC25-to-next install requires actual installed
+A separately authorized RC25-to-RC26 install requires actual installed
 source/DB/config and hotfix drift inventory; a restore-tested full backup;
 the original 001–017 history audit; and audited, one-time **018 → 019 →
 020 → 021** migration sequencing with exact existing object/index/FK shapes.
@@ -63,7 +70,7 @@ HTTP 404/timeouts as proof of absence. Confirm provider-specific payment
 review and fulfillment parity, schema readiness, exact installed migrations,
 real Telegram ACK and both providers using authorized disposable/installed
 acceptance evidence. Issue #117 stays OPEN until its remaining outcome is
-proven; this draft is not GitHub Release, deployment or production approval.
+proven; RC26's GitHub Release is not installed deployment, migration or production approval.
 
 ## Published RC25 — independent administrative Panel Groups
 
