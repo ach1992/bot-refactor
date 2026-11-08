@@ -778,13 +778,17 @@ function achbotHostedContinueUnstartedOrdinal(
     // different paid entitlement on the remaining original account.
     $plan=getPlanDetails($db,(int)$pay['plan_id']);
     $detail=$plan['plan']??null;
+    // Checkout overrides volume/day as a PAIR, otherwise the then-current
+    // plan owns the requested entitlement. Compare the immutable first
+    // native record against that original customer quote, not against a
+    // potentially different generic plan quantity for a custom purchase.
+    $custom=(int)($pay['volume']??0)!==0 || (int)($pay['day']??0)!==0;
+    $expectedVolume=$custom?(int)$pay['volume']:(int)($detail['volume']??0);
+    $expectedDays=$custom?(int)$pay['day']:(int)($detail['days']??0);
     if (!is_array($detail) ||
         (int)($detail['server_id']??0)!==$server ||
         (int)($detail['inbound_id']??-1)!==0 ||
-        (int)($detail['volume']??0)!==$volume ||
-        (int)($detail['days']??0)!==$days ||
-        ((int)($pay['volume']??0)>0 && (int)$pay['volume']!==$volume) ||
-        ((int)($pay['day']??0)>0 && (int)$pay['day']!==$days))
+        $expectedVolume!==$volume || $expectedDays!==$days)
         throw new RuntimeException('hosted_original_plan_entitlement_changed');
     // The shared 007 reservation, not this read-only preflight, is the
     // transaction/unique-key authority. No account POST can precede it.

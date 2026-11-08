@@ -3547,6 +3547,7 @@ def run_funding(tmp: str) -> tuple[dict, dict]:
         'pg_hosted_concurrent_missing_ordinal_creates_only_one_remote_account',
         'pg_hosted_changed_plan_terms_block_unstarted_original_create',
         'pg_hosted_noncontiguous_manifest_refuses_new_original_create',
+        'pg_hosted_custom_paid_entitlement_preserved_on_unstarted_original',
         'hosted_unlinked_original_native_attaches_without_recreate_or_recharge',
         'hosted_partial_marzban_keeps_original_order_and_attaches_second',
         'pg_hosted_partial_original_native_attaches_with_012_pins',

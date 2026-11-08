@@ -65,7 +65,7 @@ $pay=(int)$spec['pay'];$provider=(string)$spec['provider'];
 if (($spec['panel']??'')==='pasarguard') achbotPgPinPayment($connection,$pay);
 // The exact hosted paid+review claim is the production source transition.
 // The synthetic provider's previous verification is staged in 003 by seed.
-$q=$connection->prepare('SELECT hash_id,price,agent_count,server_id,plan_id,user_id
+$q=$connection->prepare('SELECT hash_id,price,agent_count,server_id,plan_id,user_id,day,volume
     FROM pays WHERE id=?');$q->bind_param('i',$pay);$q->execute();
 $row=$q->get_result()->fetch_assoc();$q->close();
 if (!$row) throw new RuntimeException('hosted_fixture_pay_missing');
@@ -79,7 +79,9 @@ foreach (range(1,(int)($spec['create_prefix']??$count)) as $ordinal) {
         'server_id'=>(int)$row['server_id'],'inbound_id'=>0,
         'plan_id'=>(int)$row['plan_id'],
         'remark'=>'hostedoriginal_'.$pay.'_'.$ordinal,
-        'volume'=>2,'days'=>30,'uniqid'=>'fixture-original-uuid',
+        'volume'=>(int)$row['volume']>0?(int)$row['volume']:2,
+        'days'=>(int)$row['day']>0?(int)$row['day']:30,
+        'uniqid'=>'fixture-original-uuid',
         'protocol'=>'vless','port'=>0,'expire_microdate'=>0,
         'net_type'=>'normal','rahgozar'=>0,'limitip'=>0
     ]);
@@ -203,7 +205,7 @@ def check():
                 raise RuntimeError('original hosted source '+repr((p.returncode,p.stderr[-1200:],p.stdout[-200:])))
             return json.loads(p.stdout)
         def seed(tag,provider='nextpay',panel='marzban',count=1,
-                 create_prefix=None,link_prefix=None):
+                 create_prefix=None,link_prefix=None,custom_volume=0,custom_days=0):
             assert tag.isascii() and tag.isalnum()
             sql(work,env,"UPDATE server_info SET ucount=10,active=1,state=1 WHERE id=2; "
                 "UPDATE users SET wallet=50000 WHERE userid=1001")
@@ -215,7 +217,8 @@ def check():
             ref='hosted-'+tag
             sql(work,env,"INSERT INTO pays(hash_id,user_id,type,plan_id,server_id,agent_count,"
                 "price,day,volume,request_date,state,payid) "
-                f"VALUES('{tag}',1001,'BUY_SUB',7,2,{count},100,0,0,UNIX_TIMESTAMP(),'pending','{ref}')")
+                f"VALUES('{tag}',1001,'BUY_SUB',7,2,{count},100,{custom_days},{custom_volume},"
+                f"UNIX_TIMESTAMP(),'pending','{ref}')")
             pay=int(sql(work,env,f"SELECT id FROM pays WHERE hash_id='{tag}'"))
             sql(work,env,"INSERT INTO payment_attempts "
                 "(pay_row_id,provider,order_hash,provider_reference,quote_amount,"
@@ -412,6 +415,17 @@ def check():
         recovered=run(pay,pg=True)
         assert recovered['error'] is None and recovered['orders']==2,recovered
         scenarios.append('pg_hosted_changed_plan_terms_block_unstarted_original_create')
+
+        pay,_=seed('hostedpgcustomtail',panel='pasarguard',count=2,
+                   create_prefix=1,link_prefix=1,custom_volume=4,custom_days=15)
+        server.trace=[]
+        custom=run(pay,pg=True)
+        assert custom['error'] is None and custom['orders']==2,custom
+        assert stage(pay)=='done\tdelivered'
+        assert sql(work,env,'SELECT COUNT(*) FROM service_effects '
+            f'WHERE pay_row_id={pay} AND requested_bytes=4294967296')=='2'
+        assert len([e for e in server.trace if e[0]=='POST'])==1,server.trace
+        scenarios.append('pg_hosted_custom_paid_entitlement_preserved_on_unstarted_original')
 
         pay,_=seed('hostedpgincompletegap',panel='pasarguard',count=3,
                    create_prefix=2,link_prefix=1)
