@@ -265,9 +265,13 @@ def check():
         scenarios.append('original_hosted_nextpay_fully_linked_two_original_accounts_sealed_once')
         check_result(pay,False,2)
         scenarios.append('hosted_original_delivery_packet_passes_real_integrity_validator')
-        route_pay,_=seed('hostedroute',count=1)
+        # A normal Owner route cannot inject the fixture's private Marzban
+        # source observer. Exercise that actual callback against the native
+        # PasarGuard HTTP loopback, keeping the Marzban coordinator cases
+        # separate and never fabricating an external source response.
+        route_pay,_=seed('hostedroute',panel='pasarguard',count=1)
         clean_get()
-        owner=run(route_pay,op='route',actor=9001,chat=9001)
+        owner=run(route_pay,pg=True,op='route',actor=9001,chat=9001)
         assert owner['state']=='paid' and owner['orders']==1,owner
         assert owner['delivery']==[{'ordinal':1,'state':'acknowledged','attempt_count':1}],owner
         views=[x for x in owner['events'] if x['event']=='OWNER_EDIT']
