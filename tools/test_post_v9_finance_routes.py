@@ -4472,7 +4472,7 @@ def main():
         archived=run_php(work,env,stage,dict(route='admin_review',get={},
             actor=9001,chat_id=9001,callback_data='gatewayReview_H_'+str(archived_id)))
         if (not any(e['name']=='editText' and
-            'از فهرست بررسی خارج شد' in str(e['args'][1])
+            'پرونده آرشیو شد' in str(e['args'][1])
             for e in archived['events']) or archived['network_calls']):
             raise RuntimeError('Approved operator archive did not close the original case')
         meta=sql(work,env,f"SELECT review_archived_by,review_archived_at IS NOT NULL "
@@ -4526,7 +4526,7 @@ def main():
             attempt=int(sql(work,env,f"SELECT id FROM payment_attempts WHERE order_hash='{name}'"))
             closed=run_php(work,env,stage,dict(route='admin_review',get={},
                 actor=9001,chat_id=9001,callback_data='gatewayReview_H_'+str(attempt)))
-            assert any(e['name']=='editText' and 'از فهرست بررسی خارج شد'
+            assert any(e['name']=='editText' and 'پرونده آرشیو شد'
                 in str(e['args'][1]) for e in closed['events']),closed
             before_state=sql(work,env,
                 f"SELECT p.state,a.stage,a.provider_status,p.approved_by "

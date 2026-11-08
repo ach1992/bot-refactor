@@ -255,7 +255,7 @@ def check():
         archived=recovery.call(w,e,driver,op='route',
             callback='gatewayReview_H_'+hold_attempt)
         assert event(archived,'ACK') and len(event(archived,'EDIT'))==1,archived
-        assert 'از فهرست بررسی خارج شد' in event(archived,'EDIT')[0]['text'],archived
+        assert 'پرونده آرشیو شد' in event(archived,'EDIT')[0]['text'],archived
         after=sql(w,e,f"SELECT p.state,a.stage,a.provider_status "
             f"FROM pays p JOIN payment_attempts a ON a.pay_row_id=p.id WHERE p.id={held}")
         assert after==original,(original,after)

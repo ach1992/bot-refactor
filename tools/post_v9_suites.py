@@ -2317,6 +2317,16 @@ def run_effects(tmp: str) -> tuple[dict, dict]:
         'only_one_wallet_credit_despite_replays_and_failures',
         'only_approved_and_failed_original_effects_invoked',
         'no_dedicated_review_table_created',
+        'previously_unknown_effect_can_be_archived_without_replaying',
+        'original_uncertain_payment_untouched_when_archived',
+        'archival_is_once_only',
+        'archived_original_never_gets_new_financial_buttons',
+        'fresh_open_case_can_be_archived_without_claiming_funds',
+        'original_quote_and_payment_remain_unsettled',
+        'late_approve_reject_cannot_change_archived_original',
+        'archive_keeps_original_financial_state_and_cannot_be_reopened',
+        'stale_processing_case_can_be_closed_from_attention_only',
+        'archived_processing_hold_still_requires_native_forensics_elsewhere',
     }
     if not (decision.get('complete') is True
             and set(decision.get('checks',[]))==required_decisions

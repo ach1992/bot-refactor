@@ -582,6 +582,10 @@ def delivery_recovery_copy_restore(sides:dict) -> dict:
     for key in actual:restored['admin'].pop(key)
     return restored
 def delivery_recovery_copy_negative_controls(sides:dict) -> int:
+    # The successor intentionally removed this UI. Perform the exact
+    # historical mutation controls on the immutable RC26 source, AFTER
+    # verifying present copy against the approved current cleanup contract.
+    sides=current_cleanup_restore(sides)
     delivery_recovery_copy_restore(sides)
     cases=[]
     bad=copy.deepcopy(sides);bad['admin'].pop('delivery_recovery.title');cases.append(bad)
@@ -718,7 +722,6 @@ def review_catalog_restore(sides):
     return restored,{'review_added_keys':8,'review_added_user_keys':2,'review_added_admin_keys':6,'review_source':REVIEW_SOURCE}
 
 def verify_api_and_restore(sides,definition=None):
-    sides=current_cleanup_restore(sides)
     sides=current_cleanup_restore(sides)
     if any(key.startswith('delivery_recovery.') for audience in sides.values() for key in audience):
         sides=delivery_recovery_copy_restore(sides)
