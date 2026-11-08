@@ -84,14 +84,20 @@ def sql(work,env,command):
 
 def recover(work,env,driver,**spec):
     p=subprocess.run(['php','-n','-d','extension=mysqlnd','-d','extension=mysqli',
-        '-d','extension=openssl',
         '-d','disable_functions=curl_init,curl_exec,exec,shell_exec,system,passthru,popen,proc_open,mail',
         str(driver),str(ROOT),str(work/'mysql.sock'),DB,json.dumps(spec)],
         cwd=work,env=env,capture_output=True,text=True,timeout=35)
     if p.returncode:
         raise RuntimeError('wallet recovery PHP fatal '+repr((p.returncode,p.stderr[-1500:],p.stdout[-400:])))
-    try:return json.loads(p.stdout)
-    except Exception as error:raise RuntimeError('wallet recovery JSON '+p.stdout[-600:]) from error
+    try:
+        result=json.loads(p.stdout)
+        # mysqli returns integer SQL columns as strings without MYSQLI_OPT_INT_AND_FLOAT_NATIVE.
+        for row in result['delivery']:
+            row['ordinal']=int(row['ordinal'])
+            row['attempt_count']=int(row['attempt_count'])
+        return result
+    except Exception as error:
+        raise RuntimeError('wallet recovery JSON '+p.stdout[-600:]) from error
 
 def check():
     cases=[]
