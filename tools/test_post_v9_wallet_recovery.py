@@ -428,7 +428,12 @@ def check_pasarguard_and_bulk():
         def origin(name):
             run=subprocess.run([*source_argv,json.dumps({'hash':name,'provider':'pasarguard'})],
                 cwd=work,env=env,text=True,capture_output=True,timeout=45)
-            if run.returncode or run.stderr:
+            # The original source intentionally reports the held-debit review
+            # when the fixture loses local finality AFTER native CREATE.
+            # Only this exact bounded diagnostic is expected; never discard
+            # unrelated PHP warnings, native/API errors or stack traces.
+            expected='achbot_wallet_held_debit_review hash='+name
+            if run.returncode or run.stderr.strip()!=expected:
                 raise AssertionError(('source_real_pg_origin_failed',run.returncode,
                     run.stderr[-1300:],run.stdout[-600:]))
             return json.loads(run.stdout)
