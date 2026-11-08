@@ -64,7 +64,15 @@ $reader=static function(string $url,string $user,string $pass,string $name) use(
 try {
     if (($spec['op']??'')==='eligible') $result=achbotWalletBuyRecoverable($connection,$pay);
     elseif (($spec['op']??'')==='check') {
-        $result=achbotDeliveryCheck($connection,$pay,1);
+        // DeliveryRecovery's route-scoped UI helper is not loaded by the
+        // source-real fixture. Exercise its real sealed-packet validator.
+        $connection->begin_transaction();
+        $p=$connection->query('SELECT * FROM pays WHERE id='.$pay.' FOR UPDATE')->fetch_assoc();
+        $data=$connection->query('SELECT * FROM payment_delivery_intents WHERE pay_row_id='.$pay.
+            ' AND ordinal=1 FOR UPDATE')->fetch_assoc();
+        $packet=$p&&$data ? achbotDeliveryValidateLocked($connection,$p,$data):null;
+        $result=$packet!==null?(string)$data['state']:'identity_or_payload_invalid';
+        $connection->rollback();
         if ($result!=='acknowledged' && $result!=='unknown') {
             $data=$connection->query('SELECT * FROM payment_delivery_intents WHERE pay_row_id='.$pay.' AND ordinal=1')->fetch_assoc();
             $p=$connection->query('SELECT * FROM pays WHERE id='.$pay)->fetch_assoc();
