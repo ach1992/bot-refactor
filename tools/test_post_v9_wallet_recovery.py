@@ -65,7 +65,7 @@ require_once $root.'/src/Purchase/OrderWrites.php';
 require_once $root.'/src/Finance/ReceiptHelpers.php';
 require_once $root.'/src/Finance/PaidAccountRecovery.php';
 require_once $root.'/src/Finance/DeliveryLedger.php';
-$pay=(int)$spec['pay'];$result=null;$error=null;
+$pay=(int)$spec['pay'];$paymentId=$pay;$result=null;$error=null;
 $reader=static function(string $url,string $user,string $pass,string $name) use($connection,$pay): ?object {
     $GLOBALS['events'][]=['event'=>'GET','name'=>$name];
     $q=$connection->prepare("SELECT operation_id,remote_username,requested_expire,requested_bytes
@@ -128,13 +128,15 @@ try {
     else $result=achbotResumeWalletBuy($connection,$pay,$botState,$buttonValues,
         $botUrl,$reader);
 } catch (Throwable $e) {$error=$e->getMessage();}
-$state=$connection->query('SELECT state FROM pays WHERE id='.$pay)->fetch_row()[0]??null;
+// Included real routes may reuse the $pay variable for an associative row.
+// The fixture's original request ID must not be overwritten by route scope.
+$state=$connection->query('SELECT state FROM pays WHERE id='.$paymentId)->fetch_row()[0]??null;
 $orders=(int)$connection->query('SELECT COUNT(*) FROM orders_list o JOIN service_effects e
-    ON e.order_id=o.id WHERE e.pay_row_id='.$pay)->fetch_row()[0];
-$attempt=$connection->query('SELECT provider,stage,provider_status FROM payment_attempts WHERE pay_row_id='.$pay)
+    ON e.order_id=o.id WHERE e.pay_row_id='.$paymentId)->fetch_row()[0];
+$attempt=$connection->query('SELECT provider,stage,provider_status FROM payment_attempts WHERE pay_row_id='.$paymentId)
     ->fetch_assoc();
 $delivery=$connection->query('SELECT ordinal,state,attempt_count FROM payment_delivery_intents
-    WHERE pay_row_id='.$pay.' ORDER BY ordinal')->fetch_all(MYSQLI_ASSOC);
+    WHERE pay_row_id='.$paymentId.' ORDER BY ordinal')->fetch_all(MYSQLI_ASSOC);
 echo json_encode(['result'=>$result,'error'=>$error,'state'=>$state,'orders'=>$orders,
     'attempt'=>$attempt,'delivery'=>$delivery,'events'=>$GLOBALS['events'],
     'diagnostics'=>$GLOBALS['diagnostics']??null],
