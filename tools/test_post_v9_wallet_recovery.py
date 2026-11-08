@@ -611,9 +611,10 @@ def check_pasarguard_and_bulk():
             assert response['error'] is None and len(pages)==1,(destination,response)
             body=pages[0]['body']
             if destination.startswith('deliveryCase_'):
-                assert 'بازیابی تحویل پرداخت' in body and f'#{pay}' in body and                     'paid_with_wallet' in body,(destination,response)
+                assert ('بازیابی تحویل پرداخت' in body and
+                    f'#{pay}' in body and 'paid_with_wallet' in body), (destination,response)
             else:
-                assert 'پرونده‌های نیازمند بررسی ساخت یا تمدید سرویس' in body,                     (destination,response)
+                assert 'پرونده‌های نیازمند بررسی ساخت یا تمدید سرویس' in body, (destination,response)
             # A generic unavailable/error screen would still edit successfully;
             # assert the actual requested destination is rendered, not merely
             # the presence of an editText call.
