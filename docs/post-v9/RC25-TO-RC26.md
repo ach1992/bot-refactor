@@ -246,11 +246,27 @@ constitute unconditional resolution of every historical paid orphan.
    not reasons to rerun additive SQL or drop/replace historic payment rows.
 5. Staging-only, after confirming schema and backup: apply the one-time
    `018_payment_delivery_intents.sql`, then `019_payment_review_decisions.sql`,
-   and `020_payment_followup_intents.sql` after testing each absence and shape
-   only if each is genuinely absent and the exact source/migration contract
-   was reviewed. Verify InnoDB, composite unique constraints, indexes and
-   recorded receipt/decision foreign keys. **Never backfill missing delivery
-   packets** by guessing old subscriptions or assuming an existing account.
+   then `020_payment_followup_intents.sql`, testing each absence and shape
+   before applying it, and verifying InnoDB, composite unique constraints,
+   indexes and recorded receipt/decision foreign keys after each step.
+   **Never backfill missing delivery packets** by guessing old subscriptions
+   or assuming an existing account. Only after the complete 018/019/020
+   contract is verified, audit `service_effects` and `pays` for every object
+   introduced by `021_paid_reconciliation_provenance.sql`. Verify the
+   CI-distributed SQL sidecar against its separate checksum from the sidecar
+   directory (`sha256sum -c 021_paid_reconciliation_provenance.sha256`);
+   SQL and checksum are **outside** `runtime.zip`. If the complete 021
+   extension is absent, apply `021_paid_reconciliation_provenance.sql`
+   **once** through an audited, separately authorized staging SQL session.
+   If 021 is already complete, verify-only; any partial, unexpected or
+   incompatible 021 object is a **STOP**, not permission to rerun an ALTER,
+   drop an object or guess a historical value. Verify the five 021
+   `service_effects` columns, `uq_effect_one_replacement`, and
+   `fk_effect_original_replacement` with its restrictive FK actions; also
+   verify nullable `pays.issued_entitlement_days` and
+   `pays.issued_entitlement_gb`. Inspect actual DDL and run the read-only
+   `payment_readiness_preflight.php` against the exact candidate/manifest;
+   a PASS does not replace the schema, row and migration-history audit.
 6. Run exactly the reviewed PHP 8.5 runtime package in isolated staging with
    synthetic/unfunded payment cases and mock Marzban/PasarGuard. Prove first
    approval, double click/two staff, remote success with SQL commit failure,
