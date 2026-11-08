@@ -3592,8 +3592,12 @@ def run_funding(tmp: str) -> tuple[dict, dict]:
     required_replacements={
         'manager_missing_first_007_signed_one_replacement_capacity_once',
         'replacement_get_only_links_one_original_paid_order_and_seals_018',
+        'operator_payments_authorized_first_paid_replacement',
+        'support_payments_authorized_first_paid_replacement',
         'lost_replacement_native_response_get_only_recovery_no_repost',
         'foreign_original_kept_auditable_and_replacement_preserves_capacity',
+        'bulk_missing_ordinal_only_replacement_native_no_second_inventory_hold',
+        'staff_challenge_actor_identity_bound_owner_cannot_replay_delegate',
         'demoted_manager_old_signed_button_cannot_claim_new_native_account',
         'staff_private_preview_denies_nonstaff_and_nonprivate_without_side_effects',
         'pasarguard_first_replacement_real_loopback_create_and_get_delivery',

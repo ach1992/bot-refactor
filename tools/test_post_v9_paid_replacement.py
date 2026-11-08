@@ -24,6 +24,14 @@ DB=purchase.SIDE[1]
 # Original proof is created by the actual source checkout/007/native flow in
 # hosted.ORIGINAL. Its request and payment are NEVER synthesized as settled in
 # this runner. The new native write path stays behind source-reserved 021 rows.
+# A zero original-007 prefix is valid in this recovery fixture; PHP range(1,0)
+# is [1,0], not an empty list, so narrow the synthetic original crash driver
+# without altering the historic source-real provisioner it invokes.
+ORIGINAL=hosted.ORIGINAL.replace(
+    "foreach (range(1,(int)($spec['create_prefix']??$count)) as $ordinal) {",
+    "foreach (((int)($spec['create_prefix']??$count))>0"
+    "?range(1,(int)($spec['create_prefix']??$count)):[] as $ordinal) {")
+assert ORIGINAL != hosted.ORIGINAL
 DRIVER=hosted.RECOVERY
 old=DRIVER[DRIVER.index('function createServerAccount(...$args) {'):
            DRIVER.index('function getMarzbanUser(...$args) {')]
@@ -118,7 +126,7 @@ def check():
                    '021_paid_reconciliation_provenance.sql'):
             hosted.sql(work,env,(ROOT/'migrations/post-v9'/fn).read_text())
         driver=work/'reconciled-hosted.php';driver.write_text(DRIVER)
-        original=work/'original-hosted.php';original.write_text(hosted.ORIGINAL)
+        original=work/'original-hosted.php';original.write_text(ORIGINAL)
         def sql(query):return hosted.sql(work,env,query)
         def run(pay,pg=False,**opts):
             spec={'pay':pay,**opts}
@@ -191,6 +199,19 @@ def check():
         assert result['attempt']=={'provider':'nextpay','stage':'done','provider_status':'delivered'},result
         assert balance()=='19:50000' and not any(e['event']=='REPLACEMENT_POST' for e in result['events'])
         cases.append('replacement_get_only_links_one_original_paid_order_and_seals_018')
+        # Manager/Operator/Support use the same existing payments permission;
+        # display/access does not confer server-administration authority.
+        for role in ('operator','support'):
+            sql(f"UPDATE setting SET value='{role}' WHERE type='ADMIN_ROLE_9002'")
+            pay=seed(role+'pay')
+            challenge=preview(pay,actor=9002)
+            result=confirm(pay,challenge,actor=9002)
+            assert result['error'] is None and rows(pay)=='1' and balance()=='19:50000',result
+            assert ':9002' in effect(pay)
+            delivered=run(pay)
+            assert delivered['error'] is None and delivered['orders']==1,delivered
+            cases.append(role+'_payments_authorized_first_paid_replacement')
+        sql("UPDATE setting SET value='manager' WHERE type='ADMIN_ROLE_9002'")
         # Unknown native reply must retain original replacement reservation;
         # the next operation observes the same native marker, never POSTs again.
         pay=seed('lostreply')
@@ -211,6 +232,25 @@ def check():
         assert sql(f"SELECT CONCAT(effect_kind,':',state,':',reserved_count) FROM service_effects WHERE pay_row_id={pay} AND effect_kind='create'")=='create:verified:1'
         assert run(pay)['error'] is None and sql(f'SELECT COUNT(*) FROM payment_delivery_intents WHERE pay_row_id={pay}')=='1'
         cases.append('foreign_original_kept_auditable_and_replacement_preserves_capacity')
+        # Original first CREATE already owns full bulk capacity: an absent
+        # internal ordinal must never deduct that original quantity twice.
+        pay=seed('bulkgap',count=2,create_prefix=1,link_prefix=0)
+        assert balance()=='18:50000'
+        challenge=preview(pay,ordinal=2,actor=9002)
+        result=confirm(pay,challenge,ordinal=2,actor=9002)
+        assert result['error'] is None and rows(pay)=='1' and balance()=='18:50000',result
+        finished=run(pay)
+        assert finished['error'] is None and finished['orders']==2 and len(finished['delivery'])==2,finished
+        assert sql(f"SELECT COUNT(*) FROM service_effects WHERE pay_row_id={pay} AND effect_kind='create'")=='1'
+        cases.append('bulk_missing_ordinal_only_replacement_native_no_second_inventory_hold')
+        # An HMAC belonging to one staff member cannot authorize a different
+        # person's replacement, even if the latter is the primary Owner.
+        pay=seed('actorpin')
+        challenge=preview(pay,actor=9002)
+        wrong=confirm(pay,challenge,actor=9001)
+        assert wrong['error'] and rows(pay)=='0' and balance()=='20:50000',wrong
+        assert confirm(pay,challenge,actor=9002)['error'] is None
+        cases.append('staff_challenge_actor_identity_bound_owner_cannot_replay_delegate')
         # Revoke staff after a preview: signed callback is NOT a permission.
         pay=seed('staleactor')
         ch=preview(pay,actor=9002)

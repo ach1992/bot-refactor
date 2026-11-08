@@ -488,6 +488,15 @@ try {
                 'acknowledged_at','last_result'],
                 'unique'=>['uq_followup_pay_key'=>['pay_row_id','intent_key']]],
         ],
+        // New, optional-column 007 extension required ONLY by the explicit
+        // human-confirmed paid replacement route. Without this shape the
+        // installed latest-source runtime is not release-ready.
+        '021' => [
+            'service_effects'=>['columns'=>[
+                'replaces_effect_id','reconciliation_reason',
+                'reconciliation_fingerprint','reconciliation_observed_at'],
+                'unique'=>['uq_effect_one_replacement'=>['replaces_effect_id']]],
+        ],
     ];
     foreach ($specs as $migration => $schema) {
         $present = count(array_filter(array_keys($schema),
