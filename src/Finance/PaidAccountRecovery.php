@@ -537,8 +537,9 @@ function achbotResumeWalletBuy(
 /**
  * A hosted BUY_SUB can be paid and its ORIGINAL native orders committed while
  * its PHP return handler crashes before it closes 003 or durably seals customer
- * delivery. Recovery only closes a COMPLETE, already-linked original manifest.
- * No merchant verification, native CREATE, order insertion or financial effect.
+ * delivery. Recovery requires a COMPLETE original native manifest, but may
+ * attach an already-verified original account whose order was never committed.
+ * It never sends a second native CREATE or repeats settlement/capacity.
  */
 function achbotHostedLinkedBuySnapshot(mysqli $db,int $payId,bool $lock=false): ?array {
     require_once __DIR__.'/DeliveryLedger.php';
@@ -597,8 +598,12 @@ function achbotHostedLinkedBuySnapshot(mysqli $db,int $payId,bool $lock=false): 
     foreach ($effects as $index=>$e) {
         $ordinal=$index+1;
         $bytes=achbotRecoveryExactInt($e['requested_bytes']);
+        $linked=$e['state']==='local_recorded' && $e['order_id']!==null &&
+            (int)$e['order_id']>0;
+        $unlinked=in_array((string)$e['state'],['dispatching','verified'],true) &&
+            $e['order_id']===null;
         if ($e['effect_kind']!=='create' || (int)$e['ordinal']!==$ordinal ||
-            $e['state']!=='local_recorded' || (int)($e['order_id']??0)<=0 ||
+            !($linked || $unlinked) ||
             (int)$e['reserved_count']!==($ordinal===1?$count:0) ||
             (int)$e['target_server_id']!==(int)$pay['server_id'] ||
             (int)$e['plan_id']!==(int)$pay['plan_id'] ||
@@ -610,7 +615,7 @@ function achbotHostedLinkedBuySnapshot(mysqli $db,int $payId,bool $lock=false): 
             (int)$e['requested_expire']<=time() || $bytes===null ||
             $bytes<=0 || $bytes%1073741824!==0 ||
             !is_string($e['request_sha256']) || strlen($e['request_sha256'])!==64 ||
-            isset($orders[(int)$e['order_id']])) return null;
+            ($linked && isset($orders[(int)$e['order_id']]))) return null;
         if ($pay['panel_type']==='marzban') {
             // The original Marzban native GET validates its target at
             // readback; revalidate the CURRENT panel URL/group and full 007
@@ -618,11 +623,37 @@ function achbotHostedLinkedBuySnapshot(mysqli $db,int $payId,bool $lock=false): 
             // pay/plan/config/info FOR UPDATE protects this target read.
             $target=achbotRecoveryTarget($db,$payId,$ordinal);
             if (!achbotRecoveryTargetValid($target,$payId,$ordinal)) return null;
+        } elseif ($unlinked) {
+            // Original 012 identity and the CURRENT physical PG connection
+            // must agree even before a local order exists. A historical
+            // snapshot alone cannot authorize attachment after retargeting.
+            try {
+                achbotPgLoad();
+                $account=achbotProviderAccountByEffect($db,(int)$e['id']);
+                $native=achbotPgEffect($db,(int)$e['id']);
+                $panel=$native && is_array($native['provider_snapshot']??null)
+                    ?achbotProviderPanelForSnapshot($db,$native['provider_snapshot']):null;
+                $current=achbotPgServerPanel($db,(int)$pay['server_id']);
+                if (!$account || !$native || !$panel ||
+                    $account['order_id']!==null ||
+                    !in_array((string)$account['state'],['dispatching','verified'],true) ||
+                    $account['remote_username']!==$e['remote_username'] ||
+                    $account['operation_marker']!=='achbot:v1:'.$e['operation_id'] ||
+                    $account['mutation_key']!==null ||
+                    $account['mutation_snapshot']!==null ||
+                    (int)$panel['id']!==(int)$current['id'] ||
+                    $panel['instance_key']!==$current['instance_key'] ||
+                    !hash_equals((string)$account['endpoint_sha256'],
+                        hash('sha256',rtrim((string)$current['api_url'],'/'))))
+                    return null;
+            } catch (Throwable $ignored) {return null;}
         }
-        $order=achbotOriginalBuyLinkedOrder($db,$pay,$e,$ordinal,$count,$lock);
-        if ($order===null) return null;
-        $orders[(int)$e['order_id']]=true;
-        $e['_original_order']=$order;
+        if ($linked) {
+            $order=achbotOriginalBuyLinkedOrder($db,$pay,$e,$ordinal,$count,$lock);
+            if ($order===null) return null;
+            $orders[(int)$e['order_id']]=true;
+            $e['_original_order']=$order;
+        }
         $lines[$ordinal]=$e;
     }
     return ['pay'=>$pay,'attempt'=>$attempt,'lines'=>$lines,'count'=>$count];
@@ -648,9 +679,34 @@ function achbotHostedLinkedBuyPin(array $snapshot): string {
         'attempt_stage'=>(string)$a['stage'],
         'attempt_status'=>(string)$a['provider_status'],
         'count'=>$snapshot['count'],'effects'=>$effects,
+        // Original PG native binding and mutation fence are immutable during
+        // safe readback. Verification may legitimately advance provider_state
+        // and remote ID; neither is an excuse to accept a changed connection.
+        'pg_origin'=>array_map(static fn(array $e): array => [
+            'connection'=>(string)($e['provider_connection_id']??''),
+            'snapshot'=>(string)($e['provider_snapshot']??''),
+            'marker'=>(string)($e['provider_operation_marker']??''),
+            'mutation_key'=>(string)($e['provider_mutation_key']??''),
+            'mutation_snapshot'=>(string)($e['provider_mutation_snapshot']??'')
+        ],$snapshot['lines']),
         'orders'=>achbotOriginalBuyLinkedOrderPins($snapshot)
     ],JSON_THROW_ON_ERROR));
 }
+/** Pin the 012 generation at the exact authenticated GET boundary. Original
+ * provider verification may advance dispatching -> verified, but a later
+ * remote revoke, incarnation change or another account operation cannot be
+ * treated as the state read by the recovery operator. */
+function achbotHostedPgReadbackPin(array $effect): string {
+    $keys=['id','provider_state','provider_remote_user_id',
+        'provider_remote_created_at','provider_verified_at',
+        'provider_evidence_updated_at','provider_mutation_key',
+        'provider_mutation_snapshot','provider_connection_id',
+        'provider_operation_marker','provider_snapshot'];
+    $parts=[];
+    foreach ($keys as $key) $parts[$key]=(string)($effect[$key]??'');
+    return hash('sha256',json_encode($parts,JSON_THROW_ON_ERROR));
+}
+
 function achbotHostedLinkedBuyRecoverable(mysqli $db,int $payId): bool {
     try {return achbotHostedLinkedBuySnapshot($db,$payId)!==null;}
     catch (Throwable $ignored) {return false;}
@@ -672,7 +728,7 @@ function achbotResumeHostedLinkedBuy(
     [$serverInfo,$serverConfig]=getServerInfoAndConfig($db,$server);
     if ((string)($serverConfig['type']??'')!==(string)$pay['panel_type'])
         throw new RuntimeException('hosted_recovery_provider_changed');
-    $lines=[];
+    $lines=[];$nativePins=[];
     foreach ($before['lines'] as $ordinal=>$effect) {
         $volume=intdiv((int)$effect['requested_bytes'],1073741824);
         $issued=strtotime((string)$effect['created_at']);
@@ -688,6 +744,14 @@ function achbotResumeHostedLinkedBuy(
         if (!is_object($remote) || ($remote->success??false)!==true ||
             $name!==$effect['remote_username'] || $effectId!==(int)$effect['id'])
             throw new RuntimeException('hosted_recovery_original_not_proven');
+        if ($pay['panel_type']==='pasarguard') {
+            // Capture 012 immediately after verified GET, before rendering or
+            // the terminal SQL lock. A mutation after GET invalidates the
+            // delivered account snapshot, even if its target is unchanged.
+            $fresh=achbotPgEffect($db,$effectId);
+            if (!$fresh) throw new RuntimeException('hosted_recovery_native_pin_unavailable');
+            $nativePins[$ordinal]=achbotHostedPgReadbackPin($fresh);
+        }
         [$token,$links,$uuid,$caption,$keys,$qr]=buildLinksAndSendQr(
             (string)$pay['panel_type'],$serverConfig,$botState,$botUrl,
             $server,'','',$name,$port,'',0,0,'','','',
@@ -696,8 +760,9 @@ function achbotResumeHostedLinkedBuy(
             !is_string($links) || $links==='' || !is_string($caption) ||
             trim($caption)==='' || !is_string($qr) || !is_string($keys))
             throw new RuntimeException('hosted_recovery_packet_unavailable');
-        $lines[$ordinal]=['effect_id'=>$effectId,'caption'=>$caption,
-            'keys'=>$keys,'qr'=>$qr];
+        $lines[$ordinal]=['effect_id'=>$effectId,'token'=>$token,
+            'links'=>$links,'uuid'=>$uuid?:$token,'remark'=>$name,
+            'caption'=>$caption,'keys'=>$keys,'qr'=>$qr];
     }
     $started=false;
     try {
@@ -707,12 +772,40 @@ function achbotResumeHostedLinkedBuy(
         if (!$after || !hash_equals($pin,achbotHostedLinkedBuyPin($after)))
             throw new RuntimeException('hosted_recovery_identity_changed');
         foreach ($after['lines'] as $ordinal=>$effect) {
-            if ($effect['state']!=='local_recorded' ||
+            $expected=$effect['order_id']===null?'verified':'local_recorded';
+            if ($effect['state']!==$expected ||
                 (int)$lines[$ordinal]['effect_id']!==(int)$effect['id'])
                 throw new RuntimeException('hosted_recovery_original_order_changed');
+            if ($pay['panel_type']==='pasarguard' &&
+                (!isset($nativePins[$ordinal]) ||
+                 !hash_equals($nativePins[$ordinal],
+                    achbotHostedPgReadbackPin($effect))))
+                throw new RuntimeException('hosted_recovery_native_generation_changed');
             $line=$lines[$ordinal];
+            if ($effect['order_id']!==null) {
+                // Original checkout committed this row: do not replace or
+                // reprice it, even when other ordinals were never linked.
+                $orderId=(int)$effect['order_id'];
+            } else {
+                $orderId=insertOrder($db,$owner,(string)$line['token'],
+                    (int)$pay['plan_id'],$server,0,(string)$line['remark'],
+                    (string)$line['uuid'],(int)$effect['requested_expire'],
+                    (string)$line['links'],
+                    achbotAllocateOrderAmount((int)$pay['price'],$count,$ordinal),
+                    time(),(int)($pay['agent_bought']??0),true);
+                achbotLinkPaidAccountEffect($db,(int)$effect['id'],$orderId);
+                // The new order and native link are in the same transaction
+                // as the sealed delivery and original 003 service closure.
+                $q=$db->prepare('SELECT * FROM service_effects WHERE id=? FOR UPDATE');
+                $eid=(int)$effect['id'];
+                $q->bind_param('i',$eid);$q->execute();
+                $effect=$q->get_result()->fetch_assoc();$q->close();
+                if (!$effect || $effect['state']!=='local_recorded' ||
+                    (int)$effect['order_id']!==$orderId)
+                    throw new RuntimeException('hosted_recovery_original_link_unconfirmed');
+            }
             achbotDeliveryInsertHostedBuyLocked($db,$after['pay'],$after['attempt'],
-                $effect,$ordinal,(int)$effect['order_id'],[
+                $effect,$ordinal,$orderId,[
                 'uid'=>$owner,'qr'=>$line['qr'],'caption'=>$line['caption'],
                 'keys'=>$line['keys'],'bot_url'=>$botUrl]);
         }

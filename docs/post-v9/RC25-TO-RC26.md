@@ -114,6 +114,29 @@
   immutable 009 fingerprint, not the mutable stage, owns bank identity.
   No new background reprocessing loop is introduced.
 
+## Original Hosted BUY_SUB recovery — current source candidate
+
+After RC25, the integrated Issue #117 recovery work requires the original
+003/007/012/018/019 journals for paid NextPay/Zarinpal purchases whose first
+native CREATE succeeded but its order/delivery commit did not complete.
+The Owner-only technical action accepts a **complete** original 007 manifest,
+including a mixture of original linked local orders and verified-but-unlinked
+native accounts. It reads each original Marzban/PasarGuard account with its
+operation marker and pinned current physical identity. The original linked
+orders are not rewritten; only an original verified account lacking a local
+order can obtain its first link/order. Original 003 service closure and all
+immutable 018 delivery packets must COMMIT together before any Telegram
+attempt. This is an original-account continuation, not a new purchase,
+refund, merchant verification, Native CREATE or capacity reservation.
+
+Incomplete 007 ordinals, true orphan/foreign/conflicting Native identities
+and explicitly authorized replacement require separately evidenced operator
+reconciliation: neither an absent row nor an HTTP timeout/404 permits an
+automatic replacement. Preserve actual 003/007/012/018/019/020 evidence and
+source/runtime identity for diagnostics; never delete or regenerate journals
+to make an old payment appear new. Further details and no-replay boundaries
+are in [Payment delivery recovery](PAYMENT-DELIVERY-RECOVERY.md).
+
 ## Prerequisites and one-way migration
 
 1. Determine **actual installed** source ZIP manifest, schema, PHP version,
