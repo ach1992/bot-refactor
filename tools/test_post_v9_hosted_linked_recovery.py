@@ -27,6 +27,10 @@ set_error_handler(static function($n,$m){throw new ErrorException($m,0,$n);});
 if (PHP_VERSION_ID<80500 || PHP_VERSION_ID>=80600)
     throw new RuntimeException('php85_required');
 define('ACHBOT_PG_TEST_LOOPBACK',true);
+// Source GatewayReturn.php contains browser/IPN routes at include time.
+// The canonical internal-only flag loads its original claim helpers without
+// executing any public return handler or rendering an HTTP page.
+define('ACHBOT_NP_RECONCILE_ONLY',true);
 $_SERVER['SCRIPT_FILENAME']=__FILE__;
 $root=$argv[1];$spec=json_decode($argv[4],true,64,JSON_THROW_ON_ERROR);
 $connection=new mysqli('localhost','root','',$argv[3],0,$argv[2]);
@@ -139,7 +143,7 @@ def check():
                      str(original),str(ROOT),str(work/'mysql.sock'),DB,json.dumps(spec)]
             p=subprocess.run(command,cwd=work,env=env,capture_output=True,
                              text=True,timeout=40)
-            if p.returncode or p.stderr:
+            if p.returncode or p.stderr or not p.stdout.strip():
                 raise RuntimeError('original hosted source '+repr((p.returncode,p.stderr[-1200:],p.stdout[-200:])))
             return json.loads(p.stdout)
         def seed(tag,provider='nextpay',panel='marzban',count=1,
