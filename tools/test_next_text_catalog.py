@@ -346,13 +346,13 @@ def main():
     presentation=json.loads(command('python3','tools/test_text_catalog_style.py'))
     check(presentation.get('status')=='PASS' and presentation.get('editable_files')==2
           and presentation.get('canonical_binding_paths')==2 and presentation.get('canonical_binding_entries')==4 and presentation.get('canonical_binding_negative_controls')==4
-          and presentation.get('current_keys')==2523+len(management['added_keys'])-len(catalog_owner_r5.manifest()['retired_keys'])+len(catalog_owner_r5.manifest()['added_keys'])+len(catalog_owner_r5.api_manifest()['added_keys'])+1+8+14+9+18+27+12+7+17+2+2+3+4+1+3  # Preserve prior pinned entries; add 3 exact Owner-only original Hosted recovery texts.
+          and presentation.get('current_keys')==2523+len(management['added_keys'])-len(catalog_owner_r5.manifest()['retired_keys'])+len(catalog_owner_r5.manifest()['added_keys'])+len(catalog_owner_r5.api_manifest()['added_keys'])+1+8+14+9+18+27+12+7+17+2+2+3+4+1+3+6  # Preserve all previous pins; 6 additive staff-authorized replacement messages.
           and presentation.get('management_added_keys')==len(management['added_keys'])
           and presentation.get('management_baseline_keys')==2523
           and presentation.get('management_negative_controls')==5
           and presentation.get('management_provider_label_cases')==11
           and presentation.get('management_facade_cases')==sum(record.get('facade')is True for record in management['added_keys'].values()) and presentation.get('retired_keys')==23
-          and presentation.get('added_keys')==1 and presentation.get('logical_topics')==28+9
+          and presentation.get('added_keys')==1 and presentation.get('logical_topics')==28+10
           and presentation.get('numeric_template_changes')==23
           and presentation.get('adjacent_emoji_violations')==0
           and presentation.get('parameter_exception_count')==3
