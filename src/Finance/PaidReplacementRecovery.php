@@ -29,6 +29,24 @@ function achbotHostedReplacementSchemaReady(mysqli $db): bool {
             ksort($keys[$name]);
             if (array_values($keys[$name])!==$columns) return false;
         }
+        // The durable original-to-replacement provenance must not become a
+        // weak, deleteable text reference on a partially applied 021 ALTER.
+        $q=$db->query("SELECT k.REFERENCED_TABLE_NAME,k.REFERENCED_COLUMN_NAME,
+            r.DELETE_RULE,r.UPDATE_RULE
+            FROM information_schema.KEY_COLUMN_USAGE k
+            JOIN information_schema.REFERENTIAL_CONSTRAINTS r
+              ON r.CONSTRAINT_SCHEMA=k.CONSTRAINT_SCHEMA
+             AND r.TABLE_NAME=k.TABLE_NAME
+             AND r.CONSTRAINT_NAME=k.CONSTRAINT_NAME
+            WHERE k.TABLE_SCHEMA=DATABASE() AND k.TABLE_NAME='service_effects'
+              AND k.CONSTRAINT_NAME='fk_effect_original_replacement'
+              AND k.COLUMN_NAME='replaces_effect_id'");
+        if (!$q || $q->num_rows!==1) return false;
+        $fk=$q->fetch_assoc();$q->free();
+        if ($fk['REFERENCED_TABLE_NAME']!=='service_effects' ||
+            $fk['REFERENCED_COLUMN_NAME']!=='id' ||
+            strtoupper((string)$fk['DELETE_RULE'])!=='RESTRICT' ||
+            strtoupper((string)$fk['UPDATE_RULE'])!=='RESTRICT') return false;
         return true;
     } catch(Throwable $ignored) {return false;}
 }

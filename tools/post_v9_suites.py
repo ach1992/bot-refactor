@@ -2220,6 +2220,7 @@ def run_authorization(tmp: str) -> tuple[dict, dict]:
         'partial_003_unique_index_missing_blocks',
         'delivery_018_token_uniqueness_missing_blocks',
         'replacement_021_unique_original_claim_missing_blocks',
+        'replacement_021_original_foreign_key_missing_blocks',
         'wallet_telegram_event_key_missing_blocks',
         'wallet_telegram_event_key_nonunique_blocks',
         'wallet_cursor_nontransactional_storage_blocks',
@@ -3401,6 +3402,7 @@ def run_funding(tmp: str) -> tuple[dict, dict]:
             +(replacement_run.stderr or replacement_run.stdout)[-6000:])
     replacement=json.loads(replacement_path.read_text())
     required_replacements={
+        '021_missing_original_provenance_foreign_key_blocks_paid_replacement',
         'manager_missing_first_007_signed_one_replacement_capacity_once',
         'original_create_cannot_overlap_prior_paid_replacement',
         'concurrent_staff_confirmation_cannot_double_reserve_or_post',

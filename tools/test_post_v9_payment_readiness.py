@@ -786,6 +786,15 @@ def main() -> dict:
         statement(d,'ALTER TABLE service_effects ADD UNIQUE KEY uq_effect_one_replacement(replaces_effect_id)')
         statement(d,'ALTER TABLE service_effects DROP INDEX idx_probe_replaces')
         cases.append('replacement_021_unique_original_claim_missing_blocks')
+        statement(d,'ALTER TABLE service_effects DROP FOREIGN KEY fk_effect_original_replacement')
+        code, result, _ = report_run(d)
+        require(code==2 and has(result,'schema_021','BLOCK',
+            'partial_or_incompatible_schema_requires_audit'),
+            'replacement_021_original_foreign_key_missing_blocks')
+        statement(d,'ALTER TABLE service_effects ADD CONSTRAINT fk_effect_original_replacement '
+                  'FOREIGN KEY (replaces_effect_id) REFERENCES service_effects(id) '
+                  'ON DELETE RESTRICT ON UPDATE RESTRICT')
+        cases.append('replacement_021_original_foreign_key_missing_blocks')
         source_failures=source_failure_regressions(d)
         cases.extend(r['case'] for r in source_failures)
         # Keep the original 54-case assertion independent of canonical-path

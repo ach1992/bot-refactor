@@ -2,32 +2,31 @@
 
 ## Unreleased Issue #117 source — next prerelease preflight (NOT published)
 
-The integrated main after RC25 includes Owner-initiated payment-review and
-service/delivery recovery paths from PRs #118–#131. The next source candidate
-extends original paid Hosted BUY_SUB recovery to fully recorded 007 native
-manifests with partially linked or verified-but-unlinked accounts **and**
-contiguous original manifests with trailing, provably unstarted CREATE
-ordinals. Such an ordinal receives its FIRST provider CREATE only through an
-explicit Owner callback after prior GET and original identity/capacity
-checks. No replay, replacement or duplicate settlement is authorized. This is **not** an installed
-migration or release announcement. The *latest published* GitHub artifact
-remains RC25. No next-release SHA, ZIP checksum, independent review, Owner
-Merge/release approval, installed schema or Chili acceptance is asserted by
-this draft; record exact identities only when established by the required
-gates.
+The integrated main after RC25 includes the reviewed payment-review and
+service/delivery recovery paths from PRs #118–#132. Merged PR #132 preserves
+original paid Hosted BUY_SUB accounts and order links and permits only FIRST
+CREATE for a provably unstarted trailing 007 ordinal, after an authenticated
+GET and original payment/capacity checks. This is **not** a general account
+replacement or license to re-POST unknown Native effects. Draft PR #133 is a
+separate subsequent source proposal described below; its 021 replacement
+contract is NOT integrated, independently reviewed, released, migrated or
+installed. The *latest published* GitHub artifact remains RC25. Prior
+independent reviews and Owner merges cannot authorize this new candidate's
+Merge, release, Chili migration or live provider/payment/Telegram effects.
 
 An authorized RC25-to-next upgrade needs an actual source/DB/config and
 installed-hotfix inventory, a restored staging backup, full PHP 8.5
 eight-family candidate validation, and independent review. Verify the
 existing 001–017 history and one-time **018 delivery intents**, **019 human
-review decisions** and **020 durable follow-up intents** (in that order)
-against exact target table/index/engine shapes. Do not blindly replay them;
+review decisions**, **020 durable follow-up intents**, and then new
+**021 paid reconciliation provenance**, all in that order and only after
+verifying exact target table/index/engine shapes. Do not blindly replay them;
 read-only metadata inspection of the installed NL Chili target on
 2026-11-08 found those three tables **absent**. This is not a full schema
 preflight or permission to run SQL. Retain actual payment and Native journals, private
 `telegramWebhookSecret`, original 018/020 ciphertext and active Cron
 locks. Resolve source-versus-installed drift before exact-manifest atomic
-replacement. Reversing only PHP after new 018/019/020 or Native writes is
+replacement. Reversing only PHP after new 018/019/020/021 or Native writes is
 not a safe rollback: preserve journals and reconcile by verified
 roll-forward or whole-state restore at a quiesced, audited pre-write point.
 Follow the existing [RC25 to next prerelease staging procedure](RC25-TO-RC26.md)

@@ -89,6 +89,8 @@ DRIVER=DRIVER.replace("SELECT operation_id,remote_username,requested_expire,requ
 needle="    if (($spec['op']??'')==='eligible') $result=achbotHostedLinkedBuyRecoverable($connection,$pay);"
 assert DRIVER.count(needle)==1
 DRIVER=DRIVER.replace(needle,r'''    if (($spec['op']??'')==='eligible') $result=achbotHostedLinkedBuyRecoverable($connection,$pay);
+    elseif (($spec['op']??'')==='replacement_schema_ready')
+        $result=achbotHostedReplacementSchemaReady($connection);
     elseif (($spec['op']??'')==='reconciled_eligible')
         $result=achbotHostedReconciledBuyRecoverable($connection,$pay);
     elseif (($spec['op']??'')==='replacement_preview') {
@@ -194,6 +196,15 @@ def check():
         sql("INSERT INTO setting(type,value) VALUES ('ADMIN_ROLE_9002','manager')")
         pay=seed('missingfirst')
         assert balance()=='20:50000'
+        sql('ALTER TABLE service_effects DROP FOREIGN KEY fk_effect_original_replacement')
+        proof=run(pay,op='replacement_schema_ready')
+        assert proof['result'] is False and proof['error'] is None,proof
+        assert run(pay,op='replacement_preview',actor=9002)['result'] is None
+        sql('ALTER TABLE service_effects ADD CONSTRAINT fk_effect_original_replacement '
+            'FOREIGN KEY (replaces_effect_id) REFERENCES service_effects(id) '
+            'ON DELETE RESTRICT ON UPDATE RESTRICT')
+        assert run(pay,op='replacement_schema_ready')['result'] is True
+        cases.append('021_missing_original_provenance_foreign_key_blocks_paid_replacement')
         ch=preview(pay,actor=9002)
         assert run(pay,op='replacement_preview')['result']['reason']=='original_missing'
         out=confirm(pay,ch,actor=9002)

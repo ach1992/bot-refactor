@@ -503,6 +503,15 @@ try {
         $present = count(array_filter(array_keys($schema),
             static fn(string $t): bool => isset($tables[$t])));
         $isPresent = $present === count($schema) && validShape($schema,$tables,$columns,$unique);
+        if ($migration==='021' && $isPresent) {
+            // The 021 extension must retain its original-replacement FK,
+            // not merely the names of the additive columns and indexes.
+            // Reuse the source contract's read-only shape verifier.
+            try {
+                require_once dirname(__DIR__).'/src/Finance/PaidReplacementRecovery.php';
+                $isPresent=achbotHostedReplacementSchemaReady($db);
+            } catch (Throwable $ignored) {$isPresent=false;}
+        }
         $code = $isPresent ? 'columns_and_named_unique_indexes_detected_not_ddl_certified' :
             ($present === 0 ? 'missing' : 'partial_or_incompatible_schema_requires_audit');
         $report['schema'][$migration] = $code;
