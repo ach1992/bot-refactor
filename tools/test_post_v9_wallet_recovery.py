@@ -63,7 +63,27 @@ $reader=static function(string $url,string $user,string $pass,string $name) use(
 };
 try {
     if (($spec['op']??'')==='eligible') $result=achbotWalletBuyRecoverable($connection,$pay);
-    elseif (($spec['op']??'')==='check') $result=achbotDeliveryCheck($connection,$pay,1);
+    elseif (($spec['op']??'')==='check') {
+        $result=achbotDeliveryCheck($connection,$pay,1);
+        if ($result!=='acknowledged' && $result!=='unknown') {
+            $data=$connection->query('SELECT * FROM payment_delivery_intents WHERE pay_row_id='.$pay.' AND ordinal=1')->fetch_assoc();
+            $p=$connection->query('SELECT * FROM pays WHERE id='.$pay)->fetch_assoc();
+            $a=$connection->query('SELECT * FROM payment_attempts WHERE pay_row_id='.$pay)->fetch_assoc();
+            $e=$connection->query("SELECT * FROM service_effects WHERE pay_row_id=$pay AND effect_kind='create' AND ordinal=1")->fetch_assoc();
+            $h=$connection->query("SELECT * FROM service_effects WHERE pay_row_id=$pay AND effect_kind='wallet_hold' AND ordinal=0")->fetch_assoc();
+            $digest=$data&&$p&&$a&&$e&&$h ? achbotDeliveryWalletBuyDigest($p,$a,$e,$h,1) : null;
+            $GLOBALS['diagnostics']=[
+                'schema'=>achbotDeliverySchemaReady($connection),
+                'wallet_digest_nonnull'=>$digest!==null,
+                'wallet_digest_equal'=>$data&&$digest!==null&&hash_equals((string)$data['source_digest'],$digest),
+                'pay_digest_equal'=>$data&&$p&&hash_equals((string)$data['pay_fingerprint'],achbotPaymentEvidencePayFingerprint($p)),
+                'sealed_sha_equal'=>$data&&hash_equals((string)$data['payload_sha256'],hash('sha256',(string)$data['sealed_payload'])),
+                'e_state'=>$e['state']??null,'h_state'=>$h['state']??null,
+                'attempt_status'=>$a['provider_status']??null,'delivery_state'=>$data['state']??null,
+                'payload_decryptable'=>$data&&achbotPaymentEvidenceUnprotect(achbotDeliveryPurpose($pay,1,(int)$data['effect_id'],(int)$data['order_id']),(string)$data['sealed_payload'])!==null
+            ];
+        }
+    }
     else $result=achbotResumeWalletBuy($connection,$pay,$botState,$buttonValues,
         $botUrl,$reader);
 } catch (Throwable $e) {$error=$e->getMessage();}
@@ -75,7 +95,8 @@ $attempt=$connection->query('SELECT provider,stage,provider_status FROM payment_
 $delivery=$connection->query('SELECT ordinal,state,attempt_count FROM payment_delivery_intents
     WHERE pay_row_id='.$pay.' ORDER BY ordinal')->fetch_all(MYSQLI_ASSOC);
 echo json_encode(['result'=>$result,'error'=>$error,'state'=>$state,'orders'=>$orders,
-    'attempt'=>$attempt,'delivery'=>$delivery,'events'=>$GLOBALS['events']],
+    'attempt'=>$attempt,'delivery'=>$delivery,'events'=>$GLOBALS['events'],
+    'diagnostics'=>$GLOBALS['diagnostics']??null],
     JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE);
 '''
 
@@ -143,7 +164,8 @@ def check():
         assert twice['error']=='wallet_recovery_manifest_unavailable' and not twice['events'],twice
         assert twice['orders']==1 and attempts(pay)==1 and funds()==(49900,9)
         cases.append('repeated_owner_resume_never_relinks_or_resends')
-        assert recover(work,env,driver,pay=pay,op='check')['result']=='acknowledged'
+        checked=recover(work,env,driver,pay=pay,op='check')
+        assert checked['result']=='acknowledged',checked
         cases.append('sealed_wallet_packet_passes_original_delivery_integrity_check')
 
         pay,b=test('wallet_original_verified_unlinked',initial={'order_failure':True})
