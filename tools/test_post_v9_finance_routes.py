@@ -4476,7 +4476,7 @@ def main():
             for e in archived['events']) or archived['network_calls']):
             raise RuntimeError('Approved operator archive did not close the original case')
         meta=sql(work,env,f"SELECT review_archived_by,review_archived_at IS NOT NULL "
-            f"FROM payment_attempts WHERE id={archived_id}")
+            f"FROM payment_attempts WHERE id={archived_id}").strip()
         assert meta=='9001\t1' and sql(work,env,
             "SELECT p.state,IFNULL(a.stage,''),IFNULL(a.provider_status,'<null>'),p.approved_by "
             "FROM pays p JOIN payment_attempts a ON a.pay_row_id=p.id "
@@ -4497,7 +4497,7 @@ def main():
         if (ipn['events'][-1].get('code')!=200 or ipn['network_calls']):
             raise RuntimeError('Signed late IPN was not safely acknowledged as evidence-only')
         assert sql(work,env,"SELECT observed_status FROM payment_transactions "
-            "WHERE provider='nowpayments' AND payment_id='owned-archive-late-child'")=='finished'
+            "WHERE provider='nowpayments' AND payment_id='owned-archive-late-child'").strip()=='finished'
         assert sql(work,env,"SELECT p.state,IFNULL(a.stage,''),"
             "IFNULL(a.provider_status,'<null>'),p.approved_by FROM pays p "
             f"JOIN payment_attempts a ON a.pay_row_id=p.id WHERE p.id={archived_pay}")==original
@@ -4556,7 +4556,7 @@ def main():
         assert sql(work,env,"SELECT COUNT(*) FROM payment_attempts a "
             "JOIN pays p ON p.id=a.pay_row_id WHERE a.provider='nowpayments' "
             "AND a.review_archived_at IS NULL "
-            f"AND a.id={archived_id} AND a.stage='pending'")=='0'
+            f"AND a.id={archived_id} AND a.stage='pending'").strip()=='0'
         records.append(dict(case='archived_nowpayments_original_excluded_from_cron_claim',
                             pass_=True,external_requests=0))
 

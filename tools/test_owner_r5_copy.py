@@ -39,9 +39,16 @@ def main():
       'manual_payment.receipt_helpers.build_admin_keyboard_with_stats.hash_id.286c7d3faf':'🆔 {hashId}',
       'manual_payment.manual_approval.manual_standard_report_delivery.hash_id.2899228604':'🆔 {hash_id}'
     }
-    check(all(r5.text(merged.get(k,''))==v for k,v in rc25_hash_buttons.items()) and
+    # The new automatic-gateway detail shows an actual @handle, never a
+    # numeric Telegram/customer ID. This exact legacy label is distinct
+    # from the separately labelled numeric customer ID in the new inbox.
+    handle_key='automatic_gateway_review.handle'
+    handle_label='🔖 شناسه تلگرام: @{handle}'
+    check(r5.text(merged.get(handle_key,''))==handle_label and
+          all(r5.text(merged.get(k,''))==v for k,v in rc25_hash_buttons.items()) and
           {k for k,e in merged.items() if '🆔' in r5.text(e)}==set(rc25_hash_buttons) and
-          not any(compositions.numeric_id_variant(r5.text(e)) for e in merged.values()),
+          not any(compositions.numeric_id_variant(r5.text(e))
+                  for k,e in merged.items() if k!=handle_key),
           'approved_tracking_hash_buttons_only_no_numeric_user_id_header')
     # Data-only code/URI/native labels and continuation fragments stay intact.
     # These four intentionally stable units are composed inside Persian sentences.
