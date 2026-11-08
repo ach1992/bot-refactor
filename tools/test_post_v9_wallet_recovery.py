@@ -12,6 +12,7 @@ import copy
 import json
 import subprocess
 import threading
+from concurrent.futures import ThreadPoolExecutor
 from http.server import ThreadingHTTPServer
 from urllib.parse import urlsplit, unquote
 from pathlib import Path
@@ -196,7 +197,7 @@ $out=processWalletPayment($db,$hash,static function(array $pay,array $owner)
     $uid=(int)$pay['user_id'];
     $count=max(1,(int)$pay['agent_count']);
     for ($ordinal=1;$ordinal<=$count;$ordinal++) {
-        achbotCreatePaidAccount($db,(int)$pay['id'],$ordinal,[
+        [$native,$realName,$port,$effectId]=achbotCreatePaidAccount($db,(int)$pay['id'],$ordinal,[
             'user_id'=>$uid,'server_type'=>$provider,
             'server_id'=>(int)$pay['server_id'],'inbound_id'=>0,
             'plan_id'=>(int)$pay['plan_id'],
@@ -204,6 +205,20 @@ $out=processWalletPayment($db,$hash,static function(array $pay,array $owner)
             'volume'=>2,'days'=>30,'uniqid'=>'fixture-uuid',
             'protocol'=>'vless','port'=>0,'expire_microdate'=>0,
             'net_type'=>'normal','rahgozar'=>0,'limitip'=>0]);
+        if ($ordinal<=(int)($GLOBALS['spec']['link_prefix']??0)) {
+            // Original checkout commits each ordered account+effect link,
+            // then finishes the Wallet payment separately.
+            if (!$db->begin_transaction()) throw new RuntimeException('fixture_link_begin');
+            try {
+                $orderId=insertOrder($db,$uid,'fixture-token',(int)$pay['plan_id'],
+                    (int)$pay['server_id'],0,$realName,'fixture-uuid',
+                    time()+30*86400,'fixture-vless-link',
+                    achbotAllocateOrderAmount((int)$pay['price'],$count,$ordinal),
+                    time(),(int)($pay['agent_bought']??0),true);
+                achbotLinkPaidAccountEffect($db,$effectId,$orderId);
+                if (!$db->commit()) throw new RuntimeException('fixture_link_commit');
+            } catch(Throwable $e) {$db->rollback();throw $e;}
+        }
     }
     throw new RuntimeException('fixture_lost_local_finality_after_original_native');
 },'standard');
@@ -378,6 +393,34 @@ def check():
         assert no['orders']==0 and attempts(pay)==0
         cases.append('missing_original_bulk_ordinal_cannot_invoke_new_post')
 
+        # Source-real original Wallet debit/007 native CREATE, with the
+        # checkout's first linked order committed before process failure.
+        original_partial=work/'wallet-original-partial.php'
+        original_partial.write_text(ORIGINAL)
+        pay=seed('wallet_original_linked_prefix',count=2)
+        source=subprocess.run(['php','-n','-d','extension=mysqlnd','-d','extension=mysqli',
+            '-d','disable_functions=curl_init,curl_exec,exec,shell_exec,system,passthru,popen,proc_open,mail',
+            str(original_partial),str(ROOT),str(work/'mysql.sock'),DB,
+            json.dumps({'hash':'wallet_original_linked_prefix','provider':'marzban',
+                'link_prefix':1})],cwd=work,env=env,capture_output=True,text=True,timeout=40)
+        assert source.returncode==0,(source.stdout,source.stderr)
+        assert json.loads(source.stdout)['result']['status']=='error',source.stdout
+        assert source.stderr.strip()=='achbot_wallet_held_debit_review hash=wallet_original_linked_prefix',source.stderr
+        assert sql(work,env,f'SELECT state FROM pays WHERE id={pay}')=='processing_wallet'
+        linked_id=int(sql(work,env,'SELECT order_id FROM service_effects '
+            f"WHERE pay_row_id={pay} AND effect_kind='create' AND ordinal=1"))
+        assert linked_id>0 and funds()==(49900,8),linked_id
+        assert attempts(pay)==0
+        actual=recover(work,env,driver,pay=pay)
+        assert actual['error'] is None and actual['orders']==2,actual
+        assert actual['state']=='paid_with_wallet' and len(actual['delivery'])==2,actual
+        assert sql(work,env,'SELECT order_id FROM service_effects '
+            f"WHERE pay_row_id={pay} AND effect_kind='create' AND ordinal=1")==str(linked_id)
+        assert funds()==(49900,8) and attempts(pay)==1
+        assert [v['event'] for v in actual['events']]==[
+            'GET','RENDER','GET','RENDER','TELEGRAM','TELEGRAM'],actual
+        cases.append('marzban_original_partial_linked_bulk_recovers_without_second_native_create')
+
         pay=seed('wallet_original_corrupt_hold')
         wallet.run(work,env,init,hash='wallet_original_corrupt_hold',remote='lost')
         sql(work,env,f"UPDATE service_effects SET reserved_count=0 WHERE pay_row_id={pay} "
@@ -428,8 +471,9 @@ def check_pasarguard_and_bulk():
                      '-d','disable_functions=exec,shell_exec,system,passthru,popen,proc_open,mail',
                      str(original),str(ROOT),str(work/'mysql.sock'),DB]
 
-        def origin(name):
-            run=subprocess.run([*source_argv,json.dumps({'hash':name,'provider':'pasarguard'})],
+        def origin(name,link_prefix=0):
+            run=subprocess.run([*source_argv,json.dumps({
+                'hash':name,'provider':'pasarguard','link_prefix':link_prefix})],
                 cwd=work,env=env,text=True,capture_output=True,timeout=45)
             # The original source intentionally reports the held-debit review
             # when the fixture loses local finality AFTER native CREATE.
@@ -460,9 +504,9 @@ def check_pasarguard_and_bulk():
             return [(method,urlsplit(path).path) for method,path,_ in server.trace]
         def clean_recovery():
             server.block_posts=True;server.trace=[];server.mode='ok';server.bad_username=None
-        def seed(label,count_value=1):
-            # Every requested case starts with an ACTUAL original wallet debit
-            # and native CREATE. The fixture stops before local order linking.
+        def seed(label,count_value=1,link_prefix=0):
+            # Real Wallet debit+CREATE; optionally persist original order
+            # links before the induced process failure.
             server.block_posts=False;server.mode='ok';server.bad_username=None
             sql(work,env,'UPDATE users SET wallet=50000 WHERE userid=1001;'
                 'UPDATE server_info SET ucount=10,active=1,state=1 WHERE id=2;'
@@ -474,13 +518,18 @@ def check_pasarguard_and_bulk():
                 f"VALUES('{label}',1001,'BUY_SUB',7,2,{count_value},100,0,0,UNIX_TIMESTAMP(),'pending')")
             pay=int(sql(work,env,f"SELECT id FROM pays WHERE hash_id='{label}'"))
             server.trace=[]
-            result=origin(label)
+            result=origin(label,link_prefix)
             created=sum(m=='POST' and path=='/api/user' for m,path in native_trace())
             assert result['result']['status']=='error' and created==count_value,(label,result,server.trace,lines(pay))
             assert count('service_effects',pay)==count_value+1 and balances()==(49900,10-count_value),(label,lines(pay),balances())
             assert count('payment_attempts',pay)==0 and count('payment_delivery_intents',pay)==0
-            assert count('orders_list',pay)==0 and physical_orders(pay)==0
-            assert all(row.split('\t')[1:3]==['verified','verified'] for row in lines(pay).splitlines()),(label,lines(pay))
+            assert count('orders_list',pay)==link_prefix and physical_orders(pay)==link_prefix
+            assert [r.split('\t')[1] for r in lines(pay).splitlines()]==[
+                'local_recorded' if i<=link_prefix else 'verified'
+                for i in range(1,count_value+1)],(label,lines(pay))
+            assert [r.split('\t')[2] for r in lines(pay).splitlines()]==[
+                'linked' if i<=link_prefix else 'verified'
+                for i in range(1,count_value+1)],(label,lines(pay))
             clean_recovery()
             return pay
         def run(pay,**kwargs):
@@ -551,6 +600,95 @@ def check_pasarguard_and_bulk():
         repeat=run(pay)
         assert repeat['error']=='wallet_recovery_manifest_unavailable' and not repeat['events'],repeat
         scenarios.append('pg_two_complete_original_accounts_atomically_link_and_seal_both_packets')
+
+        # Genuine original checkout prefix (already LINKED), remaining
+        # original native effect verified but not inserted locally.
+        pay=seed('pg_wallet_partial_linked',2,link_prefix=1)
+        first_order=int(sql(work,env,'SELECT order_id FROM service_effects '
+            f"WHERE pay_row_id={pay} AND effect_kind='create' AND ordinal=1"))
+        first_source=sql(work,env,f"SELECT token,uuid,link,amount FROM orders_list WHERE id={first_order}")
+        assert run(pay,op='eligible')['result'] is True
+        res=run(pay)
+        assert res['error'] is None and res['result']['committed'] is True,res
+        assert res['orders']==2 and len(res['delivery'])==2,res
+        assert sql(work,env,'SELECT order_id FROM service_effects '
+            f"WHERE pay_row_id={pay} AND effect_kind='create' AND ordinal=1")==str(first_order)
+        assert sql(work,env,f"SELECT token,uuid,link,amount FROM orders_list WHERE id={first_order}")==first_source
+        assert [ev['event'] for ev in res['events']].count('TELEGRAM')==2,res
+        check_terminal(pay,2)
+        assert run(pay)['error']=='wallet_recovery_manifest_unavailable'
+        scenarios.append('pg_partially_linked_original_bulk_reuses_first_order_and_seals_both')
+
+        pay=seed('pg_wallet_all_linked',2,link_prefix=2)
+        prior=sql(work,env,'SELECT id,remark,amount FROM orders_list '
+            f"WHERE userid=1001 AND remark REGEXP '^walletoriginal_{pay}_[0-9]+$' ORDER BY id")
+        res=run(pay,telegram='unknown')
+        assert res['error'] is None and res['orders']==2 and res['state']=='paid_with_wallet',res
+        assert sql(work,env,'SELECT id,remark,amount FROM orders_list '
+            f"WHERE userid=1001 AND remark REGEXP '^walletoriginal_{pay}_[0-9]+$' ORDER BY id")==prior
+        assert all(p['state']=='unknown' for p in res['delivery']),res
+        assert count('payment_attempts',pay)==1 and count('payment_delivery_intents',pay)==2
+        assert balances()==(49900,8) and not any(m=='POST' for m,_ in native_trace())
+        repeated=run(pay)
+        assert repeated['error']=='wallet_recovery_manifest_unavailable' and not repeated['events'],repeated
+        scenarios.append('pg_all_already_linked_original_orders_finalize_without_reorder_or_unknown_resend')
+
+        pay=seed('pg_wallet_partial_corrupt_order',2,link_prefix=1)
+        original_id=int(sql(work,env,'SELECT order_id FROM service_effects '
+            f"WHERE pay_row_id={pay} AND effect_kind='create' AND ordinal=1"))
+        sql(work,env,f"UPDATE orders_list SET amount=amount+1 WHERE id={original_id}")
+        blocked=run(pay)
+        assert blocked['error']=='wallet_recovery_manifest_unavailable' and not blocked['events'],blocked
+        assert blocked['orders']==1 and count('payment_attempts',pay)==0
+        assert balances()==(49900,8) and not any(m=='POST' for m,_ in native_trace())
+        sql(work,env,f"UPDATE orders_list SET amount=amount-1 WHERE id={original_id}")
+        recovered=run(pay)
+        assert recovered['error'] is None and recovered['orders']==2,recovered
+        check_terminal(pay,2)
+        scenarios.append('pg_tampered_linked_order_rejected_before_native_get_or_financial_finality')
+
+        pay=seed('pg_wallet_partial_native_mismatch',2,link_prefix=1)
+        server.mode='wrong_note';server.bad_username=f'walletoriginal_{pay}_2'
+        blocked=run(pay)
+        assert blocked['error'] and blocked['state']=='processing_wallet',blocked
+        assert blocked['orders']==1 and blocked['delivery']==[] and count('payment_attempts',pay)==0
+        assert balances()==(49900,8) and not any(m=='POST' for m,_ in native_trace())
+        clean_recovery()
+        recovered=run(pay)
+        assert recovered['error'] is None and recovered['orders']==2,recovered
+        check_terminal(pay,2)
+        scenarios.append('pg_partially_linked_bulk_second_native_mismatch_rolls_back_without_repost')
+
+        pay=seed('pg_wallet_partial_later_sql',2,link_prefix=1)
+        sql(work,env,"DELIMITER //\n"
+            "CREATE TRIGGER owned_wallet_second_order_fail BEFORE INSERT ON orders_list "
+            "FOR EACH ROW BEGIN IF RIGHT(NEW.remark,2)='_2' THEN "
+            "SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='fixture_second_order_failure'; "
+            "END IF; END//\nDELIMITER ;")
+        try:
+            blocked=run(pay)
+        finally:
+            sql(work,env,'DROP TRIGGER owned_wallet_second_order_fail')
+        assert blocked['error'] and blocked['state']=='processing_wallet',blocked
+        assert blocked['orders']==1 and blocked['delivery']==[] and count('payment_attempts',pay)==0
+        assert balances()==(49900,8) and not any(m=='POST' for m,_ in native_trace())
+        recovered=run(pay)
+        assert recovered['error'] is None and recovered['orders']==2,recovered
+        check_terminal(pay,2)
+        scenarios.append('pg_partial_linked_second_insert_failure_preserves_first_and_recovers_once')
+
+        pay=seed('pg_wallet_partial_concurrent',2,link_prefix=1)
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            outcomes=list(pool.map(lambda _:run(pay),range(2)))
+        completed=[r for r in outcomes if r['result'] and
+            isinstance(r['result'],dict) and r['result'].get('committed')]
+        assert len(completed)==1,outcomes
+        assert all(r['error'] or r in completed for r in outcomes),outcomes
+        assert count('payment_attempts',pay)==1 and count('payment_delivery_intents',pay)==2
+        assert physical_orders(pay)==2 and balances()==(49900,8)
+        assert not any(m=='POST' for m,_ in native_trace())
+        check_terminal(pay,2)
+        scenarios.append('pg_concurrent_owner_partial_resume_single_terminal_commit_and_delivery')
 
         pay=seed('pg_wallet_bulk_later_mismatch',2)
         server.mode='wrong_note';server.bad_username=f'walletoriginal_{pay}_2'
