@@ -2,7 +2,7 @@
 
 This guide is for a **new bot with a new, empty database**. An existing bot, a copied live database or a partly migrated database must use its exact release's upgrade/recovery guide instead. There is no browser installer or automatic schema upgrade.
 
-This guide covers **RC25** and its **124-member** source-only runtime. It retains the RC21 evidence-first bank receipt / optional API workflow, scoped add-on offers, safe Cron lock-directory creation and RC24 shared-service plan journal. An empty-database setup applies **015 after 014, then 016 and 017 in order**. Existing installations use the [RC24 -> RC25 upgrade guide](RC24-TO-RC25.md), not the fresh schema sequence. Use one exact release, manifest, setup checkout and SQL set throughout; [current scope](NEXT-RELEASE.md) identifies the boundary. Publication does not authorize a target installation, migration, API activation or live payment.
+This guide covers the **published RC26** and its **132-member** source-only runtime. It retains the RC21 evidence-first bank receipt/optional API workflow, scoped add-ons, safe Cron locks and RC24 shared-service plan journal, and adds RC26's 018-021 payment-delivery/review/follow-up and paid-replacement provenance. For a truly new empty database, apply **014 -> 015 -> 016 -> 017 -> 018 -> 019 -> 020 -> 021** in order after the earlier required baseline sidecars. Existing installations MUST use the exact [RC25 -> RC26 upgrade guide](RC25-TO-RC26.md) and any older release-to-release prerequisites, not this fresh schema sequence. Use one exact tag, manifest, private setup checkout and SQL set throughout; [current scope](NEXT-RELEASE.md) identifies the boundary. Publication does not authorize installation, migration, API activation or live payment.
 
 ## 1. Prepare the installation
 
@@ -53,6 +53,7 @@ Import `database/legacy-schema.sql` exactly once into that empty database, then 
 | 16 | `migrations/post-v9/018_payment_delivery_intents.sql` | Per-payment sealed delivery intents and Telegram attempt journal; requires 003 and 007, no historical backfill |
 | 17 | `migrations/post-v9/019_payment_review_decisions.sql` | One-shot Owner decision evidence for financial review; requires 003 |
 | 18 | `migrations/post-v9/020_payment_followup_intents.sql` | Once-only staff/customer follow-up presentation journal; requires 018 and reviewed payment evidence |
+| 19 | `migrations/post-v9/021_paid_reconciliation_provenance.sql` | Original paid account/replacement provenance, unique and restrictive original-effect relation and nullable original issued days/GB; apply only after validated 018-020 and original 007 journal |
 
 For example, the MariaDB client can import the baseline with a prompted password:
 
@@ -62,7 +63,7 @@ mariadb --user=INSTALL_DB_USER --password NEW_EMPTY_DB < database/legacy-schema.
 
 Replace the account/database placeholders and repeat the import form for each subsequent table entry. These paths are relative to the private checkout, not the runtime ZIP. The release may name001 `panel-group-migration.sql` and003 `payment-attempt-migration.sql`; use the contents/checksums matching the selected source. Do not use `--force` to ignore errors or a wildcard SQL loop. Migration 014 has two ALTER TABLE statements; 015 creates a preflight helper procedure, normally drops it after successful validation, then executes three ALTER TABLE statements. Failed preflight may leave the helper procedure pending audited cleanup. Neither is a retry script. 015 rejects duplicate legacy quantities or malformed offers and must run after 012 and 014 on a genuinely empty, correctly initialized database. 016 is a guarded one-time column drop and 017 a one-time journal creation; neither may be rerun after success. A partly applied file requires an exact schema audit and an authorized completion plan; do not use `--force` or rerun completed migrations.
 
-The source-only CI artifact provides 018/019/020 as separately SHA256-checksummed SQL sidecars, outside the runtime ZIP; packaging is not migration approval. Each is a one-time forward DDL step. Existing installations require the distinct [RC25 to RC26 operator procedure](RC25-TO-RC26.md), not this fresh-install sequence.
+The RC26 Release supplies 018/019/020/021 as individually SHA256-checksummed SQL sidecars **outside** the runtime ZIP; packaging/publication is not migration approval. Each is a one-time forward DDL step. Verify 021's five new service-effects fields, unique replacement constraint, restrictive self-FK and two nullable issued-entitlement fields in `pays`. No historical values may be inferred from a currently edited plan. Existing installations require the distinct [RC25 to RC26 operator procedure](RC25-TO-RC26.md), not this fresh-install sequence.
 
 Do **not** run historical002, `legacy_rc4_nowpayments_import.sql`, or optional cleanup010 for a fresh installation. Cleanup010 is separate guarded maintenance, not a startup requirement; original unused tables may remain. Do not insert another bot's settings/users or synthetic test fixtures. The ordinary Owner settings journeys initialize the intended configuration.
 

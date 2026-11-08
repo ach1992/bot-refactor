@@ -1,13 +1,16 @@
-# Draft RC25 -> RC26 operator migration and recovery guide
+# RC25 -> RC26 operator migration and recovery guide
 
-> **DRAFT — NOT RELEASED, NOT APPROVED FOR INSTALLATION.** Reviewed PR #133
-> is already integrated into `main` as
-> `f0f30b1f3516bbeeed84fbd6e9e7a0ed8ce6184e`, with matching
-> independently approved source tree and accepted full PHP 8.5 evidence.
-> RC25 remains the latest **published** release. Further source changes need
-> their own exact-candidate gates. Neither this guide, source merge nor any
-> CI run authorizes Chili changes, migration, merchant/provider operations,
-> real payments or Telegram sends.
+> **RC26 SOURCE-ONLY PRERELEASE — NOT INSTALLED, NOT APPROVED FOR RUNTIME CUTOVER.**
+> [v0.10.0-rc.26](https://github.com/ach1992/bot-refactor/releases/tag/v0.10.0-rc.26)
+> publishes the independently reviewed, Owner-approved merged source through
+> [PR #134](https://github.com/ach1992/bot-refactor/pull/134):
+> `main@390f7ac5cb99285864d019e3ee0ee0b5fad05bec`, source TREE
+> `a9d677eae76794e47ad4ae88b3ae60520a1a1ef0`.
+> The previously reviewed [PR #133](https://github.com/ach1992/bot-refactor/pull/133)
+> is included. The full PHP 8.5 candidate CI and same-tree merged-main
+> verification passed. Publication and this guide do **not** authorize
+> Chili installation, schema migration, new Cron activation, live
+> merchant/provider changes, real payments or Telegram sends.
 
 ## PR #133 review history — R0/R1 fixes and independently approved R2
 
@@ -227,10 +230,11 @@ never infer prior capacity ownership merely from a damaged SQL row. Later linked
 immutable encrypted 018 packets and original 003 closure are an atomic final
 SQL transaction, with `pending` Telegram delivery only after COMMIT.
 
-This code is a proposed source increment **until its exact PHP 8.5 full CI,
-independent high-assurance review and new Owner integration authorization
-pass**. The source-only 021 schema is not contained in the runtime ZIP and
-requires a *separate* live migration approval after 018/019/020 rehearsal.
+This reviewed paid-replacement source increment is **published in RC26**:
+exact PHP 8.5 full candidate CI, independent high-assurance review, Owner
+Merge and source-only publication gates passed. The new 021 schema is still
+**not installed** by publication; its SQL remains outside the runtime ZIP
+and requires *separate* live migration approval after 018/019/020 rehearsal.
 Missing evidence, unknown payment provenance, changed provider group/endpoint,
 partial 021 shape, or unsupported history fail closed; this does not
 constitute unconditional resolution of every historical paid orphan.
@@ -280,8 +284,10 @@ constitute unconditional resolution of every historical paid orphan.
    approval, double click/two staff, remote success with SQL commit failure,
    native timeout/404 and same-account GET, second bulk ordinal, QR ACK
    ambiguity, notification reporting and rejected receipt no-effect path.
-7. Publish source artifacts only after exact-main full CI, independent review,
-   Owner Merge/release authorization and SHA256-bound ZIP/manifest checks.
+7. The RC26 source publication already passed the reviewed exact-candidate
+   full PHP 8.5 CI, independent review, Owner Merge/release authorization,
+   same-tree merged-main CI and SHA256-bound ZIP/manifest verification.
+   Its public GitHub Release is **not** evidence of installed acceptance.
    An authorized Chili rollout is **separate** and must stop before any real
    financial/provider mutation if staging or migration evidence is incomplete.
 
@@ -339,9 +345,9 @@ acceptance still need verified test/operational evidence. The actual 018–021
 schema, original payment/native journals, tested database **restore**, live
 Telegram acknowledgement and end-to-end authorized acceptance remain
 unverified until an explicit target cutover. Future source candidates need
-exact-HEAD PHP 8.5 CI, independent review, separate Owner Merge permission
-and separately authorized Release/deployment/migrations. Do not label RC26
-released or deployment-ready merely because `main` passed CI.
+exact-HEAD PHP 8.5 CI, independent review and separate Owner Merge/release
+permission. **RC26 is published source-only; it is NOT installed, migrated,
+live-provider certified or deployment-ready** merely because `main` passed CI.
 
 References: [Issue #117](https://github.com/ach1992/bot-refactor/issues/117),
 [PR #123](https://github.com/ach1992/bot-refactor/pull/123),

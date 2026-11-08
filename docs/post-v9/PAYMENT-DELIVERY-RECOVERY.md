@@ -1,4 +1,4 @@
-# Issue #117 — crash-safe customer delivery (source-only candidate)
+# Issue #117 — crash-safe customer delivery (RC26 source published, installed acceptance open)
 
 ## Scope and invariants
 
