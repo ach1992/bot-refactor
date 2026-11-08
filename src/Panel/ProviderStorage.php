@@ -244,9 +244,16 @@ function achbotProviderReserveAccount(mysqli $db,int $effectId,array $snapshot,s
         preg_match('/[-_@.]{2}/',$username) || !preg_match('/^achbot:v1:[a-f0-9]{32}$/D',$marker) ||
         $entitlement['group_ids']!==$snapshot['group_ids'])
         throw new RuntimeException('provider_reservation_invalid');
-    $effect=achbotProviderRow($db,'SELECT operation_id,remote_username,endpoint_sha256,effect_kind,provider_snapshot,requested_bytes,requested_expire,
-               actor_userid,reconciliation_reason,reconciliation_fingerprint
+    $effect=achbotProviderRow($db,'SELECT operation_id,remote_username,endpoint_sha256,effect_kind,provider_snapshot,requested_bytes,requested_expire
         FROM service_effects WHERE id=? FOR UPDATE','i',[$effectId]);
+    // The 021 migration is additive. All pre-021 original CREATE and other
+    // provider operations MUST remain usable without those new columns.
+    // Read replacement proof separately, and only for the new effect kind.
+    $replacementProof=null;
+    if (($effect['effect_kind']??null)==='replacement') {
+        $replacementProof=achbotProviderRow($db,'SELECT actor_userid,reconciliation_reason,reconciliation_fingerprint
+            FROM service_effects WHERE id=? FOR UPDATE','i',[$effectId]);
+    }
     try {
         $pinned=achbotProviderCanonicalSnapshot(json_decode((string)($effect['provider_snapshot']??''),true,64,JSON_THROW_ON_ERROR));
     } catch (Throwable $e) { throw new RuntimeException('provider_effect_snapshot_missing'); }
@@ -254,11 +261,12 @@ function achbotProviderReserveAccount(mysqli $db,int $effectId,array $snapshot,s
     // original 007 lineage. Nonfinancial adoption is never admitted here.
     if (!$effect || !in_array((string)$effect['effect_kind'],['create','replacement'],true) ||
         ($effect['effect_kind']==='replacement' &&
-         ((int)($effect['actor_userid']??0)<=0 ||
-          !in_array((string)($effect['reconciliation_reason']??''),
+         (!is_array($replacementProof) ||
+          (int)($replacementProof['actor_userid']??0)<=0 ||
+          !in_array((string)($replacementProof['reconciliation_reason']??''),
               ['original_missing','original_unavailable','original_mismatch','original_invalid'],true) ||
           preg_match('/^[a-f0-9]{64}$/D',
-              (string)($effect['reconciliation_fingerprint']??''))!==1)) ||
+              (string)($replacementProof['reconciliation_fingerprint']??''))!==1)) ||
         $effect['remote_username']!==$username ||
         'achbot:v1:'.$effect['operation_id']!==$marker ||
         $effect['endpoint_sha256']!==$snapshot['endpoint_sha256'] || $pinned!==$snapshot ||

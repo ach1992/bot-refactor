@@ -82,7 +82,7 @@ function verifyManifest(string $manifestPath, string $runtimePath): bool {
         // SHA-256 of newline-joined sorted package_post_v9.members() paths.
         $members = array_keys($manifest['files']);
         sort($members, SORT_STRING);
-        if (!hash_equals('f50c9a71d15f178c1d6e52d15b8eb3db82e6681244d5903ff2c001944ccdad0a',
+        if (!hash_equals('fe05abbb1677d03f641ffc890a68942dc60bc973b7c68f8e416cc61b4770e346',
                          hash('sha256', implode("\n", $members))) ||
             in_array('baseInfo.php', $members, true)) return false;
         // All tool-side runtime source is bound before any helper executes.

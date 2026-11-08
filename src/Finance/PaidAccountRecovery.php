@@ -422,12 +422,12 @@ function achbotWalletBuyRecoverable(mysqli $db,int $payId): bool {
 }
 
 /**
- * Owner-only caller must authenticate before invoking. Both provider paths
- * read back the ORIGINAL marker; never call CREATE for an absent ordinal.
+ * Current payments-authorized staff must authenticate before invoking. Both
+ * provider paths read the ORIGINAL marker; never CREATE an absent ordinal.
  */
 function achbotResumeWalletBuy(
     mysqli $db,int $payId,array $botState,array $buttonValues,string $botUrl,
-    ?callable $marzbanRead=null
+    ?callable $marzbanRead=null,int $staffActor=0,int $primaryOwner=0
 ): array {
     achbotEffectRequireAutocommit($db);
     $first=achbotWalletBuyRecoverySnapshot($db,$payId);
@@ -474,6 +474,12 @@ function achbotResumeWalletBuy(
         if (!$db->begin_transaction()) throw new RuntimeException('wallet_recovery_finish_begin');
         $started=true;
         $after=achbotWalletBuyRecoverySnapshot($db,$payId,true);
+        if ($staffActor>0) {
+            require_once __DIR__.'/../Admin/Access.php';
+            if ($primaryOwner<=0 ||
+                !achbotAdminCanLocked($db,$staffActor,$primaryOwner,'payments'))
+                throw new RuntimeException('wallet_recovery_staff_permission_revoked');
+        }
         if (!$after || !hash_equals($original,achbotWalletBuyRecoveryPin($after)))
             throw new RuntimeException('wallet_recovery_identity_changed');
         foreach ($after['lines'] as $ordinal=>$effect) {

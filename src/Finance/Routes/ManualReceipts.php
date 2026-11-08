@@ -500,7 +500,8 @@ if (preg_match('/^(walletBuyResume|hostedBuyResume)_([1-9][0-9]{0,9})$/D',
         $progress=$hosted
             ?achbotResumeHostedLinkedBuy($connection,$id,$botState,$buttonValues,
                 (string)$botUrl,null,(int)$from_id,(int)$admin)
-            :achbotResumeWalletBuy($connection,$id,$botState,$buttonValues,(string)$botUrl);
+            :achbotResumeWalletBuy($connection,$id,$botState,$buttonValues,
+                (string)$botUrl,null,(int)$from_id,(int)$admin);
         $committed=($progress['committed']??false)===true;
         if ($committed) $summary=achbotDeliveryAggregate($connection,$id);
     } catch (Throwable $error) {
