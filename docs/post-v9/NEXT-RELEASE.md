@@ -2,63 +2,68 @@
 
 ## Unreleased Issue #117 source — next prerelease preflight (NOT published)
 
-The integrated main after RC25 includes the reviewed payment-review and
-service/delivery recovery paths from PRs #118–#132. Merged PR #132 preserves
-original paid Hosted BUY_SUB accounts and order links and permits only FIRST
-CREATE for a provably unstarted trailing 007 ordinal, after an authenticated
-GET and original payment/capacity checks. This is **not** a general account
-replacement or license to re-POST unknown Native effects. PR #133 is a separate subsequent source proposal described below. Its
-first candidate received a complete independent **CHANGES_REQUIRED** review;
-a remediation R1 candidate requires fresh exact-HEAD CI and independent delta
-re-review before integration. Neither 021 nor the candidate is approved,
-merged, released, migrated or installed. The *latest published* GitHub artifact remains RC25. Prior
-independent reviews and Owner merges cannot authorize this new candidate's
-Merge, release, Chili migration or live provider/payment/Telegram effects.
+GitHub `main` now contains the independently reviewed and Owner-authorized
+merges through [PR #133](https://github.com/ach1992/bot-refactor/pull/133),
+integrated by `f0f30b1f3516bbeeed84fbd6e9e7a0ed8ce6184e` with source
+tree `830b715d3a7897913e2af3dc444d002c70cbd77b`. The approved
+[exact R2 full PHP 8.5 CI](https://github.com/ach1992/bot-refactor/actions/runs/42510873278)
+and the [same-tree main check](https://github.com/ach1992/bot-refactor/actions/runs/42512841787)
+passed. The latter explicitly reuses the earlier full-suite evidence; it did
+not rerun eight PHP families. Merge does **not** publish RC26 or certify
+installed payment, Native, MariaDB or Telegram behavior. Published RC25 remains
+the only distributable named prerelease.
 
-An authorized RC25-to-next upgrade needs an actual source/DB/config and
-installed-hotfix inventory, a restored staging backup, full PHP 8.5
-eight-family candidate validation, and independent review. Verify the
-existing 001–017 history and one-time **018 delivery intents**, **019 human
-review decisions**, **020 durable follow-up intents**, and then new
-**021 paid reconciliation provenance**, all in that order and only after
-verifying exact target table/index/engine shapes. Do not blindly replay them;
-read-only metadata inspection of the installed NL Chili target on
-2026-11-08 found those three tables **absent**. This is not a full schema
-preflight or permission to run SQL. Retain actual payment and Native journals, private
-`telegramWebhookSecret`, original 018/020 ciphertext and active Cron
-locks. Resolve source-versus-installed drift before exact-manifest atomic
-replacement. Reversing only PHP after new 018/019/020/021 or Native writes is
-not a safe rollback: preserve journals and reconcile by verified
-roll-forward or whole-state restore at a quiesced, audited pre-write point.
-Follow the existing [RC25 to next prerelease staging procedure](RC25-TO-RC26.md)
-and [payment recovery contract](PAYMENT-DELIVERY-RECOVERY.md). None of
-these source steps permits a live payment, Telegram send or SQL mutation.
+The reviewed source now includes the original paid Hosted BUY_SUB
+NextPay/Zarinpal linked-account/delivery continuation, first-ever
+unreserved trailing 007 ordinal support, and an explicit **distinct**
+paid replacement for damaged/foreign/orphaned originals. No unknown original
+Native CREATE is re-POSTed. Current persisted `payments` permission applies
+to Owner/Manager/Operator/Support only where that administrator actually has
+it, including fresh locked checks before replacement and finality; Owner-only
+specialist tools remain separate. Migration
+`021_paid_reconciliation_provenance.sql` is committed and distributed as a
+checksum-verified SQL **sidecar**, never embedded in the runtime ZIP.
+For new standard/custom invoices, the original issued entitlement days/GB are
+frozen in 021's nullable `pays` fields; historical accounts lacking both
+those terms and independent original-007 proof remain fail-closed, never
+filled from today's mutable plan. A surviving later 007 Native account must
+be strictly authenticated before claiming an original first-ordinal
+replacement without an additional original capacity reservation.
 
-### Proposed subsequent Issue #117 source increment (not reviewed/released)
+The subsequent source-only Issue #117 delivery-maintenance change adds a
+bounded, first-attempt-only sweep inside the existing four-worker Cron
+services worker: it sends only proven terminal-payment, fully sealed 018
+`pending` packets, with at least two minutes of quiet time,
+`attempt_count=0`, the existing locked claim/immutable validation and one
+durable delivery-attempt record. Invalid packets defer without blocking other
+rows; `unknown` / `dispatching` messages are never automatically resent.
+This neither settles money nor creates/mutates a Native account and does
+**not** make all stalled `processing` cases automatically recoverable.
 
-The next candidate adds a separate `021` journal provenance contract **and
-new, issuance-time frozen BUY_SUB day/GB fields on `pays`** for an
-explicitly confirmed, once-only original-Hosted paid account replacement,
-including a truly empty original 007 manifest, internal gaps with a
-surviving first capacity claimant, and foreign/orphan Native readback.
-A missing first 007 *with surviving later originals* requires strict
-GET confirmation of every surviving original operation, a distinct stored
-capacity proof and an explicit payments-authorized staff confirmation;
-that path never reserves the original capacity twice. Unverified later
-Native identities fail closed without a second account POST or capacity debit. The previous 003/007 evidence remains unchanged and
-payment permission, **not solely Owner identity**, governs the private
-review/confirm workflow (including the pre-POST and terminal transaction
-recheck). Review is not proof of Native absence and prior remote effects
-must not be replayed. New PG/Marzban tests, exact PHP 8.5 CI and independent
-review remain mandatory before any release or installed acceptance claim.
-If approved for a future Chili upgrade, the earlier 018, 019 and 020 journals
-must be verified first, then 021 (including its `pays` columns) applied
-after the same restore-tested schema/index/engine preflight. Legacy
-standard-plan invoices with neither issued terms nor a surviving 007
-entitlement fail closed before replacement CREATE; original terms must
-never be guessed from an edited current plan. Review B1 also requires
-preserving capacity restoration for real nonfinancial CREATE accounts. No production SQL or provider action is
-preauthorized by this source description.
+### Installed upgrade / remaining acceptance boundary
+
+A separately authorized RC25-to-next install requires actual installed
+source/DB/config and hotfix drift inventory; a restore-tested full backup;
+the original 001–017 history audit; and audited, one-time **018 → 019 →
+020 → 021** migration sequencing with exact existing object/index/FK shapes.
+Verify 021's unique replacement claim, restrictive self-FK and two nullable
+`pays` frozen-term columns before enabling the reviewed runtime. Keep
+private `telegramWebhookSecret`, original 018/020 ciphertext, finance/
+provider journals and active Cron locks. Stop on partial or incompatible
+schema. Reversing only PHP after new journal or Native writes is not a safe
+rollback: plan a tested pre-write whole-state restore or evidence-preserving
+roll-forward. Read [RC25-to-RC26 staging steps](RC25-TO-RC26.md) and
+[payment recovery constraints](PAYMENT-DELIVERY-RECOVERY.md).
+
+Source acceptance remains limited for Native PUT outcomes lacking the
+original authenticated positive operation proof (including uncertain
+Marzban renewal/day/volume/standard `RENEW_SCONFIG` and PasarGuard
+`mutating` operations). Do not retry an ambiguous additive PUT or treat
+HTTP 404/timeouts as proof of absence. Confirm provider-specific payment
+review and fulfillment parity, schema readiness, exact installed migrations,
+real Telegram ACK and both providers using authorized disposable/installed
+acceptance evidence. Issue #117 stays OPEN until its remaining outcome is
+proven; this draft is not GitHub Release, deployment or production approval.
 
 ## Published RC25 — independent administrative Panel Groups
 

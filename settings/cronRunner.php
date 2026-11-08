@@ -220,6 +220,15 @@ try {
         } catch (Throwable $ignored) {
             error_log('achbot_payment_lifecycle_deferred');
         }
+        // Issue #117: crash-after-COMMIT first delivery only.  Keep this
+        // separate from provider/financial maintenance, so one unavailable
+        // subsystem cannot suppress an independently sealed customer packet.
+        try {
+            require_once __DIR__ . '/../src/Finance/DeliveryLedger.php';
+            achbotDeliveryMaintainPending($connection);
+        } catch (Throwable $error) {
+            error_log('achbot_pending_delivery_maintenance_deferred class='.get_class($error));
+        }
     }
 }
         exit(0);

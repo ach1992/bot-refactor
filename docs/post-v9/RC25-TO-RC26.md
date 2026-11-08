@@ -1,18 +1,26 @@
 # Draft RC25 -> RC26 operator migration and recovery guide
 
-> **DRAFT — NOT RELEASED, NOT APPROVED FOR INSTALLATION.** This file prepares
-> the eventual `v0.10.0-rc.26` source candidate. RC25 remains the latest
-> published release until exact-main provenance, all eight PHP 8.5 families,
-> an independent exact-HEAD review, and the required Owner gates pass. This
-> document and GitHub PR do not authorize Chili changes, remote provider
-> operations, real payments, Telegram sends or SQL changes.
+> **DRAFT — NOT RELEASED, NOT APPROVED FOR INSTALLATION.** Reviewed PR #133
+> is already integrated into `main` as
+> `f0f30b1f3516bbeeed84fbd6e9e7a0ed8ce6184e`, with matching
+> independently approved source tree and accepted full PHP 8.5 evidence.
+> RC25 remains the latest **published** release. Further source changes need
+> their own exact-candidate gates. Neither this guide, source merge nor any
+> CI run authorizes Chili changes, migration, merchant/provider operations,
+> real payments or Telegram sends.
 
-## PR #133 R1: Independent-review B1/R1/R2/R3 correction (source only)
+## PR #133 review history — R0/R1 fixes and independently approved R2
 
 The first PR #133 candidate (`d5222c3e6702e1ea6d1e98da3d587deeb3c2faba`)
-received **CHANGES_REQUIRED** (one blocker, three required). Its previous
-PHP 8.5 success does not certify the subsequently corrected source. The
-reviewed correction preserves legitimate `free_trial` and `admin_bulk`
+received **CHANGES_REQUIRED** (one blocker, three required). R1 resolved
+those four findings but initially omitted 021 from distribution sidecars.
+The final R2 candidate `bbfbd9586f0e6ee4341394b301e8135244a92dea`
+independently received **COMPLETE / APPROVE** after its
+[full PHP 8.5 validation](https://github.com/ach1992/bot-refactor/actions/runs/42510873278).
+It distributes 018–021 SQL/checksum sidecars and documents explicit 021
+operator verification; [PR #133](https://github.com/ach1992/bot-refactor/pull/133)
+was merged with unchanged tree. These reviewed corrections preserve legitimate
+`free_trial` and `admin_bulk`
 Native CREATE deletion capacity, while treating source-pinned imported
 accounts as never consuming capacity; paid replacement has its own positive
 payment provenance. Both native adapters require source-real local deletion
@@ -42,9 +50,9 @@ failure; credentials, arbitrary vendor responses, and SQL exception text are
 not rendered. An UNKNOWN Native POST is always handled through GET-only
 reconciliation and never a repeated CREATE.
 
-All migration/publish/installed-host effects remain separately gated. The
-source review must be repeated for the **new exact candidate** after its
-own full PHP 8.5 validation; approval of earlier PRs does not transfer.
+All migration/publish/installed-host effects remain separately gated.
+The existing R2 approval applies only to its exact accepted source tree;
+any further runtime changes require their own CI and independent review.
 
 ## Scope and new contracts
 
@@ -103,7 +111,7 @@ own full PHP 8.5 validation; approval of earlier PRs does not transfer.
   No new provider GET/PUT/reset, charge or approval is authorized. Missing or
   altered evidence stays `processing` for operator investigation, not a
   repeated native mutation or fabricated customer success.
-- **Proposed source-only durable follow-up completion (Issue #117):**
+- **Integrated source-only durable follow-up completion (Issue #117):**
   after a verified PasarGuard manual edit is locally finished, the original
   primary/eligible stored administrator receipt edits and subject-specific
   customer notice (plus the original renewal operator summary, where applicable)
@@ -153,7 +161,7 @@ own full PHP 8.5 validation; approval of earlier PRs does not transfer.
   immutable 009 fingerprint, not the mutable stage, owns bank identity.
   No new background reprocessing loop is introduced.
 
-## Original Hosted BUY_SUB recovery — current source candidate
+## Original Hosted BUY_SUB recovery — integrated source, not installed
 
 After RC25, Issue #117 recovery uses original 003/007/012/018/019 journals
 for paid NextPay/Zarinpal native purchases whose order/delivery commit
@@ -174,15 +182,15 @@ only for further never-started ordinals. A dispatched/unknown 007 record
 must be inspected by GET, never re-POSTed. No new merchant settlement,
 Wallet debit, refund, duplicate original reserve or new invoice is allowed.
 
-Missing first capacity owner, noncontiguous 007 ordinals, unknown/foreign/
-orphan remote accounts and evidence-based explicitly approved replacement
-remain separate Owner reconciliation. A 404, timeout, absent historical
-provenance or changed physical endpoint is never an automatic replacement
-authorization. Preserve original 003/007/012/018/019/020 evidence; never
-delete/regenerate the journals. Further details: [Payment delivery
-recovery](PAYMENT-DELIVERY-RECOVERY.md).
+A missing first 007 owner, noncontiguous ordinals and authenticated
+foreign/orphan accounts now have a **separate** staff-attested replacement
+workflow from integrated PR #133, described below. That workflow does not
+rewrite or repeat an original CREATE; an HTTP 404, timeout, missing historical
+provenance or changed physical endpoint never supplies automatic approval.
+Preserve original 003/007/012/018/019/020/021 evidence. Further details:
+[Payment delivery recovery](PAYMENT-DELIVERY-RECOVERY.md).
 
-## Owner-reviewed paid Hosted account replacement — source-only candidate
+## Owner-reviewed paid Hosted account replacement — integrated source, not installed
 
 The original paid NextPay/Zarinpal claim is still governed by its saved 003
 merchant-completed evidence and frozen invoice/quote. Its **original 007
@@ -294,24 +302,46 @@ constitute unconditional resolution of every historical paid orphan.
   authorization to create a replacement subscription. Report correlation IDs
   and actual journal states to authorized diagnostic channels without secrets.
 
+## Bounded scheduled first delivery of already-committed service packets
+
+The existing four-worker Cron `services` worker now has a bounded 018
+customer **first-delivery** continuation. Only a payment with a terminal
+confirmed local state and a sealed `payment_delivery_intents` row that is
+still `pending`, has **zero previous attempts** and has been quiet for at
+least two minutes enters the sweep. The existing `achbotDeliveryDispatch`
+transaction revalidates frozen payment, native-effect, order, recipient and
+encrypted packet evidence before recording an atomic dispatch and sending
+Telegram. Default scope is four packets per tick and an eight-second **soft**
+budget; a single provider-independent Telegram call can exceed that budget.
+Invalid/preflight-deferred packets simply move behind other due packets
+using existing `updated_at` metadata, with at least another two-minute
+interval before reinspection, not a new payment/native attempt. No new SQL
+migration, worker mode or payment settlement is introduced.
+
+A first Telegram attempt with ambiguous ACK is `unknown` and **never**
+automatically replayed; pre-existing `unknown`/`dispatching`, operator
+resends and all provider CREATE/PUT uncertainty remain in their appropriate
+explicit human recovery process. A clean local retry of a terminal callback
+and Cron compete on the same once-only 018 claim. Source tests use real
+disposable MariaDB and isolated Telegram spies, not live customers.
+
 ## Explicitly uncompleted acceptance
 
-Merged PR #125 implements **only the already-verified PasarGuard
-original-manual edit continuation**. This separate source-only
-follow-up candidate adds durable post-COMMIT presentation for those already
-verified edits, not a new remote mutation. It does **not** establish that an ambiguous `mutating`
-PasarGuard operation occurred, does not recover uncertain Marzban
-`RENEW_ACCOUNT`/day/volume/standard `RENEW_SCONFIG` remote effects, and
-does not cover every manual/hosted payment method. An already-`processing`
-row must never trigger an unproven second additive native PUT. Cases without
-the exact prior verified evidence remain reviewable without falsely approving
-payment or sending duplicate entitlements. Provider-specific financial review
-parity, installed PasarGuard/Marzban/Chili, real Telegram ACK, target schema
-and migration readiness, tested database **restore** and end-to-end real
-acceptance remain open under Issue #117. Any new source candidate requires full
-exact-HEAD PHP 8.5 CI, **independent review**, a separate Owner Merge decision,
-and separate target-specific release/deployment authorization. Do not label
-RC26 released or deployment ready while those gates remain open.
+The integrated current source covers original manual/Hosted/wallet BUY_SUB
+continuation, explicit staff-attested paid replacement and durable per-subject
+approved follow-up packets. It intentionally does **not** infer a successful
+ambiguous PasarGuard `mutating` or uncertain Marzban
+`RENEW_ACCOUNT`/day/volume/standard `RENEW_SCONFIG` remote PUT. These
+require original authenticated positive operation evidence; neither Cron nor
+a user button may issue another additive PUT from uncertainty. Provider-
+specific financial review parity and installed Marzban/PasarGuard/Chili
+acceptance still need verified test/operational evidence. The actual 018–021
+schema, original payment/native journals, tested database **restore**, live
+Telegram acknowledgement and end-to-end authorized acceptance remain
+unverified until an explicit target cutover. Future source candidates need
+exact-HEAD PHP 8.5 CI, independent review, separate Owner Merge permission
+and separately authorized Release/deployment/migrations. Do not label RC26
+released or deployment-ready merely because `main` passed CI.
 
 References: [Issue #117](https://github.com/ach1992/bot-refactor/issues/117),
 [PR #123](https://github.com/ach1992/bot-refactor/pull/123),

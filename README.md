@@ -4,16 +4,21 @@ AChBot is a PHP Telegram bot for VPN subscriptions, plans, customer support, adm
 
 **Release:** [v0.10.0-rc.25](https://github.com/ach1992/bot-refactor/releases/tag/v0.10.0-rc.25), a **source-only prerelease**. Download its verified [runtime ZIP](https://github.com/ach1992/bot-refactor/releases/download/v0.10.0-rc.25/achbot-v0.10.0-rc.25-runtime.zip), [source manifest](https://github.com/ach1992/bot-refactor/releases/download/v0.10.0-rc.25/achbot-v0.10.0-rc.25-runtime.zip.manifest.json), and [SHA256SUMS](https://github.com/ach1992/bot-refactor/releases/download/v0.10.0-rc.25/SHA256SUMS) together. The runtime has **124 members / 123 PHP files** and contains no private configuration, SQL or installer. [PR #115](https://github.com/ach1992/bot-refactor/pull/115) was independently approved and merged with [full PHP 8.5 CI](https://github.com/ach1992/bot-refactor/actions/runs/42192558708) plus [successful post-merge validation](https://github.com/ach1992/bot-refactor/actions/runs/42196043404); source publication is **not** installed-host or real-provider acceptance.
 
-**Unreleased development:** `main` contains post-RC25 Issue #117 payment,
-Native-service and durable Telegram recovery changes. These are **not**
-included in the published RC25 ZIP. The next prerelease remains unapproved
-and its 018/019/020/021 schema and installed Chili state require a
-separate, restore-tested operator cutover. Draft PR #133 additionally requires
-current `payments` staff permission for explicit, auditable paid-account
-replacement; it is not part of published RC25 or integrated `main`. See the [release preflight](docs/post-v9/NEXT-RELEASE.md)
+**Unreleased integrated development:** current `main` contains the
+independently reviewed and merged Issue #117 payment/Native/Telegram recovery
+source through [PR #133](https://github.com/ach1992/bot-refactor/pull/133)
+(merge `f0f30b1f3516bbeeed84fbd6e9e7a0ed8ce6184e`). This includes
+staff-`payments`-authorized, explicitly confirmed paid-account replacement
+and the new 021 provenance schema. **None of it is in published RC25.**
+The next prerelease has **not** been published or installed; 018/019/020/021
+must be audited and applied only under a separately authorized, restorable
+operator cutover. The subsequent source-only delivery coordinator work adds
+a bounded first-send sweep of already sealed, never-attempted 018 packets,
+without payment/Native replay or automatic resends of unknown Telegram ACKs.
+See [release preflight](docs/post-v9/NEXT-RELEASE.md), [payment recovery](docs/post-v9/PAYMENT-DELIVERY-RECOVERY.md)
 and [RC25 upgrade preparation](docs/post-v9/RC25-TO-RC26.md).
-Do not treat merged source, CI or an Owner recovery button as permission for
-live payment/provider/Telegram effects.
+Source integration and CI are not proof of installed acceptance or permission
+for live payment/provider/Telegram effects.
 
 **New in RC25:** an authorized administrator may assign, change or clear a Panel Group for Marzban and PasarGuard regardless of active/historical orders, saved plans, payment state, journals, or differing endpoints and administrator credentials. Group membership is the administrator's declaration of a genuinely shared physical panel and changes **only local Panel Group metadata**. Separate Native account, payment, transfer and plan operations retain their own identity, unresolved-journal and replay guards. See the [RC24 -> RC25 upgrade guide](docs/post-v9/RC24-TO-RC25.md) and [shared service/physical-panel contract](docs/post-v9/SHARED-SERVICE-TRANSFER.md).
 
