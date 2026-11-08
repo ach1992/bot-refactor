@@ -795,6 +795,15 @@ def main() -> dict:
                   'FOREIGN KEY (replaces_effect_id) REFERENCES service_effects(id) '
                   'ON DELETE RESTRICT ON UPDATE RESTRICT')
         cases.append('replacement_021_original_foreign_key_missing_blocks')
+        # An installed 021 without the NEW invoice entitlement columns
+        # cannot safely issue replacement accounts for later purchases.
+        statement(d,'ALTER TABLE pays DROP COLUMN issued_entitlement_gb')
+        code, result, _ = report_run(d)
+        require(code==2 and has(result,'schema_021','BLOCK',
+            'partial_or_incompatible_schema_requires_audit'),
+            'replacement_021_missing_frozen_invoice_terms_blocks')
+        statement(d,'ALTER TABLE pays ADD issued_entitlement_gb BIGINT UNSIGNED DEFAULT NULL')
+        cases.append('replacement_021_missing_frozen_invoice_terms_blocks')
         source_failures=source_failure_regressions(d)
         cases.extend(r['case'] for r in source_failures)
         # Keep the original 54-case assertion independent of canonical-path

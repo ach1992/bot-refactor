@@ -7,6 +7,45 @@
 > document and GitHub PR do not authorize Chili changes, remote provider
 > operations, real payments, Telegram sends or SQL changes.
 
+## PR #133 R1: Independent-review B1/R1/R2/R3 correction (source only)
+
+The first PR #133 candidate (`d5222c3e6702e1ea6d1e98da3d587deeb3c2faba`)
+received **CHANGES_REQUIRED** (one blocker, three required). Its previous
+PHP 8.5 success does not certify the subsequently corrected source. The
+reviewed correction preserves legitimate `free_trial` and `admin_bulk`
+Native CREATE deletion capacity, while treating source-pinned imported
+accounts as never consuming capacity; paid replacement has its own positive
+payment provenance. Both native adapters require source-real local deletion
+finalization tests.
+
+The source-only 021 migration **also adds two nullable `pays` columns**:
+`issued_entitlement_days` and `issued_entitlement_gb`. All new standard BUY_SUB
+invoices pin the actual day/GB pair in the original draft transaction while
+preserving `pays.day=0` / `pays.volume=0` for the existing standard/custom
+routing contract. Custom invoices pin their same positive custom dimensions.
+These fields join the immutable payment fingerprint for new invoices only;
+historical packets retain their original hash. An older standard invoice
+with empty 007 and no independent issued terms is **not** permission to use
+TODAY'S edited plan: confirmation refuses before capacity reservation/native
+POST and shows the original-purchase evidence deficiency. Surviving original
+007 may independently establish historical terms, which must match on
+replacement. No automatic guess/backfill or fabricated historical 007 is
+permitted.
+
+A replacement preview's signed confirmation now also pins the current
+Marzban URL/group/target and PasarGuard physical connection, instance and
+provider generation, using hashed physical target evidence. The reservation
+transaction rejects a stale target before COMMIT; the staff actor must inspect
+and confirm again. The existing private admin recovery page returns bounded
+sanitized `reason`, `stage`, and `next_action` values for each operational
+failure; credentials, arbitrary vendor responses, and SQL exception text are
+not rendered. An UNKNOWN Native POST is always handled through GET-only
+reconciliation and never a repeated CREATE.
+
+All migration/publish/installed-host effects remain separately gated. The
+source review must be repeated for the **new exact candidate** after its
+own full PHP 8.5 validation; approval of earlier PRs does not transfer.
+
 ## Scope and new contracts
 
 - Administrator approval or rejection of a NOWPayments review item is a

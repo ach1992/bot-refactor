@@ -2345,6 +2345,9 @@ return [
         'reserved'=>['text'=>'✅ جایگزین ردیف {ordinal} برای پرداخت <code>#{pay}</code> ثبت و از پنل تأیید شد. سند عملیات: <code>{effect}</code>. برای تکمیل تحویل به پروندهٔ سرویس بازگردید.',
             'parameters'=>['pay','ordinal','effect']],
         'unavailable'=>'⚠️ ساخت جایگزین قطعی نشد یا شواهد تغییر کرده‌اند. ممکن است عملیات به پنل رسیده باشد؛ ایجاد حساب دوباره مجاز نیست. وضعیت همان پرونده را بررسی کنید.',
+        'diagnostic'=>['text'=>'🔍 علت: <code>{reason}</code> | مرحله: <code>{stage}</code>' . "\n" .
+            'اقدام بعدی: <code>{action}</code>. نتیجهٔ نامطمئن پنل هرگز مجوز ساخت مجدد نیست.',
+            'parameters'=>['reason','stage','action']],
     ],
     'hosted_original_recovery' => [
         'resume_unstarted'=>'▶️ ساخت حساب شروع‌نشدهٔ خرید اصلی',

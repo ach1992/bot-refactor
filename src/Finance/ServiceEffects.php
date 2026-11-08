@@ -36,7 +36,21 @@ function achbotEffectSafeFailure(Throwable $error): array {
         'pg_rate_limited','pg_vendor_unavailable','pg_request_rejected',
         'pg_dispatch_target_changed','pg_verify_begin','pg_verify_commit_unknown',
         'pg_effect_verification_unconfirmed','pg_credentials_changed',
-        'pg_create_invalid','pg_groups_required'
+        'pg_create_invalid','pg_groups_required',
+        // Explicit paid-account replacement. Keep known operational reasons
+        // intact while never serializing untrusted provider/SQL exception text.
+        'replacement_actor_not_permitted','replacement_capacity_insufficient',
+        'replacement_capacity_owner_changed','replacement_dispatch_needs_review',
+        'replacement_evidence_expired_or_invalid','replacement_first_capacity_unavailable',
+        'replacement_missing_capacity_proof',
+        'replacement_original_duration_changed_or_unverifiable',
+        'replacement_original_entitlement_changed',
+        'replacement_original_entitlement_unavailable',
+        'replacement_original_evidence_changed','replacement_plan_invalid',
+        'replacement_reservation_id_missing','replacement_reservation_unconfirmed',
+        'replacement_reserve_begin','replacement_reserve_commit_unknown',
+        'replacement_staff_permission_revoked','replacement_target_changed',
+        'replacement_unrecognized_remote_evidence','replacement_username_invalid'
     ];
     $fallback='runtime_error';$depth=0;$source='runtime';
     for ($current=$error;$current!==null && $depth<8;$current=$current->getPrevious()) {

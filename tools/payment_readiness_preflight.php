@@ -492,6 +492,7 @@ try {
         // human-confirmed paid replacement route. Without this shape the
         // installed latest-source runtime is not release-ready.
         '021' => [
+            'pays'=>['columns'=>['issued_entitlement_days','issued_entitlement_gb']],
             'service_effects'=>['columns'=>[
                 'replaces_effect_id','reconciliation_reason',
                 'reconciliation_fingerprint','reconciliation_evidence_status',

@@ -532,9 +532,13 @@ The distinct 021 replacement operation never rewrites or repeats a previous
 original 007 CREATE. The operator must inspect actual original native evidence,
 then explicitly accept a short-lived, actor-bound confirmation warning. A
 new replacement gets its own randomly unique native username, committed
-reservation and operation marker before the first POST. Original 007 duration
-and volume are checked against the current plan so a later plan edit cannot
-silently change previously paid entitlement. Unknown/failed responses are GET-only, never another POST.
+reservation and operation marker before the first POST. For new invoices the
+actual original standard/custom days and GB are pinned inside draft issuance
+in 021-added nullable `pays` fields. For old standard invoices, surviving
+original 007 records can independently prove original terms. When both are
+absent the next CREATE is denied before reserving capacity; the CURRENT plan
+cannot be substituted for historically purchased dimensions. The prior
+standard/custom `pays.day/volume` sentinel semantics are unchanged. Unknown/failed responses are GET-only, never another POST.
 A surviving first original capacity owner is reused; truly empty original 007
 history can reserve its first quantity only once. If the original first 007
 row was lost but later originals survived, **every** later 007 Native identity
@@ -548,5 +552,9 @@ Migration `021_paid_reconciliation_provenance.sql` is **not included** in the
 source ZIP, and neither this source increment nor its CI automatically applies
 018/019/020/021 or authorizes actual Chili, merchant, native, or Telegram
 operations. A separate Owner-approved, backup/restore-tested staging and
-production process is required. The extra durable evidence fields store only
-bounded machine status and a fingerprint, not raw provider responses.
+production process is required. The 021 extra durable evidence fields store only bounded machine status
+and fingerprints, not raw provider responses. The short-lived private staff
+confirmation also pins the current physical Marzban or PasarGuard target and
+provider generation. Each error exposes only safe reason, stage and next
+operator action. The prior free-trial and admin-bulk 007 CREATE deletion
+capacity return remains valid; external imports never gain capacity.

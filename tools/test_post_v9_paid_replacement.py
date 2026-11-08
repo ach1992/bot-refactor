@@ -91,6 +91,21 @@ assert DRIVER.count(needle)==1
 DRIVER=DRIVER.replace(needle,r'''    if (($spec['op']??'')==='eligible') $result=achbotHostedLinkedBuyRecoverable($connection,$pay);
     elseif (($spec['op']??'')==='replacement_schema_ready')
         $result=achbotHostedReplacementSchemaReady($connection);
+    elseif (($spec['op']??'')==='replacement_diagnostic')
+        $result=achbotHostedReplacementFailureGuidance(
+            new RuntimeException((string)($spec['reason']??'unknown')));
+    elseif (($spec['op']??'')==='issue_invoice') {
+        require_once $root.'/src/Finance/PaymentLifecycle.php';
+        $hash='quote'.$spec['tag'];$v=(int)($spec['volume']??0);
+        $d=(int)($spec['days']??0);
+        $insert=$connection->prepare("INSERT INTO pays
+            (hash_id,description,user_id,type,plan_id,server_id,volume,day,
+             price,request_date,state,agent_count)
+            VALUES (?,'source-issued',1001,'BUY_SUB',7,2,?,?,100,UNIX_TIMESTAMP(),'pending',1)");
+        $insert->bind_param('sii',$hash,$v,$d);
+        $result=achbotPayUxInsertDraft($connection,1001,$insert);
+        $insert->close();
+    }
     elseif (($spec['op']??'')==='reconciled_eligible')
         $result=achbotHostedReconciledBuyRecoverable($connection,$pay);
     elseif (($spec['op']??'')==='replacement_preview') {
@@ -154,7 +169,8 @@ def check():
             data=json.loads(p.stdout)
             if p.stderr:data['stderr']=p.stderr[-2000:]
             return data
-        def seed(tag,panel='marzban',provider='nextpay',count=1,create_prefix=0,link_prefix=0):
+        def seed(tag,panel='marzban',provider='nextpay',count=1,create_prefix=0,link_prefix=0,
+                 pin=True,days=0,volume=0):
             assert tag.isalnum() and tag.isascii()
             sql('UPDATE server_info SET ucount=20,active=1,state=1 WHERE id=2; '
                 'UPDATE users SET wallet=50000 WHERE userid=1001')
@@ -163,9 +179,14 @@ def check():
             ref='hosted-'+tag
             sql('INSERT INTO pays(hash_id,user_id,type,plan_id,server_id,agent_count,price,'
                 'day,volume,request_date,state,payid) '
-                f"VALUES('{tag}',1001,'BUY_SUB',7,2,{count},100,0,0,UNIX_TIMESTAMP(),"
+                f"VALUES('{tag}',1001,'BUY_SUB',7,2,{count},100,{days},{volume},UNIX_TIMESTAMP(),"
                 f"'pending','{ref}')")
             pay=int(sql(f"SELECT id FROM pays WHERE hash_id='{tag}'"))
+            # These direct-test invoices represent newly issued pinned terms.
+            # Legacy missing-proof rows are seeded with pin=False below.
+            if pin:
+                sql(f'UPDATE pays SET issued_entitlement_days={days or 30},'
+                    f'issued_entitlement_gb={volume or 2} WHERE id={pay}')
             sql('INSERT INTO payment_attempts (pay_row_id,provider,order_hash,'
                 'provider_reference,quote_amount,quote_currency,local_amount_toman,'
                 'stage,provider_status) '
@@ -194,6 +215,42 @@ def check():
                        challenge=challenge,**kw)
         sql("UPDATE users SET isAdmin=1 WHERE userid=9002")
         sql("INSERT INTO setting(type,value) VALUES ('ADMIN_ROLE_9002','manager')")
+        # The SOURCE invoice issuer must pin standard and custom historical
+        # dimensions without changing pays.day/volume routing sentinel.
+        new=run(0,op='issue_invoice',tag='standard')
+        invoice=new['result'];assert new['error'] is None and invoice>0,new
+        assert sql(f'SELECT CONCAT(day,":",volume,":",issued_entitlement_days,":",issued_entitlement_gb) FROM pays WHERE id={invoice}')=='0:0:30:2'
+        custom=run(0,op='issue_invoice',tag='custom',days=12,volume=4)
+        cid=custom['result'];assert custom['error'] is None and cid>0,custom
+        assert sql(f'SELECT CONCAT(day,":",volume,":",issued_entitlement_days,":",issued_entitlement_gb) FROM pays WHERE id={cid}')=='12:4:12:4'
+        cases.append('standard_and_custom_invoice_issuance_pins_true_terms_same_transaction')
+        pay=seed('legacyempty',pin=False)
+        ch=preview(pay,actor=9002)
+        rejected=confirm(pay,ch,actor=9002)
+        assert rejected['error'] and 'replacement_original_entitlement_unavailable' in str(rejected['error']),rejected
+        assert rows(pay)=='0' and balance()=='20:50000',rejected
+        cases.append('historical_empty_007_standard_without_issued_terms_blocks_before_007_or_native')
+        # No original 007 means a preview must bind current physical Native
+        # identity. Stale confirmations are not approvals for a new panel.
+        pay=seed('targeturl')
+        ch=preview(pay,actor=9002)
+        oldUrl=sql('SELECT panel_url FROM server_config WHERE id=2')
+        sql("UPDATE server_config SET panel_url=CONCAT(panel_url,'/changed') WHERE id=2")
+        rejected=confirm(pay,ch,actor=9002)
+        assert rejected['error'] and rows(pay)=='0' and balance()=='20:50000',rejected
+        sql("UPDATE server_config SET panel_url='"+oldUrl+"' WHERE id=2")
+        cases.append('marzban_empty_007_endpoint_drift_invalidates_signed_preview')
+        pay=seed('targetgroup')
+        ch=preview(pay,actor=9002)
+        prior=sql('SELECT COALESCE(panel_group_id,0) FROM server_info WHERE id=2')
+        sql("INSERT INTO setting(type,value) VALUES('ACHBOT_MARZBAN_PANEL_GROUP','{"+
+            "\"name\":\"TargetProofFixture\""+"}')")
+        fresh=int(sql('SELECT MAX(id) FROM setting'))
+        sql(f'UPDATE server_info SET panel_group_id={fresh} WHERE id=2')
+        rejected=confirm(pay,ch,actor=9002)
+        assert rejected['error'] and rows(pay)=='0' and balance()=='20:50000',rejected
+        sql('UPDATE server_info SET panel_group_id='+('NULL' if prior=='0' else prior)+' WHERE id=2')
+        cases.append('marzban_empty_007_group_drift_invalidates_signed_preview')
         pay=seed('missingfirst')
         assert balance()=='20:50000'
         sql('ALTER TABLE service_effects DROP FOREIGN KEY fk_effect_original_replacement')
@@ -266,6 +323,34 @@ def check():
         assert sql(f"SELECT CONCAT(effect_kind,':',state,':',reserved_count) FROM service_effects WHERE pay_row_id={pay} AND effect_kind='create'")=='create:verified:1'
         assert run(pay)['error'] is None and sql(f'SELECT COUNT(*) FROM payment_delivery_intents WHERE pay_row_id={pay}')=='1'
         cases.append('foreign_original_kept_auditable_and_replacement_preserves_capacity')
+        # Old standard invoices without newly added issued fields can still
+        # use their surviving independent original 007 term evidence.
+        pay=seed('old007terms',pin=False,create_prefix=1,link_prefix=0)
+        ch=preview(pay,native='wrong_note',actor=9002)
+        proved=confirm(pay,ch,native='wrong_note',actor=9002)
+        assert proved['error'] is None and rows(pay)=='1' and balance()=='19:50000',proved
+        assert sql(f"SELECT requested_bytes FROM service_effects WHERE pay_row_id={pay} AND effect_kind='replacement'")==str(2*1073741824)
+        cases.append('historic_standard_original_007_proves_entitlement_without_issued_columns')
+        # A true custom invoice retains its own explicit positive terms,
+        # even when the present plan is a different standard configuration.
+        pay=seed('custombulk',count=2,days=12,volume=4,create_prefix=1,link_prefix=0)
+        ch=preview(pay,ordinal=2,actor=9002)
+        custom=confirm(pay,ch,ordinal=2,actor=9002)
+        assert custom['error'] is None and rows(pay)=='1' and balance()=='18:50000',custom
+        assert sql(f"SELECT requested_bytes FROM service_effects WHERE pay_row_id={pay} AND effect_kind='replacement'")==str(4*1073741824)
+        cases.append('custom_multicount_invoice_preserves_exact_day_volume_and_original_capacity')
+        # The original invoice snapshot, not a mutable plan definition,
+        # determines the first replacement's paid dimensions.
+        pay=seed('futuredrift')
+        ch=preview(pay,actor=9002)
+        oldDays=int(sql('SELECT days FROM server_plans WHERE id=7'))
+        oldVol=int(sql('SELECT volume FROM server_plans WHERE id=7'))
+        sql(f'UPDATE server_plans SET days={oldDays+5},volume={oldVol+3} WHERE id=7')
+        exact=confirm(pay,ch,actor=9002)
+        assert exact['error'] is None and rows(pay)=='1',exact
+        assert sql(f"SELECT requested_bytes FROM service_effects WHERE pay_row_id={pay} AND effect_kind='replacement'")==str(2*1073741824)
+        sql(f'UPDATE server_plans SET days={oldDays},volume={oldVol} WHERE id=7')
+        cases.append('standard_pinned_purchase_terms_survive_later_plan_day_and_volume_changes')
         # Current plan changes cannot rewrite an existing original 007
         # entitlement. Require observed original request days AND volume.
         pay=seed('daysdrift',create_prefix=1,link_prefix=0)
@@ -273,10 +358,9 @@ def check():
         originalDays=int(sql('SELECT days FROM server_plans WHERE id=7'))
         sql(f'UPDATE server_plans SET days={originalDays+5} WHERE id=7')
         changed=confirm(pay,ch,native='wrong_note',actor=9002)
-        assert changed['error'] and 'replacement_original_duration_changed_or_unverifiable' in str(changed['error']),changed
-        assert rows(pay)=='0' and balance()=='19:50000',changed
+        assert changed['error'] is None and rows(pay)=='1' and balance()=='19:50000',changed
         sql(f'UPDATE server_plans SET days={originalDays} WHERE id=7')
-        cases.append('current_plan_days_change_cannot_replace_original_paid_entitlement')
+        cases.append('original_007_entitlement_survives_current_plan_days_change')
         pay=seed('nativealready',create_prefix=1,link_prefix=0)
         original_valid=run(pay,op='replacement_preview',actor=9002,ordinal=1)
         assert original_valid['result'] is None and rows(pay)=='0' and balance()=='19:50000',original_valid
@@ -358,6 +442,33 @@ def check():
                     callback='hostedReplP_'+str(pay)+'_1')
         assert not any(e['event']=='OWNER_EDIT' for e in noadmin['events'])
         cases.append('staff_private_preview_denies_nonstaff_and_nonprivate_without_side_effects')
+        reasons={
+            'replacement_staff_permission_revoked':('authorization','ask_owner_to_check_payments_permission'),
+            'replacement_original_entitlement_unavailable':('original_purchase','verify_original_days_volume_before_create'),
+            'replacement_target_changed':('physical_target','reinspect_panel_and_confirm_again'),
+            'replacement_capacity_insufficient':('capacity','verify_available_slots_no_double_debit'),
+            'replacement_original_evidence_changed':('evidence','reopen_case_and_refresh_native_evidence'),
+            'replacement_dispatch_needs_review':('native_unknown','inspect_committed_007_and_get_only_never_repost')}
+        for reason,(stage,action) in reasons.items():
+            diag=run(0,op='replacement_diagnostic',reason=reason)
+            assert diag['error'] is None and diag['result']['reason']==reason,diag
+            assert (diag['result']['stage'],diag['result']['action'])==(stage,action),diag
+        raw=run(0,op='replacement_diagnostic',reason='secret-password=fixture-should-not-show')
+        assert raw['result']['reason']=='runtime_error' and 'secret' not in str(raw['result']),raw
+        cases.append('replacement_reason_stage_next_action_bounded_diagnostics_six_failure_modes')
+        pay=seed('capalert')
+        ch=preview(pay,actor=9002)
+        sql('UPDATE server_info SET ucount=0 WHERE id=2')
+        callback='hostedReplC_'+str(pay)+'_1_'+ch
+        visible=run(pay,op='route',actor=9002,chat=9002,callback=callback)
+        assert visible['error'] is None and rows(pay)=='0' and balance()=='0:50000',visible
+        assert any(e['event']=='OWNER_EDIT' and
+                   'replacement_capacity_insufficient' in str(e['text']) and
+                   'verify_available_slots_no_double_debit' in str(e['text'])
+                   for e in visible['events']),visible
+        blocked=run(pay,op='route',actor=9002,chat=1001,callback=callback)
+        assert not any(e['event']=='OWNER_EDIT' for e in blocked['events'])
+        cases.append('private_payments_operator_sees_bounded_capacity_reason_no_extra_effect')
         # PasarGuard uses the actual source reserve/POST/readback against an
         # HTTP loopback account store rather than a mocked PG return value.
         pay=seed('pgmissingfirst',panel='pasarguard')
@@ -371,6 +482,18 @@ def check():
         assert not any(m=='POST' for m,_,_ in server.trace)
         assert balance()=='19:50000'
         cases.append('pasarguard_first_replacement_real_loopback_create_and_get_delivery')
+        pay=seed('pgphysical',panel='pasarguard')
+        ch=preview(pay,pg=True)
+        sql('UPDATE server_config SET provider_connection_id=999 WHERE id=2')
+        changed=confirm(pay,ch,pg=True)
+        assert changed['error'] and rows(pay)=='0' and balance()=='20:50000',changed
+        cases.append('pasarguard_connection_change_cannot_reuse_empty_007_confirmation')
+        pay=seed('pggeneration',panel='pasarguard')
+        ch=preview(pay,pg=True)
+        sql("UPDATE provider_panels SET version='fixture-rotated-version' WHERE id=1")
+        changed=confirm(pay,ch,pg=True)
+        assert changed['error'] and rows(pay)=='0' and balance()=='20:50000',changed
+        cases.append('pasarguard_generation_change_cannot_reuse_empty_007_confirmation')
         return {'complete':True,'php85_required':True,'source_real':True,
                 'disposable_mariadb':True,'native_provider_loopback':True,
                 'original_post_replays':0,'double_wallet_debits':0,'scenarios':cases}

@@ -12,6 +12,9 @@ require_once __DIR__.'/../Admin/Access.php';
 
 function achbotHostedReplacementSchemaReady(mysqli $db): bool {
     try {
+        $pays=$db->query('SELECT issued_entitlement_days,issued_entitlement_gb FROM pays LIMIT 0');
+        if (!$pays) return false;
+        $pays->free();
         $q=$db->query('SELECT replaces_effect_id,reconciliation_reason,reconciliation_fingerprint,'.
             'reconciliation_evidence_status,reconciliation_observed_at,actor_userid FROM service_effects LIMIT 0');
         if (!$q) return false;
@@ -50,6 +53,59 @@ function achbotHostedReplacementSchemaReady(mysqli $db): bool {
     } catch(Throwable $ignored) {return false;}
 }
 
+/** Bind staff confirmation to the CURRENT physical target, not just the
+ * payment and historical original CREATE rows. In particular, an empty 007
+ * manifest must not leave a signed confirmation valid after server reassignment.
+ * No secrets leave this helper; only their verifier digest participates.
+ */
+function achbotHostedReplacementPhysicalTargetPin(mysqli $db,array $pay,bool $lock=false): ?string {
+    try {
+        $server=(int)$pay['server_id'];$plan=(int)$pay['plan_id'];$payId=(int)$pay['id'];
+        $sql='SELECT i.panel_group_id,c.type AS panel_type,c.panel_url,'.
+            'c.username AS panel_username,c.password AS panel_password,'.
+            'c.provider_connection_id,c.provider_instance_key,c.provider_version,'.
+            'c.provider_enabled,s.server_id AS plan_server,s.inbound_id AS plan_inbound,'.
+            'g.id AS valid_group FROM server_info i JOIN server_config c ON c.id=i.id '.
+            'JOIN server_plans s ON s.id=? LEFT JOIN setting g ON g.id=i.panel_group_id '.
+            "AND g.type='ACHBOT_MARZBAN_PANEL_GROUP' WHERE i.id=?";
+        $q=$db->prepare($sql);$q->bind_param('ii',$plan,$server);$q->execute();
+        $row=$q->get_result()->fetch_assoc();$q->close();
+        if (!$row || (int)$row['plan_server']!==$server ||
+            (int)$row['plan_inbound']!==0 ||
+            (string)$row['panel_type']!==(string)$pay['panel_type'] ||
+            ($row['panel_type']==='marzban' && $row['panel_group_id']!==null &&
+                $row['valid_group']===null)) return null;
+        $target=achbotEffectTargetIdentity($db,$server,$plan,$payId,$row);
+        $identity=['provider'=>$target['provider'],'group'=>$target['group'],
+            'endpoint'=>$target['endpoint'],'target_key'=>$target['key'],
+            'credential_sha256'=>$target['credentials']];
+        if ($target['provider']==='pasarguard') {
+            // The quote can be old while the physical connection/generation
+            // changes: pin both current configured connection and live panel.
+            $panel=achbotPgServerPanel($db,$server);
+            $current=achbotProviderSnapshot($db,$server,$plan);
+            $id=(int)$panel['id'];
+            if ($lock) {
+                $q=$db->prepare('SELECT id,instance_key,api_url,version,enabled FROM provider_panels WHERE id=? FOR UPDATE');
+                $q->bind_param('i',$id);$q->execute();$physical=$q->get_result()->fetch_assoc();$q->close();
+                if (!$physical || $physical['instance_key']!==$panel['instance_key'] ||
+                    rtrim((string)$physical['api_url'],'/')!==rtrim((string)$panel['api_url'],'/') ||
+                    $physical['version']!==$panel['version'] ||
+                    (int)$physical['enabled']!==(int)$panel['enabled']) return null;
+            }
+            $identity['connection_id']=(int)$row['provider_connection_id'];
+            $identity['server_instance']=(string)$row['provider_instance_key'];
+            $identity['server_version']=(string)$row['provider_version'];
+            $identity['server_enabled']=(string)$row['provider_enabled'];
+            $identity['physical_panel']=[(int)$panel['id'],(string)$panel['instance_key'],
+                (string)$panel['version'],(int)$panel['enabled']];
+            $identity['current_snapshot']=$current;
+            $identity['issued_snapshot']=$target['snapshot']??null;
+        }
+        return hash('sha256',json_encode($identity,JSON_THROW_ON_ERROR));
+    } catch(Throwable $ignored) {return null;}
+}
+
 /** SQL evidence for an existing paid claim, including ORIGINAL rows even when
  * they are invalid or noncontiguous. The current target and payment are
  * strictly verified, never inferred from orphaned native accounts.
@@ -59,6 +115,8 @@ function achbotHostedReconciliationSnapshot(mysqli $db,int $payId,bool $lock=fal
     $fund=achbotHostedOriginalFundingSnapshot($db,$payId,$lock);
     if (!$fund) return null;
     $pay=$fund['pay'];$count=$fund['count'];$suffix=$lock?' FOR UPDATE':'';
+    $targetPin=achbotHostedReplacementPhysicalTargetPin($db,$pay,$lock);
+    if ($targetPin===null) return null;
     $q=$db->prepare('SELECT *,UNIX_TIMESTAMP(created_at) AS original_created_epoch FROM service_effects WHERE pay_row_id=? ORDER BY ordinal,effect_kind'.$suffix);
     $q->bind_param('i',$payId);$q->execute();
     $rows=$q->get_result()->fetch_all(MYSQLI_ASSOC);$q->close();
@@ -182,7 +240,7 @@ function achbotHostedReconciliationSnapshot(mysqli $db,int $payId,bool $lock=fal
         $lines[$ordinal]=$effective;
     }
     return $fund+['original'=>$original,'replacement'=>$replacement,
-        'lines'=>$lines,'history'=>$rows,'count'=>$count];
+        'lines'=>$lines,'history'=>$rows,'count'=>$count,'target_pin'=>$targetPin];
 }
 
 /** Only original/future replacement identity, not transient GET state. */
@@ -203,7 +261,8 @@ function achbotHostedReconciliationPin(array $snapshot): string {
     return hash('sha256',json_encode([
         achbotPaymentEvidencePayFingerprint($snapshot['pay']),
         achbotPaymentEvidenceQuoteFingerprint($snapshot['attempt']),
-        $snapshot['count'],$rows,achbotOriginalBuyLinkedOrderPins($snapshot)
+        $snapshot['count'],$rows,achbotOriginalBuyLinkedOrderPins($snapshot),
+        (string)($snapshot['target_pin']??'')
     ],JSON_THROW_ON_ERROR));
 }
 
@@ -279,6 +338,38 @@ function achbotHostedReplacementChallengeValid(int $actor,int $payId,int $ordina
             $minute,$evidence['stamp'],$evidence['reason']),$m[2]);
 }
 
+/** Show the private operator only stable, safe stage/action identifiers.
+ * Provider bodies, DB messages, credentials and transport exception strings
+ * never appear in the bot reply or in the general-purpose diagnostic log.
+ */
+function achbotHostedReplacementFailureGuidance(Throwable $error): array {
+    $safe=achbotEffectSafeFailure($error);
+    $reason=$safe['reason'];
+    [$stage,$action]=match($reason) {
+        'replacement_actor_not_permitted','replacement_staff_permission_revoked'
+            =>['authorization','ask_owner_to_check_payments_permission'],
+        'replacement_original_entitlement_unavailable',
+        'replacement_original_entitlement_changed',
+        'replacement_original_duration_changed_or_unverifiable',
+        'replacement_plan_invalid'=>['original_purchase','verify_original_days_volume_before_create'],
+        'replacement_target_changed',
+        'replacement_capacity_owner_changed'=>['physical_target','reinspect_panel_and_confirm_again'],
+        'replacement_capacity_insufficient'=>['capacity','verify_available_slots_no_double_debit'],
+        'replacement_evidence_expired_or_invalid',
+        'replacement_original_evidence_changed',
+        'replacement_unrecognized_remote_evidence',
+        'replacement_missing_capacity_proof'=>['evidence','reopen_case_and_refresh_native_evidence'],
+        'replacement_dispatch_needs_review',
+        'replacement_reserve_commit_unknown',
+        'replacement_reservation_unconfirmed',
+        'replacement_reservation_id_missing'=>['native_unknown','inspect_committed_007_and_get_only_never_repost'],
+        'replacement_first_capacity_unavailable'=>['capacity','verify_original_capacity_ownership'],
+        default=>['preflight','inspect_existing_case_no_repeat_create']
+    };
+    return ['reason'=>$reason,'stage'=>$stage,'action'=>$action,
+        'class'=>$safe['class'],'chain_depth'=>$safe['chain_depth']];
+}
+
 /** A signed explicit confirmation is valid only for the just-observed
  * payment/original history; a second staff actor cannot borrow the button.
  * SQL row locks and unique replacement keys are the final race authority.
@@ -304,8 +395,31 @@ function achbotHostedCreateReconciledReplacement(
     // plan edit from silently substituting a different paid subscription.
     $plan=getPlanDetails($db,$planId);$detail=$plan['plan']??null;
     $custom=(int)($pay['volume']??0)!==0 || (int)($pay['day']??0)!==0;
-    $volume=$custom?(int)$pay['volume']:(int)($detail['volume']??0);
-    $days=$custom?(int)$pay['day']:(int)($detail['days']??0);
+    $volume=$custom?(int)$pay['volume']:(int)($pay['issued_entitlement_gb']??0);
+    $days=$custom?(int)$pay['day']:(int)($pay['issued_entitlement_days']??0);
+    if (!$custom && ($volume<=0 || $days<=0) && !$snapshot['original'])
+        throw new RuntimeException('replacement_original_entitlement_unavailable');
+    // For historical standard invoices with surviving 007, that journal is
+    // an independent durable entitlement source. Do not take *current* plan
+    // dimensions as past purchase proof if the original journal survived.
+    if (!$custom && ($volume<=0 || $days<=0) && $snapshot['original']) {
+        $first=reset($snapshot['original']);
+        $bytes=achbotRecoveryExactInt($first['requested_bytes']??null);
+        $created=achbotRecoveryExactInt($first['original_created_epoch']??null);
+        $expires=achbotRecoveryExactInt($first['requested_expire']??null);
+        if ($bytes===null || $bytes<=0 || $bytes%1073741824!==0 ||
+            $created===null || $created<=0 || $expires===null)
+            throw new RuntimeException('replacement_original_entitlement_unavailable');
+        $volume=intdiv($bytes,1073741824);
+        $duration=$expires-$created;
+        if ($duration<=0 || $duration%86400>120 && 86400-$duration%86400>120)
+            throw new RuntimeException('replacement_original_entitlement_unavailable');
+        $days=(int)round($duration/86400);
+    }
+    if (!$custom && (!$snapshot['original']) &&
+        ((int)($pay['issued_entitlement_days']??0)<=0 ||
+         (int)($pay['issued_entitlement_gb']??0)<=0))
+        throw new RuntimeException('replacement_original_entitlement_unavailable');
     if (!is_array($detail) || (int)($detail['server_id']??0)!==$server ||
         (int)($detail['inbound_id']??-1)!==0 || $volume<=0 ||
         $days<=0 || $days>36500 ||
@@ -377,6 +491,9 @@ function achbotHostedCreateReconciledReplacement(
                 $targetRow['panel_group_id']!==null && $targetRow['valid_group']===null))
             throw new RuntimeException('replacement_target_changed');
         $target=achbotEffectTargetIdentity($db,$server,$planId,$payId,$targetRow);
+        $freshPin=achbotHostedReplacementPhysicalTargetPin($db,$fund,true);
+        if ($freshPin===null || !hash_equals((string)$locked['target_pin'],$freshPin))
+            throw new RuntimeException('replacement_target_changed');
         $group=$target['group'];$endpoint=$target['endpoint'];
         $targetKey=$target['key'];$credentials=$target['credentials'];
         // A first original CREATE already consumed all purchase inventory.

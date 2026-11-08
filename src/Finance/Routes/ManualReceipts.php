@@ -464,12 +464,17 @@ if ($replacePreview || $replaceExecute) {
                 'pay'=>$payId,'ordinal'=>$ordinal,'effect'=>(int)$result['effect_id']]);
         }
     } catch(Throwable $error) {
-        $reason=achbotEffectSafeFailure($error);
+        $diagnostic=achbotHostedReplacementFailureGuidance($error);
         error_log('achbot_hosted_replacement_deferred pay_id='.$payId.
             ' ordinal='.$ordinal.' actor='.(int)$from_id.
-            ' reason='.$reason['reason'].' cause='.$reason['class']);
-        // Ambiguous provider POST is not an invitation to press CREATE again.
-        $body=achbotMessage('hosted_replacement.unavailable');
+            ' stage='.$diagnostic['stage'].' reason='.$diagnostic['reason'].
+            ' next_action='.$diagnostic['action'].' cause='.$diagnostic['class']);
+        // An UNKNOWN provider POST is NEVER a reason to offer another CREATE.
+        $body=achbotMessage('hosted_replacement.unavailable')."\n".
+            achbotMessageHtml('hosted_replacement.diagnostic',[
+                'reason'=>$diagnostic['reason'],
+                'stage'=>$diagnostic['stage'],
+                'action'=>$diagnostic['action']]);
     }
     $buttons[]=[['text'=>achbotMessage('service_workbench.back'),
         'callback_data'=>'serviceRecoveryCase_'.$payId]];

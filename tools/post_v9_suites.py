@@ -657,7 +657,7 @@ def run_services(tmp: str) -> tuple[dict, dict]:
             {'database':'owned socket MariaDB','network_calls':0,'optional_011_missing_cancel_proven':True}),
         ('customer_services','test_unified_customer_services.py','cases',596,
             {'actual_php':True,'obsolete_order_columns_absent':True,'native_disposable_mariadb':True,'external_provider_calls':0,'production_mutations':0,'real_JDF_no_date_stubs':True,'fresh_each_render_same_process':True,'same_packet_observation_and_presentation':True,'genuine_import_origin_writer_fixture':True,'actual_service_unit_helpers':True,'native_plan_admission_seam':'controlled_read_only_SQL_fixture','actual_native_plan_eligibility_checked_here':False,'actual_URL_import_checked_here':False,'imported_actions_hide_ineligible_autorenew':True,'existing_consent_withdrawal_visible_when_plan_global_or_observation_unavailable':True,'unlimited_actions_hide_unsupported_relative_changes':True,'native_HTTP_count_checked_here':False,'actual_composed_ASCII_Jalali_Tehran_proofs':{key:['marzban','pasarguard'] for key in ['customer_remote_expiry','admin_remote_expiry','admin_recorded_expiry','admin_warning_grace']},'baseline_date_ref':'2408982797af15bc99e1df2909c13be3976cb1f4','baseline_date_jdf_sha256':'e32da43aafb6548fa746492a9d3181ef796083fa618af2c84f6a7bb4e857337d','baseline_dates_already_ASCII':True,'baseline_date_RED':False,'archived_warning_toggle_RED':2}),
-        ('service_lifecycle','test_unified_service_lifecycle.py','cases',138,
+        ('service_lifecycle','test_unified_service_lifecycle.py','cases',148,
             {'native_php':True,'disposable_mariadb':True,'actual_delete_transports':True,'import_warning_planless_and_assigned':True,'import_warning_retry_once':True,'amount0_trial_warning_policy_preserved':True,'malformed_origin_warning_row_isolated':True,'automatic_known_refusal_predebit':True,'scheduled_known_refusal_prefence':True,'production_mutations':0,'external_provider_calls':0,'notification_delivery_regression_red':True,'grace_integrity':True,'deletion_fairness_red':True,'deletion_fairness_source':'5568e5e24ecc595c371c4710bf41db51bb78125d','scheduled_deletion_cursor':'deleteLastOrderId','deletion_fairness_deferred_batch':50,'deletion_fairness_cross_provider_directions':2,'deletion_fairness_financial_hold':True}),
         ('runtime_cleanup','test_unified_runtime_cleanup.py','assertions',144,
             {'actual_php':True,'owned_socket_mariadb':True,'provider_mutations':0,'production_mutations':0,'composed_native_reader_unique':True,'domain_independent_verified_token_import':True}),
@@ -1216,10 +1216,10 @@ def run_wallet(tmp: str) -> tuple[dict, dict]:
             and text_catalog.get("retired_parser_tokens")==23
             and text_catalog.get("relocation_source_ref")=="ecd30ba9192ed374703118a6c131be8809cc7b06"
             and text_catalog.get("native",{}).get("current_retired_feature_keys")==3
-            and text_catalog.get("catalog_keys")==2780+14+9+18+27+12+7+17+2+2+3+4+1+3+6
+            and text_catalog.get("catalog_keys")==2780+14+9+18+27+12+7+17+2+2+3+4+1+3+6+1
             and text_catalog.get("native",{}).get("editable_catalog_files")==2
             and text_catalog.get("native",{}).get("logical_topics")==28+10
-            and text_catalog.get("native",{}).get("current_catalog_keys")==2780+14+9+18+27+12+7+17+2+2+3+4+1+3+6
+            and text_catalog.get("native",{}).get("current_catalog_keys")==2780+14+9+18+27+12+7+17+2+2+3+4+1+3+6+1
             and text_catalog.get("native",{}).get("current_gift_admin_additions")==1
             and text_catalog.get("native",{}).get("current_gift_catalog_negative_controls")==8
             and text_catalog.get("native",{}).get("current_gift_catalog_negative_scenarios")==[
@@ -1248,10 +1248,10 @@ def run_wallet(tmp: str) -> tuple[dict, dict]:
             # exactly 3 keys, 3 source references and eight native template
             # assertions (including one parameterized object/one-pass text).
             # Preserve all earlier counters and negative controls.
-            and text_catalog.get("native",{}).get("current_native_template_assertions")==4120+24+9+139+42+7+2+3+9+1+8+21
-            and text_catalog.get("native",{}).get("current_object_conversion_templates")==268+2+15+5+1+1+1+3
-            and text_catalog.get("native",{}).get("current_shared_multi_parameter_templates")==66+1+14+5+1+1+1+2
-            and text_catalog.get("native",{}).get("current_one_pass_templates")==268+2+15+5+1+1+1+3
+            and text_catalog.get("native",{}).get("current_native_template_assertions")==4120+24+9+139+42+7+2+3+9+1+8+21+6
+            and text_catalog.get("native",{}).get("current_object_conversion_templates")==268+2+15+5+1+1+1+3+1
+            and text_catalog.get("native",{}).get("current_shared_multi_parameter_templates")==66+1+14+5+1+1+1+2+1
+            and text_catalog.get("native",{}).get("current_one_pass_templates")==268+2+15+5+1+1+1+3+1
             and text_catalog.get("native",{}).get("current_r5_changes")==273
             and text_catalog.get("native",{}).get("current_r5_retired_keys")==10
             and text_catalog.get("native",{}).get("current_r5_added_keys")==60
@@ -1259,7 +1259,7 @@ def run_wallet(tmp: str) -> tuple[dict, dict]:
             and text_catalog.get("native",{}).get("current_non_ascii_digit_templates")==0
             and text_catalog.get("presentation",{}).get("status")=="PASS"
             and text_catalog.get("presentation",{}).get("editable_files")==2
-            and text_catalog.get("presentation",{}).get("current_keys")==2780+14+9+18+27+12+7+17+2+2+3+4+1+3+6
+            and text_catalog.get("presentation",{}).get("current_keys")==2780+14+9+18+27+12+7+17+2+2+3+4+1+3+6+1
             and text_catalog.get("presentation",{}).get("numeric_template_changes")==23
             and text_catalog.get("presentation",{}).get("adjacent_emoji_violations")==0
             and text_catalog.get("presentation",{}).get("parameter_exception_count")==3
@@ -1311,7 +1311,7 @@ def run_wallet(tmp: str) -> tuple[dict, dict]:
         # Four retired #112 references and the additional old direct-delete
         # callback reference are proven absent by test_next_text_catalog.py.
         # Keep complete current-reference equality, never a lower bound.
-         'runtime_references':2453+14-1-6-4-1+8-3+28+12-5+2+3+4+1+3+6,
+         'runtime_references':2453+14-1-6-4-1+8-3+28+12-5+2+3+4+1+3+6+1,
         # +28 owner financial/service/delivery copy keys; +12 net from R2
         # financial exception and R3 final receipt. Two earlier recovery
         # labels and three original-edit recovery labels are statically
@@ -2221,6 +2221,7 @@ def run_authorization(tmp: str) -> tuple[dict, dict]:
         'delivery_018_token_uniqueness_missing_blocks',
         'replacement_021_unique_original_claim_missing_blocks',
         'replacement_021_original_foreign_key_missing_blocks',
+        'replacement_021_missing_frozen_invoice_terms_blocks',
         'wallet_telegram_event_key_missing_blocks',
         'wallet_telegram_event_key_nonunique_blocks',
         'wallet_cursor_nontransactional_storage_blocks',
@@ -3403,6 +3404,15 @@ def run_funding(tmp: str) -> tuple[dict, dict]:
     replacement=json.loads(replacement_path.read_text())
     required_replacements={
         '021_missing_original_provenance_foreign_key_blocks_paid_replacement',
+        'standard_and_custom_invoice_issuance_pins_true_terms_same_transaction',
+        'historical_empty_007_standard_without_issued_terms_blocks_before_007_or_native',
+        'marzban_empty_007_endpoint_drift_invalidates_signed_preview',
+        'marzban_empty_007_group_drift_invalidates_signed_preview',
+        'replacement_reason_stage_next_action_bounded_diagnostics_six_failure_modes',
+        'private_payments_operator_sees_bounded_capacity_reason_no_extra_effect',
+        'pasarguard_connection_change_cannot_reuse_empty_007_confirmation',
+        'pasarguard_generation_change_cannot_reuse_empty_007_confirmation',
+
         'manager_missing_first_007_signed_one_replacement_capacity_once',
         'original_create_cannot_overlap_prior_paid_replacement',
         'concurrent_staff_confirmation_cannot_double_reserve_or_post',
@@ -3411,7 +3421,10 @@ def run_funding(tmp: str) -> tuple[dict, dict]:
         'support_payments_authorized_first_paid_replacement',
         'lost_replacement_native_response_get_only_recovery_no_repost',
         'foreign_original_kept_auditable_and_replacement_preserves_capacity',
-        'current_plan_days_change_cannot_replace_original_paid_entitlement',
+        'historic_standard_original_007_proves_entitlement_without_issued_columns',
+        'custom_multicount_invoice_preserves_exact_day_volume_and_original_capacity',
+        'original_007_entitlement_survives_current_plan_days_change',
+        'standard_pinned_purchase_terms_survive_later_plan_day_and_volume_changes',
         'authenticated_matching_original_account_never_offered_replacement',
         'bulk_missing_ordinal_only_replacement_native_no_second_inventory_hold',
         'noncontiguous_internal_gap_preserves_original_full_count_capacity_owner',

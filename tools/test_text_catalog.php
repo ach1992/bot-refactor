@@ -397,8 +397,8 @@ $workbench = [
  // New #117 Owner-only explicit FIRST-time original Hosted CREATE copy.
  // Strictly additive; old pre-RC26 catalogue bytes are still verified.
  'hosted_replacement'=>[
-  'digest'=>'11ebe4c79ce6e9b12d730ce6e3c5373ecd05076c0d3fa13d8761730fa84dde19',
-  'names'=>['inspect','review_note','warning','confirm','reserved','unavailable']],
+  'digest'=>'71b48a3375bde58af787cbbe1b9f670ebaf6341ca1650e5b24b6842a0ec6102e',
+  'names'=>['inspect','review_note','warning','confirm','reserved','unavailable','diagnostic']],
  'hosted_original_recovery'=>[
   'digest'=>'f442322538c4ebf091f8ca914667a046ad3ba7431a094de4cb794f25d6574394',
   'names'=>['resume_unstarted','unstarted_warning','started']],

@@ -7,10 +7,11 @@ service/delivery recovery paths from PRs #118–#132. Merged PR #132 preserves
 original paid Hosted BUY_SUB accounts and order links and permits only FIRST
 CREATE for a provably unstarted trailing 007 ordinal, after an authenticated
 GET and original payment/capacity checks. This is **not** a general account
-replacement or license to re-POST unknown Native effects. Draft PR #133 is a
-separate subsequent source proposal described below; its 021 replacement
-contract is NOT integrated, independently reviewed, released, migrated or
-installed. The *latest published* GitHub artifact remains RC25. Prior
+replacement or license to re-POST unknown Native effects. PR #133 is a separate subsequent source proposal described below. Its
+first candidate received a complete independent **CHANGES_REQUIRED** review;
+a remediation R1 candidate requires fresh exact-HEAD CI and independent delta
+re-review before integration. Neither 021 nor the candidate is approved,
+merged, released, migrated or installed. The *latest published* GitHub artifact remains RC25. Prior
 independent reviews and Owner merges cannot authorize this new candidate's
 Merge, release, Chili migration or live provider/payment/Telegram effects.
 
@@ -35,7 +36,8 @@ these source steps permits a live payment, Telegram send or SQL mutation.
 
 ### Proposed subsequent Issue #117 source increment (not reviewed/released)
 
-The next candidate adds a separate `021` journal provenance contract for an
+The next candidate adds a separate `021` journal provenance contract **and
+new, issuance-time frozen BUY_SUB day/GB fields on `pays`** for an
 explicitly confirmed, once-only original-Hosted paid account replacement,
 including a truly empty original 007 manifest, internal gaps with a
 surviving first capacity claimant, and foreign/orphan Native readback.
@@ -50,8 +52,12 @@ recheck). Review is not proof of Native absence and prior remote effects
 must not be replayed. New PG/Marzban tests, exact PHP 8.5 CI and independent
 review remain mandatory before any release or installed acceptance claim.
 If approved for a future Chili upgrade, the earlier 018, 019 and 020 journals
-must be verified first, then 021 applied after the same restore-tested
-schema/index/engine preflight. No production SQL or provider action is
+must be verified first, then 021 (including its `pays` columns) applied
+after the same restore-tested schema/index/engine preflight. Legacy
+standard-plan invoices with neither issued terms nor a surviving 007
+entitlement fail closed before replacement CREATE; original terms must
+never be guessed from an edited current plan. Review B1 also requires
+preserving capacity restoration for real nonfinancial CREATE accounts. No production SQL or provider action is
 preauthorized by this source description.
 
 ## Published RC25 — independent administrative Panel Groups

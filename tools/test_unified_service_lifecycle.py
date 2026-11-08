@@ -99,6 +99,11 @@ if ($action==='policy') {
  $row=$connection->query('SELECT * FROM orders_list WHERE id='.(int)$spec['order'])->fetch_assoc();
  if (!empty($spec['change_cycle'])) $connection->query('UPDATE orders_list SET expire_date=expire_date+1 WHERE id='.(int)$spec['order']);
  $out=achbotAutoRenewPrepareDeletion($connection,(int)$spec['order'],$row);
+} elseif ($action==='finalize_deleted') {
+ // Source-real local continuation AFTER a confirmed native DELETE. This
+ // function must restore capacity exactly once without reissuing remote DELETE.
+ $out=achbotAutoRenewFinalizeDeletion($connection,(int)$spec['order'],
+     (int)$spec['server'],true);
 } elseif ($action==='deletion_settled') {
  $id=(int)$spec['order'];
  $connection->begin_transaction();
@@ -694,6 +699,50 @@ def main():
                 all(t[0]=='GET' for t in pguard.trace[prior:]) and
                 (refusal=='native_schedule' or pguard.trace[prior:]==[]),
                 'pasarguard_scheduled_delete_'+refusal+'_preserves_live_reference_consent_and_all_evidence_before_fence')
+        # Review B1: source-real finalization of already-confirmed native
+        # account deletions must restore one slot for genuine CREATE accounts
+        # (including nonfinancial trials/bulk), but none for imported ones.
+        # Both Marzban and PasarGuard use the same shared local finalizer;
+        # preceding scenarios already exercise both actual native DELETE
+        # transports with no second DELETE on local uncertainty.
+        for provider,sid in [('marzban',2),('pasarguard',3)]:
+            for offset,(effectKind,sourceKind,hasPay,held,restored) in enumerate([
+                ('create','free_trial',False,1,True),
+                ('create','admin_bulk',False,1,True),
+                ('create',None,True,1,True),
+                ('replacement',None,True,0,True),
+                ('adopt','external_import',False,0,False),
+            ]):
+                oid=3000+(sid*10)+offset
+                remark='capacity_'+str(oid)
+                seed(oid,server=sid,remark=remark,notif=0)
+                sql(f"UPDATE orders_list SET status=0,autoRenew='off' WHERE id={oid}")
+                payref='NULL'
+                if hasPay:
+                    key='capacity_pay_'+str(oid)
+                    sql(f"INSERT INTO pays(hash_id,user_id,type,price,request_date,state) "
+                        f"VALUES('{key}',1001,'BUY_SUB',100,1700000000,'paid')")
+                    payref=sql(f"SELECT id FROM pays WHERE hash_id='{key}'")
+                source='NULL' if sourceKind is None else "'"+sourceKind+"'"
+                sourceRef='NULL' if sourceKind is None else "'"+sourceKind+':'+str(oid)+"'"
+                marker=hashlib.md5((provider+':'+str(oid)).encode()).hexdigest()
+                endpoint=hashlib.sha256(str(oid).encode()).hexdigest()
+                targetKey='server:2' if sid==2 else 'pg:capacity-fixture'
+                sql('INSERT INTO service_effects(pay_row_id,source_kind,source_ref,actor_userid,'
+                    'ordinal,operation_id,effect_kind,target_server_id,target_key,endpoint_sha256,'
+                    'plan_id,remote_username,requested_expire,requested_bytes,request_sha256,'
+                    'reserved_count,state,order_id) VALUES('
+                    f"{payref},{source},{sourceRef},9001,1,'{marker}','{effectKind}',"
+                    f"{sid},'{targetKey}','{endpoint}',{7 if sid==2 else 8},'{remark}',"
+                    f"2000000000,2147483648,REPEAT('a',64),{held},'local_recorded',{oid})")
+                cap=int(sql(f'SELECT ucount FROM server_info WHERE id={sid}'))
+                beforeRemote=(deletes(mb),deletes(pguard))
+                done=call('finalize_deleted',order=oid,server=sid)
+                newcap=int(sql(f'SELECT ucount FROM server_info WHERE id={sid}'))
+                yes(done is True and newcap==cap+(1 if restored else 0) and
+                    sql(f'SELECT COUNT(*) FROM orders_list WHERE id={oid}')=='0' and
+                    beforeRemote==(deletes(mb),deletes(pguard)),
+                    provider+'_finalize_'+effectKind+'_'+str(sourceKind)+'_restores_'+str(restored))
         report={'complete':True,'cases':len(checks),'scenarios':checks,'baseline_red':True,'notification_delivery_regression_red':True,'grace_integrity':True,
             'deletion_fairness_red':True,'deletion_fairness_source':DELETION_FAIRNESS_REGRESSION,
             'scheduled_deletion_cursor':'deleteLastOrderId','deletion_fairness_deferred_batch':50,

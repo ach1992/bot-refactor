@@ -14,3 +14,11 @@ ALTER TABLE service_effects
   ADD UNIQUE KEY uq_effect_one_replacement(replaces_effect_id),
   ADD CONSTRAINT fk_effect_original_replacement FOREIGN KEY (replaces_effect_id)
     REFERENCES service_effects(id) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+-- New invoice issuance records the actual standard-plan entitlement before
+-- a payment link can be offered. NULL distinguishes legacy invoices whose
+-- historical standard terms were NEVER independently pinned. The original
+-- day/volume=0 standard-vs-custom routing contract remains unchanged.
+ALTER TABLE pays
+  ADD issued_entitlement_days INT UNSIGNED DEFAULT NULL,
+  ADD issued_entitlement_gb BIGINT UNSIGNED DEFAULT NULL;
