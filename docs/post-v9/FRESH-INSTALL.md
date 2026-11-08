@@ -51,7 +51,6 @@ Import `database/legacy-schema.sql` exactly once into that empty database, then 
 | 14 | `migrations/post-v9/016_remove_pasarguard_server_groups.sql` | Guarded removal of obsolete server-level PasarGuard Native Group column, after verifying active plans use explicit plan-level Native Groups |
 | 15 | `migrations/post-v9/017_shared_plan_changes.sql` | Durable service_plan_changes journal for reconciled Native plan changes; must follow 016 |
 | 16 | `migrations/post-v9/018_payment_delivery_intents.sql` | Per-payment sealed delivery intents and Telegram attempt journal; requires 003 and 007, no historical backfill |
-| 17 | `migrations/post-v9/019_payment_review_decisions.sql` | One-shot Owner decision evidence for financial review; requires 003 |
 | 18 | `migrations/post-v9/020_payment_followup_intents.sql` | Once-only staff/customer follow-up presentation journal; requires 018 and reviewed payment evidence |
 | 19 | `migrations/post-v9/021_paid_reconciliation_provenance.sql` | Original paid account/replacement provenance, unique and restrictive original-effect relation and nullable original issued days/GB; apply only after validated 018-020 and original 007 journal |
 

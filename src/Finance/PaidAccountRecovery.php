@@ -315,6 +315,7 @@ function achbotWalletBuyRecoverySnapshot(mysqli $db,int $payId,bool $lock=false)
         (int)$pay['user_id']<=0 || (int)$pay['price']<=0 ||
         (int)$pay['plan_id']<=0 || (int)$pay['server_id']<=0 ||
         (int)$pay['agent_count']<0 ||
+        (int)($pay['approved_by']??0)>0 ||
         (int)$pay['plan_server']!==(int)$pay['server_id'] ||
         (int)$pay['plan_inbound']!==0 ||
         !in_array((string)$pay['panel_type'],['marzban','pasarguard'],true) ||
@@ -561,11 +562,10 @@ function achbotHostedOriginalFundingSnapshot(
     require_once __DIR__.'/RecoveryInspection.php';
     require_once __DIR__.'/ReviewDecisions.php';
     require_once __DIR__.'/../Purchase/OrderWrites.php';
-    // Without the already-approved 019 journal we cannot rule out a prior
-    // Owner attestation. Never relabel an operator-fulfilled business outcome
-    // as merchant-verified delivery or overwrite the operator provenance.
+    // An operator-confirmed attempt stays distinguished by approved_by and
+    // its original unique 003 state; never relabel it merchant-verified.
     if ($payId<=0 || !achbotDeliverySchemaReady($db) ||
-        !achbotNpDecisionSchemaReady($db)) return null;
+        !achbotGatewayReviewReady($db)) return null;
     achbotEffectRequireUniqueLine($db);
     $suffix=$lock?' FOR UPDATE':'';
     $q=$db->prepare('SELECT p.*,s.server_id AS plan_server,s.inbound_id AS plan_inbound,'.
@@ -598,9 +598,6 @@ function achbotHostedOriginalFundingSnapshot(
         (int)$attempt['local_amount_toman']!==(int)$pay['price'] ||
         $attempt['payment_id']!==null ||
         ($attempt['evidence_profile']??null)!==null) return null;
-    $q=$db->prepare('SELECT id FROM payment_review_decisions WHERE pay_row_id=? LIMIT 1'.$suffix);
-    $q->bind_param('i',$payId);$q->execute();$operator=$q->get_result()->fetch_assoc();$q->close();
-    if ($operator) return null;
     // A previously sealed packet is never rebuilt/reissued.
     $q=$db->prepare('SELECT id FROM payment_delivery_intents WHERE pay_row_id=? LIMIT 1'.$suffix);
     $q->bind_param('i',$payId);$q->execute();$existing=$q->get_result()->fetch_assoc();$q->close();

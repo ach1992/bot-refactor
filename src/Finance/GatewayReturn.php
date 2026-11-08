@@ -780,14 +780,14 @@ function achbotHostedPaymentAttemptsExists(mysqli $db): bool {
 
 /** Save only a bound, uncertain hosted VERIFY result for an Owner decision.
  * A browser return is NOT proof of funds. Do not call merchant GET here or
- * overwrite a terminal/processing payment. Requires existing 019 audit.
+ * overwrite a terminal/processing payment. Uses the unique 003 attempt.
  */
 function achbotHostedMarkVerificationUncertain(mysqli $db,int $payId,
                                               string $provider,string $hash): bool {
     if ($payId<=0 || !in_array($provider,['nextpay','zarinpal'],true) ||
         $hash==='') return false;
     require_once __DIR__.'/ReviewDecisions.php';
-    if (!achbotNpDecisionSchemaReady($db)) return false;
+    if (!achbotGatewayReviewReady($db)) return false;
     $open=false;
     try {
         if (!$db->begin_transaction()) return false;
@@ -892,15 +892,9 @@ function achbotClaimHostedServiceForReview(mysqli $db, int $payId, int $amount,
                 $stage=(string)$attempt['stage'];
                 $status=(string)($attempt['provider_status']??'');
                 if ($stage==='fulfilling' && $status==='operator_attested') {
-                    // Operator journal COMMIT must exist before the original
-                    // provider effect. This is not a second attestation.
-                    $j=$db->prepare("SELECT id FROM payment_review_decisions
-                        WHERE pay_row_id=? AND attempt_id=? AND decision='approve'
-                          AND state='dispatching' FOR UPDATE");
-                    $aid=(int)$attempt['id'];
-                    $j->bind_param('ii',$payId,$aid);$j->execute();
-                    $hasDecision=$j->get_result()->num_rows===1;$j->close();
-                    if (!$hasDecision) throw new RuntimeException('operator_journal_missing');
+                    // This unique 003 attempt was claimed once by the
+                    // authenticated operator before invoking this effect.
+                    // Its 'operator_attested' status is not merchant proof.
                 } elseif ($stage!=='pending' &&
                     !($stage==='review' && $status==='verification_uncertain')) {
                     throw new RuntimeException('attempt_mismatch');

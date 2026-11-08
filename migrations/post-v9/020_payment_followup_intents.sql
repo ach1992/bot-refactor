@@ -1,5 +1,5 @@
 -- Issue #117: source-only, one-shot post-COMMIT presentations.
--- No production deployment or automatic backfill. Apply only after 018/019,
+-- No production deployment or automatic backfill. Apply only after 018,
 -- verified backup+restore, exact schema audit and separate Owner approval.
 -- Each destined Telegram SEND is claimed before network I/O. An unknown
 -- response is never automatically resent. Each receipt EDIT is independently

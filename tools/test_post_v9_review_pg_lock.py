@@ -50,14 +50,14 @@ $remote=['payment_id'=>'pg-review-child',
  'pay_amount'=>'1','actually_paid'=>'1','pay_currency'=>'usdttrc20',
  'outcome_amount'=>'0.98','outcome_currency'=>'usdttrc20'];
 if($mode==='probe'){
- $pre=achbotNpDecisionEligible($db,(int)$a['id'],$remote,'approve');
- $stamp=$pre?achbotNpDecisionSubjectStamp($db,$pre['pay']):null;
+ $pre=achbotGatewayReviewEligible($db,(int)$a['id'],'approve');
+ $stamp=$pre?achbotGatewayReviewSubjectStamp($db,$pre['pay']):null;
  $supports=$pre?achbotSupportsPaymentSubject($db,$pre['pay']):false;
  echo json_encode(['eligible'=>$pre!==null,'stamp'=>$stamp!==null,
    'supports'=>$supports],JSON_THROW_ON_ERROR);
  exit;
 }
-$out=achbotNpDecisionCommit($db,9001,(int)$a['id'],'approve',$remote);
+$out=achbotGatewayReviewCommit($db,9001,(int)$a['id'],'approve');
 echo json_encode($out,JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE);
 '''
 ORIGINAL=pg.Handler.handle_request
@@ -91,7 +91,7 @@ def main():
             '012_shared_provider_storage.sql',
             '016_remove_pasarguard_server_groups.sql',
             '017_shared_plan_changes.sql',
-            '019_payment_review_decisions.sql']:
+            ]:
             sql((ROOT/'migrations/post-v9'/name).read_text())
         sql(shared_storage.connection(2,1,url)+
             "UPDATE server_plans SET provider_group_ids='[2,5]' WHERE id IN (7,8);")
@@ -167,7 +167,7 @@ def main():
             if result.get('status') not in ('stale','unsupported'):
                 raise RuntimeError('changed_financial_or_quote_subject_not_fenced: '+
                     repr((case,result)))
-            if sql("SELECT COUNT(*) FROM payment_review_decisions WHERE pay_row_id=301")!='0':
+            if sql("SELECT COUNT(*) FROM payment_attempts WHERE pay_row_id=301 AND provider_status LIKE 'operator_%'")!='0':
                 raise RuntimeError('remote_drift_committed_unsafe_financial_claim')
             if server.write_count:
                 raise RuntimeError('remote_mutation_occurred_during_review_preflight')

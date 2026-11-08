@@ -4609,8 +4609,7 @@ def main():
 
         # Owner decision integration: execute the REAL private Telegram
         # callback route against the original PHP and disposable MariaDB.
-        # 019 is installed only in this fixture, never in installed Chili.
-        sql(work,env,(ROOT/'migrations/post-v9/019_payment_review_decisions.sql').read_text())
+        # The simplified inbox relies on the existing unique 003 attempt.
         def prepare_owner_case(hash_id, status):
             invoice='owned-'+hash_id+'-invoice'
             child='owned-'+hash_id+'-child'
@@ -4625,14 +4624,14 @@ def main():
                 f"WHERE order_hash='{hash_id}'").strip())
         approve_id=prepare_owner_case('owner-route-approve','confirmed')
         route_args=dict(route='admin_review',get={},actor=9001,chat_id=9001,
-                        callback_data='npDecisionPA_'+str(approve_id))
+                        callback_data='gatewayReview_A_'+str(approve_id))
         before=int(sql(work,env,'SELECT wallet FROM users WHERE userid=1001').strip())
         approved=run_php(work,env,stage,route_args)
         after=int(sql(work,env,'SELECT wallet FROM users WHERE userid=1001').strip())
         if (approved['network_calls'] or after!=before+100 or
             sql(work,env,"SELECT state FROM pays WHERE hash_id='owner-route-approve'").strip()!='paid' or
-            sql(work,env,"SELECT decision,provider_status,state FROM payment_review_decisions "
-                "WHERE attempt_id="+str(approve_id)).strip()!='approve\toperator_attested\tcompleted' or
+            sql(work,env,"SELECT stage,provider_status FROM payment_attempts "
+                "WHERE id="+str(approve_id)).strip()!='done\toperator_fulfilled' or
             not any(e['name']=='editText' for e in approved['events'])):
             raise RuntimeError('Original Owner direct approval callback failed without merchant GET: '+
                                repr((approved['network_calls'],approved['events'][-4:]))[:750])
@@ -4643,15 +4642,15 @@ def main():
             raise RuntimeError('Repeated owner callback re-credited wallet or contacted merchant')
         records.append(dict(case='owner_approve_route_replay_denied_no_credit',
                             pass_=True,external_requests=0))
-        rejected_id=prepare_owner_case('owner-route-reject','sending')
+        rejected_id=prepare_owner_case('owner-route-reject','refunded')
         before_reject=int(sql(work,env,'SELECT wallet FROM users WHERE userid=1001').strip())
         rejected=run_php(work,env,stage,dict(route='admin_review',get={},actor=9001,
-            chat_id=9001,callback_data='npDecisionPR_'+str(rejected_id)))
+            chat_id=9001,callback_data='gatewayReview_R_'+str(rejected_id)))
         if (rejected['network_calls'] or
             int(sql(work,env,'SELECT wallet FROM users WHERE userid=1001').strip())!=before_reject or
             sql(work,env,"SELECT state FROM pays WHERE hash_id='owner-route-reject'").strip()!='declined' or
-            sql(work,env,'SELECT decision,provider_status,state FROM payment_review_decisions '
-                'WHERE attempt_id='+str(rejected_id)).strip()!='reject\toperator_rejected\tcompleted' or
+            sql(work,env,'SELECT stage,provider_status FROM payment_attempts '
+                'WHERE id='+str(rejected_id)).strip()!='done\toperator_rejected' or
             not any(e['name']=='sendMessage' and len(e['args'])>=4 and
                         e['args'][3]==1001 and 'توسط مدیر رد شد' in e['args'][0]
                         for e in rejected['events']) or

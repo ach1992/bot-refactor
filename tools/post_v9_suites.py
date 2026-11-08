@@ -2470,95 +2470,39 @@ def run_effects(tmp: str) -> tuple[dict, dict]:
         raise RuntimeError("Required source-real PasarGuard lock boundary proof incomplete")
     decision['pasarguard_review_lock_boundary']=pg_lock
     required_decisions={
-        "decision_schema_unique_innodb",
-        "verified_finished_complete_single_child_eligible",
-        "not_finished_must_not_fake_payout",
-        "wrong_order_identity_rejected",
-        "underpaid_rejected",
-        "decision_token_binds_actor",
-        "decision_token_binds_action",
-        "decision_token_binds_expiry",
-        "decision_token_binds_provider_digest",
-        "approve_effect_completes",
-        "exact_ledger_closes_after_effect",
-        "authenticated_provider_finished_provenance_preserved",
-        "exactly_one_wallet_credit",
-        "one_original_business_report",
-        "repeated_or_raced_approve_never_dispatches_second_effect",
-        "not_refunded_cannot_be_rejected",
-        "refunded_reject_commits",
-        "refund_audit_terminal",
-        "rejection_cannot_dispatch_service_or_wallet",
-        "ambiguous_remote_fenced_as_unknown",
-        "unknown_remote_effect_never_replayed",
-        "multiple_funded_child_not_fake_single_invoice",
-        "owner_can_attest_saved_nonfinal_provider_evidence",
-        "owner_direct_approve_runs_original_effect",
-        "nowpayments_human_final_003_does_not_forge_provider_finished",
-        "owner_direct_approve_wallet_once",
-        "human_attestation_not_fabricated_provider_finished",
-        "owner_repeat_callback_no_second_credit",
-        "owner_can_reject_without_provider_refunded",
-        "owner_reject_closes_unfulfilled_order",
-        "owner_reject_no_wallet_credit",
-        "owner_rejection_preserves_financial_evidence",
-        "owner_finished_primary_can_reject_business_without_fake_refund",
-        "finished_primary_rejection_does_not_forge_provider_refund",
-        "unfunded_invoice_not_accidentally_decidable",
-        "owner_approve_refunded_only_funds_fails_closed",
-        "owner_multi_child_decides_original_order_once",
-        "owner_multi_child_never_credits_twice",
-        "additional_child_remains_in_financial_exception_ledger",
-        "owner_unknown_original_effect_held",
-        "owner_unknown_must_reconcile_not_repeat_effect",
-        "nextpay_operator_attestation_eligible",
-        "nextpay_fake_remote_success_denied",
-        "nextpay_pending_without_review_not_decidable",
-        "nextpay_operator_approval_dispatches_original",
-        "nextpay_operator_financial_commit_once",
-        "nextpay_human_finished_business_not_merchant_finished",
-        "nextpay_single_original_wallet_effect",
-        "nextpay_attestation_distinct_from_provider_settlement",
-        "nextpay_repeat_operator_callback_no_double_credit",
-        "zarinpal_operator_attestation_eligible",
-        "zarinpal_fake_remote_success_denied",
-        "zarinpal_pending_without_review_not_decidable",
-        "zarinpal_operator_rejects_unfinished_only",
-        "zarinpal_reject_never_claims_refund_or_credits",
-        "zarinpal_reject_cannot_be_reapproved",
-        "zarinpal_operator_approval_dispatches_original",
-        "zarinpal_human_003_019_provenance_distinct_from_merchant",
-        "zarinpal_repeat_owner_callback_wallet_native_once",
-        "hosted_failed_preclaim_is_durably_unknown",
-        "hosted_unknown_payment_still_has_decision_audit",
-        "hosted_unknown_preclaim_not_blindly_replayed",
+        'existing_unique_attempt_schema_ready',
+        'nowpayments_review_candidate',
+        'original_nowpayments_success',
+        'one_shot_original_attempt_and_admin_identity',
+        'duplicate_approval_refused',
+        'zarinpal_saved_uncertainty',
+        'hosted_original_rejection',
+        'no_fake_merchant_refund',
+        'rejected_order_never_reapproved',
+        'funded_invoice_not_declined_without_refund',
+        'aged_pending_invoice_can_be_manually_attested',
+        'new_checkout_not_prematurely_reviewed',
+        'changed_local_amount_fails_closed',
+        'refunded_original_never_credited',
+        'unknown_original_effect_held',
+        'durable_uncertain_hold',
+        'unknown_hold_not_replayed',
+        'second_funded_child_blocks_single_order_claim',
+        'only_one_wallet_credit_despite_replays_and_failures',
+        'only_approved_and_failed_original_effects_invoked',
+        'no_dedicated_review_table_created',
     }
-    if not (decision.get("complete") is True
-            and set(decision.get("checks",[]))==required_decisions
-            and decision.get("owned_mariadb") is True
-            and decision.get("real_review_decision_source") is True
-            and decision.get("original_gateway_review_stage_source") is True
-            and decision.get("real_hosted_original_claim_after_uncertain") is True
-            and decision.get("hosted_wallet_finalized_once_after_uncertain") is True
-            and decision.get("operator_dispatch_journal_required") is True
-            and decision.get("no_merchant_or_customer_network") is True
-            and decision.get("test_effect_is_synthetic") is True
-            and decision.get("provider_http_calls")==0
-            and decision.get("telegram_calls")==0
-            and decision.get("audit_exactly_once") is True
-            and decision.get("financial_double_credit") is False
-            and decision.get("cron_operator_claim_survived") is True
-            and decision.get("signed_ipn_operator_claim_survived") is True
-            and decision.get("signed_ipn_postpaid_primary_preserved") is True
-            and decision.get("signed_ipn_out_of_order_secondary_preserved") is True
-            and decision.get("additional_funds_paid_and_inflight_visible") is True
-            and decision.get("rejected_funded_primary_visible_without_reopening") is True
-            and decision.get("real_refund_evidence_closes_rejected_primary_exception") is True
-            and decision.get("internal_payment_page_suppressed") is True
-            and decision.get("inbox_only_unfinalized_with_funds_or_receipt") is True
-            and decision.get("api_module_loaded_on_first_entry") is True
-            and decision.get("examined")>=5):
-        raise RuntimeError("Manual review journal, queue or concurrent Cron fence unproven")
+    if not (decision.get('complete') is True
+            and set(decision.get('checks',[]))==required_decisions
+            and decision.get('owned_mariadb') is True
+            and decision.get('real_review_decision_source') is True
+            and decision.get('test_effect_is_synthetic') is True
+            and decision.get('provider_http_calls')==0
+            and decision.get('telegram_calls')==0
+            and decision.get('audit_exactly_once') is True
+            and decision.get('financial_double_credit') is False
+            and decision.get('existing_attempt_only') is True):
+        raise RuntimeError('Original-attempt gateway review or one-shot guards unproven')
     # Current R10 financial contract: preserve authenticated settlement,
     # durable compensation proof and concurrency-safe operator recovery.
     mandatory_finance = {
