@@ -19,7 +19,7 @@ from check_post_v9 import (
     owner_gift_policy_negative_controls, owner_r5_proof_mismatches,
 )
 
-FAMILY_FIELDS = {'admin': ('owner_ux_r5', 'owner_r6_notifications', 'owner_r6_financial_alerts'), 'api': ('existing_payment_apis',), 'services': ('marzban', 'purchases', 'webhook_file_configuration', 'telegram_transport_log_privacy', 'optional_cron_runner', 'marzban_service_modifications'), 'wallet': ('unsupported_wallet_preflight', 'wallet_transfer_safety', 'wallet_replay_freshness_and_operation_identity', 'wallet_transfer_generation', 'admin_wallet_adjustment_safety', 'admin_wallet_ux', 'next_payment_ux', 'central_text_catalog', 'copy_audience_and_numeric_source', 'public_bootstrap_privacy', 'public_gateway_privacy', 'service_unit_quote_guards', 'pasarguard_client', 'optional_cleanup'), 'presentation': ('provider_integration', 'currency_settings', 'server_display_settings', 'subscription_presentation', 'simple_server_display', 'financial_subject_preflight', 'catalogue_and_subscription_qr', 'payment_ux_lifecycle', 'payment_browser_feedback', 'checkout_serialization', 'customer_method_serialization'), 'authorization': ('automatic_renewal_ledger', 'payment_readiness_preflight', 'wallet_authorization_freshness', 'latest_review_f1_f4'), 'effects': ('financial_native_route_guards', 'review_decision_idempotency', 'service_effects', 'create_verification_lock_order', 'strict_effect_transport_pin', 'gift_source_enqueue_idempotency', 'direct_admin_gift_verified', 'direct_admin_gift_native', 'owner_gift_policy', 'owner_gift_locks', 'owner_gift_lock_negative_controls', 'owner_gift_policy_negative_controls', 'gift_worker_safe_continuation', 'gift_physical_target_continuity'), 'funding': ('source_only_overlays', 'wallet_paid_create', 'wallet_checkout_routes', 'wallet_callback_framing', 'manual_choice_callback_framing', 'nonpaid_trial_bulk', 'referral_awards', 'referral_postcommit_routes', 'bank_auto_buy_sub', 'bank_recovery_inspection', 'bank_recovery_transport', 'manual_payment_method_isolation', 'manual_standard_real_helper_review_remediation', 'manual_crypto_destination_and_admin_guards', 'shared_payment_ledger_rc4_import', 'agency_state_regression', 'marzban_logical_transfer')}
+FAMILY_FIELDS = {'admin': ('owner_ux_r5', 'owner_r6_notifications', 'owner_r6_financial_alerts'), 'api': ('existing_payment_apis',), 'services': ('marzban', 'purchases', 'webhook_file_configuration', 'telegram_transport_log_privacy', 'optional_cron_runner', 'marzban_service_modifications'), 'wallet': ('unsupported_wallet_preflight', 'wallet_transfer_safety', 'wallet_replay_freshness_and_operation_identity', 'wallet_transfer_generation', 'admin_wallet_adjustment_safety', 'admin_wallet_ux', 'next_payment_ux', 'central_text_catalog', 'copy_audience_and_numeric_source', 'public_bootstrap_privacy', 'public_gateway_privacy', 'service_unit_quote_guards', 'pasarguard_client', 'optional_cleanup'), 'presentation': ('provider_integration', 'currency_settings', 'server_display_settings', 'subscription_presentation', 'simple_server_display', 'financial_subject_preflight', 'catalogue_and_subscription_qr', 'payment_ux_lifecycle', 'payment_browser_feedback', 'checkout_serialization', 'customer_method_serialization'), 'authorization': ('automatic_renewal_ledger', 'payment_readiness_preflight', 'wallet_authorization_freshness', 'latest_review_f1_f4'), 'effects': ('financial_native_route_guards', 'review_decision_idempotency', 'service_effects', 'create_verification_lock_order', 'strict_effect_transport_pin', 'gift_source_enqueue_idempotency', 'direct_admin_gift_verified', 'direct_admin_gift_native', 'owner_gift_policy', 'owner_gift_locks', 'owner_gift_lock_negative_controls', 'owner_gift_policy_negative_controls', 'gift_worker_safe_continuation', 'gift_physical_target_continuity'), 'funding': ('source_only_overlays', 'wallet_paid_create', 'wallet_original_recovery', 'wallet_checkout_routes', 'wallet_callback_framing', 'manual_choice_callback_framing', 'nonpaid_trial_bulk', 'referral_awards', 'referral_postcommit_routes', 'bank_auto_buy_sub', 'bank_recovery_inspection', 'bank_recovery_transport', 'manual_payment_method_isolation', 'manual_standard_real_helper_review_remediation', 'manual_crypto_destination_and_admin_guards', 'shared_payment_ledger_rc4_import', 'agency_state_regression', 'marzban_logical_transfer')}
 
 SOURCE_UPDATES = {'admin': (), 'api': (), 'services': ('unified_service_management',), 'wallet': (), 'presentation': (), 'authorization': (), 'effects': (), 'funding': ('current_additive_migration_separately_tested',)}
 
@@ -3473,6 +3473,35 @@ def run_funding(tmp: str) -> tuple[dict, dict]:
             wallet_create.get('provider_real_requests')==0 and
             wallet_create.get('production_mutations')==0):
         raise RuntimeError('Wallet creation replay/debit safety incomplete')
+    recovery_path=Path(tmp)/"wallet-original-recovery.json"
+    wallet_recovery_run=subprocess.run(
+        ["python3",str(ROOT/"tools/test_post_v9_wallet_recovery.py"),
+         "--report",str(recovery_path)],
+        cwd=ROOT,capture_output=True,text=True,timeout=170)
+    if wallet_recovery_run.returncode!=0:
+        raise RuntimeError("Original wallet recovery native acceptance failed:\n"
+            +wallet_recovery_run.stderr[-5000:])
+    wallet_recovery=json.loads(recovery_path.read_text())
+    required_wallet_recovery={
+        'lost_native_response_reuses_original_verified_account_without_post_or_second_debit',
+        'repeated_owner_resume_never_relinks_or_resends',
+        'sealed_wallet_packet_passes_original_delivery_integrity_check',
+        'verified_native_unlinked_finalizes_without_create',
+        'foreign_native_marker_keeps_original_wallet_hold_for_review',
+        'exact_original_native_proof_can_complete_after_mismatch',
+        'telegram_unknown_is_durable_and_not_automatically_resent',
+        'missing_original_bulk_ordinal_cannot_invoke_new_post',
+        'tampered_wallet_capacity_hold_fails_before_remote_get',
+        'foreign_provider_attempt_cannot_be_wallet_recovery_proof',
+    }
+    if not (wallet_recovery.get('complete') is True and
+            set(wallet_recovery.get('scenarios',[]))==required_wallet_recovery and
+            wallet_recovery.get('source_real') is True and
+            wallet_recovery.get('php85_required') is True and
+            wallet_recovery.get('disposable_mariadb') is True and
+            wallet_recovery.get('original_native_post_replays')==0 and
+            wallet_recovery.get('original_wallet_duplicate_debits')==0):
+        raise RuntimeError('Original wallet source-real recovery evidence incomplete')
     nonpaid_path=Path(tmp)/"trial-bulk-native.json"
     native_nonpaid=subprocess.run(
         ["python3",str(ROOT/"tools/test_post_v9_nonpaid_routes.py"),
@@ -4281,7 +4310,7 @@ def run_funding(tmp: str) -> tuple[dict, dict]:
             and swap.get("synthetic_private_files_untouched")):
         raise RuntimeError("Physical post-V9/V9 source-only overlay or private-state check failed")
 
-    return {'source_only_overlays': swap, 'wallet_paid_create': wallet_create, 'wallet_checkout_routes': wallet_checkout, 'wallet_callback_framing': wallet_frame, 'manual_choice_callback_framing': manual_frame, 'nonpaid_trial_bulk': nonpaid, 'referral_awards': referral, 'referral_postcommit_routes': route_award, 'bank_auto_buy_sub': bank_buy, 'bank_recovery_inspection': recovery, 'bank_recovery_transport': transport, 'manual_payment_method_isolation': manual, 'manual_standard_real_helper_review_remediation': integrity, 'manual_crypto_destination_and_admin_guards': crypto_guard, 'shared_payment_ledger_rc4_import': migration, 'agency_state_regression': agency, 'marzban_logical_transfer': logical}, result
+    return {'source_only_overlays': swap, 'wallet_paid_create': wallet_create, 'wallet_original_recovery': wallet_recovery, 'wallet_checkout_routes': wallet_checkout, 'wallet_callback_framing': wallet_frame, 'manual_choice_callback_framing': manual_frame, 'nonpaid_trial_bulk': nonpaid, 'referral_awards': referral, 'referral_postcommit_routes': route_award, 'bank_auto_buy_sub': bank_buy, 'bank_recovery_inspection': recovery, 'bank_recovery_transport': transport, 'manual_payment_method_isolation': manual, 'manual_standard_real_helper_review_remediation': integrity, 'manual_crypto_destination_and_admin_guards': crypto_guard, 'shared_payment_ledger_rc4_import': migration, 'agency_state_regression': agency, 'marzban_logical_transfer': logical}, result
 
 
 RUNNERS = {

@@ -386,3 +386,36 @@ localhost HTTP and negative identity/entitlement cases.
 remediation review, migration audit/backup and TESTED restore, and separate
 Owner authorization succeed.** Older source-only 018/019 migration plans
 remain forward-only and do not backfill historical untracked notifications.
+
+## 2026-11-08 — Original-wallet committed-native recovery (source only)
+
+An Owner-private `serviceRecoveryCase_<pay>` page now offers a wallet continuation
+**only** for a `processing_wallet` BUY_SUB that still has its original,
+committed `wallet_hold`, full and contiguous CREATE-effect manifest, and **no**
+previously linked orders or competing 003 payment attempt. There is no retry
+from a missing CREATE ordinal, unknown funding, a partly linked batch, or a
+payment with changed native/account pins. Such cases stay in the service
+workbench for separate, evidence-based operator reconciliation.
+
+The `walletBuyResume_<pay>` callback checks Owner/private `review` authority,
+then performs one exact original native GET per stored effect (Marzban or
+PasarGuard), never POST. A new `existingOnly` flag explicitly prevents the
+ordinary paid-continuation helper from falling back to CREATE after an
+unexpectedly missing ordinal. Only matching, still-valid native account
+identity/entitlement can advance a `dispatching` effect to `verified`.
+
+When **all** original ordinals are independently verified, one InnoDB COMMIT
+links the original native effects to new local order rows, records a
+`provider=wallet` **local debit provenance** (not merchant settlement) on the
+existing 003 table, encrypts original immutable 018 delivery packets for
+**all** ordinals, and changes `pays` from `processing_wallet` to
+`paid_with_wallet`. It does not debit the wallet, reserve capacity, re-create
+accounts or send Telegram inside that transaction. After COMMIT it dispatches
+**only pending** packets. Unknown/dispatching deliveries remain held; Owner
+uses the existing warned Delivery Recovery flow for deliberate resends.
+
+This is an additive source change with no SQL migration. It does not pretend
+that unbackfilled historical wallet orders, missing native operations, partial
+locally linked batches, unstarted held debit, merchant-hosted uncertainty or
+installed Chili have been accepted. Do not deploy or run live recovery without
+separate target approval, compatible 003/007/018 audit and restore-tested backup.

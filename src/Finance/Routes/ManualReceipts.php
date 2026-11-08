@@ -422,6 +422,50 @@ if (preg_match('/^accept([A-Za-z0-9_-]{1,50})$/D',
     }
 }
 
+// Recover a previously debited WALLET purchase only from the complete original
+// native-effect manifest. This Owner-private action cannot start a new CREATE.
+$walletResume=[];
+if (preg_match('/^walletBuyResume_([1-9][0-9]{0,9})$/D',
+        (string)$data,$walletResume)===1) {
+    if ((int)($admin??0)<=0 || (int)$from_id!==(int)$admin ||
+        (int)($chat_id??0)!==(int)$admin ||
+        !achbotAdminCan('review',(int)$from_id)) {
+        achbotAdminDeny();return;
+    }
+    require_once __DIR__.'/../PaidAccountRecovery.php';
+    $id=(int)$walletResume[1];$committed=false;$summary=null;
+    try {
+        $progress=achbotResumeWalletBuy($connection,$id,$botState,$buttonValues,
+            (string)$botUrl);
+        $committed=($progress['committed']??false)===true;
+        if ($committed) $summary=achbotDeliveryAggregate($connection,$id);
+    } catch (Throwable $error) {
+        // The original native GET may have verified a held effect locally,
+        // but no new payment, capacity claim or native CREATE is authorized.
+        $reason=achbotEffectSafeFailure($error);
+        error_log('achbot_wallet_recovery_deferred pay_id='.$id.
+            ' reason='.$reason['reason'].' cause='.$reason['class']);
+    }
+    $body=$committed?achbotMessage('wallet_buy_recovery.committed'):
+        achbotMessage('wallet_buy_recovery.unavailable');
+    if ($committed && $summary) $body.="\n".achbotMessageHtml(
+        'wallet_buy_recovery.delivery_status',[
+            'total'=>$summary['total'],'ack'=>$summary['ack'],
+            'pending'=>$summary['pending'],'unknown'=>$summary['unknown'],
+            'dispatching'=>$summary['dispatching']]);
+    $buttons=[];
+    if ($committed) $buttons[]=[['text'=>achbotMessage('delivery_recovery.back'),
+        'callback_data'=>'deliveryCase_'.$id]];
+    $buttons[]=[['text'=>achbotMessage('service_workbench.back'),
+        'callback_data'=>'serviceRecoveryCase_'.$id]];
+    $keyboard=json_encode(['inline_keyboard'=>$buttons],JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
+    answerCallbackQuery($callbackId,achbotMessage('service_workbench.checked'));
+    $reply=editText($message_id,$body,$keyboard,'HTML',(int)$admin);
+    if (!is_object($reply) || ($reply->ok??false)!==true)
+        sendMessage($body,$keyboard,'HTML',(int)$admin);
+    return;
+}
+
 // Paid remote/renewal uncertainty is not an unpaid transaction. Keep it in
 // a separate, owner-initiated read-only recovery queue. Never offer a second
 // financial approve/decline or dispatch a new native CREATE from this UI.
@@ -523,6 +567,14 @@ if (preg_match('/^serviceRecovery(Inbox|Case)(?:_([1-9][0-9]{0,17}))?$/D',
                 // native effect; opening the workbench alone never replays it.
                 $buttons[]=[['text'=>achbotMessage('service_recovery_action.resume_purchase'),
                     'callback_data'=>'apiEvidenceResume_'.$id]];
+            }
+            if ($pay['type']==='BUY_SUB' && $pay['state']==='processing_wallet') {
+                require_once __DIR__.'/../PaidAccountRecovery.php';
+                if (achbotWalletBuyRecoverable($connection,$id)) {
+                    $buttons[]=[['text'=>achbotMessage('wallet_buy_recovery.resume'),
+                        'callback_data'=>'walletBuyResume_'.$id]];
+                    $body.="\n".achbotMessage('wallet_buy_recovery.warning');
+                }
             }
             if ($canResume) {
                 // The existing accept handler is the only financial/native

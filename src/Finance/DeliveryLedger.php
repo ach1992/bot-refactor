@@ -186,6 +186,79 @@ function achbotDeliveryInsertManualBuyLocked(mysqli $db,array $pay,array $attemp
         (string)$effect['operation_id'],(string)$effect['target_key'],$packet);
 }
 
+/**
+ * Locally debited wallet BUY_SUB proof, with no merchant-attestation claim.
+ * The original ordinal-0 hold was committed with wallet debit and capacity;
+ * every CREATE is an already-dispatched, exactly pinned operation.
+ */
+function achbotDeliveryWalletBuyDigest(
+    array $pay,array $attempt,array $effect,array $hold,int $ordinal
+): ?string {
+    $payId=(int)($pay['id']??0);$count=max(1,(int)($pay['agent_count']??0));
+    $price=(int)($pay['price']??0);
+    if ($payId<=0 || $price<=0 || (int)($pay['agent_count']??0)<0 ||
+        ($pay['type']??'')!=='BUY_SUB' ||
+        !in_array((string)($pay['state']??''),['processing_wallet','paid_with_wallet'],true) ||
+        (int)($pay['user_id']??0)<=0 ||
+        (int)($attempt['pay_row_id']??0)!==$payId ||
+        ($attempt['provider']??'')!=='wallet' ||
+        ($attempt['order_hash']??null)!==($pay['hash_id']??null) ||
+        ($attempt['quote_currency']??null)!=='toman' ||
+        ($attempt['quote_amount']??null)!==sprintf('%d.00000000',$price) ||
+        (int)($attempt['local_amount_toman']??-1)!==$price ||
+        ($attempt['stage']??null)!=='completed' ||
+        ($attempt['provider_status']??null)!=='wallet_debited' ||
+        ($attempt['provider_reference']??null)!==null ||
+        ($attempt['payment_id']??null)!==null ||
+        (int)($hold['pay_row_id']??0)!==$payId ||
+        ($hold['effect_kind']??null)!=='wallet_hold' ||
+        (int)($hold['ordinal']??-1)!==0 ||
+        ($hold['state']??null)!=='consumed' ||
+        (int)($hold['reserved_count']??0)!==$count ||
+        $hold['order_id']!==null ||
+        (int)($effect['pay_row_id']??0)!==$payId ||
+        ($effect['effect_kind']??null)!=='create' ||
+        (int)($effect['ordinal']??0)!==$ordinal ||
+        $ordinal<=0 || $ordinal>$count ||
+        !in_array((string)($effect['state']??''),['verified','local_recorded'],true) ||
+        (int)($effect['reserved_count']??-1)!==0 ||
+        (int)($effect['target_server_id']??0)!==(int)($pay['server_id']??0) ||
+        (int)($effect['plan_id']??0)!==(int)($pay['plan_id']??0) ||
+        (int)($hold['target_server_id']??0)!==(int)($effect['target_server_id']??0) ||
+        (int)($hold['plan_id']??0)!==(int)($effect['plan_id']??0) ||
+        $hold['target_key']!==$effect['target_key'] ||
+        $hold['target_group_id']!==$effect['target_group_id'] ||
+        $hold['endpoint_sha256']!==$effect['endpoint_sha256'] ||
+        (int)($effect['requested_expire']??0)<=0 ||
+        (int)($effect['requested_bytes']??0)<=0 ||
+        (int)($hold['requested_expire']??-1)!==0 ||
+        (int)($hold['requested_bytes']??-1)!==0) return null;
+    return hash('sha256',json_encode([
+        'wallet-buy:v1',achbotPaymentEvidencePayFingerprint($pay),
+        achbotPaymentEvidenceQuoteFingerprint($attempt),$ordinal,$count,
+        (string)$hold['id'],(string)$hold['operation_id'],
+        (string)$hold['request_sha256'],(string)$hold['target_key'],
+        (string)$effect['id'],(string)$effect['operation_id'],
+        (string)$effect['request_sha256'],(string)$effect['endpoint_sha256'],
+        (string)$effect['remote_username'],(string)$effect['requested_expire'],
+        (string)$effect['requested_bytes']
+    ],JSON_THROW_ON_ERROR));
+}
+
+/** Same transaction as the original wallet's complete local-order finality. */
+function achbotDeliveryInsertWalletBuyLocked(
+    mysqli $db,array $pay,array $attempt,array $effect,array $hold,
+    int $ordinal,int $orderId,array $packet
+): void {
+    $digest=achbotDeliveryWalletBuyDigest($pay,$attempt,$effect,$hold,$ordinal);
+    if ($digest===null || $orderId<=0)
+        throw new RuntimeException('delivery_wallet_original_proof_invalid');
+    $packet['kind']='qr';
+    achbotDeliveryInsertLocked($db,$pay,$attempt,$ordinal,(int)$effect['id'],$orderId,
+        (int)$effect['target_server_id'],$digest,(string)$effect['operation_id'],
+        (string)$effect['target_key'],$packet);
+}
+
 /** For wallet / API service edit, invoked under the SAME terminal transaction. */
 function achbotDeliveryInsertTextLocked(mysqli $db,array $pay,array $attempt,string $text,
                                         string $mode,int $orderId,int $serverId,
@@ -228,7 +301,8 @@ function achbotDeliveryValidateLocked(mysqli $db,array $pay,array $d): ?array {
         if (!is_string($body[$k]??null) || !hash_equals($v,$body[$k])) return null;
     if ($effectId>0) {
         $q=$db->prepare('SELECT id,pay_row_id,ordinal,state,order_id,target_server_id,'.
-            'operation_id,target_key,request_sha256,endpoint_sha256,remote_username '.
+            'operation_id,target_key,request_sha256,endpoint_sha256,remote_username,'.
+              'effect_kind,plan_id,requested_expire,requested_bytes,reserved_count '.
             'FROM service_effects WHERE id=? FOR UPDATE');
         $q->bind_param('i',$effectId);$q->execute();$effect=$q->get_result()->fetch_assoc();$q->close();
         if (!$effect || (int)$effect['pay_row_id']!==$id ||
@@ -237,7 +311,16 @@ function achbotDeliveryValidateLocked(mysqli $db,array $pay,array $d): ?array {
             !hash_equals((string)$d['native_operation'],(string)$effect['operation_id']) ||
             !hash_equals((string)$d['native_target_key'],(string)$effect['target_key']))
             return null;
-        if (in_array((string)$attempt['provider'],
+        if (($attempt['provider']??null)==='wallet') {
+            $holdQuery=$db->prepare("SELECT * FROM service_effects WHERE pay_row_id=?
+                AND effect_kind='wallet_hold' AND ordinal=0 FOR UPDATE");
+            $holdQuery->bind_param('i',$id);$holdQuery->execute();
+            $hold=$holdQuery->get_result()->fetch_assoc();$holdQuery->close();
+            $walletDigest=$hold?achbotDeliveryWalletBuyDigest(
+                $pay,$attempt,$effect,$hold,$ordinal):null;
+            if ($walletDigest===null ||
+                !hash_equals((string)$d['source_digest'],$walletDigest)) return null;
+        } elseif (in_array((string)$attempt['provider'],
                 ['bank_transfer','gift_card','manual_usdt','manual_trx'],true) &&
             (int)($pay['approved_by']??0)>0) {
             if (!achbotDeliveryManualReceiptLocked($db,$pay,$attempt) ||
