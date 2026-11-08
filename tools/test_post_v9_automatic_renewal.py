@@ -977,6 +977,12 @@ def main():
             '<?php echo "RECONCILIATION_EXECUTED";')
         (wrapper/'src/Finance/PaymentLifecycle.php').write_text(
             '<?php function achbotPayUxMaintain($db){echo "PAYMENT_MAINTENANCE_EXECUTED";}')
+        # The real services worker now also runs the independent sealed,
+        # first-attempt-only delivery maintenance after payment maintenance.
+        # This isolated Cron admission test replaces only external includes
+        # with sentinels; real ledger/SQL behavior is tested by bank fixtures.
+        (wrapper/'src/Finance/DeliveryLedger.php').write_text(
+            '<?php function achbotDeliveryMaintainPending($db){echo "DELIVERY_MAINTENANCE_EXECUTED";}')
         lock_dir=w/'canonical-cron-private-locks';lock_dir.mkdir(mode=0o700)
         lock_path=lock_dir/('achbot-cron-'+hashlib.sha256(str(wrapper.resolve()).encode()).hexdigest()[:24]+'.lock')
         with lock_path.open('x+b') as lease:
@@ -995,8 +1001,9 @@ def main():
                         'php',*canonical_cron.PHP_CLI_OPTS,str(entrypoint),'--job=services'],
                     cwd=cron_cwd,env={**os.environ,'ACHBOT_CRON_LOCK_DIR':str(lock_dir)},
                     pass_fds=(inherited.fileno(),),capture_output=True,timeout=10)
-        assert proc.returncode==0 and proc.stdout==b'RECONCILIATION_EXECUTEDPAYMENT_MAINTENANCE_EXECUTED',(
-            proc.returncode,proc.stdout,proc.stderr)
+        assert proc.returncode==0 and proc.stdout==(
+            b'RECONCILIATION_EXECUTEDPAYMENT_MAINTENANCE_EXECUTED'
+            b'DELIVERY_MAINTENANCE_EXECUTED'),(proc.returncode,proc.stdout,proc.stderr)
         assert b'achbot_warning_cleanup_deferred' in proc.stderr
         cases.append('f1_real_cron_entrypoint_warning_exception_cannot_skip_renewal_reconciliation')
 

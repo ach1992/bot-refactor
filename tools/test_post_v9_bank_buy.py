@@ -506,11 +506,17 @@ def check():
         assert no_retry['result']['checked']==0 and not no_retry['events'],no_retry
         cases.append('cron_ambiguous_first_telegram_send_never_automatically_replayed')
 
+        # Each real invoice issuance updates the fixture's physical server
+        # remark. Complete one invoice's pinned first CREATE before issuing
+        # the next so the test does not introduce an unrelated target drift.
         broken=seed(work,env,'bankcrondeliverybroken')
+        assert run(work,env,driver,op='claim',pay=broken)['result'] is True
+        created_broken=run(work,env,driver,op='provision_claimed',pay=broken)
+        assert created_broken['result']['committed'],created_broken
         follower=seed(work,env,'bankcrondeliveryfollower')
-        for pay in (broken,follower):
-            assert run(work,env,driver,op='claim',pay=pay)['result'] is True
-            assert run(work,env,driver,op='provision_claimed',pay=pay)['result']['committed']
+        assert run(work,env,driver,op='claim',pay=follower)['result'] is True
+        created_follower=run(work,env,driver,op='provision_claimed',pay=follower)
+        assert created_follower['result']['committed'],created_follower
         query(work,env,f"UPDATE payment_delivery_intents SET sealed_payload=CONCAT('x',sealed_payload) WHERE pay_row_id={broken}")
         query(work,env,f"UPDATE payment_delivery_intents SET updated_at=NOW()-INTERVAL 4 MINUTE WHERE pay_row_id={broken}")
         query(work,env,f"UPDATE payment_delivery_intents SET updated_at=NOW()-INTERVAL 3 MINUTE WHERE pay_row_id={follower}")
