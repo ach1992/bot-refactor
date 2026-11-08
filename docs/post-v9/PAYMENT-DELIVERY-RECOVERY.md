@@ -396,7 +396,8 @@ no competing 003 payment attempt. Original CREATE lines can be either
 unlinked (`dispatching`/`verified`) or already linked to genuine local orders
 (`local_recorded`). Linked orders must still match the exact customer,
 plan, server, account, allocated price, order status and PasarGuard 012
-incarnation. Missing CREATE ordinals, forged/conflicting linked orders,
+incarnation **and the current server-to-original physical panel binding**.
+Missing CREATE ordinals, forged/conflicting linked orders,
 unknown funding and changed native/account pins remain in the workbench for
 separate, evidence-based operator reconciliation.
 
@@ -416,9 +417,14 @@ creates and links **only** missing local orders, records one `provider=wallet`
 original immutable 018 customer packets for **all** ordinals, and transitions
 `pays` from `processing_wallet` to `paid_with_wallet`. Original linked
 order data and effect/order IDs are pinned before remote GET and rechecked
-under SQL locks at finalization. The recovery never debits the wallet, reserves
-capacity, re-creates accounts or sends Telegram inside the transaction. After
-COMMIT it dispatches **only pending** packets. Unknown/dispatching delivery
+under SQL locks at finalization. For previously linked PasarGuard accounts,
+the original 012 mutation key, snapshot, state and evidence-update generation
+are also pinned: a separately completed revoke/edit or unresolved native
+mutation after the GET cannot finalize a stale customer packet. Current
+server-to-panel identity is checked before GET and again using current
+server_config data within the final locked transaction. The recovery never
+debits the wallet, reserves capacity, re-creates accounts or sends Telegram
+inside the transaction. After COMMIT it dispatches **only pending** packets. Unknown/dispatching delivery
 remains held; Owner uses the warned Delivery Recovery flow for intentional
 resends, never an automatic replay.
 

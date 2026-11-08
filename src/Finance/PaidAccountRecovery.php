@@ -262,6 +262,35 @@ function achbotWalletBuyLinkedOrder(
             $account['remote_username']!==$effect['remote_username'] ||
             $account['operation_marker']!=='achbot:v1:'.$effect['operation_id'] ||
             $account['state']!=='linked') return null;
+        try {
+            // An original order still needs to be manageable through its
+            // CURRENT logical server. Historic 012 evidence alone does not
+            // prove the server still points at the original physical panel.
+            // The final snapshot first locks server_config in its pay join,
+            // so this same check is stable across the terminal transaction.
+            $panel=achbotPgServerPanel($db,(int)$order['server_id']);
+            // Use an explicit current/locking read of this exact config;
+            // a preexisting REPEATABLE READ view must not conceal a
+            // connection change seen after the final payment row lock.
+            $q=$db->prepare('SELECT provider_connection_id,provider_instance_key,panel_url
+                FROM server_config WHERE id=?'.($lock?' FOR UPDATE':''));
+            $serverId=(int)$order['server_id'];
+            $q->bind_param('i',$serverId);$q->execute();
+            $current=$q->get_result()->fetch_assoc();$q->close();
+            if (!$current ||
+                (int)$panel['id']!==(int)$account['panel_id'] ||
+                $panel['instance_key']!==$account['instance_key'] ||
+                !hash_equals((string)$account['endpoint_sha256'],
+                    hash('sha256',rtrim((string)$panel['api_url'],'/'))) ||
+                (int)$current['provider_connection_id']!==(int)$account['panel_id'] ||
+                $current['provider_instance_key']!==$account['instance_key'] ||
+                !hash_equals((string)$account['endpoint_sha256'],
+                    hash('sha256',rtrim((string)$current['panel_url'],'/'))))
+                return null;
+            // A pending or malformed native mutation cannot be treated as
+            // stable original delivery evidence.
+            achbotPgMutationHistory($account);
+        } catch (Throwable $ignored) {return null;}
     }
     return $order;
 }
@@ -362,6 +391,19 @@ function achbotWalletBuyRecoveryPin(array $snapshot): string {
         $orderPins[$ordinal]=[];
         foreach ($orderKeys as $key)
             $orderPins[$ordinal][$key]=(string)($order[$key]??'');
+        if ($pay['panel_type']==='pasarguard') {
+            // These are the EXISTING 012 mutation-fence generations.
+            // Native revoke/edit can finish and return to state=linked
+            // after the remote GET, yet invalidate the rendered packet.
+            // Pin only already-linked accounts: verifying a previously
+            // unlinked CREATE legitimately changes provider evidence.
+            $orderPins[$ordinal]['provider_mutation']=[
+                'state'=>$line['provider_state'],
+                'key'=>$line['provider_mutation_key'],
+                'snapshot'=>$line['provider_mutation_snapshot'],
+                'updated_at'=>$line['provider_evidence_updated_at']
+            ];
+        }
     }
     return hash('sha256',json_encode([
         'payment'=>achbotPaymentEvidencePayFingerprint($pay),

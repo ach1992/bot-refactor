@@ -11,6 +11,7 @@ import contextlib
 import copy
 import json
 import subprocess
+import time
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from http.server import ThreadingHTTPServer
@@ -33,6 +34,7 @@ error_reporting(E_ALL & ~E_DEPRECATED);
 set_error_handler(static function($n,$m) {throw new ErrorException($m,0,$n);});
 $_SERVER['SCRIPT_FILENAME']=__FILE__;
 $root=$argv[1];$spec=json_decode($argv[4],true,512,JSON_THROW_ON_ERROR);
+$GLOBALS['spec']=$spec;
 define('ACHBOT_PG_TEST_LOOPBACK',true);
 $connection=new mysqli('localhost','root','',$argv[3],0,$argv[2]);
 $connection->set_charset('utf8mb4');
@@ -59,6 +61,20 @@ function getMarzbanUser(...$args) {throw new RuntimeException('unexpected_unpinn
 function buildLinksAndSendQr(...$args) {
     if (($args[24]??null)!==false) throw new RuntimeException('premature_delivery');
     $GLOBALS['events'][]=['event'=>'RENDER','uid'=>$args[16]];
+    // A bounded fixture-only barrier AFTER the exact native GET/links,
+    // BEFORE the final payment/effect/012/018 locking transaction.
+    $pause=$GLOBALS['spec']['pause_after_readback']??null;
+    if (is_string($pause) && $pause!=='' && !($GLOBALS['pause_done']??false)) {
+        $GLOBALS['pause_done']=true;
+        if (file_put_contents($pause.'.ready','observed')===false)
+            throw new RuntimeException('fixture_pause_marker_failed');
+        $released=false;
+        for ($i=0;$i<160;$i++) {
+            if (is_file($pause.'.release')) {$released=true;break;}
+            usleep(50000);
+        }
+        if (!$released) throw new RuntimeException('fixture_pause_timeout');
+    }
     return ['fixture-token','["vless://fixture.invalid"]','fixture-uuid',
         'مشخصات اشتراک','{}','vless://fixture.invalid'];
 }
@@ -145,6 +161,25 @@ echo json_encode(['result'=>$result,'error'=>$error,'state'=>$state,'orders'=>$o
     JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE);
 '''
 
+
+
+# A separately authorized fixture operator exercises the ACTUAL PasarGuard
+# action adapter and its 012 mutation journal, not direct SQL state forgery.
+NATIVE_MUTATION=r"""<?php
+error_reporting(E_ALL & ~E_DEPRECATED);
+set_error_handler(static function($n,$m){throw new ErrorException($m,0,$n);});
+$_SERVER['SCRIPT_FILENAME']=__FILE__;
+define('ACHBOT_PG_TEST_LOOPBACK',true);
+$root=$argv[1];$spec=json_decode($argv[4],true,64,JSON_THROW_ON_ERROR);
+$connection=new mysqli('localhost','root','',$argv[3],0,$argv[2]);
+$connection->set_charset('utf8mb4');
+$GLOBALS['update']=(object)['update_id'=>777331];
+require_once $root.'/src/Panel/ProviderRuntime.php';
+$result=achbotProviderRevoke((int)$spec['server_id'],(string)$spec['remark']);
+echo json_encode(['success'=>($result->success??false)===true,
+    'verified'=>($result->verified??false)===true,
+    'reason'=>$result->reason??null],JSON_THROW_ON_ERROR);
+"""
 
 # This is the ACTUAL source wallet claim + actual 007 CREATE implementation.
 # The simulated failure occurs only after every native CREATE was committed,
@@ -249,6 +284,19 @@ class WalletPanel(pg.Handler):
                 server.write_count+=1
                 status=201;value=user
             self.reply(status,value);return
+        if self.command=='POST' and path.startswith('/api/user/by-id/') and path.endswith('/revoke_sub'):
+            # Only this permitted native mutation may occur during a recovery
+            # fixture. New native CREATE is still disallowed.
+            server.trace.append(('REVOKE',path,None))
+            assert self.headers.get('X-Api-Key')=='fixture-private-key'
+            native_id=int(path.split('/by-id/',1)[1].split('/')[0])
+            user=next((u for u in server.users.values() if u['id']==native_id),None)
+            if user is None:
+                self.reply(404,{'detail':'no such user'});return
+            user['proxy_settings']={'vless':{'id':'fixture-revoked-native-identity'}}
+            user['subscription_url']='https://sub.example.invalid/after-revoke'
+            server.write_count+=1
+            self.reply(200,copy.deepcopy(user));return
         if self.command=='GET' and (path.startswith('/api/user/by-username/') or
                                     path.startswith('/api/user/by-id/')):
             server.trace.append(('GET',path,None))
@@ -532,8 +580,39 @@ def check_pasarguard_and_bulk():
                 for i in range(1,count_value+1)],(label,lines(pay))
             clean_recovery()
             return pay
+        mutation=work/'wallet-pg-native-mutation.php'
+        mutation.write_text(NATIVE_MUTATION)
+        def native_revoke(pay):
+            name=f'walletoriginal_{pay}_1'
+            proc=subprocess.run(['php','-n','-d','extension=mysqlnd',
+                '-d','extension=mysqli','-d','extension=curl','-d','extension=ctype',
+                '-d','disable_functions=exec,shell_exec,system,passthru,popen,proc_open,mail',
+                str(mutation),str(ROOT),str(work/'mysql.sock'),DB,
+                json.dumps({'server_id':2,'remark':name})],cwd=work,env=env,
+                capture_output=True,text=True,timeout=25)
+            assert proc.returncode==0,(proc.stdout,proc.stderr)
+            outcome=json.loads(proc.stdout)
+            assert outcome['success'] and outcome['verified'],(outcome,proc.stderr)
+            return outcome
         def run(pay,**kwargs):
             return recover(work,env,driver,pg_native=True,pay=pay,**kwargs)
+        def after_readback(pay,action):
+            # Recovery's first pinned 012 native read and packet are already
+            # complete. A DIFFERENT PHP process then commits a provider
+            # mutation or configuration change before recovery's final lock.
+            barrier=work/f'wallet-pg-readback-{pay}'
+            with ThreadPoolExecutor(max_workers=1) as pool:
+                future=pool.submit(lambda:run(pay,pause_after_readback=str(barrier)))
+                limit=time.monotonic()+12
+                while not (work/f'wallet-pg-readback-{pay}.ready').is_file():
+                    if future.done(): raise AssertionError(('recovery_never_paused',future.result()))
+                    if time.monotonic()>=limit:raise AssertionError('fixture_readback_barrier_timeout')
+                    time.sleep(.03)
+                try:
+                    action()
+                finally:
+                    (work/f'wallet-pg-readback-{pay}.release').write_text('continue')
+                return future.result(timeout=40)
         def check_terminal(pay,count_value):
             assert sql(work,env,f'SELECT state FROM pays WHERE id={pay}')=='paid_with_wallet'
             assert count('orders_list',pay)==count_value and physical_orders(pay)==count_value
@@ -632,6 +711,71 @@ def check_pasarguard_and_bulk():
         repeated=run(pay)
         assert repeated['error']=='wallet_recovery_manifest_unavailable' and not repeated['events'],repeated
         scenarios.append('pg_all_already_linked_original_orders_finalize_without_reorder_or_unknown_resend')
+
+        # REQUIRED-1: preserve the old physical panel on an independent
+        # logical server, reassign the purchase server to a second valid
+        # PasarGuard incarnation (not merely an invalid/missing panel id).
+        sql(work,env,"INSERT INTO server_info "
+            "(id,title,ucount,remark,flag,active,state) "
+            "VALUES(3,'Preserved original PG panel',10,'pg-old','',1,1);"
+            +provider_storage.connection(3,1,url))
+        def rebind_old():
+            sql(work,env,provider_storage.connection(2,1,url))
+        def rebind_new():
+            sql(work,env,provider_storage.connection(2,66,url,instance='e'*32))
+        pay=seed('pg_wallet_all_linked_physical_drift',2,link_prefix=2)
+        rebind_new()
+        assert run(pay,op='eligible')['result'] is False
+        blocked=run(pay)
+        assert blocked['error']=='wallet_recovery_manifest_unavailable' and not blocked['events'],blocked
+        assert blocked['orders']==2 and blocked['state']=='processing_wallet'
+        assert count('payment_attempts',pay)==0 and count('payment_delivery_intents',pay)==0
+        assert balances()==(49900,8) and not server.trace
+        rebind_old()
+        restored=run(pay)
+        assert restored['error'] is None and restored['orders']==2,restored
+        check_terminal(pay,2)
+        scenarios.append('pg_all_linked_current_server_physical_rebind_blocks_before_get_and_recovers_after_restore')
+
+        pay=seed('pg_wallet_final_physical_drift',2,link_prefix=2)
+        blocked=after_readback(pay,rebind_new)
+        assert blocked['error']=='wallet_recovery_identity_changed' and not blocked['delivery'],blocked
+        assert blocked['state']=='processing_wallet' and blocked['orders']==2
+        assert count('payment_attempts',pay)==0 and count('payment_delivery_intents',pay)==0
+        assert balances()==(49900,8) and not any(ev['event']=='TELEGRAM' for ev in blocked['events'])
+        assert not any(m=='POST' for m,_ in native_trace())
+        rebind_old()
+        stable=run(pay)
+        assert stable['error'] is None and stable['orders']==2,stable
+        check_terminal(pay,2)
+        scenarios.append('pg_current_server_physical_rebind_after_native_get_cannot_commit')
+
+        # REQUIRED-2: the real provider action adapter commits a revoke
+        # through the same 012 mutation claim/fence/finish as production,
+        # on a SEPARATE PHP connection between native GET and SQL COMMIT.
+        pay=seed('pg_wallet_revoke_after_read',1,link_prefix=1)
+        before=sql(work,env,'SELECT provider_mutation_key FROM service_effects '
+            f"WHERE pay_row_id={pay} AND effect_kind='create'")
+        assert before=='NULL',before
+        blocked=after_readback(pay,lambda:native_revoke(pay))
+        assert blocked['error']=='wallet_recovery_identity_changed',blocked
+        assert blocked['state']=='processing_wallet' and blocked['orders']==1
+        assert blocked['delivery']==[] and count('payment_attempts',pay)==0
+        assert count('payment_delivery_intents',pay)==0 and balances()==(49900,9)
+        assert not any(ev['event']=='TELEGRAM' for ev in blocked['events']),blocked
+        assert any(m=='REVOKE' for m,_ in native_trace()) and not any(
+            m=='POST' for m,_ in native_trace()),server.trace
+        after=sql(work,env,'SELECT provider_state,provider_mutation_key,'
+            'JSON_UNQUOTE(JSON_EXTRACT(provider_mutation_snapshot,\'$.result\')) '
+            f"FROM service_effects WHERE pay_row_id={pay} AND effect_kind='create'")
+        assert after=='linked\ttelegram:777331:revoke\tverified',after
+        server.trace=[]
+        recovered=run(pay)
+        assert recovered['error'] is None and recovered['state']=='paid_with_wallet',recovered
+        assert recovered['orders']==1 and len(recovered['delivery'])==1
+        assert balances()==(49900,9) and not any(m in ('POST','REVOKE') for m,_ in native_trace())
+        check_terminal(pay,1)
+        scenarios.append('pg_completed_native_revoke_between_get_and_commit_invalidates_stale_packet_once')
 
         pay=seed('pg_wallet_partial_corrupt_order',2,link_prefix=1)
         original_id=int(sql(work,env,'SELECT order_id FROM service_effects '
