@@ -320,7 +320,7 @@ function achbotResumeWalletBuy(
         $issued=strtotime((string)$effect['created_at']);
         if ($issued===false || $issued<=0) throw new RuntimeException('wallet_recovery_issue_time_invalid');
         $days=max(1,(int)round(((int)$effect['requested_expire']-$issued)/86400));
-        // The complete original manifest was checked BEFORE every call. This
+        // The complete original manifest was checked BEFORE every call.
         // existingOnly forbids the helper's new-CREATE fallback even if an
         // unusual concurrent ledger deletion occurs after this snapshot.
         [$remote,$name,$port,$effectId]=achbotContinuePaidAccount($db,$payId,$ordinal,[

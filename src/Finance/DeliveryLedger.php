@@ -301,8 +301,8 @@ function achbotDeliveryValidateLocked(mysqli $db,array $pay,array $d): ?array {
         if (!is_string($body[$k]??null) || !hash_equals($v,$body[$k])) return null;
     if ($effectId>0) {
         $q=$db->prepare('SELECT id,pay_row_id,ordinal,state,order_id,target_server_id,'.
-            'operation_id,target_key,request_sha256,endpoint_sha256,remote_username,'.
-              'effect_kind,plan_id,requested_expire,requested_bytes,reserved_count '.
+            'operation_id,target_key,target_group_id,request_sha256,endpoint_sha256,'.
+              'remote_username,effect_kind,plan_id,requested_expire,requested_bytes,reserved_count '.
             'FROM service_effects WHERE id=? FOR UPDATE');
         $q->bind_param('i',$effectId);$q->execute();$effect=$q->get_result()->fetch_assoc();$q->close();
         if (!$effect || (int)$effect['pay_row_id']!==$id ||
