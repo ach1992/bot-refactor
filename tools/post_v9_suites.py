@@ -3206,6 +3206,7 @@ def run_funding(tmp: str) -> tuple[dict, dict]:
         "mysqlireportoff_sql_failure_retained_review_no_blind_retry",
         "credit_and_confirmation_atomic_rollback",
         "signed_debt_credit_arithmetic_preserved",
+        "archived_hosted_referral_wallet_credit_and_new_award_refused",
         "missing_unique_pay_index_fails_closed",
     }
     if not (referral.get("complete") is True and

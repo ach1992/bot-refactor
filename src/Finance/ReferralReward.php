@@ -56,13 +56,14 @@ if (!function_exists('achbotReferralOriginalArchivedLocked')) {
             else throw $error;
         }
         if (!$hasLedger) return false;
-        $q=$db->prepare('SELECT review_archived_at FROM payment_attempts
-            WHERE pay_row_id=? LIMIT 1 FOR UPDATE');
+        $q=$db->prepare('SELECT id FROM payment_attempts
+            WHERE pay_row_id=? AND review_archived_at IS NOT NULL
+            LIMIT 1 FOR UPDATE');
         if (!$q) throw new RuntimeException('referral_archive_fence_prepare');
         $q->bind_param('i',$payId);
         if (!$q->execute()) throw new RuntimeException('referral_archive_fence_read');
-        $row=$q->get_result()->fetch_assoc();$q->close();
-        return $row!==null && $row['review_archived_at']!==null;
+        $archived=$q->get_result()->num_rows>0;$q->close();
+        return $archived;
     }
 }
 

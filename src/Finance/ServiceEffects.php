@@ -287,15 +287,15 @@ function achbotCreatePaidAccount(mysqli $db, int $payId, int $ordinal, array $p,
             if ($hasLedger) {
                 // Missing 022 on an existing 003 ledger is a schema error:
                 // fail closed before a remote request, never skip Archive.
-                $fence=$db->prepare('SELECT review_archived_at FROM payment_attempts
-                    WHERE pay_row_id=? LIMIT 1 FOR UPDATE');
+                $fence=$db->prepare('SELECT id FROM payment_attempts
+                    WHERE pay_row_id=? AND review_archived_at IS NOT NULL
+                    LIMIT 1 FOR UPDATE');
                 if (!$fence) throw new RuntimeException('effect_archive_fence_unavailable');
                 $fence->bind_param('i',$payId);
                 if (!$fence->execute()) throw new RuntimeException('effect_archive_fence_read_failed');
-                $attempt=$fence->get_result()->fetch_assoc();
+                $archived=$fence->get_result()->num_rows>0;
                 $fence->close();
-                if ($attempt && $attempt['review_archived_at']!==null)
-                    throw new RuntimeException('effect_original_archived');
+                if ($archived) throw new RuntimeException('effect_original_archived');
             }
         }
 
