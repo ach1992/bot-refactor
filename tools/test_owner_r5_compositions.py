@@ -421,10 +421,20 @@ def audit(source_root=ROOT,catalog_root=ROOT):
         (stage/'messages/loader.php').write_bytes((catalog_root/'messages/loader.php').read_bytes())
         for audience in ['user','admin']:
             (stage/'messages/fa'/f'{audience}.php').write_bytes(command('git','show',REFERENCE+':messages/fa/'+audience+'.php'))
-        # The successor receipt-decision template did not exist in the
-        # historical reference catalog; it is tested only on current source.
-        archived=render({name:expr for name,expr in expressions.items()
-                         if name!='manual_receipt_decision_result'},stage)
+        # Preserve historical RED evidence for the original manual-receipt
+        # composition even though its RC26 experimental $body was retired.
+        # The successor tests its live decision result separately; neither
+        # catalog is changed or permitted to hide a legacy correction.
+        previous_manual=command('git','show',REFERENCE+
+            ':src/Finance/Routes/ManualReceipts.php').decode()
+        historical_tokens=json.loads(command('php','-r',TOKENIZE,input=json.dumps({
+            'manual':previous_manual}).encode()))
+        historical_body=expression(historical_tokens['manual'],'assign','$body',
+            'manual_receipts.body.8725ef87b4')
+        archived_expressions={name:expr for name,expr in expressions.items()
+                              if name!='manual_receipt_decision_result'}
+        archived_expressions['manual_operator_review']=historical_body
+        archived=render(archived_expressions,stage)
         current_catalogs=load_catalogs(catalog_root);archived_catalogs=load_catalogs(stage)
         # The successor's new bounded inbox is checked by the cleanup
         # overlay. Historical layered corrections must run against the
@@ -445,6 +455,7 @@ def audit(source_root=ROOT,catalog_root=ROOT):
     reds=[name for name,value in archived.items()if heading_collisions(value)]
     expected_red={s['name']for s in SPECS[:2]+SPECS[3:18]}
     expected_red.discard('manual_receipt_decision_result')
+    expected_red.add('manual_operator_review')
     check(set(reds)==expected_red,'archived_composed_RED_scope_drift:'+str(reds))
     # Actual combined output negatives: template-only tests cannot catch these.
     report=current['wallet_transfer_report']

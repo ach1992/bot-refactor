@@ -309,8 +309,10 @@ def main():
         assert len(query(work,env,'SHOW TABLES').splitlines())==23
         for db in (DB,purchase.SIDE[0]):
             query(work,env,(ROOT/'migrations/post-v9/001_marzban_panel_group_id.sql').read_text(),db)
+        query(work,env,(ROOT/'migrations/post-v9/003_payment_attempts.sql').read_text())
+        query(work,env,(ROOT/'migrations/post-v9/022_gateway_review_archive.sql').read_text())
         query(work,env,(ROOT/'migrations/post-v9/007_service_effects.sql').read_text())
-        assert len(query(work,env,'SHOW TABLES').splitlines())==24
+        assert len(query(work,env,'SHOW TABLES').splitlines())==26
         # Existing identity/readback tests are not a capacity stress test.
         # Keep ample stock until the explicit bounded scenarios below.
         query(work,env,'UPDATE server_info SET ucount=1000 WHERE id=2')
@@ -433,6 +435,38 @@ def main():
         assert '1\tverified' in state(work,env,multi) and '2\tdispatching' in state(work,env,multi)
         assert run_php(work,env,driver,pay=multi,line=2,username='paid_multi_2')['events']==[]
         cases.append('two_account_partial_remote_no_bulk_replay')
+
+        # Owner terminal Archive: a paid hosted multi-line invoice can be
+        # archived after line 1 was dispatched. Its next Native CREATE line
+        # must fail BEFORE capacity reservation and before any remote POST.
+        frozen=pay(work,env,'archive_multi_hosted',count=2)
+        query(work,env,f"UPDATE pays SET state='paid',payid='archive-hosted-invoice' WHERE id={frozen}")
+        query(work,env,"INSERT INTO payment_attempts "
+             "(pay_row_id,provider,order_hash,provider_reference,quote_amount,quote_currency,local_amount_toman) "
+             f"VALUES ({frozen},'nowpayments','archive_multi_hosted','archive-hosted-invoice',1,'usd',100)")
+        first_line=run_php(work,env,driver,pay=frozen,line=1,username='archive_multi_line_1')
+        assert first_line['error'] is None and [e['event'] for e in first_line['events']]==['POST','GET'],first_line
+        query(work,env,"UPDATE payment_attempts "
+            "SET review_archived_at=UTC_TIMESTAMP(),review_archived_by=9001 "
+            f"WHERE pay_row_id={frozen}")
+        capacity_before=query(work,env,'SELECT ucount FROM server_info WHERE id=2')
+        blocked_line=run_php(work,env,driver,pay=frozen,line=2,username='archive_multi_line_2')
+        assert blocked_line['error']=='effect_original_archived' and blocked_line['events']==[],blocked_line
+        assert state(work,env,frozen).count('\n')==0 and '1\tverified' in state(work,env,frozen)
+        assert query(work,env,'SELECT ucount FROM server_info WHERE id=2')==capacity_before
+        assert query(work,env,'SELECT state FROM pays WHERE id='+str(frozen))=='paid'
+        cases.append('archived_paid_hosted_second_native_create_blocked_before_reservation')
+        # An archived claim without any prior Native dispatch cannot create
+        # even the first account, without changing the original paid state.
+        no_effect=pay(work,env,'archive_first_hosted')
+        query(work,env,f"UPDATE pays SET state='paid',payid='archive-hosted-first' WHERE id={no_effect}")
+        query(work,env,"INSERT INTO payment_attempts "
+             "(pay_row_id,provider,order_hash,provider_reference,quote_amount,quote_currency,local_amount_toman,review_archived_at,review_archived_by) "
+             f"VALUES ({no_effect},'nowpayments','archive_first_hosted','archive-hosted-first',1,'usd',100,UTC_TIMESTAMP(),9001)")
+        first_block=run_php(work,env,driver,pay=no_effect,username='archive_disallowed_first')
+        assert first_block['error']=='effect_original_archived' and first_block['events']==[]
+        assert state(work,env,no_effect)=='' and query(work,env,'SELECT ucount FROM server_info WHERE id=2')==capacity_before
+        cases.append('archived_paid_hosted_first_native_create_blocked_before_reservation')
 
         # Accurate source-to-order join: matching order must be persisted
         # before ledger state can become local_recorded; a foreign row fails.

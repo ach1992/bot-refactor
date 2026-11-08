@@ -4533,11 +4533,11 @@ def main():
                 f"FROM pays p JOIN payment_attempts a ON p.id=a.pay_row_id "
                 f"WHERE a.id={attempt}")
             before_wallet=int(sql(work,env,'SELECT wallet FROM users WHERE userid=1001'))
-            args=(dict(route='return',get={'zarinpal':'','hash_id':name,
+            return_spec=(dict(route='return',get={'zarinpal':'','hash_id':name,
                 'Authority':ref,'Status':'OK'},zarin_status=100) if provider=='zarinpal'
                 else dict(route='return',get={'nextpay':'','trans_id':ref},
                     nextpay_code=0))
-            run_php(work,env,stage,args)
+            run_php(work,env,stage,return_spec)
             if sql(work,env,f"SELECT p.state,a.stage,a.provider_status,p.approved_by "
                     f"FROM pays p JOIN payment_attempts a ON p.id=a.pay_row_id "
                     f"WHERE a.id={attempt}")!=before_state or int(sql(work,env,

@@ -92,8 +92,12 @@ requires preservation, stop and investigate instead of blindly dropping.
 
 Current installed Chili still has RC26 paths that depend on the 019 table.
 **Do not run these statements against RC26.** Once a separately approved,
-fully verified successor runtime is installed, and the exact test schema
-is backed up **and restore-tested**, inspect the exact objects and users:
+fully verified successor runtime is installed, and an explicit host-scoped
+DDL approval is granted, inspect the exact objects and users. The Owner has
+**waived a backup for the named `chilibot` TEST database only**; this does
+not waive schema/row/FK/index inspection, change approval, or the risk of
+irreversible test-data loss. Production or any other database has no such
+waiver and requires its own verified recovery plan:
 
 ```sql
 SELECT COUNT(*) AS experimental_decision_rows
@@ -118,7 +122,7 @@ below is deliberately **not** a runtime migration/installer, and requires
 its own reviewed exact-shape preflight and explicit host mutation grant:
 
 ```sql
--- Run only after approved test-only cutover and verified rollback.
+-- Run only after approved test-only cutover and exact schema inspection.
 DROP TABLE chilibot.payment_review_decisions;
 ALTER TABLE chilibot.service_effects
   DROP FOREIGN KEY fk_effect_original_replacement;
@@ -135,10 +139,12 @@ ALTER TABLE chilibot.pays
   DROP COLUMN issued_entitlement_gb;
 ```
 
-These MariaDB DDL statements autocommit. Their rollback is restoration from
-the previously verified test backup, not an ordinary SQL ROLLBACK. Re-run
-the read-only schema and payment/source preflight afterward and record exact
-before/after objects. Keep 018/020, original 003/007/009 and customer data
+These MariaDB DDL statements autocommit; SQL ROLLBACK cannot undo them.
+A verified database restore is a possible recovery path **only when a matching
+backup actually exists**. Since the Owner waived a backup for `chilibot` TEST,
+no physical rollback can be promised for that target; approval must explicitly
+accept this consequence. Re-run the read-only schema and payment/source
+preflight afterward and record exact before/after objects. Keep 018/020, original 003/007/009 and customer data
 untouched. **No command from this subsection was executed on the host.**
 
 No runtime ZIP extraction, test DB DROP, webhook, live payment or provider

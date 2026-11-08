@@ -274,6 +274,32 @@ function achbotCreatePaidAccount(mysqli $db, int $payId, int $ordinal, array $p,
             throw new RuntimeException('effect_payment_identity_mismatch');
         }
 
+        // A hosted BUY_SUB can have several per-account Native CREATE lines.
+        // Archive must stop every line not yet reserved, even when an earlier
+        // line was already dispatched and the original pays row remains paid.
+        // The pays row is locked above; take the attempt lock afterwards, as
+        // in the operator Archive / signed IPN paths. Manual and wallet
+        // purchase claims are not affected by the hosted operator inbox.
+        if ($claim['state']==='paid') {
+            $tables=$db->query("SHOW TABLES LIKE 'payment_attempts'");
+            if (!$tables) throw new RuntimeException('effect_archive_ledger_unavailable');
+            $hasLedger=$tables->num_rows===1;
+            $tables->free();
+            if ($hasLedger) {
+                // Missing 022 on an existing 003 ledger is a schema error:
+                // fail closed before a remote request, never skip Archive.
+                $fence=$db->prepare('SELECT review_archived_at FROM payment_attempts
+                    WHERE pay_row_id=? LIMIT 1 FOR UPDATE');
+                if (!$fence) throw new RuntimeException('effect_archive_fence_unavailable');
+                $fence->bind_param('i',$payId);
+                if (!$fence->execute()) throw new RuntimeException('effect_archive_fence_read_failed');
+                $attempt=$fence->get_result()->fetch_assoc();
+                $fence->close();
+                if ($attempt && $attempt['review_archived_at']!==null)
+                    throw new RuntimeException('effect_original_archived');
+            }
+        }
+
         $targetIdentity=achbotEffectTargetIdentity($db,$serverId,$planId,$payId,$claim);
         $group=$targetIdentity['group'];$endpoint=$targetIdentity['endpoint'];
         $credentials=$targetIdentity['credentials'];$targetKey=$targetIdentity['key'];

@@ -52,20 +52,39 @@ function achbotNpIngestIpn(mysqli $connection, string $ipnSecret,
         $orderHash==='' || strlen($orderHash)>50 || strlen($status)>32 ||
         strtolower((string)$payload['price_currency'])!=='usd') return 422;
     try {
-        // Lock the entire local invoice decision, then claim provider child
-        // identity in ONE UNIQUE ledger shared by primary and extra deposits.
-        // No HTTP 200 is returned before child evidence and state commit.
-        if (!$connection->begin_transaction())
-            throw new RuntimeException('ipn_begin_unconfirmed');
-        $stmt=$connection->prepare("SELECT a.*,p.payid AS original_invoice
-            FROM payment_attempts a JOIN pays p ON p.id=a.pay_row_id
-            WHERE a.provider='nowpayments' AND a.order_hash=? AND a.provider_reference=? LIMIT 2 FOR UPDATE");
+        // Find the immutable attempt identity without acquiring a row lock.
+        // Every mutating path (including terminal Archive) locks pays FIRST,
+        // then its attempt. A joined FOR UPDATE may lock the attempt first
+        // depending on the optimizer and deadlock against an operator.
+        $stmt=$connection->prepare("SELECT id,pay_row_id FROM payment_attempts
+            WHERE provider='nowpayments' AND order_hash=? AND provider_reference=? LIMIT 2");
         $stmt->bind_param('ss',$orderHash,$invoiceId);
         $stmt->execute();
-        $rows=$stmt->get_result();
-        $attempt=$rows->num_rows===1?$rows->fetch_assoc():null;
+        $matches=$stmt->get_result();
+        $locator=$matches->num_rows===1?$matches->fetch_assoc():null;
         $stmt->close();
-        if (!$attempt || (string)$attempt['original_invoice']!==$invoiceId) {
+        if (!$locator) return 409;
+
+        // The signed child evidence and original decision still commit as
+        // one local transaction. Revalidate the locator after both locks;
+        // never trust the pre-lock identity if the row changed meanwhile.
+        if (!$connection->begin_transaction())
+            throw new RuntimeException('ipn_begin_unconfirmed');
+        $payId=(int)$locator['pay_row_id'];
+        $attemptId=(int)$locator['id'];
+        $stmt=$connection->prepare('SELECT payid FROM pays WHERE id=? FOR UPDATE');
+        $stmt->bind_param('i',$payId);
+        $stmt->execute();
+        $pay=$stmt->get_result()->fetch_assoc();
+        $stmt->close();
+        $stmt=$connection->prepare("SELECT * FROM payment_attempts
+            WHERE id=? AND pay_row_id=? AND provider='nowpayments'
+              AND order_hash=? AND provider_reference=? LIMIT 1 FOR UPDATE");
+        $stmt->bind_param('iiss',$attemptId,$payId,$orderHash,$invoiceId);
+        $stmt->execute();
+        $attempt=$stmt->get_result()->fetch_assoc();
+        $stmt->close();
+        if (!$pay || !$attempt || (string)$pay['payid']!==$invoiceId) {
             $connection->rollback();
             return 409;
         }
