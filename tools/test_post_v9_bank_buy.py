@@ -219,6 +219,10 @@ if ($op==='claim') {
 } elseif ($op==='delivery_pending') {
     require_once $root.'/src/Finance/DeliveryLedger.php';
     $value=achbotDeliveryDispatchPending($connection,(int)$spec['pay']);
+} elseif ($op==='delivery_maintenance') {
+    require_once $root.'/src/Finance/DeliveryLedger.php';
+    $value=achbotDeliveryMaintainPending($connection,
+        (int)($spec['batch']??4),(float)($spec['budget']??8.0));
 } elseif ($op==='delivery_check') {
     require_once $root.'/src/Finance/DeliveryLedger.php';
     $value=achbotDeliveryCheck($connection,(int)$spec['pay'],(int)$spec['ordinal']);
@@ -468,6 +472,78 @@ def check():
         assert again['result']==[] and not again['events'],again
         assert total(work,env,'orders_list',crash)==1 and total(work,env,'service_effects',crash)==1
         cases.append('crash_postterminal_before_telegram_resumes_pending_only_once')
+
+        # The ordinary four-worker Cron may finish only a previously sealed
+        # never-attempted 018 packet after a quiet grace period; no new bank,
+        # financial, Native CREATE or unknown Telegram replay is allowed.
+        assert 'achbotDeliveryMaintainPending($connection)' in (
+            ROOT/'settings/cronRunner.php').read_text()
+        queued=seed(work,env,'bankcrondeliveryqueued')
+        assert run(work,env,driver,op='claim',pay=queued)['result'] is True
+        assert run(work,env,driver,op='provision_claimed',pay=queued)['result']['committed']
+        before=run(work,env,driver,op='delivery_maintenance')
+        assert before['result']['checked']==0 and not [
+            e for e in before['events'] if e['event']=='DELIVER'],before
+        query(work,env,f"UPDATE payment_delivery_intents SET updated_at=NOW()-INTERVAL 3 MINUTE WHERE pay_row_id={queued}")
+        sent=run(work,env,driver,op='delivery_maintenance',batch=1)
+        assert sent['result']=={'checked':1,'acknowledged':1,'unknown':0,'deferred':0},sent
+        assert sum(e['event']=='DELIVER' for e in sent['events'])==1,sent
+        assert not [e for e in sent['events'] if e['event'] in ('POST','GET')],sent
+        assert query(work,env,f"SELECT state,attempt_count FROM payment_delivery_intents WHERE pay_row_id={queued}")=='acknowledged	1'
+        again=run(work,env,driver,op='delivery_maintenance')
+        assert again['result']['checked']==0 and not again['events'],again
+        cases.append('cron_first_pending_018_delivery_after_crash_single_claim')
+
+        ambiguous=seed(work,env,'bankcrondeliveryambiguous')
+        assert run(work,env,driver,op='claim',pay=ambiguous)['result'] is True
+        assert run(work,env,driver,op='provision_claimed',pay=ambiguous)['result']['committed']
+        query(work,env,f"UPDATE payment_delivery_intents SET updated_at=NOW()-INTERVAL 3 MINUTE WHERE pay_row_id={ambiguous}")
+        unknown=run(work,env,driver,op='delivery_maintenance',mode='telegram_unconfirmed')
+        assert unknown['result']['unknown']==1 and sum(
+            e['event']=='DELIVER' for e in unknown['events'])==1,unknown
+        assert query(work,env,f"SELECT state,attempt_count FROM payment_delivery_intents WHERE pay_row_id={ambiguous}")=='unknown	1'
+        no_retry=run(work,env,driver,op='delivery_maintenance')
+        assert no_retry['result']['checked']==0 and not no_retry['events'],no_retry
+        cases.append('cron_ambiguous_first_telegram_send_never_automatically_replayed')
+
+        # Each real invoice issuance updates the fixture's physical server
+        # remark. Complete one invoice's pinned first CREATE before issuing
+        # the next so the test does not introduce an unrelated target drift.
+        broken=seed(work,env,'bankcrondeliverybroken')
+        assert run(work,env,driver,op='claim',pay=broken)['result'] is True
+        created_broken=run(work,env,driver,op='provision_claimed',pay=broken)
+        assert created_broken['result']['committed'],created_broken
+        follower=seed(work,env,'bankcrondeliveryfollower')
+        assert run(work,env,driver,op='claim',pay=follower)['result'] is True
+        created_follower=run(work,env,driver,op='provision_claimed',pay=follower)
+        assert created_follower['result']['committed'],created_follower
+        query(work,env,f"UPDATE payment_delivery_intents SET sealed_payload=CONCAT('x',sealed_payload) WHERE pay_row_id={broken}")
+        query(work,env,f"UPDATE payment_delivery_intents SET updated_at=NOW()-INTERVAL 4 MINUTE WHERE pay_row_id={broken}")
+        query(work,env,f"UPDATE payment_delivery_intents SET updated_at=NOW()-INTERVAL 3 MINUTE WHERE pay_row_id={follower}")
+        defer=run(work,env,driver,op='delivery_maintenance',batch=1)
+        assert defer['result']=={'checked':1,'acknowledged':0,'unknown':0,'deferred':1},defer
+        assert not [e for e in defer['events'] if e['event']=='DELIVER'],defer
+        assert query(work,env,f"SELECT state,attempt_count FROM payment_delivery_intents WHERE pay_row_id={broken}")=='pending	0'
+        fair=run(work,env,driver,op='delivery_maintenance',batch=1)
+        assert fair['result']['acknowledged']==1 and sum(
+            e['event']=='DELIVER' for e in fair['events'])==1,fair
+        assert query(work,env,f"SELECT state,attempt_count FROM payment_delivery_intents WHERE pay_row_id={follower}")=='acknowledged	1'
+        cases.append('cron_invalid_pending_packet_deferred_without_starving_later_valid')
+
+        racing=seed(work,env,'bankcrondeliveryrace')
+        assert run(work,env,driver,op='claim',pay=racing)['result'] is True
+        assert run(work,env,driver,op='provision_claimed',pay=racing)['result']['committed']
+        query(work,env,f"UPDATE payment_delivery_intents SET updated_at=NOW()-INTERVAL 3 MINUTE WHERE pay_row_id={racing}")
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            def dispatch_kind(kind):
+                return run(work,env,driver,op=kind,pay=racing)
+            contenders=list(pool.map(dispatch_kind,('delivery_maintenance','delivery_pending')))
+        assert sum(e['event']=='DELIVER' for result in contenders
+                   for e in result['events'])==1,contenders
+        assert not [e for result in contenders for e in result['events']
+                    if e['event'] in ('POST','GET')],contenders
+        assert query(work,env,f"SELECT state,attempt_count FROM payment_delivery_intents WHERE pay_row_id={racing}")=='acknowledged\t1'
+        cases.append('cron_and_original_callback_compete_one_018_dispatch_claim')
 
         # The timer only scans have_sent. A durable processing claim with
         # no remote line must be actionable through the Owner's real

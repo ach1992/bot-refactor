@@ -81,6 +81,19 @@ function achbotPayUxMaintain($db) {
 }
 """
 
+DELIVERY_MAINTENANCE_PHP = r"""<?php
+function achbotDeliveryMaintainPending($db) {
+    $trace = getenv('ACHBOT_TEST_ONLY_TRACE');
+    if (is_string($trace) && $trace !== '') {
+        file_put_contents($trace . '.maintenance', "delivery\n", FILE_APPEND | LOCK_EX);
+        if (is_file($trace . '.delivery-failure')) {
+            throw new RuntimeException('owned fixture controlled delivery maintenance failure');
+        }
+    }
+    return [];
+}
+"""
+
 
 def cmd(php: str, entrypoint: Path, cwd: Path, env: dict[str, str],
         *args: str, disable_proc: bool = False,
@@ -116,6 +129,7 @@ def setup(root: Path) -> tuple[Path, Path]:
     (root/'src/Finance/AutomaticRenewal.php').write_text('<?php /* owned fixture */')
     (root/'src/Finance/PaymentLifecycle.php').write_text(PAYUX_MAINTENANCE_PHP)
     (root/'src/Finance/ApiPayments.php').write_text(API_MAINTENANCE_PHP)
+    (root/'src/Finance/DeliveryLedger.php').write_text(DELIVERY_MAINTENANCE_PHP)
 
     work = root / "owned-cwd"
     work.mkdir()
@@ -431,8 +445,11 @@ def main() -> None:
               clean.stdout.count("owned fixture success") == len(JOBS)
               and clean.stderr == "")
         maintenance_trace = Path(str(trace) + '.maintenance')
-        api_order = maintenance_trace.read_text().splitlines() == ['api', 'payux']
+        # Keep the existing API-before-PayUX invariant while validating the
+        # new independently guarded delivery first-attempt maintenance.
+        api_order = maintenance_trace.read_text().splitlines() == ['api', 'payux', 'delivery']
         check('api_payment_maintenance_precedes_payux', api_order)
+        check('sealed_delivery_maintenance_follows_payux', api_order)
         check("per_installation_private_lock_created",
               lock_file.exists() and lock_file.stat().st_mode & 0o777 == 0o600)
         check("first_create_then_reuse_same_inode",
@@ -897,10 +914,29 @@ def main() -> None:
             api_failed.returncode == 0
             and api_failed.stdout == 'owned fixture success\n' * len(JOBS)
             and api_failed.stderr.strip() == 'achbot_payment_lifecycle_deferred'
-            and maintenance_trace.read_text().splitlines() == ['api', 'payux']
+            and maintenance_trace.read_text().splitlines() == ['api', 'payux', 'delivery']
             and [line.split('|')[0] for line in trace.read_text().splitlines()] == list(JOBS)
         )
         check('api_payment_failure_preserves_payux_finally', api_finally)
+
+        # Delivery failures must neither undo earlier maintenance nor skip
+        # any of the four established child scripts.  Only the simulated
+        # delivery maintenance fails; the real worker catches its exception.
+        maintenance_trace.unlink()
+        trace.unlink()
+        delivery_failure = Path(str(trace) + '.delivery-failure')
+        delivery_failure.write_text('owned controlled failure', encoding='utf-8')
+        try:
+            delivery_failed = cmd(php, entrypoint, work, env)
+        finally:
+            delivery_failure.unlink()
+        check('delivery_maintenance_failure_preserves_four_worker_outputs',
+              delivery_failed.returncode == 0
+              and delivery_failed.stdout == 'owned fixture success\n' * len(JOBS)
+              and delivery_failed.stderr.strip()
+                  == 'achbot_pending_delivery_maintenance_deferred class=RuntimeException'
+              and maintenance_trace.read_text().splitlines() == ['api', 'payux', 'delivery']
+              and [line.split('|')[0] for line in trace.read_text().splitlines()] == list(JOBS))
 
 
     report = {

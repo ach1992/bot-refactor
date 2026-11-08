@@ -558,3 +558,20 @@ confirmation also pins the current physical Marzban or PasarGuard target and
 provider generation. Each error exposes only safe reason, stage and next
 operator action. The prior free-trial and admin-bulk 007 CREATE deletion
 capacity return remains valid; external imports never gain capacity.
+
+### Scheduled first-attempt delivery for terminal committed packets
+
+Source-only Issue #117 follow-up adds a narrow Cron service-worker sweep
+on the existing migration 018 table. It is **not** an automatic native or
+payment reconciliation loop. Only immutable, previously sealed Telegram
+packets under terminal confirmed `pays`, with `state=pending`,
+`attempt_count=0` and at least two minutes of quiet time, are eligible.
+The ordinary locked `achbotDeliveryDispatch` verifies the exact original
+payment, delivery, native effect, local order and decrypted immutable packet
+before claiming one attempt. Default sweep: four records / eight seconds
+soft wall-time per tick; a single Telegram transport can outlast the budget.
+A preflight-deferring row rotates its existing `updated_at` queue timestamp,
+without changing financial state or declaring Telegram attempted. A lost
+Telegram ACK remains `unknown`; it is **never** retried from Cron.
+`dispatching`, `unknown`, manual warned redelivery and provider uncertainty
+stay separate. No new migration, source ZIP SQL, or live activation is implied.

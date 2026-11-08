@@ -577,6 +577,81 @@ function achbotDeliveryDispatchPending(mysqli $db,int $payId): array {
     }
     return $out;
 }
+/**
+ * Recover only first, never-attempted customer delivery after a committed
+ * payment/order.  The 018 journal already has a unique per-ordinal claim and
+ * a CAS-based dispatch history; this sweep never changes money or Native
+ * provider state and never resends UNKNOWN/dispatching packets.
+ *
+ * A quiet two-minute window lets the original callback finish first.  A
+ * deferred preflight merely rotates updated_at to avoid starving later valid
+ * packets; it is NOT a Telegram attempt or permission to rebuild the packet.
+ * This worker has a bounded batch and soft wall-time budget (one transport
+ * call can still take longer than the budget).
+ */
+function achbotDeliveryMaintainPending(mysqli $db,int $limit=4,float $budgetSeconds=8.0): array {
+    $stats=['checked'=>0,'acknowledged'=>0,'unknown'=>0,'deferred'=>0];
+    if (!achbotDeliverySchemaReady($db)) return $stats;
+    $limit=max(1,min(8,$limit));
+    $budgetSeconds=max(1.0,min(15.0,$budgetSeconds));
+    try {
+        // idx_delivery_work(state,updated_at) is part of migration 018.
+        // The terminal state is necessary but insufficient: dispatch itself
+        // verifies the immutable financial/native/order/delivery provenance
+        // again under row locks before contacting Telegram.
+        $q=$db->query("SELECT d.id,d.pay_row_id,d.ordinal
+            FROM payment_delivery_intents d
+            JOIN pays p ON p.id=d.pay_row_id
+            WHERE d.state='pending' AND d.attempt_count=0
+              AND p.state IN ('approved','paid','auto_cart_approved','paid_with_wallet')
+              AND d.updated_at<=DATE_SUB(NOW(),INTERVAL 2 MINUTE)
+            ORDER BY d.updated_at,d.id LIMIT {$limit}");
+        if (!$q) throw new RuntimeException('delivery_maintenance_scan_failed');
+        $rows=$q->fetch_all(MYSQLI_ASSOC);
+        $q->free();
+    } catch (Throwable $error) {
+        error_log('achbot_delivery_maintenance_scan_deferred class='.get_class($error));
+        return $stats;
+    }
+    $started=microtime(true);
+    foreach ($rows as $d) {
+        if (microtime(true)-$started >= $budgetSeconds) break;
+        $id=(int)$d['id'];$payId=(int)$d['pay_row_id'];
+        $ordinal=(int)$d['ordinal'];
+        $stats['checked']++;
+        try {
+            $outcome=achbotDeliveryDispatch($db,$payId,$ordinal);
+        } catch (Throwable $error) {
+            error_log('achbot_delivery_maintenance_dispatch_deferred pay_id='.$payId.
+                ' ordinal='.$ordinal.' class='.get_class($error));
+            $outcome='review';
+        }
+        if ($outcome==='acknowledged') {
+            $stats['acknowledged']++;
+        } elseif ($outcome==='unknown') {
+            // One attempted send may already have succeeded.  Keep its
+            // uncertainty in the 018/attempt ledgers; never retry from Cron.
+            $stats['unknown']++;
+        } else {
+            $stats['deferred']++;
+            try {
+                // No packet/state/attempt/actor changes.  A failed readiness
+                // check is retried no sooner than another two-minute window
+                // and cannot monopolize the head of the bounded queue.
+                $q=$db->prepare("UPDATE payment_delivery_intents
+                    SET updated_at=NOW() WHERE id=?
+                    AND state='pending' AND attempt_count=0");
+                $q->bind_param('i',$id);
+                $q->execute();$q->close();
+            } catch (Throwable $error) {
+                error_log('achbot_delivery_maintenance_defer_failed pay_id='.$payId.
+                    ' ordinal='.$ordinal.' class='.get_class($error));
+            }
+        }
+    }
+    return $stats;
+}
+
 /** Bounded operator-visible projection; never return private sealed packets. */
 function achbotDeliveryInspect(mysqli $db,int $payId,int $after=0): array {
     if (!achbotDeliverySchemaReady($db) || $after<0) return [];
