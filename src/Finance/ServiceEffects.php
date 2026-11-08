@@ -271,7 +271,9 @@ function achbotCreatePaidAccount(mysqli $db, int $payId, int $ordinal, array $p)
         $requestedCount=(int)$claim['requested_count'];
         if ($requestedCount<=0)
             throw new RuntimeException('effect_invalid_reserved_count');
-        $first=$db->prepare("SELECT ordinal,reserved_count FROM service_effects
+        $first=$db->prepare("SELECT ordinal,reserved_count,target_server_id,
+                target_group_id,target_key,endpoint_sha256,plan_id
+            FROM service_effects
             WHERE pay_row_id=? AND effect_kind='create'
             ORDER BY ordinal LIMIT 1 FOR UPDATE");
         if (!$first) throw new RuntimeException('effect_capacity_owner_prepare_failed');
@@ -352,6 +354,16 @@ function achbotCreatePaidAccount(mysqli $db, int $payId, int $ordinal, array $p)
             if (!$prior || (int)$prior['ordinal']!==1 ||
                 (int)$prior['reserved_count']!==$expectedCreateHold)
                 throw new RuntimeException('effect_capacity_origin_unverified');
+            // A multi-account original claim cannot switch a later CREATE
+            // onto a new physical provider, group, plan or credentials
+            // after the full-count inventory was reserved by ordinal one.
+            // This invariant also protects interrupted hosted continuations.
+            if ((int)$prior['target_server_id']!==$serverId ||
+                (int)$prior['plan_id']!==$planId ||
+                ($prior['target_group_id']===null?null:(int)$prior['target_group_id'])!==$group ||
+                !hash_equals((string)$prior['target_key'],$targetKey) ||
+                !hash_equals((string)$prior['endpoint_sha256'],$endpoint))
+                throw new RuntimeException('effect_capacity_origin_target_changed');
             $previousOrdinal=$ordinal-1;
             $previous=$db->prepare("SELECT state FROM service_effects
                 WHERE pay_row_id=? AND effect_kind='create' AND ordinal=?

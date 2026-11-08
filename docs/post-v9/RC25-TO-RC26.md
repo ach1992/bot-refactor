@@ -116,26 +116,32 @@
 
 ## Original Hosted BUY_SUB recovery — current source candidate
 
-After RC25, the integrated Issue #117 recovery work requires the original
-003/007/012/018/019 journals for paid NextPay/Zarinpal purchases whose first
-native CREATE succeeded but its order/delivery commit did not complete.
-The Owner-only technical action accepts a **complete** original 007 manifest,
-including a mixture of original linked local orders and verified-but-unlinked
-native accounts. It reads each original Marzban/PasarGuard account with its
-operation marker and pinned current physical identity. The original linked
-orders are not rewritten; only an original verified account lacking a local
-order can obtain its first link/order. Original 003 service closure and all
-immutable 018 delivery packets must COMMIT together before any Telegram
-attempt. This is an original-account continuation, not a new purchase,
-refund, merchant verification, Native CREATE or capacity reservation.
+After RC25, Issue #117 recovery uses original 003/007/012/018/019 journals
+for paid NextPay/Zarinpal native purchases whose order/delivery commit
+did not complete. With a complete original CREATE manifest, the Owner
+authenticates each original Marzban/PasarGuard account via GET; original
+linked orders are immutable, verified-but-unlinked original accounts receive
+their first local orders, and original 003 service closure and all immutable
+018 packets COMMIT together. Customer Telegram follows COMMIT only.
 
-Incomplete 007 ordinals, true orphan/foreign/conflicting Native identities
-and explicitly authorized replacement require separately evidenced operator
-reconciliation: neither an absent row nor an HTTP timeout/404 permits an
-automatic replacement. Preserve actual 003/007/012/018/019/020 evidence and
-source/runtime identity for diagnostics; never delete or regenerate journals
-to make an old payment appear new. Further details and no-replay boundaries
-are in [Payment delivery recovery](PAYMENT-DELIVERY-RECOVERY.md).
+If a purchase has a **contiguous original 007 prefix**, a first full-count
+capacity reservation, and **trailing never-reserved ordinals**, the explicitly
+labeled Owner callback may first perform one new 007 CREATE for **the next
+original never-started ordinal**. This is not replay or replacement: the
+actual 007 source reserves a unique ordinal before the first POST, reuses
+the original capacity hold and denies changed provider/plan/entitlement
+or missing authenticated GET of every previous account. The Owner can repeat
+only for further never-started ordinals. A dispatched/unknown 007 record
+must be inspected by GET, never re-POSTed. No new merchant settlement,
+Wallet debit, refund, duplicate original reserve or new invoice is allowed.
+
+Missing first capacity owner, noncontiguous 007 ordinals, unknown/foreign/
+orphan remote accounts and evidence-based explicitly approved replacement
+remain separate Owner reconciliation. A 404, timeout, absent historical
+provenance or changed physical endpoint is never an automatic replacement
+authorization. Preserve original 003/007/012/018/019/020 evidence; never
+delete/regenerate the journals. Further details: [Payment delivery
+recovery](PAYMENT-DELIVERY-RECOVERY.md).
 
 ## Prerequisites and one-way migration
 

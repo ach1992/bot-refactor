@@ -541,7 +541,9 @@ function achbotResumeWalletBuy(
  * attach an already-verified original account whose order was never committed.
  * It never sends a second native CREATE or repeats settlement/capacity.
  */
-function achbotHostedLinkedBuySnapshot(mysqli $db,int $payId,bool $lock=false): ?array {
+function achbotHostedLinkedBuySnapshot(
+    mysqli $db,int $payId,bool $lock=false,bool $allowIncomplete=false
+): ?array {
     require_once __DIR__.'/DeliveryLedger.php';
     require_once __DIR__.'/RecoveryInspection.php';
     require_once __DIR__.'/ReviewDecisions.php';
@@ -593,7 +595,12 @@ function achbotHostedLinkedBuySnapshot(mysqli $db,int $payId,bool $lock=false): 
     $q=$db->prepare('SELECT * FROM service_effects WHERE pay_row_id=? '.
         'ORDER BY ordinal,effect_kind'.$suffix);
     $q->bind_param('i',$payId);$q->execute();$effects=$q->get_result()->fetch_all(MYSQLI_ASSOC);$q->close();
-    if (count($effects)!==$count) return null;
+    // Missing *trailing* ordinal rows have never reserved or dispatched
+    // native CREATE under 007's reservation-before-POST contract. They
+    // must not be confused with a present dispatching row (unknown POST),
+    // a gap, a missing first capacity claimant or a replacement account.
+    if (count($effects)>$count || !$effects ||
+        (!$allowIncomplete && count($effects)!==$count)) return null;
     $first=$effects[0];$lines=[];$orders=[];
     foreach ($effects as $index=>$e) {
         $ordinal=$index+1;
@@ -708,8 +715,98 @@ function achbotHostedPgReadbackPin(array $effect): string {
 }
 
 function achbotHostedLinkedBuyRecoverable(mysqli $db,int $payId): bool {
-    try {return achbotHostedLinkedBuySnapshot($db,$payId)!==null;}
+    try {return achbotHostedLinkedBuySnapshot($db,$payId,false,true)!==null;}
     catch (Throwable $ignored) {return false;}
+}
+
+/**
+ * Continue ONE never-started trailing CREATE of an already paid original
+ * Hosted purchase. Under the real 007 contract an outbound CREATE is
+ * impossible without a committed ordinal reservation; a present dispatching
+ * ordinal is NOT eligible here, even after a remote 404.
+ *
+ * The Owner's existing private Resume callback is the explicit trigger.
+ * First read back ALL previous original accounts, then recheck the exact
+ * financial and immutable origin snapshot. The shared effect reservation
+ * enforces one ordinal, full-count held capacity and same physical target.
+ * No merchant check/credit, replacement or Telegram send occurs here.
+ */
+function achbotHostedContinueUnstartedOrdinal(
+    mysqli $db,int $payId,?callable $marzbanRead=null
+): array {
+    require_once __DIR__.'/../Purchase/Core.php';
+    $before=achbotHostedLinkedBuySnapshot($db,$payId,false,true);
+    if (!$before || count($before['lines'])>=($before['count']??0))
+        throw new RuntimeException('hosted_original_unstarted_unavailable');
+    $pay=$before['pay'];$server=(int)$pay['server_id'];
+    $first=$before['lines'][1]??null;
+    if (!$first) throw new RuntimeException('hosted_original_first_capacity_missing');
+    $original=achbotHostedLinkedBuyPin($before);
+    foreach ($before['lines'] as $ordinal=>$effect) {
+        $issued=strtotime((string)$effect['created_at']);
+        if ($issued===false || $issued<=0)
+            throw new RuntimeException('hosted_original_created_at_invalid');
+        $days=max(1,(int)round(((int)$effect['requested_expire']-$issued)/86400));
+        [$remote,$name,$port,$effectId]=achbotContinuePaidAccount($db,$payId,$ordinal,[
+            'user_id'=>(int)$pay['user_id'],
+            'server_type'=>(string)$pay['panel_type'],
+            'server_id'=>$server,'inbound_id'=>0,
+            'plan_id'=>(int)$pay['plan_id'],
+            'remark'=>(string)$effect['remote_username'],
+            'volume'=>intdiv((int)$effect['requested_bytes'],1073741824),
+            'days'=>$days,'uniqid'=>'','protocol'=>'','port'=>0,
+            'expire_microdate'=>0,'net_type'=>'','rahgozar'=>0,'limitip'=>0
+        ],$marzbanRead,true,true);
+        if (!is_object($remote) || ($remote->success??false)!==true ||
+            $effectId!==(int)$effect['id'] ||
+            $name!==(string)$effect['remote_username'])
+            throw new RuntimeException('hosted_original_prefix_not_proven');
+    }
+    $after=achbotHostedLinkedBuySnapshot($db,$payId,false,true);
+    if (!$after || !hash_equals($original,achbotHostedLinkedBuyPin($after)) ||
+        count($after['lines'])!==count($before['lines']))
+        throw new RuntimeException('hosted_original_prefix_changed');
+    $next=count($after['lines'])+1;
+    if ($next<=1 || $next>$before['count'])
+        throw new RuntimeException('hosted_original_next_ordinal_invalid');
+    $issued=strtotime((string)$first['created_at']);
+    if ($issued===false || $issued<=0)
+        throw new RuntimeException('hosted_original_first_issue_invalid');
+    $days=max(1,(int)round(((int)$first['requested_expire']-$issued)/86400));
+    $volume=intdiv((int)$first['requested_bytes'],1073741824);
+    // A plan edited after the first ordinal cannot silently dictate a
+    // different paid entitlement on the remaining original account.
+    $plan=getPlanDetails($db,(int)$pay['plan_id']);
+    $detail=$plan['plan']??null;
+    if (!is_array($detail) ||
+        (int)($detail['server_id']??0)!==$server ||
+        (int)($detail['inbound_id']??-1)!==0 ||
+        (int)($detail['volume']??0)!==$volume ||
+        (int)($detail['days']??0)!==$days ||
+        ((int)($pay['volume']??0)>0 && (int)$pay['volume']!==$volume) ||
+        ((int)($pay['day']??0)>0 && (int)$pay['day']!==$days))
+        throw new RuntimeException('hosted_original_plan_entitlement_changed');
+    // The shared 007 reservation, not this read-only preflight, is the
+    // transaction/unique-key authority. No account POST can precede it.
+    [$serverInfo,$serverConfig]=getServerInfoAndConfig($db,$server);
+    if ((string)$serverConfig['type']!==(string)$pay['panel_type'])
+        throw new RuntimeException('hosted_original_panel_changed');
+    $protocol=(string)($detail['protocol']??'');
+    $remark='hosted_resume_'.$payId.'_'.$next;
+    [$remote,$name,$port,$newEffect]=achbotCreatePaidAccount($db,$payId,$next,[
+        'user_id'=>(int)$pay['user_id'],'server_type'=>(string)$pay['panel_type'],
+        'server_id'=>$server,'inbound_id'=>0,'plan_id'=>(int)$pay['plan_id'],
+        'remark'=>$remark,'volume'=>$volume,'days'=>$days,
+        'uniqid'=>generateRandomString(42,$protocol),
+        'protocol'=>$protocol,'port'=>0,'expire_microdate'=>0,
+        'net_type'=>(string)($detail['type']??'normal'),
+        'rahgozar'=>(int)($detail['rahgozar']??0),
+        'limitip'=>(int)($detail['limitip']??0)
+    ]);
+    if (!is_object($remote) || ($remote->success??false)!==true ||
+        $name!==$remark || (int)$newEffect<=0)
+        throw new RuntimeException('hosted_original_new_ordinal_unverified');
+    return ['started_ordinal'=>$next,'requested'=>$before['count']];
 }
 
 /** Existing Owner-only technical recovery route authenticates BEFORE entry.
@@ -720,8 +817,18 @@ function achbotResumeHostedLinkedBuy(
     ?callable $marzbanRead=null
 ): array {
     achbotEffectRequireAutocommit($db);
-    $before=achbotHostedLinkedBuySnapshot($db,$payId);
+    $before=achbotHostedLinkedBuySnapshot($db,$payId,false,true);
     if (!$before) throw new RuntimeException('hosted_recovery_manifest_unavailable');
+    if (count($before['lines'])<$before['count']) {
+        $progress=achbotHostedContinueUnstartedOrdinal($db,$payId,$marzbanRead);
+        if ($progress['started_ordinal']<$progress['requested']) return [
+            'committed'=>false,'progressed'=>true,'ordinal'=>$progress['started_ordinal'],
+            'count'=>$progress['requested']];
+        // All original ordinals now exist. The new original account must
+        // independently pass the same authenticated readback and 018 gate.
+        $before=achbotHostedLinkedBuySnapshot($db,$payId);
+        if (!$before) throw new RuntimeException('hosted_original_manifest_not_complete');
+    }
     $pay=$before['pay'];$count=$before['count'];
     $pin=achbotHostedLinkedBuyPin($before);
     $owner=(int)$pay['user_id'];$server=(int)$pay['server_id'];
