@@ -46,6 +46,7 @@ require_once $root.'/src/Purchase/Core.php';
 require_once $root.'/src/Purchase/OrderWrites.php';
 require_once $root.'/src/Finance/ReceiptHelpers.php';
 require_once $root.'/src/Finance/PaidAccountRecovery.php';
+require_once $root.'/src/Finance/DeliveryLedger.php';
 $pay=(int)$spec['pay'];$result=null;$error=null;
 $reader=static function(string $url,string $user,string $pass,string $name) use($connection,$pay): ?object {
     $GLOBALS['events'][]=['event'=>'GET','name'=>$name];
