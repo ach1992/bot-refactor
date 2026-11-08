@@ -65,7 +65,7 @@ $pay=(int)$spec['pay'];$provider=(string)$spec['provider'];
 if (($spec['panel']??'')==='pasarguard') achbotPgPinPayment($connection,$pay);
 // The exact hosted paid+review claim is the production source transition.
 // The synthetic provider's previous verification is staged in 003 by seed.
-$q=$connection->prepare('SELECT hash_id,price,agent_count,server_id,plan_id,user_id
+$q=$connection->prepare('SELECT hash_id,price,agent_count,server_id,plan_id,user_id,day,volume
     FROM pays WHERE id=?');$q->bind_param('i',$pay);$q->execute();
 $row=$q->get_result()->fetch_assoc();$q->close();
 if (!$row) throw new RuntimeException('hosted_fixture_pay_missing');
@@ -79,7 +79,9 @@ foreach (range(1,(int)($spec['create_prefix']??$count)) as $ordinal) {
         'server_id'=>(int)$row['server_id'],'inbound_id'=>0,
         'plan_id'=>(int)$row['plan_id'],
         'remark'=>'hostedoriginal_'.$pay.'_'.$ordinal,
-        'volume'=>2,'days'=>30,'uniqid'=>'fixture-original-uuid',
+        'volume'=>(int)$row['volume']>0?(int)$row['volume']:2,
+        'days'=>(int)$row['day']>0?(int)$row['day']:30,
+        'uniqid'=>'fixture-original-uuid',
         'protocol'=>'vless','port'=>0,'expire_microdate'=>0,
         'net_type'=>'normal','rahgozar'=>0,'limitip'=>0
     ]);
@@ -109,7 +111,44 @@ RECOVERY=wallet.RECOVERY.replace(
     "achbotWalletBuyRecoverable", "achbotHostedLinkedBuyRecoverable"
 ).replace(
     "achbotResumeWalletBuy", "achbotResumeHostedLinkedBuy"
-).replace("walletBuyResume_","hostedBuyResume_")
+).replace("walletBuyResume_","hostedBuyResume_").replace(
+    "function sendQrFromLink(...$args) {",
+    "function generateRandomString($length,$protocol) {return '11111111-2222-4333-8444-555555555555';}\nfunction sendQrFromLink(...$args) {"
+).replace(
+    "function createServerAccount(...$args) {throw new RuntimeException('forbidden_native_post');}",
+    '''function createServerAccount(...$args) {
+    // The only permitted recovery POST is a genuinely NEVER reserved 007
+    // ordinal under the actual source reservation-before-POST path.
+    $expect=(int)($GLOBALS['spec']['allow_original_new_ordinal']??0);
+    if ($expect<=0 || (string)($args[0]??'')!=='marzban')
+        throw new RuntimeException('forbidden_native_recovery_post');
+    $name=(string)$args[4];
+    $q=$GLOBALS['connection']->prepare("SELECT ordinal,operation_id,state
+        FROM service_effects WHERE remote_username=? AND effect_kind='create'");
+    $q->bind_param('s',$name);$q->execute();
+    $a=$q->get_result()->fetch_assoc();$q->close();
+    if (!$a || (int)$a['ordinal']!==$expect ||
+        $a['state']!=='dispatching' ||
+        $a['operation_id']!==(string)$args[14])
+        throw new RuntimeException('new_original_not_pre_reserved');
+    $GLOBALS['events'][]=['event'=>'POST_NEW_ORIGINAL','ordinal'=>$expect];
+    $GLOBALS['newOriginal'][$name]=(object)[
+        'username'=>$name,'note'=>'achbot:v1:'.$a['operation_id'],
+        'expire'=>(int)$args[15],
+        'data_limit'=>(int)$args[5]*1073741824,
+        'status'=>'active','subscription_url'=>'/sub/hosted-new',
+        'links'=>['vless://fixture.invalid']];
+    return [(object)['success'=>true],$name,12345];
+}'''
+).replace(
+    "function getMarzbanUser(...$args) {throw new RuntimeException('unexpected_unpinned_native_get');}",
+    '''function getMarzbanUser(...$args) {
+    if (($args[3]??false)!==true)
+        throw new RuntimeException('forbidden_unpinned_native_get');
+    $GLOBALS['events'][]=['event'=>'NEW_ORIGINAL_GET','name'=>$args[1]];
+    return $GLOBALS['newOriginal'][$args[1]]??null;
+}'''
+)
 
 def sql(work,env,query):
     return wallet.sql(work,env,query)
@@ -169,7 +208,7 @@ def check():
                 raise RuntimeError('original hosted source '+repr((p.returncode,p.stderr[-1200:],p.stdout[-200:])))
             return json.loads(p.stdout)
         def seed(tag,provider='nextpay',panel='marzban',count=1,
-                 create_prefix=None,link_prefix=None):
+                 create_prefix=None,link_prefix=None,custom_volume=0,custom_days=0):
             assert tag.isascii() and tag.isalnum()
             sql(work,env,"UPDATE server_info SET ucount=10,active=1,state=1 WHERE id=2; "
                 "UPDATE users SET wallet=50000 WHERE userid=1001")
@@ -181,7 +220,8 @@ def check():
             ref='hosted-'+tag
             sql(work,env,"INSERT INTO pays(hash_id,user_id,type,plan_id,server_id,agent_count,"
                 "price,day,volume,request_date,state,payid) "
-                f"VALUES('{tag}',1001,'BUY_SUB',7,2,{count},100,0,0,UNIX_TIMESTAMP(),'pending','{ref}')")
+                f"VALUES('{tag}',1001,'BUY_SUB',7,2,{count},100,{custom_days},{custom_volume},"
+                f"UNIX_TIMESTAMP(),'pending','{ref}')")
             pay=int(sql(work,env,f"SELECT id FROM pays WHERE hash_id='{tag}'"))
             sql(work,env,"INSERT INTO payment_attempts "
                 "(pay_row_id,provider,order_hash,provider_reference,quote_amount,"
@@ -314,19 +354,246 @@ def check():
         scenarios.append('hosted_foreign_native_marker_blocks_then_valid_get_recovers')
 
         pay,_=seed('hostedincomplete',count=2,create_prefix=1,link_prefix=1)
-        clean_get()
-        missing=run(pay)
-        assert missing['error']=='hosted_recovery_manifest_unavailable' and missing['delivery']==[]
+        original_order=int(sql(work,env,'SELECT order_id FROM service_effects '
+            f'WHERE pay_row_id={pay} AND ordinal=1'))
         assert stage(pay)=='review\tfulfillment_started' and balances()==(50000,8)
-        assert not server.trace
-        scenarios.append('hosted_incomplete_original_ordinals_refuse_without_get_or_create')
+        clean_get()
+        assert run(pay,op='eligible')['result'] is True
+        missing=run(pay,allow_original_new_ordinal=2)
+        assert missing['error'] is None and stage(pay)=='done\tdelivered',missing
+        assert [e['event'] for e in missing['events']].count('POST_NEW_ORIGINAL')==1
+        assert missing['orders']==2 and len(missing['delivery'])==2,missing
+        assert count('payment_delivery_intents',pay)==2 and balances()==(50000,8)
+        assert int(sql(work,env,'SELECT order_id FROM service_effects '
+            f'WHERE pay_row_id={pay} AND ordinal=1'))==original_order
+        assert not any(method=='POST' for method,_ in native_trace())
+        assert run(pay,allow_original_new_ordinal=2)['error']=='hosted_recovery_manifest_unavailable'
+        scenarios.append('hosted_unstarted_second_original_ordinal_once_without_second_capacity_claim')
 
+        pay,_=seed('hostedpgtailthree',panel='pasarguard',count=3,
+                   create_prefix=1,link_prefix=1)
+        original_order=int(sql(work,env,'SELECT order_id FROM service_effects '
+            f'WHERE pay_row_id={pay} AND ordinal=1'))
+        server.trace=[]
+        first=run(pay,pg=True,op='route',actor=9001,chat=9001)
+        assert first['error'] is None and first['orders']==1,first
+        assert count('payment_delivery_intents',pay)==0
+        assert stage(pay)=='review\tfulfillment_started'
+        assert sql(work,env,'SELECT state FROM service_effects '
+            f'WHERE pay_row_id={pay} AND ordinal=2')=='verified'
+        assert len([e for e in server.trace if e[0]=='POST'])==1,server.trace
+        assert any('hostedBuyResume_'+str(pay) in str(e['markup']) for e in first['events']
+                   if e['event']=='OWNER_EDIT'),first
+        resumed=run(pay,pg=True,op='route',actor=9001,chat=9001)
+        assert resumed['error'] is None and resumed['orders']==3,resumed
+        assert stage(pay)=='done\tdelivered' and balances()==(50000,7)
+        assert count('payment_delivery_intents',pay)==3
+        assert len([e for e in server.trace if e[0]=='POST'])==2,server.trace
+        assert int(sql(work,env,'SELECT order_id FROM service_effects '
+            f'WHERE pay_row_id={pay} AND ordinal=1'))==original_order
+        assert run(pay,pg=True,op='check',ordinal=3)['result']=='acknowledged'
+        scenarios.append('pg_hosted_two_unstarted_trailing_ordinals_one_owner_click_each')
+
+        pay,_=seed('hostedpgmissingrace',panel='pasarguard',count=2,
+                   create_prefix=1,link_prefix=1)
+        server.trace=[]
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            race=list(pool.map(lambda _:run(pay,pg=True),range(2)))
+        assert count('orders_list',pay)==2 and count('payment_delivery_intents',pay)==2,race
+        assert stage(pay)=='done\tdelivered' and balances()==(50000,8)
+        assert len([e for e in server.trace if e[0]=='POST'])==1,server.trace
+        scenarios.append('pg_hosted_concurrent_missing_ordinal_creates_only_one_remote_account')
+
+        pay,_=seed('hostedpglostpost',panel='pasarguard',count=2,
+                   create_prefix=1,link_prefix=1)
+        server.trace=[];server.drop_next_post_reply=True
+        unknown=run(pay,pg=True)
+        assert unknown['error'] and unknown['orders']==1,unknown
+        assert stage(pay)=='review\tfulfillment_started'
+        assert count('payment_delivery_intents',pay)==0
+        assert sql(work,env,'SELECT state FROM service_effects '
+            f'WHERE pay_row_id={pay} AND ordinal=2')=='dispatching'
+        assert len([e for e in server.trace if e[0]=='POST'])==1,server.trace
+        # Readback of the original operation is the ONLY permitted recovery;
+        # never infer that the POST was not applied because its HTTP died.
+        recovered=run(pay,pg=True)
+        assert recovered['error'] is None and recovered['orders']==2,recovered
+        assert stage(pay)=='done\tdelivered' and balances()==(50000,8)
+        assert count('payment_delivery_intents',pay)==2
+        assert len([e for e in server.trace if e[0]=='POST'])==1,server.trace
+        assert run(pay,pg=True)['error']=='hosted_recovery_manifest_unavailable'
+        scenarios.append('pg_hosted_lost_create_http_response_readback_only_never_reposts')
+
+        pay,_=seed('hostedpgchangedplan',panel='pasarguard',count=2,
+                   create_prefix=1,link_prefix=1)
+        sql(work,env,'UPDATE server_plans SET volume=3 WHERE id=7')
+        server.trace=[]
+        denied=run(pay,pg=True)
+        assert denied['error']=='hosted_original_plan_entitlement_changed',denied
+        assert stage(pay)=='review\tfulfillment_started'
+        assert len([e for e in server.trace if e[0]=='POST'])==0,server.trace
+        assert sql(work,env,'SELECT COUNT(*) FROM service_effects '
+            f'WHERE pay_row_id={pay}')=='1'
+        sql(work,env,'UPDATE server_plans SET volume=2 WHERE id=7')
+        recovered=run(pay,pg=True)
+        assert recovered['error'] is None and recovered['orders']==2,recovered
+        scenarios.append('pg_hosted_changed_plan_terms_block_unstarted_original_create')
+
+        pay,_=seed('hostedpgcustomtail',panel='pasarguard',count=2,
+                   create_prefix=1,link_prefix=1,custom_volume=4,custom_days=15)
+        server.trace=[]
+        custom=run(pay,pg=True)
+        assert custom['error'] is None and custom['orders']==2,custom
+        assert stage(pay)=='done\tdelivered'
+        assert sql(work,env,'SELECT COUNT(*) FROM service_effects '
+            f'WHERE pay_row_id={pay} AND requested_bytes=4294967296')=='2'
+        assert len([e for e in server.trace if e[0]=='POST'])==1,server.trace
+        scenarios.append('pg_hosted_custom_paid_entitlement_preserved_on_unstarted_original')
+
+        pay,_=seed('hostedpgincompletegap',panel='pasarguard',count=3,
+                   create_prefix=2,link_prefix=1)
+        sql(work,env,'UPDATE service_effects SET ordinal=3 WHERE pay_row_id='+
+            str(pay)+' AND ordinal=2')
+        server.trace=[]
+        denied=run(pay,pg=True)
+        assert denied['error']=='hosted_recovery_manifest_unavailable',denied
+        assert len(server.trace)==0
+        assert stage(pay)=='review\tfulfillment_started'
+        scenarios.append('pg_hosted_noncontiguous_manifest_refuses_new_original_create')
+
+        # The original Native CREATE was committed, but its local order
+        # transaction was lost. Attach ONLY that proven operation, in the same
+        # terminal transaction as 018 and 003; never create a replacement.
         pay,_=seed('hostedunlinked',count=1,link_prefix=0)
+        assert count('orders_list',pay)==0
         clean_get()
         unlinked=run(pay)
-        assert unlinked['error']=='hosted_recovery_manifest_unavailable' and unlinked['delivery']==[]
-        assert stage(pay)=='review\tfulfillment_started' and balances()==(50000,9)
-        scenarios.append('hosted_unlinked_original_requires_separate_operator_reconciliation')
+        assert unlinked['error'] is None and unlinked['orders']==1,unlinked
+        assert stage(pay)=='done\tdelivered' and balances()==(50000,9)
+        assert count('payment_delivery_intents',pay)==1
+        assert run(pay,op='check')['result']=='acknowledged'
+        assert not any(method=='POST' for method,_ in native_trace())
+        scenarios.append('hosted_unlinked_original_native_attaches_without_recreate_or_recharge')
+
+        pay,_=seed('hostedpartial',count=2,link_prefix=1)
+        original_order=int(sql(work,env,'SELECT order_id FROM service_effects '
+            f'WHERE pay_row_id={pay} AND ordinal=1'))
+        assert count('orders_list',pay)==1 and count('payment_delivery_intents',pay)==0
+        clean_get()
+        partial=run(pay)
+        assert partial['error'] is None and partial['orders']==2,partial
+        assert stage(pay)=='done\tdelivered' and balances()==(50000,8)
+        assert count('payment_delivery_intents',pay)==2
+        assert int(sql(work,env,'SELECT order_id FROM service_effects '
+            f'WHERE pay_row_id={pay} AND ordinal=1'))==original_order
+        assert int(sql(work,env,'SELECT order_id FROM service_effects '
+            f'WHERE pay_row_id={pay} AND ordinal=2'))!=original_order
+        assert run(pay,op='check',ordinal=2)['result']=='acknowledged'
+        assert not any(method=='POST' for method,_ in native_trace())
+        scenarios.append('hosted_partial_marzban_keeps_original_order_and_attaches_second')
+
+        pay,_=seed('hostedpgpartial',panel='pasarguard',count=2,link_prefix=1)
+        original_order=int(sql(work,env,'SELECT order_id FROM service_effects '
+            f'WHERE pay_row_id={pay} AND ordinal=1'))
+        clean_get()
+        partial=run(pay,pg=True,op='route',actor=9001,chat=9001)
+        assert partial['error'] is None and partial['orders']==2,partial
+        assert stage(pay)=='done\tdelivered' and balances()==(50000,8)
+        assert count('payment_delivery_intents',pay)==2
+        assert int(sql(work,env,'SELECT order_id FROM service_effects '
+            f'WHERE pay_row_id={pay} AND ordinal=1'))==original_order
+        assert sql(work,env,'SELECT COUNT(*) FROM orders_list o '
+            'JOIN service_effects e ON e.order_id=o.id '
+            f'WHERE e.pay_row_id={pay} AND o.provider_effect_id=e.id')=='2'
+        assert all(method=='GET' for method,_ in native_trace()),server.trace
+        assert run(pay,pg=True,op='check',ordinal=2)['result']=='acknowledged'
+        scenarios.append('pg_hosted_partial_original_native_attaches_with_012_pins')
+
+        pay,_=seed('hostedunlinkedmissing',count=1,link_prefix=0)
+        clean_get()
+        missing=run(pay,native='missing')
+        assert missing['error'] and count('orders_list',pay)==0,missing
+        assert stage(pay)=='review\tfulfillment_started'
+        assert count('payment_delivery_intents',pay)==0
+        assert run(pay)['error'] is None
+        scenarios.append('hosted_unlinked_missing_remote_refuses_then_original_get_recovers')
+
+        pay,_=seed('hostedpgunlinkedforeign',panel='pasarguard',link_prefix=0)
+        clean_get()
+        server.mode='wrong_note'
+        server.bad_username=f'hostedoriginal_{pay}_1'
+        foreign=run(pay,pg=True)
+        assert foreign['error'] and count('orders_list',pay)==0,foreign
+        assert stage(pay)=='review\tfulfillment_started'
+        assert count('payment_delivery_intents',pay)==0
+        server.mode='ok';server.bad_username=None
+        accepted=run(pay,pg=True)
+        assert accepted['error'] is None and count('orders_list',pay)==1,accepted
+        assert not any(method=='POST' for method,_ in native_trace())
+        scenarios.append('pg_hosted_unlinked_foreign_native_marker_refused')
+
+        pay,_=seed('hostedpartialconcurrent',count=2,link_prefix=1)
+        clean_get()
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            attempts=list(pool.map(lambda _:run(pay),range(2)))
+        assert sum(x['error'] is None for x in attempts)==1,attempts
+        assert count('orders_list',pay)==2 and count('payment_delivery_intents',pay)==2
+        assert stage(pay)=='done\tdelivered' and balances()==(50000,8)
+        assert not any(method=='POST' for method,_ in native_trace())
+        scenarios.append('hosted_partial_concurrent_owner_resume_attaches_once')
+
+        pay,_=seed('hostedunlinkedafterget',count=1,link_prefix=0)
+        clean_get()
+        stale=after_readback(pay,lambda:sql(work,env,
+            "UPDATE server_config SET panel_url='http://127.0.0.1:9/new' WHERE id=2"),
+            pg=False)
+        assert stale['error']=='hosted_recovery_identity_changed',stale
+        assert count('orders_list',pay)==0 and count('payment_delivery_intents',pay)==0
+        assert stage(pay)=='review\tfulfillment_started'
+        sql(work,env,pgstorage.connection(2,1,url))
+        sql(work,env,"UPDATE server_config SET type='marzban' WHERE id=2")
+        assert run(pay)['error'] is None
+        scenarios.append('hosted_unlinked_marzban_target_drift_after_get_blocks_attachment')
+
+        pay,_=seed('hostedpgunlinkeddrift',panel='pasarguard',link_prefix=0)
+        sql(work,env,pgstorage.connection(2,66,url,instance='e'*32))
+        clean_get()
+        denied=run(pay,pg=True)
+        assert denied['error']=='hosted_recovery_manifest_unavailable' and not server.trace,denied
+        assert stage(pay)=='review\tfulfillment_started'
+        assert count('orders_list',pay)==0 and count('payment_delivery_intents',pay)==0
+        sql(work,env,pgstorage.connection(2,1,url))
+        clean_get()
+        accepted=run(pay,pg=True)
+        assert accepted['error'] is None and accepted['orders']==1,accepted
+        assert all(method=='GET' for method,_ in native_trace())
+        scenarios.append('pg_hosted_unlinked_original_refuses_physical_provider_retarget')
+
+        pay,_=seed('hostedpartialrollback',count=2,link_prefix=1)
+        original_order=int(sql(work,env,'SELECT order_id FROM service_effects '
+            f'WHERE pay_row_id={pay} AND ordinal=1'))
+        sql(work,env,"DELIMITER //\n"
+            "CREATE TRIGGER owned_hosted_partial_seal_failure "
+            "BEFORE INSERT ON payment_delivery_intents FOR EACH ROW "
+            "BEGIN IF NEW.ordinal=2 THEN SIGNAL SQLSTATE '45000' "
+            "SET MESSAGE_TEXT='fixture_partial_seal'; END IF; END//\n"
+            "DELIMITER ;")
+        try:
+            clean_get()
+            failed=run(pay)
+        finally:
+            sql(work,env,'DROP TRIGGER owned_hosted_partial_seal_failure')
+        assert failed['error'] and failed['orders']==1 and failed['delivery']==[],failed
+        assert stage(pay)=='review\tfulfillment_started' and balances()==(50000,8)
+        assert int(sql(work,env,'SELECT order_id FROM service_effects '
+            f'WHERE pay_row_id={pay} AND ordinal=1'))==original_order
+        assert sql(work,env,'SELECT order_id FROM service_effects '
+            f'WHERE pay_row_id={pay} AND ordinal=2')=='NULL'
+        assert count('payment_delivery_intents',pay)==0
+        restored=run(pay)
+        assert restored['error'] is None and restored['orders']==2
+        assert stage(pay)=='done\tdelivered' and balances()==(50000,8)
+        scenarios.append('hosted_partial_link_and_delivery_rollback_atomically')
 
         pay,_=seed('hostedquote')
         sql(work,env,'UPDATE payment_attempts SET local_amount_toman=101 '

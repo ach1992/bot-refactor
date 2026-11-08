@@ -435,41 +435,67 @@ original orders, unstarted held debit, merchant-hosted uncertainty or
 installed Chili acceptance. Do not deploy or run live recovery without
 separate target approval, compatible 003/007/018 audit and restore-tested backup.
 
-### Source-only original Hosted paid + fully linked delivery recovery
+### Source-only original Hosted paid delivery and partial-link recovery
 
-The Owner-private technical case can offer the hostedBuyResume callback when
-a genuine existing NextPay/Zarinpal BUY_SUB has already reached paid through
-the original hosted claim, its unique 003 attempt is still in
-review / fulfillment_started, and all original 007 CREATE ordinals are
-complete, contiguous and linked to their exact original local orders.
-The first CREATE owns the whole capacity reservation. The original invoice
-reference, fixed Toman quote, paid customer/plan/server, 007 operation/target,
-order/amount and current PasarGuard physical incarnation must all match.
-The existing 019 journal must be valid and contain NO operator decision:
-a human-attested service result cannot silently become an authenticated
-merchant result. The required 018 delivery ledger must be ready and empty
-for this payment.
+The Owner-private technical case may offer `hostedBuyResume_<pay>` for an
+**existing** NextPay/Zarinpal `BUY_SUB` whose original financial claim is
+`pays.state=paid`, original 003 attempt is `review/fulfillment_started`, and
+every original 007 CREATE ordinal **already present** is contiguous, tied
+to its first ordinal's full-count capacity reservation and unchanged physical
+provider. Original accounts may already be linked to their exact original
+orders or may still be `dispatching` / `verified` with no order link.
+Any missing ordinal must be a **trailing** unstarted line: 007's mandatory
+committed-before-POST reservation proves no source-driven CREATE was ever
+dispatched for that ordinal. A gap, a missing first capacity owner, a present
+`dispatching` row or any unjournaled historical creation is NOT an
+unstarted original account and is never re-POSTed.
 
-This path does not verify money again, perform merchant GET, reserve
-capacity, CREATE/modify native accounts, relink/reprice existing orders or
-repeat a payment. It checks each original native account with exact read-only
-Marzban/PasarGuard GET and renders delivery packets without sending. After
-all reads, a final SQL transaction locks and rechecks the exact payment,
-003, 007, original orders, current physical provider binding and any existing
-012 mutation generation. The transaction inserts encrypted immutable 018
-customer packets and closes the service-fulfillment 003 attempt as
-done / delivered, without changing the original paid state. This value is not
-a new merchant assertion or proof of a Telegram ACK. After COMMIT, only
-PENDING packets can be sent; UNKNOWN packets are never automatically resent.
+The exact immutable payment reference, fixed Toman quote, recipient,
+plan/server, original 007 operation/target, current physical provider
+identity and 019 absence of Owner attestation must all match. Previously
+linked orders retain their immutable order IDs, amount and Native identity;
+PasarGuard 012 mutation generations and provider incarnation are checked.
+An existing 018 intent prohibits reconstruction and cannot be silently
+replaced.
 
-Missing/unlinked/foreign original accounts, incomplete ordinals, unresolved
-owner attestation, uncertain funds or already-sealed delivery remain outside
-this action and must be separately reconciled. No historical/terminal paid
-record is automatically backfilled. The original hosted browser-result and
-administrator-report paths are not replaced by this narrower repair.
-Source-real PHP 8.5 / disposable MariaDB + loopback acceptance is required;
-installed Chili, migrations 018/019, backups/restores and live Telegram/provider
-acceptance remain separately authorized and UNVERIFIED.
+An authorized Owner continuation first performs authenticated read-only
+Marzban/PasarGuard GET for **each recorded original** CREATE operation;
+unknown, mismatched, foreign or retargeted remote accounts are never
+adopted. Previously `dispatching` originals may become locally `verified`
+only on matching readback.
+
+When exactly one or more **trailing** original ordinals were never reserved,
+the explicitly labeled Owner action may issue **one first-time 007 CREATE**
+per click, only after successful preceding native readback, immutable payment
+identity, original reservation/target and original plan volume/days checks.
+The 007 source transaction MUST commit a unique original ordinal before any
+provider POST. A lost POST response becomes its same original
+`dispatching` row and is GET-only on every subsequent callback, not an
+invitation to issue a replacement or re-reserve capacity. If more unstarted
+ordinals remain, the Owner sees a clear next-action status with no Telegram
+delivery. A final ordinal must pass another complete original readback,
+followed by the terminal atomic local order/delivery closure.
+
+For a now **complete** original manifest, in one terminal SQL transaction the original linked
+orders remain unchanged, **only verified original accounts with no local
+order receive their first local order and 007 link**, and every 018 immutable
+encrypted customer packet is sealed. The same COMMIT closes the 003
+*service fulfillment* attempt as `done/delivered`, which does **not**
+assert a new merchant settlement or a Telegram ACK. No repeated provider CREATE, wallet debit, payment settlement, capacity
+claim or replacement is performed. Only a genuinely never-reserved trailing
+original ordinal can receive its **first** provider CREATE under an
+explicit Owner action. A rollback undoes every new local link/order and packet while
+preserving original verified native operations. After COMMIT only PENDING
+Telegram packets are sent; `unknown`/`dispatching` are never automatically
+retried.
+
+Missing first ordinal/invalid tail gaps, orphan/foreign/conflicting
+identities, missing financial provenance, Owner-approved replacement, and
+already sealed 018 remain outside this bounded action and demand independent,
+evidence-based reconciliation. No historical paid row is automatically backfilled.
+Source-real PHP 8.5 / disposable MariaDB + loopback acceptance is mandatory;
+installed Chili, 018/019/020 migrations, backup/restore and real
+provider/Telegram acceptance remain separately gated and **UNVERIFIED**.
 
 ### 2026-11-08 independent-review remediation for PR #129
 

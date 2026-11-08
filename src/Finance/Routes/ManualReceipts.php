@@ -422,9 +422,10 @@ if (preg_match('/^accept([A-Za-z0-9_-]{1,50})$/D',
     }
 }
 
-// Complete ORIGINAL native/account manifests only. Wallet recovery closes
-// the local debit hold; hosted recovery seals customer packets for a paid
-// claim whose original accounts were all locally linked. Neither can CREATE.
+// Wallet closes a complete original debit hold. Hosted may also provision
+// ONE never-started trailing original ordinal, but only after authenticated
+// readback of the already reserved prefix and an explicit Owner callback.
+// Unknown existing CREATE effects can NEVER be re-POSTed as missing.
 $originalBuyResume=[];
 if (preg_match('/^(walletBuyResume|hostedBuyResume)_([1-9][0-9]{0,9})$/D',
         (string)$data,$originalBuyResume)===1) {
@@ -434,7 +435,7 @@ if (preg_match('/^(walletBuyResume|hostedBuyResume)_([1-9][0-9]{0,9})$/D',
         achbotAdminDeny();return;
     }
     require_once __DIR__.'/../PaidAccountRecovery.php';
-    $id=(int)$originalBuyResume[2];$committed=false;$summary=null;
+    $id=(int)$originalBuyResume[2];$committed=false;$summary=null;$progress=null;
     $hosted=$originalBuyResume[1]==='hostedBuyResume';
     try {
         $progress=$hosted
@@ -450,10 +451,13 @@ if (preg_match('/^(walletBuyResume|hostedBuyResume)_([1-9][0-9]{0,9})$/D',
             '_recovery_deferred pay_id='.$id.
             ' reason='.$reason['reason'].' cause='.$reason['class']);
     }
+    $progressed=($progress['progressed']??false)===true;
     $body=$committed?achbotMessage(($summary && (int)$summary['ack']===(int)$summary['total'])
             ? 'finance_workbench.status_completed'
             : 'finance_workbench.status_delivery_unconfirmed'):
-        achbotMessage('service_workbench.unavailable');
+        ($progressed?achbotMessageHtml('hosted_original_recovery.started',[
+            'ordinal'=>(int)$progress['ordinal'],'count'=>(int)$progress['count']]):
+            achbotMessage('service_workbench.unavailable'));
     if ($committed && $summary) $body.="\n".achbotMessageHtml(
         'delivery_recovery.summary',[
             'total'=>$summary['total'],'ack'=>$summary['ack'],
@@ -462,6 +466,9 @@ if (preg_match('/^(walletBuyResume|hostedBuyResume)_([1-9][0-9]{0,9})$/D',
     $buttons=[];
     if ($committed) $buttons[]=[['text'=>achbotMessage('delivery_recovery.open'),
         'callback_data'=>'deliveryCase_'.$id]];
+    if ($progressed && $hosted)
+        $buttons[]=[['text'=>achbotMessage('hosted_original_recovery.resume_unstarted'),
+            'callback_data'=>'hostedBuyResume_'.$id]];
     // Original recovery is terminal for the technical case; unresolved
     // cases stay accessible for further evidence-based reconciliation.
     $buttons[]=[['text'=>achbotMessage('service_workbench.back'),
@@ -585,9 +592,18 @@ if (preg_match('/^serviceRecovery(Inbox|Case)(?:_([1-9][0-9]{0,17}))?$/D',
                     :(achbotHostedLinkedBuyRecoverable($connection,$id)
                         ?'hostedBuyResume_'.$id:null);
                 if ($resume!==null) {
-                    $buttons[]=[['text'=>achbotMessage('service_recovery_action.resume_purchase'),
+                    $unstarted=false;
+                    if ((string)$pay['state']==='paid') {
+                        $prefix=achbotHostedLinkedBuySnapshot($connection,$id,false,true);
+                        $unstarted=$prefix && count($prefix['lines'])<$prefix['count'];
+                    }
+                    $buttons[]=[['text'=>$unstarted
+                        ?achbotMessage('hosted_original_recovery.resume_unstarted')
+                        :achbotMessage('service_recovery_action.resume_purchase'),
                         'callback_data'=>$resume]];
-                    $body.="\n".achbotMessage('service_recovery_action.resume_warning');
+                    $body.="\n".($unstarted
+                        ?achbotMessage('hosted_original_recovery.unstarted_warning')
+                        :achbotMessage('service_recovery_action.resume_warning'));
                 }
             }
             if ($canResume) {

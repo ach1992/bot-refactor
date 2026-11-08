@@ -114,6 +114,35 @@
   immutable 009 fingerprint, not the mutable stage, owns bank identity.
   No new background reprocessing loop is introduced.
 
+## Original Hosted BUY_SUB recovery — current source candidate
+
+After RC25, Issue #117 recovery uses original 003/007/012/018/019 journals
+for paid NextPay/Zarinpal native purchases whose order/delivery commit
+did not complete. With a complete original CREATE manifest, the Owner
+authenticates each original Marzban/PasarGuard account via GET; original
+linked orders are immutable, verified-but-unlinked original accounts receive
+their first local orders, and original 003 service closure and all immutable
+018 packets COMMIT together. Customer Telegram follows COMMIT only.
+
+If a purchase has a **contiguous original 007 prefix**, a first full-count
+capacity reservation, and **trailing never-reserved ordinals**, the explicitly
+labeled Owner callback may first perform one new 007 CREATE for **the next
+original never-started ordinal**. This is not replay or replacement: the
+actual 007 source reserves a unique ordinal before the first POST, reuses
+the original capacity hold and denies changed provider/plan/entitlement
+or missing authenticated GET of every previous account. The Owner can repeat
+only for further never-started ordinals. A dispatched/unknown 007 record
+must be inspected by GET, never re-POSTed. No new merchant settlement,
+Wallet debit, refund, duplicate original reserve or new invoice is allowed.
+
+Missing first capacity owner, noncontiguous 007 ordinals, unknown/foreign/
+orphan remote accounts and evidence-based explicitly approved replacement
+remain separate Owner reconciliation. A 404, timeout, absent historical
+provenance or changed physical endpoint is never an automatic replacement
+authorization. Preserve original 003/007/012/018/019/020 evidence; never
+delete/regenerate the journals. Further details: [Payment delivery
+recovery](PAYMENT-DELIVERY-RECOVERY.md).
+
 ## Prerequisites and one-way migration
 
 1. Determine **actual installed** source ZIP manifest, schema, PHP version,

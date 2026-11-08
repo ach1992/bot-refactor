@@ -404,6 +404,13 @@ WORKBENCH_BLOCKS={
   'sha':'37c23110bf7b6696eef5b2c8a552d9bccb519ac830a0094aa876adb57a656360',
   'names':{'resume_purchase','resume_warning','resume_verified_edit','edit_warning','edit_unverified'}
  },
+ # #117 additive new original-HOSTED first-time CREATE guidance.
+ # Source bytes are independently pinned; all pre-existing sections and
+ # prior Owner-approved translations remain byte-for-byte unchanged.
+ 'hosted_original_recovery':{
+  'sha':'f442322538c4ebf091f8ca914667a046ad3ba7431a094de4cb794f25d6574394',
+  'names':{'resume_unstarted','unstarted_warning','started'}
+ },
  'service_edit_delivery':{
   'sha':'32355d7bacf05d19b252482f21c2ea382723a63f44ddb7fb3e89c9e24fa9a8fa',
   'names':{'header','line','more','warning'}

@@ -1,5 +1,39 @@
 # Current source and published release contracts
 
+## Unreleased Issue #117 source — next prerelease preflight (NOT published)
+
+The integrated main after RC25 includes Owner-initiated payment-review and
+service/delivery recovery paths from PRs #118–#131. The next source candidate
+extends original paid Hosted BUY_SUB recovery to fully recorded 007 native
+manifests with partially linked or verified-but-unlinked accounts **and**
+contiguous original manifests with trailing, provably unstarted CREATE
+ordinals. Such an ordinal receives its FIRST provider CREATE only through an
+explicit Owner callback after prior GET and original identity/capacity
+checks. No replay, replacement or duplicate settlement is authorized. This is **not** an installed
+migration or release announcement. The *latest published* GitHub artifact
+remains RC25. No next-release SHA, ZIP checksum, independent review, Owner
+Merge/release approval, installed schema or Chili acceptance is asserted by
+this draft; record exact identities only when established by the required
+gates.
+
+An authorized RC25-to-next upgrade needs an actual source/DB/config and
+installed-hotfix inventory, a restored staging backup, full PHP 8.5
+eight-family candidate validation, and independent review. Verify the
+existing 001–017 history and one-time **018 delivery intents**, **019 human
+review decisions** and **020 durable follow-up intents** (in that order)
+against exact target table/index/engine shapes. Do not blindly replay them;
+read-only metadata inspection of the installed NL Chili target on
+2026-11-08 found those three tables **absent**. This is not a full schema
+preflight or permission to run SQL. Retain actual payment and Native journals, private
+`telegramWebhookSecret`, original 018/020 ciphertext and active Cron
+locks. Resolve source-versus-installed drift before exact-manifest atomic
+replacement. Reversing only PHP after new 018/019/020 or Native writes is
+not a safe rollback: preserve journals and reconcile by verified
+roll-forward or whole-state restore at a quiesced, audited pre-write point.
+Follow the existing [RC25 to next prerelease staging procedure](RC25-TO-RC26.md)
+and [payment recovery contract](PAYMENT-DELIVERY-RECOVERY.md). None of
+these source steps permits a live payment, Telegram send or SQL mutation.
+
 ## Published RC25 — independent administrative Panel Groups
 
 [RC25](https://github.com/ach1992/bot-refactor/releases/tag/v0.10.0-rc.25) publishes the independently approved [Issue #114](https://github.com/ach1992/bot-refactor/issues/114) and [PR #115](https://github.com/ach1992/bot-refactor/pull/115). Marzban/PasarGuard logical Panel Groups are administrator-declared physical backend membership: the admin can change/clear a valid Group even with active orders, payment effects, unfinished journals or different credentials/URLs. The operation changes only local Panel Group metadata, not Native access, plan references, orders or money. Subsequent plan/import/transfer operations independently verify Native identity and persistent journal holds, including surviving orphaned-order journals. See the [product contract](SHARED-SERVICE-TRANSFER.md) and [RC24 -> RC25 upgrade/rollback](RC24-TO-RC25.md).

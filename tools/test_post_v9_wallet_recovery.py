@@ -283,6 +283,14 @@ class WalletPanel(pg.Handler):
                 server.users[name]=user
                 server.write_count+=1
                 status=201;value=user
+                # Fault injected strictly AFTER remote CREATE commit: the
+                # client never receives HTTP success. An original 007
+                # dispatching marker must survive and forbid a second POST.
+                if server.drop_next_post_reply:
+                    server.drop_next_post_reply=False
+                    self.close_connection=True
+                    self.connection.close()
+                    return
             self.reply(status,value);return
         if self.command=='POST' and path.startswith('/api/user/by-id/') and path.endswith('/revoke_sub'):
             # Only this permitted native mutation may occur during a recovery
@@ -333,6 +341,7 @@ def wallet_panel():
     server.trace=[];server.user=copy.deepcopy(pg.USER)
     server.users={};server.mode='ok';server.bad_username=None
     server.write_count=0;server.links_requested=False;server.block_posts=False
+    server.drop_next_post_reply=False
     thread=threading.Thread(target=server.serve_forever,daemon=True)
     thread.start()
     try:yield server,f'http://127.0.0.1:{server.server_port}'
