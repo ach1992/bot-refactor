@@ -554,7 +554,8 @@ function achbotHostedLinkedBuySnapshot(mysqli $db,int $payId,bool $lock=false): 
     $suffix=$lock?' FOR UPDATE':'';
     $q=$db->prepare('SELECT p.*,s.server_id AS plan_server,s.inbound_id AS plan_inbound,'.
         'c.type AS panel_type FROM pays p JOIN server_plans s ON s.id=p.plan_id '.
-        'JOIN server_config c ON c.id=p.server_id WHERE p.id=?'.$suffix);
+        'JOIN server_config c ON c.id=p.server_id '.
+        'JOIN server_info i ON i.id=p.server_id WHERE p.id=?'.$suffix);
     $q->bind_param('i',$payId);$q->execute();$pay=$q->get_result()->fetch_assoc();$q->close();
     if (!$pay || $pay['type']!=='BUY_SUB' || $pay['state']!=='paid' ||
         (int)$pay['user_id']<=0 || (int)$pay['price']<=0 ||
@@ -610,6 +611,14 @@ function achbotHostedLinkedBuySnapshot(mysqli $db,int $payId,bool $lock=false): 
             $bytes<=0 || $bytes%1073741824!==0 ||
             !is_string($e['request_sha256']) || strlen($e['request_sha256'])!==64 ||
             isset($orders[(int)$e['order_id']])) return null;
+        if ($pay['panel_type']==='marzban') {
+            // The original Marzban native GET validates its target at
+            // readback; revalidate the CURRENT panel URL/group and full 007
+            // source fingerprint again during finalization. The initial
+            // pay/plan/config/info FOR UPDATE protects this target read.
+            $target=achbotRecoveryTarget($db,$payId,$ordinal);
+            if (!achbotRecoveryTargetValid($target,$payId,$ordinal)) return null;
+        }
         $order=achbotOriginalBuyLinkedOrder($db,$pay,$e,$ordinal,$count,$lock);
         if ($order===null) return null;
         $orders[(int)$e['order_id']]=true;

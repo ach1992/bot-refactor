@@ -186,12 +186,12 @@ def check():
                 f'WHERE pay_row_id={pay}')
         def native_trace():
             return [(method,path) for method,path,_ in server.trace]
-        def after_readback(pay,action):
+        def after_readback(pay,action,pg=True):
             # Two genuine PHP/SQL sessions, with a test-only barrier exactly
             # after native GET, before the terminal SQL transaction.
             pause=work/f'hosted-after-readback-{pay}'
             with ThreadPoolExecutor(max_workers=1) as pool:
-                future=pool.submit(lambda:run(pay,pg=True,pause_after_readback=str(pause)))
+                future=pool.submit(lambda:run(pay,pg=pg,pause_after_readback=str(pause)))
                 limit=time.monotonic()+12
                 while not (work/f'hosted-after-readback-{pay}.ready').exists():
                     if future.done():raise AssertionError(('hosted_no_barrier',future.result()))
@@ -230,7 +230,10 @@ def check():
         clean_get()
         assert run(pay,op='case')['result'] is True
         assert run(pay,op='eligible')['result'] is True
-        accepted=run(pay,op='route',actor=9001,chat=9001)
+        # Exercise the exact production coordinator directly first. The
+        # Telegram route intentionally catches native/SQL exceptions, so a
+        # route-only test can conceal the original failure reason.
+        accepted=run(pay)
         assert accepted['error'] is None and accepted['state']=='paid',accepted
         assert accepted['orders']==2 and len(accepted['delivery'])==2
         assert [d['state'] for d in accepted['delivery']]==['acknowledged','acknowledged'],accepted
@@ -240,6 +243,17 @@ def check():
         scenarios.append('original_hosted_nextpay_fully_linked_two_original_accounts_sealed_once')
         check_result(pay,False,2)
         scenarios.append('hosted_original_delivery_packet_passes_real_integrity_validator')
+        route_pay,_=seed('hostedroute',count=1)
+        clean_get()
+        owner=run(route_pay,op='route',actor=9001,chat=9001)
+        assert owner['state']=='paid' and owner['orders']==1,owner
+        assert owner['delivery']==[{'ordinal':1,'state':'acknowledged','attempt_count':1}],owner
+        views=[x for x in owner['events'] if x['event']=='OWNER_EDIT']
+        assert len(views)==1 and views[0]['markup']['inline_keyboard'][0][0]['callback_data']==(
+            'deliveryCase_'+str(route_pay)),owner
+        assert stage(route_pay)=='done\tdelivered'
+        assert balances()==(50000,9)
+        scenarios.append('hosted_owner_route_valid_callback_finishes_and_opens_delivery')
         sql(work,env,"UPDATE payment_attempts SET provider_reference='foreign-hosted' "
             f'WHERE pay_row_id={pay}')
         assert run(pay,op='check')['result']=='identity_or_payload_invalid'
@@ -355,6 +369,34 @@ def check():
         fixed=run(pay,pg=True)
         assert fixed['error'] is None and stage(pay)=='done\tdelivered',fixed
         scenarios.append('pg_hosted_current_physical_provider_binding_refuses_retargeted_order')
+
+        pay,_=seed('hostedmarzbandrift',panel='marzban')
+        # A complete historical 007/023 record is insufficient once the
+        # logical server is rebound to a different physical Marzban endpoint.
+        sql(work,env,"UPDATE server_config SET panel_url='http://127.0.0.1:9/new' WHERE id=2")
+        clean_get()
+        blocked=run(pay)
+        assert blocked['error']=='hosted_recovery_manifest_unavailable' and not blocked['events']
+        assert stage(pay)=='review\tfulfillment_started'
+        assert count('payment_delivery_intents',pay)==0
+        sql(work,env,pgstorage.connection(2,1,url))
+        sql(work,env,"UPDATE server_config SET type='marzban' WHERE id=2")
+        assert run(pay)['error'] is None
+        scenarios.append('hosted_current_marzban_endpoint_drift_rejected_before_native_get')
+
+        pay,_=seed('hostedmarzbanafterget',panel='marzban')
+        clean_get()
+        stale=after_readback(pay,lambda:sql(work,env,
+            "UPDATE server_config SET panel_url='http://127.0.0.1:9/new' WHERE id=2"),
+            pg=False)
+        assert stale['error']=='hosted_recovery_identity_changed',stale
+        assert stage(pay)=='review\tfulfillment_started'
+        assert count('payment_delivery_intents',pay)==0 and balances()==(50000,9)
+        assert not any(e['event']=='TELEGRAM' for e in stale['events']),stale
+        sql(work,env,pgstorage.connection(2,1,url))
+        sql(work,env,"UPDATE server_config SET type='marzban' WHERE id=2")
+        assert run(pay)['error'] is None
+        scenarios.append('hosted_marzban_target_drift_after_get_blocks_stale_terminal_commit')
 
         pay,_=seed('hostedpgafterget',panel='pasarguard')
         clean_get()
