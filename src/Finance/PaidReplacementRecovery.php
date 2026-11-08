@@ -86,12 +86,13 @@ function achbotHostedReplacementPhysicalTargetPin(mysqli $db,array $pay,bool $lo
             $current=achbotProviderSnapshot($db,$server,$plan);
             $id=(int)$panel['id'];
             if ($lock) {
-                $q=$db->prepare('SELECT id,instance_key,api_url,version,enabled FROM provider_panels WHERE id=? FOR UPDATE');
-                $q->bind_param('i',$id);$q->execute();$physical=$q->get_result()->fetch_assoc();$q->close();
-                if (!$physical || $physical['instance_key']!==$panel['instance_key'] ||
-                    rtrim((string)$physical['api_url'],'/')!==rtrim((string)$panel['api_url'],'/') ||
-                    $physical['version']!==$panel['version'] ||
-                    (int)$physical['enabled']!==(int)$panel['enabled']) return null;
+                // Since migration 012, shared provider connections live in
+                // server_config rather than the retired provider_panels
+                // table. Reuse the actual current native connection reader,
+                // locking all physical peers before committing our effect.
+                $physical=achbotProviderPanel($db,$id,true);
+                foreach (['instance_key','api_url','api_key','version','enabled'] as $field)
+                    if ($physical[$field]!==$panel[$field]) return null;
             }
             $identity['connection_id']=(int)$row['provider_connection_id'];
             $identity['server_instance']=(string)$row['provider_instance_key'];

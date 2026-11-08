@@ -461,10 +461,10 @@ def check():
         sql('UPDATE server_info SET ucount=0 WHERE id=2')
         callback='hostedReplC_'+str(pay)+'_1_'+ch
         visible=run(pay,op='route',actor=9002,chat=9002,callback=callback)
-        assert visible['error'] is None and rows(pay)=='0' and balance()=='0:50000',visible
+        assert visible['result']=={'handled':True} and rows(pay)=='0' and balance()=='0:50000',visible
         assert any(e['event']=='OWNER_EDIT' and
-                   'replacement_capacity_insufficient' in str(e['text']) and
-                   'verify_available_slots_no_double_debit' in str(e['text'])
+                   'replacement_capacity_insufficient' in str(e['body']) and
+                   'verify_available_slots_no_double_debit' in str(e['body'])
                    for e in visible['events']),visible
         blocked=run(pay,op='route',actor=9002,chat=1001,callback=callback)
         assert not any(e['event']=='OWNER_EDIT' for e in blocked['events'])
@@ -490,7 +490,7 @@ def check():
         cases.append('pasarguard_connection_change_cannot_reuse_empty_007_confirmation')
         pay=seed('pggeneration',panel='pasarguard')
         ch=preview(pay,pg=True)
-        sql("UPDATE provider_panels SET version='fixture-rotated-version' WHERE id=1")
+        sql("UPDATE server_config SET provider_version='fixture-rotated-version' WHERE id=2")
         changed=confirm(pay,ch,pg=True)
         assert changed['error'] and rows(pay)=='0' and balance()=='20:50000',changed
         cases.append('pasarguard_generation_change_cannot_reuse_empty_007_confirmation')
