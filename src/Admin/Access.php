@@ -152,8 +152,7 @@ function achbotAdminRequestCapability(string $value): ?string {
     $groups=[
         'admin'=>'~^managePanel$~D',
         'admins'=>'~^(?:adminsList|addNewAdmin|delAdmin|adminRole\\||adminAssign\\||adminNotify\\|)~D',
-        'review'=>'~^(?:attention(?:Inbox|Case)|serviceRecovery(?:Inbox|Case))~D',
-        'owner_recovery'=>'~^(?:npReview|npDecision|bankReview|delivery)~D',
+        'review'=>'~^attention(?:Inbox|Case)~D',
         'gateways'=>'~^(?:gateWays_Channels|changeGateWays|changePaymentKeys|achbotPaymentKey\\||gatewayAudienceSettings|cycleGatewayAudience_|paymentPolicy|editPaymentPolicy_|gr\\||editcartToCartAutoAcceptTime)~D',
         'bot_settings'=>'~^(?:botSettings|changeBot|changeUpdateConfigLinkState|changeConfigRemarkType|editSupportID|editRewardChannel|editLockChannel|inviteSetting|inviteBanner|editInvite|editRewaredTime|addExemptUser|removeExempt|achbotExempt:|ic\\||achbotInstance:)~D',
         'stats'=>'~^(?:botReports|show_stats_menu|stats_|top_50_|agent_users_list|plan_sales|server_sales|custom_sales_date|awaitingDateRange)~D',
@@ -163,7 +162,7 @@ function achbotAdminRequestCapability(string $value): ?string {
         'customers'=>'~^(?:userReports|userInfoDetails|quickUserDetails)~D',
         'moderation'=>'~^(?:banUser|unbanUser|toggleBan_)~D',
         'orders'=>'~^(?:switchLocation|switchServer|manageorderdatabase|showUserSubscriptions|selectOrderByRemark_userid_|returnToPanel_|deleteOrder_|confirmDeleteOrder_|toggleNotif_|orderWarningStatus_|changeExpireDate_|changeToken_|changeUUID_|changeServerId_|selectServerId_|changeFileId_|selectFileId_|quickUserOrderDetails_|userOrderDetails|searchUsersConfig|adminToggleAutoRenew|awaitingOrderRemarkOnly|awaitingUserIdSelection_|manageOrderById_|awaitingExpireChange_|awaitingToken_|awaitingUUID_)~D',
-        'payments'=>'~^(?:accept[A-Za-z0-9_-]|accCustom|approveRenewAcc|approveIncreaseDay|approveIncreaseVolume|approvePayment|declineAction|apiReview_|walletBuyResume_|hostedBuyResume_|hostedRepl[PC]_)~D',
+        'payments'=>'~^(?:accept[A-Za-z0-9_-]|accCustom|approveRenewAcc|approveIncreaseDay|approveIncreaseVolume|approvePayment|declineAction|apiReview_|apiEvidenceResume_|gatewayReview_)~D',
         'operations'=>'~^(?:managePanel|messageToSpeceficUser|sendMessageToUser|increaseUserWallet|decreaseUserWallet|achbotWalletAdmin|increaseWalletUser|decreaseWalletUser|debtWalletUser|achbotWalletReason:|achbotWalletDebt:|createUserWalletDebt|walletDebt|addSubscriptionToCustomer|createMultipleAccounts|createAcc|awaiting_userid_input|giftVolumeAndDay|giftTo|giftServer|achbotDirectGift|mainMenuButtons|delMainButton|addNewMainButton|setMainButtonAnswer|discount_codes|addDiscount|editDiscount|delDiscount|editD|setDiscount|removeDiscountUser|toggleDiscount|copyHash|message2All|broadcast|editBroadcastAsk_|chooseSendGroup_|cancelBroadcast|noDontSend2all|yesSend2All|pinManageAll|pinManageSelect_|jobCancel_|jobCreate_|jobsStatus|s2a_|bc_edit_|ticketsList|ticketsCategory|addTicketCategory|delTicketCat_|allTickets|newTickets|openTickets|reply_|answer_|changeCustomPort|changeCustomSni|changeCustomPath|pgResetAccount)~D',
     ];
     foreach ($groups as $capability=>$pattern) if (preg_match($pattern,$value)) return $capability;
@@ -179,9 +178,7 @@ function achbotAdminRequestAllowed(?string $callback,?string $text,string $step)
     foreach (array_unique([(string)$callback,$step]) as $value) {
         $capability=achbotAdminRequestCapability($value);
         if ($capability===null) continue;
-        if ($capability==='owner_recovery') {
-            if (achbotAdminLevel()!=='owner') return false;
-        } elseif (!achbotAdminCan($capability)) return false;
+        if (!achbotAdminCan($capability)) return false;
     }
     return true;
 }

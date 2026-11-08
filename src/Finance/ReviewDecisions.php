@@ -110,7 +110,10 @@ function achbotGatewayReviewEligible(mysqli $db,int $attemptId,
         if ($decision==='approve' && $seen==='refunded' && $childId===$primary)
             return null;
     }
-    if ($decision==='approve' && $provider==='nowpayments' && $primary==='') return null;
+    // NOWPayments may have persisted the issued invoice but lost the child
+    // payment ID during a provider disconnect. The Owner can independently
+    // match the original invoice in the merchant dashboard. No synthetic
+    // payment_transactions row or provider 'finished' claim is created.
     unset($a['age_seconds']); // time passes between preflight and locked recheck
     $digest=hash('sha256',json_encode([
         'pay'=>$pay,'attempt'=>$a,'children'=>$children],

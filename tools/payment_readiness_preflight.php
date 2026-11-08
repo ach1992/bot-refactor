@@ -469,15 +469,6 @@ try {
                 'unique'=>['uq_delivery_attempt_no'=>['intent_id','attempt_no'],
                     'uq_delivery_dispatch_token'=>['dispatch_token']]],
         ],
-        // #117: manual, irreversible provider decisions require the
-        // once-per-pay idempotent journal, not a legacy button shortcut.
-        '019' => [
-            'payment_review_decisions'=>['columns'=>[
-                'id','pay_row_id','attempt_id','decision','actor_id',
-                'payment_id','provider_status','evidence_sha256','state',
-                'outcome','created_at','resolved_at'],
-                'unique'=>['uq_review_decision_pay'=>['pay_row_id']]],
-        ],
         // #117: original customer, staff and referral messages must have
         // per-recipient PENDING/UNKNOWN followups before a terminal COMMIT.
         '020' => [
