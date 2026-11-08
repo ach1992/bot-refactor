@@ -679,3 +679,159 @@ function achbotRecoveryInspectLine(mysqli $db, int $payId, int $ordinal,
     )?'matching_observation':'remote_mismatch';
     return $result;
 }
+
+
+/**
+ * Owner-private PasarGuard CREATE observation. A committed original effect and
+ * account provenance are prerequisites for even one GET. This never verifies,
+ * attaches, provisions, refunds or dispatches a customer message.
+ */
+function achbotRecoveryInspectPasarGuardLine(
+    mysqli $db,int $payId,int $ordinal,?callable $readAccount=null
+): array {
+    $result=['status'=>'unknown','pay_id'=>$payId,'ordinal'=>$ordinal,
+        'remote_gets'=>0,'read_only'=>true,'settlement_proven'=>false];
+    if ($payId<=0 || $ordinal<=0) return $result;
+    achbotEffectRequireUniqueLine($db);
+
+    // One local identity contract for both sides of the network observation.
+    // Do not compare to current plan Groups: original entitlement is pinned.
+    $local=static function() use ($db,$payId,$ordinal): ?array {
+        $q=$db->prepare("SELECT e.*,p.type AS pay_type,p.state AS pay_state,
+            p.user_id AS paid_user,p.plan_id AS paid_plan,
+            p.server_id AS paid_server,p.agent_count,p.price,
+            s.server_id AS plan_server,s.inbound_id AS plan_inbound,
+            c.type AS panel_type
+            FROM service_effects e JOIN pays p ON p.id=e.pay_row_id
+            JOIN server_plans s ON s.id=p.plan_id
+            JOIN server_config c ON c.id=e.target_server_id
+            WHERE e.pay_row_id=? AND e.effect_kind='create'
+              AND e.ordinal=? LIMIT 1");
+        $q->bind_param('ii',$payId,$ordinal);
+        $q->execute();$e=$q->get_result()->fetch_assoc();$q->close();
+        if (!$e || $e['pay_type']!=='BUY_SUB' ||
+            !in_array($e['pay_state'],['processing','paid','processing_wallet'],true) ||
+            !in_array($e['state'],['dispatching','verified','local_recorded'],true) ||
+            $e['panel_type']!=='pasarguard' || (int)$e['paid_user']<=0 ||
+            (int)$e['paid_plan']<=0 || (int)$e['price']<0 ||
+            (int)$e['agent_count']<0 || $ordinal>max(1,(int)$e['agent_count']) ||
+            (int)$e['paid_server']<=0 ||
+            (int)$e['paid_server']!==(int)$e['target_server_id'] ||
+            (int)$e['plan_server']!==(int)$e['target_server_id'] ||
+            (int)$e['plan_inbound']!==0 ||
+            (int)$e['plan_id']!==(int)$e['paid_plan'] ||
+            $e['target_group_id']!==null ||
+            preg_match('/^[a-f0-9]{32}$/D',(string)$e['operation_id'])!==1 ||
+            !achbotEffectValidUsername((string)$e['remote_username']) ||
+            (int)$e['requested_expire']<=0 ||
+            ($bytes=achbotRecoveryExactInt($e['requested_bytes']))===null ||
+            $bytes===0 || $bytes%1073741824!==0)
+            return null;
+        try {
+            achbotPgLoad();
+            $snap=achbotProviderCanonicalSnapshot(json_decode(
+                (string)$e['provider_snapshot'],true,64,JSON_THROW_ON_ERROR));
+            $target='pg:'.$snap['instance_key'];
+            if ($e['target_key']!==$target ||
+                !hash_equals((string)$e['endpoint_sha256'],$snap['endpoint_sha256']))
+                return null;
+            $fingerprint=hash('sha256',json_encode([
+                $payId,$ordinal,(int)$e['plan_id'],(int)$e['target_server_id'],
+                null,$target,$snap['endpoint_sha256'],(string)$e['remote_username'],
+                (int)$e['requested_expire'],$bytes
+            ],JSON_THROW_ON_ERROR));
+            if (!hash_equals((string)$e['request_sha256'],$fingerprint)) return null;
+            $account=achbotProviderAccountByEffect($db,(int)$e['id']);
+            if (!$account || (int)$account['effect_id']!==(int)$e['id'] ||
+                $account['operation_marker']!=='achbot:v1:'.$e['operation_id'] ||
+                $account['remote_username']!==$e['remote_username'] ||
+                $account['order_id']!==($e['order_id']===null?null:(int)$e['order_id']) ||
+                !in_array($account['state'],['reserved','dispatching','verified','linked'],true))
+                return null;
+            $entitlement=json_decode((string)$account['entitlement_snapshot'],
+                true,64,JSON_THROW_ON_ERROR);
+            if (!is_array($entitlement) || ($entitlement['data_limit']??null)!==$bytes ||
+                ($entitlement['expire']??null)!==(int)$e['requested_expire'] ||
+                ($entitlement['group_ids']??null)!==$snap['group_ids'] ||
+                ($entitlement['status']??null)!=='active')
+                return null;
+            $panel=achbotProviderPanelForSnapshot($db,$snap);
+            $serverPanel=achbotPgServerPanel($db,(int)$e['target_server_id']);
+            foreach (['id','instance_key','api_url','api_key','version'] as $key)
+                if ($panel[$key]!==$serverPanel[$key]) return null;
+            if ($account['remote_user_id']!==null &&
+                !achbotPgIdentityValid(achbotProviderAccountIdentity($db,$account)))
+                return null;
+            return ['effect'=>$e,'account'=>$account,
+                'snapshot'=>$snap,'panel'=>$panel];
+        } catch (Throwable $ignored) {return null;}
+    };
+
+    $first=$local();
+    if ($first===null) {
+        $result['status']='target_or_identity_changed';
+        return $result;
+    }
+    $result['effect_id']=(int)$first['effect']['id'];
+    $result['username']=(string)$first['effect']['remote_username'];
+    $account=$first['account'];$panel=$first['panel'];
+    try {
+        $result['remote_gets']=1;
+        if ($readAccount!==null) {
+            // Tests may substitute exactly this read-only native operation.
+            $read=$readAccount($panel,$account);
+        } elseif ($account['remote_user_id']!==null) {
+            $read=achbotPgRead($panel,achbotProviderAccountIdentity($db,$account));
+        } else {
+            $name=rawurlencode((string)$account['remote_username']);
+            $read=achbotPgUserResult(achbotPgRequest(
+                $panel,'GET','/api/user/by-username/'.$name));
+        }
+    } catch (Throwable $ignored) {
+        $read=null;
+    }
+    // Revalidate the *same* original local claim even if GET failed.
+    $last=$local();
+    if ($last===null || $last!==$first) {
+        $result['status']='changed_during_inspection';
+        return $result;
+    }
+    if (!is_array($read) || ($read['success']??false)!==true ||
+        !is_array($read['user']??null)) {
+        $result['status']='remote_unavailable';
+        return $result;
+    }
+    $user=$read['user'];
+    $result['status']=(
+        ($user['username']??null)===$account['remote_username'] &&
+        ($user['note']??null)===$account['operation_marker'] &&
+        ($user['data_limit']??null)===(int)$first['effect']['requested_bytes'] &&
+        ($user['expire']??null)===(int)$first['effect']['requested_expire'] &&
+        ($user['group_ids']??null)===$first['snapshot']['group_ids'] &&
+        ($user['status']??null)==='active' && achbotPgManaged($user) &&
+        ($account['remote_user_id']===null ||
+            achbotPgIdentityMatches($user,achbotProviderAccountIdentity($db,$account)))
+    )?'matching_observation':'remote_mismatch';
+    return $result;
+}
+
+/** Route an original paid CREATE Check to its own native read-only adapter. */
+function achbotRecoveryInspectPaidLine(
+    mysqli $db,int $payId,int $ordinal,callable $marzbanRead
+): array {
+    if ($payId<=0 || $ordinal<=0)
+        return ['status'=>'unknown','pay_id'=>$payId,'ordinal'=>$ordinal,
+            'remote_gets'=>0,'read_only'=>true,'settlement_proven'=>false];
+    $q=$db->prepare("SELECT c.type FROM service_effects e
+        JOIN server_config c ON c.id=e.target_server_id
+        WHERE e.pay_row_id=? AND e.effect_kind='create' AND e.ordinal=? LIMIT 1");
+    $q->bind_param('ii',$payId,$ordinal);
+    $q->execute();$row=$q->get_result()->fetch_assoc();$q->close();
+    if (($row['type']??null)==='pasarguard')
+        return achbotRecoveryInspectPasarGuardLine($db,$payId,$ordinal);
+    if (($row['type']??null)==='marzban')
+        return achbotRecoveryInspectLine($db,$payId,$ordinal,$marzbanRead);
+    return ['status'=>'target_or_identity_changed','pay_id'=>$payId,
+        'ordinal'=>$ordinal,'remote_gets'=>0,'read_only'=>true,
+        'settlement_proven'=>false];
+}

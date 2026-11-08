@@ -72,6 +72,11 @@ try {
         $result=achbotPgDispatchReserved($db,$effect,2,$username,$operation,
             2000000000,2147483648,['port'=>443],hash('sha256','fixture-private-key'));
         $result=['verified'=>($result[0]->verified??false)===true];
+    } elseif ($spec['op']==='readback') {
+        require_once $root.'/src/Finance/RecoveryInspection.php';
+        $result=achbotRecoveryInspectPaidLine($db,(int)($spec['pay']??0),
+            (int)($spec['ordinal']??0),
+            static function(){throw new RuntimeException('wrong_marzban_adapter');});
     } elseif ($spec['op']==='group_preflight') {
         $panel=achbotPgServerPanel($db,2);
         $result=achbotPgCreate($panel,['username'=>'group_probe',
@@ -96,6 +101,11 @@ try {
 class FaultPanel(pg.Handler):
     """Mutate only the disposable DB after the real POST reaches loopback."""
     def handle_request(self):
+        if self.command == "GET" and urlsplit(self.path).path.startswith("/api/user/by-"):
+            callback = getattr(self.server, "on_read", None)
+            if callback is not None:
+                self.server.on_read = None
+                callback()
         if self.command == "POST" and urlsplit(self.path).path == "/api/user":
             callback = getattr(self.server, "on_create", None)
             if callback is not None:
@@ -113,6 +123,7 @@ def panel():
     server.write_count = 0
     server.links_requested = False
     server.on_create = None
+    server.on_read = None
     worker = threading.Thread(target=server.serve_forever, daemon=True)
     worker.start()
     try:
@@ -254,6 +265,119 @@ def test():
         assert not any(secret in raw["result"]["safe"] for secret in
                        ("fixture-private-key", "SQL detail", "provider")), raw
         checks.append("untrusted_provider_error_text_sanitized")
+
+        # An original *paid* two-account purchase, with only its first native
+        # CREATE journaled: the other ordinal is never guessed or queried.
+        pay_key="pg-inspect-owned"
+        sql("INSERT INTO pays(hash_id,user_id,type,plan_id,server_id,agent_count,"
+            "price,request_date,state) VALUES "
+            f"('{pay_key}',1001,'BUY_SUB',7,2,2,200,1700000000,'processing')")
+        pay_id=int(sql(f"SELECT id FROM pays WHERE hash_id='{pay_key}'"))
+        operation="d"*32
+        username="fixture_paid"
+        target_key=f"pg:{INSTANCE}"
+        fingerprint=hashlib.sha256(json.dumps(
+            [pay_id,1,7,2,None,target_key,target_hash,username,EXPIRE,BYTES],
+            separators=(",",":")).encode()).hexdigest()
+        quoted_snap=snapshot.replace("'","''")
+        sql("INSERT INTO service_effects "
+            "(pay_row_id,ordinal,operation_id,effect_kind,target_server_id,"
+            "target_key,endpoint_sha256,plan_id,remote_username,requested_expire,"
+            "requested_bytes,request_sha256,provider_snapshot,reserved_count,state) "
+            f"VALUES ({pay_id},1,'{operation}','create',2,'{target_key}',"
+            f"'{target_hash}',7,'{username}',{EXPIRE},{BYTES},'{fingerprint}',"
+            f"'{quoted_snap}',2,'dispatching')")
+        paid_effect=int(sql(f"SELECT id FROM service_effects WHERE pay_row_id={pay_id}"))
+        assert call(op="reserve",effect=paid_effect,username=username,
+                    operation=operation)=={"ok":True,"result":{"newly_reserved":True}}
+        server.user=copy.deepcopy(pg.USER)
+        server.user.update(id=117,username=username,note="achbot:v1:"+operation,
+                           data_limit=BYTES,expire="2033-05-18T03:33:20Z",
+                           group_ids=[2,5])
+        baseline=(
+            sql(f"SELECT state FROM pays WHERE id={pay_id}"),
+            sql("SELECT wallet FROM users WHERE userid=1001"),
+            sql("SELECT ucount FROM server_info WHERE id=2"),
+            sql("SELECT COUNT(*) FROM orders_list"),
+            sql(f"SELECT state,provider_state,order_id FROM service_effects WHERE id={paid_effect}"),
+        )
+        def inspect(ordinal=1,mode="ok"):
+            server.mode=mode
+            server.trace=[]
+            server.write_count=0
+            reply=call(op="readback",pay=pay_id,ordinal=ordinal)
+            assert reply["ok"] is True, reply
+            assert server.write_count==0
+            assert all(method=="GET" for method,path,_ in server.trace),server.trace
+            assert (sql(f"SELECT state FROM pays WHERE id={pay_id}"),
+                    sql("SELECT wallet FROM users WHERE userid=1001"),
+                    sql("SELECT ucount FROM server_info WHERE id=2"),
+                    sql("SELECT COUNT(*) FROM orders_list"),
+                    sql(f"SELECT state,provider_state,order_id FROM service_effects WHERE id={paid_effect}"))==baseline
+            return reply["result"]
+        success=inspect()
+        assert success["status"]=="matching_observation" and success["remote_gets"]==1
+        assert success["read_only"] is True and success["settlement_proven"] is False
+        assert len(server.trace)==1 and server.trace[0][1]=="/api/user/by-username/"+username
+        checks.append("paid_pg_exact_marker_username_readback_no_post_no_financial_write")
+        missing=inspect(ordinal=2)
+        assert missing["status"]=="target_or_identity_changed" and missing["remote_gets"]==0
+        assert not server.trace
+        checks.append("paid_pg_partial_bulk_missing_ordinal_never_infers_absence")
+        mismatch=inspect(mode="foreign_note")
+        assert mismatch["status"]=="remote_mismatch" and mismatch["remote_gets"]==1
+        checks.append("paid_pg_other_account_marker_is_not_original_provision")
+        server.user["group_ids"]=[2,7]
+        group_mismatch=inspect()
+        assert group_mismatch["status"]=="remote_mismatch" and group_mismatch["remote_gets"]==1
+        server.user["group_ids"]=[2,5]
+        checks.append("paid_pg_original_groups_mismatch_is_not_proof")
+        reset=inspect(mode="scheduled_reset")
+        assert reset["status"]=="remote_mismatch" and reset["remote_gets"]==1
+        checks.append("paid_pg_native_policy_drift_is_not_proof")
+        unavailable=inspect(mode="http_404")
+        assert unavailable["status"]=="remote_unavailable" and unavailable["remote_gets"]==1
+        checks.append("paid_pg_404_is_uncertainty_not_create_permission")
+        sql(f"UPDATE service_effects SET request_sha256=REPEAT('f',64) WHERE id={paid_effect}")
+        # The deliberately corrupted journal is not a new legitimate local state.
+        reject=call(op="readback",pay=pay_id,ordinal=1)["result"]
+        assert reject["status"]=="target_or_identity_changed" and reject["remote_gets"]==0
+        sql(f"UPDATE service_effects SET request_sha256='{fingerprint}' WHERE id={paid_effect}")
+        checks.append("paid_pg_corrupt_original_fingerprint_blocks_remote_read")
+        sql("UPDATE server_config SET provider_instance_key=REPEAT('e',32) WHERE id=2")
+        server.trace=[]
+        reject=call(op="readback",pay=pay_id,ordinal=1)["result"]
+        assert reject["status"]=="target_or_identity_changed" and reject["remote_gets"]==0
+        assert not server.trace
+        sql(f"UPDATE server_config SET provider_instance_key='{INSTANCE}' WHERE id=2")
+        checks.append("paid_pg_other_native_instance_refuses_get")
+        server.on_read=lambda:sql(f"UPDATE pays SET state='approved' WHERE id={pay_id}")
+        server.mode="ok";server.trace=[]
+        changed=call(op="readback",pay=pay_id,ordinal=1)["result"]
+        assert changed["status"]=="changed_during_inspection" and changed["remote_gets"]==1
+        assert len(server.trace)==1
+        sql(f"UPDATE pays SET state='processing' WHERE id={pay_id}")
+        checks.append("paid_pg_payment_race_during_get_fails_closed")
+        # An already identified original incarnation must use by-ID, not
+        # silently fall back to another account with the same username.
+        sql("UPDATE service_effects SET state='verified',provider_state='verified',"
+            "provider_remote_user_id=117,"
+            "provider_remote_created_at='2026-10-26T05:00:00.123456Z' "
+            f"WHERE id={paid_effect}")
+        baseline=(
+            sql(f"SELECT state FROM pays WHERE id={pay_id}"),
+            sql("SELECT wallet FROM users WHERE userid=1001"),
+            sql("SELECT ucount FROM server_info WHERE id=2"),
+            sql("SELECT COUNT(*) FROM orders_list"),
+            sql(f"SELECT state,provider_state,order_id FROM service_effects WHERE id={paid_effect}"),
+        )
+        by_id=inspect()
+        assert by_id["status"]=="matching_observation" and by_id["remote_gets"]==1
+        assert len(server.trace)==1 and server.trace[0][1]=="/api/user/by-id/117"
+        checks.append("paid_pg_verified_native_incarnation_exact_by_id_only")
+        foreign_id=inspect(mode="foreign_id")
+        assert foreign_id["status"]=="remote_unavailable" and foreign_id["remote_gets"]==1
+        checks.append("paid_pg_foreign_native_id_does_not_match_verified_claim")
     return dict(complete=True, cases=len(checks), checks=checks,
                 php85_source_real=True, owned_socket_mariadb=True,
                 actual_pasarguard_post_and_readback=True, native_post_replays=0,
