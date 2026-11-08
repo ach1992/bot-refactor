@@ -182,6 +182,12 @@ require_once $root.'/src/Finance/ReceiptHelpers.php';
 require_once $root.'/src/Finance/ServiceEffects.php';
 require_once $root.'/src/Finance/WalletSettlement.php';
 $hash=(string)$spec['hash'];$provider=(string)$spec['provider'];
+// In the actual PasarGuard checkout this immutable original quote is stored
+// before any wallet debit; use the same source API in this fixture.
+$q=$db->prepare('SELECT id FROM pays WHERE hash_id=? LIMIT 1');
+$q->bind_param('s',$hash);$q->execute();$row=$q->get_result()->fetch_assoc();$q->close();
+if (!$row) throw new RuntimeException('fixture_original_quote_not_found');
+achbotPgPinPayment($db,(int)$row['id']);
 $out=processWalletPayment($db,$hash,static function(array $pay,array $owner)
     use($db,$provider) {
     $uid=(int)$pay['user_id'];
