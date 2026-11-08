@@ -16,6 +16,25 @@ require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
 require_once __DIR__.'/ServiceEffects.php';
 
 require_once __DIR__.'/PaymentLifecycle.php';
+/** Display-only proof of a safe original API continuation; settlement
+ * repeats all immutable evidence and native-effect checks under its locks.
+ * A processing service belongs to technical recovery, not financial review.
+ */
+function achbotRecoveryApiCanResume(mysqli $db,array $pay): bool {
+    $provider=(string)($pay['attempt']['provider']??'');
+    $state=(string)($pay['state']??'');
+    $id=(int)($pay['id']??0);
+    if ($id<=0 || !in_array($provider,['bank_transfer','gift_card'],true) ||
+        !in_array($state,['pending','have_sent','processing'],true) ||
+        ($state==='processing' && (int)($pay['approved_by']??-1)!==0)) return false;
+    $proof=achbotPaymentEvidenceGetProof($db,$id);
+    if (($proof['mode']??null)!=='settle') return false;
+    if ($state!=='processing' || (string)($pay['type']??'')==='BUY_SUB') return true;
+    $attempt=achbotApiPaymentAttempt($db,$id);
+    return in_array((string)($attempt['evidence_fulfillment_state']??''),
+        ['reserved','verified'],true);
+}
+
 /** Payment recording and fulfillment are independent, conservative facts. */
 function achbotRecoveryEvidenceText(array $pay, ?array $attempt): string {
     $state=(string)($pay['state']??$pay['payment_state']??'');

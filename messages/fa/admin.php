@@ -29,6 +29,7 @@ return [
         'order' => ['text' => '🧾 شناسه اشتراک: <code>{id}</code>', 'parameters' => ['id']],
         'quantity' => ['text' => '👥 تعداد اشتراک: {quantity}', 'parameters' => ['quantity']],
         'request_time' => ['text' => '🕒 ثبت سفارش: {date}', 'parameters' => ['date']],
+        'merchant_quote' => ['text' => '💵 مبلغ اعلام‌شده به درگاه: {amount} {currency}', 'parameters' => ['amount', 'currency']],
         'invoice' => ['text' => '🔗 شناسه صورتحساب درگاه: <code>{reference}</code>', 'parameters' => ['reference']],
         'payment' => ['text' => '🔍 شناسه پرداخت درگاه: <code>{reference}</code>', 'parameters' => ['reference']],
         'reference' => ['text' => '📎 شناسه سفارش ربات: <code>{hash}</code>', 'parameters' => ['hash']],

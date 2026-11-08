@@ -66,6 +66,15 @@ function achbotGatewayReviewEligible(mysqli $db,int $attemptId,
     if ($stage==='pending') {
         if ($status!=='' || (int)$a['age_seconds']<achbotPayUxHostedAttentionSeconds())
             return null;
+    } elseif ($stage==='checking') {
+        // A stranded NOWPayments verification may have lost the worker. The
+        // original Cron retries only after ten minutes, so never let staff
+        // claim the live worker's current check.
+        if ($provider!=='nowpayments' ||
+            (string)($a['last_checked_at']??'')==='' ||
+            strtotime((string)$a['last_checked_at'])===false ||
+            strtotime((string)$a['last_checked_at'])>time()-600)
+            return null;
     } elseif ($stage==='review') {
         if (in_array($status,[
             'fulfillment_started','fulfillment_failed','fulfillment_unconfirmed',

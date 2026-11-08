@@ -2425,15 +2425,6 @@ def run_authorization(tmp: str) -> tuple[dict, dict]:
 
 def run_effects(tmp: str) -> tuple[dict, dict]:
     result = {}
-    finance_path=Path(tmp)/"finance-native-routes.json"
-    finance_run=subprocess.run(
-        ["python3",str(ROOT/"tools/test_post_v9_finance_routes.py"),
-         "--run-disposable","--report",str(finance_path)],
-        cwd=ROOT,timeout=180,capture_output=True,text=True)
-    if finance_run.returncode!=0:
-        raise RuntimeError("Financial native source regression failed:\n"+
-            (finance_run.stderr or finance_run.stdout)[-5000:])
-    finance=json.loads(finance_path.read_text())
     decision_path=Path(tmp)/"review-decision-idempotency.json"
     worker=subprocess.run([
         "python3",str(ROOT/"tools/test_post_v9_review_decisions.py"),
@@ -2503,6 +2494,15 @@ def run_effects(tmp: str) -> tuple[dict, dict]:
             and decision.get('financial_double_credit') is False
             and decision.get('existing_attempt_only') is True):
         raise RuntimeError('Original-attempt gateway review or one-shot guards unproven')
+    finance_path=Path(tmp)/"finance-native-routes.json"
+    finance_run=subprocess.run(
+        ["python3",str(ROOT/"tools/test_post_v9_finance_routes.py"),
+         "--run-disposable","--report",str(finance_path)],
+        cwd=ROOT,timeout=180,capture_output=True,text=True)
+    if finance_run.returncode!=0:
+        raise RuntimeError("Financial native source regression failed:\n"+
+            (finance_run.stderr or finance_run.stdout)[-5000:])
+    finance=json.loads(finance_path.read_text())
     # Current R10 financial contract: preserve authenticated settlement,
     # durable compensation proof and concurrency-safe operator recovery.
     mandatory_finance = {

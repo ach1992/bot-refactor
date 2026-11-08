@@ -38,7 +38,10 @@ if (preg_match('/^attention(?:Inbox(?:_[1-9][0-9]{0,17})?|Case_[1-9][0-9]{0,17})
                   'operator_verified_finished','operator_rejected',
                   'operator_compensated','operator_fulfilled')))))
           OR (a.stage='pending' AND a.provider_status IS NULL
-              AND a.created_at <= NOW()-INTERVAL ".(int)$threshold." SECOND))";
+              AND a.created_at <= NOW()-INTERVAL ".(int)$threshold." SECOND)
+          OR (a.provider='nowpayments' AND a.stage='checking'
+              AND a.last_checked_at IS NOT NULL AND
+              a.last_checked_at < NOW()-INTERVAL 10 MINUTE))";
     $inbox=[];$case=[];
     $isInbox=preg_match('/^attentionInbox(?:_([1-9][0-9]{0,17}))?$/D',
         (string)$data,$inbox)===1;
@@ -60,13 +63,16 @@ if (preg_match('/^attention(?:Inbox(?:_[1-9][0-9]{0,17})?|Case_[1-9][0-9]{0,17})
         $rows=[];
         if ($isInbox) {
             $before=(int)($inbox[1]??0);
-            $q=$connection->prepare("SELECT p.id,p.user_id,p.price,a.provider
-                FROM pays p INNER JOIN payment_attempts a ON a.pay_row_id=p.id
-                WHERE $scope AND (?=0 OR p.id<?)
-                ORDER BY p.id DESC LIMIT 13");
-            $q->bind_param('ii',$before,$before);
-            $q->execute();$items=$q->get_result()->fetch_all(MYSQLI_ASSOC);$q->close();
-            $more=count($items)>12;$items=array_slice($items,0,12);
+            $items=[];$more=false;
+            if (achbotPayUxTable($connection,'payment_attempts')) {
+                $q=$connection->prepare("SELECT p.id,p.user_id,p.price,a.provider
+                    FROM pays p INNER JOIN payment_attempts a ON a.pay_row_id=p.id
+                    WHERE $scope AND (?=0 OR p.id<?)
+                    ORDER BY p.id DESC LIMIT 13");
+                $q->bind_param('ii',$before,$before);
+                $q->execute();$items=$q->get_result()->fetch_all(MYSQLI_ASSOC);$q->close();
+                $more=count($items)>12;$items=array_slice($items,0,12);
+            }
             foreach ($items as $item) {
                 $label=number_format((int)$item['price']).' '.
                     achbotMessage('automatic_gateway_review.toman').' | '.
@@ -182,6 +188,8 @@ if (preg_match('/^attention(?:Inbox(?:_[1-9][0-9]{0,17})?|Case_[1-9][0-9]{0,17})
                     'automatic_gateway_review.description',['description'=>$item['description']]):'').
                 "\n".achbotMessageHtml('automatic_gateway_review.request_time',
                     ['date'=>$requested]).
+                "\n".achbotMessageHtml('automatic_gateway_review.merchant_quote',[
+                    'amount'=>$item['quote_amount'],'currency'=>$item['quote_currency']]).
                 "\n".achbotMessageHtml('automatic_gateway_review.invoice',
                     ['reference'=>$item['provider_reference']]).
                 "\n".achbotMessageHtml('automatic_gateway_review.payment',
@@ -220,6 +228,71 @@ if (preg_match('/^attention(?:Inbox(?:_[1-9][0-9]{0,17})?|Case_[1-9][0-9]{0,17})
     } catch (Throwable $error) {
         error_log('achbot_automatic_gateway_inbox_unavailable class='.get_class($error));
         answerCallbackQuery($callbackId,achbotMessage('automatic_gateway_review.unavailable'),true);
+    }
+    return;
+}
+
+// An existing authenticated bank/gift API proof can finish the ORIGINAL
+// payment. No provider GET, second financial ledger, or new access grant.
+if (preg_match('/^apiEvidenceResume_([1-9][0-9]{0,17})$/D',(string)$data,$apiResume)) {
+    if (!achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'payments') ||
+        (int)($chat_id??0)!==(int)$from_id) {
+        answerCallbackQuery($callbackId,achbotMessage('manual_payment.manual_receipts.alert.0a23f88410'),true);
+        return;
+    }
+    $payId=(int)$apiResume[1];
+    try {
+        // The direct callback may be the first admin route in this process.
+        // Do not depend on having opened the attention inbox beforehand.
+        require_once __DIR__.'/../RecoveryInspection.php';
+        require_once __DIR__.'/../ApiPayments.php';
+        $pay=achbotApiPaymentRow($connection,$payId);
+        $attempt=$pay?achbotApiPaymentAttempt($connection,$payId):null;
+        $proof=$pay?achbotPaymentEvidenceGetProof($connection,$payId):null;
+        if (!$pay || !$attempt) {
+            answerCallbackQuery($callbackId,achbotMessage('finance_workbench.status_stale'),true);
+            return;
+        }
+        $pay['attempt']=$attempt;
+        // Previously issued callbacks can safely revisit an already terminal
+        // invoice: the original coordinator dispatches only PENDING delivery
+        // packets, never money/native effects or UNKNOWN Telegram sends.
+        $terminalDeliveryOnly=achbotApiPaymentTerminal($pay) &&
+            in_array((string)$attempt['provider'],['bank_transfer','gift_card'],true) &&
+            ($proof['mode']??null)==='settle';
+        if ((!achbotRecoveryApiCanResume($connection,$pay) && !$terminalDeliveryOnly) ||
+            !is_array($proof)) {
+            answerCallbackQuery($callbackId,achbotMessage('finance_workbench.status_stale'),true);
+            return;
+        }
+        answerCallbackQuery($callbackId,achbotMessage('finance_workbench.checking'));
+        $outcome=achbotApiPaymentSettle($connection,$payId,$proof);
+        // A settled invoice is not necessarily an ACKed customer message.
+        // The terminal fast-path returns 'settled' after pending-only delivery;
+        // inspect the original per-message journal before reporting success.
+        $acknowledged=false;
+        if (in_array($outcome,['confirmed','settled'],true)) {
+            $delivery=achbotDeliveryAggregate($connection,$payId);
+            $acknowledged=$delivery && (int)$delivery['total']>0 &&
+                (int)$delivery['ack']===(int)$delivery['total'];
+        }
+        $result=$acknowledged
+            ? achbotMessage('finance_workbench.status_completed')
+            : (in_array($outcome,['confirmed','settled'],true)
+                ? achbotMessage('finance_workbench.status_delivery_unconfirmed')
+                : achbotMessage('finance_workbench.status_unknown'));
+        // The former financial case is no longer in its inbox after
+        // processing/terminal completion. Return to an always-valid list.
+        $buttons=json_encode(['inline_keyboard'=>[[['text'=>achbotMessage('finance_workbench.back'),
+            'callback_data'=>'attentionInbox']]]],JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
+        $text=achbotMessageHtml('finance_workbench.result',['result'=>$result]);
+        $reply=editText($message_id,$text,$buttons,'HTML',(int)$from_id);
+        if (!is_object($reply)||($reply->ok??false)!==true)
+            sendMessage($text,$buttons,'HTML',(int)$from_id);
+    } catch(Throwable $error) {
+        error_log('achbot_api_review_resume_unavailable pay_id='.$payId.
+            ' class='.get_class($error));
+        answerCallbackQuery($callbackId,achbotMessage('finance_workbench.status_unavailable'),true);
     }
     return;
 }
