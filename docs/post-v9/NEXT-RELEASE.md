@@ -10,10 +10,12 @@ retain 018/020 delivery/follow-up journals and add the small 022
 operator archive columns, without shipping 019/021 or
 the specialized paid-account replacement workbench. See
 [AUTOMATIC-GATEWAY-REVIEW.md](AUTOMATIC-GATEWAY-REVIEW.md).
-**Not merged, reviewed, tested as a complete candidate, published or
-installed.** Do not confuse this prospective source with RC26 or alter its
-historical release artifacts. This is not approval to DROP a test database
-object or migrate a shared host.
+**Not merged, independently reviewed, published or installed.** Source-real
+regression checks are available, but final acceptance must be bound to all
+eight PHP 8.5 families and the protected aggregate on the exact candidate
+HEAD; this is not installed-host or real-merchant acceptance. Do not confuse
+this prospective source with RC26 or alter its historical release artifacts.
+This is not approval to DROP a test database object or migrate a shared host.
 
 
 **Archive completion boundary:** User confirmed archival is a terminal
