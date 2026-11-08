@@ -422,28 +422,32 @@ if (preg_match('/^accept([A-Za-z0-9_-]{1,50})$/D',
     }
 }
 
-// Recover a previously debited WALLET purchase only from the complete original
-// native-effect manifest. This Owner-private action cannot start a new CREATE.
-$walletResume=[];
-if (preg_match('/^walletBuyResume_([1-9][0-9]{0,9})$/D',
-        (string)$data,$walletResume)===1) {
+// Complete ORIGINAL native/account manifests only. Wallet recovery closes
+// the local debit hold; hosted recovery seals customer packets for a paid
+// claim whose original accounts were all locally linked. Neither can CREATE.
+$originalBuyResume=[];
+if (preg_match('/^(walletBuyResume|hostedBuyResume)_([1-9][0-9]{0,9})$/D',
+        (string)$data,$originalBuyResume)===1) {
     if ((int)($admin??0)<=0 || (int)$from_id!==(int)$admin ||
         (int)($chat_id??0)!==(int)$admin ||
         !achbotAdminCan('review',(int)$from_id)) {
         achbotAdminDeny();return;
     }
     require_once __DIR__.'/../PaidAccountRecovery.php';
-    $id=(int)$walletResume[1];$committed=false;$summary=null;
+    $id=(int)$originalBuyResume[2];$committed=false;$summary=null;
+    $hosted=$originalBuyResume[1]==='hostedBuyResume';
     try {
-        $progress=achbotResumeWalletBuy($connection,$id,$botState,$buttonValues,
-            (string)$botUrl);
+        $progress=$hosted
+            ?achbotResumeHostedLinkedBuy($connection,$id,$botState,$buttonValues,(string)$botUrl)
+            :achbotResumeWalletBuy($connection,$id,$botState,$buttonValues,(string)$botUrl);
         $committed=($progress['committed']??false)===true;
         if ($committed) $summary=achbotDeliveryAggregate($connection,$id);
     } catch (Throwable $error) {
-        // The original native GET may have verified a held effect locally,
-        // but no new payment, capacity claim or native CREATE is authorized.
+        // A strict GET may have verified original evidence locally; neither
+        // action can replay a merchant, wallet, capacity or native CREATE.
         $reason=achbotEffectSafeFailure($error);
-        error_log('achbot_wallet_recovery_deferred pay_id='.$id.
+        error_log(($hosted?'achbot_hosted':'achbot_wallet').
+            '_recovery_deferred pay_id='.$id.
             ' reason='.$reason['reason'].' cause='.$reason['class']);
     }
     $body=$committed?achbotMessage(($summary && (int)$summary['ack']===(int)$summary['total'])
@@ -458,9 +462,8 @@ if (preg_match('/^walletBuyResume_([1-9][0-9]{0,9})$/D',
     $buttons=[];
     if ($committed) $buttons[]=[['text'=>achbotMessage('delivery_recovery.open'),
         'callback_data'=>'deliveryCase_'.$id]];
-    // Successful wallet recovery is terminal: paid_with_wallet no longer
-    // belongs to the technical recovery-case queue. Return to its inbox.
-    // On an unresolved recovery, the original case remains actionable.
+    // Original recovery is terminal for the technical case; unresolved
+    // cases stay accessible for further evidence-based reconciliation.
     $buttons[]=[['text'=>achbotMessage('service_workbench.back'),
         'callback_data'=>$committed?'serviceRecoveryInbox':'serviceRecoveryCase_'.$id]];
     $keyboard=json_encode(['inline_keyboard'=>$buttons],JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
@@ -573,11 +576,17 @@ if (preg_match('/^serviceRecovery(Inbox|Case)(?:_([1-9][0-9]{0,17}))?$/D',
                 $buttons[]=[['text'=>achbotMessage('service_recovery_action.resume_purchase'),
                     'callback_data'=>'apiEvidenceResume_'.$id]];
             }
-            if ($pay['type']==='BUY_SUB' && $pay['state']==='processing_wallet') {
+            if ($pay['type']==='BUY_SUB' &&
+                in_array((string)$pay['state'],['processing_wallet','paid'],true)) {
                 require_once __DIR__.'/../PaidAccountRecovery.php';
-                if (achbotWalletBuyRecoverable($connection,$id)) {
+                $resume=(string)$pay['state']==='processing_wallet'
+                    ?(achbotWalletBuyRecoverable($connection,$id)
+                        ?'walletBuyResume_'.$id:null)
+                    :(achbotHostedLinkedBuyRecoverable($connection,$id)
+                        ?'hostedBuyResume_'.$id:null);
+                if ($resume!==null) {
                     $buttons[]=[['text'=>achbotMessage('service_recovery_action.resume_purchase'),
-                        'callback_data'=>'walletBuyResume_'.$id]];
+                        'callback_data'=>$resume]];
                     $body.="\n".achbotMessage('service_recovery_action.resume_warning');
                 }
             }
