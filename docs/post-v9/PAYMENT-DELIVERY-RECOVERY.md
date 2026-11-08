@@ -531,8 +531,10 @@ COMMIT independently recheck current persisted permissions under SQL locks.
 The distinct 021 replacement operation never rewrites or repeats a previous
 original 007 CREATE. The operator must inspect actual original native evidence,
 then explicitly accept a short-lived, actor-bound confirmation warning. A
-new replacement gets its own committed reservation and operation marker before
-the first POST. Unknown/failed responses are GET-only, never another POST.
+new replacement gets its own randomly unique native username, committed
+reservation and operation marker before the first POST. Original 007 duration
+and volume are checked against the current plan so a later plan edit cannot
+silently change previously paid entitlement. Unknown/failed responses are GET-only, never another POST.
 A surviving first original capacity owner is reused; truly empty original 007
 history can reserve its first quantity only once. If the original first 007
 row was lost but later originals survived, **every** later 007 Native identity

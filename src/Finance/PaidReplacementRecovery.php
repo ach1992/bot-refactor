@@ -42,7 +42,7 @@ function achbotHostedReconciliationSnapshot(mysqli $db,int $payId,bool $lock=fal
     $fund=achbotHostedOriginalFundingSnapshot($db,$payId,$lock);
     if (!$fund) return null;
     $pay=$fund['pay'];$count=$fund['count'];$suffix=$lock?' FOR UPDATE':'';
-    $q=$db->prepare('SELECT * FROM service_effects WHERE pay_row_id=? ORDER BY ordinal,effect_kind'.$suffix);
+    $q=$db->prepare('SELECT *,UNIX_TIMESTAMP(created_at) AS original_created_epoch FROM service_effects WHERE pay_row_id=? ORDER BY ordinal,effect_kind'.$suffix);
     $q->bind_param('i',$payId);$q->execute();
     $rows=$q->get_result()->fetch_all(MYSQLI_ASSOC);$q->close();
     $original=[];$replacement=[];
@@ -178,7 +178,8 @@ function achbotHostedReconciliationPin(array $snapshot): string {
             'endpoint_sha256','plan_id','remote_username','requested_expire',
             'requested_bytes','request_sha256','replaces_effect_id',
             'reconciliation_reason','reconciliation_fingerprint',
-            'reconciliation_evidence_status','actor_userid','provider_snapshot','provider_mutation_key',
+            'reconciliation_evidence_status','actor_userid','original_created_epoch',
+            'provider_snapshot','provider_mutation_key',
             'provider_mutation_snapshot'] as $key) $copy[$key]=(string)($row[$key]??'');
         $rows[]=$copy;
     }
@@ -299,12 +300,24 @@ function achbotHostedCreateReconciledReplacement(
             $bytes%1073741824===0 &&
             $bytes!==$volume*1073741824)
             throw new RuntimeException('replacement_original_entitlement_changed');
+        // 007 records the original requested expiry and reservation creation
+        // time. A later plan edit cannot silently increase/decrease paid days;
+        // custom orders already use their frozen pays.day/volume values.
+        $created=achbotRecoveryExactInt($row['original_created_epoch']??null);
+        $oldExpiry=achbotRecoveryExactInt($row['requested_expire']??null);
+        if ($created===null || $created<=0 || $oldExpiry===null ||
+            abs(($oldExpiry-$created)-$days*86400)>120)
+            throw new RuntimeException('replacement_original_duration_changed_or_unverifiable');
     }
     // One original payment, no second merchant settlement/wallet debit.
     // The 007 reservation and optional capacity decrement both COMMIT before
     // ANY remote POST. An unknown COMMIT never triggers an outbound request.
-    $effectId=0;$op='';$endpoint='';$targetKey='';$group=null;$credentials='';
-    $name='hosted_repl_'.$payId.'_'.$ordinal;
+    $effectId=0;$op=bin2hex(random_bytes(16));$endpoint='';
+    $targetKey='';$group=null;$credentials='';
+    // Distinct native identity even if a historical 007 replacement record
+    // was lost outside the controlled transaction and its remote account
+    // survives as an orphan. Do not reuse deterministic usernames.
+    $name='hosted_repl_'.$payId.'_'.$ordinal.'_'.substr($op,0,12);
     if (!achbotEffectValidUsername($name))
         throw new RuntimeException('replacement_username_invalid');
     $expiry=time()+$days*86400;$bytes=$volume*1073741824;
@@ -384,7 +397,6 @@ function achbotHostedCreateReconciledReplacement(
             $ok=$q->execute() && $q->affected_rows===1;$q->close();
             if (!$ok) throw new RuntimeException('replacement_capacity_insufficient');
         }
-        $op=bin2hex(random_bytes(16));
         $fingerprint=hash('sha256',json_encode([
             $payId,$ordinal,$planId,$server,$group,$targetKey,$endpoint,
             $name,$expiry,$bytes],JSON_THROW_ON_ERROR));

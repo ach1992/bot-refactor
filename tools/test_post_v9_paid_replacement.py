@@ -102,6 +102,15 @@ DRIVER=DRIVER.replace(needle,r'''    if (($spec['op']??'')==='eligible') $result
         $result=achbotHostedCreateReconciledReplacement($connection,$pay,$ordinal,$actor,9001,
             (string)($spec['challenge']??''),$reader);
     }
+    elseif (($spec['op']??'')==='original_after_replacement') {
+        $result=achbotCreatePaidAccount($connection,$pay,1,[
+            'user_id'=>1001,'server_type'=>'marzban',
+            'server_id'=>2,'inbound_id'=>0,'plan_id'=>7,
+            'remark'=>'original_after_replacement_'.$pay,
+            'volume'=>2,'days'=>30,'uniqid'=>'fixture-original-uuid',
+            'protocol'=>'vless','port'=>0,'expire_microdate'=>0,
+            'net_type'=>'normal','rahgozar'=>0,'limitip'=>0]);
+    }
     elseif (($spec['op']??'')==='replacement_status') {
         $result=achbotHostedReconciliationSnapshot($connection,$pay);
         $result=$result?['count'=>$result['count'],
@@ -194,6 +203,11 @@ def check():
         assert confirm(pay,ch,actor=9002)['error'] is not None
         assert rows(pay)=='1' and balance()=='19:50000'
         cases.append('manager_missing_first_007_signed_one_replacement_capacity_once')
+        stale=run(pay,op='original_after_replacement')
+        assert stale['error'] and 'effect_original_create_after_replacement_denied' in str(stale['error']),stale
+        assert rows(pay)=='1' and balance()=='19:50000',stale
+        assert not any(ev['event']=='REPLACEMENT_POST' for ev in stale['events']),stale
+        cases.append('original_create_cannot_overlap_prior_paid_replacement')
         pay=seed('racefirst')
         challenge=preview(pay,actor=9002)
         with ThreadPoolExecutor(max_workers=2) as executor:
@@ -241,6 +255,17 @@ def check():
         assert sql(f"SELECT CONCAT(effect_kind,':',state,':',reserved_count) FROM service_effects WHERE pay_row_id={pay} AND effect_kind='create'")=='create:verified:1'
         assert run(pay)['error'] is None and sql(f'SELECT COUNT(*) FROM payment_delivery_intents WHERE pay_row_id={pay}')=='1'
         cases.append('foreign_original_kept_auditable_and_replacement_preserves_capacity')
+        # Current plan changes cannot rewrite an existing original 007
+        # entitlement. Require observed original request days AND volume.
+        pay=seed('daysdrift',create_prefix=1,link_prefix=0)
+        ch=preview(pay,native='wrong_note',actor=9002)
+        originalDays=int(sql('SELECT days FROM server_plans WHERE id=7'))
+        sql(f'UPDATE server_plans SET days={originalDays+5} WHERE id=7')
+        changed=confirm(pay,ch,native='wrong_note',actor=9002)
+        assert changed['error'] and 'replacement_original_duration_changed_or_unverifiable' in str(changed['error']),changed
+        assert rows(pay)=='0' and balance()=='19:50000',changed
+        sql(f'UPDATE server_plans SET days={originalDays} WHERE id=7')
+        cases.append('current_plan_days_change_cannot_replace_original_paid_entitlement')
         pay=seed('nativealready',create_prefix=1,link_prefix=0)
         original_valid=run(pay,op='replacement_preview',actor=9002,ordinal=1)
         assert original_valid['result'] is None and rows(pay)=='0' and balance()=='19:50000',original_valid

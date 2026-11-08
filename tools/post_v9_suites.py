@@ -3402,12 +3402,14 @@ def run_funding(tmp: str) -> tuple[dict, dict]:
     replacement=json.loads(replacement_path.read_text())
     required_replacements={
         'manager_missing_first_007_signed_one_replacement_capacity_once',
+        'original_create_cannot_overlap_prior_paid_replacement',
         'concurrent_staff_confirmation_cannot_double_reserve_or_post',
         'replacement_get_only_links_one_original_paid_order_and_seals_018',
         'operator_payments_authorized_first_paid_replacement',
         'support_payments_authorized_first_paid_replacement',
         'lost_replacement_native_response_get_only_recovery_no_repost',
         'foreign_original_kept_auditable_and_replacement_preserves_capacity',
+        'current_plan_days_change_cannot_replace_original_paid_entitlement',
         'authenticated_matching_original_account_never_offered_replacement',
         'bulk_missing_ordinal_only_replacement_native_no_second_inventory_hold',
         'noncontiguous_internal_gap_preserves_original_full_count_capacity_owner',
