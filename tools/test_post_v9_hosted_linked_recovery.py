@@ -290,7 +290,10 @@ def check():
         replay=run(pay,op='route',actor=9001,chat=9001)
         assert stage(pay)=='done\tdelivered'
         assert len([e for e in replay['events'] if e['event']=='TELEGRAM'])==0
-        assert count('payment_delivery_intents',pay)==2 and balances()==(50000,8)
+        # The separate native Owner-route fixture has since reset capacity
+        # and created one account. The first hosted payment's repeated
+        # callback must not reserve another slot from that current balance.
+        assert count('payment_delivery_intents',pay)==2 and balances()==(50000,9)
         scenarios.append('hosted_repeat_owner_callback_never_reseals_or_resends')
         assert not any(method=='POST' for method,_ in native_trace())
         scenarios.append('hosted_claimed_original_native_never_reposts_on_resume')
