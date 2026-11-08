@@ -388,6 +388,6 @@ def main():
     print(json.dumps({'status':'PASS','pre_style_source_equivalent_occurrences':reverse,'source_files':len(inventory['files']),
       'catalog_keys':len(entries),**api_references,'api_reference_negative_controls':api_reference_controls,'management_added_keys':len(management['added_keys']),'management_retained_legacy_keys':len(management['retained_legacy_keys']),'runtime_references':len(refs),'static_ui_violations':len(violations),'ascii_ui_violations':len(ascii_ui),'ascii_audit_negative_controls':8,'management_ascii_audit_controls':2,'machine_predicate_audit_controls':2,'migrated_machine_fields_or_sql_arguments':0,
       'authorized_source_dependency_files':len(amendments['source_dependencies']),'authorized_bootstrap_flow_changes':1,'approved_public_copy_corrections':len(amendments['approved_copy']),
-      'direct_http_guards':len(guarded),'editable_catalog_files':2,'logical_topics':28+8,
+      'direct_http_guards':len(guarded),'editable_catalog_files':2,'logical_topics':28+9,
       'current_authorized_source_edits':len(style_source['edits']),'retired_parser_tokens':len(style_source['retired_keys']),'relocation_source_ref':RELOCATION_SOURCE,'presentation':presentation,'native':native},ensure_ascii=False))
 if __name__=='__main__':main()

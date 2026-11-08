@@ -1211,15 +1211,15 @@ def run_wallet(tmp: str) -> tuple[dict, dict]:
             and text_catalog.get("native",{}).get("pre_style_privacy_corrections")==3
             and text_catalog.get("native",{}).get("actual_traffic_helper_parity_cases")==18
             and text_catalog.get("editable_catalog_files")==2
-            and text_catalog.get("logical_topics")==28+8
+            and text_catalog.get("logical_topics")==28+9
             and text_catalog.get("current_authorized_source_edits")==26
             and text_catalog.get("retired_parser_tokens")==23
             and text_catalog.get("relocation_source_ref")=="ecd30ba9192ed374703118a6c131be8809cc7b06"
             and text_catalog.get("native",{}).get("current_retired_feature_keys")==3
-            and text_catalog.get("catalog_keys")==2780+14+9+18+27+12+7+17+2+2+3+4+1
+            and text_catalog.get("catalog_keys")==2780+14+9+18+27+12+7+17+2+2+3+4+1+3
             and text_catalog.get("native",{}).get("editable_catalog_files")==2
-            and text_catalog.get("native",{}).get("logical_topics")==28+8
-            and text_catalog.get("native",{}).get("current_catalog_keys")==2780+14+9+18+27+12+7+17+2+2+3+4+1
+            and text_catalog.get("native",{}).get("logical_topics")==28+9
+            and text_catalog.get("native",{}).get("current_catalog_keys")==2780+14+9+18+27+12+7+17+2+2+3+4+1+3
             and text_catalog.get("native",{}).get("current_gift_admin_additions")==1
             and text_catalog.get("native",{}).get("current_gift_catalog_negative_controls")==8
             and text_catalog.get("native",{}).get("current_gift_catalog_negative_scenarios")==[
@@ -1243,16 +1243,15 @@ def run_wallet(tmp: str) -> tuple[dict, dict]:
             and text_catalog["native"]["current_byte_preserved_keys"]
                 +text_catalog["native"]["current_style_changes"]
                 +text_catalog["native"]["current_added_admin_keys"]==2523
-            # #117 now has eight strictly source-hash-pinned additive topics:
-            # the original seven remain byte-identical, and the new four-entry
-            # Owner-private delivery view contributes three zero-slot messages
-            # and one five-slot message: 3 + 6 native samples, one object,
-            # one multi-parameter object and one one-pass sample.
-            # Preserve all prior counts and negative controls.
-            and text_catalog.get("native",{}).get("current_native_template_assertions")==4120+24+9+139+42+7+2+3+9+1
-            and text_catalog.get("native",{}).get("current_object_conversion_templates")==268+2+15+5+1+1
-            and text_catalog.get("native",{}).get("current_shared_multi_parameter_templates")==66+1+14+5+1+1
-            and text_catalog.get("native",{}).get("current_one_pass_templates")==268+2+15+5+1+1
+            # Prior approved topics remain individually hash-pinned. The
+            # new 3-entry Owner-private original Hosted CREATE action adds
+            # exactly 3 keys, 3 source references and eight native template
+            # assertions (including one parameterized object/one-pass text).
+            # Preserve all earlier counters and negative controls.
+            and text_catalog.get("native",{}).get("current_native_template_assertions")==4120+24+9+139+42+7+2+3+9+1+8
+            and text_catalog.get("native",{}).get("current_object_conversion_templates")==268+2+15+5+1+1+1
+            and text_catalog.get("native",{}).get("current_shared_multi_parameter_templates")==66+1+14+5+1+1+1
+            and text_catalog.get("native",{}).get("current_one_pass_templates")==268+2+15+5+1+1+1
             and text_catalog.get("native",{}).get("current_r5_changes")==273
             and text_catalog.get("native",{}).get("current_r5_retired_keys")==10
             and text_catalog.get("native",{}).get("current_r5_added_keys")==60
@@ -1260,7 +1259,7 @@ def run_wallet(tmp: str) -> tuple[dict, dict]:
             and text_catalog.get("native",{}).get("current_non_ascii_digit_templates")==0
             and text_catalog.get("presentation",{}).get("status")=="PASS"
             and text_catalog.get("presentation",{}).get("editable_files")==2
-            and text_catalog.get("presentation",{}).get("current_keys")==2780+14+9+18+27+12+7+17+2+2+3+4+1
+            and text_catalog.get("presentation",{}).get("current_keys")==2780+14+9+18+27+12+7+17+2+2+3+4+1+3
             and text_catalog.get("presentation",{}).get("numeric_template_changes")==23
             and text_catalog.get("presentation",{}).get("adjacent_emoji_violations")==0
             and text_catalog.get("presentation",{}).get("parameter_exception_count")==3
@@ -1312,7 +1311,7 @@ def run_wallet(tmp: str) -> tuple[dict, dict]:
         # Four retired #112 references and the additional old direct-delete
         # callback reference are proven absent by test_next_text_catalog.py.
         # Keep complete current-reference equality, never a lower bound.
-        'runtime_references':2453+14-1-6-4-1+8-3+28+12-5+2+3+4+1,
+         'runtime_references':2453+14-1-6-4-1+8-3+28+12-5+2+3+4+1+3,
         # +28 owner financial/service/delivery copy keys; +12 net from R2
         # financial exception and R3 final receipt. Two earlier recovery
         # labels and three original-edit recovery labels are statically
