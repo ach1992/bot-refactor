@@ -112,6 +112,9 @@ RECOVERY=wallet.RECOVERY.replace(
 ).replace(
     "achbotResumeWalletBuy", "achbotResumeHostedLinkedBuy"
 ).replace("walletBuyResume_","hostedBuyResume_").replace(
+    "function sendQrFromLink(...$args) {",
+    "function generateRandomString($length,$protocol) {return '11111111-2222-4333-8444-555555555555';}\nfunction sendQrFromLink(...$args) {"
+).replace(
     "function createServerAccount(...$args) {throw new RuntimeException('forbidden_native_post');}",
     '''function createServerAccount(...$args) {
     // The only permitted recovery POST is a genuinely NEVER reserved 007
@@ -400,6 +403,26 @@ def check():
         assert stage(pay)=='done\tdelivered' and balances()==(50000,8)
         assert len([e for e in server.trace if e[0]=='POST'])==1,server.trace
         scenarios.append('pg_hosted_concurrent_missing_ordinal_creates_only_one_remote_account')
+
+        pay,_=seed('hostedpglostpost',panel='pasarguard',count=2,
+                   create_prefix=1,link_prefix=1)
+        server.trace=[];server.drop_next_post_reply=True
+        unknown=run(pay,pg=True)
+        assert unknown['error'] and unknown['orders']==1,unknown
+        assert stage(pay)=='review\tfulfillment_started'
+        assert count('payment_delivery_intents',pay)==0
+        assert sql(work,env,'SELECT state FROM service_effects '
+            f'WHERE pay_row_id={pay} AND ordinal=2')=='dispatching'
+        assert len([e for e in server.trace if e[0]=='POST'])==1,server.trace
+        # Readback of the original operation is the ONLY permitted recovery;
+        # never infer that the POST was not applied because its HTTP died.
+        recovered=run(pay,pg=True)
+        assert recovered['error'] is None and recovered['orders']==2,recovered
+        assert stage(pay)=='done\tdelivered' and balances()==(50000,8)
+        assert count('payment_delivery_intents',pay)==2
+        assert len([e for e in server.trace if e[0]=='POST'])==1,server.trace
+        assert run(pay,pg=True)['error']=='hosted_recovery_manifest_unavailable'
+        scenarios.append('pg_hosted_lost_create_http_response_readback_only_never_reposts')
 
         pay,_=seed('hostedpgchangedplan',panel='pasarguard',count=2,
                    create_prefix=1,link_prefix=1)

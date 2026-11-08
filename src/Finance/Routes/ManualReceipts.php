@@ -455,7 +455,7 @@ if (preg_match('/^(walletBuyResume|hostedBuyResume)_([1-9][0-9]{0,9})$/D',
     $body=$committed?achbotMessage(($summary && (int)$summary['ack']===(int)$summary['total'])
             ? 'finance_workbench.status_completed'
             : 'finance_workbench.status_delivery_unconfirmed'):
-        ($progressed?achbotMessageHtml('service_recovery_action.original_started',[
+        ($progressed?achbotMessageHtml('hosted_original_recovery.started',[
             'ordinal'=>(int)$progress['ordinal'],'count'=>(int)$progress['count']]):
             achbotMessage('service_workbench.unavailable'));
     if ($committed && $summary) $body.="\n".achbotMessageHtml(
@@ -467,7 +467,7 @@ if (preg_match('/^(walletBuyResume|hostedBuyResume)_([1-9][0-9]{0,9})$/D',
     if ($committed) $buttons[]=[['text'=>achbotMessage('delivery_recovery.open'),
         'callback_data'=>'deliveryCase_'.$id]];
     if ($progressed && $hosted)
-        $buttons[]=[['text'=>achbotMessage('service_recovery_action.resume_original_unstarted'),
+        $buttons[]=[['text'=>achbotMessage('hosted_original_recovery.resume_unstarted'),
             'callback_data'=>'hostedBuyResume_'.$id]];
     // Original recovery is terminal for the technical case; unresolved
     // cases stay accessible for further evidence-based reconciliation.
@@ -597,13 +597,13 @@ if (preg_match('/^serviceRecovery(Inbox|Case)(?:_([1-9][0-9]{0,17}))?$/D',
                         $prefix=achbotHostedLinkedBuySnapshot($connection,$id,false,true);
                         $unstarted=$prefix && count($prefix['lines'])<$prefix['count'];
                     }
-                    $buttons[]=[['text'=>achbotMessage($unstarted
-                        ?'service_recovery_action.resume_original_unstarted'
-                        :'service_recovery_action.resume_purchase'),
+                    $buttons[]=[['text'=>$unstarted
+                        ?achbotMessage('hosted_original_recovery.resume_unstarted')
+                        :achbotMessage('service_recovery_action.resume_purchase'),
                         'callback_data'=>$resume]];
-                    $body.="\n".achbotMessage($unstarted
-                        ?'service_recovery_action.original_unstarted_warning'
-                        :'service_recovery_action.resume_warning');
+                    $body.="\n".($unstarted
+                        ?achbotMessage('hosted_original_recovery.unstarted_warning')
+                        :achbotMessage('service_recovery_action.resume_warning'));
                 }
             }
             if ($canResume) {

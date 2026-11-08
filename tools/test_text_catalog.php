@@ -394,6 +394,11 @@ $workbench = [
  'service_recovery_action'=>[
   'digest'=>'37c23110bf7b6696eef5b2c8a552d9bccb519ac830a0094aa876adb57a656360',
   'names'=>['resume_purchase','resume_verified_edit','edit_warning','edit_unverified','resume_warning']],
+ // New #117 Owner-only explicit FIRST-time original Hosted CREATE copy.
+ // Strictly additive; old pre-RC26 catalogue bytes are still verified.
+ 'hosted_original_recovery'=>[
+  'digest'=>'f442322538c4ebf091f8ca914667a046ad3ba7431a094de4cb794f25d6574394',
+  'names'=>['resume_unstarted','unstarted_warning','started']],
  'service_edit_delivery'=>[
   'digest'=>'32355d7bacf05d19b252482f21c2ea382723a63f44ddb7fb3e89c9e24fa9a8fa',
   'names'=>['header','line','more','warning']],
