@@ -37,20 +37,9 @@ function achbotEffectSafeFailure(Throwable $error): array {
         'pg_dispatch_target_changed','pg_verify_begin','pg_verify_commit_unknown',
         'pg_effect_verification_unconfirmed','pg_credentials_changed',
         'pg_create_invalid','pg_groups_required',
-        // Explicit paid-account replacement. Keep known operational reasons
-        // intact while never serializing untrusted provider/SQL exception text.
-        'replacement_actor_not_permitted','replacement_capacity_insufficient',
-        'replacement_capacity_owner_changed','replacement_dispatch_needs_review',
-        'replacement_evidence_expired_or_invalid','replacement_first_capacity_unavailable',
-        'replacement_missing_capacity_proof',
-        'replacement_original_duration_changed_or_unverifiable',
-        'replacement_original_entitlement_changed',
-        'replacement_original_entitlement_unavailable',
-        'replacement_original_evidence_changed','replacement_plan_invalid',
-        'replacement_reservation_id_missing','replacement_reservation_unconfirmed',
-        'replacement_reserve_begin','replacement_reserve_commit_unknown',
-        'replacement_staff_permission_revoked','replacement_target_changed',
-        'replacement_unrecognized_remote_evidence','replacement_username_invalid'
+        // Exact, trusted terminal-Archive refusal; never reduce an expected
+        // operator fence to an opaque runtime_error diagnostic.
+        'effect_original_archived'
     ];
     $fallback='runtime_error';$depth=0;$source='runtime';
     for ($current=$error;$current!==null && $depth<8;$current=$current->getPrevious()) {
@@ -281,10 +270,20 @@ function achbotCreatePaidAccount(mysqli $db, int $payId, int $ordinal, array $p,
         // in the operator Archive / signed IPN paths. Manual and wallet
         // purchase claims are not affected by the hosted operator inbox.
         if ($claim['state']==='paid') {
-            $tables=$db->query("SHOW TABLES LIKE 'payment_attempts'");
-            if (!$tables) throw new RuntimeException('effect_archive_ledger_unavailable');
-            $hasLedger=$tables->num_rows===1;
-            $tables->free();
+            // SHOW TABLES can silently hide a table without sufficient
+            // privileges. Only MySQL 1146 proves genuine pre-ledger absence;
+            // permission/transport/schema errors must never bypass Archive.
+            $hasLedger=true;
+            try {
+                $probe=$db->query('SELECT 1 FROM payment_attempts LIMIT 0');
+                if (!$probe) {
+                    if ((int)$db->errno===1146) $hasLedger=false;
+                    else throw new RuntimeException('effect_archive_ledger_unavailable');
+                } else $probe->free();
+            } catch (mysqli_sql_exception $error) {
+                if ((int)$error->getCode()===1146) $hasLedger=false;
+                else throw $error;
+            }
             if ($hasLedger) {
                 // Missing 022 on an existing 003 ledger is a schema error:
                 // fail closed before a remote request, never skip Archive.

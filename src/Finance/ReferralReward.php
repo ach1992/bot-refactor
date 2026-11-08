@@ -37,6 +37,35 @@ if (!function_exists('achbotReferralSchemaReady')) {
     }
 }
 
+/** Called only after locking the original pays row. A hosted Archive must
+ * also fence a *later* referral wallet credit, including the gap between
+ * durable award reservation and its separate credit transaction. The table
+ * probe distinguishes genuine pre-003 invoices (1146) from hidden tables.
+ */
+if (!function_exists('achbotReferralOriginalArchivedLocked')) {
+    function achbotReferralOriginalArchivedLocked(mysqli $db,int $payId): bool {
+        $hasLedger=true;
+        try {
+            $probe=$db->query('SELECT 1 FROM payment_attempts LIMIT 0');
+            if (!$probe) {
+                if ((int)$db->errno===1146) $hasLedger=false;
+                else throw new RuntimeException('referral_archive_ledger_unavailable');
+            } else $probe->free();
+        } catch (mysqli_sql_exception $error) {
+            if ((int)$error->getCode()===1146) $hasLedger=false;
+            else throw $error;
+        }
+        if (!$hasLedger) return false;
+        $q=$db->prepare('SELECT review_archived_at FROM payment_attempts
+            WHERE pay_row_id=? LIMIT 1 FOR UPDATE');
+        if (!$q) throw new RuntimeException('referral_archive_fence_prepare');
+        $q->bind_param('i',$payId);
+        if (!$q->execute()) throw new RuntimeException('referral_archive_fence_read');
+        $row=$q->get_result()->fetch_assoc();$q->close();
+        return $row!==null && $row['review_archived_at']!==null;
+    }
+}
+
 if (!function_exists('achbotReferralAwardStatus')) {
     /** Read only; no retry, no compensation and no personal balance exposed. */
     function achbotReferralAwardStatus(mysqli $db, int $payId): string {
@@ -191,6 +220,8 @@ if (!function_exists('giveReferralReward')) {
                 $pay['type']!=='BUY_SUB' ||
                 !in_array($pay['state'],['approved','paid','auto_cart_approved'],true))
                 throw new RuntimeException('referral_payment_unconfirmed');
+            if ($pay['state']==='paid' && achbotReferralOriginalArchivedLocked($db,$payId))
+                throw new RuntimeException('referral_original_archived');
 
             // Source-only 007 journal is the existing canonical remote
             // service identity: do not award for a merely paid but unfulfilled
@@ -267,6 +298,8 @@ if (!function_exists('giveReferralReward')) {
             if (count($paid)!==1 ||
                 !in_array($paid[0]['state'],['approved','paid','auto_cart_approved'],true))
                 throw new RuntimeException('referral_credit_payment_changed');
+            if ($paid[0]['state']==='paid' && achbotReferralOriginalArchivedLocked($db,$payId))
+                throw new RuntimeException('referral_original_archived');
             $stmt=$db->prepare("SELECT state,inviter_userid,amount_toman
                 FROM referral_awards WHERE pay_row_id=? FOR UPDATE");
             if (!$stmt) throw new RuntimeException('referral_credit_claim_prepare');

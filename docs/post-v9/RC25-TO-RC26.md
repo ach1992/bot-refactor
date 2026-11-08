@@ -3,7 +3,7 @@
 > **Historical published RC26 upgrade only.** Draft PR #136 proposes a
 > different future schema without experimental 019/021. Use RC26's tagged
 > runtime and 018-021 sidecars together if following this historical guide;
-> do not combine them with the unreleased successor's 018/020-only schema.
+> do not combine them with the unreleased successor's 018/020/022 schema.
 
 
 > **RC26 SOURCE-ONLY PRERELEASE — NOT INSTALLED, NOT APPROVED FOR RUNTIME CUTOVER.**
