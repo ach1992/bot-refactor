@@ -435,6 +435,42 @@ original orders, unstarted held debit, merchant-hosted uncertainty or
 installed Chili acceptance. Do not deploy or run live recovery without
 separate target approval, compatible 003/007/018 audit and restore-tested backup.
 
+### Source-only original Hosted paid + fully linked delivery recovery
+
+The Owner-private technical case can offer the hostedBuyResume callback when
+a genuine existing NextPay/Zarinpal BUY_SUB has already reached paid through
+the original hosted claim, its unique 003 attempt is still in
+review / fulfillment_started, and all original 007 CREATE ordinals are
+complete, contiguous and linked to their exact original local orders.
+The first CREATE owns the whole capacity reservation. The original invoice
+reference, fixed Toman quote, paid customer/plan/server, 007 operation/target,
+order/amount and current PasarGuard physical incarnation must all match.
+The existing 019 journal must be valid and contain NO operator decision:
+a human-attested service result cannot silently become an authenticated
+merchant result. The required 018 delivery ledger must be ready and empty
+for this payment.
+
+This path does not verify money again, perform merchant GET, reserve
+capacity, CREATE/modify native accounts, relink/reprice existing orders or
+repeat a payment. It checks each original native account with exact read-only
+Marzban/PasarGuard GET and renders delivery packets without sending. After
+all reads, a final SQL transaction locks and rechecks the exact payment,
+003, 007, original orders, current physical provider binding and any existing
+012 mutation generation. The transaction inserts encrypted immutable 018
+customer packets and closes the service-fulfillment 003 attempt as
+done / delivered, without changing the original paid state. This value is not
+a new merchant assertion or proof of a Telegram ACK. After COMMIT, only
+PENDING packets can be sent; UNKNOWN packets are never automatically resent.
+
+Missing/unlinked/foreign original accounts, incomplete ordinals, unresolved
+owner attestation, uncertain funds or already-sealed delivery remain outside
+this action and must be separately reconciled. No historical/terminal paid
+record is automatically backfilled. The original hosted browser-result and
+administrator-report paths are not replaced by this narrower repair.
+Source-real PHP 8.5 / disposable MariaDB + loopback acceptance is required;
+installed Chili, migrations 018/019, backups/restores and live Telegram/provider
+acceptance remain separately authorized and UNVERIFIED.
+
 ### 2026-11-08 independent-review remediation for PR #129
 
 The Owner callback for a **successfully** recovered wallet purchase now

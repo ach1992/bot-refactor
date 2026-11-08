@@ -3524,6 +3524,49 @@ def run_funding(tmp: str) -> tuple[dict, dict]:
             wallet_recovery.get('original_wallet_duplicate_debits')==0):
         raise RuntimeError('Original wallet source-real recovery evidence incomplete')
     wallet_create['original_recovery']=wallet_recovery
+    hosted_path=Path(tmp)/"hosted-original-linked-recovery.json"
+    hosted_run=subprocess.run(
+        ["python3",str(ROOT/"tools/test_post_v9_hosted_linked_recovery.py"),
+         "--report",str(hosted_path)],
+        cwd=ROOT,capture_output=True,text=True,timeout=170)
+    if hosted_run.returncode!=0:
+        raise RuntimeError("Original hosted linked recovery native acceptance failed:\n"
+            +(hosted_run.stderr or hosted_run.stdout)[-5500:])
+    hosted=json.loads(hosted_path.read_text())
+    required_hosted={
+        'original_hosted_nextpay_fully_linked_two_original_accounts_sealed_once',
+        'hosted_original_delivery_packet_passes_real_integrity_validator',
+        'hosted_owner_route_valid_callback_finishes_and_opens_delivery',
+        'hosted_tampered_payment_reference_blocks_sealed_delivery_validation',
+        'hosted_repeat_owner_callback_never_reseals_or_resends',
+        'hosted_claimed_original_native_never_reposts_on_resume',
+        'original_hosted_zarinpal_same_paid_native_once_only',
+        'hosted_foreign_native_marker_blocks_then_valid_get_recovers',
+        'hosted_incomplete_original_ordinals_refuse_without_get_or_create',
+        'hosted_unlinked_original_requires_separate_operator_reconciliation',
+        'hosted_foreign_quote_never_becomes_delivery_authority',
+        'hosted_already_terminal_attempt_cannot_fabricate_backfill',
+        'hosted_existing_human_attestation_cannot_be_relabelled_merchant_delivered',
+        'hosted_telegram_unknown_stays_sealed_no_auto_retry',
+        'pg_hosted_two_original_linked_native_accounts_by_id_are_delivered_once',
+        'pg_hosted_current_physical_provider_binding_refuses_retargeted_order',
+        'hosted_current_marzban_endpoint_drift_rejected_before_native_get',
+        'hosted_marzban_target_drift_after_get_blocks_stale_terminal_commit',
+        'pg_hosted_rebind_between_native_get_and_commit_refuses_stale_delivery',
+        'pg_hosted_completed_native_revoke_between_get_and_commit_refuses_stale_packet',
+        'hosted_second_delivery_insert_rolls_back_then_recovers_without_native_create',
+        'hosted_concurrent_owner_resumes_single_terminal_commit_and_delivery',
+        'hosted_owner_only_private_callback_denies_foreign_actor_chat',
+    }
+    if not (hosted.get('complete') is True and
+            set(hosted.get('scenarios',[]))==required_hosted and
+            hosted.get('source_real') is True and
+            hosted.get('php85_required') is True and
+            hosted.get('disposable_mariadb') is True and
+            hosted.get('original_hosted_post_replays')==0 and
+            hosted.get('original_hosted_duplicate_wallet_debits')==0):
+        raise RuntimeError('Original hosted linked delivery evidence incomplete')
+    wallet_create['hosted_linked_recovery']=hosted
     nonpaid_path=Path(tmp)/"trial-bulk-native.json"
     native_nonpaid=subprocess.run(
         ["python3",str(ROOT/"tools/test_post_v9_nonpaid_routes.py"),
