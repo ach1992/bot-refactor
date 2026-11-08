@@ -10,7 +10,8 @@ require_once __DIR__.'/ServiceEffects.php';
 /** Native CREATE replay gate shared by bank/API/manual fulfillment. */
 function achbotContinuePaidAccount(mysqli $db,int $payId,int $ordinal,array $request,
                                    ?callable $exactAccountGet=null,
-                                   bool $existingOnly=false): array {
+                                   bool $existingOnly=false,
+                                   bool $allowLinked=false): array {
     achbotEffectRequireAutocommit($db);
     achbotEffectRequireUniqueLine($db);
     if ($payId<=0 || $ordinal<=0) throw new RuntimeException('paid_resume_invalid_line');
@@ -35,10 +36,18 @@ function achbotContinuePaidAccount(mysqli $db,int $payId,int $ordinal,array $req
     $server=(int)($request['server_id']??0);
     $volume=(int)($request['volume']??0);
     $days=(int)($request['days']??0);
+    // A separately authenticated Wallet operator can observe a previously
+    // linked original line. Ordinary approval/Bank/API paths cannot borrow
+    // this permission, nor turn an absent effect into a fresh CREATE.
+    $linked=$existingOnly && $allowLinked &&
+        $e['pay_state']==='processing_wallet' &&
+        $e['state']==='local_recorded' && $e['order_id']!==null &&
+        (int)$e['order_id']>0;
     if ($e['pay_type']!=='BUY_SUB' ||
         !in_array((string)$e['pay_state'],['processing','paid','processing_wallet'],true) ||
-        !in_array((string)$e['state'],['dispatching','verified'],true) ||
-        $e['order_id']!==null || (int)$e['paid_user']!==(int)($request['user_id']??0) ||
+        !($linked || (in_array((string)$e['state'],['dispatching','verified'],true) &&
+            $e['order_id']===null)) ||
+        (int)$e['paid_user']!==(int)($request['user_id']??0) ||
         (int)$e['paid_plan']!==(int)($request['plan_id']??0) ||
         (int)$e['plan_id']!==(int)$e['paid_plan'] ||
         (int)$e['target_server_id']!==$server || (int)$e['paid_server']!==$server ||
@@ -114,9 +123,10 @@ function achbotContinuePasarGuardPaidAccount(mysqli $db,int $payId,int $ordinal,
     $snapshot=$current['provider_snapshot'];
     $panel=achbotProviderPanelForSnapshot($db,$snapshot);
     $account=achbotProviderAccountByEffect($db,$effectId);
+    $linked=$e['state']==='local_recorded';
     if (!$account || $account['operation_marker']!=='achbot:v1:'.$e['operation_id'] ||
         $account['remote_username']!==$e['remote_username'] ||
-        $account['order_id']!==null)
+        $account['order_id']!==($linked?(int)$e['order_id']:null))
         throw new RuntimeException('paid_resume_account_identity_invalid');
     if ($account['remote_user_id']!==null) {
         $identity=achbotProviderAccountIdentity($db,$account);
@@ -163,7 +173,8 @@ function achbotContinuePasarGuardPaidAccount(mysqli $db,int $payId,int $ordinal,
         }
     }
     $bound=achbotProviderAccountByEffect($db,$effectId);
-    if (!$bound || $bound['state']!=='verified')
+    if (!$bound || $bound['state']!==($linked?'linked':'verified') ||
+        $bound['order_id']!==($linked?(int)$e['order_id']:null))
         throw new RuntimeException('paid_resume_verify_missing');
     $links=achbotPgLinks($panel,achbotProviderAccountIdentity($db,$bound));
     if (($links['success']??false)!==true)
@@ -212,13 +223,83 @@ function achbotResumePaidPurchaseDelivery(mysqli $db,int $payId,int $actor): arr
 
 /**
  * Issue #117: Owner-reconciled, already-dispatched wallet BUY_SUB recovery.
- * Only a COMPLETE original CREATE manifest is admitted. No new native CREATE,
- * wallet debit, capacity hold, merchant settlement or speculative delivery.
+ * Only a COMPLETE original CREATE manifest is admitted, including original
+ * individually linked orders. No new native CREATE, wallet debit, capacity
+ * hold, merchant settlement or speculative delivery.
  */
+
+/** A linked original order is provenance, not an invitation to replace it. */
+function achbotWalletBuyLinkedOrder(
+    mysqli $db,array $pay,array $effect,int $ordinal,int $count,bool $lock
+): ?array {
+    $orderId=(int)($effect['order_id']??0);
+    if ($orderId<=0) return null;
+    $q=$db->prepare('SELECT * FROM orders_list WHERE id=?'.($lock?' FOR UPDATE':''));
+    $q->bind_param('i',$orderId);$q->execute();
+    $order=$q->get_result()->fetch_assoc();$q->close();
+    if (!$order || (int)$order['userid']!==(int)$pay['user_id'] ||
+        (int)$order['fileid']!==(int)$pay['plan_id'] ||
+        (int)$order['server_id']!==(int)$effect['target_server_id'] ||
+        (int)$order['inbound_id']!==0 ||
+        (string)$order['remark']!==(string)$effect['remote_username'] ||
+        (int)$order['amount']!==achbotAllocateOrderAmount((int)$pay['price'],$count,$ordinal) ||
+        (int)$order['status']!==1 ||
+        (int)$order['agent_bought']!==(int)($pay['agent_bought']??0) ||
+        (int)$order['expire_date']<=0 ||
+        !is_string($order['token']) ||
+        !is_string($order['uuid']) || $order['uuid']==='' ||
+        !is_string($order['link']) || $order['link']==='' ||
+        (string)$order['autoRenew']!=='off') return null;
+    if ($pay['panel_type']==='pasarguard') {
+        // ProviderStorage is intentionally lazy-loaded by ordinary PG dispatch.
+        // Wallet recovery inspects linked orders BEFORE any provider GET.
+        achbotPgLoad();
+        // The 012 provider incarnation must be the same linked effect and
+        // original operation marker, not a coincidentally named subscription.
+        $account=achbotProviderAccountByOrder($db,$orderId,$lock);
+        if (!$account || (int)$account['effect_id']!==(int)$effect['id'] ||
+            $account['order_id']!==$orderId ||
+            $account['remote_username']!==$effect['remote_username'] ||
+            $account['operation_marker']!=='achbot:v1:'.$effect['operation_id'] ||
+            $account['state']!=='linked') return null;
+        try {
+            // An original order still needs to be manageable through its
+            // CURRENT logical server. Historic 012 evidence alone does not
+            // prove the server still points at the original physical panel.
+            // The final snapshot first locks server_config in its pay join,
+            // so this same check is stable across the terminal transaction.
+            $panel=achbotPgServerPanel($db,(int)$order['server_id']);
+            // Use an explicit current/locking read of this exact config;
+            // a preexisting REPEATABLE READ view must not conceal a
+            // connection change seen after the final payment row lock.
+            $q=$db->prepare('SELECT provider_connection_id,provider_instance_key,panel_url
+                FROM server_config WHERE id=?'.($lock?' FOR UPDATE':''));
+            $serverId=(int)$order['server_id'];
+            $q->bind_param('i',$serverId);$q->execute();
+            $current=$q->get_result()->fetch_assoc();$q->close();
+            if (!$current ||
+                (int)$panel['id']!==(int)$account['panel_id'] ||
+                $panel['instance_key']!==$account['instance_key'] ||
+                !hash_equals((string)$account['endpoint_sha256'],
+                    hash('sha256',rtrim((string)$panel['api_url'],'/'))) ||
+                (int)$current['provider_connection_id']!==(int)$account['panel_id'] ||
+                $current['provider_instance_key']!==$account['instance_key'] ||
+                !hash_equals((string)$account['endpoint_sha256'],
+                    hash('sha256',rtrim((string)$current['panel_url'],'/'))))
+                return null;
+            // A pending or malformed native mutation cannot be treated as
+            // stable original delivery evidence.
+            achbotPgMutationHistory($account);
+        } catch (Throwable $ignored) {return null;}
+    }
+    return $order;
+}
+
 /** Read-only admission. Treat uncertainty as ineligible, not as absence. */
 function achbotWalletBuyRecoverySnapshot(mysqli $db,int $payId,bool $lock=false): ?array {
     require_once __DIR__.'/DeliveryLedger.php';
     require_once __DIR__.'/RecoveryInspection.php';
+    require_once __DIR__.'/../Purchase/OrderWrites.php';
     if ($payId<=0 || !achbotDeliverySchemaReady($db)) return null;
     achbotEffectRequireUniqueLine($db);
     $suffix=$lock?' FOR UPDATE':'';
@@ -251,13 +332,16 @@ function achbotWalletBuyRecoverySnapshot(mysqli $db,int $payId,bool $lock=false)
         (int)$hold['plan_id']!==(int)$pay['plan_id'] ||
         $hold['order_id']!==null || (int)$hold['requested_expire']!==0 ||
         (int)$hold['requested_bytes']!==0) return null;
-    $lines=[];
+    $lines=[];$seenOrders=[];
     foreach (array_slice($effects,1) as $index=>$e) {
         $ordinal=$index+1;
         $bytes=achbotRecoveryExactInt($e['requested_bytes']);
+        $linked=$e['state']==='local_recorded' && $e['order_id']!==null &&
+            (int)$e['order_id']>0;
         if ($e['effect_kind']!=='create' || (int)$e['ordinal']!==$ordinal ||
-            !in_array($e['state'],['dispatching','verified'],true) ||
-            $e['order_id']!==null || (int)$e['reserved_count']!==0 ||
+            !($linked || (in_array($e['state'],['dispatching','verified'],true) &&
+                $e['order_id']===null)) ||
+            (int)$e['reserved_count']!==0 ||
             (int)$e['target_server_id']!==(int)$pay['server_id'] ||
             (int)$e['plan_id']!==(int)$pay['plan_id'] ||
             $e['target_group_id']!==$hold['target_group_id'] ||
@@ -269,6 +353,14 @@ function achbotWalletBuyRecoverySnapshot(mysqli $db,int $payId,bool $lock=false)
             $bytes<=0 || $bytes%1073741824!==0 ||
             !is_string($e['request_sha256']) || strlen($e['request_sha256'])!==64)
             return null;
+        if ($linked) {
+            $orderId=(int)$e['order_id'];
+            if (isset($seenOrders[$orderId])) return null;
+            $seenOrders[$orderId]=true;
+            $order=achbotWalletBuyLinkedOrder($db,$pay,$e,$ordinal,$count,$lock);
+            if ($order===null) return null;
+            $e['_original_order']=$order;
+        }
         $lines[$ordinal]=$e;
     }
     // The physical target is a provider-verified identity checked independently
@@ -281,15 +373,44 @@ function achbotWalletBuyRecoveryPin(array $snapshot): string {
     $pay=$snapshot['pay'];$hold=$snapshot['hold'];
     $keys=['id','effect_kind','ordinal','operation_id','reserved_count',
         'target_server_id','target_group_id','target_key','endpoint_sha256',
-        'plan_id','remote_username','requested_expire','requested_bytes','request_sha256'];
+        'plan_id','remote_username','requested_expire','requested_bytes','request_sha256','order_id'];
     $pick=static function(array $row) use($keys): array {
         $out=[];foreach($keys as $key) $out[$key]=(string)($row[$key]??'');return $out;
     };
+    $orderKeys=['id','userid','fileid','server_id','inbound_id','remark',
+        'amount','status','agent_bought','expire_date','token','uuid','link',
+        'autoRenew','provider_effect_id','provider_remote_user_id',
+        'provider_remote_created_at'];
+    $orderPins=[];
+    foreach ($snapshot['lines'] as $ordinal=>$line) {
+        $order=$line['_original_order']??null;
+        if ($order===null) {
+            $orderPins[$ordinal]=null;
+            continue;
+        }
+        $orderPins[$ordinal]=[];
+        foreach ($orderKeys as $key)
+            $orderPins[$ordinal][$key]=(string)($order[$key]??'');
+        if ($pay['panel_type']==='pasarguard') {
+            // These are the EXISTING 012 mutation-fence generations.
+            // Native revoke/edit can finish and return to state=linked
+            // after the remote GET, yet invalidate the rendered packet.
+            // Pin only already-linked accounts: verifying a previously
+            // unlinked CREATE legitimately changes provider evidence.
+            $orderPins[$ordinal]['provider_mutation']=[
+                'state'=>$line['provider_state'],
+                'key'=>$line['provider_mutation_key'],
+                'snapshot'=>$line['provider_mutation_snapshot'],
+                'updated_at'=>$line['provider_evidence_updated_at']
+            ];
+        }
+    }
     return hash('sha256',json_encode([
         'payment'=>achbotPaymentEvidencePayFingerprint($pay),
         'provider'=>(string)$pay['panel_type'],'count'=>$snapshot['count'],
         'hold'=>$pick($hold),
-        'lines'=>array_map($pick,$snapshot['lines'])
+        'lines'=>array_map($pick,$snapshot['lines']),
+        'linked_orders'=>$orderPins
     ],JSON_THROW_ON_ERROR));
 }
 
@@ -329,7 +450,7 @@ function achbotResumeWalletBuy(
             'remark'=>(string)$effect['remote_username'],'volume'=>$volume,
             'days'=>$days,'uniqid'=>'','protocol'=>'','port'=>0,
             'expire_microdate'=>0,'net_type'=>'','rahgozar'=>0,'limitip'=>0
-        ],$marzbanRead,true);
+        ],$marzbanRead,true,true);
         if (!is_object($remote) || ($remote->success??false)!==true ||
             $name!==$effect['remote_username'] || $effectId!==(int)$effect['id'])
             throw new RuntimeException('wallet_recovery_original_not_proven');
@@ -354,7 +475,8 @@ function achbotResumeWalletBuy(
         if (!$after || !hash_equals($original,achbotWalletBuyRecoveryPin($after)))
             throw new RuntimeException('wallet_recovery_identity_changed');
         foreach ($after['lines'] as $ordinal=>$effect) {
-            if ($effect['state']!=='verified' ||
+            $expected=$effect['order_id']===null?'verified':'local_recorded';
+            if ($effect['state']!==$expected ||
                 (int)($lines[$ordinal]['effect_id']??0)!==(int)$effect['id'])
                 throw new RuntimeException('wallet_recovery_effect_not_verified');
         }
@@ -373,12 +495,18 @@ function achbotResumeWalletBuy(
             throw new RuntimeException('wallet_recovery_local_attempt_invalid');
         foreach ($after['lines'] as $ordinal=>$effect) {
             $line=$lines[$ordinal];
-            $orderId=insertOrder($db,$owner,(string)$line['token'],(int)$pay['plan_id'],
-                $server,0,(string)$line['remark'],(string)$line['uuid'],
-                (int)$effect['requested_expire'],(string)$line['links'],
-                achbotAllocateOrderAmount($amount,$count,$ordinal),time(),
-                (int)($pay['agent_bought']??0),true);
-            achbotLinkPaidAccountEffect($db,(int)$effect['id'],$orderId);
+            if ($effect['order_id']!==null) {
+                // Original checkout already committed this exact order. Never
+                // insert, reprice, relink or modify its native incarnation.
+                $orderId=(int)$effect['order_id'];
+            } else {
+                $orderId=insertOrder($db,$owner,(string)$line['token'],(int)$pay['plan_id'],
+                    $server,0,(string)$line['remark'],(string)$line['uuid'],
+                    (int)$effect['requested_expire'],(string)$line['links'],
+                    achbotAllocateOrderAmount($amount,$count,$ordinal),time(),
+                    (int)($pay['agent_bought']??0),true);
+                achbotLinkPaidAccountEffect($db,(int)$effect['id'],$orderId);
+            }
             achbotDeliveryInsertWalletBuyLocked($db,$pay,$attempt,$effect,$first['hold'],
                 $ordinal,$orderId,['uid'=>$owner,'qr'=>$line['qr'],
                 'caption'=>$line['caption'],'keys'=>$line['keys'],'bot_url'=>$botUrl]);

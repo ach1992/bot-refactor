@@ -389,35 +389,50 @@ remain forward-only and do not backfill historical untracked notifications.
 
 ## 2026-11-08 — Original-wallet committed-native recovery (source only)
 
-An Owner-private `serviceRecoveryCase_<pay>` page now offers a wallet continuation
-**only** for a `processing_wallet` BUY_SUB that still has its original,
-committed `wallet_hold`, full and contiguous CREATE-effect manifest, and **no**
-previously linked orders or competing 003 payment attempt. There is no retry
-from a missing CREATE ordinal, unknown funding, a partly linked batch, or a
-payment with changed native/account pins. Such cases stay in the service
-workbench for separate, evidence-based operator reconciliation.
+An Owner-private `serviceRecoveryCase_<pay>` page offers a wallet continuation
+**only** for a `processing_wallet` BUY_SUB with its original consumed
+`wallet_hold`, a **full and contiguous** original CREATE-effect manifest, and
+no competing 003 payment attempt. Original CREATE lines can be either
+unlinked (`dispatching`/`verified`) or already linked to genuine local orders
+(`local_recorded`). Linked orders must still match the exact customer,
+plan, server, account, allocated price, order status and PasarGuard 012
+incarnation **and the current server-to-original physical panel binding**.
+Missing CREATE ordinals, forged/conflicting linked orders,
+unknown funding and changed native/account pins remain in the workbench for
+separate, evidence-based operator reconciliation.
 
 The `walletBuyResume_<pay>` callback checks Owner/private `review` authority,
-then performs one exact original native GET per stored effect (Marzban or
-PasarGuard), never POST. A new `existingOnly` flag explicitly prevents the
-ordinary paid-continuation helper from falling back to CREATE after an
-unexpectedly missing ordinal. Only matching, still-valid native account
-identity/entitlement can advance a `dispatching` effect to `verified`.
+then performs one exact original native GET for **every** stored CREATE effect
+(Marzban or PasarGuard), never POST. The `existingOnly` gate forbids falling
+back to CREATE on an absent ordinal. The additional linked-read permission is
+restricted to this original `processing_wallet` recovery; ordinary
+bank/manual/API continuation cannot use it. Matching native identity and
+entitlement can verify a previously `dispatching` effect; a linked original
+account must already have valid, unchanged local and native evidence.
 
-When **all** original ordinals are independently verified, one InnoDB COMMIT
-links the original native effects to new local order rows, records a
-`provider=wallet` **local debit provenance** (not merchant settlement) on the
-existing 003 table, encrypts original immutable 018 delivery packets for
-**all** ordinals, and changes `pays` from `processing_wallet` to
-`paid_with_wallet`. It does not debit the wallet, reserve capacity, re-create
-accounts or send Telegram inside that transaction. After COMMIT it dispatches
-**only pending** packets. Unknown/dispatching deliveries remain held; Owner
-uses the existing warned Delivery Recovery flow for deliberate resends.
+Only after **all** original ordinals are independently proven, one InnoDB
+transaction retains every previously linked original order **unchanged**,
+creates and links **only** missing local orders, records one `provider=wallet`
+**local debit provenance** (not merchant settlement) in 003, encrypts the
+original immutable 018 customer packets for **all** ordinals, and transitions
+`pays` from `processing_wallet` to `paid_with_wallet`. Original linked
+order data and effect/order IDs are pinned before remote GET and rechecked
+under SQL locks at finalization. For previously linked PasarGuard accounts,
+the original 012 mutation key, snapshot, state and evidence-update generation
+are also pinned: a separately completed revoke/edit or unresolved native
+mutation after the GET cannot finalize a stale customer packet. Current
+server-to-panel identity is checked before GET and again using current
+server_config data within the final locked transaction. The recovery never
+debits the wallet, reserves capacity, re-creates accounts or sends Telegram
+inside the transaction. After COMMIT it dispatches **only pending** packets. Unknown/dispatching delivery
+remains held; Owner uses the warned Delivery Recovery flow for intentional
+resends, never an automatic replay.
 
-This is an additive source change with no SQL migration. It does not pretend
-that unbackfilled historical wallet orders, missing native operations, partial
-locally linked batches, unstarted held debit, merchant-hosted uncertainty or
-installed Chili have been accepted. Do not deploy or run live recovery without
+The initial PR #129 admitted only all-unlinked originals; PR #130 extends it
+to already/partly linked **complete** manifests. This is source-only, with no
+new SQL migration. It does not claim missing native operations, conflicting
+original orders, unstarted held debit, merchant-hosted uncertainty or
+installed Chili acceptance. Do not deploy or run live recovery without
 separate target approval, compatible 003/007/018 audit and restore-tested backup.
 
 ### 2026-11-08 independent-review remediation for PR #129
