@@ -49,6 +49,7 @@ function answerCallbackQuery(...$args) {
 }
 function editText(...$args) {
     $GLOBALS['events'][]=['event'=>'OWNER_EDIT',
+        'body'=>(string)($args[1]??''),
         'markup'=>json_decode((string)($args[2]??''),true)];
     return (object)['ok'=>true];
 }
@@ -606,8 +607,16 @@ def check_pasarguard_and_bulk():
         # and assert they remain Owner-visible with no second native operation.
         for destination in actions:
             response=run(pay,op='route',actor=9001,chat=9001,callback=destination)
-            assert response['error'] is None and any(e['event']=='OWNER_EDIT'
-                for e in response['events']),(destination,response)
+            pages=[e for e in response['events'] if e['event']=='OWNER_EDIT']
+            assert response['error'] is None and len(pages)==1,(destination,response)
+            body=pages[0]['body']
+            if destination.startswith('deliveryCase_'):
+                assert 'بازیابی تحویل پرداخت' in body and f'#{pay}' in body and                     'paid_with_wallet' in body,(destination,response)
+            else:
+                assert 'پرونده‌های نیازمند بررسی ساخت یا تمدید سرویس' in body,                     (destination,response)
+            # A generic unavailable/error screen would still edit successfully;
+            # assert the actual requested destination is rendered, not merely
+            # the presence of an editText call.
             assert response['orders']==1 and balances()==(49900,9)
             assert not any(m=='POST' for m,_ in native_trace())
         scenarios.append('owner_route_success_offers_only_valid_delivery_and_inbox_navigation')
