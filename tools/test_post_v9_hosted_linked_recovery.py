@@ -132,7 +132,29 @@ def check():
         original=work/'hosted-original-native.php';original.write_text(ORIGINAL)
 
         def run(pay,pg=False,**opts):
-            return wallet.recover(work,env,driver,pg_native=pg,pay=pay,**opts)
+            # Keep the real PHP route's protected failure reason visible to
+            # this isolated test: the production route deliberately catches
+            # source exceptions and emits a generic Owner-safe message.
+            # Do not swallow a fatal, JSON failure or diagnostic stderr.
+            extensions=['-d','extension=curl','-d','extension=ctype'] if pg else []
+            denied='exec,shell_exec,system,passthru,popen,proc_open,mail'
+            if not pg:denied='curl_init,curl_exec,'+denied
+            spec={'pay':pay,**opts}
+            proc=subprocess.run(['php','-n','-d','extension=mysqlnd',
+                '-d','extension=mysqli',*extensions,
+                '-d','disable_functions='+denied,
+                str(driver),str(ROOT),str(work/'mysql.sock'),DB,json.dumps(spec)],
+                cwd=work,env=env,text=True,capture_output=True,timeout=40)
+            if proc.returncode or not proc.stdout.strip():
+                raise RuntimeError('hosted source PHP '+repr((
+                    proc.returncode,proc.stderr[-1500:],proc.stdout[-600:])))
+            data=json.loads(proc.stdout)
+            for packet in data['delivery']:
+                packet['ordinal']=int(packet['ordinal'])
+                packet['attempt_count']=int(packet['attempt_count'])
+            if proc.stderr:
+                data['diagnostic_stderr']=proc.stderr[-2000:]
+            return data
         def call_original(pay,provider,panel,count,create_prefix=None,link_prefix=None):
             spec={'pay':pay,'provider':provider,'panel':panel,
                   'create_prefix':count if create_prefix is None else create_prefix,
