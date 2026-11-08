@@ -189,14 +189,30 @@ def check():
         sql(w,e,f"UPDATE pays SET payid='fixture-zarinpal-authority' WHERE id={gateway}; "
                 f"UPDATE payment_attempts SET provider_reference='fixture-zarinpal-authority' "
                 f"WHERE pay_row_id={gateway}")
+        unknown=pay(w,e,'failed-original','INCREASE_WALLET',state='pending',
+            provider='nextpay',stage='review',status='operator_fulfillment_unconfirmed')
+        held=pay(w,e,'held-native','BUY_SUB',state='processing',
+            provider='nowpayments',stage='review',status='fulfillment_failed')
+        sql(w,e,f"UPDATE payment_attempts SET updated_at=NOW()-INTERVAL 11 MINUTE "
+            f"WHERE pay_row_id={held}")
         before=purchase.snapshot(w,e,DB)
         inbox=recovery.call(w,e,driver,op='route',callback='attentionInbox')
         cards=event(inbox,'EDIT')
         assert len(cards)==1 and 'پرداخت‌های خودکار نیازمند بررسی' in cards[0]['text'],inbox
         keys={b['callback_data'] for row in cards[0]['buttons']['inline_keyboard'] for b in row}
         assert f'attentionCase_{gateway}' in keys,('missing_automatic_case',keys)
+        assert all(f'attentionCase_{i}' in keys for i in (unknown,held)),keys
         assert all(f'attentionCase_{i}' not in keys for i in (manual,terminal,native)),keys
         checks.append('only_incomplete_automatic_gateways_appear_no_receipts_or_paid_service')
+        for payid in (unknown,held):
+            blocked=recovery.call(w,e,driver,op='route',callback=f'attentionCase_{payid}')
+            edits=event(blocked,'EDIT')
+            assert len(edits)==1 and not event(blocked,'GET'),blocked
+            controls={b['callback_data'] for row in edits[0]['buttons']['inline_keyboard']
+                for b in row}
+            assert controls=={'attentionInbox'},controls
+            assert 'عملیات قبلی' in edits[0]['text'],edits
+        checks.append('unfinished_original_effects_remain_visible_without_second_action')
         detail=recovery.call(w,e,driver,op='route',callback=f'attentionCase_{gateway}')
         edits=event(detail,'EDIT')
         assert len(edits)==1 and 'زرین‌پال' in edits[0]['text'],detail

@@ -44,8 +44,8 @@ def run_admin(tmp: str) -> tuple[dict, dict]:
     result = {}
     owner_r5={}
     r5_suites=[
-        ('roles','test_owner_r5_roles.py',635,
-         {'complete':True,'cases':635,'real_disposable_mariadb':True,'actual_admin_keyboard':True,
+        ('roles','test_owner_r5_roles.py',630,
+         {'complete':True,'cases':630,'real_disposable_mariadb':True,'actual_admin_keyboard':True,
           'db_only_staff_authority':True,'legacy_roleless_operator':True,
           'obsolete_staff_arrays_ignored':True,'obsolete_array_denials':3,
           'no_obsolete_array_import':True,'explicit_manager_assignment':True,
@@ -593,12 +593,12 @@ def run_api(tmp: str) -> tuple[dict, dict]:
         'manual_volume_unknown_customer_ack_not_automatically_resent',
         'manual_day_missing_followup_schema_rolls_back_local_finish',
         # Independent review REQUIRED-1: actual Owner-private UI evidence.
-        'manual_edit_owner_case_customer_pending_primary_acknowledged',
-        'manual_edit_owner_case_customer_unknown_no_replay',
-        'manual_edit_owner_case_mirror_dispatching_original_message',
-        'manual_edit_owner_case_fully_acknowledged_not_recoverable',
-        'manual_edit_owner_case_61st_customer_pending_before_limit',
-        'manual_edit_owner_case_61st_customer_unknown_without_replay',
+        'manual_edit_original_callback_delivers_pending_customer_once',
+        'manual_edit_unknown_customer_telegram_ack_never_resent',
+        'manual_edit_dispatching_original_mirror_no_duplicate',
+        'manual_edit_all_acknowledged_no_recovery_or_replay',
+        'manual_edit_61st_customer_pending_sent_despite_60_prior_receipts',
+        'manual_edit_61st_customer_unknown_no_second_telegram',
         # Reviewer R1/R2: original approver and immutable amount, all kinds.
         'manual_renew_resume_refuses_changed_payment_amount',
         'manual_renew_resume_refuses_changed_attempt_amount',
@@ -1179,7 +1179,7 @@ def run_wallet(tmp: str) -> tuple[dict, dict]:
                     "--run-disposable","--report",str(next_payment_path)],
                    cwd=ROOT,check=True,timeout=180,capture_output=True)
     next_payment=json.loads(next_payment_path.read_text())
-    if not (next_payment.get("complete") is True and next_payment.get("cases")==15
+    if not (next_payment.get("complete") is True and next_payment.get("cases")==16
             and next_payment.get("fresh_native_addon_admission") is True
             and next_payment.get("unknown_native_refuses_without_draft") is True):
         raise RuntimeError("Durable payment messages, volume entry and attention proof incomplete")
@@ -2686,19 +2686,9 @@ def run_effects(tmp: str) -> tuple[dict, dict]:
             "normal","begin_failure","credential_drift","invalid_username",
             "post_lost","provider_503")
     } | {"native_group_preflight_no_post_and_safe_reason",
-         "untrusted_provider_error_text_sanitized"} | {
-        "paid_pg_exact_marker_username_readback_no_post_no_financial_write",
-        "paid_pg_partial_bulk_missing_ordinal_never_infers_absence",
-        "paid_pg_other_account_marker_is_not_original_provision",
-        "paid_pg_original_groups_mismatch_is_not_proof",
-        "paid_pg_native_policy_drift_is_not_proof",
-        "paid_pg_404_is_uncertainty_not_create_permission",
-        "paid_pg_corrupt_original_fingerprint_blocks_remote_read",
-        "paid_pg_other_native_instance_refuses_get",
-        "paid_pg_payment_race_during_get_fails_closed",
-        "paid_pg_verified_native_incarnation_exact_by_id_only",
-        "paid_pg_foreign_native_id_does_not_match_verified_claim",
-    }
+         "untrusted_provider_error_text_sanitized"}
+    # Original paid PasarGuard continuation has a separate, stronger
+    # source-real integration gate below, including GET-only negative cases.
     if not (pg_diag.get("complete") is True
             and set(pg_diag.get("checks",[]))==expected_pg_diag
             and pg_diag.get("cases")==len(expected_pg_diag)
@@ -3533,7 +3523,7 @@ def run_funding(tmp: str) -> tuple[dict, dict]:
     }
     if not (transport.get("complete") is True and
             required_native_resume.issubset(set(transport.get("scenarios",[]))) and
-            transport.get("cases")>=32 and
+            transport.get("cases")>=26 and
             transport.get("real_curl_login_and_get") is True and
             transport.get("loopback_only") is True and
             transport.get("max_account_get_per_inspection")==1 and

@@ -42,19 +42,6 @@ elseif($op==='issue')$value=achbotManualClaim($connection,$pay,$spec['method']??
 elseif($op==='check')$value=achbotApiPaymentCheck($connection,$id);
 elseif($op==='save'){$value=achbotPaymentEvidenceSaveGiftCode($connection,$id,1001,$spec['code']);if(($value['status']??'')==='saved'){$v=achbotManualBeginEvidence($connection,$pay,'gift_card',1001,$spec['code']);if(!$v||!achbotManualFinishEvidence($connection,$pay['hash_id'],$spec['code'],$v,222,9001))throw new RuntimeException('fixture_gift_review_delivery_failed');}}
 elseif($op==='maintain')$value=achbotApiPaymentMaintain($connection);
-elseif($op==='technical') {
- require_once $root.'/src/Finance/RecoveryInspection.php';
- $value=achbotRecoveryTechnicalCase($connection,$id)!==null;
-}
-elseif($op==='owner_case' || $op==='owner_inbox') {
- $from_id=(int)($spec['actor']??9001);
- $chat_id=(int)($spec['chat']??$from_id);
- $callbackId='fixture-owner-case';$message_id=222;
- $text=null;$userInfo=['step'=>'none'];
- $data=$op==='owner_case'?'serviceRecoveryCase_'.$id:'serviceRecoveryInbox';
- require $root.'/src/Finance/Routes/ManualReceipts.php';
- $value=true;
-}
 elseif($op==='receipt'){$v=achbotManualBeginEvidence($connection,$pay,'bank_transfer',1001,'native-photo');$value=$v?achbotManualFinishEvidence($connection,$pay['hash_id'],'native-photo',$v,222,9001):false;}
 elseif($op==='locked_drift') {
  if(!function_exists('achbotApiPaymentSubjectPreflight'))$value=['supported'=>false];
@@ -128,14 +115,7 @@ def driver_source():
         send_marker)
     php+="\n"+flow.PREP+r'''
 function alert(...$args){$GLOBALS['events'][]=['event'=>'ALERT'];}
-function editText(...$args) {
- if (in_array(($GLOBALS['spec']['op']??''),['owner_case','owner_inbox'],true))
-  $GLOBALS['events'][]=['event'=>'OWNER_VIEW',
-   'text'=>(string)($args[1]??''),
-   'buttons'=>json_decode((string)($args[2]??''),true),
-   'chat'=>$args[4]??null];
- return (object)['ok'=>true];
-}
+function editText(...$args){return (object)['ok'=>true];}
 function delMessage(...$args){}
 function setUser(...$args){}
 function bot(...$args){return(object)['ok'=>true];}
@@ -358,18 +338,18 @@ def check(progress_path=None):
             sealed=q(f"SELECT role,recipient,IFNULL(message_id,0),state FROM payment_followup_intents "
                      f"WHERE pay_row_id={n} ORDER BY id").splitlines()
             before=q('SELECT COUNT(*) FROM increase_order')
-            technical_pending=call(op='technical',pay=n)['result'] is True
+            unresolved_before_dispatch=q(f"SELECT COUNT(*) FROM payment_followup_intents WHERE pay_row_id={n} "
+                "AND stage='approved_edit' AND state<>'acknowledged'")!='0'
             pending=len(sealed)==(4 if kind=='renew' else 3) and all(
                 line.endswith('\tpending') for line in sealed)
             record('manual_'+kind+'_postcommit_before_telegram_staged',
-                state(n)=='approved' and before=='1' and pending and technical_pending and
+                state(n)=='approved' and before=='1' and pending and unresolved_before_dispatch and
                 panel.write_count==writes and panel.trace==[] and not pg_events(closed) and
                 not [e for e in closed['events'] if e.get('event') in ('MESSAGE','EDIT_KEYS')],
                 dict(closed=closed,sealed=sealed,write_count=writes))
             recovered=call(op='human',pay=n,actor=9002)
             dispatch=q(f"SELECT role,recipient,IFNULL(message_id,0),state FROM "
                        f"payment_followup_intents WHERE pay_row_id={n} ORDER BY id").splitlines()
-            technical_closed=call(op='technical',pay=n)['result'] is False
             edited=[e for e in recovered['events'] if e.get('event')=='EDIT_KEYS']
             sent=[e for e in recovered['events'] if e.get('event')=='MESSAGE']
             record('manual_'+kind+'_delivery_only_resume_pending_once',
@@ -396,7 +376,6 @@ def check(progress_path=None):
         uncertain=call(op='human',pay=n,actor=9002,customer_ack_unknown=True)
         states=q(f"SELECT role,state,attempt_count FROM payment_followup_intents "
                  f"WHERE pay_row_id={n} ORDER BY id").splitlines()
-        technical_unknown=call(op='technical',pay=n)['result'] is True
         repeated=call(op='human',pay=n,actor=9002)
         record('manual_volume_unknown_customer_ack_not_automatically_resent',
             state(n)=='approved' and q('SELECT COUNT(*) FROM increase_order')=='1' and
@@ -428,19 +407,14 @@ def check(progress_path=None):
             any(e.get('event')=='ALERT' for e in blocked['events']),
             dict(blocked=blocked,resumed=resumed,no_commit=no_commit,writes=writes))
 
-        # R1: the ACTUAL Owner-private serviceRecoveryCase callback must
-        # expose role, state, attempts, original recipient and message ID.
-        # The scenario record contains its actual rendered Telegram text and
-        # inline keyboard, not just a read-only SQL helper result.
-        def view(n):
-            response=call(op='owner_case',pay=n)
-            displayed=[e for e in response['events'] if e.get('event')=='OWNER_VIEW']
-            assert len(displayed)<=1,response
-            return response,(displayed[0] if displayed else None)
-        def actions(rendered):
-            return [button['callback_data'] for line in
-                    (rendered or {}).get('buttons',{}).get('inline_keyboard',[])
-                    for button in line if 'callback_data' in button]
+        # The experimental Owner service-recovery workbench was removed.
+        # Preserve source-real coverage of immutable 020 recipients and
+        # the ORIGINAL human callback's once-only pending delivery path.
+        def outbox(pay_id):
+            return [line.split('\t') for line in q(
+                f"SELECT role,recipient,IFNULL(message_id,0),state,attempt_count "
+                f"FROM payment_followup_intents WHERE pay_row_id={pay_id} "
+                "AND stage='approved_edit' ORDER BY id").splitlines()]
         def make_delivery(kind='volume',mirrors=0):
             n,key=reset(kind)
             assert issue(n,'bank_transfer')['result'] is True
@@ -448,149 +422,113 @@ def check(progress_path=None):
             assert call(op='receipt',pay=n)['result'] is True
             call(op='human',pay=n,actor=9001,crash_after_native=True)
             if mirrors:
-                # Distinct real original receipt pairs in the allowed Owner
-                # chat, not fabricated rows in the sealed 020 outbox.
-                original=[{'chat_id':9001,'message_id':223+i}
-                    for i in range(mirrors)]
+                original=[{'chat_id':9001,'message_id':223+i} for i in range(mirrors)]
                 q(f"UPDATE pays SET admins_messages='{json.dumps(original)}' WHERE id={n}")
             done=call(op='human',pay=n,actor=9002,skip_followup_dispatch=True)
             assert state(n)=='approved' and q('SELECT COUNT(*) FROM increase_order')=='1',done
             panel.trace=[]
             return n,key,panel.write_count
+        def no_native_reissue(n,writes,result):
+            return (state(n)=='approved' and
+                q('SELECT COUNT(*) FROM increase_order')=='1' and
+                panel.write_count==writes and not panel.trace and
+                not pg_events(result))
+        def sent_to(result,who):
+            return [e for e in result['events']
+                    if e.get('event')=='MESSAGE' and e.get('to')==who]
+        def edits(result):
+            return [e for e in result['events'] if e.get('event')=='EDIT_KEYS']
 
-        # A: original primary receipt acknowledged; customer message pending.
+        # A: durable original recipient/receipt ID plus pending customer
+        # are retained and only the still-pending customer is delivered.
         n,key,writes=make_delivery()
         q(f"UPDATE payment_followup_intents SET state='acknowledged',attempt_count=1 "
           f"WHERE pay_row_id={n} AND role='receipt_primary'")
-        a,rendered=view(n);text=(rendered or {}).get('text','');buttons=actions(rendered)
-        record('manual_edit_owner_case_customer_pending_primary_acknowledged',
-            rendered is not None and rendered['chat']==9001 and
-            'receipt_primary' in text and 'acknowledged' in text and
-            'customer' in text and 'pending' in text and
-            '<code>1001</code>' in text and '<code>222</code>' in text and
-            '<code>1</code>' in text and
-            buttons.count('approveIncreaseVolume'+key)==1 and
-            not any(t.startswith(('accept','npDecision','reject','approveRenewAcc')) for t in buttons) and
-            q('SELECT COUNT(*) FROM increase_order')=='1' and panel.write_count==writes and
-            panel.trace==[] and not pg_events(a),
-            dict(view=a,buttons=buttons,text=text,write_count=writes))
+        before=outbox(n)
+        resumed=call(op='human',pay=n,actor=9002)
+        after=outbox(n)
+        record('manual_edit_original_callback_delivers_pending_customer_once',
+            len(before)==2 and
+            before[0][:4]==['receipt_primary','9001','222','acknowledged'] and
+            before[1][:4]==['customer','1001','0','pending'] and
+            len(sent_to(resumed,1001))==1 and not edits(resumed) and
+            [row[3] for row in after]==['acknowledged','acknowledged'] and
+            no_native_reissue(n,writes,resumed),
+            dict(before=before,after=after,original_callback=resumed))
 
-        # B: unknown customer acknowledgement must be explained, not resent.
+        # B: an unknown Telegram ACK is NOT a new right to send.
+        n,key,writes=make_delivery()
+        q(f"UPDATE payment_followup_intents SET state='acknowledged',attempt_count=1 "
+          f"WHERE pay_row_id={n} AND role='receipt_primary'")
         q(f"UPDATE payment_followup_intents SET state='unknown',attempt_count=1 "
           f"WHERE pay_row_id={n} AND role='customer'")
-        b,rendered=view(n);text=(rendered or {}).get('text','');buttons=actions(rendered)
-        record('manual_edit_owner_case_customer_unknown_no_replay',
-            rendered is not None and rendered['chat']==9001 and
-            'customer' in text and 'unknown' in text and
-            'receipt_primary' in text and 'acknowledged' in text and
-            '<code>1001</code>' in text and
-            '<code>1</code>' in text and
-            'approveIncreaseVolume'+key not in buttons and
-            not any(t.startswith(('accept','npDecision','reject','approve')) for t in buttons) and
-            q('SELECT COUNT(*) FROM increase_order')=='1' and panel.write_count==writes and
-            panel.trace==[] and not pg_events(b),
-            dict(view=b,buttons=buttons,text=text,write_count=writes))
+        before=outbox(n)
+        repeated=call(op='human',pay=n,actor=9002)
+        record('manual_edit_unknown_customer_telegram_ack_never_resent',
+            before==outbox(n) and before[1][3:] == ['unknown','1'] and
+            not sent_to(repeated,1001) and not edits(repeated) and
+            no_native_reissue(n,writes,repeated),
+            dict(outbox=before,original_callback=repeated))
 
-        # C: uncertain stored administrator receipt, exact original pair.
+        # C: dispatching original secondary-admin edit is not replayed
+        # even after the customer and primary copy were acknowledged.
         n,key,writes=make_delivery(mirrors=1)
         q(f"UPDATE payment_followup_intents SET state='acknowledged',attempt_count=1 "
           f"WHERE pay_row_id={n} AND role IN ('receipt_primary','customer')")
         q(f"UPDATE payment_followup_intents SET state='dispatching',attempt_count=1 "
           f"WHERE pay_row_id={n} AND role='receipt_mirror'")
-        c,rendered=view(n);text=(rendered or {}).get('text','');buttons=actions(rendered)
-        record('manual_edit_owner_case_mirror_dispatching_original_message',
-            rendered is not None and rendered['chat']==9001 and
-            'receipt_mirror' in text and 'dispatching' in text and
-            '<code>9001</code>' in text and '<code>223</code>' in text and
-            'customer' in text and 'acknowledged' in text and
-            '<code>1</code>' in text and
-            'approveIncreaseVolume'+key not in buttons and
-            not any(t.startswith(('accept','npDecision','reject','approve')) for t in buttons) and
-            q('SELECT COUNT(*) FROM increase_order')=='1' and panel.write_count==writes and
-            panel.trace==[] and not pg_events(c),
-            dict(view=c,buttons=buttons,text=text,write_count=writes))
+        before=outbox(n);again=call(op='human',pay=n,actor=9002)
+        record('manual_edit_dispatching_original_mirror_no_duplicate',
+            any(row[:4]==['receipt_mirror','9001','223','dispatching']
+                for row in before) and before==outbox(n) and
+            not sent_to(again,1001) and not edits(again) and
+            no_native_reissue(n,writes,again),
+            dict(outbox=before,original_callback=again))
 
-        # D: fully acknowledged delivery is not an outstanding service case.
-        q(f"UPDATE payment_followup_intents SET state='acknowledged' "
+        # D: all ACKs are terminal for the presentation journal.
+        n,key,writes=make_delivery()
+        q(f"UPDATE payment_followup_intents SET state='acknowledged',attempt_count=1 "
           f"WHERE pay_row_id={n} AND stage='approved_edit'")
-        all_done=call(op='technical',pay=n)['result'] is False
-        d=call(op='owner_inbox',pay=n)
-        inboxes=[e for e in d['events'] if e.get('event')=='OWNER_VIEW']
-        inbox=inboxes[0] if len(inboxes)==1 else None
-        record('manual_edit_owner_case_fully_acknowledged_not_recoverable',
-            all_done and inbox is not None and inbox['chat']==9001 and
-            'serviceRecoveryCase_'+str(n) not in actions(inbox) and
-            not any(a.startswith(('approve','accept','npDecision','reject'))
-                for a in actions(inbox)) and
-            q('SELECT COUNT(*) FROM increase_order')=='1' and panel.write_count==writes and
-            panel.trace==[] and not pg_events(d),
-            dict(view=d,technical_open=not all_done,write_count=writes))
+        before=outbox(n);again=call(op='human',pay=n,actor=9002)
+        record('manual_edit_all_acknowledged_no_recovery_or_replay',
+            len(before)==2 and all(row[3]=='acknowledged' for row in before)
+            and before==outbox(n) and not sent_to(again,1001) and
+            not edits(again) and no_native_reissue(n,writes,again),
+            dict(outbox=before,original_callback=again))
 
-        # R1A: 60 original receipt messages precede the original customer
-        # packet in the durable outbox. The SQL summary must select that
-        # unresolved 61st packet BEFORE its LIMIT 60, and the actual Owner
-        # callback must show it first rather than only acknowledged peers.
+        # Long original recipient list: 60 acknowledged receipts cannot
+        # starve customer #61. The original pending dispatcher pages by ID,
+        # not by visible workbench row count, and sends customer only once.
         n,key,writes=make_delivery(mirrors=59)
-        initial=q(f"SELECT CONCAT(role, ':', IFNULL(message_id,0), ':', state) "
-                  f"FROM payment_followup_intents WHERE pay_row_id={n} "
-                  f"AND stage='approved_edit' ORDER BY id").splitlines()
-        assert len(initial)==61 and initial[0]=='receipt_primary:222:pending' and (
-            initial[1]=='receipt_mirror:223:pending') and (
-            initial[-1]=='customer:0:pending'),initial
+        initial=outbox(n)
+        assert len(initial)==61 and initial[0][:4]==[
+            'receipt_primary','9001','222','pending'] and initial[-1][:4]==[
+            'customer','1001','0','pending'],initial
         q(f"UPDATE payment_followup_intents SET state='acknowledged',attempt_count=1 "
           f"WHERE pay_row_id={n} AND role IN ('receipt_primary','receipt_mirror')")
-        assert q(f"SELECT COUNT(*) FROM payment_followup_intents WHERE pay_row_id={n} "
-                 f"AND state='acknowledged'")=='60'
-        open_pending=call(op='technical',pay=n)['result'] is True
-        a,shown=view(n);text=(shown or {}).get('text','');buttons=actions(shown)
-        cutoff_notice='\u0641\u0642\u0637 10 \u0645\u0648\u0631\u062f \u0627\u0648\u0644'
-        packet_line_count=(text.count('<code>customer</code>')+
-                           text.count('<code>receipt_primary</code>')+
-                           text.count('<code>receipt_mirror</code>'))
-        record('manual_edit_owner_case_61st_customer_pending_before_limit',
-            open_pending and shown is not None and shown['chat']==9001 and
-            packet_line_count==10 and text.count('<code>customer</code>')==1 and
-            text.count('<code>receipt_primary</code>')==1 and
-            text.count('<code>receipt_mirror</code>')==8 and
-            text.index('<code>customer</code>')<text.index('<code>receipt_primary</code>') and
-            '<code>pending</code>' in text and '<code>1001</code>' in text and
-            cutoff_notice in text and
-            buttons.count('approveIncreaseVolume'+key)==1 and
-            not any(t.startswith(('accept','npDecision','reject','approveRenewAcc'))
-                    for t in buttons) and
-            q('SELECT COUNT(*) FROM increase_order')=='1' and
-            q(f"SELECT COUNT(*) FROM payment_followup_intents WHERE pay_row_id={n}")=='61' and
-            panel.write_count==writes and not panel.trace and not pg_events(a) and
-            not [e for e in a['events'] if e.get('event') in ('MESSAGE','EDIT_KEYS')],
-            dict(view=a,visible_lines=packet_line_count,
-                 outbox_count=len(initial),writes=writes))
+        pending=outbox(n)
+        delivery=call(op='human',pay=n,actor=9002)
+        final=outbox(n)
+        record('manual_edit_61st_customer_pending_sent_despite_60_prior_receipts',
+            len(pending)==61 and len([x for x in pending if x[3]=='acknowledged'])==60
+            and pending[-1][3]=='pending' and len(sent_to(delivery,1001))==1
+            and not edits(delivery) and len(final)==61 and
+            all(x[3]=='acknowledged' for x in final) and
+            no_native_reissue(n,writes,delivery),
+            dict(outbox_before=pending,outbox_after=final,original_callback=delivery))
 
-        # Same 61 genuine packets, but no PENDING remaining: an unknown
-        # customer ACK must be visible and must NOT acquire a replay button.
+        # The same 61-record journal with an uncertain customer ACK cannot
+        # resend, even when the original human callback is repeated.
         q(f"UPDATE payment_followup_intents SET state='unknown',attempt_count=1 "
           f"WHERE pay_row_id={n} AND role='customer'")
-        open_unknown=call(op='technical',pay=n)['result'] is True
-        b,shown=view(n);text=(shown or {}).get('text','');buttons=actions(shown)
-        packet_line_count=(text.count('<code>customer</code>')+
-                           text.count('<code>receipt_primary</code>')+
-                           text.count('<code>receipt_mirror</code>'))
-        record('manual_edit_owner_case_61st_customer_unknown_without_replay',
-            open_unknown and shown is not None and shown['chat']==9001 and
-            packet_line_count==10 and text.count('<code>customer</code>')==1 and
-            text.count('<code>receipt_primary</code>')==1 and
-            text.count('<code>receipt_mirror</code>')==8 and
-            text.index('<code>customer</code>')<text.index('<code>receipt_primary</code>') and
-            '<code>unknown</code>' in text and '<code>1001</code>' in text and
-            cutoff_notice in text and
-            'approveIncreaseVolume'+key not in buttons and
-            not any(t.startswith(('accept','npDecision','reject','approve'))
-                    for t in buttons) and
-            q('SELECT COUNT(*) FROM increase_order')=='1' and
-            q(f"SELECT COUNT(*) FROM payment_followup_intents WHERE pay_row_id={n}")=='61' and
-            panel.write_count==writes and not panel.trace and not pg_events(b) and
-            not [e for e in b['events'] if e.get('event') in ('MESSAGE','EDIT_KEYS')],
-            dict(view=b,visible_lines=packet_line_count,
-                 outbox_count=len(initial),writes=writes))
+        unknown=outbox(n)
+        repeated=call(op='human',pay=n,actor=9002)
+        record('manual_edit_61st_customer_unknown_no_second_telegram',
+            len(unknown)==61 and unknown[-1][3:] == ['unknown','1']
+            and unknown==outbox(n) and
+            not sent_to(repeated,1001) and not edits(repeated) and
+            no_native_reissue(n,writes,repeated),
+            dict(outbox=unknown,original_callback=repeated))
 
         # R1/R2 regression: a distinct authorized recovery Operator never
         # replaces the first human approver. The *original* issued 003 local
