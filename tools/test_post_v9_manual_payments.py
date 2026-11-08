@@ -935,7 +935,7 @@ def check():
         assert not any(e['name'] in ('remote_create','remote_edit','qr_send') for e in rejected)
         assert any(e['name']=='sendMessage' and len(e.get('args',[]))>=4 and
                    e['args'][3]==1001 for e in rejected),rejected
-        assert any(e['name']=='sendMessage' and 'کاربر' in str(e['args'][0])
+        assert any(e['name']=='sendMessage' and 'مشتری' in str(e['args'][0])
                    for e in rejected),rejected
         assert not any(e['name']=='setUser' and str(e['step']).startswith('declineActionReason_')
                        for e in rejected),rejected

@@ -317,6 +317,3 @@ if (preg_match('/^gatewayReview_([AR])_([1-9][0-9]{0,17})$/D',
     }
     return;
 }
-
-
-return 1;

@@ -10,8 +10,14 @@ require_once __DIR__ . '/../../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
 if (!achbotAdminRequestAllowed(is_string($data??null)?$data:null,is_string($text??null)?$text:null,(string)($userInfo['step']??''))) {achbotAdminDeny();return;}
 
 
-// The hosted-gateway exception UI is independent of manual receipt approval.
-if ((require __DIR__.'/AutomaticGatewayReview.php') === null) return;
+// Keep hosted-gateway exceptions outside the manual receipt handler.
+$adminCallback=(string)($data??'');
+if (str_starts_with($adminCallback,'attentionInbox') ||
+    str_starts_with($adminCallback,'attentionCase_') ||
+    str_starts_with($adminCallback,'gatewayReview_')) {
+    require __DIR__.'/AutomaticGatewayReview.php';
+    return;
+}
 
 // An existing authenticated bank/gift API proof can finish the ORIGINAL
 // payment. No provider GET, second financial ledger, or new access grant.
@@ -25,7 +31,6 @@ if (preg_match('/^apiEvidenceResume_([1-9][0-9]{0,17})$/D',(string)$data,$apiRes
     try {
         // The direct callback may be the first admin route in this process.
         // Do not depend on having opened the attention inbox beforehand.
-        require_once __DIR__.'/../ApiPayments.php';
         require_once __DIR__.'/../ApiPayments.php';
         $pay=achbotApiPaymentRow($connection,$payId);
         $attempt=$pay?achbotApiPaymentAttempt($connection,$payId):null;
