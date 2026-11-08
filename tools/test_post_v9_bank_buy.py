@@ -602,7 +602,7 @@ def check():
         # UNKNOWN Telegram ACK remains held; no operator resend menu or
         # synthetic repeat can turn uncertainty into a new delivery attempt.
         after_unknown=run(work,env,driver,op='delivery_pending',pay=split)
-        assert after_unknown['result']=={} and not any(
+        assert after_unknown['result']==[] and not any(
             e['event']=='DELIVER' for e in after_unknown['events'])
         assert query(work,env,f"SELECT GROUP_CONCAT(state ORDER BY ordinal) "
             f"FROM payment_delivery_intents WHERE pay_row_id={split}")=='acknowledged,unknown'
@@ -623,7 +623,7 @@ def check():
         # lease is preserved; the first-attempt maintenance job does not retry.
         inspected=run(work,env,driver,op='delivery_pending',pay=stale)
         maintenance=run(work,env,driver,op='delivery_maintenance',pay=stale)
-        assert inspected['result']=={} and not any(
+        assert inspected['result']==[] and not any(
             e['event']=='DELIVER' for e in inspected['events']+maintenance['events'])
         assert query(work,env,f"SELECT state,attempt_count FROM payment_delivery_intents "
             f"WHERE pay_row_id={stale}")=='dispatching\t1'

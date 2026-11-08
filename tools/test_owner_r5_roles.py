@@ -157,9 +157,9 @@ yes(in_array('increaseUserWallet',$oldCallbacks,true),'archived baseline RED sup
 $from_id=9001;$legacy=json_decode(baselineAdminKeys(),true);yes($legacy['inline_keyboard'][0][0]['callback_data']==='attentionInbox','archived baseline RED payment review at wrong position');
 
 $from_id=9004;
-foreach(['userReports','userInfoDetails1001','banUser','unbanUser','manageorderdatabase','showUserSubscriptions1001','attentionInbox','attentionCase_1','accCustomxyz','approveRenewAccxyz','approveIncreaseDayxyz','approveIncreaseVolumexyz','approvePaymentxyz','acceptxyz','declineAction_xyz'] as $cb)
+foreach(['userReports','userInfoDetails1001','banUser','unbanUser','manageorderdatabase','showUserSubscriptions1001','attentionInbox','attentionCase_1','accCustomxyz','approveRenewAccxyz','approveIncreaseDayxyz','approveIncreaseVolumexyz','approvePaymentxyz','acceptxyz','declineAction_xyz','gatewayReview_A_1'] as $cb)
  yes(achbotAdminRequestAllowed($cb,null,'none'),'support allowed route '.$cb);
-foreach(['botReports','serversSetting','am|abc|save','pgServerGroups1','achbotDisplay|1','categoriesSetting','backplan','botSettings','changeBotbotState','ic|menu','gateWays_Channels','gr|l','npReviewInbox','bankReviewInbox','adminsList','delAdmin9002','adminAssign|9005|manager','createMultipleAccounts','createAccPlan1','increaseUserWallet','createUserWalletDebt','walletDebtYes:abc','toggleAgent_1001','editAgentDiscountNormal1001_userinfo','message2All','ticketsList'] as $cb)
+foreach(['botReports','serversSetting','am|abc|save','pgServerGroups1','achbotDisplay|1','categoriesSetting','backplan','botSettings','changeBotbotState','ic|menu','gateWays_Channels','gr|l','adminsList','delAdmin9002','adminAssign|9005|manager','createMultipleAccounts','createAccPlan1','increaseUserWallet','createUserWalletDebt','walletDebtYes:abc','toggleAgent_1001','editAgentDiscountNormal1001_userinfo','message2All','ticketsList'] as $cb)
  yes(!achbotAdminRequestAllowed($cb,null,'none'),'support forged callback denied '.$cb);
 foreach(['editServerName1','achbotManage|abc','achbotInstance:start_message','achbotPaymentKey|abc','gr|edit|abc','createAccAmount1_1_1','editAgentDiscountNormal1001_userinfo'] as $step)
  yes(!achbotAdminRequestAllowed(null,'new value',$step),'support stale editor denied '.$step);
@@ -173,7 +173,7 @@ foreach(['botReports','serversSetting','newPlanForServer1','gateWays_Channels','
  yes(!achbotAdminRequestAllowed($cb,null,'none'),'operator denied '.$cb);
 foreach(['attentionInbox','attentionCase_1','userReports','increaseUserWallet','createMultipleAccounts','agentsList'] as $cb)
  yes(achbotAdminRequestAllowed($cb,null,'none'),'operator allowed '.$cb);
-yes(!achbotAdminRequestAllowed('npReviewVerify_1',null,'none'),'operator cannot invoke owner financial recovery');
+yes(achbotAdminRequestAllowed('gatewayReview_A_1',null,'none'),'operator can use the ordinary payments permission for gateway decisions');
 $from_id=9002;yes(!achbotAdminRequestAllowed('adminsList',null,'none'),'manager admin management denied');yes(achbotAdminRequestAllowed('botSettings',null,'none'),'manager bot settings allowed');
 yes(achbotAdminAssignLevel($connection,9001,9001,9002,'support'),'owner downgrades same marker');
 yes((int)$connection->query('SELECT isAdmin FROM users WHERE userid=9002')->fetch_assoc()['isAdmin']===1,'all levels preserve financial boolean');

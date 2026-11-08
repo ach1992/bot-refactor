@@ -447,7 +447,7 @@ return !empty($GLOBALS['spec']['fail_staff'])?null:(object)['ok'=>true];}""")
         assert call(op='resume_hint',pay=n)['result'] is False
         settled=call(op='review_resume',pay=n)
         edits=[e['text'] for e in settled['events'] if e['event']=='EDIT']
-        assert len(edits)==1 and 'نتیجه عادی سفارش از مسیر اصلی ارسال شده' in edits[0],settled
+        assert len(edits)==1 and 'سفارش تأیید و پیام‌های ثبت‌شده تحویل شدند' in edits[0],settled
         assert not any(e['event'] in ['MESSAGE','DELIVER','POST'] for e in settled['events']),settled
         assert int(query(work,env,'SELECT wallet FROM users WHERE userid=1001'))==walletAfter
         assert query(work,env,f'SELECT state FROM payment_delivery_intents WHERE pay_row_id={n}')=='acknowledged'
@@ -458,7 +458,7 @@ return !empty($GLOBALS['spec']['fail_staff'])?null:(object)['ok'=>true];}""")
         pending=call(op='review_resume',pay=n)
         edits=[e['text'] for e in pending['events'] if e['event']=='EDIT']
         sends=[e for e in pending['events'] if e['event']=='MESSAGE']
-        assert len(sends)==1 and sends[0]['to']==1001 and len(edits)==1 and 'نتیجه عادی سفارش از مسیر اصلی ارسال شده' in edits[0],pending
+        assert len(sends)==1 and sends[0]['to']==1001 and len(edits)==1 and 'سفارش تأیید و پیام‌های ثبت‌شده تحویل شدند' in edits[0],pending
         assert query(work,env,f'SELECT state FROM payment_delivery_intents WHERE pay_row_id={n}')=='acknowledged'
         assert int(query(work,env,'SELECT wallet FROM users WHERE userid=1001'))==walletAfter
         cases.append('actual_api_resume_terminal_pending_only_ack_returns_complete_no_double_credit')

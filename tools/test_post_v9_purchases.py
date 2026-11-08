@@ -92,7 +92,12 @@ def _authorized_ui_pairs(manifest,followups,definitions,r5):
     # Catalog identity/negative controls run on the actual RC25 copy above.
     # Only the exact approved values are reversed for historical V9 UI
     # parity; native, payment and callback fields are not normalized.
-    old_group_copy=r5_catalog.chili_copy_restore(r5_catalog.panel_group_copy_restore(sides))
+    # Historic V9 UI parity is evaluated against the *approved RC26*
+    # snapshot after strict successor removal/new-copy validation; the
+    # actual runtime never loads the retired workbench keys.
+    pre_cleanup=r5_catalog.current_cleanup_restore(sides)
+    old_group_copy=r5_catalog.chili_copy_restore(
+        r5_catalog.panel_group_copy_restore(pre_cleanup))
     current={**old_group_copy['user'],**old_group_copy['admin']}
     literal={key:record for key,record in manifest['changes'].items()
              if record.get('parameters')==[] and record.get('before_parameters',[])==[]}
