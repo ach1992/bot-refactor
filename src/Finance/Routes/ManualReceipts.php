@@ -458,8 +458,11 @@ if (preg_match('/^walletBuyResume_([1-9][0-9]{0,9})$/D',
     $buttons=[];
     if ($committed) $buttons[]=[['text'=>achbotMessage('delivery_recovery.open'),
         'callback_data'=>'deliveryCase_'.$id]];
+    // Successful wallet recovery is terminal: paid_with_wallet no longer
+    // belongs to the technical recovery-case queue. Return to its inbox.
+    // On an unresolved recovery, the original case remains actionable.
     $buttons[]=[['text'=>achbotMessage('service_workbench.back'),
-        'callback_data'=>'serviceRecoveryCase_'.$id]];
+        'callback_data'=>$committed?'serviceRecoveryInbox':'serviceRecoveryCase_'.$id]];
     $keyboard=json_encode(['inline_keyboard'=>$buttons],JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
     answerCallbackQuery($callbackId,achbotMessage('service_workbench.checked'));
     $reply=editText($message_id,$body,$keyboard,'HTML',(int)$admin);

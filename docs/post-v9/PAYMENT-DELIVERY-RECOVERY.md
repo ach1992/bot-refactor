@@ -419,3 +419,21 @@ that unbackfilled historical wallet orders, missing native operations, partial
 locally linked batches, unstarted held debit, merchant-hosted uncertainty or
 installed Chili have been accepted. Do not deploy or run live recovery without
 separate target approval, compatible 003/007/018 audit and restore-tested backup.
+
+### 2026-11-08 independent-review remediation for PR #129
+
+The Owner callback for a **successfully** recovered wallet purchase now
+returns to `serviceRecoveryInbox`: a terminal `paid_with_wallet` record is no
+longer eligible for `serviceRecoveryCase_<pay>`. An unresolved wallet case
+retains the original case Back destination. The existing delivery case remains
+a separate valid Owner-only destination.
+
+The source-real funding family also exercises **actual** wallet debit/capacity
+claim, original PasarGuard CREATE through a disposable 127.0.0.1 HTTP server,
+then source-real by-username/by-ID native GET, original 007 proof, single- and
+complete two-account 003/018 COMMIT, two distinct encrypted delivery packets,
+and transactional rollback on late SQL failure. Owner/private Callback routing
+is tested with denied actors/chats and verified post-success keyboard actions.
+These tests prohibit a second HTTP POST during recovery and use no real user,
+merchant, installed Chili or native provider. Real installed acceptance remains
+separately gated.

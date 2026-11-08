@@ -3493,6 +3493,17 @@ def run_funding(tmp: str) -> tuple[dict, dict]:
         'missing_original_bulk_ordinal_cannot_invoke_new_post',
         'tampered_wallet_capacity_hold_fails_before_remote_get',
         'foreign_provider_attempt_cannot_be_wallet_recovery_proof',
+        'pg_original_by_username_native_get_seals_original_wallet_order',
+        'pg_original_pinned_by_id_readback_never_posts_again',
+        'pg_missing_and_foreign_original_native_hold_without_repost_or_finance',
+        'pg_verified_original_continuation_after_resolving_native_mismatch',
+        'pg_two_complete_original_accounts_atomically_link_and_seal_both_packets',
+        'pg_complete_bulk_second_native_mismatch_cannot_partially_finalize',
+        'pg_complete_bulk_second_sql_failure_rolls_back_all_local_finality',
+        'pg_complete_bulk_post_rollback_reconciles_original_without_duplicate_post',
+        'owner_route_rejects_foreign_actor_without_get_finance_or_delivery',
+        'owner_route_rejects_nonprivate_chat_without_get_finance_or_delivery',
+        'owner_route_success_offers_only_valid_delivery_and_inbox_navigation',
     }
     if not (wallet_recovery.get('complete') is True and
             set(wallet_recovery.get('scenarios',[]))==required_wallet_recovery and
