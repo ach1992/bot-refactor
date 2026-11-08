@@ -479,31 +479,11 @@ try {
                 'acknowledged_at','last_result'],
                 'unique'=>['uq_followup_pay_key'=>['pay_row_id','intent_key']]],
         ],
-        // New, optional-column 007 extension required ONLY by the explicit
-        // human-confirmed paid replacement route. Without this shape the
-        // installed latest-source runtime is not release-ready.
-        '021' => [
-            'pays'=>['columns'=>['issued_entitlement_days','issued_entitlement_gb']],
-            'service_effects'=>['columns'=>[
-                'replaces_effect_id','reconciliation_reason',
-                'reconciliation_fingerprint','reconciliation_evidence_status',
-                'reconciliation_observed_at'],
-                'unique'=>['uq_effect_one_replacement'=>['replaces_effect_id']]],
-        ],
     ];
     foreach ($specs as $migration => $schema) {
         $present = count(array_filter(array_keys($schema),
             static fn(string $t): bool => isset($tables[$t])));
         $isPresent = $present === count($schema) && validShape($schema,$tables,$columns,$unique);
-        if ($migration==='021' && $isPresent) {
-            // The 021 extension must retain its original-replacement FK,
-            // not merely the names of the additive columns and indexes.
-            // Reuse the source contract's read-only shape verifier.
-            try {
-                require_once dirname(__DIR__).'/src/Finance/PaidReplacementRecovery.php';
-                $isPresent=achbotHostedReplacementSchemaReady($db);
-            } catch (Throwable $ignored) {$isPresent=false;}
-        }
         $code = $isPresent ? 'columns_and_named_unique_indexes_detected_not_ddl_certified' :
             ($present === 0 ? 'missing' : 'partial_or_incompatible_schema_requires_audit');
         $report['schema'][$migration] = $code;

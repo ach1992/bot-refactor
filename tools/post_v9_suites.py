@@ -19,7 +19,7 @@ from check_post_v9 import (
     owner_gift_policy_negative_controls, owner_r5_proof_mismatches,
 )
 
-FAMILY_FIELDS = {'admin': ('owner_ux_r5', 'owner_r6_notifications', 'owner_r6_financial_alerts'), 'api': ('existing_payment_apis',), 'services': ('marzban', 'purchases', 'webhook_file_configuration', 'telegram_transport_log_privacy', 'optional_cron_runner', 'marzban_service_modifications'), 'wallet': ('unsupported_wallet_preflight', 'wallet_transfer_safety', 'wallet_replay_freshness_and_operation_identity', 'wallet_transfer_generation', 'admin_wallet_adjustment_safety', 'admin_wallet_ux', 'next_payment_ux', 'central_text_catalog', 'copy_audience_and_numeric_source', 'public_bootstrap_privacy', 'public_gateway_privacy', 'service_unit_quote_guards', 'pasarguard_client', 'optional_cleanup'), 'presentation': ('provider_integration', 'currency_settings', 'server_display_settings', 'subscription_presentation', 'simple_server_display', 'financial_subject_preflight', 'catalogue_and_subscription_qr', 'payment_ux_lifecycle', 'payment_browser_feedback', 'checkout_serialization', 'customer_method_serialization'), 'authorization': ('automatic_renewal_ledger', 'payment_readiness_preflight', 'wallet_authorization_freshness', 'latest_review_f1_f4'), 'effects': ('financial_native_route_guards', 'review_decision_idempotency', 'service_effects', 'create_verification_lock_order', 'strict_effect_transport_pin', 'gift_source_enqueue_idempotency', 'direct_admin_gift_verified', 'direct_admin_gift_native', 'owner_gift_policy', 'owner_gift_locks', 'owner_gift_lock_negative_controls', 'owner_gift_policy_negative_controls', 'gift_worker_safe_continuation', 'gift_physical_target_continuity'), 'funding': ('source_only_overlays', 'wallet_paid_create', 'wallet_checkout_routes', 'wallet_callback_framing', 'manual_choice_callback_framing', 'nonpaid_trial_bulk', 'referral_awards', 'referral_postcommit_routes', 'bank_auto_buy_sub', 'bank_recovery_inspection', 'bank_recovery_transport', 'manual_payment_method_isolation', 'manual_standard_real_helper_review_remediation', 'manual_crypto_destination_and_admin_guards', 'shared_payment_ledger_rc4_import', 'agency_state_regression', 'marzban_logical_transfer')}
+FAMILY_FIELDS = {'admin': ('owner_ux_r5', 'owner_r6_notifications', 'owner_r6_financial_alerts'), 'api': ('existing_payment_apis',), 'services': ('marzban', 'purchases', 'webhook_file_configuration', 'telegram_transport_log_privacy', 'optional_cron_runner', 'marzban_service_modifications'), 'wallet': ('unsupported_wallet_preflight', 'wallet_transfer_safety', 'wallet_replay_freshness_and_operation_identity', 'wallet_transfer_generation', 'admin_wallet_adjustment_safety', 'admin_wallet_ux', 'next_payment_ux', 'central_text_catalog', 'copy_audience_and_numeric_source', 'public_bootstrap_privacy', 'public_gateway_privacy', 'service_unit_quote_guards', 'pasarguard_client', 'optional_cleanup'), 'presentation': ('provider_integration', 'currency_settings', 'server_display_settings', 'subscription_presentation', 'simple_server_display', 'financial_subject_preflight', 'catalogue_and_subscription_qr', 'payment_ux_lifecycle', 'payment_browser_feedback', 'checkout_serialization', 'customer_method_serialization'), 'authorization': ('automatic_renewal_ledger', 'payment_readiness_preflight', 'wallet_authorization_freshness', 'latest_review_f1_f4'), 'effects': ('financial_native_route_guards', 'review_decision_idempotency', 'service_effects', 'create_verification_lock_order', 'strict_effect_transport_pin', 'gift_source_enqueue_idempotency', 'direct_admin_gift_verified', 'direct_admin_gift_native', 'owner_gift_policy', 'owner_gift_locks', 'owner_gift_lock_negative_controls', 'owner_gift_policy_negative_controls', 'gift_worker_safe_continuation', 'gift_physical_target_continuity'), 'funding': ('source_only_overlays', 'wallet_paid_create', 'wallet_checkout_routes', 'wallet_callback_framing', 'manual_choice_callback_framing', 'nonpaid_trial_bulk', 'referral_awards', 'referral_postcommit_routes', 'bank_auto_buy_sub', 'bank_recovery_transport', 'manual_payment_method_isolation', 'manual_standard_real_helper_review_remediation', 'manual_crypto_destination_and_admin_guards', 'shared_payment_ledger_rc4_import', 'agency_state_regression', 'marzban_logical_transfer')}
 
 SOURCE_UPDATES = {'admin': (), 'api': (), 'services': ('unified_service_management',), 'wallet': (), 'presentation': (), 'authorization': (), 'effects': (), 'funding': ('current_additive_migration_separately_tested',)}
 
@@ -2219,9 +2219,6 @@ def run_authorization(tmp: str) -> tuple[dict, dict]:
         *('retired_runtime_member_blocks__'+name.replace('/','_').replace('.','_') for name in package.RETIRED_RUNTIME_MEMBERS-{'settings/tronChecker.php'}),
         'partial_003_unique_index_missing_blocks',
         'delivery_018_token_uniqueness_missing_blocks',
-        'replacement_021_unique_original_claim_missing_blocks',
-        'replacement_021_original_foreign_key_missing_blocks',
-        'replacement_021_missing_frozen_invoice_terms_blocks',
         'wallet_telegram_event_key_missing_blocks',
         'wallet_telegram_event_key_nonunique_blocks',
         'wallet_cursor_nontransactional_storage_blocks',
@@ -2276,7 +2273,7 @@ def run_authorization(tmp: str) -> tuple[dict, dict]:
             readiness.get('source_usdt_production_helper_compared') is True and
             readiness.get('source_policy_production_helper_compared') is True and
             readiness.get('source_members_verified')==package.EXPECTED_RUNTIME_COUNT and
-            readiness.get('all_nine_additive_shapes_exercised') is True and
+            readiness.get('current_additive_shapes_exercised') is True and
             readiness.get('api_schema_capability_compared') is True and
             readiness.get('api_credentials_not_decrypted') is True and
             readiness.get('api_schema_014_disposable_only') is True and
@@ -2434,32 +2431,6 @@ def run_effects(tmp: str) -> tuple[dict, dict]:
         raise RuntimeError("Owned manual payment review decision regression failed:\n"+
             (worker.stderr or worker.stdout)[-4000:])
     decision=json.loads(decision_path.read_text())
-    pg_lock_path=Path(tmp)/"real-pasarguard-review-lock-boundary.json"
-    pg_lock_run=subprocess.run([
-        "python3",str(ROOT/"tools/test_post_v9_review_pg_lock.py"),
-        "--run-disposable","--report",str(pg_lock_path)],
-        cwd=ROOT,timeout=90,capture_output=True,text=True)
-    if pg_lock_run.returncode:
-        raise RuntimeError("Source-real PasarGuard loopback financial lock test failed:\n"+
-            (pg_lock_run.stderr or pg_lock_run.stdout)[-4000:])
-    pg_lock=json.loads(pg_lock_path.read_text())
-    required_pg_lock={
-        'source_real_pasar_guard_account_identity_pinned',
-        'source_real_pg_GET_no_SQL_lock_pay_terminal_drift',
-        'source_real_pg_GET_drift_fails_closed_pay_terminal_drift',
-        'source_real_pg_GET_no_SQL_lock_plan_target_drift',
-        'source_real_pg_GET_drift_fails_closed_plan_target_drift',
-    }
-    if not (pg_lock.get('complete') is True
-            and set(pg_lock.get('checks',[]))==required_pg_lock
-            and pg_lock.get('source_real_php') is True
-            and pg_lock.get('owned_mariadb') is True
-            and pg_lock.get('actual_pasar_guard_http_get') is True
-            and pg_lock.get('financial_locks_released_during_GET') is True
-            and pg_lock.get('target_drift_fails_closed') is True
-            and pg_lock.get('native_writes')==0):
-        raise RuntimeError("Required source-real PasarGuard lock boundary proof incomplete")
-    decision['pasarguard_review_lock_boundary']=pg_lock
     required_decisions={
         'existing_unique_attempt_schema_ready',
         'nowpayments_review_candidate',
@@ -2543,17 +2514,14 @@ def run_effects(tmp: str) -> tuple[dict, dict]:
         # send a daily unchanged-evidence finance warning.
         "nowpayments_funded_review_quiet_no_push",
         "nowpayments_repeat_review_quiet",
+        "simple_gateway_inbox_original_case_and_merchant_ids",
+        "simple_gateway_admin_private_access_and_no_provider_get",
+        "simple_gateway_fifteen_cases_paginated_without_repeat",
+        "nowpayments_extra_children_preserved_no_second_original",
         "nowpayments_second_unpaid_child_is_not_payment",
         "nowpayments_unpaid_failed_child_no_operator_case",
         "nowpayments_secondary_funds_keep_terminal_claim_no_downgrade",
         "nowpayments_secondary_paid_child_quiet",
-        "nowpayments_paid_extra_funds_visible_in_separate_owner_queue",
-        "nowpayments_extra_funds_owner_only",
-        "nowpayments_operator_inbox_details_private_auth",
-        "nowpayments_operator_provider_inquiry_readonly",
-        "nowpayments_operator_unauthorized_callbacks_refused",
-        "nowpayments_owner_inquiry_one_child_per_callback",
-        "nowpayments_13th_funded_child_cursor_inquiry_safe",
         "nowpayments_ipn_child_insert_fail_retry_throwing",
         "nowpayments_ipn_child_insert_fail_retry_off",
         "nowpayments_ipn_primary_link_fail_retry_throwing",
@@ -2682,7 +2650,7 @@ def run_effects(tmp: str) -> tuple[dict, dict]:
         'owner_direct_approve_route_no_merchant_get_one_wallet_credit',
         'owner_approve_route_replay_denied_no_credit',
         'owner_direct_reject_route_preserves_funds_and_reports',
-        'owner_decision_delegated_actor_cannot_settle',
+        'gateway_review_nonadmin_cannot_settle',
         'retired_two_stage_callback_fail_closed',
     })
     cases_finance = {case.get("case") for case in finance.get("scenarios",[])
@@ -3335,59 +3303,6 @@ def run_effects(tmp: str) -> tuple[dict, dict]:
 
 def run_funding(tmp: str) -> tuple[dict, dict]:
     result = {}
-    # Fail fast on the new critical source-real replacement tests before
-    # running unrelated settled funding suites.
-    replacement_path=Path(tmp)/'hosted-paid-replacement.json'
-    replacement_run=subprocess.run(
-        ['python3',str(ROOT/'tools/test_post_v9_paid_replacement.py'),
-         '--report',str(replacement_path)],
-        cwd=ROOT,capture_output=True,text=True,timeout=180)
-    if replacement_run.returncode!=0:
-        raise RuntimeError('Hosted paid reconciliation source-real acceptance failed:\n'
-            +(replacement_run.stderr or replacement_run.stdout)[-6000:])
-    replacement=json.loads(replacement_path.read_text())
-    required_replacements={
-        '021_missing_original_provenance_foreign_key_blocks_paid_replacement',
-        'standard_and_custom_invoice_issuance_pins_true_terms_same_transaction',
-        'historical_empty_007_standard_without_issued_terms_blocks_before_007_or_native',
-        'marzban_empty_007_endpoint_drift_invalidates_signed_preview',
-        'marzban_empty_007_group_drift_invalidates_signed_preview',
-        'replacement_reason_stage_next_action_bounded_diagnostics_six_failure_modes',
-        'private_payments_operator_sees_bounded_capacity_reason_no_extra_effect',
-        'pasarguard_connection_change_cannot_reuse_empty_007_confirmation',
-        'pasarguard_generation_change_cannot_reuse_empty_007_confirmation',
-
-        'manager_missing_first_007_signed_one_replacement_capacity_once',
-        'original_create_cannot_overlap_prior_paid_replacement',
-        'concurrent_staff_confirmation_cannot_double_reserve_or_post',
-        'replacement_get_only_links_one_original_paid_order_and_seals_018',
-        'operator_payments_authorized_first_paid_replacement',
-        'support_payments_authorized_first_paid_replacement',
-        'lost_replacement_native_response_get_only_recovery_no_repost',
-        'foreign_original_kept_auditable_and_replacement_preserves_capacity',
-        'historic_standard_original_007_proves_entitlement_without_issued_columns',
-        'custom_multicount_invoice_preserves_exact_day_volume_and_original_capacity',
-        'original_007_entitlement_survives_current_plan_days_change',
-        'standard_pinned_purchase_terms_survive_later_plan_day_and_volume_changes',
-        'authenticated_matching_original_account_never_offered_replacement',
-        'bulk_missing_ordinal_only_replacement_native_no_second_inventory_hold',
-        'noncontiguous_internal_gap_preserves_original_full_count_capacity_owner',
-        'missing_first_with_authenticated_later_original_reuses_prior_capacity_once',
-        'missing_first_later_native_foreign_blocks_second_capacity_claim',
-        'staff_challenge_actor_identity_bound_owner_cannot_replay_delegate',
-        'demoted_manager_old_signed_button_cannot_claim_new_native_account',
-        'staff_private_preview_denies_nonstaff_and_nonprivate_without_side_effects',
-        'pasarguard_first_replacement_real_loopback_create_and_get_delivery',
-    }
-    if not (replacement.get('complete') is True and
-            set(replacement.get('scenarios',[]))==required_replacements and
-            replacement.get('source_real') is True and
-            replacement.get('php85_required') is True and
-            replacement.get('disposable_mariadb') is True and
-            replacement.get('native_provider_loopback') is True and
-            replacement.get('original_post_replays')==0 and
-            replacement.get('double_wallet_debits')==0):
-        raise RuntimeError('Hosted paid replacement source-real report incomplete')
     referral_path=Path(tmp)/"referral-award-journal.json"
     proc=subprocess.run(
         ["python3",str(ROOT/"tools/test_post_v9_referral_awards.py"),
@@ -3457,7 +3372,6 @@ def run_funding(tmp: str) -> tuple[dict, dict]:
         raise RuntimeError("Wallet pre-POST journal acceptance failed:\n"
             +native_wallet.stderr[-4500:])
     wallet_create=json.loads(wallet_path.read_text())
-    wallet_create['hosted_replacement_recovery']=replacement
     required_wallet={
         "wallet_confirmed_debit_and_capacity_once_before_post",
         "wallet_unknown_post_keeps_paid_hold_and_no_replay",
@@ -3473,114 +3387,6 @@ def run_funding(tmp: str) -> tuple[dict, dict]:
             wallet_create.get('provider_real_requests')==0 and
             wallet_create.get('production_mutations')==0):
         raise RuntimeError('Wallet creation replay/debit safety incomplete')
-    recovery_path=Path(tmp)/"wallet-original-recovery.json"
-    wallet_recovery_run=subprocess.run(
-        ["python3",str(ROOT/"tools/test_post_v9_wallet_recovery.py"),
-         "--report",str(recovery_path)],
-        cwd=ROOT,capture_output=True,text=True,timeout=170)
-    if wallet_recovery_run.returncode!=0:
-        raise RuntimeError("Original wallet recovery native acceptance failed:\n"
-            +wallet_recovery_run.stderr[-5000:])
-    wallet_recovery=json.loads(recovery_path.read_text())
-    required_wallet_recovery={
-        'lost_native_response_reuses_original_verified_account_without_post_or_second_debit',
-        'repeated_owner_resume_never_relinks_or_resends',
-        'sealed_wallet_packet_passes_original_delivery_integrity_check',
-        'verified_native_unlinked_finalizes_without_create',
-        'foreign_native_marker_keeps_original_wallet_hold_for_review',
-        'exact_original_native_proof_can_complete_after_mismatch',
-        'telegram_unknown_is_durable_and_not_automatically_resent',
-        'missing_original_bulk_ordinal_cannot_invoke_new_post',
-        'marzban_original_partial_linked_bulk_recovers_without_second_native_create',
-        'tampered_wallet_capacity_hold_fails_before_remote_get',
-        'foreign_provider_attempt_cannot_be_wallet_recovery_proof',
-        'pg_original_by_username_native_get_seals_original_wallet_order',
-        'pg_original_pinned_by_id_readback_never_posts_again',
-        'pg_missing_and_foreign_original_native_hold_without_repost_or_finance',
-        'pg_verified_original_continuation_after_resolving_native_mismatch',
-        'pg_two_complete_original_accounts_atomically_link_and_seal_both_packets',
-        'pg_partially_linked_original_bulk_reuses_first_order_and_seals_both',
-        'pg_all_already_linked_original_orders_finalize_without_reorder_or_unknown_resend',
-        'pg_all_linked_current_server_physical_rebind_blocks_before_get_and_recovers_after_restore',
-        'pg_current_server_physical_rebind_after_native_get_cannot_commit',
-        'pg_completed_native_revoke_between_get_and_commit_invalidates_stale_packet_once',
-        'pg_tampered_linked_order_rejected_before_native_get_or_financial_finality',
-        'pg_partially_linked_bulk_second_native_mismatch_rolls_back_without_repost',
-        'pg_partial_linked_second_insert_failure_preserves_first_and_recovers_once',
-        'pg_concurrent_owner_partial_resume_single_terminal_commit_and_delivery',
-        'pg_complete_bulk_second_native_mismatch_cannot_partially_finalize',
-        'pg_complete_bulk_second_sql_failure_rolls_back_all_local_finality',
-        'pg_complete_bulk_post_rollback_reconciles_original_without_duplicate_post',
-        'owner_route_rejects_foreign_actor_without_get_finance_or_delivery',
-        'owner_route_rejects_nonprivate_chat_without_get_finance_or_delivery',
-        'owner_route_success_offers_only_valid_delivery_and_inbox_navigation',
-    }
-    if not (wallet_recovery.get('complete') is True and
-            set(wallet_recovery.get('scenarios',[]))==required_wallet_recovery and
-            wallet_recovery.get('source_real') is True and
-            wallet_recovery.get('php85_required') is True and
-            wallet_recovery.get('disposable_mariadb') is True and
-            wallet_recovery.get('original_native_post_replays')==0 and
-            wallet_recovery.get('original_wallet_duplicate_debits')==0):
-        raise RuntimeError('Original wallet source-real recovery evidence incomplete')
-    wallet_create['original_recovery']=wallet_recovery
-    hosted_path=Path(tmp)/"hosted-original-linked-recovery.json"
-    hosted_run=subprocess.run(
-        ["python3",str(ROOT/"tools/test_post_v9_hosted_linked_recovery.py"),
-         "--report",str(hosted_path)],
-        cwd=ROOT,capture_output=True,text=True,timeout=170)
-    if hosted_run.returncode!=0:
-        raise RuntimeError("Original hosted linked recovery native acceptance failed:\n"
-            +(hosted_run.stderr or hosted_run.stdout)[-5500:])
-    hosted=json.loads(hosted_path.read_text())
-    required_hosted={
-        'original_hosted_nextpay_fully_linked_two_original_accounts_sealed_once',
-        'hosted_original_delivery_packet_passes_real_integrity_validator',
-        'hosted_owner_route_valid_callback_finishes_and_opens_delivery',
-        'hosted_tampered_payment_reference_blocks_sealed_delivery_validation',
-        'hosted_repeat_owner_callback_never_reseals_or_resends',
-        'hosted_claimed_original_native_never_reposts_on_resume',
-        'original_hosted_zarinpal_same_paid_native_once_only',
-        'hosted_foreign_native_marker_blocks_then_valid_get_recovers',
-        'hosted_unstarted_second_original_ordinal_once_without_second_capacity_claim',
-        'pg_hosted_two_unstarted_trailing_ordinals_one_owner_click_each',
-        'pg_hosted_concurrent_missing_ordinal_creates_only_one_remote_account',
-        'pg_hosted_lost_create_http_response_readback_only_never_reposts',
-        'pg_hosted_changed_plan_terms_block_unstarted_original_create',
-        'pg_hosted_noncontiguous_manifest_refuses_new_original_create',
-        'pg_hosted_custom_paid_entitlement_preserved_on_unstarted_original',
-        'hosted_unlinked_original_native_attaches_without_recreate_or_recharge',
-        'hosted_partial_marzban_keeps_original_order_and_attaches_second',
-        'pg_hosted_partial_original_native_attaches_with_012_pins',
-        'hosted_unlinked_missing_remote_refuses_then_original_get_recovers',
-        'pg_hosted_unlinked_foreign_native_marker_refused',
-        'hosted_partial_concurrent_owner_resume_attaches_once',
-        'hosted_unlinked_marzban_target_drift_after_get_blocks_attachment',
-        'pg_hosted_unlinked_original_refuses_physical_provider_retarget',
-        'hosted_partial_link_and_delivery_rollback_atomically',
-        'hosted_foreign_quote_never_becomes_delivery_authority',
-        'hosted_already_terminal_attempt_cannot_fabricate_backfill',
-        'hosted_existing_human_attestation_cannot_be_relabelled_merchant_delivered',
-        'hosted_telegram_unknown_stays_sealed_no_auto_retry',
-        'pg_hosted_two_original_linked_native_accounts_by_id_are_delivered_once',
-        'pg_hosted_current_physical_provider_binding_refuses_retargeted_order',
-        'hosted_current_marzban_endpoint_drift_rejected_before_native_get',
-        'hosted_marzban_target_drift_after_get_blocks_stale_terminal_commit',
-        'pg_hosted_rebind_between_native_get_and_commit_refuses_stale_delivery',
-        'pg_hosted_completed_native_revoke_between_get_and_commit_refuses_stale_packet',
-        'hosted_second_delivery_insert_rolls_back_then_recovers_without_native_create',
-        'hosted_concurrent_owner_resumes_single_terminal_commit_and_delivery',
-        'hosted_owner_only_private_callback_denies_foreign_actor_chat',
-    }
-    if not (hosted.get('complete') is True and
-            set(hosted.get('scenarios',[]))==required_hosted and
-            hosted.get('source_real') is True and
-            hosted.get('php85_required') is True and
-            hosted.get('disposable_mariadb') is True and
-            hosted.get('original_hosted_post_replays')==0 and
-            hosted.get('original_hosted_duplicate_wallet_debits')==0):
-        raise RuntimeError('Original hosted linked delivery evidence incomplete')
-    wallet_create['hosted_linked_recovery']=hosted
     nonpaid_path=Path(tmp)/"trial-bulk-native.json"
     native_nonpaid=subprocess.run(
         ["python3",str(ROOT/"tools/test_post_v9_nonpaid_routes.py"),
@@ -3831,67 +3637,6 @@ def run_funding(tmp: str) -> tuple[dict, dict]:
             and bank_buy.get("real_financial_effects")==0
             and bank_buy.get("installed_operator_tested") is False):
         raise RuntimeError("Bank BUY_SUB finality/remote-effects contract incomplete")
-    # Owner-private BUY_SUB crash inspection is read-only even with
-    # an inconclusive authenticated provider GET. Exercise actual
-    # Telegram route, exact ledger/endpoint and SQL on owned MariaDB.
-    recovery_path=Path(tmp)/"recovery-inspection.json"
-    recovery_run=subprocess.run(
-        ["python3",str(ROOT/"tools/test_post_v9_recovery_inspection.py"),
-         "--run-disposable","--report",str(recovery_path)],
-        cwd=ROOT,timeout=140,capture_output=True,text=True)
-    if recovery_run.returncode!=0:
-        raise RuntimeError("BUY_SUB recovery workbench acceptance failed:\n"
-                           +recovery_run.stderr[-6000:])
-    recovery=json.loads(recovery_path.read_text())
-    required_recovery={
-        "unresolved_bank_case_reads_exact_local_identity_without_sql_writes",
-        "provider_readback_failure_logs_exact_effect_and_trusted_cause",
-        "provider_raw_exception_credentials_never_logged",
-        "pasarguard_nested_transport_reason_not_lost",
-        "provider_diagnostic_indices_and_stage_fail_closed",
-        "owner_private_wallet_debit_capacity_hold_visible_no_unissued_get",
-        "strict_one_account_get_only_matching_observation_no_replay",
-        "no_financial_write_remote_missing",
-        "no_financial_write_remote_timeout",
-        "no_financial_write_remote_wrong_note",
-        "no_financial_write_remote_float_bytes",
-        "no_financial_write_remote_float_expiry",
-        "missing_ordinal_never_infers_remote_absence_or_gets",
-        "nonowner_or_nonprivate_inspection_denied_9002_9001",
-        "nonowner_or_nonprivate_inspection_denied_9001_7777",
-        "owner_private_readback_button_real_callback_no_sql_mutations",
-        "endpoint_drift_fences_remote_get_without_guessing",
-        "concurrent_endpoint_change_disqualifies_readback_evidence",
-        "15_line_keyset_pagination_and_exact_late_account_get",
-        "twelve_account_page_telegram_length_and_button_bounds",
-        "bank_payment_without_effect_visible_and_13th_case_reachable",
-        "terminal_payment_not_reattributed_to_pending_case",
-        "missing_ledger_schema_fails_closed_without_get_or_mutation",
-        "corrupted_operation_fingerprint_blocks_remote_get",
-        "logical_group_drift_blocks_remote_get",
-        "deleted_historical_order_preserved_without_inferred_refund",
-        "hosted_paid_state_not_assumed_settled_or_mutated",
-        "owner_private_full_inbox_page_and_case_ui_navigation",
-        "missing_unique_effect_index_blocks_remote_selection",
-        "changed_plan_inbound_rejected_before_any_remote_get",
-        "invalid_payment_account_count_fails_closed",
-        "zero_quota_with_matching_fingerprint_never_gets",
-        "ordinal_exceeding_mutated_payment_account_count_no_remote_get",
-        "fifteen_requested_two_recorded_clear_owner_private_operation_ids",
-        "terminal_after_get_owner_sees_uncertainty_once_ack",
-        "telegram_edit_failure_falls_back_to_owner_private_send",
-        "mysqlireport_off_sql_failure_after_get_ends_owner_visible_uncertain",
-    }
-    if not (recovery.get("complete")
-            and recovery.get("cases")>=36
-            and required_recovery.issubset(recovery.get("scenarios",[]))
-            and recovery.get("actual_php_admin_route") is True
-            and recovery.get("owned_socket_mariadb") is True
-            and recovery.get("max_account_get_per_callback")==1
-            and recovery.get("remote_writes")==0
-            and recovery.get("money_mutations")==0
-            and recovery.get("installed_operator_tested") is False):
-        raise RuntimeError("Owner-only read-only recovery contract incomplete")
     # The actual production curl adapter (rather than a getMarzbanUser
     # mock) must authenticate and GET on one pinned endpoint and IP.
     transport_path=Path(tmp)/"recovery-transport.json"
@@ -4389,7 +4134,7 @@ def run_funding(tmp: str) -> tuple[dict, dict]:
             and swap.get("synthetic_private_files_untouched")):
         raise RuntimeError("Physical post-V9/V9 source-only overlay or private-state check failed")
 
-    return {'source_only_overlays': swap, 'wallet_paid_create': wallet_create, 'wallet_checkout_routes': wallet_checkout, 'wallet_callback_framing': wallet_frame, 'manual_choice_callback_framing': manual_frame, 'nonpaid_trial_bulk': nonpaid, 'referral_awards': referral, 'referral_postcommit_routes': route_award, 'bank_auto_buy_sub': bank_buy, 'bank_recovery_inspection': recovery, 'bank_recovery_transport': transport, 'manual_payment_method_isolation': manual, 'manual_standard_real_helper_review_remediation': integrity, 'manual_crypto_destination_and_admin_guards': crypto_guard, 'shared_payment_ledger_rc4_import': migration, 'agency_state_regression': agency, 'marzban_logical_transfer': logical}, result
+    return {'source_only_overlays': swap, 'wallet_paid_create': wallet_create, 'wallet_checkout_routes': wallet_checkout, 'wallet_callback_framing': wallet_frame, 'manual_choice_callback_framing': manual_frame, 'nonpaid_trial_bulk': nonpaid, 'referral_awards': referral, 'referral_postcommit_routes': route_award, 'bank_auto_buy_sub': bank_buy, 'bank_recovery_transport': transport, 'manual_payment_method_isolation': manual, 'manual_standard_real_helper_review_remediation': integrity, 'manual_crypto_destination_and_admin_guards': crypto_guard, 'shared_payment_ledger_rc4_import': migration, 'agency_state_regression': agency, 'marzban_logical_transfer': logical}, result
 
 
 RUNNERS = {

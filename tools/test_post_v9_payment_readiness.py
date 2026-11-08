@@ -772,37 +772,6 @@ def main() -> dict:
             'delivery_018_token_uniqueness_missing_blocks')
         statement(d,'ALTER TABLE payment_delivery_attempts ADD UNIQUE KEY uq_delivery_dispatch_token(dispatch_token)')
         cases.append('delivery_018_token_uniqueness_missing_blocks')
-        # The unique 021 predecessor reference is mandatory: missing columns
-        # or a duplicate replacement claimant must never be accepted as safe.
-        # A self-FK needs an index on its child column; keep a temporary
-        # non-unique one while proving the UNIQUE replacement claimant guard.
-        statement(d,'ALTER TABLE service_effects ADD INDEX idx_probe_replaces(replaces_effect_id)')
-        statement(d,'ALTER TABLE service_effects DROP INDEX uq_effect_one_replacement')
-        code, result, _ = report_run(d)
-        require(code==2 and has(result,'schema_021','BLOCK',
-            'partial_or_incompatible_schema_requires_audit'),
-            'replacement_021_unique_original_claim_missing_blocks')
-        statement(d,'ALTER TABLE service_effects ADD UNIQUE KEY uq_effect_one_replacement(replaces_effect_id)')
-        statement(d,'ALTER TABLE service_effects DROP INDEX idx_probe_replaces')
-        cases.append('replacement_021_unique_original_claim_missing_blocks')
-        statement(d,'ALTER TABLE service_effects DROP FOREIGN KEY fk_effect_original_replacement')
-        code, result, _ = report_run(d)
-        require(code==2 and has(result,'schema_021','BLOCK',
-            'partial_or_incompatible_schema_requires_audit'),
-            'replacement_021_original_foreign_key_missing_blocks')
-        statement(d,'ALTER TABLE service_effects ADD CONSTRAINT fk_effect_original_replacement '
-                  'FOREIGN KEY (replaces_effect_id) REFERENCES service_effects(id) '
-                  'ON DELETE RESTRICT ON UPDATE RESTRICT')
-        cases.append('replacement_021_original_foreign_key_missing_blocks')
-        # An installed 021 without the NEW invoice entitlement columns
-        # cannot safely issue replacement accounts for later purchases.
-        statement(d,'ALTER TABLE pays DROP COLUMN issued_entitlement_gb')
-        code, result, _ = report_run(d)
-        require(code==2 and has(result,'schema_021','BLOCK',
-            'partial_or_incompatible_schema_requires_audit'),
-            'replacement_021_missing_frozen_invoice_terms_blocks')
-        statement(d,'ALTER TABLE pays ADD issued_entitlement_gb BIGINT UNSIGNED DEFAULT NULL')
-        cases.append('replacement_021_missing_frozen_invoice_terms_blocks')
         source_failures=source_failure_regressions(d)
         cases.extend(r['case'] for r in source_failures)
         # Keep the original 54-case assertion independent of canonical-path
@@ -828,7 +797,7 @@ def main() -> dict:
         'source_policy_production_helper_compared':True,
         'source_members_verified':package.EXPECTED_RUNTIME_COUNT,
         'original_23_table_schema_used':True,
-        'all_nine_additive_shapes_exercised':True,
+        'current_additive_shapes_exercised':True,
         'api_schema_capability_compared':True,
         'api_credentials_not_decrypted':True,
         'api_schema_014_disposable_only':True,

@@ -52,7 +52,7 @@ function doAction($payId,$provider) {
  } catch(Throwable $error) {$db->rollback();throw $error;}
  return 'delivered';
 }
-require_once $root.'/src/Finance/ReviewDecisions.php';
+require_once $root.'/src/Finance/GatewayReview.php';
 function seed($db,$id,$provider,$stage,$status=null,$child=null,$price=100000,$ageSeconds=0) {
  $hash='test-'.$id;$reference=$hash.'-invoice';
  $q=$db->prepare("INSERT INTO pays (id,hash_id,user_id,type,price,request_date,state,payid)

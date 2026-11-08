@@ -114,11 +114,11 @@ elseif($op==='presentation'){
  $value=['details'=>$d,'keys'=>json_decode(achbotApiPaymentFinalKeyboard($pay,'settled',$automatic,$d),true)];
 }
 elseif($op==='access'){$from_id=(int)$spec['actor'];$value=achbotAdminRequestAllowed('apiReview_'.$pay['hash_id'],null,'none');}
-elseif($op==='attention'){require_once $root.'/src/Finance/RecoveryInspection.php';$q=$connection->query('SELECT p.id FROM pays p WHERE p.id='.$id.' AND '.achbotRecoveryAttentionSql($connection));$value=$q->num_rows===1;}
+elseif($op==='attention'){$value=false; /* manual bank API is outside automatic-gateway inbox */}
 elseif($op==='resume_hint'){
- require_once $root.'/src/Finance/RecoveryInspection.php';
+ require_once $root.'/src/Finance/ApiPayments.php';
  $pay['attempt']=achbotApiPaymentAttempt($connection,$id);
- $value=achbotRecoveryApiCanResume($connection,$pay);
+ $value=achbotApiPaymentCanResume($connection,$pay);
 }
 elseif($op==='review_resume'){
  // Actual admin callback, without requiring an earlier inbox visit.

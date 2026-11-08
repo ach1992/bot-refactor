@@ -30,21 +30,6 @@ function achbotNpChildEvidenceRank($status): int {
     };
 }
 
-/** Only unfinalized invoices with incoming-funds evidence belong to finance review.
- * An already paid order with uncertain CREATE/Telegram delivery belongs in
- * service recovery, never back in payment review.
- * Callers join pays as p, payment_attempts as a.
- */
-function achbotNpOperatorWorkSql(): string {
-    $funded="'confirmed','sending','partially_paid','finished','refunded'";
-    return "a.provider='nowpayments'
-      AND p.state IN ('pending','send','have_sent')
-      AND a.stage='review'
-      AND EXISTS (SELECT 1 FROM payment_transactions c
-          WHERE c.attempt_id=a.id AND c.provider='nowpayments'
-            AND c.observed_status IN ($funded))";
-}
-
 /**
  * Signed NOWPayments IPN only records a durable payment ID. It never
  * provisions anything or contacts external providers in the HTTP callback.
@@ -786,7 +771,7 @@ function achbotHostedMarkVerificationUncertain(mysqli $db,int $payId,
                                               string $provider,string $hash): bool {
     if ($payId<=0 || !in_array($provider,['nextpay','zarinpal'],true) ||
         $hash==='') return false;
-    require_once __DIR__.'/ReviewDecisions.php';
+    require_once __DIR__.'/GatewayReview.php';
     if (!achbotGatewayReviewReady($db)) return false;
     $open=false;
     try {

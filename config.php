@@ -522,7 +522,7 @@ function getAdminKeys(){
         foreach ($row as [$key,$callback]) {
             $capability=$key==='__review'?'review':achbotAdminButtonCapability($key);
             if (!achbotAdminLevelCan($level,$capability)) continue;
-            $line[]=['text'=>$key==='__review'?achbotMessage('admin_settings.config.get_admin_keys.button.f5a816a832'):$buttonValues[$key],
+            $line[]=['text'=>$key==='__review'?achbotMessage('automatic_gateway_review.menu'):$buttonValues[$key],
                 'callback_data'=>$callback];
         }
         if ($line) $keyboard[]=$line;

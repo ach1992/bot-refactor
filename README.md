@@ -8,7 +8,17 @@ AChBot is a PHP Telegram bot for VPN subscriptions, plans, customer support, adm
 
 **New in RC25:** an authorized administrator may assign, change or clear a Panel Group for Marzban and PasarGuard regardless of active/historical orders, saved plans, payment state, journals, or differing endpoints and administrator credentials. Group membership is the administrator's declaration of a genuinely shared physical panel and changes **only local Panel Group metadata**. Separate Native account, payment, transfer and plan operations retain their own identity, unresolved-journal and replay guards. See the [RC24 -> RC25 upgrade guide](docs/post-v9/RC24-TO-RC25.md) and [shared service/physical-panel contract](docs/post-v9/SHARED-SERVICE-TRANSFER.md).
 
-**Experimental follow-up (Issue #117, unmerged source):** The Owner rejected the RC26 multi-tool payment-review menu. The next source change replaces it with **one on-demand exception inbox exclusively for unfinished automatic-gateway payments**. It is being developed on a separate unmerged branch; the published RC26 ZIP and its historical SQL sidecars are immutable. Current implementation removes the 019 review-table dependency in favor of the original unique payment_attempts row. **Do not drop 019 from an installed RC26 runtime** before switching together to an independently reviewed/approved version, since RC26 still uses it. See [accepted simplified review contract](docs/post-v9/AUTOMATIC-GATEWAY-REVIEW.md).
+**Unreleased successor - Draft PR #136:** The owner opted for a root
+cleanup of RC26's experimental recovery workbenches. The successor source
+has exactly one on-demand incomplete automatic-gateway payment inbox,
+reusing the original payment_attempts record for one-shot financial decisions.
+Bank/gift/manual approvals, money and Native uniqueness guards, and the
+018/020 core Telegram journals remain intact. The old private workbenches,
+specialized paid replacement and their 019/021 future-schema requirements
+are removed from this source; **published RC26 remains immutable**.
+See [new exception inbox and cleanup contract](docs/post-v9/AUTOMATIC-GATEWAY-REVIEW.md).
+**This branch is not independently reviewed, installed or released. Do not
+combine the published RC26 runtime with prospective 018/020-only schema.**
 
 **Schema / upgrade:** RC26 introduces four **separate, one-time SQL sidecars**, [018](migrations/post-v9/018_payment_delivery_intents.sql) (delivery journal), [019](https://github.com/ach1992/bot-refactor/blob/v0.10.0-rc.26/migrations/post-v9/019_payment_review_decisions.sql) (human payment decisions), [020](migrations/post-v9/020_payment_followup_intents.sql) (follow-up packets) and [021](migrations/post-v9/021_paid_reconciliation_provenance.sql) (paid replacement provenance and frozen original issued terms). None is inside the runtime ZIP or applied by the GitHub Release. Starting from RC25, inventory real installed source, config, migration history and schema, verify a restorable backup on staging, and audit/apply only genuinely absent steps in strict **018 -> 019 -> 020 -> 021** order under separate target-specific approval. Partial objects, existing conflicting FKs/indexes, missing encryption keys or unknown original Native/payment effects are STOP conditions, not grounds to rerun DDL or retry operations. Earlier 015/016/017 remain one-time historical migrations: never replay them or migrate an unexamined schema. Use the [RC25 -> RC26 guide](docs/post-v9/RC25-TO-RC26.md) and [RC24 -> RC25 guide](docs/post-v9/RC24-TO-RC25.md) where applicable.
 

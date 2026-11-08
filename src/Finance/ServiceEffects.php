@@ -274,21 +274,6 @@ function achbotCreatePaidAccount(mysqli $db, int $payId, int $ordinal, array $p,
             throw new RuntimeException('effect_payment_identity_mismatch');
         }
 
-        // The paid replacement path has its own unique operation identity.
-        // Once any replacement belongs to this payment, do not admit a new
-        // ORIGINAL CREATE from a stale checkout/Cron/operator request.
-        // This query is compatible with legacy 007 before migration 021.
-        $replacementClaim=$db->prepare("SELECT id FROM service_effects
-            WHERE pay_row_id=? AND effect_kind='replacement' LIMIT 1 FOR UPDATE");
-        if (!$replacementClaim)
-            throw new RuntimeException('effect_replacement_guard_prepare_failed');
-        $replacementClaim->bind_param('i',$payId);
-        if (!$replacementClaim->execute())
-            throw new RuntimeException('effect_replacement_guard_read_failed');
-        $hasReplacement=$replacementClaim->get_result()->num_rows>0;
-        $replacementClaim->close();
-        if ($hasReplacement)
-            throw new RuntimeException('effect_original_create_after_replacement_denied');
         $targetIdentity=achbotEffectTargetIdentity($db,$serverId,$planId,$payId,$claim);
         $group=$targetIdentity['group'];$endpoint=$targetIdentity['endpoint'];
         $credentials=$targetIdentity['credentials'];$targetKey=$targetIdentity['key'];

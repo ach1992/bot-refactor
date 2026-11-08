@@ -1,5 +1,19 @@
 # Current source and published release contracts
 
+## Unreleased cleanup candidate (Draft PR #136)
+
+The Owner explicitly rejected RC26's experimental multi-workbench payment
+review and asked for source/schema cleanup as if these extra tools had never
+been built. Draft PR #136 replaces them with one quiet incomplete automatic-
+gateway inbox and original-attempt one-shot decisions. Future fresh installs
+retain normal 018/020 delivery/follow-up journals but do not ship 019/021 or
+the specialized paid-account replacement workbench. See
+[AUTOMATIC-GATEWAY-REVIEW.md](AUTOMATIC-GATEWAY-REVIEW.md).
+**Not merged, reviewed, tested as a complete candidate, published or
+installed.** Do not confuse this prospective source with RC26 or alter its
+historical release artifacts. This is not approval to DROP a test database
+object or migrate a shared host.
+
 ## Published RC26 — source-reviewed recovery; installed acceptance open
 
 [RC26](https://github.com/ach1992/bot-refactor/releases/tag/v0.10.0-rc.26)

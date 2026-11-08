@@ -43,13 +43,21 @@ it can be dropped only once the new runtime is installed and no caller
 uses it. Confirm zero rows, exact schema and any FKs before the scoped
 DROP TABLE chilibot.payment_review_decisions with target-specific approval.
 
-**Do not drop 018 or 020** merely because their review UI buttons were
-removed: payment_delivery_intents, payment_delivery_attempts and
-payment_followup_intents are core, actively referenced by normal
-bank/gift/payment and Telegram once-only workflows. Migration 021's
-frozen issued terms and native effect reconciliation fields also have
-live backend consumers; their removal requires a separate fully tested
-rewrite, not dropping columns while consumers still read or write them.
+**Do not drop 018 or 020**: payment_delivery_intents,
+payment_delivery_attempts and payment_followup_intents remain part of
+normal paid/manual bank/gift operations, even though the experimental
+recovery screen is gone.
+
+The 021 paid replacement feature, its extra 007 effect columns and the
+two nullable issued-entitlement columns on pays have no successor runtime
+consumers. On a **new empty database**, do not apply 019 or 021. On an
+installed test database such as chilibot, first install the version-matched
+new runtime and verify all its ledger and customer paths. Only then, with
+a target-scoped DDL authorization, inspect and optionally remove the exact
+021 unique key, restrictive self-FK and seven unused fields, plus 019.
+Neither removing UI routes nor seeing zero rows justifies dropping core
+delivery or follow-up evidence tables. If a foreign key or old data
+requires preservation, stop and investigate instead of blindly dropping.
 
 No runtime ZIP extraction, test DB DROP, webhook, live payment or provider
 side effect is authorized by this source document. PHP 8.5 validation,
