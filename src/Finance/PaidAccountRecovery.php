@@ -397,6 +397,13 @@ function achbotResumeWalletBuy(
     }
     // No Telegram before the WHOLE original order and sealed packets COMMIT.
     // A concurrent, unknown or acknowledged packet is never retried.
-    return ['committed'=>true,'delivery'=>achbotDeliveryDispatchPending($db,$payId),
-        'count'=>$count];
+    // If the post-commit dispatch query fails, preserve confirmed order finality:
+    // Owner can inspect/send only still-PENDING packets via Delivery Recovery.
+    $delivery=[];
+    try {$delivery=achbotDeliveryDispatchPending($db,$payId);}
+    catch (Throwable $error) {
+        error_log('achbot_wallet_recovery_delivery_deferred pay_id='.$payId.
+            ' class='.get_class($error));
+    }
+    return ['committed'=>true,'delivery'=>$delivery,'count'=>$count];
 }
