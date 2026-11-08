@@ -701,7 +701,7 @@ function achbotHostedPgReadbackPin(array $effect): string {
         'provider_remote_created_at','provider_verified_at',
         'provider_evidence_updated_at','provider_mutation_key',
         'provider_mutation_snapshot','provider_connection_id',
-        'provider_operation_marker','provider_snapshot'];
+        'provider_operation_marker'];
     $parts=[];
     foreach ($keys as $key) $parts[$key]=(string)($effect[$key]??'');
     return hash('sha256',json_encode($parts,JSON_THROW_ON_ERROR));
