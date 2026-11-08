@@ -9,7 +9,8 @@ require_once __DIR__.'/ServiceEffects.php';
 
 /** Native CREATE replay gate shared by bank/API/manual fulfillment. */
 function achbotContinuePaidAccount(mysqli $db,int $payId,int $ordinal,array $request,
-                                   ?callable $exactAccountGet=null): array {
+                                   ?callable $exactAccountGet=null,
+                                   bool $existingOnly=false): array {
     achbotEffectRequireAutocommit($db);
     achbotEffectRequireUniqueLine($db);
     if ($payId<=0 || $ordinal<=0) throw new RuntimeException('paid_resume_invalid_line');
@@ -24,6 +25,9 @@ function achbotContinuePaidAccount(mysqli $db,int $payId,int $ordinal,array $req
     $q->bind_param('ii',$payId,$ordinal);$q->execute();
     $e=$q->get_result()->fetch_assoc();$q->close();
     if ($e===null) {
+        // Recovery callers that require an already committed native operation
+        // must NEVER fall through to a fresh CREATE after concurrent deletion.
+        if ($existingOnly) throw new RuntimeException('paid_resume_original_line_missing');
         // The original per-pay-line UNIQUE and committed whole-count hold
         // still enforce one CREATE. A missing line is not a replay.
         return achbotCreatePaidAccount($db,$payId,$ordinal,$request);
@@ -204,4 +208,202 @@ function achbotResumePaidPurchaseDelivery(mysqli $db,int $payId,int $actor): arr
         }
     }
     return $out;
+}
+
+/**
+ * Issue #117: Owner-reconciled, already-dispatched wallet BUY_SUB recovery.
+ * Only a COMPLETE original CREATE manifest is admitted. No new native CREATE,
+ * wallet debit, capacity hold, merchant settlement or speculative delivery.
+ */
+/** Read-only admission. Treat uncertainty as ineligible, not as absence. */
+function achbotWalletBuyRecoverySnapshot(mysqli $db,int $payId,bool $lock=false): ?array {
+    require_once __DIR__.'/DeliveryLedger.php';
+    require_once __DIR__.'/RecoveryInspection.php';
+    if ($payId<=0 || !achbotDeliverySchemaReady($db)) return null;
+    achbotEffectRequireUniqueLine($db);
+    $suffix=$lock?' FOR UPDATE':'';
+    $q=$db->prepare('SELECT p.*,s.server_id AS plan_server,s.inbound_id AS plan_inbound,'.
+        'c.type AS panel_type FROM pays p JOIN server_plans s ON s.id=p.plan_id '.
+        'JOIN server_config c ON c.id=p.server_id WHERE p.id=?'.$suffix);
+    $q->bind_param('i',$payId);$q->execute();$pay=$q->get_result()->fetch_assoc();$q->close();
+    if (!$pay || $pay['type']!=='BUY_SUB' || $pay['state']!=='processing_wallet' ||
+        (int)$pay['user_id']<=0 || (int)$pay['price']<=0 ||
+        (int)$pay['plan_id']<=0 || (int)$pay['server_id']<=0 ||
+        (int)$pay['agent_count']<0 ||
+        (int)$pay['plan_server']!==(int)$pay['server_id'] ||
+        (int)$pay['plan_inbound']!==0 ||
+        !in_array((string)$pay['panel_type'],['marzban','pasarguard'],true) ||
+        (string)($pay['payid']??'')!=='') return null;
+    $count=max(1,(int)$pay['agent_count']);
+    // Wallet buyers were directly debited in the original wallet claim. An
+    // existing provider attempt means this is NOT that original funding path.
+    $q=$db->prepare('SELECT id FROM payment_attempts WHERE pay_row_id=? LIMIT 1'.$suffix);
+    $q->bind_param('i',$payId);$q->execute();$attempt=$q->get_result()->fetch_assoc();$q->close();
+    if ($attempt) return null;
+    $q=$db->prepare('SELECT * FROM service_effects WHERE pay_row_id=? '.
+        'ORDER BY ordinal,effect_kind'.$suffix);
+    $q->bind_param('i',$payId);$q->execute();$effects=$q->get_result()->fetch_all(MYSQLI_ASSOC);$q->close();
+    if (count($effects)!==$count+1) return null;
+    $hold=$effects[0];
+    if ($hold['effect_kind']!=='wallet_hold' || (int)$hold['ordinal']!==0 ||
+        $hold['state']!=='consumed' || (int)$hold['reserved_count']!==$count ||
+        (int)$hold['target_server_id']!==(int)$pay['server_id'] ||
+        (int)$hold['plan_id']!==(int)$pay['plan_id'] ||
+        $hold['order_id']!==null || (int)$hold['requested_expire']!==0 ||
+        (int)$hold['requested_bytes']!==0) return null;
+    $lines=[];
+    foreach (array_slice($effects,1) as $index=>$e) {
+        $ordinal=$index+1;
+        $bytes=achbotRecoveryExactInt($e['requested_bytes']);
+        if ($e['effect_kind']!=='create' || (int)$e['ordinal']!==$ordinal ||
+            !in_array($e['state'],['dispatching','verified'],true) ||
+            $e['order_id']!==null || (int)$e['reserved_count']!==0 ||
+            (int)$e['target_server_id']!==(int)$pay['server_id'] ||
+            (int)$e['plan_id']!==(int)$pay['plan_id'] ||
+            $e['target_group_id']!==$hold['target_group_id'] ||
+            (string)$e['target_key']!==(string)$hold['target_key'] ||
+            (string)$e['endpoint_sha256']!==(string)$hold['endpoint_sha256'] ||
+            !achbotEffectValidUsername((string)$e['remote_username']) ||
+            preg_match('/^[a-f0-9]{32}$/D',(string)$e['operation_id'])!==1 ||
+            (int)$e['requested_expire']<=time() || $bytes===null ||
+            $bytes<=0 || $bytes%1073741824!==0 ||
+            !is_string($e['request_sha256']) || strlen($e['request_sha256'])!==64)
+            return null;
+        $lines[$ordinal]=$e;
+    }
+    // The physical target is a provider-verified identity checked independently
+    // by each original-effect GET; mutable display settings are not proof.
+    return ['pay'=>$pay,'hold'=>$hold,'lines'=>$lines,'count'=>$count];
+}
+
+/** Compare only immutable fields: native readback may verify an effect. */
+function achbotWalletBuyRecoveryPin(array $snapshot): string {
+    $pay=$snapshot['pay'];$hold=$snapshot['hold'];
+    $keys=['id','effect_kind','ordinal','operation_id','reserved_count',
+        'target_server_id','target_group_id','target_key','endpoint_sha256',
+        'plan_id','remote_username','requested_expire','requested_bytes','request_sha256'];
+    $pick=static function(array $row) use($keys): array {
+        $out=[];foreach($keys as $key) $out[$key]=(string)($row[$key]??'');return $out;
+    };
+    return hash('sha256',json_encode([
+        'payment'=>achbotPaymentEvidencePayFingerprint($pay),
+        'provider'=>(string)$pay['panel_type'],'count'=>$snapshot['count'],
+        'hold'=>$pick($hold),
+        'lines'=>array_map($pick,$snapshot['lines'])
+    ],JSON_THROW_ON_ERROR));
+}
+
+function achbotWalletBuyRecoverable(mysqli $db,int $payId): bool {
+    try {return achbotWalletBuyRecoverySnapshot($db,$payId)!==null;}
+    catch (Throwable $ignored) {return false;}
+}
+
+/**
+ * Owner-only caller must authenticate before invoking. Both provider paths
+ * read back the ORIGINAL marker; never call CREATE for an absent ordinal.
+ */
+function achbotResumeWalletBuy(
+    mysqli $db,int $payId,array $botState,array $buttonValues,string $botUrl,
+    ?callable $marzbanRead=null
+): array {
+    achbotEffectRequireAutocommit($db);
+    $first=achbotWalletBuyRecoverySnapshot($db,$payId);
+    if ($first===null) throw new RuntimeException('wallet_recovery_manifest_unavailable');
+    $pay=$first['pay'];$count=$first['count'];$original=achbotWalletBuyRecoveryPin($first);
+    $owner=(int)$pay['user_id'];$server=(int)$pay['server_id'];
+    [$serverInfo,$serverConfig]=getServerInfoAndConfig($db,$server);
+    if ((string)($serverConfig['type']??'')!==(string)$pay['panel_type'])
+        throw new RuntimeException('wallet_recovery_provider_changed');
+    $lines=[];
+    foreach ($first['lines'] as $ordinal=>$effect) {
+        $volume=intdiv((int)$effect['requested_bytes'],1073741824);
+        $issued=strtotime((string)$effect['created_at']);
+        if ($issued===false || $issued<=0) throw new RuntimeException('wallet_recovery_issue_time_invalid');
+        $days=max(1,(int)round(((int)$effect['requested_expire']-$issued)/86400));
+        // The complete original manifest was checked BEFORE every call.
+        // existingOnly forbids the helper's new-CREATE fallback even if an
+        // unusual concurrent ledger deletion occurs after this snapshot.
+        [$remote,$name,$port,$effectId]=achbotContinuePaidAccount($db,$payId,$ordinal,[
+            'user_id'=>$owner,'server_type'=>(string)$pay['panel_type'],
+            'server_id'=>$server,'inbound_id'=>0,'plan_id'=>(int)$pay['plan_id'],
+            'remark'=>(string)$effect['remote_username'],'volume'=>$volume,
+            'days'=>$days,'uniqid'=>'','protocol'=>'','port'=>0,
+            'expire_microdate'=>0,'net_type'=>'','rahgozar'=>0,'limitip'=>0
+        ],$marzbanRead,true);
+        if (!is_object($remote) || ($remote->success??false)!==true ||
+            $name!==$effect['remote_username'] || $effectId!==(int)$effect['id'])
+            throw new RuntimeException('wallet_recovery_original_not_proven');
+        [$token,$links,$uuid,$caption,$keys,$qr]=buildLinksAndSendQr(
+            (string)$pay['panel_type'],$serverConfig,$botState,$botUrl,
+            $server,'','',$name,$port,'',0,0,'','','',
+            $remote,$owner,$volume,$days,$buttonValues,[],false,'',null,false);
+        if (!is_string($token) || ($pay['panel_type']==='marzban' && $token==='') ||
+            !is_string($links) || $links==='' || !is_string($caption) ||
+            trim($caption)==='' || !is_string($qr) || !is_string($keys))
+            throw new RuntimeException('wallet_recovery_packet_unavailable');
+        $lines[$ordinal]=['effect_id'=>$effectId,'token'=>$token,'links'=>$links,
+            'uuid'=>$uuid?:$token,'caption'=>$caption,'keys'=>$keys,'qr'=>$qr,
+            'remark'=>$name];
+    }
+
+    $started=false;
+    try {
+        if (!$db->begin_transaction()) throw new RuntimeException('wallet_recovery_finish_begin');
+        $started=true;
+        $after=achbotWalletBuyRecoverySnapshot($db,$payId,true);
+        if (!$after || !hash_equals($original,achbotWalletBuyRecoveryPin($after)))
+            throw new RuntimeException('wallet_recovery_identity_changed');
+        foreach ($after['lines'] as $ordinal=>$effect) {
+            if ($effect['state']!=='verified' ||
+                (int)($lines[$ordinal]['effect_id']??0)!==(int)$effect['id'])
+                throw new RuntimeException('wallet_recovery_effect_not_verified');
+        }
+        $q=$db->prepare("INSERT INTO payment_attempts
+            (pay_row_id,provider,order_hash,quote_amount,quote_currency,
+             local_amount_toman,stage,provider_status)
+            VALUES (?,'wallet',?,?,'toman',?,'completed','wallet_debited')");
+        $hash=(string)$pay['hash_id'];$amount=(int)$pay['price'];
+        $q->bind_param('isii',$payId,$hash,$amount,$amount);
+        if (!$q->execute() || $q->affected_rows!==1)
+            throw new RuntimeException('wallet_recovery_local_attempt_unconfirmed');
+        $q->close();
+        $q=$db->prepare('SELECT * FROM payment_attempts WHERE pay_row_id=? FOR UPDATE');
+        $q->bind_param('i',$payId);$q->execute();$attempt=$q->get_result()->fetch_assoc();$q->close();
+        if (!$attempt || $attempt['provider']!=='wallet')
+            throw new RuntimeException('wallet_recovery_local_attempt_invalid');
+        foreach ($after['lines'] as $ordinal=>$effect) {
+            $line=$lines[$ordinal];
+            $orderId=insertOrder($db,$owner,(string)$line['token'],(int)$pay['plan_id'],
+                $server,0,(string)$line['remark'],(string)$line['uuid'],
+                (int)$effect['requested_expire'],(string)$line['links'],
+                achbotAllocateOrderAmount($amount,$count,$ordinal),time(),
+                (int)($pay['agent_bought']??0),true);
+            achbotLinkPaidAccountEffect($db,(int)$effect['id'],$orderId);
+            achbotDeliveryInsertWalletBuyLocked($db,$pay,$attempt,$effect,$first['hold'],
+                $ordinal,$orderId,['uid'=>$owner,'qr'=>$line['qr'],
+                'caption'=>$line['caption'],'keys'=>$line['keys'],'bot_url'=>$botUrl]);
+        }
+        $q=$db->prepare("UPDATE pays SET state='paid_with_wallet'
+            WHERE id=? AND user_id=? AND type='BUY_SUB' AND state='processing_wallet'");
+        $q->bind_param('ii',$payId,$owner);
+        if (!$q->execute() || $q->affected_rows!==1)
+            throw new RuntimeException('wallet_recovery_finish_state_unknown');
+        $q->close();
+        if (!$db->commit()) throw new RuntimeException('wallet_recovery_finish_commit_unknown');
+        $started=false;
+    } catch (Throwable $error) {
+        if ($started) try {$db->rollback();} catch(Throwable $ignored) {}
+        throw $error;
+    }
+    // No Telegram before the WHOLE original order and sealed packets COMMIT.
+    // A concurrent, unknown or acknowledged packet is never retried.
+    // If the post-commit dispatch query fails, preserve confirmed order finality:
+    // Owner can inspect/send only still-PENDING packets via Delivery Recovery.
+    $delivery=[];
+    try {$delivery=achbotDeliveryDispatchPending($db,$payId);}
+    catch (Throwable $error) {
+        error_log('achbot_wallet_recovery_delivery_deferred pay_id='.$payId.
+            ' class='.get_class($error));
+    }
+    return ['committed'=>true,'delivery'=>$delivery,'count'=>$count];
 }

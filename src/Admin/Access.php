@@ -153,7 +153,7 @@ function achbotAdminRequestCapability(string $value): ?string {
         'admin'=>'~^managePanel$~D',
         'admins'=>'~^(?:adminsList|addNewAdmin|delAdmin|adminRole\\||adminAssign\\||adminNotify\\|)~D',
         'review'=>'~^attention(?:Inbox|Case)~D',
-        'owner_recovery'=>'~^(?:npReview|npDecision|bankReview|delivery|serviceRecovery)~D',
+        'owner_recovery'=>'~^(?:npReview|npDecision|bankReview|delivery|serviceRecovery|walletBuyResume_)~D',
         'gateways'=>'~^(?:gateWays_Channels|changeGateWays|changePaymentKeys|achbotPaymentKey\\||gatewayAudienceSettings|cycleGatewayAudience_|paymentPolicy|editPaymentPolicy_|gr\\||editcartToCartAutoAcceptTime)~D',
         'bot_settings'=>'~^(?:botSettings|changeBot|changeUpdateConfigLinkState|changeConfigRemarkType|editSupportID|editRewardChannel|editLockChannel|inviteSetting|inviteBanner|editInvite|editRewaredTime|addExemptUser|removeExempt|achbotExempt:|ic\\||achbotInstance:)~D',
         'stats'=>'~^(?:botReports|show_stats_menu|stats_|top_50_|agent_users_list|plan_sales|server_sales|custom_sales_date|awaitingDateRange)~D',

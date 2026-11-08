@@ -3473,6 +3473,47 @@ def run_funding(tmp: str) -> tuple[dict, dict]:
             wallet_create.get('provider_real_requests')==0 and
             wallet_create.get('production_mutations')==0):
         raise RuntimeError('Wallet creation replay/debit safety incomplete')
+    recovery_path=Path(tmp)/"wallet-original-recovery.json"
+    wallet_recovery_run=subprocess.run(
+        ["python3",str(ROOT/"tools/test_post_v9_wallet_recovery.py"),
+         "--report",str(recovery_path)],
+        cwd=ROOT,capture_output=True,text=True,timeout=170)
+    if wallet_recovery_run.returncode!=0:
+        raise RuntimeError("Original wallet recovery native acceptance failed:\n"
+            +wallet_recovery_run.stderr[-5000:])
+    wallet_recovery=json.loads(recovery_path.read_text())
+    required_wallet_recovery={
+        'lost_native_response_reuses_original_verified_account_without_post_or_second_debit',
+        'repeated_owner_resume_never_relinks_or_resends',
+        'sealed_wallet_packet_passes_original_delivery_integrity_check',
+        'verified_native_unlinked_finalizes_without_create',
+        'foreign_native_marker_keeps_original_wallet_hold_for_review',
+        'exact_original_native_proof_can_complete_after_mismatch',
+        'telegram_unknown_is_durable_and_not_automatically_resent',
+        'missing_original_bulk_ordinal_cannot_invoke_new_post',
+        'tampered_wallet_capacity_hold_fails_before_remote_get',
+        'foreign_provider_attempt_cannot_be_wallet_recovery_proof',
+        'pg_original_by_username_native_get_seals_original_wallet_order',
+        'pg_original_pinned_by_id_readback_never_posts_again',
+        'pg_missing_and_foreign_original_native_hold_without_repost_or_finance',
+        'pg_verified_original_continuation_after_resolving_native_mismatch',
+        'pg_two_complete_original_accounts_atomically_link_and_seal_both_packets',
+        'pg_complete_bulk_second_native_mismatch_cannot_partially_finalize',
+        'pg_complete_bulk_second_sql_failure_rolls_back_all_local_finality',
+        'pg_complete_bulk_post_rollback_reconciles_original_without_duplicate_post',
+        'owner_route_rejects_foreign_actor_without_get_finance_or_delivery',
+        'owner_route_rejects_nonprivate_chat_without_get_finance_or_delivery',
+        'owner_route_success_offers_only_valid_delivery_and_inbox_navigation',
+    }
+    if not (wallet_recovery.get('complete') is True and
+            set(wallet_recovery.get('scenarios',[]))==required_wallet_recovery and
+            wallet_recovery.get('source_real') is True and
+            wallet_recovery.get('php85_required') is True and
+            wallet_recovery.get('disposable_mariadb') is True and
+            wallet_recovery.get('original_native_post_replays')==0 and
+            wallet_recovery.get('original_wallet_duplicate_debits')==0):
+        raise RuntimeError('Original wallet source-real recovery evidence incomplete')
+    wallet_create['original_recovery']=wallet_recovery
     nonpaid_path=Path(tmp)/"trial-bulk-native.json"
     native_nonpaid=subprocess.run(
         ["python3",str(ROOT/"tools/test_post_v9_nonpaid_routes.py"),
