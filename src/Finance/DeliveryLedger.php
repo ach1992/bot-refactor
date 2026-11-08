@@ -161,7 +161,8 @@ function achbotDeliveryHostedBuyDigest(
     $replacement=(string)$effect['effect_kind']==='replacement';
     if ($replacement && ((int)($effect['actor_userid']??0)<=0 ||
         !in_array((string)($effect['reconciliation_reason']??''),
-            ['original_missing','original_unavailable','original_mismatch','original_invalid'],true) ||
+            ['original_missing','original_missing_proven','original_unavailable',
+             'original_mismatch','original_invalid'],true) ||
         preg_match('/^[a-f0-9]{64}$/D',
             (string)($effect['reconciliation_fingerprint']??''))!==1)) return null;
     $digestParts=[

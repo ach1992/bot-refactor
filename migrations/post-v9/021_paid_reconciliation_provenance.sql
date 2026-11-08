@@ -9,6 +9,7 @@ ALTER TABLE service_effects
   ADD replaces_effect_id BIGINT UNSIGNED DEFAULT NULL,
   ADD reconciliation_reason VARCHAR(40) COLLATE utf8mb4_bin DEFAULT NULL,
   ADD reconciliation_fingerprint CHAR(64) COLLATE utf8mb4_bin DEFAULT NULL,
+  ADD reconciliation_evidence_status VARCHAR(40) COLLATE utf8mb4_bin DEFAULT NULL,
   ADD reconciliation_observed_at DATETIME DEFAULT NULL,
   ADD UNIQUE KEY uq_effect_one_replacement(replaces_effect_id),
   ADD CONSTRAINT fk_effect_original_replacement FOREIGN KEY (replaces_effect_id)

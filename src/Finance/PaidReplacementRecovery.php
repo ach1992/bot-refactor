@@ -13,7 +13,7 @@ require_once __DIR__.'/../Admin/Access.php';
 function achbotHostedReplacementSchemaReady(mysqli $db): bool {
     try {
         $q=$db->query('SELECT replaces_effect_id,reconciliation_reason,reconciliation_fingerprint,'.
-            'reconciliation_observed_at,actor_userid FROM service_effects LIMIT 0');
+            'reconciliation_evidence_status,reconciliation_observed_at,actor_userid FROM service_effects LIMIT 0');
         if (!$q) return false;
         $q->free();
         $q=$db->query("SHOW TABLE STATUS WHERE Name='service_effects'");
@@ -62,12 +62,17 @@ function achbotHostedReconciliationSnapshot(mysqli $db,int $payId,bool $lock=fal
     if ($anchor!==null && ((int)$anchor['reserved_count']!==$count ||
         (int)$anchor['target_server_id']!==(int)$pay['server_id'] ||
         (int)$anchor['plan_id']!==(int)$pay['plan_id'])) return null;
-    // No original first capacity owner: only a new *first* replacement may
-    // acquire the entire unreserved count. Other rows cannot claim capacity.
+    // 007 atomically commits the full-count reservation on ordinal one.
+    // A surviving later CREATE (only possible after a valid first reservation
+    // in this source contract) is NOT evidence that capacity was unreserved.
+    // Later original effects must have zero independent capacity; a missing
+    // ordinal one can be replaced without a second debit only after strict,
+    // independently authenticated Native GET of ALL surviving originals.
     if ($anchor===null) {
         foreach ($original as $row) if ((int)$row['reserved_count']!==0) return null;
     }
-    $first=$anchor??($replacement[1]??null);
+    $first=$anchor??($replacement[1]??null)??reset($original);
+    if ($first===false) $first=null;
     $lines=[];$seenOrders=[];
     for ($ordinal=1;$ordinal<=$count;$ordinal++) {
         $o=$original[$ordinal]??null;$r=$replacement[$ordinal]??null;
@@ -77,12 +82,23 @@ function achbotHostedReconciliationSnapshot(mysqli $db,int $payId,bool $lock=fal
             if (!in_array((string)$r['state'],['dispatching','verified','local_recorded'],true) ||
                 (int)($r['actor_userid']??0)<=0 ||
                 !in_array((string)$r['reconciliation_reason'],
-                    ['original_missing','original_unavailable','original_mismatch','original_invalid'],true) ||
+                    ['original_missing','original_missing_proven','original_unavailable',
+                     'original_mismatch','original_invalid'],true) ||
                 preg_match('/^[a-f0-9]{64}$/D',(string)$r['reconciliation_fingerprint'])!==1 ||
+                !in_array((string)($r['reconciliation_evidence_status']??''),
+                    ['missing','original_capacity_verified','invalid','remote_unavailable',
+                     'remote_mismatch','target_or_identity_changed',
+                     'changed_during_inspection','unknown'],true) ||
                 !is_string($r['reconciliation_observed_at']) ||
                 (int)$r['target_server_id']!==(int)$pay['server_id'] ||
                 (int)$r['plan_id']!==(int)$pay['plan_id'] ||
-                (int)$r['reserved_count']!==(int)($ordinal===1 && $anchor===null?$count:0) ||
+                (int)$r['reserved_count']!==(int)($ordinal===1 && $anchor===null &&
+                    !$original?$count:0) ||
+                ($ordinal===1 && $anchor===null && $original &&
+                    ((string)$r['reconciliation_reason']!=='original_missing_proven' ||
+                     (string)$r['reconciliation_evidence_status']!=='original_capacity_verified')) ||
+                ($ordinal===1 && $anchor===null && !$original &&
+                    (string)$r['reconciliation_reason']==='original_missing_proven') ||
                 ($o===null ? $r['replaces_effect_id']!==null :
                     (int)$r['replaces_effect_id']!==(int)$o['id'])) return null;
         }
@@ -162,7 +178,7 @@ function achbotHostedReconciliationPin(array $snapshot): string {
             'endpoint_sha256','plan_id','remote_username','requested_expire',
             'requested_bytes','request_sha256','replaces_effect_id',
             'reconciliation_reason','reconciliation_fingerprint',
-            'actor_userid','provider_snapshot','provider_mutation_key',
+            'reconciliation_evidence_status','actor_userid','provider_snapshot','provider_mutation_key',
             'provider_mutation_snapshot'] as $key) $copy[$key]=(string)($row[$key]??'');
         $rows[]=$copy;
     }
@@ -188,6 +204,23 @@ function achbotHostedReplacementEvidence(mysqli $db,int $payId,int $ordinal,
     // A missing first capacity record is special: do not guess that another
     // existing native account is an original, even when usernames coincide.
     $reason='original_missing';$status='missing';
+    if ($original===null && $ordinal===1 && $snap['original']) {
+        // Losing the original first 007 source row MUST NOT re-decrement
+        // capacity when later 007 rows survive. 007 could not legitimately
+        // emit those later ordinals without previously committing its first
+        // full-count capacity owner. Authenticate all later native accounts
+        // and let staff explicitly attest that proof before any new CREATE.
+        $reader=$marzbanRead??'achbotRecoveryStrictAccountGet';
+        foreach ($snap['original'] as $existingOrdinal=>$existing) {
+            if ($snap['lines'][$existingOrdinal]===null) return null;
+            try {$check=achbotRecoveryInspectPaidLine($db,$payId,
+                (int)$existingOrdinal,$reader);}
+            catch(Throwable $ignored) {return null;}
+            if (($check['status']??null)!=='matching_observation') return null;
+        }
+        $reason='original_missing_proven';
+        $status='original_capacity_verified';
+    }
     if ($original!==null) {
         if ($snap['lines'][$ordinal]===null) {
             $reason='original_invalid';$status='invalid';
@@ -322,13 +355,24 @@ function achbotHostedCreateReconciledReplacement(
         $firstReplacement=$locked['replacement'][1]??null;
         if ($capacityOriginal!==null || $firstReplacement!==null) {
             $anchor=$capacityOriginal??$firstReplacement;
-            if ((int)$anchor['reserved_count']!==$count ||
+            $expectedHold=$capacityOriginal!==null || !$locked['original']?$count:0;
+            if ((int)$anchor['reserved_count']!==$expectedHold ||
                 (int)$anchor['target_server_id']!==$server ||
                 (int)$anchor['plan_id']!==$planId ||
                 ($anchor['target_group_id']===null?null:(int)$anchor['target_group_id'])!==$group ||
                 !hash_equals((string)$anchor['endpoint_sha256'],$endpoint) ||
                 (string)$anchor['target_key']!==$targetKey)
                 throw new RuntimeException('replacement_capacity_owner_changed');
+            $reserve=0;
+        } elseif ($locked['original']) {
+            // An authenticated later original implies original ordinal 1
+            // previously consumed capacity under 007 source invariants.
+            // Never debit it a second time merely because owner history was
+            // damaged. Both the reason and the GET-backed confirmation are
+            // bound to this source/actor and frozen in the replacement row.
+            if ($ordinal!==1 || $evidence['reason']!=='original_missing_proven' ||
+                $evidence['status']!=='original_capacity_verified')
+                throw new RuntimeException('replacement_missing_capacity_proof');
             $reserve=0;
         } else {
             if ($ordinal!==1)
@@ -347,20 +391,25 @@ function achbotHostedCreateReconciledReplacement(
         $reconciliation=hash('sha256',json_encode([
             'paid-replacement:v1',$evidence['stamp'],$evidence['reason'],
             $actor,$payId,$ordinal,$original['id']??null,
-            $count,$targetKey,$endpoint,$bytes,$days
+            $count,$targetKey,$endpoint,$bytes,$days,$evidence['status']
         ],JSON_THROW_ON_ERROR));
         $origId=$original===null?null:(int)$original['id'];
         $reason=$evidence['reason'];
+        $observed=(string)$evidence['status'];
+        if (!in_array($observed,['missing','original_capacity_verified','invalid',
+            'remote_unavailable','remote_mismatch',
+            'target_or_identity_changed','changed_during_inspection','unknown'],true))
+            throw new RuntimeException('replacement_unrecognized_remote_evidence');
         $q=$db->prepare("INSERT INTO service_effects
             (pay_row_id,ordinal,operation_id,effect_kind,target_server_id,target_group_id,
              target_key,endpoint_sha256,plan_id,remote_username,requested_expire,
              requested_bytes,request_sha256,reserved_count,state,actor_userid,
              replaces_effect_id,reconciliation_reason,reconciliation_fingerprint,
-             reconciliation_observed_at)
-            VALUES (?,?,?,'replacement',?,?,?,?,?,?,?,?,?,?,'dispatching',?,?,?,?,UTC_TIMESTAMP())");
-        $q->bind_param('iisiissisiisiiiss',$payId,$ordinal,$op,$server,$group,
+             reconciliation_evidence_status,reconciliation_observed_at)
+            VALUES (?,?,?,'replacement',?,?,?,?,?,?,?,?,?,?,'dispatching',?,?,?,?,?,UTC_TIMESTAMP())");
+        $q->bind_param('iisiissisiisiiisss',$payId,$ordinal,$op,$server,$group,
             $targetKey,$endpoint,$planId,$name,$expiry,$bytes,$fingerprint,
-            $reserve,$actor,$origId,$reason,$reconciliation);
+            $reserve,$actor,$origId,$reason,$reconciliation,$observed);
         if (!$q->execute() || $q->affected_rows!==1)
             throw new RuntimeException('replacement_reservation_unconfirmed');
         $effectId=(int)$q->insert_id;$q->close();

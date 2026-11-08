@@ -38,8 +38,13 @@ these source steps permits a live payment, Telegram send or SQL mutation.
 
 The next candidate adds a separate `021` journal provenance contract for an
 explicitly confirmed, once-only original-Hosted paid account replacement,
-including missing first original 007, gapped originals and foreign/orphan
-Native readback. The previous 003/007 evidence remains unchanged and
+including a truly empty original 007 manifest, internal gaps with a
+surviving first capacity claimant, and foreign/orphan Native readback.
+A missing first 007 *with surviving later originals* requires strict
+GET confirmation of every surviving original operation, a distinct stored
+capacity proof and an explicit payments-authorized staff confirmation;
+that path never reserves the original capacity twice. Unverified later
+Native identities fail closed without a second account POST or capacity debit. The previous 003/007 evidence remains unchanged and
 payment permission, **not solely Owner identity**, governs the private
 review/confirm workflow (including the pre-POST and terminal transaction
 recheck). Review is not proof of Native absence and prior remote effects

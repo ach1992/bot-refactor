@@ -494,7 +494,8 @@ try {
         '021' => [
             'service_effects'=>['columns'=>[
                 'replaces_effect_id','reconciliation_reason',
-                'reconciliation_fingerprint','reconciliation_observed_at'],
+                'reconciliation_fingerprint','reconciliation_evidence_status',
+                'reconciliation_observed_at'],
                 'unique'=>['uq_effect_one_replacement'=>['replaces_effect_id']]],
         ],
     ];

@@ -1211,15 +1211,15 @@ def run_wallet(tmp: str) -> tuple[dict, dict]:
             and text_catalog.get("native",{}).get("pre_style_privacy_corrections")==3
             and text_catalog.get("native",{}).get("actual_traffic_helper_parity_cases")==18
             and text_catalog.get("editable_catalog_files")==2
-            and text_catalog.get("logical_topics")==28+9
+            and text_catalog.get("logical_topics")==28+10
             and text_catalog.get("current_authorized_source_edits")==26
             and text_catalog.get("retired_parser_tokens")==23
             and text_catalog.get("relocation_source_ref")=="ecd30ba9192ed374703118a6c131be8809cc7b06"
             and text_catalog.get("native",{}).get("current_retired_feature_keys")==3
-            and text_catalog.get("catalog_keys")==2780+14+9+18+27+12+7+17+2+2+3+4+1+3
+            and text_catalog.get("catalog_keys")==2780+14+9+18+27+12+7+17+2+2+3+4+1+3+6
             and text_catalog.get("native",{}).get("editable_catalog_files")==2
-            and text_catalog.get("native",{}).get("logical_topics")==28+9
-            and text_catalog.get("native",{}).get("current_catalog_keys")==2780+14+9+18+27+12+7+17+2+2+3+4+1+3
+            and text_catalog.get("native",{}).get("logical_topics")==28+10
+            and text_catalog.get("native",{}).get("current_catalog_keys")==2780+14+9+18+27+12+7+17+2+2+3+4+1+3+6
             and text_catalog.get("native",{}).get("current_gift_admin_additions")==1
             and text_catalog.get("native",{}).get("current_gift_catalog_negative_controls")==8
             and text_catalog.get("native",{}).get("current_gift_catalog_negative_scenarios")==[
@@ -1248,10 +1248,10 @@ def run_wallet(tmp: str) -> tuple[dict, dict]:
             # exactly 3 keys, 3 source references and eight native template
             # assertions (including one parameterized object/one-pass text).
             # Preserve all earlier counters and negative controls.
-            and text_catalog.get("native",{}).get("current_native_template_assertions")==4120+24+9+139+42+7+2+3+9+1+8
-            and text_catalog.get("native",{}).get("current_object_conversion_templates")==268+2+15+5+1+1+1
-            and text_catalog.get("native",{}).get("current_shared_multi_parameter_templates")==66+1+14+5+1+1+1
-            and text_catalog.get("native",{}).get("current_one_pass_templates")==268+2+15+5+1+1+1
+            and text_catalog.get("native",{}).get("current_native_template_assertions")==4120+24+9+139+42+7+2+3+9+1+8+21
+            and text_catalog.get("native",{}).get("current_object_conversion_templates")==268+2+15+5+1+1+1+3
+            and text_catalog.get("native",{}).get("current_shared_multi_parameter_templates")==66+1+14+5+1+1+1+2
+            and text_catalog.get("native",{}).get("current_one_pass_templates")==268+2+15+5+1+1+1+3
             and text_catalog.get("native",{}).get("current_r5_changes")==273
             and text_catalog.get("native",{}).get("current_r5_retired_keys")==10
             and text_catalog.get("native",{}).get("current_r5_added_keys")==60
@@ -1259,7 +1259,7 @@ def run_wallet(tmp: str) -> tuple[dict, dict]:
             and text_catalog.get("native",{}).get("current_non_ascii_digit_templates")==0
             and text_catalog.get("presentation",{}).get("status")=="PASS"
             and text_catalog.get("presentation",{}).get("editable_files")==2
-            and text_catalog.get("presentation",{}).get("current_keys")==2780+14+9+18+27+12+7+17+2+2+3+4+1+3
+            and text_catalog.get("presentation",{}).get("current_keys")==2780+14+9+18+27+12+7+17+2+2+3+4+1+3+6
             and text_catalog.get("presentation",{}).get("numeric_template_changes")==23
             and text_catalog.get("presentation",{}).get("adjacent_emoji_violations")==0
             and text_catalog.get("presentation",{}).get("parameter_exception_count")==3
@@ -2219,6 +2219,7 @@ def run_authorization(tmp: str) -> tuple[dict, dict]:
         *('retired_runtime_member_blocks__'+name.replace('/','_').replace('.','_') for name in package.RETIRED_RUNTIME_MEMBERS-{'settings/tronChecker.php'}),
         'partial_003_unique_index_missing_blocks',
         'delivery_018_token_uniqueness_missing_blocks',
+        'replacement_021_unique_original_claim_missing_blocks',
         'wallet_telegram_event_key_missing_blocks',
         'wallet_telegram_event_key_nonunique_blocks',
         'wallet_cursor_nontransactional_storage_blocks',
@@ -3407,6 +3408,9 @@ def run_funding(tmp: str) -> tuple[dict, dict]:
         'lost_replacement_native_response_get_only_recovery_no_repost',
         'foreign_original_kept_auditable_and_replacement_preserves_capacity',
         'bulk_missing_ordinal_only_replacement_native_no_second_inventory_hold',
+        'noncontiguous_internal_gap_preserves_original_full_count_capacity_owner',
+        'missing_first_with_authenticated_later_original_reuses_prior_capacity_once',
+        'missing_first_later_native_foreign_blocks_second_capacity_claim',
         'staff_challenge_actor_identity_bound_owner_cannot_replay_delegate',
         'demoted_manager_old_signed_button_cannot_claim_new_native_account',
         'staff_private_preview_denies_nonstaff_and_nonprivate_without_side_effects',

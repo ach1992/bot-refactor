@@ -243,6 +243,42 @@ def check():
         assert finished['error'] is None and finished['orders']==2 and len(finished['delivery'])==2,finished
         assert sql(f"SELECT COUNT(*) FROM service_effects WHERE pay_row_id={pay} AND effect_kind='create'")=='1'
         cases.append('bulk_missing_ordinal_only_replacement_native_no_second_inventory_hold')
+        # Simulate legacy 007 journal damage on an *owned synthetic DB*:
+        # an internal noncontiguous gap is safe to reconcile because ordinal
+        # one still proves the exact full-count original capacity claimant.
+        pay=seed('internalgap',count=3,create_prefix=3,link_prefix=0)
+        assert balance()=='17:50000'
+        sql(f"DELETE FROM service_effects WHERE pay_row_id={pay} AND effect_kind='create' AND ordinal=2")
+        challenge=preview(pay,ordinal=2,actor=9002)
+        result=confirm(pay,challenge,ordinal=2,actor=9002)
+        assert result['error'] is None and rows(pay)=='1' and balance()=='17:50000',result
+        finished=run(pay)
+        assert finished['error'] is None and finished['orders']==3 and len(finished['delivery'])==3,finished
+        cases.append('noncontiguous_internal_gap_preserves_original_full_count_capacity_owner')
+        # Losing original ordinal one is NOT evidence of unreserved
+        # inventory when later 007 rows exist. The surviving ordinal must
+        # be strictly confirmed via Native GET; source 007 guarantees that
+        # creating it required an earlier full-count reservation. A second
+        # capacity decrement would be wrong even on explicit replacement.
+        pay=seed('missinganchor',count=2,create_prefix=2,link_prefix=0)
+        assert balance()=='18:50000'
+        sql(f"DELETE FROM service_effects WHERE pay_row_id={pay} AND effect_kind='create' AND ordinal=1")
+        challenge=preview(pay,actor=9002)
+        proof=run(pay,op='replacement_preview',actor=9002,ordinal=1)
+        assert proof['result']['reason']=='original_missing_proven' and \
+               proof['result']['status']=='original_capacity_verified',proof
+        completed=confirm(pay,challenge,actor=9002)
+        assert completed['error'] is None and rows(pay)=='1' and balance()=='18:50000',completed
+        assert ':0:9002' in effect(pay)
+        finished=run(pay)
+        assert finished['error'] is None and finished['orders']==2 and len(finished['delivery'])==2,finished
+        cases.append('missing_first_with_authenticated_later_original_reuses_prior_capacity_once')
+        pay=seed('brokenlater',count=2,create_prefix=2,link_prefix=0)
+        assert balance()=='18:50000'
+        sql(f"DELETE FROM service_effects WHERE pay_row_id={pay} AND effect_kind='create' AND ordinal=1")
+        denied=run(pay,op='replacement_preview',actor=9002,ordinal=1,native='wrong_note')
+        assert denied['result'] is None and rows(pay)=='0' and balance()=='18:50000',denied
+        cases.append('missing_first_later_native_foreign_blocks_second_capacity_claim')
         # An HMAC belonging to one staff member cannot authorize a different
         # person's replacement, even if the latter is the primary Owner.
         pay=seed('actorpin')

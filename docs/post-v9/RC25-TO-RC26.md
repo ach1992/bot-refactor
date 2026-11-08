@@ -159,16 +159,24 @@ and payment capability are rechecked inside the reservation and final SQL
 transactions, so old keyboards cannot grant actions after demotion.
 
 New additive, **not yet installed** migration `021_paid_reconciliation_provenance.sql`
-adds optional original-effect self-reference, immutable reason/fingerprint and
+adds optional original-effect self-reference, immutable reason/fingerprint,
+a bounded stored Native-check outcome and observed timestamp, and
 a unique source-original replacement claim to the existing 007 journal.
 A replacement gets an independent operation marker and `effect_kind=replacement`
 reservation **COMMITTED BEFORE** its first Native POST; any lost/ambiguous
 POST response requires GET-only reconciliation, never a second POST. The
 first committed original capacity claimant stays authoritative. Where there
 is genuinely no first original 007 capacity claimant, an explicitly authorized
-first replacement may reserve the complete original quantity once. This
-cannot be inferred from an ambiguous historical object without reviewing the
-actual installed schema, metadata and earlier journals. Later linked orders,
+first replacement reserves the complete original quantity once **only
+when the original 007 CREATE history is genuinely empty** under its atomic
+reservation-before-POST contract. If first 007 is missing while later original
+ordinals survive, capacity was already owned under 007's predecessor rule.
+This route must first authenticate **every** surviving original Native account
+via strict GET and the exact immutable operation marker. Only then can staff
+explicitly approve replacement ordinal one **without any new capacity debit**,
+while preserving the damaged/orphan original history. A later Native mismatch,
+timeout, unknown physical account, or failed authenticated GET **fails closed**;
+never infer prior capacity ownership merely from a damaged SQL row. Later linked orders,
 immutable encrypted 018 packets and original 003 closure are an atomic final
 SQL transaction, with `pending` Telegram delivery only after COMMIT.
 

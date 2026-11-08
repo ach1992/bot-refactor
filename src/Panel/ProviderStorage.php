@@ -264,7 +264,8 @@ function achbotProviderReserveAccount(mysqli $db,int $effectId,array $snapshot,s
          (!is_array($replacementProof) ||
           (int)($replacementProof['actor_userid']??0)<=0 ||
           !in_array((string)($replacementProof['reconciliation_reason']??''),
-              ['original_missing','original_unavailable','original_mismatch','original_invalid'],true) ||
+              ['original_missing','original_missing_proven','original_unavailable',
+               'original_mismatch','original_invalid'],true) ||
           preg_match('/^[a-f0-9]{64}$/D',
               (string)($replacementProof['reconciliation_fingerprint']??''))!==1)) ||
         $effect['remote_username']!==$username ||
