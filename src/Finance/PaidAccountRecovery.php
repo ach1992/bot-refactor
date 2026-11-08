@@ -251,6 +251,9 @@ function achbotWalletBuyLinkedOrder(
         !is_string($order['link']) || $order['link']==='' ||
         (string)$order['autoRenew']!=='off') return null;
     if ($pay['panel_type']==='pasarguard') {
+        // ProviderStorage is intentionally lazy-loaded by ordinary PG dispatch.
+        // Wallet recovery inspects linked orders BEFORE any provider GET.
+        achbotPgLoad();
         // The 012 provider incarnation must be the same linked effect and
         // original operation marker, not a coincidentally named subscription.
         $account=achbotProviderAccountByOrder($db,$orderId,$lock);
