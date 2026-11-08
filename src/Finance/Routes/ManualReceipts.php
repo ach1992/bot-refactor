@@ -446,15 +446,17 @@ if (preg_match('/^walletBuyResume_([1-9][0-9]{0,9})$/D',
         error_log('achbot_wallet_recovery_deferred pay_id='.$id.
             ' reason='.$reason['reason'].' cause='.$reason['class']);
     }
-    $body=$committed?achbotMessage('wallet_buy_recovery.committed'):
-        achbotMessage('wallet_buy_recovery.unavailable');
+    $body=$committed?achbotMessage(($summary && (int)$summary['ack']===(int)$summary['total'])
+            ? 'finance_workbench.status_completed'
+            : 'finance_workbench.status_delivery_unconfirmed'):
+        achbotMessage('service_workbench.unavailable');
     if ($committed && $summary) $body.="\n".achbotMessageHtml(
-        'wallet_buy_recovery.delivery_status',[
+        'delivery_recovery.summary',[
             'total'=>$summary['total'],'ack'=>$summary['ack'],
             'pending'=>$summary['pending'],'unknown'=>$summary['unknown'],
             'dispatching'=>$summary['dispatching']]);
     $buttons=[];
-    if ($committed) $buttons[]=[['text'=>achbotMessage('delivery_recovery.back'),
+    if ($committed) $buttons[]=[['text'=>achbotMessage('delivery_recovery.open'),
         'callback_data'=>'deliveryCase_'.$id]];
     $buttons[]=[['text'=>achbotMessage('service_workbench.back'),
         'callback_data'=>'serviceRecoveryCase_'.$id]];
@@ -571,9 +573,9 @@ if (preg_match('/^serviceRecovery(Inbox|Case)(?:_([1-9][0-9]{0,17}))?$/D',
             if ($pay['type']==='BUY_SUB' && $pay['state']==='processing_wallet') {
                 require_once __DIR__.'/../PaidAccountRecovery.php';
                 if (achbotWalletBuyRecoverable($connection,$id)) {
-                    $buttons[]=[['text'=>achbotMessage('wallet_buy_recovery.resume'),
+                    $buttons[]=[['text'=>achbotMessage('service_recovery_action.resume_purchase'),
                         'callback_data'=>'walletBuyResume_'.$id]];
-                    $body.="\n".achbotMessage('wallet_buy_recovery.warning');
+                    $body.="\n".achbotMessage('service_recovery_action.resume_warning');
                 }
             }
             if ($canResume) {
