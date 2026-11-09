@@ -95,7 +95,7 @@ def _authorized_ui_pairs(manifest,followups,definitions,r5):
     # Historic V9 UI parity is evaluated against the *approved RC26*
     # snapshot after strict successor removal/new-copy validation; the
     # actual runtime never loads the retired workbench keys.
-    pre_cleanup=r5_catalog.current_cleanup_restore(sides)
+    pre_cleanup=r5_catalog.current_cleanup_restore(r5_catalog.gift_precheck_copy_restore(sides))
     old_group_copy=r5_catalog.chili_copy_restore(
         r5_catalog.panel_group_copy_restore(pre_cleanup))
     current={**old_group_copy['user'],**old_group_copy['admin']}

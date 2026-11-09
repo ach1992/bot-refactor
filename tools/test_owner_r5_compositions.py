@@ -69,7 +69,7 @@ def display_context_baseline():
 def display_context_followup_proof(current):
     # Exactly seven new admin entries relative to the accepted 7489946 source.
     # Existing entries, audiences, params and earlier amendment layers stay exact.
-    current,_=r5.verify_api_and_restore(r5.panel_group_copy_restore(current))
+    current,_=r5.verify_api_and_restore(r5.panel_group_copy_restore(current),from_r5=True)
     baseline=display_context_baseline();record=r5.manifest()
     check(set(current['user'])==set(baseline['user'])
           and set(current['admin'])==set(baseline['admin'])|set(DISPLAY_CONTEXT_ENTRIES)|set(SIMPLE_DISPLAY_ENTRIES),
@@ -114,8 +114,8 @@ STAFF_GUIDE_AFTER='پشتیبان: اطلاعات کاربر، مسدودساز�
 def staff_followup_proof(current,archived):
     # New notification entries and this one role sentence have separate,
     # explicit lineage; they never change the 22 historical corrections.
-    record=r5.manifest();r5.verify_and_restore(current,record)
-    current,_=r5.verify_api_and_restore(r5.panel_group_copy_restore(current))
+    record=r5.manifest();r5.verify_and_restore(current,record,from_verified_current=True)
+    current,_=r5.verify_api_and_restore(r5.panel_group_copy_restore(current),from_r5=True)
     added={key for audience,rows in current.items()for key in rows if key not in archived[audience]}
     check(added==NOTIFICATION_KEYS|set(DISPLAY_CONTEXT_ENTRIES)|set(SIMPLE_DISPLAY_ENTRIES),'notification_catalog_addition_scope_drift')
     check(all(set(archived[a])-set(SETTINGS_RETIRED_ENTRIES)<=set(current[a])for a in archived),'staff_followup_removed_historical_entry')
@@ -439,10 +439,10 @@ def audit(source_root=ROOT,catalog_root=ROOT):
         # The successor's new bounded inbox is checked by the cleanup
         # overlay. Historical layered corrections must run against the
         # restored RC26 catalog, never a partially restored hybrid.
-        historical_catalogs=r5.current_cleanup_restore(current_catalogs)
+        historical_catalogs=r5.current_cleanup_restore(r5.gift_precheck_copy_restore(current_catalogs))
         correction_count=correction_proof(historical_catalogs,archived_catalogs)
-        _,api_proof=r5.verify_api_and_restore(r5.panel_group_copy_restore(historical_catalogs))
-        api_controls=r5.api_negative_controls(r5.panel_group_copy_restore(historical_catalogs))
+        _,api_proof=r5.verify_api_and_restore(r5.panel_group_copy_restore(historical_catalogs),from_r5=True)
+        api_controls=r5.api_negative_controls(r5.panel_group_copy_restore(historical_catalogs),from_r5=True)
         staff_controls=staff_followup_negative_controls(historical_catalogs,archived_catalogs)
         display_context_controls=display_context_negative_controls(historical_catalogs)
     # Existing private-failure composition: this value comes from update_id,

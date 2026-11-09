@@ -94,6 +94,9 @@ elseif($op==='budget'){$deadline=hrtime(true)/1000000000+(float)$spec['seconds']
 elseif($op==='ack'){if(!empty($spec['pre_check']))achbotApiPaymentCheck($connection,$id);try{achbotManualAcknowledgeAndVerify($connection,$pay,(string)achbotApiPaymentAttempt($connection,$id)['provider'],'Start','FixtureBot');$value=['threw'=>false];}catch(Throwable $e){$value=['threw'=>true];}}
 elseif($op==='review_keys')$value=json_decode(achbotApiPaymentReviewKeyboard($pay),true);
 elseif($op==='fits')$value=achbotManualGiftReviewFits($spec['caption'],$spec['code']);
+elseif($op==='gift_plain')$value=html_entity_decode(
+    strip_tags(achbotManualGiftReviewText($spec['caption'],$spec['code'])),
+    ENT_QUOTES|ENT_HTML5,'UTF-8');
 elseif($op==='rawsave')$value=achbotPaymentEvidenceSaveGiftCode($connection,$id,1001,$spec['code']);
 elseif($op==='save'){$value=achbotPaymentEvidenceSaveGiftCode($connection,$id,1001,$spec['code']);if(($value['status']??'')==='saved'){$v=achbotManualBeginEvidence($connection,$pay,'gift_card',1001,$spec['code']);if(!$v||!achbotManualFinishEvidence($connection,$pay['hash_id'],$spec['code'],$v,222,9001))throw new RuntimeException('fixture_gift_review_delivery_failed');}}
 elseif($op==='timer')$value=['eligible'=>achbotAutoBankEligible($connection,$pay),'claimed'=>achbotAutoBankClaim($connection,$pay)];
@@ -325,8 +328,14 @@ return !empty($GLOBALS['spec']['fail_staff'])?null:(object)['ok'=>true];}""")
         assert query(work,env,f"SELECT evidence_code IS NULL AND stage='pending' AND review_notice_claim_token IS NULL FROM payment_attempts WHERE pay_row_id={n}")=='1'
         assert any('در یک پیام جا نمی' in str(e.get('args')) for e in r['events']),r
         cases.append('oversized_code_rejected_before_storage_or_delivery_claim')
-        caption='<b>سفارش 😀</b>';label='کد گیفت‌کارت:'
-        limit=4096-len(('سفارش 😀'+'\n\n'+label+'\n').encode('utf-16-le'))//2
+        caption='<b>سفارش 😀</b>'
+        # Use the actual current staff message including the three metadata
+        # labels and their explicit missing-value copy; no fixed old-caption
+        # assumptions or smaller Telegram allowance may pass unnoticed.
+        plain=call(op='gift_plain',pay=n,caption=caption,code='')['result']
+        assert 'مبلغ بازخرید:' in plain and 'شماره سفارش گیفت‌کارت:' in plain
+        assert 'تاریخ ایجاد گیفت‌کارت:' in plain
+        limit=4096-len(plain.encode('utf-16-le'))//2
         assert call(op='fits',pay=n,caption=caption,code='&'*limit)['result'] is True
         assert call(op='fits',pay=n,caption=caption,code='&'*(limit+1))['result'] is False
         cases.append('whole_message_capacity_entities_and_supplementary_boundary')
@@ -334,15 +343,32 @@ return !empty($GLOBALS['spec']['fail_staff'])?null:(object)['ok'=>true];}""")
         n=seed('giftlivecaption',method='gift_card');gift('valid-route-code');offset=len(APIs.received)
         assert call(op='rawsave',pay=n,code='valid-route-code')['result']['status']=='saved'
         assert call(pay=n)['result']=='awaiting_receipt' and len(APIs.received)==offset
+        before_events=len(APIs.events)
+        old_redeems=sum(e[0]=='POST' and e[1].endswith('/redeem') for e in APIs.events)
         r=run(work,env,app,human_driver,url,route='wallet',step='waitIncreaseWalletGiftReceiptgiftlivecaption',actor=1001,message_transport='no_id',update={'message':{'text':'valid-route-code'}})
-        assert not r.get('fatal') and state(n)=='pending' and len(APIs.received)==offset and APIs.cards['valid-route-code']['status']=='active',r
-        assert call(pay=n)['result']=='awaiting_receipt' and len(APIs.received)==offset
-        cases.append('saved_code_and_failed_primary_delivery_never_verify_or_consume')
+        preflight=APIs.events[before_events:]
+        # Customer-first screening is an authenticated, read-only /verify.
+        # A failed primary Telegram delivery still cannot dispatch /redeem,
+        # finish the review claim or credit the local wallet.
+        assert not r.get('fatal') and state(n)=='pending' and APIs.cards['valid-route-code']['status']=='active',r
+        assert len(APIs.received)>offset and any(e[0]=='POST' and e[1].endswith('/verify') for e in preflight),preflight
+        assert not any(e[0]=='POST' and e[1].endswith('/redeem') for e in preflight),preflight
+        assert query(work,env,f"SELECT state FROM pays WHERE id={n}")=='pending'
+        after_failed=len(APIs.received)
+        assert call(pay=n)['result']=='awaiting_receipt' and len(APIs.received)==after_failed
+        cases.append('saved_code_failed_staff_delivery_readonly_verify_no_consume')
         before=int(query(work,env,'SELECT wallet FROM users WHERE userid=1001'))
         r=run(work,env,app,human_driver,url,route='wallet',step='waitIncreaseWalletGiftReceiptgiftlivecaption',actor=1001,update={'message':{'text':'valid-route-code'}})
         assert not r.get('fatal') and state(n)=='approved' and APIs.cards['valid-route-code']['status']=='redeemed',r
         reviews=[e for e in r['events'] if e.get('name')=='sendMessage' and '<code>valid-route-code</code>' in str(e.get('args'))]
-        assert reviews and reviews[0]['at']<APIs.received[offset] and all(e['args'][3] in [9001,9002,9003] for e in reviews),r
+        new_redeems=[e for e in APIs.events[before_events:] if
+            e[0]=='POST' and e[1].endswith('/redeem')]
+        assert len(new_redeems)==1 and sum(e[0]=='POST' and e[1].endswith('/redeem')
+            for e in APIs.events)==old_redeems+1,APIs.events[before_events:]
+        # /verify precedes staff review by design; the staff message MUST
+        # still precede the first and ONLY value-changing /redeem operation.
+        assert reviews and reviews[0]['at']<APIs.received[-1] and all(
+            e['args'][3] in [9001,9002,9003] for e in reviews),r
         assert int(query(work,env,'SELECT wallet FROM users WHERE userid=1001'))==before+101
         assert any(e.get('name')=='editKeys' and 'تایید خودکار توسط API' in str(e.get('args')) for e in r['events']),r
         assert call(op='human',pay=n)['result'] is None and int(query(work,env,'SELECT wallet FROM users WHERE userid=1001'))==before+101

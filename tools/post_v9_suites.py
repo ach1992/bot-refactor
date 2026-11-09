@@ -449,7 +449,7 @@ def run_api(tmp: str) -> tuple[dict, dict]:
         'gift_zero_string_is_valid_text_evidence',
         'oversized_code_rejected_before_storage_or_delivery_claim',
         'whole_message_capacity_entities_and_supplementary_boundary',
-        'saved_code_and_failed_primary_delivery_never_verify_or_consume',
+        'saved_code_failed_staff_delivery_readonly_verify_no_consume',
         'gift_real_code_review_precedes_auto_approval_and_stale_human_no_recredit',
         'gift_terminal_receipt_three_information_rows_no_financial_actions',
         'unsubmitted_invoices_do_not_starve_reviewed_background_work',
@@ -1188,8 +1188,8 @@ def run_wallet(tmp: str) -> tuple[dict, dict]:
         cwd=ROOT,check=True,timeout=180,capture_output=True,text=True)
     text_catalog=json.loads(catalog_output.stdout)
     expected_catalog={
-        'status':'PASS','current_catalog_keys':2853,
-        'current_admin_keys':1911,'current_user_keys':942,
+        'status':'PASS','current_catalog_keys':2862,
+        'current_admin_keys':1914,'current_user_keys':948,
         'retired_experimental_keys':129,'retired_experimental_topics':10,
         'new_copy_entries':33,'current_runtime_files':131,
         'new_copy_references_unbound':0,

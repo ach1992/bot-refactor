@@ -429,7 +429,16 @@ if (preg_match('/wait(?:CustomCart|CustomGift|CustomUsdt)Receipt(.*)/', $userInf
         achbotManualCaption($connection, $receiptPay, $mainValues['buy_custom_account_request'])
     );
 
-    if(achbotManualTypedGift($connection,$receiptPay,$method) && !achbotManualGiftReviewFits($msg,$fileid)){
+    // The code is checked against this ORIGINAL pinned invoice before any
+    // staff message or durable receipt lease. A definite mismatch stays here.
+    $giftScreen=achbotManualGiftSubmissionPreflight($connection,$receiptPay,$method,$fileid);
+    if (!$giftScreen['accepted']) {
+        sendMessage(achbotManualGiftRetryMessage((string)$giftScreen['reason']),
+            kbOnlyCancel('cancelCustomCartReceipt', $match[1]), 'HTML');
+        exit;
+    }
+    if(achbotManualTypedGift($connection,$receiptPay,$method) &&
+        !achbotManualGiftReviewFits($msg,$fileid,$giftScreen)){
         sendMessage(achbotMessage('payment.api_payment.code_too_long'),null,'HTML');return;
     }
     $deliveryToken = achbotManualBeginEvidence($connection, $receiptPay, $method, (int)$from_id, $fileid);
@@ -449,7 +458,7 @@ if (preg_match('/wait(?:CustomCart|CustomGift|CustomUsdt)Receipt(.*)/', $userInf
 
     if (sendReceiptToAdminsAndUpdatePay($connection, $fileid,
         $msg, $adminKeyboard, $admin, $match[1],
-        $deliveryToken)) {
+        $deliveryToken,$giftScreen)) {
         setUser();
         achbotManualAcknowledgeAndVerify($connection,$receiptPay,$method,$buttonValues['start_bot'],$botUsername);
     } else {
@@ -1296,7 +1305,16 @@ if (preg_match('/wait(?:BuyCart|BuyGift|BuyUsdt)Receipt(.*)/', $userInfo['step']
         );
     }
 
-    if(achbotManualTypedGift($connection,$receiptPay,$method) && !achbotManualGiftReviewFits($msg,$fileid)){
+    // The code is checked against this ORIGINAL pinned invoice before any
+    // staff message or durable receipt lease. A definite mismatch stays here.
+    $giftScreen=achbotManualGiftSubmissionPreflight($connection,$receiptPay,$method,$fileid);
+    if (!$giftScreen['accepted']) {
+        sendMessage(achbotManualGiftRetryMessage((string)$giftScreen['reason']),
+            kbOnlyCancel('cancelBuyCartReceipt', $match[1]), 'HTML');
+        exit;
+    }
+    if(achbotManualTypedGift($connection,$receiptPay,$method) &&
+        !achbotManualGiftReviewFits($msg,$fileid,$giftScreen)){
         sendMessage(achbotMessage('payment.api_payment.code_too_long'),null,'HTML');return;
     }
     $deliveryToken = achbotManualBeginEvidence($connection, $receiptPay, $method, (int)$from_id, $fileid);
@@ -1316,7 +1334,7 @@ if (preg_match('/wait(?:BuyCart|BuyGift|BuyUsdt)Receipt(.*)/', $userInfo['step']
 
 if (sendReceiptToAdminsAndUpdatePay($connection, $fileid,
         $msg, $adminKeyboard, $admin, $match[1],
-        $deliveryToken)) {
+        $deliveryToken,$giftScreen)) {
         setUser();
         achbotManualAcknowledgeAndVerify($connection,$receiptPay,$method,$buttonValues['start_bot'],$botUsername);
     } else {

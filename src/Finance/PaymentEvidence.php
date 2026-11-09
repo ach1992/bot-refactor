@@ -538,11 +538,28 @@ function achbotPaymentEvidenceGiftVerify(array $profile,string $code): array {
     $j=$r['json'];
     if (($j['api_version']??null)!=='2' || !is_bool($j['ok']??null)) return $bad;
     if (!$r['ok'] || $j['ok']!==true || ($j['code']??'')!=='card_verified') {
-        return ['ok'=>false,'status'=>in_array($j['code']??'',
-            ['card_not_found','invalid_code','invalid_card_code','payload_mismatch'],true)?'unknown':'unavailable','data'=>null];
+        // Only a consistent negative v2 envelope can establish a definite
+        // invalid code. Contradictory/missing fields require human review.
+        $negative=!$r['ok'] && $j['ok']===false &&
+            array_key_exists('data',$j) && $j['data']===null;
+        $error=$j['code']??null;
+        $status=$negative && $r['http']===404 && $error==='card_not_found' ? 'not_found'
+            : ($negative && in_array($r['http'],[400,409,422],true) &&
+                in_array($error,['invalid_code','invalid_card_code','payload_mismatch'],true)
+                    ? 'invalid' : 'unavailable');
+        return ['ok'=>false,'status'=>$status,'data'=>null];
     }
     $data=$j['data']??null;
     if (!is_array($data)) return $bad;
+    // A definitive non-active status needs the same minimum card identity
+    // shape as an active verification. Never reject on partial observations.
+    $uuid=$data['card_uuid']??null;
+    $game=$data['game_key']??null;
+    if (!is_string($uuid) || !preg_match('/\A[A-Za-z0-9_-]{1,128}\z/D',$uuid) ||
+        !is_string($game) || $game==='' || strlen($game)>120 ||
+        achbotPaymentEvidenceInteger($data['redeem_value_id']??null)===null ||
+        achbotPaymentEvidenceAmountToman($data['redeem_amount']??null,
+            (string)($profile['amount_unit']??''))===null) return $bad;
     $status=match($data['status']??'') {
         'active'=>'active','redeemed','redeemed_offline'=>'used',
         'revoked'=>'revoked','expired'=>'expired',default=>'unavailable'};
@@ -807,7 +824,24 @@ function achbotPaymentEvidenceGiftNormalizationStatus(array $data,array $profile
         !in_array($unit,['toman','rial'],true)) return 'review';
     $amount=achbotPaymentEvidenceAmountToman($data[$field]??null,$unit);
     $quote=achbotPaymentEvidenceIntegralQuote($attempt['quote_amount']??null);
-    return $amount!==null && $quote!==null && $amount!==$quote?'mismatch':'review';
+    if ($amount===null || $quote===null) return 'review';
+    if ($amount!==$quote) return 'mismatch';
+    // Only a well-formed, explicitly returned configured product identity
+    // can prove a mismatch; missing fields are ambiguous/manual-review.
+    foreach ($profile['filters']??[] as $key=>$value) {
+        // Invalid shape is NOT a confident mismatched product.
+        if ($key==='game_key') {
+            $actual=$data[$key]??null;
+            $actual=is_string($actual) && $actual!=='' && strlen($actual)<=120
+                ? $actual:null;
+        } elseif ($key==='redeem_value_id') {
+            $actual=achbotPaymentEvidenceInteger($data[$key]??null);
+            $actual=$actual===null?null:(string)$actual;
+        } else return 'review';
+        if ($actual===null)return 'review';
+        if ($actual!==$value)return 'mismatch';
+    }
+    return 'review';
 }
 function achbotPaymentEvidenceSmsActions(array $profile,int $after=0): array {
     if ($after<0) return ['ok'=>false,'data'=>[]];
