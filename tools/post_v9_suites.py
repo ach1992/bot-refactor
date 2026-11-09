@@ -2558,6 +2558,10 @@ def run_effects(tmp: str) -> tuple[dict, dict]:
         'archived_nowpayments_browser_return_cannot_reopen',
         'archived_zarinpal_verified_callback_cannot_credit_cancel_or_reopen',
         'archived_nextpay_verified_callback_cannot_credit_cancel_or_reopen',
+        'r3_nextpay_concurrent_verified_return_pending_single_effect',
+        'r3_zarinpal_concurrent_verified_return_pending_single_effect',
+        'r3_nextpay_lock_error_not_success',
+        'r3_zarinpal_lock_error_not_success',
         'archived_nowpayments_original_excluded_from_cron_claim',
     })
     cases_finance = {case.get("case") for case in finance.get("scenarios",[])

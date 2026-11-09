@@ -878,6 +878,131 @@ def verify_unchanged(work,env,before,label):
     if snapshot(work,env)!=before:
         raise RuntimeError('Unexpected financial/account SQL mutation on '+label)
 
+def check_verified_browser_worker_contention(work,env,stage,records):
+    """Real verified browser returns, two MariaDB sessions, mock network.
+
+    The only instrumentation is in the disposable source stage and pauses
+    worker 1 immediately AFTER acquiring its real GET_LOCK session lease.
+    """
+    source=stage/'src/Finance/GatewayReturn.php'
+    code=source.read_text()
+    original_source=code
+    marker="    try {\n        $effectStage='preclaim';"
+    assert code.count(marker)==1
+    hold="""
+        if (($ready=getenv('ACHBOT_R3_HOLD_READY'))!==false && $ready!=='') {
+            file_put_contents($ready,'lease-held');
+            $release=(string)getenv('ACHBOT_R3_HOLD_RELEASE');
+            $deadline=microtime(true)+12;
+            while (!is_file($release) && microtime(true)<$deadline) usleep(10000);
+            if (!is_file($release)) throw new RuntimeException('test_pause_timeout');
+        }
+"""
+    code=code.replace(marker,"    try {\n"+hold+"        $effectStage='preclaim';",1)
+    lock="    $lockName=achbotHostedWorkerLockName($connection,(int)$payRowId);"
+    assert code.count(lock)==1
+    code=code.replace(lock,lock+'''\n    if (getenv('ACHBOT_R3_FAULT_LOCK')==='1') $lockName=null;''',1)
+    source.write_text(code)
+    driver=work/'owned-finance-guard.php'
+    assert driver.is_file()
+    def php_cmd(spec):
+        return ['php','-n','-d','extension=mysqlnd','-d','extension=mysqli',
+                '-d','extension=curl','-d','extension=ctype','-d','allow_url_fopen=0',
+                '-d','disable_functions=curl_init,curl_setopt,curl_setopt_array,curl_exec,curl_close,curl_error,curl_getinfo,exec,shell_exec,system,passthru,popen,proc_open,mail',
+                str(driver),str(stage),DB,str(work/'mysql.sock'),json.dumps(spec)]
+    def finish(process,expected_log=b''):
+        out,err=process.communicate(timeout=18)
+        if process.returncode or err!=expected_log:
+            raise RuntimeError('R3 actual route process failed: '+repr((process.returncode,out[-500:],err[-500:])))
+        result=json.loads(out)
+        if result['error'] or result['fatal'] or result['known_inherited_warnings']:
+            raise RuntimeError('R3 actual route error: '+repr(result)[:1000])
+        return result
+    def issued(provider,name,ref):
+        seed_payment(work,env,name,'INCREASE_WALLET',0,0,ref)
+        sql(work,env,"INSERT INTO payment_attempts (pay_row_id,provider,order_hash,"
+            "provider_reference,quote_amount,quote_currency,local_amount_toman,stage) "
+            f"SELECT id,'{provider}',hash_id,payid,price,'toman',price,'pending' "
+            f"FROM pays WHERE hash_id='{name}'")
+        return int(sql(work,env,f"SELECT id FROM pays WHERE hash_id='{name}'"))
+    def spec_for(provider,name,ref):
+        return (dict(route='return',get={'nextpay':'','trans_id':ref},nextpay_code=0)
+            if provider=='nextpay' else dict(route='return',
+            get={'zarinpal':'','hash_id':name,'Authority':ref,'Status':'OK'},zarin_status=100))
+    try:
+        for provider in ('nextpay','zarinpal'):
+            name='r3-browser-concurrent-'+provider
+            ref='r3-browser-reference-'+provider
+            pid=issued(provider,name,ref)
+            spec=spec_for(provider,name,ref)
+            wallet=int(sql(work,env,'SELECT wallet FROM users WHERE userid=1001'))
+            effects=int(sql(work,env,'SELECT COUNT(*) FROM service_effects'))
+            orders=int(sql(work,env,'SELECT COUNT(*) FROM orders_list'))
+            folder=work/('r3-'+provider);folder.mkdir()
+            ready=folder/'ready';release=folder/'release'
+            held_env=dict(env,ACHBOT_R3_HOLD_READY=str(ready),ACHBOT_R3_HOLD_RELEASE=str(release))
+            first=subprocess.Popen(php_cmd(spec),cwd=work,env=held_env,
+                stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+            try:
+                deadline=clock.monotonic()+8
+                while not ready.exists() and clock.monotonic()<deadline:
+                    if first.poll() is not None:raise RuntimeError('R3 original worker ended before lock hold')
+                    clock.sleep(.01)
+                if not ready.exists():raise RuntimeError('R3 original worker did not hold lease')
+                second=subprocess.Popen(php_cmd(spec),cwd=work,env=env,
+                    stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+                busy_log=(f'achbot_hosted_browser_worker_busy pay_id={pid} '
+                          f'provider={provider} reason=active_worker\n').encode()
+                blocked=finish(second,busy_log)
+                if ('class="panel pending"' not in blocked['form'] or
+                    'پرداخت در حال بررسی خودکار است' not in blocked['form'] or
+                    len(blocked['network_calls'])!=1):
+                    raise RuntimeError('R3 duplicate verified return did not show pending')
+                if (sql(work,env,f'SELECT state FROM pays WHERE id={pid}').strip()!='pending' or
+                    int(sql(work,env,'SELECT wallet FROM users WHERE userid=1001'))!=wallet or
+                    int(sql(work,env,'SELECT COUNT(*) FROM service_effects'))!=effects or
+                    int(sql(work,env,'SELECT COUNT(*) FROM orders_list'))!=orders):
+                    raise RuntimeError('R3 duplicate verified return mutated original payment '+repr({'provider':provider,'pay':sql(work,env,f'SELECT state FROM pays WHERE id={pid}').strip(),'wallet':sql(work,env,'SELECT wallet FROM users WHERE userid=1001'),'expected_wallet':wallet,'effects':sql(work,env,'SELECT COUNT(*) FROM service_effects'),'expected_effects':effects,'orders':sql(work,env,'SELECT COUNT(*) FROM orders_list'),'expected_orders':orders}))
+            finally:
+                release.write_text('release')
+                if first.poll() is None:
+                    try:first.wait(timeout=15)
+                    except subprocess.TimeoutExpired:first.kill()
+            completed=finish(first)
+            if ('class="panel completed"' not in completed['form'] or
+                sql(work,env,f'SELECT state FROM pays WHERE id={pid}').strip()!='paid' or
+                int(sql(work,env,'SELECT wallet FROM users WHERE userid=1001'))!=wallet+100):
+                raise RuntimeError('R3 original verified worker did not settle exactly once')
+            replay=run_php(work,env,stage,spec)
+            if (not replay['form'] or
+                int(sql(work,env,'SELECT wallet FROM users WHERE userid=1001'))!=wallet+100 or
+                int(sql(work,env,'SELECT COUNT(*) FROM service_effects'))!=effects or
+                int(sql(work,env,'SELECT COUNT(*) FROM orders_list'))!=orders):
+                raise RuntimeError('R3 repeated callback duplicated money, Native or order')
+            records.append(dict(case='r3_'+provider+'_concurrent_verified_return_pending_single_effect',
+                pass_=True,actual_two_mysql_sessions=True,real_provider_requests=0))
+            # A NULL lock name makes real MariaDB GET_LOCK() return NULL,
+            # distinct from GET_LOCK()=0 (another worker currently owns it).
+            fault_name='r3-browser-fault-'+provider
+            fault_ref='r3-browser-fault-ref-'+provider
+            fault_id=issued(provider,fault_name,fault_ref)
+            fault=subprocess.Popen(php_cmd(spec_for(provider,fault_name,fault_ref)),
+                cwd=work,env=dict(env,ACHBOT_R3_FAULT_LOCK='1'),
+                stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+            log=(f'achbot_hosted_browser_result_unconfirmed pay_id={fault_id} '
+                 f'provider={provider} cause=RuntimeException code=0 '
+                 'detail=hosted_payment_worker_lock_unconfirmed\n').encode()
+            result=finish(fault,log)
+            if ('class="panel review"' not in result['form'] or
+                'پرداخت تأیید شده است اما ثبت نتیجهٔ سفارش هنوز قطعی نیست' not in result['form'] or
+                sql(work,env,f'SELECT state FROM pays WHERE id={fault_id}').strip()!='pending'):
+                raise RuntimeError('R3 failed lease acquisition falsely implied settlement')
+            records.append(dict(case='r3_'+provider+'_lock_error_not_success',
+                pass_=True,real_provider_requests=0))
+    finally:
+        source.write_text(original_source)
+
+
 def main():
     p=argparse.ArgumentParser()
     p.add_argument('--run-disposable',required=True,action='store_true')
@@ -4449,6 +4574,8 @@ def main():
             raise RuntimeError('Retired two-stage action contacted merchant')
         records.append(dict(case='retired_two_stage_callback_fail_closed',
                             pass_=True,external_requests=0))
+
+        check_verified_browser_worker_contention(work,env,stage,records)
 
         # Owner archive closes the ORIGINAL operator attention case. A late
         # signed IPN may add external child evidence but must not update the

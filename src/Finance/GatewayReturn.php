@@ -556,7 +556,7 @@ if (defined('ACHBOT_NP_RECONCILE_ONLY')) {
             ($result->Status===100 || $result->Status==='100');
         if ($verifiedStatus) {
             // A forged/stale browser NOK cannot cancel trusted positive funds.
-            doAction($rowId, "zarinpal");
+            achbotVerifiedHostedBrowserReturn($rowId, "zarinpal");
         } else {
             achbotHostedMarkVerificationUncertain($connection,$rowId,'zarinpal',
                 (string)$payParam['hash_id']);
@@ -688,7 +688,7 @@ if (defined('ACHBOT_NP_RECONCILE_ONLY')) {
 
         $disposition = achbotVerifiedGatewayOutcome('nextpay', $verifyCode);
         if ($disposition === 'verified') {
-            doAction($rowId, "nextpay");
+            achbotVerifiedHostedBrowserReturn($rowId, "nextpay");
         } elseif ($disposition === 'rejected') {
             // Official NextPay codes -2 (rejected) and -4 (canceled) are
             // definitive. -1/-3 are pending; other errors need reconciliation.
@@ -1851,7 +1851,11 @@ function doAction($payRowId, $gateType) {
     $q=$connection->prepare('SELECT GET_LOCK(?,0) AS acquired');
     $q->bind_param('s',$lockName);$q->execute();
     $held=$q->get_result()->fetch_assoc();$q->close();
-    if ((int)($held['acquired']??0)!==1)
+    // A true 0 means another live session owns this payment. SQL NULL or
+    // missing results indicate an acquisition failure, NOT contention.
+    if (!isset($held['acquired']) || !in_array((string)$held['acquired'],['0','1'],true))
+        throw new RuntimeException('hosted_payment_worker_lock_unconfirmed');
+    if ((int)$held['acquired']===0)
         throw new RuntimeException('hosted_payment_worker_busy');
     try {
         $effectStage='preclaim';
@@ -1891,6 +1895,37 @@ function doAction($payRowId, $gateType) {
             error_log('achbot_hosted_worker_lock_release_unconfirmed pay_id='.
                 (int)$payRowId);
         }
+    }
+}
+
+/**
+ * A duplicate verified browser return may race an already-running hosted
+ * worker. Keep the original worker and financial claim untouched; never
+ * turn an expected live-session lease into a public PHP 500. Cron and admin
+ * decision callers use doAction() directly and keep their own semantics.
+ */
+function achbotVerifiedHostedBrowserReturn(int $payId,string $provider): void {
+    try {
+        doAction($payId,$provider);
+    } catch (Throwable $error) {
+        if ($error instanceof RuntimeException &&
+            $error->getMessage()==='hosted_payment_worker_busy') {
+            error_log('achbot_hosted_browser_worker_busy pay_id='.$payId.
+                ' provider='.$provider.' reason=active_worker');
+            showForm(\achbotMessage('gateway.gateway_return.np_reconcile_batch.message.e46087af54'),
+                \achbotMessage('gateway.gateway_return.np_reconcile_batch.message.f71cd91dad'),
+                false,'pending');
+            return;
+        }
+        // A genuine database/worker failure is NOT a successful charge or
+        // proof of local fulfillment. Preserve internal diagnostic context.
+        error_log('achbot_hosted_browser_result_unconfirmed pay_id='.$payId.
+            ' provider='.$provider.' cause='.get_class($error).
+            ' code='.$error->getCode().' detail='.
+            substr(str_replace(["\r","\n"],' ',$error->getMessage()),0,300));
+        showForm(\achbotMessage('gateway.gateway_return.do_action.text.30e9647ee1'),
+            \achbotMessage('gateway.gateway_return.np_reconcile_batch.message.da0bc406d8'),
+            false,'review');
     }
 }
 
