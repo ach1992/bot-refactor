@@ -1045,10 +1045,12 @@ def check():
             return run_route(work,env,route_driver,route='manual_admin',
                              step='@stored',text=reason,actor=actor,**kwargs)
 
-        def reject_with_reason(key,actor=9001,reason='رسید معتبر نیست',**kwargs):
+        def reject_with_reason(key,actor=9001,reason='رسید معتبر نیست',
+                               expect_commit=True,**kwargs):
             open_reason_editor(key,actor=actor)
             result=submit_reason(key,reason=reason,actor=actor,**kwargs)
-            assert query(work,env,"SELECT step FROM users WHERE userid="+str(actor))=='none',(key,result)
+            expected='none' if expect_commit else 'declineActionReason_'+key+'_111'
+            assert query(work,env,"SELECT step FROM users WHERE userid="+str(actor))==expected,(key,result)
             return result
 
         standard_pay('standarddirectreject',method='gift_card')
@@ -1317,6 +1319,7 @@ def check():
             before_wallet=query(work,env,'SELECT userid,wallet FROM users ORDER BY userid')
             try:
                 failed=reject_with_reason('standardrejectoutboxfail',
+                                 expect_commit=False,
                                  expected_warning='achbot_manual_reject_claim_unconfirmed')
             finally: query(work,env,'DROP TRIGGER fixture_f1_reject_outbox_fail')
             assert query(work,env,"SELECT state FROM pays WHERE "
