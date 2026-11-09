@@ -1,7 +1,7 @@
 # Simple automatic-gateway exception inbox — successor to RC26 Issue #117 menu
 
-> **Status:** source-only development, not merged, independently approved, released or deployed.
-> The published RC26 asset and migration 019 remain historical external artifacts.
+> **Status:** independently approved, merged and published as [RC27](https://github.com/ach1992/bot-refactor/releases/tag/v0.10.0-rc.27), **not installed or operationally accepted**.
+> The historical published RC26 assets and migration 019 remain unchanged.
 
 ## Scope
 
@@ -83,14 +83,14 @@ backup/restore-tested, versioned runtime cutover gate. The old experimental
 payment_review_decisions migration 019 is removed from *future-source*
 packaging. Existing RC26 installations may still contain this historical
 table and must retain it until any separately authorized schema audit
-establishes a safe disposition. No installed objects are dropped by PR #136.
+establishes a safe disposition. No installed objects are dropped by RC27 publication.
 
 **Do not drop 018 or 020**: payment_delivery_intents,
 payment_delivery_attempts and payment_followup_intents remain part of
 normal paid/manual bank/gift operations, even though the experimental
 recovery screen is gone.
 
-The successor **does not offer paid replacement** or require 019/021 for a
+RC27 **does not offer paid replacement** or require 019/021 for a
 new empty database, but existing RC26 records are different: historic 018
 delivery packets and API evidence may refer to 021 issued-entitlement fields
 or replacement provenance. These fields are now read **only to validate
@@ -126,5 +126,6 @@ accounting; any truncation is visibly indicated. The same bounded HTML
 body and inline actions are sent through edit or send fallback.
 
 No runtime ZIP extraction, test DB DROP, webhook, live payment or provider
-side effect is authorized by this source document. PHP 8.5 validation,
-independent review, owner integration and deployment gates still apply.
+side effect is authorized by this source document or GitHub Release.
+Independent source review, PHP 8.5 and integration have passed; installed
+host changes, database DDL and operational acceptance remain separately gated.
