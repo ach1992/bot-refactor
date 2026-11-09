@@ -1179,6 +1179,7 @@ def check():
             assert query(work,env,"SELECT state FROM pays WHERE hash_id='"+key+"'")=='have_sent',(gate,result)
             assert query(work,env,"SELECT COUNT(*) FROM payment_followup_intents f "
                 "JOIN pays p ON p.id=f.pay_row_id WHERE p.hash_id='"+key+"'")=='0',gate
+            query(work,env,"DELETE FROM setting WHERE type='FIXTURE_MANUAL_REJECT_"+gate+"'")
             return result
 
         # R1: current staff membership, not initial request authorization,
@@ -1583,7 +1584,6 @@ def check():
         cases.append('real_standard_remote_success_local_write_failed_no_automatic_replay')
 
         standard_pay('standardrace',method='gift_card')
-        from concurrent.futures import ThreadPoolExecutor
         with ThreadPoolExecutor(max_workers=2) as executor:
             decisions=list(executor.map(lambda _:run_route(
                 work,env,route_driver,data='acceptstandardrace',
@@ -1850,7 +1850,6 @@ def check():
         # Admin callback and scheduler claim contend for one pays row. If
         # bank Cron wins BUY_SUB remains processing until verified fulfillment;
         # neither contender can send a second remote CREATE.
-        from concurrent.futures import ThreadPoolExecutor
         for i in range(4):
             key='servicecallbackrace'+str(i)
             service_pay(key,subject='BUY_SUB',method='bank_transfer')
@@ -2242,7 +2241,6 @@ def check():
         assert base('walletapprovalrace','claim','manual_usdt')
         query(work,env,"UPDATE pays SET state='have_sent' WHERE hash_id='walletapprovalrace'")
         before=int(query(work,env,'SELECT wallet FROM users WHERE userid=1001'))
-        from concurrent.futures import ThreadPoolExecutor
         with ThreadPoolExecutor(max_workers=2) as executor:
             two=list(executor.map(lambda _:base('walletapprovalrace','approve','manual_usdt',
                                                  actor=9001),range(2)))
@@ -2674,7 +2672,6 @@ def check():
         assert query(work,env,"SELECT state FROM pays WHERE hash_id='autoautofirst'")=='auto_cart_approved'
         cases.append('scheduled_before_admin_bank_approval_exactly_one_credit')
 
-        from concurrent.futures import ThreadPoolExecutor
         for n in range(6):
             key=f'autocontest{n}'
             seed(work,env,key)
