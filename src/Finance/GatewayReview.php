@@ -352,15 +352,17 @@ function achbotGatewayReviewArchive(mysqli $db,int $actor,int $attemptId,int $pr
         if (!achbotAdminCanLocked($db,$actor,$primaryOwner,'payments')) {
             $db->rollback();$open=false;return 'denied';
         }
-        // A committed dispatch admission may still reach the remote system.
-        // Do not pretend Archive can cancel it. A reserved (not admitted)
-        // line may be archived; its later admission will fail under pays lock.
-        $q=$db->prepare("SELECT id FROM service_effects
-            WHERE pay_row_id=? AND effect_kind IN ('create','replacement')
-              AND state IN ('dispatching','verified') LIMIT 1 FOR UPDATE");
-        $q->bind_param('i',$payId);$q->execute();
-        $inFlight=$q->get_result()->num_rows>0;$q->close();
-        if ($inFlight) {
+        // A durable 007 dispatching/verified row is forensic evidence, not
+        // proof that the PHP worker is still alive. The original doAction
+        // holds one MariaDB session lock across the WHOLE hosted operation,
+        // including post-Native local/Telegram work, but no SQL transaction
+        // remains open over HTTP. A worker crash releases the lease, allowing
+        // the human to archive without replaying or rewriting its outcome.
+        $name='achbot-hosted-payment-'.$payId;
+        $q=$db->prepare('SELECT IS_USED_LOCK(?) AS holder');
+        $q->bind_param('s',$name);$q->execute();
+        $holder=$q->get_result()->fetch_assoc();$q->close();
+        if (!$holder || $holder['holder']!==null) {
             $db->rollback();$open=false;return 'busy';
         }
         // A finished or newly active case cannot be hidden by an old button.

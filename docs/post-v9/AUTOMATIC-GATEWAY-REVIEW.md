@@ -25,13 +25,20 @@ Native fulfillment. Stale `processing`/already-paid cases with unresolved
 fulfillment evidence and an operator's previously unknown effect remain
 **visible until explicitly archived** in the same list, **read-only for
 Approve/Reject**: they never receive a second financial decision button.
-A case can be **Archived** once no already-admitted Native dispatch
-remains unresolved. If one is in flight, Archive reports that it was **not**
-performed; the operator must verify its outcome first, not assume that a
-remote request was canceled. A still-**reserved** line is not an admitted
-remote operation and cannot dispatch after Archive. Archive removes
-a successfully closed case from the active inbox, while preserving the original payment/order
-state, provider and child evidence, and Native/Telegram replay holds.
+After independently checking the original merchant invoice and any
+uncertain Native outcome, the administrator can choose **Archive** as a
+terminal LOCAL decision. A genuinely active original hosted worker holds
+one MariaDB session-scoped advisory lock until its payment work (including
+local order linking and Telegram delivery) ends; Archive responds **busy**
+while that worker is active. The lock releases when that connection ends,
+including after a crash, even if the original 007 Native evidence is still
+`dispatching` or `verified` without an order. The administrator can then
+Archive the stale case **without** canceling, retrying, refunding or
+declaring success for its unknown external outcome. A still-**reserved**
+line cannot begin Native CREATE after Archive. No SQL transaction remains
+open during merchant, Native or Telegram HTTP. Archive removes
+a successfully closed case from the active inbox while preserving the original
+payment/order state, provider and child evidence, and Native/Telegram replay holds.
 The archive actor and timestamp persist; later provider callbacks and
 Cron must neither change the archived original's stage/status nor mutate
 its local financial order or retry Native/Telegram effects. A late signed
@@ -96,13 +103,24 @@ database columns would invalidate already-sealed proof. Therefore:
   authorize MariaDB DDL, host changes or source cutover. A distinct,
   evidence-backed approval is required for any future destructive cleanup.
 
-**Archive versus outbound Native CREATE:** a short original-payment lock
-coordinates reserved -> dispatching admission with terminal Archive. A
-reserved line can be archived and then cannot begin remote dispatch. An
-already-admitted/uncertain Native operation makes Archive return a clear
-**not archived** status until its outcome is independently resolved; there
-is no false remote cancellation or replay. No new process, queue, table or
-operator workbench is introduced.
+**Archive versus outbound Native CREATE:** the original pay-row
+transaction coordinates reserved -> dispatching admission with terminal
+Archive. One session-scoped advisory lock around the existing hosted
+`doAction` lifecycle distinguishes an actual running worker from an
+old/abandoned journal record. Live work yields **busy**; after the worker
+ends, Archive may close an uncertain record without rewriting that record.
+The existing paid order-link transaction rechecks the terminal marker so
+a delayed local finalizer cannot create an order after Archive. Nothing
+automatically retries a CREATE, rewrites a payment or invents a remote
+success. No new table, background process, queue or workbench is introduced.
+
+**Telegram case budget:** the one existing case text keeps the full
+payment/invoice identifiers, amount, local statuses and the five most
+recent Native evidence rows. It fits optional display-only fields (name,
+plan title, handle and original long description) into the remaining
+4096-character post-HTML Telegram budget with UTF-16-aware length
+accounting; any truncation is visibly indicated. The same bounded HTML
+body and inline actions are sent through edit or send fallback.
 
 No runtime ZIP extraction, test DB DROP, webhook, live payment or provider
 side effect is authorized by this source document. PHP 8.5 validation,

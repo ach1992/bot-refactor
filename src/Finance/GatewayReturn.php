@@ -1842,36 +1842,56 @@ function achbotPerformPaymentEffect($payRowId, $gateType, &$effectStage = null) 
  * an attempt as delivered when the underlying effect throws or is uncertain.
  */
 function doAction($payRowId, $gateType) {
-    $effectStage='preclaim';
+    global $connection;
+    // A live-worker signal for the ENTIRE hosted attempt, including local
+    // order linking and Telegram delivery after remote Native HTTP. It is
+    // session-scoped, automatically cleared after PHP/connection death.
+    // It does NOT hold a database transaction across any external request.
+    $lockName='achbot-hosted-payment-'.(int)$payRowId;
+    $q=$connection->prepare('SELECT GET_LOCK(?,0) AS acquired');
+    $q->bind_param('s',$lockName);$q->execute();
+    $held=$q->get_result()->fetch_assoc();$q->close();
+    if ((int)($held['acquired']??0)!==1)
+        throw new RuntimeException('hosted_payment_worker_busy');
     try {
-        $outcome=achbotPerformPaymentEffect($payRowId,$gateType,$effectStage);
-    } catch (Throwable $error) {
-        if (!in_array($gateType,['nextpay','zarinpal'],true)) throw $error;
-        // Even an upstream-verified charge can fail on the *first* local
-        // SELECT, before a durable review record exists. A post-claim throw
-        // may instead follow a real remote side effect. Neither is safe to
-        // retry, refund, or describe as an already-recorded review request.
-        $afterClaim=$effectStage==='postclaim';
-        $event=$afterClaim
-            ? 'achbot_hosted_service_effect_needs_review'
-            : 'achbot_hosted_claim_unconfirmed';
-        $reason=$afterClaim
-            ? 'postclaim_effect_exception'
-            : 'preclaim_local_error';
-        error_log($event.' pay_id='.(int)$payRowId.
-                  ' provider='.$gateType.' code='.$reason);
-        $message=$afterClaim
-            ? \achbotMessage('gateway.gateway_return.do_action.text.83188c9e00')
-            : \achbotMessage('gateway.gateway_return.do_action.text.30e9647ee1');
-        showForm($message,\achbotMessage('gateway.gateway_return.np_reconcile_batch.message.da0bc406d8'),false,'review');
-        return 'ambiguous';
+        $effectStage='preclaim';
+        try {
+            $outcome=achbotPerformPaymentEffect($payRowId,$gateType,$effectStage);
+        } catch (Throwable $error) {
+            if (!in_array($gateType,['nextpay','zarinpal'],true)) throw $error;
+            // Even an upstream-verified charge can fail on the *first* local
+            // SELECT, before a durable review record exists. A post-claim throw
+            // may instead follow a real remote side effect. Neither is safe to
+            // retry, refund, or describe as an already-recorded review request.
+            $afterClaim=$effectStage==='postclaim';
+            $event=$afterClaim
+                ? 'achbot_hosted_service_effect_needs_review'
+                : 'achbot_hosted_claim_unconfirmed';
+            $reason=$afterClaim
+                ? 'postclaim_effect_exception'
+                : 'preclaim_local_error';
+            error_log($event.' pay_id='.(int)$payRowId.
+                      ' provider='.$gateType.' code='.$reason);
+            $message=$afterClaim
+                ? \achbotMessage('gateway.gateway_return.do_action.text.83188c9e00')
+                : \achbotMessage('gateway.gateway_return.do_action.text.30e9647ee1');
+            showForm($message,\achbotMessage('gateway.gateway_return.np_reconcile_batch.message.da0bc406d8'),false,'review');
+            return 'ambiguous';
+        }
+        if (in_array($gateType,['nextpay','zarinpal'],true) &&
+            in_array($outcome,['delivered','compensated'],true)) {
+            achbotFinishHostedServiceReview($connection,(int)$payRowId,$gateType,$outcome);
+        }
+        return $outcome;
+    } finally {
+        try {
+            $q=$connection->prepare('SELECT RELEASE_LOCK(?)');
+            $q->bind_param('s',$lockName);$q->execute();$q->close();
+        } catch (Throwable $ignored) {
+            error_log('achbot_hosted_worker_lock_release_unconfirmed pay_id='.
+                (int)$payRowId);
+        }
     }
-    if (in_array($gateType,['nextpay','zarinpal'],true) &&
-        in_array($outcome,['delivered','compensated'],true)) {
-        global $connection;
-        achbotFinishHostedServiceReview($connection,(int)$payRowId,$gateType,$outcome);
-    }
-    return $outcome;
 }
 
 /**

@@ -18,11 +18,15 @@ Bank/gift/manual approvals, money and Native uniqueness guards, and the
 specialized paid replacement and their 019/021 future-schema requirements
 are removed from this source; **published RC26 remains immutable**.
 See [new exception inbox and cleanup contract](docs/post-v9/AUTOMATIC-GATEWAY-REVIEW.md).
-**This branch remains unapproved after an independent CHANGES_REQUIRED
-review; it is not merged, installed or released. The fix preserves read-only
-RC26 018/021 historical evidence without restoring the old workbenches.
-Do not combine the published RC26 runtime with prospective 018/020/022
-schema or delete installed 021 historical fields.**
+**This branch remains Draft and unapproved after the second independent
+CHANGES_REQUIRED review; it is not merged, installed or released.**
+The latest source fix allows a human to Archive a stale, uncertain Native
+case once the payment worker has ended, while a truly running worker
+still blocks Archive. It also bounds the single Telegram case message
+without hiding original payment or Native evidence. The earlier read-only
+RC26 018/021 compatibility remains intact; no workbenches were restored.
+Do not combine published RC26 runtime with prospective 018/020/022 schema
+or delete installed 021 historical fields.
 
 **Schema / upgrade:** RC26 introduces four **separate, one-time SQL sidecars**, [018](migrations/post-v9/018_payment_delivery_intents.sql) (delivery journal), [019](https://github.com/ach1992/bot-refactor/blob/v0.10.0-rc.26/migrations/post-v9/019_payment_review_decisions.sql) (human payment decisions), [020](migrations/post-v9/020_payment_followup_intents.sql) (follow-up packets) and [021](https://github.com/ach1992/bot-refactor/blob/v0.10.0-rc.26/migrations/post-v9/021_paid_reconciliation_provenance.sql) (paid replacement provenance and frozen original issued terms). None is inside the runtime ZIP or applied by the GitHub Release. Starting from RC25, inventory real installed source, config, migration history and schema, verify a restorable backup on staging, and audit/apply only genuinely absent steps in strict **018 -> 019 -> 020 -> 021** order under separate target-specific approval. Partial objects, existing conflicting FKs/indexes, missing encryption keys or unknown original Native/payment effects are STOP conditions, not grounds to rerun DDL or retry operations. Earlier 015/016/017 remain one-time historical migrations: never replay them or migrate an unexamined schema. Use the [RC25 -> RC26 guide](docs/post-v9/RC25-TO-RC26.md) and [RC24 -> RC25 guide](docs/post-v9/RC24-TO-RC25.md) where applicable.
 

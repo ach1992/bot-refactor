@@ -8,6 +8,57 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
 require_once __DIR__.'/../../Admin/Access.php';
 require_once __DIR__.'/../../../messages/loader.php';
 
+/** Telegram's 4096-character text limit applies after HTML parsing.
+ * Conservatively count UTF-16 units so astral emojis cannot overflow.
+ */
+function achbotGatewayReviewTextLength(string $html): int {
+    $plain=html_entity_decode(strip_tags($html),ENT_QUOTES|ENT_HTML5,'UTF-8');
+    $characters=preg_match_all('/./us',$plain);
+    $astral=preg_match_all('/[\x{10000}-\x{10FFFF}]/u',$plain);
+    return $characters===false || $astral===false
+        ? PHP_INT_MAX : $characters+$astral;
+}
+
+/** Protect payment/provider/Native facts and buttons; fit only display-only
+ * text (including a 5000-character legacy description) into the remainder.
+ * Raw persisted facts remain unchanged for all subsequent validations.
+ */
+function achbotGatewayReviewFitCase(string $core,array $optional,string $footer): string {
+    $notice="\n".achbotMessage('automatic_gateway_review.truncated');
+    // Reserve a notice even when it turns out unnecessary. This keeps the
+    // budget exact for both editMessageText and fallback sendMessage.
+    $budget=4096-achbotGatewayReviewTextLength($notice);
+    if (achbotGatewayReviewTextLength($core.$footer)>$budget)
+        throw new RuntimeException('gateway_review_essential_text_over_limit');
+    $added='';$trimmed=false;
+    foreach ($optional as [$key,$param,$value]) {
+        $value=(string)$value;
+        if ($value==='') continue;
+        $line=static fn(string $v): string =>
+            "\n".achbotMessageHtml($key,[$param=>$v]);
+        $complete=$line($value);
+        if (achbotGatewayReviewTextLength($core.$added.$complete.$footer)<=$budget) {
+            $added.=$complete;
+            continue;
+        }
+        $trimmed=true;
+        $low=0;$high=mb_strlen($value,'UTF-8');
+        while ($low<$high) {
+            $mid=intdiv($low+$high+1,2);
+            $partial=$line(mb_substr($value,0,$mid,'UTF-8').'…');
+            if (achbotGatewayReviewTextLength($core.$added.$partial.$footer)<=$budget)
+                $low=$mid;
+            else $high=$mid-1;
+        }
+        if ($low>0)
+            $added.=$line(mb_substr($value,0,$low,'UTF-8').'…');
+    }
+    $result=$core.$added.($trimmed?$notice:'').$footer;
+    if (achbotGatewayReviewTextLength($result)>4096)
+        throw new RuntimeException('gateway_review_message_budget_invalid');
+    return $result;
+}
+
 // Only unfinished automatic-gateway payments are shown here.
 if (preg_match('/^attention(?:Inbox(?:_[1-9][0-9]{0,17})?|Case_[1-9][0-9]{0,17})$/D',
     (string)($data??''))===1) {
@@ -42,7 +93,7 @@ if (preg_match('/^attention(?:Inbox(?:_[1-9][0-9]{0,17})?|Case_[1-9][0-9]{0,17})
         'zarinpal'=>achbotMessage('automatic_gateway_review.provider_zarinpal'),
         'nextpay'=>achbotMessage('automatic_gateway_review.provider_nextpay'),
     ];
-    $safe=static fn($v) => htmlspecialchars(substr((string)($v??''),0,180),
+    $safe=static fn($v) => htmlspecialchars(mb_substr((string)($v??''),0,180,'UTF-8'),
         ENT_QUOTES|ENT_SUBSTITUTE,'UTF-8');
     try {
         $rows=[];
@@ -165,17 +216,20 @@ if (preg_match('/^attention(?:Inbox(?:_[1-9][0-9]{0,17})?|Case_[1-9][0-9]{0,17})
                     ->setTimezone(new DateTimeZone('Asia/Tehran'))->format('Y-m-d H:i:s')
                 : (string)$item['created_at'];
             $status=(string)($item['provider_status']??'');
+            $optional=[
+                ['automatic_gateway_review.plan','plan',$planTitle],
+                ['automatic_gateway_review.name','name',$name],
+                ['automatic_gateway_review.handle','handle',$handle],
+                ['automatic_gateway_review.description','description',
+                    (string)($item['description']??'')],
+            ];
             $body=achbotMessage('automatic_gateway_review.case_title').
                 "\n\n".achbotMessageHtml('automatic_gateway_review.customer',['id'=>$item['user_id']]).
-                ($name!==''?"\n".achbotMessageHtml('automatic_gateway_review.name',['name'=>$name]):'').
-                ($handle!==''?"\n".achbotMessageHtml('automatic_gateway_review.handle',['handle'=>$handle]):'').
                 "\n".achbotMessageHtml('automatic_gateway_review.amount',[
                     'amount'=>number_format((int)$item['price'])]).
                 "\n".achbotMessageHtml('automatic_gateway_review.gateway',[
                     'provider'=>$labels[$item['provider']]??$item['provider']]).
                 "\n".achbotMessageHtml('automatic_gateway_review.subject',['subject'=>$subject]).
-                ($planTitle!==''?"\n".achbotMessageHtml('automatic_gateway_review.plan',
-                    ['plan'=>$planTitle]):'').
                 ($orderName!==''?"\n".achbotMessageHtml('automatic_gateway_review.username',
                     ['username'=>$orderName]):'').
                 ($orderId>0?"\n".achbotMessageHtml('automatic_gateway_review.order',
@@ -189,8 +243,6 @@ if (preg_match('/^attention(?:Inbox(?:_[1-9][0-9]{0,17})?|Case_[1-9][0-9]{0,17})
                 (($type==='BUY_SUB' || $type==='RENEW_SCONFIG')
                     && (int)$item['volume']>0?"\n".achbotMessageHtml(
                         'automatic_gateway_review.quota',['gb'=>$item['volume']]):'').
-                ((string)($item['description']??'')!==''?"\n".achbotMessageHtml(
-                    'automatic_gateway_review.description',['description'=>$item['description']]):'').
                 "\n".achbotMessageHtml('automatic_gateway_review.request_time',
                     ['date'=>$requested]).
                 "\n".achbotMessageHtml('automatic_gateway_review.merchant_quote',[
@@ -232,7 +284,7 @@ if (preg_match('/^attention(?:Inbox(?:_[1-9][0-9]{0,17})?|Case_[1-9][0-9]{0,17})
                 if ($nativeTotal>0)
                     $body.="\n".achbotMessage('automatic_gateway_review.native_errors');
             }
-            $body.="\n\n".achbotMessage('automatic_gateway_review.warning');
+            $footer="\n\n".achbotMessage('automatic_gateway_review.warning');
             $attempt=(int)$item['attempt_id'];
             // A merchant-attested decision still enforces the existing one-shot
             // payment/reference/native-effect checks on execution.
@@ -244,10 +296,11 @@ if (preg_match('/^attention(?:Inbox(?:_[1-9][0-9]{0,17})?|Case_[1-9][0-9]{0,17})
                 $actions[]=['text'=>achbotMessage('automatic_gateway_review.reject'),
                     'callback_data'=>'gatewayReview_R_'.$attempt];
             if ($actions) $rows[]=$actions;
-            else $body.="\n".achbotMessage('automatic_gateway_review.manual_hold');
+            else $footer.="\n".achbotMessage('automatic_gateway_review.manual_hold');
             $rows[]=[['text'=>achbotMessage('automatic_gateway_review.archive'),
                 'callback_data'=>'gatewayReview_H_'.$attempt]];
-            $body.="\n".achbotMessage('automatic_gateway_review.archive_notice');
+            $footer.="\n".achbotMessage('automatic_gateway_review.archive_notice');
+            $body=achbotGatewayReviewFitCase($body,$optional,$footer);
             $rows[]=[['text'=>achbotMessage('automatic_gateway_review.back_list'),
                 'callback_data'=>'attentionInbox']];
         }

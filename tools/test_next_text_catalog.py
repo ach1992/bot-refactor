@@ -2,7 +2,7 @@
 """Exact current editable-copy contract after removing experimental workbenches.
 
 Retired RC26 translations and their obsolete routes are absent from shipping
-source. The surviving 2,844 entries and all unrelated prior copy are compared
+source. The surviving current two-audience catalog and unrelated prior copy are compared
 against immutable Git baselines. New copy must be source-bound and parameter
 safe. This is deliberately not the historical 019/021-workbench test.
 """
@@ -55,12 +55,12 @@ def main() -> dict:
     ],cwd=ROOT,text=True)
     groups=json.loads(shell)
     current={a:historical.flatten(v) for a,v in groups.items()}
-    assert len(current['admin'])==1910 and len(current['user'])==942
+    assert len(current['admin'])==1911 and len(current['user'])==942
     assert not set(current['admin'])&set(current['user'])
     prior=historical.current_cleanup_restore(current)
     assert len(prior['admin'])==1964 and len(prior['user'])==942
     assert historical.CLEANUP_TOPICS.isdisjoint(groups['admin'])
-    assert len(historical.CLEANUP_NEW_KEYS)==32
+    assert len(historical.CLEANUP_NEW_KEYS)==33
     content={**current['user'],**current['admin']}
     refs=set()
     pattern=re.compile(r"""achbotMessage(?:Html)?\(\s*['"]([^'"]+)['"]""")

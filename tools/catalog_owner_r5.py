@@ -347,6 +347,7 @@ CLEANUP_ARCHIVE_NEW_KEYS={
     'automatic_gateway_review.native_effect',
     'automatic_gateway_review.native_more',
     'automatic_gateway_review.native_errors',
+    'automatic_gateway_review.truncated',
 }
 CLEANUP_NEW_KEYS=CLEANUP_ORIGINAL_NEW_KEYS | CLEANUP_ARCHIVE_NEW_KEYS
 @functools.lru_cache(maxsize=2)

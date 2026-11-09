@@ -571,6 +571,17 @@ function achbotEffectLockLinkRows(mysqli $db,int $effectId,bool $paid): array {
     if (!$target || $serverId<=0 || ($paid?($payId===null || $payId<=0):$payId!==null))
         throw new RuntimeException('effect_link_target_invalid');
     achbotEffectLockTargetRows($db,$serverId,null,$payId);
+    // A callback that finished its remote HTTP just before operator Archive
+    // must not link a new local order after the terminal original decision.
+    // Leave the verified/uncertain Native record for independent diagnosis.
+    if ($paid) {
+        $q=$db->prepare('SELECT state FROM pays WHERE id=?');
+        $q->bind_param('i',$payId);$q->execute();
+        $owner=$q->get_result()->fetch_assoc();$q->close();
+        if ($owner && in_array((string)$owner['state'],['paid','processing'],true))
+            achbotEffectAssertNotArchivedLocked(
+                $db,$payId,$owner['state']==='processing');
+    }
     return [$serverId,$payId];
 }
 

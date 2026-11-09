@@ -401,22 +401,61 @@ check($denied &&
  $db->query("SELECT state FROM service_effects WHERE id=$later")->fetch_row()[0]==='reserved',
  'archived_later_line_never_admitted_for_remote_create');
 
-// Dispatch admission serializes under original pays lock; Archive must
-// decline an admitted request whose external result may be uncertain.
+// Persisted dispatching and verified rows may outlive the remote worker.
+// Archive must close the original AFTER worker termination without changing
+// the 007 evidence, paying again, or pretending the remote account is absent.
 $admitted=seed($db,316,'zarinpal','review','fulfillment_failed');
 stalePaid($db,316,$admitted);
 $active=reserveEffect($db,316,1,'native_already_admitted');
 achbotEffectAdmitPaidDispatch($db,$active);
 check($db->query("SELECT state FROM service_effects WHERE id=$active")->fetch_row()[0]==='dispatching' &&
- achbotGatewayReviewArchive($db,9001,$admitted,9001)==='busy',
- 'archive_waits_for_inflight_native_admission');
-$db->query("UPDATE service_effects SET state='verified' WHERE id=$active");
-check(achbotGatewayReviewArchive($db,9001,$admitted,9001)==='busy',
- 'archive_does_not_discard_verified_unlinked_remote_result');
-$db->query("UPDATE service_effects SET state='local_recorded',order_id=998877
- WHERE id=$active");
-check(achbotGatewayReviewArchive($db,9001,$admitted,9001)==='archived',
- 'archive_allowed_after_prior_remote_effect_is_recorded');
+ achbotGatewayReviewArchive($db,9001,$admitted,9001)==='archived',
+ 'stale_dispatching_original_reaches_terminal_archive_without_replay');
+check($db->query("SELECT state FROM service_effects WHERE id=$active")->fetch_row()[0]==='dispatching' &&
+ achbotGatewayReviewArchive($db,9001,$admitted,9001)==='stale',
+ 'terminal_archive_immutable_stale_dispatch_evidence_retained');
+$verified=seed($db,325,'nowpayments','review','fulfillment_failed');
+stalePaid($db,325,$verified);
+$verifiedEffect=reserveEffect($db,325,1,'native_verified_unlinked');
+$db->query("UPDATE service_effects SET state='verified',verified_at=NOW()
+ WHERE id=$verifiedEffect");
+check(achbotGatewayReviewArchive($db,9001,$verified,9001)==='archived' &&
+ $db->query("SELECT state FROM service_effects WHERE id=$verifiedEffect")->fetch_row()[0]==='verified',
+ 'verified_unlinked_original_reaches_archive_without_order_synthesis');
+// A live same-session dispatch lease, unlike a stale database journal, must
+// still prevent terminal Archive until the worker releases its connection.
+$live=seed($db,324,'nextpay','review','fulfillment_failed');
+stalePaid($db,324,$live);
+$liveEffect=reserveEffect($db,324,1,'native_active_lease');
+achbotEffectAdmitPaidDispatch($db,$liveEffect);
+
+// Valid persisted near-5000-character description and five long Native
+// evidence rows must not hide the original review actions in Telegram.
+$long=seed($db,326,'nowpayments','review','fulfillment_failed');
+stalePaid($db,326,$long);
+$description=mb_substr(str_repeat('شرح <>& 😀 و توضیح فارسی ',350),0,4990,'UTF-8');
+$q=$db->prepare("UPDATE pays SET type='BUY_SUB',agent_count=5,
+ description=?,plan_id=7 WHERE id=326");
+$q->bind_param('s',$description);$q->execute();$q->close();
+$q=$db->prepare("UPDATE users SET name=? WHERE userid=1001");
+$longName=str_repeat('نام <>&😀 ',8);
+$q->bind_param('s',$longName);$q->execute();$q->close();
+for($i=1;$i<=5;$i++) {
+ $letter=chr(96+$i);
+ $e=reserveEffect($db,326,$i,str_repeat($letter,82));
+ $db->query("UPDATE service_effects SET state='dispatching',
+   provider_state=REPEAT('u',32) WHERE id=$e");
+}
+for($i=1;$i<=2;$i++) {
+ $q=$db->prepare("INSERT INTO payment_transactions
+ (attempt_id,provider,payment_id,observed_status)
+ VALUES (?,'nowpayments',?,'unconfirmed')");
+ $payment='provider-payment-'.$i.'-'.str_repeat('z',90);
+ $q->bind_param('is',$long,$payment);$q->execute();$q->close();
+}
+$pendingLong=seed($db,327,'nowpayments','pending',null,null,100000,30000);
+$q=$db->prepare('UPDATE pays SET description=? WHERE id=327');
+$q->bind_param('s',$description);$q->execute();$q->close();
 
 $j=seed($db,309,'nowpayments','review','confirmed','confirmed');
 $q=$db->prepare("INSERT INTO payment_transactions
@@ -445,9 +484,56 @@ echo json_encode([
  'real_review_decision_source'=>true,'test_effect_is_synthetic'=>true,
  'provider_http_calls'=>0,'telegram_calls'=>0,'audit_exactly_once'=>true,
  'financial_double_credit'=>false,'existing_attempt_only'=>true,
- 'race_effect_id'=>$raceEffect,'race_attempt_id'=>$raceAttempt],
+ 'race_effect_id'=>$raceEffect,'race_attempt_id'=>$raceAttempt,
+ 'live_effect_id'=>$liveEffect,'live_attempt_id'=>$live,
+ 'long_case_id'=>326,'pending_case_id'=>327],
  JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE);
 '''
+PHP_CASE = r"""<?php
+$_SERVER['SCRIPT_FILENAME']=__FILE__;
+$root=$argv[1];$socket=$argv[2];$dbName=$argv[3];
+$payId=(int)$argv[4];$mode=$argv[5];
+$db=new mysqli('localhost','root','',$dbName,0,$socket);
+$db->set_charset('utf8mb4');
+$connection=$db;$GLOBALS['connection']=$db;
+$admin=9001;$from_id=9001;$chat_id=9001;$message_id=73;
+$callbackId='fixture-gateway-detail';$botState=[];
+$data='attentionCase_'.$payId;
+$GLOBALS['case_edits']=[];$GLOBALS['case_sent']=[];
+function editText($id,$text,$markup,$mode,$chat) {
+ $GLOBALS['case_edits'][]=['text'=>$text,'markup'=>$markup,'parse'=>$mode];
+ return (object)['ok'=>($GLOBALS['case_mode']??'')!=='fallback'];
+}
+function sendMessage($text,$markup,$parse,$chat) {
+ $GLOBALS['case_sent'][]=['text'=>$text,'markup'=>$markup,'parse'=>$parse];
+ return (object)['ok'=>true];
+}
+function answerCallbackQuery(...$args) {return true;}
+$GLOBALS['case_mode']=$mode;
+require $root.'/src/Finance/Routes/AutomaticGatewayReview.php';
+$edits=$GLOBALS['case_edits'];$sent=$GLOBALS['case_sent'];
+$final=$mode==='fallback' ? ($sent[0]??null):($edits[0]??null);
+if (!$final)throw new RuntimeException('case_not_delivered');
+$plain=html_entity_decode(strip_tags($final['text']),ENT_QUOTES|ENT_HTML5,'UTF-8');
+$chars=preg_match_all('/./us',$plain);
+$astral=preg_match_all('/[\x{10000}-\x{10FFFF}]/u',$plain);
+$keyboard=json_decode($final['markup'],true,64,JSON_THROW_ON_ERROR);
+$callbacks=[];
+foreach($keyboard['inline_keyboard'] as $line)
+ foreach($line as $button)$callbacks[]=$button['callback_data'];
+echo json_encode([
+ 'complete'=>true,'units'=>$chars+$astral,
+ 'max'=>4096,'valid_utf8'=>preg_match('//u',$plain)===1,
+ 'balanced_html'=>substr_count($final['text'],'<code>')===
+   substr_count($final['text'],'</code>'),
+ 'truncated'=>str_contains($plain,'بخش‌هایی از متن نمایشی طولانی کوتاه'),
+ 'description_too_long_unmodified_in_storage'=>
+   (int)$db->query("SELECT CHAR_LENGTH(description) FROM pays WHERE id=$payId")->fetch_row()[0]>=4900,
+ 'text'=>$plain,'callbacks'=>$callbacks,
+ 'edit_count'=>count($edits),'send_count'=>count($sent),'parse'=>$final['parse']
+],JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE);
+"""
+
 PHP_RACE = r"""<?php
 $_SERVER['SCRIPT_FILENAME']=__FILE__;
 $root=$argv[1];$socket=$argv[2];$dbName=$argv[3];
@@ -458,7 +544,24 @@ $db->set_charset('utf8mb4');
 function achbotPayUxHostedAttentionSeconds(){return 3600;}
 require_once $root.'/src/Finance/GatewayReview.php';
 require_once $root.'/src/Finance/ServiceEffects.php';
-if ($mode==='admit') {
+if ($mode==='hold') {
+ $q=$db->prepare('SELECT pay_row_id FROM service_effects WHERE id=?');
+ $q->bind_param('i',$effectId);$q->execute();
+ $pay=$q->get_result()->fetch_assoc();$q->close();
+ if (!$pay || (int)$pay['pay_row_id']<=0)
+  throw new RuntimeException('no_fixture_hosted_owner');
+ $name='achbot-hosted-payment-'.(int)$pay['pay_row_id'];
+ $q=$db->prepare('SELECT GET_LOCK(?,0) AS acquired');
+ $q->bind_param('s',$name);$q->execute();
+ $acquired=$q->get_result()->fetch_assoc();$q->close();
+ if ((int)($acquired['acquired']??0)!==1)
+  throw new RuntimeException('effect_live_lock_unavailable');
+ file_put_contents($ready,'live_worker_owns_dispatch_lease');
+ $limit=microtime(true)+15;
+ while (!file_exists($release) && microtime(true)<$limit) usleep(10000);
+ // Termination/crash also releases this session lock automatically.
+ $result='worker_finished';
+} elseif ($mode==='admit') {
  file_put_contents($ready,'reserved_before_http');
  $limit=microtime(true)+15;
  while (!file_exists($release) && microtime(true)<$limit) usleep(10000);
@@ -483,6 +586,12 @@ def main():
             sql=(ROOT/"migrations/post-v9"/filename).read_bytes()
             result=subprocess.run(client,input=sql,env=env,capture_output=True,timeout=15)
             if result.returncode:raise RuntimeError(result.stderr.decode(errors='replace')[-1400:])
+        # Current 012 provider schema has a nullable 007 status display field.
+        # Only that read-only field is necessary for the isolated case fixture.
+        provider_col=subprocess.run(client+["-e",
+            "ALTER TABLE service_effects ADD provider_state VARCHAR(32) DEFAULT NULL"],
+            env=env,capture_output=True,text=True,timeout=10)
+        if provider_col.returncode:raise RuntimeError(provider_col.stderr)
         script=d/"gateway-review-fixture.php"
         script.write_text(PHP)
         proc=subprocess.run(["php","-d","allow_url_fopen=0",
@@ -532,6 +641,96 @@ def main():
                 worker.terminate()
                 try:worker.wait(timeout=3)
                 except subprocess.TimeoutExpired:worker.kill();worker.wait(timeout=3)
+        # A second real MariaDB session holds the dispatch lease while its
+        # worker is alive. Archive must report BUSY, not terminal success.
+        # Killing only our own synthetic worker proves that session teardown
+        # releases the lease and a stale 007 dispatching row can be archived.
+        liveReady=d/"live-ready";liveRelease=d/"live-release"
+        live=["php","-d","allow_url_fopen=0",
+            "-d","disable_functions=curl_init,curl_exec,exec,shell_exec,system,passthru,popen,proc_open,mail",
+            str(race_script),str(ROOT),str(d/"mysql.sock"),DB,
+            str(output["live_effect_id"]),str(output["live_attempt_id"])]
+        liveWorker=subprocess.Popen(live+["hold",str(liveReady),str(liveRelease)],
+            env=env,cwd=ROOT,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
+        try:
+            until=time.monotonic()+8
+            while not liveReady.exists() and time.monotonic()<until:
+                if liveWorker.poll() is not None:
+                    raise RuntimeError("Live dispatch lease worker exited early")
+                time.sleep(0.02)
+            if not liveReady.exists():raise RuntimeError("Live lease barrier missing")
+            blocked=subprocess.run(live+["archive",str(liveReady),str(liveRelease)],
+                env=env,cwd=ROOT,capture_output=True,text=True,timeout=10)
+            if blocked.returncode or blocked.stderr or json.loads(blocked.stdout)["result"]!="busy":
+                raise RuntimeError("True active dispatch was not guarded: "+blocked.stderr+blocked.stdout)
+            liveWorker.terminate()
+            liveWorker.communicate(timeout=8)
+            closed=subprocess.run(live+["archive",str(liveReady),str(liveRelease)],
+                env=env,cwd=ROOT,capture_output=True,text=True,timeout=10)
+            if closed.returncode or closed.stderr or json.loads(closed.stdout)["result"]!="archived":
+                raise RuntimeError("Stale dispatch remained unarchivable: "+closed.stderr+closed.stdout)
+            verify=subprocess.run(client+["-N","-e",
+                "SELECT CONCAT(p.state,'|',a.stage,'|',a.provider_status,'|',e.state,'|',"
+                "IFNULL(e.order_id,'NULL'),'|',IF(a.review_archived_at IS NULL,'open','archived')) "
+                "FROM pays p JOIN payment_attempts a ON a.pay_row_id=p.id "
+                "JOIN service_effects e ON e.pay_row_id=p.id "
+                "WHERE e.id="+str(output["live_effect_id"])],
+                env=env,capture_output=True,text=True,timeout=5)
+            if verify.returncode or verify.stdout.strip()!="paid|review|fulfillment_failed|dispatching|NULL|archived":
+                raise RuntimeError("Archive modified original money/Native evidence: "+verify.stdout+verify.stderr)
+            output["checks"].extend([
+                "true_active_native_dispatch_refuses_archive_without_mutation",
+                "worker_exit_releases_session_lease_and_allows_terminal_archive",
+                "unknown_native_effect_and_original_financial_status_immutable_after_archive",
+            ])
+        finally:
+            if liveWorker.poll() is None:
+                liveWorker.terminate()
+                try:liveWorker.wait(timeout=3)
+                except subprocess.TimeoutExpired:liveWorker.kill();liveWorker.wait(timeout=3)
+        # Execute the ACTUAL Telegram case route, with the real original
+        # 003/007 rows and a near-maximal persisted description. Use the same
+        # full HTML body and buttons for edit success and send fallback.
+        case_script=d/"gateway-case.php"
+        case_script.write_text(PHP_CASE)
+        for pay_id,mode in [(output["long_case_id"],"edit"),
+                            (output["long_case_id"],"fallback"),
+                            (output["pending_case_id"],"edit")]:
+            result=subprocess.run(["php","-d","allow_url_fopen=0",
+                "-d","disable_functions=curl_init,curl_exec,exec,shell_exec,system,passthru,popen,proc_open,mail",
+                str(case_script),str(ROOT),str(d/"mysql.sock"),DB,str(pay_id),mode],
+                env=env,cwd=ROOT,capture_output=True,text=True,timeout=25)
+            if result.returncode or result.stderr:
+                raise RuntimeError("Actual Telegram case route failed: "+
+                    result.stderr[-2400:]+result.stdout[-1200:])
+            case=json.loads(result.stdout)
+            if not (case["complete"] and case["valid_utf8"] and
+                    case["balanced_html"] and case["truncated"] and
+                    case["description_too_long_unmodified_in_storage"] and
+                    0<case["units"]<=4096 and case["parse"]=="HTML" and
+                    "attentionInbox" in case["callbacks"]):
+                raise RuntimeError("Bounded case failed: "+str(case)[:1000])
+            if pay_id==output["long_case_id"]:
+                if not (any(key.startswith("gatewayReview_H_") for key in case["callbacks"]) and
+                        all(part in case["text"] for part in [
+                            "شناسه عددی مشتری", "مبلغ سفارش", "شناسه صورتحساب",
+                            "آخرین وضعیت","عملیات سرویس", "اثر", "ردیف 5"])):
+                    raise RuntimeError("Case lost original/Native evidence: "+str(case)[:1000])
+            else:
+                if not (all(any(key.startswith(prefix) for key in case["callbacks"])
+                            for prefix in ("gatewayReview_A_","gatewayReview_R_","gatewayReview_H_"))):
+                    raise RuntimeError("Original approve/reject/archive buttons missing")
+            if mode=="fallback":
+                if case["edit_count"]!=1 or case["send_count"]!=1:
+                    raise RuntimeError("Edit failure did not send one bounded fallback")
+            elif case["edit_count"]!=1 or case["send_count"]!=0:
+                raise RuntimeError("Edit successful but fallback was incorrectly used")
+        output["checks"].extend([
+            "maximal_original_description_kept_in_database_html_case_bounded",
+            "five_native_lines_and_original_payment_evidence_kept",
+            "real_telegram_edit_and_fallback_both_deliver_legal_html_text",
+            "approve_reject_archive_back_buttons_survive_original_case_budget",
+        ])
         if not output.get("complete") or len(output["checks"])<16:
             raise RuntimeError("Incomplete original-attempt review checks")
         if args.report:args.report.write_text(json.dumps(output,indent=2,ensure_ascii=False)+"\n")

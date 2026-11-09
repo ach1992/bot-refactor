@@ -1188,10 +1188,10 @@ def run_wallet(tmp: str) -> tuple[dict, dict]:
         cwd=ROOT,check=True,timeout=180,capture_output=True,text=True)
     text_catalog=json.loads(catalog_output.stdout)
     expected_catalog={
-        'status':'PASS','current_catalog_keys':2852,
-        'current_admin_keys':1910,'current_user_keys':942,
+        'status':'PASS','current_catalog_keys':2853,
+        'current_admin_keys':1911,'current_user_keys':942,
         'retired_experimental_keys':129,'retired_experimental_topics':10,
-        'new_copy_entries':32,'current_runtime_files':131,
+        'new_copy_entries':33,'current_runtime_files':131,
         'new_copy_references_unbound':0,
         'unapproved_existing_copy_changes':0,
         'new_copy_negative_controls':5,'bare_ui_copy_violations':0,
@@ -2337,9 +2337,9 @@ def run_effects(tmp: str) -> tuple[dict, dict]:
         'archived_first_line_never_admitted_for_remote_create',
         'archive_closes_reserved_multi_account_followup',
         'archived_later_line_never_admitted_for_remote_create',
-        'archive_waits_for_inflight_native_admission',
-        'archive_does_not_discard_verified_unlinked_remote_result',
-        'archive_allowed_after_prior_remote_effect_is_recorded',
+        'stale_dispatching_original_reaches_terminal_archive_without_replay',
+        'terminal_archive_immutable_stale_dispatch_evidence_retained',
+        'verified_unlinked_original_reaches_archive_without_order_synthesis',
         'rc26_021_persisted_payment_fingerprint_byte_identical',
         'rc26_nextpay_018_hosted_digest_byte_identical',
         'rc26_zarinpal_018_hosted_digest_byte_identical',
@@ -2349,6 +2349,13 @@ def run_effects(tmp: str) -> tuple[dict, dict]:
         'historical_replacement_018_read_only_delivery',
         'archived_original_does_not_dispatch_sealed_018_packet',
         'real_race_fixture_reserved_before_archive',
+        'true_active_native_dispatch_refuses_archive_without_mutation',
+        'worker_exit_releases_session_lease_and_allows_terminal_archive',
+        'unknown_native_effect_and_original_financial_status_immutable_after_archive',
+        'maximal_original_description_kept_in_database_html_case_bounded',
+        'five_native_lines_and_original_payment_evidence_kept',
+        'real_telegram_edit_and_fallback_both_deliver_legal_html_text',
+        'approve_reject_archive_back_buttons_survive_original_case_budget',
     }
     if not (decision.get('complete') is True
             and set(decision.get('checks',[]))==required_decisions
