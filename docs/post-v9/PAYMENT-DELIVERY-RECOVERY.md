@@ -1,15 +1,16 @@
 # Issue #117 — crash-safe customer delivery (RC26 source published, installed acceptance open)
 
-> **Version-bound historical RC26 documentation, not the unreleased successor
-> contract.** The current Draft PR #136 intentionally removes the
-> operator resend/replacement/service workbenches and new-install 019/021
-> migrations. The future source still uses original 018/020 delivery and
-> follow-up journals for ordinary payment flows, including pending-only
-> first-send recovery; no blind retries of uncertain Telegram ACK or remote
-> Native effects. For the actual future scope, see
-> [AUTOMATIC-GATEWAY-REVIEW.md](AUTOMATIC-GATEWAY-REVIEW.md). For users of the
-> already-published RC26, retrieve matching versioned sources and operator
-> instructions from its immutable tag; never combine both versions' SQL.
+> **Version-bound historical RC26 documentation, not the published RC27
+> contract.** [PR #136](https://github.com/ach1992/bot-refactor/pull/136),
+> now released as [RC27](https://github.com/ach1992/bot-refactor/releases/tag/v0.10.0-rc.27),
+> removed the experimental operator resend/replacement/service workbenches
+> and new-install 019/021 migrations. The current source still retains
+> original 018/020 sealed delivery and follow-up journals and pending-only
+> first-send recovery, without blind retries of uncertain Telegram ACK or
+> remote Native effects. See [the current inbox and archive contract](AUTOMATIC-GATEWAY-REVIEW.md)
+> and [RC26 -> RC27 upgrade guide](RC26-TO-RC27.md). RC26's older procedures
+> remain valid only for the exact immutable RC26 release; never mix SQL
+> sidecars across versions.
 
 ## Scope and invariants
 

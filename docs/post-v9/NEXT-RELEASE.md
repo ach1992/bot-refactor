@@ -1,41 +1,14 @@
 # Current source and published release contracts
 
-## Unreleased cleanup candidate (Draft PR #136)
+## Published RC27 — source-only simplified automatic-gateway exception inbox
 
-The Owner explicitly rejected RC26's experimental multi-workbench payment
-review and asked for source/schema cleanup as if these extra tools had never
-been built. Draft PR #136 replaces them with one quiet incomplete automatic-
-gateway inbox and original-attempt one-shot decisions. Future fresh installs
-retain 018/020 delivery/follow-up journals and add the small 022
-operator archive columns, without shipping 019/021 or
-the specialized paid-account replacement workbench. See
-[AUTOMATIC-GATEWAY-REVIEW.md](AUTOMATIC-GATEWAY-REVIEW.md).
-**Not merged, independently approved, published or installed.**
-The initial independent review returned CHANGES_REQUIRED (six material
-findings). Its second high-assurance review confirmed F1/F2/F4/F5, but
-found two remaining defects: stale Native dispatching/verified journals
-could permanently prevent Archive, and a valid 5000-character description
-could exceed Telegram's 4096-character case limit. PR #136 now prepares
-one coherent narrow follow-up: reuse a session-scoped hosted-worker lock
-to allow terminal closure after the worker ends, and bound only optional
-case text while preserving payment/Native evidence and existing actions.
-These repairs still require exact-candidate PHP 8.5 CI and independent
-delta re-review; no extra workbench, review table or new-install 019/021
-migration is introduced. Installed RC26 021 data must remain intact for
-historical read-side proof.
-Source-real
-regression checks are available, but final acceptance must be bound to all
-eight PHP 8.5 families and the protected aggregate on the exact candidate
-HEAD; this is not installed-host or real-merchant acceptance. Do not confuse
-this prospective source with RC26 or alter its historical release artifacts.
-This is not approval to DROP a test database object or migrate a shared host.
+[v0.10.0-rc.27](https://github.com/ach1992/bot-refactor/releases/tag/v0.10.0-rc.27) publishes independently approved [PR #136](https://github.com/ach1992/bot-refactor/pull/136) and [Issue #117](https://github.com/ach1992/bot-refactor/issues/117), merged into 27e7d03a2f1adafbec24f4921e253c10325b78d3, TREE fcc1d5b8928d60f81b695947e76dde01b028dba0. The 131-member runtime ZIP SHA256 is 7853912ea273410dfe6a2c4e50bba0961d826e74f8bcc6c16a4747693ba9130f. [Full eight-family PHP 8.5 CI](https://github.com/ach1992/bot-refactor/actions/runs/42628557514) passed on the reviewed HEAD; [merged-main same-TREE CI](https://github.com/ach1992/bot-refactor/actions/runs/42634642173) passed via documented reuse and a fresh exact-source ZIP. The external independent review returned COMPLETE / APPROVE, no BLOCKER or REQUIRED.
 
+RC27 replaces RC26's experimental recovery workbenches with exactly one private on-demand unfinished ORIGINAL NOWPayments/NextPay/Zarinpal inbox. Staff with the existing payments capability have original-payment Approve, Reject, terminal local Archive and Back. Historical provider, Native, delivery and financial evidence remain; Archive prevents later original effects but is not an external refund or cancellation. Browser callback concurrency now differentiates live worker contention from actual SQL failure. No new workbench or replacement-flow replay was introduced.
 
-**Archive completion boundary:** User confirmed archival is a terminal
-operator handoff. The original invoice is hidden from the active queue,
-and no late automatic callback/Cron can change its local status, money or
-Native effect. Original customer/provider state and audit remain available;
-late signed child evidence is captured separately without reactivation.
+**Version boundary:** Fresh empty databases use existing prerequisites plus **018 -> 020 -> 022**; experimental 019/021 are not new-install steps. Existing RC26 installations must retain all historical 018/019/020/021 objects and sealed/fingerprint evidence, and may only apply the genuinely missing 022 after an explicitly authorized schema audit/cutover. RC27 distributes checksum-bound migrations separately from the runtime ZIP, not as automated DDL. Follow [RC26 to RC27](RC26-TO-RC27.md) and [gateway-review contract](AUTOMATIC-GATEWAY-REVIEW.md).
+
+**Still unverified:** installed Chili source/schema, real merchant verification, Marzban/PasarGuard, Telegram and webhook/Cron acceptance. GitHub publication authorizes none of those target mutations. Issue #117 remains OPEN. Older RC26 assets stay immutable.
 
 ## Published RC26 — source-reviewed recovery; installed acceptance open
 

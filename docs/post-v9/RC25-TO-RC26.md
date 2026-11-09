@@ -1,9 +1,10 @@
 # RC25 -> RC26 operator migration and recovery guide
 
-> **Historical published RC26 upgrade only.** Draft PR #136 proposes a
-> different future schema without experimental 019/021. Use RC26's tagged
-> runtime and 018-021 sidecars together if following this historical guide;
-> do not combine them with the unreleased successor's 018/020/022 schema.
+> **Historical published RC26 upgrade only.** Published
+> [RC27](https://github.com/ach1992/bot-refactor/releases/tag/v0.10.0-rc.27)
+> has a different fresh-install schema without experimental 019/021. Use
+> RC26's matching tagged runtime and 018-021 sidecars only for this historical
+> guide; do not combine them with RC27's 018/020/022 new-install chain.
 
 
 > **RC26 SOURCE-ONLY PRERELEASE — NOT INSTALLED, NOT APPROVED FOR RUNTIME CUTOVER.**

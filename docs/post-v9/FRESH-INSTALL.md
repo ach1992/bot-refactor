@@ -2,15 +2,7 @@
 
 This guide is for a **new bot with a new, empty database**. An existing bot, a copied live database or a partly migrated database must use its exact release's upgrade/recovery guide instead. There is no browser installer or automatic schema upgrade.
 
-**Version boundary:** This guide describes a **future, not-yet-released
-source-only successor** under Draft PR #136 (131 runtime members). The
-published RC26 still uses 018-021 and has its own immutable
-[RC25 to RC26 upgrade guide](RC25-TO-RC26.md) and matching tag. **Never mix**
-this prospective 018 + 020 + 022 schema with the published RC26 ZIP.
-A genuinely empty database uses the ordered current-source migrations listed
-below. Existing databases, even testing installations, require an audited
-forward transition and exact-version runtime replacement before removing
-unused objects.
+**Version boundary:** This guide applies to the published [v0.10.0-rc.27](https://github.com/ach1992/bot-refactor/releases/tag/v0.10.0-rc.27) source-only prerelease with 131 runtime members. New empty databases follow all historical prerequisites and then 018 -> 020 -> 022, excluding obsolete experimental 019/021. Published RC26 uses a different 018-021 chain and the immutable [RC25 to RC26 guide](RC25-TO-RC26.md). **Never mix RC26 runtime with RC27's new-install schema.** For an existing RC26 database, use the separately approved, audited forward transition in [RC26 to RC27](RC26-TO-RC27.md), not this fresh-install sequence.
 
 ## 1. Prepare the installation
 
@@ -70,12 +62,11 @@ mariadb --user=INSTALL_DB_USER --password NEW_EMPTY_DB < database/legacy-schema.
 
 Replace the account/database placeholders and repeat the import form for each subsequent table entry. These paths are relative to the private checkout, not the runtime ZIP. The release may name001 `panel-group-migration.sql` and003 `payment-attempt-migration.sql`; use the contents/checksums matching the selected source. Do not use `--force` to ignore errors or a wildcard SQL loop. Migration 014 has two ALTER TABLE statements; 015 creates a preflight helper procedure, normally drops it after successful validation, then executes three ALTER TABLE statements. Failed preflight may leave the helper procedure pending audited cleanup. Neither is a retry script. 015 rejects duplicate legacy quantities or malformed offers and must run after 012 and 014 on a genuinely empty, correctly initialized database. 016 is a guarded one-time column drop and 017 a one-time journal creation; neither may be rerun after success. A partly applied file requires an exact schema audit and an authorized completion plan; do not use `--force` or rerun completed migrations.
 
-The **future** source-only candidate distributes migration sidecars 018
-020 and 022, outside its runtime ZIP, as one-time checksum-bound DDL. It does
-**not** require the historical experimental 019 review table or the 021 paid
-replacement extensions. Published RC26 and historical upgrade documentation
-remain version-bound; no old Release asset has been changed. Migration
-sequencing remains a separately authorized operator action.
+RC27 distributes migration sidecars 018, 020 and 022, outside its runtime ZIP,
+as one-time checksum-bound DDL. New empty databases do **not** require the old
+experimental 019 review table or 021 paid replacement extensions. Published
+RC26 and its historical upgrade guide remain version-bound and immutable.
+Migration execution remains a separately authorized operator action.
 
 Do **not** run historical002, `legacy_rc4_nowpayments_import.sql`, or optional cleanup010 for a fresh installation. Cleanup010 is separate guarded maintenance, not a startup requirement; original unused tables may remain. Do not insert another bot's settings/users or synthetic test fixtures. The ordinary Owner settings journeys initialize the intended configuration.
 
