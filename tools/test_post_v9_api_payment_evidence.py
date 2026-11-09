@@ -482,9 +482,9 @@ def run(module):
                     assert php('giftprecheck',pay_id=gs,code='card-code')['accepted'] is True
                 assert not server.verify_responses
                 assert server.gift_consumes==0
-                assert sql(f"SELECT state,IFNULL(message_id,0) FROM pays WHERE id={gs}")=='pending\\t0'
+                assert sql(f"SELECT state,IFNULL(message_id,0) FROM pays WHERE id={gs}")=='pending\t0'
                 assert sql(f"SELECT stage,evidence_code IS NULL,evidence_review_sent_at IS NULL "
-                    f"FROM payment_attempts WHERE pay_row_id={gs}")=='pending\\t1\\t1'
+                    f"FROM payment_attempts WHERE pay_row_id={gs}")=='pending\t1\t1'
                 assert sql(f"SELECT COUNT(*) FROM payment_transactions WHERE attempt_id="
                     f"(SELECT id FROM payment_attempts WHERE pay_row_id={gs})")=='0'
                 server.card=card('CARD_PRECHECK',100001)
