@@ -1234,6 +1234,17 @@ def check():
         assert query(work,env,'SELECT step FROM users WHERE userid=9001')=='none'
         cases.append('manual_reject_r2_concurrent_editor_replacement_keeps_new_decision')
 
+        # A case-insensitive users.step collation must not accidentally
+        # treat a differently cased, superseding editor as the cached one.
+        standard_pay('standardr2case',method='gift_card')
+        open_reason_editor('standardr2case')
+        race_reason('r2_case','standardr2case',lambda:query(work,env,
+            "UPDATE users SET step='declineactionReason_standardr2case_111' WHERE userid=9001"))
+        assert query(work,env,'SELECT step FROM users WHERE userid=9001')==(
+            'declineactionReason_standardr2case_111')
+        query(work,env,"UPDATE users SET step='none' WHERE userid=9001")
+        cases.append('manual_reject_r2_exact_editor_bytes_ignore_case_insensitive_sql_collation')
+
         # R4: historical repeated refs to the same admin Telegram message
         # must not violate 020's unique key and roll back a valid rejection.
         assert query(work,env,'SELECT COUNT(*) FROM users WHERE userid=9003')=='0'

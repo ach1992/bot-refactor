@@ -354,7 +354,9 @@ if (preg_match('/^declineActionReason_(.+)_(\d+)$/', (string)($userInfo['step']?
         $actor=(int)$from_id;
         if (!achbotAdminCanLocked($connection,$actor,(int)$admin,'payments'))
             throw new RuntimeException('manual_reject_actor_revoked');
-        $q=$connection->prepare("UPDATE users SET step='none' WHERE userid=? AND step=?");
+        // users.step uses a case-insensitive legacy collation. Compare bytes,
+        // not collation-equivalent text, to consume only this exact editor.
+        $q=$connection->prepare("UPDATE users SET step='none' WHERE userid=? AND BINARY step=BINARY ?");
         $q->bind_param('is',$actor,$expectedEditor);
         $editorClaimed=$q->execute() && $q->affected_rows===1;$q->close();
         if (!$editorClaimed) throw new RuntimeException('manual_reject_editor_stale');

@@ -196,7 +196,7 @@ function sendPhoto(...$args){$GLOBALS['events'][]=['event'=>'PHOTO'];if(!empty($
  else {
   $connection=$GLOBALS['connection'];$admin=9001;$buttonValues=$GLOBALS['buttonValues'];$mainValues=$GLOBALS['mainValues'];$botUsername='FixtureBot';
   $hadActor=array_key_exists('from_id',$GLOBALS);$oldActor=$GLOBALS['from_id']??null;$GLOBALS['from_id']=9001;
-  $from_id=9001;$chat_id=9001;$message_id=222;
+  $from_id=9001;$chat_id=9001;$message_id=222;$cancelKey='{}';
   // First invoke the real original receipt Reject button: it must open
   // and persist the administrator's editor, never settle on its own.
   $data='declineAction_'.$p['hash_id'];$text='';$userInfo=['step'=>'none'];
