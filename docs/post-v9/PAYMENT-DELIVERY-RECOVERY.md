@@ -1,5 +1,16 @@
 # Issue #117 — crash-safe customer delivery (RC26 source published, installed acceptance open)
 
+> **Version-bound historical RC26 documentation, not the unreleased successor
+> contract.** The current Draft PR #136 intentionally removes the
+> operator resend/replacement/service workbenches and new-install 019/021
+> migrations. The future source still uses original 018/020 delivery and
+> follow-up journals for ordinary payment flows, including pending-only
+> first-send recovery; no blind retries of uncertain Telegram ACK or remote
+> Native effects. For the actual future scope, see
+> [AUTOMATIC-GATEWAY-REVIEW.md](AUTOMATIC-GATEWAY-REVIEW.md). For users of the
+> already-published RC26, retrieve matching versioned sources and operator
+> instructions from its immutable tag; never combine both versions' SQL.
+
 ## Scope and invariants
 
 This is an additive **source** change, NOT an installed Chili migration and NOT a claim that full Issue #117 is accepted. Payment/native settlement remains governed by the existing financial and service-effect pins.

@@ -935,7 +935,7 @@ def check():
         assert not any(e['name'] in ('remote_create','remote_edit','qr_send') for e in rejected)
         assert any(e['name']=='sendMessage' and len(e.get('args',[]))>=4 and
                    e['args'][3]==1001 for e in rejected),rejected
-        assert any(e['name']=='sendMessage' and 'کاربر' in str(e['args'][0])
+        assert any(e['name']=='sendMessage' and 'مشتری' in str(e['args'][0])
                    for e in rejected),rejected
         assert not any(e['name']=='setUser' and str(e['step']).startswith('declineActionReason_')
                        for e in rejected),rejected
@@ -1076,7 +1076,7 @@ def check():
         assert observed=='customer:unknown,operator:acknowledged,receipt_primary:acknowledged',observed
         report=[str(e['args'][0]) for e in attempts if e['name']=='sendMessage' and
                 e['args'][-1]==9001]
-        assert len(report)==1 and 'رد توسط مدیر' in report[0] and 'ارسال شد' not in report[0],report
+        assert len(report)==1 and 'رسید دستی رد شد' in report[0] and 'ارسال شد' not in report[0],report
         replay=run_route(work,env,route_driver,
                          data='declineAction_standardrejectnoticeunknown',
                          actor=9001,route='manual_admin')

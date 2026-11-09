@@ -270,46 +270,11 @@ def check():
             assert value['result'] is None and not server.trace,invalid
             scenarios.append('strict_invalid_endpoint_no_login_or_get')
 
+        # The old operator bank-review GET callback was removed entirely.
+        # Keep the source-real auth/login/GET and existing original CREATE
+        # continuation tests below; no stale admin UI or second service path.
         baseline=recovery.unchanged(work,env,pay)
-        route=call(work,env,driver,op='route',callback=f'bankReviewRead_{pay}_1_0')
-        assert [e['event'] for e in route['events']]==['ACK','EDIT'],route
-        assert 'شواهد لحظه‌ای حساب' in route['events'][-1]['text']
-        assert len(server.trace)==2 and server.trace[-1][2] is True
-        assert recovery.unchanged(work,env,pay)==baseline
-        scenarios.append('real_operator_route_uses_exact_pinned_curl_readback_no_writes')
-        server.trace.clear()
-
-        nonowner=call(work,env,driver,op='route',
-                      callback=f'bankReviewRead_{pay}_1_0',actor=9002)
-        assert not server.trace and [e['event'] for e in nonowner['events']]==['ACK']
-        scenarios.append('unauthorized_callback_never_contacts_login_or_account')
-
-        for mode,restore in (
-            ('drift_url',f"UPDATE server_config SET panel_url='{server.url}' WHERE id=2"),
-            ('drift_credentials',"UPDATE server_config SET password='fixture-password' WHERE id=2"),
-        ):
-            server.mode=mode;server.trace.clear()
-            result=call(work,env,driver,op='route',
-                        callback=f'bankReviewRead_{pay}_1_0')
-            assert [r[:2] for r in server.trace]==[
-                ('POST','/api/admin/token'),
-                ('GET','/api/user/'+server.username)],(mode,server.trace)
-            assert len([e for e in result['events'] if e['event']=='ACK'])==1
-            assert 'نتیجه غیرقطعی' in result['events'][-1]['text']
-            recovery.sql(work,env,restore)
-            scenarios.append('mutation_during_login_does_not_retarget_'+mode)
-
-        # Repeat the same actual route under failures, never claiming
-        # remote nonexecution from a 404 or a missing token.
-        for mode in ('get_404','login_redirect'):
-            server.mode=mode;server.trace.clear()
-            result=call(work,env,driver,op='route',
-                        callback=f'bankReviewRead_{pay}_1_0')
-            assert len([e for e in result['events'] if e['event']=='ACK'])==1
-            assert 'استعلام قابل اتکا دریافت نشد' in result['events'][-1]['text']
-            scenarios.append('operator_route_http_failure_remains_unknown_'+mode)
-
-        assert recovery.unchanged(work,env,pay)==baseline
+        server.mode='ok';server.trace.clear()
 
         # Real PHP + MariaDB + authenticated login/account GET, then the
         # EXISTING service_effects dispatching row is advanced locally.

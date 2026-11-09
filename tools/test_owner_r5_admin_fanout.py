@@ -125,7 +125,7 @@ yes(achbotAdminRecipientAllowed($connection,9004,9001)&&!achbotAdminCan('operati
 foreach([9001,9002,9003,9004,9005,9006] as $actor)yes(achbotAdminCan('payments',$actor)&&achbotAdminCan('review',$actor),'same receipt review approve reject permission for every valid tier '.$actor);
 yes(achbotAdminCan('payments',9013)&&achbotAdminCan('payments',9014),'invalid notification preference cannot revoke genuine staff payment authority');
 $from_id=9004;yes(achbotAdminRequestAllowed('approvePaymentfixture',null,'none')&&achbotAdminRequestAllowed('attentionInbox',null,'none'),'Support receipt/review ingress remains allowed');
-foreach(['increaseUserWallet','decreaseUserWallet','createUserWalletDebt','pgResetAccount1','reply_7','npReviewInbox'] as $cb)yes(!achbotAdminRequestAllowed($cb,null,'none'),'notification permission cannot grant independent operation '.$cb);
+foreach(['increaseUserWallet','decreaseUserWallet','createUserWalletDebt','pgResetAccount1','reply_7','gateWays_Channels'] as $cb)yes(!achbotAdminRequestAllowed($cb,null,'none'),'notification permission cannot grant independent operation '.$cb);
 $from_id=1001;
 yes(achbotAdminLevel(9013)==='operator'&&!achbotAdminRecipientAllowed($connection,9013,9001),'malformed notification preference denies otherwise valid staff');
 yes(achbotAdminLevel(9014)==='operator'&&!achbotAdminRecipientAllowed($connection,9014,9001),'duplicate notification preference denies otherwise valid staff');

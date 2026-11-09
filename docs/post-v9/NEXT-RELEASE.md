@@ -1,5 +1,42 @@
 # Current source and published release contracts
 
+## Unreleased cleanup candidate (Draft PR #136)
+
+The Owner explicitly rejected RC26's experimental multi-workbench payment
+review and asked for source/schema cleanup as if these extra tools had never
+been built. Draft PR #136 replaces them with one quiet incomplete automatic-
+gateway inbox and original-attempt one-shot decisions. Future fresh installs
+retain 018/020 delivery/follow-up journals and add the small 022
+operator archive columns, without shipping 019/021 or
+the specialized paid-account replacement workbench. See
+[AUTOMATIC-GATEWAY-REVIEW.md](AUTOMATIC-GATEWAY-REVIEW.md).
+**Not merged, independently approved, published or installed.**
+The initial independent review returned CHANGES_REQUIRED (six material
+findings). Its second high-assurance review confirmed F1/F2/F4/F5, but
+found two remaining defects: stale Native dispatching/verified journals
+could permanently prevent Archive, and a valid 5000-character description
+could exceed Telegram's 4096-character case limit. PR #136 now prepares
+one coherent narrow follow-up: reuse a session-scoped hosted-worker lock
+to allow terminal closure after the worker ends, and bound only optional
+case text while preserving payment/Native evidence and existing actions.
+These repairs still require exact-candidate PHP 8.5 CI and independent
+delta re-review; no extra workbench, review table or new-install 019/021
+migration is introduced. Installed RC26 021 data must remain intact for
+historical read-side proof.
+Source-real
+regression checks are available, but final acceptance must be bound to all
+eight PHP 8.5 families and the protected aggregate on the exact candidate
+HEAD; this is not installed-host or real-merchant acceptance. Do not confuse
+this prospective source with RC26 or alter its historical release artifacts.
+This is not approval to DROP a test database object or migrate a shared host.
+
+
+**Archive completion boundary:** User confirmed archival is a terminal
+operator handoff. The original invoice is hidden from the active queue,
+and no late automatic callback/Cron can change its local status, money or
+Native effect. Original customer/provider state and audit remain available;
+late signed child evidence is captured separately without reactivation.
+
 ## Published RC26 — source-reviewed recovery; installed acceptance open
 
 [RC26](https://github.com/ach1992/bot-refactor/releases/tag/v0.10.0-rc.26)

@@ -304,6 +304,7 @@ def sandbox(*, imported_empty=False):
         for name in (
             "001_marzban_panel_group_id.sql",
             "003_payment_attempts.sql",
+            "022_gateway_review_archive.sql",
             "006_payment_message_refs.sql",
             "007_service_effects.sql",
             "008_referral_awards.sql",

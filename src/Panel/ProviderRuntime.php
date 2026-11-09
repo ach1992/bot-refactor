@@ -1245,6 +1245,9 @@ function achbotProviderDispatchReservedAccount(
         throw new RuntimeException('effect_provider_changed_pre_dispatch');
     $adapter=achbotProviderDefinition($type);
     if ($adapter===null) throw new RuntimeException('unsupported_effect_provider');
+    // This one short admission is AFTER reservation, BEFORE any outbound
+    // CREATE, for both Marzban and PasarGuard. No lock spans provider HTTP.
+    achbotEffectAdmitPaidDispatch($db,$effectId);
     return ($adapter['dispatch'])($db,$effectId,$serverId,$group,$endpoint,$remark,$volume,$days,$planId,$operation,$expiry,$bytes,$p,$credentials);
 }
 function achbotMarzbanDispatchEffectAdapter(

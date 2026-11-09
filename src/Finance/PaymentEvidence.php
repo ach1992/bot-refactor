@@ -170,8 +170,8 @@ function achbotPaymentEvidencePayFingerprint(array $pay): string {
     // A new scoped quote binds its immutable metadata to every API receipt.
     if (isset($pay['addon_scope_snapshot']))
         $out['addon_scope_snapshot']=(string)$pay['addon_scope_snapshot'];
-    // Only NEW, durably pinned invoices include 021 evidence. Legacy hashed
-    // evidence remains byte-identical, even when later nullable columns exist.
+    // Historical RC26 evidence includes these immutable 021 fields only
+    // when they were populated. New installs without 021 remain compatible.
     if (isset($pay['issued_entitlement_days']) || isset($pay['issued_entitlement_gb'])) {
         $out['issued_entitlement_days']=(string)($pay['issued_entitlement_days']??'');
         $out['issued_entitlement_gb']=(string)($pay['issued_entitlement_gb']??'');

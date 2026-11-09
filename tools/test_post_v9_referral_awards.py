@@ -207,6 +207,21 @@ def main():
         assert balance(work,env)==500 and status(work,env,debt)=='CONFIRMED'
         cases.append('signed_debt_credit_arithmetic_preserved')
 
+        # Source-real hosted Archive after an otherwise completed account
+        # journal: the referrer's wallet must NOT receive any NEW credit.
+        # Original paid state, 007 local effect and referral evidence stay put.
+        sql(work,env,(ROOT/'migrations/post-v9/003_payment_attempts.sql').read_text())
+        sql(work,env,(ROOT/'migrations/post-v9/022_gateway_review_archive.sql').read_text())
+        archived=seed(work,env,'archived_referrer',state='paid')
+        sql(work,env,"INSERT INTO payment_attempts "
+            "(pay_row_id,provider,order_hash,provider_reference,quote_amount,quote_currency,local_amount_toman,review_archived_at,review_archived_by) "
+            f"VALUES ({archived},'nowpayments','archived_referrer','referrer-archive-invoice',1,'usd',100,UTC_TIMESTAMP(),9001)")
+        before_archive=balance(work,env)
+        refused=invoke(work,env,driver,pay=archived)
+        assert refused['result'] is False and balance(work,env)==before_archive and refused['events']==[],refused
+        assert status(work,env,archived)=='' and sql(work,env,f"SELECT state FROM pays WHERE id={archived}")=='paid'
+        cases.append('archived_hosted_referral_wallet_credit_and_new_award_refused')
+
         malformed=seed(work,env,'malformed_index')
         sql(work,env,'ALTER TABLE referral_awards DROP FOREIGN KEY fk_referral_award_payment, DROP INDEX uq_referral_award_payment')
         assert invoke(work,env,driver,pay=malformed)['result'] is False

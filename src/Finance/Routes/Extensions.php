@@ -335,7 +335,7 @@ if (preg_match('/^approveIncreaseDay(.*)/', $data, $match) && achbotAdminCanFor(
     if ($resume!==null) {
         if (in_array($resume['status'],['approved','delivery_only'],true)) {
             achbotManualPgEditNotify($connection,(int)$resume['pay_id']);
-        } else alert(achbotMessage('service_recovery_action.edit_unverified'),true);
+        } else alert(achbotMessage('manual_receipt_final.edit_unverified'),true);
         return;
     }
     $apiManualSeen=function_exists('achbotApiPaymentManualAddonPreflight') ? achbotApiPaymentManualAddonPreflight($connection,(string)$match[1]) : null;
@@ -1179,7 +1179,7 @@ if (preg_match('/^approveIncreaseVolume(.*)/', $data, $match) && achbotAdminCanF
     if ($resume!==null) {
         if (in_array($resume['status'],['approved','delivery_only'],true)) {
             achbotManualPgEditNotify($connection,(int)$resume['pay_id']);
-        } else alert(achbotMessage('service_recovery_action.edit_unverified'),true);
+        } else alert(achbotMessage('manual_receipt_final.edit_unverified'),true);
         return;
     }
     $apiManualSeen=function_exists('achbotApiPaymentManualAddonPreflight') ? achbotApiPaymentManualAddonPreflight($connection,(string)$match[1]) : null;

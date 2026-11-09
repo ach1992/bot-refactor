@@ -19,7 +19,7 @@ from check_post_v9 import (
     owner_gift_policy_negative_controls, owner_r5_proof_mismatches,
 )
 
-FAMILY_FIELDS = {'admin': ('owner_ux_r5', 'owner_r6_notifications', 'owner_r6_financial_alerts'), 'api': ('existing_payment_apis',), 'services': ('marzban', 'purchases', 'webhook_file_configuration', 'telegram_transport_log_privacy', 'optional_cron_runner', 'marzban_service_modifications'), 'wallet': ('unsupported_wallet_preflight', 'wallet_transfer_safety', 'wallet_replay_freshness_and_operation_identity', 'wallet_transfer_generation', 'admin_wallet_adjustment_safety', 'admin_wallet_ux', 'next_payment_ux', 'central_text_catalog', 'copy_audience_and_numeric_source', 'public_bootstrap_privacy', 'public_gateway_privacy', 'service_unit_quote_guards', 'pasarguard_client', 'optional_cleanup'), 'presentation': ('provider_integration', 'currency_settings', 'server_display_settings', 'subscription_presentation', 'simple_server_display', 'financial_subject_preflight', 'catalogue_and_subscription_qr', 'payment_ux_lifecycle', 'payment_browser_feedback', 'checkout_serialization', 'customer_method_serialization'), 'authorization': ('automatic_renewal_ledger', 'payment_readiness_preflight', 'wallet_authorization_freshness', 'latest_review_f1_f4'), 'effects': ('financial_native_route_guards', 'review_decision_idempotency', 'service_effects', 'create_verification_lock_order', 'strict_effect_transport_pin', 'gift_source_enqueue_idempotency', 'direct_admin_gift_verified', 'direct_admin_gift_native', 'owner_gift_policy', 'owner_gift_locks', 'owner_gift_lock_negative_controls', 'owner_gift_policy_negative_controls', 'gift_worker_safe_continuation', 'gift_physical_target_continuity'), 'funding': ('source_only_overlays', 'wallet_paid_create', 'wallet_checkout_routes', 'wallet_callback_framing', 'manual_choice_callback_framing', 'nonpaid_trial_bulk', 'referral_awards', 'referral_postcommit_routes', 'bank_auto_buy_sub', 'bank_recovery_inspection', 'bank_recovery_transport', 'manual_payment_method_isolation', 'manual_standard_real_helper_review_remediation', 'manual_crypto_destination_and_admin_guards', 'shared_payment_ledger_rc4_import', 'agency_state_regression', 'marzban_logical_transfer')}
+FAMILY_FIELDS = {'admin': ('owner_ux_r5', 'owner_r6_notifications', 'owner_r6_financial_alerts'), 'api': ('existing_payment_apis',), 'services': ('marzban', 'purchases', 'webhook_file_configuration', 'telegram_transport_log_privacy', 'optional_cron_runner', 'marzban_service_modifications'), 'wallet': ('unsupported_wallet_preflight', 'wallet_transfer_safety', 'wallet_replay_freshness_and_operation_identity', 'wallet_transfer_generation', 'admin_wallet_adjustment_safety', 'admin_wallet_ux', 'next_payment_ux', 'central_text_catalog', 'copy_audience_and_numeric_source', 'public_bootstrap_privacy', 'public_gateway_privacy', 'service_unit_quote_guards', 'pasarguard_client', 'optional_cleanup'), 'presentation': ('provider_integration', 'currency_settings', 'server_display_settings', 'subscription_presentation', 'simple_server_display', 'financial_subject_preflight', 'catalogue_and_subscription_qr', 'payment_ux_lifecycle', 'payment_browser_feedback', 'checkout_serialization', 'customer_method_serialization'), 'authorization': ('automatic_renewal_ledger', 'payment_readiness_preflight', 'wallet_authorization_freshness', 'latest_review_f1_f4'), 'effects': ('financial_native_route_guards', 'review_decision_idempotency', 'service_effects', 'create_verification_lock_order', 'strict_effect_transport_pin', 'gift_source_enqueue_idempotency', 'direct_admin_gift_verified', 'direct_admin_gift_native', 'owner_gift_policy', 'owner_gift_locks', 'owner_gift_lock_negative_controls', 'owner_gift_policy_negative_controls', 'gift_worker_safe_continuation', 'gift_physical_target_continuity'), 'funding': ('source_only_overlays', 'wallet_paid_create', 'wallet_checkout_routes', 'wallet_callback_framing', 'manual_choice_callback_framing', 'nonpaid_trial_bulk', 'referral_awards', 'referral_postcommit_routes', 'bank_auto_buy_sub', 'bank_recovery_transport', 'manual_payment_method_isolation', 'manual_standard_real_helper_review_remediation', 'manual_crypto_destination_and_admin_guards', 'shared_payment_ledger_rc4_import', 'agency_state_regression', 'marzban_logical_transfer')}
 
 SOURCE_UPDATES = {'admin': (), 'api': (), 'services': ('unified_service_management',), 'wallet': (), 'presentation': (), 'authorization': (), 'effects': (), 'funding': ('current_additive_migration_separately_tested',)}
 
@@ -44,8 +44,8 @@ def run_admin(tmp: str) -> tuple[dict, dict]:
     result = {}
     owner_r5={}
     r5_suites=[
-        ('roles','test_owner_r5_roles.py',635,
-         {'complete':True,'cases':635,'real_disposable_mariadb':True,'actual_admin_keyboard':True,
+        ('roles','test_owner_r5_roles.py',630,
+         {'complete':True,'cases':630,'real_disposable_mariadb':True,'actual_admin_keyboard':True,
           'db_only_staff_authority':True,'legacy_roleless_operator':True,
           'obsolete_staff_arrays_ignored':True,'obsolete_array_denials':3,
           'no_obsolete_array_import':True,'explicit_manager_assignment':True,
@@ -593,12 +593,12 @@ def run_api(tmp: str) -> tuple[dict, dict]:
         'manual_volume_unknown_customer_ack_not_automatically_resent',
         'manual_day_missing_followup_schema_rolls_back_local_finish',
         # Independent review REQUIRED-1: actual Owner-private UI evidence.
-        'manual_edit_owner_case_customer_pending_primary_acknowledged',
-        'manual_edit_owner_case_customer_unknown_no_replay',
-        'manual_edit_owner_case_mirror_dispatching_original_message',
-        'manual_edit_owner_case_fully_acknowledged_not_recoverable',
-        'manual_edit_owner_case_61st_customer_pending_before_limit',
-        'manual_edit_owner_case_61st_customer_unknown_without_replay',
+        'manual_edit_original_callback_delivers_pending_customer_once',
+        'manual_edit_unknown_customer_telegram_ack_never_resent',
+        'manual_edit_dispatching_original_mirror_no_duplicate',
+        'manual_edit_all_acknowledged_no_recovery_or_replay',
+        'manual_edit_61st_customer_pending_sent_despite_60_prior_receipts',
+        'manual_edit_61st_customer_unknown_no_second_telegram',
         # Reviewer R1/R2: original approver and immutable amount, all kinds.
         'manual_renew_resume_refuses_changed_payment_amount',
         'manual_renew_resume_refuses_changed_attempt_amount',
@@ -1179,7 +1179,7 @@ def run_wallet(tmp: str) -> tuple[dict, dict]:
                     "--run-disposable","--report",str(next_payment_path)],
                    cwd=ROOT,check=True,timeout=180,capture_output=True)
     next_payment=json.loads(next_payment_path.read_text())
-    if not (next_payment.get("complete") is True and next_payment.get("cases")==15
+    if not (next_payment.get("complete") is True and next_payment.get("cases")==19
             and next_payment.get("fresh_native_addon_admission") is True
             and next_payment.get("unknown_native_refuses_without_draft") is True):
         raise RuntimeError("Durable payment messages, volume entry and attention proof incomplete")
@@ -1187,160 +1187,24 @@ def run_wallet(tmp: str) -> tuple[dict, dict]:
         ["python3",str(ROOT/"tools/test_next_text_catalog.py")],
         cwd=ROOT,check=True,timeout=180,capture_output=True,text=True)
     text_catalog=json.loads(catalog_output.stdout)
-    if not (text_catalog.get("status")=="PASS"
-            and text_catalog.get("source_files")==78
-            and text_catalog.get("pre_style_source_equivalent_occurrences")==3202
-            and text_catalog.get("presentation",{}).get("owner_followup_changes")==7
-            and text_catalog.get("presentation",{}).get("owner_followup_negative_controls")==7
-            and text_catalog.get("native",{}).get("current_owner_followup_changes")==7
-            and text_catalog.get("static_ui_violations")==0
-            and text_catalog.get("ascii_ui_violations")==0
-            and text_catalog.get("ascii_audit_negative_controls")==8
-            and text_catalog.get("management_ascii_audit_controls")==2
-            and text_catalog.get("machine_predicate_audit_controls")==2
-            and text_catalog.get("presentation",{}).get("management_provider_label_cases")==11
-            and text_catalog.get("migrated_machine_fields_or_sql_arguments")==0
-            and text_catalog.get("direct_http_guards")==4
-            and text_catalog.get("native",{}).get("pre_style_templates")==3066
-            and text_catalog.get("native",{}).get("pre_style_interpolated_templates")==293
-            and text_catalog.get("native",{}).get("pre_style_byte_assertions")==4839
-            and text_catalog.get("authorized_source_dependency_files")==3
-            and text_catalog.get("authorized_bootstrap_flow_changes")==1
-            and text_catalog.get("approved_public_copy_corrections")==3
-            and text_catalog.get("native",{}).get("pre_style_byte_preserved_templates")==3063
-            and text_catalog.get("native",{}).get("pre_style_privacy_corrections")==3
-            and text_catalog.get("native",{}).get("actual_traffic_helper_parity_cases")==18
-            and text_catalog.get("editable_catalog_files")==2
-            and text_catalog.get("logical_topics")==28+10
-            and text_catalog.get("current_authorized_source_edits")==26
-            and text_catalog.get("retired_parser_tokens")==23
-            and text_catalog.get("relocation_source_ref")=="ecd30ba9192ed374703118a6c131be8809cc7b06"
-            and text_catalog.get("native",{}).get("current_retired_feature_keys")==3
-            and text_catalog.get("catalog_keys")==2780+14+9+18+27+12+7+17+2+2+3+4+1+3+6+1
-            and text_catalog.get("native",{}).get("editable_catalog_files")==2
-            and text_catalog.get("native",{}).get("logical_topics")==28+10
-            and text_catalog.get("native",{}).get("current_catalog_keys")==2780+14+9+18+27+12+7+17+2+2+3+4+1+3+6+1
-            and text_catalog.get("native",{}).get("current_gift_admin_additions")==1
-            and text_catalog.get("native",{}).get("current_gift_catalog_negative_controls")==8
-            and text_catalog.get("native",{}).get("current_gift_catalog_negative_scenarios")==[
-                'missing_report','wrong_audience','changed_value','missing_parameter',
-                'reordered_parameters','unapproved_extra_key',
-                'duplicate_cross_audience_key','prior_catalog_mutation']
-            and text_catalog.get("native",{}).get("current_addon_catalog_additions")==14
-            and text_catalog.get("native",{}).get("current_addon_catalog_negative_controls")==4
-            and text_catalog.get("native",{}).get("current_addon_catalog_negative_scenarios")==[
-                'addon_missing_key','addon_changed_value','addon_cross_audience','addon_extra_key']
-            and text_catalog.get("native",{}).get("current_management_added_keys")==112
-            and text_catalog.get("native",{}).get("current_catalog_binding_paths")==2
-            and text_catalog.get("native",{}).get("current_catalog_binding_entries")==4
-            and text_catalog.get("native",{}).get("current_catalog_binding_negative_controls")==4
-            and text_catalog.get("native",{}).get("retired_current_facade_absent") is True
-            and text_catalog.get("native",{}).get("current_traffic_shared_observation_cases")==28
-            and text_catalog.get("native",{}).get("current_retired_implementation_keys")==23
-            and text_catalog.get("native",{}).get("current_added_admin_keys")==1
-            and text_catalog.get("native",{}).get("current_parameter_privacy_changes")==3
-            and text_catalog.get("native",{}).get("current_style_changes",0)>0
-            and text_catalog["native"]["current_byte_preserved_keys"]
-                +text_catalog["native"]["current_style_changes"]
-                +text_catalog["native"]["current_added_admin_keys"]==2523
-            # Prior approved topics remain individually hash-pinned. The
-            # new 3-entry Owner-private original Hosted CREATE action adds
-            # exactly 3 keys, 3 source references and eight native template
-            # assertions (including one parameterized object/one-pass text).
-            # Preserve all earlier counters and negative controls.
-            and text_catalog.get("native",{}).get("current_native_template_assertions")==4120+24+9+139+42+7+2+3+9+1+8+21+6
-            and text_catalog.get("native",{}).get("current_object_conversion_templates")==268+2+15+5+1+1+1+3+1
-            and text_catalog.get("native",{}).get("current_shared_multi_parameter_templates")==66+1+14+5+1+1+1+2+1
-            and text_catalog.get("native",{}).get("current_one_pass_templates")==268+2+15+5+1+1+1+3+1
-            and text_catalog.get("native",{}).get("current_r5_changes")==273
-            and text_catalog.get("native",{}).get("current_r5_retired_keys")==10
-            and text_catalog.get("native",{}).get("current_r5_added_keys")==60
-            and text_catalog.get("presentation",{}).get("r5_negative_controls")==5
-            and text_catalog.get("native",{}).get("current_non_ascii_digit_templates")==0
-            and text_catalog.get("presentation",{}).get("status")=="PASS"
-            and text_catalog.get("presentation",{}).get("editable_files")==2
-            and text_catalog.get("presentation",{}).get("current_keys")==2780+14+9+18+27+12+7+17+2+2+3+4+1+3+6+1
-            and text_catalog.get("presentation",{}).get("numeric_template_changes")==23
-            and text_catalog.get("presentation",{}).get("adjacent_emoji_violations")==0
-            and text_catalog.get("presentation",{}).get("parameter_exception_count")==3
-            and text_catalog.get("presentation",{}).get("semantic_label_icon_cases")==12
-            and text_catalog.get("presentation",{}).get("semantic_context_icon_cases")==16
-            and text_catalog.get("presentation",{}).get("native_compositions")==6
-            and text_catalog.get("presentation",{}).get("reviewed_semantic_context_cases")==9
-            and text_catalog.get("presentation",{}).get("archived_semantic_context_RED")==7
-            and text_catalog.get("presentation",{}).get("recipient_placement_cases")==12
-            and text_catalog.get("presentation",{}).get("archived_recipient_placement_RED")==12
-            and text_catalog.get("presentation",{}).get("recipient_payloads_byte_unchanged") is True
-            and text_catalog.get("presentation",{}).get("recipient_source_files")==3
-            and text_catalog.get("presentation",{}).get("recipient_authorized_role_layers")==1
-            and text_catalog.get("presentation",{}).get("recipient_source_layer_negative_controls")==3
-            and text_catalog.get("presentation",{}).get("recipient_authorized_ticket_layers")==2
-            and text_catalog.get("presentation",{}).get("recipient_ticket_layer_negative_controls")==7
-            and text_catalog.get("presentation",{}).get("recipient_staff_capability_conditions")==2
-            and text_catalog.get("presentation",{}).get("recipient_staff_layer_negative_controls")==4
-            and text_catalog.get("presentation",{}).get("recipient_total_source_layer_negative_controls")==14):
-        # The historical proof deliberately checks dozens of counters. When
-        # one diverges, preserve the values as diagnostic metadata instead of
-        # a generic RED that costs another complete native CI run to locate.
-        # Only scalar attestations/counts are included, never message bodies.
-        def metadata_only(block):
-            return {key:value for key,value in block.items()
-                    if type(value) in (bool,int,float) or
-                    (type(value) is str and len(value)<130 and
-                     (key=='status' or key.endswith(('_ref','_commit','_sha')))) or
-                    (key in ('current_gift_catalog_negative_scenarios',
-                             'current_addon_catalog_negative_scenarios') and
-                     isinstance(value,list) and len(value)<=20 and
-                     all(isinstance(item,str) and len(item)<65 for item in value))}
-        evidence={
-            'top':metadata_only(text_catalog),
-            'native':metadata_only(text_catalog.get('native',{})),
-            'presentation':metadata_only(text_catalog.get('presentation',{})),
-        }
-        raise RuntimeError('Pre-style/current catalog proof mismatch: '+
-            json.dumps(evidence,sort_keys=True,ensure_ascii=True))
-    # The Owner removed the redundant add-on filter row; its previously
-    # published admin-only text remains editable but is intentionally not
-    # referenced by the runtime. The exact retired key is already audited
-    # in test_next_text_catalog.py; no other reference count is relaxed.
-    addon_admin_source=(ROOT/'src/Plans/AddonAdmin.php').read_text()
-    if ("achbotAddonAdminFilterKeys" in addon_admin_source or
-            "achbotMessage('addon_scopes.filter_all')" in addon_admin_source):
-        raise RuntimeError('Retired scope filter is unexpectedly rendered')
-    required_api_catalog={
-        # Four retired #112 references and the additional old direct-delete
-        # callback reference are proven absent by test_next_text_catalog.py.
-        # Keep complete current-reference equality, never a lower bound.
-         'runtime_references':2453+14-1-6-4-1+8-3+28+12-5+2+3+4+1+3+6+1,
-        # +28 owner financial/service/delivery copy keys; +12 net from R2
-        # financial exception and R3 final receipt. Two earlier recovery
-        # labels and three original-edit recovery labels are statically
-        # referenced, plus the four new SHA-pinned Owner delivery evidence
-        # labels in the same existing recovery view. The five retired
-        # second-confirmation labels remain
-        # absent under the exact inherited source checks, but are retained
-        # in the editable historical catalog.
-        # The exact orphan/source inventory proof remains mandatory.
-        'api_referenced_keys':68,
-        'api_dynamic_source_paths':2,
-        'api_reference_source_commit':'16c1558322b578b8ca817f3c4b42818d57dcf161',
-        'api_retained_unreferenced_keys':18,
-        'api_reference_negative_controls':8,
+    expected_catalog={
+        'status':'PASS','current_catalog_keys':2853,
+        'current_admin_keys':1911,'current_user_keys':942,
+        'retired_experimental_keys':129,'retired_experimental_topics':10,
+        'new_copy_entries':33,'current_runtime_files':131,
+        'new_copy_references_unbound':0,
+        'unapproved_existing_copy_changes':0,
+        'new_copy_negative_controls':5,'bare_ui_copy_violations':0,
+        'published_rc26_artifacts_modified':False,
     }
-    required_api_native_catalog={
-        'current_api_additions':86,
-        'current_api_user_additions':22,
-        'current_api_admin_additions':64,
-        'current_r5_catalog_keys':2685,
-    }
-    for section,proof,required in [('references',text_catalog,required_api_catalog),
-            ('native',text_catalog.get('native',{}),required_api_native_catalog)]:
-        if any(type(proof.get(key)) is not type(value) or proof.get(key)!=value
-               for key,value in required.items()):
-            raise RuntimeError('Current API catalog source proof incomplete: '+section+
-                ' mismatches='+json.dumps({key:{'expected':value,'observed':proof.get(key)}
-                for key,value in required.items() if type(proof.get(key)) is not type(value)
-                or proof.get(key)!=value},sort_keys=True,ensure_ascii=True))
+    if (any(text_catalog.get(k)!=v for k,v in expected_catalog.items()) or
+            type(text_catalog.get('runtime_checked_php_sources')) is not int or
+            text_catalog['runtime_checked_php_sources']<70 or
+            type(text_catalog.get('source_literal_bindings')) is not int or
+            text_catalog['source_literal_bindings']<2000):
+        raise RuntimeError('Current post-cleanup catalog exact copy/negative proof incomplete: '+
+            json.dumps({k:[v,text_catalog.get(k)] for k,v in expected_catalog.items()
+                        if text_catalog.get(k)!=v},sort_keys=True))
     copy_audience_output=subprocess.run(
         ["python3",str(ROOT/"tools/test_next_copy_audience.py")],
         cwd=ROOT,check=True,timeout=60,capture_output=True,text=True)
@@ -2219,9 +2083,6 @@ def run_authorization(tmp: str) -> tuple[dict, dict]:
         *('retired_runtime_member_blocks__'+name.replace('/','_').replace('.','_') for name in package.RETIRED_RUNTIME_MEMBERS-{'settings/tronChecker.php'}),
         'partial_003_unique_index_missing_blocks',
         'delivery_018_token_uniqueness_missing_blocks',
-        'replacement_021_unique_original_claim_missing_blocks',
-        'replacement_021_original_foreign_key_missing_blocks',
-        'replacement_021_missing_frozen_invoice_terms_blocks',
         'wallet_telegram_event_key_missing_blocks',
         'wallet_telegram_event_key_nonunique_blocks',
         'wallet_cursor_nontransactional_storage_blocks',
@@ -2276,7 +2137,7 @@ def run_authorization(tmp: str) -> tuple[dict, dict]:
             readiness.get('source_usdt_production_helper_compared') is True and
             readiness.get('source_policy_production_helper_compared') is True and
             readiness.get('source_members_verified')==package.EXPECTED_RUNTIME_COUNT and
-            readiness.get('all_nine_additive_shapes_exercised') is True and
+            readiness.get('current_additive_shapes_exercised') is True and
             readiness.get('api_schema_capability_compared') is True and
             readiness.get('api_credentials_not_decrypted') is True and
             readiness.get('api_schema_014_disposable_only') is True and
@@ -2425,15 +2286,6 @@ def run_authorization(tmp: str) -> tuple[dict, dict]:
 
 def run_effects(tmp: str) -> tuple[dict, dict]:
     result = {}
-    finance_path=Path(tmp)/"finance-native-routes.json"
-    finance_run=subprocess.run(
-        ["python3",str(ROOT/"tools/test_post_v9_finance_routes.py"),
-         "--run-disposable","--report",str(finance_path)],
-        cwd=ROOT,timeout=180,capture_output=True,text=True)
-    if finance_run.returncode!=0:
-        raise RuntimeError("Financial native source regression failed:\n"+
-            (finance_run.stderr or finance_run.stdout)[-5000:])
-    finance=json.loads(finance_path.read_text())
     decision_path=Path(tmp)/"review-decision-idempotency.json"
     worker=subprocess.run([
         "python3",str(ROOT/"tools/test_post_v9_review_decisions.py"),
@@ -2443,122 +2295,89 @@ def run_effects(tmp: str) -> tuple[dict, dict]:
         raise RuntimeError("Owned manual payment review decision regression failed:\n"+
             (worker.stderr or worker.stdout)[-4000:])
     decision=json.loads(decision_path.read_text())
-    pg_lock_path=Path(tmp)/"real-pasarguard-review-lock-boundary.json"
-    pg_lock_run=subprocess.run([
-        "python3",str(ROOT/"tools/test_post_v9_review_pg_lock.py"),
-        "--run-disposable","--report",str(pg_lock_path)],
-        cwd=ROOT,timeout=90,capture_output=True,text=True)
-    if pg_lock_run.returncode:
-        raise RuntimeError("Source-real PasarGuard loopback financial lock test failed:\n"+
-            (pg_lock_run.stderr or pg_lock_run.stdout)[-4000:])
-    pg_lock=json.loads(pg_lock_path.read_text())
-    required_pg_lock={
-        'source_real_pasar_guard_account_identity_pinned',
-        'source_real_pg_GET_no_SQL_lock_pay_terminal_drift',
-        'source_real_pg_GET_drift_fails_closed_pay_terminal_drift',
-        'source_real_pg_GET_no_SQL_lock_plan_target_drift',
-        'source_real_pg_GET_drift_fails_closed_plan_target_drift',
-    }
-    if not (pg_lock.get('complete') is True
-            and set(pg_lock.get('checks',[]))==required_pg_lock
-            and pg_lock.get('source_real_php') is True
-            and pg_lock.get('owned_mariadb') is True
-            and pg_lock.get('actual_pasar_guard_http_get') is True
-            and pg_lock.get('financial_locks_released_during_GET') is True
-            and pg_lock.get('target_drift_fails_closed') is True
-            and pg_lock.get('native_writes')==0):
-        raise RuntimeError("Required source-real PasarGuard lock boundary proof incomplete")
-    decision['pasarguard_review_lock_boundary']=pg_lock
     required_decisions={
-        "decision_schema_unique_innodb",
-        "verified_finished_complete_single_child_eligible",
-        "not_finished_must_not_fake_payout",
-        "wrong_order_identity_rejected",
-        "underpaid_rejected",
-        "decision_token_binds_actor",
-        "decision_token_binds_action",
-        "decision_token_binds_expiry",
-        "decision_token_binds_provider_digest",
-        "approve_effect_completes",
-        "exact_ledger_closes_after_effect",
-        "authenticated_provider_finished_provenance_preserved",
-        "exactly_one_wallet_credit",
-        "one_original_business_report",
-        "repeated_or_raced_approve_never_dispatches_second_effect",
-        "not_refunded_cannot_be_rejected",
-        "refunded_reject_commits",
-        "refund_audit_terminal",
-        "rejection_cannot_dispatch_service_or_wallet",
-        "ambiguous_remote_fenced_as_unknown",
-        "unknown_remote_effect_never_replayed",
-        "multiple_funded_child_not_fake_single_invoice",
-        "owner_can_attest_saved_nonfinal_provider_evidence",
-        "owner_direct_approve_runs_original_effect",
-        "nowpayments_human_final_003_does_not_forge_provider_finished",
-        "owner_direct_approve_wallet_once",
-        "human_attestation_not_fabricated_provider_finished",
-        "owner_repeat_callback_no_second_credit",
-        "owner_can_reject_without_provider_refunded",
-        "owner_reject_closes_unfulfilled_order",
-        "owner_reject_no_wallet_credit",
-        "owner_rejection_preserves_financial_evidence",
-        "owner_finished_primary_can_reject_business_without_fake_refund",
-        "finished_primary_rejection_does_not_forge_provider_refund",
-        "unfunded_invoice_not_accidentally_decidable",
-        "owner_approve_refunded_only_funds_fails_closed",
-        "owner_multi_child_decides_original_order_once",
-        "owner_multi_child_never_credits_twice",
-        "additional_child_remains_in_financial_exception_ledger",
-        "owner_unknown_original_effect_held",
-        "owner_unknown_must_reconcile_not_repeat_effect",
-        "nextpay_operator_attestation_eligible",
-        "nextpay_fake_remote_success_denied",
-        "nextpay_pending_without_review_not_decidable",
-        "nextpay_operator_approval_dispatches_original",
-        "nextpay_operator_financial_commit_once",
-        "nextpay_human_finished_business_not_merchant_finished",
-        "nextpay_single_original_wallet_effect",
-        "nextpay_attestation_distinct_from_provider_settlement",
-        "nextpay_repeat_operator_callback_no_double_credit",
-        "zarinpal_operator_attestation_eligible",
-        "zarinpal_fake_remote_success_denied",
-        "zarinpal_pending_without_review_not_decidable",
-        "zarinpal_operator_rejects_unfinished_only",
-        "zarinpal_reject_never_claims_refund_or_credits",
-        "zarinpal_reject_cannot_be_reapproved",
-        "zarinpal_operator_approval_dispatches_original",
-        "zarinpal_human_003_019_provenance_distinct_from_merchant",
-        "zarinpal_repeat_owner_callback_wallet_native_once",
-        "hosted_failed_preclaim_is_durably_unknown",
-        "hosted_unknown_payment_still_has_decision_audit",
-        "hosted_unknown_preclaim_not_blindly_replayed",
+        'existing_unique_attempt_schema_ready',
+        'nowpayments_review_candidate',
+        'original_nowpayments_success',
+        'one_shot_original_attempt_and_admin_identity',
+        'duplicate_approval_refused',
+        'zarinpal_saved_uncertainty',
+        'hosted_original_rejection',
+        'no_fake_merchant_refund',
+        'rejected_order_never_reapproved',
+        'funded_invoice_not_declined_without_refund',
+        'aged_pending_invoice_can_be_manually_attested',
+        'new_checkout_not_prematurely_reviewed',
+        'changed_local_amount_fails_closed',
+        'refunded_original_never_credited',
+        'unknown_original_effect_held',
+        'durable_uncertain_hold',
+        'unknown_hold_not_replayed',
+        'second_funded_child_blocks_single_order_claim',
+        'only_one_wallet_credit_despite_replays_and_failures',
+        'only_approved_and_failed_original_effects_invoked',
+        'no_dedicated_review_table_created',
+        'previously_unknown_effect_can_be_archived_without_replaying',
+        'original_uncertain_payment_untouched_when_archived',
+        'archival_is_once_only',
+        'archived_original_never_gets_new_financial_buttons',
+        'fresh_open_case_can_be_archived_without_claiming_funds',
+        'original_quote_and_payment_remain_unsettled',
+        'late_approve_reject_cannot_change_archived_original',
+        'archive_keeps_original_financial_state_and_cannot_be_reopened',
+        'stale_processing_case_can_be_closed_from_attention_only',
+        'archived_processing_hold_still_requires_native_forensics_elsewhere',
+        'delegated_staff_initially_allowed',
+        'revoked_staff_cannot_finalize_old_callback',
+        'banned_staff_cannot_archive',
+        'authorized_staff_can_archive_after_role_restored',
+        'archive_denies_missing_original_unique_index',
+        'archive_denies_duplicate_original_attempts',
+        'archive_closes_not_dispatched_first_line',
+        'archived_first_line_never_admitted_for_remote_create',
+        'archive_closes_reserved_multi_account_followup',
+        'archived_later_line_never_admitted_for_remote_create',
+        'stale_dispatching_original_reaches_terminal_archive_without_replay',
+        'terminal_archive_immutable_stale_dispatch_evidence_retained',
+        'verified_unlinked_original_reaches_archive_without_order_synthesis',
+        'rc26_021_persisted_payment_fingerprint_byte_identical',
+        'rc26_nextpay_018_hosted_digest_byte_identical',
+        'rc26_zarinpal_018_hosted_digest_byte_identical',
+        'rc26_replacement_018_digest_read_only_compatible',
+        'fresh_022_fingerprint_without_021_columns',
+        'historical_hosted_018_once_only_pending_delivery',
+        'historical_replacement_018_read_only_delivery',
+        'archived_original_does_not_dispatch_sealed_018_packet',
+        'real_race_fixture_reserved_before_archive',
+        'true_active_native_dispatch_refuses_archive_without_mutation',
+        'worker_exit_releases_session_lease_and_allows_terminal_archive',
+        'unknown_native_effect_and_original_financial_status_immutable_after_archive',
+        'independent_bot_databases_do_not_share_payment_leases',
+        'maximal_original_description_kept_in_database_html_case_bounded',
+        'five_native_lines_and_original_payment_evidence_kept',
+        'real_telegram_edit_and_fallback_both_deliver_legal_html_text',
+        'approve_reject_archive_back_buttons_survive_original_case_budget',
     }
-    if not (decision.get("complete") is True
-            and set(decision.get("checks",[]))==required_decisions
-            and decision.get("owned_mariadb") is True
-            and decision.get("real_review_decision_source") is True
-            and decision.get("original_gateway_review_stage_source") is True
-            and decision.get("real_hosted_original_claim_after_uncertain") is True
-            and decision.get("hosted_wallet_finalized_once_after_uncertain") is True
-            and decision.get("operator_dispatch_journal_required") is True
-            and decision.get("no_merchant_or_customer_network") is True
-            and decision.get("test_effect_is_synthetic") is True
-            and decision.get("provider_http_calls")==0
-            and decision.get("telegram_calls")==0
-            and decision.get("audit_exactly_once") is True
-            and decision.get("financial_double_credit") is False
-            and decision.get("cron_operator_claim_survived") is True
-            and decision.get("signed_ipn_operator_claim_survived") is True
-            and decision.get("signed_ipn_postpaid_primary_preserved") is True
-            and decision.get("signed_ipn_out_of_order_secondary_preserved") is True
-            and decision.get("additional_funds_paid_and_inflight_visible") is True
-            and decision.get("rejected_funded_primary_visible_without_reopening") is True
-            and decision.get("real_refund_evidence_closes_rejected_primary_exception") is True
-            and decision.get("internal_payment_page_suppressed") is True
-            and decision.get("inbox_only_unfinalized_with_funds_or_receipt") is True
-            and decision.get("api_module_loaded_on_first_entry") is True
-            and decision.get("examined")>=5):
-        raise RuntimeError("Manual review journal, queue or concurrent Cron fence unproven")
+    if not (decision.get('complete') is True
+            and set(decision.get('checks',[]))==required_decisions
+            and decision.get('owned_mariadb') is True
+            and decision.get('real_review_decision_source') is True
+            and decision.get('test_effect_is_synthetic') is True
+            and decision.get('provider_http_calls')==0
+            and decision.get('telegram_calls')==0
+            and decision.get('audit_exactly_once') is True
+            and decision.get('financial_double_credit') is False
+            and decision.get('existing_attempt_only') is True):
+        raise RuntimeError('Original-attempt gateway review or one-shot guards unproven')
+    finance_path=Path(tmp)/"finance-native-routes.json"
+    finance_run=subprocess.run(
+        ["python3",str(ROOT/"tools/test_post_v9_finance_routes.py"),
+         "--run-disposable","--report",str(finance_path)],
+        cwd=ROOT,timeout=180,capture_output=True,text=True)
+    if finance_run.returncode!=0:
+        raise RuntimeError("Financial native source regression failed:\n"+
+            (finance_run.stderr or finance_run.stdout)[-5000:])
+    finance=json.loads(finance_path.read_text())
     # Current R10 financial contract: preserve authenticated settlement,
     # durable compensation proof and concurrency-safe operator recovery.
     mandatory_finance = {
@@ -2599,25 +2418,19 @@ def run_effects(tmp: str) -> tuple[dict, dict]:
         # send a daily unchanged-evidence finance warning.
         "nowpayments_funded_review_quiet_no_push",
         "nowpayments_repeat_review_quiet",
+        "simple_gateway_inbox_original_case_and_merchant_ids",
+        "simple_gateway_admin_private_access_and_no_provider_get",
+        "simple_gateway_fifteen_cases_paginated_without_repeat",
+        "nowpayments_extra_children_preserved_no_second_original",
         "nowpayments_second_unpaid_child_is_not_payment",
         "nowpayments_unpaid_failed_child_no_operator_case",
         "nowpayments_secondary_funds_keep_terminal_claim_no_downgrade",
         "nowpayments_secondary_paid_child_quiet",
-        "nowpayments_paid_extra_funds_visible_in_separate_owner_queue",
-        "nowpayments_extra_funds_owner_only",
-        "nowpayments_operator_inbox_details_private_auth",
-        "nowpayments_operator_provider_inquiry_readonly",
-        "nowpayments_operator_unauthorized_callbacks_refused",
-        "nowpayments_owner_inquiry_one_child_per_callback",
-        "nowpayments_13th_funded_child_cursor_inquiry_safe",
         "nowpayments_ipn_child_insert_fail_retry_throwing",
         "nowpayments_ipn_child_insert_fail_retry_off",
         "nowpayments_ipn_primary_link_fail_retry_throwing",
         "nowpayments_ipn_primary_link_fail_retry_off",
         "nowpayments_ipn_cross_invoice_child_not_acknowledged",
-        "nowpayments_owner_inbox_case_keyset_older_review_visible",
-        "nowpayments_owner_inbox_case_cursor_private_readonly",
-        "nowpayments_owner_inbox_case_cursor_stable_ties",
         "nowpayments_new_attempt_browser_bypass_closed",
         "nowpayments_invalid_signature_no_effect",
         "nowpayments_real_loopback_http_ipn_minimal_bootstrap",
@@ -2738,8 +2551,18 @@ def run_effects(tmp: str) -> tuple[dict, dict]:
         'owner_direct_approve_route_no_merchant_get_one_wallet_credit',
         'owner_approve_route_replay_denied_no_credit',
         'owner_direct_reject_route_preserves_funds_and_reports',
-        'owner_decision_delegated_actor_cannot_settle',
+        'gateway_review_nonadmin_cannot_settle',
         'retired_two_stage_callback_fail_closed',
+        'owner_archive_terminal_once_only_no_financial_action',
+        'archived_nowpayments_late_signed_ipn_evidence_only_no_status_change',
+        'archived_nowpayments_browser_return_cannot_reopen',
+        'archived_zarinpal_verified_callback_cannot_credit_cancel_or_reopen',
+        'archived_nextpay_verified_callback_cannot_credit_cancel_or_reopen',
+        'r3_nextpay_concurrent_verified_return_pending_single_effect',
+        'r3_zarinpal_concurrent_verified_return_pending_single_effect',
+        'r3_nextpay_lock_error_not_success',
+        'r3_zarinpal_lock_error_not_success',
+        'archived_nowpayments_original_excluded_from_cron_claim',
     })
     cases_finance = {case.get("case") for case in finance.get("scenarios",[])
                      if case.get("pass_")}
@@ -2753,7 +2576,20 @@ def run_effects(tmp: str) -> tuple[dict, dict]:
             finance.get("original_mariadb_socket_only") and
             finance.get("synthetic_payment_spy") and
             finance.get("real_provider_requests")==0):
-        raise RuntimeError("Original-schema finance and NOWPayments finality assurance incomplete")
+        raise RuntimeError("Original-schema finance and NOWPayments finality assurance incomplete: "+
+            json.dumps({
+                'cases':finance.get('cases'),
+                'expected_minimum':153,
+                'missing_required':sorted(mandatory_finance-cases_finance),
+                'source_schema_tables':finance.get('schema_tables'),
+                'current_schema_tables':finance.get('current_schema_tables'),
+                'synthetic_only':finance.get('real_provider_requests'),
+                'key_flags':{key:finance.get(key) for key in (
+                    'complete','shared_payment_attempt_ledger_tested',
+                    'fresh_addon_existing_native_source',
+                    'unknown_native_addon_admission_refused',
+                    'original_mariadb_socket_only','synthetic_payment_spy')},
+            },sort_keys=True))
     # #26 distinct account identity: verified by source-native PHP and
     # independent socket-only MariaDB, not by changes in account totals.
     effect_path=Path(tmp)/"account-service-effects.json"
@@ -2900,19 +2736,9 @@ def run_effects(tmp: str) -> tuple[dict, dict]:
             "normal","begin_failure","credential_drift","invalid_username",
             "post_lost","provider_503")
     } | {"native_group_preflight_no_post_and_safe_reason",
-         "untrusted_provider_error_text_sanitized"} | {
-        "paid_pg_exact_marker_username_readback_no_post_no_financial_write",
-        "paid_pg_partial_bulk_missing_ordinal_never_infers_absence",
-        "paid_pg_other_account_marker_is_not_original_provision",
-        "paid_pg_original_groups_mismatch_is_not_proof",
-        "paid_pg_native_policy_drift_is_not_proof",
-        "paid_pg_404_is_uncertainty_not_create_permission",
-        "paid_pg_corrupt_original_fingerprint_blocks_remote_read",
-        "paid_pg_other_native_instance_refuses_get",
-        "paid_pg_payment_race_during_get_fails_closed",
-        "paid_pg_verified_native_incarnation_exact_by_id_only",
-        "paid_pg_foreign_native_id_does_not_match_verified_claim",
-    }
+         "untrusted_provider_error_text_sanitized"}
+    # Original paid PasarGuard continuation has a separate, stronger
+    # source-real integration gate below, including GET-only negative cases.
     if not (pg_diag.get("complete") is True
             and set(pg_diag.get("checks",[]))==expected_pg_diag
             and pg_diag.get("cases")==len(expected_pg_diag)
@@ -3391,59 +3217,6 @@ def run_effects(tmp: str) -> tuple[dict, dict]:
 
 def run_funding(tmp: str) -> tuple[dict, dict]:
     result = {}
-    # Fail fast on the new critical source-real replacement tests before
-    # running unrelated settled funding suites.
-    replacement_path=Path(tmp)/'hosted-paid-replacement.json'
-    replacement_run=subprocess.run(
-        ['python3',str(ROOT/'tools/test_post_v9_paid_replacement.py'),
-         '--report',str(replacement_path)],
-        cwd=ROOT,capture_output=True,text=True,timeout=180)
-    if replacement_run.returncode!=0:
-        raise RuntimeError('Hosted paid reconciliation source-real acceptance failed:\n'
-            +(replacement_run.stderr or replacement_run.stdout)[-6000:])
-    replacement=json.loads(replacement_path.read_text())
-    required_replacements={
-        '021_missing_original_provenance_foreign_key_blocks_paid_replacement',
-        'standard_and_custom_invoice_issuance_pins_true_terms_same_transaction',
-        'historical_empty_007_standard_without_issued_terms_blocks_before_007_or_native',
-        'marzban_empty_007_endpoint_drift_invalidates_signed_preview',
-        'marzban_empty_007_group_drift_invalidates_signed_preview',
-        'replacement_reason_stage_next_action_bounded_diagnostics_six_failure_modes',
-        'private_payments_operator_sees_bounded_capacity_reason_no_extra_effect',
-        'pasarguard_connection_change_cannot_reuse_empty_007_confirmation',
-        'pasarguard_generation_change_cannot_reuse_empty_007_confirmation',
-
-        'manager_missing_first_007_signed_one_replacement_capacity_once',
-        'original_create_cannot_overlap_prior_paid_replacement',
-        'concurrent_staff_confirmation_cannot_double_reserve_or_post',
-        'replacement_get_only_links_one_original_paid_order_and_seals_018',
-        'operator_payments_authorized_first_paid_replacement',
-        'support_payments_authorized_first_paid_replacement',
-        'lost_replacement_native_response_get_only_recovery_no_repost',
-        'foreign_original_kept_auditable_and_replacement_preserves_capacity',
-        'historic_standard_original_007_proves_entitlement_without_issued_columns',
-        'custom_multicount_invoice_preserves_exact_day_volume_and_original_capacity',
-        'original_007_entitlement_survives_current_plan_days_change',
-        'standard_pinned_purchase_terms_survive_later_plan_day_and_volume_changes',
-        'authenticated_matching_original_account_never_offered_replacement',
-        'bulk_missing_ordinal_only_replacement_native_no_second_inventory_hold',
-        'noncontiguous_internal_gap_preserves_original_full_count_capacity_owner',
-        'missing_first_with_authenticated_later_original_reuses_prior_capacity_once',
-        'missing_first_later_native_foreign_blocks_second_capacity_claim',
-        'staff_challenge_actor_identity_bound_owner_cannot_replay_delegate',
-        'demoted_manager_old_signed_button_cannot_claim_new_native_account',
-        'staff_private_preview_denies_nonstaff_and_nonprivate_without_side_effects',
-        'pasarguard_first_replacement_real_loopback_create_and_get_delivery',
-    }
-    if not (replacement.get('complete') is True and
-            set(replacement.get('scenarios',[]))==required_replacements and
-            replacement.get('source_real') is True and
-            replacement.get('php85_required') is True and
-            replacement.get('disposable_mariadb') is True and
-            replacement.get('native_provider_loopback') is True and
-            replacement.get('original_post_replays')==0 and
-            replacement.get('double_wallet_debits')==0):
-        raise RuntimeError('Hosted paid replacement source-real report incomplete')
     referral_path=Path(tmp)/"referral-award-journal.json"
     proc=subprocess.run(
         ["python3",str(ROOT/"tools/test_post_v9_referral_awards.py"),
@@ -3467,6 +3240,7 @@ def run_funding(tmp: str) -> tuple[dict, dict]:
         "mysqlireportoff_sql_failure_retained_review_no_blind_retry",
         "credit_and_confirmation_atomic_rollback",
         "signed_debt_credit_arithmetic_preserved",
+        "archived_hosted_referral_wallet_credit_and_new_award_refused",
         "missing_unique_pay_index_fails_closed",
     }
     if not (referral.get("complete") is True and
@@ -3513,7 +3287,6 @@ def run_funding(tmp: str) -> tuple[dict, dict]:
         raise RuntimeError("Wallet pre-POST journal acceptance failed:\n"
             +native_wallet.stderr[-4500:])
     wallet_create=json.loads(wallet_path.read_text())
-    wallet_create['hosted_replacement_recovery']=replacement
     required_wallet={
         "wallet_confirmed_debit_and_capacity_once_before_post",
         "wallet_unknown_post_keeps_paid_hold_and_no_replay",
@@ -3529,114 +3302,6 @@ def run_funding(tmp: str) -> tuple[dict, dict]:
             wallet_create.get('provider_real_requests')==0 and
             wallet_create.get('production_mutations')==0):
         raise RuntimeError('Wallet creation replay/debit safety incomplete')
-    recovery_path=Path(tmp)/"wallet-original-recovery.json"
-    wallet_recovery_run=subprocess.run(
-        ["python3",str(ROOT/"tools/test_post_v9_wallet_recovery.py"),
-         "--report",str(recovery_path)],
-        cwd=ROOT,capture_output=True,text=True,timeout=170)
-    if wallet_recovery_run.returncode!=0:
-        raise RuntimeError("Original wallet recovery native acceptance failed:\n"
-            +wallet_recovery_run.stderr[-5000:])
-    wallet_recovery=json.loads(recovery_path.read_text())
-    required_wallet_recovery={
-        'lost_native_response_reuses_original_verified_account_without_post_or_second_debit',
-        'repeated_owner_resume_never_relinks_or_resends',
-        'sealed_wallet_packet_passes_original_delivery_integrity_check',
-        'verified_native_unlinked_finalizes_without_create',
-        'foreign_native_marker_keeps_original_wallet_hold_for_review',
-        'exact_original_native_proof_can_complete_after_mismatch',
-        'telegram_unknown_is_durable_and_not_automatically_resent',
-        'missing_original_bulk_ordinal_cannot_invoke_new_post',
-        'marzban_original_partial_linked_bulk_recovers_without_second_native_create',
-        'tampered_wallet_capacity_hold_fails_before_remote_get',
-        'foreign_provider_attempt_cannot_be_wallet_recovery_proof',
-        'pg_original_by_username_native_get_seals_original_wallet_order',
-        'pg_original_pinned_by_id_readback_never_posts_again',
-        'pg_missing_and_foreign_original_native_hold_without_repost_or_finance',
-        'pg_verified_original_continuation_after_resolving_native_mismatch',
-        'pg_two_complete_original_accounts_atomically_link_and_seal_both_packets',
-        'pg_partially_linked_original_bulk_reuses_first_order_and_seals_both',
-        'pg_all_already_linked_original_orders_finalize_without_reorder_or_unknown_resend',
-        'pg_all_linked_current_server_physical_rebind_blocks_before_get_and_recovers_after_restore',
-        'pg_current_server_physical_rebind_after_native_get_cannot_commit',
-        'pg_completed_native_revoke_between_get_and_commit_invalidates_stale_packet_once',
-        'pg_tampered_linked_order_rejected_before_native_get_or_financial_finality',
-        'pg_partially_linked_bulk_second_native_mismatch_rolls_back_without_repost',
-        'pg_partial_linked_second_insert_failure_preserves_first_and_recovers_once',
-        'pg_concurrent_owner_partial_resume_single_terminal_commit_and_delivery',
-        'pg_complete_bulk_second_native_mismatch_cannot_partially_finalize',
-        'pg_complete_bulk_second_sql_failure_rolls_back_all_local_finality',
-        'pg_complete_bulk_post_rollback_reconciles_original_without_duplicate_post',
-        'owner_route_rejects_foreign_actor_without_get_finance_or_delivery',
-        'owner_route_rejects_nonprivate_chat_without_get_finance_or_delivery',
-        'owner_route_success_offers_only_valid_delivery_and_inbox_navigation',
-    }
-    if not (wallet_recovery.get('complete') is True and
-            set(wallet_recovery.get('scenarios',[]))==required_wallet_recovery and
-            wallet_recovery.get('source_real') is True and
-            wallet_recovery.get('php85_required') is True and
-            wallet_recovery.get('disposable_mariadb') is True and
-            wallet_recovery.get('original_native_post_replays')==0 and
-            wallet_recovery.get('original_wallet_duplicate_debits')==0):
-        raise RuntimeError('Original wallet source-real recovery evidence incomplete')
-    wallet_create['original_recovery']=wallet_recovery
-    hosted_path=Path(tmp)/"hosted-original-linked-recovery.json"
-    hosted_run=subprocess.run(
-        ["python3",str(ROOT/"tools/test_post_v9_hosted_linked_recovery.py"),
-         "--report",str(hosted_path)],
-        cwd=ROOT,capture_output=True,text=True,timeout=170)
-    if hosted_run.returncode!=0:
-        raise RuntimeError("Original hosted linked recovery native acceptance failed:\n"
-            +(hosted_run.stderr or hosted_run.stdout)[-5500:])
-    hosted=json.loads(hosted_path.read_text())
-    required_hosted={
-        'original_hosted_nextpay_fully_linked_two_original_accounts_sealed_once',
-        'hosted_original_delivery_packet_passes_real_integrity_validator',
-        'hosted_owner_route_valid_callback_finishes_and_opens_delivery',
-        'hosted_tampered_payment_reference_blocks_sealed_delivery_validation',
-        'hosted_repeat_owner_callback_never_reseals_or_resends',
-        'hosted_claimed_original_native_never_reposts_on_resume',
-        'original_hosted_zarinpal_same_paid_native_once_only',
-        'hosted_foreign_native_marker_blocks_then_valid_get_recovers',
-        'hosted_unstarted_second_original_ordinal_once_without_second_capacity_claim',
-        'pg_hosted_two_unstarted_trailing_ordinals_one_owner_click_each',
-        'pg_hosted_concurrent_missing_ordinal_creates_only_one_remote_account',
-        'pg_hosted_lost_create_http_response_readback_only_never_reposts',
-        'pg_hosted_changed_plan_terms_block_unstarted_original_create',
-        'pg_hosted_noncontiguous_manifest_refuses_new_original_create',
-        'pg_hosted_custom_paid_entitlement_preserved_on_unstarted_original',
-        'hosted_unlinked_original_native_attaches_without_recreate_or_recharge',
-        'hosted_partial_marzban_keeps_original_order_and_attaches_second',
-        'pg_hosted_partial_original_native_attaches_with_012_pins',
-        'hosted_unlinked_missing_remote_refuses_then_original_get_recovers',
-        'pg_hosted_unlinked_foreign_native_marker_refused',
-        'hosted_partial_concurrent_owner_resume_attaches_once',
-        'hosted_unlinked_marzban_target_drift_after_get_blocks_attachment',
-        'pg_hosted_unlinked_original_refuses_physical_provider_retarget',
-        'hosted_partial_link_and_delivery_rollback_atomically',
-        'hosted_foreign_quote_never_becomes_delivery_authority',
-        'hosted_already_terminal_attempt_cannot_fabricate_backfill',
-        'hosted_existing_human_attestation_cannot_be_relabelled_merchant_delivered',
-        'hosted_telegram_unknown_stays_sealed_no_auto_retry',
-        'pg_hosted_two_original_linked_native_accounts_by_id_are_delivered_once',
-        'pg_hosted_current_physical_provider_binding_refuses_retargeted_order',
-        'hosted_current_marzban_endpoint_drift_rejected_before_native_get',
-        'hosted_marzban_target_drift_after_get_blocks_stale_terminal_commit',
-        'pg_hosted_rebind_between_native_get_and_commit_refuses_stale_delivery',
-        'pg_hosted_completed_native_revoke_between_get_and_commit_refuses_stale_packet',
-        'hosted_second_delivery_insert_rolls_back_then_recovers_without_native_create',
-        'hosted_concurrent_owner_resumes_single_terminal_commit_and_delivery',
-        'hosted_owner_only_private_callback_denies_foreign_actor_chat',
-    }
-    if not (hosted.get('complete') is True and
-            set(hosted.get('scenarios',[]))==required_hosted and
-            hosted.get('source_real') is True and
-            hosted.get('php85_required') is True and
-            hosted.get('disposable_mariadb') is True and
-            hosted.get('original_hosted_post_replays')==0 and
-            hosted.get('original_hosted_duplicate_wallet_debits')==0):
-        raise RuntimeError('Original hosted linked delivery evidence incomplete')
-    wallet_create['hosted_linked_recovery']=hosted
     nonpaid_path=Path(tmp)/"trial-bulk-native.json"
     native_nonpaid=subprocess.run(
         ["python3",str(ROOT/"tools/test_post_v9_nonpaid_routes.py"),
@@ -3823,6 +3488,8 @@ def run_funding(tmp: str) -> tuple[dict, dict]:
     bank_buy=json.loads(bank_path.read_text())
     required_bank={
         "buy_sub_nonterminal_exclusive_claim",
+        "original_bank_claim_once_003_009_no_cron_reissue",
+        "bank_unknown_native_original_never_replayed",
         "one_verified_account_atomic_order_before_telegram_no_replay",
         "unknown_lost_no_refund_success_or_replay",
         "unknown_exists_no_refund_success_or_replay",
@@ -3832,8 +3499,8 @@ def run_funding(tmp: str) -> tuple[dict, dict]:
         "first_success_atomic_encrypted_manifest_and_ack_history",
         "crash_postterminal_before_telegram_resumes_pending_only_once",
         "multi_line_each_ordinal_ack_is_durable",
-        "partial_bulk_unknown_owner_challenge_and_exact_one_line_resend",
-        "stale_dispatch_lease_preserves_unknown_audit_before_warned_resend",
+        "partial_bulk_unknown_telegram_once_no_resend",
+        "stale_dispatching_telegram_stays_held_no_replay",
         "corrupted_immutable_delivery_payload_blocks_send_without_replay",
         "concurrent_telegram_pending_cas_exactly_one_dispatch",
         "multi_line_partial_unknown_requires_review_not_refund",
@@ -3887,67 +3554,6 @@ def run_funding(tmp: str) -> tuple[dict, dict]:
             and bank_buy.get("real_financial_effects")==0
             and bank_buy.get("installed_operator_tested") is False):
         raise RuntimeError("Bank BUY_SUB finality/remote-effects contract incomplete")
-    # Owner-private BUY_SUB crash inspection is read-only even with
-    # an inconclusive authenticated provider GET. Exercise actual
-    # Telegram route, exact ledger/endpoint and SQL on owned MariaDB.
-    recovery_path=Path(tmp)/"recovery-inspection.json"
-    recovery_run=subprocess.run(
-        ["python3",str(ROOT/"tools/test_post_v9_recovery_inspection.py"),
-         "--run-disposable","--report",str(recovery_path)],
-        cwd=ROOT,timeout=140,capture_output=True,text=True)
-    if recovery_run.returncode!=0:
-        raise RuntimeError("BUY_SUB recovery workbench acceptance failed:\n"
-                           +recovery_run.stderr[-6000:])
-    recovery=json.loads(recovery_path.read_text())
-    required_recovery={
-        "unresolved_bank_case_reads_exact_local_identity_without_sql_writes",
-        "provider_readback_failure_logs_exact_effect_and_trusted_cause",
-        "provider_raw_exception_credentials_never_logged",
-        "pasarguard_nested_transport_reason_not_lost",
-        "provider_diagnostic_indices_and_stage_fail_closed",
-        "owner_private_wallet_debit_capacity_hold_visible_no_unissued_get",
-        "strict_one_account_get_only_matching_observation_no_replay",
-        "no_financial_write_remote_missing",
-        "no_financial_write_remote_timeout",
-        "no_financial_write_remote_wrong_note",
-        "no_financial_write_remote_float_bytes",
-        "no_financial_write_remote_float_expiry",
-        "missing_ordinal_never_infers_remote_absence_or_gets",
-        "nonowner_or_nonprivate_inspection_denied_9002_9001",
-        "nonowner_or_nonprivate_inspection_denied_9001_7777",
-        "owner_private_readback_button_real_callback_no_sql_mutations",
-        "endpoint_drift_fences_remote_get_without_guessing",
-        "concurrent_endpoint_change_disqualifies_readback_evidence",
-        "15_line_keyset_pagination_and_exact_late_account_get",
-        "twelve_account_page_telegram_length_and_button_bounds",
-        "bank_payment_without_effect_visible_and_13th_case_reachable",
-        "terminal_payment_not_reattributed_to_pending_case",
-        "missing_ledger_schema_fails_closed_without_get_or_mutation",
-        "corrupted_operation_fingerprint_blocks_remote_get",
-        "logical_group_drift_blocks_remote_get",
-        "deleted_historical_order_preserved_without_inferred_refund",
-        "hosted_paid_state_not_assumed_settled_or_mutated",
-        "owner_private_full_inbox_page_and_case_ui_navigation",
-        "missing_unique_effect_index_blocks_remote_selection",
-        "changed_plan_inbound_rejected_before_any_remote_get",
-        "invalid_payment_account_count_fails_closed",
-        "zero_quota_with_matching_fingerprint_never_gets",
-        "ordinal_exceeding_mutated_payment_account_count_no_remote_get",
-        "fifteen_requested_two_recorded_clear_owner_private_operation_ids",
-        "terminal_after_get_owner_sees_uncertainty_once_ack",
-        "telegram_edit_failure_falls_back_to_owner_private_send",
-        "mysqlireport_off_sql_failure_after_get_ends_owner_visible_uncertain",
-    }
-    if not (recovery.get("complete")
-            and recovery.get("cases")>=36
-            and required_recovery.issubset(recovery.get("scenarios",[]))
-            and recovery.get("actual_php_admin_route") is True
-            and recovery.get("owned_socket_mariadb") is True
-            and recovery.get("max_account_get_per_callback")==1
-            and recovery.get("remote_writes")==0
-            and recovery.get("money_mutations")==0
-            and recovery.get("installed_operator_tested") is False):
-        raise RuntimeError("Owner-only read-only recovery contract incomplete")
     # The actual production curl adapter (rather than a getMarzbanUser
     # mock) must authenticate and GET on one pinned endpoint and IP.
     transport_path=Path(tmp)/"recovery-transport.json"
@@ -3968,7 +3574,7 @@ def run_funding(tmp: str) -> tuple[dict, dict]:
     }
     if not (transport.get("complete") is True and
             required_native_resume.issubset(set(transport.get("scenarios",[]))) and
-            transport.get("cases")>=32 and
+            transport.get("cases")>=26 and
             transport.get("real_curl_login_and_get") is True and
             transport.get("loopback_only") is True and
             transport.get("max_account_get_per_inspection")==1 and
@@ -4445,7 +4051,7 @@ def run_funding(tmp: str) -> tuple[dict, dict]:
             and swap.get("synthetic_private_files_untouched")):
         raise RuntimeError("Physical post-V9/V9 source-only overlay or private-state check failed")
 
-    return {'source_only_overlays': swap, 'wallet_paid_create': wallet_create, 'wallet_checkout_routes': wallet_checkout, 'wallet_callback_framing': wallet_frame, 'manual_choice_callback_framing': manual_frame, 'nonpaid_trial_bulk': nonpaid, 'referral_awards': referral, 'referral_postcommit_routes': route_award, 'bank_auto_buy_sub': bank_buy, 'bank_recovery_inspection': recovery, 'bank_recovery_transport': transport, 'manual_payment_method_isolation': manual, 'manual_standard_real_helper_review_remediation': integrity, 'manual_crypto_destination_and_admin_guards': crypto_guard, 'shared_payment_ledger_rc4_import': migration, 'agency_state_regression': agency, 'marzban_logical_transfer': logical}, result
+    return {'source_only_overlays': swap, 'wallet_paid_create': wallet_create, 'wallet_checkout_routes': wallet_checkout, 'wallet_callback_framing': wallet_frame, 'manual_choice_callback_framing': manual_frame, 'nonpaid_trial_bulk': nonpaid, 'referral_awards': referral, 'referral_postcommit_routes': route_award, 'bank_auto_buy_sub': bank_buy, 'bank_recovery_transport': transport, 'manual_payment_method_isolation': manual, 'manual_standard_real_helper_review_remediation': integrity, 'manual_crypto_destination_and_admin_guards': crypto_guard, 'shared_payment_ledger_rc4_import': migration, 'agency_state_regression': agency, 'marzban_logical_transfer': logical}, result
 
 
 RUNNERS = {

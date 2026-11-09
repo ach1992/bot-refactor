@@ -310,6 +310,16 @@ def main():
   for member in ['src/Purchase/Core.php','src/Finance/ServiceEffects.php','src/Finance/PaymentLifecycle.php','src/Finance/AutomaticRenewal.php']:
    yes((fixture/member).read_bytes()==(ROOT/member).read_bytes(),'fixture_adapter_uses_unchanged_shared_'+Path(member).stem)
   sql("UPDATE server_config SET type='fixture_native' WHERE id=2")
+  # The fake generic adapter dispatches a synthetic non-payment effect.
+  # Seed its real 007 identity so the central admission lookup is exercised
+  # without pretending that a nonexistent paid effect may dispatch.
+  sql("""INSERT INTO service_effects
+      (id,source_kind,source_ref,actor_userid,ordinal,operation_id,effect_kind,
+       target_server_id,target_key,endpoint_sha256,plan_id,remote_username,
+       requested_expire,requested_bytes,request_sha256,reserved_count,state)
+      VALUES (111,'admin_bulk','fixture-registry-nonpaid',9001,1,
+       REPEAT('e',32),'create',2,'fixture:test-only',REPEAT('a',64),7,
+       'fixture_registry_nonpaid',2000000000,2147483648,REPEAT('c',64),0,'reserved')""")
   before=snapshot();out=run(fixture,'fixture');d=out['out'];events=out['events']
   yes(before==snapshot(),'temporary_dispatch_probe_does_not_mutate_business_state')
   yes(d['account']and d['plan']and d['order']and d['display'],'registered_fixture_uses_common_eligibility_and_native_display')

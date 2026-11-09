@@ -30,21 +30,6 @@ function achbotNpChildEvidenceRank($status): int {
     };
 }
 
-/** Only unfinalized invoices with incoming-funds evidence belong to finance review.
- * An already paid order with uncertain CREATE/Telegram delivery belongs in
- * service recovery, never back in payment review.
- * Callers join pays as p, payment_attempts as a.
- */
-function achbotNpOperatorWorkSql(): string {
-    $funded="'confirmed','sending','partially_paid','finished','refunded'";
-    return "a.provider='nowpayments'
-      AND p.state IN ('pending','send','have_sent')
-      AND a.stage='review'
-      AND EXISTS (SELECT 1 FROM payment_transactions c
-          WHERE c.attempt_id=a.id AND c.provider='nowpayments'
-            AND c.observed_status IN ($funded))";
-}
-
 /**
  * Signed NOWPayments IPN only records a durable payment ID. It never
  * provisions anything or contacts external providers in the HTTP callback.
@@ -67,20 +52,39 @@ function achbotNpIngestIpn(mysqli $connection, string $ipnSecret,
         $orderHash==='' || strlen($orderHash)>50 || strlen($status)>32 ||
         strtolower((string)$payload['price_currency'])!=='usd') return 422;
     try {
-        // Lock the entire local invoice decision, then claim provider child
-        // identity in ONE UNIQUE ledger shared by primary and extra deposits.
-        // No HTTP 200 is returned before child evidence and state commit.
-        if (!$connection->begin_transaction())
-            throw new RuntimeException('ipn_begin_unconfirmed');
-        $stmt=$connection->prepare("SELECT a.*,p.payid AS original_invoice
-            FROM payment_attempts a JOIN pays p ON p.id=a.pay_row_id
-            WHERE a.provider='nowpayments' AND a.order_hash=? AND a.provider_reference=? LIMIT 2 FOR UPDATE");
+        // Find the immutable attempt identity without acquiring a row lock.
+        // Every mutating path (including terminal Archive) locks pays FIRST,
+        // then its attempt. A joined FOR UPDATE may lock the attempt first
+        // depending on the optimizer and deadlock against an operator.
+        $stmt=$connection->prepare("SELECT id,pay_row_id FROM payment_attempts
+            WHERE provider='nowpayments' AND order_hash=? AND provider_reference=? LIMIT 2");
         $stmt->bind_param('ss',$orderHash,$invoiceId);
         $stmt->execute();
-        $rows=$stmt->get_result();
-        $attempt=$rows->num_rows===1?$rows->fetch_assoc():null;
+        $matches=$stmt->get_result();
+        $locator=$matches->num_rows===1?$matches->fetch_assoc():null;
         $stmt->close();
-        if (!$attempt || (string)$attempt['original_invoice']!==$invoiceId) {
+        if (!$locator) return 409;
+
+        // The signed child evidence and original decision still commit as
+        // one local transaction. Revalidate the locator after both locks;
+        // never trust the pre-lock identity if the row changed meanwhile.
+        if (!$connection->begin_transaction())
+            throw new RuntimeException('ipn_begin_unconfirmed');
+        $payId=(int)$locator['pay_row_id'];
+        $attemptId=(int)$locator['id'];
+        $stmt=$connection->prepare('SELECT payid FROM pays WHERE id=? FOR UPDATE');
+        $stmt->bind_param('i',$payId);
+        $stmt->execute();
+        $pay=$stmt->get_result()->fetch_assoc();
+        $stmt->close();
+        $stmt=$connection->prepare("SELECT * FROM payment_attempts
+            WHERE id=? AND pay_row_id=? AND provider='nowpayments'
+              AND order_hash=? AND provider_reference=? LIMIT 1 FOR UPDATE");
+        $stmt->bind_param('iiss',$attemptId,$payId,$orderHash,$invoiceId);
+        $stmt->execute();
+        $attempt=$stmt->get_result()->fetch_assoc();
+        $stmt->close();
+        if (!$pay || !$attempt || (string)$pay['payid']!==$invoiceId) {
             $connection->rollback();
             return 409;
         }
@@ -125,13 +129,21 @@ function achbotNpIngestIpn(mysqli $connection, string $ipnSecret,
                 throw new RuntimeException('np_child_evidence_update_unconfirmed');
             $stmt->close();
         }
+        if (($attempt['review_archived_at']??null)!==null) {
+            // Preserve signed late child evidence without changing the
+            // archived payment's own stage, status or financial result.
+            if (!$connection->commit()) throw new RuntimeException('archived_ipn_commit_unconfirmed');
+            error_log('achbot_archived_ipn_evidence_only attempt='.(int)$attempt['id'].
+                ' provider=nowpayments');
+            return 200;
+        }
         if ($attempt['payment_id']===null) {
             $stmt=$connection->prepare("UPDATE payment_attempts SET
                 payment_id=?, provider_status=CASE
                     WHEN stage='review' THEN provider_status ELSE ? END,
                 stage=CASE WHEN stage='review' THEN 'review'
                            WHEN stage='checking' THEN 'checking'
-                           ELSE 'pending' END WHERE id=?");
+                           ELSE 'pending' END WHERE id=? AND review_archived_at IS NULL");
             $stmt->bind_param('ssi',$paymentId,$status,$attempt['id']);
             if (!$stmt->execute() || $stmt->affected_rows!==1)
                 throw new RuntimeException('ipn_primary_link_unconfirmed');
@@ -142,11 +154,12 @@ function achbotNpIngestIpn(mysqli $connection, string $ipnSecret,
             // An unsettled *unclaimed* primary is held for finance review;
             // never overwrite a done/fulfilling/owner-journal state or hijack
             // doAction() between its operator COMMIT and fulfillment.
-            // A separate owner-only finance-exception queue reads secondary
-            // child evidence independently of the primary pay/attempt state.
+            // Record signed child evidence independently; the only
+            // original-attempt review UI is the operator attention inbox.
             $stmt=$connection->prepare("UPDATE payment_attempts SET
                 provider_status='multiple_payments',stage='review'
                 WHERE id=? AND stage IN ('pending','checking')
+                  AND review_archived_at IS NULL
                   AND EXISTS (SELECT 1 FROM pays p
                     WHERE p.id=payment_attempts.pay_row_id
                       AND p.state IN ('pending','send'))");
@@ -187,7 +200,7 @@ function achbotNpReconcileBatch(mysqli $connection, array $paymentKeys,
     $sql = "SELECT a.*,p.payid AS original_invoice,p.state AS pay_state,
                    p.price AS current_local_amount
             FROM payment_attempts a JOIN pays p ON p.id=a.pay_row_id
-            WHERE a.provider='nowpayments' AND a.payment_id IS NOT NULL AND
+            WHERE a.provider='nowpayments' AND a.review_archived_at IS NULL AND a.payment_id IS NOT NULL AND
             (a.stage='pending' OR
               (a.stage='checking' AND a.last_checked_at < NOW()-INTERVAL 10 MINUTE)
               OR a.stage='fulfilling')
@@ -203,11 +216,8 @@ function achbotNpReconcileBatch(mysqli $connection, array $paymentKeys,
         // provider statuses are assessed independently below.
         // A prior run may have exited inside the inherited doAction().
         // Never trigger remote provisioning again after an ambiguous result.
-        // An authorized operator may already own the exact provider
-        // settlement through the 019 decision journal. This stage is
-        // intentionally long-lived across local or remote effects. Never
-        // make it reviewable again from a concurrently running Cron tick,
-        // even if the 019 table is temporarily unavailable.
+        // An operator may already have acted on this original invoice.
+        // Archived records must never be re-entered by the Cron worker.
         if ($attempt['stage']==='fulfilling' &&
             in_array((string)($attempt['provider_status']??''),
                 ['operator_verified_finished','operator_attested'],true)) {
@@ -217,7 +227,7 @@ function achbotNpReconcileBatch(mysqli $connection, array $paymentKeys,
             !in_array($attempt['pay_state'],['pending','send'],true)) {
             $stmt=$connection->prepare("UPDATE payment_attempts
                 SET stage='review',provider_status='fulfillment_needs_review'
-                WHERE id=? AND stage NOT IN ('done','review')");
+                WHERE id=? AND review_archived_at IS NULL AND stage NOT IN ('done','review')");
             $stmt->bind_param('i',$attempt['id']);
             $stmt->execute();
             $stmt->close();
@@ -226,7 +236,7 @@ function achbotNpReconcileBatch(mysqli $connection, array $paymentKeys,
         }
         $stmt = $connection->prepare("UPDATE payment_attempts
             SET stage='checking',last_checked_at=NOW()
-            WHERE id=? AND
+            WHERE id=? AND review_archived_at IS NULL AND
               (stage='pending' OR
                 (stage='checking' AND last_checked_at < NOW()-INTERVAL 10 MINUTE))
               AND (last_checked_at IS NULL OR
@@ -239,7 +249,7 @@ function achbotNpReconcileBatch(mysqli $connection, array $paymentKeys,
         $remote=achbotNpGetVerifiedPayment((string)$attempt['payment_id'],$apiKey);
         if (!$remote) {
             $connection->query("UPDATE payment_attempts
-                SET stage='pending' WHERE id=".(int)$attempt['id']." AND stage='checking'");
+                SET stage='pending' WHERE id=".(int)$attempt['id']." AND stage='checking' AND review_archived_at IS NULL");
             $done['pending']++;
             continue;
         }
@@ -251,7 +261,7 @@ function achbotNpReconcileBatch(mysqli $connection, array $paymentKeys,
             $actualOrderHash !== (string)$attempt['order_hash'] ||
             (string)$attempt['original_invoice'] !== (string)$attempt['provider_reference']) {
             $stmt=$connection->prepare("UPDATE payment_attempts
-                SET stage='review',provider_status='identity_mismatch' WHERE id=?");
+                SET stage='review',provider_status='identity_mismatch' WHERE id=? AND review_archived_at IS NULL");
             $stmt->bind_param('i',$attempt['id']);
             $stmt->execute();
             $stmt->close();
@@ -262,7 +272,7 @@ function achbotNpReconcileBatch(mysqli $connection, array $paymentKeys,
             (int)$attempt['local_amount_toman'] !== (int)$attempt['current_local_amount']) {
             $stmt=$connection->prepare("UPDATE payment_attempts
                 SET stage='review',provider_status='local_amount_changed'
-                WHERE id=? AND stage='checking'");
+                WHERE id=? AND stage='checking' AND review_archived_at IS NULL");
             $stmt->bind_param('i',$attempt['id']);
             $stmt->execute();
             $stmt->close();
@@ -277,7 +287,7 @@ function achbotNpReconcileBatch(mysqli $connection, array $paymentKeys,
             $nextStage=$kind==='pending'?'pending':'review';
             // Do not silently auto-expire a payment that may arrive late.
             $stmt=$connection->prepare("UPDATE payment_attempts
-                SET stage=?,provider_status=? WHERE id=? AND stage='checking'");
+                SET stage=?,provider_status=? WHERE id=? AND stage='checking' AND review_archived_at IS NULL");
             $stmt->bind_param('ssi',$nextStage,$status,$attempt['id']);
             $stmt->execute();
             $stmt->close();
@@ -286,7 +296,7 @@ function achbotNpReconcileBatch(mysqli $connection, array $paymentKeys,
         }
         if (!achbotNpValidFinalAmount($attempt,$remote)) {
             $stmt=$connection->prepare("UPDATE payment_attempts
-                SET stage='review',provider_status='amount_mismatch' WHERE id=?");
+                SET stage='review',provider_status='amount_mismatch' WHERE id=? AND review_archived_at IS NULL");
             $stmt->bind_param('i',$attempt['id']);
             $stmt->execute();
             $stmt->close();
@@ -296,7 +306,7 @@ function achbotNpReconcileBatch(mysqli $connection, array $paymentKeys,
         $stmt=$connection->prepare("UPDATE payment_attempts a
             JOIN pays p ON p.id=a.pay_row_id
             SET a.stage='fulfilling',a.provider_status='finished'
-            WHERE a.id=? AND a.stage='checking'
+            WHERE a.id=? AND a.stage='checking' AND a.review_archived_at IS NULL
               AND p.price=a.local_amount_toman
               AND p.state IN ('pending','send')");
         $stmt->bind_param('i',$attempt['id']);
@@ -318,14 +328,14 @@ function achbotNpReconcileBatch(mysqli $connection, array $paymentKeys,
                 in_array($effectOutcome,['delivered','compensated'],true)) {
                 $status=$effectOutcome==='compensated'?'compensated':'finished';
                 $stmt=$connection->prepare("UPDATE payment_attempts
-                    SET stage='done',provider_status=? WHERE id=? AND stage='fulfilling'");
+                    SET stage='done',provider_status=? WHERE id=? AND stage='fulfilling' AND review_archived_at IS NULL");
                 $stmt->bind_param('si',$status,$attempt['id']);
                 $stmt->execute();
                 $stmt->close();
                 $done['completed']++;
             } else {
                 $stmt=$connection->prepare("UPDATE payment_attempts
-                    SET stage='review',provider_status='fulfillment_unconfirmed' WHERE id=?");
+                    SET stage='review',provider_status='fulfillment_unconfirmed' WHERE id=? AND review_archived_at IS NULL");
                 $stmt->bind_param('i',$attempt['id']);
                 $stmt->execute();
                 $stmt->close();
@@ -335,7 +345,7 @@ function achbotNpReconcileBatch(mysqli $connection, array $paymentKeys,
             // DB and remote Marzban are not one transaction. Keep a human
             // review marker; do NOT blindly replay creation after an error.
             $stmt=$connection->prepare("UPDATE payment_attempts
-                SET stage='review',provider_status='fulfillment_failed' WHERE id=?");
+                SET stage='review',provider_status='fulfillment_failed' WHERE id=? AND review_archived_at IS NULL");
             $stmt->bind_param('i',$attempt['id']);
             $stmt->execute();
             $stmt->close();
@@ -546,7 +556,7 @@ if (defined('ACHBOT_NP_RECONCILE_ONLY')) {
             ($result->Status===100 || $result->Status==='100');
         if ($verifiedStatus) {
             // A forged/stale browser NOK cannot cancel trusted positive funds.
-            doAction($rowId, "zarinpal");
+            achbotVerifiedHostedBrowserReturn($rowId, "zarinpal");
         } else {
             achbotHostedMarkVerificationUncertain($connection,$rowId,'zarinpal',
                 (string)$payParam['hash_id']);
@@ -678,13 +688,17 @@ if (defined('ACHBOT_NP_RECONCILE_ONLY')) {
 
         $disposition = achbotVerifiedGatewayOutcome('nextpay', $verifyCode);
         if ($disposition === 'verified') {
-            doAction($rowId, "nextpay");
+            achbotVerifiedHostedBrowserReturn($rowId, "nextpay");
         } elseif ($disposition === 'rejected') {
             // Official NextPay codes -2 (rejected) and -4 (canceled) are
             // definitive. -1/-3 are pending; other errors need reconciliation.
             // Cancel only the selected pending row; never clobber a replayed or
             // concurrently changed payment with an external payid.
-            $stmt = $connection->prepare("UPDATE `pays` SET `state` = 'canceled' WHERE `id` = ? AND `state` IN ('pending', 'send')");
+            $archiveFence=achbotHostedPaymentAttemptsExists($connection)
+                ? " AND NOT EXISTS (SELECT 1 FROM payment_attempts a WHERE a.pay_row_id=pays.id
+                     AND a.review_archived_at IS NOT NULL)" : '';
+            $stmt = $connection->prepare("UPDATE `pays` SET `state` = 'canceled'
+                WHERE `id` = ? AND `state` IN ('pending', 'send')".$archiveFence);
             $stmt->bind_param("i", $rowId);
             $stmt->execute();
             $changed = $stmt->affected_rows === 1;
@@ -721,9 +735,12 @@ function achbotClaimAndCreditWallet(mysqli $db, int $payId, int $userId,
     if ($payId <= 0 || $userId <= 0 || $amount <= 0) return false;
     $db->begin_transaction();
     try {
+        $archiveFence=achbotHostedPaymentAttemptsExists($db)
+            ? " AND NOT EXISTS (SELECT 1 FROM payment_attempts a
+                 WHERE a.pay_row_id=pays.id AND a.review_archived_at IS NOT NULL)" : '';
         $stmt = $db->prepare("UPDATE pays SET state='paid'
             WHERE id=? AND user_id=? AND price=? AND type='INCREASE_WALLET'
-              AND state IN ('pending','send')");
+              AND state IN ('pending','send')".$archiveFence);
         $stmt->bind_param('iii', $payId, $userId, $amount);
         $stmt->execute();
         $claimed = $stmt->affected_rows;
@@ -780,14 +797,14 @@ function achbotHostedPaymentAttemptsExists(mysqli $db): bool {
 
 /** Save only a bound, uncertain hosted VERIFY result for an Owner decision.
  * A browser return is NOT proof of funds. Do not call merchant GET here or
- * overwrite a terminal/processing payment. Requires existing 019 audit.
+ * overwrite a terminal/processing payment. Uses the unique 003 attempt.
  */
 function achbotHostedMarkVerificationUncertain(mysqli $db,int $payId,
                                               string $provider,string $hash): bool {
     if ($payId<=0 || !in_array($provider,['nextpay','zarinpal'],true) ||
         $hash==='') return false;
-    require_once __DIR__.'/ReviewDecisions.php';
-    if (!achbotNpDecisionSchemaReady($db)) return false;
+    require_once __DIR__.'/GatewayReview.php';
+    if (!achbotGatewayReviewReady($db)) return false;
     $open=false;
     try {
         if (!$db->begin_transaction()) return false;
@@ -796,7 +813,8 @@ function achbotHostedMarkVerificationUncertain(mysqli $db,int $payId,
         $q->bind_param('i',$payId);$q->execute();$pay=$q->get_result()->fetch_assoc();$q->close();
         $q=$db->prepare('SELECT * FROM payment_attempts WHERE pay_row_id=? FOR UPDATE');
         $q->bind_param('i',$payId);$q->execute();$attempt=$q->get_result()->fetch_assoc();$q->close();
-        if (!$pay || !$attempt || !in_array($pay['state'],['pending','send'],true) ||
+        if (!$pay || !$attempt || $attempt['review_archived_at']!==null ||
+            !in_array($pay['state'],['pending','send'],true) ||
             (string)$pay['hash_id']!==$hash || (int)$pay['price']<=0 ||
             (string)$pay['payid']!== (string)$attempt['provider_reference'] ||
             (string)$attempt['provider_reference']==='' ||
@@ -817,7 +835,7 @@ function achbotHostedMarkVerificationUncertain(mysqli $db,int $payId,
         $id=(int)$attempt['id'];
         $q=$db->prepare("UPDATE payment_attempts
             SET stage='review',provider_status='verification_uncertain',last_checked_at=NOW()
-            WHERE id=? AND stage='pending'");
+            WHERE id=? AND stage='pending' AND review_archived_at IS NULL");
         $q->bind_param('i',$id);$q->execute();$ok=$q->affected_rows===1;$q->close();
         if (!$ok) throw new RuntimeException('hosted_review_stage_unconfirmed');
         if (!$db->commit()) throw new RuntimeException('hosted_review_commit_unconfirmed');
@@ -864,8 +882,11 @@ function achbotClaimHostedServiceForReview(mysqli $db, int $payId, int $amount,
         if (!$db->begin_transaction()) throw new RuntimeException('transaction_begin_failed');
 
         $failure='paid_claim_failed';
+        $archiveFence=$hasLedger
+            ? " AND NOT EXISTS (SELECT 1 FROM payment_attempts a
+                WHERE a.pay_row_id=pays.id AND a.review_archived_at IS NOT NULL)" : '';
         $stmt=$db->prepare("UPDATE pays SET state='paid'
-            WHERE id=? AND price=? AND hash_id=? AND state IN ('pending','send')");
+            WHERE id=? AND price=? AND hash_id=? AND state IN ('pending','send')".$archiveFence);
         $stmt->bind_param('iis',$payId,$amount,$hash);
         if (!$stmt->execute()) throw new RuntimeException('paid_claim_failed');
         $claimed=$stmt->affected_rows;
@@ -876,7 +897,7 @@ function achbotClaimHostedServiceForReview(mysqli $db, int $payId, int $amount,
         if ($hasLedger) {
             // Lock pays before the attempt, matching checkout's lock order.
             $failure='attempt_read_failed';
-            $stmt=$db->prepare("SELECT id,provider,stage,provider_status,order_hash,local_amount_toman
+            $stmt=$db->prepare("SELECT id,provider,stage,provider_status,order_hash,local_amount_toman,review_archived_at
                 FROM payment_attempts WHERE pay_row_id=? FOR UPDATE");
             $stmt->bind_param('i',$payId);
             if (!$stmt->execute()) throw new RuntimeException('attempt_read_failed');
@@ -884,7 +905,8 @@ function achbotClaimHostedServiceForReview(mysqli $db, int $payId, int $amount,
             $stmt->close();
             if ($attempt) {
                 $failure='attempt_mismatch';
-                if ((string)$attempt['provider']!==$provider ||
+                if ($attempt['review_archived_at']!==null ||
+                    (string)$attempt['provider']!==$provider ||
                     (string)$attempt['order_hash']!==$hash ||
                     (int)$attempt['local_amount_toman']!==$amount) {
                     throw new RuntimeException('attempt_mismatch');
@@ -892,15 +914,9 @@ function achbotClaimHostedServiceForReview(mysqli $db, int $payId, int $amount,
                 $stage=(string)$attempt['stage'];
                 $status=(string)($attempt['provider_status']??'');
                 if ($stage==='fulfilling' && $status==='operator_attested') {
-                    // Operator journal COMMIT must exist before the original
-                    // provider effect. This is not a second attestation.
-                    $j=$db->prepare("SELECT id FROM payment_review_decisions
-                        WHERE pay_row_id=? AND attempt_id=? AND decision='approve'
-                          AND state='dispatching' FOR UPDATE");
-                    $aid=(int)$attempt['id'];
-                    $j->bind_param('ii',$payId,$aid);$j->execute();
-                    $hasDecision=$j->get_result()->num_rows===1;$j->close();
-                    if (!$hasDecision) throw new RuntimeException('operator_journal_missing');
+                    // This unique 003 attempt was claimed once by the
+                    // authenticated operator before invoking this effect.
+                    // Its 'operator_attested' status is not merchant proof.
                 } elseif ($stage!=='pending' &&
                     !($stage==='review' && $status==='verification_uncertain')) {
                     throw new RuntimeException('attempt_mismatch');
@@ -910,7 +926,7 @@ function achbotClaimHostedServiceForReview(mysqli $db, int $payId, int $amount,
                 $stmt=$db->prepare("UPDATE payment_attempts
                     SET stage='review',provider_status='fulfillment_started'
                     WHERE id=? AND pay_row_id=? AND provider=? AND stage=?
-                      AND (provider_status <=> ?)");
+                      AND (provider_status <=> ?) AND review_archived_at IS NULL");
                 $beforeStatus=$attempt['provider_status'];
                 $stmt->bind_param('iisss',$id,$payId,$provider,$stage,$beforeStatus);
                 if (!$stmt->execute()) throw new RuntimeException('ledger_stage_failed');
@@ -945,7 +961,8 @@ function achbotFinishHostedServiceReview(mysqli $db, int $payId,
         $stmt=$db->prepare("UPDATE payment_attempts a JOIN pays p ON p.id=a.pay_row_id
             SET a.stage='done',a.provider_status=?
             WHERE a.pay_row_id=? AND a.provider=? AND a.stage='review'
-              AND a.provider_status='fulfillment_started' AND p.state='paid'");
+              AND a.provider_status='fulfillment_started' AND p.state='paid'
+                AND a.review_archived_at IS NULL");
         if ($stmt===false) {
             $sqlErrorCode=(int)$db->errno;
             throw new RuntimeException('hosted_review_finish_prepare_failed');
@@ -970,7 +987,8 @@ function achbotFinishHostedServiceReview(mysqli $db, int $payId,
                   AND p.state='paid' AND p.type='INCREASE_WALLET'
                   AND BINARY p.hash_id=BINARY a.order_hash
                   AND BINARY p.payid=BINARY a.provider_reference
-                  AND p.price=a.local_amount_toman");
+                  AND p.price=a.local_amount_toman
+                  AND a.review_archived_at IS NULL");
             if ($wallet===false) throw new RuntimeException('hosted_wallet_finish_prepare_failed');
             $wallet->bind_param('is',$payId,$provider);
             if (!$wallet->execute()) {
@@ -1091,7 +1109,8 @@ function achbotPerformPaymentEffect($payRowId, $gateType, &$effectStage = null) 
 
     if ($gateType === 'nowpayment') {
         $stmt=$connection->prepare("SELECT local_amount_toman FROM payment_attempts
-            WHERE pay_row_id=? AND provider='nowpayments' AND stage='fulfilling' LIMIT 1");
+            WHERE pay_row_id=? AND provider='nowpayments' AND stage='fulfilling'
+              AND review_archived_at IS NULL LIMIT 1");
         $stmt->bind_param('i',$rowId);
         $stmt->execute();
         $expected=$stmt->get_result()->fetch_assoc();
@@ -1118,7 +1137,9 @@ function achbotPerformPaymentEffect($payRowId, $gateType, &$effectStage = null) 
     } else {
         // NOWPayments has its own fulfilling/review worker boundary.
         $stmt = $connection->prepare("UPDATE `pays` SET `state` = 'paid'
-            WHERE `id` = ? AND `price`=? AND `state` IN ('pending','send')");
+            WHERE `id` = ? AND `price`=? AND `state` IN ('pending','send')
+            AND NOT EXISTS (SELECT 1 FROM payment_attempts a
+                WHERE a.pay_row_id=pays.id AND a.review_archived_at IS NOT NULL)");
         $stmt->bind_param('ii',$payRowId,$amount);
         $stmt->execute();
         $claimed=$stmt->affected_rows;
@@ -1821,36 +1842,91 @@ function achbotPerformPaymentEffect($payRowId, $gateType, &$effectStage = null) 
  * an attempt as delivered when the underlying effect throws or is uncertain.
  */
 function doAction($payRowId, $gateType) {
-    $effectStage='preclaim';
+    global $connection;
+    // A live-worker signal for the ENTIRE hosted attempt, including local
+    // order linking and Telegram delivery after remote Native HTTP. It is
+    // session-scoped, automatically cleared after PHP/connection death.
+    // It does NOT hold a database transaction across any external request.
+    $lockName=achbotHostedWorkerLockName($connection,(int)$payRowId);
+    $q=$connection->prepare('SELECT GET_LOCK(?,0) AS acquired');
+    $q->bind_param('s',$lockName);$q->execute();
+    $held=$q->get_result()->fetch_assoc();$q->close();
+    // A true 0 means another live session owns this payment. SQL NULL or
+    // missing results indicate an acquisition failure, NOT contention.
+    if (!isset($held['acquired']) || !in_array((string)$held['acquired'],['0','1'],true))
+        throw new RuntimeException('hosted_payment_worker_lock_unconfirmed');
+    if ((int)$held['acquired']===0)
+        throw new RuntimeException('hosted_payment_worker_busy');
     try {
-        $outcome=achbotPerformPaymentEffect($payRowId,$gateType,$effectStage);
+        $effectStage='preclaim';
+        try {
+            $outcome=achbotPerformPaymentEffect($payRowId,$gateType,$effectStage);
+        } catch (Throwable $error) {
+            if (!in_array($gateType,['nextpay','zarinpal'],true)) throw $error;
+            // Even an upstream-verified charge can fail on the *first* local
+            // SELECT, before a durable review record exists. A post-claim throw
+            // may instead follow a real remote side effect. Neither is safe to
+            // retry, refund, or describe as an already-recorded review request.
+            $afterClaim=$effectStage==='postclaim';
+            $event=$afterClaim
+                ? 'achbot_hosted_service_effect_needs_review'
+                : 'achbot_hosted_claim_unconfirmed';
+            $reason=$afterClaim
+                ? 'postclaim_effect_exception'
+                : 'preclaim_local_error';
+            error_log($event.' pay_id='.(int)$payRowId.
+                      ' provider='.$gateType.' code='.$reason);
+            $message=$afterClaim
+                ? \achbotMessage('gateway.gateway_return.do_action.text.83188c9e00')
+                : \achbotMessage('gateway.gateway_return.do_action.text.30e9647ee1');
+            showForm($message,\achbotMessage('gateway.gateway_return.np_reconcile_batch.message.da0bc406d8'),false,'review');
+            return 'ambiguous';
+        }
+        if (in_array($gateType,['nextpay','zarinpal'],true) &&
+            in_array($outcome,['delivered','compensated'],true)) {
+            achbotFinishHostedServiceReview($connection,(int)$payRowId,$gateType,$outcome);
+        }
+        return $outcome;
+    } finally {
+        try {
+            $q=$connection->prepare('SELECT RELEASE_LOCK(?)');
+            $q->bind_param('s',$lockName);$q->execute();$q->close();
+        } catch (Throwable $ignored) {
+            error_log('achbot_hosted_worker_lock_release_unconfirmed pay_id='.
+                (int)$payRowId);
+        }
+    }
+}
+
+/**
+ * A duplicate verified browser return may race an already-running hosted
+ * worker. Keep the original worker and financial claim untouched; never
+ * turn an expected live-session lease into a public PHP 500. Cron and admin
+ * decision callers use doAction() directly and keep their own semantics.
+ */
+function achbotVerifiedHostedBrowserReturn(int $payId,string $provider): void {
+    try {
+        doAction($payId,$provider);
     } catch (Throwable $error) {
-        if (!in_array($gateType,['nextpay','zarinpal'],true)) throw $error;
-        // Even an upstream-verified charge can fail on the *first* local
-        // SELECT, before a durable review record exists. A post-claim throw
-        // may instead follow a real remote side effect. Neither is safe to
-        // retry, refund, or describe as an already-recorded review request.
-        $afterClaim=$effectStage==='postclaim';
-        $event=$afterClaim
-            ? 'achbot_hosted_service_effect_needs_review'
-            : 'achbot_hosted_claim_unconfirmed';
-        $reason=$afterClaim
-            ? 'postclaim_effect_exception'
-            : 'preclaim_local_error';
-        error_log($event.' pay_id='.(int)$payRowId.
-                  ' provider='.$gateType.' code='.$reason);
-        $message=$afterClaim
-            ? \achbotMessage('gateway.gateway_return.do_action.text.83188c9e00')
-            : \achbotMessage('gateway.gateway_return.do_action.text.30e9647ee1');
-        showForm($message,\achbotMessage('gateway.gateway_return.np_reconcile_batch.message.da0bc406d8'),false,'review');
-        return 'ambiguous';
+        if ($error instanceof RuntimeException &&
+            $error->getMessage()==='hosted_payment_worker_busy') {
+            error_log('achbot_hosted_browser_worker_busy pay_id='.$payId.
+                ' provider='.$provider.' reason=active_worker');
+            showForm(\achbotMessage('gateway.gateway_return.np_reconcile_batch.message.e46087af54'),
+                \achbotMessage('gateway.gateway_return.np_reconcile_batch.message.f71cd91dad'),
+                false,'pending');
+            return;
+        }
+        // A genuine database/worker failure is NOT a successful charge or
+        // proof of local fulfillment. Preserve internal diagnostic context.
+        error_log('achbot_hosted_browser_result_unconfirmed pay_id='.$payId.
+            ' provider='.$provider.' cause='.get_class($error).
+            ' code='.$error->getCode().' detail='.
+            substr(str_replace(["\r","\n"],' ',$error->getMessage()),0,300));
+        showForm(\achbotMessage('gateway.gateway_return.do_action.text.30e9647ee1'),
+            \achbotMessage('gateway.gateway_return.np_reconcile_batch.message.da0bc406d8'),
+            false,'review');
     }
-    if (in_array($gateType,['nextpay','zarinpal'],true) &&
-        in_array($outcome,['delivered','compensated'],true)) {
-        global $connection;
-        achbotFinishHostedServiceReview($connection,(int)$payRowId,$gateType,$outcome);
-    }
-    return $outcome;
 }
 
 /**

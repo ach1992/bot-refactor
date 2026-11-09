@@ -649,6 +649,7 @@ function achbotNotifyAdmins(...$args){$GLOBALS['events'][]=['event'=>'ADMIN_NOTI
                         proc.stderr[-1200:],proc.stdout[-1200:]))
                 return json.loads(proc.stdout)
             q((ROOT/'migrations/post-v9/003_payment_attempts.sql').read_text())
+            q((ROOT/'migrations/post-v9/022_gateway_review_archive.sql').read_text())
             # Financial callbacks do not trust preview-only $botState. The
             # definitive current policy is the owner-locked, unique persisted
             # BOT_STATES row. Seed it explicitly on the disposable database.

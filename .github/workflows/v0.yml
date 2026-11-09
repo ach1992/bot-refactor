@@ -440,15 +440,10 @@ jobs:
           mkdir -p "$bundle"
           python3 tools/package_post_v9.py create --output "$bundle/runtime.zip"
           python3 tools/package_post_v9.py verify --zip "$bundle/runtime.zip" --manifest "$bundle/runtime.zip.manifest.json"
-          for id in 001_marzban_panel_group_id 003_payment_attempts 004_automatic_renewal_attempts 005_wallet_adjustments 006_payment_message_refs 007_service_effects 008_referral_awards 009_bank_buy_invoice_claims 011_provider_identity 012_shared_provider_storage 013_remove_obsolete_order_columns 014_api_payment_evidence 015_scoped_addons 016_remove_pasarguard_server_groups 017_shared_plan_changes 018_payment_delivery_intents 019_payment_review_decisions 020_payment_followup_intents 021_paid_reconciliation_provenance; do
+          for id in 001_marzban_panel_group_id 003_payment_attempts 004_automatic_renewal_attempts 005_wallet_adjustments 006_payment_message_refs 007_service_effects 008_referral_awards 009_bank_buy_invoice_claims 011_provider_identity 012_shared_provider_storage 013_remove_obsolete_order_columns 014_api_payment_evidence 015_scoped_addons 016_remove_pasarguard_server_groups 017_shared_plan_changes 018_payment_delivery_intents 020_payment_followup_intents 022_gateway_review_archive; do
             cp "migrations/post-v9/$id.sql" "$bundle/$id.sql"
             (cd "$bundle" && sha256sum "$id.sql" > "$id.sha256")
           done
-          # 021 must accompany the distribution as a checksummed sidecar,
-          # never inside the source-only runtime ZIP.
-          test -s "$bundle/021_paid_reconciliation_provenance.sql"
-          cmp "migrations/post-v9/021_paid_reconciliation_provenance.sql" "$bundle/021_paid_reconciliation_provenance.sql"
-          (cd "$bundle" && sha256sum -c 021_paid_reconciliation_provenance.sha256)
           mkdir -p "$bundle/optional-cleanup/tools" "$bundle/optional-cleanup/migrations/post-v9"
           cp tools/cleanup_post_v9.php "$bundle/optional-cleanup/tools/"
           cp migrations/post-v9/010_cleanup_manifest.json "$bundle/optional-cleanup/migrations/post-v9/"

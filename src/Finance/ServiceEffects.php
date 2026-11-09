@@ -37,20 +37,9 @@ function achbotEffectSafeFailure(Throwable $error): array {
         'pg_dispatch_target_changed','pg_verify_begin','pg_verify_commit_unknown',
         'pg_effect_verification_unconfirmed','pg_credentials_changed',
         'pg_create_invalid','pg_groups_required',
-        // Explicit paid-account replacement. Keep known operational reasons
-        // intact while never serializing untrusted provider/SQL exception text.
-        'replacement_actor_not_permitted','replacement_capacity_insufficient',
-        'replacement_capacity_owner_changed','replacement_dispatch_needs_review',
-        'replacement_evidence_expired_or_invalid','replacement_first_capacity_unavailable',
-        'replacement_missing_capacity_proof',
-        'replacement_original_duration_changed_or_unverifiable',
-        'replacement_original_entitlement_changed',
-        'replacement_original_entitlement_unavailable',
-        'replacement_original_evidence_changed','replacement_plan_invalid',
-        'replacement_reservation_id_missing','replacement_reservation_unconfirmed',
-        'replacement_reserve_begin','replacement_reserve_commit_unknown',
-        'replacement_staff_permission_revoked','replacement_target_changed',
-        'replacement_unrecognized_remote_evidence','replacement_username_invalid'
+        // Exact, trusted terminal-Archive refusal; never reduce an expected
+        // operator fence to an opaque runtime_error diagnostic.
+        'effect_original_archived'
     ];
     $fallback='runtime_error';$depth=0;$source='runtime';
     for ($current=$error;$current!==null && $depth<8;$current=$current->getPrevious()) {
@@ -197,6 +186,90 @@ function achbotEffectValidUsername(string $username): bool {
         preg_match('/^[a-zA-Z0-9_-]+$/D',$username)===1;
 }
 
+/**
+ * Called only while the original pays row is already FOR UPDATE locked.
+ * The 003 ledger is optional for very old non-hosted orders, but a hidden
+ * table, missing 022 or other SQL error must never bypass Archive.
+ */
+function achbotEffectAssertNotArchivedLocked(mysqli $db,int $payId,bool $processing=false): void {
+    $hasLedger=true;
+    try {
+        $probe=$db->query('SELECT 1 FROM payment_attempts LIMIT 0');
+        if (!$probe) {
+            if ((int)$db->errno===1146) $hasLedger=false;
+            else throw new RuntimeException('effect_archive_ledger_unavailable');
+        } else $probe->free();
+    } catch (mysqli_sql_exception $error) {
+        if ((int)$error->getCode()===1146) $hasLedger=false;
+        else throw $error;
+    }
+    if (!$hasLedger) return;
+    if ($processing) {
+        // Unchanged manual-processing orders on older schemas do not have
+        // the hosted operator Archive contract. Guard only actual hosted
+        // attempts here; a missing 022 on an active hosted case still fails.
+        $q=$db->prepare('SELECT provider FROM payment_attempts
+            WHERE pay_row_id=? LIMIT 1 FOR UPDATE');
+        $q->bind_param('i',$payId);$q->execute();
+        $row=$q->get_result()->fetch_assoc();$q->close();
+        if (!$row || !in_array((string)$row['provider'],
+                ['nowpayments','zarinpal','nextpay'],true)) return;
+    }
+    $fence=$db->prepare('SELECT id FROM payment_attempts
+        WHERE pay_row_id=? AND review_archived_at IS NOT NULL
+        LIMIT 1 FOR UPDATE');
+    if (!$fence) throw new RuntimeException('effect_archive_fence_unavailable');
+    $fence->bind_param('i',$payId);
+    if (!$fence->execute()) throw new RuntimeException('effect_archive_fence_read_failed');
+    $archived=$fence->get_result()->num_rows>0;
+    $fence->close();
+    if ($archived) throw new RuntimeException('effect_original_archived');
+}
+
+/**
+ * Local reservation is not proof of remote dispatch. In one short transaction,
+ * coordinate the actual dispatch admission with Archive via the original
+ * payment lock: reserved -> dispatching. Archive may close a reserved line,
+ * but refuses while a dispatch has been admitted and its result is uncertain.
+ * No database transaction remains open during provider HTTP.
+ */
+function achbotEffectAdmitPaidDispatch(mysqli $db,int $effectId): void {
+    achbotEffectRequireAutocommit($db);
+    $q=$db->prepare('SELECT pay_row_id FROM service_effects WHERE id=?');
+    $q->bind_param('i',$effectId);$q->execute();
+    $row=$q->get_result()->fetch_assoc();$q->close();
+    if (!$row) throw new RuntimeException('effect_dispatch_missing');
+    if ($row['pay_row_id']===null) return; // Existing non-payment path.
+    $payId=(int)$row['pay_row_id'];
+    if ($payId<=0) throw new RuntimeException('effect_dispatch_pay_invalid');
+    $open=false;
+    try {
+        if (!$db->begin_transaction()) throw new RuntimeException('effect_admission_begin_failed');
+        $open=true;
+        $q=$db->prepare('SELECT state FROM pays WHERE id=? FOR UPDATE');
+        $q->bind_param('i',$payId);$q->execute();
+        $pay=$q->get_result()->fetch_assoc();$q->close();
+        if (!$pay || !in_array((string)$pay['state'],
+                ['paid','processing','processing_wallet'],true))
+            throw new RuntimeException('effect_dispatch_payment_changed');
+        if (in_array((string)$pay['state'],['paid','processing'],true))
+            achbotEffectAssertNotArchivedLocked(
+                $db,$payId,$pay['state']==='processing');
+        $q=$db->prepare("UPDATE service_effects SET state='dispatching'
+            WHERE id=? AND pay_row_id=? AND effect_kind='create'
+            AND state='reserved' AND order_id IS NULL");
+        $q->bind_param('ii',$effectId,$payId);
+        if (!$q->execute() || $q->affected_rows!==1)
+            throw new RuntimeException('effect_dispatch_already_admitted');
+        $q->close();
+        if (!$db->commit()) throw new RuntimeException('effect_admission_commit_unknown');
+        $open=false;
+    } catch (Throwable $error) {
+        if ($open) try {$db->rollback();} catch (Throwable $ignored) {}
+        throw $error;
+    }
+}
+
 /** Reserve ONCE before outbound POST; never derive outcome from account counts. */
 function achbotCreatePaidAccount(mysqli $db, int $payId, int $ordinal, array $p,
                                  int $staffActor=0,int $primaryOwner=0): array {
@@ -274,21 +347,12 @@ function achbotCreatePaidAccount(mysqli $db, int $payId, int $ordinal, array $p,
             throw new RuntimeException('effect_payment_identity_mismatch');
         }
 
-        // The paid replacement path has its own unique operation identity.
-        // Once any replacement belongs to this payment, do not admit a new
-        // ORIGINAL CREATE from a stale checkout/Cron/operator request.
-        // This query is compatible with legacy 007 before migration 021.
-        $replacementClaim=$db->prepare("SELECT id FROM service_effects
-            WHERE pay_row_id=? AND effect_kind='replacement' LIMIT 1 FOR UPDATE");
-        if (!$replacementClaim)
-            throw new RuntimeException('effect_replacement_guard_prepare_failed');
-        $replacementClaim->bind_param('i',$payId);
-        if (!$replacementClaim->execute())
-            throw new RuntimeException('effect_replacement_guard_read_failed');
-        $hasReplacement=$replacementClaim->get_result()->num_rows>0;
-        $replacementClaim->close();
-        if ($hasReplacement)
-            throw new RuntimeException('effect_original_create_after_replacement_denied');
+        // The local reservation is not a remote send. Both reservation and
+        // final dispatch admission must honor a terminal Archive.
+        if (in_array($claim['state'],['paid','processing'],true))
+            achbotEffectAssertNotArchivedLocked(
+                $db,$payId,$claim['state']==='processing');
+
         $targetIdentity=achbotEffectTargetIdentity($db,$serverId,$planId,$payId,$claim);
         $group=$targetIdentity['group'];$endpoint=$targetIdentity['endpoint'];
         $credentials=$targetIdentity['credentials'];$targetKey=$targetIdentity['key'];
@@ -430,7 +494,7 @@ function achbotCreatePaidAccount(mysqli $db, int $payId, int $ordinal, array $p,
         $stmt=$db->prepare("INSERT INTO service_effects
             (pay_row_id,ordinal,operation_id,effect_kind,target_server_id,target_group_id,
              target_key,endpoint_sha256,plan_id,remote_username,requested_expire,requested_bytes,request_sha256,reserved_count,state)
-            VALUES (?,?,?,'create',?,?,?,?,?,?,?,?,?,?,'dispatching')");
+            VALUES (?,?,?,'create',?,?,?,?,?,?,?,?,?,?,'reserved')");
         if (!$stmt) throw new RuntimeException('effect_reserve_prepare_failed');
         $stmt->bind_param('iisiissisiisi',$payId,$ordinal,$operation,$serverId,$group,
             $targetKey,$endpoint,$planId,$remark,$expiry,$bytes,$fingerprint,$reserveSlots);
@@ -507,6 +571,17 @@ function achbotEffectLockLinkRows(mysqli $db,int $effectId,bool $paid): array {
     if (!$target || $serverId<=0 || ($paid?($payId===null || $payId<=0):$payId!==null))
         throw new RuntimeException('effect_link_target_invalid');
     achbotEffectLockTargetRows($db,$serverId,null,$payId);
+    // A callback that finished its remote HTTP just before operator Archive
+    // must not link a new local order after the terminal original decision.
+    // Leave the verified/uncertain Native record for independent diagnosis.
+    if ($paid) {
+        $q=$db->prepare('SELECT state FROM pays WHERE id=?');
+        $q->bind_param('i',$payId);$q->execute();
+        $owner=$q->get_result()->fetch_assoc();$q->close();
+        if ($owner && in_array((string)$owner['state'],['paid','processing'],true))
+            achbotEffectAssertNotArchivedLocked(
+                $db,$payId,$owner['state']==='processing');
+    }
     return [$serverId,$payId];
 }
 

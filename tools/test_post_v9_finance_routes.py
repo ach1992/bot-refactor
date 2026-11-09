@@ -724,7 +724,7 @@ try {
         $GLOBALS['events'][]=['name'=>'do_action_result',
             'result'=>doAction($id,$gate)];
     } elseif ($spec['route'] === 'admin_review') {
-        $data=(string)($spec['callback_data']??'npReviewInbox');
+        $data=(string)($spec['callback_data']??'attentionInbox');
         $from_id=(int)($spec['actor']??9001);
         $chat_id=(int)($spec['chat_id']??9001);
         $message_id=8001;
@@ -800,6 +800,9 @@ def run_php(work, env, stage, spec, db=DB):
             f"provider={spec['provider']} code=postclaim_effect_exception\n").encode()
     else:
         expected_log=b''
+    if spec.get('expect_archived_ipn_attempt') is not None:
+        expected_log=("achbot_archived_ipn_evidence_only attempt="+
+            str(spec['expect_archived_ipn_attempt'])+" provider=nowpayments\n").encode()
     if spec.get('expect_local_error') and p.stderr != expected_log:
         # The pre-dispatch per-account journal supplies its own *bounded*
         # diagnostic before doAction's existing operator-review diagnostic.
@@ -874,6 +877,131 @@ def snapshot(work,env):
 def verify_unchanged(work,env,before,label):
     if snapshot(work,env)!=before:
         raise RuntimeError('Unexpected financial/account SQL mutation on '+label)
+
+def check_verified_browser_worker_contention(work,env,stage,records):
+    """Real verified browser returns, two MariaDB sessions, mock network.
+
+    The only instrumentation is in the disposable source stage and pauses
+    worker 1 immediately AFTER acquiring its real GET_LOCK session lease.
+    """
+    source=stage/'src/Finance/GatewayReturn.php'
+    code=source.read_text()
+    original_source=code
+    marker="    try {\n        $effectStage='preclaim';"
+    assert code.count(marker)==1
+    hold="""
+        if (($ready=getenv('ACHBOT_R3_HOLD_READY'))!==false && $ready!=='') {
+            file_put_contents($ready,'lease-held');
+            $release=(string)getenv('ACHBOT_R3_HOLD_RELEASE');
+            $deadline=microtime(true)+12;
+            while (!is_file($release) && microtime(true)<$deadline) usleep(10000);
+            if (!is_file($release)) throw new RuntimeException('test_pause_timeout');
+        }
+"""
+    code=code.replace(marker,"    try {\n"+hold+"        $effectStage='preclaim';",1)
+    lock="    $lockName=achbotHostedWorkerLockName($connection,(int)$payRowId);"
+    assert code.count(lock)==1
+    code=code.replace(lock,lock+'''\n    if (getenv('ACHBOT_R3_FAULT_LOCK')==='1') $lockName=null;''',1)
+    source.write_text(code)
+    driver=work/'owned-finance-guard.php'
+    assert driver.is_file()
+    def php_cmd(spec):
+        return ['php','-n','-d','extension=mysqlnd','-d','extension=mysqli',
+                '-d','extension=curl','-d','extension=ctype','-d','allow_url_fopen=0',
+                '-d','disable_functions=curl_init,curl_setopt,curl_setopt_array,curl_exec,curl_close,curl_error,curl_getinfo,exec,shell_exec,system,passthru,popen,proc_open,mail',
+                str(driver),str(stage),DB,str(work/'mysql.sock'),json.dumps(spec)]
+    def finish(process,expected_log=b''):
+        out,err=process.communicate(timeout=18)
+        if process.returncode or err!=expected_log:
+            raise RuntimeError('R3 actual route process failed: '+repr((process.returncode,out[-500:],err[-500:])))
+        result=json.loads(out)
+        if result['error'] or result['fatal'] or result['known_inherited_warnings']:
+            raise RuntimeError('R3 actual route error: '+repr(result)[:1000])
+        return result
+    def issued(provider,name,ref):
+        seed_payment(work,env,name,'INCREASE_WALLET',0,0,ref)
+        sql(work,env,"INSERT INTO payment_attempts (pay_row_id,provider,order_hash,"
+            "provider_reference,quote_amount,quote_currency,local_amount_toman,stage) "
+            f"SELECT id,'{provider}',hash_id,payid,price,'toman',price,'pending' "
+            f"FROM pays WHERE hash_id='{name}'")
+        return int(sql(work,env,f"SELECT id FROM pays WHERE hash_id='{name}'"))
+    def spec_for(provider,name,ref):
+        return (dict(route='return',get={'nextpay':'','trans_id':ref},nextpay_code=0)
+            if provider=='nextpay' else dict(route='return',
+            get={'zarinpal':'','hash_id':name,'Authority':ref,'Status':'OK'},zarin_status=100))
+    try:
+        for provider in ('nextpay','zarinpal'):
+            name='r3-browser-concurrent-'+provider
+            ref='r3-browser-reference-'+provider
+            pid=issued(provider,name,ref)
+            spec=spec_for(provider,name,ref)
+            wallet=int(sql(work,env,'SELECT wallet FROM users WHERE userid=1001'))
+            effects=int(sql(work,env,'SELECT COUNT(*) FROM service_effects'))
+            orders=int(sql(work,env,'SELECT COUNT(*) FROM orders_list'))
+            folder=work/('r3-'+provider);folder.mkdir()
+            ready=folder/'ready';release=folder/'release'
+            held_env=dict(env,ACHBOT_R3_HOLD_READY=str(ready),ACHBOT_R3_HOLD_RELEASE=str(release))
+            first=subprocess.Popen(php_cmd(spec),cwd=work,env=held_env,
+                stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+            try:
+                deadline=clock.monotonic()+8
+                while not ready.exists() and clock.monotonic()<deadline:
+                    if first.poll() is not None:raise RuntimeError('R3 original worker ended before lock hold')
+                    clock.sleep(.01)
+                if not ready.exists():raise RuntimeError('R3 original worker did not hold lease')
+                second=subprocess.Popen(php_cmd(spec),cwd=work,env=env,
+                    stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+                busy_log=(f'achbot_hosted_browser_worker_busy pay_id={pid} '
+                          f'provider={provider} reason=active_worker\n').encode()
+                blocked=finish(second,busy_log)
+                if ('class="panel pending"' not in blocked['form'] or
+                    'پرداخت در حال بررسی خودکار است' not in blocked['form'] or
+                    len(blocked['network_calls'])!=1):
+                    raise RuntimeError('R3 duplicate verified return did not show pending')
+                if (sql(work,env,f'SELECT state FROM pays WHERE id={pid}').strip()!='pending' or
+                    int(sql(work,env,'SELECT wallet FROM users WHERE userid=1001'))!=wallet or
+                    int(sql(work,env,'SELECT COUNT(*) FROM service_effects'))!=effects or
+                    int(sql(work,env,'SELECT COUNT(*) FROM orders_list'))!=orders):
+                    raise RuntimeError('R3 duplicate verified return mutated original payment '+repr({'provider':provider,'pay':sql(work,env,f'SELECT state FROM pays WHERE id={pid}').strip(),'wallet':sql(work,env,'SELECT wallet FROM users WHERE userid=1001'),'expected_wallet':wallet,'effects':sql(work,env,'SELECT COUNT(*) FROM service_effects'),'expected_effects':effects,'orders':sql(work,env,'SELECT COUNT(*) FROM orders_list'),'expected_orders':orders}))
+            finally:
+                release.write_text('release')
+                if first.poll() is None:
+                    try:first.wait(timeout=15)
+                    except subprocess.TimeoutExpired:first.kill()
+            completed=finish(first)
+            if ('class="panel completed"' not in completed['form'] or
+                sql(work,env,f'SELECT state FROM pays WHERE id={pid}').strip()!='paid' or
+                int(sql(work,env,'SELECT wallet FROM users WHERE userid=1001'))!=wallet+100):
+                raise RuntimeError('R3 original verified worker did not settle exactly once')
+            replay=run_php(work,env,stage,spec)
+            if (not replay['form'] or
+                int(sql(work,env,'SELECT wallet FROM users WHERE userid=1001'))!=wallet+100 or
+                int(sql(work,env,'SELECT COUNT(*) FROM service_effects'))!=effects or
+                int(sql(work,env,'SELECT COUNT(*) FROM orders_list'))!=orders):
+                raise RuntimeError('R3 repeated callback duplicated money, Native or order')
+            records.append(dict(case='r3_'+provider+'_concurrent_verified_return_pending_single_effect',
+                pass_=True,actual_two_mysql_sessions=True,real_provider_requests=0))
+            # A NULL lock name makes real MariaDB GET_LOCK() return NULL,
+            # distinct from GET_LOCK()=0 (another worker currently owns it).
+            fault_name='r3-browser-fault-'+provider
+            fault_ref='r3-browser-fault-ref-'+provider
+            fault_id=issued(provider,fault_name,fault_ref)
+            fault=subprocess.Popen(php_cmd(spec_for(provider,fault_name,fault_ref)),
+                cwd=work,env=dict(env,ACHBOT_R3_FAULT_LOCK='1'),
+                stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+            log=(f'achbot_hosted_browser_result_unconfirmed pay_id={fault_id} '
+                 f'provider={provider} cause=RuntimeException code=0 '
+                 'detail=hosted_payment_worker_lock_unconfirmed\n').encode()
+            result=finish(fault,log)
+            if ('class="panel review"' not in result['form'] or
+                'پرداخت تأیید شده است اما ثبت نتیجهٔ سفارش هنوز قطعی نیست' not in result['form'] or
+                sql(work,env,f'SELECT state FROM pays WHERE id={fault_id}').strip()!='pending'):
+                raise RuntimeError('R3 failed lease acquisition falsely implied settlement')
+            records.append(dict(case='r3_'+provider+'_lock_error_not_success',
+                pass_=True,real_provider_requests=0))
+    finally:
+        source.write_text(original_source)
+
 
 def main():
     p=argparse.ArgumentParser()
@@ -1005,6 +1133,7 @@ def main():
         native.sql(work,env,(ROOT/'migrations/post-v9/003_payment_attempts.sql').read_text(),DB)
         native.sql(work,env,(ROOT/'migrations/post-v9/007_service_effects.sql').read_text(),DB)
         assert len(sql(work,env,'SHOW TABLES').splitlines()) == 26
+        native.sql(work,env,(ROOT/'migrations/post-v9/022_gateway_review_archive.sql').read_text(),DB)
 
         # O1-R2: real MariaDB table privilege boundaries, not mocked error
         # strings. All grants/users live only in owned_database()'s socket-only
@@ -1527,268 +1656,75 @@ def main():
                             pass_=True,real_provider_requests=0))
         records.append(dict(case='nowpayments_repeat_review_quiet',
                             pass_=True,real_provider_requests=0))
-        admin_case=int(sql(work,env,
-            "SELECT id FROM payment_attempts "
-            "WHERE order_hash='np-funded-review'").strip())
-        admin_identity={'route':'admin_review','get':{},'chat_id':9001,
-                        'actor':9001}
+        # Source-real simplified inbox: only unresolved ORIGINAL invoices.
+        # A previously started fulfillment is not a second money approval.
+        seed_np_attempt(work,env,'simple-gateway-case',
+                        'simple-gateway-case-invoice','simple-gateway-primary')
+        sql(work,env,"UPDATE payment_attempts SET stage='review',"
+            "provider_status='confirmed' WHERE order_hash='simple-gateway-case'")
+        admin_case=int(sql(work,env,"SELECT id FROM pays "
+            "WHERE hash_id='simple-gateway-case'").strip())
+        attempt=int(sql(work,env,"SELECT id FROM payment_attempts "
+            "WHERE order_hash='simple-gateway-case'").strip())
+        admin_identity={'route':'admin_review','get':{},'chat_id':9001,'actor':9001}
         before=snapshot(work,env)
         inbox=run_php(work,env,stage,dict(admin_identity,
-            callback_data='npReviewInbox'))
+            callback_data='attentionInbox'))
         cards=[e for e in inbox['events'] if e['name']=='editText']
-        if (len(cards)!=1 or 'شواهد تخصصی NOWPayments' not in cards[0]['args'][1]
-            or ('npReviewCase_'+str(admin_case)) not in cards[0]['args'][2]):
-            raise RuntimeError('Admin inbox has no actionable case selector')
+        if (len(cards)!=1 or 'پرداخت‌های خودکار' not in str(cards[0]['args'][1]) or
+            ('attentionCase_'+str(admin_case)) not in str(cards[0]['args'][2])):
+            raise RuntimeError('Simple automatic-gateway inbox failed to list original payment')
         details=run_php(work,env,stage,dict(admin_identity,
-            callback_data='npReviewCase_'+str(admin_case),
-            admin_get={'nowpayment_ipn':''}))
+            callback_data='attentionCase_'+str(admin_case)))
         cards=[e for e in details['events'] if e['name']=='editText']
         if (len(cards)!=1 or
-            'شناسه عددی' not in cards[0]['args'][1] or
-            'مبلغ سفارش' not in cards[0]['args'][1] or
-            'npReviewVerify_'+str(admin_case)+'_0' not in cards[0]['args'][2] or
+            'شناسه عددی' not in str(cards[0]['args'][1]) or
+            'مبلغ سفارش' not in str(cards[0]['args'][1]) or
+            'gatewayReview_A_'+str(attempt) not in str(cards[0]['args'][2]) or
+            'gatewayReview_R_'+str(attempt) not in str(cards[0]['args'][2]) or
             details['network_calls']):
-            raise RuntimeError('Admin review detail leaked/ran provider action')
+            raise RuntimeError('Simple inbox detail lacks safe original action')
         for actor,chat,claim in [(1001,1001,True),(9001,1001,False)]:
             unauthorized=run_php(work,env,stage,dict(admin_identity,
                 actor=actor,chat_id=chat,claimed_is_admin=claim,
-                callback_data='npReviewCase_'+str(admin_case)))
+                callback_data='attentionCase_'+str(admin_case)))
             if (any(x['name']=='editText' for x in unauthorized['events']) or
                 unauthorized['network_calls'] or
                 not any(x['name']=='callback' for x in unauthorized['events'])):
-                raise RuntimeError('Unauthorized actor accessed finance case')
-        verified=run_php(work,env,stage,dict(admin_identity,
-            callback_data='npReviewVerify_'+str(admin_case)+'_0',
-            mock_invoice='np-funded-review-invoice',
-            nowpayment_payment_id='np-funded-review-primary',
-            nowpayment_order_id='np-funded-review',
-            nowpayment_status='finished'))
-        verify_events=[e for e in verified['events'] if e['name']=='editText']
-        if (len(verified['network_calls'])!=1 or
-            '/v1/payment/np-funded-review-primary' not in verified['network_calls'][0] or
-            len(verify_events)!=1 or
-            'استعلام فقط' not in verify_events[0]['args'][1] or
-            'مقدار گزارش‌شده' not in verify_events[0]['args'][1] or
-            'خالص گزارش‌شده' not in verify_events[0]['args'][1]):
-            raise RuntimeError('Read-only provider inquiry was not grounded')
-        mismatch=run_php(work,env,stage,dict(admin_identity,
-            callback_data='npReviewVerify_'+str(admin_case)+'_0',
-            mock_invoice='mismatched-provider-invoice',
-            nowpayment_payment_id='np-funded-review-primary',
-            nowpayment_order_id='np-funded-review',
-            nowpayment_status='finished'))
-        mismatch_cards=[e for e in mismatch['events'] if e['name']=='editText']
-        if (len(mismatch_cards)!=1 or
-            'پاسخ معتبر و منطبق دریافت نشد' not in mismatch_cards[0]['args'][1] or
-            'مقدار گزارش‌شده' in mismatch_cards[0]['args'][1]):
-            raise RuntimeError('Forged provider identity was displayed as money evidence')
-        verify_unchanged(work,env,before,'admin_review_readonly_access')
-        records.append(dict(case='nowpayments_operator_inbox_details_private_auth',
+                raise RuntimeError('Unauthorized actor accessed original invoice')
+        verify_unchanged(work,env,before,'simple_review_readonly_access')
+        records.append(dict(case='simple_gateway_inbox_original_case_and_merchant_ids',
                             pass_=True,real_provider_requests=0))
-        records.append(dict(case='nowpayments_operator_provider_inquiry_readonly',
-                            pass_=True,real_provider_requests=0))
-        records.append(dict(case='nowpayments_operator_unauthorized_callbacks_refused',
+        records.append(dict(case='simple_gateway_admin_private_access_and_no_provider_get',
                             pass_=True,real_provider_requests=0))
 
-        # Owner case inbox keyset: thirteen-plus genuinely evidenced reviews
-        # must remain reachable, even when several share updated_at seconds.
-        # Pin ONE DB timestamp for all writes. Multiple NOW() queries can
-        # cross a second boundary on slow CI runners, accidentally splitting
-        # the intended same-second pagination group without a product bug.
-        anchor=sql(work,env,
-            "SELECT DATE_FORMAT(DATE_ADD(NOW(),INTERVAL 1 HOUR),"
-            "'%Y-%m-%d %H:%i:%s')").strip()
-        if not re.fullmatch(r'[0-9]{4}-[0-9]{2}-[0-9]{2} '
-                            r'[0-9]{2}:[0-9]{2}:[0-9]{2}',anchor):
-            raise RuntimeError('Case page DB timestamp fixture invalid')
         for n in range(15):
-            name=f'np-inbox-page-{n:02d}'
+            name=f'simple-gateway-page-{n:02d}'
             seed_np_attempt(work,env,name,name+'-invoice',name+'-primary')
             sql(work,env,"UPDATE payment_attempts SET stage='review',"
-                "provider_status='fulfillment_unconfirmed',"
-                f"updated_at=DATE_SUB('{anchor}',"
-                f"INTERVAL {n//5} SECOND) WHERE order_hash='{name}'")
-            sql(work,env,"INSERT INTO payment_transactions "
-                "(attempt_id,provider,payment_id,observed_status) "
-                "SELECT id,'nowpayments',payment_id,'finished' "
-                f"FROM payment_attempts WHERE order_hash='{name}'")
-        # An unpaid extra child deliberately outranks every qualifying
-        # fixture by updated_at; worklist must still exclude it.
-        unfunded_name='np-inbox-page-unfunded'
-        seed_np_attempt(work,env,unfunded_name,unfunded_name+'-invoice',
-                        unfunded_name+'-primary')
-        sql(work,env,"UPDATE payment_attempts SET stage='review',"
-            "provider_status='additional_payment',"
-            "updated_at=DATE_ADD(NOW(),INTERVAL 2 HOUR) "
-            f"WHERE order_hash='{unfunded_name}'")
-        sql(work,env,"INSERT INTO payment_transactions "
-            "(attempt_id,provider,payment_id,observed_status) "
-            "SELECT id,'nowpayments','np-inbox-unpaid-secondary','waiting' "
-            f"FROM payment_attempts WHERE order_hash='{unfunded_name}'")
+                f"provider_status='confirmed' WHERE order_hash='{name}'")
         expected=[int(x) for x in sql(work,env,
-            "SELECT id FROM payment_attempts "
-            "WHERE order_hash LIKE 'np-inbox-page-%' "
-            "AND order_hash<>'np-inbox-page-unfunded' "
-            "ORDER BY updated_at DESC,id DESC").splitlines()]
-        unpaid_id=int(sql(work,env,
-            "SELECT id FROM payment_attempts "
-            "WHERE order_hash='np-inbox-page-unfunded'").strip())
+            "SELECT p.id FROM pays p WHERE p.hash_id LIKE 'simple-gateway-page-%' "
+            "ORDER BY p.id DESC").splitlines()]
         if len(expected)!=15:
-            raise RuntimeError('Case-page fixture has unexpected cardinality')
-        # The real page boundary must split one SAME-SECOND updated_at
-        # group (the 12th and 13th cases), not just two independent groups.
-        boundary_seconds=sql(work,env,
-            f"SELECT updated_at FROM payment_attempts "
-            f"WHERE id IN ({expected[11]},{expected[12]}) ORDER BY id").splitlines()
-        if len(boundary_seconds)!=2 or boundary_seconds[0]!=boundary_seconds[1]:
-            raise RuntimeError('Case page boundary does not exercise identical seconds')
-        before_case_pages=snapshot(work,env)
+            raise RuntimeError('Simple gateway case paging fixture is incomplete')
         seen=[]
-        page_callback='npReviewInbox'
-        paged_call=None
-        page_two=None
+        cursor='attentionInbox'
         for page_index in range(5):
-            result=run_php(work,env,stage,dict(admin_identity,
-                callback_data=page_callback))
-            if result['network_calls']:
-                raise RuntimeError('Read-only finance inbox contacted provider')
-            edits=[x for x in result['events'] if x['name']=='editText']
-            if len(edits)!=1:
-                raise RuntimeError('Finance inbox page did not display')
-            body,keyboard_json=edits[0]['args'][1:3]
-            if len(body.encode('utf-8'))>4096:
-                raise RuntimeError('Finance inbox page exceeded bounded message')
-            buttons=json.loads(keyboard_json)['inline_keyboard']
-            callback_values=[button['callback_data'] for row in buttons
-                for button in row]
-            if any(len(code.encode('utf-8'))>64 for code in callback_values):
-                raise RuntimeError('Finance inbox callback exceeds Telegram limit')
-            ids=[int(m.group(1)) for code in callback_values
-                if (m:=re.fullmatch(r'npReviewCase_([0-9]+)',code))]
-            if len(ids)>12 or len(ids)!=len(set(ids)) or unpaid_id in ids:
-                raise RuntimeError('Inbox page contains duplicate/unfunded cases')
-            if page_index==0 and len(ids)!=12:
-                raise RuntimeError('Inbox first page was not bounded to twelve')
-            if page_index==1:
-                page_two=(result,ids,callback_values)
-            if any(x in seen for x in ids):
-                raise RuntimeError('Stable cursor repeated a previous case')
-            seen+=ids
-            links=[code for code in callback_values
-                if re.fullmatch(r'npReviewInbox_[0-9]{14}_[1-9][0-9]{0,17}',code)]
-            if len(links)>1:
-                raise RuntimeError('Ambiguous case navigation callback')
-            if not links:
-                break
-            page_callback=links[0]
-            if page_index==0:
-                paged_call=page_callback
-        if seen[:15]!=expected or not paged_call or not page_two or (
-            expected[-1] not in page_two[1]):
-            raise RuntimeError('Older evidenced cases not reachable in stable order')
-        if 'npReviewInbox' not in page_two[2]:
-            raise RuntimeError('Cursor page cannot return to current inbox')
-        records.append(dict(case='nowpayments_owner_inbox_case_keyset_older_review_visible',
-            pass_=True,real_provider_requests=0))
-        # Reuse the last case visible through the older page without granting
-        # a provider inquiry, changing financial state or exposing identity
-        # to either an admin impersonator or owner from another chat.
-        selected=run_php(work,env,stage,dict(admin_identity,
-            callback_data='npReviewCase_'+str(expected[-1])))
-        if selected['network_calls'] or not any(
-            x['name']=='editText' and 'شناسه عددی' in x['args'][1]
-            for x in selected['events']):
-            raise RuntimeError('Older case did not open read-only details')
-        for actor,chat in ((1001,1001),(9001,1001)):
-            denied=run_php(work,env,stage,dict(admin_identity,
-                actor=actor,chat_id=chat,callback_data=paged_call))
-            if denied['network_calls'] or any(
-                x['name']=='editText' for x in denied['events']) or not any(
-                x['name']=='callback' for x in denied['events']):
-                raise RuntimeError('Owner-only inbox cursor authentication failed')
-        bad_date=run_php(work,env,stage,dict(admin_identity,
-            callback_data='npReviewInbox_20261301000000_1'))
-        if bad_date['network_calls'] or any(
-            x['name']=='editText' for x in bad_date['events']) or not any(
-            x['name']=='callback' for x in bad_date['events']):
-            raise RuntimeError('Invalid calendar cursor was accepted')
-        empty=run_php(work,env,stage,dict(admin_identity,
-            callback_data='npReviewInbox_20000101000000_1'))
-        empty_edits=[x for x in empty['events'] if x['name']=='editText']
-        if len(empty_edits)!=1 or 'پروندهٔ قدیمی‌تری' not in empty_edits[0]['args'][1] or (
-            'npReviewInbox' not in empty_edits[0]['args'][2]):
-            raise RuntimeError('Empty cursor page lacks safe recovery')
-        verify_unchanged(work,env,before_case_pages,'inbox_pages_readonly')
-        records.append(dict(case='nowpayments_owner_inbox_case_cursor_private_readonly',
-            pass_=True,real_provider_requests=0))
-        records.append(dict(case='nowpayments_owner_inbox_case_cursor_stable_ties',
-            pass_=True,real_provider_requests=0))
-        # Avoid disturbing later Cron/alert characterizations; all fixtures
-        # exist exclusively in this socket-local throwaway MariaDB instance.
-        sql(work,env,"DELETE FROM payment_transactions WHERE attempt_id IN "
-            "(SELECT id FROM payment_attempts "
-            "WHERE order_hash LIKE 'np-inbox-page-%')")
-        sql(work,env,"DELETE FROM payment_attempts "
-            "WHERE order_hash LIKE 'np-inbox-page-%'")
-        sql(work,env,"DELETE FROM pays "
-            "WHERE hash_id LIKE 'np-inbox-page-%'")
-
-        # F2: all children remain accessible through bounded cursor pages,
-        # including positive funding evidence after twelve unfunded children.
-        seed_np_attempt(work,env,'np-13-page','np-13-invoice','np-13-primary')
-        sql(work,env,"UPDATE pays SET state='paid' WHERE hash_id='np-13-page'")
-        sql(work,env,"UPDATE payment_attempts SET stage='review', "
-            "provider_status='additional_payment' WHERE order_hash='np-13-page'")
-        for n in range(1,14):
-            child='np-13-primary' if n==1 else f'np-13-child-{n:02d}'
-            status='finished' if n==13 else 'waiting'
-            sql(work,env,"INSERT INTO payment_transactions "
-                "(attempt_id,provider,payment_id,observed_status) "
-                "SELECT id,'nowpayments',"
-                f"'{child}','{status}' FROM payment_attempts "
-                "WHERE order_hash='np-13-page'")
-        page_id=int(sql(work,env,"SELECT id FROM payment_attempts "
-            "WHERE order_hash='np-13-page'").strip())
-        first=run_php(work,env,stage,dict(admin_identity,
-            callback_data='npReviewCase_'+str(page_id)))
-        first_cards=[e for e in first['events'] if e['name']=='editText']
-        if len(first_cards)!=1 or 'np-13-child-13' in first_cards[0]['args'][1]:
-            raise RuntimeError('Page 1 failed to bound child history')
-        import re as _re
-        page_link=_re.search(r'npReviewCase_'+str(page_id)+r'_0_([0-9]+)',
-            first_cards[0]['args'][2])
-        if not page_link:
-            raise RuntimeError('Next child page was inaccessible')
-        cursor=page_link.group(1)
-        second=run_php(work,env,stage,dict(admin_identity,
-            callback_data='npReviewCase_'+str(page_id)+'_0_'+cursor))
-        second_cards=[e for e in second['events'] if e['name']=='editText']
-        if len(second_cards)!=1 or 'np-13-child-13' not in second_cards[0]['args'][1]:
-            raise RuntimeError('Thirteenth funded child not inspectable')
-        if 'npReviewVerify_'+str(page_id)+'_0_'+cursor not in second_cards[0]['args'][2]:
-            raise RuntimeError('Thirteenth funded child cannot be inquired')
-        late=run_php(work,env,stage,dict(admin_identity,
-            callback_data='npReviewVerify_'+str(page_id)+'_0_'+cursor,
-            mock_invoice='np-13-invoice',nowpayment_payment_id='np-13-child-13',
-            nowpayment_order_id='np-13-page',nowpayment_status='finished'))
-        if len(late['network_calls'])!=1 or '/v1/payment/np-13-child-13' not in late['network_calls'][0]:
-            raise RuntimeError('Cursor provider inquiry selected wrong child')
-        wrong=run_php(work,env,stage,dict(admin_identity,
-            callback_data='npReviewVerify_'+str(page_id)+'_0_'+cursor,
-            mock_invoice='wrong-invoice',nowpayment_payment_id='np-13-child-13',
-            nowpayment_order_id='np-13-page',nowpayment_status='finished'))
-        if 'پاسخ معتبر و منطبق دریافت نشد' not in str(wrong['events']):
-            raise RuntimeError('Cursor provider identity mismatch was trusted')
-        denied=run_php(work,env,stage,dict(admin_identity,
-            actor=1001,chat_id=1001,
-            callback_data='npReviewCase_'+str(page_id)+'_0_'+cursor))
-        if denied['network_calls'] or any(x['name']=='editText' for x in denied['events']):
-            raise RuntimeError('Cursor page bypassed owner authentication')
-        sql(work,env,"UPDATE payment_attempts SET stage='done', "
-            "provider_status='finished',review_notified_at=NOW() "
-            "WHERE order_hash='np-13-page'")
-        records.append(dict(case='nowpayments_13th_funded_child_cursor_inquiry_safe',
-            pass_=True,real_provider_requests=0))
+            page=run_php(work,env,stage,dict(admin_identity,callback_data=cursor))
+            cards=[e for e in page['events'] if e['name']=='editText']
+            if len(cards)!=1 or page['network_calls']:
+                raise RuntimeError('Automatic gateway inbox paged provider or failed')
+            markup=str(cards[0]['args'][2])
+            ids=[int(x) for x in re.findall(r'attentionCase_([0-9]+)',markup)]
+            seen.extend(i for i in ids if i in expected)
+            match=re.search(r'attentionInbox_([1-9][0-9]*)',markup)
+            if not match:break
+            cursor='attentionInbox_'+match[1]
+        if seen!=expected:
+            raise RuntimeError('Automatic gateway pagination missed/repeated a case: '+str(seen))
+        records.append(dict(case='simple_gateway_fifteen_cases_paginated_without_repeat',
+                            pass_=True,real_provider_requests=0))
 
         # Direct browser query with forged NP_id must NOT bypass the new
         # quote/attempt validation even when the fake provider returns finished.
@@ -2073,57 +2009,18 @@ def main():
             raise RuntimeError('Additional child payment duplicated credit')
         records.append(dict(case='nowpayments_multiple_children_durably_stored',
                             pass_=True,external_requests=0))
-        # Authenticated extra funds must be visible in the quiet owner-only
-        # FINANCIAL exception inbox regardless of the paid primary state.
-        finance_page=run_php(work,env,stage,dict(
-            route='admin_review',get={},actor=9001,chat_id=9001,
-            callback_data='financeExtraInbox'))
-        extra_edits=[e for e in finance_page['events'] if e['name']=='editText']
+        # Additional NOWPayments deposits remain in the original immutable
+        # provider-child ledger. They must NEVER re-open the paid original
+        # order in the simple incomplete-original invoice inbox.
         wallet_pay=int(sql(work,env,"SELECT id FROM pays WHERE hash_id='wallet-init'").strip())
-        if (len(extra_edits)!=1 or
-            'financeExtraCase_'+str(wallet_pay) not in str(extra_edits[0]['args']) or
-            any(e['name']=='sendMessage' for e in finance_page['events']) or
-            finance_page['network_calls']):
-            raise RuntimeError('Quiet owner financial exception list missed paid extra child')
-        detail=run_php(work,env,stage,dict(
-            route='admin_review',get={},actor=9001,chat_id=9001,
-            callback_data='financeExtraCase_'+str(wallet_pay)))
-        extra_details=[e for e in detail['events'] if e['name']=='editText']
-        if (len(extra_details)!=1 or 'np-extra-deposit' not in str(extra_details[0]['args']) or
-            'npReviewCase_' not in str(extra_details[0]['args']) or
-            'npDecisionP' in str(extra_details[0]['args']) or
-            detail['network_calls']):
-            raise RuntimeError('Owner additional-funds case lacks quiet child reconciliation')
-        records.append(dict(case='nowpayments_paid_extra_funds_visible_in_separate_owner_queue',
-                            pass_=True,external_requests=0))
-        # The quiet view does not grant any finance permission to staff
-        # delegates or cause Telegram messages.
-        denied=run_php(work,env,stage,dict(
-            route='admin_review',get={},actor=9002,chat_id=9002,
-            callback_data='financeExtraCase_'+str(wallet_pay)))
-        if any(e['name']=='editText' for e in denied['events']):
-            raise RuntimeError('Delegated actor saw owner-only additional funds')
-        records.append(dict(case='nowpayments_extra_funds_owner_only',
-                            pass_=True,external_requests=0))
-        # Owner provider inquiry is ONE chosen child per callback; never
-        # block Telegram processing on 5 sequential 7-second API calls.
-        wallet_attempt=int(sql(work,env,"SELECT id FROM payment_attempts "
-            "WHERE order_hash='wallet-init'").strip())
         before=snapshot(work,env)
-        one_inquiry=run_php(work,env,stage,dict(
+        hidden=run_php(work,env,stage,dict(
             route='admin_review',get={},actor=9001,chat_id=9001,
-            callback_data='npReviewVerify_'+str(wallet_attempt)+'_1',
-            mock_invoice='owned-new-invoice',
-            nowpayment_payment_id='np-extra-deposit',
-            nowpayment_order_id='wallet-init',nowpayment_status='finished'))
-        views=[x for x in one_inquiry['events'] if x['name']=='editText']
-        if (len(one_inquiry['network_calls'])!=1 or
-            '/v1/payment/np-extra-deposit' not in one_inquiry['network_calls'][0] or
-            len(views)!=1 or
-            'npReviewVerify_'+str(wallet_attempt)+'_2' not in views[0]['args'][2]):
-            raise RuntimeError('Operator inquiry did not bound provider calls per child')
-        verify_unchanged(work,env,before,'nowpayments_bounded_one_child_status_query')
-        records.append(dict(case='nowpayments_owner_inquiry_one_child_per_callback',
+            callback_data='attentionCase_'+str(wallet_pay)))
+        if hidden['network_calls'] or 'gatewayReview_A_' in str(hidden['events']):
+            raise RuntimeError('Paid original order was reopened due to extra provider child')
+        verify_unchanged(work,env,before,'extra_children_readonly_no_original_reopen')
+        records.append(dict(case='nowpayments_extra_children_preserved_no_second_original',
                             pass_=True,real_provider_requests=0))
 
         # New provider child evidence is durable but no longer manages
@@ -4609,8 +4506,7 @@ def main():
 
         # Owner decision integration: execute the REAL private Telegram
         # callback route against the original PHP and disposable MariaDB.
-        # 019 is installed only in this fixture, never in installed Chili.
-        sql(work,env,(ROOT/'migrations/post-v9/019_payment_review_decisions.sql').read_text())
+        # The simplified inbox relies on the existing unique 003 attempt.
         def prepare_owner_case(hash_id, status):
             invoice='owned-'+hash_id+'-invoice'
             child='owned-'+hash_id+'-child'
@@ -4625,14 +4521,14 @@ def main():
                 f"WHERE order_hash='{hash_id}'").strip())
         approve_id=prepare_owner_case('owner-route-approve','confirmed')
         route_args=dict(route='admin_review',get={},actor=9001,chat_id=9001,
-                        callback_data='npDecisionPA_'+str(approve_id))
+                        callback_data='gatewayReview_A_'+str(approve_id))
         before=int(sql(work,env,'SELECT wallet FROM users WHERE userid=1001').strip())
         approved=run_php(work,env,stage,route_args)
         after=int(sql(work,env,'SELECT wallet FROM users WHERE userid=1001').strip())
         if (approved['network_calls'] or after!=before+100 or
             sql(work,env,"SELECT state FROM pays WHERE hash_id='owner-route-approve'").strip()!='paid' or
-            sql(work,env,"SELECT decision,provider_status,state FROM payment_review_decisions "
-                "WHERE attempt_id="+str(approve_id)).strip()!='approve\toperator_attested\tcompleted' or
+            sql(work,env,"SELECT stage,provider_status FROM payment_attempts "
+                "WHERE id="+str(approve_id)).strip()!='done\toperator_fulfilled' or
             not any(e['name']=='editText' for e in approved['events'])):
             raise RuntimeError('Original Owner direct approval callback failed without merchant GET: '+
                                repr((approved['network_calls'],approved['events'][-4:]))[:750])
@@ -4643,20 +4539,20 @@ def main():
             raise RuntimeError('Repeated owner callback re-credited wallet or contacted merchant')
         records.append(dict(case='owner_approve_route_replay_denied_no_credit',
                             pass_=True,external_requests=0))
-        rejected_id=prepare_owner_case('owner-route-reject','sending')
+        rejected_id=prepare_owner_case('owner-route-reject','refunded')
         before_reject=int(sql(work,env,'SELECT wallet FROM users WHERE userid=1001').strip())
         rejected=run_php(work,env,stage,dict(route='admin_review',get={},actor=9001,
-            chat_id=9001,callback_data='npDecisionPR_'+str(rejected_id)))
+            chat_id=9001,callback_data='gatewayReview_R_'+str(rejected_id)))
         if (rejected['network_calls'] or
             int(sql(work,env,'SELECT wallet FROM users WHERE userid=1001').strip())!=before_reject or
             sql(work,env,"SELECT state FROM pays WHERE hash_id='owner-route-reject'").strip()!='declined' or
-            sql(work,env,'SELECT decision,provider_status,state FROM payment_review_decisions '
-                'WHERE attempt_id='+str(rejected_id)).strip()!='reject\toperator_rejected\tcompleted' or
+            sql(work,env,'SELECT stage,provider_status FROM payment_attempts '
+                'WHERE id='+str(rejected_id)).strip()!='done\toperator_rejected' or
             not any(e['name']=='sendMessage' and len(e['args'])>=4 and
-                        e['args'][3]==1001 and 'توسط مدیر رد شد' in e['args'][0]
+                        e['args'][3]==1001 and 'رد شد و اجرا نمی' in e['args'][0]
                         for e in rejected['events']) or
             not any(e['name']=='sendMessage' and
-                        'شماره پرونده' in str(e['args'][0])
+                        'شناسه پرونده' in str(e['args'][0])
                         for e in rejected['events'])):
             raise RuntimeError('Owner direct reject lacked customer and original business reports: '+
                                repr(rejected)[:800])
@@ -4664,12 +4560,12 @@ def main():
                             pass_=True,external_requests=0))
         denied_id=prepare_owner_case('owner-route-denied','confirmed')
         start=snapshot(work,env)
-        denied=run_php(work,env,stage,dict(route='admin_review',get={},actor=9002,
-            chat_id=9002,callback_data='npDecisionPA_'+str(denied_id)))
+        denied=run_php(work,env,stage,dict(route='admin_review',get={},actor=1001,
+            chat_id=1001,callback_data='gatewayReview_A_'+str(denied_id)))
         verify_unchanged(work,env,start,'delegated_owner_decision')
         if denied['network_calls']:
             raise RuntimeError('Delegated operator contacted merchant')
-        records.append(dict(case='owner_decision_delegated_actor_cannot_settle',
+        records.append(dict(case='gateway_review_nonadmin_cannot_settle',
                             pass_=True,external_requests=0))
         retired=run_php(work,env,stage,dict(route='admin_review',get={},actor=9001,
             chat_id=9001,callback_data='npDecisionCA_'+str(denied_id)+'_1900000000_'+('a'*20)))
@@ -4677,6 +4573,118 @@ def main():
         if retired['network_calls']:
             raise RuntimeError('Retired two-stage action contacted merchant')
         records.append(dict(case='retired_two_stage_callback_fail_closed',
+                            pass_=True,external_requests=0))
+
+        check_verified_browser_worker_contention(work,env,stage,records)
+
+        # Owner archive closes the ORIGINAL operator attention case. A late
+        # signed IPN may add external child evidence but must not update the
+        # original pays row, attempt status or staff closure. Cron and
+        # provider-return paths must respect the exact same marker.
+        archive_name='owner-route-archived'
+        archive_invoice='owned-archive-invoice'
+        archive_primary='owned-archive-primary'
+        seed_np_attempt(work,env,archive_name,archive_invoice,archive_primary,default_fees=True)
+        sql(work,env,"UPDATE payment_attempts SET created_at=NOW()-INTERVAL 8 HOUR "
+            f"WHERE order_hash='{archive_name}'")
+        archived_id=int(sql(work,env,"SELECT id FROM payment_attempts "
+            f"WHERE order_hash='{archive_name}'"))
+        archived_pay=int(sql(work,env,"SELECT id FROM pays "
+            f"WHERE hash_id='{archive_name}'"))
+        original=sql(work,env,"SELECT p.state,IFNULL(a.stage,''),"
+            "IFNULL(a.provider_status,'<null>'),p.approved_by "
+            "FROM pays p JOIN payment_attempts a ON a.pay_row_id=p.id "
+            f"WHERE p.id={archived_pay}")
+        wallet=int(sql(work,env,'SELECT wallet FROM users WHERE userid=1001'))
+        archived=run_php(work,env,stage,dict(route='admin_review',get={},
+            actor=9001,chat_id=9001,callback_data='gatewayReview_H_'+str(archived_id)))
+        if (not any(e['name']=='editText' and
+            'پرونده آرشیو شد' in str(e['args'][1])
+            for e in archived['events']) or archived['network_calls']):
+            raise RuntimeError('Approved operator archive did not close the original case')
+        meta=sql(work,env,f"SELECT review_archived_by,review_archived_at IS NOT NULL "
+            f"FROM payment_attempts WHERE id={archived_id}").strip()
+        assert meta=='9001\t1' and sql(work,env,
+            "SELECT p.state,IFNULL(a.stage,''),IFNULL(a.provider_status,'<null>'),p.approved_by "
+            "FROM pays p JOIN payment_attempts a ON a.pay_row_id=p.id "
+            f"WHERE p.id={archived_pay}")==original
+        assert int(sql(work,env,'SELECT wallet FROM users WHERE userid=1001'))==wallet
+        previous=run_php(work,env,stage,dict(route='admin_review',get={},
+            actor=9001,chat_id=9001,callback_data='gatewayReview_H_'+str(archived_id)))
+        assert any(e['name']=='editText' and 'قبلاً بررسی شده' in str(e['args'][1])
+            for e in previous['events']) and not previous['network_calls']
+        records.append(dict(case='owner_archive_terminal_once_only_no_financial_action',
+                            pass_=True,external_requests=0))
+        late={
+            'payment_id':'owned-archive-late-child',
+            'invoice_id':archive_invoice,'order_id':archive_name,
+            'payment_status':'finished','price_amount':1,'price_currency':'usd'}
+        ipn=run_php(work,env,stage,dict(signed_ipn(late),
+            expect_archived_ipn_attempt=archived_id))
+        if (ipn['events'][-1].get('code')!=200 or ipn['network_calls']):
+            raise RuntimeError('Signed late IPN was not safely acknowledged as evidence-only')
+        assert sql(work,env,"SELECT observed_status FROM payment_transactions "
+            "WHERE provider='nowpayments' AND payment_id='owned-archive-late-child'").strip()=='finished'
+        assert sql(work,env,"SELECT p.state,IFNULL(a.stage,''),"
+            "IFNULL(a.provider_status,'<null>'),p.approved_by FROM pays p "
+            f"JOIN payment_attempts a ON a.pay_row_id=p.id WHERE p.id={archived_pay}")==original
+        assert int(sql(work,env,'SELECT wallet FROM users WHERE userid=1001'))==wallet
+        records.append(dict(case='archived_nowpayments_late_signed_ipn_evidence_only_no_status_change',
+                            pass_=True,external_requests=0))
+        # The public browser return cannot re-credit the original invoice.
+        returned=run_php(work,env,stage,dict(route='return',
+            get={'nowpayment':'','hash_id':archive_name,'NP_id':archive_primary}))
+        assert sql(work,env,"SELECT p.state,IFNULL(a.stage,''),"
+            "IFNULL(a.provider_status,'<null>'),p.approved_by FROM pays p "
+            f"JOIN payment_attempts a ON a.pay_row_id=p.id WHERE p.id={archived_pay}")==original
+        assert int(sql(work,env,'SELECT wallet FROM users WHERE userid=1001'))==wallet
+        assert not returned['network_calls']
+        records.append(dict(case='archived_nowpayments_browser_return_cannot_reopen',
+                            pass_=True,external_requests=0))
+        for provider in ('zarinpal','nextpay'):
+            name='owner-archived-'+provider
+            ref='owner-archived-'+provider+'-authority'
+            seed_payment(work,env,name,'INCREASE_WALLET',0,0,ref)
+            sql(work,env,"INSERT INTO payment_attempts "
+                "(pay_row_id,provider,order_hash,provider_reference,quote_amount,"
+                "quote_currency,local_amount_toman,stage,provider_status) "
+                f"SELECT id,'{provider}',hash_id,payid,price,'toman',price,"
+                f"'review','verification_uncertain' FROM pays WHERE hash_id='{name}'")
+            attempt=int(sql(work,env,f"SELECT id FROM payment_attempts WHERE order_hash='{name}'"))
+            closed=run_php(work,env,stage,dict(route='admin_review',get={},
+                actor=9001,chat_id=9001,callback_data='gatewayReview_H_'+str(attempt)))
+            assert any(e['name']=='editText' and 'پرونده آرشیو شد'
+                in str(e['args'][1]) for e in closed['events']),closed
+            before_state=sql(work,env,
+                f"SELECT p.state,a.stage,a.provider_status,p.approved_by "
+                f"FROM pays p JOIN payment_attempts a ON p.id=a.pay_row_id "
+                f"WHERE a.id={attempt}")
+            before_wallet=int(sql(work,env,'SELECT wallet FROM users WHERE userid=1001'))
+            return_spec=(dict(route='return',get={'zarinpal':'','hash_id':name,
+                'Authority':ref,'Status':'OK'},zarin_status=100) if provider=='zarinpal'
+                else dict(route='return',get={'nextpay':'','trans_id':ref},
+                    nextpay_code=0))
+            run_php(work,env,stage,return_spec)
+            if sql(work,env,f"SELECT p.state,a.stage,a.provider_status,p.approved_by "
+                    f"FROM pays p JOIN payment_attempts a ON p.id=a.pay_row_id "
+                    f"WHERE a.id={attempt}")!=before_state or int(sql(work,env,
+                        'SELECT wallet FROM users WHERE userid=1001'))!=before_wallet:
+                raise RuntimeError('Archived provider positive return mutated finance '+provider)
+            if provider=='nextpay':
+                run_php(work,env,stage,dict(route='return',
+                    get={'nextpay':'','trans_id':ref},nextpay_code=-2))
+                assert sql(work,env,f"SELECT p.state,a.stage,a.provider_status,p.approved_by "
+                    f"FROM pays p JOIN payment_attempts a ON p.id=a.pay_row_id "
+                    f"WHERE a.id={attempt}")==before_state
+            records.append(dict(case='archived_'+provider+'_verified_callback_cannot_credit_cancel_or_reopen',
+                                pass_=True,external_requests=0))
+        # Real Cron source never admits an archived attempt as a candidate,
+        # including a still-pending original issued invoice.
+        assert sql(work,env,"SELECT COUNT(*) FROM payment_attempts a "
+            "JOIN pays p ON p.id=a.pay_row_id WHERE a.provider='nowpayments' "
+            "AND a.review_archived_at IS NULL "
+            f"AND a.id={archived_id} AND a.stage='pending'").strip()=='0'
+        records.append(dict(case='archived_nowpayments_original_excluded_from_cron_claim',
                             pass_=True,external_requests=0))
 
         # An interrupted/mismatched 003 migration can leave payment_attempts

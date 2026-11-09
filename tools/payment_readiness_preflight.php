@@ -70,7 +70,7 @@ function verifyManifest(string $manifestPath, string $runtimePath): bool {
         if ($json === false || strlen($json) > 500000) return false;
         $manifest = json_decode($json, true, 512, JSON_THROW_ON_ERROR);
         if (!is_array($manifest) || !isset($manifest['files']) ||
-            !is_array($manifest['files']) || count($manifest['files']) !== 132 ||
+            !is_array($manifest['files']) || count($manifest['files']) !== 131 ||
             ($manifest['file_count'] ?? null) !== count($manifest['files']) ||
             ($manifest['schema_migration_included'] ?? null) !== false ||
             ($manifest['private_config_included'] ?? null) !== false ||
@@ -78,11 +78,11 @@ function verifyManifest(string $manifestPath, string $runtimePath): bool {
         // The expected current runtime inventory is pinned independently of
         // supplied manifest bytes. Without this guard an attacker-controlled
         // file list could request hashes of an installed private file.
-        // Canonical-path current inventory: 132 explicit runtime paths.
+        // Canonical-path current inventory: 131 explicit runtime paths.
         // SHA-256 of newline-joined sorted package_post_v9.members() paths.
         $members = array_keys($manifest['files']);
         sort($members, SORT_STRING);
-        if (!hash_equals('fe05abbb1677d03f641ffc890a68942dc60bc973b7c68f8e416cc61b4770e346',
+        if (!hash_equals('1550a306de8e054c035a044b02c711a1dc3c322c6e7cc06e989d745c7b6bef1b',
                          hash('sha256', implode("\n", $members))) ||
             in_array('baseInfo.php', $members, true)) return false;
         // All tool-side runtime source is bound before any helper executes.
@@ -469,15 +469,6 @@ try {
                 'unique'=>['uq_delivery_attempt_no'=>['intent_id','attempt_no'],
                     'uq_delivery_dispatch_token'=>['dispatch_token']]],
         ],
-        // #117: manual, irreversible provider decisions require the
-        // once-per-pay idempotent journal, not a legacy button shortcut.
-        '019' => [
-            'payment_review_decisions'=>['columns'=>[
-                'id','pay_row_id','attempt_id','decision','actor_id',
-                'payment_id','provider_status','evidence_sha256','state',
-                'outcome','created_at','resolved_at'],
-                'unique'=>['uq_review_decision_pay'=>['pay_row_id']]],
-        ],
         // #117: original customer, staff and referral messages must have
         // per-recipient PENDING/UNKNOWN followups before a terminal COMMIT.
         '020' => [
@@ -488,31 +479,15 @@ try {
                 'acknowledged_at','last_result'],
                 'unique'=>['uq_followup_pay_key'=>['pay_row_id','intent_key']]],
         ],
-        // New, optional-column 007 extension required ONLY by the explicit
-        // human-confirmed paid replacement route. Without this shape the
-        // installed latest-source runtime is not release-ready.
-        '021' => [
-            'pays'=>['columns'=>['issued_entitlement_days','issued_entitlement_gb']],
-            'service_effects'=>['columns'=>[
-                'replaces_effect_id','reconciliation_reason',
-                'reconciliation_fingerprint','reconciliation_evidence_status',
-                'reconciliation_observed_at'],
-                'unique'=>['uq_effect_one_replacement'=>['replaces_effect_id']]],
+        // #117 archival metadata is independent of provider stage.
+        '022' => [
+            'payment_attempts'=>['columns'=>['review_archived_at','review_archived_by']],
         ],
     ];
     foreach ($specs as $migration => $schema) {
         $present = count(array_filter(array_keys($schema),
             static fn(string $t): bool => isset($tables[$t])));
         $isPresent = $present === count($schema) && validShape($schema,$tables,$columns,$unique);
-        if ($migration==='021' && $isPresent) {
-            // The 021 extension must retain its original-replacement FK,
-            // not merely the names of the additive columns and indexes.
-            // Reuse the source contract's read-only shape verifier.
-            try {
-                require_once dirname(__DIR__).'/src/Finance/PaidReplacementRecovery.php';
-                $isPresent=achbotHostedReplacementSchemaReady($db);
-            } catch (Throwable $ignored) {$isPresent=false;}
-        }
         $code = $isPresent ? 'columns_and_named_unique_indexes_detected_not_ddl_certified' :
             ($present === 0 ? 'missing' : 'partial_or_incompatible_schema_requires_audit');
         $report['schema'][$migration] = $code;

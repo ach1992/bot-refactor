@@ -15,7 +15,7 @@ require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
 function achbotPayUxTable(mysqli $db, string $name): bool {
     if (!in_array($name, ['payment_attempts','payment_transactions',
                           'payment_message_refs','service_effects','automatic_renewal_attempts',
-                          'payment_delivery_intents','payment_review_decisions',
+                          'payment_delivery_intents',
                           'payment_followup_intents'], true)) return false;
     try {
         $result = $db->query("SHOW TABLES LIKE '".$name."'");
@@ -185,56 +185,6 @@ function achbotPayUxInsertDraft(mysqli $db, int $actor, mysqli_stmt $insert, boo
             if (($buy || (string)$pay['type']==='RENEW_SCONFIG') &&
                 !achbotSupportsPlan($db,(int)$pay['plan_id'],0,(int)$pay['server_id'],true))
                 throw new RuntimeException('draft_new_plan_unavailable');
-        }
-        // Migration 021 is optional on older installations. On upgraded
-        // sites, issue an immutable per-invoice entitlement WITH the draft's
-        // first transaction, not later from mutable plan definitions. Leave
-        // pays.day/volume untouched: their zero/positive custom-plan sentinel
-        // is a long-standing customer/payment contract.
-        if ((string)$pay['type']==='BUY_SUB') {
-            // SHOW COLUMNS is compatible with the pre-021 checkout schema
-            // even when mysqli exception reporting is enabled: an ordinary
-            // SELECT of a missing optional column would abort legacy sales.
-            $issuedColumns=0;
-            foreach (['issued_entitlement_days','issued_entitlement_gb'] as $column) {
-                $shape=$db->query("SHOW COLUMNS FROM pays LIKE '".$column."'");
-                if (!$shape) throw new RuntimeException('draft_entitlement_schema_unavailable');
-                if ($shape->num_rows===1) $issuedColumns++;
-                $shape->free();
-            }
-            if ($issuedColumns===2) {
-                $custom=(int)$pay['day']!==0 || (int)$pay['volume']!==0;
-                if ($custom) {
-                    $days=(int)$pay['day'];$volume=(int)$pay['volume'];
-                } else {
-                    $p=$db->prepare('SELECT days,volume FROM server_plans WHERE id=? AND server_id=? FOR UPDATE');
-                    $p->bind_param('ii',$pay['plan_id'],$pay['server_id']);
-                    $p->execute();$quoted=$p->get_result()->fetch_assoc();$p->close();
-                    $days=(int)($quoted['days']??0);$volume=(int)($quoted['volume']??0);
-                }
-                if ($days<=0 || $days>36500 || $volume<=0 ||
-                    $volume>intdiv(PHP_INT_MAX,1073741824))
-                    throw new RuntimeException('draft_entitlement_invalid');
-                $p=$db->prepare('UPDATE pays SET issued_entitlement_days=?,issued_entitlement_gb=? '.
-                    'WHERE id=? AND issued_entitlement_days IS NULL AND issued_entitlement_gb IS NULL');
-                $p->bind_param('iii',$days,$volume,$draftId);
-                $ok=$p->execute() && $p->affected_rows===1;$p->close();
-                if (!$ok) throw new RuntimeException('draft_entitlement_persist_failed');
-            } else {
-                // Absence of 021 preserves old checkout. Partially installed
-                // pays or 021 service-effect columns may not issue a quote.
-                if ($issuedColumns!==0)
-                    throw new RuntimeException('draft_entitlement_schema_partial');
-                $existing=$db->query("SHOW TABLES LIKE 'service_effects'");
-                if (!$existing) throw new RuntimeException('draft_entitlement_schema_unavailable');
-                $serviceTable=$existing->num_rows===1;$existing->free();
-                if ($serviceTable) {
-                    $partial=$db->query("SHOW COLUMNS FROM service_effects LIKE 'replaces_effect_id'");
-                    if (!$partial) throw new RuntimeException('draft_entitlement_schema_unavailable');
-                    $has021=$partial->num_rows===1;$partial->free();
-                    if ($has021) throw new RuntimeException('draft_entitlement_schema_partial');
-                }
-            }
         }
         if ($scopedAddon) {
             require_once __DIR__.'/../Plans/Addons.php';

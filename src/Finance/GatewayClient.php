@@ -32,6 +32,20 @@ function achbotSharedPaymentTablesReady(mysqli $db): bool {
     }
 }
 
+/** MariaDB named locks are SERVER-wide, not scoped to the selected DB.
+ * Independent bots have dedicated databases but may reuse payment IDs.
+ * Scope the ONE hosted-worker lease by the connected database identity.
+ */
+function achbotHostedWorkerLockName(mysqli $db,int $payId): string {
+    if ($payId<=0) throw new RuntimeException('hosted_worker_pay_invalid');
+    $query=$db->query('SELECT DATABASE() AS schema_name');
+    $schema=$query?$query->fetch_assoc()['schema_name']:null;
+    if ($query) $query->free();
+    if (!is_string($schema) || $schema==='')
+        throw new RuntimeException('hosted_worker_schema_unknown');
+    return 'achbot-hosted-'.substr(hash('sha256',$schema),0,20).'-'.$payId;
+}
+
 /**
  * Legacy pays.payid has no provider dimension or uniqueness constraint.
  * New provider-scoped attempts MAY reuse an ID held by a different NEW

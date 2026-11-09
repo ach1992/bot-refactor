@@ -1,667 +1,768 @@
 #!/usr/bin/env python3
-"""#117 NOWPayments owner decision state-machine, isolated real PHP+MariaDB.
+"""Isolated PHP 8.5 / MariaDB source-real automatic gateway decision tests.
 
-No merchant, Telegram, Cron, remote CREATE or real payment is contacted.
-Exercises source ReviewDecisions.php, authentic amount validator, actual
-InnoDB unique/lock boundaries, provider identity, forged/stale decisions,
-unknown effect, and one-shot replay prevention. The original service/wallet
-effect itself has a separate source-real finance test suite.
+Only synthetic data and one test-owned Unix-socket MariaDB. No merchant,
+Telegram, Native API, live Chili, or real balance is ever contacted.
 """
 from __future__ import annotations
-import argparse, json, subprocess
+import argparse
+import json
+import subprocess
 from pathlib import Path
-
 import test_access_state as fx
 
-ROOT=Path(__file__).resolve().parents[1]
-DB=fx.NAMES[1]
-PHP=r'''<?php
+ROOT = Path(__file__).resolve().parents[1]
+DB = fx.NAMES[1]
+
+PHP = r'''<?php
 error_reporting(E_ALL & ~E_DEPRECATED);
-set_error_handler(static function($level,$text){
-  if($level===E_DEPRECATED)return true;throw new ErrorException($text,0,$level);
+set_error_handler(static function($severity,$message) {
+ if($severity===E_DEPRECATED)return true;
+ throw new ErrorException($message,0,$severity);
 });
 $_SERVER['SCRIPT_FILENAME']=__FILE__;
-$root=$argv[1];$db=new mysqli('localhost','root','',$argv[3],0,$argv[2]);
-$db->set_charset('utf8mb4');$connection=$db;
-$GLOBALS['telegramWebhookSecret']='syntheticReviewSecretForOwnedMariaDB2026';
+$root=$argv[1];
+$db=new mysqli('localhost','root','',$argv[3],0,$argv[2]);
+$db->set_charset('utf8mb4');
+$GLOBALS['connection']=$db;
 $GLOBALS['events']=[];$checks=[];
-function check($condition,$name){
- if(!$condition)throw new RuntimeException('test_failure:'.$name.
-  ' fixture_effect_error='.($GLOBALS['fixture_last_effect_error']??'none'));
- $GLOBALS['checks'][]=$name;
+function check($ok,$label) {
+ if(!$ok)throw new RuntimeException('failed:'.$label);
+ $GLOBALS['checks'][]=$label;
 }
-function achbotSupportsPaymentSubject($db,$pay){
- return in_array((string)($pay['type']??''),['INCREASE_WALLET','BUY_SUB'],true);
-}
-function achbotNpChildEvidenceRank($status):int {
- return match((string)$status) {
-  'waiting','failed','expired'=>0,'confirming'=>1,'confirmed'=>2,'sending'=>3,
-  'partially_paid'=>4,'finished'=>5,'refunded'=>6,default=>0};
+function achbotPayUxHostedAttentionSeconds(){return 3600;}
+function achbotSupportsPaymentSubject($db,$pay) {
+ return (string)($pay['type']??'')==='INCREASE_WALLET';
 }
 function doAction($payId,$provider) {
- try {
- $GLOBALS['events'][]=['effect',$payId,$provider];
- if(!in_array($provider,['nowpayment','nextpay','zarinpal'],true))throw new RuntimeException('invalid_provider');
+ if(!in_array($provider,['nowpayment','zarinpal','nextpay'],true))
+   throw new RuntimeException('unexpected_provider');
+ $GLOBALS['events'][]=['original_effect',$payId,$provider];
+ if(($GLOBALS['fail_for']??0)===$payId)throw new RuntimeException('synthetic_unknown_effect');
  $db=$GLOBALS['connection'];
- $mode=$GLOBALS['effect_mode']??'complete';
- if($mode==='throw')throw new RuntimeException('synthetic_remote_unknown');
- if($mode==='leave_pending')return 'ambiguous';
  $db->begin_transaction();
  try {
-  $q=$db->prepare("UPDATE pays SET state='paid'
-      WHERE id=? AND state='pending' AND type='INCREASE_WALLET'");
-  $q->bind_param('i',$payId);$q->execute();$claimed=$q->affected_rows;$q->close();
-  if($claimed!==1)throw new RuntimeException('duplicate_pay');
-  $q=$db->prepare('UPDATE users SET wallet=wallet+100000 WHERE userid=1001');
-  $q->execute();$changed=$q->affected_rows;$q->close();
-  if($changed!==1)throw new RuntimeException('no_wallet');
-  $db->commit();
- } catch(Throwable $e) {$db->rollback();throw $e;}
- $GLOBALS['events'][]=['normal_result_report',$payId,'report_channel'];
+   $q=$db->prepare("UPDATE pays SET state='paid' WHERE id=? AND state='pending'");
+   $q->bind_param('i',$payId);$q->execute();$changed=$q->affected_rows;$q->close();
+   if($changed!==1)throw new RuntimeException('duplicate_financial_claim');
+   $q=$db->prepare('UPDATE users SET wallet=wallet+100000 WHERE userid=1001');
+   $q->execute();$changed=$q->affected_rows;$q->close();
+   if($changed!==1)throw new RuntimeException('duplicate_wallet');
+   $db->commit();
+ } catch(Throwable $error) {$db->rollback();throw $error;}
  return 'delivered';
- } catch(Throwable $error) {
-  $GLOBALS['fixture_last_effect_error']=get_class($error).':'.$error->getMessage();
-  throw $error;
- }
 }
-require_once $root.'/src/Finance/ReviewDecisions.php';
-function seed(mysqli $db,string $hash,int $id) {
- $q=$db->prepare("INSERT INTO pays
-    (id,hash_id,user_id,type,price,request_date,state,payid)
-    VALUES (?,?,1001,'INCREASE_WALLET',100000,UNIX_TIMESTAMP(),'pending',?)");
- $invoice=$hash.'-invoice';$q->bind_param('iss',$id,$hash,$invoice);$q->execute();$q->close();
+require_once $root.'/src/Finance/GatewayReview.php';
+require_once $root.'/src/Finance/ServiceEffects.php';
+require_once $root.'/src/Finance/DeliveryLedger.php';
+$GLOBALS['telegramWebhookSecret']='AChBotTestSecretFixtureOnly_123';
+$GLOBALS['qr_sends']=0;
+function sendQrFromLink(...$args) {$GLOBALS['qr_sends']++;return true;}
+function reserveEffect($db,$payId,$ordinal,$label) {
+ $label.='_'.$payId;
+ $operation=bin2hex(random_bytes(16));
+ $endpoint=hash('sha256','fixture-endpoint');
+ $digest=hash('sha256',$label);
+ $q=$db->prepare("INSERT INTO service_effects
+  (pay_row_id,ordinal,operation_id,effect_kind,target_server_id,target_key,
+   endpoint_sha256,plan_id,remote_username,requested_expire,requested_bytes,
+   request_sha256,reserved_count,state)
+  VALUES (?,?,?,'create',2,'server:2',?,7,?,1800000000,1073741824,?,0,'reserved')");
+ $q->bind_param('iissss',$payId,$ordinal,$operation,$endpoint,$label,$digest);
+ $q->execute();$id=(int)$db->insert_id;$q->close();
+ return $id;
+}
+function stalePaid($db,$payId,$attemptId) {
+ $db->query("UPDATE pays SET state='paid' WHERE id=$payId");
+ $db->query("UPDATE payment_attempts SET updated_at=NOW()-INTERVAL 11 MINUTE
+  WHERE id=$attemptId");
+}
+function seed($db,$id,$provider,$stage,$status=null,$child=null,$price=100000,$ageSeconds=0) {
+ $hash='test-'.$id;$reference=$hash.'-invoice';
+ $q=$db->prepare("INSERT INTO pays (id,hash_id,user_id,type,price,request_date,state,payid)
+   VALUES (?,?,1001,'INCREASE_WALLET',?,UNIX_TIMESTAMP(),'pending',?)");
+ $q->bind_param('isis',$id,$hash,$price,$reference);$q->execute();$q->close();
+ $quote=$provider==='nowpayments'?'1.00000000':'100000.00000000';
+ $currency=$provider==='nowpayments'?'usd':'toman';
+ $payment=$provider==='nowpayments'?$hash.'-payment':null;
  $q=$db->prepare("INSERT INTO payment_attempts
    (pay_row_id,provider,order_hash,provider_reference,payment_id,quote_amount,
-    quote_currency,local_amount_toman,stage,provider_status,minimum_settlement_amount)
-   VALUES (?,'nowpayments',?,?,?,1,'usd',100000,'review','partial',0)");
- $child=$hash.'-child';$q->bind_param('isss',$id,$hash,$invoice,$child);$q->execute();
- $a=$db->insert_id;$q->close();
- $q=$db->prepare("INSERT INTO payment_transactions
-   (attempt_id,provider,payment_id,observed_status)
-   VALUES (?,'nowpayments',?,'finished')");
- $q->bind_param('is',$a,$child);$q->execute();$q->close();
- return (int)$a;
+    quote_currency,local_amount_toman,stage,provider_status,created_at)
+    VALUES (?,?,?,?,?,?,?,?,?,?,DATE_SUB(NOW(), INTERVAL ? SECOND))");
+ $q->bind_param('issssssissi',$id,$provider,$hash,$reference,$payment,
+   $quote,$currency,$price,$stage,$status,$ageSeconds);
+ $q->execute();$attempt=(int)$db->insert_id;$q->close();
+ if($child!==null) {
+  $q=$db->prepare("INSERT INTO payment_transactions
+     (attempt_id,provider,payment_id,observed_status) VALUES(?,?,?,?)");
+  $q->bind_param('isss',$attempt,$provider,$payment,$child);$q->execute();$q->close();
+ }
+ return $attempt;
 }
-function seedHosted(mysqli $db,string $hash,int $id,string $provider):int {
- $invoice=$hash.'-authority';
- $q=$db->prepare("INSERT INTO pays
-    (id,hash_id,user_id,type,price,request_date,state,payid)
-    VALUES (?,?,1001,'INCREASE_WALLET',100000,UNIX_TIMESTAMP(),'pending',?)");
- $q->bind_param('iss',$id,$hash,$invoice);$q->execute();$q->close();
- $q=$db->prepare("INSERT INTO payment_attempts
-   (pay_row_id,provider,order_hash,provider_reference,quote_amount,
-    quote_currency,local_amount_toman,stage,provider_status)
-   VALUES (?,?,?,?,100000,'toman',100000,'review','verification_uncertain')");
- $q->bind_param('isss',$id,$provider,$hash,$invoice);$q->execute();
- $aid=(int)$db->insert_id;$q->close();return $aid;
-}
-function remote(string $hash,string $state='finished'):array {
- return [
-  'payment_id'=>$hash.'-child','invoice_id'=>$hash.'-invoice','order_id'=>$hash,
-  'payment_status'=>$state,'price_amount'=>'1.00000000','price_currency'=>'usd',
-  'pay_amount'=>'1','actually_paid'=>'1','pay_currency'=>'usdttrc20',
-  'outcome_amount'=>'0.98','outcome_currency'=>'usdttrc20'];
-}
-function row(mysqli $db,string $hash):array {
- $q=$db->prepare("SELECT p.state AS pay_state,a.stage,a.provider_status,
-         d.decision,d.state AS review_state,d.outcome
-  FROM pays p JOIN payment_attempts a ON a.pay_row_id=p.id
-  LEFT JOIN payment_review_decisions d ON d.pay_row_id=p.id
-  WHERE p.hash_id=?");
- $q->bind_param('s',$hash);$q->execute();$r=$q->get_result()->fetch_assoc();$q->close();
+function state($db,$id){
+ $q=$db->prepare('SELECT p.state AS pay_state,p.approved_by,a.stage,a.provider_status
+  FROM pays p JOIN payment_attempts a ON a.pay_row_id=p.id WHERE p.id=?');
+ $q->bind_param('i',$id);$q->execute();$r=$q->get_result()->fetch_assoc();$q->close();
  return $r;
 }
-check(achbotNpDecisionSchemaReady($db),'decision_schema_unique_innodb');
-$a=seed($db,'approve-pass',201);
-$beforeWallet=(int)$db->query('SELECT wallet FROM users WHERE userid=1001')->fetch_row()[0];
-check(achbotNpDecisionEligible($db,$a,remote('approve-pass'),'approve')!==null,
-  'verified_finished_complete_single_child_eligible');
-check(achbotNpDecisionEligible($db,$a,remote('approve-pass','confirmed'),'approve')===null,
-  'not_finished_must_not_fake_payout');
-$wrong=remote('approve-pass');$wrong['order_id']='forged-order';
-check(achbotNpDecisionEligible($db,$a,$wrong,'approve')===null,'wrong_order_identity_rejected');
-$under=remote('approve-pass');$under['actually_paid']='0.50';
-check(achbotNpDecisionEligible($db,$a,$under,'approve')===null,'underpaid_rejected');
-check(achbotNpDecisionToken(9001,$a,'approve',1900000000,'abc')!==
-      achbotNpDecisionToken(9002,$a,'approve',1900000000,'abc'),
-      'decision_token_binds_actor');
-check(achbotNpDecisionToken(9001,$a,'approve',1900000000,'abc')!==
-      achbotNpDecisionToken(9001,$a,'reject',1900000000,'abc'),
-      'decision_token_binds_action');
-check(achbotNpDecisionToken(9001,$a,'approve',1900000000,'abc')!==
-      achbotNpDecisionToken(9001,$a,'approve',1900000001,'abc'),
-      'decision_token_binds_expiry');
-check(achbotNpDecisionToken(9001,$a,'approve',1900000000,'abc')!==
-      achbotNpDecisionToken(9001,$a,'approve',1900000000,'abd'),
-      'decision_token_binds_provider_digest');
-$complete=achbotNpDecisionCommit($db,9001,$a,'approve',remote('approve-pass'));
-check($complete['status']==='completed','approve_effect_completes');
-$r=row($db,'approve-pass');
-check($r['pay_state']==='paid'&&$r['stage']==='done'&&
-      $r['review_state']==='completed'&&$r['decision']==='approve',
-      'exact_ledger_closes_after_effect');
-check($r['provider_status']==='finished' &&
-      $db->query('SELECT actor_id,provider_status FROM payment_review_decisions WHERE pay_row_id=201')
-        ->fetch_assoc()['provider_status']==='finished',
-      'authenticated_provider_finished_provenance_preserved');
-check((int)$db->query('SELECT wallet FROM users WHERE userid=1001')->fetch_row()[0]
-      ===$beforeWallet+100000,'exactly_one_wallet_credit');
-check(count($GLOBALS['events'])===2&&$GLOBALS['events'][1][0]==='normal_result_report',
-      'one_original_business_report');
-$again=achbotNpDecisionCommit($db,9001,$a,'approve',remote('approve-pass'));
-check($again['status']!=='completed'&&count($GLOBALS['events'])===2,
-      'repeated_or_raced_approve_never_dispatches_second_effect');
-$a=seed($db,'refund-verified',202);
-check(achbotNpDecisionEligible($db,$a,remote('refund-verified','confirmed'),'reject')===null,
-  'not_refunded_cannot_be_rejected');
-$rejected=achbotNpDecisionCommit($db,9001,$a,'reject',remote('refund-verified','refunded'));
-check($rejected['status']==='rejected','refunded_reject_commits');
-$r=row($db,'refund-verified');
-check($r['pay_state']==='declined'&&$r['stage']==='done'&&$r['review_state']==='completed'
-      &&$r['decision']==='reject','refund_audit_terminal');
-check(count($GLOBALS['events'])===2,'rejection_cannot_dispatch_service_or_wallet');
-$a=seed($db,'ambiguous-effect',203);
-$GLOBALS['effect_mode']='throw';
-$result=achbotNpDecisionCommit($db,9001,$a,'approve',remote('ambiguous-effect'));
-$r=row($db,'ambiguous-effect');
-check($result['status']==='unknown'&&$r['stage']==='review'&&
-    $r['review_state']==='unknown','ambiguous_remote_fenced_as_unknown');
-$prior=count($GLOBALS['events']);$GLOBALS['effect_mode']='complete';
-$result=achbotNpDecisionCommit($db,9001,$a,'approve',remote('ambiguous-effect'));
-check($result['status']!=='completed'&&count($GLOBALS['events'])===$prior,
- 'unknown_remote_effect_never_replayed');
-$a=seed($db,'extra-funded-child',204);
-$db->query("INSERT INTO payment_transactions(attempt_id,provider,payment_id,observed_status)
- VALUES($a,'nowpayments','extra-funded-child-new','confirmed')");
-check(achbotNpDecisionEligible($db,$a,remote('extra-funded-child'),'approve')===null,
- 'multiple_funded_child_not_fake_single_invoice');
-$inflight=seed($db,'operator-inflight',205);
-$db->query("UPDATE payment_attempts SET stage='fulfilling',
- provider_status='operator_verified_finished'
- WHERE id=".$inflight);
-$db->query("INSERT INTO payment_review_decisions
- (pay_row_id,attempt_id,decision,actor_id,payment_id,provider_status,
- evidence_sha256,state)
- VALUES(205,".$inflight.",'approve',9001,'operator-inflight-child','finished',
- REPEAT('a',64),'dispatching')");
-// Human decisions use previously recorded signed merchant evidence, without
-// a fresh provider call or false 'finished' assertion. A second callback
-// cannot charge again, even when original provider status was nonterminal.
-$local=seed($db,'owner-confirmed',209);
-$db->query("UPDATE payment_transactions SET observed_status='confirmed' WHERE attempt_id=$local");
-$walletBefore=(int)$db->query('SELECT wallet FROM users WHERE userid=1001')->fetch_row()[0];
-check(achbotNpDecisionEligible($db,$local,null,'approve')!==null,
-  'owner_can_attest_saved_nonfinal_provider_evidence');
-$localResult=achbotNpDecisionCommit($db,9001,$local,'approve',null);
-$localRow=row($db,'owner-confirmed');
-check($localResult['status']==='completed' && $localRow['pay_state']==='paid'
-  && $localRow['decision']==='approve','owner_direct_approve_runs_original_effect');
-check($localRow['stage']==='done' && $localRow['provider_status']==='operator_fulfilled',
- 'nowpayments_human_final_003_does_not_forge_provider_finished');
-check((int)$db->query('SELECT wallet FROM users WHERE userid=1001')->fetch_row()[0]
-  ===$walletBefore+100000,'owner_direct_approve_wallet_once');
-$detail=$db->query("SELECT provider_status,actor_id,decision FROM payment_review_decisions
- WHERE pay_row_id=209")->fetch_assoc();
-check(($detail['provider_status']??'')==='operator_attested' &&
- (int)$detail['actor_id']===9001 && $detail['decision']==='approve',
- 'human_attestation_not_fabricated_provider_finished');
-$priorEvents=count($GLOBALS['events']);
-check(achbotNpDecisionCommit($db,9001,$local,'approve',null)['status']!=='completed'
- && count($GLOBALS['events'])===$priorEvents,'owner_repeat_callback_no_second_credit');
+check(achbotGatewayReviewReady($db),'existing_unique_attempt_schema_ready');
+$balance=(int)$db->query('SELECT wallet FROM users WHERE userid=1001')->fetch_row()[0];
 
-$reject=seed($db,'owner-reject',210);
-$db->query("UPDATE payment_transactions SET observed_status='sending' WHERE attempt_id=$reject");
-$beforeReject=(int)$db->query('SELECT wallet FROM users WHERE userid=1001')->fetch_row()[0];
-check(achbotNpDecisionEligible($db,$reject,null,'reject')!==null,
-  'owner_can_reject_without_provider_refunded');
-$rejected=achbotNpDecisionCommit($db,9001,$reject,'reject',null);
-check($rejected['status']==='rejected' && row($db,'owner-reject')['pay_state']==='declined',
-  'owner_reject_closes_unfulfilled_order');
-check((int)$db->query('SELECT wallet FROM users WHERE userid=1001')->fetch_row()[0]
-  ===$beforeReject,'owner_reject_no_wallet_credit');
-$observed=$db->query("SELECT observed_status FROM payment_transactions
- WHERE attempt_id=$reject")->fetch_assoc();
-check(($observed['observed_status']??'')==='sending',
- 'owner_rejection_preserves_financial_evidence');
+$a=seed($db,301,'nowpayments','review','confirmed','confirmed');
+check(achbotGatewayReviewEligible($db,$a,'approve')!==null,'nowpayments_review_candidate');
+check(achbotGatewayReviewCommit($db,9001,$a,'approve',9001)['status']==='completed',
+ 'original_nowpayments_success');
+$r=state($db,301);
+check($r['pay_state']==='paid' && $r['stage']==='done' &&
+ $r['provider_status']==='operator_fulfilled' && (int)$r['approved_by']===9001,
+ 'one_shot_original_attempt_and_admin_identity');
+check(achbotGatewayReviewCommit($db,9001,$a,'approve',9001)['status']!=='completed',
+ 'duplicate_approval_refused');
 
-// Another authentic primary reports finished but Owner rejects the ORDER.
-// The merchant funds remain an exception until a real refund is observed.
-$finishedReject=seed($db,'owner-finished-reject',215);
-check(achbotNpDecisionCommit($db,9001,$finishedReject,'reject',null)['status']==='rejected',
-  'owner_finished_primary_can_reject_business_without_fake_refund');
-check(row($db,'owner-finished-reject')['provider_status']==='operator_rejected',
-  'finished_primary_rejection_does_not_forge_provider_refund');
-$absent=seed($db,'owner-no-funds',211);
-$db->query("UPDATE payment_transactions SET observed_status='waiting' WHERE attempt_id=$absent");
-check(achbotNpDecisionEligible($db,$absent,null,'approve')===null
-  && achbotNpDecisionEligible($db,$absent,null,'reject')===null,
- 'unfunded_invoice_not_accidentally_decidable');
+$b=seed($db,302,'zarinpal','review','verification_uncertain');
+check(achbotGatewayReviewEligible($db,$b,'reject')!==null,'zarinpal_saved_uncertainty');
+check(achbotGatewayReviewCommit($db,9001,$b,'reject',9001)['status']==='rejected',
+ 'hosted_original_rejection');
+$r=state($db,302);
+check($r['pay_state']==='declined' && $r['stage']==='done' &&
+ $r['provider_status']==='operator_rejected',
+ 'no_fake_merchant_refund');
+check(achbotGatewayReviewEligible($db,$b,'approve')===null,
+ 'rejected_order_never_reapproved');
 
-$refunded=seed($db,'owner-refunded',214);
-$db->query("UPDATE payment_transactions SET observed_status='refunded'
- WHERE attempt_id=$refunded");
-check(achbotNpDecisionEligible($db,$refunded,null,'approve')===null,
- 'owner_approve_refunded_only_funds_fails_closed');
+$c=seed($db,303,'nowpayments','review','finished','finished');
+check(achbotGatewayReviewEligible($db,$c,'reject')===null,
+ 'funded_invoice_not_declined_without_refund');
+$d=seed($db,304,'nextpay','pending',null,null,100000,4000);
+check(achbotGatewayReviewEligible($db,$d,'approve')!==null,
+ 'aged_pending_invoice_can_be_manually_attested');
+$e=seed($db,305,'nextpay','pending',null,null,100000,0);
+check(achbotGatewayReviewEligible($db,$e,'approve')===null,
+ 'new_checkout_not_prematurely_reviewed');
+$f=seed($db,306,'zarinpal','review','verification_uncertain',null,99999);
+check(achbotGatewayReviewEligible($db,$f,'approve')===null,
+ 'changed_local_amount_fails_closed');
+$g=seed($db,307,'nowpayments','review','finished','refunded');
+check(achbotGatewayReviewEligible($db,$g,'approve')===null,
+ 'refunded_original_never_credited');
 
-$multiple=seed($db,'owner-multi-child',212);
-$db->query("INSERT INTO payment_transactions(attempt_id,provider,payment_id,observed_status)
- VALUES ($multiple,'nowpayments','owner-multi-child-extra','confirmed')");
-$beforeMulti=(int)$db->query('SELECT wallet FROM users WHERE userid=1001')->fetch_row()[0];
-check(achbotNpDecisionCommit($db,9001,$multiple,'approve',null)['status']==='completed',
- 'owner_multi_child_decides_original_order_once');
-check((int)$db->query('SELECT wallet FROM users WHERE userid=1001')->fetch_row()[0]
-  ===$beforeMulti+100000,'owner_multi_child_never_credits_twice');
-$childCount=(int)$db->query("SELECT COUNT(*) FROM payment_transactions
- WHERE attempt_id=$multiple")->fetch_row()[0];
-check($childCount===2,'additional_child_remains_in_financial_exception_ledger');
+$h=seed($db,308,'nowpayments','review','confirmed','confirmed');
+$GLOBALS['fail_for']=308;
+check(achbotGatewayReviewCommit($db,9001,$h,'approve',9001)['status']==='unknown',
+ 'unknown_original_effect_held');
+$r=state($db,308);
+check($r['pay_state']==='pending' && $r['stage']==='review' &&
+ $r['provider_status']==='operator_fulfillment_unconfirmed',
+ 'durable_uncertain_hold');
+check(achbotGatewayReviewEligible($db,$h,'approve')===null,
+ 'unknown_hold_not_replayed');
+check(achbotGatewayReviewArchive($db,9001,$h,9001)==='archived',
+ 'previously_unknown_effect_can_be_archived_without_replaying');
+$held=$db->query("SELECT review_archived_by,review_archived_at,
+ stage,provider_status FROM payment_attempts WHERE id=$h")->fetch_assoc();
+check((int)$held['review_archived_by']===9001 &&
+ is_string($held['review_archived_at']) && $held['review_archived_at']!=='' &&
+ $held['stage']==='review' &&
+ $held['provider_status']==='operator_fulfillment_unconfirmed' &&
+ state($db,308)['pay_state']==='pending',
+ 'original_uncertain_payment_untouched_when_archived');
+check(achbotGatewayReviewArchive($db,9002,$h,9001)==='stale',
+ 'archival_is_once_only');
+check(achbotGatewayReviewEligible($db,$h,'approve')===null &&
+ achbotGatewayReviewEligible($db,$h,'reject')===null,
+ 'archived_original_never_gets_new_financial_buttons');
+$oldArchivedAt=$held['review_archived_at'];
 
-$unknown=seed($db,'owner-unknown',213);
-$GLOBALS['effect_mode']='throw';
-check(achbotNpDecisionCommit($db,9001,$unknown,'approve',null)['status']==='unknown',
- 'owner_unknown_original_effect_held');
-$beforeRetry=count($GLOBALS['events']);
-$GLOBALS['effect_mode']='complete';
-check(achbotNpDecisionCommit($db,9001,$unknown,'approve',null)['status']!=='completed'
- && count($GLOBALS['events'])===$beforeRetry,
- 'owner_unknown_must_reconcile_not_repeat_effect');
+$k=seed($db,310,'nowpayments','review','confirmed','confirmed');
+check(achbotGatewayReviewArchive($db,9002,$k,9001)==='archived',
+ 'fresh_open_case_can_be_archived_without_claiming_funds');
+$before=$db->query("SELECT review_archived_by,review_archived_at FROM payment_attempts
+ WHERE id=$k")->fetch_assoc();
+check((int)$before['review_archived_by']===9002 &&
+ $before['review_archived_at']!==null &&
+ state($db,310)['pay_state']==='pending',
+ 'original_quote_and_payment_remain_unsettled');
+check(achbotGatewayReviewCommit($db,9001,$k,'approve',9001)['status']==='stale' &&
+ achbotGatewayReviewCommit($db,9001,$k,'reject',9001)['status']==='stale',
+ 'late_approve_reject_cannot_change_archived_original');
+$after=$db->query("SELECT review_archived_by,review_archived_at
+ FROM payment_attempts WHERE id=$k")->fetch_assoc();
+check($after===$before && state($db,310)['stage']==='review' &&
+ state($db,310)['provider_status']==='confirmed' &&
+ achbotGatewayReviewEligible($db,$k,'approve')===null &&
+ achbotGatewayReviewArchive($db,9001,$k,9001)==='stale',
+ 'archive_keeps_original_financial_state_and_cannot_be_reopened');
 
-// Hosted pending VERIFY is not a merchant settlement. An explicit Owner
-// decision reuses the existing unique 019 journal and original effect.
-foreach(['nextpay'=>216,'zarinpal'=>217] as $provider=>$payId) {
- $hash=$provider.'-operator-review';$attemptId=seedHosted($db,$hash,$payId,$provider);
- check(achbotNpDecisionEligible($db,$attemptId,null,'approve')!==null,
-   $provider.'_operator_attestation_eligible');
- check(achbotNpDecisionEligible($db,$attemptId,remote('owner-confirmed'),'approve')===null,
-   $provider.'_fake_remote_success_denied');
- $db->query("UPDATE payment_attempts SET provider_status='pending'
-   WHERE id=".$attemptId);
- check(achbotNpDecisionEligible($db,$attemptId,null,'approve')===null,
-   $provider.'_pending_without_review_not_decidable');
- $db->query("UPDATE payment_attempts SET provider_status='verification_uncertain'
-   WHERE id=".$attemptId);
- $before=(int)$db->query('SELECT wallet FROM users WHERE userid=1001')->fetch_row()[0];
- $eventsBefore=count($GLOBALS['events']);
- if($provider==='nextpay') {
-  check(achbotNpDecisionCommit($db,9001,$attemptId,'approve',null)['status']==='completed',
-    'nextpay_operator_approval_dispatches_original');
-  $row=row($db,$hash);
-  check($row['pay_state']==='paid' && $row['stage']==='done' &&
-    $row['review_state']==='completed','nextpay_operator_financial_commit_once');
-  check($row['provider_status']==='operator_fulfilled',
-    'nextpay_human_finished_business_not_merchant_finished');
-  check((int)$db->query('SELECT wallet FROM users WHERE userid=1001')->fetch_row()[0]
-    ===$before+100000,'nextpay_single_original_wallet_effect');
-  $decision=$db->query("SELECT provider_status,payment_id,actor_id,decision FROM payment_review_decisions
-    WHERE pay_row_id=$payId")->fetch_assoc();
-  check($decision['provider_status']==='operator_attested' &&
-    $decision['payment_id']===$hash.'-authority' &&
-    (int)$decision['actor_id']===9001 && $decision['decision']==='approve',
-    'nextpay_attestation_distinct_from_provider_settlement');
-  check(achbotNpDecisionCommit($db,9001,$attemptId,'approve',null)['status']!=='completed' &&
-    count($GLOBALS['events'])===$eventsBefore+2,
-    'nextpay_repeat_operator_callback_no_double_credit');
- } else {
-  check(achbotNpDecisionCommit($db,9001,$attemptId,'reject',null)['status']==='rejected',
-    'zarinpal_operator_rejects_unfinished_only');
-  check(row($db,$hash)['pay_state']==='declined' &&
-    (int)$db->query('SELECT wallet FROM users WHERE userid=1001')->fetch_row()[0]
-       ===$before && count($GLOBALS['events'])===$eventsBefore,
-    'zarinpal_reject_never_claims_refund_or_credits');
-  check(achbotNpDecisionCommit($db,9001,$attemptId,'approve',null)['status']!=='completed',
-    'zarinpal_reject_cannot_be_reapproved');
+$m=seed($db,311,'nowpayments','review','fulfillment_failed');
+$db->query("UPDATE pays SET state='processing' WHERE id=311");
+$db->query("UPDATE payment_attempts SET updated_at=NOW()-INTERVAL 11 MINUTE
+ WHERE id=$m");
+check(achbotGatewayReviewArchive($db,9001,$m,9001)==='archived',
+ 'stale_processing_case_can_be_closed_from_attention_only');
+check(state($db,311)['pay_state']==='processing' &&
+ state($db,311)['provider_status']==='fulfillment_failed',
+ 'archived_processing_hold_still_requires_native_forensics_elsewhere');
+
+// Immutable historical fingerprints and 018 digest constants are frozen from
+// main/RC26, not calculated from the code under test.
+$oldPay=[
+ 'id'=>770,'hash_id'=>'rc26-770','user_id'=>1001,'type'=>'BUY_SUB',
+ 'plan_id'=>7,'server_id'=>2,'order_id'=>0,'price'=>100000,'day'=>30,
+ 'volume'=>10,'agent_count'=>2,'description'=>'rc26','agent_bought'=>0,
+ 'state'=>'paid','payid'=>'merchant-770',
+ 'issued_entitlement_days'=>30,'issued_entitlement_gb'=>10,
+];
+$oldAttempt=[
+ 'id'=>1770,'pay_row_id'=>770,'provider'=>'nextpay','order_hash'=>'rc26-770',
+ 'quote_amount'=>'100000.00000000','quote_currency'=>'toman',
+ 'local_amount_toman'=>100000,'provider_reference'=>'merchant-770',
+ 'payment_id'=>null,'evidence_profile'=>null,'settlement_currency'=>null,
+];
+$oldEffect=[
+ 'id'=>2770,'pay_row_id'=>770,'effect_kind'=>'create','ordinal'=>1,
+ 'state'=>'local_recorded','order_id'=>3770,'reserved_count'=>2,
+ 'target_server_id'=>2,'plan_id'=>7,'operation_id'=>str_repeat('a',32),
+ 'request_sha256'=>str_repeat('b',64),'endpoint_sha256'=>str_repeat('c',64),
+ 'target_key'=>'server:2','remote_username'=>'rc26_user_1',
+ 'requested_expire'=>1800000000,'requested_bytes'=>10737418240,
+];
+check(achbotPaymentEvidencePayFingerprint($oldPay)===
+ 'b164d72900a5cbfa9c5c94960ce09f3982d3b4f463eab14df1cc5151a24822d8',
+ 'rc26_021_persisted_payment_fingerprint_byte_identical');
+check(achbotDeliveryHostedBuyDigest($oldPay,$oldAttempt,$oldEffect,1)===
+ '6835fd8869082ce9704afe54b5bb98cd64e296696c0c8253e17dd66bfa3d3444',
+ 'rc26_nextpay_018_hosted_digest_byte_identical');
+$oldAttempt['provider']='zarinpal';
+check(achbotDeliveryHostedBuyDigest($oldPay,$oldAttempt,$oldEffect,1)===
+ '3d0e9f213220268359467b6ac4709e1c46865a8f4ce20452522d9e86876ed96e',
+ 'rc26_zarinpal_018_hosted_digest_byte_identical');
+$oldReplacement=$oldEffect;
+$oldReplacement['effect_kind']='replacement';
+$oldReplacement['reserved_count']=0;
+$oldReplacement['replaces_effect_id']=2770;
+$oldReplacement['reconciliation_fingerprint']=str_repeat('d',64);
+$oldReplacement['reconciliation_reason']='original_unavailable';
+$oldReplacement['actor_userid']=9001;
+check(achbotDeliveryHostedBuyDigest($oldPay,$oldAttempt,$oldReplacement,1)===
+ '7d83e9c58c3b575c833a7efb54964d1c2176475fb48b743983bd6a6bad3695ac',
+ 'rc26_replacement_018_digest_read_only_compatible');
+unset($oldPay['issued_entitlement_days'],$oldPay['issued_entitlement_gb']);
+check(achbotPaymentEvidencePayFingerprint($oldPay)===
+ '84469a36aee3c463e0311374e9d0a4f8cd72c03e934548a186f9092ae4ac8e02',
+ 'fresh_022_fingerprint_without_021_columns');
+
+// Real sealed 018 packet validation: historical hosted delivery is read-side
+// only and sends one original packet without a second Native or payment claim.
+function historicalHostedPacket($db,$payId,$provider,$kind='create') {
+ $a=seed($db,$payId,$provider,'done','delivered');
+ $db->query("UPDATE pays SET state='paid',type='BUY_SUB',plan_id=7,
+  server_id=2,agent_count=2,issued_entitlement_days=30,
+  issued_entitlement_gb=10 WHERE id=$payId");
+ $effect=reserveEffect($db,$payId,1,'rc26_hosted_'.$provider);
+ if ($kind==='replacement') {
+  $db->query("UPDATE service_effects SET effect_kind='replacement',
+    actor_userid=9001,reconciliation_reason='original_unavailable',
+    reconciliation_fingerprint=REPEAT('d',64) WHERE id=$effect");
+  $original=reserveEffect($db,$payId,1,'historical_original');
+  $db->query("UPDATE service_effects SET replaces_effect_id=$original
+    WHERE id=$effect");
  }
+ $db->query("INSERT INTO orders_list
+  (userid,token,transid,fileid,server_id,inbound_id,remark,uuid,protocol,
+   expire_date,link,amount,status,date,notif,rahgozar,agent_bought)
+  SELECT 1001,'token','',7,2,0,remote_username,'fixture-uuid','vless',
+   1800000000,'[]',100,1,'fixture',0,0,0
+  FROM service_effects WHERE id=$effect");
+ $orderId=(int)$db->insert_id;
+ if ($orderId<=0) throw new RuntimeException('historical_order_fixture_missing');
+ $db->query("UPDATE service_effects SET state='local_recorded',
+  order_id=$orderId,reserved_count=2 WHERE id=$effect");
+ $pay=$db->query("SELECT * FROM pays WHERE id=$payId")->fetch_assoc();
+ $attempt=$db->query("SELECT * FROM payment_attempts WHERE id=$a")->fetch_assoc();
+ $effectRow=$db->query("SELECT * FROM service_effects WHERE id=$effect")->fetch_assoc();
+ $digest=achbotDeliveryHostedBuyDigest($pay,$attempt,$effectRow,1);
+ if (!is_string($digest)) throw new RuntimeException('historical_digest_unavailable');
+ $packet=['kind'=>'qr','qr'=>'fixture-synthetic-qr','caption'=>'Historic RC26 delivery',
+  'keys'=>'{}','bot_url'=>'https://example.invalid','uid'=>1001];
+ $db->begin_transaction();
+ try {
+  achbotDeliveryInsertLocked($db,$pay,$attempt,1,$effect,$orderId,2,
+    $digest,$effectRow['operation_id'],$effectRow['target_key'],$packet);
+  $db->commit();
+ } catch(Throwable $error) {$db->rollback();throw $error;}
+ return ['attempt'=>$a,'effect'=>$effect,'order'=>$orderId];
 }
+// Test-only historical 021 columns simulate an already-upgraded RC26 tenant.
+// The prospective fresh-install migrations still do not ship 021.
+$db->query("ALTER TABLE pays ADD issued_entitlement_days INT UNSIGNED DEFAULT NULL,
+ ADD issued_entitlement_gb BIGINT UNSIGNED DEFAULT NULL");
+$db->query("ALTER TABLE service_effects
+ ADD replaces_effect_id BIGINT UNSIGNED DEFAULT NULL,
+ ADD reconciliation_reason VARCHAR(40) DEFAULT NULL,
+ ADD reconciliation_fingerprint CHAR(64) DEFAULT NULL");
+$np=historicalHostedPacket($db,317,'nextpay');
+$zp=historicalHostedPacket($db,318,'zarinpal');
+$rep=historicalHostedPacket($db,320,'zarinpal','replacement');
+$npDelivered=achbotDeliveryDispatch($db,317,1);
+$zpDelivered=achbotDeliveryDispatch($db,318,1);
+$replacementDelivered=achbotDeliveryDispatch($db,320,1);
+check($npDelivered==='acknowledged' && $zpDelivered==='acknowledged' &&
+ $GLOBALS['qr_sends']===3 &&
+ $db->query("SELECT COUNT(*) FROM payment_delivery_intents
+ WHERE pay_row_id IN (317,318) AND state='acknowledged' AND attempt_count=1")
+ ->fetch_row()[0]==='2','historical_hosted_018_once_only_pending_delivery');
+check($replacementDelivered==='acknowledged' &&
+ $db->query("SELECT state FROM payment_delivery_intents WHERE pay_row_id=320")
+ ->fetch_row()[0]==='acknowledged' && $GLOBALS['qr_sends']===3,
+ 'historical_replacement_018_read_only_delivery');
+// Archive must also stop a queued historical packet whose original payment
+// has subsequently been archived, without destroying the packet itself.
+$pending=historicalHostedPacket($db,321,'nextpay');
+$db->query("UPDATE payment_attempts SET review_archived_at=UTC_TIMESTAMP(),
+ review_archived_by=9001 WHERE id=".$pending['attempt']);
+$db->begin_transaction();
+try {
+ $p=$db->query('SELECT * FROM pays WHERE id=321 FOR UPDATE')->fetch_assoc();
+ $d=$db->query('SELECT * FROM payment_delivery_intents
+  WHERE pay_row_id=321 AND ordinal=1 FOR UPDATE')->fetch_assoc();
+ $blocked=achbotDeliveryValidateLocked($db,$p,$d);
+ $db->rollback();
+} catch(Throwable $error) {$db->rollback();throw $error;}
+check($blocked===null &&
+ $db->query('SELECT state FROM payment_delivery_intents WHERE pay_row_id=321')
+ ->fetch_row()[0]==='pending' && $GLOBALS['qr_sends']===3,
+ 'archived_original_does_not_dispatch_sealed_018_packet');
 
-// A successful Zarinpal human-approved wallet is distinct from the
-// independently tested reject branch above; both use the same 019 journal.
-$zarId=250;$zarHash='zarinpal-owner-approval';
-$zarAttempt=seedHosted($db,$zarHash,$zarId,'zarinpal');
-$beforeZar=(int)$db->query('SELECT wallet FROM users WHERE userid=1001')->fetch_row()[0];
-$beforeZarEvents=count($GLOBALS['events']);
-check(achbotNpDecisionCommit($db,9001,$zarAttempt,'approve',null)['status']==='completed',
- 'zarinpal_operator_approval_dispatches_original');
-$zarRow=row($db,$zarHash);
-$zarJournal=$db->query("SELECT actor_id,provider_status,decision,state FROM payment_review_decisions
- WHERE pay_row_id=$zarId")->fetch_assoc();
-check($zarRow['pay_state']==='paid' && $zarRow['stage']==='done' &&
- $zarRow['provider_status']==='operator_fulfilled' &&
- $zarJournal['provider_status']==='operator_attested' &&
- (int)$zarJournal['actor_id']===9001 && $zarJournal['decision']==='approve' &&
- $zarJournal['state']==='completed',
- 'zarinpal_human_003_019_provenance_distinct_from_merchant');
-check((int)$db->query('SELECT wallet FROM users WHERE userid=1001')->fetch_row()[0]
- ===$beforeZar+100000 &&
- achbotNpDecisionCommit($db,9001,$zarAttempt,'approve',null)['status']!=='completed' &&
- count($GLOBALS['events'])===$beforeZarEvents+2,
- 'zarinpal_repeat_owner_callback_wallet_native_once');
+// Permission must be current inside the write transaction, not only at UI admission.
+$revoked=seed($db,312,'nowpayments','review','confirmed','confirmed');
+check(achbotAdminCanFor($db,9002,9001,'payments'),
+ 'delegated_staff_initially_allowed');
+$db->query('UPDATE users SET isAdmin=0 WHERE userid=9002');
+check(achbotGatewayReviewCommit($db,9002,$revoked,'approve',9001)['status']==='denied' &&
+ achbotGatewayReviewArchive($db,9002,$revoked,9001)==='denied' &&
+ state($db,312)['pay_state']==='pending',
+ 'revoked_staff_cannot_finalize_old_callback');
+$db->query("UPDATE users SET isAdmin=1,step='banned' WHERE userid=9002");
+check(achbotGatewayReviewArchive($db,9002,$revoked,9001)==='denied',
+ 'banned_staff_cannot_archive');
+$db->query("UPDATE users SET isAdmin=1,step='none' WHERE userid=9002");
+check(achbotGatewayReviewArchive($db,9002,$revoked,9001)==='archived',
+ 'authorized_staff_can_archive_after_role_restored');
 
-// A lost local preclaim must remain in the quiet attention inbox. A second
-// Approve cannot replay an effect with an unknown first result.
-$failedHosted=seedHosted($db,'hosted-lost-preclaim',221,'nextpay');
-$GLOBALS['effect_mode']='throw';
-$before=count($GLOBALS['events']);
-check(achbotNpDecisionCommit($db,9001,$failedHosted,'approve',null)['status']==='unknown',
- 'hosted_failed_preclaim_is_durably_unknown');
-$failed=row($db,'hosted-lost-preclaim');
-check($failed['pay_state']==='pending' && $failed['stage']==='review' &&
- $failed['provider_status']==='operator_fulfillment_unconfirmed' &&
- $failed['review_state']==='unknown',
- 'hosted_unknown_payment_still_has_decision_audit');
-$GLOBALS['effect_mode']='complete';
-check(achbotNpDecisionCommit($db,9001,$failedHosted,'approve',null)['status']!=='completed' &&
- count($GLOBALS['events'])===$before+1,
- 'hosted_unknown_preclaim_not_blindly_replayed');
-
-echo json_encode(['complete'=>true,'checks'=>$checks,
- 'owned_mariadb'=>true,'real_review_decision_source'=>true,
- 'test_effect_is_synthetic'=>true,'provider_http_calls'=>0,
- 'telegram_calls'=>0,'financial_double_credit'=>false,
- 'audit_exactly_once'=>true],JSON_THROW_ON_ERROR);
-'''
-def main():
- p=argparse.ArgumentParser()
- p.add_argument('--run-disposable',action='store_true')
- p.add_argument('--report',type=Path)
- args=p.parse_args()
- if not args.run_disposable:raise SystemExit('Use --run-disposable only')
- with fx.owned_database() as (d,env):
-  client=['mariadb','--no-defaults','--protocol=SOCKET',
-    '--socket='+str(d/'mysql.sock'),'-uroot',DB]
-  for name in ['003_payment_attempts.sql','019_payment_review_decisions.sql']:
-   sql=(ROOT/'migrations/post-v9'/name).read_bytes()
-   subprocess.run(client,input=sql,env=env,capture_output=True,check=True,timeout=15)
-  driver=d/'review-decisions.php';driver.write_text(PHP)
-  proc=subprocess.run(['php','-d','allow_url_fopen=0',
-      '-d','disable_functions=curl_init,curl_exec,exec,shell_exec,system,passthru,popen,proc_open,mail',
-      str(driver),str(ROOT),str(d/'mysql.sock'),DB],
-      env=env,capture_output=True,text=True,timeout=45)
-  # Both synthetic post-COMMIT failures must emit their exact sanitized
-  # correlation codes; never suppress arbitrary stderr or private payloads.
-  stderr=proc.stderr.strip()
-  allowed='\n'.join([
-   'achbot_review_effect_unknown pay_id=203 class=RuntimeException',
-   'achbot_review_effect_unknown pay_id=213 class=RuntimeException',
-   'achbot_review_effect_unknown pay_id=221 class=RuntimeException'])
-  if proc.returncode or (stderr and stderr!=allowed):
-   raise RuntimeError(proc.stderr[-2500:]+' '+proc.stdout[-1000:])
-  out=json.loads(proc.stdout)
-  worker=d/'review-cron-worker.php';worker.write_text(WORKER)
-  cron=subprocess.run(['php','-d','disable_functions=curl_init,curl_exec',
-      str(worker),str(ROOT),str(d/'mysql.sock'),DB],
-      env=env,capture_output=True,text=True,timeout=15)
-  if cron.returncode or cron.stderr:
-   raise RuntimeError('cron operator race: '+cron.stderr[-1800:])
-  assert json.loads(cron.stdout)['cron_operator_claim_survived']
-  assert json.loads(cron.stdout)['internal_payment_page_suppressed']
-  out['cron_operator_claim_survived']=True
-  out['signed_ipn_operator_claim_survived']=True
-  out['signed_ipn_postpaid_primary_preserved']=True
-  out['signed_ipn_out_of_order_secondary_preserved']=True
-  out['internal_payment_page_suppressed']=True
-  hosted=d/'hosted-gateway-review.php';hosted.write_text(HOSTED)
-  result=subprocess.run(['php','-d','disable_functions=curl_init,curl_exec',
-      str(hosted),str(ROOT),str(d/'mysql.sock'),DB],env=env,
-      capture_output=True,text=True,timeout=20)
-  # The two deliberately refused original claims preserve their precise
-  # internal diagnostic codes. Reject any extra log line or PHP warning.
-  expected_hosted_log='\n'.join([
-   'achbot_hosted_claim_unconfirmed pay_id=218 provider=nextpay code=paid_claim_unavailable',
-   'achbot_hosted_claim_unconfirmed pay_id=220 provider=nextpay code=attempt_mismatch'])
-  if result.returncode or result.stderr.strip()!=expected_hosted_log:
-   raise RuntimeError('hosted verification staging: '+result.stderr[-2000:])
-  hosted_proof=json.loads(result.stdout)
-  assert hosted_proof['original_gateway_review_stage_source']
-  assert hosted_proof['no_merchant_or_customer_network']
-  assert hosted_proof['real_hosted_original_claim_after_uncertain']
-  assert hosted_proof['hosted_wallet_finalized_once_after_uncertain']
-  assert hosted_proof['operator_dispatch_journal_required']
-  out.update(hosted_proof)
-  inbox=d/'review-inbox.php';inbox.write_text(INBOX)
-  inc=subprocess.run(['php','-d','disable_functions=curl_init,curl_exec',
-      str(inbox),str(ROOT),str(d/'mysql.sock'),DB],
-      env=env,capture_output=True,text=True,timeout=15)
-  if inc.returncode or inc.stderr:
-   raise RuntimeError('review inbox selection: '+inc.stderr[-1500:])
-  selected=json.loads(inc.stdout)
-  assert selected['inbox_only_unfinalized_with_funds_or_receipt']
-  assert selected['api_module_loaded_on_first_entry']
-  assert selected['additional_funds_paid_and_inflight_visible']
-  assert selected['rejected_funded_primary_visible_without_reopening']
-  assert selected['real_refund_evidence_closes_rejected_primary_exception']
-  out.update(selected)
- if args.report:args.report.write_text(json.dumps(out,ensure_ascii=False,indent=2)+'\n')
- print(json.dumps({k:v for k,v in out.items() if k!='checks'}))
-HOSTED=r'''<?php
-error_reporting(E_ALL & ~E_DEPRECATED);
-set_error_handler(static function($l,$t){if($l===E_DEPRECATED)return true;throw new ErrorException($t,0,$l);});
-$_SERVER['SCRIPT_FILENAME']=__FILE__;
-define('ACHBOT_NP_RECONCILE_ONLY',true);
-$db=new mysqli('localhost','root','',$argv[3],0,$argv[2]);
-$db->set_charset('utf8mb4');$connection=$db;
-require_once $argv[1].'/src/Finance/GatewayReturn.php';
-// Known bound invoice from previous driver. A verify retry cannot stage or
-// re-approve already completed or rejected business history.
-if (achbotHostedMarkVerificationUncertain($db,216,'nextpay','nextpay-operator-review'))
- throw new RuntimeException('hosted_paid_reopened');
-if (achbotHostedMarkVerificationUncertain($db,217,'zarinpal','zarinpal-operator-review'))
- throw new RuntimeException('hosted_declined_reopened');
-$db->query("INSERT INTO pays (id,hash_id,user_id,type,price,request_date,state,payid)
- VALUES (218,'nextpay-bound',1001,'INCREASE_WALLET',100000,UNIX_TIMESTAMP(),
- 'pending','nextpay-bound-authority')");
+// A missing/incorrect unique original-attempt index must never close one of
+// several rows or appear to finish the actual payment.
+$broken=seed($db,313,'zarinpal','review','verification_uncertain');
+$db->query('ALTER TABLE payment_attempts ADD INDEX idx_fixture_pay_row(pay_row_id)');
+$db->query('ALTER TABLE payment_attempts DROP INDEX uq_payment_attempt_pay_row');
+check(!achbotGatewayReviewReady($db) &&
+ achbotGatewayReviewArchive($db,9001,$broken,9001)==='unavailable',
+ 'archive_denies_missing_original_unique_index');
 $db->query("INSERT INTO payment_attempts
- (pay_row_id,provider,order_hash,provider_reference,quote_amount,quote_currency,
-  local_amount_toman,stage,provider_status)
- VALUES (218,'nextpay','nextpay-bound','nextpay-bound-authority',
-  100000,'toman',100000,'pending',NULL)");
-if (achbotHostedMarkVerificationUncertain($db,218,'nextpay','wrong-hash'))
- throw new RuntimeException('hosted_wrong_invoice_staged');
-if (!achbotHostedMarkVerificationUncertain($db,218,'nextpay','nextpay-bound'))
- throw new RuntimeException('hosted_exact_invoice_not_staged');
-if (!achbotHostedMarkVerificationUncertain($db,218,'nextpay','nextpay-bound'))
- throw new RuntimeException('hosted_same_invoice_not_idempotent');
-$attempt=$db->query('SELECT stage,provider_status FROM payment_attempts WHERE pay_row_id=218')->fetch_assoc();
-if ($attempt['stage']!=='review' || $attempt['provider_status']!=='verification_uncertain')
- throw new RuntimeException('hosted_stage_incorrect');
-$wallet=(int)$db->query('SELECT wallet FROM users WHERE userid=1001')->fetch_row()[0];
-if (achbotHostedMarkVerificationUncertain($db,218,'zarinpal','nextpay-bound'))
- throw new RuntimeException('hosted_wrong_provider_staged');
-if ((int)$db->query('SELECT wallet FROM users WHERE userid=1001')->fetch_row()[0]!==$wallet)
- throw new RuntimeException('hosted_verification_stage_credited');
-// A later genuinely verified browser callback must still claim the exact
-// original staged invoice. A second callback must not claim again.
-if (!achbotClaimHostedServiceForReview($db,218,100000,'nextpay','nextpay-bound'))
- throw new RuntimeException('verified_after_uncertain_not_claimed');
-$later=$db->query('SELECT p.state,a.stage,a.provider_status FROM pays p
- JOIN payment_attempts a ON a.pay_row_id=p.id WHERE p.id=218')->fetch_assoc();
-if ($later['state']!=='paid'||$later['stage']!=='review'||
-    $later['provider_status']!=='fulfillment_started'||
-    achbotClaimHostedServiceForReview($db,218,100000,'nextpay','nextpay-bound'))
- throw new RuntimeException('verified_after_uncertain_double_claim');
-// A human 019 approval can enter the original hosted paid claim, with its
-// immutable financial audit; an unjournaled forged fulfilling stage cannot.
-foreach ([219=>true,220=>false] as $pid=>$journaled) {
- $hash='hosted-service-'.$pid;$ref=$hash.'-authority';
- $q=$db->prepare("INSERT INTO pays (id,hash_id,user_id,type,price,request_date,state,payid)
-  VALUES (?,?,1001,'BUY_SUB',100000,UNIX_TIMESTAMP(),'pending',?)");
- $q->bind_param('iss',$pid,$hash,$ref);$q->execute();$q->close();
- $q=$db->prepare("INSERT INTO payment_attempts
   (pay_row_id,provider,order_hash,provider_reference,quote_amount,quote_currency,
    local_amount_toman,stage,provider_status)
-  VALUES (?,'nextpay',?,?,100000,'toman',100000,'fulfilling','operator_attested')");
- $q->bind_param('iss',$pid,$hash,$ref);$q->execute();$aid=(int)$db->insert_id;$q->close();
- if ($journaled) {
-  $q=$db->prepare("INSERT INTO payment_review_decisions
-   (pay_row_id,attempt_id,decision,actor_id,payment_id,provider_status,
-    evidence_sha256,state) VALUES (?,?,'approve',9001,?,'operator_attested',
-    REPEAT('a',64),'dispatching')");
-  $q->bind_param('iis',$pid,$aid,$ref);$q->execute();$q->close();
- }
- $claimed=achbotClaimHostedServiceForReview($db,$pid,100000,'nextpay',$hash);
- if ($claimed!==$journaled)throw new RuntimeException('operator_claim_journal_gate_'.$pid);
- $stage=$db->query("SELECT p.state,a.stage FROM pays p JOIN payment_attempts a
-  ON a.pay_row_id=p.id WHERE p.id=$pid")->fetch_assoc();
- if ($journaled && ($stage['state']!=='paid'||$stage['stage']!=='review'))
-  throw new RuntimeException('operator_existing_journal_not_processed');
- if (!$journaled && ($stage['state']!=='pending'||$stage['stage']!=='fulfilling'))
-  throw new RuntimeException('forged_operator_stage_changed');
+  SELECT pay_row_id,provider,CONCAT(order_hash,'-other'),
+   CONCAT(provider_reference,'-other'),quote_amount,
+   quote_currency,local_amount_toman,stage,provider_status
+  FROM payment_attempts WHERE id=$broken");
+check(achbotGatewayReviewArchive($db,9001,$broken,9001)==='unavailable' &&
+ (int)$db->query('SELECT COUNT(*) FROM payment_attempts WHERE pay_row_id=313')->fetch_row()[0]===2,
+ 'archive_denies_duplicate_original_attempts');
+$db->query("DELETE FROM payment_attempts WHERE pay_row_id=313 AND id<>$broken");
+$db->query('ALTER TABLE payment_attempts ADD UNIQUE KEY uq_payment_attempt_pay_row(pay_row_id)');
+$db->query('ALTER TABLE payment_attempts DROP INDEX idx_fixture_pay_row');
+
+// True reservation is not an external send. Archive may close it; later
+// dispatch admission must fail and cannot call either Native provider.
+$reserved=seed($db,314,'nowpayments','review','fulfillment_failed');
+stalePaid($db,314,$reserved);
+$first=reserveEffect($db,314,1,'native_first_reserved');
+check(achbotGatewayReviewArchive($db,9001,$reserved,9001)==='archived',
+ 'archive_closes_not_dispatched_first_line');
+try {achbotEffectAdmitPaidDispatch($db,$first);$denied=false;}
+catch(RuntimeException $error) {$denied=$error->getMessage()==='effect_original_archived';}
+check($denied &&
+ $db->query("SELECT state FROM service_effects WHERE id=$first")->fetch_row()[0]==='reserved',
+ 'archived_first_line_never_admitted_for_remote_create');
+
+// The original line was completed; a later reserved line must still be
+// blocked after Archive, without duplicating first-line Native effects.
+$multi=seed($db,315,'nowpayments','review','fulfillment_failed');
+stalePaid($db,315,$multi);
+$db->query('UPDATE pays SET agent_count=2 WHERE id=315');
+$old=reserveEffect($db,315,1,'native_first_recorded');
+$db->query("UPDATE service_effects SET state='local_recorded',order_id=998876
+ WHERE id=$old");
+$later=reserveEffect($db,315,2,'native_later_reserved');
+check(achbotGatewayReviewArchive($db,9001,$multi,9001)==='archived',
+ 'archive_closes_reserved_multi_account_followup');
+try {achbotEffectAdmitPaidDispatch($db,$later);$denied=false;}
+catch(RuntimeException $error) {$denied=$error->getMessage()==='effect_original_archived';}
+check($denied &&
+ $db->query("SELECT state FROM service_effects WHERE id=$later")->fetch_row()[0]==='reserved',
+ 'archived_later_line_never_admitted_for_remote_create');
+
+// Persisted dispatching and verified rows may outlive the remote worker.
+// Archive must close the original AFTER worker termination without changing
+// the 007 evidence, paying again, or pretending the remote account is absent.
+$admitted=seed($db,316,'zarinpal','review','fulfillment_failed');
+stalePaid($db,316,$admitted);
+$active=reserveEffect($db,316,1,'native_already_admitted');
+achbotEffectAdmitPaidDispatch($db,$active);
+check($db->query("SELECT state FROM service_effects WHERE id=$active")->fetch_row()[0]==='dispatching' &&
+ achbotGatewayReviewArchive($db,9001,$admitted,9001)==='archived',
+ 'stale_dispatching_original_reaches_terminal_archive_without_replay');
+check($db->query("SELECT state FROM service_effects WHERE id=$active")->fetch_row()[0]==='dispatching' &&
+ achbotGatewayReviewArchive($db,9001,$admitted,9001)==='stale',
+ 'terminal_archive_immutable_stale_dispatch_evidence_retained');
+$verified=seed($db,325,'nowpayments','review','fulfillment_failed');
+stalePaid($db,325,$verified);
+$verifiedEffect=reserveEffect($db,325,1,'native_verified_unlinked');
+$db->query("UPDATE service_effects SET state='verified',verified_at=NOW()
+ WHERE id=$verifiedEffect");
+check(achbotGatewayReviewArchive($db,9001,$verified,9001)==='archived' &&
+ $db->query("SELECT state FROM service_effects WHERE id=$verifiedEffect")->fetch_row()[0]==='verified',
+ 'verified_unlinked_original_reaches_archive_without_order_synthesis');
+// A live same-session dispatch lease, unlike a stale database journal, must
+// still prevent terminal Archive until the worker releases its connection.
+$live=seed($db,324,'nextpay','review','fulfillment_failed');
+stalePaid($db,324,$live);
+$liveEffect=reserveEffect($db,324,1,'native_active_lease');
+achbotEffectAdmitPaidDispatch($db,$liveEffect);
+
+// Valid persisted near-5000-character description and five long Native
+// evidence rows must not hide the original review actions in Telegram.
+$long=seed($db,326,'nowpayments','review','fulfillment_failed');
+stalePaid($db,326,$long);
+$description=mb_substr(str_repeat('شرح <>& 😀 و توضیح فارسی ',350),0,4990,'UTF-8');
+$q=$db->prepare("UPDATE pays SET type='BUY_SUB',agent_count=5,
+ description=?,plan_id=7 WHERE id=326");
+$q->bind_param('s',$description);$q->execute();$q->close();
+$q=$db->prepare("UPDATE users SET name=? WHERE userid=1001");
+$longName=str_repeat('نام <>&😀 ',8);
+$q->bind_param('s',$longName);$q->execute();$q->close();
+for($i=1;$i<=5;$i++) {
+ $letter=chr(96+$i);
+ $e=reserveEffect($db,326,$i,str_repeat($letter,82));
+ $db->query("UPDATE service_effects SET state='dispatching',
+   provider_state=REPEAT('u',32) WHERE id=$e");
 }
-// Browser-confirmed hosted wallet credit commits atomically before the
-// previously unknown 003 verification marker is closed (no second credit).
-$db->query("INSERT INTO pays(id,hash_id,user_id,type,price,request_date,state,payid)
- VALUES(222,'hosted-wallet-final',1001,'INCREASE_WALLET',100000,
- UNIX_TIMESTAMP(),'pending','hosted-wallet-authority')");
-$db->query("INSERT INTO payment_attempts(pay_row_id,provider,order_hash,
- provider_reference,quote_amount,quote_currency,local_amount_toman,stage,
- provider_status) VALUES(222,'nextpay','hosted-wallet-final',
- 'hosted-wallet-authority',100000,'toman',100000,'review','verification_uncertain')");
-$walletBefore=(int)$db->query('SELECT wallet FROM users WHERE userid=1001')->fetch_row()[0];
-if (!achbotClaimAndCreditWallet($db,222,1001,100000))
- throw new RuntimeException('verified_wallet_claim_not_atomic');
-achbotFinishHostedServiceReview($db,222,'nextpay','delivered');
-$walletAttempt=$db->query('SELECT stage,provider_status FROM payment_attempts
- WHERE pay_row_id=222')->fetch_assoc();
-if ($walletAttempt['stage']!=='done' || $walletAttempt['provider_status']!=='delivered')
- throw new RuntimeException('wallet_verified_after_uncertain_remained_review');
-achbotFinishHostedServiceReview($db,222,'nextpay','delivered');
-if (achbotClaimAndCreditWallet($db,222,1001,100000) ||
- (int)$db->query('SELECT wallet FROM users WHERE userid=1001')->fetch_row()[0]
- !==$walletBefore+100000)
- throw new RuntimeException('wallet_hosted_verified_double_credit');
-echo json_encode(['original_gateway_review_stage_source'=>true,
- 'hosted_wallet_finalized_once_after_uncertain'=>true,
- 'no_merchant_or_customer_network'=>true,
- 'real_hosted_original_claim_after_uncertain'=>true,
- 'operator_dispatch_journal_required'=>true,
- 'no_merchant_or_customer_network'=>true],JSON_THROW_ON_ERROR);
-'''
-WORKER=r'''<?php
-error_reporting(E_ALL & ~E_DEPRECATED);
-set_error_handler(static function($l,$t){if($l===E_DEPRECATED)return true;throw new ErrorException($t,0,$l);});
-$_SERVER['SCRIPT_FILENAME']=__FILE__;
-$connection=new mysqli('localhost','root','',$argv[3],0,$argv[2]);
-$connection->set_charset('utf8mb4');
-define('ACHBOT_NP_RECONCILE_ONLY',true);
-require_once $argv[1].'/src/Finance/GatewayReturn.php';
-$res=achbotNpReconcileBatch($connection,['nowpayment'=>'offline-synthetic'],5);
-function ipn(mysqli $db,string $hash,string $child,string $status): int {
- $payload=['payment_id'=>$child,'invoice_id'=>$hash.'-invoice',
-   'order_id'=>$hash,'payment_status'=>$status,
-   'price_amount'=>'1','price_currency'=>'usd'];
- $raw=json_encode($payload,JSON_THROW_ON_ERROR|JSON_UNESCAPED_SLASHES);
- $canonical=json_encode(achbotNpSortedPayload($payload),
-   JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES);
- return achbotNpIngestIpn($db,'isolated-owned-review-ipn',
-   $raw,hash_hmac('sha512',$canonical,'isolated-owned-review-ipn'));
+for($i=1;$i<=2;$i++) {
+ $q=$db->prepare("INSERT INTO payment_transactions
+ (attempt_id,provider,payment_id,observed_status)
+ VALUES (?,'nowpayments',?,'unconfirmed')");
+ $payment='provider-payment-'.$i.'-'.str_repeat('z',90);
+ $q->bind_param('is',$long,$payment);$q->execute();$q->close();
 }
-// Signed funded child AFTER the operator journal COMMIT, BEFORE its original
-// effect executes: no stage or provider-status clobber, no second execution.
-if(ipn($connection,'operator-inflight','operator-inflight-extra','confirming')!==200 ||
-   ipn($connection,'operator-inflight','operator-inflight-extra','finished')!==200 ||
-   ipn($connection,'operator-inflight','operator-inflight-extra','waiting')!==200)
- throw new RuntimeException('signed_operator_inflight_ipn_not_accepted');
-$claim=$connection->query("SELECT stage,provider_status FROM payment_attempts
- WHERE order_hash='operator-inflight'")->fetch_assoc();
-if(($claim['stage']??'')!=='fulfilling' ||
-   ($claim['provider_status']??'')!=='operator_verified_finished')
- throw new RuntimeException('signed_ipn_clobbered_operator_claim');
-// Signed post-COMMIT child on a PAID terminal wallet remains independent
-// financial evidence and never rearms the paid original.
-if(ipn($connection,'approve-pass','approve-pass-second','finished')!==200 ||
-   ipn($connection,'approve-pass','approve-pass-second','waiting')!==200)
- throw new RuntimeException('postpaid_signed_ipn_not_accepted');
-$paid=$connection->query("SELECT a.stage,a.provider_status,p.state FROM payment_attempts a
- JOIN pays p ON p.id=a.pay_row_id WHERE a.order_hash='approve-pass'")->fetch_assoc();
-if(($paid['state']??'')!=='paid' || ($paid['stage']??'')!=='done')
- throw new RuntimeException('signed_ipn_reopened_paid_wallet');
-$child=$connection->query("SELECT observed_status FROM payment_transactions
- WHERE payment_id='approve-pass-second'")->fetch_assoc();
-if(($child['observed_status']??'')!=='finished')
- throw new RuntimeException('out_of_order_ipn_erased_secondary_funds');
-$q=$connection->query("SELECT a.stage,a.provider_status,p.state FROM payment_attempts a
- JOIN pays p ON p.id=a.pay_row_id WHERE a.order_hash='operator-inflight'");
-$row=$q->fetch_assoc();
-if(!$row || $row['stage']!=='fulfilling' ||
-   $row['provider_status']!=='operator_verified_finished' ||
-   $row['state']!=='pending' || $res['completed']!==0 || $res['review']!==0)
- throw new RuntimeException('concurrent_cron_clobbered_operator_fulfillment');
-ob_start();
-showForm('internal-agent-must-not-render','internal',true,'review');
-$html=ob_get_clean();
-if($html!=='' || headers_list())
- throw new RuntimeException('internal_payment_page_leaked_to_webhook');
-echo json_encode(['cron_operator_claim_survived'=>true,
- 'signed_ipn_operator_claim_survived'=>true,
- 'signed_ipn_postpaid_primary_preserved'=>true,
- 'signed_ipn_out_of_order_secondary_preserved'=>true,
- 'internal_payment_page_suppressed'=>true],JSON_THROW_ON_ERROR);
+$pendingLong=seed($db,327,'nowpayments','pending',null,null,100000,30000);
+$q=$db->prepare('UPDATE pays SET description=? WHERE id=327');
+$q->bind_param('s',$description);$q->execute();$q->close();
+
+$j=seed($db,309,'nowpayments','review','confirmed','confirmed');
+$q=$db->prepare("INSERT INTO payment_transactions
+ (attempt_id,provider,payment_id,observed_status)
+ VALUES (?,'nowpayments','different-child','finished')");
+$q->bind_param('i',$j);$q->execute();$q->close();
+check(achbotGatewayReviewEligible($db,$j,'approve')===null,
+ 'second_funded_child_blocks_single_order_claim');
+
+// Set up the isolated two-session Archive-vs-admission barrier test.
+$raceAttempt=seed($db,322,'nextpay','review','fulfillment_failed');
+stalePaid($db,322,$raceAttempt);
+$raceEffect=reserveEffect($db,322,1,'native_waits_before_dispatch');
+check($db->query("SELECT state FROM service_effects WHERE id=$raceEffect")
+ ->fetch_row()[0]==='reserved',
+ 'real_race_fixture_reserved_before_archive');
+$balanceAfter=(int)$db->query('SELECT wallet FROM users WHERE userid=1001')->fetch_row()[0];
+check($balanceAfter===$balance+100000,
+ 'only_one_wallet_credit_despite_replays_and_failures');
+check(count($GLOBALS['events'])===2,'only_approved_and_failed_original_effects_invoked');
+check((int)$db->query("SELECT COUNT(*) FROM information_schema.TABLES
+ WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='payment_review_decisions'")
+ ->fetch_row()[0]===0,'no_dedicated_review_table_created');
+echo json_encode([
+ 'complete'=>true,'checks'=>$GLOBALS['checks'],'owned_mariadb'=>true,
+ 'real_review_decision_source'=>true,'test_effect_is_synthetic'=>true,
+ 'provider_http_calls'=>0,'telegram_calls'=>0,'audit_exactly_once'=>true,
+ 'financial_double_credit'=>false,'existing_attempt_only'=>true,
+ 'race_effect_id'=>$raceEffect,'race_attempt_id'=>$raceAttempt,
+ 'live_effect_id'=>$liveEffect,'live_attempt_id'=>$live,
+ 'long_case_id'=>326,'pending_case_id'=>327],
+ JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE);
 '''
-INBOX=r'''<?php
-error_reporting(E_ALL & ~E_DEPRECATED);
-set_error_handler(static function($l,$t){if($l===E_DEPRECATED)return true;throw new ErrorException($t,0,$l);});
+PHP_CASE = r"""<?php
 $_SERVER['SCRIPT_FILENAME']=__FILE__;
-$root=$argv[1];$db=new mysqli('localhost','root','',$argv[3],0,$argv[2]);
+$root=$argv[1];$socket=$argv[2];$dbName=$argv[3];
+$payId=(int)$argv[4];$mode=$argv[5];
+$db=new mysqli('localhost','root','',$dbName,0,$socket);
 $db->set_charset('utf8mb4');
-require_once $root.'/src/Finance/RecoveryInspection.php';
-// An authentically verified hosted charge can be pending local finalization.
-$db->query("INSERT INTO pays(id,hash_id,user_id,type,price,request_date,state)
-    VALUES(206,'nextpay-funds',1001,'INCREASE_WALLET',100000,UNIX_TIMESTAMP(),'pending'),
-          (207,'manual-evidence',1001,'BUY_SUB',100000,UNIX_TIMESTAMP(),'have_sent'),
-          (208,'np-unfunded',1001,'INCREASE_WALLET',100000,UNIX_TIMESTAMP(),'pending')");
-$db->query("UPDATE pays SET message_id=112,chat_id=9001 WHERE id=207");
-$db->query("INSERT INTO payment_attempts
-   (pay_row_id,provider,order_hash,quote_amount,quote_currency,
-    local_amount_toman,stage,provider_status)
-    VALUES(206,'nextpay','nextpay-funds',100000,'irr',100000,'review','fulfillment_started'),
-          (207,'bank_transfer','manual-evidence',100000,'irr',100000,'review','receipt_pending'),
-          (208,'nowpayments','np-unfunded',1,'usd',100000,'review','waiting')");
-$rows=achbotRecoveryAttentionCases($db);
-$ids=array_map(static fn(array $r)=>(int)$r['id'],$rows);
-foreach([203,204,205,206,207,221] as $id)
- if(!in_array($id,$ids,true))throw new RuntimeException('missing_funded_review_'.$id);
-foreach([201,202,208] as $id)
- if(in_array($id,$ids,true))throw new RuntimeException('wrong_review_inclusion_'.$id);
-$hostedUnknown=achbotRecoveryAttentionCase($db,221);
-if (!$hostedUnknown || $hostedUnknown['state']!=='pending' ||
-    $hostedUnknown['attempt']['provider_status']!=='operator_fulfillment_unconfirmed')
- throw new RuntimeException('hosted_unknown_preclaim_dropped_from_attention');
-$extra=achbotRecoveryAdditionalFundsCases($db);
-$extraIds=array_map(static fn($r)=>(int)$r['id'],$extra);
-foreach([201,205,210,215] as $id)
- if(!in_array($id,$extraIds,true))
-   throw new RuntimeException('missing_quiet_funded_exception_'.$id);
-if(in_array(202,$extraIds,true))
- throw new RuntimeException('refunded_primary_not_unresolved_exception');
-foreach([210,215] as $id) {
- $case=achbotRecoveryAdditionalFundsCase($db,$id);
- if(!$case || $case['state']!=='declined' || $case['attempt']['provider']!=='nowpayments'
-    || $case['attempt']['provider_status']!=='operator_rejected')
-  throw new RuntimeException('rejected_primary_not_owner_inspectable_'.$id);
+$connection=$db;$GLOBALS['connection']=$db;
+$admin=9001;$from_id=9001;$chat_id=9001;$message_id=73;
+$callbackId='fixture-gateway-detail';$botState=[];
+$data='attentionCase_'.$payId;
+$GLOBALS['case_edits']=[];$GLOBALS['case_sent']=[];
+function editText($id,$text,$markup,$mode,$chat) {
+ $GLOBALS['case_edits'][]=['text'=>$text,'markup'=>$markup,'parse'=>$mode];
+ return (object)['ok'=>($GLOBALS['case_mode']??'')!=='fallback'];
 }
-// Simulate a later authenticated refund as a saved UNIQUE merchant-child update.
-// Once that primary is genuinely refunded, the exception must close without
-// touching the rejected business order or unspent wallet balance.
-$refundedAttempt=(int)$db->query('SELECT id FROM payment_attempts WHERE pay_row_id=210')
-  ->fetch_row()[0];
-$db->query("UPDATE payment_transactions SET observed_status='refunded'
- WHERE attempt_id=".$refundedAttempt." AND BINARY payment_id='owner-reject-child'");
-$afterRefundIds=array_map(static fn($r)=>(int)$r['id'],
-  achbotRecoveryAdditionalFundsCases($db));
-$originalAfterRefund=$db->query('SELECT state FROM pays WHERE id=210')->fetch_row()[0];
-if(achbotRecoveryAdditionalFundsCase($db,210)!==null ||
-    in_array(210,$afterRefundIds,true) || $originalAfterRefund!=='declined')
- throw new RuntimeException('refund_evidence_must_close_original_financial_exception');
-if(achbotRecoveryAdditionalFundsCase($db,215)===null)
- throw new RuntimeException('other_funded_exception_must_remain_open');
-if(in_array(202,$extraIds,true))
- throw new RuntimeException('unfunded_not_exception');
-$paidExtra=achbotRecoveryAdditionalFundsCase($db,201);
-if(!$paidExtra || ($paidExtra['state']??'')!=='paid')
- throw new RuntimeException('terminal_primary_exception_not_inspectable');
-echo json_encode(['inbox_only_unfinalized_with_funds_or_receipt'=>true,
-  'api_module_loaded_on_first_entry'=>function_exists('achbotApiPaymentReady'),
-  'additional_funds_paid_and_inflight_visible'=>true,
-  'rejected_funded_primary_visible_without_reopening'=>true,
-  'real_refund_evidence_closes_rejected_primary_exception'=>true,
-  'examined'=>count($ids)],JSON_THROW_ON_ERROR);
-'''
-if __name__=='__main__':main()
+function sendMessage($text,$markup,$parse,$chat) {
+ $GLOBALS['case_sent'][]=['text'=>$text,'markup'=>$markup,'parse'=>$parse];
+ return (object)['ok'=>true];
+}
+function answerCallbackQuery(...$args) {return true;}
+$GLOBALS['case_mode']=$mode;
+require $root.'/src/Finance/Routes/AutomaticGatewayReview.php';
+$edits=$GLOBALS['case_edits'];$sent=$GLOBALS['case_sent'];
+$final=$mode==='fallback' ? ($sent[0]??null):($edits[0]??null);
+if (!$final)throw new RuntimeException('case_not_delivered');
+$plain=html_entity_decode(strip_tags($final['text']),ENT_QUOTES|ENT_HTML5,'UTF-8');
+$chars=preg_match_all('/./us',$plain);
+$astral=preg_match_all('/[\x{10000}-\x{10FFFF}]/u',$plain);
+$keyboard=json_decode($final['markup'],true,64,JSON_THROW_ON_ERROR);
+$callbacks=[];
+foreach($keyboard['inline_keyboard'] as $line)
+ foreach($line as $button)$callbacks[]=$button['callback_data'];
+echo json_encode([
+ 'complete'=>true,'units'=>$chars+$astral,
+ 'max'=>4096,'valid_utf8'=>preg_match('//u',$plain)===1,
+ 'balanced_html'=>substr_count($final['text'],'<code>')===
+   substr_count($final['text'],'</code>'),
+ 'truncated'=>str_contains($plain,'بخش‌هایی از متن نمایشی طولانی کوتاه'),
+ 'description_too_long_unmodified_in_storage'=>
+   (int)$db->query("SELECT CHAR_LENGTH(description) FROM pays WHERE id=$payId")->fetch_row()[0]>=4900,
+ 'text'=>$plain,'callbacks'=>$callbacks,
+ 'edit_count'=>count($edits),'send_count'=>count($sent),'parse'=>$final['parse']
+],JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE);
+"""
+
+PHP_SCOPE = r"""<?php
+$_SERVER['SCRIPT_FILENAME']=__FILE__;
+$root=$argv[1];$socket=$argv[2];
+require_once $root.'/src/Finance/GatewayClient.php';
+$a=new mysqli('localhost','root','',$argv[3],0,$socket);
+$b=new mysqli('localhost','root','',$argv[4],0,$socket);
+$first=achbotHostedWorkerLockName($a,1);
+$second=achbotHostedWorkerLockName($b,1);
+if (hash_equals($first,$second))throw new RuntimeException('cross_bot_lock_collision');
+$q=$a->prepare('SELECT GET_LOCK(?,0) AS acquired');
+$q->bind_param('s',$first);$q->execute();
+$heldA=(int)$q->get_result()->fetch_assoc()['acquired'];$q->close();
+$q=$b->prepare('SELECT GET_LOCK(?,0) AS acquired');
+$q->bind_param('s',$second);$q->execute();
+$heldB=(int)$q->get_result()->fetch_assoc()['acquired'];$q->close();
+$q=$a->prepare('SELECT RELEASE_LOCK(?)');
+$q->bind_param('s',$first);$q->execute();$q->close();
+$q=$b->prepare('SELECT RELEASE_LOCK(?)');
+$q->bind_param('s',$second);$q->execute();$q->close();
+echo json_encode(['separate'=>$heldA===1 && $heldB===1]);
+"""
+
+PHP_RACE = r"""<?php
+$_SERVER['SCRIPT_FILENAME']=__FILE__;
+$root=$argv[1];$socket=$argv[2];$dbName=$argv[3];
+$effectId=(int)$argv[4];$attemptId=(int)$argv[5];$mode=$argv[6];
+$ready=$argv[7];$release=$argv[8];
+$db=new mysqli('localhost','root','',$dbName,0,$socket);
+$db->set_charset('utf8mb4');
+function achbotPayUxHostedAttentionSeconds(){return 3600;}
+require_once $root.'/src/Finance/GatewayReview.php';
+require_once $root.'/src/Finance/ServiceEffects.php';
+if ($mode==='hold') {
+ $q=$db->prepare('SELECT pay_row_id FROM service_effects WHERE id=?');
+ $q->bind_param('i',$effectId);$q->execute();
+ $pay=$q->get_result()->fetch_assoc();$q->close();
+ if (!$pay || (int)$pay['pay_row_id']<=0)
+  throw new RuntimeException('no_fixture_hosted_owner');
+ $name=achbotHostedWorkerLockName($db,(int)$pay['pay_row_id']);
+ $q=$db->prepare('SELECT GET_LOCK(?,0) AS acquired');
+ $q->bind_param('s',$name);$q->execute();
+ $acquired=$q->get_result()->fetch_assoc();$q->close();
+ if ((int)($acquired['acquired']??0)!==1)
+  throw new RuntimeException('effect_live_lock_unavailable');
+ file_put_contents($ready,'live_worker_owns_dispatch_lease');
+ $limit=microtime(true)+15;
+ while (!file_exists($release) && microtime(true)<$limit) usleep(10000);
+ // Termination/crash also releases this session lock automatically.
+ $result='worker_finished';
+} elseif ($mode==='admit') {
+ file_put_contents($ready,'reserved_before_http');
+ $limit=microtime(true)+15;
+ while (!file_exists($release) && microtime(true)<$limit) usleep(10000);
+ if (!file_exists($release)) throw new RuntimeException('barrier_release_timeout');
+ try {achbotEffectAdmitPaidDispatch($db,$effectId);$result='admitted';}
+ catch(Throwable $error) {$result=$error->getMessage();}
+} elseif ($mode==='archive') {
+ $result=achbotGatewayReviewArchive($db,9001,$attemptId,9001);
+} else throw new RuntimeException('invalid_race_role');
+echo json_encode(['result'=>$result],JSON_THROW_ON_ERROR);
+"""
+
+def main():
+    parser=argparse.ArgumentParser()
+    parser.add_argument("--run-disposable",action="store_true",required=True)
+    parser.add_argument("--report",type=Path)
+    args=parser.parse_args()
+    with fx.owned_database() as (d,env):
+        client=["mariadb","--no-defaults","--protocol=SOCKET",
+                "--socket="+str(d/"mysql.sock"),"-uroot",DB]
+        for filename in ["003_payment_attempts.sql","007_service_effects.sql", "018_payment_delivery_intents.sql", "022_gateway_review_archive.sql"]:
+            sql=(ROOT/"migrations/post-v9"/filename).read_bytes()
+            result=subprocess.run(client,input=sql,env=env,capture_output=True,timeout=15)
+            if result.returncode:raise RuntimeError(result.stderr.decode(errors='replace')[-1400:])
+        # Current 012 provider schema has a nullable 007 status display field.
+        # Only that read-only field is necessary for the isolated case fixture.
+        provider_col=subprocess.run(client+["-e",
+            "ALTER TABLE service_effects ADD provider_state VARCHAR(32) DEFAULT NULL"],
+            env=env,capture_output=True,text=True,timeout=10)
+        if provider_col.returncode:raise RuntimeError(provider_col.stderr)
+        scope_script=d/"gateway-lock-scope.php"
+        scope_script.write_text(PHP_SCOPE)
+        scope=subprocess.run(["php",str(scope_script),str(ROOT),str(d/"mysql.sock"),
+            fx.NAMES[0],fx.NAMES[1]],env=env,capture_output=True,text=True,timeout=12)
+        if scope.returncode or scope.stderr or not json.loads(scope.stdout)["separate"]:
+            raise RuntimeError("Two independent bot DB leases collided: "+scope.stderr+scope.stdout)
+        script=d/"gateway-review-fixture.php"
+        script.write_text(PHP)
+        proc=subprocess.run(["php","-d","allow_url_fopen=0",
+            "-d","disable_functions=curl_init,curl_exec,exec,shell_exec,system,passthru,popen,proc_open,mail",
+            str(script),str(ROOT),str(d/"mysql.sock"),DB],
+            env=env,capture_output=True,text=True,timeout=50)
+        if proc.returncode:
+            raise RuntimeError("PHP gateway review fixture: "+
+                proc.stderr[-2400:]+proc.stdout[-1200:])
+        allowed="achbot_gateway_review_effect_unknown pay_id=308 class=RuntimeException"
+        if proc.stderr.strip()!=allowed:
+            raise RuntimeError("Unexpected PHP log: "+proc.stderr[-2400:])
+        output=json.loads(proc.stdout)
+        output["checks"].append("independent_bot_databases_do_not_share_payment_leases")
+        # The actual source gate waits after a durable line reservation.
+        # Another connection Archives while the worker is paused before
+        # dispatch. The resumed worker must not admit a new Native operation.
+        race_script=d/"gateway-race.php"
+        race_script.write_text(PHP_RACE)
+        ready=d/"race-ready";release=d/"race-release"
+        common=["php","-d","allow_url_fopen=0",
+            "-d","disable_functions=curl_init,curl_exec,exec,shell_exec,system,passthru,popen,proc_open,mail",
+            str(race_script),str(ROOT),str(d/"mysql.sock"),DB,
+            str(output["race_effect_id"]),str(output["race_attempt_id"])]
+        worker=subprocess.Popen(common+["admit",str(ready),str(release)],
+            env=env,cwd=ROOT,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
+        try:
+            import time
+            until=time.monotonic()+8
+            while not ready.exists() and time.monotonic()<until:
+                if worker.poll() is not None: raise RuntimeError("Admission worker exited early")
+                time.sleep(0.02)
+            if not ready.exists():raise RuntimeError("Admission barrier missing")
+            archived=subprocess.run(common+["archive",str(ready),str(release)],
+                env=env,cwd=ROOT,capture_output=True,text=True,timeout=10)
+            if archived.returncode or archived.stderr or json.loads(archived.stdout)["result"]!="archived":
+                raise RuntimeError("Concurrent Archive did not commit: "+archived.stderr+archived.stdout)
+            release.write_text("go")
+            stdout,stderr=worker.communicate(timeout=12)
+            if worker.returncode or stderr or json.loads(stdout)["result"]!="effect_original_archived":
+                raise RuntimeError("Post-Archive Native admission was not denied: "+stderr+stdout)
+            check=subprocess.run(client+["-e","SELECT state FROM service_effects WHERE id="+str(output["race_effect_id"])],
+                env=env,capture_output=True,text=True,timeout=5)
+            if check.returncode or "reserved" not in check.stdout:
+                raise RuntimeError("Archive race changed reserved original effect")
+        finally:
+            if worker.poll() is None:
+                worker.terminate()
+                try:worker.wait(timeout=3)
+                except subprocess.TimeoutExpired:worker.kill();worker.wait(timeout=3)
+        # A second real MariaDB session holds the dispatch lease while its
+        # worker is alive. Archive must report BUSY, not terminal success.
+        # Killing only our own synthetic worker proves that session teardown
+        # releases the lease and a stale 007 dispatching row can be archived.
+        liveReady=d/"live-ready";liveRelease=d/"live-release"
+        live=["php","-d","allow_url_fopen=0",
+            "-d","disable_functions=curl_init,curl_exec,exec,shell_exec,system,passthru,popen,proc_open,mail",
+            str(race_script),str(ROOT),str(d/"mysql.sock"),DB,
+            str(output["live_effect_id"]),str(output["live_attempt_id"])]
+        liveWorker=subprocess.Popen(live+["hold",str(liveReady),str(liveRelease)],
+            env=env,cwd=ROOT,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
+        try:
+            until=time.monotonic()+8
+            while not liveReady.exists() and time.monotonic()<until:
+                if liveWorker.poll() is not None:
+                    raise RuntimeError("Live dispatch lease worker exited early")
+                time.sleep(0.02)
+            if not liveReady.exists():raise RuntimeError("Live lease barrier missing")
+            blocked=subprocess.run(live+["archive",str(liveReady),str(liveRelease)],
+                env=env,cwd=ROOT,capture_output=True,text=True,timeout=10)
+            if blocked.returncode or blocked.stderr or json.loads(blocked.stdout)["result"]!="busy":
+                raise RuntimeError("True active dispatch was not guarded: "+blocked.stderr+blocked.stdout)
+            liveWorker.terminate()
+            liveWorker.communicate(timeout=8)
+            closed=subprocess.run(live+["archive",str(liveReady),str(liveRelease)],
+                env=env,cwd=ROOT,capture_output=True,text=True,timeout=10)
+            if closed.returncode or closed.stderr or json.loads(closed.stdout)["result"]!="archived":
+                raise RuntimeError("Stale dispatch remained unarchivable: "+closed.stderr+closed.stdout)
+            verify=subprocess.run(client+["-N","-e",
+                "SELECT CONCAT(p.state,'|',a.stage,'|',a.provider_status,'|',e.state,'|',"
+                "IFNULL(e.order_id,'NULL'),'|',IF(a.review_archived_at IS NULL,'open','archived')) "
+                "FROM pays p JOIN payment_attempts a ON a.pay_row_id=p.id "
+                "JOIN service_effects e ON e.pay_row_id=p.id "
+                "WHERE e.id="+str(output["live_effect_id"])],
+                env=env,capture_output=True,text=True,timeout=5)
+            if verify.returncode or verify.stdout.strip()!="paid|review|fulfillment_failed|dispatching|NULL|archived":
+                raise RuntimeError("Archive modified original money/Native evidence: "+verify.stdout+verify.stderr)
+            output["checks"].extend([
+                "true_active_native_dispatch_refuses_archive_without_mutation",
+                "worker_exit_releases_session_lease_and_allows_terminal_archive",
+                "unknown_native_effect_and_original_financial_status_immutable_after_archive",
+            ])
+        finally:
+            if liveWorker.poll() is None:
+                liveWorker.terminate()
+                try:liveWorker.wait(timeout=3)
+                except subprocess.TimeoutExpired:liveWorker.kill();liveWorker.wait(timeout=3)
+        # Execute the ACTUAL Telegram case route, with the real original
+        # 003/007 rows and a near-maximal persisted description. Use the same
+        # full HTML body and buttons for edit success and send fallback.
+        case_script=d/"gateway-case.php"
+        case_script.write_text(PHP_CASE)
+        for pay_id,mode in [(output["long_case_id"],"edit"),
+                            (output["long_case_id"],"fallback"),
+                            (output["pending_case_id"],"edit")]:
+            result=subprocess.run(["php","-d","allow_url_fopen=0",
+                "-d","disable_functions=curl_init,curl_exec,exec,shell_exec,system,passthru,popen,proc_open,mail",
+                str(case_script),str(ROOT),str(d/"mysql.sock"),DB,str(pay_id),mode],
+                env=env,cwd=ROOT,capture_output=True,text=True,timeout=25)
+            if result.returncode or result.stderr:
+                raise RuntimeError("Actual Telegram case route failed: "+
+                    result.stderr[-2400:]+result.stdout[-1200:])
+            case=json.loads(result.stdout)
+            if not (case["complete"] and case["valid_utf8"] and
+                    case["balanced_html"] and case["truncated"] and
+                    case["description_too_long_unmodified_in_storage"] and
+                    0<case["units"]<=4096 and case["parse"]=="HTML" and
+                    "attentionInbox" in case["callbacks"]):
+                raise RuntimeError("Bounded case failed: "+str(case)[:1000])
+            if pay_id==output["long_case_id"]:
+                if not (any(key.startswith("gatewayReview_H_") for key in case["callbacks"]) and
+                        all(part in case["text"] for part in [
+                            "شناسه عددی مشتری", "مبلغ سفارش", "شناسه صورتحساب",
+                            "آخرین وضعیت","عملیات سرویس", "اثر", "ردیف 5"])):
+                    raise RuntimeError("Case lost original/Native evidence: "+str(case)[:1000])
+            else:
+                if not (all(any(key.startswith(prefix) for key in case["callbacks"])
+                            for prefix in ("gatewayReview_A_","gatewayReview_R_","gatewayReview_H_"))):
+                    raise RuntimeError("Original approve/reject/archive buttons missing")
+            if mode=="fallback":
+                if case["edit_count"]!=1 or case["send_count"]!=1:
+                    raise RuntimeError("Edit failure did not send one bounded fallback")
+            elif case["edit_count"]!=1 or case["send_count"]!=0:
+                raise RuntimeError("Edit successful but fallback was incorrectly used")
+        output["checks"].extend([
+            "maximal_original_description_kept_in_database_html_case_bounded",
+            "five_native_lines_and_original_payment_evidence_kept",
+            "real_telegram_edit_and_fallback_both_deliver_legal_html_text",
+            "approve_reject_archive_back_buttons_survive_original_case_budget",
+        ])
+        if not output.get("complete") or len(output["checks"])<16:
+            raise RuntimeError("Incomplete original-attempt review checks")
+        if args.report:args.report.write_text(json.dumps(output,indent=2,ensure_ascii=False)+"\n")
+        print(json.dumps({k:v for k,v in output.items() if k!="checks"}))
+if __name__=="__main__":
+    main()

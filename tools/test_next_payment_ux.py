@@ -84,7 +84,7 @@ def check():
     checks=[]
     with owned.owned_database() as (w,e):
         purchase.init(w,e,'http://127.0.0.1:9')
-        for name in ['001_marzban_panel_group_id.sql','003_payment_attempts.sql','004_automatic_renewal_attempts.sql','006_payment_message_refs.sql','007_service_effects.sql']:
+        for name in ['001_marzban_panel_group_id.sql','003_payment_attempts.sql','004_automatic_renewal_attempts.sql','006_payment_message_refs.sql','007_service_effects.sql','022_gateway_review_archive.sql']:
             sql(w,e,(ROOT/'migrations/post-v9'/name).read_text())
         app=w/'app';stages.stage_source(app,True);(app/'config.php').write_text('<?php // no production bootstrap\n')
         future=int(time.time())+86400*30
@@ -174,77 +174,117 @@ def check():
         assert purchase.snapshot(w,e,DB)==before
         checks.append('expired_status_no_payment_action_foreign_status_private_persisted_reference_no_duplicate')
         driver=w/'recovery-driver.php';driver.write_text(recovery.DRIVER)
-        # Run the ACTUAL source attention callbacks with no remote transport.
+        # The new inbox deliberately excludes manually reviewed receipts and
+        # finalized/paid Native service cases; it is ONLY for automatic-gateway
+        # invoices with a recorded original provider claim.
         recovery.ROOT=app
-        historic=pay(w,e,'historicalpaid',state='paid')
-        completed=pay(w,e,'completedpaid',state='paid',provider='nextpay',stage='done',status='fulfilled')
-        recorded=recovery.create_case(w,e,'completed-create',state='paid',effect_state='local_recorded',method=None)
-        unresolved=recovery.create_case(w,e,'unresolved-create',state='paid',effect_state='dispatching',method=None)
-        ids=[]
-        for n,kind in enumerate(['BUY_SUB','RENEW_ACCOUNT','INCREASE_DAY_41_1','INCREASE_VOLUME_41_51','INCREASE_WALLET']):
-            ids.append(pay(w,e,'uncertain'+str(n),kind,state='paid',provider='zarinpal',order=41 if n in (1,2,3) else 0))
-        wallet_uncertain=pay(w,e,'wallet-volume-hold','INCREASE_VOLUME_41_51',state='processing_wallet',order=41)
-        manual=pay(w,e,'manualreview','INCREASE_WALLET',state='have_sent',provider='bank_transfer',status='receipt_received')
-        # A human receipt must have a persisted original Telegram
-        # message to be actionable; an arbitrary have_sent label is not proof.
-        sql(w,e,f"UPDATE pays SET message_id=501,chat_id=9001 WHERE id={manual}")
-        auto=pay(w,e,'autorenew','RENEW_ACCOUNT',state='processing_wallet',order=41)
-        sql(w,e,f"INSERT INTO automatic_renewal_attempts (order_id,cycle_expire,pay_row_id,user_id,plan_id,server_id,account_remark,price_toman,duration_days,volume_gb,new_expire,stage,reason_code) VALUES (41,1,{auto},1001,7,2,'fixture41',100,30,2,{future},'review','remote_unconfirmed')")
-        sql(w,e,"INSERT INTO payment_transactions(attempt_id,provider,payment_id,observed_status) SELECT id,provider,'local-child-proof','finished' FROM payment_attempts WHERE order_hash='uncertain4'")
+        manual=pay(w,e,'manualreview','INCREASE_WALLET',state='have_sent',
+            provider='bank_transfer',status='receipt_received')
+        terminal=pay(w,e,'alreadydone',state='paid',provider='zarinpal',
+            stage='done',status='delivered')
+        native=pay(w,e,'paidnative',state='paid',provider='nextpay',
+            stage='review',status='fulfillment_unconfirmed')
+        gateway=pay(w,e,'auto-uncertain','INCREASE_WALLET',state='pending',
+            provider='zarinpal',stage='review',status='verification_uncertain')
+        sql(w,e,f"UPDATE pays SET payid='fixture-zarinpal-authority' WHERE id={gateway}; "
+                f"UPDATE payment_attempts SET provider_reference='fixture-zarinpal-authority' "
+                f"WHERE pay_row_id={gateway}")
+        unknown=pay(w,e,'failed-original','INCREASE_WALLET',state='pending',
+            provider='nextpay',stage='review',status='operator_fulfillment_unconfirmed')
+        held=pay(w,e,'held-native','BUY_SUB',state='processing',
+            provider='nowpayments',stage='review',status='fulfillment_failed')
+        sql(w,e,f"UPDATE payment_attempts SET updated_at=NOW()-INTERVAL 11 MINUTE "
+            f"WHERE pay_row_id={held}")
         before=purchase.snapshot(w,e,DB)
-        r=recovery.call(w,e,driver,op='route',callback='attentionInbox')
-        keys={b['callback_data'] for row in event(r,'EDIT')[0]['buttons']['inline_keyboard'] for b in row}
-        assert not ({f'attentionCase_{historic}',f'attentionCase_{completed}',f'attentionCase_{recorded}'} & keys)
-        assert f'attentionCase_{manual}' in keys,('original_receipt_missing',keys,manual)
-        assert not ({f'attentionCase_{i}' for i in ids+[auto,unresolved,wallet_uncertain]} & keys),(
-            'finalized_or_service_only_leaked_to_finance_review',keys,ids,manual,auto,r)
-        checks.append('payment_review_quiet_includes_actual_manual_receipt_excludes_terminal_service_only')
-        # The former broad inbox also carried paid native failures and
-        # reserved automatic-renewal money. Moving those out of the payment
-        # inbox must NOT make their local audit cases invisible.
-        technical=recovery.call(w,e,driver,op='route',callback='serviceRecoveryInbox')
-        techkeys={b['callback_data'] for row in event(technical,'EDIT')[0]['buttons']['inline_keyboard'] for b in row}
-        assert all(f'serviceRecoveryCase_{i}' in techkeys
-                   for i in ids+[auto,unresolved,wallet_uncertain]),(
-            'missing_native_or_renewal_recovery',techkeys,ids,auto,unresolved,wallet_uncertain)
-        assert not ({f'serviceRecoveryCase_{i}' for i in
-                     [historic,completed,recorded,manual]} & techkeys),(
-            'completed_or_payment_only_in_service_queue',techkeys)
-        checks.append('service_recovery_preserves_unresolved_native_and_automatic_renewal_visibility')
-        auto_case=recovery.call(w,e,driver,op='route',callback=f'serviceRecoveryCase_{auto}')
-        assert event(auto_case,'EDIT') and not event(auto_case,'GET'),auto_case
-        assert 'remote_unconfirmed' in event(auto_case,'EDIT')[0]['text']
-        delegated=recovery.call(w,e,driver,op='route',callback=f'serviceRecoveryCase_{auto}',
-                                  actor=9002,chat=9002)
-        # 9002 is current Operator in this source-real fixture; it has the
-        # same review permission as a payment reviewer, but viewing remains
-        # local and cannot silently create Native or send customer Telegram.
-        assert event(delegated,'EDIT') and not event(delegated,'GET') and not event(delegated,'SEND'),delegated
-        assert 'remote_unconfirmed' in event(delegated,'EDIT')[0]['text']
-        denied=recovery.call(w,e,driver,op='route',callback=f'serviceRecoveryCase_{auto}',
-                              actor=1001,chat=1001)
-        assert event(denied,'ACK') and not event(denied,'EDIT') and not event(denied,'SEND')
-        assert purchase.snapshot(w,e,DB)==before
-        checks.append('service_recovery_private_current_payments_reviewer_local_diagnostics_no_mutation')
-        specialist=recovery.call(w,e,driver,op='list')['value']
-        assert historic not in [int(x['id']) for x in specialist] and recorded not in [int(x['id']) for x in specialist]
-        assert unresolved in [int(x['id']) for x in specialist]
-        for target in [historic]+ids+[auto]:
-            r=recovery.call(w,e,driver,op='route',callback=f'attentionCase_{target}')
-            text=event(r,'EDIT')[0]['text'];assert 'وصول وجه اثبات نشده' not in text
-            if target==historic:assert 'نبود آن نشانه' in text
-            if target==ids[-1]:assert 'local-child-proof' in text and 'موجودی فعلی' in text
-            if target==ids[2]:assert 'دفتر CREATE' in text
-            if target==auto:assert 'remote_unconfirmed' in text and 'سند تمدید خودکار' in text
-            assert not event(r,'GET')
+        inbox=recovery.call(w,e,driver,op='route',callback='attentionInbox')
+        cards=event(inbox,'EDIT')
+        assert len(cards)==1 and 'پرداخت‌های خودکار نیازمند بررسی' in cards[0]['text'],inbox
+        keys={b['callback_data'] for row in cards[0]['buttons']['inline_keyboard'] for b in row}
+        assert f'attentionCase_{gateway}' in keys,('missing_automatic_case',keys)
+        assert all(f'attentionCase_{i}' in keys for i in (unknown,held)),keys
+        assert all(f'attentionCase_{i}' not in keys for i in (manual,terminal,native)),keys
+        checks.append('only_incomplete_automatic_gateways_appear_no_receipts_or_paid_service')
+        for payid in (unknown,held):
+            blocked=recovery.call(w,e,driver,op='route',callback=f'attentionCase_{payid}')
+            edits=event(blocked,'EDIT')
+            assert len(edits)==1 and not event(blocked,'GET'),blocked
+            controls={b['callback_data'] for row in edits[0]['buttons']['inline_keyboard']
+                for b in row}
+            assert controls=={'attentionInbox',
+                'gatewayReview_H_'+sql(w,e,
+                    f'SELECT id FROM payment_attempts WHERE pay_row_id={payid}')},controls
+            assert 'عملیات قبلی' in edits[0]['text'],edits
+        checks.append('unfinished_original_effects_readonly_but_archive_available')
+        detail=recovery.call(w,e,driver,op='route',callback=f'attentionCase_{gateway}')
+        edits=event(detail,'EDIT')
+        assert len(edits)==1 and 'زرین‌پال' in edits[0]['text'],detail
+        assert 'fixture-zarinpal-authority' in edits[0]['text']
+        assert 'شناسه عددی مشتری' in edits[0]['text']
+        choices={b['callback_data'] for row in edits[0]['buttons']['inline_keyboard'] for b in row}
+        attempt=int(sql(w,e,f'SELECT id FROM payment_attempts WHERE pay_row_id={gateway}'))
+        assert {'gatewayReview_A_'+str(attempt),'gatewayReview_R_'+str(attempt),
+                'gatewayReview_H_'+str(attempt),'attentionInbox'}.issubset(choices),choices
+        assert not event(detail,'GET') and not event(detail,'SEND'),detail
+        checks.append('original_invoice_details_and_two_evidence_aware_actions_are_local')
+        declined=recovery.call(w,e,driver,op='route',callback=f'attentionCase_{terminal}')
+        assert event(declined,'EDIT') and not event(declined,'GET')
+        assert 'دیگر نیازمند بررسی نیست' in event(declined,'EDIT')[0]['text']
+        checks.append('completed_payment_cannot_be_reopened_from_old_callback')
         for actor,chat in [(1001,1001),(9001,1001),(9002,9001)]:
-            r=recovery.call(w,e,driver,op='route',callback=f'attentionCase_{auto}',actor=actor,chat=chat)
-            assert event(r,'ACK') and not event(r,'EDIT') and not event(r,'SEND') and 'remote_unconfirmed' not in str(r)
+            private=recovery.call(w,e,driver,op='route',
+                callback=f'attentionCase_{gateway}',actor=actor,chat=chat)
+            assert event(private,'ACK') and not event(private,'EDIT') and not event(private,'SEND'),private
+        checks.append('forged_nonadmin_and_nonprivate_original_order_inbox_denied')
         assert purchase.snapshot(w,e,DB)==before
-        checks.append('owner_private_diagnostics_subject_specific_evidence_no_get_no_financial_mutation')
-        for case in [call(w,e,app,route='volume',data='increaseAVolume42'),call(w,e,app,route='status',data='ps_evidenceinvoice')]:
-            assert not any(term.lower() in str(case).lower() for term in ['SQLSTATE','mysqli','Marzban','remote_unconfirmed','fulfillment_unconfirmed'])
-        checks.append('customer_copy_redacts_diagnostics_while_authorized_admin_retains_reason')
+        checks.append('automatic_gateway_inbox_all_views_readonly_no_native_get_or_mutation')
+        # Simulate the ACTUAL operator archive callback; no native, wallet,
+        # settlement, customer message, child status or service mutation.
+        native_before=purchase.snapshot(w,e,DB)
+        original=sql(w,e,f"SELECT p.state,a.stage,a.provider_status "
+            f"FROM pays p JOIN payment_attempts a ON a.pay_row_id=p.id WHERE p.id={held}")
+        hold_attempt=sql(w,e,f'SELECT id FROM payment_attempts WHERE pay_row_id={held}')
+        rejected=recovery.call(w,e,driver,op='route',
+            callback='gatewayReview_H_'+hold_attempt,actor=1001,chat=1001)
+        assert event(rejected,'ACK') and not event(rejected,'EDIT') and not event(rejected,'SEND')
+        assert sql(w,e,f'SELECT review_archived_at IS NULL FROM payment_attempts WHERE id={hold_attempt}')=='1'
+        rejected=recovery.call(w,e,driver,op='route',
+            callback='gatewayReview_H_'+hold_attempt,actor=9001,chat=1001)
+        assert event(rejected,'ACK') and not event(rejected,'EDIT') and not event(rejected,'SEND')
+        assert sql(w,e,f'SELECT review_archived_at IS NULL FROM payment_attempts WHERE id={hold_attempt}')=='1'
+        checks.append('archive_requires_current_staff_and_private_chat')
+        archived=recovery.call(w,e,driver,op='route',
+            callback='gatewayReview_H_'+hold_attempt)
+        assert event(archived,'ACK') and len(event(archived,'EDIT'))==1,archived
+        assert 'پرونده آرشیو شد' in event(archived,'EDIT')[0]['text'],archived
+        after=sql(w,e,f"SELECT p.state,a.stage,a.provider_status "
+            f"FROM pays p JOIN payment_attempts a ON a.pay_row_id=p.id WHERE p.id={held}")
+        assert after==original,(original,after)
+        actor=sql(w,e,f'SELECT review_archived_by FROM payment_attempts WHERE id={hold_attempt}')
+        assert actor=='9001',actor
+        reopened=recovery.call(w,e,driver,op='route',callback='attentionInbox')
+        keys={b['callback_data'] for row in event(reopened,'EDIT')[0]['buttons']['inline_keyboard']
+              for b in row}
+        assert f'attentionCase_{held}' not in keys and f'attentionCase_{unknown}' in keys,keys
+        assert f'attentionCase_{gateway}' in keys,keys
+        stale=recovery.call(w,e,driver,op='route',callback=f'attentionCase_{held}')
+        assert 'دیگر نیازمند بررسی نیست' in event(stale,'EDIT')[0]['text']
+        repeated=recovery.call(w,e,driver,op='route',
+            callback='gatewayReview_H_'+hold_attempt)
+        assert 'قبلاً بررسی شده' in event(repeated,'EDIT')[0]['text']
+        assert not event(archived,'GET') and not event(archived,'SEND')
+        checks.append('operator_archive_removes_only_selected_case_without_settlement')
+        # An old/stale callback must not reopen the original case or
+        # rewrite its financial status. Actual signed IPN/Cron probes are
+        # source-real in the finance-route suite.
+        duplicate=recovery.call(w,e,driver,op='route',
+            callback='gatewayReview_H_'+hold_attempt)
+        assert 'قبلاً بررسی شده' in event(duplicate,'EDIT')[0]['text']
+        reopened=recovery.call(w,e,driver,op='route',callback='attentionInbox')
+        keys={b['callback_data'] for row in event(reopened,'EDIT')[0]['buttons']['inline_keyboard']
+              for b in row}
+        assert f'attentionCase_{held}' not in keys,keys
+        assert sql(w,e,f'SELECT review_archived_by FROM payment_attempts WHERE id={hold_attempt}')=='9001'
+        checks.append('archived_case_stays_closed_after_stale_operator_callback')
     return {'complete':True,'cases':len(checks),'scenarios':checks,'fresh_native_addon_admission':True,'unknown_native_refuses_without_draft':True,'limits':['Fake Telegram transport; no installed/operator UI acceptance','No live tenant/provider/financial effects','PHP runtime reported by invocation; aggregate PHP matrix owned by Master']}
 
 if __name__=='__main__':

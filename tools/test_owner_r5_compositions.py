@@ -317,7 +317,9 @@ SPECS=[
  spec('referral_operator','src/Finance/ReferralReward.php','assign','$operatorMsg','give_referral_reward.operator_msg.7c8cfd9d4f'),
  spec('payment_reference','src/Finance/PaymentLifecycle.php','return','return','pay_ux_reference.label.edb6e627ea'),
  spec('wallet_uncertain_effect','src/Finance/WalletSettlement.php','assign','$adminErr','process_wallet_payment.admin_err.51996ec850'),
- spec('manual_operator_review','src/Finance/Routes/ManualReceipts.php','assign','$body','manual_receipts.body.8725ef87b4'),
+ # RC26's experimental manual-review $body was removed; verify the live
+ # original-receipt decision result instead of a deleted workbench message.
+ spec('manual_receipt_decision_result','src/Finance/Routes/ManualReceipts.php','assign','$text','manual_receipt_final.result'),
  spec('manual_approved_balances','src/Finance/Routes/ManualReceipts.php','assign','$adminMessages','manual_receipts.admin_messages.31d90c5e69'),
  spec('manual_customer_wallet_credit','src/Finance/Routes/ManualReceipts.php','call','sendMessage','manual_receipts.message.f568baa065'),
  spec('broadcast_detail','src/Broadcast/Routes.php','assign','$out','pm_noop.out.94647cb3a5'),
@@ -355,7 +357,7 @@ foreach($input as$name=>$expr){$out[$name]=(static function($expr){
  'provider_reference'=>'fixture_invoice','payment_id'=>'fixture_payment','extra_evidence_count'=>0,'updated_at'=>'2026-10-29 00:00:00'];
  $reason='نیازمند بررسی';$safe=static fn($v)=>htmlspecialchars((string)$v,ENT_QUOTES|ENT_SUBSTITUTE,'UTF-8');
  $esc=$safe;$case=$a+['user_name'=>'کاربر آزمایشی','user_handle'=>'fixture_user','quote_amount'=>'2.50','quote_currency'=>'USD','stage'=>'needs_review'];
- $handle='fixture_user';$attemptId=702;$cursor=0;$methodName='بانکی';$userId=1001;$currentWallet=50000;$newWallet=50300;$hash_id='fixture_receipt';
+ $result='پرداخت تأیید شد';$handle='fixture_user';$attemptId=702;$cursor=0;$methodName='بانکی';$userId=1001;$currentWallet=50000;$newWallet=50300;$hash_id='fixture_receipt';
  $hashId='fixture_order';$uidForLog=1001;$price=300;$supportID='@fixture_support';
  $bid=801;$title='پیام نمونه';$tp='پیام';$g='همه';$dt='2026-10-29';$previewText='متن آزمایشی';$total=20;$pinned=10;$deleted=0;
  $amountText='10 درصد';$dateText='2026-11-29';$countText='10';$canUseText='1';$audienceText='همه';$targetText='همه سرویس‌ها';$minPriceText='100,000 تومان';$maxDiscountText='20,000 تومان';
@@ -419,13 +421,30 @@ def audit(source_root=ROOT,catalog_root=ROOT):
         (stage/'messages/loader.php').write_bytes((catalog_root/'messages/loader.php').read_bytes())
         for audience in ['user','admin']:
             (stage/'messages/fa'/f'{audience}.php').write_bytes(command('git','show',REFERENCE+':messages/fa/'+audience+'.php'))
-        archived=render(expressions,stage)
+        # Preserve historical RED evidence for the original manual-receipt
+        # composition even though its RC26 experimental $body was retired.
+        # The successor tests its live decision result separately; neither
+        # catalog is changed or permitted to hide a legacy correction.
+        previous_manual=command('git','show',REFERENCE+
+            ':src/Finance/Routes/ManualReceipts.php').decode()
+        historical_tokens=json.loads(command('php','-r',TOKENIZE,input=json.dumps({
+            'manual':previous_manual}).encode()))
+        historical_body=expression(historical_tokens['manual'],'assign','$body',
+            'manual_receipts.body.8725ef87b4')
+        archived_expressions={name:expr for name,expr in expressions.items()
+                              if name!='manual_receipt_decision_result'}
+        archived_expressions['manual_operator_review']=historical_body
+        archived=render(archived_expressions,stage)
         current_catalogs=load_catalogs(catalog_root);archived_catalogs=load_catalogs(stage)
-        correction_count=correction_proof(current_catalogs,archived_catalogs)
-        _,api_proof=r5.verify_api_and_restore(r5.panel_group_copy_restore(current_catalogs))
-        api_controls=r5.api_negative_controls(r5.panel_group_copy_restore(current_catalogs))
-        staff_controls=staff_followup_negative_controls(current_catalogs,archived_catalogs)
-        display_context_controls=display_context_negative_controls(current_catalogs)
+        # The successor's new bounded inbox is checked by the cleanup
+        # overlay. Historical layered corrections must run against the
+        # restored RC26 catalog, never a partially restored hybrid.
+        historical_catalogs=r5.current_cleanup_restore(current_catalogs)
+        correction_count=correction_proof(historical_catalogs,archived_catalogs)
+        _,api_proof=r5.verify_api_and_restore(r5.panel_group_copy_restore(historical_catalogs))
+        api_controls=r5.api_negative_controls(r5.panel_group_copy_restore(historical_catalogs))
+        staff_controls=staff_followup_negative_controls(historical_catalogs,archived_catalogs)
+        display_context_controls=display_context_negative_controls(historical_catalogs)
     # Existing private-failure composition: this value comes from update_id,
     # not message_id. The copy correction must preserve the supplied number.
     update_expr=expression(tokenized['src/Finance/Routes/WalletTransfer.php'],'assign','$transferUpdateId',"'update_id'")
@@ -435,6 +454,8 @@ def audit(source_root=ROOT,catalog_root=ROOT):
     check('شناسه پیام تلگرام: <code>9001</code>\n' in archived['wallet_private_failure'],'archived_wrong_telegram_update_label_RED_missing')
     reds=[name for name,value in archived.items()if heading_collisions(value)]
     expected_red={s['name']for s in SPECS[:2]+SPECS[3:18]}
+    expected_red.discard('manual_receipt_decision_result')
+    expected_red.add('manual_operator_review')
     check(set(reds)==expected_red,'archived_composed_RED_scope_drift:'+str(reds))
     # Actual combined output negatives: template-only tests cannot catch these.
     report=current['wallet_transfer_report']

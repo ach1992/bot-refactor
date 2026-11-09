@@ -310,7 +310,88 @@ def server_removal_copy_negative_controls(sides):
         raise AssertionError('server_removal_copy_negative_control_missed')
     return len(cases)
 
+# Successor contract: remove experimental workbench copy in the installed
+# catalogs while preserving ALL previously accepted user/admin copy. Historic
+# proof inputs are restored ONLY in memory from an exact Git source snapshot.
+CLEANUP_BASE='25f33731c568f9aa9a9c7137bd44032d2647e166'
+CLEANUP_SOURCE='a732398116ffedbc82ec2037f99b1c7313bc1d54'
+CLEANUP_TOPICS={
+    'payment_review','delivery_recovery','finance_workbench',
+    'finance_exceptions','service_workbench','service_recovery_action',
+    'hosted_replacement','hosted_original_recovery',
+    'service_edit_delivery','delivery_workbench',
+}
+CLEANUP_ORIGINAL_NEW_KEYS={
+    'automatic_gateway_review.'+name for name in (
+        'menu','provider_nextpay','provider_nowpayments','provider_zarinpal',
+        'rejected_customer','rejected_report','result','status_completed',
+        'status_rejected','status_stale','status_unavailable','status_unknown',
+        'status_unsupported',
+    )
+} | {
+    'manual_receipt_final.'+name for name in (
+        'back','checking','edit_unverified','rejected_report','result',
+        'status_completed','status_delivery_unconfirmed','status_rejected',
+        'status_stale','status_unavailable','status_unknown',
+    )
+}
+
+# Owner's archive decision: these are NEW bounded UI entries, not part of
+# the exact historical 24-key delivery/review copy baseline.
+CLEANUP_ARCHIVE_NEW_KEYS={
+    'automatic_gateway_review.archive',
+    'automatic_gateway_review.archive_notice',
+    'automatic_gateway_review.status_archived',
+    'automatic_gateway_review.status_busy',
+    'automatic_gateway_review.native_count',
+    'automatic_gateway_review.native_effect',
+    'automatic_gateway_review.native_more',
+    'automatic_gateway_review.native_errors',
+    'automatic_gateway_review.truncated',
+}
+CLEANUP_NEW_KEYS=CLEANUP_ORIGINAL_NEW_KEYS | CLEANUP_ARCHIVE_NEW_KEYS
+@functools.lru_cache(maxsize=2)
+def _cleanup_catalog(ref):
+    php='$s=stream_get_contents(STDIN);$p=strpos($s,"return [");if($p===false)throw new RuntimeException("array_missing");echo json_encode(eval(substr($s,$p)),JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);'
+    return {audience:{
+        topic+'.'+key:value for topic,group in json.loads(command('php','-r',php,
+            input=command('git','show',ref+':messages/fa/'+audience+'.php'))).items()
+        for key,value in group.items()} for audience in ('user','admin')}
+
+def current_cleanup_restore(sides):
+    if not (CLEANUP_NEW_KEYS & set(sides.get('admin',{}))):
+        return sides
+    check(set(sides)=={'user','admin'},'cleanup_audiences')
+    original=_cleanup_catalog(CLEANUP_BASE)
+    accepted=_cleanup_catalog(CLEANUP_SOURCE)
+    check(sides['user']==original['user'],'cleanup_user_copy_changed')
+    old=original['admin'];current=sides['admin']
+    removed={key for key in old if key.split('.',1)[0] in CLEANUP_TOPICS}
+    check(len(removed)==129 and
+          set(old)-set(current)==removed and
+          set(current)-set(old)==CLEANUP_NEW_KEYS and
+          all(current.get(k)==v for k,v in old.items() if k not in removed),
+          'cleanup_unapproved_catalog_change')
+    check(set(accepted['admin'])-set(old)==CLEANUP_ORIGINAL_NEW_KEYS and
+          all(current[k]==accepted['admin'][k] for k in CLEANUP_ORIGINAL_NEW_KEYS),
+          'cleanup_new_copy_byte_drift')
+    for key in CLEANUP_NEW_KEYS:
+        entry=current[key];value=text(entry);parameters=params(entry)
+        check(isinstance(value,str) and value.strip() and
+              len(parameters)==len(set(parameters)) and
+              set(parameters)==set(re.findall(
+                  r'\{([A-Za-z_][A-Za-z0-9_]*)\}',value)) and
+              not re.search(r'[\u06f0-\u06f9\u0660-\u0669]',value),
+              'cleanup_new_template_invalid:'+key)
+    # 25f3373 included an unreviewed intermediary gateway UI. Restore the
+    # last independently reviewed RC26 catalog for *historical* byte tests;
+    # the entire successor delta above is already checked against its exact
+    # intermediary source and no old copy can silently drift.
+    return copy.deepcopy(_cleanup_catalog(
+        '50318bc3163bfa7496b3bc6dce8b1e789417334e'))
+
 def verify_and_restore(sides,definition=None):
+    sides=current_cleanup_restore(sides)
     if any(key.startswith('delivery_recovery.') for audience in sides.values() for key in audience):
         sides=delivery_recovery_copy_restore(sides)
     current=scoped_addon_restore(shared_transfer_copy_restore(server_removal_copy_restore(panel_group_copy_restore(sides))))
@@ -447,7 +528,19 @@ def delivery_recovery_original_bytes(current:bytes) -> bytes:
           'delivery_recovery_preexisting_catalog_bytes_changed')
     return original
 def delivery_recovery_copy_restore(sides:dict) -> dict:
-    delivery_recovery_original_bytes((ROOT/'messages/fa/admin.php').read_bytes())
+    # Historical proof may be called directly by a sibling suite; verify
+    # the present successor delta first, then restore old approved evidence.
+    sides=current_cleanup_restore(sides)
+    # This feature was intentionally removed; its old approved copy must
+    # still match the exact immutable published-source evidence.
+    present=(ROOT/'messages/fa/admin.php').read_bytes()
+    archived=command('git','show','50318bc3163bfa7496b3bc6dce8b1e789417334e:messages/fa/admin.php')
+    if b"'delivery_recovery' =>" not in present:
+        check(b"'delivery_recovery' =>" in archived,
+              'retired_delivery_baseline_missing')
+        delivery_recovery_original_bytes(archived)
+    else:
+        delivery_recovery_original_bytes(present)
     check(set(sides)=={'user','admin'},'delivery_recovery_catalog_audiences')
     restored=copy.deepcopy(sides)
     for topic,proof in WORKBENCH_BLOCKS.items():
@@ -481,17 +574,24 @@ def delivery_recovery_copy_restore(sides:dict) -> dict:
     for key in ['title','summary','line','warning','check_result','send_result',
                 'check_ack','check','request_send','send_confirm','back_inbox','next',
                 'first','missing','not_eligible','unavailable','open']:
-        check("'delivery_recovery."+key+"'" in (
-            ROOT/'src/Finance/Routes/DeliveryRecovery.php').read_text() or
-            "'delivery_recovery."+key+"'" in (
-            ROOT/'src/Finance/Routes/ManualReceipts.php').read_text() or
-            (key=='back_inbox' and "'delivery_workbench.back_inbox'" in
-             (ROOT/'src/Finance/Routes/DeliveryRecovery.php').read_text()),
-            'delivery_recovery_copy_unbound_to_owner_route:'+key)
+        # Verify the original route/source binding in the archived source,
+        # not a non-existent runtime file (restoration is proof-only).
+        historic=command('git','show',
+            '50318bc3163bfa7496b3bc6dce8b1e789417334e:src/Finance/Routes/DeliveryRecovery.php').decode()
+        historic_receipts=command('git','show',
+            '50318bc3163bfa7496b3bc6dce8b1e789417334e:src/Finance/Routes/ManualReceipts.php').decode()
+        check("'delivery_recovery."+key+"'" in historic or
+              "'delivery_recovery."+key+"'" in historic_receipts or
+              (key=='back_inbox' and "'delivery_workbench.back_inbox'" in historic),
+              'retired_delivery_route_original_binding:'+key)
     restored=copy.deepcopy(sides)
     for key in actual:restored['admin'].pop(key)
     return restored
 def delivery_recovery_copy_negative_controls(sides:dict) -> int:
+    # The successor intentionally removed this UI. Perform the exact
+    # historical mutation controls on the immutable RC26 source, AFTER
+    # verifying present copy against the approved current cleanup contract.
+    sides=current_cleanup_restore(sides)
     delivery_recovery_copy_restore(sides)
     cases=[]
     bad=copy.deepcopy(sides);bad['admin'].pop('delivery_recovery.title');cases.append(bad)
@@ -526,6 +626,12 @@ def chili_copy_values():
             # #117 has one separately pinned additive topic. Removing only
             # that exact byte block must restore the approved, historical
             # RC25 source byte for byte; no preexisting copy can drift.
+            # Current successor removed these 019/021 workbenches. Their
+            # historical byte proof is over immutable published RC26 source,
+            # while current catalog scope is independently pinned above.
+            if b"'delivery_recovery' =>" not in current:
+                current=command('git','show',
+                    '50318bc3163bfa7496b3bc6dce8b1e789417334e:'+path)
             current=delivery_recovery_original_bytes(current)
         check(hashlib.sha256(raw).hexdigest()==digest and
               hashlib.sha256(current).hexdigest()==digest,
@@ -622,6 +728,7 @@ def review_catalog_restore(sides):
     return restored,{'review_added_keys':8,'review_added_user_keys':2,'review_added_admin_keys':6,'review_source':REVIEW_SOURCE}
 
 def verify_api_and_restore(sides,definition=None):
+    sides=current_cleanup_restore(sides)
     if any(key.startswith('delivery_recovery.') for audience in sides.values() for key in audience):
         sides=delivery_recovery_copy_restore(sides)
     # Historical composition proofs enter directly at this API layer. They
@@ -863,6 +970,22 @@ def api_source_references(path,source):
         # checking the same pinned API source and previously accepted #107 insertion.
         audited=source
         if path=='src/Finance/ApiPayments.php':
+            # The only surviving API recovery predicate has moved from its
+            # retired workbench into the API module. Verify exact original
+            # source bytes first; do not accept any unrelated API drift.
+            moved='/** Display-only proof of a safe original API continuation;'
+            if moved in audited:
+                original=command('git','show',
+                    '25f33731c568f9aa9a9c7137bd44032d2647e166:src/Finance/RecoveryInspection.php').decode()
+                source_begin=original.index(moved)
+                source_end=original.index('/** Payment recording and fulfillment',source_begin)
+                expected=original[source_begin:source_end].strip().replace(
+                    'achbotRecoveryApiCanResume','achbotApiPaymentCanResume')
+                begin=audited.index(moved)
+                end=audited.index('function achbotApiPaymentReady(',begin)
+                check(audited[begin:end].strip()==expected,
+                    'api_resume_extracted_exact_historical_source')
+                audited=audited[:begin]+audited[end:]
             # Preserve the original #117 source proof and explicitly pin
             # the reviewed interrupted-BUY_SUB continuation delta. Neither
             # changes the catalog's historical dynamic-message inventory.
