@@ -358,7 +358,7 @@ function achbotGatewayReviewArchive(mysqli $db,int $actor,int $attemptId,int $pr
         // including post-Native local/Telegram work, but no SQL transaction
         // remains open over HTTP. A worker crash releases the lease, allowing
         // the human to archive without replaying or rewriting its outcome.
-        $name='achbot-hosted-payment-'.$payId;
+        $name=achbotHostedWorkerLockName($db,$payId);
         $q=$db->prepare('SELECT IS_USED_LOCK(?) AS holder');
         $q->bind_param('s',$name);$q->execute();
         $holder=$q->get_result()->fetch_assoc();$q->close();

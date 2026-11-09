@@ -29,7 +29,10 @@ After independently checking the original merchant invoice and any
 uncertain Native outcome, the administrator can choose **Archive** as a
 terminal LOCAL decision. A genuinely active original hosted worker holds
 one MariaDB session-scoped advisory lock until its payment work (including
-local order linking and Telegram delivery) ends; Archive responds **busy**
+local order linking and Telegram delivery) ends. Its key is scoped to the
+connected bot database, so independent bot installations sharing one MariaDB
+server cannot block each other's identically numbered payment rows;
+Archive responds **busy**
 while that worker is active. The lock releases when that connection ends,
 including after a crash, even if the original 007 Native evidence is still
 `dispatching` or `verified` without an order. The administrator can then

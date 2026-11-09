@@ -534,6 +534,28 @@ echo json_encode([
 ],JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE);
 """
 
+PHP_SCOPE = r"""<?php
+$_SERVER['SCRIPT_FILENAME']=__FILE__;
+$root=$argv[1];$socket=$argv[2];
+require_once $root.'/src/Finance/GatewayClient.php';
+$a=new mysqli('localhost','root','',$argv[3],0,$socket);
+$b=new mysqli('localhost','root','',$argv[4],0,$socket);
+$first=achbotHostedWorkerLockName($a,1);
+$second=achbotHostedWorkerLockName($b,1);
+if (hash_equals($first,$second))throw new RuntimeException('cross_bot_lock_collision');
+$q=$a->prepare('SELECT GET_LOCK(?,0) AS acquired');
+$q->bind_param('s',$first);$q->execute();
+$heldA=(int)$q->get_result()->fetch_assoc()['acquired'];$q->close();
+$q=$b->prepare('SELECT GET_LOCK(?,0) AS acquired');
+$q->bind_param('s',$second);$q->execute();
+$heldB=(int)$q->get_result()->fetch_assoc()['acquired'];$q->close();
+$q=$a->prepare('SELECT RELEASE_LOCK(?)');
+$q->bind_param('s',$first);$q->execute();$q->close();
+$q=$b->prepare('SELECT RELEASE_LOCK(?)');
+$q->bind_param('s',$second);$q->execute();$q->close();
+echo json_encode(['separate'=>$heldA===1 && $heldB===1]);
+"""
+
 PHP_RACE = r"""<?php
 $_SERVER['SCRIPT_FILENAME']=__FILE__;
 $root=$argv[1];$socket=$argv[2];$dbName=$argv[3];
@@ -550,7 +572,7 @@ if ($mode==='hold') {
  $pay=$q->get_result()->fetch_assoc();$q->close();
  if (!$pay || (int)$pay['pay_row_id']<=0)
   throw new RuntimeException('no_fixture_hosted_owner');
- $name='achbot-hosted-payment-'.(int)$pay['pay_row_id'];
+ $name=achbotHostedWorkerLockName($db,(int)$pay['pay_row_id']);
  $q=$db->prepare('SELECT GET_LOCK(?,0) AS acquired');
  $q->bind_param('s',$name);$q->execute();
  $acquired=$q->get_result()->fetch_assoc();$q->close();
@@ -592,6 +614,12 @@ def main():
             "ALTER TABLE service_effects ADD provider_state VARCHAR(32) DEFAULT NULL"],
             env=env,capture_output=True,text=True,timeout=10)
         if provider_col.returncode:raise RuntimeError(provider_col.stderr)
+        scope_script=d/"gateway-lock-scope.php"
+        scope_script.write_text(PHP_SCOPE)
+        scope=subprocess.run(["php",str(scope_script),str(ROOT),str(d/"mysql.sock"),
+            fx.NAMES[0],fx.NAMES[1]],env=env,capture_output=True,text=True,timeout=12)
+        if scope.returncode or scope.stderr or not json.loads(scope.stdout)["separate"]:
+            raise RuntimeError("Two independent bot DB leases collided: "+scope.stderr+scope.stdout)
         script=d/"gateway-review-fixture.php"
         script.write_text(PHP)
         proc=subprocess.run(["php","-d","allow_url_fopen=0",
@@ -605,6 +633,7 @@ def main():
         if proc.stderr.strip()!=allowed:
             raise RuntimeError("Unexpected PHP log: "+proc.stderr[-2400:])
         output=json.loads(proc.stdout)
+        output["checks"].append("independent_bot_databases_do_not_share_payment_leases")
         # The actual source gate waits after a durable line reservation.
         # Another connection Archives while the worker is paused before
         # dispatch. The resumed worker must not admit a new Native operation.

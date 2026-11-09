@@ -2352,6 +2352,7 @@ def run_effects(tmp: str) -> tuple[dict, dict]:
         'true_active_native_dispatch_refuses_archive_without_mutation',
         'worker_exit_releases_session_lease_and_allows_terminal_archive',
         'unknown_native_effect_and_original_financial_status_immutable_after_archive',
+        'independent_bot_databases_do_not_share_payment_leases',
         'maximal_original_description_kept_in_database_html_case_bounded',
         'five_native_lines_and_original_payment_evidence_kept',
         'real_telegram_edit_and_fallback_both_deliver_legal_html_text',

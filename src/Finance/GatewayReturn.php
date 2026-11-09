@@ -1847,7 +1847,7 @@ function doAction($payRowId, $gateType) {
     // order linking and Telegram delivery after remote Native HTTP. It is
     // session-scoped, automatically cleared after PHP/connection death.
     // It does NOT hold a database transaction across any external request.
-    $lockName='achbot-hosted-payment-'.(int)$payRowId;
+    $lockName=achbotHostedWorkerLockName($connection,(int)$payRowId);
     $q=$connection->prepare('SELECT GET_LOCK(?,0) AS acquired');
     $q->bind_param('s',$lockName);$q->execute();
     $held=$q->get_result()->fetch_assoc();$q->close();
