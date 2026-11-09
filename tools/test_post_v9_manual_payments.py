@@ -171,6 +171,12 @@ $userInfo=[
     'userid'=>$from_id,'name'=>'Customer',
     'username'=>'synthetic_user','isAdmin'=>false
 ];
+if (($spec['route']??'')==='manual_admin' && ($spec['step']??'')==='@stored') {
+    $stmt=$connection->prepare('SELECT step FROM users WHERE userid=? LIMIT 1');
+    $stmt->bind_param('i',$from_id);$stmt->execute();
+    $row=$stmt->get_result()->fetch_assoc();$stmt->close();
+    $userInfo['step']=(string)($row['step']??'none');
+}
 $update=json_decode(json_encode($spec['update']??['message'=>[
     'photo'=>[['file_id'=>'fixture-small'],['file_id'=>'fixture-photo-id']]
 ]]),false);
@@ -208,11 +214,22 @@ function delMessage(){ $GLOBALS['events'][]=['name'=>'delMessage'];}
 function setUser($value='none',$field='step'){
     global $connection,$from_id,$spec;
     $GLOBALS['events'][]=['name'=>'setUser','step'=>$value,'field'=>$field];
-    // Model the real database step transition for this test's top-up route;
-    // rejected updates must preserve even a pre-existing private step.
-    if (($spec['route']??'')==='topup') {
+    // Match persisted administrator reason steps as well as customer top-up
+    // steps; each PHP route process sees the real next-request user row.
+    if (in_array(($spec['route']??''),['topup','manual_admin'],true)) {
         if ($field!=='step') throw new RuntimeException('unexpected step field');
-        $stmt=$connection->prepare('UPDATE users SET step=? WHERE userid=?');
+        if (($spec['route']??'')==='manual_admin') {
+            $stmt=$connection->prepare('SELECT id FROM users WHERE userid=? LIMIT 1');
+            $stmt->bind_param('i',$from_id);$stmt->execute();
+            $exists=$stmt->get_result()->fetch_assoc();$stmt->close();
+            if (!$exists) {
+                $stmt=$connection->prepare("INSERT INTO users(userid,name,username,refcode,wallet,date,isAdmin,step,first_start) VALUES(?,'Fixture staff','fixture','0',0,'1700000000',1,'none','sent')");
+                $stmt->bind_param('i',$from_id);$stmt->execute();$stmt->close();
+            }
+            $sql="UPDATE users SET step=? WHERE userid=? AND step <> 'banned' " .
+                "AND step NOT LIKE 'achbotDirectGift%' AND step NOT LIKE 'achbotExempt:%'";
+        } else $sql='UPDATE users SET step=? WHERE userid=?';
+        $stmt=$connection->prepare($sql);
         $stmt->bind_param('si',$value,$from_id);
         $stmt->execute();$stmt->close();
     }
@@ -925,25 +942,95 @@ def check():
                         amount=amount,quantity=quantity,standard=True)
             return key
 
+        def open_reason_editor(key,actor=9001):
+            # The same real callback is printed for every manually reviewed
+            # bank/gift/crypto receipt, independently of order subject.
+            before=query(work,env,"SELECT state FROM pays WHERE hash_id='"+key+"'")
+            buyer_wallet=query(work,env,'SELECT wallet FROM users WHERE userid=1001')
+            events=run_route(work,env,route_driver,data='declineAction_'+key,
+                             actor=actor,route='manual_admin',step='@stored')
+            expected_step='declineActionReason_'+key+'_111'
+            assert before=='have_sent' and query(work,env,"SELECT state FROM pays WHERE hash_id='"+key+"'")==before,(key,events)
+            assert query(work,env,'SELECT wallet FROM users WHERE userid=1001')==buyer_wallet,(key,events)
+            assert query(work,env,"SELECT step FROM users WHERE userid="+str(actor))==expected_step,(key,events)
+            assert any(e['name']=='setUser' and e['step']==expected_step for e in events),(key,events)
+            prompt=[e for e in events if e['name']=='sendMessage']
+            assert len(prompt)==1 and 'دلیل رد' in str(prompt[0]['args'][0]),(key,events)
+            assert not any(e['name'] in ('remote_create','remote_edit','editKeys','order_insert') for e in events),(key,events)
+            return events
+
+        def submit_reason(key,reason='مغایرت اطلاعات رسید با مبلغ واریزی',actor=9001,**kwargs):
+            return run_route(work,env,route_driver,route='manual_admin',
+                             step='@stored',text=reason,actor=actor,**kwargs)
+
+        def reject_with_reason(key,actor=9001,reason='رسید معتبر نیست',**kwargs):
+            open_reason_editor(key,actor=actor)
+            result=submit_reason(key,reason=reason,actor=actor,**kwargs)
+            assert query(work,env,"SELECT step FROM users WHERE userid="+str(actor))=='none',(key,result)
+            return result
+
         standard_pay('standarddirectreject',method='gift_card')
+        # Reject no longer commits on the button: invalid/blank text and
+        # callbacks cannot impersonate the operator's newly typed reason.
+        open_reason_editor('standarddirectreject')
+        blank=submit_reason('standarddirectreject',reason='  ')
+        assert any(e['name']=='sendMessage' and 'دلیل رد' in str(e['args'][0]) for e in blank),blank
+        assert query(work,env,"SELECT state FROM pays WHERE hash_id='standarddirectreject'")=='have_sent'
+        assert query(work,env,"SELECT step FROM users WHERE userid=9001")==(
+            'declineActionReason_standarddirectreject_111')
+        injected=run_route(work,env,route_driver,data='evidenceHome',step='@stored',
+                           text='fake callback reason',actor=9001,route='manual_admin')
+        assert query(work,env,"SELECT state FROM pays WHERE hash_id='standarddirectreject'")=='have_sent',injected
         wallet_before=query(work,env,'SELECT userid,wallet FROM users ORDER BY userid')
-        rejected=run_route(work,env,route_driver,data='declineAction_standarddirectreject',
-                           actor=9001,route='manual_admin')
+        reason='رسید <مغایر> با مبلغ واریزی است & باید دوباره ارسال شود'
+        rejected=submit_reason('standarddirectreject',reason=reason)
         assert query(work,env,"SELECT state,approved_by FROM pays WHERE "
                      "hash_id='standarddirectreject'")=='declined\t9001',rejected
         assert query(work,env,'SELECT userid,wallet FROM users ORDER BY userid')==wallet_before
+        assert query(work,env,'SELECT step FROM users WHERE userid=9001')=='none'
         assert not any(e['name'] in ('remote_create','remote_edit','qr_send') for e in rejected)
-        assert any(e['name']=='sendMessage' and len(e.get('args',[]))>=4 and
-                   e['args'][3]==1001 for e in rejected),rejected
-        assert any(e['name']=='sendMessage' and 'مشتری' in str(e['args'][0])
-                   for e in rejected),rejected
-        assert not any(e['name']=='setUser' and str(e['step']).startswith('declineActionReason_')
-                       for e in rejected),rejected
+        buyer=[e['args'][0] for e in rejected if e['name']=='sendMessage' and
+               len(e.get('args',[]))>=4 and e['args'][3]==1001]
+        assert len(buyer)==1 and '&lt;مغایر&gt;' in buyer[0] and '&amp;' in buyer[0],(buyer,rejected)
+        assert '<blockquote>' in buyer[0] and 'باید دوباره ارسال شود' in buyer[0]
         repeated=run_route(work,env,route_driver,data='declineAction_standarddirectreject',
                            actor=9001,route='manual_admin')
         assert not any(e['name'] in ('remote_create','remote_edit','qr_send','sendMessage')
                        for e in repeated),repeated
-        cases.append('manual_direct_reject_one_click_no_wallet_native_or_duplicate_reports')
+        cases.append('manual_reject_reason_required_not_callback_and_customer_escaped_once')
+
+        standard_pay('standardcancelreason',method='bank_transfer')
+        open_reason_editor('standardcancelreason')
+        cancel=submit_reason('standardcancelreason',reason='❌ لغو عملیات')
+        assert not any(e['name'] in ('sendMessage','editKeys','remote_create') for e in cancel),cancel
+        assert query(work,env,"SELECT state FROM pays WHERE hash_id='standardcancelreason'")=='have_sent'
+        assert query(work,env,"SELECT COUNT(*) FROM payment_followup_intents f JOIN pays p ON p.id=f.pay_row_id WHERE p.hash_id='standardcancelreason'")=='0'
+        cases.append('manual_reject_cancel_leaves_original_receipt_reviewable')
+
+        # Shared rejection for every manual order family: wallet, standard,
+        # custom, renewal and add-ons. Only the approval callback differs;
+        # no subject-specific reject shortcut is admitted.
+        shared_manual=[
+            ('wallet','INCREASE_WALLET','bank_transfer',None),
+            ('standard','BUY_SUB','gift_card',None),
+            ('custom','BUY_SUB','manual_usdt',None),
+            ('renew','RENEW_ACCOUNT','bank_transfer',None),
+            ('standardrenew','RENEW_SCONFIG','gift_card',None),
+            ('day','INCREASE_DAY_1_2','gift_card',2),
+            ('volume','INCREASE_VOLUME_1_2','manual_usdt',3),
+        ]
+        for family,subject,method,units in shared_manual:
+            key='reasonmatrix'+family
+            service_pay(key,subject=subject,method=method,addon_units=units)
+            funds_before=query(work,env,'SELECT wallet FROM users WHERE userid=1001')
+            result=reject_with_reason(key,reason='علت مربوط به '+family)
+            assert query(work,env,"SELECT state,approved_by FROM pays WHERE hash_id='"+key+"'")=='declined\t9001',(key,result)
+            assert query(work,env,'SELECT wallet FROM users WHERE userid=1001')==funds_before,(key,result)
+            buyers=[e['args'][0] for e in result if e['name']=='sendMessage' and
+                    len(e.get('args',[]))>=4 and e['args'][3]==1001]
+            assert len(buyers)==1 and 'علت مربوط به '+family in buyers[0],(key,result)
+            assert not any(e['name'] in ('remote_create','remote_edit','qr_send','order_insert') for e in result),(key,result)
+            cases.append('manual_reason_shared_'+family+'_'+method)
 
         # R4: historical repeated refs to the same admin Telegram message
         # must not violate 020's unique key and roll back a valid rejection.
@@ -959,9 +1046,7 @@ def check():
             query(work,env,"UPDATE pays SET admins_messages='"+copies+"' "
                   "WHERE hash_id='standardrejectduplicateref'")
             before_wallet=query(work,env,'SELECT userid,wallet FROM users ORDER BY userid')
-            result=run_route(work,env,route_driver,
-                             data='declineAction_standardrejectduplicateref',
-                             actor=9001,route='manual_admin')
+            result=reject_with_reason('standardrejectduplicateref')
             assert query(work,env,"SELECT state FROM pays WHERE "
                          "hash_id='standardrejectduplicateref'")=='declined',result
             assert query(work,env,'SELECT userid,wallet FROM users ORDER BY userid')==before_wallet
@@ -1000,9 +1085,7 @@ def check():
             query(work,env,"UPDATE pays SET admins_messages='"+copies+"' "
                   "WHERE hash_id='standardrejectsamechat'")
             before_wallet=query(work,env,'SELECT userid,wallet FROM users ORDER BY userid')
-            result=run_route(work,env,route_driver,
-                             data='declineAction_standardrejectsamechat',
-                             actor=9001,route='manual_admin')
+            result=reject_with_reason('standardrejectsamechat')
             assert query(work,env,"SELECT state FROM pays WHERE "
                          "hash_id='standardrejectsamechat'")=='declined',result
             assert query(work,env,'SELECT userid,wallet FROM users ORDER BY userid')==before_wallet
@@ -1033,9 +1116,7 @@ def check():
                 "SET MESSAGE_TEXT='fixture_followup_reject_denied'")
             before_wallet=query(work,env,'SELECT userid,wallet FROM users ORDER BY userid')
             try:
-                failed=run_route(work,env,route_driver,
-                                 data='declineAction_standardrejectoutboxfail',
-                                 actor=9001,route='manual_admin',
+                failed=reject_with_reason('standardrejectoutboxfail',
                                  expected_warning='achbot_manual_reject_claim_unconfirmed')
             finally: query(work,env,'DROP TRIGGER fixture_f1_reject_outbox_fail')
             assert query(work,env,"SELECT state FROM pays WHERE "
@@ -1045,9 +1126,7 @@ def check():
                 "WHERE p.hash_id='standardrejectoutboxfail'")=='0'
             assert not any(e['name'] in ('editKeys','sendMessage','remote_create') for e in failed),failed
             assert query(work,env,'SELECT userid,wallet FROM users ORDER BY userid')==before_wallet
-            retry=run_route(work,env,route_driver,
-                            data='declineAction_standardrejectoutboxfail',
-                            actor=9001,route='manual_admin')
+            retry=reject_with_reason('standardrejectoutboxfail')
             assert query(work,env,"SELECT state FROM pays WHERE "
                          "hash_id='standardrejectoutboxfail'")=='declined',retry
             assert not any(e['name'] in ('remote_create','remote_edit') for e in retry)
@@ -1061,9 +1140,7 @@ def check():
         # report must NOT claim that the customer was notified successfully.
         standard_pay('standardrejectnoticeunknown',method='gift_card')
         before_wallet=query(work,env,'SELECT userid,wallet FROM users ORDER BY userid')
-        attempts=run_route(work,env,route_driver,
-                           data='declineAction_standardrejectnoticeunknown',
-                           actor=9001,route='manual_admin',
+        attempts=reject_with_reason('standardrejectnoticeunknown',
                            message_transport='throw_once',
                            expected_warning='achbot_followup_telegram_uncertain')
         assert query(work,env,"SELECT state FROM pays "
@@ -1090,9 +1167,7 @@ def check():
         # operator notification, nor authorize a second reply on old buttons.
         standard_pay('standardrejecteditunknown',method='gift_card')
         before_wallet=query(work,env,'SELECT userid,wallet FROM users ORDER BY userid')
-        edited=run_route(work,env,route_driver,
-                         data='declineAction_standardrejecteditunknown',
-                         actor=9001,route='manual_admin',
+        edited=reject_with_reason('standardrejecteditunknown',
                          message_edit_transport='throw',
                          expected_warning='achbot_followup_telegram_uncertain')
         assert query(work,env,"SELECT state FROM pays "

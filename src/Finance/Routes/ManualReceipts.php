@@ -186,19 +186,22 @@ if (preg_match('/^declineAction_(.+)$/', $data, $match) && achbotAdminCanFor($co
         return;
     }
 
-    // Owner decision: this button IS the final rejection. Reuse the existing
-    // financial CAS, original customer message and admin report path below;
-    // no separate reason entry or provider status GET is required. A stale
-    // previously opened reason editor is still handled by the same code.
-    $userInfo['step'] = 'declineActionReason_' . $hash_id . '_' . $message_id;
-    $text = \achbotMessage('manual_receipt_final.status_rejected');
+    // All manual receipt methods/subjects use one reason-first rejection
+    // workflow. This callback never settles or rejects the original payment.
+    // Keep the original pay and staff identity; the typed reply is rechecked
+    // against the current financial row by the guarded transaction below.
+    setUser('declineActionReason_' . $hash_id . '_' . $message_id);
+    sendMessage(\achbotMessage('manual_payment.manual_receipts.message.a757d0e2a6'),$cancelKey);
+    return;
 }
 
 if (preg_match('/^declineActionReason_(.+)_(\d+)$/', (string)($userInfo['step']??''), $match) &&
+    (string)($data??'')==='' &&
     $text != $buttonValues['cancel'] &&
     achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'payments')) {
+    // Only a freshly typed administrator message can supply the reason;
+    // a callback's previously rendered message must not finalize rejection.
     if (!is_string($text) || trim($text)==='') {
-        // Compatibility for an editor opened before the one-click change.
         sendMessage(\achbotMessage('manual_payment.manual_receipts.message.a757d0e2a6'),$cancelKey);
         return;
     }
