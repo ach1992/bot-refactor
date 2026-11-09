@@ -302,6 +302,14 @@ if (preg_match('/wait(?:IncreaseDay|IncreaseDayGift|IncreaseDayUsdt)Receipt(.*)/
     if(achbotManualTypedGift($connection,$receiptPay,$method) && !achbotManualGiftReviewFits($msg,$fileid)){
         sendMessage(achbotMessage('payment.api_payment.code_too_long'),null,'HTML');return;
     }
+    // The code is checked against this ORIGINAL pinned invoice before any
+    // staff message or durable receipt lease. A definite mismatch stays here.
+    $giftScreen=achbotManualGiftSubmissionPreflight($connection,$receiptPay,$method,$fileid);
+    if (!$giftScreen['accepted']) {
+        sendMessage(achbotManualGiftRetryMessage((string)$giftScreen['reason']),
+            kbOnlyCancel('cancelIncreaseDayReceipt', $match[1]), 'HTML');
+        exit;
+    }
     $deliveryToken = achbotManualBeginEvidence($connection, $receiptPay, $method, (int)$from_id, $fileid);
     if ($deliveryToken === null) {
         alert(\achbotMessage('renewal.extensions.alert.795c4bddb8'), true);
@@ -319,7 +327,7 @@ if (preg_match('/wait(?:IncreaseDay|IncreaseDayGift|IncreaseDayUsdt)Receipt(.*)/
 
     if (sendReceiptToAdminsAndUpdatePay($connection, $fileid,
         $msg, $adminKeyboard, $admin, $match[1],
-        $deliveryToken)) {
+        $deliveryToken,$giftScreen)) {
         setUser();
         achbotManualAcknowledgeAndVerify($connection,$receiptPay,$method,$buttonValues['start_bot'],$botUsername);
     } else {
@@ -1146,6 +1154,14 @@ if (preg_match('/wait(?:IncreaseVolume|IncreaseVolumeGift|IncreaseVolumeUsdt)Rec
     if(achbotManualTypedGift($connection,$receiptPay,$method) && !achbotManualGiftReviewFits($msg,$fileid)){
         sendMessage(achbotMessage('payment.api_payment.code_too_long'),null,'HTML');return;
     }
+    // The code is checked against this ORIGINAL pinned invoice before any
+    // staff message or durable receipt lease. A definite mismatch stays here.
+    $giftScreen=achbotManualGiftSubmissionPreflight($connection,$receiptPay,$method,$fileid);
+    if (!$giftScreen['accepted']) {
+        sendMessage(achbotManualGiftRetryMessage((string)$giftScreen['reason']),
+            kbOnlyCancel('cancelIncreaseVolumeReceipt', $match[1]), 'HTML');
+        exit;
+    }
     $deliveryToken = achbotManualBeginEvidence($connection, $receiptPay, $method, (int)$from_id, $fileid);
     if ($deliveryToken === null) {
         alert(\achbotMessage('renewal.extensions.alert.795c4bddb8'), true);
@@ -1163,7 +1179,7 @@ if (preg_match('/wait(?:IncreaseVolume|IncreaseVolumeGift|IncreaseVolumeUsdt)Rec
 
     if (sendReceiptToAdminsAndUpdatePay($connection, $fileid,
         $msg, $adminKeyboard, $admin, $match[1],
-        $deliveryToken)) {
+        $deliveryToken,$giftScreen)) {
         setUser();
         achbotManualAcknowledgeAndVerify($connection,$receiptPay,$method,$buttonValues['start_bot'],$botUsername);
     } else {

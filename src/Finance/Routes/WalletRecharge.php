@@ -400,6 +400,14 @@ if (preg_match('/wait(?:IncreaseWallet|IncreaseWalletGift|IncreaseWalletUsdt)Rec
     if(achbotManualTypedGift($connection,$receiptPay,$method) && !achbotManualGiftReviewFits($msg,$fileid)){
         sendMessage(achbotMessage('payment.api_payment.code_too_long'),null,'HTML');return;
     }
+    // The code is checked against this ORIGINAL pinned invoice before any
+    // staff message or durable receipt lease. A definite mismatch stays here.
+    $giftScreen=achbotManualGiftSubmissionPreflight($connection,$receiptPay,$method,$fileid);
+    if (!$giftScreen['accepted']) {
+        sendMessage(achbotManualGiftRetryMessage((string)$giftScreen['reason']),
+            kbOnlyCancel('cancelIncreaseWalletReceipt', $match[1]), 'HTML');
+        exit;
+    }
     $deliveryToken = achbotManualBeginEvidence($connection, $receiptPay, $method, (int)$from_id, $fileid);
     if ($deliveryToken === null) {
         alert(\achbotMessage('wallet.wallet_recharge.wallet_topup_amount_problem.alert.795c4bddb8'), true);
@@ -417,7 +425,7 @@ if (preg_match('/wait(?:IncreaseWallet|IncreaseWalletGift|IncreaseWalletUsdt)Rec
 
     if (sendReceiptToAdminsAndUpdatePay($connection, $fileid,
         $msg, $adminKeyboard, $admin, $match[1],
-        $deliveryToken)) {
+        $deliveryToken,$giftScreen)) {
         setUser();
         achbotManualAcknowledgeAndVerify($connection,$receiptPay,$method,$buttonValues['start_bot'],$botUsername);
     } else {

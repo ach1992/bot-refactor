@@ -358,6 +358,47 @@ def _cleanup_catalog(ref):
             input=command('git','show',ref+':messages/fa/'+audience+'.php'))).items()
         for key,value in group.items()} for audience in ('user','admin')}
 
+# #117 (pre-release): nine gift-card precheck messages are an additive
+# current-source layer. Verify their exact recipient and value, then remove
+# only those additions from the in-memory historical catalog comparison.
+# This never mutates user/admin source or weakens the legacy baseline checks.
+GIFT_PRECHECK_SHA256={
+ 'user':{
+ 'payment.api_payment.code_not_found_retry':'3814670e24051515406b1f2ab8e7d50fdd11ab6bbbef183f87c17839095cc6d0',
+ 'payment.api_payment.code_invalid_retry':'8e4f8dbb8210e78653e595bdd79f550a8d278de537ec16c351191d88eb7b6d17',
+ 'payment.api_payment.code_used_retry':'4cda4d41a3f67b60bdf43d49026471113c65ae13f841c444997bcc1a4993189a',
+ 'payment.api_payment.code_revoked_retry':'01b9b96c0e5286bf732c3672fd83863919e0800d9010cf12542c2ddde94b9bbd',
+ 'payment.api_payment.code_expired_retry':'90127ec78c70e321aa1b4284a771526ac625d8ce28fe988ce8967f4061d76378',
+ 'payment.api_payment.code_mismatch_retry':'99f011ef5c58b40ee4f67a1cce01cba011b8f768fe8c912ef1917e945cf697a4',
+ },
+ 'admin':{
+ 'manual_payment.api_payment.gift_details':'6ce1ea1ca8646a8dde8fad50633b4c08b56c90aed5f17205ef8e20544a42ab3d',
+ 'manual_payment.api_payment.gift_not_verified':'3434932947125a849117e3bbd1ee17a7d59f0b17aff0a1756c9e917e1e4ac8c8',
+ 'manual_payment.api_payment.gift_not_provided':'475fd4cbbef6064ae643b3557b2d9710d7d7be63fea67346619d51072f997a20',
+ }}
+def gift_precheck_copy_restore(sides,allow_prestripped=False):
+    restored=copy.deepcopy(sides)
+    check(set(restored)=={'user','admin'},'gift_precheck_audiences')
+    # The historical R5 -> API chain enters twice; only the already-
+    # verified projection may omit the new keys. A real current catalog
+    # missing ALL new keys is still a contract failure.
+    if not any(key in restored[audience] for audience,items in
+               GIFT_PRECHECK_SHA256.items() for key in items):
+        check(allow_prestripped,'gift_precheck_missing_all_copy')
+        return restored
+    for audience,items in GIFT_PRECHECK_SHA256.items():
+        other='admin'if audience=='user'else'user'
+        for key,digest in items.items():
+            check(key not in restored[other],'gift_precheck_wrong_recipient:'+key)
+            value=restored[audience].pop(key,None)
+            check(value is not None and
+                  hashlib.sha256(json.dumps(value,ensure_ascii=False,sort_keys=True,
+                      separators=(',',':')).encode()).hexdigest()==digest and
+                  set(re.findall(r'\{([A-Za-z_][A-Za-z0-9_]*)\}',text(value)))==set(params(value)) and
+                  not re.search(r'[\u06f0-\u06f9\u0660-\u0669]',text(value)),
+                  'gift_precheck_copy_drift:'+key)
+    return restored
+
 def current_cleanup_restore(sides):
     if not (CLEANUP_NEW_KEYS & set(sides.get('admin',{}))):
         return sides
@@ -391,11 +432,12 @@ def current_cleanup_restore(sides):
         '50318bc3163bfa7496b3bc6dce8b1e789417334e'))
 
 def verify_and_restore(sides,definition=None):
+    sides=gift_precheck_copy_restore(sides)
     sides=current_cleanup_restore(sides)
     if any(key.startswith('delivery_recovery.') for audience in sides.values() for key in audience):
         sides=delivery_recovery_copy_restore(sides)
     current=scoped_addon_restore(shared_transfer_copy_restore(server_removal_copy_restore(panel_group_copy_restore(sides))))
-    sides,api_proof=verify_api_and_restore(current)
+    sides,api_proof=verify_api_and_restore(current,from_r5=True)
     record=manifest()if definition is None else definition
     check(record.get('version')==1 and record.get('baseline_commit')==BASE and record.get('authorization')==AUTH,'r5_amendment_identity')
     old=baseline();check(sum(map(len,old.values()))==2635,'r5_baseline_identity')
@@ -622,6 +664,21 @@ def chili_copy_values():
         path='messages/fa/'+audience+'.php'
         raw=command('git','show',CHILI_COPY_HEAD+':'+path)
         current=(ROOT/path).read_bytes()
+        if audience=='user':
+            # Verify current additive copy above; erasing only its six
+            # individually pinned source lines must recover the immutable
+            # historical full-file SHA.
+            added={key.split('.',1)[1] for key in GIFT_PRECHECK_SHA256['user']}
+            original_lines=current.splitlines(keepends=True)
+            kept=[];removed=[]
+            for line in original_lines:
+                hit=re.match(rb"^        '(api_payment\.code_[a-z_]+)' =>",line)
+                if hit and hit.group(1).decode() in added:
+                    removed.append(hit.group(1).decode())
+                else:kept.append(line)
+            check(len(removed)==len(added) and set(removed)==added,
+                  'gift_precheck_user_exact_lines')
+            current=b''.join(kept)
         if audience=='admin':
             # #117 has one separately pinned additive topic. Removing only
             # that exact byte block must restore the approved, historical
@@ -727,7 +784,8 @@ def review_catalog_restore(sides):
             restored[audience].pop(key)
     return restored,{'review_added_keys':8,'review_added_user_keys':2,'review_added_admin_keys':6,'review_source':REVIEW_SOURCE}
 
-def verify_api_and_restore(sides,definition=None):
+def verify_api_and_restore(sides,definition=None,from_r5=False):
+    sides=gift_precheck_copy_restore(sides,allow_prestripped=from_r5)
     sides=current_cleanup_restore(sides)
     if any(key.startswith('delivery_recovery.') for audience in sides.values() for key in audience):
         sides=delivery_recovery_copy_restore(sides)

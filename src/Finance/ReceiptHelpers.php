@@ -1821,15 +1821,71 @@ function achbotManualCaption(mysqli $connection, array $payInfo, string $caption
     return $quoteLine . $caption;
 }
 
-/** Keep the whole code and original caption in one Telegram text message. */
-function achbotManualGiftReviewText(string $caption,string $code): string {
-    return $caption."\n\n".achbotMessageHtml('manual_payment.api_payment.code_evidence',['code'=>$code]);
+/** Keep the whole code, the original caption and trusted API details in ONE
+ * private staff message. The gift API v2 currently does not disclose its
+ * originating WooCommerce order number or gift-card creation timestamp.
+ * Never label the bot's own invoice as either remote gift-card field.
+ */
+function achbotManualGiftReviewText(string $caption,string $code,?array $screen=null): string {
+    $unit=($screen['amount_unit']??null)==='rial'?'ریال':'تومان';
+    $amount=is_int($screen['redeem_amount']??null) && $screen['redeem_amount']>0
+        ? number_format($screen['redeem_amount']).' '.$unit
+        : achbotMessage('manual_payment.api_payment.gift_not_verified');
+    return $caption."\n\n".
+        achbotMessageHtml('manual_payment.api_payment.code_evidence',['code'=>$code])."\n".
+        achbotMessageHtml('manual_payment.api_payment.gift_details',[
+            'amount'=>$amount,
+            'order'=>achbotMessage('manual_payment.api_payment.gift_not_provided'),
+            'created'=>achbotMessage('manual_payment.api_payment.gift_not_provided')]);
 }
 function achbotManualGiftReviewFits(string $caption,string $code): bool {
-    $plain=html_entity_decode(strip_tags(achbotManualGiftReviewText($caption,$code)),ENT_QUOTES|ENT_HTML5,'UTF-8');
+    // Largest representable redeem amount bounds the final numeric line.
+    // Fit-checking BEFORE durable code save prevents a stranded invoice.
+    $plain=html_entity_decode(strip_tags(achbotManualGiftReviewText($caption,$code,
+        ['redeem_amount'=>PHP_INT_MAX,'amount_unit'=>'rial'])),ENT_QUOTES|ENT_HTML5,'UTF-8');
     $characters=preg_match_all('/./us',$plain);
     $supplementary=preg_match_all('/[\x{10000}-\x{10ffff}]/u',$plain);
     return $characters!==false && $supplementary!==false && $characters+$supplementary<=4096;
+}
+/** A read-only verification BEFORE the original manual receipt lease and
+ * Telegram fanout. Unknown/unavailable evidence keeps genuine human review;
+ * a definite invalid/used/wrong-value card never reaches staff.
+ */
+function achbotManualGiftSubmissionPreflight(mysqli $db,array $pay,string $method,
+                                            string $code): array {
+    $accepted=['accepted'=>true,'redeem_amount'=>null,'amount_unit'=>null];
+    if (!achbotManualTypedGift($db,$pay,$method))return $accepted;
+    try {
+        $c=achbotApiPaymentContext($db,(string)$pay['hash_id'],(int)$pay['user_id']);
+        if (!$c || ($c['attempt']['provider']??'')!=='gift_card' ||
+            ($c['pay']['state']??'')!=='pending')return $accepted;
+        $verified=achbotPaymentEvidenceGiftVerify($c['profile'],$code);
+        $status=(string)($verified['status']??'unavailable');
+        if (in_array($status,['not_found','invalid','used','revoked','expired'],true))
+            return ['accepted'=>false,'reason'=>$status,'redeem_amount'=>null,'amount_unit'=>null];
+        if (!empty($verified['ok']) && $status==='active') {
+            $e=achbotPaymentEvidenceGiftNormalize($verified['data'],$c['profile'],$c['attempt']);
+            if ($e!==null)return [
+                'accepted'=>true,
+                'redeem_amount'=>achbotPaymentEvidenceInteger($verified['data']['redeem_amount']),
+                'amount_unit'=>(string)$c['profile']['amount_unit']];
+            if (achbotPaymentEvidenceGiftNormalizationStatus($verified['data'],
+                    $c['profile'],$c['attempt'])==='mismatch')
+                return ['accepted'=>false,'reason'=>'mismatch','redeem_amount'=>null,'amount_unit'=>null];
+        }
+    } catch (Throwable $e) {
+        // The API/DB observation was inconclusive: keep normal human review.
+    }
+    return $accepted;
+}
+function achbotManualGiftRetryMessage(string $reason): string {
+    $key=match($reason) {
+        'not_found'=>'code_not_found_retry','invalid'=>'code_invalid_retry',
+        'used'=>'code_used_retry','revoked'=>'code_revoked_retry',
+        'expired'=>'code_expired_retry','mismatch'=>'code_mismatch_retry',
+        default=>'code_invalid_retry'
+    };
+    return achbotMessage('payment.api_payment.'.$key);
 }
 function achbotManualTypedGift(mysqli $db,array $pay,string $method): bool {
     return $method==='gift_card' && function_exists('achbotApiPaymentContext') &&
@@ -2177,12 +2233,13 @@ function sendReceiptToAdminsAndUpdatePay(
     string $adminKeyboard,
     int $adminChatId,
     string $hashId,
-    string $claimToken
+    string $claimToken,
+    ?array $giftScreen=null
 ): bool {
     try {
         $pay=dbFetchPayByHash($connection,$hashId);
         $typed=$pay && achbotManualTypedGift($connection,$pay,'gift_card') && achbotManualSelectedMethod($connection,$pay)==='gift_card';
-        if($typed){$code=achbotPaymentEvidenceReadGiftCode($connection,(int)$pay['id']);if($code!==$fileid)throw new RuntimeException('typed_receipt_evidence_mismatch');if(!achbotManualGiftReviewFits($caption,$code))throw new RuntimeException('typed_receipt_message_too_long');$caption=achbotManualGiftReviewText($caption,$code);}
+        if($typed){$code=achbotPaymentEvidenceReadGiftCode($connection,(int)$pay['id']);if($code!==$fileid)throw new RuntimeException('typed_receipt_evidence_mismatch');if(!achbotManualGiftReviewFits($caption,$code))throw new RuntimeException('typed_receipt_message_too_long');$caption=achbotManualGiftReviewText($caption,$code,$giftScreen);}
         $response = $typed?sendMessage($caption,$adminKeyboard,'HTML',$adminChatId):sendPhoto($fileid, $caption, $adminKeyboard, 'HTML', $adminChatId);
         $msgId = (int)($response->result->message_id ?? 0);
         if ($msgId <= 0 ||
