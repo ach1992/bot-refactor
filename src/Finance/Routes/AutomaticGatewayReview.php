@@ -11,24 +11,24 @@ require_once __DIR__.'/../../../messages/loader.php';
 /** Telegram's 4096-character text limit applies after HTML parsing.
  * Conservatively count UTF-16 units so astral emojis cannot overflow.
  */
-function achbotGatewayReviewTextLength(string $html): int {
+$gatewayTextLength=static function(string $html): int {
     $plain=html_entity_decode(strip_tags($html),ENT_QUOTES|ENT_HTML5,'UTF-8');
     $characters=preg_match_all('/./us',$plain);
     $astral=preg_match_all('/[\x{10000}-\x{10FFFF}]/u',$plain);
     return $characters===false || $astral===false
         ? PHP_INT_MAX : $characters+$astral;
-}
+};
 
 /** Protect payment/provider/Native facts and buttons; fit only display-only
  * text (including a 5000-character legacy description) into the remainder.
  * Raw persisted facts remain unchanged for all subsequent validations.
  */
-function achbotGatewayReviewFitCase(string $core,array $optional,string $footer): string {
+$gatewayFitCase=static function(string $core,array $optional,string $footer) use ($gatewayTextLength): string {
     $notice="\n".achbotMessage('automatic_gateway_review.truncated');
     // Reserve a notice even when it turns out unnecessary. This keeps the
     // budget exact for both editMessageText and fallback sendMessage.
-    $budget=4096-achbotGatewayReviewTextLength($notice);
-    if (achbotGatewayReviewTextLength($core.$footer)>$budget)
+    $budget=4096-$gatewayTextLength($notice);
+    if ($gatewayTextLength($core.$footer)>$budget)
         throw new RuntimeException('gateway_review_essential_text_over_limit');
     $added='';$trimmed=false;
     foreach ($optional as [$key,$param,$value]) {
@@ -37,7 +37,7 @@ function achbotGatewayReviewFitCase(string $core,array $optional,string $footer)
         $line=static fn(string $v): string =>
             "\n".achbotMessageHtml($key,[$param=>$v]);
         $complete=$line($value);
-        if (achbotGatewayReviewTextLength($core.$added.$complete.$footer)<=$budget) {
+        if ($gatewayTextLength($core.$added.$complete.$footer)<=$budget) {
             $added.=$complete;
             continue;
         }
@@ -46,7 +46,7 @@ function achbotGatewayReviewFitCase(string $core,array $optional,string $footer)
         while ($low<$high) {
             $mid=intdiv($low+$high+1,2);
             $partial=$line(mb_substr($value,0,$mid,'UTF-8').'…');
-            if (achbotGatewayReviewTextLength($core.$added.$partial.$footer)<=$budget)
+            if ($gatewayTextLength($core.$added.$partial.$footer)<=$budget)
                 $low=$mid;
             else $high=$mid-1;
         }
@@ -54,10 +54,10 @@ function achbotGatewayReviewFitCase(string $core,array $optional,string $footer)
             $added.=$line(mb_substr($value,0,$low,'UTF-8').'…');
     }
     $result=$core.$added.($trimmed?$notice:'').$footer;
-    if (achbotGatewayReviewTextLength($result)>4096)
+    if ($gatewayTextLength($result)>4096)
         throw new RuntimeException('gateway_review_message_budget_invalid');
     return $result;
-}
+};
 
 // Only unfinished automatic-gateway payments are shown here.
 if (preg_match('/^attention(?:Inbox(?:_[1-9][0-9]{0,17})?|Case_[1-9][0-9]{0,17})$/D',
@@ -300,7 +300,7 @@ if (preg_match('/^attention(?:Inbox(?:_[1-9][0-9]{0,17})?|Case_[1-9][0-9]{0,17})
             $rows[]=[['text'=>achbotMessage('automatic_gateway_review.archive'),
                 'callback_data'=>'gatewayReview_H_'.$attempt]];
             $footer.="\n".achbotMessage('automatic_gateway_review.archive_notice');
-            $body=achbotGatewayReviewFitCase($body,$optional,$footer);
+            $body=$gatewayFitCase($body,$optional,$footer);
             $rows[]=[['text'=>achbotMessage('automatic_gateway_review.back_list'),
                 'callback_data'=>'attentionInbox']];
         }
