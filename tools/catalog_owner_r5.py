@@ -632,8 +632,8 @@ def delivery_recovery_copy_restore(sides:dict) -> dict:
 def delivery_recovery_copy_negative_controls(sides:dict) -> int:
     # The successor intentionally removed this UI. Perform the exact
     # historical mutation controls on the immutable RC26 source, AFTER
-    # verifying present copy against the approved current cleanup contract.
-    sides=current_cleanup_restore(sides)
+    # verifying the current gift-copy additions and their original recipients.
+    sides=current_cleanup_restore(gift_precheck_copy_restore(sides))
     delivery_recovery_copy_restore(sides)
     cases=[]
     bad=copy.deepcopy(sides);bad['admin'].pop('delivery_recovery.title');cases.append(bad)
@@ -846,9 +846,9 @@ def verify_api_and_restore(sides,definition=None,from_r5=False):
     check(sides==accepted,'api_undeclared_catalog_key_value_parameter_or_recipient')
     return copy.deepcopy(before),{'api_added_keys':len(delta),'api_added_user_keys':22,'api_added_admin_keys':64,
         'api_baseline_keys':2685,'api_current_keys':2771,'api_retained_unreferenced_keys':len(API_RETAINED),**gift_proof,**review_proof}
-def api_negative_controls(sides):
+def api_negative_controls(sides,from_r5=False):
     definition=api_manifest();key='payment.api_payment.bank_invoice';controls=[]
-    verify_api_and_restore(sides,definition)
+    verify_api_and_restore(sides,definition,from_r5=from_r5)
     bad=copy.deepcopy(sides);bad['user']['payment.api_payment.unapproved']='ناشناخته';controls.append((bad,definition))
     bad=copy.deepcopy(sides);bad['admin']['unapproved.extra']='ناشناخته';controls.append((bad,definition))
     bad=copy.deepcopy(sides);bad['user'][key]['text']+=' تغییر ثبت‌نشده';controls.append((bad,definition))
@@ -864,7 +864,7 @@ def api_negative_controls(sides):
     bad=copy.deepcopy(definition);bad['added_keys'][key]['source_paths']=['unapproved.php'];controls.append((sides,bad))
     bad=copy.deepcopy(sides);bad['user']['legacy_messages.banned']='تغییر قدیمی ثبت‌نشده';controls.append((bad,definition))
     for candidate,record in controls:
-        try:verify_api_and_restore(candidate,record)
+        try:verify_api_and_restore(candidate,record,from_r5=from_r5)
         except AssertionError:continue
         raise AssertionError('api_catalog_negative_control_missed')
     return len(controls)

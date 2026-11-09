@@ -1188,8 +1188,8 @@ def run_wallet(tmp: str) -> tuple[dict, dict]:
         cwd=ROOT,check=True,timeout=180,capture_output=True,text=True)
     text_catalog=json.loads(catalog_output.stdout)
     expected_catalog={
-        'status':'PASS','current_catalog_keys':2853,
-        'current_admin_keys':1911,'current_user_keys':942,
+        'status':'PASS','current_catalog_keys':2862,
+        'current_admin_keys':1914,'current_user_keys':948,
         'retired_experimental_keys':129,'retired_experimental_topics':10,
         'new_copy_entries':33,'current_runtime_files':131,
         'new_copy_references_unbound':0,

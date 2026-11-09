@@ -55,9 +55,14 @@ def main() -> dict:
     ],cwd=ROOT,text=True)
     groups=json.loads(shell)
     current={a:historical.flatten(v) for a,v in groups.items()}
-    assert len(current['admin'])==1911 and len(current['user'])==942
+    added=historical.GIFT_PRECHECK_SHA256
+    assert len(current['admin'])==1911+len(added['admin']) and \
+        len(current['user'])==942+len(added['user'])
     assert not set(current['admin'])&set(current['user'])
-    prior=historical.current_cleanup_restore(current)
+    # Verify exact current additions and recipient placement before
+    # comparing the older immutable post-cleanup user/admin baseline.
+    prior=historical.current_cleanup_restore(
+        historical.gift_precheck_copy_restore(current))
     assert len(prior['admin'])==1964 and len(prior['user'])==942
     assert historical.CLEANUP_TOPICS.isdisjoint(groups['admin'])
     assert len(historical.CLEANUP_NEW_KEYS)==33
@@ -94,7 +99,8 @@ def main() -> dict:
     altered=copy.deepcopy(current);altered['admin']['finance_workbench.title']='stale'
     negative.append(('obsolete_workbench_copy',altered))
     for name,changed in negative:
-        try:historical.current_cleanup_restore(changed)
+        try:historical.current_cleanup_restore(
+            historical.gift_precheck_copy_restore(changed))
         except AssertionError:continue
         raise AssertionError('Negative copy control missed: '+name)
     # The existing native token-based sink inventory includes new routes.
