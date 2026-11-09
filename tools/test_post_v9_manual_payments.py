@@ -6,6 +6,7 @@ Source is exercised by real PHP against the existing additive shared ledger.
 """
 from __future__ import annotations
 import argparse
+import html
 import json
 import re
 import subprocess
@@ -846,13 +847,15 @@ def check():
         # Review F1/F2: execute actual service operator callback handlers, not
         # merely helper functions. Every remote action is a local spy.
         def service_pay(key,subject='BUY_SUB',method='bank_transfer',received=True,
-                        amount=100000,quantity=0,addon_units=None,standard=False):
+                        amount=100000,quantity=0,addon_units=None,standard=False,
+                        description_override=None):
             seed(work,env,key,price=amount)
             # A physical Marzban username cannot be reused for two paid
             # identities on the same provider. Synthetic custom descriptions
             # must therefore differ per payment; real mismatches fail closed.
-            description='fx_'+key if (key.startswith('custom') or
-                key.startswith('servicecallbackrace')) else 'fixture'
+            description=(description_override if description_override is not None
+                else ('fx_'+key if (key.startswith('custom') or
+                      key.startswith('servicecallbackrace')) else 'fixture'))
             # Only explicitly NEW add-on scenarios get a pinned quantity.
             # Wallet/legacy seed defaults remain zero and are tested below.
             days,volume=(0,0) if standard else (30,10)
@@ -1006,6 +1009,47 @@ def check():
         assert query(work,env,"SELECT state FROM pays WHERE hash_id='standardcancelreason'")=='have_sent'
         assert query(work,env,"SELECT COUNT(*) FROM payment_followup_intents f JOIN pays p ON p.id=f.pay_row_id WHERE p.hash_id='standardcancelreason'")=='0'
         cases.append('manual_reject_cancel_leaves_original_receipt_reviewable')
+
+        # The original persisted subscription label is presentation data, not
+        # trusted HTML. Its markup must not corrupt the customer's typed reason.
+        service_pay('standardrejectmarkup',standard=True,method='gift_card',
+                    description_override='Label & <fake> Markup')
+        escaped=reject_with_reason('standardrejectmarkup',reason='توضیح کامل رد')
+        customer=[str(e['args'][0]) for e in escaped if e['name']=='sendMessage' and
+                  len(e.get('args',[]))>=4 and e['args'][3]==1001]
+        assert len(customer)==1 and '<code>Label &amp; &lt;fake&gt; Markup</code>' in customer[0],escaped
+        assert 'توضیح کامل رد' in customer[0],escaped
+        cases.append('manual_reject_untrusted_subscription_name_html_escaped')
+
+        # Telegram accepts up to 4096 UTF-16 units, but the complete notice
+        # includes headings, payment facts and escaped reason entities.
+        service_pay('standardrejectlongreason',standard=True,method='gift_card')
+        open_reason_editor('standardrejectlongreason')
+        long_reply=submit_reason('standardrejectlongreason',reason='گ'*4096)
+        assert query(work,env,"SELECT state FROM pays WHERE hash_id='standardrejectlongreason'")=='have_sent',long_reply
+        assert query(work,env,"SELECT step FROM users WHERE userid=9001")==(
+            'declineActionReason_standardrejectlongreason_111'),long_reply
+        assert query(work,env,"SELECT COUNT(*) FROM payment_followup_intents f JOIN pays p ON p.id=f.pay_row_id WHERE p.hash_id='standardrejectlongreason'")=='0',long_reply
+        assert not any(e['name'] in ('editKeys','remote_create','remote_edit') for e in long_reply),long_reply
+        assert any(e['name']=='sendMessage' and 'طولانی' in str(e['args'][0]) for e in long_reply),long_reply
+        recovered=submit_reason('standardrejectlongreason',reason='مبلغ رسید با فاکتور تفاوت دارد')
+        assert query(work,env,"SELECT state FROM pays WHERE hash_id='standardrejectlongreason'")=='declined',recovered
+        assert any(e['name']=='sendMessage' and 'مبلغ رسید با فاکتور تفاوت دارد' in str(e['args'][0])
+                   for e in recovered),recovered
+        cases.append('manual_reject_oversize_reason_reprompt_before_commit_then_accept')
+
+        # A long original label may be shortened for display while the exact
+        # human reason and immutable payment evidence remain unmodified.
+        service_pay('standardrejectlongname',standard=True,method='gift_card',
+                    description_override='X'*4500)
+        readable=reject_with_reason('standardrejectlongname',reason='اطلاعات ناقص است')
+        reports=[e['args'][0] for e in readable if e['name']=='sendMessage']
+        assert len(reports)>=2 and all(
+            len(html.unescape(re.sub(r'<[^>]+>','',str(t))).encode('utf-16-le'))//2<=4096
+            for t in reports),(reports[:1],readable)
+        assert any('اطلاعات ناقص است' in str(t) and '…' in str(t) for t in reports),readable
+        assert query(work,env,"SELECT LENGTH(description) FROM pays WHERE hash_id='standardrejectlongname'")=='4500'
+        cases.append('manual_reject_long_original_label_fits_without_mutating_pinned_evidence')
 
         # Shared rejection for every manual order family: wallet, standard,
         # custom, renewal and add-ons. Only the approval callback differs;

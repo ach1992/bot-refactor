@@ -269,25 +269,66 @@ if (preg_match('/^declineActionReason_(.+)_(\d+)$/', (string)($userInfo['step']?
         \achbotMessage('manual_payment.manual_receipts.button.e3517e568b'),
         'url'=>"https://t.me/$botUsername?start=restart_$hash_id"]]]],
         JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
-    $message=\achbotMessage('manual_payment.manual_receipts.message.bc0155976d',
-        ['reason'=>$reason]).
-        \achbotMessage('manual_payment.manual_receipts.message.c4d810a7d3',['price'=>$price]).
-        \achbotMessage('manual_payment.manual_receipts.message.61d75413a2',['remark'=>$remark]).
-        \achbotMessage('manual_payment.manual_receipts.message.df4f415ed5',['hash_id'=>$hash_id]);
+    // The reason is administrator-authored HTML data, never markup. Preserve
+    // it in full; only a display-only subscription name may be shortened.
+    $payId=(int)$payInfo['id'];
+    $customerNotice=static function(string $name) use ($reason,$price,$hash_id): string {
+        return \achbotMessage('manual_payment.manual_receipts.message.bc0155976d',
+            ['reason'=>$reason]).
+            \achbotMessage('manual_payment.manual_receipts.message.c4d810a7d3',
+                ['price'=>$price]).
+            \achbotMessageHtml('manual_payment.manual_receipts.message.61d75413a2',
+                ['remark'=>$name]).
+            \achbotMessageHtml('manual_payment.manual_receipts.message.df4f415ed5',
+                ['hash_id'=>$hash_id]);
+    };
+    $operatorNotice=static function(string $name) use ($payId,$uid,$payInfo,$hash_id): string {
+        return \achbotMessage('manual_receipt_final.status_rejected')."\n".
+            \achbotMessageHtml('manual_receipt_final.rejected_report',[
+                'id'=>$payId,'user'=>(int)$uid,
+                'amount'=>number_format((int)$payInfo['price']),'hash'=>$hash_id])."\n".
+            \achbotMessageHtml('manual_payment.manual_receipts.message.61d75413a2',
+                ['remark'=>$name]);
+    };
+    // Telegram bounds parsed HTML in UTF-16 units (4096); escaping an
+    // otherwise valid reason/name can exceed that limit. Never COMMIT a
+    // rejection whose original customer/operator notice cannot be sent.
+    $telegramUnits=static function(string $html): int {
+        $plain=html_entity_decode(strip_tags($html),ENT_QUOTES|ENT_HTML5,'UTF-8');
+        $characters=preg_match_all('/./us',$plain);
+        $astral=preg_match_all('/[\x{10000}-\x{10FFFF}]/u',$plain);
+        return $characters===false || $astral===false ? PHP_INT_MAX : $characters+$astral;
+    };
+    $message=$customerNotice($remark);
+    $adminReport=$operatorNotice($remark);
+    if ($telegramUnits($message)>4096 || $telegramUnits($adminReport)>4096) {
+        // Keep the largest readable display prefix and the exact reason,
+        // original payment and database description untouched.
+        $low=0;$high=mb_strlen((string)$remark,'UTF-8');
+        while ($low<$high) {
+            $mid=intdiv($low+$high+1,2);
+            $preview=mb_substr((string)$remark,0,$mid,'UTF-8').'…';
+            if ($telegramUnits($customerNotice($preview))<=4096 &&
+                $telegramUnits($operatorNotice($preview))<=4096) $low=$mid;
+            else $high=$mid-1;
+        }
+        $displayName=$low>0?mb_substr((string)$remark,0,$low,'UTF-8').'…':'…';
+        $message=$customerNotice($displayName);
+        $adminReport=$operatorNotice($displayName);
+        if ($telegramUnits($message)>4096 || $telegramUnits($adminReport)>4096) {
+            // The reason itself is too large. Keep the editor open and ask
+            // for a shorter message BEFORE any irreversible financial state.
+            setUser('declineActionReason_'.$hash_id.'_'.$message_id);
+            sendMessage(\achbotMessage('broadcast.routes.pm_noop.message.72fe3f7c5d')."\n".
+                \achbotMessage('manual_payment.manual_receipts.message.a757d0e2a6'),$cancelKey);
+            return;
+        }
+    }
     $adminAfterSendKeys=json_encode(['inline_keyboard'=>[[['text'=>
         \achbotMessage('manual_payment.manual_receipts.button.7918a2f411'),
         'callback_data'=>'banUserDirect_'.$uid]]]],JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
-    // This message is staged BEFORE Telegram is called. Never assert that
+    // These messages are staged BEFORE Telegram is called. Never assert that
     // the customer's rejection notice was delivered: its ACK may be unknown.
-    $payId=(int)$payInfo['id'];
-    // The existing fixed status is an operator result, never the reason
-    // attributed to the customer. Preserve its current catalog reference.
-    $adminReport=\achbotMessage('manual_receipt_final.status_rejected')."\n".
-        \achbotMessageHtml('manual_receipt_final.rejected_report',[
-        'id'=>$payId,'user'=>(int)$uid,
-        'amount'=>number_format((int)$payInfo['price']),'hash'=>$hash_id])."\n".
-        \achbotMessageHtml('manual_payment.manual_receipts.message.61d75413a2',
-            ['remark'=>$remark]);
     $opened=false;
     try {
         if (!$connection->begin_transaction()) throw new RuntimeException('manual_reject_begin');
