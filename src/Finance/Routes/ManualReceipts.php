@@ -304,15 +304,19 @@ if (preg_match('/^declineActionReason_(.+)_(\d+)$/', (string)($userInfo['step']?
     if ($telegramUnits($message)>4096 || $telegramUnits($adminReport)>4096) {
         // Keep the largest readable display prefix and the exact reason,
         // original payment and database description untouched.
-        $low=0;$high=mb_strlen((string)$remark,'UTF-8');
+        // PCRE Unicode splitting works even in the minimal PHP 8.5
+        // fixture/runtime without an optional mbstring extension.
+        $codepoints=preg_split('//u',(string)$remark,-1,PREG_SPLIT_NO_EMPTY);
+        if (!is_array($codepoints)) $codepoints=[];
+        $low=0;$high=count($codepoints);
         while ($low<$high) {
             $mid=intdiv($low+$high+1,2);
-            $preview=mb_substr((string)$remark,0,$mid,'UTF-8').'…';
+            $preview=implode('',array_slice($codepoints,0,$mid)).'…';
             if ($telegramUnits($customerNotice($preview))<=4096 &&
                 $telegramUnits($operatorNotice($preview))<=4096) $low=$mid;
             else $high=$mid-1;
         }
-        $displayName=$low>0?mb_substr((string)$remark,0,$low,'UTF-8').'…':'…';
+        $displayName=($low>0?implode('',array_slice($codepoints,0,$low)):'').'…';
         $message=$customerNotice($displayName);
         $adminReport=$operatorNotice($displayName);
         if ($telegramUnits($message)>4096 || $telegramUnits($adminReport)>4096) {
