@@ -120,6 +120,68 @@ function achbotDeliveryInsertBuyLocked(mysqli $db,array $pay,array $attempt,arra
         (string)$effect['operation_id'],(string)$effect['target_key'],$packet);
 }
 
+/**
+ * Immutable original hosted BUY_SUB delivery from already committed orders.
+ * An original 003 paid claim is required; no merchant/financial replay.
+ */
+function achbotDeliveryHostedBuyDigest(
+    array $pay,array $attempt,array $effect,int $ordinal
+): ?string {
+    $id=(int)($pay['id']??0);$count=max(1,(int)($pay['agent_count']??0));
+    $amount=(int)($pay['price']??0);
+    if ($id<=0 || $amount<=0 || (int)($pay['agent_count']??0)<0 ||
+        ($pay['type']??null)!=='BUY_SUB' || ($pay['state']??null)!=='paid' ||
+        !in_array((string)($attempt['provider']??''),['nextpay','zarinpal'],true) ||
+        (int)($attempt['pay_row_id']??0)!==$id ||
+        (string)($attempt['order_hash']??'')!==(string)($pay['hash_id']??'') ||
+        (string)($attempt['provider_reference']??'')==='' ||
+        (string)$attempt['provider_reference']!==(string)($pay['payid']??'') ||
+        (string)($attempt['quote_currency']??'')!=='toman' ||
+        (string)($attempt['quote_amount']??'')!==sprintf('%d.00000000',$amount) ||
+        (int)($attempt['local_amount_toman']??0)!==$amount ||
+        ($attempt['payment_id']??null)!==null ||
+        ($attempt['evidence_profile']??null)!==null ||
+        (int)($effect['pay_row_id']??0)!==$id ||
+        !in_array((string)($effect['effect_kind']??''),['create','replacement'],true) ||
+        (int)($effect['ordinal']??0)!==$ordinal ||
+        $ordinal<=0 || $ordinal>$count ||
+        ($effect['state']??null)!=='local_recorded' ||
+        (int)($effect['order_id']??0)<=0 ||
+        (($effect['effect_kind']??'')==='create'
+            ?(int)($effect['reserved_count']??-1)!==($ordinal===1?$count:0)
+            :($ordinal===1
+                ?!in_array((int)($effect['reserved_count']??-1),[0,$count],true)
+                :(int)($effect['reserved_count']??-1)!==0)) ||
+        (int)($effect['target_server_id']??0)!==(int)($pay['server_id']??0) ||
+        (int)($effect['plan_id']??0)!==(int)($pay['plan_id']??0))
+        return null;
+    foreach (['operation_id','request_sha256','target_key','endpoint_sha256',
+        'remote_username'] as $key)
+        if (!is_string($effect[$key]??null) || $effect[$key]==='') return null;
+    $replacement=(string)$effect['effect_kind']==='replacement';
+    if ($replacement && ((int)($effect['actor_userid']??0)<=0 ||
+        !in_array((string)($effect['reconciliation_reason']??''),
+            ['original_missing','original_missing_proven','original_unavailable',
+             'original_mismatch','original_invalid'],true) ||
+        preg_match('/^[a-f0-9]{64}$/D',
+            (string)($effect['reconciliation_fingerprint']??''))!==1)) return null;
+    $digestParts=[
+        $replacement?'hosted-replacement:v1':'hosted-linked-buy:v1',
+        achbotPaymentEvidencePayFingerprint($pay),
+        achbotPaymentEvidenceQuoteFingerprint($attempt),
+        $ordinal,$count,(string)$effect['id'],(string)$effect['operation_id'],
+        (string)$effect['request_sha256'],(string)$effect['endpoint_sha256'],
+        (string)$effect['target_key'],(string)$effect['remote_username'],
+        (string)$effect['requested_expire'],(string)$effect['requested_bytes']
+    ];
+    // Existing 018 packets retain their original v1 digest *exactly*.
+    // Only the distinct replacement uses the additional immutable evidence.
+    if ($replacement) $digestParts[]=[(string)$effect['replaces_effect_id'],
+        (string)$effect['reconciliation_fingerprint'],
+        (string)$effect['reconciliation_reason'],
+        (string)$effect['actor_userid']];
+    return hash('sha256',json_encode($digestParts,JSON_THROW_ON_ERROR));
+}
 /** Original human receipt, not a merchant attestation. The same 003
  * method/quote and 007 manual capacity hold must survive until delivery.
  * Caller owns the payment transaction when lock=true. No provider HTTP.
@@ -283,7 +345,10 @@ function achbotDeliveryValidateLocked(mysqli $db,array $pay,array $d): ?array {
         return null;
     $a=$db->prepare('SELECT * FROM payment_attempts WHERE pay_row_id=? FOR UPDATE');
     $a->bind_param('i',$id);$a->execute();$attempt=$a->get_result()->fetch_assoc();$a->close();
-    if (!$attempt || (int)$attempt['id']!==(int)$d['attempt_id']) return null;
+    // A terminal operator Archive cannot initiate any later delivery send;
+    // read-only historical validation remains available before Archive.
+    if (!$attempt || (int)$attempt['id']!==(int)$d['attempt_id'] ||
+        ($attempt['review_archived_at']??null)!==null) return null;
     $effectId=(int)($d['effect_id']??0);$orderId=(int)($d['order_id']??0);
     $body=achbotPaymentEvidenceUnprotect(
         achbotDeliveryPurpose($id,$ordinal,$effectId,$orderId),(string)$d['sealed_payload']);
@@ -300,10 +365,9 @@ function achbotDeliveryValidateLocked(mysqli $db,array $pay,array $d): ?array {
         'native_target_key'=>(string)($d['native_target_key']??'')] as $k=>$v)
         if (!is_string($body[$k]??null) || !hash_equals($v,$body[$k])) return null;
     if ($effectId>0) {
-        $q=$db->prepare('SELECT id,pay_row_id,ordinal,state,order_id,target_server_id,'.
-            'operation_id,target_key,target_group_id,request_sha256,endpoint_sha256,'.
-              'remote_username,effect_kind,plan_id,requested_expire,requested_bytes,reserved_count '.
-            'FROM service_effects WHERE id=? FOR UPDATE');
+        // Historical RC26 replacement evidence may have extra 021 columns.
+        // SELECT * also works on a fresh schema that has no 021 columns.
+        $q=$db->prepare('SELECT * FROM service_effects WHERE id=? FOR UPDATE');
         $q->bind_param('i',$effectId);$q->execute();$effect=$q->get_result()->fetch_assoc();$q->close();
         if (!$effect || (int)$effect['pay_row_id']!==$id ||
             (int)$effect['ordinal']!==$ordinal || (string)$effect['state']!=='local_recorded' ||
@@ -320,6 +384,13 @@ function achbotDeliveryValidateLocked(mysqli $db,array $pay,array $d): ?array {
                 $pay,$attempt,$effect,$hold,$ordinal):null;
             if ($walletDigest===null ||
                 !hash_equals((string)$d['source_digest'],$walletDigest)) return null;
+        } elseif (in_array((string)$attempt['provider'],['nextpay','zarinpal'],true)) {
+            // Read-only compatibility for already-sealed RC26 hosted packets.
+            $digest=achbotDeliveryHostedBuyDigest($pay,$attempt,$effect,$ordinal);
+            if (($attempt['stage']??null)!=='done' ||
+                ($attempt['provider_status']??null)!=='delivered' ||
+                $digest===null ||
+                !hash_equals((string)$d['source_digest'],$digest)) return null;
         } elseif (in_array((string)$attempt['provider'],
                 ['bank_transfer','gift_card','manual_usdt','manual_trx'],true) &&
             (int)($pay['approved_by']??0)>0) {

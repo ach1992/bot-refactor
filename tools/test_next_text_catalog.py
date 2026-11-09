@@ -55,12 +55,12 @@ def main() -> dict:
     ],cwd=ROOT,text=True)
     groups=json.loads(shell)
     current={a:historical.flatten(v) for a,v in groups.items()}
-    assert len(current['admin'])==1905 and len(current['user'])==942
+    assert len(current['admin'])==1910 and len(current['user'])==942
     assert not set(current['admin'])&set(current['user'])
     prior=historical.current_cleanup_restore(current)
     assert len(prior['admin'])==1964 and len(prior['user'])==942
     assert historical.CLEANUP_TOPICS.isdisjoint(groups['admin'])
-    assert len(historical.CLEANUP_NEW_KEYS)==27
+    assert len(historical.CLEANUP_NEW_KEYS)==32
     content={**current['user'],**current['admin']}
     refs=set()
     pattern=re.compile(r"""achbotMessage(?:Html)?\(\s*['"]([^'"]+)['"]""")

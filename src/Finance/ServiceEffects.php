@@ -186,6 +186,90 @@ function achbotEffectValidUsername(string $username): bool {
         preg_match('/^[a-zA-Z0-9_-]+$/D',$username)===1;
 }
 
+/**
+ * Called only while the original pays row is already FOR UPDATE locked.
+ * The 003 ledger is optional for very old non-hosted orders, but a hidden
+ * table, missing 022 or other SQL error must never bypass Archive.
+ */
+function achbotEffectAssertNotArchivedLocked(mysqli $db,int $payId,bool $processing=false): void {
+    $hasLedger=true;
+    try {
+        $probe=$db->query('SELECT 1 FROM payment_attempts LIMIT 0');
+        if (!$probe) {
+            if ((int)$db->errno===1146) $hasLedger=false;
+            else throw new RuntimeException('effect_archive_ledger_unavailable');
+        } else $probe->free();
+    } catch (mysqli_sql_exception $error) {
+        if ((int)$error->getCode()===1146) $hasLedger=false;
+        else throw $error;
+    }
+    if (!$hasLedger) return;
+    if ($processing) {
+        // Unchanged manual-processing orders on older schemas do not have
+        // the hosted operator Archive contract. Guard only actual hosted
+        // attempts here; a missing 022 on an active hosted case still fails.
+        $q=$db->prepare('SELECT provider FROM payment_attempts
+            WHERE pay_row_id=? LIMIT 1 FOR UPDATE');
+        $q->bind_param('i',$payId);$q->execute();
+        $row=$q->get_result()->fetch_assoc();$q->close();
+        if (!$row || !in_array((string)$row['provider'],
+                ['nowpayments','zarinpal','nextpay'],true)) return;
+    }
+    $fence=$db->prepare('SELECT id FROM payment_attempts
+        WHERE pay_row_id=? AND review_archived_at IS NOT NULL
+        LIMIT 1 FOR UPDATE');
+    if (!$fence) throw new RuntimeException('effect_archive_fence_unavailable');
+    $fence->bind_param('i',$payId);
+    if (!$fence->execute()) throw new RuntimeException('effect_archive_fence_read_failed');
+    $archived=$fence->get_result()->num_rows>0;
+    $fence->close();
+    if ($archived) throw new RuntimeException('effect_original_archived');
+}
+
+/**
+ * Local reservation is not proof of remote dispatch. In one short transaction,
+ * coordinate the actual dispatch admission with Archive via the original
+ * payment lock: reserved -> dispatching. Archive may close a reserved line,
+ * but refuses while a dispatch has been admitted and its result is uncertain.
+ * No database transaction remains open during provider HTTP.
+ */
+function achbotEffectAdmitPaidDispatch(mysqli $db,int $effectId): void {
+    achbotEffectRequireAutocommit($db);
+    $q=$db->prepare('SELECT pay_row_id FROM service_effects WHERE id=?');
+    $q->bind_param('i',$effectId);$q->execute();
+    $row=$q->get_result()->fetch_assoc();$q->close();
+    if (!$row) throw new RuntimeException('effect_dispatch_missing');
+    if ($row['pay_row_id']===null) return; // Existing non-payment path.
+    $payId=(int)$row['pay_row_id'];
+    if ($payId<=0) throw new RuntimeException('effect_dispatch_pay_invalid');
+    $open=false;
+    try {
+        if (!$db->begin_transaction()) throw new RuntimeException('effect_admission_begin_failed');
+        $open=true;
+        $q=$db->prepare('SELECT state FROM pays WHERE id=? FOR UPDATE');
+        $q->bind_param('i',$payId);$q->execute();
+        $pay=$q->get_result()->fetch_assoc();$q->close();
+        if (!$pay || !in_array((string)$pay['state'],
+                ['paid','processing','processing_wallet'],true))
+            throw new RuntimeException('effect_dispatch_payment_changed');
+        if (in_array((string)$pay['state'],['paid','processing'],true))
+            achbotEffectAssertNotArchivedLocked(
+                $db,$payId,$pay['state']==='processing');
+        $q=$db->prepare("UPDATE service_effects SET state='dispatching'
+            WHERE id=? AND pay_row_id=? AND effect_kind='create'
+            AND state='reserved' AND order_id IS NULL");
+        $q->bind_param('ii',$effectId,$payId);
+        if (!$q->execute() || $q->affected_rows!==1)
+            throw new RuntimeException('effect_dispatch_already_admitted');
+        $q->close();
+        if (!$db->commit()) throw new RuntimeException('effect_admission_commit_unknown');
+        $open=false;
+    } catch (Throwable $error) {
+        if ($open) try {$db->rollback();} catch (Throwable $ignored) {}
+        throw $error;
+    }
+}
+
 /** Reserve ONCE before outbound POST; never derive outcome from account counts. */
 function achbotCreatePaidAccount(mysqli $db, int $payId, int $ordinal, array $p,
                                  int $staffActor=0,int $primaryOwner=0): array {
@@ -263,41 +347,11 @@ function achbotCreatePaidAccount(mysqli $db, int $payId, int $ordinal, array $p,
             throw new RuntimeException('effect_payment_identity_mismatch');
         }
 
-        // A hosted BUY_SUB can have several per-account Native CREATE lines.
-        // Archive must stop every line not yet reserved, even when an earlier
-        // line was already dispatched and the original pays row remains paid.
-        // The pays row is locked above; take the attempt lock afterwards, as
-        // in the operator Archive / signed IPN paths. Manual and wallet
-        // purchase claims are not affected by the hosted operator inbox.
-        if ($claim['state']==='paid') {
-            // SHOW TABLES can silently hide a table without sufficient
-            // privileges. Only MySQL 1146 proves genuine pre-ledger absence;
-            // permission/transport/schema errors must never bypass Archive.
-            $hasLedger=true;
-            try {
-                $probe=$db->query('SELECT 1 FROM payment_attempts LIMIT 0');
-                if (!$probe) {
-                    if ((int)$db->errno===1146) $hasLedger=false;
-                    else throw new RuntimeException('effect_archive_ledger_unavailable');
-                } else $probe->free();
-            } catch (mysqli_sql_exception $error) {
-                if ((int)$error->getCode()===1146) $hasLedger=false;
-                else throw $error;
-            }
-            if ($hasLedger) {
-                // Missing 022 on an existing 003 ledger is a schema error:
-                // fail closed before a remote request, never skip Archive.
-                $fence=$db->prepare('SELECT id FROM payment_attempts
-                    WHERE pay_row_id=? AND review_archived_at IS NOT NULL
-                    LIMIT 1 FOR UPDATE');
-                if (!$fence) throw new RuntimeException('effect_archive_fence_unavailable');
-                $fence->bind_param('i',$payId);
-                if (!$fence->execute()) throw new RuntimeException('effect_archive_fence_read_failed');
-                $archived=$fence->get_result()->num_rows>0;
-                $fence->close();
-                if ($archived) throw new RuntimeException('effect_original_archived');
-            }
-        }
+        // The local reservation is not a remote send. Both reservation and
+        // final dispatch admission must honor a terminal Archive.
+        if (in_array($claim['state'],['paid','processing'],true))
+            achbotEffectAssertNotArchivedLocked(
+                $db,$payId,$claim['state']==='processing');
 
         $targetIdentity=achbotEffectTargetIdentity($db,$serverId,$planId,$payId,$claim);
         $group=$targetIdentity['group'];$endpoint=$targetIdentity['endpoint'];
@@ -440,7 +494,7 @@ function achbotCreatePaidAccount(mysqli $db, int $payId, int $ordinal, array $p,
         $stmt=$db->prepare("INSERT INTO service_effects
             (pay_row_id,ordinal,operation_id,effect_kind,target_server_id,target_group_id,
              target_key,endpoint_sha256,plan_id,remote_username,requested_expire,requested_bytes,request_sha256,reserved_count,state)
-            VALUES (?,?,?,'create',?,?,?,?,?,?,?,?,?,?,'dispatching')");
+            VALUES (?,?,?,'create',?,?,?,?,?,?,?,?,?,?,'reserved')");
         if (!$stmt) throw new RuntimeException('effect_reserve_prepare_failed');
         $stmt->bind_param('iisiissisiisi',$payId,$ordinal,$operation,$serverId,$group,
             $targetKey,$endpoint,$planId,$remark,$expiry,$bytes,$fingerprint,$reserveSlots);

@@ -53,6 +53,30 @@ function doAction($payId,$provider) {
  return 'delivered';
 }
 require_once $root.'/src/Finance/GatewayReview.php';
+require_once $root.'/src/Finance/ServiceEffects.php';
+require_once $root.'/src/Finance/DeliveryLedger.php';
+$GLOBALS['telegramWebhookSecret']='AChBotTestSecretFixtureOnly_123';
+$GLOBALS['qr_sends']=0;
+function sendQrFromLink(...$args) {$GLOBALS['qr_sends']++;return true;}
+function reserveEffect($db,$payId,$ordinal,$label) {
+ $label.='_'.$payId;
+ $operation=bin2hex(random_bytes(16));
+ $endpoint=hash('sha256','fixture-endpoint');
+ $digest=hash('sha256',$label);
+ $q=$db->prepare("INSERT INTO service_effects
+  (pay_row_id,ordinal,operation_id,effect_kind,target_server_id,target_key,
+   endpoint_sha256,plan_id,remote_username,requested_expire,requested_bytes,
+   request_sha256,reserved_count,state)
+  VALUES (?,?,?,'create',2,'server:2',?,7,?,1800000000,1073741824,?,0,'reserved')");
+ $q->bind_param('iissss',$payId,$ordinal,$operation,$endpoint,$label,$digest);
+ $q->execute();$id=(int)$db->insert_id;$q->close();
+ return $id;
+}
+function stalePaid($db,$payId,$attemptId) {
+ $db->query("UPDATE pays SET state='paid' WHERE id=$payId");
+ $db->query("UPDATE payment_attempts SET updated_at=NOW()-INTERVAL 11 MINUTE
+  WHERE id=$attemptId");
+}
 function seed($db,$id,$provider,$stage,$status=null,$child=null,$price=100000,$ageSeconds=0) {
  $hash='test-'.$id;$reference=$hash.'-invoice';
  $q=$db->prepare("INSERT INTO pays (id,hash_id,user_id,type,price,request_date,state,payid)
@@ -86,18 +110,18 @@ $balance=(int)$db->query('SELECT wallet FROM users WHERE userid=1001')->fetch_ro
 
 $a=seed($db,301,'nowpayments','review','confirmed','confirmed');
 check(achbotGatewayReviewEligible($db,$a,'approve')!==null,'nowpayments_review_candidate');
-check(achbotGatewayReviewCommit($db,9001,$a,'approve')['status']==='completed',
+check(achbotGatewayReviewCommit($db,9001,$a,'approve',9001)['status']==='completed',
  'original_nowpayments_success');
 $r=state($db,301);
 check($r['pay_state']==='paid' && $r['stage']==='done' &&
  $r['provider_status']==='operator_fulfilled' && (int)$r['approved_by']===9001,
  'one_shot_original_attempt_and_admin_identity');
-check(achbotGatewayReviewCommit($db,9001,$a,'approve')['status']!=='completed',
+check(achbotGatewayReviewCommit($db,9001,$a,'approve',9001)['status']!=='completed',
  'duplicate_approval_refused');
 
 $b=seed($db,302,'zarinpal','review','verification_uncertain');
 check(achbotGatewayReviewEligible($db,$b,'reject')!==null,'zarinpal_saved_uncertainty');
-check(achbotGatewayReviewCommit($db,9001,$b,'reject')['status']==='rejected',
+check(achbotGatewayReviewCommit($db,9001,$b,'reject',9001)['status']==='rejected',
  'hosted_original_rejection');
 $r=state($db,302);
 check($r['pay_state']==='declined' && $r['stage']==='done' &&
@@ -124,7 +148,7 @@ check(achbotGatewayReviewEligible($db,$g,'approve')===null,
 
 $h=seed($db,308,'nowpayments','review','confirmed','confirmed');
 $GLOBALS['fail_for']=308;
-check(achbotGatewayReviewCommit($db,9001,$h,'approve')['status']==='unknown',
+check(achbotGatewayReviewCommit($db,9001,$h,'approve',9001)['status']==='unknown',
  'unknown_original_effect_held');
 $r=state($db,308);
 check($r['pay_state']==='pending' && $r['stage']==='review' &&
@@ -132,7 +156,7 @@ check($r['pay_state']==='pending' && $r['stage']==='review' &&
  'durable_uncertain_hold');
 check(achbotGatewayReviewEligible($db,$h,'approve')===null,
  'unknown_hold_not_replayed');
-check(achbotGatewayReviewArchive($db,9001,$h)==='archived',
+check(achbotGatewayReviewArchive($db,9001,$h,9001)==='archived',
  'previously_unknown_effect_can_be_archived_without_replaying');
 $held=$db->query("SELECT review_archived_by,review_archived_at,
  stage,provider_status FROM payment_attempts WHERE id=$h")->fetch_assoc();
@@ -142,7 +166,7 @@ check((int)$held['review_archived_by']===9001 &&
  $held['provider_status']==='operator_fulfillment_unconfirmed' &&
  state($db,308)['pay_state']==='pending',
  'original_uncertain_payment_untouched_when_archived');
-check(achbotGatewayReviewArchive($db,9002,$h)==='stale',
+check(achbotGatewayReviewArchive($db,9002,$h,9001)==='stale',
  'archival_is_once_only');
 check(achbotGatewayReviewEligible($db,$h,'approve')===null &&
  achbotGatewayReviewEligible($db,$h,'reject')===null,
@@ -150,7 +174,7 @@ check(achbotGatewayReviewEligible($db,$h,'approve')===null &&
 $oldArchivedAt=$held['review_archived_at'];
 
 $k=seed($db,310,'nowpayments','review','confirmed','confirmed');
-check(achbotGatewayReviewArchive($db,9002,$k)==='archived',
+check(achbotGatewayReviewArchive($db,9002,$k,9001)==='archived',
  'fresh_open_case_can_be_archived_without_claiming_funds');
 $before=$db->query("SELECT review_archived_by,review_archived_at FROM payment_attempts
  WHERE id=$k")->fetch_assoc();
@@ -158,26 +182,241 @@ check((int)$before['review_archived_by']===9002 &&
  $before['review_archived_at']!==null &&
  state($db,310)['pay_state']==='pending',
  'original_quote_and_payment_remain_unsettled');
-check(achbotGatewayReviewCommit($db,9001,$k,'approve')['status']==='stale' &&
- achbotGatewayReviewCommit($db,9001,$k,'reject')['status']==='stale',
+check(achbotGatewayReviewCommit($db,9001,$k,'approve',9001)['status']==='stale' &&
+ achbotGatewayReviewCommit($db,9001,$k,'reject',9001)['status']==='stale',
  'late_approve_reject_cannot_change_archived_original');
 $after=$db->query("SELECT review_archived_by,review_archived_at
  FROM payment_attempts WHERE id=$k")->fetch_assoc();
 check($after===$before && state($db,310)['stage']==='review' &&
  state($db,310)['provider_status']==='confirmed' &&
  achbotGatewayReviewEligible($db,$k,'approve')===null &&
- achbotGatewayReviewArchive($db,9001,$k)==='stale',
+ achbotGatewayReviewArchive($db,9001,$k,9001)==='stale',
  'archive_keeps_original_financial_state_and_cannot_be_reopened');
 
 $m=seed($db,311,'nowpayments','review','fulfillment_failed');
 $db->query("UPDATE pays SET state='processing' WHERE id=311");
 $db->query("UPDATE payment_attempts SET updated_at=NOW()-INTERVAL 11 MINUTE
  WHERE id=$m");
-check(achbotGatewayReviewArchive($db,9001,$m)==='archived',
+check(achbotGatewayReviewArchive($db,9001,$m,9001)==='archived',
  'stale_processing_case_can_be_closed_from_attention_only');
 check(state($db,311)['pay_state']==='processing' &&
  state($db,311)['provider_status']==='fulfillment_failed',
  'archived_processing_hold_still_requires_native_forensics_elsewhere');
+
+// Immutable historical fingerprints and 018 digest constants are frozen from
+// main/RC26, not calculated from the code under test.
+$oldPay=[
+ 'id'=>770,'hash_id'=>'rc26-770','user_id'=>1001,'type'=>'BUY_SUB',
+ 'plan_id'=>7,'server_id'=>2,'order_id'=>0,'price'=>100000,'day'=>30,
+ 'volume'=>10,'agent_count'=>2,'description'=>'rc26','agent_bought'=>0,
+ 'state'=>'paid','payid'=>'merchant-770',
+ 'issued_entitlement_days'=>30,'issued_entitlement_gb'=>10,
+];
+$oldAttempt=[
+ 'id'=>1770,'pay_row_id'=>770,'provider'=>'nextpay','order_hash'=>'rc26-770',
+ 'quote_amount'=>'100000.00000000','quote_currency'=>'toman',
+ 'local_amount_toman'=>100000,'provider_reference'=>'merchant-770',
+ 'payment_id'=>null,'evidence_profile'=>null,'settlement_currency'=>null,
+];
+$oldEffect=[
+ 'id'=>2770,'pay_row_id'=>770,'effect_kind'=>'create','ordinal'=>1,
+ 'state'=>'local_recorded','order_id'=>3770,'reserved_count'=>2,
+ 'target_server_id'=>2,'plan_id'=>7,'operation_id'=>str_repeat('a',32),
+ 'request_sha256'=>str_repeat('b',64),'endpoint_sha256'=>str_repeat('c',64),
+ 'target_key'=>'server:2','remote_username'=>'rc26_user_1',
+ 'requested_expire'=>1800000000,'requested_bytes'=>10737418240,
+];
+check(achbotPaymentEvidencePayFingerprint($oldPay)===
+ 'b164d72900a5cbfa9c5c94960ce09f3982d3b4f463eab14df1cc5151a24822d8',
+ 'rc26_021_persisted_payment_fingerprint_byte_identical');
+check(achbotDeliveryHostedBuyDigest($oldPay,$oldAttempt,$oldEffect,1)===
+ '6835fd8869082ce9704afe54b5bb98cd64e296696c0c8253e17dd66bfa3d3444',
+ 'rc26_nextpay_018_hosted_digest_byte_identical');
+$oldAttempt['provider']='zarinpal';
+check(achbotDeliveryHostedBuyDigest($oldPay,$oldAttempt,$oldEffect,1)===
+ '3d0e9f213220268359467b6ac4709e1c46865a8f4ce20452522d9e86876ed96e',
+ 'rc26_zarinpal_018_hosted_digest_byte_identical');
+$oldReplacement=$oldEffect;
+$oldReplacement['effect_kind']='replacement';
+$oldReplacement['reserved_count']=0;
+$oldReplacement['replaces_effect_id']=2770;
+$oldReplacement['reconciliation_fingerprint']=str_repeat('d',64);
+$oldReplacement['reconciliation_reason']='original_unavailable';
+$oldReplacement['actor_userid']=9001;
+check(achbotDeliveryHostedBuyDigest($oldPay,$oldAttempt,$oldReplacement,1)===
+ '7d83e9c58c3b575c833a7efb54964d1c2176475fb48b743983bd6a6bad3695ac',
+ 'rc26_replacement_018_digest_read_only_compatible');
+unset($oldPay['issued_entitlement_days'],$oldPay['issued_entitlement_gb']);
+check(achbotPaymentEvidencePayFingerprint($oldPay)===
+ '84469a36aee3c463e0311374e9d0a4f8cd72c03e934548a186f9092ae4ac8e02',
+ 'fresh_022_fingerprint_without_021_columns');
+
+// Real sealed 018 packet validation: historical hosted delivery is read-side
+// only and sends one original packet without a second Native or payment claim.
+function historicalHostedPacket($db,$payId,$provider,$kind='create') {
+ $a=seed($db,$payId,$provider,'done','delivered');
+ $db->query("UPDATE pays SET state='paid',type='BUY_SUB',plan_id=7,
+  server_id=2,agent_count=2,issued_entitlement_days=30,
+  issued_entitlement_gb=10 WHERE id=$payId");
+ $effect=reserveEffect($db,$payId,1,'rc26_hosted_'.$provider);
+ if ($kind==='replacement') {
+  $db->query("UPDATE service_effects SET effect_kind='replacement',
+    actor_userid=9001,reconciliation_reason='original_unavailable',
+    reconciliation_fingerprint=REPEAT('d',64) WHERE id=$effect");
+  $original=reserveEffect($db,$payId,1,'historical_original');
+  $db->query("UPDATE service_effects SET replaces_effect_id=$original
+    WHERE id=$effect");
+ }
+ $db->query("INSERT INTO orders_list
+  (userid,token,transid,fileid,server_id,inbound_id,remark,uuid,protocol,
+   expire_date,link,amount,status,date,notif,rahgozar,agent_bought)
+  SELECT 1001,'token','',7,2,0,remote_username,'fixture-uuid','vless',
+   1800000000,'[]',100,1,'fixture',0,0,0
+  FROM service_effects WHERE id=$effect");
+ $orderId=(int)$db->insert_id;
+ if ($orderId<=0) throw new RuntimeException('historical_order_fixture_missing');
+ $db->query("UPDATE service_effects SET state='local_recorded',
+  order_id=$orderId,reserved_count=2 WHERE id=$effect");
+ $pay=$db->query("SELECT * FROM pays WHERE id=$payId")->fetch_assoc();
+ $attempt=$db->query("SELECT * FROM payment_attempts WHERE id=$a")->fetch_assoc();
+ $effectRow=$db->query("SELECT * FROM service_effects WHERE id=$effect")->fetch_assoc();
+ $digest=achbotDeliveryHostedBuyDigest($pay,$attempt,$effectRow,1);
+ if (!is_string($digest)) throw new RuntimeException('historical_digest_unavailable');
+ $packet=['kind'=>'qr','qr'=>'fixture-synthetic-qr','caption'=>'Historic RC26 delivery',
+  'keys'=>'{}','bot_url'=>'https://example.invalid','uid'=>1001];
+ $db->begin_transaction();
+ try {
+  achbotDeliveryInsertLocked($db,$pay,$attempt,1,$effect,$orderId,2,
+    $digest,$effectRow['operation_id'],$effectRow['target_key'],$packet);
+  $db->commit();
+ } catch(Throwable $error) {$db->rollback();throw $error;}
+ return ['attempt'=>$a,'effect'=>$effect,'order'=>$orderId];
+}
+// Test-only historical 021 columns simulate an already-upgraded RC26 tenant.
+// The prospective fresh-install migrations still do not ship 021.
+$db->query("ALTER TABLE pays ADD issued_entitlement_days INT UNSIGNED DEFAULT NULL,
+ ADD issued_entitlement_gb BIGINT UNSIGNED DEFAULT NULL");
+$db->query("ALTER TABLE service_effects
+ ADD replaces_effect_id BIGINT UNSIGNED DEFAULT NULL,
+ ADD reconciliation_reason VARCHAR(40) DEFAULT NULL,
+ ADD reconciliation_fingerprint CHAR(64) DEFAULT NULL");
+$np=historicalHostedPacket($db,317,'nextpay');
+$zp=historicalHostedPacket($db,318,'zarinpal');
+$rep=historicalHostedPacket($db,320,'zarinpal','replacement');
+$npDelivered=achbotDeliveryDispatch($db,317,1);
+$zpDelivered=achbotDeliveryDispatch($db,318,1);
+$replacementDelivered=achbotDeliveryDispatch($db,320,1);
+check($npDelivered==='acknowledged' && $zpDelivered==='acknowledged' &&
+ $GLOBALS['qr_sends']===3 &&
+ $db->query("SELECT COUNT(*) FROM payment_delivery_intents
+ WHERE pay_row_id IN (317,318) AND state='acknowledged' AND attempt_count=1")
+ ->fetch_row()[0]==='2','historical_hosted_018_once_only_pending_delivery');
+check($replacementDelivered==='acknowledged' &&
+ $db->query("SELECT state FROM payment_delivery_intents WHERE pay_row_id=320")
+ ->fetch_row()[0]==='acknowledged' && $GLOBALS['qr_sends']===3,
+ 'historical_replacement_018_read_only_delivery');
+// Archive must also stop a queued historical packet whose original payment
+// has subsequently been archived, without destroying the packet itself.
+$pending=historicalHostedPacket($db,321,'nextpay');
+$db->query("UPDATE payment_attempts SET review_archived_at=UTC_TIMESTAMP(),
+ review_archived_by=9001 WHERE id=".$pending['attempt']);
+$db->begin_transaction();
+try {
+ $p=$db->query('SELECT * FROM pays WHERE id=321 FOR UPDATE')->fetch_assoc();
+ $d=$db->query('SELECT * FROM payment_delivery_intents
+  WHERE pay_row_id=321 AND ordinal=1 FOR UPDATE')->fetch_assoc();
+ $blocked=achbotDeliveryValidateLocked($db,$p,$d);
+ $db->rollback();
+} catch(Throwable $error) {$db->rollback();throw $error;}
+check($blocked===null &&
+ $db->query('SELECT state FROM payment_delivery_intents WHERE pay_row_id=321')
+ ->fetch_row()[0]==='pending' && $GLOBALS['qr_sends']===3,
+ 'archived_original_does_not_dispatch_sealed_018_packet');
+
+// Permission must be current inside the write transaction, not only at UI admission.
+$revoked=seed($db,312,'nowpayments','review','confirmed','confirmed');
+check(achbotAdminCanFor($db,9002,9001,'payments'),
+ 'delegated_staff_initially_allowed');
+$db->query('UPDATE users SET isAdmin=0 WHERE userid=9002');
+check(achbotGatewayReviewCommit($db,9002,$revoked,'approve',9001)['status']==='denied' &&
+ achbotGatewayReviewArchive($db,9002,$revoked,9001)==='denied' &&
+ state($db,312)['pay_state']==='pending',
+ 'revoked_staff_cannot_finalize_old_callback');
+$db->query("UPDATE users SET isAdmin=1,step='banned' WHERE userid=9002");
+check(achbotGatewayReviewArchive($db,9002,$revoked,9001)==='denied',
+ 'banned_staff_cannot_archive');
+$db->query("UPDATE users SET isAdmin=1,step='none' WHERE userid=9002");
+check(achbotGatewayReviewArchive($db,9002,$revoked,9001)==='archived',
+ 'authorized_staff_can_archive_after_role_restored');
+
+// A missing/incorrect unique original-attempt index must never close one of
+// several rows or appear to finish the actual payment.
+$broken=seed($db,313,'zarinpal','review','verification_uncertain');
+$db->query('ALTER TABLE payment_attempts ADD INDEX idx_fixture_pay_row(pay_row_id)');
+$db->query('ALTER TABLE payment_attempts DROP INDEX uq_payment_attempt_pay_row');
+check(!achbotGatewayReviewReady($db) &&
+ achbotGatewayReviewArchive($db,9001,$broken,9001)==='unavailable',
+ 'archive_denies_missing_original_unique_index');
+$db->query("INSERT INTO payment_attempts
+  (pay_row_id,provider,order_hash,provider_reference,quote_amount,quote_currency,
+   local_amount_toman,stage,provider_status)
+  SELECT pay_row_id,provider,CONCAT(order_hash,'-other'),
+   CONCAT(provider_reference,'-other'),quote_amount,
+   quote_currency,local_amount_toman,stage,provider_status
+  FROM payment_attempts WHERE id=$broken");
+check(achbotGatewayReviewArchive($db,9001,$broken,9001)==='unavailable' &&
+ (int)$db->query('SELECT COUNT(*) FROM payment_attempts WHERE pay_row_id=313')->fetch_row()[0]===2,
+ 'archive_denies_duplicate_original_attempts');
+$db->query("DELETE FROM payment_attempts WHERE pay_row_id=313 AND id<>$broken");
+$db->query('ALTER TABLE payment_attempts ADD UNIQUE KEY uq_payment_attempt_pay_row(pay_row_id)');
+$db->query('ALTER TABLE payment_attempts DROP INDEX idx_fixture_pay_row');
+
+// True reservation is not an external send. Archive may close it; later
+// dispatch admission must fail and cannot call either Native provider.
+$reserved=seed($db,314,'nowpayments','review','fulfillment_failed');
+stalePaid($db,314,$reserved);
+$first=reserveEffect($db,314,1,'native_first_reserved');
+check(achbotGatewayReviewArchive($db,9001,$reserved,9001)==='archived',
+ 'archive_closes_not_dispatched_first_line');
+try {achbotEffectAdmitPaidDispatch($db,$first);$denied=false;}
+catch(RuntimeException $error) {$denied=$error->getMessage()==='effect_original_archived';}
+check($denied &&
+ $db->query("SELECT state FROM service_effects WHERE id=$first")->fetch_row()[0]==='reserved',
+ 'archived_first_line_never_admitted_for_remote_create');
+
+// The original line was completed; a later reserved line must still be
+// blocked after Archive, without duplicating first-line Native effects.
+$multi=seed($db,315,'nowpayments','review','fulfillment_failed');
+stalePaid($db,315,$multi);
+$db->query('UPDATE pays SET agent_count=2 WHERE id=315');
+$old=reserveEffect($db,315,1,'native_first_recorded');
+$db->query("UPDATE service_effects SET state='local_recorded',order_id=998876
+ WHERE id=$old");
+$later=reserveEffect($db,315,2,'native_later_reserved');
+check(achbotGatewayReviewArchive($db,9001,$multi,9001)==='archived',
+ 'archive_closes_reserved_multi_account_followup');
+try {achbotEffectAdmitPaidDispatch($db,$later);$denied=false;}
+catch(RuntimeException $error) {$denied=$error->getMessage()==='effect_original_archived';}
+check($denied &&
+ $db->query("SELECT state FROM service_effects WHERE id=$later")->fetch_row()[0]==='reserved',
+ 'archived_later_line_never_admitted_for_remote_create');
+
+// Dispatch admission serializes under original pays lock; Archive must
+// decline an admitted request whose external result may be uncertain.
+$admitted=seed($db,316,'zarinpal','review','fulfillment_failed');
+stalePaid($db,316,$admitted);
+$active=reserveEffect($db,316,1,'native_already_admitted');
+achbotEffectAdmitPaidDispatch($db,$active);
+check($db->query("SELECT state FROM service_effects WHERE id=$active")->fetch_row()[0]==='dispatching' &&
+ achbotGatewayReviewArchive($db,9001,$admitted,9001)==='busy',
+ 'archive_waits_for_inflight_native_admission');
+$db->query("UPDATE service_effects SET state='verified' WHERE id=$active");
+check(achbotGatewayReviewArchive($db,9001,$admitted,9001)==='busy',
+ 'archive_does_not_discard_verified_unlinked_remote_result');
+$db->query("UPDATE service_effects SET state='local_recorded',order_id=998877
+ WHERE id=$active");
+check(achbotGatewayReviewArchive($db,9001,$admitted,9001)==='archived',
+ 'archive_allowed_after_prior_remote_effect_is_recorded');
 
 $j=seed($db,309,'nowpayments','review','confirmed','confirmed');
 $q=$db->prepare("INSERT INTO payment_transactions
@@ -187,6 +426,13 @@ $q->bind_param('i',$j);$q->execute();$q->close();
 check(achbotGatewayReviewEligible($db,$j,'approve')===null,
  'second_funded_child_blocks_single_order_claim');
 
+// Set up the isolated two-session Archive-vs-admission barrier test.
+$raceAttempt=seed($db,322,'nextpay','review','fulfillment_failed');
+stalePaid($db,322,$raceAttempt);
+$raceEffect=reserveEffect($db,322,1,'native_waits_before_dispatch');
+check($db->query("SELECT state FROM service_effects WHERE id=$raceEffect")
+ ->fetch_row()[0]==='reserved',
+ 'real_race_fixture_reserved_before_archive');
 $balanceAfter=(int)$db->query('SELECT wallet FROM users WHERE userid=1001')->fetch_row()[0];
 check($balanceAfter===$balance+100000,
  'only_one_wallet_credit_despite_replays_and_failures');
@@ -198,9 +444,33 @@ echo json_encode([
  'complete'=>true,'checks'=>$GLOBALS['checks'],'owned_mariadb'=>true,
  'real_review_decision_source'=>true,'test_effect_is_synthetic'=>true,
  'provider_http_calls'=>0,'telegram_calls'=>0,'audit_exactly_once'=>true,
- 'financial_double_credit'=>false,'existing_attempt_only'=>true],
+ 'financial_double_credit'=>false,'existing_attempt_only'=>true,
+ 'race_effect_id'=>$raceEffect,'race_attempt_id'=>$raceAttempt],
  JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE);
 '''
+PHP_RACE = r"""<?php
+$_SERVER['SCRIPT_FILENAME']=__FILE__;
+$root=$argv[1];$socket=$argv[2];$dbName=$argv[3];
+$effectId=(int)$argv[4];$attemptId=(int)$argv[5];$mode=$argv[6];
+$ready=$argv[7];$release=$argv[8];
+$db=new mysqli('localhost','root','',$dbName,0,$socket);
+$db->set_charset('utf8mb4');
+function achbotPayUxHostedAttentionSeconds(){return 3600;}
+require_once $root.'/src/Finance/GatewayReview.php';
+require_once $root.'/src/Finance/ServiceEffects.php';
+if ($mode==='admit') {
+ file_put_contents($ready,'reserved_before_http');
+ $limit=microtime(true)+15;
+ while (!file_exists($release) && microtime(true)<$limit) usleep(10000);
+ if (!file_exists($release)) throw new RuntimeException('barrier_release_timeout');
+ try {achbotEffectAdmitPaidDispatch($db,$effectId);$result='admitted';}
+ catch(Throwable $error) {$result=$error->getMessage();}
+} elseif ($mode==='archive') {
+ $result=achbotGatewayReviewArchive($db,9001,$attemptId,9001);
+} else throw new RuntimeException('invalid_race_role');
+echo json_encode(['result'=>$result],JSON_THROW_ON_ERROR);
+"""
+
 def main():
     parser=argparse.ArgumentParser()
     parser.add_argument("--run-disposable",action="store_true",required=True)
@@ -209,7 +479,7 @@ def main():
     with fx.owned_database() as (d,env):
         client=["mariadb","--no-defaults","--protocol=SOCKET",
                 "--socket="+str(d/"mysql.sock"),"-uroot",DB]
-        for filename in ["003_payment_attempts.sql","007_service_effects.sql", "022_gateway_review_archive.sql"]:
+        for filename in ["003_payment_attempts.sql","007_service_effects.sql", "018_payment_delivery_intents.sql", "022_gateway_review_archive.sql"]:
             sql=(ROOT/"migrations/post-v9"/filename).read_bytes()
             result=subprocess.run(client,input=sql,env=env,capture_output=True,timeout=15)
             if result.returncode:raise RuntimeError(result.stderr.decode(errors='replace')[-1400:])
@@ -226,6 +496,42 @@ def main():
         if proc.stderr.strip()!=allowed:
             raise RuntimeError("Unexpected PHP log: "+proc.stderr[-2400:])
         output=json.loads(proc.stdout)
+        # The actual source gate waits after a durable line reservation.
+        # Another connection Archives while the worker is paused before
+        # dispatch. The resumed worker must not admit a new Native operation.
+        race_script=d/"gateway-race.php"
+        race_script.write_text(PHP_RACE)
+        ready=d/"race-ready";release=d/"race-release"
+        common=["php","-d","allow_url_fopen=0",
+            "-d","disable_functions=curl_init,curl_exec,exec,shell_exec,system,passthru,popen,proc_open,mail",
+            str(race_script),str(ROOT),str(d/"mysql.sock"),DB,
+            str(output["race_effect_id"]),str(output["race_attempt_id"])]
+        worker=subprocess.Popen(common+["admit",str(ready),str(release)],
+            env=env,cwd=ROOT,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
+        try:
+            import time
+            until=time.monotonic()+8
+            while not ready.exists() and time.monotonic()<until:
+                if worker.poll() is not None: raise RuntimeError("Admission worker exited early")
+                time.sleep(0.02)
+            if not ready.exists():raise RuntimeError("Admission barrier missing")
+            archived=subprocess.run(common+["archive",str(ready),str(release)],
+                env=env,cwd=ROOT,capture_output=True,text=True,timeout=10)
+            if archived.returncode or archived.stderr or json.loads(archived.stdout)["result"]!="archived":
+                raise RuntimeError("Concurrent Archive did not commit: "+archived.stderr+archived.stdout)
+            release.write_text("go")
+            stdout,stderr=worker.communicate(timeout=12)
+            if worker.returncode or stderr or json.loads(stdout)["result"]!="effect_original_archived":
+                raise RuntimeError("Post-Archive Native admission was not denied: "+stderr+stdout)
+            check=subprocess.run(client+["-e","SELECT state FROM service_effects WHERE id="+str(output["race_effect_id"])],
+                env=env,capture_output=True,text=True,timeout=5)
+            if check.returncode or "reserved" not in check.stdout:
+                raise RuntimeError("Archive race changed reserved original effect")
+        finally:
+            if worker.poll() is None:
+                worker.terminate()
+                try:worker.wait(timeout=3)
+                except subprocess.TimeoutExpired:worker.kill();worker.wait(timeout=3)
         if not output.get("complete") or len(output["checks"])<16:
             raise RuntimeError("Incomplete original-attempt review checks")
         if args.report:args.report.write_text(json.dumps(output,indent=2,ensure_ascii=False)+"\n")

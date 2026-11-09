@@ -1188,10 +1188,10 @@ def run_wallet(tmp: str) -> tuple[dict, dict]:
         cwd=ROOT,check=True,timeout=180,capture_output=True,text=True)
     text_catalog=json.loads(catalog_output.stdout)
     expected_catalog={
-        'status':'PASS','current_catalog_keys':2847,
-        'current_admin_keys':1905,'current_user_keys':942,
+        'status':'PASS','current_catalog_keys':2852,
+        'current_admin_keys':1910,'current_user_keys':942,
         'retired_experimental_keys':129,'retired_experimental_topics':10,
-        'new_copy_entries':27,'current_runtime_files':131,
+        'new_copy_entries':32,'current_runtime_files':131,
         'new_copy_references_unbound':0,
         'unapproved_existing_copy_changes':0,
         'new_copy_negative_controls':5,'bare_ui_copy_violations':0,
@@ -2327,6 +2327,28 @@ def run_effects(tmp: str) -> tuple[dict, dict]:
         'archive_keeps_original_financial_state_and_cannot_be_reopened',
         'stale_processing_case_can_be_closed_from_attention_only',
         'archived_processing_hold_still_requires_native_forensics_elsewhere',
+        'delegated_staff_initially_allowed',
+        'revoked_staff_cannot_finalize_old_callback',
+        'banned_staff_cannot_archive',
+        'authorized_staff_can_archive_after_role_restored',
+        'archive_denies_missing_original_unique_index',
+        'archive_denies_duplicate_original_attempts',
+        'archive_closes_not_dispatched_first_line',
+        'archived_first_line_never_admitted_for_remote_create',
+        'archive_closes_reserved_multi_account_followup',
+        'archived_later_line_never_admitted_for_remote_create',
+        'archive_waits_for_inflight_native_admission',
+        'archive_does_not_discard_verified_unlinked_remote_result',
+        'archive_allowed_after_prior_remote_effect_is_recorded',
+        'rc26_021_persisted_payment_fingerprint_byte_identical',
+        'rc26_nextpay_018_hosted_digest_byte_identical',
+        'rc26_zarinpal_018_hosted_digest_byte_identical',
+        'rc26_replacement_018_digest_read_only_compatible',
+        'fresh_022_fingerprint_without_021_columns',
+        'historical_hosted_018_once_only_pending_delivery',
+        'historical_replacement_018_read_only_delivery',
+        'archived_original_does_not_dispatch_sealed_018_packet',
+        'real_race_fixture_reserved_before_archive',
     }
     if not (decision.get('complete') is True
             and set(decision.get('checks',[]))==required_decisions

@@ -140,6 +140,26 @@ if (preg_match('/^attention(?:Inbox(?:_[1-9][0-9]{0,17})?|Case_[1-9][0-9]{0,17})
                 $r=$q->get_result()->fetch_assoc();$q->close();
                 $planTitle=(string)($r['title']??'');
             }
+            // The existing immutable 007 ledger explains whether a Native
+            // account was reserved/dispatched, including without a local order.
+            // This is read-only case evidence, not another recovery screen.
+            $native=[];$nativeTotal=0;
+            if ($type==='BUY_SUB') {
+                $q=$connection->prepare("SELECT COUNT(*) AS total FROM service_effects
+                    WHERE pay_row_id=? AND effect_kind IN ('create','replacement')");
+                $q->bind_param('i',$payId);$q->execute();
+                $nativeTotal=(int)($q->get_result()->fetch_assoc()['total']??0);$q->close();
+                if ($nativeTotal>0) {
+                    $q=$connection->prepare("SELECT id,ordinal,state,effect_kind,operation_id,
+                        remote_username,target_server_id,order_id,provider_state
+                        FROM service_effects WHERE pay_row_id=?
+                          AND effect_kind IN ('create','replacement')
+                        ORDER BY ordinal DESC LIMIT 5");
+                    $q->bind_param('i',$payId);$q->execute();
+                    $native=array_reverse($q->get_result()->fetch_all(MYSQLI_ASSOC));
+                    $q->close();
+                }
+            }
             $requested=(int)$item['request_date']>0
                 ?(new DateTimeImmutable('@'.(int)$item['request_date']))
                     ->setTimezone(new DateTimeZone('Asia/Tehran'))->format('Y-m-d H:i:s')
@@ -192,6 +212,25 @@ if (preg_match('/^attention(?:Inbox(?:_[1-9][0-9]{0,17})?|Case_[1-9][0-9]{0,17})
                     'payment'=>$observed['payment_id'],
                     'status'=>$observed['observed_status'],
                     'date'=>$observed['received_at']]);
+            }
+            if ($type==='BUY_SUB') {
+                $body.="\n".achbotMessageHtml('automatic_gateway_review.native_count',[
+                    'count'=>$nativeTotal]);
+                foreach ($native as $effect) {
+                    $body.="\n".achbotMessageHtml('automatic_gateway_review.native_effect',[
+                        'id'=>$effect['id'],'ordinal'=>$effect['ordinal'],
+                        'username'=>$effect['remote_username']?:achbotMessage('automatic_gateway_review.unknown'),
+                        'state'=>$effect['state'],
+                        'provider_state'=>$effect['provider_state']?:achbotMessage('automatic_gateway_review.unknown'),
+                        'operation'=>$effect['operation_id'],
+                        'server'=>$effect['target_server_id'],
+                        'order'=>$effect['order_id']?:achbotMessage('automatic_gateway_review.unknown')]);
+                }
+                if ($nativeTotal>count($native))
+                    $body.="\n".achbotMessageHtml('automatic_gateway_review.native_more',[
+                        'remaining'=>$nativeTotal-count($native)]);
+                if ($nativeTotal>0)
+                    $body.="\n".achbotMessage('automatic_gateway_review.native_errors');
             }
             $body.="\n\n".achbotMessage('automatic_gateway_review.warning');
             $attempt=(int)$item['attempt_id'];
@@ -247,8 +286,10 @@ if (preg_match('/^gatewayReview_([ARH])_([1-9][0-9]{0,17})$/D',
     try {
         answerCallbackQuery($callbackId,achbotMessage('automatic_gateway_review.checking'));
         $result=$archive
-            ?['status'=>achbotGatewayReviewArchive($connection,(int)$from_id,$attempt)]
-            :achbotGatewayReviewCommit($connection,(int)$from_id,$attempt,$mode);
+            ?['status'=>achbotGatewayReviewArchive(
+                $connection,(int)$from_id,$attempt,(int)$admin)]
+            :achbotGatewayReviewCommit(
+                $connection,(int)$from_id,$attempt,$mode,(int)$admin);
         $status=(string)($result['status']??'unavailable');
         if ($status==='rejected') {
             // Closing the business order does not refund the merchant.
@@ -275,8 +316,10 @@ if (preg_match('/^gatewayReview_([ARH])_([1-9][0-9]{0,17})$/D',
             'completed'=>achbotMessage('automatic_gateway_review.status_completed'),
             'rejected'=>achbotMessage('automatic_gateway_review.status_rejected'),
             'archived'=>achbotMessage('automatic_gateway_review.status_archived'),
+            'busy'=>achbotMessage('automatic_gateway_review.status_busy'),
             'unknown'=>achbotMessage('automatic_gateway_review.status_unknown'),
             'stale'=>achbotMessage('automatic_gateway_review.status_stale'),
+            'denied'=>achbotMessage('automatic_gateway_review.denied'),
             'unsupported'=>achbotMessage('automatic_gateway_review.status_unsupported'),
             default=>achbotMessage('automatic_gateway_review.status_unavailable'),
         };

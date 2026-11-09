@@ -10,7 +10,14 @@ retain 018/020 delivery/follow-up journals and add the small 022
 operator archive columns, without shipping 019/021 or
 the specialized paid-account replacement workbench. See
 [AUTOMATIC-GATEWAY-REVIEW.md](AUTOMATIC-GATEWAY-REVIEW.md).
-**Not merged, independently reviewed, published or installed.** Source-real
+**Not merged, independently approved, published or installed.**
+The first exact-candidate independent review returned CHANGES_REQUIRED
+for historical 021/018 evidence compatibility, Native Archive admission,
+locked staff rights, original-attempt uniqueness and case diagnostics.
+The narrow fixes are being verified in PR #136; they add no workbench,
+review table or new-install 019/021 requirement. Installed RC26 021 data
+must remain intact for historical read-side proof.
+Source-real
 regression checks are available, but final acceptance must be bound to all
 eight PHP 8.5 families and the protected aggregate on the exact candidate
 HEAD; this is not installed-host or real-merchant acceptance. Do not confuse

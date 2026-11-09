@@ -342,6 +342,11 @@ CLEANUP_ARCHIVE_NEW_KEYS={
     'automatic_gateway_review.archive',
     'automatic_gateway_review.archive_notice',
     'automatic_gateway_review.status_archived',
+    'automatic_gateway_review.status_busy',
+    'automatic_gateway_review.native_count',
+    'automatic_gateway_review.native_effect',
+    'automatic_gateway_review.native_more',
+    'automatic_gateway_review.native_errors',
 }
 CLEANUP_NEW_KEYS=CLEANUP_ORIGINAL_NEW_KEYS | CLEANUP_ARCHIVE_NEW_KEYS
 @functools.lru_cache(maxsize=2)

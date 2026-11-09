@@ -8,6 +8,7 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '')===__FILE__) {
 }
 require_once __DIR__.'/GatewayClient.php';
 require_once __DIR__.'/PaymentEvidence.php';
+require_once __DIR__.'/../Admin/Access.php';
 
 /** One source of truth for active operator-attention cases. Archival is
  * a terminal LOCAL automation fence, not a merchant settlement or refund.
@@ -224,7 +225,7 @@ function achbotGatewayReviewSubjectStamp(mysqli $db,array $pay,bool $lock=false)
  * permission to create another account or re-credit the wallet.
  */
 function achbotGatewayReviewCommit(mysqli $db,int $actor,int $attemptId,
-    string $decision): array {
+    string $decision,int $primaryOwner): array {
     if ($actor<=0 || !achbotGatewayReviewReady($db))
         return ['status'=>'unavailable'];
     try {$before=achbotGatewayReviewEligible($db,$attemptId,$decision);}
@@ -246,6 +247,9 @@ function achbotGatewayReviewCommit(mysqli $db,int $actor,int $attemptId,
         $locked=achbotGatewayReviewEligible($db,$attemptId,$decision,true);
         if (!$locked || !hash_equals($before['digest'],$locked['digest'])) {
             $db->rollback();$open=false;return ['status'=>'stale'];
+        }
+        if (!achbotAdminCanLocked($db,$actor,$primaryOwner,'payments')) {
+            $db->rollback();$open=false;return ['status'=>'denied'];
         }
         $pay=$locked['pay'];$a=$locked['attempt'];$payId=(int)$pay['id'];
         if ($decision==='approve') {
@@ -315,8 +319,10 @@ function achbotGatewayReviewCommit(mysqli $db,int $actor,int $attemptId,
  * but all subsequent automatic financial paths must honor this terminal fence.
  * Admission is enforced at the private, payments-capable callback route.
  */
-function achbotGatewayReviewArchive(mysqli $db,int $actor,int $attemptId): string {
+function achbotGatewayReviewArchive(mysqli $db,int $actor,int $attemptId,int $primaryOwner): string {
     if ($actor<=0 || $attemptId<=0) return 'stale';
+    // The original attempt must remain unique before terminally archiving it.
+    if (!achbotGatewayReviewReady($db)) return 'unavailable';
     $open=false;
     try {
         // Fail closed if the separately versioned archival schema is missing.
@@ -342,6 +348,20 @@ function achbotGatewayReviewArchive(mysqli $db,int $actor,int $attemptId): strin
         if (!$pay || !$attempt || $attempt['review_archived_at']!==null) {
             $db->rollback();$open=false;
             return 'stale';
+        }
+        if (!achbotAdminCanLocked($db,$actor,$primaryOwner,'payments')) {
+            $db->rollback();$open=false;return 'denied';
+        }
+        // A committed dispatch admission may still reach the remote system.
+        // Do not pretend Archive can cancel it. A reserved (not admitted)
+        // line may be archived; its later admission will fail under pays lock.
+        $q=$db->prepare("SELECT id FROM service_effects
+            WHERE pay_row_id=? AND effect_kind IN ('create','replacement')
+              AND state IN ('dispatching','verified') LIMIT 1 FOR UPDATE");
+        $q->bind_param('i',$payId);$q->execute();
+        $inFlight=$q->get_result()->num_rows>0;$q->close();
+        if ($inFlight) {
+            $db->rollback();$open=false;return 'busy';
         }
         // A finished or newly active case cannot be hidden by an old button.
         $scope=achbotGatewayAttentionScope();
