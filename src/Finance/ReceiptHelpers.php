@@ -1821,12 +1821,12 @@ function achbotManualCaption(mysqli $connection, array $payInfo, string $caption
     return $quoteLine . $caption;
 }
 
-/** Keep the whole code, the original caption and trusted API details in ONE
- * private staff message. The gift API v2 currently does not disclose its
- * originating WooCommerce order number or gift-card creation timestamp.
- * Never label the bot's own invoice as either remote gift-card field.
+/** The private staff review uses the exact signed v2 /verify observation.
+ * `order_number` belongs to the WooCommerce purchase; `created_at` is the
+ * gift-card creation time (NOT `order_created_at` or the bot invoice time).
  */
 function achbotManualGiftReviewText(string $caption,string $code,?array $screen=null): string {
+    $missing=achbotMessage('manual_payment.api_payment.gift_not_provided');
     $unit=($screen['amount_unit']??null)==='rial'?'ریال':'تومان';
     $amount=is_int($screen['redeem_amount']??null) && $screen['redeem_amount']>0
         ? number_format($screen['redeem_amount']).' '.$unit
@@ -1835,14 +1835,14 @@ function achbotManualGiftReviewText(string $caption,string $code,?array $screen=
         achbotMessageHtml('manual_payment.api_payment.code_evidence',['code'=>$code])."\n".
         achbotMessageHtml('manual_payment.api_payment.gift_details',[
             'amount'=>$amount,
-            'order'=>achbotMessage('manual_payment.api_payment.gift_not_provided'),
-            'created'=>achbotMessage('manual_payment.api_payment.gift_not_provided')]);
+            'order'=>$screen['order_number']??$missing,
+            'created'=>$screen['created_at']??$missing]);
 }
-function achbotManualGiftReviewFits(string $caption,string $code): bool {
-    // Largest representable redeem amount bounds the final numeric line.
-    // Fit-checking BEFORE durable code save prevents a stranded invoice.
+function achbotManualGiftReviewFits(string $caption,string $code,?array $screen=null): bool {
+    // Verify the ACTUAL full Telegram message before saving evidence; the
+    // escaping and supplementary-codepoint calculation match staff delivery.
     $plain=html_entity_decode(strip_tags(achbotManualGiftReviewText($caption,$code,
-        ['redeem_amount'=>PHP_INT_MAX,'amount_unit'=>'rial'])),ENT_QUOTES|ENT_HTML5,'UTF-8');
+        $screen)),ENT_QUOTES|ENT_HTML5,'UTF-8');
     $characters=preg_match_all('/./us',$plain);
     $supplementary=preg_match_all('/[\x{10000}-\x{10ffff}]/u',$plain);
     return $characters!==false && $supplementary!==false && $characters+$supplementary<=4096;
@@ -1853,7 +1853,8 @@ function achbotManualGiftReviewFits(string $caption,string $code): bool {
  */
 function achbotManualGiftSubmissionPreflight(mysqli $db,array $pay,string $method,
                                             string $code): array {
-    $accepted=['accepted'=>true,'redeem_amount'=>null,'amount_unit'=>null];
+    $accepted=['accepted'=>true,'redeem_amount'=>null,'amount_unit'=>null,
+        'order_number'=>null,'created_at'=>null];
     if (!achbotManualTypedGift($db,$pay,$method))return $accepted;
     try {
         $c=achbotApiPaymentContext($db,(string)$pay['hash_id'],(int)$pay['user_id']);
@@ -1862,16 +1863,41 @@ function achbotManualGiftSubmissionPreflight(mysqli $db,array $pay,string $metho
         $verified=achbotPaymentEvidenceGiftVerify($c['profile'],$code);
         $status=(string)($verified['status']??'unavailable');
         if (in_array($status,['not_found','invalid','used','revoked','expired'],true))
-            return ['accepted'=>false,'reason'=>$status,'redeem_amount'=>null,'amount_unit'=>null];
+            return array_replace($accepted,['accepted'=>false,'reason'=>$status]);
         if (!empty($verified['ok']) && $status==='active') {
-            $e=achbotPaymentEvidenceGiftNormalize($verified['data'],$c['profile'],$c['attempt']);
-            if ($e!==null)return [
-                'accepted'=>true,
-                'redeem_amount'=>achbotPaymentEvidenceInteger($verified['data']['redeem_amount']),
-                'amount_unit'=>(string)$c['profile']['amount_unit']];
-            if (achbotPaymentEvidenceGiftNormalizationStatus($verified['data'],
+            $data=$verified['data'];
+            $e=achbotPaymentEvidenceGiftNormalize($data,$c['profile'],$c['attempt']);
+            if ($e!==null) {
+                // The v2 contract permits null order details when the
+                // WooCommerce order is inaccessible. Do not substitute the
+                // numeric order_id or any local invoice timestamp.
+                $order=$data['order_number']??null;
+                $order=is_string($order)?trim($order):null;
+                if ($order==='' || (is_string($order) &&
+                    (strlen($order)>512 || preg_match('/[\x00-\x1f\x7f]/',$order))))
+                    $order=null;
+                $created=$data['created_at']??null;
+                if (!is_string($created) || strlen($created)>40) $created=null;
+                if ($created!==null) {
+                    try {
+                        $parsed=DateTimeImmutable::createFromFormat(DateTimeInterface::ATOM,$created);
+                        $created=$parsed!==false && DateTimeImmutable::getLastErrors()===false
+                            ? $parsed->format('Y-m-d H:i:s P') : null;
+                    } catch (Throwable $e) {
+                        // A broken optional date must not hide the verified
+                        // amount/order number or block genuine staff review.
+                        $created=null;
+                    }
+                }
+                return array_replace($accepted,[
+                    'redeem_amount'=>achbotPaymentEvidenceInteger($data['redeem_amount']),
+                    'amount_unit'=>(string)$c['profile']['amount_unit'],
+                    'order_number'=>$order,
+                    'created_at'=>$created]);
+            }
+            if (achbotPaymentEvidenceGiftNormalizationStatus($data,
                     $c['profile'],$c['attempt'])==='mismatch')
-                return ['accepted'=>false,'reason'=>'mismatch','redeem_amount'=>null,'amount_unit'=>null];
+                return array_replace($accepted,['accepted'=>false,'reason'=>'mismatch']);
         }
     } catch (Throwable $e) {
         // The API/DB observation was inconclusive: keep normal human review.
@@ -2239,7 +2265,7 @@ function sendReceiptToAdminsAndUpdatePay(
     try {
         $pay=dbFetchPayByHash($connection,$hashId);
         $typed=$pay && achbotManualTypedGift($connection,$pay,'gift_card') && achbotManualSelectedMethod($connection,$pay)==='gift_card';
-        if($typed){$code=achbotPaymentEvidenceReadGiftCode($connection,(int)$pay['id']);if($code!==$fileid)throw new RuntimeException('typed_receipt_evidence_mismatch');if(!achbotManualGiftReviewFits($caption,$code))throw new RuntimeException('typed_receipt_message_too_long');$caption=achbotManualGiftReviewText($caption,$code,$giftScreen);}
+        if($typed){$code=achbotPaymentEvidenceReadGiftCode($connection,(int)$pay['id']);if($code!==$fileid)throw new RuntimeException('typed_receipt_evidence_mismatch');if(!achbotManualGiftReviewFits($caption,$code,$giftScreen))throw new RuntimeException('typed_receipt_message_too_long');$caption=achbotManualGiftReviewText($caption,$code,$giftScreen);}
         $response = $typed?sendMessage($caption,$adminKeyboard,'HTML',$adminChatId):sendPhoto($fileid, $caption, $adminKeyboard, 'HTML', $adminChatId);
         $msgId = (int)($response->result->message_id ?? 0);
         if ($msgId <= 0 ||

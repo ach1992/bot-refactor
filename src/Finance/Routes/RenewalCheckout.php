@@ -318,9 +318,6 @@ if (preg_match('/wait(?:RenewCart|RenewGift|RenewUsdt)Receipt(.*)/', $userInfo['
         achbotManualCaption($connection, $receiptPay, $mainValues['renew_account_request_message'])
     );
 
-    if(achbotManualTypedGift($connection,$receiptPay,$method) && !achbotManualGiftReviewFits($msg,$fileid)){
-        sendMessage(achbotMessage('payment.api_payment.code_too_long'),null,'HTML');return;
-    }
     // The code is checked against this ORIGINAL pinned invoice before any
     // staff message or durable receipt lease. A definite mismatch stays here.
     $giftScreen=achbotManualGiftSubmissionPreflight($connection,$receiptPay,$method,$fileid);
@@ -328,6 +325,10 @@ if (preg_match('/wait(?:RenewCart|RenewGift|RenewUsdt)Receipt(.*)/', $userInfo['
         sendMessage(achbotManualGiftRetryMessage((string)$giftScreen['reason']),
             kbOnlyCancel('cancelRenewCartReceipt', $match[1]), 'HTML');
         exit;
+    }
+    if(achbotManualTypedGift($connection,$receiptPay,$method) &&
+        !achbotManualGiftReviewFits($msg,$fileid,$giftScreen)){
+        sendMessage(achbotMessage('payment.api_payment.code_too_long'),null,'HTML');return;
     }
     $deliveryToken = achbotManualBeginEvidence($connection, $receiptPay, $method, (int)$from_id, $fileid);
     if ($deliveryToken === null) {

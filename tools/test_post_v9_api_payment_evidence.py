@@ -99,7 +99,7 @@ case 'giftpreview':
  $result=['text'=>achbotManualGiftReviewText($spec['caption']??'Fixture invoice',
      $spec['code']??'fixture-code',$spec['screen']??null),
      'fits'=>achbotManualGiftReviewFits($spec['caption']??'Fixture invoice',
-     $spec['code']??'fixture-code')];break;
+     $spec['code']??'fixture-code',$spec['screen']??null)];break;
 case 'giftnormalize':
  $result=achbotPaymentEvidenceGiftNormalizationStatus($spec['card'],$profile,$a);break;
 case 'giftreserve':
@@ -221,7 +221,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self.send(200,response)
 def validate_gift_route_boundaries():
     # These are the six original subject handlers. The common screen must
-    # run after caption/length validation and before any durable lease or
+    # run before the exact full-message length validation, durable lease or
     # private admin send; a rejected code cannot consume the input step.
     paths={
         'src/Finance/Routes/Checkout.php':2,
@@ -240,6 +240,7 @@ def validate_gift_route_boundaries():
             # cancellation action. No payment state or admin delivery occurs.
             assert section.index('achbotManualGiftRetryMessage(')<section.index(reserve),(name,'retry_before_claim')
             assert section.index('exit;')<section.index(reserve),(name,'reject_before_claim')
+            assert section.index('achbotManualGiftReviewFits($msg,$fileid,$giftScreen)')<section.index(reserve),(name,'full_metadata_length_before_claim')
             assert section.index(reserve)<section.index('sendReceiptToAdminsAndUpdatePay('),(name,'claim_before_staff')
             assert 'setUser(' not in section[:section.index(reserve)],(name,'reject_discarded_input_step')
     return 6
@@ -306,8 +307,13 @@ def run(module):
                     bank_key='fixture',rule_id=7,amount=amount,display_unit=unit,
                     sms_date=now.strftime('%Y-%m-%d'),sms_time=now.strftime('%H:%M:%S'),status='ready')
             def card(uuid='CARD_UUID_1',amount=100001):
+                # v2.3.3 verified-card metadata, distinct from the bot's
+                # invoice/order ID and the WooCommerce order creation time.
                 return dict(card_uuid=uuid,status='active',game_key='fixture',redeem_value_id=42,
-                    redeem_amount=amount,display_amount=999999,face_value=10,currency_label='fixture')
+                    redeem_amount=amount,display_amount=999999,face_value=10,currency_label='fixture',
+                    order_id=1234,order_number='WEB-2026-0042',
+                    order_created_at='2026-09-09T07:00:00+00:00',
+                    created_at='2026-09-10T08:05:00+00:00')
             p1=seed('smsexact')
             r=sms(1);server.messages['1']=dict(r)
             assert php('normalize',pay_id=p1,row=r)['matches']
@@ -419,7 +425,8 @@ def run(module):
             sql(f"UPDATE pays SET state='pending',message_id=0,chat_id=0 WHERE id={gs}")
             sql(f"UPDATE payment_attempts SET stage='pending' WHERE pay_row_id={gs}")
             assert php('giftprecheck',pay_id=gs,code='unknown-code')=={
-                'accepted':False,'reason':'not_found','redeem_amount':None,'amount_unit':None}
+                'accepted':False,'reason':'not_found','redeem_amount':None,'amount_unit':None,
+                'order_number':None,'created_at':None}
             assert php('giftprecheck',pay_id=gs,code='bad-code')['reason']=='invalid'
             assert php('giftprecheck',pay_id=gs,code='bad-payload')['reason']=='invalid'
             # Invalid HTTP scopes cannot be misinterpreted as a definite card
@@ -427,7 +434,13 @@ def run(module):
             assert php('giftprecheck',pay_id=gs,code='unauthorized')['accepted'] is True
             server.card=card('CARD_PRECHECK',100001)
             exact=php('giftprecheck',pay_id=gs,code='card-code')
-            assert exact=={'accepted':True,'redeem_amount':100001,'amount_unit':'toman'},exact
+            assert exact=={
+                'accepted':True,'redeem_amount':100001,'amount_unit':'toman',
+                'order_number':'WEB-2026-0042','created_at':'2026-09-10 08:05:00 +00:00'
+            },exact
+            preview=php('giftpreview',code='card-code',screen=exact)
+            assert 'WEB-2026-0042' in preview['text'] and '2026-09-10 08:05:00 +00:00' in preview['text']
+            assert '2026-09-09' not in preview['text'] and '1234' not in preview['text']
             for remote_state,reason in [('redeemed','used'),('redeemed_offline','used'),
                      ('revoked','revoked'),('expired','expired')]:
                 server.card['status']=remote_state
@@ -475,7 +488,8 @@ def run(module):
             sql(f"UPDATE payment_attempts SET stage='pending' WHERE pay_row_id={gr}")
             server.card=card('CARD_PRE_RIAL',1000010)
             unit=php('giftprecheck',pay_id=gr,code='card-code')
-            assert unit=={'accepted':True,'redeem_amount':1000010,'amount_unit':'rial'},unit
+            assert unit=={'accepted':True,'redeem_amount':1000010,'amount_unit':'rial',
+                'order_number':'WEB-2026-0042','created_at':'2026-09-10 08:05:00 +00:00'},unit
             assert '1,000,010 ریال' in php('giftpreview',code='test',
                 screen=unit)['text']
             server.card=card('CARD_PRE_WRONG_RIAL',1000011)
@@ -488,6 +502,45 @@ def run(module):
             assert 'شماره سفارش گیفت‌کارت' in display['text'] and 'در پاسخ API ارائه نشده' in display['text']
             assert 'تاریخ ایجاد گیفت‌کارت' in display['text'] and display['fits']
             assert php('giftpreview',code='0')['fits']
+            # Upstream nulls are legitimate and MUST NOT be replaced by the
+            # bot invoice, numeric order_id or WooCommerce order_created_at.
+            server.card=card('CARD_META_MISSING')
+            server.card['order_number']=None
+            server.card['created_at']=None
+            missing=php('giftprecheck',pay_id=gs,code='card-code')
+            assert missing['accepted'] and missing['order_number'] is None
+            assert missing['created_at'] is None
+            unavail=php('giftpreview',code='card-code',screen=missing)['text']
+            assert unavail.count('در پاسخ API ارائه نشده')==2
+            assert '1234' not in unavail and '2026-09-09' not in unavail
+            # A custom WooCommerce order number is untrusted presentation data.
+            server.card=card('CARD_META_ESCAPE')
+            server.card['order_number']='<b>&BadOrder</b>'
+            server.card['created_at']='2026-09-10T11:35:00+03:30'
+            escaped=php('giftprecheck',pay_id=gs,code='card-code')
+            assert escaped['order_number']=='<b>&BadOrder</b>'
+            assert escaped['created_at']=='2026-09-10 11:35:00 +03:30'
+            rendered=php('giftpreview',code='<bad&code>',screen=escaped)['text']
+            assert '&lt;b&gt;&amp;BadOrder&lt;/b&gt;' in rendered
+            assert '<b>&BadOrder</b>' not in rendered and '<bad&code>' not in rendered
+            assert '&lt;bad&amp;code&gt;' in rendered
+            # Bad dates cannot be used as creation evidence; they do not erase
+            # the independent genuine redeem/order-number observations.
+            server.card['created_at']='2026-02-30T10:00:00+00:00'
+            malformed=php('giftprecheck',pay_id=gs,code='card-code')
+            assert malformed['accepted'] and malformed['created_at'] is None
+            assert malformed['order_number']=='<b>&BadOrder</b>'
+            server.card['created_at']='2026-09-10T08:05:00+00:00'
+            server.card['order_number']='order-123\nforged status'
+            control=php('giftprecheck',pay_id=gs,code='card-code')
+            assert control['accepted'] and control['order_number'] is None
+            # Long optional metadata cannot create an un-sendable accepted
+            # code after it is encrypted and the staff lease has begun.
+            full=php('giftpreview',caption='Invoice',code='x'*3970,
+                screen={'redeem_amount':100001,'amount_unit':'toman',
+                    'order_number':'W'*128,'created_at':'2026-09-10 08:05:00 +00:00'})
+            assert not full['fits']
+            assert server.gift_consumes==0
             # Gift: persist code first, exact redeem_amount independent of display_amount.
             hostile=seed('gifthostile','gift_card',pin_hostile='display_amount',expected_pin=False)
             assert php('snapshot',pay_id=hostile)['valid'] is False

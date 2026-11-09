@@ -299,9 +299,6 @@ if (preg_match('/wait(?:IncreaseDay|IncreaseDayGift|IncreaseDayUsdt)Receipt(.*)/
         achbotManualCaption($connection, $receiptPay, $mainValues['increase_account_request_message'])
     );
 
-    if(achbotManualTypedGift($connection,$receiptPay,$method) && !achbotManualGiftReviewFits($msg,$fileid)){
-        sendMessage(achbotMessage('payment.api_payment.code_too_long'),null,'HTML');return;
-    }
     // The code is checked against this ORIGINAL pinned invoice before any
     // staff message or durable receipt lease. A definite mismatch stays here.
     $giftScreen=achbotManualGiftSubmissionPreflight($connection,$receiptPay,$method,$fileid);
@@ -309,6 +306,10 @@ if (preg_match('/wait(?:IncreaseDay|IncreaseDayGift|IncreaseDayUsdt)Receipt(.*)/
         sendMessage(achbotManualGiftRetryMessage((string)$giftScreen['reason']),
             kbOnlyCancel('cancelIncreaseDayReceipt', $match[1]), 'HTML');
         exit;
+    }
+    if(achbotManualTypedGift($connection,$receiptPay,$method) &&
+        !achbotManualGiftReviewFits($msg,$fileid,$giftScreen)){
+        sendMessage(achbotMessage('payment.api_payment.code_too_long'),null,'HTML');return;
     }
     $deliveryToken = achbotManualBeginEvidence($connection, $receiptPay, $method, (int)$from_id, $fileid);
     if ($deliveryToken === null) {
@@ -1151,9 +1152,6 @@ if (preg_match('/wait(?:IncreaseVolume|IncreaseVolumeGift|IncreaseVolumeUsdt)Rec
         achbotManualCaption($connection, $receiptPay, $mainValues['increase_account_request_message'])
     );
 
-    if(achbotManualTypedGift($connection,$receiptPay,$method) && !achbotManualGiftReviewFits($msg,$fileid)){
-        sendMessage(achbotMessage('payment.api_payment.code_too_long'),null,'HTML');return;
-    }
     // The code is checked against this ORIGINAL pinned invoice before any
     // staff message or durable receipt lease. A definite mismatch stays here.
     $giftScreen=achbotManualGiftSubmissionPreflight($connection,$receiptPay,$method,$fileid);
@@ -1161,6 +1159,10 @@ if (preg_match('/wait(?:IncreaseVolume|IncreaseVolumeGift|IncreaseVolumeUsdt)Rec
         sendMessage(achbotManualGiftRetryMessage((string)$giftScreen['reason']),
             kbOnlyCancel('cancelIncreaseVolumeReceipt', $match[1]), 'HTML');
         exit;
+    }
+    if(achbotManualTypedGift($connection,$receiptPay,$method) &&
+        !achbotManualGiftReviewFits($msg,$fileid,$giftScreen)){
+        sendMessage(achbotMessage('payment.api_payment.code_too_long'),null,'HTML');return;
     }
     $deliveryToken = achbotManualBeginEvidence($connection, $receiptPay, $method, (int)$from_id, $fileid);
     if ($deliveryToken === null) {
