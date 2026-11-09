@@ -6,11 +6,13 @@ Source is exercised by real PHP against the existing additive shared ledger.
 """
 from __future__ import annotations
 import argparse
+import contextlib
 import html
 import json
 import re
 import subprocess
 import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import test_access_state as owned
@@ -155,7 +157,32 @@ set_error_handler(static function($severity,$message){
 $_SERVER['SCRIPT_FILENAME']=__FILE__;
 $root=$argv[1];
 $spec=json_decode($argv[4],true,512,JSON_THROW_ON_ERROR);
-$connection=new mysqli('localhost','root','',$argv[3],0,$argv[2]);
+// Only the disposable two-session tests use this instrumented connection.
+// It pauses at the real handler's first transaction boundary, AFTER the
+// original role/editor preflight and BEFORE the final financial decision.
+class ReviewBoundaryMysqli extends mysqli {
+    private bool $reviewBarrierUsed=false;
+    public function begin_transaction(int $flags=0,?string $name=null):bool {
+        $gate=(string)($GLOBALS['spec']['manual_review_gate']??'');
+        if ($gate!=='' && !$this->reviewBarrierUsed) {
+            $this->reviewBarrierUsed=true;
+            if (!preg_match('/\A[a-z][a-z0-9_]{0,30}\z/D',$gate))
+                throw new RuntimeException('invalid_disposable_review_gate');
+            $marker='FIXTURE_MANUAL_REJECT_'.$gate;
+            $q=$this->prepare("INSERT INTO setting(type,value) VALUES(?,'waiting')");
+            $q->bind_param('s',$marker);$q->execute();$q->close();
+            $lock='achbot_manual_reject_'.$gate;
+            $q=$this->prepare('SELECT GET_LOCK(?,15) AS granted');
+            $q->bind_param('s',$lock);$q->execute();
+            $granted=(int)($q->get_result()->fetch_assoc()['granted']??0);$q->close();
+            if ($granted!==1) throw new RuntimeException('disposable_review_gate_timeout');
+            $q=$this->prepare('SELECT RELEASE_LOCK(?) AS released');
+            $q->bind_param('s',$lock);$q->execute();$q->close();
+        }
+        return parent::begin_transaction($flags,$name);
+    }
+}
+$connection=new ReviewBoundaryMysqli('localhost','root','',$argv[3],0,$argv[2]);
 $connection->set_charset('utf8mb4');
 // 018 uses AEAD with this isolated synthetic fixture key only.
 $GLOBALS['telegramWebhookSecret']='fixture-manual-route-delivery-key-2026';
@@ -477,17 +504,69 @@ if (($spec['route']??'wallet') === 'manual_crypto') {
     require $root.'/src/Finance/Routes/WalletRecharge.php';
 }
 """
+
+# A second disposable MariaDB session holds a named lock. The real PHP
+# handler signals its finality boundary using the fixture subclass above;
+# the competing session then commits a role/editor change before release.
+GATE_HOLDER_PHP=r"""
+$connection=new mysqli('localhost','root','',$argv[2],0,$argv[1]);
+$lock='achbot_manual_reject_'.$argv[3];
+$q=$connection->prepare('SELECT GET_LOCK(?,0) AS granted');
+$q->bind_param('s',$lock);$q->execute();
+$granted=(int)($q->get_result()->fetch_assoc()['granted']??0);$q->close();
+if ($granted!==1) throw new RuntimeException('fixture_gate_not_held');
+fwrite(STDOUT,"held\n");fflush(STDOUT);
+if (fgets(STDIN)===false) throw new RuntimeException('fixture_gate_not_released');
+$q=$connection->prepare('SELECT RELEASE_LOCK(?) AS released');
+$q->bind_param('s',$lock);$q->execute();$q->close();
+"""
+
+@contextlib.contextmanager
+def held_review_gate(work,env,gate):
+    assert re.fullmatch(r'[a-z][a-z0-9_]{0,30}',gate),gate
+    cmd=['php','-n','-d','extension=mysqlnd','-d','extension=mysqli','-r',
+         GATE_HOLDER_PHP,str(work/'mysql.sock'),DB,gate]
+    holder=subprocess.Popen(cmd,env=env,stdin=subprocess.PIPE,
+                            stdout=subprocess.PIPE,stderr=subprocess.PIPE,
+                            text=True)
+    try:
+        acknowledged=holder.stdout.readline().strip()
+        if acknowledged!='held':
+            raise RuntimeError('disposable review lock holder failed: '+
+                               repr((acknowledged,holder.stderr.read()))[:500])
+        yield
+    finally:
+        if holder.poll() is None:
+            _,errors=holder.communicate(input='\n',timeout=5)
+        else:
+            _,errors=holder.communicate(timeout=5)
+        if holder.returncode:
+            raise RuntimeError('disposable review lock holder exited: '+repr(errors)[:500])
+
+def await_review_gate(work,env,gate,future):
+    marker='FIXTURE_MANUAL_REJECT_'+gate
+    deadline=time.monotonic()+8
+    while time.monotonic()<deadline:
+        if query(work,env,"SELECT COUNT(*) FROM setting WHERE type='"+marker+"'")=='1':
+            return
+        if future.done():
+            raise AssertionError('reason request exited before transactional race boundary: '+
+                                 repr(future.result())[:700])
+        time.sleep(0.05)
+    raise AssertionError('reason request never reached transactional race boundary '+gate)
+
 def run_route(work,env,driver,data='',step='none',actor=1001,update=None,route='wallet',
               photo_mode='success',remote_mode='success',qr_transport='',text='',
               keys=None,states=None,bot_reply_message_id=None,message_transport='',message_edit_transport='',
               pause_before_insert_ms=0,expected_review=False,expected_warning=None,
               mysqli_report_off=False,service_applied_expire=None,edit_order_id=None,
-              existing_native=None):
+              existing_native=None,manual_review_gate=''):
     spec={'data':data,'step':step,'actor':actor,'route':route,
           'photo_mode':photo_mode,'remote_mode':remote_mode,'qr_transport':qr_transport,'text':text,
           'message_transport':message_transport,'message_edit_transport':message_edit_transport,
           'pause_before_insert_ms':pause_before_insert_ms,
-          'mysqli_report_off':mysqli_report_off}
+          'mysqli_report_off':mysqli_report_off,
+          'manual_review_gate':manual_review_gate}
     if service_applied_expire is not None: spec['service_applied_expire']=service_applied_expire
     if edit_order_id is not None: spec['edit_order_id']=edit_order_id
     if existing_native is not None: spec['existing_native']=existing_native
@@ -1076,6 +1155,82 @@ def check():
             assert not any(e['name'] in ('remote_create','remote_edit','qr_send','order_insert') for e in result),(key,result)
             cases.append('manual_reason_shared_'+family+'_'+method)
 
+        # Independent R1/R2 delta-review regressions: a real PHP request has
+        # already checked its cached step/role and reached the source's BEGIN;
+        # a separate MariaDB connection changes the role or editor before
+        # the irreversible decision. The disposable fixture barrier makes
+        # these interleavings deterministic without production test hooks.
+        def race_reason(gate,key,mutate,actor=9001):
+            with ThreadPoolExecutor(max_workers=1) as executor:
+                with held_review_gate(work,env,gate):
+                    pending=executor.submit(
+                        submit_reason,key,actor=actor,
+                        reason='توضیح رسید از درخواست قدیمی',
+                        manual_review_gate=gate,
+                        expected_warning=('manual_reject_actor_revoked'
+                            if gate=='r1_revoked' else 'manual_reject_editor_stale'))
+                    await_review_gate(work,env,gate,pending)
+                    mutate()
+                result=pending.result(timeout=20)
+            assert any(e['name']=='alert' for e in result),(gate,result)
+            assert not any(e['name'] in (
+                'sendMessage','editKeys','remote_create','remote_edit',
+                'order_insert','qr_delivery_mock') for e in result),(gate,result)
+            assert query(work,env,"SELECT state FROM pays WHERE hash_id='"+key+"'")=='have_sent',(gate,result)
+            assert query(work,env,"SELECT COUNT(*) FROM payment_followup_intents f "
+                "JOIN pays p ON p.id=f.pay_row_id WHERE p.hash_id='"+key+"'")=='0',gate
+            return result
+
+        # R1: current staff membership, not initial request authorization,
+        # controls finality. A revoked Support member cannot reject.
+        assert query(work,env,'SELECT COUNT(*) FROM users WHERE userid=9005')=='0'
+        query(work,env,"INSERT INTO users(userid,name,username,refcode,wallet,date,isAdmin,step,first_start) "
+            "VALUES(9005,'Fixture revocation','revoked','0',0,'1700000000',1,'none','sent');"
+            "INSERT INTO setting(type,value) VALUES('ADMIN_ROLE_9005','support')")
+        try:
+            standard_pay('standardr1revocation',method='gift_card')
+            open_reason_editor('standardr1revocation',actor=9005)
+            initial=query(work,env,'SELECT step FROM users WHERE userid=9005')
+            race_reason('r1_revoked','standardr1revocation',lambda:query(work,env,
+                "START TRANSACTION;"
+                "UPDATE users SET isAdmin=0 WHERE userid=9005;"
+                "DELETE FROM setting WHERE type='ADMIN_ROLE_9005';"
+                "COMMIT"),actor=9005)
+            assert query(work,env,'SELECT isAdmin FROM users WHERE userid=9005')=='0'
+            assert query(work,env,"SELECT COUNT(*) FROM setting WHERE type='ADMIN_ROLE_9005'")=='0'
+            assert query(work,env,'SELECT step FROM users WHERE userid=9005')==initial
+            cases.append('manual_reject_r1_concurrent_staff_revocation_denied_before_financial_cas')
+        finally:
+            query(work,env,"DELETE FROM setting WHERE type='ADMIN_ROLE_9005';"
+                  "DELETE FROM users WHERE userid=9005")
+
+        # R2/cancel: an update that canceled the editor wins over an older
+        # already-running typed message. No late setUser can erase that change.
+        standard_pay('standardr2cancel',method='gift_card')
+        open_reason_editor('standardr2cancel')
+        race_reason('r2_cancel','standardr2cancel',lambda:query(work,env,
+            "UPDATE users SET step='none' WHERE userid=9001 "
+            "AND step='declineActionReason_standardr2cancel_111'"))
+        assert query(work,env,'SELECT step FROM users WHERE userid=9001')=='none'
+        recovered=reject_with_reason('standardr2cancel',reason='رد معتبر پس از بازگشایی')
+        assert query(work,env,"SELECT state FROM pays WHERE hash_id='standardr2cancel'")=='declined',recovered
+        cases.append('manual_reject_r2_concurrent_cancel_preserves_payment_and_reopen')
+
+        # R2/replace: opening a different real receipt editor supersedes A.
+        # The obsolete A cannot finalize or clear B; B remains actionable.
+        standard_pay('standardr2old',method='gift_card')
+        standard_pay('standardr2new',method='gift_card')
+        open_reason_editor('standardr2old')
+        race_reason('r2_replace','standardr2old',
+                    lambda:open_reason_editor('standardr2new'))
+        assert query(work,env,'SELECT step FROM users WHERE userid=9001')==(
+            'declineActionReason_standardr2new_111')
+        current=submit_reason('standardr2new',reason='رسید جدید باید رد شود')
+        assert query(work,env,"SELECT state FROM pays WHERE hash_id='standardr2new'")=='declined',current
+        assert query(work,env,"SELECT state FROM pays WHERE hash_id='standardr2old'")=='have_sent'
+        assert query(work,env,'SELECT step FROM users WHERE userid=9001')=='none'
+        cases.append('manual_reject_r2_concurrent_editor_replacement_keeps_new_decision')
+
         # R4: historical repeated refs to the same admin Telegram message
         # must not violate 020's unique key and roll back a valid rejection.
         assert query(work,env,'SELECT COUNT(*) FROM users WHERE userid=9003')=='0'
@@ -1165,6 +1320,8 @@ def check():
             finally: query(work,env,'DROP TRIGGER fixture_f1_reject_outbox_fail')
             assert query(work,env,"SELECT state FROM pays WHERE "
                          "hash_id='standardrejectoutboxfail'")=='have_sent',failed
+            assert query(work,env,'SELECT step FROM users WHERE userid=9001')==(
+                'declineActionReason_standardrejectoutboxfail_111'),failed
             assert query(work,env,"SELECT COUNT(*) FROM payment_followup_intents f "
                 "JOIN pays p ON p.id=f.pay_row_id "
                 "WHERE p.hash_id='standardrejectoutboxfail'")=='0'

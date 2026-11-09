@@ -205,7 +205,10 @@ if (preg_match('/^declineActionReason_(.+)_(\d+)$/', (string)($userInfo['step']?
         sendMessage(\achbotMessage('manual_payment.manual_receipts.message.a757d0e2a6'),$cancelKey);
         return;
     }
-    setUser();
+    // This webhook's cached step may already have been canceled or replaced.
+    // Consume it only when the same financial transaction verifies it still
+    // belongs to this exact administrator decision.
+    $expectedEditor=(string)$userInfo['step'];
     $hash_id = $match[1];
     $message_id = $match[2];
 
@@ -322,7 +325,7 @@ if (preg_match('/^declineActionReason_(.+)_(\d+)$/', (string)($userInfo['step']?
         if ($telegramUnits($message)>4096 || $telegramUnits($adminReport)>4096) {
             // The reason itself is too large. Keep the editor open and ask
             // for a shorter message BEFORE any irreversible financial state.
-            setUser('declineActionReason_'.$hash_id.'_'.$message_id);
+            // The persisted editor remains open; no unconditional rewrite.
             sendMessage(\achbotMessage('broadcast.routes.pm_noop.message.72fe3f7c5d')."\n".
                 \achbotMessage('manual_payment.manual_receipts.message.a757d0e2a6'),$cancelKey);
             return;
@@ -345,9 +348,19 @@ if (preg_match('/^declineActionReason_(.+)_(\d+)$/', (string)($userInfo['step']?
             (int)$locked['chat_id']!==(int)$payInfo['chat_id'] ||
             (int)$locked['message_id']!==(int)$payInfo['message_id'])
             throw new RuntimeException('manual_reject_stale');
+        // The pays lock alone cannot freeze staff authority or the active
+        // reason editor. Lock current membership/role, then atomically claim
+        // only the same persisted editor before financial settlement.
+        $actor=(int)$from_id;
+        if (!achbotAdminCanLocked($connection,$actor,(int)$admin,'payments'))
+            throw new RuntimeException('manual_reject_actor_revoked');
+        $q=$connection->prepare("UPDATE users SET step='none' WHERE userid=? AND step=?");
+        $q->bind_param('is',$actor,$expectedEditor);
+        $editorClaimed=$q->execute() && $q->affected_rows===1;$q->close();
+        if (!$editorClaimed) throw new RuntimeException('manual_reject_editor_stale');
         $q=$connection->prepare("UPDATE pays SET state='declined',approved_by=?
             WHERE id=? AND state='have_sent'");
-        $actor=(int)$from_id;$q->bind_param('ii',$actor,$payId);
+        $q->bind_param('ii',$actor,$payId);
         $ok=$q->execute() && $q->affected_rows===1;$q->close();
         if (!$ok) throw new RuntimeException('manual_reject_cas_failed');
         $locked['state']='declined';$locked['approved_by']=$actor;
@@ -384,8 +397,13 @@ if (preg_match('/^declineActionReason_(.+)_(\d+)$/', (string)($userInfo['step']?
         $opened=false;
     } catch(Throwable $error) {
         if ($opened) try {$connection->rollback();} catch(Throwable $ignored) {}
+        // Preserve a bounded, non-secret reason for operator diagnostics.
+        $code=in_array($error->getMessage(),[
+            'manual_reject_stale','manual_reject_actor_revoked',
+            'manual_reject_editor_stale','manual_reject_cas_failed',
+        ],true)?$error->getMessage():'transaction_unconfirmed';
         error_log('achbot_manual_reject_claim_unconfirmed pay_id='.$payId.
-            ' class='.get_class($error));
+            ' code='.$code.' class='.get_class($error));
         alert(\achbotMessage('manual_payment.manual_receipts.alert.872f260882'));
         return;
     }
