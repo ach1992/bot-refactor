@@ -430,12 +430,21 @@ foreach([9002,9003,9004] as $actor){
  yes($approved['state']==='approved'&&(int)$approved['approved_by']===$actor&&(int)$connection->query('SELECT wallet FROM users WHERE userid=1001')->fetch_assoc()['wallet']===$wallet+100,'direct authorized helper credits once with exact approver '.$actor);
  yes(achbotApproveManualWalletTopup($connection,$hash,$actor,9001)===null&&(int)$connection->query('SELECT wallet FROM users WHERE userid=1001')->fetch_assoc()['wallet']===$wallet+100,'direct authorized helper receipt replay cannot recredit '.$actor);
  $hash='r5-legitimate-decline-'.$actor;$makeReceipt($hash);$wallet=(int)$connection->query('SELECT wallet FROM users WHERE userid=1001')->fetch_assoc()['wallet'];
- $from_id=$chat_id=$actor;$data='declineAction_'.$hash;$text='';$userInfo=['step'=>'none','isAdmin'=>false,'userid'=>$actor];require $root.'/src/Finance/Routes/ManualReceipts.php';
+ $from_id=$chat_id=$actor;$data='declineAction_'.$hash;$text='';$userInfo=['step'=>'none','isAdmin'=>false,'userid'=>$actor];$GLOBALS['events']=[];
+ require $root.'/src/Finance/Routes/ManualReceipts.php';
  $declineStep=$connection->query('SELECT step FROM users WHERE userid='.$actor)->fetch_assoc()['step'];
- yes(!str_starts_with($declineStep,'declineActionReason_'.$hash.'_') &&
-     $connection->query("SELECT state FROM pays WHERE hash_id='$hash'")->fetch_assoc()['state']==='declined' &&
-     (int)$connection->query('SELECT wallet FROM users WHERE userid=1001')->fetch_assoc()['wallet']===$wallet,
-     'all staff one-click reject needs no reason step, no native effect or wallet credit '.$actor);
+ yes($declineStep==='declineActionReason_'.$hash.'_'.$message_id &&
+     $connection->query("SELECT state FROM pays WHERE hash_id='$hash'")->fetch_assoc()['state']==='have_sent' &&
+     (int)$connection->query('SELECT wallet FROM users WHERE userid=1001')->fetch_assoc()['wallet']===$wallet &&
+     count(array_filter($GLOBALS['events'],static fn($e)=>$e['kind']==='send' && str_contains((string)$e['body'],'دلیل رد')))==1,
+     'all staff rejects require a persisted reason first and never debit/credit on click '.$actor);
+ $data='';$text='رسید این سفارش معتبر نیست';$userInfo=['step'=>$declineStep,'isAdmin'=>false,'userid'=>$actor];$GLOBALS['events']=[];
+ require $root.'/src/Finance/Routes/ManualReceipts.php';
+ yes($connection->query("SELECT state,approved_by FROM pays WHERE hash_id='$hash'")->fetch_assoc()['state']==='declined' &&
+     (int)$connection->query("SELECT approved_by FROM pays WHERE hash_id='$hash'")->fetch_assoc()['approved_by']===$actor &&
+     (int)$connection->query('SELECT wallet FROM users WHERE userid=1001')->fetch_assoc()['wallet']===$wallet &&
+     count(array_filter($GLOBALS['events'],static fn($e)=>$e['kind']==='send' && str_contains((string)$e['body'],'رسید این سفارش معتبر نیست')))==1,
+     'Manager/Operator/Support typed reasons reach original customer after one financial CAS '.$actor);
  $data='';$text='stale old editor';$userInfo=['step'=>'declineActionReason_'.$hash.'_111','isAdmin'=>false,'userid'=>$actor];
  require $root.'/src/Finance/Routes/ManualReceipts.php';
  yes($connection->query("SELECT state FROM pays WHERE hash_id='$hash'")->fetch_assoc()['state']==='declined'&&(int)$connection->query('SELECT wallet FROM users WHERE userid=1001')->fetch_assoc()['wallet']===$wallet,

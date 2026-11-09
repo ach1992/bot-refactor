@@ -178,7 +178,16 @@ function bot($method,$data){
 }
 function answerCallbackQuery(...$args){$GLOBALS['events'][]=['event'=>'ACK','at'=>hrtime(true)/1000000000];}
 function alert(...$args){answerCallbackQuery(...$args);}
-function setUser($step='none',$field='step'){$GLOBALS['events'][]=['event'=>'STATE','step'=>$step];}
+function setUser($step='none',$field='step'){
+ $GLOBALS['events'][]=['event'=>'STATE','step'=>$step];
+ // Only the genuine rejection editor in the staff/API race needs to
+ // persist its state. Other fixture wizard effects remain isolated spies.
+ if($field==='step' && str_starts_with((string)$step,'declineActionReason_')){
+  $actor=(int)$GLOBALS['from_id'];
+  $q=$GLOBALS['connection']->prepare('UPDATE users SET step=? WHERE userid=?');
+  $q->bind_param('si',$step,$actor);$q->execute();$q->close();
+ }
+}
 function sendPhoto(...$args){$GLOBALS['events'][]=['event'=>'PHOTO'];if(!empty($GLOBALS['spec']['photo_api']))achbotApiPaymentCheck($GLOBALS['connection'],(int)$GLOBALS['spec']['pay']);return(object)['ok'=>true,'result'=>(object)['message_id'=>456]];}
 """)
         php=php.replace("function editKeys(...$args) {\n    $GLOBALS['events'][]=['event'=>'EDIT_KEYS','state'=>fixtureState()];\n}","""function editKeys(...$args){$GLOBALS['events'][]=['event'=>'EDIT_KEYS','state'=>fixtureState(),'chat'=>$args[2]??null,'keys'=>$args[0]??null];if(!empty($GLOBALS['spec']['staff_decision']) && empty($GLOBALS['staff_decision_once'])){
@@ -187,8 +196,21 @@ function sendPhoto(...$args){$GLOBALS['events'][]=['event'=>'PHOTO'];if(!empty($
  else {
   $connection=$GLOBALS['connection'];$admin=9001;$buttonValues=$GLOBALS['buttonValues'];$mainValues=$GLOBALS['mainValues'];$botUsername='FixtureBot';
   $hadActor=array_key_exists('from_id',$GLOBALS);$oldActor=$GLOBALS['from_id']??null;$GLOBALS['from_id']=9001;
-  $from_id=9001;$chat_id=9001;$message_id=222;$data='';$text='Synthetic administrator rejection';$userInfo=['step'=>'declineActionReason_'.$p['hash_id'].'_222'];
-  try{require $GLOBALS['root'].'/src/Finance/Routes/ManualReceipts.php';}finally{if($hadActor)$GLOBALS['from_id']=$oldActor;else unset($GLOBALS['from_id']);}
+  $from_id=9001;$chat_id=9001;$message_id=222;$cancelKey='{}';
+  // First invoke the real original receipt Reject button: it must open
+  // and persist the administrator's editor, never settle on its own.
+  $data='declineAction_'.$p['hash_id'];$text='';$userInfo=['step'=>'none'];
+  try{
+   require $GLOBALS['root'].'/src/Finance/Routes/ManualReceipts.php';
+   $expected='declineActionReason_'.$p['hash_id'].'_222';
+   $q=$connection->prepare('SELECT step FROM users WHERE userid=?');
+   $q->bind_param('i',$from_id);$q->execute();
+   $editor=(string)($q->get_result()->fetch_assoc()['step']??'');$q->close();
+   if($editor!==$expected)throw new RuntimeException('fixture_reason_editor_not_opened');
+   // A separate typed update now consumes precisely the persisted editor.
+   $data='';$text='Synthetic administrator rejection';$userInfo=['step'=>$editor];
+   require $GLOBALS['root'].'/src/Finance/Routes/ManualReceipts.php';
+  }finally{if($hadActor)$GLOBALS['from_id']=$oldActor;else unset($GLOBALS['from_id']);}
  }
 }
 return !empty($GLOBALS['spec']['fail_staff'])?null:(object)['ok'=>true];}""")

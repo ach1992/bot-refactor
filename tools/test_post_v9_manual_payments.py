@@ -6,10 +6,13 @@ Source is exercised by real PHP against the existing additive shared ledger.
 """
 from __future__ import annotations
 import argparse
+import contextlib
+import html
 import json
 import re
 import subprocess
 import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import test_access_state as owned
@@ -154,7 +157,32 @@ set_error_handler(static function($severity,$message){
 $_SERVER['SCRIPT_FILENAME']=__FILE__;
 $root=$argv[1];
 $spec=json_decode($argv[4],true,512,JSON_THROW_ON_ERROR);
-$connection=new mysqli('localhost','root','',$argv[3],0,$argv[2]);
+// Only the disposable two-session tests use this instrumented connection.
+// It pauses at the real handler's first transaction boundary, AFTER the
+// original role/editor preflight and BEFORE the final financial decision.
+class ReviewBoundaryMysqli extends mysqli {
+    private bool $reviewBarrierUsed=false;
+    public function begin_transaction(int $flags=0,?string $name=null):bool {
+        $gate=(string)($GLOBALS['spec']['manual_review_gate']??'');
+        if ($gate!=='' && !$this->reviewBarrierUsed) {
+            $this->reviewBarrierUsed=true;
+            if (!preg_match('/\A[a-z][a-z0-9_]{0,30}\z/D',$gate))
+                throw new RuntimeException('invalid_disposable_review_gate');
+            $marker='FIXTURE_MANUAL_REJECT_'.$gate;
+            $q=$this->prepare("INSERT INTO setting(type,value) VALUES(?,'waiting')");
+            $q->bind_param('s',$marker);$q->execute();$q->close();
+            $lock='achbot_manual_reject_'.$gate;
+            $q=$this->prepare('SELECT GET_LOCK(?,15) AS granted');
+            $q->bind_param('s',$lock);$q->execute();
+            $granted=(int)($q->get_result()->fetch_assoc()['granted']??0);$q->close();
+            if ($granted!==1) throw new RuntimeException('disposable_review_gate_timeout');
+            $q=$this->prepare('SELECT RELEASE_LOCK(?) AS released');
+            $q->bind_param('s',$lock);$q->execute();$q->close();
+        }
+        return parent::begin_transaction($flags,$name);
+    }
+}
+$connection=new ReviewBoundaryMysqli('localhost','root','',$argv[3],0,$argv[2]);
 $connection->set_charset('utf8mb4');
 // 018 uses AEAD with this isolated synthetic fixture key only.
 $GLOBALS['telegramWebhookSecret']='fixture-manual-route-delivery-key-2026';
@@ -171,6 +199,12 @@ $userInfo=[
     'userid'=>$from_id,'name'=>'Customer',
     'username'=>'synthetic_user','isAdmin'=>false
 ];
+if (($spec['route']??'')==='manual_admin' && ($spec['step']??'')==='@stored') {
+    $stmt=$connection->prepare('SELECT step FROM users WHERE userid=? LIMIT 1');
+    $stmt->bind_param('i',$from_id);$stmt->execute();
+    $row=$stmt->get_result()->fetch_assoc();$stmt->close();
+    $userInfo['step']=(string)($row['step']??'none');
+}
 $update=json_decode(json_encode($spec['update']??['message'=>[
     'photo'=>[['file_id'=>'fixture-small'],['file_id'=>'fixture-photo-id']]
 ]]),false);
@@ -208,11 +242,22 @@ function delMessage(){ $GLOBALS['events'][]=['name'=>'delMessage'];}
 function setUser($value='none',$field='step'){
     global $connection,$from_id,$spec;
     $GLOBALS['events'][]=['name'=>'setUser','step'=>$value,'field'=>$field];
-    // Model the real database step transition for this test's top-up route;
-    // rejected updates must preserve even a pre-existing private step.
-    if (($spec['route']??'')==='topup') {
+    // Match persisted administrator reason steps as well as customer top-up
+    // steps; each PHP route process sees the real next-request user row.
+    if (in_array(($spec['route']??''),['topup','manual_admin'],true)) {
         if ($field!=='step') throw new RuntimeException('unexpected step field');
-        $stmt=$connection->prepare('UPDATE users SET step=? WHERE userid=?');
+        if (($spec['route']??'')==='manual_admin') {
+            $stmt=$connection->prepare('SELECT id FROM users WHERE userid=? LIMIT 1');
+            $stmt->bind_param('i',$from_id);$stmt->execute();
+            $exists=$stmt->get_result()->fetch_assoc();$stmt->close();
+            if (!$exists) {
+                $stmt=$connection->prepare("INSERT INTO users(userid,name,username,refcode,wallet,date,isAdmin,step,first_start) VALUES(?,'Fixture staff','fixture','0',0,'1700000000',1,'none','sent')");
+                $stmt->bind_param('i',$from_id);$stmt->execute();$stmt->close();
+            }
+            $sql="UPDATE users SET step=? WHERE userid=? AND step <> 'banned' " .
+                "AND step NOT LIKE 'achbotDirectGift%' AND step NOT LIKE 'achbotExempt:%'";
+        } else $sql='UPDATE users SET step=? WHERE userid=?';
+        $stmt=$connection->prepare($sql);
         $stmt->bind_param('si',$value,$from_id);
         $stmt->execute();$stmt->close();
     }
@@ -459,17 +504,69 @@ if (($spec['route']??'wallet') === 'manual_crypto') {
     require $root.'/src/Finance/Routes/WalletRecharge.php';
 }
 """
+
+# A second disposable MariaDB session holds a named lock. The real PHP
+# handler signals its finality boundary using the fixture subclass above;
+# the competing session then commits a role/editor change before release.
+GATE_HOLDER_PHP=r"""
+$connection=new mysqli('localhost','root','',$argv[2],0,$argv[1]);
+$lock='achbot_manual_reject_'.$argv[3];
+$q=$connection->prepare('SELECT GET_LOCK(?,0) AS granted');
+$q->bind_param('s',$lock);$q->execute();
+$granted=(int)($q->get_result()->fetch_assoc()['granted']??0);$q->close();
+if ($granted!==1) throw new RuntimeException('fixture_gate_not_held');
+fwrite(STDOUT,"held\n");fflush(STDOUT);
+if (fgets(STDIN)===false) throw new RuntimeException('fixture_gate_not_released');
+$q=$connection->prepare('SELECT RELEASE_LOCK(?) AS released');
+$q->bind_param('s',$lock);$q->execute();$q->close();
+"""
+
+@contextlib.contextmanager
+def held_review_gate(work,env,gate):
+    assert re.fullmatch(r'[a-z][a-z0-9_]{0,30}',gate),gate
+    cmd=['php','-n','-d','extension=mysqlnd','-d','extension=mysqli','-r',
+         GATE_HOLDER_PHP,str(work/'mysql.sock'),DB,gate]
+    holder=subprocess.Popen(cmd,env=env,stdin=subprocess.PIPE,
+                            stdout=subprocess.PIPE,stderr=subprocess.PIPE,
+                            text=True)
+    try:
+        acknowledged=holder.stdout.readline().strip()
+        if acknowledged!='held':
+            raise RuntimeError('disposable review lock holder failed: '+
+                               repr((acknowledged,holder.stderr.read()))[:500])
+        yield
+    finally:
+        if holder.poll() is None:
+            _,errors=holder.communicate(input='\n',timeout=5)
+        else:
+            _,errors=holder.communicate(timeout=5)
+        if holder.returncode:
+            raise RuntimeError('disposable review lock holder exited: '+repr(errors)[:500])
+
+def await_review_gate(work,env,gate,future):
+    marker='FIXTURE_MANUAL_REJECT_'+gate
+    deadline=time.monotonic()+8
+    while time.monotonic()<deadline:
+        if query(work,env,"SELECT COUNT(*) FROM setting WHERE type='"+marker+"'")=='1':
+            return
+        if future.done():
+            raise AssertionError('reason request exited before transactional race boundary: '+
+                                 repr(future.result())[:700])
+        time.sleep(0.05)
+    raise AssertionError('reason request never reached transactional race boundary '+gate)
+
 def run_route(work,env,driver,data='',step='none',actor=1001,update=None,route='wallet',
               photo_mode='success',remote_mode='success',qr_transport='',text='',
               keys=None,states=None,bot_reply_message_id=None,message_transport='',message_edit_transport='',
               pause_before_insert_ms=0,expected_review=False,expected_warning=None,
               mysqli_report_off=False,service_applied_expire=None,edit_order_id=None,
-              existing_native=None):
+              existing_native=None,manual_review_gate=''):
     spec={'data':data,'step':step,'actor':actor,'route':route,
           'photo_mode':photo_mode,'remote_mode':remote_mode,'qr_transport':qr_transport,'text':text,
           'message_transport':message_transport,'message_edit_transport':message_edit_transport,
           'pause_before_insert_ms':pause_before_insert_ms,
-          'mysqli_report_off':mysqli_report_off}
+          'mysqli_report_off':mysqli_report_off,
+          'manual_review_gate':manual_review_gate}
     if service_applied_expire is not None: spec['service_applied_expire']=service_applied_expire
     if edit_order_id is not None: spec['edit_order_id']=edit_order_id
     if existing_native is not None: spec['existing_native']=existing_native
@@ -829,13 +926,15 @@ def check():
         # Review F1/F2: execute actual service operator callback handlers, not
         # merely helper functions. Every remote action is a local spy.
         def service_pay(key,subject='BUY_SUB',method='bank_transfer',received=True,
-                        amount=100000,quantity=0,addon_units=None,standard=False):
+                        amount=100000,quantity=0,addon_units=None,standard=False,
+                        description_override=None):
             seed(work,env,key,price=amount)
             # A physical Marzban username cannot be reused for two paid
             # identities on the same provider. Synthetic custom descriptions
             # must therefore differ per payment; real mismatches fail closed.
-            description='fx_'+key if (key.startswith('custom') or
-                key.startswith('servicecallbackrace')) else 'fixture'
+            description=(description_override if description_override is not None
+                else ('fx_'+key if (key.startswith('custom') or
+                      key.startswith('servicecallbackrace')) else 'fixture'))
             # Only explicitly NEW add-on scenarios get a pinned quantity.
             # Wallet/legacy seed defaults remain zero and are tested below.
             days,volume=(0,0) if standard else (30,10)
@@ -925,25 +1024,226 @@ def check():
                         amount=amount,quantity=quantity,standard=True)
             return key
 
+        def open_reason_editor(key,actor=9001):
+            # The same real callback is printed for every manually reviewed
+            # bank/gift/crypto receipt, independently of order subject.
+            before=query(work,env,"SELECT state FROM pays WHERE hash_id='"+key+"'")
+            buyer_wallet=query(work,env,'SELECT wallet FROM users WHERE userid=1001')
+            events=run_route(work,env,route_driver,data='declineAction_'+key,
+                             actor=actor,route='manual_admin',step='@stored')
+            expected_step='declineActionReason_'+key+'_111'
+            assert before=='have_sent' and query(work,env,"SELECT state FROM pays WHERE hash_id='"+key+"'")==before,(key,events)
+            assert query(work,env,'SELECT wallet FROM users WHERE userid=1001')==buyer_wallet,(key,events)
+            assert query(work,env,"SELECT step FROM users WHERE userid="+str(actor))==expected_step,(key,events)
+            assert any(e['name']=='setUser' and e['step']==expected_step for e in events),(key,events)
+            prompt=[e for e in events if e['name']=='sendMessage']
+            assert len(prompt)==1 and 'دلیل رد' in str(prompt[0]['args'][0]),(key,events)
+            assert not any(e['name'] in ('remote_create','remote_edit','editKeys','order_insert') for e in events),(key,events)
+            return events
+
+        def submit_reason(key,reason='مغایرت اطلاعات رسید با مبلغ واریزی',actor=9001,**kwargs):
+            return run_route(work,env,route_driver,route='manual_admin',
+                             step='@stored',text=reason,actor=actor,**kwargs)
+
+        def reject_with_reason(key,actor=9001,reason='رسید معتبر نیست',
+                               expect_commit=True,**kwargs):
+            open_reason_editor(key,actor=actor)
+            result=submit_reason(key,reason=reason,actor=actor,**kwargs)
+            expected='none' if expect_commit else 'declineActionReason_'+key+'_111'
+            assert query(work,env,"SELECT step FROM users WHERE userid="+str(actor))==expected,(key,result)
+            return result
+
         standard_pay('standarddirectreject',method='gift_card')
+        # Reject no longer commits on the button: invalid/blank text and
+        # callbacks cannot impersonate the operator's newly typed reason.
+        open_reason_editor('standarddirectreject')
+        blank=submit_reason('standarddirectreject',reason='  ')
+        assert any(e['name']=='sendMessage' and 'دلیل رد' in str(e['args'][0]) for e in blank),blank
+        assert query(work,env,"SELECT state FROM pays WHERE hash_id='standarddirectreject'")=='have_sent'
+        assert query(work,env,"SELECT step FROM users WHERE userid=9001")==(
+            'declineActionReason_standarddirectreject_111')
+        injected=run_route(work,env,route_driver,data='evidenceHome',step='@stored',
+                           text='fake callback reason',actor=9001,route='manual_admin')
+        assert query(work,env,"SELECT state FROM pays WHERE hash_id='standarddirectreject'")=='have_sent',injected
         wallet_before=query(work,env,'SELECT userid,wallet FROM users ORDER BY userid')
-        rejected=run_route(work,env,route_driver,data='declineAction_standarddirectreject',
-                           actor=9001,route='manual_admin')
+        reason='رسید <مغایر> با مبلغ واریزی است & باید دوباره ارسال شود'
+        rejected=submit_reason('standarddirectreject',reason=reason)
         assert query(work,env,"SELECT state,approved_by FROM pays WHERE "
                      "hash_id='standarddirectreject'")=='declined\t9001',rejected
         assert query(work,env,'SELECT userid,wallet FROM users ORDER BY userid')==wallet_before
+        assert query(work,env,'SELECT step FROM users WHERE userid=9001')=='none'
         assert not any(e['name'] in ('remote_create','remote_edit','qr_send') for e in rejected)
-        assert any(e['name']=='sendMessage' and len(e.get('args',[]))>=4 and
-                   e['args'][3]==1001 for e in rejected),rejected
-        assert any(e['name']=='sendMessage' and 'مشتری' in str(e['args'][0])
-                   for e in rejected),rejected
-        assert not any(e['name']=='setUser' and str(e['step']).startswith('declineActionReason_')
-                       for e in rejected),rejected
+        buyer=[e['args'][0] for e in rejected if e['name']=='sendMessage' and
+               len(e.get('args',[]))>=4 and e['args'][3]==1001]
+        assert len(buyer)==1 and '&lt;مغایر&gt;' in buyer[0] and '&amp;' in buyer[0],(buyer,rejected)
+        assert '<blockquote>' in buyer[0] and 'باید دوباره ارسال شود' in buyer[0]
         repeated=run_route(work,env,route_driver,data='declineAction_standarddirectreject',
                            actor=9001,route='manual_admin')
         assert not any(e['name'] in ('remote_create','remote_edit','qr_send','sendMessage')
                        for e in repeated),repeated
-        cases.append('manual_direct_reject_one_click_no_wallet_native_or_duplicate_reports')
+        cases.append('manual_reject_reason_required_not_callback_and_customer_escaped_once')
+
+        standard_pay('standardcancelreason',method='bank_transfer')
+        open_reason_editor('standardcancelreason')
+        cancel=submit_reason('standardcancelreason',reason='❌ لغو عملیات')
+        assert not any(e['name'] in ('sendMessage','editKeys','remote_create') for e in cancel),cancel
+        assert query(work,env,"SELECT state FROM pays WHERE hash_id='standardcancelreason'")=='have_sent'
+        assert query(work,env,"SELECT COUNT(*) FROM payment_followup_intents f JOIN pays p ON p.id=f.pay_row_id WHERE p.hash_id='standardcancelreason'")=='0'
+        cases.append('manual_reject_cancel_leaves_original_receipt_reviewable')
+
+        # The original persisted subscription label is presentation data, not
+        # trusted HTML. Its markup must not corrupt the customer's typed reason.
+        service_pay('standardrejectmarkup',standard=True,method='gift_card',
+                    description_override='Label & <fake> Markup')
+        escaped=reject_with_reason('standardrejectmarkup',reason='توضیح کامل رد')
+        customer=[str(e['args'][0]) for e in escaped if e['name']=='sendMessage' and
+                  len(e.get('args',[]))>=4 and e['args'][3]==1001]
+        assert len(customer)==1 and '<code>Label &amp; &lt;fake&gt; Markup</code>' in customer[0],escaped
+        assert 'توضیح کامل رد' in customer[0],escaped
+        cases.append('manual_reject_untrusted_subscription_name_html_escaped')
+
+        # Telegram accepts up to 4096 UTF-16 units, but the complete notice
+        # includes headings, payment facts and escaped reason entities.
+        service_pay('standardrejectlongreason',standard=True,method='gift_card')
+        open_reason_editor('standardrejectlongreason')
+        long_reply=submit_reason('standardrejectlongreason',reason='گ'*4096)
+        assert query(work,env,"SELECT state FROM pays WHERE hash_id='standardrejectlongreason'")=='have_sent',long_reply
+        assert query(work,env,"SELECT step FROM users WHERE userid=9001")==(
+            'declineActionReason_standardrejectlongreason_111'),long_reply
+        assert query(work,env,"SELECT COUNT(*) FROM payment_followup_intents f JOIN pays p ON p.id=f.pay_row_id WHERE p.hash_id='standardrejectlongreason'")=='0',long_reply
+        assert not any(e['name'] in ('editKeys','remote_create','remote_edit') for e in long_reply),long_reply
+        assert any(e['name']=='sendMessage' and 'طولانی' in str(e['args'][0]) for e in long_reply),long_reply
+        recovered=submit_reason('standardrejectlongreason',reason='مبلغ رسید با فاکتور تفاوت دارد')
+        assert query(work,env,"SELECT state FROM pays WHERE hash_id='standardrejectlongreason'")=='declined',recovered
+        assert any(e['name']=='sendMessage' and 'مبلغ رسید با فاکتور تفاوت دارد' in str(e['args'][0])
+                   for e in recovered),recovered
+        cases.append('manual_reject_oversize_reason_reprompt_before_commit_then_accept')
+
+        # A long original label may be shortened for display while the exact
+        # human reason and immutable payment evidence remain unmodified.
+        service_pay('standardrejectlongname',standard=True,method='gift_card',
+                    description_override='X'*4500)
+        readable=reject_with_reason('standardrejectlongname',reason='اطلاعات ناقص است')
+        reports=[e['args'][0] for e in readable if e['name']=='sendMessage']
+        assert len(reports)>=2 and all(
+            len(html.unescape(re.sub(r'<[^>]+>','',str(t))).encode('utf-16-le'))//2<=4096
+            for t in reports),(reports[:1],readable)
+        assert any('اطلاعات ناقص است' in str(t) and '…' in str(t) for t in reports),readable
+        assert query(work,env,"SELECT LENGTH(description) FROM pays WHERE hash_id='standardrejectlongname'")=='4500'
+        cases.append('manual_reject_long_original_label_fits_without_mutating_pinned_evidence')
+
+        # Shared rejection for every manual order family: wallet, standard,
+        # custom, renewal and add-ons. Only the approval callback differs;
+        # no subject-specific reject shortcut is admitted.
+        shared_manual=[
+            ('wallet','INCREASE_WALLET','bank_transfer',None),
+            ('standard','BUY_SUB','gift_card',None),
+            ('custom','BUY_SUB','manual_usdt',None),
+            ('renew','RENEW_ACCOUNT','bank_transfer',None),
+            ('standardrenew','RENEW_SCONFIG','gift_card',None),
+            ('day','INCREASE_DAY_1_2','gift_card',2),
+            ('volume','INCREASE_VOLUME_1_2','manual_usdt',3),
+        ]
+        for family,subject,method,units in shared_manual:
+            key='reasonmatrix'+family
+            service_pay(key,subject=subject,method=method,addon_units=units)
+            funds_before=query(work,env,'SELECT wallet FROM users WHERE userid=1001')
+            result=reject_with_reason(key,reason='علت مربوط به '+family)
+            assert query(work,env,"SELECT state,approved_by FROM pays WHERE hash_id='"+key+"'")=='declined\t9001',(key,result)
+            assert query(work,env,'SELECT wallet FROM users WHERE userid=1001')==funds_before,(key,result)
+            buyers=[e['args'][0] for e in result if e['name']=='sendMessage' and
+                    len(e.get('args',[]))>=4 and e['args'][3]==1001]
+            assert len(buyers)==1 and 'علت مربوط به '+family in buyers[0],(key,result)
+            assert not any(e['name'] in ('remote_create','remote_edit','qr_send','order_insert') for e in result),(key,result)
+            cases.append('manual_reason_shared_'+family+'_'+method)
+
+        # Independent R1/R2 delta-review regressions: a real PHP request has
+        # already checked its cached step/role and reached the source's BEGIN;
+        # a separate MariaDB connection changes the role or editor before
+        # the irreversible decision. The disposable fixture barrier makes
+        # these interleavings deterministic without production test hooks.
+        def race_reason(gate,key,mutate,actor=9001):
+            with ThreadPoolExecutor(max_workers=1) as executor:
+                with held_review_gate(work,env,gate):
+                    pending=executor.submit(
+                        submit_reason,key,actor=actor,
+                        reason='توضیح رسید از درخواست قدیمی',
+                        manual_review_gate=gate,
+                        expected_warning=('manual_reject_actor_revoked'
+                            if gate=='r1_revoked' else 'manual_reject_editor_stale'))
+                    await_review_gate(work,env,gate,pending)
+                    mutate()
+                result=pending.result(timeout=20)
+            assert any(e['name']=='alert' for e in result),(gate,result)
+            assert not any(e['name'] in (
+                'sendMessage','editKeys','remote_create','remote_edit',
+                'order_insert','qr_delivery_mock') for e in result),(gate,result)
+            assert query(work,env,"SELECT state FROM pays WHERE hash_id='"+key+"'")=='have_sent',(gate,result)
+            assert query(work,env,"SELECT COUNT(*) FROM payment_followup_intents f "
+                "JOIN pays p ON p.id=f.pay_row_id WHERE p.hash_id='"+key+"'")=='0',gate
+            query(work,env,"DELETE FROM setting WHERE type='FIXTURE_MANUAL_REJECT_"+gate+"'")
+            return result
+
+        # R1: current staff membership, not initial request authorization,
+        # controls finality. A revoked Support member cannot reject.
+        assert query(work,env,'SELECT COUNT(*) FROM users WHERE userid=9005')=='0'
+        query(work,env,"INSERT INTO users(userid,name,username,refcode,wallet,date,isAdmin,step,first_start) "
+            "VALUES(9005,'Fixture revocation','revoked','0',0,'1700000000',1,'none','sent');"
+            "INSERT INTO setting(type,value) VALUES('ADMIN_ROLE_9005','support')")
+        try:
+            standard_pay('standardr1revocation',method='gift_card')
+            open_reason_editor('standardr1revocation',actor=9005)
+            initial=query(work,env,'SELECT step FROM users WHERE userid=9005')
+            race_reason('r1_revoked','standardr1revocation',lambda:query(work,env,
+                "START TRANSACTION;"
+                "UPDATE users SET isAdmin=0 WHERE userid=9005;"
+                "DELETE FROM setting WHERE type='ADMIN_ROLE_9005';"
+                "COMMIT"),actor=9005)
+            assert query(work,env,'SELECT isAdmin FROM users WHERE userid=9005')=='0'
+            assert query(work,env,"SELECT COUNT(*) FROM setting WHERE type='ADMIN_ROLE_9005'")=='0'
+            assert query(work,env,'SELECT step FROM users WHERE userid=9005')==initial
+            cases.append('manual_reject_r1_concurrent_staff_revocation_denied_before_financial_cas')
+        finally:
+            query(work,env,"DELETE FROM setting WHERE type='ADMIN_ROLE_9005';"
+                  "DELETE FROM users WHERE userid=9005")
+
+        # R2/cancel: an update that canceled the editor wins over an older
+        # already-running typed message. No late setUser can erase that change.
+        standard_pay('standardr2cancel',method='gift_card')
+        open_reason_editor('standardr2cancel')
+        race_reason('r2_cancel','standardr2cancel',lambda:query(work,env,
+            "UPDATE users SET step='none' WHERE userid=9001 "
+            "AND step='declineActionReason_standardr2cancel_111'"))
+        assert query(work,env,'SELECT step FROM users WHERE userid=9001')=='none'
+        recovered=reject_with_reason('standardr2cancel',reason='رد معتبر پس از بازگشایی')
+        assert query(work,env,"SELECT state FROM pays WHERE hash_id='standardr2cancel'")=='declined',recovered
+        cases.append('manual_reject_r2_concurrent_cancel_preserves_payment_and_reopen')
+
+        # R2/replace: opening a different real receipt editor supersedes A.
+        # The obsolete A cannot finalize or clear B; B remains actionable.
+        standard_pay('standardr2old',method='gift_card')
+        standard_pay('standardr2new',method='gift_card')
+        open_reason_editor('standardr2old')
+        race_reason('r2_replace','standardr2old',
+                    lambda:open_reason_editor('standardr2new'))
+        assert query(work,env,'SELECT step FROM users WHERE userid=9001')==(
+            'declineActionReason_standardr2new_111')
+        current=submit_reason('standardr2new',reason='رسید جدید باید رد شود')
+        assert query(work,env,"SELECT state FROM pays WHERE hash_id='standardr2new'")=='declined',current
+        assert query(work,env,"SELECT state FROM pays WHERE hash_id='standardr2old'")=='have_sent'
+        assert query(work,env,'SELECT step FROM users WHERE userid=9001')=='none'
+        cases.append('manual_reject_r2_concurrent_editor_replacement_keeps_new_decision')
+
+        # A case-insensitive users.step collation must not accidentally
+        # treat a differently cased, superseding editor as the cached one.
+        standard_pay('standardr2case',method='gift_card')
+        open_reason_editor('standardr2case')
+        race_reason('r2_case','standardr2case',lambda:query(work,env,
+            "UPDATE users SET step='declineactionReason_standardr2case_111' WHERE userid=9001"))
+        assert query(work,env,'SELECT step FROM users WHERE userid=9001')==(
+            'declineactionReason_standardr2case_111')
+        query(work,env,"UPDATE users SET step='none' WHERE userid=9001")
+        cases.append('manual_reject_r2_exact_editor_bytes_ignore_case_insensitive_sql_collation')
 
         # R4: historical repeated refs to the same admin Telegram message
         # must not violate 020's unique key and roll back a valid rejection.
@@ -959,9 +1259,7 @@ def check():
             query(work,env,"UPDATE pays SET admins_messages='"+copies+"' "
                   "WHERE hash_id='standardrejectduplicateref'")
             before_wallet=query(work,env,'SELECT userid,wallet FROM users ORDER BY userid')
-            result=run_route(work,env,route_driver,
-                             data='declineAction_standardrejectduplicateref',
-                             actor=9001,route='manual_admin')
+            result=reject_with_reason('standardrejectduplicateref')
             assert query(work,env,"SELECT state FROM pays WHERE "
                          "hash_id='standardrejectduplicateref'")=='declined',result
             assert query(work,env,'SELECT userid,wallet FROM users ORDER BY userid')==before_wallet
@@ -1000,9 +1298,7 @@ def check():
             query(work,env,"UPDATE pays SET admins_messages='"+copies+"' "
                   "WHERE hash_id='standardrejectsamechat'")
             before_wallet=query(work,env,'SELECT userid,wallet FROM users ORDER BY userid')
-            result=run_route(work,env,route_driver,
-                             data='declineAction_standardrejectsamechat',
-                             actor=9001,route='manual_admin')
+            result=reject_with_reason('standardrejectsamechat')
             assert query(work,env,"SELECT state FROM pays WHERE "
                          "hash_id='standardrejectsamechat'")=='declined',result
             assert query(work,env,'SELECT userid,wallet FROM users ORDER BY userid')==before_wallet
@@ -1033,21 +1329,20 @@ def check():
                 "SET MESSAGE_TEXT='fixture_followup_reject_denied'")
             before_wallet=query(work,env,'SELECT userid,wallet FROM users ORDER BY userid')
             try:
-                failed=run_route(work,env,route_driver,
-                                 data='declineAction_standardrejectoutboxfail',
-                                 actor=9001,route='manual_admin',
+                failed=reject_with_reason('standardrejectoutboxfail',
+                                 expect_commit=False,
                                  expected_warning='achbot_manual_reject_claim_unconfirmed')
             finally: query(work,env,'DROP TRIGGER fixture_f1_reject_outbox_fail')
             assert query(work,env,"SELECT state FROM pays WHERE "
                          "hash_id='standardrejectoutboxfail'")=='have_sent',failed
+            assert query(work,env,'SELECT step FROM users WHERE userid=9001')==(
+                'declineActionReason_standardrejectoutboxfail_111'),failed
             assert query(work,env,"SELECT COUNT(*) FROM payment_followup_intents f "
                 "JOIN pays p ON p.id=f.pay_row_id "
                 "WHERE p.hash_id='standardrejectoutboxfail'")=='0'
             assert not any(e['name'] in ('editKeys','sendMessage','remote_create') for e in failed),failed
             assert query(work,env,'SELECT userid,wallet FROM users ORDER BY userid')==before_wallet
-            retry=run_route(work,env,route_driver,
-                            data='declineAction_standardrejectoutboxfail',
-                            actor=9001,route='manual_admin')
+            retry=reject_with_reason('standardrejectoutboxfail')
             assert query(work,env,"SELECT state FROM pays WHERE "
                          "hash_id='standardrejectoutboxfail'")=='declined',retry
             assert not any(e['name'] in ('remote_create','remote_edit') for e in retry)
@@ -1061,9 +1356,7 @@ def check():
         # report must NOT claim that the customer was notified successfully.
         standard_pay('standardrejectnoticeunknown',method='gift_card')
         before_wallet=query(work,env,'SELECT userid,wallet FROM users ORDER BY userid')
-        attempts=run_route(work,env,route_driver,
-                           data='declineAction_standardrejectnoticeunknown',
-                           actor=9001,route='manual_admin',
+        attempts=reject_with_reason('standardrejectnoticeunknown',
                            message_transport='throw_once',
                            expected_warning='achbot_followup_telegram_uncertain')
         assert query(work,env,"SELECT state FROM pays "
@@ -1090,9 +1383,7 @@ def check():
         # operator notification, nor authorize a second reply on old buttons.
         standard_pay('standardrejecteditunknown',method='gift_card')
         before_wallet=query(work,env,'SELECT userid,wallet FROM users ORDER BY userid')
-        edited=run_route(work,env,route_driver,
-                         data='declineAction_standardrejecteditunknown',
-                         actor=9001,route='manual_admin',
+        edited=reject_with_reason('standardrejecteditunknown',
                          message_edit_transport='throw',
                          expected_warning='achbot_followup_telegram_uncertain')
         assert query(work,env,"SELECT state FROM pays "
@@ -1307,7 +1598,6 @@ def check():
         cases.append('real_standard_remote_success_local_write_failed_no_automatic_replay')
 
         standard_pay('standardrace',method='gift_card')
-        from concurrent.futures import ThreadPoolExecutor
         with ThreadPoolExecutor(max_workers=2) as executor:
             decisions=list(executor.map(lambda _:run_route(
                 work,env,route_driver,data='acceptstandardrace',
@@ -1574,7 +1864,6 @@ def check():
         # Admin callback and scheduler claim contend for one pays row. If
         # bank Cron wins BUY_SUB remains processing until verified fulfillment;
         # neither contender can send a second remote CREATE.
-        from concurrent.futures import ThreadPoolExecutor
         for i in range(4):
             key='servicecallbackrace'+str(i)
             service_pay(key,subject='BUY_SUB',method='bank_transfer')
@@ -1966,7 +2255,6 @@ def check():
         assert base('walletapprovalrace','claim','manual_usdt')
         query(work,env,"UPDATE pays SET state='have_sent' WHERE hash_id='walletapprovalrace'")
         before=int(query(work,env,'SELECT wallet FROM users WHERE userid=1001'))
-        from concurrent.futures import ThreadPoolExecutor
         with ThreadPoolExecutor(max_workers=2) as executor:
             two=list(executor.map(lambda _:base('walletapprovalrace','approve','manual_usdt',
                                                  actor=9001),range(2)))
@@ -2398,7 +2686,6 @@ def check():
         assert query(work,env,"SELECT state FROM pays WHERE hash_id='autoautofirst'")=='auto_cart_approved'
         cases.append('scheduled_before_admin_bank_approval_exactly_one_credit')
 
-        from concurrent.futures import ThreadPoolExecutor
         for n in range(6):
             key=f'autocontest{n}'
             seed(work,env,key)

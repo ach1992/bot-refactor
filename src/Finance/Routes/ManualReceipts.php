@@ -186,23 +186,29 @@ if (preg_match('/^declineAction_(.+)$/', $data, $match) && achbotAdminCanFor($co
         return;
     }
 
-    // Owner decision: this button IS the final rejection. Reuse the existing
-    // financial CAS, original customer message and admin report path below;
-    // no separate reason entry or provider status GET is required. A stale
-    // previously opened reason editor is still handled by the same code.
-    $userInfo['step'] = 'declineActionReason_' . $hash_id . '_' . $message_id;
-    $text = \achbotMessage('manual_receipt_final.status_rejected');
+    // All manual receipt methods/subjects use one reason-first rejection
+    // workflow. This callback never settles or rejects the original payment.
+    // Keep the original pay and staff identity; the typed reply is rechecked
+    // against the current financial row by the guarded transaction below.
+    setUser('declineActionReason_' . $hash_id . '_' . $message_id);
+    sendMessage(\achbotMessage('manual_payment.manual_receipts.message.a757d0e2a6'),$cancelKey);
+    return;
 }
 
 if (preg_match('/^declineActionReason_(.+)_(\d+)$/', (string)($userInfo['step']??''), $match) &&
+    (string)($data??'')==='' &&
     $text != $buttonValues['cancel'] &&
     achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'payments')) {
+    // Only a freshly typed administrator message can supply the reason;
+    // a callback's previously rendered message must not finalize rejection.
     if (!is_string($text) || trim($text)==='') {
-        // Compatibility for an editor opened before the one-click change.
         sendMessage(\achbotMessage('manual_payment.manual_receipts.message.a757d0e2a6'),$cancelKey);
         return;
     }
-    setUser();
+    // This webhook's cached step may already have been canceled or replaced.
+    // Consume it only when the same financial transaction verifies it still
+    // belongs to this exact administrator decision.
+    $expectedEditor=(string)$userInfo['step'];
     $hash_id = $match[1];
     $message_id = $match[2];
 
@@ -266,22 +272,70 @@ if (preg_match('/^declineActionReason_(.+)_(\d+)$/', (string)($userInfo['step']?
         \achbotMessage('manual_payment.manual_receipts.button.e3517e568b'),
         'url'=>"https://t.me/$botUsername?start=restart_$hash_id"]]]],
         JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
-    $message=\achbotMessage('manual_payment.manual_receipts.message.bc0155976d',
-        ['reason'=>$reason]).
-        \achbotMessage('manual_payment.manual_receipts.message.c4d810a7d3',['price'=>$price]).
-        \achbotMessage('manual_payment.manual_receipts.message.61d75413a2',['remark'=>$remark]).
-        \achbotMessage('manual_payment.manual_receipts.message.df4f415ed5',['hash_id'=>$hash_id]);
+    // The reason is administrator-authored HTML data, never markup. Preserve
+    // it in full; only a display-only subscription name may be shortened.
+    $payId=(int)$payInfo['id'];
+    $customerNotice=static function(string $name) use ($reason,$price,$hash_id): string {
+        return \achbotMessage('manual_payment.manual_receipts.message.bc0155976d',
+            ['reason'=>$reason]).
+            \achbotMessage('manual_payment.manual_receipts.message.c4d810a7d3',
+                ['price'=>$price]).
+            \achbotMessageHtml('manual_payment.manual_receipts.message.61d75413a2',
+                ['remark'=>$name]).
+            \achbotMessageHtml('manual_payment.manual_receipts.message.df4f415ed5',
+                ['hash_id'=>$hash_id]);
+    };
+    $operatorNotice=static function(string $name) use ($payId,$uid,$payInfo,$hash_id): string {
+        return \achbotMessage('manual_receipt_final.status_rejected')."\n".
+            \achbotMessageHtml('manual_receipt_final.rejected_report',[
+                'id'=>$payId,'user'=>(int)$uid,
+                'amount'=>number_format((int)$payInfo['price']),'hash'=>$hash_id])."\n".
+            \achbotMessageHtml('manual_payment.manual_receipts.message.61d75413a2',
+                ['remark'=>$name]);
+    };
+    // Telegram bounds parsed HTML in UTF-16 units (4096); escaping an
+    // otherwise valid reason/name can exceed that limit. Never COMMIT a
+    // rejection whose original customer/operator notice cannot be sent.
+    $telegramUnits=static function(string $html): int {
+        $plain=html_entity_decode(strip_tags($html),ENT_QUOTES|ENT_HTML5,'UTF-8');
+        $characters=preg_match_all('/./us',$plain);
+        $astral=preg_match_all('/[\x{10000}-\x{10FFFF}]/u',$plain);
+        return $characters===false || $astral===false ? PHP_INT_MAX : $characters+$astral;
+    };
+    $message=$customerNotice($remark);
+    $adminReport=$operatorNotice($remark);
+    if ($telegramUnits($message)>4096 || $telegramUnits($adminReport)>4096) {
+        // Keep the largest readable display prefix and the exact reason,
+        // original payment and database description untouched.
+        // PCRE Unicode splitting works even in the minimal PHP 8.5
+        // fixture/runtime without an optional mbstring extension.
+        $codepoints=preg_split('//u',(string)$remark,-1,PREG_SPLIT_NO_EMPTY);
+        if (!is_array($codepoints)) $codepoints=[];
+        $low=0;$high=count($codepoints);
+        while ($low<$high) {
+            $mid=intdiv($low+$high+1,2);
+            $preview=implode('',array_slice($codepoints,0,$mid)).'…';
+            if ($telegramUnits($customerNotice($preview))<=4096 &&
+                $telegramUnits($operatorNotice($preview))<=4096) $low=$mid;
+            else $high=$mid-1;
+        }
+        $displayName=($low>0?implode('',array_slice($codepoints,0,$low)):'').'…';
+        $message=$customerNotice($displayName);
+        $adminReport=$operatorNotice($displayName);
+        if ($telegramUnits($message)>4096 || $telegramUnits($adminReport)>4096) {
+            // The reason itself is too large. Keep the editor open and ask
+            // for a shorter message BEFORE any irreversible financial state.
+            // The persisted editor remains open; no unconditional rewrite.
+            sendMessage(\achbotMessage('broadcast.routes.pm_noop.message.72fe3f7c5d')."\n".
+                \achbotMessage('manual_payment.manual_receipts.message.a757d0e2a6'),$cancelKey);
+            return;
+        }
+    }
     $adminAfterSendKeys=json_encode(['inline_keyboard'=>[[['text'=>
         \achbotMessage('manual_payment.manual_receipts.button.7918a2f411'),
         'callback_data'=>'banUserDirect_'.$uid]]]],JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
-    // This message is staged BEFORE Telegram is called. Never assert that
+    // These messages are staged BEFORE Telegram is called. Never assert that
     // the customer's rejection notice was delivered: its ACK may be unknown.
-    $payId=(int)$payInfo['id'];
-    $adminReport=\achbotMessageHtml('manual_receipt_final.rejected_report',[
-        'id'=>$payId,'user'=>(int)$uid,
-        'amount'=>number_format((int)$payInfo['price']),'hash'=>$hash_id])."\n".
-        \achbotMessageHtml('manual_payment.manual_receipts.message.61d75413a2',
-            ['remark'=>$remark]);
     $opened=false;
     try {
         if (!$connection->begin_transaction()) throw new RuntimeException('manual_reject_begin');
@@ -294,9 +348,21 @@ if (preg_match('/^declineActionReason_(.+)_(\d+)$/', (string)($userInfo['step']?
             (int)$locked['chat_id']!==(int)$payInfo['chat_id'] ||
             (int)$locked['message_id']!==(int)$payInfo['message_id'])
             throw new RuntimeException('manual_reject_stale');
+        // The pays lock alone cannot freeze staff authority or the active
+        // reason editor. Lock current membership/role, then atomically claim
+        // only the same persisted editor before financial settlement.
+        $actor=(int)$from_id;
+        if (!achbotAdminCanLocked($connection,$actor,(int)$admin,'payments'))
+            throw new RuntimeException('manual_reject_actor_revoked');
+        // users.step uses a case-insensitive legacy collation. Compare bytes,
+        // not collation-equivalent text, to consume only this exact editor.
+        $q=$connection->prepare("UPDATE users SET step='none' WHERE userid=? AND BINARY step=BINARY ?");
+        $q->bind_param('is',$actor,$expectedEditor);
+        $editorClaimed=$q->execute() && $q->affected_rows===1;$q->close();
+        if (!$editorClaimed) throw new RuntimeException('manual_reject_editor_stale');
         $q=$connection->prepare("UPDATE pays SET state='declined',approved_by=?
             WHERE id=? AND state='have_sent'");
-        $actor=(int)$from_id;$q->bind_param('ii',$actor,$payId);
+        $q->bind_param('ii',$actor,$payId);
         $ok=$q->execute() && $q->affected_rows===1;$q->close();
         if (!$ok) throw new RuntimeException('manual_reject_cas_failed');
         $locked['state']='declined';$locked['approved_by']=$actor;
@@ -333,8 +399,13 @@ if (preg_match('/^declineActionReason_(.+)_(\d+)$/', (string)($userInfo['step']?
         $opened=false;
     } catch(Throwable $error) {
         if ($opened) try {$connection->rollback();} catch(Throwable $ignored) {}
+        // Preserve a bounded, non-secret reason for operator diagnostics.
+        $code=in_array($error->getMessage(),[
+            'manual_reject_stale','manual_reject_actor_revoked',
+            'manual_reject_editor_stale','manual_reject_cas_failed',
+        ],true)?$error->getMessage():'transaction_unconfirmed';
         error_log('achbot_manual_reject_claim_unconfirmed pay_id='.$payId.
-            ' class='.get_class($error));
+            ' code='.$code.' class='.get_class($error));
         alert(\achbotMessage('manual_payment.manual_receipts.alert.872f260882'));
         return;
     }
