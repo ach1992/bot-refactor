@@ -280,7 +280,10 @@ if (preg_match('/^declineActionReason_(.+)_(\d+)$/', (string)($userInfo['step']?
     // This message is staged BEFORE Telegram is called. Never assert that
     // the customer's rejection notice was delivered: its ACK may be unknown.
     $payId=(int)$payInfo['id'];
-    $adminReport=\achbotMessageHtml('manual_receipt_final.rejected_report',[
+    // The existing fixed status is an operator result, never the reason
+    // attributed to the customer. Preserve its current catalog reference.
+    $adminReport=\achbotMessage('manual_receipt_final.status_rejected')."\n".
+        \achbotMessageHtml('manual_receipt_final.rejected_report',[
         'id'=>$payId,'user'=>(int)$uid,
         'amount'=>number_format((int)$payInfo['price']),'hash'=>$hash_id])."\n".
         \achbotMessageHtml('manual_payment.manual_receipts.message.61d75413a2',

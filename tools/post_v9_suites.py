@@ -44,8 +44,8 @@ def run_admin(tmp: str) -> tuple[dict, dict]:
     result = {}
     owner_r5={}
     r5_suites=[
-        ('roles','test_owner_r5_roles.py',630,
-         {'complete':True,'cases':630,'real_disposable_mariadb':True,'actual_admin_keyboard':True,
+        ('roles','test_owner_r5_roles.py',633,
+         {'complete':True,'cases':633,'real_disposable_mariadb':True,'actual_admin_keyboard':True,
           'db_only_staff_authority':True,'legacy_roleless_operator':True,
           'obsolete_staff_arrays_ignored':True,'obsolete_array_denials':3,
           'no_obsolete_array_import':True,'explicit_manager_assignment':True,
