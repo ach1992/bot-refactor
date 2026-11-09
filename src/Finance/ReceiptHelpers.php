@@ -1906,12 +1906,15 @@ function achbotManualGiftSubmissionPreflight(mysqli $db,array $pay,string $metho
 }
 function achbotManualGiftRetryMessage(string $reason): string {
     $key=match($reason) {
-        'not_found'=>'code_not_found_retry','invalid'=>'code_invalid_retry',
-        'used'=>'code_used_retry','revoked'=>'code_revoked_retry',
-        'expired'=>'code_expired_retry','mismatch'=>'code_mismatch_retry',
-        default=>'code_invalid_retry'
+        'not_found'=>'payment.api_payment.code_not_found_retry',
+        'invalid'=>'payment.api_payment.code_invalid_retry',
+        'used'=>'payment.api_payment.code_used_retry',
+        'revoked'=>'payment.api_payment.code_revoked_retry',
+        'expired'=>'payment.api_payment.code_expired_retry',
+        'mismatch'=>'payment.api_payment.code_mismatch_retry',
+        default=>'payment.api_payment.code_invalid_retry'
     };
-    return achbotMessage('payment.api_payment.'.$key);
+    return achbotMessage($key);
 }
 function achbotManualTypedGift(mysqli $db,array $pay,string $method): bool {
     return $method==='gift_card' && function_exists('achbotApiPaymentContext') &&

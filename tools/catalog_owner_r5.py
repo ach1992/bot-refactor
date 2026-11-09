@@ -431,8 +431,11 @@ def current_cleanup_restore(sides):
     return copy.deepcopy(_cleanup_catalog(
         '50318bc3163bfa7496b3bc6dce8b1e789417334e'))
 
-def verify_and_restore(sides,definition=None):
-    sides=gift_precheck_copy_restore(sides)
+def verify_and_restore(sides,definition=None,from_verified_current=False):
+    # Historical composition tests operate on a previously validated
+    # projection of the exact new copy. Ordinary current-catalog callers
+    # must still provide all nine source-pinned keys.
+    sides=gift_precheck_copy_restore(sides,allow_prestripped=from_verified_current)
     sides=current_cleanup_restore(sides)
     if any(key.startswith('delivery_recovery.') for audience in sides.values() for key in audience):
         sides=delivery_recovery_copy_restore(sides)

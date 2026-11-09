@@ -94,6 +94,9 @@ elseif($op==='budget'){$deadline=hrtime(true)/1000000000+(float)$spec['seconds']
 elseif($op==='ack'){if(!empty($spec['pre_check']))achbotApiPaymentCheck($connection,$id);try{achbotManualAcknowledgeAndVerify($connection,$pay,(string)achbotApiPaymentAttempt($connection,$id)['provider'],'Start','FixtureBot');$value=['threw'=>false];}catch(Throwable $e){$value=['threw'=>true];}}
 elseif($op==='review_keys')$value=json_decode(achbotApiPaymentReviewKeyboard($pay),true);
 elseif($op==='fits')$value=achbotManualGiftReviewFits($spec['caption'],$spec['code']);
+elseif($op==='gift_plain')$value=html_entity_decode(
+    strip_tags(achbotManualGiftReviewText($spec['caption'],$spec['code'])),
+    ENT_QUOTES|ENT_HTML5,'UTF-8');
 elseif($op==='rawsave')$value=achbotPaymentEvidenceSaveGiftCode($connection,$id,1001,$spec['code']);
 elseif($op==='save'){$value=achbotPaymentEvidenceSaveGiftCode($connection,$id,1001,$spec['code']);if(($value['status']??'')==='saved'){$v=achbotManualBeginEvidence($connection,$pay,'gift_card',1001,$spec['code']);if(!$v||!achbotManualFinishEvidence($connection,$pay['hash_id'],$spec['code'],$v,222,9001))throw new RuntimeException('fixture_gift_review_delivery_failed');}}
 elseif($op==='timer')$value=['eligible'=>achbotAutoBankEligible($connection,$pay),'claimed'=>achbotAutoBankClaim($connection,$pay)];
@@ -325,8 +328,14 @@ return !empty($GLOBALS['spec']['fail_staff'])?null:(object)['ok'=>true];}""")
         assert query(work,env,f"SELECT evidence_code IS NULL AND stage='pending' AND review_notice_claim_token IS NULL FROM payment_attempts WHERE pay_row_id={n}")=='1'
         assert any('در یک پیام جا نمی' in str(e.get('args')) for e in r['events']),r
         cases.append('oversized_code_rejected_before_storage_or_delivery_claim')
-        caption='<b>سفارش 😀</b>';label='کد گیفت‌کارت:'
-        limit=4096-len(('سفارش 😀'+'\n\n'+label+'\n').encode('utf-16-le'))//2
+        caption='<b>سفارش 😀</b>'
+        # Use the actual current staff message including the three metadata
+        # labels and their explicit missing-value copy; no fixed old-caption
+        # assumptions or smaller Telegram allowance may pass unnoticed.
+        plain=call(op='gift_plain',pay=n,caption=caption,code='')['result']
+        assert 'مبلغ بازخرید:' in plain and 'شماره سفارش گیفت‌کارت:' in plain
+        assert 'تاریخ ایجاد گیفت‌کارت:' in plain
+        limit=4096-len(plain.encode('utf-16-le'))//2
         assert call(op='fits',pay=n,caption=caption,code='&'*limit)['result'] is True
         assert call(op='fits',pay=n,caption=caption,code='&'*(limit+1))['result'] is False
         cases.append('whole_message_capacity_entities_and_supplementary_boundary')
