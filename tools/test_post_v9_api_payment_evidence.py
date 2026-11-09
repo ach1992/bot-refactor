@@ -133,7 +133,7 @@ class Server(http.server.ThreadingHTTPServer):
         self.redirect=False;self.overflow=False;self.dbcheck=dbcheck;self.lock_checks=0
         self.gift_idempotent_first=False
         self.read_faults=[];self.read_requests=0
-        self.verify_faults=[];self.verify_requests=0
+        self.verify_faults=[];self.verify_requests=0;self.verify_responses=[]
         self.direct_not_found=set();self.direct_reads={}
 class Handler(http.server.BaseHTTPRequestHandler):
     def log_message(self,*args):pass
@@ -195,6 +195,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
         assert nonce not in s.nonces;s.nonces.add(nonce)
         if self.path.endswith('/verify'):
             s.verify_requests+=1
+            if s.verify_responses:
+                status,payload=s.verify_responses.pop(0)
+                return self.send(status,payload)
             if s.verify_faults:
                 status=s.verify_faults.pop(0)
                 return self.send(status,{'code':'fixture_verify_failed'})
@@ -447,6 +450,43 @@ def run(module):
                 # Invalid HTTP scopes cannot be misinterpreted as a definite card
                 # error even when the body misleadingly uses an invalid-code tag.
                 assert php('giftprecheck',pay_id=gs,code='unauthorized')['accepted'] is True
+                # A recognizable error code is NOT definitive when its v2
+                # envelope contradicts HTTP status or omits required data.
+                error={'api_version':'2','ok':False,'code':'card_not_found','data':None}
+                for http,body in [
+                    (404,dict(error,ok=True)),
+                    (404,{k:v for k,v in error.items() if k!='data'}),
+                    (404,dict(error,data={'status':'redeemed'})),
+                    (200,error),
+                    (409,{'api_version':'2','ok':True,'code':'payload_mismatch','data':None}),
+                    (422,{'api_version':'2','ok':False,'code':'invalid_card_code',
+                          'data':{'status':'revoked'}}),
+                ]:
+                    server.verify_responses=[(http,body)]
+                    ambiguous=php('giftprecheck',pay_id=gs,code='card-code')
+                    assert ambiguous['accepted'] is True and 'reason' not in ambiguous,(http,body,ambiguous)
+                # Every successful status, not just active, requires enough
+                # card identity/amount to justify rejecting the customer.
+                for state in ('redeemed','redeemed_offline','revoked','expired'):
+                    complete=card('CARD_AMBIGUOUS_'+state)
+                    complete['status']=state
+                    for key in ('card_uuid','game_key','redeem_value_id','redeem_amount'):
+                        incomplete=dict(complete)
+                        del incomplete[key]
+                        server.verify_responses=[(200,{'api_version':'2','ok':True,
+                            'code':'card_verified','data':incomplete})]
+                        ambiguous=php('giftprecheck',pay_id=gs,code='card-code')
+                        assert ambiguous['accepted'] is True and 'reason' not in ambiguous,(state,key,ambiguous)
+                    server.verify_responses=[(200,{'api_version':'2','ok':True,
+                        'code':'card_verified','data':dict(complete,card_uuid='invalid uuid')})]
+                    assert php('giftprecheck',pay_id=gs,code='card-code')['accepted'] is True
+                assert not server.verify_responses
+                assert server.gift_consumes==0
+                assert sql(f"SELECT state,IFNULL(message_id,0) FROM pays WHERE id={gs}")=='pending\\t0'
+                assert sql(f"SELECT stage,evidence_code IS NULL,evidence_review_sent_at IS NULL "
+                    f"FROM payment_attempts WHERE pay_row_id={gs}")=='pending\\t1\\t1'
+                assert sql(f"SELECT COUNT(*) FROM payment_transactions WHERE attempt_id="
+                    f"(SELECT id FROM payment_attempts WHERE pay_row_id={gs})")=='0'
                 server.card=card('CARD_PRECHECK',100001)
                 exact=php('giftprecheck',pay_id=gs,code='card-code')
                 assert exact=={

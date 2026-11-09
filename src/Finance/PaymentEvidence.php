@@ -538,17 +538,28 @@ function achbotPaymentEvidenceGiftVerify(array $profile,string $code): array {
     $j=$r['json'];
     if (($j['api_version']??null)!=='2' || !is_bool($j['ok']??null)) return $bad;
     if (!$r['ok'] || $j['ok']!==true || ($j['code']??'')!=='card_verified') {
-        // A recognized non-success response is different from an API outage:
-        // definite code errors can be corrected before any staff disclosure.
+        // Only a consistent negative v2 envelope can establish a definite
+        // invalid code. Contradictory/missing fields require human review.
+        $negative=!$r['ok'] && $j['ok']===false &&
+            array_key_exists('data',$j) && $j['data']===null;
         $error=$j['code']??null;
-        $status=$r['http']===404 && $error==='card_not_found' ? 'not_found'
-            : (in_array($r['http'],[400,409,422],true) &&
+        $status=$negative && $r['http']===404 && $error==='card_not_found' ? 'not_found'
+            : ($negative && in_array($r['http'],[400,409,422],true) &&
                 in_array($error,['invalid_code','invalid_card_code','payload_mismatch'],true)
                     ? 'invalid' : 'unavailable');
         return ['ok'=>false,'status'=>$status,'data'=>null];
     }
     $data=$j['data']??null;
     if (!is_array($data)) return $bad;
+    // A definitive non-active status needs the same minimum card identity
+    // shape as an active verification. Never reject on partial observations.
+    $uuid=$data['card_uuid']??null;
+    $game=$data['game_key']??null;
+    if (!is_string($uuid) || !preg_match('/\A[A-Za-z0-9_-]{1,128}\z/D',$uuid) ||
+        !is_string($game) || $game==='' || strlen($game)>120 ||
+        achbotPaymentEvidenceInteger($data['redeem_value_id']??null)===null ||
+        achbotPaymentEvidenceAmountToman($data['redeem_amount']??null,
+            (string)($profile['amount_unit']??''))===null) return $bad;
     $status=match($data['status']??'') {
         'active'=>'active','redeemed','redeemed_offline'=>'used',
         'revoked'=>'revoked','expired'=>'expired',default=>'unavailable'};
