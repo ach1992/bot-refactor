@@ -624,6 +624,9 @@ function achbotApiPaymentCheckGift(mysqli $db,array $claim): string {
         return is_array($proof)?achbotApiPaymentSettle($db,$id,$proof):'review';
     }
     $code=achbotPaymentEvidenceReadGiftCode($db,$id);if($code===null)return 'monitoring';
+    // Legacy malformed sealed evidence is kept for human reconciliation,
+    // but cannot re-enter provider monitoring or create a fresh review.
+    if (!achbotPaymentEvidenceGiftCodeFormatValid($code))return 'manual';
     $result=achbotPaymentEvidenceGiftVerify($claim['profile'],$code);$status=(string)($result['status']??'unavailable');
     if(in_array($status,['used','revoked','expired'],true)) {
         if(achbotPaymentEvidenceRejectGiftCode($db,$id,$code,$status))achbotApiPaymentRememberGiftRejection($db,$id,$code,$status);return $status;

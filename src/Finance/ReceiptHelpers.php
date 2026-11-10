@@ -1743,7 +1743,8 @@ function achbotManualFinishEvidence(mysqli $connection, string $hashId, string $
         }
         $intent = achbotManualIntentDecode((string)$attempt['checkout_url'], (string)$attempt['provider']);
         $typed=achbotManualTypedGift($connection,$pay,(string)$attempt['provider']);
-        if (!$intent || ($typed ? achbotPaymentEvidenceReadGiftCode($connection,$id)!==$fileId : ($intent['receipt_file_id'] ?? null) !== $fileId)) {
+        if (!$intent || ($typed ? (!achbotPaymentEvidenceGiftCodeFormatValid($fileId) ||
+                achbotPaymentEvidenceReadGiftCode($connection,$id)!==$fileId) : ($intent['receipt_file_id'] ?? null) !== $fileId)) {
             $connection->rollback(); return false;
         }
         $stmt = $connection->prepare("UPDATE pays SET state='have_sent',message_id=?,chat_id=?
@@ -2279,7 +2280,7 @@ function sendReceiptToAdminsAndUpdatePay(
     try {
         $pay=dbFetchPayByHash($connection,$hashId);
         $typed=$pay && achbotManualTypedGift($connection,$pay,'gift_card') && achbotManualSelectedMethod($connection,$pay)==='gift_card';
-        if($typed){$code=achbotPaymentEvidenceReadGiftCode($connection,(int)$pay['id']);if($code!==$fileid)throw new RuntimeException('typed_receipt_evidence_mismatch');if(!achbotManualGiftReviewFits($caption,$code,$giftScreen))throw new RuntimeException('typed_receipt_message_too_long');$caption=achbotManualGiftReviewText($caption,$code,$giftScreen);}
+        if($typed){$code=achbotPaymentEvidenceReadGiftCode($connection,(int)$pay['id']);if($code!==$fileid || !achbotPaymentEvidenceGiftCodeFormatValid($code))throw new RuntimeException('typed_receipt_evidence_mismatch');if(!achbotManualGiftReviewFits($caption,$code,$giftScreen))throw new RuntimeException('typed_receipt_message_too_long');$caption=achbotManualGiftReviewText($caption,$code,$giftScreen);}
         $response = $typed?sendMessage($caption,$adminKeyboard,'HTML',$adminChatId):sendPhoto($fileid, $caption, $adminKeyboard, 'HTML', $adminChatId);
         $msgId = (int)($response->result->message_id ?? 0);
         if ($msgId <= 0 ||

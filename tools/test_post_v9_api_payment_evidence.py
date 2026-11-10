@@ -101,6 +101,29 @@ case 'reject':
 case 'giftverify':
  $code=achbotPaymentEvidenceReadGiftCode($db,$id);
  $result=$code===null?null:achbotPaymentEvidenceGiftVerify($profile,$code);break;
+case 'giftverify_raw':
+ $result=achbotPaymentEvidenceGiftVerify($p,$spec['code']);break;
+case 'legacygift':
+ // Recreate the OLD accepted storage contract: encrypted code plus exact
+ // local digest, without calling the NEW SaveGiftCode structural guard.
+ // This fixture is isolated to the disposable MariaDB database.
+ if (!$a || ($profile['method']??'')!=='gift_card')throw new RuntimeException('fixture_legacy_scope');
+ $code=$spec['code'];
+ $sealed=achbotPaymentEvidenceProtect('code:'.$a['id'].':'.$id,['code'=>$code,'actor'=>1001]);
+ $digest=achbotPaymentEvidenceCodeDigest($code);
+ $q=$db->prepare("UPDATE payment_attempts SET evidence_code=?,evidence_code_sha256=?,
+     evidence_state='monitoring' WHERE id=? AND evidence_code IS NULL");
+ $aid=(int)$a['id'];$q->bind_param('ssi',$sealed,$digest,$aid);$q->execute();
+ $result=['stored'=>$q->affected_rows===1];$q->close();break;
+case 'giftread':
+ $result=achbotPaymentEvidenceReadGiftCode($db,$id);break;
+case 'giftrecovery':
+ require_once dirname($argv[1]).'/ApiPayments.php';
+ $claim=achbotPaymentEvidenceClaim($db,$id);
+ if (!$claim){$result=['status'=>'no_claim'];break;}
+ $status=achbotApiPaymentCheckGift($db,$claim);
+ $deferred=achbotPaymentEvidenceDefer($db,$id,$claim['token'],$status==='manual'?'manual':'monitoring',60);
+ $result=['status'=>$status,'deferred'=>$deferred];break;
 case 'giftprecheck':
  require_once dirname($argv[1]).'/ApiPayments.php';
  $result=achbotManualGiftSubmissionPreflight($db,$pay,'gift_card',$spec['code']);break;
@@ -261,8 +284,24 @@ def validate_gift_route_boundaries():
             assert 'setUser(' not in section[:section.index(reserve)],(name,'reject_discarded_input_step')
     return 6
 
+def validate_legacy_delivery_boundaries():
+    source=(ROOT/'src/Finance/ReceiptHelpers.php').read_text()
+    start=source.index('function sendReceiptToAdminsAndUpdatePay(')
+    end=source.index('function achbotManualAcknowledgeAndVerify(',start)
+    delivery=source[start:end]
+    assert delivery.index('achbotPaymentEvidenceGiftCodeFormatValid($code)')<delivery.index(
+        '$response = $typed?sendMessage(')
+    finish=source[source.index('function achbotManualFinishEvidence('):start]
+    assert 'achbotPaymentEvidenceGiftCodeFormatValid($fileId)' in finish
+    reader=(ROOT/'src/Finance/PaymentEvidence.php').read_text()
+    read=reader[reader.index('function achbotPaymentEvidenceReadGiftCode('):
+        reader.index('function achbotPaymentEvidenceRejectGiftCode(')]
+    assert 'achbotPaymentEvidenceGiftCodeFormatValid' not in read
+    return True
+
 def run(module):
     assert validate_gift_route_boundaries()==6
+    assert validate_legacy_delivery_boundaries()
     with owned.owned_database() as (work,env):
         driver=work/'evidence.php';driver.write_text(DRIVER)
         def sql(q):return native.sql(work,env,q,DB).strip()
@@ -467,6 +506,48 @@ def run(module):
                     assert php('save',pay_id=gs,code=malformed,raw_code=True)['status']=='invalid'
                 assert server.verify_requests==before_requests
                 assert sql(f'SELECT evidence_code IS NULL FROM payment_attempts WHERE pay_row_id={gs}')=='1'
+                # Upgrade/recovery: old releases accepted ANY nonempty code
+                # into encrypted evidence. An old sealed value must remain
+                # readable for authorized reconciliation, but may neither
+                # contact /verify or /redeem nor create new staff delivery or
+                # financial operations under the current runtime.
+                for i,bad in enumerate(('0','old arbitrary gift text','AG2-K1-ABC')):
+                    legacy=seed('giftlegacy'+str(i),'gift_card')
+                    assert php('legacygift',pay_id=legacy,method='gift_card',code=bad)['stored']
+                    assert php('giftread',pay_id=legacy,method='gift_card')==bad
+                    before_verifies=server.verify_requests
+                    before_consumes=server.gift_consumes
+                    before_posts=len(server.posts)
+                    assert php('giftverify_raw',method='gift_card',code=bad)=={
+                        'ok':False,'status':'invalid','data':None}
+                    assert php('giftverify',pay_id=legacy,method='gift_card')=={
+                        'ok':False,'status':'invalid','data':None}
+                    assert php('giftrecovery',pay_id=legacy,method='gift_card')=={
+                        'status':'manual','deferred':True}
+                    assert server.verify_requests==before_verifies
+                    assert server.gift_consumes==before_consumes
+                    assert len(server.posts)==before_posts  # zero /verify AND /redeem
+                    assert php('giftread',pay_id=legacy,method='gift_card')==bad
+                    assert php('proof',pay_id=legacy) is None
+                    assert sql(f"SELECT COUNT(*) FROM payment_transactions WHERE attempt_id="
+                        f"(SELECT id FROM payment_attempts WHERE pay_row_id={legacy})")=='0'
+                    assert sql(f"SELECT evidence_state FROM payment_attempts WHERE pay_row_id={legacy}")=='manual'
+                    assert sql(f"SELECT evidence_review_sent_at IS NULL FROM payment_attempts WHERE pay_row_id={legacy}")=='1'
+                    assert sql(f"SELECT state FROM pays WHERE id={legacy}")=='have_sent'
+                    # Already-delivered legacy reviews remain readable by the
+                    # original guarded staff callback; no new staff copy.
+                    if i==0:
+                        sql(f"UPDATE payment_attempts SET evidence_review_sent_at=NOW() WHERE pay_row_id={legacy}")
+                        assert php('typed',pay_id=legacy) is True
+                        assert php('giftread',pay_id=legacy,method='gift_card')==bad
+                old_valid=seed('giftlegacyvalid','gift_card')
+                valid=fixture_gift_code('previous-valid')
+                assert php('legacygift',pay_id=old_valid,method='gift_card',code=valid)['stored']
+                assert php('giftread',pay_id=old_valid,method='gift_card')==valid
+                server.card=card('CARD_PREVIOUS_VALID')
+                before_verifies=server.verify_requests
+                assert php('giftverify',pay_id=old_valid,method='gift_card')['status']=='active'
+                assert server.verify_requests==before_verifies+1
                 assert php('giftprecheck',pay_id=gs,code='unknown-code')=={
                     'accepted':False,'reason':'not_found','redeem_amount':None,'amount_unit':None,
                     'order_number':None,'created_at':None}
@@ -713,6 +794,7 @@ def run(module):
                 'full_exact_quote','exact_rial_conversion','ready_only','original_time',
                 'bank_preissue_grace_and_minute_precision','sql_collision_fence','pre_dispatch_intent','sms_same_key_recovery','sms_expired_recovery',
                 'manual_settled_evidence_only','typed_review_authenticity','gift_single_code','gift_exact_redeem_amount',
+                'legacy_sealed_code_provider_admission','legacy_human_recovery_no_new_staff',
                 'gift_partial_commit','gift_nonce_reference','gift_uncertain_active_hold',
                 'bounded_transport','rotation_fails_closed'],'loopback_dispatches':server.lock_checks,
                 'exact_quote':True,'replay_and_partial_commit':True,'no_http_transaction':True,

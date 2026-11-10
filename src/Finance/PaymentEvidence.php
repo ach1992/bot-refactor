@@ -534,6 +534,10 @@ function achbotPaymentEvidenceGiftVerify(array $profile,string $code): array {
     $bad=['ok'=>false,'status'=>'unavailable','data'=>null];
     if (($profile['method']??'')!=='gift_card' || trim($code)==='' ||
         strlen($code)>4096 || preg_match('/[\x00-\x1f\x7f]/',$code)) return $bad;
+    // Final admission boundary also covers encrypted codes saved before the
+    // input/save structural gate existed. Never send those to the issuer.
+    if (!achbotPaymentEvidenceGiftCodeFormatValid($code))
+        return ['ok'=>false,'status'=>'invalid','data'=>null];
     $r=achbotPaymentEvidenceHttp($profile,'POST','/verify',['code'=>$code]);
     $j=$r['json'];
     if (($j['api_version']??null)!=='2' || !is_bool($j['ok']??null)) return $bad;
@@ -702,6 +706,9 @@ function achbotPaymentEvidenceSaveGiftCode(mysqli $db,int $payId,int $actor,stri
     } catch (Throwable $e) {try{$db->rollback();}catch(Throwable $x){}return $bad;}
 }
 function achbotPaymentEvidenceReadGiftCode(mysqli $db,int $payId): ?string {
+    // This is authenticated historical evidence retrieval, not permission to
+    // verify or newly deliver the code. Retain previously sealed malformed
+    // values for authorized reconciliation; consumers enforce current format.
     try {
         if (!achbotPaymentEvidenceSchemaReady($db)) return null;
         $q=$db->prepare('SELECT * FROM payment_attempts WHERE pay_row_id=?');
