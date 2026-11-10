@@ -534,6 +534,10 @@ function achbotPaymentEvidenceGiftVerify(array $profile,string $code): array {
     $bad=['ok'=>false,'status'=>'unavailable','data'=>null];
     if (($profile['method']??'')!=='gift_card' || trim($code)==='' ||
         strlen($code)>4096 || preg_match('/[\x00-\x1f\x7f]/',$code)) return $bad;
+    // Final admission boundary also covers encrypted codes saved before the
+    // input/save structural gate existed. Never send those to the issuer.
+    if (!achbotPaymentEvidenceGiftCodeFormatValid($code))
+        return ['ok'=>false,'status'=>'invalid','data'=>null];
     $r=achbotPaymentEvidenceHttp($profile,'POST','/verify',['code'=>$code]);
     $j=$r['json'];
     if (($j['api_version']??null)!=='2' || !is_bool($j['ok']??null)) return $bad;
@@ -642,14 +646,28 @@ function achbotPaymentEvidenceDefer(mysqli $db,int $payId,string $token,string $
         $ok=$q->affected_rows===1; $q->close(); return $ok;
     } catch (Throwable $e) { return false; }
 }
+/** Syntax-only ACh Gift Cards for Woo v2 code check.
+ * The issuer encodes 52 bytes (16-byte IV, 20-byte ciphertext, 16-byte
+ * MAC) as 84 RFC4648 Base32 characters grouped in fives. A match does
+ * not establish issuance, integrity, amount or redemption status: the
+ * authenticated upstream /verify endpoint remains the sole authority.
+ */
+function achbotPaymentEvidenceGiftCodeFormatValid(string $code): bool {
+    $code=trim($code);
+    if (!preg_match('/\AAG2-[A-Z0-9_]{1,40}-((?:[A-Z2-7]{5}-){16}[A-Z2-7]{4}|[A-Z2-7]{84})\z/i',
+            $code,$parts)) return false;
+    // 52*8 = 416 bits: four zero pad bits in the final Base32 character.
+    return in_array(strtoupper(substr($parts[1],-1)),['A','Q'],true);
+}
 function achbotPaymentEvidenceCodeDigest(string $code): string {
     return hash_hmac('sha256',"AChBot/payment-evidence/code/v1\0".$code,achbotPaymentEvidenceKey());
 }
 function achbotPaymentEvidenceSaveGiftCode(mysqli $db,int $payId,int $actor,string $code): array {
     $bad=['status'=>'invalid'];
     $code=trim($code);
-    if ($payId<=0 || $actor<=0 || $code==='' || strlen($code)>4096 ||
-        preg_match('/[\x00-\x1f\x7f]/',$code) || !achbotPaymentEvidenceSchemaReady($db)) return $bad;
+    if ($payId<=0 || $actor<=0 ||
+        !achbotPaymentEvidenceGiftCodeFormatValid($code) ||
+        !achbotPaymentEvidenceSchemaReady($db)) return $bad;
     try {
         achbotPaymentEvidenceRequireAutocommit($db); $db->begin_transaction();
         $q=$db->prepare('SELECT * FROM pays WHERE id=? FOR UPDATE');
@@ -688,6 +706,9 @@ function achbotPaymentEvidenceSaveGiftCode(mysqli $db,int $payId,int $actor,stri
     } catch (Throwable $e) {try{$db->rollback();}catch(Throwable $x){}return $bad;}
 }
 function achbotPaymentEvidenceReadGiftCode(mysqli $db,int $payId): ?string {
+    // This is authenticated historical evidence retrieval, not permission to
+    // verify or newly deliver the code. Retain previously sealed malformed
+    // values for authorized reconciliation; consumers enforce current format.
     try {
         if (!achbotPaymentEvidenceSchemaReady($db)) return null;
         $q=$db->prepare('SELECT * FROM payment_attempts WHERE pay_row_id=?');

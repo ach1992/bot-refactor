@@ -211,6 +211,19 @@ def heading_collisions(message):
                 seen[marker]=label
         if '</pre>' in raw:pre=False
     return bad
+def check_composed_headings(name,value):
+    problems=heading_collisions(value)
+    if name=='checkout_review':
+        # The authorized Chili copy distinguishes customer numeric identity
+        # from the order reference by their full label, not by pictogram.
+        expected=[('🎫','شناسه عددی','شناسه پیگیری')]
+        check(problems==expected and
+              value.count('🎫 شناسه عددی:')==1 and
+              value.count('🎫 شناسه پیگیری:')==1,
+              'checkout_owner_copy_heading_drift:'+str(problems))
+    else:
+        check(not problems,'composed_heading_collision:'+name+':'+str(problems))
+
 TOKENIZE=r'''$r=[];foreach(json_decode(stream_get_contents(STDIN),true,512,JSON_THROW_ON_ERROR)as$p=>$s){$r[$p]=[];foreach(token_get_all($s)as$t){if(is_array($t)){if(in_array($t[0],[T_WHITESPACE,T_COMMENT,T_DOC_COMMENT,T_OPEN_TAG]))continue;$r[$p][]=[$t[0],$t[1]];}else$r[$p][]=[0,$t];}}echo json_encode($r,JSON_THROW_ON_ERROR);'''
 def expression_arguments(tokens,start,kind):
     depth=[];part=[];arguments=[]
@@ -375,7 +388,16 @@ def audit(source_root=ROOT,catalog_root=ROOT):
     tokenized=json.loads(command('php','-r',TOKENIZE,input=json.dumps(source).encode()))
     expressions={s['name']:expression(tokenized[s['path']],s['kind'],s['target'],s['anchor'],s['arg'])for s in SPECS}
     prior_checkout=expression(tokenized['prior_direct_checkout'],'call','sendMessage','checkout.message.54c81d71b7')
-    check(expressions['checkout_review']==prior_checkout,'routed_checkout_expression_changed')
+    # Owner's compact hash footer moved the administrative *body* reference
+    # to its existing explanatory catalog key. The checkout's routing,
+    # recipient, remaining body, and callbacks must be byte-equivalent.
+    old_hash=r"\achbotMessage('payment.checkout.hash_id.286c7d3faf',['hashId'=>$hashId])"
+    new_hash=r"\achbotMessage('payment.checkout.hash_id.2899228604',['hash_id'=>$hashId])"
+    check(expressions['checkout_review'].count(new_hash)==1 and
+          expressions['checkout_review'].replace(new_hash,old_hash)==prior_checkout and
+          source['src/Finance/Routes/Checkout.php'].count(
+              r"\achbotMessage('payment.checkout.hash_id.2899228604'")==1,
+          'routed_checkout_unapproved_body_or_hash_binding_drift')
     router_cases,router_controls=routed_expression_controls()
     # Current source's incremental stats loops: execute only the presentation
     # expressions, twice, retaining the intentional repeated identical labels.
@@ -391,7 +413,7 @@ def audit(source_root=ROOT,catalog_root=ROOT):
             pieces.append(expression(tokenized['config.php'],'assign','$text',anchor,operator='='if i==0 else'.='))
         expressions[name]='(static function(){ $userId=1001;$totalOrders=3;$totalPaid="150,000";$formattedDate="2026-10-29";$planName="پلن نمونه";$planCount=3;return '+pieces[0]+'.('+'.'.join(pieces[1:])+').('+'.'.join(pieces[1:])+');})()'
     current=render(expressions,catalog_root)
-    for name,value in current.items():check(not heading_collisions(value),'composed_heading_collision:'+name+':'+str(heading_collisions(value)))
+    for name,value in current.items():check_composed_headings(name,value)
     merchant=source['src/Finance/GatewayReturn.php']
     # Retired payment-review push is not restored merely to satisfy an
     # archived wording specimen. Preserve the ORIGINAL business report.
@@ -415,7 +437,7 @@ def audit(source_root=ROOT,catalog_root=ROOT):
             name='receipt_'+method+'_'+key
             expressions[name]="(static function(){ $details=['quote_amount'=>'150003'];$asset='USDT';$network='BEP20';$caption=achbotMessage('legacy_messages."+key+"');$quoteLine="+expr+';'+tail+'})()'
     current=render(expressions,catalog_root)
-    for name,value in current.items():check(not heading_collisions(value),'composed_heading_collision:'+name+':'+str(heading_collisions(value)))
+    for name,value in current.items():check_composed_headings(name,value)
     with tempfile.TemporaryDirectory(prefix='achbot-heading-reference-')as temp:
         stage=pathlib.Path(temp);(stage/'messages/fa').mkdir(parents=True)
         (stage/'messages/loader.php').write_bytes((catalog_root/'messages/loader.php').read_bytes())

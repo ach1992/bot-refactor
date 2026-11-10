@@ -75,7 +75,6 @@ function request($botToken, $runtimeDir, $method, $datas = []) {
         $log .= "---------------------------\n";
         file_put_contents($logFile, $log, FILE_APPEND);
 
-        curl_close($ch);
         return null;
     }
 
@@ -108,11 +107,9 @@ function request($botToken, $runtimeDir, $method, $datas = []) {
         $log .= "---------------------------\\n";
         file_put_contents($logFile, $log, FILE_APPEND);
 
-        curl_close($ch);
         return $decoded;
     }
 
-    curl_close($ch);
     return $decoded;
 }
 
@@ -172,7 +169,6 @@ function sendFile($botToken, $runtimeDir, $method, $datas = []) {
         $log .= "---------------------------\n";
         file_put_contents($logFile, $log, FILE_APPEND);
 
-        curl_close($ch);
         return false;
     }
 
@@ -191,7 +187,6 @@ function sendFile($botToken, $runtimeDir, $method, $datas = []) {
         file_put_contents($logFile, $log, FILE_APPEND);
     }
 
-    curl_close($ch);
 
     $decoded = json_decode($res, true);
     return $decoded ?: false;

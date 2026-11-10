@@ -17,7 +17,7 @@ return [
         'provider_nextpay' => 'NextPay',
         'result' => ['text' => '📋 نتیجهٔ بررسی پرداخت: {result}', 'parameters' => ['result']],
         'status_completed' => 'پرداخت از مسیر اصلی انجام و ثبت شد.',
-        'status_rejected' => 'سفارش رد شد و سرویس یا اعتبار صادر نشد؛ این به معنی بازپرداخت وجه نیست.',
+        'status_rejected' => '❌ سفارش رد شد و سرویس یا اعتبار صادر نشد؛ این به معنی بازپرداخت وجه نیست.',
         'status_archived' => 'پرونده آرشیو شد؛ پردازش خودکار این سفارش متوقف شد و وضعیت مالی فعلی آن تغییر نکرد.',
         'status_busy' => 'عملیات سرویس هنوز در حال اجراست؛ پس از پایان آن دوباره آرشیو کنید. هیچ تصمیمی ثبت نشد.',
         'status_unknown' => 'ثبت تصمیم انجام شد، اما نتیجهٔ اجرای سفارش نامطمئن است؛ عملیات تکرار نمی‌شود.',
@@ -25,13 +25,13 @@ return [
         'status_unsupported' => 'این نوع سفارش از این مسیر قابل پردازش نیست.',
         'status_unavailable' => 'ثبت نتیجه امکان‌پذیر نبود. پرونده را دوباره بررسی کنید.',
         'rejected_customer' => ['text' => '❌ سفارش <code>{hash}</code> رد شد و اجرا نمی‌شود. مبلغ: {amount} تومان. اگر وجه پرداخت کرده‌اید، با پشتیبانی تماس بگیرید.', 'parameters' => ['hash','amount']],
-        'rejected_report' => ['text' => '❌ سفارش درگاه خودکار توسط مدیر رد شد؛ شناسه پرونده: {id}، مشتری: {user}، مبلغ: {amount} تومان، سفارش: <code>{hash}</code>', 'parameters' => ['id','user','amount','hash']],
+        'rejected_report' => ['text' => "❌ سفارش درگاه خودکار توسط مدیر رد شد.\n🗂 شناسه پرونده: <code>{id}</code>\n🎫 شناسه عددی: <code>{user}</code>\n💰 مبلغ: {amount} تومان\n🧾 شناسه سفارش: <code>{hash}</code>", 'parameters' => ['id','user','amount','hash']],
         'title' => '📋 پرداخت‌های خودکار نیازمند بررسی',
         'empty' => '✅ پرداخت ناتمامی برای بررسی وجود ندارد.',
         'archive' => '📦 آرشیو پرونده',
         'archive_notice' => '🗂 پس از بررسی مستقل وجه و نتیجهٔ سرویس، آرشیو تصمیم نهایی محلی است؛ هیچ عملیات نامطمئنی را لغو، موفق یا مسترد اعلام نمی‌کند.',
         'case_title' => '📋 جزئیات پرداخت نیازمند بررسی',
-        'customer' => ['text' => '🎫 شناسه عددی مشتری: <code>{id}</code>', 'parameters' => ['id']],
+        'customer' => ['text' => '🎫 شناسه عددی: <code>{id}</code>', 'parameters' => ['id']],
         'name' => ['text' => '👤 نام مشتری: {name}', 'parameters' => ['name']],
         'handle' => ['text' => '🔖 شناسه تلگرام: @{handle}', 'parameters' => ['handle']],
         'description' => ['text' => '📝 توضیح سفارش: {description}', 'parameters' => ['description']],
@@ -709,7 +709,7 @@ return [
         'referral_reward.give_referral_reward.text.6aaba1c235' => '' . "\n" . 'شناسه معرف: ',
         'referral_reward.give_referral_reward.text.534fd54cb9' => '' . "\n" . '💰 مبلغ: ',
         // checkout.user_i_d_uid_for_log
-        'checkout.user_i_d_uid_for_log.6a12f817c0' => ['text' => '👤 شناسه عددی: {uidForLog}' . "\n" . '', 'parameters' => ['uidForLog']],
+        'checkout.user_i_d_uid_for_log.6a12f817c0' => ['text' => '🎫 شناسه عددی: {uidForLog}' . "\n" . '', 'parameters' => ['uidForLog']],
         // checkout.text
         'checkout.text.0ec6de536f' => '' . "\n" . 'پرداخت و سرویس ثبت شده‌اند؛ ساخت مجدد انجام نشود.',
         // discount_administration.message
@@ -829,14 +829,15 @@ return [
 
     // ── رسیدهای پرداخت دستی ──
     'manual_payment' => [
-        'api_payment.report' => ['text' => "گزارش بررسی پرداخت\nشناسه پیگیری: {reference}\nمشتری: {userId}\n💰 مبلغ دقیق: {amount} {unit}\nروش پرداخت: {method}\nمرجع بررسی: {evidence}\n🧾 موضوع: {subject}\nنتیجه: {status}", 'parameters' => ["reference", "userId", "amount", "unit", "method", "evidence", "subject", "status"]],
+        'api_payment.report' => ['text' => "📋 گزارش بررسی پرداخت\n📎 شناسه پیگیری: <code>{reference}</code>\n🎫 شناسه عددی: <code>{userId}</code>\n💰 مبلغ: {amount} {unit}\n💳 روش پرداخت: {method}\n🔎 مرجع بررسی: <code>{evidence}</code>\n🧾 موضوع: {subject}\n📋 نتیجه: {status}", 'parameters' => ["reference", "userId", "amount", "unit", "method", "evidence", "subject", "status"]],
         'api_payment.code_used' => 'کد گیفت‌کارت طبق API قبلاً مصرف شده است.',
         'api_payment.code_revoked' => 'کد گیفت‌کارت طبق API باطل شده است.',
         'api_payment.code_expired' => 'کد گیفت‌کارت طبق API منقضی شده است.',
         'api_payment.code_mismatch' => 'مبلغ گیفت‌کارت طبق API با فاکتور برابر نیست؛ کد مصرف نشد',
         'api_payment.auto_approved' => 'تایید خودکار توسط API',
-        'api_payment.code_evidence' => ['text' => "کد گیفت‌کارت:\n<code>{code}</code>", 'parameters' => ['code']],
-        'api_payment.gift_details' => ['text' => "مبلغ بازخرید: {amount}\nشماره سفارش گیفت‌کارت: {order}\nتاریخ ایجاد گیفت‌کارت: {created}", 'parameters' => ['amount', 'order', 'created']],
+        'api_payment.code_evidence' => ['text' => "🎁 کد گیفت‌کارت:\n<code>{code}</code>", 'parameters' => ['code']],
+        'api_payment.code_evidence_unrecognized' => ['text' => "🎁 کد گیفت‌کارت: <b>گیفت کارت توسط API تشخیص داده نشد، چک کنید کد تغییر یافته یا اشتباه نباشد.</b>\n<code>{code}</code>", 'parameters' => ['code']],
+        'api_payment.gift_details' => ['text' => "💰 مبلغ بازخرید: {amount}\n🧾 شماره سفارش: {order}\n📅 تاریخ ایجاد: {created}", 'parameters' => ['amount', 'order', 'created']],
         'api_payment.gift_not_verified' => 'نیازمند بررسی دستی',
         'api_payment.gift_not_provided' => 'در پاسخ API ارائه نشده',
         'api_payment.status_confirmed' => "پرداخت و عملیات مربوط تأیید شد",
@@ -847,11 +848,11 @@ return [
         'api_payment.status_evidence_only' => "پیامک دیررس ثبت شد؛ پرداخت قبلاً نهایی بود و عملیات مالی تکرار نشد",
         'api_payment.view_code' => "مشاهده کد گیفت‌کارت",
         // Existing API-assisted payments.
-        'api_payment.review_staff' => ['text' => "پرداخت نیازمند بررسی کد یا نتیجهٔ نامشخص است.\nشناسه پیگیری: {reference}", 'parameters' => ["reference"]],
-        'api_payment.automatic_status' => ['text' => "وضعیت بررسی خودکار پرداخت\nشناسه پیگیری: {reference}\nنتیجه: {status}", 'parameters' => ["reference", "status"]],
-        'api_payment.typed_evidence' => ['text' => "درخواست بررسی گیفت‌کارت\nشناسه پیگیری: {reference}\nکد به‌صورت امن نگه‌داری شده است.\nنتیجهٔ بررسی: {status}", 'parameters' => ["reference", "status"]],
+        'api_payment.review_staff' => ['text' => "⚠️ پرداخت نیازمند بررسی کد یا نتیجهٔ نامشخص است.\n📎 شناسه پیگیری: <code>{reference}</code>", 'parameters' => ["reference"]],
+        'api_payment.automatic_status' => ['text' => "🔎 وضعیت بررسی خودکار پرداخت\n📎 شناسه پیگیری: <code>{reference}</code>\n📋 نتیجه: {status}", 'parameters' => ["reference", "status"]],
+        'api_payment.typed_evidence' => ['text' => "🎁 درخواست بررسی گیفت‌کارت\n📎 شناسه پیگیری: <code>{reference}</code>\n🔒 کد به‌صورت امن نگه‌داری شده است.\n📋 نتیجهٔ بررسی: {status}", 'parameters' => ["reference", "status"]],
         // automatic_receipts.text
-        'automatic_receipts.text.ba58f1caaf' => '' . "\n" . '🎫 شناسه کاربر: ',
+        'automatic_receipts.text.ba58f1caaf' => '' . "\n" . '🎫 شناسه عددی: ',
         'automatic_receipts.text.12646a1ad0' => '' . "\n" . '💰 مبلغ سفارش: ',
         'automatic_receipts.text.e1cad19d95' => '' . "\n" . '📦 تعداد اشتراک: ',
         // automatic_receipts.message
@@ -870,7 +871,7 @@ return [
         // receipt_helpers.refund_to_wallet_and_notify
         'receipt_helpers.refund_to_wallet_and_notify.text.32f7062209' => ['text' => ' تومان به کیف پول کاربر {userId} توسط درگاه {gateType} اضافه شد. ', 'parameters' => ['userId', 'gateType']],
         // receipt_helpers.manual_caption
-        'receipt_helpers.manual_caption.header.cc6f426145' => '💎 مبلغ رمزارز: <code>',
+        'receipt_helpers.manual_caption.header.cc6f426145' => '💎 مقدار رمزارز: <code>',
         'receipt_helpers.manual_caption.text.1c777cb98d' => '</code> | شبکه: <b>',
         'receipt_helpers.manual_caption.header.12c0babe12' => '💵 مبلغ دقیق حواله: <code>',
         'receipt_helpers.manual_caption.text.de6a1a6756' => ' تومان</code>' . "\n" . '',
@@ -933,7 +934,7 @@ return [
         'manual_receipts.text.be26bedc74' => '💰 مبلغ: ',
         'manual_receipts.text.81a62ff6c6' => ' تومان' . "\n" . '',
         'manual_receipts.text.cb30509da2' => '🧾 موضوع: <code>',
-        'manual_receipts.text.f0b53210c3' => '🔀 روش: <code>',
+        'manual_receipts.text.f0b53210c3' => '💳 روش پرداخت: <code>',
         'manual_receipts.text.260481666f' => 'سند موجود نیست',
         'manual_receipts.text.8e4c17a2df' => '</code> | وضعیت سابقه: <code>',
         'manual_receipts.text.11acfb8b65' => 'مرحلهٔ دفتر: <code>',
@@ -985,11 +986,11 @@ return [
         // manual_receipts.body
         'manual_receipts.body.7dd7fb1632' => '<b>🧩 پروندهٔ سرویس #',
         // manual_receipts.text
-        'manual_receipts.text.d2bbfff6d2' => '🎫 شناسهٔ کاربر: ',
+        'manual_receipts.text.d2bbfff6d2' => '🎫 شناسه عددی: ',
         'manual_receipts.text.db022eb061' => '💰 مبلغ ثبت‌شده: ',
         'manual_receipts.text.d279f3e369' => '📦 حساب‌های درخواستی: ',
         'manual_receipts.text.f5bbd167b7' => ' | عملیات ثبت‌شده: ',
-        'manual_receipts.text.955398cb47' => '🔀 روش: <code>',
+        'manual_receipts.text.955398cb47' => '💳 روش پرداخت: <code>',
         'manual_receipts.text.1adade53f0' => '📍 وضعیت سابقه: <code>',
         // manual_receipts.body
         'manual_receipts.body.421579cc6a' => '' . "\n" . '💳 برداشت و رزرو کیف پول: <code>',
@@ -1609,7 +1610,7 @@ return [
         'config.get_bot_setting_keys.button.333513e744' => 'زمان تایید خودکار ',
         // config.send_chunked_messages
         'config.send_chunked_messages.text.e2f79e5b60' => 'نامشخص',
-        'config.send_chunked_messages.text.833406bb32' => ['text' => '🎫 شناسه کاربر: <code>{userId}</code>' . "\n" . '', 'parameters' => ['userId']],
+        'config.send_chunked_messages.text.833406bb32' => ['text' => '🎫 شناسه عددی: <code>{userId}</code>' . "\n" . '', 'parameters' => ['userId']],
         'config.send_chunked_messages.text.60cf33455d' => ['text' => '💰 موجودی: <b>{amount} تومان</b>' . "\n" . '' . "\n" . '', 'parameters' => ['amount']],
         'config.send_chunked_messages.text.5a5302e156' => ['text' => '📦 تعداد اشتراک‌ها: <b>{amount}</b>' . "\n" . '' . "\n" . '', 'parameters' => ['amount']],
         'config.send_chunked_messages.text.bffd2d6f62' => ['text' => '💰 مبلغ پرداختی: <b>{amount} تومان</b>' . "\n" . '' . "\n" . '', 'parameters' => ['amount']],
@@ -2251,8 +2252,8 @@ return [
         'status_unknown' => 'نتیجهٔ ادامهٔ پرداخت نامطمئن است؛ از ثبت دوبارهٔ وجه یا سرویس خودداری کنید.',
         'status_stale' => 'این پرداخت دیگر در حالت قابل ادامه نیست.',
         'status_unavailable' => 'ادامهٔ این پرداخت فعلاً تأیید نشد.',
-        'status_rejected' => 'رسید رد شد و سفارش اجرا نشد.',
-        'rejected_report' => ['text' => '❌ رسید دستی رد شد؛ شناسه پرونده: {id}، مشتری: {user}، مبلغ: {amount} تومان، سفارش: <code>{hash}</code>', 'parameters' => ['id','user','amount','hash']],
+        'status_rejected' => '⚠️ رسید رد شد و سفارش اجرا نشد.',
+        'rejected_report' => ['text' => "❌ رسید دستی رد شد.\n🗂 شناسه پرونده: <code>{id}</code>\n🎫 شناسه عددی: <code>{user}</code>\n💰 مبلغ: {amount} تومان\n🧾 شناسه سفارش: <code>{hash}</code>", 'parameters' => ['id','user','amount','hash']],
         'day_subject'=>['text'=>'حساب {remark} | افزایش {units} روز',
             'parameters'=>['remark','units']],
         'volume_subject'=>['text'=>'حساب {remark} | افزایش {units} گیگ',

@@ -396,6 +396,8 @@ def run_api(tmp: str) -> tuple[dict, dict]:
         'typed_review_authenticity',
         'gift_single_code',
         'gift_exact_redeem_amount',
+        'legacy_sealed_code_provider_admission',
+        'legacy_human_recovery_no_new_staff',
         'gift_partial_commit',
         'gift_nonce_reference',
         'gift_uncertain_active_hold',
@@ -446,7 +448,7 @@ def run_api(tmp: str) -> tuple[dict, dict]:
         'gift_generated_button_original_caption_copyable_private_volume',
         'gift_generated_button_original_caption_copyable_private_external',
         'external_renewal_bank_generated_button_uses_buy_receipt_route',
-        'gift_zero_string_is_valid_text_evidence',
+        'gift_plain_text_rejected_before_api_storage_or_staff',
         'oversized_code_rejected_before_storage_or_delivery_claim',
         'whole_message_capacity_entities_and_supplementary_boundary',
         'saved_code_failed_staff_delivery_readonly_verify_no_consume',
@@ -1188,8 +1190,8 @@ def run_wallet(tmp: str) -> tuple[dict, dict]:
         cwd=ROOT,check=True,timeout=180,capture_output=True,text=True)
     text_catalog=json.loads(catalog_output.stdout)
     expected_catalog={
-        'status':'PASS','current_catalog_keys':2862,
-        'current_admin_keys':1914,'current_user_keys':948,
+        'status':'PASS','current_catalog_keys':2863,
+        'current_admin_keys':1915,'current_user_keys':948,
         'retired_experimental_keys':129,'retired_experimental_topics':10,
         'new_copy_entries':33,'current_runtime_files':131,
         'new_copy_references_unbound':0,

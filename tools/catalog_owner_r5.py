@@ -376,8 +376,109 @@ GIFT_PRECHECK_SHA256={
  'manual_payment.api_payment.gift_not_verified':'3434932947125a849117e3bbd1ee17a7d59f0b17aff0a1756c9e917e1e4ac8c8',
  'manual_payment.api_payment.gift_not_provided':'475fd4cbbef6064ae643b3557b2d9710d7d7be63fea67346619d51072f997a20',
  }}
+# Owner-approved Chili runtime copy became authoritative for this final text
+# batch; preserve the older independently reviewed catalogs as immutable
+# historical references. This new layer proves the *entire* two-file source
+# delta against RC28, not a blanket exemption for arbitrary newer wording.
+CHILI_SYNC_BASE='220d016267bda0a8363ec6453db2e530b26f4485'
+CHILI_SYNC_MANIFEST=ROOT/'tools/text_catalog_chili_sync_20261111.json'
+
+@functools.lru_cache(maxsize=1)
+def chili_copy_reference():
+    definition=json.loads(CHILI_SYNC_MANIFEST.read_text())
+    check(set(definition)=={'version','base_commit','changes','added'} and
+          definition['version']==1 and
+          definition['base_commit']==CHILI_SYNC_BASE and
+          len(definition['changes'])==37 and len(definition['added'])==1 and
+          set(definition['added'])=={'manual_payment.api_payment.code_evidence_unrecognized'},
+          'chili_copy_manifest_identity')
+    changes=definition['changes'];added=definition['added']
+    prior={};current={}
+    topic_rx=re.compile(r"^    '([^']+)'\s*=>\s*\[$")
+    key_rx=re.compile(r"^        '([^']+)'\s*=>")
+    def lines(text):
+        result={};topic=None
+        for raw in text.splitlines():
+            m=topic_rx.match(raw)
+            if m:topic=m[1];continue
+            m=key_rx.match(raw)
+            if m and topic:
+                key=topic+'.'+m[1]
+                check(key not in result,'chili_copy_duplicate_key:'+key)
+                result[key]=raw
+        return result
+    decode='$s=stream_get_contents(STDIN);$p=strpos($s,"return [");if($p===false)throw new RuntimeException("array_missing");echo json_encode(eval(substr($s,$p)),JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);'
+    for audience in ['user','admin']:
+        name='messages/fa/'+audience+'.php'
+        before=command('git','show',CHILI_SYNC_BASE+':'+name).decode('utf-8')
+        after=(ROOT/name).read_text()
+        left=lines(before);right=lines(after)
+        check(set(left)-set(right)==set() and
+              set(right)-set(left)=={k for k,v in added.items() if v['audience']==audience},
+              'chili_copy_key_scope:'+audience)
+        rebuilt=[]
+        current_topic=None
+        for line in after.splitlines(keepends=True):
+            m=topic_rx.match(line.rstrip('\r\n'))
+            if m: current_topic=m[1]
+            match=key_rx.match(line)
+            key=current_topic+'.'+match[1] if match and current_topic else None
+            if key in changes:
+                item=changes[key]
+                check(item['audience']==audience and item.get('reason') and
+                      hashlib.sha256(left[key].encode()).hexdigest()==item['before_sha256'] and
+                      hashlib.sha256(right[key].encode()).hexdigest()==item['after_sha256'],
+                      'chili_copy_line_pin:'+str(key))
+                rebuilt.append(left[key]+'\n')
+            elif key in added:
+                item=added[key]
+                check(item['audience']==audience and item.get('reason') and
+                      hashlib.sha256(right[key].encode()).hexdigest()==item['after_sha256'],
+                      'chili_copy_added_pin:'+str(key))
+            else:
+                rebuilt.append(line)
+        check(''.join(rebuilt)==before,'chili_copy_unlisted_source_diff:'+audience)
+        prior[audience]=flatten(json.loads(command('php','-r',decode,input=before.encode('utf-8'))))
+        current[audience]=flatten(json.loads(command('php','-r',decode,input=after.encode('utf-8'))))
+        for key in changes:
+            if changes[key]['audience']!=audience:continue
+            check(key in prior[audience] and key in current[audience] and
+                  params(prior[audience][key])==params(current[audience][key]) and
+                  set(re.findall(r'\{([A-Za-z_][A-Za-z0-9_]*)\}',text(current[audience][key])))==set(params(current[audience][key])),
+                  'chili_copy_parameter_drift:'+key)
+        for key in added:
+            if added[key]['audience']!=audience:continue
+            value=current[audience][key]
+            check(isinstance(text(value),str) and
+                  set(re.findall(r'\{([A-Za-z_][A-Za-z0-9_]*)\}',text(value)))==set(params(value)),
+                  'chili_copy_added_slots:'+key)
+    return definition,prior,current
+
+def chili_live_copy_restore(sides):
+    definition,prior,current=chili_copy_reference()
+    check(set(sides)=={'user','admin'},'chili_copy_audiences')
+    changes=definition['changes'];added=definition['added']
+    # Only the actual current entry point may use this source-pinned
+    # transition. Historical nested projections skip it at their caller.
+    result=copy.deepcopy(sides)
+    for key,item in changes.items():
+        aud=item['audience'];other='admin'if aud=='user'else'user'
+        check(key not in result[other] and result[aud].get(key)==current[aud][key],
+              'chili_copy_unapproved_value:'+key)
+        result[aud][key]=prior[aud][key]
+    for key,item in added.items():
+        aud=item['audience'];other='admin'if aud=='user'else'user'
+        check(key not in result[other] and result[aud].get(key)==current[aud][key],
+              'chili_copy_addition_drift:'+key)
+        del result[aud][key]
+    return result
+
 def gift_precheck_copy_restore(sides,allow_prestripped=False):
-    restored=copy.deepcopy(sides)
+    # The real Chili->RC28 transition is fully pinned on first admission.
+    # Nested R5->API proofs deliberately operate on an already-verified
+    # historical projection; applying the *new* delta again would compare
+    # that older snapshot with the current runtime, not with its own base.
+    restored=copy.deepcopy(sides) if allow_prestripped else chili_live_copy_restore(sides)
     check(set(restored)=={'user','admin'},'gift_precheck_audiences')
     # The historical R5 -> API chain enters twice; only the already-
     # verified projection may omit the new keys. A real current catalog
@@ -661,12 +762,18 @@ CHILI_COPY_FILES={
 }
 @functools.lru_cache(maxsize=1)
 def chili_copy_values():
+    # The original RC25 byte/sha proof is over an earlier published source.
+    # First prove the *entire* actual current catalog delta against RC28,
+    # then feed that exact immutable RC28 source to the historical proof.
+    # Never compare the newer Owner copy directly against an old raw hash
+    # or bypass validation of the actual file in the working tree.
+    chili_copy_reference()
     decode='$s=stream_get_contents(STDIN);$p=strpos($s,"return [");if($p===false)throw new RuntimeException("catalog_missing");echo json_encode(eval(substr($s,$p)),JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);'
     before={};after={};changed={}
     for audience,digest in CHILI_COPY_FILES.items():
         path='messages/fa/'+audience+'.php'
         raw=command('git','show',CHILI_COPY_HEAD+':'+path)
-        current=(ROOT/path).read_bytes()
+        current=command('git','show',CHILI_SYNC_BASE+':'+path)
         if audience=='user':
             # Verify current additive copy above; erasing only its six
             # individually pinned source lines must recover the immutable

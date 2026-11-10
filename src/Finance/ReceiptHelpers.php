@@ -1743,7 +1743,8 @@ function achbotManualFinishEvidence(mysqli $connection, string $hashId, string $
         }
         $intent = achbotManualIntentDecode((string)$attempt['checkout_url'], (string)$attempt['provider']);
         $typed=achbotManualTypedGift($connection,$pay,(string)$attempt['provider']);
-        if (!$intent || ($typed ? achbotPaymentEvidenceReadGiftCode($connection,$id)!==$fileId : ($intent['receipt_file_id'] ?? null) !== $fileId)) {
+        if (!$intent || ($typed ? (!achbotPaymentEvidenceGiftCodeFormatValid($fileId) ||
+                achbotPaymentEvidenceReadGiftCode($connection,$id)!==$fileId) : ($intent['receipt_file_id'] ?? null) !== $fileId)) {
             $connection->rollback(); return false;
         }
         $stmt = $connection->prepare("UPDATE pays SET state='have_sent',message_id=?,chat_id=?
@@ -1831,8 +1832,15 @@ function achbotManualGiftReviewText(string $caption,string $code,?array $screen=
     $amount=is_int($screen['redeem_amount']??null) && $screen['redeem_amount']>0
         ? number_format($screen['redeem_amount']).' '.$unit
         : achbotMessage('manual_payment.api_payment.gift_not_verified');
+    // No API details: show the code-integrity hint to staff, not on verified cards.
+    $unrecognized=($screen['redeem_amount']??null)===null &&
+        ($screen['order_number']??null)===null &&
+        ($screen['created_at']??null)===null;
+    $codeKey=$unrecognized
+        ? 'manual_payment.api_payment.code_evidence_unrecognized'
+        : 'manual_payment.api_payment.code_evidence';
     return $caption."\n\n".
-        achbotMessageHtml('manual_payment.api_payment.code_evidence',['code'=>$code])."\n".
+        achbotMessageHtml($codeKey,['code'=>$code])."\n".
         achbotMessageHtml('manual_payment.api_payment.gift_details',[
             'amount'=>$amount,
             'order'=>$screen['order_number']??$missing,
@@ -1856,6 +1864,9 @@ function achbotManualGiftSubmissionPreflight(mysqli $db,array $pay,string $metho
     $accepted=['accepted'=>true,'redeem_amount'=>null,'amount_unit'=>null,
         'order_number'=>null,'created_at'=>null];
     if (!achbotManualTypedGift($db,$pay,$method))return $accepted;
+    // No API call, SQL evidence or staff disclosure for plainly invalid text.
+    if (!achbotPaymentEvidenceGiftCodeFormatValid($code))
+        return array_replace($accepted,['accepted'=>false,'reason'=>'invalid']);
     try {
         $c=achbotApiPaymentContext($db,(string)$pay['hash_id'],(int)$pay['user_id']);
         if (!$c || ($c['attempt']['provider']??'')!=='gift_card' ||
@@ -1924,10 +1935,11 @@ function achbotManualEvidenceInput($update,mysqli $db,array $pay,string $method)
     if(!achbotManualTypedGift($db,$pay,$method))return extractPhotoFileId($update);
     $code=$update->message->text??null;
     if(!is_string($code))return null;$code=trim($code);
-    return $code!=='' && strlen($code)<=4096 && !preg_match('/[\x00-\x1f\x7f]/',$code)?$code:null;
+    return achbotPaymentEvidenceGiftCodeFormatValid($code)?$code:null;
 }
 function achbotManualEvidencePrompt(array $mainValues,mysqli $db,array $pay,string $method,bool $invalid=false): string {
-    if(achbotManualTypedGift($db,$pay,$method))return achbotMessage('payment.api_payment.code_prompt');
+    if(achbotManualTypedGift($db,$pay,$method))
+        return achbotMessage($invalid?'payment.api_payment.code_invalid_retry':'payment.api_payment.code_prompt');
     return $invalid?$mainValues['please_send_only_image']:achbotManualReceiptPrompt($mainValues,$method);
 }
 
@@ -2010,7 +2022,7 @@ function buildCartToCartInfoMessage(array $paymentKeys, array $mainValues, int $
         if ($method === 'bank_transfer' &&
             (trim((string)($intent['account'] ?? '')) === '' ||
              trim((string)($intent['holder'] ?? '')) === '')) return '';
-        if(achbotManualTypedGift($connection,$pay,$method))return achbotMessageHtml('payment.api_payment.gift_invoice',['amount'=>(string)$amount])."\n\n".achbotMessage('payment.api_payment.code_prompt');
+        if(achbotManualTypedGift($connection,$pay,$method))return achbotMessageHtml('payment.api_payment.gift_invoice',['amount'=>number_format($amount)]);
         $template = (string)($mainValues[$method === 'gift_card' ?
             'brw_cart_to_cart_gift' : 'brw_cart_to_cart_detail'] ?? '');
         return strtr($template, [
@@ -2268,7 +2280,7 @@ function sendReceiptToAdminsAndUpdatePay(
     try {
         $pay=dbFetchPayByHash($connection,$hashId);
         $typed=$pay && achbotManualTypedGift($connection,$pay,'gift_card') && achbotManualSelectedMethod($connection,$pay)==='gift_card';
-        if($typed){$code=achbotPaymentEvidenceReadGiftCode($connection,(int)$pay['id']);if($code!==$fileid)throw new RuntimeException('typed_receipt_evidence_mismatch');if(!achbotManualGiftReviewFits($caption,$code,$giftScreen))throw new RuntimeException('typed_receipt_message_too_long');$caption=achbotManualGiftReviewText($caption,$code,$giftScreen);}
+        if($typed){$code=achbotPaymentEvidenceReadGiftCode($connection,(int)$pay['id']);if($code!==$fileid || !achbotPaymentEvidenceGiftCodeFormatValid($code))throw new RuntimeException('typed_receipt_evidence_mismatch');if(!achbotManualGiftReviewFits($caption,$code,$giftScreen))throw new RuntimeException('typed_receipt_message_too_long');$caption=achbotManualGiftReviewText($caption,$code,$giftScreen);}
         $response = $typed?sendMessage($caption,$adminKeyboard,'HTML',$adminChatId):sendPhoto($fileid, $caption, $adminKeyboard, 'HTML', $adminChatId);
         $msgId = (int)($response->result->message_id ?? 0);
         if ($msgId <= 0 ||

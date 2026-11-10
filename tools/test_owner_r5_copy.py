@@ -27,17 +27,37 @@ def main():
     ap=argparse.ArgumentParser();ap.add_argument('--composition-source-root',type=pathlib.Path,default=ROOT,help='Read-only current source for the composed-message matrix; catalogs stay in this checkout.')
     args=ap.parse_args()
     sides=current();old,counts=r5.verify_and_restore(sides);merged={**sides['user'],**sides['admin']}
+    # New Chili copy manifest must not authorize arbitrary text or an
+    # unexpected new staff entry (the older frozen proofs remain intact).
+    approved=r5.chili_live_copy_restore(sides)
+    check('manual_payment.api_payment.code_evidence_unrecognized' not in approved['admin'],
+          'chili_sync_added_key_was_not_removed_in_projection')
+    changed=copy.deepcopy(sides)
+    changed['admin']['manual_payment.api_payment.report']['text']+=' unapproved'
+    try:r5.chili_live_copy_restore(changed)
+    except AssertionError:pass
+    else:raise AssertionError('chili_sync_unapproved_value_was_accepted')
+    changed=copy.deepcopy(sides)
+    changed['admin'].pop('manual_payment.api_payment.code_evidence_unrecognized')
+    try:r5.chili_live_copy_restore(changed)
+    except AssertionError:pass
+    else:raise AssertionError('chili_sync_missing_added_key_was_accepted')
     delivery_controls=r5.delivery_recovery_copy_negative_controls(sides)
     check(delivery_controls==4,'delivery_recovery_copy_negative_controls_missing')
     removal_controls=r5.server_removal_copy_negative_controls(sides)
     check(removal_controls==4,'server_removal_unsafe_copy_negative_control_missing')
     controls=r5.negative_controls(sides)
     gift_controls=r5.gift_catalog_negative_controls(sides)
-    # Two specific RC25 approved tracking-hash buttons now deliberately use
-    # the compact ID symbol; numeric-user-ID headers remain prohibited.
-    rc25_hash_buttons={
+    # The Owner's later Chili sync extends the established compact hash
+    # footer to ALL payment/renewal inline-keyboard order-hash surfaces.
+    # Explanatory body references and Telegram numeric IDs stay distinct.
+    hash_footer_buttons={
       'manual_payment.receipt_helpers.build_admin_keyboard_with_stats.hash_id.286c7d3faf':'🆔 {hashId}',
-      'manual_payment.manual_approval.manual_standard_report_delivery.hash_id.2899228604':'🆔 {hash_id}'
+      'manual_payment.manual_approval.manual_standard_report_delivery.hash_id.2899228604':'🆔 {hash_id}',
+      'payment.checkout.hash_id_local.09f20c4022':'🆔 {hashIdLocal}',
+      'payment.checkout.hash_id.286c7d3faf':'🆔 {hashId}',
+      'renewal.extensions.hash_id.2899228604':'🆔 {hash_id}',
+      'gateway.gateway_return.perform_payment_effect.hash_id.2899228604':'🆔 {hash_id}',
     }
     # The new automatic-gateway detail shows an actual @handle, never a
     # numeric Telegram/customer ID. This exact legacy label is distinct
@@ -45,11 +65,21 @@ def main():
     handle_key='automatic_gateway_review.handle'
     handle_label='🔖 شناسه تلگرام: @{handle}'
     check(r5.text(merged.get(handle_key,''))==handle_label and
-          all(r5.text(merged.get(k,''))==v for k,v in rc25_hash_buttons.items()) and
-          {k for k,e in merged.items() if '🆔' in r5.text(e)}==set(rc25_hash_buttons) and
+          all(r5.text(merged.get(k,''))==v for k,v in hash_footer_buttons.items()) and
+          {k for k,e in merged.items() if '🆔' in r5.text(e)}==set(hash_footer_buttons) and
           not any(compositions.numeric_id_variant(r5.text(e))
                   for k,e in merged.items() if k!=handle_key),
           'approved_tracking_hash_buttons_only_no_numeric_user_id_header')
+    checkout=(ROOT/'src/Finance/Routes/Checkout.php').read_text()
+    check("\\achbotMessage('payment.checkout.hash_id.2899228604', ['hash_id' => $hashId])" in checkout,
+          'checkout_admin_body_must_not_reuse_compact_footer_key')
+    check(r5.text(merged['payment.api_payment.gift_invoice']).count('<b>')==4 and
+          '🧾 اطلاعات شارژ:' in r5.text(merged['wallet.wallet_start.start_wallet_payment.message.1f46b2b87f']) and
+          '🎫 شناسه عددی' in r5.text(merged['payment.payment_lifecycle.pay_ux_reference.text.d031212b3c']) and
+          '<b>فقط کد بفرستید</b>' in r5.text(merged['payment.api_payment.code_prompt']) and
+          '<b>گیفت کارت توسط API تشخیص داده نشد' in
+          r5.text(merged['manual_payment.api_payment.code_evidence_unrecognized']),
+          'live_chili_copy_semantics_or_gift_staff_caution_missing')
     # Data-only code/URI/native labels and continuation fragments stay intact.
     # These four intentionally stable units are composed inside Persian sentences.
     expected_fragments=['notifications.warnings.send.1e5349d9b2','notifications.warnings.send.0458ad0612','jobs.gift2all.gift_text.8f714dee13','jobs.gift2all.text.b70363d685']
@@ -90,21 +120,37 @@ def main():
     # Repeated identical field labels are deliberate in sender/recipient sections.
     duplicate_markers=[(key,problem)for key,entry in merged.items()
                        for problem in compositions.heading_collisions(r5.text(entry))]
-    # RC25 explicitly gives Toman and Rial the same currency glyph, but
-    # their distinct full labels must both remain; every other collision
-    # remains a regression.
+    # RC25 gives Toman/Rial the same currency glyph. The Owner's exact,
+    # source-pinned Chili additions also intentionally use one check-mark
+    # for three wallet limits and repeat a report icon for its result.
+    # Permit only these exact pairs; every other collision is a regression.
     expected_shared_currency={
        ('legacy_messages.brw_cart_to_cart_detail',
         ('💵','مبلغ به تومان','مبلغ به ریال')),
        ('payment.api_payment.bank_invoice',
         ('💵','مبلغ به تومان','مبلغ به ریال'))
     }
-    check(set(duplicate_markers)==expected_shared_currency and
-          len(duplicate_markers)==2 and
+    expected_owner_chili_reuse={
+       ('wallet.wallet_recharge.wallet_topup_amount_problem.message.ae69d93a89',
+        ('✅','حداقل مبلغ قابل شارژ 100,000 تومان می باشد.',
+         'حداکثر مبلغ قابل شارژ 10,000,000 تومان می باشد.')),
+       ('wallet.wallet_recharge.wallet_topup_amount_problem.message.ae69d93a89',
+        ('✅','حداکثر مبلغ قابل شارژ 10,000,000 تومان می باشد.',
+         'مبلغ باید فقط مضربی از 50,000 تومان باشد.')),
+       ('manual_payment.api_payment.report',
+        ('📋','گزارش بررسی پرداخت','نتیجه')),
+    }
+    check(set(duplicate_markers)==expected_shared_currency|expected_owner_chili_reuse and
+          len(duplicate_markers)==5 and
           all('💵 مبلغ به تومان' in r5.text(merged[k]) and
               '💵 مبلغ به ریال' in r5.text(merged[k])
-              for k,_ in expected_shared_currency),
-          'duplicate_heading_marker_outside_two_RC25_currency_templates:'+str(duplicate_markers))
+              for k,_ in expected_shared_currency) and
+          all('✅ حداقل مبلغ قابل شارژ' in r5.text(merged[k])
+              and '✅ حداکثر مبلغ قابل شارژ' in r5.text(merged[k])
+              and '✅ مبلغ باید فقط مضربی' in r5.text(merged[k])
+              for k,problems in expected_owner_chili_reuse if k.startswith('wallet.')) and
+          '📋 نتیجه: {status}' in r5.text(merged['manual_payment.api_payment.report']),
+          'unapproved_duplicate_heading_marker:'+str(duplicate_markers))
     native=r'''require 'src/Subscription/ServerDisplaySettings.php';require 'src/Telegram/Messages.php';
 $reports=[];foreach(['marzban','pasarguard']as$provider){
  $guide=achbotServerDisplayGuide($provider);$calls=[];
