@@ -120,21 +120,37 @@ def main():
     # Repeated identical field labels are deliberate in sender/recipient sections.
     duplicate_markers=[(key,problem)for key,entry in merged.items()
                        for problem in compositions.heading_collisions(r5.text(entry))]
-    # RC25 explicitly gives Toman and Rial the same currency glyph, but
-    # their distinct full labels must both remain; every other collision
-    # remains a regression.
+    # RC25 gives Toman/Rial the same currency glyph. The Owner's exact,
+    # source-pinned Chili additions also intentionally use one check-mark
+    # for three wallet limits and repeat a report icon for its result.
+    # Permit only these exact pairs; every other collision is a regression.
     expected_shared_currency={
        ('legacy_messages.brw_cart_to_cart_detail',
         ('💵','مبلغ به تومان','مبلغ به ریال')),
        ('payment.api_payment.bank_invoice',
         ('💵','مبلغ به تومان','مبلغ به ریال'))
     }
-    check(set(duplicate_markers)==expected_shared_currency and
-          len(duplicate_markers)==2 and
+    expected_owner_chili_reuse={
+       ('wallet.wallet_recharge.wallet_topup_amount_problem.message.ae69d93a89',
+        ('✅','حداقل مبلغ قابل شارژ 100,000 تومان می باشد.',
+         'حداکثر مبلغ قابل شارژ 10,000,000 تومان می باشد.')),
+       ('wallet.wallet_recharge.wallet_topup_amount_problem.message.ae69d93a89',
+        ('✅','حداکثر مبلغ قابل شارژ 10,000,000 تومان می باشد.',
+         'مبلغ باید فقط مضربی از 50,000 تومان باشد.')),
+       ('manual_payment.api_payment.report',
+        ('📋','گزارش بررسی پرداخت','نتیجه')),
+    }
+    check(set(duplicate_markers)==expected_shared_currency|expected_owner_chili_reuse and
+          len(duplicate_markers)==5 and
           all('💵 مبلغ به تومان' in r5.text(merged[k]) and
               '💵 مبلغ به ریال' in r5.text(merged[k])
-              for k,_ in expected_shared_currency),
-          'duplicate_heading_marker_outside_two_RC25_currency_templates:'+str(duplicate_markers))
+              for k,_ in expected_shared_currency) and
+          all('✅ حداقل مبلغ قابل شارژ' in r5.text(merged[k])
+              and '✅ حداکثر مبلغ قابل شارژ' in r5.text(merged[k])
+              and '✅ مبلغ باید فقط مضربی' in r5.text(merged[k])
+              for k,problems in expected_owner_chili_reuse if k.startswith('wallet.')) and
+          '📋 نتیجه: {status}' in r5.text(merged['manual_payment.api_payment.report']),
+          'unapproved_duplicate_heading_marker:'+str(duplicate_markers))
     native=r'''require 'src/Subscription/ServerDisplaySettings.php';require 'src/Telegram/Messages.php';
 $reports=[];foreach(['marzban','pasarguard']as$provider){
  $guide=achbotServerDisplayGuide($provider);$calls=[];
