@@ -1863,6 +1863,9 @@ function achbotManualGiftSubmissionPreflight(mysqli $db,array $pay,string $metho
     $accepted=['accepted'=>true,'redeem_amount'=>null,'amount_unit'=>null,
         'order_number'=>null,'created_at'=>null];
     if (!achbotManualTypedGift($db,$pay,$method))return $accepted;
+    // No API call, SQL evidence or staff disclosure for plainly invalid text.
+    if (!achbotPaymentEvidenceGiftCodeFormatValid($code))
+        return array_replace($accepted,['accepted'=>false,'reason'=>'invalid']);
     try {
         $c=achbotApiPaymentContext($db,(string)$pay['hash_id'],(int)$pay['user_id']);
         if (!$c || ($c['attempt']['provider']??'')!=='gift_card' ||
@@ -1931,10 +1934,11 @@ function achbotManualEvidenceInput($update,mysqli $db,array $pay,string $method)
     if(!achbotManualTypedGift($db,$pay,$method))return extractPhotoFileId($update);
     $code=$update->message->text??null;
     if(!is_string($code))return null;$code=trim($code);
-    return $code!=='' && strlen($code)<=4096 && !preg_match('/[\x00-\x1f\x7f]/',$code)?$code:null;
+    return achbotPaymentEvidenceGiftCodeFormatValid($code)?$code:null;
 }
 function achbotManualEvidencePrompt(array $mainValues,mysqli $db,array $pay,string $method,bool $invalid=false): string {
-    if(achbotManualTypedGift($db,$pay,$method))return achbotMessage('payment.api_payment.code_prompt');
+    if(achbotManualTypedGift($db,$pay,$method))
+        return achbotMessage($invalid?'payment.api_payment.code_invalid_retry':'payment.api_payment.code_prompt');
     return $invalid?$mainValues['please_send_only_image']:achbotManualReceiptPrompt($mainValues,$method);
 }
 

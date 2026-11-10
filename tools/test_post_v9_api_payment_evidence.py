@@ -5,6 +5,7 @@ No tenant config, installed target, provider, Telegram or external API is used.
 """
 from __future__ import annotations
 import argparse
+import base64
 import contextlib
 import datetime as dt
 import hashlib
@@ -19,6 +20,13 @@ from pathlib import Path
 
 import test_access_state as owned
 import test_v6_native as native
+
+def fixture_gift_code(label):
+    """Canonical issuer-shaped synthetic code; the fake /verify owns identity."""
+    raw=hashlib.sha512(('AChBot evidence fixture / '+label).encode()).digest()[:52]
+    token=base64.b32encode(raw).decode('ascii').rstrip('=')
+    assert len(token)==84
+    return 'AG2-K1-'+'-'.join(token[i:i+5] for i in range(0,84,5))
 
 ROOT=Path(__file__).resolve().parents[1]
 DB=owned.NAMES[1]
@@ -84,6 +92,8 @@ case 'validate':
  $db->begin_transaction();
  $result=$proof && achbotPaymentEvidenceValidateProofLocked($db,$pay,$proof);
  $db->rollback();break;
+case 'giftformat':
+ $result=achbotPaymentEvidenceGiftCodeFormatValid($spec['code']);break;
 case 'save':
  $result=achbotPaymentEvidenceSaveGiftCode($db,$id,1001,$spec['code']);break;
 case 'reject':
@@ -201,13 +211,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
             if s.verify_faults:
                 status=s.verify_faults.pop(0)
                 return self.send(status,{'code':'fixture_verify_failed'})
-            if body['code']=='unknown-code':
+            if body['code']==fixture_gift_code('unknown-code'):
                 return self.send(404,{'api_version':'2','ok':False,'code':'card_not_found','data':None})
-            if body['code']=='bad-code':
+            if body['code']==fixture_gift_code('bad-code'):
                 return self.send(422,{'api_version':'2','ok':False,'code':'invalid_card_code','data':None})
-            if body['code']=='bad-payload':
+            if body['code']==fixture_gift_code('bad-payload'):
                 return self.send(409,{'api_version':'2','ok':False,'code':'payload_mismatch','data':None})
-            if body['code']=='unauthorized':
+            if body['code']==fixture_gift_code('unauthorized'):
                 return self.send(403,{'api_version':'2','ok':False,'code':'invalid_card_code','data':None})
             return self.send(200,{'api_version':'2','ok':True,'code':'card_verified','data':dict(s.card),
                 'request_id':'req_verify_fixture'})
@@ -261,6 +271,9 @@ def run(module):
         server=Server(dbcheck);thread=threading.Thread(target=server.serve_forever,daemon=True);thread.start()
         base='http://127.0.0.1:'+str(server.server_port)
         def php(op,**spec):
+            raw_code=spec.pop('raw_code',False)
+            if not raw_code and op in ('save','reject','giftprecheck') and isinstance(spec.get('code'),str):
+                spec['code']=fixture_gift_code(spec['code'])
             data=dict(op=op,base=base,**spec)
             p=subprocess.run(['php','-n','-d','extension=mysqlnd','-d','extension=mysqli',
                 '-d','extension=curl','-d','display_errors=stderr','-d','log_errors=0',
@@ -431,11 +444,29 @@ def run(module):
             # real sibling ApiPayments/ReceiptHelpers modules on the canonical
             # source path; mutating those dependencies is outside this control.
             if module.resolve()==(ROOT/'src/Finance/PaymentEvidence.php').resolve():
+                sample=fixture_gift_code('canonical-format')
+                compact='AG2-K1-'+sample[len('AG2-K1-'):].replace('-','')
+                assert php('giftformat',code=sample) is True
+                assert php('giftformat',code=sample.lower()) is True
+                assert php('giftformat',code=compact) is True
+                for malformed in ('0','hello','AG2-K1-ABC','AG2-K1-'+
+                        sample[len('AG2-K1-'):].replace('-','')[:-1]+'B',
+                        'AG2-K1-'+sample[len('AG2-K1-'):].replace('-','')[:-1]+'1',
+                        'AG2-K1-'+sample[len('AG2-K1-'):].replace('-','')+'AG2',
+                        sample+' extra text'):
+                    assert php('giftformat',code=malformed) is False,malformed
                 # Customer-first read-only screening of the original pending invoice.
                 # Nothing is persisted, redeemed or delivered to staff on rejection.
                 gs=seed('giftprecheck','gift_card')
                 sql(f"UPDATE pays SET state='pending',message_id=0,chat_id=0 WHERE id={gs}")
                 sql(f"UPDATE payment_attempts SET stage='pending' WHERE pay_row_id={gs}")
+                before_requests=server.verify_requests
+                for malformed in ('0','any arbitrary text','123456','AG2-K1-invalid'):
+                    denied=php('giftprecheck',pay_id=gs,code=malformed,raw_code=True)
+                    assert denied['accepted'] is False and denied['reason']=='invalid',denied
+                    assert php('save',pay_id=gs,code=malformed,raw_code=True)['status']=='invalid'
+                assert server.verify_requests==before_requests
+                assert sql(f'SELECT evidence_code IS NULL FROM payment_attempts WHERE pay_row_id={gs}')=='1'
                 assert php('giftprecheck',pay_id=gs,code='unknown-code')=={
                     'accepted':False,'reason':'not_found','redeem_amount':None,'amount_unit':None,
                     'order_number':None,'created_at':None}
@@ -639,7 +670,7 @@ def run(module):
             assert php('giftreserve',pay_id=g2,method='gift_card',card=server.card)
             assert php('consume',pay_id=g2,method='gift_card')['status']=='pending'
             assert php('consume',pay_id=g2,method='gift_card')['status']=='proven'
-            refs=[b['reference'] for path,h,b in server.posts if path.endswith('/redeem') and b.get('code')=='gift-code-two']
+            refs=[b['reference'] for path,h,b in server.posts if path.endswith('/redeem') and b.get('code')==fixture_gift_code('gift-code-two')]
             assert len(refs)==2 and refs[0]==refs[1]
             # Unredeem/active after uncertain consume never causes blind new consumption.
             g3=seed('giftreset','gift_card');server.card=card('CARD_UUID_3');server.gift_fail_once=True

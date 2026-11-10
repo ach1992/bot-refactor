@@ -15,6 +15,18 @@ import test_post_v9_manual_payments as manual
 ROOT=Path(__file__).resolve().parents[1]
 DB=purchase.SIDE[1]
 
+# Synthetic issuer-shaped values ONLY: the upstream mock owns /verify.
+# These are deliberately not cryptographically signed real gift cards.
+GIFT_FORMAT_LABELS = {}
+
+def fixture_gift_code(label):
+    raw=hashlib.sha512(('AChBot fixture / gift / '+label).encode()).digest()[:52]
+    token=base64.b32encode(raw).decode('ascii').rstrip('=')
+    assert len(token)==84
+    code='AG2-K1-'+'-'.join(token[i:i+5] for i in range(0,len(token),5))
+    GIFT_FORMAT_LABELS[code]=label
+    return code
+
 class APIs(BaseHTTPRequestHandler):
     rows={}; cards={}; cache={}; events=[]; received=[]; next_id=0; mode='ok'; lock=threading.Lock()
     def log_message(self,*a): pass
@@ -58,7 +70,7 @@ class APIs(BaseHTTPRequestHandler):
                 r['status']='used';out={'data':dict(r),'request_id':'sms-'+key[:16]};self.cache[key]=out
                 if self.mode=='lost':return self.reply({},503)
                 return self.reply(out)
-            card=self.cards.get(data.get('code'))
+            card=self.cards.get(GIFT_FORMAT_LABELS.get(data.get('code'),data.get('code')))
             if not card:return self.reply({'api_version':'2','ok':False,'code':'card_not_found'},404)
             if self.path.endswith('/verify'):return self.reply({'api_version':'2','ok':True,'code':'card_verified','data':dict(card)})
             ref=data['reference'];old=self.cache.get(ref)
@@ -139,6 +151,8 @@ echo json_encode(['result'=>$value,'events'=>$GLOBALS['events']],JSON_THROW_ON_E
 
 def query(work,env,sql):return bank.query(work,env,sql)
 def run(work,env,app,driver,url,**spec):
+    if spec.get('op') in ('save','rawsave') and isinstance(spec.get('code'),str):
+        spec['code']=fixture_gift_code(spec['code'])
     spec['url']=url
     cmd=['php','-n','-d','extension=mysqlnd','-d','extension=mysqli','-d','extension=curl','-d','allow_url_fopen=0','-d','display_errors=0','-d','log_errors=1','-d','error_log=/dev/stderr',str(driver),str(app),str(work/'mysql.sock'),DB,json.dumps(spec)]
     p=subprocess.run(cmd,cwd=work,env=env,capture_output=True,text=True,timeout=35)
@@ -300,10 +314,10 @@ return !empty($GLOBALS['spec']['fail_staff'])?null:(object)['ok'=>true];}""")
             clicked=run(work,env,app,human_driver,url,route=route,data=callback,actor=1001)
             steps=[e['step'] for e in clicked['events'] if e.get('name')=='setUser']
             assert not clicked.get('fatal') and step+key in steps,(label,callback,clicked)
-            code='CODE<&>'+label;offset=len(APIs.received);APIs.mode='offline'
+            code=fixture_gift_code('original-caption-'+label);offset=len(APIs.received);APIs.mode='offline'
             r=run(work,env,app,human_driver,url,route=route,step=step+key,actor=1001,update={'message':{'text':code}})
             assert not r.get('fatal') and state(n)=='have_sent', (label,r)
-            reviews=[e for e in r['events'] if e.get('name')=='sendMessage' and len(e['args'])>3 and e['args'][3]==9001 and '<code>CODE&lt;&amp;&gt;'+label+'</code>' in e['args'][0]]
+            reviews=[e for e in r['events'] if e.get('name')=='sendMessage' and len(e['args'])>3 and e['args'][3]==9001 and '<code>'+code+'</code>' in e['args'][0]]
             assert len(reviews)==1 and '101' in reviews[0]['args'][0] and 'synthetic_user' in reviews[0]['args'][0],(label,r)
             keys=json.loads(reviews[0]['args'][1]);assert any('declineAction_'+key==b.get('callback_data') for row in keys['inline_keyboard'] for b in row),(label,r)
             assert not any(e.get('name')=='sendPhoto' for e in r['events']) and 'receipt_file_id' not in query(work,env,f'SELECT checkout_url FROM payment_attempts WHERE pay_row_id={n}'),(label,r)
@@ -317,16 +331,19 @@ return !empty($GLOBALS['spec']['fail_staff'])?null:(object)['ok'=>true];}""")
         clicked=run(work,env,app,human_driver,url,route='checkout',data=callback,actor=1001)
         assert not clicked.get('fatal') and any(e.get('step')=='waitBuyCartReceipt'+key for e in clicked['events']),clicked
         cases.append('external_renewal_bank_generated_button_uses_buy_receipt_route')
-        # Numeric zero follows the nullable text contract, with no fake photo.
-        n=seed('zerocode',method='gift_card');APIs.mode='offline'
+        # A nonempty but non-issuer-shaped input never reaches API, SQL or staff.
+        n=seed('zerocode',method='gift_card');APIs.mode='offline';before=len(APIs.received)
         r=run(work,env,app,human_driver,url,route='wallet',step='waitIncreaseWalletGiftReceiptzerocode',actor=1001,update={'message':{'text':'0'}})
-        assert not r.get('fatal') and state(n)=='have_sent' and any('<code>0</code>' in str(e.get('args')) for e in r['events']),r
-        cases.append('gift_zero_string_is_valid_text_evidence')
+        assert not r.get('fatal') and state(n)=='pending' and len(APIs.received)==before,r
+        assert not any(e.get('name')=='sendMessage' and len(e.get('args',[]))>3 and e['args'][3]==9001 for e in r['events']),r
+        assert query(work,env,f'SELECT evidence_code IS NULL FROM payment_attempts WHERE pay_row_id={n}')=='1'
+        assert any('معتبر نیست' in str(e.get('args')) for e in r['events']),r
+        cases.append('gift_plain_text_rejected_before_api_storage_or_staff')
         n=seed('oversizedcode',method='gift_card');offset=len(APIs.received)
         r=run(work,env,app,human_driver,url,route='wallet',step='waitIncreaseWalletGiftReceiptoversizedcode',actor=1001,update={'message':{'text':'A'*4096}})
         assert not r.get('fatal') and state(n)=='pending' and len(APIs.received)==offset,r
         assert query(work,env,f"SELECT evidence_code IS NULL AND stage='pending' AND review_notice_claim_token IS NULL FROM payment_attempts WHERE pay_row_id={n}")=='1'
-        assert any('در یک پیام جا نمی' in str(e.get('args')) for e in r['events']),r
+        assert any('معتبر نیست' in str(e.get('args')) for e in r['events']),r
         cases.append('oversized_code_rejected_before_storage_or_delivery_claim')
         caption='<b>سفارش 😀</b>'
         # Use the actual current staff message including the three metadata
@@ -345,7 +362,7 @@ return !empty($GLOBALS['spec']['fail_staff'])?null:(object)['ok'=>true];}""")
         assert call(pay=n)['result']=='awaiting_receipt' and len(APIs.received)==offset
         before_events=len(APIs.events)
         old_redeems=sum(e[0]=='POST' and e[1].endswith('/redeem') for e in APIs.events)
-        r=run(work,env,app,human_driver,url,route='wallet',step='waitIncreaseWalletGiftReceiptgiftlivecaption',actor=1001,message_transport='no_id',update={'message':{'text':'valid-route-code'}})
+        r=run(work,env,app,human_driver,url,route='wallet',step='waitIncreaseWalletGiftReceiptgiftlivecaption',actor=1001,message_transport='no_id',update={'message':{'text':fixture_gift_code('valid-route-code')}})
         preflight=APIs.events[before_events:]
         # Customer-first screening is an authenticated, read-only /verify.
         # A failed primary Telegram delivery still cannot dispatch /redeem,
@@ -358,9 +375,9 @@ return !empty($GLOBALS['spec']['fail_staff'])?null:(object)['ok'=>true];}""")
         assert call(pay=n)['result']=='awaiting_receipt' and len(APIs.received)==after_failed
         cases.append('saved_code_failed_staff_delivery_readonly_verify_no_consume')
         before=int(query(work,env,'SELECT wallet FROM users WHERE userid=1001'))
-        r=run(work,env,app,human_driver,url,route='wallet',step='waitIncreaseWalletGiftReceiptgiftlivecaption',actor=1001,update={'message':{'text':'valid-route-code'}})
+        r=run(work,env,app,human_driver,url,route='wallet',step='waitIncreaseWalletGiftReceiptgiftlivecaption',actor=1001,update={'message':{'text':fixture_gift_code('valid-route-code')}})
         assert not r.get('fatal') and state(n)=='approved' and APIs.cards['valid-route-code']['status']=='redeemed',r
-        reviews=[e for e in r['events'] if e.get('name')=='sendMessage' and '<code>valid-route-code</code>' in str(e.get('args'))]
+        reviews=[e for e in r['events'] if e.get('name')=='sendMessage' and '<code>'+fixture_gift_code('valid-route-code')+'</code>' in str(e.get('args'))]
         new_redeems=[e for e in APIs.events[before_events:] if
             e[0]=='POST' and e[1].endswith('/redeem')]
         assert len(new_redeems)==1 and sum(e[0]=='POST' and e[1].endswith('/redeem')

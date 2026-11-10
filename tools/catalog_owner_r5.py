@@ -454,7 +454,7 @@ def chili_copy_reference():
                   'chili_copy_added_slots:'+key)
     return definition,prior,current
 
-def chili_copy_restore(sides,allow_prestripped=False):
+def chili_live_copy_restore(sides,allow_prestripped=False):
     definition,prior,current=chili_copy_reference()
     check(set(sides)=={'user','admin'},'chili_copy_audiences')
     changes=definition['changes'];added=definition['added']
@@ -479,7 +479,7 @@ def chili_copy_restore(sides,allow_prestripped=False):
     return result
 
 def gift_precheck_copy_restore(sides,allow_prestripped=False):
-    restored=chili_copy_restore(sides,allow_prestripped=allow_prestripped)
+    restored=chili_live_copy_restore(sides,allow_prestripped=allow_prestripped)
     check(set(restored)=={'user','admin'},'gift_precheck_audiences')
     # The historical R5 -> API chain enters twice; only the already-
     # verified projection may omit the new keys. A real current catalog

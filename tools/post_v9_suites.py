@@ -446,7 +446,7 @@ def run_api(tmp: str) -> tuple[dict, dict]:
         'gift_generated_button_original_caption_copyable_private_volume',
         'gift_generated_button_original_caption_copyable_private_external',
         'external_renewal_bank_generated_button_uses_buy_receipt_route',
-        'gift_zero_string_is_valid_text_evidence',
+        'gift_plain_text_rejected_before_api_storage_or_staff',
         'oversized_code_rejected_before_storage_or_delivery_claim',
         'whole_message_capacity_entities_and_supplementary_boundary',
         'saved_code_failed_staff_delivery_readonly_verify_no_consume',
