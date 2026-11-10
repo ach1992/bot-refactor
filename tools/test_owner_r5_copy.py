@@ -27,6 +27,21 @@ def main():
     ap=argparse.ArgumentParser();ap.add_argument('--composition-source-root',type=pathlib.Path,default=ROOT,help='Read-only current source for the composed-message matrix; catalogs stay in this checkout.')
     args=ap.parse_args()
     sides=current();old,counts=r5.verify_and_restore(sides);merged={**sides['user'],**sides['admin']}
+    # New Chili copy manifest must not authorize arbitrary text or an
+    # unexpected new staff entry (the older frozen proofs remain intact).
+    approved=r5.chili_live_copy_restore(sides)
+    check('manual_payment.api_payment.code_evidence_unrecognized' not in approved['admin'],
+          'chili_sync_added_key_was_not_removed_in_projection')
+    changed=copy.deepcopy(sides)
+    changed['admin']['manual_payment.api_payment.report']['text']+=' unapproved'
+    try:r5.chili_live_copy_restore(changed)
+    except AssertionError:pass
+    else:raise AssertionError('chili_sync_unapproved_value_was_accepted')
+    changed=copy.deepcopy(sides)
+    changed['admin'].pop('manual_payment.api_payment.code_evidence_unrecognized')
+    try:r5.chili_live_copy_restore(changed)
+    except AssertionError:pass
+    else:raise AssertionError('chili_sync_missing_added_key_was_accepted')
     delivery_controls=r5.delivery_recovery_copy_negative_controls(sides)
     check(delivery_controls==4,'delivery_recovery_copy_negative_controls_missing')
     removal_controls=r5.server_removal_copy_negative_controls(sides)

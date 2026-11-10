@@ -454,17 +454,12 @@ def chili_copy_reference():
                   'chili_copy_added_slots:'+key)
     return definition,prior,current
 
-def chili_live_copy_restore(sides,allow_prestripped=False):
+def chili_live_copy_restore(sides):
     definition,prior,current=chili_copy_reference()
     check(set(sides)=={'user','admin'},'chili_copy_audiences')
     changes=definition['changes'];added=definition['added']
-    # Internal older projections may have already restored the exact RC28
-    # values. A real new raw catalog cannot silently take this escape path.
-    if allow_prestripped and all(
-       sides[aud].get(key)==prior[aud].get(key)
-       for key,item in changes.items() for aud in [item['audience']]) and all(
-       key not in sides[item['audience']] for key,item in added.items()):
-        return copy.deepcopy(sides)
+    # Only the actual current entry point may use this source-pinned
+    # transition. Historical nested projections skip it at their caller.
     result=copy.deepcopy(sides)
     for key,item in changes.items():
         aud=item['audience'];other='admin'if aud=='user'else'user'
@@ -479,7 +474,11 @@ def chili_live_copy_restore(sides,allow_prestripped=False):
     return result
 
 def gift_precheck_copy_restore(sides,allow_prestripped=False):
-    restored=chili_live_copy_restore(sides,allow_prestripped=allow_prestripped)
+    # The real Chili->RC28 transition is fully pinned on first admission.
+    # Nested R5->API proofs deliberately operate on an already-verified
+    # historical projection; applying the *new* delta again would compare
+    # that older snapshot with the current runtime, not with its own base.
+    restored=copy.deepcopy(sides) if allow_prestripped else chili_live_copy_restore(sides)
     check(set(restored)=={'user','admin'},'gift_precheck_audiences')
     # The historical R5 -> API chain enters twice; only the already-
     # verified projection may omit the new keys. A real current catalog
