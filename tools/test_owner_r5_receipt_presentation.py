@@ -100,10 +100,11 @@ def main():
             before=row_fingerprint();v=caption(h,'buy_new_account_request')
             assert all(x not in v['composed'] for x in ['روش پرداخت:','مقصد:','آدرس:'])
             if method=='gift_card':
-                assert 'مبلغ دقیق حواله' not in v['composed'] and 'مبلغ رمزارز' not in v['composed']
+                assert 'مبلغ دقیق حواله' not in v['composed'] and all(
+                     phrase not in v['composed'] for phrase in ['مبلغ رمزارز','مقدار رمزارز'])
             else:
                 ls=v['composed'].splitlines();at=next(i for i,l in enumerate(ls) if 'PRICE' in l)
-                assert 'مبلغ رمزارز' in ls[at+1]
+                assert 'مقدار رمزارز' in ls[at+1]
                 assert ('TRX' if method=='manual_trx' else 'USDT') in ls[at+1]
                 assert ('TRON' if method=='manual_trx' else 'BEP20') in ls[at+1]
             assert row_fingerprint()==before

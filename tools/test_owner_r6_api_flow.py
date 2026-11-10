@@ -333,8 +333,8 @@ return !empty($GLOBALS['spec']['fail_staff'])?null:(object)['ok'=>true];}""")
         # labels and their explicit missing-value copy; no fixed old-caption
         # assumptions or smaller Telegram allowance may pass unnoticed.
         plain=call(op='gift_plain',pay=n,caption=caption,code='')['result']
-        assert 'مبلغ بازخرید:' in plain and 'شماره سفارش گیفت‌کارت:' in plain
-        assert 'تاریخ ایجاد گیفت‌کارت:' in plain
+        assert 'مبلغ بازخرید:' in plain and '🧾 شماره سفارش:' in plain
+        assert '📅 تاریخ ایجاد:' in plain
         limit=4096-len(plain.encode('utf-16-le'))//2
         assert call(op='fits',pay=n,caption=caption,code='&'*limit)['result'] is True
         assert call(op='fits',pay=n,caption=caption,code='&'*(limit+1))['result'] is False

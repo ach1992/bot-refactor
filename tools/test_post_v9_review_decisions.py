@@ -742,7 +742,7 @@ def main():
             if pay_id==output["long_case_id"]:
                 if not (any(key.startswith("gatewayReview_H_") for key in case["callbacks"]) and
                         all(part in case["text"] for part in [
-                            "شناسه عددی مشتری", "مبلغ سفارش", "شناسه صورتحساب",
+                            "🎫 شناسه عددی: 1001", "مبلغ سفارش", "شناسه صورتحساب",
                             "آخرین وضعیت","عملیات سرویس", "اثر", "ردیف 5"])):
                     raise RuntimeError("Case lost original/Native evidence: "+str(case)[:1000])
             else:

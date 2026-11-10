@@ -554,8 +554,8 @@ def run(module):
                 # upstream gift creation metadata.
                 display=php('giftpreview',code='<sensitive&code>',screen={'redeem_amount':100001,'amount_unit':'toman'})
                 assert '100,001' in display['text'] and '&lt;sensitive&amp;code&gt;' in display['text']
-                assert 'شماره سفارش گیفت‌کارت' in display['text'] and 'در پاسخ API ارائه نشده' in display['text']
-                assert 'تاریخ ایجاد گیفت‌کارت' in display['text'] and display['fits']
+                assert '🧾 شماره سفارش' in display['text'] and 'در پاسخ API ارائه نشده' in display['text']
+                assert '📅 تاریخ ایجاد' in display['text'] and display['fits']
                 assert php('giftpreview',code='0')['fits']
                 # Upstream nulls are legitimate and MUST NOT be replaced by the
                 # bot invoice, numeric order_id or WooCommerce order_created_at.

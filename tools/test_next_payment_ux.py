@@ -219,7 +219,7 @@ def check():
         edits=event(detail,'EDIT')
         assert len(edits)==1 and 'زرین‌پال' in edits[0]['text'],detail
         assert 'fixture-zarinpal-authority' in edits[0]['text']
-        assert 'شناسه عددی مشتری' in edits[0]['text']
+        assert '🎫 شناسه عددی: ' in edits[0]['text']
         choices={b['callback_data'] for row in edits[0]['buttons']['inline_keyboard'] for b in row}
         attempt=int(sql(w,e,f'SELECT id FROM payment_attempts WHERE pay_row_id={gateway}'))
         assert {'gatewayReview_A_'+str(attempt),'gatewayReview_R_'+str(attempt),
