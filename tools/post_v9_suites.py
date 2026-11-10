@@ -396,6 +396,8 @@ def run_api(tmp: str) -> tuple[dict, dict]:
         'typed_review_authenticity',
         'gift_single_code',
         'gift_exact_redeem_amount',
+        'legacy_sealed_code_provider_admission',
+        'legacy_human_recovery_no_new_staff',
         'gift_partial_commit',
         'gift_nonce_reference',
         'gift_uncertain_active_hold',
