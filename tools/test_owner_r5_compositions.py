@@ -375,7 +375,16 @@ def audit(source_root=ROOT,catalog_root=ROOT):
     tokenized=json.loads(command('php','-r',TOKENIZE,input=json.dumps(source).encode()))
     expressions={s['name']:expression(tokenized[s['path']],s['kind'],s['target'],s['anchor'],s['arg'])for s in SPECS}
     prior_checkout=expression(tokenized['prior_direct_checkout'],'call','sendMessage','checkout.message.54c81d71b7')
-    check(expressions['checkout_review']==prior_checkout,'routed_checkout_expression_changed')
+    # Owner's compact hash footer moved the administrative *body* reference
+    # to its existing explanatory catalog key. The checkout's routing,
+    # recipient, remaining body, and callbacks must be byte-equivalent.
+    old_hash=r"\achbotMessage('payment.checkout.hash_id.286c7d3faf',['hashId'=>$hashId])"
+    new_hash=r"\achbotMessage('payment.checkout.hash_id.2899228604',['hash_id'=>$hashId])"
+    check(expressions['checkout_review'].count(new_hash)==1 and
+          expressions['checkout_review'].replace(new_hash,old_hash)==prior_checkout and
+          source['src/Finance/Routes/Checkout.php'].count(
+              r"\achbotMessage('payment.checkout.hash_id.2899228604'")==1,
+          'routed_checkout_unapproved_body_or_hash_binding_drift')
     router_cases,router_controls=routed_expression_controls()
     # Current source's incremental stats loops: execute only the presentation
     # expressions, twice, retaining the intentional repeated identical labels.
