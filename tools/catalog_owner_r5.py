@@ -762,12 +762,18 @@ CHILI_COPY_FILES={
 }
 @functools.lru_cache(maxsize=1)
 def chili_copy_values():
+    # The original RC25 byte/sha proof is over an earlier published source.
+    # First prove the *entire* actual current catalog delta against RC28,
+    # then feed that exact immutable RC28 source to the historical proof.
+    # Never compare the newer Owner copy directly against an old raw hash
+    # or bypass validation of the actual file in the working tree.
+    chili_copy_reference()
     decode='$s=stream_get_contents(STDIN);$p=strpos($s,"return [");if($p===false)throw new RuntimeException("catalog_missing");echo json_encode(eval(substr($s,$p)),JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);'
     before={};after={};changed={}
     for audience,digest in CHILI_COPY_FILES.items():
         path='messages/fa/'+audience+'.php'
         raw=command('git','show',CHILI_COPY_HEAD+':'+path)
-        current=(ROOT/path).read_bytes()
+        current=command('git','show',CHILI_SYNC_BASE+':'+path)
         if audience=='user':
             # Verify current additive copy above; erasing only its six
             # individually pinned source lines must recover the immutable
