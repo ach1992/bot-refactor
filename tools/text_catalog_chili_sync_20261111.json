@@ -1,0 +1,235 @@
+{
+  "added": {
+    "manual_payment.api_payment.code_evidence_unrecognized": {
+      "after_sha256": "d43b834bdaa8916586f33593a75dc201cda35e14f6571898fb1c72381ec08d4b",
+      "audience": "admin",
+      "reason": "Owner-approved Chili wording or order-hash footer synchronization"
+    }
+  },
+  "base_commit": "220d016267bda0a8363ec6453db2e530b26f4485",
+  "changes": {
+    "admin_settings.config.send_chunked_messages.text.833406bb32": {
+      "after_sha256": "eec0e6a116f20b5505d6a87e116f75bb5d69010302f2a5304324d8cb8f738918",
+      "audience": "admin",
+      "before_sha256": "938c05358fcd636bb301bf0e153880981fd49e489c81fa43500f8a457638646b",
+      "reason": "Owner-approved Chili wording or order-hash footer synchronization"
+    },
+    "automatic_gateway_review.customer": {
+      "after_sha256": "32aba7daf09e8ffc78b846633515f3c45b42d7f82c6e468a7e79f3423a8082dd",
+      "audience": "admin",
+      "before_sha256": "ca9f129f628236e2ebecab4acf473a40152ed8894a91b915f555c0a58fc21106",
+      "reason": "Owner-approved Chili wording or order-hash footer synchronization"
+    },
+    "automatic_gateway_review.rejected_report": {
+      "after_sha256": "176091bbd0a15348ede0351bfb14f3e66ef270a92c4562977bfdf27ec698754e",
+      "audience": "admin",
+      "before_sha256": "9d4f56f03661612f1416cd9eedf0919aa3c99e64e78e8fd3a7a451b78d7ee4d9",
+      "reason": "Owner-approved Chili wording or order-hash footer synchronization"
+    },
+    "automatic_gateway_review.status_rejected": {
+      "after_sha256": "a6874ca2076c7e23a7b4f6bb140204458af6e037c85bd990874be069fa0580e2",
+      "audience": "admin",
+      "before_sha256": "9a5351730e0bb24dc5de76b5f9ce368a3eff353972484f85e81ea79c44206b31",
+      "reason": "Owner-approved Chili wording or order-hash footer synchronization"
+    },
+    "gateway.gateway_initiation.mark_checkout_uncertain.message.0c4a9612f7": {
+      "after_sha256": "d9bade40c5948294b126fca2ae0bd3b7e023004c24dd284d237470401f7fd18c",
+      "audience": "user",
+      "before_sha256": "424a28dfd3b99d9068d0ea54e8cd6247c84e08887ba4353201f537852b63d28a",
+      "reason": "Owner-approved Chili wording or order-hash footer synchronization"
+    },
+    "gateway.gateway_return.perform_payment_effect.hash_id.2899228604": {
+      "after_sha256": "1d1ddb630d260c979b0d080007f4fbd47e38f4d7ec11086587f5b5eb5df972dc",
+      "audience": "user",
+      "before_sha256": "cb428b97d869c516b35d82e34febc6b7404745d7bd7c50387979ba9d979c8dc2",
+      "reason": "Owner-approved Chili wording or order-hash footer synchronization"
+    },
+    "manual_payment.api_payment.automatic_status": {
+      "after_sha256": "5d4231e3d40f60c2b2bcf3ccb52693550e5e9cb8bcae98b2d726a7ec4081acd6",
+      "audience": "admin",
+      "before_sha256": "4f66f2b082a3f5a00fc10a77b15e2d498b92c587d38f0f5b8b929e5be4069ef7",
+      "reason": "Owner-approved Chili wording or order-hash footer synchronization"
+    },
+    "manual_payment.api_payment.code_evidence": {
+      "after_sha256": "2ca6cae5bef9b909a093652078a945593c679134227be32792dfb488f4fd3eed",
+      "audience": "admin",
+      "before_sha256": "73083196fd149007b46bff09aa4b4c6c4d4f888410c65071e636d0c471f562da",
+      "reason": "Owner-approved Chili wording or order-hash footer synchronization"
+    },
+    "manual_payment.api_payment.gift_details": {
+      "after_sha256": "9b7286bfb8d14ff16be3b249f83b8ce801e8361e70c9e289503f8798df4cb787",
+      "audience": "admin",
+      "before_sha256": "2fc729ddef71f5de7a1b1cfb19cf559f3d356c180b9ebce1fccec1d5258dcb36",
+      "reason": "Owner-approved Chili wording or order-hash footer synchronization"
+    },
+    "manual_payment.api_payment.report": {
+      "after_sha256": "163998ac0c088f17ebd0e7e41814316f17f5f3f89e0e2e5988982980c9e4d9da",
+      "audience": "admin",
+      "before_sha256": "fc7235a2df6502a6b07a810ba0e3348271bc7158e9796ed59ddffb97c46f7b8d",
+      "reason": "Owner-approved Chili wording or order-hash footer synchronization"
+    },
+    "manual_payment.api_payment.review_staff": {
+      "after_sha256": "ed48df1ec47cb2581a39dfc451319e88711b62ac5cadf9e920b3ac04d95dc23a",
+      "audience": "admin",
+      "before_sha256": "e9af07f087b9e350247861b5c8fcd99bedaca7856aee52c5e61ec1bfe7953929",
+      "reason": "Owner-approved Chili wording or order-hash footer synchronization"
+    },
+    "manual_payment.api_payment.typed_evidence": {
+      "after_sha256": "55006b0249742a3de08ff5d3a6875e9ed20f42ca01dfcded39dd166d9890dc64",
+      "audience": "admin",
+      "before_sha256": "27e95b00ca9f567f8241bedb42491a877f4633bbf9ee48f2b01bb96c92b39341",
+      "reason": "Owner-approved Chili wording or order-hash footer synchronization"
+    },
+    "manual_payment.automatic_receipts.text.ba58f1caaf": {
+      "after_sha256": "9440cf963b8f43aeb523d93eb18bf93d1547249a0adba3be5d587d7cf4bf1850",
+      "audience": "admin",
+      "before_sha256": "2c9a1525f8048827b4a8953708c6c097452ec3e45573b00fba3cf32477ead251",
+      "reason": "Owner-approved Chili wording or order-hash footer synchronization"
+    },
+    "manual_payment.manual_crypto.text.0a49531de8": {
+      "after_sha256": "79f49d3a05ab5ccb9f6040dcd10c11e84ee0441aa69455b699f5d0e466878759",
+      "audience": "user",
+      "before_sha256": "3974f70c8792b6b44906d2649a99d1c25cab9143d1ccd40b18ced97e1c082345",
+      "reason": "Owner-approved Chili wording or order-hash footer synchronization"
+    },
+    "manual_payment.manual_crypto.text.ee4ae4b0c7": {
+      "after_sha256": "df3d3147efc2a82f6e8dfce50c5358695c02635cd3a90fb464645c358e82e3df",
+      "audience": "user",
+      "before_sha256": "015a4e717c785e9ff7bdc78e102370c8feada91b8d9e11088b9985f38f1d5240",
+      "reason": "Owner-approved Chili wording or order-hash footer synchronization"
+    },
+    "manual_payment.manual_receipts.text.955398cb47": {
+      "after_sha256": "d863d61f77a749476eaf4a02c0855a25f3ce9fe66c3f246d7d56804270f246d3",
+      "audience": "admin",
+      "before_sha256": "3f6e35226aeeb4959991d57245c91794100e2545b854ff5cfeac51ad78cbcdcb",
+      "reason": "Owner-approved Chili wording or order-hash footer synchronization"
+    },
+    "manual_payment.manual_receipts.text.d2bbfff6d2": {
+      "after_sha256": "ed144ee0d2fe4072fc7241629a18eb4259a7e188ae27303b074645bd5e404627",
+      "audience": "admin",
+      "before_sha256": "9c2397570b068ffb6b37b3b1d0950d3b8bf025f8b27905e728f3f6ebe6878099",
+      "reason": "Owner-approved Chili wording or order-hash footer synchronization"
+    },
+    "manual_payment.manual_receipts.text.f0b53210c3": {
+      "after_sha256": "56d872e5a5b1ef4d5ac237a10bbe879123e9bcdd0bb5291ced1e1240e95dab1d",
+      "audience": "admin",
+      "before_sha256": "7775009dc4467401de5c038a9171272255f5042a7875d5f94de82a314025b2e2",
+      "reason": "Owner-approved Chili wording or order-hash footer synchronization"
+    },
+    "manual_payment.receipt_helpers.manual_caption.header.cc6f426145": {
+      "after_sha256": "300b78c4d009a638add834ccb8f031f37894ee94fee2c1d4223645f8dc8dc93b",
+      "audience": "admin",
+      "before_sha256": "5a1bb10222ef1255381556cffcabc00442e8343c827472a09e430867a08c4fe8",
+      "reason": "Owner-approved Chili wording or order-hash footer synchronization"
+    },
+    "manual_receipt_final.rejected_report": {
+      "after_sha256": "1e8c56e27611fe54aaa2fd39d8889b4a08a03e06bdcaa8579f541acab6ed5cf7",
+      "audience": "admin",
+      "before_sha256": "fdd96a6352d5cfe2bc9b8b5263c7097c4bb5bd1dfdf69ed1b1b5bd4ffbc01c99",
+      "reason": "Owner-approved Chili wording or order-hash footer synchronization"
+    },
+    "manual_receipt_final.status_rejected": {
+      "after_sha256": "7e5ee30b19e19382a507e6adcf6f977cd3c19d8dd19b842454303e759f1e43bc",
+      "audience": "admin",
+      "before_sha256": "6273e4ce6f60cc345b3c30b7b50a073a8394b153f36cfaa43a52b8caedc015c7",
+      "reason": "Owner-approved Chili wording or order-hash footer synchronization"
+    },
+    "payment.api_payment.code": {
+      "after_sha256": "b5264ad3c7065a2c727846cf8fd0eaa9d5434312ccfd2f6e4eceb92223c02804",
+      "audience": "user",
+      "before_sha256": "05d125322d8d05e1e7d1a5b98b4e39309c9ec41f88caf2b236568ac931c3d301",
+      "reason": "Owner-approved Chili wording or order-hash footer synchronization"
+    },
+    "payment.api_payment.code_acknowledgement": {
+      "after_sha256": "633f0f46bc945ad2da1eff54a9dc081d817ba9383f2174566ea5ae1b15feb80d",
+      "audience": "user",
+      "before_sha256": "8dec3c3adb06765ae23bc28d7c7a3449b487921086533285e851970bf14675eb",
+      "reason": "Owner-approved Chili wording or order-hash footer synchronization"
+    },
+    "payment.api_payment.code_prompt": {
+      "after_sha256": "96db3ef5cd509ef82e19b7175775501bd92c6e9cf3e4b0613e85738ea02e0ced",
+      "audience": "user",
+      "before_sha256": "46dd1a8faecc1fd4dafcd5defa37ec283a53a32a4e279442e5cda8042b2dd4ea",
+      "reason": "Owner-approved Chili wording or order-hash footer synchronization"
+    },
+    "payment.api_payment.gift_invoice": {
+      "after_sha256": "10647fe58d78964c7f780124be40ece6dc9ccf8cdd4ee3b3df076a4cfa0ee5d5",
+      "audience": "user",
+      "before_sha256": "f2b8fa9d8bd111639577256feafcc8194288fd08d6051316e77e57445cc02d5b",
+      "reason": "Owner-approved Chili wording or order-hash footer synchronization"
+    },
+    "payment.checkout.hash_id.286c7d3faf": {
+      "after_sha256": "fb0a73b9c18b6130b1b64fcd6549fc5f2720401bef3580bf66c039903eff522e",
+      "audience": "user",
+      "before_sha256": "9053ed032afcd038b66d21b47e5cab1c229ff08f5949eafb7669956a3b4736c9",
+      "reason": "Owner-approved Chili wording or order-hash footer synchronization"
+    },
+    "payment.checkout.hash_id_local.09f20c4022": {
+      "after_sha256": "d6064e011695f3e8b4fcd89d1f4d74be7cd357636e9f670d534eb8eb462c7074",
+      "audience": "user",
+      "before_sha256": "97f960f5b31bba812ac550d7049bc21fce319be44a9a7b28bae7e04261300f48",
+      "reason": "Owner-approved Chili wording or order-hash footer synchronization"
+    },
+    "payment.checkout.user_i_d_uid_for_log.6a12f817c0": {
+      "after_sha256": "610f13d42b755742a617b98313bb5fdbcc1aa9cdba7401aec788b000bed65b8f",
+      "audience": "admin",
+      "before_sha256": "0a4929667cd2c6856e06b4ac97c99ec736e79507b856e60268f733af2807613e",
+      "reason": "Owner-approved Chili wording or order-hash footer synchronization"
+    },
+    "payment.payment_lifecycle.pay_ux_reference.label.edb6e627ea": {
+      "after_sha256": "6ae5fed047f4dd0de0eca2c1bf1f155d2f348c5614fc983212fea7aa76e81d00",
+      "audience": "user",
+      "before_sha256": "175bd5cfc8dd143e7cd475598ebbab09a229158032daaf660120b23b4a147c05",
+      "reason": "Owner-approved Chili wording or order-hash footer synchronization"
+    },
+    "payment.payment_lifecycle.pay_ux_reference.text.d031212b3c": {
+      "after_sha256": "4ac62acdbf24781e835c45d12ec8253239f20e49ea9ea66c6047aa30a3311e09",
+      "audience": "user",
+      "before_sha256": "64e29f975262019250195b7cc45d87ec7a3ceee1d5994adbc1da6f1ce9653966",
+      "reason": "Owner-approved Chili wording or order-hash footer synchronization"
+    },
+    "payment.payment_lifecycle.pay_ux_status_text.text.5e55076dd5": {
+      "after_sha256": "b404756815f228c3af9ed70a9dcd9a970f6318dea8379f65f70cad9ab87651c6",
+      "audience": "user",
+      "before_sha256": "4e3800349368c4d6e3d2f6ba52dba9ee95acfb6dd54e462766fd67b4173eb439",
+      "reason": "Owner-approved Chili wording or order-hash footer synchronization"
+    },
+    "payment.payment_lifecycle.pay_ux_status_text.text.b2948cf010": {
+      "after_sha256": "4b94995afaa4c4920e0ee5733be4b30d1f2885ebeabf61616f42033a8b1539b8",
+      "audience": "user",
+      "before_sha256": "6a29dae137faed2a348631f38f2728903917367bf8ad198eb2db61aaf4617489",
+      "reason": "Owner-approved Chili wording or order-hash footer synchronization"
+    },
+    "payment.pre_payment.text.c8886e46d5": {
+      "after_sha256": "a4048a83c7c386995027eb68cd93a02f29abdf3598b997bf932d7043f7e36f2e",
+      "audience": "user",
+      "before_sha256": "cc648312e4f97dcdacecff7e3623a517915f58ab073f0cc08eaef6be30f48ce7",
+      "reason": "Owner-approved Chili wording or order-hash footer synchronization"
+    },
+    "renewal.extensions.hash_id.2899228604": {
+      "after_sha256": "5b785bc3a2edc60b6eeaad9e75ec887cab7e50bdc065594964f20b7c9d87a6fa",
+      "audience": "user",
+      "before_sha256": "86147ee68a4c360a4ce718d76fbf41df33d438b810823a5258da0cffdbc525fd",
+      "reason": "Owner-approved Chili wording or order-hash footer synchronization"
+    },
+    "wallet.wallet_recharge.wallet_topup_amount_problem.message.ae69d93a89": {
+      "after_sha256": "6457945e9850196cc4e839d7768e547d046882d1043b0bb259b263304075297b",
+      "audience": "user",
+      "before_sha256": "cc3e8d08f8a0c4413610de8fca335920a062fa9902314413922cd82de6c787bc",
+      "reason": "Owner-approved Chili wording or order-hash footer synchronization"
+    },
+    "wallet.wallet_start.start_wallet_payment.message.1f46b2b87f": {
+      "after_sha256": "c17523b649388c681233009a82465c8df9e4c2b961ba34529bf00db657ea4e63",
+      "audience": "user",
+      "before_sha256": "cfa7a94ef71855ebe910a46336fb011caf8472608d3a61d5c39807a9ef256d91",
+      "reason": "Owner-approved Chili wording or order-hash footer synchronization"
+    },
+    "wallet.wallet_start.start_wallet_payment.message.64ab796d01": {
+      "after_sha256": "6f8eace6dcaa9568c7caeea7e45979b5b47c4b87d36c21e1dfea759660012e4d",
+      "audience": "user",
+      "before_sha256": "852c50410382e1fd30c93d6965be896fd03a3a3fdae80ab7117dfe3e26b0b9e2",
+      "reason": "Owner-approved Chili wording or order-hash footer synchronization"
+    }
+  },
+  "version": 1
+}

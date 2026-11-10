@@ -33,11 +33,16 @@ def main():
     check(removal_controls==4,'server_removal_unsafe_copy_negative_control_missing')
     controls=r5.negative_controls(sides)
     gift_controls=r5.gift_catalog_negative_controls(sides)
-    # Two specific RC25 approved tracking-hash buttons now deliberately use
-    # the compact ID symbol; numeric-user-ID headers remain prohibited.
-    rc25_hash_buttons={
+    # The Owner's later Chili sync extends the established compact hash
+    # footer to ALL payment/renewal inline-keyboard order-hash surfaces.
+    # Explanatory body references and Telegram numeric IDs stay distinct.
+    hash_footer_buttons={
       'manual_payment.receipt_helpers.build_admin_keyboard_with_stats.hash_id.286c7d3faf':'🆔 {hashId}',
-      'manual_payment.manual_approval.manual_standard_report_delivery.hash_id.2899228604':'🆔 {hash_id}'
+      'manual_payment.manual_approval.manual_standard_report_delivery.hash_id.2899228604':'🆔 {hash_id}',
+      'payment.checkout.hash_id_local.09f20c4022':'🆔 {hashIdLocal}',
+      'payment.checkout.hash_id.286c7d3faf':'🆔 {hashId}',
+      'renewal.extensions.hash_id.2899228604':'🆔 {hash_id}',
+      'gateway.gateway_return.perform_payment_effect.hash_id.2899228604':'🆔 {hash_id}',
     }
     # The new automatic-gateway detail shows an actual @handle, never a
     # numeric Telegram/customer ID. This exact legacy label is distinct
@@ -45,11 +50,21 @@ def main():
     handle_key='automatic_gateway_review.handle'
     handle_label='🔖 شناسه تلگرام: @{handle}'
     check(r5.text(merged.get(handle_key,''))==handle_label and
-          all(r5.text(merged.get(k,''))==v for k,v in rc25_hash_buttons.items()) and
-          {k for k,e in merged.items() if '🆔' in r5.text(e)}==set(rc25_hash_buttons) and
+          all(r5.text(merged.get(k,''))==v for k,v in hash_footer_buttons.items()) and
+          {k for k,e in merged.items() if '🆔' in r5.text(e)}==set(hash_footer_buttons) and
           not any(compositions.numeric_id_variant(r5.text(e))
                   for k,e in merged.items() if k!=handle_key),
           'approved_tracking_hash_buttons_only_no_numeric_user_id_header')
+    checkout=(ROOT/'src/Finance/Routes/Checkout.php').read_text()
+    check("\\achbotMessage('payment.checkout.hash_id.2899228604', ['hash_id' => $hashId])" in checkout,
+          'checkout_admin_body_must_not_reuse_compact_footer_key')
+    check(r5.text(merged['payment.api_payment.gift_invoice']).count('<b>')==4 and
+          '🧾 اطلاعات شارژ:' in r5.text(merged['wallet.wallet_start.start_wallet_payment.message.1f46b2b87f']) and
+          '🎫 شناسه عددی' in r5.text(merged['payment.payment_lifecycle.pay_ux_reference.text.d031212b3c']) and
+          '<b>فقط کد بفرستید</b>' in r5.text(merged['payment.api_payment.code_prompt']) and
+          '<b>گیفت کارت توسط API تشخیص داده نشد' in
+          r5.text(merged['manual_payment.api_payment.code_evidence_unrecognized']),
+          'live_chili_copy_semantics_or_gift_staff_caution_missing')
     # Data-only code/URI/native labels and continuation fragments stay intact.
     # These four intentionally stable units are composed inside Persian sentences.
     expected_fragments=['notifications.warnings.send.1e5349d9b2','notifications.warnings.send.0458ad0612','jobs.gift2all.gift_text.8f714dee13','jobs.gift2all.text.b70363d685']

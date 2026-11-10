@@ -406,7 +406,6 @@ return !empty($GLOBALS['spec']['fail_staff'])?null:(object)['ok'=>true];}""")
             f"SELECT TIMESTAMPDIFF(SECOND,NOW(),evidence_next_check_at) "
             f"FROM payment_attempts WHERE pay_row_id={n}"))
         assert 0<=remaining<=20,remaining
-        cases.append('bank_sms_monitoring_eligible_for_next_minute_tick_without_new_worker')
         due(n);good=sms(n);before=int(query(work,env,'SELECT wallet FROM users WHERE userid=1001'));r=call(pay=n);assert r['result']=='confirmed' and state(n)=='approved' and APIs.rows[good]['status']=='used',r
         assert int(query(work,env,'SELECT wallet FROM users WHERE userid=1001'))==before+int(query(work,env,f'SELECT price FROM pays WHERE id={n}'))
         assert call(op='settle',pay=n)['result']=='settled';assert APIs.rows[bad]['status']=='ready';cases.append('full_exact_quote_only_and_wallet_replay')

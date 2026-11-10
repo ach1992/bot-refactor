@@ -294,7 +294,7 @@ def main():
         assert third['result']==10
         assert count(w,e,'payment_message_refs',
                      f'pay_row_id={overflow} AND synced_digest IS NOT NULL')==12
-        cases.append('over_ten_messages_retry_only_after_cooldown_without_starvation')
+        cases.append('over_ten_messages_markup_failure_rotates_without_starvation')
         transport=add(w,e,'transport-failed-edit',who=9031,kind='INCREASE_WALLET')
         assert run(w,e,dict(action='track',id=transport,chat_id=9031,
                             message_id=2001))['result'] is True
@@ -309,7 +309,6 @@ def main():
         assert noop['result']==1 and [x['method'] for x in noop['events']]==['editMessageText']
         assert count(w,e,'payment_message_refs',
                      f'pay_row_id={transport} AND synced_digest IS NOT NULL')==1
-        cases.append('telegram_transport_failure_skips_duplicate_fallback_and_noop_acks_text')
         for mid in (90,91):
             run(w,e,dict(action='track',id=uncertain,message_id=mid))
         protected=run(w,e,dict(action='sync',id=uncertain))

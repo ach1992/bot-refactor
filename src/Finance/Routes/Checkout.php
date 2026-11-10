@@ -998,7 +998,7 @@ if (is_string($data) && strlen($data) <= 64 && preg_match('/\ApayBuyWithWallet([
 
 		(achbotNotifyAdmins('sendMessage', ['text'=>\achbotMessage('payment.checkout.message.54c81d71b7') .
 			\achbotMessage('payment.checkout.user_i_d_uid_for_log.6a12f817c0', ['uidForLog' => $uidForLog]) .
-			\achbotMessage('payment.checkout.hash_id.286c7d3faf', ['hashId' => $hashId]),
+			\achbotMessage('payment.checkout.hash_id.2899228604', ['hash_id' => $hashId]),
                     'reply_markup'=>null,'parse_mode'=>null],
                     ['primary'=>$admin,'report_channel'=>null])[0]['response']??null);
 		return;

@@ -56,7 +56,8 @@ def main() -> dict:
     groups=json.loads(shell)
     current={a:historical.flatten(v) for a,v in groups.items()}
     added=historical.GIFT_PRECHECK_SHA256
-    assert len(current['admin'])==1911+len(added['admin']) and \
+    chili=historical.chili_copy_reference()[0]
+    assert len(current['admin'])==1911+len(added['admin'])+len(chili['added']) and \
         len(current['user'])==942+len(added['user'])
     assert not set(current['admin'])&set(current['user'])
     # Verify exact current additions and recipient placement before

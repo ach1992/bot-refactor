@@ -1831,8 +1831,15 @@ function achbotManualGiftReviewText(string $caption,string $code,?array $screen=
     $amount=is_int($screen['redeem_amount']??null) && $screen['redeem_amount']>0
         ? number_format($screen['redeem_amount']).' '.$unit
         : achbotMessage('manual_payment.api_payment.gift_not_verified');
+    // No API details: show the code-integrity hint to staff, not on verified cards.
+    $unrecognized=($screen['redeem_amount']??null)===null &&
+        ($screen['order_number']??null)===null &&
+        ($screen['created_at']??null)===null;
+    $codeKey=$unrecognized
+        ? 'manual_payment.api_payment.code_evidence_unrecognized'
+        : 'manual_payment.api_payment.code_evidence';
     return $caption."\n\n".
-        achbotMessageHtml('manual_payment.api_payment.code_evidence',['code'=>$code])."\n".
+        achbotMessageHtml($codeKey,['code'=>$code])."\n".
         achbotMessageHtml('manual_payment.api_payment.gift_details',[
             'amount'=>$amount,
             'order'=>$screen['order_number']??$missing,
@@ -2010,7 +2017,7 @@ function buildCartToCartInfoMessage(array $paymentKeys, array $mainValues, int $
         if ($method === 'bank_transfer' &&
             (trim((string)($intent['account'] ?? '')) === '' ||
              trim((string)($intent['holder'] ?? '')) === '')) return '';
-        if(achbotManualTypedGift($connection,$pay,$method))return achbotMessageHtml('payment.api_payment.gift_invoice',['amount'=>(string)$amount])."\n\n".achbotMessage('payment.api_payment.code_prompt');
+        if(achbotManualTypedGift($connection,$pay,$method))return achbotMessageHtml('payment.api_payment.gift_invoice',['amount'=>number_format($amount)]);
         $template = (string)($mainValues[$method === 'gift_card' ?
             'brw_cart_to_cart_gift' : 'brw_cart_to_cart_detail'] ?? '');
         return strtr($template, [
