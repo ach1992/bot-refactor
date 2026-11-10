@@ -731,6 +731,17 @@ function achbotPayUxStatusKeyboard(string $hash): string {
 }
 
 /**
+ * A Telegram no-op response is an acknowledgement that the requested text
+ * AND keyboard are already present. A markup-only no-op is not text proof.
+ */
+function achbotPayUxEditAccepted($reply): bool {
+    return is_object($reply) && (($reply->ok ?? false) === true ||
+        ((int)($reply->error_code ?? 0) === 400 &&
+         is_string($reply->description ?? null) &&
+         str_contains(strtolower($reply->description), 'message is not modified')));
+}
+
+/**
  * Best-effort Telegram clean-up: each registered payment message is rewritten
  * to its current status, or at minimum has its old clickable URL removed.
  * A failed edit never rewinds or changes a financial transition.
@@ -769,6 +780,7 @@ function achbotPayUxSyncMessages(mysqli $db, int $payId): int {
         $digest=hash('sha256',$state."\n".$text."\n".$keyboard);
         $stmt=$db->prepare('SELECT id,chat_id,message_id,kind,synced_digest
                             FROM payment_message_refs WHERE pay_row_id=?
+                              AND updated_at<=NOW(6)
                               AND (synced_digest IS NULL OR synced_digest<>?)
                             ORDER BY updated_at ASC,id ASC LIMIT 10');
         $stmt->bind_param('is',$payId,$digest);$stmt->execute();
@@ -781,7 +793,9 @@ function achbotPayUxSyncMessages(mysqli $db, int $payId): int {
                 // Never edit a foreign/bad reference; rotate it out so other
                 // messages remain eligible rather than starving indefinitely.
                 $rowId=(int)$item['id'];
-                $stmt=$db->prepare('UPDATE payment_message_refs SET updated_at=NOW(6)
+                // Keep corrupt/foreign references, but do not spin on them.
+                $stmt=$db->prepare('UPDATE payment_message_refs
+                                    SET updated_at=DATE_ADD(NOW(6),INTERVAL 3 MINUTE)
                                     WHERE id=? AND pay_row_id=?');
                 $stmt->bind_param('ii',$rowId,$payId);
                 $stmt->execute();$stmt->close();
@@ -790,6 +804,7 @@ function achbotPayUxSyncMessages(mysqli $db, int $payId): int {
             // Text first changes the instructions AND removes stale provider URL.
             $ok=false;
             $fullTextEdited=false;
+            $transportFailed=false;
             if ($item['kind']==='text') {
                 try {
                     $res=bot('editMessageText',[
@@ -798,9 +813,10 @@ function achbotPayUxSyncMessages(mysqli $db, int $payId): int {
                         'reply_markup'=>$keyboard,
                         'disable_web_page_preview'=>true
                     ]);
-                    $ok=is_object($res) && ($res->ok ?? false)===true;
+                    $ok=achbotPayUxEditAccepted($res);
                     $fullTextEdited=$ok;
-                } catch (Throwable $ignored) {}
+                    $transportFailed=$res===null || $res===false;
+                } catch (Throwable $ignored) { $transportFailed=true; }
             }
             if (!$ok && $item['kind']==='media') {
                 try {
@@ -809,11 +825,13 @@ function achbotPayUxSyncMessages(mysqli $db, int $payId): int {
                         'caption'=>$text,'parse_mode'=>'HTML',
                         'reply_markup'=>$keyboard
                     ]);
-                    $ok=is_object($res) && ($res->ok ?? false)===true;
+                    $ok=achbotPayUxEditAccepted($res);
                     $fullTextEdited=$ok;
-                } catch (Throwable $ignored) {}
+                    $transportFailed=$res===null || $res===false;
+                } catch (Throwable $ignored) { $transportFailed=true; }
             }
-            if (!$ok) {
+            // A failed transport affects markup too; do not double-hit it.
+            if (!$ok && !$transportFailed) {
                 try {
                     $res=bot('editMessageReplyMarkup',[
                         'chat_id'=>$chat,'message_id'=>$message,
@@ -827,10 +845,14 @@ function achbotPayUxSyncMessages(mysqli $db, int $payId): int {
             }
             if (!$fullTextEdited) {
                 // Even a successful markup-only action is not a truthful text
-                // synchronization. Keep it retryable; rotate this attempted
-                // row behind not-yet-attempted messages for this pay ID.
+                // synchronization. Preserve the reference, but delay an
+                // unchanged failure for three minutes to avoid a Telegram
+                // request storm. A new reference is eligible immediately.
+                // This scheduler already owns updated_at ordering; a future
+                // value is a retry-not-before hint, not proof of delivery.
                 $rowId=(int)$item['id'];
-                $stmt=$db->prepare('UPDATE payment_message_refs SET updated_at=NOW(6)
+                $stmt=$db->prepare('UPDATE payment_message_refs
+                                    SET updated_at=DATE_ADD(NOW(6),INTERVAL 3 MINUTE)
                                     WHERE id=? AND pay_row_id=?');
                 $stmt->bind_param('ii',$rowId,$payId);
                 $stmt->execute();$stmt->close();
@@ -922,6 +944,7 @@ function achbotPayUxMaintain(mysqli $db, int $maxRows=45): array {
         try {
             $stmt=$db->prepare(
                 "SELECT pay_row_id FROM payment_message_refs
+                 WHERE updated_at<=NOW(6)
                  GROUP BY pay_row_id ORDER BY MIN(updated_at) ASC LIMIT {$messageBatch}"
             );
             $stmt->execute();
@@ -932,7 +955,7 @@ function achbotPayUxMaintain(mysqli $db, int $maxRows=45): array {
                 // Fair scanning; a failed Telegram edit remains eligible later.
                 $stmt=$db->prepare(
                     'UPDATE payment_message_refs SET updated_at=NOW(6)
-                     WHERE pay_row_id=?'
+                     WHERE pay_row_id=? AND updated_at<=NOW(6)'
                 );
                 $stmt->bind_param('i',$id);$stmt->execute();$stmt->close();
             }

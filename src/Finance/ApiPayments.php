@@ -689,7 +689,20 @@ function achbotApiPaymentCheckWithinBudget(mysqli $db,int $id): string {
         $status=$claim['attempt']['provider']==='bank_transfer'?achbotApiPaymentCheckBank($db,$claim):achbotApiPaymentCheckGift($db,$claim);
 
     }catch(Throwable $e){error_log('achbot_api_payment_check_deferred pay_id='.$id);$status='review';}
-    finally {achbotPaymentEvidenceDefer($db,$id,$token,in_array($status,['confirmed','settled'],true)?'proven':(in_array($status,['review','unavailable'],true)?'review':(in_array($status,['used','expired','revoked','mismatch'],true)?'invalid_code':($status==='pending'?'uncertain':($status==='manual'?'manual':'monitoring')))),60);}
+    finally {
+        // The one-minute Cron is already the polling throttle. A 60-second
+        // post-receipt hint can miss the very next tick and add another
+        // minute when bank SMS arrives just after the first check. Keep
+        // provider Retry-After and evidence/operation idempotency fences.
+        $delay=($claim['attempt']['provider']==='bank_transfer' &&
+            in_array($status,['monitoring','pending'],true))?20:60;
+        achbotPaymentEvidenceDefer($db,$id,$token,
+            in_array($status,['confirmed','settled'],true)?'proven':
+            (in_array($status,['review','unavailable'],true)?'review':
+            (in_array($status,['used','expired','revoked','mismatch'],true)?'invalid_code':
+            ($status==='pending'?'uncertain':($status==='manual'?'manual':'monitoring')))),
+            $delay);
+    }
     $pay=achbotApiPaymentRow($db,$id);if($pay){
         $c=achbotApiPaymentContext($db,(string)$pay['hash_id']);if($c)achbotApiPaymentSyncInvoice($db,$c);
         if(in_array($status,['used','revoked','expired','mismatch'],true))achbotApiPaymentNotice($db,$pay,$status);

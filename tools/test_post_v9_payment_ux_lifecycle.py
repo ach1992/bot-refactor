@@ -31,6 +31,12 @@ function bot($method,$data=[]) {
         'message_id'=>$data['message_id']??0,'keyboard'=>$data['reply_markup']??'',
         'text'=>$data['text']??''];
     $fail=$GLOBALS['spec']['fail_edit']??false;
+    if (($GLOBALS['spec']['transport_failure']??false) &&
+        $method==='editMessageText') return null;
+    if (($GLOBALS['spec']['telegram_noop']??false) &&
+        $method==='editMessageText')
+        return (object)['ok'=>false,'error_code'=>400,
+            'description'=>'Bad Request: message is not modified'];
     if (($GLOBALS['spec']['fail_text_only']??false) &&
         $method==='editMessageText') $fail=true;
     return (object)['ok'=>!$fail];
@@ -240,12 +246,20 @@ def main():
         assert fail['result']==0
         assert count(w,e,'payment_message_refs',
                      f'pay_row_id={msg} AND synced_digest IS NOT NULL')==0
+        assert count(w,e,'payment_message_refs',
+                     f'pay_row_id={msg} AND updated_at>NOW(6)')==3
+        no_retry=run(w,e,dict(action='sync',id=msg))
+        assert no_retry['result']==0 and not no_retry['events'],no_retry
+        sql(w,e,f"UPDATE payment_message_refs SET updated_at=NOW(6)-INTERVAL 1 SECOND WHERE pay_row_id={msg}")
         markup=run(w,e,dict(action='sync',id=msg,fail_text_only=True))
         assert markup['result']==0
         assert len([x for x in markup['events'] if x['method']=='editMessageReplyMarkup'])==3
         assert count(w,e,'payment_message_refs',
                      f'pay_row_id={msg} AND synced_digest IS NOT NULL')==0
         cases.append('markup_only_removes_links_but_does_not_claim_text_synced')
+        assert count(w,e,'payment_message_refs',
+                     f'pay_row_id={msg} AND updated_at>NOW(6)')==3
+        sql(w,e,f"UPDATE payment_message_refs SET updated_at=NOW(6)-INTERVAL 1 SECOND WHERE pay_row_id={msg}")
         good=run(w,e,dict(action='sync',id=msg))
         edits=[x for x in good['events'] if x['method']=='editMessageText']
         assert len(edits)==3 and good['result']==3,(good,edits)
@@ -266,18 +280,36 @@ def main():
                     if x['method']=='editMessageReplyMarkup'])==10
         assert count(w,e,'payment_message_refs',
                      f'pay_row_id={overflow} AND synced_digest IS NOT NULL')==0
-        # The first ten were attempted but not truthfully synchronized.
-        # Microsecond last-attempt rotation MUST serve the other two next.
+        # Failed ten receive cooldown, but the two untouched references
+        # remain immediately eligible: no starvation and no repeated storm.
         second=run(w,e,dict(action='sync',id=overflow))
         updated=[x['message_id'] for x in second['events']
                  if x['method']=='editMessageText']
-        assert updated[:2]==[1110,1111] and len(updated)==10,(second,updated)
-        assert second['result']==10
+        assert updated==[1110,1111] and second['result']==2,(second,updated)
+        immediate=run(w,e,dict(action='sync',id=overflow))
+        assert immediate['result']==0 and not immediate['events'],immediate
+        sql(w,e,f"UPDATE payment_message_refs SET updated_at=NOW(6)-INTERVAL 1 SECOND "
+                f"WHERE pay_row_id={overflow} AND synced_digest IS NULL")
         third=run(w,e,dict(action='sync',id=overflow))
-        assert third['result']==2
+        assert third['result']==10
         assert count(w,e,'payment_message_refs',
                      f'pay_row_id={overflow} AND synced_digest IS NOT NULL')==12
-        cases.append('over_ten_messages_markup_failure_rotates_without_starvation')
+        cases.append('over_ten_messages_retry_only_after_cooldown_without_starvation')
+        transport=add(w,e,'transport-failed-edit',who=9031,kind='INCREASE_WALLET')
+        assert run(w,e,dict(action='track',id=transport,chat_id=9031,
+                            message_id=2001))['result'] is True
+        sql(w,e,f"UPDATE pays SET state='paid' WHERE id={transport}")
+        bad_transport=run(w,e,dict(action='sync',id=transport,transport_failure=True))
+        assert bad_transport['result']==0
+        assert [x['method'] for x in bad_transport['events']]==['editMessageText'],bad_transport
+        assert count(w,e,'payment_message_refs',
+                     f'pay_row_id={transport} AND updated_at>NOW(6)')==1
+        sql(w,e,f"UPDATE payment_message_refs SET updated_at=NOW(6)-INTERVAL 1 SECOND WHERE pay_row_id={transport}")
+        noop=run(w,e,dict(action='sync',id=transport,telegram_noop=True))
+        assert noop['result']==1 and [x['method'] for x in noop['events']]==['editMessageText']
+        assert count(w,e,'payment_message_refs',
+                     f'pay_row_id={transport} AND synced_digest IS NOT NULL')==1
+        cases.append('telegram_transport_failure_skips_duplicate_fallback_and_noop_acks_text')
         for mid in (90,91):
             run(w,e,dict(action='track',id=uncertain,message_id=mid))
         protected=run(w,e,dict(action='sync',id=uncertain))
