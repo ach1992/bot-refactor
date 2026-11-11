@@ -281,6 +281,11 @@ if (!function_exists('processWalletPayment')) {
                             (int)$payInfo['id'],$quantity,$quantity,
                             $isCustom || $manualRemark);
                         $generatedValid=achbotEffectValidUsername($sample,'marzban');
+                        // Keep an invalid configured purchase prefix from
+                        // bypassing the wallet pre-debit source preflight.
+                        if (!$isCustom && !$manualRemark &&
+                            !achbotEffectValidUsername($serverRemark))
+                            $generatedValid=false;
                     } catch (Throwable $ignored) {$generatedValid=false;}
                 }
                 if (!$plan || (int)$plan['server_id']!==$serverId ||

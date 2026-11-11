@@ -644,8 +644,10 @@ if (!function_exists('createServerAccount')) {
         $remark,$volume,$days,$uniqid,$protocol,$port,$expireMicrodate,
         $netType,$rahgozar,$limitIp,?string $operationNote=null,
         ?int $fixedExpire=null,?array $effectTarget=null): array {
-        if ($serverType!=='marzban' || (int)$inboundId!==0 ||
-            $operationNote===null || $operationNote==='' ||
+        if ($serverType!=='marzban' || (int)$inboundId!==0)
+            return [(object)['success'=>false,'msg'=>'unsupported_panel'],
+                (string)$remark,(int)$port];
+        if ($operationNote===null || $operationNote==='' ||
             $fixedExpire===null || $effectTarget===null ||
             preg_match('/^[a-f0-9]{32}$/D',$operationNote)!==1)
             throw new RuntimeException('native_create_pinned_target_required');

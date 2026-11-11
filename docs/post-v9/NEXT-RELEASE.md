@@ -480,3 +480,14 @@ port helper uses a locked counter for auto mode, and random mode has no counter
 side effect. The source-real original-schema NOWPayments (344 cases) and
 agent-zero-price Native (46 cases) tests passed locally on disposable MariaDB;
 this is **not** a PHP 8.5 CI verdict or installed verification.
+
+PHP 8.5 CI remediation of the Native CREATE repair: the current public
+createServerAccount facade now returns a bounded unsupported_panel result
+without invoking any provider for retired/non-Marzban/inbound variants,
+matching the active Marzban-only preflight. Current wallet settlement still
+rejects malformed administrator-configured purchase prefixes BEFORE debit
+even when the final generated Marzban username is independent of the
+randomized base. The source-real native Marzban preflight (five negative
+controls) and wallet checkout (34 cases) passed locally; exact-current CI
+requires a fresh run. No old helper implementation or compatibility shim
+was restored.
