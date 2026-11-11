@@ -121,6 +121,9 @@ DRIVER = plans.DRIVER.replace(" } elseif($op==='toggle'){", """ } elseif($op==='
   $q->bind_param('sisiiiii',$hash,$actor,$type,$plan,$server,$order,$price,$now);
   $id=achbotPayUxInsertDraft($connection,$actor,$q);$q->close();
   $out=$id>0?'issued':'denied';
+ } elseif($op==='review_payment_journal'){
+  require_once $root.'/src/Purchase/Core.php';
+  $out=achbotServicePaymentJournalClear($connection,(int)$spec['order']);
  } elseif($op==='review_superseded_payment'){
   require_once $root.'/src/Finance/PaymentLifecycle.php';
   $id=(int)$spec['pay'];
@@ -313,6 +316,48 @@ def main():
                 f" VALUES('{hashid}',1002,'{payment_type}',119,2,{peer},137,UNIX_TIMESTAMP(),'{state}')")
         return int(h['db'](f"SELECT id FROM pays WHERE hash_id='{hashid}'"))
 
+    # A previously committed service-change intent must stop any NEW
+    # invoice or API claim from starting between Native GET / PUT / finalize.
+    # Foreign linked physical owners must be fenced by old_rows, not only
+    # the selected journal source_order_id.
+    for provider in ('marzban','pasarguard'):
+        with harness(provider) as h:
+            seeded(h)
+            db=h['db'];oid=h['oid'];peer=h['peer']
+            yes(h['call']('review_payment_journal',order=oid) is True and
+                h['call']('review_payment_journal',order=peer) is True,
+                provider+'_payment_subject_admits_no_active_native_journal')
+            # The *real* purchasing boundary must use the same current
+            # journal check before accepting an order-backed old product.
+            original=invoice(h,'journalquote','pending',order=peer)
+            if provider=='marzban':
+                pre=h['call']('review_superseded_payment',pay=original)
+                yes(pre['eligible'] is True,
+                    'marzban_real_renew_invoice_current_without_plan_journal')
+            record=json.dumps({'version':1,'old_rows':[
+                {'id':oid,'fileid':119,'server_id':2},
+                {'id':peer,'fileid':119,'server_id':2}]})
+            db("INSERT INTO service_plan_changes (lock_key,source_order_id,"
+               "plan_id,server_id,provider,state,intent_json) VALUES "
+               f"('synthetic-payment-journal',{oid},119,2,'{provider}',"
+               "'dispatching','"+record+"')")
+            yes(h['call']('review_payment_journal',order=oid) is False and
+                h['call']('review_payment_journal',order=peer) is False,
+                provider+'_pending_native_journal_blocks_selected_and_shared_owner_payment')
+            if provider=='marzban':
+                blocked=h['call']('review_superseded_payment',pay=original)
+                yes(blocked['eligible'] is False and
+                    db('SELECT state FROM pays WHERE id='+str(original))=='pending',
+                    'marzban_real_renew_invoice_denied_during_native_journal_without_financial_side_effect')
+            db("UPDATE service_plan_changes SET state='committed'"
+               " WHERE lock_key='synthetic-payment-journal'")
+            yes(h['call']('review_payment_journal',order=oid) is True and
+                h['call']('review_payment_journal',order=peer) is True,
+                provider+'_committed_native_journal_reopens_new_payment_admission')
+            if provider=='marzban':
+                again=h['call']('review_superseded_payment',pay=original)
+                yes(again['eligible'] is True,
+                    'marzban_new_invoice_reenabled_after_native_journal_commit')
     # Issue #144: all old, not-yet-dispatched service payments become
     # non-payable without discarding issuer/receipt/provider evidence.
     for provider in ('marzban','pasarguard'):
@@ -322,6 +367,7 @@ def main():
             db('UPDATE pays SET user_id=1001 WHERE id='+str(pending))
             issued=invoice(h,'issued','send',order=h['peer'])
             review=invoice(h,'review','have_sent',order=h['peer'])
+            legacy=invoice(h,'oldencoded','pending',f'INCREASE_DAY_{h["peer"]}_3',0)
             db("UPDATE pays SET payid='old-provider-id',message_id=3131,"
                "chat_id='1002' WHERE id="+str(issued))
             db("INSERT INTO payment_attempts (pay_row_id,provider,order_hash,"
@@ -332,7 +378,7 @@ def main():
                "quote_amount,quote_currency,local_amount_toman,stage,provider_status)"
                " SELECT id,'bank_transfer',hash_id,137,'toman',137,'review','verification_uncertain'"
                " FROM pays WHERE id="+str(review))
-            ids=f'{pending},{issued},{review}'
+            ids=f'{pending},{issued},{review},{legacy}'
             old_details=db('SELECT id,hash_id,payid,user_id,type,plan_id,server_id,order_id,price,message_id,chat_id FROM pays WHERE id IN ('+ids+') ORDER BY id')
             before=subject(h);money=finance(h);puts=len(h['writes']())
             plan(h,120)
@@ -347,7 +393,7 @@ def main():
                 provider+'_old_open_payments_closed_and_new_native_plan_committed_once')
             yes(db('SELECT id,hash_id,payid,user_id,type,plan_id,server_id,order_id,price,message_id,chat_id FROM pays WHERE id IN ('+ids+') ORDER BY id')==old_details and
                 db('SELECT state FROM pays WHERE id IN ('+ids+') ORDER BY id')==
-                'service_superseded\nservice_superseded\nservice_superseded',
+                'service_superseded\nservice_superseded\nservice_superseded\nservice_superseded',
                 provider+'_old_invoice_and_receipt_bytes_preserved_only_state_retired')
             yes(h['call']('review_superseded_payment',pay=issued)==
                 {'state':'service_superseded','eligible':False},
@@ -546,7 +592,10 @@ def main():
             db(f'DELETE FROM service_effects WHERE id={effects}')
 
             legacy=invoice(h,'legacyaddon','pending',f'INCREASE_DAY_{h["peer"]}_3',0)
-            denied(h,'legacy_type_encoded_addon_unclaimed')
+            # An unrelated actor cannot make a foreign customer's old quote
+            # appear settled just by forging its service-order ID in type.
+            db('UPDATE pays SET user_id=1001 WHERE id='+str(legacy))
+            denied(h,'foreign_legacy_type_encoded_addon_unclaimed')
             db(f'DELETE FROM pays WHERE id={legacy}')
 
             # A Panel Group is the administrator's independent declaration

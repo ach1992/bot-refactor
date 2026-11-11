@@ -31,6 +31,9 @@ published RC30 ZIP or the active Chili installation.
   is claimed. Late signed IPN evidence is preserved, but old product
   fulfillment and customer/staff payment callbacks are denied by original
   state-CAS checks. Customer status explains the financial-review path.
+  A new service-bound invoice also checks the CURRENT uncommitted plan
+  journal for the selected owner and every old_rows shared owner, so it cannot
+  start a fresh old-plan claim during the Native GET/PUT/finalize gap.
 - **Strict safety exceptions:** a checking/fulfilling claim, an unreconciled
   Native effect, an active API evidence lease, a reserved/redeemed gift/SMS
   operation, an unknown 003/014 schema or a bound foreign owner cannot be

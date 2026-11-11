@@ -421,6 +421,48 @@ function achbotOrderAddonEligibility($connection,array $order,string $kind,?arra
 }
 }
 
+/**
+ * A new quote cannot claim a shared physical account while a Native plan
+ * change has a durable, not-yet-committed journal, including when another
+ * owner is the selected source. Called after order validation/locking.
+ *
+ * The 017 table is optional only when truly absent. An invalid installed
+ * journal or unreadable old_rows is NOT proof of eligibility.
+ */
+if (!function_exists('achbotServicePaymentJournalClear')) {
+    function achbotServicePaymentJournalClear(mysqli $db,int $orderId,bool $lock=false): bool {
+        if ($orderId<=0) return false;
+        try {
+            $q=$db->query("SELECT TABLE_TYPE,ENGINE FROM information_schema.TABLES
+                WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='service_plan_changes'");
+            if (!($q instanceof mysqli_result)) return false;
+            $row=$q->fetch_assoc();$count=$q->num_rows;$q->free();
+            if ($row===null) return $count===0;
+            if ($count!==1 || $row['TABLE_TYPE']!=='BASE TABLE' ||
+                strcasecmp((string)$row['ENGINE'],'InnoDB')!==0) return false;
+            $q=$db->query("SELECT source_order_id,intent_json
+                FROM service_plan_changes WHERE state<>'committed' ORDER BY id".
+                ($lock?' FOR UPDATE':''));
+            if (!($q instanceof mysqli_result)) return false;
+            while ($pending=$q->fetch_assoc()) {
+                if ((int)$pending['source_order_id']===$orderId) { $q->free();return false; }
+                $intent=json_decode((string)$pending['intent_json'],true);
+                if (!is_array($intent) || !isset($intent['old_rows']) ||
+                    !is_array($intent['old_rows']) || count($intent['old_rows'])>10000) {
+                    $q->free();return false;
+                }
+                foreach ($intent['old_rows'] as $peer) {
+                    if (!is_array($peer) || (int)($peer['id']??0)<=0) {
+                        $q->free();return false;
+                    }
+                    if ((int)$peer['id']===$orderId) { $q->free();return false; }
+                }
+            }
+            $q->free();return true;
+        } catch (Throwable $error) { return false; }
+    }
+}
+
 if (!function_exists('achbotSupportsPaymentSubject')) {
     function achbotSupportsPaymentSubject($connection, $pay, bool $lock = false)
     {
@@ -454,9 +496,10 @@ if (!function_exists('achbotSupportsPaymentSubject')) {
                 achbotSupportsMarzbanPlan($connection, $pid, 0, $sid, $lock);
         }
         if ($type === 'RENEW_ACCOUNT') {
+            $oid=(int)($pay['order_id']??0);
             return $pid > 0 && achbotSupportsOrder(
-                $connection, (int)($pay['order_id'] ?? 0), $pid, $uid > 0 ? $uid : null, $lock
-            );
+                $connection, $oid, $pid, $uid > 0 ? $uid : null, $lock
+            ) && achbotServicePaymentJournalClear($connection,$oid,$lock);
         }
         if (preg_match('/^INCREASE_(DAY|VOLUME)_(\d+)_(\d+)$/', $type, $match)) {
             $oid = (int)$match[2];
@@ -465,6 +508,7 @@ if (!function_exists('achbotSupportsPaymentSubject')) {
                 $connection, $oid, $pid > 0 ? $pid : null, $uid > 0 ? $uid : null, $lock
             )) return false;
             if (!empty($pay['order_id']) && (int)$pay['order_id'] !== $oid) return false;
+            if (!achbotServicePaymentJournalClear($connection,$oid,$lock)) return false;
             if (achbotPinnedAddonUnits($pay)===null) return false;
             $stmt=$connection->prepare('SELECT id,server_id,remark,userid FROM orders_list WHERE id=?'.($lock?' FOR UPDATE':''));
             $stmt->bind_param('i',$oid);$stmt->execute();$order=$stmt->get_result()->fetch_assoc();$stmt->close();
