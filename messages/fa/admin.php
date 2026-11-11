@@ -834,7 +834,7 @@ return [
         'api_payment.code_revoked' => 'کد گیفت‌کارت طبق API باطل شده است.',
         'api_payment.code_expired' => 'کد گیفت‌کارت طبق API منقضی شده است.',
         'api_payment.code_mismatch' => 'مبلغ گیفت‌کارت طبق API با فاکتور برابر نیست؛ کد مصرف نشد',
-        'api_payment.auto_approved' => 'تایید خودکار توسط API',
+        'api_payment.auto_approved' => '🔑 تایید خودکار توسط API',
         'api_payment.code_evidence' => ['text' => "🎁 کد گیفت‌کارت:\n<code>{code}</code>", 'parameters' => ['code']],
         'api_payment.code_evidence_unrecognized' => ['text' => "🎁 کد گیفت‌کارت: <b>گیفت کارت توسط API تشخیص داده نشد، چک کنید کد تغییر یافته یا اشتباه نباشد.</b>\n<code>{code}</code>", 'parameters' => ['code']],
         'api_payment.gift_details' => ['text' => "💰 مبلغ بازخرید: {amount}\n🧾 شماره سفارش: {order}\n📅 تاریخ ایجاد: {created}", 'parameters' => ['amount', 'order', 'created']],
