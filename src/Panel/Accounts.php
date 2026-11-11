@@ -201,7 +201,19 @@ function getMarzbanUser($server_id, $remark, $token = null, bool $strict = false
 
     if($token == null) $token = getMarzbanToken($server_id,$expectedPanelUrl,$effectTarget);
     if(isset($token->detail)){return (object) ['success'=>false, 'msg'=>$token->detail];}
-    
+    // A timed-out or malformed auth response must not be used as a Bearer
+    // token. Preserve the original uncertain readback contract; report one
+    // bounded, non-secret failure per server per PHP invocation.
+    if (!is_object($token) || !is_string($token->access_token??null) ||
+        $token->access_token==='') {
+        static $reportedAuthFailures=[];
+        if (!isset($reportedAuthFailures[(int)$server_id])) {
+            $reportedAuthFailures[(int)$server_id]=true;
+            error_log('achbot_marzban_auth_unverified server_id='.(int)$server_id.' stage=get_user');
+        }
+        return (object)['success'=>false,'uncertain'=>$strict,'msg'=>'marzban_auth_unverified'];
+    }
+
     $panel_url .= '/api/user/' . urlencode($remark);
 
     $curl = curl_init();

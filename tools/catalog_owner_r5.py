@@ -383,6 +383,14 @@ GIFT_PRECHECK_SHA256={
 CHILI_SYNC_BASE='220d016267bda0a8363ec6453db2e530b26f4485'
 CHILI_SYNC_MANIFEST=ROOT/'tools/text_catalog_chili_sync_20261111.json'
 
+# One later Owner-approved button prefix. Keep the RC28/RC29 37+1
+# historical Chili manifest immutable; project just this exact line back
+# before comparing every original source byte and every previous entry pin.
+CHILI_APPROVED_LATER_KEY='manual_payment.api_payment.auto_approved'
+CHILI_APPROVED_LATER_LINE_BEFORE="        'api_payment.auto_approved' => 'تایید خودکار توسط API',"
+CHILI_APPROVED_LATER_LINE_AFTER="        'api_payment.auto_approved' => '🔑 تایید خودکار توسط API',"
+
+
 @functools.lru_cache(maxsize=1)
 def chili_copy_reference():
     definition=json.loads(CHILI_SYNC_MANIFEST.read_text())
@@ -412,13 +420,20 @@ def chili_copy_reference():
         name='messages/fa/'+audience+'.php'
         before=command('git','show',CHILI_SYNC_BASE+':'+name).decode('utf-8')
         after=(ROOT/name).read_text()
-        left=lines(before);right=lines(after)
+        historical_after=after
+        if audience=='admin':
+            original=CHILI_APPROVED_LATER_LINE_BEFORE+'\n'
+            approved=CHILI_APPROVED_LATER_LINE_AFTER+'\n'
+            check(before.count(original)==1 and after.count(approved)==1,
+                  'approved_api_button_prefix_exact_source')
+            historical_after=after.replace(approved,original,1)
+        left=lines(before);right=lines(historical_after)
         check(set(left)-set(right)==set() and
               set(right)-set(left)=={k for k,v in added.items() if v['audience']==audience},
               'chili_copy_key_scope:'+audience)
         rebuilt=[]
         current_topic=None
-        for line in after.splitlines(keepends=True):
+        for line in historical_after.splitlines(keepends=True):
             m=topic_rx.match(line.rstrip('\r\n'))
             if m: current_topic=m[1]
             match=key_rx.match(line)
@@ -471,6 +486,11 @@ def chili_live_copy_restore(sides):
         check(key not in result[other] and result[aud].get(key)==current[aud][key],
               'chili_copy_addition_drift:'+key)
         del result[aud][key]
+    key=CHILI_APPROVED_LATER_KEY
+    check(result['admin'].get(key)=='🔑 تایید خودکار توسط API' and
+          prior['admin'].get(key)=='تایید خودکار توسط API',
+          'approved_api_button_prefix_projection')
+    result['admin'][key]=prior['admin'][key]
     return result
 
 def gift_precheck_copy_restore(sides,allow_prestripped=False):

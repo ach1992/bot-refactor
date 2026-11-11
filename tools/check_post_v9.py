@@ -512,7 +512,9 @@ def cron_checks(tmp: Path) -> dict:
         ["python3",str(ROOT/"tools/test_post_v9_cron_config_bootstrap.py")],
         cwd=ROOT,check=True,timeout=25,capture_output=True,text=True)
     actor=json.loads(actor_process.stdout)
-    if not (actor.get('complete') is True and actor.get('cases')==5 and
+    if not (actor.get('complete') is True and actor.get('cases')==7 and
+            actor.get('native_panel_no_empty_auth_request') is True and
+            actor.get('native_panel_auth_diagnostic_once') is True and
             actor.get('actual_config_section') is True and
             actor.get('cli_no_telegram_or_php_warnings') is True and
             actor.get('real_verified_webhook_membership') is True and

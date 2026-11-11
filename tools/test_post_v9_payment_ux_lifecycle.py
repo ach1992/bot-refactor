@@ -129,12 +129,17 @@ def cmd(w,e,root,s):
             str(src),str(root),str(w/'mysql.sock'),DB,json.dumps(s,ensure_ascii=False)]
 
 def run(w,e,s):
+    expected_diagnostic=s.pop('expected_edit_diagnostic',None)
     p=subprocess.run(cmd(w,e,ROOT,s),cwd=w,env=e,capture_output=True,timeout=20)
     import re
     expected=re.compile(rb'achbot_payment_telegram_edit_deferred pay_id=[0-9]+ '
-                        rb'ref_id=[0-9]+ category=(transport_unavailable|message_missing|message_not_editable|'
-                        rb'access_denied|rate_limited|telegram_server_error|telegram_rejected)')
+                        rb'ref_id=[0-9]+ kind=(text|media) '
+                        rb'category=(transport_unavailable|message_missing|message_not_editable|'
+                        rb'access_denied|rate_limited|telegram_server_error|telegram_rejected) '
+                        rb'tg_code=[0-9]{1,3} markup_only=[01]')
     unexpected=[line for line in p.stderr.splitlines() if not expected.fullmatch(line)]
+    if expected_diagnostic is not None and expected_diagnostic.encode() not in p.stderr:
+        raise RuntimeError('Missing expected categorized Telegram edit diagnostic: '+str(expected_diagnostic))
     if p.returncode or unexpected:
         raise RuntimeError('PHP native failure: '+repr((p.returncode,p.stdout[-400:],unexpected[-8:])))
     return json.loads(p.stdout)
@@ -282,7 +287,8 @@ def main():
             assert run(w,e,dict(action='track',id=overflow,chat_id=9030,
                                  message_id=mid))['result'] is True
         sql(w,e,f"UPDATE pays SET state='paid' WHERE id={overflow}")
-        first=run(w,e,dict(action='sync',id=overflow,fail_text_only=True))
+        first=run(w,e,dict(action='sync',id=overflow,fail_text_only=True,
+            expected_edit_diagnostic='category=telegram_rejected tg_code=0 markup_only=1'))
         assert first['result']==0
         assert len([x for x in first['events']
                     if x['method']=='editMessageReplyMarkup'])==10
@@ -332,7 +338,8 @@ def main():
         assert run(w,e,dict(action='track',id=missing_msg,chat_id=9055,
                             message_id=2055))['result'] is True
         sql(w,e,f"UPDATE pays SET state='paid' WHERE id={missing_msg}")
-        lost=run(w,e,dict(action='sync',id=missing_msg,telegram_message_missing=True))
+        lost=run(w,e,dict(action='sync',id=missing_msg,telegram_message_missing=True,
+            expected_edit_diagnostic='category=message_missing tg_code=400 markup_only=0'))
         assert lost['result']==0
         assert [x['method'] for x in lost['events']]==[
             'editMessageText','editMessageReplyMarkup']

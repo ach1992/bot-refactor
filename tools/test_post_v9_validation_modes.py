@@ -143,7 +143,10 @@ class ValidationModes(unittest.TestCase):
         }
 
     def cron_actor_proof(self):
-        return {'complete':True,'cases':5,'actual_config_section':True,
+        return {'complete':True,'cases':7,
+                'native_panel_no_empty_auth_request':True,
+                'native_panel_auth_diagnostic_once':True,
+                'actual_config_section':True,
                 'cli_no_telegram_or_php_warnings':True,
                 'real_verified_webhook_membership':True,
                 'malformed_membership_no_warning':True,

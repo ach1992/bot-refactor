@@ -54,6 +54,51 @@ echo json_encode(['calls'=>$GLOBALS['member_calls'], 'from_id'=>$from_id,
 '''
 
 
+def native_marzban_invalid_auth_guard() -> None:
+    # Execute the actual current function with an absent token, without a real
+    # DB, cURL extension or network. A bad Bearer request would fail loudly.
+    source = (ROOT / 'src/Panel/Accounts.php').read_text()
+    start = source.index('function getMarzbanUser(')
+    end = source.index('function getMarzbanHosts(', start)
+    function_source = source[start:end]
+    fixture = r'''<?php
+namespace AchBot\Panel\Accounts;
+error_reporting(E_ALL);
+class OwnedResult {
+    function fetch_assoc() {return ['type'=>'marzban','panel_url'=>'http://127.0.0.1:9'];}
+}
+class OwnedStmt {
+    function bind_param(...$arguments) {}
+    function execute() {}
+    function get_result() {return new OwnedResult();}
+    function close() {}
+}
+class OwnedDb {function prepare($sql) {return new OwnedStmt();}}
+$connection=new OwnedDb();
+function getMarzbanToken(...$arguments) {return null;}
+'''
+    fixture += function_source
+    fixture += r'''
+foreach ([false,true] as $strict) {
+    $result=getMarzbanUser(91,'fixture-user',null,$strict);
+    $results[]=['success'=>$result->success??null,'uncertain'=>$result->uncertain??null,
+        'msg'=>$result->msg??null];
+}
+echo json_encode($results,JSON_THROW_ON_ERROR);
+'''
+    with tempfile.TemporaryDirectory(prefix='achbot-cron-panel-auth-') as directory:
+        path = Path(directory) / 'owned-panel.php'
+        path.write_text(fixture)
+        r = subprocess.run(['php','-n','-d','display_errors=stderr',str(path)],
+                           capture_output=True,text=True,timeout=7)
+    assert r.returncode == 0, (r.stdout,r.stderr)
+    assert json.loads(r.stdout) == [
+        {'success':False,'uncertain':False,'msg':'marzban_auth_unverified'},
+        {'success':False,'uncertain':True,'msg':'marzban_auth_unverified'}
+    ], r.stdout
+    assert r.stderr.strip()=='achbot_marzban_auth_unverified server_id=91 stage=get_user',r.stderr
+
+
 def run() -> dict:
     text = (ROOT / 'config.php').read_text()
     assert text.count(START) == 1 and text.count(END) == 1
@@ -114,7 +159,10 @@ def run() -> dict:
             logs=php_log.read()
             for forbidden in ('PHP Warning:','PHP Deprecated:','PHP Fatal error:'):
                 assert forbidden not in logs,(forbidden,logs[-700:])
-    return {'complete': True,'cases':5,'actual_config_section':True,
+    native_marzban_invalid_auth_guard()
+    return {'complete': True,'cases':7,'actual_config_section':True,
+            'native_panel_no_empty_auth_request':True,
+            'native_panel_auth_diagnostic_once':True,
             'cli_no_telegram_or_php_warnings':True,'real_verified_webhook_membership':True,
             'malformed_membership_no_warning':True,'unknown_actor_fails_closed':True,
             'external_network_calls':0,'live_database_mutations':0}

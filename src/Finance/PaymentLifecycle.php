@@ -860,11 +860,17 @@ function achbotPayUxSyncMessages(mysqli $db, int $payId): int {
                 } catch (Throwable $ignored) {}
             }
             $failureClass=achbotPayUxEditFailureCategory($fullEditResponse);
-            if (!$ok) {
-                error_log('achbot_payment_telegram_edit_deferred pay_id='.$payId.
-                    ' ref_id='.(int)$item['id'].' category='.$failureClass);
-            }
             if (!$fullTextEdited) {
+                // A successful markup-only fallback does NOT prove the old
+                // text was updated. Keep that failure visible, with safe
+                // per-reference diagnostics instead of a generic warning.
+                $tgCode=is_object($fullEditResponse)
+                    ?max(0,min(599,(int)($fullEditResponse->error_code??0))):0;
+                $kind=$item['kind']==='media'?'media':'text';
+                error_log('achbot_payment_telegram_edit_deferred pay_id='.$payId.
+                    ' ref_id='.(int)$item['id'].' kind='.$kind.
+                    ' category='.$failureClass.' tg_code='.$tgCode.
+                    ' markup_only='.($ok?'1':'0'));
                 // Even a successful markup-only action is not a truthful text
                 // synchronization. Preserve the reference, but delay an
                 // unchanged failure for three minutes to avoid a Telegram
