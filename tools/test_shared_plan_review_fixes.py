@@ -341,6 +341,12 @@ def main():
             yes(h['call']('review_payment_journal',order=oid) is True and
                 h['call']('review_payment_journal',order=peer) is True,
                 provider+'_payment_subject_admits_no_active_native_journal')
+            # Demonstrate that a real, source-issued renewal works normally
+            # before the journal, including the other local owner.
+            for actor, target, label in ((1001,oid,'selected'),(1002,peer,'peer')):
+                yes(h['call']('review_invoice',actor=actor,type='RENEW_ACCOUNT',
+                    order=target,plan=119,server=2)=='issued',
+                    provider+'_real_draft_before_journal_'+label)
             # The *real* purchasing boundary must use the same current
             # journal check before accepting an order-backed old product.
             original=invoice(h,'journalquote','pending',order=peer)
@@ -358,6 +364,22 @@ def main():
             yes(h['call']('review_payment_journal',order=oid) is False and
                 h['call']('review_payment_journal',order=peer) is False,
                 provider+'_pending_native_journal_blocks_selected_and_shared_owner_payment')
+            # A later payment claim was already fenced; the actual INSERT
+            # boundary must now refuse a new advertised invoice altogether.
+            draft_count=int(db('SELECT COUNT(*) FROM pays'))
+            for actor,target,label,typ in (
+                (1001,oid,'selected_renew','RENEW_ACCOUNT'),
+                (1002,peer,'peer_renew','RENEW_ACCOUNT'),
+                (1002,peer,'peer_day',f'INCREASE_DAY_{peer}_3'),
+                (1002,peer,'peer_volume',f'INCREASE_VOLUME_{peer}_3')):
+                denied_quote=h['call']('review_invoice',actor=actor,type=typ,
+                    order=target,plan=119,server=2)
+                yes(denied_quote=='denied' and
+                    int(db('SELECT COUNT(*) FROM pays'))==draft_count,
+                    provider+'_real_draft_denied_during_journal_'+label)
+            yes(h['call']('review_invoice',actor=1001,type='INCREASE_WALLET',
+                order=0,plan=0,server=0)=='issued',
+                provider+'_wallet_draft_unaffected_by_service_journal')
             if provider=='marzban':
                 blocked=h['call']('review_superseded_payment',pay=original)
                 yes(blocked['eligible'] is False and
@@ -368,6 +390,10 @@ def main():
             yes(h['call']('review_payment_journal',order=oid) is True and
                 h['call']('review_payment_journal',order=peer) is True,
                 provider+'_committed_native_journal_reopens_new_payment_admission')
+            for actor,target,label in ((1001,oid,'selected'),(1002,peer,'peer')):
+                yes(h['call']('review_invoice',actor=actor,type='RENEW_ACCOUNT',
+                    order=target,plan=119,server=2)=='issued',
+                    provider+'_real_draft_after_journal_'+label)
             if provider=='marzban':
                 again=h['call']('review_superseded_payment',pay=original)
                 yes(again['eligible'] is True,

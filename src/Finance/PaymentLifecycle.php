@@ -174,10 +174,30 @@ function achbotPayUxInsertDraft(mysqli $db, int $actor, mysqli_stmt $insert, boo
         require_once __DIR__.'/../Panel/ProviderRuntime.php';
         achbotProviderPinPayment($db,$draftId);
         // Stale buttons cannot issue new invoices on disabled/deleted servers.
-        $s=$db->prepare('SELECT type,server_id,plan_id,day,volume FROM pays WHERE id=? FOR UPDATE');
+        $s=$db->prepare('SELECT type,server_id,plan_id,user_id,order_id,day,volume FROM pays WHERE id=? FOR UPDATE');
         $s->bind_param('i',$draftId);$s->execute();$pay=$s->get_result()->fetch_assoc();$s->close();
         if (!$pay) throw new RuntimeException('draft_service_missing');
-        if ((string)$pay['type']!=='INCREASE_WALLET') {
+        $type=(string)$pay['type'];
+        $addon=preg_match('/^INCREASE_(?:DAY|VOLUME)_([1-9][0-9]*)_[1-9][0-9]*$/D',$type,$match)===1;
+        if ($type==='RENEW_ACCOUNT' || $addon) {
+            $orderId=$addon?(int)$match[1]:(int)$pay['order_id'];
+            // The issued invoice must belong to this owner and currently
+            // selected service. A legacy add-on may have order_id=0, but its
+            // canonical type still pins the exact original order.
+            if ($orderId<=0 || (int)$pay['user_id']!==$actor ||
+                ($addon && (int)($pay['order_id']??0)!==0 &&
+                 (int)$pay['order_id']!==$orderId) ||
+                achbotProviderPaymentSubjectServer($db,$pay)!==(int)$pay['server_id'])
+                throw new RuntimeException('draft_service_identity_changed');
+            require_once __DIR__.'/../Purchase/Core.php';
+            // A current locking read (not an earlier RR snapshot) closes the
+            // gap between Native-journal creation and advertised new quotes.
+            // The caller still owns the short users->pays transaction; any
+            // conflicting in-flight plan transition fails closed on rollback.
+            if (!achbotServicePaymentJournalClear($db,$orderId,true))
+                throw new RuntimeException('draft_native_journal_unresolved');
+        }
+        if ($type!=='INCREASE_WALLET') {
             require_once __DIR__.'/../Panel/ProviderRuntime.php';
             $buy=(string)$pay['type']==='BUY_SUB';
             if (!achbotServerCommerceAvailable($db,(int)$pay['server_id'],$buy,true))
