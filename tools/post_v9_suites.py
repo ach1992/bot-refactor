@@ -3322,6 +3322,7 @@ def run_funding(tmp: str) -> tuple[dict, dict]:
         "admin_bulk_delivery_uncertain_reports_verified_creates_and_missing_telegram_ack",
         "two_real_admin_batches_race_one_available_server_slot",
         "real_manual_remark_two_independent_single_and_multi_batches_unique_names_no_replay",
+        "admin_bulk_long_base_compact_marzban_username_32_no_remote_replay",
         "invalid_manual_remark_rejected_without_remote_or_capacity_effect",
         "nonpaid_source_db_insert_failure_before_post_no_capacity_loss",
         "trial_postcommit_telegram_failure_no_recreate"

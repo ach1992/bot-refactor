@@ -612,8 +612,11 @@ if (!function_exists('achbotAdminBulkAccountRemark')) {
             preg_match('/^bulk:[1-9][0-9]*:[1-9][0-9]*$/D',$sourceRef)!==1 ||
             preg_match('/^[a-zA-Z0-9_-]+$/D',$base)!==1)
             throw new InvalidArgumentException('bulk_account_remark_invalid');
-        $suffix='_b'.substr(hash('sha256',$sourceRef),0,20).'_'.$ordinal;
-        $prefix=substr($base,0,100-strlen($suffix));
+        // Marzban's persisted username allows at most 32 ASCII bytes.
+        // Hash BOTH the authenticated update and line, with no fixed quantity
+        // limit and no different username for a previously dispatched line.
+        $suffix='_b'.substr(hash('sha256',$sourceRef.':'.$ordinal),0,18);
+        $prefix=substr($base,0,32-strlen($suffix));
         if ($prefix==='' || !preg_match('/^[a-zA-Z0-9_-]+$/D',$prefix))
             throw new InvalidArgumentException('bulk_account_remark_invalid');
         return $prefix.$suffix;

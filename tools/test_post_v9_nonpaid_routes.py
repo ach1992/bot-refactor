@@ -4,7 +4,7 @@
 No production updates, real customers, real Marzban, or payment operations.
 """
 from __future__ import annotations
-import argparse,json,subprocess
+import argparse,hashlib,json,subprocess
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -93,6 +93,11 @@ function generateRandomString(){return 'fixtureuuid';}
 function getNextPortAndIncrease(){return [12345,0];}
 function createServerAccount(...$args) {
     $GLOBALS['events'][]=['name'=>'POST','remark'=>$args[4]];
+    // Marzban documents 3..32 ASCII bytes; a too-long name gets a failed
+    // upstream CREATE, not a successful account. Do not fake success here.
+    if (strlen((string)$args[4])<3 || strlen((string)$args[4])>32)
+        return [(object)['success'=>false,'msg'=>'fixture_mbz_username_invalid'],
+                $args[4],12345];
     $count=($GLOBALS['posts']??0)+1;$GLOBALS['posts']=$count;
     $remote=[
         'username'=>(string)$args[4],'note'=>'achbot:v1:'.(string)$args[14],
@@ -242,9 +247,11 @@ def check():
                     text=str(n),remark_mode='manual',update_id=update_id)
                 new_names=[e['remark'] for e in created if e['name']=='POST']
                 assert len(new_names)==n,(n,update_id,created)
-                assert all(name.startswith('batch_custom_b') and
-                           name.rsplit('_',1)[-1]==str(i+1)
-                           for i,name in enumerate(new_names)),new_names
+                assert all(
+                    name=='batch_custom_b'+hashlib.sha256(
+                        f'bulk:9001:{update_id}:{i+1}'.encode()).hexdigest()[:18]
+                    and len(name)==32
+                    for i,name in enumerate(new_names)),new_names
                 assert not set(new_names).intersection(manual_names)
                 assert not set(new_names).intersection(firstnames)
                 firstnames.extend(new_names)
@@ -257,6 +264,30 @@ def check():
         assert sql(work,env,"SELECT COUNT(DISTINCT remote_username) FROM "
                 "service_effects WHERE source_kind='admin_bulk'")=='6'
         cases.append('real_manual_remark_two_independent_single_and_multi_batches_unique_names_no_replay')
+
+        reset()
+        # Regression from real installed RC30: the bot accepted up to 100
+        # username bytes, while the Marzban /api/user backing SQL field is 32.
+        # Verify real PHP bulk route/007 capacity and a strict fake 32-byte API.
+        very_long='prefix_'+'x'*93
+        sql(work,env,"UPDATE server_plans SET descr='"+very_long+"' WHERE id=7")
+        sql(work,env,"UPDATE users SET step='createAccAmount7_30_2' WHERE userid=9001")
+        compact=php(work,env,driver,route='bulk',actor=9001,text='2',
+                    remark_mode='manual',update_id=987811)
+        compact_posts=[e for e in compact if e['name']=='POST']
+        assert len(compact_posts)==2 and len([e for e in compact if e['name']=='DELIVER'])==2,compact
+        compact_names=[e['remark'] for e in compact_posts]
+        assert (len(set(compact_names))==2 and all(
+            name.startswith(very_long[:12]) and len(name)==32
+            for name in compact_names)),compact_names
+        assert capacity()==8 and effects('admin_bulk')=='1\tlocal_recorded\t2\n2\tlocal_recorded\t0'
+        assert not [e for e in php(work,env,driver,route='bulk',actor=9001,
+            text='2',remark_mode='manual',update_id=987811,
+            force_cached_step=True) if e['name']=='POST']
+        compact_reports=[e['text'] for e in compact if e['name']=='MESSAGE'
+            and 'ساخت گروهی اکانت' in e['text']]
+        assert compact_reports and all(name in compact_reports[0] for name in compact_names)
+        cases.append('admin_bulk_long_base_compact_marzban_username_32_no_remote_replay')
 
         reset()
         sql(work,env,"UPDATE server_plans SET descr='name with spaces' WHERE id=7")

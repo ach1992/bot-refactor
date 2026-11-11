@@ -16,8 +16,22 @@ runtime source member, with no database migration or third notification schedule
 These edits are **unmerged and unreviewed** pending exact-candidate PHP 8.5 CI,
 independent high-assurance review, and separate Owner integration/release/Chili
 authorization. RC30 remains the published baseline; no installed source or
-provider/Telegram/database acceptance is implied. The report cannot explain the
-installed admin-bulk error's root cause without approved read-only host evidence.
+provider/Telegram/database acceptance is implied.
+
+Read-only installed diagnostics on 2026-11-11 show an admin bulk operation held at
+`remote_create` with `effect_remote_create_unconfirmed`. Nearby Marzban API logs
+show `POST /api/user` returning HTTP 500 and MySQL error 1406, `Data too long for
+column 'username' at row 1`. The original Chili generator created usernames up to
+100 ASCII bytes, while Marzban accepts at most 32. The PR now produces a
+source-and-ordinal-bound, stable 32-byte maximum identity with a readable prefix,
+and its synthetic Native API rejects excess-length usernames rather than faking
+success. A source-real two-account regression proves complete local records,
+reports and no replay with an intentionally long base remark. The error times and
+failure mode are consistent, but lacking a shared request ID does not prove that
+the observed Marzban 500 was the exact Chili request. Installed endpoint, original
+Native effect and actual delivery still need separately authorized verification;
+never retry the protected dispatched claim or rewrite original evidence. No
+production target, provider or customer data was changed by this investigation.
 
 ## Published RC30 — source-only Cron, Telegram, Marzban and gift-card reliability
 
