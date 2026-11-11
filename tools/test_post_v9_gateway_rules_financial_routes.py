@@ -137,7 +137,7 @@ $GLOBALS['r1_release']=(string)($spec['release']??'');""",1)
 def hosted_cmd(w,stage,driver,spec):
     return ['php','-n','-d','extension=mysqlnd','-d','extension=mysqli',
             '-d','extension=curl','-d','allow_url_fopen=0',
-            '-d','disable_functions=curl_init,curl_setopt,curl_setopt_array,curl_exec,curl_close,curl_error,curl_getinfo,exec,shell_exec,system,passthru,popen,proc_open,mail',
+            '-d','disable_functions=curl_init,curl_setopt,curl_setopt_array,curl_exec,curl_close,curl_error,curl_errno,curl_getinfo,exec,shell_exec,system,passthru,popen,proc_open,mail',
             str(driver),str(stage),DB,str(w/'mysql.sock'),json.dumps(spec)]
 def hosted_case(w,e,stage,driver,n,iso,revoke):
     actor=12600+n;user(w,e,actor)
