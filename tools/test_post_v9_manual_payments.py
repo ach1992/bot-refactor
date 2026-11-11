@@ -1510,7 +1510,7 @@ def check():
                     'SELECT GROUP_CONCAT(e.remote_username ORDER BY e.ordinal SEPARATOR ",") '
                     'FROM service_effects e JOIN pays p ON p.id=e.pay_row_id '
                     f"WHERE p.hash_id='{key}' AND e.effect_kind='create'").split(',')
-                assert any('2 از 2' in text and all(n in text for n in created_names)
+                assert any(f'{count} از {count}' in text and all(n in text for n in created_names)
                     for text in reports),(key,reports,created_names)
             reject_service(key,'standard_approval','accept')
             cases.append(f'r2_exact_manual_order_allocation_{price}_{count}_no_replay')

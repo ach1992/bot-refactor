@@ -814,7 +814,8 @@ def delivery_recovery_copy_negative_controls(sides:dict) -> int:
     # The successor intentionally removed this UI. Perform the exact
     # historical mutation controls on the immutable RC26 source, AFTER
     # verifying the current gift-copy additions and their original recipients.
-    sides=current_cleanup_restore(gift_precheck_copy_restore(sides))
+    sides=current_cleanup_restore(gift_precheck_copy_restore(
+        bulk_reporting_copy_restore(sides)))
     delivery_recovery_copy_restore(sides)
     cases=[]
     bad=copy.deepcopy(sides);bad['admin'].pop('delivery_recovery.title');cases.append(bad)

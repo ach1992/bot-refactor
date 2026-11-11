@@ -461,7 +461,9 @@ def audit(source_root=ROOT,catalog_root=ROOT):
         # The successor's new bounded inbox is checked by the cleanup
         # overlay. Historical layered corrections must run against the
         # restored RC26 catalog, never a partially restored hybrid.
-        historical_catalogs=r5.current_cleanup_restore(r5.gift_precheck_copy_restore(current_catalogs))
+        historical_catalogs=r5.current_cleanup_restore(
+            r5.gift_precheck_copy_restore(
+                r5.bulk_reporting_copy_restore(current_catalogs)))
         correction_count=correction_proof(historical_catalogs,archived_catalogs)
         _,api_proof=r5.verify_api_and_restore(r5.panel_group_copy_restore(historical_catalogs),from_r5=True)
         api_controls=r5.api_negative_controls(r5.panel_group_copy_restore(historical_catalogs),from_r5=True)
