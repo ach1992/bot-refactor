@@ -492,7 +492,7 @@ def check():
         # that a later provider would reject, without inserting any invoice.
         catalogue_driver=work/'catalogue-much-wallet.php'
         catalogue_driver.write_text(PHP_CATALOGUE)
-        for i,bad_name in enumerate(('foo bar','bad/name','برنامه','x'*101),start=1):
+        for i,bad_name in enumerate(('foo bar','bad/name','برنامه','x'*33,'x'*101),start=1):
             events=catalogue(work,env,catalogue_driver,
                 username=bad_name,hash='badmuchdraft'+str(i))
             assert any(e['name']=='MESSAGE' and

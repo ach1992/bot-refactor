@@ -293,7 +293,7 @@ function createServerAccount(...$args) {
         }
         if (strlen((string)($args[4]??''))>32) $mode='invalid_username';
         $GLOBALS['events'][]=['name'=>'marzban_create_attempt',
-            'name'=>(string)($args[4]??''),
+            'username'=>(string)($args[4]??''),
             'number'=>$index,'mode'=>$mode,'stage'=>$stage,'pay_state'=>$state,
             'held_at_post'=>$held,'capacity_at_post'=>$capacity];
         if ($mode==='success') {
@@ -4138,12 +4138,15 @@ def main():
                     result!=[{'name':'do_action_result','result':expected_result}]):
                     raise RuntimeError('O2 actual multi-account loop did not honor remote outcomes: '+
                                        repr((name,created,delivered,result))[:1300])
-                # The actual hosted success notice must report the complete
-                # original purchase, not just the last Native account.
+                # Exact usernames are bound to the original payment and
+                # ordinal, not assumed to be a manually supplied prefix.
+                names=[e['username'] for e in created]
+                if len(set(names))!=2 or not all(len(n)<=32 for n in names):
+                    raise RuntimeError('O2 hosted native aliases not source-bound')
                 reports=[str(e['args'][0]) for e in outcome['events']
                          if e['name']=='sendMessage' and e.get('args')]
                 if label=='complete' and not any(
-                    '2 از 2' in text and remark+'_1' in text and remark+'_2' in text
+                    '2 از 2' in text and all(alias in text for alias in names)
                     for text in reports):
                     raise RuntimeError('O2 hosted bulk owner report lost original accounts: '+
                                        repr((name,reports))[:1200])
@@ -4152,7 +4155,7 @@ def main():
                         if 'ثبت محلی تأییدشده:' in text]
                     if len(partial_reports)!=1 or not all(
                         '1 از 2' in text and '#'+str(pay_id) in text and
-                        remark+'_1' in text and remark+'_2' not in text and
+                        names[0] in text and names[1] not in text and
                         'عملیات نامشخص را تکرار نکنید' in text
                         for text in partial_reports):
                         raise RuntimeError('O2 partial hosted original-effect report missing: '+
@@ -4164,8 +4167,9 @@ def main():
                        for e in created):
                     raise RuntimeError('O2 Marzban POST before full-count committed capacity ownership')
                 local_orders=sql(work,env,
-                    "SELECT uuid FROM orders_list "
-                    f"WHERE userid=1001 AND remark IN ('{remark}_1','{remark}_2') ORDER BY id").splitlines()
+                    "SELECT o.uuid FROM orders_list o JOIN service_effects e "
+                    "ON e.order_id=o.id WHERE o.userid=1001 AND e.effect_kind='create' "
+                    f"AND e.pay_row_id={pay_id} ORDER BY e.ordinal").splitlines()
                 state=sql(work,env,f"SELECT stage,provider_status FROM "
                     f"payment_attempts WHERE pay_row_id={pay_id}").strip()
                 effect_rows=sql(work,env,
@@ -4206,9 +4210,9 @@ def main():
                     scripted_marzban_creates=['success','success']))
                 if any(e['name']=='marzban_create_attempt'
                        for e in replay['events']) or (
-                    sql(work,env,"SELECT COUNT(*) FROM orders_list "
-                        f"WHERE userid=1001 AND remark IN ('{remark}_1','{remark}_2')").strip()
-                         !=str(expected_order_count)):
+                    sql(work,env,"SELECT COUNT(*) FROM orders_list o JOIN service_effects e "
+                        "ON e.order_id=o.id WHERE o.userid=1001 AND e.effect_kind='create' "
+                        f"AND e.pay_row_id={pay_id}").strip()!=str(expected_order_count)):
                     raise RuntimeError('O2 replay attempted unsafe re-fulfillment')
                 records.append(dict(case='hosted_'+provider+
                     '_two_account_'+label+'_effects_operator_recovery_no_replay',

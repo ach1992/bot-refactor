@@ -243,11 +243,10 @@ if((preg_match('/^discountCustomPlanDay(\d+)/',$userInfo['step'], $match) || pre
     $stmt->execute(); 
     $respd = $stmt->get_result()->fetch_assoc(); 
     $stmt->close();
-    // A single explicitly chosen Marzban username must fit its Native
-    // schema BEFORE a payable quote is created. Multi-account names are
-    // compacted with a source-bound identity at actual dispatch.
+    // This custom-name draft always issues one account; its third step
+    // argument is GiB, not a bulk quantity. Reject an impossible Marzban
+    // username before creating an invoice or charging the wallet.
     if (!preg_match('/^discountCustomPlanDay/', $userInfo['step']) &&
-        (int)($match['accountCount']??1)===1 &&
         strlen((string)$text)>32 && $respd) {
         $q=$connection->prepare('SELECT type FROM server_config WHERE id=?');
         $sid=(int)$respd['server_id'];$q->bind_param('i',$sid);
