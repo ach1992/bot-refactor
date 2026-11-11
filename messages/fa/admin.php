@@ -461,6 +461,7 @@ return [
         'account_details.get_user_order_detail_keys.text.ed76444585' => '🟢 تمدید خودکار روشن',
         'account_details.get_user_order_detail_keys.text.fb6d00ad8d' => '🔴 تمدید خودکار خاموش',
         // service_change_report (shared administrator/report-channel notices)
+        'service_plan_recovery.action' => '🔎 بررسی و تکمیل تغییر پلن',
         'service_change_report.admin' => 'مدیر',
         'service_change_report.customer' => 'کاربر',
         'service_change_report.server' => [

@@ -38,6 +38,28 @@ still needs an exact candidate review, Owner rollout approval and separate
 operator acceptance. Follow [Issue #144](https://github.com/ach1992/bot-refactor/issues/144).
 
 
+## PR #145 follow-up — administrator-controlled GET-only plan recovery (not shipped)
+
+Independent review identified a missing operator recovery action for an already
+dispatched `service_plan_changes` journal. The new plan-management action is
+shown only to currently authorized administrators for the original order and
+exact dispatching journal (migration 017). The handler rechecks the current
+orders permission, original source order/linked references, native provider,
+physical target and plan fingerprints, and original PasarGuard mutation
+identity. Native requests are **strictly GET-only**, requiring original
+Marzban account/Hosts or PasarGuard exact identity/Groups to be already in the
+required state. Only after a verified match, original local references,
+PasarGuard mutation evidence (when present), and the original journal are
+finalized in one SQL transaction. Absent, stale, unauthorized, contradictory
+or partial Native observations leave the original journal held; **no second
+Native PUT, money mutation or automated compensation/replay exists**. Audit
+logs record bounded journal, actor and result codes, without credentials.
+A source-real disposable two-provider injected-finalize-failure regression
+covers admin GET-only recovery, incomplete Native holds, stale/unauthorized
+callbacks, duplicate attempts and absent second PUT. Nothing in this source
+branch changes installed Chili or protected historic orders/journals. Exact
+PHP 8.5 CI and fresh independent delta review remain mandatory before merge.
+
 ## Published RC30 — source-only Cron, Telegram, Marzban and gift-card reliability
 
 [v0.10.0-rc.30](https://github.com/ach1992/bot-refactor/releases/tag/v0.10.0-rc.30) publishes independently approved [PR #142](https://github.com/ach1992/bot-refactor/pull/142), merged as `main@ebca4bee143ccb03ea45c2ea2767646b60ac6f9c`, TREE `f5103e9ffcdcc88994f30ec4e5550dc7b9546a13`. The **131-member source-only runtime ZIP** has SHA256 `5ac98c346867e1a8d3aeb7c38482090cde5288d293f05375f6e7f74e13e79150`, five modified runtime paths since RC29, and **no new DDL**. See the [RC29 -> RC30 operator guide](https://github.com/ach1992/bot-refactor/releases/download/v0.10.0-rc.30/RC29-TO-RC30.md), [test acceptance matrix](https://github.com/ach1992/bot-refactor/releases/download/v0.10.0-rc.30/TEST-CHILI-ACCEPTANCE.md) and full Release Notes.

@@ -223,11 +223,26 @@ jobs:
           extensions: mysqli, tokenizer, curl, zip, gd
           coverage: none
           tools: none
-      - name: Install isolated native MariaDB fixtures
+      - name: Prepare verified native MariaDB binaries without APT
         run: |
           set -euo pipefail
-          sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends mariadb-server
+          # Every native fixture starts its own disposable, socket-only mariadbd.
+          # A shared Docker service would not exercise the same isolation path.
+          version=10.11.19
+          filename="mariadb-${version}-linux-systemd-x86_64.tar.gz"
+          root="$RUNNER_TEMP/mariadb-${version}-linux-systemd-x86_64"
+          archive="$RUNNER_TEMP/$filename"
+          curl --fail --location --silent --show-error --retry 2 \
+            --connect-timeout 20 --max-time 300 \
+            "https://archive.mariadb.org/mariadb-${version}/bintar-linux-systemd-x86_64/$filename" \
+            --output "$archive"
+          printf '%s  %s\n' '7efb257927f31f4422f496246b32590d0b7617f3d9dd900e575de761b302d919' "$archive" | sha256sum --check -
+          tar -xzf "$archive" -C "$RUNNER_TEMP"
+          test -x "$root/bin/mariadbd"
+          test -x "$root/bin/mariadb"
+          test -x "$root/scripts/mariadb-install-db"
+          printf '%s\n' "$root/bin" "$root/scripts" >> "$GITHUB_PATH"
+          "$root/bin/mariadbd" --version
       - name: Scoped extensions native contract on the existing MariaDB shard
         if: matrix.index == 5
         run: |

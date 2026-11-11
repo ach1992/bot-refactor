@@ -722,6 +722,182 @@ function achbotPhysicalSelectPlan(mysqli $db,int $orderId,int $newPlanId,int $ac
 }
 
 /**
+ * Exact, already-dispatched plan journal recovery. This is an administrator
+ * GET-only observation followed by a single local transaction. An uncertain
+ * Native PUT, mismatched account/plan, missing peer or stale permission is
+ * NEVER permission for a second Native write.
+ */
+function achbotPhysicalRecoverySnapshotLocked(
+    mysqli $db,array $journal,array $intent,int $actorId
+): array {
+    require_once __DIR__.'/../Admin/Access.php';
+    $s=$db->prepare('SELECT userid,step FROM users WHERE userid=? FOR UPDATE');
+    $s->bind_param('i',$actorId);$s->execute();
+    $actors=$s->get_result()->fetch_all(MYSQLI_ASSOC);$s->close();
+    if (count($actors)!==1 || $actors[0]['step']==='banned' ||
+        !achbotAdminCanLocked($db,$actorId,(int)($GLOBALS['admin']??0),'orders'))
+        throw new RuntimeException('physical_recovery_admin_denied');
+    $orderId=(int)$journal['source_order_id'];
+    $s=$db->prepare('SELECT * FROM orders_list WHERE id=? AND status=1 FOR UPDATE');
+    $s->bind_param('i',$orderId);$s->execute();
+    $order=$s->get_result()->fetch_assoc();$s->close();
+    if (!$order || achbotPhysicalLockName($db,$order)!==$journal['lock_key'] ||
+        (int)$order['server_id']!==(int)$journal['server_id'] ||
+        (int)$journal['plan_id']!==(int)$intent['new_plan_id'] ||
+        (int)$order['server_id']!==(int)$intent['selected_server_id'])
+        throw new RuntimeException('physical_recovery_original_order_changed');
+    $provider=achbotProviderType($db,(int)$order['server_id']);
+    if ($provider!==$journal['provider'] || $provider!==($intent['provider']??null))
+        throw new RuntimeException('physical_recovery_provider_changed');
+    $peers=achbotPhysicalActiveOrders($db,$order,true);
+    $old=array_map(static fn($r)=>[
+        'id'=>(int)$r['id'],'server_id'=>(int)$r['server_id'],
+        'fileid'=>(int)$r['fileid']],$peers);
+    if ($old!==$intent['old_rows'] ||
+        achbotPhysicalTargetFingerprint($db,$order)!==$intent['physical_target_sha256'])
+        throw new RuntimeException('physical_recovery_original_identity_changed');
+    $newPlan=(int)$intent['new_plan_id'];$server=(int)$order['server_id'];
+    $s=$db->prepare('SELECT * FROM server_plans WHERE id=? AND server_id=? FOR UPDATE');
+    $s->bind_param('ii',$newPlan,$server);$s->execute();
+    $plan=$s->get_result()->fetch_assoc();$s->close();
+    if (!$plan || achbotPhysicalPlanFingerprint($plan)!==$intent['plan_sha256'])
+        throw new RuntimeException('physical_recovery_plan_changed');
+    $pg=null;$mutation=null;
+    if ($provider==='pasarguard') {
+        $pg=achbotPgOrderContext($db,$orderId,true,true);
+        if (achbotPhysicalPgIdentityFingerprint($pg)!==$intent['pg_identity_sha256'])
+            throw new RuntimeException('physical_recovery_pg_identity_changed');
+        $state=(string)$pg['account']['state'];
+        if ($state==='mutating') {
+            try {$mutation=json_decode((string)$pg['account']['mutation_snapshot'],true,64,JSON_THROW_ON_ERROR);}
+            catch (Throwable $e) {throw new RuntimeException('physical_recovery_pg_journal_unverified');}
+            if (!is_array($mutation) || ($mutation['version']??null)!==1 ||
+                ($mutation['phase']??null)!=='dispatching' ||
+                ($mutation['key']??null)!=='plan:'.(int)$journal['id'] ||
+                ($mutation['action']??null)!=='select_plan' ||
+                ($mutation['identity']??null)!==$pg['identity'] ||
+                ($mutation['changes']['group_ids']??null)!==($intent['native_target']['groups']??null))
+                throw new RuntimeException('physical_recovery_pg_journal_unverified');
+        } elseif ($state!=='linked')
+            throw new RuntimeException('physical_recovery_pg_account_unverified');
+    } elseif ($provider==='marzban') {
+        if (!is_string($intent['native_username']??null) ||
+            $intent['native_username']!==$order['remark'] ||
+            !isset($intent['native_target']['inbounds']) ||
+            !is_array($intent['native_target']['inbounds']))
+            throw new RuntimeException('physical_recovery_marzban_identity_unverified');
+    } else throw new RuntimeException('physical_recovery_provider_unavailable');
+    achbotPhysicalNoPendingPayments($db,$peers);
+    return ['order'=>$order,'peers'=>$peers,'pg'=>$pg,'mutation'=>$mutation];
+}
+
+/** Administrator-only verification of an original dispatched Native intent. */
+function achbotPhysicalRecoverPlan(mysqli $db,int $journalId,int $actorId,
+    int $expectedOrderId=0): array {
+    if ($journalId<=0 || $actorId<=0)
+        return achbotPhysicalPlanResult(false,'physical_recovery_invalid');
+    require_once __DIR__.'/../Admin/Access.php';
+    require_once __DIR__.'/../Panel/MarzbanPlanAccess.php';
+    $lease=null;$tx=false;$commitAttempted=false;
+    try {
+        $s=$db->prepare('SELECT * FROM service_plan_changes WHERE id=?');
+        $s->bind_param('i',$journalId);$s->execute();
+        $journal=$s->get_result()->fetch_assoc();$s->close();
+        if (!$journal || $journal['state']!=='dispatching' ||
+            ($expectedOrderId>0 && (int)$journal['source_order_id']!==$expectedOrderId) ||
+            !preg_match('/^achbot-(?:edit|plan)-[a-f0-9]{40}$/D',(string)$journal['lock_key']))
+            throw new RuntimeException('physical_recovery_not_dispatched');
+        try {$intent=json_decode((string)$journal['intent_json'],true,64,JSON_THROW_ON_ERROR);}
+        catch (Throwable $e) {throw new RuntimeException('physical_recovery_intent_invalid');}
+        if (!is_array($intent) || ($intent['version']??null)!==1 ||
+            ($intent['lock_key']??null)!==$journal['lock_key'] ||
+            ($intent['source_order_id']??null)!==(int)$journal['source_order_id'] ||
+            ($intent['new_plan_id']??null)!==(int)$journal['plan_id'] ||
+            !is_array($intent['old_rows']??null) || !$intent['old_rows'] ||
+            !is_array($intent['native_target']??null) ||
+            !is_string($intent['physical_target_sha256']??null) ||
+            !is_string($intent['plan_sha256']??null))
+            throw new RuntimeException('physical_recovery_intent_invalid');
+        $lease=$journal['lock_key'];
+        achbotPhysicalAcquireLock($db,$lease);
+        if (!$db->begin_transaction()) throw new RuntimeException('physical_recovery_preflight_begin');
+        $tx=true;
+        $s=$db->prepare("SELECT * FROM service_plan_changes WHERE id=? AND state='dispatching' FOR UPDATE");
+        $s->bind_param('i',$journalId);$s->execute();
+        $locked=$s->get_result()->fetch_assoc();$s->close();
+        if (!$locked || $locked['intent_json']!==$journal['intent_json'])
+            throw new RuntimeException('physical_recovery_journal_changed');
+        $pre=achbotPhysicalRecoverySnapshotLocked($db,$locked,$intent,$actorId);
+        if (!$db->commit()) throw new RuntimeException('physical_recovery_preflight_commit_unknown');
+        $tx=false;
+        // Observation only. An incomplete Native state remains a durable
+        // operator hold; NEVER dispatch a corrective PUT from this route.
+        $provider=$journal['provider'];$server=(int)$journal['server_id'];
+        if ($provider==='marzban') {
+            $s=$db->prepare("SELECT panel_url,type FROM server_config WHERE id=?");
+            $s->bind_param('i',$server);$s->execute();
+            $target=$s->get_result()->fetch_assoc();$s->close();
+            if (!$target || $target['type']!=='marzban')
+                throw new RuntimeException('physical_recovery_native_target_changed');
+            $url=rtrim((string)$target['panel_url'],'/');
+            $token=getMarzbanToken($server,$url);
+            if (!is_object($token) || !is_string($token->access_token??null) ||
+                $token->access_token==='')
+                throw new RuntimeException('physical_recovery_native_get_unconfirmed');
+            $user=getMarzbanUser($server,$intent['native_username'],$token,true,$url);
+            if (!is_object($user) ||
+                achbotMarzbanNativeAccessSnapshot($user,$intent['native_username'])['inbounds']!==
+                    $intent['native_target']['inbounds'])
+                throw new RuntimeException('physical_recovery_native_incomplete');
+        } else {
+            $ctx=$pre['pg'];
+            $native=achbotPgRead($ctx['panel'],$ctx['identity']);
+            if (($native['success']??false)!==true ||
+                !achbotPgManaged($native['user']) ||
+                $native['user']['group_ids']!==$intent['native_target']['groups'])
+                throw new RuntimeException('physical_recovery_native_incomplete');
+        }
+        if (!$db->begin_transaction()) throw new RuntimeException('physical_recovery_finalize_begin');
+        $tx=true;
+        $s=$db->prepare("SELECT * FROM service_plan_changes WHERE id=? AND state='dispatching' FOR UPDATE");
+        $s->bind_param('i',$journalId);$s->execute();
+        $locked=$s->get_result()->fetch_assoc();$s->close();
+        if (!$locked || $locked['intent_json']!==$journal['intent_json'])
+            throw new RuntimeException('physical_recovery_journal_changed');
+        $final=achbotPhysicalRecoverySnapshotLocked($db,$locked,$intent,$actorId);
+        if ($provider==='pasarguard' && $final['mutation']!==null) {
+            if ($pre['pg']['account']['state']!==$final['pg']['account']['state'] ||
+                $pre['mutation']!==$final['mutation'] ||
+                $pre['pg']['identity']!==$final['pg']['identity'])
+                throw new RuntimeException('physical_recovery_pg_state_changed');
+            achbotPgFinishMutation($db,$final['pg'],$final['mutation'],$native);
+        }
+        $count=achbotPhysicalUpdateOrders($db,$final['peers'],$server,
+            (int)$journal['plan_id']);
+        $s=$db->prepare("UPDATE service_plan_changes SET state='committed'
+            WHERE id=? AND state='dispatching' AND intent_json=?");
+        $s->bind_param('is',$journalId,$journal['intent_json']);
+        if (!$s->execute() || $s->affected_rows!==1)
+            throw new RuntimeException('physical_recovery_finalize_unconfirmed');
+        $s->close();
+        $commitAttempted=true;
+        if (!$db->commit()) throw new RuntimeException('physical_recovery_finalize_commit_unknown');
+        $tx=false;
+        error_log('achbot_shared_plan_recovered journal_id='.$journalId.
+            ' source_order_id='.(int)$journal['source_order_id'].
+            ' actor_id='.$actorId.' active_refs='.$count.' mode=get_only');
+        return achbotPhysicalPlanResult(true,'recovered',$count);
+    } catch (Throwable $error) {
+        if ($tx && !$commitAttempted) {try{$db->rollback();}catch(Throwable $ignored){}}
+        $reason=(string)$error->getMessage();
+        $safe=preg_match('/^physical_[a-z0-9_]{5,100}$/D',$reason)?$reason:'physical_recovery_internal_error';
+        error_log('achbot_shared_plan_recovery_held journal_id='.$journalId.
+            ' actor_id='.$actorId.' code='.$safe);
+        return achbotPhysicalPlanResult(false,'physical_plan_requires_review');
+    } finally {if ($lease!==null) achbotPhysicalReleaseLock($db,$lease);}
+}
+
+/**
  * Every successful admin/customer service change should reach normal staff
  * recipients AND the configured reporting channel. No report is issued before
  * the authoritative local/Native commit. Telegram failure never replays it.

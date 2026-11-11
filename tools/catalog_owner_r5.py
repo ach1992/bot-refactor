@@ -392,6 +392,7 @@ def service_change_catalog_layer():
         'user':{'subscription.account_details.get_order_detail_keys.button.5c38085697'},
         'admin':{'subscription.account_transfers.admin_message.6645c1fd4d'}}
     expected_added={'user':set(),'admin':{
+        'subscription.service_plan_recovery.action',
         'subscription.service_change_report.admin',
         'subscription.service_change_report.customer',
         'subscription.service_change_report.server',
