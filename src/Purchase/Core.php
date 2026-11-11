@@ -615,82 +615,9 @@ if (!function_exists('achbotAdminBulkAccountRemark')) {
         // Marzban's persisted username allows at most 32 ASCII bytes.
         // Hash BOTH the authenticated update and line, with no fixed quantity
         // limit and no different username for a previously dispatched line.
-        $suffix='_b'.substr(hash('sha256',$sourceRef.':'.$ordinal),0,18);
-        $prefix=substr($base,0,32-strlen($suffix));
-        if ($prefix==='' || !preg_match('/^[a-zA-Z0-9_-]+$/D',$prefix))
-            throw new InvalidArgumentException('bulk_account_remark_invalid');
-        return $prefix.$suffix;
-    }
-}
-
-if (!function_exists('getNextPortAndIncrease')) {
-    function getNextPortAndIncrease($tempFilePath, $portType)
-    {
-        $port     = rand(1111, 65000);
-        $last_num = 0;
-
-        if (file_exists($tempFilePath)) {
-            $savedinfo = file_get_contents($tempFilePath);
-            $parts = explode('-', trim($savedinfo));
-
-            if (count($parts) === 2) {
-                $basePort = (int)$parts[0];
-                $baseLast = (int)$parts[1];
-
-                $port     = $basePort + 1;
-                $last_num = $baseLast + 1;
-            }
-        }
-
-        if ($portType === "auto") {
-            @file_put_contents($tempFilePath, $port . '-' . $last_num);
-        } else {
-            $port = rand(1111, 65000);
-        }
-
-        return [$port, $last_num];
-    }
-}
-
-if (!function_exists('createServerAccount')) {
-    function createServerAccount(
-        $serverType,
-        $server_id,
-        $inbound_id,
-        $fid,
-        $remark,
-        $volume,
-        $days,
-        $uniqid,
-        $protocol,
-        $port,
-        $expire_microdate,
-        $netType,
-        $rahgozar,
-        $limitip,
-        ?string $effectOperationId = null,
-        ?int $effectExpire = null,
-        ?array $effectTarget = null
-    ) {
-        // This provider seam is explicit: do not reinterpret unknown/retired
-        // X-UI or inbound-based plan records as Marzban. Never send an API
-        // request to a legacy panel or create a phantom paid account.
-        if (!achbotSupportsPanel($serverType) || (int)$inbound_id !== 0) {
-            return [(object)['success' => false, 'msg' => 'unsupported_panel'], $remark, $port];
-        }
-
-        if ($serverType!=='marzban') {
-            return [(object)['success'=>false,'uncertain'=>false,'msg'=>'pg_durable_effect_required'],$remark,$port];
-        }
-        $note = $effectOperationId === null ? null : 'achbot:v1:'.$effectOperationId;
-        $response = addMarzbanUser($server_id, $remark, $volume, $days, $fid, $note, $effectExpire, $effectTarget);
-        // A durable effect can NEVER change its remote username and retry.
-        if ($effectOperationId === null && is_object($response) && !$response->success
-            && isset($response->msg) && $response->msg === 'User already exists') {
-            $remark .= rand(1111, 99999);
-            $response = addMarzbanUser($server_id, $remark, $volume, $days, $fid);
-        }
-        return [$response, $remark, $port];
+        // The validated buildRemark() base can contain fresh randomness.
+        // Durable identities depend ONLY on the authenticated update/line.
+        return 'mbz_bulk_'.substr(hash('sha256',$sourceRef.':'.$ordinal),0,23);
     }
 }
 

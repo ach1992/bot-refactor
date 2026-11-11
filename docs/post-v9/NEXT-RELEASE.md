@@ -458,3 +458,15 @@ Reconcile any uncertain operation against protected local/provider evidence and
 use a separately reviewed recovery plan. Lower Telegram update IDs after a long
 idle epoch and retained transfer cursors also require explicit reconciliation,
 not erasing replay history.
+
+C03 independent-review remediation: newly generated Marzban usernames now
+use fixed human-readable `mbz_bulk_` or `mbz_paid_` prefixes followed by
+23 hex characters derived ONLY from the authenticated Telegram bulk-source
+reference or original payment ID plus ordinal. A fresh randomized
+`buildRemark()` base cannot change the 32-byte generated identity across
+separate invocations, including single generated purchases. Explicitly
+entered single-account names remain unchanged when valid; PasarGuard
+uses its existing provider contract. Previously dispatched 007 identities
+remain untouched; no automatic reconciliation CREATE is enabled. A new
+source-real native fixture checks distinct randomized buildRemark inputs,
+source/ordinal uniqueness, provider boundaries, and stable output.

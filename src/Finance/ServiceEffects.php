@@ -201,15 +201,15 @@ if (!function_exists('achbotPaidPurchaseRemark')) {
         if ($provider!=='marzban') return $base;
         if (preg_match('/^[A-Za-z0-9_-]+$/D',$base)!==1)
             throw new RuntimeException('paid_marzban_username_invalid');
-        if ($count===1 && strlen($base)<=32) return $base;
-        if ($count===1 && $explicitSingle)
-            throw new RuntimeException('paid_marzban_username_invalid');
-        // Deterministic across retries, scoped to original payment and line.
-        // Keep 12 readable bytes; fixed 20-byte suffix incl. _p.
-        $suffix='_p'.substr(hash('sha256',$payId.':'.$ordinal),0,18);
-        $prefix=substr($base,0,32-strlen($suffix));
-        if ($prefix==='') throw new RuntimeException('paid_marzban_username_invalid');
-        return $prefix.$suffix;
+        if ($count===1 && $explicitSingle) {
+            if (strlen($base)>32)
+                throw new RuntimeException('paid_marzban_username_invalid');
+            return $base;
+        }
+        // buildRemark() may randomize $base even for one generated account.
+        // Only the immutable original payment and ordinal determine a new
+        // generated username; existing 007 dispatched effects are not renamed.
+        return 'mbz_paid_'.substr(hash('sha256',$payId.':'.$ordinal),0,23);
     }
 }
 

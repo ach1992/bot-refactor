@@ -128,6 +128,25 @@ require_once $root.'/src/Purchase/OrderWrites.php';
 require_once $root.'/src/Finance/ServiceEffects.php';
 if (($spec['route']??'trial')==='trial') {
     require $root.'/src/Purchase/TrialProvision.php';
+} elseif (($spec['route']??'trial')==='alias_identity') {
+    mt_srand(1234);
+    $first=buildRemark(['remark'=>'digits'],'mbz','',1001);
+    mt_srand(5678);
+    $second=buildRemark(['remark'=>'digits'],'mbz','',1001);
+    $GLOBALS['events'][]=['name'=>'ALIAS_IDENTITY','different_base'=>$first!==$second,
+        'bulk_first'=>achbotAdminBulkAccountRemark($first,'bulk:9001:987811',1),
+        'bulk_second'=>achbotAdminBulkAccountRemark($second,'bulk:9001:987811',1),
+        'bulk_other_line'=>achbotAdminBulkAccountRemark($first,'bulk:9001:987811',2),
+        'bulk_other_source'=>achbotAdminBulkAccountRemark($first,'bulk:9001:987812',1),
+        'paid_first'=>achbotPaidPurchaseRemark($first,'marzban',12345,1,2),
+        'paid_second'=>achbotPaidPurchaseRemark($second,'marzban',12345,1,2),
+        'paid_other_line'=>achbotPaidPurchaseRemark($first,'marzban',12345,2,2),
+        'paid_other_source'=>achbotPaidPurchaseRemark($first,'marzban',12346,1,2),
+        'paid_single_first'=>achbotPaidPurchaseRemark($first,'marzban',12345,1,1),
+        'paid_single_second'=>achbotPaidPurchaseRemark($second,'marzban',12345,1,1),
+        'paid_explicit'=>achbotPaidPurchaseRemark('chosen_name','marzban',12345,1,1,true),
+        'pasarguard_original'=>achbotPaidPurchaseRemark($first,'pasarguard',12345,1,2),
+        'pasarguard_base'=>$first];
 } else {
     require $root.'/src/Purchase/EntryAndBulk.php';
 }
@@ -153,6 +172,24 @@ def check():
         sql(work,env,(ROOT/'migrations/post-v9/001_marzban_panel_group_id.sql').read_text())
         sql(work,env,(ROOT/'migrations/post-v9/007_service_effects.sql').read_text())
         driver=work/'nonpaid-route.php';driver.write_text(PHP)
+        observed=php(work,env,driver,route='alias_identity')
+        assert len(observed)==1 and observed[0]['name']=='ALIAS_IDENTITY',observed
+        evidence=observed[0]
+        assert evidence['different_base'],evidence
+        assert evidence['bulk_first']==evidence['bulk_second'] and all(
+            len(evidence[key])==32 and evidence[key].startswith('mbz_bulk_')
+            for key in ('bulk_first','bulk_second','bulk_other_line','bulk_other_source'))
+        assert len(set(evidence[key] for key in
+            ('bulk_first','bulk_other_line','bulk_other_source')))==3
+        assert (evidence['paid_first']==evidence['paid_second']==
+                evidence['paid_single_first']==evidence['paid_single_second'])
+        assert all(len(evidence[key])==32 and evidence[key].startswith('mbz_paid_')
+                   for key in ('paid_first','paid_second','paid_other_line','paid_other_source'))
+        assert len(set(evidence[key] for key in
+            ('paid_first','paid_other_line','paid_other_source')))==3
+        assert evidence['paid_explicit']=='chosen_name' and (
+            evidence['pasarguard_original']==evidence['pasarguard_base'])
+        cases.append('source_stable_admin_and_paid_marzban_aliases_ignore_build_remark_randomness')
         def reset():
             sql(work,env,'DELETE FROM service_effects')
             purchase.init(work,env,'http://127.0.0.1:9')
@@ -248,8 +285,8 @@ def check():
                 new_names=[e['remark'] for e in created if e['name']=='POST']
                 assert len(new_names)==n,(n,update_id,created)
                 assert all(
-                    name=='batch_custom_b'+hashlib.sha256(
-                        f'bulk:9001:{update_id}:{i+1}'.encode()).hexdigest()[:18]
+                    name=='mbz_bulk_'+hashlib.sha256(
+                        f'bulk:9001:{update_id}:{i+1}'.encode()).hexdigest()[:23]
                     and len(name)==32
                     for i,name in enumerate(new_names)),new_names
                 assert not set(new_names).intersection(manual_names)
@@ -278,7 +315,7 @@ def check():
         assert len(compact_posts)==2 and len([e for e in compact if e['name']=='DELIVER'])==2,compact
         compact_names=[e['remark'] for e in compact_posts]
         assert (len(set(compact_names))==2 and all(
-            name.startswith(very_long[:12]) and len(name)==32
+            name.startswith('mbz_bulk_') and len(name)==32
             for name in compact_names)),compact_names
         assert capacity()==8 and effects('admin_bulk')=='1\tlocal_recorded\t2\n2\tlocal_recorded\t0'
         assert not [e for e in php(work,env,driver,route='bulk',actor=9001,
