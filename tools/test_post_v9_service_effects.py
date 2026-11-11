@@ -653,11 +653,13 @@ def main():
         # Terminal review/payment states cannot authorize a brand-new
         # unjournaled CREATE when 007 is first introduced on older paid data.
         query(work,env,'UPDATE server_info SET ucount=10 WHERE id=2')
-        for terminal in ('approved','auto_cart_approved','paid_with_wallet'):
+        for ordinal,terminal in enumerate(('approved','auto_cart_approved','paid_with_wallet'),1):
             legacy_pay=pay(work,env,'already_paid_terminal_'+terminal)
             query(work,env,f"UPDATE pays SET state='{terminal}' WHERE id={legacy_pay}")
+            # Exercise the terminal-state fence using a VALID Marzban name;
+            # an overlong fixture would fail earlier on username admission.
             denied=run_php(work,env,driver,pay=legacy_pay,
-                username='terminal_forbidden_'+terminal)
+                username='terminal_forbidden_'+str(ordinal))
             assert denied['error']=='effect_payment_identity_mismatch',denied
             assert denied['events']==[] and state(work,env,legacy_pay)==''
             assert query(work,env,'SELECT ucount FROM server_info WHERE id=2')=='10'
