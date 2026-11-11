@@ -469,3 +469,33 @@ Reconcile any uncertain operation against protected local/provider evidence and
 use a separately reviewed recovery plan. Lower Telegram update IDs after a long
 idle epoch and retained transfer cursors also require explicit reconciliation,
 not erasing replay history.
+
+A02 source-only correction candidate (Issue #144): incomplete original
+service_plan_changes entries may be corrected only after a distinct
+administrator confirmation action. A second immutable 017 row stores the
+authorizing actor, original journal ID and digest, target access and fresh
+Native-before digest before any additional PUT. The exact physical GET_LOCK,
+original Native/account/plan/financial preflight, pinned target, provider
+authority and immediately-before-PUT readback remain mandatory. Unknown
+correction outcomes stay dispatched and unretryable: only the existing
+administrator GET-only path may finalize both audit rows and the shared local
+orders in one transaction after provider access is verified. No current
+installation is changed; neither the protected old journal #2 nor order #33
+is a test input. Migration 017 remains unchanged (no additional DDL).
+The product may require a deliberate rollout/upgrade; compatibility with
+older unsupported runtime versions is not a release condition. Data/effect
+conservation is mandatory regardless of source version.
+
+A02 local test-infrastructure note: disposable MariaDB schema initialization
+in the shared development VM once exceeded the previous 10-second subprocess
+limit (no product PHP or Native assertions had started for that fixture).
+The owned-schema test-only timeout is now 30 seconds; data and provider
+timeouts, functional assertions, and all CI gate requirements are unchanged.
+
+Final A02 isolated Native result after the lock-order and worker-failure
+checks: 271 source-real assertions PASSED on task-owned socket MariaDB
+with both Marzban and PasarGuard loopback providers. The same suite verifies
+administrator/stale-order denial, original intent immutability, single
+correction PUT, no PUT on complete Native state, no repeat after uncertain
+local finalization, delayed GET-only settlement, and exact audit-row
+commit. This is not live Chili testing or full PHP 8.5 CI acceptance.

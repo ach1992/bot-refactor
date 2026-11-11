@@ -8,6 +8,7 @@ from __future__ import annotations
 import argparse
 import contextlib
 import copy
+import hashlib
 import json
 import re
 import subprocess
@@ -80,6 +81,10 @@ DRIVER = plans.DRIVER.replace(" } elseif($op==='toggle'){", """ } elseif($op==='
  } elseif($op==='review_recover'){
   require_once $root.'/src/Subscription/PhysicalService.php';
   $out=achbotPhysicalRecoverPlan($connection,(int)$spec['journal'],
+    (int)$spec['actor'],(int)($spec['order']??0));
+ } elseif($op==='review_correct'){
+  require_once $root.'/src/Subscription/PhysicalService.php';
+  $out=achbotPhysicalCorrectPlan($connection,(int)$spec['journal'],
     (int)$spec['actor'],(int)($spec['order']??0));
  } elseif($op==='review_pg_key'){
   require_once $root.'/src/Subscription/PhysicalService.php';
@@ -204,7 +209,10 @@ def harness(provider: str):
                 'achbot_customer_draft_creation_deferred',
                 'achbot_order_plan_actions_unverified',
                 'achbot_shared_plan_recovery_held',
-                'achbot_shared_plan_recovered')
+                'achbot_shared_plan_recovered',
+                'achbot_plan_correction_dispatched',
+                'achbot_plan_correction_verified',
+                'achbot_plan_correction_held')
             if run.returncode or not all(line.startswith(allowed)
                 for line in run.stderr.splitlines()):
                 raise AssertionError((provider, op, run.returncode, run.stdout, run.stderr))
@@ -1021,6 +1029,128 @@ def main():
             yes(repeat['success'] is False and outstanding(h)=='committed' and
                 len(h['writes']())==writes+1,
                 provider+'_get_only_recovery_duplicate_callback_denied_without_put')
+
+    # A02: An explicit administrator action may dispatch ONE NEW corrective
+    # Native mutation for an exact, still incomplete original journal. The
+    # original 017 intent and local financial/account provenance survive.
+    for provider in ('marzban','pasarguard'):
+        with harness(provider) as h:
+            seeded(h)
+            db=h['db'];prior=finance(h);old=subject(h)
+            db('CREATE TRIGGER fixture_block_plan_correction BEFORE UPDATE ON orders_list '
+               "FOR EACH ROW SIGNAL SQLSTATE '45000' "
+               "SET MESSAGE_TEXT='fixture_original_native_committed_only'")
+            try:
+                puts=len(h['writes']())
+                plan(h,120)
+            finally:
+                db('DROP TRIGGER fixture_block_plan_correction')
+            jid=int(db('SELECT MAX(id) FROM service_plan_changes'))
+            journal_count=int(db('SELECT COUNT(*) FROM service_plan_changes'))
+            original=db(f'SELECT intent_json FROM service_plan_changes WHERE id={jid}')
+            yes(outstanding(h)=='dispatching' and len(h['writes']())==puts+1,
+                provider+'_correction_original_put_hold_prepared')
+            if provider=='marzban':
+                h['vendor'].edit_account['inbounds']={'vless':['inbound']}
+            else:
+                h['vendor'].users[41]['group_ids']=[2,5]
+            forbidden=h['call']('review_correct',journal=jid,actor=1001,order=h['oid'])
+            forged=h['call']('review_correct',journal=jid,actor=9001,order=h['peer'])
+            yes(not forbidden['success'] and not forged['success'] and
+                len(h['writes']())==puts+1 and
+                int(db('SELECT COUNT(*) FROM service_plan_changes'))==journal_count and
+                outstanding(h)=='dispatching',
+                provider+'_correction_nonadmin_and_stale_order_denied_without_put')
+            corrected=h['call']('review_correct',journal=jid,actor=9001,order=h['oid'])
+            yes(corrected=={'success':True,'reason':'corrected','shared_count':2},
+                provider+'_corrective_native_success')
+            yes(len(h['writes']())==puts+2 and outstanding(h)=='committed' and
+                db(f'SELECT fileid FROM orders_list WHERE id IN ({h["oid"]},{h["peer"]}) ORDER BY id')=='120\n120' and
+                db(f'SELECT intent_json FROM service_plan_changes WHERE id={jid}')==original and
+                int(db('SELECT COUNT(*) FROM service_plan_changes'))==journal_count+1,
+                provider+'_correction_one_additional_put_and_original_intent_immutable')
+            extra=json.loads(db("SELECT intent_json FROM service_plan_changes "
+                f"WHERE provider='{provider}_correction' AND source_order_id={h['oid']}"))
+            yes(extra['corrects_journal_id']==jid and
+                extra['requested_by']==9001 and
+                extra['original_intent_sha256']==hashlib.sha256(original.encode()).hexdigest() and
+                db("SELECT provider,state FROM service_plan_changes "
+                   f"WHERE provider='{provider}_correction' AND source_order_id={h['oid']}")==provider+'_correction\tcommitted',
+                provider+'_correction_authorized_separate_durable_audit')
+            replay=h['call']('review_correct',journal=jid,actor=9001,order=h['oid'])
+            yes(not replay['success'] and len(h['writes']())==puts+2 and
+                int(db('SELECT COUNT(*) FROM service_plan_changes'))==journal_count+1 and
+                finance(h)==prior,
+                provider+'_correction_replayed_callback_no_native_or_financial_effect')
+
+    # A02 negative assurance: an already-complete first Native PUT is never
+    # repeated by the corrective route. Only GET-only settlement is allowed.
+    for provider in ('marzban','pasarguard'):
+        with harness(provider) as h:
+            seeded(h)
+            db=h['db']
+            db('CREATE TRIGGER fixture_a02_original_complete BEFORE UPDATE ON orders_list '
+               "FOR EACH ROW SIGNAL SQLSTATE '45000' "
+               "SET MESSAGE_TEXT='fixture_original_complete_local_failure'")
+            try:
+                plan(h,120)
+            finally:
+                db('DROP TRIGGER fixture_a02_original_complete')
+            jid=int(db('SELECT MAX(id) FROM service_plan_changes'))
+            count=int(db('SELECT COUNT(*) FROM service_plan_changes'))
+            writes=len(h['writes']())
+            refused=h['call']('review_correct',journal=jid,actor=9001,order=h['oid'])
+            yes(refused=={'success':False,'reason':'physical_correction_get_only_available',
+                'shared_count':0} and len(h['writes']())==writes and
+                int(db('SELECT COUNT(*) FROM service_plan_changes'))==count and
+                outstanding(h)=='dispatching',
+                provider+'_correction_completed_native_never_sends_second_put')
+            recovered=h['call']('review_recover',journal=jid,actor=9001,order=h['oid'])
+            yes(recovered['success'] and len(h['writes']())==writes and
+                outstanding(h)=='committed',
+                provider+'_correction_complete_uses_only_original_get_finalization')
+
+    # A02 uncertain-local-finality: the authorized corrective Native write
+    # succeeded but the local order UPDATE did not. Retain both journal rows
+    # and reject another PUT; GET-only recovery finishes atomically later.
+    for provider in ('marzban','pasarguard'):
+        with harness(provider) as h:
+            seeded(h)
+            db=h['db']
+            db('CREATE TRIGGER fixture_a02_original_lost BEFORE UPDATE ON orders_list '
+               "FOR EACH ROW SIGNAL SQLSTATE '45000' "
+               "SET MESSAGE_TEXT='fixture_original_native_success_local_failed'")
+            try:
+                plan(h,120)
+            finally:
+                db('DROP TRIGGER fixture_a02_original_lost')
+            jid=int(db('SELECT MAX(id) FROM service_plan_changes'))
+            if provider=='marzban':
+                h['vendor'].edit_account['inbounds']={'vless':['inbound']}
+            else:
+                h['vendor'].users[41]['group_ids']=[2,5]
+            writes=len(h['writes']())
+            db('CREATE TRIGGER fixture_a02_corrected_lost BEFORE UPDATE ON orders_list '
+               "FOR EACH ROW SIGNAL SQLSTATE '45000' "
+               "SET MESSAGE_TEXT='fixture_corrective_native_success_local_failed'")
+            try:
+                held=h['call']('review_correct',journal=jid,actor=9001,order=h['oid'])
+            finally:
+                db('DROP TRIGGER fixture_a02_corrected_lost')
+            correction=f"{provider}_correction"
+            yes(not held['success'] and len(h['writes']())==writes+1 and
+                outstanding(h)=='dispatching' and
+                db(f"SELECT state FROM service_plan_changes WHERE provider='{correction}'")=='dispatching',
+                provider+'_correction_local_finality_failure_leaves_both_journals_held')
+            denied=h['call']('review_correct',journal=jid,actor=9001,order=h['oid'])
+            yes(not denied['success'] and len(h['writes']())==writes+1,
+                provider+'_correction_replayed_after_local_failure_no_second_put')
+            recovered=h['call']('review_recover',journal=jid,actor=9001,order=h['oid'])
+            yes(recovered['success'] and outstanding(h)=='committed' and
+                db(f"SELECT state FROM service_plan_changes WHERE provider='{correction}'")=='committed' and
+                db(f'SELECT fileid FROM orders_list WHERE id IN ({h["oid"]},{h["peer"]}) ORDER BY id')=='120\n120' and
+                len(h['writes']())==writes+1,
+                provider+'_correction_delayed_get_only_commits_both_original_and_audit')
 
     # F3: independent real Marzban API admission evidence complements
     # PasarGuard's authenticated native preflight exact-SQL-claim proof.

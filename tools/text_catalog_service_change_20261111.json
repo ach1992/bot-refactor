@@ -9,7 +9,7 @@
     },
     "admin": {
       "before_sha256": "bbe941cca8f668f1425b8ce0e330a5ae5e74f38a939ecad780a6fad87de1d8b1",
-      "after_sha256": "b58ce88bb64894fec0a7ec36b985e071df61c609554a7a9a67cd8ce0f4b6108d"
+      "after_sha256": "195c01efaadcc62c611bec1e647de7f242bee36c681aa7c19ca967b034ad33ec"
     }
   },
   "changes": {
@@ -28,7 +28,11 @@
       "subscription.service_change_report.server",
       "subscription.service_change_report.plan",
       "admin_settings.config.get_bot_setting_keys.customer_plan_toggle",
-      "subscription.service_plan_recovery.action"
+      "subscription.service_plan_recovery.action",
+      "subscription.service_plan_correction.action",
+      "subscription.service_plan_correction.confirm",
+      "subscription.service_plan_correction.warning",
+      "subscription.service_plan_correction.get_only"
     ]
   }
 }
