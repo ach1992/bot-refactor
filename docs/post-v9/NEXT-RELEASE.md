@@ -1,5 +1,43 @@
 # Current source and published release contracts
 
+
+## UNRELEASED — Issue #144 service-change corrections (not deployed)
+
+This section documents an **unreleased candidate**, not an update to the
+published RC30 ZIP or the active Chili installation.
+
+- Marzban Native Host changes use **one** partial-update PUT that includes
+  explicit empty arrays for protocols removed by the new plan. Both old and
+  target protocol sets are compared using strict normalized native GET
+  evidence; no second automatic PUT or credentials/quota/Note rewrite.
+- PasarGuard continues to use absolute, canonical `group_ids`, an existing
+  durable mutation fence, authenticated identity checks, Native GET before
+  and after the bounded PUT, and no-op/replay checks. The two providers do
+  not share incorrect transport semantics.
+- Successful service/server and plan changes use a common report-channel and
+  staff notice titled **تغییر سرویس**, with escaped subscription name,
+  order/customer IDs and numeric actor ID. Administrator order buttons for
+  service/server and plan are adjacent.
+- BOT_STATES adds an editable **customer plan-change** toggle, default ON to
+  preserve established behavior. Both the visible customer button and both
+  callback entrypoints enforce OFF; staff plan management remains available.
+- **Not included**: user-initiated server relocation and automatic invalidation
+  of pending, issued service-related payment attempts. The existing server
+  transfer is staff-authorized and the strict pending-payment fence remains
+  until a separate complete, race-safe cancellation/reconciliation design is
+  implemented. Customer toggles must not be falsely presented as empowering
+  a transfer that would affect other owners' shared Native subscription.
+- Previously dispatched ambiguous operations must **not** be silently retried
+  or have their journal marked committed. The Owner described the current
+  Chili record as disposable test data and explicitly did not authorize
+  modifying it; new code only fixes **future** operations.
+
+No new migration, scheduler, provider dependency, production mutation or
+change to the Native account Note marker is included. Future installation
+still needs an exact candidate review, Owner rollout approval and separate
+operator acceptance. Follow [Issue #144](https://github.com/ach1992/bot-refactor/issues/144).
+
+
 ## Published RC30 — source-only Cron, Telegram, Marzban and gift-card reliability
 
 [v0.10.0-rc.30](https://github.com/ach1992/bot-refactor/releases/tag/v0.10.0-rc.30) publishes independently approved [PR #142](https://github.com/ach1992/bot-refactor/pull/142), merged as `main@ebca4bee143ccb03ea45c2ea2767646b60ac6f9c`, TREE `f5103e9ffcdcc88994f30ec4e5550dc7b9546a13`. The **131-member source-only runtime ZIP** has SHA256 `5ac98c346867e1a8d3aeb7c38482090cde5288d293f05375f6e7f74e13e79150`, five modified runtime paths since RC29, and **no new DDL**. See the [RC29 -> RC30 operator guide](https://github.com/ach1992/bot-refactor/releases/download/v0.10.0-rc.30/RC29-TO-RC30.md), [test acceptance matrix](https://github.com/ach1992/bot-refactor/releases/download/v0.10.0-rc.30/TEST-CHILI-ACCEPTANCE.md) and full Release Notes.

@@ -452,7 +452,7 @@ if(($data=="botSettings" or preg_match('/^changeBot([A-Za-z0-9_]+)$/D',$data,$ma
         // Keep this explicit list in sync with getBotSettingKeys().
         $editableBotToggles=[
             'agencyState','agencyPlanDiscount','individualExistence',
-            'sharedExistence','testAccount','changeProtocolState',
+            'sharedExistence','testAccount','changeProtocolState','changePlanState',
             'renewAccountState','renewAutoState','plandelkhahState',
             'increaseTimeState','increaseVolumeState',
             'requirePhone','requireIranPhone','sellState','botState',

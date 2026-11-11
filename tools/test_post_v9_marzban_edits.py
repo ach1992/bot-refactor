@@ -131,6 +131,16 @@ class EditProviderHandler(native.Handler):
                           'data_limit_reset_strategy'):
                 account[field]=copy.deepcopy(request[field] if field in request
                                              else pre_put[field])
+            # Real Marzban UserModify updates ONLY inbound protocols named
+            # in the request. Missing protocol keys retain old access.
+            # This mode turns a previously simplistic replacement mock into
+            # the regression condition observed on installed Chili.
+            if getattr(server,'partial_plan_inbounds',False) and 'inbounds' in request:
+                merged=copy.deepcopy(pre_put['inbounds'])
+                for protocol,tags in request['inbounds'].items():
+                    if tags:merged[protocol]=copy.deepcopy(tags)
+                    else:merged.pop(protocol,None)
+                account['inbounds']=merged
             if 'status' not in request:
                 if (pre_put['status']=='expired' and
                     account['expire']>time.time()):

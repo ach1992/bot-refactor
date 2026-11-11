@@ -232,8 +232,10 @@ function showOrderManagementPanel($order, $msgId = null,string $notice=''){
         [["text" => \achbotMessage('admin_settings.management.local_delete'), "callback_data" => "deleteOrder_{$order['id']}"]],
         [["text" => \achbotMessage('admin_settings.management.local_expiry'), "callback_data" => "changeExpireDate_{$order['id']}"]],
         [["text" => \achbotMessage('subscription.order_management.show_order_management_panel.button.7256e018bd'), "callback_data" => "changeToken_{$order['id']}"]],
-        [["text" => \achbotMessage('subscription.order_management.show_order_management_panel.button.8824464622'), "callback_data" => "changeServerId_{$order['id']}"]],
-        [["text" => \achbotMessage('admin_settings.management.local_plan'), "callback_data" => "changeFileId_{$order['id']}_{$order['server_id']}"]],
+        [
+            ["text" => \achbotMessage('subscription.order_management.show_order_management_panel.button.8824464622'), "callback_data" => "changeServerId_{$order['id']}"],
+            ["text" => \achbotMessage('admin_settings.management.local_plan'), "callback_data" => "changeFileId_{$order['id']}_{$order['server_id']}"]
+        ],
         [["text" => \achbotMessage('subscription.order_management.show_order_management_panel.button.8851b5ce4f'), "callback_data" => "changeUUID_{$order['id']}"]],
 		[["text" => \achbotMessage('subscription.order_management.show_order_management_panel.button.72e5322e9a', ['agentStatus' => $agentStatus]), "callback_data" => "toggleAgent_{$order['id']}"]],
         [["text"=>$warning['label'],"callback_data"=>"orderWarningStatus_{$order['id']}"]],
@@ -539,6 +541,8 @@ if (preg_match('/^selectServerId_(\d+)_(\d+)$/D', (string)($data ?? ''), $match)
         alert(\achbotMessage('subscription.order_management.show_order_management_panel.alert.c5dae93802'), true);
         return;
     }
+    require_once __DIR__.'/PhysicalService.php';
+    achbotNotifyServiceChange('server',$result,(int)$from_id,true);
     sendMessage(\achbotMessage('subscription.order_management.show_order_management_panel.message.88e0b88b0d'));
     $stmt = $connection->prepare("SELECT * FROM `orders_list` WHERE `id` = ?");
     $stmt->bind_param('i', $id);
@@ -583,6 +587,18 @@ if (preg_match('/^selectFileId_(\d+)_(\d+)$/', (string) ($data ?? ''), $match)) 
     if (!$result['success']) {
         alert(\achbotMessage('subscription.order_management.show_order_management_panel.alert.99d247fc18'),true);
         return;
+    }
+    // Source of truth is the committed order+plan, not stale callback text.
+    try {
+        $q=$connection->prepare('SELECT o.id,o.userid,o.remark,p.title AS plan_title FROM orders_list o JOIN server_plans p ON p.id=o.fileid WHERE o.id=? AND o.fileid=?');
+        $q->bind_param('ii',$id,$newFileId);$q->execute();$subject=$q->get_result()->fetch_assoc();$q->close();
+        if ($subject) {
+            $subject['plan_id']=$newFileId;
+            require_once __DIR__.'/PhysicalService.php';
+            achbotNotifyServiceChange('plan',$subject,(int)$from_id,true);
+        }
+    } catch (Throwable $noticeError) {
+        error_log('achbot_service_plan_report_unconfirmed order_id='.$id);
     }
     sendMessage(\achbotMessage('subscription.order_management.show_order_management_panel.message.75785b37ae'));
     $s=$connection->prepare('SELECT * FROM orders_list WHERE id=?');

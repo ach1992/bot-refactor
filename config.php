@@ -630,7 +630,7 @@ function setSettings($field, $value): bool {
         'agencyState','agencyPlanDiscount','individualExistence',
         'sharedExistence','testAccount','changeProtocolState',
         'renewAccountState','renewAutoState','plandelkhahState',
-        'switchLocationState','increaseTimeState','increaseVolumeState',
+        'switchLocationState','changePlanState','increaseTimeState','increaseVolumeState',
         'requirePhone','requireIranPhone','sellState','botState',
         'searchState',
         'renewConfigLinkState','updateConfigLinkState','qrConfigState',
@@ -1364,6 +1364,8 @@ function getBotSettingKeys(){
     $stmt->close();
 
     $changeProtocole = $botState['changeProtocolState']=="on"?$buttonValues['on']:$buttonValues['off'];
+    // Backward compatible: customer plan selection was previously available.
+    $customerPlanSwitch = ($botState['changePlanState'] ?? 'on')==='on'?$buttonValues['on']:$buttonValues['off'];
     $renewAccount = $botState['renewAccountState']=="on"?$buttonValues['on']:$buttonValues['off'];
     $plandelkhahwiz = $botState['plandelkhahState']=="on"?$buttonValues['on']:$buttonValues['off'];
     $increaseTime = $botState['increaseTimeState']=="on"?$buttonValues['on']:$buttonValues['off'];
@@ -1435,6 +1437,10 @@ function getBotSettingKeys(){
         [
             ['text'=>$changeProtocole,'callback_data'=>"changeBotchangeProtocolState"],
             ['text'=>\achbotMessage('admin_settings.config.get_bot_setting_keys.button.5705eee73b'),'callback_data'=>"wizwizch"]
+        ],
+        [
+            ['text'=>$customerPlanSwitch,'callback_data'=>'changeBotchangePlanState'],
+            ['text'=>\achbotMessage('admin_settings.config.get_bot_setting_keys.customer_plan_toggle'),'callback_data'=>'wizwizch']
         ],
         [
             ['text'=>$renewAccount,'callback_data'=>"changeBotrenewAccountState"],

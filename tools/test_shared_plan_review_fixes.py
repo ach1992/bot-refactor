@@ -304,6 +304,61 @@ def main():
                 f" VALUES('{hashid}',1002,'{payment_type}',119,2,{peer},137,UNIX_TIMESTAMP(),'{state}')")
         return int(h['db'](f"SELECT id FROM pays WHERE hash_id='{hashid}'"))
 
+    # RC30 installed incident: a partial Marzban PUT kept protocol keys that
+    # the new plan omitted, then the durable journal blocked all retries.
+    # Exercise the REAL PHP plan controller against a merge-semantics mock.
+    with harness('marzban') as h:
+        seeded(h)
+        vendor=h['vendor']
+        vendor.partial_plan_inbounds=True
+        vendor.edit_account['inbounds'].update({
+            'shadowsocks':['old-shadowsocks'],'trojan':['old-trojan']})
+        vendor.edit_account['proxies'].update({
+            'shadowsocks':{'password':'old-secret'},
+            'trojan':{'password':'old-secret'}})
+        old_note=vendor.edit_account['note']
+        old_usage=vendor.edit_account['used_traffic']
+        before=len(h['writes']())
+        plan(h,120)
+        yes(len(h['writes']())==before+1 and outstanding(h)=='committed',
+            'marzban_partial_put_protocol_removal_committed_once')
+        wire=json.loads(h['writes']()[-1]['body'])['inbounds']
+        yes(wire.get('shadowsocks')==[] and wire.get('trojan')==[] and
+            wire['vless']==['fake-inbound'] and
+            vendor.edit_account['inbounds']=={'vless':['fake-inbound']},
+            'marzban_single_put_explicitly_clears_omitted_protocol_keys')
+        yes(vendor.edit_account['note']==old_note and
+            vendor.edit_account['used_traffic']==old_usage and
+            'shadowsocks' in vendor.edit_account['proxies'] and
+            'trojan' in vendor.edit_account['proxies'],
+            'marzban_access_only_put_preserves_notes_usage_and_credentials')
+        old_puts=len(h['writes']())
+        plan(h,120)
+        yes(len(h['writes']())==old_puts and outstanding(h)=='committed',
+            'marzban_repeated_same_plan_is_verified_no_put')
+
+    # PasarGuard is NOT a Marzban protocol host edit. Its Native group_ids
+    # are the entire absolute entitlement set. Verify one bounded physical
+    # write, exact readback and no same-plan replay on a real PG wire fixture.
+    with harness('pasarguard') as h:
+        seeded(h)
+        vendor=h['vendor']
+        before=vendor.users[41].copy()
+        writes=len(h['writes']())
+        plan(h,120)
+        after=vendor.users[41]
+        yes(len(h['writes']())==writes+1 and
+            after['group_ids']==[2] and outstanding(h)=='committed',
+            'pasarguard_plan_replaces_native_groups_exactly_once')
+        yes(after['note']==before['note'] and
+            after['used_traffic']==before['used_traffic'] and
+            after['expire']==before['expire'],
+            'pasarguard_plan_preserves_note_usage_and_expiry')
+        old_writes=len(h['writes']())
+        plan(h,120)
+        yes(len(h['writes']())==old_writes and outstanding(h)=='committed',
+            'pasarguard_same_plan_replay_is_native_no_put')
+
     for provider in ('marzban', 'pasarguard'):
         # F2 financial cases plus F1 before and after a real F3 held journal.
         with harness(provider) as h:

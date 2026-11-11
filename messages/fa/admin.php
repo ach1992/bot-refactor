@@ -460,8 +460,33 @@ return [
         'account_details.get_user_order_detail_keys.button.1c7f597d4f' => '🤝 خرید همکار',
         'account_details.get_user_order_detail_keys.text.ed76444585' => '🟢 تمدید خودکار روشن',
         'account_details.get_user_order_detail_keys.text.fb6d00ad8d' => '🔴 تمدید خودکار خاموش',
+        // service_change_report (shared administrator/report-channel notices)
+        'service_change_report.admin' => 'مدیر',
+        'service_change_report.customer' => 'کاربر',
+        'service_change_report.server' => [
+            'text' => "🔄 <b>تغییر سرویس</b>
+🧩 نوع: تغییر سرور
+🎈 نام اشتراک: <code>{remark}</code>
+🧾 شناسه سفارش: <code>{order_id}</code>
+👤 شناسه کاربر: <code>{user_id}</code>
+🛠 شناسه عددی مدیر: <code>{actor_id}</code>
+🌐 سرور قبلی: <code>{source_id}</code>
+📍 سرور جدید: <code>{target_id}</code> — {target_title}",
+            'parameters' => ['remark','order_id','user_id','actor_id','source_id','target_id','target_title']
+        ],
+        'service_change_report.plan' => [
+            'text' => "🔄 <b>تغییر سرویس</b>
+🧩 نوع: تغییر پلن
+🎈 نام اشتراک: <code>{remark}</code>
+🧾 شناسه سفارش: <code>{order_id}</code>
+👤 شناسه کاربر: <code>{user_id}</code>
+👤 شناسه {actor_role}: <code>{actor_id}</code>
+📦 پلن جدید: {plan_title}
+🔢 شناسه پلن: <code>{plan_id}</code>",
+            'parameters' => ['remark','order_id','user_id','actor_role','actor_id','plan_title','plan_id']
+        ],
         // account_transfers.admin_message
-        'account_transfers.admin_message.6645c1fd4d' => '🌐 تغییر سرور منطقی مرزبان در ربات' . "\n" . '',
+        'account_transfers.admin_message.6645c1fd4d' => '🔄 تغییر سرویس' . "\n" . '',
         // account_transfers.user_i_d
         'account_transfers.user_i_d.6590a1ba5e' => 'شناسه عددی: ',
         // account_transfers.order_i_d
@@ -1588,6 +1613,7 @@ return [
         'config.get_bot_setting_keys.button.f9a77f614a' => '♻️ تمدید خودکار اشتراک',
         'config.get_bot_setting_keys.button.8ef9c2184e' => '📋 پلن دلخواه',
         'config.get_bot_setting_keys.button.c6b7f26615' => '🌐 تغییر سرویس',
+        'config.get_bot_setting_keys.customer_plan_toggle' => '📦 تغییر پلن کاربران',
         'config.get_bot_setting_keys.button.070602773a' => '📅 افزایش زمان',
         'config.get_bot_setting_keys.button.4bbbd988ad' => '📦 افزایش حجم',
         'config.get_bot_setting_keys.button.bb9acf5637' => '📱 تایید شماره',

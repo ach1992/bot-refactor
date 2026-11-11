@@ -720,3 +720,54 @@ function achbotPhysicalSelectPlan(mysqli $db,int $orderId,int $newPlanId,int $ac
         if ($lease!==null) achbotPhysicalReleaseLock($db,$lease);
     }
 }
+
+/**
+ * Every successful admin/customer service change should reach normal staff
+ * recipients AND the configured reporting channel. No report is issued before
+ * the authoritative local/Native commit. Telegram failure never replays it.
+ */
+function achbotNotifyServiceChange(string $kind,array $subject,int $actorId,bool $adminActor): void {
+    if (!in_array($kind,['server','plan'],true) ||
+        $actorId<=0 || (int)($subject['id']??0)<=0 ||
+        (int)($subject['userid']??0)<=0 ||
+        !is_string($subject['remark']??null) ||
+        (string)$subject['remark']==='') return;
+    try {
+        $escape=static fn($s): string =>
+            htmlspecialchars((string)$s,ENT_QUOTES|ENT_SUBSTITUTE,'UTF-8');
+        $params=[
+            'remark'=>$escape($subject['remark']),
+            'order_id'=>(string)(int)$subject['id'],
+            'user_id'=>(string)(int)$subject['userid'],
+            'actor_id'=>(string)$actorId,
+            'actor_role'=>$adminActor
+                ? achbotMessage('subscription.service_change_report.admin')
+                : achbotMessage('subscription.service_change_report.customer')
+        ];
+        if ($kind==='server') {
+            $source=(int)($subject['source_id']??0);
+            $target=(int)($subject['target_id']??0);
+            if (!$adminActor || $source<=0 || $target<=0) return;
+            $params['source_id']=(string)$source;
+            $params['target_id']=(string)$target;
+            $params['target_title']=$escape($subject['title']??'');
+        } else {
+            $id=(int)($subject['plan_id']??0);
+            if ($id<=0) return;
+            $params['plan_id']=(string)$id;
+            $params['plan_title']=$escape($subject['plan_title']??'');
+        }
+        $text=achbotMessage(
+            $kind==='server'
+                ? 'subscription.service_change_report.server'
+                : 'subscription.service_change_report.plan',
+            $params
+        );
+        // Default general notification fanout includes botState.rewardChannel.
+        // Do not pass report_channel=null: that explicitly disables it.
+        achbotNotifyAdmins('sendMessage',['text'=>$text,'parse_mode'=>'HTML']);
+    } catch (Throwable $error) {
+        error_log('achbot_service_change_report_unconfirmed order_id='.
+            (int)$subject['id'].' kind='.$kind.' class='.get_class($error));
+    }
+}

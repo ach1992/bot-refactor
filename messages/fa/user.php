@@ -371,7 +371,7 @@ return [
         'account_details.get_order_status_text.text.63ef396546' => '⏰ مدت اشتراک تمام شده است.',
         'account_details.get_order_status_text.text.e9216d0d0c' => '🔋 حجم اشتراک تمام شده است.',
         // account_details.get_order_detail_keys
-        'account_details.get_order_detail_keys.button.5c38085697' => '📍 تغییر سرور',
+        'account_details.get_order_detail_keys.button.5c38085697' => '🌐 تغییر سرویس',
         // account_transfers.alert
         'account_transfers.alert.6b5b63fb0f' => '⛔️ تغییر سرور غیرفعال است.',
         'account_transfers.alert.2c082acb46' => '⛔️ سفارش یا سرور فعلی معتبر نیست.',

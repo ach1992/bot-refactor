@@ -461,7 +461,9 @@ function getOrderDetailKeys($from_id, $id, $offset = 0){
         if (($botState['updateConfigLinkState'] ?? "off") == "on")
             $flatButtons[] = ['text' => $buttonValues['update_config_connection'], 'callback_data' => "updateConfigConnectionLink{$id}"];
 
-        if ($planActions['choose']) $flatButtons[] = ['text' => $buttonValues['change_plan'], 'callback_data' => "changePlan_{$id}"];
+        if ($planActions['choose'] && (canReadAdminOrderDetails() ||
+            ($botState['changePlanState'] ?? 'on')==='on'))
+            $flatButtons[] = ['text' => $buttonValues['change_plan'], 'callback_data' => "changePlan_{$id}"];
 
         if (($botState['qrConfigState'] ?? "off") == "on" && !empty($presentation['qr_config_links']))
             $flatButtons[] = ['text' => $buttonValues['qr_config'], 'callback_data' => "showQrConfig{$id}"];
