@@ -107,7 +107,24 @@ def main():
     def membership_block(source):
         start=source.index("$channelLock = $botState['lockChannel'];")
         return source[start:source.index('// Channel exemption is dispatched',start)]
-    check(membership_block(cfg)==membership_block(old_cfg),'membership_checks_byte_unchanged')
+    # This previously byte-pinned current membership call was intentionally
+    # guarded for verified Telegram actors to prevent an unauthenticated CLI
+    # Cron process from making a bogus getChatMember request each minute.
+    # Pin the entire approved delta and forbid any unrelated membership edit.
+    original_call="$joniedState= bot('getChatMember', ['chat_id' => $channelLock,'user_id' => $from_id])->result->status;"
+    guarded_call="""$joniedState = null;
+// Membership is relevant only for an authenticated webhook actor, not a
+// once-per-minute CLI job. Preserve the legacy unknown-result behavior.
+if (defined('ACHBOT_VERIFIED_WEBHOOK_ENTRYPOINT') && (int)$from_id > 0 &&
+    $channelLock !== null && $channelLock !== '') {
+    $membership = bot('getChatMember', ['chat_id' => $channelLock,'user_id' => $from_id]);
+    $memberStatus = is_object($membership) ? ($membership->result->status ?? null) : null;
+    $joniedState = is_string($memberStatus) ? $memberStatus : null;
+}"""
+    old_membership=membership_block(old_cfg)
+    check(old_membership.count(original_call)==1 and
+          membership_block(cfg)==old_membership.replace(original_call,guarded_call),
+          'membership_only_exact_verified_actor_guard_delta')
     def join_block(source):
         marker="        $joinUrl = \\AchBot\\Presentation\\Text\\lockChannelJoinUrl("
         start=source.index(marker) if marker in source else source.index("        $lockChannelValue = trim($botState['lockChannel'] ?? '');")

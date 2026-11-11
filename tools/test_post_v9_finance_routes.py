@@ -537,6 +537,14 @@ function curl_error($handle) {
         $GLOBALS['fake_marzban_transport_failure']) return 'synthetic_timeout';
     return '';
 }
+// The current Marzban auth boundary reads curl_errno alongside curl_error.
+// Match the real cURL contract in this no-network fixture, not a missing PHP
+// function that would silently fail the caller's financial recovery path.
+function curl_errno($handle) {
+    if (str_contains($handle->url,'/api/user/') && $handle->method==='PUT' &&
+        $GLOBALS['fake_marzban_transport_failure']) return 28;
+    return 0;
+}
 function curl_getinfo($handle,$option) {
     if (str_contains($handle->url,'/api/user/') &&
         str_ends_with($handle->url,'/reset')) return $GLOBALS['fake_marzban_reset_http'];
@@ -781,7 +789,7 @@ def run_php(work, env, stage, spec, db=DB):
     # load ctype explicitly without exposing real curl functions/network.
     cmd=['php','-n','-d','extension=mysqlnd','-d','extension=mysqli',
          '-d','extension=curl','-d','extension=ctype','-d','allow_url_fopen=0',
-         '-d','disable_functions=curl_init,curl_setopt,curl_setopt_array,curl_exec,curl_close,curl_error,curl_getinfo,exec,shell_exec,system,passthru,popen,proc_open,mail',
+         '-d','disable_functions=curl_init,curl_setopt,curl_setopt_array,curl_exec,curl_close,curl_error,curl_errno,curl_getinfo,exec,shell_exec,system,passthru,popen,proc_open,mail',
          str(script),str(stage),db,str(work/'mysql.sock'),json.dumps(spec)]
     p=subprocess.run(cmd,env=env,cwd=work,capture_output=True,timeout=20)
     claim_code=spec.get('expect_hosted_claim_code')
@@ -908,7 +916,7 @@ def check_verified_browser_worker_contention(work,env,stage,records):
     def php_cmd(spec):
         return ['php','-n','-d','extension=mysqlnd','-d','extension=mysqli',
                 '-d','extension=curl','-d','extension=ctype','-d','allow_url_fopen=0',
-                '-d','disable_functions=curl_init,curl_setopt,curl_setopt_array,curl_exec,curl_close,curl_error,curl_getinfo,exec,shell_exec,system,passthru,popen,proc_open,mail',
+                '-d','disable_functions=curl_init,curl_setopt,curl_setopt_array,curl_exec,curl_close,curl_error,curl_errno,curl_getinfo,exec,shell_exec,system,passthru,popen,proc_open,mail',
                 str(driver),str(stage),DB,str(work/'mysql.sock'),json.dumps(spec)]
     def finish(process,expected_log=b''):
         out,err=process.communicate(timeout=18)

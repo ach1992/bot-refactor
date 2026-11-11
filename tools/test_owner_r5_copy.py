@@ -38,6 +38,11 @@ def main():
     except AssertionError:pass
     else:raise AssertionError('chili_sync_unapproved_value_was_accepted')
     changed=copy.deepcopy(sides)
+    changed['admin']['manual_payment.api_payment.auto_approved']='تایید خودکار توسط API'
+    try:r5.chili_live_copy_restore(changed)
+    except AssertionError:pass
+    else:raise AssertionError('unapproved_api_button_prefix_reversal_accepted')
+    changed=copy.deepcopy(sides)
     changed['admin'].pop('manual_payment.api_payment.code_evidence_unrecognized')
     try:r5.chili_live_copy_restore(changed)
     except AssertionError:pass

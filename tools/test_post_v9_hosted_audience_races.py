@@ -126,7 +126,7 @@ def one(w,e,stage,driver,provider,mode,old,index,iso,typ='INCREASE_WALLET',flag=
           'f2_release':str(folder/'release'),'isolation':iso}
     proc=subprocess.Popen(['php','-n','-d','extension=mysqlnd','-d',
            'extension=mysqli','-d','extension=curl','-d','allow_url_fopen=0',
-           '-d','disable_functions=curl_init,curl_setopt,curl_setopt_array,curl_exec,curl_close,curl_error,curl_getinfo,exec,shell_exec,system,passthru,popen,proc_open,mail',
+           '-d','disable_functions=curl_init,curl_setopt,curl_setopt_array,curl_exec,curl_close,curl_error,curl_errno,curl_getinfo,exec,shell_exec,system,passthru,popen,proc_open,mail',
            str(driver),str(stage),DB,str(w/'mysql.sock'),json.dumps(spec)],
            cwd=w,env=e,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
     try:

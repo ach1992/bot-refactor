@@ -142,8 +142,30 @@ class ValidationModes(unittest.TestCase):
             "production_database_or_service_modified":False,
         }
 
-    def cron_call(self, proof=None, *, raw=None, missing=False, failed=False):
+    def cron_actor_proof(self):
+        return {'complete':True,'cases':30,
+                'native_marzban_bad_token_no_get_list_create':True,
+                'native_marzban_auth_root_cause_classified':True,
+                'native_marzban_subscription_single_login':True,
+                'native_panel_no_empty_auth_request':True,
+                'native_panel_auth_diagnostic_once':True,
+                'actual_config_section':True,
+                'cli_no_telegram_or_php_warnings':True,
+                'real_verified_webhook_membership':True,
+                'malformed_membership_no_warning':True,
+                'unknown_actor_fails_closed':True,
+                'external_network_calls':0,'live_database_mutations':0}
+
+    def cron_call(self, proof=None, *, raw=None, missing=False, failed=False,
+                  actor=None, actor_failed=False):
         def run(command, **kwargs):
+            if command[:2]==['python3',str(checks.ROOT/'tools/test_post_v9_cron_config_bootstrap.py')]:
+                self.assertEqual(kwargs['timeout'],25)
+                self.assertTrue(kwargs['check'])
+                if actor_failed:
+                    raise subprocess.CalledProcessError(19,command,stderr=b'controlled config fixture failure')
+                chosen=self.cron_actor_proof() if actor is None else actor
+                return subprocess.CompletedProcess(command,0,stdout=json.dumps(chosen))
             self.assertEqual(command[:2],
                              ["python3",str(checks.ROOT/"tools/test_post_v9_cron_runner.py")])
             self.assertEqual(kwargs["timeout"],65)
@@ -164,7 +186,19 @@ class ValidationModes(unittest.TestCase):
 
     def test_valid_complete_cron_report_is_accepted(self):
         proof=self.proof()
-        self.assertEqual(self.cron_call(proof),proof)
+        self.assertEqual(self.cron_call(proof),dict(proof,
+            config_actor_bootstrap=self.cron_actor_proof()))
+
+    def test_failed_config_actor_fixture_blocks_cron_acceptance(self):
+        with self.assertRaises(subprocess.CalledProcessError):
+            self.cron_call(self.proof(),actor_failed=True)
+        NEGATIVE_CONTROLS.append('failed_config_actor_fixture')
+
+    def test_false_config_actor_proof_blocks_cron_acceptance(self):
+        bad=self.cron_actor_proof();bad['cli_no_telegram_or_php_warnings']=False
+        with self.assertRaises(RuntimeError):
+            self.cron_call(self.proof(),actor=bad)
+        NEGATIVE_CONTROLS.append('false_config_actor_proof')
 
     def test_missing_cron_report_is_not_success(self):
         with self.assertRaises(FileNotFoundError):

@@ -3,6 +3,10 @@
 namespace AchBot\Panel\Accounts;
 use stdClass;
 
+// RFC 6750 Bearer b64token alphabet (not JWT-specific). Reject whitespace,
+// control characters and non-token bytes before any Authorization header.
+const MARZBAN_BEARER_TOKEN_PATTERN = '#\A[A-Za-z0-9._~+/-]+=*\z#D';
+
 if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
     http_response_code(404);
     exit;
@@ -11,6 +15,18 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
 function getMarzbanToken($server_id, ?string $expectedPanelUrl = null,
                         ?array $effectTarget = null){
     global $connection;
+    // Diagnostic is private to this existing provider method. One classified
+    // failure per server per PHP invocation, no secret/token/URL.
+    static $reportedAuthFailures=[];
+    $logAuthFailure=static function(string $reason,int $http=0,int $errno=0)
+        use($server_id,&$reportedAuthFailures): void {
+        $id=(int)$server_id;
+        if (isset($reportedAuthFailures[$id]))return;
+        $reportedAuthFailures[$id]=true;
+        error_log('achbot_marzban_auth_unverified server_id='.$id.
+            ' reason='.$reason.' http='.max(0,min($http,599)).
+            ' curl_errno='.max(0,min($errno,999)));
+    };
     $stmt = $connection->prepare("SELECT * FROM server_config WHERE id = ?");
     $stmt->bind_param('i', $server_id);
     $stmt->execute();
@@ -63,18 +79,41 @@ function getMarzbanToken($server_id, ?string $expectedPanelUrl = null,
             'Content-Type: application/x-www-form-urlencoded',
             'accept: application/json'
         ));
+    // Pinned financial effects already emit one durable reconciliation
+    // diagnostic with stage/reason; a second panel auth line would duplicate
+    // the same operation and violate the existing exact journal contract.
+    $logStandaloneAuthFailure=static function(string $reason,int $http=0,int $errno=0)
+        use($effectTarget,$logAuthFailure): void {
+        if ($effectTarget===null)$logAuthFailure($reason,$http,$errno);
+    };
     $response = curl_exec($curl);
     $curlError=curl_error($curl);
+    $curlErrno=(int)curl_errno($curl);
     $http=(int)curl_getinfo($curl,CURLINFO_HTTP_CODE);
-    if ($curlError!=='' || $response===false)
+    if ($curlError!=='' || $response===false || $curlErrno!==0) {
+        $logStandaloneAuthFailure('transport',$http,$curlErrno);
         return (object)['success'=>false,'detail'=>'marzban_auth_transport_unavailable'];
-    if ($effectTarget!==null && $http!==200)
-        return (object)['success'=>false,'detail'=>'effect_auth_unconfirmed'];
+    }
+    if ($http!==200) {
+        $logStandaloneAuthFailure('http_status',$http);
+        // Preserve the existing consumer-facing Marzban error object for
+        // ordinary reads; older callers rely on its `detail` field. A
+        // financial effect still returns the pinned, non-provider reason.
+        if ($effectTarget===null) {
+            $providerError=json_decode((string)$response);
+            if (is_object($providerError) && isset($providerError->detail))
+                return $providerError;
+        }
+        return (object)['success'=>false,'detail'=>$effectTarget!==null
+            ?'effect_auth_unconfirmed':'marzban_auth_http_unconfirmed'];
+    }
     $token=json_decode((string)$response);
-    if ($effectTarget!==null &&
-        (!is_object($token) || !is_string($token->access_token??null) ||
-         $token->access_token===''))
-        return (object)['success'=>false,'detail'=>'effect_auth_invalid'];
+    if (!is_object($token) || !is_string($token->access_token??null) ||
+        preg_match(MARZBAN_BEARER_TOKEN_PATTERN,$token->access_token)!==1) {
+        $logStandaloneAuthFailure('invalid_token',$http);
+        return (object)['success'=>false,'detail'=>$effectTarget!==null
+            ?'effect_auth_invalid':'marzban_auth_invalid'];
+    }
     return $token;
 }
 
@@ -102,7 +141,7 @@ function getMarzbanJson($server_id, $token = null, ?array $giftTarget = null){
         $token=getMarzbanToken($server_id);
     }
     if (!is_object($token) || !is_string($token->access_token??null) ||
-        $token->access_token==='')
+        preg_match(MARZBAN_BEARER_TOKEN_PATTERN,$token->access_token)!==1)
         return (object)['success'=>false,'msg'=>'marzban_list_auth_unverified'];
 
     $curl=curl_init();
@@ -139,34 +178,53 @@ function getMarzbanJson($server_id, $token = null, ?array $giftTarget = null){
 
 function getMarzbanUserInfo($server_id, $remark){
     global $connection;
-    
     $stmt = $connection->prepare("SELECT * FROM server_config WHERE id=?");
-    $stmt->bind_param("i", $server_id);
+    $stmt->bind_param('i', $server_id);
     $stmt->execute();
     $server_info = $stmt->get_result()->fetch_assoc();
     $stmt->close();
+    if (!$server_info || ($server_info['type']??'')!=='marzban')
+        return (object)['success'=>false,'msg'=>'unsupported_panel'];
+    $panel_url=rtrim((string)$server_info['panel_url'],'/');
 
-    $panel_url = $server_info['panel_url'];
-
-    $configInfo = array();
-    $curl = curl_init();
-    for($i = 0; $i <= 10; $i++){
-        $info = getMarzbanUser($server_id, $remark);
-		$subLink = "/sub/" . (explode("/sub/", $info->subscription_url)[1]);
-		$info->subscription_url = $subLink;
-        curl_setopt($curl, CURLOPT_URL, $panel_url . $info->subscription_url);
-        curl_setopt($curl, CURLOPT_CONNECTTIMEOUT, 3);
-        curl_setopt($curl, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($curl, CURLOPT_TIMEOUT, 3); 
-        $response = curl_exec($curl);
-        if($response && !curl_error($curl)){
-            $configInfo = $info;
-            break;
+    // One token per read: previous code re-authenticated up to eleven times
+    // even after a failed login, causing invalid Bearer fetches and Cron lag.
+    $token=getMarzbanToken($server_id);
+    if (isset($token->detail))
+        return (object)['success'=>false,'msg'=>(string)$token->detail];
+    if (!is_object($token) || !is_string($token->access_token??null) ||
+        preg_match(MARZBAN_BEARER_TOKEN_PATTERN,$token->access_token)!==1) {
+        static $reportedUnexpectedToken=[];
+        if (!isset($reportedUnexpectedToken[(int)$server_id])) {
+            $reportedUnexpectedToken[(int)$server_id]=true;
+            error_log('achbot_marzban_auth_unverified server_id='.(int)$server_id.
+                ' reason=token_missing http=0 curl_errno=0');
         }
-		if($i == 10) $configInfo = $info;
+        return (object)['success'=>false,'msg'=>'marzban_auth_unverified'];
     }
 
-    return (object) $configInfo;
+    $curl=curl_init();
+    for($i=0;$i<=10;$i++){
+        $info=getMarzbanUser($server_id,$remark,$token);
+        if (!is_object($info) || ($info->success??null)===false)
+            return is_object($info)?$info:
+                (object)['success'=>false,'msg'=>'marzban_user_unavailable'];
+        $subscription=$info->subscription_url??null;
+        if (!is_string($subscription) || !str_contains($subscription,'/sub/'))
+            return (object)['success'=>false,'msg'=>'marzban_subscription_url_unverified'];
+        $parts=explode('/sub/',$subscription,2);
+        if ($parts[1]==='')
+            return (object)['success'=>false,'msg'=>'marzban_subscription_url_unverified'];
+        $info->subscription_url='/sub/'.$parts[1];
+        curl_setopt($curl,CURLOPT_URL,$panel_url.$info->subscription_url);
+        curl_setopt($curl,CURLOPT_CONNECTTIMEOUT,3);
+        curl_setopt($curl,CURLOPT_RETURNTRANSFER,true);
+        curl_setopt($curl,CURLOPT_TIMEOUT,3);
+        $response=curl_exec($curl);
+        if ($response && !curl_error($curl))return $info;
+        if ($i===10)return $info; // Existing last-attempt fallback.
+    }
+    return (object)['success'=>false,'msg'=>'marzban_subscription_unavailable'];
 }
 
 function getMarzbanUser($server_id, $remark, $token = null, bool $strict = false,
@@ -201,7 +259,19 @@ function getMarzbanUser($server_id, $remark, $token = null, bool $strict = false
 
     if($token == null) $token = getMarzbanToken($server_id,$expectedPanelUrl,$effectTarget);
     if(isset($token->detail)){return (object) ['success'=>false, 'msg'=>$token->detail];}
-    
+    // A timed-out or malformed auth response must not be used as a Bearer
+    // token. Preserve the original uncertain readback contract; report one
+    // bounded, non-secret failure per server per PHP invocation.
+    if (!is_object($token) || !is_string($token->access_token??null) ||
+        preg_match(MARZBAN_BEARER_TOKEN_PATTERN,$token->access_token)!==1) {
+        static $reportedAuthFailures=[];
+        if ($effectTarget===null && !isset($reportedAuthFailures[(int)$server_id])) {
+            $reportedAuthFailures[(int)$server_id]=true;
+            error_log('achbot_marzban_auth_unverified server_id='.(int)$server_id.' stage=get_user');
+        }
+        return (object)['success'=>false,'uncertain'=>$strict,'msg'=>'marzban_auth_unverified'];
+    }
+
     $panel_url .= '/api/user/' . urlencode($remark);
 
     $curl = curl_init();
@@ -322,7 +392,7 @@ function addMarzbanUser($server_id, $remark, $volume, $days, $plan_id,
     $token = getMarzbanToken($server_id,$effectTarget['panel_url']??null,$effectTarget);
     if ($effectTarget!==null &&
         (!is_object($token) || !is_string($token->access_token??null) ||
-         $token->access_token===''))
+         preg_match(MARZBAN_BEARER_TOKEN_PATTERN,$token->access_token)!==1))
         return (object)['success'=>false,'msg'=>'effect_auth_unconfirmed'];
     if(isset($token->detail)){return (object) ['success'=>false, 'msg'=>$token->detail];}
 	$dataproxy = array(

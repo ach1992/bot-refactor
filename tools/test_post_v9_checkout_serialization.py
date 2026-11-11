@@ -145,7 +145,7 @@ def php_cmd(w,stage,spec):
     if not driver.exists():driver.write_text(finance.PHP_DRIVER)
     return ['php','-n','-d','extension=mysqlnd','-d','extension=mysqli',
             '-d','extension=curl','-d','allow_url_fopen=0',
-            '-d','disable_functions=curl_init,curl_setopt,curl_setopt_array,curl_exec,curl_close,curl_error,curl_getinfo,exec,shell_exec,system,passthru,popen,proc_open,mail',
+            '-d','disable_functions=curl_init,curl_setopt,curl_setopt_array,curl_exec,curl_close,curl_error,curl_errno,curl_getinfo,exec,shell_exec,system,passthru,popen,proc_open,mail',
             str(driver),str(stage),DB,str(w/'mysql.sock'),json.dumps(spec)]
 
 def json_run(w,e,stage,spec):
