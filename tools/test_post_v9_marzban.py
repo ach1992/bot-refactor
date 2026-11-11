@@ -56,7 +56,11 @@ def prepare(work: Path, stage: Path, candidate: bool) -> None:
         # Stage actual current modules together; historical staging stays exact.
         shutil.copytree(ROOT/'src',stage/'src',dirs_exist_ok=True)
         with (stage/'functions-under-test.php').open('ab') as stream:
-            stream.write(b"\nrequire_once __DIR__.'/src/Panel/ProviderRuntime.php';\n")
+            # Only this owned candidate fixture captures new diagnostic
+            # records. Native runner still rejects unexpected stderr; the
+            # frozen historical provider receives no modified bootstrap.
+            stream.write(b"\nini_set('error_log', __DIR__.'/marzban-auth-diagnostic.log');\n")
+            stream.write(b"require_once __DIR__.'/src/Panel/ProviderRuntime.php';\n")
     (stage / "native.php").write_bytes((ROOT / "tests/v6/native.php").read_bytes())
     (stage / "baseInfo.php").write_text("<?php // owned synthetic placeholder\n")
     (stage / "private-state.json").write_text('{"fixture":"post-v9"}\n')
@@ -215,6 +219,18 @@ def main():
             for p in [old/"baseInfo.php",current/"baseInfo.php",
                       old/"private-state.json",current/"private-state.json"]
         }
+        auth_log=current/'marzban-auth-diagnostic.log'
+        def auth_delta(previous:bytes)->str:
+            current_bytes=auth_log.read_bytes() if auth_log.exists() else b''
+            if not current_bytes.startswith(previous):
+                raise RuntimeError('marzban_auth_diagnostic_log_rewritten')
+            return current_bytes[len(previous):].decode('utf-8')
+        def require_auth_diagnostic(message:str,expected_http:int)->None:
+            exact=(r'(?:\[[^\n]+\] )?achbot_marzban_auth_unverified '
+                   r'server_id=2 reason=http_status http='+str(expected_http)+
+                   r' curl_errno=0\n')
+            if re.fullmatch(exact,message) is None:
+                raise RuntimeError('marzban_auth_diagnostic_missing_or_unbounded:'+repr(message[-180:]))
         for name,(fn,arguments) in current_cases.items():
             panel.mode = (
                 "marzban-invalid"
@@ -223,10 +239,19 @@ def main():
                 else "ok"
             )
             results=[];traces=[]
+            auth_before=auth_log.read_bytes() if auth_log.exists() else b''
             for stage,db in ((old,native.DBS[0]),(current,native.DBS[1])):
                 panel.trace.clear()
                 result=native.run(work,env,stage,db,{"function":fn,"args":arguments})
                 results.append(result);traces.append(list(panel.trace))
+            logged=auth_delta(auth_before)
+            expected_http={'marzban.token.invalid':401,
+                           'marzban.token.service_503':503,
+                           'marzban.user.unauthorized':401}.get(name)
+            if expected_http is not None:
+                require_auth_diagnostic(logged,expected_http)
+            elif logged:
+                raise RuntimeError('unexpected_marzban_auth_diagnostic:'+name)
             # Frozen V9 has 47 curl_close() calls, all no-ops since PHP 8.0.
             # PHP 8.5 reports this one deprecation; it is NOT a functional
             # differential. Preserve strict parity for every other warning,
@@ -336,8 +361,10 @@ def main():
                         'owned_http_requests':len(panel.trace),'result':'PASS'})
         panel.mode='marzban-invalid'
         panel.trace.clear()
+        auth_before=auth_log.read_bytes() if auth_log.exists() else b''
         denied=native.run(work,env,current,native.DBS[1],{
             'function':'getMarzbanUser','args':[2,'fixture-user',None,True]})
+        require_auth_diagnostic(auth_delta(auth_before),401)
         if (denied['exception'] or denied['warnings'] or denied['stdout'] or
             isinstance(denied['result'],dict) and denied['result'].get('username')=='fixture-user' or
             any('/api/user/fixture-user' in t['path'] for t in panel.trace)):

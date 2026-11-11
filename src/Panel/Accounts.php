@@ -92,6 +92,14 @@ function getMarzbanToken($server_id, ?string $expectedPanelUrl = null,
     }
     if ($http!==200) {
         $logStandaloneAuthFailure('http_status',$http);
+        // Preserve the existing consumer-facing Marzban error object for
+        // ordinary reads; older callers rely on its `detail` field. A
+        // financial effect still returns the pinned, non-provider reason.
+        if ($effectTarget===null) {
+            $providerError=json_decode((string)$response);
+            if (is_object($providerError) && isset($providerError->detail))
+                return $providerError;
+        }
         return (object)['success'=>false,'detail'=>$effectTarget!==null
             ?'effect_auth_unconfirmed':'marzban_auth_http_unconfirmed'];
     }
