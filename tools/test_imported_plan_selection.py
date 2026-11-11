@@ -81,6 +81,12 @@ def main():
             consent=config[begin:end].replace('__DIR__',json.dumps(str(ROOT)))
             (work/'consent-source.php').write_text('<?php\n'+consent)
             script=work/'plan-controller.php';script.write_text(DRIVER);source=500000
+            # Invalid PHP composition must be visible before a child process
+            # hides runtime diagnostics to protect the actual fixture output.
+            lint=subprocess.run(['php','-l',str(script)],cwd=work,env=env,
+                capture_output=True,text=True,timeout=10)
+            if lint.returncode:
+                raise AssertionError(('plan_driver_php_syntax',lint.stdout,lint.stderr))
             def call(op,**spec):
                 nonlocal source
                 source+=1

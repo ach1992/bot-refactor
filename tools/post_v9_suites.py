@@ -1190,8 +1190,8 @@ def run_wallet(tmp: str) -> tuple[dict, dict]:
         cwd=ROOT,check=True,timeout=180,capture_output=True,text=True)
     text_catalog=json.loads(catalog_output.stdout)
     expected_catalog={
-        'status':'PASS','current_catalog_keys':2863,
-        'current_admin_keys':1915,'current_user_keys':948,
+        'status':'PASS','current_catalog_keys':2868,
+        'current_admin_keys':1920,'current_user_keys':948,
         'retired_experimental_keys':129,'retired_experimental_topics':10,
         'new_copy_entries':33,'current_runtime_files':131,
         'new_copy_references_unbound':0,
@@ -3958,7 +3958,7 @@ def run_funding(tmp: str) -> tuple[dict, dict]:
             and crypto_guard.get('retired_keys_denied_at_persistence_boundary')
             and crypto_guard.get('all_advertised_current_admin_toggles_work')
             and crypto_guard.get('moved_display_global_toggles')==['configLinkState','subLinkState','switchLocationState']
-            and crypto_guard.get('retained_original_bot_toggles')==22
+            and crypto_guard.get('retained_original_bot_toggles')==23
             and crypto_guard.get('retained_original_gateway_toggles')==8
             and crypto_guard.get('schema_tables')==23
             and crypto_guard.get('isolated_socket_only')

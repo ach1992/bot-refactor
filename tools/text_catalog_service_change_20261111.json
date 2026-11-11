@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "base_commit": "251c15d1ff6436b4a3b1651c5aeb26ebf99fe31e",
+  "issue": "https://github.com/ach1992/bot-refactor/issues/144",
+  "files": {
+    "user": {
+      "before_sha256": "c82a24e84b73376bc62a8dc23faae311ba9c145e1e669a2bc1228f81c4d95b43",
+      "after_sha256": "8c00435f405afd44537bdcbd23f7d086a45e813df77518415632ddcf07594d8f"
+    },
+    "admin": {
+      "before_sha256": "bbe941cca8f668f1425b8ce0e330a5ae5e74f38a939ecad780a6fad87de1d8b1",
+      "after_sha256": "734518491d7d0acb5f5832ede2b98e2ea2c578e907de9565e514a2f458d54197"
+    }
+  },
+  "changes": {
+    "user": [
+      "subscription.account_details.get_order_detail_keys.button.5c38085697"
+    ],
+    "admin": [
+      "subscription.account_transfers.admin_message.6645c1fd4d"
+    ]
+  },
+  "added": {
+    "user": [],
+    "admin": [
+      "subscription.service_change_report.admin",
+      "subscription.service_change_report.customer",
+      "subscription.service_change_report.server",
+      "subscription.service_change_report.plan",
+      "admin_settings.config.get_bot_setting_keys.customer_plan_toggle"
+    ]
+  }
+}

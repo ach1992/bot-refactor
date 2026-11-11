@@ -361,7 +361,10 @@ def check() -> dict:
         # BOT_STATES toggle must never be advertised or editable.
         moved_display={'configLinkState','subLinkState','switchLocationState'}
         assert len(baseline['changeBot'])==25 and len(baseline['changeGateWays'])==8
-        assert advertised['changeBot']==baseline['changeBot']-moved_display,advertised
+        # New, authorized customer-plan capability is independently persisted
+        # and exercised like each other current BOT_STATES toggle.
+        assert advertised['changeBot']==(
+            baseline['changeBot']-moved_display)|{'changePlanState'},advertised
         assert advertised['changeGateWays']==baseline['changeGateWays'],advertised
         assert not moved_display.intersection(advertised['changeBot'])
         cases.append('obsolete_transfer_and_display_toggles_absent')

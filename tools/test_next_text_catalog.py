@@ -57,7 +57,7 @@ def main() -> dict:
     current={a:historical.flatten(v) for a,v in groups.items()}
     added=historical.GIFT_PRECHECK_SHA256
     chili=historical.chili_copy_reference()[0]
-    assert len(current['admin'])==1911+len(added['admin'])+len(chili['added']) and \
+    assert len(current['admin'])==1911+len(added['admin'])+len(chili['added'])+len(historical.service_change_catalog_layer()[2]['admin'])-len(historical.service_change_catalog_layer()[1]['admin']) and \
         len(current['user'])==942+len(added['user'])
     assert not set(current['admin'])&set(current['user'])
     # Verify exact current additions and recipient placement before

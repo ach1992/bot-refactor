@@ -376,6 +376,71 @@ GIFT_PRECHECK_SHA256={
  'manual_payment.api_payment.gift_not_verified':'3434932947125a849117e3bbd1ee17a7d59f0b17aff0a1756c9e917e1e4ac8c8',
  'manual_payment.api_payment.gift_not_provided':'475fd4cbbef6064ae643b3557b2d9710d7d7be63fea67346619d51072f997a20',
  }}
+# Issue #144: exact, source-pinned successor catalog layer, independent of
+# all immutable RC29 and earlier text copy evidence. Projection is in-memory
+# only: an unlisted source change, key, recipient or template must fail CI.
+SERVICE_CHANGE_MANIFEST=ROOT/'tools/text_catalog_service_change_20261111.json'
+@functools.lru_cache(maxsize=1)
+def service_change_catalog_layer():
+    record=json.loads(SERVICE_CHANGE_MANIFEST.read_text())
+    base='251c15d1ff6436b4a3b1651c5aeb26ebf99fe31e'
+    check(set(record)=={'version','base_commit','issue','files','changes','added'} and
+          record['version']==1 and record['base_commit']==base and
+          record['issue']=='https://github.com/ach1992/bot-refactor/issues/144',
+          'service_change_catalog_manifest_identity')
+    expected_changes={
+        'user':{'subscription.account_details.get_order_detail_keys.button.5c38085697'},
+        'admin':{'subscription.account_transfers.admin_message.6645c1fd4d'}}
+    expected_added={'user':set(),'admin':{
+        'subscription.service_change_report.admin',
+        'subscription.service_change_report.customer',
+        'subscription.service_change_report.server',
+        'subscription.service_change_report.plan',
+        'admin_settings.config.get_bot_setting_keys.customer_plan_toggle'}}
+    check(set(record['files'])=={'user','admin'} and
+          {a:set(v) for a,v in record['changes'].items()}==expected_changes and
+          {a:set(v) for a,v in record['added'].items()}==expected_added,
+          'service_change_catalog_exact_scope')
+    php='$s=stream_get_contents(STDIN);$p=strpos($s,"return [");if($p===false)throw new RuntimeException("array_missing");echo json_encode(eval(substr($s,$p)),JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);'
+    before={};after={};original={}
+    for audience in ('user','admin'):
+        name='messages/fa/'+audience+'.php'
+        raw=command('git','show',base+':'+name)
+        now=(ROOT/name).read_bytes()
+        evidence=record['files'][audience]
+        check(set(evidence)=={'before_sha256','after_sha256'} and
+              hashlib.sha256(raw).hexdigest()==evidence['before_sha256'] and
+              hashlib.sha256(now).hexdigest()==evidence['after_sha256'] and
+              raw!=now,'service_change_catalog_exact_file_digest:'+audience)
+        old=flatten(json.loads(command('php','-r',php,input=raw)))
+        new=flatten(json.loads(command('php','-r',php,input=now)))
+        check(set(new)-set(old)==expected_added[audience] and
+              set(old)-set(new)==set() and
+              {key for key in old if new.get(key)!=old[key]}==expected_changes[audience],
+              'service_change_catalog_no_undeclared_key_or_value:'+audience)
+        for key in expected_changes[audience]:
+            check(params(old[key])==params(new[key]) and
+                  text(old[key])!=text(new[key]),
+                  'service_change_catalog_template_change:'+key)
+        for key in expected_added[audience]:
+            value=new[key];spans=set(re.findall(
+                r'\{([A-Za-z_][A-Za-z0-9_]*)\}',text(value)))
+            check(isinstance(text(value),str) and text(value).strip() and
+                  isinstance(params(value),list) and
+                  len(params(value))==len(set(params(value))) and
+                  spans==set(params(value)) and
+                  not re.search(r'[\u06f0-\u06f9\u0660-\u0669]',text(value)),
+                  'service_change_catalog_new_template_invalid:'+key)
+        before[audience]=old;after[audience]=new;original[audience]=raw.decode()
+    return original,before,after
+
+def service_change_copy_restore(sides):
+    _,prior,current=service_change_catalog_layer()
+    check(type(sides) is dict and set(sides)=={'user','admin'} and
+          all(sides[audience]==current[audience] for audience in ('user','admin')),
+          'service_change_catalog_unapproved_current_copy')
+    return copy.deepcopy(prior)
+
 # Owner-approved Chili runtime copy became authoritative for this final text
 # batch; preserve the older independently reviewed catalogs as immutable
 # historical references. This new layer proves the *entire* two-file source
@@ -419,7 +484,10 @@ def chili_copy_reference():
     for audience in ['user','admin']:
         name='messages/fa/'+audience+'.php'
         before=command('git','show',CHILI_SYNC_BASE+':'+name).decode('utf-8')
-        after=(ROOT/name).read_text()
+        # Validate every current catalog byte against the exact approved
+        # successor. Legacy Chili proof always receives its own original,
+        # immutable predecessor; no broad exclusions or shifted baselines.
+        after=service_change_catalog_layer()[0][audience]
         historical_after=after
         if audience=='admin':
             original=CHILI_APPROVED_LATER_LINE_BEFORE+'\n'
@@ -470,6 +538,7 @@ def chili_copy_reference():
     return definition,prior,current
 
 def chili_live_copy_restore(sides):
+    sides=service_change_copy_restore(sides)
     definition,prior,current=chili_copy_reference()
     check(set(sides)=={'user','admin'},'chili_copy_audiences')
     changes=definition['changes'];added=definition['added']
