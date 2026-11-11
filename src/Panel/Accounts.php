@@ -3,6 +3,10 @@
 namespace AchBot\Panel\Accounts;
 use stdClass;
 
+// RFC 6750 Bearer b64token alphabet (not JWT-specific). Reject whitespace,
+// control characters and non-token bytes before any Authorization header.
+const MARZBAN_BEARER_TOKEN_PATTERN = '#\A[A-Za-z0-9._~+/-]+=*\z#D';
+
 if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
     http_response_code(404);
     exit;
@@ -105,7 +109,7 @@ function getMarzbanToken($server_id, ?string $expectedPanelUrl = null,
     }
     $token=json_decode((string)$response);
     if (!is_object($token) || !is_string($token->access_token??null) ||
-        $token->access_token==='') {
+        preg_match(MARZBAN_BEARER_TOKEN_PATTERN,$token->access_token)!==1) {
         $logStandaloneAuthFailure('invalid_token',$http);
         return (object)['success'=>false,'detail'=>$effectTarget!==null
             ?'effect_auth_invalid':'marzban_auth_invalid'];
@@ -137,7 +141,7 @@ function getMarzbanJson($server_id, $token = null, ?array $giftTarget = null){
         $token=getMarzbanToken($server_id);
     }
     if (!is_object($token) || !is_string($token->access_token??null) ||
-        $token->access_token==='')
+        preg_match(MARZBAN_BEARER_TOKEN_PATTERN,$token->access_token)!==1)
         return (object)['success'=>false,'msg'=>'marzban_list_auth_unverified'];
 
     $curl=curl_init();
@@ -189,7 +193,7 @@ function getMarzbanUserInfo($server_id, $remark){
     if (isset($token->detail))
         return (object)['success'=>false,'msg'=>(string)$token->detail];
     if (!is_object($token) || !is_string($token->access_token??null) ||
-        $token->access_token==='') {
+        preg_match(MARZBAN_BEARER_TOKEN_PATTERN,$token->access_token)!==1) {
         static $reportedUnexpectedToken=[];
         if (!isset($reportedUnexpectedToken[(int)$server_id])) {
             $reportedUnexpectedToken[(int)$server_id]=true;
@@ -259,7 +263,7 @@ function getMarzbanUser($server_id, $remark, $token = null, bool $strict = false
     // token. Preserve the original uncertain readback contract; report one
     // bounded, non-secret failure per server per PHP invocation.
     if (!is_object($token) || !is_string($token->access_token??null) ||
-        $token->access_token==='') {
+        preg_match(MARZBAN_BEARER_TOKEN_PATTERN,$token->access_token)!==1) {
         static $reportedAuthFailures=[];
         if ($effectTarget===null && !isset($reportedAuthFailures[(int)$server_id])) {
             $reportedAuthFailures[(int)$server_id]=true;
@@ -388,7 +392,7 @@ function addMarzbanUser($server_id, $remark, $volume, $days, $plan_id,
     $token = getMarzbanToken($server_id,$effectTarget['panel_url']??null,$effectTarget);
     if ($effectTarget!==null &&
         (!is_object($token) || !is_string($token->access_token??null) ||
-         $token->access_token===''))
+         preg_match(MARZBAN_BEARER_TOKEN_PATTERN,$token->access_token)!==1))
         return (object)['success'=>false,'msg'=>'effect_auth_unconfirmed'];
     if(isset($token->detail)){return (object) ['success'=>false, 'msg'=>$token->detail];}
 	$dataproxy = array(

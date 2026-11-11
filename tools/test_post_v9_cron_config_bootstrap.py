@@ -58,6 +58,8 @@ def native_marzban_invalid_auth_guard() -> None:
     # Execute the actual current function with an absent token, without a real
     # DB, cURL extension or network. A bad Bearer request would fail loudly.
     source = (ROOT / 'src/Panel/Accounts.php').read_text()
+    token_constant=next(line for line in source.splitlines()
+                        if line.startswith('const MARZBAN_BEARER_TOKEN_PATTERN = '))
     start = source.index('function getMarzbanUser(')
     end = source.index('function getMarzbanHosts(', start)
     function_source = source[start:end]
@@ -77,6 +79,8 @@ class OwnedDb {function prepare($sql) {return new OwnedStmt();}}
 $connection=new OwnedDb();
 function getMarzbanToken(...$arguments) {return null;}
 '''
+    fixture=fixture.replace('namespace AchBot\\Panel\\Accounts;\n',
+                            'namespace AchBot\\Panel\\Accounts;\n'+token_constant+'\n',1)
     fixture += function_source
     fixture += r'''
 foreach ([false,true] as $strict) {
@@ -102,6 +106,8 @@ echo json_encode($results,JSON_THROW_ON_ERROR);
 def native_marzban_login_subscription_guard() -> None:
     """Actual auth and subscription functions with fake local cURL/DB only."""
     source=(ROOT/'src/Panel/Accounts.php').read_text()
+    token_constant=next(line for line in source.splitlines()
+                        if line.startswith('const MARZBAN_BEARER_TOKEN_PATTERN = '))
     auth=source[source.index('function getMarzbanToken('):
                 source.index('function getMarzbanJson(')]
     info=source[source.index('function getMarzbanUserInfo('):
@@ -143,6 +149,12 @@ function curl_exec($handle) {
             'auth_http_401','info_auth_bad','auth_effect_401'=>'{"detail":"unauthorized"}',
             'auth_http_503'=>'{"detail":"unavailable"}',
             'auth_bad_json'=>'invalid-json',
+            'auth_whitespace','auth_effect_whitespace','info_auth_whitespace'=>'{"access_token":"   "}',
+            'auth_inline_space'=>'{"access_token":"abc def"}',
+            'auth_crlf'=>'{"access_token":"abc\\r\\nfoo"}',
+            'auth_control'=>'{"access_token":"abc\\u0000foo"}',
+            'auth_valid_jwt'=>'{"access_token":"eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.sig_-"}',
+            'auth_valid_b64'=>'{"access_token":"abc.DEF_~+/-=="}',
             'auth_transport'=>false,
             default=>'{"access_token":"synthetic-token"}',
         };
@@ -177,13 +189,15 @@ function getMarzbanUser($serverId,$remark,$token) {
     return (object)['username'=>'fixture','subscription_url'=>'https://fixture.invalid/sub/synthetic'];
 }
 '''
+    prefix=prefix.replace('namespace AchBot\\Panel\\Accounts;\n',
+                          'namespace AchBot\\Panel\\Accounts;\n'+token_constant+'\n',1)
     suffix=r'''
 if (str_starts_with($mode,'info_')) {
     $v=getMarzbanUserInfo(91,'owned-user');
     $result=['success'=>$v->success??null,'msg'=>$v->msg??null,
              'subscription_url'=>$v->subscription_url??null];
 } else {
-    $v=$mode==='auth_effect_401'
+    $v=in_array($mode,['auth_effect_401','auth_effect_whitespace'],true)
       ?getMarzbanToken(91,'https://fixture.invalid',[
           'panel_url'=>'https://fixture.invalid','username'=>'owned','password'=>'synthetic'])
       :getMarzbanToken(91);
@@ -201,6 +215,19 @@ echo json_encode(['result'=>$result,'auth_requests'=>$GLOBALS['auth_requests'],
       'auth_http_503':({'detail':'unavailable','valid_token':False},1,0,0,
                         'achbot_marzban_auth_unverified server_id=91 reason=http_status http=503 curl_errno=0'),
       'auth_bad_json':({'detail':'marzban_auth_invalid','valid_token':False},1,0,0,
+                        'achbot_marzban_auth_unverified server_id=91 reason=invalid_token http=200 curl_errno=0'),
+      'auth_whitespace':({'detail':'marzban_auth_invalid','valid_token':False},1,0,0,
+                        'achbot_marzban_auth_unverified server_id=91 reason=invalid_token http=200 curl_errno=0'),
+      'auth_effect_whitespace':({'detail':'effect_auth_invalid','valid_token':False},1,0,0,''),
+      'auth_inline_space':({'detail':'marzban_auth_invalid','valid_token':False},1,0,0,
+                        'achbot_marzban_auth_unverified server_id=91 reason=invalid_token http=200 curl_errno=0'),
+      'auth_crlf':({'detail':'marzban_auth_invalid','valid_token':False},1,0,0,
+                        'achbot_marzban_auth_unverified server_id=91 reason=invalid_token http=200 curl_errno=0'),
+      'auth_control':({'detail':'marzban_auth_invalid','valid_token':False},1,0,0,
+                        'achbot_marzban_auth_unverified server_id=91 reason=invalid_token http=200 curl_errno=0'),
+      'auth_valid_jwt':({'detail':None,'valid_token':True},1,0,0,''),
+      'auth_valid_b64':({'detail':None,'valid_token':True},1,0,0,''),
+      'info_auth_whitespace':({'success':False,'msg':'marzban_auth_invalid','subscription_url':None},1,0,0,
                         'achbot_marzban_auth_unverified server_id=91 reason=invalid_token http=200 curl_errno=0'),
       'auth_transport':({'detail':'marzban_auth_transport_unavailable','valid_token':False},1,0,0,
                         'achbot_marzban_auth_unverified server_id=91 reason=transport http=0 curl_errno=28'),
@@ -286,7 +313,13 @@ def run() -> dict:
                 assert forbidden not in logs,(forbidden,logs[-700:])
     native_marzban_invalid_auth_guard()
     native_marzban_login_subscription_guard()
-    return {'complete': True,'cases':17,'actual_config_section':True,
+    import test_post_v9_marzban_bearer as bearer
+    guard=bearer.run()
+    assert guard['complete'] and guard['cases']==5 and guard['http_outbound']==0
+    assert guard['supplied_token_get_list_denied'] and guard['invalid_provider_create_denied']
+    assert guard['pinned_effect_denied']
+    return {'complete': True,'cases':30,'actual_config_section':True,
+            'native_marzban_bad_token_no_get_list_create':True,
             'native_marzban_auth_root_cause_classified':True,
             'native_marzban_subscription_single_login':True,
             'native_panel_no_empty_auth_request':True,
