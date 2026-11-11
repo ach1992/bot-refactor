@@ -4247,7 +4247,7 @@ def main():
             len(set(long_names))!=2 or not all(
                 len(n)==32 and n.startswith('very_long_') for n in long_names) or
             sql(work,env,f'SELECT COUNT(*) FROM orders_list o '
-                f'JOIN service_effects e ON e.order_id=o.id WHERE e.pay_row_id={long_id}')!='2'):
+                f'JOIN service_effects e ON e.order_id=o.id WHERE e.pay_row_id={long_id}').strip()!='2'):
             raise RuntimeError('Hosted long-name Marzban native compatibility: '+
                                repr((long_names,long_post))[:1200])
         report_texts=[str(e['args'][0]) for e in long_events['events']
