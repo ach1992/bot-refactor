@@ -199,7 +199,8 @@ function achbotPhysicalReleaseLock(mysqli $db,string $name): void {
  * PasarGuard: the immutable linked service-effect ID/physical incarnation;
  * never infer an account from a username or URL.
  */
-function achbotPhysicalActiveOrders(mysqli $db,array $selected,bool $lock=false): array {
+function achbotPhysicalActiveOrders(mysqli $db,array $selected,bool $lock=false,
+    bool $recoverDispatchedPlan=false): array {
     $server=(int)($selected['server_id']??0);
     $orderId=(int)($selected['id']??0);
     $remark=(string)($selected['remark']??'');
@@ -210,7 +211,11 @@ function achbotPhysicalActiveOrders(mysqli $db,array $selected,bool $lock=false)
     if ($type==='pasarguard') {
         achbotPgLoad();
         $anchor=achbotProviderAccountByOrder($db,$orderId,$lock);
-        if (!$anchor || !in_array($anchor['state'],['linked','verified'],true))
+        // Only the original, administrator-authorized GET-only journal
+        // recovery may inspect a durably held PasarGuard mutation. Ordinary
+        // purchase/plan operations keep their strict no-replay state gate.
+        $allowed=$recoverDispatchedPlan?['linked','verified','mutating']:['linked','verified'];
+        if (!$anchor || !in_array($anchor['state'],$allowed,true))
             throw new RuntimeException('physical_account_unverified');
         $effect=(int)$anchor['effect_id'];
         $s=$db->prepare('SELECT * FROM orders_list WHERE provider_effect_id=? AND status=1 ORDER BY id'.($lock?' FOR UPDATE':''));
@@ -958,7 +963,7 @@ function achbotPhysicalRecoverySnapshotLocked(
     $provider=achbotProviderType($db,(int)$order['server_id']);
     if ($provider!==$journal['provider'] || $provider!==($intent['provider']??null))
         throw new RuntimeException('physical_recovery_provider_changed');
-    $peers=achbotPhysicalActiveOrders($db,$order,true);
+    $peers=achbotPhysicalActiveOrders($db,$order,true,true);
     $old=array_map(static fn($r)=>[
         'id'=>(int)$r['id'],'server_id'=>(int)$r['server_id'],
         'fileid'=>(int)$r['fileid']],$peers);
