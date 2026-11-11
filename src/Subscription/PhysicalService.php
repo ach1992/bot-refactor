@@ -410,6 +410,68 @@ function achbotPhysicalRetireOpenPaymentsLocked(mysqli $db,array $rows): int {
     return $retired;
 }
 
+/** After a committed REAL service change, remove stale manual receipt
+ * approval/rejection buttons from their original administrator messages.
+ * This is display cleanup ONLY: state='service_superseded' has already
+ * fenced all old callbacks in SQL. Telegram failure never reactivates the
+ * invoice, rewrites a receipt, or replays a financial/Native effect.
+ */
+function achbotPhysicalHideRetiredReceiptActions(mysqli $db,array $rows): void {
+    try {
+        $ids=[];$owners=[];
+        foreach ($rows as $row) {
+            $id=(int)($row['id']??0);$owner=(int)($row['userid']??0);
+            if ($id<=0 || $owner<=0 || isset($owners[$id]) && $owners[$id]!==$owner)
+                throw new RuntimeException('retired_receipt_subject_invalid');
+            $owners[$id]=$owner;$ids[$id]=$id;
+        }
+        if (!$ids) return;
+        $list=implode(',',$ids);
+        $userIds=implode(',',array_unique(array_values($owners)));
+        $pattern='^INCREASE_(DAY|VOLUME)_('.implode('|',$ids).')_';
+        $q=$db->prepare("SELECT id,type,order_id,user_id,chat_id,message_id,
+            admins_messages FROM pays WHERE state='service_superseded'
+            AND user_id IN ($userIds)
+            AND (order_id IN ($list) OR type REGEXP ?) ORDER BY id");
+        $q->bind_param('s',$pattern);$q->execute();$pays=$q->get_result()->fetch_all(MYSQLI_ASSOC);$q->close();
+        $sent=[];$ownerAdmin=(int)($GLOBALS['admin']??0);
+        foreach ($pays as $pay) {
+            $type=(string)$pay['type'];$oid=0;
+            if ($type==='RENEW_ACCOUNT') $oid=(int)$pay['order_id'];
+            elseif (preg_match('/^INCREASE_(?:DAY|VOLUME)_([1-9][0-9]*)_[1-9][0-9]*$/D',$type,$m))
+                $oid=(int)$m[1];
+            if (!isset($owners[$oid]) || (int)$pay['user_id']!==$owners[$oid]) continue;
+            $refs=[['chat_id'=>$pay['chat_id'],'message_id'=>$pay['message_id']]];
+            $copies=json_decode((string)($pay['admins_messages']??''),true);
+            if (is_array($copies))foreach ($copies as $copy)if (is_array($copy))$refs[]=$copy;
+            foreach ($refs as $ref) {
+                $chat=(int)($ref['chat_id']??0);$message=(int)($ref['message_id']??0);
+                if ($chat<=0 || $message<=0 || $ownerAdmin<=0) continue;
+                $key=$chat.':'.$message;
+                if (isset($sent[$key])) continue;
+                if (!achbotAdminStoredRecipientAllowed($db,$chat,$ownerAdmin)) continue;
+                $sent[$key]=true;
+                try {
+                    // Bot API: omitting optional reply_markup removes the
+                    // old inline keyboard without rewriting receipt evidence.
+                    $response=bot('editMessageReplyMarkup',[
+                        'chat_id'=>$chat,'message_id'=>$message
+                    ]);
+                    if (!is_object($response) || ($response->ok??false)!==true)
+                        error_log('achbot_retired_receipt_keyboard_unconfirmed pay_id='.
+                            (int)$pay['id'].' chat_id='.$chat.' message_id='.$message);
+                } catch(Throwable $error) {
+                    error_log('achbot_retired_receipt_keyboard_deferred pay_id='.
+                        (int)$pay['id'].' chat_id='.$chat.' message_id='.$message.
+                        ' class='.get_class($error));
+                }
+            }
+        }
+    } catch(Throwable $error) {
+        error_log('achbot_retired_receipt_cleanup_deferred class='.get_class($error));
+    }
+}
+
 /** Whether selecting a plan really changes at least one current local reference. */
 function achbotPhysicalPlanChangesLocalPlan(array $rows,int $planId): bool {
     foreach ($rows as $row)
@@ -822,6 +884,8 @@ function achbotPhysicalSelectPlan(mysqli $db,int $orderId,int $newPlanId,int $ac
         $tx=false;$commitAttempted=false;
         error_log('achbot_shared_plan_committed journal_id='.$journalId.
             ' source_order_id='.$orderId.' active_refs='.$count);
+        if (achbotPhysicalPlanChangesLocalPlan($fresh,$newPlanId))
+            achbotPhysicalHideRetiredReceiptActions($db,$fresh);
         return achbotPhysicalPlanResult(true,'committed',$count);
     } catch (Throwable $error) {
         if ($tx) {try{$db->rollback();}catch(Throwable $ignored){}}

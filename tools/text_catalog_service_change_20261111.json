@@ -5,19 +5,24 @@
   "files": {
     "user": {
       "before_sha256": "c82a24e84b73376bc62a8dc23faae311ba9c145e1e669a2bc1228f81c4d95b43",
-      "after_sha256": "fb45b3208ac4c91d4d9258fa359ce39e94aa45dc6d5160aa8596108a53bb139c"
+      "after_sha256": "b7aa9aaab77f0b147dfa5e26d4137c68963aa2b87c904a3ae3b734c8188d397c"
     },
     "admin": {
       "before_sha256": "bbe941cca8f668f1425b8ce0e330a5ae5e74f38a939ecad780a6fad87de1d8b1",
-      "after_sha256": "9cd443b4a6109458eef36107ded7ab8a34d3d012f2002ab36eb157da9c670e2e"
+      "after_sha256": "d8b8e145c34e9f0694c5589215e704bb820b06189131c8c79d1d253ef9797b23"
     }
   },
   "changes": {
     "user": [
-      "subscription.account_details.get_order_detail_keys.button.5c38085697"
+      "subscription.account_details.get_order_detail_keys.button.5c38085697",
+      "renewal.extensions.message.143c7f81f1",
+      "subscription.account_transfers.message.3f6bd6c3c8"
     ],
     "admin": [
-      "subscription.account_transfers.admin_message.6645c1fd4d"
+      "subscription.account_transfers.admin_message.6645c1fd4d",
+      "automatic_gateway_review.menu",
+      "automatic_gateway_review.title",
+      "subscription.order_management.show_order_management_panel.message.877fdebc48"
     ]
   },
   "added": {

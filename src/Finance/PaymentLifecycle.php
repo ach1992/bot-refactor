@@ -674,9 +674,12 @@ function achbotPayUxState(array $pay, ?array $attempt): string {
         if ($age>=achbotPayUxManualDeadlineSeconds())
             return 'needs_review'; // Never claim cancellation before COMMIT.
     }
-    if (achbotPayUxHostedProvider($provider) &&
-        $stage==='pending' && $age>=achbotPayUxHostedAttentionSeconds())
-        return 'needs_review'; // Provider remains financially unsettled.
+    // An unpaid hosted checkout remains awaiting payment regardless of age.
+    // Time passing is not evidence of funds or provider unavailability.
+    if (achbotPayUxHostedProvider($provider) && $stage==='pending' &&
+        in_array((string)($attempt['provider_status']??''),
+            ['','waiting','pending','confirming'],true))
+        return 'awaiting_payment';
     if (achbotPayUxManualProvider($provider) && $stage==='expired')
         return 'expired';
     if (!in_array($state,['pending','send'],true)) return 'needs_review';

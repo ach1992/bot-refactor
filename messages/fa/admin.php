@@ -11,7 +11,7 @@ return [
 
     // ── صف سادهٔ پرداخت‌های خودکارِ ناتمام ──
     'automatic_gateway_review' => [
-        'menu' => '💳 پرداخت‌های خودکار نیازمند بررسی',
+        'menu' => '💳 پرداخت‌های نیازمند بررسی',
         'provider_nowpayments' => 'NOWPayments',
         'provider_zarinpal' => 'زرین‌پال',
         'provider_nextpay' => 'NextPay',
@@ -26,7 +26,7 @@ return [
         'status_unavailable' => 'ثبت نتیجه امکان‌پذیر نبود. پرونده را دوباره بررسی کنید.',
         'rejected_customer' => ['text' => '❌ سفارش <code>{hash}</code> رد شد و اجرا نمی‌شود. مبلغ: {amount} تومان. اگر وجه پرداخت کرده‌اید، با پشتیبانی تماس بگیرید.', 'parameters' => ['hash','amount']],
         'rejected_report' => ['text' => "❌ سفارش درگاه خودکار توسط مدیر رد شد.\n🗂 شناسه پرونده: <code>{id}</code>\n🎫 شناسه عددی: <code>{user}</code>\n💰 مبلغ: {amount} تومان\n🧾 شناسه سفارش: <code>{hash}</code>", 'parameters' => ['id','user','amount','hash']],
-        'title' => '📋 پرداخت‌های خودکار نیازمند بررسی',
+        'title' => '📋 پرداخت‌های نیازمند بررسی',
         'empty' => '✅ پرداخت ناتمامی برای بررسی وجود ندارد.',
         'archive' => '📦 آرشیو پرونده',
         'archive_notice' => '🗂 پس از بررسی مستقل وجه و نتیجهٔ سرویس، آرشیو تصمیم نهایی محلی است؛ هیچ عملیات نامطمئنی را لغو، موفق یا مسترد اعلام نمی‌کند.',
@@ -566,7 +566,7 @@ return [
         'order_management.show_order_management_panel.message.557fb66856' => '🌐 سرور منطقی مقصد را انتخاب کنید. تنظیمات مقصد پس از بررسی اشتراک اعمال می‌شود.',
         'order_management.show_order_management_panel.alert.c5dae93802' => '⛔️ مقصد با اشتراک فعلی سازگار نیست یا نتیجه نیاز به بررسی دارد.',
         'order_management.show_order_management_panel.message.88e0b88b0d' => '✅ مقصد اشتراک پس از بررسی به‌روزرسانی شد.',
-        'order_management.show_order_management_panel.message.877fdebc48' => '📦 لطفا پلن جدید را انتخاب کنید:',
+        'order_management.show_order_management_panel.message.877fdebc48' => '📦 لطفاً پلن جدید را انتخاب کنید:' . "\n" . '⚠️ تغییر واقعی پلن، فاکتورهای ناتمام همین اشتراک را برای دریافت خدمات بی‌اعتبار می‌کند؛ دریافت وجه احتمالی جداگانه پیگیری می‌شود.',
         'order_management.show_order_management_panel.alert.f19b5510c6' => '⛔️ پلن انتخابی با سرور مرزبان این سفارش سازگار نیست.',
         'order_management.show_order_management_panel.alert.99d247fc18' => '⛔️ خطا در تغییر پلن؛ اطلاعات سفارش تغییر نکرد.',
         'order_management.show_order_management_panel.message.75785b37ae' => '✅ مقدار Fileid (پلن) با موفقیت تغییر یافت.',

@@ -448,13 +448,24 @@ def main():
         assert run(w,e,dict(action='track',id=hosted,chat_id=9466,
                             message_id=3466))['result'] is True
         hosted_sync=run(w,e,dict(action='sync',id=hosted))
-        assert hosted_sync['result']==1
-        assert 'نیازمند بررسی' in hosted_sync['events'][0]['text']
-        assert run(w,e,dict(action='state',id=hosted))['result']['state']=='needs_review'
+        # Original provider payment buttons stay intact while the checkout
+        # merely waits for money; no Telegram update or staff alert occurs.
+        assert hosted_sync['result']==0 and not hosted_sync['events'],hosted_sync
+        assert run(w,e,dict(action='state',id=hosted))['result']['state']=='awaiting_payment'
         assert run(w,e,dict(action='manual_expire',id=hosted))['result'] is False
         assert state(w,e,'hosted-claim')=='pending'
         assert sql(w,e,f"SELECT stage FROM payment_attempts WHERE pay_row_id={hosted}").strip()=='pending'
-        cases.append('hosted_link_attention_not_provider_claim_cancellation')
+        cases.append('aged_hosted_unpaid_remains_waiting_not_review_or_cancellation')
+        # Actual subsequent provider evidence changes the original customer
+        # message, without crediting funds or allowing a second settlement.
+        sql(w,e,f"UPDATE payment_attempts SET stage='review',provider_status='confirmed' "
+            f"WHERE pay_row_id={hosted}")
+        hosted_review=run(w,e,dict(action='sync',id=hosted))
+        assert hosted_review['result']==1 and len(hosted_review['events'])==1
+        assert 'نیازمند بررسی' in hosted_review['events'][0]['text'],hosted_review
+        assert run(w,e,dict(action='state',id=hosted))['result']['state']=='needs_review'
+        assert state(w,e,'hosted-claim')=='pending'
+        cases.append('hosted_provider_evidence_updates_customer_status_without_payment_effect')
         fresh_host=add(w,e,'fresh-hosted-claim',who=9467,old=int(time.time()))
         sql(w,e,f"INSERT INTO payment_attempts "
             f"(pay_row_id,provider,order_hash,quote_amount,quote_currency,stage) "

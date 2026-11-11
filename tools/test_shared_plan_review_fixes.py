@@ -111,6 +111,15 @@ DRIVER = plans.DRIVER.replace(" } elseif($op==='toggle'){", """ } elseif($op==='
   $out=['preflight'=>$seen['valid'],
    'allowed'=>achbotApiPaymentLocalSubjectAllowed($connection,$locked,$seen)];
   $connection->rollback();
+ } elseif($op==='review_receipt_buttons'){
+  require_once $root.'/src/Subscription/PhysicalService.php';
+  $id=(int)$spec['order'];
+  $q=$connection->prepare('SELECT * FROM orders_list WHERE id=?');
+  $q->bind_param('i',$id);$q->execute();$original=$q->get_result()->fetch_assoc();$q->close();
+  $shared=achbotPhysicalActiveOrders($connection,$original);
+  achbotPhysicalHideRetiredReceiptActions($connection,$shared);
+  $out=array_values(array_filter($GLOBALS['events'],
+    static fn($e)=>($e['kind']??'')==='retired_markup'));
  } elseif($op==='review_invoice'){
   require_once $root.'/src/Finance/PaymentLifecycle.php';
   $hash='state'.bin2hex(random_bytes(10));$actor=(int)$spec['actor'];
@@ -150,6 +159,14 @@ DRIVER = plans.DRIVER.replace(" } elseif($op==='toggle'){", """ } elseif($op==='
  } elseif($op==='toggle'){""", 1)
 assert DRIVER != plans.DRIVER, 'review test route not added'
 assert DRIVER.count('<?php\n')==1
+# Instrument ONLY synthetic Telegram bot replies for a read-only
+# regression of real receipt keyboards; the production helper is unmodified.
+DRIVER=DRIVER.replace(
+ "function bot(...$a){return(object)['ok'=>true,'result'=>(object)['first_name'=>'Owned']];}",
+ "function bot(...$a){if(($a[0]??'')==='editMessageReplyMarkup') "
+ "$GLOBALS['events'][]=['kind'=>'retired_markup','payload'=>$a[1]??[]];"
+ "return(object)['ok'=>true,'result'=>(object)['first_name'=>'Owned']];}",1)
+assert 'retired_markup' in DRIVER, 'synthetic_markup_spy_missing'
 DRIVER=DRIVER.replace('<?php\n','<?php\n'+old_function+'\n',1)
 
 @contextlib.contextmanager
@@ -420,6 +437,11 @@ def main():
                "quote_amount,quote_currency,local_amount_toman,stage,provider_status)"
                " SELECT id,'bank_transfer',hash_id,137,'toman',137,'review','verification_uncertain'"
                " FROM pays WHERE id="+str(review))
+            db("UPDATE pays SET chat_id=9001,message_id=6501,"
+               "admins_messages='[{\"chat_id\":9002,\"message_id\":6502}]'"
+               " WHERE id="+str(review))
+            yes(h['call']('review_receipt_buttons',order=h['oid'])==[],
+                provider+'_unsuperseded_manual_receipt_keyboard_unchanged')
             ids=f'{pending},{issued},{review},{legacy},{wallet_quote}'
             old_details=db('SELECT id,hash_id,payid,user_id,type,plan_id,server_id,order_id,price,message_id,chat_id FROM pays WHERE id IN ('+ids+') ORDER BY id')
             before=subject(h);money=finance(h);puts=len(h['writes']())
@@ -440,6 +462,11 @@ def main():
             yes(h['call']('review_superseded_payment',pay=wallet_quote)==
                 {'state':'service_superseded','eligible':False},
                 provider+'_low_wallet_old_service_quote_cannot_resume_after_recharge')
+            removed=h['call']('review_receipt_buttons',order=h['oid'])
+            yes(len(removed)==2 and
+                sorted(e['payload']['chat_id'] for e in removed)==[9001,9002]
+                and all('reply_markup' not in e['payload'] for e in removed),
+                provider+'_retired_manual_receipt_buttons_removed_after_real_change')
             yes(db('SELECT state FROM pays WHERE id='+str(wallet_topup))=='pending',
                 provider+'_independent_wallet_topup_never_swept_by_service_change')
             yes(h['call']('review_superseded_payment',pay=issued)==
@@ -991,8 +1018,11 @@ def main():
                          order=h['oid'],type='BUY_SUB')=='issued',
                 provider+'_state1_allows_new_purchase_invoice')
             yes(h['call']('review_invoice',server=2,plan=119,
-                         order=h['oid'],type='RENEW_ACCOUNT')=='issued',
+                         order=h['oid'],type='RENEW_ACCOUNT',actor=1001)=='issued',
                 provider+'_state1_allows_existing_renewal_invoice')
+            yes(h['call']('review_invoice',server=2,plan=119,
+                         order=h['oid'],type='RENEW_ACCOUNT',actor=9001)=='denied',
+                provider+'_cannot_issue_foreign_subscription_renewal')
 
         with harness(provider) as h:
             seeded(h)
@@ -1005,7 +1035,7 @@ def main():
             yes(h['call']('review_invoice',server=2,plan=119,
                          order=h['oid'],type='BUY_SUB')=='denied' and
                 h['call']('review_invoice',server=2,plan=119,
-                          order=h['oid'],type='RENEW_ACCOUNT')=='denied',
+                          order=h['oid'],type='RENEW_ACCOUNT',actor=1001)=='denied',
                 provider+'_state0_financial_draft_admission_denied')
 
             db("UPDATE server_info SET state=2 WHERE id=2;UPDATE server_plans SET active=0 WHERE id=119")
@@ -1017,7 +1047,7 @@ def main():
             yes(h['call']('review_invoice',server=2,plan=119,
                          order=h['oid'],type='BUY_SUB')=='denied' and
                 h['call']('review_invoice',server=2,plan=119,
-                          order=h['oid'],type='RENEW_ACCOUNT')=='issued',
+                          order=h['oid'],type='RENEW_ACCOUNT',actor=1001)=='issued',
                 provider+'_state2_inactive_plan_blocks_new_invoice_but_allows_own_renewal')
             db("UPDATE server_info SET state=1 WHERE id=2")
             status=h['call']('review_commerce',server=2,plan=119,order=h['oid'])

@@ -1679,7 +1679,7 @@ def main():
         inbox=run_php(work,env,stage,dict(admin_identity,
             callback_data='attentionInbox'))
         cards=[e for e in inbox['events'] if e['name']=='editText']
-        if (len(cards)!=1 or 'پرداخت‌های خودکار' not in str(cards[0]['args'][1]) or
+        if (len(cards)!=1 or 'پرداخت‌های نیازمند بررسی' not in str(cards[0]['args'][1]) or
             ('attentionCase_'+str(admin_case)) not in str(cards[0]['args'][2])):
             raise RuntimeError('Simple automatic-gateway inbox failed to list original payment')
         details=run_php(work,env,stage,dict(admin_identity,
@@ -4519,8 +4519,8 @@ def main():
             invoice='owned-'+hash_id+'-invoice'
             child='owned-'+hash_id+'-child'
             seed_np_attempt(work,env,hash_id,invoice,child,default_fees=True)
-            sql(work,env,"UPDATE payment_attempts SET stage='review' "
-                         f"WHERE order_hash='{hash_id}'")
+            sql(work,env,"UPDATE payment_attempts SET stage='review',"
+                         f"provider_status='{status}' WHERE order_hash='{hash_id}'")
             sql(work,env,"INSERT INTO payment_transactions "
                 "(attempt_id,provider,payment_id,observed_status) "
                 f"SELECT id,'nowpayments','{child}','{status}' "
@@ -4593,7 +4593,10 @@ def main():
         archive_invoice='owned-archive-invoice'
         archive_primary='owned-archive-primary'
         seed_np_attempt(work,env,archive_name,archive_invoice,archive_primary,default_fees=True)
-        sql(work,env,"UPDATE payment_attempts SET created_at=NOW()-INTERVAL 8 HOUR "
+        # Archive is a terminal operator action for a REAL exception, not
+        # an age-based shortcut to cancel a merely unpaid checkout.
+        sql(work,env,"UPDATE payment_attempts SET created_at=NOW()-INTERVAL 8 HOUR,"
+            "stage='review',provider_status='confirmed' "
             f"WHERE order_hash='{archive_name}'")
         archived_id=int(sql(work,env,"SELECT id FROM payment_attempts "
             f"WHERE order_hash='{archive_name}'"))
@@ -4657,7 +4660,7 @@ def main():
                 "(pay_row_id,provider,order_hash,provider_reference,quote_amount,"
                 "quote_currency,local_amount_toman,stage,provider_status) "
                 f"SELECT id,'{provider}',hash_id,payid,price,'toman',price,"
-                f"'review','verification_uncertain' FROM pays WHERE hash_id='{name}'")
+                f"'review','verification_unavailable' FROM pays WHERE hash_id='{name}'")
             attempt=int(sql(work,env,f"SELECT id FROM payment_attempts WHERE order_hash='{name}'"))
             closed=run_php(work,env,stage,dict(route='admin_review',get={},
                 actor=9001,chat_id=9001,callback_data='gatewayReview_H_'+str(attempt)))

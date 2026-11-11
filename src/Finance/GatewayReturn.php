@@ -543,8 +543,16 @@ if (defined('ACHBOT_NP_RECONCILE_ONLY')) {
                 'Amount'=>$amount
             ]);
         } catch (\Throwable $error) {
+            // A missing local SOAP extension or an invalid application
+            // response is not evidence that the gateway is unreachable.
+            $transportFailure=$error instanceof \SoapFault && (
+                (string)($error->faultcode??'')==='HTTP' ||
+                preg_match('/could not connect|timed? out|could not resolve|'
+                    .'name resolution|error fetching http headers|'
+                    .'failed to load external entity/i',
+                    (string)$error->getMessage())===1);
             achbotHostedMarkVerificationUncertain($connection,$rowId,'zarinpal',
-                (string)$payParam['hash_id']);
+                (string)$payParam['hash_id'],$transportFailure);
             showForm(\achbotMessage('gateway.gateway_return.np_reconcile_batch.message.965bc59eaf'),
                      \achbotMessage('gateway.gateway_return.np_reconcile_batch.message.858b02ccfe'), false, 'review');
             return;
@@ -680,6 +688,7 @@ if (defined('ACHBOT_NP_RECONCILE_ONLY')) {
 
         $rawResponse = curl_exec($curl);
         $httpStatus = curl_getinfo($curl, CURLINFO_HTTP_CODE);
+        $curlFailure = curl_errno($curl);
         curl_close($curl);
         // A transport/HTTP/JSON failure is NOT proof of a declined payment.
         $response = $rawResponse !== false && $httpStatus === 200
@@ -711,8 +720,14 @@ if (defined('ACHBOT_NP_RECONCILE_ONLY')) {
         } else {
             // The verifier did not prove funds. Save a recoverable *claim*,
             // not a fabricated provider-approved charge.
+            // A genuine failed HTTP/transport verification differs from
+            // a provider response saying 'pending' or an unknown outcome.
+            // Only the former is an administrator attention candidate.
+            $unavailable=($rawResponse===false &&
+                    in_array($curlFailure,[6,7,28,35,52,56],true)) ||
+                $httpStatus===429 || $httpStatus>=500;
             achbotHostedMarkVerificationUncertain($connection,$rowId,'nextpay',
-                (string)$payParam['hash_id']);
+                (string)$payParam['hash_id'],$unavailable);
             // Do not debit, credit or settle an unknown payment outcome.
             showForm(\achbotMessage('gateway.gateway_return.np_reconcile_batch.message.463d7338a5'), \achbotMessage('gateway.gateway_return.np_reconcile_batch.message.26003a476f'), false, 'review');
         }
@@ -795,12 +810,13 @@ function achbotHostedPaymentAttemptsExists(mysqli $db): bool {
     }
 }
 
-/** Save only a bound, uncertain hosted VERIFY result for an Owner decision.
- * A browser return is NOT proof of funds. Do not call merchant GET here or
- * overwrite a terminal/processing payment. Uses the unique 003 attempt.
+/** A real failed verification transport may merit human review; an ordinary
+ * unknown / not-yet-paid result must not enter the staff inbox. Neither is
+ * payment evidence or a refund. Bind to the original scoped 003 attempt.
  */
 function achbotHostedMarkVerificationUncertain(mysqli $db,int $payId,
-                                              string $provider,string $hash): bool {
+                                              string $provider,string $hash,
+                                              bool $providerUnavailable=false): bool {
     if ($payId<=0 || !in_array($provider,['nextpay','zarinpal'],true) ||
         $hash==='') return false;
     require_once __DIR__.'/GatewayReview.php';
@@ -827,16 +843,36 @@ function achbotHostedMarkVerificationUncertain(mysqli $db,int $payId,
             achbotHasUnscopedPaymentReferenceCollision($db,(string)$pay['payid'],$payId)) {
             $db->rollback();return false;
         }
-        if ($attempt['stage']==='review' &&
-            $attempt['provider_status']==='verification_uncertain') {
-            $db->rollback();return true;
+        $reason=$providerUnavailable?'verification_unavailable':'verification_uncertain';
+        if ($attempt['stage']==='review') {
+            // Do not downgrade a previously verified transport outage when a
+            // later browser return merely lacks settlement proof.
+            if ($attempt['provider_status']===$reason ||
+                ($attempt['provider_status']==='verification_unavailable' &&
+                 !$providerUnavailable)) {
+                $db->rollback();return true;
+            }
+            if ($providerUnavailable &&
+                $attempt['provider_status']==='verification_uncertain') {
+                $id=(int)$attempt['id'];
+                $q=$db->prepare("UPDATE payment_attempts SET
+                    provider_status='verification_unavailable',last_checked_at=NOW()
+                    WHERE id=? AND stage='review' AND
+                      provider_status='verification_uncertain' AND
+                      review_archived_at IS NULL");
+                $q->bind_param('i',$id);$q->execute();$ok=$q->affected_rows===1;$q->close();
+                if (!$ok) throw new RuntimeException('hosted_review_reason_unconfirmed');
+                if (!$db->commit()) throw new RuntimeException('hosted_review_commit_unconfirmed');
+                $open=false;return true;
+            }
+            $db->rollback();return false;
         }
         if ($attempt['stage']!=='pending') {$db->rollback();return false;}
         $id=(int)$attempt['id'];
         $q=$db->prepare("UPDATE payment_attempts
-            SET stage='review',provider_status='verification_uncertain',last_checked_at=NOW()
+            SET stage='review',provider_status=?,last_checked_at=NOW()
             WHERE id=? AND stage='pending' AND review_archived_at IS NULL");
-        $q->bind_param('i',$id);$q->execute();$ok=$q->affected_rows===1;$q->close();
+        $q->bind_param('si',$reason,$id);$q->execute();$ok=$q->affected_rows===1;$q->close();
         if (!$ok) throw new RuntimeException('hosted_review_stage_unconfirmed');
         if (!$db->commit()) throw new RuntimeException('hosted_review_commit_unconfirmed');
         $open=false;return true;
@@ -918,7 +954,8 @@ function achbotClaimHostedServiceForReview(mysqli $db, int $payId, int $amount,
                     // authenticated operator before invoking this effect.
                     // Its 'operator_attested' status is not merchant proof.
                 } elseif ($stage!=='pending' &&
-                    !($stage==='review' && $status==='verification_uncertain')) {
+                    !($stage==='review' && in_array($status,
+                        ['verification_uncertain','verification_unavailable'],true))) {
                     throw new RuntimeException('attempt_mismatch');
                 }
                 $id=(int)$attempt['id'];

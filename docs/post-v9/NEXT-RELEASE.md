@@ -48,6 +48,24 @@ published RC30 ZIP or the active Chili installation.
   reconciliation. Retiring an open invoice happens with the service-change
   intent commit, before a potential Native PUT. A later uncertain Native
   response does not resurrect prior invoices or falsely claim service success.
+- **Owner refinement for manual receipts and hosted review** (PR #146 only):
+  after a VERIFIED real service/plan change, the original staff approval and
+  rejection keyboards are removed from saved receipt messages on a best-effort
+  post-commit Telegram edit; any retained/stale button is already inert under
+  the durable `service_superseded` financial CAS. Receipt, provider ID and
+  photo/code evidence remain unchanged. Customer and staff plan/server
+  selection screens warn BEFORE selection that incomplete service-bound
+  invoices become non-payable for services, without promising a refund.
+- **Review inbox admission is not a six-hour expiration alarm:** the button
+  reads exactly **پرداخت‌های نیازمند بررسی**. Pure `pending`/`waiting`,
+  unpaid, merely old, malformed or generically unknown merchant invoices are
+  not eligible. The queue admits signed NOWPayments partial/observed-funds
+  evidence, genuine merchant verification transport outage, and already
+  initiated but unresolved local fulfillment. Authenticated funds arriving
+  after an invoice is retired may be inspected and locally archived but
+  cannot reapply the old service, be manually settled against it, or rewrite
+  the external payment evidence. A failed Telegram edit does not bypass the
+  SQL CAS and never warrants a second Native/financial execution.
 - **Not included:** user-initiated server relocation, automatic refunds,
   general late-payment financial resolution and operator-facing safe recovery
   of an already-dispatched ambiguous Native plan journal. Owner-approved

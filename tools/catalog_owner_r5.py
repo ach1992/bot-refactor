@@ -389,8 +389,12 @@ def service_change_catalog_layer():
           record['issue']=='https://github.com/ach1992/bot-refactor/issues/144',
           'service_change_catalog_manifest_identity')
     expected_changes={
-        'user':{'subscription.account_details.get_order_detail_keys.button.5c38085697'},
-        'admin':{'subscription.account_transfers.admin_message.6645c1fd4d'}}
+        'user':{'subscription.account_details.get_order_detail_keys.button.5c38085697',
+                'renewal.extensions.message.143c7f81f1',
+                'subscription.account_transfers.message.3f6bd6c3c8'},
+        'admin':{'subscription.account_transfers.admin_message.6645c1fd4d',
+                 'automatic_gateway_review.menu','automatic_gateway_review.title',
+                 'subscription.order_management.show_order_management_panel.message.877fdebc48'}}
     expected_added={'user':{
         'payment.payment_lifecycle.pay_ux_status_text.service_superseded_title',
         'payment.payment_lifecycle.pay_ux_status_text.service_superseded_next'},'admin':{

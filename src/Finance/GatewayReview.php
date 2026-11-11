@@ -15,40 +15,38 @@ require_once __DIR__.'/../Admin/Access.php';
  * Late signed IPN evidence is separate from the immutable archived attempt.
  */
 function achbotGatewayAttentionScope(): string {
-    $threshold=achbotPayUxHostedAttentionSeconds();
-    $scope="a.review_archived_at IS NULL AND a.provider IN ('nowpayments','nextpay','zarinpal')
+    // Age, a never-paid invoice, or generic unknown verification is NOT
+    // financial evidence. The inbox is for observed money, a genuine
+    // verification transport outage, or a previously started local effect.
+    return "a.review_archived_at IS NULL
+        AND a.provider IN ('nowpayments','nextpay','zarinpal')
         AND (
             (p.state IN ('pending','send') AND (
                 (a.stage='review' AND (
-                    (a.provider IN ('zarinpal','nextpay') AND
-                     a.provider_status='verification_uncertain')
-                    OR (a.provider='nowpayments' AND (
-                        a.provider_status IS NULL OR a.provider_status NOT IN (
-                        'fulfillment_started','fulfillment_unconfirmed',
-                        'fulfillment_failed','fulfillment_needs_review',
-                        'operator_attested','operator_verified_finished',
-                        'operator_rejected','operator_compensated',
-                        'operator_fulfilled')))
+                    (a.provider='nowpayments' AND a.provider_status IN (
+                        'partially_paid','confirming','confirmed','sending',
+                        'finished','refunded','amount_mismatch','multiple_payments'))
+                    OR (a.provider IN ('nextpay','zarinpal') AND
+                        a.provider_status='verification_unavailable')
                     OR a.provider_status='operator_fulfillment_unconfirmed'
-                    OR (a.provider_status IN
-                         ('fulfillment_failed','fulfillment_needs_review',
-                          'fulfillment_unconfirmed')
-                        AND a.updated_at <= NOW()-INTERVAL 10 MINUTE)))
-                OR (a.stage='pending' AND a.provider_status IS NULL
-                    AND a.created_at <= NOW()-INTERVAL ".(int)$threshold." SECOND)
-                OR (a.provider='nowpayments' AND a.stage='checking'
-                    AND a.last_checked_at IS NOT NULL
-                    AND a.last_checked_at < NOW()-INTERVAL 10 MINUTE)
+                    OR (a.provider_status IN (
+                        'fulfillment_failed','fulfillment_unconfirmed',
+                        'fulfillment_needs_review')
+                        AND a.updated_at<=NOW()-INTERVAL 10 MINUTE)))
                 OR (a.stage='fulfilling' AND
-                    a.updated_at <= NOW()-INTERVAL 10 MINUTE)))
+                    a.updated_at<=NOW()-INTERVAL 10 MINUTE)))
             OR (p.state IN ('processing','paid') AND
                 a.stage IN ('review','fulfilling') AND
                 a.provider_status IN ('fulfillment_started',
                     'fulfillment_unconfirmed','fulfillment_failed',
-                    'fulfillment_needs_review',
-                    'operator_fulfillment_unconfirmed') AND
-                a.updated_at <= NOW()-INTERVAL 10 MINUTE))";
-    return $scope;
+                    'fulfillment_needs_review','operator_fulfillment_unconfirmed')
+                AND a.updated_at<=NOW()-INTERVAL 10 MINUTE)
+            OR (p.state='service_superseded' AND a.provider='nowpayments'
+                AND EXISTS (SELECT 1 FROM payment_transactions t
+                    WHERE t.attempt_id=a.id AND t.provider=a.provider
+                    AND t.observed_status IN (
+                        'partially_paid','confirming','confirmed','sending','finished')))
+        )";
 }
 
 function achbotGatewayReviewReady(mysqli $db): bool {
@@ -69,8 +67,8 @@ function achbotGatewayReviewReady(mysqli $db): bool {
 
 /** Current committed local state, NOT a claim that merchant funds settled.
  * A recorded remote CREATE/credit disqualifies all further decisions.
- * Pending checkout invoices enter this queue only after the normal hosted
- * attention threshold; an older invoice is not necessarily a paid invoice.
+ * Aged unpaid invoices never enter the queue. Genuine provider evidence
+ * or a verified upstream transport outage is required for original decisions.
  */
 function achbotGatewayReviewEligible(mysqli $db,int $attemptId,
     string $decision,bool $lock=false): ?array {
@@ -106,28 +104,19 @@ function achbotGatewayReviewEligible(mysqli $db,int $attemptId,
             (string)($a['payment_id']??'')!=='') return null;
     }
     $stage=(string)$a['stage'];$status=(string)($a['provider_status']??'');
-    if ($stage==='pending') {
-        if ($status!=='' || (int)$a['age_seconds']<achbotPayUxHostedAttentionSeconds())
+    // Staff cannot approve a waiting invoice on elapsed time alone or while
+    // a real verifier is running. Human decision is only for a trusted
+    // provider observation or a verified merchant-transport outage.
+    if ($stage!=='review') return null;
+    if ($provider==='nowpayments') {
+        // A merchant-confirmed refund permits closing the *original* local
+        // quote as declined, never approving it or refunding anything again.
+        if ($status==='refunded') {
+            if ($decision!=='reject') return null;
+        } elseif (!in_array($status,[
+            'partially_paid','confirming','confirmed','sending','finished'],true))
             return null;
-    } elseif ($stage==='checking') {
-        // A stranded NOWPayments verification may have lost the worker. The
-        // original Cron retries only after ten minutes, so never let staff
-        // claim the live worker's current check.
-        if ($provider!=='nowpayments' ||
-            (string)($a['last_checked_at']??'')==='' ||
-            strtotime((string)$a['last_checked_at'])===false ||
-            strtotime((string)$a['last_checked_at'])>time()-600)
-            return null;
-    } elseif ($stage==='review') {
-        if (in_array($status,[
-            'fulfillment_started','fulfillment_failed','fulfillment_unconfirmed',
-            'fulfillment_needs_review','operator_fulfillment_unconfirmed',
-            'operator_attested','operator_verified_finished','operator_rejected',
-            'identity_mismatch','local_amount_changed','amount_mismatch',
-            'multiple_payments'],true)) return null;
-        if ($provider!=='nowpayments' && $status!=='verification_uncertain')
-            return null;
-    } else return null;
+    } elseif ($status!=='verification_unavailable') return null;
     // Never declare an invoice unpaid or send its effects a second time if
     // a local service/payment side effect has already started.
     $q=$db->prepare('SELECT id FROM service_effects WHERE pay_row_id=? LIMIT 1'.$suffix);

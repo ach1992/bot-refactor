@@ -960,6 +960,7 @@ function achbotReassignLogicalServer(mysqli $db,int $orderId,int $targetId,int $
         $started=false;
         error_log('achbot_shared_transfer_committed order_id='.$orderId.
             ' target_id='.$targetId.' active_refs='.$count);
+        achbotPhysicalHideRetiredReceiptActions($db,$all);
         return ['id'=>$orderId,'userid'=>$order['userid'],'remark'=>$order['remark'],
             'title'=>$target['title'],'source_id'=>$old,'target_id'=>$targetId,
             'provider'=>achbotProviderType($db,$targetId),'shared_count'=>$count];
