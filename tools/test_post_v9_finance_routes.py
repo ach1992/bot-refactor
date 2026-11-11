@@ -537,6 +537,14 @@ function curl_error($handle) {
         $GLOBALS['fake_marzban_transport_failure']) return 'synthetic_timeout';
     return '';
 }
+// The current Marzban auth boundary reads curl_errno alongside curl_error.
+// Match the real cURL contract in this no-network fixture, not a missing PHP
+// function that would silently fail the caller's financial recovery path.
+function curl_errno($handle) {
+    if (str_contains($handle->url,'/api/user/') && $handle->method==='PUT' &&
+        $GLOBALS['fake_marzban_transport_failure']) return 28;
+    return 0;
+}
 function curl_getinfo($handle,$option) {
     if (str_contains($handle->url,'/api/user/') &&
         str_ends_with($handle->url,'/reset')) return $GLOBALS['fake_marzban_reset_http'];
