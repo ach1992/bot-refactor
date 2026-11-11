@@ -480,7 +480,7 @@ return [
 🎈 نام اشتراک: <code>{remark}</code>
 🧾 شناسه سفارش: <code>{order_id}</code>
 👤 شناسه کاربر: <code>{user_id}</code>
-👤 شناسه {actor_role}: <code>{actor_id}</code>
+🛠 شناسه {actor_role}: <code>{actor_id}</code>
 📦 پلن جدید: {plan_title}
 🔢 شناسه پلن: <code>{plan_id}</code>",
             'parameters' => ['remark','order_id','user_id','actor_role','actor_id','plan_title','plan_id']

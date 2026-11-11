@@ -739,10 +739,7 @@ function achbotNotifyServiceChange(string $kind,array $subject,int $actorId,bool
             'remark'=>$escape($subject['remark']),
             'order_id'=>(string)(int)$subject['id'],
             'user_id'=>(string)(int)$subject['userid'],
-            'actor_id'=>(string)$actorId,
-            'actor_role'=>$adminActor
-                ? achbotMessage('subscription.service_change_report.admin')
-                : achbotMessage('subscription.service_change_report.customer')
+            'actor_id'=>(string)$actorId
         ];
         if ($kind==='server') {
             $source=(int)($subject['source_id']??0);
@@ -754,6 +751,9 @@ function achbotNotifyServiceChange(string $kind,array $subject,int $actorId,bool
         } else {
             $id=(int)($subject['plan_id']??0);
             if ($id<=0) return;
+            $params['actor_role']=$adminActor
+                ? achbotMessage('subscription.service_change_report.admin')
+                : achbotMessage('subscription.service_change_report.customer');
             $params['plan_id']=(string)$id;
             $params['plan_title']=$escape($subject['plan_title']??'');
         }

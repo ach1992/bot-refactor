@@ -9,7 +9,7 @@
     },
     "admin": {
       "before_sha256": "bbe941cca8f668f1425b8ce0e330a5ae5e74f38a939ecad780a6fad87de1d8b1",
-      "after_sha256": "734518491d7d0acb5f5832ede2b98e2ea2c578e907de9565e514a2f458d54197"
+      "after_sha256": "9cd443b4a6109458eef36107ded7ab8a34d3d012f2002ab36eb157da9c670e2e"
     }
   },
   "changes": {

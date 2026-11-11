@@ -40,6 +40,11 @@ def main():
         stages.stage_source(stage,True)
         fixture=stage/'native-purchase.php'
         stub=fixture.read_text()
+        # A dedicated synthetic channel allows us to assert the production
+        # fanout contract without real Telegram delivery or external secrets.
+        channel="-1009000000100"
+        assert stub.count("'rewardChannel'=>'',")==1
+        stub=stub.replace("'rewardChannel'=>'',","'rewardChannel'=>'"+channel+"',",1)
         # The old purchase-parity harness deliberately shadowed the
         # provider registry with a Marzban-only stub. This test instead
         # exercises the current real administrator Group callback for BOTH
@@ -401,6 +406,16 @@ achEvent('probe',[
             z=do('transfer',f'switchServer3_{oid}',
                 expected_stderr=f'achbot_shared_transfer_committed order_id={oid} target_id=3 active_refs=2\n')
             if getid()!=3 or not has(z,'editText'):raise RuntimeError('Administrator remapping failed')
+            reports=[event for event in z['events']
+                if event['name']=='sendMessage' and event['args'] and
+                'تغییر سرویس' in str(event['args'][0])]
+            if not (len(reports)>=2 and
+                any(len(event['args'])>=4 and event['args'][3]==9001 for event in reports) and
+                any(len(event['args'])>=4 and str(event['args'][3])==channel for event in reports) and
+                all('r4-order' in str(event['args'][0]) and
+                    '9001' in str(event['args'][0]) for event in reports)):
+                raise RuntimeError('Real server transfer staff/channel notice missing or incomplete')
+            passed('service_change_server_report_to_staff_channel_with_numeric_actor_and_name')
             if fields!=sql(work,env,
                 f'SELECT token,remark,uuid,link,amount,status FROM orders_list WHERE id={oid}'):
                 raise RuntimeError('Logical transfer modified physical account or payment')
