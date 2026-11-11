@@ -340,7 +340,11 @@ function achbotPhysicalRetireOpenPaymentsLocked(mysqli $db,array $rows): int {
     $retired=0;
     foreach ($payments as $payment) {
         $state=(string)$payment['state'];
-        if (!in_array($state,['pending','send','have_sent'],true)) continue;
+        // Insufficient-wallet invoices are also unfinished original-service
+        // quotes: a later wallet recharge cannot revive old-plan pricing.
+        if (!in_array($state,['pending','send','have_sent','low_wallet'],true)) continue;
+        if ($state==='low_wallet' && (string)($payment['payid']??'')!=='')
+            throw new RuntimeException('physical_pending_financial_effect');
         $type=(string)$payment['type'];
         $target=0;
         if ($type==='RENEW_ACCOUNT') $target=(int)$payment['order_id'];

@@ -24,7 +24,8 @@ published RC30 ZIP or the active Chili installation.
 - **Stacked finance candidate only** (not part of PR #145's independently
   validated exact SHA): a local plan-change intent or staff-authorized
   same-physical-server transfer atomically transitions old, unclaimed
-  renewal/extension invoices for **all** current shared order owners to
+  renewal/extension invoices (including insufficient-wallet
+  \`low_wallet\` quotes) for **all** current shared order owners to
   \`service_superseded\`. Their payment IDs, hashes, original amounts, provider
   invoices, API/receipt evidence and rows remain unchanged. The invoice's
   service fulfillment is closed; no external refund or provider cancellation

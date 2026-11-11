@@ -376,6 +376,8 @@ def main():
             issued=invoice(h,'issued','send',order=h['peer'])
             review=invoice(h,'review','have_sent',order=h['peer'])
             legacy=invoice(h,'oldencoded','pending',f'INCREASE_DAY_{h["peer"]}_3',0)
+            wallet_quote=invoice(h,'walletshort','low_wallet',order=h['peer'])
+            wallet_topup=invoice(h,'unrelatedwallet','pending','INCREASE_WALLET',0)
             db("UPDATE pays SET payid='old-provider-id',message_id=3131,"
                "chat_id='1002' WHERE id="+str(issued))
             db("INSERT INTO payment_attempts (pay_row_id,provider,order_hash,"
@@ -386,7 +388,7 @@ def main():
                "quote_amount,quote_currency,local_amount_toman,stage,provider_status)"
                " SELECT id,'bank_transfer',hash_id,137,'toman',137,'review','verification_uncertain'"
                " FROM pays WHERE id="+str(review))
-            ids=f'{pending},{issued},{review},{legacy}'
+            ids=f'{pending},{issued},{review},{legacy},{wallet_quote}'
             old_details=db('SELECT id,hash_id,payid,user_id,type,plan_id,server_id,order_id,price,message_id,chat_id FROM pays WHERE id IN ('+ids+') ORDER BY id')
             before=subject(h);money=finance(h);puts=len(h['writes']())
             plan(h,120)
@@ -401,8 +403,13 @@ def main():
                 provider+'_old_open_payments_closed_and_new_native_plan_committed_once')
             yes(db('SELECT id,hash_id,payid,user_id,type,plan_id,server_id,order_id,price,message_id,chat_id FROM pays WHERE id IN ('+ids+') ORDER BY id')==old_details and
                 db('SELECT state FROM pays WHERE id IN ('+ids+') ORDER BY id')==
-                'service_superseded\nservice_superseded\nservice_superseded\nservice_superseded',
+                'service_superseded\nservice_superseded\nservice_superseded\nservice_superseded\nservice_superseded',
                 provider+'_old_invoice_and_receipt_bytes_preserved_only_state_retired')
+            yes(h['call']('review_superseded_payment',pay=wallet_quote)==
+                {'state':'service_superseded','eligible':False},
+                provider+'_low_wallet_old_service_quote_cannot_resume_after_recharge')
+            yes(db('SELECT state FROM pays WHERE id='+str(wallet_topup))=='pending',
+                provider+'_independent_wallet_topup_never_swept_by_service_change')
             yes(h['call']('review_superseded_payment',pay=issued)==
                 {'state':'service_superseded','eligible':False},
                 provider+'_late_old_issued_invoice_preflight_denied_and_status_explicit')
