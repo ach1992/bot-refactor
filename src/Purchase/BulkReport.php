@@ -94,3 +94,21 @@ function achbotBulkReportAppend(string $base,array $proof,bool $html=false): str
     }
     return $body;
 }
+
+/** Read-only staff report for a started but not fully confirmed paid batch.
+ * Call only from the existing payment handler's genuine postclaim failure path;
+ * never initiate payment, refund, account creation or replay from here.
+ */
+function achbotBulkPartialPaymentReport(mysqli $db,int $payId): ?string {
+    if ($payId<=0) return null;
+    $q=$db->prepare("SELECT type,user_id,agent_count FROM pays WHERE id=? LIMIT 1");
+    $q->bind_param('i',$payId);
+    if (!$q->execute()) throw new RuntimeException('bulk_partial_payment_unavailable');
+    $owner=$q->get_result()->fetch_assoc();$q->close();
+    $count=(int)($owner['agent_count']??0);
+    if (!$owner || $owner['type']!=='BUY_SUB' ||
+        (int)$owner['user_id']<=0 || $count<=1) return null;
+    $proof=achbotBulkRecordedAccounts($db,$count,(int)$owner['user_id'],$payId);
+    $subject=achbotMessage('bulk_reporting.bulk_subject').' #'.$payId;
+    return achbotBulkReportAppend($subject,$proof,true);
+}

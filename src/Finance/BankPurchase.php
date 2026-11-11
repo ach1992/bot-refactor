@@ -244,6 +244,8 @@ function achbotAutoBankProvisionBuySub(
         $remark=buildRemark($botState,(string)$p['server_remark'],
             $description,$owner,$description!==''?$description:null);
         if ($count>1 && $description!=='') $remark.='_'.$i;
+        $remark=achbotPaidPurchaseRemark((string)$remark,(string)$p['panel_type'],
+            $payId,$i,$count,$description!=='' && $count===1);
         // Reuse prior dispatch only through exact native readback. A new
         // ordinal still calls the existing unique-key CREATE owner once.
         [$response,$remark,$port,$effectId]=achbotContinuePaidAccount($db,$payId,$i,[

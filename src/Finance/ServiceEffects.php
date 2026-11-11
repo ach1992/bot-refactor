@@ -181,9 +181,36 @@ function achbotEffectRecordManualCapacityLocked(mysqli $db,array $pay,int $count
  * pre-debit verification and the final paid/nonpaid effect dispatcher.
  * Byte-length is intentional: Marzban usernames are ASCII identifiers.
  */
-function achbotEffectValidUsername(string $username): bool {
-    return strlen($username)>=1 && strlen($username)<=100 &&
+function achbotEffectValidUsername(string $username,?string $provider=null): bool {
+    // Keep the existing general/PasarGuard admission contract. Marzban's
+    // actual Native /api/user username column rejects more than 32 bytes.
+    $max=$provider==='marzban'?32:100;
+    return strlen($username)>=1 && strlen($username)<=$max &&
         preg_match('/^[a-zA-Z0-9_-]+$/D',$username)===1;
+}
+
+/** Resolve NEW paid Marzban user identities before durable CREATE reservation.
+ * PasarGuard names retain their own provider contract; already-dispatched
+ * operations are NEVER renamed or replayed by this formatter.
+ */
+if (!function_exists('achbotPaidPurchaseRemark')) {
+    function achbotPaidPurchaseRemark(string $base,string $provider,
+        int $payId,int $ordinal,int $count,bool $explicitSingle=false): string {
+        if ($payId<=0 || $ordinal<=0 || $count<=0 || $ordinal>$count)
+            throw new RuntimeException('paid_username_identity_invalid');
+        if ($provider!=='marzban') return $base;
+        if (preg_match('/^[A-Za-z0-9_-]+$/D',$base)!==1)
+            throw new RuntimeException('paid_marzban_username_invalid');
+        if ($count===1 && strlen($base)<=32) return $base;
+        if ($count===1 && $explicitSingle)
+            throw new RuntimeException('paid_marzban_username_invalid');
+        // Deterministic across retries, scoped to original payment and line.
+        // Keep 12 readable bytes; fixed 20-byte suffix incl. _p.
+        $suffix='_p'.substr(hash('sha256',$payId.':'.$ordinal),0,18);
+        $prefix=substr($base,0,32-strlen($suffix));
+        if ($prefix==='') throw new RuntimeException('paid_marzban_username_invalid');
+        return $prefix.$suffix;
+    }
 }
 
 /**
@@ -285,7 +312,7 @@ function achbotCreatePaidAccount(mysqli $db, int $payId, int $ordinal, array $p,
         $planId<=0 || $inboundId!==0 || !achbotSupportsAccount($p['server_type']??'',0) ||
         $volume<=0 || $days<=0 || $days>36500 ||
         $volume>intdiv(PHP_INT_MAX,1073741824) ||
-        !achbotEffectValidUsername($remark)) {
+        !achbotEffectValidUsername($remark,(string)($p['server_type']??''))) {
         throw new RuntimeException('effect_invalid_account_request');
     }
 
@@ -826,7 +853,7 @@ function achbotCreateNonPaymentAccount(
         (int)($p['inbound_id']??-1)!==0 ||
         $volume<=0 || $days<=0 || $days>36500 ||
         $volume>intdiv(PHP_INT_MAX,1073741824) ||
-        !achbotEffectValidUsername($remark)) {
+        !achbotEffectValidUsername($remark,(string)($p['server_type']??''))) {
         throw new RuntimeException('nonpaid_effect_invalid_request');
     }
     if (($kind==='free_trial' && !str_starts_with($sourceRef,'trial:') &&

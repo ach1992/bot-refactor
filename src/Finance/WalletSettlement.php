@@ -267,8 +267,22 @@ if (!function_exists('processWalletPayment')) {
                 $remarkMode=(string)($botState['remark']??'');
                 $prefixSuffix=$remarkMode==='digits' ? '-99999' :
                     '-'.$uid.'-99999';
+                // Validate the FINAL prospective Marzban identity while the
+                // original wallet/plan quote is locked, BEFORE debiting money.
+                // Single explicit customer names are not silently renamed;
+                // paid multiple-account aliases use the original invoice ID.
                 $generatedValid=$isCustom || $manualRemark ||
                     achbotEffectValidUsername($serverRemark.$prefixSuffix);
+                if ((string)($plan['panel_type']??'')==='marzban') {
+                    try {
+                        $sample=$isCustom || $manualRemark
+                            ? $persistedRemark : $serverRemark.$prefixSuffix;
+                        $sample=achbotPaidPurchaseRemark($sample,'marzban',
+                            (int)$payInfo['id'],$quantity,$quantity,
+                            $isCustom || $manualRemark);
+                        $generatedValid=achbotEffectValidUsername($sample,'marzban');
+                    } catch (Throwable $ignored) {$generatedValid=false;}
+                }
                 if (!$plan || (int)$plan['server_id']!==$serverId ||
                     (int)$plan['inbound_id']!==0 ||
                     (int)$plan['server_active']!==1 ||
@@ -377,6 +391,17 @@ if (!function_exists('processWalletPayment')) {
             if ($heldDebit)
                 error_log('achbot_wallet_held_debit_review hash='.
                     preg_replace('/[^A-Za-z0-9_-]/','',(string)$hashId));
+            if ($heldDebit && (int)($payInfo['id']??0)>0) {
+                try {
+                    require_once __DIR__.'/../Purchase/BulkReport.php';
+                    $bulk=achbotBulkPartialPaymentReport($connection,(int)$payInfo['id']);
+                    if ($bulk!==null) achbotNotifyAdmins('sendMessage',[
+                        'text'=>$bulk,'parse_mode'=>'HTML']);
+                } catch (Throwable $reportError) {
+                    error_log('achbot_wallet_bulk_partial_report_unavailable pay_id='.
+                        (int)$payInfo['id'].' class='.get_class($reportError));
+                }
+            }
             $adminErr = \achbotMessage('wallet.wallet_settlement.process_wallet_payment.admin_err.51996ec850')
                 . \achbotMessage('wallet.wallet_settlement.process_wallet_payment.hash__i_d_hash_id.e73fee2172', ['hashId' => $hashId])
                 . \achbotMessage('wallet.wallet_settlement.process_wallet_payment.user_from_id.45aa9ea684', ['from_id' => $from_id])

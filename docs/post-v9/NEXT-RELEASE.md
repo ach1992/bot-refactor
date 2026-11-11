@@ -33,6 +33,22 @@ Native effect and actual delivery still need separately authorized verification;
 never retry the protected dispatched claim or rewrite original evidence. No
 production target, provider or customer data was changed by this investigation.
 
+The 2026-11-11 independent review of PR #148 required two additional
+corrections: provider-aware Marzban names on **paid** customer/agent routes,
+and exact original-payment reporting on **partial** wallet/hosted failures.
+The updated candidate validates explicit single Marzban names at the customer
+quote and locked wallet pre-debit boundaries. It assigns deterministic,
+payment-and-ordinal-bound names (maximum 32 ASCII bytes) for newly created
+paid multiple-account Marzban identities; PasarGuard retains its existing
+provider-specific contract. Existing dispatched effects are not renamed or
+replayed. When a started paid wallet/hosted purchase fails mid-batch, a
+read-only projection of original 007 effects/linked orders reports the payment
+reference, verified count, exact confirmed identities and uncertainty to staff
+and the configured report channel. It neither compensates money nor issues
+CREATE/refund actions. Actual PHP 8.5 exact-HEAD CI and fresh high-assurance
+delta review are mandatory before any integration; source-only fixtures cannot
+establish an installed provider or financial outcome.
+
 ## Published RC30 — source-only Cron, Telegram, Marzban and gift-card reliability
 
 [v0.10.0-rc.30](https://github.com/ach1992/bot-refactor/releases/tag/v0.10.0-rc.30) publishes independently approved [PR #142](https://github.com/ach1992/bot-refactor/pull/142), merged as `main@ebca4bee143ccb03ea45c2ea2767646b60ac6f9c`, TREE `f5103e9ffcdcc88994f30ec4e5550dc7b9546a13`. The **131-member source-only runtime ZIP** has SHA256 `5ac98c346867e1a8d3aeb7c38482090cde5288d293f05375f6e7f74e13e79150`, five modified runtime paths since RC29, and **no new DDL**. See the [RC29 -> RC30 operator guide](https://github.com/ach1992/bot-refactor/releases/download/v0.10.0-rc.30/RC29-TO-RC30.md), [test acceptance matrix](https://github.com/ach1992/bot-refactor/releases/download/v0.10.0-rc.30/TEST-CHILI-ACCEPTANCE.md) and full Release Notes.

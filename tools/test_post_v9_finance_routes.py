@@ -291,7 +291,9 @@ function createServerAccount(...$args) {
             $capacity=(int)$GLOBALS['connection']->query(
                 'SELECT ucount FROM server_info WHERE id=2')->fetch_row()[0];
         }
+        if (strlen((string)($args[4]??''))>32) $mode='invalid_username';
         $GLOBALS['events'][]=['name'=>'marzban_create_attempt',
+            'name'=>(string)($args[4]??''),
             'number'=>$index,'mode'=>$mode,'stage'=>$stage,'pay_state'=>$state,
             'held_at_post'=>$held,'capacity_at_post'=>$capacity];
         if ($mode==='success') {
@@ -4145,8 +4147,18 @@ def main():
                     for text in reports):
                     raise RuntimeError('O2 hosted bulk owner report lost original accounts: '+
                                        repr((name,reports))[:1200])
-                if label=='partial' and any('2 از 2' in text for text in reports):
-                    raise RuntimeError('O2 uncertain hosted operation reported full success')
+                if label=='partial':
+                    partial_reports=[text for text in reports
+                        if 'ثبت محلی تأییدشده:' in text]
+                    if len(partial_reports)!=1 or not all(
+                        '1 از 2' in text and '#'+str(pay_id) in text and
+                        remark+'_1' in text and remark+'_2' not in text and
+                        'عملیات نامشخص را تکرار نکنید' in text
+                        for text in partial_reports):
+                        raise RuntimeError('O2 partial hosted original-effect report missing: '+
+                                           repr((name,partial_reports))[:1200])
+                    if any('2 از 2' in text for text in reports):
+                        raise RuntimeError('O2 uncertain hosted operation reported full success')
                 if any(e['stage']!='review' or e['pay_state']!='paid' or
                        e['held_at_post']!=2 or e['capacity_at_post']!=0
                        for e in created):
@@ -4205,6 +4217,48 @@ def main():
                     full_count_held_before_create=True,
                     requires_operator_review=label=='partial'))
                 sql(work,env,"UPDATE server_info SET ucount=20 WHERE id=2")
+
+        # Real source long manual/agent hosted description must not reach
+        # Marzban overlong; 007, original amount and receipt remain intact.
+        long_name='very_long_'+'m'*84
+        long_hash='o2-hosted-long-marzban'
+        seed_payment(work,env,long_hash,'BUY_SUB',7,2,long_hash+'-invoice')
+        sql(work,env,f"UPDATE pays SET agent_count=2,description='{long_name}' "
+            f"WHERE hash_id='{long_hash}'")
+        sql(work,env,"INSERT INTO payment_attempts "
+            "(pay_row_id,provider,order_hash,provider_reference,"
+            "quote_amount,quote_currency,local_amount_toman,stage) "
+            f"SELECT id,'nextpay',hash_id,'{long_hash}-invoice',"
+            f"price,'toman',price,'pending' FROM pays WHERE hash_id='{long_hash}'")
+        long_id=int(sql(work,env,f"SELECT id FROM pays WHERE hash_id='{long_hash}'"))
+        sql(work,env,"UPDATE server_info SET ucount=2 WHERE id=2")
+        long_events=run_php(work,env,stage,dict(route='do_action',get={},
+            provider='nextpay',pay_row_id=long_id,
+            scripted_marzban_creates=['success','success']))
+        long_post=[e for e in long_events['events']
+                   if e['name']=='marzban_create_attempt']
+        long_names=sql(work,env,'SELECT remote_username FROM service_effects '
+            f'WHERE pay_row_id={long_id} AND effect_kind="create" ORDER BY ordinal').splitlines()
+        if (len(long_post)!=2 or [e['mode'] for e in long_post]!=['success','success'] or
+            len(set(long_names))!=2 or not all(
+                len(n)==32 and n.startswith('very_long_') for n in long_names) or
+            sql(work,env,f'SELECT COUNT(*) FROM orders_list o '
+                f'JOIN service_effects e ON e.order_id=o.id WHERE e.pay_row_id={long_id}')!='2'):
+            raise RuntimeError('Hosted long-name Marzban native compatibility: '+
+                               repr((long_names,long_post))[:1200])
+        report_texts=[str(e['args'][0]) for e in long_events['events']
+            if e['name']=='sendMessage' and e.get('args')]
+        if not any('2 از 2' in text and all(n in text for n in long_names)
+                   for text in report_texts):
+            raise RuntimeError('Hosted long-name report lost original account identities')
+        replay=run_php(work,env,stage,dict(route='do_action',get={},
+            provider='nextpay',pay_row_id=long_id,
+            scripted_marzban_creates=['success','success']))
+        if any(e['name']=='marzban_create_attempt' for e in replay['events']):
+            raise RuntimeError('Hosted long-name original effect was re-created')
+        records.append(dict(case='hosted_nextpay_long_multi_marzban_username_32_no_replay',
+                            pass_=True,real_provider_requests=0))
+        sql(work,env,'UPDATE server_info SET ucount=20 WHERE id=2')
 
         # Review R2: run the ACTUAL hosted callback/CREATE and integer-bound
         # insertOrder path for nondivisible paid prices, not only a helper.

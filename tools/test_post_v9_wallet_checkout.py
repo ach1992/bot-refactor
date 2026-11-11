@@ -116,6 +116,8 @@ function generateRandomString($len=42,$protocol='vless'){return 'testuuid';}
 function getNextPortAndIncrease(...$args){return [12345,0];}
 function buildRemark(...$args) {
     $i=($GLOBALS['built_names']??0)+1;$GLOBALS['built_names']=$i;
+    if (!empty($GLOBALS['spec']['use_server_remark']))
+        return (string)$args[1].'_'.$i;
     return 'checkout_'.($GLOBALS['spec']['hash']??'native').'_'.$i;
 }
 function getServerInfoAndConfig($db,$id) {
@@ -131,6 +133,9 @@ function buildLinksAndSendQr(...$args){
     return ['token','["vless://fixture"]','uuid','Fixture account','{}','vless://fixture'];
 }
 function createServerAccount(...$args) {
+    // The real Marzban /api/user field is bounded to 32 ASCII bytes.
+    if (strlen((string)($args[4]??''))>32)
+        throw new RuntimeException('fixture_marzban_username_too_long');
     $count=($GLOBALS['posts']??0)+1;$GLOBALS['posts']=$count;
     $GLOBALS['events'][]=['event'=>'POST','ordinal'=>$count,'name'=>$args[4],
         'volume_gb'=>(int)$args[5],'days'=>(int)$args[6]];
@@ -631,8 +636,40 @@ def check():
         assert detail(unknown)==('wallet_hold\t0\t2\tconsumed\n'
                                  'create\t1\t0\tlocal_recorded\n'
                                  'create\t2\t0\tdispatching'),detail(unknown)
+        partial_reports=[m['synthetic_note'] for m in calls(failed,'MESSAGE')
+                         if 'ثبت محلی تأییدشده:' in m['synthetic_note']]
+        assert len(partial_reports)>=1 and all(
+            '1 از 2' in text and '#'+str(unknown) in text and
+            calls(failed,'POST')[0]['name'] in text and
+            calls(failed,'POST')[1]['name'] not in text and
+            'عملیات نامشخص را تکرار نکنید' in text
+            for text in partial_reports),(unknown,partial_reports,failed)
         assert not calls(route(work,env,driver,hash='native_partial'),'POST')
         cases.append('real_multi_wallet_second_line_ambiguous_stays_paid_hold_no_replay')
+
+        # Provider-specific 32-byte limit must not block a valid two-account
+        # paid operation, nor silently debit for an impossible single manual name.
+        long_base='mbz_'+'x'*88
+        initial_server=sql(work,env,'SELECT remark FROM server_info WHERE id=2')
+        try:
+            sql(work,env,"UPDATE server_info SET remark='"+long_base+"' WHERE id=2")
+            long_id=newpay('wallet_long_marzban',2)
+            long_result=route(work,env,driver,hash='wallet_long_marzban',
+                              use_server_remark=True)
+            aliases=[e['name'] for e in calls(long_result,'POST')]
+            assert len(aliases)==2 and len(set(aliases))==2 and all(
+                len(alias)==32 and alias.startswith('mbz_') for alias in aliases),aliases
+            assert paid(long_id)=='paid_with_wallet' and wallet()==49900 and cap()==8
+            assert all(alias in str(long_result) for alias in aliases)
+            assert not calls(route(work,env,driver,hash='wallet_long_marzban'),'POST')
+            manual_id=newpay('wallet_long_manual',1)
+            sql(work,env,"UPDATE pays SET description='"+long_base+"' WHERE id="+str(manual_id))
+            denied=route(work,env,driver,hash='wallet_long_manual',remark_mode='manual')
+            assert not calls(denied,'POST') and paid(manual_id)=='pending',denied
+            assert wallet()==50000 and cap()==10 and detail(manual_id)==''
+        finally:
+            sql(work,env,"UPDATE server_info SET remark='"+initial_server.replace("'","''")+"' WHERE id=2")
+        cases.append('paid_marzban_long_multi_username_compacted_single_manual_predebit_denied')
 
         custom=newpay('native_custom',1,custom=True)
         user=route(work,env,driver,hash='native_custom',custom=True)
