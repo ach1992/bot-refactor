@@ -143,7 +143,9 @@ class ValidationModes(unittest.TestCase):
         }
 
     def cron_actor_proof(self):
-        return {'complete':True,'cases':7,
+        return {'complete':True,'cases':16,
+                'native_marzban_auth_root_cause_classified':True,
+                'native_marzban_subscription_single_login':True,
                 'native_panel_no_empty_auth_request':True,
                 'native_panel_auth_diagnostic_once':True,
                 'actual_config_section':True,

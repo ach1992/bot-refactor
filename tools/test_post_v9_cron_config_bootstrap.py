@@ -99,6 +99,127 @@ echo json_encode($results,JSON_THROW_ON_ERROR);
     assert r.stderr.strip()=='achbot_marzban_auth_unverified server_id=91 stage=get_user',r.stderr
 
 
+def native_marzban_login_subscription_guard() -> None:
+    """Actual auth and subscription functions with fake local cURL/DB only."""
+    source=(ROOT/'src/Panel/Accounts.php').read_text()
+    auth=source[source.index('function achbotMarzbanAuthDiagnostic('):
+                source.index('function getMarzbanJson(')]
+    info=source[source.index('function getMarzbanUserInfo('):
+                source.index('function getMarzbanUser(',source.index('function getMarzbanUserInfo('))]
+    prefix=r'''<?php
+namespace AchBot\Panel\Accounts;
+error_reporting(E_ALL);
+foreach (['CURLOPT_URL'=>1,'CURLOPT_FOLLOWLOCATION'=>2,'CURLOPT_RETURNTRANSFER'=>3,
+          'CURLOPT_POST'=>4,'CURLOPT_CONNECTTIMEOUT'=>5,'CURLOPT_TIMEOUT'=>6,
+          'CURLOPT_SSL_VERIFYPEER'=>7,'CURLOPT_SSL_VERIFYHOST'=>8,
+          'CURLOPT_POSTFIELDS'=>9,'CURLOPT_HTTPHEADER'=>10,'CURLINFO_HTTP_CODE'=>11] as $name=>$id)
+    define($name,$id);
+class OwnedResult { function fetch_assoc() {
+    return ['id'=>91,'type'=>'marzban','panel_url'=>'https://fixture.invalid',
+            'username'=>'owned','password'=>'synthetic'];
+}}
+class OwnedStmt {
+    function bind_param(...$args) {}
+    function execute() {}
+    function get_result() {return new OwnedResult();}
+    function close() {}
+}
+class OwnedDb {function prepare($query) {return new OwnedStmt();}}
+$connection=new OwnedDb();
+$mode=$argv[1];
+$GLOBALS['auth_requests']=0;
+$GLOBALS['user_requests']=0;
+$GLOBALS['sub_requests']=0;
+function curl_init() {return (object)['url'=>''];}
+function curl_setopt($handle,$key,$value) {
+    if ($key===CURLOPT_URL)$handle->url=$value;
+    return true;
+}
+function curl_exec($handle) {
+    global $mode;
+    if (str_contains($handle->url,'/api/admin/token')) {
+        ++$GLOBALS['auth_requests'];
+        return match($mode) {
+            'auth_http_401','info_auth_bad'=>'{"detail":"unauthorized"}',
+            'auth_http_503'=>'{"detail":"unavailable"}',
+            'auth_bad_json'=>'invalid-json',
+            'auth_transport'=>false,
+            default=>'{"access_token":"synthetic-token"}',
+        };
+    }
+    if (str_contains($handle->url,'/sub/')) {
+        ++$GLOBALS['sub_requests'];
+        return $mode==='info_sub_retry' && $GLOBALS['sub_requests']<3?false:'fixture-subscription';
+    }
+    throw new \RuntimeException('unrecognized_fake_curl_url');
+}
+function curl_error($handle) {global $mode;
+    return $mode==='auth_transport'?'owned-timeout':'';
+}
+function curl_errno($handle) {global $mode;
+    return $mode==='auth_transport'?28:0;
+}
+function curl_getinfo($handle,$option) {global $mode;
+    return match($mode) {
+        'auth_http_401','info_auth_bad'=>401,
+        'auth_http_503'=>503,
+        'auth_transport'=>0,
+        default=>200,
+    };
+}
+function getMarzbanUser($serverId,$remark,$token) {
+    global $mode;
+    ++$GLOBALS['user_requests'];
+    if (!is_object($token) || ($token->access_token??'')!=='synthetic-token')
+        throw new \RuntimeException('invalid_token_passed_to_user_read');
+    if ($mode==='info_bad_user')return (object)['success'=>false,'msg'=>'remote_get_unconfirmed'];
+    if ($mode==='info_missing_sub')return (object)['username'=>'fixture','subscription_url'=>null];
+    return (object)['username'=>'fixture','subscription_url'=>'https://fixture.invalid/sub/synthetic'];
+}
+'''
+    suffix=r'''
+if (str_starts_with($mode,'info_')) {
+    $v=getMarzbanUserInfo(91,'owned-user');
+    $result=['success'=>$v->success??null,'msg'=>$v->msg??null,
+             'subscription_url'=>$v->subscription_url??null];
+} else {
+    $v=getMarzbanToken(91);
+    $result=['detail'=>$v->detail??null,
+             'valid_token'=>is_string($v->access_token??null)];
+}
+echo json_encode(['result'=>$result,'auth_requests'=>$GLOBALS['auth_requests'],
+   'user_requests'=>$GLOBALS['user_requests'],'sub_requests'=>$GLOBALS['sub_requests']],
+   JSON_THROW_ON_ERROR);
+'''
+    cases={
+      'auth_http_401':({'detail':'marzban_auth_http_unconfirmed','valid_token':False},1,0,0,
+                        'achbot_marzban_auth_unverified server_id=91 reason=http_status http=401 curl_errno=0'),
+      'auth_http_503':({'detail':'marzban_auth_http_unconfirmed','valid_token':False},1,0,0,
+                        'achbot_marzban_auth_unverified server_id=91 reason=http_status http=503 curl_errno=0'),
+      'auth_bad_json':({'detail':'marzban_auth_invalid','valid_token':False},1,0,0,
+                        'achbot_marzban_auth_unverified server_id=91 reason=invalid_token http=200 curl_errno=0'),
+      'auth_transport':({'detail':'marzban_auth_transport_unavailable','valid_token':False},1,0,0,
+                        'achbot_marzban_auth_unverified server_id=91 reason=transport http=0 curl_errno=28'),
+      'auth_ok':({'detail':None,'valid_token':True},1,0,0,''),
+      'info_auth_bad':({'success':False,'msg':'marzban_auth_http_unconfirmed','subscription_url':None},1,0,0,
+                        'achbot_marzban_auth_unverified server_id=91 reason=http_status http=401 curl_errno=0'),
+      'info_missing_sub':({'success':False,'msg':'marzban_subscription_url_unverified','subscription_url':None},1,1,0,''),
+      'info_bad_user':({'success':False,'msg':'remote_get_unconfirmed','subscription_url':None},1,1,0,''),
+      'info_sub_retry':({'success':None,'msg':None,'subscription_url':'/sub/synthetic'},1,3,3,''),
+    }
+    with tempfile.TemporaryDirectory(prefix='achbot-native-marzban-auth-owned-') as temp:
+        path=Path(temp)/'fake-marzban.php'
+        path.write_text(prefix+auth+info+suffix)
+        for name,(expected,auth_calls,user_calls,sub_calls,diagnostic) in cases.items():
+            r=subprocess.run(['php','-n','-d','display_errors=stderr',str(path),name],
+                             capture_output=True,text=True,timeout=6)
+            assert r.returncode==0,(name,r.stdout,r.stderr)
+            output=json.loads(r.stdout)
+            assert output=={'result':expected,'auth_requests':auth_calls,
+                            'user_requests':user_calls,'sub_requests':sub_calls},(name,output)
+            assert r.stderr.strip()==diagnostic,(name,r.stderr)
+
+
 def run() -> dict:
     text = (ROOT / 'config.php').read_text()
     assert text.count(START) == 1 and text.count(END) == 1
@@ -160,7 +281,10 @@ def run() -> dict:
             for forbidden in ('PHP Warning:','PHP Deprecated:','PHP Fatal error:'):
                 assert forbidden not in logs,(forbidden,logs[-700:])
     native_marzban_invalid_auth_guard()
-    return {'complete': True,'cases':7,'actual_config_section':True,
+    native_marzban_login_subscription_guard()
+    return {'complete': True,'cases':16,'actual_config_section':True,
+            'native_marzban_auth_root_cause_classified':True,
+            'native_marzban_subscription_single_login':True,
             'native_panel_no_empty_auth_request':True,
             'native_panel_auth_diagnostic_once':True,
             'cli_no_telegram_or_php_warnings':True,'real_verified_webhook_membership':True,
