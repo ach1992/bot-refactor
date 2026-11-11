@@ -58,7 +58,7 @@ def main() -> dict:
     added=historical.GIFT_PRECHECK_SHA256
     chili=historical.chili_copy_reference()[0]
     assert len(current['admin'])==1911+len(added['admin'])+len(chili['added'])+len(historical.service_change_catalog_layer()[2]['admin'])-len(historical.service_change_catalog_layer()[1]['admin']) and \
-        len(current['user'])==942+len(added['user'])
+        len(current['user'])==942+len(added['user'])+len(historical.service_change_catalog_layer()[2]['user'])-len(historical.service_change_catalog_layer()[1]['user'])
     assert not set(current['admin'])&set(current['user'])
     # Verify exact current additions and recipient placement before
     # comparing the older immutable post-cleanup user/admin baseline.

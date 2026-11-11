@@ -426,6 +426,9 @@ if (!function_exists('achbotSupportsPaymentSubject')) {
     {
         if (!is_array($pay)) return false;
         $type = (string)($pay['type'] ?? '');
+        // Supersession terminates only the ORIGINAL service-bound invoice.
+        // Even a correct old plan/server no longer makes it payable.
+        if (($pay['state']??null)==='service_superseded') return false;
         // Wallet top-ups are deliberately not tied to VPN providers.
         if ($type === 'INCREASE_WALLET') return true;
         if (!achbotProviderQuoteEligible($connection,$pay,$lock)) return false;

@@ -633,6 +633,9 @@ function achbotPayUxTrackClicked(mysqli $db, int $payId, int $chatId, int $messa
 function achbotPayUxState(array $pay, ?array $attempt): string {
     $state = (string)($pay['state'] ?? '');
     $stage = (string)($attempt['stage'] ?? '');
+    // A service-change intent invalidates the old invoice's product claim
+    // without asserting its external funds were unpaid or refunded.
+    if ($state === 'service_superseded') return 'service_superseded';
     if ($state === 'expired' || $state === 'mismatched_plan' ||
         $state === 'expired_have_sent') return 'expired';
     if ($state === 'declined') return 'declined';
@@ -694,6 +697,7 @@ function achbotPayUxStatusText(array $pay, ?array $attempt): string {
         ? (string)payTypeToDescription((string)$pay['type'])
         : \achbotMessage('payment.payment_lifecycle.pay_ux_status_text.text.df83eb82dd');
     $title = match ($state) {
+        'service_superseded' => \achbotMessage('payment.payment_lifecycle.pay_ux_status_text.service_superseded_title'),
         'expired' => \achbotMessage('payment.payment_lifecycle.pay_ux_status_text.text.a1026d7b85'),
         'superseded' => \achbotMessage('payment.payment_lifecycle.pay_ux_status_text.text.74adf2adfe'),
         'declined' => \achbotMessage('payment.payment_lifecycle.pay_ux_status_text.text.f8f1a7f2f5'),
@@ -706,6 +710,7 @@ function achbotPayUxStatusText(array $pay, ?array $attempt): string {
     $safe = static fn($v) => htmlspecialchars((string)$v,ENT_QUOTES|ENT_SUBSTITUTE,'UTF-8');
     $amount = number_format((int)($pay['price'] ?? 0));
     $next = match ($state) {
+        'service_superseded' => \achbotMessage('payment.payment_lifecycle.pay_ux_status_text.service_superseded_next'),
         'expired' => achbotPayUxManualProvider((string)($attempt['provider']??''))
             ? \achbotMessage('payment.payment_lifecycle.pay_ux_status_text.text.8b1195f62f')
             : \achbotMessage('payment.payment_lifecycle.pay_ux_status_text.text.90290d6783'),

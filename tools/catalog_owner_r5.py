@@ -391,7 +391,9 @@ def service_change_catalog_layer():
     expected_changes={
         'user':{'subscription.account_details.get_order_detail_keys.button.5c38085697'},
         'admin':{'subscription.account_transfers.admin_message.6645c1fd4d'}}
-    expected_added={'user':set(),'admin':{
+    expected_added={'user':{
+        'payment.payment_lifecycle.pay_ux_status_text.service_superseded_title',
+        'payment.payment_lifecycle.pay_ux_status_text.service_superseded_next'},'admin':{
         'subscription.service_change_report.admin',
         'subscription.service_change_report.customer',
         'subscription.service_change_report.server',

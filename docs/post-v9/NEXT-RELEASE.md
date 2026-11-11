@@ -21,12 +21,30 @@ published RC30 ZIP or the active Chili installation.
 - BOT_STATES adds an editable **customer plan-change** toggle, default ON to
   preserve established behavior. Both the visible customer button and both
   callback entrypoints enforce OFF; staff plan management remains available.
-- **Not included**: user-initiated server relocation and automatic invalidation
-  of pending, issued service-related payment attempts. The existing server
-  transfer is staff-authorized and the strict pending-payment fence remains
-  until a separate complete, race-safe cancellation/reconciliation design is
-  implemented. Customer toggles must not be falsely presented as empowering
-  a transfer that would affect other owners' shared Native subscription.
+- **Stacked finance candidate only** (not part of PR #145's independently
+  validated exact SHA): a local plan-change intent or staff-authorized
+  same-physical-server transfer atomically transitions old, unclaimed
+  renewal/extension invoices for **all** current shared order owners to
+  \`service_superseded\`. Their payment IDs, hashes, original amounts, provider
+  invoices, API/receipt evidence and rows remain unchanged. The invoice's
+  service fulfillment is closed; no external refund or provider cancellation
+  is claimed. Late signed IPN evidence is preserved, but old product
+  fulfillment and customer/staff payment callbacks are denied by original
+  state-CAS checks. Customer status explains the financial-review path.
+- **Strict safety exceptions:** a checking/fulfilling claim, an unreconciled
+  Native effect, an active API evidence lease, a reserved/redeemed gift/SMS
+  operation, an unknown 003/014 schema or a bound foreign owner cannot be
+  silently retired; it continues to hold the service transition for
+  reconciliation. Retiring an open invoice happens with the service-change
+  intent commit, before a potential Native PUT. A later uncertain Native
+  response does not resurrect prior invoices or falsely claim service success.
+- **Not included:** user-initiated server relocation, automatic refunds,
+  general late-payment financial resolution and operator-facing safe recovery
+  of an already-dispatched ambiguous Native plan journal. Owner-approved
+  manual reconciliation remains required for these exceptional cases.
+  The existing server transfer remains staff-authorized. Customer toggles
+  must not imply they authorize physical changes to another customer's
+  shared Native subscription.
 - Previously dispatched ambiguous operations must **not** be silently retried
   or have their journal marked committed. The Owner described the current
   Chili record as disposable test data and explicitly did not authorize

@@ -5,7 +5,7 @@
   "files": {
     "user": {
       "before_sha256": "c82a24e84b73376bc62a8dc23faae311ba9c145e1e669a2bc1228f81c4d95b43",
-      "after_sha256": "8c00435f405afd44537bdcbd23f7d086a45e813df77518415632ddcf07594d8f"
+      "after_sha256": "fb45b3208ac4c91d4d9258fa359ce39e94aa45dc6d5160aa8596108a53bb139c"
     },
     "admin": {
       "before_sha256": "bbe941cca8f668f1425b8ce0e330a5ae5e74f38a939ecad780a6fad87de1d8b1",
@@ -21,7 +21,10 @@
     ]
   },
   "added": {
-    "user": [],
+    "user": [
+      "payment.payment_lifecycle.pay_ux_status_text.service_superseded_title",
+      "payment.payment_lifecycle.pay_ux_status_text.service_superseded_next"
+    ],
     "admin": [
       "subscription.service_change_report.admin",
       "subscription.service_change_report.customer",

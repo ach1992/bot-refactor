@@ -398,6 +398,18 @@ achEvent('probe',[
                 "price,request_date,state) VALUES"
                 f"('transfer-declined',1001,'RENEW_ACCOUNT',7,2,{oid},137,UNIX_TIMESTAMP(),'declined'),"
                 f"('transfer-mismatched',9002,'RENEW_ACCOUNT',7,2,{peer},137,UNIX_TIMESTAMP(),'mismatched_plan')")
+            # A still-unclaimed renewal quote is genuinely tied to this
+            # order. Move the physical account and close only this quote,
+            # atomically; old financial identities remain inspectable.
+            sql(work,env,
+                "INSERT INTO pays(hash_id,user_id,type,plan_id,server_id,order_id,"
+                "price,request_date,state) VALUES "
+                f"('transfer-open',1001,'RENEW_ACCOUNT',7,2,{oid},137,UNIX_TIMESTAMP(),'pending')")
+            open_id=int(sql(work,env,
+                "SELECT id FROM pays WHERE hash_id='transfer-open'").strip())
+            old_open=sql(work,env,
+                "SELECT id,hash_id,user_id,plan_id,server_id,order_id,price,payid "
+                "FROM pays WHERE id="+str(open_id))
             old_receipts=sql(work,env,
                 "SELECT id,hash_id,state,payid FROM pays WHERE hash_id IN "
                 "('transfer-declined','transfer-mismatched') ORDER BY id")
@@ -427,8 +439,15 @@ achEvent('probe',[
                 raise RuntimeError('Transfer did not update every linked customer reference')
             passed('physical_marzban_two_customer_references_moved_atomically')
             if any(before[0][k]!=snapshot(work,env)[0][k] for k in
-                   ('payments','capacity','users','plans','categories')):
-                raise RuntimeError('Logical transfer touched finance or catalogue')
+                   ('capacity','users','plans','categories')):
+                raise RuntimeError('Logical transfer touched balance, capacity or catalogue')
+            if (sql(work,env,
+                "SELECT id,hash_id,user_id,plan_id,server_id,order_id,price,payid "
+                "FROM pays WHERE id="+str(open_id))!=old_open or
+                sql(work,env,"SELECT state FROM pays WHERE id="+str(open_id)).strip()
+                !='service_superseded'):
+                raise RuntimeError('Transfer failed to retire ONLY its old open quote')
+            passed('unclaimed_service_quote_retired_atomically_with_shared_server_transfer')
             passed('same_group_transfer_clears_plan_and_renewal_without_native_payment_mutation')
             if old_receipts!=sql(work,env,
                 "SELECT id,hash_id,state,payid FROM pays WHERE hash_id IN "

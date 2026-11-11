@@ -2556,6 +2556,16 @@ function achbotSharedAccountWorkSettledLocked(mysqli $db,array $peers,int $ownAt
             $q=$db->prepare('SELECT stage FROM payment_attempts WHERE pay_row_id=? FOR UPDATE');
             $q->bind_param('i',$id);$q->execute();$attempt=$q->get_result()->fetch_assoc();$q->close();
         }
+        // This explicit state is created only by the locked physical
+        // service-change boundary, never by an unverified provider callback.
+        // The old invoice may receive late *funds evidence*, but not a new
+        // fulfillment of its previous order. Started Native/API operations
+        // are excluded from retirement and retain their original hold.
+        if ($payment['state']==='service_superseded') {
+            if ($attempt!==null && !in_array($attempt['stage'],
+                ['pending','review'],true)) return false;
+            continue;
+        }
         // Even paid/approved evidence cannot release an account if a gateway
         // attempt still claims fulfillment/review. Historical completed rows
         // and normal automatic-renewal semantics remain unchanged.

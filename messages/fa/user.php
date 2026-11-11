@@ -644,6 +644,8 @@ return [
         'payment_lifecycle.pay_ux_status_text.text.df83eb82dd' => 'پرداخت سفارش',
         'payment_lifecycle.pay_ux_status_text.text.a1026d7b85' => '⌛️ مهلت این درخواست پرداخت پایان یافته است.',
         'payment_lifecycle.pay_ux_status_text.text.74adf2adfe' => '🧾 درخواست جدیدتری جایگزین این پیش‌نویس شده است.',
+        'payment_lifecycle.pay_ux_status_text.service_superseded_title' => '🔄 فاکتور قبلی به دلیل تغییر سرویس متوقف شده است.',
+        'payment_lifecycle.pay_ux_status_text.service_superseded_next' => 'پرداخت این فاکتور دیگر اشتراک را تغییر نمی‌دهد. اگر وجهی پرداخت کرده‌اید، با شناسه پیگیری برای بررسی مالی به پشتیبانی اطلاع دهید.',
         'payment_lifecycle.pay_ux_status_text.text.f8f1a7f2f5' => '❌ درخواست پرداخت تأیید نشد.',
         'payment_lifecycle.pay_ux_status_text.text.0a0cf2fd64' => '📥 رسید دریافت شده و در انتظار بررسی است.',
         'payment_lifecycle.pay_ux_status_text.text.8c253d0486' => '📤 در انتظار تصویر رسید یا گیفت‌کارت شما',

@@ -284,11 +284,134 @@ function achbotPhysicalPlanResult(bool $ok,string $reason='',int $count=0): arra
     return ['success'=>$ok,'reason'=>$reason,'shared_count'=>$count];
 }
 
-/** Reuse the cross-ledger account settlement contract; never shortcut it to pays.state. */
-function achbotPhysicalNoPendingPayments(mysqli $db,array $rows): void {
+/**
+ * Retire only unclaimed, service-bound quotes inside an already-open
+ * administrator/customer plan-change or transfer transaction.
+ *
+ * Durable pays/003 identity and original signed/provider/manual evidence are
+ * never deleted, rewritten or marked paid/refunded. All old callbacks must
+ * fail their normal state CAS after the same transaction changes the service
+ * (transfer) or commits its nonreplayable Native intent (plan selection).
+ * An in-flight claim/native effect is NOT an old quote: it keeps the hold.
+ */
+function achbotPhysicalRetireOpenPaymentsLocked(mysqli $db,array $rows): int {
     require_once __DIR__.'/../Finance/ReceiptHelpers.php';
-    // Plan/transfer changes may orphan even an unclaimed quote; unlike
-    // automatic renewal they require a fully quiet physical subscription.
+    $ids=[];$owners=[];
+    foreach ($rows as $row) {
+        $id=(int)($row['id']??0);
+        $user=(int)($row['userid']??0);
+        if (!is_array($row) || $id<=0 || $user<=0 ||
+            (int)($row['status']??0)!==1 ||
+            (isset($owners[$id]) && $owners[$id]!==$user))
+            throw new RuntimeException('physical_payment_subject_invalid');
+        $ids[]=$id;$owners[$id]=$user;
+    }
+    $ids=array_values(array_unique($ids));
+    if (!$ids || count($ids)>10000)
+        throw new RuntimeException('physical_payment_subject_invalid');
+    $mode=achbotManualLedgerMode($db);
+    if (!in_array($mode,['legacy','current'],true))
+        throw new RuntimeException('physical_payment_ledger_unavailable');
+    $apiColumns=false;
+    if ($mode==='current') {
+        // 014 is optional on older installations; a partially applied 014 is
+        // not evidence that its existing receipt/fulfillment claims are absent.
+        $q=$db->query("SELECT COLUMN_NAME FROM information_schema.COLUMNS
+            WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='payment_attempts'
+              AND COLUMN_NAME IN ('evidence_claim_token','evidence_fulfillment_state')");
+        if (!($q instanceof mysqli_result))
+            throw new RuntimeException('physical_payment_evidence_unavailable');
+        $cols=array_column($q->fetch_all(MYSQLI_ASSOC),'COLUMN_NAME');$q->free();
+        if (count($cols)===1)
+            throw new RuntimeException('physical_payment_evidence_unavailable');
+        $apiColumns=count($cols)===2;
+        if ($apiColumns) {
+            require_once __DIR__.'/../Finance/PaymentEvidence.php';
+            if (!achbotPaymentEvidenceSchemaReady($db))
+                throw new RuntimeException('physical_payment_evidence_unavailable');
+        }
+    }
+    $list=implode(',',$ids); // validated positive local integer IDs
+    $pattern='^INCREASE_(DAY|VOLUME)_('.implode('|',$ids).')_';
+    $q=$db->prepare("SELECT id,state,type,payid,user_id,order_id FROM pays WHERE
+        (order_id IN ($list) OR type REGEXP ?) ORDER BY id FOR UPDATE");
+    $q->bind_param('s',$pattern);$q->execute();
+    $payments=$q->get_result()->fetch_all(MYSQLI_ASSOC);$q->close();
+    $retired=0;
+    foreach ($payments as $payment) {
+        $state=(string)$payment['state'];
+        if (!in_array($state,['pending','send','have_sent'],true)) continue;
+        $type=(string)$payment['type'];
+        $target=0;
+        if ($type==='RENEW_ACCOUNT') $target=(int)$payment['order_id'];
+        elseif (preg_match('/^INCREASE_(?:DAY|VOLUME)_([1-9][0-9]*)_([1-9][0-9]*)$/D',$type,$m)===1) {
+            $target=(int)$m[1];
+            if ((int)($payment['order_id']??0)!==0 &&
+                (int)$payment['order_id']!==$target)
+                throw new RuntimeException('physical_payment_subject_invalid');
+        } else continue; // Unrelated payment type never silently retired.
+        if (!isset($owners[$target]) ||
+            (int)$payment['user_id']!==$owners[$target])
+            throw new RuntimeException('physical_payment_subject_invalid');
+        // Lock the exact attempt after its pays parent, in the same order
+        // as authenticated provider/webhook/manual/finance claims.
+        if ($mode==='current') {
+            $payId=(int)$payment['id'];
+            $fields='id,stage,provider_status'.($apiColumns?
+                ',evidence_claim_token,evidence_fulfillment_state':'');
+            $q=$db->prepare("SELECT $fields FROM payment_attempts
+                WHERE pay_row_id=? FOR UPDATE");
+            $q->bind_param('i',$payId);$q->execute();
+            $attempt=$q->get_result()->fetch_assoc();$q->close();
+            if ($attempt) {
+                $stage=(string)$attempt['stage'];
+                $status=(string)($attempt['provider_status']??'');
+                // The original claim may already be inside Native/financial
+                // execution even if the parent payment was not finalized.
+                // Fail closed for any unrecognized state/progress marker.
+                $readOnlyStatuses=['','waiting','confirming','partially_paid',
+                    'pending','finished','failed','expired','receipt_started'];
+                $reviewOnlyStatuses=['verification_uncertain','multiple_payments',
+                    'identity_mismatch','amount_mismatch','receipt_started'];
+                if (($stage==='pending' && !in_array($status,$readOnlyStatuses,true)) ||
+                    ($stage==='review' && !in_array($status,$reviewOnlyStatuses,true)) ||
+                    !in_array($stage,['pending','review'],true))
+                    throw new RuntimeException('physical_pending_financial_effect');
+                if ($apiColumns) {
+                    if ($attempt['evidence_claim_token']!==null ||
+                        $attempt['evidence_fulfillment_state']!==null)
+                        throw new RuntimeException('physical_pending_financial_effect');
+                    $aid=(int)$attempt['id'];
+                    $q=$db->prepare('SELECT id FROM payment_transactions
+                        WHERE attempt_id=? AND evidence_operation IS NOT NULL
+                        LIMIT 1 FOR UPDATE');
+                    $q->bind_param('i',$aid);$q->execute();
+                    $operation=$q->get_result()->num_rows>0;$q->close();
+                    if ($operation)
+                        throw new RuntimeException('physical_pending_financial_effect');
+                }
+            }
+        }
+        // An issued merchant payid or submitted receipt is *not* a refund.
+        // Keep both immutable, only end this original product fulfillment.
+        $id=(int)$payment['id'];
+        $q=$db->prepare("UPDATE pays SET state='service_superseded',updated_at=NOW()
+            WHERE id=? AND state=?");
+        $q->bind_param('is',$id,$state);$q->execute();
+        $changed=$q->affected_rows;$q->close();
+        if ($changed!==1)
+            throw new RuntimeException('physical_payment_retirement_unconfirmed');
+        ++$retired;
+    }
+    return $retired;
+}
+
+/** Only actual in-flight financial/native effects keep a service-change hold. */
+function achbotPhysicalNoPendingPayments(mysqli $db,array $rows,bool $retireOpen=false): void {
+    require_once __DIR__.'/../Finance/ReceiptHelpers.php';
+    // Must be in the caller's order/peer-locked transaction; any failure
+    // rolls back every retirement with the service change intent/transition.
+    if ($retireOpen) achbotPhysicalRetireOpenPaymentsLocked($db,$rows);
     if (!achbotSharedAccountWorkSettledLocked($db,$rows,0,0,true,true))
         throw new RuntimeException('physical_pending_financial_effect');
 }
@@ -440,7 +563,7 @@ function achbotPhysicalBeforeNativeWrite(mysqli $db,array $intent,int $journalId
             throw new RuntimeException('physical_before_put_subject_changed');
         if (achbotPhysicalTargetFingerprint($db,$selected)!==$intent['physical_target_sha256'])
             throw new RuntimeException('physical_before_put_target_changed');
-        achbotPhysicalNoPendingPayments($db,$rows);
+        achbotPhysicalNoPendingPayments($db,$rows,true);
         $commitAttempted=true;
         if (!$db->commit()) throw new RuntimeException('physical_before_put_commit_unknown');
         $transaction=false;
@@ -521,7 +644,7 @@ function achbotPhysicalSelectPlan(mysqli $db,int $orderId,int $newPlanId,int $ac
                 !achbotSameProviderPanel($db,$peerServer,$server)))
                 throw new RuntimeException('physical_peer_server_mismatch');
         }
-        achbotPhysicalNoPendingPayments($db,$all);
+        achbotPhysicalNoPendingPayments($db,$all,true);
         if ($provider==='marzban')
             achbotPhysicalAssertMarzbanGroupJournalClear($db,$server,(string)$order['remark'],
                 array_map(static fn($r)=>(int)$r['id'],$all),'physical_plan_requires_review');
@@ -593,7 +716,7 @@ function achbotPhysicalSelectPlan(mysqli $db,int $orderId,int $newPlanId,int $ac
         if ($provider==='pasarguard' &&
             achbotPhysicalPgIdentityFingerprint(achbotPgOrderContext($db,$orderId,true))!==$pgIdentitySha)
             throw new RuntimeException('physical_pg_identity_changed');
-        achbotPhysicalNoPendingPayments($db,$prePeers);
+        achbotPhysicalNoPendingPayments($db,$prePeers,true);
         $commitAttempted=true;
         if (!$db->commit()) throw new RuntimeException('physical_plan_preflight_commit_unknown');
         $tx=false;$commitAttempted=false;
@@ -676,7 +799,7 @@ function achbotPhysicalSelectPlan(mysqli $db,int $orderId,int $newPlanId,int $ac
         $s->bind_param('ii',$newPlanId,$server);$s->execute();$freshPlan=$s->get_result()->fetch_assoc();$s->close();
         if (!$freshPlan || achbotPhysicalPlanFingerprint($freshPlan)!==$intent['plan_sha256'])
             throw new RuntimeException('physical_plan_changed_during_effect');
-        achbotPhysicalNoPendingPayments($db,$fresh);
+        achbotPhysicalNoPendingPayments($db,$fresh,true);
         $count=achbotPhysicalUpdateOrders($db,$fresh,$server,$newPlanId);
         $s=$db->prepare("UPDATE service_plan_changes SET state='committed' WHERE id=? AND state='dispatching'");
         $s->bind_param('i',$journalId);

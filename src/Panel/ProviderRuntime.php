@@ -948,7 +948,7 @@ function achbotReassignLogicalServer(mysqli $db,int $orderId,int $targetId,int $
         $held->bind_param('s',$lease);$held->execute();
         $blocked=$held->get_result()->num_rows!==0;$held->close();
         if ($blocked) throw new RuntimeException('physical_transfer_pending_plan_review');
-        achbotPhysicalNoPendingPayments($db,$all);
+        achbotPhysicalNoPendingPayments($db,$all,true);
         foreach ($all as $peer) {
             if (!achbotSamePanelGroup($db,(int)$peer['server_id'],$targetId) ||
                 !achbotSameProviderPanel($db,(int)$peer['server_id'],$targetId))

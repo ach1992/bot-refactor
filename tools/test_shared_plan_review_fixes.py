@@ -121,6 +121,15 @@ DRIVER = plans.DRIVER.replace(" } elseif($op==='toggle'){", """ } elseif($op==='
   $q->bind_param('sisiiiii',$hash,$actor,$type,$plan,$server,$order,$price,$now);
   $id=achbotPayUxInsertDraft($connection,$actor,$q);$q->close();
   $out=$id>0?'issued':'denied';
+ } elseif($op==='review_superseded_payment'){
+  require_once $root.'/src/Finance/PaymentLifecycle.php';
+  $id=(int)$spec['pay'];
+  $q=$connection->prepare('SELECT * FROM pays WHERE id=?');
+  $q->bind_param('i',$id);$q->execute();$pay=$q->get_result()->fetch_assoc();$q->close();
+  $q=$connection->prepare('SELECT * FROM payment_attempts WHERE pay_row_id=?');
+  $q->bind_param('i',$id);$q->execute();$attempt=$q->get_result()->fetch_assoc();$q->close();
+  $out=['state'=>achbotPayUxState($pay,$attempt),
+        'eligible'=>achbotSupportsPaymentSubject($connection,$pay)];
  } elseif($op==='toggle'){""", 1)
 assert DRIVER != plans.DRIVER, 'review test route not added'
 assert DRIVER.count('<?php\n')==1
@@ -303,6 +312,77 @@ def main():
         h['db']('INSERT INTO pays(hash_id,user_id,type,plan_id,server_id,order_id,price,request_date,state)'
                 f" VALUES('{hashid}',1002,'{payment_type}',119,2,{peer},137,UNIX_TIMESTAMP(),'{state}')")
         return int(h['db'](f"SELECT id FROM pays WHERE hash_id='{hashid}'"))
+
+    # Issue #144: all old, not-yet-dispatched service payments become
+    # non-payable without discarding issuer/receipt/provider evidence.
+    for provider in ('marzban','pasarguard'):
+        with harness(provider) as h:
+            seeded(h);db=h['db']
+            pending=invoice(h,'unclaimed','pending',order=h['oid'])
+            db('UPDATE pays SET user_id=1001 WHERE id='+str(pending))
+            issued=invoice(h,'issued','send',order=h['peer'])
+            review=invoice(h,'review','have_sent',order=h['peer'])
+            db("UPDATE pays SET payid='old-provider-id',message_id=3131,"
+               "chat_id='1002' WHERE id="+str(issued))
+            db("INSERT INTO payment_attempts (pay_row_id,provider,order_hash,"
+               "quote_amount,quote_currency,local_amount_toman,stage,provider_status)"
+               " SELECT id,'nowpayments',hash_id,137,'usd',137,'checking',NULL"
+               " FROM pays WHERE id="+str(issued))
+            db("INSERT INTO payment_attempts (pay_row_id,provider,order_hash,"
+               "quote_amount,quote_currency,local_amount_toman,stage,provider_status)"
+               " SELECT id,'bank_transfer',hash_id,137,'toman',137,'review','verification_uncertain'"
+               " FROM pays WHERE id="+str(review))
+            ids=f'{pending},{issued},{review}'
+            old_details=db('SELECT id,hash_id,payid,user_id,type,plan_id,server_id,order_id,price,message_id,chat_id FROM pays WHERE id IN ('+ids+') ORDER BY id')
+            before=subject(h);money=finance(h);puts=len(h['writes']())
+            plan(h,120)
+            yes(subject(h)==before and finance(h)==money and
+                len(h['writes']())==puts and outstanding(h)=='committed',
+                provider+'_inflight_payment_claim_blocks_native_change_without_retirement')
+            db("UPDATE payment_attempts SET stage='pending' WHERE pay_row_id="+str(issued))
+            plan(h,120)
+            yes(outstanding(h)=='committed' and
+                db(f"SELECT fileid FROM orders_list WHERE id IN ({h['oid']},{h['peer']}) ORDER BY id")=='120\n120'
+                and len(h['writes']())==puts+1,
+                provider+'_old_open_payments_closed_and_new_native_plan_committed_once')
+            yes(db('SELECT id,hash_id,payid,user_id,type,plan_id,server_id,order_id,price,message_id,chat_id FROM pays WHERE id IN ('+ids+') ORDER BY id')==old_details and
+                db('SELECT state FROM pays WHERE id IN ('+ids+') ORDER BY id')==
+                'service_superseded\nservice_superseded\nservice_superseded',
+                provider+'_old_invoice_and_receipt_bytes_preserved_only_state_retired')
+            yes(h['call']('review_superseded_payment',pay=issued)==
+                {'state':'service_superseded','eligible':False},
+                provider+'_late_old_issued_invoice_preflight_denied_and_status_explicit')
+            old=len(h['writes']());plan(h,120)
+            yes(len(h['writes']())==old and outstanding(h)=='committed',
+                provider+'_replayed_plan_never_reissues_native_write')
+
+    # 014 API evidence and pending redemption are more authoritative than
+    # a still-open invoice. A started claim is not safe to retire silently.
+    with harness('pasarguard') as h:
+        seeded(h);db=h['db']
+        db((ROOT/'migrations/post-v9/014_api_payment_evidence.sql').read_text())
+        pay=invoice(h,'apiheld','pending',order=h['oid'])
+        db('UPDATE pays SET user_id=1001 WHERE id='+str(pay))
+        db("INSERT INTO payment_attempts (pay_row_id,provider,order_hash,"
+           "quote_amount,quote_currency,local_amount_toman,stage,"
+           "evidence_claim_token,evidence_fulfillment_state)"
+           " SELECT id,'bank_transfer',hash_id,137,'toman',137,'pending',"
+           "'0123456789abcdef0123456789abcdef',NULL FROM pays WHERE id="+str(pay))
+        before=subject(h);money=finance(h);puts=len(h['writes']())
+        plan(h,120)
+        yes(subject(h)==before and finance(h)==money and len(h['writes']())==puts,
+            'pasarguard_active_api_evidence_lease_blocks_retirement')
+        db('UPDATE payment_attempts SET evidence_claim_token=NULL WHERE pay_row_id='+str(pay))
+        db("UPDATE payment_attempts SET evidence_fulfillment_state='reserved' WHERE pay_row_id="+str(pay))
+        plan(h,120)
+        yes(subject(h)==before and len(h['writes']())==puts and
+            db('SELECT state FROM pays WHERE id='+str(pay))=='pending',
+            'pasarguard_reserved_api_native_fulfillment_holds_plan_change')
+        db('UPDATE payment_attempts SET evidence_fulfillment_state=NULL WHERE pay_row_id='+str(pay))
+        plan(h,120)
+        yes(db('SELECT state FROM pays WHERE id='+str(pay))=='service_superseded' and
+            len(h['writes']())==puts+1 and outstanding(h)=='committed',
+            'pasarguard_clean_api_invoice_retired_without_false_payment_settlement')
 
     # RC30 installed incident: a partial Marzban PUT kept protocol keys that
     # the new plan omitted, then the durable journal blocked all retries.
