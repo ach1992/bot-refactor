@@ -81,6 +81,13 @@ DRIVER = plans.DRIVER.replace(" } elseif($op==='toggle'){", """ } elseif($op==='
   require_once $root.'/src/Subscription/PhysicalService.php';
   $out=achbotPhysicalRecoverPlan($connection,(int)$spec['journal'],
     (int)$spec['actor'],(int)($spec['order']??0));
+ } elseif($op==='review_recover_markups'){
+  require_once $root.'/src/Subscription/PhysicalService.php';
+  $GLOBALS['fixture_fail_markup']=!empty($spec['telegram_fail']);
+  $result=achbotPhysicalRecoverPlan($connection,(int)$spec['journal'],
+    (int)$spec['actor'],(int)($spec['order']??0));
+  $out=['result'=>$result,'markups'=>array_values(array_filter($GLOBALS['events'],
+    static fn($e)=>($e['kind']??'')==='retired_markup'))];
  } elseif($op==='review_pg_key'){
   require_once $root.'/src/Subscription/PhysicalService.php';
   $connection->begin_transaction();
@@ -169,6 +176,8 @@ DRIVER=DRIVER.replace(
  "function bot(...$a){return(object)['ok'=>true,'result'=>(object)['first_name'=>'Owned']];}",
  "function bot(...$a){if(($a[0]??'')==='editMessageReplyMarkup') "
  "$GLOBALS['events'][]=['kind'=>'retired_markup','payload'=>$a[1]??[]];"
+ "if(($a[0]??'')==='editMessageReplyMarkup' && !empty($GLOBALS['fixture_fail_markup']))"
+ "return(object)['ok'=>false];"
  "return(object)['ok'=>true,'result'=>(object)['first_name'=>'Owned']];}",1)
 assert 'retired_markup' in DRIVER, 'synthetic_markup_spy_missing'
 DRIVER=DRIVER.replace('<?php\n','<?php\n'+old_function+'\n',1)
@@ -247,7 +256,8 @@ def harness(provider: str):
                 'achbot_customer_draft_creation_deferred',
                 'achbot_order_plan_actions_unverified',
                 'achbot_shared_plan_recovery_held',
-                'achbot_shared_plan_recovered')
+                'achbot_shared_plan_recovered',
+                'achbot_retired_receipt_keyboard_unconfirmed')
             if run.returncode or not all(line.startswith(allowed)
                 for line in run.stderr.splitlines()):
                 raise AssertionError((provider, op, run.returncode, run.stdout, run.stderr))
@@ -1280,6 +1290,44 @@ def main():
             yes(repeat['success'] is False and outstanding(h)=='committed' and
                 len(h['writes']())==writes+1,
                 provider+'_get_only_recovery_duplicate_callback_denied_without_put')
+
+    # B03: GET-only journal recovery clears original receipt keyboards
+    # strictly post-commit. Telegram failure cannot reverse Native or SQL.
+    for provider in ('marzban','pasarguard'):
+        with harness(provider) as h:
+            seeded(h)
+            db=h['db'];old_quote=invoice(h,'recoveredbuttons','pending')
+            copies=json.dumps([{'chat_id':9002,'message_id':7712}])
+            db("UPDATE pays SET chat_id=9001,message_id=7711,admins_messages='"
+               +copies+f"' WHERE id={old_quote}")
+            db('CREATE TRIGGER fixture_block_recovery_markup BEFORE UPDATE ON orders_list '
+               "FOR EACH ROW SIGNAL SQLSTATE '45000' "
+               "SET MESSAGE_TEXT='fixture_after_native_before_recovery_markup'")
+            try:
+                before=len(h['writes']())
+                plan(h,120)
+            finally:
+                db('DROP TRIGGER fixture_block_recovery_markup')
+            journal=int(db('SELECT MAX(id) FROM service_plan_changes'))
+            yes(outstanding(h)=='dispatching' and
+                db(f'SELECT state FROM pays WHERE id={old_quote}')=='pending' and
+                len(h['writes']())==before+1,
+                provider+'_recover_markups_precommit_original_invoice_no_double_put')
+            result=h['call']('review_recover_markups',journal=journal,
+                actor=9001,order=h['oid'],telegram_fail=True)
+            markups=result['markups']
+            yes(result['result']=={'success':True,'reason':'recovered','shared_count':2}
+                and outstanding(h)=='committed' and
+                db(f'SELECT state FROM pays WHERE id={old_quote}')=='service_superseded'
+                and len(h['writes']())==before+1 and len(markups)==2 and
+                sorted(e['payload']['chat_id'] for e in markups)==[9001,9002]
+                and all('reply_markup' not in e['payload'] for e in markups),
+                provider+'_recover_markups_original_keyboard_after_commit')
+            again=h['call']('review_recover_markups',journal=journal,
+                actor=9001,order=h['oid'])
+            yes(again['result']['success'] is False and again['markups']==[] and
+                len(h['writes']())==before+1 and outstanding(h)=='committed',
+                provider+'_recover_markup_failure_never_reopens_or_replays')
 
     # F3: independent real Marzban API admission evidence complements
     # PasarGuard's authenticated native preflight exact-SQL-claim proof.

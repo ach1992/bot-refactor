@@ -547,3 +547,12 @@ Reconcile any uncertain operation against protected local/provider evidence and
 use a separately reviewed recovery plan. Lower Telegram update IDs after a long
 idle epoch and retained transfer cursors also require explicit reconciliation,
 not erasing replay history.
+
+B03 independent-review correction: successful original-journal GET-only
+plan recovery now performs the existing best-effort retired manual receipt
+keyboard cleanup strictly AFTER COMMIT. Telegram errors cannot undo the
+original journal/order/invoice state or trigger any new Native/finance effect.
+Source-real Marzban/PasarGuard fixtures create an old invoice with two admin
+receipt messages, force the first local finalize to fail, complete the original
+journal by GET-only recovery and simulate Telegram markup failure, then assert
+retirement, two attempted cleanup calls and zero replay.
