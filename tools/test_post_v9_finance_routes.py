@@ -789,7 +789,7 @@ def run_php(work, env, stage, spec, db=DB):
     # load ctype explicitly without exposing real curl functions/network.
     cmd=['php','-n','-d','extension=mysqlnd','-d','extension=mysqli',
          '-d','extension=curl','-d','extension=ctype','-d','allow_url_fopen=0',
-         '-d','disable_functions=curl_init,curl_setopt,curl_setopt_array,curl_exec,curl_close,curl_error,curl_getinfo,exec,shell_exec,system,passthru,popen,proc_open,mail',
+         '-d','disable_functions=curl_init,curl_setopt,curl_setopt_array,curl_exec,curl_close,curl_error,curl_errno,curl_getinfo,exec,shell_exec,system,passthru,popen,proc_open,mail',
          str(script),str(stage),db,str(work/'mysql.sock'),json.dumps(spec)]
     p=subprocess.run(cmd,env=env,cwd=work,capture_output=True,timeout=20)
     claim_code=spec.get('expect_hosted_claim_code')
@@ -916,7 +916,7 @@ def check_verified_browser_worker_contention(work,env,stage,records):
     def php_cmd(spec):
         return ['php','-n','-d','extension=mysqlnd','-d','extension=mysqli',
                 '-d','extension=curl','-d','extension=ctype','-d','allow_url_fopen=0',
-                '-d','disable_functions=curl_init,curl_setopt,curl_setopt_array,curl_exec,curl_close,curl_error,curl_getinfo,exec,shell_exec,system,passthru,popen,proc_open,mail',
+                '-d','disable_functions=curl_init,curl_setopt,curl_setopt_array,curl_exec,curl_close,curl_error,curl_errno,curl_getinfo,exec,shell_exec,system,passthru,popen,proc_open,mail',
                 str(driver),str(stage),DB,str(work/'mysql.sock'),json.dumps(spec)]
     def finish(process,expected_log=b''):
         out,err=process.communicate(timeout=18)
