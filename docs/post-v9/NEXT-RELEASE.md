@@ -556,3 +556,11 @@ Source-real Marzban/PasarGuard fixtures create an old invoice with two admin
 receipt messages, force the first local finalize to fail, complete the original
 journal by GET-only recovery and simulate Telegram markup failure, then assert
 retirement, two attempted cleanup calls and zero replay.
+
+PR #146 transfer finalization correction: the original service-bound open
+invoice retirement now occurs inside the SAME verified server-reassignment SQL
+transaction as the shared order update, not in its read-only preflight.
+The 003/014 claim and evidence checks still reject ambiguous or in-flight
+financial effects, and the original invoice identifiers/history remain.
+The disposable source-real logical transfer fixture passed 55 cases locally;
+PHP 8.5 full CI and independent review remain separate required gates.
