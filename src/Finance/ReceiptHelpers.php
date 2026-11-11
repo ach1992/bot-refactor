@@ -2533,7 +2533,8 @@ function achbotNonPayablePaymentSettledLocked(array $payment,?array $attempt): b
 
 /** Pending claims serialize a shared account; completed references are not an ownership restriction. */
 function achbotSharedAccountWorkSettledLocked(mysqli $db,array $peers,int $ownAttempt=0,
-    int $ownPay=0,bool $blockUnclaimedQuotes=false,bool $strictCompletion=false): bool {
+    int $ownPay=0,bool $blockUnclaimedQuotes=false,bool $strictCompletion=false,
+    array $preverifiedUnclaimedQuoteIds=[]): bool {
     $ids=[];
     foreach ($peers as $row) {
         if ((int)($row['id']??0)<=0 || (int)($row['status']??0)!==1) return false;
@@ -2561,6 +2562,18 @@ function achbotSharedAccountWorkSettledLocked(mysqli $db,array $peers,int $ownAt
             $id=(int)$payment['id'];
             $q=$db->prepare('SELECT stage FROM payment_attempts WHERE pay_row_id=? FOR UPDATE');
             $q->bind_param('i',$id);$q->execute();$attempt=$q->get_result()->fetch_assoc();$q->close();
+        }
+        // Only the physical plan-change transaction may pass these exact
+        // still-unpaid, identity-checked, 003/014-checked invoice IDs. They
+        // remain in their ORIGINAL states until the verified local/native
+        // final commit; the pending plan journal fences callbacks meanwhile.
+        $id=(int)$payment['id'];
+        if (isset($preverifiedUnclaimedQuoteIds[$id])) {
+            if ((int)$preverifiedUnclaimedQuoteIds[$id]!==$id ||
+                !in_array($payment['state'],['pending','send','have_sent','low_wallet'],true) ||
+                ($attempt!==null && !in_array($attempt['stage'],['pending','review'],true)))
+                return false;
+            continue;
         }
         // This explicit state is created only by the locked physical
         // service-change boundary, never by an unverified provider callback.

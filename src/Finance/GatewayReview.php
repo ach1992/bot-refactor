@@ -46,6 +46,13 @@ function achbotGatewayAttentionScope(): string {
                     WHERE t.attempt_id=a.id AND t.provider=a.provider
                     AND t.observed_status IN (
                         'partially_paid','confirming','confirmed','sending','finished')))
+            OR (p.state='service_superseded' AND
+                a.provider IN ('nextpay','zarinpal') AND
+                a.stage='review' AND a.provider_status='retired_verified_funds'
+                AND EXISTS (SELECT 1 FROM payment_transactions t
+                    WHERE t.attempt_id=a.id AND t.provider=a.provider
+                      AND t.payment_id=a.provider_reference
+                      AND t.observed_status='finished'))
         )";
 }
 

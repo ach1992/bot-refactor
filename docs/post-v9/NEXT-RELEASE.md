@@ -84,6 +84,38 @@ still needs an exact candidate review, Owner rollout approval and separate
 operator acceptance. Follow [Issue #144](https://github.com/ach1992/bot-refactor/issues/144).
 
 
+## PR #146 independent-review remediation — successful-change retirement and late original funds
+
+The independent reviewer found two correctness defects: original renewal/day/volume
+invoices could be terminally retired *before* the physical Native plan mutation
+was verified, and positive late NextPay/Zarinpal funds for those original
+invoices could be hidden from the operator inbox. These fixes remain source-only,
+**not installed**, and need exact current PHP 8.5 acceptance and fresh review.
+
+For a real plan change, the original 003/014/provider/receipt identities are
+inspected without changing payment state while the immutable plan journal
+fences competing financial claims. The old quote becomes
+`service_superseded` **only** in the same local transaction that commits the
+GET/PUT-verified Native outcome and all linked order-plan updates. Failed,
+missing, mismatched or uncertain Native outcomes leave both the original
+invoice evidence/state and the `dispatching` journal in place for independent
+operator reconciliation: no automatic Native replay, refund, fulfillment or
+invoice resurrection. An explicitly authorized, GET-only review operation in
+the stacked PR #145 is required to resolve a verified-complete interrupted
+journal, including the same final retirement boundary after successful readback.
+
+For NextPay/Zarinpal, a returned callback for an already superseded invoice is
+accepted for **provider verification only** after exact unique 003 original
+identity, amount/currency and collision checks. A strictly positive provider
+outcome records the original provider reference as one immutable `finished`
+child observation and marks the same attempt `retired_verified_funds` for
+operator **financial review and archival only**. A negative/unknown provider
+result, stale/foreign reference, archived attempt, duplicate callback or claim
+collision does not initiate a payment, a new service, wallet credit, refund or
+Native effect. The original pays state, quote, identity and payment evidence
+remain intact. The inbox still excludes mere unpaid/old invoices, and staff
+cannot approve/fulfill a terminal old-service invoice.
+
 ## Published RC30 — source-only Cron, Telegram, Marzban and gift-card reliability
 
 [v0.10.0-rc.30](https://github.com/ach1992/bot-refactor/releases/tag/v0.10.0-rc.30) publishes independently approved [PR #142](https://github.com/ach1992/bot-refactor/pull/142), merged as `main@ebca4bee143ccb03ea45c2ea2767646b60ac6f9c`, TREE `f5103e9ffcdcc88994f30ec4e5550dc7b9546a13`. The **131-member source-only runtime ZIP** has SHA256 `5ac98c346867e1a8d3aeb7c38482090cde5288d293f05375f6e7f74e13e79150`, five modified runtime paths since RC29, and **no new DDL**. See the [RC29 -> RC30 operator guide](https://github.com/ach1992/bot-refactor/releases/download/v0.10.0-rc.30/RC29-TO-RC30.md), [test acceptance matrix](https://github.com/ach1992/bot-refactor/releases/download/v0.10.0-rc.30/TEST-CHILI-ACCEPTANCE.md) and full Release Notes.

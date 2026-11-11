@@ -4689,6 +4689,90 @@ def main():
                     f"WHERE a.id={attempt}")==before_state
             records.append(dict(case='archived_'+provider+'_verified_callback_cannot_credit_cancel_or_reopen',
                                 pass_=True,external_requests=0))
+        # B02: verified positive funds arriving after a real, locally
+        # terminal service-plan change belong to the ORIGINAL operator
+        # financial inbox. Never fulfill the obsolete old order or refund it.
+        for provider in ('nextpay','zarinpal'):
+            name='retired-old-service-'+provider
+            ref='retired-old-service-'+provider+'-merchant'
+            seed_payment(work,env,name,'RENEW_ACCOUNT',7,2,ref)
+            sql(work,env,"INSERT INTO payment_attempts "
+                "(pay_row_id,provider,order_hash,provider_reference,quote_amount,"
+                "quote_currency,local_amount_toman,stage,provider_status) "
+                f"SELECT id,'{provider}',hash_id,payid,price,'toman',price,"
+                f"'pending','waiting' FROM pays WHERE hash_id='{name}'")
+            sql(work,env,f"UPDATE pays SET state='service_superseded' WHERE hash_id='{name}'")
+            pid=int(sql(work,env,f"SELECT id FROM pays WHERE hash_id='{name}'"))
+            aid=int(sql(work,env,f"SELECT id FROM payment_attempts WHERE pay_row_id={pid}"))
+            original=sql(work,env,f"SELECT hash_id,payid,user_id,price,state,approved_by "
+                f"FROM pays WHERE id={pid}")
+            funds=int(sql(work,env,'SELECT wallet FROM users WHERE userid=1001'))
+            effects=int(sql(work,env,'SELECT COUNT(*) FROM service_effects'))
+            orders=int(sql(work,env,'SELECT COUNT(*) FROM orders_list'))
+            spec=(dict(route='return',get={'nextpay':'','trans_id':ref},nextpay_code=0)
+                  if provider=='nextpay' else dict(route='return',
+                    get={'zarinpal':'','hash_id':name,'Authority':ref,'Status':'OK'},
+                    zarin_status=100))
+            negative=dict(spec)
+            negative['nextpay_code']=-3
+            negative['zarin_status']=52
+            before=run_php(work,env,stage,negative)
+            assert before['network_calls'] and sql(work,env,
+                f"SELECT stage,provider_status FROM payment_attempts WHERE id={aid}").strip()=='pending\twaiting'
+            verified=run_php(work,env,stage,spec)
+            assert verified['network_calls'],(provider,verified)
+            assert sql(work,env,f'SELECT hash_id,payid,user_id,price,state,approved_by '
+                f'FROM pays WHERE id={pid}')==original
+            assert sql(work,env,f'SELECT stage,provider_status FROM payment_attempts '
+                f'WHERE id={aid}').strip()=='review\tretired_verified_funds'
+            assert sql(work,env,'SELECT payment_id,observed_status FROM payment_transactions '
+                f'WHERE attempt_id={aid}').strip()==ref+'\tfinished'
+            assert int(sql(work,env,'SELECT wallet FROM users WHERE userid=1001'))==funds
+            assert int(sql(work,env,'SELECT COUNT(*) FROM service_effects'))==effects
+            assert int(sql(work,env,'SELECT COUNT(*) FROM orders_list'))==orders
+            case=run_php(work,env,stage,dict(route='admin_review',get={},
+                actor=9001,chat_id=9001,callback_data='attentionCase_'+str(pid)))
+            assert not case['network_calls'] and any(e['name']=='editText'
+                and ref in str(e['args']) and 'retired_verified_funds' in str(e['args'])
+                for e in case['events']),case
+            assert not any(e['name']=='editText' and 'تأیید پرداخت' in str(e['args'])
+                           for e in case['events'])
+            duplicate=run_php(work,env,stage,spec)
+            assert duplicate['network_calls'] and sql(work,env,
+                f'SELECT COUNT(*) FROM payment_transactions WHERE attempt_id={aid}').strip()=='1'
+            assert sql(work,env,f'SELECT hash_id,payid,user_id,price,state,approved_by '
+                f'FROM pays WHERE id={pid}')==original
+            closed=run_php(work,env,stage,dict(route='admin_review',get={},
+                actor=9001,chat_id=9001,callback_data='gatewayReview_H_'+str(aid)))
+            assert any(e['name']=='editText' and 'پرونده آرشیو شد' in str(e['args'])
+                       for e in closed['events']),closed
+            archived=run_php(work,env,stage,spec)
+            assert not archived['network_calls'] and sql(work,env,
+                f'SELECT COUNT(*) FROM payment_transactions WHERE attempt_id={aid}').strip()=='1'
+            records.append(dict(case='retired_'+provider+
+                '_late_positive_evidence_original_financial_inbox_readonly_archive_no_replay',
+                pass_=True,real_provider_requests=0))
+        # A foreign original with a duplicate unscoped reference must NOT
+        # even reach the provider verifier on a retired local invoice.
+        ref='retired-conflicting-merchant-reference'
+        seed_payment(work,env,'retired-collision','RENEW_ACCOUNT',7,2,ref)
+        sql(work,env,"INSERT INTO payment_attempts "
+            "(pay_row_id,provider,order_hash,provider_reference,quote_amount,"
+            "quote_currency,local_amount_toman,stage) "
+            "SELECT id,'nextpay',hash_id,payid,price,'toman',price,'pending' "
+            "FROM pays WHERE hash_id='retired-collision'")
+        sql(work,env,"UPDATE pays SET state='service_superseded' "
+            "WHERE hash_id='retired-collision'")
+        seed_payment(work,env,'foreign-collision','INCREASE_WALLET',0,0,ref)
+        collided=run_php(work,env,stage,dict(route='return',
+            get={'nextpay':'','trans_id':ref},nextpay_code=0))
+        assert not collided['network_calls'] and sql(work,env,
+            "SELECT COUNT(*) FROM payment_transactions WHERE provider='nextpay' "
+            f"AND payment_id='{ref}'").strip()=='0'
+        assert sql(work,env,"SELECT state FROM pays WHERE hash_id='retired-collision'").strip()=='service_superseded'
+        records.append(dict(case='retired_nextpay_duplicate_reference_denies_verification',
+                            pass_=True,real_provider_requests=0))
+
         # Real Cron source never admits an archived attempt as a candidate,
         # including a still-pending original issued invoice.
         assert sql(work,env,"SELECT COUNT(*) FROM payment_attempts a "

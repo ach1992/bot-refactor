@@ -294,7 +294,8 @@ function achbotPhysicalPlanResult(bool $ok,string $reason='',int $count=0): arra
  * (transfer) or commits its nonreplayable Native intent (plan selection).
  * An in-flight claim/native effect is NOT an old quote: it keeps the hold.
  */
-function achbotPhysicalRetireOpenPaymentsLocked(mysqli $db,array $rows): int {
+function achbotPhysicalRetireOpenPaymentsLocked(mysqli $db,array $rows,
+    bool $commitRetirement=false): array {
     require_once __DIR__.'/../Finance/ReceiptHelpers.php';
     $ids=[];$owners=[];
     foreach ($rows as $row) {
@@ -337,7 +338,7 @@ function achbotPhysicalRetireOpenPaymentsLocked(mysqli $db,array $rows): int {
         (order_id IN ($list) OR type REGEXP ?) ORDER BY id FOR UPDATE");
     $q->bind_param('s',$pattern);$q->execute();
     $payments=$q->get_result()->fetch_all(MYSQLI_ASSOC);$q->close();
-    $retired=0;
+    $retired=[];
     foreach ($payments as $payment) {
         $state=(string)$payment['state'];
         // Insufficient-wallet invoices are also unfinished original-service
@@ -399,13 +400,17 @@ function achbotPhysicalRetireOpenPaymentsLocked(mysqli $db,array $rows): int {
         // An issued merchant payid or submitted receipt is *not* a refund.
         // Keep both immutable, only end this original product fulfillment.
         $id=(int)$payment['id'];
-        $q=$db->prepare("UPDATE pays SET state='service_superseded',updated_at=NOW()
-            WHERE id=? AND state=?");
-        $q->bind_param('is',$id,$state);$q->execute();
-        $changed=$q->affected_rows;$q->close();
-        if ($changed!==1)
-            throw new RuntimeException('physical_payment_retirement_unconfirmed');
-        ++$retired;
+        $retired[$id]=$id;
+        if ($commitRetirement) {
+            // Only the VERIFIED native-change finalization may end the old
+            // invoice. The change + original journal commit in the SAME txn.
+            $q=$db->prepare("UPDATE pays SET state='service_superseded',updated_at=NOW()
+                WHERE id=? AND state=?");
+            $q->bind_param('is',$id,$state);$q->execute();
+            $changed=$q->affected_rows;$q->close();
+            if ($changed!==1)
+                throw new RuntimeException('physical_payment_retirement_unconfirmed');
+        }
     }
     return $retired;
 }
@@ -480,12 +485,17 @@ function achbotPhysicalPlanChangesLocalPlan(array $rows,int $planId): bool {
 }
 
 /** Only actual in-flight financial/native effects keep a service-change hold. */
-function achbotPhysicalNoPendingPayments(mysqli $db,array $rows,bool $retireOpen=false): void {
+function achbotPhysicalNoPendingPayments(mysqli $db,array $rows,
+    bool $retireOpen=false,bool $nativeVerifiedFinal=false): void {
     require_once __DIR__.'/../Finance/ReceiptHelpers.php';
-    // Must be in the caller's order/peer-locked transaction; any failure
-    // rolls back every retirement with the service change intent/transition.
-    if ($retireOpen) achbotPhysicalRetireOpenPaymentsLocked($db,$rows);
-    if (!achbotSharedAccountWorkSettledLocked($db,$rows,0,0,$retireOpen,true))
+    // An unclaimed old invoice is safe to FENCE (by the durable plan journal)
+    // before Native GET/PUT, but NOT to terminally retire. Probe its original
+    // payment/003/014 evidence under the same locks without changing pays.
+    // Terminal retirement occurs only during the verified local plan commit.
+    $eligible=$retireOpen?
+        achbotPhysicalRetireOpenPaymentsLocked($db,$rows,$nativeVerifiedFinal):[];
+    if (!achbotSharedAccountWorkSettledLocked($db,$rows,0,0,$retireOpen,true,
+        $nativeVerifiedFinal?[]:$eligible))
         throw new RuntimeException('physical_pending_financial_effect');
 }
 
@@ -872,7 +882,8 @@ function achbotPhysicalSelectPlan(mysqli $db,int $orderId,int $newPlanId,int $ac
         $s->bind_param('ii',$newPlanId,$server);$s->execute();$freshPlan=$s->get_result()->fetch_assoc();$s->close();
         if (!$freshPlan || achbotPhysicalPlanFingerprint($freshPlan)!==$intent['plan_sha256'])
             throw new RuntimeException('physical_plan_changed_during_effect');
-        achbotPhysicalNoPendingPayments($db,$fresh,achbotPhysicalPlanChangesLocalPlan($fresh,$newPlanId));
+        achbotPhysicalNoPendingPayments($db,$fresh,
+            achbotPhysicalPlanChangesLocalPlan($fresh,$newPlanId),true);
         $count=achbotPhysicalUpdateOrders($db,$fresh,$server,$newPlanId);
         $s=$db->prepare("UPDATE service_plan_changes SET state='committed' WHERE id=? AND state='dispatching'");
         $s->bind_param('i',$journalId);

@@ -347,6 +347,34 @@ def main():
                 f" VALUES('{hashid}',1002,'{payment_type}',119,2,{peer},137,UNIX_TIMESTAMP(),'{state}')")
         return int(h['db'](f"SELECT id FROM pays WHERE hash_id='{hashid}'"))
 
+    # B01: a completed original Native PUT with failed local finalization
+    # is NOT a successful local plan change. Only a successful final COMMIT
+    # may retire old invoices; the dispatching journal still fences claims.
+    for provider in ('marzban','pasarguard'):
+        with harness(provider) as h:
+            seeded(h)
+            db=h['db'];old_quote=invoice(h,'nativefinal','pending',order=h['peer'])
+            before_money=finance(h);before_orders=subject(h)
+            before_writes=len(h['writes']())
+            db("CREATE TRIGGER owned_old_invoice_finalization_abort "
+               "BEFORE UPDATE ON orders_list FOR EACH ROW SIGNAL SQLSTATE '45000' "
+               "SET MESSAGE_TEXT='fixture_after_native_before_local_commit'")
+            try: plan(h,120)
+            finally: db('DROP TRIGGER owned_old_invoice_finalization_abort')
+            yes(len(h['writes']())==before_writes+1 and
+                outstanding(h)=='dispatching' and
+                db(f'SELECT state FROM pays WHERE id={old_quote}')=='pending' and
+                finance(h)==before_money and subject(h)==before_orders,
+                provider+'_native_changed_local_commit_failed_original_quote_not_retired')
+            yes(h['call']('review_payment_journal',order=h['peer']) is False and
+                h['call']('review_payment_journal',order=h['oid']) is False,
+                provider+'_unsuperseded_invoice_blocked_by_original_dispatched_journal')
+            denied(h,'native_uncertain_no_automatic_second_put')
+            yes(h['call']('review_invoice',actor=1002,type='RENEW_ACCOUNT',
+                    order=h['peer'],plan=119,server=2)=='denied' and
+                finance(h)==before_money and outstanding(h)=='dispatching',
+                provider+'_native_uncertain_no_late_old_product_invoice')
+
     # A previously committed service-change intent must stop any NEW
     # invoice or API claim from starting between Native GET / PUT / finalize.
     # Foreign linked physical owners must be fenced by old_rows, not only
