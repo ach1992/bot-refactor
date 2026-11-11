@@ -102,7 +102,7 @@ echo json_encode($results,JSON_THROW_ON_ERROR);
 def native_marzban_login_subscription_guard() -> None:
     """Actual auth and subscription functions with fake local cURL/DB only."""
     source=(ROOT/'src/Panel/Accounts.php').read_text()
-    auth=source[source.index('function achbotMarzbanAuthDiagnostic('):
+    auth=source[source.index('function getMarzbanToken('):
                 source.index('function getMarzbanJson(')]
     info=source[source.index('function getMarzbanUserInfo('):
                 source.index('function getMarzbanUser(',source.index('function getMarzbanUserInfo('))]

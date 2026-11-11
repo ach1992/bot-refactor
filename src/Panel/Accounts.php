@@ -8,20 +8,21 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
     exit;
 }
 
-/** One safe auth failure per server and PHP invocation, no credential/URL. */
-function achbotMarzbanAuthDiagnostic($serverId,string $reason,int $http=0,int $curlErrno=0): void {
-    static $reported=[];
-    $id=(int)$serverId;
-    if (isset($reported[$id]))return;
-    $reported[$id]=true;
-    error_log('achbot_marzban_auth_unverified server_id='.$id.
-        ' reason='.$reason.' http='.max(0,min($http,599)).
-        ' curl_errno='.max(0,min($curlErrno,999)));
-}
-
 function getMarzbanToken($server_id, ?string $expectedPanelUrl = null,
                         ?array $effectTarget = null){
     global $connection;
+    // Diagnostic is private to this existing provider method. One classified
+    // failure per server per PHP invocation, no secret/token/URL.
+    static $reportedAuthFailures=[];
+    $logAuthFailure=static function(string $reason,int $http=0,int $errno=0)
+        use($server_id,&$reportedAuthFailures): void {
+        $id=(int)$server_id;
+        if (isset($reportedAuthFailures[$id]))return;
+        $reportedAuthFailures[$id]=true;
+        error_log('achbot_marzban_auth_unverified server_id='.$id.
+            ' reason='.$reason.' http='.max(0,min($http,599)).
+            ' curl_errno='.max(0,min($errno,999)));
+    };
     $stmt = $connection->prepare("SELECT * FROM server_config WHERE id = ?");
     $stmt->bind_param('i', $server_id);
     $stmt->execute();
@@ -79,18 +80,18 @@ function getMarzbanToken($server_id, ?string $expectedPanelUrl = null,
     $curlErrno=(int)curl_errno($curl);
     $http=(int)curl_getinfo($curl,CURLINFO_HTTP_CODE);
     if ($curlError!=='' || $response===false || $curlErrno!==0) {
-        achbotMarzbanAuthDiagnostic($server_id,'transport',$http,$curlErrno);
+        $logAuthFailure('transport',$http,$curlErrno);
         return (object)['success'=>false,'detail'=>'marzban_auth_transport_unavailable'];
     }
     if ($http!==200) {
-        achbotMarzbanAuthDiagnostic($server_id,'http_status',$http);
+        $logAuthFailure('http_status',$http);
         return (object)['success'=>false,'detail'=>$effectTarget!==null
             ?'effect_auth_unconfirmed':'marzban_auth_http_unconfirmed'];
     }
     $token=json_decode((string)$response);
     if (!is_object($token) || !is_string($token->access_token??null) ||
         $token->access_token==='') {
-        achbotMarzbanAuthDiagnostic($server_id,'invalid_token',$http);
+        $logAuthFailure('invalid_token',$http);
         return (object)['success'=>false,'detail'=>$effectTarget!==null
             ?'effect_auth_invalid':'marzban_auth_invalid'];
     }
@@ -174,7 +175,12 @@ function getMarzbanUserInfo($server_id, $remark){
         return (object)['success'=>false,'msg'=>(string)$token->detail];
     if (!is_object($token) || !is_string($token->access_token??null) ||
         $token->access_token==='') {
-        achbotMarzbanAuthDiagnostic($server_id,'token_missing');
+        static $reportedUnexpectedToken=[];
+        if (!isset($reportedUnexpectedToken[(int)$server_id])) {
+            $reportedUnexpectedToken[(int)$server_id]=true;
+            error_log('achbot_marzban_auth_unverified server_id='.(int)$server_id.
+                ' reason=token_missing http=0 curl_errno=0');
+        }
         return (object)['success'=>false,'msg'=>'marzban_auth_unverified'];
     }
 
