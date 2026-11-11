@@ -11,7 +11,7 @@ return [
 
     // ── صف سادهٔ پرداخت‌های خودکارِ ناتمام ──
     'automatic_gateway_review' => [
-        'menu' => '💳 پرداخت‌های خودکار نیازمند بررسی',
+        'menu' => '💳 پرداخت‌های نیازمند بررسی',
         'provider_nowpayments' => 'NOWPayments',
         'provider_zarinpal' => 'زرین‌پال',
         'provider_nextpay' => 'NextPay',
@@ -26,7 +26,7 @@ return [
         'status_unavailable' => 'ثبت نتیجه امکان‌پذیر نبود. پرونده را دوباره بررسی کنید.',
         'rejected_customer' => ['text' => '❌ سفارش <code>{hash}</code> رد شد و اجرا نمی‌شود. مبلغ: {amount} تومان. اگر وجه پرداخت کرده‌اید، با پشتیبانی تماس بگیرید.', 'parameters' => ['hash','amount']],
         'rejected_report' => ['text' => "❌ سفارش درگاه خودکار توسط مدیر رد شد.\n🗂 شناسه پرونده: <code>{id}</code>\n🎫 شناسه عددی: <code>{user}</code>\n💰 مبلغ: {amount} تومان\n🧾 شناسه سفارش: <code>{hash}</code>", 'parameters' => ['id','user','amount','hash']],
-        'title' => '📋 پرداخت‌های خودکار نیازمند بررسی',
+        'title' => '📋 پرداخت‌های نیازمند بررسی',
         'empty' => '✅ پرداخت ناتمامی برای بررسی وجود ندارد.',
         'archive' => '📦 آرشیو پرونده',
         'archive_notice' => '🗂 پس از بررسی مستقل وجه و نتیجهٔ سرویس، آرشیو تصمیم نهایی محلی است؛ هیچ عملیات نامطمئنی را لغو، موفق یا مسترد اعلام نمی‌کند.',
@@ -76,6 +76,18 @@ return [
         'checking' => 'در حال بررسی پرونده',
         'unavailable' => '⚠️ اطلاعات پرداخت فعلاً قابل بررسی نیست.',
         'denied' => 'دسترسی به بررسی پرداخت‌ها مجاز نیست.',
+    ],
+
+    // #147 — Verified bulk source reports (source-pinned in test catalog).
+    'bulk_reporting' => [
+        'complete' => ['text' => '✅ ساخت و ثبت اکانت‌ها: {confirmed} از {requested}', 'parameters' => ['confirmed', 'requested']],
+        'needs_review' => ['text' => '⚠️ ساخت گروهی نیازمند بررسی است. ثبت محلی تأییدشده: {confirmed} از {requested}. عملیات نامشخص را تکرار نکنید.', 'parameters' => ['confirmed', 'requested']],
+        'names' => '🧩 اکانت‌های ثبت و تأییدشده:',
+        'more' => ['text' => '… اطلاعات {count} اکانت دیگر در سوابق اصلی ثبت شده است.', 'parameters' => ['count']],
+        'short_reference' => '📋 گزارش ساخت یا خرید گروهی',
+        'bulk_subject' => 'خرید گروهی اشتراک',
+        'admin_created' => ['text' => "📦 ساخت گروهی اکانت\n👤 مدیر: {actor}\n🔗 شناسه عملیات: {source}\n🗂 سرور: {server}\n🧭 پلن: {plan}\n⏳ مدت: {days} روز\n📊 حجم: {volume} گیگابایت", 'parameters' => ['actor', 'source', 'server', 'plan', 'days', 'volume']],
+        'delivery_needs_review' => ['text' => '⚠️ ارسال اطلاعات {count} اکانت به تلگرام تأیید نشد؛ ساخت مجدد نکنید و تحویل را بررسی کنید.', 'parameters' => ['count']],
     ],
 
     // ── پیام‌های اصلی و متن‌های قابل سفارشی‌سازی قدیمی ──
@@ -460,8 +472,38 @@ return [
         'account_details.get_user_order_detail_keys.button.1c7f597d4f' => '🤝 خرید همکار',
         'account_details.get_user_order_detail_keys.text.ed76444585' => '🟢 تمدید خودکار روشن',
         'account_details.get_user_order_detail_keys.text.fb6d00ad8d' => '🔴 تمدید خودکار خاموش',
+        // service_change_report (shared administrator/report-channel notices)
+        'service_plan_recovery.action' => '🔎 بررسی و تکمیل تغییر پلن',
+        'service_plan_correction.action' => '🛠️ اصلاح یک‌باره دسترسی Native',
+        'service_plan_correction.confirm' => '⚠️ تأیید ارسال یک درخواست Native جدید (فقط یک‌بار)',
+        'service_plan_correction.warning' => '⚠️ این اقدام پس از تأیید، ممکن است یک درخواست جدید برای اصلاح دسترسی Native ارسال کند. پس از خطای نامطمئن، درخواست دوباره ارسال نمی‌شود؛ ابتدا Journal و وضعیت Native را بررسی کنید.',
+        'service_plan_correction.get_only' => '✅ دسترسی Native اکنون مطابق پلن است؛ از گزینهٔ بررسی و تکمیل تغییر پلن استفاده کنید.',
+        'service_change_report.admin' => 'مدیر',
+        'service_change_report.customer' => 'کاربر',
+        'service_change_report.server' => [
+            'text' => "🔄 <b>تغییر سرویس</b>
+🧩 نوع: تغییر سرور
+🎈 نام اشتراک: <code>{remark}</code>
+🧾 شناسه سفارش: <code>{order_id}</code>
+👤 شناسه کاربر: <code>{user_id}</code>
+🛠 شناسه عددی مدیر: <code>{actor_id}</code>
+🌐 سرور قبلی: <code>{source_id}</code>
+📍 سرور جدید: <code>{target_id}</code> — {target_title}",
+            'parameters' => ['remark','order_id','user_id','actor_id','source_id','target_id','target_title']
+        ],
+        'service_change_report.plan' => [
+            'text' => "🔄 <b>تغییر سرویس</b>
+🧩 نوع: تغییر پلن
+🎈 نام اشتراک: <code>{remark}</code>
+🧾 شناسه سفارش: <code>{order_id}</code>
+👤 شناسه کاربر: <code>{user_id}</code>
+🛠 شناسه {actor_role}: <code>{actor_id}</code>
+📦 پلن جدید: {plan_title}
+🔢 شناسه پلن: <code>{plan_id}</code>",
+            'parameters' => ['remark','order_id','user_id','actor_role','actor_id','plan_title','plan_id']
+        ],
         // account_transfers.admin_message
-        'account_transfers.admin_message.6645c1fd4d' => '🌐 تغییر سرور منطقی مرزبان در ربات' . "\n" . '',
+        'account_transfers.admin_message.6645c1fd4d' => '🔄 تغییر سرویس' . "\n" . '',
         // account_transfers.user_i_d
         'account_transfers.user_i_d.6590a1ba5e' => 'شناسه عددی: ',
         // account_transfers.order_i_d
@@ -541,7 +583,7 @@ return [
         'order_management.show_order_management_panel.message.557fb66856' => '🌐 سرور منطقی مقصد را انتخاب کنید. تنظیمات مقصد پس از بررسی اشتراک اعمال می‌شود.',
         'order_management.show_order_management_panel.alert.c5dae93802' => '⛔️ مقصد با اشتراک فعلی سازگار نیست یا نتیجه نیاز به بررسی دارد.',
         'order_management.show_order_management_panel.message.88e0b88b0d' => '✅ مقصد اشتراک پس از بررسی به‌روزرسانی شد.',
-        'order_management.show_order_management_panel.message.877fdebc48' => '📦 لطفا پلن جدید را انتخاب کنید:',
+        'order_management.show_order_management_panel.message.877fdebc48' => '📦 لطفاً پلن جدید را انتخاب کنید:' . "\n" . '⚠️ تغییر واقعی پلن، فاکتورهای ناتمام همین اشتراک را برای دریافت خدمات بی‌اعتبار می‌کند؛ دریافت وجه احتمالی جداگانه پیگیری می‌شود.',
         'order_management.show_order_management_panel.alert.f19b5510c6' => '⛔️ پلن انتخابی با سرور مرزبان این سفارش سازگار نیست.',
         'order_management.show_order_management_panel.alert.99d247fc18' => '⛔️ خطا در تغییر پلن؛ اطلاعات سفارش تغییر نکرد.',
         'order_management.show_order_management_panel.message.75785b37ae' => '✅ مقدار Fileid (پلن) با موفقیت تغییر یافت.',
@@ -1588,6 +1630,7 @@ return [
         'config.get_bot_setting_keys.button.f9a77f614a' => '♻️ تمدید خودکار اشتراک',
         'config.get_bot_setting_keys.button.8ef9c2184e' => '📋 پلن دلخواه',
         'config.get_bot_setting_keys.button.c6b7f26615' => '🌐 تغییر سرویس',
+        'config.get_bot_setting_keys.customer_plan_toggle' => '📦 تغییر پلن کاربران',
         'config.get_bot_setting_keys.button.070602773a' => '📅 افزایش زمان',
         'config.get_bot_setting_keys.button.4bbbd988ad' => '📦 افزایش حجم',
         'config.get_bot_setting_keys.button.bb9acf5637' => '📱 تایید شماره',

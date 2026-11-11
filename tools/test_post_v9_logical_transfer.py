@@ -40,6 +40,11 @@ def main():
         stages.stage_source(stage,True)
         fixture=stage/'native-purchase.php'
         stub=fixture.read_text()
+        # A dedicated synthetic channel allows us to assert the production
+        # fanout contract without real Telegram delivery or external secrets.
+        channel="-1009000000100"
+        assert stub.count("'rewardChannel'=>'',")==1
+        stub=stub.replace("'rewardChannel'=>'',","'rewardChannel'=>'"+channel+"',",1)
         # The old purchase-parity harness deliberately shadowed the
         # provider registry with a Marzban-only stub. This test instead
         # exercises the current real administrator Group callback for BOTH
@@ -393,6 +398,18 @@ achEvent('probe',[
                 "price,request_date,state) VALUES"
                 f"('transfer-declined',1001,'RENEW_ACCOUNT',7,2,{oid},137,UNIX_TIMESTAMP(),'declined'),"
                 f"('transfer-mismatched',9002,'RENEW_ACCOUNT',7,2,{peer},137,UNIX_TIMESTAMP(),'mismatched_plan')")
+            # A still-unclaimed renewal quote is genuinely tied to this
+            # order. Move the physical account and close only this quote,
+            # atomically; old financial identities remain inspectable.
+            sql(work,env,
+                "INSERT INTO pays(hash_id,user_id,type,plan_id,server_id,order_id,"
+                "price,request_date,state) VALUES "
+                f"('transfer-open',1001,'RENEW_ACCOUNT',7,2,{oid},137,UNIX_TIMESTAMP(),'pending')")
+            open_id=int(sql(work,env,
+                "SELECT id FROM pays WHERE hash_id='transfer-open'").strip())
+            old_open=sql(work,env,
+                "SELECT id,hash_id,user_id,plan_id,server_id,order_id,price,payid "
+                "FROM pays WHERE id="+str(open_id))
             old_receipts=sql(work,env,
                 "SELECT id,hash_id,state,payid FROM pays WHERE hash_id IN "
                 "('transfer-declined','transfer-mismatched') ORDER BY id")
@@ -401,6 +418,16 @@ achEvent('probe',[
             z=do('transfer',f'switchServer3_{oid}',
                 expected_stderr=f'achbot_shared_transfer_committed order_id={oid} target_id=3 active_refs=2\n')
             if getid()!=3 or not has(z,'editText'):raise RuntimeError('Administrator remapping failed')
+            reports=[event for event in z['events']
+                if event['name']=='sendMessage' and event['args'] and
+                'تغییر سرویس' in str(event['args'][0])]
+            if not (len(reports)>=2 and
+                any(len(event['args'])>=4 and event['args'][3]==9001 for event in reports) and
+                any(len(event['args'])>=4 and str(event['args'][3])==channel for event in reports) and
+                all('r4-order' in str(event['args'][0]) and
+                    '9001' in str(event['args'][0]) for event in reports)):
+                raise RuntimeError('Real server transfer staff/channel notice missing or incomplete')
+            passed('service_change_server_report_to_staff_channel_with_numeric_actor_and_name')
             if fields!=sql(work,env,
                 f'SELECT token,remark,uuid,link,amount,status FROM orders_list WHERE id={oid}'):
                 raise RuntimeError('Logical transfer modified physical account or payment')
@@ -412,8 +439,15 @@ achEvent('probe',[
                 raise RuntimeError('Transfer did not update every linked customer reference')
             passed('physical_marzban_two_customer_references_moved_atomically')
             if any(before[0][k]!=snapshot(work,env)[0][k] for k in
-                   ('payments','capacity','users','plans','categories')):
-                raise RuntimeError('Logical transfer touched finance or catalogue')
+                   ('capacity','users','plans','categories')):
+                raise RuntimeError('Logical transfer touched balance, capacity or catalogue')
+            if (sql(work,env,
+                "SELECT id,hash_id,user_id,plan_id,server_id,order_id,price,payid "
+                "FROM pays WHERE id="+str(open_id))!=old_open or
+                sql(work,env,"SELECT state FROM pays WHERE id="+str(open_id)).strip()
+                !='service_superseded'):
+                raise RuntimeError('Transfer failed to retire ONLY its old open quote')
+            passed('unclaimed_service_quote_retired_atomically_with_shared_server_transfer')
             passed('same_group_transfer_clears_plan_and_renewal_without_native_payment_mutation')
             if old_receipts!=sql(work,env,
                 "SELECT id,hash_id,state,payid FROM pays WHERE hash_id IN "

@@ -779,7 +779,9 @@ if (is_string($data) && preg_match('/^changePlan_([1-9][0-9]{0,9})$/D', $data, $
         $actor=\AchBot\Subscription\AccountDetails\currentOrderDetailActor();
         if ($actor===null || $orderId>2147483647) throw new RuntimeException('plan_actor_unavailable');
         $actorId=(int)$actor['userid'];
-        $isAdmin=$actorId===(int)$admin || (int)$actor['isAdmin']===1;
+        $isAdmin=achbotAdminCanFor($connection,$actorId,(int)$admin,'orders');
+        if (!$isAdmin && ($botState['changePlanState'] ?? 'on')!=='on')
+            throw new RuntimeException('customer_plan_disabled');
         $stmt=$connection->prepare('SELECT * FROM orders_list WHERE id=? AND status=1');
         $stmt->bind_param('i',$orderId);$stmt->execute();
         $orderInfo=$stmt->get_result()->fetch_assoc();$stmt->close();
@@ -821,6 +823,8 @@ if (is_string($data) && preg_match('/^confirmChangePlan_([1-9][0-9]{0,9})_([1-9]
         $s->bind_param('i',$orderId);$s->execute();$orderInfo=$s->get_result()->fetch_assoc();$s->close();
         if (!$orderInfo) throw new RuntimeException('plan_order_unavailable');
         $isAdmin=achbotAdminCanFor($connection,$actorId,(int)$admin,'orders');
+        if (!$isAdmin && ($botState['changePlanState'] ?? 'on')!=='on')
+            throw new RuntimeException('customer_plan_disabled');
         if (!$isAdmin && (int)$orderInfo['userid']!==$actorId)
             throw new RuntimeException('plan_actor_denied');
         if (!achbotOrderMayUsePaidPlan($connection,$orderInfo))
@@ -839,12 +843,12 @@ if (is_string($data) && preg_match('/^confirmChangePlan_([1-9][0-9]{0,9})_([1-9]
     }
     // Failed notifications cannot change a committed product selection.
     editText($message_id,\achbotMessage('renewal.extensions.message.3067ddba76'));
-    $escape=static fn($value)=>htmlspecialchars((string)$value,ENT_QUOTES|ENT_SUBSTITUTE,'UTF-8');
-    $channelMessage=\achbotMessage('renewal.extensions.channel_message.f9e3ed8281',[
-        'orderInfo_userid'=>$orderInfo['userid'],'first_name'=>$escape($first_name),
-        'username'=>$escape($username),'orderInfo_remark'=>$escape($orderInfo['remark']),
-        'planTitle'=>$escape($plan['title']),'newPlanId'=>$newPlanId]);
-    achbotNotifyAdmins('sendMessage', ['text'=>$channelMessage,'parse_mode'=>'HTML']);
+    require_once __DIR__.'/../../Subscription/PhysicalService.php';
+    achbotNotifyServiceChange('plan',[
+        'id'=>$orderId,'userid'=>$orderInfo['userid'],
+        'remark'=>$orderInfo['remark'],'plan_id'=>$newPlanId,
+        'plan_title'=>$plan['title']
+    ],$actorId,$isAdmin);
     return;
 }
 if (preg_match('/^increaseAVolume([1-9][0-9]{0,9})$/D', $data, $match)) {

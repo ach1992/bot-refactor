@@ -291,7 +291,9 @@ function createServerAccount(...$args) {
             $capacity=(int)$GLOBALS['connection']->query(
                 'SELECT ucount FROM server_info WHERE id=2')->fetch_row()[0];
         }
+        if (strlen((string)($args[4]??''))>32) $mode='invalid_username';
         $GLOBALS['events'][]=['name'=>'marzban_create_attempt',
+            'username'=>(string)($args[4]??''),
             'number'=>$index,'mode'=>$mode,'stage'=>$stage,'pay_state'=>$state,
             'held_at_post'=>$held,'capacity_at_post'=>$capacity];
         if ($mode==='success') {
@@ -1679,7 +1681,7 @@ def main():
         inbox=run_php(work,env,stage,dict(admin_identity,
             callback_data='attentionInbox'))
         cards=[e for e in inbox['events'] if e['name']=='editText']
-        if (len(cards)!=1 or 'پرداخت‌های خودکار' not in str(cards[0]['args'][1]) or
+        if (len(cards)!=1 or 'پرداخت‌های نیازمند بررسی' not in str(cards[0]['args'][1]) or
             ('attentionCase_'+str(admin_case)) not in str(cards[0]['args'][2])):
             raise RuntimeError('Simple automatic-gateway inbox failed to list original payment')
         details=run_php(work,env,stage,dict(admin_identity,
@@ -4136,13 +4138,38 @@ def main():
                     result!=[{'name':'do_action_result','result':expected_result}]):
                     raise RuntimeError('O2 actual multi-account loop did not honor remote outcomes: '+
                                        repr((name,created,delivered,result))[:1300])
+                # Exact usernames are bound to the original payment and
+                # ordinal, not assumed to be a manually supplied prefix.
+                names=[e['username'] for e in created]
+                if len(set(names))!=2 or not all(len(n)<=32 for n in names):
+                    raise RuntimeError('O2 hosted native aliases not source-bound')
+                reports=[str(e['args'][0]) for e in outcome['events']
+                         if e['name']=='sendMessage' and e.get('args')]
+                if label=='complete' and not any(
+                    '2 از 2' in text and all(alias in text for alias in names)
+                    for text in reports):
+                    raise RuntimeError('O2 hosted bulk owner report lost original accounts: '+
+                                       repr((name,reports))[:1200])
+                if label=='partial':
+                    partial_reports=[text for text in reports
+                        if 'ثبت محلی تأییدشده:' in text]
+                    if len(partial_reports)!=1 or not all(
+                        '1 از 2' in text and '#'+str(pay_id) in text and
+                        names[0] in text and names[1] not in text and
+                        'عملیات نامشخص را تکرار نکنید' in text
+                        for text in partial_reports):
+                        raise RuntimeError('O2 partial hosted original-effect report missing: '+
+                                           repr((name,partial_reports))[:1200])
+                    if any('2 از 2' in text for text in reports):
+                        raise RuntimeError('O2 uncertain hosted operation reported full success')
                 if any(e['stage']!='review' or e['pay_state']!='paid' or
                        e['held_at_post']!=2 or e['capacity_at_post']!=0
                        for e in created):
                     raise RuntimeError('O2 Marzban POST before full-count committed capacity ownership')
                 local_orders=sql(work,env,
-                    "SELECT uuid FROM orders_list "
-                    f"WHERE userid=1001 AND remark IN ('{remark}_1','{remark}_2') ORDER BY id").splitlines()
+                    "SELECT o.uuid FROM orders_list o JOIN service_effects e "
+                    "ON e.order_id=o.id WHERE o.userid=1001 AND e.effect_kind='create' "
+                    f"AND e.pay_row_id={pay_id} ORDER BY e.ordinal").splitlines()
                 state=sql(work,env,f"SELECT stage,provider_status FROM "
                     f"payment_attempts WHERE pay_row_id={pay_id}").strip()
                 effect_rows=sql(work,env,
@@ -4183,9 +4210,9 @@ def main():
                     scripted_marzban_creates=['success','success']))
                 if any(e['name']=='marzban_create_attempt'
                        for e in replay['events']) or (
-                    sql(work,env,"SELECT COUNT(*) FROM orders_list "
-                        f"WHERE userid=1001 AND remark IN ('{remark}_1','{remark}_2')").strip()
-                         !=str(expected_order_count)):
+                    sql(work,env,"SELECT COUNT(*) FROM orders_list o JOIN service_effects e "
+                        "ON e.order_id=o.id WHERE o.userid=1001 AND e.effect_kind='create' "
+                        f"AND e.pay_row_id={pay_id}").strip()!=str(expected_order_count)):
                     raise RuntimeError('O2 replay attempted unsafe re-fulfillment')
                 records.append(dict(case='hosted_'+provider+
                     '_two_account_'+label+'_effects_operator_recovery_no_replay',
@@ -4194,6 +4221,48 @@ def main():
                     full_count_held_before_create=True,
                     requires_operator_review=label=='partial'))
                 sql(work,env,"UPDATE server_info SET ucount=20 WHERE id=2")
+
+        # Real source long manual/agent hosted description must not reach
+        # Marzban overlong; 007, original amount and receipt remain intact.
+        long_name='very_long_'+'m'*84
+        long_hash='o2-hosted-long-marzban'
+        seed_payment(work,env,long_hash,'BUY_SUB',7,2,long_hash+'-invoice')
+        sql(work,env,f"UPDATE pays SET agent_count=2,description='{long_name}' "
+            f"WHERE hash_id='{long_hash}'")
+        sql(work,env,"INSERT INTO payment_attempts "
+            "(pay_row_id,provider,order_hash,provider_reference,"
+            "quote_amount,quote_currency,local_amount_toman,stage) "
+            f"SELECT id,'nextpay',hash_id,'{long_hash}-invoice',"
+            f"price,'toman',price,'pending' FROM pays WHERE hash_id='{long_hash}'")
+        long_id=int(sql(work,env,f"SELECT id FROM pays WHERE hash_id='{long_hash}'"))
+        sql(work,env,"UPDATE server_info SET ucount=2 WHERE id=2")
+        long_events=run_php(work,env,stage,dict(route='do_action',get={},
+            provider='nextpay',pay_row_id=long_id,
+            scripted_marzban_creates=['success','success']))
+        long_post=[e for e in long_events['events']
+                   if e['name']=='marzban_create_attempt']
+        long_names=sql(work,env,'SELECT remote_username FROM service_effects '
+            f'WHERE pay_row_id={long_id} AND effect_kind="create" ORDER BY ordinal').splitlines()
+        if (len(long_post)!=2 or [e['mode'] for e in long_post]!=['success','success'] or
+            len(set(long_names))!=2 or not all(
+                len(n)==32 and n.startswith('mbz_paid_') for n in long_names) or
+            sql(work,env,f'SELECT COUNT(*) FROM orders_list o '
+                f'JOIN service_effects e ON e.order_id=o.id WHERE e.pay_row_id={long_id}').strip()!='2'):
+            raise RuntimeError('Hosted long-name Marzban native compatibility: '+
+                               repr((long_names,long_post))[:1200])
+        report_texts=[str(e['args'][0]) for e in long_events['events']
+            if e['name']=='sendMessage' and e.get('args')]
+        if not any('2 از 2' in text and all(n in text for n in long_names)
+                   for text in report_texts):
+            raise RuntimeError('Hosted long-name report lost original account identities')
+        replay=run_php(work,env,stage,dict(route='do_action',get={},
+            provider='nextpay',pay_row_id=long_id,
+            scripted_marzban_creates=['success','success']))
+        if any(e['name']=='marzban_create_attempt' for e in replay['events']):
+            raise RuntimeError('Hosted long-name original effect was re-created')
+        records.append(dict(case='hosted_nextpay_long_multi_marzban_username_32_no_replay',
+                            pass_=True,real_provider_requests=0))
+        sql(work,env,'UPDATE server_info SET ucount=20 WHERE id=2')
 
         # Review R2: run the ACTUAL hosted callback/CREATE and integer-bound
         # insertOrder path for nondivisible paid prices, not only a helper.
@@ -4519,8 +4588,8 @@ def main():
             invoice='owned-'+hash_id+'-invoice'
             child='owned-'+hash_id+'-child'
             seed_np_attempt(work,env,hash_id,invoice,child,default_fees=True)
-            sql(work,env,"UPDATE payment_attempts SET stage='review' "
-                         f"WHERE order_hash='{hash_id}'")
+            sql(work,env,"UPDATE payment_attempts SET stage='review',"
+                         f"provider_status='{status}' WHERE order_hash='{hash_id}'")
             sql(work,env,"INSERT INTO payment_transactions "
                 "(attempt_id,provider,payment_id,observed_status) "
                 f"SELECT id,'nowpayments','{child}','{status}' "
@@ -4593,7 +4662,10 @@ def main():
         archive_invoice='owned-archive-invoice'
         archive_primary='owned-archive-primary'
         seed_np_attempt(work,env,archive_name,archive_invoice,archive_primary,default_fees=True)
-        sql(work,env,"UPDATE payment_attempts SET created_at=NOW()-INTERVAL 8 HOUR "
+        # Archive is a terminal operator action for a REAL exception, not
+        # an age-based shortcut to cancel a merely unpaid checkout.
+        sql(work,env,"UPDATE payment_attempts SET created_at=NOW()-INTERVAL 8 HOUR,"
+            "stage='review',provider_status='confirmed' "
             f"WHERE order_hash='{archive_name}'")
         archived_id=int(sql(work,env,"SELECT id FROM payment_attempts "
             f"WHERE order_hash='{archive_name}'"))
@@ -4657,7 +4729,7 @@ def main():
                 "(pay_row_id,provider,order_hash,provider_reference,quote_amount,"
                 "quote_currency,local_amount_toman,stage,provider_status) "
                 f"SELECT id,'{provider}',hash_id,payid,price,'toman',price,"
-                f"'review','verification_uncertain' FROM pays WHERE hash_id='{name}'")
+                f"'review','verification_unavailable' FROM pays WHERE hash_id='{name}'")
             attempt=int(sql(work,env,f"SELECT id FROM payment_attempts WHERE order_hash='{name}'"))
             closed=run_php(work,env,stage,dict(route='admin_review',get={},
                 actor=9001,chat_id=9001,callback_data='gatewayReview_H_'+str(attempt)))
@@ -4686,6 +4758,90 @@ def main():
                     f"WHERE a.id={attempt}")==before_state
             records.append(dict(case='archived_'+provider+'_verified_callback_cannot_credit_cancel_or_reopen',
                                 pass_=True,external_requests=0))
+        # B02: verified positive funds arriving after a real, locally
+        # terminal service-plan change belong to the ORIGINAL operator
+        # financial inbox. Never fulfill the obsolete old order or refund it.
+        for provider in ('nextpay','zarinpal'):
+            name='retired-old-service-'+provider
+            ref='retired-old-service-'+provider+'-merchant'
+            seed_payment(work,env,name,'RENEW_ACCOUNT',7,2,ref)
+            sql(work,env,"INSERT INTO payment_attempts "
+                "(pay_row_id,provider,order_hash,provider_reference,quote_amount,"
+                "quote_currency,local_amount_toman,stage,provider_status) "
+                f"SELECT id,'{provider}',hash_id,payid,price,'toman',price,"
+                f"'pending','waiting' FROM pays WHERE hash_id='{name}'")
+            sql(work,env,f"UPDATE pays SET state='service_superseded' WHERE hash_id='{name}'")
+            pid=int(sql(work,env,f"SELECT id FROM pays WHERE hash_id='{name}'"))
+            aid=int(sql(work,env,f"SELECT id FROM payment_attempts WHERE pay_row_id={pid}"))
+            original=sql(work,env,f"SELECT hash_id,payid,user_id,price,state,approved_by "
+                f"FROM pays WHERE id={pid}")
+            funds=int(sql(work,env,'SELECT wallet FROM users WHERE userid=1001'))
+            effects=int(sql(work,env,'SELECT COUNT(*) FROM service_effects'))
+            orders=int(sql(work,env,'SELECT COUNT(*) FROM orders_list'))
+            spec=(dict(route='return',get={'nextpay':'','trans_id':ref},nextpay_code=0)
+                  if provider=='nextpay' else dict(route='return',
+                    get={'zarinpal':'','hash_id':name,'Authority':ref,'Status':'OK'},
+                    zarin_status=100))
+            negative=dict(spec)
+            negative['nextpay_code']=-3
+            negative['zarin_status']=52
+            before=run_php(work,env,stage,negative)
+            assert before['network_calls'] and sql(work,env,
+                f"SELECT stage,provider_status FROM payment_attempts WHERE id={aid}").strip()=='pending\twaiting'
+            verified=run_php(work,env,stage,spec)
+            assert verified['network_calls'],(provider,verified)
+            assert sql(work,env,f'SELECT hash_id,payid,user_id,price,state,approved_by '
+                f'FROM pays WHERE id={pid}')==original
+            assert sql(work,env,f'SELECT stage,provider_status FROM payment_attempts '
+                f'WHERE id={aid}').strip()=='review\tretired_verified_funds'
+            assert sql(work,env,'SELECT payment_id,observed_status FROM payment_transactions '
+                f'WHERE attempt_id={aid}').strip()==ref+'\tfinished'
+            assert int(sql(work,env,'SELECT wallet FROM users WHERE userid=1001'))==funds
+            assert int(sql(work,env,'SELECT COUNT(*) FROM service_effects'))==effects
+            assert int(sql(work,env,'SELECT COUNT(*) FROM orders_list'))==orders
+            case=run_php(work,env,stage,dict(route='admin_review',get={},
+                actor=9001,chat_id=9001,callback_data='attentionCase_'+str(pid)))
+            assert not case['network_calls'] and any(e['name']=='editText'
+                and ref in str(e['args']) and 'retired_verified_funds' in str(e['args'])
+                for e in case['events']),case
+            assert not any(e['name']=='editText' and 'تأیید پرداخت' in str(e['args'])
+                           for e in case['events'])
+            duplicate=run_php(work,env,stage,spec)
+            assert duplicate['network_calls'] and sql(work,env,
+                f'SELECT COUNT(*) FROM payment_transactions WHERE attempt_id={aid}').strip()=='1'
+            assert sql(work,env,f'SELECT hash_id,payid,user_id,price,state,approved_by '
+                f'FROM pays WHERE id={pid}')==original
+            closed=run_php(work,env,stage,dict(route='admin_review',get={},
+                actor=9001,chat_id=9001,callback_data='gatewayReview_H_'+str(aid)))
+            assert any(e['name']=='editText' and 'پرونده آرشیو شد' in str(e['args'])
+                       for e in closed['events']),closed
+            archived=run_php(work,env,stage,spec)
+            assert not archived['network_calls'] and sql(work,env,
+                f'SELECT COUNT(*) FROM payment_transactions WHERE attempt_id={aid}').strip()=='1'
+            records.append(dict(case='retired_'+provider+
+                '_late_positive_evidence_original_financial_inbox_readonly_archive_no_replay',
+                pass_=True,real_provider_requests=0))
+        # A foreign original with a duplicate unscoped reference must NOT
+        # even reach the provider verifier on a retired local invoice.
+        ref='retired-conflicting-merchant-reference'
+        seed_payment(work,env,'retired-collision','RENEW_ACCOUNT',7,2,ref)
+        sql(work,env,"INSERT INTO payment_attempts "
+            "(pay_row_id,provider,order_hash,provider_reference,quote_amount,"
+            "quote_currency,local_amount_toman,stage) "
+            "SELECT id,'nextpay',hash_id,payid,price,'toman',price,'pending' "
+            "FROM pays WHERE hash_id='retired-collision'")
+        sql(work,env,"UPDATE pays SET state='service_superseded' "
+            "WHERE hash_id='retired-collision'")
+        seed_payment(work,env,'foreign-collision','INCREASE_WALLET',0,0,ref)
+        collided=run_php(work,env,stage,dict(route='return',
+            get={'nextpay':'','trans_id':ref},nextpay_code=0))
+        assert not collided['network_calls'] and sql(work,env,
+            "SELECT COUNT(*) FROM payment_transactions WHERE provider='nextpay' "
+            f"AND payment_id='{ref}'").strip()=='0'
+        assert sql(work,env,"SELECT state FROM pays WHERE hash_id='retired-collision'").strip()=='service_superseded'
+        records.append(dict(case='retired_nextpay_duplicate_reference_denies_verification',
+                            pass_=True,real_provider_requests=0))
+
         # Real Cron source never admits an archived attempt as a candidate,
         # including a still-pending original issued invoice.
         assert sql(work,env,"SELECT COUNT(*) FROM payment_attempts a "

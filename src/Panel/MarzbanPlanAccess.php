@@ -31,8 +31,11 @@ function achbotMarzbanNativeHosts($inbounds): array {
     foreach ((array)$inbounds as $protocol=>$tags) {
         if (!is_string($protocol) || !is_array($tags)) throw new RuntimeException('marzban_hosts_unverified');
         foreach ($tags as $tag) if (!is_string($tag)) throw new RuntimeException('marzban_hosts_unverified');
-        $result[$protocol]=array_values(array_unique($tags));
-        sort($result[$protocol],SORT_STRING);
+        $unique=array_values(array_unique($tags));
+        sort($unique,SORT_STRING);
+        // Empty native inbound sets mean the protocol has no access. Ignore
+        // zero-tag keys in readback even when the API retains those keys.
+        if ($unique!==[]) $result[$protocol]=$unique;
     }
     ksort($result,SORT_STRING);
     return $result;
@@ -57,6 +60,20 @@ function achbotMarzbanNativeAccessSnapshot(object $account,string $username): ar
         'proxies'=>json_encode($account->proxies,JSON_THROW_ON_ERROR),
         'inbounds'=>achbotMarzbanNativeHosts($account->inbounds)
     ];
+}
+
+/**
+ * A Marzban UserModify inbounds dictionary updates named protocols only.
+ * Omitted protocols retain prior access: clear obsolete keys explicitly.
+ * Never send a second PUT in response to a lost/uncertain first result.
+ */
+function achbotMarzbanPlanPatch(array $before,array $wanted): array {
+    $patch=$wanted;
+    foreach ($before as $protocol=>$tags) {
+        if (!array_key_exists($protocol,$wanted)) $patch[$protocol]=[];
+    }
+    ksort($patch,SORT_STRING);
+    return $patch;
 }
 
 /** Account-level lock and durable cross-provider receipt belong to caller. */
@@ -117,7 +134,8 @@ function achbotMarzbanApplyPlanHosts(int $serverId,string $username,array $wante
         if ($fresh!==$beforeWithoutUsage)
             throw new RuntimeException('marzban_before_access_changed');
         if ($beforeWrite!==null) $beforeWrite();
-        $json=json_encode(['inbounds'=>$wanted],JSON_THROW_ON_ERROR);
+        $patch=achbotMarzbanPlanPatch($before['inbounds'],$wanted);
+        $json=json_encode(['inbounds'=>$patch],JSON_THROW_ON_ERROR);
         $curl=curl_init($url.'/api/user/'.rawurlencode($username));
         curl_setopt_array($curl,[
             CURLOPT_RETURNTRANSFER=>true,CURLOPT_CUSTOMREQUEST=>'PUT',

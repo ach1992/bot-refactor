@@ -4,7 +4,7 @@
 No production updates, real customers, real Marzban, or payment operations.
 """
 from __future__ import annotations
-import argparse,json,subprocess
+import argparse,hashlib,json,subprocess
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -39,7 +39,7 @@ if (($spec['route']??'trial')==='trial') {
     $message->text=$text;
     $update->message=$message;
 }
-$botState=['remark'=>(string)($spec['remark_mode']??'digits'),'rewardChannel'=>null];
+$botState=['remark'=>(string)($spec['remark_mode']??'digits'),'rewardChannel'=>'@fixtureReport'];
 $buttonValues=['cancel'=>'cancel','start_bot'=>'start','back_to_main'=>'back'];
 $mainValues=['sending_config_to_user'=>'Working',
  'send_only_number'=>'Enter integer','can_create_specific_account'=>'Limit AMOUNT',
@@ -68,7 +68,7 @@ function setUser($value='none',$field='step'){
     $stmt->close();
 }
 function sendMessage($body=null,$keys=null,$format=null,$to=null){
-    $GLOBALS['events'][]=['name'=>'MESSAGE','to'=>$to,'text'=>(string)$body];
+    $GLOBALS['events'][]=['name'=>'MESSAGE','to'=>$to,'text'=>(string)$body,'format'=>$format];
     return (object)['ok'=>true];
 }
 function sendQrFromLink(...$args) {
@@ -93,6 +93,11 @@ function generateRandomString(){return 'fixtureuuid';}
 function getNextPortAndIncrease(){return [12345,0];}
 function createServerAccount(...$args) {
     $GLOBALS['events'][]=['name'=>'POST','remark'=>$args[4]];
+    // Marzban documents 3..32 ASCII bytes; a too-long name gets a failed
+    // upstream CREATE, not a successful account. Do not fake success here.
+    if (strlen((string)$args[4])<3 || strlen((string)$args[4])>32)
+        return [(object)['success'=>false,'msg'=>'fixture_mbz_username_invalid'],
+                $args[4],12345];
     $count=($GLOBALS['posts']??0)+1;$GLOBALS['posts']=$count;
     $remote=[
         'username'=>(string)$args[4],'note'=>'achbot:v1:'.(string)$args[14],
@@ -123,6 +128,25 @@ require_once $root.'/src/Purchase/OrderWrites.php';
 require_once $root.'/src/Finance/ServiceEffects.php';
 if (($spec['route']??'trial')==='trial') {
     require $root.'/src/Purchase/TrialProvision.php';
+} elseif (($spec['route']??'trial')==='alias_identity') {
+    mt_srand(1234);
+    $first=buildRemark(['remark'=>'digits'],'mbz','',1001);
+    mt_srand(5678);
+    $second=buildRemark(['remark'=>'digits'],'mbz','',1001);
+    $GLOBALS['events'][]=['name'=>'ALIAS_IDENTITY','different_base'=>$first!==$second,
+        'bulk_first'=>achbotAdminBulkAccountRemark($first,'bulk:9001:987811',1),
+        'bulk_second'=>achbotAdminBulkAccountRemark($second,'bulk:9001:987811',1),
+        'bulk_other_line'=>achbotAdminBulkAccountRemark($first,'bulk:9001:987811',2),
+        'bulk_other_source'=>achbotAdminBulkAccountRemark($first,'bulk:9001:987812',1),
+        'paid_first'=>achbotPaidPurchaseRemark($first,'marzban',12345,1,2),
+        'paid_second'=>achbotPaidPurchaseRemark($second,'marzban',12345,1,2),
+        'paid_other_line'=>achbotPaidPurchaseRemark($first,'marzban',12345,2,2),
+        'paid_other_source'=>achbotPaidPurchaseRemark($first,'marzban',12346,1,2),
+        'paid_single_first'=>achbotPaidPurchaseRemark($first,'marzban',12345,1,1),
+        'paid_single_second'=>achbotPaidPurchaseRemark($second,'marzban',12345,1,1),
+        'paid_explicit'=>achbotPaidPurchaseRemark('chosen_name','marzban',12345,1,1,true),
+        'pasarguard_original'=>achbotPaidPurchaseRemark($first,'pasarguard',12345,1,2),
+        'pasarguard_base'=>$first];
 } else {
     require $root.'/src/Purchase/EntryAndBulk.php';
 }
@@ -148,6 +172,24 @@ def check():
         sql(work,env,(ROOT/'migrations/post-v9/001_marzban_panel_group_id.sql').read_text())
         sql(work,env,(ROOT/'migrations/post-v9/007_service_effects.sql').read_text())
         driver=work/'nonpaid-route.php';driver.write_text(PHP)
+        observed=php(work,env,driver,route='alias_identity')
+        assert len(observed)==1 and observed[0]['name']=='ALIAS_IDENTITY',observed
+        evidence=observed[0]
+        assert evidence['different_base'],evidence
+        assert evidence['bulk_first']==evidence['bulk_second'] and all(
+            len(evidence[key])==32 and evidence[key].startswith('mbz_bulk_')
+            for key in ('bulk_first','bulk_second','bulk_other_line','bulk_other_source'))
+        assert len(set(evidence[key] for key in
+            ('bulk_first','bulk_other_line','bulk_other_source')))==3
+        assert (evidence['paid_first']==evidence['paid_second']==
+                evidence['paid_single_first']==evidence['paid_single_second'])
+        assert all(len(evidence[key])==32 and evidence[key].startswith('mbz_paid_')
+                   for key in ('paid_first','paid_second','paid_other_line','paid_other_source'))
+        assert len(set(evidence[key] for key in
+            ('paid_first','paid_other_line','paid_other_source')))==3
+        assert evidence['paid_explicit']=='chosen_name' and (
+            evidence['pasarguard_original']==evidence['pasarguard_base'])
+        cases.append('source_stable_admin_and_paid_marzban_aliases_ignore_build_remark_randomness')
         def reset():
             sql(work,env,'DELETE FROM service_effects')
             purchase.init(work,env,'http://127.0.0.1:9')
@@ -186,7 +228,13 @@ def check():
         assert capacity()==8 and effects('admin_bulk')=='1\tlocal_recorded\t2\n2\tlocal_recorded\t0'
         assert not any(e['name']=='POST' for e in php(work,env,driver,route='bulk',
             actor=9001,text='2',force_cached_step=True))
-        cases.append('actual_admin_bulk_two_accounts_full_reservation_one_batch')
+        reports=[e for e in bulk if e['name']=='MESSAGE' and 'ساخت گروهی اکانت' in e['text']]
+        assert {e['to'] for e in reports}>={9001,'@fixtureReport'} and all(e['format']=='HTML' for e in reports)
+        assert '2 از 2' in reports[0]['text'] and 'مدیر: 9001' in reports[0]['text'] and 'شناسه عملیات:' in reports[0]['text']
+        for index,post in enumerate([e for e in bulk if e['name']=='POST'],1):
+            assert (post['remark'] in reports[0]['text'] and
+                f'{index}.' in reports[0]['text']),reports
+        cases.append('actual_admin_bulk_two_accounts_full_reservation_and_complete_owner_report')
 
         reset()
         sql(work,env,"UPDATE users SET step='createAccAmount7_30_2' WHERE userid=9001")
@@ -196,7 +244,23 @@ def check():
         assert capacity()==8 and effects('admin_bulk')=='1\tlocal_recorded\t2\n2\tdispatching\t0'
         assert not any(e['name']=='POST' for e in php(work,env,driver,route='bulk',
             actor=9001,text='2',force_cached_step=True))
+        partial_reports=[e for e in partial if e['name']=='MESSAGE'
+                         and 'ساخت گروهی اکانت' in e.get('text','')]
+        assert {e['to'] for e in partial_reports}>={9001,'@fixtureReport'}
+        assert all('1 از 2' in e['text'] and '2 از 2' not in e['text']
+                   and 'شناسه عملیات:' in e['text'] for e in partial_reports),partial
+        assert any(e['remark'] in partial_reports[0]['text'] for e in partial
+                   if e['name']=='POST'),partial
         cases.append('actual_admin_bulk_partial_retains_capacity_and_audit')
+
+        reset()
+        sql(work,env,"UPDATE users SET step='createAccAmount7_30_2' WHERE userid=9001")
+        qr_unknown=php(work,env,driver,route='bulk',actor=9001,text='2',notice='false')
+        assert len([e for e in qr_unknown if e['name']=='POST'])==2
+        delivery=[e for e in qr_unknown if e['name']=='MESSAGE' and 'ساخت گروهی اکانت' in e['text']]
+        assert {e['to'] for e in delivery}>={9001,'@fixtureReport'} and all('2 از 2' in e['text'] and 'ارسال اطلاعات 2 اکانت' in e['text'] for e in delivery)
+        assert capacity()==8
+        cases.append('admin_bulk_delivery_uncertain_reports_verified_creates_and_missing_telegram_ack')
 
         reset()
         sql(work,env,"UPDATE users SET step='createAccAmount7_30_2' WHERE userid=9001")
@@ -220,9 +284,11 @@ def check():
                     text=str(n),remark_mode='manual',update_id=update_id)
                 new_names=[e['remark'] for e in created if e['name']=='POST']
                 assert len(new_names)==n,(n,update_id,created)
-                assert all(name.startswith('batch_custom_b') and
-                           name.rsplit('_',1)[-1]==str(i+1)
-                           for i,name in enumerate(new_names)),new_names
+                assert all(
+                    name=='mbz_bulk_'+hashlib.sha256(
+                        f'bulk:9001:{update_id}:{i+1}'.encode()).hexdigest()[:23]
+                    and len(name)==32
+                    for i,name in enumerate(new_names)),new_names
                 assert not set(new_names).intersection(manual_names)
                 assert not set(new_names).intersection(firstnames)
                 firstnames.extend(new_names)
@@ -235,6 +301,30 @@ def check():
         assert sql(work,env,"SELECT COUNT(DISTINCT remote_username) FROM "
                 "service_effects WHERE source_kind='admin_bulk'")=='6'
         cases.append('real_manual_remark_two_independent_single_and_multi_batches_unique_names_no_replay')
+
+        reset()
+        # Regression from real installed RC30: the bot accepted up to 100
+        # username bytes, while the Marzban /api/user backing SQL field is 32.
+        # Verify real PHP bulk route/007 capacity and a strict fake 32-byte API.
+        very_long='prefix_'+'x'*93
+        sql(work,env,"UPDATE server_plans SET descr='"+very_long+"' WHERE id=7")
+        sql(work,env,"UPDATE users SET step='createAccAmount7_30_2' WHERE userid=9001")
+        compact=php(work,env,driver,route='bulk',actor=9001,text='2',
+                    remark_mode='manual',update_id=987811)
+        compact_posts=[e for e in compact if e['name']=='POST']
+        assert len(compact_posts)==2 and len([e for e in compact if e['name']=='DELIVER'])==2,compact
+        compact_names=[e['remark'] for e in compact_posts]
+        assert (len(set(compact_names))==2 and all(
+            name.startswith('mbz_bulk_') and len(name)==32
+            for name in compact_names)),compact_names
+        assert capacity()==8 and effects('admin_bulk')=='1\tlocal_recorded\t2\n2\tlocal_recorded\t0'
+        assert not [e for e in php(work,env,driver,route='bulk',actor=9001,
+            text='2',remark_mode='manual',update_id=987811,
+            force_cached_step=True) if e['name']=='POST']
+        compact_reports=[e['text'] for e in compact if e['name']=='MESSAGE'
+            and 'ساخت گروهی اکانت' in e['text']]
+        assert compact_reports and all(name in compact_reports[0] for name in compact_names)
+        cases.append('admin_bulk_long_base_compact_marzban_username_32_no_remote_replay')
 
         reset()
         sql(work,env,"UPDATE server_plans SET descr='name with spaces' WHERE id=7")

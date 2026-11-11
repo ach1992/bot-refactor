@@ -394,13 +394,18 @@ function achbotPgPlanSnapshot(mysqli $db,int $serverId,int $planId,bool $lock=fa
     achbotPgLoad();achbotPgServerPanel($db,$serverId);
     return achbotProviderSnapshot($db,$serverId,$planId);
 }
-function achbotPgOrderContext(mysqli $db,int $orderId,bool $lock=false): array {
+function achbotPgOrderContext(mysqli $db,int $orderId,bool $lock=false,
+    bool $recoverDispatchedPlan=false): array {
     achbotPgLoad();
     $s=$db->prepare('SELECT o.*,c.type AS provider_type FROM orders_list o JOIN server_config c ON c.id=o.server_id WHERE o.id=?'.($lock?' FOR UPDATE':''));
     $s->bind_param('i',$orderId);$s->execute();$o=$s->get_result()->fetch_assoc();$s->close();
     if (!$o || $o['provider_type']!=='pasarguard') throw new RuntimeException('pg_order_identity_changed');
     $a=achbotProviderAccountByOrder($db,$orderId,$lock);
-    if (!$a || !in_array($a['state'],['verified','linked'],true) || (int)$a['remote_user_id']<=0 || empty($a['remote_created_at'])) throw new RuntimeException('pg_account_not_verified');
+    // Only an explicit administrator GET-only plan recovery may inspect the
+    // existing, durably fenced 'mutating' provider identity. All regular
+    // callers still reject it and may not begin another Native effect.
+    $allowed=$recoverDispatchedPlan?['verified','linked','mutating']:['verified','linked'];
+    if (!$a || !in_array($a['state'],$allowed,true) || (int)$a['remote_user_id']<=0 || empty($a['remote_created_at'])) throw new RuntimeException('pg_account_not_verified');
     if ($o['remark']!==$a['remote_username']) throw new RuntimeException('pg_order_identity_changed');
     $panel=achbotPgServerPanel($db,(int)$o['server_id']);
     if ((int)$panel['id']!==(int)$a['panel_id'] || $panel['instance_key']!==$a['instance_key'] || hash('sha256',rtrim($panel['api_url'],'/'))!==$a['endpoint_sha256']) throw new RuntimeException('pg_account_panel_changed');
@@ -948,7 +953,10 @@ function achbotReassignLogicalServer(mysqli $db,int $orderId,int $targetId,int $
         $held->bind_param('s',$lease);$held->execute();
         $blocked=$held->get_result()->num_rows!==0;$held->close();
         if ($blocked) throw new RuntimeException('physical_transfer_pending_plan_review');
-        achbotPhysicalNoPendingPayments($db,$all);
+        // The local reassignment itself is the verified service-change commit.
+        // Retire eligible original-service quotes in THIS SQL transaction,
+        // never during a tentative preflight or outside the rollback boundary.
+        achbotPhysicalNoPendingPayments($db,$all,true,true);
         foreach ($all as $peer) {
             if (!achbotSamePanelGroup($db,(int)$peer['server_id'],$targetId) ||
                 !achbotSameProviderPanel($db,(int)$peer['server_id'],$targetId))
@@ -960,6 +968,7 @@ function achbotReassignLogicalServer(mysqli $db,int $orderId,int $targetId,int $
         $started=false;
         error_log('achbot_shared_transfer_committed order_id='.$orderId.
             ' target_id='.$targetId.' active_refs='.$count);
+        achbotPhysicalHideRetiredReceiptActions($db,$all);
         return ['id'=>$orderId,'userid'=>$order['userid'],'remark'=>$order['remark'],
             'title'=>$target['title'],'source_id'=>$old,'target_id'=>$targetId,
             'provider'=>achbotProviderType($db,$targetId),'shared_count'=>$count];

@@ -1503,6 +1503,15 @@ def check():
                 'SELECT COALESCE(SUM(o.amount),0) '
                 'FROM orders_list o JOIN service_effects e ON e.order_id=o.id '
                 f"JOIN pays p ON p.id=e.pay_row_id WHERE p.hash_id='{key}'"))==price
+            if count>1:
+                reports=[str(e['args'][0]) for e in events if e['name']=='sendMessage'
+                         and e['args'][-1]==9001]
+                created_names=query(work,env,
+                    'SELECT GROUP_CONCAT(e.remote_username ORDER BY e.ordinal SEPARATOR ",") '
+                    'FROM service_effects e JOIN pays p ON p.id=e.pay_row_id '
+                    f"WHERE p.hash_id='{key}' AND e.effect_kind='create'").split(',')
+                assert any(f'{count} از {count}' in text and all(n in text for n in created_names)
+                    for text in reports),(key,reports,created_names)
             reject_service(key,'standard_approval','accept')
             cases.append(f'r2_exact_manual_order_allocation_{price}_{count}_no_replay')
 

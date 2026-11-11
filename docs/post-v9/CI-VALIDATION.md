@@ -34,6 +34,8 @@ The checker keeps its default complete serial entrypoint (`python3 tools/check_p
 
 Eight isolated native families run under **PHP 8.5 only** on distinct disposable GitHub Actions runners: `admin`, `api`, `services`, `wallet`, `presentation`, `authorization`, `effects`, `funding`. Each family has disjoint declared report-field ownership. Shared source/payment-identity/privacy checks run once in `foundation`. Each family can use its own disposable MariaDB and loopback fixtures.
 
+The eight hosted native-family runners use the official MariaDB 10.11.19 Linux x86-64 binary tarball, fixed upstream archive URL and verified SHA-256, placed under each job's temporary directory. The `mariadbd`, `mariadb` and `mariadb-install-db` tools run without Ubuntu APT mirrors; every source-real test continues to create and own its separate socket-only database. No shared SQL service, fixture assertions, PHP version checks, source hashes, shard count or protected aggregation is replaced. An unavailable archive, checksum mismatch or missing native executable fails the family before acceptance. This eliminates the observed GitHub-hosted Ubuntu APT/DNS dependency rather than bypassing native tests.
+
 `tools/post_v9_shards.py foundation --report <file>`, `run --index 1..8 --count 8 --report <file>`, and `aggregate --source <file> --reports <directory> --report <file>` are the individual stages. Each shard and the foundation are explicitly incomplete. Aggregation rejects missing, duplicate, unknown, version-mismatched or inconsistent reports, and checks exact current Git HEAD/tree, PHP 8.5, runtime and validator hashes, catalog ownership, execution evidence and required migration proof. Only an accepted complete aggregation may set `complete: true` for **current PHP 8.5 acceptance**. Full reports include per-family timings; rebalance only after measured CI evidence.
 
 The protected aggregate job is `php85-validation`. It verifies upstream job outcomes before assembling current-head source ZIP and checksum-verified SQL sidecars, without executing migrations. Incomplete targeted reports and same-tree reuse receipts have separate names and must never be relabelled as full/native results. A successful old PHP 8.1/8.4 job does not satisfy a PHP 8.5 requirement.
@@ -67,3 +69,11 @@ The first full PHP 8.5 matrix runs [41462988501](https://github.com/ach1992/bot-
 Do **not** claim that every PHP runtime code path is proven PHP 8.5 compatible: other curl_close() calls remain, including the exact byte-guarded canonical checkout flow. Any changes to frozen byte-parity paths require a separate explicit contract/review decision, not test suppression or silent rewrite. Full current acceptance remains blocked until the actual matrix and aggregator succeed.
 
 The historical V9 Marzban differential keeps checking the exact original Git SHA and all native SQL/HTTP/result comparisons; on PHP 8.5, its comparison normalizes **only** the exact historical no-op curl_close() E_DEPRECATED message, records the number of those archival messages, and rejects every other historical/current warning. The old gift/getter race RED fixture similarly reads the exact archived source and removes **exactly 11** inert close calls in its temporary executable copy only. Neither operation rewrites historical Git objects, changes the candidate source, exempts a current warning, nor claims a new PHP 8.4 test.
+
+
+### Verified isolated MariaDB runtime bootstrap
+All eight required PHP 8.5 native-family shards use a SHA-256-pinned official
+MariaDB 10.11.19 binary archive, replacing intermittent GitHub APT mirror/DNS
+failures. Each family still initializes its own socket-only database and
+strict acceptance/aggregate contracts remain unchanged. A mismatched archive
+necessarily fails validation.

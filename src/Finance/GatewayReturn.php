@@ -457,7 +457,7 @@ if (defined('ACHBOT_NP_RECONCILE_ONLY')) {
 
     $hash_id = $_GET['hash_id'];
 
-    $stmt = $connection->prepare("SELECT * FROM `pays` WHERE `hash_id` = ? AND (`state` = 'pending' OR `state` = 'send')");
+    $stmt = $connection->prepare("SELECT * FROM `pays` WHERE `hash_id` = ? AND `state` IN ('pending','send','service_superseded')");
     $stmt->bind_param("s", $hash_id);
     $stmt->execute();
     $payInfo = $stmt->get_result();
@@ -467,7 +467,8 @@ if (defined('ACHBOT_NP_RECONCILE_ONLY')) {
         showForm(\achbotMessage('gateway.gateway_initiation.mark_checkout_uncertain.message.2d0a6d7c50'), \achbotMessage('gateway.gateway_return.np_reconcile_batch.message.f48a802b77'));
     } else {
         $payParam = $payInfo->fetch_assoc();
-        if (!achbotSupportsPaymentSubject($connection, $payParam)) {
+        $retiredOriginal=$payParam['state']==='service_superseded';
+        if (!$retiredOriginal && !achbotSupportsPaymentSubject($connection, $payParam)) {
             showForm(\achbotMessage('gateway.gateway_return.np_reconcile_batch.message.e898fa59b8'), \achbotMessage('gateway.gateway_return.np_reconcile_batch.message.28954419df'));
             return;
         }
@@ -517,6 +518,14 @@ if (defined('ACHBOT_NP_RECONCILE_ONLY')) {
                 return;
             }
         }
+        // A retired original may only be verified with its exact issued 003
+        // provider identity; legacy/unscoped receipts cannot be attributed.
+        if ($retiredOriginal && (!$scoped ||
+            !achbotRetiredHostedOriginalEligible($connection,$rowId,'zarinpal',$Authority))) {
+            showForm(\achbotMessage('gateway.gateway_return.np_reconcile_batch.message.e72296ca09'),
+                \achbotMessage('gateway.gateway_return.np_reconcile_batch.message.da0bc406d8'),false,'review');
+            return;
+        }
         if (!$scoped) {
             // Unscoped historical pays.payid is NOT unique and may describe
             // different gateways. Never guess a provider for old records.
@@ -543,8 +552,16 @@ if (defined('ACHBOT_NP_RECONCILE_ONLY')) {
                 'Amount'=>$amount
             ]);
         } catch (\Throwable $error) {
-            achbotHostedMarkVerificationUncertain($connection,$rowId,'zarinpal',
-                (string)$payParam['hash_id']);
+            // A missing local SOAP extension or an invalid application
+            // response is not evidence that the gateway is unreachable.
+            $transportFailure=$error instanceof \SoapFault && (
+                (string)($error->faultcode??'')==='HTTP' ||
+                preg_match('/could not connect|timed? out|could not resolve|'
+                    .'name resolution|error fetching http headers|'
+                    .'failed to load external entity/i',
+                    (string)$error->getMessage())===1);
+            if (!$retiredOriginal) achbotHostedMarkVerificationUncertain($connection,$rowId,'zarinpal',
+                (string)$payParam['hash_id'],$transportFailure);
             showForm(\achbotMessage('gateway.gateway_return.np_reconcile_batch.message.965bc59eaf'),
                      \achbotMessage('gateway.gateway_return.np_reconcile_batch.message.858b02ccfe'), false, 'review');
             return;
@@ -555,10 +572,14 @@ if (defined('ACHBOT_NP_RECONCILE_ONLY')) {
         $verifiedStatus=is_object($result) && isset($result->Status) &&
             ($result->Status===100 || $result->Status==='100');
         if ($verifiedStatus) {
-            // A forged/stale browser NOK cannot cancel trusted positive funds.
-            achbotVerifiedHostedBrowserReturn($rowId, "zarinpal");
+            // A superseded old quote receives evidence, NEVER new fulfillment.
+            if ($retiredOriginal) {
+                achbotRecordRetiredHostedVerifiedFunds($connection,$rowId,'zarinpal',$Authority);
+                showForm(\achbotMessage('gateway.gateway_return.np_reconcile_batch.message.965bc59eaf'),
+                    \achbotMessage('gateway.gateway_return.np_reconcile_batch.message.858b02ccfe'),false,'review');
+            } else achbotVerifiedHostedBrowserReturn($rowId,"zarinpal");
         } else {
-            achbotHostedMarkVerificationUncertain($connection,$rowId,'zarinpal',
+            if (!$retiredOriginal) achbotHostedMarkVerificationUncertain($connection,$rowId,'zarinpal',
                 (string)$payParam['hash_id']);
             // WebGate error-code lists vary by API generation. 101 is an
             // already-verified result, and other codes (including 52/-52)
@@ -651,11 +672,18 @@ if (defined('ACHBOT_NP_RECONCILE_ONLY')) {
     if (!$payParam) {
         showForm(\achbotMessage('gateway.gateway_return.np_reconcile_batch.message.faca1dabd3'), \achbotMessage('gateway.gateway_return.np_reconcile_batch.message.f48a802b77'));
     } else {
-        if (!in_array($payParam['state'], ['pending', 'send'], true)) {
+        $retiredOriginal=$payParam['state']==='service_superseded';
+        if (!in_array($payParam['state'], ['pending','send','service_superseded'], true)) {
             showForm(\achbotMessage('gateway.gateway_return.np_reconcile_batch.message.cef6ec0c00'), \achbotMessage('gateway.gateway_return.np_reconcile_batch.message.f48a802b77'));
             return;
         }
-        if (!achbotSupportsPaymentSubject($connection, $payParam)) {
+        if ($retiredOriginal && !achbotRetiredHostedOriginalEligible(
+            $connection,(int)$payParam['id'],'nextpay',(string)$payParam['payid'])) {
+            showForm(\achbotMessage('gateway.gateway_return.np_reconcile_batch.message.2a57015571'),
+                \achbotMessage('gateway.gateway_return.np_reconcile_batch.message.da0bc406d8'),false,'review');
+            return;
+        }
+        if (!$retiredOriginal && !achbotSupportsPaymentSubject($connection, $payParam)) {
             showForm(\achbotMessage('gateway.gateway_return.np_reconcile_batch.message.e898fa59b8'), \achbotMessage('gateway.gateway_return.np_reconcile_batch.message.28954419df'));
             return;
         }
@@ -680,6 +708,7 @@ if (defined('ACHBOT_NP_RECONCILE_ONLY')) {
 
         $rawResponse = curl_exec($curl);
         $httpStatus = curl_getinfo($curl, CURLINFO_HTTP_CODE);
+        $curlFailure = curl_errno($curl);
         curl_close($curl);
         // A transport/HTTP/JSON failure is NOT proof of a declined payment.
         $response = $rawResponse !== false && $httpStatus === 200
@@ -688,8 +717,12 @@ if (defined('ACHBOT_NP_RECONCILE_ONLY')) {
 
         $disposition = achbotVerifiedGatewayOutcome('nextpay', $verifyCode);
         if ($disposition === 'verified') {
-            achbotVerifiedHostedBrowserReturn($rowId, "nextpay");
-        } elseif ($disposition === 'rejected') {
+            if ($retiredOriginal) {
+                achbotRecordRetiredHostedVerifiedFunds($connection,$rowId,'nextpay',$payid);
+                showForm(\achbotMessage('gateway.gateway_return.np_reconcile_batch.message.463d7338a5'),
+                    \achbotMessage('gateway.gateway_return.np_reconcile_batch.message.26003a476f'),false,'review');
+            } else achbotVerifiedHostedBrowserReturn($rowId,"nextpay");
+        } elseif ($disposition === 'rejected' && !$retiredOriginal) {
             // Official NextPay codes -2 (rejected) and -4 (canceled) are
             // definitive. -1/-3 are pending; other errors need reconciliation.
             // Cancel only the selected pending row; never clobber a replayed or
@@ -711,8 +744,14 @@ if (defined('ACHBOT_NP_RECONCILE_ONLY')) {
         } else {
             // The verifier did not prove funds. Save a recoverable *claim*,
             // not a fabricated provider-approved charge.
-            achbotHostedMarkVerificationUncertain($connection,$rowId,'nextpay',
-                (string)$payParam['hash_id']);
+            // A genuine failed HTTP/transport verification differs from
+            // a provider response saying 'pending' or an unknown outcome.
+            // Only the former is an administrator attention candidate.
+            $unavailable=($rawResponse===false &&
+                    in_array($curlFailure,[6,7,28,35,52,56],true)) ||
+                $httpStatus===429 || $httpStatus>=500;
+            if (!$retiredOriginal) achbotHostedMarkVerificationUncertain($connection,$rowId,'nextpay',
+                (string)$payParam['hash_id'],$unavailable);
             // Do not debit, credit or settle an unknown payment outcome.
             showForm(\achbotMessage('gateway.gateway_return.np_reconcile_batch.message.463d7338a5'), \achbotMessage('gateway.gateway_return.np_reconcile_batch.message.26003a476f'), false, 'review');
         }
@@ -795,12 +834,101 @@ function achbotHostedPaymentAttemptsExists(mysqli $db): bool {
     }
 }
 
-/** Save only a bound, uncertain hosted VERIFY result for an Owner decision.
- * A browser return is NOT proof of funds. Do not call merchant GET here or
- * overwrite a terminal/processing payment. Uses the unique 003 attempt.
+/** Late positive evidence of ORIGINAL retired funds, never fulfillment. */
+function achbotRetiredHostedOriginalEligible(mysqli $db,int $payId,
+    string $provider,string $reference): bool {
+    if ($payId<=0 || !in_array($provider,['nextpay','zarinpal'],true) ||
+        $reference==='') return false;
+    try {
+        $q=$db->prepare("SELECT p.state,p.price,p.payid,p.hash_id,
+            a.id AS attempt_id,a.provider,a.provider_reference,a.order_hash,
+            a.quote_amount,a.quote_currency,a.local_amount_toman,a.stage,
+            a.review_archived_at FROM pays p JOIN payment_attempts a
+            ON a.pay_row_id=p.id WHERE p.id=? LIMIT 2");
+        $q->bind_param('i',$payId);$q->execute();
+        $r=$q->get_result();$row=$r->num_rows===1?$r->fetch_assoc():null;$q->close();
+        if (!$row || $row['state']!=='service_superseded' ||
+            $row['review_archived_at']!==null ||
+            $row['provider']!==$provider ||
+            !hash_equals((string)$row['payid'],$reference) ||
+            !hash_equals((string)$row['provider_reference'],$reference) ||
+            !hash_equals((string)$row['order_hash'],(string)$row['hash_id']) ||
+            (int)$row['price']<=0 ||
+            (int)$row['local_amount_toman']!==(int)$row['price'] ||
+            strtolower((string)$row['quote_currency'])!=='toman' ||
+            !achbotNpDecimalAtLeast($row['quote_amount'],(string)$row['price']) ||
+            !achbotNpDecimalAtLeast((string)$row['price'],$row['quote_amount']) ||
+            !in_array($row['stage'],['pending','review'],true) ||
+            achbotHasUnscopedPaymentReferenceCollision($db,$reference,$payId))
+            return false;
+        return achbotSharedPaymentTablesReady($db);
+    } catch (Throwable $ignored) {return false;}
+}
+
+/** Record exactly the provider-verified original funds with no new side effect. */
+function achbotRecordRetiredHostedVerifiedFunds(mysqli $db,int $payId,
+    string $provider,string $reference): bool {
+    if (!achbotRetiredHostedOriginalEligible($db,$payId,$provider,$reference)) return false;
+    $open=false;
+    try {
+        if (!$db->begin_transaction()) return false;
+        $open=true;
+        $q=$db->prepare('SELECT state FROM pays WHERE id=? FOR UPDATE');
+        $q->bind_param('i',$payId);$q->execute();
+        $p=$q->get_result()->fetch_assoc();$q->close();
+        $q=$db->prepare('SELECT id,stage,provider_status,review_archived_at FROM payment_attempts WHERE pay_row_id=? FOR UPDATE');
+        $q->bind_param('i',$payId);$q->execute();
+        $a=$q->get_result()->fetch_assoc();$q->close();
+        if (!$p || $p['state']!=='service_superseded' || !$a ||
+            $a['review_archived_at']!==null ||
+            !in_array($a['stage'],['pending','review'],true) ||
+            !achbotRetiredHostedOriginalEligible($db,$payId,$provider,$reference)) {
+            $db->rollback();$open=false;return false;
+        }
+        $attempt=(int)$a['id'];
+        $q=$db->prepare('SELECT attempt_id,observed_status FROM payment_transactions
+            WHERE provider=? AND payment_id=? FOR UPDATE');
+        $q->bind_param('ss',$provider,$reference);$q->execute();
+        $child=$q->get_result()->fetch_assoc();$q->close();
+        if ($child && ((int)$child['attempt_id']!==$attempt ||
+            $child['observed_status']!=='finished'))
+            throw new RuntimeException('retired_hosted_evidence_collision');
+        if (!$child) {
+            $status='finished';
+            $q=$db->prepare('INSERT INTO payment_transactions
+                (attempt_id,provider,payment_id,observed_status) VALUES (?,?,?,?)');
+            $q->bind_param('isss',$attempt,$provider,$reference,$status);
+            if (!$q->execute() || $q->affected_rows!==1)
+                throw new RuntimeException('retired_hosted_evidence_insert_unconfirmed');
+            $q->close();
+        }
+        if ($a['provider_status']!=='retired_verified_funds' || $a['stage']!=='review') {
+            $status='retired_verified_funds';
+            $q=$db->prepare("UPDATE payment_attempts SET stage='review',
+                provider_status=?,last_checked_at=NOW() WHERE id=?
+                AND stage IN ('pending','review') AND review_archived_at IS NULL");
+            $q->bind_param('si',$status,$attempt);
+            if (!$q->execute() || $q->affected_rows!==1)
+                throw new RuntimeException('retired_hosted_evidence_update_unconfirmed');
+            $q->close();
+        }
+        if (!$db->commit()) throw new RuntimeException('retired_hosted_evidence_commit_unknown');
+        $open=false;
+        return true;
+    } catch (Throwable $error) {
+        error_log('achbot_retired_hosted_evidence_unconfirmed pay_id='.$payId.
+            ' provider='.$provider.' class='.get_class($error));
+        return false;
+    } finally {if ($open) try{$db->rollback();}catch(Throwable $ignored){}}
+}
+
+/** A real failed verification transport may merit human review; an ordinary
+ * unknown / not-yet-paid result must not enter the staff inbox. Neither is
+ * payment evidence or a refund. Bind to the original scoped 003 attempt.
  */
 function achbotHostedMarkVerificationUncertain(mysqli $db,int $payId,
-                                              string $provider,string $hash): bool {
+                                              string $provider,string $hash,
+                                              bool $providerUnavailable=false): bool {
     if ($payId<=0 || !in_array($provider,['nextpay','zarinpal'],true) ||
         $hash==='') return false;
     require_once __DIR__.'/GatewayReview.php';
@@ -827,16 +955,36 @@ function achbotHostedMarkVerificationUncertain(mysqli $db,int $payId,
             achbotHasUnscopedPaymentReferenceCollision($db,(string)$pay['payid'],$payId)) {
             $db->rollback();return false;
         }
-        if ($attempt['stage']==='review' &&
-            $attempt['provider_status']==='verification_uncertain') {
-            $db->rollback();return true;
+        $reason=$providerUnavailable?'verification_unavailable':'verification_uncertain';
+        if ($attempt['stage']==='review') {
+            // Do not downgrade a previously verified transport outage when a
+            // later browser return merely lacks settlement proof.
+            if ($attempt['provider_status']===$reason ||
+                ($attempt['provider_status']==='verification_unavailable' &&
+                 !$providerUnavailable)) {
+                $db->rollback();return true;
+            }
+            if ($providerUnavailable &&
+                $attempt['provider_status']==='verification_uncertain') {
+                $id=(int)$attempt['id'];
+                $q=$db->prepare("UPDATE payment_attempts SET
+                    provider_status='verification_unavailable',last_checked_at=NOW()
+                    WHERE id=? AND stage='review' AND
+                      provider_status='verification_uncertain' AND
+                      review_archived_at IS NULL");
+                $q->bind_param('i',$id);$q->execute();$ok=$q->affected_rows===1;$q->close();
+                if (!$ok) throw new RuntimeException('hosted_review_reason_unconfirmed');
+                if (!$db->commit()) throw new RuntimeException('hosted_review_commit_unconfirmed');
+                $open=false;return true;
+            }
+            $db->rollback();return false;
         }
         if ($attempt['stage']!=='pending') {$db->rollback();return false;}
         $id=(int)$attempt['id'];
         $q=$db->prepare("UPDATE payment_attempts
-            SET stage='review',provider_status='verification_uncertain',last_checked_at=NOW()
+            SET stage='review',provider_status=?,last_checked_at=NOW()
             WHERE id=? AND stage='pending' AND review_archived_at IS NULL");
-        $q->bind_param('i',$id);$q->execute();$ok=$q->affected_rows===1;$q->close();
+        $q->bind_param('si',$reason,$id);$q->execute();$ok=$q->affected_rows===1;$q->close();
         if (!$ok) throw new RuntimeException('hosted_review_stage_unconfirmed');
         if (!$db->commit()) throw new RuntimeException('hosted_review_commit_unconfirmed');
         $open=false;return true;
@@ -918,7 +1066,8 @@ function achbotClaimHostedServiceForReview(mysqli $db, int $payId, int $amount,
                     // authenticated operator before invoking this effect.
                     // Its 'operator_attested' status is not merchant proof.
                 } elseif ($stage!=='pending' &&
-                    !($stage==='review' && $status==='verification_uncertain')) {
+                    !($stage==='review' && in_array($status,
+                        ['verification_uncertain','verification_unavailable'],true))) {
                     throw new RuntimeException('attempt_mismatch');
                 }
                 $id=(int)$attempt['id'];
@@ -1247,6 +1396,9 @@ function achbotPerformPaymentEffect($payRowId, $gateType, &$effectStage = null) 
                 $remark .= '_'.$i;
             }
 
+            $remark=achbotPaidPurchaseRemark((string)$remark,$serverType,
+                $rowId,$i,$accountCount,$forcedRemark!==null && $accountCount===1);
+
             // First-use expiry staging was exclusive to never-deployed
             // Sanaei/Alireza inbound plans. Marzban keeps normal expiry.
             $expire_microdate_local = $expire_microdate;
@@ -1427,7 +1579,25 @@ function achbotPerformPaymentEffect($payRowId, $gateType, &$effectStage = null) 
             ]
         ]]);
 
-        $msg = \achbotMessage('gateway.gateway_return.perform_payment_effect.msg.8205ac68fa', ['gateType' => $gateType, 'user_id' => $user_id, 'first_name' => $first_name, 'username' => $username, 'amount' => $amount, 'remark' => $remark, 'volume' => $volume, 'days' => $days]);
+        $bulkProof=null;
+        if ($accountCount>1) {
+            try {
+                require_once __DIR__.'/../Purchase/BulkReport.php';
+                $bulkProof=achbotBulkRecordedAccounts($connection,$accountCount,$user_id,$rowId);
+                if (!$bulkProof['complete'])
+                    error_log('achbot_hosted_bulk_report_incomplete pay_id='.$rowId);
+            } catch (Throwable $error) {
+                error_log('achbot_hosted_bulk_report_unavailable pay_id='.$rowId.
+                    ' class='.get_class($error));
+            }
+        }
+        $summaryName=$accountCount>1?achbotMessage('bulk_reporting.bulk_subject'):$remark;
+        $msg = \achbotMessage('gateway.gateway_return.perform_payment_effect.msg.8205ac68fa', ['gateType' => $gateType, 'user_id' => $user_id, 'first_name' => $first_name, 'username' => $username, 'amount' => $amount, 'remark' => $summaryName, 'volume' => $volume, 'days' => $days]);
+        if ($accountCount>1)
+            $msg=$bulkProof===null
+                ?($msg."\n".achbotMessage('bulk_reporting.needs_review',[
+                    'confirmed'=>'نامشخص','requested'=>$accountCount]))
+                :achbotBulkReportAppend($msg,$bulkProof,true);
 		notifyAllAdminsSimple($msg, $admin, "html", $keys, $rewardChannel);
     }
 
@@ -1841,6 +2011,22 @@ function achbotPerformPaymentEffect($payRowId, $gateType, &$effectStage = null) 
  * Keep the existing public payment action entrypoint stable. Never close
  * an attempt as delivered when the underlying effect throws or is uncertain.
  */
+/** A started, failed hosted BUY_SUB needs its original partial ledger report. */
+function achbotHostedPartialBulkNotice(mysqli $db,int $payId,string $gateType): void {
+    global $admin,$botState;
+    if (!in_array($gateType,['nextpay','zarinpal','nowpayment'],true)) return;
+    try {
+        require_once __DIR__.'/../Purchase/BulkReport.php';
+        $text=achbotBulkPartialPaymentReport($db,$payId);
+        if ($text!==null)
+            notifyAllAdminsSimple($text,$admin,'html',null,
+                $botState['rewardChannel']??null);
+    } catch (Throwable $reportError) {
+        error_log('achbot_hosted_bulk_partial_report_unavailable pay_id='.$payId.
+            ' class='.get_class($reportError));
+    }
+}
+
 function doAction($payRowId, $gateType) {
     global $connection;
     // A live-worker signal for the ENTIRE hosted attempt, including local
@@ -1862,6 +2048,8 @@ function doAction($payRowId, $gateType) {
         try {
             $outcome=achbotPerformPaymentEffect($payRowId,$gateType,$effectStage);
         } catch (Throwable $error) {
+            if ($effectStage==='postclaim')
+                achbotHostedPartialBulkNotice($connection,(int)$payRowId,$gateType);
             if (!in_array($gateType,['nextpay','zarinpal'],true)) throw $error;
             // Even an upstream-verified charge can fail on the *first* local
             // SELECT, before a durable review record exists. A post-claim throw
@@ -1882,6 +2070,9 @@ function doAction($payRowId, $gateType) {
             showForm($message,\achbotMessage('gateway.gateway_return.np_reconcile_batch.message.da0bc406d8'),false,'review');
             return 'ambiguous';
         }
+        if ($effectStage==='postclaim' &&
+            !in_array($outcome,['delivered','compensated'],true))
+            achbotHostedPartialBulkNotice($connection,(int)$payRowId,$gateType);
         if (in_array($gateType,['nextpay','zarinpal'],true) &&
             in_array($outcome,['delivered','compensated'],true)) {
             achbotFinishHostedServiceReview($connection,(int)$payRowId,$gateType,$outcome);

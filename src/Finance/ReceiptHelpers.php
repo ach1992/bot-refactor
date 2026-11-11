@@ -2517,6 +2517,12 @@ function achbotSharedAccountReferencesLocked(mysqli $db,int $orderId,int $server
  */
 function achbotNonPayablePaymentSettledLocked(array $payment,?array $attempt): bool {
     $state=(string)($payment['state']??'');
+    // A locked service change retires only previously unclaimed original
+    // invoices. These are terminal for the OLD service, even when issued
+    // externally. A later actual fulfillment stage must still block cleanup.
+    if ($state==='service_superseded')
+        return $attempt===null ||
+            in_array((string)($attempt['stage']??''),['pending','review'],true);
     if (in_array($state,['canceled','cancelled','rejected','expired'],true))
         return $attempt===null || in_array((string)($attempt['stage']??''),['expired','done'],true);
     if ((string)($payment['payid']??'')!=='' || $attempt!==null) return false;
@@ -2527,7 +2533,8 @@ function achbotNonPayablePaymentSettledLocked(array $payment,?array $attempt): b
 
 /** Pending claims serialize a shared account; completed references are not an ownership restriction. */
 function achbotSharedAccountWorkSettledLocked(mysqli $db,array $peers,int $ownAttempt=0,
-    int $ownPay=0,bool $blockUnclaimedQuotes=false,bool $strictCompletion=false): bool {
+    int $ownPay=0,bool $blockUnclaimedQuotes=false,bool $strictCompletion=false,
+    array $preverifiedUnclaimedQuoteIds=[]): bool {
     $ids=[];
     foreach ($peers as $row) {
         if ((int)($row['id']??0)<=0 || (int)($row['status']??0)!==1) return false;
@@ -2555,6 +2562,27 @@ function achbotSharedAccountWorkSettledLocked(mysqli $db,array $peers,int $ownAt
             $id=(int)$payment['id'];
             $q=$db->prepare('SELECT stage FROM payment_attempts WHERE pay_row_id=? FOR UPDATE');
             $q->bind_param('i',$id);$q->execute();$attempt=$q->get_result()->fetch_assoc();$q->close();
+        }
+        // Only the physical plan-change transaction may pass these exact
+        // still-unpaid, identity-checked, 003/014-checked invoice IDs. They
+        // remain in their ORIGINAL states until the verified local/native
+        // final commit; the pending plan journal fences callbacks meanwhile.
+        $id=(int)$payment['id'];
+        if (isset($preverifiedUnclaimedQuoteIds[$id])) {
+            if ((int)$preverifiedUnclaimedQuoteIds[$id]!==$id ||
+                !in_array($payment['state'],['pending','send','have_sent','low_wallet'],true) ||
+                ($attempt!==null && !in_array($attempt['stage'],['pending','review'],true)))
+                return false;
+            continue;
+        }
+        // This explicit state is created only by the locked physical
+        // service-change boundary, never by an unverified provider callback.
+        // The old invoice may receive late *funds evidence*, but not a new
+        // fulfillment of its previous order. Started Native/API operations
+        // are excluded from retirement and retain their original hold.
+        if ($payment['state']==='service_superseded') {
+            if (!achbotNonPayablePaymentSettledLocked($payment,$attempt)) return false;
+            continue;
         }
         // Even paid/approved evidence cannot release an account if a gateway
         // attempt still claims fulfillment/review. Historical completed rows

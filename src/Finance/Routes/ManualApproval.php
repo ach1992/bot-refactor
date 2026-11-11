@@ -380,6 +380,9 @@ if (
             if ($accountCount>1 && (($botState['remark']??'')==='manual')) {
                 $remark .= '_'.$i;
             }
+            $remark=achbotPaidPurchaseRemark((string)$remark,$serverType,
+                $payId,$i,$accountCount,
+                (($botState['remark']??'')==='manual'));
             $lastRemarkForAdminMsg = $remark;
 
             [$response, $remark, $port, $effectId] = achbotContinuePaidAccount(
@@ -457,8 +460,14 @@ if (
             return;
         }
 
+        // Native CREATE and exact strict GET already completed above. An
+        // InnoDB deadlock victim rolls back ONLY the local finalize. Retry
+        // that SQL-only unit after an acknowledged rollback; never re-enter
+        // the remote CREATE/GET loop or mint a new 007 operation identity.
+        for ($localFinalizeAttempt=0; $localFinalizeAttempt<2; ++$localFinalizeAttempt) {
         if ($connection->begin_transaction() !== true)
             throw new RuntimeException('manual_standard_finish_begin_failed');
+        $localCommitAttempted=false;
         try {
             $q=$connection->prepare('SELECT * FROM pays WHERE id=? FOR UPDATE');
             $q->bind_param('i',$payId);$q->execute();$lockedPay=$q->get_result()->fetch_assoc();$q->close();
@@ -514,18 +523,32 @@ if (
             achbotFollowupStageManualPurchaseLocked($connection,$lockedPay,(int)$admin,
                 $lastRemarkForAdminMsg,$accountCount,$days,$volume,$price,
                 $hash_id,$mainValues);
+            $localCommitAttempted=true;
             if ($connection->commit() !== true)
                 throw new RuntimeException('manual_standard_finish_commit_unconfirmed');
             $serviceCommitted = true;
             $followupStage = 'purchase_account_delivery';
+            break;
         } catch (Throwable $e) {
-            try { $connection->rollback(); } catch (Throwable $ignored) {}
+            $rolledBack=false;
+            try { $rolledBack=$connection->rollback()===true; } catch (Throwable $ignored) {}
+            // 1213 is an acknowledged InnoDB deadlock victim, never an
+            // unknown COMMIT. The original 007 lines are immutable and the
+            // following iteration only inserts/links local orders under the
+            // same persisted payment+effect identity. Any other error holds.
+            if (!$localCommitAttempted && $rolledBack &&
+                $e instanceof mysqli_sql_exception && (int)$e->getCode()===1213 &&
+                $localFinalizeAttempt===0) {
+                error_log('achbot_manual_standard_local_deadlock_retry pay_id='.$payId);
+                continue;
+            }
             // One or more remote accounts may exist without local orders.
             error_log('achbot_manual_standard_remote_finish_review pay_id='.$payId.' subject=purchase exception='.get_class($e).' code='.(int)$e->getCode());
             (achbotNotifyAdmins('sendMessage', ['text'=>\achbotMessage('manual_payment.manual_approval.manual_standard_report_delivery.message.6f4a274426', ['hash_id' => $hash_id]),
                     'reply_markup'=>null,'parse_mode'=>null],
                     ['primary'=>$admin,'report_channel'=>null])[0]['response']??null);
             return;
+        }
         }
 
         $followupStage='purchase_referral_journal';

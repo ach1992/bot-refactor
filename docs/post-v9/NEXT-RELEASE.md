@@ -1,5 +1,221 @@
 # Current source and published release contracts
 
+
+## UNRELEASED — Issue #144 service-change corrections (not deployed)
+
+This section documents an **unreleased candidate**, not an update to the
+published RC30 ZIP or the active Chili installation.
+
+- Marzban Native Host changes use **one** partial-update PUT that includes
+  explicit empty arrays for protocols removed by the new plan. Both old and
+  target protocol sets are compared using strict normalized native GET
+  evidence; no second automatic PUT or credentials/quota/Note rewrite.
+- PasarGuard continues to use absolute, canonical `group_ids`, an existing
+  durable mutation fence, authenticated identity checks, Native GET before
+  and after the bounded PUT, and no-op/replay checks. The two providers do
+  not share incorrect transport semantics.
+- Successful service/server and plan changes use a common report-channel and
+  staff notice titled **تغییر سرویس**, with escaped subscription name,
+  order/customer IDs and numeric actor ID. Administrator order buttons for
+  service/server and plan are adjacent.
+- BOT_STATES adds an editable **customer plan-change** toggle, default ON to
+  preserve established behavior. Both the visible customer button and both
+  callback entrypoints enforce OFF; staff plan management remains available.
+- **Stacked finance candidate only** (not part of PR #145's independently
+  validated exact SHA): a local plan-change intent or staff-authorized
+  same-physical-server transfer atomically transitions old, unclaimed
+  renewal/extension invoices (including insufficient-wallet
+  \`low_wallet\` quotes) for **all** current shared order owners to
+  \`service_superseded\`. Their payment IDs, hashes, original amounts, provider
+  invoices, API/receipt evidence and rows remain unchanged. The invoice's
+  service fulfillment is closed; no external refund or provider cancellation
+  is claimed. Late signed IPN evidence is preserved, but old product
+  fulfillment and customer/staff payment callbacks are denied by original
+  state-CAS checks. Customer status explains the financial-review path.
+  A new service-bound invoice also checks the CURRENT uncommitted plan
+  journal for the selected owner and every old_rows shared owner, so it cannot
+  start a fresh old-plan claim during the Native GET/PUT/finalize gap.
+  Selecting the SAME already-local plan never retires a still-valid current
+  invoice merely to verify/reconcile Native access; a new correctly quoted
+  plan-specific invoice AFTER a verified change remains payable.
+  Retired old-service invoice evidence is terminal for Native cleanup only
+  while its attempt remains in an unclaimed pending/review stage; unexpected
+  progress to fulfillment remains a real reconciliation hold.
+- **Strict safety exceptions:** a checking/fulfilling claim, an unreconciled
+  Native effect, an active API evidence lease, a reserved/redeemed gift/SMS
+  operation, an unknown 003/014 schema or a bound foreign owner cannot be
+  silently retired; it continues to hold the service transition for
+  reconciliation. The original journal fences new claims before a potential
+  Native PUT, but the old invoice is retired only with the verified local
+  service-change COMMIT. An uncertain Native response leaves the original
+  invoice open but held behind the journal; neither funds nor service are
+  falsely claimed as settled.
+- **Owner refinement for manual receipts and hosted review** (PR #146 only):
+  after a VERIFIED real service/plan change, the original staff approval and
+  rejection keyboards are removed from saved receipt messages on a best-effort
+  post-commit Telegram edit; any retained/stale button is already inert under
+  the durable `service_superseded` financial CAS. Receipt, provider ID and
+  photo/code evidence remain unchanged. Customer and staff plan/server
+  selection screens warn BEFORE selection that incomplete service-bound
+  invoices become non-payable for services, without promising a refund.
+- **Review inbox admission is not a six-hour expiration alarm:** the button
+  reads exactly **پرداخت‌های نیازمند بررسی**. Pure `pending`/`waiting`,
+  unpaid, merely old, malformed or generically unknown merchant invoices are
+  not eligible. The queue admits signed NOWPayments partial/observed-funds
+  evidence, genuine merchant verification transport outage, and already
+  initiated but unresolved local fulfillment. Authenticated funds arriving
+  after an invoice is retired may be inspected and locally archived but
+  cannot reapply the old service, be manually settled against it, or rewrite
+  the external payment evidence. A failed Telegram edit does not bypass the
+  SQL CAS and never warrants a second Native/financial execution.
+- **Not included:** user-initiated server relocation, automatic refunds,
+  general late-payment financial resolution. An explicit administrator-confirmed
+  single-use corrective Native action is separately journaled in A02. Owner-approved
+  manual reconciliation remains required for these exceptional cases.
+  The existing server transfer remains staff-authorized. Customer toggles
+  must not imply they authorize physical changes to another customer's
+  shared Native subscription.
+- Previously dispatched ambiguous operations must **not** be silently retried
+  or have their journal marked committed. The Owner described the current
+  Chili record as disposable test data and explicitly did not authorize
+  modifying it; new code only fixes **future** operations.
+
+No new migration, scheduler, provider dependency, production mutation or
+change to the Native account Note marker is included. Future installation
+still needs an exact candidate review, Owner rollout approval and separate
+operator acceptance. Follow [Issue #144](https://github.com/ach1992/bot-refactor/issues/144).
+
+
+## PR #145 follow-up — administrator-controlled GET-only plan recovery (not shipped)
+
+Independent review identified a missing operator recovery action for an already
+dispatched `service_plan_changes` journal. The new plan-management action is
+shown only to currently authorized administrators for the original order and
+exact dispatching journal (migration 017). The handler rechecks the current
+orders permission, original source order/linked references, native provider,
+physical target and plan fingerprints, and original PasarGuard mutation
+identity. Native requests are **strictly GET-only**, requiring original
+Marzban account/Hosts or PasarGuard exact identity/Groups to be already in the
+required state. Only after a verified match, original local references,
+PasarGuard mutation evidence (when present), and the original journal are
+finalized in one SQL transaction. Absent, stale, unauthorized, contradictory
+or partial Native observations leave the original journal held; **no second
+Native PUT, money mutation or automated compensation/replay exists**. Audit
+logs record bounded journal, actor and result codes, without credentials.
+A source-real disposable two-provider injected-finalize-failure regression
+covers admin GET-only recovery, incomplete Native holds, stale/unauthorized
+callbacks, duplicate attempts and absent second PUT. Nothing in this source
+branch changes installed Chili or protected historic orders/journals. Exact
+PHP 8.5 CI and fresh independent delta review remain mandatory before merge.
+
+## PR #146 independent-review remediation — successful-change retirement and late original funds
+
+The independent reviewer found two correctness defects: original renewal/day/volume
+invoices could be terminally retired *before* the physical Native plan mutation
+was verified, and positive late NextPay/Zarinpal funds for those original
+invoices could be hidden from the operator inbox. These fixes remain source-only,
+**not installed**, and need exact current PHP 8.5 acceptance and fresh review.
+
+For a real plan change, the original 003/014/provider/receipt identities are
+inspected without changing payment state while the immutable plan journal
+fences competing financial claims. The old quote becomes
+`service_superseded` **only** in the same local transaction that commits the
+GET/PUT-verified Native outcome and all linked order-plan updates. Failed,
+missing, mismatched or uncertain Native outcomes leave both the original
+invoice evidence/state and the `dispatching` journal in place for independent
+operator reconciliation: no automatic Native replay, refund, fulfillment or
+invoice resurrection. An explicitly authorized, GET-only review operation in
+the stacked PR #145 is required to resolve a verified-complete interrupted
+journal, including the same final retirement boundary after successful readback.
+
+For NextPay/Zarinpal, a returned callback for an already superseded invoice is
+accepted for **provider verification only** after exact unique 003 original
+identity, amount/currency and collision checks. A strictly positive provider
+outcome records the original provider reference as one immutable `finished`
+child observation and marks the same attempt `retired_verified_funds` for
+operator **financial review and archival only**. A negative/unknown provider
+result, stale/foreign reference, archived attempt, duplicate callback or claim
+collision does not initiate a payment, a new service, wallet credit, refund or
+Native effect. The original pays state, quote, identity and payment evidence
+remain intact. The inbox still excludes mere unpaid/old invoices, and staff
+cannot approve/fulfill a terminal old-service invoice.
+
+## Open source-only bulk correction — Issue #147 (not shipped)
+
+[Issue #147](https://github.com/ach1992/bot-refactor/issues/147) tracks a separate
+source-only branch for verified multi-account creation and purchase summaries.
+The administrator's no-payment bulk CREATE, wallet BUY_SUB, manual-receipt BUY_SUB,
+and hosted BUY_SUB now propose a report of the original operation/invoice, actor,
+requested count, locally recorded per-ordinal order identities and delivery warnings.
+Unknown or partially created remote effects remain protected by the existing 007
+no-replay journal; missing Telegram acknowledgements never authorize new CREATE.
+Bulk admin cases also distinguish safely confirmed local orders from missing/unknown
+remote results. The new `src/Purchase/BulkReport.php` read-only projection adds one
+runtime source member, with no database migration or third notification scheduler.
+
+These edits are **unmerged and unreviewed** pending exact-candidate PHP 8.5 CI,
+independent high-assurance review, and separate Owner integration/release/Chili
+authorization. RC30 remains the published baseline; no installed source or
+provider/Telegram/database acceptance is implied.
+
+Read-only installed diagnostics on 2026-11-11 show an admin bulk operation held at
+`remote_create` with `effect_remote_create_unconfirmed`. Nearby Marzban API logs
+show `POST /api/user` returning HTTP 500 and MySQL error 1406, `Data too long for
+column 'username' at row 1`. The original Chili generator created usernames up to
+100 ASCII bytes, while Marzban accepts at most 32. The PR now produces a
+source-and-ordinal-bound, stable 32-byte maximum identity with a readable prefix,
+and its synthetic Native API rejects excess-length usernames rather than faking
+success. A source-real two-account regression proves complete local records,
+reports and no replay with an intentionally long base remark. The error times and
+failure mode are consistent, but lacking a shared request ID does not prove that
+the observed Marzban 500 was the exact Chili request. Installed endpoint, original
+Native effect and actual delivery still need separately authorized verification;
+never retry the protected dispatched claim or rewrite original evidence. No
+production target, provider or customer data was changed by this investigation.
+
+The 2026-11-11 independent review of PR #148 required two additional
+corrections: provider-aware Marzban names on **paid** customer/agent routes,
+and exact original-payment reporting on **partial** wallet/hosted failures.
+The updated candidate validates explicit single Marzban names at the customer
+quote and locked wallet pre-debit boundaries. It assigns deterministic,
+payment-and-ordinal-bound names (maximum 32 ASCII bytes) for newly created
+paid multiple-account Marzban identities; PasarGuard retains its existing
+provider-specific contract. Existing dispatched effects are not renamed or
+replayed. When a started paid wallet/hosted purchase fails mid-batch, a
+read-only projection of original 007 effects/linked orders reports the payment
+reference, verified count, exact confirmed identities and uncertainty to staff
+and the configured report channel. It neither compensates money nor issues
+CREATE/refund actions. Actual PHP 8.5 exact-HEAD CI and fresh high-assurance
+delta review are mandatory before any integration; source-only fixtures cannot
+establish an installed provider or financial outcome.
+
+## Unreleased combined-branch integration and SQL deadlock recovery
+
+The isolated source-only integration combines #144 (A02 Native correction and
+B03 service-payment supersession) with #147 (C03 bulk provenance/reporting).
+It does **not** modify any installed Chili order, journal, worker, API or
+Native account. The combined catalog verification preserves the immutable
+Chili predecessor, independently proves the #147 eight-key block and projects
+it away exactly once before verifying the #144 SHA-256 manifest. A second
+attempt to subtract #147 from the pre-#144 predecessor is invalid.
+
+A concurrent human-bank/API purchase can leave a verified, already-created
+Native account followed by MariaDB `1213` during the **local** order/effect
+link and payment finalization. The manual standard BUY_SUB finisher therefore
+allows a single additional attempt of this **SQL-only** transaction after an
+InnoDB 1213 victim and acknowledged rollback. The preexisting 007 operation,
+remote CREATE, strict GET, immutable receipt, capacity reservation and
+payment claim are **never dispatched or debited again**. A failed rollback,
+other SQL error, unknown commit or repeated deadlock stays under the existing
+operator reconciliation hold. The dedicated disposable test injects one
+synthetic 1213 at original order insertion and requires exactly one Native
+CREATE plus one committed local effect. SQL trigger syntax was checked on
+isolated MariaDB; current-runtime end-to-end acceptance requires PHP 8.5 CI.
+
+An exact integrated candidate, new independent review, owner merge
+permission and separate rollout acceptance remain mandatory. No PHP 8.4
+runtime rehearsal substitutes for the protected PHP 8.5 Gate.
+
 ## Published RC30 — source-only Cron, Telegram, Marzban and gift-card reliability
 
 [v0.10.0-rc.30](https://github.com/ach1992/bot-refactor/releases/tag/v0.10.0-rc.30) publishes independently approved [PR #142](https://github.com/ach1992/bot-refactor/pull/142), merged as `main@ebca4bee143ccb03ea45c2ea2767646b60ac6f9c`, TREE `f5103e9ffcdcc88994f30ec4e5550dc7b9546a13`. The **131-member source-only runtime ZIP** has SHA256 `5ac98c346867e1a8d3aeb7c38482090cde5288d293f05375f6e7f74e13e79150`, five modified runtime paths since RC29, and **no new DDL**. See the [RC29 -> RC30 operator guide](https://github.com/ach1992/bot-refactor/releases/download/v0.10.0-rc.30/RC29-TO-RC30.md), [test acceptance matrix](https://github.com/ach1992/bot-refactor/releases/download/v0.10.0-rc.30/TEST-CHILI-ACCEPTANCE.md) and full Release Notes.
@@ -409,3 +625,83 @@ Reconcile any uncertain operation against protected local/provider evidence and
 use a separately reviewed recovery plan. Lower Telegram update IDs after a long
 idle epoch and retained transfer cursors also require explicit reconciliation,
 not erasing replay history.
+
+B03 independent-review correction: successful original-journal GET-only
+plan recovery now performs the existing best-effort retired manual receipt
+keyboard cleanup strictly AFTER COMMIT. Telegram errors cannot undo the
+original journal/order/invoice state or trigger any new Native/finance effect.
+Source-real Marzban/PasarGuard fixtures create an old invoice with two admin
+receipt messages, force the first local finalize to fail, complete the original
+journal by GET-only recovery and simulate Telegram markup failure, then assert
+retirement, two attempted cleanup calls and zero replay.
+
+PR #146 transfer finalization correction: the original service-bound open
+invoice retirement now occurs inside the SAME verified server-reassignment SQL
+transaction as the shared order update, not in its read-only preflight.
+The 003/014 claim and evidence checks still reject ambiguous or in-flight
+financial effects, and the original invoice identifiers/history remain.
+The disposable source-real logical transfer fixture passed 55 cases locally;
+PHP 8.5 full CI and independent review remain separate required gates.
+
+A02 source-only correction candidate (Issue #144): incomplete original
+service_plan_changes entries may be corrected only after a distinct
+administrator confirmation action. A second immutable 017 row stores the
+authorizing actor, original journal ID and digest, target access and fresh
+Native-before digest before any additional PUT. The exact physical GET_LOCK,
+original Native/account/plan/financial preflight, pinned target, provider
+authority and immediately-before-PUT readback remain mandatory. Unknown
+correction outcomes stay dispatched and unretryable: only the existing
+administrator GET-only path may finalize both audit rows and the shared local
+orders in one transaction after provider access is verified. No current
+installation is changed; neither the protected old journal #2 nor order #33
+is a test input. Migration 017 remains unchanged (no additional DDL).
+The product may require a deliberate rollout/upgrade; compatibility with
+older unsupported runtime versions is not a release condition. Data/effect
+conservation is mandatory regardless of source version.
+
+A02 local test-infrastructure note: disposable MariaDB schema initialization
+in the shared development VM once exceeded the previous 10-second subprocess
+limit (no product PHP or Native assertions had started for that fixture).
+The owned-schema test-only timeout is now 30 seconds; data and provider
+timeouts, functional assertions, and all CI gate requirements are unchanged.
+
+Final A02 isolated Native result after the lock-order and worker-failure
+checks: 271 source-real assertions PASSED on task-owned socket MariaDB
+with both Marzban and PasarGuard loopback providers. The same suite verifies
+administrator/stale-order denial, original intent immutability, single
+correction PUT, no PUT on complete Native state, no repeat after uncertain
+local finalization, delayed GET-only settlement, and exact audit-row
+commit. This is not live Chili testing or full PHP 8.5 CI acceptance.
+
+C03 independent-review remediation: newly generated Marzban usernames now
+use fixed human-readable `mbz_bulk_` or `mbz_paid_` prefixes followed by
+23 hex characters derived ONLY from the authenticated Telegram bulk-source
+reference or original payment ID plus ordinal. A fresh randomized
+`buildRemark()` base cannot change the 32-byte generated identity across
+separate invocations, including single generated purchases. Explicitly
+entered single-account names remain unchanged when valid; PasarGuard
+uses its existing provider contract. Previously dispatched 007 identities
+remain untouched; no automatic reconciliation CREATE is enabled. A new
+source-real native fixture checks distinct randomized buildRemark inputs,
+source/ordinal uniqueness, provider boundaries, and stable output.
+
+Current PR #148 native CREATE repair: all modern paid/nonpaid Marzban effect
+paths use `src/Purchase/Core.php` to obtain the port and dispatch the one
+provider-bound CREATE. The exact 007 operation marker is forwarded with its
+required `achbot:v1:` prefix, immutable username and pinned endpoint/credentials;
+no legacy 409 collision retry or unrecorded second POST exists. The current
+port helper uses a locked counter for auto mode, and random mode has no counter
+side effect. The source-real original-schema NOWPayments (344 cases) and
+agent-zero-price Native (46 cases) tests passed locally on disposable MariaDB;
+this is **not** a PHP 8.5 CI verdict or installed verification.
+
+PHP 8.5 CI remediation of the Native CREATE repair: the current public
+createServerAccount facade now returns a bounded unsupported_panel result
+without invoking any provider for retired/non-Marzban/inbound variants,
+matching the active Marzban-only preflight. Current wallet settlement still
+rejects malformed administrator-configured purchase prefixes BEFORE debit
+even when the final generated Marzban username is independent of the
+randomized base. The source-real native Marzban preflight (five negative
+controls) and wallet checkout (34 cases) passed locally; exact-current CI
+requires a fresh run. No old helper implementation or compatibility shim
+was restored.

@@ -71,8 +71,9 @@ if (preg_match('/^attention(?:Inbox(?:_[1-9][0-9]{0,17})?|Case_[1-9][0-9]{0,17})
         return;
     }
 
-    // An old unpaid checkout is only a review *candidate*, never proof of funds.
-    // The existing configurable hosted-attention age also controls this list.
+    // An old unpaid checkout is not itself an exception. Admission uses
+    // original provider evidence or a previously started unresolved effect;
+    // elapsed time alone never creates a staff action.
     $scope=achbotGatewayAttentionScope();
     $inbox=[];$case=[];
     $isInbox=preg_match('/^attentionInbox(?:_([1-9][0-9]{0,17}))?$/D',

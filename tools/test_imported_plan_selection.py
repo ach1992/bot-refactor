@@ -13,7 +13,10 @@ import test_unified_existing_subscriptions as imports
 
 ROOT=Path(__file__).resolve().parents[1]
 DB=purchase.SIDE[1]
-DRIVER=imports.PHP.replace("$botState['rewardChannel']='';", "$botState['rewardChannel']='';$botState['renewAutoState']=$spec['renew_auto_state']??'on';",1).replace(" } elseif($op==='copy'){", """ } elseif($op==='toggle'){
+DRIVER=imports.PHP.replace("$botState['rewardChannel']='';",
+    "$botState['rewardChannel']='-1009000000100';"
+    "$botState['renewAutoState']=$spec['renew_auto_state']??'on';"
+    "$botState['changePlanState']=$spec['change_plan_state']??'on';",1).replace(" } elseif($op==='copy'){", """ } elseif($op==='toggle'){
   require __DIR__.'/consent-source.php';
  } elseif($op==='admin_view'){
   require_once $root.'/src/Subscription/AccountDetails.php';
@@ -75,6 +78,12 @@ def main():
             consent=config[begin:end].replace('__DIR__',json.dumps(str(ROOT)))
             (work/'consent-source.php').write_text('<?php\n'+consent)
             script=work/'plan-controller.php';script.write_text(DRIVER);source=500000
+            # Invalid PHP composition must be visible before a child process
+            # hides runtime diagnostics to protect the actual fixture output.
+            lint=subprocess.run(['php','-l',str(script)],cwd=work,env=env,
+                capture_output=True,text=True,timeout=10)
+            if lint.returncode:
+                raise AssertionError(('plan_driver_php_syntax',lint.stdout,lint.stderr))
             def call(op,**spec):
                 nonlocal source
                 source+=1
@@ -132,6 +141,14 @@ def main():
                "UPDATE server_plans SET volume=0.5 WHERE id=117")
             db("INSERT INTO server_plans(id,fileid,catid,server_id,inbound_id,acount,limitip,title,protocol,days,volume,type,price,descr,pic,active,step,date,custom_sni,provider_group_ids)"
                " SELECT 119,fileid,catid,server_id,inbound_id,acount,limitip,'Second valid plan',protocol,days,volume,type,197,descr,pic,active,step,date,custom_sni,provider_group_ids FROM server_plans WHERE id=7")
+            # A newly restored BOT_STATES customer switch must be a real
+            # backend permission check, not merely a hidden menu button.
+            for callback in ['changePlan_'+str(oid),
+                             'confirmChangePlan_'+str(oid)+'_7']:
+                before=snapshot();writes_before=len(writes())
+                call('extensions',actor=1001,data=callback,change_plan_state='off')
+                yes(snapshot()==before and len(writes())==writes_before,
+                    provider+'_customer_plan_disabled_'+callback.split('_')[0]+'_no_native_or_local_change')
             before=finances();remote=len(writes())
             menu=call('extensions',data='changePlan_'+str(oid))
             shown=json.dumps(menu)
@@ -201,7 +218,14 @@ def main():
                    json.dumps({'inbounds':{'vless':['fake-inbound']},'proxies':{'vless':{'flow':''}}})+
                    "' WHERE id=120")
             before=finances();remote=len(writes())
-            call('extensions',actor=9001,data='confirmChangePlan_'+str(oid)+'_120')
+            change=call('extensions',actor=9001,data='confirmChangePlan_'+str(oid)+'_120')
+            notices=[e for e in change['events'] if e['kind']=='send'
+                and 'تغییر سرویس' in e['text']]
+            yes(len(notices)>=2 and
+                any(e['to']==9001 for e in notices) and
+                any(str(e['to'])=='-1009000000100' for e in notices) and
+                all(remark in e['text'] and '9001' in e['text'] for e in notices),
+                provider+'_successful_plan_reports_name_actor_to_channel_and_staff')
             changed_native=(vendor.users[41]['group_ids']==[2] if provider=='pasarguard'
                 else vendor.edit_account['inbounds']=={'vless':['fake-inbound']})
             yes(changed_native and len(writes())==remote+1 and finances()==before and

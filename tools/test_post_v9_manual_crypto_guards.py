@@ -361,7 +361,10 @@ def check() -> dict:
         # BOT_STATES toggle must never be advertised or editable.
         moved_display={'configLinkState','subLinkState','switchLocationState'}
         assert len(baseline['changeBot'])==25 and len(baseline['changeGateWays'])==8
-        assert advertised['changeBot']==baseline['changeBot']-moved_display,advertised
+        # New, authorized customer-plan capability is independently persisted
+        # and exercised like each other current BOT_STATES toggle.
+        assert advertised['changeBot']==(
+            baseline['changeBot']-moved_display)|{'changePlanState'},advertised
         assert advertised['changeGateWays']==baseline['changeGateWays'],advertised
         assert not moved_display.intersection(advertised['changeBot'])
         cases.append('obsolete_transfer_and_display_toggles_absent')
@@ -374,13 +377,25 @@ def check() -> dict:
                 events=run(data=callback)
                 new=json.loads(state_raw())
                 expected='1' if key=='cartToCartAutoAcceptType' and old.get(key)=='0' else (
-                    'off' if old.get(key)=='on' else 'on')
+                    'off' if old.get(key, 'on' if key=='changePlanState' else 'off')=='on' else 'on')
                 assert new.get(key)==expected,(callback,new.get(key),expected)
                 assert {k:v for k,v in new.items() if k!=key} == {
                     k:v for k,v in old.items() if k!=key},callback
                 assert any(e[0]=='editText' for e in events),callback
                 assert protected_snapshot()==baseline_finance
                 cases.append('advertised_current_admin_toggle_works_'+callback)
+                if key=='changePlanState':
+                    # Older BOT_STATES rows omit this toggle. Both the UI and
+                    # authorization contract default ON; the first OFF click
+                    # must persist OFF and the next click must restore ON.
+                    assert 'changePlanState' not in old, 'fixture must start without setting'
+                    assert new['changePlanState']=='off'
+                    back=run(data=callback)
+                    restored=json.loads(state_raw())
+                    assert restored.get('changePlanState')=='on'
+                    assert any(e[0]=='editText' for e in back)
+                    assert protected_snapshot()==baseline_finance
+                    cases.append('absent_customer_plan_toggle_first_off_then_on')
 
         # No alternate operator identity may bypass the allowlists or alter
         # current toggles. A delegated administrator retains current privileges.

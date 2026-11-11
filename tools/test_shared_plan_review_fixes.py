@@ -8,6 +8,7 @@ from __future__ import annotations
 import argparse
 import contextlib
 import copy
+import hashlib
 import json
 import re
 import subprocess
@@ -77,6 +78,21 @@ DRIVER = plans.DRIVER.replace(" } elseif($op==='toggle'){", """ } elseif($op==='
   require_once $root.'/src/Subscription/PhysicalService.php';
   $record=$connection->query('SELECT * FROM orders_list WHERE id='.(int)$spec['order'])->fetch_assoc();
   $out=achbotPhysicalLockName($connection,$record);
+ } elseif($op==='review_recover'){
+  require_once $root.'/src/Subscription/PhysicalService.php';
+  $out=achbotPhysicalRecoverPlan($connection,(int)$spec['journal'],
+    (int)$spec['actor'],(int)($spec['order']??0));
+ } elseif($op==='review_recover_markups'){
+  require_once $root.'/src/Subscription/PhysicalService.php';
+  $GLOBALS['fixture_fail_markup']=!empty($spec['telegram_fail']);
+  $result=achbotPhysicalRecoverPlan($connection,(int)$spec['journal'],
+    (int)$spec['actor'],(int)($spec['order']??0));
+  $out=['result'=>$result,'markups'=>array_values(array_filter($GLOBALS['events'],
+    static fn($e)=>($e['kind']??'')==='retired_markup'))];
+ } elseif($op==='review_correct'){
+  require_once $root.'/src/Subscription/PhysicalService.php';
+  $out=achbotPhysicalCorrectPlan($connection,(int)$spec['journal'],
+    (int)$spec['actor'],(int)($spec['order']??0));
  } elseif($op==='review_pg_key'){
   require_once $root.'/src/Subscription/PhysicalService.php';
   $connection->begin_transaction();
@@ -111,6 +127,15 @@ DRIVER = plans.DRIVER.replace(" } elseif($op==='toggle'){", """ } elseif($op==='
   $out=['preflight'=>$seen['valid'],
    'allowed'=>achbotApiPaymentLocalSubjectAllowed($connection,$locked,$seen)];
   $connection->rollback();
+ } elseif($op==='review_receipt_buttons'){
+  require_once $root.'/src/Subscription/PhysicalService.php';
+  $id=(int)$spec['order'];
+  $q=$connection->prepare('SELECT * FROM orders_list WHERE id=?');
+  $q->bind_param('i',$id);$q->execute();$original=$q->get_result()->fetch_assoc();$q->close();
+  $shared=achbotPhysicalActiveOrders($connection,$original);
+  achbotPhysicalHideRetiredReceiptActions($connection,$shared);
+  $out=array_values(array_filter($GLOBALS['events'],
+    static fn($e)=>($e['kind']??'')==='retired_markup'));
  } elseif($op==='review_invoice'){
   require_once $root.'/src/Finance/PaymentLifecycle.php';
   $hash='state'.bin2hex(random_bytes(10));$actor=(int)$spec['actor'];
@@ -121,9 +146,45 @@ DRIVER = plans.DRIVER.replace(" } elseif($op==='toggle'){", """ } elseif($op==='
   $q->bind_param('sisiiiii',$hash,$actor,$type,$plan,$server,$order,$price,$now);
   $id=achbotPayUxInsertDraft($connection,$actor,$q);$q->close();
   $out=$id>0?'issued':'denied';
+ } elseif($op==='review_payment_journal'){
+  require_once $root.'/src/Purchase/Core.php';
+  $out=achbotServicePaymentJournalClear($connection,(int)$spec['order']);
+ } elseif($op==='pin_new_pg_invoice'){
+  // Unlike Marzban, a new PasarGuard invoice MUST capture an immutable
+  // post-change account/Native Group snapshot before quote eligibility.
+  require_once $root.'/src/Panel/ProviderRuntime.php';
+  achbotPgPinPayment($connection,(int)$spec['pay']);
+  $out='pinned';
+ } elseif($op==='review_retired_terminal'){
+  require_once $root.'/src/Finance/ReceiptHelpers.php';
+  $id=(int)$spec['pay'];
+  $q=$connection->prepare('SELECT * FROM pays WHERE id=?');
+  $q->bind_param('i',$id);$q->execute();$pay=$q->get_result()->fetch_assoc();$q->close();
+  $q=$connection->prepare('SELECT * FROM payment_attempts WHERE pay_row_id=?');
+  $q->bind_param('i',$id);$q->execute();$attempt=$q->get_result()->fetch_assoc();$q->close();
+  $out=achbotNonPayablePaymentSettledLocked($pay,$attempt);
+ } elseif($op==='review_superseded_payment'){
+  require_once $root.'/src/Finance/PaymentLifecycle.php';
+  $id=(int)$spec['pay'];
+  $q=$connection->prepare('SELECT * FROM pays WHERE id=?');
+  $q->bind_param('i',$id);$q->execute();$pay=$q->get_result()->fetch_assoc();$q->close();
+  $q=$connection->prepare('SELECT * FROM payment_attempts WHERE pay_row_id=?');
+  $q->bind_param('i',$id);$q->execute();$attempt=$q->get_result()->fetch_assoc();$q->close();
+  $out=['state'=>achbotPayUxState($pay,$attempt),
+        'eligible'=>achbotSupportsPaymentSubject($connection,$pay)];
  } elseif($op==='toggle'){""", 1)
 assert DRIVER != plans.DRIVER, 'review test route not added'
 assert DRIVER.count('<?php\n')==1
+# Instrument ONLY synthetic Telegram bot replies for a read-only
+# regression of real receipt keyboards; the production helper is unmodified.
+DRIVER=DRIVER.replace(
+ "function bot(...$a){return(object)['ok'=>true,'result'=>(object)['first_name'=>'Owned']];}",
+ "function bot(...$a){if(($a[0]??'')==='editMessageReplyMarkup') "
+ "$GLOBALS['events'][]=['kind'=>'retired_markup','payload'=>$a[1]??[]];"
+ "if(($a[0]??'')==='editMessageReplyMarkup' && !empty($GLOBALS['fixture_fail_markup']))"
+ "return(object)['ok'=>false];"
+ "return(object)['ok'=>true,'result'=>(object)['first_name'=>'Owned']];}",1)
+assert 'retired_markup' in DRIVER, 'synthetic_markup_spy_missing'
 DRIVER=DRIVER.replace('<?php\n','<?php\n'+old_function+'\n',1)
 
 @contextlib.contextmanager
@@ -198,7 +259,13 @@ def harness(provider: str):
                 'achbot_shared_plan_requires_review',
                 'achbot_shared_plan_committed',
                 'achbot_customer_draft_creation_deferred',
-                'achbot_order_plan_actions_unverified')
+                'achbot_order_plan_actions_unverified',
+                'achbot_shared_plan_recovery_held',
+                'achbot_shared_plan_recovered',
+                'achbot_retired_receipt_keyboard_unconfirmed',
+                'achbot_plan_correction_dispatched',
+                'achbot_plan_correction_verified',
+                'achbot_plan_correction_held')
             if run.returncode or not all(line.startswith(allowed)
                 for line in run.stderr.splitlines()):
                 raise AssertionError((provider, op, run.returncode, run.stdout, run.stderr))
@@ -303,6 +370,271 @@ def main():
         h['db']('INSERT INTO pays(hash_id,user_id,type,plan_id,server_id,order_id,price,request_date,state)'
                 f" VALUES('{hashid}',1002,'{payment_type}',119,2,{peer},137,UNIX_TIMESTAMP(),'{state}')")
         return int(h['db'](f"SELECT id FROM pays WHERE hash_id='{hashid}'"))
+
+    # B01: a completed original Native PUT with failed local finalization
+    # is NOT a successful local plan change. Only a successful final COMMIT
+    # may retire old invoices; the dispatching journal still fences claims.
+    for provider in ('marzban','pasarguard'):
+        with harness(provider) as h:
+            seeded(h)
+            db=h['db'];old_quote=invoice(h,'nativefinal','pending',order=h['peer'])
+            before_money=finance(h);before_orders=subject(h)
+            before_writes=len(h['writes']())
+            db("CREATE TRIGGER owned_old_invoice_finalization_abort "
+               "BEFORE UPDATE ON orders_list FOR EACH ROW SIGNAL SQLSTATE '45000' "
+               "SET MESSAGE_TEXT='fixture_after_native_before_local_commit'")
+            try: plan(h,120)
+            finally: db('DROP TRIGGER owned_old_invoice_finalization_abort')
+            yes(len(h['writes']())==before_writes+1 and
+                outstanding(h)=='dispatching' and
+                db(f'SELECT state FROM pays WHERE id={old_quote}')=='pending' and
+                finance(h)==before_money and subject(h)==before_orders,
+                provider+'_native_changed_local_commit_failed_original_quote_not_retired')
+            yes(h['call']('review_payment_journal',order=h['peer']) is False and
+                h['call']('review_payment_journal',order=h['oid']) is False,
+                provider+'_unsuperseded_invoice_blocked_by_original_dispatched_journal')
+            denied(h,'native_uncertain_no_automatic_second_put')
+            yes(h['call']('review_invoice',actor=1002,type='RENEW_ACCOUNT',
+                    order=h['peer'],plan=119,server=2)=='denied' and
+                finance(h)==before_money and outstanding(h)=='dispatching',
+                provider+'_native_uncertain_no_late_old_product_invoice')
+
+    # A previously committed service-change intent must stop any NEW
+    # invoice or API claim from starting between Native GET / PUT / finalize.
+    # Foreign linked physical owners must be fenced by old_rows, not only
+    # the selected journal source_order_id.
+    for provider in ('marzban','pasarguard'):
+        with harness(provider) as h:
+            seeded(h)
+            db=h['db'];oid=h['oid'];peer=h['peer']
+            yes(h['call']('review_payment_journal',order=oid) is True and
+                h['call']('review_payment_journal',order=peer) is True,
+                provider+'_payment_subject_admits_no_active_native_journal')
+            # Demonstrate that a real, source-issued renewal works normally
+            # before the journal, including the other local owner.
+            for actor, target, label in ((1001,oid,'selected'),(1002,peer,'peer')):
+                yes(h['call']('review_invoice',actor=actor,type='RENEW_ACCOUNT',
+                    order=target,plan=119,server=2)=='issued',
+                    provider+'_real_draft_before_journal_'+label)
+            # The *real* purchasing boundary must use the same current
+            # journal check before accepting an order-backed old product.
+            original=invoice(h,'journalquote','pending',order=peer)
+            if provider=='marzban':
+                pre=h['call']('review_superseded_payment',pay=original)
+                yes(pre['eligible'] is True,
+                    'marzban_real_renew_invoice_current_without_plan_journal')
+            record=json.dumps({'version':1,'old_rows':[
+                {'id':oid,'fileid':119,'server_id':2},
+                {'id':peer,'fileid':119,'server_id':2}]})
+            db("INSERT INTO service_plan_changes (lock_key,source_order_id,"
+               "plan_id,server_id,provider,state,intent_json) VALUES "
+               f"('synthetic-payment-journal',{oid},119,2,'{provider}',"
+               "'dispatching','"+record+"')")
+            yes(h['call']('review_payment_journal',order=oid) is False and
+                h['call']('review_payment_journal',order=peer) is False,
+                provider+'_pending_native_journal_blocks_selected_and_shared_owner_payment')
+            # A later payment claim was already fenced; the actual INSERT
+            # boundary must now refuse a new advertised invoice altogether.
+            draft_count=int(db('SELECT COUNT(*) FROM pays'))
+            for actor,target,label,typ in (
+                (1001,oid,'selected_renew','RENEW_ACCOUNT'),
+                (1002,peer,'peer_renew','RENEW_ACCOUNT'),
+                (1002,peer,'peer_day',f'INCREASE_DAY_{peer}_3'),
+                (1002,peer,'peer_volume',f'INCREASE_VOLUME_{peer}_3')):
+                denied_quote=h['call']('review_invoice',actor=actor,type=typ,
+                    order=target,plan=119,server=2)
+                yes(denied_quote=='denied' and
+                    int(db('SELECT COUNT(*) FROM pays'))==draft_count,
+                    provider+'_real_draft_denied_during_journal_'+label)
+            yes(h['call']('review_invoice',actor=1001,type='INCREASE_WALLET',
+                order=0,plan=0,server=0)=='issued',
+                provider+'_wallet_draft_unaffected_by_service_journal')
+            if provider=='marzban':
+                blocked=h['call']('review_superseded_payment',pay=original)
+                yes(blocked['eligible'] is False and
+                    db('SELECT state FROM pays WHERE id='+str(original))=='pending',
+                    'marzban_real_renew_invoice_denied_during_native_journal_without_financial_side_effect')
+            db("UPDATE service_plan_changes SET state='committed'"
+               " WHERE lock_key='synthetic-payment-journal'")
+            yes(h['call']('review_payment_journal',order=oid) is True and
+                h['call']('review_payment_journal',order=peer) is True,
+                provider+'_committed_native_journal_reopens_new_payment_admission')
+            for actor,target,label in ((1001,oid,'selected'),(1002,peer,'peer')):
+                yes(h['call']('review_invoice',actor=actor,type='RENEW_ACCOUNT',
+                    order=target,plan=119,server=2)=='issued',
+                    provider+'_real_draft_after_journal_'+label)
+            if provider=='marzban':
+                again=h['call']('review_superseded_payment',pay=original)
+                yes(again['eligible'] is True,
+                    'marzban_new_invoice_reenabled_after_native_journal_commit')
+    # Issue #144: all old, not-yet-dispatched service payments become
+    # non-payable without discarding issuer/receipt/provider evidence.
+    for provider in ('marzban','pasarguard'):
+        with harness(provider) as h:
+            seeded(h);db=h['db']
+            pending=invoice(h,'unclaimed','pending',order=h['oid'])
+            db('UPDATE pays SET user_id=1001 WHERE id='+str(pending))
+            issued=invoice(h,'issued','send',order=h['peer'])
+            review=invoice(h,'review','have_sent',order=h['peer'])
+            legacy=invoice(h,'oldencoded','pending',f'INCREASE_DAY_{h["peer"]}_3',0)
+            wallet_quote=invoice(h,'walletshort','low_wallet',order=h['peer'])
+            wallet_topup=invoice(h,'unrelatedwallet','pending','INCREASE_WALLET',0)
+            db("UPDATE pays SET payid='old-provider-id',message_id=3131,"
+               "chat_id='1002' WHERE id="+str(issued))
+            db("INSERT INTO payment_attempts (pay_row_id,provider,order_hash,"
+               "quote_amount,quote_currency,local_amount_toman,stage,provider_status)"
+               " SELECT id,'nowpayments',hash_id,137,'usd',137,'checking',NULL"
+               " FROM pays WHERE id="+str(issued))
+            db("INSERT INTO payment_attempts (pay_row_id,provider,order_hash,"
+               "quote_amount,quote_currency,local_amount_toman,stage,provider_status)"
+               " SELECT id,'bank_transfer',hash_id,137,'toman',137,'review','verification_uncertain'"
+               " FROM pays WHERE id="+str(review))
+            db("UPDATE pays SET chat_id=9001,message_id=6501,"
+               "admins_messages='[{\"chat_id\":9002,\"message_id\":6502}]'"
+               " WHERE id="+str(review))
+            yes(h['call']('review_receipt_buttons',order=h['oid'])==[],
+                provider+'_unsuperseded_manual_receipt_keyboard_unchanged')
+            ids=f'{pending},{issued},{review},{legacy},{wallet_quote}'
+            old_details=db('SELECT id,hash_id,payid,user_id,type,plan_id,server_id,order_id,price,message_id,chat_id FROM pays WHERE id IN ('+ids+') ORDER BY id')
+            before=subject(h);money=finance(h);puts=len(h['writes']())
+            plan(h,120)
+            yes(subject(h)==before and finance(h)==money and
+                len(h['writes']())==puts and outstanding(h)=='committed',
+                provider+'_inflight_payment_claim_blocks_native_change_without_retirement')
+            db("UPDATE payment_attempts SET stage='pending' WHERE pay_row_id="+str(issued))
+            plan(h,120)
+            yes(outstanding(h)=='committed' and
+                db(f"SELECT fileid FROM orders_list WHERE id IN ({h['oid']},{h['peer']}) ORDER BY id")=='120\n120'
+                and len(h['writes']())==puts+1,
+                provider+'_old_open_payments_closed_and_new_native_plan_committed_once')
+            yes(db('SELECT id,hash_id,payid,user_id,type,plan_id,server_id,order_id,price,message_id,chat_id FROM pays WHERE id IN ('+ids+') ORDER BY id')==old_details and
+                db('SELECT state FROM pays WHERE id IN ('+ids+') ORDER BY id')==
+                'service_superseded\nservice_superseded\nservice_superseded\nservice_superseded\nservice_superseded',
+                provider+'_old_invoice_and_receipt_bytes_preserved_only_state_retired')
+            yes(h['call']('review_superseded_payment',pay=wallet_quote)==
+                {'state':'service_superseded','eligible':False},
+                provider+'_low_wallet_old_service_quote_cannot_resume_after_recharge')
+            removed=h['call']('review_receipt_buttons',order=h['oid'])
+            yes(len(removed)==2 and
+                sorted(e['payload']['chat_id'] for e in removed)==[9001,9002]
+                and all('reply_markup' not in e['payload'] for e in removed),
+                provider+'_retired_manual_receipt_buttons_removed_after_real_change')
+            yes(db('SELECT state FROM pays WHERE id='+str(wallet_topup))=='pending',
+                provider+'_independent_wallet_topup_never_swept_by_service_change')
+            yes(h['call']('review_superseded_payment',pay=issued)==
+                {'state':'service_superseded','eligible':False},
+                provider+'_late_old_issued_invoice_preflight_denied_and_status_explicit')
+            # The retired invoice is terminal for safe cleanup only while
+            # its pre-fulfillment evidence remains pending/review. New
+            # fulfillment progress cannot masquerade as an old canceled
+            # invoice, even after the original service was changed.
+            yes(h['call']('review_retired_terminal',pay=issued) is True,
+                provider+'_superseded_original_pending_evidence_is_terminal_for_cleanup')
+            db("UPDATE payment_attempts SET stage='fulfilling' WHERE pay_row_id="+str(issued))
+            yes(h['call']('review_retired_terminal',pay=issued) is False,
+                provider+'_retired_original_unexpected_fulfillment_still_blocks_cleanup')
+            db("UPDATE payment_attempts SET stage='pending' WHERE pay_row_id="+str(issued))
+            # A NEW price/plan-bound invoice after a real change is valid,
+            # and reselecting the identical plan must not invalidate it.
+            new_invoice=invoice(h,'newplan','pending',order=h['peer'])
+            db(f'UPDATE pays SET plan_id=120 WHERE id={new_invoice}')
+            if provider=='pasarguard':
+                # Quote without 012 snapshot is intentionally NOT payable.
+                # Pin the verified, new Native identity exactly as the real
+                # current PasarGuard invoice creation path must.
+                yes(h['call']('pin_new_pg_invoice',pay=new_invoice)=='pinned' and
+                    db('SELECT provider_snapshot IS NOT NULL FROM pays WHERE id='+str(new_invoice))=='1',
+                    'pasarguard_new_plan_quote_has_fresh_verified_native_pin')
+            yes(h['call']('review_superseded_payment',pay=new_invoice)['eligible'] is True,
+                provider+'_new_plan_invoice_is_payable_after_successful_service_change')
+            old=len(h['writes']());plan(h,120)
+            yes(len(h['writes']())==old and outstanding(h)=='committed' and
+                db('SELECT state FROM pays WHERE id='+str(new_invoice))=='pending' and
+                h['call']('review_superseded_payment',pay=new_invoice)['eligible'] is True,
+                provider+'_identical_plan_noop_never_retires_new_valid_invoice')
+
+    # 014 API evidence and pending redemption are more authoritative than
+    # a still-open invoice. A started claim is not safe to retire silently.
+    with harness('pasarguard') as h:
+        seeded(h);db=h['db']
+        db((ROOT/'migrations/post-v9/014_api_payment_evidence.sql').read_text())
+        pay=invoice(h,'apiheld','pending',order=h['oid'])
+        db('UPDATE pays SET user_id=1001 WHERE id='+str(pay))
+        db("INSERT INTO payment_attempts (pay_row_id,provider,order_hash,"
+           "quote_amount,quote_currency,local_amount_toman,stage,"
+           "evidence_claim_token,evidence_fulfillment_state)"
+           " SELECT id,'bank_transfer',hash_id,137,'toman',137,'pending',"
+           "'0123456789abcdef0123456789abcdef',NULL FROM pays WHERE id="+str(pay))
+        before=subject(h);money=finance(h);puts=len(h['writes']())
+        plan(h,120)
+        yes(subject(h)==before and finance(h)==money and len(h['writes']())==puts,
+            'pasarguard_active_api_evidence_lease_blocks_retirement')
+        db('UPDATE payment_attempts SET evidence_claim_token=NULL WHERE pay_row_id='+str(pay))
+        db("UPDATE payment_attempts SET evidence_fulfillment_state='reserved' WHERE pay_row_id="+str(pay))
+        plan(h,120)
+        yes(subject(h)==before and len(h['writes']())==puts and
+            db('SELECT state FROM pays WHERE id='+str(pay))=='pending',
+            'pasarguard_reserved_api_native_fulfillment_holds_plan_change')
+        db('UPDATE payment_attempts SET evidence_fulfillment_state=NULL WHERE pay_row_id='+str(pay))
+        plan(h,120)
+        yes(db('SELECT state FROM pays WHERE id='+str(pay))=='service_superseded' and
+            len(h['writes']())==puts+1 and outstanding(h)=='committed',
+            'pasarguard_clean_api_invoice_retired_without_false_payment_settlement')
+
+    # RC30 installed incident: a partial Marzban PUT kept protocol keys that
+    # the new plan omitted, then the durable journal blocked all retries.
+    # Exercise the REAL PHP plan controller against a merge-semantics mock.
+    with harness('marzban') as h:
+        seeded(h)
+        vendor=h['vendor']
+        vendor.partial_plan_inbounds=True
+        vendor.edit_account['inbounds'].update({
+            'shadowsocks':['old-shadowsocks'],'trojan':['old-trojan']})
+        vendor.edit_account['proxies'].update({
+            'shadowsocks':{'password':'old-secret'},
+            'trojan':{'password':'old-secret'}})
+        old_note=vendor.edit_account['note']
+        old_usage=vendor.edit_account['used_traffic']
+        before=len(h['writes']())
+        plan(h,120)
+        yes(len(h['writes']())==before+1 and outstanding(h)=='committed',
+            'marzban_partial_put_protocol_removal_committed_once')
+        wire=json.loads(h['writes']()[-1]['body'])['inbounds']
+        yes(wire.get('shadowsocks')==[] and wire.get('trojan')==[] and
+            wire['vless']==['fake-inbound'] and
+            vendor.edit_account['inbounds']=={'vless':['fake-inbound']},
+            'marzban_single_put_explicitly_clears_omitted_protocol_keys')
+        yes(vendor.edit_account['note']==old_note and
+            vendor.edit_account['used_traffic']==old_usage and
+            'shadowsocks' in vendor.edit_account['proxies'] and
+            'trojan' in vendor.edit_account['proxies'],
+            'marzban_access_only_put_preserves_notes_usage_and_credentials')
+        old_puts=len(h['writes']())
+        plan(h,120)
+        yes(len(h['writes']())==old_puts and outstanding(h)=='committed',
+            'marzban_repeated_same_plan_is_verified_no_put')
+
+    # PasarGuard is NOT a Marzban protocol host edit. Its Native group_ids
+    # are the entire absolute entitlement set. Verify one bounded physical
+    # write, exact readback and no same-plan replay on a real PG wire fixture.
+    with harness('pasarguard') as h:
+        seeded(h)
+        vendor=h['vendor']
+        before=vendor.users[41].copy()
+        writes=len(h['writes']())
+        plan(h,120)
+        after=vendor.users[41]
+        yes(len(h['writes']())==writes+1 and
+            after['group_ids']==[2] and outstanding(h)=='committed',
+            'pasarguard_plan_replaces_native_groups_exactly_once')
+        yes(after['note']==before['note'] and
+            after['used_traffic']==before['used_traffic'] and
+            after['expire']==before['expire'],
+            'pasarguard_plan_preserves_note_usage_and_expiry')
+        old_writes=len(h['writes']())
+        plan(h,120)
+        yes(len(h['writes']())==old_writes and outstanding(h)=='committed',
+            'pasarguard_same_plan_replay_is_native_no_put')
 
     for provider in ('marzban', 'pasarguard'):
         # F2 financial cases plus F1 before and after a real F3 held journal.
@@ -411,7 +743,10 @@ def main():
             db(f'DELETE FROM service_effects WHERE id={effects}')
 
             legacy=invoice(h,'legacyaddon','pending',f'INCREASE_DAY_{h["peer"]}_3',0)
-            denied(h,'legacy_type_encoded_addon_unclaimed')
+            # An unrelated actor cannot make a foreign customer's old quote
+            # appear settled just by forging its service-order ID in type.
+            db('UPDATE pays SET user_id=1001 WHERE id='+str(legacy))
+            denied(h,'foreign_legacy_type_encoded_addon_unclaimed')
             db(f'DELETE FROM pays WHERE id={legacy}')
 
             # A Panel Group is the administrator's independent declaration
@@ -735,8 +1070,11 @@ def main():
                          order=h['oid'],type='BUY_SUB')=='issued',
                 provider+'_state1_allows_new_purchase_invoice')
             yes(h['call']('review_invoice',server=2,plan=119,
-                         order=h['oid'],type='RENEW_ACCOUNT')=='issued',
+                         order=h['oid'],type='RENEW_ACCOUNT',actor=1001)=='issued',
                 provider+'_state1_allows_existing_renewal_invoice')
+            yes(h['call']('review_invoice',server=2,plan=119,
+                         order=h['oid'],type='RENEW_ACCOUNT',actor=9001)=='denied',
+                provider+'_cannot_issue_foreign_subscription_renewal')
 
         with harness(provider) as h:
             seeded(h)
@@ -749,7 +1087,7 @@ def main():
             yes(h['call']('review_invoice',server=2,plan=119,
                          order=h['oid'],type='BUY_SUB')=='denied' and
                 h['call']('review_invoice',server=2,plan=119,
-                          order=h['oid'],type='RENEW_ACCOUNT')=='denied',
+                          order=h['oid'],type='RENEW_ACCOUNT',actor=1001)=='denied',
                 provider+'_state0_financial_draft_admission_denied')
 
             db("UPDATE server_info SET state=2 WHERE id=2;UPDATE server_plans SET active=0 WHERE id=119")
@@ -761,7 +1099,7 @@ def main():
             yes(h['call']('review_invoice',server=2,plan=119,
                          order=h['oid'],type='BUY_SUB')=='denied' and
                 h['call']('review_invoice',server=2,plan=119,
-                          order=h['oid'],type='RENEW_ACCOUNT')=='issued',
+                          order=h['oid'],type='RENEW_ACCOUNT',actor=1001)=='issued',
                 provider+'_state2_inactive_plan_blocks_new_invoice_but_allows_own_renewal')
             db("UPDATE server_info SET state=1 WHERE id=2")
             status=h['call']('review_commerce',server=2,plan=119,order=h['oid'])
@@ -907,6 +1245,218 @@ def main():
                         remark=h['remark'],orders=[])=='allowed' and
                     len(h['writes']())==puts,
                     'marzban_resolved_historical_journal_does_not_block_native_admission')
+
+    # A01: Administrator GET-only recovery of exactly the original, already
+    # dispatched journal after Native changed but local final COMMIT failed.
+    # The original error is injected ONLY into disposable local order SQL;
+    # the authenticated Native mock has performed the ONE PUT already.
+    for provider in ('marzban','pasarguard'):
+        with harness(provider) as h:
+            seeded(h)
+            db=h['db'];initial=finance(h);existing=subject(h)
+            db('CREATE TRIGGER fixture_block_plan_recovery BEFORE UPDATE ON orders_list '
+               "FOR EACH ROW SIGNAL SQLSTATE '45000' "
+               "SET MESSAGE_TEXT='fixture_after_native_finalization_failed'")
+            try:
+                writes=len(h['writes']())
+                plan(h,120)
+            finally:
+                db('DROP TRIGGER fixture_block_plan_recovery')
+            journal=int(db('SELECT MAX(id) FROM service_plan_changes'))
+            yes(journal>0 and outstanding(h)=='dispatching' and
+                subject(h)==existing and len(h['writes']())==writes+1,
+                provider+'_get_only_recovery_original_dispatched_journal_preserved')
+            wrong=h['call']('review_recover',journal=journal,actor=9001,order=h['peer'])
+            yes(wrong['success'] is False and outstanding(h)=='dispatching' and
+                len(h['writes']())==writes+1,
+                provider+'_get_only_recovery_stale_order_callback_denied')
+            denied=h['call']('review_recover',journal=journal,actor=1001)
+            yes(denied['success'] is False and outstanding(h)=='dispatching' and
+                len(h['writes']())==writes+1,
+                provider+'_get_only_recovery_nonadmin_denied_without_put')
+            if provider=='marzban':
+                wanted=copy.deepcopy(h['vendor'].edit_account['inbounds'])
+                h['vendor'].edit_account['inbounds']={'vless':['inbound']}
+            else:
+                wanted=copy.deepcopy(h['vendor'].users[41]['group_ids'])
+                h['vendor'].users[41]['group_ids']=[2,5]
+            held=h['call']('review_recover',journal=journal,actor=9001)
+            yes(held['success'] is False and outstanding(h)=='dispatching' and
+                subject(h)==existing and len(h['writes']())==writes+1,
+                provider+'_get_only_recovery_incomplete_native_stays_held')
+            if provider=='marzban': h['vendor'].edit_account['inbounds']=wanted
+            else: h['vendor'].users[41]['group_ids']=wanted
+            recovered=h['call']('review_recover',journal=journal,actor=9001)
+            yes(recovered=={'success':True,'reason':'recovered','shared_count':2}
+                and outstanding(h)=='committed' and len(h['writes']())==writes+1 and
+                db(f'SELECT fileid FROM orders_list WHERE id IN ({h["oid"]},{h["peer"]}) ORDER BY id')=='120\n120' and
+                db('SELECT userid,wallet FROM users ORDER BY userid;'
+                   'SELECT id,price,state FROM pays ORDER BY id;'
+                   'SELECT id,ucount FROM server_info ORDER BY id')==initial,
+                provider+'_get_only_recovery_verified_completed_without_second_native_put')
+            repeat=h['call']('review_recover',journal=journal,actor=9001)
+            yes(repeat['success'] is False and outstanding(h)=='committed' and
+                len(h['writes']())==writes+1,
+                provider+'_get_only_recovery_duplicate_callback_denied_without_put')
+
+    # B03: GET-only journal recovery clears original receipt keyboards
+    # strictly post-commit. Telegram failure cannot reverse Native or SQL.
+    for provider in ('marzban','pasarguard'):
+        with harness(provider) as h:
+            seeded(h)
+            db=h['db'];old_quote=invoice(h,'recoveredbuttons','pending')
+            copies=json.dumps([{'chat_id':9002,'message_id':7712}])
+            db("UPDATE pays SET chat_id=9001,message_id=7711,admins_messages='"
+               +copies+f"' WHERE id={old_quote}")
+            db('CREATE TRIGGER fixture_block_recovery_markup BEFORE UPDATE ON orders_list '
+               "FOR EACH ROW SIGNAL SQLSTATE '45000' "
+               "SET MESSAGE_TEXT='fixture_after_native_before_recovery_markup'")
+            try:
+                before=len(h['writes']())
+                plan(h,120)
+            finally:
+                db('DROP TRIGGER fixture_block_recovery_markup')
+            journal=int(db('SELECT MAX(id) FROM service_plan_changes'))
+            yes(outstanding(h)=='dispatching' and
+                db(f'SELECT state FROM pays WHERE id={old_quote}')=='pending' and
+                len(h['writes']())==before+1,
+                provider+'_recover_markups_precommit_original_invoice_no_double_put')
+            result=h['call']('review_recover_markups',journal=journal,
+                actor=9001,order=h['oid'],telegram_fail=True)
+            markups=result['markups']
+            yes(result['result']=={'success':True,'reason':'recovered','shared_count':2}
+                and outstanding(h)=='committed' and
+                db(f'SELECT state FROM pays WHERE id={old_quote}')=='service_superseded'
+                and len(h['writes']())==before+1 and len(markups)==2 and
+                sorted(e['payload']['chat_id'] for e in markups)==[9001,9002]
+                and all('reply_markup' not in e['payload'] for e in markups),
+                provider+'_recover_markups_original_keyboard_after_commit')
+            again=h['call']('review_recover_markups',journal=journal,
+                actor=9001,order=h['oid'])
+            yes(again['result']['success'] is False and again['markups']==[] and
+                len(h['writes']())==before+1 and outstanding(h)=='committed',
+                provider+'_recover_markup_failure_never_reopens_or_replays')
+    # A02: An explicit administrator action may dispatch ONE NEW corrective
+    # Native mutation for an exact, still incomplete original journal. The
+    # original 017 intent and local financial/account provenance survive.
+    for provider in ('marzban','pasarguard'):
+        with harness(provider) as h:
+            seeded(h)
+            db=h['db'];prior=finance(h);old=subject(h)
+            db('CREATE TRIGGER fixture_block_plan_correction BEFORE UPDATE ON orders_list '
+               "FOR EACH ROW SIGNAL SQLSTATE '45000' "
+               "SET MESSAGE_TEXT='fixture_original_native_committed_only'")
+            try:
+                puts=len(h['writes']())
+                plan(h,120)
+            finally:
+                db('DROP TRIGGER fixture_block_plan_correction')
+            jid=int(db('SELECT MAX(id) FROM service_plan_changes'))
+            journal_count=int(db('SELECT COUNT(*) FROM service_plan_changes'))
+            original=db(f'SELECT intent_json FROM service_plan_changes WHERE id={jid}')
+            yes(outstanding(h)=='dispatching' and len(h['writes']())==puts+1,
+                provider+'_correction_original_put_hold_prepared')
+            if provider=='marzban':
+                h['vendor'].edit_account['inbounds']={'vless':['inbound']}
+            else:
+                h['vendor'].users[41]['group_ids']=[2,5]
+            forbidden=h['call']('review_correct',journal=jid,actor=1001,order=h['oid'])
+            forged=h['call']('review_correct',journal=jid,actor=9001,order=h['peer'])
+            yes(not forbidden['success'] and not forged['success'] and
+                len(h['writes']())==puts+1 and
+                int(db('SELECT COUNT(*) FROM service_plan_changes'))==journal_count and
+                outstanding(h)=='dispatching',
+                provider+'_correction_nonadmin_and_stale_order_denied_without_put')
+            corrected=h['call']('review_correct',journal=jid,actor=9001,order=h['oid'])
+            yes(corrected=={'success':True,'reason':'corrected','shared_count':2},
+                provider+'_corrective_native_success')
+            yes(len(h['writes']())==puts+2 and outstanding(h)=='committed' and
+                db(f'SELECT fileid FROM orders_list WHERE id IN ({h["oid"]},{h["peer"]}) ORDER BY id')=='120\n120' and
+                db(f'SELECT intent_json FROM service_plan_changes WHERE id={jid}')==original and
+                int(db('SELECT COUNT(*) FROM service_plan_changes'))==journal_count+1,
+                provider+'_correction_one_additional_put_and_original_intent_immutable')
+            extra=json.loads(db("SELECT intent_json FROM service_plan_changes "
+                f"WHERE provider='{provider}_correction' AND source_order_id={h['oid']}"))
+            yes(extra['corrects_journal_id']==jid and
+                extra['requested_by']==9001 and
+                extra['original_intent_sha256']==hashlib.sha256(original.encode()).hexdigest() and
+                db("SELECT provider,state FROM service_plan_changes "
+                   f"WHERE provider='{provider}_correction' AND source_order_id={h['oid']}")==provider+'_correction\tcommitted',
+                provider+'_correction_authorized_separate_durable_audit')
+            replay=h['call']('review_correct',journal=jid,actor=9001,order=h['oid'])
+            yes(not replay['success'] and len(h['writes']())==puts+2 and
+                int(db('SELECT COUNT(*) FROM service_plan_changes'))==journal_count+1 and
+                finance(h)==prior,
+                provider+'_correction_replayed_callback_no_native_or_financial_effect')
+
+    # A02 negative assurance: an already-complete first Native PUT is never
+    # repeated by the corrective route. Only GET-only settlement is allowed.
+    for provider in ('marzban','pasarguard'):
+        with harness(provider) as h:
+            seeded(h)
+            db=h['db']
+            db('CREATE TRIGGER fixture_a02_original_complete BEFORE UPDATE ON orders_list '
+               "FOR EACH ROW SIGNAL SQLSTATE '45000' "
+               "SET MESSAGE_TEXT='fixture_original_complete_local_failure'")
+            try:
+                plan(h,120)
+            finally:
+                db('DROP TRIGGER fixture_a02_original_complete')
+            jid=int(db('SELECT MAX(id) FROM service_plan_changes'))
+            count=int(db('SELECT COUNT(*) FROM service_plan_changes'))
+            writes=len(h['writes']())
+            refused=h['call']('review_correct',journal=jid,actor=9001,order=h['oid'])
+            yes(refused=={'success':False,'reason':'physical_correction_get_only_available',
+                'shared_count':0} and len(h['writes']())==writes and
+                int(db('SELECT COUNT(*) FROM service_plan_changes'))==count and
+                outstanding(h)=='dispatching',
+                provider+'_correction_completed_native_never_sends_second_put')
+            recovered=h['call']('review_recover',journal=jid,actor=9001,order=h['oid'])
+            yes(recovered['success'] and len(h['writes']())==writes and
+                outstanding(h)=='committed',
+                provider+'_correction_complete_uses_only_original_get_finalization')
+
+    # A02 uncertain-local-finality: the authorized corrective Native write
+    # succeeded but the local order UPDATE did not. Retain both journal rows
+    # and reject another PUT; GET-only recovery finishes atomically later.
+    for provider in ('marzban','pasarguard'):
+        with harness(provider) as h:
+            seeded(h)
+            db=h['db']
+            db('CREATE TRIGGER fixture_a02_original_lost BEFORE UPDATE ON orders_list '
+               "FOR EACH ROW SIGNAL SQLSTATE '45000' "
+               "SET MESSAGE_TEXT='fixture_original_native_success_local_failed'")
+            try:
+                plan(h,120)
+            finally:
+                db('DROP TRIGGER fixture_a02_original_lost')
+            jid=int(db('SELECT MAX(id) FROM service_plan_changes'))
+            if provider=='marzban':
+                h['vendor'].edit_account['inbounds']={'vless':['inbound']}
+            else:
+                h['vendor'].users[41]['group_ids']=[2,5]
+            writes=len(h['writes']())
+            db('CREATE TRIGGER fixture_a02_corrected_lost BEFORE UPDATE ON orders_list '
+               "FOR EACH ROW SIGNAL SQLSTATE '45000' "
+               "SET MESSAGE_TEXT='fixture_corrective_native_success_local_failed'")
+            try:
+                held=h['call']('review_correct',journal=jid,actor=9001,order=h['oid'])
+            finally:
+                db('DROP TRIGGER fixture_a02_corrected_lost')
+            correction=f"{provider}_correction"
+            yes(not held['success'] and len(h['writes']())==writes+1 and
+                outstanding(h)=='dispatching' and
+                db(f"SELECT state FROM service_plan_changes WHERE provider='{correction}'")=='dispatching',
+                provider+'_correction_local_finality_failure_leaves_both_journals_held')
+            denied=h['call']('review_correct',journal=jid,actor=9001,order=h['oid'])
+            yes(not denied['success'] and len(h['writes']())==writes+1,
+                provider+'_correction_replayed_after_local_failure_no_second_put')
+            recovered=h['call']('review_recover',journal=jid,actor=9001,order=h['oid'])
+            yes(recovered['success'] and outstanding(h)=='committed' and
+                db(f"SELECT state FROM service_plan_changes WHERE provider='{correction}'")=='committed' and
+                db(f'SELECT fileid FROM orders_list WHERE id IN ({h["oid"]},{h["peer"]}) ORDER BY id')=='120\n120' and
+                len(h['writes']())==writes+1,
+                provider+'_correction_delayed_get_only_commits_both_original_and_audit')
 
     # F3: independent real Marzban API admission evidence complements
     # PasarGuard's authenticated native preflight exact-SQL-claim proof.

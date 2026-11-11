@@ -119,8 +119,8 @@ check($r['pay_state']==='paid' && $r['stage']==='done' &&
 check(achbotGatewayReviewCommit($db,9001,$a,'approve',9001)['status']!=='completed',
  'duplicate_approval_refused');
 
-$b=seed($db,302,'zarinpal','review','verification_uncertain');
-check(achbotGatewayReviewEligible($db,$b,'reject')!==null,'zarinpal_saved_uncertainty');
+$b=seed($db,302,'zarinpal','review','verification_unavailable');
+check(achbotGatewayReviewEligible($db,$b,'reject')!==null,'zarinpal_verified_transport_outage_reviewable');
 check(achbotGatewayReviewCommit($db,9001,$b,'reject',9001)['status']==='rejected',
  'hosted_original_rejection');
 $r=state($db,302);
@@ -134,17 +134,44 @@ $c=seed($db,303,'nowpayments','review','finished','finished');
 check(achbotGatewayReviewEligible($db,$c,'reject')===null,
  'funded_invoice_not_declined_without_refund');
 $d=seed($db,304,'nextpay','pending',null,null,100000,4000);
-check(achbotGatewayReviewEligible($db,$d,'approve')!==null,
- 'aged_pending_invoice_can_be_manually_attested');
+check(achbotGatewayReviewEligible($db,$d,'approve')===null,
+ 'aged_unpaid_invoice_cannot_be_attested');
 $e=seed($db,305,'nextpay','pending',null,null,100000,0);
 check(achbotGatewayReviewEligible($db,$e,'approve')===null,
  'new_checkout_not_prematurely_reviewed');
-$f=seed($db,306,'zarinpal','review','verification_uncertain',null,99999);
+$unproved=seed($db,1101,'zarinpal','review','verification_uncertain');
+check(achbotGatewayReviewEligible($db,$unproved,'approve')===null &&
+ achbotGatewayReviewEligible($db,$unproved,'reject')===null,
+ 'ordinary_unknown_merchant_outcome_not_manual_attestation');
+$f=seed($db,306,'zarinpal','review','verification_unavailable',null,99999);
 check(achbotGatewayReviewEligible($db,$f,'approve')===null,
  'changed_local_amount_fails_closed');
 $g=seed($db,307,'nowpayments','review','finished','refunded');
 check(achbotGatewayReviewEligible($db,$g,'approve')===null,
  'refunded_original_never_credited');
+$refunded=seed($db,1105,'nowpayments','review','refunded','refunded');
+check(achbotGatewayReviewEligible($db,$refunded,'approve')===null &&
+ achbotGatewayReviewEligible($db,$refunded,'reject')!==null,
+ 'signed_refund_can_decline_local_invoice_without_new_refund');
+$part=seed($db,1102,'nowpayments','review','partially_paid','partially_paid');
+check(achbotGatewayReviewEligible($db,$part,'approve')!==null &&
+ achbotGatewayReviewEligible($db,$part,'reject')===null,
+ 'signed_partial_funds_review_without_false_rejection');
+$sup=seed($db,1103,'nowpayments','pending','waiting','confirmed');
+$db->query("UPDATE pays SET state='service_superseded' WHERE id=1103");
+$scope=achbotGatewayAttentionScope();
+$visible=$db->query("SELECT p.id FROM pays p JOIN payment_attempts a ON a.pay_row_id=p.id WHERE $scope")
+ ->fetch_all(MYSQLI_ASSOC);
+$ids=array_map('intval',array_column($visible,'id'));
+check(!in_array(304,$ids,true) && !in_array(305,$ids,true) &&
+ !in_array(1101,$ids,true) && in_array(1102,$ids,true) &&
+ in_array(1103,$ids,true),
+ 'attention_requires_funds_or_real_outage_and_retired_funds_are_read_only');
+check(achbotGatewayReviewEligible($db,$sup,'approve')===null &&
+ achbotGatewayReviewEligible($db,$sup,'reject')===null &&
+ achbotGatewayReviewArchive($db,9001,$sup,9001)==='archived' &&
+ state($db,1103)['pay_state']==='service_superseded',
+ 'retired_signed_funds_may_be_archived_but_never_fulfilled');
 
 $h=seed($db,308,'nowpayments','review','confirmed','confirmed');
 $GLOBALS['fail_for']=308;
@@ -351,7 +378,7 @@ check(achbotGatewayReviewArchive($db,9002,$revoked,9001)==='archived',
 
 // A missing/incorrect unique original-attempt index must never close one of
 // several rows or appear to finish the actual payment.
-$broken=seed($db,313,'zarinpal','review','verification_uncertain');
+$broken=seed($db,313,'zarinpal','review','verification_unavailable');
 $db->query('ALTER TABLE payment_attempts ADD INDEX idx_fixture_pay_row(pay_row_id)');
 $db->query('ALTER TABLE payment_attempts DROP INDEX uq_payment_attempt_pay_row');
 check(!achbotGatewayReviewReady($db) &&
@@ -414,9 +441,9 @@ check($db->query("SELECT state FROM service_effects WHERE id=$active")->fetch_ro
 check($db->query("SELECT state FROM service_effects WHERE id=$active")->fetch_row()[0]==='dispatching' &&
  achbotGatewayReviewArchive($db,9001,$admitted,9001)==='stale',
  'terminal_archive_immutable_stale_dispatch_evidence_retained');
-$verified=seed($db,325,'nowpayments','review','fulfillment_failed');
-stalePaid($db,325,$verified);
-$verifiedEffect=reserveEffect($db,325,1,'native_verified_unlinked');
+$verified=seed($db,825,'nowpayments','review','fulfillment_failed');
+stalePaid($db,825,$verified);
+$verifiedEffect=reserveEffect($db,825,1,'native_verified_unlinked');
 $db->query("UPDATE service_effects SET state='verified',verified_at=NOW()
  WHERE id=$verifiedEffect");
 check(achbotGatewayReviewArchive($db,9001,$verified,9001)==='archived' &&
@@ -431,18 +458,18 @@ achbotEffectAdmitPaidDispatch($db,$liveEffect);
 
 // Valid persisted near-5000-character description and five long Native
 // evidence rows must not hide the original review actions in Telegram.
-$long=seed($db,326,'nowpayments','review','fulfillment_failed');
-stalePaid($db,326,$long);
+$long=seed($db,826,'nowpayments','review','fulfillment_failed');
+stalePaid($db,826,$long);
 $description=mb_substr(str_repeat('شرح <>& 😀 و توضیح فارسی ',350),0,4990,'UTF-8');
 $q=$db->prepare("UPDATE pays SET type='BUY_SUB',agent_count=5,
- description=?,plan_id=7 WHERE id=326");
+ description=?,plan_id=7 WHERE id=826");
 $q->bind_param('s',$description);$q->execute();$q->close();
 $q=$db->prepare("UPDATE users SET name=? WHERE userid=1001");
 $longName=str_repeat('نام <>&😀 ',8);
 $q->bind_param('s',$longName);$q->execute();$q->close();
 for($i=1;$i<=5;$i++) {
  $letter=chr(96+$i);
- $e=reserveEffect($db,326,$i,str_repeat($letter,82));
+ $e=reserveEffect($db,826,$i,str_repeat($letter,82));
  $db->query("UPDATE service_effects SET state='dispatching',
    provider_state=REPEAT('u',32) WHERE id=$e");
 }
@@ -453,8 +480,8 @@ for($i=1;$i<=2;$i++) {
  $payment='provider-payment-'.$i.'-'.str_repeat('z',90);
  $q->bind_param('is',$long,$payment);$q->execute();$q->close();
 }
-$pendingLong=seed($db,327,'nowpayments','pending',null,null,100000,30000);
-$q=$db->prepare('UPDATE pays SET description=? WHERE id=327');
+$pendingLong=seed($db,827,'nextpay','review','verification_unavailable',null,100000,30000);
+$q=$db->prepare('UPDATE pays SET description=? WHERE id=827');
 $q->bind_param('s',$description);$q->execute();$q->close();
 
 $j=seed($db,309,'nowpayments','review','confirmed','confirmed');
@@ -486,7 +513,7 @@ echo json_encode([
  'financial_double_credit'=>false,'existing_attempt_only'=>true,
  'race_effect_id'=>$raceEffect,'race_attempt_id'=>$raceAttempt,
  'live_effect_id'=>$liveEffect,'live_attempt_id'=>$live,
- 'long_case_id'=>326,'pending_case_id'=>327],
+ 'long_case_id'=>826,'pending_case_id'=>827],
  JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE);
 '''
 PHP_CASE = r"""<?php

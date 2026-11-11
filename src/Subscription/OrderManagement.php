@@ -13,7 +13,7 @@ require_once __DIR__.'/../Presentation/Text.php';
 // Every local-record management callback is privileged. A forged old button
 // or stale cached role must not disclose or mutate another customer's order.
 $achbotOrderAdminRoute=is_string($data??null) &&
-    ($data==='manageorderdatabase' || preg_match('/^(?:showUserSubscriptions|selectOrderByRemark_userid_|returnToPanel_|deleteOrder_|confirmDeleteOrder_|toggleAgent_|toggleNotif_|orderWarningStatus_|changeExpireDate_|changeToken_|changeUUID_|changeServerId_|selectServerId_|changeFileId_|selectFileId_|quickUserOrderDetails_)/D',$data));
+    ($data==='manageorderdatabase' || preg_match('/^(?:showUserSubscriptions|selectOrderByRemark_userid_|returnToPanel_|deleteOrder_|confirmDeleteOrder_|toggleAgent_|toggleNotif_|orderWarningStatus_|changeExpireDate_|changeToken_|changeUUID_|changeServerId_|selectServerId_|changeFileId_|selectFileId_|recoverPlanJournal_|reviewPlanCorrection_|confirmPlanCorrection_|quickUserOrderDetails_)/D',$data));
 $achbotOrderAdminStep=preg_match('/^(?:awaitingOrderRemarkOnly$|awaitingUserIdSelection_|manageOrderById_|awaitingExpireChange_|awaitingToken_|awaitingUUID_)/D',(string)($userInfo['step']??''));
 if (($achbotOrderAdminRoute || $achbotOrderAdminStep) &&
     !\AchBot\Subscription\AccountDetails\canReadAdminOrderDetails()) {
@@ -232,8 +232,10 @@ function showOrderManagementPanel($order, $msgId = null,string $notice=''){
         [["text" => \achbotMessage('admin_settings.management.local_delete'), "callback_data" => "deleteOrder_{$order['id']}"]],
         [["text" => \achbotMessage('admin_settings.management.local_expiry'), "callback_data" => "changeExpireDate_{$order['id']}"]],
         [["text" => \achbotMessage('subscription.order_management.show_order_management_panel.button.7256e018bd'), "callback_data" => "changeToken_{$order['id']}"]],
-        [["text" => \achbotMessage('subscription.order_management.show_order_management_panel.button.8824464622'), "callback_data" => "changeServerId_{$order['id']}"]],
-        [["text" => \achbotMessage('admin_settings.management.local_plan'), "callback_data" => "changeFileId_{$order['id']}_{$order['server_id']}"]],
+        [
+            ["text" => \achbotMessage('subscription.order_management.show_order_management_panel.button.8824464622'), "callback_data" => "changeServerId_{$order['id']}"],
+            ["text" => \achbotMessage('admin_settings.management.local_plan'), "callback_data" => "changeFileId_{$order['id']}_{$order['server_id']}"]
+        ],
         [["text" => \achbotMessage('subscription.order_management.show_order_management_panel.button.8851b5ce4f'), "callback_data" => "changeUUID_{$order['id']}"]],
 		[["text" => \achbotMessage('subscription.order_management.show_order_management_panel.button.72e5322e9a', ['agentStatus' => $agentStatus]), "callback_data" => "toggleAgent_{$order['id']}"]],
         [["text"=>$warning['label'],"callback_data"=>"orderWarningStatus_{$order['id']}"]],
@@ -249,6 +251,39 @@ function showOrderManagementPanel($order, $msgId = null,string $notice=''){
     }
     if ($provider==='pasarguard')
         array_splice($keyboard,1,0,[[['text'=>\achbotMessage('subscription.order_management.show_order_management_panel.button.198b410113'),'callback_data'=>'pgResetAccount'.(int)$order['id']]]]);
+
+    // Offer the GET-only recovery action only for an exact originating
+    // dispatched plan journal. Older installs without 017 retain their UI.
+    if (in_array($provider,['marzban','pasarguard'],true)) {
+        try {
+        require_once __DIR__.'/../Admin/Access.php';
+        if (achbotAdminCanFor($GLOBALS['connection'],(int)($GLOBALS['from_id']??0),
+            (int)($GLOBALS['admin']??0),'orders')) {
+            $tables=$GLOBALS['connection']->query("SELECT TABLE_TYPE,ENGINE FROM information_schema.TABLES
+                WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='service_plan_changes'");
+            $table=$tables?$tables->fetch_assoc():null;
+            if ($tables) $tables->free();
+            if ($table && $table['TABLE_TYPE']==='BASE TABLE' &&
+                strcasecmp((string)$table['ENGINE'],'InnoDB')===0) {
+                $q=$GLOBALS['connection']->prepare("SELECT id FROM service_plan_changes
+                    WHERE source_order_id=? AND provider IN ('marzban','pasarguard')
+                    AND state='dispatching' ORDER BY id DESC LIMIT 1");
+                $orderId=(int)$order['id'];$q->bind_param('i',$orderId);$q->execute();
+                $pending=$q->get_result()->fetch_assoc();$q->close();
+                if ($pending) {
+                    $keyboard[]=[[ 'text'=>\achbotMessage('subscription.service_plan_recovery.action'),
+                        'callback_data'=>'recoverPlanJournal_'.(int)$pending['id'].'_'.$orderId ]];
+                    $keyboard[]=[[ 'text'=>\achbotMessage('subscription.service_plan_correction.action'),
+                        'callback_data'=>'reviewPlanCorrection_'.(int)$pending['id'].'_'.$orderId ]];
+                }
+            }
+        }
+        } catch (Throwable $error) {
+            // A partial/older 017 installation must not break the ordinary
+            // read-only order panel or fabricate a recovery action.
+            error_log('achbot_plan_recovery_action_unavailable class='.get_class($error));
+        }
+    }
 
     $stmt=$GLOBALS['connection']->prepare('SELECT i.title AS server_title,p.title AS plan_title FROM orders_list o LEFT JOIN server_info i ON i.id=o.server_id LEFT JOIN server_plans p ON p.id=o.fileid WHERE o.id=?');
     $orderId=(int)$order['id'];$stmt->bind_param('i',$orderId);$stmt->execute();$context=$stmt->get_result()->fetch_assoc()??[];$stmt->close();
@@ -539,6 +574,8 @@ if (preg_match('/^selectServerId_(\d+)_(\d+)$/D', (string)($data ?? ''), $match)
         alert(\achbotMessage('subscription.order_management.show_order_management_panel.alert.c5dae93802'), true);
         return;
     }
+    require_once __DIR__.'/PhysicalService.php';
+    achbotNotifyServiceChange('server',$result,(int)$from_id,true);
     sendMessage(\achbotMessage('subscription.order_management.show_order_management_panel.message.88e0b88b0d'));
     $stmt = $connection->prepare("SELECT * FROM `orders_list` WHERE `id` = ?");
     $stmt->bind_param('i', $id);
@@ -576,6 +613,60 @@ if (preg_match('/^changeFileId_(\\d+)_(\\d+)$/', (string) ($data ?? ''), $match)
     sendMessage(\achbotMessage('subscription.order_management.show_order_management_panel.message.877fdebc48'), json_encode(['inline_keyboard' => $keyboard]));
 }
 
+if (preg_match('/^reviewPlanCorrection_([1-9][0-9]*)_([1-9][0-9]*)$/D',
+    (string)($data??''),$match)) {
+    $journalId=(int)$match[1];$orderId=(int)$match[2];
+    require_once __DIR__.'/../Admin/Access.php';
+    if (!achbotAdminCanFor($connection,(int)$from_id,(int)($GLOBALS['admin']??0),'orders')) {
+        alert(\achbotMessage('subscription.order_management.show_order_management_panel.alert.057ec5448c'),true);
+        return;
+    }
+    // Displaying a confirmation button is read-only, never Native authorization.
+    // The second callback independently rechecks every SQL/Native invariant.
+    $keyboard=['inline_keyboard'=>[
+        [[ 'text'=>\achbotMessage('subscription.service_plan_correction.confirm'),
+            'callback_data'=>'confirmPlanCorrection_'.$journalId.'_'.$orderId ]],
+        [[ 'text'=>$buttonValues['back_button']??\achbotMessage('subscription.order_management.show_order_management_panel.button.b35a2352f5'),
+            'callback_data'=>'returnToPanel_'.$orderId ]]
+    ]];
+    sendMessage(\achbotMessage('subscription.service_plan_correction.warning'),
+        json_encode($keyboard,JSON_THROW_ON_ERROR));
+    return;
+}
+
+if (preg_match('/^(recoverPlanJournal|confirmPlanCorrection)_([1-9][0-9]*)_([1-9][0-9]*)$/D',
+    (string)($data??''),$match)) {
+    $journalId=(int)$match[2];$orderId=(int)$match[3];
+    $correct=$match[1]==='confirmPlanCorrection';
+    require_once __DIR__.'/PhysicalService.php';
+    $result=$correct?
+        achbotPhysicalCorrectPlan($connection,$journalId,(int)$from_id,$orderId):
+        achbotPhysicalRecoverPlan($connection,$journalId,(int)$from_id,$orderId);
+    if (!$result['success']) {
+        $key=$correct && $result['reason']==='physical_correction_get_only_available'
+            ?'subscription.service_plan_correction.get_only'
+            :'subscription.order_management.show_order_management_panel.alert.99d247fc18';
+        alert(\achbotMessage($key),true);
+        return;
+    }
+    try {
+        $q=$connection->prepare('SELECT o.id,o.userid,o.remark,p.id AS plan_id,
+            p.title AS plan_title FROM orders_list o JOIN server_plans p
+            ON p.id=o.fileid WHERE o.id=? AND o.status=1');
+        $q->bind_param('i',$orderId);$q->execute();
+        $subject=$q->get_result()->fetch_assoc();$q->close();
+        if ($subject) achbotNotifyServiceChange('plan',$subject,(int)$from_id,true);
+    } catch (Throwable $error) {
+        error_log('achbot_plan_recovery_report_unconfirmed journal_id='.$journalId);
+    }
+    sendMessage(\achbotMessage('subscription.order_management.show_order_management_panel.message.75785b37ae'));
+    $q=$connection->prepare('SELECT * FROM orders_list WHERE id=? AND status=1');
+    $q->bind_param('i',$orderId);$q->execute();
+    $order=$q->get_result()->fetch_assoc();$q->close();
+    if ($order) showOrderManagementPanel($order,$message_id);
+    return;
+}
+
 if (preg_match('/^selectFileId_(\d+)_(\d+)$/', (string) ($data ?? ''), $match)) {
     $id=(int)$match[1];$newFileId=(int)$match[2];
     require_once __DIR__.'/PhysicalService.php';
@@ -583,6 +674,18 @@ if (preg_match('/^selectFileId_(\d+)_(\d+)$/', (string) ($data ?? ''), $match)) 
     if (!$result['success']) {
         alert(\achbotMessage('subscription.order_management.show_order_management_panel.alert.99d247fc18'),true);
         return;
+    }
+    // Source of truth is the committed order+plan, not stale callback text.
+    try {
+        $q=$connection->prepare('SELECT o.id,o.userid,o.remark,p.title AS plan_title FROM orders_list o JOIN server_plans p ON p.id=o.fileid WHERE o.id=? AND o.fileid=?');
+        $q->bind_param('ii',$id,$newFileId);$q->execute();$subject=$q->get_result()->fetch_assoc();$q->close();
+        if ($subject) {
+            $subject['plan_id']=$newFileId;
+            require_once __DIR__.'/PhysicalService.php';
+            achbotNotifyServiceChange('plan',$subject,(int)$from_id,true);
+        }
+    } catch (Throwable $noticeError) {
+        error_log('achbot_service_plan_report_unconfirmed order_id='.$id);
     }
     sendMessage(\achbotMessage('subscription.order_management.show_order_management_panel.message.75785b37ae'));
     $s=$connection->prepare('SELECT * FROM orders_list WHERE id=?');

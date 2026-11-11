@@ -1,0 +1,46 @@
+{
+  "version": 1,
+  "base_commit": "251c15d1ff6436b4a3b1651c5aeb26ebf99fe31e",
+  "issue": "https://github.com/ach1992/bot-refactor/issues/144",
+  "files": {
+    "user": {
+      "before_sha256": "c82a24e84b73376bc62a8dc23faae311ba9c145e1e669a2bc1228f81c4d95b43",
+      "after_sha256": "b7aa9aaab77f0b147dfa5e26d4137c68963aa2b87c904a3ae3b734c8188d397c"
+    },
+    "admin": {
+      "before_sha256": "bbe941cca8f668f1425b8ce0e330a5ae5e74f38a939ecad780a6fad87de1d8b1",
+      "after_sha256": "126d22fe3c6d4e3310e63c03f627f52378f40e73c7218a9719a4f016f64e3d56"
+    }
+  },
+  "changes": {
+    "user": [
+      "subscription.account_details.get_order_detail_keys.button.5c38085697",
+      "renewal.extensions.message.143c7f81f1",
+      "subscription.account_transfers.message.3f6bd6c3c8"
+    ],
+    "admin": [
+      "subscription.account_transfers.admin_message.6645c1fd4d",
+      "automatic_gateway_review.menu",
+      "automatic_gateway_review.title",
+      "subscription.order_management.show_order_management_panel.message.877fdebc48"
+    ]
+  },
+  "added": {
+    "user": [
+      "payment.payment_lifecycle.pay_ux_status_text.service_superseded_title",
+      "payment.payment_lifecycle.pay_ux_status_text.service_superseded_next"
+    ],
+    "admin": [
+      "subscription.service_change_report.admin",
+      "subscription.service_change_report.customer",
+      "subscription.service_change_report.server",
+      "subscription.service_change_report.plan",
+      "admin_settings.config.get_bot_setting_keys.customer_plan_toggle",
+      "subscription.service_plan_recovery.action",
+      "subscription.service_plan_correction.action",
+      "subscription.service_plan_correction.confirm",
+      "subscription.service_plan_correction.warning",
+      "subscription.service_plan_correction.get_only"
+    ]
+  }
+}

@@ -452,7 +452,7 @@ if(($data=="botSettings" or preg_match('/^changeBot([A-Za-z0-9_]+)$/D',$data,$ma
         // Keep this explicit list in sync with getBotSettingKeys().
         $editableBotToggles=[
             'agencyState','agencyPlanDiscount','individualExistence',
-            'sharedExistence','testAccount','changeProtocolState',
+            'sharedExistence','testAccount','changeProtocolState','changePlanState',
             'renewAccountState','renewAutoState','plandelkhahState',
             'increaseTimeState','increaseVolumeState',
             'requirePhone','requireIranPhone','sellState','botState',
@@ -465,7 +465,7 @@ if(($data=="botSettings" or preg_match('/^changeBot([A-Za-z0-9_]+)$/D',$data,$ma
             return;
         }
         if($match[1] == "cartToCartAutoAcceptType") $newValue = $botState[$match[1]] == "0"?"1":($botState[$match[1]] == "1"?"2":0);
-        else $newValue = ($botState[$match[1]] ?? 'off')==="on"?"off":"on";
+        else $newValue = ($botState[$match[1]] ?? ($match[1] === 'changePlanState' ? 'on' : 'off')) === "on" ? "off" : "on";
         setSettings($match[1], $newValue);
     }
     editText($message_id,$mainValues['change_bot_settings_message'],getBotSettingKeys());

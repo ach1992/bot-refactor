@@ -95,7 +95,13 @@ def shared_transfer_baseline():
 
 @functools.lru_cache(maxsize=2)
 def shared_transfer_source_lines(path,original=False):
-    raw=command('git','show',SHARED_TRANSFER_SOURCE+':'+path).decode() if original else (ROOT/path).read_text()
+    # #144's successor copy is independently pinned byte-for-byte. The #112
+    # historical proof must inspect the verified pre-#144 source projection,
+    # not treat an approved newer service warning as an unlisted #112 edit.
+    check(path in ('messages/fa/user.php','messages/fa/admin.php'),
+          'shared_transfer_source_unexpected_path')
+    raw=(command('git','show',SHARED_TRANSFER_SOURCE+':'+path).decode()
+         if original else service_change_catalog_layer()[0][path.split('/')[-1][:-4]])
     lines={}
     topic=None
     for line in raw.splitlines():
@@ -114,10 +120,9 @@ def shared_transfer_source_lines(path,original=False):
 def shared_transfer_shipped_values():
     # Compare synthetic negative controls to the actual pinned shipping copy,
     # never just to the key inventory. The source line hash is verified below.
-    return {audience:flatten(json.loads(command(
-        'php','-r',
-        '$g=require "messages/fa/'+audience+'.php";echo json_encode($g,JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);'
-    ))) for audience in ['user','admin']}
+    # Both source file hashes and the exact #144 key deltas are checked by
+    # service_change_catalog_layer(); reuse its pre-change value projection.
+    return service_change_catalog_layer()[1]
 
 def shared_transfer_copy_restore(sides):
     record=json.loads((ROOT/'tools/text_catalog_shared_transfer.json').read_text())
@@ -376,6 +381,92 @@ GIFT_PRECHECK_SHA256={
  'manual_payment.api_payment.gift_not_verified':'3434932947125a849117e3bbd1ee17a7d59f0b17aff0a1756c9e917e1e4ac8c8',
  'manual_payment.api_payment.gift_not_provided':'475fd4cbbef6064ae643b3557b2d9710d7d7be63fea67346619d51072f997a20',
  }}
+# Issue #144: exact, source-pinned successor catalog layer, independent of
+# all immutable RC29 and earlier text copy evidence. Projection is in-memory
+# only: an unlisted source change, key, recipient or template must fail CI.
+SERVICE_CHANGE_MANIFEST=ROOT/'tools/text_catalog_service_change_20261111.json'
+@functools.lru_cache(maxsize=1)
+def service_change_catalog_layer():
+    record=json.loads(SERVICE_CHANGE_MANIFEST.read_text())
+    base='251c15d1ff6436b4a3b1651c5aeb26ebf99fe31e'
+    check(set(record)=={'version','base_commit','issue','files','changes','added'} and
+          record['version']==1 and record['base_commit']==base and
+          record['issue']=='https://github.com/ach1992/bot-refactor/issues/144',
+          'service_change_catalog_manifest_identity')
+    expected_changes={
+        'user':{'subscription.account_details.get_order_detail_keys.button.5c38085697',
+                'renewal.extensions.message.143c7f81f1',
+                'subscription.account_transfers.message.3f6bd6c3c8'},
+        'admin':{'subscription.account_transfers.admin_message.6645c1fd4d',
+                 'automatic_gateway_review.menu','automatic_gateway_review.title',
+                 'subscription.order_management.show_order_management_panel.message.877fdebc48'}}
+    expected_added={'user':{
+        'payment.payment_lifecycle.pay_ux_status_text.service_superseded_title',
+        'payment.payment_lifecycle.pay_ux_status_text.service_superseded_next'},'admin':{
+        'subscription.service_plan_recovery.action',
+        'subscription.service_plan_correction.action',
+        'subscription.service_plan_correction.confirm',
+        'subscription.service_plan_correction.warning',
+        'subscription.service_plan_correction.get_only',
+        'subscription.service_change_report.admin',
+        'subscription.service_change_report.customer',
+        'subscription.service_change_report.server',
+        'subscription.service_change_report.plan',
+        'admin_settings.config.get_bot_setting_keys.customer_plan_toggle'}}
+    check(set(record['files'])=={'user','admin'} and
+          {a:set(v) for a,v in record['changes'].items()}==expected_changes and
+          {a:set(v) for a,v in record['added'].items()}==expected_added,
+          'service_change_catalog_exact_scope')
+    php='$s=stream_get_contents(STDIN);$p=strpos($s,"return [");if($p===false)throw new RuntimeException("array_missing");echo json_encode(eval(substr($s,$p)),JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);'
+    before={};after={};original={}
+    for audience in ('user','admin'):
+        name='messages/fa/'+audience+'.php'
+        raw=command('git','show',base+':'+name)
+        now=(ROOT/name).read_bytes()
+        if audience=='admin':
+            # Independently verify #147's exact topic before projecting it
+            # away; #144 keeps its byte-exact source-level contract.
+            bulk=bulk_reporting_source().encode()
+            check(now.count(bulk)==1,'service_change_bulk_projection_invalid')
+            now=now.replace(bulk,b'',1)
+        evidence=record['files'][audience]
+        check(set(evidence)=={'before_sha256','after_sha256'} and
+              hashlib.sha256(raw).hexdigest()==evidence['before_sha256'] and
+              hashlib.sha256(now).hexdigest()==evidence['after_sha256'] and
+              raw!=now,'service_change_catalog_exact_file_digest:'+audience)
+        old=flatten(json.loads(command('php','-r',php,input=raw)))
+        new=flatten(json.loads(command('php','-r',php,input=now)))
+        check(set(new)-set(old)==expected_added[audience] and
+              set(old)-set(new)==set() and
+              {key for key in old if new.get(key)!=old[key]}==expected_changes[audience],
+              'service_change_catalog_no_undeclared_key_or_value:'+audience)
+        for key in expected_changes[audience]:
+            check(params(old[key])==params(new[key]) and
+                  text(old[key])!=text(new[key]),
+                  'service_change_catalog_template_change:'+key)
+        for key in expected_added[audience]:
+            value=new[key];spans=set(re.findall(
+                r'\{([A-Za-z_][A-Za-z0-9_]*)\}',text(value)))
+            check(isinstance(text(value),str) and text(value).strip() and
+                  isinstance(params(value),list) and
+                  len(params(value))==len(set(params(value))) and
+                  spans==set(params(value)) and
+                  not re.search(r'[\u06f0-\u06f9\u0660-\u0669]',text(value)),
+                  'service_change_catalog_new_template_invalid:'+key)
+        before[audience]=old;after[audience]=new;original[audience]=raw.decode()
+    return original,before,after
+
+def service_change_copy_restore(sides):
+    # Current consumers may arrive before #147's separate restoration.
+    # Strip only the source-pinned additive topic when present.
+    if any(key.startswith('bulk_reporting.') for key in sides.get('admin',{})):
+        sides=bulk_reporting_copy_restore(sides)
+    _,prior,current=service_change_catalog_layer()
+    check(type(sides) is dict and set(sides)=={'user','admin'} and
+          all(sides[audience]==current[audience] for audience in ('user','admin')),
+          'service_change_catalog_unapproved_current_copy')
+    return copy.deepcopy(prior)
+
 # Owner-approved Chili runtime copy became authoritative for this final text
 # batch; preserve the older independently reviewed catalogs as immutable
 # historical references. This new layer proves the *entire* two-file source
@@ -389,6 +480,62 @@ CHILI_SYNC_MANIFEST=ROOT/'tools/text_catalog_chili_sync_20261111.json'
 CHILI_APPROVED_LATER_KEY='manual_payment.api_payment.auto_approved'
 CHILI_APPROVED_LATER_LINE_BEFORE="        'api_payment.auto_approved' => 'تایید خودکار توسط API',"
 CHILI_APPROVED_LATER_LINE_AFTER="        'api_payment.auto_approved' => '🔑 تایید خودکار توسط API',"
+
+# #147 bulk reporting is an exactly source-pinned additive topic, not a
+# blanket relaxation of the older independently reviewed catalogues.
+BULK_REPORT_MANIFEST=ROOT/'tools/text_catalog_bulk_reporting_20261111.json'
+
+def bulk_reporting_source():
+    item=json.loads(BULK_REPORT_MANIFEST.read_text())
+    check(set(item)=={'version','base_commit','topic','audience','source',
+                      'block_sha256','line_sha256'} and
+          item['version']==1 and item['base_commit']=='251c15d1ff6436b4a3b1651c5aeb26ebf99fe31e' and
+          item['topic']=='bulk_reporting' and item['audience']=='admin' and
+          item['source']=='messages/fa/admin.php' and
+          set(item['line_sha256'])=={'bulk_reporting.'+k for k in
+              ['complete','needs_review','names','more','short_reference',
+               'bulk_subject','admin_created','delivery_needs_review']},'bulk_reporting_manifest_identity')
+    raw=(ROOT/item['source']).read_text()
+    heading='    // #147 — Verified bulk source reports (source-pinned in test catalog).\n'
+    ending='    // ── پیام‌های اصلی و متن‌های قابل سفارشی‌سازی قدیمی ──'
+    check(raw.count(heading)==1 and raw.count(ending)==1,
+          'bulk_reporting_source_marker')
+    start=raw.index(heading);end=raw.index(ending,start)
+    block=raw[start:end]
+    check(hashlib.sha256(block.encode()).hexdigest()==item['block_sha256'],
+          'bulk_reporting_source_block_drift')
+    lines={}
+    for line in block.splitlines():
+        match=re.match(r"^        '([^']+)' =>",line)
+        if match:
+            lines['bulk_reporting.'+match[1]]=hashlib.sha256(line.encode()).hexdigest()
+    check(lines==item['line_sha256'],'bulk_reporting_source_line_drift')
+    # After dropping only #147's block, the remaining #144 source must be
+    # exactly the independently pinned service-change manifest content.
+    prior=json.loads(SERVICE_CHANGE_MANIFEST.read_text())['files']['admin']['after_sha256']
+    check(hashlib.sha256((raw[:start]+raw[end:]).encode()).hexdigest()==prior,
+          'bulk_reporting_unlisted_admin_source_change')
+    return block
+
+def bulk_reporting_copy_restore(sides,prestripped=False):
+    block=bulk_reporting_source() # Verify actual file even for nested baseline tests.
+    _=block
+    check(set(sides)=={'admin','user'} and
+          not any(key.startswith('bulk_reporting.') for key in sides['user']),
+          'bulk_reporting_audience')
+    original=json.loads(command('php','-r',
+       '$a=require "messages/fa/admin.php";echo json_encode($a["bulk_reporting"],JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);'))
+    keys={'bulk_reporting.'+key:value for key,value in original.items()}
+    current={key:value for key,value in sides['admin'].items()
+             if key.startswith('bulk_reporting.')}
+    if not current:
+        check(prestripped,'bulk_reporting_current_keys_missing')
+        return sides
+    check(current==keys,'bulk_reporting_current_copy_drift')
+    restored=copy.deepcopy(sides)
+    for key in keys:restored['admin'].pop(key)
+    return restored
+
 
 
 @functools.lru_cache(maxsize=1)
@@ -419,13 +566,21 @@ def chili_copy_reference():
     for audience in ['user','admin']:
         name='messages/fa/'+audience+'.php'
         before=command('git','show',CHILI_SYNC_BASE+':'+name).decode('utf-8')
-        after=(ROOT/name).read_text()
+        # Validate every current catalog byte against the exact approved
+        # successor. Legacy Chili proof always receives its own original,
+        # immutable predecessor; no broad exclusions or shifted baselines.
+        after=service_change_catalog_layer()[0][audience]
         historical_after=after
         if audience=='admin':
             original=CHILI_APPROVED_LATER_LINE_BEFORE+'\n'
             approved=CHILI_APPROVED_LATER_LINE_AFTER+'\n'
             check(before.count(original)==1 and after.count(approved)==1,
                   'approved_api_button_prefix_exact_source')
+            # service_change_catalog_layer()[0] is the immutable source
+            # BEFORE #144 (and therefore before #147), not current admin.php.
+            # That layer already verifies and subtracts only the exact #147
+            # block before its byte-for-byte #144 manifest check. Never
+            # subtract #147 again from this historical Chili predecessor.
             historical_after=after.replace(approved,original,1)
         left=lines(before);right=lines(historical_after)
         check(set(left)-set(right)==set() and
@@ -470,6 +625,7 @@ def chili_copy_reference():
     return definition,prior,current
 
 def chili_live_copy_restore(sides):
+    sides=service_change_copy_restore(sides)
     definition,prior,current=chili_copy_reference()
     check(set(sides)=={'user','admin'},'chili_copy_audiences')
     changes=definition['changes'];added=definition['added']
@@ -556,6 +712,7 @@ def verify_and_restore(sides,definition=None,from_verified_current=False):
     # Historical composition tests operate on a previously validated
     # projection of the exact new copy. Ordinary current-catalog callers
     # must still provide all nine source-pinned keys.
+    sides=bulk_reporting_copy_restore(sides,prestripped=from_verified_current)
     sides=gift_precheck_copy_restore(sides,allow_prestripped=from_verified_current)
     sides=current_cleanup_restore(sides)
     if any(key.startswith('delivery_recovery.') for audience in sides.values() for key in audience):
@@ -757,7 +914,8 @@ def delivery_recovery_copy_negative_controls(sides:dict) -> int:
     # The successor intentionally removed this UI. Perform the exact
     # historical mutation controls on the immutable RC26 source, AFTER
     # verifying the current gift-copy additions and their original recipients.
-    sides=current_cleanup_restore(gift_precheck_copy_restore(sides))
+    sides=current_cleanup_restore(gift_precheck_copy_restore(
+        bulk_reporting_copy_restore(sides)))
     delivery_recovery_copy_restore(sides)
     cases=[]
     bad=copy.deepcopy(sides);bad['admin'].pop('delivery_recovery.title');cases.append(bad)

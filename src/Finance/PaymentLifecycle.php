@@ -174,10 +174,30 @@ function achbotPayUxInsertDraft(mysqli $db, int $actor, mysqli_stmt $insert, boo
         require_once __DIR__.'/../Panel/ProviderRuntime.php';
         achbotProviderPinPayment($db,$draftId);
         // Stale buttons cannot issue new invoices on disabled/deleted servers.
-        $s=$db->prepare('SELECT type,server_id,plan_id,day,volume FROM pays WHERE id=? FOR UPDATE');
+        $s=$db->prepare('SELECT type,server_id,plan_id,user_id,order_id,day,volume FROM pays WHERE id=? FOR UPDATE');
         $s->bind_param('i',$draftId);$s->execute();$pay=$s->get_result()->fetch_assoc();$s->close();
         if (!$pay) throw new RuntimeException('draft_service_missing');
-        if ((string)$pay['type']!=='INCREASE_WALLET') {
+        $type=(string)$pay['type'];
+        $addon=preg_match('/^INCREASE_(?:DAY|VOLUME)_([1-9][0-9]*)_[1-9][0-9]*$/D',$type,$match)===1;
+        if ($type==='RENEW_ACCOUNT' || $addon) {
+            $orderId=$addon?(int)$match[1]:(int)$pay['order_id'];
+            // The issued invoice must belong to this owner and currently
+            // selected service. A legacy add-on may have order_id=0, but its
+            // canonical type still pins the exact original order.
+            if ($orderId<=0 || (int)$pay['user_id']!==$actor ||
+                ($addon && (int)($pay['order_id']??0)!==0 &&
+                 (int)$pay['order_id']!==$orderId) ||
+                achbotProviderPaymentSubjectServer($db,$pay)!==(int)$pay['server_id'])
+                throw new RuntimeException('draft_service_identity_changed');
+            require_once __DIR__.'/../Purchase/Core.php';
+            // A current locking read (not an earlier RR snapshot) closes the
+            // gap between Native-journal creation and advertised new quotes.
+            // The caller still owns the short users->pays transaction; any
+            // conflicting in-flight plan transition fails closed on rollback.
+            if (!achbotServicePaymentJournalClear($db,$orderId,true))
+                throw new RuntimeException('draft_native_journal_unresolved');
+        }
+        if ($type!=='INCREASE_WALLET') {
             require_once __DIR__.'/../Panel/ProviderRuntime.php';
             $buy=(string)$pay['type']==='BUY_SUB';
             if (!achbotServerCommerceAvailable($db,(int)$pay['server_id'],$buy,true))
@@ -633,6 +653,9 @@ function achbotPayUxTrackClicked(mysqli $db, int $payId, int $chatId, int $messa
 function achbotPayUxState(array $pay, ?array $attempt): string {
     $state = (string)($pay['state'] ?? '');
     $stage = (string)($attempt['stage'] ?? '');
+    // A service-change intent invalidates the old invoice's product claim
+    // without asserting its external funds were unpaid or refunded.
+    if ($state === 'service_superseded') return 'service_superseded';
     if ($state === 'expired' || $state === 'mismatched_plan' ||
         $state === 'expired_have_sent') return 'expired';
     if ($state === 'declined') return 'declined';
@@ -651,9 +674,12 @@ function achbotPayUxState(array $pay, ?array $attempt): string {
         if ($age>=achbotPayUxManualDeadlineSeconds())
             return 'needs_review'; // Never claim cancellation before COMMIT.
     }
-    if (achbotPayUxHostedProvider($provider) &&
-        $stage==='pending' && $age>=achbotPayUxHostedAttentionSeconds())
-        return 'needs_review'; // Provider remains financially unsettled.
+    // An unpaid hosted checkout remains awaiting payment regardless of age.
+    // Time passing is not evidence of funds or provider unavailability.
+    if (achbotPayUxHostedProvider($provider) && $stage==='pending' &&
+        in_array((string)($attempt['provider_status']??''),
+            ['','waiting','pending','confirming'],true))
+        return 'awaiting_payment';
     if (achbotPayUxManualProvider($provider) && $stage==='expired')
         return 'expired';
     if (!in_array($state,['pending','send'],true)) return 'needs_review';
@@ -694,6 +720,7 @@ function achbotPayUxStatusText(array $pay, ?array $attempt): string {
         ? (string)payTypeToDescription((string)$pay['type'])
         : \achbotMessage('payment.payment_lifecycle.pay_ux_status_text.text.df83eb82dd');
     $title = match ($state) {
+        'service_superseded' => \achbotMessage('payment.payment_lifecycle.pay_ux_status_text.service_superseded_title'),
         'expired' => \achbotMessage('payment.payment_lifecycle.pay_ux_status_text.text.a1026d7b85'),
         'superseded' => \achbotMessage('payment.payment_lifecycle.pay_ux_status_text.text.74adf2adfe'),
         'declined' => \achbotMessage('payment.payment_lifecycle.pay_ux_status_text.text.f8f1a7f2f5'),
@@ -706,6 +733,7 @@ function achbotPayUxStatusText(array $pay, ?array $attempt): string {
     $safe = static fn($v) => htmlspecialchars((string)$v,ENT_QUOTES|ENT_SUBSTITUTE,'UTF-8');
     $amount = number_format((int)($pay['price'] ?? 0));
     $next = match ($state) {
+        'service_superseded' => \achbotMessage('payment.payment_lifecycle.pay_ux_status_text.service_superseded_next'),
         'expired' => achbotPayUxManualProvider((string)($attempt['provider']??''))
             ? \achbotMessage('payment.payment_lifecycle.pay_ux_status_text.text.8b1195f62f')
             : \achbotMessage('payment.payment_lifecycle.pay_ux_status_text.text.90290d6783'),

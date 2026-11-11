@@ -501,6 +501,7 @@ def run_api(tmp: str) -> tuple[dict, dict]:
         'concurrent_real_human_api_rday_at_most_once',
         'concurrent_real_human_api_rvolume_at_most_once',
         'concurrent_real_human_api_rexternal_at_most_once',
+        'manual_paid_native_complete_deadlock_local_sql_retry_only',
         'restart_after_local_claim_reuses_capacity_hold_once',
         'api_processing_proven_resume_is_technical_only_and_terminal_hint_disappears',
         'restart_verified_edit_finishes_without_native_redispatch',
@@ -689,7 +690,7 @@ def run_services(tmp: str) -> tuple[dict, dict]:
              'no_provider_or_telegram_calls':True,'shared_reference_metadata':True,
              'malformed_origin_never_legacy':True,'atomic_order_origin_rollback':True,
              'locked_origin_current_read':True,'payment_wallet_capacity_mutations':0,'production_mutations':0}),
-        ('imported_plan_selection','test_imported_plan_selection.py','cases',106,
+        ('imported_plan_selection','test_imported_plan_selection.py','cases',112,
             {'actual_imports':True,'actual_change_plan_controller':True,
              'actual_config_consent_controller':True,'actual_native_provider_eligibility':True,'existing_consent_withdrawal_visible_and_controller_checked':True,
              'owner_rev4_saved_inactive_plan_consent_and_server_state':True,
@@ -704,7 +705,7 @@ def run_services(tmp: str) -> tuple[dict, dict]:
              'archived_renderer_sha256':'4a34ed56370842e75ddb16563908c7c0497736851bbbc0da81c17b686e29fb9c',
              'actual_archived_renderer_RED':['marzban','pasarguard'],'synthetic_Telegram_delivery':True,
              'production_mutations':0,'live_provider_calls':0}),
-        ('shared_plan_review_regressions','test_shared_plan_review_fixes.py','cases',206,
+        ('shared_plan_review_regressions','test_shared_plan_review_fixes.py','cases',360,
             {'actual_php':True,'disposable_mariadb':True,
              'native_providers':['marzban','pasarguard'],
              'panel_group_admin_independent':True,
@@ -735,6 +736,24 @@ def run_services(tmp: str) -> tuple[dict, dict]:
         subprocess.run(['python3',str(ROOT/'tools'/script),'--run-disposable','--report',str(path)],
             cwd=ROOT,check=True,timeout=300,capture_output=True)
         evidence=json.loads(path.read_text())
+        if name=='shared_plan_review_regressions':
+            required_correction={
+                *(provider+'_'+suffix for provider in ('marzban','pasarguard')
+                  for suffix in (
+                    'correction_original_put_hold_prepared',
+                    'correction_nonadmin_and_stale_order_denied_without_put',
+                    'corrective_native_success',
+                    'correction_one_additional_put_and_original_intent_immutable',
+                    'correction_authorized_separate_durable_audit',
+                    'correction_replayed_callback_no_native_or_financial_effect',
+                    'correction_completed_native_never_sends_second_put',
+                    'correction_complete_uses_only_original_get_finalization',
+                    'correction_local_finality_failure_leaves_both_journals_held',
+                    'correction_replayed_after_local_failure_no_second_put',
+                    'correction_delayed_get_only_commits_both_original_and_audit'))
+            }
+            if not required_correction.issubset(evidence.get('checks',[])):
+                raise RuntimeError('A02 durable correction evidence incomplete')
         if evidence.get('complete') is not True or evidence.get(counter,0)<minimum or any(evidence.get(k)!=v for k,v in proofs.items()):
             diff={k:(evidence.get(k),v) for k,v in proofs.items()
                   if evidence.get(k)!=v}
@@ -1190,10 +1209,10 @@ def run_wallet(tmp: str) -> tuple[dict, dict]:
         cwd=ROOT,check=True,timeout=180,capture_output=True,text=True)
     text_catalog=json.loads(catalog_output.stdout)
     expected_catalog={
-        'status':'PASS','current_catalog_keys':2863,
-        'current_admin_keys':1915,'current_user_keys':948,
+        'status':'PASS','current_catalog_keys':2883,
+        'current_admin_keys':1933,'current_user_keys':950,
         'retired_experimental_keys':129,'retired_experimental_topics':10,
-        'new_copy_entries':33,'current_runtime_files':131,
+        'new_copy_entries':33,'current_runtime_files':132,
         'new_copy_references_unbound':0,
         'unapproved_existing_copy_changes':0,
         'new_copy_negative_controls':5,'bare_ui_copy_violations':0,
@@ -1471,7 +1490,8 @@ def run_presentation(tmp: str) -> tuple[dict, dict]:
         "clicked_manual_trx_persists_upload_intent_not_paid",
         "manual_evidence_lease_not_expired",
         "bounded_manual_window_policy_changes_effective_deadline",
-        "hosted_link_attention_not_provider_claim_cancellation",
+        "aged_hosted_unpaid_remains_waiting_not_review_or_cancellation",
+        "hosted_provider_evidence_updates_customer_status_without_payment_effect",
         "hosted_attention_window_is_bounded_and_configurable",
         "manual_click_cannot_revive_overdue_quote_under_concurrency",
         "per_method_audience_all_agent_buyer_none_fail_closed",
@@ -2303,15 +2323,20 @@ def run_effects(tmp: str) -> tuple[dict, dict]:
         'original_nowpayments_success',
         'one_shot_original_attempt_and_admin_identity',
         'duplicate_approval_refused',
-        'zarinpal_saved_uncertainty',
+        'zarinpal_verified_transport_outage_reviewable',
         'hosted_original_rejection',
         'no_fake_merchant_refund',
         'rejected_order_never_reapproved',
         'funded_invoice_not_declined_without_refund',
-        'aged_pending_invoice_can_be_manually_attested',
+        'aged_unpaid_invoice_cannot_be_attested',
+        'ordinary_unknown_merchant_outcome_not_manual_attestation',
+        'signed_partial_funds_review_without_false_rejection',
+        'attention_requires_funds_or_real_outage_and_retired_funds_are_read_only',
+        'retired_signed_funds_may_be_archived_but_never_fulfilled',
         'new_checkout_not_prematurely_reviewed',
         'changed_local_amount_fails_closed',
         'refunded_original_never_credited',
+        'signed_refund_can_decline_local_invoice_without_new_refund',
         'unknown_original_effect_held',
         'durable_uncertain_hold',
         'unknown_hold_not_replayed',
@@ -2493,6 +2518,7 @@ def run_effects(tmp: str) -> tuple[dict, dict]:
         "nowpayments_finished_insufficient_capacity_missing_user_review_no_refund",
         "nowpayments_finished_insufficient_capacity_verified_user_review_no_refund",
         "hosted_nextpay_two_accounts_one_slot_no_create_review_no_refund",
+        "hosted_nextpay_long_multi_marzban_username_32_no_replay",
         "hosted_zarinpal_two_accounts_one_slot_no_create_review_no_refund",
         "renewal_nowpayment_explicit_failure_is_ambiguous",
         "renewal_nextpay_explicit_failure_is_ambiguous",
@@ -2564,6 +2590,9 @@ def run_effects(tmp: str) -> tuple[dict, dict]:
         'r3_zarinpal_concurrent_verified_return_pending_single_effect',
         'r3_nextpay_lock_error_not_success',
         'r3_zarinpal_lock_error_not_success',
+        'retired_nextpay_late_positive_evidence_original_financial_inbox_readonly_archive_no_replay',
+        'retired_zarinpal_late_positive_evidence_original_financial_inbox_readonly_archive_no_replay',
+        'retired_nextpay_duplicate_reference_denies_verification',
         'archived_nowpayments_original_excluded_from_cron_claim',
     })
     cases_finance = {case.get("case") for case in finance.get("scenarios",[])
@@ -3317,10 +3346,13 @@ def run_funding(tmp: str) -> tuple[dict, dict]:
         "actual_trial_route_reserved_once_with_real_order_and_delivery",
         "actual_trial_unknown_remote_retained_fence_and_capacity",
         "forged_trial_update_no_dispatch",
-        "actual_admin_bulk_two_accounts_full_reservation_one_batch",
+        "actual_admin_bulk_two_accounts_full_reservation_and_complete_owner_report",
         "actual_admin_bulk_partial_retains_capacity_and_audit",
+        "admin_bulk_delivery_uncertain_reports_verified_creates_and_missing_telegram_ack",
         "two_real_admin_batches_race_one_available_server_slot",
         "real_manual_remark_two_independent_single_and_multi_batches_unique_names_no_replay",
+        "admin_bulk_long_base_compact_marzban_username_32_no_remote_replay",
+        "source_stable_admin_and_paid_marzban_aliases_ignore_build_remark_randomness",
         "invalid_manual_remark_rejected_without_remote_or_capacity_effect",
         "nonpaid_source_db_insert_failure_before_post_no_capacity_loss",
         "trial_postcommit_telegram_failure_no_recreate"
@@ -3381,6 +3413,7 @@ def run_funding(tmp: str) -> tuple[dict, dict]:
         "r2_exact_wallet_order_allocation_101_2_no_replay",
         "real_multi_wallet_checkout_full_hold_order_delivery_after_finality",
         "real_multi_wallet_second_line_ambiguous_stays_paid_hold_no_replay",
+        "paid_marzban_long_multi_username_compacted_single_manual_predebit_denied",
         "real_custom_wallet_checkout_single_effect_after_commit",
         "real_custom_wallet_postcommit_telegram_unconfirmed_never_reissues",
         "real_multi_wallet_postcommit_delivery_throw_owner_review_no_replay",
@@ -3958,7 +3991,7 @@ def run_funding(tmp: str) -> tuple[dict, dict]:
             and crypto_guard.get('retired_keys_denied_at_persistence_boundary')
             and crypto_guard.get('all_advertised_current_admin_toggles_work')
             and crypto_guard.get('moved_display_global_toggles')==['configLinkState','subLinkState','switchLocationState']
-            and crypto_guard.get('retained_original_bot_toggles')==22
+            and crypto_guard.get('retained_original_bot_toggles')==23
             and crypto_guard.get('retained_original_gateway_toggles')==8
             and crypto_guard.get('schema_tables')==23
             and crypto_guard.get('isolated_socket_only')

@@ -242,7 +242,20 @@ if((preg_match('/^discountCustomPlanDay(\d+)/',$userInfo['step'], $match) || pre
     $stmt->bind_param("i", $id); 
     $stmt->execute(); 
     $respd = $stmt->get_result()->fetch_assoc(); 
-    $stmt->close(); 
+    $stmt->close();
+    // This custom-name draft always issues one account; its third step
+    // argument is GiB, not a bulk quantity. Reject an impossible Marzban
+    // username before creating an invoice or charging the wallet.
+    if (!preg_match('/^discountCustomPlanDay/', $userInfo['step']) &&
+        strlen((string)$text)>32 && $respd) {
+        $q=$connection->prepare('SELECT type FROM server_config WHERE id=?');
+        $sid=(int)$respd['server_id'];$q->bind_param('i',$sid);
+        $q->execute();$provider=$q->get_result()->fetch_assoc();$q->close();
+        if (($provider['type']??'')==='marzban') {
+            sendMessage($mainValues['incorrect_config_name']);exit();
+        }
+    }
+
      
     $stmt = $connection->prepare("SELECT * FROM `server_categories` WHERE `id`=?"); 
     $stmt->bind_param("i", $respd['catid']); 

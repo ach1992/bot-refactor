@@ -437,7 +437,11 @@ def exercise_callback_identity(w,e,stage):
     seed_pay(w,e,issued_new,1001,'RENEW_ACCOUNT',24580)
     claim=json_run(w,e,stage,dict(route='prepayment',get={},
                                     callback_data='ps_'+issued,actor=1001))
-    assert 'نیازمند بررسی' in str(first_event(claim,'editText')),claim
+    # A still-unpaid hosted provider claim is awaiting payment, not an
+    # operator exception merely because a newer quote exists. Never erase
+    # the original provider identity or independently infer received funds.
+    claim_text=str(first_event(claim,'editText'))
+    assert 'در انتظار پرداخت' in claim_text and 'نیازمند بررسی' not in claim_text,claim
     assert sql(w,e,f"SELECT payid,state FROM pays WHERE id={eid}")=='f3-real-claim\tpending'
     assert sql(w,e,f"SELECT provider_reference FROM payment_attempts WHERE pay_row_id={eid}")=='f3-real-claim'
     cases.append('f3_old_provider_claim_never_cancelled')

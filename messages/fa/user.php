@@ -371,7 +371,7 @@ return [
         'account_details.get_order_status_text.text.63ef396546' => '⏰ مدت اشتراک تمام شده است.',
         'account_details.get_order_status_text.text.e9216d0d0c' => '🔋 حجم اشتراک تمام شده است.',
         // account_details.get_order_detail_keys
-        'account_details.get_order_detail_keys.button.5c38085697' => '📍 تغییر سرور',
+        'account_details.get_order_detail_keys.button.5c38085697' => '🌐 تغییر سرویس',
         // account_transfers.alert
         'account_transfers.alert.6b5b63fb0f' => '⛔️ تغییر سرور غیرفعال است.',
         'account_transfers.alert.2c082acb46' => '⛔️ سفارش یا سرور فعلی معتبر نیست.',
@@ -379,7 +379,7 @@ return [
         // account_transfers.text
         'account_transfers.text.b233883d0d' => 'بازگشت',
         // account_transfers.message
-        'account_transfers.message.3f6bd6c3c8' => '📍 سرور مقصد را انتخاب کنید. انتقال فقط بین سرورهای یک گروه مشترک متعلق به همان پنل واقعی مجاز است. پس از انتقال پلن قبلی همه کاربران این اشتراک خالی می‌شود؛ سپس پلن جدید مقصد را انتخاب کنید.',
+        'account_transfers.message.3f6bd6c3c8' => '📍 سرور مقصد را انتخاب کنید. انتقال فقط بین سرورهای یک گروه مشترک متعلق به همان پنل واقعی مجاز است. پس از انتقال پلن قبلی همه کاربران این اشتراک خالی می‌شود؛ سپس پلن جدید مقصد را انتخاب کنید.' . "\n" . '⚠️ فاکتورهای ناتمام همین اشتراک پس از انتقال دیگر برای دریافت خدمات معتبر نیستند؛ وجه احتمالی دریافت‌شده جداگانه بررسی می‌شود.',
         // account_transfers.alert
         'account_transfers.alert.4da40d7d6f' => '⛔️ انتقال این اشتراک به مقصد انتخاب‌شده امکان‌پذیر نیست.',
         // account_transfers.message
@@ -521,7 +521,7 @@ return [
         'extensions.alert.65fc393064' => '⚠️ امکان تغییر پلن برای این نوع اشتراک وجود ندارد.',
         // extensions.message
         'extensions.message.655234a584' => '⚠️ هیچ پلنی برای این سرور وجود ندارد.',
-        'extensions.message.143c7f81f1' => '🎲 لطفاً یکی از پلن‌های زیر را انتخاب کنید.' . "\n" . '♻️ بعد از تغییر پلن می توانید اشتراک خودتان را مطابق پلن جدید تمدید کنید.',
+        'extensions.message.143c7f81f1' => '🎲 لطفاً یکی از پلن‌های زیر را انتخاب کنید.' . "\n" . '♻️ بعد از تغییر پلن می‌توانید اشتراک خودتان را مطابق پلن جدید تمدید کنید.' . "\n" . '⚠️ با تغییر واقعی پلن، فاکتورهای ناتمام این اشتراک دیگر برای دریافت خدمات معتبر نیستند؛ اگر قبلاً وجهی پرداخته‌اید، برای تعیین تکلیف با پشتیبانی تماس بگیرید.',
         'extensions.message.dee2da49f3' => '❗️پلن فعلی شما همین است. لطفاً پلن متفاوتی انتخاب کنید.',
         'extensions.message.3067ddba76' => '✅ پلن اشتراک شما با موفقیت تغییر یافت.',
         // extensions.alert
@@ -644,6 +644,8 @@ return [
         'payment_lifecycle.pay_ux_status_text.text.df83eb82dd' => 'پرداخت سفارش',
         'payment_lifecycle.pay_ux_status_text.text.a1026d7b85' => '⌛️ مهلت این درخواست پرداخت پایان یافته است.',
         'payment_lifecycle.pay_ux_status_text.text.74adf2adfe' => '🧾 درخواست جدیدتری جایگزین این پیش‌نویس شده است.',
+        'payment_lifecycle.pay_ux_status_text.service_superseded_title' => '🔄 فاکتور قبلی به دلیل تغییر سرویس متوقف شده است.',
+        'payment_lifecycle.pay_ux_status_text.service_superseded_next' => 'پرداخت این فاکتور دیگر اشتراک را تغییر نمی‌دهد. اگر وجهی پرداخت کرده‌اید، با شناسه پیگیری برای بررسی مالی به پشتیبانی اطلاع دهید.',
         'payment_lifecycle.pay_ux_status_text.text.f8f1a7f2f5' => '❌ درخواست پرداخت تأیید نشد.',
         'payment_lifecycle.pay_ux_status_text.text.0a0cf2fd64' => '📥 رسید دریافت شده و در انتظار بررسی است.',
         'payment_lifecycle.pay_ux_status_text.text.8c253d0486' => '📤 در انتظار تصویر رسید یا گیفت‌کارت شما',

@@ -882,6 +882,10 @@ if (is_string($data) && strlen($data) <= 64 && preg_match('/\ApayBuyWithWallet([
                     $uid
                 );
 
+                $remark=achbotPaidPurchaseRemark((string)$remark,$serverType,
+                    (int)$payInfo['id'],$i,$accountCount,
+                    (($botState['remark']??'')==='manual'));
+
                 // Each line owns a durable 007 operation identity.
                 // The first line atomically reserves the FULL quantity.
                 [$response, $remark, $port, $effectId] = achbotCreatePaidAccount(
@@ -1091,6 +1095,20 @@ if (is_string($data) && strlen($data) <= 64 && preg_match('/\ApayBuyWithWallet([
         ]
     ], JSON_UNESCAPED_UNICODE);
 
+    $bulkProof=null;
+    if ($payType==='BUY_SUB' && (int)($payInfo['agent_count']??0)>1) {
+        try {
+            require_once __DIR__.'/../../Purchase/BulkReport.php';
+            $bulkProof=achbotBulkRecordedAccounts($connection,
+                (int)$payInfo['agent_count'],(int)$uid,(int)$payInfo['id']);
+            if (!$bulkProof['complete'])
+                error_log('achbot_wallet_bulk_report_incomplete pay_id='.(int)$payInfo['id']);
+        } catch (Throwable $error) {
+            error_log('achbot_wallet_bulk_report_unavailable pay_id='.(int)$payInfo['id'].
+                ' class='.get_class($error));
+        }
+        $lastRemark=achbotMessage('bulk_reporting.bulk_subject');
+    }
     if ($payType === "RENEW_SCONFIG") {
         $msg = str_replace(
             ['TYPE', 'USER-ID', 'USERNAME', 'NAME', 'PRICE', 'REMARK', 'VOLUME', 'DAYS'],
@@ -1105,6 +1123,15 @@ if (is_string($data) && strlen($data) <= 64 && preg_match('/\ApayBuyWithWallet([
         );
     }
 
+    if ((int)($payInfo['agent_count']??0)>1 && $payType==='BUY_SUB') {
+        if (!empty($deliveryReview))
+            $msg.="\n".achbotMessage('bulk_reporting.delivery_needs_review',
+                ['count'=>count($deliveryReview)]);
+        $msg=$bulkProof===null
+            ?($msg."\n".achbotMessage('bulk_reporting.needs_review',[
+                'confirmed'=>'نامشخص','requested'=>(int)$payInfo['agent_count']]))
+            :achbotBulkReportAppend($msg,$bulkProof,true);
+    }
     achbotNotifyAdmins('sendMessage', ['text'=>$msg, 'reply_markup'=>$keys, 'parse_mode'=>'HTML']);
 }
 
