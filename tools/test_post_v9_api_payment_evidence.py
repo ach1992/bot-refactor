@@ -310,6 +310,7 @@ def run(module):
         server=Server(dbcheck);thread=threading.Thread(target=server.serve_forever,daemon=True);thread.start()
         base='http://127.0.0.1:'+str(server.server_port)
         def php(op,**spec):
+            expected_reuse_log=spec.pop('expected_reuse_log',None)
             raw_code=spec.pop('raw_code',False)
             if not raw_code and op in ('save','reject','giftprecheck') and isinstance(spec.get('code'),str):
                 spec['code']=fixture_gift_code(spec['code'])
@@ -319,7 +320,12 @@ def run(module):
                 '-d','allow_url_fopen=0','-d','disable_functions=exec,shell_exec,system,passthru,popen,proc_open,mail',
                 str(driver),str(module),str(work/'mysql.sock'),DB,json.dumps(data)],
                 env=env,capture_output=True,text=True,timeout=25)
-            if p.returncode or p.stderr:raise RuntimeError('owned PHP failure: '+p.stderr[-1500:])
+            if expected_reuse_log is not None:
+                expected=('achbot_gift_proven_reuse_deferred pay_id='+str(spec['pay_id'])+
+                    ' reason='+expected_reuse_log+'\n')
+                if p.stderr!=expected:raise RuntimeError('unexpected gift replay diagnostic: '+repr(p.stderr[-1500:]))
+            elif p.stderr:raise RuntimeError('owned PHP failure: '+p.stderr[-1500:])
+            if p.returncode:raise RuntimeError('owned PHP failed: '+repr((p.returncode,p.stderr)))
             return json.loads(p.stdout)['result']
         try:
             assert php('ready') is False
@@ -723,6 +729,45 @@ def run(module):
             assert server.gift_consumes==1
             assert 'gift-code-one' not in sql('SELECT evidence_payload FROM payment_transactions')
             assert 'gift-code-one' not in json.dumps(php('proof',pay_id=g1))
+            # A previously PROVEN card may later be manually unredeemed in
+            # WordPress, but original local payment evidence cannot disappear
+            # or authorize a second invoice. Stop Cron's endless /verify spam.
+            g_replay=seed('giftprovedagain','gift_card')
+            assert php('save',pay_id=g_replay,method='gift_card',code='gift-code-one')['status']=='saved'
+            server.card['status']='active'  # issuer's separate unredeem
+            before_verifies=server.verify_requests
+            before_consumes=server.gift_consumes
+            assert php('giftrecovery',pay_id=g_replay,method='gift_card',
+                expected_reuse_log='code_digest_collision')=={'status':'manual','deferred':True}
+            assert server.verify_requests==before_verifies
+            assert server.gift_consumes==before_consumes
+            assert sql(f"SELECT evidence_state FROM payment_attempts WHERE pay_row_id={g_replay}")=='manual'
+            assert sql(f"SELECT COUNT(*) FROM payment_transactions WHERE attempt_id="
+                f"(SELECT id FROM payment_attempts WHERE pay_row_id={g_replay})")=='0'
+            assert sql(f"SELECT state FROM pays WHERE id={g_replay}")=='have_sent'
+            assert php('giftrecovery',pay_id=g_replay,method='gift_card')=={
+                'status':'no_claim'}
+            assert server.verify_requests==before_verifies
+            assert php('proof',pay_id=g1) is not None  # original proof is preserved
+            # Alternate accepted grouping changes the raw-code digest but not
+            # canonical issuer identity; the second final identity fence
+            # protects the original invoice without another /redeem.
+            g_reformatted=seed('giftprovedreformatted','gift_card')
+            compact=fixture_gift_code('gift-code-one').replace('-','')
+            code='AG2-K1-'+compact[len('AG2K1'):]
+            assert php('save',pay_id=g_reformatted,method='gift_card',code=code,
+                raw_code=True)['status']=='saved'
+            before_verifies=server.verify_requests
+            assert php('giftrecovery',pay_id=g_reformatted,method='gift_card',
+                expected_reuse_log='provider_identity_collision')=={
+                    'status':'manual','deferred':True}
+            assert server.verify_requests==before_verifies+1
+            assert server.gift_consumes==before_consumes
+            assert sql(f"SELECT evidence_state FROM payment_attempts WHERE pay_row_id={g_reformatted}")=='manual'
+            assert php('giftrecovery',pay_id=g_reformatted,method='gift_card')=={'status':'no_claim'}
+            assert server.verify_requests==before_verifies+1
+            assert sql(f"SELECT COUNT(*) FROM payment_transactions WHERE attempt_id="
+                f"(SELECT id FROM payment_attempts WHERE pay_row_id={g_reformatted})")=='0'
             # Same persisted operation may win in a concurrent request before this call returns.
             gi=seed('giftidempotent','gift_card');server.card=card('CARD_IDEMPOTENT');server.gift_idempotent_first=True
             assert php('save',pay_id=gi,method='gift_card',code='same-operation-code')['status']=='saved'

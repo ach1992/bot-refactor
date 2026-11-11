@@ -294,8 +294,12 @@ $time = time();
 // Their arbitrary request bodies must never become privileged bot callbacks.
 $update = defined('ACHBOT_VERIFIED_WEBHOOK_ENTRYPOINT')
     ? json_decode(file_get_contents("php://input")) : null;
+// Cron and internal pages have no Telegram actor or callback. Give those
+// contexts explicit inert bindings instead of PHP warnings and API calls.
+$from_id = $from_id ?? 0;
+$data = $data ?? '';
 require __DIR__ . '/src/Telegram/UpdateBindings.php';
-if($from_id < 0) exit();
+if((int)$from_id < 0 || (defined('ACHBOT_VERIFIED_WEBHOOK_ENTRYPOINT') && (int)$from_id <= 0)) exit();
 $stmt = $connection->prepare("SELECT * FROM `users` WHERE `userid`=?");
 $stmt->bind_param("i", $from_id);
 $stmt->execute();
@@ -325,7 +329,15 @@ if (defined('ACHBOT_VERIFIED_WEBHOOK_ENTRYPOINT') &&
 
 $supportID = $botState['supportID'];
 $channelLock = $botState['lockChannel'];
-$joniedState= bot('getChatMember', ['chat_id' => $channelLock,'user_id' => $from_id])->result->status;
+$joniedState = null;
+// Membership is relevant only for an authenticated webhook actor, not a
+// once-per-minute CLI job. Preserve the legacy unknown-result behavior.
+if (defined('ACHBOT_VERIFIED_WEBHOOK_ENTRYPOINT') && (int)$from_id > 0 &&
+    $channelLock !== null && $channelLock !== '') {
+    $membership = bot('getChatMember', ['chat_id' => $channelLock,'user_id' => $from_id]);
+    $memberStatus = is_object($membership) ? ($membership->result->status ?? null) : null;
+    $joniedState = is_string($memberStatus) ? $memberStatus : null;
+}
 
 // Channel exemption is dispatched by bot.php AFTER webhook/IP verification.
 // No privileged Telegram update may change EXEMPTED_USERS during bootstrap.

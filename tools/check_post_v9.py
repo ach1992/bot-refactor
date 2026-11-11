@@ -508,6 +508,20 @@ def cron_checks(tmp: Path) -> dict:
         "permissive_lock_file_fails_closed",
         "unavailable_php_flock_fails_closed",
     }
+    actor_process=subprocess.run(
+        ["python3",str(ROOT/"tools/test_post_v9_cron_config_bootstrap.py")],
+        cwd=ROOT,check=True,timeout=25,capture_output=True,text=True)
+    actor=json.loads(actor_process.stdout)
+    if not (actor.get('complete') is True and actor.get('cases')==5 and
+            actor.get('actual_config_section') is True and
+            actor.get('cli_no_telegram_or_php_warnings') is True and
+            actor.get('real_verified_webhook_membership') is True and
+            actor.get('malformed_membership_no_warning') is True and
+            actor.get('unknown_actor_fails_closed') is True and
+            actor.get('external_network_calls')==0 and
+            actor.get('live_database_mutations')==0):
+        raise RuntimeError('Shared Cron/webhook config-actor proof incomplete')
+    cron['config_actor_bootstrap']=actor
     if not (cron.get("complete") and cron.get("cases")>=95
             and required_cron_cases.issubset(cron.get("scenarios", []))
             and cron.get("actual_current_runner_executed")

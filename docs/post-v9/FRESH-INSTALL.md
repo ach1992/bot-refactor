@@ -135,6 +135,8 @@ sudo stat -c '%U:%G %a %n' /var/lib/achbot /var/lib/achbot/cron-locks
 
 Expected lock-directory ownership/mode: `root:root 700`. Do not overwrite or change an unexpected existing path. For non-root Cron, use a separate private directory owned by its user and set `ACHBOT_CRON_LOCK_DIR` in that Cron command. A root-owned 0700 directory cannot be reused by another UID. Do not make it 0777. Use an absolute canonical path without symlink aliases; ancestors must be root- or scheduler-owned, without untrusted write access (a root-owned sticky ancestor is permitted).
 
+When aaPanel appends Cron output to its own `/www/server/cron/<task-id>.log`, the bot's runtime does **not** rotate that host-managed file. The separately authorized ACh Host NL Chili operation now checks the **one** identified aaPanel log every minute using an independent `logrotate` timer, starts rotation at **40 MiB** (headroom beneath the Owner's 50 MB active-file target), retains three compressed previous versions, and uses `copytruncate` so aaPanel's writer continues on the same path. This host change is not included in a source ZIP and is not a literal hard per-write size guarantee under an unexpected large burst. Do not copy its host-specific task ID to another installation, disable diagnostics, assume all aaPanel logs are covered, or mistake archived log rotation for source error remediation.
+
 After settings/readiness preparation, schedule **one invocation per minute**. In aaPanel select the one-minute schedule and put only the command below in its command field. In a normal crontab, prefix the command with `* * * * *`. Replace paths with this installation's actual paths and pre-create its private writable log directory:
 
 ```sh

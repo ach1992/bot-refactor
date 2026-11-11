@@ -610,6 +610,32 @@ function achbotApiPaymentRememberGiftRejection(mysqli $db,int $id,string $code,s
         $q=$db->prepare('UPDATE payment_attempts SET evidence_code=? WHERE pay_row_id=? AND evidence_code_sha256=?');$q->bind_param('sis',$sealed,$id,$a['evidence_code_sha256']);$q->execute();$q->close();$db->commit();
     }catch(Throwable $e){try{$db->rollback();}catch(Throwable $ignored){}}
 }
+/** A proved gift card remains consumed by its ORIGINAL AChBot invoice
+ * even if the issuer later changes the card back to active. This read-only
+ * lookup does not authorize replay, reversal or a second settlement.
+ */
+function achbotApiPaymentGiftPreviouslyProven(mysqli $db,int $payId,?string $codeDigest=null,
+                                            ?string $providerIdentity=null): bool {
+    if ($payId<=0 || ($codeDigest===null && $providerIdentity===null))return false;
+    try {
+        if ($providerIdentity!==null && !preg_match('/\A[a-f0-9]{64}\z/D',$providerIdentity))
+            return false;
+        if ($codeDigest!==null && !preg_match('/\A[a-f0-9]{64}\z/D',$codeDigest))
+            return false;
+        $match=$providerIdentity!==null
+            ?'t.payment_id=?':'a.evidence_code_sha256=?';
+        $value=$providerIdentity!==null?'api1:'.$providerIdentity:$codeDigest;
+        $q=$db->prepare('SELECT 1 FROM payment_attempts a
+            INNER JOIN payment_transactions t ON t.attempt_id=a.id
+            WHERE a.provider=\'gift_card\' AND t.provider=\'gift_card\'
+              AND a.pay_row_id<>? AND t.evidence_state=\'proven\'
+              AND t.evidence_operation IS NOT NULL AND '.$match.' LIMIT 1');
+        $q->bind_param('is',$payId,$value);$q->execute();
+        $found=$q->get_result()->num_rows>0;$q->close();
+        return $found;
+    } catch (Throwable $ignored) {return false;}
+}
+
 /** Customer code is encrypted before verification HTTP. Never log or fan it out. */
 function achbotApiPaymentCheckGift(mysqli $db,array $claim): string {
     $pay=$claim['pay'];$id=(int)$pay['id'];
@@ -627,6 +653,13 @@ function achbotApiPaymentCheckGift(mysqli $db,array $claim): string {
     // Legacy malformed sealed evidence is kept for human reconciliation,
     // but cannot re-enter provider monitoring or create a fresh review.
     if (!achbotPaymentEvidenceGiftCodeFormatValid($code))return 'manual';
+    // The original proven code digest is sufficient to park an exact replay
+    // WITHOUT another provider /verify (which itself writes issuer audit).
+    if (achbotApiPaymentGiftPreviouslyProven($db,$id,
+        (string)($claim['attempt']['evidence_code_sha256']??''))) {
+        error_log('achbot_gift_proven_reuse_deferred pay_id='.$id.' reason=code_digest_collision');
+        return 'manual';
+    }
     $result=achbotPaymentEvidenceGiftVerify($claim['profile'],$code);$status=(string)($result['status']??'unavailable');
     if(in_array($status,['used','revoked','expired'],true)) {
         if(achbotPaymentEvidenceRejectGiftCode($db,$id,$code,$status))achbotApiPaymentRememberGiftRejection($db,$id,$code,$status);return $status;
@@ -634,6 +667,11 @@ function achbotApiPaymentCheckGift(mysqli $db,array $claim): string {
     if(empty($result['ok']) || $status!=='active')return 'review';
     $e=achbotPaymentEvidenceGiftNormalize($result['data']??[],$claim['profile'],$claim['attempt']);
     if($e===null) {$why=achbotPaymentEvidenceGiftNormalizationStatus($result['data']??[],$claim['profile'],$claim['attempt']);if($why==='mismatch' && achbotPaymentEvidenceRejectGiftCode($db,$id,$code,'mismatch'))achbotApiPaymentRememberGiftRejection($db,$id,$code,'mismatch');return $why==='mismatch'?'mismatch':'review';}
+    if (achbotApiPaymentGiftPreviouslyProven($db,$id,null,(string)$e['identity'])) {
+        error_log('achbot_gift_proven_reuse_deferred pay_id='.$id.' reason=provider_identity_collision');
+        return 'manual';
+    }
+    // The locked Reserve() identity check remains authoritative for races.
     $handle=achbotPaymentEvidenceReserve($db,$id,$e,'settle',$code);
     if(!$handle)return 'review';
     $consumed=achbotPaymentEvidenceConsume($db,$handle);

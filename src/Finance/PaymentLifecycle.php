@@ -741,6 +741,22 @@ function achbotPayUxEditAccepted($reply): bool {
          str_contains(strtolower($reply->description), 'message is not modified')));
 }
 
+/** Stable, non-sensitive Telegram failure categories. Missing originals
+ * remain retained and unsynced; a new message stays immediately eligible.
+ */
+function achbotPayUxEditFailureCategory($reply): string {
+    if (!is_object($reply))return 'transport_unavailable';
+    $http=(int)($reply->error_code??0);
+    $description=strtolower(is_string($reply->description??null)?$reply->description:'');
+    if ($http===400 && str_contains($description,'message to edit not found'))return 'message_missing';
+    if ($http===400 && (str_contains($description,"message can't be edited") ||
+        str_contains($description,'message can not be edited')))return 'message_not_editable';
+    if ($http===403)return 'access_denied';
+    if ($http===429)return 'rate_limited';
+    if ($http>=500)return 'telegram_server_error';
+    return 'telegram_rejected';
+}
+
 /**
  * Best-effort Telegram clean-up: each registered payment message is rewritten
  * to its current status, or at minimum has its old clickable URL removed.
@@ -805,6 +821,7 @@ function achbotPayUxSyncMessages(mysqli $db, int $payId): int {
             $ok=false;
             $fullTextEdited=false;
             $transportFailed=false;
+            $fullEditResponse=null;
             if ($item['kind']==='text') {
                 try {
                     $res=bot('editMessageText',[
@@ -813,6 +830,7 @@ function achbotPayUxSyncMessages(mysqli $db, int $payId): int {
                         'reply_markup'=>$keyboard,
                         'disable_web_page_preview'=>true
                     ]);
+                    $fullEditResponse=$res;
                     $ok=achbotPayUxEditAccepted($res);
                     $fullTextEdited=$ok;
                     $transportFailed=$res===null || $res===false;
@@ -825,6 +843,7 @@ function achbotPayUxSyncMessages(mysqli $db, int $payId): int {
                         'caption'=>$text,'parse_mode'=>'HTML',
                         'reply_markup'=>$keyboard
                     ]);
+                    $fullEditResponse=$res;
                     $ok=achbotPayUxEditAccepted($res);
                     $fullTextEdited=$ok;
                     $transportFailed=$res===null || $res===false;
@@ -840,8 +859,10 @@ function achbotPayUxSyncMessages(mysqli $db, int $payId): int {
                     $ok=is_object($res) && ($res->ok ?? false)===true;
                 } catch (Throwable $ignored) {}
             }
+            $failureClass=achbotPayUxEditFailureCategory($fullEditResponse);
             if (!$ok) {
-                error_log('achbot_payment_telegram_edit_deferred pay_id='.$payId);
+                error_log('achbot_payment_telegram_edit_deferred pay_id='.$payId.
+                    ' ref_id='.(int)$item['id'].' category='.$failureClass);
             }
             if (!$fullTextEdited) {
                 // Even a successful markup-only action is not a truthful text
@@ -851,10 +872,13 @@ function achbotPayUxSyncMessages(mysqli $db, int $payId): int {
                 // This scheduler already owns updated_at ordering; a future
                 // value is a retry-not-before hint, not proof of delivery.
                 $rowId=(int)$item['id'];
+                $retrySeconds=in_array($failureClass,
+                    ['message_missing','message_not_editable','access_denied'],true)
+                    ?6*3600:3*60;
                 $stmt=$db->prepare('UPDATE payment_message_refs
-                                    SET updated_at=DATE_ADD(NOW(6),INTERVAL 3 MINUTE)
+                                    SET updated_at=DATE_ADD(NOW(6),INTERVAL ? SECOND)
                                     WHERE id=? AND pay_row_id=?');
-                $stmt->bind_param('ii',$rowId,$payId);
+                $stmt->bind_param('iii',$retrySeconds,$rowId,$payId);
                 $stmt->execute();$stmt->close();
                 continue;
             }
