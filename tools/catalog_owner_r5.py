@@ -95,7 +95,13 @@ def shared_transfer_baseline():
 
 @functools.lru_cache(maxsize=2)
 def shared_transfer_source_lines(path,original=False):
-    raw=command('git','show',SHARED_TRANSFER_SOURCE+':'+path).decode() if original else (ROOT/path).read_text()
+    # #144's successor copy is independently pinned byte-for-byte. The #112
+    # historical proof must inspect the verified pre-#144 source projection,
+    # not treat an approved newer service warning as an unlisted #112 edit.
+    check(path in ('messages/fa/user.php','messages/fa/admin.php'),
+          'shared_transfer_source_unexpected_path')
+    raw=(command('git','show',SHARED_TRANSFER_SOURCE+':'+path).decode()
+         if original else service_change_catalog_layer()[0][path.split('/')[-1][:-4]])
     lines={}
     topic=None
     for line in raw.splitlines():
@@ -114,10 +120,9 @@ def shared_transfer_source_lines(path,original=False):
 def shared_transfer_shipped_values():
     # Compare synthetic negative controls to the actual pinned shipping copy,
     # never just to the key inventory. The source line hash is verified below.
-    return {audience:flatten(json.loads(command(
-        'php','-r',
-        '$g=require "messages/fa/'+audience+'.php";echo json_encode($g,JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);'
-    ))) for audience in ['user','admin']}
+    # Both source file hashes and the exact #144 key deltas are checked by
+    # service_change_catalog_layer(); reuse its pre-change value projection.
+    return service_change_catalog_layer()[1]
 
 def shared_transfer_copy_restore(sides):
     record=json.loads((ROOT/'tools/text_catalog_shared_transfer.json').read_text())
