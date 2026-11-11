@@ -1099,10 +1099,20 @@ function achbotPhysicalRecoverPlan(mysqli $db,int $journalId,int $actorId,
         $s->close();
         $commitAttempted=true;
         if (!$db->commit()) throw new RuntimeException('physical_recovery_finalize_commit_unknown');
-        $tx=false;
+        $tx=false;$commitAttempted=false;
         error_log('achbot_shared_plan_recovered journal_id='.$journalId.
             ' source_order_id='.(int)$journal['source_order_id'].
             ' actor_id='.$actorId.' active_refs='.$count.' mode=get_only');
+        // Telegram cleanup is strictly post-commit and best-effort. Both the
+        // original journal and old invoice state are already authoritative;
+        // editMessageReplyMarkup failure cannot undo or replay Native/finance.
+        try {
+            if (achbotPhysicalPlanChangesLocalPlan($final['peers'],(int)$journal['plan_id']))
+                achbotPhysicalHideRetiredReceiptActions($db,$final['peers']);
+        } catch (Throwable $cleanupError) {
+            error_log('achbot_plan_recovery_receipt_cleanup_unconfirmed journal_id='.$journalId.
+                ' class='.get_class($cleanupError));
+        }
         return achbotPhysicalPlanResult(true,'recovered',$count);
     } catch (Throwable $error) {
         if ($tx && !$commitAttempted) {try{$db->rollback();}catch(Throwable $ignored){}}
