@@ -470,3 +470,13 @@ uses its existing provider contract. Previously dispatched 007 identities
 remain untouched; no automatic reconciliation CREATE is enabled. A new
 source-real native fixture checks distinct randomized buildRemark inputs,
 source/ordinal uniqueness, provider boundaries, and stable output.
+
+Current PR #148 native CREATE repair: all modern paid/nonpaid Marzban effect
+paths use `src/Purchase/Core.php` to obtain the port and dispatch the one
+provider-bound CREATE. The exact 007 operation marker is forwarded with its
+required `achbot:v1:` prefix, immutable username and pinned endpoint/credentials;
+no legacy 409 collision retry or unrecorded second POST exists. The current
+port helper uses a locked counter for auto mode, and random mode has no counter
+side effect. The source-real original-schema NOWPayments (344 cases) and
+agent-zero-price Native (46 cases) tests passed locally on disposable MariaDB;
+this is **not** a PHP 8.5 CI verdict or installed verification.

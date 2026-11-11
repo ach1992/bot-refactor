@@ -199,10 +199,9 @@ if (!function_exists('achbotPaidPurchaseRemark')) {
         if ($payId<=0 || $ordinal<=0 || $count<=0 || $ordinal>$count)
             throw new RuntimeException('paid_username_identity_invalid');
         if ($provider!=='marzban') return $base;
-        if (preg_match('/^[A-Za-z0-9_-]+$/D',$base)!==1)
-            throw new RuntimeException('paid_marzban_username_invalid');
         if ($count===1 && $explicitSingle) {
-            if (strlen($base)>32)
+            if (preg_match('/^[A-Za-z0-9_-]+$/D',$base)!==1 ||
+                strlen($base)>32)
                 throw new RuntimeException('paid_marzban_username_invalid');
             return $base;
         }

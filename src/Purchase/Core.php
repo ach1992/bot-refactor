@@ -597,6 +597,65 @@ if (!function_exists('buildRemark')) {
 }
 
 /**
+ * Process-safe implementation of the archived auto-port contract. It must be
+ * available to all current checkout and nonpaid routes, not just historical
+ * buy_helpers.php. Random mode does not persist a counter; auto mode uses a
+ * single file lock around the complete read/increment/write transaction.
+ */
+if (!function_exists('getNextPortAndIncrease')) {
+    function getNextPortAndIncrease(string $tempFilePath,string $portType): array {
+        if ($portType!=='auto') return [random_int(1111,65000),0];
+        if ($tempFilePath==='') throw new RuntimeException('auto_port_path_missing');
+        $handle=@fopen($tempFilePath,'c+');
+        if ($handle===false) throw new RuntimeException('auto_port_store_unavailable');
+        try {
+            if (!flock($handle,LOCK_EX))
+                throw new RuntimeException('auto_port_lock_unavailable');
+            rewind($handle);
+            $saved=stream_get_contents($handle,128);
+            if ($saved===false) throw new RuntimeException('auto_port_read_unavailable');
+            $port=random_int(1111,65000);$last=0;
+            if (trim($saved)!=='') {
+                if (!preg_match('/^([0-9]{4,5})-([0-9]{1,18})$/D',trim($saved),$m) ||
+                    (int)$m[1]<1111 || (int)$m[1]>65000 ||
+                    (int)$m[2]>=PHP_INT_MAX-1)
+                    throw new RuntimeException('auto_port_state_invalid');
+                $port=(int)$m[1]+1;$last=(int)$m[2]+1;
+                if ($port>65000) $port=1111;
+            }
+            $written=$port.'-'.$last;
+            if (!rewind($handle) || !ftruncate($handle,0) ||
+                fwrite($handle,$written)!==strlen($written) || !fflush($handle))
+                throw new RuntimeException('auto_port_write_unconfirmed');
+            return [$port,$last];
+        } finally {
+            flock($handle,LOCK_UN);fclose($handle);
+        }
+    }
+}
+
+/**
+ * Sole current CREATE facade for a previously reserved, pinned Marzban 007
+ * effect. Historical collision retries are unsafe after a durable dispatch.
+ * The PG provider uses its own 007 adapter and never reaches this branch.
+ */
+if (!function_exists('createServerAccount')) {
+    function createServerAccount($serverType,$serverId,$inboundId,$planId,
+        $remark,$volume,$days,$uniqid,$protocol,$port,$expireMicrodate,
+        $netType,$rahgozar,$limitIp,?string $operationNote=null,
+        ?int $fixedExpire=null,?array $effectTarget=null): array {
+        if ($serverType!=='marzban' || (int)$inboundId!==0 ||
+            $operationNote===null || $operationNote==='' ||
+            $fixedExpire===null || $effectTarget===null ||
+            preg_match('/^[a-f0-9]{32}$/D',$operationNote)!==1)
+            throw new RuntimeException('native_create_pinned_target_required');
+        $response=addMarzbanUser((int)$serverId,(string)$remark,(int)$volume,
+            (int)$days,(int)$planId,'achbot:v1:'.$operationNote,$fixedExpire,$effectTarget);
+        return [$response,(string)$remark,(int)$port];
+    }
+}
+
+/**
  * Independent authenticated admin updates must map to distinct, stable
  * Marzban account identities even when manual remark is unchanged.
  *

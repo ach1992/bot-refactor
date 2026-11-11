@@ -57,6 +57,7 @@ def marzban():
 # The free selector has no invoice hash; preserve the webhook's empty ambient value.
 DRIVER=existing.PHP.replace("$botState['rewardChannel']='';",
     "$botState['rewardChannel']='';$botState['remark']='digits';$hash_id='';",1)
+# Use the actual current shared purchase bootstrap, including port allocation.
 DRIVER=DRIVER.replace("try {\n $out=null;$op=$spec['op'];",r"""function sendQrFromLink(...$args){
  $GLOBALS['events'][]=['kind'=>'delivery','owner'=>$args[4]??null];return true;
 }
