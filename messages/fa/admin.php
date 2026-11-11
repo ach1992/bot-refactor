@@ -86,7 +86,7 @@ return [
         'more' => ['text' => '… اطلاعات {count} اکانت دیگر در سوابق اصلی ثبت شده است.', 'parameters' => ['count']],
         'short_reference' => '📋 گزارش ساخت یا خرید گروهی',
         'bulk_subject' => 'خرید گروهی اشتراک',
-        'admin_created' => ['text' => "📦 ساخت گروهی اکانت\n👤 مدیر: {actor}\n🔗 شناسه عملیات: {source}\n🗂 سرور: {server}\n📦 پلن: {plan}\n⏳ مدت: {days} روز\n📊 حجم: {volume} گیگابایت", 'parameters' => ['actor', 'source', 'server', 'plan', 'days', 'volume']],
+        'admin_created' => ['text' => "📦 ساخت گروهی اکانت\n👤 مدیر: {actor}\n🔗 شناسه عملیات: {source}\n🗂 سرور: {server}\n🧭 پلن: {plan}\n⏳ مدت: {days} روز\n📊 حجم: {volume} گیگابایت", 'parameters' => ['actor', 'source', 'server', 'plan', 'days', 'volume']],
         'delivery_needs_review' => ['text' => '⚠️ ارسال اطلاعات {count} اکانت به تلگرام تأیید نشد؛ ساخت مجدد نکنید و تحویل را بررسی کنید.', 'parameters' => ['count']],
     ],
 
