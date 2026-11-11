@@ -124,6 +124,12 @@ DRIVER = plans.DRIVER.replace(" } elseif($op==='toggle'){", """ } elseif($op==='
  } elseif($op==='review_payment_journal'){
   require_once $root.'/src/Purchase/Core.php';
   $out=achbotServicePaymentJournalClear($connection,(int)$spec['order']);
+ } elseif($op==='pin_new_pg_invoice'){
+  // Unlike Marzban, a new PasarGuard invoice MUST capture an immutable
+  // post-change account/Native Group snapshot before quote eligibility.
+  require_once $root.'/src/Panel/ProviderRuntime.php';
+  achbotPgPinPayment($connection,(int)$spec['pay']);
+  $out='pinned';
  } elseif($op==='review_retired_terminal'){
   require_once $root.'/src/Finance/ReceiptHelpers.php';
   $id=(int)$spec['pay'];
@@ -427,6 +433,13 @@ def main():
             # and reselecting the identical plan must not invalidate it.
             new_invoice=invoice(h,'newplan','pending',order=h['peer'])
             db(f'UPDATE pays SET plan_id=120 WHERE id={new_invoice}')
+            if provider=='pasarguard':
+                # Quote without 012 snapshot is intentionally NOT payable.
+                # Pin the verified, new Native identity exactly as the real
+                # current PasarGuard invoice creation path must.
+                yes(h['call']('pin_new_pg_invoice',pay=new_invoice)=='pinned' and
+                    db('SELECT provider_snapshot IS NOT NULL FROM pays WHERE id='+str(new_invoice))=='1',
+                    'pasarguard_new_plan_quote_has_fresh_verified_native_pin')
             yes(h['call']('review_superseded_payment',pay=new_invoice)['eligible'] is True,
                 provider+'_new_plan_invoice_is_payable_after_successful_service_change')
             old=len(h['writes']());plan(h,120)
