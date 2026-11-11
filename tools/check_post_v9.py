@@ -512,7 +512,7 @@ def cron_checks(tmp: Path) -> dict:
         ["python3",str(ROOT/"tools/test_post_v9_cron_config_bootstrap.py")],
         cwd=ROOT,check=True,timeout=25,capture_output=True,text=True)
     actor=json.loads(actor_process.stdout)
-    if not (actor.get('complete') is True and actor.get('cases')==16 and
+    if not (actor.get('complete') is True and actor.get('cases')==17 and
             actor.get('native_marzban_auth_root_cause_classified') is True and
             actor.get('native_marzban_subscription_single_login') is True and
             actor.get('native_panel_no_empty_auth_request') is True and

@@ -140,7 +140,7 @@ function curl_exec($handle) {
     if (str_contains($handle->url,'/api/admin/token')) {
         ++$GLOBALS['auth_requests'];
         return match($mode) {
-            'auth_http_401','info_auth_bad'=>'{"detail":"unauthorized"}',
+            'auth_http_401','info_auth_bad','auth_effect_401'=>'{"detail":"unauthorized"}',
             'auth_http_503'=>'{"detail":"unavailable"}',
             'auth_bad_json'=>'invalid-json',
             'auth_transport'=>false,
@@ -161,7 +161,7 @@ function curl_errno($handle) {global $mode;
 }
 function curl_getinfo($handle,$option) {global $mode;
     return match($mode) {
-        'auth_http_401','info_auth_bad'=>401,
+        'auth_http_401','info_auth_bad','auth_effect_401'=>401,
         'auth_http_503'=>503,
         'auth_transport'=>0,
         default=>200,
@@ -183,7 +183,10 @@ if (str_starts_with($mode,'info_')) {
     $result=['success'=>$v->success??null,'msg'=>$v->msg??null,
              'subscription_url'=>$v->subscription_url??null];
 } else {
-    $v=getMarzbanToken(91);
+    $v=$mode==='auth_effect_401'
+      ?getMarzbanToken(91,'https://fixture.invalid',[
+          'panel_url'=>'https://fixture.invalid','username'=>'owned','password'=>'synthetic'])
+      :getMarzbanToken(91);
     $result=['detail'=>$v->detail??null,
              'valid_token'=>is_string($v->access_token??null)];
 }
@@ -194,6 +197,7 @@ echo json_encode(['result'=>$result,'auth_requests'=>$GLOBALS['auth_requests'],
     cases={
       'auth_http_401':({'detail':'marzban_auth_http_unconfirmed','valid_token':False},1,0,0,
                         'achbot_marzban_auth_unverified server_id=91 reason=http_status http=401 curl_errno=0'),
+      'auth_effect_401':({'detail':'effect_auth_unconfirmed','valid_token':False},1,0,0,''),
       'auth_http_503':({'detail':'marzban_auth_http_unconfirmed','valid_token':False},1,0,0,
                         'achbot_marzban_auth_unverified server_id=91 reason=http_status http=503 curl_errno=0'),
       'auth_bad_json':({'detail':'marzban_auth_invalid','valid_token':False},1,0,0,
@@ -282,7 +286,7 @@ def run() -> dict:
                 assert forbidden not in logs,(forbidden,logs[-700:])
     native_marzban_invalid_auth_guard()
     native_marzban_login_subscription_guard()
-    return {'complete': True,'cases':16,'actual_config_section':True,
+    return {'complete': True,'cases':17,'actual_config_section':True,
             'native_marzban_auth_root_cause_classified':True,
             'native_marzban_subscription_single_login':True,
             'native_panel_no_empty_auth_request':True,

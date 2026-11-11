@@ -75,23 +75,30 @@ function getMarzbanToken($server_id, ?string $expectedPanelUrl = null,
             'Content-Type: application/x-www-form-urlencoded',
             'accept: application/json'
         ));
+    // Pinned financial effects already emit one durable reconciliation
+    // diagnostic with stage/reason; a second panel auth line would duplicate
+    // the same operation and violate the existing exact journal contract.
+    $logStandaloneAuthFailure=static function(string $reason,int $http=0,int $errno=0)
+        use($effectTarget,$logAuthFailure): void {
+        if ($effectTarget===null)$logAuthFailure($reason,$http,$errno);
+    };
     $response = curl_exec($curl);
     $curlError=curl_error($curl);
     $curlErrno=(int)curl_errno($curl);
     $http=(int)curl_getinfo($curl,CURLINFO_HTTP_CODE);
     if ($curlError!=='' || $response===false || $curlErrno!==0) {
-        $logAuthFailure('transport',$http,$curlErrno);
+        $logStandaloneAuthFailure('transport',$http,$curlErrno);
         return (object)['success'=>false,'detail'=>'marzban_auth_transport_unavailable'];
     }
     if ($http!==200) {
-        $logAuthFailure('http_status',$http);
+        $logStandaloneAuthFailure('http_status',$http);
         return (object)['success'=>false,'detail'=>$effectTarget!==null
             ?'effect_auth_unconfirmed':'marzban_auth_http_unconfirmed'];
     }
     $token=json_decode((string)$response);
     if (!is_object($token) || !is_string($token->access_token??null) ||
         $token->access_token==='') {
-        $logAuthFailure('invalid_token',$http);
+        $logStandaloneAuthFailure('invalid_token',$http);
         return (object)['success'=>false,'detail'=>$effectTarget!==null
             ?'effect_auth_invalid':'marzban_auth_invalid'];
     }
@@ -246,7 +253,7 @@ function getMarzbanUser($server_id, $remark, $token = null, bool $strict = false
     if (!is_object($token) || !is_string($token->access_token??null) ||
         $token->access_token==='') {
         static $reportedAuthFailures=[];
-        if (!isset($reportedAuthFailures[(int)$server_id])) {
+        if ($effectTarget===null && !isset($reportedAuthFailures[(int)$server_id])) {
             $reportedAuthFailures[(int)$server_id]=true;
             error_log('achbot_marzban_auth_unverified server_id='.(int)$server_id.' stage=get_user');
         }
