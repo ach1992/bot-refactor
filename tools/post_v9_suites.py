@@ -501,6 +501,7 @@ def run_api(tmp: str) -> tuple[dict, dict]:
         'concurrent_real_human_api_rday_at_most_once',
         'concurrent_real_human_api_rvolume_at_most_once',
         'concurrent_real_human_api_rexternal_at_most_once',
+        'manual_paid_native_complete_deadlock_local_sql_retry_only',
         'restart_after_local_claim_reuses_capacity_hold_once',
         'api_processing_proven_resume_is_technical_only_and_terminal_hint_disappears',
         'restart_verified_edit_finishes_without_native_redispatch',

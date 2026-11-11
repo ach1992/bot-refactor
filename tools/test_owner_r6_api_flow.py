@@ -596,6 +596,42 @@ return !empty($GLOBALS['spec']['fail_staff'])?null:(object)['ok'=>true];}""")
             if kind=='BUY_SUB':assert int(query(work,env,f"SELECT COUNT(*) FROM service_effects WHERE pay_row_id={n} AND effect_kind='create' AND state='local_recorded'"))==count,(label,r1,r2)
             due(n);r=call(pay=n);assert APIs.rows[rid]['status']=='used',(label,r)
             assert call(op='settle',pay=n)['result']=='settled';cases.append('concurrent_real_human_api_'+label+'_at_most_once')
+        # A deadlock victim after verified Native CREATE must retry only the
+        # local order+payment SQL transaction. Synthetic 1213 is emitted once
+        # on the SAME PHP DB session; the next insertion succeeds only after
+        # the complete original transaction was explicitly rolled back.
+        APIs.rows={}
+        local_retry_pay=seed('localretry','BUY_SUB')
+        local_retry_hash=query(work,env,
+            f'SELECT hash_id FROM pays WHERE id={local_retry_pay}')
+        wallet_before_retry=query(work,env,'SELECT wallet FROM users WHERE userid=1001')
+        query(work,env,'''DELIMITER //
+CREATE TRIGGER achbot_fixture_local_deadlock BEFORE INSERT ON orders_list
+FOR EACH ROW BEGIN
+  IF @achbot_fixture_deadlock_once IS NULL THEN
+    SET @achbot_fixture_deadlock_once=1;
+    SIGNAL SQLSTATE '40001'
+        SET MYSQL_ERRNO=1213, MESSAGE_TEXT='synthetic_local_deadlock_victim';
+  END IF;
+END//
+DELIMITER ;''')
+        try:
+            local_retry_result=human('standard_approval','accept'+local_retry_hash)
+        finally:
+            query(work,env,'DROP TRIGGER IF EXISTS achbot_fixture_local_deadlock')
+        assert (state(local_retry_pay)=='approved' and
+            int(query(work,env,
+                'SELECT COUNT(*) FROM service_effects WHERE pay_row_id='
+                +str(local_retry_pay)
+                +" AND effect_kind='create' AND state='local_recorded'"
+                +' AND order_id IS NOT NULL'))==1 and
+            query(work,env,'SELECT wallet FROM users WHERE userid=1001')==wallet_before_retry and
+            sum(e.get('name')=='remote_create' for e in local_retry_result['events'])==1 and
+            sum(e.get('name')=='remote_get' for e in local_retry_result['events'])>=1 and
+            'achbot_manual_standard_local_deadlock_retry pay_id='
+                +str(local_retry_pay) in local_retry_result['stderr']),local_retry_result
+        cases.append('manual_paid_native_complete_deadlock_local_sql_retry_only')
+
         # Crash after funded local claim before any CREATE uses its existing hold once.
         APIs.rows={};n=seed('restartcreate','BUY_SUB');assert call(op='resume_hint',pay=n)['result'] is False
         sms(n);capacity=int(query(work,env,'SELECT ucount FROM server_info WHERE id=2'));r=call(pay=n,crash_before_native=True);assert r['result']=='review' and state(n)=='processing',r

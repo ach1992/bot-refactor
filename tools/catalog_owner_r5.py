@@ -576,10 +576,12 @@ def chili_copy_reference():
             approved=CHILI_APPROVED_LATER_LINE_AFTER+'\n'
             check(before.count(original)==1 and after.count(approved)==1,
                   'approved_api_button_prefix_exact_source')
+            # service_change_catalog_layer()[0] is the immutable source
+            # BEFORE #144 (and therefore before #147), not current admin.php.
+            # That layer already verifies and subtracts only the exact #147
+            # block before its byte-for-byte #144 manifest check. Never
+            # subtract #147 again from this historical Chili predecessor.
             historical_after=after.replace(approved,original,1)
-            bulk=bulk_reporting_source()
-            check(historical_after.count(bulk)==1,'bulk_reporting_source_projection')
-            historical_after=historical_after.replace(bulk,'',1)
         left=lines(before);right=lines(historical_after)
         check(set(left)-set(right)==set() and
               set(right)-set(left)=={k for k,v in added.items() if v['audience']==audience},

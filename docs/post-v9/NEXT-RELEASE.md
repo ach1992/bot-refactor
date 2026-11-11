@@ -45,9 +45,11 @@ published RC30 ZIP or the active Chili installation.
   Native effect, an active API evidence lease, a reserved/redeemed gift/SMS
   operation, an unknown 003/014 schema or a bound foreign owner cannot be
   silently retired; it continues to hold the service transition for
-  reconciliation. Retiring an open invoice happens with the service-change
-  intent commit, before a potential Native PUT. A later uncertain Native
-  response does not resurrect prior invoices or falsely claim service success.
+  reconciliation. The original journal fences new claims before a potential
+  Native PUT, but the old invoice is retired only with the verified local
+  service-change COMMIT. An uncertain Native response leaves the original
+  invoice open but held behind the journal; neither funds nor service are
+  falsely claimed as settled.
 - **Owner refinement for manual receipts and hosted review** (PR #146 only):
   after a VERIFIED real service/plan change, the original staff approval and
   rejection keyboards are removed from saved receipt messages on a best-effort
@@ -186,6 +188,33 @@ and the configured report channel. It neither compensates money nor issues
 CREATE/refund actions. Actual PHP 8.5 exact-HEAD CI and fresh high-assurance
 delta review are mandatory before any integration; source-only fixtures cannot
 establish an installed provider or financial outcome.
+
+## Unreleased combined-branch integration and SQL deadlock recovery
+
+The isolated source-only integration combines #144 (A02 Native correction and
+B03 service-payment supersession) with #147 (C03 bulk provenance/reporting).
+It does **not** modify any installed Chili order, journal, worker, API or
+Native account. The combined catalog verification preserves the immutable
+Chili predecessor, independently proves the #147 eight-key block and projects
+it away exactly once before verifying the #144 SHA-256 manifest. A second
+attempt to subtract #147 from the pre-#144 predecessor is invalid.
+
+A concurrent human-bank/API purchase can leave a verified, already-created
+Native account followed by MariaDB `1213` during the **local** order/effect
+link and payment finalization. The manual standard BUY_SUB finisher therefore
+allows a single additional attempt of this **SQL-only** transaction after an
+InnoDB 1213 victim and acknowledged rollback. The preexisting 007 operation,
+remote CREATE, strict GET, immutable receipt, capacity reservation and
+payment claim are **never dispatched or debited again**. A failed rollback,
+other SQL error, unknown commit or repeated deadlock stays under the existing
+operator reconciliation hold. The dedicated disposable test injects one
+synthetic 1213 at original order insertion and requires exactly one Native
+CREATE plus one committed local effect. SQL trigger syntax was checked on
+isolated MariaDB; current-runtime end-to-end acceptance requires PHP 8.5 CI.
+
+An exact integrated candidate, new independent review, owner merge
+permission and separate rollout acceptance remain mandatory. No PHP 8.4
+runtime rehearsal substitutes for the protected PHP 8.5 Gate.
 
 ## Published RC30 — source-only Cron, Telegram, Marzban and gift-card reliability
 
