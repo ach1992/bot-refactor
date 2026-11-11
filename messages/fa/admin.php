@@ -462,6 +462,10 @@ return [
         'account_details.get_user_order_detail_keys.text.fb6d00ad8d' => '🔴 تمدید خودکار خاموش',
         // service_change_report (shared administrator/report-channel notices)
         'service_plan_recovery.action' => '🔎 بررسی و تکمیل تغییر پلن',
+        'service_plan_correction.action' => '🛠️ اصلاح یک‌باره دسترسی Native',
+        'service_plan_correction.confirm' => '⚠️ تأیید ارسال یک درخواست Native جدید (فقط یک‌بار)',
+        'service_plan_correction.warning' => '⚠️ این اقدام پس از تأیید، ممکن است یک درخواست جدید برای اصلاح دسترسی Native ارسال کند. پس از خطای نامطمئن، درخواست دوباره ارسال نمی‌شود؛ ابتدا Journal و وضعیت Native را بررسی کنید.',
+        'service_plan_correction.get_only' => '✅ دسترسی Native اکنون مطابق پلن است؛ از گزینهٔ بررسی و تکمیل تغییر پلن استفاده کنید.',
         'service_change_report.admin' => 'مدیر',
         'service_change_report.customer' => 'کاربر',
         'service_change_report.server' => [

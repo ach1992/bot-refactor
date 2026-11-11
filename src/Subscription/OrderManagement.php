@@ -13,7 +13,7 @@ require_once __DIR__.'/../Presentation/Text.php';
 // Every local-record management callback is privileged. A forged old button
 // or stale cached role must not disclose or mutate another customer's order.
 $achbotOrderAdminRoute=is_string($data??null) &&
-    ($data==='manageorderdatabase' || preg_match('/^(?:showUserSubscriptions|selectOrderByRemark_userid_|returnToPanel_|deleteOrder_|confirmDeleteOrder_|toggleAgent_|toggleNotif_|orderWarningStatus_|changeExpireDate_|changeToken_|changeUUID_|changeServerId_|selectServerId_|changeFileId_|selectFileId_|recoverPlanJournal_|quickUserOrderDetails_)/D',$data));
+    ($data==='manageorderdatabase' || preg_match('/^(?:showUserSubscriptions|selectOrderByRemark_userid_|returnToPanel_|deleteOrder_|confirmDeleteOrder_|toggleAgent_|toggleNotif_|orderWarningStatus_|changeExpireDate_|changeToken_|changeUUID_|changeServerId_|selectServerId_|changeFileId_|selectFileId_|recoverPlanJournal_|reviewPlanCorrection_|confirmPlanCorrection_|quickUserOrderDetails_)/D',$data));
 $achbotOrderAdminStep=preg_match('/^(?:awaitingOrderRemarkOnly$|awaitingUserIdSelection_|manageOrderById_|awaitingExpireChange_|awaitingToken_|awaitingUUID_)/D',(string)($userInfo['step']??''));
 if (($achbotOrderAdminRoute || $achbotOrderAdminStep) &&
     !\AchBot\Subscription\AccountDetails\canReadAdminOrderDetails()) {
@@ -266,12 +266,16 @@ function showOrderManagementPanel($order, $msgId = null,string $notice=''){
             if ($table && $table['TABLE_TYPE']==='BASE TABLE' &&
                 strcasecmp((string)$table['ENGINE'],'InnoDB')===0) {
                 $q=$GLOBALS['connection']->prepare("SELECT id FROM service_plan_changes
-                    WHERE source_order_id=? AND state='dispatching' ORDER BY id DESC LIMIT 1");
+                    WHERE source_order_id=? AND provider IN ('marzban','pasarguard')
+                    AND state='dispatching' ORDER BY id DESC LIMIT 1");
                 $orderId=(int)$order['id'];$q->bind_param('i',$orderId);$q->execute();
                 $pending=$q->get_result()->fetch_assoc();$q->close();
-                if ($pending)
+                if ($pending) {
                     $keyboard[]=[[ 'text'=>\achbotMessage('subscription.service_plan_recovery.action'),
                         'callback_data'=>'recoverPlanJournal_'.(int)$pending['id'].'_'.$orderId ]];
+                    $keyboard[]=[[ 'text'=>\achbotMessage('subscription.service_plan_correction.action'),
+                        'callback_data'=>'reviewPlanCorrection_'.(int)$pending['id'].'_'.$orderId ]];
+                }
             }
         }
         } catch (Throwable $error) {
@@ -609,13 +613,40 @@ if (preg_match('/^changeFileId_(\\d+)_(\\d+)$/', (string) ($data ?? ''), $match)
     sendMessage(\achbotMessage('subscription.order_management.show_order_management_panel.message.877fdebc48'), json_encode(['inline_keyboard' => $keyboard]));
 }
 
-if (preg_match('/^recoverPlanJournal_([1-9][0-9]*)_([1-9][0-9]*)$/D',
+if (preg_match('/^reviewPlanCorrection_([1-9][0-9]*)_([1-9][0-9]*)$/D',
     (string)($data??''),$match)) {
     $journalId=(int)$match[1];$orderId=(int)$match[2];
+    require_once __DIR__.'/../Admin/Access.php';
+    if (!achbotAdminCanFor($connection,(int)$from_id,(int)($GLOBALS['admin']??0),'orders')) {
+        alert(\achbotMessage('subscription.order_management.show_order_management_panel.alert.057ec5448c'),true);
+        return;
+    }
+    // Displaying a confirmation button is read-only, never Native authorization.
+    // The second callback independently rechecks every SQL/Native invariant.
+    $keyboard=['inline_keyboard'=>[
+        [[ 'text'=>\achbotMessage('subscription.service_plan_correction.confirm'),
+            'callback_data'=>'confirmPlanCorrection_'.$journalId.'_'.$orderId ]],
+        [[ 'text'=>$buttonValues['back_button']??\achbotMessage('subscription.order_management.show_order_management_panel.button.b35a2352f5'),
+            'callback_data'=>'returnToPanel_'.$orderId ]]
+    ]];
+    sendMessage(\achbotMessage('subscription.service_plan_correction.warning'),
+        json_encode($keyboard,JSON_THROW_ON_ERROR));
+    return;
+}
+
+if (preg_match('/^(recoverPlanJournal|confirmPlanCorrection)_([1-9][0-9]*)_([1-9][0-9]*)$/D',
+    (string)($data??''),$match)) {
+    $journalId=(int)$match[2];$orderId=(int)$match[3];
+    $correct=$match[1]==='confirmPlanCorrection';
     require_once __DIR__.'/PhysicalService.php';
-    $result=achbotPhysicalRecoverPlan($connection,$journalId,(int)$from_id,$orderId);
+    $result=$correct?
+        achbotPhysicalCorrectPlan($connection,$journalId,(int)$from_id,$orderId):
+        achbotPhysicalRecoverPlan($connection,$journalId,(int)$from_id,$orderId);
     if (!$result['success']) {
-        alert(\achbotMessage('subscription.order_management.show_order_management_panel.alert.99d247fc18'),true);
+        $key=$correct && $result['reason']==='physical_correction_get_only_available'
+            ?'subscription.service_plan_correction.get_only'
+            :'subscription.order_management.show_order_management_panel.alert.99d247fc18';
+        alert(\achbotMessage($key),true);
         return;
     }
     try {

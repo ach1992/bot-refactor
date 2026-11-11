@@ -52,7 +52,10 @@ def owned_database():
                 for name in NAMES:
                     subprocess.run(client+['-e','CREATE DATABASE '+name+' CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci'],env=env,check=True,capture_output=True,timeout=5)
                     sql=(ROOT/'database/legacy-schema.sql').read_bytes()+SEED.encode()
-                    subprocess.run(client+[name],input=sql,env=env,check=True,capture_output=True,timeout=10)
+                    # MariaDB DDL on a shared development VM may briefly be
+                    # I/O-bound. A 10-second subprocess timeout incorrectly
+                    # classified slow fixture initialization as product failure.
+                    subprocess.run(client+[name],input=sql,env=env,check=True,capture_output=True,timeout=30)
                 yield d,env
             finally:
                 if server.poll() is None:server.terminate()

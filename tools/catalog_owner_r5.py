@@ -404,6 +404,10 @@ def service_change_catalog_layer():
         'payment.payment_lifecycle.pay_ux_status_text.service_superseded_title',
         'payment.payment_lifecycle.pay_ux_status_text.service_superseded_next'},'admin':{
         'subscription.service_plan_recovery.action',
+        'subscription.service_plan_correction.action',
+        'subscription.service_plan_correction.confirm',
+        'subscription.service_plan_correction.warning',
+        'subscription.service_plan_correction.get_only',
         'subscription.service_change_report.admin',
         'subscription.service_change_report.customer',
         'subscription.service_change_report.server',
