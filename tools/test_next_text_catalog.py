@@ -57,13 +57,15 @@ def main() -> dict:
     current={a:historical.flatten(v) for a,v in groups.items()}
     added=historical.GIFT_PRECHECK_SHA256
     chili=historical.chili_copy_reference()[0]
-    assert len(current['admin'])==1911+len(added['admin'])+len(chili['added'])+len(historical.service_change_catalog_layer()[2]['admin'])-len(historical.service_change_catalog_layer()[1]['admin']) and \
-        len(current['user'])==942+len(added['user'])+len(historical.service_change_catalog_layer()[2]['user'])-len(historical.service_change_catalog_layer()[1]['user'])
+    # The two source-pinned additions remain independently reviewable.
+    _, service_before, service_after=historical.service_change_catalog_layer()
+    assert len(current['admin'])==1911+len(added['admin'])+len(chili['added'])+8+len(service_after['admin'])-len(service_before['admin']) and \
+        len(current['user'])==942+len(added['user'])+len(service_after['user'])-len(service_before['user'])
     assert not set(current['admin'])&set(current['user'])
     # Verify exact current additions and recipient placement before
     # comparing the older immutable post-cleanup user/admin baseline.
     prior=historical.current_cleanup_restore(
-        historical.gift_precheck_copy_restore(current))
+        historical.gift_precheck_copy_restore(historical.bulk_reporting_copy_restore(current)))
     assert len(prior['admin'])==1964 and len(prior['user'])==942
     assert historical.CLEANUP_TOPICS.isdisjoint(groups['admin'])
     assert len(historical.CLEANUP_NEW_KEYS)==33
@@ -101,7 +103,7 @@ def main() -> dict:
     negative.append(('obsolete_workbench_copy',altered))
     for name,changed in negative:
         try:historical.current_cleanup_restore(
-            historical.gift_precheck_copy_restore(changed))
+            historical.gift_precheck_copy_restore(historical.bulk_reporting_copy_restore(changed)))
         except AssertionError:continue
         raise AssertionError('Negative copy control missed: '+name)
     # The existing native token-based sink inventory includes new routes.

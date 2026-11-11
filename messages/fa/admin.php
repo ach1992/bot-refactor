@@ -78,6 +78,18 @@ return [
         'denied' => 'دسترسی به بررسی پرداخت‌ها مجاز نیست.',
     ],
 
+    // #147 — Verified bulk source reports (source-pinned in test catalog).
+    'bulk_reporting' => [
+        'complete' => ['text' => '✅ ساخت و ثبت اکانت‌ها: {confirmed} از {requested}', 'parameters' => ['confirmed', 'requested']],
+        'needs_review' => ['text' => '⚠️ ساخت گروهی نیازمند بررسی است. ثبت محلی تأییدشده: {confirmed} از {requested}. عملیات نامشخص را تکرار نکنید.', 'parameters' => ['confirmed', 'requested']],
+        'names' => '🧩 اکانت‌های ثبت و تأییدشده:',
+        'more' => ['text' => '… اطلاعات {count} اکانت دیگر در سوابق اصلی ثبت شده است.', 'parameters' => ['count']],
+        'short_reference' => '📋 گزارش ساخت یا خرید گروهی',
+        'bulk_subject' => 'خرید گروهی اشتراک',
+        'admin_created' => ['text' => "📦 ساخت گروهی اکانت\n👤 مدیر: {actor}\n🔗 شناسه عملیات: {source}\n🗂 سرور: {server}\n🧭 پلن: {plan}\n⏳ مدت: {days} روز\n📊 حجم: {volume} گیگابایت", 'parameters' => ['actor', 'source', 'server', 'plan', 'days', 'volume']],
+        'delivery_needs_review' => ['text' => '⚠️ ارسال اطلاعات {count} اکانت به تلگرام تأیید نشد؛ ساخت مجدد نکنید و تحویل را بررسی کنید.', 'parameters' => ['count']],
+    ],
+
     // ── پیام‌های اصلی و متن‌های قابل سفارشی‌سازی قدیمی ──
     'legacy_messages' => [
         'send_user_id' => '🀄️ شناسه عددی کاربر رو بفرست:',

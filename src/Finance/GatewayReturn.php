@@ -1396,6 +1396,9 @@ function achbotPerformPaymentEffect($payRowId, $gateType, &$effectStage = null) 
                 $remark .= '_'.$i;
             }
 
+            $remark=achbotPaidPurchaseRemark((string)$remark,$serverType,
+                $rowId,$i,$accountCount,$forcedRemark!==null && $accountCount===1);
+
             // First-use expiry staging was exclusive to never-deployed
             // Sanaei/Alireza inbound plans. Marzban keeps normal expiry.
             $expire_microdate_local = $expire_microdate;
@@ -1576,7 +1579,25 @@ function achbotPerformPaymentEffect($payRowId, $gateType, &$effectStage = null) 
             ]
         ]]);
 
-        $msg = \achbotMessage('gateway.gateway_return.perform_payment_effect.msg.8205ac68fa', ['gateType' => $gateType, 'user_id' => $user_id, 'first_name' => $first_name, 'username' => $username, 'amount' => $amount, 'remark' => $remark, 'volume' => $volume, 'days' => $days]);
+        $bulkProof=null;
+        if ($accountCount>1) {
+            try {
+                require_once __DIR__.'/../Purchase/BulkReport.php';
+                $bulkProof=achbotBulkRecordedAccounts($connection,$accountCount,$user_id,$rowId);
+                if (!$bulkProof['complete'])
+                    error_log('achbot_hosted_bulk_report_incomplete pay_id='.$rowId);
+            } catch (Throwable $error) {
+                error_log('achbot_hosted_bulk_report_unavailable pay_id='.$rowId.
+                    ' class='.get_class($error));
+            }
+        }
+        $summaryName=$accountCount>1?achbotMessage('bulk_reporting.bulk_subject'):$remark;
+        $msg = \achbotMessage('gateway.gateway_return.perform_payment_effect.msg.8205ac68fa', ['gateType' => $gateType, 'user_id' => $user_id, 'first_name' => $first_name, 'username' => $username, 'amount' => $amount, 'remark' => $summaryName, 'volume' => $volume, 'days' => $days]);
+        if ($accountCount>1)
+            $msg=$bulkProof===null
+                ?($msg."\n".achbotMessage('bulk_reporting.needs_review',[
+                    'confirmed'=>'نامشخص','requested'=>$accountCount]))
+                :achbotBulkReportAppend($msg,$bulkProof,true);
 		notifyAllAdminsSimple($msg, $admin, "html", $keys, $rewardChannel);
     }
 
@@ -1990,6 +2011,22 @@ function achbotPerformPaymentEffect($payRowId, $gateType, &$effectStage = null) 
  * Keep the existing public payment action entrypoint stable. Never close
  * an attempt as delivered when the underlying effect throws or is uncertain.
  */
+/** A started, failed hosted BUY_SUB needs its original partial ledger report. */
+function achbotHostedPartialBulkNotice(mysqli $db,int $payId,string $gateType): void {
+    global $admin,$botState;
+    if (!in_array($gateType,['nextpay','zarinpal','nowpayment'],true)) return;
+    try {
+        require_once __DIR__.'/../Purchase/BulkReport.php';
+        $text=achbotBulkPartialPaymentReport($db,$payId);
+        if ($text!==null)
+            notifyAllAdminsSimple($text,$admin,'html',null,
+                $botState['rewardChannel']??null);
+    } catch (Throwable $reportError) {
+        error_log('achbot_hosted_bulk_partial_report_unavailable pay_id='.$payId.
+            ' class='.get_class($reportError));
+    }
+}
+
 function doAction($payRowId, $gateType) {
     global $connection;
     // A live-worker signal for the ENTIRE hosted attempt, including local
@@ -2011,6 +2048,8 @@ function doAction($payRowId, $gateType) {
         try {
             $outcome=achbotPerformPaymentEffect($payRowId,$gateType,$effectStage);
         } catch (Throwable $error) {
+            if ($effectStage==='postclaim')
+                achbotHostedPartialBulkNotice($connection,(int)$payRowId,$gateType);
             if (!in_array($gateType,['nextpay','zarinpal'],true)) throw $error;
             // Even an upstream-verified charge can fail on the *first* local
             // SELECT, before a durable review record exists. A post-claim throw
@@ -2031,6 +2070,9 @@ function doAction($payRowId, $gateType) {
             showForm($message,\achbotMessage('gateway.gateway_return.np_reconcile_batch.message.da0bc406d8'),false,'review');
             return 'ambiguous';
         }
+        if ($effectStage==='postclaim' &&
+            !in_array($outcome,['delivered','compensated'],true))
+            achbotHostedPartialBulkNotice($connection,(int)$payRowId,$gateType);
         if (in_array($gateType,['nextpay','zarinpal'],true) &&
             in_array($outcome,['delivered','compensated'],true)) {
             achbotFinishHostedServiceReview($connection,(int)$payRowId,$gateType,$outcome);

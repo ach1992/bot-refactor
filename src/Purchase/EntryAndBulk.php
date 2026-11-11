@@ -247,6 +247,21 @@ if (
 
     $lastRemark = '';
     $pendingDeliveries=[];
+    $reportBulk=static function(array $deliveryReview=[]) use (
+        $connection,$count,$uid,$bulkSource,$serverInfo,$server_id,
+        $plan,$fidFromStep,$days,$volume): array {
+        require_once __DIR__.'/BulkReport.php';
+        $proof=achbotBulkRecordedAccounts($connection,$count,$uid,null,$bulkSource);
+        $base=achbotMessageHtml('bulk_reporting.admin_created',[
+            'actor'=>$uid,'source'=>$bulkSource,
+            'server'=>(string)($serverInfo['title']??$server_id),
+            'plan'=>(string)($plan['title']??$fidFromStep),
+            'days'=>$days,'volume'=>$volume]);
+        if ($deliveryReview)
+            $base.="\n".achbotMessage('bulk_reporting.delivery_needs_review',
+                ['count'=>count($deliveryReview)]);
+        return ['proof'=>$proof,'text'=>achbotBulkReportAppend($base,$proof,true)];
+    };
     try {
     for ($i = 1; $i <= $count; $i++) {
 
@@ -330,30 +345,59 @@ if (
 
     // Capacity was atomically held with first journal dispatch.
     } catch (Throwable $error) {
+        $safe=achbotEffectSafeFailure($error);
         error_log('achbot_admin_bulk_effect_needs_review source='.
             preg_replace('/[^A-Za-z0-9_:]/','',$bulkSource).
+            ' ordinal='.(int)($i??0).' reason='.$safe['reason'].
             ' class='.get_class($error));
         try {
-            (achbotNotifyAdmins('sendMessage', ['text'=>\achbotMessage('purchase.entry_and_bulk.create_multiple_accounts.message.76499f65f3').
-                \achbotMessage('purchase.entry_and_bulk.create_multiple_accounts.message.fbde023d57'),
-                    'reply_markup'=>null,'parse_mode'=>null],
-                    ['primary'=>$admin,'report_channel'=>null])[0]['response']??null);
-        } catch (Throwable $ignored) {}
+            $summary=$reportBulk();
+            $notice=achbotNotifyAdmins('sendMessage', [
+                'text'=>$summary['text'],'reply_markup'=>null,'parse_mode'=>'HTML']);
+            if (!achbotAdminFanoutAcknowledged($notice))
+                error_log('achbot_admin_bulk_partial_notice_unconfirmed source='.
+                    preg_replace('/[^A-Za-z0-9_:]/','',$bulkSource));
+        } catch (Throwable $notificationError) {
+            error_log('achbot_admin_bulk_partial_notice_failed source='.
+                preg_replace('/[^A-Za-z0-9_:]/','',$bulkSource).
+                ' class='.get_class($notificationError));
+        }
         alert(\achbotMessage('purchase.entry_and_bulk.create_multiple_accounts.alert.c7ce33a4eb'),true);
         return;
     }
-    foreach ($pendingDeliveries as $packet) {
+    $deliveryReview=[];
+    foreach ($pendingDeliveries as $index=>$packet) {
         try {
             if (!sendQrFromLink($packet['qr'],$packet['caption'],$packet['keys'],
                     $botUrl,$uid,'',null))
                 throw new RuntimeException('bulk_telegram_unconfirmed');
         } catch (Throwable $error) {
+            $deliveryReview[]=$index+1;
             error_log('achbot_admin_bulk_delivery_review source='.
                 preg_replace('/[^A-Za-z0-9_:]/','',$bulkSource).
-                ' class='.get_class($error));
+                ' ordinal='.($index+1).' class='.get_class($error));
         }
     }
-    sendMessage(\achbotMessage('purchase.entry_and_bulk.create_multiple_accounts.message.62d6e89b94'), getMainKeys());
+    try {
+        $summary=$reportBulk($deliveryReview);
+        $notices=achbotNotifyAdmins('sendMessage',[
+            'text'=>$summary['text'],'reply_markup'=>null,'parse_mode'=>'HTML']);
+        if (!achbotAdminFanoutAcknowledged($notices))
+            error_log('achbot_admin_bulk_report_delivery_unconfirmed source='.
+                preg_replace('/[^A-Za-z0-9_:]/','',$bulkSource));
+        if (!$summary['proof']['complete'])
+            error_log('achbot_admin_bulk_report_incomplete source='.
+                preg_replace('/[^A-Za-z0-9_:]/','',$bulkSource));
+    } catch (Throwable $error) {
+        error_log('achbot_admin_bulk_report_unavailable source='.
+            preg_replace('/[^A-Za-z0-9_:]/','',$bulkSource).
+            ' class='.get_class($error));
+    }
+    sendMessage($deliveryReview
+        ? achbotMessage('bulk_reporting.delivery_needs_review',
+            ['count'=>count($deliveryReview)])
+        : achbotMessage('purchase.entry_and_bulk.create_multiple_accounts.message.62d6e89b94'),
+        getMainKeys());
     setUser();
 }
 

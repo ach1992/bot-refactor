@@ -67,8 +67,8 @@ published RC30 ZIP or the active Chili installation.
   the external payment evidence. A failed Telegram edit does not bypass the
   SQL CAS and never warrants a second Native/financial execution.
 - **Not included:** user-initiated server relocation, automatic refunds,
-  general late-payment financial resolution and operator-facing safe recovery
-  of an already-dispatched ambiguous Native plan journal. Owner-approved
+  general late-payment financial resolution. An explicit administrator-confirmed
+  single-use corrective Native action is separately journaled in A02. Owner-approved
   manual reconciliation remains required for these exceptional cases.
   The existing server transfer remains staff-authorized. Customer toggles
   must not imply they authorize physical changes to another customer's
@@ -137,6 +137,55 @@ collision does not initiate a payment, a new service, wallet credit, refund or
 Native effect. The original pays state, quote, identity and payment evidence
 remain intact. The inbox still excludes mere unpaid/old invoices, and staff
 cannot approve/fulfill a terminal old-service invoice.
+
+## Open source-only bulk correction — Issue #147 (not shipped)
+
+[Issue #147](https://github.com/ach1992/bot-refactor/issues/147) tracks a separate
+source-only branch for verified multi-account creation and purchase summaries.
+The administrator's no-payment bulk CREATE, wallet BUY_SUB, manual-receipt BUY_SUB,
+and hosted BUY_SUB now propose a report of the original operation/invoice, actor,
+requested count, locally recorded per-ordinal order identities and delivery warnings.
+Unknown or partially created remote effects remain protected by the existing 007
+no-replay journal; missing Telegram acknowledgements never authorize new CREATE.
+Bulk admin cases also distinguish safely confirmed local orders from missing/unknown
+remote results. The new `src/Purchase/BulkReport.php` read-only projection adds one
+runtime source member, with no database migration or third notification scheduler.
+
+These edits are **unmerged and unreviewed** pending exact-candidate PHP 8.5 CI,
+independent high-assurance review, and separate Owner integration/release/Chili
+authorization. RC30 remains the published baseline; no installed source or
+provider/Telegram/database acceptance is implied.
+
+Read-only installed diagnostics on 2026-11-11 show an admin bulk operation held at
+`remote_create` with `effect_remote_create_unconfirmed`. Nearby Marzban API logs
+show `POST /api/user` returning HTTP 500 and MySQL error 1406, `Data too long for
+column 'username' at row 1`. The original Chili generator created usernames up to
+100 ASCII bytes, while Marzban accepts at most 32. The PR now produces a
+source-and-ordinal-bound, stable 32-byte maximum identity with a readable prefix,
+and its synthetic Native API rejects excess-length usernames rather than faking
+success. A source-real two-account regression proves complete local records,
+reports and no replay with an intentionally long base remark. The error times and
+failure mode are consistent, but lacking a shared request ID does not prove that
+the observed Marzban 500 was the exact Chili request. Installed endpoint, original
+Native effect and actual delivery still need separately authorized verification;
+never retry the protected dispatched claim or rewrite original evidence. No
+production target, provider or customer data was changed by this investigation.
+
+The 2026-11-11 independent review of PR #148 required two additional
+corrections: provider-aware Marzban names on **paid** customer/agent routes,
+and exact original-payment reporting on **partial** wallet/hosted failures.
+The updated candidate validates explicit single Marzban names at the customer
+quote and locked wallet pre-debit boundaries. It assigns deterministic,
+payment-and-ordinal-bound names (maximum 32 ASCII bytes) for newly created
+paid multiple-account Marzban identities; PasarGuard retains its existing
+provider-specific contract. Existing dispatched effects are not renamed or
+replayed. When a started paid wallet/hosted purchase fails mid-batch, a
+read-only projection of original 007 effects/linked orders reports the payment
+reference, verified count, exact confirmed identities and uncertainty to staff
+and the configured report channel. It neither compensates money nor issues
+CREATE/refund actions. Actual PHP 8.5 exact-HEAD CI and fresh high-assurance
+delta review are mandatory before any integration; source-only fixtures cannot
+establish an installed provider or financial outcome.
 
 ## Published RC30 — source-only Cron, Telegram, Marzban and gift-card reliability
 
@@ -594,3 +643,36 @@ administrator/stale-order denial, original intent immutability, single
 correction PUT, no PUT on complete Native state, no repeat after uncertain
 local finalization, delayed GET-only settlement, and exact audit-row
 commit. This is not live Chili testing or full PHP 8.5 CI acceptance.
+
+C03 independent-review remediation: newly generated Marzban usernames now
+use fixed human-readable `mbz_bulk_` or `mbz_paid_` prefixes followed by
+23 hex characters derived ONLY from the authenticated Telegram bulk-source
+reference or original payment ID plus ordinal. A fresh randomized
+`buildRemark()` base cannot change the 32-byte generated identity across
+separate invocations, including single generated purchases. Explicitly
+entered single-account names remain unchanged when valid; PasarGuard
+uses its existing provider contract. Previously dispatched 007 identities
+remain untouched; no automatic reconciliation CREATE is enabled. A new
+source-real native fixture checks distinct randomized buildRemark inputs,
+source/ordinal uniqueness, provider boundaries, and stable output.
+
+Current PR #148 native CREATE repair: all modern paid/nonpaid Marzban effect
+paths use `src/Purchase/Core.php` to obtain the port and dispatch the one
+provider-bound CREATE. The exact 007 operation marker is forwarded with its
+required `achbot:v1:` prefix, immutable username and pinned endpoint/credentials;
+no legacy 409 collision retry or unrecorded second POST exists. The current
+port helper uses a locked counter for auto mode, and random mode has no counter
+side effect. The source-real original-schema NOWPayments (344 cases) and
+agent-zero-price Native (46 cases) tests passed locally on disposable MariaDB;
+this is **not** a PHP 8.5 CI verdict or installed verification.
+
+PHP 8.5 CI remediation of the Native CREATE repair: the current public
+createServerAccount facade now returns a bounded unsupported_panel result
+without invoking any provider for retired/non-Marzban/inbound variants,
+matching the active Marzban-only preflight. Current wallet settlement still
+rejects malformed administrator-configured purchase prefixes BEFORE debit
+even when the final generated Marzban username is independent of the
+randomized base. The source-real native Marzban preflight (five negative
+controls) and wallet checkout (34 cases) passed locally; exact-current CI
+requires a fresh run. No old helper implementation or compatibility shim
+was restored.

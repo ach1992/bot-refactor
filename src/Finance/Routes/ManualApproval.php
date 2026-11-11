@@ -380,6 +380,9 @@ if (
             if ($accountCount>1 && (($botState['remark']??'')==='manual')) {
                 $remark .= '_'.$i;
             }
+            $remark=achbotPaidPurchaseRemark((string)$remark,$serverType,
+                $payId,$i,$accountCount,
+                (($botState['remark']??'')==='manual'));
             $lastRemarkForAdminMsg = $remark;
 
             [$response, $remark, $port, $effectId] = achbotContinuePaidAccount(
