@@ -1458,6 +1458,55 @@ def main():
                 len(h['writes']())==writes+1,
                 provider+'_correction_delayed_get_only_commits_both_original_and_audit')
 
+    # A02 x B03: an unclaimed old-service invoice remains pending even
+    # after both uncertain Native writes until a verified, local GET-only
+    # finalization commits the old quote retirement, shared plan and both
+    # journals as one SQL effect.
+    for provider in ('marzban','pasarguard'):
+        with harness(provider) as h:
+            seeded(h)
+            db=h['db'];old_quote=invoice(h,'crosscorrection','pending')
+            wallet_before=db('SELECT userid,wallet FROM users ORDER BY userid')
+            writes=len(h['writes']())
+            db('CREATE TRIGGER fixture_cross_original BEFORE UPDATE ON orders_list '
+               "FOR EACH ROW SIGNAL SQLSTATE '45000' "
+               "SET MESSAGE_TEXT='fixture_cross_original_local_lost'")
+            try:
+                plan(h,120)
+            finally:
+                db('DROP TRIGGER fixture_cross_original')
+            original=int(db('SELECT MAX(id) FROM service_plan_changes'))
+            yes(db(f'SELECT state FROM pays WHERE id={old_quote}')=='pending'
+                and db(f'SELECT state FROM service_plan_changes WHERE id={original}')=='dispatching'
+                and len(h['writes']())==writes+1,
+                provider+'_a02_b03_original_failed_finality_preserves_old_pending_quote')
+            if provider=='marzban':
+                h['vendor'].edit_account['inbounds']={'vless':['inbound']}
+            else:
+                h['vendor'].users[41]['group_ids']=[2,5]
+            db('CREATE TRIGGER fixture_cross_correction BEFORE UPDATE ON orders_list '
+               "FOR EACH ROW SIGNAL SQLSTATE '45000' "
+               "SET MESSAGE_TEXT='fixture_cross_correction_local_lost'")
+            try:
+                held=h['call']('review_correct',journal=original,actor=9001,order=h['oid'])
+            finally:
+                db('DROP TRIGGER fixture_cross_correction')
+            denied=h['call']('review_correct',journal=original,actor=9001,order=h['oid'])
+            yes(not held['success'] and not denied['success'] and
+                len(h['writes']())==writes+2 and
+                db(f'SELECT state FROM pays WHERE id={old_quote}')=='pending' and
+                db(f"SELECT state FROM service_plan_changes WHERE provider='{provider}_correction'")=='dispatching',
+                provider+'_a02_b03_uncertain_correction_holds_invoice_and_no_replay')
+            done=h['call']('review_recover',journal=original,actor=9001,order=h['oid'])
+            yes(done['success'] and done['shared_count']==2 and
+                len(h['writes']())==writes+2 and
+                db(f'SELECT state FROM pays WHERE id={old_quote}')=='service_superseded' and
+                db(f'SELECT state FROM service_plan_changes WHERE id={original}')=='committed' and
+                db(f"SELECT state FROM service_plan_changes WHERE provider='{provider}_correction'")=='committed' and
+                db(f'SELECT fileid FROM orders_list WHERE id IN ({h["oid"]},{h["peer"]}) ORDER BY id')=='120\n120' and
+                db('SELECT userid,wallet FROM users ORDER BY userid')==wallet_before,
+                provider+'_a02_b03_get_only_final_atomically_retires_old_invoice')
+
     # F3: independent real Marzban API admission evidence complements
     # PasarGuard's authenticated native preflight exact-SQL-claim proof.
     for state,label in [(0,'disabled'),(2,'existing_only')]:

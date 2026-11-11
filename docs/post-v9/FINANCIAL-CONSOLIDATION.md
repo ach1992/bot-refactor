@@ -736,12 +736,17 @@ establish an immutable source identity, with one operation per ordinal;
 ordinary free trial uses a single per-user reservation in
 `users.freetrial`. A new authenticated administrator update
 can request a new bulk batch, whereas replay of the same update cannot
-create a second batch. Real `buildRemark()` manual-mode naming now adds a
-stable, valid batch-update-bound digest and ordinal, preserving the plan
-description prefix when valid; identical plan descriptions across distinct
-updates no longer collide on the same physical target. Unsupported manual
-names are rejected before remote dispatch. Every batch reserves all its
-slots up front.
+create a second batch. **Current source behavior (superseding the earlier
+description-prefix rule):** new administrator-generated Marzban bulk
+usernames use `mbz_bulk_` plus 23 hex characters from the immutable
+authenticated bulk source and ordinal; paid-generated names use
+`mbz_paid_` plus 23 hex characters from the original payment ID and
+ordinal. Both are 32 ASCII bytes, independent of randomized
+`buildRemark()` or plan-description prefixes. Explicitly supplied names
+retain their provider-aware validation; PasarGuard has its own separate
+username contract and is not given the Marzban 32-byte limit. Immutable
+already-dispatched 007 identities are neither renamed nor re-CREATEd.
+Every batch reserves all its slots up front.
 A verified remote CREATE must link the exact new `orders_list` row
 before Telegram delivery. Partial and uncertain states remain review-only.
 
