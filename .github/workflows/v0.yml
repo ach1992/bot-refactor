@@ -226,8 +226,15 @@ jobs:
       - name: Install isolated native MariaDB fixtures
         run: |
           set -euo pipefail
-          sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends mariadb-server
+          # GitHub's Ubuntu mirror list currently prioritizes an intermittently
+          # unresolvable Azure mirror. Keep the image's official Ubuntu
+          # archive fallback, only when that fallback is present.
+          if [ -f /etc/apt/apt-mirrors.txt ] &&
+             grep -q 'https://archive.ubuntu.com/ubuntu/' /etc/apt/apt-mirrors.txt; then
+            sudo sed -i '/azure\.archive\.ubuntu\.com/d' /etc/apt/apt-mirrors.txt
+          fi
+          timeout 180 sudo apt-get -o Acquire::Retries=2 update -qq
+          timeout 240 sudo apt-get -o Acquire::Retries=2 install -y --no-install-recommends mariadb-server
       - name: Scoped extensions native contract on the existing MariaDB shard
         if: matrix.index == 5
         run: |
