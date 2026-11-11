@@ -1,5 +1,24 @@
 # Current source and published release contracts
 
+## Open source-only bulk correction — Issue #147 (not shipped)
+
+[Issue #147](https://github.com/ach1992/bot-refactor/issues/147) tracks a separate
+source-only branch for verified multi-account creation and purchase summaries.
+The administrator's no-payment bulk CREATE, wallet BUY_SUB, manual-receipt BUY_SUB,
+and hosted BUY_SUB now propose a report of the original operation/invoice, actor,
+requested count, locally recorded per-ordinal order identities and delivery warnings.
+Unknown or partially created remote effects remain protected by the existing 007
+no-replay journal; missing Telegram acknowledgements never authorize new CREATE.
+Bulk admin cases also distinguish safely confirmed local orders from missing/unknown
+remote results. The new `src/Purchase/BulkReport.php` read-only projection adds one
+runtime source member, with no database migration or third notification scheduler.
+
+These edits are **unmerged and unreviewed** pending exact-candidate PHP 8.5 CI,
+independent high-assurance review, and separate Owner integration/release/Chili
+authorization. RC30 remains the published baseline; no installed source or
+provider/Telegram/database acceptance is implied. The report cannot explain the
+installed admin-bulk error's root cause without approved read-only host evidence.
+
 ## Published RC30 — source-only Cron, Telegram, Marzban and gift-card reliability
 
 [v0.10.0-rc.30](https://github.com/ach1992/bot-refactor/releases/tag/v0.10.0-rc.30) publishes independently approved [PR #142](https://github.com/ach1992/bot-refactor/pull/142), merged as `main@ebca4bee143ccb03ea45c2ea2767646b60ac6f9c`, TREE `f5103e9ffcdcc88994f30ec4e5550dc7b9546a13`. The **131-member source-only runtime ZIP** has SHA256 `5ac98c346867e1a8d3aeb7c38482090cde5288d293f05375f6e7f74e13e79150`, five modified runtime paths since RC29, and **no new DDL**. See the [RC29 -> RC30 operator guide](https://github.com/ach1992/bot-refactor/releases/download/v0.10.0-rc.30/RC29-TO-RC30.md), [test acceptance matrix](https://github.com/ach1992/bot-refactor/releases/download/v0.10.0-rc.30/TEST-CHILI-ACCEPTANCE.md) and full Release Notes.

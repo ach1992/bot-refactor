@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "base_commit": "251c15d1ff6436b4a3b1651c5aeb26ebf99fe31e",
+  "topic": "bulk_reporting",
+  "audience": "admin",
+  "source": "messages/fa/admin.php",
+  "block_sha256": "dde253873d5e7ff4d43dc1d8ba1e1258f2b31aa3ed9c7d5741a1cc82faa3728a",
+  "line_sha256": {
+    "bulk_reporting.complete": "8b67283d79f1f81689829bc97452f6e69a1183742aacf37990a94c61fb45b59c",
+    "bulk_reporting.needs_review": "87808783d9ddc9ab82b0ee97bf3dd0d117c29b3081ebcc0105db16230b13b8b1",
+    "bulk_reporting.names": "a8ef24ced35a34026ff78a616e1fda0a19f463eaa54771eb44bc71622ba19913",
+    "bulk_reporting.more": "fd4ffbeebec2d98c3586490fbb50d94c82694a1771c6210eb478cabf6788bb63",
+    "bulk_reporting.short_reference": "0430b8981a95ca76cf0c31f3af5a1e72492fb8235ff5e6328a24418bead806fb",
+    "bulk_reporting.bulk_subject": "2c0dbbaacd3862dd8fffe9bad908f010ab0230f159887d46fd2914c9423333b3",
+    "bulk_reporting.admin_created": "235b4335f9b9467e10ed12664404c4286b2de563c4f934f2da958330aa1327b7",
+    "bulk_reporting.delivery_needs_review": "4265ad61f292550ea322bbd8bdeb91f74aab8ae973584c5cbb012a9436808066"
+  }
+}

@@ -43,7 +43,10 @@ function achbotFollowupInsertLocked(mysqli $db,array $pay,string $stage,string $
                                     array $content): void {
     if (!in_array($stage,['approved_purchase','approved_edit','manual_reject','referral_reward'],true) ||
         !in_array($role,['customer','operator','receipt_primary','receipt_mirror',
-                          'referral_admin','referral_channel','referral_inviter'],true) ||
+                          'referral_admin','referral_channel','referral_inviter',
+                          'purchase_owner','purchase_channel'],true) ||
+        (in_array($role,['purchase_owner','purchase_channel'],true) &&
+            $stage!=='approved_purchase') ||
         !in_array($kind,['send','edit'],true) ||
         preg_match('/^(?:-?[0-9]{1,19}|@[A-Za-z0-9_]{3,64})$/D',$recipient)!==1 ||
         ($kind==='edit')!==($messageId!==null && $messageId>0) ||
@@ -106,6 +109,11 @@ function achbotFollowupRecipientAllowed(mysqli $db,array $pay,array $r): bool {
     }
     if ($role==='operator') return $who===(int)$pay['approved_by'] &&
         achbotAdminCanFor($db,$who,$owner,'payments');
+    if ($role==='purchase_owner') return $owner>0 && $who===$owner;
+    if ($role==='purchase_channel') {
+        $channel=(string)($GLOBALS['botState']['rewardChannel']??'');
+        return $channel!=='' && $recipient===$channel;
+    }
     if ($role==='referral_inviter') {
         $q=$db->prepare("SELECT inviter_userid,state FROM referral_awards
             WHERE pay_row_id=? AND state='CONFIRMED'");
@@ -126,6 +134,10 @@ function achbotFollowupValidateLocked(mysqli $db,array $pay,array $r): ?array {
         !in_array((string)$r['stage'],['approved_purchase','approved_edit','manual_reject','referral_reward'],true) ||
         !in_array((string)$r['kind'],['send','edit'],true) ||
         ($r['stage']==='manual_reject' && $pay['state']!=='declined') ||
+        (in_array((string)$r['role'],['purchase_owner','purchase_channel'],true) &&
+            ((string)$r['stage']!=='approved_purchase' ||
+             (string)$pay['type']!=='BUY_SUB' ||
+             (int)($pay['agent_count']??0)<=1)) ||
         (in_array($r['stage'],['approved_purchase','referral_reward'],true) &&
             ($pay['state']!=='approved' || $pay['type']!=='BUY_SUB')) ||
         ($r['stage']==='approved_edit' &&
@@ -271,7 +283,14 @@ function achbotFollowupStageManualPurchaseLocked(mysqli $db,array $pay,int $owne
     if ($payId<=0 || $buyer<=0 || $actor<=0 || $count<=0 ||
         !is_string($mainValues['sent_config_to_user']??null))
         throw new RuntimeException('manual_purchase_followup_identity_invalid');
-    $actualSubject=$remark.($count>1?' +'.($count-1):'');
+    $bulkProof=null;
+    if ($count>1) {
+        require_once __DIR__.'/../Purchase/BulkReport.php';
+        $bulkProof=achbotBulkRecordedAccounts($db,$count,$buyer,$payId);
+        if (!$bulkProof['complete'])
+            throw new RuntimeException('manual_bulk_report_original_effect_unverified');
+    }
+    $actualSubject=$count>1?achbotMessage('bulk_reporting.bulk_subject'):$remark;
     $keys=achbotManualFinalReceiptKeyboard($db,$payId,$actualSubject);
     achbotFollowupInsertLocked($db,$pay,'approved_purchase','receipt_primary','edit',
         (string)(int)$pay['chat_id'],(int)$pay['message_id'],
@@ -297,11 +316,25 @@ function achbotFollowupStageManualPurchaseLocked(mysqli $db,array $pay,int $owne
     }
     $notice=str_replace(
         ['USERID','REMARK','VOLUME','DAYS','PRICE','HASHID'],
-        [$buyer,$remark,$volume,$days,$price,$hash],
+        [$buyer,$actualSubject,$volume,$days,$price,$hash],
         (string)$mainValues['sent_config_to_user']);
+    if ($bulkProof!==null) $notice=achbotBulkReportAppend($notice,$bulkProof);
     achbotFollowupInsertLocked($db,$pay,'approved_purchase','operator','send',
         (string)$actor,null,
         ['text'=>$notice,'keys'=>getMainKeys(),'mode'=>null]);
+    if ($bulkProof!==null) {
+        // A one-shot report for the original Owner and the configured
+        // channel, even when a delegated administrator approved the receipt.
+        if ($owner!==$actor)
+            achbotFollowupInsertLocked($db,$pay,'approved_purchase',
+                'purchase_owner','send',(string)$owner,null,
+                ['text'=>$notice,'keys'=>null,'mode'=>null]);
+        $channel=(string)($GLOBALS['botState']['rewardChannel']??'');
+        if ($channel!=='')
+            achbotFollowupInsertLocked($db,$pay,'approved_purchase',
+                'purchase_channel','send',$channel,null,
+                ['text'=>$notice,'keys'=>null,'mode'=>null]);
+    }
     $q=$db->prepare('SELECT name,username,refered_by FROM users WHERE userid=? LIMIT 2');
     $q->bind_param('i',$buyer);$q->execute();
     $buyers=$q->get_result()->fetch_all(MYSQLI_ASSOC);$q->close();

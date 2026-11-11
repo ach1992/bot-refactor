@@ -578,6 +578,11 @@ def check():
         assert len(calls(done,'GET'))==2
         assert all(e['state']=='paid_with_wallet' for e in calls(done,'QR')),done
         assert len(calls(done,'QR'))==2
+        bulk_admin=[m for m in calls(done,'MESSAGE')
+                    if 'اکانت‌های ثبت و تأییدشده' in m['synthetic_note']]
+        assert bulk_admin and all('2 از 2' in m['synthetic_note']
+            and all(post['name'] in m['synthetic_note'] for post in calls(done,'POST'))
+            for m in bulk_admin),bulk_admin
         assert paid(multi)=='paid_with_wallet' and wallet()==49900 and cap()==8
         assert detail(multi)==('wallet_hold\t0\t2\tconsumed\n'
                               'create\t1\t0\tlocal_recorded\n'

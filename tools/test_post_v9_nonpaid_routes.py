@@ -39,7 +39,7 @@ if (($spec['route']??'trial')==='trial') {
     $message->text=$text;
     $update->message=$message;
 }
-$botState=['remark'=>(string)($spec['remark_mode']??'digits'),'rewardChannel'=>null];
+$botState=['remark'=>(string)($spec['remark_mode']??'digits'),'rewardChannel'=>'@fixtureReport'];
 $buttonValues=['cancel'=>'cancel','start_bot'=>'start','back_to_main'=>'back'];
 $mainValues=['sending_config_to_user'=>'Working',
  'send_only_number'=>'Enter integer','can_create_specific_account'=>'Limit AMOUNT',
@@ -68,7 +68,7 @@ function setUser($value='none',$field='step'){
     $stmt->close();
 }
 function sendMessage($body=null,$keys=null,$format=null,$to=null){
-    $GLOBALS['events'][]=['name'=>'MESSAGE','to'=>$to,'text'=>(string)$body];
+    $GLOBALS['events'][]=['name'=>'MESSAGE','to'=>$to,'text'=>(string)$body,'format'=>$format];
     return (object)['ok'=>true];
 }
 function sendQrFromLink(...$args) {
@@ -186,7 +186,13 @@ def check():
         assert capacity()==8 and effects('admin_bulk')=='1\tlocal_recorded\t2\n2\tlocal_recorded\t0'
         assert not any(e['name']=='POST' for e in php(work,env,driver,route='bulk',
             actor=9001,text='2',force_cached_step=True))
-        cases.append('actual_admin_bulk_two_accounts_full_reservation_one_batch')
+        reports=[e for e in bulk if e['name']=='MESSAGE' and 'ساخت گروهی اکانت' in e['text']]
+        assert {e['to'] for e in reports}>={9001,'@fixtureReport'} and all(e['format']=='HTML' for e in reports)
+        assert '2 از 2' in reports[0]['text'] and 'مدیر: 9001' in reports[0]['text'] and 'شناسه عملیات:' in reports[0]['text']
+        for index,post in enumerate([e for e in bulk if e['name']=='POST'],1):
+            assert (post['remark'] in reports[0]['text'] and
+                f'{index}.' in reports[0]['text']),reports
+        cases.append('actual_admin_bulk_two_accounts_full_reservation_and_complete_owner_report')
 
         reset()
         sql(work,env,"UPDATE users SET step='createAccAmount7_30_2' WHERE userid=9001")
@@ -196,7 +202,23 @@ def check():
         assert capacity()==8 and effects('admin_bulk')=='1\tlocal_recorded\t2\n2\tdispatching\t0'
         assert not any(e['name']=='POST' for e in php(work,env,driver,route='bulk',
             actor=9001,text='2',force_cached_step=True))
+        partial_reports=[e for e in partial if e['name']=='MESSAGE'
+                         and 'ساخت گروهی اکانت' in e.get('text','')]
+        assert {e['to'] for e in partial_reports}>={9001,'@fixtureReport'}
+        assert all('1 از 2' in e['text'] and '2 از 2' not in e['text']
+                   and 'شناسه عملیات:' in e['text'] for e in partial_reports),partial
+        assert any(e['remark'] in partial_reports[0]['text'] for e in partial
+                   if e['name']=='POST'),partial
         cases.append('actual_admin_bulk_partial_retains_capacity_and_audit')
+
+        reset()
+        sql(work,env,"UPDATE users SET step='createAccAmount7_30_2' WHERE userid=9001")
+        qr_unknown=php(work,env,driver,route='bulk',actor=9001,text='2',notice='false')
+        assert len([e for e in qr_unknown if e['name']=='POST'])==2
+        delivery=[e for e in qr_unknown if e['name']=='MESSAGE' and 'ساخت گروهی اکانت' in e['text']]
+        assert {e['to'] for e in delivery}>={9001,'@fixtureReport'} and all('2 از 2' in e['text'] and 'ارسال اطلاعات 2 اکانت' in e['text'] for e in delivery)
+        assert capacity()==8
+        cases.append('admin_bulk_delivery_uncertain_reports_verified_creates_and_missing_telegram_ack')
 
         reset()
         sql(work,env,"UPDATE users SET step='createAccAmount7_30_2' WHERE userid=9001")

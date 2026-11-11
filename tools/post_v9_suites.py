@@ -1190,10 +1190,10 @@ def run_wallet(tmp: str) -> tuple[dict, dict]:
         cwd=ROOT,check=True,timeout=180,capture_output=True,text=True)
     text_catalog=json.loads(catalog_output.stdout)
     expected_catalog={
-        'status':'PASS','current_catalog_keys':2863,
-        'current_admin_keys':1915,'current_user_keys':948,
+        'status':'PASS','current_catalog_keys':2871,
+        'current_admin_keys':1923,'current_user_keys':948,
         'retired_experimental_keys':129,'retired_experimental_topics':10,
-        'new_copy_entries':33,'current_runtime_files':131,
+        'new_copy_entries':33,'current_runtime_files':132,
         'new_copy_references_unbound':0,
         'unapproved_existing_copy_changes':0,
         'new_copy_negative_controls':5,'bare_ui_copy_violations':0,
@@ -3317,8 +3317,9 @@ def run_funding(tmp: str) -> tuple[dict, dict]:
         "actual_trial_route_reserved_once_with_real_order_and_delivery",
         "actual_trial_unknown_remote_retained_fence_and_capacity",
         "forged_trial_update_no_dispatch",
-        "actual_admin_bulk_two_accounts_full_reservation_one_batch",
+        "actual_admin_bulk_two_accounts_full_reservation_and_complete_owner_report",
         "actual_admin_bulk_partial_retains_capacity_and_audit",
+        "admin_bulk_delivery_uncertain_reports_verified_creates_and_missing_telegram_ack",
         "two_real_admin_batches_race_one_available_server_slot",
         "real_manual_remark_two_independent_single_and_multi_batches_unique_names_no_replay",
         "invalid_manual_remark_rejected_without_remote_or_capacity_effect",

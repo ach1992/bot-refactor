@@ -4136,6 +4136,17 @@ def main():
                     result!=[{'name':'do_action_result','result':expected_result}]):
                     raise RuntimeError('O2 actual multi-account loop did not honor remote outcomes: '+
                                        repr((name,created,delivered,result))[:1300])
+                # The actual hosted success notice must report the complete
+                # original purchase, not just the last Native account.
+                reports=[str(e['args'][0]) for e in outcome['events']
+                         if e['name']=='sendMessage' and e.get('args')]
+                if label=='complete' and not any(
+                    '2 از 2' in text and remark+'_1' in text and remark+'_2' in text
+                    for text in reports):
+                    raise RuntimeError('O2 hosted bulk owner report lost original accounts: '+
+                                       repr((name,reports))[:1200])
+                if label=='partial' and any('2 از 2' in text for text in reports):
+                    raise RuntimeError('O2 uncertain hosted operation reported full success')
                 if any(e['stage']!='review' or e['pay_state']!='paid' or
                        e['held_at_post']!=2 or e['capacity_at_post']!=0
                        for e in created):

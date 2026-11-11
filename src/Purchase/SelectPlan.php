@@ -52,12 +52,14 @@ if((preg_match('/^discountSelectPlan(\d+)_(\d+)_(\d+)/',$userInfo['step'],$match
     $remark = ""; 
     if(preg_match("/selectPlan(\d+)_(\d+)_(\w+)/",$userInfo['step'])){ 
         if($match['buyType'] == "much"){ 
-            if(is_numeric($text)){ 
-                if($text > 0){ 
-                    $accountCount = $text; 
-                    setUser(); 
-                }else{sendMessage( $mainValues['send_positive_number']); exit(); } 
-            }else{ sendMessage($mainValues['send_only_number']); exit(); } 
+            // An account quantity is a positive integer, not an exponent,
+            // decimal or a value which PHP will silently cast during INSERT.
+            if (!is_string($text) || preg_match('/^0*[1-9][0-9]*$/D',$text)!==1 ||
+                filter_var(ltrim($text,'0'),FILTER_VALIDATE_INT)===false) {
+                sendMessage($mainValues['send_only_number']); exit();
+            }
+            $accountCount=(int)$text;
+            setUser();
         }         
     } 
     elseif(preg_match("/enterAccountName(\d+)_(\d+)/",$userInfo['step'])){ 
@@ -101,8 +103,13 @@ if((preg_match('/^discountSelectPlan(\d+)_(\d+)_(\d+)/',$userInfo['step'],$match
     $desc = $respd['descr']; 
 	$sid = $respd['server_id']; 
 	$keyboard = array(); 
-    $price =  $respd['price']; 
-    if(isset($accountCount)) $price *= $accountCount; 
+    $price=(int)$respd['price'];
+    if (isset($accountCount)) {
+        if ($price<0 || $price>0 && $accountCount>intdiv(PHP_INT_MAX,$price)) {
+            alert($mainValues['send_only_number']); return;
+        }
+        $price*=$accountCount;
+    }
      
     $agentBought = false; 
     if($userInfo['is_agent'] == true && ($match['buyType'] == "one" || $match['buyType'] == "much")){ 

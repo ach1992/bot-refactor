@@ -1427,7 +1427,25 @@ function achbotPerformPaymentEffect($payRowId, $gateType, &$effectStage = null) 
             ]
         ]]);
 
-        $msg = \achbotMessage('gateway.gateway_return.perform_payment_effect.msg.8205ac68fa', ['gateType' => $gateType, 'user_id' => $user_id, 'first_name' => $first_name, 'username' => $username, 'amount' => $amount, 'remark' => $remark, 'volume' => $volume, 'days' => $days]);
+        $bulkProof=null;
+        if ($accountCount>1) {
+            try {
+                require_once __DIR__.'/../Purchase/BulkReport.php';
+                $bulkProof=achbotBulkRecordedAccounts($connection,$accountCount,$user_id,$rowId);
+                if (!$bulkProof['complete'])
+                    error_log('achbot_hosted_bulk_report_incomplete pay_id='.$rowId);
+            } catch (Throwable $error) {
+                error_log('achbot_hosted_bulk_report_unavailable pay_id='.$rowId.
+                    ' class='.get_class($error));
+            }
+        }
+        $summaryName=$accountCount>1?achbotMessage('bulk_reporting.bulk_subject'):$remark;
+        $msg = \achbotMessage('gateway.gateway_return.perform_payment_effect.msg.8205ac68fa', ['gateType' => $gateType, 'user_id' => $user_id, 'first_name' => $first_name, 'username' => $username, 'amount' => $amount, 'remark' => $summaryName, 'volume' => $volume, 'days' => $days]);
+        if ($accountCount>1)
+            $msg=$bulkProof===null
+                ?($msg."\n".achbotMessage('bulk_reporting.needs_review',[
+                    'confirmed'=>'نامشخص','requested'=>$accountCount]))
+                :achbotBulkReportAppend($msg,$bulkProof,true);
 		notifyAllAdminsSimple($msg, $admin, "html", $keys, $rewardChannel);
     }
 

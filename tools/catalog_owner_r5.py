@@ -390,6 +390,59 @@ CHILI_APPROVED_LATER_KEY='manual_payment.api_payment.auto_approved'
 CHILI_APPROVED_LATER_LINE_BEFORE="        'api_payment.auto_approved' => 'تایید خودکار توسط API',"
 CHILI_APPROVED_LATER_LINE_AFTER="        'api_payment.auto_approved' => '🔑 تایید خودکار توسط API',"
 
+# #147 bulk reporting is an exactly source-pinned additive topic, not a
+# blanket relaxation of the older independently reviewed catalogues.
+BULK_REPORT_MANIFEST=ROOT/'tools/text_catalog_bulk_reporting_20261111.json'
+
+def bulk_reporting_source():
+    item=json.loads(BULK_REPORT_MANIFEST.read_text())
+    check(set(item)=={'version','base_commit','topic','audience','source',
+                      'block_sha256','line_sha256'} and
+          item['version']==1 and item['base_commit']=='251c15d1ff6436b4a3b1651c5aeb26ebf99fe31e' and
+          item['topic']=='bulk_reporting' and item['audience']=='admin' and
+          item['source']=='messages/fa/admin.php' and
+          set(item['line_sha256'])=={'bulk_reporting.'+k for k in
+              ['complete','needs_review','names','more','short_reference',
+               'bulk_subject','admin_created','delivery_needs_review']},'bulk_reporting_manifest_identity')
+    raw=(ROOT/item['source']).read_text()
+    heading='    // #147 — Verified bulk source reports (source-pinned in test catalog).\n'
+    ending='    // ── پیام‌های اصلی و متن‌های قابل سفارشی‌سازی قدیمی ──'
+    check(raw.count(heading)==1 and raw.count(ending)==1,
+          'bulk_reporting_source_marker')
+    start=raw.index(heading);end=raw.index(ending,start)
+    block=raw[start:end]
+    check(hashlib.sha256(block.encode()).hexdigest()==item['block_sha256'],
+          'bulk_reporting_source_block_drift')
+    lines={}
+    for line in block.splitlines():
+        match=re.match(r"^        '([^']+)' =>",line)
+        if match:
+            lines['bulk_reporting.'+match[1]]=hashlib.sha256(line.encode()).hexdigest()
+    check(lines==item['line_sha256'],'bulk_reporting_source_line_drift')
+    prior=command('git','show',item['base_commit']+':'+item['source']).decode()
+    check(raw[:start]+raw[end:]==prior,'bulk_reporting_unlisted_admin_source_change')
+    return block
+
+def bulk_reporting_copy_restore(sides,prestripped=False):
+    block=bulk_reporting_source() # Verify actual file even for nested baseline tests.
+    _=block
+    check(set(sides)=={'admin','user'} and
+          not any(key.startswith('bulk_reporting.') for key in sides['user']),
+          'bulk_reporting_audience')
+    original=json.loads(command('php','-r',
+       '$a=require "messages/fa/admin.php";echo json_encode($a["bulk_reporting"],JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);'))
+    keys={'bulk_reporting.'+key:value for key,value in original.items()}
+    current={key:value for key,value in sides['admin'].items()
+             if key.startswith('bulk_reporting.')}
+    if not current:
+        check(prestripped,'bulk_reporting_current_keys_missing')
+        return sides
+    check(current==keys,'bulk_reporting_current_copy_drift')
+    restored=copy.deepcopy(sides)
+    for key in keys:restored['admin'].pop(key)
+    return restored
+
+
 
 @functools.lru_cache(maxsize=1)
 def chili_copy_reference():
@@ -427,6 +480,9 @@ def chili_copy_reference():
             check(before.count(original)==1 and after.count(approved)==1,
                   'approved_api_button_prefix_exact_source')
             historical_after=after.replace(approved,original,1)
+            bulk=bulk_reporting_source()
+            check(historical_after.count(bulk)==1,'bulk_reporting_source_projection')
+            historical_after=historical_after.replace(bulk,'',1)
         left=lines(before);right=lines(historical_after)
         check(set(left)-set(right)==set() and
               set(right)-set(left)=={k for k,v in added.items() if v['audience']==audience},
@@ -556,6 +612,7 @@ def verify_and_restore(sides,definition=None,from_verified_current=False):
     # Historical composition tests operate on a previously validated
     # projection of the exact new copy. Ordinary current-catalog callers
     # must still provide all nine source-pinned keys.
+    sides=bulk_reporting_copy_restore(sides,prestripped=from_verified_current)
     sides=gift_precheck_copy_restore(sides,allow_prestripped=from_verified_current)
     sides=current_cleanup_restore(sides)
     if any(key.startswith('delivery_recovery.') for audience in sides.values() for key in audience):
