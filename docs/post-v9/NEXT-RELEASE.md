@@ -34,6 +34,12 @@ published RC30 ZIP or the active Chili installation.
   A new service-bound invoice also checks the CURRENT uncommitted plan
   journal for the selected owner and every old_rows shared owner, so it cannot
   start a fresh old-plan claim during the Native GET/PUT/finalize gap.
+  Selecting the SAME already-local plan never retires a still-valid current
+  invoice merely to verify/reconcile Native access; a new correctly quoted
+  plan-specific invoice AFTER a verified change remains payable.
+  Retired old-service invoice evidence is terminal for Native cleanup only
+  while its attempt remains in an unclaimed pending/review stage; unexpected
+  progress to fulfillment remains a real reconciliation hold.
 - **Strict safety exceptions:** a checking/fulfilling claim, an unreconciled
   Native effect, an active API evidence lease, a reserved/redeemed gift/SMS
   operation, an unknown 003/014 schema or a bound foreign owner cannot be

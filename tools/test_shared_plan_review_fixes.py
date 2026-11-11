@@ -124,6 +124,14 @@ DRIVER = plans.DRIVER.replace(" } elseif($op==='toggle'){", """ } elseif($op==='
  } elseif($op==='review_payment_journal'){
   require_once $root.'/src/Purchase/Core.php';
   $out=achbotServicePaymentJournalClear($connection,(int)$spec['order']);
+ } elseif($op==='review_retired_terminal'){
+  require_once $root.'/src/Finance/ReceiptHelpers.php';
+  $id=(int)$spec['pay'];
+  $q=$connection->prepare('SELECT * FROM pays WHERE id=?');
+  $q->bind_param('i',$id);$q->execute();$pay=$q->get_result()->fetch_assoc();$q->close();
+  $q=$connection->prepare('SELECT * FROM payment_attempts WHERE pay_row_id=?');
+  $q->bind_param('i',$id);$q->execute();$attempt=$q->get_result()->fetch_assoc();$q->close();
+  $out=achbotNonPayablePaymentSettledLocked($pay,$attempt);
  } elseif($op==='review_superseded_payment'){
   require_once $root.'/src/Finance/PaymentLifecycle.php';
   $id=(int)$spec['pay'];
@@ -398,9 +406,27 @@ def main():
             yes(h['call']('review_superseded_payment',pay=issued)==
                 {'state':'service_superseded','eligible':False},
                 provider+'_late_old_issued_invoice_preflight_denied_and_status_explicit')
+            # The retired invoice is terminal for safe cleanup only while
+            # its pre-fulfillment evidence remains pending/review. New
+            # fulfillment progress cannot masquerade as an old canceled
+            # invoice, even after the original service was changed.
+            yes(h['call']('review_retired_terminal',pay=issued) is True,
+                provider+'_superseded_original_pending_evidence_is_terminal_for_cleanup')
+            db("UPDATE payment_attempts SET stage='fulfilling' WHERE pay_row_id="+str(issued))
+            yes(h['call']('review_retired_terminal',pay=issued) is False,
+                provider+'_retired_original_unexpected_fulfillment_still_blocks_cleanup')
+            db("UPDATE payment_attempts SET stage='pending' WHERE pay_row_id="+str(issued))
+            # A NEW price/plan-bound invoice after a real change is valid,
+            # and reselecting the identical plan must not invalidate it.
+            new_invoice=invoice(h,'newplan','pending',order=h['peer'])
+            db(f'UPDATE pays SET plan_id=120 WHERE id={new_invoice}')
+            yes(h['call']('review_superseded_payment',pay=new_invoice)['eligible'] is True,
+                provider+'_new_plan_invoice_is_payable_after_successful_service_change')
             old=len(h['writes']());plan(h,120)
-            yes(len(h['writes']())==old and outstanding(h)=='committed',
-                provider+'_replayed_plan_never_reissues_native_write')
+            yes(len(h['writes']())==old and outstanding(h)=='committed' and
+                db('SELECT state FROM pays WHERE id='+str(new_invoice))=='pending' and
+                h['call']('review_superseded_payment',pay=new_invoice)['eligible'] is True,
+                provider+'_identical_plan_noop_never_retires_new_valid_invoice')
 
     # 014 API evidence and pending redemption are more authoritative than
     # a still-open invoice. A started claim is not safe to retire silently.

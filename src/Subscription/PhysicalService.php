@@ -406,13 +406,20 @@ function achbotPhysicalRetireOpenPaymentsLocked(mysqli $db,array $rows): int {
     return $retired;
 }
 
+/** Whether selecting a plan really changes at least one current local reference. */
+function achbotPhysicalPlanChangesLocalPlan(array $rows,int $planId): bool {
+    foreach ($rows as $row)
+        if ((int)($row['fileid']??0)!==$planId) return true;
+    return false;
+}
+
 /** Only actual in-flight financial/native effects keep a service-change hold. */
 function achbotPhysicalNoPendingPayments(mysqli $db,array $rows,bool $retireOpen=false): void {
     require_once __DIR__.'/../Finance/ReceiptHelpers.php';
     // Must be in the caller's order/peer-locked transaction; any failure
     // rolls back every retirement with the service change intent/transition.
     if ($retireOpen) achbotPhysicalRetireOpenPaymentsLocked($db,$rows);
-    if (!achbotSharedAccountWorkSettledLocked($db,$rows,0,0,true,true))
+    if (!achbotSharedAccountWorkSettledLocked($db,$rows,0,0,$retireOpen,true))
         throw new RuntimeException('physical_pending_financial_effect');
 }
 
@@ -563,7 +570,7 @@ function achbotPhysicalBeforeNativeWrite(mysqli $db,array $intent,int $journalId
             throw new RuntimeException('physical_before_put_subject_changed');
         if (achbotPhysicalTargetFingerprint($db,$selected)!==$intent['physical_target_sha256'])
             throw new RuntimeException('physical_before_put_target_changed');
-        achbotPhysicalNoPendingPayments($db,$rows,true);
+        achbotPhysicalNoPendingPayments($db,$rows,achbotPhysicalPlanChangesLocalPlan($intent['old_rows'],(int)$intent['new_plan_id']));
         $commitAttempted=true;
         if (!$db->commit()) throw new RuntimeException('physical_before_put_commit_unknown');
         $transaction=false;
@@ -644,7 +651,7 @@ function achbotPhysicalSelectPlan(mysqli $db,int $orderId,int $newPlanId,int $ac
                 !achbotSameProviderPanel($db,$peerServer,$server)))
                 throw new RuntimeException('physical_peer_server_mismatch');
         }
-        achbotPhysicalNoPendingPayments($db,$all,true);
+        achbotPhysicalNoPendingPayments($db,$all,achbotPhysicalPlanChangesLocalPlan($all,$newPlanId));
         if ($provider==='marzban')
             achbotPhysicalAssertMarzbanGroupJournalClear($db,$server,(string)$order['remark'],
                 array_map(static fn($r)=>(int)$r['id'],$all),'physical_plan_requires_review');
@@ -716,7 +723,7 @@ function achbotPhysicalSelectPlan(mysqli $db,int $orderId,int $newPlanId,int $ac
         if ($provider==='pasarguard' &&
             achbotPhysicalPgIdentityFingerprint(achbotPgOrderContext($db,$orderId,true))!==$pgIdentitySha)
             throw new RuntimeException('physical_pg_identity_changed');
-        achbotPhysicalNoPendingPayments($db,$prePeers,true);
+        achbotPhysicalNoPendingPayments($db,$prePeers,achbotPhysicalPlanChangesLocalPlan($prePeers,$newPlanId));
         $commitAttempted=true;
         if (!$db->commit()) throw new RuntimeException('physical_plan_preflight_commit_unknown');
         $tx=false;$commitAttempted=false;
@@ -799,7 +806,7 @@ function achbotPhysicalSelectPlan(mysqli $db,int $orderId,int $newPlanId,int $ac
         $s->bind_param('ii',$newPlanId,$server);$s->execute();$freshPlan=$s->get_result()->fetch_assoc();$s->close();
         if (!$freshPlan || achbotPhysicalPlanFingerprint($freshPlan)!==$intent['plan_sha256'])
             throw new RuntimeException('physical_plan_changed_during_effect');
-        achbotPhysicalNoPendingPayments($db,$fresh,true);
+        achbotPhysicalNoPendingPayments($db,$fresh,achbotPhysicalPlanChangesLocalPlan($fresh,$newPlanId));
         $count=achbotPhysicalUpdateOrders($db,$fresh,$server,$newPlanId);
         $s=$db->prepare("UPDATE service_plan_changes SET state='committed' WHERE id=? AND state='dispatching'");
         $s->bind_param('i',$journalId);

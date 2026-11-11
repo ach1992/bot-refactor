@@ -704,7 +704,7 @@ def run_services(tmp: str) -> tuple[dict, dict]:
              'archived_renderer_sha256':'4a34ed56370842e75ddb16563908c7c0497736851bbbc0da81c17b686e29fb9c',
              'actual_archived_renderer_RED':['marzban','pasarguard'],'synthetic_Telegram_delivery':True,
              'production_mutations':0,'live_provider_calls':0}),
-        ('shared_plan_review_regressions','test_shared_plan_review_fixes.py','cases',245,
+        ('shared_plan_review_regressions','test_shared_plan_review_fixes.py','cases',253,
             {'actual_php':True,'disposable_mariadb':True,
              'native_providers':['marzban','pasarguard'],
              'panel_group_admin_independent':True,
