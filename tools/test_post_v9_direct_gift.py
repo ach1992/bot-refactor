@@ -314,9 +314,16 @@ def setup(work: Path, env: dict) -> Path:
     (stage/'moderation-route.php').write_text(
         '<?php\n'+config[moderation_start:moderation_end])
     exemption_start=config.index('function achbotHandleChannelExemption(')
+    # The membership binding is explicitly guarded against Cron/anonymous
+    # callbacks now. Search the actual section by its stable role boundary,
+    # retaining both negative controls against pre-ingress state mutations.
+    membership_section=config[config.index("$channelLock = $botState['lockChannel'];"):
+                              config.index('// تابع مشترک ساخت درخواست پرداخت')]
     ensure(exemption_start<moderation_start and
-           'if ($data == "addExemptUser")' not in config[config.index('$joniedState='):config.index('// تابع مشترک ساخت درخواست پرداخت')] and
-           'if ($userInfo[\'step\'] == "awaitingExemptUserID")' not in config[config.index('$joniedState='):config.index('// تابع مشترک ساخت درخواست پرداخت')],
+           'if ($data == "addExemptUser")' not in membership_section and
+           'if ($userInfo[\'step\'] == "awaitingExemptUserID")' not in membership_section and
+           "defined('ACHBOT_VERIFIED_WEBHOOK_ENTRYPOINT')" in membership_section and
+           "bot('getChatMember'" in membership_section,
            'Exemption still mutates during config.php bootstrap')
     ensure(bot.index('check();')<bot.index('if (achbotHandleChannelExemption('),
            'Exemption route precedes IP check')

@@ -80,8 +80,25 @@ def main():
     for name,key in [('sink-manual','manual_payment.manual_receipts.message.f6331b33af'),
                      ('sink-gateway','gateway.gateway_return.perform_payment_effect.message.dd866497c7')]:
         check(parts['current'][name].replace("\\achbotMessageHtml('"+key,"\\achbotMessage('"+key)==parts['archived'][name],name+'_only_destination_encoding_differs')
-    membership="$channelLock = $botState['lockChannel'];\n$joniedState= bot('getChatMember', ['chat_id' => $channelLock,'user_id' => $from_id])->result->status;"
-    check(membership in current['config.php'] and membership in archived['config.php'],'membership_query_and_raw_chat_id_unchanged')
+    # The real checked membership call is unchanged in its destination and
+    # actor payload, but is now guarded for verified webhook actor only:
+    # Cron must not call Telegram with the default empty actor.
+    original="$channelLock = $botState['lockChannel'];\n$joniedState= bot('getChatMember', ['chat_id' => $channelLock,'user_id' => $from_id])->result->status;"
+    protected="""$channelLock = $botState['lockChannel'];
+$joniedState = null;
+// Membership is relevant only for an authenticated webhook actor, not a
+// once-per-minute CLI job. Preserve the legacy unknown-result behavior.
+if (defined('ACHBOT_VERIFIED_WEBHOOK_ENTRYPOINT') && (int)$from_id > 0 &&
+    $channelLock !== null && $channelLock !== '') {
+    $membership = bot('getChatMember', ['chat_id' => $channelLock,'user_id' => $from_id]);
+    $memberStatus = is_object($membership) ? ($membership->result->status ?? null) : null;
+    $joniedState = is_string($memberStatus) ? $memberStatus : null;
+}"""
+    check(original in archived['config.php'] and
+          protected in current['config.php'] and
+          current['config.php'].count(protected)==1 and
+          original not in current['config.php'],
+          'membership_dest_actor_preserved_under_verified_webhook_guard')
     fragment_hashes={label:{key:hashlib.sha256(value.encode()).hexdigest()for key,value in selected.items()}for label,selected in parts.items()}
     with owned.owned_database()as(work,env):
         client=['mariadb','--no-defaults','--protocol=SOCKET','--socket='+str(work/'mysql.sock'),'-uroot','--batch','--skip-column-names',DB]
