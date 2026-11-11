@@ -77,6 +77,10 @@ DRIVER = plans.DRIVER.replace(" } elseif($op==='toggle'){", """ } elseif($op==='
   require_once $root.'/src/Subscription/PhysicalService.php';
   $record=$connection->query('SELECT * FROM orders_list WHERE id='.(int)$spec['order'])->fetch_assoc();
   $out=achbotPhysicalLockName($connection,$record);
+ } elseif($op==='review_recover'){
+  require_once $root.'/src/Subscription/PhysicalService.php';
+  $out=achbotPhysicalRecoverPlan($connection,(int)$spec['journal'],
+    (int)$spec['actor'],(int)($spec['order']??0));
  } elseif($op==='review_pg_key'){
   require_once $root.'/src/Subscription/PhysicalService.php';
   $connection->begin_transaction();
@@ -241,7 +245,9 @@ def harness(provider: str):
                 'achbot_shared_plan_requires_review',
                 'achbot_shared_plan_committed',
                 'achbot_customer_draft_creation_deferred',
-                'achbot_order_plan_actions_unverified')
+                'achbot_order_plan_actions_unverified',
+                'achbot_shared_plan_recovery_held',
+                'achbot_shared_plan_recovered')
             if run.returncode or not all(line.startswith(allowed)
                 for line in run.stderr.splitlines()):
                 raise AssertionError((provider, op, run.returncode, run.stdout, run.stderr))
@@ -1221,6 +1227,59 @@ def main():
                         remark=h['remark'],orders=[])=='allowed' and
                     len(h['writes']())==puts,
                     'marzban_resolved_historical_journal_does_not_block_native_admission')
+
+    # A01: Administrator GET-only recovery of exactly the original, already
+    # dispatched journal after Native changed but local final COMMIT failed.
+    # The original error is injected ONLY into disposable local order SQL;
+    # the authenticated Native mock has performed the ONE PUT already.
+    for provider in ('marzban','pasarguard'):
+        with harness(provider) as h:
+            seeded(h)
+            db=h['db'];initial=finance(h);existing=subject(h)
+            db('CREATE TRIGGER fixture_block_plan_recovery BEFORE UPDATE ON orders_list '
+               "FOR EACH ROW SIGNAL SQLSTATE '45000' "
+               "SET MESSAGE_TEXT='fixture_after_native_finalization_failed'")
+            try:
+                writes=len(h['writes']())
+                plan(h,120)
+            finally:
+                db('DROP TRIGGER fixture_block_plan_recovery')
+            journal=int(db('SELECT MAX(id) FROM service_plan_changes'))
+            yes(journal>0 and outstanding(h)=='dispatching' and
+                subject(h)==existing and len(h['writes']())==writes+1,
+                provider+'_get_only_recovery_original_dispatched_journal_preserved')
+            wrong=h['call']('review_recover',journal=journal,actor=9001,order=h['peer'])
+            yes(wrong['success'] is False and outstanding(h)=='dispatching' and
+                len(h['writes']())==writes+1,
+                provider+'_get_only_recovery_stale_order_callback_denied')
+            denied=h['call']('review_recover',journal=journal,actor=1001)
+            yes(denied['success'] is False and outstanding(h)=='dispatching' and
+                len(h['writes']())==writes+1,
+                provider+'_get_only_recovery_nonadmin_denied_without_put')
+            if provider=='marzban':
+                wanted=copy.deepcopy(h['vendor'].edit_account['inbounds'])
+                h['vendor'].edit_account['inbounds']={'vless':['inbound']}
+            else:
+                wanted=copy.deepcopy(h['vendor'].users[41]['group_ids'])
+                h['vendor'].users[41]['group_ids']=[2,5]
+            held=h['call']('review_recover',journal=journal,actor=9001)
+            yes(held['success'] is False and outstanding(h)=='dispatching' and
+                subject(h)==existing and len(h['writes']())==writes+1,
+                provider+'_get_only_recovery_incomplete_native_stays_held')
+            if provider=='marzban': h['vendor'].edit_account['inbounds']=wanted
+            else: h['vendor'].users[41]['group_ids']=wanted
+            recovered=h['call']('review_recover',journal=journal,actor=9001)
+            yes(recovered=={'success':True,'reason':'recovered','shared_count':2}
+                and outstanding(h)=='committed' and len(h['writes']())==writes+1 and
+                db(f'SELECT fileid FROM orders_list WHERE id IN ({h["oid"]},{h["peer"]}) ORDER BY id')=='120\n120' and
+                db('SELECT userid,wallet FROM users ORDER BY userid;'
+                   'SELECT id,price,state FROM pays ORDER BY id;'
+                   'SELECT id,ucount FROM server_info ORDER BY id')==initial,
+                provider+'_get_only_recovery_verified_completed_without_second_native_put')
+            repeat=h['call']('review_recover',journal=journal,actor=9001)
+            yes(repeat['success'] is False and outstanding(h)=='committed' and
+                len(h['writes']())==writes+1,
+                provider+'_get_only_recovery_duplicate_callback_denied_without_put')
 
     # F3: independent real Marzban API admission evidence complements
     # PasarGuard's authenticated native preflight exact-SQL-claim proof.

@@ -704,7 +704,7 @@ def run_services(tmp: str) -> tuple[dict, dict]:
              'archived_renderer_sha256':'4a34ed56370842e75ddb16563908c7c0497736851bbbc0da81c17b686e29fb9c',
              'actual_archived_renderer_RED':['marzban','pasarguard'],'synthetic_Telegram_delivery':True,
              'production_mutations':0,'live_provider_calls':0}),
-        ('shared_plan_review_regressions','test_shared_plan_review_fixes.py','cases',296,
+        ('shared_plan_review_regressions','test_shared_plan_review_fixes.py','cases',306,
             {'actual_php':True,'disposable_mariadb':True,
              'native_providers':['marzban','pasarguard'],
              'panel_group_admin_independent':True,
@@ -1190,8 +1190,8 @@ def run_wallet(tmp: str) -> tuple[dict, dict]:
         cwd=ROOT,check=True,timeout=180,capture_output=True,text=True)
     text_catalog=json.loads(catalog_output.stdout)
     expected_catalog={
-        'status':'PASS','current_catalog_keys':2870,
-        'current_admin_keys':1920,'current_user_keys':950,
+        'status':'PASS','current_catalog_keys':2871,
+        'current_admin_keys':1921,'current_user_keys':950,
         'retired_experimental_keys':129,'retired_experimental_topics':10,
         'new_copy_entries':33,'current_runtime_files':131,
         'new_copy_references_unbound':0,

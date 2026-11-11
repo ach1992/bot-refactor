@@ -84,6 +84,28 @@ still needs an exact candidate review, Owner rollout approval and separate
 operator acceptance. Follow [Issue #144](https://github.com/ach1992/bot-refactor/issues/144).
 
 
+## PR #145 follow-up — administrator-controlled GET-only plan recovery (not shipped)
+
+Independent review identified a missing operator recovery action for an already
+dispatched `service_plan_changes` journal. The new plan-management action is
+shown only to currently authorized administrators for the original order and
+exact dispatching journal (migration 017). The handler rechecks the current
+orders permission, original source order/linked references, native provider,
+physical target and plan fingerprints, and original PasarGuard mutation
+identity. Native requests are **strictly GET-only**, requiring original
+Marzban account/Hosts or PasarGuard exact identity/Groups to be already in the
+required state. Only after a verified match, original local references,
+PasarGuard mutation evidence (when present), and the original journal are
+finalized in one SQL transaction. Absent, stale, unauthorized, contradictory
+or partial Native observations leave the original journal held; **no second
+Native PUT, money mutation or automated compensation/replay exists**. Audit
+logs record bounded journal, actor and result codes, without credentials.
+A source-real disposable two-provider injected-finalize-failure regression
+covers admin GET-only recovery, incomplete Native holds, stale/unauthorized
+callbacks, duplicate attempts and absent second PUT. Nothing in this source
+branch changes installed Chili or protected historic orders/journals. Exact
+PHP 8.5 CI and fresh independent delta review remain mandatory before merge.
+
 ## PR #146 independent-review remediation — successful-change retirement and late original funds
 
 The independent reviewer found two correctness defects: original renewal/day/volume

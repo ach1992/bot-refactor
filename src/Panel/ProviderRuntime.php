@@ -394,13 +394,18 @@ function achbotPgPlanSnapshot(mysqli $db,int $serverId,int $planId,bool $lock=fa
     achbotPgLoad();achbotPgServerPanel($db,$serverId);
     return achbotProviderSnapshot($db,$serverId,$planId);
 }
-function achbotPgOrderContext(mysqli $db,int $orderId,bool $lock=false): array {
+function achbotPgOrderContext(mysqli $db,int $orderId,bool $lock=false,
+    bool $recoverDispatchedPlan=false): array {
     achbotPgLoad();
     $s=$db->prepare('SELECT o.*,c.type AS provider_type FROM orders_list o JOIN server_config c ON c.id=o.server_id WHERE o.id=?'.($lock?' FOR UPDATE':''));
     $s->bind_param('i',$orderId);$s->execute();$o=$s->get_result()->fetch_assoc();$s->close();
     if (!$o || $o['provider_type']!=='pasarguard') throw new RuntimeException('pg_order_identity_changed');
     $a=achbotProviderAccountByOrder($db,$orderId,$lock);
-    if (!$a || !in_array($a['state'],['verified','linked'],true) || (int)$a['remote_user_id']<=0 || empty($a['remote_created_at'])) throw new RuntimeException('pg_account_not_verified');
+    // Only an explicit administrator GET-only plan recovery may inspect the
+    // existing, durably fenced 'mutating' provider identity. All regular
+    // callers still reject it and may not begin another Native effect.
+    $allowed=$recoverDispatchedPlan?['verified','linked','mutating']:['verified','linked'];
+    if (!$a || !in_array($a['state'],$allowed,true) || (int)$a['remote_user_id']<=0 || empty($a['remote_created_at'])) throw new RuntimeException('pg_account_not_verified');
     if ($o['remark']!==$a['remote_username']) throw new RuntimeException('pg_order_identity_changed');
     $panel=achbotPgServerPanel($db,(int)$o['server_id']);
     if ((int)$panel['id']!==(int)$a['panel_id'] || $panel['instance_key']!==$a['instance_key'] || hash('sha256',rtrim($panel['api_url'],'/'))!==$a['endpoint_sha256']) throw new RuntimeException('pg_account_panel_changed');

@@ -69,3 +69,11 @@ The first full PHP 8.5 matrix runs [41462988501](https://github.com/ach1992/bot-
 Do **not** claim that every PHP runtime code path is proven PHP 8.5 compatible: other curl_close() calls remain, including the exact byte-guarded canonical checkout flow. Any changes to frozen byte-parity paths require a separate explicit contract/review decision, not test suppression or silent rewrite. Full current acceptance remains blocked until the actual matrix and aggregator succeed.
 
 The historical V9 Marzban differential keeps checking the exact original Git SHA and all native SQL/HTTP/result comparisons; on PHP 8.5, its comparison normalizes **only** the exact historical no-op curl_close() E_DEPRECATED message, records the number of those archival messages, and rejects every other historical/current warning. The old gift/getter race RED fixture similarly reads the exact archived source and removes **exactly 11** inert close calls in its temporary executable copy only. Neither operation rewrites historical Git objects, changes the candidate source, exempts a current warning, nor claims a new PHP 8.4 test.
+
+
+### Verified isolated MariaDB runtime bootstrap
+All eight required PHP 8.5 native-family shards use a SHA-256-pinned official
+MariaDB 10.11.19 binary archive, replacing intermittent GitHub APT mirror/DNS
+failures. Each family still initializes its own socket-only database and
+strict acceptance/aggregate contracts remain unchanged. A mismatched archive
+necessarily fails validation.

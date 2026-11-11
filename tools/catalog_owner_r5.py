@@ -403,6 +403,7 @@ def service_change_catalog_layer():
     expected_added={'user':{
         'payment.payment_lifecycle.pay_ux_status_text.service_superseded_title',
         'payment.payment_lifecycle.pay_ux_status_text.service_superseded_next'},'admin':{
+        'subscription.service_plan_recovery.action',
         'subscription.service_change_report.admin',
         'subscription.service_change_report.customer',
         'subscription.service_change_report.server',
