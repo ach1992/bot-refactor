@@ -1,0 +1,29 @@
+# RC32 → RC33: source-only release and authorized operator preflight
+
+This guide documents source changes and the boundary between a GitHub release, **ZIP-only staging**, and a separately authorized live Chili installation. It is not permission to extract the ZIP, execute SQL, modify Cron/webhook, call Native/payment/Telegram providers, or perform an upgrade. Preserve historic order `orders_list.id=33` and original `service_plan_changes.id=2` without mutation or replay.
+
+## Source change since RC32
+
+Independently approved [PR #155](https://github.com/ach1992/bot-refactor/pull/155) is merged into `main@e0651d7dedb4a51ee66b2c3a44b53b57595b5308` (TREE `1e5b2579afbe152fb56cc4e201963a3eec7e3fc5`). New generated administrator no-payment bulk and paid customer/agent bulk accounts receive **exactly five decimal digits** in the suffix while retaining the configured `server-userId-number` or digits-mode `server-number` format for Marzban/PasarGuard. These are new-name changes only: do not rename, reconstruct or retry previously dispatched identities, financial effects or capacity claims.
+
+The Owner explicitly approved exactly the new three-line Persian plan-selection copy and six field emojis in the successful purchase report; no other visible copy/workflow change is authorized. Independently Native-verified identical Marzban subscription identities on an explicitly valid shared Panel Group may be presented as one import candidate. Distinct physical groups, missing group declarations and unsupported matches remain ambiguous; PasarGuard's independent Native bearer/instance proof remains unchanged. The durable prior-Owner-approval rule for future user-/administrator-visible changes is in `AGENTS.md`.
+
+The current approved source diff has 12 changed files (178 additions, 26 deletions), **zero migration/DDL changes**, no new provider API contract, Cron, private config or application dependency. Runtime packaging remains **132 source members** without SQL data or private `baseInfo.php`. The published RC33 tag, manifest and asset checksums must bind to the final release commit, not only to the pre-documentation PR SHA.
+
+## Source validation and unresolved risk
+
+- Exact PR #155 source PHP 8.5 [CI #43221520051 attempt 2](https://github.com/ach1992/bot-refactor/actions/runs/43221520051): foundation, eight isolated native-family shards and protected aggregate **SUCCESS**.
+- Post-merge `main` [CI #43227140126](https://github.com/ach1992/bot-refactor/actions/runs/43227140126): **SUCCESS** via verified same-tree acceptance reuse; not another full execution.
+- A first-attempt synthetic finance SQL INSERT exceeded a 15-second test timeout on isolated MariaDB; rerun passed with identical source. Precise cause remains unknown. Do not weaken financial checks or add blanket retry absent new evidence; [Issue #104](https://github.com/ach1992/bot-refactor/issues/104) owns any recurrence.
+
+## What was actually seen on Chili (read-only, 2026-11-12)
+
+Gateway target `ach-host-aapanel` resolved to `ach-host-nl`, installed root `/www/acdomains/host.hellservice.top/chili`. An independent **132/132 RC32 manifest SHA256** check matched the official RC32 runtime files. A later limited inspection confirmed **131/131 expected PHP runtime paths** plus the required private `baseInfo.php`, with no unknown extra PHP path; selected 003/014/017/018/020/022 SQL columns, indexes and nine table engines were present; protected order #33 and journal #2 existed. These observations do not establish byte identity for every non-PHP extra asset, full schema correctness, actual process/OPcache code, in-flight financial state, Native/payment success, Telegram delivery, or a tested restore. RC33-specific changes were **not** installed. The formerly staged RC32 ZIP was absent at the exact root.
+
+## Approved staging only; separate installation gates
+
+The Owner authorized publishing the source-only RC33 release and placing **only the exact verified runtime ZIP** into `/www/acdomains/host.hellservice.top/chili`; do not extract it, replace `bot.php`, run migrations, restart services, touch `baseInfo.php`, change providers/SQL, send Telegram, or change Cron/webhook. Use an unambiguous versioned filename, verify official ZIP/manifest/SHA256SUMS and SHA256 on the destination, and do not overwrite an existing artifact with conflicting content.
+
+Before any *later* live rollout, independently inventory the installed runtime, extra/stale source, complete schema/indices and private configuration; inspect original pending payment/Native and service-plan journals, and prove recoverable file+database+config backup/restoration and compatibility with any externally committed effects. Coordinate the whole 132-member cutover with a **new explicit target-specific Owner approval**, not this staging permission. No new RC33-vs-RC32 migration is required for a fully schema-compatible RC32 installation; **never replay earlier 003/014/017/018/020/022 migrations** or automatically alter protected old orders/effects.
+
+After authorized installation, separately verify five-digit generated names with both Native providers, original per-account source/ordinal/order/effect and full/partial capacity/finance evidence, original primary administrator/report-channel/customer Telegram acknowledgments, and shared Marzban import vs distinct-panel rejection. Verify plan-change finality and automatic payment review without releasing historic uncertain effects. A Git rollback cannot undo external accounts, payments or messages. Record real checks and unresolved holds in [#147](https://github.com/ach1992/bot-refactor/issues/147), [#144](https://github.com/ach1992/bot-refactor/issues/144) and [#117](https://github.com/ach1992/bot-refactor/issues/117); keep all OPEN until their installed acceptance requirements are actually satisfied.
