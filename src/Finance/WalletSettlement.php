@@ -195,11 +195,8 @@ if (!function_exists('processWalletPayment')) {
             $userReferrer = $userRow['refered_by'] ?? null;
 
             if ($userWallet < $price) {
-                $stmt = $connection->prepare("UPDATE `pays` SET `state` = 'low_wallet' WHERE `hash_id` = ? LIMIT 1");
-                $stmt->bind_param("s", $hashId);
-                if (!$stmt->execute()) throw new RuntimeException('wallet_low_balance_status_failed');
-                $stmt->close();
-                if (!$connection->commit()) throw new RuntimeException('wallet_low_balance_commit_unknown');
+                // Insufficient funds are not a payment-method claim.
+                $connection->rollback();
 
                 alert(
                     \achbotMessage('wallet.wallet_settlement.process_wallet_payment.alert.ae55877021') .

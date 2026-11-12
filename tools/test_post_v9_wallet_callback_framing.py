@@ -114,6 +114,19 @@ def check() -> dict:
                 assert observe(actor, name) == before, (subject, label, 'SQL mutated')
                 scenarios.append(f'{subject}_{label}_no_wallet_or_service_effect')
 
+            # Insufficient wallet is an ordinary payment-choice rejection:
+            # the same invoice must remain pending for other providers.
+            sql(f'UPDATE users SET wallet=0 WHERE userid={actor}')
+            insufficient_before=observe(actor,name)
+            insufficient_events=send(prefix + name)
+            assert not any(e.get('event',e.get('name')) in ('POST','remote_edit')
+                           for e in insufficient_events),(subject,insufficient_events)
+            assert observe(actor,name)==insufficient_before,(
+                subject,'insufficient funds mutated financial quote')
+            assert sql(f"SELECT state FROM pays WHERE hash_id='{name}'")=='pending'
+            scenarios.append(f'{subject}_insufficient_wallet_preserves_payment_choice')
+            sql(f'UPDATE users SET wallet=50000 WHERE userid={actor}')
+
             assert len((prefix + name).encode('utf-8')) <= 64
             events = send(prefix + name)
             types = [evt.get('event', evt.get('name')) for evt in events]

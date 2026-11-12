@@ -124,7 +124,7 @@ if (is_string($data) && str_starts_with($data, 'prePayCheck_')) {
     // A callback button can survive a provider settlement indefinitely.
     // Reject ALL terminal states before checking plans, expiry or gateways.
     // Never let a stale Telegram callback rewrite a paid/terminal receipt.
-    if (!in_array((string)$payInfo['state'], ['pending','send'], true)) {
+    if (!in_array((string)$payInfo['state'], ['pending','send','low_wallet'], true)) {
         answerCallbackQuery($callbackId, \achbotMessage('payment.pre_payment.alert.bf99a9262b'));
         return;
     }
@@ -147,6 +147,16 @@ if (is_string($data) && str_starts_with($data, 'prePayCheck_')) {
     if (!$methodAllowed) {
         answerCallbackQuery($callbackId,\achbotMessage('payment.pre_payment.alert.cb95ca3290'),true);
         return;
+    }
+    // Older wallet attempts recorded low_wallet even though no funds were held.
+    // Reopen only an unclaimed, unexpired draft after current method-policy checks.
+    if ($payInfo['state']==='low_wallet') {
+        if (!achbotPayUxReopenLowWalletDraft($connection,(int)$payInfo['id'],(int)$from_id)) {
+            answerCallbackQuery($callbackId,
+                \achbotMessage('payment.pre_payment.alert.bf99a9262b'),true);
+            return;
+        }
+        $payInfo['state']='pending';
     }
     if (achbotPayUxExpireDraft($connection,(int)$payInfo['id'])) {
         answerCallbackQuery($callbackId,\achbotMessage('payment.pre_payment.alert.15d949aabf'),true);

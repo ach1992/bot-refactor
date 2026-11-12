@@ -301,6 +301,52 @@ function achbotPayUxUnclaimedDraftUsable(mysqli $db, array $pay,
 }
 
 /**
+ * Historic insufficient-wallet choices left local invoices stuck in low_wallet.
+ * Reopen only a still-current, never-issued draft. Owner -> pays -> attempt
+ * locking prevents rearming paid/provider-claimed or superseded invoices.
+ */
+function achbotPayUxReopenLowWalletDraft(mysqli $db, int $payId, int $actor): bool {
+    if ($payId<=0 || $actor<=0 ||
+        !achbotPayUxTable($db,'payment_attempts') ||
+        !achbotPayUxTable($db,'service_effects')) return false;
+    $started=false;
+    try {
+        if (!$db->begin_transaction()) return false;
+        $started=true;
+        achbotPayUxLockDraftOwner($db,$actor);
+        $stmt=$db->prepare('SELECT * FROM pays WHERE id=? FOR UPDATE');
+        $stmt->bind_param('i',$payId);
+        if (!$stmt->execute()) throw new RuntimeException('wallet_reopen_pay_read');
+        $pay=$stmt->get_result()->fetch_assoc();$stmt->close();
+        if (!$pay || (int)$pay['user_id']!==$actor ||
+            (string)$pay['state']!=='low_wallet' ||
+            !achbotPayUxUnclaimedDraftUsable($db,$pay,true)) {
+            $db->rollback();return false;
+        }
+        foreach (['payment_attempts','service_effects'] as $table) {
+            $stmt=$db->prepare('SELECT id FROM '.$table.' WHERE pay_row_id=? LIMIT 1 FOR UPDATE');
+            $stmt->bind_param('i',$payId);
+            if (!$stmt->execute()) throw new RuntimeException('wallet_reopen_claim_read');
+            $claimed=$stmt->get_result()->fetch_assoc();$stmt->close();
+            if ($claimed) {$db->rollback();return false;}
+        }
+        $stmt=$db->prepare("UPDATE pays SET state='pending'
+            WHERE id=? AND user_id=? AND state='low_wallet'
+              AND (payid IS NULL OR payid='')");
+        $stmt->bind_param('ii',$payId,$actor);
+        if (!$stmt->execute() || $stmt->affected_rows!==1)
+            throw new RuntimeException('wallet_reopen_state_race');
+        $stmt->close();
+        if (!$db->commit()) throw new RuntimeException('wallet_reopen_commit_unknown');
+        return true;
+    } catch (Throwable $error) {
+        if ($started) {try{$db->rollback();}catch(Throwable $ignored){}}
+        error_log('achbot_wallet_reopen_deferred pay_id='.$payId);
+        return false;
+    }
+}
+
+/**
  * Under pays FOR UPDATE followed by the exact 003 attempt FOR UPDATE, mark a
  * never-started manual quote expired only after its configured idle window.
  * The pinned destination remains untouched; real out-of-band funds, if any,
