@@ -991,8 +991,10 @@ echo json_encode(['required'=>count(achbotProviderRequiredOperations()),
       shared_storage.clone(6,2))
   imported_url='https://update.example.invalid:8443/sub/'+mb_token
   before=entities();audit=sql('SELECT COUNT(*) FROM add_link')
-  preview(1004,imported_url)
-  yes(entities()==before and sql('SELECT COUNT(*) FROM add_link')==audit,
+  ungrouped=preview(1004,imported_url);step,proof=state(1004)
+  yes(step=='showAccount'and proof is None and
+      'addToOrders'not in json.dumps(ungrouped) and
+      entities()==before and sql('SELECT COUNT(*) FROM add_link')==audit,
       'separate_unconfigured_Marzban_targets_remain_ambiguous_without_declared_panel_group')
   sql("INSERT INTO setting(type,value) VALUES('ACHBOT_MARZBAN_PANEL_GROUP','owned_same_physical')")
   group_id=int(sql("SELECT id FROM setting WHERE type='ACHBOT_MARZBAN_PANEL_GROUP'"
