@@ -1,10 +1,23 @@
 # Current source and published release contracts
 
 
-## UNRELEASED — Issue #144 service-change corrections (not deployed)
+## Published RC31 — service-plan, financial-finality and bulk-reporting corrections
 
-This section documents an **unreleased candidate**, not an update to the
-published RC30 ZIP or the active Chili installation.
+[v0.10.0-rc.31](https://github.com/ach1992/bot-refactor/releases/tag/v0.10.0-rc.31) publishes the previously integrated, independently reviewed [PR #149](https://github.com/ach1992/bot-refactor/pull/149) and [PR #150](https://github.com/ach1992/bot-refactor/pull/150). The first candidate's two exact PHP 8.5 full-family runs [#43113439195](https://github.com/ach1992/bot-refactor/actions/runs/43113439195) and [#43114752477](https://github.com/ach1992/bot-refactor/actions/runs/43114752477) succeeded; #150's exact full-family run [#43119266197](https://github.com/ach1992/bot-refactor/actions/runs/43119266197) succeeded. The integrated-main checks [#43118287967](https://github.com/ach1992/bot-refactor/actions/runs/43118287967) and [#43124739660](https://github.com/ach1992/bot-refactor/actions/runs/43124739660) succeeded using explicitly identified same-tree evidence reuse, not new eight-family executions. RC31's final Git tag and manifest own its published commit identity.
+
+The published source corrects Marzban partial Host patch semantics, provider-specific Native readback and administrator recovery; original-service invoice retirement only with verified plan/server finality; a real customer-plan switch, shared administrator reports, original-evidence late-funds review; complete/partial bulk reports for admin no-payment, wallet, manual and hosted purchases; stable 32-byte Marzban generated identities; and a locally scoped SQL 1213 deadlock retry without repeating Native CREATE. No new SQL migration, scheduler, provider dependency or Native Note format is introduced since RC30. The published 132-member source runtime does **not** install itself, apply migrations, touch production Chili, authorize a payment or replay an ambiguous Native operation. See [RC30 to RC31 upgrade boundaries](RC30-TO-RC31.md).
+
+**Still OPEN:** [Issue #144](https://github.com/ach1992/bot-refactor/issues/144), [Issue #147](https://github.com/ach1992/bot-refactor/issues/147) and related installed [Issue #117](https://github.com/ach1992/bot-refactor/issues/117) require separately authorized real installation, backup/rollback, preserved original journal evidence, live Marzban/PasarGuard/Telegram and payment reconciliation. Protected historical Chili order #33 and original plan journal #2 have not been modified.
+
+**Historical notice:** The next four sections retain the 2026-11-11/12 pre-merge engineering rationale and candidate snapshots, including old words such as "not shipped", "needs review" and "RC30 baseline". Those status assertions were superseded by approved PRs #149/#150 and this RC31 release; they are not current instructions or current CI/merge blockers. The installed-acceptance restrictions remain current.
+
+
+
+## Historical pre-integration — Issue #144 service-change corrections
+
+This historical section describes the pre-merge source candidate relative to RC30.
+Its accepted corrections are now in the published RC31 source, **not** installed
+on Chili.
 
 - Marzban Native Host changes use **one** partial-update PUT that includes
   explicit empty arrays for protocols removed by the new plan. Both old and
@@ -82,11 +95,11 @@ published RC30 ZIP or the active Chili installation.
 
 No new migration, scheduler, provider dependency, production mutation or
 change to the Native account Note marker is included. Future installation
-still needs an exact candidate review, Owner rollout approval and separate
-operator acceptance. Follow [Issue #144](https://github.com/ach1992/bot-refactor/issues/144).
+has now passed independent exact-candidate source review and was published
+in RC31; a target-specific rollout approval and operator acceptance still remain. Follow [Issue #144](https://github.com/ach1992/bot-refactor/issues/144).
 
 
-## PR #145 follow-up — administrator-controlled GET-only plan recovery (not shipped)
+## Historical PR #145 follow-up — administrator-controlled GET-only plan recovery
 
 Independent review identified a missing operator recovery action for an already
 dispatched `service_plan_changes` journal. The new plan-management action is
@@ -140,7 +153,7 @@ Native effect. The original pays state, quote, identity and payment evidence
 remain intact. The inbox still excludes mere unpaid/old invoices, and staff
 cannot approve/fulfill a terminal old-service invoice.
 
-## Open source-only bulk correction — Issue #147 (not shipped)
+## Historical source-only bulk correction — Issue #147
 
 [Issue #147](https://github.com/ach1992/bot-refactor/issues/147) tracks a separate
 source-only branch for verified multi-account creation and purchase summaries.
@@ -153,10 +166,10 @@ Bulk admin cases also distinguish safely confirmed local orders from missing/unk
 remote results. The new `src/Purchase/BulkReport.php` read-only projection adds one
 runtime source member, with no database migration or third notification scheduler.
 
-These edits are **unmerged and unreviewed** pending exact-candidate PHP 8.5 CI,
-independent high-assurance review, and separate Owner integration/release/Chili
-authorization. RC30 remains the published baseline; no installed source or
-provider/Telegram/database acceptance is implied.
+These source edits were integrated by PR #149 and subsequently published in
+RC31, with PR #150 test/documentation follow-up. Exact PHP 8.5 and independent
+source review were completed. No installed Chili, provider, Telegram or payment
+acceptance is implied.
 
 Read-only installed diagnostics on 2026-11-11 show an admin bulk operation held at
 `remote_create` with `effect_remote_create_unconfirmed`. Nearby Marzban API logs
@@ -189,7 +202,7 @@ CREATE/refund actions. Actual PHP 8.5 exact-HEAD CI and fresh high-assurance
 delta review are mandatory before any integration; source-only fixtures cannot
 establish an installed provider or financial outcome.
 
-## Unreleased combined-branch integration and SQL deadlock recovery
+## Historical combined-branch integration and SQL deadlock recovery
 
 The isolated source-only integration combines #144 (A02 Native correction and
 B03 service-payment supersession) with #147 (C03 bulk provenance/reporting).
@@ -212,9 +225,10 @@ synthetic 1213 at original order insertion and requires exactly one Native
 CREATE plus one committed local effect. SQL trigger syntax was checked on
 isolated MariaDB; current-runtime end-to-end acceptance requires PHP 8.5 CI.
 
-An exact integrated candidate, new independent review, owner merge
-permission and separate rollout acceptance remain mandatory. No PHP 8.4
-runtime rehearsal substitutes for the protected PHP 8.5 Gate.
+Exact integrated PR #149/#150 reviews, Owner merge approvals and PHP 8.5
+gates were completed for source. **Separate installed rollout and operator
+acceptance** remain mandatory; no old PHP 8.4 rehearsal substitutes for a
+PHP 8.5 source gate or production evidence.
 
 ## Published RC30 — source-only Cron, Telegram, Marzban and gift-card reliability
 
@@ -234,7 +248,7 @@ The reviewed candidate passed [8/8 native PHP 8.5 families](https://github.com/a
 
 ## Published RC28 — source-only manual receipt reasons and gift preflight
 
-[v0.10.0-rc.28](https://github.com/ach1992/bot-refactor/releases/tag/v0.10.0-rc.28) published independently approved [PR #138](https://github.com/ach1992/bot-refactor/pull/138) and [PR #139](https://github.com/ach1992/bot-refactor/pull/139): protected typed manual-rejection reasons and non-consuming authenticated gift-card screening before staff disclosure. Unavailable/uncertain API remains subject to legitimate staff review. No new SQL migration. [RC27 -> RC28 guide](https://github.com/ach1992/bot-refactor/releases/download/v0.10.0-rc.28/RC27-TO-RC28.md). RC30 is the latest published source; neither RC29 nor RC30 publication proves an installed rollout.
+[v0.10.0-rc.28](https://github.com/ach1992/bot-refactor/releases/tag/v0.10.0-rc.28) published independently approved [PR #138](https://github.com/ach1992/bot-refactor/pull/138) and [PR #139](https://github.com/ach1992/bot-refactor/pull/139): protected typed manual-rejection reasons and non-consuming authenticated gift-card screening before staff disclosure. Unavailable/uncertain API remains subject to legitimate staff review. No new SQL migration. [RC27 -> RC28 guide](https://github.com/ach1992/bot-refactor/releases/download/v0.10.0-rc.28/RC27-TO-RC28.md). RC31 is the latest published source; none of RC29, RC30 or RC31 publication proves an installed rollout.
 
 ## Published RC27 — source-only simplified automatic-gateway exception inbox
 

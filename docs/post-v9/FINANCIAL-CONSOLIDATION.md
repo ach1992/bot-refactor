@@ -711,9 +711,16 @@ authorized operator reconciliation; never automatically release, retry
 or refund. Terminal historical paid states cannot authorize new CREATE.
 
 **Wallet debit barrier.** Fresh authorization and plan/capacity checks
-precede any debit. The custom-plan `buyType=much` draft and the locked
-pays-row authorization both use the same strict ASCII/100-byte provider
-username validator, including previously persisted invalid requests.
+precede any debit. The custom-plan `buyType=much` draft validates a
+positive integer account count and the original payable quote. A locked
+wallet purchase validates its original plan/capacity and the final
+provider-bound Native username **before** debit. The general/PasarGuard
+admission contract is ASCII with a 100-byte ceiling; Marzban's persisted
+Native username is stricter at **32 ASCII bytes**. New generated Marzban
+paid names are deterministic from the original payment ID and ordinal
+(`mbz_paid_` prefix); explicit single-account names are checked at the
+payable draft and pre-debit boundary. Previously dispatched identities
+are never silently renamed or replayed.
 For standard purchases, plan days/volume, manual names and generated
 server prefix are checked before debit; custom purchases instead validate
 their persisted requested days/volume and allow a zero-day/zero-volume
