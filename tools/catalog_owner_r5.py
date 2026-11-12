@@ -3,6 +3,55 @@ from __future__ import annotations
 import copy,functools,hashlib,json,pathlib,re,subprocess
 ROOT=pathlib.Path(__file__).resolve().parents[1]
 BASE='64feca4b777a442023676122e315c68ad26e902d'
+# Owner-approved 2026-11-12 presentation-only successor to RC32.
+# Restore exactly two changed source lines before passing historical catalog
+# checks; never revise or weaken the immutable older source manifests.
+OWNER_20261112_BASE='30ee9bba612484f043ed68808b78d648d8daa506'
+OWNER_20261112_LINES={
+ 'user':("'extensions.message.143c7f81f1' =>",
+         '95c703954753c754272a391258863b222e13a820d32e50c81769124b3d0e95ea',
+         'renewal.extensions.message.143c7f81f1'),
+ 'admin':("'sent_config_to_user' =>",
+          'eaf2d0e6256bcbbed0e4ce0e5017020c630eb814afb2e31df4f57aa18ef957c1',
+          'legacy_messages.sent_config_to_user')
+}
+@functools.lru_cache(maxsize=1)
+def owner_20261112_catalog_projection():
+    parser='$s=stream_get_contents(STDIN);$p=strpos($s,"return [");if($p===false)throw new RuntimeException("array_missing");echo json_encode(eval(substr($s,$p)),JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);'
+    source={};old_values={};new_values={}
+    for audience,(marker,expected_sha,key) in OWNER_20261112_LINES.items():
+        path='messages/fa/'+audience+'.php'
+        before=command('git','show',OWNER_20261112_BASE+':'+path).decode()
+        current=(ROOT/path).read_text()
+        originals=[line for line in before.splitlines()if marker in line]
+        approved=[line for line in current.splitlines()if marker in line]
+        check(len(originals)==len(approved)==1 and
+              hashlib.sha256(approved[0].encode()).hexdigest()==expected_sha and
+              approved[0]!=originals[0] and
+              current.replace(approved[0],originals[0],1)==before,
+              'owner_20261112_exact_approved_catalog_source:'+audience)
+        historical=flatten(json.loads(command('php','-r',parser,input=before.encode())))
+        shipping=flatten(json.loads(command('php','-r',parser,input=current.encode())))
+        check(set(historical)==set(shipping) and
+              {name for name in historical if historical[name]!=shipping[name]}=={key} and
+              params(historical[key])==params(shipping[key]),
+              'owner_20261112_only_two_approved_values:'+audience)
+        source[audience]=before
+        old_values[audience]=historical[key]
+        new_values[audience]=shipping[key]
+    return source,old_values,new_values
+
+def owner_20261112_copy_restore(sides):
+    _,prior,shipping=owner_20261112_catalog_projection()
+    restored=copy.deepcopy(sides)
+    check(set(restored)=={'user','admin'},'owner_20261112_catalog_audiences')
+    for audience,(_,_,key) in OWNER_20261112_LINES.items():
+        other='admin'if audience=='user'else'user'
+        check(key not in restored[other] and restored[audience].get(key)==shipping[audience],
+              'owner_20261112_copy_drift:'+key)
+        restored[audience][key]=prior[audience]
+    return restored
+
 AUTH='https://github.com/ach1992/bot-refactor/issues/26#issuecomment-6486592777'
 def check(ok,message):
     if not ok:raise AssertionError(message)
@@ -422,7 +471,7 @@ def service_change_catalog_layer():
     for audience in ('user','admin'):
         name='messages/fa/'+audience+'.php'
         raw=command('git','show',base+':'+name)
-        now=(ROOT/name).read_bytes()
+        now=owner_20261112_catalog_projection()[0][audience].encode()
         if audience=='admin':
             # Independently verify #147's exact topic before projecting it
             # away; #144 keeps its byte-exact source-level contract.
@@ -495,7 +544,7 @@ def bulk_reporting_source():
           set(item['line_sha256'])=={'bulk_reporting.'+k for k in
               ['complete','needs_review','names','more','short_reference',
                'bulk_subject','admin_created','delivery_needs_review']},'bulk_reporting_manifest_identity')
-    raw=(ROOT/item['source']).read_text()
+    raw=owner_20261112_catalog_projection()[0]['admin']
     heading='    // #147 — Verified bulk source reports (source-pinned in test catalog).\n'
     ending='    // ── پیام‌های اصلی و متن‌های قابل سفارشی‌سازی قدیمی ──'
     check(raw.count(heading)==1 and raw.count(ending)==1,
@@ -625,6 +674,7 @@ def chili_copy_reference():
     return definition,prior,current
 
 def chili_live_copy_restore(sides):
+    sides=owner_20261112_copy_restore(sides)
     sides=service_change_copy_restore(sides)
     definition,prior,current=chili_copy_reference()
     check(set(sides)=={'user','admin'},'chili_copy_audiences')
