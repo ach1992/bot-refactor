@@ -223,6 +223,14 @@ jobs:
           extensions: mysqli, tokenizer, curl, zip, gd
           coverage: none
           tools: none
+      # Prefer a GitHub-hosted immutable archive cache. Every restored byte is
+      # rehashed before extraction; fixture DBs remain isolated per test.
+      - name: Restore verified MariaDB archive
+        id: mariadb_archive_cache
+        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5, Node 24
+        with:
+          path: ${{ runner.temp }}/mariadb-10.11.19-linux-systemd-x86_64.tar.gz
+          key: achbot-mariadb-ubuntu2404-x64-10.11.19-7efb257927f31f4422f496246b32590d0b7617f3d9dd900e575de761b302d919
       - name: Prepare verified native MariaDB binaries without APT
         run: |
           set -euo pipefail
@@ -232,10 +240,12 @@ jobs:
           filename="mariadb-${version}-linux-systemd-x86_64.tar.gz"
           root="$RUNNER_TEMP/mariadb-${version}-linux-systemd-x86_64"
           archive="$RUNNER_TEMP/$filename"
-          curl --fail --location --silent --show-error --retry 2 \
-            --connect-timeout 20 --max-time 300 \
-            "https://archive.mariadb.org/mariadb-${version}/bintar-linux-systemd-x86_64/$filename" \
-            --output "$archive"
+          if [[ ! -f "$archive" ]]; then
+            curl --fail --location --silent --show-error --retry 2 \
+              --connect-timeout 20 --max-time 300 \
+              "https://archive.mariadb.org/mariadb-${version}/bintar-linux-systemd-x86_64/$filename" \
+              --output "$archive"
+          fi
           printf '%s  %s\n' '7efb257927f31f4422f496246b32590d0b7617f3d9dd900e575de761b302d919' "$archive" | sha256sum --check -
           tar -xzf "$archive" -C "$RUNNER_TEMP"
           test -x "$root/bin/mariadbd"
@@ -243,6 +253,14 @@ jobs:
           test -x "$root/scripts/mariadb-install-db"
           printf '%s\n' "$root/bin" "$root/scripts" >> "$GITHUB_PATH"
           "$root/bin/mariadbd" --version
+      # Only one of eight runners writes the content-addressed cache;
+      # other runners can restore it on subsequent runs without racing saves.
+      - name: Save verified MariaDB archive for subsequent runs
+        if: matrix.index == 1 && steps.mariadb_archive_cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5, Node 24
+        with:
+          path: ${{ runner.temp }}/mariadb-10.11.19-linux-systemd-x86_64.tar.gz
+          key: achbot-mariadb-ubuntu2404-x64-10.11.19-7efb257927f31f4422f496246b32590d0b7617f3d9dd900e575de761b302d919
       - name: Scoped extensions native contract on the existing MariaDB shard
         if: matrix.index == 5
         run: |

@@ -9,6 +9,9 @@ import hashlib
 import json
 import re
 import subprocess
+import sys
+import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 import package_post_v9 as package
@@ -731,10 +734,19 @@ def run_services(tmp: str) -> tuple[dict, dict]:
         ('canonical_checkout','test_canonical_checkout.py','cases',143,
             {'native_http':True,'actual_public_controller':True,'owned_socket_mariadb':True,'complete_issuance_body_preserved':True,'pay_back_only_canonical_import_changed':True,'retired_routes_absent':True,'GET_only':True,'no_database_failure_private':True,'indirect_include_preserved':True,'external_requests':0,'production_mutations':0}),
     ]
-    for name,script,counter,minimum,proofs in suites:
+    # Each fixture uses its own disposable socket-only database and report file.
+    # A small pool removes avoidable serial startup/wait time on the services
+    # critical path without splitting/omitting any source-real acceptance case.
+    def execute_unified_fixture(spec):
+        name,script,counter,minimum,proofs=spec
         path=Path(tmp)/(name+'.json')
-        subprocess.run(['python3',str(ROOT/'tools'/script),'--run-disposable','--report',str(path)],
-            cwd=ROOT,check=True,timeout=300,capture_output=True)
+        started=time.monotonic()
+        try:
+            subprocess.run(['python3',str(ROOT/'tools'/script),'--run-disposable','--report',str(path)],
+                cwd=ROOT,check=True,timeout=300,capture_output=True)
+        except subprocess.CalledProcessError as exc:
+            stderr=(exc.stderr or b'').decode(errors='replace')[-5000:]
+            raise RuntimeError('Unified service-management fixture failed: '+name+' '+stderr) from exc
         evidence=json.loads(path.read_text())
         if name=='shared_plan_review_regressions':
             required_correction={
@@ -765,7 +777,22 @@ def run_services(tmp: str) -> tuple[dict, dict]:
                                    'minimum':minimum,'missing_or_mismatched':diff,
                                    'complete':evidence.get('complete')},
                                   ensure_ascii=False,sort_keys=True))
-        unified[name]=evidence
+        return name,evidence,time.monotonic()-started
+
+    collected={}
+    with ThreadPoolExecutor(max_workers=3) as executor:
+        futures=[executor.submit(execute_unified_fixture,spec) for spec in suites]
+        try:
+            for future in as_completed(futures):
+                name,evidence,seconds=future.result()
+                collected[name]=evidence
+                print(f'services fixture {name}: {seconds:.2f}s',file=sys.stderr,flush=True)
+        except BaseException:
+            for future in futures:
+                future.cancel()
+            raise
+    # Reassemble stable, declared order: proof contents are identical to serial.
+    unified={name:collected[name] for name,*_ in suites}
     result['unified_service_management']=unified
     webhook_path=Path(tmp)/"webhook-file-config.json"
     subprocess.run(["python3",str(ROOT/"tools/test_post_v9_webhook_config.py"),
