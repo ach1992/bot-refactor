@@ -704,31 +704,6 @@ if (!function_exists('createServerAccount')) {
     }
 }
 
-/**
- * Independent authenticated admin updates must map to distinct, stable
- * Marzban account identities even when manual remark is unchanged.
- *
- * Generated names use the fixed mbz_bulk_ prefix and a source/ordinal
- * digest, independent of any plan description or randomized base.
- * Never derive a fresh name when reconciling an uncertain journal dispatch.
- */
-if (!function_exists('achbotAdminBulkAccountRemark')) {
-    function achbotAdminBulkAccountRemark(
-        string $base, string $sourceRef, int $ordinal
-    ): string {
-        if ($ordinal<1 ||
-            preg_match('/^bulk:[1-9][0-9]*:[1-9][0-9]*$/D',$sourceRef)!==1 ||
-            preg_match('/^[a-zA-Z0-9_-]+$/D',$base)!==1)
-            throw new InvalidArgumentException('bulk_account_remark_invalid');
-        // Marzban's persisted username allows at most 32 ASCII bytes.
-        // Hash BOTH the authenticated update and line, with no fixed quantity
-        // limit and no different username for a previously dispatched line.
-        // The validated buildRemark() base can contain fresh randomness.
-        // Durable identities depend ONLY on the authenticated update/line.
-        return 'mbz_bulk_'.substr(hash('sha256',$sourceRef.':'.$ordinal),0,23);
-    }
-}
-
 // Only bounded, internally defined reasons may be forwarded to Telegram
 // operators. Never send provider response bodies or Throwable::getMessage().
 if (!function_exists('achbotFinanceDiagnosticReason')) {

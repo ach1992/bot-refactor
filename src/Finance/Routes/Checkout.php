@@ -882,9 +882,15 @@ if (is_string($data) && strlen($data) <= 64 && preg_match('/\ApayBuyWithWallet([
                     $uid
                 );
 
+                $remarkMode=(string)($botState['remark']??'');
+                if ($remarkMode==='manual' && $accountCount>1 &&
+                    (string)$remark==='') {
+                    $remarkMode='';
+                    $remark=buildRemark(['remark'=>''],$srv_remark,'',$uid);
+                }
                 $remark=achbotPaidPurchaseRemark((string)$remark,$serverType,
                     (int)$payInfo['id'],$i,$accountCount,
-                    (($botState['remark']??'')==='manual'));
+                    $remarkMode==='manual',$remarkMode);
 
                 // Each line owns a durable 007 operation identity.
                 // The first line atomically reserves the FULL quantity.

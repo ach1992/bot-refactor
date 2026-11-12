@@ -152,9 +152,28 @@ $out=achbotAutoRenewReserve($db,92,1001);break;
 case 'autoedit':
 $out=achbotApplyServiceEdit($db,2,['remark'=>'trial_user','pay_id'=>$spec['pay'],'operation_key'=>'autorenew:'.$spec['attempt'],'days'=>30,'volume'=>2]);break;
 case 'bulk':
+$name=achbotAdminBulkAccountRemark((string)($spec['base']??'pg-12345'),
+ 'bulk:9001:201',(int)$spec['line'],2,'pasarguard','digits');
 $out=achbotCreateNonPaymentAccount($db,'admin_bulk','bulk:9001:201',9001,$spec['line'],2,
 ['is_primary_admin'=>true,'server_type'=>'pasarguard','server_id'=>2,'inbound_id'=>0,'plan_id'=>7,
-'remark'=>'bulk_user_'.$spec['line'],'volume'=>2,'days'=>30,'user_id'=>9001,'port'=>0]);break;
+'remark'=>$name,'volume'=>2,'days'=>30,'user_id'=>9001,'port'=>0]);break;
+case 'bulk_report':
+require_once $argv[1].'/src/Purchase/BulkReport.php';
+$out=achbotBulkRecordedAccounts($db,2,9001,null,'bulk:9001:201');break;
+case 'paid_bulk':
+$line=(int)$spec['line'];
+$name=achbotPaidPurchaseRemark((string)($spec['base']??'pg-12345'),
+ 'pasarguard',99003,$line,2,false,'digits');
+$out=achbotCreatePaidAccount($db,99003,$line,['server_type'=>'pasarguard',
+ 'server_id'=>2,'inbound_id'=>0,'plan_id'=>7,'remark'=>$name,
+ 'volume'=>2,'days'=>30,'user_id'=>1001,'port'=>0]);break;
+case 'paid_bulk_report':
+require_once $argv[1].'/src/Purchase/BulkReport.php';
+$out=achbotBulkRecordedAccounts($db,2,1001,99003,null);break;
+case 'paid_bulk_link':
+$db->begin_transaction();
+achbotLinkPaidAccountEffect($db,(int)$spec['effect'],(int)$spec['order']);
+$db->commit();$out=['linked'=>true];break;
 case 'link_nonpaid':
 $db->begin_transaction();achbotLinkNonPaymentAccountEffect($db,(int)$spec['effect'],(int)$spec['order']);$db->commit();$out=['linked'=>true];break;
 case 'giftlist':
@@ -672,11 +691,89 @@ def main():
   sql("UPDATE service_effects SET provider_state='linked' WHERE order_id=92")
 
 
+  # Two REAL PasarGuard Native CREATE effects from one administrator source;
+  # both deliberately receive the same buildRemark() 5-digit base. Each
+  # local 007 operation and account name must still be a distinct original.
+  pg_bulk_before=int(sql('SELECT ucount FROM server_info WHERE id=2').strip())
+  pg_admin=[]
   for line,remote in [(1,19),(2,20)]:
    pg.USER['id']=remote
    r=call('bulk',line=line);yes('error' not in r,'bulk_line_'+str(line)+'_durable')
+   pg_admin.append(dict(effect=r['out'][3],name=server.user['username'],remote=remote))
+  yes(len({v['name'] for v in pg_admin})==2 and all(
+      re.fullmatch(r'pg-[0-9]{10}',v['name']) for v in pg_admin),
+      'pg_admin_forced_same_random_base_source_bound_distinct_native_names')
+  yes(int(sql('SELECT ucount FROM server_info WHERE id=2').strip())==pg_bulk_before-2 and
+      sql("SELECT ordinal,reserved_count,state FROM service_effects "
+          "WHERE source_ref='bulk:9001:201' ORDER BY ordinal").strip()==
+          '1\t2\tverified\n2\t0\tverified',
+      'pg_admin_full_two_slot_capacity_and_original_007_ordinals')
+  report=call('bulk_report')['out']
+  yes(report['requested']==2 and report['confirmed']==0 and report['complete'] is False,
+      'pg_admin_unlinked_remote_accounts_never_false_complete')
+  exp=pg_admin[0]
+  sql("INSERT INTO orders_list(id,userid,token,transid,fileid,server_id,inbound_id,remark,uuid,protocol,expire_date,link,amount,status,date) VALUES(99091,9001,'','',7,2,0,'"+exp['name']+"','pg-admin-1','vless',2000000000,'[]',0,1,'fixture')")
+  yes(call('link_nonpaid',effect=exp['effect'],order=99091)['out']['linked'] is True,
+      'pg_admin_first_original_order_effect_link')
+  report=call('bulk_report')['out']
+  yes(report['confirmed']==1 and report['complete'] is False and
+      report['accounts'][0]['name']==exp['name'],
+      'pg_admin_partial_report_identifies_exact_committed_account')
+  exp=pg_admin[1]
+  sql("INSERT INTO orders_list(id,userid,token,transid,fileid,server_id,inbound_id,remark,uuid,protocol,expire_date,link,amount,status,date) VALUES(99092,9001,'','',7,2,0,'"+exp['name']+"','pg-admin-2','vless',2000000000,'[]',0,1,'fixture')")
+  yes(call('link_nonpaid',effect=exp['effect'],order=99092)['out']['linked'] is True,
+      'pg_admin_second_original_order_effect_link')
+  report=call('bulk_report')['out']
+  yes(report['confirmed']==2 and report['complete'] is True and
+      [row['name'] for row in report['accounts']]==[v['name'] for v in pg_admin],
+      'pg_admin_complete_report_preserves_both_original_account_names')
   posts=sum(t[0]=='POST' and t[1]=='/api/user' for t in server.trace)
-  yes('error' in call('bulk',line=2) and sum(t[0]=='POST' and t[1]=='/api/user' for t in server.trace)==posts,'bulk_partial_source_cannot_reissue')
+  yes('error' in call('bulk',line=2,base='pg-99999') and
+      sum(t[0]=='POST' and t[1]=='/api/user' for t in server.trace)==posts,
+      'bulk_partial_source_cannot_reissue')
+
+  # The exact paid 007 dispatcher uses the same formatter for wallet,
+  # hosted and manual/bank claim paths. No artificial provider calls:
+  # only task-owned loopback PasarGuard performs the verified POST/GET.
+  sql("INSERT INTO pays(id,hash_id,user_id,plan_id,server_id,type,state,price,agent_count,request_date) "
+      "VALUES(99003,'pgbulkpaid',1001,7,2,'BUY_SUB','paid',100,2,1700000000)")
+  pinned=call('pin',pay=99003)['out']
+  yes(pinned['group_ids']==[5], 'pg_paid_bulk_pins_current_native_group_quote')
+  paid_start=int(sql('SELECT ucount FROM server_info WHERE id=2').strip())
+  pg_paid=[]
+  for line,remote in [(1,21),(2,22)]:
+   pg.USER['id']=remote
+   r=call('paid_bulk',line=line)
+   yes('error' not in r,'pg_paid_bulk_line_'+str(line)+'_verified_native')
+   pg_paid.append(dict(effect=r['out'][3],name=server.user['username'],remote=remote))
+  yes(len({v['name'] for v in pg_paid})==2 and all(
+      re.fullmatch(r'pg-[0-9]{10}',v['name']) for v in pg_paid) and
+      {v['name'] for v in pg_paid}.isdisjoint({v['name'] for v in pg_admin}),
+      'pg_paid_same_random_base_distinct_source_and_ordinal_names')
+  yes(int(sql('SELECT ucount FROM server_info WHERE id=2').strip())==paid_start-2 and
+      sql('SELECT ordinal,reserved_count,state FROM service_effects WHERE pay_row_id=99003 '
+          "AND effect_kind='create' ORDER BY ordinal").strip()==
+          '1\t2\tverified\n2\t0\tverified',
+      'pg_paid_full_count_reserved_once_with_original_007_lines')
+  report=call('paid_bulk_report')['out']
+  yes(report['confirmed']==0 and report['complete'] is False,
+      'pg_paid_preorder_report_never_false_complete')
+  for line,v in enumerate(pg_paid,1):
+   order=99092+line
+   sql("INSERT INTO orders_list(id,userid,token,transid,fileid,server_id,inbound_id,remark,uuid,protocol,expire_date,link,amount,status,date) VALUES("+str(order)+",1001,'','',7,2,0,'"+v['name']+"','pg-paid','vless',2000000000,'[]',50,1,'fixture')")
+   yes(call('paid_bulk_link',effect=v['effect'],order=order)['out']['linked'] is True,
+       'pg_paid_original_line_'+str(line)+'_order_effect_link')
+   report=call('paid_bulk_report')['out']
+   yes(report['confirmed']==line and report['complete'] is (line==2),
+       'pg_paid_'+str(line)+'_line_report_finality')
+  yes([row['name'] for row in report['accounts']]==[v['name'] for v in pg_paid],
+      'pg_paid_complete_report_contains_each_source_bound_name')
+  posts=sum(t[0]=='POST' and t[1]=='/api/user' for t in server.trace)
+  yes('error' in call('paid_bulk',line=2,base='pg-99999') and
+      sum(t[0]=='POST' and t[1]=='/api/user' for t in server.trace)==posts,
+      'pg_paid_repeated_source_no_second_native_create')
+  # Retain the preexisting fixture identity for subsequent independent suites.
+  pg.USER['id']=20
 
  # Bind RED evidence to the exact reviewed pre-remediation source on every
  # invocation. The archived run fails at the first disclosure negative before

@@ -115,10 +115,21 @@ function sendQrFromLink(...$args) {
 function generateRandomString($len=42,$protocol='vless'){return 'testuuid';}
 function getNextPortAndIncrease(...$args){return [12345,0];}
 function buildRemark(...$args) {
-    $i=($GLOBALS['built_names']??0)+1;$GLOBALS['built_names']=$i;
-    if (!empty($GLOBALS['spec']['use_server_remark']))
-        return (string)$args[1].'_'.$i;
-    return 'checkout_'.($GLOBALS['spec']['hash']??'native').'_'.$i;
+    // The production generator returns server-[uid-]4/5 digits. A fixture
+    // name like checkout_invoice_1 is not a valid generated identity.
+    $i=(int)($GLOBALS['built_names']??0)+1;$GLOBALS['built_names']=$i;
+    $state=(array)($args[0]??[]);
+    $server=(string)($args[1]??'fixture');
+    $description=(string)($args[2]??'');
+    $uid=(int)($args[3]??1001);
+    $forced=$args[4]??null;
+    if ($forced!==null && (string)$forced!=='') return (string)$forced;
+    $mode=(string)($state['remark']??'');
+    if ($mode==='manual') return $description;
+    $source=(string)($GLOBALS['spec']['hash']??'wallet').':'.$i;
+    $digits=10000+(int)(hexdec(substr(hash('sha256',$source),0,9))%90000);
+    return $mode==='digits' ? $server.'-'.$digits
+        : $server.'-'.$uid.'-'.$digits;
 }
 function getServerInfoAndConfig($db,$id) {
     $stmt=$db->prepare('SELECT s.remark,s.title,c.* FROM server_info s
@@ -602,6 +613,26 @@ def check():
         assert not calls(repeated,'POST') and not calls(repeated,'QR')
         assert wallet()==49900 and cap()==8
         cases.append('real_multi_wallet_checkout_full_hold_order_delivery_after_finality')
+
+        # Multi-account checkout has no per-line manual username entry. When
+        # the global naming mode is manual but this original paid draft has
+        # no description, use the ordinary server-userId-numeric structure
+        # before debit and CREATE; preserve all original payment safeguards.
+        manual_bulk=newpay('wallet_manual_bulk_without_name',2)
+        sql(work,env,f"UPDATE pays SET description='' WHERE id={manual_bulk}")
+        manual_done=route(work,env,driver,hash='wallet_manual_bulk_without_name',
+                          remark_mode='manual')
+        manual_post=calls(manual_done,'POST')
+        assert len(manual_post)==2 and len({p['name'] for p in manual_post})==2,manual_done
+        assert all(__import__('re').fullmatch(
+            r'[A-Za-z0-9_-]+-1001-[0-9]{10}',p['name']) for p in manual_post),manual_done
+        assert paid(manual_bulk)=='paid_with_wallet' and wallet()==49900 and cap()==8
+        assert detail(manual_bulk)==('wallet_hold\t0\t2\tconsumed\n'
+                                   'create\t1\t0\tlocal_recorded\n'
+                                   'create\t2\t0\tlocal_recorded'),detail(manual_bulk)
+        assert not calls(route(work,env,driver,hash='wallet_manual_bulk_without_name',
+                               remark_mode='manual'),'POST')
+        cases.append('real_wallet_manual_mode_bulk_without_name_defaults_to_standard_style')
 
         # Review R2: exact local order totals must equal the REAL wallet
         # debit even when the paid price is not divisible by account count.
