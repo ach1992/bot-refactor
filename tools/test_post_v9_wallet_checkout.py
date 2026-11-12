@@ -115,10 +115,21 @@ function sendQrFromLink(...$args) {
 function generateRandomString($len=42,$protocol='vless'){return 'testuuid';}
 function getNextPortAndIncrease(...$args){return [12345,0];}
 function buildRemark(...$args) {
-    $i=($GLOBALS['built_names']??0)+1;$GLOBALS['built_names']=$i;
-    if (!empty($GLOBALS['spec']['use_server_remark']))
-        return (string)$args[1].'_'.$i;
-    return 'checkout_'.($GLOBALS['spec']['hash']??'native').'_'.$i;
+    // The production generator returns server-[uid-]4/5 digits. A fixture
+    // name like checkout_invoice_1 is not a valid generated identity.
+    $i=(int)($GLOBALS['built_names']??0)+1;$GLOBALS['built_names']=$i;
+    $state=(array)($args[0]??[]);
+    $server=(string)($args[1]??'fixture');
+    $description=(string)($args[2]??'');
+    $uid=(int)($args[3]??1001);
+    $forced=$args[4]??null;
+    if ($forced!==null && (string)$forced!=='') return (string)$forced;
+    $mode=(string)($state['remark']??'');
+    if ($mode==='manual') return $description;
+    $source=(string)($GLOBALS['spec']['hash']??'wallet').':'.$i;
+    $digits=10000+(int)(hexdec(substr(hash('sha256',$source),0,9))%90000);
+    return $mode==='digits' ? $server.'-'.$digits
+        : $server.'-'.$uid.'-'.$digits;
 }
 function getServerInfoAndConfig($db,$id) {
     $stmt=$db->prepare('SELECT s.remark,s.title,c.* FROM server_info s

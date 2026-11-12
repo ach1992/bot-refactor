@@ -327,14 +327,25 @@ function getPlanDetails(...$args){return [
 ]];}
 function ensureServerCapacity(...$args){}
 function buildRemark(...$args){
-    $i=($GLOBALS['remark_counter']??0)+1;
+    // Match production buildRemark()'s naming grammar, not the old fixture
+    // constant "fixture-remark" that cannot be a generated native username.
+    // Keep stable fixture numbers across independent source-real processes,
+    // while letting the actual 007 journal reject any reused operation.
+    $i=(int)($GLOBALS['remark_counter']??0)+1;
     $GLOBALS['remark_counter']=$i;
-    // Independent manual purchase hashes must not reuse a remote username.
-    // The durable journal rejects the same username across different orders.
-    if (($GLOBALS['spec']['route']??'')==='standard_approval') {
-        return 'fx_'.substr(hash('sha256',(string)($GLOBALS['spec']['data']??'')),0,12).'_'.$i;
-    }
-    return $i===1 ? 'fixture-remark' : 'fixture-remark-'.$i;
+    $state=(array)($args[0]??[]);
+    $server=(string)($args[1]??'fixture');
+    $description=(string)($args[2]??'');
+    $uid=(int)($args[3]??1001);
+    $forced=$args[4]??null;
+    if ($forced!==null && (string)$forced!=='') return (string)$forced;
+    $mode=(string)($state['remark']??'');
+    if ($mode==='manual') return $description;
+    $source=(string)($GLOBALS['spec']['route']??'').':'.
+        (string)($GLOBALS['spec']['data']??'').':'.$i;
+    $digits=10000+(int)(hexdec(substr(hash('sha256',$source),0,9))%90000);
+    return $mode==='digits' ? $server.'-'.$digits
+        : $server.'-'.$uid.'-'.$digits;
 }
 function sendQrFromLink(...$args){
     $GLOBALS['events'][]=['name'=>'qr_send'];
