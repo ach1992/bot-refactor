@@ -210,8 +210,8 @@ def check():
         )
         assert evidence['purchase_report']==(
             '✅ اشتراک برای کاربر ارسال شد.\n\n'
-            '🆔 شناسه عددی: USERID\n'
-            '🎫 نام کاربری اشتراک: REMARK\n'
+            '🎫 شناسه عددی: USERID\n'
+            '🔄 نام کاربری اشتراک: REMARK\n'
             '📦 حجم اشتراک: VOLUME گیگ\n'
             '📅 مدت زمان اشتراک: DAYS روز\n'
             '💰 هزینه پرداختی: PRICE تومان\n'

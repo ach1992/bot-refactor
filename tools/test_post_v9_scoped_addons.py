@@ -345,7 +345,7 @@ def test(php:bool)->dict:
             volume_keyboard=next(ev['keys']['inline_keyboard'] for ev in listing['events']
                 if ev.get('event')=='EDIT' and 'inline_keyboard' in (ev.get('keys') or {}))
             yes(all(len(row)==1 for row in volume_keyboard) and
-                volume_keyboard[-1]==[{'text':'🔙 بازگشت','callback_data':'orderDetails41'}] and
+                volume_keyboard[-1]==[{'text':'↪️ بازگشت','callback_data':'orderDetails41'}] and
                 any(row[0].get('callback_data')=='increaseVolumePlan41_301' and
                     row[0].get('text')=='10 گیگ ← 120 تومان' for row in volume_keyboard),
                 'customer_volume_catalog_one_column_exact_price_and_order_back')

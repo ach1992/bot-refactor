@@ -470,6 +470,10 @@ def main():
         events,_=act(button('gr|c|wallet|non_agents|buy'))
         assert state()['gatewayRules']['methods']['wallet'][0]['metrics']['buy']['count']==0
         assert state()['gatewayRules']['methods']['wallet'][0]['metrics']['buy']['days']==0
+        # A cleared recent preset retains direction; restore older before
+        # exercising the prior toggle expectation and two-admin CAS.
+        events,_=act(button('gr|v|wallet|non_agents|buy'))
+        assert state()['gatewayRules']['methods']['wallet'][0]['metrics']['buy']['direction']=='older'
         cases.append('operator_quick_preset_stale_cas_and_stay_on_metric')
         events,_=act(button('gr|n|wallet|non_agents|renew|days'))
         events,_=act(text='bad',message=True)

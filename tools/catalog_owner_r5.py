@@ -15,6 +15,62 @@ OWNER_20261112_LINES={
           'eaf2d0e6256bcbbed0e4ce0e5017020c630eb814afb2e31df4f57aa18ef957c1',
           'legacy_messages.sent_config_to_user')
 }
+
+# #158: exact source identity for the complete authorized successor catalogs.
+# Historical tests receive only a verified pre-#158 comparison COPY.
+VIVAN_20261113_BASE='cd7e4dd131400ec45b14506fe1cc9b340c501d3c'
+@functools.lru_cache(maxsize=1)
+def vivan_20261113_source():
+    manifest=json.loads((ROOT/'tools/text_catalog_vivan_20261113.json').read_text())
+    check(set(manifest)=={'version','authorization','base_commit','source_identity','change_scope'} and
+          manifest['version']==1 and manifest['base_commit']==VIVAN_20261113_BASE and
+          manifest['authorization']=='https://github.com/ach1992/bot-refactor/issues/158' and
+          set(manifest['source_identity'])=={'user','admin'},'vivan_catalog_scope')
+    decode='$s=stream_get_contents(STDIN);$p=strpos($s,"return [");if($p===false)throw new RuntimeException("array_missing");echo json_encode(eval(substr($s,$p)),JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);'
+    result={}
+    for audience in ('user','admin'):
+        path='messages/fa/'+audience+'.php'
+        before=command('git','show',VIVAN_20261113_BASE+':'+path)
+        current=(ROOT/path).read_bytes()
+        sha=manifest['source_identity'][audience]
+        check(set(sha)=={'base_sha256','approved_sha256'} and
+              hashlib.sha256(before).hexdigest()==sha['base_sha256'] and
+              hashlib.sha256(current).hexdigest()==sha['approved_sha256'],
+              'vivan_catalog_full_source_identity:'+audience)
+        original=flatten(json.loads(command('php','-r',decode,input=before)))
+        actual=flatten(json.loads(command('php','-r',decode,input=current)))
+        added=set(actual)-set(original)
+        changed={key for key in original if key in actual and actual[key]!=original[key]}
+        check(set(original)<=set(actual) and
+              all(key.startswith('payment_settings.gateway_rule_admin.') for key in added),
+              'vivan_catalog_added_scope:'+audience)
+        for key in changed:
+            check(params(original[key])==params(actual[key]),
+                  'vivan_catalog_parameter_preservation:'+key)
+        result[audience]={'before_source':before.decode(),'before':original,
+                          'after':actual,'changed':changed,'added':added}
+    return result
+
+def vivan_20261113_copy_restore(sides):
+    sources=vivan_20261113_source()
+    copy_sides=copy.deepcopy(sides)
+    check(set(copy_sides)=={'user','admin'},'vivan_catalog_audiences')
+    for audience,record in sources.items():
+        updates=record['changed']|record['added']
+        # Historical callers can pass an already restored prior snapshot.
+        if not any((key in copy_sides[audience] and
+                    copy_sides[audience][key]!=record['before'].get(key))
+                   for key in updates):
+            continue
+        other='admin' if audience=='user' else 'user'
+        for key in updates:
+            check(key not in copy_sides[other] and
+                  copy_sides[audience].get(key)==record['after'][key],
+                  'vivan_catalog_approved_delta_only:'+key)
+            if key in record['added']:copy_sides[audience].pop(key)
+            else:copy_sides[audience][key]=record['before'][key]
+    return copy_sides
+
 @functools.lru_cache(maxsize=1)
 def owner_20261112_catalog_projection():
     parser='$s=stream_get_contents(STDIN);$p=strpos($s,"return [");if($p===false)throw new RuntimeException("array_missing");echo json_encode(eval(substr($s,$p)),JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);'
@@ -22,7 +78,7 @@ def owner_20261112_catalog_projection():
     for audience,(marker,expected_sha,key) in OWNER_20261112_LINES.items():
         path='messages/fa/'+audience+'.php'
         before=command('git','show',OWNER_20261112_BASE+':'+path).decode()
-        current=(ROOT/path).read_text()
+        current=vivan_20261113_source()[audience]['before_source']
         originals=[line for line in before.splitlines()if marker in line]
         approved=[line for line in current.splitlines()if marker in line]
         check(len(originals)==len(approved)==1 and
@@ -240,7 +296,7 @@ def panel_group_copy_restore(sides):
           'panel_group_copy_manifest_identity')
     path='messages/fa/admin.php'
     original=command('git','show',PANEL_GROUP_PARENT+':'+path).decode('utf-8')
-    current=(ROOT/path).read_text()
+    current=vivan_20261113_source()['admin']['before_source']
     def lines(source):
         topic=None;out={}
         for line in source.splitlines():
@@ -674,6 +730,7 @@ def chili_copy_reference():
     return definition,prior,current
 
 def chili_live_copy_restore(sides):
+    sides=vivan_20261113_copy_restore(sides)
     sides=owner_20261112_copy_restore(sides)
     sides=service_change_copy_restore(sides)
     definition,prior,current=chili_copy_reference()

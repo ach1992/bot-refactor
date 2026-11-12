@@ -1,36 +1,6 @@
 <?php
 /** Retained pre-style byte proof and exact current audience-catalog acceptance. */
 require_once dirname(__DIR__).'/messages/loader.php';
-// #158 exact Vivan UX/copy amendment. Protect BOTH complete shipping PHP
-// sources by fixed hashes, then project this verified new revision onto the
-// historical pre-#158 source for immutable earlier proof gates. This does not
-// permit arbitrary new translations, moved keys or changed placeholders.
-$uiManifest=json_decode(file_get_contents(__DIR__.'/text_catalog_vivan_20261113.json'),true,512,JSON_THROW_ON_ERROR);
-if (($uiManifest['version']??null)!==1 ||
-    ($uiManifest['authorization']??null)!=='https://github.com/ach1992/bot-refactor/issues/158' ||
-    ($uiManifest['base_commit']??null)!=='cd7e4dd131400ec45b14506fe1cc9b340c501d3c' ||
-    array_keys($uiManifest['source_identity']??[])!==['user','admin'])
-    throw new RuntimeException('vivan_catalog_amendment_invalid');
-$priorCatalogSource=[];$priorCatalogGroups=[];$uiActualGroups=[];
-foreach (['user','admin'] as $audience) {
-    $path='messages/fa/'.$audience.'.php';
-    $prior=shell_exec('git -C '.escapeshellarg(dirname(__DIR__)).' show '.
-        escapeshellarg($uiManifest['base_commit'].':'.$path));
-    $currentSource=file_get_contents(dirname(__DIR__).'/'.$path);
-    $proof=$uiManifest['source_identity'][$audience];
-    if (!is_string($prior) || !is_string($currentSource) ||
-        !is_array($proof) || array_keys($proof)!==['base_sha256','approved_sha256'] ||
-        !hash_equals($proof['base_sha256'],hash('sha256',$prior)) ||
-        !hash_equals($proof['approved_sha256'],hash('sha256',$currentSource)))
-        throw new RuntimeException('vivan_catalog_exact_source_identity:'.$audience);
-    $begin=strpos($prior,'return [');
-    if ($begin===false) throw new RuntimeException('vivan_catalog_prior_missing');
-    $priorCatalogSource[$audience]=$prior;
-    $priorCatalogGroups[$audience]=eval(substr($prior,$begin));
-    $uiActualGroups[$audience]=require dirname(__DIR__).'/'.$path;
-    if (array_keys($priorCatalogGroups[$audience])!==array_keys($uiActualGroups[$audience]))
-        throw new RuntimeException('vivan_catalog_audience_topics_changed:'.$audience);
-}
 $inventory=json_decode(file_get_contents(__DIR__.'/text_catalog_inventory.json'),true,512,JSON_THROW_ON_ERROR);
 const CATALOG_STYLE_BASELINE='7faac9b067f8a171e5e26d6aea5aaf9f4088a3e7';
 const CATALOG_MANAGEMENT_BASE='2c0e728dcd71c38e20d176fe2577bc264d3faa1a';
@@ -257,26 +227,14 @@ $mainValues=$currentBindingProof['main'];$buttonValues=$currentBindingProof['but
 $facadeSource=shell_exec('git -C '.escapeshellarg(dirname(__DIR__)).' show '.
     escapeshellarg(CATALOG_MANAGEMENT_BASE.':settings/values.php'));
 $archivedFacade=catalogBindingValues($facadeSource,'/../messages/loader.php');
-$historicalMain=$mainValues;$historicalButtons=$buttonValues;
-foreach (['new_member_joined','sent_config_to_user','renewed_config_to_user'] as $key) {
-    if (!array_key_exists($key,$historicalMain))
-        throw new RuntimeException('vivan_catalog_legacy_message_missing:'.$key);
-    $historicalMain[$key]=$priorCatalogGroups['admin']['legacy_messages'][$key];
-}
-foreach (['back_button','back_to_main'] as $key) {
-    if (!array_key_exists($key,$historicalButtons))
-        throw new RuntimeException('vivan_catalog_legacy_button_missing:'.$key);
-    $historicalButtons[$key]=$priorCatalogGroups['user']['legacy_buttons'][$key];
-}
-if ($archivedFacade['main']!==$historicalMain||
-    $archivedFacade['buttons']!==$historicalButtons)
+if ($archivedFacade['main']!==$mainValues||$archivedFacade['buttons']!==$buttonValues)
     throw new RuntimeException('archived_facade_payload_mismatch');
 $main=catalogImmutableTopics()['legacy_messages'];
 $buttons=catalogImmutableTopics()['legacy_buttons'];
 $legacy=shell_exec('git -C '.escapeshellarg(dirname(__DIR__)).' show '.escapeshellarg($inventory['baseline'].':settings/values.php'));
 if (!is_string($legacy)) throw new RuntimeException('legacy_source_missing');
 ob_start();eval('?>'.$legacy);ob_end_clean();
-if($main!==$historicalMain||$buttons!==$historicalButtons) throw new RuntimeException('legacy_facade_mismatch');
+if($main!==$mainValues||$buttons!==$buttonValues) throw new RuntimeException('legacy_facade_mismatch');
 $checks+=2;
 require_once dirname(__DIR__).'/src/Presentation/Labels.php';
 if (\AchBot\Presentation\Labels\paymentType('BUY_SUB')!==achbotMessage('labels.labels.payment_type.label.e6343571a4'))
@@ -374,14 +332,6 @@ foreach(['user','admin']as$audience){$groups=require dirname(__DIR__).'/messages
  $shippingSides[$audience]=[];
  foreach($groups as$topic=>$entries)foreach($entries as$name=>$value)$shippingSides[$audience][$topic.'.'.$name]=$value;
 }
-// The real current shipping catalog remains in $shipping and achbotMessage().
-// Historical negative controls continue to run on the pristine proven source.
-foreach (['user','admin'] as $audience) {
-    $historical=[];
-    foreach($priorCatalogGroups[$audience]as$topic=>$entries)
-        foreach($entries as$key=>$entry)$historical[$topic.'.'.$key]=$entry;
-    $shippingSides[$audience]=$historical;
-}
 // #117 adds one 18-key Owner-only recovery topic. Preserve all historical
 // native whole-catalogue identity gates: remove ONLY this exact source block
 // for their original byte/array proofs. Neither arbitrary new translations,
@@ -392,7 +342,7 @@ $deliveryNames=[
  'check_ack','check','request_send','send_confirm','back','back_inbox',
  'next','first','missing','not_eligible','unavailable','open'
 ];
-$sourceAdmin=$priorCatalogSource['admin'];
+$sourceAdmin=file_get_contents(dirname(__DIR__).'/messages/fa/admin.php');
 $deliveryBlocks=[];
 if(!is_string($sourceAdmin) ||
    preg_match_all("~(?ms)^    'delivery_recovery' => \[\n.*?^    \],\n~",
@@ -506,7 +456,7 @@ foreach($chiliCopyHash as$audience=>$digest){
  if(!is_string($source)||!is_string($parent)||
     hash('sha256',$source)!==$digest ||
     hash('sha256',$audience==='admin'?$preDeliveryAdmin:
-         $priorCatalogSource[$audience])!==$digest)
+         file_get_contents(dirname(__DIR__).'/'.$path))!==$digest)
     throw new RuntimeException('chili_copy_exact_source_identity:'.$path);
  $chiliCopyBefore[$audience]=$flattenChili($parent);
  $chiliCopyAfter[$audience]=$flattenChili($source);
@@ -590,7 +540,7 @@ $removalSourceLines=static function(string $source):array {
  return $lines;
 };
 $removalOriginalLines=$removalSourceLines($removalBeforeSource);
-$removalCurrentLines=$removalSourceLines($priorCatalogSource['admin']);
+$removalCurrentLines=$removalSourceLines(file_get_contents(dirname(__DIR__).'/messages/fa/admin.php'));
 foreach($removalManifest['entries']as$key=>$item){
  if(!is_array($item) ||
     array_keys($item)!==['audience','before_sha256','after_sha256','reason'] ||
@@ -689,7 +639,7 @@ foreach(['admin','user']as$audience){
   $transferBaseline[$audience][$topic.'.'.$name]=$value;
  $transferSource[$audience]=[
     'before'=>explode("\n",$source),
-    'after'=>explode("\n",$priorCatalogSource[basename($path,'.php')])
+    'after'=>explode("\n",file_get_contents(dirname(__DIR__).'/'.$path))
  ];
 }
 foreach($transferManifest['entries']as$key=>$item){
@@ -751,7 +701,7 @@ if(($panelGroupManifest['version']??null)!==1 ||
  throw new RuntimeException('panel_group_catalog_manifest_identity');
 $panelGroupOld=shell_exec('git -C '.escapeshellarg(dirname(__DIR__)).' show '.
     escapeshellarg($panelGroupParent.':messages/fa/admin.php'));
-$panelGroupNew=$priorCatalogSource['admin'];
+$panelGroupNew=file_get_contents(dirname(__DIR__).'/messages/fa/admin.php');
 $groupStart=is_string($panelGroupOld)?strpos($panelGroupOld,'return ['):false;
 if($groupStart===false || !is_string($panelGroupNew))
  throw new RuntimeException('panel_group_catalog_baseline_missing');

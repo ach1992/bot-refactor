@@ -505,7 +505,7 @@ return [
         // account_transfers.admin_message
         'account_transfers.admin_message.6645c1fd4d' => '🔄 تغییر سرویس' . "\n" . '',
         // account_transfers.user_i_d
-        'account_transfers.user_i_d.6590a1ba5e' => 'شناسه عددی: ',
+         'account_transfers.user_i_d.6590a1ba5e' => '🎫 شناسه عددی: ',
         // account_transfers.order_i_d
         'account_transfers.order_i_d.98a7867ccd' => 'شناسه سفارش: ',
         // account_transfers.server
@@ -797,7 +797,7 @@ return [
         'discount_administration.add_discount_code.message.ed39e0ee1b' => '🔘 لطفا فقط عدد به تومان وارد کنید یا 0 برای بدون سقف وارد کنید.',
         'discount_administration.add_discount_code.message.f12309f24f' => ['text' => '✅ کد تخفیف جدید (<code>{hashId}</code>) با موفقیت ساخته شد.', 'parameters' => ['hashId']],
         'discount_administration.add_discount_code.button.689da8336a' => '✅ بله، حذف شود',
-        'discount_administration.add_discount_code.button.a766691671' => '↪️ خیر، بازگشت',
+        'discount_administration.add_discount_code.button.a766691671' => '↪️ بازگشت',
         'discount_administration.add_discount_code.message.e8830dbcad' => '⚠️ آیا از حذف این کد تخفیف مطمئن هستید؟',
         'discount_administration.add_discount_code.alert.f007c663c6' => '✅ کد تخفیف مورد نظر با موفقیت حذف شد.',
         'discount_administration.add_discount_code.alert.fa58f63a4f' => '⚠️ کد تخفیف یافت نشد.',
@@ -1246,7 +1246,7 @@ return [
         'gateway_return.perform_payment_effect.msg.05d5688689' => ['text' => '' . "\n" . '📦 افزایش حجم اشتراک (درگاه {gateType})' . "\n" . '' . "\n" . '🎫 آیدی کاربر: {user_id}' . "\n" . '👤 نام کاربر: {first_name}' . "\n" . '🔖 نام کاربری تلگرام: @{username}' . "\n" . '💰 مبلغ پرداختی: {amount} تومان' . "\n" . '🎈 نام اشتراک: {remark}' . "\n" . 'حجم اضافه شده: {plusVolume} گیگ' . "\n" . '', 'parameters' => ['gateType', 'user_id', 'first_name', 'username', 'amount', 'remark', 'plusVolume']],
         'gateway_return.perform_payment_effect.text.c7546a7b9b' => 'میخواست حجم اشتراکشو افزایش بده',
         'gateway_return.perform_payment_effect.admin_text.b660a2780f' => ['text' => '✅ تمدید اشتراک (درگاه {gateType})' . "\n" . '' . "\n" . '', 'parameters' => ['gateType']],
-        'gateway_return.perform_payment_effect.user_i_d_user_id.8fd1cfbf5d' => ['text' => 'شناسه عددی: {user_id}' . "\n" . '', 'parameters' => ['user_id']],
+        'gateway_return.perform_payment_effect.user_i_d_user_id.8fd1cfbf5d' => ['text' => '🎫 شناسه عددی: {user_id}' . "\n" . '', 'parameters' => ['user_id']],
         'gateway_return.perform_payment_effect.remark_remark.806b185dfd' => ['text' => 'نام اشتراک: {remark}' . "\n" . '', 'parameters' => ['remark']],
         'gateway_return.perform_payment_effect.plan_i_d_fid.1471242965' => ['text' => 'شناسه پلن: {fid}' . "\n" . '', 'parameters' => ['fid']],
         'gateway_return.perform_payment_effect.amount.ad7e6bbc81' => '💰 مبلغ: ',
@@ -1264,7 +1264,7 @@ return [
     // ── پشتیبانی و تیکت ──
     'support' => [
         'customer_conversation.user_all_tickets.message.2baf15e3c0' => '☑️ تیکت توسط کاربر بسته شد.',
-        'customer_conversation.user_all_tickets.txt.54b5fecc08' => ['text' => 'پیام جدید:' . "\n" . '[{ticketTitle}] <i>{ticketCat}</i>' . "\n" . '' . "\n" . 'کاربر: <a href=\'tg://user?id={from_id}\'>{first_name}</a>' . "\n" . 'نام کاربری: {username}' . "\n" . 'شناسه عددی: {from_id_2}' . "\n" . '', 'parameters' => ['ticketTitle', 'ticketCat', 'from_id', 'first_name', 'username', 'from_id_2']],
+        'customer_conversation.user_all_tickets.txt.54b5fecc08' => ['text' => 'پیام جدید:' . "\n" . '[{ticketTitle}] <i>{ticketCat}</i>' . "\n" . '' . "\n" . 'کاربر: <a href=\'tg://user?id={from_id}\'>{first_name}</a>' . "\n" . 'نام کاربری: {username}' . "\n" . '🎫 شناسه عددی: {from_id_2}' . "\n" . '', 'parameters' => ['ticketTitle', 'ticketCat', 'from_id', 'first_name', 'username', 'from_id_2']],
         'customer_conversation.user_all_tickets.text.a79a2fa69e' => ['text' => '' . "\n" . 'متن پیام: {text}', 'parameters' => ['text']],
         'customer_conversation.user_all_tickets.text.46d8580795' => ['text' => '' . "\n" . 'متن پیام: {caption}', 'parameters' => ['caption']],
         'customer_conversation.user_all_tickets.text.497743bb13' => ['text' => '📨 رأی به تیکت ' . "\n" . '' . "\n" . '🎫 شناسه عددی: {from_id}' . "\n" . '👤 نام کاربر: {first_name}' . "\n" . '🔖 نام کاربری: @{username}' . "\n" . '〽️ عنوان: {title}' . "\n" . '⚜️ دسته بندی: {category}' . "\n" . '❤️ رای: {rate}' . "\n" . '', 'parameters' => ['from_id', 'first_name', 'username', 'title', 'category', 'rate']],
@@ -1296,7 +1296,7 @@ return [
         // create_ticket.button
         'create_ticket.button.3b90dccc67' => '💬 پاسخ',
         // create_ticket.txt
-        'create_ticket.txt.e819afcdf4' => ['text' => 'تیکت جدید:' . "\n" . '' . "\n" . 'کاربر: <a href=\'tg://user?id={from_id}\'>{first_name}</a>' . "\n" . 'نام کاربری: @{username}' . "\n" . 'شناسه عددی: {from_id_2}' . "\n" . '' . "\n" . 'موضوع تیکت: {ticketCat}' . "\n" . '' . "\n" . 'عنوان تیکت: ', 'parameters' => ['from_id', 'first_name', 'username', 'from_id_2', 'ticketCat']],
+        'create_ticket.txt.e819afcdf4' => ['text' => 'تیکت جدید:' . "\n" . '' . "\n" . 'کاربر: <a href=\'tg://user?id={from_id}\'>{first_name}</a>' . "\n" . 'نام کاربری: @{username}' . "\n" . '🎫 شناسه عددی: {from_id_2}' . "\n" . '' . "\n" . 'موضوع تیکت: {ticketCat}' . "\n" . '' . "\n" . 'عنوان تیکت: ', 'parameters' => ['from_id', 'first_name', 'username', 'from_id_2', 'ticketCat']],
         // create_ticket.text
         'create_ticket.text.fe45cc8381' => ['text' => '' . "\n" . 'متن تیکت: {text}', 'parameters' => ['text']],
         'create_ticket.text.4479736037' => ['text' => '' . "\n" . 'متن تیکت: {caption}', 'parameters' => ['caption']],
@@ -1361,7 +1361,7 @@ return [
         'roles.level.operator' => ['text' => 'اپراتور', 'parameters' => []],
         'roles.level.support' => ['text' => 'پشتیبان', 'parameters' => []],
         'roles.level.invalid' => ['text' => 'سطح نامشخص؛ انتخاب کنید', 'parameters' => []],
-        'roles.owner_row' => ['text' => 'مالک ربات · شناسه عددی: {userId}', 'parameters' => ['userId']],
+        'roles.owner_row' => ['text' => 'مالک ربات · 🎫 شناسه عددی: {userId}', 'parameters' => ['userId']],
         'roles.choose_level' => ['text' => 'سطح دسترسی مدیر با شناسه عددی <code>{userId}</code> را انتخاب کنید.' . "\n" . '' . "\n" . 'مدیر: همهٔ بخش‌ها به‌جز مدیریت ادمین‌ها' . "\n" . 'اپراتور: امور مشتریان و عملیات روزانه' . "\n" . 'پشتیبان: اطلاعات کاربر، مسدودسازی، ویرایش سفارش و بررسی رسید پرداخت (تأیید یا رد)', 'parameters' => ['userId']],
         'roles.saved' => ['text' => 'سطح دسترسی ذخیره شد.', 'parameters' => []],
         'roles.target_prompt' => ['text' => 'شناسه عددی کاربری را بفرستید که قبلاً ربات را شروع کرده است. مالک از این بخش قابل تغییر نیست.', 'parameters' => []],
@@ -2069,14 +2069,14 @@ return [
         'gateway_rule_admin.summary.before_days' => ['text'=>'حداقل {count} تراکنش پیش از {days} روز گذشته', 'parameters'=>['count','days']],
         'gateway_rule_admin.summary.recent_days' => ['text'=>'حداقل {count} تراکنش در {days} روز اخیر', 'parameters'=>['count','days']],
         'gateway_rule_admin.summary.category_intro' => "👥 دستهٔ کاربر را انتخاب کنید. هر دسته قانون جداگانه دارد؛ برای دسترسی کافی است یکی از قوانین فعال برقرار باشد.
-💡 مثال: می‌توانید روش پرداخت را برای خریداران با حداقل ۲ خرید در ۳۰ روز اخیر فعال کنید.
+💡 مثال: می‌توانید روش پرداخت را برای خریداران با حداقل 2 خرید در 30 روز اخیر فعال کنید.
 ",
         'gateway_rule_admin.summary.metric_heading' => ['text'=>"🔐 {method} | {category}
 📊 تنظیم شرط: {metric}
 ", 'parameters'=>['method','category','metric']],
         'gateway_rule_admin.summary.current_condition' => ['text'=>"✅ تنظیم فعلی: {condition}
 ", 'parameters'=>['condition']],
-        'gateway_rule_admin.summary.metric_explanation' => "💡 دکمه‌های آماده را انتخاب کنید یا تعداد و بازه را جداگانه تغییر دهید. صفر برای تعداد و روز یعنی غیرفعال؛ ۰ تراکنش با بازهٔ مثبت یعنی دست‌کم ۱ تراکنش در آن بازه. فقط پرداخت‌های موفق شمرده می‌شوند؛ زمان بر اساس ثبت درخواست است.
+        'gateway_rule_admin.summary.metric_explanation' => "💡 دکمه‌های آماده را انتخاب کنید یا تعداد و بازه را جداگانه تغییر دهید. اگر تعداد و بازه هر دو 0 باشند شرط غیرفعال است؛ تعداد 0 همراه با بازهٔ مثبت یعنی حداقل 1 تراکنش در آن بازه. فقط پرداخت‌های موفق شمرده می‌شوند؛ زمان بر اساس ثبت درخواست است.
 ",
         'gateway_rule_admin.summary.direction_button' => ['text'=>'🕒 جهت بازه: {direction}', 'parameters'=>['direction']],
         'gateway_rule_admin.summary.rule_heading' => ['text'=>"🔐 {method} | {category}
@@ -2094,10 +2094,10 @@ return [
         'gateway_rule_admin.summary.age_button' => '📅 تغییر حداقل سن عضویت',
         'gateway_rule_admin.summary.edit_suffix' => ' | ویرایش',
         'gateway_rule_admin.summary.back_rule' => '↪️ بازگشت به قانون',
-        'gateway_rule_admin.preset.all' => '۱ تراکنش | تمام سابقه',
-        'gateway_rule_admin.preset.w7' => '۱ مورد | ۷ روز اخیر',
-        'gateway_rule_admin.preset.w30' => '۱ مورد | ۳۰ روز اخیر',
-        'gateway_rule_admin.preset.x30' => '۲ مورد | ۳۰ روز اخیر',
+        'gateway_rule_admin.preset.all' => '1 تراکنش | تمام سابقه',
+        'gateway_rule_admin.preset.w7' => '1 مورد | 7 روز اخیر',
+        'gateway_rule_admin.preset.w30' => '1 مورد | 30 روز اخیر',
+        'gateway_rule_admin.preset.x30' => '2 مورد | 30 روز اخیر',
         'gateway_rule_admin.preset.off' => '⛔️ حذف این شرط',
         // gateway_rules.gateway_rule_metrics
         'gateway_rules.gateway_rule_metrics.text.7021d6f38e' => 'خرید اولیه',

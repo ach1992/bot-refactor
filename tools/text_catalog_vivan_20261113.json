@@ -9,7 +9,7 @@
     },
     "admin": {
       "base_sha256": "89c991c12cfffce8c739c9e55b1a2fc0bdfe59b8928da0ad8398470d24f73a99",
-      "approved_sha256": "e4ab5bcb4224b68376a915dd0ccefa5d1e963c8df409c2dd4135e9999fc9e222"
+      "approved_sha256": "d8c3d452b8aeef602ded60d09ade0e6675fb433c6c01a422365aa39f186a36dd"
     }
   },
   "change_scope": "approved Vivan copy, back navigation, wallet-topup controls and Telegram gateway-policy redesign"

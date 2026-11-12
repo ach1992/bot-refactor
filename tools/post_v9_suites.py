@@ -1238,9 +1238,15 @@ def run_wallet(tmp: str) -> tuple[dict, dict]:
         ["python3",str(ROOT/"tools/test_next_text_catalog.py")],
         cwd=ROOT,check=True,timeout=180,capture_output=True,text=True)
     text_catalog=json.loads(catalog_output.stdout)
+    # The new UI copy is admission-gated by whole-file source SHA before
+    # historical catalog proofs; the base counts remain immutable.
+    import catalog_owner_r5 as catalog_lineage
+    successor=catalog_lineage.vivan_20261113_source()
+    admin_added=len(successor['admin']['added'])
+    user_added=len(successor['user']['added'])
     expected_catalog={
-        'status':'PASS','current_catalog_keys':2883,
-        'current_admin_keys':1933,'current_user_keys':950,
+        'status':'PASS','current_catalog_keys':2883+admin_added+user_added,
+        'current_admin_keys':1933+admin_added,'current_user_keys':950+user_added,
         'retired_experimental_keys':129,'retired_experimental_topics':10,
         'new_copy_entries':33,'current_runtime_files':132,
         'new_copy_references_unbound':0,
@@ -1909,6 +1915,7 @@ def run_authorization(tmp: str) -> tuple[dict, dict]:
              'operator_preview_does_not_persist',
              'operator_explicit_add',
              'operator_private_integer_confirm_commit',
+             'operator_quick_preset_stale_cas_and_stay_on_metric',
              'operator_invalid_and_cancel',
              'two_admins_independent_fields',
              'unauthenticated_group_sender_rejected',
@@ -3534,6 +3541,15 @@ def run_funding(tmp: str) -> tuple[dict, dict]:
         f'{subject}_{kind}'
         for subject in ('buy','custom','renew','day','volume')
         for kind in ('valid_owned_callback_still_pays_once','paid_callback_no_replay')
+    } | {
+        f'{subject}_insufficient_wallet_preserves_payment_choice'
+        for subject in ('buy','custom','renew','day','volume')
+    } | {
+        'legacy_low_wallet_foreign_owner_cannot_reopen',
+        'legacy_low_wallet_issued_reference_cannot_reopen',
+        'legacy_low_wallet_superseded_draft_cannot_reopen',
+        'legacy_low_wallet_expired_draft_cannot_reopen',
+        'legacy_low_wallet_owner_reopen_once_no_financial_effect'
     } | {'wallet_exact_64_byte_callback_accepted',
          'wallet_65_byte_callback_without_side_effects',
          'unrelated_callback_not_blocked_by_wallet_guard'} | {
@@ -3543,7 +3559,7 @@ def run_funding(tmp: str) -> tuple[dict, dict]:
                      'valid_frame_reaches_dispatch')
     }
     if not (wallet_frame.get('complete') is True
-            and wallet_frame.get('cases')==38
+            and wallet_frame.get('cases')==48
             and set(wallet_frame.get('scenarios',[]))==expected_framing
             and wallet_frame.get('real_php_mariadb') is True
             and wallet_frame.get('original_payment_schema_preserved') is True

@@ -55,12 +55,14 @@ def main() -> dict:
     ],cwd=ROOT,text=True)
     groups=json.loads(shell)
     current={a:historical.flatten(v) for a,v in groups.items()}
+    successor=historical.vivan_20261113_source()
+    successor_added={a:len(successor[a]['added']) for a in ('user','admin')}
     added=historical.GIFT_PRECHECK_SHA256
     chili=historical.chili_copy_reference()[0]
     # The two source-pinned additions remain independently reviewable.
     _, service_before, service_after=historical.service_change_catalog_layer()
-    assert len(current['admin'])==1911+len(added['admin'])+len(chili['added'])+8+len(service_after['admin'])-len(service_before['admin']) and \
-        len(current['user'])==942+len(added['user'])+len(service_after['user'])-len(service_before['user'])
+    assert len(current['admin'])==1911+len(added['admin'])+len(chili['added'])+8+len(service_after['admin'])-len(service_before['admin'])+successor_added['admin'] and \
+        len(current['user'])==942+len(added['user'])+len(service_after['user'])-len(service_before['user'])+successor_added['user']
     assert not set(current['admin'])&set(current['user'])
     # Verify exact current additions and recipient placement before
     # comparing the older immutable post-cleanup user/admin baseline.
