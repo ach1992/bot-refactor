@@ -422,7 +422,7 @@ def test(php:bool)->dict:
             day_keyboard=next(ev['keys']['inline_keyboard'] for ev in customer_days['events']
                 if ev.get('event')=='EDIT' and 'inline_keyboard' in (ev.get('keys') or {}))
             yes(all(len(row)==1 for row in day_keyboard) and
-                day_keyboard[-1]==[{'text':'🔙 بازگشت','callback_data':'orderDetails41'}] and
+                day_keyboard[-1]==[{'text':'↪️ بازگشت','callback_data':'orderDetails41'}] and
                 any(row[0].get('text')=='15 روز ← 1234 تومان' for row in day_keyboard),
                 'customer_day_catalog_one_column_exact_price_and_order_back')
             yes('selectPlanDayIncrease41_' in json.dumps(customer_days['events'])
