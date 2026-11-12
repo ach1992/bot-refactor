@@ -701,7 +701,7 @@ def main():
    r=call('bulk',line=line);yes('error' not in r,'bulk_line_'+str(line)+'_durable')
    pg_admin.append(dict(effect=r['out'][3],name=server.user['username'],remote=remote))
   yes(len({v['name'] for v in pg_admin})==2 and all(
-      re.fullmatch(r'pg-[0-9]{10}',v['name']) for v in pg_admin),
+      re.fullmatch(r'pg-[0-9]{5}',v['name']) for v in pg_admin),
       'pg_admin_forced_same_random_base_source_bound_distinct_native_names')
   yes(int(sql('SELECT ucount FROM server_info WHERE id=2').strip())==pg_bulk_before-2 and
       sql("SELECT ordinal,reserved_count,state FROM service_effects "
@@ -747,7 +747,7 @@ def main():
    yes('error' not in r,'pg_paid_bulk_line_'+str(line)+'_verified_native')
    pg_paid.append(dict(effect=r['out'][3],name=server.user['username'],remote=remote))
   yes(len({v['name'] for v in pg_paid})==2 and all(
-      re.fullmatch(r'pg-[0-9]{10}',v['name']) for v in pg_paid) and
+      re.fullmatch(r'pg-[0-9]{5}',v['name']) for v in pg_paid) and
       {v['name'] for v in pg_paid}.isdisjoint({v['name'] for v in pg_admin}),
       'pg_paid_same_random_base_distinct_source_and_ordinal_names')
   yes(int(sql('SELECT ucount FROM server_info WHERE id=2').strip())==paid_start-2 and

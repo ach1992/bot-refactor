@@ -195,6 +195,34 @@ if ($userInfo['step'] == "showAccount" && $text != $buttonValues['cancel']) {
             error_log('achbot_existing_subscription_lookup_deferred');
         }
     }
+    // Different logical Marzban server records can point at one explicitly
+    // declared physical Panel Group. Each has independently verified the
+    // supplied bearer. Collapse only identical native account identities on
+    // that SAME valid declared panel; unrelated targets stay ambiguous.
+    if (count($matches)>1) {
+        $unique=[];
+        foreach ($matches as $match) {
+            $same=false;
+            if ($match['type']==='marzban' &&
+                is_array($match['proof']['identity']??null)) {
+                foreach ($unique as $previous) {
+                    if ($previous['type']!=='marzban' ||
+                        ($previous['proof']['identity']??null)!==$match['proof']['identity'])
+                        continue;
+                    try {
+                        if (achbotSameMarzbanPanel($connection,$previous['server'],$match['server'])) {
+                            $same=true;break;
+                        }
+                    } catch (Throwable $error) {
+                        // Original pre-group schema has no group column; it
+                        // remains ambiguous rather than guessing from URLs.
+                    }
+                }
+            }
+            if (!$same) $unique[]=$match;
+        }
+        $matches=$unique;
+    }
     $found=count($matches)===1;$config=null;$serverId=0;
     if ($found) {
         $match=array_values($matches)[0];$serverId=$match['server'];$config=$match['remote'];$proof=$match['proof'];

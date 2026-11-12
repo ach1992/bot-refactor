@@ -983,6 +983,39 @@ echo json_encode(['required'=>count(achbotProviderRequiredOperations()),
   yes(keyboard[1][0]['text']=='نامحدود'and keyboard[2][0]['text']=='نامحدود'and
       sql(f'SELECT expire_date FROM orders_list WHERE id={mb_order}')=='0',
       'Marzban_imported_customer_page_never_exposes_zero_or_epoch_for_unlimited')
+  # Reproduce the owner's false-negative: two logical Marzban entries on
+  # the SAME physically declared panel both verify a genuine bearer. Without
+  # physical grouping, the two positive proofs remain ambiguous.
+  sql("INSERT INTO server_info(id,title,ucount,remark,flag,active,state,provider_group_ids)"
+      " VALUES(6,'Same physical Marzban',20,'marzbanalias','',1,1,'[2,5]');"+
+      shared_storage.clone(6,2))
+  imported_url='https://update.example.invalid:8443/sub/'+mb_token
+  before=entities();audit=sql('SELECT COUNT(*) FROM add_link')
+  ungrouped=preview(1004,imported_url);step,proof=state(1004)
+  yes(step=='showAccount'and proof is None and
+      'addToOrders'not in json.dumps(ungrouped) and
+      entities()==before and sql('SELECT COUNT(*) FROM add_link')==audit,
+      'separate_unconfigured_Marzban_targets_remain_ambiguous_without_declared_panel_group')
+  sql("INSERT INTO setting(type,value) VALUES('ACHBOT_MARZBAN_PANEL_GROUP','owned_same_physical')")
+  group_id=int(sql("SELECT id FROM setting WHERE type='ACHBOT_MARZBAN_PANEL_GROUP'"
+                   " AND value='owned_same_physical'"))
+  sql(f"UPDATE server_info SET panel_group_id={group_id} WHERE id IN(2,6)")
+  shown=preview(1004,imported_url);step,proof=state(1004)
+  yes(step=='none'and proof is not None and proof['server_id']==2 and
+      proof['username']=='existing_mb_user'and proof['import_url']==imported_url and
+      entities()==before and not mutations(),
+      'same_physical_Marzban_alias_host_port_two_logical_entries_one_verified_preview')
+  sql("DELETE FROM server_config WHERE id=6;DELETE FROM server_info WHERE id=6;"
+      "UPDATE server_info SET panel_group_id=NULL WHERE id=2;"
+      f"DELETE FROM setting WHERE id={group_id}")
+  # PasarGuard's independent physical instance identity and the same
+  # arbitrary HTTPS /sub token URL remain valid without fetching the alias.
+  pg_alias='https://backup.example.invalid/sub/'+token
+  shown=preview(1004,pg_alias)
+  yes(state(1004)[1]['provider']=='pasarguard'and
+      state(1004)[1]['import_url']==pg_alias and not foreign.trace,
+      'PasarGuard_https_sub_alias_without_native_host_registration')
+
   yes(all(not any(callback in keys for callback in [
       'toggleAutoRenew','adminToggleAutoRenew','increaseADay','increaseAVolume'])
       for keys in unlimited_controls),

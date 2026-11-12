@@ -251,12 +251,13 @@ function achbotStyledAccountRemark(string $base,string $provider,string $source,
     return $name;
 }
 
-/** Decimal-only stable suffix retains the original account naming style. */
+/** Five visible digits; adjacent lines of the same source cannot collide. */
 function achbotAccountNumericToken(string $source,int $ordinal): string {
-    // 44-bit value stays an exact integer on 64-bit PHP; ten decimal
-    // digits avoid the 5-digit birthday collisions of large bulk batches.
-    $number=(int)(hexdec(substr(hash('sha256',$source.':'.$ordinal),0,11))%10000000000);
-    return str_pad((string)$number,10,'0',STR_PAD_LEFT);
+    // One source-derived starting point, then sequential line offsets.
+    // The existing unique Native-target/effect index still fences collisions
+    // with other sources before any remote CREATE.
+    $start=(int)(hexdec(substr(hash('sha256',$source),0,11))%90000);
+    return (string)(10000+(($start+$ordinal)%90000));
 }
 
 function achbotAdminBulkAccountRemark(string $base,string $sourceRef,

@@ -625,7 +625,7 @@ def check():
         manual_post=calls(manual_done,'POST')
         assert len(manual_post)==2 and len({p['name'] for p in manual_post})==2,manual_done
         assert all(__import__('re').fullmatch(
-            r'[A-Za-z0-9_-]+-1001-[0-9]{10}',p['name']) for p in manual_post),manual_done
+            r'[A-Za-z0-9_-]+-1001-[0-9]{5}',p['name']) for p in manual_post),manual_done
         assert paid(manual_bulk)=='paid_with_wallet' and wallet()==49900 and cap()==8
         assert detail(manual_bulk)==('wallet_hold\t0\t2\tconsumed\n'
                                    'create\t1\t0\tlocal_recorded\n'
