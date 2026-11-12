@@ -167,6 +167,9 @@ if (($spec['route']??'trial')==='trial') {
         'pg_paid_explicit_multi'=>achbotPaidPurchaseRemark('chosen_name','pasarguard',12345,2,2,true,'manual'),
         'pg_admin_manual'=>achbotAdminBulkAccountRemark('batch_custom','bulk:9001:987811',1,2,'pasarguard','manual'),
         'pg_long_prefix'=>achbotAdminBulkAccountRemark(str_repeat('x',96).'-12345','bulk:9001:987811',1,2,'pasarguard','digits'),
+        'batch_tokens'=>array_map(static fn($i)=>achbotAccountNumericToken('bulk:9001:987811',$i),range(1,500)),
+        'plan_copy'=>achbotMessage('renewal.extensions.message.143c7f81f1'),
+        'purchase_report'=>achbotMessages('legacy_messages')['sent_config_to_user'],
         'pasarguard_base'=>$first];
 } else {
     require $root.'/src/Purchase/EntryAndBulk.php';
@@ -197,14 +200,31 @@ def check():
         assert len(observed)==1 and observed[0]['name']=='STYLE_IDENTITY',observed
         evidence=observed[0]
         assert evidence['different_base'],evidence
+        assert len(set(evidence['batch_tokens']))==500
+        assert all(__import__('re').fullmatch(r'[1-9][0-9]{4}',value)
+                   for value in evidence['batch_tokens'])
+        assert evidence['plan_copy']==(
+            '🎲 لطفاً یکی از پلن‌های زیر را انتخاب کنید.\n'
+            '♻️ بعد از تغییر پلن می‌توانید اشتراک خودتان را مطابق پلن جدید تمدید کنید.\n'
+            '⚠️ در صورت تغییر پلن پرداخت های در دست بررسی یا نیمه تمام شما برای این اشتراک نامعتبر می شوند.'
+        )
+        assert evidence['purchase_report']==(
+            '✅ اشتراک برای کاربر ارسال شد.\n\n'
+            '🆔 شناسه عددی: USERID\n'
+            '🎫 نام کاربری اشتراک: REMARK\n'
+            '📦 حجم اشتراک: VOLUME گیگ\n'
+            '📅 مدت زمان اشتراک: DAYS روز\n'
+            '💰 هزینه پرداختی: PRICE تومان\n'
+            '🔖 شناسه پرداخت: HASHID\n'
+        )
         assert evidence['bulk_first']==evidence['bulk_second'] and all(
             len(evidence[key])<=32 and
-            __import__('re').fullmatch(r'mbz-[0-9]{10}',evidence[key])
+            __import__('re').fullmatch(r'mbz-[0-9]{5}',evidence[key])
             for key in ('bulk_first','bulk_second','bulk_other_line','bulk_other_source'))
         assert len(set(evidence[key] for key in
             ('bulk_first','bulk_other_line','bulk_other_source')))==3
         assert evidence['paid_first']==evidence['paid_second']
-        assert all(__import__('re').fullmatch(r'mbz-[0-9]{10}',evidence[key])
+        assert all(__import__('re').fullmatch(r'mbz-[0-9]{5}',evidence[key])
                    for key in ('paid_first','paid_second','paid_other_line','paid_other_source'))
         assert len(set(evidence[key] for key in
             ('paid_first','paid_other_line','paid_other_source')))==3
@@ -213,7 +233,7 @@ def check():
         assert evidence['paid_explicit']=='chosen_name'
         assert evidence['paid_manual_multi'].startswith('chosen_name_') and (
             evidence['paid_manual_multi'].endswith('_2'))
-        assert __import__('re').fullmatch(r'someserver-1001-[0-9]{10}',evidence['admin_default'])
+        assert __import__('re').fullmatch(r'someserver-1001-[0-9]{5}',evidence['admin_default'])
         assert evidence['admin_manual'].startswith('batch_custom_') and (
             evidence['admin_manual'].endswith('_1'))
         import re
@@ -223,16 +243,16 @@ def check():
                       ('pg_paid_line1','pg_paid_line2','pg_paid_new_source')):
             names=[evidence[key] for key in group]
             assert len(set(names))==3 and all(
-                re.fullmatch(r'pg-[0-9]{10}',name) and len(name)<=100
+                re.fullmatch(r'pg-[0-9]{5}',name) and len(name)<=100
                 for name in names),names
-        assert (re.fullmatch(r'pg-1001-[0-9]{10}',evidence['pg_paid_normal']) and
-                re.fullmatch(r'pg-1001-[0-9]{10}',evidence['pg_admin_normal']))
+        assert (re.fullmatch(r'pg-1001-[0-9]{5}',evidence['pg_paid_normal']) and
+                re.fullmatch(r'pg-1001-[0-9]{5}',evidence['pg_admin_normal']))
         assert evidence['pg_paid_single']==evidence['pg_generated_base']
         assert evidence['pg_paid_explicit_single']=='chosen_name'
         assert evidence['pg_paid_explicit_multi'].startswith('chosen_name_')
         assert evidence['pg_admin_manual'].startswith('batch_custom_')
         assert len(evidence['pg_long_prefix'])==100 and re.fullmatch(
-            r'x+-[0-9]{10}',evidence['pg_long_prefix'])
+            r'x+-[0-9]{5}',evidence['pg_long_prefix'])
         cases.append('configured_single_style_and_source_stable_bulk_decimal_identifiers')
         cases.append('pasarguard_forced_random_collision_source_bound_bulk_and_provider_limits')
         def reset():
@@ -355,7 +375,7 @@ def check():
                      remark_mode='manual',update_id=987814)
         fallback_names=[e['remark'] for e in fallback if e['name']=='POST']
         assert len(fallback_names)==2 and all(
-            __import__('re').fullmatch(r'[A-Za-z0-9_-]+-9001-[0-9]{10}',name)
+            __import__('re').fullmatch(r'[A-Za-z0-9_-]+-9001-[0-9]{5}',name)
             for name in fallback_names),fallback
         assert len(set(fallback_names))==2
         assert capacity()==8
