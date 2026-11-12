@@ -32,12 +32,18 @@ def owned_database():
         if not shutil.which(tool):raise RuntimeError('Missing existing prerequisite: '+tool)
     env={'PATH':os.environ.get('PATH','/usr/bin:/bin'),'LANG':'C.UTF-8','HOME':'/nonexistent'}
     with tempfile.TemporaryDirectory(prefix='achbot-access-native-') as tmp:
-        d=Path(tmp);(d/'data').mkdir();(d/'.achbot-access-db').write_text('achbot-v4-fixture-only\n')
+        d=Path(tmp);(d/'data').mkdir();(d/'tmp').mkdir()
+        (d/'.achbot-access-db').write_text('achbot-v4-fixture-only\n')
+        # Bootstrap runs alongside other disposable MariaDB fixtures. The
+        # server receives a private --tmpdir below; its bootstrap needs the
+        # same isolation or concurrent mysql.tmp_* DDL may collide in /tmp.
+        env['TMPDIR']=str(d/'tmp')
         with (d/'process.log').open('wb') as log:
             user=pwd.getpwuid(os.getuid()).pw_name
             try:
                 subprocess.run(['mariadb-install-db','--no-defaults','--datadir='+str(d/'data'),
-                    '--auth-root-authentication-method=normal','--skip-test-db','--user='+user],
+                    '--auth-root-authentication-method=normal','--skip-test-db','--user='+user,
+                    '--tmpdir='+str(d/'tmp')],
                     env=env,check=True,stdout=log,stderr=log,timeout=45)
             except subprocess.CalledProcessError as error:
                 log.flush()
