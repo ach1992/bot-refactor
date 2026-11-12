@@ -716,11 +716,17 @@ positive integer account count and the original payable quote. A locked
 wallet purchase validates its original plan/capacity and the final
 provider-bound Native username **before** debit. The general/PasarGuard
 admission contract is ASCII with a 100-byte ceiling; Marzban's persisted
-Native username is stricter at **32 ASCII bytes**. New generated Marzban
-paid names are deterministic from the original payment ID and ordinal
-(`mbz_paid_` prefix); explicit single-account names are checked at the
-payable draft and pre-debit boundary. Previously dispatched identities
-are never silently renamed or replayed.
+Native username is stricter at **32 ASCII bytes**. New generated Marzban usernames preserve the configured single-account
+shape: `server-userId-number` (default) or `server-number` (digits),
+rather than a fixed opaque `mbz_paid_` alias. Single generated accounts
+retain the normal `buildRemark()` number; new multi-account lines use
+a decimal-only source/ordinal-stable suffix so randomized inputs cannot
+change their pending identity. Explicit single-account names are exact;
+bulk manual descriptions remain recognizable prefixes with source-distinct
+line suffixes, compacted only where the provider's real name limit requires.
+Provider admission and the final dispatch check the same chosen name before
+Native CREATE; wallet rejects invalid final names before debit. The old
+007 journal's original identities are immutable and never silently replayed.
 For standard purchases, plan days/volume, manual names and generated
 server prefix are checked before debit; custom purchases instead validate
 their persisted requested days/volume and allow a zero-day/zero-volume
@@ -743,16 +749,19 @@ establish an immutable source identity, with one operation per ordinal;
 ordinary free trial uses a single per-user reservation in
 `users.freetrial`. A new authenticated administrator update
 can request a new bulk batch, whereas replay of the same update cannot
-create a second batch. **Current source behavior (superseding the earlier
-description-prefix rule):** new administrator-generated Marzban bulk
-usernames use `mbz_bulk_` plus 23 hex characters from the immutable
-authenticated bulk source and ordinal; paid-generated names use
-`mbz_paid_` plus 23 hex characters from the original payment ID and
-ordinal. Both are 32 ASCII bytes, independent of randomized
-`buildRemark()` or plan-description prefixes. Explicitly supplied names
-retain their provider-aware validation; PasarGuard has its own separate
-username contract and is not given the Marzban 32-byte limit. Immutable
-already-dispatched 007 identities are neither renamed nor re-CREATEd.
+create a second batch. **Current next-candidate naming decision (Owner 2026-11-12):**
+administrator bulk uses the same configured `buildRemark()` structure as
+ordinary accounts. For generated names, the numeric suffix is derived from
+the original authenticated Telegram source and ordinal and remains recognizable
+as a numeric username, never an opaque `mbz_bulk_` hash name. For the
+administrator's manual mode, the plan description remains the visible prefix,
+with a source-distinct numeric line suffix. Paid bulk likewise uses the
+original invoice/ordinal for stable numeric suffixes, while the independent
+PasarGuard contract retains its supported length. The Marzban 32-byte bound
+shortens only the generated server/description prefix when necessary; exact
+customer-chosen single names cannot be silently changed. Previously
+dispatched 007 rows are immutable and never re-CREATEd. This source change
+does not require a legacy-version compatibility layer or a SQL migration.
 Every batch reserves all its slots up front.
 A verified remote CREATE must link the exact new `orders_list` row
 before Telegram delivery. Partial and uncertain states remain review-only.

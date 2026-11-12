@@ -1,6 +1,22 @@
 # Current source and published release contracts
 
 
+## Pending source correction — restore configured account naming
+
+**Owner decision 2026-11-12:** RC31's fixed `mbz_bulk_` and `mbz_paid_`
+names are not the desired user-visible account naming convention. New
+administrator and paid multi-account Marzban usernames must preserve
+the configured single-account shape (`server-userId-number` or
+`server-number`), while explicit single names remain exact. For new
+bulk operations the numeric portion remains bound to the original source
+and ordinal; manual bulk descriptions retain their readable prefix.
+Preserve actual Marzban 32-byte validation, original 007 operation identity,
+financial/capacity holds, no-repeat rules, and independent PasarGuard
+semantics. No old-version compatibility layer, new table or migration is
+required. This is **unreleased source work**; the immutable RC31 artifact
+and previously installed files are not changed by this documentation.
+See [Issue #147](https://github.com/ach1992/bot-refactor/issues/147).
+
 ## Published RC31 — service-plan, financial-finality and bulk-reporting corrections
 
 [v0.10.0-rc.31](https://github.com/ach1992/bot-refactor/releases/tag/v0.10.0-rc.31) publishes the previously integrated, independently reviewed [PR #149](https://github.com/ach1992/bot-refactor/pull/149) and [PR #150](https://github.com/ach1992/bot-refactor/pull/150). The first candidate's two exact PHP 8.5 full-family runs [#43113439195](https://github.com/ach1992/bot-refactor/actions/runs/43113439195) and [#43114752477](https://github.com/ach1992/bot-refactor/actions/runs/43114752477) succeeded; #150's exact full-family run [#43119266197](https://github.com/ach1992/bot-refactor/actions/runs/43119266197) succeeded. The integrated-main checks [#43118287967](https://github.com/ach1992/bot-refactor/actions/runs/43118287967) and [#43124739660](https://github.com/ach1992/bot-refactor/actions/runs/43124739660) succeeded using explicitly identified same-tree evidence reuse, not new eight-family executions. RC31's final Git tag and manifest own its published commit identity.

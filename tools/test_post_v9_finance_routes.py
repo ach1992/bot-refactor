@@ -4245,7 +4245,7 @@ def main():
             f'WHERE pay_row_id={long_id} AND effect_kind="create" ORDER BY ordinal').splitlines()
         if (len(long_post)!=2 or [e['mode'] for e in long_post]!=['success','success'] or
             len(set(long_names))!=2 or not all(
-                len(n)==32 and n.startswith('mbz_paid_') for n in long_names) or
+                len(n)==32 and n.startswith('very_long_') for n in long_names) or
             sql(work,env,f'SELECT COUNT(*) FROM orders_list o '
                 f'JOIN service_effects e ON e.order_id=o.id WHERE e.pay_row_id={long_id}').strip()!='2'):
             raise RuntimeError('Hosted long-name Marzban native compatibility: '+

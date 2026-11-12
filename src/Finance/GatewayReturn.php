@@ -1392,12 +1392,15 @@ function achbotPerformPaymentEffect($payRowId, $gateType, &$effectStage = null) 
             $remark = buildRemark($botState, $srv_remark, $description, $user_id, $forcedRemark);
             // An explicit repeated name across a multi-account order would
             // previously trigger random renames on 409. Pin each line first.
-            if ($accountCount > 1 && $forcedRemark !== null) {
-                $remark .= '_'.$i;
-            }
 
+            $remarkMode=(string)($botState['remark']??'');
+            if ($remarkMode==='manual' && $accountCount>1 &&
+                (string)$remark==='') {
+                $remarkMode='';
+                $remark=buildRemark(['remark'=>''],$srv_remark,'',$user_id);
+            }
             $remark=achbotPaidPurchaseRemark((string)$remark,$serverType,
-                $rowId,$i,$accountCount,$forcedRemark!==null && $accountCount===1);
+                $rowId,$i,$accountCount,$forcedRemark!==null,$remarkMode);
 
             // First-use expiry staging was exclusive to never-deployed
             // Sanaei/Alireza inbound plans. Marzban keeps normal expiry.

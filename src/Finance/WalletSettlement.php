@@ -231,6 +231,10 @@ if (!function_exists('processWalletPayment')) {
                 $isCustom=($expectedBuyMode==='custom');
                 $manualRemark=(($botState['remark']??'')==='manual');
                 $persistedRemark=(string)($payInfo['description']??'');
+                // The bulk form has no manual per-account name input.
+                // Use the normal generated server/user format in that case.
+                if ($manualRemark && $quantity>1 && $persistedRemark==='')
+                    $manualRemark=false;
                 // Reject deterministic request errors while still in the
                 // owner/pay/user lock transaction and BEFORE financial debit.
                 // Even an old or tampered pays row cannot skip this guard.
@@ -265,6 +269,7 @@ if (!function_exists('processWalletPayment')) {
                 $planVolume=(int)($plan['volume']??0);
                 $serverRemark=(string)($plan['server_remark']??'');
                 $remarkMode=(string)($botState['remark']??'');
+                if ($remarkMode==='manual' && !$manualRemark) $remarkMode='';
                 $prefixSuffix=$remarkMode==='digits' ? '-99999' :
                     '-'.$uid.'-99999';
                 // Validate the FINAL prospective Marzban identity while the
@@ -279,7 +284,7 @@ if (!function_exists('processWalletPayment')) {
                             ? $persistedRemark : $serverRemark.$prefixSuffix;
                         $sample=achbotPaidPurchaseRemark($sample,'marzban',
                             (int)$payInfo['id'],$quantity,$quantity,
-                            $isCustom || $manualRemark);
+                            $isCustom || $manualRemark,$remarkMode);
                         $generatedValid=achbotEffectValidUsername($sample,'marzban');
                         // Keep an invalid configured purchase prefix from
                         // bypassing the wallet pre-debit source preflight.
