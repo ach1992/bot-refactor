@@ -35,8 +35,15 @@ def owned_database():
         d=Path(tmp);(d/'data').mkdir();(d/'.achbot-access-db').write_text('achbot-v4-fixture-only\n')
         with (d/'process.log').open('wb') as log:
             user=pwd.getpwuid(os.getuid()).pw_name
-            subprocess.run(['mariadb-install-db','--no-defaults','--datadir='+str(d/'data'),
-                '--auth-root-authentication-method=normal','--skip-test-db','--user='+user],env=env,check=True,stdout=log,stderr=log,timeout=45)
+            try:
+                subprocess.run(['mariadb-install-db','--no-defaults','--datadir='+str(d/'data'),
+                    '--auth-root-authentication-method=normal','--skip-test-db','--user='+user],
+                    env=env,check=True,stdout=log,stderr=log,timeout=45)
+            except subprocess.CalledProcessError as error:
+                log.flush()
+                raise RuntimeError('Disposable MariaDB bootstrap failed (exit '+
+                    str(error.returncode)+'): '+
+                    (d/'process.log').read_text(errors='replace')[-6000:]) from error
             cmd=['mariadbd','--no-defaults','--datadir='+str(d/'data'),'--socket='+str(d/'mysql.sock'),
                 '--pid-file='+str(d/'mysql.pid'),'--log-error='+str(d/'server.log'),'--skip-networking','--skip-name-resolve',
                 '--innodb-buffer-pool-size=32M','--innodb-log-file-size=8M','--key-buffer-size=8M','--aria-pagecache-buffer-size=8M',

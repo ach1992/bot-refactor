@@ -69,12 +69,17 @@ def main():
     # from the separately labelled numeric customer ID in the new inbox.
     handle_key='automatic_gateway_review.handle'
     handle_label='🔖 شناسه تلگرام: @{handle}'
+    # The Owner explicitly added one numeric-ID line to the PURCHASE report,
+    # not to the existing payment/status or hash-button templates.
+    approved_report='legacy_messages.sent_config_to_user'
     check(r5.text(merged.get(handle_key,''))==handle_label and
           all(r5.text(merged.get(k,''))==v for k,v in hash_footer_buttons.items()) and
-          {k for k,e in merged.items() if '🆔' in r5.text(e)}==set(hash_footer_buttons) and
+          '🆔 شناسه عددی: USERID' in r5.text(merged.get(approved_report,'')) and
+          {k for k,e in merged.items() if '🆔' in r5.text(e)}==
+              set(hash_footer_buttons)|{approved_report} and
           not any(compositions.numeric_id_variant(r5.text(e))
-                  for k,e in merged.items() if k!=handle_key),
-          'approved_tracking_hash_buttons_only_no_numeric_user_id_header')
+                  for k,e in merged.items() if k not in (handle_key,approved_report)),
+          'approved_tracking_hash_buttons_only_with_explicit_purchase_numeric_id')
     checkout=(ROOT/'src/Finance/Routes/Checkout.php').read_text()
     check("\\achbotMessage('payment.checkout.hash_id.2899228604', ['hash_id' => $hashId])" in checkout,
           'checkout_admin_body_must_not_reuse_compact_footer_key')
