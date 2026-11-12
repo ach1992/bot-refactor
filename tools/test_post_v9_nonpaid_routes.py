@@ -133,19 +133,40 @@ if (($spec['route']??'trial')==='trial') {
     $first=buildRemark(['remark'=>'digits'],'mbz','',1001);
     mt_srand(5678);
     $second=buildRemark(['remark'=>'digits'],'mbz','',1001);
-    $GLOBALS['events'][]=['name'=>'ALIAS_IDENTITY','different_base'=>$first!==$second,
-        'bulk_first'=>achbotAdminBulkAccountRemark($first,'bulk:9001:987811',1),
-        'bulk_second'=>achbotAdminBulkAccountRemark($second,'bulk:9001:987811',1),
-        'bulk_other_line'=>achbotAdminBulkAccountRemark($first,'bulk:9001:987811',2),
-        'bulk_other_source'=>achbotAdminBulkAccountRemark($first,'bulk:9001:987812',1),
-        'paid_first'=>achbotPaidPurchaseRemark($first,'marzban',12345,1,2),
-        'paid_second'=>achbotPaidPurchaseRemark($second,'marzban',12345,1,2),
-        'paid_other_line'=>achbotPaidPurchaseRemark($first,'marzban',12345,2,2),
-        'paid_other_source'=>achbotPaidPurchaseRemark($first,'marzban',12346,1,2),
-        'paid_single_first'=>achbotPaidPurchaseRemark($first,'marzban',12345,1,1),
-        'paid_single_second'=>achbotPaidPurchaseRemark($second,'marzban',12345,1,1),
-        'paid_explicit'=>achbotPaidPurchaseRemark('chosen_name','marzban',12345,1,1,true),
-        'pasarguard_original'=>achbotPaidPurchaseRemark($first,'pasarguard',12345,1,2),
+    $default=buildRemark(['remark'=>'default'],'someserver','',1001);
+    $GLOBALS['events'][]=['name'=>'STYLE_IDENTITY','different_base'=>$first!==$second,
+        'bulk_first'=>achbotAdminBulkAccountRemark($first,'bulk:9001:987811',1,2,'marzban','digits'),
+        'bulk_second'=>achbotAdminBulkAccountRemark($second,'bulk:9001:987811',1,2,'marzban','digits'),
+        'bulk_other_line'=>achbotAdminBulkAccountRemark($first,'bulk:9001:987811',2,2,'marzban','digits'),
+        'bulk_other_source'=>achbotAdminBulkAccountRemark($first,'bulk:9001:987812',1,2,'marzban','digits'),
+        'paid_first'=>achbotPaidPurchaseRemark($first,'marzban',12345,1,2,false,'digits'),
+        'paid_second'=>achbotPaidPurchaseRemark($second,'marzban',12345,1,2,false,'digits'),
+        'paid_other_line'=>achbotPaidPurchaseRemark($first,'marzban',12345,2,2,false,'digits'),
+        'paid_other_source'=>achbotPaidPurchaseRemark($first,'marzban',12346,1,2,false,'digits'),
+        'paid_single_first'=>achbotPaidPurchaseRemark($first,'marzban',12345,1,1,false,'digits'),
+        'paid_single_second'=>achbotPaidPurchaseRemark($second,'marzban',12345,1,1,false,'digits'),
+        'paid_explicit'=>achbotPaidPurchaseRemark('chosen_name','marzban',12345,1,1,true,'manual'),
+        'paid_manual_multi'=>achbotPaidPurchaseRemark('chosen_name','marzban',12345,2,2,true,'manual'),
+        'admin_default'=>achbotAdminBulkAccountRemark($default,'bulk:9001:987811',1,2,'marzban','default'),
+        'admin_manual'=>achbotAdminBulkAccountRemark('batch_custom','bulk:9001:987811',1,2,'marzban','manual'),
+        // Force the same buildRemark() random output for every ordinal.
+        // The actual PHP formatter must not inherit those collisions.
+        'pg_generated_base'=>'pg-12345',
+        'pg_admin_line1'=>achbotAdminBulkAccountRemark('pg-12345','bulk:9001:987811',1,2,'pasarguard','digits'),
+        'pg_admin_line2'=>achbotAdminBulkAccountRemark('pg-12345','bulk:9001:987811',2,2,'pasarguard','digits'),
+        'pg_admin_replay'=>achbotAdminBulkAccountRemark('pg-99999','bulk:9001:987811',1,2,'pasarguard','digits'),
+        'pg_admin_new_source'=>achbotAdminBulkAccountRemark('pg-12345','bulk:9001:987812',1,2,'pasarguard','digits'),
+        'pg_paid_line1'=>achbotPaidPurchaseRemark('pg-12345','pasarguard',12345,1,2,false,'digits'),
+        'pg_paid_line2'=>achbotPaidPurchaseRemark('pg-12345','pasarguard',12345,2,2,false,'digits'),
+        'pg_paid_replay'=>achbotPaidPurchaseRemark('pg-99999','pasarguard',12345,1,2,false,'digits'),
+        'pg_paid_new_source'=>achbotPaidPurchaseRemark('pg-12345','pasarguard',12346,1,2,false,'digits'),
+        'pg_paid_normal'=>achbotPaidPurchaseRemark('pg-1001-12345','pasarguard',12345,1,2,false,''),
+        'pg_admin_normal'=>achbotAdminBulkAccountRemark('pg-1001-12345','bulk:9001:987811',1,2,'pasarguard',''),
+        'pg_paid_single'=>achbotPaidPurchaseRemark('pg-12345','pasarguard',12345,1,1,false,'digits'),
+        'pg_paid_explicit_single'=>achbotPaidPurchaseRemark('chosen_name','pasarguard',12345,1,1,true,'manual'),
+        'pg_paid_explicit_multi'=>achbotPaidPurchaseRemark('chosen_name','pasarguard',12345,2,2,true,'manual'),
+        'pg_admin_manual'=>achbotAdminBulkAccountRemark('batch_custom','bulk:9001:987811',1,2,'pasarguard','manual'),
+        'pg_long_prefix'=>achbotAdminBulkAccountRemark(str_repeat('x',96).'-12345','bulk:9001:987811',1,2,'pasarguard','digits'),
         'pasarguard_base'=>$first];
 } else {
     require $root.'/src/Purchase/EntryAndBulk.php';
@@ -173,23 +194,47 @@ def check():
         sql(work,env,(ROOT/'migrations/post-v9/007_service_effects.sql').read_text())
         driver=work/'nonpaid-route.php';driver.write_text(PHP)
         observed=php(work,env,driver,route='alias_identity')
-        assert len(observed)==1 and observed[0]['name']=='ALIAS_IDENTITY',observed
+        assert len(observed)==1 and observed[0]['name']=='STYLE_IDENTITY',observed
         evidence=observed[0]
         assert evidence['different_base'],evidence
         assert evidence['bulk_first']==evidence['bulk_second'] and all(
-            len(evidence[key])==32 and evidence[key].startswith('mbz_bulk_')
+            len(evidence[key])<=32 and
+            __import__('re').fullmatch(r'mbz-[0-9]{10}',evidence[key])
             for key in ('bulk_first','bulk_second','bulk_other_line','bulk_other_source'))
         assert len(set(evidence[key] for key in
             ('bulk_first','bulk_other_line','bulk_other_source')))==3
-        assert (evidence['paid_first']==evidence['paid_second']==
-                evidence['paid_single_first']==evidence['paid_single_second'])
-        assert all(len(evidence[key])==32 and evidence[key].startswith('mbz_paid_')
+        assert evidence['paid_first']==evidence['paid_second']
+        assert all(__import__('re').fullmatch(r'mbz-[0-9]{10}',evidence[key])
                    for key in ('paid_first','paid_second','paid_other_line','paid_other_source'))
         assert len(set(evidence[key] for key in
             ('paid_first','paid_other_line','paid_other_source')))==3
-        assert evidence['paid_explicit']=='chosen_name' and (
-            evidence['pasarguard_original']==evidence['pasarguard_base'])
-        cases.append('source_stable_admin_and_paid_marzban_aliases_ignore_build_remark_randomness')
+        assert evidence['paid_single_first']==evidence['pasarguard_base'] and (
+            evidence['paid_single_second']!=evidence['paid_single_first'])
+        assert evidence['paid_explicit']=='chosen_name'
+        assert evidence['paid_manual_multi'].startswith('chosen_name_') and (
+            evidence['paid_manual_multi'].endswith('_2'))
+        assert __import__('re').fullmatch(r'someserver-1001-[0-9]{10}',evidence['admin_default'])
+        assert evidence['admin_manual'].startswith('batch_custom_') and (
+            evidence['admin_manual'].endswith('_1'))
+        import re
+        assert (evidence['pg_admin_line1']==evidence['pg_admin_replay'] and
+                evidence['pg_paid_line1']==evidence['pg_paid_replay'])
+        for group in (('pg_admin_line1','pg_admin_line2','pg_admin_new_source'),
+                      ('pg_paid_line1','pg_paid_line2','pg_paid_new_source')):
+            names=[evidence[key] for key in group]
+            assert len(set(names))==3 and all(
+                re.fullmatch(r'pg-[0-9]{10}',name) and len(name)<=100
+                for name in names),names
+        assert (re.fullmatch(r'pg-1001-[0-9]{10}',evidence['pg_paid_normal']) and
+                re.fullmatch(r'pg-1001-[0-9]{10}',evidence['pg_admin_normal']))
+        assert evidence['pg_paid_single']==evidence['pg_generated_base']
+        assert evidence['pg_paid_explicit_single']=='chosen_name'
+        assert evidence['pg_paid_explicit_multi'].startswith('chosen_name_')
+        assert evidence['pg_admin_manual'].startswith('batch_custom_')
+        assert len(evidence['pg_long_prefix'])==100 and re.fullmatch(
+            r'x+-[0-9]{10}',evidence['pg_long_prefix'])
+        cases.append('configured_single_style_and_source_stable_bulk_decimal_identifiers')
+        cases.append('pasarguard_forced_random_collision_source_bound_bulk_and_provider_limits')
         def reset():
             sql(work,env,'DELETE FROM service_effects')
             purchase.init(work,env,'http://127.0.0.1:9')
@@ -285,9 +330,8 @@ def check():
                 new_names=[e['remark'] for e in created if e['name']=='POST']
                 assert len(new_names)==n,(n,update_id,created)
                 assert all(
-                    name=='mbz_bulk_'+hashlib.sha256(
-                        f'bulk:9001:{update_id}:{i+1}'.encode()).hexdigest()[:23]
-                    and len(name)==32
+                    name.startswith('batch_custom_') and
+                    name.endswith('_'+str(i+1)) and len(name)<=32
                     for i,name in enumerate(new_names)),new_names
                 assert not set(new_names).intersection(manual_names)
                 assert not set(new_names).intersection(firstnames)
@@ -302,6 +346,21 @@ def check():
                 "service_effects WHERE source_kind='admin_bulk'")=='6'
         cases.append('real_manual_remark_two_independent_single_and_multi_batches_unique_names_no_replay')
 
+        # The administrator form has no manual per-account username input.
+        # Empty plan description must still use the same standard name shape.
+        reset()
+        sql(work,env,"UPDATE server_plans SET descr='' WHERE id=7")
+        sql(work,env,"UPDATE users SET step='createAccAmount7_30_2' WHERE userid=9001")
+        fallback=php(work,env,driver,route='bulk',actor=9001,text='2',
+                     remark_mode='manual',update_id=987814)
+        fallback_names=[e['remark'] for e in fallback if e['name']=='POST']
+        assert len(fallback_names)==2 and all(
+            __import__('re').fullmatch(r'[A-Za-z0-9_-]+-9001-[0-9]{10}',name)
+            for name in fallback_names),fallback
+        assert len(set(fallback_names))==2
+        assert capacity()==8
+        cases.append('admin_bulk_empty_manual_description_uses_normal_single_account_shape')
+
         reset()
         # Regression from real installed RC30: the bot accepted up to 100
         # username bytes, while the Marzban /api/user backing SQL field is 32.
@@ -315,8 +374,9 @@ def check():
         assert len(compact_posts)==2 and len([e for e in compact if e['name']=='DELIVER'])==2,compact
         compact_names=[e['remark'] for e in compact_posts]
         assert (len(set(compact_names))==2 and all(
-            name.startswith('mbz_bulk_') and len(name)==32
-            for name in compact_names)),compact_names
+            name.startswith('prefix_') and len(name)==32
+            and name.endswith('_'+str(i+1))
+            for i,name in enumerate(compact_names))),compact_names
         assert capacity()==8 and effects('admin_bulk')=='1\tlocal_recorded\t2\n2\tlocal_recorded\t0'
         assert not [e for e in php(work,env,driver,route='bulk',actor=9001,
             text='2',remark_mode='manual',update_id=987811,

@@ -277,10 +277,16 @@ if (
             null
         );
 
-        // Bind uniqueness to the verified Telegram update, not to the
-        // manually configured (possibly identical) plan description.
+        // Keep the configured single-account style, with a stable per-line
+        // numeric suffix for independent administrator bulk requests.
+        $remarkMode=(string)($botState['remark']??'');
+        if ($remarkMode==='manual' && (string)$remark==='') {
+            $remarkMode='';
+            $remark=buildRemark(['remark'=>''],$srv_remark,'',$uid);
+        }
         $remark=achbotAdminBulkAccountRemark(
-            (string)$remark,$bulkSource,$i);
+            (string)$remark,$bulkSource,$i,$count,(string)$serverType,
+            $remarkMode);
         [$response, $remark, $port, $effectId] = achbotCreateNonPaymentAccount(
             $connection,'admin_bulk',$bulkSource,$uid,$i,$count,[
                 'is_primary_admin'=>($uid===(int)$admin),

@@ -376,13 +376,16 @@ if (
             $uniqid = generateRandomString(42, $protocol);
             [$port] = getNextPortAndIncrease('settings/temp.txt', $portType);
 
-            $remark = buildRemark($botState, $srv_remark, $payInfo['description'], $uid);
-            if ($accountCount>1 && (($botState['remark']??'')==='manual')) {
-                $remark .= '_'.$i;
+            $remarkMode=(string)($botState['remark']??'');
+            $remark=buildRemark($botState,$srv_remark,$payInfo['description'],$uid);
+            if ($remarkMode==='manual' && $accountCount>1 &&
+                (string)$remark==='') {
+                $remarkMode='';
+                $remark=buildRemark(['remark'=>''],$srv_remark,'',$uid);
             }
             $remark=achbotPaidPurchaseRemark((string)$remark,$serverType,
                 $payId,$i,$accountCount,
-                (($botState['remark']??'')==='manual'));
+                $remarkMode==='manual',$remarkMode);
             $lastRemarkForAdminMsg = $remark;
 
             [$response, $remark, $port, $effectId] = achbotContinuePaidAccount(

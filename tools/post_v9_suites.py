@@ -1387,19 +1387,38 @@ def run_presentation(tmp: str) -> tuple[dict, dict]:
         'paid_pg_resume_verified_locally_without_native_create',
         'paid_pg_resume_known_id_readback_never_posts',
         'paid_pg_resume_persisted_remote_id_mismatch_denied',
+        # Reviewer REQUIRED-01: same forced random base must not collide
+        # across PasarGuard administrator/paid ordinals or owner sources;
+        # source-real loopback POST/GET + 007 + order/report identities.
+        'pg_admin_forced_same_random_base_source_bound_distinct_native_names',
+        'pg_admin_full_two_slot_capacity_and_original_007_ordinals',
+        'pg_admin_unlinked_remote_accounts_never_false_complete',
+        'pg_admin_first_original_order_effect_link',
+        'pg_admin_partial_report_identifies_exact_committed_account',
+        'pg_admin_second_original_order_effect_link',
+        'pg_admin_complete_report_preserves_both_original_account_names',
+        'pg_paid_bulk_pins_current_native_group_quote',
+        'pg_paid_same_random_base_distinct_source_and_ordinal_names',
+        'pg_paid_full_count_reserved_once_with_original_007_lines',
+        'pg_paid_preorder_report_never_false_complete',
+        'pg_paid_complete_report_contains_each_source_bound_name',
+        'pg_paid_repeated_source_no_second_native_create',
+        *(f'pg_paid_bulk_line_{line}_verified_native' for line in (1,2)),
+        *(f'pg_paid_original_line_{line}_order_effect_link' for line in (1,2)),
+        *(f'pg_paid_{line}_line_report_finality' for line in (1,2)),
     }
-    if not (provider_integration.get("complete") is True and provider_integration.get("cases",0)>=301
+    if not (provider_integration.get("complete") is True and provider_integration.get("cases",0)>=320
             and required_pg.issubset(provider_integration.get('checks',[]))
             and provider_integration.get("actual_php_curl") is True
             and provider_integration.get("owned_socket_mariadb") is True
             and provider_integration.get("real_provider_tested") is False
-            and provider_integration.get("lifecycle_cases")==261
+            and provider_integration.get("lifecycle_cases")==280
             and provider_integration.get("admin_read_authorization_cases")==40
             and provider_integration.get("forbidden_order_queries")==0
             and provider_integration.get("forbidden_provider_requests")==0
             and provider_integration.get("baseline_red") is True
             and provider_integration.get("baseline_red_source")=="fb138eacdc5817922cc1e1c9c200323d24c79838"
-            and provider_integration.get("original_provider_integration_cases")==238
+            and provider_integration.get("original_provider_integration_cases")==257
             and native_renewal_complete
             and [proof.get('cases') for proof in native_renewal_proofs]==[43,20,63]
             and native_renewal_proofs[0].get('loopback_native_pasar_guard') is True
@@ -2651,6 +2670,42 @@ def run_effects(tmp: str) -> tuple[dict, dict]:
                     'unknown_native_addon_admission_refused',
                     'original_mariadb_socket_only','synthetic_payment_spy')},
             },sort_keys=True))
+    # Reviewer REQUIRED-02: the ACTUAL custom BUY_SUB Catalogue request
+    # must retain literal '0' through hosted payment on BOTH gateways and
+    # ALL configured naming modes. Each test owns a separate disposable
+    # physical provider to respect the real unique-username constraint.
+    explicit_zero_path=Path(tmp)/"hosted-explicit-zero.json"
+    explicit_zero_run=subprocess.run(
+        ["python3",str(ROOT/"tools/test_post_v9_hosted_explicit_zero.py"),
+         "--run-disposable","--report",str(explicit_zero_path)],
+        cwd=ROOT,timeout=120,capture_output=True,text=True)
+    if explicit_zero_run.returncode!=0:
+        raise RuntimeError("Hosted explicit literal-zero username regression failed:\n"+
+            (explicit_zero_run.stderr or explicit_zero_run.stdout)[-5000:])
+    hosted_zero=json.loads(explicit_zero_path.read_text())
+    required_hosted_zero={
+        'original_custom_form_denies_invalid_username_before_invoice',
+        *(f'custom_draft_{gateway}_{mode}_persists_literal_zero'
+          for gateway in ('nextpay','zarinpal')
+          for mode in ('default','digits','manual')),
+        *(f'hosted_{gateway}_{mode}_zero_exact_order_effect_finance_capacity'
+          for gateway in ('nextpay','zarinpal')
+          for mode in ('default','digits','manual')),
+        *(f'hosted_{gateway}_{mode}_zero_replay_no_second_effect'
+          for gateway in ('nextpay','zarinpal')
+          for mode in ('default','digits','manual')),
+    }
+    if not (hosted_zero.get('complete') is True
+            and hosted_zero.get('cases')==len(required_hosted_zero)==19
+            and set(hosted_zero.get('scenarios',[]))==required_hosted_zero
+            and hosted_zero.get('real_catalogue_php') is True
+            and hosted_zero.get('real_gateway_return_php') is True
+            and hosted_zero.get('owned_socket_mariadb') is True
+            and hosted_zero.get('synthetic_merchant_and_native') is True
+            and hosted_zero.get('real_external_operations')==0):
+        raise RuntimeError('Hosted literal-zero request/payment/effect proof incomplete')
+    finance['hosted_explicit_zero_username']=hosted_zero
+
     # #26 distinct account identity: verified by source-native PHP and
     # independent socket-only MariaDB, not by changes in account totals.
     effect_path=Path(tmp)/"account-service-effects.json"
@@ -3382,7 +3437,9 @@ def run_funding(tmp: str) -> tuple[dict, dict]:
         "two_real_admin_batches_race_one_available_server_slot",
         "real_manual_remark_two_independent_single_and_multi_batches_unique_names_no_replay",
         "admin_bulk_long_base_compact_marzban_username_32_no_remote_replay",
-        "source_stable_admin_and_paid_marzban_aliases_ignore_build_remark_randomness",
+        "configured_single_style_and_source_stable_bulk_decimal_identifiers",
+        "pasarguard_forced_random_collision_source_bound_bulk_and_provider_limits",
+        "admin_bulk_empty_manual_description_uses_normal_single_account_shape",
         "invalid_manual_remark_rejected_without_remote_or_capacity_effect",
         "nonpaid_source_db_insert_failure_before_post_no_capacity_loss",
         "trial_postcommit_telegram_failure_no_recreate"
@@ -3442,6 +3499,7 @@ def run_funding(tmp: str) -> tuple[dict, dict]:
         "r2_exact_wallet_order_allocation_100_3_no_replay",
         "r2_exact_wallet_order_allocation_101_2_no_replay",
         "real_multi_wallet_checkout_full_hold_order_delivery_after_finality",
+        "real_wallet_manual_mode_bulk_without_name_defaults_to_standard_style",
         "real_multi_wallet_second_line_ambiguous_stays_paid_hold_no_replay",
         "paid_marzban_long_multi_username_compacted_single_manual_predebit_denied",
         "real_custom_wallet_checkout_single_effect_after_commit",
