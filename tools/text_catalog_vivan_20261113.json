@@ -5,12 +5,12 @@
   "source_identity": {
     "user": {
       "base_sha256": "a7dfac1ca9b1e31514c15d0b49371d98b1afc1da112d9c34950ae46cf6b8696f",
-      "approved_sha256": "ad3fd7d2c00aa24a0d41b8042c5bfb7eaba87c3c0dcb52fd06369484d1df629c"
+      "approved_sha256": "be32cd064848f3878db6fe850f0c8179797a48b47b5880b788c24cab22e22bae"
     },
     "admin": {
       "base_sha256": "89c991c12cfffce8c739c9e55b1a2fc0bdfe59b8928da0ad8398470d24f73a99",
       "approved_sha256": "d8c3d452b8aeef602ded60d09ade0e6675fb433c6c01a422365aa39f186a36dd"
     }
   },
-  "change_scope": "approved Vivan copy, back navigation, wallet-topup controls and Telegram gateway-policy redesign"
+  "change_scope": "Owner-approved Vivan wallet/gateway UI copy, back navigation, and concise subscription-link overflow warning"
 }

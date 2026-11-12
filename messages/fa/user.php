@@ -448,7 +448,7 @@ return [
         'presentation.present.text.3ff0456031' => '' . "\n" . '🔁 لینک کمکی اشتراک:' . "\n" . '',
         'presentation.config_qr_name_suffix' => '…',
         'presentation.config_qr_delivery_unconfirmed' => '⚠️ ارسال کامل QR یا متن کانفیگ تأیید نشد. پیام‌های دریافت‌شده را بررسی کنید و در صورت نیاز دوباره دکمهٔ کد QR کانفیگ را بزنید.',
-        'presentation.present.text.6b058a11c6' => 'ℹ️ تعداد یا طول لینک‌ها از ظرفیت نمایش بیشتر است؛ برای دریافت همه تنظیمات از لینک اشتراک استفاده کنید یا با پشتیبانی تماس بگیرید.',
+        'presentation.present.text.6b058a11c6' => '⚠️ برای دریافت همه کانفیگ ها از لینک اشتراک استفاده کنید.',
         // presentation.config_message
         'presentation.config_message.text.2953f9a4ad' => '' . "\n" . '🔌 لینک تکی کانفیگ:' . "\n" . 'CONNECT-LINK' . "\n" . '',
         'presentation.config_message.text.359fef2e2b' => '' . "\n" . '' . "\n" . '♻️ در صورتی که قصد دارید حجم دیگری خریداری کنید می توانید از دکمه ← 🔄 <b>تغییر پلن</b> استفاده و بعد تمدید کنید.',
