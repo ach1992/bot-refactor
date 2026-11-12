@@ -708,8 +708,8 @@ if (!function_exists('createServerAccount')) {
  * Independent authenticated admin updates must map to distinct, stable
  * Marzban account identities even when manual remark is unchanged.
  *
- * The readable administrator/plan prefix survives; a source-bound suffix
- * makes the actual remote username repeatable for a specific update + line.
+ * Generated names use the fixed mbz_bulk_ prefix and a source/ordinal
+ * digest, independent of any plan description or randomized base.
  * Never derive a fresh name when reconciling an uncertain journal dispatch.
  */
 if (!function_exists('achbotAdminBulkAccountRemark')) {

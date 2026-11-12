@@ -705,7 +705,7 @@ def run_services(tmp: str) -> tuple[dict, dict]:
              'archived_renderer_sha256':'4a34ed56370842e75ddb16563908c7c0497736851bbbc0da81c17b686e29fb9c',
              'actual_archived_renderer_RED':['marzban','pasarguard'],'synthetic_Telegram_delivery':True,
              'production_mutations':0,'live_provider_calls':0}),
-        ('shared_plan_review_regressions','test_shared_plan_review_fixes.py','cases',360,
+        ('shared_plan_review_regressions','test_shared_plan_review_fixes.py','cases',366,
             {'actual_php':True,'disposable_mariadb':True,
              'native_providers':['marzban','pasarguard'],
              'panel_group_admin_independent':True,
@@ -750,7 +750,10 @@ def run_services(tmp: str) -> tuple[dict, dict]:
                     'correction_complete_uses_only_original_get_finalization',
                     'correction_local_finality_failure_leaves_both_journals_held',
                     'correction_replayed_after_local_failure_no_second_put',
-                    'correction_delayed_get_only_commits_both_original_and_audit'))
+                    'correction_delayed_get_only_commits_both_original_and_audit',
+                    'a02_b03_original_failed_finality_preserves_old_pending_quote',
+                    'a02_b03_uncertain_correction_holds_invoice_and_no_replay',
+                    'a02_b03_get_only_final_atomically_retires_old_invoice'))
             }
             if not required_correction.issubset(evidence.get('checks',[])):
                 raise RuntimeError('A02 durable correction evidence incomplete')
