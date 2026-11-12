@@ -1,7 +1,15 @@
 # Current source and published release contracts
 
 
-## Pending source correction — restore configured account naming
+## Published RC32 — original username shape and verified CI speedup
+
+[v0.10.0-rc.32](https://github.com/ach1992/bot-refactor/releases/tag/v0.10.0-rc.32) packages the independently reviewed and merged [PR #152](https://github.com/ach1992/bot-refactor/pull/152) runtime naming correction, while [PR #153](https://github.com/ach1992/bot-refactor/pull/153) changes only CI infrastructure/test scheduling. Original configured `server-userId-number` and `server-number` formats, source/ordinal-stable generated suffixes, manual username `"0"`, original 007/payment identities, Marzban/PasarGuard admission rules and per-account reporting are preserved. No migration, schema, new provider, Cron or installed-side effect is introduced relative to RC31. The source release is not Chili installation acceptance. See [RC31 → RC32](RC31-TO-RC32.md), [Issue #147](https://github.com/ach1992/bot-refactor/issues/147) and [Issue #144](https://github.com/ach1992/bot-refactor/issues/144).
+
+**Acceptance:** PR #152 exact full PHP 8.5 [CI #43190781457](https://github.com/ach1992/bot-refactor/actions/runs/43190781457) and PR #153 exact new-target full PHP 8.5 [CI #43196616962](https://github.com/ach1992/bot-refactor/actions/runs/43196616962) were both successful with eight native families and protected aggregate. Each received independent HIGH_ASSURANCE APPROVE before its authorized merge. The RC32 documentation-only release preparation is separate from those runtime/CI changes and does not introduce new behavioral code.
+
+**Historical source-preparation notice:** The immediately following naming/hosted-checkout paragraphs were written before PR #152 merged; their old pending/unreleased labels are superseded by the RC32 publication statement above. Retain their accepted behavior requirements, not their old status.
+
+## Historical source correction — restore configured account naming
 
 **Owner decision 2026-11-12:** RC31's fixed `mbz_bulk_` and `mbz_paid_`
 names are not the desired user-visible account naming convention. New
@@ -16,11 +24,10 @@ and no-repeat rules. Generated PasarGuard bulk usernames must also be
 source/ordinal-stable (rather than passing through random 4/5-digit bases),
 including in wallet pre-debit admission. No old-version compatibility layer,
 new table or migration is
-required. This is **unreleased source work**; the immutable RC31 artifact
-and previously installed files are not changed by this documentation.
+required. This source correction was integrated through PR #152; RC31 remains an immutable historical artifact and installed files are unchanged by GitHub publication.
 See [Issue #147](https://github.com/ach1992/bot-refactor/issues/147).
 
-**Independent review REQUIRED-02 (unreleased):** The custom BUY_SUB form
+**Historical independent review REQUIRED-02 (resolved in PR #152):** The custom BUY_SUB form
 already admits literal username `0`, but hosted gateway fulfillment previously
 treated it as absent via PHP `empty()`. The hosted caller now distinguishes an
 empty string from `0` and preserves the exact accepted single-account name.
@@ -29,7 +36,7 @@ fulfillment under default/digits/manual modes, original 007 effect/order/amount,
 full-count capacity ownership, provider validation, and no-repeat behavior.
 No schema migration, provider calls or automatic legacy-account renaming.
 
-## Published RC31 — service-plan, financial-finality and bulk-reporting corrections
+## Previous published RC31 — service-plan, financial-finality and bulk-reporting corrections
 
 [v0.10.0-rc.31](https://github.com/ach1992/bot-refactor/releases/tag/v0.10.0-rc.31) publishes the previously integrated, independently reviewed [PR #149](https://github.com/ach1992/bot-refactor/pull/149) and [PR #150](https://github.com/ach1992/bot-refactor/pull/150). The first candidate's two exact PHP 8.5 full-family runs [#43113439195](https://github.com/ach1992/bot-refactor/actions/runs/43113439195) and [#43114752477](https://github.com/ach1992/bot-refactor/actions/runs/43114752477) succeeded; #150's exact full-family run [#43119266197](https://github.com/ach1992/bot-refactor/actions/runs/43119266197) succeeded. The integrated-main checks [#43118287967](https://github.com/ach1992/bot-refactor/actions/runs/43118287967) and [#43124739660](https://github.com/ach1992/bot-refactor/actions/runs/43124739660) succeeded using explicitly identified same-tree evidence reuse, not new eight-family executions. RC31's final Git tag and manifest own its published commit identity.
 
@@ -276,7 +283,7 @@ The reviewed candidate passed [8/8 native PHP 8.5 families](https://github.com/a
 
 ## Published RC28 — source-only manual receipt reasons and gift preflight
 
-[v0.10.0-rc.28](https://github.com/ach1992/bot-refactor/releases/tag/v0.10.0-rc.28) published independently approved [PR #138](https://github.com/ach1992/bot-refactor/pull/138) and [PR #139](https://github.com/ach1992/bot-refactor/pull/139): protected typed manual-rejection reasons and non-consuming authenticated gift-card screening before staff disclosure. Unavailable/uncertain API remains subject to legitimate staff review. No new SQL migration. [RC27 -> RC28 guide](https://github.com/ach1992/bot-refactor/releases/download/v0.10.0-rc.28/RC27-TO-RC28.md). RC31 is the latest published source; none of RC29, RC30 or RC31 publication proves an installed rollout.
+[v0.10.0-rc.28](https://github.com/ach1992/bot-refactor/releases/tag/v0.10.0-rc.28) published independently approved [PR #138](https://github.com/ach1992/bot-refactor/pull/138) and [PR #139](https://github.com/ach1992/bot-refactor/pull/139): protected typed manual-rejection reasons and non-consuming authenticated gift-card screening before staff disclosure. Unavailable/uncertain API remains subject to legitimate staff review. No new SQL migration. [RC27 -> RC28 guide](https://github.com/ach1992/bot-refactor/releases/download/v0.10.0-rc.28/RC27-TO-RC28.md). RC32 is the latest published source; none of RC29, RC30 or RC31 publication proves an installed rollout.
 
 ## Published RC27 — source-only simplified automatic-gateway exception inbox
 
