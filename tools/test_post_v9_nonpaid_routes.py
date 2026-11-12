@@ -149,7 +149,24 @@ if (($spec['route']??'trial')==='trial') {
         'paid_manual_multi'=>achbotPaidPurchaseRemark('chosen_name','marzban',12345,2,2,true,'manual'),
         'admin_default'=>achbotAdminBulkAccountRemark($default,'bulk:9001:987811',1,2,'marzban','default'),
         'admin_manual'=>achbotAdminBulkAccountRemark('batch_custom','bulk:9001:987811',1,2,'marzban','manual'),
-        'pasarguard_original'=>achbotPaidPurchaseRemark($first,'pasarguard',12345,1,2,false,'digits'),
+        // Force the same buildRemark() random output for every ordinal.
+        // The actual PHP formatter must not inherit those collisions.
+        'pg_generated_base'=>'pg-12345',
+        'pg_admin_line1'=>achbotAdminBulkAccountRemark('pg-12345','bulk:9001:987811',1,2,'pasarguard','digits'),
+        'pg_admin_line2'=>achbotAdminBulkAccountRemark('pg-12345','bulk:9001:987811',2,2,'pasarguard','digits'),
+        'pg_admin_replay'=>achbotAdminBulkAccountRemark('pg-99999','bulk:9001:987811',1,2,'pasarguard','digits'),
+        'pg_admin_new_source'=>achbotAdminBulkAccountRemark('pg-12345','bulk:9001:987812',1,2,'pasarguard','digits'),
+        'pg_paid_line1'=>achbotPaidPurchaseRemark('pg-12345','pasarguard',12345,1,2,false,'digits'),
+        'pg_paid_line2'=>achbotPaidPurchaseRemark('pg-12345','pasarguard',12345,2,2,false,'digits'),
+        'pg_paid_replay'=>achbotPaidPurchaseRemark('pg-99999','pasarguard',12345,1,2,false,'digits'),
+        'pg_paid_new_source'=>achbotPaidPurchaseRemark('pg-12345','pasarguard',12346,1,2,false,'digits'),
+        'pg_paid_normal'=>achbotPaidPurchaseRemark('pg-1001-12345','pasarguard',12345,1,2,false,''),
+        'pg_admin_normal'=>achbotAdminBulkAccountRemark('pg-1001-12345','bulk:9001:987811',1,2,'pasarguard',''),
+        'pg_paid_single'=>achbotPaidPurchaseRemark('pg-12345','pasarguard',12345,1,1,false,'digits'),
+        'pg_paid_explicit_single'=>achbotPaidPurchaseRemark('chosen_name','pasarguard',12345,1,1,true,'manual'),
+        'pg_paid_explicit_multi'=>achbotPaidPurchaseRemark('chosen_name','pasarguard',12345,2,2,true,'manual'),
+        'pg_admin_manual'=>achbotAdminBulkAccountRemark('batch_custom','bulk:9001:987811',1,2,'pasarguard','manual'),
+        'pg_long_prefix'=>achbotAdminBulkAccountRemark(str_repeat('x',96).'-12345','bulk:9001:987811',1,2,'pasarguard','digits'),
         'pasarguard_base'=>$first];
 } else {
     require $root.'/src/Purchase/EntryAndBulk.php';
@@ -199,8 +216,25 @@ def check():
         assert __import__('re').fullmatch(r'someserver-1001-[0-9]{10}',evidence['admin_default'])
         assert evidence['admin_manual'].startswith('batch_custom_') and (
             evidence['admin_manual'].endswith('_1'))
-        assert evidence['pasarguard_original']==evidence['pasarguard_base']
+        import re
+        assert (evidence['pg_admin_line1']==evidence['pg_admin_replay'] and
+                evidence['pg_paid_line1']==evidence['pg_paid_replay'])
+        for group in (('pg_admin_line1','pg_admin_line2','pg_admin_new_source'),
+                      ('pg_paid_line1','pg_paid_line2','pg_paid_new_source')):
+            names=[evidence[key] for key in group]
+            assert len(set(names))==3 and all(
+                re.fullmatch(r'pg-[0-9]{10}',name) and len(name)<=100
+                for name in names),names
+        assert (re.fullmatch(r'pg-1001-[0-9]{10}',evidence['pg_paid_normal']) and
+                re.fullmatch(r'pg-1001-[0-9]{10}',evidence['pg_admin_normal']))
+        assert evidence['pg_paid_single']==evidence['pg_generated_base']
+        assert evidence['pg_paid_explicit_single']=='chosen_name'
+        assert evidence['pg_paid_explicit_multi'].startswith('chosen_name_')
+        assert evidence['pg_admin_manual'].startswith('batch_custom_')
+        assert len(evidence['pg_long_prefix'])==100 and re.fullmatch(
+            r'x+-[0-9]{10}',evidence['pg_long_prefix'])
         cases.append('configured_single_style_and_source_stable_bulk_decimal_identifiers')
+        cases.append('pasarguard_forced_random_collision_source_bound_bulk_and_provider_limits')
         def reset():
             sql(work,env,'DELETE FROM service_effects')
             purchase.init(work,env,'http://127.0.0.1:9')

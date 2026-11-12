@@ -1,5 +1,18 @@
 # AChBot financial lifecycle — current contract and controlled consolidation
 
+**Unreleased PR #152 — generated bulk account identity:** New PasarGuard and
+Marzban administrator/paid bulk accounts use the existing configured
+`server-userId-number` or `server-number` shape with a source/ordinal-stable
+10-digit numeric suffix. PasarGuard retains its independent 100 ASCII-byte
+username limit (Marzban: 32); a generated server prefix may be shortened.
+Explicit single-account names remain exact. The same final formatter is used
+before a wallet debit and by wallet/manual/bank/hosted fulfillment. The
+original 007 journal, native account identity, capacity ownership and
+no-replay rules remain authoritative; never rename a dispatched operation.
+The longer bulk-only suffix minimizes random-base collision risk without any
+schema migration or old-release compatibility layer. Real installed-provider
+and customer-delivery acceptance remain separate from source tests.
+
 **Owner acceptance:** 2026-10-16, roadmap #29, finance owner #26. The immutable public `v0.10.0-rc.4` baseline includes merged PRs #42 and #43; [PR #44](https://github.com/ach1992/bot-refactor/pull/44) has since integrated the provider-shared ledger into `main` under independently approved source-only gates. Consult [GitHub Releases](https://github.com/ach1992/bot-refactor/releases) for the exact published artifact. On 2026-10-17 the identified Chili test installation was verified on-disk at RC5, its dedicated `chilibot` MariaDB database was verified after the Owner-authorized additive 003 migration (25 total tables, both new tables empty), and the Owner reported normal basic bot operation. This narrow acceptance is recorded in [Issue #26](https://github.com/ach1992/bot-refactor/issues/26#issuecomment-6225581330); other installations/schemas, live money and merchant settlement remain unverified. Publication, source merge, real database migration and financial acceptance are distinct gates. This file is the specialized implementation contract; `docs/PROJECT-SPEC.md` defines canonical product intent.
 
 ## Source-only customer wallet top-up request boundary (PR #55, Issues #26/#51)

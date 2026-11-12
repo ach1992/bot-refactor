@@ -196,8 +196,8 @@ function achbotEffectValidUsername(string $username,?string $provider=null): boo
  * a pending operation. The 007 journal, not this formatter, is replay truth.
  *
  * For long generated names only the server prefix is shortened to fit
- * Marzban's 32 ASCII bytes. Explicit single names stay exact; bulk
- * descriptions remain visible prefixes with source-distinct line suffixes.
+ * Marzban's 32 ASCII bytes (PasarGuard: 100). Explicit single names stay
+ * exact; bulk descriptions remain visible with source-distinct suffixes.
  */
 function achbotStyledAccountRemark(string $base,string $provider,string $source,
     int $ordinal,int $count,string $mode,bool $explicit=false,
@@ -221,10 +221,12 @@ function achbotStyledAccountRemark(string $base,string $provider,string $source,
         $room=$max-strlen($suffix);
         if ($room<1) throw new InvalidArgumentException('account_name_too_long');
         $name=substr($base,0,$room).$suffix;
-    } elseif ($provider!=='marzban') {
-        // PasarGuard generated names retain buildRemark(), not Marzban rules.
+    } elseif ($provider==='pasarguard' && !$adminBulk && $count===1) {
+        // Preserve the unmodified generated single-account name on PasarGuard.
         $name=$base;
     } else {
+        // Both providers must bind NEW bulk generated names to immutable
+        // source/ordinal. They differ only in their actual username ceiling.
         if (preg_match('/^(.+)-([0-9]{4,5})$/D',$base,$matches)!==1 ||
             preg_match('/^[A-Za-z0-9_-]+$/D',$matches[1])!==1)
             throw new InvalidArgumentException('account_name_generated_invalid');

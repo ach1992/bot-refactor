@@ -272,22 +272,22 @@ if (!function_exists('processWalletPayment')) {
                 if ($remarkMode==='manual' && !$manualRemark) $remarkMode='';
                 $prefixSuffix=$remarkMode==='digits' ? '-99999' :
                     '-'.$uid.'-99999';
-                // Validate the FINAL prospective Marzban identity while the
-                // original wallet/plan quote is locked, BEFORE debiting money.
-                // Single explicit customer names are not silently renamed;
-                // paid multiple-account aliases use the original invoice ID.
-                $generatedValid=$isCustom || $manualRemark ||
-                    achbotEffectValidUsername($serverRemark.$prefixSuffix);
-                if ((string)($plan['panel_type']??'')==='marzban') {
+                // Preflight the FINAL provider-bound username before debit,
+                // including PasarGuard bulk names and their longer 100-byte
+                // ceiling. Single explicit names remain exact; source/ordinal
+                // names are bound to the original payment ID.
+                $provider=(string)($plan['panel_type']??'');
+                $generatedValid=false;
+                if (in_array($provider,['marzban','pasarguard'],true)) {
                     try {
                         $sample=$isCustom || $manualRemark
                             ? $persistedRemark : $serverRemark.$prefixSuffix;
-                        $sample=achbotPaidPurchaseRemark($sample,'marzban',
+                        $sample=achbotPaidPurchaseRemark($sample,$provider,
                             (int)$payInfo['id'],$quantity,$quantity,
                             $isCustom || $manualRemark,$remarkMode);
-                        $generatedValid=achbotEffectValidUsername($sample,'marzban');
-                        // Keep an invalid configured purchase prefix from
-                        // bypassing the wallet pre-debit source preflight.
+                        $generatedValid=achbotEffectValidUsername($sample,$provider);
+                        // Do not silently repair a malformed configured
+                        // prefix by truncating away invalid source bytes.
                         if (!$isCustom && !$manualRemark &&
                             !achbotEffectValidUsername($serverRemark))
                             $generatedValid=false;

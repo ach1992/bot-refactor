@@ -5,14 +5,17 @@
 
 **Owner decision 2026-11-12:** RC31's fixed `mbz_bulk_` and `mbz_paid_`
 names are not the desired user-visible account naming convention. New
-administrator and paid multi-account Marzban usernames must preserve
+administrator and paid multi-account Marzban/PasarGuard usernames must preserve
 the configured single-account shape (`server-userId-number` or
 `server-number`), while explicit single names remain exact. For new
 bulk operations the numeric portion remains bound to the original source
 and ordinal; manual bulk descriptions retain their readable prefix.
-Preserve actual Marzban 32-byte validation, original 007 operation identity,
-financial/capacity holds, no-repeat rules, and independent PasarGuard
-semantics. No old-version compatibility layer, new table or migration is
+Preserve Marzban's 32-byte and PasarGuard's independent 100-byte ASCII
+username limits, original 007 operation identity, financial/capacity holds,
+and no-repeat rules. Generated PasarGuard bulk usernames must also be
+source/ordinal-stable (rather than passing through random 4/5-digit bases),
+including in wallet pre-debit admission. No old-version compatibility layer,
+new table or migration is
 required. This is **unreleased source work**; the immutable RC31 artifact
 and previously installed files are not changed by this documentation.
 See [Issue #147](https://github.com/ach1992/bot-refactor/issues/147).
