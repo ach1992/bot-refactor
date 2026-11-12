@@ -1388,7 +1388,8 @@ function achbotPerformPaymentEffect($payRowId, $gateType, &$effectStage = null) 
 
             [$port] = getNextPortAndIncrease(dirname(__DIR__, 2) . '/settings/temp.txt', $portType);
 
-            $forcedRemark = (!empty($description)) ? $description : null;
+            // PHP empty('0') is true; preserve the customer's explicit name.
+            $forcedRemark = ((string)$description !== '') ? $description : null;
             $remark = buildRemark($botState, $srv_remark, $description, $user_id, $forcedRemark);
             // An explicit repeated name across a multi-account order would
             // previously trigger random renames on 409. Pin each line first.

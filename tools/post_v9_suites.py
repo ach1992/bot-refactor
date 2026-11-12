@@ -2643,6 +2643,42 @@ def run_effects(tmp: str) -> tuple[dict, dict]:
                     'unknown_native_addon_admission_refused',
                     'original_mariadb_socket_only','synthetic_payment_spy')},
             },sort_keys=True))
+    # Reviewer REQUIRED-02: the ACTUAL custom BUY_SUB Catalogue request
+    # must retain literal '0' through hosted payment on BOTH gateways and
+    # ALL configured naming modes. Each test owns a separate disposable
+    # physical provider to respect the real unique-username constraint.
+    explicit_zero_path=Path(tmp)/"hosted-explicit-zero.json"
+    explicit_zero_run=subprocess.run(
+        ["python3",str(ROOT/"tools/test_post_v9_hosted_explicit_zero.py"),
+         "--run-disposable","--report",str(explicit_zero_path)],
+        cwd=ROOT,timeout=120,capture_output=True,text=True)
+    if explicit_zero_run.returncode!=0:
+        raise RuntimeError("Hosted explicit literal-zero username regression failed:\n"+
+            (explicit_zero_run.stderr or explicit_zero_run.stdout)[-5000:])
+    hosted_zero=json.loads(explicit_zero_path.read_text())
+    required_hosted_zero={
+        'original_custom_form_denies_invalid_username_before_invoice',
+        *(f'custom_draft_{gateway}_{mode}_persists_literal_zero'
+          for gateway in ('nextpay','zarinpal')
+          for mode in ('default','digits','manual')),
+        *(f'hosted_{gateway}_{mode}_zero_exact_order_effect_finance_capacity'
+          for gateway in ('nextpay','zarinpal')
+          for mode in ('default','digits','manual')),
+        *(f'hosted_{gateway}_{mode}_zero_replay_no_second_effect'
+          for gateway in ('nextpay','zarinpal')
+          for mode in ('default','digits','manual')),
+    }
+    if not (hosted_zero.get('complete') is True
+            and hosted_zero.get('cases')==len(required_hosted_zero)==19
+            and set(hosted_zero.get('scenarios',[]))==required_hosted_zero
+            and hosted_zero.get('real_catalogue_php') is True
+            and hosted_zero.get('real_gateway_return_php') is True
+            and hosted_zero.get('owned_socket_mariadb') is True
+            and hosted_zero.get('synthetic_merchant_and_native') is True
+            and hosted_zero.get('real_external_operations')==0):
+        raise RuntimeError('Hosted literal-zero request/payment/effect proof incomplete')
+    finance['hosted_explicit_zero_username']=hosted_zero
+
     # #26 distinct account identity: verified by source-native PHP and
     # independent socket-only MariaDB, not by changes in account totals.
     effect_path=Path(tmp)/"account-service-effects.json"
