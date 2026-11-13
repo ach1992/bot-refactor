@@ -41,6 +41,12 @@ def check() -> dict:
         ):
             checkout.sql(work,env,(ROOT/'migrations/post-v9'/migration).read_text())
         checkout.sql(work,env,'UPDATE server_info SET ucount=100 WHERE id=2')
+        # The unchanged hosted add-on eligibility path also checks the
+        # pinned original SKU; a missing catalogue offer is a real denial.
+        checkout.sql(work,env,
+            "INSERT INTO increase_day (id,volume,price) VALUES (901,7,100)")
+        checkout.sql(work,env,
+            "INSERT INTO increase_plan (id,volume,price) VALUES (902,8,100)")
         # Provider issuance does a CURRENT primary-key read of persisted
         # BOT_STATES, not the Telegram preview globals. The test must seed
         # that real source of truth for a usable nextpay alternative.
