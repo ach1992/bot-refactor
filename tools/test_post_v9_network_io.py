@@ -78,7 +78,6 @@ set_error_handler(static function($level,$message) {throw new \ErrorException($m
 $case=\json_decode($argv[2],true,512,JSON_THROW_ON_ERROR);
 $GLOBALS['case']=$case;
 $GLOBALS['options']=[];
-$GLOBALS['closed']=false;
 class QueryResult {
     public function fetch_assoc(): array {
         return ['panel_url'=>'http://fixture.invalid','username'=>'operator','password'=>'password','type'=>'marzban'];
@@ -107,7 +106,6 @@ function curl_setopt($ch,$option,$value): bool {
 function curl_exec($ch) {return $GLOBALS['case']['raw'];}
 function curl_errno($ch): int {return (int)$GLOBALS['case']['errno'];}
 function curl_getinfo($ch,$info): int {return (int)$GLOBALS['case']['http'];}
-function curl_close($ch): void {$GLOBALS['closed']=true;}
 $source=\file_get_contents($argv[1].'/src/Panel/Accounts.php');
 $start=\strpos($source,'function changeMarzbanState(');
 if ($start===false) throw new \RuntimeException('missing toggle function');
@@ -120,7 +118,7 @@ $bounded=($opts[CURLOPT_TIMEOUT]??null)===20 &&
     ($opts[CURLOPT_FOLLOWLOCATION]??null)===false &&
     ($opts[CURLOPT_SSL_VERIFYPEER]??null)===true &&
     ($opts[CURLOPT_SSL_VERIFYHOST]??null)===2;
-echo \json_encode(['result'=>$result,'bounded'=>$bounded,'closed'=>$GLOBALS['closed']],
+echo \json_encode(['result'=>$result,'bounded'=>$bounded],
     JSON_THROW_ON_ERROR);
 """
 
@@ -184,7 +182,7 @@ def verify(root: Path = ROOT) -> dict:
                 raise RuntimeError('Offline Marzban '+name+': '+repr(response.stderr[-1600:]))
             observed=json.loads(response.stdout)
             record=observed['result']
-            assert observed['bounded'] and observed['closed'], (name,observed)
+            assert observed['bounded'], (name,observed)
             assert record['success'] is expected_success, (name,observed)
             assert bool(record.get('uncertain')) is expected_uncertain, (name,observed)
 
@@ -192,7 +190,7 @@ def verify(root: Path = ROOT) -> dict:
     assert 'CURLOPT_CONNECTTIMEOUT, 5' in toggle and 'CURLOPT_TIMEOUT, 20' in toggle
     assert 'CURLOPT_FOLLOWLOCATION, false' in toggle
     assert "'uncertain'=>true" in toggle and 'curl_errno($curl)' in toggle
-    assert 'curl_close($curl)' in toggle and '$http!==200' in toggle
+    assert 'curl_close($curl)' not in toggle and '$http!==200' in toggle
 
     for path, action in (('pay/checkout.php', 'PaymentRequest'),
                          ('src/Finance/GatewayReturn.php','PaymentVerification')):

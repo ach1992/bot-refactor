@@ -1103,7 +1103,6 @@ function changeMarzbanState($server_id,$remark){
     $raw=curl_exec($curl);
     $errno=curl_errno($curl);
     $http=(int)curl_getinfo($curl,CURLINFO_HTTP_CODE);
-    curl_close($curl);
     // The PUT may have taken effect despite a missing acknowledgement.
     // Never claim success (or safely retry) after a transport failure.
     if ($raw===false || $errno!==0 || $http!==200)
