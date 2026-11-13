@@ -64,11 +64,20 @@ yes(!achbotAdminAssignLevel($connection,9001,9001,9999,'support'),'missing targe
 yes(achbotAdminAssignLevel($connection,9001,9001,9004,'support'),'owner assigns support');
 yes(achbotAdminLevel(9004)==='support','explicit support role read');
 $expected=[
-9001=>['botReports','userReports','messageToSpeceficUser','increaseUserWallet','decreaseUserWallet','createMultipleAccounts','giftVolumeAndDay','banUser','unbanUser','manageorderdatabase','serversSetting','categoriesSetting','backplan','discount_codes','mainMenuButtons','ticketsList','message2All','agentsList','pinManageAll','adminsList','attentionInbox','gateWays_Channels','botSettings','mainMenu'],
-9002=>['botReports','userReports','messageToSpeceficUser','increaseUserWallet','decreaseUserWallet','createMultipleAccounts','giftVolumeAndDay','banUser','unbanUser','manageorderdatabase','serversSetting','categoriesSetting','backplan','discount_codes','mainMenuButtons','ticketsList','message2All','agentsList','pinManageAll','attentionInbox','gateWays_Channels','botSettings','mainMenu'],
-9003=>['userReports','messageToSpeceficUser','increaseUserWallet','decreaseUserWallet','createMultipleAccounts','giftVolumeAndDay','banUser','unbanUser','manageorderdatabase','discount_codes','mainMenuButtons','ticketsList','message2All','agentsList','pinManageAll','attentionInbox','mainMenu'],
+9001=>['botReports','userReports','messageToSpeceficUser','increaseUserWallet','decreaseUserWallet','createMultipleAccounts','giftVolumeAndDay','banUser','unbanUser','manageorderdatabase','serversSetting','categoriesSetting','backplan','discount_codes','mainMenuButtons','ticketsList','message2All','agentsList','pinManageAll','adminsList','attentionInbox','gr|l','gateWays_Channels','botSettings','mainMenu'],
+9002=>['botReports','userReports','messageToSpeceficUser','increaseUserWallet','decreaseUserWallet','createMultipleAccounts','giftVolumeAndDay','banUser','unbanUser','manageorderdatabase','serversSetting','categoriesSetting','backplan','discount_codes','mainMenuButtons','ticketsList','message2All','agentsList','pinManageAll','attentionInbox','gr|l','gateWays_Channels','botSettings','mainMenu'],
+9003=>['userReports','messageToSpeceficUser','increaseUserWallet','decreaseUserWallet','createMultipleAccounts','giftVolumeAndDay','banUser','unbanUser','manageorderdatabase','discount_codes','mainMenuButtons','ticketsList','message2All','agentsList','pinManageAll','attentionInbox','gr|l','mainMenu'],
 9004=>['userReports','banUser','unbanUser','manageorderdatabase','attentionInbox','mainMenu'],
 ];
+foreach(['owner'=>true,'manager'=>true,'operator'=>true,'support'=>false] as $tier=>$allowed)
+ yes(achbotAdminLevelCan($tier,'gateway_rules')===$allowed,'payment eligibility editor tier '.$tier);
+foreach([9001,9002,9003,9004] as $actor) {
+ $from_id=$actor;
+ yes(achbotAdminRequestAllowed('gr|l',null,'none')===($actor!==9004),
+     'gateway rules callback excludes Support '.$actor);
+ yes(achbotAdminRequestAllowed(null,null,'gr|exempt|wallet')===($actor!==9004),
+     'gateway exemption input excludes Support '.$actor);
+}
 foreach($expected as $actor=>$callbacks){$from_id=$actor;$keys=json_decode(getAdminKeys(),true);$actual=[];foreach($keys['inline_keyboard'] as $row)foreach($row as $button)$actual[]=$button['callback_data'];yes($actual===$callbacks,'actual exact admin keyboard '.$actor);}
 
 // A pre-existing repeatable-read snapshot must not preserve a revoked tier.

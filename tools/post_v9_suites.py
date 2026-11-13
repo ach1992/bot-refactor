@@ -47,8 +47,8 @@ def run_admin(tmp: str) -> tuple[dict, dict]:
     result = {}
     owner_r5={}
     r5_suites=[
-        ('roles','test_owner_r5_roles.py',633,
-         {'complete':True,'cases':633,'real_disposable_mariadb':True,'actual_admin_keyboard':True,
+        ('roles','test_owner_r5_roles.py',645,
+         {'complete':True,'cases':645,'real_disposable_mariadb':True,'actual_admin_keyboard':True,
           'db_only_staff_authority':True,'legacy_roleless_operator':True,
           'obsolete_staff_arrays_ignored':True,'obsolete_array_denials':3,
           'no_obsolete_array_import':True,'explicit_manager_assignment':True,
@@ -1245,8 +1245,8 @@ def run_wallet(tmp: str) -> tuple[dict, dict]:
     admin_added=len(successor['admin']['added'])
     user_added=len(successor['user']['added'])
     expected_catalog={
-        'status':'PASS','current_catalog_keys':2883+admin_added+user_added,
-        'current_admin_keys':1933+admin_added,'current_user_keys':950+user_added,
+        'status':'PASS','current_catalog_keys':2883+admin_added+user_added+len(catalog_lineage.GATEWAY_CONTROLS_KEYS),
+        'current_admin_keys':1933+admin_added+len(catalog_lineage.GATEWAY_CONTROLS_KEYS),'current_user_keys':950+user_added,
         'retired_experimental_keys':129,'retired_experimental_topics':10,
         'new_copy_entries':33,'current_runtime_files':132,
         'new_copy_references_unbound':0,
@@ -1862,6 +1862,9 @@ def run_authorization(tmp: str) -> tuple[dict, dict]:
              'b1_read_committed_future_success_unrestricted_buyer_not_nonbuyer_dated_denied',
              'b1_repeatable_read_zero_success_unrestricted_buyer_not_nonbuyer_dated_denied',
              'b1_repeatable_read_future_success_unrestricted_buyer_not_nonbuyer_dated_denied',
+             'per_category_and_or_default_and_category_guard',
+             'malformed_or_toggle_denies',
+             'or_valid_history_with_invalid_age_and_default_and_fail',
              'or_and_categories_READ-COMMITTED',
              'or_and_categories_REPEATABLE-READ',
              'new_category_all',
@@ -1911,9 +1914,17 @@ def run_authorization(tmp: str) -> tuple[dict, dict]:
              'method_omission_retains_legacy_explicit_off',
              'intentional_explicit_new_rule_overrides_legacy_off',
              'nowpayments_topup_flag_independent',
+             'per_method_exemption_live_flag_and_legacy_off',
+             'missing_exemption_field_preserves_legacy',
+             'explicit_null_exemption_denied_final_and_preview',
+             'explicit_null_admin_page_and_writer_atomic_denials',
+             'malformed_exemption_fails_closed',
              'operator_all_methods_longest_category_callbacks_under_64_bytes',
              'operator_preview_does_not_persist',
              'operator_explicit_add',
+             'operator_real_private_multi_id_add_remove_atomic',
+             'operator_allowed_support_denied_signed_exemption',
+             'signed_combine_toggle_stale_replay_and_row_location',
              'operator_private_integer_confirm_commit',
              'operator_quick_preset_stale_cas_and_stay_on_metric',
              'operator_invalid_and_cancel',

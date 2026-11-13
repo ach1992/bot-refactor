@@ -2004,6 +2004,20 @@ return [
         'invite_reward_prompt' => "پاداش هر دعوت به تومان (عدد صحیح از 0 تا 999999999؛ مقدار 0 یا /clear برای غیرفعال‌کردن)",
         'invite_reward_hint' => "🎁 مبلغ پاداش را با عدد صحیح انگلیسی از 0 تا 999999999 به تومان وارد کنید؛ برای غیرفعال‌کردن 0 یا /clear را بفرستید.",
 
+        // Dedicated payment-rule navigation and direct method exemptions
+        'gateway_rule_admin.exempt_button' => '🔓 معاف کاربر از قوانین',
+        'gateway_rule_admin.exempt_prompt' => [
+            'text' => "🔓 معافیت قوانین: {method}\n👥 تعداد شناسه‌های معاف: {count}\n🎫 شناسه‌های فعلی: <code>{ids}</code>\n\n👤 شناسه‌های عددی را با فاصله، ویرگول یا در چند خط ارسال کنید.\n➕ افزودن: <code>123456 789012</code>\n➖ حذف: <code>-123456 -789012</code>\n💡 این معافیت فقط وقتی روش پرداخت روشن باشد معتبر است.",
+            'parameters' => ['method','count','ids']
+        ],
+        'gateway_rule_admin.exempt_saved' => '✅ شناسه‌های معاف از قوانین به‌روزرسانی شدند.',
+        'gateway_rule_admin.combine_label' => '⚖️ اعمال همزمان قوانین',
+        'gateway_rule_admin.combine_on' => '✅ روشن',
+        'gateway_rule_admin.combine_off' => '⚪ خاموش',
+        'gateway_rule_admin.summary.match_mode' => [
+            'text' => "⚖️ ترکیب شرط‌ها: {mode}\n",
+            'parameters' => ['mode']
+        ],
         // gateway_rule_admin.gateway_admin_method_flags
         'gateway_rule_admin.gateway_admin_method_flags.text.c7cf334c78' => 'شارژ',
         'gateway_rule_admin.gateway_admin_method_flags.text.452e2203fa' => 'سایر',
@@ -2089,7 +2103,7 @@ return [
 ",
         'gateway_rule_admin.summary.no_transaction_conditions' => "🔓 محدودیت تراکنش ندارید.
 ",
-        'gateway_rule_admin.summary.rule_help' => "💡 فقط شرط‌های فعال بررسی می‌شوند و همهٔ آن‌ها باید برقرار باشند. برای تغییر هر شرط از دکمه‌های زیر استفاده کنید. بعد از ذخیره در همین بخش می‌مانید.
+        'gateway_rule_admin.summary.rule_help' => "💡 در حالت روشن همهٔ شرط‌های فعال لازم‌اند (AND) و در حالت خاموش کافی است یکی برقرار باشد (OR). برای تغییر هر شرط از دکمه‌های زیر استفاده کنید.
 ",
         'gateway_rule_admin.summary.age_button' => '📅 تغییر حداقل سن عضویت',
         'gateway_rule_admin.summary.edit_suffix' => ' | ویرایش',

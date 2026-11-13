@@ -55,13 +55,24 @@ def main() -> dict:
     ],cwd=ROOT,text=True)
     groups=json.loads(shell)
     current={a:historical.flatten(v) for a,v in groups.items()}
+    assert current['user'][historical.GIFT_SELECTOR_KEY]=='🎁 خرید گیفت کارت | ریالی'
+    # Only selector keyboards consume the legacy gift-card method label;
+    # the separate purchase-link button and renewal price copy stay unchanged.
+    selectors=('src/Finance/WalletStart.php','src/Purchase/SelectPlan.php',
+               'src/Purchase/Catalogue.php','src/Finance/Routes/Extensions.php')
+    hits={name:(ROOT/name).read_text().count("['gift_card']") for name in selectors}
+    assert hits=={'src/Finance/WalletStart.php':1,
+                  'src/Purchase/SelectPlan.php':1,
+                  'src/Purchase/Catalogue.php':1,
+                  'src/Finance/Routes/Extensions.php':2},hits
+    assert current['user']['telegram.markup.receipt_and_cancel.button.4595a70ab5']=='🎁 خرید گیفت‌کارت'
     successor=historical.vivan_20261113_source()
     successor_added={a:len(successor[a]['added']) for a in ('user','admin')}
     added=historical.GIFT_PRECHECK_SHA256
     chili=historical.chili_copy_reference()[0]
     # The two source-pinned additions remain independently reviewable.
     _, service_before, service_after=historical.service_change_catalog_layer()
-    assert len(current['admin'])==1911+len(added['admin'])+len(chili['added'])+8+len(service_after['admin'])-len(service_before['admin'])+successor_added['admin'] and \
+    assert len(current['admin'])==1911+len(added['admin'])+len(chili['added'])+8+len(service_after['admin'])-len(service_before['admin'])+successor_added['admin']+len(historical.GATEWAY_CONTROLS_KEYS) and \
         len(current['user'])==942+len(added['user'])+len(service_after['user'])-len(service_before['user'])+successor_added['user']
     assert not set(current['admin'])&set(current['user'])
     # Verify exact current additions and recipient placement before

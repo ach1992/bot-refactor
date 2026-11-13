@@ -534,6 +534,7 @@ function getAdminKeys(){
         [['agent_list','agentsList'],['pin_manage_all','pinManageAll']],
         [['admins_list','adminsList']],
         [['__review','attentionInbox']],
+        [['gateway_rules_settings','gr|l']],
         [['gateways_settings','gateWays_Channels'],['bot_settings','botSettings']],
     ];
     $keyboard=[];
@@ -542,7 +543,10 @@ function getAdminKeys(){
         foreach ($row as [$key,$callback]) {
             $capability=$key==='__review'?'review':achbotAdminButtonCapability($key);
             if (!achbotAdminLevelCan($level,$capability)) continue;
-            $line[]=['text'=>$key==='__review'?achbotMessage('automatic_gateway_review.menu'):$buttonValues[$key],
+            $line[]=['text'=>$key==='__review'?achbotMessage('automatic_gateway_review.menu'):
+                ($key==='gateway_rules_settings'
+                    ? achbotMessage('admin_settings.config.get_gate_ways_keys.button.2110b39744')
+                    : $buttonValues[$key]),
                 'callback_data'=>$callback];
         }
         if ($line) $keyboard[]=$line;
@@ -695,7 +699,8 @@ function achbotAdminGatewayChange($update,int $actor,int $chat,int $message,
         $bound=$kind==='toggle' ? 'changeGateWays'.$key
               : ($kind==='audience' ? 'cycleGatewayAudience_'.$key
               : ($kind==='rule' ? $key : (string)$value));
-        if (strlen($bound)>64 || !function_exists('achbotWebhookIngressAuthenticated') ||
+        if (($kind!=='number' && strlen($bound)>64) ||
+            !function_exists('achbotWebhookIngressAuthenticated') ||
             !achbotWebhookIngressAuthenticated())
             throw new RuntimeException('gateway_webhook_not_authenticated');
         if (!function_exists('achbotDirectGiftWebhook'))
@@ -719,7 +724,7 @@ function achbotAdminGatewayChange($update,int $actor,int $chat,int $message,
         $pk=$findActor($connection,$actor);
         $currentStep=null;
         $authorize=static function(mysqli $db) use(
-            $actor,$primary,$pk,$findActor,&$currentStep
+            $actor,$primary,$pk,$findActor,$key,&$currentStep
         ): void {
             // FIRST read in the transaction: lock CURRENT actor privileges.
             $stmt=$db->prepare('SELECT id,userid,isAdmin,step FROM users WHERE id=? FOR UPDATE');
@@ -734,7 +739,8 @@ function achbotAdminGatewayChange($update,int $actor,int $chat,int $message,
                 (string)$current['step']==='banned' ||
                 $findActor($db,$actor)!==$pk)
                 throw new RuntimeException('gateway_actor_no_longer_authorized');
-            if (!achbotAdminCanLocked($db,$actor,$primary,'gateways'))
+            if (!achbotAdminCanLocked($db,$actor,$primary,
+                str_starts_with($key,'gr|')?'gateway_rules':'gateways'))
                 throw new RuntimeException('gateway_actor_no_longer_authorized');
             $currentStep=(string)$current['step'];
         };
@@ -1356,8 +1362,6 @@ function getGateWaysKeys(){
 		],
         [['text'=>\achbotMessage('admin_settings.config.get_gate_ways_keys.button.fff77fef22'),
           'callback_data'=>'paymentPolicySettings']],
-        [['text'=>\achbotMessage('admin_settings.config.get_gate_ways_keys.button.2110b39744'),
-          'callback_data'=>'gr|l']],
 			[['text'=>$buttonValues['back_button'],'callback_data'=>"managePanel"]]
         ]]);
 }

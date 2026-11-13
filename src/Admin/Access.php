@@ -27,13 +27,13 @@ function achbotAdminLevel(?int $actor=null,?mysqli $db=null,?int $primary=null,b
     } catch (Throwable $ignored) {$complete=false;return 'none';}
 }
 function achbotAdminLevelCan(string $level,string $capability): bool {
-    if (!in_array($capability,['admin','admins','stats','servers','plans','bot_settings','gateways',
+    if (!in_array($capability,['admin','admins','stats','servers','plans','bot_settings','gateways','gateway_rules',
         'customers','moderation','orders','agents','operations','payments','review'],true)) return false;
     if ($level==='owner') return true;
     if ($capability==='admins') return false;
     if ($level==='manager') return true;
     if ($level==='operator') return in_array($capability,
-        ['admin','customers','moderation','orders','agents','operations','payments','review'],true);
+        ['admin','customers','moderation','orders','agents','operations','payments','review','gateway_rules'],true);
     return $level==='support' && in_array($capability,['admin','customers','moderation','orders','payments','review'],true);
 }
 function achbotAdminLevelLabel(string $level): string {
@@ -139,7 +139,7 @@ function achbotAdminButtonCapability(string $key): string {
     return match($key) {
         'bot_reports'=>'stats','server_settings'=>'servers',
         'categories_settings','plan_settings'=>'plans',
-        'gateways_settings'=>'gateways','bot_settings'=>'bot_settings',
+        'gateways_settings'=>'gateways','gateway_rules_settings'=>'gateway_rules','bot_settings'=>'bot_settings',
         'admins_list'=>'admins','user_reports'=>'customers',
         'ban_user','unban_user'=>'moderation','manage_order_database'=>'orders',
         'agent_list'=>'agents', default=>'operations',
@@ -153,7 +153,8 @@ function achbotAdminRequestCapability(string $value): ?string {
         'admin'=>'~^managePanel$~D',
         'admins'=>'~^(?:adminsList|addNewAdmin|delAdmin|adminRole\\||adminAssign\\||adminNotify\\|)~D',
         'review'=>'~^attention(?:Inbox|Case)~D',
-        'gateways'=>'~^(?:gateWays_Channels|changeGateWays|changePaymentKeys|achbotPaymentKey\\||gatewayAudienceSettings|cycleGatewayAudience_|paymentPolicy|editPaymentPolicy_|gr\\||editcartToCartAutoAcceptTime)~D',
+        'gateway_rules'=>'~^(?:gatewayAudienceSettings|gr\\|)~D',
+        'gateways'=>'~^(?:gateWays_Channels|changeGateWays|changePaymentKeys|achbotPaymentKey\\||cycleGatewayAudience_|paymentPolicy|editPaymentPolicy_|editcartToCartAutoAcceptTime)~D',
         'bot_settings'=>'~^(?:botSettings|changeBot|changeUpdateConfigLinkState|changeConfigRemarkType|editSupportID|editRewardChannel|editLockChannel|inviteSetting|inviteBanner|editInvite|editRewaredTime|addExemptUser|removeExempt|achbotExempt:|ic\\||achbotInstance:)~D',
         'stats'=>'~^(?:botReports|show_stats_menu|stats_|top_50_|agent_users_list|plan_sales|server_sales|custom_sales_date|awaitingDateRange)~D',
         'servers'=>'~^(?:serversSetting|nextServerPage|showServerSettings|toggleServerState|setServerState|addNewServer|addManagedServer|addNewMarzbanPanel|pgConnections|pgAddConnection|pgNewServer|managePanelGroups|manageMarzbanPanelGroups|addMarzbanPanelGroup|newMarzbanPanelGroup|deleteMarzbanPanelGroup_|editPanelGroup|editMarzbanGroup|setServerPanelGroup_|changesServer|editServer|editsServer|changeServerType|chhangeServerType|changePortType|changeRealityState|wizwizdeleteserver|yesDeleteServer|cancelDeleteServer|marzbanHostSettings|selectHost|saveServerHost|editSubLinks|subLinksInput|serverDisplay|achbotDisplay\\||achbotManage\\||achbotField\\||am\\||addserverName|addServer|pg:|pgRotate|pgServerGroups)~D',

@@ -91,7 +91,7 @@ return [
     'legacy_buttons' => [
         'back_to_main' => '↪️ بازگشت',
         'cart_to_cart' => '💳 کارت‌به‌کارت بانکی',
-        'gift_card' => '🎁 خرید گیفت‌کارت',
+        'gift_card' => '🎁 خرید گیفت کارت | ریالی',
         'manual_usdt' => '🧰 ارسال تتر یا ترون',
         'now_payment_gateway' => '💎 درگاه رمز ارز',
         'zarinpal_gateway' => '🌐 پرداخت آنلاین (زرین پال)',

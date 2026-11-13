@@ -231,6 +231,27 @@ def main():
                     assert not allowed(policy('wallet',[rule]),who=user,isolation=iso)
                 cases.append('b1_'+iso.replace('-','_').lower()+'_'+label+
                              '_success_unrestricted_buyer_not_nonbuyer_dated_denied')
+        # The category always matches; OR changes only active age/history filters.
+        combined=blank('buyers')
+        combined['registration_age_days']=145
+        combined['metrics']['buy']['count']=2
+        assert not allowed(policy('wallet',[combined]))
+        combined['match_all']=False
+        assert allowed(policy('wallet',[combined]))
+        combined['metrics']['buy']['count']=8
+        assert not allowed(policy('wallet',[combined]))
+        combined['registration_age_days']=120
+        assert allowed(policy('wallet',[combined]))
+        combined['match_all']=True
+        assert not allowed(policy('wallet',[combined]))
+        combined['match_all']=False
+        assert not allowed(policy('wallet',[combined]),who=1002)
+        no_filters=blank('buyers');no_filters['match_all']=False
+        assert allowed(policy('wallet',[no_filters]))
+        cases.append('per_category_and_or_default_and_category_guard')
+        invalid=blank('all');invalid['match_all']='off'
+        assert not allowed(policy('wallet',[invalid]))
+        cases.append('malformed_or_toggle_denies')
         agent=blank('agents');regular=blank('non_agents')
         regular['registration_age_days']=90
         regular['metrics']['buy']['count']=2
@@ -330,6 +351,14 @@ def main():
             sql(w,e,'UPDATE users SET date='+quoted(wrong)+' WHERE userid=1001')
             assert not allowed(s),wrong
             cases.append('bad_registration_'+label)
+        invalid_age=blank('all');invalid_age['registration_age_days']=1
+        invalid_age['metrics']['buy']['count']=1
+        invalid_age['match_all']=False
+        sql(w,e,"UPDATE users SET date='nope' WHERE userid=1001")
+        assert allowed(policy('wallet',[invalid_age]))
+        invalid_age['match_all']=True
+        assert not allowed(policy('wallet',[invalid_age]))
+        cases.append('or_valid_history_with_invalid_age_and_default_and_fail')
         sql(w,e,f"UPDATE users SET date='{now-140*86400}' WHERE userid=1001")
         s=policy('wallet',[blank('all')])
         sql(w,e,"INSERT INTO users(userid,name,username,refcode,wallet,date) "
@@ -383,6 +412,33 @@ def main():
         assert not allowed(s,'nowpayments',subject='INCREASE_WALLET')
         assert allowed(s,'nowpayments',subject='BUY_SUB')
         cases.append('nowpayments_topup_flag_independent')
+        excluded=policy('wallet',[blank('agents')],
+                        gatewayRuleExemptUsers={'wallet':[1001]})
+        assert allowed(excluded)
+        excluded['gatewayRules']['methods']['bank_transfer']=[blank('agents')]
+        assert not allowed(excluded,who=1001,method='bank_transfer')
+        assert not allowed(policy('wallet',[],gatewayRuleExemptUsers={
+            'bank_transfer':[1001]}))
+        assert not allowed(policy('wallet',[],walletState='off',
+                                 gatewayRuleExemptUsers={'wallet':[1001]}))
+        assert not allowed(policy('wallet',[],gatewayRuleExemptUsers={
+            'wallet':[999999]}),who=999999)
+        assert allowed({**initial,'gatewayAudience':{'wallet':'off'},
+                        'gatewayRuleExemptUsers':{'wallet':[1001]}})
+        cases.append('per_method_exemption_live_flag_and_legacy_off')
+        # Optional field may be absent, but explicit JSON null is malformed.
+        assert allowed(policy('wallet',[blank('all')]))
+        cases.append('missing_exemption_field_preserves_legacy')
+        explicit_null=policy('wallet',[blank('all')],gatewayRuleExemptUsers=None)
+        assert not allowed(explicit_null,final=True)
+        assert not allowed(explicit_null,final=False)
+        cases.append('explicit_null_exemption_denied_final_and_preview')
+        for bad in ({'wallet':[0]},{'wallet':['1001']},
+                    {'wallet':[1001,1001]},{'retired':[1001]},
+                    {'wallet':'1001'}):
+            assert not allowed(policy('wallet',[blank('all')],
+                                     gatewayRuleExemptUsers=bad)),bad
+        cases.append('malformed_exemption_fails_closed')
         # Rest of operator suite uses original source route and writer.
         store(initial)
         sequence=[1000]
@@ -397,7 +453,7 @@ def main():
         def button(prefix,who=9001):
             # Read the exact server-rendered callback before the operation.
             parts=prefix.split('|')
-            assert parts[0]=='gr' and parts[1] in ('t','v','c','n','p'),prefix
+            assert parts[0]=='gr' and parts[1] in ('t','h','v','c','n','p'),prefix
             method,category=parts[2],parts[3]
             metric=parts[4] if len(parts)>4 else 'age'
             route=('gr|f|' + method+'|'+category+'|'+metric
@@ -441,6 +497,98 @@ def main():
         events,_=act('gr|a|wallet|non_agents')
         assert state()['gatewayRules']['methods']['wallet'][0]['category']=='non_agents'
         cases.append('operator_explicit_add')
+        # A malformed persisted exemption must fail in the read-only page,
+        # and in the authenticated writer WITHOUT advancing its global
+        # source watermark or consuming the administrator's private wizard.
+        events,_=act('gr|e|wallet')
+        step_before=sql(w,e,'SELECT step FROM users WHERE userid=9001')
+        assert step_before=='gr|exempt|wallet'
+        source_before=sql(w,e,
+            "SELECT value FROM setting WHERE type='ACHBOT_ADMIN_GATEWAY_SOURCE'")
+        assert source_before
+        clean=state()
+        corrupt={**clean,'gatewayRuleExemptUsers':None}
+        sql(w,e,"UPDATE setting SET value="+quoted(
+            json.dumps(corrupt,ensure_ascii=False,separators=(',',':')))+
+            " WHERE type='BOT_STATES'")
+        events,_=act('gr|l')
+        assert any(x[0]=='edit' and 'روش‌های پرداخت' not in x[1]
+                   for x in events),events
+        for request in ('callback','number'):
+            if request=='callback':
+                events,_=act('gr|e|wallet')
+            else:
+                events,_=act(text='1001 1002',message=True)
+            assert state()==corrupt,(request,state())
+            assert sql(w,e,'SELECT step FROM users WHERE userid=9001')==step_before
+            assert sql(w,e,"SELECT value FROM setting WHERE type='ACHBOT_ADMIN_GATEWAY_SOURCE'")==source_before
+            assert any(x[0]=='deny' or
+                       (x[0]=='send' and 'معتبر' in x[1])
+                       for x in events),events
+        # Restore the synthetic fixture, never a live installation.
+        sql(w,e,"UPDATE setting SET value="+quoted(
+            json.dumps(clean,ensure_ascii=False,separators=(',',':')))+
+            " WHERE type='BOT_STATES'")
+        events,_=act(text='لغو',message=True)
+        assert sql(w,e,'SELECT step FROM users WHERE userid=9001')=='none'
+        cases.append('explicit_null_admin_page_and_writer_atomic_denials')
+        events,_=act('gr|m|bank_transfer')
+        keyboard=json.loads([e for e in events if e[0]=='edit'][-1][2])['inline_keyboard']
+        assert keyboard[-2][0]['callback_data']=='gr|e|bank_transfer'
+        assert keyboard[-1][0]['callback_data']=='gr|l'
+        events,_=act('gr|e|wallet')
+        assert sql(w,e,'SELECT step FROM users WHERE userid=9001')=='gr|exempt|wallet'
+        assert any(e[0]=='send' and 'شناسه' in e[1] for e in events)
+        events,_=act(text='1001, 1002\n1200 1001'+' '*2+'   1001'+' '*65,message=True)
+        assert state()['gatewayRuleExemptUsers']=={'wallet':[1001,1002,1200]}
+        assert sql(w,e,'SELECT step FROM users WHERE userid=9001')=='none'
+        events,_=act('gr|e|bank_transfer')
+        events,_=act(text='1400',message=True)
+        assert state()['gatewayRuleExemptUsers']=={
+            'wallet':[1001,1002,1200],'bank_transfer':[1400]}
+        events,_=act('gr|e|wallet')
+        before_exempt=json.dumps(state(),sort_keys=True)
+        events,_=act(text='1001 bad-id',message=True)
+        assert json.dumps(state(),sort_keys=True)==before_exempt
+        assert sql(w,e,'SELECT step FROM users WHERE userid=9001')=='gr|exempt|wallet'
+        events,_=act(text='-1002 -1200 1401',message=True)
+        assert state()['gatewayRuleExemptUsers']=={
+            'wallet':[1001,1401],'bank_transfer':[1400]}
+        assert sql(w,e,'SELECT step FROM users WHERE userid=9001')=='none'
+        cancelled=json.dumps(state(),sort_keys=True)
+        events,_=act('gr|e|wallet')
+        events,_=act(text='لغو',message=True)
+        assert json.dumps(state(),sort_keys=True)==cancelled
+        assert sql(w,e,'SELECT step FROM users WHERE userid=9001')=='none'
+        assert not any(e[0]=='send' and 'به‌روزرسانی شدند' in e[1] for e in events)
+        cases.append('operator_real_private_multi_id_add_remove_atomic')
+        sql(w,e,"UPDATE setting SET value='operator' WHERE type='ADMIN_ROLE_9002'")
+        events,_=act('gr|m|wallet',who=9002)
+        assert any(e[0]=='edit' for e in events)
+        events,_=act('gr|e|wallet',who=9002)
+        assert sql(w,e,'SELECT step FROM users WHERE userid=9002')=='gr|exempt|wallet'
+        events,_=act(text='1400',who=9002,message=True)
+        assert 1400 in state()['gatewayRuleExemptUsers']['wallet']
+        sql(w,e,"UPDATE setting SET value='support' WHERE type='ADMIN_ROLE_9002'")
+        before_exempt=json.dumps(state(),sort_keys=True)
+        events,_=act('gr|e|wallet',who=9002)
+        assert json.dumps(state(),sort_keys=True)==before_exempt
+        assert any(e[0]=='deny' for e in events)
+        sql(w,e,"UPDATE setting SET value='manager' WHERE type='ADMIN_ROLE_9002'")
+        cases.append('operator_allowed_support_denied_signed_exemption')
+        events,_=act('gr|r|wallet|non_agents')
+        keyboard=json.loads([e for e in events if e[0]=='edit'][-1][2])['inline_keyboard']
+        assert keyboard[-4][0]['callback_data'].startswith('gr|h|wallet|non_agents|')
+        assert 'اعمال همزمان قوانین' in keyboard[-4][1]['text']
+        assert keyboard[-4][1]['callback_data']==keyboard[-4][0]['callback_data']
+        old_toggle=button('gr|h|wallet|non_agents')
+        events,_=act(old_toggle)
+        assert state()['gatewayRules']['methods']['wallet'][0]['match_all'] is False
+        events,_=act(old_toggle)
+        assert state()['gatewayRules']['methods']['wallet'][0]['match_all'] is False
+        events,_=act(button('gr|h|wallet|non_agents'))
+        assert state()['gatewayRules']['methods']['wallet'][0]['match_all'] is True
+        cases.append('signed_combine_toggle_stale_replay_and_row_location')
         events,_=act(button('gr|n|wallet|non_agents|buy|count'))
         assert sql(w,e,'SELECT step FROM users WHERE userid=9001').startswith('gr|edit|')
         assert any(x[0]=='send' for x in events)
