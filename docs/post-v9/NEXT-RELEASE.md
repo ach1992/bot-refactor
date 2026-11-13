@@ -1,5 +1,33 @@
 # Current source and published release contracts
 
+## RC41 — API payment staff-digest lock order and recoverable projection
+
+[v0.10.0-rc.41](https://github.com/ach1992/bot-refactor/releases/tag/v0.10.0-rc.41)
+contains the independently approved correction from
+[PR #178](https://github.com/ach1992/bot-refactor/pull/178).
+
+An UPDATE ... JOIN in the administrator receipt/keyboard acknowledgment
+path could visit payment_attempts before pays, the opposite of regular
+payment settlement, contributing to an intermittent InnoDB Deadlock 1213
+when API and human approval overlapped. The new short transaction locks
+pays first, compares the current state and approved_by, then updates only
+the matching payment_attempts.evidence_staff_digest. The external Telegram
+edit is outside the transaction; SQL failures defer this optional digest
+to existing maintenance instead of replaying payment/provider/native effects.
+
+There are **no schema, private configuration, gateway policy or customer
+UX changes**. The new source-real PHP 8.5 fixture exercises nine cases
+including true InnoDB concurrency, stale state, nullable approver,
+synthetic deadlock rollback and normal deferred retry. Existing API and
+native preflight scenarios remain part of the official eight-family suite.
+The broader installed financial acceptance remains [Issue #26](https://github.com/ach1992/bot-refactor/issues/26);
+a source Release or ZIP staging does not close it.
+
+See the [RC40 → RC41 guide](RC40-TO-RC41.md). The official release archive
+may be placed in Vivan, Hell and Chili for later authorized installation;
+do not infer any live PHP, database, Cron, Telegram or provider update from
+the archive's presence.
+
 ## Published RC40 — first-start registration and verified mandatory join
 
 [v0.10.0-rc.40](https://github.com/ach1992/bot-refactor/releases/tag/v0.10.0-rc.40)
