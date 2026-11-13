@@ -105,7 +105,7 @@ def run_admin(tmp: str) -> tuple[dict, dict]:
           'runtime_schema_mutations':0,'runtime_automatic_data_writes':0}),
         ('user_info','test_owner_r5_user_info.py',46,
          {'result':'PASS','source_real':True,'owned_socket_mariadb':True,'baseline_missing_refresh_red':True}),
-        ('onboarding','test_post_v9_onboarding.py',33,
+        ('onboarding','test_post_v9_onboarding.py',51,
          {'complete':True,'source_real':True,'owned_socket_mariadb':True,
           'php85':True,'forced_membership_verified':True,
           'concurrent_registration':True,'referral_awarded_once':True,

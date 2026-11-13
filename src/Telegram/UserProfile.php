@@ -165,7 +165,9 @@ function achbotRegisterStartUser(
         if ($referrer !== null && $inviteReward > 0) {
             $stage = 'reward';
             $old = (int)$referrer['wallet'];
-            if ($old < 0 || $old > 2147483647 - $inviteReward)
+            // Wallet debt is a valid signed balance. A positive invitation
+            // credit may reduce that debt; only signed INT overflow is invalid.
+            if ($inviteReward > 2147483647 - $old)
                 throw new RuntimeException('reward_out_of_range');
             $new = $old + $inviteReward;
             $referrerId = (int)$referrer['id'];

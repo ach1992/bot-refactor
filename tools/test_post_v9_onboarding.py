@@ -363,6 +363,91 @@ def main() -> None:
               chat_type='group',chat_id=-100)
         yes(r['rows']==[] and not r['events'],
             "group_join_callback_neither_deletes_message_nor_registers")
+
+        # Independent review #1: legitimate administrator-adjusted debt must
+        # not prevent a different user from joining through a valid referral.
+        native.sql(w,env,"UPDATE users SET wallet=-100 WHERE userid=1001",DB)
+        r=run(actor=2440,text='/start 1001',reward=250)
+        yes(len(r['rows'])==1 and r['registered'] is True and
+            int(r['rows'][0]['refered_by'])==1001 and
+            int(r['inviter_wallet'])==150 and
+            any(e['text']=='HOME' for e in r['events'] if e['kind']=='send'),
+            "negative_inviter_balance_credits_debt_and_registers")
+        r=run(actor=2440,text='/start 1001',reward=250)
+        yes(r['registered'] is False and int(r['inviter_wallet'])==150,
+            "negative_debt_referral_not_repeated_with_current_row")
+        native.sql(w,env,"UPDATE users SET wallet=-100 WHERE userid=1001",DB)
+        r=run(actor=2441,forced=True,membership='left',text='/start 1001',reward=250)
+        yes(not r['rows'] and int(r['inviter_wallet'])==-100 and
+            [e['text'] for e in r['events'] if e['kind']=='send']==['JOIN_PROMPT'],
+            "negative_debt_reward_waits_for_mandatory_join")
+        r=run(actor=2441,forced=True,membership='member',
+              callback='haveJoined/start 1001',reward=250)
+        yes(len(r['rows'])==1 and r['registered'] is True and
+            int(r['inviter_wallet'])==150 and
+            any(e['text']=='HOME' for e in r['events'] if e['kind']=='send'),
+            "negative_debt_referral_after_join_verification")
+        r=run(actor=2441,forced=True,membership='member',
+              callback='haveJoined/start 1001',reward=250)
+        yes(r['registered'] is False and int(r['inviter_wallet'])==150,
+            "negative_debt_join_replay_does_not_double_credit")
+        native.sql(w,env,"UPDATE users SET wallet=-100 WHERE userid=1001",DB)
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            workers=[pool.submit(run,actor=2442,text='/start 1001',reward=250)
+                     for _ in range(2)]
+            outcomes=[job.result(timeout=25) for job in workers]
+        final_balance=int(native.sql(w,env,
+            "SELECT wallet FROM users WHERE userid=1001",DB).strip())
+        yes(final_balance==150 and
+            sum(x['registered'] is True for x in outcomes)==1 and
+            int(native.sql(w,env,"SELECT COUNT(*) FROM users WHERE userid=2442",DB).strip())==1,
+            "concurrent_negative_debt_referral_creates_one_row_and_reward")
+        native.sql(w,env,"UPDATE users SET wallet=2147483600 WHERE userid=1001",DB)
+        r=run(actor=2443,text='/start 1001',reward=250)
+        yes(not r['rows'] and int(r['inviter_wallet'])==2147483600 and
+            any(e['text']=='UNAVAILABLE' for e in r['events'] if e['kind']=='send'),
+            "signed_int_overflow_rolls_back_registration_and_reward")
+        native.sql(w,env,"UPDATE users SET wallet=-2147483648 WHERE userid=1001",DB)
+        r=run(actor=2444,text='/start 1001',reward=1)
+        yes(len(r['rows'])==1 and r['registered'] is True and
+            int(r['inviter_wallet'])==-2147483647,
+            "signed_int_lower_boundary_allows_valid_positive_reward")
+
+        # Independent review #2: a Home-only callback can display the menu,
+        # but must not burn a new user's one-time welcome/admin notice flag.
+        for offset,callback_name in enumerate(('mainMenu','evidenceHome','ph_invoiceFixture')):
+            user=2450+offset
+            native.sql(w,env,
+                "INSERT INTO users(userid,name,username,refcode,wallet,date,first_start) "
+                +f"VALUES ({user},'prior','prior',0,0,1700000000,NULL)",DB)
+            r=run(actor=user,callback=callback_name)
+            yes(len(r['rows'])==1 and r['rows'][0]['first_start'] is None and
+                [e['text'] for e in r['events'] if e['kind']=='send']==['HOME'] and
+                not any(e['kind']=='admin' for e in r['events']),
+                "home_callback_preserves_unsent_first_start_"+callback_name)
+            r=run(actor=user)
+            yes(len(r['rows'])==1 and r['rows'][0]['first_start']=='sent' and
+                [e['text'] for e in r['events'] if e['kind']=='send']==['HOME','WELCOME'] and
+                sum(e['kind']=='admin' for e in r['events'])==1,
+                "start_after_home_delivers_welcome_and_admin_"+callback_name)
+            r=run(actor=user)
+            yes(len(r['rows'])==1 and r['rows'][0]['first_start']=='sent' and
+                [e['text'] for e in r['events'] if e['kind']=='send']==['HOME'] and
+                not any(e['kind']=='admin' for e in r['events']),
+                "repeat_start_after_home_does_not_repeat_notifications_"+callback_name)
+        native.sql(w,env,
+            "INSERT INTO users(userid,name,username,refcode,wallet,date,first_start) "
+            "VALUES (2455,'prior','prior',0,0,1700000000,NULL)",DB)
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            tasks=[pool.submit(run,actor=2455) for _ in range(2)]
+            concurrent=[job.result(timeout=25) for job in tasks]
+        yes(sum(e['text']=='WELCOME' for x in concurrent for e in x['events']
+                if e['kind']=='send')==1 and
+            sum(e['kind']=='admin' for x in concurrent for e in x['events'])==1 and
+            sum(e['text']=='HOME' for x in concurrent for e in x['events']
+                if e['kind']=='send')==2,
+            "concurrent_start_after_existing_unsent_user_notifies_once")
+
     proof={'complete':True,'cases':len(checks),'checks':checks,
            'source_real':True,'owned_socket_mariadb':True,'php85':True,
            'forced_membership_verified':True,'concurrent_registration':True,
