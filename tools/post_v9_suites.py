@@ -391,6 +391,7 @@ def run_api(tmp: str) -> tuple[dict, dict]:
         'ready_only',
         'original_time',
         'bank_preissue_grace_and_minute_precision',
+        'bank_indexed_filter_and_source_time_guard',
         'sql_collision_fence',
         'pre_dispatch_intent',
         'sms_same_key_recovery',

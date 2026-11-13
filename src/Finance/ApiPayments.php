@@ -564,17 +564,11 @@ function achbotApiPaymentCheckBank(mysqli $db,array $claim): string {
         return is_array($proof)?achbotApiPaymentSettle($db,$id,$proof):'review';
     }
     if(time()>(int)$profile['issued_at']+(int)$profile['horizon_seconds'])return 'manual';
-    $after=max(0,(int)($a['evidence_cursor_id']??0));
-    for($page=0;$page<4;$page++) {
-        $result=achbotPaymentEvidenceSmsList($profile,$after);
-        if(empty($result['ok']))return 'unavailable';
-        $data=$result['data']??[];
-        $rows=is_array($data)&&isset($data['items'])?$data['items']:$data;
-        if(!is_array($rows))return 'review';
+    // Keep original proof/uniqueness/admission logic independent from search.
+    $inspect=static function(array $rows) use ($db,$a,$profile,$id): ?string {
         foreach($rows as $raw) {
             if(!is_array($raw))continue;
             $e=achbotPaymentEvidenceSmsNormalize($raw,$profile);
-            // Mismatched amounts are not candidates and never reach Reserve.
             if($e===null || !achbotPaymentEvidenceSmsMatches($e,$a,$profile))continue;
             $fresh=achbotApiPaymentRow($db,$id);if(!$fresh)return 'review';
             $mode=achbotApiPaymentTerminal($fresh)?'evidence_only':'settle';
@@ -584,13 +578,66 @@ function achbotApiPaymentCheckBank(mysqli $db,array $claim): string {
             if(!$handle)return 'review';
             $consumed=achbotPaymentEvidenceConsume($db,$handle);
             if(($consumed['status']??'')!=='proven')return (string)($consumed['status']??'review');
-            // A human may win while external consumption is in flight.
-            // Its committed state is final; only mark external evidence used.
+            // A human may win while remote consumption is in flight; a terminal
+            // human outcome must never be credited or applied again.
             $fresh=achbotApiPaymentRow($db,$id);
             if($fresh && achbotApiPaymentTerminal($fresh))return 'settled';
             $proof=$consumed['proof']??achbotPaymentEvidenceGetProof($db,$id);
             return is_array($proof)?achbotApiPaymentSettle($db,$id,$proof):'review';
         }
+        return null;
+    };
+    $quote=achbotPaymentEvidenceIntegralQuote($a['quote_amount']??null);
+    $issued=$profile['issued_at']??null;
+    if(($a['quote_currency']??null)!=='toman' || $quote===null ||
+        !is_int($issued) || $issued<=180)return 'review';
+
+    // WordPress 1.0.16 indexes exact amount/unit and immutable ingestion time.
+    // Start at original quote issuance minus 180s, NOT receipt submission time.
+    // Never use an upper ingestion bound: a delayed bank SMS can be stored
+    // after its real transfer time and still be eligible within the pinned
+    // original quote horizon checked by SmsMatches().
+    $filters=[['amount'=>(int)$quote,'display_unit'=>'toman','received_from'=>$issued-180]];
+    if((int)$quote<=intdiv(PHP_INT_MAX,10))
+        $filters[]=['amount'=>(int)$quote*10,'display_unit'=>'rial','received_from'=>$issued-180];
+    $legacy=false;
+    foreach($filters as $filter) {
+        $after=0;
+        for($page=0;$page<4;$page++) {
+            $result=achbotPaymentEvidenceSmsList($profile,$after,$filter);
+            if(($result['status']??'')==='ambiguous_time' &&
+                isset($filter['received_from'])) {
+                // WP site DATETIME during a timezone rollback may be ambiguous.
+                // Amount/unit filtering remains indexed; source-SMS transfer-time
+                // admission is still enforced locally to the original 180s gate.
+                unset($filter['received_from']);$page--;continue;
+            }
+            if(($result['status']??'')==='unsupported') {
+                // Older WP versions can accept unknown query args with HTTP 200.
+                // Preserve availability without treating an unfiltered page as
+                // exhaustive or weakening exact match/financial proof guards.
+                $legacy=true;break 2;
+            }
+            if(empty($result['ok']))return 'unavailable';
+            $outcome=$inspect($result['data']);
+            if($outcome!==null)return $outcome;
+            if(empty($result['has_more']))break;
+            $next=(int)$result['next_after_id'];
+            if($next<=$after)return 'review';
+            if($page===3)return 'review'; // Too many same-amount candidates.
+            $after=$next;
+        }
+    }
+    if(!$legacy)return 'monitoring';
+
+    // Backward-compatible fallback only for a demonstrably unsupported API.
+    // Current Blinko 1.0.16 uses the fast path and never scans old unrelated SMS.
+    $after=max(0,(int)($a['evidence_cursor_id']??0));
+    for($page=0;$page<4;$page++) {
+        $result=achbotPaymentEvidenceSmsList($profile,$after);
+        if(empty($result['ok']))return 'unavailable';
+        $outcome=$inspect($result['data']);
+        if($outcome!==null)return $outcome;
         $next=empty($result['has_more'])?0:(int)($result['next_after_id']??0);
         if($next!==0 && $next<=$after)return 'review';
         $cursor=$db->prepare('UPDATE payment_attempts SET evidence_cursor_id=? WHERE pay_row_id=? AND evidence_claim_token=?');
