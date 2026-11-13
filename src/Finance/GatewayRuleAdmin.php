@@ -136,8 +136,9 @@ function achbotGatewayRuleMutate(array $state,string $kind,string $key,
                 if ($item['remove']) unset($ids[$item['id']]);
                 else $ids[$item['id']]=true;
             }
+            // Keep insertion order so the operator can see the latest
+            // additions without changing the stored allowlist or schema.
             $current=array_map('intval',array_keys($ids));
-            sort($current,SORT_NUMERIC);
             if ($current) $exempt[$s['method']]=$current;
             else unset($exempt[$s['method']]);
             $state['gatewayRuleExemptUsers']=$exempt;
@@ -284,8 +285,7 @@ function achbotGatewayAdminExemptPrompt(string $method): string {
     if ($state===null || !array_key_exists($method,achbotPayUxAudienceMethods()))
         return achbotMessage('payment_settings.gateway_rule_admin.gateway_admin_page.button.36e4da5935');
     $ids=$state['gatewayRuleExemptUsers'][$method]??[];
-    $current=$ids ? implode(', ',array_slice($ids,0,30)) : '—';
-    if (count($ids)>30) $current.=' …';
+    $current=$ids ? implode(', ',array_slice($ids,-10)) : '—';
     return achbotMessage('payment_settings.gateway_rule_admin.exempt_prompt',[
         'method'=>achbotPayUxAudienceMethods()[$method],
         'count'=>count($ids),'ids'=>$current]);

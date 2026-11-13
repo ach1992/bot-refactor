@@ -66,7 +66,8 @@ $from_id=(int)$spec['actor'];$admin=9001;$chat_id=$from_id;
 $message_id=(int)($spec['message_id']??75);
 $data=(string)($spec['data']??'');$text=(string)($spec['text']??'');
 $botState=$spec['snapshot']??[];
-$buttonValues=['cancel'=>'لغو'];$cancelKey='{}';
+$buttonValues=['cancel'=>'❌ لغو عملیات'];$cancelKey='{}';
+$removeKeyboard='{"remove_keyboard":true}';
 $mainValues=['change_bot_settings_message'=>'Fixture settings'];
 $callbackId='fixture-callback';
 $stmt=$connection->prepare('SELECT * FROM users WHERE userid=? LIMIT 1');
@@ -529,8 +530,13 @@ def main():
         sql(w,e,"UPDATE setting SET value="+quoted(
             json.dumps(clean,ensure_ascii=False,separators=(',',':')))+
             " WHERE type='BOT_STATES'")
-        events,_=act(text='لغو',message=True)
+        events,_=act(text='❌ لغو عملیات',message=True)
         assert sql(w,e,'SELECT step FROM users WHERE userid=9001')=='none'
+        assert len(events)==2 and events[0][0]=='send' and 'لغو شد' in events[0][1],events
+        assert json.loads(events[0][2])=={'remove_keyboard':True},events
+        assert events[1][0]=='send' and 'inline_keyboard' in json.loads(events[1][2]),events
+        assert any(button['callback_data']=='gr|e|wallet'
+                   for row in json.loads(events[1][2])['inline_keyboard'] for button in row),events
         cases.append('explicit_null_admin_page_and_writer_atomic_denials')
         events,_=act('gr|m|bank_transfer')
         keyboard=json.loads([e for e in events if e[0]=='edit'][-1][2])['inline_keyboard']
@@ -542,6 +548,11 @@ def main():
         events,_=act(text='1001, 1002\n1200 1001'+' '*2+'   1001'+' '*65,message=True)
         assert state()['gatewayRuleExemptUsers']=={'wallet':[1001,1002,1200]}
         assert sql(w,e,'SELECT step FROM users WHERE userid=9001')=='none'
+        assert len(events)==2 and 'به‌روزرسانی شدند' in events[0][1],events
+        assert json.loads(events[0][2])=={'remove_keyboard':True}
+        assert events[1][0]=='send' and any(
+            button['callback_data']=='gr|e|wallet'
+            for row in json.loads(events[1][2])['inline_keyboard'] for button in row)
         events,_=act('gr|e|bank_transfer')
         events,_=act(text='1400',message=True)
         assert state()['gatewayRuleExemptUsers']=={
@@ -557,11 +568,32 @@ def main():
         assert sql(w,e,'SELECT step FROM users WHERE userid=9001')=='none'
         cancelled=json.dumps(state(),sort_keys=True)
         events,_=act('gr|e|wallet')
-        events,_=act(text='لغو',message=True)
+        events,_=act(text='❌ لغو عملیات',message=True)
         assert json.dumps(state(),sort_keys=True)==cancelled
         assert sql(w,e,'SELECT step FROM users WHERE userid=9001')=='none'
         assert not any(e[0]=='send' and 'به‌روزرسانی شدند' in e[1] for e in events)
+        assert len(events)==2 and json.loads(events[0][2])=={'remove_keyboard':True}
+        assert 'لغو شد' in events[0][1]
+        assert any(button['callback_data']=='gr|e|wallet'
+                   for row in json.loads(events[1][2])['inline_keyboard'] for button in row)
         cases.append('operator_real_private_multi_id_add_remove_atomic')
+        # Preserve insertion order, not numeric order. Render only the latest
+        # ten while the full exemption list remains stored and effective.
+        additions=[5500,3100,5400,5001,4500,3900,4800,4200,5300,3200,4700,6100]
+        events,_=act('gr|e|wallet')
+        events,_=act(text=' '.join(map(str,additions)),message=True)
+        assert state()['gatewayRuleExemptUsers']['wallet']==[1001,1401]+additions
+        assert len(events)==2 and json.loads(events[0][2])=={'remove_keyboard':True}
+        events,_=act('gr|e|wallet')
+        prompts=[event[1] for event in events
+                 if event[0]=='send' and 'شناسه‌های فعلی:' in event[1]]
+        assert len(prompts)==1,prompts
+        assert 'تعداد شناسه‌های معاف: 14' in prompts[0]
+        assert '<code>'+', '.join(map(str,additions[-10:]))+'</code>' in prompts[0],prompts
+        events,_=act(text='❌ لغو عملیات',message=True)
+        assert state()['gatewayRuleExemptUsers']['wallet']==[1001,1401]+additions
+        assert sql(w,e,'SELECT step FROM users WHERE userid=9001')=='none'
+        cases.append('exempt_recent_ten_insertion_order_and_cancel_from_full_list')
         sql(w,e,"UPDATE setting SET value='operator' WHERE type='ADMIN_ROLE_9002'")
         events,_=act('gr|m|wallet',who=9002)
         assert any(e[0]=='edit' for e in events)
