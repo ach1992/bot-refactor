@@ -121,10 +121,35 @@ if (defined('ACHBOT_VERIFIED_WEBHOOK_ENTRYPOINT') && (int)$from_id > 0 &&
     $memberStatus = is_object($membership) ? ($membership->result->status ?? null) : null;
     $joniedState = is_string($memberStatus) ? $memberStatus : null;
 }"""
+    # Historical first-actor guard remains exactly pinned to its accepted
+    # source. Issue #176's stronger join proof is a separately checked delta
+    # layered on top; never weaken the older archived comparison.
+    previous_cfg=subprocess.check_output([
+        'git','show','779996e3efa0acec168bab13121494051782132e:config.php'
+    ],cwd=ROOT).decode()
     old_membership=membership_block(old_cfg)
+    previous_membership=membership_block(previous_cfg)
     check(old_membership.count(original_call)==1 and
-          membership_block(cfg)==old_membership.replace(original_call,guarded_call),
+          previous_membership==old_membership.replace(original_call,guarded_call),
           'membership_only_exact_verified_actor_guard_delta')
+    verified_join_guard="""$joniedState = null;
+$joinMembershipVerified = false;
+// A configured mandatory channel is not bypassed when Telegram cannot verify
+// membership. The same result is checked again when "عضو شدم" is pressed.
+if (defined('ACHBOT_VERIFIED_WEBHOOK_ENTRYPOINT') && (int)$from_id > 0 &&
+    $channelLock !== null && $channelLock !== '') {
+    $membership = bot('getChatMember', ['chat_id' => $channelLock,'user_id' => $from_id]);
+    if (is_object($membership) && ($membership->ok ?? false) === true) {
+        $status = $membership->result->status ?? null;
+        $joniedState = is_string($status) ? $status : null;
+        $joinMembershipVerified = in_array($status,
+            ['creator','administrator','member'],true) ||
+            ($status === 'restricted' && ($membership->result->is_member ?? false) === true);
+    }
+}"""
+    check(previous_membership.count(guarded_call)==1 and
+          membership_block(cfg)==previous_membership.replace(guarded_call,verified_join_guard),
+          'issue176_only_verified_join_guard_delta')
     def join_block(source):
         marker="        $joinUrl = \\AchBot\\Presentation\\Text\\lockChannelJoinUrl("
         start=source.index(marker) if marker in source else source.index("        $lockChannelValue = trim($botState['lockChannel'] ?? '');")
