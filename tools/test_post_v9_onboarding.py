@@ -163,7 +163,11 @@ def call(w: Path, env: dict, spec: dict) -> dict:
          DB,json.dumps(spec)]
     p=subprocess.run(cmd,cwd=w,env=env,capture_output=True,text=True,timeout=20)
     if p.returncode!=0 or p.stderr or not p.stdout:
-        raise AssertionError("onboarding PHP: exit="+str(p.returncode)+" stderr="+p.stderr[-1400:])
+        log=w/"onboarding-errors.log"
+        log_tail=log.read_text(encoding="utf-8",errors="replace")[-1800:] if log.is_file() else ""
+        raise AssertionError("onboarding PHP: exit="+str(p.returncode)
+                             +" stderr="+p.stderr[-900:]+" output="+p.stdout[-500:]
+                             +" diagnostic="+log_tail)
     try:return json.loads(p.stdout)
     except json.JSONDecodeError as e:raise AssertionError(p.stdout[-1200:]) from e
 
