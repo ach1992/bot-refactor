@@ -27,7 +27,9 @@ SUBJECTS = (
 # Synthetic browser initiation is intentionally separate from Telegram
 # authentication. It must never rearm low_wallet by GET alone.
 STATES = {'walletState':'on','nextpay':'on','nowPaymentOther':'on',
-          'gatewayAudience':{'wallet':'all','nextpay':'all'}}
+          'manualUsdtState':'on',
+          'gatewayAudience':{'wallet':'all','nextpay':'all',
+                             'manual_usdt':'all','manual_trx':'all'}}
 
 def check() -> dict:
     cases=[]
@@ -181,6 +183,17 @@ def check() -> dict:
             assert claims(pid)[0]=='1',(subject,reselected,twice)
             cases.append(subject+'_alternative_hosted_once_and_replay_safe')
 
+        # Old USDT buttons are not mcm_ until ManualCrypto.php runs AFTER
+        # PrePayment.php. Reopen before the original network selector without
+        # claiming funds or choosing the destination.
+        actor,name,pid,oid=seed('buy','BUY_SUB',0,0,'LegacyManualCrypto')
+        chosen=telegram(actor,'payBuyWithManualUsdt'+name)
+        assert state(pid)=='pending',(chosen.get('error'),chosen['events'])
+        assert claims(pid)==('0','0','0')
+        assert any(event.get('name')=='editText' for event in chosen['events'])
+        assert not chosen['network_calls']
+        cases.append('legacy_manual_crypto_direct_button_reopens_before_network_menu')
+
         # Negative rearm probes use the identical real PrePayment.php path.
         # Leave each synthetic invoice untouched for unambiguous evidence.
         def negative(label,subject,kind,prefix,day,volume,setup=None,actor_override=None,
@@ -243,6 +256,9 @@ def check() -> dict:
                  callback_options={'callback_sender':900000})
         negative('disabled_wallet','buy','BUY_SUB','payBuyWithWallet',0,0,
                  callback_options={'states':{'walletState':'off'}})
+        negative('disabled_manual_crypto','buy','BUY_SUB','payBuyWithWallet',0,0,
+                 callback_override=lambda name:'payBuyWithManualUsdt'+name,
+                 callback_options={'states':{'manualUsdtState':'off'}})
         # No Telegram callback envelope must never permit a local transition,
         # even when a syntactically valid $data string is passed internally.
         actor,name,pid,oid=seed('buy','BUY_SUB',0,0,'NoTelegramEnvelope')

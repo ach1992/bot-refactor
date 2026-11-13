@@ -3593,10 +3593,12 @@ def run_funding(tmp: str) -> tuple[dict, dict]:
             'provider_attempt_with_transaction','Native_service_effect',
             'Native_plan_journal','expired_quote','newer_draft',
             'forged_callback_family','forged_callback_sender',
-            'disabled_wallet','no_Telegram_envelope')
+            'disabled_wallet','disabled_manual_crypto','no_Telegram_envelope')
     }
+    required_reentry.add(
+        'legacy_manual_crypto_direct_button_reopens_before_network_menu')
     if not (legacy_reentry.get('complete') is True and
-            legacy_reentry.get('cases')==26 and
+            legacy_reentry.get('cases')==28 and
             set(legacy_reentry.get('scenarios',[]))==required_reentry and
             all(legacy_reentry.get(flag) is True
                 for flag in ('real_php_mariadb','actual_prepayment_php',

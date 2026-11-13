@@ -305,7 +305,7 @@ function achbotPayUxUnclaimedDraftUsable(mysqli $db, array $pay,
  * Public hosted-checkout URLs never pass here, and a hash alone is not
  * authorization. A manual-crypto menu is a genuine selection step too.
  *
- * @return array{hash:string,kind:string,method:string}|null
+ * @return array{hash:string,kind:string,method:string,network_tag?:string}|null
  */
 function achbotPayUxLegacyTelegramChoice(string $data): ?array {
     if (strlen($data)>64) return null;
@@ -318,6 +318,12 @@ function achbotPayUxLegacyTelegramChoice(string $data): ?array {
         return $method===null?null:['hash'=>$m[3],'kind'=>$m[1],
                                     'method'=>$method];
     }
+    // Old direct USDT buttons are normalized to mcm_ by ManualCrypto.php
+    // *after* PrePayment.php. Authenticate and reopen before that rewrite,
+    // but never choose a chain or issue a crypto claim here.
+    if (preg_match('/\Apay(Buy|Custom|Renew|IncreaseDay|Increase)WithManualUsdt([A-Za-z0-9_-]{1,50})\z/D',
+                   $data,$m)===1)
+        return ['hash'=>$m[2],'kind'=>$m[1],'method'=>'crypto'];
     if (preg_match('/\Amcm_([A-Za-z0-9_-]{1,50})\z/D',$data,$m)===1)
         return ['hash'=>$m[1],'kind'=>'crypto_menu','method'=>'crypto'];
     if (preg_match('/\Amc_([bcet])_([A-Za-z0-9_-]{1,50})\z/D',$data,$m)===1)
