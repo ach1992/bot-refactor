@@ -125,9 +125,18 @@ def check() -> dict:
             spec.update(options)
             return finance.run_php(work,env,stage,spec)
         def hosted(name:str,**options):
-            return finance.run_php(work,env,stage,dict(
-                route='initiate',get={'nextpay':'','hash_id':name},
-                states=STATES,**options))
+            spec=dict(route='initiate',get={'nextpay':'','hash_id':name},
+                      states=STATES)
+            # Existing renewal/add-on customers must have a verified real
+            # Native-account identity; an invented/missing account is a hard
+            # settlement rejection in production, not a wallet-reentry bug.
+            # The provider is the synthetic curl transport of this fixture.
+            if name.startswith(('LWRenew','LWDay','LWVolume')):
+                native='oldwallet'+name
+                spec.update(existing_native_accounts=[native],
+                            marzban_username=native)
+            spec.update(options)
+            return finance.run_php(work,env,stage,spec)
 
         for subject,kind,prefix,day,volume in SUBJECTS:
             actor,name,pid,order_id=seed(subject,kind,day,volume,'Positive')
@@ -154,7 +163,10 @@ def check() -> dict:
             # here are fake fixture transport; only the 003 local reservation
             # may be written. Repeated callbacks cannot create a second claim.
             switched=hosted(name)
-            assert claims(pid)[0]=='1',(subject,switched)
+            assert claims(pid)[0]=='1',(
+                subject,switched.get('error'),switched['events'],
+                switched['network_calls'],state(pid),claims(pid),
+                'no_provider_claim_on_alternative')
             assert sql(f'SELECT wallet FROM users WHERE userid={actor}')=='0'
             assert sql(f"SELECT COUNT(*) FROM payment_attempts WHERE pay_row_id={pid} AND provider='nextpay'")=='1'
             reselected=telegram(actor,button)
