@@ -56,6 +56,78 @@ SUBSCRIPTION_MENU_LABELS={
 }
 
 
+# Current Owner-authorized gateway-rule copy is projected only for historical
+# tests; all preexisting catalog manifests and immutable revisions remain pinned.
+# Confirm the COMPLETE current admin source equals exactly this approved delta
+# over RC37 before using the previous source in a historical comparison.
+GATEWAY_CONTROLS_BASE='6bae8034e5a5f1614559e2aa8465f2e0d6ce75b4'
+GATEWAY_CONTROLS_BASE_SHA='52e11b0f8a7b044b42b067b92a8c04d9a0267b73056f8e85c01bef7d488fbd03'
+GATEWAY_CONTROLS_BLOCK_SHA='8ddabde16b03095770618f2293717b8372fb81021b66bc49624a22d7dd47c412'
+GATEWAY_CONTROLS_KEYS={
+    'payment_settings.gateway_rule_admin.exempt_button',
+    'payment_settings.gateway_rule_admin.exempt_prompt',
+    'payment_settings.gateway_rule_admin.exempt_saved',
+    'payment_settings.gateway_rule_admin.combine_label',
+    'payment_settings.gateway_rule_admin.combine_on',
+    'payment_settings.gateway_rule_admin.combine_off',
+    'payment_settings.gateway_rule_admin.summary.match_mode',
+}
+GATEWAY_CONTROLS_CHANGED='payment_settings.gateway_rule_admin.summary.rule_help'
+
+@functools.lru_cache(maxsize=1)
+def gateway_controls_source():
+    path='messages/fa/admin.php'
+    original=command('git','show',GATEWAY_CONTROLS_BASE+':'+path)
+    current=(ROOT/path).read_bytes()
+    check(hashlib.sha256(original).hexdigest()==GATEWAY_CONTROLS_BASE_SHA,
+          'gateway_controls_rc37_source_identity')
+    prior=original.decode();next_source=current.decode()
+    begin='        // Dedicated payment-rule navigation and direct method exemptions\n'
+    end='        // gateway_rule_admin.gateway_admin_method_flags\n'
+    check(begin in next_source and end in next_source and begin not in prior,
+          'gateway_controls_addition_anchor')
+    block=next_source[next_source.index(begin):next_source.index(end,next_source.index(begin))]
+    check(hashlib.sha256(block.encode()).hexdigest()==GATEWAY_CONTROLS_BLOCK_SHA,
+          'gateway_controls_added_block_identity')
+    old=[l for l in prior.splitlines() if "'gateway_rule_admin.summary.rule_help' =>" in l]
+    new=[l for l in next_source.splitlines() if "'gateway_rule_admin.summary.rule_help' =>" in l]
+    check(len(old)==len(new)==1 and
+          'در حالت روشن' in new[0] and '(AND)' in new[0] and '(OR)' in new[0] and
+          next_source==prior.replace(end,block+end,1).replace(old[0],new[0],1),
+          'gateway_controls_complete_approved_source_delta')
+    parser='$s=stream_get_contents(STDIN);$p=strpos($s,"return [");if($p===false)throw new RuntimeException("array_missing");echo json_encode(eval(substr($s,$p)),JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);'
+    before=flatten(json.loads(command('php','-r',parser,input=original)))
+    after=flatten(json.loads(command('php','-r',parser,input=current)))
+    check(set(after)-set(before)==GATEWAY_CONTROLS_KEYS and
+          set(before)-set(after)==set() and
+          {k for k in before if before[k]!=after[k]}=={GATEWAY_CONTROLS_CHANGED} and
+          params(before[GATEWAY_CONTROLS_CHANGED])==params(after[GATEWAY_CONTROLS_CHANGED]) and
+          all(set(re.findall(r'\{([A-Za-z_][A-Za-z0-9_]*)\}',text(after[k])))==
+              set(params(after[k])) for k in GATEWAY_CONTROLS_KEYS),
+          'gateway_controls_catalog_delta_only')
+    return {'before_source':original,'before':before,'after':after}
+
+def gateway_controls_copy_restore(sides):
+    proof=gateway_controls_source()
+    check(set(sides)=={'admin','user'} and
+          not GATEWAY_CONTROLS_KEYS.intersection(sides['user']),
+          'gateway_controls_correct_audience')
+    present=GATEWAY_CONTROLS_KEYS.intersection(sides['admin'])
+    if not present:
+        # Older historical layers may already have restored the previous
+        # help copy; only the complete original set may be projected.
+        return sides
+    check(present==GATEWAY_CONTROLS_KEYS and
+          sides['admin'][GATEWAY_CONTROLS_CHANGED]==
+              proof['after'][GATEWAY_CONTROLS_CHANGED] and
+          all(sides['admin'][key]==proof['after'][key] for key in present),
+          'gateway_controls_current_copy_drift')
+    restored=copy.deepcopy(sides)
+    for key in GATEWAY_CONTROLS_KEYS:restored['admin'].pop(key)
+    restored['admin'][GATEWAY_CONTROLS_CHANGED]=proof['before'][GATEWAY_CONTROLS_CHANGED]
+    return restored
+
+
 @functools.lru_cache(maxsize=1)
 def subscription_menu_20261113_source():
     manifest=json.loads((ROOT/'tools/text_catalog_main_menu_20261113.json').read_text())
@@ -75,7 +147,8 @@ def subscription_menu_20261113_source():
     for audience in ('user','admin'):
         path='messages/fa/'+audience+'.php'
         before=command('git','show',SUBSCRIPTION_MENU_BASE+':'+path)
-        current=(ROOT/path).read_bytes()
+        current=(gateway_controls_source()['before_source'] if audience=='admin'
+                 else (ROOT/path).read_bytes())
         identity=manifest['source_identity'][audience]
         check(set(identity)=={'base_sha256','approved_sha256'} and
               hashlib.sha256(before).hexdigest()==identity['base_sha256'] and
@@ -199,6 +272,7 @@ def vivan_20261113_source():
     return result
 
 def vivan_20261113_copy_restore(sides):
+    sides=gateway_controls_copy_restore(sides)
     sources=vivan_20261113_source()
     copy_sides=menu_20261113_copy_restore(sides)
     check(set(copy_sides)=={'user','admin'},'vivan_catalog_audiences')
@@ -931,6 +1005,7 @@ def gift_precheck_copy_restore(sides,allow_prestripped=False):
     return restored
 
 def current_cleanup_restore(sides):
+    sides=gateway_controls_copy_restore(sides)
     if not (CLEANUP_NEW_KEYS & set(sides.get('admin',{}))):
         return sides
     check(set(sides)=={'user','admin'},'cleanup_audiences')

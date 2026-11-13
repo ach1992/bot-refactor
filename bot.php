@@ -534,7 +534,7 @@ if (is_string($data??null) &&
         // A rejection must never leave a stale editor that invites more
         // unsafe clicks. Re-validate authorization before showing fresh data.
         if ($operation!==null &&
-            in_array($operation['action'],['t','v','c','n','p'],true) &&
+            in_array($operation['action'],['t','v','c','n','p','h'],true) &&
             achbotGatewayAdminCanView($update,(int)$from_id,
                 (int)$chat_id,(int)$message_id,(int)$admin,$data)) {
             $refresh=in_array($operation['action'],['v','c','p'],true)
@@ -545,6 +545,10 @@ if (is_string($data??null) &&
                 \achbotMessage('bot.bot.gateway_audience_settings.message.553d718ccf').
                 $page['text'],$page['keyboard']);
         }
+        return;
+    }
+    if ($operation['action']==='e') {
+        sendMessage(achbotGatewayAdminExemptPrompt($operation['method']),$cancelKey,'HTML');
         return;
     }
     if ($operation['action']==='n') {
@@ -582,7 +586,8 @@ if (is_string($data??null) &&
     return;
 }
 if (is_string($userInfo['step']??null) &&
-    str_starts_with($userInfo['step'],'gr|edit|')) {
+    (str_starts_with($userInfo['step'],'gr|edit|') ||
+     str_starts_with($userInfo['step'],'gr|exempt|'))) {
     if (!achbotAdminGatewayChange($update,(int)$from_id,
             (int)$chat_id,(int)$message_id,(int)$admin,'number',
             $userInfo['step'],(string)$text)) {
@@ -592,6 +597,13 @@ if (is_string($userInfo['step']??null) &&
     }
     if ($text===$buttonValues['cancel']) {
         sendMessage(\achbotMessage('bot.bot.gateway_audience_settings.message.74d707fe02'));
+        return;
+    }
+    if (str_starts_with($userInfo['step'],'gr|exempt|')) {
+        $method=substr($userInfo['step'],strlen('gr|exempt|'));
+        $page=achbotGatewayAdminPage('gr|m|'.$method);
+        sendMessage(achbotMessage('payment_settings.gateway_rule_admin.exempt_saved')."\n".
+            $page['text'],$page['keyboard'],'HTML');
         return;
     }
     $sourceId=(int)($update->update_id??0);

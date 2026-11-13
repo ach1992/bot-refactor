@@ -691,13 +691,29 @@ function achbotPayUxAudienceAllowed(mysqli $db, string $method, int $userId,
         }
         // New rule documents are versioned and strictly validated. A missing
         // method retains its exact legacy audience policy.
+        $rules=null;
         if (array_key_exists('gatewayRules',$states)) {
-            $parsed=achbotGatewayRulesDecode($states['gatewayRules']);
-            if ($parsed===null) return false;
-            if (array_key_exists($method,$parsed['methods']))
-                return achbotGatewayRulesAllow($db,$userId,
-                    $parsed['methods'][$method],$final);
+            $rules=achbotGatewayRulesDecode($states['gatewayRules']);
+            if ($rules===null) return false;
         }
+        $exempt=achbotGatewayRuleExemptUsersDecode(
+            $states['gatewayRuleExemptUsers']??[]);
+        if ($exempt===null) return false;
+        if (in_array($userId,$exempt[$method]??[],true)) {
+            // Explicit policy exemption never grants an ambiguous/nonexistent
+            // customer access or revives a disabled gateway flag.
+            $stmt=$db->prepare('SELECT id FROM users'.
+                ($final?' FORCE INDEX (idx_users_userid_v1)':'').
+                ' WHERE userid=? LIMIT 2'.($final?' FOR UPDATE':''));
+            if (!$stmt) throw new RuntimeException('exempt_identity_prepare');
+            $stmt->bind_param('i',$userId);
+            if (!$stmt->execute()) throw new RuntimeException('exempt_identity_read');
+            $people=$stmt->get_result()->fetch_all(MYSQLI_ASSOC);$stmt->close();
+            return count($people)===1;
+        }
+        if ($rules!==null && array_key_exists($method,$rules['methods']))
+            return achbotGatewayRulesAllow($db,$userId,
+                $rules['methods'][$method],$final);
         $configured=array_key_exists('gatewayAudience',$states)
             ? $states['gatewayAudience'] : [];
         if (!is_array($configured)) return false;

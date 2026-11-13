@@ -25,7 +25,7 @@ function achbotGatewayRuleBlank(string $category): array {
     }
     return [
         'category'=>$category,'enabled'=>true,'registration_age_days'=>0,
-        'metrics'=>$metrics
+        'metrics'=>$metrics,'match_all'=>true
     ];
 }
 /** Valid, nonnegative JSON integers. Days must be safe for seconds arithmetic. */
@@ -34,7 +34,11 @@ function achbotGatewayRuleInteger($number,bool $days=false): bool {
         (!$days || $number<=intdiv(PHP_INT_MAX,86400));
 }
 function achbotGatewayRuleValidate(array $rule): bool {
-    if (array_keys($rule)!==['category','enabled','registration_age_days','metrics'] ||
+    $keys=array_keys($rule);
+    if (!in_array($keys,[
+        ['category','enabled','registration_age_days','metrics'],
+        ['category','enabled','registration_age_days','metrics','match_all']
+        ],true) || (array_key_exists('match_all',$rule) && !is_bool($rule['match_all'])) ||
         !is_string($rule['category']) ||
         !array_key_exists($rule['category'],achbotGatewayRuleCategories()) ||
         !is_bool($rule['enabled']) ||
@@ -68,6 +72,21 @@ function achbotGatewayRulesDecode($raw): ?array {
             if (!is_array($rule) || !achbotGatewayRuleValidate($rule) ||
                 isset($seen[$rule['category']])) return null;
             $seen[$rule['category']]=true;
+        }
+    }
+    return $raw;
+}
+/** Optional per-method allowlist stored in BOT_STATES; strict on corruption. */
+function achbotGatewayRuleExemptUsersDecode($raw): ?array {
+    if (!is_array($raw)) return null;
+    foreach ($raw as $method=>$ids) {
+        if (!is_string($method) ||
+            !array_key_exists($method,achbotPayUxAudienceMethods()) ||
+            !is_array($ids) || !array_is_list($ids)) return null;
+        $seen=[];
+        foreach ($ids as $id) {
+            if (!is_int($id) || $id<=0 || isset($seen[$id])) return null;
+            $seen[$id]=true;
         }
     }
     return $raw;
@@ -116,13 +135,14 @@ function achbotGatewayRuleMatchesUser(mysqli $db,int $userId,array $rule,
                                       array $user,bool $final,int $now): bool {
     $category=$rule['category'];
     if (!$rule['enabled']) return false;
+    $conditions=[];
     if ($rule['registration_age_days']>0) {
         $raw=(string)($user['date']??'');
         if (!preg_match('/\A[1-9][0-9]*\z/D',$raw)) return false;
         $date=filter_var($raw,FILTER_VALIDATE_INT,
             ['options'=>['min_range'=>1,'max_range'=>$now]]);
-        if ($date===false || $now-$date<$rule['registration_age_days']*86400)
-            return false;
+        if ($date===false) return false;
+        $conditions[]=($now-$date >= $rule['registration_age_days']*86400);
     }
     if ($category==='agents' && (int)$user['is_agent']!==1) return false;
     if ($category==='non_agents' && (int)$user['is_agent']===1) return false;
@@ -149,9 +169,14 @@ function achbotGatewayRuleMatchesUser(mysqli $db,int $userId,array $rule,
         $found=achbotGatewayRuleHistoryCount($db,$userId,$key,
             $value['days'],$value['direction'],$final,$now);
         $required=$value['count']===0?1:$value['count'];
-        if ($found===null || $found<$required) return false;
+        // An unknown current transaction count cannot be bypassed through OR.
+        if ($found===null) return false;
+        $conditions[]=($found >= $required);
     }
-    return true;
+    if (!$conditions) return true; // Category-only rule, as before.
+    return ($rule['match_all']??true)
+        ? !in_array(false,$conditions,true)
+        : in_array(true,$conditions,true);
 }
 /** Check a fully validated method policy using one unique current user. */
 function achbotGatewayRulesAllow(mysqli $db,int $userId,array $rules,

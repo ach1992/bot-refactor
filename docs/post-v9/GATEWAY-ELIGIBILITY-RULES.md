@@ -22,9 +22,21 @@ historical backfill**.
   `no_active_order`. The old `off` mode means **no one** rather than a
   matching user category, so an explicitly empty method rule array or
   all-disabled rules deny everyone.
-- A method can have one rule per category; multiple enabled rules are OR.
-  Within each rule, the category, optional minimum registration age and
-  each enabled history criterion are AND.
+- A method can have one rule per category; multiple enabled category rules
+  are OR. Each rule always requires matching its named user category. The
+  «اعمال همزمان قوانین» toggle controls the conditions within that
+  category: ON means AND (all active age/history criteria), OFF means OR
+  (at least one active criterion). With no configured age/history criteria,
+  category-only behavior is unchanged. Existing policies without match_all
+  default to ON/AND, preserving prior eligibility; the optional boolean
+  match_all persists per category when toggled. Unknown transaction reads
+  and invalid user identity fail closed in either mode.
+- Optional BOT_STATES.gatewayRuleExemptUsers stores a strict per-method map
+  of positive numeric Telegram user IDs (e.g. {"bank_transfer":[123,456]}).
+  An exemption bypasses only the selected method's audience/category/history
+  rules. The method's real ON/OFF flag, unique current user identity and
+  all financial/provider controls remain mandatory. An invalid exemption
+  document denies issuance rather than silently opening access.
 - `BOT_STATES.gatewayRules` is optional and versioned:
   `{"version":1,"methods":{"wallet":[{"category":"non_agents","enabled":true,"registration_age_days":90,"metrics":{"buy":{"count":5,"days":90,"direction":"older"},"renew":{"count":0,"days":0,"direction":"older"},"volume":{"count":0,"days":0,"direction":"older"},"time":{"count":0,"days":0,"direction":"older"},"topup":{"count":0,"days":0,"direction":"older"}}}]}}`.
   **The example numbers are not defaults or UI limits.** All count and day
@@ -85,6 +97,17 @@ Direction buttons select older/recent, the metric-disable button clears
 count/days to zero, and a category rule can be enabled/paused. Removing a
 rule requires a separate signed, nonce-bound confirmation; stale/replayed
 confirmations and revoked/non-admin/wrong-chat actions fail closed.
+
+The eligibility menu now appears in the main administrator menu immediately
+below «پرداخت‌های نیازمند بررسی», for Owner, Manager and Operator (not
+Support), independently of the Manager-only general gateway/settings menu.
+Each payment method has a single «معاف کاربر از قوانین» button immediately
+before Back. It opens a signed private input for one or more positive decimal
+IDs separated by whitespace or commas; prefixing IDs with - removes them
+from the same method's exemption list. Duplicates are ignored, invalid batches
+are rejected atomically, and editing a different method never overwrites its
+existing list. The category editor places the «اعمال همزمان قوانین» ON/OFF
+control immediately above the existing rule enabled/disabled action.
 
 New rules persist atomically with the global gateway `update_id` watermark,
 the actor's private wizard step, and other administrators' independent fields.

@@ -18,11 +18,17 @@ function achbotGatewayRuleCallback(string $data): ?array {
     $p=explode('|',$data);
     if (count($p)<2 || $p[0]!=='gr') return null;
     $action=$p[1];
+    if ($action==='e') {
+        return count($p)===3 &&
+            array_key_exists($p[2],achbotPayUxAudienceMethods())
+            ? ['action'=>'e','method'=>$p[2],'category'=>null,
+               'metric'=>null,'field'=>null,'expected_tag'=>null] : null;
+    }
     if (in_array($action,['s','x'],true)) {
         return count($p)===3 && preg_match('/\A[1-9][0-9]*\z/D',$p[2])
             ? ['action'=>$action,'nonce'=>$p[2]] : null;
     }
-    if (!in_array($action,['a','d','q','t','n','v','c','p'],true) ||
+    if (!in_array($action,['a','d','q','t','n','v','c','p','h'],true) ||
         count($p)<4 || count($p)>7 ||
         !array_key_exists($p[2],achbotPayUxAudienceMethods()) ||
         !array_key_exists($p[3],achbotGatewayRuleCategories()))
@@ -30,7 +36,7 @@ function achbotGatewayRuleCallback(string $data): ?array {
     if (in_array($action,['a','q'],true) && count($p)!==4) return null;
     if ($action==='d' && (count($p)!==5 ||
         preg_match('/\A[1-9][0-9]*\z/D',$p[4])!==1)) return null;
-    if ($action==='t' && count($p)!==5) return null;
+    if (in_array($action,['t','h'],true) && count($p)!==5) return null;
     if (in_array($action,['v','c'],true) &&
         (count($p)!==6 || !array_key_exists($p[4],achbotGatewayRuleMetrics())))
         return null;
@@ -42,7 +48,7 @@ function achbotGatewayRuleCallback(string $data): ?array {
           (array_key_exists($p[4],achbotGatewayRuleMetrics()) &&
            in_array($p[5],['count','days'],true))))) return null;
     $tokenIndex=match ($action) {
-        't'=>4,'v','c'=>5,'n','p'=>6,default=>null
+        't','h'=>4,'v','c'=>5,'n','p'=>6,default=>null
     };
     if ($tokenIndex!==null &&
         preg_match('/\A[a-f0-9]{15}\z/D',$p[$tokenIndex])!==1) return null;
@@ -52,6 +58,9 @@ function achbotGatewayRuleCallback(string $data): ?array {
 }
 function achbotGatewayRuleStep(string $source): ?array {
     $p=explode('|',$source);
+    if (count($p)===3 && $p[0]==='gr' && $p[1]==='exempt' &&
+        array_key_exists($p[2],achbotPayUxAudienceMethods()))
+        return ['phase'=>'exempt','method'=>$p[2]];
     if (count($p)<5 || $p[0]!=='gr' ||
         !in_array($p[1],['edit','confirm','delete'],true) ||
         !array_key_exists($p[2],achbotPayUxAudienceMethods()) ||
@@ -80,6 +89,21 @@ function achbotGatewayRuleTextInteger(string $text,bool $days): ?int {
     $n=filter_var($text,FILTER_VALIDATE_INT,['options'=>['min_range'=>0]]);
     return $n!==false && achbotGatewayRuleInteger($n,$days)?$n:null;
 }
+/** One signed Telegram input may add or remove multiple numeric user IDs. */
+function achbotGatewayExemptChanges(string $value): ?array {
+    $tokens=preg_split('/[\\s,،]+/u',trim($value));
+    if (!$tokens || $tokens===['']) return null;
+    $changes=[];
+    foreach ($tokens as $token) {
+        if (preg_match('/\\A([+-]?)([1-9][0-9]*)\\z/D',$token,$match)!==1)
+            return null;
+        $id=filter_var($match[2],FILTER_VALIDATE_INT,
+            ['options'=>['min_range'=>1]]);
+        if ($id===false) return null;
+        $changes[]=['id'=>$id,'remove'=>$match[1]==='-'];
+    }
+    return $changes;
+}
 /**
  * Called only inside achbotMutateBotStates, after the current actor is locked.
  * Return a targeted BOT_STATES delta and optionally an owned users.step delta.
@@ -92,8 +116,32 @@ function achbotGatewayRuleMutate(array $state,string $kind,string $key,
         ? achbotGatewayRulesDecode($state['gatewayRules'])
         : ['version'=>1,'methods'=>[]];
     if ($raw===null) throw new RuntimeException('gateway_rule_document_invalid');
+    $exempt=achbotGatewayRuleExemptUsersDecode($state['gatewayRuleExemptUsers']??[]);
+    if ($exempt===null) throw new RuntimeException('gateway_exempt_document_invalid');
     if ($kind==='number') {
         $s=achbotGatewayRuleStep($step);
+        if ($s && $s['phase']==='exempt') {
+            if ($step!==$key || $value===null)
+                throw new RuntimeException('gateway_exempt_input_not_owned');
+            if ($value===($GLOBALS['buttonValues']['cancel']??null)) {
+                $newStep='none';return $state;
+            }
+            $changes=achbotGatewayExemptChanges($value);
+            if ($changes===null)
+                throw new RuntimeException('gateway_exempt_ids_invalid');
+            $ids=array_fill_keys($exempt[$s['method']]??[],true);
+            foreach ($changes as $item) {
+                if ($item['remove']) unset($ids[$item['id']]);
+                else $ids[$item['id']]=true;
+            }
+            $current=array_map('intval',array_keys($ids));
+            sort($current,SORT_NUMERIC);
+            if ($current) $exempt[$s['method']]=$current;
+            else unset($exempt[$s['method']]);
+            $state['gatewayRuleExemptUsers']=$exempt;
+            $newStep='none';
+            return $state;
+        }
         if (!$s || $s['phase']!=='edit' || $step!==$key || $value===null)
             throw new RuntimeException('gateway_rule_input_not_owned');
         if ($value===($GLOBALS['buttonValues']['cancel']??null)) {
@@ -110,6 +158,10 @@ function achbotGatewayRuleMutate(array $state,string $kind,string $key,
     $parsed=achbotGatewayRuleCallback($key);
     if ($parsed===null) throw new RuntimeException('gateway_rule_action_invalid');
     $act=$parsed['action'];
+    if ($act==='e') {
+        $newStep='gr|exempt|'.$parsed['method'];
+        return $state;
+    }
     if ($act==='s' || $act==='x') {
         $s=achbotGatewayRuleStep($step);
         if ($s===null || !in_array($s['phase'],['confirm','delete'],true) ||
@@ -148,7 +200,7 @@ function achbotGatewayRuleMutate(array $state,string $kind,string $key,
         // came from a stale screen. Compare against the rule the admin saw.
         // This includes BOTH count and days for Clear and all rule fields for
         // Toggle/Direction. Numeric Save retains its per-field CAS afterward.
-        if (in_array($act,['t','v','c','n','p'],true) &&
+        if (in_array($act,['t','v','c','n','p','h'],true) &&
             !hash_equals(achbotGatewayRuleControlTag($entries[$index]),
                          (string)$parsed['expected_tag']))
             throw new RuntimeException('gateway_rule_stale_operator_button');
@@ -164,6 +216,7 @@ function achbotGatewayRuleMutate(array $state,string $kind,string $key,
             array_splice($entries,$index,1);
         }
         elseif ($act==='t') $entries[$index]['enabled']=!$entries[$index]['enabled'];
+        elseif ($act==='h') $entries[$index]['match_all']=!($entries[$index]['match_all']??true);
         elseif ($act==='n') {
             $baseline=$metric==='age'
                 ? $entries[$index]['registration_age_days']
@@ -216,9 +269,23 @@ function achbotGatewayAdminCurrent(): ?array {
         $state=json_decode((string)$rows[0]['value'],true,512,JSON_THROW_ON_ERROR);
         if (!is_array($state) || (
             array_key_exists('gatewayRules',$state) &&
-            achbotGatewayRulesDecode($state['gatewayRules'])===null)) return null;
+            achbotGatewayRulesDecode($state['gatewayRules'])===null) ||
+            achbotGatewayRuleExemptUsersDecode(
+                $state['gatewayRuleExemptUsers']??[])===null) return null;
         return $state;
     } catch (Throwable $ignored) {return null;}
+}
+/** Read-only wizard prompt; the normal writer commits only a signed reply. */
+function achbotGatewayAdminExemptPrompt(string $method): string {
+    $state=achbotGatewayAdminCurrent();
+    if ($state===null || !array_key_exists($method,achbotPayUxAudienceMethods()))
+        return achbotMessage('payment_settings.gateway_rule_admin.gateway_admin_page.button.36e4da5935');
+    $ids=$state['gatewayRuleExemptUsers'][$method]??[];
+    $current=$ids ? implode(', ',array_slice($ids,0,30)) : '—';
+    if (count($ids)>30) $current.=' …';
+    return achbotMessage('payment_settings.gateway_rule_admin.exempt_prompt',[
+        'method'=>achbotPayUxAudienceMethods()[$method],
+        'count'=>count($ids),'ids'=>$current]);
 }
 function achbotGatewayAdminMarkup(array $rows): string {
     return json_encode(['inline_keyboard'=>$rows],JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
@@ -260,13 +327,13 @@ function achbotGatewayAdminPage(string $data,?int $nonce=null): array {
     $state=achbotGatewayAdminCurrent();
     if ($state===null) return [
         'text'=>\achbotMessage('payment_settings.gateway_rule_admin.gateway_admin_page.button.36e4da5935'),
-        'keyboard'=>achbotGatewayAdminMarkup([[['text'=>\achbotMessage('payment_settings.gateway_rule_admin.gateway_admin_page.button.b233883d0d'),'callback_data'=>'gateWays_Channels']]])
+        'keyboard'=>achbotGatewayAdminMarkup([[['text'=>\achbotMessage('payment_settings.gateway_rule_admin.gateway_admin_page.button.b233883d0d'),'callback_data'=>'managePanel']]])
     ];
     $policy=isset($state['gatewayRules'])
         ? achbotGatewayRulesDecode($state['gatewayRules'])['methods'] : [];
     $legacy=$state['gatewayAudience']??[];
     $p=explode('|',$data);
-    $back=[[['text'=>\achbotMessage('payment_settings.gateway_rule_admin.gateway_admin_page.button.b35a2352f5'),'callback_data'=>'gateWays_Channels']]];
+    $back=[[['text'=>\achbotMessage('payment_settings.gateway_rule_admin.gateway_admin_page.button.b35a2352f5'),'callback_data'=>'managePanel']]];
     if ($data==='gr|l' || $data==='gatewayAudienceSettings') {
         $rows=[];$text=\achbotMessage('payment_settings.gateway_rule_admin.gateway_admin_page.text.778e46431a');
         $text.=\achbotMessage('payment_settings.gateway_rule_admin.gateway_admin_page.text.557fcc0258');
@@ -297,6 +364,8 @@ function achbotGatewayAdminPage(string $data,?int $nonce=null): array {
             $rows[]=[['text'=>$label.\achbotMessage('payment_settings.gateway_rule_admin.gateway_admin_page.text.3b2e8119b6').$tag,
                 'callback_data'=>'gr|r|'.$method.'|'.$category]];
         }
+        $rows[]=[['text'=>achbotMessage('payment_settings.gateway_rule_admin.exempt_button'),
+            'callback_data'=>'gr|e|'.$method]];
         return ['text'=>$text,'keyboard'=>achbotGatewayAdminMarkup(
             array_merge($rows,$methodBack))];
     }
@@ -384,6 +453,8 @@ function achbotGatewayAdminPage(string $data,?int $nonce=null): array {
     }
     if ($active===0)
         $text.=\achbotMessage('payment_settings.gateway_rule_admin.summary.no_transaction_conditions');
+    $text.=achbotMessage('payment_settings.gateway_rule_admin.summary.match_mode',[
+        'mode'=>($r['match_all']??true)?'AND':'OR']);
     $text.=\achbotMessage('payment_settings.gateway_rule_admin.summary.rule_help');
     $tag=achbotGatewayRuleControlTag($r);
     $rows=[[['text'=>\achbotMessage('payment_settings.gateway_rule_admin.summary.age_button'),
@@ -392,6 +463,14 @@ function achbotGatewayAdminPage(string $data,?int $nonce=null): array {
         $rows[]=[['text'=>achbotGatewayAdminMetricTitle($metric).
             \achbotMessage('payment_settings.gateway_rule_admin.summary.edit_suffix'),
             'callback_data'=>'gr|f|'.$prefix.'|'.$metric]];
+    $rows[]=[
+        ['text'=>($r['match_all']??true)
+            ? achbotMessage('payment_settings.gateway_rule_admin.combine_on')
+            : achbotMessage('payment_settings.gateway_rule_admin.combine_off'),
+         'callback_data'=>'gr|h|'.$prefix.'|'.$tag],
+        ['text'=>achbotMessage('payment_settings.gateway_rule_admin.combine_label'),
+         'callback_data'=>'wizwizch']
+    ];
     $rows[]=[['text'=>$r['enabled']
         ? \achbotMessage('payment_settings.gateway_rule_admin.gateway_admin_page.text.fe79dd4aa2')
         : \achbotMessage('payment_settings.gateway_rule_admin.gateway_admin_page.text.9dda803abf'),
@@ -417,6 +496,6 @@ function achbotGatewayAdminCanView($update,int $actor,int $chat,int $message,
         if (!$stmt->execute()) return false;
         $rows=$stmt->get_result()->fetch_all(MYSQLI_ASSOC);$stmt->close();
         return count($rows)===1 && $rows[0]['step']!=='banned' &&
-            ($actor===$primary || (int)$rows[0]['isAdmin']===1) && achbotAdminCan('gateways',$actor);
+            ($actor===$primary || (int)$rows[0]['isAdmin']===1) && achbotAdminCan('gateway_rules',$actor);
     } catch (Throwable $ignored) { return false;}
 }
