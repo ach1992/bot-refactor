@@ -433,6 +433,10 @@ function getMainKeys(){
     }
 
     $mainKeys = array_merge($mainKeys, [
+        // Owner-approved conditional row: free trial precedes account/view
+        // whenever the unchanged eligibility gate makes it visible.
+        (($botState['testAccount'] == "on" && ($from_id == $admin || $userInfo['freetrial'] != 'used')) ?
+            [['text'=>$buttonValues['test_account'],'callback_data'=>"getTestAccount"]] : []),
         [
             ['text'=>$buttonValues['my_info'],'callback_data'=>"myInfo"],
             ['text'=>$buttonValues['my_subscriptions'],'callback_data'=>
@@ -443,8 +447,6 @@ function getMainKeys(){
                 [['text'=>$buttonValues['invite_friends'],'callback_data'=>"inviteFriends"]] : []),
             [['text'=>$buttonValues['application_links'],'callback_data'=>"reciveApplications"]]
         ),
-        (($botState['testAccount'] == "on" && ($from_id == $admin || $userInfo['freetrial'] != 'used')) ?
-            [['text'=>$buttonValues['test_account'],'callback_data'=>"getTestAccount"]] : []),
         (($botState['sharedExistence'] == "on" && $botState['individualExistence'] == "on")?
             [['text'=>$buttonValues['shared_existence'],'callback_data'=>"availableServers"],['text'=>$buttonValues['individual_existence'],'callback_data'=>"availableServers2"]] : []
         ),

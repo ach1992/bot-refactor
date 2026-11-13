@@ -30,8 +30,10 @@ in the same PR (original button emojis and callback destinations preserved):
 
 The half-space in **اشتراک‌ها** is U+200C. Ordinary users have the referral
 button; administrator visibility and agent-specific subscriptions callbacks
-are unchanged. When enabled and eligible, the unchanged free-trial button
-appears **after** the fixed account and earning rows, never before them.
+are unchanged. Under the later Owner decision in Issue #162, when
+enabled and eligible the unchanged free-trial button appears **above**
+the account/subscriptions row, after the wallet/purchase row. If the trial
+is disabled or unavailable, the account/subscriptions row is third.
 Its original label, callback and eligibility gate are unchanged. Other
 optional search/custom buttons and configured cooperation links retain their
 existing availability; help remains last. Two wallet
@@ -99,7 +101,8 @@ unchanged.
   GET/toggle (including preflight failures without PUT and mismatched PUT
   acknowledgements), and actual menu/copy regressions covering free-trial
   disabled, enabled/eligible, enabled/already used, agent, admin and custom
-  buttons while support remains last. Existing message
+  buttons, explicitly checking trial-above-account placement when eligible
+  and support-last ordering. Existing message
   templates and financial effects remain under their original contracts.
   The previous independent review reported two REQUIRED Marzban findings;
   a fresh independent **delta re-review** of this amended candidate is required

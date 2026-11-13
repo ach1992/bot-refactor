@@ -98,8 +98,9 @@ def check(root: Path = ROOT) -> dict:
         support=[{'text':'💬 پشتیبانی','url':'https://t.me/fixture_help'}]
         free_trial=[{'text':labels['test_account'],'callback_data':'getTestAccount'}]
 
-        # The first four ordinary-user rows are stable for every legitimate
-        # free-trial state; trial eligibility affects only the following row.
+        # Updated Owner decision: when eligible, the unchanged trial row
+        # precedes account/view, while it remains completely absent when
+        # disabled or already used. The next two rows retain their order.
         for label,options,eligible in [
             ('trial_off_used',{},False),
             ('trial_off_eligible',{'trial_eligible':True},False),
@@ -107,43 +108,50 @@ def check(root: Path = ROOT) -> dict:
             ('trial_on_used',{'trial_on':True},False),
         ]:
             rows=regular['rows'] if not options else execute(**options)['rows']
+            ordered_rows=([expected[0],expected[1],
+                           [('getTestAccount',labels['test_account'])],
+                           expected[2],expected[3]] if eligible else expected)
             assert [[(b.get('callback_data'),b['text']) for b in row]
-                    for row in rows[:4]]==expected,(label,rows)
+                    for row in rows[:len(ordered_rows)]]==ordered_rows,(label,rows)
             assert len(rows)==5+int(eligible),(label,rows)
             assert rows[-1]==support,(label,rows)
             trial_rows=[row for row in rows
                         if any(b.get('callback_data')=='getTestAccount' for b in row)]
             assert trial_rows==([free_trial] if eligible else []),(label,rows)
             if eligible:
-                assert rows[4]==free_trial,(label,rows)
+                assert rows[2]==free_trial,(label,rows)
             cases+=1
 
-        # Existing role-specific menus/eligibility and support-last ordering
-        # stay intact even when the free-trial feature is switched on.
+        # Agent and admin eligibility is unchanged. Whenever the trial row
+        # exists, it also appears before their account/subscription row.
         agent=execute(agent=True,trial_on=True,trial_eligible=True)
         agent_rows=agent['rows']
         assert [b.get('callback_data') for b in agent_rows[0]]==['agencySettings']
         assert [b.get('callback_data') for b in agent_rows[2]]==['agentOneBuy','agentMuchBuy']
-        assert [b.get('callback_data') for b in agent_rows[3]]==['myInfo','agentConfigsList']
-        assert [b.get('callback_data') for b in agent_rows[4]]==['inviteFriends','reciveApplications']
-        assert agent_rows[5]==free_trial and agent_rows[-1]==support,agent_rows
+        assert agent_rows[3]==free_trial,agent_rows
+        assert [b.get('callback_data') for b in agent_rows[4]]==['myInfo','agentConfigsList']
+        assert [b.get('callback_data') for b in agent_rows[5]]==['inviteFriends','reciveApplications']
+        assert agent_rows[-1]==support,agent_rows
         cases+=1
 
-        # An administrator remains trial-eligible despite freetrial='used'
-        # by the original owner/admin exception, but never sees referral.
+        # Existing administrator exception: free trial remains available
+        # despite freetrial='used', and referral remains unavailable.
         admin=execute(admin=True,trial_on=True)
         admin_rows=admin['rows']
-        assert [b.get('callback_data') for b in admin_rows[2]]==['myInfo','mySubscriptions']
-        assert [b.get('callback_data') for b in admin_rows[3]]==['reciveApplications']
-        assert admin_rows[4]==free_trial and admin_rows[-1]==support,admin_rows
+        assert admin_rows[2]==free_trial,admin_rows
+        assert [b.get('callback_data') for b in admin_rows[3]]==['myInfo','mySubscriptions']
+        assert [b.get('callback_data') for b in admin_rows[4]]==['reciveApplications']
+        assert admin_rows[-1]==support,admin_rows
         assert not any(b.get('callback_data')=='inviteFriends'
                        for row in admin_rows for b in row),admin_rows
         cases+=1
 
         extra=execute(extra=True,trial_on=True,trial_eligible=True)
         erows=extra['rows']
-        assert erows[:4]==regular['rows'][:4],erows
-        assert erows[4]==free_trial and erows[-1]==support,erows
+        assert erows[:2]==regular['rows'][:2],erows
+        assert erows[2]==free_trial and erows[-1]==support,erows
+        assert [b.get('callback_data') for b in erows[3]]==['myInfo','mySubscriptions'],erows
+        assert [b.get('callback_data') for b in erows[4]]==['inviteFriends','reciveApplications'],erows
         assert any(b.get('url')=='https://t.me/fixture_partners'
                    for row in erows for b in row),erows
         assert any(b.get('callback_data')=='showMainButtonAns7'
