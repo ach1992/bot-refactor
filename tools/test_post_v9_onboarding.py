@@ -58,8 +58,11 @@ $mainValues=['join_channel_message'=>'JOIN_PROMPT','not_joine_yet'=>'NOT_JOINED'
   'new_member_joined'=>'NEW FULLNAME USERNAME USERID','user_welcome_message'=>'WELCOME'];
 $buttonValues=['join_channel'=>'Join channel','have_joined'=>'Joined','sharj'=>'Wallet',
   'buy_subscriptions'=>'Buy','my_info'=>'Info','my_subscriptions'=>'Subscriptions',
-  'invite_friends'=>'Invite','application_links'=>'Apps','back_to_main'=>'Back',
-  'request_agency'=>'Agency','test_account'=>'Trial','search_config'=>'Search'];
+  'invite_friends'=>'Invite','application_links'=>'Apps','send_message_to_user'=>'Reply',
+  'back_to_main'=>'Back',
+  'request_agency'=>'Agency','agency_setting'=>'Agency settings',
+  'agent_much_buy'=>'Bulk','agent_one_buy'=>'Individual','individual_existence'=>'Individual',
+  'shared_existence'=>'Shared','test_account'=>'Trial','search_config'=>'Search'];
 $events=[];$memberQueries=0;
 $sender=(object)['id'=>(int)($spec['sender']??$actor),'first_name'=>'Fixture',
     'last_name'=>'Test','username'=>'fixture_user','is_bot'=>false];
