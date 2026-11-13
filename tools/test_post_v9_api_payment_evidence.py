@@ -11,6 +11,7 @@ import datetime as dt
 import hashlib
 import hmac
 import http.server
+import urllib.parse
 import json
 import subprocess
 import threading
@@ -57,6 +58,14 @@ if(isset($spec['pin_hostile']) && $p)$p['amount_field']=$spec['pin_hostile'];
 $result=null;
 switch($spec['op']){
 case 'ready':$result=achbotPaymentEvidenceSchemaReady($db);break;
+case 'bank_scan':
+ require_once dirname($argv[1]).'/ApiPayments.php';
+ $claim=achbotPaymentEvidenceClaim($db,$id);
+ if (!$claim) {$result='no_claim';break;}
+ $result=achbotApiPaymentCheckBank($db,$claim);
+ achbotPaymentEvidenceDefer($db,$id,$claim['token'],
+     $result==='monitoring'?'monitoring':'proven',20);
+ break;
 case 'profile':
  $result=['valid'=>$p!==null,'source'=>$p['source_key']??null,'endpoint'=>$p['endpoint_sha256']??null,
   'amount_field'=>$p['amount_field']??null];break;
@@ -168,6 +177,7 @@ class Server(http.server.ThreadingHTTPServer):
         self.read_faults=[];self.read_requests=0
         self.verify_faults=[];self.verify_requests=0;self.verify_responses=[]
         self.direct_not_found=set();self.direct_reads={}
+        self.list_paths=[];self.ignore_filters=False;self.ambiguous_time_once=False
 class Handler(http.server.BaseHTTPRequestHandler):
     def log_message(self,*args):pass
     def send(self,status,data):
@@ -189,11 +199,30 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.send_response(302);self.send_header('Location','http://127.0.0.1:9/unowned')
             self.end_headers();return
         if s.overflow:return self.send(200,{'padding':'x'*150000})
-        path=self.path.split('?',1)[0]
+        parsed=urllib.parse.urlsplit(self.path)
+        path=parsed.path
         if path.endswith('/messages'):
+            s.list_paths.append(self.path)
+            q=urllib.parse.parse_qs(parsed.query)
+            if s.ambiguous_time_once and 'received_from' in q:
+                s.ambiguous_time_once=False
+                return self.send(400,{'code':'ach_pay_ambiguous_ingestion_time'})
             rows=[v for v in s.messages.values() if v['status']=='ready']
-            return self.send(200,{'data':rows,'pagination':{'has_more':False,
-                'next_after_id':max([int(v['id']) for v in rows],default=0)}})
+            if not s.ignore_filters:
+                if 'amount' in q:
+                    rows=[r for r in rows if str(r['amount'])==q['amount'][0] and
+                          r['display_unit']==q['display_unit'][0]]
+                if 'received_from' in q:
+                    cutoff=dt.datetime.fromisoformat(q['received_from'][0].replace('Z','+00:00'))
+                    rows=[r for r in rows if dt.datetime.fromisoformat(
+                        r.get('created_at','1970-01-01 00:00:00').replace(' ','T')+
+                        '+00:00')>=cutoff]
+            after=int(q.get('after_id',['0'])[0])
+            per=int(q.get('per_page',['100'])[0])
+            rows=sorted((r for r in rows if int(r['id'])>after),key=lambda r:int(r['id']))
+            current=rows[:per]
+            return self.send(200,{'data':current,'pagination':{'has_more':len(rows)>per,
+                'next_after_id':int(current[-1]['id']) if current else after}})
         ident=path.rsplit('/',1)[-1]
         s.direct_reads[ident]=s.direct_reads.get(ident,0)+1
         if ident in s.direct_not_found:
@@ -489,6 +518,101 @@ def run(module):
             # real sibling ApiPayments/ReceiptHelpers modules on the canonical
             # source path; mutating those dependencies is outside this control.
             if module.resolve()==(ROOT/'src/Finance/PaymentEvidence.php').resolve():
+                # WP v1.0.16 amount/unit + ingestion filters: never traverse
+                # hundreds of unrelated old ready SMS for a fresh invoice.
+                stale=(now-dt.timedelta(days=5)).strftime('%Y-%m-%d %H:%M:%S')
+                for remote_id in range(100,410):
+                    old=sms(remote_id,amount=990001)
+                    old['created_at']=stale
+                    server.messages[str(remote_id)]=old
+                def seed_human(name,price):
+                    pay=seed(name,price=price)
+                    sql(f"UPDATE pays SET state='approved',approved_by=9001 WHERE id={pay}")
+                    return pay
+                now_local=now.strftime('%Y-%m-%d %H:%M:%S')
+                filtered=seed_human('lookupfiltered',100773)
+                fresh=sms(2500,amount=100773)
+                fresh['created_at']=now_local
+                server.messages['2500']=fresh
+                sql(f"UPDATE payment_attempts SET evidence_cursor_id=14805 WHERE pay_row_id={filtered}")
+                begin=len(server.list_paths)
+                assert php('bank_scan',pay_id=filtered)=='settled'
+                paths=server.list_paths[begin:]
+                assert len(paths)==1,paths
+                q=urllib.parse.parse_qs(urllib.parse.urlsplit(paths[0]).query)
+                assert q['amount']==['100773'] and q['display_unit']==['toman']
+                assert q['after_id']==['0'] and q['per_page']==['100']
+                lower=dt.datetime.fromisoformat(q['received_from'][0].replace('Z','+00:00'))
+                assert int(lower.timestamp())==int(issued.timestamp())-180
+                assert server.consumes['2500']==1
+                assert php('proof',pay_id=filtered)['mode']=='evidence_only'
+                assert sql(f"SELECT state FROM pays WHERE id={filtered}")=='approved'
+                assert sql(f"SELECT evidence_cursor_id FROM payment_attempts WHERE pay_row_id={filtered}")=='14805'
+
+                # Exact Rial representation is also eligible; do not narrow
+                # the accepted local evidence contract to Toman-only SMS.
+                rial=seed_human('lookuprial',100774)
+                fresh_rial=sms(2501,amount=1007740,unit='rial')
+                fresh_rial['created_at']=now_local
+                server.messages['2501']=fresh_rial
+                begin=len(server.list_paths)
+                assert php('bank_scan',pay_id=rial)=='settled'
+                paths=server.list_paths[begin:]
+                assert len(paths)==2,paths
+                assert 'amount=100774&display_unit=toman' in paths[0]
+                assert 'amount=1007740&display_unit=rial' in paths[1]
+                assert server.consumes['2501']==1
+                assert php('proof',pay_id=rial)['mode']=='evidence_only'
+
+                # Fresh WP ingestion never waives the original 3-minute
+                # transfer-time bound. A transfer preceding original issuance
+                # by 181 seconds is ineligible even when inserted just now.
+                early=seed_human('lookupineligible',100775)
+                too_early=sms(2502,amount=100775)
+                transfer=(issued-dt.timedelta(seconds=181))
+                too_early['sms_date']=transfer.strftime('%Y-%m-%d')
+                too_early['sms_time']=transfer.strftime('%H:%M:%S')
+                too_early['created_at']=now_local
+                server.messages['2502']=too_early
+                assert php('bank_scan',pay_id=early)=='monitoring'
+                assert '2502' not in server.consumes
+                assert php('proof',pay_id=early) is None
+
+                # Offset-aware ingestion can be ambiguous around a WP DST
+                # rollback; retain amount filtering and local transfer checks.
+                ambiguous=seed_human('lookupambiguous',100776)
+                ambiguous_sms=sms(2503,amount=100776)
+                ambiguous_sms['created_at']=now_local
+                server.messages['2503']=ambiguous_sms
+                server.ambiguous_time_once=True
+                begin=len(server.list_paths)
+                assert php('bank_scan',pay_id=ambiguous)=='settled'
+                paths=server.list_paths[begin:]
+                assert len(paths)==2 and 'received_from=' in paths[0]
+                assert 'received_from=' not in paths[1] and 'amount=100776' in paths[1]
+                assert server.consumes['2503']==1
+
+                # Older WP versions may return HTTP 200 but ignore unknown
+                # filters. Detect mismatching rows and use the former bounded
+                # unfiltered scan, never accept a partial filtered response.
+                legacy=seed_human('lookuplegacy',100777)
+                legacy_sms=sms(2504,amount=100777)
+                legacy_sms['created_at']=now_local
+                server.messages['2504']=legacy_sms
+                server.ignore_filters=True
+                begin=len(server.list_paths)
+                assert php('bank_scan',pay_id=legacy)=='settled'
+                paths=server.list_paths[begin:]
+                assert 'amount=100777&display_unit=toman' in paths[0]
+                assert any('amount=' not in p for p in paths[1:]),paths
+                assert server.consumes['2504']==1
+                server.ignore_filters=False
+                for remote_id in range(100,410):server.messages.pop(str(remote_id),None)
+                for remote_id in range(2500,2505):server.messages.pop(str(remote_id),None)
+
+                # Malformed filtered routes are never arbitrary URL input;
+                # the existing transport keeps all URLs on the pinned host.
+                assert php('http')['ok']
                 sample=fixture_gift_code('canonical-format')
                 compact='AG2-K1-'+sample[len('AG2-K1-'):].replace('-','')
                 assert php('giftformat',code=sample) is True
@@ -838,7 +962,7 @@ def run(module):
             assert server.lock_checks>=10
             return {'complete':True,'contracts':['partial_schema','encrypted_config','explicit_mapping','stable_namespace',
                 'full_exact_quote','exact_rial_conversion','ready_only','original_time',
-                'bank_preissue_grace_and_minute_precision','sql_collision_fence','pre_dispatch_intent','sms_same_key_recovery','sms_expired_recovery',
+                'bank_preissue_grace_and_minute_precision','bank_indexed_filter_and_source_time_guard','sql_collision_fence','pre_dispatch_intent','sms_same_key_recovery','sms_expired_recovery',
                 'manual_settled_evidence_only','typed_review_authenticity','gift_single_code','gift_exact_redeem_amount',
                 'legacy_sealed_code_provider_admission','legacy_human_recovery_no_new_staff',
                 'gift_partial_commit','gift_nonce_reference','gift_uncertain_active_hold',

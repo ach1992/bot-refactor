@@ -285,7 +285,7 @@ function achbotPaymentEvidenceHttp(array $profile,string $method,string $path,?a
         if (!function_exists('curl_init') || !in_array($method,['GET','POST'],true)) return $bad;
         $kind=(string)($profile['method']??'');
         $base=achbotPaymentEvidenceBaseUrl((string)($profile['base_url']??''),$kind);
-        if ($base===null || !preg_match('~\A/(?:messages(?:/[1-9][0-9]*(?:/actions)?)?(?:\?status=ready&after_id=[0-9]+&per_page=100)?|actions\?after_id=[0-9]+&per_page=100|verify|redeem)\z~D',$path))
+        if ($base===null || !preg_match('~\A/(?:messages(?:/[1-9][0-9]*(?:/actions)?)?(?:\?status=ready&after_id=[0-9]+&per_page=100|\?status=ready&amount=[1-9][0-9]*&display_unit=(?:toman|rial)(?:&received_from=[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}%3A[0-9]{2}%3A[0-9]{2}Z)?&after_id=[0-9]+&per_page=100)?|actions\?after_id=[0-9]+&per_page=100|verify|redeem)\z~D',$path))
             return $bad;
         $raw=$body===null?'':json_encode($body,JSON_THROW_ON_ERROR|JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);
         if (strlen($raw)>8192) return $bad;
@@ -395,15 +395,49 @@ function achbotPaymentEvidenceHttp(array $profile,string $method,string $path,?a
         return $result;
     } catch (Throwable $error) {return $bad;}
 }
-function achbotPaymentEvidenceSmsList(array $profile,int $after=0): array {
+/** Exact, bounded WP v1.0.16 lookup; no new evidence or settlement authority. */
+function achbotPaymentEvidenceSmsList(array $profile,int $after=0,?array $filter=null): array {
     $bad=['ok'=>false,'status'=>'unavailable','data'=>[],'next_after_id'=>$after,'has_more'=>false];
     if (($profile['method']??'')!=='bank_transfer' || $after<0) return $bad;
-    $r=achbotPaymentEvidenceHttp($profile,'GET','/messages?status=ready&after_id='.$after.'&per_page=100');
+    $path='/messages?status=ready';
+    if ($filter!==null) {
+        $amount=achbotPaymentEvidenceInteger($filter['amount']??null);
+        $unit=$filter['display_unit']??null;
+        $from=$filter['received_from']??null;
+        if ($amount===null || !in_array($unit,['toman','rial'],true) ||
+            ($from!==null && (!is_int($from) || $from<0 || $from>253402300799)))
+            return $bad;
+        $path.='&amount='.$amount.'&display_unit='.$unit;
+        if ($from!==null)
+            $path.='&received_from='.rawurlencode(gmdate('Y-m-d\TH:i:s\Z',$from));
+    }
+    $path.='&after_id='.$after.'&per_page=100';
+    $r=achbotPaymentEvidenceHttp($profile,'GET',$path);
     $j=$r['json'];
-    if (!$r['ok'] || !is_array($j['data']??null) || !array_is_list($j['data']) ||
+    if (!$r['ok']) {
+        $code=is_array($j)?($j['code']??null):null;
+        if ($filter!==null && ($r['http']??0)===400 &&
+            $code==='ach_pay_ambiguous_ingestion_time')
+            $bad['status']='ambiguous_time';
+        elseif ($filter!==null && ($r['http']??0)===400 &&
+            $code==='ach_pay_invalid_filter')
+            $bad['status']='unsupported';
+        return $bad;
+    }
+    if (!is_array($j['data']??null) || !array_is_list($j['data']) ||
         count($j['data'])>100 || !is_bool($j['pagination']['has_more']??null)) return $bad;
     $next=achbotPaymentEvidenceInteger($j['pagination']['next_after_id']??null,true);
     if ($next===null || ($j['pagination']['has_more'] && $next<=$after)) return $bad;
+    if ($filter!==null) foreach ($j['data'] as $row) {
+        if (!is_array($row) ||
+            achbotPaymentEvidenceInteger($row['amount']??null)!==$amount ||
+            ($row['display_unit']??null)!==$unit) {
+            // Older Pay Manager releases may silently ignore unknown filters.
+            // Do not treat that response as an exhaustive filtered lookup.
+            $bad['status']='unsupported';
+            return $bad;
+        }
+    }
     return ['ok'=>true,'status'=>'ok','data'=>$j['data'],
         'next_after_id'=>$next,'has_more'=>$j['pagination']['has_more']];
 }
