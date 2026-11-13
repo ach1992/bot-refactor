@@ -304,7 +304,7 @@ $stmt = $connection->prepare("SELECT * FROM `users` WHERE `userid`=?");
 $stmt->bind_param("i", $from_id);
 $stmt->execute();
 $uinfo = $stmt->get_result();
-$userInfo = $uinfo->fetch_assoc();
+$userInfo = $uinfo->fetch_assoc() ?: [];
 $stmt->close();
  
 $stmt = $connection->prepare("SELECT * FROM `setting` WHERE `type` = 'PAYMENT_KEYS'");
@@ -330,13 +330,19 @@ if (defined('ACHBOT_VERIFIED_WEBHOOK_ENTRYPOINT') &&
 $supportID = $botState['supportID'];
 $channelLock = $botState['lockChannel'];
 $joniedState = null;
-// Membership is relevant only for an authenticated webhook actor, not a
-// once-per-minute CLI job. Preserve the legacy unknown-result behavior.
+$joinMembershipVerified = false;
+// A configured mandatory channel is not bypassed when Telegram cannot verify
+// membership. The same result is checked again when "عضو شدم" is pressed.
 if (defined('ACHBOT_VERIFIED_WEBHOOK_ENTRYPOINT') && (int)$from_id > 0 &&
     $channelLock !== null && $channelLock !== '') {
     $membership = bot('getChatMember', ['chat_id' => $channelLock,'user_id' => $from_id]);
-    $memberStatus = is_object($membership) ? ($membership->result->status ?? null) : null;
-    $joniedState = is_string($memberStatus) ? $memberStatus : null;
+    if (is_object($membership) && ($membership->ok ?? false) === true) {
+        $status = $membership->result->status ?? null;
+        $joniedState = is_string($status) ? $status : null;
+        $joinMembershipVerified = in_array($status,
+            ['creator','administrator','member'],true) ||
+            ($status === 'restricted' && ($membership->result->is_member ?? false) === true);
+    }
 }
 
 // Channel exemption is dispatched by bot.php AFTER webhook/IP verification.
@@ -922,13 +928,14 @@ function checkSpam(){
     global $connection, $from_id, $userInfo, $admin;
     
     if($userInfo != null && $from_id != $admin){
-        $spamInfo = json_decode($userInfo['spam_info'],true)??array();
-        $spamDate = $spamInfo['date'];
+        $spamInfo = json_decode((string)($userInfo['spam_info']??''),true);
+        if (!is_array($spamInfo)) $spamInfo = [];
+        $spamDate = (int)($spamInfo['date']??0);
         if(isset($spamInfo['banned'])){
             if(time() <= $spamInfo['banned']) return $spamInfo['banned'];
         }
         
-        if(time() <= $spamDate) $spamInfo['count'] += 1;
+        if(time() <= $spamDate) $spamInfo['count'] = (int)($spamInfo['count']??0) + 1;
         else{
             $spamInfo['count'] = 1;
             $spamInfo['date'] = strtotime("+1 minute");

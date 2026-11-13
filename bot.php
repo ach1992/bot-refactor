@@ -67,7 +67,8 @@ $robotState = $botState['botState']??"on";
 $inviteReward = achbotInviteReward($connection);
 
 GOTOSTART:
-if ($userInfo['step'] == "banned" && $from_id != $admin && $userInfo['isAdmin'] != true) {
+if (($userInfo['step'] ?? null) === "banned" &&
+    $from_id != $admin && empty($userInfo['isAdmin'])) {
     sendMessage($mainValues['banned']);
     exit();
 }
@@ -98,113 +99,98 @@ if (($achbotV8Result = require __DIR__ . '/src/Finance/Routes/PrePayment.php') =
 if (($achbotManualCryptoResult = require __DIR__ . '/src/Finance/Routes/ManualCrypto.php') === null) return;
 // END Pre Pay Check By ACh
 
-if (preg_match("/^haveJoined(.*)/", $data, $match)) {
-    if ($joniedState == "kicked" || $joniedState == "left") {
-        alert($mainValues['not_joine_yet']);
-        exit();
-    } else {
-        delMessage();
-        $text = isset($match[1]) ? $match[1] : '';
-    }
+// "عضو شدم" is a navigation continuation, not proof of membership. Only
+// the current authenticated getChatMember response can clear the join gate.
+$isJoinCallback = is_string($data) &&
+    preg_match('/\AhaveJoined(?:\/start(?: [1-9][0-9]{0,18})?)?\z/D', $data) === 1;
+if ($isJoinCallback) {
+    $continuation = substr($data, strlen('haveJoined'));
+    $text = $continuation !== '' ? $continuation : '/start';
 }
-
-if (($joniedState == "kicked" || $joniedState == "left") && $from_id != $admin) {
-
+$joinRequired = $from_id != $admin &&
+    $channelLock !== null && $channelLock !== '' && !$joinMembershipVerified;
+if ($joinRequired) {
     $stmt = $connection->prepare("SELECT `value` FROM `setting` WHERE `type` = 'EXEMPTED_USERS'");
     $stmt->execute();
     $row = $stmt->get_result()->fetch_assoc();
     $stmt->close();
 
-    $exemptedUsers = json_decode($row['value'], true);
+    $exemptedUsers = json_decode((string)($row['value'] ?? '[]'), true);
     if (!is_array($exemptedUsers)) $exemptedUsers = [];
-
-    if (!in_array($from_id, $exemptedUsers)) {
-
-        $joinUrl = \AchBot\Presentation\Text\lockChannelJoinUrl($botState,(string)($joinLink??''));
-
-        sendMessage(
-            $mainValues['join_channel_message'],
-            json_encode([
-                'inline_keyboard' => array_values(array_filter([
-                    $joinUrl!=='' ? [
-                        ['text' => $buttonValues['join_channel'], 'url' => $joinUrl]
-                    ] : [],
-                    [
-                        ['text' => $buttonValues['have_joined'], 'callback_data' => 'haveJoined' . (isset($text) ? $text : '')]
-                    ]
-                ]))
-            ]),
-            "HTML"
+    if (!in_array((string)$from_id, array_map('strval', $exemptedUsers), true)) {
+        if ($isJoinCallback) {
+            alert($mainValues['not_joine_yet']);
+            exit;
+        }
+        $joinUrl = \AchBot\Presentation\Text\lockChannelJoinUrl(
+            $botState, (string)($joinLink ?? '')
         );
+        // Send only a bounded, reconstructible /start continuation. A Telegram
+        // callback cannot safely embed arbitrary message text.
+        $startContinuation = is_string($text) &&
+            preg_match('/\A\/[Ss]tart(?: [1-9][0-9]{0,18})?\z/D', $text) === 1
+                ? '/start' . substr($text, strlen('/start')) : '/start';
+        $joinKeyboard = [];
+        if ($joinUrl !== '') {
+            $joinKeyboard[] = [
+                ['text' => $buttonValues['join_channel'], 'url' => $joinUrl]
+            ];
+        }
+        $joinKeyboard[] = [
+            ['text' => $buttonValues['have_joined'],
+             'callback_data' => 'haveJoined' . $startContinuation]
+        ];
+        sendMessage($mainValues['join_channel_message'],
+            json_encode(['inline_keyboard' => $joinKeyboard]), 'HTML');
         exit;
     }
 }
+if ($isJoinCallback) delMessage();
 
-if($robotState == "off" && $from_id != $admin){
+if ($robotState === "off" && $from_id != $admin) {
     sendMessage($mainValues['bot_is_updating']);
     exit();
 }
 
-if(strstr($text, "/start ")){
-    $inviter = str_replace("/start ", "", $text);
-    if($inviter < 0) exit();
-
-    if($uinfo->num_rows == 0 && $inviter != $from_id){
-        $stmt = $connection->prepare("SELECT * FROM `users` WHERE `userid` = ?");
-        $stmt->bind_param("i", $inviter);
-        $stmt->execute();
-        $inviterInfo = $stmt->get_result();
-        $stmt->close();
-
-        if($inviterInfo->num_rows > 0){
-            $inviterData = $inviterInfo->fetch_assoc();
-
-            $first_name = !empty($first_name) ? $first_name : " ";
-            $username = !empty($username) ? $username : " ";
-
-            // ثبت کاربر جدید
-            $time = time();
-            $sql = "INSERT INTO `users` (`userid`, `name`, `username`, `refcode`, `wallet`, `date`, `refered_by`)
-                    VALUES (?,?,?, 0,0,?,?)";
-            $stmt = $connection->prepare($sql);
-            $stmt->bind_param("issii", $from_id, $first_name, $username, $time, $inviter);
-            $stmt->execute();
-            $stmt->close();
-
-				if ($inviteReward > 0) {
-
-					// موجودی قدیم دعوت‌کننده
-					$oldWallet = $inviterData['wallet'];
-					$newWallet = $oldWallet + $inviteReward;
-
-					// آپدیت موجودی
-					$stmt = $connection->prepare("UPDATE `users` SET `wallet` = ? WHERE `userid` = ?");
-					$stmt->bind_param("ii", $newWallet, $inviter);
-					$stmt->execute();
-					$stmt->close();
-
-					// ارسال پیام به دعوت‌کننده
-					$inviterMsg = \achbotMessage('bot.bot.webhook_ingress_authenticated.inviter_msg.0a64da8ef5')
-						. \achbotMessage('bot.bot.webhook_ingress_authenticated.text.750b1aaad1') . number_format($inviteReward) . \achbotMessage('bot.bot.webhook_ingress_authenticated.text.81a62ff6c6')
-						. \achbotMessage('bot.bot.webhook_ingress_authenticated.text.87d0794e8e') . number_format($oldWallet) . \achbotMessage('bot.bot.webhook_ingress_authenticated.text.81a62ff6c6')
-						. \achbotMessage('bot.bot.webhook_ingress_authenticated.text.447278518a') . number_format($newWallet) . \achbotMessage('bot.bot.webhook_ingress_authenticated.text.2cc98f7f7c');
-					sendMessage($inviterMsg, null, "html", $inviter);
-
-					// ارسال پیام به ادمین
-					$adminMsg = \achbotMessage('bot.bot.webhook_ingress_authenticated.admin_msg.a511ccf2ec', ['inviter' => $inviter])
-						. \achbotMessage('bot.bot.webhook_ingress_authenticated.text.c69814bacf', ['from_id' => $from_id])
-						. \achbotMessage('bot.bot.webhook_ingress_authenticated.text.5f8f2b70e9') . number_format($inviteReward) . \achbotMessage('bot.bot.webhook_ingress_authenticated.text.81a62ff6c6')
-						. \achbotMessage('bot.bot.webhook_ingress_authenticated.text.87d0794e8e') . number_format($oldWallet) . \achbotMessage('bot.bot.webhook_ingress_authenticated.text.81a62ff6c6')
-						. \achbotMessage('bot.bot.webhook_ingress_authenticated.text.447278518a') . number_format($newWallet) . \achbotMessage('bot.bot.webhook_ingress_authenticated.text.2cc98f7f7c');
-					achbotNotifyAdmins('sendMessage', ['text'=>$adminMsg,'parse_mode'=>'HTML']);
-			}
-
-            setUser("referedBy" . $inviter);
-            $userInfo['step'] = "referedBy" . $inviter;
-        }
+// Registration belongs after verified forced membership, but before the
+// existing phone gate and first-start menu. The helper owns all concurrent
+// first-start/referral writes; prior users retain their existing state.
+$isStart = is_string($text) &&
+    preg_match('/\A\/[Ss]tart(?:@[A-Za-z0-9_]{1,32})?(?:\s|$)/D', $text) === 1;
+if ($isStart) {
+    $inviteFromStart = 0;
+    if (preg_match('/\A\/[Ss]tart ([1-9][0-9]{0,18})\z/D', trim($text), $startMatch) === 1) {
+        $parsed = filter_var($startMatch[1], FILTER_VALIDATE_INT,
+                             ['options'=>['min_range'=>1]]);
+        if ($parsed !== false) $inviteFromStart = $parsed;
     }
-
-    $text = "/start";
+    require_once __DIR__ . '/src/Telegram/UserProfile.php';
+    $registration = achbotRegisterStartUser($connection, $update ?? null,
+        (int)$from_id, $inviteFromStart, $inviteReward, (string)$dbName);
+    if ($registration === null) {
+        sendMessage(\achbotMessage('bot.bootstrap.unavailable'), null, 'HTML');
+        return;
+    }
+    $userInfo = $registration['user'];
+    $awarded = $registration['reward'];
+    if ($registration['created'] && is_array($awarded)) {
+        $inviter = $awarded['inviter'];
+        $oldWallet = $awarded['old_wallet'];
+        $newWallet = $awarded['new_wallet'];
+        $actualReward = $awarded['amount'];
+        $inviterMsg = \achbotMessage('bot.bot.webhook_ingress_authenticated.inviter_msg.0a64da8ef5')
+            . \achbotMessage('bot.bot.webhook_ingress_authenticated.text.750b1aaad1') . number_format($actualReward) . \achbotMessage('bot.bot.webhook_ingress_authenticated.text.81a62ff6c6')
+            . \achbotMessage('bot.bot.webhook_ingress_authenticated.text.87d0794e8e') . number_format($oldWallet) . \achbotMessage('bot.bot.webhook_ingress_authenticated.text.81a62ff6c6')
+            . \achbotMessage('bot.bot.webhook_ingress_authenticated.text.447278518a') . number_format($newWallet) . \achbotMessage('bot.bot.webhook_ingress_authenticated.text.2cc98f7f7c');
+        sendMessage($inviterMsg, null, 'html', $inviter);
+        $adminMsg = \achbotMessage('bot.bot.webhook_ingress_authenticated.admin_msg.a511ccf2ec', ['inviter' => $inviter])
+            . \achbotMessage('bot.bot.webhook_ingress_authenticated.text.c69814bacf', ['from_id' => $from_id])
+            . \achbotMessage('bot.bot.webhook_ingress_authenticated.text.5f8f2b70e9') . number_format($actualReward) . \achbotMessage('bot.bot.webhook_ingress_authenticated.text.81a62ff6c6')
+            . \achbotMessage('bot.bot.webhook_ingress_authenticated.text.87d0794e8e') . number_format($oldWallet) . \achbotMessage('bot.bot.webhook_ingress_authenticated.text.81a62ff6c6')
+            . \achbotMessage('bot.bot.webhook_ingress_authenticated.text.447278518a') . number_format($newWallet) . \achbotMessage('bot.bot.webhook_ingress_authenticated.text.2cc98f7f7c');
+        achbotNotifyAdmins('sendMessage', ['text'=>$adminMsg, 'parse_mode'=>'HTML']);
+    }
+    $text = '/start';
 }
 
 if($userInfo['phone'] == null && $from_id != $admin && $userInfo['isAdmin'] != true && $botState['requirePhone'] == "on"){
