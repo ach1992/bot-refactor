@@ -169,6 +169,28 @@ def check(root: Path = ROOT) -> dict:
         assert ordinary_rows[-1]==support,ordinary_rows
         cases+=1
 
+        # The optional add-subscription action precedes the configured
+        # cooperation/support URL, not the other way around.  Check both
+        # its enabled and disabled states, with the independent help link
+        # and a custom button present as in real tenant menus.
+        for label,options,expected_enabled in [
+            ('customer_enabled',{'search_on':True,'extra':True},True),
+            ('customer_disabled',{'extra':True},False),
+            ('agent_enabled',{'agent':True,'search_on':True,'extra':True},True),
+            ('agent_disabled',{'agent':True,'extra':True},False),
+        ]:
+            current=execute(**options)['rows']
+            cooperation=[i for i,row in enumerate(current)
+                         if any(b.get('url')=='https://t.me/fixture_partners' for b in row)]
+            imports=[i for i,row in enumerate(current)
+                     if any(b.get('callback_data')=='showUUIDLeft' for b in row)]
+            assert len(cooperation)==1,(label,current)
+            assert imports==([cooperation[0]-1] if expected_enabled else []),(label,current)
+            assert current[-1]==support,(label,current)
+            assert [b['callback_data'] for row in current for b in row
+                    if b.get('callback_data')=='reciveApplications']==['reciveApplications'],(label,current)
+            cases+=1
+
         # Owner's own account may be neither ordinary (0) nor agent (1);
         # all four current staff levels share the same main-menu pairing.
         for name,options in [

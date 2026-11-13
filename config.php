@@ -456,9 +456,8 @@ function getMainKeys(){
         (($botState['sharedExistence'] != "on" && $botState['individualExistence'] == "on")?
             [['text'=>$buttonValues['individual_existence'],'callback_data'=>"availableServers2"]] : []
         ),
-		(($from_id != $admin && $userInfo['isAdmin'] != true && $cooperationUrl!=='') ?
-			[['text' => \achbotMessage('admin_settings.config.get_main_keys.button.b7d6aa7173'), 'url' => $cooperationUrl]] : []
-		),
+        // Keep the optional customer import action above the configured
+        // cooperation/support URL; the staff search pair stays on one row.
         (($botState['searchState']=="on" || $isAdminMenu)?
             array_merge(
                 [['text'=>$buttonValues['search_config'],'callback_data'=>"showUUIDLeft"]],
@@ -468,6 +467,9 @@ function getMainKeys(){
                 ]] : [])
             ) : []
         ),
+		(($from_id != $admin && $userInfo['isAdmin'] != true && $cooperationUrl!=='') ?
+			[['text' => \achbotMessage('admin_settings.config.get_main_keys.button.b7d6aa7173'), 'url' => $cooperationUrl]] : []
+		),
     ]);
 
     $stmt = $connection->prepare("SELECT * FROM `setting` WHERE `type` LIKE '%MAIN_BUTTONS%'");
