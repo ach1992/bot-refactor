@@ -1,5 +1,38 @@
 # Current source and published release contracts
 
+## Published RC38 — gateway payment eligibility controls
+
+[v0.10.0-rc.38](https://github.com/ach1992/bot-refactor/releases/tag/v0.10.0-rc.38)
+is a source-only prerelease of independently approved
+[PR #169](https://github.com/ach1992/bot-refactor/pull/169).
+Candidate `7b9a5454cd5d6ed8828f85cdbdc6990af3755f2a`
+was merged as `978ff715b10f9da63ac6c000c2e62e2ba319bfc4`, with
+reviewed runtime tree `7b3c3484783332460ee184d6b20e83f7003509f0`.
+[Exact-source CI #43404256057](https://github.com/ach1992/bot-refactor/actions/runs/43404256057)
+passed PHP 8.5 Foundation, all eight Native families and protected aggregate.
+The subsequent release-only README/guide edits do **not** change runtime or
+test files. The final tag and manifest are authoritative for released bytes.
+
+The payment-rule management button appears immediately below the administrator
+payment review inbox for Owner, Manager and Operator, not Support. Per-method
+numeric user exemptions bypass only eligibility rules, never disabled gateways
+or financial authorization; per-category ON requires all enabled conditions
+(AND, legacy default), OFF accepts any (OR), category membership remains
+mandatory. Wallet top-up, purchase and add-on payment-selection buttons use
+the exact label **🎁 خرید گیفت کارت | ریالی**. The separate gift purchase,
+receipt and renewal labels remain unchanged. Malformed explicit JSON null
+exemption state fails closed while absent optional state retains legacy
+behavior. The guide is [RC37 → RC38](RC37-TO-RC38.md);
+[eligibility rule operations](GATEWAY-ELIGIBILITY-RULES.md) remain canonical.
+
+No SQL migration, schema, private config setting, webhook, Cron, provider
+dependency or automatic production action is introduced. GitHub publication
+does not install Vivan, Chili, Hell or any tenant; their installed acceptance
+requires separate specific approval. [Vivan #157](https://github.com/ach1992/bot-refactor/issues/157)
+and [Hell #161](https://github.com/ach1992/bot-refactor/issues/161)
+remain open. All older release sections below are historical.
+
+
 
 ## Published RC35 — Vivan invitation timeout correction and approved main menu
 
