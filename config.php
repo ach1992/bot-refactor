@@ -414,13 +414,13 @@ function getMainKeys(){
     $cooperationUrl = \AchBot\Presentation\Text\configuredDestination($botState,'cooperationUrl',true);
     $helpChannelUrl = \AchBot\Presentation\Text\configuredDestination($botState,'helpChannel');
 
-    if($botState['agencyState'] == "on" && $userInfo['is_agent'] == 1){
+    if(($botState['agencyState'] ?? 'off') == "on" && $userInfo['is_agent'] == 1){
 		$mainKeys = array_merge($mainKeys, [
 			[['text'=>$buttonValues['agency_setting'],'callback_data'=>"agencySettings"]],
 			[['text'=>$buttonValues['sharj'],'callback_data'=>"increaseMyWallet"]],
 		]);
 
-		if (($botState['sellState'] ?? 'off') == "on" || $from_id == $admin || !empty($userInfo['isAdmin'])) {
+		if ((($botState['sellState'] ?? 'off') ?? 'off') == "on" || $from_id == $admin || !empty($userInfo['isAdmin'])) {
 			$mainKeys[] = [
 				['text'=>$buttonValues['agent_one_buy'],'callback_data'=>"agentOneBuy"],
 				['text'=>$buttonValues['agent_much_buy'],'callback_data'=>"agentMuchBuy"]
@@ -428,10 +428,10 @@ function getMainKeys(){
 		}
 	}else{
         $mainKeys = array_merge($mainKeys,[
-            (($botState['agencyState'] == "on" && $userInfo['is_agent'] == 0)?[
+            ((($botState['agencyState'] ?? 'off') == "on" && $userInfo['is_agent'] == 0)?[
                 ['text'=>$buttonValues['request_agency'],'callback_data'=>"requestAgency"]
             ]: []),
-            (($botState['sellState'] == "on" || $from_id == $admin || $userInfo['isAdmin'] == true)?
+            ((($botState['sellState'] ?? 'off') == "on" || $from_id == $admin || $userInfo['isAdmin'] == true)?
                 [['text'=>$buttonValues['sharj'],'callback_data'=>"increaseMyWallet"],['text'=>$buttonValues['buy_subscriptions'],'callback_data'=>"buySubscription"]]
                 :
                 [['text'=>$buttonValues['sharj'],'callback_data'=>"increaseMyWallet"]]
@@ -442,7 +442,7 @@ function getMainKeys(){
     $mainKeys = array_merge($mainKeys, [
         // Owner-approved conditional row: free trial precedes account/view
         // whenever the unchanged eligibility gate makes it visible.
-        (($botState['testAccount'] == "on" && ($from_id == $admin || $userInfo['freetrial'] != 'used')) ?
+        ((($botState['testAccount'] ?? 'off') == "on" && ($from_id == $admin || $userInfo['freetrial'] != 'used')) ?
             [['text'=>$buttonValues['test_account'],'callback_data'=>"getTestAccount"]] : []),
         [
             ['text'=>$buttonValues['my_info'],'callback_data'=>"myInfo"],
@@ -453,18 +453,18 @@ function getMainKeys(){
             ['text'=>$buttonValues['invite_friends'],'callback_data'=>"inviteFriends"],
             ['text'=>$buttonValues['application_links'],'callback_data'=>"reciveApplications"]
         ] : []),
-        (($botState['sharedExistence'] == "on" && $botState['individualExistence'] == "on")?
+        ((($botState['sharedExistence'] ?? 'off') == "on" && ($botState['individualExistence'] ?? 'off') == "on")?
             [['text'=>$buttonValues['shared_existence'],'callback_data'=>"availableServers"],['text'=>$buttonValues['individual_existence'],'callback_data'=>"availableServers2"]] : []
         ),
-        (($botState['sharedExistence'] == "on" && $botState['individualExistence'] != "on")?
+        ((($botState['sharedExistence'] ?? 'off') == "on" && ($botState['individualExistence'] ?? 'off') != "on")?
             [['text'=>$buttonValues['shared_existence'],'callback_data'=>"availableServers"]] : []
         ),
-        (($botState['sharedExistence'] != "on" && $botState['individualExistence'] == "on")?
+        ((($botState['sharedExistence'] ?? 'off') != "on" && ($botState['individualExistence'] ?? 'off') == "on")?
             [['text'=>$buttonValues['individual_existence'],'callback_data'=>"availableServers2"]] : []
         ),
         // Keep the optional customer import action above the configured
         // cooperation/support URL; the staff search pair stays on one row.
-        (($botState['searchState']=="on" || $isAdminMenu)?
+        ((($botState['searchState'] ?? 'off')=="on" || $isAdminMenu)?
             array_merge(
                 [['text'=>$buttonValues['search_config'],'callback_data'=>"showUUIDLeft"]],
                 ($isAdminMenu ? [[

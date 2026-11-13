@@ -104,6 +104,16 @@ if (($achbotManualCryptoResult = require __DIR__ . '/src/Finance/Routes/ManualCr
 $isJoinCallback = is_string($data) &&
     preg_match('/\AhaveJoined(?:\/start(?: [1-9][0-9]{0,18})?)?\z/D', $data) === 1;
 if ($isJoinCallback) {
+    // The join button is usable only in the same actor's private bot chat.
+    // Validate before potentially deleting its message or writing identity.
+    $joinFrame = $update->callback_query ?? null;
+    $joinSender = $joinFrame->from ?? null;
+    $joinChat = $joinFrame->message->chat ?? null;
+    if (!is_object($joinSender) || !is_object($joinChat) ||
+        !is_int($joinSender->id ?? null) || $joinSender->id !== (int)$from_id ||
+        ($joinSender->is_bot ?? false) === true ||
+        ($joinChat->type ?? null) !== 'private' ||
+        ($joinChat->id ?? null) !== (int)$from_id) return;
     $continuation = substr($data, strlen('haveJoined'));
     $text = $continuation !== '' ? $continuation : '/start';
 }
@@ -145,8 +155,6 @@ if ($joinRequired) {
         exit;
     }
 }
-if ($isJoinCallback) delMessage();
-
 if ($robotState === "off" && $from_id != $admin) {
     sendMessage($mainValues['bot_is_updating']);
     exit();
@@ -172,6 +180,9 @@ if ($isStart) {
         return;
     }
     $userInfo = $registration['user'];
+    // Do not remove a channel-join prompt unless verified registration
+    // (or the uniquely resolved pre-existing identity) actually succeeded.
+    if ($isJoinCallback) delMessage();
     $awarded = $registration['reward'];
     if ($registration['created'] && is_array($awarded)) {
         $inviter = $awarded['inviter'];

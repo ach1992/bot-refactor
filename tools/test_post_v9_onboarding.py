@@ -50,6 +50,9 @@ $botState=['lockChannel'=>$channelLock,'supportID'=>'@fixture_support',
     'cooperationUrl'=>'@fixture_support','helpChannel'=>'',
     'agencyState'=>'off','sellState'=>'on','testAccount'=>'off','sharedExistence'=>'off',
     'individualExistence'=>'off','searchState'=>'off'];
+if(!empty($spec['missing_optional_flags'])) {
+    unset($botState['individualExistence'],$botState['sharedExistence'],$botState['agencyState']);
+}
 $mainValues=['join_channel_message'=>'JOIN_PROMPT','not_joine_yet'=>'NOT_JOINED',
   'bot_is_updating'=>'UPDATING','start_message'=>'HOME',
   'new_member_joined'=>'NEW FULLNAME USERNAME USERID','user_welcome_message'=>'WELCOME'];
@@ -155,6 +158,7 @@ def call(w: Path, env: dict, spec: dict) -> dict:
     cmd=["php","-d","allow_url_fopen=0",
          "-d","disable_functions=curl_exec,fsockopen,pfsockopen,stream_socket_client,stream_socket_server",
          "-d","display_errors=0","-d","log_errors=1",
+         "-d","error_log="+str(w/"onboarding-errors.log"),
          str(w/"onboarding-driver.php"),str(ROOT),str(w/"mysql.sock"),
          DB,json.dumps(spec)]
     p=subprocess.run(cmd,cwd=w,env=env,capture_output=True,text=True,timeout=20)
@@ -228,6 +232,9 @@ def main() -> None:
         buttons=[b for row in json.loads(home['markup'])['inline_keyboard'] for b in row]
         yes(sum(b.get('url')=='https://t.me/fixture_support' for b in buttons)==1,
             "home_single_support_destination_no_duplicate_button")
+        r=run(actor=2423,missing_optional_flags=True)
+        yes(len(r['rows'])==1 and any(e['text']=='HOME' for e in r['events']),
+            "unset_optional_feature_flags_do_not_break_new_user_menu")
         r=run(actor=2401)
         yes(len(r['rows'])==1 and r['registered'] is False and
             [e['text'] for e in r['events'] if e['kind']=='send']==['HOME'],
@@ -290,6 +297,10 @@ def main() -> None:
         r=run(actor=2413,mode='helper')
         yes(len(r['rows'])==2 and r['registered'] is None,
             "ambiguous_legacy_identity_never_overwritten")
+        log=(w/"onboarding-errors.log").read_text(encoding="utf-8")
+        yes("achbot_start_registration_unverified actor=2413 stage=identity" in log and
+            "class=RuntimeException" in log and "fixture_user" not in log,
+            "ambiguous_registration_retains_actor_stage_and_safe_error_diagnostics")
         native.sql(w,env,"INSERT INTO users(userid,name,username,refcode,wallet,date) VALUES "
                        "(2414,'prior','prior','0',0,'1700000000')",DB)
         native.sql(w,env,"DELETE FROM users WHERE userid=2414",DB)
@@ -329,6 +340,10 @@ def main() -> None:
         r=run(actor=2420,mode='helper',text='/invalid')
         yes(r['rows']==[] and r['registered'] is None,
             "non_start_message_cannot_create_identity")
+        r=run(actor=2422,forced=False,callback='haveJoined/start',
+              chat_type='group',chat_id=-100)
+        yes(r['rows']==[] and not r['events'],
+            "group_join_callback_neither_deletes_message_nor_registers")
     proof={'complete':True,'cases':len(checks),'checks':checks,
            'source_real':True,'owned_socket_mariadb':True,'php85':True,
            'forced_membership_verified':True,'concurrent_registration':True,

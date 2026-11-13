@@ -193,7 +193,9 @@ function achbotRegisterStartUser(
         if ($begun) {
             try { $db->rollback(); } catch (Throwable $unused) {}
         }
-        error_log('achbot_start_registration_unverified stage=' . $stage);
+        error_log('achbot_start_registration_unverified actor=' . $actor
+            . ' stage=' . $stage . ' class=' . get_class($ignored)
+            . ' code=' . (int)$ignored->getCode());
         return null;
     } finally {
         if ($ownsLock) {
