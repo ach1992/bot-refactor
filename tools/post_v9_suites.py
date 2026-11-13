@@ -556,6 +556,35 @@ def run_api(tmp: str) -> tuple[dict, dict]:
     if api_flow_mismatches:
         raise RuntimeError('Existing API payment flow source proof incomplete: '+
                            json.dumps(api_flow_mismatches,sort_keys=True))
+    # Keep the staff projection's real InnoDB lock-order and deadlock-victim
+    # semantics in the API family, alongside the existing financial flow.
+    digest_path=Path(tmp)/'payment-api-staff-digest.json'
+    subprocess.run(['python3',str(ROOT/'tools/test_post_v9_api_staff_digest.py'),
+                    '--run-disposable','--report',str(digest_path)],
+                   cwd=ROOT,check=True,timeout=90,capture_output=True)
+    digest=json.loads(digest_path.read_text())
+    required_digest=[
+        'current_state_digest_stamped',
+        'stale_state_refuses_stamp',
+        'different_approver_refuses_stamp',
+        'null_approver_semantics',
+        'caller_transaction_not_committed_or_rolled_back',
+        'synthetic_1213_leaves_digest_retryable',
+        'post_1213_retry_stamps_without_repeating_effects',
+        'concurrent_pays_then_attempt_lock_order',
+        'concurrent_changed_payment_refuses_stale_digest',
+    ]
+    digest_mismatches=exact_current_proof_mismatches(digest,
+        {'complete':True,'cases':9,'exact_source_extracted':True,
+         'php85':True,'owned_socket_mariadb':True,'real_innodb_concurrency':True,
+         'synthetic_1213':True,'provider_requests':0,'telegram_requests':0,
+         'production_mutations':0,'source_head':current_api_head},
+        'scenarios',required_digest,count_key=None)
+    if digest.get('scenarios')!=required_digest:
+        digest_mismatches['scenario_order']='required exact source-real lock-order scenarios'
+    if digest_mismatches:
+        raise RuntimeError('API staff digest lock-order regression proof incomplete: '+
+                           json.dumps(digest_mismatches,sort_keys=True))
     api_native_path=Path(tmp)/'payment-api-native-preflight.json'
     subprocess.run(['python3',str(ROOT/'tools/test_owner_r6_api_native_preflight.py'),
                     '--run-disposable','--report',str(api_native_path)],
@@ -648,7 +677,7 @@ def run_api(tmp: str) -> tuple[dict, dict]:
         raise RuntimeError('Existing API actual native preflight proof incomplete: '+
                            json.dumps(api_native_mismatches,sort_keys=True))
 
-    return {'existing_payment_apis': {'settings': api_settings, 'evidence': api_evidence, 'evidence_negative_controls': api_evidence_red, 'flow': api_flow, 'native_preflight': api_native}}, result
+    return {'existing_payment_apis': {'settings': api_settings, 'evidence': api_evidence, 'evidence_negative_controls': api_evidence_red, 'flow': api_flow, 'staff_digest_lock_order': digest, 'native_preflight': api_native}}, result
 
 
 def run_services(tmp: str) -> tuple[dict, dict]:
