@@ -192,14 +192,20 @@ def verify(root: Path = ROOT) -> dict:
     assert "'uncertain'=>true" in toggle and 'curl_errno($curl)' in toggle
     assert 'curl_close($curl)' not in toggle and '$http!==200' in toggle
 
-    for path, action in (('pay/checkout.php', 'PaymentRequest'),
-                         ('src/Finance/GatewayReturn.php','PaymentVerification')):
-        content = (root/path).read_text()
-        target=content.split('new SoapClient(',1)[1].split('->'+action+'(',1)[0]
-        assert "'connection_timeout'=>5" in target
-        assert "'stream_context'=>stream_context_create(['http'=>['timeout'=>15]])" in target
-        assert "ini_set('default_socket_timeout','15')" in content
-        assert "if ($socketTimeout!==false) ini_set('default_socket_timeout',$socketTimeout)" in content
+    checkout=(root/'pay/checkout.php').read_text()
+    marker='/**\n * Claim one gateway per local order'
+    assert checkout.count(marker)==1
+    prelude,body=checkout.split(marker,1)
+    assert "ini_set('default_socket_timeout','15')" in prelude
+    # Keep historical issuance exactly byte-pinned. The SOAP bound is applied
+    # by the request entrypoint, not by rewriting that verified controller.
+    assert "'connection_timeout'=>5" not in body
+    verify_source=(root/'src/Finance/GatewayReturn.php').read_text()
+    target=verify_source.split('new SoapClient(',1)[1].split('->PaymentVerification(',1)[0]
+    assert "'connection_timeout'=>5" in target
+    assert "'stream_context'=>stream_context_create(['http'=>['timeout'=>15]])" in target
+    assert "ini_set('default_socket_timeout','15')" in verify_source
+    assert "if ($socketTimeout!==false) ini_set('default_socket_timeout',$socketTimeout)" in verify_source
 
     return {'verified': True, 'invite_handler_scenarios': cases,
             'offline_no_real_telegram': True, 'active_marzban_toggle_timeout_guard': True, 'offline_marzban_scenarios': 5,

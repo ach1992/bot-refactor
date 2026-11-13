@@ -26,12 +26,14 @@ do not expose its token or contents.
   classify missing/invalid/non-200 remote acknowledgement as **uncertain**, not
   a confirmed successful toggle. Do not automatically retry an uncertain PUT;
   read the remote account's actual state before any further action.
-- Zarinpal SOAP checkout and verification: bound connection (5s) and socket
-  read (15s) via connection_timeout, request-scoped
-  default_socket_timeout and HTTP stream-context timeout. Restore the
-  original PHP INI setting after the call. On failure, preserve existing
-  checkout/verification uncertainty and manual reconciliation paths. A timeout
-  does not prove the provider rejected the financial request.
+- Zarinpal SOAP checkout: the canonical issuance body is historically pinned
+  byte-for-byte. Its public checkout entrypoint sets a per-request 15s
+  default_socket_timeout before that body; PHP resets the setting at request
+  termination. No issuance logic or payment claim was rewritten.
+  Zarinpal SOAP verification: 5s connection and 15s stream-read/socket
+  timeouts, with the original PHP INI setting restored in finally. On failure,
+  preserve existing checkout/verification uncertainty and manual reconciliation
+  paths. A timeout does not prove the provider rejected the financial request.
 - The legacy curl_get_file_contents helper, legacy
   GatewayClient::NOWPayments() helper and legacy
   renewMarzbanUUID() helper currently have no runtime callers (source
