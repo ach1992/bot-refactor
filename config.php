@@ -724,7 +724,7 @@ function achbotAdminGatewayChange($update,int $actor,int $chat,int $message,
         $pk=$findActor($connection,$actor);
         $currentStep=null;
         $authorize=static function(mysqli $db) use(
-            $actor,$primary,$pk,$findActor,$kind,&$currentStep
+            $actor,$primary,$pk,$findActor,$key,&$currentStep
         ): void {
             // FIRST read in the transaction: lock CURRENT actor privileges.
             $stmt=$db->prepare('SELECT id,userid,isAdmin,step FROM users WHERE id=? FOR UPDATE');
@@ -740,7 +740,7 @@ function achbotAdminGatewayChange($update,int $actor,int $chat,int $message,
                 $findActor($db,$actor)!==$pk)
                 throw new RuntimeException('gateway_actor_no_longer_authorized');
             if (!achbotAdminCanLocked($db,$actor,$primary,
-                in_array($kind,['rule','number'],true)?'gateway_rules':'gateways'))
+                str_starts_with($key,'gr|')?'gateway_rules':'gateways'))
                 throw new RuntimeException('gateway_actor_no_longer_authorized');
             $currentStep=(string)$current['step'];
         };

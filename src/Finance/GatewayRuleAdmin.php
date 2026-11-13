@@ -495,7 +495,10 @@ function achbotGatewayAdminCanView($update,int $actor,int $chat,int $message,
         $stmt->bind_param('i',$actor);
         if (!$stmt->execute()) return false;
         $rows=$stmt->get_result()->fetch_all(MYSQLI_ASSOC);$stmt->close();
+        $capability=($data==='gatewayAudienceSettings' || str_starts_with($data,'gr|'))
+            ? 'gateway_rules' : 'gateways';
         return count($rows)===1 && $rows[0]['step']!=='banned' &&
-            ($actor===$primary || (int)$rows[0]['isAdmin']===1) && achbotAdminCan('gateway_rules',$actor);
+            ($actor===$primary || (int)$rows[0]['isAdmin']===1) &&
+            achbotAdminCan($capability,$actor);
     } catch (Throwable $ignored) { return false;}
 }
