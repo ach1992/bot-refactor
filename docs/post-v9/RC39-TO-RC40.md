@@ -49,6 +49,14 @@ acceptance from the release tag or published ZIP. A failed CI check requires
 diagnosis and a subsequently reviewed/validated fix, not a bypass of
 branch protection.
 
+**Recorded later:** [GitHub PHP 8.5 Run #43523520445](https://github.com/ach1992/bot-refactor/actions/runs/43523520445) passed
+all eight native families and the protected aggregate on attempt 2 for
+the published source commit 6fcddf4579ba4ac6a76f44c6891758f6a87879b3.
+The first attempt had a MariaDB Deadlock 1213 in the unchanged finance
+API flow under concurrent synthetic calls; the bounded retry passed.
+Preserve that initial failure as diagnostic evidence, not a repaired
+financial bug. Integration still follows the actual protected PR status.
+
 ## ZIP artifact and three archive-only staging destinations
 
 Use the **attached release runtime ZIP**, matching

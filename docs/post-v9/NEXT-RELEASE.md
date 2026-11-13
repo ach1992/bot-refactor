@@ -24,6 +24,15 @@ No extraction, runtime activation, SQL migration, webhook/Cron operation,
 financial or provider effect was authorized. Refer to
 [RC39 → RC40](RC39-TO-RC40.md) for artifact verification and rollback scope.
 
+**Post-publication CI:** [Run #43523520445](https://github.com/ach1992/bot-refactor/actions/runs/43523520445) completed
+successfully on attempt 2 at release commit
+6fcddf4579ba4ac6a76f44c6891758f6a87879b3.
+The initial attempt had one unrelated concurrency Deadlock 1213 in
+the unchanged API-payment Fixture; its failed family passed on bounded
+retry. The check is not itself proof of a permanent concurrency repair
+or an installed bot upgrade. PR #177 must still satisfy the
+PR-associated protected-main check before merging.
+
 ## Published RC39 — indexed SMS, gateway exemption UX, public root/health
 
 [v0.10.0-rc.39](https://github.com/ach1992/bot-refactor/releases/tag/v0.10.0-rc.39)
