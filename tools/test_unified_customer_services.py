@@ -276,7 +276,18 @@ echo json_encode($out,JSON_THROW_ON_ERROR);
       eligible=amount>0 or imported
       yes((toggle in keys)==(fileid>0 and eligible) and (plan_callback in keys)==(op=='admin' or eligible),
           provider+'_'+op+'_file'+str(fileid)+'_amount'+str(amount)+'_import'+str(imported)+'_automatic_renewal_and_familiar_plan_action_policy')
-      if op=='admin':yes('changePlan_91'in keys and 'changeFileId_91_2'not in keys,provider+'_admin_preserves_familiar_common_plan_selector_'+str(fileid)+'_'+str(amount)+'_'+str(imported))
+      if op=='admin':
+       # Keep exact test-family case counts while strengthening the original
+       # admin plan selector proof with its visible paired-service row.
+       rows=json.loads(keys)['inline_keyboard']
+       service_rows=[row for row in rows if any(
+           str(button.get('callback_data','')).startswith('switchLocation91_')
+           for button in row)]
+       yes('changePlan_91'in keys and 'changeFileId_91_2'not in keys and
+           len(service_rows)==1 and
+           [button.get('callback_data') for button in service_rows[0]]==
+           ['switchLocation91_2_0_0','changePlan_91'],
+           provider+'_admin_preserves_familiar_common_plan_selector_'+str(fileid)+'_'+str(amount)+'_'+str(imported))
    sql("DELETE FROM setting WHERE type='ACHBOT_SERVICE_ORIGIN:91';UPDATE orders_list SET fileid=7,amount=100,autoRenew='on' WHERE id=91")
    for op in ['view','admin']:
     toggle='adminToggleAutoRenew91' if op=='admin' else 'toggleAutoRenew91'
@@ -293,12 +304,24 @@ echo json_encode($out,JSON_THROW_ON_ERROR);
       sql("UPDATE orders_list SET autoRenew='"+consent+"' WHERE id=91")
       keys=call(op,actor=9001 if op=='admin' else 1001,remote=remote,renew_auto_state=global_state)['out']['keyboard']
       buttons=[button for row in json.loads(keys)['inline_keyboard'] for button in row if button.get('callback_data')==toggle]
+      # The admin transfer must remain available alone when Native status
+      # is uncertain; it must not re-expose the gated change-plan action.
+      if op=='admin' and remote is None:
+       rows=json.loads(keys)['inline_keyboard']
+       service_rows=[row for row in rows if any(
+           str(button.get('callback_data','')).startswith('switchLocation91_')
+           for button in row)]
+       uncertain_actions=(len(service_rows)==1 and
+           [button.get('callback_data') for button in service_rows[0]]==
+           ['switchLocation91_2_0_0'] and 'changePlan_91' not in keys)
+      else:
+       uncertain_actions=True
       # Owner Rev4: a plan hidden from new purchases still permits the
       # existing subscriber to newly enable renewal of that exact plan.
       expected=(len(buttons)==1 and buttons[0]['text']==original_label) if consent=='on' else (
           (len(buttons)==1 and buttons[0]['text']!=original_label)
           if label=='retired_plan' else buttons==[])
-      yes(expected,provider+'_'+op+'_'+label+'_'+consent+'_existing_consent_and_hidden_plan_renewal_policy')
+      yes(expected and uncertain_actions,provider+'_'+op+'_'+label+'_'+consent+'_existing_consent_and_hidden_plan_renewal_policy')
     sql("UPDATE server_plans SET active=1 WHERE id=7;UPDATE orders_list SET autoRenew='on' WHERE id=91")
    sql("UPDATE orders_list SET autoRenew='off' WHERE id=91")
    for unlimited in [None,0]:

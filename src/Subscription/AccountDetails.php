@@ -272,13 +272,15 @@ function getUserOrderDetailKeys($id, $offset = 0){
     // Admin always sees transfer, even when there is no eligible destination
     // or the remote panel is temporarily unavailable. The callback gives a
     // reason and rechecks current group/order/authority, never a silent hide.
-    if (canReadAdminOrderDetails()) $keyboard[] = [[
+    $servicePlanActions = [];
+    if (canReadAdminOrderDetails()) $servicePlanActions[] = [
         'text'=>\achbotMessage('subscription.account_details.get_order_detail_keys.button.5c38085697'),
         'callback_data'=>"switchLocation{$id}_{$server_id}_0_0"
-    ]];
-    if (!$uncertain && $actionable) $keyboard[] = [
-        ['text' => $buttonValues['change_plan'], 'callback_data' => "changePlan_{$id}"],
     ];
+    if (!$uncertain && $actionable) $servicePlanActions[] = [
+        'text' => $buttonValues['change_plan'], 'callback_data' => "changePlan_{$id}"
+    ];
+    if ($servicePlanActions) $keyboard[] = $servicePlanActions;
 
     // Existing consent can always be withdrawn from an active local order.
     // The original eligibility checks still control offering new consent.
