@@ -19,6 +19,7 @@ import v9_contract as historical
 import package_post_v9 as package
 import test_post_v9_customer_errors as customer_errors
 import test_post_v9_network_io as webhook_io
+import test_post_v9_main_menu as main_menu
 
 ROOT = Path(__file__).resolve().parents[1]
 V9 = "7eb077fd8e6d0a303421626d1500f69e295a6664"
@@ -455,6 +456,7 @@ def source_checks():
     # Execute new regression cases without changing the exact pinned CI
     # foundation proof schema owned by tools/post_v9_shards.py.
     webhook_io.verify(ROOT)
+    main_menu.check(ROOT)
     return {"source_files":len(files),"php_lint":len(php_files),
             "original_historical_schema_file_unchanged":True,
             "current_additive_migration_separately_tested":False,

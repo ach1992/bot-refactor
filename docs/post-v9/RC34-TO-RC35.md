@@ -12,20 +12,50 @@ api.telegram.org/getMe call without a short request timeout, observed twice
 in PHP-FPM slow traces on 2026-11-13. The menu now constructs its original
 t.me/<botUsername>?start=<numeric-userid> string offline from the existing
 private $botUsername. The NL Vivan configuration was independently confirmed
-to match the bot's actual Telegram username. Existing invite banner text,
-photo, button labels, reward amounts and success presentation are unchanged.
-An absent/invalid configured username produces the **existing** invite-unavailable
+to match the bot's actual Telegram username. Existing invite banners, photos,
+reward amounts, callbacks and success presentation are unchanged. An
+absent/invalid configured username produces the **existing** invite-unavailable
 alert and a classified server-side diagnostic instead of silently waiting on
 the Telegram network. Fix the private configuration if this condition occurs;
 do not expose its token or contents.
 
+The Owner explicitly approved this revised **ordinary user** main-menu layout
+in the same PR (original button emojis and callback destinations preserved):
+
+1. Existing cooperation request: unchanged.
+2. Existing wallet top-up | new-subscription purchase: unchanged.
+3. 🔐 حساب کاربری | 🔄 مشاهده اشتراک‌ها
+4. 🧲 کسب درآمد | 📚 آموزش و قوانین
+5. Existing support/help-channel button, last.
+
+The half-space in **اشتراک‌ها** is U+200C. Ordinary users have the referral
+button; administrator visibility and agent-specific subscriptions callbacks
+are unchanged. Optional trial/search/custom buttons and configured cooperation
+links retain their existing availability; help remains last. Two wallet
+top-up completion messages, expiration/import instructions, and other
+identified references now use the same menu label. There is no text-based
+legacy menu action needing an alias: all existing inline button callback IDs
+remain unchanged. Frozen historical copy fixtures are untouched.
+
 ## Other active network paths
 
-- Current Marzban account enable/disable/toggle PUT: bound connection (5s)
-  and total (20s) time, disallow redirects, retain TLS verification and
-  classify missing/invalid/non-200 remote acknowledgement as **uncertain**, not
-  a confirmed successful toggle. Do not automatically retry an uncertain PUT;
-  read the remote account's actual state before any further action.
+- Marzban ordinary and strict account GET: both have unconditional 5s
+  connection / 20s total deadlines, TLS verification and no redirects;
+  the strict mode still separately governs invalid-response classification.
+  Account presentation and the customer toggle cannot bypass these limits.
+- Marzban account enable/disable/toggle: the initial **strict, physical-target-
+  matched GET** must return the requested account identity, an active/disabled
+  status and the fields to be sent. A malformed/error/timeout/foreign account
+  causes **no PUT**. The intended status is computed once. The PUT retains
+  its 5s/20s deadlines, TLS and redirect protection, and can report success
+  only on HTTP 200 JSON acknowledging that same username and intended status.
+  Missing/invalid/contradictory replies are **uncertain**. Never automatically
+  repeat an uncertain PUT; observe remote state before taking another action.
+- Marzban getMarzbanUserInfo() link probing formerly repeated the full
+  account GET up to 11 times. It now performs one bounded authenticated GET,
+  then probes the same subscription URL within an additional 12-second
+  budget (maximum 11 probes of at most 3 seconds each), preserving the
+  existing last-attempt link fallback rather than blocking on repeated GETs.
 - Zarinpal SOAP checkout: the canonical issuance body is historically pinned
   byte-for-byte. Its public checkout entrypoint sets a per-request 15s
   default_socket_timeout before that body; PHP resets the setting at request
@@ -39,9 +69,11 @@ do not expose its token or contents.
   renewMarzbanUUID() helper currently have no runtime callers (source
   search). They are **not evidence of active webhook hangs**; do not add
   speculative dependencies, untested shims or unrelated cleanup to this fix.
-- Other observed current-runtime remote cURL operations already have explicit
-  connection/total timeouts. Reassess new outbound paths if future code adds
-  them.
+- Other surveyed current-runtime Telegram, hosted payment, bank evidence,
+  PasarGuard and strict Marzban transports have explicit deadlines; the
+  previously missed ordinary Marzban GET is now covered as above. This is
+  an audit of identified **active paths**, not a guarantee that no future
+  unbounded network call can ever be introduced.
 
 ## Source and installation boundary
 
@@ -49,8 +81,13 @@ do not expose its token or contents.
   token change, Cron change, Telegram webhook change, payment amount or Native
   account migration accompanies this source correction.
 - Run the PHP 8.5 exact-candidate eight Native family CI and protected
-  aggregate, plus the offline invitation and Marzban error regressions.
-  Independent review is required before merge.
+  aggregate, plus the source-real offline invitation (8 scenarios), Marzban
+  GET/toggle (including preflight failures without PUT and mismatched PUT
+  acknowledgements), and actual menu/copy regressions. Existing message
+  templates and financial effects remain under their original contracts.
+  The previous independent review reported two REQUIRED Marzban findings;
+  a fresh independent **delta re-review** of this amended candidate is required
+  before merge.
 - Published ZIP and manifest are **not a live installation**. On any Vivan,
   Chili or Hell target, use a fresh target-specific approval, immutable artifact
   hash verification, restorable source/config backup and a rollback plan.

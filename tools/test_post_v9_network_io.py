@@ -75,12 +75,16 @@ MARZBAN_PHP = r"""<?php
 namespace AchBot\Panel\Accounts;
 error_reporting(E_ALL);
 set_error_handler(static function($level,$message) {throw new \ErrorException($message,0,$level);});
+const MARZBAN_BEARER_TOKEN_PATTERN='#\A[A-Za-z0-9._~+/-]+=*\z#D';
 $case=\json_decode($argv[2],true,512,JSON_THROW_ON_ERROR);
 $GLOBALS['case']=$case;
-$GLOBALS['options']=[];
+$GLOBALS['handles']=[];
+$GLOBALS['calls']=[];
+$GLOBALS['last_method']='';
 class QueryResult {
     public function fetch_assoc(): array {
-        return ['panel_url'=>'http://fixture.invalid','username'=>'operator','password'=>'password','type'=>'marzban'];
+        return ['panel_url'=>'https://fixture.invalid','username'=>'operator',
+            'password'=>'fixture-password','type'=>'marzban'];
     }
 }
 class Query {
@@ -93,34 +97,71 @@ class DB {
     public function prepare($sql): Query {return new Query();}
 }
 $connection=new DB();
-function getMarzbanToken($server_id) {return (object)['access_token'=>'fixture'];}
-function getMarzbanUser($server_id,$remark,$token) {
-    return (object)['inbounds'=>[], 'proxies'=>(object)[], 'expire'=>1,
-        'data_limit'=>1,'note'=>'fixture','data_limit_reset_strategy'=>'no_reset','status'=>'active'];
+function getMarzbanToken($server_id, ?string $expectedPanelUrl=null,
+                         ?array $effectTarget=null) {
+    return (object)['access_token'=>'fixture'];
 }
-function curl_init() {return (object)[];}
+function curl_init() {
+    $id=\count($GLOBALS['handles'])+1;
+    $GLOBALS['handles'][$id]=[];
+    return (object)['id'=>$id];
+}
 function curl_setopt($ch,$option,$value): bool {
-    $GLOBALS['options'][$option]=$value;
+    $GLOBALS['handles'][$ch->id][$option]=$value;
     return true;
 }
-function curl_exec($ch) {return $GLOBALS['case']['raw'];}
-function curl_errno($ch): int {return (int)$GLOBALS['case']['errno'];}
-function curl_getinfo($ch,$info): int {return (int)$GLOBALS['case']['http'];}
+function curl_exec($ch) {
+    $opts=$GLOBALS['handles'][$ch->id];
+    $url=(string)($opts[CURLOPT_URL]??'');
+    $method=($opts[CURLOPT_CUSTOMREQUEST]??'')==='PUT'?'PUT':
+        (\str_contains($url,'/sub/')?'SUB':'GET');
+    $GLOBALS['last_method']=$method;
+    $body=$opts[CURLOPT_POSTFIELDS]??'';
+    $post=\json_decode((string)$body,true);
+    $GLOBALS['calls'][]=[
+        'method'=>$method,
+        'connect'=>$opts[CURLOPT_CONNECTTIMEOUT]??null,
+        'timeout'=>$opts[CURLOPT_TIMEOUT]??null,
+        'redirect'=>$opts[CURLOPT_FOLLOWLOCATION]??null,
+        'tls_peer'=>$opts[CURLOPT_SSL_VERIFYPEER]??null,
+        'tls_host'=>$opts[CURLOPT_SSL_VERIFYHOST]??null,
+        'post_status'=>$post['status']??null,
+    ];
+    $c=$GLOBALS['case'];
+    return match($method) {
+        'GET'=>$c['get_raw']??false,
+        'PUT'=>$c['put_raw']??false,
+        default=>$c['sub_raw']??false,
+    };
+}
+function curl_errno($ch): int {
+    $c=$GLOBALS['case'];$kind=$GLOBALS['last_method'];
+    return (int)($c[\strtolower($kind).'_errno']??0);
+}
+function curl_getinfo($ch,$info): int {
+    $c=$GLOBALS['case'];$kind=$GLOBALS['last_method'];
+    return (int)($c[\strtolower($kind).'_http']??0);
+}
+function curl_error($ch): string {return curl_errno($ch)?'synthetic network failure':'';}
 $source=\file_get_contents($argv[1].'/src/Panel/Accounts.php');
-$start=\strpos($source,'function changeMarzbanState(');
-if ($start===false) throw new \RuntimeException('missing toggle function');
-$fn=\substr($source,$start);
-eval('namespace AchBot\\Panel\\Accounts;'. $fn);
-$result=changeMarzbanState(1,'fixture');
-$opts=$GLOBALS['options'];
-$bounded=($opts[CURLOPT_TIMEOUT]??null)===20 &&
-    ($opts[CURLOPT_CONNECTTIMEOUT]??null)===5 &&
-    ($opts[CURLOPT_FOLLOWLOCATION]??null)===false &&
-    ($opts[CURLOPT_SSL_VERIFYPEER]??null)===true &&
-    ($opts[CURLOPT_SSL_VERIFYHOST]??null)===2;
-echo \json_encode(['result'=>$result,'bounded'=>$bounded],
+$i=\strpos($source,'function getMarzbanUserInfo(');
+$g=\strpos($source,'function getMarzbanUser(');
+$end=\strpos($source,'function getMarzbanHosts(');
+$t=\strpos($source,'function changeMarzbanState(');
+if ($i===false || $g===false || $end===false || $t===false || !($i<$g && $g<$end && $end<$t))
+    throw new \RuntimeException('source_method_extraction_failed');
+$functions=\substr($source,$i,$end-$i).\substr($source,$t);
+eval('namespace AchBot\\Panel\\Accounts;'.$functions);
+$mode=$case['mode']??'toggle';
+$result=match($mode) {
+    'get'=>getMarzbanUser(1,'fixture',(object)['access_token'=>'fixture']),
+    'info'=>getMarzbanUserInfo(1,'fixture'),
+    default=>changeMarzbanState(1,'fixture'),
+};
+echo \json_encode(['result'=>$result,'calls'=>$GLOBALS['calls']],
     JSON_THROW_ON_ERROR);
 """
+
 
 def verify(root: Path = ROOT) -> dict:
     bot = (root / "bot.php").read_text()
@@ -165,26 +206,109 @@ def verify(root: Path = ROOT) -> dict:
         cases += 1
 
     with tempfile.TemporaryDirectory(prefix='achbot-native-io-offline-') as temp:
-        native_driver = Path(temp)/'marzban.php'
+        native_driver=Path(temp)/'marzban.php'
         native_driver.write_text(MARZBAN_PHP)
-        for name,raw,errno,http,expected_success,expected_uncertain in [
-            ('success','{"username":"fixture"}',0,200,True,False),
-            ('timeout',False,28,0,False,True),
-            ('empty_body','',0,200,False,True),
-            ('bad_json','not-json',0,200,False,True),
-            ('server_error','{"detail":"error"}',0,500,False,True),
-        ]:
-            response=subprocess.run(
-                ['php',str(native_driver),str(root),
-                 json.dumps({'raw':raw,'errno':errno,'http':http})],
+
+        def native(**case):
+            result=subprocess.run(
+                ['php',str(native_driver),str(root),json.dumps(case)],
                 capture_output=True,text=True,timeout=10)
-            if response.returncode:
-                raise RuntimeError('Offline Marzban '+name+': '+repr(response.stderr[-1600:]))
-            observed=json.loads(response.stdout)
-            record=observed['result']
-            assert observed['bounded'], (name,observed)
-            assert record['success'] is expected_success, (name,observed)
-            assert bool(record.get('uncertain')) is expected_uncertain, (name,observed)
+            if result.returncode:
+                raise RuntimeError('Source-real native fixture: '+repr(result.stderr[-1800:]))
+            return json.loads(result.stdout)
+
+        base={'username':'fixture','status':'active',
+              'inbounds':{'vless':['fixture-inbound']},'proxies':{'vless':{}},
+              'expire':0,'data_limit':0,'data_limit_reset_strategy':'no_reset',
+              'note':None,'subscription_url':'https://fixture.invalid/sub/fixture'}
+        def wire(**overrides):
+            return json.dumps(base|overrides)
+
+        def bounded(call):
+            assert call['connect']==5 and call['timeout']==20,call
+            assert call['redirect'] is False and call['tls_peer'] is True,call
+            assert call['tls_host']==2,call
+
+        # Exercise the actual non-strict account GET that was unbounded in
+        # REQUIRED-01. No mocked replacement for getMarzbanUser is defined.
+        for raw,http in ((wire(),200),(False,0),('{invalid',200)):
+            result=native(mode='get',get_raw=raw,get_http=http)
+            assert [c['method'] for c in result['calls']]==['GET'],result
+            bounded(result['calls'][0])
+
+        # Existing getMarzbanUserInfo previously repeated the account GET up to
+        # eleven times. Link probes remain bounded by a single 12s retry budget.
+        info=native(mode='info',get_raw=wire(),get_http=200,
+                    sub_raw=False,sub_http=503,sub_errno=7)
+        calls=info['calls']
+        assert [c['method'] for c in calls].count('GET')==1,calls
+        assert 1 <= [c['method'] for c in calls].count('SUB') <= 11,calls
+        bounded(calls[0])
+        assert all(c['connect']==3 and 1<=c['timeout']<=3
+                   for c in calls[1:]),calls
+        assert info['result']['subscription_url']=='/sub/fixture'
+
+        native_cases=0
+        def toggle(name,get_raw,get_http,put_raw,put_http,
+                   success,uncertain,puts,get_errno=0,put_errno=0,
+                   expected_status=None):
+            nonlocal native_cases
+            result=native(get_raw=get_raw,get_http=get_http,get_errno=get_errno,
+                          put_raw=put_raw,put_http=put_http,put_errno=put_errno)
+            calls=result['calls']
+            gets=[c for c in calls if c['method']=='GET']
+            put_calls=[c for c in calls if c['method']=='PUT']
+            assert len(gets)==1 and len(put_calls)==puts,(name,calls)
+            assert len(calls)==1+puts,(name,calls)
+            bounded(gets[0])
+            for call in put_calls:bounded(call)
+            record=result['result']
+            assert record['success'] is success,(name,record)
+            assert bool(record.get('uncertain')) is uncertain,(name,record)
+            if expected_status is not None:
+                assert put_calls[0]['post_status']==expected_status,(name,put_calls)
+            native_cases+=1
+
+        good_ack=json.dumps({'username':'fixture','status':'disabled'})
+        toggle('valid_disable',wire(),200,good_ack,200,True,False,1,
+               expected_status='disabled')
+        toggle('valid_enable',wire(status='disabled'),200,
+               json.dumps({'username':'fixture','status':'active'}),200,
+               True,False,1,expected_status='active')
+        for name,raw,http,errno in [
+            ('get_timeout',False,0,28),
+            ('get_partial_transport_error',wire(),200,28),
+            ('get_server_error',wire(),500,0),
+            ('get_malformed','{invalid',200,0),
+            ('get_detail',json.dumps({'detail':'not found'}),404,0),
+            ('get_empty','{}',200,0),
+            ('get_wrong_identity',wire(username='foreign'),200,0),
+            ('get_bad_status',wire(status='expired'),200,0),
+            ('get_missing_required',json.dumps({'username':'fixture','status':'active'}),200,0),
+        ]:
+            toggle(name,raw,http,good_ack,200,False,True,0,get_errno=errno)
+
+        for name,raw,http,errno in [
+            ('put_timeout',False,0,28),
+            ('put_http_500',good_ack,500,0),
+            ('put_empty_object','{}',200,0),
+            ('put_wrong_identity',json.dumps({'username':'foreign','status':'disabled'}),200,0),
+            ('put_wrong_status',json.dumps({'username':'fixture','status':'active'}),200,0),
+            ('put_missing_status',json.dumps({'username':'fixture'}),200,0),
+            ('put_detail',json.dumps({'username':'fixture','status':'disabled','detail':'error'}),200,0),
+            ('put_bad_json','{invalid',200,0),
+        ]:
+            toggle(name,wire(),200,raw,http,False,True,1,put_errno=errno,
+                   expected_status='disabled')
+        # Confirm the actual customer route only displays success on a true
+        # adapter result; uncertain results reach the existing review message.
+        provider=(root/'src/Panel/ProviderRuntime.php').read_text()
+        customer=(root/'src/Subscription/CustomerRoutes.php').read_text()
+        assert "'toggle'=>changeMarzbanState($serverId,$remark)" in provider
+        assert "return achbotProviderAction($serverId,$remark,'toggle');" in provider
+        assert '$update_response = achbotProviderToggle($server_id, $remark);' in customer
+        assert 'if($update_response->success)' in customer
+        assert "sendMessage(\\achbotMessage('subscription.customer_routes.cancel_search_keyboard.message.b63b579845'));" in customer
 
     toggle = (root / 'src/Panel/Accounts.php').read_text().split('function changeMarzbanState(',1)[1]
     assert 'CURLOPT_CONNECTTIMEOUT, 5' in toggle and 'CURLOPT_TIMEOUT, 20' in toggle
@@ -208,7 +332,7 @@ def verify(root: Path = ROOT) -> dict:
     assert "if ($socketTimeout!==false) ini_set('default_socket_timeout',$socketTimeout)" in verify_source
 
     return {'verified': True, 'invite_handler_scenarios': cases,
-            'offline_no_real_telegram': True, 'active_marzban_toggle_timeout_guard': True, 'offline_marzban_scenarios': 5,
+            'offline_no_real_telegram': True, 'active_marzban_toggle_timeout_guard': True, 'offline_marzban_scenarios': native_cases,
             'both_zarinpal_soap_timeout_guards': True}
 
 if __name__=='__main__':
