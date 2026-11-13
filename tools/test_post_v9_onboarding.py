@@ -210,8 +210,11 @@ def main() -> None:
     ap.add_argument("--report",type=Path)
     a=ap.parse_args()
     checks=[]
+    last_case={}
     def yes(ok: bool,label: str) -> None:
-        if not ok:raise AssertionError(label)
+        if not ok:
+            raise AssertionError(label+' synthetic_case='+json.dumps(last_case,
+                ensure_ascii=False,sort_keys=True,default=str)[-1800:])
         checks.append(label)
     auth=(ROOT/"bot.php").read_text(encoding="utf-8")
     yes(auth.index("if (!achbotWebhookIngressAuthenticated())") <
@@ -230,7 +233,11 @@ def main() -> None:
         raise AssertionError("missing actor safe initial state")
     with owned.owned_database() as (w,env):
         write_runtime(w)
-        def run(**kwargs):return call(w,env,kwargs)
+        def run(**kwargs):
+            response=call(w,env,kwargs)
+            last_case.clear()
+            last_case.update({'spec':kwargs,'result':response})
+            return response
         r=run(actor=2401)
         yes(len(r['rows'])==1 and
             [e['text'] for e in r['events'] if e['kind']=='send']==['HOME','WELCOME'],
@@ -247,9 +254,11 @@ def main() -> None:
             [e['text'] for e in r['events'] if e['kind']=='send']==['HOME'],
             "repeat_start_reuses_identity_no_repeat_welcome")
         r=run(actor=2402,forced=True,membership='left')
+        join_buttons=[button for row in json.loads(r['events'][0]['markup'])['inline_keyboard']
+                      for button in row] if r['events'] and r['events'][0]['kind']=='send' else []
         yes(r['rows']==[] and
             [e['text'] for e in r['events'] if e['kind']=='send']==['JOIN_PROMPT'] and
-            'haveJoined/start' in r['events'][0]['markup'],
+            any(b.get('callback_data')=='haveJoined/start' for b in join_buttons),
             "not_joined_receives_only_join_prompt")
         r=run(actor=2403,forced=True,membership='error')
         yes(r['rows']==[] and any(e['text']=='JOIN_PROMPT' for e in r['events'] if e['kind']=='send'),
@@ -317,9 +326,12 @@ def main() -> None:
         with ThreadPoolExecutor(max_workers=2) as pool:
             jobs=[pool.submit(run,actor=2415,text='/start 1001',reward=150) for _ in range(2)]
             results=[x.result(timeout=25) for x in jobs]
+        # Each request can finish before the *other* has committed; assert
+        # the shared final database value after both workers have exited.
+        final_wallet=int(native.sql(w,env,"SELECT wallet FROM users WHERE userid=1001",DB).strip())
         yes(all(len(x['rows'])==1 for x in results) and
             [x['registered'] for x in results].count(True)==1 and
-            all(int(x['inviter_wallet'])==50300 for x in results),
+            final_wallet==50300,
             "parallel_first_start_single_row_single_referral_reward")
         yes(int(native.sql(w,env,"SELECT COUNT(*) FROM users WHERE userid=2415",DB).strip())==1,
             "owned_database_enforces_parallel_one_row_result")
