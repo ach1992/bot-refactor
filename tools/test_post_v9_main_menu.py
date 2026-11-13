@@ -22,8 +22,9 @@ $admin=9001;
 $from_id=(int)($spec['admin']??false?9001:2002);
 $userInfo=['is_agent'=>($spec['agent']??false)?1:0,
            'isAdmin'=>($spec['admin']??false),
-           'freetrial'=>'used'];
-$botState=['agencyState'=>'on','sellState'=>'on','testAccount'=>'off',
+           'freetrial'=>!empty($spec['trial_eligible'])?'not_used':'used'];
+$botState=['agencyState'=>'on','sellState'=>'on',
+           'testAccount'=>!empty($spec['trial_on'])?'on':'off',
            'sharedExistence'=>'off','individualExistence'=>'off',
            'searchState'=>'off','supportID'=>'',
            'cooperationUrl'=>!empty($spec['extra'])?'@fixture_partners':'',
@@ -69,6 +70,7 @@ echo json_encode(['rows'=>$rows,'labels'=>[
     'sharj'=>$buttonValues['sharj'],
     'buy_subscriptions'=>$buttonValues['buy_subscriptions'],
     'request_agency'=>$buttonValues['request_agency'],
+    'test_account'=>$buttonValues['test_account'],
 ]],JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE);
 '''
 
@@ -86,7 +88,6 @@ def check(root: Path = ROOT) -> dict:
             return json.loads(result.stdout)
 
         regular=execute()
-        rows=regular['rows']
         labels=regular['labels']
         expected=[
             [('requestAgency','✚ درخواست همکاری ✚')],
@@ -94,36 +95,55 @@ def check(root: Path = ROOT) -> dict:
             [('myInfo','🔐 حساب کاربری'),('mySubscriptions','🔄 مشاهده اشتراک‌ها')],
             [('inviteFriends','🧲 کسب درآمد'),('reciveApplications','📚 آموزش و قوانین')],
         ]
-        for row,values in zip(rows[:4],expected):
-            assert [(b.get('callback_data'),b['text']) for b in row]==values,(row,values)
-        assert len(rows)==5,rows
-        assert rows[-1]==[{'text':'💬 پشتیبانی','url':'https://t.me/fixture_help'}],rows
-        cases+=1
+        support=[{'text':'💬 پشتیبانی','url':'https://t.me/fixture_help'}]
+        free_trial=[{'text':labels['test_account'],'callback_data':'getTestAccount'}]
 
-        # A real agent retains the existing distinct subscriptions callback,
-        # its agency/purchase menus, and invitation access.
-        agent=execute(agent=True)
+        # The first four ordinary-user rows are stable for every legitimate
+        # free-trial state; trial eligibility affects only the following row.
+        for label,options,eligible in [
+            ('trial_off_used',{},False),
+            ('trial_off_eligible',{'trial_eligible':True},False),
+            ('trial_on_eligible',{'trial_on':True,'trial_eligible':True},True),
+            ('trial_on_used',{'trial_on':True},False),
+        ]:
+            rows=regular['rows'] if not options else execute(**options)['rows']
+            assert [[(b.get('callback_data'),b['text']) for b in row]
+                    for row in rows[:4]]==expected,(label,rows)
+            assert len(rows)==5+int(eligible),(label,rows)
+            assert rows[-1]==support,(label,rows)
+            trial_rows=[row for row in rows
+                        if any(b.get('callback_data')=='getTestAccount' for b in row)]
+            assert trial_rows==([free_trial] if eligible else []),(label,rows)
+            if eligible:
+                assert rows[4]==free_trial,(label,rows)
+            cases+=1
+
+        # Existing role-specific menus/eligibility and support-last ordering
+        # stay intact even when the free-trial feature is switched on.
+        agent=execute(agent=True,trial_on=True,trial_eligible=True)
         agent_rows=agent['rows']
         assert [b.get('callback_data') for b in agent_rows[0]]==['agencySettings']
         assert [b.get('callback_data') for b in agent_rows[2]]==['agentOneBuy','agentMuchBuy']
-        assert any([b.get('callback_data') for b in row]==['myInfo','agentConfigsList']
-                   for row in agent_rows),agent_rows
-        assert any([b.get('callback_data') for b in row]==['inviteFriends','reciveApplications']
-                   for row in agent_rows),agent_rows
+        assert [b.get('callback_data') for b in agent_rows[3]]==['myInfo','agentConfigsList']
+        assert [b.get('callback_data') for b in agent_rows[4]]==['inviteFriends','reciveApplications']
+        assert agent_rows[5]==free_trial and agent_rows[-1]==support,agent_rows
         cases+=1
 
-        admin=execute(admin=True)
+        # An administrator remains trial-eligible despite freetrial='used'
+        # by the original owner/admin exception, but never sees referral.
+        admin=execute(admin=True,trial_on=True)
         admin_rows=admin['rows']
+        assert [b.get('callback_data') for b in admin_rows[2]]==['myInfo','mySubscriptions']
+        assert [b.get('callback_data') for b in admin_rows[3]]==['reciveApplications']
+        assert admin_rows[4]==free_trial and admin_rows[-1]==support,admin_rows
         assert not any(b.get('callback_data')=='inviteFriends'
                        for row in admin_rows for b in row),admin_rows
-        assert any([b.get('callback_data') for b in row]==['reciveApplications']
-                   for row in admin_rows),admin_rows
-        assert admin_rows[-1][0]['text']=='💬 پشتیبانی',admin_rows
         cases+=1
 
-        extra=execute(extra=True)
+        extra=execute(extra=True,trial_on=True,trial_eligible=True)
         erows=extra['rows']
-        assert erows[-1][0]['text']=='💬 پشتیبانی',erows
+        assert erows[:4]==regular['rows'][:4],erows
+        assert erows[4]==free_trial and erows[-1]==support,erows
         assert any(b.get('url')=='https://t.me/fixture_partners'
                    for row in erows for b in row),erows
         assert any(b.get('callback_data')=='showMainButtonAns7'

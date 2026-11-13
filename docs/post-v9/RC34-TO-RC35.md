@@ -30,8 +30,11 @@ in the same PR (original button emojis and callback destinations preserved):
 
 The half-space in **اشتراک‌ها** is U+200C. Ordinary users have the referral
 button; administrator visibility and agent-specific subscriptions callbacks
-are unchanged. Optional trial/search/custom buttons and configured cooperation
-links retain their existing availability; help remains last. Two wallet
+are unchanged. When enabled and eligible, the unchanged free-trial button
+appears **after** the fixed account and earning rows, never before them.
+Its original label, callback and eligibility gate are unchanged. Other
+optional search/custom buttons and configured cooperation links retain their
+existing availability; help remains last. Two wallet
 top-up completion messages, expiration/import instructions, and other
 identified references now use the same menu label. There is no text-based
 legacy menu action needing an alias: all existing inline button callback IDs
@@ -94,7 +97,9 @@ unchanged.
 - Run the PHP 8.5 exact-candidate eight Native family CI and protected
   aggregate, plus the source-real offline invitation (8 scenarios), Marzban
   GET/toggle (including preflight failures without PUT and mismatched PUT
-  acknowledgements), and actual menu/copy regressions. Existing message
+  acknowledgements), and actual menu/copy regressions covering free-trial
+  disabled, enabled/eligible, enabled/already used, agent, admin and custom
+  buttons while support remains last. Existing message
   templates and financial effects remain under their original contracts.
   The previous independent review reported two REQUIRED Marzban findings;
   a fresh independent **delta re-review** of this amended candidate is required
