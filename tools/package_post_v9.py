@@ -60,6 +60,7 @@ def committed_zip_timestamp(head: str) -> tuple[int, int, int, int, int, int]:
 
 # This is a current-runtime-only retirement; historical V9 is never edited.
 RETIRED_RUNTIME_MEMBERS = frozenset({
+    "index.html",
     "buy_helpers.php",
     "settings/tronChecker.php",
     "settings/subLink.php",
@@ -71,7 +72,7 @@ RETIRED_RUNTIME_MEMBERS = frozenset({
     "src/Finance/CryptoChecker.php",
     "src/Finance/Routes/CryptoAndExchange.php",
 })
-NEW_RUNTIME_MEMBERS = ("src/Subscription/Delivery.php", "pay/checkout.php", "settings/cronRunner.php", "src/Finance/PaymentPage.php",
+NEW_RUNTIME_MEMBERS = ("index.php", "src/Subscription/Delivery.php", "pay/checkout.php", "settings/cronRunner.php", "src/Finance/PaymentPage.php",
                        "src/Finance/Routes/ManualCrypto.php", "src/Finance/PaymentLifecycle.php",
                        "src/Finance/GatewayRules.php", "src/Finance/GatewayRuleAdmin.php",
                        "src/Finance/PaymentKeyAdmin.php",

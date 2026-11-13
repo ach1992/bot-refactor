@@ -457,6 +457,15 @@ def source_checks():
     # foundation proof schema owned by tools/post_v9_shards.py.
     webhook_io.verify(ROOT)
     main_menu.check(ROOT)
+    # Real GET/HEAD, status/keyword, DB failure and legacy cached-failure
+    # behavior on a disposable local PHP HTTP server with no external I/O.
+    probe=subprocess.run(['python3',str(ROOT/'tools/test_post_v9_public_health.py')],
+                         cwd=ROOT,capture_output=True,text=True,timeout=25,check=True)
+    health=json.loads(probe.stdout)
+    if health!={'complete':True,'cases':6,'local_http_only':True,
+               'no_telegram_calls':True,'no_cache_writes':True,
+               'current_index_php':True,'historical_source_unchanged':True}:
+        raise RuntimeError('Current public health/root acceptance incomplete')
     return {"source_files":len(files),"php_lint":len(php_files),
             "original_historical_schema_file_unchanged":True,
             "current_additive_migration_separately_tested":False,
