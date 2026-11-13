@@ -1,10 +1,13 @@
 # RC33 → RC34 — Vivan wallet-choice recovery and payment-policy administration
 
-**Status: RC34 candidate, NOT published or installed.** The latest published
-source release remains [RC33](https://github.com/ach1992/bot-refactor/releases/tag/v0.10.0-rc.33).
-This note describes the scoped [Owner-approved Issue #158](https://github.com/ach1992/bot-refactor/issues/158)
-and its [candidate PR #159](https://github.com/ach1992/bot-refactor/pull/159);
-it is not independent-review approval, merge authorization or production-deploy permission.
+**Status: [RC34 source-only prerelease published](https://github.com/ach1992/bot-refactor/releases/tag/v0.10.0-rc.34); NOT installed.**
+The previous release was [RC33](https://github.com/ach1992/bot-refactor/releases/tag/v0.10.0-rc.33).
+This guide covers the independently approved, merged
+[PR #159](https://github.com/ach1992/bot-refactor/pull/159) and
+[Owner-approved Issue #158](https://github.com/ach1992/bot-refactor/issues/158).
+The approved runtime was merged into `main@151f411711076b7789dd7be6fb2456efd4d12b88`
+with unchanged reviewed Git tree `60878fb35588a76351b2916f9fa9b4c5bf06c7eb`.
+This source release is **not** permission to install or mutate Vivan, Chili or Hell.
 
 ## Behavior changed in source
 
@@ -52,11 +55,15 @@ plus foreign-owner, old/ambiguous provider, Native-journal, expired,
 superseded and repeated-click negative evidence. The historical ledger is
 never rewritten automatically by migration or an unauthenticated browser.
 
-After the candidate settles, **require exact HEAD full PHP 8.5 native acceptance
-(all eight shards plus protected aggregate), independent high-assurance approval
-of the current main→PR effective diff, and the relevant Owner approvals** before
-merging, tagging RC34 or announcing a release. Do not treat PHP 8.4 local tests,
-a green PR subset or an unverified ZIP as release approval.
+**Source acceptance complete:** The exact reviewed candidate
+`d1b08da685f6f642f6e344da0f4f77587550f9d1` received independent
+HIGH_ASSURANCE `APPROVE` with no findings. The [PHP 8.5 CI run #43335158774](https://github.com/ach1992/bot-refactor/actions/runs/43335158774)
+passed Foundation, all eight Native families (including 28 real-route recovery
+cases) and protected aggregate. The accepted candidate's runtime tree matched
+the merge. The subsequent release-only README/docs commit changes no runtime
+source and does not require a new behavior review; its source package must still
+be built and SHA/manifest-verified from the exact tagged commit. Neither CI nor
+publication verifies any installed Telegram, payment or Native service effect.
 
 The Vivan production installation currently receives Telegram at
 `https://host.hellservice.top/vivan/bot.php`, uses `botvivan`, and reuses

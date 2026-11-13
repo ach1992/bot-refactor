@@ -1,17 +1,39 @@
 # Current source and published release contracts
 
 
-## Pending RC34 candidate — Vivan payment recovery and rule-editor UX
+## Published RC34 — Vivan wallet recovery and payment-policy UX
 
-[PR #159](https://github.com/ach1992/bot-refactor/pull/159) implements
+[v0.10.0-rc.34](https://github.com/ach1992/bot-refactor/releases/tag/v0.10.0-rc.34)
+is the **source-only prerelease** succeeding RC33. It integrates independently
+approved [PR #159](https://github.com/ach1992/bot-refactor/pull/159) and
 [Owner-approved Issue #158](https://github.com/ach1992/bot-refactor/issues/158).
-This source is **not yet merged, independently approved, released or installed**.
-It removes an insufficient-wallet payment-method dead end, supports guarded
-recovery of preexisting unclaimed `low_wallet` drafts and streamlines the
-existing admin category-rule editor without a new migration. The specified
-Persian labels, icon choices and back-navigation are Owner-approved.
-See [RC33 → RC34](RC33-TO-RC34.md) for readiness checks and Vivan-only
-production boundaries. RC33 remains the latest published release.
+The reviewed code was merged into `main@151f411711076b7789dd7be6fb2456efd4d12b88`
+with **exactly the approved runtime Git tree**. Insufficient-wallet payment
+choices now preserve new drafts and safely reopen only unclaimed eligible old
+`low_wallet` quotes through authenticated Telegram callbacks across purchase,
+custom purchase, renewal and day/volume extensions. Administrators receive
+the approved clearer gateway-rule editor and exact Owner-approved Persian
+copy/emojis/back-navigation, including the short subscription-link warning.
+No schema, migration, Cron, provider API, third-party dependency or automatic
+production effect is added.
+
+**Acceptance:** Exact source PHP 8.5
+[PR #159 CI #43335158774](https://github.com/ach1992/bot-refactor/actions/runs/43335158774)
+passed foundation, all eight isolated native families and protected aggregate.
+The subsequent README/release-doc alignment changes **documentation only**,
+not reviewed runtime files, so do not relabel their docs-only CI as eight-family
+execution. The RC34 tag/source manifest is authoritative for final package bytes.
+
+**Installed boundary:** Vivan at `/www/acdomains/host.hellservice.top/vivan`
+has **not** been installed from RC34. The prior Vivan `/order` migration must
+**never** be replayed. Original callbacks, historical payment discrepancies and
+provider/Native settlement remain open in
+[Issue #157](https://github.com/ach1992/bot-refactor/issues/157).
+Chili and Hell are likewise **not** deployment targets for RC34 publication;
+the earlier RC32-versus-RC33 Chili evidence is historical and does not prove
+RC34 installation. Separate Owner approval, preflight, restorable backup,
+rollback/roll-forward and installed acceptance are required for any target.
+See [RC33 → RC34](RC33-TO-RC34.md).
 
 ## Published RC33 — five-digit bulk suffix and verified shared Marzban import
 
@@ -21,7 +43,7 @@ production boundaries. RC33 remains the latest published release.
 
 **Installed boundary:** a read-only 2026-11-12 132/132 runtime SHA256 check on exact Chili root `/www/acdomains/host.hellservice.top/chili` matched **RC32**, not PR #155/RC33. Separate read-only filename/schema preflights and presence of protected original order #33 and service-plan journal #2 are not live operator acceptance or restore proof. The Owner authorized source-only RC33 publication and **ZIP-file-only staging** into this exact directory; neither action grants extraction, installation, SQL, Native, money, Telegram, Cron or webhook changes. Keep [Issues #147](https://github.com/ach1992/bot-refactor/issues/147), [#144](https://github.com/ach1992/bot-refactor/issues/144) and [#117](https://github.com/ach1992/bot-refactor/issues/117) OPEN for actual installed behavior and rollback verification.
 
-**Historical notice:** RC32 and older release headings below remain as dated milestones; statements that RC32 is the current or latest release are superseded by the RC33 heading above.
+**Historical notice:** RC33 and older sections below are dated milestones; any historical "latest source release" claims in those sections are superseded by the published RC34 heading above.
 
 ## Published RC32 — original username shape and verified CI speedup
 
