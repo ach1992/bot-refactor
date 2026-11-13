@@ -1,6 +1,50 @@
 # Current source and published release contracts
 
 
+## Published RC35 — Vivan invitation timeout correction and approved main menu
+
+[v0.10.0-rc.35](https://github.com/ach1992/bot-refactor/releases/tag/v0.10.0-rc.35)
+is the **source-only prerelease** succeeding RC34. It integrates [PR #163](https://github.com/ach1992/bot-refactor/pull/163)
+into `main@d434d6d0d83d22304c723a132add9053634bbb00` with exactly the
+independently reviewed candidate **runtime tree**
+`f10152e7c5ad7c392f302cb511f157843d91ca71`.
+The previously unbounded Vivan invitation `getMe` request is eliminated by
+using the already-configured bot username. Marzban account GET and status-toggle
+confirmation and Zarinpal SOAP issuance/verification are bounded without
+unsafe success/retry claims or changes to the canonical checkout issuance body.
+
+**Owner-visible contract:** Standard user and agent main menus preserve
+the original emoji/callbacks with the approved account/subscription and
+earning/guide rows. The original eligible `🎁 اشتراک تست رایگان` button appears
+**above** the account/subscriptions row; the support link is last.
+Instructions after wallet top-up and relevant subscription guidance now refer
+to `🔄 مشاهده اشتراک‌ها` (with U+200C). Exact authorization and source-hash
+boundaries are in [Issue #162](https://github.com/ach1992/bot-refactor/issues/162).
+
+**Acceptance:** The independent high-assurance review of
+`main@89d2b8e66512efc2fe41d07615398c659662ff05` ->
+`af3a8752b96ad3f7b8ee9d5843ba5073cb0d683c` was
+**COMPLETE / APPROVE** with zero BLOCKER/REQUIRED findings.
+[Exact PHP 8.5 CI #43356405971](https://github.com/ach1992/bot-refactor/actions/runs/43356405971)
+passed Foundation, all eight isolated Native families and the protected
+aggregate. Subsequent RC35 documentation alignment is Markdown-only and
+does **not** constitute new runtime verification; the published release tag
+and source-bound manifest prove the final artifact identity.
+No new SQL/DDL migration, runtime dependency, Cron, webhook, private
+configuration schema or automatic production effects are introduced.
+
+**Installed boundary:** A source release is not a Vivan repair confirmation
+until RC35 is installed and Telegram, PHP-FPM and original remote/payment
+behavior are tested under separate target-specific approval. No Vivan,
+Chili, Hell or other installation is authorized by publication. Historical
+Vivan reconciliation remains in [Issue #157](https://github.com/ach1992/bot-refactor/issues/157),
+and Hell migration remains separately gated in
+[Issue #161](https://github.com/ach1992/bot-refactor/issues/161).
+See [RC34 → RC35](RC34-TO-RC35.md) for upgrade verification and rollback.
+
+**Historical notice:** RC34 and older sections below describe their original
+publication milestones; any “latest” status there is superseded by RC35.
+
 ## Published RC34 — Vivan wallet recovery and payment-policy UX
 
 [v0.10.0-rc.34](https://github.com/ach1992/bot-refactor/releases/tag/v0.10.0-rc.34)

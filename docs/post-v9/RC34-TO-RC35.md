@@ -1,9 +1,14 @@
 # RC34 → RC35 — bounded active outbound requests and Vivan invitation menu
 
-This is the **source-only candidate upgrade guide**. Version RC35 must not be
-described as published until the independently reviewed candidate is merged
-and an immutable GitHub Release with a verified runtime ZIP, manifest and
-checksums exists. Reference: [Issue #162](https://github.com/ach1992/bot-refactor/issues/162).
+This is the **source-only RC35 upgrade guide**, not authorization for an
+installed Vivan/Chili/Hell upgrade. The verified GitHub prerelease and matching
+runtime ZIP, manifest and `SHA256SUMS` are authoritative when published.
+Source implementation was independently approved at exact
+`af3a8752b96ad3f7b8ee9d5843ba5073cb0d683c`
+([PHP 8.5 CI #43356405971](https://github.com/ach1992/bot-refactor/actions/runs/43356405971)),
+and merged into `main@d434d6d0d83d22304c723a132add9053634bbb00`
+with exactly its reviewed Git tree.
+Reference: [Issue #162](https://github.com/ach1992/bot-refactor/issues/162).
 
 ## User-visible contract and production incident
 
@@ -104,9 +109,10 @@ unchanged.
   buttons, explicitly checking trial-above-account placement when eligible
   and support-last ordering. Existing message
   templates and financial effects remain under their original contracts.
-  The previous independent review reported two REQUIRED Marzban findings;
-  a fresh independent **delta re-review** of this amended candidate is required
-  before merge.
+  The final independent **COMPLETE / APPROVE** review confirmed those
+  earlier Marzban REQUIRED findings resolved and the Owner-superseded
+  free-trial placement. No BLOCKER or REQUIRED finding remains. The reviewed
+  runtime tree was identical after PR #163's merge.
 - Published ZIP and manifest are **not a live installation**. On any Vivan,
   Chili or Hell target, use a fresh target-specific approval, immutable artifact
   hash verification, restorable source/config backup and a rollback plan.
