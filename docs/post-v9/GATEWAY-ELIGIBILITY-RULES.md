@@ -110,7 +110,13 @@ before Back. It opens a signed private input for one or more positive decimal
 IDs separated by whitespace or commas; prefixing IDs with - removes them
 from the same method's exemption list. Duplicates are ignored, invalid batches
 are rejected atomically, and editing a different method never overwrites its
-existing list. The category editor places the «اعمال همزمان قوانین» ON/OFF
+existing list. Completing or cancelling an exemption edit removes the temporary
+reply keyboard and returns to that same payment method's rule menu; cancelling
+never changes the saved exemptions. The exemption prompt shows only the ten
+most recently added persisted IDs, but its count and the effective allowlist
+still include every ID. New edits preserve insertion order; historical lists
+previously stored in numeric order cannot reveal their original add times.
+The category editor places the «اعمال همزمان قوانین» ON/OFF
 control immediately above the existing rule enabled/disabled action.
 
 New rules persist atomically with the global gateway `update_id` watermark,
