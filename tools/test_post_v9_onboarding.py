@@ -240,7 +240,7 @@ def main() -> None:
         yes(sum(b.get('url')=='https://t.me/fixture_support' for b in buttons)==1,
             "home_single_support_destination_no_duplicate_button")
         r=run(actor=2423,missing_optional_flags=True)
-        yes(len(r['rows'])==1 and any(e['text']=='HOME' for e in r['events']),
+        yes(len(r['rows'])==1 and any(e['text']=='HOME' for e in r['events'] if e['kind']=='send'),
             "unset_optional_feature_flags_do_not_break_new_user_menu")
         r=run(actor=2401)
         yes(len(r['rows'])==1 and r['registered'] is False and
@@ -252,10 +252,10 @@ def main() -> None:
             'haveJoined/start' in r['events'][0]['markup'],
             "not_joined_receives_only_join_prompt")
         r=run(actor=2403,forced=True,membership='error')
-        yes(r['rows']==[] and any(e['text']=='JOIN_PROMPT' for e in r['events']),
+        yes(r['rows']==[] and any(e['text']=='JOIN_PROMPT' for e in r['events'] if e['kind']=='send'),
             "unverified_getChatMember_does_not_bypass_join")
         r=run(actor=2404,forced=True,membership='member')
-        yes(len(r['rows'])==1 and any(e['text']=='HOME' for e in r['events']) and
+        yes(len(r['rows'])==1 and any(e['text']=='HOME' for e in r['events'] if e['kind']=='send') and
             all(e['text']!='JOIN_PROMPT' for e in r['events'] if e['kind']=='send'),
             "already_member_goes_direct_to_menu")
         r=run(actor=2405,forced=True,membership='left',callback='haveJoined/start')
@@ -267,10 +267,10 @@ def main() -> None:
             any(e['text']=='HOME' for e in r['events'] if e['kind']=='send'),
             "joined_button_registers_then_shows_menu")
         r=run(actor=2406,forced=True,membership='restricted',is_member=True)
-        yes(len(r['rows'])==1 and any(e['text']=='HOME' for e in r['events']),
+        yes(len(r['rows'])==1 and any(e['text']=='HOME' for e in r['events'] if e['kind']=='send'),
             "restricted_actual_member_accepted")
         r=run(actor=2407,forced=True,membership='restricted',is_member=False)
-        yes(r['rows']==[] and any(e['text']=='JOIN_PROMPT' for e in r['events']),
+        yes(r['rows']==[] and any(e['text']=='JOIN_PROMPT' for e in r['events'] if e['kind']=='send'),
             "restricted_nonmember_denied")
         r=run(actor=2408,forced=True,membership='left',text='/start 1001',reward=150)
         yes(r['rows']==[] and int(r['inviter_wallet'])==50000,
@@ -279,7 +279,7 @@ def main() -> None:
               callback='haveJoined/start 1001',reward=150)
         yes(len(r['rows'])==1 and int(r['inviter_wallet'])==50150 and
             int(r['rows'][0]['refered_by'])==1001 and
-            any(e['text']=='HOME' for e in r['events']),
+            any(e['text']=='HOME' for e in r['events'] if e['kind']=='send'),
             "joined_referral_awarded_once_after_registration")
         r=run(actor=2408,forced=True,membership='member',
               callback='haveJoined/start 1001',reward=150)
@@ -312,7 +312,7 @@ def main() -> None:
                        "(2414,'prior','prior','0',0,'1700000000')",DB)
         native.sql(w,env,"DELETE FROM users WHERE userid=2414",DB)
         r=run(actor=2414)
-        yes(len(r['rows'])==1 and any(e['text']=='HOME' for e in r['events']),
+        yes(len(r['rows'])==1 and any(e['text']=='HOME' for e in r['events'] if e['kind']=='send'),
             "controlled_deleted_account_rejoin_recovers_menu")
         with ThreadPoolExecutor(max_workers=2) as pool:
             jobs=[pool.submit(run,actor=2415,text='/start 1001',reward=150) for _ in range(2)]
@@ -333,13 +333,13 @@ def main() -> None:
                 if e['kind']=='send')==2,
             "concurrent_first_start_single_welcome_and_admin_notice")
         r=run(actor=2416,forced=False,callback='haveJoined')
-        yes(len(r['rows'])==1 and any(e['text']=='HOME' for e in r['events']),
+        yes(len(r['rows'])==1 and any(e['text']=='HOME' for e in r['events'] if e['kind']=='send'),
             "old_join_button_after_lock_disabled_shows_menu")
         r=run(actor=2417,forced=True,membership='administrator')
-        yes(len(r['rows'])==1 and any(e['text']=='HOME' for e in r['events']),
+        yes(len(r['rows'])==1 and any(e['text']=='HOME' for e in r['events'] if e['kind']=='send'),
             "channel_administrator_status_accepted")
         r=run(actor=2418,forced=True,membership='creator')
-        yes(len(r['rows'])==1 and any(e['text']=='HOME' for e in r['events']),
+        yes(len(r['rows'])==1 and any(e['text']=='HOME' for e in r['events'] if e['kind']=='send'),
             "channel_creator_status_accepted")
         r=run(actor=2419,mode='helper',text='/start',chat_id=1)
         yes(r['rows']==[] and r['registered'] is None,
