@@ -66,7 +66,7 @@ $from_id=(int)$spec['actor'];$admin=9001;$chat_id=$from_id;
 $message_id=(int)($spec['message_id']??75);
 $data=(string)($spec['data']??'');$text=(string)($spec['text']??'');
 $botState=$spec['snapshot']??[];
-$buttonValues=['cancel'=>'لغو'];$cancelKey='{}';
+$buttonValues=['cancel'=>'❌ لغو عملیات'];$cancelKey='{}';
 $removeKeyboard='{"remove_keyboard":true}';
 $mainValues=['change_bot_settings_message'=>'Fixture settings'];
 $callbackId='fixture-callback';
@@ -530,7 +530,7 @@ def main():
         sql(w,e,"UPDATE setting SET value="+quoted(
             json.dumps(clean,ensure_ascii=False,separators=(',',':')))+
             " WHERE type='BOT_STATES'")
-        events,_=act(text='لغو',message=True)
+        events,_=act(text='❌ لغو عملیات',message=True)
         assert sql(w,e,'SELECT step FROM users WHERE userid=9001')=='none'
         assert len(events)==2 and events[0][0]=='send' and 'لغو شد' in events[0][1],events
         assert json.loads(events[0][2])=={'remove_keyboard':True},events
@@ -568,7 +568,7 @@ def main():
         assert sql(w,e,'SELECT step FROM users WHERE userid=9001')=='none'
         cancelled=json.dumps(state(),sort_keys=True)
         events,_=act('gr|e|wallet')
-        events,_=act(text='لغو',message=True)
+        events,_=act(text='❌ لغو عملیات',message=True)
         assert json.dumps(state(),sort_keys=True)==cancelled
         assert sql(w,e,'SELECT step FROM users WHERE userid=9001')=='none'
         assert not any(e[0]=='send' and 'به‌روزرسانی شدند' in e[1] for e in events)
@@ -590,7 +590,7 @@ def main():
         assert len(prompts)==1,prompts
         assert 'تعداد شناسه‌های معاف: 14' in prompts[0]
         assert '<code>'+', '.join(map(str,additions[-10:]))+'</code>' in prompts[0],prompts
-        events,_=act(text='لغو',message=True)
+        events,_=act(text='❌ لغو عملیات',message=True)
         assert state()['gatewayRuleExemptUsers']['wallet']==[1001,1401]+additions
         assert sql(w,e,'SELECT step FROM users WHERE userid=9001')=='none'
         cases.append('exempt_recent_ten_insertion_order_and_cancel_from_full_list')
