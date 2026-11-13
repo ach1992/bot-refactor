@@ -1,5 +1,32 @@
 # Current source and published release contracts
 
+## Published RC39 — indexed SMS, gateway exemption UX, public root/health
+
+[v0.10.0-rc.39](https://github.com/ach1992/bot-refactor/releases/tag/v0.10.0-rc.39)
+is the source-only successor to RC38 with independently approved
+[PRs #172](https://github.com/ach1992/bot-refactor/pull/172),
+[#173](https://github.com/ach1992/bot-refactor/pull/173) and
+[#174](https://github.com/ach1992/bot-refactor/pull/174).
+The current source now uses a per-invoice indexed bank-SMS list query with
+exact full quote and original issuance minus 180s ingestion lower bound;
+method-specific gateway-rule Cancel returns to the same menu, showing
+the newest ten exemption IDs; the Owner's unchanged `index.php` replaces
+retired `index.html` and `health.php` checks local PHP/token/DB readiness
+without external Telegram `getMe` or stale cache. [Exact current PHP 8.5
+CI #43443216653](https://github.com/ach1992/bot-refactor/actions/runs/43443216653)
+passed all eight families and protected aggregate for the independent
+reviewed source tree `149d41198642c189b779da2670852c487889e95b`.
+Additional publication documentation does not change runtime member blobs.
+The final tag/Manifest bind the released ZIP bytes.
+
+**Upgrade and rollback:** [RC38 → RC39](RC38-TO-RC39.md). No new schema
+migration, private setting or production task is performed by this publication.
+Do not infer live Telegram/Cron/finance health from the new local-readiness
+endpoint. A later authorized deployment must remove retired `index.html`,
+preserve `baseInfo.php` and finance/native evidence, and verify each actual
+instance/monitor. ZIP staging and installation for Vivan/Chili/Hell remain
+separate, not implied by this source release.
+
 ## Published RC38 — gateway payment eligibility controls
 
 [v0.10.0-rc.38](https://github.com/ach1992/bot-refactor/releases/tag/v0.10.0-rc.38)
@@ -194,8 +221,8 @@ on Chili.
   validated exact SHA): a local plan-change intent or staff-authorized
   same-physical-server transfer atomically transitions old, unclaimed
   renewal/extension invoices (including insufficient-wallet
-  \`low_wallet\` quotes) for **all** current shared order owners to
-  \`service_superseded\`. Their payment IDs, hashes, original amounts, provider
+  `low_wallet` quotes) for **all** current shared order owners to
+  `service_superseded`. Their payment IDs, hashes, original amounts, provider
   invoices, API/receipt evidence and rows remain unchanged. The invoice's
   service fulfillment is closed; no external refund or provider cancellation
   is claimed. Late signed IPN evidence is preserved, but old product
