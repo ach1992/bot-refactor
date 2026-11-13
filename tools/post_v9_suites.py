@@ -1923,6 +1923,7 @@ def run_authorization(tmp: str) -> tuple[dict, dict]:
              'operator_preview_does_not_persist',
              'operator_explicit_add',
              'operator_real_private_multi_id_add_remove_atomic',
+             'exempt_recent_ten_insertion_order_and_cancel_from_full_list',
              'operator_allowed_support_denied_signed_exemption',
              'signed_combine_toggle_stale_replay_and_row_location',
              'operator_private_integer_confirm_commit',
