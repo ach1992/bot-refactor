@@ -404,6 +404,7 @@ function getMainKeys(){
     global $connection, $userInfo, $from_id, $admin, $botState, $buttonValues;
     $mainKeys = array();
     $temp = array();
+    $isAdminMenu = ($from_id == $admin || $userInfo['isAdmin'] == true);
     $cooperationUrl = \AchBot\Presentation\Text\configuredDestination($botState,'cooperationUrl',true);
     $helpChannelUrl = \AchBot\Presentation\Text\configuredDestination($botState,'helpChannel');
 
@@ -442,11 +443,10 @@ function getMainKeys(){
             ['text'=>$buttonValues['my_subscriptions'],'callback_data'=>
                 $userInfo['is_agent']==1?'agentConfigsList':'mySubscriptions']
         ],
-        array_merge(
-            (($from_id != $admin && $userInfo['isAdmin'] != true) ?
-                [['text'=>$buttonValues['invite_friends'],'callback_data'=>"inviteFriends"]] : []),
-            [['text'=>$buttonValues['application_links'],'callback_data'=>"reciveApplications"]]
-        ),
+        (!$isAdminMenu ? [
+            ['text'=>$buttonValues['invite_friends'],'callback_data'=>"inviteFriends"],
+            ['text'=>$buttonValues['application_links'],'callback_data'=>"reciveApplications"]
+        ] : []),
         (($botState['sharedExistence'] == "on" && $botState['individualExistence'] == "on")?
             [['text'=>$buttonValues['shared_existence'],'callback_data'=>"availableServers"],['text'=>$buttonValues['individual_existence'],'callback_data'=>"availableServers2"]] : []
         ),
@@ -459,8 +459,14 @@ function getMainKeys(){
 		(($from_id != $admin && $userInfo['isAdmin'] != true && $cooperationUrl!=='') ?
 			[['text' => \achbotMessage('admin_settings.config.get_main_keys.button.b7d6aa7173'), 'url' => $cooperationUrl]] : []
 		),
-        (($botState['searchState']=="on" || $from_id == $admin || $userInfo['isAdmin'] == true)?
-            [['text'=>$buttonValues['search_config'],'callback_data'=>"showUUIDLeft"]] : []
+        (($botState['searchState']=="on" || $isAdminMenu)?
+            array_merge(
+                [['text'=>$buttonValues['search_config'],'callback_data'=>"showUUIDLeft"]],
+                ($isAdminMenu ? [[
+                    'text'=>\achbotMessage('admin_settings.config.get_main_keys.button.11b0188fcb'),
+                    'callback_data'=>"searchUsersConfig"
+                ]] : [])
+            ) : []
         ),
     ]);
 
@@ -482,8 +488,7 @@ function getMainKeys(){
     }
     array_push($mainKeys, $temp);
 
-    if ($from_id == $admin || $userInfo['isAdmin'] == true) {
-        array_push($mainKeys, [['text' => \achbotMessage('admin_settings.config.get_main_keys.button.11b0188fcb'), 'callback_data' => "searchUsersConfig"]]);
+    if ($isAdminMenu) {
         array_push($mainKeys, [['text' => \achbotMessage('admin_settings.config.get_main_keys.button.d9c51cced4'), 'callback_data' => "managePanel"]]);
     }
 

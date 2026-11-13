@@ -39,6 +39,78 @@ MENU_20261113_KEYS={
     },
 }
 
+# The 2026-11-13 administrator/ordinary-user subscription-button decision is
+# a separate successor of the immutable RC35 menu catalog. Project a checked
+# copy to the exact RC35 source before exercising older historical checks.
+SUBSCRIPTION_MENU_BASE='f34b2f265823bb39b6a4d9ebc3f1d02c23b8a011'
+SUBSCRIPTION_MENU_LABELS={
+    'user':{
+        'legacy_buttons.search_config':'➕ افزودن اشتراک',
+        'legacy_buttons.search_agent_config':'🔍 جستجوی اشتراک',
+    },
+    'admin':{
+        'legacy_buttons.search_admin_config':'🔍 جستجوی اشتراک',
+        'subscription.manual_accounts.manual_account_consume_selection.button.11b0188fcb':'🔍 جستجوی اشتراک',
+        'admin_settings.config.get_main_keys.button.11b0188fcb':'🔍 جستجوی اشتراک',
+    },
+}
+
+
+@functools.lru_cache(maxsize=1)
+def subscription_menu_20261113_source():
+    manifest=json.loads((ROOT/'tools/text_catalog_main_menu_20261113.json').read_text())
+    check(set(manifest)=={'version','authorization','base_commit',
+                         'source_identity','changed_keys'} and
+          manifest['version']==1 and
+          manifest['base_commit']==SUBSCRIPTION_MENU_BASE and
+          manifest['authorization']==
+          'Owner-approved 2026-11-13 main-menu labels and administrator layout' and
+          set(manifest['source_identity'])=={'user','admin'} and
+          set(manifest['changed_keys'])=={'user','admin'} and
+          all(set(manifest['changed_keys'][a])==set(SUBSCRIPTION_MENU_LABELS[a])
+              for a in ('user','admin')),
+          'subscription_menu_20261113_owner_scope')
+    decode='$s=stream_get_contents(STDIN);$p=strpos($s,"return [");if($p===false)throw new RuntimeException("array_missing");echo json_encode(eval(substr($s,$p)),JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);'
+    result={}
+    for audience in ('user','admin'):
+        path='messages/fa/'+audience+'.php'
+        before=command('git','show',SUBSCRIPTION_MENU_BASE+':'+path)
+        current=(ROOT/path).read_bytes()
+        identity=manifest['source_identity'][audience]
+        check(set(identity)=={'base_sha256','approved_sha256'} and
+              hashlib.sha256(before).hexdigest()==identity['base_sha256'] and
+              hashlib.sha256(current).hexdigest()==identity['approved_sha256'],
+              'subscription_menu_20261113_full_source_identity:'+audience)
+        original=flatten(json.loads(command('php','-r',decode,input=before)))
+        actual=flatten(json.loads(command('php','-r',decode,input=current)))
+        changed={key for key in original if original[key]!=actual.get(key)}
+        check(set(original)==set(actual) and
+              changed==set(SUBSCRIPTION_MENU_LABELS[audience]) and
+              all(actual[key]==value and
+                  params(original[key])==params(value)
+                  for key,value in SUBSCRIPTION_MENU_LABELS[audience].items()),
+              'subscription_menu_20261113_exact_labels:'+audience)
+        result[audience]={'before_source':before,'before':original,
+                          'after':actual,'changed':changed}
+    return result
+
+
+def subscription_menu_20261113_copy_restore(sides):
+    source=subscription_menu_20261113_source()
+    check(set(sides)=={'user','admin'},'subscription_menu_20261113_audiences')
+    restored=copy.deepcopy(sides)
+    for audience,record in source.items():
+        other='admin' if audience=='user' else 'user'
+        for key in record['changed']:
+            check(key not in restored[other],
+                  'subscription_menu_20261113_wrong_audience:'+key)
+            value=restored[audience].get(key)
+            check(value in (record['after'][key],record['before'][key]),
+                  'subscription_menu_20261113_unapproved_value:'+key)
+            restored[audience][key]=record['before'][key]
+    return restored
+
+
 @functools.lru_cache(maxsize=1)
 def menu_20261113_source():
     manifest=json.loads((ROOT/'tools/text_catalog_menu_20261113.json').read_text())
@@ -58,7 +130,7 @@ def menu_20261113_source():
     for audience in ('user','admin'):
         path='messages/fa/'+audience+'.php'
         before=command('git','show',MENU_20261113_BASE+':'+path)
-        current=(ROOT/path).read_bytes()
+        current=subscription_menu_20261113_source()[audience]['before_source']
         identity=manifest['source_identity'][audience]
         check(set(identity)=={'base_sha256','approved_sha256'} and
               hashlib.sha256(before).hexdigest()==identity['base_sha256'] and
@@ -83,7 +155,7 @@ def menu_20261113_source():
 def menu_20261113_copy_restore(sides):
     source=menu_20261113_source()
     check(set(sides)=={'user','admin'},'menu_20261113_audiences')
-    restored=copy.deepcopy(sides)
+    restored=subscription_menu_20261113_copy_restore(sides)
     for audience,record in source.items():
         other='admin' if audience=='user' else 'user'
         for key in record['changed']:

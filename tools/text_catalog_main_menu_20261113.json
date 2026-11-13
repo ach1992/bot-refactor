@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "authorization": "Owner-approved 2026-11-13 main-menu labels and administrator layout",
+  "base_commit": "f34b2f265823bb39b6a4d9ebc3f1d02c23b8a011",
+  "source_identity": {
+    "user": {
+      "base_sha256": "3af8a91458e92324c4d504321b61a87ea36396a4963e092036e1ea20e8042dd1",
+      "approved_sha256": "5d76f3f678ed714ce1106fbdd2e984fda4cef9b949e7bfb5fd1568944221ba2b"
+    },
+    "admin": {
+      "base_sha256": "dcb02fd06b487ac8f21c25570714d3ee8437782b106047444697004767a2de14",
+      "approved_sha256": "52e11b0f8a7b044b42b067b92a8c04d9a0267b73056f8e85c01bef7d488fbd03"
+    }
+  },
+  "changed_keys": {
+    "user": [
+      "legacy_buttons.search_config",
+      "legacy_buttons.search_agent_config"
+    ],
+    "admin": [
+      "legacy_buttons.search_admin_config",
+      "subscription.manual_accounts.manual_account_consume_selection.button.11b0188fcb",
+      "admin_settings.config.get_main_keys.button.11b0188fcb"
+    ]
+  }
+}
