@@ -41,6 +41,21 @@ def check() -> dict:
         ):
             checkout.sql(work,env,(ROOT/'migrations/post-v9'/migration).read_text())
         checkout.sql(work,env,'UPDATE server_info SET ucount=100 WHERE id=2')
+        # Provider issuance does a CURRENT primary-key read of persisted
+        # BOT_STATES, not the Telegram preview globals. The test must seed
+        # that real source of truth for a usable nextpay alternative.
+        frozen=json.dumps(STATES,separators=(',',':'))
+        checkout.sql(work,env,"DELETE FROM setting WHERE type='BOT_STATES'")
+        checkout.sql(work,env,"INSERT INTO setting(type,value) VALUES "
+                     "('BOT_STATES','"+frozen+"')")
+        # Actual pay/checkout.php also reads the tenant PAYMENT_KEYS row,
+        # independently of the fixture's no-network transport API token.
+        # Use synthetic credentials, never private tenant configuration.
+        gateway_keys=json.dumps({'nextpay':'SYNTHETIC-LOCAL-ONLY'},
+                                separators=(',',':'))
+        checkout.sql(work,env,"DELETE FROM setting WHERE type='PAYMENT_KEYS'")
+        checkout.sql(work,env,"INSERT INTO setting(type,value) VALUES "
+                     "('PAYMENT_KEYS','"+gateway_keys+"')")
         stage=work/'low-wallet-real-routes'
         stages.stage_source(stage,True)
 
@@ -59,7 +74,15 @@ def check() -> dict:
         }
         if ((require $root . '/src/Finance/Routes/PrePayment.php') === null) {"""
         assert driver.count(marker)==1
-        (work/'owned-finance-guard.php').write_text(driver.replace(marker,replacement))
+        driver=driver.replace(marker,replacement)
+        # Synthetic-only location for actionable failure localization in CI.
+        # No production exception/logging or provider path is changed.
+        errorline="$GLOBALS['error'] = get_class($e) . ': ' . $e->getMessage();"
+        assert driver.count(errorline)==1
+        driver=driver.replace(errorline,
+            "$GLOBALS['error'] = get_class($e) . ': ' . $e->getMessage() "
+            ". ' @' . basename($e->getFile()) . ':' . $e->getLine();")
+        (work/'owned-finance-guard.php').write_text(driver)
 
         def sql(query:str)->str:
             return checkout.sql(work,env,query)
