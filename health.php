@@ -1,80 +1,64 @@
 <?php
-require_once __DIR__.'/messages/loader.php';
-$mainValues=achbotMessages('legacy_messages');
-$buttonValues=achbotMessages('legacy_buttons');
-require_once __DIR__.'/baseInfo.php';
-
+/**
+ * Cheap local HTTP/DB readiness probe. Telegram reachability is not bot liveness:
+ * getMe can time out when webhook/cron handling is healthy.
+ *
+ * GET /health.php -> JSON + 200 (ready) or 503 (not ready).
+ * HEAD -> identical status, no body. No cache files, outbound HTTP or writes.
+ */
 header('Content-Type: application/json; charset=utf-8');
+header('Cache-Control: no-store, max-age=0');
 
-if (!in_array($_SERVER['REQUEST_METHOD'] ?? 'GET', ['GET','HEAD'], true)) {
+$method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
+if ($method !== 'GET' && $method !== 'HEAD') {
+    header('Allow: GET, HEAD');
     http_response_code(405);
-    echo json_encode(['app'=>'fail','error'=>'method_not_allowed']);
+    echo json_encode(['app' => 'fail', 'error' => 'method_not_allowed']);
     exit;
 }
 
-if (empty($botToken)) {
-    http_response_code(500);
-    echo json_encode(['app'=>'fail','error'=>'no_bot_token']);
-    exit;
-}
-
-$cacheFile = __DIR__ . '/health_cache.json';
-$cacheTtl  = 30;
-if (is_file($cacheFile) && (time() - filemtime($cacheFile) < $cacheTtl)) {
-    if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'HEAD') { exit; }
-    readfile($cacheFile);
-    exit;
-}
-
-$ok = true;
-$status = ['app'=>'ok','time'=>date('c'),'checks'=>[]];
+$ready = false;
+$reason = 'unavailable';
 
 try {
-    $mysqli = @new mysqli('localhost', $dbUserName, $dbPassword, $dbName);
-    if ($mysqli->connect_error) { throw new Exception('db_connect'); }
-    $mysqli->set_charset('utf8mb4');
-    if (!$mysqli->ping())      { throw new Exception('db_ping'); }
-    $status['checks']['db'] = 'ok';
+    // Never include the message catalogs or load Telegram client code on a probe.
+    @require __DIR__.'/baseInfo.php';
+    if (empty($botToken)) {
+        $reason = 'no_bot_token';
+    } else {
+        $db = mysqli_init();
+        if (!$db) {
+            throw new RuntimeException('db_init');
+        }
+
+        // Bound the one local dependency, including delayed reads after connect.
+        $db->options(MYSQLI_OPT_CONNECT_TIMEOUT, 2);
+        if (defined('MYSQLI_OPT_READ_TIMEOUT')) {
+            $db->options(MYSQLI_OPT_READ_TIMEOUT, 2);
+        }
+        @$db->real_connect('localhost', $dbUserName, $dbPassword, $dbName);
+        $result = @$db->query('SELECT 1');
+        $row = $result ? $result->fetch_row() : null;
+        if (!is_array($row) || (string)($row[0] ?? '') !== '1') {
+            throw new RuntimeException('db_probe');
+        }
+        $db->close();
+        $ready = true;
+    }
 } catch (Throwable $e) {
-    $ok = false;
-    $status['checks']['db'] = 'fail';
-    $status['error_db'] = 'db_fail';
+    // The public endpoint must not expose connection strings or error details.
+    $reason = 'db_unavailable';
 }
 
-function tg_get($method) {
-    global $botToken;
-    $url = "https://api.telegram.org/bot{$botToken}/{$method}";
-    $ch = curl_init($url);
-    curl_setopt_array($ch, [
-        CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_TIMEOUT => 5,
-        CURLOPT_CONNECTTIMEOUT => 3,
-        CURLOPT_IPRESOLVE => CURL_IPRESOLVE_V4,
-        CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
-        CURLOPT_NOSIGNAL => true,
-        CURLOPT_HTTPHEADER => ['Expect:'],
-    ]);
-    $res = curl_exec($ch);
-    curl_close($ch);
-    return json_decode($res ?: '', false);
+http_response_code($ready ? 200 : 503);
+$body = [
+    'app' => $ready ? 'ok' : 'fail',
+    'time' => date('c'),
+    'checks' => ['db' => $ready ? 'ok' : 'fail'],
+];
+if (!$ready) {
+    $body['error'] = $reason;
 }
-
-try {
-    $tg = tg_get('getMe');
-    if (!is_object($tg) || empty($tg->ok)) { throw new Exception('tg'); }
-    $status['checks']['telegram_api'] = 'ok';
-    $status['bot_username'] = $tg->result->username ?? null;
-} catch (Throwable $e) {
-    $ok = false;
-    $status['checks']['telegram_api'] = 'fail';
-    $status['error_tg'] = 'tg_fail';
+if ($method === 'GET') {
+    echo json_encode($body, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 }
-
-if (!$ok) $status['app'] = 'fail';
-http_response_code($ok ? 200 : 500);
-$json = json_encode($status, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES);
-@file_put_contents($cacheFile, $json, LOCK_EX);
-
-if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'HEAD') { exit; }
-
-echo $json;

@@ -12,7 +12,7 @@ import package_post_v9 as package
 
 ROOT = Path(__file__).resolve().parents[1]
 ENTRYPOINTS = {
-    "index.html": "existing public root landing page",
+    "index.php": "owner-supplied PHP root landing page",
     "bot.php": "authenticated Telegram webhook",
     "health.php": "public health endpoint",
     "pay/index.php": "public hosted checkout",

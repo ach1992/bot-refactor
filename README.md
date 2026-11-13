@@ -140,6 +140,32 @@ For upgrades, inventory the installed source, schema, private configuration and 
 
 ## Development
 
+## Public root page and health monitoring
+
+Current source packages contain the Owner-provided `index.php` at the web root; the
+old `index.html` is deliberately retired. The supplied login/register/recovery
+forms are **presentation-only placeholders**: they do not authenticate, create
+accounts, persist registration requests, or send recovery email. Do not advertise
+them as a working authentication system without a separate implementation.
+
+Monitor the exact deployed URL `https://host.hellservice.top/<instance>/health.php`
+(replace `<instance>` with `vivan`, `hell`, or `chili`). Use HTTP `GET`,
+expect status `200` and exact JSON substring `"app":"ok"` (case-sensitive).
+`HEAD` gives status with no body and must not be used for keyword monitoring.
+`/health` has no rewrite alias; `/user/health.php` is a distinct old bot
+installation, not one of the three targets.
+
+The new default `health.php` verifies that the installed PHP endpoint, local
+bot-token configuration and local MariaDB answer `SELECT 1`, with a 2-second
+connection/read timeout; it returns `503` on unavailable prerequisites. It no
+longer makes external Telegram `getMe` calls or uses the former 30-second
+writable `health_cache.json` (which could serve a cached fail body with HTTP
+`200`). This is **local readiness**, not proof of successful Telegram
+webhook delivery, scheduled Cron execution, payments or Native provider health.
+Do not mark an actual webhook/financial failure as tested based on this probe.
+Release publication and copying a ZIP into a bot directory do not activate
+either public endpoint until a separately approved installation.
+
 Run `python3 tools/check_post_v9.py --suite source` for fast source/inventory/PHP-lint feedback or `--suite cron` for that coverage plus isolated Cron coordinator regression. Neither selected mode claims full current-runtime acceptance. The default `python3 tools/check_post_v9.py --report /tmp/achbot-post-v9.json` is the complete serial current suite under **PHP 8.5**; CI distributes its eight native families across isolated runners, then strictly aggregates all reports. Native tests use disposable MariaDB and loopback provider fixtures; no production services are contacted. Build source packages with `tools/package_post_v9.py create` and check them with `verify`. Immutable original V0–V9 source/schema pins remain guarded, but their old PHP 8.1/8.4 executions are archived rather than falsely rerun or relabelled PHP 8.5. See [CI validation policy](docs/post-v9/CI-VALIDATION.md).
 
 Source tests, independent review and publication do not establish installed Telegram/provider/payment acceptance. Those open boundaries remain tracked in Issues [26](https://github.com/ach1992/bot-refactor/issues/26), [37](https://github.com/ach1992/bot-refactor/issues/37), [51](https://github.com/ach1992/bot-refactor/issues/51) and [81](https://github.com/ach1992/bot-refactor/issues/81).

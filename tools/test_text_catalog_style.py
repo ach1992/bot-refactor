@@ -235,8 +235,11 @@ def management_runtime_paths():
     # The package is the shipping source authority, including new draft modules
     # before the first candidate commit. No arbitrary worktree PHP is accepted.
     import package_post_v9
+    # The Owner-supplied root index.php is a separate public HTML page, not
+    # Telegram bot text or an administrator message-catalog consumer.
     return [p for p in package_post_v9.members()
-            if p.endswith('.php') and not p.startswith(('phpqrcode/','messages/'))]
+            if p.endswith('.php') and p != 'index.php'
+            and not p.startswith(('phpqrcode/','messages/'))]
 def management_runtime_refs():
     refs=set()
     for path in management_runtime_paths():
