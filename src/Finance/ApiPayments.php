@@ -162,6 +162,44 @@ function achbotApiPaymentSyncInvoice(mysqli $db,array $c): bool {
         $q->bind_param('si',$digest,$id);$q->execute();$q->close();return true;
     } catch (Throwable $e) {error_log('achbot_api_invoice_edit_deferred pay_id='.$id);return false;}
 }
+/**
+ * Persist an already acknowledged staff keyboard only while its financial
+ * state is still current. Finance holds pays before payment_attempts; the
+ * former UPDATE ... JOIN could lock those rows in the opposite order and
+ * deadlock with an API/human settlement racing the staff projection.
+ *
+ * Only local SQL belongs in this transaction. Telegram has already been
+ * called; a failed digest stamp is left retryable by normal projection.
+ */
+function achbotApiPaymentStampStaffDigest(mysqli $db,int $id,string $state,?int $actor,string $digest): bool {
+    $started=false;$phase='begin';
+    try {
+        achbotPaymentEvidenceRequireAutocommit($db);
+        if (!$db->begin_transaction()) throw new RuntimeException('api_staff_digest_begin_failed');
+        $started=true;
+        $phase='lock_payment';
+        $q=$db->prepare('SELECT state,approved_by FROM pays WHERE id=? FOR UPDATE');
+        $q->bind_param('i',$id);$q->execute();$current=$q->get_result()->fetch_assoc();$q->close();
+        $currentActor=$current && $current['approved_by']!==null?(int)$current['approved_by']:null;
+        $matches=$current && $current['state']===$state && $currentActor===$actor;
+        if ($matches) {
+            $phase='stamp_attempt';
+            $q=$db->prepare('UPDATE payment_attempts SET evidence_staff_digest=? WHERE pay_row_id=?');
+            $q->bind_param('si',$digest,$id);$q->execute();$q->close();
+        }
+        $phase='commit';
+        if (!$db->commit()) throw new RuntimeException('api_staff_digest_commit_unconfirmed');
+        return (bool)$matches;
+    } catch (Throwable $e) {
+        if ($started) {
+            try {$db->rollback();} catch (Throwable $ignored) {}
+        }
+        error_log('achbot_api_staff_digest_deferred pay_id='.$id.
+            ' phase='.$phase.' exception='.get_class($e).' code='.(int)$e->getCode());
+        return false;
+    }
+}
+
 /** No general report reaches Operator/Support; existing copies still converge. */
 function achbotApiPaymentAck($response): bool {
     return $response===true || (is_object($response)&&($response->ok??false)===true) || (is_array($response)&&($response['ok']??false)===true);
@@ -224,7 +262,8 @@ function achbotApiPaymentNotice(mysqli $db,array $pay,string $status,bool $repor
             $latest['admins_messages']=json_encode($refs);
             achbotApiPaymentNotice($db,$latest,achbotApiPaymentTerminal($latest)?'settled':'review',false);return;
         }
-        if($ack){$q=$db->prepare('UPDATE payment_attempts a JOIN pays p ON p.id=a.pay_row_id SET a.evidence_staff_digest=? WHERE a.pay_row_id=? AND p.state=? AND p.approved_by<=>?');$actor=$pay['approved_by'];$state=(string)$pay['state'];$q->bind_param('sisi',$staffDigest,$id,$state,$actor);$q->execute();$q->close();}
+        if($ack) achbotApiPaymentStampStaffDigest($db,$id,(string)$pay['state'],
+            $pay['approved_by']===null?null:(int)$pay['approved_by'],$staffDigest);
     }
     $c=achbotApiPaymentContext($db,$hash);if($c)achbotApiPaymentSyncInvoice($db,$c);
 }
