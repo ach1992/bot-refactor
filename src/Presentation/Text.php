@@ -60,6 +60,15 @@ function destinationUrl($value): string {
         filter_var($value,FILTER_VALIDATE_URL)===false) return '';
     return $value;
 }
+/** The configured bot identity is authoritative for invite links; never fetch it on a webhook. */
+function inviteStartLink($configuredUsername, $userId): string {
+    if (!is_string($configuredUsername) || (!is_int($userId) && !is_string($userId))) return '';
+    $name=trim($configuredUsername);
+    if (str_starts_with($name,'@')) $name=substr($name,1);
+    if (preg_match('/\A[A-Za-z][A-Za-z0-9_]{4,31}\z/D',$name)!==1 ||
+        preg_match('/\A[1-9][0-9]{0,19}\z/D',(string)$userId)!==1) return '';
+    return 't.me/'.$name.'?start='.$userId;
+}
 function supportUrl(array $botState, string $fallback = '') {
     return destinationUrl($botState['supportID']??'') ?: $fallback;
 }

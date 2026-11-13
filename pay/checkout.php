@@ -615,15 +615,25 @@ if(mysqli_num_rows($payInfo)==0){
         }
         $CallbackURL = $botUrl . "pay/back.php?zarinpal&hash_id=" . urlencode($hash_id);
         try {
-            $client = new SoapClient('https://www.zarinpal.com/pg/services/WebGate/wsdl', ['encoding' => 'UTF-8']);
-            $result = $client->PaymentRequest([
-                'MerchantID' => $paymentKeys['zarinpal'],
-                'Amount' => $amount,
-                'Description' => $type,
-                'Email' => $Email ?? '',
-                'Mobile' => $Mobile ?? '',
-                'CallbackURL' => $CallbackURL,
-            ]);
+            // SoapClient connection_timeout alone does not bound a slow SOAP response.
+            $socketTimeout=ini_get('default_socket_timeout');
+            ini_set('default_socket_timeout','15');
+            try {
+                $client = new SoapClient('https://www.zarinpal.com/pg/services/WebGate/wsdl', [
+                    'encoding'=>'UTF-8','connection_timeout'=>5,
+                    'stream_context'=>stream_context_create(['http'=>['timeout'=>15]])
+                ]);
+                $result = $client->PaymentRequest([
+                    'MerchantID' => $paymentKeys['zarinpal'],
+                    'Amount' => $amount,
+                    'Description' => $type,
+                    'Email' => $Email ?? '',
+                    'Mobile' => $Mobile ?? '',
+                    'CallbackURL' => $CallbackURL,
+                ]);
+            } finally {
+                if ($socketTimeout!==false) ini_set('default_socket_timeout',$socketTimeout);
+            }
             $authority=(string)($result->Authority ?? '');
             if (!preg_match('/^[A-Za-z0-9_-]{1,128}$/D',$authority) ||
                 !in_array((int)($result->Status ?? -1),[100,0],true)) {

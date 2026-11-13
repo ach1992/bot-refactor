@@ -1088,6 +1088,11 @@ function changeMarzbanState($server_id,$remark){
     curl_setopt($curl, CURLOPT_URL, $panel_url);
     curl_setopt($curl, CURLOPT_CUSTOMREQUEST, 'PUT');
     curl_setopt($curl, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($curl, CURLOPT_FOLLOWLOCATION, false);
+    curl_setopt($curl, CURLOPT_CONNECTTIMEOUT, 5);
+    curl_setopt($curl, CURLOPT_TIMEOUT, 20);
+    curl_setopt($curl, CURLOPT_SSL_VERIFYPEER, true);
+    curl_setopt($curl, CURLOPT_SSL_VERIFYHOST, 2);
     curl_setopt($curl, CURLOPT_HTTPHEADER, array(
         'Accept: application/json',
         'Authorization: Bearer ' .  $token->access_token,
@@ -1095,12 +1100,21 @@ function changeMarzbanState($server_id,$remark){
     ));
     curl_setopt($curl, CURLOPT_POSTFIELDS, json_encode($postFields));
 
-    $response = json_decode(curl_exec($curl));
-
-    if(isset($response->detail)){
-		$detail = $response->detail;
-        return (object) ['success'=>false, 'msg' => is_object($detail)?implode("-", (array) $detail):$detail];
+    $raw=curl_exec($curl);
+    $errno=curl_errno($curl);
+    $http=(int)curl_getinfo($curl,CURLINFO_HTTP_CODE);
+    curl_close($curl);
+    // The PUT may have taken effect despite a missing acknowledgement.
+    // Never claim success (or safely retry) after a transport failure.
+    if ($raw===false || $errno!==0 || $http!==200)
+        return (object)['success'=>false,'uncertain'=>true,'msg'=>'marzban_toggle_unconfirmed'];
+    $response=json_decode($raw);
+    if (!is_object($response))
+        return (object)['success'=>false,'uncertain'=>true,'msg'=>'marzban_toggle_body_unconfirmed'];
+    if (isset($response->detail)) {
+        $detail=$response->detail;
+        return (object)['success'=>false,'msg'=>is_object($detail)?implode("-", (array)$detail):$detail];
     }
-    return (object) ['success'=>true];
+    return (object)['success'=>true];
 }
 

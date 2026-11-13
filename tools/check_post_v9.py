@@ -18,6 +18,7 @@ from pathlib import Path
 import v9_contract as historical
 import package_post_v9 as package
 import test_post_v9_customer_errors as customer_errors
+import test_post_v9_network_io as webhook_io
 
 ROOT = Path(__file__).resolve().parents[1]
 V9 = "7eb077fd8e6d0a303421626d1500f69e295a6664"
@@ -451,7 +452,9 @@ def source_checks():
         raise RuntimeError("Obsolete XUI provider HTTP transport retained")
     if (ROOT/'settings/subLink.php').exists() or 'settings/subLink.php' in files:
         raise RuntimeError('Unused retired XUI subscription stub retained')
+    webhook_network=webhook_io.verify(ROOT)
     return {"source_files":len(files),"php_lint":len(php_files),
+            "webhook_network_io_regression":webhook_network,
             "original_historical_schema_file_unchanged":True,
             "current_additive_migration_separately_tested":False,
             "synthetic_baseinfo_example_current_settings_removed":True,

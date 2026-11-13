@@ -983,6 +983,13 @@ if($data=="inviteFriends"){
     $inviteText = $stmt->get_result()->fetch_assoc()['value'];
 
     if($inviteText != null){
+        require_once __DIR__.'/src/Presentation/Text.php';
+        $link=\AchBot\Presentation\Text\inviteStartLink($botUsername??null,$from_id);
+        if ($link==='') {
+            error_log('achbot_invite_username_unavailable');
+            alert(\achbotMessage('bot.bot.invite_friends.alert.56fd80c6d5'));
+            return;
+        }
         delMessage();
         $inviteText = json_decode($inviteText, true);
 
@@ -990,11 +997,6 @@ if($data=="inviteFriends"){
         $stmt->execute();
         $inviteAmount = number_format($stmt->get_result()->fetch_assoc()['value'] ?? 0) . \achbotMessage('bot.bot.webhook_ingress_authenticated.text.2cc98f7f7c');
         $stmt->close();
-
-        $getBotInfo = json_decode(file_get_contents("http://api.telegram.org/bot" . $botToken . "/getMe"), true);
-        $botId = $getBotInfo['result']['username'];
-
-        $link = "t.me/$botId?start=" . $from_id;
 
         if($inviteText['type'] == "text"){
             $txt = str_replace('LINK', $link, $inviteText['text']);
