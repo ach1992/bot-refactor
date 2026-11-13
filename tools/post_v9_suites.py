@@ -1864,6 +1864,7 @@ def run_authorization(tmp: str) -> tuple[dict, dict]:
              'b1_repeatable_read_future_success_unrestricted_buyer_not_nonbuyer_dated_denied',
              'per_category_and_or_default_and_category_guard',
              'malformed_or_toggle_denies',
+             'or_valid_history_with_invalid_age_and_default_and_fail',
              'or_and_categories_READ-COMMITTED',
              'or_and_categories_REPEATABLE-READ',
              'new_category_all',

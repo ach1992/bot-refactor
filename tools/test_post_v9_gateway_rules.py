@@ -351,6 +351,14 @@ def main():
             sql(w,e,'UPDATE users SET date='+quoted(wrong)+' WHERE userid=1001')
             assert not allowed(s),wrong
             cases.append('bad_registration_'+label)
+        invalid_age=blank('all');invalid_age['registration_age_days']=1
+        invalid_age['metrics']['buy']['count']=1
+        invalid_age['match_all']=False
+        sql(w,e,"UPDATE users SET date='nope' WHERE userid=1001")
+        assert allowed(policy('wallet',[invalid_age]))
+        invalid_age['match_all']=True
+        assert not allowed(policy('wallet',[invalid_age]))
+        cases.append('or_valid_history_with_invalid_age_and_default_and_fail')
         sql(w,e,f"UPDATE users SET date='{now-140*86400}' WHERE userid=1001")
         s=policy('wallet',[blank('all')])
         sql(w,e,"INSERT INTO users(userid,name,username,refcode,wallet,date) "

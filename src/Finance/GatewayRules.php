@@ -138,11 +138,13 @@ function achbotGatewayRuleMatchesUser(mysqli $db,int $userId,array $rule,
     $conditions=[];
     if ($rule['registration_age_days']>0) {
         $raw=(string)($user['date']??'');
-        if (!preg_match('/\A[1-9][0-9]*\z/D',$raw)) return false;
-        $date=filter_var($raw,FILTER_VALIDATE_INT,
-            ['options'=>['min_range'=>1,'max_range'=>$now]]);
-        if ($date===false) return false;
-        $conditions[]=($now-$date >= $rule['registration_age_days']*86400);
+        $date=preg_match('/\A[1-9][0-9]*\z/D',$raw)===1
+            ? filter_var($raw,FILTER_VALIDATE_INT,
+                ['options'=>['min_range'=>1,'max_range'=>$now]]) : false;
+        // Missing/invalid age never satisfies that condition. In OR mode,
+        // independently verified history may still satisfy another condition.
+        $conditions[]=($date!==false &&
+            $now-$date >= $rule['registration_age_days']*86400);
     }
     if ($category==='agents' && (int)$user['is_agent']!==1) return false;
     if ($category==='non_agents' && (int)$user['is_agent']===1) return false;
