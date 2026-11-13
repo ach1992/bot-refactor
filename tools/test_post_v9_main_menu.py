@@ -17,16 +17,19 @@ $root=$argv[1];
 $spec=json_decode($argv[2],true,512,JSON_THROW_ON_ERROR);
 require_once $root.'/src/Presentation/Text.php';
 $catalog=require $root.'/messages/fa/user.php';
+$adminCatalog=require $root.'/messages/fa/admin.php';
 $buttonValues=$catalog['legacy_buttons'];
+$adminSearchLabel=$adminCatalog['admin_settings']['config.get_main_keys.button.11b0188fcb'];
+$adminManageLabel=$adminCatalog['admin_settings']['config.get_main_keys.button.d9c51cced4'];
 $admin=9001;
-$from_id=(int)($spec['admin']??false?9001:2002);
-$userInfo=['is_agent'=>($spec['agent']??false)?1:0,
-           'isAdmin'=>($spec['admin']??false),
+$from_id=!empty($spec['admin'])?9001:2002;
+$userInfo=['is_agent'=>array_key_exists('agent_status',$spec)?(int)$spec['agent_status']:(empty($spec['agent'])?0:1),
+           'isAdmin'=>!empty($spec['admin'])||!empty($spec['secondary_admin']),
            'freetrial'=>!empty($spec['trial_eligible'])?'not_used':'used'];
-$botState=['agencyState'=>'on','sellState'=>'on',
+$botState=['agencyState'=>'on','sellState'=>!empty($spec['sales_off'])?'off':'on',
            'testAccount'=>!empty($spec['trial_on'])?'on':'off',
            'sharedExistence'=>'off','individualExistence'=>'off',
-           'searchState'=>'off','supportID'=>'',
+           'searchState'=>!empty($spec['search_on'])?'on':'off','supportID'=>'',
            'cooperationUrl'=>!empty($spec['extra'])?'@fixture_partners':'',
            'helpChannel'=>'@fixture_help'];
 class Result {
@@ -47,11 +50,12 @@ class Statement {
 class DB {public function prepare($query):Statement {return new Statement();}}
 $connection=new DB();
 function achbotMessage($key) {
+    global $adminSearchLabel,$adminManageLabel;
     return match($key) {
         'instance_content.help_button'=>'💬 پشتیبانی',
         'admin_settings.config.get_main_keys.button.b7d6aa7173'=>'درخواست خارجی',
-        'admin_settings.config.get_main_keys.button.11b0188fcb'=>'ادمین اول',
-        'admin_settings.config.get_main_keys.button.d9c51cced4'=>'ادمین دوم',
+        'admin_settings.config.get_main_keys.button.11b0188fcb'=>$adminSearchLabel,
+        'admin_settings.config.get_main_keys.button.d9c51cced4'=>$adminManageLabel,
         default=>throw new RuntimeException('unexpected catalog reference:'.$key),
     };
 }
@@ -71,6 +75,10 @@ echo json_encode(['rows'=>$rows,'labels'=>[
     'buy_subscriptions'=>$buttonValues['buy_subscriptions'],
     'request_agency'=>$buttonValues['request_agency'],
     'test_account'=>$buttonValues['test_account'],
+    'search_config'=>$buttonValues['search_config'],
+    'search_agent_config'=>$buttonValues['search_agent_config'],
+    'admin_search'=>$adminSearchLabel,
+    'admin_manage'=>$adminManageLabel,
 ]],JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE);
 '''
 
@@ -140,10 +148,56 @@ def check(root: Path = ROOT) -> dict:
         admin_rows=admin['rows']
         assert admin_rows[2]==free_trial,admin_rows
         assert [b.get('callback_data') for b in admin_rows[3]]==['myInfo','mySubscriptions']
-        assert [b.get('callback_data') for b in admin_rows[4]]==['reciveApplications']
+        assert [(b.get('callback_data'),b['text']) for b in admin_rows[4]]==[
+            ('showUUIDLeft','➕ افزودن اشتراک'),('searchUsersConfig','🔍 جستجوی اشتراک')
+        ],admin_rows
+        assert [(b.get('callback_data'),b['text']) for b in admin_rows[5]]==[
+            ('managePanel','⚙️ مدیریت ربات')],admin_rows
         assert admin_rows[-1]==support,admin_rows
-        assert not any(b.get('callback_data')=='inviteFriends'
+        assert not any(b.get('callback_data') in ('inviteFriends','reciveApplications')
                        for row in admin_rows for b in row),admin_rows
+        cases+=1
+
+        # The ordinary customer keeps education and gets the shared add-label
+        # only when the existing searchState gate allows the import action.
+        ordinary_search=execute(search_on=True)
+        ordinary_rows=ordinary_search['rows']
+        assert [b.get('callback_data') for b in ordinary_rows[3]]==[
+            'inviteFriends','reciveApplications'],ordinary_rows
+        assert [(b.get('callback_data'),b['text']) for b in ordinary_rows[-2]]==[
+            ('showUUIDLeft','➕ افزودن اشتراک')],ordinary_rows
+        assert ordinary_rows[-1]==support,ordinary_rows
+        cases+=1
+
+        # Owner's own account may be neither ordinary (0) nor agent (1);
+        # all four current staff levels share the same main-menu pairing.
+        for name,options in [
+            ('owner_nonagent',{'admin':True,'agent_status':-1}),
+            ('secondary_admin',{'secondary_admin':True}),
+            ('owner_agent',{'admin':True,'agent':True}),
+            ('owner_custom_button',{'admin':True,'extra':True}),
+            ('staff_sales_disabled',{'secondary_admin':True,'sales_off':True}),
+        ]:
+            staff=execute(**options)
+            srows=staff['rows']
+            pairs=[row for row in srows
+                   if any(b.get('callback_data')=='searchUsersConfig' for b in row)]
+            assert len(pairs)==1,(name,srows)
+            assert [(b.get('callback_data'),b['text']) for b in pairs[0]]==[
+                ('showUUIDLeft','➕ افزودن اشتراک'),('searchUsersConfig','🔍 جستجوی اشتراک')
+            ],(name,srows)
+            assert sum(b.get('callback_data')=='showUUIDLeft' for row in srows for b in row)==1
+            assert not any(b.get('callback_data') in ('reciveApplications','inviteFriends')
+                           for row in srows for b in row),(name,srows)
+            assert srows[-1]==support,(name,srows)
+            assert [b.get('callback_data') for b in srows[-2]]==['managePanel'],(name,srows)
+            cases+=1
+
+        # The search label also belongs to the agent's subscriptions
+        # keyboard; this is intentionally not a new admin capability.
+        assert labels['search_agent_config']=='🔍 جستجوی اشتراک'
+        assert labels['search_config']=='➕ افزودن اشتراک'
+        assert labels['admin_search']=='🔍 جستجوی اشتراک'
         cases+=1
 
         extra=execute(extra=True,trial_on=True,trial_eligible=True)
@@ -181,9 +235,12 @@ def check(root: Path = ROOT) -> dict:
     assert labels['my_subscriptions']=='🔄 مشاهده اشتراک‌ها'
     assert labels['invite_friends']=='🧲 کسب درآمد'
 
-    # The historical copy proofs must see only a validated backward projection
-    # of the ten Owner-approved changed entries, never a loosened baseline.
+    # New Owner-approved labels are a separate exact-source successor. Older
+    # catalog/historical proofs still receive their original checked snapshot.
     import catalog_owner_r5 as history
+    import re
+    sources_new=history.subscription_menu_20261113_source()
+    assert {a:len(item['changed']) for a,item in sources_new.items()}=={'user':2,'admin':3}
     sources=history.menu_20261113_source()
     assert {a:len(item['changed']) for a,item in sources.items()}=={'user':9,'admin':1}
     catalog=subprocess.run(
@@ -192,6 +249,19 @@ def check(root: Path = ROOT) -> dict:
          'JSON_THROW_ON_ERROR);'],
         cwd=root,capture_output=True,text=True,check=True,timeout=10)
     current={a:history.flatten(groups) for a,groups in json.loads(catalog.stdout).items()}
+    projected_new=history.subscription_menu_20261113_copy_restore(current)
+    for audience,item in sources_new.items():
+        for key in item['changed']:
+            assert current[audience][key]==item['after'][key]
+            assert projected_new[audience][key]==item['before'][key]
+    for audience,key in [('user','legacy_buttons.search_config'),
+                         ('user','legacy_buttons.search_agent_config'),
+                         ('admin','admin_settings.config.get_main_keys.button.11b0188fcb')]:
+        corrupted=copy.deepcopy(current)
+        corrupted[audience][key]='unapproved'
+        try:history.subscription_menu_20261113_copy_restore(corrupted)
+        except AssertionError:pass
+        else:raise AssertionError('new menu copy allowed unapproved mutation: '+key)
     projected=history.menu_20261113_copy_restore(current)
     for audience,item in sources.items():
         for key in item['changed']:
@@ -207,7 +277,7 @@ def check(root: Path = ROOT) -> dict:
         else:raise AssertionError('menu copy allowed unapproved mutation: '+key)
 
     return {'verified':True,'real_menu_scenarios':cases,
-            'approved_catalog_deltas':10,'catalog_negative_controls':3,
+            'approved_catalog_deltas':15,'catalog_negative_controls':6,
             'copy_reference_checks':len(references)+1,
             'original_callbacks_and_feature_gates_preserved':True,
             'no_network_or_customer_data':True}

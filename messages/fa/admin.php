@@ -148,7 +148,7 @@ return [
         'gift_volume_day' => '🎁 هدیه حجم و زمان',
         'agent_list' => '👤 مدیریت همکاران',
         'rejected_agent_list' => '📋 درخواست های رد شده',
-        'search_admin_config' => '🔎 جستجوی اشتراک کاربر',
+        'search_admin_config' => '🔍 جستجوی اشتراک',
         'manage_order_database' => '🗂 ویرایش سفارش در دیتابیس',
         'plan_discount' => 'روی پلن',
         'server_discount' => 'روی سرور',
@@ -519,7 +519,7 @@ return [
         // manual_accounts.manual_account_consume_selection
         'manual_accounts.manual_account_consume_selection.msg.86a1eb982f' => ['text' => '✅ شناسه عددی <b>{customUserId}</b> با موفقیت ثبت شد.', 'parameters' => ['customUserId']],
         'manual_accounts.manual_account_consume_selection.button.0c983c9f0f' => '➕ افزودن به اشتراک های کاربر',
-        'manual_accounts.manual_account_consume_selection.button.11b0188fcb' => '🔍 جستجوی اشتراک کاربر',
+        'manual_accounts.manual_account_consume_selection.button.11b0188fcb' => '🔍 جستجوی اشتراک',
         // manual_accounts.detect_server_id_from_remark
         'manual_accounts.detect_server_id_from_remark.alert.0e59a3d9a8' => '❌ اطلاعات اشتراک یافت نشد.',
         'manual_accounts.detect_server_id_from_remark.alert.4c5aeb77e7' => '✅ این اشتراک قبلاً اضافه شده است.',
@@ -1509,7 +1509,7 @@ return [
 
 
         // config.get_main_keys
-        'config.get_main_keys.button.11b0188fcb' => '🔍 جستجوی اشتراک کاربر',
+        'config.get_main_keys.button.11b0188fcb' => '🔍 جستجوی اشتراک',
         'config.get_main_keys.button.d9c51cced4' => '⚙️ مدیریت ربات',
         // config.get_admin_keys
         'config.get_admin_keys.button.f5a816a832' => '📋 بررسی پرداخت‌های نیازمند رسیدگی',
