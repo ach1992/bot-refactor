@@ -305,6 +305,15 @@ def main() -> None:
             "parallel_first_start_single_row_single_referral_reward")
         yes(int(native.sql(w,env,"SELECT COUNT(*) FROM users WHERE userid=2415",DB).strip())==1,
             "owned_database_enforces_parallel_one_row_result")
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            jobs=[pool.submit(run,actor=2421) for _ in range(2)]
+            greetings=[x.result(timeout=25) for x in jobs]
+        yes(sum(e['text']=='WELCOME' for x in greetings for e in x['events']
+                if e['kind']=='send')==1 and
+            sum(e['kind']=='admin' for x in greetings for e in x['events'])==1 and
+            sum(e['text']=='HOME' for x in greetings for e in x['events']
+                if e['kind']=='send')==2,
+            "concurrent_first_start_single_welcome_and_admin_notice")
         r=run(actor=2416,forced=False,callback='haveJoined')
         yes(len(r['rows'])==1 and any(e['text']=='HOME' for e in r['events']),
             "old_join_button_after_lock_disabled_shows_menu")

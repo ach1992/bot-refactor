@@ -255,7 +255,24 @@ if (preg_match('/^\/([Ss]tart)/', $text) || $text == $buttonValues['back_to_main
     setUser("", "temp");
 
     $isRealAdmin  = ($from_id == $admin || (!empty($userInfo['isAdmin']) && $userInfo['isAdmin'] == true));
-    $isFirstStart = ($from_id != $admin && empty($userInfo['first_start']));
+    // The database, not an earlier cached userInfo, decides the one-time
+    // welcome/admin notice. Concurrent /start requests may both see an empty
+    // first_start before one of them has sent the welcome.
+    $isFirstStart = false;
+    if ($from_id != $admin && empty($userInfo['first_start'])) {
+        $firstStartId = (int)$menuRows[0]['id'];
+        $firstStart = $connection->prepare(
+            "UPDATE users SET first_start='sent' WHERE id=? AND userid=? "
+            . "AND (first_start IS NULL OR first_start='' OR first_start='0')"
+        );
+        if ($firstStart) {
+            $firstStart->bind_param('ii', $firstStartId, $menuActor);
+            $claimed = $firstStart->execute();
+            $isFirstStart = $claimed && $firstStart->affected_rows === 1;
+            $firstStart->close();
+            if (!$claimed) error_log('achbot_first_start_notice_claim_unverified');
+        }
+    }
     $canBuy       = (($botState['sellState'] ?? 'off') == "on" || $isRealAdmin);
 
     if (isset($data) && ($data == "mainMenu" || $data == "evidenceHome" || $paymentHome)) {
@@ -267,8 +284,6 @@ if (preg_match('/^\/([Ss]tart)/', $text) || $text == $buttonValues['back_to_main
     } else {
 
         if ($isFirstStart) {
-
-            setUser('sent', 'first_start');
 
             $keys = json_encode([
                 'inline_keyboard' => [
