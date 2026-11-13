@@ -469,7 +469,7 @@ function achbotGatewayAdminPage(string $data,?int $nonce=null): array {
             : achbotMessage('payment_settings.gateway_rule_admin.combine_off'),
          'callback_data'=>'gr|h|'.$prefix.'|'.$tag],
         ['text'=>achbotMessage('payment_settings.gateway_rule_admin.combine_label'),
-         'callback_data'=>'wizwizch']
+         'callback_data'=>'gr|h|'.$prefix.'|'.$tag]
     ];
     $rows[]=[['text'=>$r['enabled']
         ? \achbotMessage('payment_settings.gateway_rule_admin.gateway_admin_page.text.fe79dd4aa2')

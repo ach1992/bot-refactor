@@ -505,6 +505,12 @@ def main():
         assert state()['gatewayRuleExemptUsers']=={
             'wallet':[1001,1401],'bank_transfer':[1400]}
         assert sql(w,e,'SELECT step FROM users WHERE userid=9001')=='none'
+        cancelled=json.dumps(state(),sort_keys=True)
+        events,_=act('gr|e|wallet')
+        events,_=act(text='لغو',message=True)
+        assert json.dumps(state(),sort_keys=True)==cancelled
+        assert sql(w,e,'SELECT step FROM users WHERE userid=9001')=='none'
+        assert not any(e[0]=='send' and 'به‌روزرسانی شدند' in e[1] for e in events)
         cases.append('operator_real_private_multi_id_add_remove_atomic')
         sql(w,e,"UPDATE setting SET value='operator' WHERE type='ADMIN_ROLE_9002'")
         events,_=act('gr|m|wallet',who=9002)
@@ -524,6 +530,7 @@ def main():
         keyboard=json.loads([e for e in events if e[0]=='edit'][-1][2])['inline_keyboard']
         assert keyboard[-4][0]['callback_data'].startswith('gr|h|wallet|non_agents|')
         assert 'اعمال همزمان قوانین' in keyboard[-4][1]['text']
+        assert keyboard[-4][1]['callback_data']==keyboard[-4][0]['callback_data']
         old_toggle=button('gr|h|wallet|non_agents')
         events,_=act(old_toggle)
         assert state()['gatewayRules']['methods']['wallet'][0]['match_all'] is False

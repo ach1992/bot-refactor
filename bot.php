@@ -602,8 +602,9 @@ if (is_string($userInfo['step']??null) &&
     if (str_starts_with($userInfo['step'],'gr|exempt|')) {
         $method=substr($userInfo['step'],strlen('gr|exempt|'));
         $page=achbotGatewayAdminPage('gr|m|'.$method);
-        sendMessage(achbotMessage('payment_settings.gateway_rule_admin.exempt_saved')."\n".
-            $page['text'],$page['keyboard'],'HTML');
+        $notice=$text===($buttonValues['cancel']??null) ? '' :
+            achbotMessage('payment_settings.gateway_rule_admin.exempt_saved')."\n";
+        sendMessage($notice.$page['text'],$page['keyboard'],'HTML');
         return;
     }
     $sourceId=(int)($update->update_id??0);
