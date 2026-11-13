@@ -608,8 +608,8 @@ if (is_string($userInfo['step']??null) &&
         return;
     }
     if ($text===$buttonValues['cancel']) {
-        sendMessage(\achbotMessage('bot.bot.gateway_audience_settings.message.74d707fe02'),
-            $removeKeyboard);
+        // Other numeric editors retain their established cancellation UX.
+        sendMessage(\achbotMessage('bot.bot.gateway_audience_settings.message.74d707fe02'));
         return;
     }
     $sourceId=(int)($update->update_id??0);
