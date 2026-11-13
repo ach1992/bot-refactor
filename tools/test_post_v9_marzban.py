@@ -208,6 +208,7 @@ def main():
     records = []
     legacy_curl_deprecation_count=0
     minimal_edit_wire_verified=False
+    toggle_ambiguous_ack_rejected=False
     with owned.owned_database() as (work, env), native.owned_provider() as (panel, url):
         native.seed(work, env, url)
         old = work / "historic-v9"
@@ -298,6 +299,29 @@ def main():
                 not results[0].get('warnings') and
                 not results[1].get('warnings') and
                 results[0].get('stdout')==results[1].get('stdout')=='')
+            # V9's synthetic toggle PUT responds with only {"status":"ok"}.
+            # This is not Marzban's UserResponse and cannot establish the
+            # requested username or disabled status. The corrected source
+            # must return UNCERTAIN (not a false success) with exactly the
+            # historical GET/PUT wire calls and no automatic second mutation.
+            intentional_toggle_fail_closed=(
+                name=='marzban.status' and
+                results[0].get('result')=={'success':True} and
+                results[1].get('result')=={
+                    'success':False,'uncertain':True,
+                    'msg':'marzban_toggle_ack_unverified'} and
+                results[0].get('exception') is None and
+                results[1].get('exception') is None and
+                not results[0].get('warnings') and
+                not results[1].get('warnings') and
+                results[0].get('stdout')==results[1].get('stdout')=='' and
+                traces[0]==traces[1] and
+                [request['method'] for request in traces[1]]==
+                ['POST','GET','PUT'] and
+                json.loads(traces[1][-1]['body'])['status']=='disabled')
+            if name=='marzban.status':
+                toggle_ambiguous_ack_rejected=intentional_toggle_fail_closed
+
             # Current source re-reads the original physical account just
             # before the FIRST PUT: upstream Marzban can delete a queued
             # next_plan during an unrelated UserModify update. Historical V9
@@ -334,7 +358,8 @@ def main():
                 minimal_edit_wire_verified=edit_wire
             if (traces[0]!=traces[1] and not extra_edit_readback) or (
                 results[0]!=results[1] and not
-                (intentional_fail_closed or intentional_delete_fail_closed or intentional_traffic_enrichment)):
+                (intentional_fail_closed or intentional_delete_fail_closed or
+                 intentional_toggle_fail_closed or intentional_traffic_enrichment)):
                 raise RuntimeError("Marzban differential mismatch: "+name+
                                    "\n"+json.dumps({"historical":results[0],
                                                     "candidate":results[1],
@@ -345,6 +370,8 @@ def main():
             records.append({"case":name,"owned_http_requests":len(traces[0]),"result":"PASS"})
         if not minimal_edit_wire_verified:
             raise RuntimeError('Post-V9 service edit minimal PUT wire contract was not exercised')
+        if not toggle_ambiguous_ack_rejected:
+            raise RuntimeError('Marzban toggle ambiguous HTTP200 must be uncertain with unchanged wire')
         # Issue #26: the post-V9 strict readback must use a bounded, genuine
         # authenticated HTTP GET. It is intentionally NOT compared to V9.
         panel.mode='ok'

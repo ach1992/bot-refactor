@@ -57,6 +57,11 @@ unchanged.
   only on HTTP 200 JSON acknowledging that same username and intended status.
   Missing/invalid/contradictory replies are **uncertain**. Never automatically
   repeat an uncertain PUT; observe remote state before taking another action.
+  The immutable V9 differential fixture returns a generic HTTP 200
+  `{"status":"ok"}` for toggle; this is now explicitly verified as an
+  **uncertain** result with exactly the historical outbound wire requests,
+  not misreported as a confirmed state change. A separate positive test
+  exercises matching username and intended status.
 - Marzban getMarzbanUserInfo() link probing formerly repeated the full
   account GET up to 11 times. It now performs one bounded authenticated GET,
   then probes the same subscription URL within an additional 12-second
