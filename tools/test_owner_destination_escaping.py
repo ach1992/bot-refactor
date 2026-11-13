@@ -94,10 +94,41 @@ if (defined('ACHBOT_VERIFIED_WEBHOOK_ENTRYPOINT') && (int)$from_id > 0 &&
     $memberStatus = is_object($membership) ? ($membership->result->status ?? null) : null;
     $joniedState = is_string($memberStatus) ? $memberStatus : null;
 }"""
-    check(original in archived['config.php'] and
-          protected in current['config.php'] and
-          current['config.php'].count(protected)==1 and
-          original not in current['config.php'],
+    # The original caller and the previously accepted Cron-safe guard are
+    # immutable historical references. Issue #176 changes only the outcome
+    # classification for verified channel members; preserve the destination
+    # and actor payload under the same authenticated-webhook boundary.
+    previous_cfg=command('git','show',
+        '779996e3efa0acec168bab13121494051782132e:config.php').decode()
+    verified_guard="""$joniedState = null;
+$joinMembershipVerified = false;
+// A configured mandatory channel is not bypassed when Telegram cannot verify
+// membership. The same result is checked again when "عضو شدم" is pressed.
+if (defined('ACHBOT_VERIFIED_WEBHOOK_ENTRYPOINT') && (int)$from_id > 0 &&
+    $channelLock !== null && $channelLock !== '') {
+    $membership = bot('getChatMember', ['chat_id' => $channelLock,'user_id' => $from_id]);
+    if (is_object($membership) && ($membership->ok ?? false) === true) {
+        $status = $membership->result->status ?? null;
+        $joniedState = is_string($status) ? $status : null;
+        $joinMembershipVerified = in_array($status,
+            ['creator','administrator','member'],true) ||
+            ($status === 'restricted' && ($membership->result->is_member ?? false) === true);
+    }
+}"""
+    def membership_block(source):
+        start=source.index("$channelLock = $botState['lockChannel'];")
+        return source[start:source.index('// Channel exemption is dispatched',start)]
+    archived_member=membership_block(archived['config.php'])
+    previous_member=membership_block(previous_cfg)
+    current_member=membership_block(current['config.php'])
+    previous_guard=protected.partition(chr(10))[2]
+    check(archived_member.count(original)==1 and
+          previous_member==archived_member.replace(original,protected) and
+          previous_member.count(previous_guard)==1 and
+          current_member==previous_member.replace(previous_guard,verified_guard) and
+          current_member.count("bot('getChatMember', ['chat_id' => $channelLock,'user_id' => $from_id])")==1 and
+          current_member.count("defined('ACHBOT_VERIFIED_WEBHOOK_ENTRYPOINT')")==1 and
+          original not in current_member,
           'membership_dest_actor_preserved_under_verified_webhook_guard')
     fragment_hashes={label:{key:hashlib.sha256(value.encode()).hexdigest()for key,value in selected.items()}for label,selected in parts.items()}
     with owned.owned_database()as(work,env):

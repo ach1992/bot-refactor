@@ -304,7 +304,7 @@ $stmt = $connection->prepare("SELECT * FROM `users` WHERE `userid`=?");
 $stmt->bind_param("i", $from_id);
 $stmt->execute();
 $uinfo = $stmt->get_result();
-$userInfo = $uinfo->fetch_assoc();
+$userInfo = $uinfo->fetch_assoc() ?: [];
 $stmt->close();
  
 $stmt = $connection->prepare("SELECT * FROM `setting` WHERE `type` = 'PAYMENT_KEYS'");
@@ -330,13 +330,19 @@ if (defined('ACHBOT_VERIFIED_WEBHOOK_ENTRYPOINT') &&
 $supportID = $botState['supportID'];
 $channelLock = $botState['lockChannel'];
 $joniedState = null;
-// Membership is relevant only for an authenticated webhook actor, not a
-// once-per-minute CLI job. Preserve the legacy unknown-result behavior.
+$joinMembershipVerified = false;
+// A configured mandatory channel is not bypassed when Telegram cannot verify
+// membership. The same result is checked again when "عضو شدم" is pressed.
 if (defined('ACHBOT_VERIFIED_WEBHOOK_ENTRYPOINT') && (int)$from_id > 0 &&
     $channelLock !== null && $channelLock !== '') {
     $membership = bot('getChatMember', ['chat_id' => $channelLock,'user_id' => $from_id]);
-    $memberStatus = is_object($membership) ? ($membership->result->status ?? null) : null;
-    $joniedState = is_string($memberStatus) ? $memberStatus : null;
+    if (is_object($membership) && ($membership->ok ?? false) === true) {
+        $status = $membership->result->status ?? null;
+        $joniedState = is_string($status) ? $status : null;
+        $joinMembershipVerified = in_array($status,
+            ['creator','administrator','member'],true) ||
+            ($status === 'restricted' && ($membership->result->is_member ?? false) === true);
+    }
 }
 
 // Channel exemption is dispatched by bot.php AFTER webhook/IP verification.
@@ -408,13 +414,13 @@ function getMainKeys(){
     $cooperationUrl = \AchBot\Presentation\Text\configuredDestination($botState,'cooperationUrl',true);
     $helpChannelUrl = \AchBot\Presentation\Text\configuredDestination($botState,'helpChannel');
 
-    if($botState['agencyState'] == "on" && $userInfo['is_agent'] == 1){
+    if(($botState['agencyState'] ?? 'off') == "on" && $userInfo['is_agent'] == 1){
 		$mainKeys = array_merge($mainKeys, [
 			[['text'=>$buttonValues['agency_setting'],'callback_data'=>"agencySettings"]],
 			[['text'=>$buttonValues['sharj'],'callback_data'=>"increaseMyWallet"]],
 		]);
 
-		if (($botState['sellState'] ?? 'off') == "on" || $from_id == $admin || !empty($userInfo['isAdmin'])) {
+		if ((($botState['sellState'] ?? 'off') ?? 'off') == "on" || $from_id == $admin || !empty($userInfo['isAdmin'])) {
 			$mainKeys[] = [
 				['text'=>$buttonValues['agent_one_buy'],'callback_data'=>"agentOneBuy"],
 				['text'=>$buttonValues['agent_much_buy'],'callback_data'=>"agentMuchBuy"]
@@ -422,10 +428,10 @@ function getMainKeys(){
 		}
 	}else{
         $mainKeys = array_merge($mainKeys,[
-            (($botState['agencyState'] == "on" && $userInfo['is_agent'] == 0)?[
+            ((($botState['agencyState'] ?? 'off') == "on" && $userInfo['is_agent'] == 0)?[
                 ['text'=>$buttonValues['request_agency'],'callback_data'=>"requestAgency"]
             ]: []),
-            (($botState['sellState'] == "on" || $from_id == $admin || $userInfo['isAdmin'] == true)?
+            ((($botState['sellState'] ?? 'off') == "on" || $from_id == $admin || $userInfo['isAdmin'] == true)?
                 [['text'=>$buttonValues['sharj'],'callback_data'=>"increaseMyWallet"],['text'=>$buttonValues['buy_subscriptions'],'callback_data'=>"buySubscription"]]
                 :
                 [['text'=>$buttonValues['sharj'],'callback_data'=>"increaseMyWallet"]]
@@ -436,7 +442,7 @@ function getMainKeys(){
     $mainKeys = array_merge($mainKeys, [
         // Owner-approved conditional row: free trial precedes account/view
         // whenever the unchanged eligibility gate makes it visible.
-        (($botState['testAccount'] == "on" && ($from_id == $admin || $userInfo['freetrial'] != 'used')) ?
+        ((($botState['testAccount'] ?? 'off') == "on" && ($from_id == $admin || $userInfo['freetrial'] != 'used')) ?
             [['text'=>$buttonValues['test_account'],'callback_data'=>"getTestAccount"]] : []),
         [
             ['text'=>$buttonValues['my_info'],'callback_data'=>"myInfo"],
@@ -447,18 +453,18 @@ function getMainKeys(){
             ['text'=>$buttonValues['invite_friends'],'callback_data'=>"inviteFriends"],
             ['text'=>$buttonValues['application_links'],'callback_data'=>"reciveApplications"]
         ] : []),
-        (($botState['sharedExistence'] == "on" && $botState['individualExistence'] == "on")?
+        ((($botState['sharedExistence'] ?? 'off') == "on" && ($botState['individualExistence'] ?? 'off') == "on")?
             [['text'=>$buttonValues['shared_existence'],'callback_data'=>"availableServers"],['text'=>$buttonValues['individual_existence'],'callback_data'=>"availableServers2"]] : []
         ),
-        (($botState['sharedExistence'] == "on" && $botState['individualExistence'] != "on")?
+        ((($botState['sharedExistence'] ?? 'off') == "on" && ($botState['individualExistence'] ?? 'off') != "on")?
             [['text'=>$buttonValues['shared_existence'],'callback_data'=>"availableServers"]] : []
         ),
-        (($botState['sharedExistence'] != "on" && $botState['individualExistence'] == "on")?
+        ((($botState['sharedExistence'] ?? 'off') != "on" && ($botState['individualExistence'] ?? 'off') == "on")?
             [['text'=>$buttonValues['individual_existence'],'callback_data'=>"availableServers2"]] : []
         ),
         // Keep the optional customer import action above the configured
         // cooperation/support URL; the staff search pair stays on one row.
-        (($botState['searchState']=="on" || $isAdminMenu)?
+        ((($botState['searchState'] ?? 'off')=="on" || $isAdminMenu)?
             array_merge(
                 [['text'=>$buttonValues['search_config'],'callback_data'=>"showUUIDLeft"]],
                 ($isAdminMenu ? [[
@@ -922,13 +928,14 @@ function checkSpam(){
     global $connection, $from_id, $userInfo, $admin;
     
     if($userInfo != null && $from_id != $admin){
-        $spamInfo = json_decode($userInfo['spam_info'],true)??array();
-        $spamDate = $spamInfo['date'];
+        $spamInfo = json_decode((string)($userInfo['spam_info']??''),true);
+        if (!is_array($spamInfo)) $spamInfo = [];
+        $spamDate = (int)($spamInfo['date']??0);
         if(isset($spamInfo['banned'])){
             if(time() <= $spamInfo['banned']) return $spamInfo['banned'];
         }
         
-        if(time() <= $spamDate) $spamInfo['count'] += 1;
+        if(time() <= $spamDate) $spamInfo['count'] = (int)($spamInfo['count']??0) + 1;
         else{
             $spamInfo['count'] = 1;
             $spamInfo['date'] = strtotime("+1 minute");

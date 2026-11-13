@@ -23,6 +23,14 @@ $root=$argv[1];$spec=json_decode($argv[4],true,512,JSON_THROW_ON_ERROR);
 $connection=new mysqli('localhost','root','',$argv[3],0,$argv[2]);$connection->set_charset('utf8mb4');
 $from_id=(int)($spec['actor']??1001);$admin=9001;$chat_id=$from_id;$message_id=702;$callbackId='fixture';
 $data=(string)($spec['data']??'');$text=(string)($spec['text']??'');$joniedState='member';$first_name='Fixture';$username='fixture';
+// This fixture substitutes for config.php. Mirror its current mandatory-join
+// bootstrap explicitly rather than silently leaving undefined globals.
+$channelLock='';$joinMembershipVerified=true;$dbName=$argv[3];
+if ($text==='/start') {
+  $update=(object)['message'=>(object)['from'=>(object)[
+      'id'=>$from_id,'first_name'=>'Fixture','is_bot'=>false],
+    'chat'=>(object)['id'=>$from_id,'type'=>'private'],'text'=>'/start']];
+}
 $botState=['requirePhone'=>'off','sellState'=>'on','agencyPlanDiscount'=>$spec['discount_mode']??'on',
  'walletState'=>'on','nowPaymentOther'=>'off','zarinpal'=>'off','nextpay'=>'off','cartToCartState'=>'off','giftCardState'=>'off'];
 $paymentKeys=[];$botUrl='http://127.0.0.1:9/';$botUsername='fixture';
@@ -67,7 +75,8 @@ elseif ($spec['route']==='reference') {
 def sql(w,e,q):return native.sql(w,e,q,DB).strip()
 def call(w,e,stage,**spec):
     driver=w/'next-payment.php';driver.write_text(PHP)
-    cmd=['php','-n','-d','extension=mysqlnd','-d','extension=mysqli','-d','allow_url_fopen=0',
+    cmd=['php','-n','-d','extension=mysqlnd','-d','extension=mysqli','-d','extension=mbstring',
+         '-d','allow_url_fopen=0',
       '-d','disable_functions=curl_init,curl_exec,exec,shell_exec,system,passthru,popen,proc_open,mail',
       str(driver),str(stage),str(w/'mysql.sock'),DB,json.dumps(spec)]
     r=subprocess.run(cmd,cwd=stage,env=e,capture_output=True,text=True,timeout=20)

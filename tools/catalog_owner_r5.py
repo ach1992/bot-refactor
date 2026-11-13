@@ -128,6 +128,68 @@ def gateway_controls_copy_restore(sides):
     return restored
 
 
+# #176: Owner-approved support copy cleanup is a new successor, not an
+# amendment to any historical catalog acceptance pin. Prove the exact current
+# complete source and exactly four permitted replacements, then project a
+# COPY back to the previously pinned RC39 source for historical validators.
+SUPPORT_COPY_BASE='779996e3efa0acec168bab13121494051782132e'
+SUPPORT_COPY_BEFORE_SHA='1e16503add5c9e9fe0dc758c56dcc4e180c01774a3160e4e388265beb35c03e5'
+SUPPORT_COPY_AFTER_SHA='9677887696b0e1a9b33fae135ff881446709f4dfe5d0817742f1407ae4fb2d88'
+SUPPORT_COPY_CHANGES={
+    'legacy_messages.banned': (
+        '🛑 برای آزادسازی به پشتیبانی پیام دهید.',
+        '🛑 برای رفع مسدودی از راه ارتباطی زیر پیام دهید.'
+    ),
+    'legacy_messages.order_submitted': (
+        '❌ لطفا قبل از 45 دقیقه برای تایید رسید به پشتیبانی پیام ندهید رسید شما رد می شود.',
+        '❌ لطفا قبل از 45 دقیقه برای تایید رسید پیام ندهید؛ رسید شما رد می‌شود.'
+    ),
+    'legacy_messages.join_channel_message': (
+        r"""'⁉️ آیدی پشتیبانی:' . "\n" . '💬 پشتیبانی: SUPPORTID'""",
+        "'💬 پشتیبانی: SUPPORTID'"
+    ),
+    'legacy_messages.agency_request_declined': (
+        '⭕️ لطفا برای دریافت شرایط همکاری با پشتیبانی ارتباط بگیرید.',
+        '⭕️ لطفا برای دریافت شرایط همکاری از راه ارتباطی زیر پیام دهید.'
+    ),
+}
+
+@functools.lru_cache(maxsize=1)
+def support_copy_source():
+    path='messages/fa/user.php'
+    old=command('git','show',SUPPORT_COPY_BASE+':'+path)
+    current=(ROOT/path).read_bytes()
+    check(hashlib.sha256(old).hexdigest()==SUPPORT_COPY_BEFORE_SHA and
+          hashlib.sha256(current).hexdigest()==SUPPORT_COPY_AFTER_SHA,
+          'issue176_support_full_source_identity')
+    projected=old.decode()
+    for key,(before,after) in SUPPORT_COPY_CHANGES.items():
+        check(projected.count(before)==1 and before!=after,
+              'issue176_support_unique_source_replacement:'+key)
+        projected=projected.replace(before,after,1)
+    check(projected==current.decode(), 'issue176_support_exact_source_delta')
+    parser='$s=stream_get_contents(STDIN);$p=strpos($s,"return [");if($p===false)throw new RuntimeException("array_missing");echo json_encode(eval(substr($s,$p)),JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);'
+    prior=flatten(json.loads(command('php','-r',parser,input=old)))
+    shipping=flatten(json.loads(command('php','-r',parser,input=current)))
+    check(set(prior)==set(shipping) and
+          {key for key in prior if prior[key]!=shipping[key]}==set(SUPPORT_COPY_CHANGES) and
+          all(params(prior[key])==params(shipping[key]) for key in SUPPORT_COPY_CHANGES),
+          'issue176_support_exact_catalog_keys_and_parameters')
+    return {'before_source':old, 'before':prior, 'after':shipping}
+
+def support_copy_restore(sides):
+    proof=support_copy_source()
+    check(set(sides)=={'user','admin'} and
+          not set(SUPPORT_COPY_CHANGES).intersection(sides['admin']),
+          'issue176_support_correct_audience')
+    restored=copy.deepcopy(sides)
+    for key in SUPPORT_COPY_CHANGES:
+        check(restored['user'].get(key) in (proof['before'][key], proof['after'][key]),
+              'issue176_support_unexpected_copy:'+key)
+        restored['user'][key]=proof['before'][key]
+    return restored
+
+
 # One Owner-approved payment-method-selector label. Keep historical source
 # manifests immutable: project this exact one-line user catalog delta only
 # after proving both full file identities and the precise changed key.
@@ -141,7 +203,7 @@ GIFT_SELECTOR_NEW="        'gift_card' => '🎁 خرید گیفت کارت | ر�
 def gift_selector_source():
     path='messages/fa/user.php'
     original=command('git','show',GATEWAY_CONTROLS_BASE+':'+path)
-    current=(ROOT/path).read_bytes()
+    current=support_copy_source()['before_source']
     check(hashlib.sha256(original).hexdigest()==GIFT_SELECTOR_BEFORE_SHA and
           hashlib.sha256(current).hexdigest()==GIFT_SELECTOR_AFTER_SHA,
           'gift_payment_selector_full_catalog_identity')
@@ -160,6 +222,7 @@ def gift_selector_source():
     return {'before_source':original,'before':old,'after':new}
 
 def gift_selector_copy_restore(sides):
+    sides=support_copy_restore(sides)
     proof=gift_selector_source()
     check(set(sides)=={'user','admin'} and
           GIFT_SELECTOR_KEY not in sides['admin'],
