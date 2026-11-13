@@ -236,7 +236,9 @@ echo json_encode(['result'=>$result,'auth_requests'=>$GLOBALS['auth_requests'],
                         'achbot_marzban_auth_unverified server_id=91 reason=http_status http=401 curl_errno=0'),
       'info_missing_sub':({'success':False,'msg':'marzban_subscription_url_unverified','subscription_url':None},1,1,0,''),
       'info_bad_user':({'success':False,'msg':'remote_get_unconfirmed','subscription_url':None},1,1,0,''),
-      'info_sub_retry':({'success':None,'msg':None,'subscription_url':'/sub/synthetic'},1,3,3,''),
+      # One authenticated account GET, then bounded retries of the unchanged
+      # subscription URL. Repeated GETs multiply a slow provider read.
+      'info_sub_retry':({'success':None,'msg':None,'subscription_url':'/sub/synthetic'},1,1,3,''),
     }
     with tempfile.TemporaryDirectory(prefix='achbot-native-marzban-auth-owned-') as temp:
         path=Path(temp)/'fake-marzban.php'

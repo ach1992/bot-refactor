@@ -35,7 +35,13 @@ links retain their existing availability; help remains last. Two wallet
 top-up completion messages, expiration/import instructions, and other
 identified references now use the same menu label. There is no text-based
 legacy menu action needing an alias: all existing inline button callback IDs
-remain unchanged. Frozen historical copy fixtures are untouched.
+remain unchanged. Frozen historical copy fixtures are untouched. The new approved catalog
+delta is source-pinned separately in tools/text_catalog_menu_20261113.json:
+exactly nine user entries and one admin entry. Acceptance verifies full-file
+hashes, unchanged message keys/placeholders, and only these approved values,
+then projects a checked copy backward for pre-existing catalog history tests.
+The immutable earlier #158 catalog manifest and frozen V0–V9 evidence are
+unchanged.
 
 ## Other active network paths
 

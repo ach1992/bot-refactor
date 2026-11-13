@@ -2,6 +2,7 @@
 """Exercise shipping getMainKeys with safe fixture state and the real text catalogs."""
 from __future__ import annotations
 
+import copy
 import json
 from pathlib import Path
 import subprocess
@@ -151,7 +152,34 @@ def check(root: Path = ROOT) -> dict:
     assert 'کسب درآمد با معرفی' not in user_source+admin_source
     assert labels['my_subscriptions']=='🔄 مشاهده اشتراک‌ها'
     assert labels['invite_friends']=='🧲 کسب درآمد'
+
+    # The historical copy proofs must see only a validated backward projection
+    # of the ten Owner-approved changed entries, never a loosened baseline.
+    import catalog_owner_r5 as history
+    sources=history.menu_20261113_source()
+    assert {a:len(item['changed']) for a,item in sources.items()}=={'user':9,'admin':1}
+    catalog=subprocess.run(
+        ['php','-r', '$r=[];foreach(["user","admin"]as$a)$r[$a]=require '
+         '"messages/fa/".$a.".php";echo json_encode($r,JSON_UNESCAPED_UNICODE|'
+         'JSON_THROW_ON_ERROR);'],
+        cwd=root,capture_output=True,text=True,check=True,timeout=10)
+    current={a:history.flatten(groups) for a,groups in json.loads(catalog.stdout).items()}
+    projected=history.menu_20261113_copy_restore(current)
+    for audience,item in sources.items():
+        for key in item['changed']:
+            assert current[audience][key]==item['after'][key]
+            assert projected[audience][key]==item['before'][key]
+    for audience,key in [('user','legacy_buttons.my_subscriptions'),
+                         ('user','manual_payment.manual_receipts.message.f6331b33af'),
+                         ('admin','subscription.manual_accounts.detect_server_id_from_remark.msg.10aa1e12ec')]:
+        changed=copy.deepcopy(current)
+        changed[audience][key]='not approved'
+        try:history.menu_20261113_copy_restore(changed)
+        except AssertionError:pass
+        else:raise AssertionError('menu copy allowed unapproved mutation: '+key)
+
     return {'verified':True,'real_menu_scenarios':cases,
+            'approved_catalog_deltas':10,'catalog_negative_controls':3,
             'copy_reference_checks':len(references)+1,
             'original_callbacks_and_feature_gates_preserved':True,
             'no_network_or_customer_data':True}

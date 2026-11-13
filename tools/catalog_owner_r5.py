@@ -19,6 +19,81 @@ OWNER_20261112_LINES={
 # #158: exact source identity for the complete authorized successor catalogs.
 # Historical tests receive only a verified pre-#158 comparison COPY.
 VIVAN_20261113_BASE='cd7e4dd131400ec45b14506fe1cc9b340c501d3c'
+# #162 Owner-approved menu/guide copy is a distinct, narrowly source-pinned
+# successor. Project a checked COPY to the previous immutable #158 approval;
+# never rewrite historical catalog hashes or relax existing negative controls.
+MENU_20261113_BASE='880169386570ea28848c63dc48b3e389772d8d59'
+MENU_20261113_KEYS={
+    'user':{
+        'legacy_buttons.invite_friends','legacy_buttons.my_subscriptions',
+        'subscription.manual_accounts.import_completed',
+        'subscription.external_accounts.extract_username_from_link.button.387c334ec1',
+        'subscription.external_accounts.extract_username_from_link.message.b2f5ea228c',
+        'subscription.presentation.present.text.d60293ba07',
+        'manual_payment.manual_receipts.message.f6331b33af',
+        'gateway.gateway_return.perform_payment_effect.message.dd866497c7',
+        'notifications.warnings.msg.804056ecc4',
+    },
+    'admin':{
+        'subscription.manual_accounts.detect_server_id_from_remark.msg.10aa1e12ec',
+    },
+}
+
+@functools.lru_cache(maxsize=1)
+def menu_20261113_source():
+    manifest=json.loads((ROOT/'tools/text_catalog_menu_20261113.json').read_text())
+    check(set(manifest)=={'version','authorization','base_commit',
+                         'source_identity','changed_keys'} and
+          manifest['version']==1 and
+          manifest['base_commit']==MENU_20261113_BASE and
+          manifest['authorization']==
+          'https://github.com/ach1992/bot-refactor/issues/162#issuecomment-6842082229' and
+          set(manifest['source_identity'])=={'user','admin'} and
+          set(manifest['changed_keys'])=={'user','admin'} and
+          all(set(manifest['changed_keys'][a])==MENU_20261113_KEYS[a] and
+              len(manifest['changed_keys'][a])==len(MENU_20261113_KEYS[a])
+              for a in ('user','admin')), 'menu_20261113_owner_scope')
+    decode='$s=stream_get_contents(STDIN);$p=strpos($s,"return [");if($p===false)throw new RuntimeException("array_missing");echo json_encode(eval(substr($s,$p)),JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);'
+    result={}
+    for audience in ('user','admin'):
+        path='messages/fa/'+audience+'.php'
+        before=command('git','show',MENU_20261113_BASE+':'+path)
+        current=(ROOT/path).read_bytes()
+        identity=manifest['source_identity'][audience]
+        check(set(identity)=={'base_sha256','approved_sha256'} and
+              hashlib.sha256(before).hexdigest()==identity['base_sha256'] and
+              hashlib.sha256(current).hexdigest()==identity['approved_sha256'],
+              'menu_20261113_full_source_identity:'+audience)
+        original=flatten(json.loads(command('php','-r',decode,input=before)))
+        actual=flatten(json.loads(command('php','-r',decode,input=current)))
+        changed={key for key in original if original[key]!=actual.get(key)}
+        check(set(original)==set(actual) and changed==MENU_20261113_KEYS[audience] and
+              all(params(original[key])==params(actual[key]) and
+                  set(re.findall(r'\{([A-Za-z_][A-Za-z0-9_]*)\}',text(actual[key])))==
+                  set(params(actual[key])) for key in changed),
+              'menu_20261113_unapproved_catalog_delta:'+audience)
+        result[audience]={'before_source':before,'before':original,
+                          'after':actual,'changed':changed}
+    check(result['user']['after']['legacy_buttons.my_subscriptions']==
+          '🔄 مشاهده اشتراک‌ها' and
+          result['user']['after']['legacy_buttons.invite_friends']==
+          '🧲 کسب درآمد','menu_20261113_exact_label')
+    return result
+
+def menu_20261113_copy_restore(sides):
+    source=menu_20261113_source()
+    check(set(sides)=={'user','admin'},'menu_20261113_audiences')
+    restored=copy.deepcopy(sides)
+    for audience,record in source.items():
+        other='admin' if audience=='user' else 'user'
+        for key in record['changed']:
+            check(key not in restored[other], 'menu_20261113_wrong_audience:'+key)
+            value=restored[audience].get(key)
+            check(value==record['after'][key] or value==record['before'][key],
+                  'menu_20261113_unapproved_value:'+key)
+            restored[audience][key]=record['before'][key]
+    return restored
+
 @functools.lru_cache(maxsize=1)
 def vivan_20261113_source():
     manifest=json.loads((ROOT/'tools/text_catalog_vivan_20261113.json').read_text())
@@ -31,7 +106,7 @@ def vivan_20261113_source():
     for audience in ('user','admin'):
         path='messages/fa/'+audience+'.php'
         before=command('git','show',VIVAN_20261113_BASE+':'+path)
-        current=(ROOT/path).read_bytes()
+        current=menu_20261113_source()[audience]['before_source']
         sha=manifest['source_identity'][audience]
         check(set(sha)=={'base_sha256','approved_sha256'} and
               hashlib.sha256(before).hexdigest()==sha['base_sha256'] and
@@ -53,7 +128,7 @@ def vivan_20261113_source():
 
 def vivan_20261113_copy_restore(sides):
     sources=vivan_20261113_source()
-    copy_sides=copy.deepcopy(sides)
+    copy_sides=menu_20261113_copy_restore(sides)
     check(set(copy_sides)=={'user','admin'},'vivan_catalog_audiences')
     for audience,record in sources.items():
         updates=record['changed']|record['added']
