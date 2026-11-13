@@ -595,16 +595,21 @@ if (is_string($userInfo['step']??null) &&
                     $cancelKey);
         return;
     }
-    if ($text===$buttonValues['cancel']) {
-        sendMessage(\achbotMessage('bot.bot.gateway_audience_settings.message.74d707fe02'));
-        return;
-    }
     if (str_starts_with($userInfo['step'],'gr|exempt|')) {
         $method=substr($userInfo['step'],strlen('gr|exempt|'));
         $page=achbotGatewayAdminPage('gr|m|'.$method);
-        $notice=$text===($buttonValues['cancel']??null) ? '' :
-            achbotMessage('payment_settings.gateway_rule_admin.exempt_saved')."\n";
-        sendMessage($notice.$page['text'],$page['keyboard'],'HTML');
+        // An inline keyboard cannot also remove the temporary ReplyKeyboard.
+        // Finish the wizard first, then show the same method's current menu.
+        sendMessage($text===($buttonValues['cancel']??null)
+            ? \achbotMessage('bot.bot.gateway_audience_settings.message.74d707fe02')
+            : \achbotMessage('payment_settings.gateway_rule_admin.exempt_saved'),
+            $removeKeyboard);
+        sendMessage($page['text'],$page['keyboard'],'HTML');
+        return;
+    }
+    if ($text===$buttonValues['cancel']) {
+        // Other numeric editors retain their established cancellation UX.
+        sendMessage(\achbotMessage('bot.bot.gateway_audience_settings.message.74d707fe02'));
         return;
     }
     $sourceId=(int)($update->update_id??0);
