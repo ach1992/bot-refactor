@@ -433,16 +433,20 @@ function getMainKeys(){
     }
 
     $mainKeys = array_merge($mainKeys, [
-		( 
-        ($botState['testAccount'] == "on" && ( $from_id == $admin || $userInfo['freetrial'] != 'used')) ? 
-			[['text'=>$buttonValues['test_account'],'callback_data'=>"getTestAccount"]] : [] 
-		),
-        (
-		($userInfo['is_agent'] == 1) ?
-			[['text'=>$buttonValues['my_subscriptions'],'callback_data'=>'agentConfigsList']] :
-			[['text'=>$buttonValues['my_subscriptions'],'callback_data'=>'mySubscriptions']]
+        // Owner-approved conditional row: free trial precedes account/view
+        // whenever the unchanged eligibility gate makes it visible.
+        (($botState['testAccount'] == "on" && ($from_id == $admin || $userInfo['freetrial'] != 'used')) ?
+            [['text'=>$buttonValues['test_account'],'callback_data'=>"getTestAccount"]] : []),
+        [
+            ['text'=>$buttonValues['my_info'],'callback_data'=>"myInfo"],
+            ['text'=>$buttonValues['my_subscriptions'],'callback_data'=>
+                $userInfo['is_agent']==1?'agentConfigsList':'mySubscriptions']
+        ],
+        array_merge(
+            (($from_id != $admin && $userInfo['isAdmin'] != true) ?
+                [['text'=>$buttonValues['invite_friends'],'callback_data'=>"inviteFriends"]] : []),
+            [['text'=>$buttonValues['application_links'],'callback_data'=>"reciveApplications"]]
         ),
-        [['text'=>$buttonValues['application_links'],'callback_data'=>"reciveApplications"],['text'=>$buttonValues['my_info'],'callback_data'=>"myInfo"]],
         (($botState['sharedExistence'] == "on" && $botState['individualExistence'] == "on")?
             [['text'=>$buttonValues['shared_existence'],'callback_data'=>"availableServers"],['text'=>$buttonValues['individual_existence'],'callback_data'=>"availableServers2"]] : []
         ),
@@ -455,15 +459,10 @@ function getMainKeys(){
 		(($from_id != $admin && $userInfo['isAdmin'] != true && $cooperationUrl!=='') ?
 			[['text' => \achbotMessage('admin_settings.config.get_main_keys.button.b7d6aa7173'), 'url' => $cooperationUrl]] : []
 		),
-		(($from_id != $admin && $userInfo['isAdmin'] != true) ?
-			[['text'=>$buttonValues['invite_friends'],'callback_data'=>"inviteFriends"]] : []
-		),
         (($botState['searchState']=="on" || $from_id == $admin || $userInfo['isAdmin'] == true)?
             [['text'=>$buttonValues['search_config'],'callback_data'=>"showUUIDLeft"]] : []
         ),
     ]);
-
-    if ($helpChannelUrl!=='') $mainKeys[]=[['text'=>achbotMessage('instance_content.help_button'),'url'=>$helpChannelUrl]];
 
     $stmt = $connection->prepare("SELECT * FROM `setting` WHERE `type` LIKE '%MAIN_BUTTONS%'");
     $stmt->execute();
@@ -487,6 +486,8 @@ function getMainKeys(){
         array_push($mainKeys, [['text' => \achbotMessage('admin_settings.config.get_main_keys.button.11b0188fcb'), 'callback_data' => "searchUsersConfig"]]);
         array_push($mainKeys, [['text' => \achbotMessage('admin_settings.config.get_main_keys.button.d9c51cced4'), 'callback_data' => "managePanel"]]);
     }
+
+    if ($helpChannelUrl!=='') $mainKeys[]=[['text'=>achbotMessage('instance_content.help_button'),'url'=>$helpChannelUrl]];
 
     return json_encode(['inline_keyboard' => $mainKeys]);
 }

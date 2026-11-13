@@ -26,6 +26,10 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
     unset($checkoutRoot);
 }
 
+// This public checkout is one PHP request. Bound socket stream waits for the
+// legacy provider SOAP call without altering the exact pinned issuance body.
+// PHP resets this per-request INI setting when the request terminates.
+ini_set('default_socket_timeout','15');
 
 /**
  * Claim one gateway per local order before an external, non-idempotent API

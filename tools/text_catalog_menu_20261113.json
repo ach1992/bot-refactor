@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "authorization": "https://github.com/ach1992/bot-refactor/issues/162#issuecomment-6842082229",
+  "base_commit": "880169386570ea28848c63dc48b3e389772d8d59",
+  "source_identity": {
+    "user": {
+      "base_sha256": "be32cd064848f3878db6fe850f0c8179797a48b47b5880b788c24cab22e22bae",
+      "approved_sha256": "3af8a91458e92324c4d504321b61a87ea36396a4963e092036e1ea20e8042dd1"
+    },
+    "admin": {
+      "base_sha256": "d8c3d452b8aeef602ded60d09ade0e6675fb433c6c01a422365aa39f186a36dd",
+      "approved_sha256": "dcb02fd06b487ac8f21c25570714d3ee8437782b106047444697004767a2de14"
+    }
+  },
+  "changed_keys": {
+    "user": [
+      "gateway.gateway_return.perform_payment_effect.message.dd866497c7",
+      "legacy_buttons.invite_friends",
+      "legacy_buttons.my_subscriptions",
+      "manual_payment.manual_receipts.message.f6331b33af",
+      "notifications.warnings.msg.804056ecc4",
+      "subscription.external_accounts.extract_username_from_link.button.387c334ec1",
+      "subscription.external_accounts.extract_username_from_link.message.b2f5ea228c",
+      "subscription.manual_accounts.import_completed",
+      "subscription.presentation.present.text.d60293ba07"
+    ],
+    "admin": [
+      "subscription.manual_accounts.detect_server_id_from_remark.msg.10aa1e12ec"
+    ]
+  }
+}

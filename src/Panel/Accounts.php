@@ -203,28 +203,31 @@ function getMarzbanUserInfo($server_id, $remark){
         return (object)['success'=>false,'msg'=>'marzban_auth_unverified'];
     }
 
+    // A subscription link can take a moment to appear, but rereading the
+    // identical account on every probe multiplied a slow GET by 11.
+    $info=getMarzbanUser($server_id,$remark,$token);
+    if (!is_object($info) || ($info->success??null)===false)
+        return is_object($info)?$info:
+            (object)['success'=>false,'msg'=>'marzban_user_unavailable'];
+    $subscription=$info->subscription_url??null;
+    if (!is_string($subscription) || !str_contains($subscription,'/sub/'))
+        return (object)['success'=>false,'msg'=>'marzban_subscription_url_unverified'];
+    $parts=explode('/sub/',$subscription,2);
+    if ($parts[1]==='')
+        return (object)['success'=>false,'msg'=>'marzban_subscription_url_unverified'];
+    $info->subscription_url='/sub/'.$parts[1];
+
     $curl=curl_init();
-    for($i=0;$i<=10;$i++){
-        $info=getMarzbanUser($server_id,$remark,$token);
-        if (!is_object($info) || ($info->success??null)===false)
-            return is_object($info)?$info:
-                (object)['success'=>false,'msg'=>'marzban_user_unavailable'];
-        $subscription=$info->subscription_url??null;
-        if (!is_string($subscription) || !str_contains($subscription,'/sub/'))
-            return (object)['success'=>false,'msg'=>'marzban_subscription_url_unverified'];
-        $parts=explode('/sub/',$subscription,2);
-        if ($parts[1]==='')
-            return (object)['success'=>false,'msg'=>'marzban_subscription_url_unverified'];
-        $info->subscription_url='/sub/'.$parts[1];
+    $deadline=microtime(true)+12;
+    for($i=0;$i<=10 && microtime(true)<$deadline;$i++){
         curl_setopt($curl,CURLOPT_URL,$panel_url.$info->subscription_url);
         curl_setopt($curl,CURLOPT_CONNECTTIMEOUT,3);
         curl_setopt($curl,CURLOPT_RETURNTRANSFER,true);
-        curl_setopt($curl,CURLOPT_TIMEOUT,3);
+        curl_setopt($curl,CURLOPT_TIMEOUT,min(3,max(1,(int)ceil($deadline-microtime(true)))));
         $response=curl_exec($curl);
-        if ($response && !curl_error($curl))return $info;
-        if ($i===10)return $info; // Existing last-attempt fallback.
+        if ($response && !curl_error($curl)) break;
     }
-    return (object)['success'=>false,'msg'=>'marzban_subscription_unavailable'];
+    return $info; // Keep the existing last-attempt link fallback.
 }
 
 function getMarzbanUser($server_id, $remark, $token = null, bool $strict = false,
@@ -284,17 +287,19 @@ function getMarzbanUser($server_id, $remark, $token = null, bool $strict = false
         'Authorization: Bearer ' . $token->access_token
     ));
 
-    if ($strict) {
-        curl_setopt($curl,CURLOPT_CONNECTTIMEOUT,5);
-        curl_setopt($curl,CURLOPT_TIMEOUT,20);
-        curl_setopt($curl,CURLOPT_SSL_VERIFYPEER,true);
-        curl_setopt($curl,CURLOPT_SSL_VERIFYHOST,2);
-    }
+    // Transport deadlines and TLS safety apply to ordinary presentation GETs
+    // as well as strict financial/effect readbacks. Strict changes only how
+    // inconclusive responses are classified, never whether I/O is bounded.
+    curl_setopt($curl,CURLOPT_CONNECTTIMEOUT,5);
+    curl_setopt($curl,CURLOPT_TIMEOUT,20);
+    curl_setopt($curl,CURLOPT_SSL_VERIFYPEER,true);
+    curl_setopt($curl,CURLOPT_SSL_VERIFYHOST,2);
     $raw=curl_exec($curl);
+    $errno=(int)curl_errno($curl);
     $http=(int)curl_getinfo($curl,CURLINFO_HTTP_CODE);
     // In an effect readback, HTTP 404, transport failure and invalid JSON
     // are UNKNOWN evidence, not proof that CREATE was never applied.
-    if ($strict && ($raw===false || $http!==200))
+    if ($strict && ($raw===false || $errno!==0 || $http!==200))
         return (object)['success'=>false,'uncertain'=>true,'msg'=>'effect_get_unconfirmed'];
     $response=json_decode((string)$raw);
     if ($strict && (!is_object($response) || isset($response->detail)))
@@ -1061,16 +1066,27 @@ function changeMarzbanState($server_id,$remark){
     $server_info = $stmt->get_result()->fetch_assoc();
     $stmt->close();
 
-    $panel_url = $server_info['panel_url'];
-    $serverName = $server_info['username'];
-    $serverPass = $server_info['password'];
-    $serverType = $server_info['type'];
-    
-    $token = getMarzbanToken($server_id);
-    if(isset($token->detail)){return (object) ['success'=>false, 'msg'=>$token->detail];}
-    $configInfo = getMarzbanUser($server_id, $remark, $token);
+    if (!$server_info || ($server_info['type']??'')!=='marzban')
+        return (object)['success'=>false,'uncertain'=>false,'msg'=>'unsupported_panel'];
+    $panel_url=rtrim((string)$server_info['panel_url'],'/');
 
-    $panel_url .=  '/api/user/'. $remark;
+    $token=getMarzbanToken($server_id);
+    if (!is_object($token) || !is_string($token->access_token??null) ||
+        preg_match(MARZBAN_BEARER_TOKEN_PATTERN,$token->access_token)!==1)
+        return (object)['success'=>false,'uncertain'=>true,'msg'=>'marzban_toggle_auth_unverified'];
+    $configInfo=getMarzbanUser($server_id,$remark,$token,true,$panel_url);
+    // No PUT may be sent unless the fresh remote snapshot identifies exactly
+    // this account and an explicitly toggleable state. Never flip an unknown.
+    if (!is_object($configInfo) || ($configInfo->username??null)!==(string)$remark ||
+        !in_array($configInfo->status??null,['active','disabled'],true) ||
+        !property_exists($configInfo,'inbounds') ||
+        !property_exists($configInfo,'proxies') ||
+        !property_exists($configInfo,'expire') ||
+        !property_exists($configInfo,'data_limit') ||
+        !property_exists($configInfo,'data_limit_reset_strategy'))
+        return (object)['success'=>false,'uncertain'=>true,'msg'=>'marzban_toggle_preflight_unverified'];
+    $intendedStatus=$configInfo->status==='active'?'disabled':'active';
+    $panel_url.='/api/user/'.rawurlencode((string)$remark);
 
     $postFields = array(
         "inbounds" => $configInfo->inbounds,
@@ -1078,9 +1094,9 @@ function changeMarzbanState($server_id,$remark){
         "expire" => $configInfo->expire,
         "data_limit" => $configInfo->data_limit,
         "username" => urlencode($remark),
-        "note" => $configInfo->note,
+        "note" => $configInfo->note ?? null,
         "data_limit_reset_strategy"=> $configInfo->data_limit_reset_strategy,
-        "status" => $configInfo->status == "active"?"disabled":"active"
+        "status" => $intendedStatus
     );
 
 
@@ -1088,6 +1104,11 @@ function changeMarzbanState($server_id,$remark){
     curl_setopt($curl, CURLOPT_URL, $panel_url);
     curl_setopt($curl, CURLOPT_CUSTOMREQUEST, 'PUT');
     curl_setopt($curl, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($curl, CURLOPT_FOLLOWLOCATION, false);
+    curl_setopt($curl, CURLOPT_CONNECTTIMEOUT, 5);
+    curl_setopt($curl, CURLOPT_TIMEOUT, 20);
+    curl_setopt($curl, CURLOPT_SSL_VERIFYPEER, true);
+    curl_setopt($curl, CURLOPT_SSL_VERIFYHOST, 2);
     curl_setopt($curl, CURLOPT_HTTPHEADER, array(
         'Accept: application/json',
         'Authorization: Bearer ' .  $token->access_token,
@@ -1095,12 +1116,21 @@ function changeMarzbanState($server_id,$remark){
     ));
     curl_setopt($curl, CURLOPT_POSTFIELDS, json_encode($postFields));
 
-    $response = json_decode(curl_exec($curl));
-
-    if(isset($response->detail)){
-		$detail = $response->detail;
-        return (object) ['success'=>false, 'msg' => is_object($detail)?implode("-", (array) $detail):$detail];
-    }
-    return (object) ['success'=>true];
+    $raw=curl_exec($curl);
+    $errno=curl_errno($curl);
+    $http=(int)curl_getinfo($curl,CURLINFO_HTTP_CODE);
+    // The PUT may have taken effect despite a missing acknowledgement.
+    // Never claim success (or safely retry) after a transport failure.
+    if ($raw===false || $errno!==0 || $http!==200)
+        return (object)['success'=>false,'uncertain'=>true,'msg'=>'marzban_toggle_unconfirmed'];
+    $response=json_decode($raw);
+    if (!is_object($response))
+        return (object)['success'=>false,'uncertain'=>true,'msg'=>'marzban_toggle_body_unconfirmed'];
+    if (isset($response->detail))
+        return (object)['success'=>false,'uncertain'=>true,'msg'=>'marzban_toggle_provider_unconfirmed'];
+    if (($response->username??null)!==(string)$remark ||
+        ($response->status??null)!==$intendedStatus)
+        return (object)['success'=>false,'uncertain'=>true,'msg'=>'marzban_toggle_ack_unverified'];
+    return (object)['success'=>true];
 }
 

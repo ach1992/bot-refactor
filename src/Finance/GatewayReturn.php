@@ -544,13 +544,21 @@ if (defined('ACHBOT_NP_RECONCILE_ONLY')) {
         // Browser Status is untrusted presentation metadata; ONLY verified
         // provider evidence can settle a locally bound unique Authority.
         try {
-            $client = new SoapClient('https://www.zarinpal.com/pg/services/WebGate/wsdl',
-                                     ['encoding'=>'UTF-8']);
-            $result = $client->PaymentVerification([
-                'MerchantID'=>($paymentKeys['zarinpal'] ?? ''),
-                'Authority'=>$Authority,
-                'Amount'=>$amount
-            ]);
+            $socketTimeout=ini_get('default_socket_timeout');
+            ini_set('default_socket_timeout','15');
+            try {
+                $client = new SoapClient('https://www.zarinpal.com/pg/services/WebGate/wsdl', [
+                    'encoding'=>'UTF-8','connection_timeout'=>5,
+                    'stream_context'=>stream_context_create(['http'=>['timeout'=>15]])
+                ]);
+                $result = $client->PaymentVerification([
+                    'MerchantID'=>($paymentKeys['zarinpal'] ?? ''),
+                    'Authority'=>$Authority,
+                    'Amount'=>$amount
+                ]);
+            } finally {
+                if ($socketTimeout!==false) ini_set('default_socket_timeout',$socketTimeout);
+            }
         } catch (\Throwable $error) {
             // A missing local SOAP extension or an invalid application
             // response is not evidence that the gateway is unreachable.
