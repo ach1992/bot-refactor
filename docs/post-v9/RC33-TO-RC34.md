@@ -11,10 +11,22 @@ it is not independent-review approval, merge authorization or production-deploy 
 - Insufficient wallet balance never *claims* or consumes an unpaid purchase,
   custom purchase, renewal, day extension or volume extension. The draft stays
   payable through the other enabled methods without an extra wallet debit or
-  external Native effect. A legacy `low_wallet` invoice is restored to
-  `pending` only for its same owning user if still within the existing draft
-  lifetime, with no later/superseding draft, no gateway reference and no
-  payment-attempt/service-effect claim; otherwise it remains non-reissuable.
+  external Native effect.
+- **Historical low_wallet remediation:** Renewal's authenticated
+  `prePayCheck_*` callback and the other four payment families' **actual
+  authenticated Telegram** wallet, bank, gift or manual-crypto choice callbacks
+  now reach the same owner-first transactional rearm check. A valid older
+  `low_wallet` quote becomes `pending` for that same user only while its
+  original draft deadline is still live, with no later quote, issued provider
+  reference, 003 payment attempt/transaction, 007 service effect or conflicting
+  Native plan-change journal. A repeated click never creates another invoice
+  claim by itself; normal final issuer checks still apply. The original
+  alternative hosted link can then be used without making a new quote.
+  **Public `pay/checkout.php` GET never performs this recovery.** If the
+  original Telegram buttons are unavailable, payment methods were disabled,
+  the draft has expired or the evidence/journal is ambiguous, the user must
+  start a **new** eligible quote through the ordinary bot flow; never replay
+  an old provider invoice or presume a refund.
 - The existing Telegram administrator policy engine and stored
   `BOT_STATES.gatewayRules` schema/authorization semantics are unchanged.
   Category screens prioritize active conditions; metric screens provide simple
@@ -33,6 +45,12 @@ source ZIP manifest remains 132 runtime files and must exclude tenant config,
 SQL backups and payment/user data.
 
 ## Acceptance and shipping boundary
+
+Native acceptance includes the actual low-wallet Telegram route and
+alternative synthetic hosted checkout for purchase/custom/renewal/day/volume,
+plus foreign-owner, old/ambiguous provider, Native-journal, expired,
+superseded and repeated-click negative evidence. The historical ledger is
+never rewritten automatically by migration or an unauthenticated browser.
 
 After the candidate settles, **require exact HEAD full PHP 8.5 native acceptance
 (all eight shards plus protected aggregate), independent high-assurance approval

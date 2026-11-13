@@ -74,6 +74,23 @@ if (preg_match('/^ps_([A-Za-z0-9_-]{1,50})$/D', $data, $statusMatch)) {
     return;
 }
 
+// Four original payment screens (purchase, custom, day, volume) use
+// direct Telegram callbacks, unlike renewal's prePayCheck_* buttons.
+// Reopen their historical low_wallet drafts only after authenticating the
+// sender and the selected method; never from an unauthenticated checkout GET.
+if (isset($update->callback_query) &&
+    (int)($update->callback_query->from->id??0)===(int)$from_id &&
+    (string)($update->callback_query->data??'')===(string)($data??'') &&
+    is_string($data??null) && $data!=='' &&
+    achbotPayUxLegacyTelegramChoice($data)!==null) {
+    $reopened=achbotPayUxReopenOnTelegramChoice($connection,$data,(int)$from_id);
+    if ($reopened===false) {
+        answerCallbackQuery($callbackId,
+            \achbotMessage('payment.pre_payment.alert.bf99a9262b'),true);
+        return;
+    }
+}
+
 // Pre Pay Check By ACh
 
 // Only a complete, valid Telegram prepayment frame may be dispatched.

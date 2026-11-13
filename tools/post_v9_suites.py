@@ -3567,6 +3567,44 @@ def run_funding(tmp: str) -> tuple[dict, dict]:
             and wallet_frame.get('live_wallet_mutations')==0):
         raise RuntimeError('Direct wallet callback framing matrix incomplete')
 
+    # #158 remediated high-assurance review: execute the actual authenticated
+    # Telegram PrePayment.php entry for all five historical low_wallet
+    # families, then the actual alternative hosted checkout issuer against
+    # original+003/007/017 disposable MariaDB. The unauthenticated browser
+    # initiation must never alter a low_wallet row by itself.
+    legacy_reentry_path=Path(tmp)/'low-wallet-real-route-reentry.json'
+    legacy_run=subprocess.run(
+        ['python3',str(ROOT/'tools/test_post_v9_low_wallet_reentry.py'),
+         '--run-disposable','--report',str(legacy_reentry_path)],
+        cwd=ROOT,capture_output=True,text=True,timeout=180)
+    if legacy_run.returncode!=0:
+        raise RuntimeError('Historical low_wallet real-route acceptance failed:\n'+
+            legacy_run.stderr[-5500:])
+    legacy_reentry=json.loads(legacy_reentry_path.read_text())
+    required_reentry={
+        f'{kind}_{suffix}'
+        for kind in ('buy','custom','renew','day','volume')
+        for suffix in ('public_GET_does_not_rearm',
+                       'authenticated_Telegram_reopens_no_effect',
+                       'alternative_hosted_once_and_replay_safe')
+    } | {
+        'denied_'+reason
+        for reason in ('foreign_owner','issued_reference',
+            'provider_attempt_with_transaction','Native_service_effect',
+            'Native_plan_journal','expired_quote','newer_draft',
+            'forged_callback_family','forged_callback_sender',
+            'disabled_wallet','no_Telegram_envelope')
+    }
+    if not (legacy_reentry.get('complete') is True and
+            legacy_reentry.get('cases')==26 and
+            set(legacy_reentry.get('scenarios',[]))==required_reentry and
+            all(legacy_reentry.get(flag) is True
+                for flag in ('real_php_mariadb','actual_prepayment_php',
+                             'actual_hosted_checkout_php')) and
+            legacy_reentry.get('all_real_provider_calls')==0 and
+            legacy_reentry.get('live_wallet_mutations')==0):
+        raise RuntimeError('Historical low_wallet source-real matrix incomplete')
+
     # Six current manual-method choices must have exact callback framing,
     # explicit method binding and no fallthrough into a second action.
     manual_frame_path=Path(tmp)/"manual-choice-callback-framing.json"
