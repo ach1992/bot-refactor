@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import subprocess
 from pathlib import Path
 
 import test_post_v9_wallet_checkout as checkout
@@ -16,6 +17,16 @@ import test_post_v9_finance_routes as finance
 import test_post_v9_purchases as stages
 
 ROOT = Path(__file__).resolve().parents[1]
+# The original 003/007 schema is real; a legacy low_wallet can only return to
+# payment-method selection when it has no gateway/native claim or successor.
+LEGACY_REOPEN_DRIVER = r'''<?php
+$_SERVER['SCRIPT_FILENAME']=__FILE__;
+$db=new mysqli('localhost','root','',$argv[2],0,$argv[1]);
+$db->set_charset('utf8mb4');
+require $argv[3].'/src/Finance/PaymentLifecycle.php';
+echo json_encode(['reopened'=>achbotPayUxReopenLowWalletDraft(
+    $db,(int)$argv[4],(int)$argv[5])],JSON_THROW_ON_ERROR);
+'''
 ROUTES = (
     ('buy', 'checkout', 'payBuyWithWallet'),
     ('custom', 'checkout', 'payCustomWithWallet'),
@@ -114,6 +125,19 @@ def check() -> dict:
                 assert observe(actor, name) == before, (subject, label, 'SQL mutated')
                 scenarios.append(f'{subject}_{label}_no_wallet_or_service_effect')
 
+            # Insufficient wallet is an ordinary payment-choice rejection:
+            # the same invoice must remain pending for other providers.
+            sql(f'UPDATE users SET wallet=0 WHERE userid={actor}')
+            insufficient_before=observe(actor,name)
+            insufficient_events=send(prefix + name)
+            assert not any(e.get('event',e.get('name')) in ('POST','remote_edit')
+                           for e in insufficient_events),(subject,insufficient_events)
+            assert observe(actor,name)==insufficient_before,(
+                subject,'insufficient funds mutated financial quote')
+            assert sql(f"SELECT state FROM pays WHERE hash_id='{name}'")=='pending'
+            scenarios.append(f'{subject}_insufficient_wallet_preserves_payment_choice')
+            sql(f'UPDATE users SET wallet=50000 WHERE userid={actor}')
+
             assert len((prefix + name).encode('utf-8')) <= 64
             events = send(prefix + name)
             types = [evt.get('event', evt.get('name')) for evt in events]
@@ -129,6 +153,54 @@ def check() -> dict:
             assert expected not in repeated_types, (subject, 'valid replay triggered remote')
             assert sql(f'SELECT wallet FROM users WHERE userid={actor}') == '49900', subject
             scenarios.append(f'{subject}_paid_callback_no_replay')
+
+        # Pre-fix low_wallet records must be recoverable only when owned,
+        # current, unissued, not timed out and free of newer competing drafts.
+        owner=12199
+        legacy_hash='LegacyWalletShortfall'
+        sql("INSERT INTO users (userid,name,username,refcode,wallet,date,isAdmin,first_start) "
+            f"VALUES ({owner},'Legacy','legacy','0',0,'1700000000',0,'sent')")
+        sql("INSERT INTO pays (hash_id,user_id,type,plan_id,server_id,"
+            "agent_count,day,volume,price,request_date,state) VALUES "
+            f"('{legacy_hash}',{owner},'BUY_SUB',7,2,1,0,0,100,"
+            "UNIX_TIMESTAMP(),'low_wallet')")
+        pay_id=int(sql(f"SELECT id FROM pays WHERE hash_id='{legacy_hash}'"))
+        driver=work/'low-wallet-reopen-driver.php'
+        driver.write_text(LEGACY_REOPEN_DRIVER)
+        def reopen(actor):
+            proc=subprocess.run([
+                'php','-n','-d','extension=mysqlnd','-d','extension=mysqli',
+                '-d','display_errors=0',str(driver),str(work/'mysql.sock'),
+                checkout.DB,str(ROOT),str(pay_id),str(actor)
+            ],cwd=work,env=env,capture_output=True,text=True,timeout=25)
+            assert proc.returncode==0 and 'Fatal error' not in proc.stderr,(proc.stdout,proc.stderr)
+            return json.loads(proc.stdout)['reopened']
+        assert not reopen(owner+1)
+        assert sql(f"SELECT state FROM pays WHERE id={pay_id}")=='low_wallet'
+        scenarios.append('legacy_low_wallet_foreign_owner_cannot_reopen')
+        sql(f"UPDATE pays SET payid='issued_provider_reference' WHERE id={pay_id}")
+        assert not reopen(owner)
+        assert sql(f"SELECT state FROM pays WHERE id={pay_id}")=='low_wallet'
+        sql(f"UPDATE pays SET payid=NULL WHERE id={pay_id}")
+        scenarios.append('legacy_low_wallet_issued_reference_cannot_reopen')
+        sql("INSERT INTO pays (hash_id,user_id,type,plan_id,server_id,"
+            "agent_count,day,volume,price,request_date,state) VALUES "
+            f"('NewerOwnedDraft',{owner},'BUY_SUB',7,2,1,0,0,100,"
+            "UNIX_TIMESTAMP(),'pending')")
+        assert not reopen(owner)
+        sql("DELETE FROM pays WHERE hash_id='NewerOwnedDraft'")
+        scenarios.append('legacy_low_wallet_superseded_draft_cannot_reopen')
+        sql(f"UPDATE pays SET request_date=UNIX_TIMESTAMP()-7200 WHERE id={pay_id}")
+        assert not reopen(owner)
+        sql(f"UPDATE pays SET request_date=UNIX_TIMESTAMP() WHERE id={pay_id}")
+        scenarios.append('legacy_low_wallet_expired_draft_cannot_reopen')
+        assert reopen(owner)
+        assert sql(f"SELECT state FROM pays WHERE id={pay_id}")=='pending'
+        assert not reopen(owner)
+        assert sql(f"SELECT wallet FROM users WHERE userid={owner}")=='0'
+        assert sql(f"SELECT COUNT(*) FROM payment_attempts WHERE pay_row_id={pay_id}")=='0'
+        assert sql(f"SELECT COUNT(*) FROM service_effects WHERE pay_row_id={pay_id}")=='0'
+        scenarios.append('legacy_low_wallet_owner_reopen_once_no_financial_effect')
 
         # 64 is accepted only with the exact grammar and owned payment; 65
         # must not be enough to reach a real wallet debit even though the

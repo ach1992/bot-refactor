@@ -74,9 +74,9 @@ def main():
     approved_report='legacy_messages.sent_config_to_user'
     check(r5.text(merged.get(handle_key,''))==handle_label and
           all(r5.text(merged.get(k,''))==v for k,v in hash_footer_buttons.items()) and
-          '🆔 شناسه عددی: USERID' in r5.text(merged.get(approved_report,'')) and
+          '🎫 شناسه عددی: USERID' in r5.text(merged.get(approved_report,'')) and
           {k for k,e in merged.items() if '🆔' in r5.text(e)}==
-              set(hash_footer_buttons)|{approved_report} and
+              set(hash_footer_buttons) and
           not any(compositions.numeric_id_variant(r5.text(e))
                   for k,e in merged.items() if k not in (handle_key,approved_report)),
           'approved_tracking_hash_buttons_only_with_explicit_purchase_numeric_id')
@@ -103,8 +103,19 @@ def main():
     }
     check(all(r5.text(merged[k])==value for k,value in quantity_first.items()),
           'owner_addon_quantity_first_templates_must_match_exact_copy')
+    # #158 Owner-authorized one-column payment amounts and quick rule labels
+    # deliberately begin with English digits; all other prose remains scoped.
+    numeric_button_exceptions={
+      'wallet.wallet_recharge.wallet_topup_amount_problem.button.'+key
+      for key in ('e0736904e5','15bec8537a','c18668d617',
+                  'd960e787a3','79fa13dc2b','1f4dbe4fcb','f4f1019c8d')
+    }
+    numeric_button_exceptions.update({
+      'payment_settings.gateway_rule_admin.preset.'+key
+      for key in ('all','w7','w30','x30')
+    })
     line_exceptions={
-      *quantity_first,
+      *quantity_first,*numeric_button_exceptions,
       'legacy_messages.config_details_message','subscription.presentation.config_message.text.2953f9a4ad',
       'subscription.buy_helpers.build_links_and_send_qr.acc_text.698f512161',
       'bot.bot.webhook_ingress_authenticated.message.312da09ba8',
@@ -150,8 +161,26 @@ def main():
        ('manual_payment.api_payment.report',
         ('📋','گزارش بررسی پرداخت','نتیجه')),
     }
-    check(set(duplicate_markers)==expected_shared_currency|expected_owner_chili_reuse and
-          len(duplicate_markers)==5 and
+    # #158 Owner standardizes subscription usernames and numeric IDs. Two
+    # distinct labeled entities can intentionally share that exact emoji;
+    # allow only the source-pinned pairs, never all repeated headings.
+    approved_identifier_reuse={
+      ('purchase.trial_provision.channel_message.d22e3c7448',
+       ('🔄','اشتراک تست ایجاد شد.','نام کاربری اشتراک')),
+      ('subscription.service_change_report.server',
+       ('🔄','تغییر سرویس','نام کاربری اشتراک')),
+      ('subscription.service_change_report.server',
+       ('🎫','شناسه عددی','شناسه تغییر دهنده')),
+      ('subscription.service_change_report.plan',
+       ('🔄','تغییر سرویس','نام کاربری اشتراک')),
+      ('subscription.service_change_report.plan',
+       ('🎫','شناسه عددی','شناسه تغییر دهنده')),
+      ('renewal.extensions.channel_message.f9e3ed8281',
+       ('🔄','نام کاربری اشتراک','پلن جدید')),
+    }
+    approved_headings=expected_shared_currency|expected_owner_chili_reuse|approved_identifier_reuse
+    check(set(duplicate_markers)==approved_headings and
+          len(duplicate_markers)==len(approved_headings) and
           all('💵 مبلغ به تومان' in r5.text(merged[k]) and
               '💵 مبلغ به ریال' in r5.text(merged[k])
               for k,_ in expected_shared_currency) and

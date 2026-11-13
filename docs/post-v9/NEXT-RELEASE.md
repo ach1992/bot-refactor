@@ -1,6 +1,18 @@
 # Current source and published release contracts
 
 
+## Pending RC34 candidate — Vivan payment recovery and rule-editor UX
+
+[PR #159](https://github.com/ach1992/bot-refactor/pull/159) implements
+[Owner-approved Issue #158](https://github.com/ach1992/bot-refactor/issues/158).
+This source is **not yet merged, independently approved, released or installed**.
+It removes an insufficient-wallet payment-method dead end, supports guarded
+recovery of preexisting unclaimed `low_wallet` drafts and streamlines the
+existing admin category-rule editor without a new migration. The specified
+Persian labels, icon choices and back-navigation are Owner-approved.
+See [RC33 → RC34](RC33-TO-RC34.md) for readiness checks and Vivan-only
+production boundaries. RC33 remains the latest published release.
+
 ## Published RC33 — five-digit bulk suffix and verified shared Marzban import
 
 [v0.10.0-rc.33](https://github.com/ach1992/bot-refactor/releases/tag/v0.10.0-rc.33) is the **source-only** successor to RC32. Independently approved and merged [PR #155](https://github.com/ach1992/bot-refactor/pull/155) introduces exactly five decimal suffix digits for new generated administrator/paid Marzban/PasarGuard bulk names within existing configured username formats; restores only the explicitly Owner-approved three-line plan selector and six successful-purchase report emojis; and accepts multiple independently verified identical Marzban subscriptions only when the shared physical Panel Group is explicitly valid. Original 007/payment/native identities, already-dispatched accounts, distinctly physical panels and PasarGuard Native bearer checks remain protected. `AGENTS.md` forbids unapproved future user-/administrator-visible changes. There is **no new SQL migration**, provider API, scheduler or application dependency. See [RC32 → RC33](RC32-TO-RC33.md).

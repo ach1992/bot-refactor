@@ -1238,9 +1238,15 @@ def run_wallet(tmp: str) -> tuple[dict, dict]:
         ["python3",str(ROOT/"tools/test_next_text_catalog.py")],
         cwd=ROOT,check=True,timeout=180,capture_output=True,text=True)
     text_catalog=json.loads(catalog_output.stdout)
+    # The new UI copy is admission-gated by whole-file source SHA before
+    # historical catalog proofs; the base counts remain immutable.
+    import catalog_owner_r5 as catalog_lineage
+    successor=catalog_lineage.vivan_20261113_source()
+    admin_added=len(successor['admin']['added'])
+    user_added=len(successor['user']['added'])
     expected_catalog={
-        'status':'PASS','current_catalog_keys':2883,
-        'current_admin_keys':1933,'current_user_keys':950,
+        'status':'PASS','current_catalog_keys':2883+admin_added+user_added,
+        'current_admin_keys':1933+admin_added,'current_user_keys':950+user_added,
         'retired_experimental_keys':129,'retired_experimental_topics':10,
         'new_copy_entries':33,'current_runtime_files':132,
         'new_copy_references_unbound':0,
@@ -1909,6 +1915,7 @@ def run_authorization(tmp: str) -> tuple[dict, dict]:
              'operator_preview_does_not_persist',
              'operator_explicit_add',
              'operator_private_integer_confirm_commit',
+             'operator_quick_preset_stale_cas_and_stay_on_metric',
              'operator_invalid_and_cancel',
              'two_admins_independent_fields',
              'unauthenticated_group_sender_rejected',
@@ -3534,6 +3541,15 @@ def run_funding(tmp: str) -> tuple[dict, dict]:
         f'{subject}_{kind}'
         for subject in ('buy','custom','renew','day','volume')
         for kind in ('valid_owned_callback_still_pays_once','paid_callback_no_replay')
+    } | {
+        f'{subject}_insufficient_wallet_preserves_payment_choice'
+        for subject in ('buy','custom','renew','day','volume')
+    } | {
+        'legacy_low_wallet_foreign_owner_cannot_reopen',
+        'legacy_low_wallet_issued_reference_cannot_reopen',
+        'legacy_low_wallet_superseded_draft_cannot_reopen',
+        'legacy_low_wallet_expired_draft_cannot_reopen',
+        'legacy_low_wallet_owner_reopen_once_no_financial_effect'
     } | {'wallet_exact_64_byte_callback_accepted',
          'wallet_65_byte_callback_without_side_effects',
          'unrelated_callback_not_blocked_by_wallet_guard'} | {
@@ -3543,13 +3559,53 @@ def run_funding(tmp: str) -> tuple[dict, dict]:
                      'valid_frame_reaches_dispatch')
     }
     if not (wallet_frame.get('complete') is True
-            and wallet_frame.get('cases')==38
+            and wallet_frame.get('cases')==48
             and set(wallet_frame.get('scenarios',[]))==expected_framing
             and wallet_frame.get('real_php_mariadb') is True
             and wallet_frame.get('original_payment_schema_preserved') is True
             and wallet_frame.get('provider_requests')==0
             and wallet_frame.get('live_wallet_mutations')==0):
         raise RuntimeError('Direct wallet callback framing matrix incomplete')
+
+    # #158 remediated high-assurance review: execute the actual authenticated
+    # Telegram PrePayment.php entry for all five historical low_wallet
+    # families, then the actual alternative hosted checkout issuer against
+    # original+003/007/017 disposable MariaDB. The unauthenticated browser
+    # initiation must never alter a low_wallet row by itself.
+    legacy_reentry_path=Path(tmp)/'low-wallet-real-route-reentry.json'
+    legacy_run=subprocess.run(
+        ['python3',str(ROOT/'tools/test_post_v9_low_wallet_reentry.py'),
+         '--run-disposable','--report',str(legacy_reentry_path)],
+        cwd=ROOT,capture_output=True,text=True,timeout=180)
+    if legacy_run.returncode!=0:
+        raise RuntimeError('Historical low_wallet real-route acceptance failed:\n'+
+            legacy_run.stderr[-5500:])
+    legacy_reentry=json.loads(legacy_reentry_path.read_text())
+    required_reentry={
+        f'{kind}_{suffix}'
+        for kind in ('buy','custom','renew','day','volume')
+        for suffix in ('public_GET_does_not_rearm',
+                       'authenticated_Telegram_reopens_no_effect',
+                       'alternative_hosted_once_and_replay_safe')
+    } | {
+        'denied_'+reason
+        for reason in ('foreign_owner','issued_reference',
+            'provider_attempt_with_transaction','Native_service_effect',
+            'Native_plan_journal','expired_quote','newer_draft',
+            'forged_callback_family','forged_callback_sender',
+            'disabled_wallet','disabled_manual_crypto','no_Telegram_envelope')
+    }
+    required_reentry.add(
+        'legacy_manual_crypto_direct_button_reopens_before_network_menu')
+    if not (legacy_reentry.get('complete') is True and
+            legacy_reentry.get('cases')==28 and
+            set(legacy_reentry.get('scenarios',[]))==required_reentry and
+            all(legacy_reentry.get(flag) is True
+                for flag in ('real_php_mariadb','actual_prepayment_php',
+                             'actual_hosted_checkout_php')) and
+            legacy_reentry.get('all_real_provider_calls')==0 and
+            legacy_reentry.get('live_wallet_mutations')==0):
+        raise RuntimeError('Historical low_wallet source-real matrix incomplete')
 
     # Six current manual-method choices must have exact callback framing,
     # explicit method binding and no fallthrough into a second action.

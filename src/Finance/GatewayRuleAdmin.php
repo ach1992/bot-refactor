@@ -22,7 +22,7 @@ function achbotGatewayRuleCallback(string $data): ?array {
         return count($p)===3 && preg_match('/\A[1-9][0-9]*\z/D',$p[2])
             ? ['action'=>$action,'nonce'=>$p[2]] : null;
     }
-    if (!in_array($action,['a','d','q','t','n','v','c'],true) ||
+    if (!in_array($action,['a','d','q','t','n','v','c','p'],true) ||
         count($p)<4 || count($p)>7 ||
         !array_key_exists($p[2],achbotPayUxAudienceMethods()) ||
         !array_key_exists($p[3],achbotGatewayRuleCategories()))
@@ -34,12 +34,15 @@ function achbotGatewayRuleCallback(string $data): ?array {
     if (in_array($action,['v','c'],true) &&
         (count($p)!==6 || !array_key_exists($p[4],achbotGatewayRuleMetrics())))
         return null;
+    if ($action==='p' && (count($p)!==7 ||
+        !array_key_exists($p[4],achbotGatewayRuleMetrics()) ||
+        !in_array($p[5],['all','w7','w30','x30','off'],true))) return null;
     if ($action==='n' && (count($p)!==7 ||
         !(($p[4]==='age' && $p[5]==='days') ||
           (array_key_exists($p[4],achbotGatewayRuleMetrics()) &&
            in_array($p[5],['count','days'],true))))) return null;
     $tokenIndex=match ($action) {
-        't'=>4,'v','c'=>5,'n'=>6,default=>null
+        't'=>4,'v','c'=>5,'n','p'=>6,default=>null
     };
     if ($tokenIndex!==null &&
         preg_match('/\A[a-f0-9]{15}\z/D',$p[$tokenIndex])!==1) return null;
@@ -145,7 +148,7 @@ function achbotGatewayRuleMutate(array $state,string $kind,string $key,
         // came from a stale screen. Compare against the rule the admin saw.
         // This includes BOTH count and days for Clear and all rule fields for
         // Toggle/Direction. Numeric Save retains its per-field CAS afterward.
-        if (in_array($act,['t','v','c','n'],true) &&
+        if (in_array($act,['t','v','c','n','p'],true) &&
             !hash_equals(achbotGatewayRuleControlTag($entries[$index]),
                          (string)$parsed['expected_tag']))
             throw new RuntimeException('gateway_rule_stale_operator_button');
@@ -174,6 +177,17 @@ function achbotGatewayRuleMutate(array $state,string $kind,string $key,
         } elseif ($act==='c') {
             $entries[$index]['metrics'][$metric]['count']=0;
             $entries[$index]['metrics'][$metric]['days']=0;
+        } elseif ($act==='p') {
+            // Deliberate one-click preset with the same stale-button CAS as
+            // manual edits. Presets replace only the selected metric.
+            $entries[$index]['metrics'][$metric]=match ($field) {
+                'all'=>['count'=>1,'days'=>0,'direction'=>'older'],
+                'w7'=>['count'=>1,'days'=>7,'direction'=>'recent'],
+                'w30'=>['count'=>1,'days'=>30,'direction'=>'recent'],
+                'x30'=>['count'=>2,'days'=>30,'direction'=>'recent'],
+                'off'=>['count'=>0,'days'=>0,'direction'=>'older'],
+                default=>throw new RuntimeException('gateway_rule_preset_invalid'),
+            };
         } elseif ($act==='s') {
             $current=$metric==='age'
                 ? $entries[$index]['registration_age_days']
@@ -225,6 +239,23 @@ function achbotGatewayAdminMethodFlags(string $method,array $state): string {
     }
     return implode(\achbotMessage('payment_settings.gateway_rule_admin.gateway_admin_method_flags.text.11735aabd3'),$labels);
 }
+/** Consistent Telegram labels and human-readable active conditions. */
+function achbotGatewayAdminMetricTitle(string $metric): string {
+    $icons=['buy'=>'🛒','renew'=>'♻️','volume'=>'📦','time'=>'📅','topup'=>'💰'];
+    return ($icons[$metric]??'📊').' '.achbotGatewayRuleMetrics()[$metric];
+}
+function achbotGatewayAdminMetricCondition(array $v): string {
+    if ($v['count']===0 && $v['days']===0)
+        return \achbotMessage('payment_settings.gateway_rule_admin.summary.no_condition');
+    $count=max(1,$v['count']);
+    if ($v['days']===0)
+        return \achbotMessage('payment_settings.gateway_rule_admin.summary.all_history',['count'=>$count]);
+    return \achbotMessage(
+        $v['direction']==='older'
+            ? 'payment_settings.gateway_rule_admin.summary.before_days'
+            : 'payment_settings.gateway_rule_admin.summary.recent_days',
+        ['count'=>$count,'days'=>$v['days']]);
+}
 function achbotGatewayAdminPage(string $data,?int $nonce=null): array {
     $state=achbotGatewayAdminCurrent();
     if ($state===null) return [
@@ -256,7 +287,7 @@ function achbotGatewayAdminPage(string $data,?int $nonce=null): array {
     if ($p[1]==='m' && count($p)===3) {
         $text=\achbotMessage('payment_settings.gateway_rule_admin.gateway_admin_page.method_label.b0c241d56f', ['methodLabel' => $methodLabel]).achbotGatewayAdminMethodFlags($method,$state)."\n";
         $text.=\achbotMessage('payment_settings.gateway_rule_admin.gateway_admin_page.text.cffb41a268').(achbotPayUxAudienceModes()[$legacy[$method]??'all']??\achbotMessage('payment_settings.gateway_rule_admin.gateway_admin_page.text.a3544b7c99'))."\n";
-        $text.=\achbotMessage('payment_settings.gateway_rule_admin.gateway_admin_page.text.82e58a9a6a');
+        $text.=\achbotMessage('payment_settings.gateway_rule_admin.summary.category_intro');
         $rows=[];
         foreach (achbotGatewayRuleCategories() as $category=>$label) {
             $rule=null;
@@ -300,37 +331,74 @@ function achbotGatewayAdminPage(string $data,?int $nonce=null): array {
         array_key_exists($p[4],achbotGatewayRuleMetrics())) {
         $metric=$p[4];$v=$r['metrics'][$metric];
         $tag=achbotGatewayRuleControlTag($r);
-        $text=\achbotMessage('payment_settings.gateway_rule_admin.gateway_admin_page.category_label.5c0303d4dc', ['categoryLabel' => $categoryLabel]).achbotGatewayRuleMetrics()[$metric]."\n";
-        $text.=\achbotMessage('payment_settings.gateway_rule_admin.gateway_admin_page.text.b35dd70a37').$v['count'].\achbotMessage('payment_settings.gateway_rule_admin.gateway_admin_page.text.930aa8fb30').$v['days'].
-            \achbotMessage('payment_settings.gateway_rule_admin.gateway_admin_page.text.e943a81156').($v['direction']==='older'?\achbotMessage('payment_settings.gateway_rule_admin.gateway_admin_page.text.12186b2949'):\achbotMessage('payment_settings.gateway_rule_admin.gateway_admin_page.text.c6bdd72afe'))."\n";
-        $text.=\achbotMessage('payment_settings.gateway_rule_admin.gateway_admin_page.text.3153c0f2f5');
-        $text.=\achbotMessage('payment_settings.gateway_rule_admin.gateway_admin_page.text.0d5b2ce24e');
-        return ['text'=>$text,'keyboard'=>achbotGatewayAdminMarkup([
-            [['text'=>\achbotMessage('payment_settings.gateway_rule_admin.gateway_admin_page.button.4402a7a7da'),'callback_data'=>'gr|n|'.$prefix.'|'.$metric.'|count|'.$tag]],
-            [['text'=>\achbotMessage('payment_settings.gateway_rule_admin.gateway_admin_page.button.38748be977'),'callback_data'=>'gr|n|'.$prefix.'|'.$metric.'|days|'.$tag]],
-            [['text'=>\achbotMessage('payment_settings.gateway_rule_admin.gateway_admin_page.button.74c39e45b8'),'callback_data'=>'gr|v|'.$prefix.'|'.$metric.'|'.$tag]],
-            [['text'=>\achbotMessage('payment_settings.gateway_rule_admin.gateway_admin_page.button.dd5c4f32ce'),'callback_data'=>'gr|c|'.$prefix.'|'.$metric.'|'.$tag]],
-            [['text'=>\achbotMessage('payment_settings.gateway_rule_admin.gateway_admin_page.button.2fe0521c21'),'callback_data'=>'gr|r|'.$prefix]]
-        ])];
+        $text=\achbotMessage('payment_settings.gateway_rule_admin.summary.metric_heading',[
+            'method'=>$methodLabel,'category'=>$categoryLabel,
+            'metric'=>achbotGatewayAdminMetricTitle($metric)]);
+        $text.=\achbotMessage('payment_settings.gateway_rule_admin.summary.current_condition',[
+            'condition'=>achbotGatewayAdminMetricCondition($v)]);
+        $text.=\achbotMessage('payment_settings.gateway_rule_admin.summary.metric_explanation');
+        $rows=[
+            [['text'=>\achbotMessage('payment_settings.gateway_rule_admin.preset.all'),
+              'callback_data'=>'gr|p|'.$prefix.'|'.$metric.'|all|'.$tag]],
+            [
+              ['text'=>\achbotMessage('payment_settings.gateway_rule_admin.preset.w7'),
+               'callback_data'=>'gr|p|'.$prefix.'|'.$metric.'|w7|'.$tag],
+              ['text'=>\achbotMessage('payment_settings.gateway_rule_admin.preset.w30'),
+               'callback_data'=>'gr|p|'.$prefix.'|'.$metric.'|w30|'.$tag]
+            ],
+            [['text'=>\achbotMessage('payment_settings.gateway_rule_admin.preset.x30'),
+              'callback_data'=>'gr|p|'.$prefix.'|'.$metric.'|x30|'.$tag]],
+            [['text'=>\achbotMessage('payment_settings.gateway_rule_admin.gateway_admin_page.button.4402a7a7da'),
+              'callback_data'=>'gr|n|'.$prefix.'|'.$metric.'|count|'.$tag],
+             ['text'=>\achbotMessage('payment_settings.gateway_rule_admin.gateway_admin_page.button.38748be977'),
+              'callback_data'=>'gr|n|'.$prefix.'|'.$metric.'|days|'.$tag]],
+        ];
+        $rows[]=[['text'=>\achbotMessage('payment_settings.gateway_rule_admin.summary.direction_button',[
+            'direction'=>$v['direction']==='older'
+                ? \achbotMessage('payment_settings.gateway_rule_admin.gateway_admin_page.text.12186b2949')
+                : \achbotMessage('payment_settings.gateway_rule_admin.gateway_admin_page.text.c6bdd72afe')]),
+            'callback_data'=>'gr|v|'.$prefix.'|'.$metric.'|'.$tag]];
+        $rows[]=[['text'=>\achbotMessage('payment_settings.gateway_rule_admin.preset.off'),
+                  'callback_data'=>'gr|c|'.$prefix.'|'.$metric.'|'.$tag]];
+        $rows[]=[['text'=>\achbotMessage('payment_settings.gateway_rule_admin.summary.back_rule'),
+                  'callback_data'=>'gr|r|'.$prefix]];
+        return ['text'=>$text,'keyboard'=>achbotGatewayAdminMarkup($rows)];
     }
-    $text=\achbotMessage('payment_settings.gateway_rule_admin.gateway_admin_page.method_label_category_label.f136e472ba', ['methodLabel' => $methodLabel, 'categoryLabel' => $categoryLabel]);
-    $text.=\achbotMessage('payment_settings.gateway_rule_admin.gateway_admin_page.text.c5d6fc3ebd').($r['enabled']?\achbotMessage('payment_settings.gateway_rule_admin.gateway_admin_method_flags.text.a3fa2a3ffc'):\achbotMessage('payment_settings.gateway_rule_admin.gateway_admin_page.text.4e67bd8e34')).
-        \achbotMessage('payment_settings.gateway_rule_admin.gateway_admin_page.text.633cdaf049').$r['registration_age_days'].\achbotMessage('payment_settings.gateway_rule_admin.gateway_admin_page.text.f91c474748');
-    $text.=\achbotMessage('payment_settings.gateway_rule_admin.gateway_admin_page.text.03d7bf8c63');
-    foreach (achbotGatewayRuleMetrics() as $key=>$label) {
-        $v=$r['metrics'][$key];
-        $value=$v['count'].\achbotMessage('payment_settings.gateway_rule_admin.gateway_admin_page.text.103d12a4c3').$v['days'].\achbotMessage('payment_settings.gateway_rule_admin.gateway_admin_page.text.69ff4a27e5');
-        $text.=$label.': '.$value.' ('.($v['direction']==='older'?\achbotMessage('payment_settings.gateway_rule_admin.gateway_admin_page.text.12186b2949'):\achbotMessage('payment_settings.gateway_rule_admin.gateway_admin_page.text.c6bdd72afe')).")\n";
+    $text=\achbotMessage('payment_settings.gateway_rule_admin.summary.rule_heading',[
+        'method'=>$methodLabel,'category'=>$categoryLabel]);
+    $text.=\achbotMessage('payment_settings.gateway_rule_admin.summary.enabled',[
+        'enabled'=>$r['enabled']
+            ? \achbotMessage('payment_settings.gateway_rule_admin.gateway_admin_method_flags.text.a3fa2a3ffc')
+            : \achbotMessage('payment_settings.gateway_rule_admin.gateway_admin_page.text.4e67bd8e34')]);
+    $text.=\achbotMessage('payment_settings.gateway_rule_admin.summary.member_age',[
+        'days'=>$r['registration_age_days']===0
+            ? \achbotMessage('payment_settings.gateway_rule_admin.summary.no_condition')
+            : $r['registration_age_days']]);
+    $text.=\achbotMessage('payment_settings.gateway_rule_admin.summary.active_conditions');
+    $active=0;
+    foreach (achbotGatewayRuleMetrics() as $metric=>$label) {
+        $v=$r['metrics'][$metric];
+        if ($v['count']===0 && $v['days']===0) continue;
+        $text.=achbotGatewayAdminMetricTitle($metric).': '.achbotGatewayAdminMetricCondition($v)."\n";
+        $active++;
     }
+    if ($active===0)
+        $text.=\achbotMessage('payment_settings.gateway_rule_admin.summary.no_transaction_conditions');
+    $text.=\achbotMessage('payment_settings.gateway_rule_admin.summary.rule_help');
     $tag=achbotGatewayRuleControlTag($r);
-    $rows=[[['text'=>\achbotMessage('payment_settings.gateway_rule_admin.gateway_admin_page.button.02bfa8380c'),'callback_data'=>'gr|n|'.$prefix.'|age|days|'.$tag]]];
+    $rows=[[['text'=>\achbotMessage('payment_settings.gateway_rule_admin.summary.age_button'),
+              'callback_data'=>'gr|n|'.$prefix.'|age|days|'.$tag]]];
     foreach (achbotGatewayRuleMetrics() as $metric=>$label)
-        $rows[]=[['text'=>\achbotMessage('payment_settings.gateway_rule_admin.gateway_admin_page.button.1e53a1442f').$label,'callback_data'=>'gr|f|'.$prefix.'|'.$metric]];
-    $rows[]=[['text'=>$r['enabled']?\achbotMessage('payment_settings.gateway_rule_admin.gateway_admin_page.text.fe79dd4aa2'):\achbotMessage('payment_settings.gateway_rule_admin.gateway_admin_page.text.9dda803abf'),
-               'callback_data'=>'gr|t|'.$prefix.'|'.$tag]];
-    $rows[]=[['text'=>\achbotMessage('payment_settings.gateway_rule_admin.gateway_admin_page.button.661846f2c0'),'callback_data'=>'gr|q|'.$prefix]];
-    return ['text'=>$text,'keyboard'=>achbotGatewayAdminMarkup(
-        array_merge($rows,$ruleBack))];
+        $rows[]=[['text'=>achbotGatewayAdminMetricTitle($metric).
+            \achbotMessage('payment_settings.gateway_rule_admin.summary.edit_suffix'),
+            'callback_data'=>'gr|f|'.$prefix.'|'.$metric]];
+    $rows[]=[['text'=>$r['enabled']
+        ? \achbotMessage('payment_settings.gateway_rule_admin.gateway_admin_page.text.fe79dd4aa2')
+        : \achbotMessage('payment_settings.gateway_rule_admin.gateway_admin_page.text.9dda803abf'),
+         'callback_data'=>'gr|t|'.$prefix.'|'.$tag]];
+    $rows[]=[['text'=>\achbotMessage('payment_settings.gateway_rule_admin.gateway_admin_page.button.661846f2c0'),
+              'callback_data'=>'gr|q|'.$prefix]];
+    return ['text'=>$text,'keyboard'=>achbotGatewayAdminMarkup(array_merge($rows,$ruleBack))];
 }
 
 function achbotGatewayAdminCanView($update,int $actor,int $chat,int $message,

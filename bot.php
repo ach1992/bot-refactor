@@ -534,10 +534,10 @@ if (is_string($data??null) &&
         // A rejection must never leave a stale editor that invites more
         // unsafe clicks. Re-validate authorization before showing fresh data.
         if ($operation!==null &&
-            in_array($operation['action'],['t','v','c','n'],true) &&
+            in_array($operation['action'],['t','v','c','n','p'],true) &&
             achbotGatewayAdminCanView($update,(int)$from_id,
                 (int)$chat_id,(int)$message_id,(int)$admin,$data)) {
-            $refresh=in_array($operation['action'],['v','c'],true)
+            $refresh=in_array($operation['action'],['v','c','p'],true)
                 ? 'gr|f|'.$operation['method'].'|'.$operation['category'].'|'.$operation['metric']
                 : 'gr|r|'.$operation['method'].'|'.$operation['category'];
             $page=achbotGatewayAdminPage($refresh);
@@ -554,15 +554,26 @@ if (is_string($data??null) &&
         return;
     }
     if (in_array($operation['action'],['s','x'],true)) {
-        sendMessage($operation['action']==='s'?\achbotMessage('bot.bot.gateway_audience_settings.message.fdfbaf2a40'):\achbotMessage('bot.bot.gateway_audience_settings.message.74d707fe02'));
-        $page=achbotGatewayAdminPage('gr|l');
-        sendMessage($page['text'],$page['keyboard']);
+        // The currently confirmed editor still carries its original context.
+        // Stay at the edited metric after Save/Cancel, rather than resetting
+        // to the first payment-method screen after every numeric change.
+        $prior=achbotGatewayRuleStep((string)($userInfo['step']??''));
+        $target=$prior && $prior['phase']==='confirm'
+            ? 'gr|f|'.$prior['method'].'|'.$prior['category'].'|'.$prior['metric']
+            : ($prior && $prior['phase']==='delete'
+                ? 'gr|m|'.$prior['method'] : 'gr|l');
+        $page=achbotGatewayAdminPage($target);
+        editText($message_id,
+            ($operation['action']==='s'
+                ? \achbotMessage('bot.bot.gateway_audience_settings.message.fdfbaf2a40')
+                : \achbotMessage('bot.bot.gateway_audience_settings.message.74d707fe02')).
+            "\n".$page['text'],$page['keyboard']);
         return;
     }
     $target=$operation['action']==='d'
         ? 'gr|m|'.$operation['method']
         : ($operation['action']==='q' ? 'gr|q|'.$operation['method'].'|'.$operation['category']
-        : (in_array($operation['action'],['v','c'],true)
+        : (in_array($operation['action'],['v','c','p'],true)
            ? 'gr|f|'.$operation['method'].'|'.$operation['category'].'|'.$operation['metric']
            : 'gr|r|'.$operation['method'].'|'.$operation['category']));
     $page=achbotGatewayAdminPage($target,

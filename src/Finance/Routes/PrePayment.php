@@ -74,6 +74,23 @@ if (preg_match('/^ps_([A-Za-z0-9_-]{1,50})$/D', $data, $statusMatch)) {
     return;
 }
 
+// Four original payment screens (purchase, custom, day, volume) use
+// direct Telegram callbacks, unlike renewal's prePayCheck_* buttons.
+// Reopen their historical low_wallet drafts only after authenticating the
+// sender and the selected method; never from an unauthenticated checkout GET.
+if (isset($update->callback_query) &&
+    (int)($update->callback_query->from->id??0)===(int)$from_id &&
+    (string)($update->callback_query->data??'')===(string)($data??'') &&
+    is_string($data??null) && $data!=='' &&
+    achbotPayUxLegacyTelegramChoice($data)!==null) {
+    $reopened=achbotPayUxReopenOnTelegramChoice($connection,$data,(int)$from_id);
+    if ($reopened===false) {
+        answerCallbackQuery($callbackId,
+            \achbotMessage('payment.pre_payment.alert.bf99a9262b'),true);
+        return;
+    }
+}
+
 // Pre Pay Check By ACh
 
 // Only a complete, valid Telegram prepayment frame may be dispatched.
@@ -124,7 +141,7 @@ if (is_string($data) && str_starts_with($data, 'prePayCheck_')) {
     // A callback button can survive a provider settlement indefinitely.
     // Reject ALL terminal states before checking plans, expiry or gateways.
     // Never let a stale Telegram callback rewrite a paid/terminal receipt.
-    if (!in_array((string)$payInfo['state'], ['pending','send'], true)) {
+    if (!in_array((string)$payInfo['state'], ['pending','send','low_wallet'], true)) {
         answerCallbackQuery($callbackId, \achbotMessage('payment.pre_payment.alert.bf99a9262b'));
         return;
     }
@@ -147,6 +164,16 @@ if (is_string($data) && str_starts_with($data, 'prePayCheck_')) {
     if (!$methodAllowed) {
         answerCallbackQuery($callbackId,\achbotMessage('payment.pre_payment.alert.cb95ca3290'),true);
         return;
+    }
+    // Older wallet attempts recorded low_wallet even though no funds were held.
+    // Reopen only an unclaimed, unexpired draft after current method-policy checks.
+    if ($payInfo['state']==='low_wallet') {
+        if (!achbotPayUxReopenLowWalletDraft($connection,(int)$payInfo['id'],(int)$from_id)) {
+            answerCallbackQuery($callbackId,
+                \achbotMessage('payment.pre_payment.alert.bf99a9262b'),true);
+            return;
+        }
+        $payInfo['state']='pending';
     }
     if (achbotPayUxExpireDraft($connection,(int)$payInfo['id'])) {
         answerCallbackQuery($callbackId,\achbotMessage('payment.pre_payment.alert.15d949aabf'),true);

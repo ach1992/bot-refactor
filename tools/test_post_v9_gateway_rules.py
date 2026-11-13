@@ -397,11 +397,11 @@ def main():
         def button(prefix,who=9001):
             # Read the exact server-rendered callback before the operation.
             parts=prefix.split('|')
-            assert parts[0]=='gr' and parts[1] in ('t','v','c','n'),prefix
+            assert parts[0]=='gr' and parts[1] in ('t','v','c','n','p'),prefix
             method,category=parts[2],parts[3]
             metric=parts[4] if len(parts)>4 else 'age'
             route=('gr|f|' + method+'|'+category+'|'+metric
-                   if parts[1] in ('v','c') or
+                   if parts[1] in ('v','c','p') or
                       (parts[1]=='n' and metric!='age')
                    else 'gr|r|'+method+'|'+category)
             events,_=act(route,who=who)
@@ -451,6 +451,30 @@ def main():
         assert state()['gatewayRules']['methods']['wallet'][0]['metrics']['buy']['count']==13
         assert sql(w,e,'SELECT step FROM users WHERE userid=9001')=='none'
         cases.append('operator_private_integer_confirm_commit')
+        # The new editor stays on the selected metric after Save. One-click
+        # presets update only that metric; stale callbacks remain CAS-denied.
+        assert any(e[0]=='edit' and 'تنظیم شرط' in e[1] and
+                   'gr|f|wallet|non_agents|buy' not in e[1] for e in events),events
+        events,_=act('gr|f|wallet|non_agents|buy')
+        assert any(e[0]=='edit' and 'تنظیم شرط' in e[1] and
+                   'تمام سابقه' in e[1] for e in events),events
+        quick=button('gr|p|wallet|non_agents|buy|w30')
+        events,_=act(quick)
+        assert state()['gatewayRules']['methods']['wallet'][0]['metrics']['buy']=={
+            'count':1,'days':30,'direction':'recent'}
+        assert any(e[0]=='edit' and '۳۰ روز' not in e[1] and
+                   '30 روز اخیر' in e[1] for e in events),events
+        before=json.dumps(state(),sort_keys=True)
+        events,_=act(quick)
+        assert json.dumps(state(),sort_keys=True)==before
+        events,_=act(button('gr|c|wallet|non_agents|buy'))
+        assert state()['gatewayRules']['methods']['wallet'][0]['metrics']['buy']['count']==0
+        assert state()['gatewayRules']['methods']['wallet'][0]['metrics']['buy']['days']==0
+        # A cleared recent preset retains direction; restore older before
+        # exercising the prior toggle expectation and two-admin CAS.
+        events,_=act(button('gr|v|wallet|non_agents|buy'))
+        assert state()['gatewayRules']['methods']['wallet'][0]['metrics']['buy']['direction']=='older'
+        cases.append('operator_quick_preset_stale_cas_and_stay_on_metric')
         events,_=act(button('gr|n|wallet|non_agents|renew|days'))
         events,_=act(text='bad',message=True)
         assert state()['gatewayRules']['methods']['wallet'][0]['metrics']['renew']['days']==0

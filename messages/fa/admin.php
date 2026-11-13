@@ -47,7 +47,7 @@ return [
         'gateway' => ['text' => '💳 درگاه پرداخت: {provider}', 'parameters' => ['provider']],
         'subject' => ['text' => '🛍 نوع سفارش: {subject}', 'parameters' => ['subject']],
         'plan' => ['text' => '📦 پلن: {plan}', 'parameters' => ['plan']],
-        'username' => ['text' => '🔖 نام کاربری اشتراک: <code>{username}</code>', 'parameters' => ['username']],
+        'username' => ['text' => '🔄 نام کاربری اشتراک: <code>{username}</code>', 'parameters' => ['username']],
         'order' => ['text' => '🧾 شناسه اشتراک: <code>{id}</code>', 'parameters' => ['id']],
         'quantity' => ['text' => '👥 تعداد اشتراک: {quantity}', 'parameters' => ['quantity']],
         'request_time' => ['text' => '🕒 ثبت سفارش: {date}', 'parameters' => ['date']],
@@ -70,8 +70,8 @@ return [
         'reject' => '❌ رد',
         'older' => '⬅️ موارد قدیمی‌تر',
         'newest' => '🔄 ابتدای فهرست',
-        'back_list' => '↩️ بازگشت به لیست بررسی',
-        'back_admin' => '🏠 بازگشت به مدیریت',
+        'back_list' => '↪️ بازگشت به لیست بررسی',
+        'back_admin' => '↪️ بازگشت به مدیریت',
         'resolved' => 'این پرداخت دیگر نیازمند بررسی نیست.',
         'checking' => 'در حال بررسی پرونده',
         'unavailable' => '⚠️ اطلاعات پرداخت فعلاً قابل بررسی نیست.',
@@ -103,9 +103,9 @@ return [
         'buy_new_account_request' => '🛍 خرید جدید (TYPE)' . "\n" . '' . "\n" . '🎫 شناسه عددی: USER-ID' . "\n" . '👤 اسم کاربر: NAME' . "\n" . '🔖 نام کاربری: @USERNAME' . "\n" . '💰 مبلغ پرداختی: PRICE تومان' . "\n" . '🚦 سرور: SERVERNAME' . "\n" . '✏️ نام اشتراک یا پلن: REMARK' . "\n" . '📦 حجم اشتراک: VOLUME گیگ' . "\n" . '📅 مدت اشتراک: DAYS روز',
         'buy_new_much_account_request' => '🛍 خرید جدید (TYPE)' . "\n" . '' . "\n" . '🎫 شناسه عددی: USER-ID' . "\n" . '👤 اسم کاربر: NAME' . "\n" . '🔖 نام کاربری: @USERNAME' . "\n" . '💰 مبلغ پرداختی: PRICE تومان' . "\n" . '🏖 تعداد اکانت: ACCOUNT-COUNT' . "\n" . '✏️ نام اشتراک یا پلن: REMARK',
         'renew_account_request_message' => '♻️ تمدید اشتراک (TYPE)' . "\n" . '' . "\n" . '🎫 شناسه عددی: USER-ID' . "\n" . '👤 اسم کاربر: NAME' . "\n" . '🔖 نام کاربری: @USERNAME' . "\n" . '💰 مبلغ پرداختی: PRICE تومان' . "\n" . '✏️ نام اشتراک یا پلن: REMARK' . "\n" . '📦 حجم اشتراک: VOLUME گیگ' . "\n" . '📅 مدت اشتراک: DAYS روز',
-        'increase_account_request_message' => '⏰ درخواست افزایش (TYPE اشتراک)' . "\n" . '' . "\n" . '🎫 شناسه عددی: USER-ID' . "\n" . '👤 اسم کاربر: NAME' . "\n" . '🔖 نام کاربری: @USERNAME' . "\n" . '🎈 نام کاربری اشتراک: REMARK' . "\n" . '🔋 افزایش TYPE: INCREASE گیگ/روز' . "\n" . '💰 مبلغ پرداختی: PRICE تومان',
+        'increase_account_request_message' => '⏰ درخواست افزایش (TYPE اشتراک)' . "\n" . '' . "\n" . '🎫 شناسه عددی: USER-ID' . "\n" . '👤 اسم کاربر: NAME' . "\n" . '🔖 نام کاربری: @USERNAME' . "\n" . '🔄 نام کاربری اشتراک: REMARK' . "\n" . '🔋 افزایش TYPE: INCREASE گیگ/روز' . "\n" . '💰 مبلغ پرداختی: PRICE تومان',
         'change_bot_settings_message' => '🔰 هرکدوم از امکانات رو اگه تو ربات استفاده ای نداره (خاموش) کن!',
-        'new_member_joined' => '📢 کاربر جدید عضو ربات شد:' . "\n" . '' . "\n" . 'نام و نام خانوادگی: FULLNAME' . "\n" . 'نام کاربری: @USERNAME' . "\n" . 'شناسه عددی: userid' . "\n" . '' . "\n" . '📝 توصیه می کنم اگر در حال حاضر نکته خاصی هست توسط پیام برای مشتری ارسال کنید.',
+        'new_member_joined' => '📢 کاربر جدید عضو ربات شد:' . "\n" . '' . "\n" . 'نام و نام خانوادگی: FULLNAME' . "\n" . 'نام کاربری: @USERNAME' . "\n" . '🎫 شناسه عددی: userid' . "\n" . '' . "\n" . '📝 توصیه می کنم اگر در حال حاضر نکته خاصی هست توسط پیام برای مشتری ارسال کنید.',
         'used_discount_code' => '☑️ کد تخفیف استفاده شد.' . "\n" . '' . "\n" . '🎫 شناسه عددی: USERID' . "\n" . '👤 اسم کاربر: NAME' . "\n" . '🔖 نام کاربری: @USERNAME' . "\n" . '🎁 کد تخفیف: DISCOUNTCODE' . "\n" . '💰 مقدار تخفیف: AMOUNT' . "\n" . '',
         'request_agency_message' => '➕ درخواست همکاری' . "\n" . '' . "\n" . '🎫 شناسه عددی: USERID' . "\n" . '👤 اسم کاربر: NAME' . "\n" . '🔖 نام کاربری: @USERNAME' . "\n" . '',
         'send_agent_discount_percent' => '🎁 لطفا مقدار تخفیف این همکاری را به صورت درصد (مثلا 10) وارد کنید.',
@@ -115,8 +115,8 @@ return [
         'agent_deleted_successfuly' => '✅ همکاری با موفقیت حذف شد.',
         'agent_details' => '🙎 اطلاعات همکار AGENT-NAME' . "\n" . '' . "\n" . 'سمت راست درآمد و سمت چپ تعداد خرید همکار می باشد.',
         'forward_your_message' => '💬 لطفا پیام مورد نظر خود را به ربات فوروارد کنید.',
-        'sent_config_to_user' => '✅ اشتراک برای کاربر ارسال شد.' . "\n" . '' . "\n" . '🆔 شناسه عددی: USERID' . "\n" . '🎫 نام کاربری اشتراک: REMARK' . "\n" . '📦 حجم اشتراک: VOLUME گیگ' . "\n" . '📅 مدت زمان اشتراک: DAYS روز' . "\n" . '💰 هزینه پرداختی: PRICE تومان' . "\n" . '🔖 شناسه پرداخت: HASHID' . "\n" . '',
-        'renewed_config_to_user' => '✅ اشتراک تمدید شد.' . "\n" . '' . "\n" . 'شناسه عددی: USERID' . "\n" . 'نام کاربری اشتراک: REMARK' . "\n" . 'حجم اشتراک: VOLUME گیگ' . "\n" . 'مدت زمان اشتراک: DAYS روز' . "\n" . 'هزینه پرداختی: PRICE تومان' . "\n" . 'شناسه پرداخت: HASHID' . "\n" . '',
+        'sent_config_to_user' => '✅ اشتراک برای کاربر ارسال شد.' . "\n" . '' . "\n" . '🎫 شناسه عددی: USERID' . "\n" . '🔄 نام کاربری اشتراک: REMARK' . "\n" . '📦 حجم اشتراک: VOLUME گیگ' . "\n" . '📅 مدت زمان اشتراک: DAYS روز' . "\n" . '💰 هزینه پرداختی: PRICE تومان' . "\n" . '🔖 شناسه پرداخت: HASHID' . "\n" . '',
+        'renewed_config_to_user' => '✅ اشتراک تمدید شد.' . "\n" . '' . "\n" . '🎫 شناسه عددی: USERID' . "\n" . '🔄 نام کاربری اشتراک: REMARK' . "\n" . '📦 حجم اشتراک: VOLUME گیگ' . "\n" . '📅 مدت زمان اشتراک: DAYS روز' . "\n" . '💰 هزینه پرداختی: PRICE تومان' . "\n" . '🧾 شناسه پرداخت: HASHID' . "\n" . '',
         'sending_config_to_user' => '🚀 در حال ارسال اشتراک به مشتری ...',
         'agent_discount_settings' => '⚙️ مدیریت تخفیف های همکار AGENT-NAME',
     ],
@@ -450,20 +450,20 @@ return [
         'trial_provision.message.30b8933da5' => '⚠️ وضعیت ساخت Trial نیاز به بررسی دارد. ',
         'trial_provision.message.922f2b9906' => 'پیش از اقدام مجدد، حساب و ظرفیت را تطبیق دهید.',
         // trial_provision.channel_message
-        'trial_provision.channel_message.d22e3c7448' => ['text' => '' . "\n" . '🔄 اشتراک تست ایجاد شد.' . "\n" . '' . "\n" . '🎫 شناسه عددی: <code>{userId}</code>' . "\n" . '👤 اسم کاربر: {fullName}' . "\n" . '🔖 نام کاربری: {usernameText}' . "\n" . '🎈 نام کاربری اشتراک: <code>{remark}</code>' . "\n" . '📦 حجم اولیه اشتراک: {volume} گیگ' . "\n" . '📅 مدت اشتراک: {days} روز' . "\n" . '', 'parameters' => ['userId', 'fullName', 'usernameText', 'remark', 'volume', 'days']],
+        'trial_provision.channel_message.d22e3c7448' => ['text' => '' . "\n" . '🔄 اشتراک تست ایجاد شد.' . "\n" . '' . "\n" . '🎫 شناسه عددی: <code>{userId}</code>' . "\n" . '👤 اسم کاربر: {fullName}' . "\n" . '🔖 نام کاربری: {usernameText}' . "\n" . '🔄 نام کاربری اشتراک: <code>{remark}</code>' . "\n" . '📦 حجم اولیه اشتراک: {volume} گیگ' . "\n" . '📅 مدت اشتراک: {days} روز' . "\n" . '', 'parameters' => ['userId', 'fullName', 'usernameText', 'remark', 'volume', 'days']],
         // order_writes.ensure_account_creation_succeeded
         'order_writes.ensure_account_creation_succeeded.admin_message.inbound_missing' => ['text' => '⚠️ ساخت اشتراک انجام نشد.' . "\n" . 'سرویس: {title}' . "\n" . 'علت: inbound_not_found' . "\n" . 'شناسه ورودی: {inbound_id}', 'parameters' => ['title', 'inbound_id']],
     ],
 
     // ── اطلاعات و مدیریت اشتراک ──
     'subscription' => [
-        'account_deletion.report' => ['text' => '🔋 حذف اشتراک توسط کاربر' . "\n" . '' . "\n" . '🎫 شناسه عددی: <code>{from_id}</code>' . "\n" . '👤 اسم کاربر: {first_name}' . "\n" . '🔖 نام کاربری: @{username}' . "\n" . '🎈 نام کاربری اشتراک: {remark}' . "\n" . '📦 حجم اولیه اشتراک: {volumeDisplay}' . "\n" . '📅 مدت اشتراک: {daysDisplay}' . "\n" . '', 'parameters' => ['from_id', 'first_name', 'username', 'remark', 'volumeDisplay', 'daysDisplay']],
+        'account_deletion.report' => ['text' => '🔋 حذف اشتراک توسط کاربر' . "\n" . '' . "\n" . '🎫 شناسه عددی: <code>{from_id}</code>' . "\n" . '👤 اسم کاربر: {first_name}' . "\n" . '🔖 نام کاربری: @{username}' . "\n" . '🔄 نام کاربری اشتراک: {remark}' . "\n" . '📦 حجم اولیه اشتراک: {volumeDisplay}' . "\n" . '📅 مدت اشتراک: {daysDisplay}' . "\n" . '', 'parameters' => ['from_id', 'first_name', 'username', 'remark', 'volumeDisplay', 'daysDisplay']],
 
         'manual_accounts.customer_not_found' => "❌ کاربر پیدا نشد. شناسه عددی کاربری را بفرستید که قبلاً ربات را شروع کرده است.",
 
         // account_deletion.no_dont_delete
-        'account_deletion.no_dont_delete.channel_message.f5930d6ccb' => ['text' => '🔋 حذف اشتراک توسط کاربر' . "\n" . '' . "\n" . '🎫 شناسه عددی: <code>{from_id}</code>' . "\n" . '👤 اسم کاربر: {first_name}' . "\n" . '🔖 نام کاربری: @{username}' . "\n" . '🎈 نام کاربری اشتراک: {remark}' . "\n" . '📦 حجم اولیه اشتراک: {volume} گیگ' . "\n" . '📅 مدت اشتراک: {days} روز' . "\n" . '', 'parameters' => ['from_id', 'first_name', 'username', 'remark', 'volume', 'days']],
-        'account_deletion.no_dont_delete.admin_message.53224aee55' => ['text' => '' . "\n" . '❌ اشتراک توسط ادمین حذف شد.' . "\n" . '' . "\n" . '🎫 شناسه عددی: {userId}' . "\n" . '🎈 نام کاربری اشتراک: {remark}' . "\n" . '', 'parameters' => ['userId', 'remark']],
+        'account_deletion.no_dont_delete.channel_message.f5930d6ccb' => ['text' => '🔋 حذف اشتراک توسط کاربر' . "\n" . '' . "\n" . '🎫 شناسه عددی: <code>{from_id}</code>' . "\n" . '👤 اسم کاربر: {first_name}' . "\n" . '🔖 نام کاربری: @{username}' . "\n" . '🔄 نام کاربری اشتراک: {remark}' . "\n" . '📦 حجم اولیه اشتراک: {volume} گیگ' . "\n" . '📅 مدت اشتراک: {days} روز' . "\n" . '', 'parameters' => ['from_id', 'first_name', 'username', 'remark', 'volume', 'days']],
+        'account_deletion.no_dont_delete.admin_message.53224aee55' => ['text' => '' . "\n" . '❌ اشتراک توسط ادمین حذف شد.' . "\n" . '' . "\n" . '🎫 شناسه عددی: {userId}' . "\n" . '🔄 نام کاربری اشتراک: {remark}' . "\n" . '', 'parameters' => ['userId', 'remark']],
         // account_details.build_admin_protocol_buttons
         'account_details.build_admin_protocol_buttons.name.177d6f2a4e' => ['text' => '☑️ {name}', 'parameters' => ['name']],
         // account_details.get_user_order_detail_keys
@@ -483,21 +483,21 @@ return [
         'service_change_report.server' => [
             'text' => "🔄 <b>تغییر سرویس</b>
 🧩 نوع: تغییر سرور
-🎈 نام اشتراک: <code>{remark}</code>
+🔄 نام کاربری اشتراک: <code>{remark}</code>
 🧾 شناسه سفارش: <code>{order_id}</code>
-👤 شناسه کاربر: <code>{user_id}</code>
-🛠 شناسه عددی مدیر: <code>{actor_id}</code>
+🎫 شناسه عددی: <code>{user_id}</code>
+🎫 شناسه تغییر دهنده: <code>{actor_id}</code>
 🌐 سرور قبلی: <code>{source_id}</code>
 📍 سرور جدید: <code>{target_id}</code> — {target_title}",
             'parameters' => ['remark','order_id','user_id','actor_id','source_id','target_id','target_title']
         ],
         'service_change_report.plan' => [
             'text' => "🔄 <b>تغییر سرویس</b>
-🧩 نوع: تغییر پلن
-🎈 نام اشتراک: <code>{remark}</code>
+🧩 نوع: تغییر پلن ({actor_role})
+🔄 نام کاربری اشتراک: <code>{remark}</code>
 🧾 شناسه سفارش: <code>{order_id}</code>
-👤 شناسه کاربر: <code>{user_id}</code>
-🛠 شناسه {actor_role}: <code>{actor_id}</code>
+🎫 شناسه عددی: <code>{user_id}</code>
+🎫 شناسه تغییر دهنده: <code>{actor_id}</code>
 📦 پلن جدید: {plan_title}
 🔢 شناسه پلن: <code>{plan_id}</code>",
             'parameters' => ['remark','order_id','user_id','actor_role','actor_id','plan_title','plan_id']
@@ -505,7 +505,7 @@ return [
         // account_transfers.admin_message
         'account_transfers.admin_message.6645c1fd4d' => '🔄 تغییر سرویس' . "\n" . '',
         // account_transfers.user_i_d
-        'account_transfers.user_i_d.6590a1ba5e' => 'شناسه عددی: ',
+         'account_transfers.user_i_d.6590a1ba5e' => '🎫 شناسه عددی: ',
         // account_transfers.order_i_d
         'account_transfers.order_i_d.98a7867ccd' => 'شناسه سفارش: ',
         // account_transfers.server
@@ -527,7 +527,7 @@ return [
         'manual_accounts.detect_server_id_from_remark.alert.ecf2df32d7' => '✅ اشتراک با موفقیت به لیست اضافه شد.',
         'manual_accounts.detect_server_id_from_remark.msg.10aa1e12ec' => ['text' => '⚠️ اشتراک  <code>{remark}</code>  با موفقیت برای شما در ربات ثبت شد. از پایین بزنید روی دکمه:' . "\n" . '' . "\n" . ' ← 🔄 <b>مشاهده اشتراک ها</b> ' . "\n" . '' . "\n" . '🔰 از لیست اشتراک خودتان را انتخاب کنید و در صفحه بعد اگر قصد تمدید دارید بزنید روی دکمه: ' . "\n" . '' . "\n" . '← ♻️ <b>تمدید اشتراک</b>' . "\n" . '' . "\n" . '💰 وقتی مبلغ نمایش داده شد روی دکمه زیر بزنید:' . "\n" . '' . "\n" . '← 💳 <b>کارت به کارت</b>' . "\n" . '' . "\n" . '⬆️ حالا بروید <b>مبلغ را کارت به کارت کنید</b> و بیایید رسید آن را در داخل ربات بفرستید.', 'parameters' => ['remark']],
         'manual_accounts.detect_server_id_from_remark.button.48f23552b7' => '💡مشاهده مشخصات اشتراک',
-        'manual_accounts.detect_server_id_from_remark.admin_message.7e7a367cc0' => ['text' => '' . "\n" . '➕ اشتراک جدید اضافه شد' . "\n" . '' . "\n" . '🎫 شناسه عددی: <code>{finalUserId}</code>' . "\n" . '👤 اسم کاربر: {first_name}' . "\n" . '🔖 نام کاربری: @{username}' . "\n" . '🎈 نام کاربری اشتراک: <code>{remark}</code>' . "\n" . '', 'parameters' => ['finalUserId', 'first_name', 'username', 'remark']],
+        'manual_accounts.detect_server_id_from_remark.admin_message.7e7a367cc0' => ['text' => '' . "\n" . '➕ اشتراک جدید اضافه شد' . "\n" . '' . "\n" . '🎫 شناسه عددی: <code>{finalUserId}</code>' . "\n" . '👤 اسم کاربر: {first_name}' . "\n" . '🔖 نام کاربری: @{username}' . "\n" . '🔄 نام کاربری اشتراک: <code>{remark}</code>' . "\n" . '', 'parameters' => ['finalUserId', 'first_name', 'username', 'remark']],
         'manual_accounts.detect_server_id_from_remark.alert.6b70d2424a' => '❌ ثبت اشتراک با خطا مواجه شد.',
         // order_management.title
         'order_management.title.b4f29204c1' => ['text' => '🔄 <b>لیست اشتراک های کاربر</b>' . "\n" . '🎫 شناسه عددی: <code>{userId}</code>', 'parameters' => ['userId']],
@@ -560,7 +560,7 @@ return [
         'order_management.show_order_management_panel.button.72e5322e9a' => ['text' => '💎 خرید همکار ←  {agentStatus}', 'parameters' => ['agentStatus']],
         'order_management.show_order_management_panel.button.8c85c7815c' => ['text' => '🔔 وضعیت Notif ←  {notifStatus}', 'parameters' => ['notifStatus']],
         'order_management.show_order_management_panel.button.bf169ddbf3' => '💡 مشاهده مشخصات اشتراک',
-        'order_management.show_order_management_panel.button.087a5a43b1' => '🔙 بازگشت به مدیریت',
+        'order_management.show_order_management_panel.button.087a5a43b1' => '↪️ بازگشت به مدیریت',
         'order_management.show_order_management_panel.button.198b410113' => '🔄 صفر کردن مصرف (PasarGuard)',
         'order_management.show_order_management_panel.msg.4292e04017' => ['text' => '🔧 مدیریت سفارش' . "\n" . '' . "\n" . '🎫 شناسه عددی: <code>{order_userid}</code>' . "\n" . '🎈 نام اشتراک: <code>{order_remark}</code>', 'parameters' => ['order_userid', 'order_remark']],
         'order_management.show_order_management_panel.alert.c9b07798db' => '⛔️ دسترسی به حذف سفارش ندارید.',
@@ -568,8 +568,8 @@ return [
         'order_management.show_order_management_panel.alert.abcbb638e7' => '⚠️ این سفارش در حال بررسی است؛ حذف فعلاً مجاز نیست.',
         'order_management.show_order_management_panel.alert.3781a25fa3' => '⚠️ حذف سفارش نیازمند بررسی است.',
         'order_management.show_order_management_panel.alert.1340fd2124' => '✅ سفارش با موفقیت حذف شد.',
-        'order_management.show_order_management_panel.message.606600ccca' => ['text' => '✅ سفارش از دیتابیس حذف شد.' . "\n" . '' . "\n" . '🎫 شناسه عددی: <code>{userid}</code>' . "\n" . '🎈 نام اشتراک: <code>{remark}</code>' . "\n" . '' . "\n" . 'برای مدیریت سفارش دیگر، دوباره «ویرایش سفارش در دیتابیس» را بزنید.', 'parameters' => ['userid', 'remark']],
-        'order_management.show_order_management_panel.admin_message.c7c4748cee' => ['text' => '🗑 سفارش از دیتابیس حذف شد.' . "\n" . '' . "\n" . '🎫 شناسه عددی: <code>{userid}</code>' . "\n" . '🎈 نام اشتراک: <code>{remark}</code>' . "\n" . '👤 مدیر: <code>{from_id}</code>', 'parameters' => ['userid', 'remark', 'from_id']],
+        'order_management.show_order_management_panel.message.606600ccca' => ['text' => '✅ سفارش از دیتابیس حذف شد.' . "\n" . '' . "\n" . '🎫 شناسه عددی: <code>{userid}</code>' . "\n" . '🔄 نام کاربری اشتراک: <code>{remark}</code>' . "\n" . '' . "\n" . 'برای مدیریت سفارش دیگر، دوباره «ویرایش سفارش در دیتابیس» را بزنید.', 'parameters' => ['userid', 'remark']],
+        'order_management.show_order_management_panel.admin_message.c7c4748cee' => ['text' => '🗑 سفارش از دیتابیس حذف شد.' . "\n" . '' . "\n" . '🎫 شناسه عددی: <code>{userid}</code>' . "\n" . '🔄 نام کاربری اشتراک: <code>{remark}</code>' . "\n" . '👤 مدیر: <code>{from_id}</code>', 'parameters' => ['userid', 'remark', 'from_id']],
         'order_management.show_order_management_panel.message.27a65c7f2c' => '🔁 لطفا تعداد روزی که می‌خواهید به تاریخ انقضا اضافه یا کم شود را وارد کنید.' . "\n" . '' . "\n" . 'مثال: `+10` یا `-5`',
         'order_management.show_order_management_panel.message.86c15dd0ed' => '✅ تاریخ انقضا با موفقیت ویرایش شد.',
         'order_management.show_order_management_panel.message.f6d2b05a49' => '🔐 لطفا مقدار جدید Token را وارد کنید:',
@@ -579,7 +579,7 @@ return [
         'order_management.show_order_management_panel.alert.057ec5448c' => '⛔️ دسترسی لازم وجود ندارد.',
         'order_management.show_order_management_panel.alert.3e801d365f' => '⛔️ سفارش مرزبان معتبر نیست.',
         'order_management.show_order_management_panel.alert.7a6ebab798' => '⚠️ هیچ سرور دیگری با همان پنل مرزبان وجود ندارد.',
-        'order_management.show_order_management_panel.button.b35a2352f5' => '🔙 بازگشت',
+        'order_management.show_order_management_panel.button.b35a2352f5' => '↪️ بازگشت',
         'order_management.show_order_management_panel.message.557fb66856' => '🌐 سرور منطقی مقصد را انتخاب کنید. تنظیمات مقصد پس از بررسی اشتراک اعمال می‌شود.',
         'order_management.show_order_management_panel.alert.c5dae93802' => '⛔️ مقصد با اشتراک فعلی سازگار نیست یا نتیجه نیاز به بررسی دارد.',
         'order_management.show_order_management_panel.message.88e0b88b0d' => '✅ مقصد اشتراک پس از بررسی به‌روزرسانی شد.',
@@ -604,7 +604,7 @@ return [
         'server_display_settings.server_display_keys.button.f4c0c5cd38' => 'مخفی‌کردن متن نمایش: ',
         'server_display_settings.server_display_keys.button.b3ba57d81a' => '⚙️ روش انتخاب مرزبان',
         'server_display_settings.server_display_keys.button.ad00f1d27d' => '✏️ ویرایش پیشرفته',
-        'server_display_settings.server_display_keys.button.8d809988a8' => '🔙 تنظیمات سرور',
+        'server_display_settings.server_display_keys.button.8d809988a8' => '↪️ بازگشت به تنظیمات سرور',
         // server_display_settings.server_display_qr_label
         'server_display_settings.server_display_qr_label.text.fe9c7660a2' => 'خودکار',
         'server_display_settings.server_display_qr_label.text.140669bdb0' => 'لینک اشتراک',
@@ -653,7 +653,7 @@ return [
         'server_display_settings.handle_server_display_admin.text.50539a0548' => 'انتخاب بومی (پیشنهادی)',
         'server_display_settings.handle_server_display_admin.text.19adf0f6e6' => 'سازگاری موقعیت‌های مرزبان',
         'server_display_settings.handle_server_display_admin.body.fccad7f96a' => '⚠️ روش انتخاب را تغییر دهید. با تغییر روش، انتخاب قبلی پاک می‌شود. در سازگاری مرزبان، کد QR کانفیگ همه لینک‌های خام را تا سقف نمایش دارد، حتی اگر متن مخفی باشد.',
-        'server_display_settings.handle_server_display_admin.button.63b4398cc3' => '🔙 نمایش همین سرور',
+        'server_display_settings.handle_server_display_admin.button.63b4398cc3' => '↪️ بازگشت به نمایش همین سرور',
         'server_display_settings.handle_server_display_admin.text.147f04122e' => 'ویرایش لغو شد.' . "\n" . '',
         'server_display_settings.handle_server_display_admin.message.b57e3f0cb1' => '⚠️ تنظیمات نمایش تأیید نشد. دسترسی و قالب مقادیر را بررسی و ویرایش را از تنظیمات همان سرور دوباره آغاز کنید.',
         // sub_link_settings.message
@@ -682,17 +682,17 @@ return [
         // extensions.external_effect_unverified_verify_before
         'extensions.external_effect_unverified_verify_before.10e2ccf8a3' => '🔎 نتیجه عملیات سرویس تأیید نشده است؛ پیش از تکرار یا جبران، آن را بررسی کنید.' . "\n" . '📄 علت بررسی‌شده: ',
         // extensions.msg
-        'extensions.msg.bfc1b46322' => ['text' => '' . "\n" . '🔋 افزایش زمان با (کیف پول)' . "\n" . '' . "\n" . '🎫 شناسه عددی: {from_id}' . "\n" . '👤 اسم کاربر: {first_name}' . "\n" . '🔖 نام کاربری: @{username}' . "\n" . '🎈 نام کاربری اشتراک: {remark}' . "\n" . '📅 مدت افزایش: {volume} روز' . "\n" . '💰 قیمت: {price} تومان' . "\n" . '', 'parameters' => ['from_id', 'first_name', 'username', 'remark', 'volume', 'price']],
+        'extensions.msg.bfc1b46322' => ['text' => '' . "\n" . '🔋 افزایش زمان با (کیف پول)' . "\n" . '' . "\n" . '🎫 شناسه عددی: {from_id}' . "\n" . '👤 اسم کاربر: {first_name}' . "\n" . '🔖 نام کاربری: @{username}' . "\n" . '🔄 نام کاربری اشتراک: {remark}' . "\n" . '📅 مدت افزایش: {volume} روز' . "\n" . '💰 قیمت: {price} تومان' . "\n" . '', 'parameters' => ['from_id', 'first_name', 'username', 'remark', 'volume', 'price']],
         // extensions.admin_err
         'extensions.admin_err.70cf66359f' => '⚠️ خطا در افزایش زمان با کیف پول' . "\n" . '' . "\n" . '',
         // extensions.user_from_id
         'extensions.user_from_id.45aa9ea684' => ['text' => '👤 کاربر: {from_id}' . "\n" . '', 'parameters' => ['from_id']],
         // extensions.channel_message
-        'extensions.channel_message.f9e3ed8281' => ['text' => '' . "\n" . '📦 تغییر پلن اشتراک توسط کاربر' . "\n" . '' . "\n" . '🎫 شناسه عددی: <code>{orderInfo_userid}</code>' . "\n" . '👤 اسم کاربر: {first_name}' . "\n" . '🔖 نام کاربری: @{username}' . "\n" . '🎈 نام کاربری اشتراک: <code>{orderInfo_remark}</code>' . "\n" . '🔄 پلن جدید: {planTitle}' . "\n" . 'آیدی پلن جدید: {newPlanId}' . "\n" . '', 'parameters' => ['orderInfo_userid', 'first_name', 'username', 'orderInfo_remark', 'planTitle', 'newPlanId']],
+        'extensions.channel_message.f9e3ed8281' => ['text' => '' . "\n" . '📦 تغییر پلن اشتراک توسط کاربر' . "\n" . '' . "\n" . '🎫 شناسه عددی: <code>{orderInfo_userid}</code>' . "\n" . '👤 اسم کاربر: {first_name}' . "\n" . '🔖 نام کاربری: @{username}' . "\n" . '🔄 نام کاربری اشتراک: <code>{orderInfo_remark}</code>' . "\n" . '🔄 پلن جدید: {planTitle}' . "\n" . 'آیدی پلن جدید: {newPlanId}' . "\n" . '', 'parameters' => ['orderInfo_userid', 'first_name', 'username', 'orderInfo_remark', 'planTitle', 'newPlanId']],
         // extensions.err
         'extensions.err.322385c9dd' => '⚠️ خطا در تایید افزایش حجم (کارت‌به‌کارت)' . "\n" . '' . "\n" . '',
         // extensions.msg
-        'extensions.msg.0e12e9ce3d' => ['text' => '' . "\n" . '🔋 افزایش حجم با (کیف پول)' . "\n" . '' . "\n" . '🎫 شناسه عددی: {from_id}' . "\n" . '👤 اسم کاربر: {first_name}' . "\n" . '🔖 نام کاربری: @{username}' . "\n" . '🎈 نام کاربری اشتراک: {remark}' . "\n" . '📦 حجم افزایش: {volume} گیگ' . "\n" . '💰 قیمت: {price} تومان' . "\n" . '', 'parameters' => ['from_id', 'first_name', 'username', 'remark', 'volume', 'price']],
+        'extensions.msg.0e12e9ce3d' => ['text' => '' . "\n" . '🔋 افزایش حجم با (کیف پول)' . "\n" . '' . "\n" . '🎫 شناسه عددی: {from_id}' . "\n" . '👤 اسم کاربر: {first_name}' . "\n" . '🔖 نام کاربری: @{username}' . "\n" . '🔄 نام کاربری اشتراک: {remark}' . "\n" . '📦 حجم افزایش: {volume} گیگ' . "\n" . '💰 قیمت: {price} تومان' . "\n" . '', 'parameters' => ['from_id', 'first_name', 'username', 'remark', 'volume', 'price']],
         // extensions.admin_err
         'extensions.admin_err.128069a4b4' => '⚠️ خطا در افزایش حجم با کیف پول' . "\n" . '' . "\n" . '',
         // renewal_checkout.alert
@@ -797,7 +797,7 @@ return [
         'discount_administration.add_discount_code.message.ed39e0ee1b' => '🔘 لطفا فقط عدد به تومان وارد کنید یا 0 برای بدون سقف وارد کنید.',
         'discount_administration.add_discount_code.message.f12309f24f' => ['text' => '✅ کد تخفیف جدید (<code>{hashId}</code>) با موفقیت ساخته شد.', 'parameters' => ['hashId']],
         'discount_administration.add_discount_code.button.689da8336a' => '✅ بله، حذف شود',
-        'discount_administration.add_discount_code.button.a766691671' => '🔙 خیر، بازگشت',
+        'discount_administration.add_discount_code.button.a766691671' => '↪️ بازگشت',
         'discount_administration.add_discount_code.message.e8830dbcad' => '⚠️ آیا از حذف این کد تخفیف مطمئن هستید؟',
         'discount_administration.add_discount_code.alert.f007c663c6' => '✅ کد تخفیف مورد نظر با موفقیت حذف شد.',
         'discount_administration.add_discount_code.alert.fa58f63a4f' => '⚠️ کد تخفیف یافت نشد.',
@@ -830,7 +830,7 @@ return [
         'discount_administration.add_discount_code.button.c74b84ea09' => '💰 حداقل مبلغ',
         'discount_administration.add_discount_code.button.39009afb83' => '⚠️ سقف تخفیف',
         'discount_administration.add_discount_code.button.e6eabe4b9d' => '🗑 حذف کاربر از استفاده کنندگان',
-        'discount_administration.add_discount_code.button.6b16e7f231' => '🔙 بازگشت به لیست',
+        'discount_administration.add_discount_code.button.6b16e7f231' => '↪️ بازگشت به لیست',
         'discount_administration.add_discount_code.message.d2ff3672fa' => '🔘 مقدار تخفیف جدید را وارد کنید.' . "\n" . '',
         'discount_administration.add_discount_code.message.04d142737e' => '✅ مقدار تخفیف با موفقیت بروزرسانی شد.',
         'discount_administration.add_discount_code.message.a12d0d9f77' => '🔘 مدت زمان جدید این تخفیف را به روز وارد کنید.' . "\n" . '',
@@ -1104,7 +1104,7 @@ return [
         'manual_receipts.text.e06224688d' => 'فقط پرونده‌های دارای شواهد وجه یا نتیجهٔ مالی نامطمئن نمایش داده می‌شوند.' . "\n" . '',
         'manual_receipts.text.1993d8c086' => 'هر صفحه حداکثر 12 پرونده دارد؛ برای دیدن جزئیات یکی را انتخاب کنید.',
         // manual_receipts.button
-        'manual_receipts.button.407c2a3b62' => '🔙 بازگشت به فهرست جدیدتر',
+        'manual_receipts.button.407c2a3b62' => '↪️ بازگشت به فهرست جدیدتر',
         'manual_receipts.button.0fbb8a589a' => '📋 بررسی همهٔ روش‌ها',
         'manual_receipts.button.02aaa18210' => '🧩 عملیات ساخت نیازمند تطبیق',
         // manual_receipts.alert
@@ -1168,7 +1168,7 @@ return [
         'manual_receipts.text.a624a1e41f' => ' از ',
         // manual_receipts.button
         'manual_receipts.button.af4b7d7113' => '➡️ شناسه‌های بعدی',
-        'manual_receipts.button.014e4e047f' => '🔙 بازگشت به فهرست',
+        'manual_receipts.button.014e4e047f' => '↪️ بازگشت به فهرست',
         // manual_receipts.alert
         'manual_receipts.alert.671dc77b41' => 'جزئیات محافظت‌شدهٔ پرونده بارگذاری شد.',
         'manual_receipts.alert.55c0496662' => 'اطلاعات فعلاً قابل بازیابی نیست؛ بعداً دوباره تلاش کنید.',
@@ -1246,7 +1246,7 @@ return [
         'gateway_return.perform_payment_effect.msg.05d5688689' => ['text' => '' . "\n" . '📦 افزایش حجم اشتراک (درگاه {gateType})' . "\n" . '' . "\n" . '🎫 آیدی کاربر: {user_id}' . "\n" . '👤 نام کاربر: {first_name}' . "\n" . '🔖 نام کاربری تلگرام: @{username}' . "\n" . '💰 مبلغ پرداختی: {amount} تومان' . "\n" . '🎈 نام اشتراک: {remark}' . "\n" . 'حجم اضافه شده: {plusVolume} گیگ' . "\n" . '', 'parameters' => ['gateType', 'user_id', 'first_name', 'username', 'amount', 'remark', 'plusVolume']],
         'gateway_return.perform_payment_effect.text.c7546a7b9b' => 'میخواست حجم اشتراکشو افزایش بده',
         'gateway_return.perform_payment_effect.admin_text.b660a2780f' => ['text' => '✅ تمدید اشتراک (درگاه {gateType})' . "\n" . '' . "\n" . '', 'parameters' => ['gateType']],
-        'gateway_return.perform_payment_effect.user_i_d_user_id.8fd1cfbf5d' => ['text' => 'شناسه عددی: {user_id}' . "\n" . '', 'parameters' => ['user_id']],
+        'gateway_return.perform_payment_effect.user_i_d_user_id.8fd1cfbf5d' => ['text' => '🎫 شناسه عددی: {user_id}' . "\n" . '', 'parameters' => ['user_id']],
         'gateway_return.perform_payment_effect.remark_remark.806b185dfd' => ['text' => 'نام اشتراک: {remark}' . "\n" . '', 'parameters' => ['remark']],
         'gateway_return.perform_payment_effect.plan_i_d_fid.1471242965' => ['text' => 'شناسه پلن: {fid}' . "\n" . '', 'parameters' => ['fid']],
         'gateway_return.perform_payment_effect.amount.ad7e6bbc81' => '💰 مبلغ: ',
@@ -1264,7 +1264,7 @@ return [
     // ── پشتیبانی و تیکت ──
     'support' => [
         'customer_conversation.user_all_tickets.message.2baf15e3c0' => '☑️ تیکت توسط کاربر بسته شد.',
-        'customer_conversation.user_all_tickets.txt.54b5fecc08' => ['text' => 'پیام جدید:' . "\n" . '[{ticketTitle}] <i>{ticketCat}</i>' . "\n" . '' . "\n" . 'کاربر: <a href=\'tg://user?id={from_id}\'>{first_name}</a>' . "\n" . 'نام کاربری: {username}' . "\n" . 'شناسه عددی: {from_id_2}' . "\n" . '', 'parameters' => ['ticketTitle', 'ticketCat', 'from_id', 'first_name', 'username', 'from_id_2']],
+        'customer_conversation.user_all_tickets.txt.54b5fecc08' => ['text' => 'پیام جدید:' . "\n" . '[{ticketTitle}] <i>{ticketCat}</i>' . "\n" . '' . "\n" . 'کاربر: <a href=\'tg://user?id={from_id}\'>{first_name}</a>' . "\n" . 'نام کاربری: {username}' . "\n" . '🎫 شناسه عددی: {from_id_2}' . "\n" . '', 'parameters' => ['ticketTitle', 'ticketCat', 'from_id', 'first_name', 'username', 'from_id_2']],
         'customer_conversation.user_all_tickets.text.a79a2fa69e' => ['text' => '' . "\n" . 'متن پیام: {text}', 'parameters' => ['text']],
         'customer_conversation.user_all_tickets.text.46d8580795' => ['text' => '' . "\n" . 'متن پیام: {caption}', 'parameters' => ['caption']],
         'customer_conversation.user_all_tickets.text.497743bb13' => ['text' => '📨 رأی به تیکت ' . "\n" . '' . "\n" . '🎫 شناسه عددی: {from_id}' . "\n" . '👤 نام کاربر: {first_name}' . "\n" . '🔖 نام کاربری: @{username}' . "\n" . '〽️ عنوان: {title}' . "\n" . '⚜️ دسته بندی: {category}' . "\n" . '❤️ رای: {rate}' . "\n" . '', 'parameters' => ['from_id', 'first_name', 'username', 'title', 'category', 'rate']],
@@ -1296,7 +1296,7 @@ return [
         // create_ticket.button
         'create_ticket.button.3b90dccc67' => '💬 پاسخ',
         // create_ticket.txt
-        'create_ticket.txt.e819afcdf4' => ['text' => 'تیکت جدید:' . "\n" . '' . "\n" . 'کاربر: <a href=\'tg://user?id={from_id}\'>{first_name}</a>' . "\n" . 'نام کاربری: @{username}' . "\n" . 'شناسه عددی: {from_id_2}' . "\n" . '' . "\n" . 'موضوع تیکت: {ticketCat}' . "\n" . '' . "\n" . 'عنوان تیکت: ', 'parameters' => ['from_id', 'first_name', 'username', 'from_id_2', 'ticketCat']],
+        'create_ticket.txt.e819afcdf4' => ['text' => 'تیکت جدید:' . "\n" . '' . "\n" . 'کاربر: <a href=\'tg://user?id={from_id}\'>{first_name}</a>' . "\n" . 'نام کاربری: @{username}' . "\n" . '🎫 شناسه عددی: {from_id_2}' . "\n" . '' . "\n" . 'موضوع تیکت: {ticketCat}' . "\n" . '' . "\n" . 'عنوان تیکت: ', 'parameters' => ['from_id', 'first_name', 'username', 'from_id_2', 'ticketCat']],
         // create_ticket.text
         'create_ticket.text.fe45cc8381' => ['text' => '' . "\n" . 'متن تیکت: {text}', 'parameters' => ['text']],
         'create_ticket.text.4479736037' => ['text' => '' . "\n" . 'متن تیکت: {caption}', 'parameters' => ['caption']],
@@ -1361,7 +1361,7 @@ return [
         'roles.level.operator' => ['text' => 'اپراتور', 'parameters' => []],
         'roles.level.support' => ['text' => 'پشتیبان', 'parameters' => []],
         'roles.level.invalid' => ['text' => 'سطح نامشخص؛ انتخاب کنید', 'parameters' => []],
-        'roles.owner_row' => ['text' => 'مالک ربات · شناسه عددی: {userId}', 'parameters' => ['userId']],
+        'roles.owner_row' => ['text' => 'مالک ربات · 🎫 شناسه عددی: {userId}', 'parameters' => ['userId']],
         'roles.choose_level' => ['text' => 'سطح دسترسی مدیر با شناسه عددی <code>{userId}</code> را انتخاب کنید.' . "\n" . '' . "\n" . 'مدیر: همهٔ بخش‌ها به‌جز مدیریت ادمین‌ها' . "\n" . 'اپراتور: امور مشتریان و عملیات روزانه' . "\n" . 'پشتیبان: اطلاعات کاربر، مسدودسازی، ویرایش سفارش و بررسی رسید پرداخت (تأیید یا رد)', 'parameters' => ['userId']],
         'roles.saved' => ['text' => 'سطح دسترسی ذخیره شد.', 'parameters' => []],
         'roles.target_prompt' => ['text' => 'شناسه عددی کاربری را بفرستید که قبلاً ربات را شروع کرده است. مالک از این بخش قابل تغییر نیست.', 'parameters' => []],
@@ -1424,7 +1424,7 @@ return [
         'management.settings_saved' => "✅ تنظیمات سرور ذخیره شد.",
 
         'management.intro' => "📝 اطلاعات را مرحله‌به‌مرحله وارد کنید. تا تأیید نهایی چیزی ثبت نمی‌شود؛ هر زمان می‌توانید برگردید یا لغو کنید.",
-        'management.back' => "🔙 مرحله قبل",
+        'management.back' => "↪️ بازگشت به مرحله قبل",
         'management.cancel' => "❌ لغو عملیات",
         'management.canceled' => "✅ عملیات لغو شد.",
         'management.server_list' => "🌐 مدیریت سرورها",
@@ -1484,7 +1484,7 @@ return [
         'management.groups' => "🗂 گروه‌های دسترسی",
         'management.server_flag_label' => "🏳️ نشانه سرور",
         'management.server_delete' => "🗑 حذف سرور",
-        'management.server_back' => "🔙 فهرست سرورها",
+        'management.server_back' => "↪️ بازگشت به فهرست سرورها",
         'management.capacity' => ['text'=>"👥 ظرفیت: {value}",'parameters'=>["value"]],
         'management.remark' => ['text'=>"🏷 پیشوند: {value}",'parameters'=>["value"]],
         'management.plan_days_label' => ['text'=>"📅 مدت: {value} روز",'parameters'=>["value"]],
@@ -1535,7 +1535,7 @@ return [
         // config.get_marzban_panel_group_keys
         'config.get_marzban_panel_group_keys.button.62b58eccfe' => '🏷 ',
         'config.get_marzban_panel_group_keys.button.9bdffdaedc' => '⭕ بدون گروه (انتقال غیرفعال)',
-        'config.get_marzban_panel_group_keys.text.b35a2352f5' => '🔙 بازگشت',
+        'config.get_marzban_panel_group_keys.text.b35a2352f5' => '↪️ بازگشت',
         // config.get_marzban_panel_groups_management_keys
         'config.get_marzban_panel_groups_management_keys.button.eb25cfbc94' => '🗑 حذف گروه بدون سرور',
         'config.get_marzban_panel_groups_management_keys.button.d376787114' => 'هنوز گروهی تعریف نشده',
@@ -1578,7 +1578,7 @@ return [
         'config.payment_policy_fields.text.7b27bba920' => 'رسید مشابه در حال بررسی (دقیقه)',
         'config.payment_policy_fields.text.5fea8ef738' => 'تکرار رسید ردشده (دقیقه)',
         // config.payment_policy_keyboard
-        'config.payment_policy_keyboard.button.264663a645' => '🔙 بازگشت به درگاه‌ها',
+        'config.payment_policy_keyboard.button.264663a645' => '↪️ بازگشت به درگاه‌ها',
         // config.gateway_audience_keyboard
         'config.gateway_audience_keyboard.text.256b1382f5' => '⚠️ سیاست نامعتبر (مسدود)',
         'config.gateway_audience_keyboard.text.3b2e8119b6' => ' — ',
@@ -1661,7 +1661,7 @@ return [
         'config.get_bot_report_keys.button.6d1fec5b8b' => '👥 آمار کاربران',
         'config.get_bot_report_keys.button.2ef1b34354' => '📦 آمار اشتراک‌ها',
         'config.get_bot_report_keys.button.adb2cb111d' => '💰 آمار فروش',
-        'config.get_bot_report_keys.button.255cc89ba7' => '🔙 بازگشت به مدیریت',
+        'config.get_bot_report_keys.button.255cc89ba7' => '↪️ بازگشت به مدیریت',
         'config.get_bot_report_keys.text.e9de3103c2' => '📈 کاربران با بیشترین موجودی',
         'config.get_bot_report_keys.text.cc383ee7c0' => '📦 کاربران با بیشترین تعداد اشتراک',
         'config.get_bot_report_keys.text.178803da84' => '🛍 کاربران با بیشترین حجم خرید',
@@ -1686,7 +1686,7 @@ return [
         'config.get_bot_report_keys.button.e484192c7b' => '📦 کاربران با بیشترین تعداد اشتراک (50 کاربر)',
         'config.get_bot_report_keys.button.7893f23dd9' => '🛍 کاربران با بیشترین حجم خرید (50 کاربر)',
         'config.get_bot_report_keys.button.493393af17' => '🧑‍💼 لیست کاربران همکار',
-        'config.get_bot_report_keys.button.c79b329841' => '🔙 بازگشت به آمار',
+        'config.get_bot_report_keys.button.c79b329841' => '↪️ بازگشت به آمار',
         'config.get_bot_report_keys.text.696814adc4' => '🧮 تعداد اشتراک‌ها بر اساس پلن:' . "\n" . '' . "\n" . '',
         'config.get_bot_report_keys.text.b91a8cfa14' => 'ناشناس',
         'config.get_bot_report_keys.text.549ee88ce8' => ['text' => '📝 نام پلن: <b>{planName}</b>' . "\n" . '', 'parameters' => ['planName']],
@@ -1927,7 +1927,7 @@ return [
         'provider_admin.pg_server_admin_keys.button.c84bd01998' => '⚙️ گروه‌های دسترسی پیش‌فرض',
         'provider_admin.pg_server_admin_keys.button.3a95407812' => '⚙️ نمایش کانفیگ‌ها و لینک اشتراک',
         'provider_admin.pg_server_admin_keys.button.e2e7e28899' => '🔑 اتصال و کلید API',
-        'provider_admin.pg_server_admin_keys.button.b233883d0d' => '🔙 بازگشت',
+        'provider_admin.pg_server_admin_keys.button.b233883d0d' => '↪️ بازگشت',
         // provider_admin.handle_provider_admin
         'provider_admin.handle_provider_admin.alert.057ec5448c' => '⛔️ دسترسی لازم وجود ندارد.',
         'provider_admin.handle_provider_admin.message.b3a3ec95dd' => '✅ مصرف اشتراک پس از بررسی صفر شد.',
@@ -1965,7 +1965,7 @@ return [
         'api.incomplete_guidance' => "تنظیمات لازم کامل نیست. پیش از روشن‌کردن بررسی خودکار، موارد لازم را تکمیل کنید.",
         'api.read_unavailable' => "خواندن تنظیمات فعلاً ممکن نیست. صفحه را دوباره باز کنید.",
         'api.advanced' => "تنظیمات پیشرفته و فیلترهای اختیاری",
-        'api.back' => "بازگشت",
+        'api.back' => "↪️ بازگشت",
         'api.clear_hint' => "برای پاک‌کردن این مقدار <code>/clear</code> بفرستید؛ برای برگشت، لغو را بزنید.",
         'api.denied' => "این بخش برای شما در دسترس نیست.",
         'api.change_unconfirmed' => "تغییر ثبت نشد. تنظیمات لازم را کامل کنید و صفحه را دوباره باز کنید.",
@@ -2013,22 +2013,22 @@ return [
         'gateway_rule_admin.gateway_admin_method_flags.text.11735aabd3' => '، ',
         // gateway_rule_admin.gateway_admin_page
         'gateway_rule_admin.gateway_admin_page.button.36e4da5935' => '⛔️ تنظیمات پرداخت خواندنی نیست؛ هیچ قانون نامعتبر خودکار فعال نمی‌شود.',
-        'gateway_rule_admin.gateway_admin_page.button.b233883d0d' => '🔙 بازگشت',
-        'gateway_rule_admin.gateway_admin_page.button.b35a2352f5' => '🔙 بازگشت',
+        'gateway_rule_admin.gateway_admin_page.button.b233883d0d' => '↪️ بازگشت',
+        'gateway_rule_admin.gateway_admin_page.button.b35a2352f5' => '↪️ بازگشت',
         'gateway_rule_admin.gateway_admin_page.text.778e46431a' => '🔐 مدیریت دسترسی به روش‌های پرداخت' . "\n" . '',
         'gateway_rule_admin.gateway_admin_page.text.557fcc0258' => 'قوانین هر روش و هر دسته مستقل‌اند. خاموش‌بودن درگاه همیشه مانع پرداخت است.' . "\n" . '',
         'gateway_rule_admin.gateway_admin_page.text.5c034d60ca' => ' قانون',
         'gateway_rule_admin.gateway_admin_page.text.17dc013fc7' => 'سیاست قبلی',
         'gateway_rule_admin.gateway_admin_page.text.3b2e8119b6' => ' — ',
         'gateway_rule_admin.gateway_admin_page.button.1ca8c08333' => '⛔️ انتخاب ناشناخته است.',
-        'gateway_rule_admin.gateway_admin_page.button.4b1d33d728' => '🔙 روش‌های پرداخت',
+        'gateway_rule_admin.gateway_admin_page.button.4b1d33d728' => '↪️ بازگشت به روش‌های پرداخت',
         'gateway_rule_admin.gateway_admin_page.method_label.b0c241d56f' => ['text' => '💳 {methodLabel}' . "\n" . '', 'parameters' => ['methodLabel']],
         'gateway_rule_admin.gateway_admin_page.text.cffb41a268' => 'حالت پیشین: ',
         'gateway_rule_admin.gateway_admin_page.text.a3544b7c99' => 'نامعتبر',
         'gateway_rule_admin.gateway_admin_page.text.82e58a9a6a' => 'شرط‌های هر قانون با AND و قوانین فعال با OR ترکیب می‌شوند.' . "\n" . '',
         'gateway_rule_admin.gateway_admin_page.text.50c8d65df6' => 'افزودن',
         'gateway_rule_admin.gateway_admin_page.text.4e67bd8e34' => 'غیرفعال',
-        'gateway_rule_admin.gateway_admin_page.button.557627db84' => '🔙 دسته‌ها',
+        'gateway_rule_admin.gateway_admin_page.button.557627db84' => '↪️ بازگشت به دسته‌ها',
         'gateway_rule_admin.gateway_admin_page.button.78eea75cd9' => '⛔️ تأیید حذف منقضی شده است.',
         'gateway_rule_admin.gateway_admin_page.button.50abbe7e6f' => ['text' => '⚠️ قانون {categoryLabel} از {methodLabel} حذف شود؟' . "\n" . '', 'parameters' => ['categoryLabel', 'methodLabel']],
         'gateway_rule_admin.gateway_admin_page.text.63f13c4d9f' => 'اگر آخرین قانون باشد، روش تا تعریف قانون جدید مسدود می‌ماند.',
@@ -2050,7 +2050,7 @@ return [
         'gateway_rule_admin.gateway_admin_page.button.38748be977' => '✏️ ویرایش روز',
         'gateway_rule_admin.gateway_admin_page.button.74c39e45b8' => '🔁 تغییر جهت (قدیمی‌تر / اخیر)',
         'gateway_rule_admin.gateway_admin_page.button.dd5c4f32ce' => '⛔️ غیرفعال‌سازی شرط (0/0)',
-        'gateway_rule_admin.gateway_admin_page.button.2fe0521c21' => '🔙 قانون',
+        'gateway_rule_admin.gateway_admin_page.button.2fe0521c21' => '↪️ بازگشت به قانون',
         'gateway_rule_admin.gateway_admin_page.method_label_category_label.f136e472ba' => ['text' => '📋 {methodLabel} / {categoryLabel}' . "\n" . '', 'parameters' => ['methodLabel', 'categoryLabel']],
         'gateway_rule_admin.gateway_admin_page.text.c5d6fc3ebd' => 'وضعیت قانون: ',
         'gateway_rule_admin.gateway_admin_page.text.633cdaf049' => '' . "\n" . 'حداقل سابقهٔ عضویت: ',
@@ -2063,6 +2063,42 @@ return [
         'gateway_rule_admin.gateway_admin_page.text.fe79dd4aa2' => '⏸ غیرفعال‌کردن قانون',
         'gateway_rule_admin.gateway_admin_page.text.9dda803abf' => '▶️ فعال‌کردن قانون',
         'gateway_rule_admin.gateway_admin_page.button.661846f2c0' => '🗑 حذف قانون',
+        // Gateway policy redesign: human-readable active filters and compact quick actions.
+        'gateway_rule_admin.summary.no_condition' => 'بدون محدودیت',
+        'gateway_rule_admin.summary.all_history' => ['text'=>'حداقل {count} تراکنش در تمام سابقه', 'parameters'=>['count']],
+        'gateway_rule_admin.summary.before_days' => ['text'=>'حداقل {count} تراکنش پیش از {days} روز گذشته', 'parameters'=>['count','days']],
+        'gateway_rule_admin.summary.recent_days' => ['text'=>'حداقل {count} تراکنش در {days} روز اخیر', 'parameters'=>['count','days']],
+        'gateway_rule_admin.summary.category_intro' => "👥 دستهٔ کاربر را انتخاب کنید. هر دسته قانون جداگانه دارد؛ برای دسترسی کافی است یکی از قوانین فعال برقرار باشد.
+💡 مثال: می‌توانید روش پرداخت را برای خریداران با حداقل 2 خرید در 30 روز اخیر فعال کنید.
+",
+        'gateway_rule_admin.summary.metric_heading' => ['text'=>"🔐 {method} | {category}
+📊 تنظیم شرط: {metric}
+", 'parameters'=>['method','category','metric']],
+        'gateway_rule_admin.summary.current_condition' => ['text'=>"✅ تنظیم فعلی: {condition}
+", 'parameters'=>['condition']],
+        'gateway_rule_admin.summary.metric_explanation' => "💡 دکمه‌های آماده را انتخاب کنید یا تعداد و بازه را جداگانه تغییر دهید. اگر تعداد و بازه هر دو 0 باشند شرط غیرفعال است؛ تعداد 0 همراه با بازهٔ مثبت یعنی حداقل 1 تراکنش در آن بازه. فقط پرداخت‌های موفق شمرده می‌شوند؛ زمان بر اساس ثبت درخواست است.
+",
+        'gateway_rule_admin.summary.direction_button' => ['text'=>'🕒 جهت بازه: {direction}', 'parameters'=>['direction']],
+        'gateway_rule_admin.summary.rule_heading' => ['text'=>"🔐 {method} | {category}
+", 'parameters'=>['method','category']],
+        'gateway_rule_admin.summary.enabled' => ['text'=>"⚙️ وضعیت قانون: {enabled}
+", 'parameters'=>['enabled']],
+        'gateway_rule_admin.summary.member_age' => ['text'=>"📅 حداقل سن عضویت (روز): {days}
+", 'parameters'=>['days']],
+        'gateway_rule_admin.summary.active_conditions' => "📊 شرط‌های فعال:
+",
+        'gateway_rule_admin.summary.no_transaction_conditions' => "🔓 محدودیت تراکنش ندارید.
+",
+        'gateway_rule_admin.summary.rule_help' => "💡 فقط شرط‌های فعال بررسی می‌شوند و همهٔ آن‌ها باید برقرار باشند. برای تغییر هر شرط از دکمه‌های زیر استفاده کنید. بعد از ذخیره در همین بخش می‌مانید.
+",
+        'gateway_rule_admin.summary.age_button' => '📅 تغییر حداقل سن عضویت',
+        'gateway_rule_admin.summary.edit_suffix' => ' | ویرایش',
+        'gateway_rule_admin.summary.back_rule' => '↪️ بازگشت به قانون',
+        'gateway_rule_admin.preset.all' => '1 تراکنش | تمام سابقه',
+        'gateway_rule_admin.preset.w7' => '1 مورد | 7 روز اخیر',
+        'gateway_rule_admin.preset.w30' => '1 مورد | 30 روز اخیر',
+        'gateway_rule_admin.preset.x30' => '2 مورد | 30 روز اخیر',
+        'gateway_rule_admin.preset.off' => '⛔️ حذف این شرط',
         // gateway_rules.gateway_rule_metrics
         'gateway_rules.gateway_rule_metrics.text.7021d6f38e' => 'خرید اولیه',
         'gateway_rules.gateway_rule_metrics.text.3225fab3cd' => 'تمدید',
@@ -2097,7 +2133,7 @@ return [
         'routes.message2_all.button.0bb9320093' => '📚 تاریخچه ارسال‌ها',
         'routes.message2_all.message.3c4afc11a6' => '📍لطفا انتخاب کنید:',
         'routes.message2_all.button.7dba3a00f7' => '📨 ارسال پیام جدید',
-        'routes.message2_all.button.b233883d0d' => '🔙 بازگشت',
+        'routes.message2_all.button.b233883d0d' => '↪️ بازگشت',
         // routes.broadcast_start
         'routes.broadcast_start.message.76bb0d02d0' => '💬 پیام را به کدام گروه می‌خواهید ارسال کنید؟',
         'routes.broadcast_start.button.fac6686c54' => '👥 همه کاربران',
@@ -2179,7 +2215,7 @@ return [
         'routes.pm_noop.message.48a8e21213' => '⚠️ ویرایش برای پیام‌های فورواردی فعال نیست.',
         'routes.pm_noop.message.656de1721c' => '✏️ متن/کپشن جدید را ارسال کنید.',
         'routes.pm_noop.message.d433f90c40' => '❌ این ارسال وجود ندارد یا هنوز کامل نشده است.',
-        'routes.pm_noop.button.b35a2352f5' => '🔙 بازگشت',
+        'routes.pm_noop.button.b35a2352f5' => '↪️ بازگشت',
         'routes.pm_noop.message.eeefb6dde3' => '⚠️ این ارسال قبلاً برای همه حذف شده است و امکان پین/آنپین ندارد.',
         'routes.pm_noop.message.30bfbbe059' => '⚠️ این عملیات از قبل در صف/حال اجراست.',
         'routes.pm_noop.message.55c6d689fd' => '⚠️ خطا در ساخت عملیات، دوباره تلاش کنید.',
@@ -2288,7 +2324,7 @@ return [
     'manual_receipt_final' => [
         'edit_unverified' => '⚠️ نتیجهٔ تغییر قبلی سرویس قطعی نیست یا اطلاعات تغییر کرده است؛ درخواست دوباره‌ای به پنل ارسال نمی‌شود.',
         'checking' => '⏳ در حال بررسی ادامهٔ پرداخت...',
-        'back' => '🏠 بازگشت به مدیریت',
+        'back' => '↪️ بازگشت به مدیریت',
         'result' => ['text' => '📋 نتیجهٔ ادامهٔ پرداخت: {result}', 'parameters' => ['result']],
         'status_completed' => 'سفارش تأیید و پیام‌های ثبت‌شده تحویل شدند.',
         'status_delivery_unconfirmed' => 'سفارش ثبت شد، اما تأیید دریافت همهٔ پیام‌های مشتری موجود نیست؛ ارسال نامطمئن تکرار نمی‌شود.',

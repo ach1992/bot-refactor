@@ -301,6 +301,170 @@ function achbotPayUxUnclaimedDraftUsable(mysqli $db, array $pay,
 }
 
 /**
+ * Decode ONLY existing authenticated Telegram payment-selection frames.
+ * Public hosted-checkout URLs never pass here, and a hash alone is not
+ * authorization. A manual-crypto menu is a genuine selection step too.
+ *
+ * @return array{hash:string,kind:string,method:string,network_tag?:string}|null
+ */
+function achbotPayUxLegacyTelegramChoice(string $data): ?array {
+    if (strlen($data)>64) return null;
+    if (preg_match('/\Apay(Buy|Custom|Renew|IncreaseDay|Increase)With(Wallet|CartToCart|GiftCard)([A-Za-z0-9_-]{1,50})\z/D',
+                   $data,$m)===1) {
+        $method=match($m[2]){
+            'Wallet'=>'wallet','CartToCart'=>'bank_transfer',
+            'GiftCard'=>'gift_card',default=>null
+        };
+        return $method===null?null:['hash'=>$m[3],'kind'=>$m[1],
+                                    'method'=>$method];
+    }
+    // Old direct USDT buttons are normalized to mcm_ by ManualCrypto.php
+    // *after* PrePayment.php. Authenticate and reopen before that rewrite,
+    // but never choose a chain or issue a crypto claim here.
+    if (preg_match('/\Apay(Buy|Custom|Renew|IncreaseDay|Increase)WithManualUsdt([A-Za-z0-9_-]{1,50})\z/D',
+                   $data,$m)===1)
+        return ['hash'=>$m[2],'kind'=>$m[1],'method'=>'crypto'];
+    if (preg_match('/\Amcm_([A-Za-z0-9_-]{1,50})\z/D',$data,$m)===1)
+        return ['hash'=>$m[1],'kind'=>'crypto_menu','method'=>'crypto'];
+    if (preg_match('/\Amc_([bcet])_([A-Za-z0-9_-]{1,50})\z/D',$data,$m)===1)
+        return ['hash'=>$m[2],'kind'=>'crypto_pick','network_tag'=>$m[1],
+                'method'=>$m[1]==='t'?'manual_trx':'manual_usdt'];
+    return null;
+}
+
+/** A family mismatch must never allow rearming via a forged other-route key. */
+function achbotPayUxLegacyChoiceMatches(array $pay, string $kind): bool {
+    $type=(string)($pay['type']??'');
+    return match($kind) {
+        'Buy' => $type==='RENEW_SCONFIG' ||
+            ($type==='BUY_SUB' && (int)($pay['day']??0)===0 &&
+             (int)($pay['volume']??0)===0),
+        'Custom'=>$type==='BUY_SUB' &&
+            ((int)($pay['day']??0)>0 || (int)($pay['volume']??0)>0),
+        'Renew'=>$type==='RENEW_ACCOUNT',
+        'IncreaseDay'=>preg_match('/\AINCREASE_DAY_[0-9]+_[0-9]+\z/D',$type)===1,
+        'Increase'=>preg_match('/\AINCREASE_VOLUME_[0-9]+_[0-9]+\z/D',$type)===1,
+        'crypto_menu','crypto_pick'=>in_array($type,
+            ['BUY_SUB','RENEW_SCONFIG','RENEW_ACCOUNT'],true) ||
+            preg_match('/\AINCREASE_(?:DAY|VOLUME)_[0-9]+_[0-9]+\z/D',$type)===1,
+        default=>false,
+    };
+}
+
+/**
+ * Only an owner-authenticated Telegram callback may reopen an older quote.
+ * A pending/claimed/terminal invoice is never changed by this bridge; the
+ * existing downstream issuer is responsible for its own safety checks.
+ */
+function achbotPayUxReopenOnTelegramChoice(mysqli $db, string $data, int $actor): ?bool {
+    $choice=achbotPayUxLegacyTelegramChoice($data);
+    if ($choice===null || $actor<=0) return null;
+    try {
+        $stmt=$db->prepare('SELECT * FROM pays WHERE hash_id=? LIMIT 2');
+        $stmt->bind_param('s',$choice['hash']);
+        if (!$stmt->execute()) return false;
+        $rows=$stmt->get_result()->fetch_all(MYSQLI_ASSOC);$stmt->close();
+        if (count($rows)!==1) return null; // normal issuer handles absence
+        $pay=$rows[0];
+        if ((string)$pay['state']!=='low_wallet') return null;
+        if ((int)$pay['user_id']!==$actor ||
+            !achbotPayUxLegacyChoiceMatches($pay,$choice['kind'])) return false;
+        $method=$choice['method'];
+        if ($method==='wallet') {
+            if (($GLOBALS['botState']['walletState']??'off')!=='on' ||
+                !achbotPayUxAudienceAllowed($db,'wallet',$actor)) return false;
+        } elseif ($method==='crypto' ||
+                  in_array($method,['manual_usdt','manual_trx'],true)) {
+            if (!function_exists('achbotManualCryptoEnabled') ||
+                !achbotManualCryptoEnabled($actor)) return false;
+            if ($method==='crypto') {
+                $options=achbotManualCryptoOptions($actor);
+                $available=false;
+                foreach ($options as $candidate) {
+                    if (achbotPayUxAudienceAllowed(
+                        $db,(string)$candidate['provider'],$actor)) $available=true;
+                }
+                if (!$available) return false;
+            } else {
+                $selected=achbotManualCryptoOptions($actor)[$choice['network_tag']]??null;
+                if (!is_array($selected) ||
+                    (string)$selected['provider']!==$method ||
+                    !achbotPayUxAudienceAllowed($db,$method,$actor)) return false;
+            }
+        } elseif (!function_exists('achbotManualEnabled') ||
+                  !achbotManualEnabled($method) ||
+                  !achbotPayUxAudienceAllowed($db,$method,$actor)) return false;
+        return achbotPayUxReopenLowWalletDraft($db,(int)$pay['id'],$actor);
+    } catch (Throwable $error) {
+        error_log('achbot_wallet_legacy_choice_deferred');
+        return false;
+    }
+}
+
+/**
+ * Historic insufficient-wallet choices left local invoices stuck in low_wallet.
+ * Reopen only a still-current, never-issued draft. Owner -> pays -> attempt
+ * locking prevents rearming paid/provider-claimed or superseded invoices.
+ */
+function achbotPayUxReopenLowWalletDraft(mysqli $db, int $payId, int $actor): bool {
+    if ($payId<=0 || $actor<=0 ||
+        !achbotPayUxTable($db,'payment_attempts') ||
+        !achbotPayUxTable($db,'payment_transactions') ||
+        !achbotPayUxTable($db,'service_effects')) return false;
+    $started=false;
+    try {
+        if (!$db->begin_transaction()) return false;
+        $started=true;
+        achbotPayUxLockDraftOwner($db,$actor);
+        $stmt=$db->prepare('SELECT * FROM pays WHERE id=? FOR UPDATE');
+        $stmt->bind_param('i',$payId);
+        if (!$stmt->execute()) throw new RuntimeException('wallet_reopen_pay_read');
+        $pay=$stmt->get_result()->fetch_assoc();$stmt->close();
+        if (!$pay || (int)$pay['user_id']!==$actor ||
+            (string)$pay['state']!=='low_wallet' ||
+            !achbotPayUxUnclaimedDraftUsable($db,$pay,true)) {
+            $db->rollback();return false;
+        }
+        // Match the original order-specific Native-journal admission for
+        // renewal and add-ons. An in-flight plan/server change is not a
+        // reusable invoice, even when the payment ledger is empty.
+        $type=(string)$pay['type'];
+        if ($type==='RENEW_ACCOUNT' ||
+            preg_match('/^INCREASE_(?:DAY|VOLUME)_([1-9][0-9]*)_[1-9][0-9]*$/D',$type,$nativeMatch)===1) {
+            $orderId=$type==='RENEW_ACCOUNT'
+                ? (int)($pay['order_id']??0) : (int)$nativeMatch[1];
+            require_once __DIR__.'/../Purchase/Core.php';
+            if (!achbotServicePaymentJournalClear($db,$orderId,true)) {
+                $db->rollback();return false;
+            }
+        }
+        // Child provider evidence is FK-bound to its attempt; requiring the
+        // 003 pair above and denying ANY attempt also denies its transactions.
+        // A local Native/financial effect cannot be silently reissued.
+        foreach (['payment_attempts','service_effects'] as $table) {
+            $stmt=$db->prepare('SELECT id FROM '.$table.' WHERE pay_row_id=? LIMIT 1 FOR UPDATE');
+            $stmt->bind_param('i',$payId);
+            if (!$stmt->execute()) throw new RuntimeException('wallet_reopen_claim_read');
+            $claimed=$stmt->get_result()->fetch_assoc();$stmt->close();
+            if ($claimed) {$db->rollback();return false;}
+        }
+        $stmt=$db->prepare("UPDATE pays SET state='pending'
+            WHERE id=? AND user_id=? AND state='low_wallet'
+              AND (payid IS NULL OR payid='')");
+        $stmt->bind_param('ii',$payId,$actor);
+        if (!$stmt->execute() || $stmt->affected_rows!==1)
+            throw new RuntimeException('wallet_reopen_state_race');
+        $stmt->close();
+        if (!$db->commit()) throw new RuntimeException('wallet_reopen_commit_unknown');
+        return true;
+    } catch (Throwable $error) {
+        if ($started) {try{$db->rollback();}catch(Throwable $ignored){}}
+        error_log('achbot_wallet_reopen_deferred pay_id='.$payId);
+        return false;
+    }
+}
+
+/**
  * Under pays FOR UPDATE followed by the exact 003 attempt FOR UPDATE, mark a
  * never-started manual quote expired only after its configured idle window.
  * The pinned destination remains untouched; real out-of-band funds, if any,

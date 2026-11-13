@@ -655,12 +655,8 @@ if(is_string($data) && strlen($data) <= 64 && preg_match('/\ApayRenewWithWallet(
         if ($userwallet < $price) {
             $needamount = $price - $userwallet;
 
-            $stmt = $connection->prepare("UPDATE `pays` SET `state` = 'low_wallet' WHERE `hash_id` = ?");
-            $stmt->bind_param("s", $hash_id);
-            $stmt->execute();
-            $stmt->close();
-
-            $connection->commit(); // همین تغییر state ثبت شود
+            // A declined wallet debit must leave the quote selectable.
+            $connection->rollback();
             alert(\achbotMessage('renewal.extensions.alert.39c72d8044') . number_format($userwallet) . \achbotMessage('renewal.extensions.alert.71a2507661') . number_format($needamount) . \achbotMessage('renewal.extensions.text.2cc98f7f7c'), true);
             return;
         }
