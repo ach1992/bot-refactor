@@ -426,6 +426,13 @@ def main():
         assert allowed({**initial,'gatewayAudience':{'wallet':'off'},
                         'gatewayRuleExemptUsers':{'wallet':[1001]}})
         cases.append('per_method_exemption_live_flag_and_legacy_off')
+        # Optional field may be absent, but explicit JSON null is malformed.
+        assert allowed(policy('wallet',[blank('all')]))
+        cases.append('missing_exemption_field_preserves_legacy')
+        explicit_null=policy('wallet',[blank('all')],gatewayRuleExemptUsers=None)
+        assert not allowed(explicit_null,final=True)
+        assert not allowed(explicit_null,final=False)
+        cases.append('explicit_null_exemption_denied_final_and_preview')
         for bad in ({'wallet':[0]},{'wallet':['1001']},
                     {'wallet':[1001,1001]},{'retired':[1001]},
                     {'wallet':'1001'}):
@@ -490,6 +497,41 @@ def main():
         events,_=act('gr|a|wallet|non_agents')
         assert state()['gatewayRules']['methods']['wallet'][0]['category']=='non_agents'
         cases.append('operator_explicit_add')
+        # A malformed persisted exemption must fail in the read-only page,
+        # and in the authenticated writer WITHOUT advancing its global
+        # source watermark or consuming the administrator's private wizard.
+        events,_=act('gr|e|wallet')
+        step_before=sql(w,e,'SELECT step FROM users WHERE userid=9001')
+        assert step_before=='gr|exempt|wallet'
+        source_before=sql(w,e,
+            "SELECT value FROM setting WHERE type='ACHBOT_ADMIN_GATEWAY_SOURCE'")
+        assert source_before
+        clean=state()
+        corrupt={**clean,'gatewayRuleExemptUsers':None}
+        sql(w,e,"UPDATE setting SET value="+quoted(
+            json.dumps(corrupt,ensure_ascii=False,separators=(',',':')))+
+            " WHERE type='BOT_STATES'")
+        events,_=act('gr|l')
+        assert any(x[0]=='edit' and 'روش‌های پرداخت' not in x[1]
+                   for x in events),events
+        for request in ('callback','number'):
+            if request=='callback':
+                events,_=act('gr|e|wallet')
+            else:
+                events,_=act(text='1001 1002',message=True)
+            assert state()==corrupt,(request,state())
+            assert sql(w,e,'SELECT step FROM users WHERE userid=9001')==step_before
+            assert sql(w,e,"SELECT value FROM setting WHERE type='ACHBOT_ADMIN_GATEWAY_SOURCE'")==source_before
+            assert any(x[0]=='deny' or
+                       (x[0]=='send' and 'معتبر' in x[1])
+                       for x in events),events
+        # Restore the synthetic fixture, never a live installation.
+        sql(w,e,"UPDATE setting SET value="+quoted(
+            json.dumps(clean,ensure_ascii=False,separators=(',',':')))+
+            " WHERE type='BOT_STATES'")
+        events,_=act(text='لغو',message=True)
+        assert sql(w,e,'SELECT step FROM users WHERE userid=9001')=='none'
+        cases.append('explicit_null_admin_page_and_writer_atomic_denials')
         events,_=act('gr|m|bank_transfer')
         keyboard=json.loads([e for e in events if e[0]=='edit'][-1][2])['inline_keyboard']
         assert keyboard[-2][0]['callback_data']=='gr|e|bank_transfer'

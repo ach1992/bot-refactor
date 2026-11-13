@@ -55,6 +55,17 @@ def main() -> dict:
     ],cwd=ROOT,text=True)
     groups=json.loads(shell)
     current={a:historical.flatten(v) for a,v in groups.items()}
+    assert current['user'][historical.GIFT_SELECTOR_KEY]=='🎁 خرید گیفت کارت | ریالی'
+    # Only selector keyboards consume the legacy gift-card method label;
+    # the separate purchase-link button and renewal price copy stay unchanged.
+    selectors=('src/Finance/WalletStart.php','src/Purchase/SelectPlan.php',
+               'src/Purchase/Catalogue.php','src/Finance/Routes/Extensions.php')
+    hits={name:(ROOT/name).read_text().count("['gift_card']") for name in selectors}
+    assert hits=={'src/Finance/WalletStart.php':1,
+                  'src/Purchase/SelectPlan.php':1,
+                  'src/Purchase/Catalogue.php':1,
+                  'src/Finance/Routes/Extensions.php':2},hits
+    assert current['user']['telegram.markup.receipt_and_cancel.button.4595a70ab5']=='🎁 خرید گیفت‌کارت'
     successor=historical.vivan_20261113_source()
     successor_added={a:len(successor[a]['added']) for a in ('user','admin')}
     added=historical.GIFT_PRECHECK_SHA256

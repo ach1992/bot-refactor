@@ -128,6 +128,51 @@ def gateway_controls_copy_restore(sides):
     return restored
 
 
+# One Owner-approved payment-method-selector label. Keep historical source
+# manifests immutable: project this exact one-line user catalog delta only
+# after proving both full file identities and the precise changed key.
+GIFT_SELECTOR_BEFORE_SHA='5d76f3f678ed714ce1106fbdd2e984fda4cef9b949e7bfb5fd1568944221ba2b'
+GIFT_SELECTOR_AFTER_SHA='1e16503add5c9e9fe0dc758c56dcc4e180c01774a3160e4e388265beb35c03e5'
+GIFT_SELECTOR_KEY='legacy_buttons.gift_card'
+GIFT_SELECTOR_OLD="        'gift_card' => '🎁 خرید گیفت‌کارت',"
+GIFT_SELECTOR_NEW="        'gift_card' => '🎁 خرید گیفت کارت | ریالی',"
+
+@functools.lru_cache(maxsize=1)
+def gift_selector_source():
+    path='messages/fa/user.php'
+    original=command('git','show',GATEWAY_CONTROLS_BASE+':'+path)
+    current=(ROOT/path).read_bytes()
+    check(hashlib.sha256(original).hexdigest()==GIFT_SELECTOR_BEFORE_SHA and
+          hashlib.sha256(current).hexdigest()==GIFT_SELECTOR_AFTER_SHA,
+          'gift_payment_selector_full_catalog_identity')
+    prior=original.decode();shipping=current.decode()
+    check(prior.count(GIFT_SELECTOR_OLD)==1 and
+          shipping==prior.replace(GIFT_SELECTOR_OLD,GIFT_SELECTOR_NEW,1),
+          'gift_payment_selector_only_approved_line')
+    parser='$s=stream_get_contents(STDIN);$p=strpos($s,"return [");if($p===false)throw new RuntimeException("array_missing");echo json_encode(eval(substr($s,$p)),JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);'
+    old=flatten(json.loads(command('php','-r',parser,input=original)))
+    new=flatten(json.loads(command('php','-r',parser,input=current)))
+    check(set(old)==set(new) and
+          {key for key in old if old[key]!=new[key]}=={GIFT_SELECTOR_KEY} and
+          params(old[GIFT_SELECTOR_KEY])==params(new[GIFT_SELECTOR_KEY]) and
+          new[GIFT_SELECTOR_KEY]=='🎁 خرید گیفت کارت | ریالی',
+          'gift_payment_selector_exact_catalog_delta')
+    return {'before_source':original,'before':old,'after':new}
+
+def gift_selector_copy_restore(sides):
+    proof=gift_selector_source()
+    check(set(sides)=={'user','admin'} and
+          GIFT_SELECTOR_KEY not in sides['admin'],
+          'gift_payment_selector_wrong_audience')
+    value=sides['user'].get(GIFT_SELECTOR_KEY)
+    check(value in (proof['before'][GIFT_SELECTOR_KEY],
+                    proof['after'][GIFT_SELECTOR_KEY]),
+          'gift_payment_selector_unapproved_copy')
+    restored=copy.deepcopy(sides)
+    restored['user'][GIFT_SELECTOR_KEY]=proof['before'][GIFT_SELECTOR_KEY]
+    return restored
+
+
 @functools.lru_cache(maxsize=1)
 def subscription_menu_20261113_source():
     manifest=json.loads((ROOT/'tools/text_catalog_main_menu_20261113.json').read_text())
@@ -148,7 +193,7 @@ def subscription_menu_20261113_source():
         path='messages/fa/'+audience+'.php'
         before=command('git','show',SUBSCRIPTION_MENU_BASE+':'+path)
         current=(gateway_controls_source()['before_source'] if audience=='admin'
-                 else (ROOT/path).read_bytes())
+                 else gift_selector_source()['before_source'])
         identity=manifest['source_identity'][audience]
         check(set(identity)=={'base_sha256','approved_sha256'} and
               hashlib.sha256(before).hexdigest()==identity['base_sha256'] and
@@ -169,6 +214,7 @@ def subscription_menu_20261113_source():
 
 
 def subscription_menu_20261113_copy_restore(sides):
+    sides=gift_selector_copy_restore(sides)
     source=subscription_menu_20261113_source()
     check(set(sides)=={'user','admin'},'subscription_menu_20261113_audiences')
     restored=copy.deepcopy(sides)

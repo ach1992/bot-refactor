@@ -697,7 +697,8 @@ function achbotPayUxAudienceAllowed(mysqli $db, string $method, int $userId,
             if ($rules===null) return false;
         }
         $exempt=achbotGatewayRuleExemptUsersDecode(
-            $states['gatewayRuleExemptUsers']??[]);
+            array_key_exists('gatewayRuleExemptUsers',$states)
+                ? $states['gatewayRuleExemptUsers'] : []);
         if ($exempt===null) return false;
         if (in_array($userId,$exempt[$method]??[],true)) {
             // Explicit policy exemption never grants an ambiguous/nonexistent

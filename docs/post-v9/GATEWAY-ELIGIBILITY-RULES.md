@@ -36,7 +36,11 @@ historical backfill**.
   An exemption bypasses only the selected method's audience/category/history
   rules. The method's real ON/OFF flag, unique current user identity and
   all financial/provider controls remain mandatory. An invalid exemption
-  document denies issuance rather than silently opening access.
+  document denies issuance rather than silently opening access. A missing
+  optional exemption key means an empty list; an explicitly present JSON
+  null is invalid and is rejected in previews, final payment authorization,
+  administrator pages and authenticated policy writes without advancing
+  their source watermark.
 - `BOT_STATES.gatewayRules` is optional and versioned:
   `{"version":1,"methods":{"wallet":[{"category":"non_agents","enabled":true,"registration_age_days":90,"metrics":{"buy":{"count":5,"days":90,"direction":"older"},"renew":{"count":0,"days":0,"direction":"older"},"volume":{"count":0,"days":0,"direction":"older"},"time":{"count":0,"days":0,"direction":"older"},"topup":{"count":0,"days":0,"direction":"older"}}}]}}`.
   **The example numbers are not defaults or UI limits.** All count and day

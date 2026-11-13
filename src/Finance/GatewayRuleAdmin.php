@@ -116,7 +116,9 @@ function achbotGatewayRuleMutate(array $state,string $kind,string $key,
         ? achbotGatewayRulesDecode($state['gatewayRules'])
         : ['version'=>1,'methods'=>[]];
     if ($raw===null) throw new RuntimeException('gateway_rule_document_invalid');
-    $exempt=achbotGatewayRuleExemptUsersDecode($state['gatewayRuleExemptUsers']??[]);
+    $exempt=achbotGatewayRuleExemptUsersDecode(
+        array_key_exists('gatewayRuleExemptUsers',$state)
+            ? $state['gatewayRuleExemptUsers'] : []);
     if ($exempt===null) throw new RuntimeException('gateway_exempt_document_invalid');
     if ($kind==='number') {
         $s=achbotGatewayRuleStep($step);
@@ -271,7 +273,8 @@ function achbotGatewayAdminCurrent(): ?array {
             array_key_exists('gatewayRules',$state) &&
             achbotGatewayRulesDecode($state['gatewayRules'])===null) ||
             achbotGatewayRuleExemptUsersDecode(
-                $state['gatewayRuleExemptUsers']??[])===null) return null;
+                array_key_exists('gatewayRuleExemptUsers',$state)
+                    ? $state['gatewayRuleExemptUsers'] : [])===null) return null;
         return $state;
     } catch (Throwable $ignored) {return null;}
 }
