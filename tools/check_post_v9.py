@@ -452,9 +452,10 @@ def source_checks():
         raise RuntimeError("Obsolete XUI provider HTTP transport retained")
     if (ROOT/'settings/subLink.php').exists() or 'settings/subLink.php' in files:
         raise RuntimeError('Unused retired XUI subscription stub retained')
-    webhook_network=webhook_io.verify(ROOT)
+    # Execute new regression cases without changing the exact pinned CI
+    # foundation proof schema owned by tools/post_v9_shards.py.
+    webhook_io.verify(ROOT)
     return {"source_files":len(files),"php_lint":len(php_files),
-            "webhook_network_io_regression":webhook_network,
             "original_historical_schema_file_unchanged":True,
             "current_additive_migration_separately_tested":False,
             "synthetic_baseinfo_example_current_settings_removed":True,
