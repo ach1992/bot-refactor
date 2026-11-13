@@ -1,5 +1,29 @@
 # Current source and published release contracts
 
+## Published RC40 — first-start registration and verified mandatory join
+
+[v0.10.0-rc.40](https://github.com/ach1992/bot-refactor/releases/tag/v0.10.0-rc.40)
+is the **source-only prerelease** of independently reviewed
+[PR #177](https://github.com/ach1992/bot-refactor/pull/177) and
+[Issue #176](https://github.com/ach1992/bot-refactor/issues/176).
+New private-chat `/start` users are registered before the normal menu;
+if mandatory-channel joining is enabled, actual verified membership
+must first pass, including when the customer selects «عضو شدم».
+Existing phone, administrator, ban, wallet and invitation rules remain in
+effect. New-user welcome/admin notices are not consumed by Home navigation.
+Negative inviter debt is valid for a positive referral credit. Redundant
+support heading copy was simplified.
+
+By the Owner's explicit requested order, this prerelease and ZIP staging
+precede the repository's exact-HEAD GitHub PHP 8.5 validation. Dev Server
+PHP 8.5.12 targeted tests and independent source review are available;
+the protected-`main` integration gate remains in force. Do not describe
+pending GitHub CI as successful or a prerelease tag as an integrated main
+commit. ZIP transfer to Vivan, Hell and Chili means **archive staging only**.
+No extraction, runtime activation, SQL migration, webhook/Cron operation,
+financial or provider effect was authorized. Refer to
+[RC39 → RC40](RC39-TO-RC40.md) for artifact verification and rollback scope.
+
 ## Published RC39 — indexed SMS, gateway exemption UX, public root/health
 
 [v0.10.0-rc.39](https://github.com/ach1992/bot-refactor/releases/tag/v0.10.0-rc.39)
