@@ -30,7 +30,7 @@ SAFETY = {"actual_operator_installed_acceptance": False, "real_financial_safety_
           "production_database_or_service_modified": False}
 SOURCE_FACTS = {
     "source_files": package.EXPECTED_RUNTIME_COUNT,
-    "php_lint": package.EXPECTED_RUNTIME_COUNT - 1,
+    "php_lint": package.EXPECTED_RUNTIME_COUNT,  # root index.php replaces only HTML runtime member
     "original_historical_schema_file_unchanged": True,
     "current_additive_migration_separately_tested": False,
     "synthetic_baseinfo_example_current_settings_removed": True,
