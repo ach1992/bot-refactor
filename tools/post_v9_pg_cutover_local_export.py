@@ -15,15 +15,19 @@ import post_v9_pg_cutover_preflight as pg
 
 SOURCES = {
     "S": """SELECT CONCAT('S|',JSON_OBJECT('id',i.id,'provider',c.type))
-        FROM server_info i JOIN server_config c ON c.id=i.id ORDER BY i.id;""",
+        FROM server_info i JOIN server_config c ON c.id=i.id
+        WHERE c.type='marzban' ORDER BY i.id;""",
     "P": """SELECT CONCAT('P|',JSON_OBJECT('id',p.id,'server_id',p.server_id,
-        'inbound_id',p.inbound_id)) FROM server_plans p ORDER BY p.id;""",
+        'inbound_id',p.inbound_id)) FROM server_plans p
+        JOIN server_config c ON c.id=p.server_id
+        WHERE c.type='marzban' ORDER BY p.id;""",
     "O": """SELECT CONCAT('O|',JSON_OBJECT('id',o.id,'server_id',o.server_id,
         'plan_id',o.fileid,'inbound_id',o.inbound_id,'username',o.remark,
         'owner_id',o.userid,'provider_effect_id',o.provider_effect_id,
         'provider_remote_user_id',o.provider_remote_user_id,
         'auto_renew',o.autoRenew,'amount',o.amount))
-        FROM orders_list o ORDER BY o.id;""",
+        FROM orders_list o JOIN server_config c ON c.id=o.server_id
+        WHERE c.type='marzban' ORDER BY o.id;""",
     "C": """SELECT CONCAT('C|',JSON_OBJECT(
        'unsettled_service_payments',
            (SELECT COUNT(*) FROM pays p WHERE

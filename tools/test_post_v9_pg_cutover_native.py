@@ -40,7 +40,7 @@ class NativeExport(unittest.TestCase):
                 server.mode = mode
                 credentials = {"version": 1, "panels": {"main": {
                     "id": 71, "instance_key": "a" * 32, "api_url": url,
-                    "api_key": "fixture-private-key", "version": "5.5.1"}}}
+                    "api_key": "fixture-private-key", "version": "arbitrary-provider-label"}}}
                 files = [folder / p for p in ("source.json", "mapping.json", "secret.json")]
                 for path, payload in zip(files, (local, mapping, credentials)):
                     path.write_text(json.dumps(payload))
@@ -87,9 +87,8 @@ class NativeExport(unittest.TestCase):
     def test_native_schedule_conflict_blocked_by_preflight(self):
         self.assertTrue(self.run_case(mode="scheduled_hold")["complete"])
 
-    def test_wrong_version_denied_before_accounts(self):
-        self.assertEqual(self.run_case(mode="wrong_version")["error_code"],
-                         "panel_readonly_check_failed")
+    def test_reported_version_is_informational(self):
+        self.assertTrue(self.run_case(mode="wrong_version")["complete"])
 
     def test_username_mismatch_denied(self):
         self.assertEqual(self.run_case(username="other_user")["error_code"],

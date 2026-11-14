@@ -21,18 +21,20 @@ CREATE TABLE orders_list(id INT PRIMARY KEY,server_id INT,fileid INT,inbound_id 
 CREATE TABLE pays(id INT PRIMARY KEY,type VARCHAR(100),state VARCHAR(30));
 CREATE TABLE service_effects(id INT PRIMARY KEY,state VARCHAR(30),provider_state VARCHAR(30) NULL);
 CREATE TABLE service_plan_changes(id INT PRIMARY KEY,state VARCHAR(30));
-INSERT INTO server_info VALUES (2),(3);
-INSERT INTO server_config VALUES (2,'marzban'),(3,'marzban');
-INSERT INTO server_plans VALUES (9,2,0),(10,3,0);
+INSERT INTO server_info VALUES (2),(3),(14);
+INSERT INTO server_config VALUES (2,'marzban'),(3,'marzban'),(14,'pasarguard');
+INSERT INTO server_plans VALUES (9,2,0),(10,3,0),(82,14,0);
 INSERT INTO orders_list VALUES
  (101,2,9,0,'shared_user',1001,NULL,NULL,'on',50000),
  (102,2,9,0,'shared_user',1002,NULL,NULL,'off',40000),
- (103,3,0,0,'planless_user',1003,NULL,NULL,'off',0);
+ (103,3,0,0,'planless_user',1003,NULL,NULL,'off',0),
+ (201,14,82,0,'pg_fixture_user',2001,41,77,'off',100000);
 INSERT INTO pays VALUES (1,'RENEW_ACCOUNT','pending'),
  (2,'INCREASE_WALLET','pending'),(3,'BUY_SUB','auto_cart_approved'),
  (4,'INCREASE_VOLUME_101_2','have_sent');
 INSERT INTO service_effects VALUES (1,'local_recorded',NULL),
- (2,'dispatching',NULL),(3,'consumed','mutating');
+ (2,'dispatching',NULL),(3,'consumed','mutating'),
+ (41,'local_recorded','linked');
 INSERT INTO service_plan_changes VALUES (1,'committed'),(2,'review');
 """
 
@@ -50,6 +52,9 @@ def run():
         assert len(parsed["servers"]) == 2
         assert len(parsed["plans"]) == 2
         assert len(parsed["orders"]) == 3
+        assert all(server["provider"]=="marzban" for server in parsed["servers"])
+        assert {plan["id"] for plan in parsed["plans"]} == {9,10}
+        assert {order["id"] for order in parsed["orders"]} == {101,102,103}
         assert [r["username"] for r in parsed["orders"]] == [
             "shared_user", "shared_user", "planless_user"]
         assert parsed["orders"][0]["provider_effect_id"] is None
@@ -60,9 +65,9 @@ def run():
         }, parsed["claims"]
         # Financial, local account and journal rows remain exactly unchanged
         # after the SELECT-only snapshot.
-        assert native.sql(work, env, "SELECT COUNT(*) FROM orders_list", DB).strip() == "3"
+        assert native.sql(work, env, "SELECT COUNT(*) FROM orders_list", DB).strip() == "4"
         assert native.sql(work, env, "SELECT COUNT(*) FROM pays", DB).strip() == "4"
-        assert native.sql(work, env, "SELECT COUNT(*) FROM service_effects", DB).strip() == "3"
+        assert native.sql(work, env, "SELECT COUNT(*) FROM service_effects", DB).strip() == "4"
         assert native.sql(work, env, "SELECT COUNT(*) FROM service_plan_changes", DB).strip() == "2"
     print(json.dumps({"complete": True, "owned_mariadb": True,
                       "real_snapshot_sql": True, "readonly": True,
