@@ -27,6 +27,12 @@ FAMILY_FIELDS = {'admin': ('owner_ux_r5', 'owner_r6_notifications', 'owner_r6_fi
 SOURCE_UPDATES = {'admin': (), 'api': (), 'services': ('unified_service_management',), 'wallet': (), 'presentation': (), 'authorization': (), 'effects': (), 'funding': ('current_additive_migration_separately_tested',)}
 
 def run_foundation(source_result: dict) -> dict:
+    # Offline future-cutover safety tools are exercised in current PHP 8.5 CI;
+    # this is source-only preparation and does not certify installed migration.
+    for name in ("test_post_v9_pg_cutover_preflight.py", "test_post_v9_pg_cutover_native.py",
+                 "test_post_v9_pg_cutover_source_mariadb.py"):
+        subprocess.run([sys.executable, str(ROOT / "tools" / name)],
+                       cwd=ROOT, check=True, timeout=75, capture_output=True)
     payment_identity_output=subprocess.run(
         ["python3",str(ROOT/"tools/test_post_v9_payment_identity.py")],
         cwd=ROOT,check=True,timeout=20,capture_output=True,text=True)
