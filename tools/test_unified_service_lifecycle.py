@@ -245,6 +245,19 @@ def main():
         for name,order,expected in grace_matrix:
             yes(call('grace',order=order) is expected,'grace_integrity_'+name)
         seed(remark='mb_user');seed(102,3,'fixture_user');pg_identity()
+        # An abandoned local insufficient-wallet quote has no provider
+        # claim and cannot prevent a due subscription's safe deletion.
+        seed(140,remark='expired-no-effect-quote')
+        sql("INSERT INTO pays(hash_id,user_id,type,order_id,state,price,request_date) "
+            "VALUES('expired-unfunded',1001,'INCREASE_DAY_140_1',140,"
+            "'low_wallet',100,1700000000)")
+        yes(call('deletion_settled',order=140) is True,
+            'scheduled_deletion_ignores_never_issued_low_wallet_quote')
+        yes(call('fence',order=140) is True and
+            sql('SELECT status FROM orders_list WHERE id=140')=='0',
+            'scheduled_deletion_guard_advances_with_unclaimed_legacy_quote')
+        yes(sql("SELECT state FROM pays WHERE hash_id='expired-unfunded'")=='low_wallet',
+            'scheduled_deletion_preserves_old_unfunded_payment_record')
         # Final payments with completed Native edits must not be mistaken for
         # unsettled payments. Unknown claims and outstanding Native effects
         # still block scheduled deletion, across both native providers.

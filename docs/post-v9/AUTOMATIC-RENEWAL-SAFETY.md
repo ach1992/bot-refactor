@@ -1,9 +1,36 @@
 # AChBot automatic-renewal financial safety — Issue #26
 
-## Source-only, not a production authorization
+## Unclaimed payments do not block unrelated service work (2026-11-14)
 
-The Owner reports that the installed bot's **renewAutoState is OFF**. This
-candidate must not enable it. Source verification, exact-candidate CI,
+A previously unfinished invoice is not itself a physical service operation.
+The shared-account renewal and scheduled-deletion checks ignore an original
+`pending`, `send` or `low_wallet` quote **only when** its merchant `payid`
+is empty and there is no provider `payment_attempts` claim. These historical
+`pays` records remain intact; they are never silently expired, approved,
+recharged, rewritten, deleted or converted into a new service effect.
+
+An issued external checkout, submitted receipt, started wallet/Native edit,
+pending automatic-renewal journal, or uncertain result has a real potential
+effect on the *same physical subscription*, and remains subject to its
+existing evidence/reconciliation boundary. Unrelated accounts and new
+independent payment drafts are not coupled by these service locks. Physical
+plan/server transfers still use their existing atomic original-invoice
+retirement and later-payment evidence-only rules; this narrow change must
+not weaken that stricter commit-time procedure. It requires no schema
+change, additional Cron, new setting or operator background job.
+
+Source-only acceptance must cover the historical Vivan unissued low-wallet
+add-on, pending/send drafts, issued hosted payment, submitted receipt,
+durable Native/renewal claims, a second concurrent worker and due deletion.
+The installed Vivan account is not retroactively renewed: a separately
+authorized rollout and source-real acceptance remain mandatory.
+
+## Historical source-only gate (initial implementation)
+
+At initial implementation the Owner reported **renewAutoState OFF** on the
+then-installed tenant; that observation is historical, not today's settings.
+The current source change must not change any tenant toggle. Source verification,
+exact-candidate CI,
 author-separated review, integration, package, database migration, operator
 installation and real-money/provider acceptance are distinct checkpoints.
 

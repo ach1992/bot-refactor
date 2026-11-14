@@ -335,6 +335,52 @@ def main():
         assert run(w,e,{'action':'schema','order_id':oid})==[
             {'type':'schema','state':'ready'}]
         cases.append('restored_full_004_contract_ready')
+        # Unclaimed drafts remain historical audit rows, never competing
+        # Native/payment effects. This reproduces Vivan's low_wallet add-on
+        # blocking an opted-in renewal, plus two equivalent no-claim states.
+        unclaimed=seed(w,e,'unclaimed-renewal',wallet=500000)
+        for suffix,pay_state in enumerate(('pending','send','low_wallet'),1):
+            sql(w,e,
+                "INSERT INTO pays(hash_id,user_id,type,plan_id,server_id,"
+                "order_id,price,request_date,state) VALUES "
+                f"('unclaimed-{suffix}',1001,'INCREASE_DAY_{unclaimed}_{suffix}',"
+                f"7,2,{unclaimed},10000,UNIX_TIMESTAMP(),'{pay_state}')")
+        old_snapshot=sql(w,e,"SELECT hash_id,state,COALESCE(payid,'') "
+                         f"FROM pays WHERE order_id={unclaimed} ORDER BY id")
+        ev=run(w,e,{'order_id':unclaimed,'enabled':'on'})
+        assert sum(x['type']=='remote' for x in ev)==1,ev
+        assert wallet(w,e)==400000 and state(w,e,unclaimed)=='done'
+        assert count(w,e,'increase_order',"remark='unclaimed-renewal'")==1
+        assert sql(w,e,"SELECT hash_id,state,COALESCE(payid,'') FROM pays "
+                        f"WHERE order_id={unclaimed} AND description IS NULL ORDER BY id")==old_snapshot
+        assert_no_remote(run(w,e,{'order_id':unclaimed,'enabled':'on'}))
+        assert wallet(w,e)==400000
+        cases.append('unclaimed_pending_send_low_wallet_do_not_starve_auto_renewal')
+
+        # An issued checkout might still settle later; do not mistake that
+        # real claim for a harmless old local quote.
+        issued=seed(w,e,'issued-checkout',wallet=500000)
+        sql(w,e,
+            "INSERT INTO pays(hash_id,payid,user_id,type,plan_id,server_id,"
+            "order_id,price,request_date,state) VALUES "
+            f"('issued-old','provider-claim',1001,'RENEW_ACCOUNT',7,2,"
+            f"{issued},10000,UNIX_TIMESTAMP(),'pending')")
+        assert_no_remote(run(w,e,{'order_id':issued,'enabled':'on'}))
+        assert state(w,e,issued)=='' and wallet(w,e)==500000
+        cases.append('issued_external_payment_claim_still_fences_shared_native_edit')
+
+        # A submitted manual receipt may require approval/reconciliation even
+        # without a merchant reference; it is not an unissued draft.
+        receipt=seed(w,e,'submitted-receipt',wallet=500000)
+        sql(w,e,
+            "INSERT INTO pays(hash_id,user_id,type,plan_id,server_id,order_id,"
+            "price,request_date,state) VALUES "
+            f"('submitted-receipt',1001,'RENEW_ACCOUNT',7,2,{receipt},"
+            "10000,UNIX_TIMESTAMP(),'have_sent')")
+        assert_no_remote(run(w,e,{'order_id':receipt,'enabled':'on'}))
+        assert state(w,e,receipt)=='' and wallet(w,e)==500000
+        cases.append('submitted_receipt_requires_review_before_competing_native_edit')
+
         ev=run(w,e,{'order_id':oid,'enabled':'on'})
         assert sum(x['type']=='remote' for x in ev)==1,ev
         assert wallet(w,e)==400000 and state(w,e,oid)=='done'
