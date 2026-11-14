@@ -550,6 +550,8 @@ jobs:
           echo "Selected scope: $SCOPE, source-pipeline reuse: $REUSED" >> "$GITHUB_STEP_SUMMARY"
           if [[ "$SCOPE" == docs || "$SCOPE" == none ]]; then
             echo "Trusted Git provenance only: no PHP tests, native shards, MariaDB or runtime package executed." >> "$GITHUB_STEP_SUMMARY"
+          elif [[ "$SCOPE" == families && "$REUSED" == true ]]; then
+            echo "Previously accepted selected-family source pipeline reused; no PHP 8.5 foundation or native family jobs executed on this main push. Original targeted coverage remains incomplete, NOT full PHP 8.5 acceptance." >> "$GITHUB_STEP_SUMMARY"
           elif [[ "$SCOPE" == families ]]; then
             echo "Selected native families only: incomplete targeted evidence; NOT full PHP 8.5 acceptance." >> "$GITHUB_STEP_SUMMARY"
             python3 - "$RUNNER_TEMP/targeted-family-validation.json" >> "$GITHUB_STEP_SUMMARY" <<'PY'
