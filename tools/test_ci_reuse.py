@@ -3,8 +3,12 @@
 import copy
 import io
 import json
+import os
 from pathlib import Path
+import re
+import subprocess
 import tempfile
+import textwrap
 import unittest
 from unittest.mock import patch
 
@@ -330,6 +334,78 @@ class BoundaryTests(unittest.TestCase):
         expired = reuse.ReadOnlyGitHub(budget=-1)
         with self.assertRaisesRegex(reuse.NoReuse, "api_budget_exhausted"):
             expired("repos/" + reuse.REPOSITORY)
+
+
+class MainPushSelectedSummaryTests(unittest.TestCase):
+    """Execute the workflow's actual Summary Bash, not a rewritten model.
+
+    Reused targeted acceptance deliberately lacks native shard/foundation
+    artifacts on the main push. A valid receipt must not lead to a false
+    required-check failure merely by reading an impossible report path.
+    """
+
+    @staticmethod
+    def script():
+        workflow=(Path(__file__).resolve().parents[1] /
+                  ".github/workflows/v0.yml").read_text()
+        begin=workflow.index("      - name: Record exact-head validation category and timing\n")
+        marker="        run: |\n"
+        start=workflow.index(marker,begin)+len(marker)
+        end=workflow.index("      - name: Upload independently rebuilt exact-HEAD",start)
+        return textwrap.dedent(workflow[start:end])
+
+    def execute(self, scope, reused, *, targeted=None):
+        with tempfile.TemporaryDirectory(prefix="achbot-ci-reuse-summary-") as tmp:
+            root=Path(tmp)
+            if targeted is not None:
+                (root/"targeted-family-validation.json").write_text(json.dumps(targeted))
+            env={**os.environ,"GITHUB_STEP_SUMMARY":str(root/"summary.txt"),
+                 "RUNNER_TEMP":str(root),"SCOPE":scope,
+                 "REUSED":"true" if reused else "false"}
+            actual=subprocess.run(["bash","-c",self.script()],
+                   cwd=Path(__file__).resolve().parents[1],env=env,
+                   capture_output=True,text=True,timeout=12)
+            contents=(root/"summary.txt").read_text() if (root/"summary.txt").exists() else ""
+            return actual,contents
+
+    def test_selected_main_push_reuse_has_no_targeted_report_and_succeeds(self):
+        result,summary=self.execute("families",True)
+        self.assertEqual(result.returncode,0,result.stderr)
+        self.assertIn("previously",summary.lower())
+        self.assertIn("no PHP 8.5 foundation or native family jobs",summary)
+        self.assertIn("NOT full PHP 8.5 acceptance",summary)
+        self.assertNotIn("Executed:",summary)
+        self.assertNotIn("Family seconds:",summary)
+
+    def test_selected_pr_execution_uses_exact_targeted_report(self):
+        chosen={
+            "complete":False,"targeted_complete":True,"families":["admin"],
+            "omitted_families":["api","services","wallet","presentation",
+                                "authorization","effects","funding"],
+            "family_seconds":{"admin":1.25},
+        }
+        result,summary=self.execute("families",False,targeted=chosen)
+        self.assertEqual(result.returncode,0,result.stderr)
+        self.assertIn("Executed: admin",summary)
+        self.assertIn("Skipped: api, services, wallet, presentation",summary)
+        self.assertIn("Family seconds:",summary)
+        self.assertIn("NOT full PHP 8.5 acceptance",summary)
+
+    def test_selected_pr_missing_or_invalid_report_never_passes(self):
+        missing,summary=self.execute("families",False)
+        self.assertNotEqual(missing.returncode,0)
+        forged={"complete":True,"targeted_complete":False,
+                "families":["admin"],"omitted_families":[],"family_seconds":{}}
+        invalid,_=self.execute("families",False,targeted=forged)
+        self.assertNotEqual(invalid.returncode,0)
+
+    def test_full_and_docs_only_paths_do_not_require_targeted_artifact(self):
+        for scope in ("full","docs","none"):
+            with self.subTest(scope=scope):
+                result,summary=self.execute(scope,False)
+                self.assertEqual(result.returncode,0,result.stderr)
+                self.assertIn("Only complete eight-family",summary)
+                self.assertNotIn("Selected native families only:",summary)
 
 
 if __name__ == "__main__":

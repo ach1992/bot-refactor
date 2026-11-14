@@ -4,47 +4,90 @@ This document applies to **new development after RC21** in `ach1992/bot-refactor
 
 ## Documentation boundary
 
-The lightweight `docs` scope uses a **positive exact-path allowlist**, not
-an extension or directory-wide exemption. Existing post-V9 financial contracts,
-security and safety requirements, installation instructions, release and
-migration guides, provider agreements, validation criteria and unknown Markdown
-remain `full` even when only their prose changes. Both informational README
-entrypoints must be modified in place; new/deleted documents and ambiguous
-delete/add pairs (including low-similarity moves that Git cannot recognize as
-renames) also require `full`. Changing this classification policy itself
-requires full validation.
+The lightweight `docs` scope uses a **positive exact-path allowlist**:
+only modified-in-place, regular `README.md` and `docs/post-v9/README.md`.
+Financial, security, CI/policy, installation, migration and release-note
+contracts (including `docs/post-v9/NEXT-RELEASE.md`) remain `full`, even
+when only their prose changes. New or deleted documents, symlinks, mode
+changes and ambiguous renames/add-delete pairs also require `full`.
+This preserves the independent-review correction previously accepted
+under Issue #104 while allowing explicit affected-family test selection.
 
 ## Decision and selection
 
-`tools/ci_plan.py` chooses exactly one current-source scope from the Git base/head of a clean checkout. For PR validation it runs the classifier from the **trusted base Git object**, never the potentially modified PR checkout. If base proof is unavailable, a fixed workflow fallback forces full validation:
+`tools/ci_plan.py` uses immutable Git base/head objects and a clean exact
+checkout. PRs execute the classifier from the **trusted base revision**,
+never from the unreviewed candidate. Unknown, changed policy/CI/validation
+infrastructure and unprovable diffs retain the full fallback.
 
-| Scope | Accepted changes | Executed checks | Claim |
+| Scope | Trigger | Validation | Evidence |
 | --- | --- | --- | --- |
-| `docs` | Only explicitly allowlisted informational entrypoints (`README.md` and `docs/post-v9/README.md`) modified in place; no additions, deletions, renames or mode changes | Verified Git identity, ancestry and lightweight required status; no PHP, MariaDB, shards or ZIP | Documentation provenance only; no runtime tests executed |
-| `none` | Clean, same-tree/no-effective-diff commit with verified base ancestry | Verified Git identity, ancestry and lightweight required status; no PHP, MariaDB, shards or ZIP | No source-impact attestation; no runtime tests executed |
-| `source` | Compatibility with earlier bounded selection (not returned for ordinary docs by the new classifier) | Runtime source checks and PHP lint, if selected by trusted classifier | Targeted only; `complete: false` |
-| `cron` | Only the precisely delimited lock-directory preparation region in `settings/cronRunner.php`, the dedicated Cron regression file and ordinary documentation | Source checks plus actual isolated Cron coordinator regression | Targeted only; `complete: false` |
-| `full` | Shared/runtime worker changes, CI/tooling, tests outside the dedicated Cron suite, migrations, policy, unknown or unprovable diffs | Source/payment/privacy foundation plus all eight native families | Full current acceptance only after strict aggregation |
+| `docs` | Existing allowlisted README files, modified in place | Git SHA/tree, ancestry, file mode and changed-path verification | Informational-only, no PHP/native claims |
+| `none` | Exact same tree/no effective changes | Git identity and ancestry | No source impact |
+| `source` | Reserved for previously supported bounded source selection | Source checks + PHP lint | Incomplete targeted only |
+| `cron` | Dedicated Cron test or byte-bounded Cron lock preparation | Source checks and actual isolated Cron regression | Incomplete targeted only |
+| `families` | Existing, explicitly mapped test files with verified native runner ownership | Shared PHP 8.5 source foundation plus only impacted native family shards | Incomplete, lists selected **and omitted** families |
+| `full` | PHP runtime/source (pending complete transitive dependency proof), shared/high-risk/unknown source, CI/policy/financial/release/installation docs, migrations and ambiguous changes | Source foundation and all eight PHP 8.5 families | Complete only after strict eight-family aggregation |
 
-The classifier verifies exact Git SHAs, ancestry, a clean checkout, regular file modes (not symlinks), renames, the original and changed bytes outside the Cron preparation region, and the event/checkout identity. Missing evidence selects `full`; an untrusted or mismatched checkout fails the plan. Manual `workflow_dispatch` always requests `full`. There is no file-name-only exemption for Cron workers. Policy/security/CI documentation, source changes, ambiguous renames and missing evidence continue to select `full`. The protected `php85-validation` status always runs; `docs` and `none` verify a source-bound receipt and never claim skipped PHP suites were executed.
+The `families` scope currently has **21 existing mapped test paths** with
+verified native runner ownership (including transitive Python fixture imports)
+across the eight `post_v9_suites.RUNNERS` families. Multiple changed test files
+take the **union** of their owner families. Added/deleted tests, non-regular
+files, unknown tests and mixed Cron/source changes retain `full`; an all-eight
+union also uses `full`. For example:
 
-The checker keeps its default complete serial entrypoint (`python3 tools/check_post_v9.py --report <path>`). Targeted modes are `--suite source` and `--suite cron`. Historical V0–V9 execution is not claimed by either mode.
+- `tools/test_post_v9_onboarding.py` selects only `admin` (1).
+- `tools/test_post_v9_api_staff_digest.py` selects only `api` (2).
+- Changing both selects `admin/api` (1/2).
+- `src/Finance/ApiPayments.php`, `src/Finance/AutomaticRenewal.php`,
+  `src/Finance/Routes/WalletRecharge.php`, `src/Presentation/Text.php`,
+  `src/Jobs/BroadcastSend.php` and all other PHP runtime files select
+  **full**. The initial 16 PHP mappings omitted native consumers found during
+  independent review; source-to-family PHP include and dynamic entrypoint
+  closure is not yet proven, so no narrower PHP claim is made.
+
+Any future PHP source exemption requires concrete, current direct and transitive
+native test consumer evidence plus regression tests before it can be reviewed
+and introduced. This deliberately prioritizes truthful coverage over a
+speculative runner-count reduction. Current selected-family savings are for
+bounded test changes, not yet for executable PHP changes.
+
+`php85-validation` remains the protected required status for every scope.
+For `families`, it consumes the trusted path-selection receipt plus the
+source foundation and **exactly** the selected shard artifacts. The targeted
+aggregator rejects missing, duplicate, extra, tampered or mismatched
+SHA/tree/PHP/validator inputs and must always report
+`complete: false`, `targeted_complete: true`, and omitted families.
+Only a full eight-family aggregation may report full current PHP 8.5
+acceptance. Manual `workflow_dispatch` always selects full. Targeted checks
+do not authorize production rollout or real financial/provider operations.
+
+`python3 tools/check_post_v9.py --report <path>` remains the full local
+entrypoint; `--suite source` and `--suite cron` remain explicitly targeted.
+Historical V0–V9 execution is not relabelled as new PHP 8.5 proof.
 
 ## Full-current sharding
 
-Eight isolated native families run under **PHP 8.5 only** on distinct disposable GitHub Actions runners: `admin`, `api`, `services`, `wallet`, `presentation`, `authorization`, `effects`, `funding`. Each family has disjoint declared report-field ownership. Shared source/payment-identity/privacy checks run once in `foundation`. Each family can use its own disposable MariaDB and loopback fixtures.
+Full acceptance runs eight isolated native families under **PHP 8.5 only**.
+For explicitly mapped changes, the workflow starts only the selected subset
+using the same runners, MariaDB bootstrap and real PHP 8.5 test contracts: `admin`, `api`, `services`, `wallet`, `presentation`, `authorization`, `effects`, `funding`. Each family has disjoint declared report-field ownership. Shared source/payment-identity/privacy checks run once in `foundation`. Each family can use its own disposable MariaDB and loopback fixtures.
 
 The eight hosted native-family runners use the official MariaDB 10.11.19 Linux x86-64 binary tarball, fixed upstream archive URL and verified SHA-256, placed under each job's temporary directory. The `mariadbd`, `mariadb` and `mariadb-install-db` tools run without Ubuntu APT mirrors; every source-real test continues to create and own its separate socket-only database. No shared SQL service, fixture assertions, PHP version checks, source hashes, shard count or protected aggregation is replaced. An unavailable archive, checksum mismatch or missing native executable fails the family before acceptance. This eliminates the observed GitHub-hosted Ubuntu APT/DNS dependency rather than bypassing native tests.
 
 `tools/post_v9_shards.py foundation --report <file>`, `run --index 1..8 --count 8 --report <file>`, and `aggregate --source <file> --reports <directory> --report <file>` are the individual stages. Each shard and the foundation are explicitly incomplete. Aggregation rejects missing, duplicate, unknown, version-mismatched or inconsistent reports, and checks exact current Git HEAD/tree, PHP 8.5, runtime and validator hashes, catalog ownership, execution evidence and required migration proof. Only an accepted complete aggregation may set `complete: true` for **current PHP 8.5 acceptance**. Full reports include per-family timings; rebalance only after measured CI evidence.
 
-The protected aggregate job is `php85-validation`. It verifies upstream job outcomes before assembling current-head source ZIP and checksum-verified SQL sidecars, without executing migrations. Incomplete targeted reports and same-tree reuse receipts have separate names and must never be relabelled as full/native results. A successful old PHP 8.1/8.4 job does not satisfy a PHP 8.5 requirement.
+The protected aggregate job is `php85-validation`. It verifies upstream job
+outcomes before assembling the current-head source ZIP and checksum-verified
+SQL sidecars, without executing migrations. Incomplete targeted, full and
+same-tree reuse evidence have distinct files and cannot be silently relabelled
+as a complete eight-family result. A successful old PHP 8.1/8.4 job does not satisfy a PHP 8.5 requirement.
 
 ## Main-push reuse
 
 After integration into `main`, `tools/ci_reuse.py` may avoid rerunning the identical accepted source pipeline **only if** read-only GitHub evidence unambiguously establishes the same full source tree, matching merged PR/main SHA, original successful exact-source PR workflow/run/attempt, and a successful single `php85-validation` job. Any ambiguity, API error, workflow change or partial result means ordinary current validation runs.
 
-A reused result is an **attestation of the original PR pipeline**, not a newly executed native/full run. Its receipt contains the original source/run identity and the new `main` identity; current-`main` source ZIP is rebuilt and verified independently when runtime-relevant validation or reused acceptance actually requires a package. For trusted `docs`/`none` changes no runtime ZIP is rebuilt; explicit `workflow_dispatch` continues to require full PHP 8.5 acceptance and exact-head packaging.
+A reused result is an **attestation of the original PR pipeline** (full or
+explicitly targeted as originally run), not a newly executed native/full run. Its receipt contains the original source/run identity and the new `main` identity; current-`main` source ZIP is rebuilt and verified independently when runtime-relevant validation or reused acceptance actually requires a package. For trusted `docs`/`none` changes no runtime ZIP is rebuilt; explicit `workflow_dispatch` continues to require full PHP 8.5 acceptance and exact-head packaging.
 
 The read-only REST client pins `X-GitHub-Api-Version: 2022-11-28` deliberately. Verified against merged PR #105/main: the newer `2026-03-10` representation returns `merge_commit_sha: null` for an already merged PR, disabling attestation and redundantly triggering the full PHP 8.5 suite. The pinned version supplies the verified exact merge SHA. Never infer a missing merge identity or relax any other evidence checks; verify live API behavior before changing the pin.
 

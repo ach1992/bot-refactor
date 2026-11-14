@@ -5,8 +5,10 @@ No PHP version, provider, Telegram, MariaDB or protected history executes.
 """
 from __future__ import annotations
 
+import ast
 import contextlib
 import io
+from collections import defaultdict
 import json
 import os
 from pathlib import Path
@@ -16,6 +18,51 @@ import unittest
 
 import ci_plan
 
+
+# Previously proposed PHP leaf exemptions are not closed over the actual
+# source-real native test consumers and PHP include graph. Until each can
+# be justified against the full dependency graph, every such edit needs full.
+REVIEWED_PHP_SOURCE_FALLBACKS = (
+    "src/Finance/ApiPayments.php",
+    "src/Finance/AutomaticRenewal.php",
+    "src/Finance/PaymentPage.php",
+    "src/Finance/Routes/WalletRecharge.php",
+    "src/Finance/Routes/WalletTransfer.php",
+    "src/Finance/Routes/AdminWallet.php",
+    "src/Finance/Routes/DiscountEntry.php",
+    "src/Finance/Routes/DiscountAdministration.php",
+    "src/Finance/Routes/ManualReceipts.php",
+    "src/Presentation/Labels.php",
+    "src/Presentation/Text.php",
+    "src/Subscription/Presentation.php",
+    "src/Subscription/AccountDetails.php",
+    "src/Telegram/UserProfile.php",
+    "src/Telegram/Markup.php",
+    "src/Jobs/BroadcastSend.php",
+)
+
+# Native runner witnesses from independent review: these fixtures consume
+# the named source and expose the omitted owner in the prior mapping.
+PHP_SOURCE_CONSUMER_WITNESSES = {
+    "src/Finance/Routes/WalletRecharge.php": (
+        ("test_owner_r5_roles.py", 1),
+        ("test_post_v9_api_payment_evidence.py", 2),
+    ),
+    "src/Finance/ApiPayments.php": (
+        ("test_shared_plan_review_fixes.py", 3),
+        ("test_post_v9_scoped_api_pg.py", 5),
+    ),
+    "src/Finance/AutomaticRenewal.php": (
+        ("test_owner_r6_financial_alert_ack.py", 1),
+        ("test_post_v9_provider_integration.py", 5),
+    ),
+    "src/Presentation/Text.php": (
+        ("test_owner_r4_admin_intents.py", 3),
+    ),
+    "src/Jobs/BroadcastSend.php": (
+        ("test_post_v9_direct_gift.py", 7),
+    ),
+}
 
 CRON_BASE = (
     b"<?php\n"
@@ -56,6 +103,15 @@ class ImpactPlanTests(unittest.TestCase):
             self.set_file("docs/post-v9/" + name, "Existing operational contract\n")
         self.set_file("tools/test_other.py", "print('domain tests')\n")
         self.set_file("src/common.php", "<?php // shared runtime\n")
+        for path in (
+            *REVIEWED_PHP_SOURCE_FALLBACKS,
+            "src/Finance/ReceiptHelpers.php",
+            "tools/test_post_v9_onboarding.py",
+            "tools/test_post_v9_api_staff_digest.py",
+            "tools/test_unified_service_lifecycle.py",
+            "tools/post_v9_suites.py",
+        ):
+            self.set_file(path, "synthetic original source\n")
         self.set_file("AGENTS.md", "project rules\n")
         self.set_file(".github/workflows/v0.yml", "name: Compatibility\n")
         self.base = self.commit("baseline fixture")
@@ -176,6 +232,11 @@ class ImpactPlanTests(unittest.TestCase):
         self.assertEqual(ci_plan.plan(self.repo, self.base, head)["reason"],
                          "document_added_or_removed")
 
+    def test_new_markdown_requires_full_when_not_positively_reviewed(self):
+        result = self.decide("docs/post-v9/NEW-RELEASE-NOTES.md", "A new document\n")
+        self.assertEqual(result["scope"], "full")
+        self.assertEqual(result["shards"], list(range(1, 9)))
+
     def prepare_doc_rename(self):
         # Both source and destination are positively allowlisted, but the
         # destination does not exist in this disposable base.
@@ -247,6 +308,130 @@ class ImpactPlanTests(unittest.TestCase):
                 self.set_file(path, "policy text\n")
                 head = self.commit("policy " + path)
                 self.assertEqual(ci_plan.plan(self.repo, self.base, head)["scope"], "full")
+
+    def test_mapped_test_files_cover_transitive_test_family_dependencies(self):
+        # Check the actual current runner catalog, not just the filename of
+        # the changed test. Shared Python fixture imports can affect multiple
+        # independently scheduled families.
+        root = ci_plan.ROOT / "tools"
+        functions = ("run_admin", "run_api", "run_services", "run_wallet",
+                     "run_presentation", "run_authorization", "run_effects", "run_funding")
+        owners = defaultdict(set)
+        catalog = ast.parse((root/"post_v9_suites.py").read_text())
+        for function in catalog.body:
+            if not isinstance(function, ast.FunctionDef) or function.name not in functions:
+                continue
+            index = functions.index(function.name) + 1
+            for item in ast.walk(function):
+                if (isinstance(item, ast.Constant) and isinstance(item.value, str)
+                        and Path(item.value).name.startswith("test_")
+                        and item.value.endswith((".py", ".php"))):
+                    owners[Path(item.value).stem].add(index)
+        # Standalone scoped suite invocations are owned by native shard 5.
+        for name in ("test_post_v9_scoped_addons",
+                     "test_post_v9_scoped_api_pg",
+                     "test_post_v9_scoped_pg_payments"):
+            owners[name].add(5)
+        imports = {}
+        for path in root.glob("*.py"):
+            tree = ast.parse(path.read_text())
+            used = set()
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Import):
+                    used.update(alias.name.split(".")[0] for alias in node.names)
+                elif isinstance(node, ast.ImportFrom) and node.module:
+                    used.add(node.module.split(".")[0])
+            imports[path.stem] = used
+        for _ in range(len(imports) + 1):
+            changed = False
+            for parent, children in imports.items():
+                if parent not in owners:
+                    continue
+                for child in children:
+                    if not owners[parent].issubset(owners[child]):
+                        owners[child].update(owners[parent])
+                        changed = True
+            if not changed:
+                break
+        else:
+            self.fail("Test dependency closure did not converge")
+        for path, selected in ci_plan.FAMILY_PATHS.items():
+            with self.subTest(path=path):
+                self.assertTrue((ci_plan.ROOT/path).is_file())
+                self.assertFalse((ci_plan.ROOT/path).is_symlink())
+                self.assertTrue(path.startswith("tools/test_") and path.endswith(".py"),
+                                "Unverified PHP/runtime source mappings must use full fallback")
+                self.assertTrue(owners[Path(path).stem],
+                                "Explicit test has no current runner owner")
+                self.assertTrue(owners[Path(path).stem].issubset(set(selected)),
+                                "Mapped test omits a consuming family")
+        for source, witnesses in PHP_SOURCE_CONSUMER_WITNESSES.items():
+            with self.subTest(source=source):
+                # These are direct native consuming paths, not path-name guesses.
+                # The old PHP map missed at least one of these owner families.
+                self.assertNotIn(source, ci_plan.FAMILY_PATHS)
+                for test_file, expected_family in witnesses:
+                    text = (root / test_file).read_text()
+                    self.assertIn(source, text)
+                    self.assertIn(expected_family, owners[Path(test_file).stem])
+
+    def test_reviewed_php_source_paths_fail_closed_until_dependencies_are_proven(self):
+        self.assertFalse(any(path.endswith(".php") for path in ci_plan.FAMILY_PATHS))
+        for path in REVIEWED_PHP_SOURCE_FALLBACKS:
+            with self.subTest(path=path):
+                self.set_file(path, "modified source\n")
+                head = self.commit("source path: " + path)
+                result = ci_plan.plan(self.repo, self.base, head)
+                self.assertEqual(result["scope"], "full")
+                self.assertEqual(result["shards"], list(range(1, 9)))
+                self.assertEqual(result["reason"], "shared_policy_or_unknown_path")
+                self.set_file(path, "synthetic original source\n")
+                self.commit("restore source path: " + path)
+
+    def test_test_only_onboarding_avoids_unrelated_native_families(self):
+        result = self.decide("tools/test_post_v9_onboarding.py", "updated synthetic cases\n")
+        self.assertEqual(result["scope"], "families")
+        self.assertEqual(result["shards"], [1])
+
+    def test_mixed_mapped_tests_select_exact_family_union(self):
+        self.set_file("tools/test_post_v9_onboarding.py", "welcome regression\n")
+        self.set_file("tools/test_post_v9_api_staff_digest.py", "API regression\n")
+        self.set_file("docs/post-v9/README.md", "welcome notes\n")
+        head = self.commit("bounded test-only union")
+        result = ci_plan.plan(self.repo, self.base, head)
+        self.assertEqual(result["scope"], "families")
+        self.assertEqual(result["shards"], [1, 2])
+
+    def test_mixed_test_and_unproven_php_source_requires_full(self):
+        self.set_file("tools/test_post_v9_onboarding.py", "welcome regression\n")
+        self.set_file("src/Finance/Routes/WalletRecharge.php", "wallet source changed\n")
+        head = self.commit("mixed runtime source and tests")
+        result = ci_plan.plan(self.repo, self.base, head)
+        self.assertEqual(result["scope"], "full")
+        self.assertEqual(result["shards"], list(range(1, 9)))
+
+    def test_shared_helper_or_runner_change_forces_full(self):
+        for path in ("src/Finance/ReceiptHelpers.php", "tools/post_v9_suites.py"):
+            with self.subTest(path=path):
+                self.set_file(path, "shared engine change\n")
+                head = self.commit("shared change")
+                self.assertEqual(ci_plan.plan(self.repo, self.base, head)["scope"], "full")
+
+    def test_domain_module_addition_not_trusted_as_bounded(self):
+        result = self.decide("src/Finance/Routes/WalletRecharge.php", "new source\n")
+        self.assertEqual(result["scope"], "full")
+
+    def test_family_and_cron_mixed_requires_full(self):
+        self.set_file("tools/test_post_v9_onboarding.py", "new onboarding test\n")
+        self.set_file(ci_plan.CRON_TEST, "changed cron fixture\n")
+        head = self.commit("mixed domain and cron")
+        self.assertEqual(ci_plan.plan(self.repo, self.base, head)["scope"], "full")
+
+    def test_docs_plus_unknown_runtime_never_launders_full(self):
+        self.set_file("docs/post-v9/README.md", "informational note\n")
+        self.set_file("src/common.php", "unknown shared runtime change\n")
+        head = self.commit("unknown and docs")
+        self.assertEqual(ci_plan.plan(self.repo, self.base, head)["scope"], "full")
 
     def test_missing_invalid_and_nonancestor_base_are_full(self):
         head = self.decide("README.md", "Some docs\n")["head"]

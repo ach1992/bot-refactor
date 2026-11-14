@@ -109,6 +109,67 @@ class ShardContractTests(unittest.TestCase):
         self.assertIs(result["real_financial_safety_approved"], False)
         self.assertIs(result["historical_suite_executed_by_this_script"], False)
 
+    def test_targeted_family_subset_is_explicitly_incomplete(self):
+        selected = [1, 3, 5]
+        result = shard.targeted(self.source, [self.reports[i-1] for i in selected], selected)
+        self.assertIs(result["complete"], False)
+        self.assertIs(result["targeted_complete"], True)
+        self.assertIs(result["full_current_acceptance"], False)
+        self.assertEqual(result["indexes"], selected)
+        self.assertEqual(result["families"], ["admin", "services", "presentation"])
+        self.assertEqual(len(result["omitted_families"]), 5)
+        self.assertEqual(result["identity"], self.source["identity"])
+        self.assertEqual(len(result["family_payload_sha256"]), 3)
+
+    def test_targeted_missing_wrong_extra_duplicate_or_false_identity_denied(self):
+        selected = [1, 3, 5]
+        reports = [copy.deepcopy(self.reports[i-1]) for i in selected]
+        with self.assertRaises(ValueError):
+            shard.targeted(self.source, reports[:-1], selected)
+        with self.assertRaises(ValueError):
+            shard.targeted(self.source, reports + [self.reports[5]], selected)
+        with self.assertRaises(ValueError):
+            shard.targeted(self.source, [reports[0], reports[0], reports[2]], selected)
+        wrong = copy.deepcopy(reports)
+        wrong[1]["identity"]["head"] = "f"*40
+        with self.assertRaises(ValueError):
+            shard.targeted(self.source, wrong, selected)
+        tampered = copy.deepcopy(reports)
+        tampered[0]["payload_sha256"] = "0"*64
+        with self.assertRaises(ValueError):
+            shard.targeted(self.source, tampered, selected)
+
+    def test_targeted_refuses_full_invalid_or_unsorted_plan(self):
+        for indexes in ([], list(range(1,9)), [3,1], [1,1], [0], [9],
+                        [True], ["1"], [1.0], None):
+            with self.subTest(indexes=indexes):
+                with self.assertRaises(ValueError):
+                    shard.targeted(self.source, [], indexes)
+
+    def test_targeted_cli_rejects_missing_report_and_preserves_incomplete(self):
+        with tempfile.TemporaryDirectory(prefix="achbot-targeted-contract-") as tmp:
+            root = Path(tmp)
+            source_path = root/"foundation.json"
+            reports_dir = root/"reports"
+            reports_dir.mkdir()
+            result_path = root/"targeted.json"
+            source_path.write_text(json.dumps(self.source))
+            for index in [2, 6]:
+                (reports_dir/f"shard-{index}.json").write_text(
+                    json.dumps(self.reports[index-1]))
+            args = ["targeted", "--source", str(source_path), "--reports",
+                    str(reports_dir), "--indices", "[2,6]",
+                    "--report", str(result_path)]
+            with contextlib.redirect_stdout(io.StringIO()):
+                shard.main(args)
+            receipt = json.loads(result_path.read_text())
+            self.assertIs(receipt["complete"], False)
+            self.assertEqual(receipt["indexes"], [2,6])
+            (reports_dir/"shard-6.json").unlink()
+            with self.assertRaises(ValueError):
+                with contextlib.redirect_stdout(io.StringIO()):
+                    shard.main(args)
+
     def test_selected_foundation_and_every_shard_remain_incomplete(self):
         self.assertIs(self.source["complete"], False)
         for item in self.reports:
