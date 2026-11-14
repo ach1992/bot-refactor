@@ -54,6 +54,34 @@ if (!$db->commit()) throw new RuntimeException('holder_commit');
 echo 'COMMITTED';
 """
 
+# A disposable second MariaDB client holds the same orders_list row until
+# the scheduled-deletion status fence has committed. A checkout that observed
+# the earlier active preview must re-read the current locked status.
+DELETION_STATUS_HOLDER = r"""<?php
+error_reporting(E_ALL);
+$db=new mysqli('localhost','root','',$argv[1],0,$argv[2]);
+$db->set_charset('utf8mb4');
+$oid=(int)$argv[3];$ready=$argv[4];$release=$argv[5];
+if (!$db->begin_transaction()) throw new RuntimeException('begin');
+$stmt=$db->prepare('SELECT status FROM orders_list WHERE id=? FOR UPDATE');
+$stmt->bind_param('i',$oid);
+if (!$stmt->execute() || (int)$stmt->get_result()->fetch_assoc()['status']!==1)
+    throw new RuntimeException('original_order_not_active');
+$stmt->close();
+$stmt=$db->prepare("UPDATE orders_list SET status=0,autoRenew='off'
+                    WHERE id=? AND status=1");
+$stmt->bind_param('i',$oid);
+if (!$stmt->execute() || $stmt->affected_rows!==1)
+    throw new RuntimeException('fence_not_written');
+$stmt->close();
+file_put_contents($ready,'fence_held');
+$limit=microtime(true)+15;
+while (!is_file($release) && microtime(true)<$limit) usleep(11000);
+if (!is_file($release)) throw new RuntimeException('release_timeout');
+if (!$db->commit()) throw new RuntimeException('fence_commit_failed');
+echo 'COMMITTED';
+"""
+
 # A separate uncommitted successor forces the issuer's CURRENT-read successor
 # SELECT FOR UPDATE to block. KILL QUERY proves SQL lookup failure rolls back
 # the entire invoice reservation before any provider request.
@@ -557,6 +585,199 @@ def exercise_reservation_failure(w,e,stage):
         sql(w,e,'DROP TRIGGER IF EXISTS f1_reject_invoice_before_insert')
     return 'f1_failed_reservation_rolls_back_before_nonidempotent_provider'
 
+
+def exercise_checkout_loses_to_concurrent_deletion_fence(w,e,stage):
+    """Real independent MySQLi sessions: active preview, then locked stale denial."""
+    actor=49525
+    oid=49625
+    fresh_actor(w,e,actor)
+    name='F5-concurrent-status-fence'
+    sql(w,e,"INSERT INTO orders_list "
+        "(id,userid,token,transid,fileid,server_id,inbound_id,remark,uuid,"
+        "protocol,expire_date,link,amount,status,date,notif) VALUES "
+        f"({oid},{actor},'token','',7,2,0,'{name}','uuid-{name}',"
+        "'vless',1700000000,'[]',0,1,'synthetic',1)")
+    pid=seed_pay(w,e,name,actor,typ='RENEW_ACCOUNT',target=oid)
+    sql(w,e,f'UPDATE pays SET plan_id=7,server_id=2 WHERE id={pid}')
+    folder=w/'f5-concurrent-deletion'
+    folder.mkdir()
+    ready=folder/'ready'
+    release=folder/'release'
+    holder=w/'owned-deletion-status-holder.php'
+    holder.write_text(DELETION_STATUS_HOLDER)
+    child=subprocess.Popen(['php','-n','-d','extension=mysqlnd','-d','extension=mysqli',
+        str(holder),DB,str(w/'mysql.sock'),str(oid),str(ready),str(release)],
+        cwd=w,env=e,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+    try:
+        deadline=time.monotonic()+5
+        while not ready.exists() and time.monotonic()<deadline:
+            if child.poll() is not None:
+                raise AssertionError(('deletion_holder_early_exit',child.communicate()))
+            time.sleep(.012)
+        assert ready.exists(),'deletion_holder_missing_order_lock'
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            pending=pool.submit(json_run,w,e,stage,
+                dict(route='initiate',get={'nextpay':'','hash_id':name}))
+            # The read-only preview sees the previous committed status; the
+            # final subject check must WAIT on the active deletion's row lock.
+            blocked=False
+            deadline=time.monotonic()+7
+            while time.monotonic()<deadline and not pending.done():
+                state=sql(w,e,"SELECT INFO FROM information_schema.PROCESSLIST "
+                    f"WHERE DB='{DB}' AND INFO LIKE '%orders_list%' "
+                    "AND INFO LIKE '%FOR UPDATE%' AND INFO NOT LIKE '%PROCESSLIST%'")
+                if 'FOR UPDATE' in state:
+                    blocked=True
+                    break
+                time.sleep(.02)
+            assert blocked,'checkout_did_not_reach_current_order_lock_before_claim'
+            release.write_text('commit')
+            stdout,stderr=child.communicate(timeout=7)
+            assert child.returncode==0 and stdout==b'COMMITTED',(stdout,stderr)
+            outcome=pending.result(timeout=12)
+        assert not outcome['network_calls'],outcome
+        assert sql(w,e,f'SELECT status FROM orders_list WHERE id={oid}')=='0'
+        assert sql(w,e,f'SELECT COUNT(*) FROM payment_attempts WHERE pay_row_id={pid}')=='0'
+        assert sql(w,e,f'SELECT COALESCE(payid,"NULL") FROM pays WHERE id={pid}')=='NULL'
+        return 'concurrent_deletion_commits_before_checkout_claim_no_payment'
+    finally:
+        release.write_text('finish')
+        if child.poll() is None:
+            child.kill()
+            child.communicate(timeout=4)
+
+
+def exercise_deleted_service_never_issues_new_payment(w,e,stage):
+    """Real checkout PHP + real scheduled-deletion guard on owned MariaDB."""
+    import test_post_v9_automatic_renewal as renew
+    fixture=w/'owned-renew-php.php'
+    original="achbotAutoRenewPrepareDeletion($connection,$oid)];"
+    assert renew.PHP.count(original)==1
+    fixture.write_text(renew.PHP.replace(original,
+        "achbotAutoRenewPrepareDeletion($connection,$oid,$spec['expected']??null)];"))
+    cases=[]
+    for n,method in enumerate(('nowpayment','nextpay','zarinpal')):
+        actor=49500+n
+        oid=49600+n
+        fresh_actor(w,e,actor)
+        username=f'deleted-checkout-{n}'
+        expires=int(time.time())-60
+        sql(w,e,"INSERT INTO orders_list "
+            "(id,userid,token,transid,fileid,server_id,inbound_id,remark,uuid,"
+            "protocol,expire_date,link,amount,status,date,notif) VALUES "
+            f"({oid},{actor},'synthetic-token','',7,2,0,'{username}','uuid-{username}',"
+            f"'vless',{expires},'[]',0,1,'synthetic',1)")
+        name=f'F5-old-renew-{method}'
+        pid=seed_pay(w,e,name,actor,typ='RENEW_ACCOUNT',target=oid)
+        sql(w,e,f'UPDATE pays SET plan_id=7,server_id=2 WHERE id={pid}')
+        before=sql(w,e,f'SELECT id,state,payid,order_id FROM pays WHERE id={pid}')
+        expected=dict(expire_date=expires,notif=1,server_id=2,remark=username)
+        removed=renew.run(w,e,dict(action='deletion_guard',order_id=oid,
+                                   expected=expected))
+        assert removed==[{'type':'delete_guard','allowed':True}],(method,removed)
+        assert sql(w,e,f'SELECT status,autoRenew FROM orders_list WHERE id={oid}')=='0\toff'
+        assert sql(w,e,f'SELECT id,state,payid,order_id FROM pays WHERE id={pid}')==before
+        new=json_run(w,e,stage,dict(route='initiate',
+            get={method:'','hash_id':name}))
+        assert not new['network_calls'],(method,new['network_calls'])
+        assert sql(w,e,f'SELECT COUNT(*) FROM payment_attempts WHERE pay_row_id={pid}')=='0'
+        assert sql(w,e,f'SELECT COALESCE(payid,"NULL") FROM pays WHERE id={pid}')=='NULL'
+        cases.append('scheduled_delete_then_'+method+'_cannot_issue_renewal')
+        # A stale Telegram manual-method selection may still be clicked.
+        # It must not mint an attempt or a service effect after deletion.
+        manual=json_run(w,e,stage,dict(route='prepayment',
+            get={},actor=actor,callback_data='prePayCheck_Renew_CartToCart_'+name))
+        assert not manual['network_calls'],manual
+        assert sql(w,e,f'SELECT COUNT(*) FROM payment_attempts WHERE pay_row_id={pid}')=='0'
+        assert sql(w,e,f'SELECT COALESCE(payid,"NULL") FROM pays WHERE id={pid}')=='NULL'
+        cases.append('scheduled_delete_then_'+method+'_manual_choice_no_claim')
+
+        if n==0:
+            import test_post_v9_wallet_authorization_freshness as wallet
+            wallet_stage,wallet_driver=wallet.stage_source(w)
+            sql(w,e,f'UPDATE users SET wallet=700000 WHERE userid={actor}')
+            balance=sql(w,e,f'SELECT wallet FROM users WHERE userid={actor}')
+            result=subprocess.run(wallet.action_cmd(w,wallet_stage,wallet_driver,
+                dict(hash=name,actor=actor,audience='all')),
+                cwd=w,env=e,capture_output=True,timeout=25)
+            assert result.returncode==0 and not result.stderr,(result.stdout,result.stderr)
+            debited=json.loads(result.stdout)
+            assert debited['status']=='unsupported_panel' and debited['effects']==0
+            assert debited['remote_posts']==0
+            assert sql(w,e,f'SELECT wallet FROM users WHERE userid={actor}')==balance
+            assert sql(w,e,f'SELECT COUNT(*) FROM payment_attempts WHERE pay_row_id={pid}')=='0'
+            cases.append('scheduled_delete_then_wallet_choice_no_debit_or_native')
+    # A provider-backed claim must still prevent the physical deletion:
+    # it may settle after the customer closes the original checkout URL.
+    actor=49510
+    oid=49610
+    fresh_actor(w,e,actor)
+    name='F5-issued-before-delete'
+    expiry=int(time.time())-60
+    sql(w,e,"INSERT INTO orders_list "
+        "(id,userid,token,transid,fileid,server_id,inbound_id,remark,uuid,"
+        "protocol,expire_date,link,amount,status,date,notif) VALUES "
+        f"({oid},{actor},'token','',7,2,0,'{name}','uuid-{name}',"
+        f"'vless',{expiry},'[]',0,1,'synthetic',1)")
+    issued=seed_pay(w,e,name,actor,typ='RENEW_ACCOUNT',target=oid)
+    sql(w,e,f'UPDATE pays SET plan_id=7,server_id=2 WHERE id={issued}')
+    checkout=json_run(w,e,stage,dict(route='initiate',
+        get={'nextpay':'','hash_id':name}))
+    assert len(checkout['network_calls'])==1,checkout
+    assert sql(w,e,f'SELECT COUNT(*) FROM payment_attempts WHERE pay_row_id={issued}')=='1'
+    assert sql(w,e,f'SELECT COALESCE(payid,"NULL") FROM pays WHERE id={issued}')!='NULL'
+    rejected=renew.run(w,e,dict(action='deletion_guard',order_id=oid,
+        expected=dict(expire_date=expiry,notif=1,server_id=2,remark=name)))
+    assert rejected==[{'type':'delete_guard','allowed':False}],rejected
+    assert sql(w,e,f'SELECT status FROM orders_list WHERE id={oid}')=='1'
+    cases.append('issued_provider_claim_prevents_scheduled_delete')
+    # A separately authorized local-only removal cannot erase the funds
+    # evidence of an already ISSUED provider invoice. Its late callback
+    # keeps the pre-existing evidence path; the guard is for NEW claims only.
+    sql(w,e,f'UPDATE orders_list SET status=0 WHERE id={oid}')
+    late_worker=w/'owned-issued-after-local-removal.php'
+    late_worker.write_text(r'''<?php
+$_SERVER['SCRIPT_FILENAME']='owned-issued-after-local-removal.php';
+$root=$argv[1];
+$db=new mysqli('localhost','root','',$argv[2],0,$argv[3]);
+$db->set_charset('utf8mb4');
+require_once $root.'/src/Purchase/Core.php';
+$db->begin_transaction();
+$stmt=$db->prepare('SELECT * FROM pays WHERE id=? FOR UPDATE');
+$oid=(int)$argv[4];
+$stmt->bind_param('i',$oid);
+$stmt->execute();
+$pay=$stmt->get_result()->fetch_assoc();
+$stmt->close();
+$valid=$pay && achbotSupportsPaymentSubject($db,$pay,true);
+$db->rollback();
+echo json_encode(['subject_supported'=>$valid],JSON_THROW_ON_ERROR);
+''')
+    raw=subprocess.run(['php','-n','-d','extension=mysqlnd','-d','extension=mysqli',
+        str(late_worker),str(stage),DB,str(w/'mysql.sock'),str(issued)],
+        cwd=w,env=e,capture_output=True,timeout=12)
+    assert raw.returncode==0 and not raw.stderr,(raw.stdout,raw.stderr)
+    assert json.loads(raw.stdout)['subject_supported'] is True,raw.stdout
+    assert sql(w,e,f'SELECT COUNT(*) FROM payment_attempts WHERE pay_row_id={issued}')=='1'
+    cases.append('already_issued_external_claim_preserves_late_payment_subject')
+    # A committed bank/gift intent may have no pays.payid at all: its 003
+    # attempt, not the empty column, proves it is an already-issued claim.
+    manual_name='F5-issued-manual-no-payid'
+    manual_id=seed_pay(w,e,manual_name,actor,typ='RENEW_ACCOUNT',target=oid)
+    sql(w,e,f'UPDATE pays SET plan_id=7,server_id=2 WHERE id={manual_id}')
+    sql(w,e,"INSERT INTO payment_attempts "
+        "(pay_row_id,provider,order_hash,quote_amount,quote_currency,stage) "
+        f"VALUES ({manual_id},'bank_transfer','{manual_name}',100000,'toman','pending')")
+    manual=subprocess.run(['php','-n','-d','extension=mysqlnd','-d','extension=mysqli',
+        str(late_worker),str(stage),DB,str(w/'mysql.sock'),str(manual_id)],
+        cwd=w,env=e,capture_output=True,timeout=12)
+    assert manual.returncode==0 and not manual.stderr,(manual.stdout,manual.stderr)
+    assert json.loads(manual.stdout)['subject_supported'] is True,manual.stdout
+    assert sql(w,e,f'SELECT COALESCE(payid,"NULL") FROM pays WHERE id={manual_id}')=='NULL'
+    cases.append('already_issued_manual_claim_without_payid_keeps_late_evidence')
+    return cases
+
+
 def main():
     ap=argparse.ArgumentParser()
     ap.add_argument('--run-disposable',action='store_true',required=True)
@@ -567,6 +788,7 @@ def main():
                     help='Isolate reviewer R1 source-real inverted timestamp regression')
     ap.add_argument('--r1-reviewed-head',action='store_true',
                     help='Stage original reviewed d698 HEAD lifecycle for isolated RED evidence')
+    ap.add_argument('--f5-only',action='store_true',help='Only isolated deletion/checkout race')
     args=ap.parse_args()
     if args.r1_reviewed_head and (not args.r1_only or args.red_baseline):
         ap.error('--r1-reviewed-head requires --r1-only and not --red-baseline')
@@ -588,18 +810,22 @@ def main():
                 'd698dd8e099b80861982e2cf579e7f564f73c5ad:src/Finance/PaymentLifecycle.php'],
                 cwd=ROOT)
             (stage/'src/Finance/PaymentLifecycle.php').write_bytes(old_life)
-        if not args.r1_only:
+        if args.f5_only:
+            cases.append(exercise_checkout_loses_to_concurrent_deletion_fence(w,e,stage))
+        elif not args.r1_only:
             for n,provider in enumerate(('nowpayment','nextpay','zarinpal')):
                 assert exercise_raced_issuer(w,e,stage,provider,n)
                 cases.append('f1_raced_old_'+provider+'_cannot_issue_after_committed_successor')
-        if not args.red_baseline:
+        if not args.red_baseline and not args.f5_only:
             cases.extend(exercise_r1_inverted_commit_dates(w,e,stage))
-        if not args.red_baseline and not args.r1_only:
+        if not args.red_baseline and not args.r1_only and not args.f5_only:
             cases.append(exercise_reservation_failure(w,e,stage))
             cases.extend(exercise_f4_real_gateway_restrictions(w,e,stage))
             cases.append(exercise_successor_lookup_interrupted(w,e,stage))
             cases.extend(exercise_callback_identity(w,e,stage))
             cases.extend(exercise_shared_crypto(w,e,stage))
+            cases.extend(exercise_deleted_service_never_issues_new_payment(w,e,stage))
+            cases.append(exercise_checkout_loses_to_concurrent_deletion_fence(w,e,stage))
     result={'complete':True,'cases':len(cases),'scenarios':cases,
             'source_real_php':True,'owned_mariadb_only':True,
             'real_provider_requests':0,'production_mutations':0}

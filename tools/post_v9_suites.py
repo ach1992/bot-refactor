@@ -759,7 +759,7 @@ def run_services(tmp: str) -> tuple[dict, dict]:
         ('owner_r4_admin_intents','test_owner_r4_admin_intents.py','cases',50,
             {'actual_php':True,'owned_mariadb':True,'providers':['marzban','pasarguard'],
              'external_calls':0,'production_mutations':0}),
-        ('shared_account_lifecycle','test_shared_account_lifecycle.py','cases',24,
+        ('shared_account_lifecycle','test_shared_account_lifecycle.py','cases',25,
             {'actual_php':True,'owned_socket_mariadb':True,'two_distinct_users':True,
              'concurrent_workers':2,'shared_cycle_one_payer':True,'paying_order_only':True,'full_peer_row_unchanged':True,'fresh_native_shared_cycle_refusal':True,'stale_callback_safe':True,
              'pending_peer_work_held':True,'explicit_panel_group_authority':True,
@@ -783,6 +783,17 @@ def run_services(tmp: str) -> tuple[dict, dict]:
             stderr=(exc.stderr or b'').decode(errors='replace')[-5000:]
             raise RuntimeError('Unified service-management fixture failed: '+name+' '+stderr) from exc
         evidence=json.loads(path.read_text())
+        if name=='shared_account_lifecycle':
+            required_deletion={
+                'scheduled_delete_ignores_unissued_quote_across_shared_references',
+                'unclaimed_peer_payment_history_preserved_after_scheduled_delete',
+                'already_fenced_scheduled_delete_cannot_repeat',
+                'actual_peer_payment_processing_blocks_conflicting_delete',
+                'peer_in_flight_reservation_protects_physical_account_from_delete',
+                'peer_review_hold_protects_physical_delete',
+            }
+            if not required_deletion.issubset(evidence.get('checks',[])):
+                raise RuntimeError('Unclaimed-quote shared deletion evidence incomplete')
         if name=='shared_plan_review_regressions':
             required_correction={
                 *(provider+'_'+suffix for provider in ('marzban','pasarguard')
@@ -1676,6 +1687,18 @@ def run_presentation(tmp: str) -> tuple[dict, dict]:
         "f3_same_target_INCREASE_VOLUME_11_4",
         "f3_unrelated_subscription_not_superseded",
         "f3_old_provider_claim_never_cancelled",
+        # Reviewed delayed-checkout correction: the real hosted PHP must
+        # reject abandoned invoices after scheduled deletion, while issued
+        # attempts still fence deletion and late financial evidence survives.
+        *('scheduled_delete_then_'+method+'_cannot_issue_renewal'
+          for method in ('nowpayment','nextpay','zarinpal')),
+        *('scheduled_delete_then_'+method+'_manual_choice_no_claim'
+          for method in ('nowpayment','nextpay','zarinpal')),
+        'scheduled_delete_then_wallet_choice_no_debit_or_native',
+        'issued_provider_claim_prevents_scheduled_delete',
+        'already_issued_external_claim_preserves_late_payment_subject',
+        'already_issued_manual_claim_without_payid_keeps_late_evidence',
+        'concurrent_deletion_commits_before_checkout_claim_no_payment',
         # Current old-payment removal must reject unknown methods in
         # actual first-party callback dispatch before financial mutation.
         "generic_unsupported_payment_callback_no_effect_WeSwap",
