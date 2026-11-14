@@ -87,7 +87,7 @@ function achbotPhysicalAssertRebindSafe(mysqli $db,int $serverId,
 }
 
 /** Exact connected target evidence, persisted as a digest rather than secrets. */
-function achbotPhysicalTargetFingerprint(mysqli $db,array $order): string {
+function achbotPhysicalTargetFingerprint(mysqli $db,array $order,bool $legacyVersion=false): string {
     $server=(int)$order['server_id'];
     // Marzban stays usable on its own post-V9 schema: optional PasarGuard
     // provider_identity columns are NOT a prerequisite for this target pin.
@@ -100,10 +100,29 @@ function achbotPhysicalTargetFingerprint(mysqli $db,array $order): string {
     $pin=[$row,(int)$order['id'],(string)$order['remark']];
     if ($row['type']==='pasarguard') {
         $p=achbotPgServerPanel($db,$server);
-        $pin[]=[(int)$p['id'],$p['instance_key'],$p['api_url'],$p['version'],
-            hash('sha256',$p['api_key'])];
+        // New physical pins never include informational provider version metadata.
+        // The original version-bearing digest remains available ONLY for old
+        // immutable plan intents recorded before physical_target_format=2.
+        $target=[(int)$p['id'],$p['instance_key'],$p['api_url']];
+        if ($legacyVersion) $target[]=$p['version'];
+        $target[]=hash('sha256',$p['api_key']);
+        $pin[]=$target;
     }
     return hash('sha256',json_encode($pin,JSON_THROW_ON_ERROR));
+}
+/** An absent format means an original v1 journal, whose exact version-bearing
+ * hash must remain pinned. A future/unknown format is never guessed. */
+function achbotPhysicalTargetForIntent(mysqli $db,array $order,array $intent): string {
+    $provider=$intent['provider']??null;
+    $hasFormat=array_key_exists('physical_target_format',$intent);
+    if ($provider==='pasarguard') {
+        if ($hasFormat && $intent['physical_target_format']!==2)
+            throw new RuntimeException('physical_target_format_unverified');
+        return achbotPhysicalTargetFingerprint($db,$order,!$hasFormat);
+    }
+    if ($provider!=='marzban' || $hasFormat)
+        throw new RuntimeException('physical_target_format_unverified');
+    return achbotPhysicalTargetFingerprint($db,$order);
 }
 function achbotPhysicalPgIdentityFingerprint(array $ctx): string {
     return hash('sha256',json_encode([
@@ -649,7 +668,7 @@ function achbotPhysicalBeforeNativeWrite(mysqli $db,array $intent,int $journalId
             if ((int)$row['id']===(int)$intent['source_order_id']) $selected=$row;
         if ($selected===null || (int)$selected['server_id']!==(int)$intent['selected_server_id'])
             throw new RuntimeException('physical_before_put_subject_changed');
-        if (achbotPhysicalTargetFingerprint($db,$selected)!==$intent['physical_target_sha256'])
+        if (achbotPhysicalTargetForIntent($db,$selected,$intent)!==$intent['physical_target_sha256'])
             throw new RuntimeException('physical_before_put_target_changed');
         achbotPhysicalNoPendingPayments($db,$rows,achbotPhysicalPlanChangesLocalPlan($intent['old_rows'],(int)$intent['new_plan_id']));
         $commitAttempted=true;
@@ -757,6 +776,7 @@ function achbotPhysicalSelectPlan(mysqli $db,int $orderId,int $newPlanId,int $ac
             ],$all),
             'native_target'=>$provider==='pasarguard'?['groups'=>$groups]:['inbounds'=>$inbounds],
             'created_at'=>gmdate('c')];
+        if ($provider==='pasarguard') $intent['physical_target_format']=2;
         if ($provider==='marzban') {
             // Durable native identity without a schema migration or an URL/
             // credential equality assumption. Survives local order deletion.
@@ -799,7 +819,7 @@ function achbotPhysicalSelectPlan(mysqli $db,int $orderId,int $newPlanId,int $ac
             'server_id'=>(int)$r['server_id'],'fileid'=>(int)$r['fileid']],$prePeers);
         if ($preRows!==$intent['old_rows'])
             throw new RuntimeException('physical_plan_references_changed');
-        if (achbotPhysicalTargetFingerprint($db,$preOrder)!==$targetSha)
+        if (achbotPhysicalTargetForIntent($db,$preOrder,$intent)!==$targetSha)
             throw new RuntimeException('physical_plan_target_changed');
         if ($provider==='pasarguard' &&
             achbotPhysicalPgIdentityFingerprint(achbotPgOrderContext($db,$orderId,true))!==$pgIdentitySha)
@@ -870,7 +890,7 @@ function achbotPhysicalSelectPlan(mysqli $db,int $orderId,int $newPlanId,int $ac
         // very same transaction, so a peer read may verify its exact linked
         // identity. Any subsequent failure rolls this finish back and leaves
         // the durable native hold in place.
-        if (achbotPhysicalTargetFingerprint($db,$freshOrder)!==$intent['physical_target_sha256'])
+        if (achbotPhysicalTargetForIntent($db,$freshOrder,$intent)!==$intent['physical_target_sha256'])
             throw new RuntimeException('physical_plan_target_changed');
         if ($pgMutation!==null) achbotPgFinishMutation($db,$pgContext,$pgMutation,$pgResult);
         if ($provider==='pasarguard' &&
@@ -968,7 +988,7 @@ function achbotPhysicalRecoverySnapshotLocked(
         'id'=>(int)$r['id'],'server_id'=>(int)$r['server_id'],
         'fileid'=>(int)$r['fileid']],$peers);
     if ($old!==$intent['old_rows'] ||
-        achbotPhysicalTargetFingerprint($db,$order)!==$intent['physical_target_sha256'])
+        achbotPhysicalTargetForIntent($db,$order,$intent)!==$intent['physical_target_sha256'])
         throw new RuntimeException('physical_recovery_original_identity_changed');
     $newPlan=(int)$intent['new_plan_id'];$server=(int)$order['server_id'];
     $s=$db->prepare('SELECT * FROM server_plans WHERE id=? AND server_id=? FOR UPDATE');

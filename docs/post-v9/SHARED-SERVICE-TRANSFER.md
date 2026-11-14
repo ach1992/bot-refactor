@@ -161,6 +161,18 @@ used_traffic monotonically (ordinary concurrent usage growth is allowed);
 an unexpected counter reduction leaves the journal in review without another
 PUT. Native effect uncertainty always requires operator reconciliation.
 
+PasarGuard plan intents written after the version-gate correction include
+`physical_target_format=2`. Their physical-target SHA-256 excludes the panel's
+reported version label, which is informational, but still binds the local
+server, instance, endpoint, credential digest, physical order and provider
+identity. The separately recorded Native account identity pin is unchanged.
+Existing immutable PasarGuard intents with no `physical_target_format` retain
+the original **version-bearing** digest at before-PUT and GET-only recovery
+boundaries; a changed version label on an unresolved historical intent may
+continue to require operator review. Never rewrite an old journal or reinterpret
+a failed legacy fingerprint as the new format. Unknown explicit formats hold
+rather than falling back. Marzban fingerprints are unchanged.
+
 
 For PasarGuard, existing service-effects native mutation evidence also fences
 the remote write. A service_plan_changes journal row must be committed before
