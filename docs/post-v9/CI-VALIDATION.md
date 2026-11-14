@@ -26,25 +26,31 @@ infrastructure and unprovable diffs retain the full fallback.
 | `none` | Exact same tree/no effective changes | Git identity and ancestry | No source impact |
 | `source` | Reserved for previously supported bounded source selection | Source checks + PHP lint | Incomplete targeted only |
 | `cron` | Dedicated Cron test or byte-bounded Cron lock preparation | Source checks and actual isolated Cron regression | Incomplete targeted only |
-| `families` | Existing, explicitly mapped leaf runtime/test files | Shared PHP 8.5 source foundation plus only impacted native family shards | Incomplete, lists selected **and omitted** families |
-| `full` | Shared/high-risk/unknown source, CI/policy/financial/release/installation docs, migrations and ambiguous changes | Source foundation and all eight PHP 8.5 families | Complete only after strict eight-family aggregation |
+| `families` | Existing, explicitly mapped test files with verified native runner ownership | Shared PHP 8.5 source foundation plus only impacted native family shards | Incomplete, lists selected **and omitted** families |
+| `full` | PHP runtime/source (pending complete transitive dependency proof), shared/high-risk/unknown source, CI/policy/financial/release/installation docs, migrations and ambiguous changes | Source foundation and all eight PHP 8.5 families | Complete only after strict eight-family aggregation |
 
-The `families` scope has a small explicit reviewed mapping from existing file
-paths to the eight owned `post_v9_suites.RUNNERS` families. Multiple changed
-paths take the **union** of affected families. It rejects added/deleted code,
-non-regular files, unrecognized tests and cross-domain Cron changes, and uses
-full validation if the union includes all eight families. For example:
+The `families` scope currently has **21 existing mapped test paths** with
+verified native runner ownership (including transitive Python fixture imports)
+across the eight `post_v9_suites.RUNNERS` families. Multiple changed test files
+take the **union** of their owner families. Added/deleted tests, non-regular
+files, unknown tests and mixed Cron/source changes retain `full`; an all-eight
+union also uses `full`. For example:
 
 - `tools/test_post_v9_onboarding.py` selects only `admin` (1).
-- `src/Telegram/UserProfile.php` selects `admin/services/presentation` (1/3/5).
-- `src/Finance/ApiPayments.php` selects `api/wallet/effects/funding` (2/4/7/8).
-- `src/Finance/ReceiptHelpers.php`, `config.php`, `bot.php`, and
-  `tools/post_v9_suites.py` remain **full**, because of broad dependencies or
-  direct influence over test/acceptance policy.
+- `tools/test_post_v9_api_staff_digest.py` selects only `api` (2).
+- Changing both selects `admin/api` (1/2).
+- `src/Finance/ApiPayments.php`, `src/Finance/AutomaticRenewal.php`,
+  `src/Finance/Routes/WalletRecharge.php`, `src/Presentation/Text.php`,
+  `src/Jobs/BroadcastSend.php` and all other PHP runtime files select
+  **full**. The initial 16 PHP mappings omitted native consumers found during
+  independent review; source-to-family PHP include and dynamic entrypoint
+  closure is not yet proven, so no narrower PHP claim is made.
 
-A tested, newly justified mapping can be added in a separate CI change; do
-not infer code safety from file extension alone. This is an explicit bounded
-policy, not dynamic dependency discovery or an exemption from review.
+Any future PHP source exemption requires concrete, current direct and transitive
+native test consumer evidence plus regression tests before it can be reviewed
+and introduced. This deliberately prioritizes truthful coverage over a
+speculative runner-count reduction. Current selected-family savings are for
+bounded test changes, not yet for executable PHP changes.
 
 `php85-validation` remains the protected required status for every scope.
 For `families`, it consumes the trusted path-selection receipt plus the

@@ -32,23 +32,12 @@ ORDINARY_DOC_PATHS = frozenset({
     "docs/post-v9/README.md",
 })
 
+# Only isolated existing test-file edits have proven native runner ownership.
+# PHP source files depend on shared PHP includes, bot entrypoints, finance
+# fixtures and transitive execution across families. The prior 16-path PHP
+# map omitted real consumers; leave runtime PHP on conservative full until
+# complete per-source family closure is demonstrated and reviewed.
 FAMILY_PATHS = {
-    "src/Finance/ApiPayments.php": (2, 4, 7, 8),
-    "src/Finance/AutomaticRenewal.php": (3, 6, 7, 8),
-    "src/Finance/PaymentPage.php": (4, 5),
-    "src/Finance/Routes/WalletRecharge.php": (4, 8),
-    "src/Finance/Routes/WalletTransfer.php": (4, 6, 8),
-    "src/Finance/Routes/AdminWallet.php": (1, 4, 6, 8),
-    "src/Finance/Routes/DiscountEntry.php": (4, 5, 8),
-    "src/Finance/Routes/DiscountAdministration.php": (1, 4, 6, 8),
-    "src/Finance/Routes/ManualReceipts.php": (1, 2, 7, 8),
-    "src/Presentation/Labels.php": (1, 3, 5),
-    "src/Presentation/Text.php": (1, 4, 5),
-    "src/Subscription/Presentation.php": (1, 3, 5),
-    "src/Subscription/AccountDetails.php": (1, 3, 5),
-    "src/Telegram/UserProfile.php": (1, 3, 5),
-    "src/Telegram/Markup.php": (1, 5),
-    "src/Jobs/BroadcastSend.php": (1, 3),
     "tools/test_post_v9_onboarding.py": (1,),
     "tools/test_owner_destination_escaping.py": (1,),
     "tools/test_owner_r5_roles.py": (1,),
@@ -61,7 +50,7 @@ FAMILY_PATHS = {
     "tools/test_next_payment_ux.py": (4,),
     "tools/test_post_v9_provider_integration.py": (5,),
     "tools/test_post_v9_payment_ux_lifecycle.py": (2, 5, 6),
-    "tools/test_post_v9_automatic_renewal.py": (3, 6),
+    "tools/test_post_v9_automatic_renewal.py": (2, 3, 5, 6),
     "tools/test_post_v9_payment_readiness.py": (6,),
     "tools/test_post_v9_gateway_rules.py": (6,),
     "tools/test_post_v9_finance_routes.py": (2, 5, 6, 7, 8),
