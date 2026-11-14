@@ -463,6 +463,43 @@ if (!function_exists('achbotServicePaymentJournalClear')) {
     }
 }
 
+/** New service-bound payment claims need a still-active local order.
+ * Check only never-issued drafts; an already issued gateway/receipt keeps
+ * its independent late-funds reconciliation even if the order is retired.
+ * A locking read serializes the new claim with scheduled deletion's order
+ * status fence, including when the earlier preview used a stale snapshot.
+ */
+if (!function_exists('achbotUnissuedServiceOrderActive')) {
+    function achbotUnissuedServiceOrderActive(mysqli $db,array $pay,int $orderId,bool $lock): bool {
+        if ($orderId<=0) return false;
+        if (!in_array((string)($pay['state']??''),['pending','send','low_wallet'],true) ||
+            (string)($pay['payid']??'')!=='') return true;
+        $stmt=$db->prepare('SELECT status FROM orders_list WHERE id=?'.($lock?' FOR UPDATE':''));
+        if (!$stmt) return false;
+        try {
+            $stmt->bind_param('i',$orderId);
+            if (!$stmt->execute()) return false;
+            $row=$stmt->get_result()->fetch_assoc();
+            if ($row!==null && (int)$row['status']===1) return true;
+        } catch (Throwable $error) {return false;}
+        finally {$stmt->close();}
+        // Manual receipts can own an issued 003 claim while pays.payid is
+        // empty. Preserve that existing late-funds path after local removal;
+        // only a draft with no attempt can be barred from NEW issuance.
+        $payId=(int)($pay['id']??0);
+        if ($payId<=0) return false;
+        try {
+            $q=$db->prepare('SELECT id FROM payment_attempts WHERE pay_row_id=? LIMIT 1'.
+                ($lock?' FOR UPDATE':''));
+            if (!$q) return false;
+            $q->bind_param('i',$payId);
+            if (!$q->execute()) return false;
+            return $q->get_result()->fetch_assoc()!==null;
+        } catch (Throwable $error) {return false;}
+        finally {if (isset($q) && $q instanceof mysqli_stmt) $q->close();}
+    }
+}
+
 if (!function_exists('achbotSupportsPaymentSubject')) {
     function achbotSupportsPaymentSubject($connection, $pay, bool $lock = false)
     {
@@ -497,16 +534,17 @@ if (!function_exists('achbotSupportsPaymentSubject')) {
         }
         if ($type === 'RENEW_ACCOUNT') {
             $oid=(int)($pay['order_id']??0);
-            return $pid > 0 && achbotSupportsOrder(
-                $connection, $oid, $pid, $uid > 0 ? $uid : null, $lock
-            ) && achbotServicePaymentJournalClear($connection,$oid,$lock);
+            return $pid > 0 && achbotUnissuedServiceOrderActive($connection,$pay,$oid,$lock) &&
+                achbotSupportsOrder($connection, $oid, $pid, $uid > 0 ? $uid : null, $lock) &&
+                achbotServicePaymentJournalClear($connection,$oid,$lock);
         }
         if (preg_match('/^INCREASE_(DAY|VOLUME)_(\d+)_(\d+)$/', $type, $match)) {
             $oid = (int)$match[2];
             $addon = (int)$match[3];
-            if ($addon <= 0 || !achbotSupportsOrder(
-                $connection, $oid, $pid > 0 ? $pid : null, $uid > 0 ? $uid : null, $lock
-            )) return false;
+            if ($addon <= 0 ||
+                !achbotUnissuedServiceOrderActive($connection,$pay,$oid,$lock) ||
+                !achbotSupportsOrder($connection, $oid, $pid > 0 ? $pid : null,
+                    $uid > 0 ? $uid : null, $lock)) return false;
             if (!empty($pay['order_id']) && (int)$pay['order_id'] !== $oid) return false;
             if (!achbotServicePaymentJournalClear($connection,$oid,$lock)) return false;
             if (achbotPinnedAddonUnits($pay)===null) return false;

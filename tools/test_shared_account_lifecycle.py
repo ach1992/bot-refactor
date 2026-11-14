@@ -125,10 +125,14 @@ def main():
   q(f"INSERT INTO pays(hash_id,user_id,type,plan_id,server_id,order_id,price,request_date,state)VALUES('shared-delete-unclaimed',1002,'RENEW_ACCOUNT',7,2,{y},100000,UNIX_TIMESTAMP(),'pending')")
   expiry=int(q(f'SELECT expire_date FROM orders_list WHERE id={x}'))
   expected=dict(expire_date=expiry,notif=1,server_id=2,remark='shared-unclaimed-delete')
-  yes(run(x,1001,action='deletion_guard',expected=expected)==[{'type':'delete_guard','allowed':False}],
-      'scheduled_delete_retains_existing_pending_quote_protection_across_references')
-  yes(run(x,1001,action='deletion_guard')==[{'type':'delete_guard','allowed':True}],
-      'explicit_manual_delete_is_not_blocked_by_merely_unclaimed_unpaid_quote')
+  before=q(f"SELECT id,state,payid FROM pays WHERE hash_id='shared-delete-unclaimed'")
+  yes(run(x,1001,action='deletion_guard',expected=expected)==[{'type':'delete_guard','allowed':True}] and
+      q(f'SELECT status,autoRenew FROM orders_list WHERE id={x}')=='0\toff',
+      'scheduled_delete_ignores_unissued_quote_across_shared_references')
+  yes(q(f"SELECT id,state,payid FROM pays WHERE hash_id='shared-delete-unclaimed'")==before,
+      'unclaimed_peer_payment_history_preserved_after_scheduled_delete')
+  yes(run(x,1001,action='deletion_guard')==[{'type':'delete_guard','allowed':False}],
+      'already_fenced_scheduled_delete_cannot_repeat')
 
   q("INSERT INTO server_info(id,title,ucount,remark,flag,active,state)SELECT 88,'Alias',ucount,remark,flag,active,state FROM server_info WHERE id=2")
   q("INSERT INTO server_config SELECT 88,panel_url,ip,sni,header_type,request_header,response_header,security,tlsSettings,type,username,password,port_type,reality,sub_links FROM server_config WHERE id=2")

@@ -2531,6 +2531,16 @@ function achbotNonPayablePaymentSettledLocked(array $payment,?array $attempt): b
         (string)($payment['type']??'')==='RENEW_ACCOUNT';
 }
 
+/** An unissued local quote has no payment or provider claim to serialize.
+ * Receipts, issued gateways and uncertain work are NOT unclaimed quotes.
+ * Keep this separate from terminal states so a physical plan change still
+ * retires stale original-service invoices under its own committed journal.
+ */
+function achbotUnclaimedServiceQuote(array $payment, ?array $attempt): bool {
+    return $attempt===null && (string)($payment['payid']??'')==='' &&
+        in_array((string)($payment['state']??''),['pending','send','low_wallet'],true);
+}
+
 /** Pending claims serialize a shared account; completed references are not an ownership restriction. */
 function achbotSharedAccountWorkSettledLocked(mysqli $db,array $peers,int $ownAttempt=0,
     int $ownPay=0,bool $blockUnclaimedQuotes=false,bool $strictCompletion=false,
@@ -2595,9 +2605,10 @@ function achbotSharedAccountWorkSettledLocked(mysqli $db,array $peers,int $ownAt
         }
         if ($payment['state']==='paid' && ($attempt['stage']??null)==='done') continue;
         if (achbotNonPayablePaymentSettledLocked($payment,$attempt)) continue;
-        // An unclaimed bot quote has no money/native effect. A chosen/issued
-        // attempt may still settle and therefore retains the account fence.
-        if (!$blockUnclaimedQuotes && $payment['state']==='pending' && $attempt===null) continue;
+        // Only a claim that can affect this service keeps the fence. An
+        // unissued pending/send/low_wallet quote has never owned funds or
+        // provider evidence and cannot starve a later independent action.
+        if (!$blockUnclaimedQuotes && achbotUnclaimedServiceQuote($payment,$attempt)) continue;
         return false;
     }
     $result=$db->query("SELECT TABLE_TYPE,ENGINE FROM information_schema.TABLES
@@ -2658,9 +2669,10 @@ function achbotScheduledDeletionEffectsSettled(mysqli $db,array $order): bool {
         if ($payment['state']==='auto_cart_approved' &&
             ($attempt===null || ($attempt['stage']??null)==='done'))continue;
         if ($payment['state']==='paid' && ($attempt['stage']??null)==='done') continue;
-        if (achbotNonPayablePaymentSettledLocked($payment,$attempt)) continue;
-        // Pending quotes, receipt review, processing and uncertain outcomes
-        // retain the service until their owner resolves the payment.
+        if (achbotNonPayablePaymentSettledLocked($payment,$attempt) ||
+            achbotUnclaimedServiceQuote($payment,$attempt)) continue;
+        // An actual provider/receipt claim, processing or uncertain result
+        // retains the service until its effect has been reconciled.
         return false;
     }
     $result=$db->query("SELECT TABLE_TYPE,ENGINE FROM information_schema.TABLES
@@ -2703,7 +2715,7 @@ function achbotAutoRenewPrepareDeletion(mysqli $db, int $orderId,?array $expecte
                 (int)$order['server_id']!==(int)$expected['server_id'] ||
                 $order['remark']!==$expected['remark'])) ||
             !achbotAutoRenewAccountExclusiveLocked($db,$orderId,
-            (int)$order['server_id'],(string)$order['remark'],$peerOrders,$expected!==null)) {
+            (int)$order['server_id'],(string)$order['remark'],$peerOrders)) {
             $db->rollback(); return false;
         }
         if ($schema==='ready') {
