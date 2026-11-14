@@ -98,12 +98,18 @@ try {
     }
     if (!$lookup) cutoverFail('local_orders_empty');
     ksort($lookup,SORT_STRING);
-    $accounts=[];
+    $accounts=[];$notFound=[];
     foreach ($lookup as [$alias,$username]) {
         // The native API's authenticated exact username lookup is read-only.
         $r=achbotPgUserResult(achbotPgRequest($panels[$alias],'GET',
             '/api/user/by-username/'.rawurlencode($username)));
-        if (($r['success']??false)!==true) cutoverFail('native_user_read_failed');
+        if (($r['success']??false)!==true) {
+            if (($r['reason']??null)==='pg_not_found' && ($r['http']??null)===404) {
+                $notFound[]=['panel_key'=>$alias,'username'=>$username];
+                continue; // A verified 404 is not a 401/403/timeout or stale identity.
+            }
+            cutoverFail('native_user_read_failed');
+        }
         $user=$r['user'];
         if ($user['username']!==$username) cutoverFail('native_username_mismatch');
         $accounts[]=[
@@ -114,10 +120,12 @@ try {
             'native_schedules_clear'=>achbotPgManaged($user),
         ];
     }
-    $snapshot=['version'=>1,'tenant'=>$tenant,'panels'=>$outputPanels,'accounts'=>$accounts];
+    $snapshot=['version'=>1,'tenant'=>$tenant,'panels'=>$outputPanels,
+        'accounts'=>$accounts,'not_found'=>$notFound];
     cutoverOutput($options['output'],$snapshot);
     echo json_encode(['complete'=>true,'tenant'=>$tenant,'native_accounts'=>count($accounts),
-        'panel_count'=>count($outputPanels),'output_private'=>true],JSON_THROW_ON_ERROR)."\n";
+        'panel_count'=>count($outputPanels),'not_found'=>count($notFound),
+        'output_private'=>true],JSON_THROW_ON_ERROR)."\n";
     exit(0);
 } catch (Throwable $e) {
     // Never echo private path, API key, URL, username, raw response or exception text.

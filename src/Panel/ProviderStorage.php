@@ -219,7 +219,11 @@ function achbotProviderLegacyCutoverEvidence(array $e,array $account): array {
             !array_key_exists('expire',$native) ||
             !($native['expire']===null || (is_int($native['expire']) && $native['expire']>0)) ||
             !in_array($native['status']??null,['active','disabled','limited','expired'],true) ||
-            ($native['native_schedules_clear']??null)!==true ||
+            !is_bool($native['native_schedules_clear']??null) ||
+            ($native['native_schedules_clear']===false &&
+                ($migration['native_schedule_preserved']??null)!==true) ||
+            ($native['native_schedules_clear']===true &&
+                ($migration['native_schedule_preserved']??false)===true) ||
             !is_array($native['group_ids']??null) ||
             achbotPgGroupsCanonical($native['group_ids'])!==$native['group_ids'])
             throw new RuntimeException();

@@ -94,12 +94,35 @@ function pgcPlan(array $source,array $native,array $mapping,array $validated,str
             array_key_exists('expire',$nativeAccount) &&
             ($nativeAccount['expire']===null || pgcPositive($nativeAccount['expire'])) &&
             in_array($nativeAccount['status']??null,['active','disabled','limited','expired'],true) &&
-            ($nativeAccount['native_schedules_clear']??null)===true,'native_account_invalid');
+            is_bool($nativeAccount['native_schedules_clear']??null),'native_account_invalid');
         $key=$alias.'|'.$nativeAccount['username'];
         $nativeKey=$alias.'|'.$nativeAccount['id'];
         pgcExpect(!isset($accounts[$key]) && !isset($remoteIds[$nativeKey]),
             'native_identity_collision');
         $accounts[$key]=$nativeAccount;$remoteIds[$nativeKey]=true;
+    }
+    $exceptions=$validated['exceptions']??null;
+    if ($exceptions!==null) pgcExpect(is_array($exceptions) &&
+        is_int($exceptions['missing_accounts']??null) && $exceptions['missing_accounts']>=0 &&
+        is_int($exceptions['preserved_groups']??null) && $exceptions['preserved_groups']>=0 &&
+        is_int($exceptions['preserved_schedules']??null) && $exceptions['preserved_schedules']>=0,
+        'exception_policy_invalid');
+    $absent=[];
+    foreach ($native['not_found']??[] as $missing) {
+        pgcExpect(is_array($missing) && is_string($missing['panel_key']??null) &&
+            isset($panels[$missing['panel_key']]) &&
+            preg_match('/^[a-zA-Z0-9_@.-]{1,100}$/D',(string)($missing['username']??''))===1,
+            'native_absence_invalid');
+        $missingKey=$missing['panel_key'].'|'.$missing['username'];
+        pgcExpect(!isset($absent[$missingKey]) && !isset($accounts[$missingKey]),
+            'native_absence_conflict');
+        $absent[$missingKey]=true;
+    }
+    $excluded=[];
+    foreach ($validated['excluded_orders']??[] as $excludedRef) {
+        pgcExpect(is_array($excludedRef) && pgcPositive($excludedRef['order_id']??null) &&
+            !isset($excluded[$excludedRef['order_id']]),'excluded_reference_invalid');
+        $excluded[$excludedRef['order_id']]=$excludedRef;
     }
     $refs=$validated['references'];$byOrder=[];
     foreach ($refs as $reference) {
@@ -107,8 +130,9 @@ function pgcPlan(array $source,array $native,array $mapping,array $validated,str
             !isset($byOrder[$reference['order_id']]),'validated_reference_invalid');
         $byOrder[$reference['order_id']]=$reference;
     }
-    pgcExpect(count($byOrder)===count($orders),'validated_reference_incomplete');
-    $physical=[];$nativeAllocation=[];
+    pgcExpect(count($byOrder)+count($excluded)===count($orders),
+        'validated_reference_incomplete');
+    $physical=[];$nativeAllocation=[];$absentPhysical=[];$preservedPhysical=[];$preservedSchedules=[];
     foreach ($orders as $id=>$order) {
         pgcExpect(is_array($order) && isset($servers[$order['server_id']??null]) &&
             is_string($order['username']??null) &&
@@ -118,6 +142,7 @@ function pgcPlan(array $source,array $native,array $mapping,array $validated,str
             array_key_exists('provider_effect_id',$order) && $order['provider_effect_id']===null &&
             array_key_exists('provider_remote_user_id',$order) && $order['provider_remote_user_id']===null &&
             in_array($order['auto_renew']??null,['on','off'],true) &&
+            in_array($order['status']??null,[0,1],true) &&
             is_int($order['amount']??null) && $order['amount']>=0,
             'legacy_order_invalid');
         $sid=$order['server_id'];
@@ -131,7 +156,20 @@ function pgcPlan(array $source,array $native,array $mapping,array $validated,str
                 'legacy_order_plan_invalid');
         }
         $m=$byOrder[$id]??null;
-        $account=$accounts[$alias.'|'.$order['username']]??null;
+        $accountKey=$alias.'|'.$order['username'];
+        $account=$accounts[$accountKey]??null;
+        $x=$excluded[$id]??null;
+        if ($account===null && $x!==null && $exceptions!==null) {
+            pgcExpect(isset($absent[$accountKey]) && $m===null &&
+                ($x['order_id']??null)===$id && ($x['server_id']??null)===$sid &&
+                ($x['username']??null)===$order['username'] &&
+                ($x['owner_id']??null)===$order['owner_id'] &&
+                ($x['plan_id']??null)===$order['plan_id'],
+                'excluded_reference_mismatch');
+            $absentPhysical[$sid.'|'.$order['username']]=true;
+            continue;
+        }
+        pgcExpect($x===null,'excluded_reference_has_native_account');
         pgcExpect($account!==null && is_array($m) &&
             ($m['order_id']??null)===$id && ($m['server_id']??null)===$sid &&
             ($m['plan_id']??null)===$order['plan_id'] &&
@@ -142,11 +180,24 @@ function pgcPlan(array $source,array $native,array $mapping,array $validated,str
             ($m['native_groups']??null)===$account['group_ids'],
             'validated_reference_mismatch');
         $groups=$order['plan_id']===0?null:($mapping['plan_groups'][(string)$order['plan_id']]??null);
+        $scheduled=($account['native_schedules_clear']===false);
+        pgcExpect(($m['schedule_preserved']??false)===$scheduled &&
+            (!$scheduled || $exceptions!==null), 'native_scheduling_unverified');
+        if ($scheduled) $preservedSchedules[$sid.'|'.$order['username']]=true;
+        $groupPreserved=($m['group_preserved']??null)===true;
         if ($groups!==null) {
-            pgcExpect(pgcGroups($groups) && $groups===$account['group_ids'] &&
-                $groups===($m['planned_groups']??null),'native_plan_group_drift');
+            pgcExpect(pgcGroups($groups) && $groups===($m['planned_groups']??null),
+                'native_plan_group_drift');
+            if ($groupPreserved) {
+                pgcExpect($exceptions!==null && $groups!==$account['group_ids'] &&
+                    $account['group_ids'] &&
+                    !array_diff($account['group_ids'],$panels[$alias]['available_groups']??[]),
+                    'native_preserved_group_invalid');
+                $preservedPhysical[$sid.'|'.$order['username']]=true;
+            } else pgcExpect($groups===$account['group_ids'], 'native_plan_group_drift');
         } else {
-            pgcExpect($order['plan_id']===0 && array_key_exists('planned_groups',$m) && $m['planned_groups']===null,
+            pgcExpect($order['plan_id']===0 && array_key_exists('planned_groups',$m) &&
+                $m['planned_groups']===null && !$groupPreserved,
                 'planless_mapping_invalid');
         }
         $physicalKey=$sid.'|'.$order['username'];
@@ -160,6 +211,13 @@ function pgcPlan(array $source,array $native,array $mapping,array $validated,str
         $physical[$physicalKey]['references'][]=['order_id'=>$id,'owner_id'=>$order['owner_id'],
             'plan_id'=>$order['plan_id']];
     }
+    if ($exceptions!==null) pgcExpect(
+        count($absentPhysical)===$exceptions['missing_accounts'] &&
+        count($preservedPhysical)===$exceptions['preserved_groups'] &&
+        count($preservedSchedules)===$exceptions['preserved_schedules'] &&
+        count($absent)===count($absentPhysical), 'exception_count_mismatch');
+    else pgcExpect(!$excluded && !$absent && !$preservedPhysical && !$preservedSchedules,
+        'unexpected_cutover_exception');
     foreach ($plans as $id=>$p)
         pgcExpect(isset($servers[$p['server_id']??null]) && $p['inbound_id']===0 &&
             pgcGroups($mapping['plan_groups'][(string)$id]??null),
@@ -171,12 +229,15 @@ function pgcPlan(array $source,array $native,array $mapping,array $validated,str
             'planless_native_groups_invalid');
     }
     unset($item);
-    return compact('servers','plans','orders','physical','panels','mapping');
+    return compact('servers','plans','orders','physical','panels','mapping',
+        'excluded','preservedPhysical','preservedSchedules');
 }
 
 function pgcDatabase(mysqli $db,array $data,string $tenant,string $fingerprint,bool $apply): array {
     $servers=$data['servers'];$plans=$data['plans'];$orders=$data['orders'];
     $physical=$data['physical'];$panels=$data['panels'];$map=$data['mapping'];
+    $excluded=$data['excluded'];$preserved=$data['preservedPhysical'];
+    $scheduled=$data['preservedSchedules'];
     $journalKey='ACHBOT_PG_CUTOVER:v1:'.$tenant;
     $lock=$apply?' FOR UPDATE':'';
     $journal=pgcRows($db,'SELECT id,value FROM setting WHERE type=?'.$lock,[$journalKey]);
@@ -186,7 +247,10 @@ function pgcDatabase(mysqli $db,array $data,string $tenant,string $fingerprint,b
         ($existing['version']??null)===1 &&
         ($existing['fingerprint']??null)===$fingerprint &&
         ($existing['orders']??null)===count($orders) &&
-        ($existing['physical_accounts']??null)===count($physical),
+        ($existing['physical_accounts']??null)===count($physical) &&
+        ($existing['excluded_orders']??null)===count($excluded) &&
+        ($existing['preserved_groups']??null)===count($preserved) &&
+        ($existing['preserved_schedules']??null)===count($scheduled),
         'journal_conflict');
 
     $allServers=pgcRows($db,"SELECT id,type FROM server_config WHERE type='marzban' ORDER BY id".$lock);
@@ -236,7 +300,7 @@ function pgcDatabase(mysqli $db,array $data,string $tenant,string $fingerprint,b
             ($journal ? $live['provider_group_ids']===$nativeGroup :
                 $live['provider_group_ids']===null),'live_plan_changed');
     }
-    $currentOrders=pgcRows($db,'SELECT id,server_id,fileid,inbound_id,userid,remark,amount,autoRenew,
+    $currentOrders=pgcRows($db,'SELECT id,server_id,fileid,inbound_id,userid,remark,amount,status,autoRenew,
         provider_effect_id,provider_remote_user_id,provider_remote_created_at
         FROM orders_list ORDER BY id'.$lock);
     $currentLegacyOrders=[];
@@ -249,7 +313,9 @@ function pgcDatabase(mysqli $db,array $data,string $tenant,string $fingerprint,b
             (int)$live['fileid']===$o['plan_id'] &&
             (int)$live['inbound_id']===0 && (int)$live['userid']===$o['owner_id'] &&
             $live['remark']===$o['username'] && (int)$live['amount']===$o['amount'] &&
-            $live['autoRenew']===$o['auto_renew'],'live_order_changed');
+            (int)$live['status']===($journal && isset($excluded[$id])?0:$o['status']) &&
+            $live['autoRenew']===($journal && isset($excluded[$id])?'off':$o['auto_renew']),
+            'live_order_changed');
         if (!$journal) pgcExpect($live['provider_effect_id']===null &&
             $live['provider_remote_user_id']===null &&
             $live['provider_remote_created_at']===null,'source_prelinked_order');
@@ -293,9 +359,18 @@ function pgcDatabase(mysqli $db,array $data,string $tenant,string $fingerprint,b
                     'journal_reference_changed');
             }
         }
+        foreach ($excluded as $id=>$ref) {
+            $o=$currentLegacyOrders[$id];
+            pgcExpect($o['provider_effect_id']===null &&
+                $o['provider_remote_user_id']===null &&
+                $o['provider_remote_created_at']===null, 'journal_excluded_order_changed');
+        }
         return ['outcome'=>'already_applied','servers'=>count($servers),
             'plans'=>count($plans),'orders'=>count($orders),
-            'physical_accounts'=>count($physical)];
+            'physical_accounts'=>count($physical),
+            'excluded_orders'=>count($excluded),
+            'preserved_groups'=>count($preserved),
+            'preserved_schedules'=>count($scheduled)];
     }
     if ($apply) {
         $sourceHashes=$data['input_hashes'];
@@ -306,13 +381,14 @@ function pgcDatabase(mysqli $db,array $data,string $tenant,string $fingerprint,b
                 'created_at'=>$account['created_at'],'group_ids'=>$account['group_ids'],
                 'data_limit'=>$account['data_limit'],'used_traffic'=>$account['used_traffic'],
                 'expire'=>$account['expire'],'status'=>$account['status'],
-                'native_schedules_clear'=>true];
+                'native_schedules_clear'=>$account['native_schedules_clear']];
             $snapshot=['provider'=>'pasarguard','panel_id'=>$panel['id'],
                 'instance_key'=>$panel['instance_key'],
                 'endpoint_sha256'=>$panel['endpoint_sha256'],
                 'group_ids'=>$account['group_ids'],
                 'identity_mode'=>'historical_cutover',
                 'migration'=>['version'=>1,'tenant'=>$tenant,'source_server_id'=>$sourceId,
+                    'native_schedule_preserved'=>!$account['native_schedules_clear'],
                     'source_input_sha256'=>$sourceHashes['local'],
                     'native_input_sha256'=>$sourceHashes['native'],
                     'mapping_input_sha256'=>$sourceHashes['mapping'],
@@ -351,6 +427,17 @@ function pgcDatabase(mysqli $db,array $data,string $tenant,string $fingerprint,b
                     $effectId,$account['id'],$account['created_at'],$ref['order_id']]);
             }
         }
+        // The Owner approved orphaned historical order rows to remain in the
+        // financial ledger, but not to advertise a missing Native service or
+        // participate in future automation. No source row is deleted.
+        foreach ($excluded as $id=>$ref) {
+            $o=$currentLegacyOrders[$id];
+            if ((int)$o['status']!==0 || $o['autoRenew']!=='off')
+                pgcUpdate($db,"UPDATE orders_list SET status=0,autoRenew='off'
+                    WHERE id=? AND status=? AND autoRenew=? AND
+                    provider_effect_id IS NULL AND provider_remote_user_id IS NULL",[
+                    $id,$o['status'],$o['autoRenew']]);
+        }
         foreach ($plans as $id=>$plan)
             pgcUpdate($db,'UPDATE server_plans SET provider_group_ids=?
                 WHERE id=? AND provider_group_ids IS NULL',[
@@ -366,13 +453,19 @@ function pgcDatabase(mysqli $db,array $data,string $tenant,string $fingerprint,b
         }
         $journalDoc=json_encode(['version'=>1,'fingerprint'=>$fingerprint,
             'servers'=>count($servers),'plans'=>count($plans),'orders'=>count($orders),
-            'physical_accounts'=>count($physical)],JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR);
+            'physical_accounts'=>count($physical),
+            'excluded_orders'=>count($excluded),
+            'preserved_groups'=>count($preserved),
+            'preserved_schedules'=>count($scheduled)],JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR);
         pgcUpdate($db,'INSERT INTO setting (type,value) VALUES (?,?)',
             [$journalKey,$journalDoc]);
     }
     return ['outcome'=>$apply?'applied_pending_commit':'dry_run_only',
         'servers'=>count($servers),'plans'=>count($plans),'orders'=>count($orders),
-        'physical_accounts'=>count($physical)];
+        'physical_accounts'=>count($physical),
+        'excluded_orders'=>count($excluded),
+        'preserved_groups'=>count($preserved),
+        'preserved_schedules'=>count($scheduled)];
 }
 
 $database=null;

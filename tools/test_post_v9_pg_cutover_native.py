@@ -28,7 +28,7 @@ class NativeExport(unittest.TestCase):
                 "orders": [{"id": 101, "server_id": 2, "plan_id": 9,
                     "inbound_id": 0, "username": username,
                     "owner_id": 1001, "provider_effect_id": None,
-                    "provider_remote_user_id": None, "auto_renew": "on",
+                    "provider_remote_user_id": None, "auto_renew": "on", "status": 1,
                     "amount": 50000}],
                 "claims": {"unsettled_service_payments": 0,
                     "uncertain_provider_effects": 0, "uncommitted_plan_changes": 0},
@@ -38,6 +38,8 @@ class NativeExport(unittest.TestCase):
                        "plan_groups": {"9": [2, 5]}}
             with pg.panel() as (server, url):
                 server.mode = mode
+                if mode == "absent":
+                    server.user = None
                 credentials = {"version": 1, "panels": {"main": {
                     "id": 71, "instance_key": "a" * 32, "api_url": url,
                     "api_key": "fixture-private-key", "version": "arbitrary-provider-label"}}}
@@ -60,18 +62,29 @@ class NativeExport(unittest.TestCase):
                     self.assertTrue(parsed["complete"])
                     self.assertTrue(output.is_file())
                     native = json.loads(output.read_text())
-                    self.assertEqual(native["accounts"][0]["username"], "fixture_user")
-                    self.assertEqual(native["accounts"][0]["id"], 17)
-                    self.assertEqual(native["accounts"][0]["created_at"],
-                                     "2026-10-26T05:00:00.123456Z")
-                    self.assertEqual(native["accounts"][0]["used_traffic"], 10)
-                    self.assertEqual(native["accounts"][0]["data_limit"], 2147483648)
+                    if mode == "absent":
+                        self.assertEqual(native["accounts"], [])
+                        self.assertEqual(native["not_found"], [{"panel_key": "main", "username": username}])
+                        report, _ = check.reconcile(local, native, mapping,
+                            {"missing_accounts": 1, "preserved_groups": 0, "preserved_schedules": 0})
+                        self.assertTrue(report["complete"], report)
+                        self.assertEqual(report["statistics"]["historical_accounts_without_native"], 1)
+                    else:
+                        self.assertEqual(native["accounts"][0]["username"], "fixture_user")
+                    if mode != "absent":
+                        self.assertEqual(native["accounts"][0]["id"], 17)
+                    if mode != "absent":
+                        self.assertEqual(native["accounts"][0]["created_at"],
+                                         "2026-10-26T05:00:00.123456Z")
+                        self.assertEqual(native["accounts"][0]["used_traffic"], 10)
+                        self.assertEqual(native["accounts"][0]["data_limit"], 2147483648)
                     self.assertEqual(native["panels"][0]["available_groups"], [2, 5])
                     self.assertNotIn("api_key", output.read_text())
-                    report, _ = check.reconcile(local, native, mapping)
-                    self.assertEqual(report["blocker_counts"],
-                                     {"native_scheduling_conflict": 1} if mode == "scheduled_hold" else {})
-                    self.assertEqual(report["complete"], mode != "scheduled_hold")
+                    if mode != "absent":
+                        report, _ = check.reconcile(local, native, mapping)
+                        self.assertEqual(report["blocker_counts"],
+                                         {"native_scheduling_conflict": 1} if mode == "scheduled_hold" else {})
+                        self.assertEqual(report["complete"], mode != "scheduled_hold")
                     self.assertEqual(output.stat().st_mode & 0o777, 0o600)
                 else:
                     self.assertFalse(output.exists())
@@ -80,6 +93,13 @@ class NativeExport(unittest.TestCase):
                 self.assertTrue(all(method == "GET" for method, _, _ in server.trace))
                 self.assertEqual(server.write_count, 0)
                 return parsed
+
+    def test_absent_user_404_is_explicit_private_inventory_not_import(self):
+        self.assertTrue(self.run_case(mode="absent")["complete"])
+
+    def test_permission_denial_cannot_be_classified_as_absent(self):
+        self.assertEqual(self.run_case(mode="http_403")["error_code"],
+                         "panel_readonly_check_failed")
 
     def test_success_readonly_and_mapping(self):
         self.assertTrue(self.run_case()["complete"])

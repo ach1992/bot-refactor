@@ -171,16 +171,36 @@ python3 tools/post_v9_pg_cutover_preflight.py --local /secure-private/hell-local
 
 The Native exporter uses only authenticated GETs and records exact Native
 `user.id` and `created_at`, Groups, current used traffic/limit, expiry and
-status, without returning UUIDs or tokens to stdout. The comparator validates
+status, without returning UUIDs or tokens to stdout. A Native **HTTP 404** for
+an exact username is recorded privately in `native.not_found`; access denied,
+transport failures and malformed user data still abort the export rather than
+being treated as absence. The comparator validates
 the entire local source, including Hell's shared physical users and 12
-historical planless references (refresh moving counts). Verify no missing
-account, native collision, Group drift, scheduling conflict, or unsettled
-Native/plan effect. Incomplete old financial invoices remain independently
+historical planless references (refresh moving counts). Strict defaults refuse every missing account, native collision, Group drift,
+scheduling conflict, or unsettled Native/plan effect. The scoped post-panel
+cutover exception options require **exact counts** for absence, current-group
+preservation, and current-Native-scheduler preservation. Review these counts
+from fresh read-only live data before running; an unanticipated identity,
+changed count, unauthorized Group or incorrect 404 classification refuses
+conversion. The native Group and scheduling settings are **never edited** by
+the local SQL conversion, including when exceptions are accepted. Incomplete old financial invoices remain independently
 visible for review. An offline `complete=true` is **NOT** approval for
 production; `ready_for_production_cutover=false` is intentional. Confirm
 actual subscription URL and original client config continuity separately.
 
 ### 5. Dry-run and guarded one-time local conversion
+
+Before the dry-run, generate `--private-map` with three **verified** exception
+counts, for example for the 2026-11-15 observed Hell cohort:
+
+```bash
+python3 tools/post_v9_pg_cutover_preflight.py --local /secure-private/hell-local.json --native /secure-private/hell-native.json --mapping /secure-private/hell-map.json --private-map /secure-private/hell-validated-map.json --approved-missing-account-count 97 --approved-preserved-group-count 4 --approved-preserved-schedule-count 4
+```
+
+These numbers are observations and must not be assumed for a later snapshot.
+Vivan has a separate cohort and separate counts. A positive count is **not**
+permission to fabricate, import, remove, change group/expiry or bypass an
+unrelated service-effect uncertainty.
 
 The new operator CLI
 [`post_v9_pg_cutover_apply.php`](../../tools/post_v9_pg_cutover_apply.php)
@@ -209,10 +229,13 @@ Production SQL cutover for the exact two bot databases**, is the `--apply`
 mode eligible. `--apply` creates migration-specific native provenance in
 `service_effects` for each distinct physical account, links all existing
 order references to it, sets per-plan Native Group IDs and reuses the
-stored PasarGuard connection on each existing old logical server. It does
-not overwrite order IDs, paid amounts, plan terms, customer tokens, links,
-UUID/proxy credentials, wallet balances, payment history, original
-effect/quote/plan journals, or Native traffic/expiry. It does not dispatch
+stored PasarGuard connection on each existing old logical server. It leaves all customer financial and historical order rows in place.
+For explicitly verified absent historical Native identities only, it marks
+the old local order as `status=0, autoRenew=off` to avoid advertising or
+renewing an account which no longer exists. No charge is made and no record is
+deleted. It does not overwrite order IDs, paid amounts, plan terms, customer
+tokens, links, UUID/proxy credentials, wallet balances, payment history,
+original effect/quote/plan journals, or Native traffic/expiry/groups/schedules. It does not dispatch
 Native POST/PUT/DELETE, payment or Telegram requests. The database
 transaction either commits all local changes with a one-time journal in
 `setting` or rolls them back; exact repeated invocation verifies the journal

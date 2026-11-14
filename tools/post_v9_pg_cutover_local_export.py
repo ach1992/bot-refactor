@@ -23,7 +23,7 @@ SOURCES = {
         WHERE c.type='marzban' ORDER BY p.id;""",
     "O": """SELECT CONCAT('O|',JSON_OBJECT('id',o.id,'server_id',o.server_id,
         'plan_id',o.fileid,'inbound_id',o.inbound_id,'username',o.remark,
-        'owner_id',o.userid,'provider_effect_id',o.provider_effect_id,
+        'owner_id',o.userid,'status',o.status,'provider_effect_id',o.provider_effect_id,
         'provider_remote_user_id',o.provider_remote_user_id,
         'auto_renew',o.autoRenew,'amount',o.amount))
         FROM orders_list o JOIN server_config c ON c.id=o.server_id

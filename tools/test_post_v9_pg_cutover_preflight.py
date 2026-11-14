@@ -72,6 +72,8 @@ def fixture(tenant="hell"):
         "server_panels": {"2": "main", "3": "main"},
         "plan_groups": {"9": [7], "10": [8]},
     }
+    for order in local["orders"]:
+        order["status"] = 1
     return local, native, mapping
 
 
@@ -98,6 +100,51 @@ class Reconciliation(unittest.TestCase):
         self.assertTrue(report["complete"])
         self.assertEqual(report["statistics"]["native_accounts_unrelated"], 1)
         self.assertEqual(len(result), 1)
+
+    def test_owner_approved_verified_absence_and_group_preservation(self):
+        local, native, mapping = fixture()
+        local["orders"].append({"id": 104, "server_id": 2, "plan_id": 9,
+            "inbound_id": 0, "username": "orphan_old", "owner_id": 1004,
+            "provider_effect_id": None, "provider_remote_user_id": None,
+            "auto_renew": "off", "status": 1, "amount": 3500})
+        native["not_found"] = [{"panel_key": "main", "username": "orphan_old"}]
+        native["accounts"][0]["group_ids"] = [8]
+        native["accounts"][0]["native_schedules_clear"] = False
+        allowed = {"missing_accounts": 1, "preserved_groups": 1, "preserved_schedules": 1}
+        report, refs = tool.reconcile(local, native, mapping, allowed)
+        self.assertTrue(report["complete"], report)
+        self.assertEqual(report["blocker_counts"], {})
+        self.assertEqual(report["statistics"]["historical_accounts_without_native"], 1)
+        self.assertEqual(report["statistics"]["existing_native_group_preserved"], 1)
+        self.assertEqual(report["statistics"]["native_schedules_untouched"], 1)
+        self.assertEqual([r["order_id"] for r in refs], [101, 102, 103])
+        self.assertTrue(refs[0]["group_preserved"])
+        self.assertTrue(refs[0]["schedule_preserved"])
+        self.assertEqual(refs[0]["native_groups"], [8])
+        self.assertEqual(refs[0]["planned_groups"], [7])
+        for wrong in ({"missing_accounts": 0, "preserved_groups": 1, "preserved_schedules": 1},
+                      {"missing_accounts": 1, "preserved_groups": 0, "preserved_schedules": 1},
+                      {"missing_accounts": 1, "preserved_groups": 1, "preserved_schedules": 0}):
+            report, _ = tool.reconcile(local, native, mapping, wrong)
+            self.assertEqual(report["blocker_counts"], {"exception_count_mismatch": 1})
+        report, _ = tool.reconcile(local, native, mapping)
+        self.assertEqual(report["blocker_counts"], {
+            "native_account_missing": 1, "native_group_mismatch": 1,
+            "native_scheduling_conflict": 1})
+        native["not_found"] = []
+        with self.assertRaisesRegex(ValueError, "native_absence_snapshot_incomplete"):
+            tool.reconcile(local, native, mapping, allowed)
+
+    def test_no_group_exception_when_missing_or_forbidden_group(self):
+        local, native, mapping = fixture()
+        native["accounts"][0]["group_ids"] = [999]
+        report, _ = tool.reconcile(local, native, mapping,
+                                   {"missing_accounts": 0, "preserved_groups": 1, "preserved_schedules": 0})
+        self.assertIn("native_group_mismatch", report["blocker_counts"])
+        native["accounts"][0]["group_ids"] = []
+        report, _ = tool.reconcile(local, native, mapping,
+                                   {"missing_accounts": 0, "preserved_groups": 1, "preserved_schedules": 0})
+        self.assertIn("native_group_mismatch", report["blocker_counts"])
 
     def test_missing_account_blocks_and_map_incomplete(self):
         local, native, mapping = fixture()

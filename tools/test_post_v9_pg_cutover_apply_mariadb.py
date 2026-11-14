@@ -29,7 +29,7 @@ CREATE TABLE server_plans(
 CREATE TABLE orders_list(
  id INT PRIMARY KEY,server_id INT,fileid INT,inbound_id INT,
  userid BIGINT,remark VARCHAR(100) COLLATE utf8mb4_bin,
- amount INT,autoRenew VARCHAR(10),
+ amount INT,status TINYINT,autoRenew VARCHAR(10),
  provider_effect_id BIGINT NULL,provider_remote_user_id BIGINT NULL,
  provider_remote_created_at VARCHAR(40) NULL);
 CREATE TABLE setting(id INT AUTO_INCREMENT PRIMARY KEY,type VARCHAR(500),value TEXT);
@@ -65,10 +65,10 @@ INSERT INTO server_config VALUES
 UPDATE server_config SET provider_connection_id=NULL WHERE id IN (2,3);
 INSERT INTO server_plans VALUES (9,2,0,NULL),(10,3,0,NULL),(82,14,0,'[1]');
 INSERT INTO orders_list VALUES
- (101,2,9,0,1001,'plus_fixture',50000,'on',NULL,NULL,NULL),
- (102,2,9,0,1002,'plus_fixture',40000,'off',NULL,NULL,NULL),
- (103,3,0,0,1003,'planless_fixture',0,'off',NULL,NULL,NULL),
- (201,14,82,0,2001,'pg_test_fixture',100000,'off',41,61269,'2026-11-14T21:59:50.305933Z');
+ (101,2,9,0,1001,'plus_fixture',50000,1,'on',NULL,NULL,NULL),
+ (102,2,9,0,1002,'plus_fixture',40000,1,'off',NULL,NULL,NULL),
+ (103,3,0,0,1003,'planless_fixture',0,1,'off',NULL,NULL,NULL),
+ (201,14,82,0,2001,'pg_test_fixture',100000,1,'off',41,61269,'2026-11-14T21:59:50.305933Z');
 INSERT INTO service_effects (id,source_kind,source_ref,state,provider_state,
  provider_connection_id,provider_remote_user_id,provider_remote_created_at)
  VALUES (41,'free_trial','pg_fixture','local_recorded','linked',14,61269,'2026-11-14T21:59:50.305933Z');
@@ -130,6 +130,8 @@ def fixtures():
             "native_groups": account["group_ids"],
             "planned_groups": [1] if order["plan_id"] else None,
         })
+    for order in local["orders"]:
+        order["status"] = 1
     return local, native_manifest, mapping, refs
 
 
@@ -272,6 +274,88 @@ echo json_encode(['refs'=>count($refs),'id_mode'=>$id['identity_mode'],
                                      env=os_env, capture_output=True, text=True, timeout=15)
             assert process.returncode != 0, process.stdout
             checks.append("altered_incarnation_rejected")
+    with owned.owned_database() as (work, env):
+        with tempfile.TemporaryDirectory(prefix="pg-cutover-exceptions-") as directory:
+            folder = Path(directory)
+            native.sql(work, env, "CREATE DATABASE bothell")
+            native.sql(work, env, SCHEMA, "bothell")
+            native.sql(work, env, "INSERT INTO orders_list VALUES "
+                "(104,2,9,0,1004,'orphan_historical',70000,1,'on',NULL,NULL,NULL)", "bothell")
+            local, pg, mapping, refs = fixtures()
+            local["orders"].append({"id": 104, "server_id": 2, "plan_id": 9,
+                "inbound_id": 0, "username": "orphan_historical", "owner_id": 1004,
+                "provider_effect_id": None, "provider_remote_user_id": None,
+                "auto_renew": "on", "status": 1, "amount": 70000})
+            pg["accounts"][0]["group_ids"] = [3]
+            pg["accounts"][0]["native_schedules_clear"] = False
+            pg["not_found"] = [{"panel_key": "main", "username": "orphan_historical"}]
+            for ref in refs[:2]:
+                ref["native_groups"] = [3]
+                ref["group_preserved"] = True
+                ref["schedule_preserved"] = True
+            refs[2]["group_preserved"] = False
+            refs[2]["schedule_preserved"] = False
+            docs = {"local": local, "native": pg, "mapping": mapping}
+            hashes = {}
+            for label, value in docs.items():
+                path = folder / (label + ".json")
+                path.write_text(json.dumps(value, separators=(",", ":")) + "\n")
+                path.chmod(0o600)
+                hashes[label] = hashlib.sha256(path.read_bytes()).hexdigest()
+            validated = {"version": 1, "tenant": "hell", "input_sha256": hashes,
+                "exceptions": {"missing_accounts": 1, "preserved_groups": 1, "preserved_schedules": 1},
+                "references": refs,
+                "excluded_orders": [{"order_id": 104, "server_id": 2,
+                    "username": "orphan_historical", "owner_id": 1004, "plan_id": 9}]}
+            vpath = folder / "validated-map.json"
+            vpath.write_text(json.dumps(validated, separators=(",", ":")) + "\n")
+            vpath.chmod(0o600)
+            db_env = dict(env, ACHBOT_PG_CUTOVER_DB_SOCKET=str(work / "mysql.sock"),
+                ACHBOT_PG_CUTOVER_DB="bothell", ACHBOT_PG_CUTOVER_DB_USER="root",
+                ACHBOT_PG_CUTOVER_DB_PASSWORD="", ACHBOT_PG_CUTOVER_FIXTURE_DEBUG="1")
+            def execute(action):
+                cmd = ["php", str(SCRIPT), "--tenant=hell"] + [
+                    "--" + name + "=" + str(folder / (name + ".json"))
+                    for name in ("local", "native", "mapping")]
+                cmd += ["--validated-map=" + str(vpath), action]
+                process = subprocess.run(cmd, env=db_env, capture_output=True,
+                    text=True, timeout=30)
+                return process.returncode, json.loads(process.stdout)
+            result = execute("--dry-run")
+            assert result[0] == 0 and result[1]["excluded_orders"] == 1, result
+            assert native.sql(work, env,
+                "SELECT status,autoRenew FROM orders_list WHERE id=104", "bothell").strip() == "1\ton"
+            ret, result = execute("--apply")
+            assert ret == 0 and result["outcome"] == "applied", result
+            assert result["excluded_orders"] == 1 and result["preserved_groups"] == 1
+            assert result["preserved_schedules"] == 1
+            assert native.sql(work, env,
+                "SELECT CONCAT(status,':',autoRenew,':',COALESCE(provider_effect_id,'NULL')) "
+                "FROM orders_list WHERE id=104", "bothell").strip() == "0:off:NULL"
+            assert native.sql(work, env,
+                "SELECT COUNT(*) FROM service_effects "
+                "WHERE source_kind='legacy_migration'", "bothell").strip() == "2"
+            assert native.sql(work, env,
+                "SELECT provider_group_ids FROM server_plans WHERE id=9", "bothell").strip() == "[1]"
+            assert native.sql(work, env,
+                "SELECT JSON_UNQUOTE(JSON_EXTRACT(provider_entitlement_snapshot,'$.group_ids[0]')) "
+                "FROM service_effects WHERE source_kind='legacy_migration' "
+                "AND remote_username='plus_fixture'", "bothell").strip() == "3"
+            assert native.sql(work, env,
+                "SELECT JSON_UNQUOTE(JSON_EXTRACT(provider_entitlement_snapshot,"
+                "'$.native_schedules_clear')) FROM service_effects "
+                "WHERE source_kind='legacy_migration' AND remote_username='plus_fixture'",
+                "bothell").strip() == "false"
+            ret, result = execute("--apply")
+            assert ret == 0 and result["outcome"] == "already_applied", result
+            assert result["excluded_orders"] == 1
+            checks.append("approved_orphan_preserved_finance_and_group_actual")
+            # A changed Native identity can never silently replace the absent account.
+            native.sql(work, env,
+                "UPDATE orders_list SET status=1 WHERE id=104", "bothell")
+            ret, result = execute("--apply")
+            assert ret == 2 and result["error_code"] == "live_order_changed", result
+            checks.append("orphan_post_cutover_drift_rejected")
     print(json.dumps({"complete": True, "isolated": True, "checks": checks}))
 
 

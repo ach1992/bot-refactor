@@ -17,7 +17,7 @@ CREATE TABLE server_config(id INT PRIMARY KEY,type VARCHAR(40));
 CREATE TABLE server_plans(id INT PRIMARY KEY,server_id INT,inbound_id INT);
 CREATE TABLE orders_list(id INT PRIMARY KEY,server_id INT,fileid INT,inbound_id INT,
   remark VARCHAR(100),userid BIGINT,provider_effect_id BIGINT NULL,
-  provider_remote_user_id BIGINT NULL,autoRenew VARCHAR(10),amount INT);
+  provider_remote_user_id BIGINT NULL,status TINYINT,autoRenew VARCHAR(10),amount INT);
 CREATE TABLE pays(id INT PRIMARY KEY,type VARCHAR(100),state VARCHAR(30));
 CREATE TABLE service_effects(id INT PRIMARY KEY,state VARCHAR(30),provider_state VARCHAR(30) NULL);
 CREATE TABLE service_plan_changes(id INT PRIMARY KEY,state VARCHAR(30));
@@ -25,10 +25,10 @@ INSERT INTO server_info VALUES (2),(3),(14);
 INSERT INTO server_config VALUES (2,'marzban'),(3,'marzban'),(14,'pasarguard');
 INSERT INTO server_plans VALUES (9,2,0),(10,3,0),(82,14,0);
 INSERT INTO orders_list VALUES
- (101,2,9,0,'shared_user',1001,NULL,NULL,'on',50000),
- (102,2,9,0,'shared_user',1002,NULL,NULL,'off',40000),
- (103,3,0,0,'planless_user',1003,NULL,NULL,'off',0),
- (201,14,82,0,'pg_fixture_user',2001,41,77,'off',100000);
+ (101,2,9,0,'shared_user',1001,NULL,NULL,1,'on',50000),
+ (102,2,9,0,'shared_user',1002,NULL,NULL,1,'off',40000),
+ (103,3,0,0,'planless_user',1003,NULL,NULL,1,'off',0),
+ (201,14,82,0,'pg_fixture_user',2001,41,77,1,'off',100000);
 INSERT INTO pays VALUES (1,'RENEW_ACCOUNT','pending'),
  (2,'INCREASE_WALLET','pending'),(3,'BUY_SUB','auto_cart_approved'),
  (4,'INCREASE_VOLUME_101_2','have_sent');

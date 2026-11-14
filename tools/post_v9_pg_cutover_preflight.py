@@ -96,7 +96,12 @@ def date_is_canonical(value):
         return False
 
 
-def reconcile(local, native, mapping):
+def reconcile(local, native, mapping, exceptions=None):
+    if exceptions is not None:
+        require(type(exceptions) is dict and
+                all(nonnegative(exceptions.get(k)) for k in
+                    ("missing_accounts", "preserved_groups", "preserved_schedules")),
+                "exception_counts_invalid")
     require(local.get("tenant") in ("vivan", "hell") and
             native.get("tenant") == mapping.get("tenant") == local["tenant"],
             "tenant_mismatch")
@@ -170,6 +175,17 @@ def reconcile(local, native, mapping):
         by_remote[unique] = account
         by_username[named] = account
 
+    missing_manifest = set()
+    for missing in native.get("not_found", []):
+        require(type(missing) is dict and
+                type(missing.get("panel_key")) is str and
+                missing["panel_key"] in panel_by_key and
+                type(missing.get("username")) is str and
+                USERNAME.fullmatch(missing["username"]), "native_absence_invalid")
+        key = (missing["panel_key"], missing["username"])
+        require(key not in missing_manifest and key not in by_username,
+                "native_absence_conflict")
+        missing_manifest.add(key)
     issues = defaultdict(set)
     physical = {}
     for oid, order in orders.items():
@@ -180,6 +196,7 @@ def reconcile(local, native, mapping):
                 order.get("inbound_id") == 0 and order.get("provider_effect_id") is None and
                 order.get("provider_remote_user_id") is None and
                 order.get("auto_renew") in ("on", "off") and
+                order.get("status") in (0, 1) and
                 nonnegative(order.get("amount")), "source_order_invalid")
         sid, name = order["server_id"], order["username"]
         if order["plan_id"]:
@@ -191,12 +208,20 @@ def reconcile(local, native, mapping):
 
     allocation = {}
     resolved = {}
+    excluded = set()
+    preserved = set()
+    preserved_schedules = set()
+    actual_missing = set()
     for (sid, username), refs in physical.items():
         panel_key = server_map[str(sid)]
         account = by_username.get((panel_key, username))
         reference = min(r["id"] for r in refs)
         if account is None:
-            issues["native_account_missing"].add(reference)
+            actual_missing.add((panel_key, username))
+            if exceptions is not None and (panel_key, username) in missing_manifest:
+                excluded.add((sid, username))
+            else:
+                issues["native_account_missing"].add(reference)
             continue
         remote_key = (panel_key, account["id"])
         existing = allocation.get(remote_key)
@@ -205,13 +230,33 @@ def reconcile(local, native, mapping):
             continue
         allocation[remote_key] = (sid, username)
         if not account["native_schedules_clear"]:
-            issues["native_scheduling_conflict"].add(reference)
+            if exceptions is None:
+                issues["native_scheduling_conflict"].add(reference)
+            else:
+                # No Native scheduler is changed here. Runtime writes will
+                # retain their existing managed-account/schedule guards.
+                preserved_schedules.add((sid, username))
         expected = {plan_groups[o["plan_id"]] for o in refs if o["plan_id"] in plan_groups}
         if len(expected) > 1:
             issues["shared_account_plan_conflict"].add(reference)
         elif expected and next(iter(expected)) != tuple(account["group_ids"]):
-            issues["native_group_mismatch"].add(reference)
+            available = panel_by_key[panel_key]["available_groups"]
+            if (exceptions is not None and account["group_ids"] and
+                    set(account["group_ids"]) <= set(available)):
+                preserved.add((sid, username))
+            else:
+                issues["native_group_mismatch"].add(reference)
         resolved[(sid, username)] = account
+
+    # A missing user is only exempt after a verified exact-name Native 404.
+    # Counts are explicitly authorized by the operator for this sealed cohort;
+    # an unexpected missing/mismatched account must never become an exemption.
+    if exceptions is not None:
+        require(missing_manifest == actual_missing, "native_absence_snapshot_incomplete")
+        if len(excluded) != exceptions["missing_accounts"] or \
+                len(preserved) != exceptions["preserved_groups"] or \
+                len(preserved_schedules) != exceptions["preserved_schedules"]:
+            issues["exception_count_mismatch"].add("global")
 
     # An old unclaimed invoice is a financial reconciliation task, not
     # evidence that this independent account->native identity map is wrong.
@@ -232,6 +277,9 @@ def reconcile(local, native, mapping):
         "planless_orders": sum(o["plan_id"] == 0 for o in orders.values()),
         "native_accounts_available": len(by_remote),
         "native_accounts_matched": len(resolved),
+        "historical_accounts_without_native": len(excluded),
+        "existing_native_group_preserved": len(preserved),
+        "native_schedules_untouched": len(preserved_schedules),
         "native_accounts_unrelated": len(by_remote) - len(allocation),
     }
     private_map = []
@@ -249,12 +297,14 @@ def reconcile(local, native, mapping):
             "remote_created_at": account["created_at"],
             "native_groups": account["group_ids"],
             "planned_groups": list(plan_groups[order["plan_id"]]) if order["plan_id"] in plan_groups else None,
+            "group_preserved": (order["server_id"], order["username"]) in preserved,
+            "schedule_preserved": (order["server_id"], order["username"]) in preserved_schedules,
         })
     report = {
         "version": 1,
         "ready_for_production_cutover": False,
         "proof_boundary": "offline_manifest_only; live_native_payment_and_config_continuity_unverified",
-        "complete": not issues and len(resolved) == len(physical),
+        "complete": not issues and len(resolved) + len(excluded) == len(physical),
         "statistics": stats,
         "blocker_counts": dict(sorted((code, len(ids)) for code, ids in issues.items())),
         "unresolved_claim_counts": claims,
@@ -287,18 +337,42 @@ def main(argv=None):
     parser.add_argument("--native", type=Path, required=True)
     parser.add_argument("--mapping", type=Path, required=True)
     parser.add_argument("--private-map", type=Path, help="Operator-only mapping; fails if already exists")
+    parser.add_argument("--approved-missing-account-count", type=int)
+    parser.add_argument("--approved-preserved-group-count", type=int)
+    parser.add_argument("--approved-preserved-schedule-count", type=int)
     args = parser.parse_args(argv)
     try:
         local, local_hash = load(args.local)
         native, native_hash = load(args.native)
         mapping, mapping_hash = load(args.mapping)
-        report, proposed = reconcile(local, native, mapping)
+        enabled = any(x is not None for x in (args.approved_missing_account_count,
+                   args.approved_preserved_group_count,
+                   args.approved_preserved_schedule_count))
+        require(not enabled or
+                (nonnegative(args.approved_missing_account_count) and
+                 nonnegative(args.approved_preserved_group_count) and
+                 nonnegative(args.approved_preserved_schedule_count)),
+                "exception_count_pair_required")
+        exceptions = ({"missing_accounts": args.approved_missing_account_count,
+                       "preserved_groups": args.approved_preserved_group_count,
+                       "preserved_schedules": args.approved_preserved_schedule_count}
+                      if enabled else None)
+        report, proposed = reconcile(local, native, mapping, exceptions)
         report["input_sha256"] = {
             "local": local_hash, "native": native_hash, "mapping": mapping_hash,
         }
         if args.private_map and report["complete"]:
+            source_orders = unique_ids(local["orders"], "orders")
+            included = {r["order_id"] for r in proposed}
+            excluded_orders = [{"order_id": o["id"], "server_id": o["server_id"],
+                                "username": o["username"], "owner_id": o["owner_id"],
+                                "plan_id": o["plan_id"]}
+                               for o in sorted(source_orders.values(), key=lambda o: o["id"])
+                               if o["id"] not in included]
             private_write(args.private_map, {"version": 1, "tenant": local["tenant"],
                                             "input_sha256": report["input_sha256"],
+                                            "exceptions": exceptions,
+                                            "excluded_orders": excluded_orders,
                                             "references": proposed})
         print(json.dumps(report, sort_keys=True, separators=(",", ":")))
         return 0 if report["complete"] else 2
