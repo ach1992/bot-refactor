@@ -2,6 +2,92 @@
 from __future__ import annotations
 import copy,functools,hashlib,json,pathlib,re,subprocess
 ROOT=pathlib.Path(__file__).resolve().parents[1]
+# RC42 successor: restore only the Owner-approved automatic-renewal
+# notification block for previously immutable catalog history checks.
+# Never rewrite historical SHA pins, and reject any other source-byte drift.
+RENEWAL_NOTICE_BASE='91298de959ea7d02c7ed093a79832482915f81c1'
+RENEWAL_NOTICE_ADDED={
+    'user':{'renewal.automatic_renewal.unlimited_volume',
+            'renewal.automatic_renewal.success_customer',
+            'renewal.automatic_renewal.low_wallet'},
+    'admin':{'renewal.automatic_renewal.success_report'}
+}
+RENEWAL_NOTICE_REMOVED={
+    'user':{
+        'renewal.automatic_renewal.handle_auto_renew_callback.message.30ad9ebf7b',
+        'renewal.automatic_renewal.handle_auto_renew_callback.message.cab5f13fd1',
+        'renewal.automatic_renewal.handle_auto_renew_callback.message.1c7e390d77'
+    },
+    'admin':set()
+}
+
+@functools.lru_cache(maxsize=1)
+def renewal_notices_source():
+    parser='$s=stream_get_contents(STDIN);$p=strpos($s,"return [");if($p===false)throw new RuntimeException("array_missing");echo json_encode(eval(substr($s,$p)),JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);'
+    result={}
+    for audience in ('user','admin'):
+        path='messages/fa/'+audience+'.php'
+        before=command('git','show',RENEWAL_NOTICE_BASE+':'+path)
+        current=(ROOT/path).read_bytes()
+        end=b'        // extensions.alert\n' if audience=='user' else b'        // automatic_renewal.auto_renew_alert_review\n'
+        old=b'        // automatic_renewal.handle_auto_renew_callback\n' if audience=='user' else None
+        new=(b'        // automatic_renewal \xe2\x80\x94 post-commit customer notices\n'
+             if audience=='user' else
+             b'        // automatic_renewal \xe2\x80\x94 confirmed post-commit Owner/report-channel copy\n')
+        check(current.count(new)==1 and current.find(end,current.index(new))>=0,
+              'renewal_notice_current_block_anchor:'+audience)
+        start=current.index(new);stop=current.index(end,start)
+        check(start<stop,'renewal_notice_block_order:'+audience)
+        if old is not None:
+            check(before.count(old)==1 and before.find(end,before.index(old))>=0,
+                  'renewal_notice_immutable_block_anchor')
+            from_start=before.index(old)
+            from_stop=before.index(end,from_start)
+            prior_block=before[from_start:from_stop]
+        else:
+            prior_block=b''
+        restored=current[:start]+prior_block+current[stop:]
+        check(restored==before,'renewal_notice_unlisted_source_byte_change:'+audience)
+        prior=flatten(json.loads(command('php','-r',parser,input=before)))
+        after=flatten(json.loads(command('php','-r',parser,input=current)))
+        check(set(after)-set(prior)==RENEWAL_NOTICE_ADDED[audience] and
+              set(prior)-set(after)==RENEWAL_NOTICE_REMOVED[audience] and
+              all(after[k]==v for k,v in prior.items() if k not in RENEWAL_NOTICE_REMOVED[audience]),
+              'renewal_notice_undeclared_catalog_delta:'+audience)
+        for key in RENEWAL_NOTICE_ADDED[audience]:
+            entry=after[key];body=text(entry);slots=params(entry)
+            check(isinstance(body,str) and body.strip() and
+                  len(slots)==len(set(slots)) and
+                  set(re.findall(r'\{([A-Za-z_][A-Za-z0-9_]*)\}',body))==set(slots) and
+                  not re.search(r'[\u06f0-\u06f9\u0660-\u0669]',body),
+                  'renewal_notice_invalid_template:'+key)
+        result[audience]={'before_source':before,'before':prior,'after':after}
+    return result
+
+def renewal_notices_copy_restore(sides):
+    proof=renewal_notices_source()
+    check(set(sides)=={'user','admin'},'renewal_notice_audience_set')
+    added=sum((len(RENEWAL_NOTICE_ADDED[a]) for a in ('user','admin')))
+    present=sum((len(RENEWAL_NOTICE_ADDED[a].intersection(sides[a]))
+                for a in ('user','admin')))
+    restored=copy.deepcopy(sides)
+    if present==0:
+        check(all(RENEWAL_NOTICE_REMOVED[a]<=set(sides[a])
+                  for a in ('user','admin')),
+              'renewal_notice_unverified_prior_projection')
+        return restored
+    check(present==added,'renewal_notice_partial_successor')
+    for audience in ('user','admin'):
+        for key in RENEWAL_NOTICE_ADDED[audience]:
+            check(sides[audience].get(key)==proof[audience]['after'][key],
+                  'renewal_notice_current_copy_drift:'+key)
+            restored[audience].pop(key)
+        for key in RENEWAL_NOTICE_REMOVED[audience]:
+            check(key not in sides[audience],
+                  'renewal_notice_mixed_prior_and_successor:'+key)
+            restored[audience][key]=proof[audience]['before'][key]
+    return restored
+
 BASE='64feca4b777a442023676122e315c68ad26e902d'
 # Owner-approved 2026-11-12 presentation-only successor to RC32.
 # Restore exactly two changed source lines before passing historical catalog
@@ -78,7 +164,7 @@ GATEWAY_CONTROLS_CHANGED='payment_settings.gateway_rule_admin.summary.rule_help'
 def gateway_controls_source():
     path='messages/fa/admin.php'
     original=command('git','show',GATEWAY_CONTROLS_BASE+':'+path)
-    current=(ROOT/path).read_bytes()
+    current=renewal_notices_source()['admin']['before_source']
     check(hashlib.sha256(original).hexdigest()==GATEWAY_CONTROLS_BASE_SHA,
           'gateway_controls_rc37_source_identity')
     prior=original.decode();next_source=current.decode()
@@ -158,7 +244,7 @@ SUPPORT_COPY_CHANGES={
 def support_copy_source():
     path='messages/fa/user.php'
     old=command('git','show',SUPPORT_COPY_BASE+':'+path)
-    current=(ROOT/path).read_bytes()
+    current=renewal_notices_source()['user']['before_source']
     check(hashlib.sha256(old).hexdigest()==SUPPORT_COPY_BEFORE_SHA and
           hashlib.sha256(current).hexdigest()==SUPPORT_COPY_AFTER_SHA,
           'issue176_support_full_source_identity')
@@ -953,6 +1039,7 @@ def bulk_reporting_source():
     return block
 
 def bulk_reporting_copy_restore(sides,prestripped=False):
+    sides=renewal_notices_copy_restore(sides)
     block=bulk_reporting_source() # Verify actual file even for nested baseline tests.
     _=block
     check(set(sides)=={'admin','user'} and

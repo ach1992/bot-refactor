@@ -71,7 +71,13 @@ function editMarzbanConfig($id,$info) {
     return $reply;
 }
 function sendMessage($message,$keys=null,$parse=null,$id=null) {
-    $GLOBALS['events'][]=['type'=>'send','to'=>$id];
+    $GLOBALS['events'][]=['type'=>'send','to'=>$id,'text'=>$message,
+                          'keyboard'=>$keys,'parse'=>$parse];
+    if (!empty($GLOBALS['spec']['customer_notice_throw']) && (int)$id===1001)
+        throw new RuntimeException('synthetic_customer_telegram_failure');
+    if (!empty($GLOBALS['spec']['channel_notice_throw']) &&
+        (string)$id===(string)($GLOBALS['botState']['rewardChannel']??''))
+        throw new RuntimeException('synthetic_channel_telegram_failure');
     return (object)['ok'=>$GLOBALS['spec']['telegram_ok']??true];
 }
 function deleteMarzban($serverId,$remark) {
@@ -104,6 +110,8 @@ function setUser($step='none') {
 require_once $root.'/src/Purchase/Core.php';
 require_once $root.'/src/Finance/AutomaticRenewal.php';
 $botState['renewAutoState']=$spec['enabled']??'off';
+$botState['rewardChannel']='-1007001';
+$buttonValues=['my_subscriptions'=>'🔄 مشاهده اشتراک‌ها','sharj'=>'💳 شارژ کیف پول'];
 $admin=9001;
 $action=$spec['action']??'call';
 $oid=(int)($spec['order_id']??0);
@@ -239,12 +247,17 @@ def run(w,e,s):
               b'achbot_warning_local_delete_deferred',
               b'achbot_operator_local_order_delete_deferred'}
     # Correlation-safe order IDs are intentionally included in operator logs.
+    notification_diagnostic=re.compile(
+        rb'^achbot_auto_renew_(?:customer_notice|low_wallet_notice|staff_report)'
+        rb'_unconfirmed order_id=[1-9][0-9]*(?: pay_id=[1-9][0-9]*)?'
+        rb' class=[A-Za-z_\\][A-Za-z0-9_\\]{0,119}$')
     diagnostic=re.compile(rb'^achbot_(?:account_delete_remote|admin_delete_remote|'
                           rb'account_delete_local|warning_remote_delete|'
                           rb'warning_local_delete|operator_local_order_delete)'
                           rb'_deferred order_id=[1-9][0-9]*$')
     unexpected=[line for line in p.stderr.splitlines()
-                if line not in expected and not diagnostic.fullmatch(line)]
+                if line not in expected and not diagnostic.fullmatch(line)
+                and not notification_diagnostic.fullmatch(line)]
     if p.returncode or unexpected:
         raise RuntimeError(repr((p.returncode,unexpected[-8:],p.stdout[-400:])))
     return json.loads(p.stdout)
@@ -383,7 +396,15 @@ def main():
 
         ev=run(w,e,{'order_id':oid,'enabled':'on'})
         assert sum(x['type']=='remote' for x in ev)==1,ev
+        notices=[x for x in ev if x['type']=='send']
+        assert [n['to'] for n in notices]==[1001,9001,'-1007001'],notices
+        assert [n['parse'] for n in notices]==['HTML']*3,notices
+        for notice in notices:
+            for expected in ('unmigrated','100,000','500,000','400,000',
+                             '30','2','rn_'):
+                assert expected in notice['text'],(expected,notice)
         assert wallet(w,e)==400000 and state(w,e,oid)=='done'
+        cases.append('renewal_success_customer_owner_report_channel_detail_and_html')
         assert sql(w,e,f"SELECT state FROM pays WHERE order_id={oid} AND description='automatic_renewal'").strip()=='paid_with_wallet'
         assert sql(w,e,f"SELECT notif FROM orders_list WHERE id={oid}").strip()=='0'
         assert count(w,e,'increase_order',"remark='unmigrated'")==1
@@ -442,10 +463,37 @@ def main():
         cases.append('f4_nonthrowing_accounting_insert_failure_rolls_back_local_finalization_without_replay')
 
         low=seed(w,e,'low',wallet=10)
-        assert_no_remote(run(w,e,{'order_id':low,'enabled':'on'}))
+        low_events=run(w,e,{'order_id':low,'enabled':'on'})
+        assert_no_remote(low_events)
+        low_notice=[x for x in low_events if x['type']=='send']
+        assert len(low_notice)==1 and low_notice[0]['to']==1001,low_events
+        assert low_notice[0]['parse']=='HTML',low_notice
+        for expected in ('low','100,000','10','99,990','غیرفعال'):
+            assert expected in low_notice[0]['text'],(expected,low_notice)
+        buttons=json.loads(low_notice[0]['keyboard'])['inline_keyboard'][0]
+        assert [b['callback_data'] for b in buttons]==[
+            'mySubscriptions','increaseMyWallet'],buttons
         assert wallet(w,e)==10 and sql(w,e,f"SELECT autoRenew FROM orders_list WHERE id={low}").strip()=='off'
         assert count(w,e,'automatic_renewal_attempts',f'order_id={low}')==0
+        assert [x for x in run(w,e,{'order_id':low,'enabled':'on'})
+                if x['type']=='send']==[]
         cases.append('insufficient_funds_disables_auto_only')
+        cases.append('low_wallet_detailed_html_and_usable_actions_not_repeated')
+        after_user_failure=seed(w,e,'user-send-fails',wallet=500000)
+        failed_events=run(w,e,{'order_id':after_user_failure,'enabled':'on',
+                               'customer_notice_throw':True})
+        assert state(w,e,after_user_failure)=='done'
+        assert [x['to'] for x in failed_events if x['type']=='send']==[
+            1001,9001,'-1007001'],failed_events
+        cases.append('customer_telegram_failure_does_not_suppress_success_staff_reports')
+        html=seed(w,e,'html<unsafe&account>',wallet=500000)
+        html_events=run(w,e,{'order_id':html,'enabled':'on'})
+        html_notices=[x for x in html_events if x['type']=='send']
+        assert len(html_notices)==3,html_events
+        assert all('html&lt;unsafe&amp;account&gt;' in x['text'] and
+                   'html<unsafe&account>' not in x['text']
+                   for x in html_notices),html_notices
+        cases.append('renewal_customer_and_staff_html_escaped')
         debt=seed(w,e,'debt',wallet=-1000)
         assert_no_remote(run(w,e,{'order_id':debt,'enabled':'on'}))
         assert wallet(w,e)==-1000 and state(w,e,debt)==''

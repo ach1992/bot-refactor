@@ -128,10 +128,12 @@ function achbotAutoRenewReserve(mysqli $db, int $orderId, int $userId): array {
             $stmt=$db->prepare("UPDATE orders_list SET autoRenew='off'
                 WHERE id=? AND userid=? AND autoRenew='on'");
             $stmt->bind_param('ii',$orderId,$userId);
-            $stmt->execute();
+            $updated=$stmt->execute() && $stmt->affected_rows===1;
             $stmt->close();
-            if ($db->commit()!==true) throw new RuntimeException('low_wallet_commit_unconfirmed');
+            if (!$updated || $db->commit()!==true)
+                throw new RuntimeException('low_wallet_commit_unconfirmed');
             return ['status'=>'insufficient_funds','user_id'=>$userId,
+                'remark'=>(string)$order['remark'],
                 'amount'=>$amount,'wallet'=>$wallet];
         }
 
@@ -364,10 +366,26 @@ function handleAutoRenewCallback($data): void {
     $orderId=(int)$m[2];
     $claim=achbotAutoRenewReserve($connection,$orderId,$userId);
     if ($claim['status']==='insufficient_funds') {
+        // The subscription has been durably disabled, with no debit/remote edit.
+        // This notice is not issued for a mere quote or uncertain transaction.
         try {
-            sendMessage(\achbotMessage('renewal.automatic_renewal.handle_auto_renew_callback.message.30ad9ebf7b'),
-                null,null,$userId);
-        } catch (Throwable $ignored) {}
+            $notice=\achbotMessageHtml('renewal.automatic_renewal.low_wallet', [
+                'remark'=>$claim['remark'],
+                'amount'=>number_format($claim['amount']),
+                'wallet'=>number_format($claim['wallet']),
+                'shortfall'=>number_format($claim['amount']-$claim['wallet'])
+            ]);
+            $keys=json_encode(['inline_keyboard'=>[[
+                ['text'=>$buttonValues['my_subscriptions'],
+                 'callback_data'=>'mySubscriptions'],
+                ['text'=>$buttonValues['sharj'],
+                 'callback_data'=>'increaseMyWallet']
+            ]]],JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
+            sendMessage($notice,$keys,'HTML',$userId);
+        } catch (Throwable $error) {
+            error_log('achbot_auto_renew_low_wallet_notice_unconfirmed order_id='.
+                $orderId.' class='.get_class($error));
+        }
         return;
     }
     if ($claim['status']!=='reserved') return;
@@ -391,11 +409,38 @@ function handleAutoRenewCallback($data): void {
         achbotAutoRenewNeedsReview($connection,(int)$claim['id']);
         return;
     }
-    // Telegram delivery cannot revert a completed remote+financial outcome.
+    // Both audiences use only the confirmed local financial journal. Neither
+    // Telegram failure nor a duplicate Cron call can replay a wallet debit,
+    // Native edit or completed renewal for the same physical account.
+    $values=[
+        'remark'=>$claim['remark'],
+        'amount'=>number_format($claim['amount']),
+        'wallet_before'=>number_format($claim['wallet_before']),
+        'wallet_after'=>number_format($claim['wallet_before']-$claim['amount']),
+        'days'=>number_format($claim['days']),
+        'volume'=>$claim['volume']===0
+            ? \achbotMessage('renewal.automatic_renewal.unlimited_volume')
+            : number_format($claim['volume']).' گیگ',
+        'payment_ref'=>$claim['ref']
+    ];
     try {
-        sendMessage(\achbotMessage('renewal.automatic_renewal.handle_auto_renew_callback.message.cab5f13fd1').number_format($claim['amount']).
-            \achbotMessage('renewal.automatic_renewal.handle_auto_renew_callback.message.1c7e390d77'),null,null,$userId);
-    } catch (Throwable $ignored) {}
+        sendMessage(\achbotMessageHtml('renewal.automatic_renewal.success_customer',$values),
+            null,'HTML',$userId);
+    } catch (Throwable $error) {
+        error_log('achbot_auto_renew_customer_notice_unconfirmed order_id='.
+            $orderId.' pay_id='.(int)$claim['pay_id'].' class='.get_class($error));
+    }
+    // Default general-event routing sends the same detailed report to the
+    // primary Owner, enabled Managers and the configured report channel.
+    // Do not override report_channel to null: that suppresses the channel.
+    try {
+        $report=\achbotMessageHtml('renewal.automatic_renewal.success_report',
+            ['user_id'=>(string)$userId]+$values);
+        achbotNotifyAdmins('sendMessage',['text'=>$report,'parse_mode'=>'HTML']);
+    } catch (Throwable $error) {
+        error_log('achbot_auto_renew_staff_report_unconfirmed order_id='.
+            $orderId.' pay_id='.(int)$claim['pay_id'].' class='.get_class($error));
+    }
 }
 
 /** Review holds are inspected in the recovery UI, never pushed to staff. */
