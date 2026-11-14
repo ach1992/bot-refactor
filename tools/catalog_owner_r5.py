@@ -8,6 +8,7 @@ ROOT=pathlib.Path(__file__).resolve().parents[1]
 RENEWAL_NOTICE_BASE='91298de959ea7d02c7ed093a79832482915f81c1'
 RENEWAL_NOTICE_ADDED={
     'user':{'renewal.automatic_renewal.unlimited_volume',
+            'renewal.automatic_renewal.finite_volume',
             'renewal.automatic_renewal.success_customer',
             'renewal.automatic_renewal.low_wallet'},
     'admin':{'renewal.automatic_renewal.success_report'}

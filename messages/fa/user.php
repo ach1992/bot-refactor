@@ -465,6 +465,9 @@ return [
         'extensions.plan_selection_review' => "⚠️ نتیجه تغییر پلن هنوز قابل تأیید نیست. صفحه اشتراک را بررسی کنید.",
         // automatic_renewal — post-commit customer notices
         'automatic_renewal.unlimited_volume' => 'نامحدود',
+        'automatic_renewal.finite_volume' => [
+            'text' => '{volume} گیگ', 'parameters' => ['volume']
+        ],
         'automatic_renewal.success_customer' => [
             'text' => "✅ <b>اشتراک شما به‌صورت خودکار تمدید شد.</b>
 

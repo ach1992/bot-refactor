@@ -420,7 +420,8 @@ function handleAutoRenewCallback($data): void {
         'days'=>number_format($claim['days']),
         'volume'=>$claim['volume']===0
             ? \achbotMessage('renewal.automatic_renewal.unlimited_volume')
-            : number_format($claim['volume']).' گیگ',
+            : \achbotMessage('renewal.automatic_renewal.finite_volume',
+                ['volume'=>number_format($claim['volume'])]),
         'payment_ref'=>$claim['ref']
     ];
     try {

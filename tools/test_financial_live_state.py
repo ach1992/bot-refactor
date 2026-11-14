@@ -17,7 +17,7 @@ ROOT=Path(__file__).resolve().parents[1]
 DB=purchase.SIDE[1]
 BASE='c9959811e264b5a8728f6a44376cb69c9a89b7f4'
 ABSENT_DISCOUNT_REGRESSION='88f8ebfb1c10cab9b30782f8a165fbde08c35ce2'
-DRIVER=renewal.PHP.replace("$botState=['renewAutoState'=>$spec['enabled']??'on'];",
+DRIVER=renewal.CURRENT_PHP.replace("$botState=['renewAutoState'=>$spec['enabled']??'on'];",
     "$botState=['renewAutoState'=>$spec['enabled']??'on','agencyPlanDiscount'=>$spec['plan_discount']??'off'];")
 DRIVER=DRIVER.replace(" } elseif($spec['action']==='changes'){",r""" } elseif($spec['action']==='baseline_reserve'){
   require __DIR__.'/baseline-reserve.php';$botState['agencyPlanDiscount']='on';

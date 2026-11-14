@@ -401,7 +401,7 @@ def main():
         assert [n['parse'] for n in notices]==['HTML']*3,notices
         for notice in notices:
             for expected in ('unmigrated','100,000','500,000','400,000',
-                             '30','2','rn_'):
+                             '30','2 گیگ','rn_'):
                 assert expected in notice['text'],(expected,notice)
         assert wallet(w,e)==400000 and state(w,e,oid)=='done'
         cases.append('renewal_success_customer_owner_report_channel_detail_and_html')
@@ -410,6 +410,15 @@ def main():
         assert count(w,e,'increase_order',"remark='unmigrated'")==1
         assert count(w,e,'automatic_renewal_attempts',f'order_id={oid}')==1
         cases.append('verified_remote_success_all_local_effects_atomic')
+        # The same catalog-owned volume formatter must render both audiences.
+        unlimited=seed(w,e,'volume-unlimited-notice',wallet=500000)
+        sql(w,e,'UPDATE server_plans SET volume=0 WHERE id=7')
+        unlimited_events=run(w,e,{'order_id':unlimited,'enabled':'on'})
+        unlimited_notices=[x for x in unlimited_events if x['type']=='send']
+        assert [n['to'] for n in unlimited_notices]==[1001,9001,'-1007001'],unlimited_notices
+        assert all('🔋 حجم اشتراک: نامحدود' in n['text'] for n in unlimited_notices),unlimited_notices
+        assert wallet(w,e)==400000 and state(w,e,unlimited)=='done'
+        cases.append('renewal_unlimited_volume_customer_owner_channel_from_catalog')
         remote_absolute=1800201111
         exact=seed(w,e,'remote-absolute',wallet=500000)
         ev=run(w,e,{'order_id':exact,'enabled':'on',
