@@ -464,9 +464,9 @@ return [
         'extensions.plan_selection_unavailable' => "⚠️ تغییر پلن این اشتراک در حال حاضر ممکن نیست. از صفحه اشتراک دوباره وارد شوید.",
         'extensions.plan_selection_review' => "⚠️ نتیجه تغییر پلن هنوز قابل تأیید نیست. صفحه اشتراک را بررسی کنید.",
         // automatic_renewal — post-commit customer notices
-        'automatic_renewal.unlimited_volume' => 'نامحدود',
+        'automatic_renewal.unlimited_volume' => 'حجم اشتراک: نامحدود',
         'automatic_renewal.finite_volume' => [
-            'text' => '{volume} گیگ', 'parameters' => ['volume']
+            'text' => 'حجم اشتراک: {volume} گیگ', 'parameters' => ['volume']
         ],
         'automatic_renewal.success_customer' => [
             'text' => "✅ <b>اشتراک شما به‌صورت خودکار تمدید شد.</b>
@@ -476,7 +476,7 @@ return [
 🔼 موجودی قبل از تمدید: {wallet_before} تومان
 🔽 موجودی بعد از تمدید: {wallet_after} تومان
 📅 مدت اشتراک: {days} روز
-🔋 حجم اشتراک: {volume}
+🔋 {volume}
 💳 شناسه پرداخت: <code>{payment_ref}</code>",
             'parameters' => ['remark','amount','wallet_before','wallet_after',
                              'days','volume','payment_ref']

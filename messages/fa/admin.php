@@ -674,7 +674,7 @@ return [
 🔼 موجودی قبل از تمدید: {wallet_before} تومان
 🔽 موجودی بعد از تمدید: {wallet_after} تومان
 📅 مدت اشتراک: {days} روز
-🔋 حجم اشتراک: {volume}
+🔋 {volume}
 💳 شناسه پرداخت: <code>{payment_ref}</code>",
             'parameters' => ['user_id','remark','amount','wallet_before','wallet_after',
                              'days','volume','payment_ref']
