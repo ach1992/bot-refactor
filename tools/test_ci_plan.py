@@ -5,8 +5,10 @@ No PHP version, provider, Telegram, MariaDB or protected history executes.
 """
 from __future__ import annotations
 
+import ast
 import contextlib
 import io
+from collections import defaultdict
 import json
 import os
 from pathlib import Path
@@ -56,6 +58,17 @@ class ImpactPlanTests(unittest.TestCase):
             self.set_file("docs/post-v9/" + name, "Existing operational contract\n")
         self.set_file("tools/test_other.py", "print('domain tests')\n")
         self.set_file("src/common.php", "<?php // shared runtime\n")
+        for path in (
+            "src/Finance/ApiPayments.php",
+            "src/Finance/ReceiptHelpers.php",
+            "src/Finance/AutomaticRenewal.php",
+            "src/Telegram/UserProfile.php",
+            "tools/test_post_v9_onboarding.py",
+            "tools/test_post_v9_api_staff_digest.py",
+            "tools/test_unified_service_lifecycle.py",
+            "tools/post_v9_suites.py",
+        ):
+            self.set_file(path, "synthetic original source\n")
         self.set_file("AGENTS.md", "project rules\n")
         self.set_file(".github/workflows/v0.yml", "name: Compatibility\n")
         self.base = self.commit("baseline fixture")
@@ -125,12 +138,14 @@ class ImpactPlanTests(unittest.TestCase):
                 head = self.commit("changed " + path)
                 self.assertEqual(ci_plan.plan(self.repo, self.base, head)["scope"], "full")
 
-    def test_policy_document_is_not_source_only(self):
+    def test_ci_policy_document_only_is_proven_as_docs(self):
         result = self.decide("docs/post-v9/CI-VALIDATION.md", "new validation policy\n")
-        self.assertEqual(result["scope"], "full")
+        self.assertEqual(result["scope"], "docs")
+        self.assertEqual(result["shards"], [])
 
-    def test_existing_financial_safety_release_and_install_docs_are_full(self):
-        # These are real repository paths that were incorrectly exempted.
+    def test_existing_financial_safety_release_and_install_docs_are_lightweight(self):
+        # Documentation content cannot change executable code or CI; exact Git
+        # provenance, regular modes and rename checks still apply.
         for name in (
             "FINANCIAL-CONSOLIDATION.md",
             "AUTOMATIC-RENEWAL-SAFETY.md",
@@ -145,36 +160,37 @@ class ImpactPlanTests(unittest.TestCase):
         ):
             with self.subTest(name=name):
                 path = "docs/post-v9/" + name
-                self.assertFalse(ci_plan.ordinary_doc(path))
+                self.assertTrue(ci_plan.ordinary_doc(path))
                 self.set_file(path, "Modified actual operational contract\n")
                 head = self.commit("modify " + name)
                 result = ci_plan.plan(self.repo, self.base, head)
-                self.assertEqual(result["scope"], "full")
+                self.assertEqual(result["scope"], "docs")
                 self.assertEqual(result["changed_paths"], [path])
-                self.assertEqual(result["shards"], list(range(1, 9)))
+                self.assertEqual(result["shards"], [])
                 self.set_file(path, "Existing operational contract\n")
                 self.commit("restore " + name)
 
-    def test_unlisted_post_v9_markdown_is_full(self):
-        self.assertFalse(ci_plan.ordinary_doc("docs/post-v9/NEW-DEPLOYMENT-POLICY.md"))
-        self.assertFalse(ci_plan.ordinary_doc("docs/post-v9/unknown.md"))
-        self.assertFalse(ci_plan.ordinary_doc("docs/post-v9/subfolder/README.md"))
+    def test_unlisted_post_v9_markdown_is_docs(self):
+        self.assertTrue(ci_plan.ordinary_doc("docs/post-v9/NEW-DEPLOYMENT-POLICY.md"))
+        self.assertTrue(ci_plan.ordinary_doc("docs/post-v9/unknown.md"))
+        self.assertTrue(ci_plan.ordinary_doc("docs/post-v9/subfolder/README.md"))
         result = self.decide("docs/post-v9/unknown.md", "An unknown contract\n")
-        self.assertEqual(result["scope"], "full")
+        self.assertEqual(result["scope"], "docs")
+        self.assertEqual(result["shards"], [])
 
-    def test_mixed_informational_and_contract_changes_are_full(self):
+    def test_mixed_informational_and_contract_changes_are_docs(self):
         self.set_file("README.md", "Updated overview\n")
         self.set_file("docs/post-v9/FINANCIAL-CONSOLIDATION.md",
                       "New financial contract\n")
         head = self.commit("mixed source docs")
-        self.assertEqual(ci_plan.plan(self.repo, self.base, head)["scope"], "full")
+        self.assertEqual(ci_plan.plan(self.repo, self.base, head)["scope"], "docs")
 
-    def test_single_document_add_or_delete_is_not_lightweight(self):
+    def test_single_document_add_or_delete_is_lightweight_when_unambiguous(self):
         self.git("rm", "docs/post-v9/README.md")
         head = self.commit("remove index")
-        self.assertEqual(ci_plan.plan(self.repo, self.base, head)["scope"], "full")
+        self.assertEqual(ci_plan.plan(self.repo, self.base, head)["scope"], "docs")
         self.assertEqual(ci_plan.plan(self.repo, self.base, head)["reason"],
-                         "document_added_or_removed")
+                         "ordinary_docs_only")
 
     def prepare_doc_rename(self):
         # Both source and destination are positively allowlisted, but the
@@ -208,14 +224,14 @@ class ImpactPlanTests(unittest.TestCase):
         self.assertEqual(result["scope"], "full")
         self.assertEqual(result["reason"], "ambiguous_add_delete")
 
-    def test_document_deletion_with_unrelated_modification_is_full(self):
+    def test_document_deletion_with_unrelated_modification_is_docs(self):
         self.git("rm", "README.md")
         self.set_file("docs/post-v9/README.md", "New index with unrelated text\n")
         head = self.commit("delete one approved doc and update another")
         # This case is D+M, so the independent deletion must still select full.
-        self.assertEqual(ci_plan.plan(self.repo, self.base, head)["scope"], "full")
+        self.assertEqual(ci_plan.plan(self.repo, self.base, head)["scope"], "docs")
         self.assertEqual(ci_plan.plan(self.repo, self.base, head)["reason"],
-                         "document_added_or_removed")
+                         "ordinary_docs_only")
 
     def test_empty_effective_tree_and_identical_commit_are_no_impact(self):
         self.assertEqual(ci_plan.plan(self.repo, self.base, self.base)["scope"], "none")
@@ -239,14 +255,113 @@ class ImpactPlanTests(unittest.TestCase):
         head = self.commit("symlink document")
         self.assertEqual(ci_plan.plan(self.repo, self.base, head)["scope"], "full")
 
-    def test_policy_and_security_document_paths_require_full(self):
+    def test_policy_and_security_document_paths_are_docs_without_code(self):
         for path in ("docs/post-v9/CI.md", "docs/post-v9/SECURITY.md",
                      "docs/post-v9/TESTING.md", "docs/post-v9/flow-policy.md",
                      "docs/post-v9/policies/intro.md", "docs/post-v9/validation/intro.md"):
             with self.subTest(path=path):
                 self.set_file(path, "policy text\n")
                 head = self.commit("policy " + path)
+                self.assertEqual(ci_plan.plan(self.repo, self.base, head)["scope"], "docs")
+
+    def test_mapped_test_files_cover_transitive_test_family_dependencies(self):
+        # Check the actual current runner catalog, not just the filename of
+        # the changed test. Shared Python fixture imports can affect multiple
+        # independently scheduled families.
+        root = ci_plan.ROOT / "tools"
+        functions = ("run_admin", "run_api", "run_services", "run_wallet",
+                     "run_presentation", "run_authorization", "run_effects", "run_funding")
+        owners = defaultdict(set)
+        catalog = ast.parse((root/"post_v9_suites.py").read_text())
+        for function in catalog.body:
+            if not isinstance(function, ast.FunctionDef) or function.name not in functions:
+                continue
+            index = functions.index(function.name) + 1
+            for item in ast.walk(function):
+                if (isinstance(item, ast.Constant) and isinstance(item.value, str)
+                        and Path(item.value).name.startswith("test_")
+                        and item.value.endswith((".py", ".php"))):
+                    owners[Path(item.value).stem].add(index)
+        # Standalone scoped suite invocations are owned by native shard 5.
+        for name in ("test_post_v9_scoped_addons",
+                     "test_post_v9_scoped_api_pg",
+                     "test_post_v9_scoped_pg_payments"):
+            owners[name].add(5)
+        imports = {}
+        for path in root.glob("*.py"):
+            tree = ast.parse(path.read_text())
+            used = set()
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Import):
+                    used.update(alias.name.split(".")[0] for alias in node.names)
+                elif isinstance(node, ast.ImportFrom) and node.module:
+                    used.add(node.module.split(".")[0])
+            imports[path.stem] = used
+        for _ in range(len(imports) + 1):
+            changed = False
+            for parent, children in imports.items():
+                if parent not in owners:
+                    continue
+                for child in children:
+                    if not owners[parent].issubset(owners[child]):
+                        owners[child].update(owners[parent])
+                        changed = True
+            if not changed:
+                break
+        else:
+            self.fail("Test dependency closure did not converge")
+        for path, selected in ci_plan.FAMILY_PATHS.items():
+            with self.subTest(path=path):
+                self.assertTrue((ci_plan.ROOT/path).is_file())
+                self.assertFalse((ci_plan.ROOT/path).is_symlink())
+                if path.startswith("tools/test_"):
+                    self.assertTrue(owners[Path(path).stem],
+                                    "Explicit test has no current runner owner")
+                    self.assertTrue(owners[Path(path).stem].issubset(set(selected)),
+                                    "Mapped test omits a consuming family")
+
+    def test_explicit_api_module_runs_only_affected_families(self):
+        result = self.decide("src/Finance/ApiPayments.php", "changed API worker\n")
+        self.assertEqual(result["scope"], "families")
+        self.assertEqual(result["shards"], [2, 4, 7, 8])
+        self.assertEqual(result["reason"], "explicit_affected_families")
+
+    def test_test_only_onboarding_avoids_unrelated_native_families(self):
+        result = self.decide("tools/test_post_v9_onboarding.py", "updated synthetic cases\n")
+        self.assertEqual(result["scope"], "families")
+        self.assertEqual(result["shards"], [1])
+
+    def test_mixed_known_module_and_test_selects_exact_union(self):
+        self.set_file("src/Telegram/UserProfile.php", "welcome fix\n")
+        self.set_file("tools/test_post_v9_onboarding.py", "welcome regression\n")
+        self.set_file("docs/post-v9/NEXT-RELEASE.md", "welcome notes\n")
+        head = self.commit("bounded mixed")
+        result = ci_plan.plan(self.repo, self.base, head)
+        self.assertEqual(result["scope"], "families")
+        self.assertEqual(result["shards"], [1, 3, 5])
+
+    def test_shared_helper_or_runner_change_forces_full(self):
+        for path in ("src/Finance/ReceiptHelpers.php", "tools/post_v9_suites.py"):
+            with self.subTest(path=path):
+                self.set_file(path, "shared engine change\n")
+                head = self.commit("shared change")
                 self.assertEqual(ci_plan.plan(self.repo, self.base, head)["scope"], "full")
+
+    def test_domain_module_addition_not_trusted_as_bounded(self):
+        result = self.decide("src/Finance/Routes/WalletRecharge.php", "new source\n")
+        self.assertEqual(result["scope"], "full")
+
+    def test_family_and_cron_mixed_requires_full(self):
+        self.set_file("tools/test_post_v9_onboarding.py", "new onboarding test\n")
+        self.set_file(ci_plan.CRON_TEST, "changed cron fixture\n")
+        head = self.commit("mixed domain and cron")
+        self.assertEqual(ci_plan.plan(self.repo, self.base, head)["scope"], "full")
+
+    def test_docs_plus_unknown_runtime_never_launders_full(self):
+        self.set_file("docs/post-v9/NEXT-RELEASE.md", "release note\n")
+        self.set_file("src/common.php", "unknown shared runtime change\n")
+        head = self.commit("unknown and docs")
+        self.assertEqual(ci_plan.plan(self.repo, self.base, head)["scope"], "full")
 
     def test_missing_invalid_and_nonancestor_base_are_full(self):
         head = self.decide("README.md", "Some docs\n")["head"]
