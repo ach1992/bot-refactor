@@ -142,6 +142,7 @@ For upgrades, inventory the installed source, schema, private configuration and 
 - [Current source/release scope and configuration boundaries](docs/post-v9/NEXT-RELEASE.md)
 - [Per-server display and QR settings](docs/post-v9/SUBSCRIPTION-PRESENTATION.md)
 - [Native PasarGuard contract](docs/post-v9/PASARGUARD-CONTRACT.md)
+- [Vivan/Hell PasarGuard cutover preparation (source-only, read-only)](docs/post-v9/PASARGUARD-CUTOVER-PREPARATION.md)
 - [Read-only installed-runtime diagnostics](docs/post-v9/INSTALL-DIAGNOSTICS.md)
 - [Read-only payment readiness preflight](docs/post-v9/PAYMENT-READINESS-PREFLIGHT.md)
 - [Operator acceptance checklist](docs/post-v9/MARZBAN-OPERATOR-ACCEPTANCE.md)
