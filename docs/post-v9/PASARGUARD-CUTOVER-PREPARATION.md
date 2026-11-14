@@ -89,7 +89,7 @@ python3 tools/post_v9_pg_cutover_preflight.py \
   --private-map /secure-private/vivan-validated-map.json
 ```
 
-Repeat for Hell. The optional validated private map is created **only when every reference matches**, permission `0600`, never overwritten, never inside the repo. Stdout contains counts and SHA256 input identities, not usernames. It detects missing/colliding native IDs, changed/unknown plans, unbound Native Groups, conflicting shared subscriptions, nonzero inbound/previous native binding, native scheduling and unresolved financial/effect attention counts. Unlimited quota (`data_limit=0`) and unlimited expiry (`expire=null`) remain distinct.
+Repeat for Hell. The optional validated private map is created **only when every reference matches**, permission `0600`, never overwritten, never inside the repo. Stdout contains counts and SHA256 input identities, not usernames. It detects missing/colliding native IDs, changed/unknown plans, unbound Native Groups, conflicting shared subscriptions, nonzero inbound/previous native binding, native scheduling and uncertain native effects or plan-change journals. Existing nonfinal invoices are separate **financial attention**, not an unconditional account-mapping block; they must be individually reconciled before a separately authorized conversion/fulfillment, without suppressing later unrelated payments. Unlimited quota (`data_limit=0`) and unlimited expiry (`expire=null`) remain distinct.
 
 A passing offline consistency result is **not** approval or readiness for production. It does not prove actual old config/URL continuity, bot-admin ownership, live payment settlement, frozen source/target identities, or valid SQL conversion.
 

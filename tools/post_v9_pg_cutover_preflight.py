@@ -213,7 +213,11 @@ def reconcile(local, native, mapping):
             issues["native_group_mismatch"].add(reference)
         resolved[(sid, username)] = account
 
-    for key in ("unsettled_service_payments", "uncertain_provider_effects", "uncommitted_plan_changes"):
+    # An old unclaimed invoice is a financial reconciliation task, not
+    # evidence that this independent account->native identity map is wrong.
+    # Never silently settle/replay such invoices as part of the cutover.
+    # Real in-progress provider effects/plan journals remain hard holds.
+    for key in ("uncertain_provider_effects", "uncommitted_plan_changes"):
         if claims[key]:
             issues["unresolved_" + key].add("global")
 
@@ -254,6 +258,7 @@ def reconcile(local, native, mapping):
         "statistics": stats,
         "blocker_counts": dict(sorted((code, len(ids)) for code, ids in issues.items())),
         "unresolved_claim_counts": claims,
+        "financial_review_required": claims["unsettled_service_payments"] > 0,
         "private_map_size": len(private_map),
     }
     return report, private_map

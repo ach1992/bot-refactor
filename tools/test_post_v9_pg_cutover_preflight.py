@@ -169,14 +169,26 @@ class Reconciliation(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "mapping_incomplete"):
             tool.reconcile(local, native, mapping)
 
-    def test_global_claims_block_even_if_users_match(self):
+    def test_unfinished_invoice_is_attention_not_global_identity_block(self):
         local, native, mapping = fixture()
-        for claim_type in local["claims"]:
+        local["claims"]["unsettled_service_payments"] = 554
+        report, private_map = tool.reconcile(local, native, mapping)
+        self.assertTrue(report["complete"])
+        self.assertTrue(report["financial_review_required"])
+        self.assertEqual(report["blocker_counts"], {})
+        self.assertEqual(report["unresolved_claim_counts"]["unsettled_service_payments"], 554)
+        self.assertFalse(report["ready_for_production_cutover"])
+        self.assertEqual(len(private_map), 3)
+
+    def test_unfinished_native_effect_or_plan_journal_blocks_mapping(self):
+        local, native, mapping = fixture()
+        for claim_type in ("uncertain_provider_effects", "uncommitted_plan_changes"):
             copy_local = copy.deepcopy(local)
             copy_local["claims"][claim_type] = 3
             report, _ = tool.reconcile(copy_local, native, mapping)
             self.assertEqual(report["blocker_counts"], {"unresolved_" + claim_type: 1})
             self.assertEqual(report["unresolved_claim_counts"][claim_type], 3)
+            self.assertFalse(report["complete"])
 
     def test_claims_missing_denied(self):
         local, native, mapping = fixture()
