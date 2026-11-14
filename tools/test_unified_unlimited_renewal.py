@@ -6,6 +6,7 @@ Only owned socket MariaDB, loopback HTTP and synthetic identities are used.
 """
 from __future__ import annotations
 import provider_storage_fixture as shared_storage
+import notification_fixture
 import argparse,copy,hashlib,io,json,subprocess,tarfile,tempfile,time
 from pathlib import Path
 from datetime import datetime
@@ -54,6 +55,12 @@ try {
  echo json_encode($out,JSON_THROW_ON_ERROR);
 } catch(Throwable $error){echo json_encode(['fixture_error'=>$error->getMessage()],JSON_THROW_ON_ERROR);}
 '''
+# Keep the source-real Owner/Manager/report-channel router in the isolated PHP driver.
+# Keep baseline's historical PHP unchanged. Current notice buttons come from
+# the actual two-file catalog, never from test-invented Persian labels.
+CURRENT_PHP=notification_fixture.with_router(PHP.replace(
+    '$root=$argv[1];',
+    "$root=$argv[1];$buttonValues=(require $root.'/messages/fa/user.php')['legacy_buttons'];",1))
 
 def acceptance(root:Path=ROOT,baseline_only:bool=False,providers=('pasarguard','marzban')):
  checks=[];by_provider={provider:[]for provider in providers};active_provider=providers[0]
@@ -110,7 +117,7 @@ def acceptance(root:Path=ROOT,baseline_only:bool=False,providers=('pasarguard','
         proxies={'vless':{'id':'preserved-fixture-identity'}},note='preserved-renewal-note')
     server.edit_put_count=0;server.edit_reset_count=0
     remote=server.edit_account
-   driver=work/'actual-unlimited-renewal.php';driver.write_text(PHP)
+   driver=work/'actual-unlimited-renewal.php';driver.write_text(PHP if baseline else CURRENT_PHP)
    def call(action,**spec):
     proc=subprocess.run(['php','-d','display_errors=0','-d','log_errors=0',
        str(driver),str(source),str(work/'mysql.sock'),DB,

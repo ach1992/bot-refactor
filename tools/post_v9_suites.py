@@ -1290,9 +1290,12 @@ def run_wallet(tmp: str) -> tuple[dict, dict]:
     successor=catalog_lineage.vivan_20261113_source()
     admin_added=len(successor['admin']['added'])
     user_added=len(successor['user']['added'])
+    renewal_user_added=(len(catalog_lineage.RENEWAL_NOTICE_ADDED['user'])
+                        -len(catalog_lineage.RENEWAL_NOTICE_REMOVED['user']))
+    renewal_admin_added=len(catalog_lineage.RENEWAL_NOTICE_ADDED['admin'])
     expected_catalog={
-        'status':'PASS','current_catalog_keys':2883+admin_added+user_added+len(catalog_lineage.GATEWAY_CONTROLS_KEYS),
-        'current_admin_keys':1933+admin_added+len(catalog_lineage.GATEWAY_CONTROLS_KEYS),'current_user_keys':950+user_added,
+        'status':'PASS','current_catalog_keys':2883+admin_added+user_added+len(catalog_lineage.GATEWAY_CONTROLS_KEYS)+renewal_user_added+renewal_admin_added,
+        'current_admin_keys':1933+admin_added+len(catalog_lineage.GATEWAY_CONTROLS_KEYS)+renewal_admin_added,'current_user_keys':950+user_added+renewal_user_added,
         'retired_experimental_keys':129,'retired_experimental_topics':10,
         'new_copy_entries':33,'current_runtime_files':132,
         'new_copy_references_unbound':0,
@@ -2361,6 +2364,9 @@ def run_authorization(tmp: str) -> tuple[dict, dict]:
         "missing_schema_fails_closed",
         "disabled_flag_no_effect",
         "verified_remote_success_all_local_effects_atomic",
+        "renewal_success_customer_owner_report_channel_detail_and_html",
+        "renewal_unlimited_volume_customer_owner_channel_from_catalog",
+        "low_wallet_detailed_html_and_usable_actions_not_repeated",
         "replayed_and_foreign_requests_no_extra_charge",
         # Independent reviewer F4: failed nonthrowing accounting INSERT
         # cannot finalize payment, order or journal or replay provider.

@@ -463,10 +463,35 @@ return [
     'renewal' => [
         'extensions.plan_selection_unavailable' => "⚠️ تغییر پلن این اشتراک در حال حاضر ممکن نیست. از صفحه اشتراک دوباره وارد شوید.",
         'extensions.plan_selection_review' => "⚠️ نتیجه تغییر پلن هنوز قابل تأیید نیست. صفحه اشتراک را بررسی کنید.",
-        // automatic_renewal.handle_auto_renew_callback
-        'automatic_renewal.handle_auto_renew_callback.message.30ad9ebf7b' => '❌ موجودی کیف پول برای تمدید خودکار کافی نیست؛ تمدید خودکار این اشتراک غیرفعال شد. لطفاً موجودی را افزایش دهید و سپس آن را دوباره فعال کنید.',
-        'automatic_renewal.handle_auto_renew_callback.message.cab5f13fd1' => '✅ تمدید خودکار اشتراک انجام شد؛ مبلغ ',
-        'automatic_renewal.handle_auto_renew_callback.message.1c7e390d77' => ' تومان از کیف پول شما کسر شد.',
+        // automatic_renewal — post-commit customer notices
+        'automatic_renewal.unlimited_volume' => 'حجم اشتراک: نامحدود',
+        'automatic_renewal.finite_volume' => [
+            'text' => 'حجم اشتراک: {volume} گیگ', 'parameters' => ['volume']
+        ],
+        'automatic_renewal.success_customer' => [
+            'text' => "✅ <b>اشتراک شما به‌صورت خودکار تمدید شد.</b>
+
+👤 نام کاربری اشتراک: <code>{remark}</code>
+💰 مبلغ تمدید: <b>{amount} تومان</b>
+🔼 موجودی قبل از تمدید: {wallet_before} تومان
+🔽 موجودی بعد از تمدید: {wallet_after} تومان
+📅 مدت اشتراک: {days} روز
+🔋 {volume}
+💳 شناسه پرداخت: <code>{payment_ref}</code>",
+            'parameters' => ['remark','amount','wallet_before','wallet_after',
+                             'days','volume','payment_ref']
+        ],
+        'automatic_renewal.low_wallet' => [
+            'text' => "❌ <b>موجودی کیف پول برای تمدید خودکار کافی نیست.</b>
+
+👤 نام کاربری اشتراک: <code>{remark}</code>
+💰 مبلغ تمدید: {amount} تومان
+💵 موجودی فعلی: {wallet} تومان
+🔺 کسری موجودی: <b>{shortfall} تومان</b>
+
+⚠️ تمدید خودکار این اشتراک غیرفعال شد. پس از شارژ کیف پول، از «مشاهده اشتراک‌ها» دوباره آن را فعال کنید.",
+            'parameters' => ['remark','amount','wallet','shortfall']
+        ],
         // extensions.alert
         'extensions.alert.d0779ad27d' => '⛔️ افزایش حجم یا مدت برای این اشتراک در حال حاضر امکان‌پذیر نیست.',
         'extensions.alert.6732b29e55' => '⚠️ در حال حاضر هیچ پلنی برای افزایش مدت زمان اشتراک وجود ندارد.',

@@ -664,6 +664,21 @@ return [
 
     // ── تمدید و افزایش حجم یا زمان ──
     'renewal' => [
+        // automatic_renewal — confirmed post-commit Owner/report-channel copy
+        'automatic_renewal.success_report' => [
+            'text' => "✅ <b>تمدید خودکار اشتراک انجام شد.</b>
+
+🎫 شناسه عددی کاربر: <code>{user_id}</code>
+👤 نام کاربری اشتراک: <code>{remark}</code>
+💰 مبلغ کسرشده: <b>{amount} تومان</b>
+🔼 موجودی قبل از تمدید: {wallet_before} تومان
+🔽 موجودی بعد از تمدید: {wallet_after} تومان
+📅 مدت اشتراک: {days} روز
+🔋 {volume}
+💳 شناسه پرداخت: <code>{payment_ref}</code>",
+            'parameters' => ['user_id','remark','amount','wallet_before','wallet_after',
+                             'days','volume','payment_ref']
+        ],
         // automatic_renewal.auto_renew_alert_review
         'automatic_renewal.auto_renew_alert_review.a_ch_bot_automatic_renewal_requires_operator.bcbe5e6050' => 'تمدید خودکار AChBot نیازمند بررسی مدیر است.' . "\n" . '',
         'automatic_renewal.auto_renew_alert_review.attempt.b7a6466686' => 'شناسه تلاش: ',

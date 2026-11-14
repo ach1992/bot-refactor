@@ -72,9 +72,19 @@ def main() -> dict:
     chili=historical.chili_copy_reference()[0]
     # The two source-pinned additions remain independently reviewable.
     _, service_before, service_after=historical.service_change_catalog_layer()
-    assert len(current['admin'])==1911+len(added['admin'])+len(chili['added'])+8+len(service_after['admin'])-len(service_before['admin'])+successor_added['admin']+len(historical.GATEWAY_CONTROLS_KEYS) and \
-        len(current['user'])==942+len(added['user'])+len(service_after['user'])-len(service_before['user'])+successor_added['user']
+    assert len(current['admin'])==1911+len(added['admin'])+len(chili['added'])+8+len(service_after['admin'])-len(service_before['admin'])+successor_added['admin']+len(historical.GATEWAY_CONTROLS_KEYS)+len(historical.RENEWAL_NOTICE_ADDED['admin']) and \
+        len(current['user'])==942+len(added['user'])+len(service_after['user'])-len(service_before['user'])+successor_added['user']+len(historical.RENEWAL_NOTICE_ADDED['user'])-len(historical.RENEWAL_NOTICE_REMOVED['user'])
     assert not set(current['admin'])&set(current['user'])
+    # An exact approved successor cannot become a blanket pass-through for
+    # unrelated user/admin copy or a tampered renewal template.
+    restored=historical.renewal_notices_copy_restore(current)
+    for audience,known in historical.RENEWAL_NOTICE_ADDED.items():
+        for key in known:assert key not in restored[audience]
+    tampered=copy.deepcopy(current)
+    tampered['user']['renewal.automatic_renewal.low_wallet']['text']='tampered'
+    try:historical.renewal_notices_copy_restore(tampered)
+    except AssertionError:pass
+    else:raise AssertionError('renewal_notice_copy_negative_control_missing')
     # Verify exact current additions and recipient placement before
     # comparing the older immutable post-cleanup user/admin baseline.
     prior=historical.current_cleanup_restore(
