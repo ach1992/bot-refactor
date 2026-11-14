@@ -252,6 +252,46 @@ def aggregate(source: dict, reports: list[dict]) -> dict:
     return result
 
 
+def targeted(source: dict, reports: list[dict], indexes: list[int]) -> dict:
+    """Verify only a trusted explicitly selected subset; NEVER attest full."""
+    validate_foundation(source)
+    if (not isinstance(indexes, list) or not 1 <= len(indexes) < COUNT
+            or any(type(index) is not int or not 1 <= index <= COUNT
+                   for index in indexes)
+            or indexes != sorted(set(indexes))):
+        raise ValueError("Expected a sorted strict subset of eight family indices")
+    if len(reports) != len(indexes):
+        raise ValueError("Selected family evidence count mismatch")
+    found = {}
+    for report in reports:
+        validate_shard(report)
+        index = report["index"]
+        if index not in indexes or index in found:
+            raise ValueError("Unexpected or duplicate selected family")
+        if report["identity"] != source["identity"]:
+            raise ValueError("Selected shard identity does not match foundation")
+        found[index] = report
+    if set(found) != set(indexes):
+        raise ValueError("Selected family proof is incomplete")
+    selected = [FAMILIES[index-1] for index in indexes]
+    return {
+        "complete": False, "targeted_complete": True,
+        "scope": "families", "identity": source["identity"],
+        "catalog_sha256": source["catalog_sha256"],
+        "source_payload_sha256": source["payload_sha256"],
+        "indexes": indexes, "families": selected,
+        "omitted_families": [name for name in FAMILIES if name not in selected],
+        "family_payload_sha256": {
+            found[index]["family"]: found[index]["payload_sha256"] for index in indexes},
+        "foundation_seconds": source["elapsed_seconds"],
+        "family_seconds": {
+            found[index]["family"]: found[index]["elapsed_seconds"] for index in indexes},
+        "full_current_acceptance": False,
+        "historical_suite_executed_by_this_script": False,
+        "production_database_or_service_modified": False,
+    }
+
+
 def full_checks(args, source_result: dict) -> dict:
     """Default serial CLI uses exactly the same families and aggregate contract."""
     source = foundation(source_result)
@@ -279,9 +319,12 @@ def main(argv=None) -> None:
     shard.add_argument("--count", type=int, default=COUNT)
     shard.add_argument("--report", type=Path, required=True)
     joined = commands.add_parser("aggregate")
-    joined.add_argument("--source", type=Path, required=True)
-    joined.add_argument("--reports", type=Path, nargs="+", required=True)
-    joined.add_argument("--report", type=Path, required=True)
+    selected = commands.add_parser("targeted")
+    for command in (joined, selected):
+        command.add_argument("--source", type=Path, required=True)
+        command.add_argument("--reports", type=Path, nargs="+", required=True)
+        command.add_argument("--report", type=Path, required=True)
+    selected.add_argument("--indices", required=True, help="Trusted plan's JSON index array")
     args = parser.parse_args(argv)
     if args.command == "foundation":
         result = foundation()
@@ -292,11 +335,16 @@ def main(argv=None) -> None:
         if len(paths) == 1 and paths[0].is_dir():
             paths = sorted(paths[0].rglob("shard-*.json"))
         if not paths or any(path.is_dir() for path in paths):
-            raise ValueError("Provide exactly eight shard report files")
-        result = aggregate(_read(args.source), [_read(path) for path in paths])
+            raise ValueError("Provide selected shard report files")
+        reports = [_read(path) for path in paths]
+        if args.command == "aggregate":
+            result = aggregate(_read(args.source), reports)
+        else:
+            result = targeted(_read(args.source), reports, json.loads(args.indices))
     args.report.write_text(json.dumps(result, indent=2, ensure_ascii=False) + "\n")
     print(json.dumps({"complete": result["complete"], "kind": result.get("kind", "aggregate"),
-                      "family": result.get("family"), "count": result.get("count")}))
+                      "family": result.get("family"), "count": result.get("count"),
+                      "targeted_complete": result.get("targeted_complete", False)}))
 
 
 if __name__ == "__main__":

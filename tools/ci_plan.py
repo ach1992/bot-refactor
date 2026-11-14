@@ -20,13 +20,46 @@ CRON = "settings/cronRunner.php"
 CRON_TEST = "tools/test_post_v9_cron_runner.py"
 PREPARATION_START = b"$installDirectory = realpath(dirname(__DIR__));\n"
 PREPARATION_END = b"$lockFile = $lockDirectory . DIRECTORY_SEPARATOR . 'achbot-cron-'\n"
-# Only explicitly reviewed informational entrypoints can use the fast docs gate.
-# Existing post-V9 contracts, installation guides and migration/release notes
-# are intentionally NOT exempted; newly introduced paths default to full.
+# Explicitly owned paths only. Shared/unknown runtime, validation infrastructure,
+# migrations and policy code still need all eight families. Indices are the
+# existing disjoint post_v9_suites.RUNNERS order, not ad hoc single-test claims.
+# Keep this mapping intentionally small and evidence-backed; extend it when an
+# actual dependency/calling-path review establishes a narrower safe selection.
+# Existing informational entrypoints have a reviewed lightweight contract.
+# Financial/security/release/migration/policy docs and unknown Markdown stay full.
 ORDINARY_DOC_PATHS = frozenset({
     "README.md",
     "docs/post-v9/README.md",
 })
+
+# Only isolated existing test-file edits have proven native runner ownership.
+# PHP source files depend on shared PHP includes, bot entrypoints, finance
+# fixtures and transitive execution across families. The prior 16-path PHP
+# map omitted real consumers; leave runtime PHP on conservative full until
+# complete per-source family closure is demonstrated and reviewed.
+FAMILY_PATHS = {
+    "tools/test_post_v9_onboarding.py": (1,),
+    "tools/test_owner_destination_escaping.py": (1,),
+    "tools/test_owner_r5_roles.py": (1,),
+    "tools/test_post_v9_api_staff_digest.py": (2,),
+    "tools/test_owner_r6_api_flow.py": (2,),
+    "tools/test_post_v9_payment_api_admin.py": (2,),
+    "tools/test_unified_service_lifecycle.py": (3,),
+    "tools/test_unified_customer_services.py": (3,),
+    "tools/test_post_v9_wallet_transfer.py": (4,),
+    "tools/test_next_payment_ux.py": (4,),
+    "tools/test_post_v9_provider_integration.py": (5,),
+    "tools/test_post_v9_payment_ux_lifecycle.py": (2, 5, 6),
+    "tools/test_post_v9_automatic_renewal.py": (2, 3, 5, 6),
+    "tools/test_post_v9_payment_readiness.py": (6,),
+    "tools/test_post_v9_gateway_rules.py": (6,),
+    "tools/test_post_v9_finance_routes.py": (2, 5, 6, 7, 8),
+    "tools/test_post_v9_service_effects.py": (7,),
+    "tools/test_post_v9_logical_transfer.py": (8,),
+    "tools/test_post_v9_wallet_checkout.py": (7, 8),
+    "tools/test_post_v9_bank_buy.py": (2, 4, 8),
+    "tools/test_post_v9_manual_payments.py": (1, 2, 4, 5, 6, 8),
+}
 
 
 class PlanError(RuntimeError):
@@ -124,40 +157,58 @@ def outside_preparation(source: bytes):
 
 
 def classify(repo: Path, base: str, head: str,
-             changed: list[tuple[str, str]]) -> tuple[str, str]:
+             changed: list[tuple[str, str]]) -> tuple[str, str, list[int]]:
     if not changed:
-        return "none", "no_effective_changes"
-    # Git rename heuristics may report a moved-and-rewritten document as
-    # independent D+A records. Never grant lightweight acceptance to a pair.
+        return "none", "no_effective_changes", []
+    # A low-similarity move can be reported as independent add/delete records.
+    # Never assume it is a harmless documentation-only change.
     statuses = {status for status, _ in changed}
     if "A" in statuses and "D" in statuses:
-        return "full", "ambiguous_add_delete"
+        return "full", "ambiguous_add_delete", list(range(1, 9))
     cron = False
+    selected = set()
     for status, path in changed:
-        if path not in (CRON, CRON_TEST) and not ordinary_doc(path):
-            return "full", "shared_policy_or_unknown_path"
-        if status not in ("A","M","D"):
-            return "full", "file_type_or_ambiguous_change"
-        # A standalone addition/removal can hide an undetected rename; a
-        # readme must already exist at the same path on both sides.
-        if ordinary_doc(path) and status != "M":
-            return "full", "document_added_or_removed"
-        old = entry(repo,base,path)
-        new = entry(repo,head,path)
+        if status not in ("A", "M", "D"):
+            return "full", "file_type_or_ambiguous_change", list(range(1, 9))
+        old = entry(repo, base, path)
+        new = entry(repo, head, path)
         if ((status != "A" and not regular(old))
                 or (status != "D" and not regular(new))
                 or (old is not None and new is not None and old[0] != new[0])):
-            return "full", "nonregular_or_mode_change"
-        if path in (CRON,CRON_TEST):
+            return "full", "nonregular_or_mode_change", list(range(1, 9))
+        if ordinary_doc(path):
+            # Added/deleted docs and disguised low-similarity moves are not
+            # covered by the reviewed modified-in-place docs contract.
+            if status != "M":
+                return "full", "document_added_or_removed", list(range(1, 9))
+            continue
+        if path in (CRON, CRON_TEST):
             if status != "M" or old is None or new is None:
-                return "full", "cron_file_added_or_removed"
+                return "full", "cron_file_added_or_removed", list(range(1, 9))
             cron = True
-        if path == CRON:
-            before = outside_preparation(git(repo,"cat-file","blob",old[2]))
-            after = outside_preparation(git(repo,"cat-file","blob",new[2]))
-            if before is None or after is None or before != after:
-                return "full", "cron_outside_preparation_changed_or_ambiguous"
-    return ("cron","cron_preparation_or_dedicated_test") if cron else ("docs","ordinary_docs_only")
+            if path == CRON:
+                before = outside_preparation(git(repo, "cat-file", "blob", old[2]))
+                after = outside_preparation(git(repo, "cat-file", "blob", new[2]))
+                if before is None or after is None or before != after:
+                    return "full", "cron_outside_preparation_changed_or_ambiguous", list(range(1, 9))
+            continue
+        families = FAMILY_PATHS.get(path)
+        if families is None or status != "M":
+            return "full", "shared_policy_or_unknown_path", list(range(1, 9))
+        if not families or any(type(index) is not int or index not in range(1, 9)
+                               for index in families):
+            return "full", "invalid_family_mapping", list(range(1, 9))
+        selected.update(families)
+    if cron and selected:
+        # No lightweight path may silently omit its independent Cron regression.
+        return "full", "mixed_cron_and_domain", list(range(1, 9))
+    if cron:
+        return "cron", "cron_preparation_or_dedicated_test", []
+    if selected:
+        if len(selected) == 8:
+            return "full", "all_families_affected", list(range(1, 9))
+        return "families", "explicit_affected_families", sorted(selected)
+    return "docs", "ordinary_docs_only", []
 
 
 def plan(repo: Path, base, head, *, force_full: bool = False) -> dict:
@@ -172,7 +223,7 @@ def plan(repo: Path, base, head, *, force_full: bool = False) -> dict:
     if checkout != head or resolved != head or not exact_sha(tree):
         raise PlanError("Checkout HEAD does not match the requested/event source HEAD")
 
-    scope, reason, changed = "full", "invalid_or_missing_base", []
+    scope, reason, changed, shards = "full", "invalid_or_missing_base", [], list(range(1, 9))
     try:
         if exact_sha(base):
             try:
@@ -192,11 +243,11 @@ def plan(repo: Path, base, head, *, force_full: bool = False) -> dict:
                         if git(repo,"status","--porcelain=v1","-z","--untracked-files=normal"):
                             reason = "dirty_checkout"
                         else:
-                            scope, reason = classify(repo,base,head,changed)
+                            scope, reason, shards = classify(repo,base,head,changed)
     except (GitError, UnicodeError):
         scope, reason = "full", "git_evidence_unavailable_or_ambiguous"
     if force_full:
-        scope, reason = "full", "forced_full"
+        scope, reason, shards = "full", "forced_full", list(range(1, 9))
     try:
         final_head = git(repo,"rev-parse","--verify","HEAD").decode().strip()
     except (GitError, UnicodeError) as error:
@@ -206,7 +257,7 @@ def plan(repo: Path, base, head, *, force_full: bool = False) -> dict:
     return {
         "scope":scope, "head":head, "tree":tree, "base":base,
         "changed_paths":[path for _,path in changed], "reason":reason,
-        "shards":list(range(1,9)) if scope == "full" else [],
+        "shards":shards,
     }
 
 

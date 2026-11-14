@@ -94,6 +94,14 @@ jobs:
           path: ${{ runner.temp }}/validation-plan.json
           if-no-files-found: error
           retention-days: 14
+      - name: Preserve trusted selected-family impact plan
+        if: steps.impact.outputs.scope == 'families'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: family-impact-plan
+          path: ${{ runner.temp }}/validation-plan.json
+          if-no-files-found: error
+          retention-days: 14
       - name: Attest a prior successful same-tree PR run on main only
         id: reuse
         env:
@@ -165,7 +173,7 @@ jobs:
   foundation:
     name: current-php85-foundation
     needs: [plan]
-    if: needs.plan.outputs.scope == 'full' && needs.plan.outputs.reuse != 'true'
+    if: (needs.plan.outputs.scope == 'full' || needs.plan.outputs.scope == 'families') && needs.plan.outputs.reuse != 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     steps:
@@ -202,13 +210,13 @@ jobs:
   families:
     name: php85-family-${{ matrix.index }}
     needs: [plan]
-    if: needs.plan.outputs.scope == 'full' && needs.plan.outputs.reuse != 'true'
+    if: (needs.plan.outputs.scope == 'full' || needs.plan.outputs.scope == 'families') && needs.plan.outputs.reuse != 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
-        index: [1, 2, 3, 4, 5, 6, 7, 8]
+        index: ${{ fromJSON(needs.plan.outputs.shards) }}
     steps:
       - name: Checkout exact source
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -356,7 +364,7 @@ jobs:
               expected = ("success", "skipped", "skipped")
           elif env["REUSED"] == "false" and env["SCOPE"] in ("docs", "none"):
               expected = ("skipped", "skipped", "skipped")
-          elif env["REUSED"] == "false" and env["SCOPE"] == "full":
+          elif env["REUSED"] == "false" and env["SCOPE"] in ("full", "families"):
               expected = ("skipped", "success", "success")
           else:
               raise SystemExit("Unknown acceptance branch")
@@ -428,13 +436,13 @@ jobs:
           print(f"Attested {scope}: HEAD={head}, tree={tree}; PHP/native tests not executed")
           PYLIGHT
       - name: Retrieve full PHP 8.5 foundation
-        if: needs.plan.outputs.reuse != 'true' && needs.plan.outputs.scope == 'full'
+        if: needs.plan.outputs.reuse != 'true' && (needs.plan.outputs.scope == 'full' || needs.plan.outputs.scope == 'families')
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: php85-foundation
           path: ${{ runner.temp }}/foundation-evidence
       - name: Retrieve all eight disjoint PHP 8.5 families
-        if: needs.plan.outputs.reuse != 'true' && needs.plan.outputs.scope == 'full'
+        if: needs.plan.outputs.reuse != 'true' && (needs.plan.outputs.scope == 'full' || needs.plan.outputs.scope == 'families')
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           pattern: php85-shard-*
@@ -445,6 +453,41 @@ jobs:
         run: |
           set -euo pipefail
           python3 tools/post_v9_shards.py aggregate --source "$RUNNER_TEMP/foundation-evidence/foundation.json" --reports "$RUNNER_TEMP/family-evidence" --report "$RUNNER_TEMP/post-v9-acceptance.json"
+      - name: Retrieve trusted selected-family impact receipt
+        if: needs.plan.outputs.reuse != 'true' && needs.plan.outputs.scope == 'families'
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: family-impact-plan
+          path: ${{ runner.temp }}/family-impact-plan
+      - name: Verify selected family plan and incomplete PHP 8.5 evidence
+        if: needs.plan.outputs.reuse != 'true' && needs.plan.outputs.scope == 'families'
+        env:
+          PLAN_SHARDS: ${{ needs.plan.outputs.shards }}
+        run: |
+          set -euo pipefail
+          python3 - "$RUNNER_TEMP/family-impact-plan/validation-plan.json" <<'PYFAMILIES'
+          import json, os, subprocess, sys
+          plan = json.load(open(sys.argv[1], encoding="utf-8"))
+          head = subprocess.check_output(["git","rev-parse","HEAD"], text=True).strip()
+          tree = subprocess.check_output(["git","rev-parse","HEAD^{tree}"], text=True).strip()
+          indexes = json.loads(os.environ["PLAN_SHARDS"])
+          if (plan.get("scope") != "families"
+                  or plan.get("reason") != "explicit_affected_families"
+                  or plan.get("head") != head or plan.get("tree") != tree
+                  or not isinstance(plan.get("changed_paths"), list)
+                  or not plan["changed_paths"]
+                  or plan.get("shards") != indexes
+                  or not isinstance(indexes, list)
+                  or not (1 <= len(indexes) < 8)
+                  or any(type(index) is not int or not 1 <= index <= 8 for index in indexes)
+                  or indexes != sorted(set(indexes))):
+              raise SystemExit("Selected-family plan is missing or contradictory")
+          PYFAMILIES
+          python3 tools/post_v9_shards.py targeted \
+            --source "$RUNNER_TEMP/foundation-evidence/foundation.json" \
+            --reports "$RUNNER_TEMP/family-evidence" \
+            --indices "$PLAN_SHARDS" \
+            --report "$RUNNER_TEMP/targeted-family-validation.json"
       - name: Retrieve read-only prior PR acceptance receipt
         if: needs.plan.outputs.reuse == 'true'
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
@@ -487,6 +530,8 @@ jobs:
             cp "$RUNNER_TEMP/post-v9-acceptance.json" "$bundle/post-v9-acceptance.json"
           elif [[ -f "$RUNNER_TEMP/selected-validation.json" ]]; then
             cp "$RUNNER_TEMP/selected-validation.json" "$bundle/post-v9-targeted.json"
+          elif [[ -f "$RUNNER_TEMP/targeted-family-validation.json" ]]; then
+            cp "$RUNNER_TEMP/targeted-family-validation.json" "$bundle/post-v9-targeted.json"
           elif [[ -f "$RUNNER_TEMP/reuse-evidence/ci-reuse-receipt.json" ]]; then
             cp "$RUNNER_TEMP/reuse-evidence/ci-reuse-receipt.json" "$bundle/ci-reuse-receipt.json"
           else
@@ -505,6 +550,18 @@ jobs:
           echo "Selected scope: $SCOPE, source-pipeline reuse: $REUSED" >> "$GITHUB_STEP_SUMMARY"
           if [[ "$SCOPE" == docs || "$SCOPE" == none ]]; then
             echo "Trusted Git provenance only: no PHP tests, native shards, MariaDB or runtime package executed." >> "$GITHUB_STEP_SUMMARY"
+          elif [[ "$SCOPE" == families && "$REUSED" == true ]]; then
+            echo "Previously accepted selected-family source pipeline reused; no PHP 8.5 foundation or native family jobs executed on this main push. Original targeted coverage remains incomplete, NOT full PHP 8.5 acceptance." >> "$GITHUB_STEP_SUMMARY"
+          elif [[ "$SCOPE" == families ]]; then
+            echo "Selected native families only: incomplete targeted evidence; NOT full PHP 8.5 acceptance." >> "$GITHUB_STEP_SUMMARY"
+            python3 - "$RUNNER_TEMP/targeted-family-validation.json" >> "$GITHUB_STEP_SUMMARY" <<'PY'
+          import json,sys
+          report=json.load(open(sys.argv[1], encoding="utf-8"))
+          assert report["complete"] is False and report["targeted_complete"] is True
+          print("Executed: "+", ".join(report["families"]))
+          print("Skipped: "+", ".join(report["omitted_families"]))
+          print("Family seconds: "+json.dumps(report["family_seconds"],sort_keys=True))
+          PY
           fi
           echo "Only complete eight-family PHP 8.5 aggregation is full current-runtime acceptance. Prior frozen V0-V9 PHP 8.1/8.4 execution results remain separate historical evidence; not executed or relabelled by this workflow. No live bot, provider, or financial operation is authorized." >> "$GITHUB_STEP_SUMMARY"
           if [[ -f "$RUNNER_TEMP/post-v9-acceptance.json" ]]; then
