@@ -1,5 +1,27 @@
 # AChBot automatic-renewal financial safety — Issue #26
 
+## RC43 post-commit notices and low-wallet behavior (2026-11-14)
+
+[Reviewed PR #181](https://github.com/ach1992/bot-refactor/pull/181)
+restores the detailed customer and administrator/report-channel notifications
+for automatic renewals. Success notices occur only after
+`achbotAutoRenewFinalize()` commits payment state, accounting, order expiry
+and renewal journal `stage=done` in one transaction. Customer messages and
+the independent Owner/eligible Manager/channel report use the production
+notification router and escaped HTML dynamic fields. Finite and unlimited
+volume displays share catalog-owned formatting. Missing Telegram delivery
+never causes a second wallet debit or Native provider edit, but notification
+delivery itself is **best effort**, with no durable outbox or automatic retry.
+
+When the wallet is insufficient, only the affected subscription's
+`autoRenew=off` state is conditionally committed, with no debit or Native
+change. The customer sees required amount, available balance, shortfall
+and actionable subscription/wallet buttons. Repeated callbacks do not send
+another notice. See [RC42 -> RC43](RC42-TO-RC43.md) and [Issue #26](https://github.com/ach1992/bot-refactor/issues/26)
+for still-unverified installed delivery. The Owner directed **no change**
+to customer/admin/scheduled deletion. The real grace period remains 10
+days while the customer warning intentionally says 3 days.
+
 ## Unclaimed payments do not block unrelated service work (2026-11-14)
 
 A previously unfinished invoice is not itself a physical service operation.

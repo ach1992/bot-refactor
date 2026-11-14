@@ -1,5 +1,44 @@
 # Current source and published release contracts
 
+## Published RC43 — automatic-renewal reporting and proportional CI
+
+[Source-only prerelease v0.10.0-rc.43](https://github.com/ach1992/bot-refactor/releases/tag/v0.10.0-rc.43)
+is bound to merged `main@d1a1761dfde0dd6be7dffc2fa3e0aa2ff814ccf4`,
+reviewed Tree `3eb95f6e6d88e38a911d1ca48e90a367cc1d02e4`.
+It includes independently approved [PR #181](https://github.com/ach1992/bot-refactor/pull/181)
+(confirmed renewal customer/Owner/Manager/report-channel notifications and useful
+low-wallet notice) and [PR #180](https://github.com/ach1992/bot-refactor/pull/180)
+(proportional PHP 8.5 CI for 21 proven test files; PHP runtime/source
+changes still take full fallback). There is **no deletion logic change**;
+actual 10-day grace and customer-stated 3-day warning remain intentional.
+
+Only the renewal PHP module and two `messages/fa` catalogs differ in
+the 132-member runtime from RC42. No schema change, new setting or provider
+migration. [Exact candidate CI #43548969109](https://github.com/ach1992/bot-refactor/actions/runs/43548969109)
+passed foundation, eight PHP 8.5 families and `php85-validation`;
+[main CI #43575764805](https://github.com/ach1992/bot-refactor/actions/runs/43575764805)
+passed exact-tree accepted-evidence reuse. This documentation-only
+update is not a new runtime candidate. The tag, release ZIP, manifest and
+SHA256SUMS own the exact released source and binary integrity.
+Read the [RC42 -> RC43 guide](RC42-TO-RC43.md).
+**No live server transfer, installation, database or Telegram action**
+occurred during this source release. [Issue #26](https://github.com/ach1992/bot-refactor/issues/26)
+continues to own installed finance/provider/reporting acceptance;
+[Issue #104](https://github.com/ach1992/bot-refactor/issues/104)
+retains unfinished PHP-source impact mapping and measured CI savings.
+
+## Published RC42 — unclaimed historical payment draft safety
+
+[Source-only v0.10.0-rc.42](https://github.com/ach1992/bot-refactor/releases/tag/v0.10.0-rc.42)
+delivered reviewed [PR #179](https://github.com/ach1992/bot-refactor/pull/179)
+at `main@91298de959ea7d02c7ed093a79832482915f81c1`.
+Unissued historical `pending`, `send`, or `low_wallet` payment quotes without
+real provider/manual/effect claims no longer block otherwise eligible
+renewal or scheduled deletion, while genuine issued checkout, submitted
+evidence and unsettled effects remain protected. No previously protected
+journal is discarded. The [official RC41 -> RC42 guide](https://github.com/ach1992/bot-refactor/releases/download/v0.10.0-rc.42/RC41-TO-RC42.md)
+explains that source-only packaging/staging is not installed acceptance.
+
 ## RC41 — API payment staff-digest lock order and recoverable projection
 
 [v0.10.0-rc.41](https://github.com/ach1992/bot-refactor/releases/tag/v0.10.0-rc.41)
