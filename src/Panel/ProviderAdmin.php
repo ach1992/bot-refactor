@@ -163,7 +163,7 @@ function achbotHandleProviderAdmin(): bool {
                 achbotPgAdminActor($connection,$step,true);
                 $locked=achbotProviderPanel($connection,$id,true);
                 if ($locked['instance_key']!==$p['instance_key'] || $locked['api_url']!==$p['api_url'] ||
-                    $locked['version']!==$p['version'] || !hash_equals($before,$locked['api_key']))
+                    !hash_equals($before,$locked['api_key']))
                     throw new RuntimeException('pg_key_target_changed');
                 // Shared PG API-key rotation must not rebind an in-flight
                 // plan's captured target. Rotation for otherwise healthy

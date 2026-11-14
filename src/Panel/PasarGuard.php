@@ -1,5 +1,5 @@
 <?php
-/** AChBot native PasarGuard 5.5.1 adapter; no retries, scheduling or finance. */
+/** AChBot native PasarGuard adapter; API capabilities decide compatibility, not version labels. */
 if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) { http_response_code(404); exit; }
 
 function achbotPgFailure(string $reason, bool $uncertain=false, int $http=0): array {
@@ -27,7 +27,7 @@ function achbotPgExpiry($value): ?int {
     return (new DateTimeImmutable(achbotPgDate($value)))->getTimestamp();
 }
 function achbotPgPanelValid(array $panel): bool {
-    if (($panel['version']??'')!=='5.5.1' || !is_int($panel['id']??null) || $panel['id']<=0 ||
+    if (!is_int($panel['id']??null) || $panel['id']<=0 ||
         !preg_match('/^[a-f0-9]{32}$/D',(string)($panel['instance_key']??'')) ||
         !is_string($panel['api_key']??null) || $panel['api_key']==='' ||
         preg_match('/[^\x21-\x7e]/',$panel['api_key']) ||
@@ -349,7 +349,9 @@ function achbotPgGroups(array $panel): array {
 function achbotPgCheck(array $panel): array {
     $system=achbotPgRequest($panel,'GET','/api/system');
     if (!$system['success']) return $system;
-    if (($system['data']['version']??null)!=='5.5.1') return achbotPgFailure('pg_version_unsupported');
+    // The remote version is informational; only actual API results and permissions gate use.
+    $version=$system['data']['version']??null;
+    if (!is_string($version) || $version==='' || strlen($version)>32) $version=null;
     $admin=achbotPgRequest($panel,'GET','/api/admin');
     if (!$admin['success']) return $admin;
     $role=$admin['data']['role']??null;
@@ -367,7 +369,7 @@ function achbotPgCheck(array $panel): array {
     }
     $groups=achbotPgGroups($panel);if (!$groups['success']) return $groups;
     return ['success'=>true,'uncertain'=>false,'reason'=>'','http'=>200,
-        'version'=>'5.5.1','groups'=>$groups['groups'],
+        'version'=>$version,'groups'=>$groups['groups'],
         'allowed_group_ids'=>$role['access']['allowed_group_ids']??null];
 }
 
