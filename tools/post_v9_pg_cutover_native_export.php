@@ -101,13 +101,28 @@ try {
     $accounts=[];$notFound=[];
     foreach ($lookup as [$alias,$username]) {
         // The native API's authenticated exact username lookup is read-only.
-        $r=achbotPgUserResult(achbotPgRequest($panels[$alias],'GET',
-            '/api/user/by-username/'.rawurlencode($username)));
+        $attempt=0;
+        do {
+            $r=achbotPgUserResult(achbotPgRequest($panels[$alias],'GET',
+                '/api/user/by-username/'.rawurlencode($username)));
+            if (($r['success']??false)===true ||
+                (($r['reason']??null)==='pg_not_found' && ($r['http']??null)===404)) break;
+            // Idempotent GET only. A transient transport/remote failure must
+            // never be mistaken for a missing account or weaker auth.
+            if ($attempt>=3 || !in_array(($r['reason']??null),[
+                'pg_timeout','pg_transport_unavailable','pg_vendor_unavailable',
+                'pg_rate_limited'],true)) break;
+            usleep(($attempt+1)*350000);
+            $attempt++;
+        } while (true);
         if (($r['success']??false)!==true) {
             if (($r['reason']??null)==='pg_not_found' && ($r['http']??null)===404) {
                 $notFound[]=['panel_key'=>$alias,'username'=>$username];
-                continue; // A verified 404 is not a 401/403/timeout or stale identity.
+                continue; // Verified absence only; no Native mutation.
             }
+            if (($r['reason']??null)==='pg_timeout') cutoverFail('native_user_timeout');
+            if (($r['reason']??null)==='pg_permission_denied' ||
+                ($r['reason']??null)==='pg_auth_denied') cutoverFail('native_user_auth_denied');
             cutoverFail('native_user_read_failed');
         }
         $user=$r['user'];
@@ -135,7 +150,8 @@ try {
         'input_tenant_or_mapping_invalid','panel_alias_invalid','panel_config_invalid',
         'panel_readonly_check_failed','panel_groups_empty','local_order_invalid',
         'missing_panel_mapping','local_username_invalid','local_orders_empty',
-        'native_user_read_failed','native_username_mismatch'];
+        'native_user_read_failed','native_user_timeout','native_user_auth_denied',
+        'native_username_mismatch'];
     $reason=$e->getMessage();
     if (!in_array($reason,$allowed,true)) $reason='native_snapshot_failed';
     echo json_encode(['complete'=>false,'error_code'=>$reason])."\n";
