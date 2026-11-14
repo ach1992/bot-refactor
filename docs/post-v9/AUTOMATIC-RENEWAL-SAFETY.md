@@ -22,6 +22,23 @@ change, additional Cron, new setting or operator background job.
 Source-only acceptance must cover the historical Vivan unissued low-wallet
 add-on, pending/send drafts, issued hosted payment, submitted receipt,
 durable Native/renewal claims, a second concurrent worker and due deletion.
+
+**Post-deletion issuance boundary (PR #179 independent re-review):** A still-open,
+never-issued renewal or day/volume add-on draft cannot become a NEW payable
+method after its original local `orders_list.status` changes to 0. The existing
+payment subject verification checks the active order and, on an actual
+issuance/financial transaction, uses a current `FOR UPDATE` row read.
+This check applies only to drafts with an empty `payid` in
+`pending/send/low_wallet` states. Already-issued hosted payments and actual
+receipt evidence (including a manual 003 attempt with empty pays.payid) follow
+their existing late settlement/reconciliation paths:
+they must **not** be silently canceled, settled, replayed or forgotten.
+Scheduled deletion still ignores an unclaimed quote and keeps its historical
+row; it may not race a genuine issued claim or outstanding native journal.
+Tests cover actual hosted checkout, Telegram manual choice, wallet debit
+refusal, issued-claim hold and both persisted lock-order outcomes, including
+an independent deletion transaction committing during checkout preview.
+
 The installed Vivan account is not retroactively renewed: a separately
 authorized rollout and source-real acceptance remain mandatory.
 
