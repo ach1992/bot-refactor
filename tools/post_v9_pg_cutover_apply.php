@@ -484,8 +484,13 @@ try {
     [$mapping,$mappingHash]=pgcRead($opt['mapping']);
     [$validated,$validatedHash]=pgcRead($opt['validated-map']);
     $hashes=['local'=>$sourceHash,'native'=>$nativeHash,'mapping'=>$mappingHash];
-    pgcExpect(($validated['input_sha256']??null)===$hashes,
+    $observedHashes=$validated['input_sha256']??null;
+    pgcExpect(is_array($observedHashes) && count($observedHashes)===count($hashes),
         'validated_inputs_changed');
+    $sortedHashes=$hashes;
+    ksort($sortedHashes,SORT_STRING);
+    ksort($observedHashes,SORT_STRING);
+    pgcExpect($observedHashes===$sortedHashes,'validated_inputs_changed');
     $data=pgcPlan($source,$native,$mapping,$validated,$tenant);
     $data['input_hashes']=$hashes;
     $data['claims']=$source['claims']??null;

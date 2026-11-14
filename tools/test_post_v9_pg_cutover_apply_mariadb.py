@@ -153,7 +153,7 @@ def run():
             validated = {"version": 1, "tenant": "hell",
                          "input_sha256": hashes, "references": refs}
             vpath = folder / "validated-map.json"
-            vpath.write_text(json.dumps(validated, separators=(",", ":")) + "\n")
+            vpath.write_text(json.dumps(validated, sort_keys=True, separators=(",", ":")) + "\n")
             vpath.chmod(0o600)
             args.extend(["--validated-map", str(vpath)])
             os_env = dict(env, ACHBOT_PG_CUTOVER_DB_SOCKET=str(work/"mysql.sock"),
@@ -308,7 +308,7 @@ echo json_encode(['refs'=>count($refs),'id_mode'=>$id['identity_mode'],
                 "excluded_orders": [{"order_id": 104, "server_id": 2,
                     "username": "orphan_historical", "owner_id": 1004, "plan_id": 9}]}
             vpath = folder / "validated-map.json"
-            vpath.write_text(json.dumps(validated, separators=(",", ":")) + "\n")
+            vpath.write_text(json.dumps(validated, sort_keys=True, separators=(",", ":")) + "\n")
             vpath.chmod(0o600)
             db_env = dict(env, ACHBOT_PG_CUTOVER_DB_SOCKET=str(work / "mysql.sock"),
                 ACHBOT_PG_CUTOVER_DB="bothell", ACHBOT_PG_CUTOVER_DB_USER="root",
