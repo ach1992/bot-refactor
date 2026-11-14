@@ -29,8 +29,7 @@ SOURCE_UPDATES = {'admin': (), 'api': (), 'services': ('unified_service_manageme
 def run_foundation(source_result: dict) -> dict:
     # Offline future-cutover safety tools are exercised in current PHP 8.5 CI;
     # this is source-only preparation and does not certify installed migration.
-    for name in ("test_post_v9_pg_cutover_preflight.py", "test_post_v9_pg_cutover_native.py",
-                 "test_post_v9_pg_cutover_source_mariadb.py"):
+    for name in ("test_post_v9_pg_cutover_preflight.py", "test_post_v9_pg_cutover_native.py"):
         subprocess.run([sys.executable, str(ROOT / "tools" / name)],
                        cwd=ROOT, check=True, timeout=75, capture_output=True)
     payment_identity_output=subprocess.run(
@@ -687,6 +686,11 @@ def run_api(tmp: str) -> tuple[dict, dict]:
 
 
 def run_services(tmp: str) -> tuple[dict, dict]:
+    # The source SQL proof requires the disposable MariaDB binaries that
+    # CI provisions for native family jobs, not for Foundation.
+    subprocess.run([sys.executable, str(ROOT / "tools" /
+                    "test_post_v9_pg_cutover_source_mariadb.py")],
+                   cwd=ROOT, check=True, timeout=75, capture_output=True)
     result = {}
     unified={}
     suites=[
