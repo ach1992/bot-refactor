@@ -100,7 +100,6 @@ function achbotGiftPgOrderContext(mysqli $db,int $orderId,bool $lock=false): arr
         $server['provider_instance_key']!==$panel['instance_key'] ||
         rtrim($server['panel_url'],'/')!==rtrim($panel['api_url'],'/') ||
         $server['password']!==$panel['api_key'] ||
-        $server['provider_version']!==$panel['version'] ||
         (int)$server['provider_enabled']!==$panel['enabled'] ||
         $context['identity']!==achbotProviderAccountIdentity($db,$account,true))
         throw new RuntimeException('gift_pg_current_identity_changed');

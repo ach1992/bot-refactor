@@ -125,7 +125,7 @@ function achbotProviderPanel(mysqli $db,int $panelId,bool $lock=false): array {
             'api_url'=>$r['panel_url'],'api_key'=>$r['password'],'version'=>$r['provider_version'],
             'enabled'=>(int)$r['provider_enabled']];
         if ($p['enabled']!==1 || !achbotPgPanelValid($p)) throw new RuntimeException('provider_panel_invalid');
-        if ($panel!==null) foreach (['instance_key','api_url','api_key','version','enabled'] as $field)
+        if ($panel!==null) foreach (['instance_key','api_url','api_key','enabled'] as $field)
             if ($panel[$field]!==$p[$field]) throw new RuntimeException('provider_connection_ambiguous');
         $panel=$panel??$p;
     }

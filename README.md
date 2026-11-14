@@ -1,6 +1,6 @@
 # AChBot
 
-AChBot is a PHP Telegram bot for VPN subscriptions, plans, customer support, administrator management and scheduled service operations. It supports Marzban and native PasarGuard 5.5.1.
+AChBot is a PHP Telegram bot for VPN subscriptions, plans, customer support, administrator management and scheduled service operations. It supports Marzban and native PasarGuard.
 
 **Latest source prerelease:** [v0.10.0-rc.43](https://github.com/ach1992/bot-refactor/releases/tag/v0.10.0-rc.43) publishes the independently approved and merged [automatic-renewal reporting PR #181](https://github.com/ach1992/bot-refactor/pull/181) and [proportional CI PR #180](https://github.com/ach1992/bot-refactor/pull/180). Confirmed automatic renewals now deliver detailed escaped-HTML success messages to customers and separate reports to the primary Owner, eligible Managers and the configured report channel; insufficient wallet disables only that subscription's auto-renewal and sends an actionable balance/shortfall notice without a debit or Native edit. Volume labels for finite and unlimited subscriptions remain fully catalog-owned. The actual automatic deletion grace is **10 days**, while the customer-facing warning intentionally states **3 days**; deletion logic was not modified.
 
@@ -83,7 +83,7 @@ AChBot is a PHP Telegram bot for VPN subscriptions, plans, customer support, adm
 - A Linux host with HTTPS, a PHP web handler and PHP CLI. **New source validation uses PHP 8.5 only**, with `mysqli`/mysqlnd, `curl`, `zip` and `gd`. Previously released RC21 was validated under its own historical toolchain; this CI policy is not a claim of installed PHP 8.5 acceptance.
 - MariaDB and a dedicated database/account for each bot. Prepare the matching current schema; the historical 23-table DDL alone is insufficient.
 - A Telegram bot token, its numeric Owner ID and a unique per-bot webhook secret. API evidence additionally needs OpenSSL AES-256-GCM support; preserve the existing secret on upgrades because it protects pinned credentials and recoverable codes.
-- A supported panel. Native PasarGuard **5.5.1** needs its [Group/Host, subscription URL and API prerequisites](docs/post-v9/PASARGUARD-CONTRACT.md); other versions and retired X-UI variants are not implied.
+- A supported panel. Native PasarGuard uses its [Group/Host, subscription URL and API prerequisites](docs/post-v9/PASARGUARD-CONTRACT.md), without gating on the panel version number. Actual API behavior determines whether a given version works; retired X-UI variants are not supported.
 - For scheduled operations: a one-minute Cron task, CLI `posix_geteuid`, `flock`, `proc_open`, Linux `/proc`, and a private lock directory outside all served webroots.
 
 ## Install a new bot

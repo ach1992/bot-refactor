@@ -1,7 +1,7 @@
 # PasarGuard native contract (source candidate)
 
-Issue #81, NEXT-PG-CLIENT-2 / #26 revision2. Supported source pin: 5.5.1,
-eba70d68eaa5a89e34ffebb47c8fd5ce054d0e43. Actual target source/version verification:
+Issue #81, NEXT-PG-CLIENT-2 / #26 revision2. Original native API fixture:
+PasarGuard 5.5.1 at eba70d68eaa5a89e34ffebb47c8fd5ce054d0e43. Runtime connection is **not** version-gated; the API response and actual permissions determine whether operations can proceed. Original source/version verification:
 https://github.com/ach1992/bot-refactor/issues/81#issuecomment-6427352542 .
 This contract does not establish installed/live acceptance.
 
@@ -19,7 +19,7 @@ Global functions in src/Panel/PasarGuard.php, PHP >=8.1:
 - achbotPgCheck(array $panel):array
 - achbotPgGroups(array $panel):array
 
-Panel keys: id,instance_key,api_url,api_key,version.
+Panel keys: id,instance_key,api_url,api_key; optional version metadata is informational and never a compatibility gate.
 Identity keys: remote_user_id,remote_created_at,operation_marker.
 Create request: username,data_limit(int bytes),expire(?int UTC epoch),
 group_ids(sorted unique positive ints),operation_marker(achbot:v1:<32hex>).

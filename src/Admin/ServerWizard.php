@@ -19,7 +19,7 @@ function achbotManagementInteger(string $input,int $min=1,int $max=2147483647): 
 function achbotServerWizardPanel(mysqli $db,array $v): array {
     achbotPgLoad();achbotProviderRequireSchema($db);
     if (!empty($v['panel_id'])) return achbotProviderPanel($db,(int)$v['panel_id']);
-    $panel=['id'=>1,'version'=>'5.5.1','instance_key'=>$v['instance_key']??str_repeat('0',32),
+    $panel=['id'=>1,'version'=>null,'instance_key'=>$v['instance_key']??str_repeat('0',32),
         'api_url'=>$v['url']??'','api_key'=>$v['api_key']??''];
     if (!achbotPgPanelValid($panel)) throw new RuntimeException('management_connection');
     return $panel;
@@ -174,7 +174,7 @@ function achbotServerWizardAdvance(mysqli $db,array &$d,string $action,string $i
         $s=achbotManagementSql($db,"INSERT INTO server_config(id,panel_url,ip,sni,header_type,request_header,response_header,security,tlsSettings,username,password,type,
             provider_connection_id,provider_instance_key,provider_version,provider_enabled)
             VALUES(?,?,'','','none','','','none','','',?,'pasarguard',?,?,?,1)",
-            'ississ',[$id,$v['url'],$p['api_key'],$pid,$p['instance_key'],$p['version']]);$s->close();
+            'ississ',[$id,$v['url'],$p['api_key'],$pid,$p['instance_key'],$check['version']]);$s->close();
     } else {
         $s=achbotManagementSql($db,"INSERT INTO server_config(id,panel_url,ip,sni,header_type,request_header,response_header,security,tlsSettings,username,password,type)
             VALUES(?,?,'','','none','','','none','',?,?,?)",'issss',[$id,$v['url'],$v['username']??'',$v['password']??'',$provider]);$s->close();

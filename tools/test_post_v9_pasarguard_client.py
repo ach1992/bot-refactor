@@ -203,10 +203,12 @@ def adapter_checks(work):
         call('achbotPgLinks',[IDENTITY,'links_base64'],'links_base64_invalid',False)
         call('achbotPgLinks',[IDENTITY],'links_identity_race',False)
         call('achbotPgCheck');assert len(s.trace)==4
-        for mode in ['wrong_version','template_only','permission_missing','groups_truncated','groups_duplicate']:
+        observed=call('achbotPgCheck',[],'wrong_version')
+        assert observed['version']=='5.5.2'
+        for mode in ['template_only','permission_missing','groups_truncated','groups_duplicate']:
             call('achbotPgCheck',[],mode,False)
         call('achbotPgGroups',[],'groups_null_tags')
-        call('achbotPgRead',[IDENTITY],success=False,overrides={'version':'5.6.0'});assert not s.trace
+        call('achbotPgRead',[IDENTITY],success=True,overrides={'version':'5.6.0'});assert [e[:2] for e in s.trace]==[('GET','/api/user/by-id/17')]
         call('achbotPgRead',[IDENTITY],success=False,overrides={'api_url':'http://example.invalid'});assert not s.trace
     return cases
 
