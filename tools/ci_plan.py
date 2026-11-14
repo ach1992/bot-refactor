@@ -25,6 +25,13 @@ PREPARATION_END = b"$lockFile = $lockDirectory . DIRECTORY_SEPARATOR . 'achbot-c
 # existing disjoint post_v9_suites.RUNNERS order, not ad hoc single-test claims.
 # Keep this mapping intentionally small and evidence-backed; extend it when an
 # actual dependency/calling-path review establishes a narrower safe selection.
+# Existing informational entrypoints have a reviewed lightweight contract.
+# Financial/security/release/migration/policy docs and unknown Markdown stay full.
+ORDINARY_DOC_PATHS = frozenset({
+    "README.md",
+    "docs/post-v9/README.md",
+})
+
 FAMILY_PATHS = {
     "src/Finance/ApiPayments.php": (2, 4, 7, 8),
     "src/Finance/AutomaticRenewal.php": (3, 6, 7, 8),
@@ -96,9 +103,7 @@ def exact_sha(value) -> bool:
 
 
 def ordinary_doc(path: str) -> bool:
-    # Documentation-only changes cannot alter executable runtime/CI.
-    # Git mode, ancestry, rename and identity still undergo exact validation.
-    return path == "README.md" or (path.startswith("docs/") and path.endswith(".md"))
+    return path in ORDINARY_DOC_PATHS
 
 
 def changes(repo: Path, base: str, head: str) -> list[tuple[str, str]]:
@@ -183,6 +188,10 @@ def classify(repo: Path, base: str, head: str,
                 or (old is not None and new is not None and old[0] != new[0])):
             return "full", "nonregular_or_mode_change", list(range(1, 9))
         if ordinary_doc(path):
+            # Added/deleted docs and disguised low-similarity moves are not
+            # covered by the reviewed modified-in-place docs contract.
+            if status != "M":
+                return "full", "document_added_or_removed", list(range(1, 9))
             continue
         if path in (CRON, CRON_TEST):
             if status != "M" or old is None or new is None:
