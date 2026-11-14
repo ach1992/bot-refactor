@@ -1,5 +1,13 @@
 # Current source and published release contracts
 
+## Published RC44 — provider version metadata no longer blocks PasarGuard
+
+[Source-only prerelease v0.10.0-rc.44](https://github.com/ach1992/bot-refactor/releases/tag/v0.10.0-rc.44) contains Owner-authorized [PR #185](https://github.com/ach1992/bot-refactor/pull/185) on merged main commit acd0727b9fa04edead999038acf5611b52d5ef36, identical to candidate tree 60e84083415398b2cb866d72c02b7059369da8d9. Six runtime PHP files change relative to RC43. The fixed PasarGuard 5.5.1 acceptance gate is gone, while real API, permissions, physical account and financial protections remain. Newly created PasarGuard service-plan journals include physical_target_format=2, excluding informational version metadata from the physical-target hash; historical unresolved journals retain original version-bearing hashes and operator review holds. Marzban was already version-agnostic. There is no SQL migration or customer-visible copy change.
+
+[Official PR CI #43643031288](https://github.com/ach1992/bot-refactor/actions/runs/43643031288) completed successfully, including Foundation, all eight PHP 8.5 families and protected aggregate complete=true. [Main CI #43643757280](https://github.com/ach1992/bot-refactor/actions/runs/43643757280) passed using exact-tree reuse. The independent reviewer verified the source fix with no further BLOCKER/REQUIRED but gave INCOMPLETE / NO_VERDICT solely because CI was still running. The Owner explicitly authorized Merge and GitHub source publication once the same CI finished successfully; no independent APPROVE is claimed. The official 132-file ZIP SHA256 is be603e54fd46a80a8b8c41b2c56988a5f211a1f29cfb151708b0c249cd07c1a6. See the [RC43 to RC44 guide](RC43-TO-RC44.md).
+
+Publication is **source-only**. No ZIP transfer/install to Vivan/Hell/Chili, private configuration, SQL, Cron, webhook, real API or financial/Telegram operation occurred. Future cutover remains tracked under [Issue #183](https://github.com/ach1992/bot-refactor/issues/183) and Draft [PR #184](https://github.com/ach1992/bot-refactor/pull/184). RC43 is preserved as the previous released rollback candidate.
+
 ## Published RC43 — automatic-renewal reporting and proportional CI
 
 [Source-only prerelease v0.10.0-rc.43](https://github.com/ach1992/bot-refactor/releases/tag/v0.10.0-rc.43)
