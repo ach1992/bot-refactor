@@ -31,9 +31,35 @@ The existing API URL and API-key values match between bots by protected, read-on
 
 Hell also has a test plan `server_plans.id=82`, `provider_group_ids=[1]`, and one local test order `orders_list.id=37015` linked to `service_effects.id=41`. That effect has `source_kind=free_trial`, `provider_state=linked` and a stored native account ID/incarnation. This is **test evidence only**, not a paid legacy-order conversion, and Group `[1]` must **not** be copied indiscriminately to historic plans. The test plan row is active, but the test server's sales state is 0.
 
-The production read-only aggregate at 2026-11-15 counted **458 Marzban-linked orders in Vivan** and **2,063 in Hell**, with 38/42 legacy plans, respectively. These counts change during live operation and do not authorize a cutover.
+The production read-only aggregate at 2026-11-15 counted **458 Marzban-linked orders in Vivan** and **2,063 in Hell**, with 38/42 legacy plans, respectively. These counts change during live operation and do not authorize a cutover. One Vivan order still has an immutable original **Marzban import origin** from a different old logical server than its current plan (a legitimate historical transfer); this origin must be preserved unchanged during cutover. The runtime migration-specific Native identity validation accepts that original historical Marzban origin without reinterpreting it as a PasarGuard import, new sale or capacity reservation.
 
 At the authorized later cutover, map every legacy logical server to the verified already-registered **tenant-local** PasarGuard connection and each legacy paid plan to its **actual Native Group set**. Do not change historical server/order/plan IDs, customer credentials, finances, or old subscription/config links. Recheck all data under a controlled source/target snapshot after the external panel migration.
+
+## Accepted access Groups and server cohorts
+
+Owner mapping (2026-11-15), stored as the small source-controlled operator declaration
+[`PASARGUARD-COHORTS.json`](PASARGUARD-COHORTS.json):
+
+| Logical bot | Legacy server ID / service | PasarGuard Group |
+|---|---|---|
+| Vivan | 2 Plus, 3 No-expiry / unlimited duration | `Plus` |
+| Vivan | 12 Lite | `Lite` |
+| Vivan | 13 Prime | `Prime` |
+| Hell | 2 Plus, 3 Unlimited-duration | `Plus` |
+| Hell | 4 Unlimited-volume, 5 Lite | `Lite` |
+| Hell | 11 Prime | `Prime` |
+
+Read-only PostgreSQL of the real PasarGuard panel found **Plus ID 1, Lite ID 3,
+Prime ID 2**, all enabled at this checkpoint. These **are observations**,
+not hardcoded provider identifiers. The later authorized connection's GET-only
+Group catalog is authoritative; mapping generation requires matching enabled,
+permitted Groups and stops if a name is missing, disabled or ambiguous.
+
+**Access Group is NOT a quota/expiry policy.** Never turn a no-expiry account
+into a timed account merely because it belongs to Plus; never turn an
+unlimited-volume account into a finite-volume account merely because it belongs
+to Lite. Preserve per-user Native expiry, consumed traffic, limits and status.
+Legacy bot server and plan IDs do not change during conversion.
 
 ## Inputs required AFTER the panel migration
 
@@ -43,88 +69,218 @@ At the authorized later cutover, map every legacy logical server to the verified
 4. Separate reconciliation of unfinished service-bound invoices/old callbacks, financial/effect/plan journals, and any uncertain work. Historical money, balances and original effect/quote evidence remain immutable.
 5. A controlled cutover window with permission for the exact DB and writers, restorable full database backups and a paired-runtime recovery plan. No panel-side account edits or replayed native writes.
 
-## Prepare private input snapshots (read-only, no changes now)
+## Fast maintenance-window runbook (prepared tooling; do NOT execute in Production now)
 
-Only after exact read-only access is authorized, with a SELECT-only DB account where possible, run the source export on the appropriate host:
+The Owner will **start the separate panel-user migration** and **temporarily
+turn off both bot webhook/interaction paths and all bot Cron workers**, preventing
+new orders/renewals and new financial/provider effects. The bot cutover follows
+only when the external panel migration is complete, clients' existing
+configs/links work, and the Owner authorizes the **exact bot databases/actions**.
+
+**Gate before every Production write:** confirm the actual Vivan/Hell runtime
+source and post-V9 Schema support this new historical provenance. RC44 ZIP was
+*staged only*, not installed, and **does not include this source-only
+converter**. Review and publish a new runtime artifact through the repository
+gates, then install it during a separately approved window, before re-enabling
+customers. Do not install an unreviewed Draft PR or extract the RC44 ZIP as if it
+contains this converter. Chili is unrelated and remains untouched.
+
+### 1. Quiesce and protect state
+
+1. Owner stops the two bots and all their Cron dispatchers. Verify **no
+   active webhook, scheduled, payment-callback, administrator, or manual service
+   writer** can race the snapshots/apply. Merely disabling new purchase buttons
+   is insufficient if callback workers can still write. Observe the actual
+   processes/leases with passive diagnostics; do not erase them.
+2. Confirm physical user migration completed to PasarGuard under
+   `bot-admin`, including original UUID/password/proxy/subscription URL
+   continuity. Verify current traffic, quota, expiry, status and access Group
+   for every cohort. Confirm the planned node/link behavior with the panel
+   migration Owner; node replacement remains controlled by that other project.
+3. Make **restorable**, time-bound backups of `botvivan` and `bothell`
+   plus their private config/runtime release identities. Keep full data,
+   including wallets, payments, service effects, origin/plan journals,
+   customer links and old Marzban connection metadata. Check a restore in an
+   isolated database before assuming a fallback works. Preserve the
+   pre-migration backup until post-restart acceptance.
+4. Reconcile outstanding incomplete invoices separately. Old pending
+   requests do **not** automatically block unrelated future purchases, but
+   uncertain provider effects and uncommitted plan journals remain blockers
+   to the affected conversion. Do not expire/settle/replay historical invoices
+   simply to make this check pass.
+
+### 2. Capture private source, connection, and native access Groups
+
+Use approved, **non-printing protected credentials** and private operator
+directory `/secure-private` on the authorized execution host. `0600`
+snapshot files contain private owner/native identities; the connections file
+also contains a **real API Key**. Do not upload them to GitHub, chat, CI
+artifacts, logs or general-purpose paste tools. The commands below are
+templates for the authorized environment; do not assume a tool named
+`mariadb` has the correct default socket/account until inspected.
 
 ```bash
+# After both bots/Cron are confirmed quiescent, with authorized DB read access:
 python3 tools/post_v9_pg_cutover_local_export.py --tenant vivan --output /secure-private/vivan-local.json
-python3 tools/post_v9_pg_cutover_local_export.py --tenant hell --output /secure-private/hell-local.json
+python3 tools/post_v9_pg_cutover_local_export.py --tenant hell  --output /secure-private/hell-local.json
+
+# Reuse the already configured PasarGuard test connection in EACH bot DB:
+python3 tools/post_v9_pg_cutover_connection_export.py --tenant vivan --server-id 14 --panel-alias main --output /secure-private/vivan-connections.json
+python3 tools/post_v9_pg_cutover_connection_export.py --tenant hell  --server-id 12 --panel-alias main --output /secure-private/hell-connections.json
+
+# GET only: /api/system, /api/admin, /api/groups with existing authorized credentials.
+php tools/post_v9_pg_cutover_group_catalog.php --connections=/secure-private/vivan-connections.json --panel-alias=main --output=/secure-private/vivan-groups.json
+php tools/post_v9_pg_cutover_group_catalog.php --connections=/secure-private/hell-connections.json  --panel-alias=main --output=/secure-private/hell-groups.json
 ```
 
-The exporter uses one `START TRANSACTION READ ONLY` snapshot, selecting **only server/plan/order rows whose configured provider is `marzban`**; already-existing PasarGuard test rows are not legacy migration sources. Its aggregate finance/effect/journal attention counts still cover the bot database and must be reconciled separately. Exported fields are minimum owner/order/server/plan IDs and usernames, **not** private tokens, links, UUIDs, passwords or balances. Output is operator-private `0600` and must be outside the repo. Three SQL claims fields are conservative attention counts; zero is *not* complete financial settlement proof. This operation has not been executed against production.
+The connection exporter runs a single MariaDB `READ ONLY` transaction and
+never prints the secret/URL. It checks the **configured** connection ID,
+instance key and enabled state, not a hardcoded provider version. The PasarGuard
+Group catalog exporter verifies actual API authentication, user/Group permissions
+and `require_template=false`, returning only currently eligible enabled
+Groups by ID and name. It writes no Native changes and never prints keys.
+**Live API/Group permission readback has not been performed yet**; saved SQL
+configuration alone does not prove it.
 
-For each tenant, create a private mapping file, e.g. this **synthetic example** (not a real assignment):
-
-```json
-{
-  "version": 1,
-  "tenant": "vivan",
-  "server_panels": {"2": "main"},
-  "plan_groups": {"9": [1, 2]}
-}
-```
-
-The real files must enumerate **every** existing server ID and plan ID, with sorted positive native Groups. Native `group_ids=[]` can be valid for an existing planless native subscription, not an ordinary plan.
-
-Create private credentials `/secure-private/pg-connections.json` with mode `0600`. The values below are placeholders only:
-
-```json
-{
-  "version": 1,
-  "panels": {
-    "main": {
-      "id": 71,
-      "instance_key": "0123456789abcdef0123456789abcdef",
-      "api_url": "https://pasarguard.example.invalid",
-      "api_key": "PROTECTED_CREDENTIAL_PLACEHOLDER"
-    }
-  }
-}
-```
-
-The 32-digit instance key must stay stable **for a given bot-local connection** across its mapped aliases and future operations; do not force Vivan and Hell to share one local instance key. Use each existing saved connection ID/key rather than these synthetic values. The optional provider `version` metadata is informational, never a compatibility allowlist. Native adapter authentication and Group permissions are verified by GET-only methods. The export's API key is never written to the output.
-
-Run the Native GET-only exporter **after** the panel migration:
+### 3. Generate ALL plan mappings from the verified Groups
 
 ```bash
-php tools/post_v9_pg_cutover_native_export.php \
-  --local=/secure-private/vivan-local.json \
-  --mapping=/secure-private/vivan-map.json \
-  --connections=/secure-private/pg-connections.json \
-  --output=/secure-private/vivan-native.json
+python3 tools/post_v9_pg_cutover_mapping.py --local /secure-private/vivan-local.json --cohorts docs/post-v9/PASARGUARD-COHORTS.json --group-catalog /secure-private/vivan-groups.json --panel-alias main --output /secure-private/vivan-map.json
+
+python3 tools/post_v9_pg_cutover_mapping.py --local /secure-private/hell-local.json --cohorts docs/post-v9/PASARGUARD-COHORTS.json --group-catalog /secure-private/hell-groups.json --panel-alias main --output /secure-private/hell-map.json
 ```
 
-It calls only the existing native PasarGuard adapter's `GET /api/system`, `GET /api/admin`, `GET /api/groups` and `GET /api/user/by-username/{username}` endpoints, no POST/PUT/DELETE. It excludes private proxy settings, tokens and notes from its JSON output. Errors abort without saving a partial file. Multi-user API reads are sequential, not a transactional panel snapshot.
+Generation covers **every** old Marzban server and existing plan ID and
+fails on unexpected/renamed servers or missing/ambiguous/disabled Group
+labels; it does not infer IDs from the bot-local historical Marzban panel
+groups 61/55. Existing separate PasarGuard test plans/orders are excluded
+from legacy source export, and no Native Group is assigned to customers
+via this operation.
 
-Then validate completely offline:
+### 4. GET-only account inventory and strict offline reconciliation
 
 ```bash
-python3 tools/post_v9_pg_cutover_preflight.py \
-  --local /secure-private/vivan-local.json \
-  --native /secure-private/vivan-native.json \
-  --mapping /secure-private/vivan-map.json \
-  --private-map /secure-private/vivan-validated-map.json
+php tools/post_v9_pg_cutover_native_export.php --local=/secure-private/vivan-local.json --mapping=/secure-private/vivan-map.json --connections=/secure-private/vivan-connections.json --output=/secure-private/vivan-native.json
+
+php tools/post_v9_pg_cutover_native_export.php --local=/secure-private/hell-local.json --mapping=/secure-private/hell-map.json --connections=/secure-private/hell-connections.json --output=/secure-private/hell-native.json
+
+python3 tools/post_v9_pg_cutover_preflight.py --local /secure-private/vivan-local.json --native /secure-private/vivan-native.json --mapping /secure-private/vivan-map.json --private-map /secure-private/vivan-validated-map.json
+
+python3 tools/post_v9_pg_cutover_preflight.py --local /secure-private/hell-local.json --native /secure-private/hell-native.json --mapping /secure-private/hell-map.json --private-map /secure-private/hell-validated-map.json
 ```
 
-Repeat for Hell. The optional validated private map is created **only when every reference matches**, permission `0600`, never overwritten, never inside the repo. Stdout contains counts and SHA256 input identities, not usernames. It detects missing/colliding native IDs, changed/unknown plans, unbound Native Groups, conflicting shared subscriptions, nonzero inbound/previous native binding, native scheduling and uncertain native effects or plan-change journals. Existing nonfinal invoices are separate **financial attention**, not an unconditional account-mapping block; they must be individually reconciled before a separately authorized conversion/fulfillment, without suppressing later unrelated payments. Unlimited quota (`data_limit=0`) and unlimited expiry (`expire=null`) remain distinct.
+The Native exporter uses only authenticated GETs and records exact Native
+`user.id` and `created_at`, Groups, current used traffic/limit, expiry and
+status, without returning UUIDs or tokens to stdout. The comparator validates
+the entire local source, including Hell's shared physical users and 12
+historical planless references (refresh moving counts). Verify no missing
+account, native collision, Group drift, scheduling conflict, or unsettled
+Native/plan effect. Incomplete old financial invoices remain independently
+visible for review. An offline `complete=true` is **NOT** approval for
+production; `ready_for_production_cutover=false` is intentional. Confirm
+actual subscription URL and original client config continuity separately.
 
-A passing offline consistency result is **not** approval or readiness for production. It does not prove actual old config/URL continuity, bot-admin ownership, live payment settlement, frozen source/target identities, or valid SQL conversion.
+### 5. Dry-run and guarded one-time local conversion
 
-## Remaining gated execution work
+The new operator CLI
+[`post_v9_pg_cutover_apply.php`](../../tools/post_v9_pg_cutover_apply.php)
+uses the **exact same sealed four input files**. It verifies that all
+live local server/plan/order identities and Native mappings are unchanged,
+that the preconfigured PasarGuard endpoint/instance is still the same, and
+that uncertain service effects/plan changes are absent. The default mode
+is one MariaDB **READ ONLY** transaction with no live writes.
 
-- Build/verify the future **one-time historical-order SQL conversion** using original order and financial history *without* calling the existing zero-price import, overwriting paid rows, creating users or replaying Native/payment operations.
-- Link every bot order reference to an exact native ID and created-at with durable **migration-specific provenance**. Hell's duplicate local references must share the same verified physical Native account. Planless orders retain their ownership and planless semantics.
-- Reverify all remote data and Native Groups immediately before the approved cutover; quiesce webhook and Cron writers only with exact production permission. Preserve rollback/roll-forward evidence, avoid unsafe SQL replay and cross-provider settlement of old invoices.
-- After conversion, verify read-only order details/links/usage/status and separately authorized new purchase, renewal, add-on, auto-renew and administrative plan changes. Do not alter the 10-day actual/3-day user-facing deletion policy.
+Before running, have the operator establish `ACHBOT_PG_CUTOVER_DB_SOCKET`,
+`ACHBOT_PG_CUTOVER_DB_USER` and
+`ACHBOT_PG_CUTOVER_DB_PASSWORD` through the authorized secret mechanism,
+without printing the password; set `ACHBOT_PG_CUTOVER_DB` to **exactly**
+`botvivan` or `bothell` for the corresponding tenant. No database
+connection credential is stored in the repository.
+
+```bash
+# Example for Hell; repeat with vivan paths/tenant/DB in its own transaction.
+php tools/post_v9_pg_cutover_apply.php --tenant=hell --local=/secure-private/hell-local.json --native=/secure-private/hell-native.json --mapping=/secure-private/hell-map.json --validated-map=/secure-private/hell-validated-map.json --dry-run
+```
+
+Only when the dry-run is clean, both source and target backups are proven
+restorable, live Native/old-link acceptance is complete, independent source
+review and exact candidate CI pass, and the Owner **separately authorizes
+Production SQL cutover for the exact two bot databases**, is the `--apply`
+mode eligible. `--apply` creates migration-specific native provenance in
+`service_effects` for each distinct physical account, links all existing
+order references to it, sets per-plan Native Group IDs and reuses the
+stored PasarGuard connection on each existing old logical server. It does
+not overwrite order IDs, paid amounts, plan terms, customer tokens, links,
+UUID/proxy credentials, wallet balances, payment history, original
+effect/quote/plan journals, or Native traffic/expiry. It does not dispatch
+Native POST/PUT/DELETE, payment or Telegram requests. The database
+transaction either commits all local changes with a one-time journal in
+`setting` or rolls them back; exact repeated invocation verifies the journal
+and does not replay the conversion.
+
+The `--apply` flag **must not** be invoked during current preparation.
+Never use the ordinary zero-price `achbotProviderAdoptAccount` importer for
+old paid orders. The new provenance records **a verified historical
+association**, not a fictitious new purchase/effect. A wrong user/created-at,
+changed source order, duplicate alias collision or changed mapped Group
+is a stop/reconcile condition, not a reason to relax validation.
+
+### 6. Acceptance before reopening the bots
+
+1. Confirm current installed runtime artifact and schema match the
+   independently reviewed cutover source and both SQL journals/readbacks.
+   Check every original legacy order reference is linked, including multiple
+   customers sharing the same physical subscription, and test-only PasarGuard
+   orders are unchanged.
+2. Verify representative existing account details, original old VLESS/VMess/
+   Trojan configs, original subscription URLs and links, exact native ID,
+   expiry/unlimited-time, used traffic, finite/unlimited quota, status,
+   Groups and auto-renew consent without charging Wallet or mutating Native.
+3. Keep all bot writers paused if identity/mapping or old-URL continuity
+   cannot be verified. Do not simply restore a pre-cutover bot database to
+   Marzban after customers/nodes have physically moved; that is not a
+   safe standalone rollback. Reconcile external panel state before deciding
+   rollback or roll-forward.
+4. Only after verified stable read-only acceptance does the Owner re-enable
+   bot webhooks and Cron. Perform **separately authorized** representative
+   first new purchase, renew, add-on and admin plan change, checking one
+   physical effect and exactly-once money mutation. Observe failures and
+   preserve usable logs/correlation evidence.
+5. Leave original deletion logic untouched (actual grace 10 days; customer
+   message intentionally says 3). Keep Issue #183 open until installed
+   Vivan/Hell acceptance is real.
+
+## Remaining independent and Production gates
+
+- Source-only identity handling and one-time, idempotent SQL apply/dry-run code
+  are **prepared for independent review**, not merged, released, installed or
+  used against live data. Validate actual current-schema/financial behavior and
+  exact candidate CI before requesting Owner source integration permission.
+- External panel migration must finish, then actual scoped API account/Group
+  identity and original customer config/URL continuity must be verified for
+  every mapped cohort. No private live credentials were used in development.
+- Obtain new explicit Owner authorization for each actual production effect:
+  release/install of the reviewed runtime and the exact two bot database
+  conversion transactions. Do not infer SQL rights from source repo rights.
+- No live transactions/Cron/webhook/Telegram/Native API mutations have been
+  performed from this draft; maintaining the historical 10-day actual /
+  3-day user-facing deletion contract is mandatory.
 
 ## Synthetic validation only
 
 ```bash
 python3 tools/test_post_v9_pg_cutover_preflight.py
 python3 tools/test_post_v9_pg_cutover_native.py
+python3 tools/test_post_v9_pg_cutover_mapping.py
+python3 tools/test_post_v9_pg_cutover_connection.py
+python3 tools/test_post_v9_pg_cutover_groups.py
 python3 tools/test_post_v9_pg_cutover_source_mariadb.py
+python3 tools/test_post_v9_pg_cutover_apply_mariadb.py
+python3 tools/test_post_v9_pg_cutover_runtime.py
 php -l tools/post_v9_pg_cutover_native_export.php
+php -l tools/post_v9_pg_cutover_group_catalog.php
+php -l tools/post_v9_pg_cutover_apply.php
+php -l src/Panel/ProviderStorage.php
 ```
 
 All native test traffic uses synthetic loopback HTTP; tests assert GET-only and zero native writes. See [#183](https://github.com/ach1992/bot-refactor/issues/183), [native contract](PASARGUARD-CONTRACT.md), [shared provider storage](SHARED-PROVIDER-STORAGE.md).
