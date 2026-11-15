@@ -13,8 +13,7 @@ import test_access_state as owned
 import test_v6_native as native
 import test_v6_panels as panel_functions
 import test_v8_native as purchase
-import v9_contract as v9
-import package_post_v9 as current_runtime
+import package_current as current_runtime
 import catalog_owner_r5 as r5_catalog
 import notification_fixture
 
@@ -407,7 +406,12 @@ def r5_denial_notice_negative_controls(text):
 
 def stage_source(stage:Path,current:bool)->dict:
     stage.mkdir(parents=True,exist_ok=False)
-    members = current_runtime.members() if current else v9.members()
+    if current:
+        members = current_runtime.members()
+    else:
+        # Archived comparison is never imported or evaluated by Stable CI.
+        import v9_contract
+        members = v9_contract.members()
     for rel in members:
         dest=stage/rel
         dest.parent.mkdir(parents=True,exist_ok=True)

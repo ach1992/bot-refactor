@@ -25,6 +25,7 @@ ROOT = Path(__file__).resolve().parents[1]
 # Each native suite asserts against current PHP source using its own fixtures.
 NATIVE_TESTS = (
     ("api_payments", "test_post_v9_scoped_api_pg.py"),
+    ("nowpayments_finality", "test_stable_nowpayments.py"),
     ("direct_gift_native", "test_post_v9_direct_gift_native.py"),
     ("automatic_renewal", "test_post_v9_automatic_renewal.py"),
     ("bank_purchase", "test_post_v9_bank_buy.py"),
@@ -46,6 +47,9 @@ NATIVE_TESTS = (
 )
 
 OTHER_TESTS = (
+    ("manual_unknown_redrive",
+     ("python3", "tools/test_owner_r6_api_flow.py", "--run-disposable", "--ci-redrive"),
+     "report"),
     ("cron_runner", ("python3", "tools/test_post_v9_cron_runner.py"), "report"),
     ("payment_reference", ("python3", "tools/test_post_v9_payment_identity.py"), "stdout"),
     ("telegram_log_privacy", ("php", "-n", "tools/test_post_v9_telegram_log_privacy.php"), "stdout"),

@@ -9,7 +9,7 @@ import provider_storage_fixture as shared_storage
 import argparse,json,shutil,subprocess
 import test_post_v9_pasarguard_client as pg
 from pathlib import Path
-import package_post_v9 as package
+import package_current as package
 import test_access_state as owned
 import test_v6_native as native
 import test_v8_native as purchase

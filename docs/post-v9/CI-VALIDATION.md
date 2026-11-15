@@ -14,7 +14,13 @@ main pushes under the single `php85-validation` required status:
   toolchain. No Docker-in-Docker, APT mirror installation or eight duplicate
   MariaDB downloads. Independent cases use isolated, disposable socket-only
   databases and local loopback providers.
-- `tools/ci_quick.py` runs real-source PHP, finance, payment/checkout,
+- `tools/ci_quick.py` runs the focused current `test_stable_nowpayments.py`
+  for signed IPN, exact invoice/quote identity, nonfinal vs finished provider
+  outcome and replay without double wallet/Native effects; and the
+  `--ci-redrive` mode of `test_owner_r6_api_flow.py` for private,
+  permission-checked preview/confirmation and original-packet single claim.
+  Neither exercises pre-Stable source or makes live requests.
+- `tools/ci_quick.py` also runs real-source PHP, finance, payment/checkout,
   customer/service operations, subscription/payment flows, onboarding, wallet, Native,
   operator permissions, Telegram error diagnostics, Cron and
   payment-browser checks. Runs are parallel but retain each test's own
