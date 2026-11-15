@@ -18,6 +18,51 @@ function achbotHostedWorkerLockName(mysqli $db,int $payId): string {
     return 'achbot-hosted-'.substr(hash('sha256',$schema),0,20).'-'.$payId;
 }
 
+/** Dispatch workers borrow an already-held original payment session lease,
+ * or acquire their own for the entire external request and its acknowledgement.
+ * Archive checks the same lock. Never keep an InnoDB transaction across HTTP.
+ * A lease borrowed from a hosted/API/manual parent must NOT be released here.
+ */
+function achbotOriginalDispatchLeaseBegin(mysqli $db,int $payId): string {
+    if ($payId<=0) return 'unavailable';
+    try {
+        $name=achbotHostedWorkerLockName($db,$payId);
+        $q=$db->prepare('SELECT IS_USED_LOCK(?) AS holder,CONNECTION_ID() AS self');
+        if (!$q) throw new RuntimeException('dispatch_lease_probe_unavailable');
+        $q->bind_param('s',$name);$q->execute();
+        $state=$q->get_result()->fetch_assoc();$q->close();
+        if (!$state) throw new RuntimeException('dispatch_lease_probe_missing');
+        if ($state['holder']!==null)
+            return (int)$state['holder']===(int)$state['self']?'borrowed':'busy';
+        $q=$db->prepare('SELECT GET_LOCK(?,0) AS acquired');
+        if (!$q) throw new RuntimeException('dispatch_lease_claim_unavailable');
+        $q->bind_param('s',$name);$q->execute();
+        $claimed=$q->get_result()->fetch_assoc();$q->close();
+        return (int)($claimed['acquired']??0)===1?'owned':'busy';
+    } catch (Throwable $error) {
+        error_log('achbot_dispatch_lease_unavailable pay_id='.$payId.
+            ' class='.get_class($error));
+        return 'unavailable';
+    }
+}
+
+function achbotOriginalDispatchLeaseEnd(mysqli $db,int $payId,string $lease): void {
+    if ($lease!=='owned') return;
+    try {
+        $name=achbotHostedWorkerLockName($db,$payId);
+        $q=$db->prepare('SELECT RELEASE_LOCK(?) AS released');
+        if (!$q) throw new RuntimeException('dispatch_lease_release_unavailable');
+        $q->bind_param('s',$name);$q->execute();
+        $released=$q->get_result()->fetch_assoc();$q->close();
+        if ((int)($released['released']??0)!==1)
+            throw new RuntimeException('dispatch_lease_release_unconfirmed');
+    } catch (Throwable $error) {
+        // A disconnected session releases its named locks automatically.
+        error_log('achbot_dispatch_lease_release_unavailable pay_id='.$payId.
+            ' class='.get_class($error));
+    }
+}
+
 /** One source of truth for active operator-attention cases. Archival is
  * a terminal LOCAL automation fence, not a merchant settlement or refund.
  * Late signed IPN evidence is separate from the immutable archived attempt.

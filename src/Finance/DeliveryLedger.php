@@ -462,6 +462,10 @@ function achbotDeliveryValidateLocked(mysqli $db,array $pay,array $d): ?array {
 /** One CAS winner is allowed to emit; ambiguous outcome is never retried. */
 function achbotDeliveryDispatch(mysqli $db,int $payId,int $ordinal): string {
     if (!achbotDeliverySchemaReady($db)) return 'unavailable';
+    require_once __DIR__.'/GatewayClient.php';
+    $lease=achbotOriginalDispatchLeaseBegin($db,$payId);
+    if ($lease!=='owned' && $lease!=='borrowed') return $lease;
+    try {
     $token='';$packet=null;$begun=false;
     try {
         if (!$db->begin_transaction()) return 'unavailable';$begun=true;
@@ -535,6 +539,9 @@ function achbotDeliveryDispatch(mysqli $db,int $payId,int $ordinal): string {
         error_log('achbot_delivery_finalize_unknown pay_id='.$payId.' ordinal='.$ordinal);
     }
     return $finished?$state:'unknown';
+    } finally {
+        achbotOriginalDispatchLeaseEnd($db,$payId,$lease);
+    }
 }
 /** Safe to call on a repeated terminal callback: only PENDING emits.
  * Page with monotone ordinals, not a hidden account-count ceiling.

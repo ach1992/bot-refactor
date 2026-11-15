@@ -348,6 +348,32 @@ if (preg_match('/^declineActionReason_(.+)_(\d+)$/', (string)($userInfo['step']?
             (int)$locked['chat_id']!==(int)$payInfo['chat_id'] ||
             (int)$locked['message_id']!==(int)$payInfo['message_id'])
             throw new RuntimeException('manual_reject_stale');
+        // A previously opened reason editor cannot reject an original after
+        // another authorized operator Archives it. Match Archive's lock order
+        // (pays -> original attempt) and inspect before consuming users.step.
+        // Only absent pre-003/022 schema is optional; other SQL failures
+        // must roll back the financial decision and its follow-up intents.
+        $archiveProbe=null;$archiveSchemaMissing=false;
+        try {
+            $archiveProbe=$connection->prepare('SELECT review_archived_at
+                FROM payment_attempts WHERE pay_row_id=? LIMIT 1 FOR UPDATE');
+        } catch (mysqli_sql_exception $error) {
+            if (!in_array((int)$error->getCode(),[1054,1146],true)) throw $error;
+            $archiveSchemaMissing=true;
+        }
+        if (!$archiveProbe && !$archiveSchemaMissing) {
+            if (!in_array((int)$connection->errno,[1054,1146],true))
+                throw new RuntimeException('manual_reject_archive_probe_unavailable');
+            $archiveSchemaMissing=true;
+        }
+        if ($archiveProbe) {
+            $archiveProbe->bind_param('i',$payId);
+            if (!$archiveProbe->execute())
+                throw new RuntimeException('manual_reject_archive_read_unavailable');
+            $original=$archiveProbe->get_result()->fetch_assoc();$archiveProbe->close();
+            if (($original['review_archived_at']??null)!==null)
+                throw new RuntimeException('manual_reject_archived');
+        }
         // The pays lock alone cannot freeze staff authority or the active
         // reason editor. Lock current membership/role, then atomically claim
         // only the same persisted editor before financial settlement.
@@ -401,8 +427,9 @@ if (preg_match('/^declineActionReason_(.+)_(\d+)$/', (string)($userInfo['step']?
         if ($opened) try {$connection->rollback();} catch(Throwable $ignored) {}
         // Preserve a bounded, non-secret reason for operator diagnostics.
         $code=in_array($error->getMessage(),[
-            'manual_reject_stale','manual_reject_actor_revoked',
-            'manual_reject_editor_stale','manual_reject_cas_failed',
+            'manual_reject_stale','manual_reject_archived',
+            'manual_reject_actor_revoked','manual_reject_editor_stale',
+            'manual_reject_cas_failed',
         ],true)?$error->getMessage():'transaction_unconfirmed';
         error_log('achbot_manual_reject_claim_unconfirmed pay_id='.$payId.
             ' code='.$code.' class='.get_class($error));

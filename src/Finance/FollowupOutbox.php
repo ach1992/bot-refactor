@@ -209,13 +209,29 @@ function achbotFollowupValidateLocked(mysqli $db,array $pay,array $r): ?array {
  */
 function achbotFollowupDispatchOne(mysqli $db,int $id): string {
     if (!achbotFollowupSchemaReady($db) || $id<=0) return 'unavailable';
+    // Resolve the immutable original owner before the first SQL claim. The
+    // in-transaction read below verifies it again after acquiring the lease.
+    try {
+        $q=$db->prepare('SELECT pay_row_id FROM payment_followup_intents WHERE id=?');
+        $q->bind_param('i',$id);$q->execute();
+        $owner=$q->get_result()->fetch_assoc();$q->close();
+        $payId=(int)($owner['pay_row_id']??0);
+        if ($payId<=0) return 'unavailable';
+    } catch (Throwable $error) {
+        error_log('achbot_followup_owner_unavailable id='.$id.' class='.get_class($error));
+        return 'unavailable';
+    }
+    require_once __DIR__.'/GatewayClient.php';
+    $lease=achbotOriginalDispatchLeaseBegin($db,$payId);
+    if ($lease!=='owned' && $lease!=='borrowed') return $lease;
+    try {
     $token='';$r=null;$packet=null;$opened=false;
     try {
         if (!$db->begin_transaction()) return 'unavailable';$opened=true;
         $q=$db->prepare('SELECT pay_row_id FROM payment_followup_intents WHERE id=?');
         $q->bind_param('i',$id);$q->execute();$row=$q->get_result()->fetch_assoc();$q->close();
-        if (!$row) throw new RuntimeException('followup_missing');
-        $payId=(int)$row['pay_row_id'];
+        if (!$row || (int)$row['pay_row_id']!==$payId)
+            throw new RuntimeException('followup_owner_changed');
         $q=$db->prepare('SELECT * FROM pays WHERE id=? FOR UPDATE');
         $q->bind_param('i',$payId);$q->execute();$pay=$q->get_result()->fetch_assoc();$q->close();
         $q=$db->prepare('SELECT * FROM payment_followup_intents WHERE id=? AND pay_row_id=? FOR UPDATE');
@@ -266,6 +282,9 @@ function achbotFollowupDispatchOne(mysqli $db,int $id): string {
         return 'unknown';
     }
     return $status;
+    } finally {
+        achbotOriginalDispatchLeaseEnd($db,$payId,$lease);
+    }
 }
 /** All pending rows only, including previous-crash rows. UNKNOWN untouched. */
 function achbotFollowupDispatchPending(mysqli $db,int $payId,string $stage): array {
