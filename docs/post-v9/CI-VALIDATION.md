@@ -1,13 +1,13 @@
 # Current PHP 8.5 validation and CI policy
 
-This document applies to **new development after RC21** in `ach1992/bot-refactor`. Published releases and immutable historical commits retain their original evidence. It does not authorize installation, database changes, payments or production Cron operations.
+This document applies to the **current stable v0.10.0 development baseline** in `ach1992/bot-refactor`. Published releases and immutable historical commits retain their original evidence. It does not authorize installation, database changes, payments or production Cron operations.
 
 ## Documentation boundary
 
 The lightweight `docs` scope uses a **positive exact-path allowlist**:
 only modified-in-place, regular `README.md` and `docs/post-v9/README.md`.
 Financial, security, CI/policy, installation, migration and release-note
-contracts (including `docs/post-v9/NEXT-RELEASE.md`) remain `full`, even
+contracts (including `docs/post-v9/FRESH-INSTALL.md`) remain `full`, even
 when only their prose changes. New or deleted documents, symlinks, mode
 changes and ambiguous renames/add-delete pairs also require `full`.
 This preserves the independent-review correction previously accepted
@@ -72,7 +72,7 @@ Full acceptance runs eight isolated native families under **PHP 8.5 only**.
 For explicitly mapped changes, the workflow starts only the selected subset
 using the same runners, MariaDB bootstrap and real PHP 8.5 test contracts: `admin`, `api`, `services`, `wallet`, `presentation`, `authorization`, `effects`, `funding`. Each family has disjoint declared report-field ownership. Shared source/payment-identity/privacy checks run once in `foundation`. Each family can use its own disposable MariaDB and loopback fixtures.
 
-The eight hosted native-family runners use the official MariaDB 10.11.19 Linux x86-64 binary tarball, fixed upstream archive URL and verified SHA-256, placed under each job's temporary directory. The `mariadbd`, `mariadb` and `mariadb-install-db` tools run without Ubuntu APT mirrors; every source-real test continues to create and own its separate socket-only database. No shared SQL service, fixture assertions, PHP version checks, source hashes, shard count or protected aggregation is replaced. An unavailable archive, checksum mismatch or missing native executable fails the family before acceptance. This eliminates the observed GitHub-hosted Ubuntu APT/DNS dependency rather than bypassing native tests.
+The eight hosted native-family runners use the official MariaDB 10.11.19 Linux x86-64 binary tarball, ordered HTTPS availability mirrors and verified immutable SHA-256, placed under each job's temporary directory. The `mariadbd`, `mariadb` and `mariadb-install-db` tools run without Ubuntu APT mirrors; every source-real test continues to create and own its separate socket-only database. No shared SQL service, fixture assertions, PHP version checks, source hashes, shard count or protected aggregation is replaced. An unavailable archive, checksum mismatch or missing native executable fails the family before acceptance. This eliminates the observed GitHub-hosted Ubuntu APT/DNS dependency rather than bypassing native tests.
 
 `tools/post_v9_shards.py foundation --report <file>`, `run --index 1..8 --count 8 --report <file>`, and `aggregate --source <file> --reports <directory> --report <file>` are the individual stages. Each shard and the foundation are explicitly incomplete. Aggregation rejects missing, duplicate, unknown, version-mismatched or inconsistent reports, and checks exact current Git HEAD/tree, PHP 8.5, runtime and validator hashes, catalog ownership, execution evidence and required migration proof. Only an accepted complete aggregation may set `complete: true` for **current PHP 8.5 acceptance**. Full reports include per-family timings; rebalance only after measured CI evidence.
 

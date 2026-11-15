@@ -1,5 +1,7 @@
 # AChBot financial lifecycle — current contract and controlled consolidation
 
+**Current baseline note:** This detailed financial behavior and recovery reference contains historical source/RC design checkpoints. The supported forward version is [v0.10.0 Stable](STABLE-BASELINE.md); use the actual current payment/effect journals and [payment delivery recovery](PAYMENT-DELIVERY-RECOVERY.md), not dated rollout checkpoints, for production decisions. Its historical sections remain for nontrivial financial reasoning and source regression provenance.
+
 **Unreleased PR #152 — generated bulk account identity:** New PasarGuard and
 Marzban administrator/paid bulk accounts use the existing configured
 `server-userId-number` or `server-number` shape with a source/ordinal-stable

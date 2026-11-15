@@ -1,7 +1,6 @@
-# Simple automatic-gateway exception inbox — successor to RC26 Issue #117 menu
+# Automatic-gateway exception inbox — current operator contract
 
-> **Status:** independently approved, merged and published as [RC27](https://github.com/ach1992/bot-refactor/releases/tag/v0.10.0-rc.27), **not installed or operationally accepted**.
-> The historical published RC26 assets and migration 019 remain unchanged.
+> **Status:** included in the current Stable source. Installed/provider financial acceptance remains target-specific; do not infer it from the published source. Historic experimental RC26 workbenches are retired.
 
 ## Scope
 

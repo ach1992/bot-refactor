@@ -1,4 +1,5 @@
-# Issue #117 — crash-safe customer delivery (RC26 source published, installed acceptance open)
+# Crash-safe customer payment delivery — recovery contract
+> **Current baseline:** Stable v0.10.0. The dated RC26/RC27 workbench discussions below are historical decision evidence, not instructions to re-enable retired experimental menus or replay migrations. Current installed payment acceptance is still target-specific and recorded in [Issue #117](https://github.com/ach1992/bot-refactor/issues/117).
 
 > **Version-bound historical RC26 documentation, not the published RC27
 > contract.** [PR #136](https://github.com/ach1992/bot-refactor/pull/136),
@@ -8,7 +9,7 @@
 > original 018/020 sealed delivery and follow-up journals and pending-only
 > first-send recovery, without blind retries of uncertain Telegram ACK or
 > remote Native effects. See [the current inbox and archive contract](AUTOMATIC-GATEWAY-REVIEW.md)
-> and [RC26 -> RC27 upgrade guide](RC26-TO-RC27.md). RC26's older procedures
+> and [RC26 -> RC27 upgrade guide](https://github.com/ach1992/bot-refactor/blob/bc99b227660e21e065af454f6315d08905cda429/docs/post-v9/RC26-TO-RC27.md). RC26's older procedures
 > remain valid only for the exact immutable RC26 release; never mix SQL
 > sidecars across versions.
 

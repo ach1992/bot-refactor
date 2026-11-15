@@ -1,22 +1,20 @@
-# First stable baseline (proposed v0.10.0)
+# AChBot v0.10.0 — first supported Stable baseline
 
-## Boundary and readiness
+## Supported forward contract
 
-- The current supported runtime is one shared AChBot implementation for **native PasarGuard and Marzban**. Hell/Vivan are already migrated to PasarGuard; future Marzban servers remain supported. Chili is a separate installation, never automatically part of the Hell/Vivan cutover.
-- Superseded bot releases and obsolete UI callbacks are not a supported ongoing compatibility target. Historical financial rows, real customer subscription URLs and credentials, native identities, replay/uncertainty fences, and live integration contracts **are** preserved. No customer should need to replace a config because a bot version changed.
-- PasarGuard plan membership uses `server_plans.provider_group_ids`, not `custom_sni`. PG plan creation stores SQL NULL for the Marzban-only field. Marzban plans retain their native `inbounds/proxies` field. The disabled old external renewal picker no longer searches serialized metadata text and is bound to Marzban with a native plan-access check. Normal PG renewal uses the provider-aware order/plan flow.
-- `orders_list.link` is a shared purchase/import record and Marzban fallback cache, **not** the PasarGuard native subscription authority. PG config and current subscription URL are obtained from authenticated PasarGuard GET and never rewritten from historical cached links.
-- The finite `RENEW_SCONFIG` financial history remains readable/settleable by existing ledger paths. Do not bulk-delete prior payments or their replay guards merely because the old UI is disabled.
-- Frozen V0-V9 contract/test evidence and retired cutover scripts are kept outside shipped runtime. They do not mean older deployed bots remain supported.
+The unified current runtime supports **native Marzban and PasarGuard**. The old V0–V9/RC implementation versions are historical source/test/release evidence, **not** current compatibility targets. Historical migration scripts are not installed and must never be rerun against already converted Hell/Vivan data.
 
-## Delivery gates
+This retirement of **old bot versions** does not authorize changing customers' real subscription URLs, proxy identity, active Native entitlements, saved plans, provider permission contracts, wallets, original invoices/payments, unsettled/uncertain effects, financial reconciliation or replay safeguards. Existing users must not need to fetch a new config because the bot source was released.
 
-1. Accept the reviewed source candidate against the exact Git tree and require complete PHP 8.5 native CI (all eight families and aggregate). Independent review and approved merge are required; a previous production cutover review waiver did not extend to this new source release.
-2. Build the exact clean merged-HEAD runtime ZIP with `tools/package_post_v9.py`; verify the source-bound manifest, runtime inventory and SHA256SUMS. The first non-prerelease tag may be `v0.10.0` after required gates. A GitHub release is not a deployment.
-3. Before any separate production install, preserve real private config/DB and inspect Hell/Vivan current source identity, runtime ownership, scheduled jobs, and reversible rollback. Never execute the old one-time Marzban→PasarGuard cutover again.
-4. Read-only production acceptance covers active order identity, live Native subscription retrieval, plan Group assignments, stored display policy matching, and Cron schedule/log observations. Finance effects and real Telegram sends require their own permitted controlled end-to-end evidence. No tests here mutate customer entitlements.
-5. Observe aaPanel Cron (one active `Bot Hell` and `Bot Vivan` schedule at one-minute intervals; retired original schedules disabled). Leased overlapping ticks can be safely skipped; monitor runtime completion and Telegram `400/message_missing` edit failures without falsely marking old text as synchronized.
+- Native PasarGuard plan Groups live in `server_plans.provider_group_ids`; new PasarGuard plans store `custom_sni=NULL`. Keep `custom_sni` available for Marzban inbound/proxy metadata.
+- Current PasarGuard subscription URL/config links are returned by authenticated Native GET, rather than trusting historic `orders_list.link` cache. That shared order column remains in the schema for current purchase/import and Marzban fallback behavior.
+- Obsolete commented import-preview actions are removed. The inactive old external-renewal picker does not search text inside `custom_sni`; the associated historical Marzban callback validates native Marzban plan access. Current PasarGuard renewal uses the provider-aware path.
+- Financial `RENEW_SCONFIG` history, protected provider and Telegram message evidence, original customer balances and active subscription references remain available for legitimate reconciliation. Removing old bot versions does not erase customer history.
 
-## Operational record
+## Release and operations boundary
 
-See migration [Issue #183](https://github.com/ach1992/bot-refactor/issues/183), display incident [#187](https://github.com/ach1992/bot-refactor/issues/187), and Draft cutover [PR #184](https://github.com/ach1992/bot-refactor/pull/184). This document states the intended baseline; its presence is not a published-release or production-rollout claim.
+The release artifact is the **132-member** source-bound runtime ZIP, Manifest and SHA256SUMS published for tag [v0.10.0](https://github.com/ach1992/bot-refactor/releases/tag/v0.10.0). Build/verify only from the exact tagged commit; the GitHub autogenerated source ZIP is not a runtime installer. The independent review of PR [#184](https://github.com/ach1992/bot-refactor/pull/184) and [full PHP 8.5 CI #43658950528](https://github.com/ach1992/bot-refactor/actions/runs/43658950528) cover the reviewed functional source. Any additional docs-only cleanup must not change that reviewed runtime tree.
+
+A GitHub Release does **not** install files, execute migrations, enable a bot, or prove real Telegram/payment/Native delivery. For a new installation follow [Fresh install](FRESH-INSTALL.md). For an existing installation follow [Installed diagnostics](INSTALL-DIAGNOSTICS.md), preserve private state, inspect actual installed DB/Crons, and plan a separate authorized rollout/rollback. Already-converted Hell/Vivan must not rerun the historical PasarGuard migration.
+
+Historical transition notes and completed release chronology remain recoverable through immutable [Git history](https://github.com/ach1992/bot-refactor/commits/main/) and [GitHub Releases](https://github.com/ach1992/bot-refactor/releases); they are not active operational instructions or duplicate project-status documents.

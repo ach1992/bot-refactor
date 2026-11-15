@@ -249,10 +249,26 @@ jobs:
           root="$RUNNER_TEMP/mariadb-${version}-linux-systemd-x86_64"
           archive="$RUNNER_TEMP/$filename"
           if [[ ! -f "$archive" ]]; then
-            curl --fail --location --silent --show-error --retry 2 \
-              --connect-timeout 20 --max-time 300 \
-              "https://archive.mariadb.org/mariadb-${version}/bintar-linux-systemd-x86_64/$filename" \
-              --output "$archive"
+            # Availability mirrors only: the exact upstream binary SHA256 is
+            # mandatory below, irrespective of which HTTPS origin responds.
+            downloaded=false
+            for mirror in \
+              "https://mirror.netcologne.de/mariadb" \
+              "https://mirror.leaseweb.com/mariadb" \
+              "https://archive.mariadb.org"; do
+              rm -f -- "$archive"
+              if curl --fail --location --silent --show-error \
+                --connect-timeout 20 --max-time 300 \
+                "$mirror/mariadb-${version}/bintar-linux-systemd-x86_64/$filename" \
+                --output "$archive"; then
+                downloaded=true
+                break
+              fi
+            done
+            if [[ "$downloaded" != true ]]; then
+              echo "MariaDB fixture archive unavailable from configured mirrors" >&2
+              exit 1
+            fi
           fi
           printf '%s  %s\n' '7efb257927f31f4422f496246b32590d0b7617f3d9dd900e575de761b302d919' "$archive" | sha256sum --check -
           tar -xzf "$archive" -C "$RUNNER_TEMP"

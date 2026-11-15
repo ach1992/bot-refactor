@@ -1,13 +1,13 @@
-# PasarGuard native contract (source candidate)
+# PasarGuard native runtime contract
 
 Issue #81, NEXT-PG-CLIENT-2 / #26 revision2. Original native API fixture:
 PasarGuard 5.5.1 at eba70d68eaa5a89e34ffebb47c8fd5ce054d0e43. Runtime connection is **not** version-gated; the API response and actual permissions determine whether operations can proceed. Original source/version verification:
 https://github.com/ach1992/bot-refactor/issues/81#issuecomment-6427352542 .
-This contract does not establish installed/live acceptance.
+Stable runtime support is built from this source, but a new target's installed/live provider acceptance must be verified separately.
 
 ## API
 
-Global functions in src/Panel/PasarGuard.php, PHP >=8.1:
+Global functions in `src/Panel/PasarGuard.php`; current source acceptance uses PHP 8.5:
 
 - achbotPgCreate(array $panel,array $request):array
 - achbotPgRead(array $panel,array $identity):array

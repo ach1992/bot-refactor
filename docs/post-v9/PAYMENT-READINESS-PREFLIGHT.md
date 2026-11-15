@@ -41,7 +41,7 @@ It checks:
   DDL, every field definition/index, real row compatibility or applied history.
   The tool never decrypts API profiles/codes or authenticates a live client;
   enabled profiles remain `credentials_not_decrypted_not_verified`. Follow
-  [RC19 → RC20](RC19-TO-RC20.md) and [API setup](API-PAYMENT-EVIDENCE.md#configuration-before-api-enablement)
+  [RC19 → RC20](https://github.com/ach1992/bot-refactor/blob/bc99b227660e21e065af454f6315d08905cda429/docs/post-v9/RC19-TO-RC20.md) and [API setup](API-PAYMENT-EVIDENCE.md#configuration-before-api-enablement)
   for the separately authorized schema/profile/activation gates.
 - Exactly one valid JSON-object `BOT_STATES` and `PAYMENT_KEYS` document,
   dynamic `gatewayRules` decoded with the **current production PHP parser**,

@@ -17,7 +17,7 @@ When the wallet is insufficient, only the affected subscription's
 `autoRenew=off` state is conditionally committed, with no debit or Native
 change. The customer sees required amount, available balance, shortfall
 and actionable subscription/wallet buttons. Repeated callbacks do not send
-another notice. See [RC42 -> RC43](RC42-TO-RC43.md) and [Issue #26](https://github.com/ach1992/bot-refactor/issues/26)
+another notice. See [RC42 -> RC43](https://github.com/ach1992/bot-refactor/blob/bc99b227660e21e065af454f6315d08905cda429/docs/post-v9/RC42-TO-RC43.md) and [Issue #26](https://github.com/ach1992/bot-refactor/issues/26)
 for still-unverified installed delivery. The Owner directed **no change**
 to customer/admin/scheduled deletion. The real grace period remains 10
 days while the customer warning intentionally says 3 days.
