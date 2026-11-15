@@ -339,6 +339,7 @@ def main():
             r=call(callback=save);yes(draft(r)is None and counts()!=before,'plan_confirmed_'+provider)
             saved=sql("SELECT custom_sni,IFNULL(provider_group_ids,'NULL') FROM server_plans ORDER BY id DESC LIMIT 1").strip()
             yes(('fixture-vless'in saved)==(provider=='marzban') and ('[2]'in saved)==(provider=='pasarguard'),'plan_native_entitlement_persisted_'+provider)
+            yes(sql("SELECT custom_sni IS NULL FROM server_plans ORDER BY id DESC LIMIT 1").strip()==('1' if provider=='pasarguard' else '0'), 'plan_provider_specific_legacy_metadata_'+provider)
             snapshot=counts();call(callback=save);yes(counts()==snapshot,'plan_save_replay_no_duplicate_'+provider)
         r=plan_to_targets('pasarguard',pg_id);r=action(r,'pick','0');r=action(r,'done');stage(r,'review')
         r=action(r,'save');yes(draft(r)is None and sql("SELECT provider_group_ids FROM server_plans ORDER BY id DESC LIMIT 1").strip()=='[2]','plan_requires_explicit_groups')

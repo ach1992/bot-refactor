@@ -280,19 +280,6 @@ if ($userInfo['step'] == "showAccount" && $text != $buttonValues['cancel']) {
         ],
     ];
 
-    /*
-    // دکمه های مربوط به تمدید یا بروزرسانی لینک
-    if ($botState['renewAccountState'] == "on") {
-        $keyboard[] = [
-            ['text' => $buttonValues['renew_config'], 'callback_data' => "sConfigRenew" . $serverId],
-        ];
-    } elseif ($botState['updateConfigLinkState'] == "on") {
-        $keyboard[] = [
-            ['text' => $buttonValues['update_config_connection'], 'callback_data' => "sConfigUpdate" . $serverId],
-        ];
-    }
-    */
-
     if ($from_id == $admin || $userInfo['isAdmin'] == true) {
         if (empty($userInfo['addToCustomerClicked']) || $userInfo['addToCustomerClicked'] != true) {
             $keyboard[] = [['text' => \achbotMessage('subscription.external_accounts.extract_username_from_link.button.8ce785e9a5'), 'callback_data' => "addSubscriptionToCustomer" . $serverId]];
