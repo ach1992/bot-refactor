@@ -69,7 +69,7 @@ if (preg_match('/^apiEvidenceResume_([1-9][0-9]{0,17})$/D',(string)$data,$apiRes
                 : achbotMessage('manual_receipt_final.status_unknown'));
         // This action began inside the shared attention inbox. Its result
         // always returns there, even if the original case is now closed.
-        $buttons=json_encode(['inline_keyboard'=>[[['text'=>achbotMessage('automatic_gateway_review.back_list'),
+        $buttons=json_encode(['inline_keyboard'=>[[['text'=>achbotMessage('manual_receipt_final.back'),
             'callback_data'=>'attentionInbox']]]],JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
         $text=achbotMessageHtml('manual_receipt_final.result',['result'=>$result]);
         $reply=editText($message_id,$text,$buttons,'HTML',(int)$from_id);

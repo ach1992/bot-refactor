@@ -10,6 +10,13 @@ ROOT=pathlib.Path(__file__).resolve().parents[1]
 # verified Stable source for existing historical copy tests: no broad bypass,
 # no changed historical hash and no permissions to rewrite other strings.
 OPERATOR_INBOX_BASE='18fce523cabde69de3c48e88b4d799cdebf44878'
+# The old admin receipt continuation belonged to the management menu.
+# In the shared attention inbox its result returns to that originating list.
+# Enumerate this one reviewed copy correction; never rewrite old catalogs.
+OPERATOR_INBOX_BACK_KEY='manual_receipt_final.back'
+OPERATOR_INBOX_BACK_ORIGINAL='↪️ بازگشت به مدیریت'
+OPERATOR_INBOX_BACK_CURRENT='↪️ بازگشت به لیست بررسی'
+OPERATOR_INBOX_BACK_ANCHOR="        'back' => '↪️ بازگشت به مدیریت',\n        'result' => ['text' => '📋 نتیجهٔ ادامهٔ پرداخت: {result}', 'parameters' => ['result']],"
 OPERATOR_INBOX_KEYS={
     'automatic_gateway_review.provider_bank_transfer',
     'automatic_gateway_review.provider_gift_card',
@@ -42,14 +49,24 @@ def operator_inbox_catalog_source() -> bytes:
           'operator_inbox_stable_anchors')
     expected=prior.replace(old,new,1).replace(
         anchor,anchor+OPERATOR_INBOX_LINES.encode(),1)
+    prior_back=OPERATOR_INBOX_BACK_ANCHOR.encode()
+    current_back=prior_back.replace(
+        OPERATOR_INBOX_BACK_ORIGINAL.encode(),
+        OPERATOR_INBOX_BACK_CURRENT.encode(),1)
+    check(expected.count(prior_back)==1,
+          'operator_inbox_original_back_anchor')
+    expected=expected.replace(prior_back,current_back,1)
     check(candidate==expected,'operator_inbox_exact_additive_admin_catalog_delta')
     parser='$s=stream_get_contents(STDIN);$p=strpos($s,"return [");if($p===false)throw new RuntimeException("array_missing");echo json_encode(eval(substr($s,$p)),JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);'
     old_entries=flatten(json.loads(command('php','-r',parser,input=prior)))
     new_entries=flatten(json.loads(command('php','-r',parser,input=candidate)))
     check(set(new_entries)-set(old_entries)==OPERATOR_INBOX_KEYS and
           set(old_entries)-set(new_entries)==set() and
-          all(new_entries[k]==v for k,v in old_entries.items()),
-          'operator_inbox_only_expected_additive_catalog_keys')
+          old_entries.get(OPERATOR_INBOX_BACK_KEY)==OPERATOR_INBOX_BACK_ORIGINAL and
+          new_entries.get(OPERATOR_INBOX_BACK_KEY)==OPERATOR_INBOX_BACK_CURRENT and
+          all(new_entries[k]==v for k,v in old_entries.items()
+              if k!=OPERATOR_INBOX_BACK_KEY),
+          'operator_inbox_only_expected_additive_catalog_keys_and_back_fix')
     for key in OPERATOR_INBOX_KEYS:
         entry=new_entries[key];body=text(entry);slots=params(entry)
         check(isinstance(body,str) and body.strip() and
@@ -526,6 +543,11 @@ def vivan_20261113_copy_restore(sides):
     sources=vivan_20261113_source()
     copy_sides=menu_20261113_copy_restore(sides)
     check(set(copy_sides)=={'user','admin'},'vivan_catalog_audiences')
+    # The newer inbox fixes one existing Vivan navigation label; prove the
+    # exact successor source before projecting it to the reviewed Nov13 copy.
+    if (copy_sides['admin'].get(OPERATOR_INBOX_BACK_KEY)==OPERATOR_INBOX_BACK_CURRENT):
+        operator_inbox_catalog_source()
+        copy_sides['admin'][OPERATOR_INBOX_BACK_KEY]=OPERATOR_INBOX_BACK_ORIGINAL
     for audience,record in sources.items():
         updates=record['changed']|record['added']
         # Historical callers can pass an already restored prior snapshot.
@@ -1054,6 +1076,16 @@ def operator_inbox_catalog_restore(sides):
         check(restored['admin'].get(key)==actual[key],
               'operator_inbox_unapproved_current_copy:'+key)
         del restored['admin'][key]
+    # The Nov13 projection can already have restored this to its older
+    # reviewed value; otherwise project only the one explicit current copy.
+    key=OPERATOR_INBOX_BACK_KEY
+    seen=restored['admin'].get(key)
+    older=vivan_20261113_source()['admin']['before'][key]
+    check(seen in (OPERATOR_INBOX_BACK_CURRENT,
+                   OPERATOR_INBOX_BACK_ORIGINAL,older),
+          'operator_inbox_unapproved_back_copy')
+    if seen==OPERATOR_INBOX_BACK_CURRENT:
+        restored['admin'][key]=OPERATOR_INBOX_BACK_ORIGINAL
     return restored
 
 def service_change_copy_restore(sides):
