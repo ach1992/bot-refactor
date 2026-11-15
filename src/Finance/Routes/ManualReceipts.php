@@ -67,10 +67,10 @@ if (preg_match('/^apiEvidenceResume_([1-9][0-9]{0,17})$/D',(string)$data,$apiRes
             : (in_array($outcome,['confirmed','settled'],true)
                 ? achbotMessage('manual_receipt_final.status_delivery_unconfirmed')
                 : achbotMessage('manual_receipt_final.status_unknown'));
-        // The former financial case is no longer in its inbox after
-        // processing/terminal completion. Return to an always-valid list.
-        $buttons=json_encode(['inline_keyboard'=>[[['text'=>achbotMessage('manual_receipt_final.back'),
-            'callback_data'=>'managePanel']]]],JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
+        // This action began inside the shared attention inbox. Its result
+        // always returns there, even if the original case is now closed.
+        $buttons=json_encode(['inline_keyboard'=>[[['text'=>achbotMessage('automatic_gateway_review.back_list'),
+            'callback_data'=>'attentionInbox']]]],JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
         $text=achbotMessageHtml('manual_receipt_final.result',['result'=>$result]);
         $reply=editText($message_id,$text,$buttons,'HTML',(int)$from_id);
         if (!is_object($reply)||($reply->ok??false)!==true)
