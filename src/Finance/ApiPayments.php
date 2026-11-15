@@ -934,15 +934,36 @@ function achbotApiPaymentCheckWithinBudget(mysqli $db,int $id): string {
     }
     return $status;
 }
+/** Migration 022 is additive: an older API-only installation may have the
+ * original evidence ledger but not yet the operator Archive column. Its
+ * genuine pending payment must keep working. On 022 installations the
+ * exclusion is mandatory; any error other than a missing column fails
+ * closed rather than silently admitting an archived original.
+ */
+function achbotApiPaymentArchivePredicate(mysqli $db): string {
+    try {
+        $probe=$db->query('SELECT review_archived_at FROM payment_attempts LIMIT 0');
+        if ($probe instanceof mysqli_result) {
+            $probe->free();
+            return ' AND a.review_archived_at IS NULL';
+        }
+        if ((int)$db->errno===1054) return '';
+        throw new RuntimeException('api_archive_schema_unavailable');
+    } catch (mysqli_sql_exception $error) {
+        if ((int)$error->getCode()===1054) return '';
+        throw $error;
+    }
+}
 function achbotApiPaymentMaintain(mysqli $db,int $limit=12): array {
     return achbotApiPaymentWithBudget(35.0,static fn()=>achbotApiPaymentMaintainWithinBudget($db,$limit));
 }
 function achbotApiPaymentMaintainWithinBudget(mysqli $db,int $limit=12): array {
     $checked=0;$edited=0;$started=microtime(true);$limit=max(1,min(12,$limit));if(!achbotApiPaymentReady($db))return ['checked'=>0,'edited'=>0];
     try {
+        $archivePredicate=achbotApiPaymentArchivePredicate($db);
         $q=$db->query("SELECT a.pay_row_id,p.hash_id FROM payment_attempts a JOIN pays p ON p.id=a.pay_row_id
             WHERE a.evidence_profile IS NOT NULL AND a.provider IN ('bank_transfer','gift_card')
-              AND a.review_archived_at IS NULL
+              {$archivePredicate}
               AND ((p.state='have_sent' AND a.stage='review' AND p.message_id>0 AND p.chat_id>0)
                    OR p.state IN ('approved','paid','auto_cart_approved','paid_with_wallet','processing')
                    OR EXISTS (SELECT 1 FROM payment_transactions t WHERE t.attempt_id=a.id AND t.evidence_operation IS NOT NULL))
@@ -956,7 +977,7 @@ function achbotApiPaymentMaintainWithinBudget(mysqli $db,int $limit=12): array {
         // UI convergence is independent of evidence polling/finality/leases.
         $q=$db->query("SELECT p.hash_id FROM payment_attempts a JOIN pays p ON p.id=a.pay_row_id
             WHERE a.evidence_profile IS NOT NULL
-              AND a.review_archived_at IS NULL
+              {$archivePredicate}
             ORDER BY a.evidence_projection_checked_at IS NOT NULL,a.evidence_projection_checked_at,a.id LIMIT {$limit}");
         foreach($q->fetch_all(MYSQLI_ASSOC) as $row){
             $c=achbotApiPaymentContext($db,(string)$row['hash_id']);if(!$c)continue;

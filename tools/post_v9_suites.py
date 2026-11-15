@@ -2540,6 +2540,7 @@ def run_effects(tmp: str) -> tuple[dict, dict]:
         'archive_stops_original_api_receipt_without_declining_or_crediting',
         'archived_api_receipt_old_action_stale',
         'archived_api_original_never_sends_stale_customer_invoice_edit',
+        'api_maintainer_022_archive_filter_required',
         'processing_api_native_unknown_is_reviewable',
         'api_native_unknown_can_be_explicitly_archived_without_replay',
         'archived_api_original_blocks_future_native_admission',
