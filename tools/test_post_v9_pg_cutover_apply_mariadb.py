@@ -19,7 +19,7 @@ ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "tools/post_v9_pg_cutover_apply.php"
 
 SCHEMA = """
-CREATE TABLE server_info(id INT PRIMARY KEY,title VARCHAR(100));
+CREATE TABLE server_info(id INT PRIMARY KEY,title VARCHAR(100),active TINYINT DEFAULT 1);
 CREATE TABLE server_config(
  id INT PRIMARY KEY,type VARCHAR(40),panel_url VARCHAR(1000),
  password TEXT,provider_connection_id INT NULL,provider_instance_key CHAR(32) NULL,
@@ -57,7 +57,7 @@ CREATE TABLE service_effects(
  UNIQUE KEY uq_effect_remote (provider_connection_id,provider_remote_user_id),
  UNIQUE KEY uq_effect_target_username (target_key,remote_username),
  UNIQUE KEY uq_effect_provider_reference (provider_reference_id));
-INSERT INTO server_info VALUES (2,'Plus'),(3,'Lite'),(14,'PasarGuard test');
+INSERT INTO server_info (id,title) VALUES (2,'Plus'),(3,'Lite'),(14,'PasarGuard test');
 INSERT INTO server_config VALUES
  (2,'marzban','https://marzban-a.invalid' ,'old-private',NULL,NULL,'legacy',0),
  (3,'marzban','https://marzban-b.invalid' ,'old-private',NULL,NULL,'legacy',0),
@@ -185,16 +185,117 @@ def run():
                     raise AssertionError((process.stdout, process.stderr)) from exc
                 return process.returncode, result
 
+            # An existing managed native display policy must survive the provider
+            # conversion; another server has no document and uses the default.
+            policy = {"view": {"names": ["Fast"]},
+                      "delivery": {"show_subscription": False}}
+            document = {"version": 1, "server_id": 2, "provider": "marzban",
+                        "updated_source": 12,
+                        "display": {"mode": "native", "policy": policy}}
+            original_json = json.dumps(document, separators=(",", ":"))
+            def set_display(value):
+                native.sql(work, env, "DELETE FROM setting WHERE type='ACHBOT_SERVER_DISPLAY_2'",
+                           database)
+                native.sql(work, env, "INSERT INTO setting(type,value) VALUES "
+                           "('ACHBOT_SERVER_DISPLAY_2','" + value + "')", database)
+            set_display(original_json)
+
             ret, result = execute()
             assert ret == 0 and result["outcome"] == "dry_run_only", result
+            assert query("SELECT JSON_UNQUOTE(JSON_EXTRACT(value,'$.provider')) "
+                         "FROM setting WHERE type='ACHBOT_SERVER_DISPLAY_2'") == "marzban"
             assert query("SELECT type FROM server_config WHERE id=2") == "marzban"
+            checks.append("valid_existing_display_dry_run_unchanged")
+
+            set_display("not-json")
+            ret, result = execute("--apply")
+            assert ret == 2 and result["error_code"] == "display_setting_invalid", result
+            assert query("SELECT type FROM server_config WHERE id=2") == "marzban"
+            assert query("SELECT COUNT(*) FROM service_effects") == "1"
+            checks.append("malformed_display_preflights_before_conversion")
+
+            legacy = {"version": 1, "server_id": 2, "provider": "marzban",
+                      "updated_source": 12, "display": {"mode": "marzban_legacy",
+                      "policy": {}, "legacy": {"showIndexes": [1],
+                                             "linkIndices": [0]}}}
+            set_display(json.dumps(legacy, separators=(",", ":")))
+            ret, result = execute("--apply")
+            assert ret == 2 and result["error_code"] == "display_setting_legacy_incompatible", result
+            assert query("SELECT type FROM server_config WHERE id=2") == "marzban"
+            checks.append("legacy_only_policy_requires_explicit_handling")
+
+            set_display(original_json)
+            native.sql(work, env, "INSERT INTO setting(type,value) VALUES "
+                       "('ACHBOT_SERVER_DISPLAY_2','" + original_json + "')", database)
+            ret, result = execute("--apply")
+            assert ret == 2 and result["error_code"] == "display_setting_duplicate", result
+            assert query("SELECT type FROM server_config WHERE id=2") == "marzban"
+            checks.append("duplicate_display_guard_before_writes")
+            set_display(original_json)
+
+            # Provider metadata drift cannot be silently normalized to an
+            # unrelated stored value; the previous policy is preserved.
+            wrong = dict(document, provider="pasarguard")
+            set_display(json.dumps(wrong, separators=(",", ":")))
+            ret, result = execute("--apply")
+            assert ret == 2 and result["error_code"] == "display_setting_invalid", result
+            checks.append("wrong_source_display_provider_refused")
+            set_display(original_json)
+
+            # Exercise the exact helper CAS against an edit made after its
+            # locked read, plus rollback after an otherwise valid conversion.
+            cas = folder / "display-cas.php"
+            cas.write_text(r"""<?php
+$_SERVER['SCRIPT_FILENAME']=__FILE__;
+function pgcFail(string $code): never {throw new RuntimeException($code);}
+function pgcExpect(bool $test,string $code): void {if (!$test) pgcFail($code);}
+function pgcStmt(mysqli $db,string $sql,array $params=[]): mysqli_stmt {
+    $stmt=$db->prepare($sql);$stmt->execute($params);return $stmt;
+}
+function pgcRows(mysqli $db,string $sql,array $params=[]): array {
+    $stmt=pgcStmt($db,$sql,$params);
+    $rows=$stmt->get_result()->fetch_all(MYSQLI_ASSOC);$stmt->close();return $rows;
+}
+function pgcUpdate(mysqli $db,string $sql,array $params=[],int $expected=1): void {
+    $stmt=pgcStmt($db,$sql,$params);$count=$stmt->affected_rows;$stmt->close();
+    pgcExpect($count===$expected,'cutover_write_count_invalid');
+}
+require $argv[1].'/tools/post_v9_pg_cutover_display.php';
+$db=new mysqli('localhost','root','', 'bothell',0,$argv[2]);
+$db->set_charset('utf8mb4');
+$get=static fn()=>pgcRows($db,"SELECT value FROM setting WHERE type='ACHBOT_SERVER_DISPLAY_2'")[0]['value'];
+$original=$get();
+$db->begin_transaction();
+$plan=pgcDisplayPlan($db,[2=>true],true);
+$db->query("UPDATE setting SET value=JSON_SET(value,'$.updated_source',99) WHERE type='ACHBOT_SERVER_DISPLAY_2'");
+$blocked=false;
+try {pgcDisplayApply($db,$plan);}
+catch (RuntimeException $error) {$blocked=$error->getMessage()==='cutover_write_count_invalid';}
+$db->rollback();
+pgcExpect($blocked && $get()===$original,'stale_compare_and_swap_not_rejected');
+$db->begin_transaction();
+$plan=pgcDisplayPlan($db,[2=>true],true);
+pgcDisplayApply($db,$plan);
+pgcExpect(json_decode($get(),true)['provider']==='pasarguard','proposed_provider_missing');
+$db->rollback();
+pgcExpect($get()===$original,'failed_transaction_did_not_restore_display');
+echo '{"concurrent_edit_refused":true,"rollback_preserved":true}';
+""")
+            process = subprocess.run(["php",str(cas),str(ROOT),str(work/"mysql.sock")],
+                cwd=work,env=os_env,capture_output=True,text=True,timeout=20)
+            assert process.returncode==0, (process.stdout,process.stderr)
+            assert json.loads(process.stdout) == {
+                "concurrent_edit_refused":True,"rollback_preserved":True}
+            checks.append("concurrent_display_edit_cas_held")
+            checks.append("display_metadata_transaction_rollback")
+
             assert query("SELECT provider_effect_id FROM orders_list WHERE id=101") == "NULL"
             checks.append("dry_run_no_effect")
 
             native.sql(work, env, "INSERT INTO service_plan_changes VALUES (1,'review')", database)
             ret, result = execute("--apply")
             assert ret == 2 and result["error_code"] == "live_unsettled_effects_or_plans", result
-            assert query("SELECT COUNT(*) FROM setting") == "0"
+            assert query("SELECT COUNT(*) FROM setting WHERE type LIKE 'ACHBOT_PG_CUTOVER:%'") == "0"
             native.sql(work, env, "DELETE FROM service_plan_changes WHERE id=1", database)
             checks.append("live_uncommitted_plan_journal_hold")
 
@@ -230,11 +331,56 @@ def run():
             assert query("SELECT autoRenew FROM orders_list WHERE id=101") == "on"
             assert query("SELECT COUNT(*) FROM setting WHERE type='ACHBOT_PG_CUTOVER:v1:hell'") == "1"
             checks.append("atomic_effect_and_legacy_order_links")
+            display_after = json.loads(query("SELECT value FROM setting WHERE "
+                "type='ACHBOT_SERVER_DISPLAY_2'"))
+            assert display_after == dict(document, provider="pasarguard")
+            assert display_after["display"]["policy"] == policy
+            assert display_after["updated_source"] == 12
+            assert query("SELECT COUNT(*) FROM setting WHERE type='ACHBOT_SERVER_DISPLAY_3'") == "0"
+            checks.append("native_provider_metadata_and_exact_display_policy_preserved")
+            checks.append("missing_setting_keeps_native_default")
+
+            # Production resolver + renderer, not a synthetic bypass:
+            # old policy must select native config by name and keep the URL.
+            renderer = folder / "display-renderer.php"
+            renderer.write_text(r"""<?php
+$_SERVER['SCRIPT_FILENAME']=__FILE__;
+require $argv[1].'/src/Subscription/ServerDisplaySettings.php';
+$db=new mysqli('localhost','root','', 'bothell',0,$argv[2]);
+$db->set_charset('utf8mb4');
+$native=['links'=>['vless://id@fixture.invalid:443#Fast',
+                  'trojan://pw@fixture.invalid:443#Backup'],
+         'subscription_url'=>'https://subscription.invalid/native'];
+$state=['configLinkState'=>'on','subLinkState'=>'on'];
+$managed=achbotServerDisplayOptions($db,2,'pasarguard');
+$default=achbotServerDisplayOptions($db,3,'pasarguard');
+$a=\AchBot\Subscription\Presentation\present('pasarguard',$native,$state,$managed);
+$b=\AchBot\Subscription\Presentation\present('pasarguard',$native,$state,$default);
+echo json_encode([
+ 'custom_count'=>count($a['links']),
+ 'custom_config_matches'=>$a['links']==[$native['links'][0]],
+ 'custom_url'=>$a['subscription_url']===$native['subscription_url'],
+ 'custom_reason'=>$a['reason'],
+ 'default_count'=>count($b['links']),
+ 'default_url'=>$b['subscription_url']===$native['subscription_url']
+],JSON_THROW_ON_ERROR);
+""")
+            result_php = subprocess.run(["php",str(renderer),str(ROOT),str(work/"mysql.sock")],
+                cwd=work,env=os_env,capture_output=True,text=True,timeout=20)
+            assert result_php.returncode==0,(result_php.stdout,result_php.stderr)
+            assert json.loads(result_php.stdout)=={
+                "custom_count":1,"custom_config_matches":True,
+                "custom_url":True,"custom_reason":"",
+                "default_count":2,"default_url":True}
+            checks.append("real_native_subscription_renderer_after_migration")
 
             ret, result = execute("--apply")
             assert ret == 0 and result["outcome"] == "already_applied", result
             assert query("SELECT COUNT(*) FROM service_effects") == "3"
             checks.append("repeat_apply_no_replay")
+            assert json.loads(query("SELECT value FROM setting WHERE "
+                "type='ACHBOT_SERVER_DISPLAY_2'")) == dict(document, provider="pasarguard")
+            checks.append("repeat_apply_preserves_display_metadata")
 
             native.sql(work, env, "UPDATE server_plans SET provider_group_ids='[2]' "
                        "WHERE id=9", database)

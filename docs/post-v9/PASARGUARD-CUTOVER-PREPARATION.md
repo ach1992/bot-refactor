@@ -1,6 +1,20 @@
 # Vivan / Hell PasarGuard bot cutover preparation (#183)
 
-**Status:** Source-only preparation, **NOT** database conversion or production permission. Run only **after the separate panel/user/node migration** is complete and the Owner authorizes the exact target actions. Do not touch Chili, wallets, historical financial records, user-facing wording, Cron/webhooks or deletion policy.
+**Current status (2026-11-15):** The Hell/Vivan historical conversions were completed in
+Production under [#183](https://github.com/ach1992/bot-refactor/issues/183).
+Do not run the historical converter with --apply again on either tenant.
+Six stale ACHBOT_SERVER_DISPLAY provider metadata rows were separately
+repaired with exact-row backups and conditional per-tenant SQL transactions under
+[#187](https://github.com/ach1992/bot-refactor/issues/187); GET-only Native and
+real PHP renderer probes now pass for all nine migrated logical servers.
+Source PR #184 is still pending integration/release review; the new source
+diagnostic logging and future-cutover guard are not installed yet. Cron
+scheduling and original tokenized subscription-URL continuity remain separate
+checks.
+
+**The material below is a historical preparation record**, not permission to
+repeat the Production conversion. Preserve financial history, customer accounts,
+Native provider state, Chili, and the existing deletion policy.
 
 ## Read-only 2026-11-14 baseline
 
@@ -204,7 +218,13 @@ unrelated service-effect uncertainty.
 
 The new operator CLI
 [`post_v9_pg_cutover_apply.php`](../../tools/post_v9_pg_cutover_apply.php)
-uses the **exact same sealed four input files**. It verifies that all
+uses the **exact same sealed four input files**. It now requires the sibling
+tools/post_v9_pg_cutover_display.php file to be present beside the CLI.
+A valid existing native server-display document has only its top-level
+provider metadata migrated under the same transaction; all display policy keys
+are preserved. Missing settings retain the native default. Malformed,
+duplicate, wrong-provider or legacy-only display settings refuse the cutover
+before any changes; the runtime validator remains fail-closed. It verifies that all
 live local server/plan/order identities and Native mappings are unchanged,
 that the preconfigured PasarGuard endpoint/instance is still the same, and
 that uncertain service effects/plan changes are absent. The default mode
@@ -241,7 +261,7 @@ transaction either commits all local changes with a one-time journal in
 `setting` or rolls them back; exact repeated invocation verifies the journal
 and does not replay the conversion.
 
-The `--apply` flag **must not** be invoked during current preparation.
+The --apply flag **must never be re-run against the already converted Hell and Vivan production databases**.
 Never use the ordinary zero-price `achbotProviderAdoptAccount` importer for
 old paid orders. The new provenance records **a verified historical
 association**, not a fictitious new purchase/effect. A wrong user/created-at,
@@ -275,19 +295,18 @@ is a stop/reconcile condition, not a reason to relax validation.
 
 ## Remaining independent and Production gates
 
-- Source-only identity handling and one-time, idempotent SQL apply/dry-run code
-  are **prepared for independent review**, not merged, released, installed or
-  used against live data. Validate actual current-schema/financial behavior and
-  exact candidate CI before requesting Owner source integration permission.
-- External panel migration must finish, then actual scoped API account/Group
-  identity and original customer config/URL continuity must be verified for
-  every mapped cohort. No private live credentials were used in development.
-- Obtain new explicit Owner authorization for each actual production effect:
-  release/install of the reviewed runtime and the exact two bot database
-  conversion transactions. Do not infer SQL rights from source repo rights.
-- No live transactions/Cron/webhook/Telegram/Native API mutations have been
-  performed from this draft; maintaining the historical 10-day actual /
-  3-day user-facing deletion contract is mandatory.
+- The operational SQL migrations completed on 2026-11-15 under a specific
+  Owner waiver for that action only. PR #184 remains Draft; source integration,
+  release and deployment remain separately gated and need exact-candidate CI.
+- The six post-cutover display metadata repairs under #187 were backed up
+  privately, applied transactionally, and checked through live PHP/Native GET.
+  No new customer/proxy/financial mutation was part of this repair.
+- Still outstanding: tokenized **original** customer subscription-URL
+  continuity, Cron scheduling/flow validation and an Owner decision before
+  re-enabling, and authorized end-to-end Telegram purchase/renewal/admin tests.
+- The source diagnostic and pre-cutover guard are not yet installed in the bots;
+  installed-runtime verification is needed after authorized deployment.
+- Preserve the original 10-day actual / 3-day user-facing deletion contract.
 
 ## Synthetic validation only
 
@@ -303,6 +322,7 @@ python3 tools/test_post_v9_pg_cutover_runtime.py
 php -l tools/post_v9_pg_cutover_native_export.php
 php -l tools/post_v9_pg_cutover_group_catalog.php
 php -l tools/post_v9_pg_cutover_apply.php
+php -l tools/post_v9_pg_cutover_display.php
 php -l src/Panel/ProviderStorage.php
 ```
 

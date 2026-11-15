@@ -83,7 +83,13 @@ function achbotServerDisplayOptions($db,int $serverId,string $provider): array {
     } catch (Throwable $error) {
         // Invalid configuration suppresses ALL config/subscription/QR output.
         // Keep infrastructure diagnostics out of customer copy and log no values.
-        error_log('achbot_server_display_unavailable');
+        // Stable, secret-free diagnostic context. Keep the fail-closed result.
+        $reason=$error instanceof JsonException?'display_setting_json_invalid':
+            (($error instanceof RuntimeException &&
+                preg_match('/^display_[a-z_]{3,65}$/D',$error->getMessage())===1)
+                ?$error->getMessage():'display_storage_error');
+        error_log('achbot_server_display_unavailable server_id='.(int)$serverId.
+            ' reason='.$reason);
         return ['policy'=>false];
     }
 }

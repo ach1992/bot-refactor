@@ -115,7 +115,7 @@ def get_result(proc, *, allow_display_denial=False):
     safe_lines=[line for line in err.splitlines() if line]
     assert proc.returncode==0 and all(
         line.startswith(expected_review_log) or
-        (allow_display_denial and line==b'achbot_server_display_unavailable')
+        (allow_display_denial and line==b'achbot_server_display_unavailable server_id=2 reason=display_server_unavailable')
         for line in safe_lines),(out,err)
     return json.loads(out)
 

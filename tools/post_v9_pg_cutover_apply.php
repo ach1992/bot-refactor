@@ -10,6 +10,7 @@
  */
 if (PHP_SAPI !== 'cli') {http_response_code(404);exit(1);}
 umask(0077);
+require_once __DIR__.'/post_v9_pg_cutover_display.php';
 
 function pgcFail(string $code): never {throw new RuntimeException($code);}
 function pgcExpect(bool $valid,string $code): void {if (!$valid) pgcFail($code);}
@@ -260,6 +261,9 @@ function pgcDatabase(mysqli $db,array $data,string $tenant,string $fingerprint,b
     } else {
         pgcExpect(!$allServers,'journal_source_still_active');
     }
+    // Validate all existing display documents before any provider/financial writes.
+    // The same transaction locks and migrates valid native policy metadata.
+    $displayPlan=$journal?[]:pgcDisplayPlan($db,$servers,$apply);
     $testPanels=[];
     foreach ($panels as $alias=>$panel) {
         $r=pgcRows($db,"SELECT id,panel_url,provider_connection_id,provider_instance_key,provider_enabled
@@ -442,6 +446,7 @@ function pgcDatabase(mysqli $db,array $data,string $tenant,string $fingerprint,b
             pgcUpdate($db,'UPDATE server_plans SET provider_group_ids=?
                 WHERE id=? AND provider_group_ids IS NULL',[
                 json_encode($map['plan_groups'][(string)$id],JSON_THROW_ON_ERROR),$id]);
+        pgcDisplayApply($db,$displayPlan);
         foreach ($servers as $sid=>$source) {
             $alias=$map['server_panels'][(string)$sid];
             pgcUpdate($db,"UPDATE server_config c JOIN server_config t ON t.id=?

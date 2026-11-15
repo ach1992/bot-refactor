@@ -255,7 +255,7 @@ def run_php(work,env,driver,**spec):
     # Only the intentionally unconfigured target may emit this exact private
     # fixed diagnostic; every other stderr byte still fails the fixture.
     display_diagnostic=spec.pop('expect_display_unavailable',False)
-    allowed_stderr=('', 'achbot_server_display_unavailable\n') if display_diagnostic else ('',)
+    allowed_stderr=('', 'achbot_server_display_unavailable server_id=1 reason=display_server_unavailable\n') if display_diagnostic else ('',)
     cmd=['php','-n','-d','extension=mysqlnd','-d','extension=mysqli',
          '-d','allow_url_fopen=0','-d','display_errors=1',
          '-d','disable_functions=curl_init,curl_exec,exec,shell_exec,system,passthru,popen,proc_open,mail',
