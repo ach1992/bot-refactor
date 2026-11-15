@@ -305,10 +305,30 @@ function achbotEffectAssertNotArchivedLocked(mysqli $db,int $payId,bool $process
                 ['nowpayments','zarinpal','nextpay','bank_transfer','gift_card',
                  'manual_usdt','manual_trx'],true)) return;
     }
-    $fence=$db->prepare('SELECT id FROM payment_attempts
-        WHERE pay_row_id=? AND review_archived_at IS NOT NULL
-        LIMIT 1 FOR UPDATE');
-    if (!$fence) throw new RuntimeException('effect_archive_fence_unavailable');
+    // Some independently supported manual-payment installs have 003 but
+    // not yet 022. No archive can exist without its column; retain those
+    // original manual approvals, never reinterpret a missing column as
+    // permission to bypass an actual archived payment on a 022 install.
+    $missing022=false;$fence=false;
+    try {
+        $fence=$db->prepare('SELECT id FROM payment_attempts
+            WHERE pay_row_id=? AND review_archived_at IS NOT NULL
+            LIMIT 1 FOR UPDATE');
+    } catch (mysqli_sql_exception $error) {
+        if ((int)$error->getCode()!==1054) throw $error;
+        $missing022=true;
+    }
+    if (!$fence) {
+        if (!$missing022 && (int)$db->errno!==1054)
+            throw new RuntimeException('effect_archive_fence_unavailable');
+        $q=$db->prepare('SELECT provider FROM payment_attempts
+            WHERE pay_row_id=? LIMIT 1 FOR UPDATE');
+        $q->bind_param('i',$payId);$q->execute();
+        $row=$q->get_result()->fetch_assoc();$q->close();
+        if ($row && in_array((string)$row['provider'],
+            ['bank_transfer','gift_card','manual_usdt','manual_trx'],true)) return;
+        throw new RuntimeException('effect_archive_fence_unavailable');
+    }
     $fence->bind_param('i',$payId);
     if (!$fence->execute()) throw new RuntimeException('effect_archive_fence_read_failed');
     $archived=$fence->get_result()->num_rows>0;

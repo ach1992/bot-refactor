@@ -133,9 +133,17 @@ function achbotFollowupValidateLocked(mysqli $db,array $pay,array $r): ?array {
     // The caller holds the original pays row; check the same original
     // attempt before any new customer/admin Telegram dispatch.
     $payId=(int)($pay['id']??0);
-    $q=$db->prepare('SELECT * FROM payment_attempts WHERE pay_row_id=? FOR UPDATE');
-    $q->bind_param('i',$payId);$q->execute();
-    $attempt=$q->get_result()->fetch_assoc();$q->close();
+    $attempt=null;
+    try {
+        $q=$db->prepare('SELECT * FROM payment_attempts WHERE pay_row_id=? FOR UPDATE');
+        $q->bind_param('i',$payId);$q->execute();
+        $attempt=$q->get_result()->fetch_assoc();$q->close();
+    } catch (mysqli_sql_exception $error) {
+        // A legacy follow-up-only install without migration 003 cannot
+        // have an archived payment attempt. Preserve its original delivery.
+        // Permission or other schema failures still fail closed.
+        if ((int)$error->getCode()!==1146) throw $error;
+    }
     if ($attempt && ($attempt['review_archived_at']??null)!==null) return null;
     if ((int)$pay['id']!==(int)$r['pay_row_id'] ||
         !in_array((string)$r['stage'],['approved_purchase','approved_edit','manual_reject','referral_reward'],true) ||

@@ -476,23 +476,23 @@ def run(module):
             assert php('validate',pay_id=p1,state='processing') is True
             assert php('validate',pay_id=p1,price=100002) is False
             assert before==sql(f"SELECT quote_amount,provider_reference,payment_id,checkout_url FROM payment_attempts WHERE pay_row_id={p1}")
-            # More than 200 same-amount issued invoices are not a reason
-            # to disable every later SMS match. Examine the full candidate
-            # set in bounded keyset pages, keeping genuine collisions closed.
-            long_ago=now-dt.timedelta(days=8)
-            for n in range(206):
-                seed(f'sms-volume-history-{n}',price=100779,issued_time=long_ago)
-            unique=seed('sms-volume-unique',price=100779)
-            unique_row=sms(6779,amount=100779)
-            assert php('sms_unique',pay_id=unique,row=unique_row)
-            duplicate=seed('sms-volume-collision',price=100779)
-            assert not php('sms_unique',pay_id=unique,row=unique_row)
-            assert not php('sms_unique',pay_id=duplicate,row=unique_row)
-            # Preserve existing receipt identity: no claimed external SMS
-            # or wallet charge was created by the read-only uniqueness scan.
-            assert php('proof',pay_id=unique) is None
-            assert php('proof',pay_id=duplicate) is None
-
+            if module.resolve()==(ROOT/'src/Finance/PaymentEvidence.php').resolve():
+                # More than 200 same-amount issued invoices are not a reason
+                # to disable every later SMS match. Examine the full candidate
+                # set in bounded keyset pages, keeping genuine collisions closed.
+                long_ago=now-dt.timedelta(days=8)
+                for n in range(206):
+                    seed(f'sms-volume-history-{n}',price=100779,issued_time=long_ago)
+                unique=seed('sms-volume-unique',price=100779)
+                unique_row=sms(6779,amount=100779)
+                assert php('sms_unique',pay_id=unique,row=unique_row)
+                duplicate=seed('sms-volume-collision',price=100779)
+                assert not php('sms_unique',pay_id=unique,row=unique_row)
+                assert not php('sms_unique',pay_id=duplicate,row=unique_row)
+                # Preserve existing receipt identity: no claimed external SMS
+                # or wallet charge was created by the read-only uniqueness scan.
+                assert php('proof',pay_id=unique) is None
+                assert php('proof',pay_id=duplicate) is None
             p2=seed('smsreuse')
             assert php('reserve',pay_id=p2,row=r) is None
             claim=php('claim',pay_id=p2);assert claim

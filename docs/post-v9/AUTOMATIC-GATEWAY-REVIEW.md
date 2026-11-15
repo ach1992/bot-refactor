@@ -50,7 +50,7 @@ does not send duplicate standalone administrator messages.
 - **NOWPayments amount_mismatch** left by the older second crypto
   amount-check gate may be recovered after an authenticated merchant GET
   proves `finished` for the **exact original** payment, invoice, hash,
-  and local order amount. It uses the original human settlement and
+  immutable original USD quote and local order amount. It uses the original human settlement and
   `doAction` once-only pathway. Never synthesize provider children, refill
   wallets or call Native twice. The ordinary automatic reconciler accepts
   authenticated merchant-final `finished` without independent crypto

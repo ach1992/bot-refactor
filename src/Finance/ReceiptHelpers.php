@@ -10,7 +10,7 @@ require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
 require_once __DIR__.'/../Admin/Access.php';
 require_once __DIR__.'/../Panel/ProviderRuntime.php';
 require_once __DIR__.'/../Purchase/OrderWrites.php';
-require_once __DIR__.'/GatewayClient.php';
+require_once __DIR__.'/PaymentEvidence.php';
 
 if (!function_exists('payTypeToDescription')) {
     function payTypeToDescription($payType)

@@ -1032,7 +1032,32 @@ def service_change_catalog_layer():
         before[audience]=old;after[audience]=new;original[audience]=raw.decode()
     return original,before,after
 
+def operator_inbox_catalog_restore(sides):
+    # Byte-exact 2026-11-15 successor to the completed old review catalog.
+    # Previously reviewed manifests remain immutable: only the fully
+    # enumerated eight new admin keys may be projected out of a COPY.
+    check(type(sides) is dict and set(sides)=={'user','admin'},
+          'operator_inbox_audiences')
+    present=OPERATOR_INBOX_KEYS & set(sides['admin'])
+    check(not (OPERATOR_INBOX_KEYS & set(sides['user'])),
+          'operator_inbox_wrong_audience')
+    if not present:
+        return copy.deepcopy(sides)  # Already independently projected.
+    check(present==OPERATOR_INBOX_KEYS,
+          'operator_inbox_partial_addition')
+    operator_inbox_catalog_source()  # Verify the entire current file, not just selected keys.
+    parser='$s=stream_get_contents(STDIN);$p=strpos($s,"return [");if($p===false)throw new RuntimeException("array_missing");echo json_encode(eval(substr($s,$p)),JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);'
+    actual=flatten(json.loads(command('php','-r',parser,
+        input=(ROOT/'messages/fa/admin.php').read_bytes())))
+    restored=copy.deepcopy(sides)
+    for key in OPERATOR_INBOX_KEYS:
+        check(restored['admin'].get(key)==actual[key],
+              'operator_inbox_unapproved_current_copy:'+key)
+        del restored['admin'][key]
+    return restored
+
 def service_change_copy_restore(sides):
+    sides=operator_inbox_catalog_restore(sides)
     # Current consumers may arrive before #147's separate restoration.
     # Strip only the source-pinned additive topic when present.
     if any(key.startswith('bulk_reporting.') for key in sides.get('admin',{})):
@@ -1289,6 +1314,7 @@ def current_cleanup_restore(sides):
         '50318bc3163bfa7496b3bc6dce8b1e789417334e'))
 
 def verify_and_restore(sides,definition=None,from_verified_current=False):
+    sides=operator_inbox_catalog_restore(sides)
     # Historical composition tests operate on a previously validated
     # projection of the exact new copy. Ordinary current-catalog callers
     # must still provide all nine source-pinned keys.

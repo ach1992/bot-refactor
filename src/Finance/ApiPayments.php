@@ -2,8 +2,6 @@
 /** Optional existing-API evidence inside the original manual payment ledger. */
 if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) { http_response_code(404); exit; }
 require_once __DIR__.'/ReceiptHelpers.php';
-require_once __DIR__.'/GatewayClient.php';
-require_once __DIR__.'/GatewayReview.php';
 require_once __DIR__.'/PaymentLifecycle.php';
 require_once __DIR__.'/ApiPaymentPresentation.php';
 if (is_file(__DIR__.'/PaymentEvidence.php')) require_once __DIR__.'/PaymentEvidence.php';
@@ -173,7 +171,20 @@ function achbotApiPaymentTrackInvoice(mysqli $db,string $hash,int $actor,$respon
     } catch (Throwable $e) {error_log('achbot_api_invoice_reference_deferred');}
 }
 function achbotApiPaymentSyncInvoice(mysqli $db,array $c): bool {
+    $id=(int)($c['pay']['id']??0);
+    // A customer invoice edit is itself a bot-owned post-payment effect.
+    // Serialize its whole Telegram request against original operator Archive,
+    // just as bank/gift API settlement and Native dispatch already are.
+    return achbotApiPaymentWithWorkerLock($db,$id,
+        static fn():string=>achbotApiPaymentSyncInvoiceLocked($db,$c)
+            ?'synchronized':'unchanged')==='synchronized';
+}
+function achbotApiPaymentSyncInvoiceLocked(mysqli $db,array $c): bool {
     $p=$c['pay'];$a=$c['attempt'];$id=(int)$p['id'];
+    // A pre-lock read cannot authorize a post-Archive Telegram request.
+    $fresh=achbotApiPaymentAttempt($db,$id);
+    if (!$fresh || ($fresh['review_archived_at']??null)!==null ||
+        ($a['review_archived_at']??null)!==null) return false;
     $chat=(int)($a['evidence_invoice_chat_id']??0);$message=(int)($a['evidence_invoice_message_id']??0);
     if ($chat!==(int)$p['user_id'] || $chat<=0 || $message<=0 || !function_exists('bot')) return false;
     if (achbotApiPaymentTerminal($p) || !in_array($p['state'],['pending','have_sent'],true))
@@ -276,7 +287,8 @@ function achbotApiPaymentNotice(mysqli $db,array $pay,string $status,bool $repor
     $refs=json_decode((string)($pay['admins_messages']??''),true);$refs=is_array($refs)?$refs:[];
     $refs[]=['chat_id'=>$pay['chat_id']??0,'message_id'=>$pay['message_id']??0];$seen=[];
     $keys=inlineKeyboard([[['text'=>$label,'callback_data'=>'noop_'.$hash]]]);
-    if(achbotApiPaymentTerminal($pay))$keys=achbotApiPaymentFinalKeyboard($pay,$label,$automatic,$presentation);
+    if(achbotApiPaymentTerminal($pay) && !$archived)
+        $keys=achbotApiPaymentFinalKeyboard($pay,$label,$automatic,$presentation);
     if($invalidCode && $pay['state']==='have_sent' && !$archived){
         $rows=json_decode(achbotApiPaymentReviewKeyboard($pay),true)['inline_keyboard'];
         $rows[]=[['text'=>$label,'callback_data'=>'noop_'.$hash]];$keys=inlineKeyboard($rows);

@@ -2235,11 +2235,17 @@ def main():
                 nowpayment_status='finished',**overrides))
             if len(obs['network_calls'])!=1:
                 raise RuntimeError('Merchant FINAL fixture did not perform authenticated GET: '+name)
-            if sql(work,env,f"SELECT stage,provider_status FROM payment_attempts WHERE order_hash='{h}'").strip()!='done\tfinished':
-                raise RuntimeError('Authenticated final payment incorrectly held: '+name)
-            if sql(work,env,f"SELECT state FROM pays WHERE hash_id='{h}'").strip()!='paid' or int(sql(work,env,'SELECT wallet FROM users WHERE userid=1001').strip())!=start_wallet+100:
-                raise RuntimeError('Merchant finality did not settle the original once: '+name)
-            records.append(dict(case='nowpayments_'+name+'_merchant_final_accepted',pass_=True))
+            quoteMismatch=name=='output_wrong_quote'
+            expected='review\tamount_mismatch' if quoteMismatch else 'done\tfinished'
+            if sql(work,env,f"SELECT stage,provider_status FROM payment_attempts WHERE order_hash='{h}'").strip()!=expected:
+                raise RuntimeError('Merchant-final original quote identity error: '+name)
+            expectedPay='pending' if quoteMismatch else 'paid'
+            expectedWallet=start_wallet if quoteMismatch else start_wallet+100
+            if (sql(work,env,f"SELECT state FROM pays WHERE hash_id='{h}'").strip()!=expectedPay or
+                int(sql(work,env,'SELECT wallet FROM users WHERE userid=1001').strip())!=expectedWallet):
+                raise RuntimeError('Merchant finality quote and once-only effect failed: '+name)
+            records.append(dict(case=('nowpayments_'+name+
+                ('_original_quote_mismatch_review' if quoteMismatch else '_merchant_final_accepted')),pass_=True))
         # Previously issued invoices may retain a policy snapshot for audit,
         # but its coin/payout data is not a second settlement gate.
         for name,overrides in [
@@ -2267,15 +2273,19 @@ def main():
             seen=run_php(work,env,stage,dict(route='reconcile',get={},
                 mock_invoice=invoice,nowpayment_payment_id=payid,
                 nowpayment_order_id=h,nowpayment_status='finished',**overrides))
+            quoteMismatch=name=='default_wrong_quote'
+            expected='review\tamount_mismatch' if quoteMismatch else 'done\tfinished'
             if len(seen['network_calls'])!=1 or sql(work,env,
                 f"SELECT stage,provider_status FROM payment_attempts "
-                f"WHERE order_hash='{h}'").strip()!='done\tfinished':
-                raise RuntimeError('Final merchant status did not settle original: '+name)
-            if int(sql(work,env,'SELECT wallet FROM users WHERE userid=1001').strip())!=wallet_before+100:
-                raise RuntimeError('Final merchant payment did not credit wallet once: '+name)
-            if sql(work,env,f"SELECT state FROM pays WHERE hash_id='{h}'").strip()!='paid':
-                raise RuntimeError('Final merchant payment did not complete order: '+name)
-            records.append(dict(case='nowpayments_'+name+'_merchant_final_accepted',
+                f"WHERE order_hash='{h}'").strip()!=expected:
+                raise RuntimeError('Final merchant price identity mismatch: '+name)
+            expectedWallet=wallet_before if quoteMismatch else wallet_before+100
+            if int(sql(work,env,'SELECT wallet FROM users WHERE userid=1001').strip())!=expectedWallet:
+                raise RuntimeError('Merchant final invoice credit decision failed: '+name)
+            if sql(work,env,f"SELECT state FROM pays WHERE hash_id='{h}'").strip()!=('pending' if quoteMismatch else 'paid'):
+                raise RuntimeError('Merchant final original order decision failed: '+name)
+            records.append(dict(case=('nowpayments_'+name+
+                ('_original_quote_mismatch_review' if quoteMismatch else '_merchant_final_accepted')),
                                 pass_=True))
         h='np-default-tampered-floor'
         seed_np_attempt(work,env,h,h+'-invoice',h+'-payment',default_fees=True)

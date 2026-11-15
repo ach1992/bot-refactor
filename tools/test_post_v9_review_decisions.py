@@ -623,7 +623,24 @@ function sendMessage($text,$markup,$parse,$chat) {
  return (object)['ok'=>true];
 }
 function answerCallbackQuery(...$args) {return true;}
+function bot(...$args) {
+ $GLOBALS['api_bot_calls']=($GLOBALS['api_bot_calls']??0)+1;
+ return (object)['ok'=>true];
+}
 $GLOBALS['case_mode']=$mode;
+if ($mode==='archivedSync') {
+    // Synthetic original already archived under 022. Even a stale
+    // pre-Archive attempt snapshot must not trigger customer Telegram.
+    require_once $root.'/src/Finance/ApiPayments.php';
+    $pay=$db->query('SELECT * FROM pays WHERE id='.$payId)->fetch_assoc();
+    $attempt=$db->query('SELECT * FROM payment_attempts WHERE pay_row_id='.$payId)->fetch_assoc();
+    $attempt['review_archived_at']=null;
+    $GLOBALS['api_bot_calls']=0;
+    $success=achbotApiPaymentSyncInvoice($db,['pay'=>$pay,'attempt'=>$attempt]);
+    echo json_encode(['complete'=>!$success,'customer_calls'=>$GLOBALS['api_bot_calls']],
+        JSON_THROW_ON_ERROR);
+    exit;
+}
 require $root.'/src/Finance/Routes/AutomaticGatewayReview.php';
 $edits=$GLOBALS['case_edits'];$sent=$GLOBALS['case_sent'];
 $final=$mode==='fallback' ? ($sent[0]??null):($edits[0]??null);
@@ -928,6 +945,14 @@ def main():
                     raise RuntimeError("Edit failure did not send one bounded fallback")
             elif case["edit_count"]!=1 or case["send_count"]!=0:
                 raise RuntimeError("Edit successful but fallback was incorrectly used")
+        sync=subprocess.run(["php","-d","allow_url_fopen=0",
+            "-d","disable_functions=curl_init,curl_exec,exec,shell_exec,system,passthru,popen,proc_open,mail",
+            str(case_script),str(ROOT),str(d/"mysql.sock"),DB,'1301','archivedSync'],
+            env=env,cwd=ROOT,capture_output=True,text=True,timeout=25)
+        if sync.returncode or sync.stderr or json.loads(sync.stdout)!={'complete':True,'customer_calls':0}:
+            raise RuntimeError('Archived API original attempted customer invoice mutation: '+
+                sync.stderr+sync.stdout)
+        output['checks'].append('archived_api_original_never_sends_stale_customer_invoice_edit')
         output["checks"].extend([
             "maximal_original_description_kept_in_database_html_case_bounded",
             "five_native_lines_and_original_payment_evidence_kept",

@@ -4,6 +4,7 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
     http_response_code(404);
     exit;
 }
+require_once __DIR__.'/PaymentEvidence.php';
 
 /**
  * Classify only server-verified provider outcomes; browser redirects are not proof.
@@ -30,20 +31,6 @@ function achbotSharedPaymentTablesReady(mysqli $db): bool {
     } catch (Throwable $ignored) {
         return false;
     }
-}
-
-/** MariaDB named locks are SERVER-wide, not scoped to the selected DB.
- * Independent bots have dedicated databases but may reuse payment IDs.
- * Scope the ONE hosted-worker lease by the connected database identity.
- */
-function achbotHostedWorkerLockName(mysqli $db,int $payId): string {
-    if ($payId<=0) throw new RuntimeException('hosted_worker_pay_invalid');
-    $query=$db->query('SELECT DATABASE() AS schema_name');
-    $schema=$query?$query->fetch_assoc()['schema_name']:null;
-    if ($query) $query->free();
-    if (!is_string($schema) || $schema==='')
-        throw new RuntimeException('hosted_worker_schema_unknown');
-    return 'achbot-hosted-'.substr(hash('sha256',$schema),0,20).'-'.$payId;
 }
 
 /**
@@ -167,18 +154,25 @@ function achbotNpMinimumPayout(string $quoteUsd, string $rate): ?string {
     return intdiv($micros,1000000).'.'.str_pad((string)($micros%1000000),6,'0',STR_PAD_LEFT);
 }
 
-/** NOWPayments' authenticated finality is the merchant payment decision.
- * This function is a structural eligibility check only: monetary amount,
- * payout fees and crypto-asset fluctuations are diagnostic, not a second
- * fulfillment threshold. Identity, original local quote, child collisions,
- * provider-authenticated GET, and once-only native effects remain separately
- * enforced by the original reconciliation and settlement journals.
+/** NOWPayments' authenticated FINAL status is the merchant settlement
+ * decision. Crypto deposit/payout amounts, fees and assets are diagnostics,
+ * never a secondary fulfillment threshold.
+ *
+ * The USD price is different: it identifies WHAT invoice was actually
+ * settled. Require the immutable original USD quote, normalized exactly
+ * as a decimal, in addition to the payment/invoice/order references enforced
+ * by the original reconciliation/one-shot journals. A merchant FINISHED
+ * response for a DIFFERENT USD invoice price cannot satisfy this original.
  */
 function achbotNpValidFinalAmount(array $attempt,array $response): bool {
+    $original=$attempt['quote_amount']??null;
+    $remote=$response['price_amount']??null;
     return ($attempt['provider']??null)==='nowpayments' &&
         strtolower((string)($attempt['quote_currency']??''))==='usd' &&
         strtolower((string)($response['price_currency']??''))==='usd' &&
-        ($response['payment_status']??null)==='finished';
+        ($response['payment_status']??null)==='finished' &&
+        achbotNpDecimalAtLeast($original,$remote) &&
+        achbotNpDecimalAtLeast($remote,$original);
 }
 
 function achbotNpGetVerifiedPayment(string $paymentId, string $apiKey): ?array {

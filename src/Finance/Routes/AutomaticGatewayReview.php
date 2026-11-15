@@ -361,7 +361,8 @@ if (preg_match('/^attention(?:Inbox(?:_[1-9][0-9]{0,17})?|Case_[1-9][0-9]{0,17})
         answerCallbackQuery($callbackId);
         $send($body,$rows);
     } catch (Throwable $error) {
-        error_log('achbot_automatic_gateway_inbox_unavailable class='.get_class($error));
+        error_log('achbot_automatic_gateway_inbox_unavailable class='.get_class($error).
+            ' code='.(int)$error->getCode());
         answerCallbackQuery($callbackId,achbotMessage('automatic_gateway_review.unavailable'),true);
     }
     return;
