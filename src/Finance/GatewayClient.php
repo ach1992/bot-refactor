@@ -124,6 +124,22 @@ function achbotGatewayAttentionScope(?mysqli $db=null): string {
 function achbotGatewayAttentionCaseOpen(mysqli $db,int $payId): bool {
     if ($payId<=0) return false;
     try {
+        // The original API evidence schema can be present before the additive
+        // 022 Archive migration. Do not offer a case link whose action cannot
+        // run, or emit an SQL warning on every legitimate older API receipt.
+        // Only the known absent column is optional; other SQL failures remain
+        // diagnosable instead of being mistaken for missing installation.
+        try {
+            $probe=$db->query('SELECT review_archived_at FROM payment_attempts LIMIT 0');
+        } catch (mysqli_sql_exception $error) {
+            if ((int)$error->getCode()===1054) return false;
+            throw $error;
+        }
+        if (!($probe instanceof mysqli_result)) {
+            if ((int)$db->errno===1054) return false;
+            throw new RuntimeException('attention_archive_schema_probe_failed');
+        }
+        $probe->free();
         $scope=achbotGatewayAttentionScope($db);
         $q=$db->prepare("SELECT p.id FROM pays p
             JOIN payment_attempts a ON a.pay_row_id=p.id
