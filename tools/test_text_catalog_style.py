@@ -595,27 +595,29 @@ if(adjacentEmoji($userQuote)||adjacentEmoji($adminRequest))throw new RuntimeExce
 $contexts=0;
 foreach(achbotMessages('wallet')as$key=>$entry)if(str_starts_with($key,'wallet_recharge.wallet_topup_amount_problem.button.')&&preg_match('/\d[0-9,]* تومان/u',is_array($entry)?$entry['text']:$entry)){
  $value=is_array($entry)?$entry['text']:$entry;
- if(!str_starts_with($value,'💰 '))throw new RuntimeException('amount_choice_unrelated_marker');$contexts++;
+ if(!preg_match('/^[0-9][0-9,]* تومان$/u',$value))throw new RuntimeException('amount_choice_unrelated_marker');$contexts++;
 }
 if($contexts!==7)throw new RuntimeException('amount_choice_fixture_drift');
 foreach(['config.get_gate_ways_keys.button.26003a476f','config.get_gate_ways_keys.button.c0199d5243','config.get_gate_ways_keys.button.a0c8498d77']as$key){if(!str_starts_with(achbotMessage('admin_settings.'.$key),'💳 '))throw new RuntimeException('gateway_choice_unrelated_marker');$contexts++;}
 foreach([$buttonValues['renew_config'],achbotMessage('admin_settings.config.get_bot_setting_keys.button.df1c62b99e'),achbotMessage('admin_settings.config.get_bot_setting_keys.button.f9a77f614a')]as$value){if(!str_starts_with($value,'♻️ '))throw new RuntimeException('renew_action_marker_mismatch');$contexts++;}
-foreach([[$buttonValues['back_to_main'],'🔙 '],[$buttonValues['back_button'],'🔙 '],[achbotMessage('manual_payment.manual_crypto.button.1121ffbf88'),'🏠 ']]as[$value,$icon]){if(!str_starts_with($value,$icon))throw new RuntimeException('navigation_marker_mismatch');$contexts++;}
+foreach([[$buttonValues['back_to_main'],'↪️ '],[$buttonValues['back_button'],'↪️ '],[achbotMessage('manual_payment.manual_crypto.button.1121ffbf88'),'🏠 ']]as[$value,$icon]){if(!str_starts_with($value,$icon))throw new RuntimeException('navigation_marker_mismatch');$contexts++;}
 if(!str_starts_with(achbotMessage('wallet.wallet_transfer.wallet_transfer_restart.message.6924ce253f'),'⚠️ '))throw new RuntimeException('unknown_transfer_misleading_failure_marker');
 echo json_encode(['violations'=>$violations,'topics'=>count(achbotMessageTopics()),'native_compositions'=>6,'emoji_negative_controls'=>7,'semantic_label_icon_cases'=>count($fields),'semantic_context_icon_cases'=>$contexts,'canonical_binding_paths'=>count($bindingProof['paths']),'canonical_binding_entries'=>$bindingProof['entries'],'canonical_binding_negative_controls'=>$bindingNegatives],JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);'''
     native=json.loads(command('php','-r',php))
     check(not native['violations'],'adjacent emoji: '+str(native['violations']))
-    # Preserve 28 legacy topics and all prior additive sections. Issue #117
-    # adds one separately SHA-pinned Owner-only Hosted original recovery
-    # section without changing ANY previously approved catalog block.
-    additional={'delivery_recovery','finance_workbench',
-                'delivery_workbench','service_workbench','service_edit_delivery',
-                'service_recovery_action','hosted_original_recovery',
-                'hosted_replacement',
-                'finance_exceptions','manual_receipt_final'}
+    # The 2026-11-15 Stable runtime has exactly these 30 topic namespaces.
+    # Operator attention adds keys inside automatic_gateway_review, not ten
+    # experimental workbench topics. Prevent unexpected added/deleted topics.
+    expected_topics={
+        'legacy_messages','legacy_buttons','bot','wallet','purchase','subscription',
+        'renewal','payment','manual_payment','gateway','notifications','support',
+        'agent','telegram','labels','date','admin_settings','jobs','instance_content',
+        'automatic_gateway_review','bulk_reporting','admin','plans','provider',
+        'payment_settings','broadcast','backup','gifts','addon_scopes',
+        'manual_receipt_final'}
     topics=json.loads(command('php','-r',
         'require "messages/loader.php";echo json_encode(achbotMessageTopics());'))
-    check(native['topics']==28+len(additional) and additional<=set(topics),
+    check(native['topics']==len(expected_topics)==30 and set(topics)==expected_topics,
           'Expected exact source-proven review/recovery topics')
     # A mistaken cross-file move/copy must fail closed, never silently let
     # one audience override the other's value. Poison only an owned temporary

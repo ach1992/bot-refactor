@@ -75,9 +75,21 @@ function achbotServerWizardView(mysqli $db,array $d): array {
         // Saved connections are an optional shortcut INSIDE add-server, not a separate catalog.
         try {
             achbotPgLoad();achbotProviderRequireSchema($db);
-            foreach (achbotProviderConnections($db) as $p)
+            $connections=achbotProviderConnections($db);
+            // Real pages, not an arbitrary total-connections ceiling or a
+            // single Telegram keyboard with unbounded buttons.
+            $page=max(0,(int)($d['page']??0));$size=8;
+            $total=count($connections);
+            if ($page>0 && $page*$size>=$total) $page=max(0,intdiv(max(0,$total-1),$size));
+            foreach (array_slice($connections,$page*$size,$size) as $p)
                 $keys[]=[['text'=>achbotManagementText('reuse_connection',['name'=>$p['name']]),
                     'callback_data'=>achbotManagementButton($d,'panel',(string)$p['id'])]];
+            $nav=[];
+            if ($page>0) $nav[]=['text'=>achbotManagementText('previous_page'),
+                'callback_data'=>achbotManagementButton($d,'page',(string)($page-1))];
+            if (($page+1)*$size<$total) $nav[]=['text'=>achbotManagementText('next_page'),
+                'callback_data'=>achbotManagementButton($d,'page',(string)($page+1))];
+            if ($nav) $keys[]=$nav;
         } catch (Throwable $ignored) {}
     } elseif ($stage==='panelgroup') {
         foreach (achbotPanelGroups($db) as $g) $keys[]=[[
@@ -100,6 +112,13 @@ function achbotServerWizardAdvance(mysqli $db,array &$d,string $action,string $i
         $v=['provider'=>$input];$d['stage']='title';return null;
     }
     if (in_array($stage,['title','remark','flag','url','username','password','api_key','capacity'],true)) {
+        if ($stage==='url' && $v['provider']==='pasarguard' && $action==='page') {
+            $page=achbotManagementInteger($input,0);
+            $count=count(achbotProviderConnections($db));$size=8;
+            if ($page>0 && $page*$size>=$count-1) throw new RuntimeException('management_input');
+            $d['page']=$page;
+            return null;
+        }
         if ($stage==='url' && $v['provider']==='pasarguard' && $action==='panel') {
             unset($v['panel_fingerprint'],$d['choices'],$d['page']);
             $v['panel_id']=achbotManagementInteger($input);

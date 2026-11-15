@@ -72,7 +72,7 @@ def main() -> dict:
     chili=historical.chili_copy_reference()[0]
     # The two source-pinned additions remain independently reviewable.
     _, service_before, service_after=historical.service_change_catalog_layer()
-    assert len(current['admin'])==1911+len(added['admin'])+len(chili['added'])+8+len(service_after['admin'])-len(service_before['admin'])+successor_added['admin']+len(historical.GATEWAY_CONTROLS_KEYS)+len(historical.RENEWAL_NOTICE_ADDED['admin']) and \
+    assert len(current['admin'])==1911+len(added['admin'])+len(chili['added'])+8+len(service_after['admin'])-len(service_before['admin'])+successor_added['admin']+len(historical.GATEWAY_CONTROLS_KEYS)+len(historical.RENEWAL_NOTICE_ADDED['admin'])+len(historical.OPERATOR_INBOX_KEYS) and \
         len(current['user'])==942+len(added['user'])+len(service_after['user'])-len(service_before['user'])+successor_added['user']+len(historical.RENEWAL_NOTICE_ADDED['user'])-len(historical.RENEWAL_NOTICE_REMOVED['user'])
     assert not set(current['admin'])&set(current['user'])
     # An exact approved successor cannot become a blanket pass-through for

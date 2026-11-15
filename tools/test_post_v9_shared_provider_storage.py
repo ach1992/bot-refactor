@@ -159,6 +159,57 @@ def run(work,env):
   ok(preserved(work,env)==old,'reject_keeps_original_data:'+name)
   ok(native.sql(work,env,"SELECT COUNT(*) FROM information_schema.TABLES WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME IN ('provider_panels','provider_accounts')",DB).strip()=='2','reject_keeps_source_tables:'+name)
   ok(native.sql(work,env,"SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='server_config' AND COLUMN_NAME='provider_connection_id'",DB).strip()=='0','reject_before_ddl:'+name)
+ # More than 30 distinct PasarGuard connections remain reachable through
+ # the EXISTING add-server wizard's same private nonce/revision actions.
+ # No extra panel registry or arbitrary total count limit is introduced.
+ reset(work,env)
+ native.sql(work,env,sql,DB)
+ names=[];configs=[]
+ for n in range(34):
+  ident=1500+n
+  names.append(f"({ident},'Fixture {ident}',10,'pg_{ident}','',1,1)")
+  configs.append(f"({ident},'{URL}','','','none','','','none','','',{q(KEY)},"
+                 f"'pasarguard',{ident},REPEAT('c',32),'5.5.1',1)")
+ native.sql(work,env,
+  "INSERT INTO server_info(id,title,ucount,remark,flag,active,state) VALUES "+
+  ','.join(names)+";"+
+  "INSERT INTO server_config(id,panel_url,ip,sni,header_type,request_header,"
+  "response_header,security,tlsSettings,username,password,type,provider_connection_id,"
+  "provider_instance_key,provider_version,provider_enabled) VALUES "+
+  ','.join(configs)+";",DB)
+ pager=work/'connection-pages.php'
+ pager.write_text('''<?php
+$_SERVER['SCRIPT_FILENAME']=__FILE__;
+require_once $argv[1].'/src/Panel/ProviderRuntime.php';
+require_once $argv[1].'/src/Panel/ProviderStorage.php';
+require_once $argv[1].'/src/Admin/ServerWizard.php';
+function achbotManagementText(string $key,array $params=[]):string {
+ return $key.':'.($params['name']??'');
+}
+function achbotManagementButton(array $d,string $action,string $value='0'):string {
+ return $action.'|'.$value;
+}
+$db=new mysqli('localhost','root','',$argv[3],0,$argv[2]);
+$db->set_charset('utf8mb4');
+$all=achbotProviderConnections($db);
+$draft=['stage'=>'url','values'=>['provider'=>'pasarguard'],
+ 'page'=>0,'nonce'=>'012345abcdef','rev'=>0];
+[, $first]=achbotServerWizardView($db,$draft);
+$draft['page']=4;
+[, $last]=achbotServerWizardView($db,$draft);
+$labels=static fn(array $rows):array=>array_map(
+ static fn(array $row):array=>array_map(static fn(array $btn):string=>
+  (string)($btn['callback_data']??''),$row),$rows);
+echo json_encode(['total'=>count($all),'first'=>$labels($first),
+ 'last'=>$labels($last)],JSON_THROW_ON_ERROR);
+''')
+ result=pg.php(pager,ROOT,work/'mysql.sock',DB)
+ ok(result['total']==35,'all_35_real_connections_discoverable_no_silent_limit_30')
+ ok(len(result['first'])==9 and result['first'][-1]==['page|1'],
+    'first_page_eight_connection_rows_with_next')
+ ok(len(result['last'])==4 and result['last'][0]==['panel|1531'] and
+    result['last'][-1]==['page|3'],
+    'fifth_page_reaches_connection_after_30_and_returns_back')
  return checks
 
 def main():

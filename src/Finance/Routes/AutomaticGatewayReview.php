@@ -59,11 +59,12 @@ $gatewayFitCase=static function(string $core,array $optional,string $footer) use
     return $result;
 };
 
-// Only unfinished automatic-gateway payments are shown here.
+// One operator inbox for genuinely unfinished original hosted/manual/API cases.
 if (preg_match('/^attention(?:Inbox(?:_[1-9][0-9]{0,17})?|Case_[1-9][0-9]{0,17})$/D',
     (string)($data??''))===1) {
     require_once __DIR__.'/../PaymentLifecycle.php';
     require_once __DIR__.'/../GatewayReview.php';
+    require_once __DIR__.'/../ApiPayments.php';
 
     if (!achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'payments') ||
         (int)($chat_id??0)!==(int)$from_id) {
@@ -74,7 +75,7 @@ if (preg_match('/^attention(?:Inbox(?:_[1-9][0-9]{0,17})?|Case_[1-9][0-9]{0,17})
     // An old unpaid checkout is not itself an exception. Admission uses
     // original provider evidence or a previously started unresolved effect;
     // elapsed time alone never creates a staff action.
-    $scope=achbotGatewayAttentionScope();
+    $scope=achbotGatewayAttentionScope($connection);
     $inbox=[];$case=[];
     $isInbox=preg_match('/^attentionInbox(?:_([1-9][0-9]{0,17}))?$/D',
         (string)$data,$inbox)===1;
@@ -93,6 +94,10 @@ if (preg_match('/^attention(?:Inbox(?:_[1-9][0-9]{0,17})?|Case_[1-9][0-9]{0,17})
         'nowpayments'=>achbotMessage('automatic_gateway_review.provider_nowpayments'),
         'zarinpal'=>achbotMessage('automatic_gateway_review.provider_zarinpal'),
         'nextpay'=>achbotMessage('automatic_gateway_review.provider_nextpay'),
+        'bank_transfer'=>achbotMessage('automatic_gateway_review.provider_bank_transfer'),
+        'gift_card'=>achbotMessage('automatic_gateway_review.provider_gift_card'),
+        'manual_usdt'=>achbotManualLabel('manual_usdt'),
+        'manual_trx'=>achbotManualLabel('manual_trx'),
     ];
     $safe=static fn($v) => htmlspecialchars(mb_substr((string)($v??''),0,180,'UTF-8'),
         ENT_QUOTES|ENT_SUBSTITUTE,'UTF-8');
@@ -128,7 +133,7 @@ if (preg_match('/^attention(?:Inbox(?:_[1-9][0-9]{0,17})?|Case_[1-9][0-9]{0,17})
         } else {
             $payId=(int)$case[1];
             $q=$connection->prepare("SELECT p.id,p.user_id,p.hash_id,p.type,p.price,p.state,
-                p.plan_id,p.order_id,p.server_id,p.day,p.volume,p.description,\n                p.agent_count,p.request_date,
+                p.plan_id,p.order_id,p.server_id,p.day,p.volume,p.description,\n                p.agent_count,p.request_date,p.approved_by,
                 a.id AS attempt_id,a.provider,a.order_hash,a.provider_reference,
                 a.payment_id,a.quote_amount,a.quote_currency,a.stage,a.provider_status,
                 a.created_at,a.updated_at,a.last_checked_at
@@ -246,7 +251,10 @@ if (preg_match('/^attention(?:Inbox(?:_[1-9][0-9]{0,17})?|Case_[1-9][0-9]{0,17})
                         'automatic_gateway_review.quota',['gb'=>$item['volume']]):'').
                 "\n".achbotMessageHtml('automatic_gateway_review.request_time',
                     ['date'=>$requested]).
-                "\n".achbotMessageHtml('automatic_gateway_review.merchant_quote',[
+                "\n".achbotMessageHtml(
+                    in_array($item['provider'],['bank_transfer','gift_card'],true)
+                        ?'automatic_gateway_review.api_quote'
+                        :'automatic_gateway_review.merchant_quote',[
                     'amount'=>$item['quote_amount'],'currency'=>$item['quote_currency']]).
                 "\n".achbotMessageHtml('automatic_gateway_review.invoice',
                     ['reference'=>$item['provider_reference']]).
@@ -265,6 +273,19 @@ if (preg_match('/^attention(?:Inbox(?:_[1-9][0-9]{0,17})?|Case_[1-9][0-9]{0,17})
                     'payment'=>$observed['payment_id'],
                     'status'=>$observed['observed_status'],
                     'date'=>$observed['received_at']]);
+            }
+            $manualCase=in_array((string)$item['provider'],
+                ['bank_transfer','gift_card','manual_usdt','manual_trx'],true);
+            $apiAttempt=$manualCase?achbotApiPaymentAttempt($connection,$payId):null;
+            $apiCase=$manualCase &&
+                in_array((string)$item['provider'],['bank_transfer','gift_card'],true) &&
+                !empty($apiAttempt['evidence_profile']);
+            if ($apiCase) {
+                $item['evidence_state']=$apiAttempt['evidence_state']??null;
+                $item['evidence_fulfillment_state']=$apiAttempt['evidence_fulfillment_state']??null;
+                $body.="\n".achbotMessageHtml('automatic_gateway_review.api_status',[
+                    'evidence'=>$item['evidence_state']?:achbotMessage('automatic_gateway_review.unknown'),
+                    'fulfillment'=>$item['evidence_fulfillment_state']?:achbotMessage('automatic_gateway_review.unknown')]);
             }
             if ($type==='BUY_SUB') {
                 $body.="\n".achbotMessageHtml('automatic_gateway_review.native_count',[
@@ -285,19 +306,51 @@ if (preg_match('/^attention(?:Inbox(?:_[1-9][0-9]{0,17})?|Case_[1-9][0-9]{0,17})
                 if ($nativeTotal>0)
                     $body.="\n".achbotMessage('automatic_gateway_review.native_errors');
             }
-            $footer="\n\n".achbotMessage('automatic_gateway_review.warning');
+            $footer="\n\n".achbotMessage($apiCase
+                ?'automatic_gateway_review.api_warning'
+                :($manualCase?'automatic_gateway_review.manual_warning'
+                              :'automatic_gateway_review.warning'));
             $attempt=(int)$item['attempt_id'];
-            // A merchant-attested decision still enforces the existing one-shot
-            // payment/reference/native-effect checks on execution.
-            $actions=[];
-            if (achbotGatewayReviewEligible($connection,$attempt,'approve'))
-                $actions[]=['text'=>achbotMessage('automatic_gateway_review.approve'),
-                    'callback_data'=>'gatewayReview_A_'.$attempt];
-            if (achbotGatewayReviewEligible($connection,$attempt,'reject'))
-                $actions[]=['text'=>achbotMessage('automatic_gateway_review.reject'),
-                    'callback_data'=>'gatewayReview_R_'.$attempt];
+            $actions=[];$recover=false;
+            if (!$manualCase) {
+                // Hosted human Approve/Reject keep their original eligibility
+                // and the same one-shot settlement coordinator.
+                if (achbotGatewayReviewEligible($connection,$attempt,'approve'))
+                    $actions[]=['text'=>achbotMessage('automatic_gateway_review.approve'),
+                        'callback_data'=>'gatewayReview_A_'.$attempt];
+                if (achbotGatewayReviewEligible($connection,$attempt,'reject'))
+                    $actions[]=['text'=>achbotMessage('automatic_gateway_review.reject'),
+                        'callback_data'=>'gatewayReview_R_'.$attempt];
+                if ($item['provider']==='nowpayments' && $item['stage']==='review' &&
+                    $item['provider_status']==='amount_mismatch' &&
+                    in_array($item['state'],['pending','send'],true))
+                    $recover=['text'=>achbotMessage('automatic_gateway_review.recover'),
+                        'callback_data'=>'gatewayReview_V_'.$attempt];
+            } elseif ($apiCase) {
+                $item['attempt']=$apiAttempt;
+                $item['evidence_fulfillment_state']=$apiAttempt['evidence_fulfillment_state']??null;
+                $proof=achbotPaymentEvidenceGetProof($connection,$payId);
+                $eligible=achbotApiPaymentCanResume($connection,$item);
+                $terminalDelivery=achbotApiPaymentTerminal($item) &&
+                    ($proof['mode']??null)==='settle';
+                if ($eligible || $terminalDelivery)
+                    $recover=['text'=>achbotMessage('automatic_gateway_review.recover'),
+                        'callback_data'=>'apiEvidenceResume_'.$payId];
+                // An API-unproven receipt remains a human decision, using
+                // the SAME existing Approve/Reject callbacks and reason flow.
+                if ($item['state']==='have_sent' && !$proof) {
+                    $manual=json_decode(achbotApiPaymentReviewKeyboard($item),true);
+                    foreach ($manual['inline_keyboard']??[] as $buttons)
+                        foreach ($buttons as $button)
+                            if (preg_match('/^(?:approve|accept|accCustom|declineAction_)/D',
+                                (string)($button['callback_data']??''))===1)
+                                $actions[]=$button;
+                }
+            }
             if ($actions) $rows[]=$actions;
-            else $footer.="\n".achbotMessage('automatic_gateway_review.manual_hold');
+            if ($recover) $rows[]=[$recover];
+            if (!$actions && !$recover)
+                $footer.="\n".achbotMessage('automatic_gateway_review.manual_hold');
             $rows[]=[['text'=>achbotMessage('automatic_gateway_review.archive'),
                 'callback_data'=>'gatewayReview_H_'.$attempt]];
             $footer.="\n".achbotMessage('automatic_gateway_review.archive_notice');
@@ -308,7 +361,8 @@ if (preg_match('/^attention(?:Inbox(?:_[1-9][0-9]{0,17})?|Case_[1-9][0-9]{0,17})
         answerCallbackQuery($callbackId);
         $send($body,$rows);
     } catch (Throwable $error) {
-        error_log('achbot_automatic_gateway_inbox_unavailable class='.get_class($error));
+        error_log('achbot_automatic_gateway_inbox_unavailable class='.get_class($error).
+            ' code='.(int)$error->getCode());
         answerCallbackQuery($callbackId,achbotMessage('automatic_gateway_review.unavailable'),true);
     }
     return;
@@ -317,7 +371,7 @@ if (preg_match('/^attention(?:Inbox(?:_[1-9][0-9]{0,17})?|Case_[1-9][0-9]{0,17})
 
 // Same original financial effect, with one-shot provider-attempt claim.
 $gatewayAction=[];
-if (preg_match('/^gatewayReview_([ARH])_([1-9][0-9]{0,17})$/D',
+if (preg_match('/^gatewayReview_([ARHV])_([1-9][0-9]{0,17})$/D',
     (string)($data??''),$gatewayAction)===1) {
     if (!achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'payments') ||
         (int)($chat_id??0)!==(int)$from_id) {
@@ -325,6 +379,7 @@ if (preg_match('/^gatewayReview_([ARH])_([1-9][0-9]{0,17})$/D',
         return;
     }
     $archive=$gatewayAction[1]==='H';
+    $recovery=$gatewayAction[1]==='V';
     require_once __DIR__.'/../PaymentLifecycle.php';
     if (!$archive) {
         if (!defined('ACHBOT_NP_RECONCILE_ONLY')) define('ACHBOT_NP_RECONCILE_ONLY',true);
@@ -342,9 +397,29 @@ if (preg_match('/^gatewayReview_([ARH])_([1-9][0-9]{0,17})$/D',
         $result=$archive
             ?['status'=>achbotGatewayReviewArchive(
                 $connection,(int)$from_id,$attempt,(int)$admin)]
-            :achbotGatewayReviewCommit(
-                $connection,(int)$from_id,$attempt,$mode,(int)$admin);
+            :($recovery
+                ?achbotGatewayReviewRecover($connection,(int)$from_id,$attempt,
+                    (int)$admin,(array)($paymentKeys??[]))
+                :achbotGatewayReviewCommit(
+                    $connection,(int)$from_id,$attempt,$mode,(int)$admin));
         $status=(string)($result['status']??'unavailable');
+        if ($archive && $status==='archived') {
+            // The old API receipt remains a stored admin message. Update its
+            // keyboard in place so it no longer offers a stale review action.
+            try {
+                $q=$connection->prepare('SELECT pay_row_id,provider FROM payment_attempts WHERE id=?');
+                $q->bind_param('i',$attempt);$q->execute();
+                $archivedSource=$q->get_result()->fetch_assoc();$q->close();
+                if ($archivedSource && in_array($archivedSource['provider'],
+                    ['bank_transfer','gift_card'],true)) {
+                    $original=achbotApiPaymentRow($connection,(int)$archivedSource['pay_row_id']);
+                    if ($original) achbotApiPaymentNotice($connection,$original,'archived',false);
+                }
+            } catch (Throwable $error) {
+                error_log('achbot_archive_receipt_projection_deferred attempt='.$attempt.
+                    ' class='.get_class($error));
+            }
+        }
         if ($status==='rejected') {
             // Closing the business order does not refund the merchant.
             $pay=$result['pay'];

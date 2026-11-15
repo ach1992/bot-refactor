@@ -49,16 +49,25 @@ function catalogBindingValues(string $source,string $loaderSuffix): array {
 function catalogAssertCurrentBindings(string $root): array {
     if (file_exists($root.'/settings/values.php'))
         throw new RuntimeException('retired_values_facade_retained');
+    // config.php is the catalog-bound application bootstrap. health.php
+    // intentionally stays independent: it is a cheap readiness probe and
+    // must not load the bot configuration or user-visible text catalogs.
     $paths=['config.php','health.php'];
     foreach ($paths as $path) {
         $source=file_get_contents($root.'/'.$path);
-        if (str_contains($source,'settings/values.php')) throw new RuntimeException('retired_values_facade_still_consumed');
+        if (str_contains($source,'settings/values.php'))
+            throw new RuntimeException('retired_values_facade_still_consumed');
+        if ($path==='health.php') {
+            if (preg_match('~(?:\b(?:achbotMessages|achbotMessage|config\.php)\b|messages/loader\.php|\$(?:mainValues|buttonValues)\b)~',$source))
+                throw new RuntimeException('health_catalog_dependency_forbidden');
+            continue;
+        }
         $bindings=catalogBindingValues($source,'/messages/loader.php');
         if ($bindings['main']!==achbotMessages('legacy_messages') ||
             $bindings['buttons']!==achbotMessages('legacy_buttons'))
             throw new RuntimeException('canonical_catalog_binding_payload_mismatch:'.$path);
     }
-    return ['paths'=>$paths,'entries'=>4,'main'=>achbotMessages('legacy_messages'),
+    return ['paths'=>$paths,'entries'=>2,'main'=>achbotMessages('legacy_messages'),
         'buttons'=>achbotMessages('legacy_buttons'),'retired_facade_absent'=>true];
 }
 

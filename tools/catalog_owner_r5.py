@@ -5,6 +5,59 @@ ROOT=pathlib.Path(__file__).resolve().parents[1]
 # RC42 successor: restore only the Owner-approved automatic-renewal
 # notification block for previously immutable catalog history checks.
 # Never rewrite historical SHA pins, and reject any other source-byte drift.
+# The current operator exception inbox adds only these approved candidate
+# Persian admin keys. Its original catalog is projected back to the exact
+# verified Stable source for existing historical copy tests: no broad bypass,
+# no changed historical hash and no permissions to rewrite other strings.
+OPERATOR_INBOX_BASE='18fce523cabde69de3c48e88b4d799cdebf44878'
+OPERATOR_INBOX_KEYS={
+    'automatic_gateway_review.provider_bank_transfer',
+    'automatic_gateway_review.provider_gift_card',
+    'automatic_gateway_review.open_case',
+    'automatic_gateway_review.recover',
+    'automatic_gateway_review.api_status',
+    'automatic_gateway_review.api_warning',
+    'automatic_gateway_review.manual_warning',
+    'automatic_gateway_review.api_quote',
+}
+OPERATOR_INBOX_LINES="""        'provider_bank_transfer' => 'کارت‌به‌کارت',
+        'provider_gift_card' => 'گیفت‌کارت',
+        'open_case' => '🔎 بررسی پرونده',
+        'recover' => '🔄 بررسی و بازیابی عملیات',
+        'api_status' => ['text' => '🧾 وضعیت بررسی API: <code>{evidence}</code> | عملیات سرویس: <code>{fulfillment}</code>', 'parameters' => ['evidence','fulfillment']],
+        'api_warning' => '🔎 وضعیت واقعی رسید، شواهد API و عملیات سرویس را بررسی کنید. ثبت پرداخت یا ساخت سرویس تکراری مجاز نیست.',
+        'manual_warning' => '⚠️ وضعیت عملیات سرویس و سابقهٔ پرداخت دستی را بررسی کنید. عملیات نامطمئن را تکرار نکنید؛ در صورت رسیدگی مستقل مدیر، پرونده را بایگانی کنید.',
+        'api_quote' => ['text' => '💵 مبلغ رسید: {amount} {currency}', 'parameters' => ['amount','currency']],
+"""
+
+@functools.lru_cache(maxsize=1)
+def operator_inbox_catalog_source() -> bytes:
+    path='messages/fa/admin.php'
+    prior=command('git','show',OPERATOR_INBOX_BASE+':'+path)
+    candidate=(ROOT/path).read_bytes()
+    old='    // ── صف سادهٔ پرداخت‌های خودکارِ ناتمام ──\n'.encode()
+    new='    // ── پروندهٔ مشترک مشکلات واقعی پرداخت و عملیات سرویس ──\n'.encode()
+    anchor=b"        'provider_nextpay' => 'NextPay',\n"
+    check(prior.count(old)==1 and prior.count(anchor)==1,
+          'operator_inbox_stable_anchors')
+    expected=prior.replace(old,new,1).replace(
+        anchor,anchor+OPERATOR_INBOX_LINES.encode(),1)
+    check(candidate==expected,'operator_inbox_exact_additive_admin_catalog_delta')
+    parser='$s=stream_get_contents(STDIN);$p=strpos($s,"return [");if($p===false)throw new RuntimeException("array_missing");echo json_encode(eval(substr($s,$p)),JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);'
+    old_entries=flatten(json.loads(command('php','-r',parser,input=prior)))
+    new_entries=flatten(json.loads(command('php','-r',parser,input=candidate)))
+    check(set(new_entries)-set(old_entries)==OPERATOR_INBOX_KEYS and
+          set(old_entries)-set(new_entries)==set() and
+          all(new_entries[k]==v for k,v in old_entries.items()),
+          'operator_inbox_only_expected_additive_catalog_keys')
+    for key in OPERATOR_INBOX_KEYS:
+        entry=new_entries[key];body=text(entry);slots=params(entry)
+        check(isinstance(body,str) and body.strip() and
+              len(slots)==len(set(slots)) and
+              set(re.findall(r'\{([A-Za-z_][A-Za-z0-9_]*)\}',body))==set(slots),
+              'operator_inbox_invalid_template:'+key)
+    return prior
+
 RENEWAL_NOTICE_BASE='91298de959ea7d02c7ed093a79832482915f81c1'
 RENEWAL_NOTICE_ADDED={
     'user':{'renewal.automatic_renewal.unlimited_volume',
@@ -29,7 +82,8 @@ def renewal_notices_source():
     for audience in ('user','admin'):
         path='messages/fa/'+audience+'.php'
         before=command('git','show',RENEWAL_NOTICE_BASE+':'+path)
-        current=(ROOT/path).read_bytes()
+        current=(operator_inbox_catalog_source() if audience=='admin'
+                 else (ROOT/path).read_bytes())
         end=b'        // extensions.alert\n' if audience=='user' else b'        // automatic_renewal.auto_renew_alert_review\n'
         old=b'        // automatic_renewal.handle_auto_renew_callback\n' if audience=='user' else None
         new=(b'        // automatic_renewal \xe2\x80\x94 post-commit customer notices\n'
@@ -978,7 +1032,32 @@ def service_change_catalog_layer():
         before[audience]=old;after[audience]=new;original[audience]=raw.decode()
     return original,before,after
 
+def operator_inbox_catalog_restore(sides):
+    # Byte-exact 2026-11-15 successor to the completed old review catalog.
+    # Previously reviewed manifests remain immutable: only the fully
+    # enumerated eight new admin keys may be projected out of a COPY.
+    check(type(sides) is dict and set(sides)=={'user','admin'},
+          'operator_inbox_audiences')
+    present=OPERATOR_INBOX_KEYS & set(sides['admin'])
+    check(not (OPERATOR_INBOX_KEYS & set(sides['user'])),
+          'operator_inbox_wrong_audience')
+    if not present:
+        return copy.deepcopy(sides)  # Already independently projected.
+    check(present==OPERATOR_INBOX_KEYS,
+          'operator_inbox_partial_addition')
+    operator_inbox_catalog_source()  # Verify the entire current file, not just selected keys.
+    parser='$s=stream_get_contents(STDIN);$p=strpos($s,"return [");if($p===false)throw new RuntimeException("array_missing");echo json_encode(eval(substr($s,$p)),JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);'
+    actual=flatten(json.loads(command('php','-r',parser,
+        input=(ROOT/'messages/fa/admin.php').read_bytes())))
+    restored=copy.deepcopy(sides)
+    for key in OPERATOR_INBOX_KEYS:
+        check(restored['admin'].get(key)==actual[key],
+              'operator_inbox_unapproved_current_copy:'+key)
+        del restored['admin'][key]
+    return restored
+
 def service_change_copy_restore(sides):
+    sides=operator_inbox_catalog_restore(sides)
     # Current consumers may arrive before #147's separate restoration.
     # Strip only the source-pinned additive topic when present.
     if any(key.startswith('bulk_reporting.') for key in sides.get('admin',{})):
@@ -1235,6 +1314,7 @@ def current_cleanup_restore(sides):
         '50318bc3163bfa7496b3bc6dce8b1e789417334e'))
 
 def verify_and_restore(sides,definition=None,from_verified_current=False):
+    sides=operator_inbox_catalog_restore(sides)
     # Historical composition tests operate on a previously validated
     # projection of the exact new copy. Ordinary current-catalog callers
     # must still provide all nine source-pinned keys.

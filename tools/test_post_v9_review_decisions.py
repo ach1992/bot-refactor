@@ -55,6 +55,7 @@ function doAction($payId,$provider) {
 require_once $root.'/src/Finance/GatewayReview.php';
 require_once $root.'/src/Finance/ServiceEffects.php';
 require_once $root.'/src/Finance/DeliveryLedger.php';
+require_once $root.'/src/Finance/FollowupOutbox.php';
 $GLOBALS['telegramWebhookSecret']='AChBotTestSecretFixtureOnly_123';
 $GLOBALS['qr_sends']=0;
 function sendQrFromLink(...$args) {$GLOBALS['qr_sends']++;return true;}
@@ -230,6 +231,83 @@ check(state($db,311)['pay_state']==='processing' &&
  state($db,311)['provider_status']==='fulfillment_failed',
  'archived_processing_hold_still_requires_native_forensics_elsewhere');
 
+// Current 014 API manual evidence cases share the SAME original operator
+// inbox/Archive, but ordinary unproven drafts never join the queue.
+$bank=seed($db,1301,'bank_transfer','review','unavailable');
+$db->query("UPDATE pays SET state='have_sent',message_id=1001,chat_id=9001 WHERE id=1301");
+$db->query("UPDATE payment_attempts SET evidence_profile='synthetic-nonsecret',
+ evidence_state='review',evidence_review_sent_at=NOW() WHERE id=$bank");
+check(achbotGatewayAttentionCaseOpen($db,1301),
+ 'real_api_manual_review_enters_same_attention_scope');
+check(achbotGatewayReviewEligible($db,$bank,'approve')===null &&
+ achbotGatewayReviewEligible($db,$bank,'reject')===null,
+ 'api_manual_actions_do_not_inherit_hosted_financial_attestation');
+check(achbotGatewayReviewArchive($db,9001,$bank,9001)==='archived' &&
+ !achbotGatewayAttentionCaseOpen($db,1301) &&
+ state($db,1301)['pay_state']==='have_sent',
+ 'archive_stops_original_api_receipt_without_declining_or_crediting');
+check(achbotGatewayReviewArchive($db,9001,$bank,9001)==='stale',
+ 'archived_api_receipt_old_action_stale');
+$gift=seed($db,1302,'gift_card','review','native_unknown');
+$db->query("UPDATE pays SET state='processing',approved_by=0 WHERE id=1302");
+$db->query("UPDATE payment_attempts SET evidence_profile='synthetic-nonsecret',
+ evidence_state='proven',evidence_fulfillment_state='dispatched'
+ WHERE id=$gift");
+check(achbotGatewayAttentionCaseOpen($db,1302),
+ 'processing_api_native_unknown_is_reviewable');
+check(achbotGatewayReviewArchive($db,9001,$gift,9001)==='archived',
+ 'api_native_unknown_can_be_explicitly_archived_without_replay');
+$db->begin_transaction();
+try {
+ $q=$db->prepare('SELECT id FROM pays WHERE id=1302 FOR UPDATE');
+ $q->execute();$q->close();
+ $blocked=false;
+ try {achbotEffectAssertNotArchivedLocked($db,1302,true);}
+ catch(RuntimeException $error) {$blocked=$error->getMessage()==='effect_original_archived';}
+ $db->rollback();
+} catch(Throwable $error) {$db->rollback();throw $error;}
+check($blocked,'archived_api_original_blocks_future_native_admission');
+$manual=seed($db,1305,'manual_trx','review','manual_receipt');
+$db->query("UPDATE pays SET type='BUY_SUB',state='processing',approved_by=9001
+ WHERE id=1305");
+reserveEffect($db,1305,1,'pending_manual_native');
+check(achbotGatewayAttentionCaseOpen($db,1305),
+ 'human_manual_crypto_receipt_with_started_native_effect_enters_shared_inbox');
+check(achbotGatewayReviewArchive($db,9001,$manual,9001)==='archived' &&
+ !achbotGatewayAttentionCaseOpen($db,1305) &&
+ state($db,1305)['pay_state']==='processing',
+ 'manual_crypto_started_service_may_be_stopped_without_synthetic_refund');
+$unproved=seed($db,1303,'bank_transfer','review','monitoring');
+$db->query("UPDATE pays SET state='have_sent' WHERE id=1303");
+$db->query("UPDATE payment_attempts SET evidence_profile='synthetic-nonsecret',
+ evidence_state='monitoring' WHERE id=$unproved");
+check(!achbotGatewayAttentionCaseOpen($db,1303),
+ 'unproven_api_pending_does_not_flood_operator_inbox');
+$completed=seed($db,1304,'bank_transfer','done','done');
+$db->query("UPDATE pays SET state='paid' WHERE id=1304");
+$db->query("UPDATE payment_attempts SET evidence_profile='synthetic-nonsecret',
+ evidence_state='proven',evidence_fulfillment_state='done' WHERE id=$completed");
+check(!achbotGatewayAttentionCaseOpen($db,1304),
+ 'completed_api_payment_without_pending_action_exits_inbox');
+$apiCase=seed($db,1306,'bank_transfer','review','manual');
+$db->query("UPDATE pays SET state='have_sent',chat_id=9001,message_id=55 WHERE id=1306");
+$db->query("UPDATE payment_attempts SET evidence_profile='synthetic-nonsecret',
+ evidence_state='review',evidence_review_sent_at=NOW() WHERE id=$apiCase");
+check(achbotGatewayAttentionCaseOpen($db,1306),
+ 'api_pending_staff_receipt_visible_before_archive');
+$manualCase=seed($db,1307,'manual_usdt','review','native_unknown');
+$db->query("UPDATE pays SET type='BUY_SUB',state='processing',approved_by=9001
+ WHERE id=1307");
+$manualEffect=reserveEffect($db,1307,1,'manual_dispatch_review');
+check(achbotGatewayAttentionCaseOpen($db,1307),
+ 'manual_pending_native_case_visible_before_archive');
+$manualView=seed($db,1308,'manual_trx','review','native_unknown');
+$db->query("UPDATE pays SET type='BUY_SUB',state='processing',approved_by=9001
+ WHERE id=1308");
+reserveEffect($db,1308,1,'manual_dispatch_view');
+check(achbotGatewayAttentionCaseOpen($db,1308),
+ 'manual_source_case_view_not_rejected_as_ordinary_unpaid');
+
 // Immutable historical fingerprints and 018 digest constants are frozen from
 // main/RC26, not calculated from the code under test.
 $oldPay=[
@@ -342,6 +420,15 @@ check($replacementDelivered==='acknowledged' &&
  $db->query("SELECT state FROM payment_delivery_intents WHERE pay_row_id=320")
  ->fetch_row()[0]==='acknowledged' && $GLOBALS['qr_sends']===3,
  'historical_replacement_018_read_only_delivery');
+// A genuinely paid hosted order still owes its original customer Telegram
+// delivery while a sealed PENDING packet exists. It must not vanish from the
+// shared attention inbox before that delivery is verified or explicitly stopped.
+$undelivered=historicalHostedPacket($db,828,'nextpay');
+check(achbotGatewayAttentionCaseOpen($db,828),
+ 'terminal_hosted_original_with_pending_customer_packet_remains_actionable');
+check(achbotGatewayReviewArchive($db,9001,$undelivered['attempt'],9001)==='archived' &&
+ !achbotGatewayAttentionCaseOpen($db,828),
+ 'operator_may_stop_unresolved_hosted_delivery_without_replaying_native');
 // Archive must also stop a queued historical packet whose original payment
 // has subsequently been archived, without destroying the packet itself.
 $pending=historicalHostedPacket($db,321,'nextpay');
@@ -506,6 +593,40 @@ check(count($GLOBALS['events'])===2,'only_approved_and_failed_original_effects_i
 check((int)$db->query("SELECT COUNT(*) FROM information_schema.TABLES
  WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='payment_review_decisions'")
  ->fetch_row()[0]===0,'no_dedicated_review_table_created');
+
+// Pending genuine original packets exercise the exact Telegram-dispatch
+// boundaries with a separate worker and an operator Archive connection.
+$dispatchDelivery=historicalHostedPacket($db,829,'nextpay');
+$crashDelivery=historicalHostedPacket($db,830,'nextpay');
+check(achbotGatewayAttentionCaseOpen($db,829) &&
+ achbotGatewayAttentionCaseOpen($db,830),
+ 'telegram_delivery_race_cases_pending_in_original_inbox');
+
+function pendingFollowupEdit($db,int $payId): array {
+ $attempt=seed($db,$payId,'bank_transfer','done','done');
+ $db->query("UPDATE pays SET state='approved',type='RENEW_ACCOUNT',approved_by=9001
+     WHERE id=$payId");
+ $pay=$db->query("SELECT * FROM pays WHERE id=$payId")->fetch_assoc();
+ $db->begin_transaction();
+ try {
+  achbotFollowupInsertLocked($db,$pay,'approved_edit','customer','send','1001',null,
+   ['text'=>'Fixture isolated original followup','keys'=>null,'mode'=>'HTML']);
+  $db->commit();
+ } catch(Throwable $error) {$db->rollback();throw $error;}
+ $q=$db->prepare('SELECT id FROM payment_followup_intents WHERE pay_row_id=?');
+ $q->bind_param('i',$payId);$q->execute();
+ $followup=(int)$q->get_result()->fetch_assoc()['id'];$q->close();
+ return ['attempt'=>$attempt,'id'=>$followup,'pay'=>$payId];
+}
+$dispatchFollowup=pendingFollowupEdit($db,831);
+$crashFollowup=pendingFollowupEdit($db,832);
+$borrowFollowup=pendingFollowupEdit($db,833);
+$unrelatedFollowup=pendingFollowupEdit($db,834);
+check(achbotGatewayAttentionCaseOpen($db,831) &&
+ achbotGatewayAttentionCaseOpen($db,832) &&
+ achbotGatewayAttentionCaseOpen($db,833),
+ 'telegram_followup_race_cases_pending_in_original_inbox');
+
 echo json_encode([
  'complete'=>true,'checks'=>$GLOBALS['checks'],'owned_mariadb'=>true,
  'real_review_decision_source'=>true,'test_effect_is_synthetic'=>true,
@@ -513,7 +634,15 @@ echo json_encode([
  'financial_double_credit'=>false,'existing_attempt_only'=>true,
  'race_effect_id'=>$raceEffect,'race_attempt_id'=>$raceAttempt,
  'live_effect_id'=>$liveEffect,'live_attempt_id'=>$live,
- 'long_case_id'=>826,'pending_case_id'=>827],
+ 'long_case_id'=>826,'pending_case_id'=>827,
+ 'manual_effect_id'=>$manualEffect,'manual_attempt_id'=>$manualCase,
+ 'delivery_dispatch'=>$dispatchDelivery['attempt'],
+ 'delivery_crash'=>$crashDelivery['attempt'],
+ 'followup_dispatch'=>$dispatchFollowup,
+ 'followup_crash'=>$crashFollowup,
+ 'followup_borrow'=>$borrowFollowup,
+ 'followup_unrelated'=>$unrelatedFollowup,
+ ],
  JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE);
 '''
 PHP_CASE = r"""<?php
@@ -536,7 +665,25 @@ function sendMessage($text,$markup,$parse,$chat) {
  return (object)['ok'=>true];
 }
 function answerCallbackQuery(...$args) {return true;}
+function bot(...$args) {
+ $GLOBALS['api_bot_calls']=($GLOBALS['api_bot_calls']??0)+1;
+ return (object)['ok'=>true];
+}
 $GLOBALS['case_mode']=$mode;
+if ($mode==='archivedSync') {
+    // Synthetic original already archived under 022. Even a stale
+    // pre-Archive attempt snapshot must not trigger customer Telegram.
+    require_once $root.'/src/Finance/ApiPayments.php';
+    $pay=$db->query('SELECT * FROM pays WHERE id='.$payId)->fetch_assoc();
+    $attempt=$db->query('SELECT * FROM payment_attempts WHERE pay_row_id='.$payId)->fetch_assoc();
+    $attempt['review_archived_at']=null;
+    $GLOBALS['api_bot_calls']=0;
+    $success=achbotApiPaymentSyncInvoice($db,['pay'=>$pay,'attempt'=>$attempt]);
+    echo json_encode(['complete'=>!$success,'customer_calls'=>$GLOBALS['api_bot_calls'],
+        'archival_filter_required'=>achbotApiPaymentArchivePredicate($db)===
+            ' AND a.review_archived_at IS NULL'],JSON_THROW_ON_ERROR);
+    exit;
+}
 require $root.'/src/Finance/Routes/AutomaticGatewayReview.php';
 $edits=$GLOBALS['case_edits'];$sent=$GLOBALS['case_sent'];
 $final=$mode==='fallback' ? ($sent[0]??null):($edits[0]??null);
@@ -593,6 +740,45 @@ $db->set_charset('utf8mb4');
 function achbotPayUxHostedAttentionSeconds(){return 3600;}
 require_once $root.'/src/Finance/GatewayReview.php';
 require_once $root.'/src/Finance/ServiceEffects.php';
+$GLOBALS['telegramWebhookSecret']='AChBotTestSecretFixtureOnly_123';
+$GLOBALS['dispatch_count']=0;
+$GLOBALS['fixture_pay_id']=0;
+$GLOBALS['fixture_mode']=$mode;
+function syntheticOutboundTelegram(): void {
+ global $db,$mode,$ready,$release;
+ $payId=(int)$GLOBALS['fixture_pay_id'];
+ $name=achbotHostedWorkerLockName($db,$payId);
+ $q=$db->prepare('SELECT IS_USED_LOCK(?) AS holder,CONNECTION_ID() AS self');
+ $q->bind_param('s',$name);$q->execute();
+ $state=$q->get_result()->fetch_assoc();$q->close();
+ if (!$state || $state['holder']===null ||
+     (int)$state['holder']!==(int)$state['self'] ||
+     (int)$db->query('SELECT @@in_transaction')->fetch_row()[0]!==0)
+     throw new RuntimeException('telegram_dispatch_without_original_lease_or_autocommit');
+ $table=$mode==='delivery'?'payment_delivery_intents':'payment_followup_intents';
+ $filter=$mode==='delivery'?"pay_row_id=$payId AND ordinal=1":
+     "id=".(int)$GLOBALS['fixture_followup_id'];
+ $stage=(string)$db->query("SELECT state FROM $table WHERE $filter")->fetch_row()[0];
+ if ($stage!=='dispatching')
+     throw new RuntimeException('telegram_dispatch_not_durably_admitted');
+ // No external Telegram call is possible: the paused fixture is the actual
+ // PHP outbound function. This barrier occurs AFTER durable SQL commit.
+ if (in_array($mode,['delivery','followup'],true)) {
+     file_put_contents($ready,'committed_dispatching_and_original_lease');
+     $until=microtime(true)+15;
+     while (!file_exists($release) && microtime(true)<$until) usleep(10000);
+     if (!file_exists($release)) throw new RuntimeException('fixture_outbound_release_missing');
+ }
+ $GLOBALS['dispatch_count']++;
+}
+function sendQrFromLink(...$args) {
+ syntheticOutboundTelegram();
+ return false; // deliberately UNKNOWN; do not infer Telegram ACK
+}
+function sendMessage(...$args) {
+ syntheticOutboundTelegram();
+ return (object)['ok'=>false]; // deliberately UNKNOWN
+}
 if ($mode==='hold') {
  $q=$db->prepare('SELECT pay_row_id FROM service_effects WHERE id=?');
  $q->bind_param('i',$effectId);$q->execute();
@@ -617,10 +803,51 @@ if ($mode==='hold') {
  if (!file_exists($release)) throw new RuntimeException('barrier_release_timeout');
  try {achbotEffectAdmitPaidDispatch($db,$effectId);$result='admitted';}
  catch(Throwable $error) {$result=$error->getMessage();}
+} elseif ($mode==='manual_hold') {
+ require_once $root.'/src/Finance/ReceiptHelpers.php';
+ $q=$db->prepare('SELECT pay_row_id FROM service_effects WHERE id=?');
+ $q->bind_param('i',$effectId);$q->execute();
+ $source=$q->get_result()->fetch_assoc();$q->close();
+ if (!$source || !achbotManualApprovalWorkerLease($db,(int)$source['pay_row_id']))
+  throw new RuntimeException('manual_worker_lease_missing');
+ file_put_contents($ready,'original_manual_approval_worker_live');
+ $limit=microtime(true)+15;
+ while (!file_exists($release) && microtime(true)<$limit) usleep(10000);
+ $result='manual_worker_finished';
+} elseif ($mode==='delivery') {
+ require_once $root.'/src/Finance/DeliveryLedger.php';
+ $GLOBALS['fixture_pay_id']=$effectId;
+ $result=achbotDeliveryDispatch($db,$effectId,1);
+} elseif (in_array($mode,['followup','followup_borrow','followup_unrelated'],true)) {
+ require_once $root.'/src/Finance/FollowupOutbox.php';
+ $GLOBALS['fixture_followup_id']=$effectId;
+ $q=$db->prepare('SELECT pay_row_id FROM payment_followup_intents WHERE id=?');
+ $q->bind_param('i',$effectId);$q->execute();
+ $source=$q->get_result()->fetch_assoc();$q->close();
+ $GLOBALS['fixture_pay_id']=(int)($source['pay_row_id']??0);
+ if ($mode==='followup_borrow') {
+    $name=achbotHostedWorkerLockName($db,$GLOBALS['fixture_pay_id']);
+    $q=$db->prepare('SELECT GET_LOCK(?,0) AS acquired');
+    $q->bind_param('s',$name);$q->execute();
+    $held=(int)$q->get_result()->fetch_assoc()['acquired'];$q->close();
+    if ($held!==1) throw new RuntimeException('parent_fixture_original_lease_unavailable');
+ }
+ $result=achbotFollowupDispatchOne($db,$effectId);
+ if ($mode==='followup_borrow') {
+    $q=$db->prepare('SELECT IS_USED_LOCK(?) AS holder,CONNECTION_ID() AS self');
+    $q->bind_param('s',$name);$q->execute();
+    $check=$q->get_result()->fetch_assoc();$q->close();
+    $GLOBALS['lease_retained']=$check && $check['holder']!==null &&
+        (int)$check['holder']===(int)$check['self'];
+    $q=$db->prepare('SELECT RELEASE_LOCK(?) AS released');
+    $q->bind_param('s',$name);$q->execute();$q->close();
+ }
 } elseif ($mode==='archive') {
  $result=achbotGatewayReviewArchive($db,9001,$attemptId,9001);
 } else throw new RuntimeException('invalid_race_role');
-echo json_encode(['result'=>$result],JSON_THROW_ON_ERROR);
+echo json_encode(['result'=>$result,
+    'mock_telegram_calls'=>$GLOBALS['dispatch_count'],
+    'parent_lease_retained'=>$GLOBALS['lease_retained']??null],JSON_THROW_ON_ERROR);
 """
 
 def main():
@@ -631,7 +858,9 @@ def main():
     with fx.owned_database() as (d,env):
         client=["mariadb","--no-defaults","--protocol=SOCKET",
                 "--socket="+str(d/"mysql.sock"),"-uroot",DB]
-        for filename in ["003_payment_attempts.sql","007_service_effects.sql", "018_payment_delivery_intents.sql", "022_gateway_review_archive.sql"]:
+        for filename in ["003_payment_attempts.sql","007_service_effects.sql",
+                         "014_api_payment_evidence.sql","018_payment_delivery_intents.sql",
+                         "020_payment_followup_intents.sql","022_gateway_review_archive.sql"]:
             sql=(ROOT/"migrations/post-v9"/filename).read_bytes()
             result=subprocess.run(client,input=sql,env=env,capture_output=True,timeout=15)
             if result.returncode:raise RuntimeError(result.stderr.decode(errors='replace')[-1400:])
@@ -744,6 +973,165 @@ def main():
                 liveWorker.terminate()
                 try:liveWorker.wait(timeout=3)
                 except subprocess.TimeoutExpired:liveWorker.kill();liveWorker.wait(timeout=3)
+        # An operator cannot Archive a manual CREATE/PUT while its genuine
+        # approval webhook is alive. When that session ends, stale dispatched
+        # evidence may be explicitly Archived without claiming it failed.
+        manualReady=d/'manual-live-ready';manualRelease=d/'manual-live-release'
+        manual=["php","-d","allow_url_fopen=0",
+                "-d","disable_functions=curl_init,curl_exec,exec,shell_exec,system,passthru,popen,proc_open,mail",
+                str(race_script),str(ROOT),str(d/'mysql.sock'),DB,
+                str(output['manual_effect_id']),str(output['manual_attempt_id'])]
+        manualWorker=subprocess.Popen(manual+['manual_hold',str(manualReady),str(manualRelease)],
+            env=env,cwd=ROOT,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
+        try:
+            import time
+            until=time.monotonic()+8
+            while not manualReady.exists() and time.monotonic()<until:
+                if manualWorker.poll() is not None:raise RuntimeError('Manual approval worker exited early')
+                time.sleep(0.02)
+            if not manualReady.exists():raise RuntimeError('Manual approval lease barrier missing')
+            blocked=subprocess.run(manual+['archive',str(manualReady),str(manualRelease)],
+                env=env,cwd=ROOT,capture_output=True,text=True,timeout=10)
+            if blocked.returncode or blocked.stderr or json.loads(blocked.stdout)['result']!='busy':
+                raise RuntimeError('Active original manual Native effect was not held: '+blocked.stderr+blocked.stdout)
+            manualWorker.terminate();manualWorker.communicate(timeout=8)
+            closed=subprocess.run(manual+['archive',str(manualReady),str(manualRelease)],
+                env=env,cwd=ROOT,capture_output=True,text=True,timeout=10)
+            if closed.returncode or closed.stderr or json.loads(closed.stdout)['result']!='archived':
+                raise RuntimeError('Manual original did not permit terminal archive after worker exit: '+closed.stderr+closed.stdout)
+            output['checks'].extend([
+                'live_manual_webhook_session_lease_blocks_archive',
+                'dead_manual_webhook_releases_original_lock_and_archive_is_safe',
+            ])
+        finally:
+            if manualWorker.poll() is None:
+                manualWorker.terminate()
+                try:manualWorker.wait(timeout=3)
+                except subprocess.TimeoutExpired:manualWorker.kill();manualWorker.wait(timeout=3)
+        # Source-real deterministic Telegram race: the mocked outbound
+        # function pauses AFTER the original CAS is committed, before any
+        # HTTP is initiated. The same actual Archive function must see BUSY
+        # for both dispatchers; a crashed PHP DB session must release its lock.
+
+        def sqlvalue(statement):
+            result=subprocess.run(client+['-N','-e',statement],
+                env=env,cwd=ROOT,capture_output=True,text=True,timeout=10)
+            if result.returncode:raise RuntimeError('Owned SQL verification failed: '+result.stderr)
+            return result.stdout.strip()
+
+        def call_race(kind,object_id,attempt_id,ready,release):
+            call=['php','-d','allow_url_fopen=0',
+                  '-d','disable_functions=curl_init,curl_exec,exec,shell_exec,system,passthru,popen,proc_open,mail',
+                  str(race_script),str(ROOT),str(d/'mysql.sock'),DB,
+                  str(object_id),str(attempt_id),kind,str(ready),str(release)]
+            return subprocess.run(call,env=env,cwd=ROOT,
+                capture_output=True,text=True,timeout=12)
+
+        def assert_result(process,expected):
+            if process.returncode or process.stderr:
+                raise RuntimeError('Race source PHP failed: '+process.stderr[-1800:]+process.stdout[-800:])
+            value=json.loads(process.stdout)
+            if value['result']!=expected:
+                raise RuntimeError('Race result '+repr((expected,value)))
+            return value
+
+        scenarios=[
+            ('delivery',829,int(output['delivery_dispatch']),False),
+            ('followup',int(output['followup_dispatch']['id']),
+             int(output['followup_dispatch']['attempt']),False),
+            ('delivery',830,int(output['delivery_crash']),True),
+            ('followup',int(output['followup_crash']['id']),
+             int(output['followup_crash']['attempt']),True),
+        ]
+        for index,(kind,object_id,attempt_id,crash) in enumerate(scenarios):
+            ready=d/f'telegram-{index}-ready';release=d/f'telegram-{index}-release'
+            command=['php','-d','allow_url_fopen=0',
+                '-d','disable_functions=curl_init,curl_exec,exec,shell_exec,system,passthru,popen,proc_open,mail',
+                str(race_script),str(ROOT),str(d/'mysql.sock'),DB,
+                str(object_id),str(attempt_id),kind,str(ready),str(release)]
+            worker=subprocess.Popen(command,env=env,cwd=ROOT,
+                stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
+            table='payment_delivery_intents' if kind=='delivery' else 'payment_followup_intents'
+            filter_sql=('pay_row_id='+str(object_id)+' AND ordinal=1'
+                        if kind=='delivery' else 'id='+str(object_id))
+            try:
+                until=time.monotonic()+9
+                while not ready.exists() and time.monotonic()<until:
+                    if worker.poll() is not None:
+                        out,err=worker.communicate()
+                        raise RuntimeError('Telegram worker ended before outbound barrier: '+err+out)
+                    time.sleep(0.02)
+                if not ready.exists() or ready.read_text()!='committed_dispatching_and_original_lease':
+                    raise RuntimeError('Telegram SQL/lease barrier missing for '+kind)
+                if sqlvalue('SELECT state FROM '+table+' WHERE '+filter_sql)!='dispatching':
+                    raise RuntimeError('Telegram source CAS not committed before barrier')
+                blocked=call_race('archive',object_id,attempt_id,ready,release)
+                assert_result(blocked,'busy')
+                if sqlvalue('SELECT IF(review_archived_at IS NULL,0,1) FROM payment_attempts '
+                            'WHERE id='+str(attempt_id))!='0':
+                    raise RuntimeError('Archive marked active Telegram worker terminal')
+                if index==0:
+                    # Different original payments cannot block each other's
+                    # outgoing first attempt or acquire each other's DB lease.
+                    other=output['followup_unrelated']
+                    independent=call_race('followup_unrelated',int(other['id']),
+                        int(other['attempt']),ready,release)
+                    response=assert_result(independent,'unknown')
+                    if response['mock_telegram_calls']!=1:
+                        raise RuntimeError('Unrelated original lost its own dispatch')
+                    output['checks'].append('independent_payment_delivery_not_serialized_by_other_lease')
+                if crash:
+                    worker.terminate()
+                    worker.communicate(timeout=7)
+                    if sqlvalue('SELECT state FROM '+table+' WHERE '+filter_sql)!='dispatching':
+                        raise RuntimeError('Crash falsely acknowledged original Telegram packet')
+                else:
+                    release.write_text('go')
+                    out,err=worker.communicate(timeout=9)
+                    if worker.returncode or err:
+                        raise RuntimeError('Telegram dispatcher did not exit cleanly: '+err+out)
+                    final=json.loads(out)
+                    if final['result']!='unknown' or final['mock_telegram_calls']!=1:
+                        raise RuntimeError('Telegram first attempt not exactly once: '+out)
+                    if sqlvalue('SELECT state FROM '+table+' WHERE '+filter_sql)!='unknown':
+                        raise RuntimeError('UNKNOWN Telegram acknowledgement not retained')
+                terminal=call_race('archive',object_id,attempt_id,ready,release)
+                assert_result(terminal,'archived')
+                if sqlvalue('SELECT review_archived_by FROM payment_attempts '
+                            'WHERE id='+str(attempt_id))!='9001':
+                    raise RuntimeError('Archive actor not preserved on original')
+                # Archived original can never start a second request, even
+                # when a crashed worker left a durable dispatching claim.
+                release.write_text('go')
+                replay=call_race(kind,object_id,attempt_id,ready,release)
+                if replay.returncode:
+                    raise RuntimeError('Archived Telegram retry failed: '+replay.stderr)
+                repeated=json.loads(replay.stdout)
+                if repeated['mock_telegram_calls']!=0:
+                    raise RuntimeError('Post-Archive original attempted Telegram replay')
+                expected_state='dispatching' if crash else 'unknown'
+                if sqlvalue('SELECT state FROM '+table+' WHERE '+filter_sql)!=expected_state:
+                    raise RuntimeError('Archived Telegram original journal was rewritten')
+                suffix='crashed' if crash else 'active'
+                output['checks'].append(kind+'_telegram_'+suffix+
+                    '_lease_blocks_archive_and_no_post_archive_send')
+            finally:
+                if worker.poll() is None:
+                    worker.terminate()
+                    try:worker.wait(timeout=3)
+                    except subprocess.TimeoutExpired:worker.kill();worker.wait(timeout=3)
+
+        # A child worker must borrow, not RELEASE, a payment lease already
+        # held by the hosting API/manual operation on that same SQL session.
+        borrowed=output['followup_borrow']
+        ready=d/'telegram-borrow-ready';release=d/'telegram-borrow-release'
+        nested=call_race('followup_borrow',int(borrowed['id']),
+            int(borrowed['attempt']),ready,release)
+        borrow_result=assert_result(nested,'unknown')
+        if borrow_result['mock_telegram_calls']!=1 or not borrow_result['parent_lease_retained']:
+            raise RuntimeError('Nested Telegram worker released its parent lease')
+        output['checks'].append('nested_original_telegram_dispatch_retains_parent_session_lease')
+
         # Execute the ACTUAL Telegram case route, with the real original
         # 003/007 rows and a near-maximal persisted description. Use the same
         # full HTML body and buttons for edit success and send fallback.
@@ -751,7 +1139,8 @@ def main():
         case_script.write_text(PHP_CASE)
         for pay_id,mode in [(output["long_case_id"],"edit"),
                             (output["long_case_id"],"fallback"),
-                            (output["pending_case_id"],"edit")]:
+                            (output["pending_case_id"],"edit"),
+                            (1306,"edit"),(1308,"edit")]:
             result=subprocess.run(["php","-d","allow_url_fopen=0",
                 "-d","disable_functions=curl_init,curl_exec,exec,shell_exec,system,passthru,popen,proc_open,mail",
                 str(case_script),str(ROOT),str(d/"mysql.sock"),DB,str(pay_id),mode],
@@ -760,9 +1149,10 @@ def main():
                 raise RuntimeError("Actual Telegram case route failed: "+
                     result.stderr[-2400:]+result.stdout[-1200:])
             case=json.loads(result.stdout)
+            long_case=pay_id in (output["long_case_id"],output["pending_case_id"])
             if not (case["complete"] and case["valid_utf8"] and
-                    case["balanced_html"] and case["truncated"] and
-                    case["description_too_long_unmodified_in_storage"] and
+                    case["balanced_html"] and
+                    (not long_case or (case["truncated"] and case["description_too_long_unmodified_in_storage"])) and
                     0<case["units"]<=4096 and case["parse"]=="HTML" and
                     "attentionInbox" in case["callbacks"]):
                 raise RuntimeError("Bounded case failed: "+str(case)[:1000])
@@ -772,20 +1162,41 @@ def main():
                             "🎫 شناسه عددی: 1001", "مبلغ سفارش", "شناسه صورتحساب",
                             "آخرین وضعیت","عملیات سرویس", "اثر", "ردیف 5"])):
                     raise RuntimeError("Case lost original/Native evidence: "+str(case)[:1000])
-            else:
-                if not (all(any(key.startswith(prefix) for key in case["callbacks"])
-                            for prefix in ("gatewayReview_A_","gatewayReview_R_","gatewayReview_H_"))):
+            elif pay_id==output["pending_case_id"]:
+                if not all(any(key.startswith(prefix) for key in case["callbacks"])
+                           for prefix in ("gatewayReview_A_","gatewayReview_R_","gatewayReview_H_")):
                     raise RuntimeError("Original approve/reject/archive buttons missing")
+            elif pay_id==1306:
+                if not (any(key.startswith('approvePayment') for key in case["callbacks"]) and
+                        any(key.startswith('declineAction_') for key in case["callbacks"]) and
+                        any(key.startswith('gatewayReview_H_') for key in case["callbacks"]) and
+                        not any(key.startswith('gatewayReview_A_') for key in case["callbacks"])):
+                    raise RuntimeError("API manual receipt lost original human actions: "+repr(case["callbacks"]))
+            else:
+                if not (any(key.startswith('gatewayReview_H_') for key in case["callbacks"]) and
+                        not any(key.startswith('gatewayReview_A_') for key in case["callbacks"])):
+                    raise RuntimeError("Manual in-flight case invented hosted approval action")
             if mode=="fallback":
                 if case["edit_count"]!=1 or case["send_count"]!=1:
                     raise RuntimeError("Edit failure did not send one bounded fallback")
             elif case["edit_count"]!=1 or case["send_count"]!=0:
                 raise RuntimeError("Edit successful but fallback was incorrectly used")
+        sync=subprocess.run(["php","-d","allow_url_fopen=0",
+            "-d","disable_functions=curl_init,curl_exec,exec,shell_exec,system,passthru,popen,proc_open,mail",
+            str(case_script),str(ROOT),str(d/"mysql.sock"),DB,'1301','archivedSync'],
+            env=env,cwd=ROOT,capture_output=True,text=True,timeout=25)
+        if sync.returncode or sync.stderr or json.loads(sync.stdout)!={'complete':True,'customer_calls':0,'archival_filter_required':True}:
+            raise RuntimeError('Archived API original attempted customer invoice mutation: '+
+                sync.stderr+sync.stdout)
+        output['checks'].extend(['archived_api_original_never_sends_stale_customer_invoice_edit',
+                                 'api_maintainer_022_archive_filter_required'])
         output["checks"].extend([
             "maximal_original_description_kept_in_database_html_case_bounded",
             "five_native_lines_and_original_payment_evidence_kept",
             "real_telegram_edit_and_fallback_both_deliver_legal_html_text",
             "approve_reject_archive_back_buttons_survive_original_case_budget",
+            "api_receipt_keeps_original_human_approve_decline_plus_independent_archive",
+            "manual_inflight_case_shows_archive_not_hosted_attestation",
         ])
         if not output.get("complete") or len(output["checks"])<16:
             raise RuntimeError("Incomplete original-attempt review checks")
