@@ -13,6 +13,22 @@
 > remain valid only for the exact immutable RC26 release; never mix SQL
 > sidecars across versions.
 
+## Current active operator redelivery (new source candidate; not yet released)
+
+The older RC26 **Owner workbench** described below was retired by RC27 and
+must not be restored. The **current** minimal successor attaches directly to
+the existing `💳 پرداخت‌های نیازمند بررسی` case. It permits an explicitly
+confirmed, original-packet-only **single human redelivery** of a terminal
+`UNKNOWN` 018 message. It uses the current `payments` capability for
+Owner/Manager/Operator/Support, private-chat checks, locked revalidation of
+the original AEAD/pins, the original payment session lock and append-only
+attempt rows with the real staff actor. This is **not** an automatic resend,
+a new billing or account operation, or proof that the customer read Telegram.
+See [the active operator contract](AUTOMATIC-GATEWAY-REVIEW.md) for the
+current decisions, labels and safety fence. No new SQL schema or
+migrations are introduced. **The later historical RC26 paragraphs in this
+file are not current runbooks.**
+
 ## Scope and invariants
 
 This is an additive **source** change, NOT an installed Chili migration and NOT a claim that full Issue #117 is accepted. Payment/native settlement remains governed by the existing financial and service-effect pins.
@@ -36,7 +52,7 @@ The attempt table retains each dispatch token, actor, start/result and end. Ackn
 
 A fresh terminal API callback can resume only pending packets, never money, capacity or remote operations. Independent per-ordinal history handles partial bulk delivery. No new account-count ceiling was introduced.
 
-## Owner workbench
+## Historical RC26 Owner workbench (retired; never execute)
 
 From Payments requiring review, open the payment case and choose Customer delivery. This button appears only if an 018 delivery record exists and only to the current Owner. Each ordinal can be Checked without external provider requests. A Check also marks a dispatching lease older than 10 minutes unknown and records its attempt result; it does not infer actual receipt.
 

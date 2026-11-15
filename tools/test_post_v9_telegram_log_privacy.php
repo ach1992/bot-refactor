@@ -50,7 +50,9 @@ $runtime=sys_get_temp_dir().'/achbot-telegram-log-'.bin2hex(random_bytes(8));
 if (!mkdir($runtime,0700)) {
     throw new RuntimeException('Could not create owned test directory');
 }
-$log=$runtime.'/error_log.txt';
+$log=$runtime.'/php-telemetry.log';
+$oldErrorLog=ini_get('error_log');
+ini_set('error_log',$log);
 $payload=[
     'chat_id'=>'PRIVATE-USER-ID-SENTINEL',
     'text'=>'PRIVATE-CUSTOMER-ERROR-AND-SQLSTATE-SENTINEL',
@@ -94,9 +96,23 @@ try {
                 throw new RuntimeException('Missing diagnostic log for '.$mode);
             }
             $content=file_get_contents($log);
-            if (!str_contains($content,'Method: send')) {
-                throw new RuntimeException('Missing safe transport operation detail');
+            if (!str_contains($content,'"event":"achbot.telegram.transport"') ||
+                !str_contains($content,'"method":"send') ||
+                !str_contains($content,'"duration_ms":') ||
+                !str_contains($content,'"request_id":') ||
+                !str_contains($content,'"curl_errno":') ||
+                !str_contains($content,'"http_status":') ||
+                !str_contains($content,'"reason":')) {
+                throw new RuntimeException('Missing structured transport identity and diagnostics: '.$mode);
             }
+            $json=substr($content,strpos($content,'{'));
+            $item=json_decode($json,true,512,JSON_THROW_ON_ERROR);
+            if ($mode==='rate_429' && ($item['retry_after']??null)!==7)
+                throw new RuntimeException('Missing Telegram retry_after');
+            if ($mode==='request_curl_error' && ($item['curl_errno']??null)!==28)
+                throw new RuntimeException('Missing numeric cURL reason');
+            if (isset($item['pay_id']) || isset($item['delivery_actor']))
+                throw new RuntimeException('Unrelated Telegram call inherited delivery context');
             foreach ([
                 'PRIVATE-BOT-TOKEN-SENTINEL',
                 'PRIVATE-USER-ID-SENTINEL',
@@ -116,6 +132,7 @@ try {
         $passed++;
     }
 } finally {
+    ini_set('error_log',(string)$oldErrorLog);
     if (is_file($log)) unlink($log);
     rmdir($runtime);
 }

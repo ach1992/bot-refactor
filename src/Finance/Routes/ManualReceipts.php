@@ -14,6 +14,7 @@ if (!achbotAdminRequestAllowed(is_string($data??null)?$data:null,is_string($text
 $adminCallback=(string)($data??'');
 if (str_starts_with($adminCallback,'attentionInbox') ||
     str_starts_with($adminCallback,'attentionCase_') ||
+    str_starts_with($adminCallback,'attentionDelivery') ||
     str_starts_with($adminCallback,'gatewayReview_')) {
     require __DIR__.'/AutomaticGatewayReview.php';
     return;

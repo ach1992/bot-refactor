@@ -151,6 +151,17 @@ elseif($op==='inbox_case'){
  require $root.'/src/Finance/Routes/ManualReceipts.php';
  $value='routed';
 }
+elseif($op==='redrive_route'){
+ $from_id=(int)($spec['actor']??9001);
+ $chat_id=(int)($spec['chat']??$from_id);
+ $callbackId='fixture-delivery-decision';$message_id=456;
+ $action=(string)($spec['action']??'Confirm');
+ $ordinal=(int)($spec['ordinal']??1);
+ $data='attentionDelivery'.$action.'_'.$id.'_'.$ordinal;
+ $userInfo=['step'=>'none'];$text=null;
+ require $root.'/src/Finance/Routes/ManualReceipts.php';
+ $value='routed';
+}
 elseif($op==='profile_shift'){$a=achbotApiPaymentAttempt($connection,$id);$p=achbotPaymentEvidenceSnapshot($a);$p['issued_at']=time()-(int)($spec['age']??90000);unset($p['profile_sha256']);$sealed=achbotPaymentEvidenceProtect('profile:'.$a['id'].':'.$id,$p);$q=$connection->prepare('UPDATE payment_attempts SET evidence_profile=? WHERE id=?');$q->bind_param('si',$sealed,$a['id']);$q->execute();$q->close();$value=true;}
 elseif($op==='photo_race'){$v=achbotManualBeginEvidence($connection,$pay,'bank_transfer',1001,'race-photo');$value=$v?sendReceiptToAdminsAndUpdatePay($connection,'race-photo','رسید تست',achbotApiPaymentReviewKeyboard($pay),9001,$pay['hash_id'],$v):false;if($value)achbotManualAcknowledgeAndVerify($connection,$pay,'bank_transfer','Start','FixtureBot');}
 else throw new RuntimeException('unknown fixture op');
@@ -538,6 +549,46 @@ return !empty($GLOBALS['spec']['fail_staff'])?null:(object)['ok'=>true];}""")
         assert not any(e['event'] in ['DELIVER','POST','MESSAGE'] for e in callback['events']),callback
         assert int(query(work,env,f'SELECT attempt_count FROM payment_delivery_intents WHERE pay_row_id={n}'))==beforeDeliveries
         cases.append('actual_api_resume_telegram_unknown_native_create_not_replayed_or_misreported')
+        # Real source-routed admin confirmation: its preview is read-only, the
+        # eventual action alone may dispatch the exact ORIGINAL QR packet.
+        query(work,env,(ROOT/'migrations/post-v9/022_gateway_review_archive.sql').read_text())
+        try:
+            query(work,env,"INSERT INTO users(userid,name,username,refcode,wallet,date,isAdmin) VALUES(9014,'Support','support','0',0,'1700000000',1),(9015,'Operator','operator','0',0,'1700000000',1),(9016,'Manager','manager','0',0,'1700000000',1)")
+            query(work,env,"INSERT INTO setting(type,value) VALUES('ADMIN_ROLE_9014','support'),('ADMIN_ROLE_9015','operator'),('ADMIN_ROLE_9016','manager')")
+            beforeCount=int(query(work,env,f'SELECT attempt_count FROM payment_delivery_intents WHERE pay_row_id={n}'))
+            originalCount=int(query(work,env,f"SELECT COUNT(*) FROM service_effects WHERE pay_row_id={n} AND effect_kind='create'"))
+            support_preview=call(op='redrive_route',pay=n,actor=9014,action='Confirm')
+            support_ui=[e for e in support_preview['events'] if e['event']=='EDIT']
+            assert len(support_ui)==1 and 'ممکن است پیام قبلی' in support_ui[0]['text'],support_preview
+            assert any(b['callback_data']==f'attentionDeliverySend_{n}_1'
+                for row in support_ui[0]['buttons']['inline_keyboard'] for b in row)
+            assert not any(e['event'] in ['DELIVER','POST','MESSAGE'] for e in support_preview['events'])
+            case_reloaded=call(op='inbox_case',pay=n,actor=9016)
+            choices=[b for e in case_reloaded['events'] if e['event']=='EDIT'
+                for row in e['buttons']['inline_keyboard'] for b in row]
+            assert any(b['callback_data']==f'attentionDeliveryConfirm_{n}_1'
+                       for b in choices),choices
+            for actor,chat in [(1001,1001),(9014,1001)]:
+                forbidden=call(op='redrive_route',pay=n,actor=actor,chat=chat,action='Send')
+                assert not any(e['event'] in ['DELIVER','POST','MESSAGE'] for e in forbidden['events']),forbidden
+            assert int(query(work,env,f'SELECT attempt_count FROM payment_delivery_intents WHERE pay_row_id={n}'))==beforeCount
+            # Two concurrent staff clicks, same source; the named lease and
+            # durable actor journal allow EXACTLY one customer send.
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                futures=[pool.submit(call,op='redrive_route',pay=n,actor=actor,action='Send')
+                         for actor in (9014,9015)]
+                raced=[future.result() for future in futures]
+            deliveries=[e for x in raced for e in x['events'] if e['event']=='DELIVER']
+            assert len(deliveries)==1,raced
+            assert query(work,env,f'SELECT state FROM payment_delivery_intents WHERE pay_row_id={n}')=='acknowledged'
+            assert int(query(work,env,f'SELECT attempt_count FROM payment_delivery_intents WHERE pay_row_id={n}'))==beforeCount+1
+            assert query(work,env,f"SELECT COUNT(*) FROM payment_delivery_attempts a JOIN payment_delivery_intents i ON i.id=a.intent_id WHERE i.pay_row_id={n} AND a.actor_userid IN (9014,9015)")== '1'
+            assert int(query(work,env,f"SELECT COUNT(*) FROM service_effects WHERE pay_row_id={n} AND effect_kind='create'"))==originalCount
+            replay=call(op='redrive_route',pay=n,actor=9016,action='Send')
+            assert not any(e['event'] in ['DELIVER','POST','MESSAGE'] for e in replay['events'])
+            cases.append('explicit_staff_preview_permissions_cas_one_qr_send_and_no_native_replay')
+        finally:
+            query(work,env,'ALTER TABLE payment_attempts DROP COLUMN review_archived_at, DROP COLUMN review_archived_by')
         # A valid terminal wallet payment is still owned by the original user,
         # and an existing Owner callback is delivery-only even after settlement.
         APIs.rows={};n=seed('api-route-acked');sms(n)
@@ -620,6 +671,39 @@ return !empty($GLOBALS['spec']['fail_staff'])?null:(object)['ok'=>true];}""")
         replay=call(op='settle',pay=n)
         assert replay['result']=='settled' and not any(e['event']=='EDIT' for e in replay['events']),replay
         cases.append('edit_telegram_ack_failure_leaves_funds_and_native_once_delivery_unconfirmed')
+        query(work,env,(ROOT/'migrations/post-v9/022_gateway_review_archive.sql').read_text())
+        try:
+            original=call(op='manual_text',pay=n)['result']
+            wallet=int(query(work,env,'SELECT wallet FROM users WHERE userid=1001'))
+            before=int(query(work,env,f'SELECT attempt_count FROM payment_delivery_intents WHERE pay_row_id={n}'))
+            result=call(op='redrive_route',pay=n,actor=9014,action='Send')
+            sent=[e['text'] for e in result['events'] if e['event']=='MESSAGE' and e.get('to')==1001]
+            assert sent==[original],(original,result)
+            assert query(work,env,f'SELECT state FROM payment_delivery_intents WHERE pay_row_id={n}')=='acknowledged'
+            assert int(query(work,env,f'SELECT attempt_count FROM payment_delivery_intents WHERE pay_row_id={n}'))==before+1
+            assert int(query(work,env,'SELECT wallet FROM users WHERE userid=1001'))==wallet
+            assert not any(e['event'] in ('POST','DELIVER') or (e['event']=='EDIT' and 'change' in e) for e in result['events'])
+            second=call(op='redrive_route',pay=n,actor=9014,action='Send')
+            assert not any(e['event']=='MESSAGE' and e.get('to')==1001 for e in second['events'])
+            cases.append('staff_manual_renewal_redrive_exact_sealed_text_no_second_effect')
+        finally:
+            query(work,env,'ALTER TABLE payment_attempts DROP COLUMN review_archived_at, DROP COLUMN review_archived_by')
+        # A second failure remains UNKNOWN and is forever one human attempt
+        # for that original ordinal, with no silent ACK or retry.
+        n=seed('edit-redrive-unknown','RENEW_ACCOUNT',order=oid);sms(n)
+        assert call(pay=n,fail_terminal_customer=True)['result']=='settled'
+        query(work,env,(ROOT/'migrations/post-v9/022_gateway_review_archive.sql').read_text())
+        try:
+            bad=call(op='redrive_route',pay=n,actor=9016,action='Send',fail_terminal_customer=True)
+            assert query(work,env,f'SELECT state FROM payment_delivery_intents WHERE pay_row_id={n}')=='unknown',bad
+            old_count=int(query(work,env,f'SELECT attempt_count FROM payment_delivery_intents WHERE pay_row_id={n}'))
+            assert old_count==2
+            retry=call(op='redrive_route',pay=n,actor=9015,action='Send')
+            assert not any(e['event']=='MESSAGE' and e.get('to')==1001 for e in retry['events'])
+            assert int(query(work,env,f'SELECT attempt_count FROM payment_delivery_intents WHERE pay_row_id={n}'))==old_count
+            cases.append('staff_unknown_redrive_one_human_attempt_no_auto_or_repeat')
+        finally:
+            query(work,env,'ALTER TABLE payment_attempts DROP COLUMN review_archived_at, DROP COLUMN review_archived_by')
         # Real human route/API contenders share one actual local claim for every subject.
         subjects=[('rstandard','BUY_SUB',0,0,1,'standard_approval','accept',0),('rcustom','BUY_SUB',12,3,1,'checkout','accCustom',0),('rbulk','BUY_SUB',0,0,3,'standard_approval','accept',0),('rrenew','RENEW_ACCOUNT',0,0,1,'renewal','approveRenewAcc',oid),('rday',f'INCREASE_DAY_{oid}_1',4,0,1,'extension','approveIncreaseDay',oid),('rvolume',f'INCREASE_VOLUME_{oid}_1',0,5,1,'extension','approveIncreaseVolume',oid),('rexternal','RENEW_SCONFIG',0,0,1,'standard_approval','accept',0)]
         for label,kind,days,vol,count,route,prefix,order in subjects:

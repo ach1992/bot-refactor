@@ -305,19 +305,13 @@ while ($user = $usersList->fetch_assoc()) {
 				}
 			}
 
-            $logFile = dirname(__DIR__, 2) . "/settings/error_log.txt";
-            $maxSize = 1024 * 1024;
-            if (file_exists($logFile) && filesize($logFile) > $maxSize) {
-                file_put_contents($logFile, "");
-            }
-
-            $log  = \achbotMessage('jobs.broadcast_send.broadcast__send__failed_code.0164fbb749', ['code' => $code]);
-            $log .= \achbotMessage('jobs.broadcast_send.time.b8d6847128') . date("Y-m-d H:i:s") . "\n";
-            $log .= \achbotMessage('jobs.broadcast_send.user.d9c380b9a1') . $user['userid'] . "\n";
-            $log .= \achbotMessage('jobs.broadcast_send.type.e40b1c7f35') . $type . "\n";
-            $log .= \achbotMessage('jobs.broadcast_send.desc.5bd89bf4d5') . ($sendRes->description ?? '') . "\n";
-            $log .= "---------------------------\n";
-            file_put_contents($logFile, $log, FILE_APPEND);
+            // The PHP error sink is external to the public bot directory;
+            // never keep raw Telegram rejection descriptions in webroot.
+            $safeKind=preg_match('/^[A-Za-z0-9_-]{1,32}$/D',(string)$type)
+                ?(string)$type:'other';
+            error_log('achbot_broadcast_delivery_rejected code='.$code.
+                ' user_id='.(int)$user['userid'].
+                ' broadcast_id='.(int)$sendId.' kind='.$safeKind);
         }
     }
 
