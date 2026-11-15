@@ -136,7 +136,7 @@ function achbotProviderConnections(mysqli $db): array {
     achbotProviderRequireSchema($db);
     $s=achbotProviderStatement($db,"SELECT c.provider_connection_id AS id,MIN(i.title) AS name
         FROM server_config c JOIN server_info i ON i.id=c.id
-        WHERE c.type='pasarguard' AND c.provider_enabled=1 GROUP BY c.provider_connection_id ORDER BY id LIMIT 30");
+        WHERE c.type='pasarguard' AND c.provider_enabled=1 GROUP BY c.provider_connection_id ORDER BY id");
     $rows=$s->get_result()->fetch_all(MYSQLI_ASSOC);$s->close();return $rows;
 }
 function achbotProviderSnapshot(mysqli $db,int $serverId,?int $planId=null): array {

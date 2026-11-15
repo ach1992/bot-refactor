@@ -1,130 +1,109 @@
-# Automatic-gateway exception inbox — current operator contract
+# Shared payment and service exception inbox — operator contract
 
-> **Status:** included in the current Stable source. Installed/provider financial acceptance remains target-specific; do not infer it from the published source. Historic experimental RC26 workbenches are retired.
+> Source contract for the next reviewed AChBot release. **Source changes do
+> not mean any installed Chili/Hell/Vivan bot has been updated.** Production
+> activation and any schema migration require separate Owner approval. The
+> historic hosted-only 022 release behavior remains available in Git history.
 
-## Scope
+## One inbox and original-case ownership
 
-One silent, on-demand administrator screen only for incomplete hosted
-NOWPayments, Zarinpal and NextPay orders. Ordinary customer-funded manual
-receipt queues are unchanged and **never** appear in this screen. No
-operator-only finance, service-native, Telegram or evidence workbenches.
+The existing admin entry **💳 پرداخت‌های نیازمند بررسی** is the only active
+operator attention list. It does not create a second payment, another ledger,
+or a second recovery dashboard. The list reads original `pays`,
+`payment_attempts`, `payment_transactions`, `service_effects`,
+`payment_delivery_intents`, and `payment_followup_intents` when their
+original schema is available. No normal, unpaid, aging checkout enters the
+list on age alone. Completed cases with no unresolved effect or delivery exit
+automatically; no operator Archive is needed after genuine completion.
 
-The list renders **amount in toman | numeric customer ID | gateway** for
-original unresolved issued invoices. After a bounded, configurable payment
-age, even a still-pending hosted invoice appears as a **candidate**, never
-as automatically paid. Tap to inspect the original order type, customer,
-plan, bound subscription username, original request date, provider invoice
-and payment references, original quoted amount, latest locally recorded
-provider events and their timestamps, plus processing state. Merchant
-verification is manual and out of band. Do not infer merchant settlement
-from browser return, elapsed time or an old confirmed NOWPayments state.
+Admitted cases include: hosted NOWPayments/NextPay/Zarinpal payment evidence
+or operator-eligible transport failures; bank/gift **API-pinned** proved
+but unfinished payment/service or genuinely delivered manual staff review;
+manual bank/gift/USDT/TRX orders with started and unfinished local service
+effects; and completed payments across hosted/manual methods with outstanding
+original customer or staff notification packets. A terminal financial
+operation with `PENDING` or `UNKNOWN` delivery remains reviewable but is
+never replayed as another payment or Native operation. Missing optional
+API/delivery schema must never invent financial evidence or make a
+hosted-only read fail.
 
-An original hosted payment can also be stranded after settlement or during
-Native fulfillment. Stale `processing`/already-paid cases with unresolved
-fulfillment evidence and an operator's previously unknown effect remain
-**visible until explicitly archived** in the same list, **read-only for
-Approve/Reject**: they never receive a second financial decision button.
-After independently checking the original merchant invoice and any
-uncertain Native outcome, the administrator can choose **Archive** as a
-terminal LOCAL decision. A genuinely active original hosted worker holds
-one MariaDB session-scoped advisory lock until its payment work (including
-local order linking and Telegram delivery) ends. Its key is scoped to the
-connected bot database, so independent bot installations sharing one MariaDB
-server cannot block each other's identically numbered payment rows;
-Archive responds **busy**
-while that worker is active. The lock releases when that connection ends,
-including after a crash, even if the original 007 Native evidence is still
-`dispatching` or `verified` without an order. The administrator can then
-Archive the stale case **without** canceling, retrying, refunding or
-declaring success for its unknown external outcome. A still-**reserved**
-line cannot begin Native CREATE after Archive. No SQL transaction remains
-open during merchant, Native or Telegram HTTP. Archive removes
-a successfully closed case from the active inbox while preserving the original
-payment/order state, provider and child evidence, and Native/Telegram replay holds.
-The archive actor and timestamp persist; later provider callbacks and
-Cron must neither change the archived original's stage/status nor mutate
-its local financial order or retry Native/Telegram effects. A late signed
-NOWPayments child event can be recorded separately as external evidence,
-without reopening the archived case or claiming a refund/settlement.
-Short-lived
-active original callbacks are not mistaken for stale failures (ten-minute cutoff). No new technical
-workbench or unsafe Native replay is introduced.
+Opening a case presents original subject/customer/amount/ids, locally
+observed provider status and service-effect history, with the relevant API
+evidence/fulfillment status only when that invoice was API-pinned. The same
+case can be opened by a real button on the **existing API receipt**; a dead
+"نیازمند بررسی مدیر" noop must not be its only way to act. Background polling
+does not send duplicate standalone administrator messages.
 
-## Decisions
+## Contextual, unchanged original actions
 
-A currently authorized payments administrator can choose Approve, Reject,
-Archive or Back. Approval claims the original unique payment_attempts row
-and advances the original doAction; no duplicate payment/order is
-created. Rejection marks this original invoice declined **without claiming
-a merchant refund**. All callbacks re-validate user role, private chat,
-unchanged quote/invoice/target, one original claim, recorded child payments
-and pre-existing service effects under correct InnoDB lock order. An
-ambiguous native/credit effect is held; it is **never blindly replayed**.
-Fully settled, fulfilled and rejected orders leave the inbox automatically;
-unresolved previously claimed orders stay visible read-only **until archived**.
-Approval is not proof
-of merchant payment; the operator must check the merchant dashboard.
+- **Approve/Reject** for hosted gateway exceptions retain their existing
+  eligibility, original decision CAS, exact invoice, provider identity and
+  refund constraints. A refund is never implied by a rejection.
+- **Approve/Reject + reject reason** for an unverified manual bank/gift
+  receipt remain the **existing manual callbacks**, not a new hosted-like
+  operator attestation. The original receipt and reports are preserved.
+- **🔄 بررسی و بازیابی عملیات** for a bank/gift API case is shown only
+  with the existing authenticated, pinned `settle` proof and one-shot
+  original coordinator; `dispatched/unknown` Native work is read-only and
+  never blindly retried. A terminal original with pending delivery may only
+  dispatch previously unattempted `PENDING` packets.
+- **NOWPayments amount_mismatch** left by the older second crypto
+  amount-check gate may be recovered after an authenticated merchant GET
+  proves `finished` for the **exact original** payment, invoice, hash,
+  and local order amount. It uses the original human settlement and
+  `doAction` once-only pathway. Never synthesize provider children, refill
+  wallets or call Native twice. The ordinary automatic reconciler accepts
+  authenticated merchant-final `finished` without independent crypto
+  deposit/payout thresholds; non-final `partially_paid` still does not
+  auto-fulfill.
+- If there is no safe action beyond review, show why; do not manufacture a
+  recovery button or require a payment decision before Archive.
 
-## Schema policy
+## 📦 بایگانی — terminal LOCAL operator stop
 
-No new table for the inbox. Reuse pays, payment_attempts and
-payment_transactions. Owner clarification adds exactly two metadata columns
-on the original attempt, `review_archived_at` and `review_archived_by`,
-through one-time additive migration `022_gateway_review_archive.sql`.
-The archive marker is a terminal local automation fence distinct from provider `stage` and
-`provider_status`: neither provider callbacks nor the Cron may
-clear it. This avoids stale original cases reappearing after they have been
-archived, while original financial and service effects are untouched.
+An authorized payments administrator in a private chat may choose Archive
+directly even when no Approve/Reject/Recover is eligible. This lets an
+operator stop the **original bot-owned payment/service continuation** after
+handling the customer independently, without entering an external/manual
+quota scenario in bot logic.
 
-Migration 022 is required before using the successor's inbox. It is not
-present in installed RC26 and requires the same separately approved,
-backup/restore-tested, versioned runtime cutover gate. The old experimental
-payment_review_decisions migration 019 is removed from *future-source*
-packaging. Existing RC26 installations may still contain this historical
-table and must retain it until any separately authorized schema audit
-establishes a safe disposition. No installed objects are dropped by RC27 publication.
+Archive records `payment_attempts.review_archived_at` and
+`review_archived_by` exactly once under the original payment/attempt
+InnoDB locks. It does **not** settle, reject, refund, credit, mutate Native,
+rewrite provider observations, delete history or mark Telegram delivered.
+The archived case exits the live inbox; old callbacks cannot reopen it.
+An authentic late NOWPayments IPN may still preserve signed child evidence
+without changing the archived original.
 
-**Do not drop 018 or 020**: payment_delivery_intents,
-payment_delivery_attempts and payment_followup_intents remain part of
-normal paid/manual bank/gift operations, even though the experimental
-recovery screen is gone.
+The original `achbotHostedWorkerLockName` per-database/per-payment MariaDB
+session lock is shared with API SMS/gift processing and fulfillment.
+Human manual approval of Native service work also holds that same session
+lease through the entire webhook; a completed SQL claim alone does not prove
+that the corresponding remote operation has finished. Archive
+returns **busy** when a genuine original worker is active rather than
+claiming to cancel an already-dispatched Native or Telegram operation.
+Original financial/API proof, Native service-effect admission, and first
+customer/staff delivery-fence checks must refuse new work after Archive.
+Previously unknown remote results remain unknown. New independent customer
+purchases/renewals and original financial history are unaffected.
 
-RC27 **does not offer paid replacement** or require 019/021 for a
-new empty database, but existing RC26 records are different: historic 018
-delivery packets and API evidence may refer to 021 issued-entitlement fields
-or replacement provenance. These fields are now read **only to validate
-the immutable historical fingerprint and delivery digest**. Removing their
-database columns would invalidate already-sealed proof. Therefore:
+There is **no automatic detection, reconciliation or compensation of manual
+Native quota edits**. An external operator action cannot silently make an
+unfinished original bot payment "already delivered". Only the operator's
+explicit terminal Archive stops bot followup on that basis.
 
-- **New empty databases:** use the current 018/020/022 installation order;
-  do not apply 019/021.
-- **Existing RC26 tenants, including TEST `chilibot`:** preserve existing
-  019/021 objects and their historical rows by default; removal is not part
-  of this source cleanup. Do not remove 021 columns or 018 sealed evidence.
-- The Owner's backup waiver applies only to `chilibot` TEST. It does not
-  authorize MariaDB DDL, host changes or source cutover. A distinct,
-  evidence-backed approval is required for any future destructive cleanup.
+## Operator checks and release boundary
 
-**Archive versus outbound Native CREATE:** the original pay-row
-transaction coordinates reserved -> dispatching admission with terminal
-Archive. One session-scoped advisory lock around the existing hosted
-`doAction` lifecycle distinguishes an actual running worker from an
-old/abandoned journal record. Live work yields **busy**; after the worker
-ends, Archive may close an uncertain record without rewriting that record.
-The existing paid order-link transaction rechecks the terminal marker so
-a delayed local finalizer cannot create an order after Archive. Nothing
-automatically retries a CREATE, rewrites a payment or invents a remote
-success. No new table, background process, queue or workbench is introduced.
+Every action rechecks permissions, private chat, original payment and target,
+evidence and local/remote once-only journals. Synthetic acceptance covers
+active-vs-archived scopes, normal pending exclusion, API and manual cases,
+human/merchant finality, terminal delivery holds, concurrency and stale
+buttons. A green source check is not installed acceptance.
 
-**Telegram case budget:** the one existing case text keeps the full
-payment/invoice identifiers, amount, local statuses and the five most
-recent Native evidence rows. It fits optional display-only fields (name,
-plan title, handle and original long description) into the remaining
-4096-character post-HTML Telegram budget with UTF-16-aware length
-accounting; any truncation is visibly indicated. The same bounded HTML
-body and inline actions are sent through edit or send fallback.
-
-No runtime ZIP extraction, test DB DROP, webhook, live payment or provider
-side effect is authorized by this source document or GitHub Release.
-Independent source review, PHP 8.5 and integration have passed; installed
-host changes, database DDL and operational acceptance remain separately gated.
+Use current additive migrations `003`, `014` (optional bank/gift API),
+`018` (delivery), `020` (followups) and `022` (Archive) as applicable
+to the target's **existing migration state**. This source package introduces
+no new migration and never auto-runs DDL. Do not rerun existing migrations,
+change live webhook/Cron or test real financial/provider operations under
+a source-only approval. Independent review, Owner-authorized merge/release,
+and each exact installation's backup/restore and acceptance are separate gates.

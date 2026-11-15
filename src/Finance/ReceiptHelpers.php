@@ -10,6 +10,7 @@ require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
 require_once __DIR__.'/../Admin/Access.php';
 require_once __DIR__.'/../Panel/ProviderRuntime.php';
 require_once __DIR__.'/../Purchase/OrderWrites.php';
+require_once __DIR__.'/GatewayClient.php';
 
 if (!function_exists('payTypeToDescription')) {
     function payTypeToDescription($payType)
@@ -1127,6 +1128,19 @@ function achbotApproveManualWalletTopup(mysqli $connection, string $hashId, int 
             $connection->rollback();
             return null;
         }
+        // A payments-capable operator may have explicitly stopped this
+        // original API/manual request. Do not turn a stale receipt approval
+        // into a new wallet credit after its terminal Archive.
+        if (achbotManualLedgerMode($connection)==='current') {
+            $check=$connection->prepare('SELECT * FROM payment_attempts
+                WHERE pay_row_id=? LIMIT 1 FOR UPDATE');
+            $candidate=(int)$pay['id'];
+            $check->bind_param('i',$candidate);$check->execute();
+            $attempt=$check->get_result()->fetch_assoc();$check->close();
+            if ($attempt && ($attempt['review_archived_at']??null)!==null) {
+                $connection->rollback();return null;
+            }
+        }
         $userId = (int)$pay['user_id'];
         $price = (int)$pay['price'];
         $stmt = $connection->prepare('SELECT wallet FROM users WHERE userid=? LIMIT 1 FOR UPDATE');
@@ -1340,6 +1354,45 @@ function achbotManualLegacyLedgerAbsent(mysqli $db): bool {
     return achbotManualLedgerMode($db)==='legacy';
 }
 
+/** The manual approval callback can perform Native HTTP after committing its
+ * short processing claim. Hold the same original-payment session lease as
+ * hosted/API workers until this PHP request exits, so operator Archive never
+ * reports success while an actual manual CREATE/PUT is still in flight.
+ * A new request starts fresh; a crashed request releases its MySQL session.
+ * Call only after a legitimate locked manual-service receipt has been proven.
+ */
+function achbotManualApprovalWorkerLease(mysqli $db,int $payId): bool {
+    if ($payId<=0) return false;
+    try {
+        $name=achbotHostedWorkerLockName($db,$payId);
+        $q=$db->prepare('SELECT IS_USED_LOCK(?) AS holder, CONNECTION_ID() AS self');
+        $q->bind_param('s',$name);$q->execute();
+        $status=$q->get_result()->fetch_assoc();$q->close();
+        if (!$status) return false;
+        // An API settlement may already own this lease through its normal
+        // scoped worker wrapper; do not release somebody else's acquisition.
+        if ($status['holder']!==null)
+            return (int)$status['holder']===(int)$status['self'];
+        $q=$db->prepare('SELECT GET_LOCK(?,0) AS acquired');
+        $q->bind_param('s',$name);$q->execute();
+        $acquired=$q->get_result()->fetch_assoc();$q->close();
+        if ((int)($acquired['acquired']??0)!==1) return false;
+        register_shutdown_function(static function() use ($db,$name): void {
+            try {
+                $q=$db->prepare('SELECT RELEASE_LOCK(?) AS released');
+                $q->bind_param('s',$name);$q->execute();$q->close();
+            } catch (Throwable $ignored) {
+                // A closed/disconnected DB session already released its lease.
+            }
+        });
+        return true;
+    } catch (Throwable $error) {
+        error_log('achbot_manual_worker_lock_unavailable pay_id='.$payId.
+            ' class='.get_class($error));
+        return false;
+    }
+}
+
 /**
  * Reviewable manual service receipt, checked under the exact pays FOR UPDATE
  * lock before any remote fulfillment. A callback never proves settlement.
@@ -1376,7 +1429,7 @@ function achbotManualServiceApprovalAllowedLocked(mysqli $connection, ?array $pa
     if ($mode==='legacy') return true;
     try {
         $id = (int)$pay['id'];
-        $stmt = $connection->prepare('SELECT provider,stage,checkout_url
+        $stmt = $connection->prepare('SELECT *
             FROM payment_attempts WHERE pay_row_id=? LIMIT 1 FOR UPDATE');
         if (!$stmt) {
             return false;
@@ -1394,12 +1447,14 @@ function achbotManualServiceApprovalAllowedLocked(mysqli $connection, ?array $pa
             return true;
         }
         $method = (string)$attempt['provider'];
+        if (($attempt['review_archived_at']??null)!==null) return false;
         if (!in_array($method, ['bank_transfer','gift_card','manual_usdt','manual_trx'], true) ||
             (string)$attempt['stage'] !== 'review') return false;
         $intent = achbotManualIntentDecode((string)($attempt['checkout_url'] ?? ''), $method);
-        return (is_array($intent) && !empty($intent['receipt_file_id'])) ||
+        $reviewable=(is_array($intent) && !empty($intent['receipt_file_id'])) ||
             (function_exists('achbotPaymentEvidenceHasTypedReviewLocked') &&
              achbotPaymentEvidenceHasTypedReviewLocked($connection,$pay));
+        return $reviewable && achbotManualApprovalWorkerLease($connection,$id);
     } catch (Throwable $error) {
         // Invalid SQL or lost permissions after topology inspection
         // can never reactivate a historical manual receipt.

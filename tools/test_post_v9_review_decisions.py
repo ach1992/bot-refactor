@@ -230,6 +230,83 @@ check(state($db,311)['pay_state']==='processing' &&
  state($db,311)['provider_status']==='fulfillment_failed',
  'archived_processing_hold_still_requires_native_forensics_elsewhere');
 
+// Current 014 API manual evidence cases share the SAME original operator
+// inbox/Archive, but ordinary unproven drafts never join the queue.
+$bank=seed($db,1301,'bank_transfer','review','unavailable');
+$db->query("UPDATE pays SET state='have_sent',message_id=1001,chat_id=9001 WHERE id=1301");
+$db->query("UPDATE payment_attempts SET evidence_profile='synthetic-nonsecret',
+ evidence_state='review',evidence_review_sent_at=NOW() WHERE id=$bank");
+check(achbotGatewayAttentionCaseOpen($db,1301),
+ 'real_api_manual_review_enters_same_attention_scope');
+check(achbotGatewayReviewEligible($db,$bank,'approve')===null &&
+ achbotGatewayReviewEligible($db,$bank,'reject')===null,
+ 'api_manual_actions_do_not_inherit_hosted_financial_attestation');
+check(achbotGatewayReviewArchive($db,9001,$bank,9001)==='archived' &&
+ !achbotGatewayAttentionCaseOpen($db,1301) &&
+ state($db,1301)['pay_state']==='have_sent',
+ 'archive_stops_original_api_receipt_without_declining_or_crediting');
+check(achbotGatewayReviewArchive($db,9001,$bank,9001)==='stale',
+ 'archived_api_receipt_old_action_stale');
+$gift=seed($db,1302,'gift_card','review','native_unknown');
+$db->query("UPDATE pays SET state='processing',approved_by=0 WHERE id=1302");
+$db->query("UPDATE payment_attempts SET evidence_profile='synthetic-nonsecret',
+ evidence_state='proven',evidence_fulfillment_state='dispatched'
+ WHERE id=$gift");
+check(achbotGatewayAttentionCaseOpen($db,1302),
+ 'processing_api_native_unknown_is_reviewable');
+check(achbotGatewayReviewArchive($db,9001,$gift,9001)==='archived',
+ 'api_native_unknown_can_be_explicitly_archived_without_replay');
+$db->begin_transaction();
+try {
+ $q=$db->prepare('SELECT id FROM pays WHERE id=1302 FOR UPDATE');
+ $q->execute();$q->close();
+ $blocked=false;
+ try {achbotEffectAssertNotArchivedLocked($db,1302,true);}
+ catch(RuntimeException $error) {$blocked=$error->getMessage()==='effect_original_archived';}
+ $db->rollback();
+} catch(Throwable $error) {$db->rollback();throw $error;}
+check($blocked,'archived_api_original_blocks_future_native_admission');
+$manual=seed($db,1305,'manual_trx','review','manual_receipt');
+$db->query("UPDATE pays SET type='BUY_SUB',state='processing',approved_by=9001
+ WHERE id=1305");
+reserveEffect($db,1305,1,'pending_manual_native');
+check(achbotGatewayAttentionCaseOpen($db,1305),
+ 'human_manual_crypto_receipt_with_started_native_effect_enters_shared_inbox');
+check(achbotGatewayReviewArchive($db,9001,$manual,9001)==='archived' &&
+ !achbotGatewayAttentionCaseOpen($db,1305) &&
+ state($db,1305)['pay_state']==='processing',
+ 'manual_crypto_started_service_may_be_stopped_without_synthetic_refund');
+$unproved=seed($db,1303,'bank_transfer','review','monitoring');
+$db->query("UPDATE pays SET state='have_sent' WHERE id=1303");
+$db->query("UPDATE payment_attempts SET evidence_profile='synthetic-nonsecret',
+ evidence_state='monitoring' WHERE id=$unproved");
+check(!achbotGatewayAttentionCaseOpen($db,1303),
+ 'unproven_api_pending_does_not_flood_operator_inbox');
+$completed=seed($db,1304,'bank_transfer','done','done');
+$db->query("UPDATE pays SET state='paid' WHERE id=1304");
+$db->query("UPDATE payment_attempts SET evidence_profile='synthetic-nonsecret',
+ evidence_state='proven',evidence_fulfillment_state='done' WHERE id=$completed");
+check(!achbotGatewayAttentionCaseOpen($db,1304),
+ 'completed_api_payment_without_pending_action_exits_inbox');
+$apiCase=seed($db,1306,'bank_transfer','review','manual');
+$db->query("UPDATE pays SET state='have_sent',chat_id=9001,message_id=55 WHERE id=1306");
+$db->query("UPDATE payment_attempts SET evidence_profile='synthetic-nonsecret',
+ evidence_state='review',evidence_review_sent_at=NOW() WHERE id=$apiCase");
+check(achbotGatewayAttentionCaseOpen($db,1306),
+ 'api_pending_staff_receipt_visible_before_archive');
+$manualCase=seed($db,1307,'manual_usdt','review','native_unknown');
+$db->query("UPDATE pays SET type='BUY_SUB',state='processing',approved_by=9001
+ WHERE id=1307");
+$manualEffect=reserveEffect($db,1307,1,'manual_dispatch_review');
+check(achbotGatewayAttentionCaseOpen($db,1307),
+ 'manual_pending_native_case_visible_before_archive');
+$manualView=seed($db,1308,'manual_trx','review','native_unknown');
+$db->query("UPDATE pays SET type='BUY_SUB',state='processing',approved_by=9001
+ WHERE id=1308");
+reserveEffect($db,1308,1,'manual_dispatch_view');
+check(achbotGatewayAttentionCaseOpen($db,1308),
+ 'manual_source_case_view_not_rejected_as_ordinary_unpaid');
+
 // Immutable historical fingerprints and 018 digest constants are frozen from
 // main/RC26, not calculated from the code under test.
 $oldPay=[
@@ -342,6 +419,15 @@ check($replacementDelivered==='acknowledged' &&
  $db->query("SELECT state FROM payment_delivery_intents WHERE pay_row_id=320")
  ->fetch_row()[0]==='acknowledged' && $GLOBALS['qr_sends']===3,
  'historical_replacement_018_read_only_delivery');
+// A genuinely paid hosted order still owes its original customer Telegram
+// delivery while a sealed PENDING packet exists. It must not vanish from the
+// shared attention inbox before that delivery is verified or explicitly stopped.
+$undelivered=historicalHostedPacket($db,828,'nextpay');
+check(achbotGatewayAttentionCaseOpen($db,828),
+ 'terminal_hosted_original_with_pending_customer_packet_remains_actionable');
+check(achbotGatewayReviewArchive($db,9001,$undelivered['attempt'],9001)==='archived' &&
+ !achbotGatewayAttentionCaseOpen($db,828),
+ 'operator_may_stop_unresolved_hosted_delivery_without_replaying_native');
 // Archive must also stop a queued historical packet whose original payment
 // has subsequently been archived, without destroying the packet itself.
 $pending=historicalHostedPacket($db,321,'nextpay');
@@ -513,7 +599,8 @@ echo json_encode([
  'financial_double_credit'=>false,'existing_attempt_only'=>true,
  'race_effect_id'=>$raceEffect,'race_attempt_id'=>$raceAttempt,
  'live_effect_id'=>$liveEffect,'live_attempt_id'=>$live,
- 'long_case_id'=>826,'pending_case_id'=>827],
+ 'long_case_id'=>826,'pending_case_id'=>827,
+ 'manual_effect_id'=>$manualEffect,'manual_attempt_id'=>$manualCase],
  JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE);
 '''
 PHP_CASE = r"""<?php
@@ -617,6 +704,17 @@ if ($mode==='hold') {
  if (!file_exists($release)) throw new RuntimeException('barrier_release_timeout');
  try {achbotEffectAdmitPaidDispatch($db,$effectId);$result='admitted';}
  catch(Throwable $error) {$result=$error->getMessage();}
+} elseif ($mode==='manual_hold') {
+ require_once $root.'/src/Finance/ReceiptHelpers.php';
+ $q=$db->prepare('SELECT pay_row_id FROM service_effects WHERE id=?');
+ $q->bind_param('i',$effectId);$q->execute();
+ $source=$q->get_result()->fetch_assoc();$q->close();
+ if (!$source || !achbotManualApprovalWorkerLease($db,(int)$source['pay_row_id']))
+  throw new RuntimeException('manual_worker_lease_missing');
+ file_put_contents($ready,'original_manual_approval_worker_live');
+ $limit=microtime(true)+15;
+ while (!file_exists($release) && microtime(true)<$limit) usleep(10000);
+ $result='manual_worker_finished';
 } elseif ($mode==='archive') {
  $result=achbotGatewayReviewArchive($db,9001,$attemptId,9001);
 } else throw new RuntimeException('invalid_race_role');
@@ -631,7 +729,9 @@ def main():
     with fx.owned_database() as (d,env):
         client=["mariadb","--no-defaults","--protocol=SOCKET",
                 "--socket="+str(d/"mysql.sock"),"-uroot",DB]
-        for filename in ["003_payment_attempts.sql","007_service_effects.sql", "018_payment_delivery_intents.sql", "022_gateway_review_archive.sql"]:
+        for filename in ["003_payment_attempts.sql","007_service_effects.sql",
+                         "014_api_payment_evidence.sql","018_payment_delivery_intents.sql",
+                         "022_gateway_review_archive.sql"]:
             sql=(ROOT/"migrations/post-v9"/filename).read_bytes()
             result=subprocess.run(client,input=sql,env=env,capture_output=True,timeout=15)
             if result.returncode:raise RuntimeError(result.stderr.decode(errors='replace')[-1400:])
@@ -744,6 +844,41 @@ def main():
                 liveWorker.terminate()
                 try:liveWorker.wait(timeout=3)
                 except subprocess.TimeoutExpired:liveWorker.kill();liveWorker.wait(timeout=3)
+        # An operator cannot Archive a manual CREATE/PUT while its genuine
+        # approval webhook is alive. When that session ends, stale dispatched
+        # evidence may be explicitly Archived without claiming it failed.
+        manualReady=d/'manual-live-ready';manualRelease=d/'manual-live-release'
+        manual=["php","-d","allow_url_fopen=0",
+                "-d","disable_functions=curl_init,curl_exec,exec,shell_exec,system,passthru,popen,proc_open,mail",
+                str(race_script),str(ROOT),str(d/'mysql.sock'),DB,
+                str(output['manual_effect_id']),str(output['manual_attempt_id'])]
+        manualWorker=subprocess.Popen(manual+['manual_hold',str(manualReady),str(manualRelease)],
+            env=env,cwd=ROOT,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
+        try:
+            import time
+            until=time.monotonic()+8
+            while not manualReady.exists() and time.monotonic()<until:
+                if manualWorker.poll() is not None:raise RuntimeError('Manual approval worker exited early')
+                time.sleep(0.02)
+            if not manualReady.exists():raise RuntimeError('Manual approval lease barrier missing')
+            blocked=subprocess.run(manual+['archive',str(manualReady),str(manualRelease)],
+                env=env,cwd=ROOT,capture_output=True,text=True,timeout=10)
+            if blocked.returncode or blocked.stderr or json.loads(blocked.stdout)['result']!='busy':
+                raise RuntimeError('Active original manual Native effect was not held: '+blocked.stderr+blocked.stdout)
+            manualWorker.terminate();manualWorker.communicate(timeout=8)
+            closed=subprocess.run(manual+['archive',str(manualReady),str(manualRelease)],
+                env=env,cwd=ROOT,capture_output=True,text=True,timeout=10)
+            if closed.returncode or closed.stderr or json.loads(closed.stdout)['result']!='archived':
+                raise RuntimeError('Manual original did not permit terminal archive after worker exit: '+closed.stderr+closed.stdout)
+            output['checks'].extend([
+                'live_manual_webhook_session_lease_blocks_archive',
+                'dead_manual_webhook_releases_original_lock_and_archive_is_safe',
+            ])
+        finally:
+            if manualWorker.poll() is None:
+                manualWorker.terminate()
+                try:manualWorker.wait(timeout=3)
+                except subprocess.TimeoutExpired:manualWorker.kill();manualWorker.wait(timeout=3)
         # Execute the ACTUAL Telegram case route, with the real original
         # 003/007 rows and a near-maximal persisted description. Use the same
         # full HTML body and buttons for edit success and send fallback.
@@ -751,7 +886,8 @@ def main():
         case_script.write_text(PHP_CASE)
         for pay_id,mode in [(output["long_case_id"],"edit"),
                             (output["long_case_id"],"fallback"),
-                            (output["pending_case_id"],"edit")]:
+                            (output["pending_case_id"],"edit"),
+                            (1306,"edit"),(1308,"edit")]:
             result=subprocess.run(["php","-d","allow_url_fopen=0",
                 "-d","disable_functions=curl_init,curl_exec,exec,shell_exec,system,passthru,popen,proc_open,mail",
                 str(case_script),str(ROOT),str(d/"mysql.sock"),DB,str(pay_id),mode],
@@ -760,9 +896,10 @@ def main():
                 raise RuntimeError("Actual Telegram case route failed: "+
                     result.stderr[-2400:]+result.stdout[-1200:])
             case=json.loads(result.stdout)
+            long_case=pay_id in (output["long_case_id"],output["pending_case_id"])
             if not (case["complete"] and case["valid_utf8"] and
-                    case["balanced_html"] and case["truncated"] and
-                    case["description_too_long_unmodified_in_storage"] and
+                    case["balanced_html"] and
+                    (not long_case or (case["truncated"] and case["description_too_long_unmodified_in_storage"])) and
                     0<case["units"]<=4096 and case["parse"]=="HTML" and
                     "attentionInbox" in case["callbacks"]):
                 raise RuntimeError("Bounded case failed: "+str(case)[:1000])
@@ -772,10 +909,20 @@ def main():
                             "🎫 شناسه عددی: 1001", "مبلغ سفارش", "شناسه صورتحساب",
                             "آخرین وضعیت","عملیات سرویس", "اثر", "ردیف 5"])):
                     raise RuntimeError("Case lost original/Native evidence: "+str(case)[:1000])
-            else:
-                if not (all(any(key.startswith(prefix) for key in case["callbacks"])
-                            for prefix in ("gatewayReview_A_","gatewayReview_R_","gatewayReview_H_"))):
+            elif pay_id==output["pending_case_id"]:
+                if not all(any(key.startswith(prefix) for key in case["callbacks"])
+                           for prefix in ("gatewayReview_A_","gatewayReview_R_","gatewayReview_H_")):
                     raise RuntimeError("Original approve/reject/archive buttons missing")
+            elif pay_id==1306:
+                if not (any(key.startswith('approvePayment') for key in case["callbacks"]) and
+                        any(key.startswith('declineAction_') for key in case["callbacks"]) and
+                        any(key.startswith('gatewayReview_H_') for key in case["callbacks"]) and
+                        not any(key.startswith('gatewayReview_A_') for key in case["callbacks"])):
+                    raise RuntimeError("API manual receipt lost original human actions: "+repr(case["callbacks"]))
+            else:
+                if not (any(key.startswith('gatewayReview_H_') for key in case["callbacks"]) and
+                        not any(key.startswith('gatewayReview_A_') for key in case["callbacks"])):
+                    raise RuntimeError("Manual in-flight case invented hosted approval action")
             if mode=="fallback":
                 if case["edit_count"]!=1 or case["send_count"]!=1:
                     raise RuntimeError("Edit failure did not send one bounded fallback")
@@ -786,6 +933,8 @@ def main():
             "five_native_lines_and_original_payment_evidence_kept",
             "real_telegram_edit_and_fallback_both_deliver_legal_html_text",
             "approve_reject_archive_back_buttons_survive_original_case_budget",
+            "api_receipt_keeps_original_human_approve_decline_plus_independent_archive",
+            "manual_inflight_case_shows_archive_not_hosted_attestation",
         ])
         if not output.get("complete") or len(output["checks"])<16:
             raise RuntimeError("Incomplete original-attempt review checks")

@@ -14,12 +14,62 @@ require_once __DIR__.'/../Admin/Access.php';
  * a terminal LOCAL automation fence, not a merchant settlement or refund.
  * Late signed IPN evidence is separate from the immutable archived attempt.
  */
-function achbotGatewayAttentionScope(): string {
+function achbotGatewayAttentionScope(?mysqli $db=null): string {
+    // Hosted-only installations still have the original review schema.
+    // API cases enter the shared inbox only when their optional evidence
+    // and delivery tables are actually installed.
+    $apiReady=false;$manualReady=false;$followupReady=false;
+    if ($db instanceof mysqli) {
+        try {
+            $q=$db->query('SELECT pay_row_id,state FROM payment_delivery_intents LIMIT 0');
+            if ($q) {$q->free();$manualReady=true;}
+            $q=$db->query('SELECT pay_row_id,effect_kind,state FROM service_effects LIMIT 0');
+            if ($q) $q->free();else $manualReady=false;
+            $q=$db->query('SELECT evidence_profile,evidence_state,evidence_review_sent_at,
+                evidence_fulfillment_state FROM payment_attempts LIMIT 0');
+            if ($q) {$q->free();$apiReady=$manualReady;}
+            $q=$db->query('SELECT pay_row_id,state FROM payment_followup_intents LIMIT 0');
+            if ($q) {$q->free();$followupReady=true;}
+        } catch (Throwable $error) {
+            // A missing optional schema phase is not an unpaid invoice or
+            // permission to fabricate evidence. Hosted cases remain visible.
+        }
+    }
     // Age, a never-paid invoice, or generic unknown verification is NOT
     // financial evidence. The inbox is for observed money, a genuine
     // verification transport outage, or a previously started local effect.
+    $apiSql=$apiReady ? "            OR (a.provider IN ('bank_transfer','gift_card')
+                AND a.evidence_profile IS NOT NULL
+                AND (
+                    (p.state='processing' AND p.approved_by=0)
+                    OR (p.state IN ('pending','have_sent')
+                        AND EXISTS (SELECT 1 FROM payment_transactions et
+                            WHERE et.attempt_id=a.id AND et.evidence_state='proven'))
+                    OR (p.state='have_sent'
+                        AND a.evidence_review_sent_at IS NOT NULL
+                        AND a.evidence_state IN ('review','uncertain','manual','invalid_code'))
+                ))" : '';
+    $followupSql=$followupReady
+        ? " OR EXISTS (SELECT 1 FROM payment_followup_intents fu
+                WHERE fu.pay_row_id=p.id
+                  AND fu.state IN ('pending','dispatching','unknown'))"
+        : '';
+    $manualSql=$manualReady ? " OR (a.provider IN (
+                'bank_transfer','gift_card','manual_usdt','manual_trx')
+            AND p.state='processing'
+            AND (p.approved_by>0 OR EXISTS (
+                SELECT 1 FROM service_effects se WHERE se.pay_row_id=p.id)))" : '';
+    // Terminal finance/native state is not notification completion.
+    // Include PENDING/UNKNOWN original packets for any hosted/manual method,
+    // but never invent a new payment or re-dispatch an UNKNOWN notification.
+    $deliverySql=$manualReady ? " OR (p.state IN (
+            'approved','paid','auto_cart_approved','paid_with_wallet')
+            AND (EXISTS (SELECT 1 FROM payment_delivery_intents dl
+                    WHERE dl.pay_row_id=p.id
+                      AND dl.state IN ('pending','dispatching','unknown'))
+                 $followupSql))" : '';
     return "a.review_archived_at IS NULL
-        AND a.provider IN ('nowpayments','nextpay','zarinpal')
+        AND (a.provider IN ('nowpayments','nextpay','zarinpal')
         AND (
             (p.state IN ('pending','send') AND (
                 (a.stage='review' AND (
@@ -53,7 +103,31 @@ function achbotGatewayAttentionScope(): string {
                     WHERE t.attempt_id=a.id AND t.provider=a.provider
                       AND t.payment_id=a.provider_reference
                       AND t.observed_status='finished'))
+        )
+            $apiSql
+            $manualSql
+            $deliverySql
         )";
+}
+
+/** Same query powers the inbox and the original API receipt's review link.
+ * Pure local read: no customer/provider side effects.
+ */
+function achbotGatewayAttentionCaseOpen(mysqli $db,int $payId): bool {
+    if ($payId<=0) return false;
+    try {
+        $scope=achbotGatewayAttentionScope($db);
+        $q=$db->prepare("SELECT p.id FROM pays p
+            JOIN payment_attempts a ON a.pay_row_id=p.id
+            WHERE p.id=? AND $scope LIMIT 1");
+        $q->bind_param('i',$payId);$q->execute();
+        $found=$q->get_result()->fetch_assoc();$q->close();
+        return $found!==null;
+    } catch (Throwable $error) {
+        error_log('achbot_attention_case_read_unavailable pay_id='.$payId.
+            ' class='.get_class($error));
+        return false;
+    }
 }
 
 function achbotGatewayReviewReady(mysqli $db): bool {
@@ -310,6 +384,91 @@ function achbotGatewayReviewCommit(mysqli $db,int $actor,int $attemptId,
     }
 }
 
+/** Recover an earlier NOWPayments amount-only false negative through the
+ * ORIGINAL approved human settlement path. No synthetic invoice, second
+ * merchant payment, duplicate wallet credit or fresh Native order.
+ * The merchant's authenticated GET must show the exact original finished
+ * child, invoice and order before admitting the existing one-shot decision.
+ */
+function achbotGatewayReviewRecover(mysqli $db,int $actor,int $attemptId,
+    int $primaryOwner,array $paymentKeys): array {
+    if ($actor<=0 || $attemptId<=0 || !achbotGatewayReviewReady($db) ||
+        !achbotAdminCanFor($db,$actor,$primaryOwner,'payments'))
+        return ['status'=>'denied'];
+    $apiKey=(string)($paymentKeys['nowpayment']??'');
+    if ($apiKey==='') return ['status'=>'unavailable'];
+    try {
+        $q=$db->prepare("SELECT a.*,p.id AS linked_pay_id,p.hash_id AS linked_hash,
+            p.payid AS linked_invoice,p.price AS linked_price,p.state AS linked_state
+            FROM payment_attempts a JOIN pays p ON p.id=a.pay_row_id
+            WHERE a.id=? AND a.provider='nowpayments'
+              AND a.stage='review' AND a.provider_status='amount_mismatch'
+              AND a.review_archived_at IS NULL LIMIT 1");
+        $q->bind_param('i',$attemptId);$q->execute();
+        $source=$q->get_result()->fetch_assoc();$q->close();
+        if (!$source || !in_array((string)$source['linked_state'],['pending','send'],true) ||
+            (int)$source['linked_price']!==(int)$source['local_amount_toman'] ||
+            (string)$source['linked_hash']!==(string)$source['order_hash'] ||
+            (string)$source['linked_invoice']!==(string)$source['provider_reference'] ||
+            (string)($source['payment_id']??'')==='' ||
+            achbotHasUnscopedPaymentReferenceCollision($db,(string)$source['provider_reference'],
+                (int)$source['linked_pay_id']))
+            return ['status'=>'stale'];
+        $remote=achbotNpGetVerifiedPayment((string)$source['payment_id'],$apiKey);
+        if (!is_array($remote)) return ['status'=>'unavailable'];
+        if ((string)($remote['payment_id']??'')!==(string)$source['payment_id'] ||
+            (string)($remote['invoice_id']??'')!==(string)$source['provider_reference'] ||
+            (string)($remote['order_id']??'')!==(string)$source['order_hash'] ||
+            !achbotNpValidFinalAmount($source,$remote))
+            return ['status'=>'stale'];
+        if (!$db->begin_transaction()) return ['status'=>'unavailable'];
+        $open=true;
+        try {
+            $payId=(int)$source['linked_pay_id'];
+            $q=$db->prepare('SELECT id,hash_id,payid,price,state FROM pays WHERE id=? FOR UPDATE');
+            $q->bind_param('i',$payId);$q->execute();
+            $pay=$q->get_result()->fetch_assoc();$q->close();
+            $q=$db->prepare('SELECT * FROM payment_attempts WHERE id=? AND pay_row_id=? FOR UPDATE');
+            $q->bind_param('ii',$attemptId,$payId);$q->execute();
+            $attempt=$q->get_result()->fetch_assoc();$q->close();
+            $q=$db->prepare('SELECT id FROM service_effects WHERE pay_row_id=? LIMIT 1 FOR UPDATE');
+            $q->bind_param('i',$payId);$q->execute();
+            $effect=$q->get_result()->fetch_assoc();$q->close();
+            if (!$pay || !$attempt || $effect ||
+                ($attempt['review_archived_at']??null)!==null ||
+                $pay['state']!=='pending' && $pay['state']!=='send' ||
+                (int)$pay['price']!==(int)$attempt['local_amount_toman'] ||
+                (string)$pay['hash_id']!==(string)$attempt['order_hash'] ||
+                (string)$pay['payid']!==(string)$attempt['provider_reference'] ||
+                $attempt['stage']!=='review' ||
+                $attempt['provider_status']!=='amount_mismatch' ||
+                (string)$attempt['payment_id']!==(string)$source['payment_id'] ||
+                !hash_equals((string)$attempt['order_hash'],(string)$source['order_hash']) ||
+                !hash_equals((string)$attempt['provider_reference'],(string)$source['provider_reference']) ||
+                !achbotAdminCanLocked($db,$actor,$primaryOwner,'payments')) {
+                $db->rollback();$open=false;return ['status'=>'stale'];
+            }
+            $q=$db->prepare("UPDATE payment_attempts
+                SET provider_status='finished'
+                WHERE id=? AND stage='review'
+                  AND provider_status='amount_mismatch' AND review_archived_at IS NULL");
+            $q->bind_param('i',$attemptId);$q->execute();
+            $changed=$q->affected_rows;$q->close();
+            if ($changed!==1 || !$db->commit())
+                throw new RuntimeException('gateway_recovery_claim_unknown');
+            $open=false;
+        } finally {
+            if ($open) $db->rollback();
+        }
+        // All normal checks are repeated by the original settlement handler.
+        return achbotGatewayReviewCommit($db,$actor,$attemptId,'approve',$primaryOwner);
+    } catch (Throwable $error) {
+        error_log('achbot_gateway_recovery_unavailable attempt='.$attemptId.
+            ' class='.get_class($error));
+        return ['status'=>'unavailable'];
+    }
+}
+
 /** End local automated processing for an already reviewed exception.
  * The operator action never changes the original provider/order/effect state,
  * but all subsequent automatic financial paths must honor this terminal fence.
@@ -326,7 +485,9 @@ function achbotGatewayReviewArchive(mysqli $db,int $actor,int $attemptId,int $pr
         if (!$q) return 'unavailable';
         $q->free();
         $q=$db->prepare("SELECT pay_row_id FROM payment_attempts
-            WHERE id=? AND provider IN ('nowpayments','nextpay','zarinpal')");
+            WHERE id=? AND provider IN (
+                'nowpayments','nextpay','zarinpal',
+                'bank_transfer','gift_card','manual_usdt','manual_trx')");
         $q->bind_param('i',$attemptId);
         $q->execute();$source=$q->get_result()->fetch_assoc();$q->close();
         if (!$source) return 'stale';
@@ -362,7 +523,7 @@ function achbotGatewayReviewArchive(mysqli $db,int $actor,int $attemptId,int $pr
             $db->rollback();$open=false;return 'busy';
         }
         // A finished or newly active case cannot be hidden by an old button.
-        $scope=achbotGatewayAttentionScope();
+        $scope=achbotGatewayAttentionScope($db);
         $q=$db->prepare("SELECT p.id FROM pays p
             JOIN payment_attempts a ON a.pay_row_id=p.id
             WHERE a.id=? AND $scope LIMIT 1");

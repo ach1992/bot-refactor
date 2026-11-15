@@ -9,12 +9,20 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) { http_response_co
 
 return [
 
-    // ── صف سادهٔ پرداخت‌های خودکارِ ناتمام ──
+    // ── پروندهٔ مشترک مشکلات واقعی پرداخت و عملیات سرویس ──
     'automatic_gateway_review' => [
         'menu' => '💳 پرداخت‌های نیازمند بررسی',
         'provider_nowpayments' => 'NOWPayments',
         'provider_zarinpal' => 'زرین‌پال',
         'provider_nextpay' => 'NextPay',
+        'provider_bank_transfer' => 'کارت‌به‌کارت',
+        'provider_gift_card' => 'گیفت‌کارت',
+        'open_case' => '🔎 بررسی پرونده',
+        'recover' => '🔄 بررسی و بازیابی عملیات',
+        'api_status' => ['text' => '🧾 وضعیت بررسی API: <code>{evidence}</code> | عملیات سرویس: <code>{fulfillment}</code>', 'parameters' => ['evidence','fulfillment']],
+        'api_warning' => '🔎 وضعیت واقعی رسید، شواهد API و عملیات سرویس را بررسی کنید. ثبت پرداخت یا ساخت سرویس تکراری مجاز نیست.',
+        'manual_warning' => '⚠️ وضعیت عملیات سرویس و سابقهٔ پرداخت دستی را بررسی کنید. عملیات نامطمئن را تکرار نکنید؛ در صورت رسیدگی مستقل مدیر، پرونده را بایگانی کنید.',
+        'api_quote' => ['text' => '💵 مبلغ رسید: {amount} {currency}', 'parameters' => ['amount','currency']],
         'result' => ['text' => '📋 نتیجهٔ بررسی پرداخت: {result}', 'parameters' => ['result']],
         'status_completed' => 'پرداخت از مسیر اصلی انجام و ثبت شد.',
         'status_rejected' => '❌ سفارش رد شد و سرویس یا اعتبار صادر نشد؛ این به معنی بازپرداخت وجه نیست.',

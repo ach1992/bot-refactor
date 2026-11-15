@@ -5,6 +5,59 @@ ROOT=pathlib.Path(__file__).resolve().parents[1]
 # RC42 successor: restore only the Owner-approved automatic-renewal
 # notification block for previously immutable catalog history checks.
 # Never rewrite historical SHA pins, and reject any other source-byte drift.
+# The current operator exception inbox adds only these approved candidate
+# Persian admin keys. Its original catalog is projected back to the exact
+# verified Stable source for existing historical copy tests: no broad bypass,
+# no changed historical hash and no permissions to rewrite other strings.
+OPERATOR_INBOX_BASE='18fce523cabde69de3c48e88b4d799cdebf44878'
+OPERATOR_INBOX_KEYS={
+    'automatic_gateway_review.provider_bank_transfer',
+    'automatic_gateway_review.provider_gift_card',
+    'automatic_gateway_review.open_case',
+    'automatic_gateway_review.recover',
+    'automatic_gateway_review.api_status',
+    'automatic_gateway_review.api_warning',
+    'automatic_gateway_review.manual_warning',
+    'automatic_gateway_review.api_quote',
+}
+OPERATOR_INBOX_LINES="""        'provider_bank_transfer' => 'کارت‌به‌کارت',
+        'provider_gift_card' => 'گیفت‌کارت',
+        'open_case' => '🔎 بررسی پرونده',
+        'recover' => '🔄 بررسی و بازیابی عملیات',
+        'api_status' => ['text' => '🧾 وضعیت بررسی API: <code>{evidence}</code> | عملیات سرویس: <code>{fulfillment}</code>', 'parameters' => ['evidence','fulfillment']],
+        'api_warning' => '🔎 وضعیت واقعی رسید، شواهد API و عملیات سرویس را بررسی کنید. ثبت پرداخت یا ساخت سرویس تکراری مجاز نیست.',
+        'manual_warning' => '⚠️ وضعیت عملیات سرویس و سابقهٔ پرداخت دستی را بررسی کنید. عملیات نامطمئن را تکرار نکنید؛ در صورت رسیدگی مستقل مدیر، پرونده را بایگانی کنید.',
+        'api_quote' => ['text' => '💵 مبلغ رسید: {amount} {currency}', 'parameters' => ['amount','currency']],
+"""
+
+@functools.lru_cache(maxsize=1)
+def operator_inbox_catalog_source() -> bytes:
+    path='messages/fa/admin.php'
+    prior=command('git','show',OPERATOR_INBOX_BASE+':'+path)
+    candidate=(ROOT/path).read_bytes()
+    old='    // ── صف سادهٔ پرداخت‌های خودکارِ ناتمام ──\n'.encode()
+    new='    // ── پروندهٔ مشترک مشکلات واقعی پرداخت و عملیات سرویس ──\n'.encode()
+    anchor=b"        'provider_nextpay' => 'NextPay',\n"
+    check(prior.count(old)==1 and prior.count(anchor)==1,
+          'operator_inbox_stable_anchors')
+    expected=prior.replace(old,new,1).replace(
+        anchor,anchor+OPERATOR_INBOX_LINES.encode(),1)
+    check(candidate==expected,'operator_inbox_exact_additive_admin_catalog_delta')
+    parser='$s=stream_get_contents(STDIN);$p=strpos($s,"return [");if($p===false)throw new RuntimeException("array_missing");echo json_encode(eval(substr($s,$p)),JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);'
+    old_entries=flatten(json.loads(command('php','-r',parser,input=prior)))
+    new_entries=flatten(json.loads(command('php','-r',parser,input=candidate)))
+    check(set(new_entries)-set(old_entries)==OPERATOR_INBOX_KEYS and
+          set(old_entries)-set(new_entries)==set() and
+          all(new_entries[k]==v for k,v in old_entries.items()),
+          'operator_inbox_only_expected_additive_catalog_keys')
+    for key in OPERATOR_INBOX_KEYS:
+        entry=new_entries[key];body=text(entry);slots=params(entry)
+        check(isinstance(body,str) and body.strip() and
+              len(slots)==len(set(slots)) and
+              set(re.findall(r'\{([A-Za-z_][A-Za-z0-9_]*)\}',body))==set(slots),
+              'operator_inbox_invalid_template:'+key)
+    return prior
+
 RENEWAL_NOTICE_BASE='91298de959ea7d02c7ed093a79832482915f81c1'
 RENEWAL_NOTICE_ADDED={
     'user':{'renewal.automatic_renewal.unlimited_volume',
@@ -29,7 +82,8 @@ def renewal_notices_source():
     for audience in ('user','admin'):
         path='messages/fa/'+audience+'.php'
         before=command('git','show',RENEWAL_NOTICE_BASE+':'+path)
-        current=(ROOT/path).read_bytes()
+        current=(operator_inbox_catalog_source() if audience=='admin'
+                 else (ROOT/path).read_bytes())
         end=b'        // extensions.alert\n' if audience=='user' else b'        // automatic_renewal.auto_renew_alert_review\n'
         old=b'        // automatic_renewal.handle_auto_renew_callback\n' if audience=='user' else None
         new=(b'        // automatic_renewal \xe2\x80\x94 post-commit customer notices\n'

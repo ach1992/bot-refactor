@@ -35,7 +35,7 @@ if (preg_match('/^apiEvidenceResume_([1-9][0-9]{0,17})$/D',(string)$data,$apiRes
         $pay=achbotApiPaymentRow($connection,$payId);
         $attempt=$pay?achbotApiPaymentAttempt($connection,$payId):null;
         $proof=$pay?achbotPaymentEvidenceGetProof($connection,$payId):null;
-        if (!$pay || !$attempt) {
+        if (!$pay || !$attempt || ($attempt['review_archived_at']??null)!==null) {
             answerCallbackQuery($callbackId,achbotMessage('manual_receipt_final.status_stale'),true);
             return;
         }

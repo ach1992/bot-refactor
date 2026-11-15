@@ -294,15 +294,16 @@ function achbotEffectAssertNotArchivedLocked(mysqli $db,int $payId,bool $process
     }
     if (!$hasLedger) return;
     if ($processing) {
-        // Unchanged manual-processing orders on older schemas do not have
-        // the hosted operator Archive contract. Guard only actual hosted
-        // attempts here; a missing 022 on an active hosted case still fails.
+        // Processing API bank/gift orders share the same terminal Archive
+        // contract as hosted attempts. Other historical manual methods do not
+        // acquire this particular fence merely because the ledger exists.
         $q=$db->prepare('SELECT provider FROM payment_attempts
             WHERE pay_row_id=? LIMIT 1 FOR UPDATE');
         $q->bind_param('i',$payId);$q->execute();
         $row=$q->get_result()->fetch_assoc();$q->close();
         if (!$row || !in_array((string)$row['provider'],
-                ['nowpayments','zarinpal','nextpay'],true)) return;
+                ['nowpayments','zarinpal','nextpay','bank_transfer','gift_card',
+                 'manual_usdt','manual_trx'],true)) return;
     }
     $fence=$db->prepare('SELECT id FROM payment_attempts
         WHERE pay_row_id=? AND review_archived_at IS NOT NULL

@@ -37,6 +37,8 @@ require $argv[1];
 mysqli_report(MYSQLI_REPORT_ERROR|MYSQLI_REPORT_STRICT);
 $db=new mysqli('localhost','root','',$argv[3],0,$argv[2]);
 $db->set_charset('utf8mb4');
+// Fixture timestamps are UTC; make UNIX_TIMESTAMP independent of host TZ.
+$db->query("SET time_zone='+00:00'");
 $spec=json_decode($argv[4],true,32,JSON_THROW_ON_ERROR);
 $GLOBALS['telegramWebhookSecret']=$spec['webhook']??'fixture-webhook-secret-32-bytes-123456';
 $keys=['smsApiUrl'=>$spec['base'].'/wp-json/ach-pay-manager/v1',
@@ -83,6 +85,13 @@ case 'snapshot':
  $result=['valid'=>$profile!==null,'issued'=>$profile['issued_at']??null,
  'subject'=>$profile['subject']??null];break;
 case 'claim':$result=achbotPaymentEvidenceClaim($db,$id);if($result)$result=['token'=>$result['token']];break;
+case 'sms_unique':
+ require_once dirname($argv[1]).'/ApiPayments.php';
+ $candidate=achbotPaymentEvidenceSmsNormalize($spec['row'],$profile);
+ $db->begin_transaction();
+ $result=$candidate!==null && achbotApiPaymentSmsUniqueLocked($db,$candidate,$id);
+ $db->rollback();
+ break;
 case 'defer':$result=achbotPaymentEvidenceDefer($db,$id,$spec['token'],$spec['status']);break;
 case 'typed':$db->begin_transaction();$result=achbotPaymentEvidenceHasTypedReviewLocked($db,$pay);$db->rollback();break;
 case 'reserve':
@@ -333,7 +342,10 @@ def run(module):
     assert validate_legacy_delivery_boundaries()
     with owned.owned_database() as (work,env):
         driver=work/'evidence.php';driver.write_text(DRIVER)
-        def sql(q):return native.sql(work,env,q,DB).strip()
+        # Every fixture timestamp is authored as UTC; force that session
+        # timezone for CLI writes as well as the PHP driver, independent of
+        # the AI Dev Server's host timezone.
+        def sql(q):return native.sql(work,env,"SET time_zone='+00:00';"+q,DB).strip()
         sql((ROOT/'migrations/post-v9/003_payment_attempts.sql').read_text())
         def dbcheck():sql('SET innodb_lock_wait_timeout=1; UPDATE payment_attempts SET last_checked_at=NOW()')
         server=Server(dbcheck);thread=threading.Thread(target=server.serve_forever,daemon=True);thread.start()
@@ -390,6 +402,10 @@ def run(module):
                     "'{\"v\":1,\"method\":\""+method+"\"}',"
                     f"'{issued:%Y-%m-%d %H:%M:%S}')")
                 expected_pin=pinargs.pop('expected_pin',True)
+                if 'issued_time' in pinargs:
+                    issued_time=pinargs.pop('issued_time')
+                    sql(f"UPDATE payment_attempts SET created_at='{issued_time:%Y-%m-%d %H:%M:%S}' "
+                        f"WHERE pay_row_id={ident}")
                 assert php('pin',pay_id=ident,method=method,**pinargs) is expected_pin
                 if expected_pin:
                     sql(f"UPDATE pays SET state='have_sent',message_id=222,chat_id=9001 WHERE id={ident};UPDATE payment_attempts SET stage='review' WHERE pay_row_id={ident}")
@@ -460,6 +476,23 @@ def run(module):
             assert php('validate',pay_id=p1,state='processing') is True
             assert php('validate',pay_id=p1,price=100002) is False
             assert before==sql(f"SELECT quote_amount,provider_reference,payment_id,checkout_url FROM payment_attempts WHERE pay_row_id={p1}")
+            # More than 200 same-amount issued invoices are not a reason
+            # to disable every later SMS match. Examine the full candidate
+            # set in bounded keyset pages, keeping genuine collisions closed.
+            long_ago=now-dt.timedelta(days=8)
+            for n in range(206):
+                seed(f'sms-volume-history-{n}',price=100779,issued_time=long_ago)
+            unique=seed('sms-volume-unique',price=100779)
+            unique_row=sms(6779,amount=100779)
+            assert php('sms_unique',pay_id=unique,row=unique_row)
+            duplicate=seed('sms-volume-collision',price=100779)
+            assert not php('sms_unique',pay_id=unique,row=unique_row)
+            assert not php('sms_unique',pay_id=duplicate,row=unique_row)
+            # Preserve existing receipt identity: no claimed external SMS
+            # or wallet charge was created by the read-only uniqueness scan.
+            assert php('proof',pay_id=unique) is None
+            assert php('proof',pay_id=duplicate) is None
+
             p2=seed('smsreuse')
             assert php('reserve',pay_id=p2,row=r) is None
             claim=php('claim',pay_id=p2);assert claim

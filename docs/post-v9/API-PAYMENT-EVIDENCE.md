@@ -25,6 +25,29 @@ Before either API switch is enabled, an authorized operator must verify the exac
 
 The SMS monitoring horizon is a policy choice in hours measured from original invoice issuance; it is not a receipt-submission delay. Reliable timestamp interpretation and an exact source/amount match are still required without optional filters. Gift funding always uses redeem_amount; choose its actual unit rather than inferring it from a face-value/display label. Enable and live-test each API only under the separately approved rollout/acceptance plan. Old unpinned invoices stay manual; already pinned invoices retain their original profile even if the new-issuance switch is later turned OFF.
 
+## Current operator exceptions and manual Archive
+
+The original API receipt retains its subject and normal manual review controls,
+but a genuinely unresolved case now links to the **shared** operator
+attention detail instead of only displaying a dead "نیازمند بررسی مدیر"
+callback. Authentic settled evidence can resume the original one-shot
+service/delivery path only while unarchived. A payments-authorized admin may
+choose **📦 بایگانی** instead of Approve, Reject or Recover: the source
+payment, financial history and unknown Native evidence remain unchanged,
+and no subsequent provider poll, original evidence consumption, service
+dispatch, customer delivery or stale callback may continue that original.
+A live in-flight worker responds busy rather than pretending to undo a
+remote operation. Normal, fully completed payments automatically leave the
+exception queue. Do not inspect external/manual PasarGuard quota changes
+to infer bot delivery. See [shared operator contract](AUTOMATIC-GATEWAY-REVIEW.md).
+
+Same-amount SMS uniqueness now scans **all** possible originally issued
+local quotes in small ordered locked pages. The page size limits memory
+per read, not the number of invoices accepted: it never fails an otherwise
+unique real SMS merely because over 200 invoices share the same Toman
+amount. Exact amount/source/time, collision rejection and once-only remote
+consume remain mandatory.
+
 ## Bank-transfer matching and journey
 
 New RC21 profiles require administrator evidence first. Earlier issued profiles retain their original pinned policy and recovery configuration; they are not retroactively converted. See [the upgrade boundary](https://github.com/ach1992/bot-refactor/blob/bc99b227660e21e065af454f6315d08905cda429/docs/post-v9/RC20-TO-RC21.md#schema-and-existing-operations) before coordinating an existing API installation.

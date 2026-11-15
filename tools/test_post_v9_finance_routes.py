@@ -745,6 +745,15 @@ try {
         $_GET=$spec['admin_get']??[];
         require $root . '/src/Finance/Routes/ManualReceipts.php';
         $GLOBALS['events'][]=['name'=>'admin_review_finished'];
+    } elseif ($spec['route'] === 'gateway_recover') {
+        // Source-real original actor decision; merchant and Native transports
+        // are both the existing isolated fake-cURL harness above.
+        define('ACHBOT_NP_RECONCILE_ONLY',true);
+        require $root . '/src/Finance/GatewayReturn.php';
+        require_once $root . '/src/Finance/GatewayReview.php';
+        $GLOBALS['events'][]=['name'=>'gateway_recover_result',
+            'result'=>achbotGatewayReviewRecover($connection,9001,
+                (int)($spec['attempt_id']??0),9001,$paymentKeys)];
     } elseif ($spec['route'] === 'hosted_ledger_visibility') {
         $tables=$connection->query("SHOW TABLES LIKE 'payment_attempts'");
         if ($tables===false) throw new RuntimeException('fixture_visibility_failed');
@@ -2073,8 +2082,9 @@ def main():
                             pass_=True,external_requests=0))
         records.append(dict(case='nowpayments_quiet_review_no_alert_lease',
                             pass_=True,external_requests=0))
-        # A finished provider payment whose deposit is smaller than the
-        # promised quote is quarantined, never auto-reconciled as successful.
+        # An authenticated merchant FINAL payment is accepted even if the
+        # reported incoming coin quantity differs from the original estimate.
+        # Non-final partially_paid remains review-only below.
         seed_payment(work,env,'np-underpaid','INCREASE_WALLET',0,0,'np-underpaid-invoice')
         sql(work,env,"INSERT INTO payment_attempts (pay_row_id,provider,order_hash,provider_reference,payment_id,checkout_url,quote_amount,quote_currency,local_amount_toman,settlement_currency,minimum_settlement_amount) "
             "SELECT id,'nowpayments',hash_id,'np-underpaid-invoice','np-underpaid-pmt','https://nowpayments.io/pay/np-underpaid',1,'usd',price,'usdttrc20',1 FROM pays WHERE hash_id='np-underpaid'")
@@ -2085,12 +2095,47 @@ def main():
             nowpayment_order_id='np-underpaid',
             nowpayment_status='finished',
             nowpayment_price=1,nowpayment_pay_amount=1,nowpayment_actual=0.5))
-        if int(sql(work,env,'SELECT wallet FROM users WHERE userid=1001').strip())!=wallet_prior:
-            raise RuntimeError('Underpaid crypto gateway credited wallet')
-        if sql(work,env,"SELECT stage FROM payment_attempts WHERE order_hash='np-underpaid'").strip()!='review':
-            raise RuntimeError('Underpaid gateway did not enter reconciliation queue')
-        records.append(dict(case='nowpayments_underpayment_quarantined',
+        if int(sql(work,env,'SELECT wallet FROM users WHERE userid=1001').strip())!=wallet_prior+100:
+            raise RuntimeError('Merchant-final original invoice did not credit wallet')
+        if sql(work,env,"SELECT stage FROM payment_attempts WHERE order_hash='np-underpaid'").strip()!='done':
+            raise RuntimeError('Merchant-final original invoice remained blocked by coin estimate')
+        records.append(dict(case='nowpayments_finished_below_requested_coin_amount_accepted',
                             pass_=True,external_requests=1))
+        # A previously stranded amount_mismatch can now be reconciled only
+        # from the same original authenticated merchant-final payment, then
+        # through the existing human settlement one-shot coordinator.
+        name='np-original-recovery'
+        invoice=name+'-invoice';payment=name+'-payment'
+        seed_np_attempt(work,env,name,invoice,payment,default_fees=True)
+        sql(work,env,f"UPDATE payment_attempts SET stage='review',"
+            f"provider_status='amount_mismatch' WHERE order_hash='{name}'")
+        attempt_id=int(sql(work,env,f"SELECT id FROM payment_attempts WHERE order_hash='{name}'"))
+        wallet_prior=int(sql(work,env,'SELECT wallet FROM users WHERE userid=1001').strip())
+        bad=run_php(work,env,stage,dict(route='gateway_recover',get={},attempt_id=attempt_id,
+            mock_invoice=invoice,nowpayment_payment_id=payment,
+            nowpayment_order_id='unrelated-order',nowpayment_status='finished'))
+        assert bad['events'][-1]['result']['status']=='stale',bad['events'][-1]
+        assert int(sql(work,env,'SELECT wallet FROM users WHERE userid=1001').strip())==wallet_prior
+        good=run_php(work,env,stage,dict(route='gateway_recover',get={},attempt_id=attempt_id,
+            mock_invoice=invoice,nowpayment_payment_id=payment,
+            nowpayment_order_id=name,nowpayment_status='finished',
+            nowpayment_actual=0.9998,nowpayment_pay_amount=1))
+        if good['events'][-1]['result']['status']!='completed':
+            raise RuntimeError('Authenticated original recovered payment did not settle: '+repr(good['events'][-1]))
+        if sql(work,env,f"SELECT stage,provider_status FROM payment_attempts "
+           f"WHERE order_hash='{name}'").strip()!='done\toperator_fulfilled':
+            raise RuntimeError('Recovered merchant-final original did not close')
+        if int(sql(work,env,'SELECT wallet FROM users WHERE userid=1001').strip())!=wallet_prior+100:
+            raise RuntimeError('Original recovered payment credited wallet incorrectly')
+        repeat=run_php(work,env,stage,dict(route='gateway_recover',get={},attempt_id=attempt_id,
+            mock_invoice=invoice,nowpayment_payment_id=payment,
+            nowpayment_order_id=name,nowpayment_status='finished'))
+        assert repeat['events'][-1]['result']['status']=='stale'
+        assert repeat['network_calls']==[]
+        assert int(sql(work,env,'SELECT wallet FROM users WHERE userid=1001').strip())==wallet_prior+100
+        records.append(dict(case='nowpayments_original_amount_mismatch_recovery_one_shot',
+                            pass_=True,merchant_get_mocked=True,real_provider_requests=0))
+
         # NOWPayments partially_paid is a completed, underfunded child
         # payment. Do not credit or poll it indefinitely as pending.
         seed_payment(work,env,'np-partial-final','INCREASE_WALLET',0,0,
@@ -2166,16 +2211,17 @@ def main():
             raise RuntimeError('Late-invoice finished payment failed to credit wallet')
         records.append(dict(case='nowpayments_late_payment_on_timeless_invoice',
                             pass_=True,external_requests=1,real_provider_requests=0))
-        # A provider 'finished' status must prove the exact net payout
-        # asset and amount against the immutable per-order acceptance floor.
-        for name,overrides,reason in [
-            ('output_short',dict(nowpayment_outcome=0.75),'amount_mismatch'),
+        # Authenticated merchant FINAL status, not a second amount/fee/asset
+        # comparison, settles the original invoice. The same per-order amount,
+        # merchant ID and one-shot guards remain exercised elsewhere.
+        for name,overrides in [
+            ('output_short',dict(nowpayment_outcome=0.75)),
             ('output_fee_short',dict(nowpayment_outcome=0.98,
-                nowpayment_pay_amount=1,nowpayment_actual=1),'amount_mismatch'),
-            ('output_wrong_asset',dict(nowpayment_outcome_currency='btc'),'amount_mismatch'),
-            ('output_zero',dict(nowpayment_outcome=0),'amount_mismatch'),
-            ('output_wrong_quote',dict(nowpayment_price=2),'amount_mismatch'),
-            ('input_short',dict(nowpayment_actual=0.3),'amount_mismatch'),
+                nowpayment_pay_amount=1,nowpayment_actual=1)),
+            ('output_wrong_asset',dict(nowpayment_outcome_currency='btc')),
+            ('output_zero',dict(nowpayment_outcome=0)),
+            ('output_wrong_quote',dict(nowpayment_price=2)),
+            ('input_short',dict(nowpayment_actual=0.3)),
         ]:
             h='np-safety-'+name
             invoice=h+'-invoice'
@@ -2188,14 +2234,14 @@ def main():
                 nowpayment_order_id=h,
                 nowpayment_status='finished',**overrides))
             if len(obs['network_calls'])!=1:
-                raise RuntimeError('Provider outcome fixture not exercised: '+name)
-            if sql(work,env,f"SELECT stage,provider_status FROM payment_attempts WHERE order_hash='{h}'").strip()!='review\t'+reason:
-                raise RuntimeError('Unsafe net merchant outcome was accepted: '+name)
-            if sql(work,env,f"SELECT state FROM pays WHERE hash_id='{h}'").strip()!='pending' or int(sql(work,env,'SELECT wallet FROM users WHERE userid=1001').strip())!=start_wallet:
-                raise RuntimeError('Unsafe finished outcome mutated funds: '+name)
-            records.append(dict(case='nowpayments_'+name+'_needs_review',pass_=True))
-        # Default-fees invoices must still refuse zero/missing payouts,
-        # incomplete deposits and altered immutable original quotes.
+                raise RuntimeError('Merchant FINAL fixture did not perform authenticated GET: '+name)
+            if sql(work,env,f"SELECT stage,provider_status FROM payment_attempts WHERE order_hash='{h}'").strip()!='done\tfinished':
+                raise RuntimeError('Authenticated final payment incorrectly held: '+name)
+            if sql(work,env,f"SELECT state FROM pays WHERE hash_id='{h}'").strip()!='paid' or int(sql(work,env,'SELECT wallet FROM users WHERE userid=1001').strip())!=start_wallet+100:
+                raise RuntimeError('Merchant finality did not settle the original once: '+name)
+            records.append(dict(case='nowpayments_'+name+'_merchant_final_accepted',pass_=True))
+        # Previously issued invoices may retain a policy snapshot for audit,
+        # but its coin/payout data is not a second settlement gate.
         for name,overrides in [
             ('default_zero_payout',dict(nowpayment_outcome=0)),
             ('default_bad_asset',dict(nowpayment_outcome_currency='!bad')),
@@ -2223,16 +2269,14 @@ def main():
                 nowpayment_order_id=h,nowpayment_status='finished',**overrides))
             if len(seen['network_calls'])!=1 or sql(work,env,
                 f"SELECT stage,provider_status FROM payment_attempts "
-                f"WHERE order_hash='{h}'").strip()!='review\tamount_mismatch':
-                raise RuntimeError('Default-fees underpayment/invalid final data accepted: '+name)
-            if int(sql(work,env,'SELECT wallet FROM users WHERE userid=1001').strip())!=wallet_before:
-                raise RuntimeError('Invalid default-fees payment moved wallet: '+name)
-            if sql(work,env,f"SELECT state FROM pays WHERE hash_id='{h}'").strip()!='pending':
-                raise RuntimeError('Invalid default-fees payment finalized order: '+name)
-            records.append(dict(case='nowpayments_'+name+'_needs_review',
+                f"WHERE order_hash='{h}'").strip()!='done\tfinished':
+                raise RuntimeError('Final merchant status did not settle original: '+name)
+            if int(sql(work,env,'SELECT wallet FROM users WHERE userid=1001').strip())!=wallet_before+100:
+                raise RuntimeError('Final merchant payment did not credit wallet once: '+name)
+            if sql(work,env,f"SELECT state FROM pays WHERE hash_id='{h}'").strip()!='paid':
+                raise RuntimeError('Final merchant payment did not complete order: '+name)
+            records.append(dict(case='nowpayments_'+name+'_merchant_final_accepted',
                                 pass_=True))
-        # A previously strict invoice cannot be made lax by deleting only
-        # its currency while retaining the positive immutable minimum.
         h='np-default-tampered-floor'
         seed_np_attempt(work,env,h,h+'-invoice',h+'-payment',default_fees=True)
         sql(work,env,"UPDATE payment_attempts SET minimum_settlement_amount=1 "
@@ -2241,9 +2285,9 @@ def main():
             mock_invoice=h+'-invoice',nowpayment_payment_id=h+'-payment',
             nowpayment_order_id=h,nowpayment_status='finished'))
         if sql(work,env,"SELECT stage,provider_status FROM payment_attempts "
-           "WHERE order_hash='np-default-tampered-floor'").strip()!='review\tamount_mismatch':
-            raise RuntimeError('Incomplete nonzero-floor snapshot downgraded to default fees')
-        records.append(dict(case='nowpayments_default_tampered_floor_does_not_downgrade',
+           "WHERE order_hash='np-default-tampered-floor'").strip()!='done\tfinished':
+            raise RuntimeError('Old payout-only snapshot blocked merchant-final evidence')
+        records.append(dict(case='nowpayments_default_tampered_floor_is_audit_only',
                             pass_=True))
         # Changing pays.price after invoice issuance must never let a
         # previously valid USD quote settle a larger local Toman obligation.
@@ -2292,7 +2336,7 @@ def main():
            "SELECT settlement_currency,minimum_settlement_amount FROM payment_attempts "
            "WHERE order_hash='np-strict-policy'").strip()!='usdttrc20\t1.00000000':
             raise RuntimeError('Existing explicit payout-floor policy changed unexpectedly')
-        records.append(dict(case='nowpayments_explicit_floor_remains_enforced',
+        records.append(dict(case='nowpayments_explicit_floor_still_recorded',
                             pass_=True))
         seed_payment(work,env,'np-invalid-policy','INCREASE_WALLET',0,0,'invalid-policy')
         sql(work,env,"UPDATE pays SET price=100000,payid=NULL WHERE hash_id='np-invalid-policy'")

@@ -281,7 +281,7 @@ function achbotHandleManagement(): bool {
         if ($starts) sendMessage(achbotManagementText('intro'),$cancelKey);
         // A selection changes this keyboard, not the conversation history.
         $messageId=(!$starts && $callback && in_array($action,['pick','page'],true) &&
-            in_array($draft['stage'],['groups','targets'],true))?
+            in_array($draft['stage'],['groups','targets','url'],true))?
             $update->callback_query->message->message_id:null;
         achbotManagementRender($connection,$draft,'',$messageId);
     } catch (Throwable $error) {
