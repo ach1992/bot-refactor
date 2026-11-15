@@ -2,7 +2,7 @@
 
 **Current baseline note:** This detailed financial behavior and recovery reference contains historical source/RC design checkpoints. The supported forward version is [v0.10.0 Stable](STABLE-BASELINE.md); use the actual current payment/effect journals and [payment delivery recovery](PAYMENT-DELIVERY-RECOVERY.md), not dated rollout checkpoints, for production decisions. Its historical sections remain for nontrivial financial reasoning and source regression provenance.
 
-**Unreleased PR #152 — generated bulk account identity:** New PasarGuard and
+**Integrated bulk-account identity ([PR #152](https://github.com/ach1992/bot-refactor/pull/152)):** New PasarGuard and
 Marzban administrator/paid bulk accounts use the existing configured
 `server-userId-number` or `server-number` shape with a source/ordinal-stable
 10-digit numeric suffix. PasarGuard retains its independent 100 ASCII-byte
@@ -89,12 +89,12 @@ All purchase, renewal, extension and wallet top-up menus use the shared manual-c
 
 Make **all existing and future payment methods** use the same *verified payment and durable fulfillment* policy, while keeping each provider's request/authentication/proof/status semantics in an isolated adapter. Manual receipts, wallet payment/transfer, administrative debt and scheduled approval are **not bank gateways**, but must share the relevant transaction/idempotency/effect rules. A common router does **not** mean forcing distinct financial semantics into one PHP function.
 
-- Stay in this repository, PHP 8.1+/MariaDB, current bot, its already supported providers and Marzban-only service operations. No cross-project Foundation, new service, worker framework, duplicate orchestration, speculative future gateway implementation or wholesale database redesign.
+- Stay in this repository, current PHP 8.5 source acceptance/MariaDB contracts, and supported native Marzban/PasarGuard service operations. No cross-project Foundation, new service, worker framework, duplicate orchestration, speculative future gateway implementation or wholesale database redesign.
 - Keep the original 23-table historical V9 DDL/goldens immutable. The *current source* expects the separately accepted nullable `server_info.panel_group_id` column plus the provider-shared 003 tables. Actual installed migration state remains unverified; no real DB migration is authorized by this source integration. Favor current schema for initial characterization; permit **only justified additive, backwards-compatible persistence changes** after a separately reviewed design, original-data audit, explicit Owner schema/deployment approval and independently restorable backup.
-- Preserve installed `baseInfo.php`, existing URLs (`pay/index.php`, `pay/back.php`), Telegram callback identifiers, Cron entrypoint paths, price/currency expectations, supported `pays.type` business outcomes and existing Marzban account identity/capacity rules. Do not silently reinterpret historical orders, mark unsupported panels as Marzban, or convert refunds into automatic wallet credit.
-- A privileged admin may deliberately create a negative wallet **debt** with reason/actor/audit; user-controlled spend/transfer/purchase/renewal must not create or deepen debt. This policy is **not yet fully implemented/accepted**. Do not blanket clamp `users.wallet`.
+- Preserve installed `baseInfo.php`, current entrypoints (`pay/checkout.php`, `pay/back.php`), Telegram callback identifiers, Cron entrypoint paths, price/currency expectations, supported `pays.type` business outcomes and existing Marzban account identity/capacity rules. Do not silently reinterpret historical orders, mark unsupported panels as Marzban, or convert refunds into automatic wallet credit.
+- A privileged admin may deliberately create a negative wallet **debt** with reason/actor/audit; user-controlled spend/transfer/purchase/renewal must not create or deepen debt. Its actual source/installed acceptance remains tracked in [Issue #26](https://github.com/ach1992/bot-refactor/issues/26). Do not blanket clamp `users.wallet`.
 
-## Current source inventory (verified at RC3 baseline)
+## Historical RC3 source inventory (not a current file/status index)
 
 | Responsibility | Existing source | Observed gap / preservation constraint |
 |---|---|---|
@@ -597,17 +597,18 @@ corroboration, not a cryptographic remote idempotency guarantee, and absence
 after a possible deletion requires investigation. There is **no automated
 claim that exactly-once delivery or end-to-end recovery is solved**.
 
-### Bank-Cron BUY_SUB source-only hardening (proposed, not installed)
+### Bank-Cron BUY_SUB original-invoice safeguards (integrated source; installed schema acceptance separate)
 
 The automatic card-receipt BUY_SUB handler now competes with administrator
 approval for the same exclusive original pays row and leaves the successful
 claim in nonterminal processing until fulfillment can be proved.
 
-**R1 ORIGINAL issued bank BUY_SUB invoice (proposed additive 009, NOT installed):**
-`migrations/post-v9/009_bank_buy_invoice_claims.sql` creates exactly one
-payment-scoped InnoDB `bank_buy_invoice_claims` row **at the time the customer
-selects bank transfer and the original 003 `payment_attempts` bank intent is
-inserted**, in the **same short transaction**. If either INSERT, mandatory
+**Original issued bank BUY_SUB invoice (current source, migration 009 separately gated):**
+The current source uses the `009_bank_buy_invoice_claims.sql` schema for exactly one
+payment-scoped InnoDB `bank_buy_invoice_claims` row **when the customer selects
+bank transfer and the original 003 `payment_attempts` bank intent is inserted**,
+in the **same short transaction**, only when the actual installation has the
+verified compatible 009 schema. If either INSERT, mandatory
 schema, entitled-plan read, or COMMIT fails, BOTH inserts roll back, the
 purchase remains an unissued pending draft, and no new bank instructions
 are authorized.
@@ -655,8 +656,7 @@ reviewed data-preserving forward migration instead of blindly applying this
 CREATE statement. Shipping source code/CI checksums or a runtime ZIP does
 **not** install 009 or authorize a tenant migration, Cron activation, real
 payment action, release or installed acceptance.
- The new
-src/Finance/BankPurchase.php uses the **same** additive 007 per-account CREATE
+The current `src/Finance/BankPurchase.php` uses the **same** additive 007 per-account CREATE
 journal and strict Marzban readback rather than a second provider engine.
 Each ordinal, username, operation marker, target, exact expiry and byte
 limit is reserved before POST. A remote 409, lost response, target drift or
@@ -703,17 +703,9 @@ Use only disposable test accounts and authorized test financial instruments.
 Capture bounded operation/order/effect identifiers without exposing tokens
 or real customer data. No tenant SQL/production installation performed here.
 
-### Option A R1/R4 — capacity, wallet, nonpayment and referral contracts
+### Capacity, wallet, nonpayment and referral contracts (historical Option A design)
 
-This is unmerged **source-only work under Issue #26**, not installed
-finance/provider/operator acceptance or a change to previous independent
-review verdicts. The revised `007_service_effects.sql` is a proposed
-`CREATE TABLE` for targets **without an existing 007**. It adds nullable
-`pay_row_id` for nonpayment CREATE, `source_kind/source_ref/
-actor_userid`, `reserved_count` and a unique
-`(source_kind,source_ref,ordinal)` key. An already installed
-older 007 requires separate read-only DDL/data inspection and a reviewed
-forward-only additive migration; never drop, replace or truncate it.
+These service-effect safeguards are integrated into current Stable source under [Issue #26](https://github.com/ach1992/bot-refactor/issues/26); the older Option A R1/R4 implementation chronology is historical, not unmerged work to restart. The `007_service_effects.sql` source migration defines the service-effect journal, including nullable `pay_row_id` for nonpayment CREATE, `source_kind` / `source_ref` / `actor_userid`, `reserved_count` and a unique `(source_kind,source_ref,ordinal)` key. **Source integration does not prove 007 is installed or compatible on any particular bot.** For an existing table, inspect actual DDL and original evidence read-only; if a genuinely incompatible older schema requires change, obtain a separately reviewed, additive and authorized migration. Never drop, replace or truncate prior financial/Native history.
 
 **Capacity (R1).** The first paid CREATE ordinal atomically reserves
 the **whole** purchased account count using a guarded InnoDB

@@ -18,9 +18,9 @@ cannot compensate for unnecessarily privileged credentials.
 
 It checks:
 
-- All **124 current runtime files'** byte lengths and SHA-256 against the
-  **provided** manifest, and an independently pinned 124-member filename
-  inventory (canonical sorted-set SHA-256 from `package_post_v9.members()`),
+- Every **current runtime file's** byte length and SHA-256 against the
+  **provided** release-matched manifest, plus the current verifier's pinned
+  filename inventory (**132 members in the verified Stable release**),
   with no retired automatic TRON/WeSwap PHP files. The locally
   executed policy and wallet validation helpers must also match the supplied runtime
   manifest; a tool checkout from another source version is rejected.
@@ -32,8 +32,8 @@ It checks:
   Existing tables with partial/mismatched structures are **blocked**; no
   existing object is replaced. `002` is the retired historical RC4 path,
   not an instruction to install it. No sidecar SQL is executed.
-- RC20 additionally reports014 evidence capability on the existing shared
-  ledger. Missing014 with both API switches OFF is informational; a partial
+- The current preflight additionally reports migration 014 evidence capability
+  on the existing shared ledger. Missing014 with both API switches OFF is informational; a partial
   or incompatible capability with APIs OFF is a warning. An enabled API
   without usable014 capability is blocked. Even a capability PASS explicitly
   means `api_evidence_capability_detected_not_ddl_certified`: it checks the
@@ -41,8 +41,9 @@ It checks:
   DDL, every field definition/index, real row compatibility or applied history.
   The tool never decrypts API profiles/codes or authenticates a live client;
   enabled profiles remain `credentials_not_decrypted_not_verified`. Follow
-  [RC19 → RC20](https://github.com/ach1992/bot-refactor/blob/bc99b227660e21e065af454f6315d08905cda429/docs/post-v9/RC19-TO-RC20.md) and [API setup](API-PAYMENT-EVIDENCE.md#configuration-before-api-enablement)
-  for the separately authorized schema/profile/activation gates.
+  [Current API setup](API-PAYMENT-EVIDENCE.md#configuration-before-api-enablement)
+  for the separately authorized schema/profile/activation gates; old RC transition
+  instructions do not apply to an already migrated Stable installation.
 - Exactly one valid JSON-object `BOT_STATES` and `PAYMENT_KEYS` document,
   dynamic `gatewayRules` decoded with the **current production PHP parser**,
   legacy method audience modes and each method's switch. A method is

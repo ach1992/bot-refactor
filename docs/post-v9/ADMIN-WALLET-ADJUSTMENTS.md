@@ -1,12 +1,6 @@
 # Wallet adjustment journal — Issue #26
 
-The generic `wallet_adjustments` journal records administrator adjustments
-and paired user transfers. Migration **005_wallet_adjustments.sql** creates
-the new table for the owner's **RC9 -> RC11** upgrade. It is independent of
-shared payment migration 003 and automatic renewal migration 004. There is
-no RC10-to-RC11 rename/import path: RC10 will not be installed by this owner,
-and its published artifacts remain immutable. If either old or new 005 table
-already exists on another installation, stop and audit it separately.
+The shared `wallet_adjustments` journal records administrator adjustments and paired user transfers. Its original schema was introduced by **005_wallet_adjustments.sql**, independent of the shared-payment and automatic-renewal ledgers. In a current Stable installation, **inspect actual per-bot schema and existing journal rows first**: this historical migration must never be rerun or a current table replaced on the assumption that an old RC upgrade remains pending. Schema changes, if genuinely required, need separate Owner authorization and verified restoration evidence. The signed admin-debt and user-spend policy is owned by [finance Issue #26](https://github.com/ach1992/bot-refactor/issues/26).
 
 Historical V0–V9 schema/tests remain frozen. This scoped journal does not
 invent historical movement rows or replace pays, payment_attempts,

@@ -63,6 +63,10 @@ python3 tools/package_current.py verify \
 
 The manifest binds the commit, tree, runtime file digests and ZIP SHA256. Use only the release assets built and verified from the tagged commit. See [CI validation](docs/post-v9/CI-VALIDATION.md).
 
+### GitHub Release notes
+
+GitHub already renders the Release **title** as its main heading. Put the version and concise change summary in that title **once**; start the Release **body** with a short introduction, not a second `# AChBot v…` heading. Organize longer notes using `## What changed`, `## Validation` and `## Deployment notes` only when they contain useful facts. Distinguish published source, migrations (if any), deployed runtime and verified live behavior. Never claim installation or successful customer delivery merely because a Release or CI exists.
+
 ## Public root and health
 
 `index.php` is the public information page; `health.php` is a bounded local readiness endpoint, **not** proof of financial settlement, Telegram delivery or provider behavior. Do not expose the source checkout, backups, SQL, credentials, private setup tools or logs through the webroot.

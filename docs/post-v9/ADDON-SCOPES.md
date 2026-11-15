@@ -174,4 +174,4 @@ Telegram API endpoints are contacted. Historical accepted Persian copy
 proofs remain intact; the 14 current-only scoped editor keys have a separately
 pinned current-only text manifest.
 
-RC22 publication does not execute the optional migration, install the runtime, activate payment APIs or prove live Group mutations or real gateway-money operations. Any operator installation, migration and live financial validation require their own specific approval and evidence; source integration was independently reviewed under PR #109.
+A current source merge or Stable publication does not execute the optional migration, install the runtime, activate payment APIs or prove live Native Group mutation or real gateway-money operations. Any operator installation, migration and live financial validation require their own specific approval and evidence; source integration was independently reviewed under PR #109.
