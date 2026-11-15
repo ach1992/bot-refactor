@@ -126,7 +126,7 @@ function achbotPlanWizardAdvance(mysqli $db,array &$d,string $action,string $inp
     $selected=$v['targets']??[];
     if (!$selected || array_diff($selected,$allowed))
         throw new RuntimeException('management_targets');
-    $custom='';$groups=null;
+    $custom=null;$groups=null;
     if ($server['type']==='pasarguard') {
         $groups=json_encode(achbotPgGroupsCanonical($selected),JSON_THROW_ON_ERROR);
     } else {

@@ -2,6 +2,8 @@
 
 AChBot is a PHP Telegram bot for VPN subscriptions, plans, customer support, administrator management and scheduled service operations. It supports Marzban and native PasarGuard.
 
+**Next stable baseline (not yet published):** [Baseline contract](docs/post-v9/STABLE-BASELINE.md) describes the unified native Marzban/PasarGuard runtime and the review, CI and release gates for the first non-RC version. It removes old bot-version compatibility as a future requirement while preserving historical customer and financial contracts. The source merge and stable release remain pending; the live Hell/Vivan cutover itself is already complete.
+
 **Latest source prerelease:** [v0.10.0-rc.44](https://github.com/ach1992/bot-refactor/releases/tag/v0.10.0-rc.44) merges [PR #185](https://github.com/ach1992/bot-refactor/pull/185) to remove the hardcoded PasarGuard 5.5.1 version admission gate; Marzban already had no version-equality gate. API permissions, native identity, and financial/replay safeguards remain enforced. Newly recorded PasarGuard plan intents omit informational version metadata from their physical-target hashes, while old immutable intents retain their original digests and unresolved review holds. No new schema migration or customer-facing text change.
 
 **RC44 integrity:** The [132-file runtime ZIP](https://github.com/ach1992/bot-refactor/releases/download/v0.10.0-rc.44/achbot-v0.10.0-rc.44-runtime.zip), [Manifest](https://github.com/ach1992/bot-refactor/releases/download/v0.10.0-rc.44/achbot-v0.10.0-rc.44-runtime.zip.manifest.json), and SHA256SUMS bind to release commit acd0727b9fa04edead999038acf5611b52d5ef36 and Git tree 60e84083415398b2cb866d72c02b7059369da8d9. [Exact-source CI #43643031288](https://github.com/ach1992/bot-refactor/actions/runs/43643031288) passed eight PHP 8.5 families and protected aggregate; [merged-main CI #43643757280](https://github.com/ach1992/bot-refactor/actions/runs/43643757280) passed with exact-tree reuse. Independent reviewer confirmed no remaining source defects, but the formal outcome was INCOMPLETE / NO_VERDICT solely due to pending CI; the Owner authorized release after that exact CI completed successfully. No APPROVE verdict is claimed. See the [RC43 to RC44 guide](docs/post-v9/RC43-TO-RC44.md).
@@ -148,6 +150,7 @@ For upgrades, inventory the installed source, schema, private configuration and 
 - [Current source/release scope and configuration boundaries](docs/post-v9/NEXT-RELEASE.md)
 - [Per-server display and QR settings](docs/post-v9/SUBSCRIPTION-PRESENTATION.md)
 - [Native PasarGuard contract](docs/post-v9/PASARGUARD-CONTRACT.md)
+- [Vivan/Hell PasarGuard cutover preparation (source-only, read-only)](docs/post-v9/PASARGUARD-CUTOVER-PREPARATION.md)
 - [Read-only installed-runtime diagnostics](docs/post-v9/INSTALL-DIAGNOSTICS.md)
 - [Read-only payment readiness preflight](docs/post-v9/PAYMENT-READINESS-PREFLIGHT.md)
 - [Operator acceptance checklist](docs/post-v9/MARZBAN-OPERATOR-ACCEPTANCE.md)

@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "tenants": {
+    "vivan": {
+      "2": "Plus",
+      "3": "Plus",
+      "12": "Lite",
+      "13": "Prime"
+    },
+    "hell": {
+      "2": "Plus",
+      "3": "Plus",
+      "4": "Lite",
+      "5": "Lite",
+      "11": "Prime"
+    }
+  }
+}

@@ -187,24 +187,132 @@ function achbotProviderAccountRow(?array $r): ?array {
         throw new RuntimeException('provider_effect_identity_invalid');
     return $a;
 }
+
+/**
+ * A historical paid-account cutover is not a purchase or zero-price import.
+ * Its single native account effect may be shared by all pre-existing local
+ * references. Nothing here authorizes a Native CREATE or a financial replay.
+ * This validator pins the exact source and target ledger shape before use.
+ */
+function achbotProviderLegacyCutoverEvidence(array $e,array $account): array {
+    try {
+        $snap=json_decode((string)($e['provider_snapshot']??''),true,64,JSON_THROW_ON_ERROR);
+        $native=json_decode((string)($e['provider_entitlement_snapshot']??''),true,64,JSON_THROW_ON_ERROR);
+        $migration=$snap['migration']??null;
+        if (!is_array($snap) || !is_array($native) || !is_array($migration) ||
+            ($snap['identity_mode']??null)!=='historical_cutover' ||
+            ($migration['version']??null)!==1 ||
+            !in_array($migration['tenant']??null,['vivan','hell'],true) ||
+            !is_int($migration['source_server_id']??null) || $migration['source_server_id']<=0 ||
+            !preg_match('/^[a-f0-9]{64}$/D',(string)($migration['source_input_sha256']??'')) ||
+            !preg_match('/^[a-f0-9]{64}$/D',(string)($migration['native_input_sha256']??'')) ||
+            !preg_match('/^[a-f0-9]{64}$/D',(string)($migration['mapping_input_sha256']??'')) ||
+            !is_array($migration['references']??null) || !array_is_list($migration['references']) ||
+            !$migration['references'] ||
+            ($native['version']??null)!==1 ||
+            !is_int($native['id']??null) || $native['id']<=0 ||
+            !is_string($native['username']??null) || $native['username']!==$account['remote_username'] ||
+            !is_string($native['created_at']??null) ||
+            $native['created_at']!==achbotPgDate($native['created_at']) ||
+            !is_int($native['data_limit']??null) || $native['data_limit']<0 ||
+            !is_int($native['used_traffic']??null) || $native['used_traffic']<0 ||
+            !array_key_exists('expire',$native) ||
+            !($native['expire']===null || (is_int($native['expire']) && $native['expire']>0)) ||
+            !in_array($native['status']??null,['active','disabled','limited','expired'],true) ||
+            !is_bool($native['native_schedules_clear']??null) ||
+            ($native['native_schedules_clear']===false &&
+                ($migration['native_schedule_preserved']??null)!==true) ||
+            ($native['native_schedules_clear']===true &&
+                ($migration['native_schedule_preserved']??false)===true) ||
+            !is_array($native['group_ids']??null) ||
+            achbotPgGroupsCanonical($native['group_ids'])!==$native['group_ids'])
+            throw new RuntimeException();
+        $expectedTarget=['provider'=>'pasarguard','panel_id'=>(int)$account['panel_id'],
+            'instance_key'=>$account['instance_key'],'endpoint_sha256'=>$account['endpoint_sha256']];
+        foreach ($expectedTarget as $key=>$value)
+            if (($snap[$key]??null)!==$value) throw new RuntimeException();
+        if (($snap['group_ids']??null)!==$native['group_ids'] ||
+            $native['id']!==$account['remote_user_id'] ||
+            $native['created_at']!==$account['remote_created_at'] ||
+            ($e['source_kind']??null)!=='legacy_migration' ||
+            ($e['effect_kind']??null)!=='adopt' ||
+            $e['pay_row_id']!==null || $e['actor_userid']!==null ||
+            (int)$e['ordinal']!==1 || (int)$e['reserved_count']!==0 ||
+            $e['state']!=='local_recorded' ||
+            $e['provider_state']!=='linked' ||
+            (int)$e['provider_reference_id']!==(int)$e['id'] ||
+            $e['source_ref']!=='legacy:'.$migration['source_server_id'].':'.hash('sha256',$account['remote_username']) ||
+            (int)$e['target_server_id']!==$migration['source_server_id'] ||
+            $e['target_key']!=='pg:'.$account['instance_key'] ||
+            $e['endpoint_sha256']!==$account['endpoint_sha256'] ||
+            $e['remote_username']!==$account['remote_username'] ||
+            (int)$e['provider_connection_id']!==$account['panel_id'] ||
+            (int)$e['provider_remote_user_id']!==$native['id'] ||
+            $e['provider_remote_created_at']!==$native['created_at'] ||
+            (string)$e['requested_expire']!==(string)($native['expire']??0) ||
+            (string)$e['requested_bytes']!==(string)$native['data_limit'] ||
+            $e['provider_operation_marker']!=='achbot:adopt:'.$e['operation_id'] ||
+            !preg_match('/^[a-f0-9]{32}$/D',(string)$e['operation_id']) ||
+            !hash_equals(hash('sha256',json_encode($snap,JSON_THROW_ON_ERROR)),
+                (string)$e['request_sha256']))
+            throw new RuntimeException();
+        $refs=[];$previous=0;
+        foreach ($migration['references'] as $ref) {
+            if (!is_array($ref) || array_keys($ref)!==['order_id','owner_id','plan_id'] ||
+                !is_int($ref['order_id']) || $ref['order_id']<=$previous ||
+                !is_int($ref['owner_id']) || $ref['owner_id']<=0 ||
+                !is_int($ref['plan_id']) || $ref['plan_id']<0)
+                throw new RuntimeException();
+            $previous=$ref['order_id'];$refs[$previous]=$ref;
+        }
+        // No new purchase/originating local order was created by migration.
+        // Its evidence is physical, and all original order refs remain separate.
+        // This also preserves the existing deletion-capacity behavior, which
+        // checks originating purchase effects by service_effects.order_id.
+        if ((!$native['group_ids'] && array_filter($refs,static fn($r)=>$r['plan_id']!==0)) ||
+            $e['order_id']!==null || (int)$e['plan_id']!==0)
+            throw new RuntimeException();
+        return $refs;
+    } catch (Throwable $exception) {
+        throw new RuntimeException('provider_legacy_cutover_provenance_invalid');
+    }
+}
+
 function achbotProviderAccountByOrder(mysqli $db,int $orderId,bool $lock=false): ?array {
     achbotProviderRequireSchema($db);
     $order=achbotProviderRow($db,'SELECT id,userid,remark,provider_effect_id,provider_remote_user_id,provider_remote_created_at
         FROM orders_list WHERE id=?'.($lock?' FOR UPDATE':''),'i',[$orderId]);
     if (!$order || $order['provider_effect_id']===null) return null;
-    $anchor=achbotProviderAccountRow(achbotProviderRow($db,'SELECT * FROM service_effects WHERE id=?'.($lock?' LOCK IN SHARE MODE':''),
-        'i',[(int)$order['provider_effect_id']]));
+    $effect=achbotProviderRow($db,'SELECT * FROM service_effects WHERE id=?'.($lock?' LOCK IN SHARE MODE':''),
+        'i',[(int)$order['provider_effect_id']]);
+    $anchor=achbotProviderAccountRow($effect);
     if (!$anchor || $anchor['remote_username']!==$order['remark'] ||
         $anchor['remote_user_id']!==(int)$order['provider_remote_user_id'] ||
         $anchor['remote_created_at']!==$order['provider_remote_created_at']) throw new RuntimeException('provider_order_identity_invalid');
+    $historical=($effect['source_kind']??null)==='legacy_migration'?
+        achbotProviderLegacyCutoverEvidence($effect,$anchor):null;
     require_once __DIR__.'/../Purchase/OrderWrites.php';
     $origin=achbotOrderImportOrigin($db,$order,$lock);
-    if ($origin!==null) {
+    if ($historical!==null && isset($historical[$orderId])) {
+        $ref=$historical[$orderId];
+        if ($ref['owner_id']!==(int)$order['userid'])
+            throw new RuntimeException('provider_legacy_cutover_reference_invalid');
+        // An immutable old Marzban import origin can survive a legitimate
+        // previous service/plan transfer. It is NOT a PasarGuard import
+        // authority and must not be rewritten or interpreted as a new sale.
+        // Original origin.server_id may differ from today's logical server.
+        if ($origin!==null && $origin['provider']!=='marzban')
+            throw new RuntimeException('provider_legacy_cutover_origin_invalid');
+    } elseif ($origin!==null) {
+        // A NEW post-cutover external attachment to this very same historical
+        // Native account remains supported, but must prove its own modern
+        // PasarGuard import origin and exact pinned physical identity.
         if ($origin['provider']!=='pasarguard' || ($origin['provider_account_id']??null)!==$anchor['id'])
             throw new RuntimeException('provider_order_origin_invalid');
         foreach (['remote_user_id','remote_created_at','remote_username'] as $field)
             if (($origin['native_identity'][$field]??null)!==$anchor[$field]) throw new RuntimeException('provider_order_origin_identity_invalid');
-    } elseif ($anchor['order_id']!==$orderId) throw new RuntimeException('provider_order_origin_invalid');
+    } elseif ($historical!==null) throw new RuntimeException('provider_legacy_cutover_reference_invalid');
+    elseif ($anchor['order_id']!==$orderId) throw new RuntimeException('provider_order_origin_invalid');
     return $anchor;
 }
 function achbotProviderAccountByEffect(mysqli $db,int $effectId): ?array {
@@ -307,7 +415,12 @@ function achbotProviderVerifyAccount(mysqli $db,int $effectId,array $user): void
 function achbotProviderLinkAccount(mysqli $db,int $effectId,int $orderId): void {
     achbotProviderRequireSchema($db);
     if ($orderId<=0) throw new RuntimeException('provider_order_invalid');
-    $r=achbotProviderAccountByEffect($db,$effectId);
+    $effect=achbotProviderRow($db,'SELECT * FROM service_effects WHERE id=?','i',[$effectId]);
+    // A physical historical-cutover anchor never becomes a new originating
+    // purchase/effect when a customer subsequently registers a shared URL.
+    if (($effect['source_kind']??null)==='legacy_migration')
+        throw new RuntimeException('provider_legacy_cutover_link_forbidden');
+    $r=achbotProviderAccountRow($effect);
     if (!$r || $r['remote_user_id']===null || $r['remote_created_at']===null ||
         !in_array($r['state'],['verified','linked'],true))
         throw new RuntimeException('provider_account_not_verified');
@@ -333,6 +446,11 @@ function achbotProviderAccountIdentity(mysqli $db,array $account,bool $lock=fals
     if (!preg_match('/^achbot:adopt:([a-f0-9]{32})$/D',(string)$account['operation_marker'],$m))
         throw new RuntimeException('provider_account_provenance_invalid');
     $e=achbotProviderRow($db,'SELECT * FROM service_effects WHERE id=?'.($lock?' LOCK IN SHARE MODE':''),'i',[(int)$account['effect_id']]);
+    if (($e['source_kind']??null)==='legacy_migration') {
+        achbotProviderLegacyCutoverEvidence($e,$account);
+        return $identity+['identity_mode'=>'adopted','remote_username'=>$account['remote_username'],
+            'adoption_sha256'=>hash('sha256',(string)$e['provider_snapshot'])];
+    }
     try {
         $snap=json_decode((string)($e['provider_snapshot']??''),true,64,JSON_THROW_ON_ERROR);
         $native=json_decode((string)$account['entitlement_snapshot'],true,64,JSON_THROW_ON_ERROR);

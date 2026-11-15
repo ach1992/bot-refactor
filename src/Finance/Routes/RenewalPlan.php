@@ -28,6 +28,7 @@ if(preg_match('/sConfigRenewPlan(\d+)_(\d+)/',$data, $match) && ($botState['sell
     $accountServer = (int)($configInfo['server_id'] ?? 0);
     if (!is_array($configInfo) || ($configInfo['marzban'] ?? null) !== true ||
         empty($configInfo['remark']) || $accountServer <= 0 ||
+        achbotProviderType($connection, $accountServer)!=='marzban' ||
         !achbotSupportsPlan($connection, (int)$id, 0, $accountServer)) {
         alert(\achbotMessage('renewal.renewal_plan.alert.b1e40557e8'), true);
         return;

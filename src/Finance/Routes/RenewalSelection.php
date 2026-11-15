@@ -27,26 +27,26 @@ if(preg_match('/sConfigRenew(\d+)/', $data,$match)){
         alert(\achbotMessage('renewal.renewal_checkout.alert.6aa152a253'), true);
         return;
     }
-    $stmt = $connection->prepare("SELECT * FROM `server_plans` WHERE `server_id` = ? AND `custom_sni` LIKE '%inbounds%' AND `active` = 1 AND `price` != 0 AND `inbound_id` = 0 ORDER BY id ASC");
+    $stmt = $connection->prepare("SELECT p.* FROM `server_plans` p JOIN `server_config` c ON c.id=p.server_id AND c.type='marzban' WHERE p.server_id=? AND p.active=1 AND p.price>0 AND p.inbound_id=0 ORDER BY p.id ASC");
     $stmt->bind_param("i", $server_id);
 
     $stmt->execute();
     $plans = $stmt->get_result();
     $stmt->close();
-    if($plans->num_rows > 0){
-        $keyboard = [];
-        while($file = $plans->fetch_assoc()){ 
-            {
-                $id = $file['id'];
-                $name = $file['title'];
-                $price = $file['price'];
-                $price = ($price == 0) ? \achbotMessage('renewal.extensions.price.dda7ff2974') : number_format($price).\achbotMessage('renewal.renewal_selection.text.bfb7221456');
-                $keyboard[] = ['text' => "$name - $price", 'callback_data' => "sConfigRenewPlan{$id}_{$inboundId}"];
-            }
-        }
+    $keyboard = [];
+    while ($file = $plans->fetch_assoc()) {
+        $id = (int)$file['id'];
+        // The retired external-renewal callback is Marzban-only; validate
+        // actual native plan access instead of searching old JSON text.
+        if (!achbotSupportsPlan($connection, $id, 0, (int)$server_id)) continue;
+        $name = $file['title'];
+        $price = number_format($file['price']).\achbotMessage('renewal.renewal_selection.text.bfb7221456');
+        $keyboard[] = ['text' => "$name - $price", 'callback_data' => "sConfigRenewPlan{$id}_{$inboundId}"];
+    }
+    if ($keyboard) {
         $keyboard[] = ['text' => $buttonValues['back_to_main'], 'callback_data' => "mainMenu"];
         $keyboard = array_chunk($keyboard,1);
         editText($message_id, \achbotMessage('renewal.renewal_selection.message.51ab077156'), json_encode(['inline_keyboard'=>$keyboard]));
-    }else sendMessage(\achbotMessage('renewal.renewal_selection.message.5223e5a747'));
+    } else sendMessage(\achbotMessage('renewal.renewal_selection.message.5223e5a747'));
 }
 
