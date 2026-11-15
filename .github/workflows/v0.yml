@@ -1,8 +1,5 @@
-name: Compatibility
+name: Extended regression (manual)
 on:
-  pull_request:
-  push:
-    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -346,7 +343,7 @@ jobs:
           retention-days: 14
 
   php85-validation:
-    name: php85-validation
+    name: extended-php85-validation
     needs: [plan, selected, foundation, families]
     if: always() && !cancelled()
     runs-on: ubuntu-24.04

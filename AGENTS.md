@@ -19,7 +19,7 @@
 
 ## Build, verification and delivery
 
-- Current PHP validation target is **PHP 8.5**. Run targeted tests during development and the official eight-family native PHP 8.5 CI with protected aggregate on stable runtime candidates; do not weaken family completeness or substitute selected/doc-only CI for a source change. See [CI contract](docs/post-v9/CI-VALIDATION.md).
+- Current PHP validation target is **PHP 8.5**. The required `php85-validation` status runs current source/Cron and representative source-real functional regressions (payments, subscriptions, Native, wallet, authorization and delivery) from the exact candidate. The eight-family extended regression is manually runnable when broader high-risk coverage is warranted; neither path proves live financial or Telegram acceptance. See [CI contract](docs/post-v9/CI-VALIDATION.md).
 - Independent author-separated review, exact candidate identity, current base, Owner integration approval, release creation, installed deployment and live acceptance are **separate gates**. A verified merge or release does not imply production deployment.
 - The runtime comes only from the manifest-bound 132-member `tools/package_post_v9.py` package at clean, committed release HEAD; it contains no private config or SQL. Avoid runtime ZIP entry changes without corresponding source inventory and acceptance.
 - Per-installation Cron runs the existing top-level `settings/cronRunner.php` coordinator, four isolated sequential child jobs and private per-bot lock. Never manually launch real Cron as a harmless test, change operational schedules without authority, or remove active lock files. A trusted external lock directory is created only by the admitted coordinator when its OS user has permission.
