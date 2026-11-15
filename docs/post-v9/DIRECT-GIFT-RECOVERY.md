@@ -1,6 +1,6 @@
 # Direct administrator gift — source safety and recovery (Issue #78)
 
-This guide describes the RC20 administrator-gift contract from [PR101](https://github.com/ach1992/bot-refactor/pull/101) and the retained ingress/replay hardening from [Issue78](https://github.com/ach1992/bot-refactor/issues/78). Use the [current release contract](NEXT-RELEASE.md) and [RC19 → RC20](RC19-TO-RC20.md) for exact source and rollout prerequisites. Publication establishes no installed/operator or real provider result.
+This is the current administrator-gift operation and recovery contract, including the original ingress/replay protection. Use the [Stable baseline](STABLE-BASELINE.md) and exact [release manifest](https://github.com/ach1992/bot-refactor/releases/tag/v0.10.0) for the current source. Publication alone establishes no installed/operator or real provider result.
 
 Administrator gifts are independent of purchase plans, including genuine planless imports. One physical gift may have several admitted current local references; each distinct linked customer gets a notice attempt. The panel supplies displayed expiry/quota. Purchase/cache expiry and financial history remain unchanged, with only positive-day warning re-arm and durable operation evidence. The [current gift contract](API-PAYMENT-EVIDENCE.md#native-gift-correction-and-owner-policy) specifies shared-reference identity, cohort, locking and uncertainty controls.
 

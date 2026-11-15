@@ -1,7 +1,6 @@
 # Scoped day and volume extension offers (Issue #107)
 
-Status: RELEASED AS SOURCE-ONLY RC22. Release and source review are not installation, schema-migration or live-financial authorization.
-Applies to current post-V9 source; historical accepted V0-V9 schema remains frozen.
+Current Stable behavior. The applicable 015 schema/Native Group controls must be installed and verified separately; publishing source does not perform a migration or live financial action. The historical original schema remains preserved in source history.
 
 ## Eligibility and price precedence
 

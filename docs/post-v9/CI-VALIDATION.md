@@ -1,13 +1,13 @@
 # Current PHP 8.5 validation and CI policy
 
-This document applies to **new development after RC21** in `ach1992/bot-refactor`. Published releases and immutable historical commits retain their original evidence. It does not authorize installation, database changes, payments or production Cron operations.
+This document applies to the **current stable v0.10.0 development baseline** in `ach1992/bot-refactor`. Published releases and immutable historical commits retain their original evidence. It does not authorize installation, database changes, payments or production Cron operations.
 
 ## Documentation boundary
 
 The lightweight `docs` scope uses a **positive exact-path allowlist**:
 only modified-in-place, regular `README.md` and `docs/post-v9/README.md`.
 Financial, security, CI/policy, installation, migration and release-note
-contracts (including `docs/post-v9/NEXT-RELEASE.md`) remain `full`, even
+contracts (including `docs/post-v9/FRESH-INSTALL.md`) remain `full`, even
 when only their prose changes. New or deleted documents, symlinks, mode
 changes and ambiguous renames/add-delete pairs also require `full`.
 This preserves the independent-review correction previously accepted

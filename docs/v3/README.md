@@ -33,8 +33,8 @@ This step gives the support feature a bounded owner and executable old/new lifec
 
 ## Reading and validation
 
-- [Testing and evidence limits](TESTING.md)
-- [Staging, source replacement and rollback](OPERATIONS.md)
-- [Preserved legacy behavior and known risks](LEGACY-BEHAVIOR.md)
+- [Testing and evidence limits](https://github.com/ach1992/bot-refactor/blob/bc99b227660e21e065af454f6315d08905cda429/docs/v3/TESTING.md)
+- [Staging, source replacement and rollback](https://github.com/ach1992/bot-refactor/blob/bc99b227660e21e065af454f6315d08905cda429/docs/v3/OPERATIONS.md)
+- [Preserved legacy behavior and known risks](https://github.com/ach1992/bot-refactor/blob/bc99b227660e21e065af454f6315d08905cda429/docs/v3/LEGACY-BEHAVIOR.md)
 
 `tools/v3_contract.py` reconstructs the allowed source transformation from immutable V2. This protects scope; it is not a substitute for independent review. Normal tests compare immutable old execution against new execution without recording replacement goldens. No performance improvement, whole-bot completion, production rollout or manual acceptance is claimed.
