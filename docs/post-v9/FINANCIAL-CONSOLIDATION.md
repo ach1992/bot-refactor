@@ -2,7 +2,7 @@
 
 **Current baseline note:** This detailed financial behavior and recovery reference contains historical source/RC design checkpoints. The supported forward version is [v0.10.0 Stable](STABLE-BASELINE.md); use the actual current payment/effect journals and [payment delivery recovery](PAYMENT-DELIVERY-RECOVERY.md), not dated rollout checkpoints, for production decisions. Its historical sections remain for nontrivial financial reasoning and source regression provenance.
 
-**Unreleased PR #152 — generated bulk account identity:** New PasarGuard and
+**Integrated bulk-account identity ([PR #152](https://github.com/ach1992/bot-refactor/pull/152)):** New PasarGuard and
 Marzban administrator/paid bulk accounts use the existing configured
 `server-userId-number` or `server-number` shape with a source/ordinal-stable
 10-digit numeric suffix. PasarGuard retains its independent 100 ASCII-byte
@@ -89,12 +89,12 @@ All purchase, renewal, extension and wallet top-up menus use the shared manual-c
 
 Make **all existing and future payment methods** use the same *verified payment and durable fulfillment* policy, while keeping each provider's request/authentication/proof/status semantics in an isolated adapter. Manual receipts, wallet payment/transfer, administrative debt and scheduled approval are **not bank gateways**, but must share the relevant transaction/idempotency/effect rules. A common router does **not** mean forcing distinct financial semantics into one PHP function.
 
-- Stay in this repository, PHP 8.1+/MariaDB, current bot, its already supported providers and Marzban-only service operations. No cross-project Foundation, new service, worker framework, duplicate orchestration, speculative future gateway implementation or wholesale database redesign.
+- Stay in this repository, current PHP 8.5 source acceptance/MariaDB contracts, and supported native Marzban/PasarGuard service operations. No cross-project Foundation, new service, worker framework, duplicate orchestration, speculative future gateway implementation or wholesale database redesign.
 - Keep the original 23-table historical V9 DDL/goldens immutable. The *current source* expects the separately accepted nullable `server_info.panel_group_id` column plus the provider-shared 003 tables. Actual installed migration state remains unverified; no real DB migration is authorized by this source integration. Favor current schema for initial characterization; permit **only justified additive, backwards-compatible persistence changes** after a separately reviewed design, original-data audit, explicit Owner schema/deployment approval and independently restorable backup.
 - Preserve installed `baseInfo.php`, existing URLs (`pay/index.php`, `pay/back.php`), Telegram callback identifiers, Cron entrypoint paths, price/currency expectations, supported `pays.type` business outcomes and existing Marzban account identity/capacity rules. Do not silently reinterpret historical orders, mark unsupported panels as Marzban, or convert refunds into automatic wallet credit.
-- A privileged admin may deliberately create a negative wallet **debt** with reason/actor/audit; user-controlled spend/transfer/purchase/renewal must not create or deepen debt. This policy is **not yet fully implemented/accepted**. Do not blanket clamp `users.wallet`.
+- A privileged admin may deliberately create a negative wallet **debt** with reason/actor/audit; user-controlled spend/transfer/purchase/renewal must not create or deepen debt. Its actual source/installed acceptance remains tracked in [Issue #26](https://github.com/ach1992/bot-refactor/issues/26). Do not blanket clamp `users.wallet`.
 
-## Current source inventory (verified at RC3 baseline)
+## Historical RC3 source inventory (not a current file/status index)
 
 | Responsibility | Existing source | Observed gap / preservation constraint |
 |---|---|---|

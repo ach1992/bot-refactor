@@ -1,19 +1,8 @@
 # Crash-safe customer payment delivery — recovery contract
-> **Current baseline:** Stable v0.10.0. The dated RC26/RC27 workbench discussions below are historical decision evidence, not instructions to re-enable retired experimental menus or replay migrations. Current installed payment acceptance is still target-specific and recorded in [Issue #117](https://github.com/ach1992/bot-refactor/issues/117).
 
-> **Version-bound historical RC26 documentation, not the published RC27
-> contract.** [PR #136](https://github.com/ach1992/bot-refactor/pull/136),
-> now released as [RC27](https://github.com/ach1992/bot-refactor/releases/tag/v0.10.0-rc.27),
-> removed the experimental operator resend/replacement/service workbenches
-> and new-install 019/021 migrations. The current source still retains
-> original 018/020 sealed delivery and follow-up journals and pending-only
-> first-send recovery, without blind retries of uncertain Telegram ACK or
-> remote Native effects. See [the current inbox and archive contract](AUTOMATIC-GATEWAY-REVIEW.md)
-> and [RC26 -> RC27 upgrade guide](https://github.com/ach1992/bot-refactor/blob/bc99b227660e21e065af454f6315d08905cda429/docs/post-v9/RC26-TO-RC27.md). RC26's older procedures
-> remain valid only for the exact immutable RC26 release; never mix SQL
-> sidecars across versions.
+**Current Stable source:** Protected original 018/020 delivery evidence and a tightly authorized operator redelivery remain relevant. The old RC26 experimental financial/service workbenches and 019/021 new-install sidecars were retired. Use the [current exception inbox and Archive contract](AUTOMATIC-GATEWAY-REVIEW.md) and [Issue #117](https://github.com/ach1992/bot-refactor/issues/117) for current behavior and outstanding *installed* acceptance. Dated RC workbench sections below are historical reasoning, **not executable runbooks, upgrade instructions or permission to replay effects**.
 
-## Current active operator redelivery (new source candidate; not yet released)
+## Current operator redelivery (source contract; installed acceptance separate)
 
 The older RC26 **Owner workbench** described below was retired by RC27 and
 must not be restored. The **current** minimal successor attaches directly to
@@ -31,7 +20,7 @@ file are not current runbooks.**
 
 ## Scope and invariants
 
-This is an additive **source** change, NOT an installed Chili migration and NOT a claim that full Issue #117 is accepted. Payment/native settlement remains governed by the existing financial and service-effect pins.
+This is the **source** safety contract, not evidence of a newly installed Chili migration or proof that all of Issue #117's current per-bot acceptance is complete. Payment/native settlement remains governed by the existing financial and service-effect pins.
 
 For 003-backed bank BUY_SUB and API bank/gift BUY_SUB, an original, immutable per-ordinal packet (QR/photo caption/text/keyboard, destination, provider/effect/order pins) is encrypted with the existing payment-evidence AEAD key and inserted in the **same InnoDB transaction** that records local orders, links verified native CREATE effects and marks pays terminal. If the required schema/key is unavailable, the remote CREATE path fails closed before any provider request. A late SQL failure rolls back local order, terminal state and all delivery intents together. Native effects already dispatched before the final DB transaction remain in review; no blind CREATE retry.
 
