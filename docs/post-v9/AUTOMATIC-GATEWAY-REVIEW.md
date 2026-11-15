@@ -1,7 +1,7 @@
 # Shared payment and service exception inbox — operator contract
 
-> Source contract for the next reviewed AChBot release. **Source changes do
-> not mean any installed Chili/Hell/Vivan bot has been updated.** Production
+> Source contract integrated by [reviewed PR #189](https://github.com/ach1992/bot-refactor/pull/189). **A Source merge, GitHub release or ZIP copied to
+> the Chili/Hell/Vivan directories does not update the installed runtime.** Production
 > activation and any schema migration require separate Owner approval. The
 > historic hosted-only 022 release behavior remains available in Git history.
 

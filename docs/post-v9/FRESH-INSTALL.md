@@ -2,7 +2,7 @@
 
 This guide is for a **new bot with a new, empty database**. An existing bot, a copied live database or a partly migrated database must use its exact release's upgrade/recovery guide instead. There is no browser installer or automatic schema upgrade.
 
-**Version boundary:** This is the new-empty-database procedure for [stable v0.10.0](https://github.com/ach1992/bot-refactor/releases/tag/v0.10.0), whose verified runtime ZIP has 132 members. Use the matching tagged source and its actual manifest. An **existing installation** is not eligible for this initialization procedure: audit its schema, financial/provider effects and approved forward migration path before any change. Obsolete experimental migrations 019/021 are not part of a new stable installation.
+**Version boundary:** This procedure began with the [first Stable v0.10.0 baseline](https://github.com/ach1992/bot-refactor/releases/tag/v0.10.0), whose runtime ZIP contains 132 members. For a new installation, select the [latest Stable release](https://github.com/ach1992/bot-refactor/releases/latest) and use its exact tagged source, runtime member manifest and release-matched schema. An **existing installation** is not eligible for this initialization procedure: audit its schema, financial/provider effects and approved forward migration path before any change. Obsolete experimental migrations 019/021 are not part of a new stable installation.
 
 ## 1. Prepare the installation
 

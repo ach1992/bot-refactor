@@ -1,6 +1,6 @@
 # Current PHP 8.5 validation and CI policy
 
-This document applies to the **current stable v0.10.0 development baseline** in `ach1992/bot-refactor`. Published releases and immutable historical commits retain their original evidence. It does not authorize installation, database changes, payments or production Cron operations.
+This document applies to the **forward Stable development line established by v0.10.0** in `ach1992/bot-refactor`. Published releases and immutable historical commits retain their original evidence. It does not authorize installation, database changes, payments or production Cron operations.
 
 ## Documentation boundary
 
