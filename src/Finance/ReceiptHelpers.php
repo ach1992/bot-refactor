@@ -10,7 +10,7 @@ require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
 require_once __DIR__.'/../Admin/Access.php';
 require_once __DIR__.'/../Panel/ProviderRuntime.php';
 require_once __DIR__.'/../Purchase/OrderWrites.php';
-require_once __DIR__.'/PaymentEvidence.php';
+
 
 if (!function_exists('payTypeToDescription')) {
     function payTypeToDescription($payType)
@@ -1363,6 +1363,9 @@ function achbotManualLegacyLedgerAbsent(mysqli $db): bool {
  */
 function achbotManualApprovalWorkerLease(mysqli $db,int $payId): bool {
     if ($payId<=0) return false;
+    // No global finance/merchant bootstrap for ordinary manual receipts.
+    // Acquire the original hosted/API/manual coordinator only on dispatch.
+    require_once __DIR__.'/GatewayClient.php';
     try {
         $name=achbotHostedWorkerLockName($db,$payId);
         $q=$db->prepare('SELECT IS_USED_LOCK(?) AS holder, CONNECTION_ID() AS self');

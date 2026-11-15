@@ -1313,8 +1313,8 @@ def run_wallet(tmp: str) -> tuple[dict, dict]:
                         -len(catalog_lineage.RENEWAL_NOTICE_REMOVED['user']))
     renewal_admin_added=len(catalog_lineage.RENEWAL_NOTICE_ADDED['admin'])
     expected_catalog={
-        'status':'PASS','current_catalog_keys':2883+admin_added+user_added+len(catalog_lineage.GATEWAY_CONTROLS_KEYS)+renewal_user_added+renewal_admin_added,
-        'current_admin_keys':1933+admin_added+len(catalog_lineage.GATEWAY_CONTROLS_KEYS)+renewal_admin_added,'current_user_keys':950+user_added+renewal_user_added,
+        'status':'PASS','current_catalog_keys':2883+admin_added+user_added+len(catalog_lineage.GATEWAY_CONTROLS_KEYS)+renewal_user_added+renewal_admin_added+len(catalog_lineage.OPERATOR_INBOX_KEYS),
+        'current_admin_keys':1933+admin_added+len(catalog_lineage.GATEWAY_CONTROLS_KEYS)+renewal_admin_added+len(catalog_lineage.OPERATOR_INBOX_KEYS),'current_user_keys':950+user_added+renewal_user_added,
         'retired_experimental_keys':129,'retired_experimental_topics':10,
         'new_copy_entries':33,'current_runtime_files':132,
         'new_copy_references_unbound':0,

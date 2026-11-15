@@ -12,6 +12,7 @@ if (is_file(__DIR__.'/PaymentEvidence.php')) require_once __DIR__.'/PaymentEvide
  */
 function achbotApiPaymentWithWorkerLock(mysqli $db,int $payId,callable $action): string {
     if ($payId<=0) return 'review';
+    require_once __DIR__.'/GatewayClient.php';
     static $held=[];
     $key=spl_object_id($db).':'.$payId;
     if (isset($held[$key])) return $action();
@@ -266,6 +267,7 @@ function achbotApiPaymentNotice(mysqli $db,array $pay,string $status,bool $repor
     $status=in_array($status,['confirmed','settled','review','uncertain','evidence_only','used','revoked','expired','mismatch'],true)?$status:'review';
     $label=$invalidCode?achbotMessage('manual_payment.api_payment.code_'.$status):achbotMessage('manual_payment.api_payment.status_'.$status);
     $archived=($a['review_archived_at']??null)!==null;
+    require_once __DIR__.'/GatewayClient.php';
     $actionable=!$archived && achbotGatewayAttentionCaseOpen($db,$id);
     $automatic=achbotApiPaymentTerminal($pay) && (int)($pay['approved_by']??-1)===0 && ($proof['mode']??'')==='settle';
     if($automatic)$label=achbotMessage('manual_payment.api_payment.auto_approved');
