@@ -62,7 +62,7 @@ $gatewayFitCase=static function(string $core,array $optional,string $footer) use
 // An explicit private, payments-authorized human decision to send exactly
 // one original UNKNOWN packet again. The preview NEVER sends or claims.
 $deliveryAction=[];
-if (preg_match('/^attentionDelivery(Confirm|Send)_([1-9][0-9]{0,17})_([1-9][0-9]{0,17})$/D',
+if (preg_match('/^attentionDelivery(Confirm|Send)_([1-9][0-9]{0,17})_([1-9][0-9]{0,17})(?:_([a-f0-9]{20}))?$/D',
     (string)($data??''),$deliveryAction)===1) {
     if (!achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'payments') ||
         (int)($chat_id??0)!==(int)$from_id) {
@@ -78,13 +78,20 @@ if (preg_match('/^attentionDelivery(Confirm|Send)_([1-9][0-9]{0,17})_([1-9][0-9]
         $candidate=achbotDeliveryManualCandidate($connection,$payId,$ordinal);
         if (!$candidate) {
             $message=achbotMessage('automatic_gateway_review.redrive_stale');
-        } elseif ($deliveryAction[1]==='Confirm') {
+        } elseif ($deliveryAction[1]==='Confirm' &&
+            (string)($deliveryAction[4]??'')==='') {
             $message=achbotMessageHtml('automatic_gateway_review.redrive_confirm',[
                 'user'=>(int)$candidate['user_id'],
                 'payment'=>$payId,'ordinal'=>$ordinal]);
+            $callback='attentionDeliverySend_'.$payId.'_'.$ordinal.'_'.
+                achbotDeliveryManualConfirmationToken($candidate,$payId,(int)$from_id);
+            if (strlen($callback)>64)
+                throw new RuntimeException('manual_redrive_callback_limit');
             $rows[]=[['text'=>achbotMessage('automatic_gateway_review.redrive_send'),
-                'callback_data'=>'attentionDeliverySend_'.$payId.'_'.$ordinal]];
-        } else {
+                'callback_data'=>$callback]];
+        } elseif ($deliveryAction[1]==='Send' &&
+            hash_equals(achbotDeliveryManualConfirmationToken(
+                $candidate,$payId,(int)$from_id),(string)($deliveryAction[4]??''))) {
             answerCallbackQuery($callbackId,achbotMessage('automatic_gateway_review.checking'));
             $result=achbotDeliveryManualRedrive(
                 $connection,$payId,$ordinal,(int)$from_id,(int)$admin);
@@ -96,8 +103,11 @@ if (preg_match('/^attentionDelivery(Confirm|Send)_([1-9][0-9]{0,17})_([1-9][0-9]
                 'stale'=>'automatic_gateway_review.redrive_stale',
                 default=>'automatic_gateway_review.redrive_unavailable',
             });
+        } else {
+            // Forged/unconfirmed/other-actor/stale callback: no customer send.
+            $message=achbotMessage('automatic_gateway_review.redrive_stale');
         }
-        $rows[]=[$caseBack];
+        $rows[]=$caseBack;
         $keys=json_encode(['inline_keyboard'=>$rows],
             JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
         $edited=editText($message_id,$message,$keys,'HTML',(int)$from_id);

@@ -83,6 +83,11 @@ The first click is **read-only** and displays the original recipient, payment
 and packet ordinal, plus a clear warning that the earlier Telegram message may
 have reached the customer. It offers **✅ تأیید و ارسال** or
 **↪️ بازگشت به پرونده**. No customer send happens on preview or Back.
+The confirmation callback carries a short, actor-bound proof of this
+specific original packet/version; a forged `Send` callback or a button
+forwarded from another administrator cannot bypass the warning. Permission
+and payment/effect provenance are checked again at execution under locks.
+The Back button uses an ordinary valid Telegram inline keyboard row.
 
 The confirmation sends the **exact originally encrypted and authenticated
 018 packet**, including the original text/mode or original QR/caption/keyboard,

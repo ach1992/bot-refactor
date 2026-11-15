@@ -24,7 +24,13 @@ dispatch adds `pay_id`, `delivery_ordinal`, `delivery_attempt`,
 `cURL 35` classifies as `tls_handshake`, `cURL 28` as `timeout`, `6` as
 `dns_resolution`, `7` as `connection_failed`; codes alone are not a proven
 root cause. HTTP 429 and Telegram 400/403 are recorded even when cURL itself
-succeeded. Return-value and timeout policies are unchanged.
+succeeded. Entity parsing errors and blocked-customer rejections have explicit
+safe classifications; the raw provider description is never persisted.
+Source-only transport regression exercises separate configured PHP sinks in
+synthetic Webhook/Cron-like paths, payment-attempt correlation, response
+contract preservation, and sensitive-value redaction. Actual deployed PHP-FPM
+and Cron sinks must still be validated separately. Return-value and timeout
+policies are unchanged.
 
 **Data handling:** never log the token-bearing API URL, outgoing message
 body, original sealed/encrypted packet, raw Telegram error description,

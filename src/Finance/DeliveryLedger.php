@@ -567,7 +567,7 @@ function achbotDeliveryDispatch(mysqli $db,int $payId,int $ordinal): string {
 function achbotDeliveryManualCandidate(mysqli $db,int $payId,int $ordinal=0): ?array {
     if ($payId<=0 || $ordinal<0 || !achbotDeliverySchemaReady($db)) return null;
     try {
-        $q=$db->prepare("SELECT d.id,d.ordinal,d.user_id,d.attempt_count
+        $q=$db->prepare("SELECT d.id,d.ordinal,d.user_id,d.attempt_count,d.payload_sha256
             FROM pays p
             JOIN payment_attempts a ON a.pay_row_id=p.id
             JOIN payment_delivery_intents d ON d.pay_row_id=p.id AND d.attempt_id=a.id
@@ -578,14 +578,42 @@ function achbotDeliveryManualCandidate(mysqli $db,int $payId,int $ordinal=0): ?a
                 (SELECT 1 FROM payment_delivery_attempts h
                  WHERE h.intent_id=d.id AND h.actor_userid>0)
             ORDER BY d.ordinal LIMIT 1");
+        // Non-exception mysqli modes are also supported; optional 022 must
+        // fail closed rather than dereference a false prepare result.
+        if (!$q) {
+            if ((int)$db->errno===1054) return null;
+            throw new RuntimeException('manual_redrive_lookup_prepare_failed');
+        }
         $q->bind_param('iii',$payId,$ordinal,$ordinal);
         $q->execute();$candidate=$q->get_result()->fetch_assoc();$q->close();
         return $candidate?:null;
     } catch(Throwable $e) {
+        // 022 Archive is optional on older installations. The shared inbox
+        // cannot serve this action there, without noisy 1054 log spam.
+        if ($e instanceof mysqli_sql_exception && (int)$e->getCode()===1054)
+            return null;
         error_log('achbot_delivery_manual_lookup_unavailable pay_id='.$payId.
             ' class='.get_class($e));
         return null;
     }
+}
+
+/** Stateless, actor-bound proof that the duplicate-warning preview was
+ * rendered for THIS original intent/version. Its callback is never an
+ * authorization by itself: the execution path rechecks staff roles, payment
+ * and immutable packet under the original database locks.
+ */
+function achbotDeliveryManualConfirmationToken(array $candidate,int $payId,int $actor): string {
+    if ($payId<=0 || $actor<=0 || (int)($candidate['id']??0)<=0 ||
+        (int)($candidate['ordinal']??0)<=0 ||
+        !preg_match('/^[a-f0-9]{64}$/D',(string)($candidate['payload_sha256']??'')))
+        throw new RuntimeException('manual_redrive_preview_identity_invalid');
+    $proof=implode('|',['manual-redrive-preview-v1',$actor,$payId,
+        (int)$candidate['id'],(int)$candidate['ordinal'],
+        (int)$candidate['attempt_count'],(string)$candidate['payload_sha256']]);
+    // 80-bit MAC leaves room for max-size current SQL ids inside Telegram's
+    // actual 64-byte callback_data limit; no arbitrary preview TTL.
+    return substr(hash_hmac('sha256',$proof,achbotPaymentEvidenceKey()),0,20);
 }
 
 /** Explicitly confirmed by a current payments-capable administrator.
@@ -658,7 +686,16 @@ function achbotDeliveryManualRedrive(mysqli $db,int $payId,int $ordinal,
                 ' ordinal='.$ordinal.' actor='.$actor.' class='.get_class($e).
                 ' code='.preg_replace('/[^a-z0-9_]/','',
                      substr($e->getMessage(),0,80)));
-            return $e->getMessage()==='manual_redrive_denied'?'denied':'stale';
+            return match($e->getMessage()) {
+                'manual_redrive_denied'=>'denied',
+                'manual_redrive_not_terminal',
+                'manual_redrive_archived_or_missing',
+                'manual_redrive_not_unknown',
+                'manual_redrive_already_attempted',
+                'manual_redrive_original_proof_invalid',
+                'manual_redrive_claim_conflict'=>'stale',
+                default=>'unavailable',
+            };
         }
         error_log('achbot_delivery_manual_attempt_started pay_id='.$payId.
             ' ordinal='.$ordinal.' attempt='.$next.' actor='.$actor);

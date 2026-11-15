@@ -497,6 +497,7 @@ def run_api(tmp: str) -> tuple[dict, dict]:
         'terminal_unconfirmed_original_inbox_shows_status_check_not_second_operation',
         'actual_api_resume_telegram_unknown_native_create_not_replayed_or_misreported',
         'explicit_staff_preview_permissions_cas_one_qr_send_and_no_native_replay',
+        'staff_abandoned_manual_journal_after_http_not_replayed',
         'actual_api_resume_terminal_all_acknowledged_true_delivery_result',
         'actual_api_resume_terminal_pending_only_ack_returns_complete_no_double_credit',
         'api_resume_all_financially_terminal_outcomes_return_to_attention_inbox',
@@ -1073,7 +1074,7 @@ def run_services(tmp: str) -> tuple[dict, dict]:
         cwd=ROOT,check=True,timeout=20,capture_output=True,text=True)
     transport_privacy=json.loads(transport_cli.stdout)
     if not (transport_privacy.get("complete")
-            and transport_privacy.get("cases")==7
+            and transport_privacy.get("cases")==13
             and transport_privacy.get("network_requests")==0
             and transport_privacy.get("raw_payload_log_records")==0):
         raise RuntimeError("Telegram transport failure logs exposed private data")

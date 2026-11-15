@@ -187,5 +187,7 @@ function sendFile($botToken,$runtimeDir,$method,$datas=[]) {
     $decoded=is_string($res)&&$res!==''?json_decode($res,true):null;
     logResult($runtimeDir,$method,$timing,$http,$errno,$elapsed,$decoded,true);
     if ($errno!==0) return false;
-    return is_array($decoded)&&$decoded?$decoded:false;
+    // Legacy sendFile callers receive json_decode(..., true) as-is when
+    // truthy, including unusual scalar JSON. Do not narrow its contract.
+    return $decoded ?: false;
 }
