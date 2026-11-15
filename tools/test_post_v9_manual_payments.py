@@ -532,6 +532,20 @@ $q=$connection->prepare('SELECT RELEASE_LOCK(?) AS released');
 $q->bind_param('s',$lock);$q->execute();$q->close();
 """
 
+PHP_ARCHIVE = r"""<?php
+$_SERVER['SCRIPT_FILENAME']=__FILE__;
+$root=$argv[1];$socket=$argv[2];$name=$argv[3];
+$id=(int)$argv[4];$actor=(int)$argv[5];
+$db=new mysqli('localhost','root','',$name,0,$socket);
+$db->set_charset('utf8mb4');
+require_once $root.'/src/Finance/GatewayReview.php';
+$q=$db->prepare('SELECT id FROM payment_attempts WHERE pay_row_id=?');
+$q->bind_param('i',$id);$q->execute();
+$source=$q->get_result()->fetch_assoc();$q->close();
+$result=$source?achbotGatewayReviewArchive($db,$actor,(int)$source['id'],9001):'missing';
+echo json_encode(['result'=>$result],JSON_THROW_ON_ERROR);
+"""
+
 @contextlib.contextmanager
 def held_review_gate(work,env,gate):
     assert re.fullmatch(r'[a-z][a-z0-9_]{0,30}',gate),gate
@@ -1622,10 +1636,12 @@ def check():
             decisions=list(executor.map(lambda _:run_route(
                 work,env,route_driver,data='acceptstandardrace',
                 actor=9001,route='standard_approval',
-                # A concurrent loser can see the original processing line
-                # while its exact remote readback remains in-flight; only
-                # that bounded error is permitted, never a second CREATE.
-                expected_warning='achbot_manual_standard_effect_needs_review'),range(2)))
+                # A concurrent loser can observe either the in-flight
+                # Native claim or the already-approved original with only
+                # pending first-attempt notifications. Both outcomes are
+                # bounded diagnostics, not permission for another CREATE.
+                expected_warning=['achbot_manual_standard_effect_needs_review',
+                                  'achbot_manual_purchase_resume_pending']),range(2)))
         assert sum(sum(e['name']=='remote_create' for e in result)
                    for result in decisions)==1,repr(decisions)
         assert query(work,env,"SELECT state FROM pays WHERE hash_id='standardrace'")=='approved'
@@ -3768,6 +3784,82 @@ def check():
             "SELECT id,pay_row_id,provider,order_hash,stage FROM payment_attempts "
             "WHERE order_hash='topupissuedold'")==attempt_before
         cases.append('real_topup_concurrent_step_claim_single_atomic_invoice')
+
+        # Independent review #189: a typed rejection editor can be opened
+        # before another payments-capable operator Archives the original.
+        # Complete every pre-022 acceptance case first; then apply the real
+        # additive evidence/Archive schema on THIS disposable database only.
+        archive_key='standardarchiverace'
+        active_key='standardarchiveactive'
+        standard_pay(archive_key,method='gift_card')
+        standard_pay(active_key,method='gift_card')
+        open_reason_editor(archive_key,actor=9001)
+        query(work,env,(ROOT/'migrations/post-v9/014_api_payment_evidence.sql').read_text())
+        query(work,env,(ROOT/'migrations/post-v9/022_gateway_review_archive.sql').read_text())
+        query(work,env,"UPDATE payment_attempts SET "
+            "evidence_profile='fixture-original-manual',evidence_state='review',"
+            "evidence_review_sent_at=NOW() WHERE order_hash='"+archive_key+"'")
+        # B has a genuine delegated payments role but is NOT the author of
+        # A's already-open rejection editor.
+        query(work,env,"INSERT INTO users(userid,name,username,refcode,wallet,date,isAdmin,step,first_start) "
+            "VALUES(9006,'Fixture archive reviewer','archive-reviewer','0',0,'1700000000',1,'none','sent');"
+            "INSERT INTO setting(type,value) VALUES('ADMIN_ROLE_9006','operator')")
+        archive_driver=work/'manual-review-archive.php'
+        archive_driver.write_text(PHP_ARCHIVE)
+        def archive_original(key,actor=9006):
+            pay_id=query(work,env,"SELECT id FROM pays WHERE hash_id='"+key+"'")
+            proc=subprocess.run(['php','-n','-d','extension=mysqlnd','-d','extension=mysqli',
+                '-d','allow_url_fopen=0','-d','disable_functions=exec,shell_exec,system,passthru,popen,proc_open,mail',
+                str(archive_driver),str(ROOT),str(work/'mysql.sock'),DB,pay_id,str(actor)],
+                cwd=work,env=env,capture_output=True,text=True,timeout=12)
+            if proc.returncode or proc.stderr:
+                raise RuntimeError('Archive operator source failed: '+proc.stderr+proc.stdout)
+            return json.loads(proc.stdout)['result']
+        original_pay=query(work,env,"SELECT state,IFNULL(approved_by,0),price FROM pays "
+                                 "WHERE hash_id='"+archive_key+"'")
+        original_attempt=query(work,env,"SELECT id,provider,order_hash,quote_amount,evidence_state "
+                                     "FROM payment_attempts WHERE order_hash='"+archive_key+"'")
+        expected_step='declineActionReason_'+archive_key+'_111'
+        gate='archive_reason'
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            with held_review_gate(work,env,gate):
+                pending=executor.submit(submit_reason,archive_key,
+                    actor=9001,reason='علت منسوخ پس از بایگانی',
+                    manual_review_gate=gate,expected_warning='manual_reject_archived')
+                await_review_gate(work,env,gate,pending)
+                archived=archive_original(archive_key)
+                assert archived=='archived',('Archive before stale Reject',archived)
+            stale=pending.result(timeout=18)
+        assert any(e['name']=='alert' for e in stale),stale
+        assert not any(e['name'] in ('editKeys','sendMessage','remote_create','remote_edit')
+                       for e in stale),stale
+        assert query(work,env,"SELECT state,IFNULL(approved_by,0),price FROM pays "
+                        "WHERE hash_id='"+archive_key+"'")==original_pay
+        assert query(work,env,"SELECT id,provider,order_hash,quote_amount,evidence_state "
+                        "FROM payment_attempts WHERE order_hash='"+archive_key+"'")==original_attempt
+        assert query(work,env,"SELECT review_archived_by,IF(review_archived_at IS NULL,0,1) "
+                        "FROM payment_attempts WHERE order_hash='"+archive_key+"'")=='9006\t1'
+        assert query(work,env,"SELECT COUNT(*) FROM payment_followup_intents f JOIN pays p "
+                        "ON p.id=f.pay_row_id WHERE p.hash_id='"+archive_key+"'")=='0'
+        assert query(work,env,'SELECT step FROM users WHERE userid=9001')==expected_step
+        cases.append('manual_reject_stale_reason_archived_without_financial_or_editor_change')
+        # An active unarchived reason-first rejection must still commit once
+        # with genuine original customer and staff/outbox messages.
+        open_reason_editor(active_key,actor=9001)
+        sent=submit_reason(active_key,actor=9001,reason='علت معتبر رد آزمایشی')
+        assert query(work,env,"SELECT state,approved_by FROM pays WHERE hash_id='"+
+                        active_key+"'")=='declined\t9001',sent
+        assert query(work,env,'SELECT step FROM users WHERE userid=9001')=='none'
+        sent_customer=[e for e in sent if e['name']=='sendMessage' and
+                       len(e.get('args',[]))>=4 and e['args'][3]==1001]
+        assert len(sent_customer)==1 and 'علت معتبر' in str(sent_customer[0]['args'][0]),sent
+        assert query(work,env,"SELECT COUNT(*) FROM payment_followup_intents f JOIN pays p "
+                        "ON p.id=f.pay_row_id WHERE p.hash_id='"+active_key+"' AND f.state='acknowledged'")!='0'
+        assert not any(e['name'] in ('remote_create','remote_edit') for e in sent),sent
+        assert not any(e['name']=='sendMessage' for e in
+            run_route(work,env,route_driver,data='declineAction_'+active_key,
+                      actor=9001,route='manual_admin'))
+        cases.append('manual_reject_active_on_022_still_commits_once_with_original_notifications')
 
     return {'complete':True,'cases':len(cases),'scenarios':cases,
             'php_runtime':'native','database':'owned_socket_only',

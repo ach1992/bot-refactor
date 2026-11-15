@@ -78,10 +78,15 @@ without changing the archived original.
 The original `achbotHostedWorkerLockName` per-database/per-payment MariaDB
 session lock is shared with API SMS/gift processing and fulfillment.
 Human manual approval of Native service work also holds that same session
-lease through the entire webhook; a completed SQL claim alone does not prove
-that the corresponding remote operation has finished. Archive
-returns **busy** when a genuine original worker is active rather than
-claiming to cancel an already-dispatched Native or Telegram operation.
+lease through the entire webhook. Independent original 018 customer delivery
+and 020 customer/staff follow-up dispatchers hold or borrow that lease across
+the durable one-shot claim, outbound Telegram request and acknowledgement
+recording, without holding an InnoDB transaction over HTTP. A nested dispatcher
+must never release its parent's lease. Archive returns **busy** when a genuine
+original worker is active rather than claiming to cancel an already-dispatched
+Native or Telegram operation. An already-open manual rejection-reason editor
+must recheck the original Archive marker under payment/attempt locks before
+consuming the editor or committing any rejection or follow-up.
 Original financial/API proof, Native service-effect admission, and first
 customer/staff delivery-fence checks must refuse new work after Archive.
 Previously unknown remote results remain unknown. New independent customer

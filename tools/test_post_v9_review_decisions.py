@@ -627,18 +627,6 @@ check(achbotGatewayAttentionCaseOpen($db,831) &&
  achbotGatewayAttentionCaseOpen($db,833),
  'telegram_followup_race_cases_pending_in_original_inbox');
 
-// A previously opened real manual reason editor must lose to Archive.
-$manualRejectAttempt=seed($db,835,'gift_card','review','manual_receipt');
-$manualActiveAttempt=seed($db,836,'gift_card','review','manual_receipt');
-$db->query("UPDATE pays SET state='have_sent',chat_id=9001,message_id=111
- WHERE id IN (835,836)");
-$db->query("UPDATE payment_attempts SET evidence_profile='fixture-api-original',
- evidence_state='review',evidence_review_sent_at=NOW()
- WHERE pay_row_id IN (835,836)");
-check(achbotGatewayAttentionCaseOpen($db,835) &&
- achbotGatewayAttentionCaseOpen($db,836),
- 'archive_eligible_original_manual_rejection_cases');
-
 echo json_encode([
  'complete'=>true,'checks'=>$GLOBALS['checks'],'owned_mariadb'=>true,
  'real_review_decision_source'=>true,'test_effect_is_synthetic'=>true,
@@ -654,8 +642,7 @@ echo json_encode([
  'followup_crash'=>$crashFollowup,
  'followup_borrow'=>$borrowFollowup,
  'followup_unrelated'=>$unrelatedFollowup,
- 'manual_reject_attempt'=>$manualRejectAttempt,
- 'manual_active_attempt'=>$manualActiveAttempt],
+ ],
  JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE);
 '''
 PHP_CASE = r"""<?php
@@ -857,8 +844,6 @@ if ($mode==='hold') {
  }
 } elseif ($mode==='archive') {
  $result=achbotGatewayReviewArchive($db,9001,$attemptId,9001);
-} elseif ($mode==='archive_operator') {
- $result=achbotGatewayReviewArchive($db,9002,$attemptId,9001);
 } else throw new RuntimeException('invalid_race_role');
 echo json_encode(['result'=>$result,
     'mock_telegram_calls'=>$GLOBALS['dispatch_count'],
@@ -1027,8 +1012,6 @@ def main():
         # function pauses AFTER the original CAS is committed, before any
         # HTTP is initiated. The same actual Archive function must see BUSY
         # for both dispatchers; a crashed PHP DB session must release its lock.
-        import test_post_v9_manual_payments as manual
-        from concurrent.futures import ThreadPoolExecutor
 
         def sqlvalue(statement):
             result=subprocess.run(client+['-N','-e',statement],
@@ -1149,56 +1132,6 @@ def main():
             raise RuntimeError('Nested Telegram worker released its parent lease')
         output['checks'].append('nested_original_telegram_dispatch_retains_parent_session_lease')
 
-        # Actual reason-first Reject route, with two distinct authorized
-        # administrators: A opens the editor; A's typed callback is paused at
-        # BEGIN; B Archives the original in a separate MariaDB session.
-        reason_script=d/'manual-reason-archive-race.php'
-        reason_script.write_text(manual.PHP_ROUTE)
-        archive_key='test-835'
-        opened=manual.run_route(d,env,reason_script,
-            data='declineAction_'+archive_key,actor=9001,
-            route='manual_admin',step='@stored')
-        expected_editor='declineActionReason_'+archive_key+'_111'
-        if (sqlvalue('SELECT step FROM users WHERE userid=9001')!=expected_editor or
-                not any(e['name']=='sendMessage' for e in opened)):
-            raise RuntimeError('Actual original manual editor did not open')
-        before=sqlvalue("SELECT CONCAT(state,'|',approved_by,'|',price) FROM pays WHERE id=835")
-        gate='archive_reason'
-        with ThreadPoolExecutor(max_workers=1) as executor:
-            with manual.held_review_gate(d,env,gate):
-                pending=executor.submit(manual.run_route,d,env,reason_script,
-                    route='manual_admin',step='@stored',actor=9001,
-                    text='علت آزمایشی رد رسید قبلی',manual_review_gate=gate,
-                    expected_warning='manual_reject_archived')
-                manual.await_review_gate(d,env,gate,pending)
-                archived=call_race('archive_operator',835,
-                    int(output['manual_reject_attempt']),ready,release)
-                assert_result(archived,'archived')
-            stale=pending.result(timeout=15)
-        if (sqlvalue("SELECT CONCAT(state,'|',approved_by,'|',price) FROM pays WHERE id=835")!=before or
-                sqlvalue('SELECT step FROM users WHERE userid=9001')!=expected_editor or
-                sqlvalue('SELECT review_archived_by FROM payment_attempts WHERE pay_row_id=835')!='9002' or
-                sqlvalue('SELECT IF(review_archived_at IS NULL,0,1) FROM payment_attempts WHERE pay_row_id=835')!='1' or
-                sqlvalue('SELECT COUNT(*) FROM payment_followup_intents WHERE pay_row_id=835')!='0' or
-                sqlvalue('SELECT COUNT(*) FROM payment_attempts WHERE pay_row_id=835')!='1' or
-                not any(e['name']=='alert' for e in stale) or
-                any(e['name'] in ('editKeys','sendMessage') for e in stale)):
-            raise RuntimeError('Stale manual reason mutated archived original: '+repr(stale)[:1000])
-        output['checks'].append('stale_manual_reason_after_archive_denied_without_financial_or_editor_change')
-        # Original reason-first flow must remain available on an unarchived
-        # manual receipt with the same additive 014+022 schema.
-        active_key='test-836'
-        manual.run_route(d,env,reason_script,data='declineAction_'+active_key,
-            actor=9001,route='manual_admin',step='@stored')
-        accepted=manual.run_route(d,env,reason_script,route='manual_admin',
-            step='@stored',actor=9001,text='علت معتبر رد آزمایشی')
-        if (sqlvalue("SELECT CONCAT(state,'|',approved_by) FROM pays WHERE id=836")!='declined|9001' or
-                sqlvalue('SELECT step FROM users WHERE userid=9001')!='none' or
-                sqlvalue('SELECT COUNT(*) FROM payment_followup_intents WHERE pay_row_id=836 AND state=\'acknowledged\'')<='0' or
-                not any(e['name']=='sendMessage' and 'علت معتبر' in str(e['args'])
-                        for e in accepted)):
-            raise RuntimeError('Active manual rejection lost original UX or notices: '+repr(accepted)[:1100])
-        output['checks'].append('active_manual_reason_in_022_schema_rejects_and_notifies_once')
         # Execute the ACTUAL Telegram case route, with the real original
         # 003/007 rows and a near-maximal persisted description. Use the same
         # full HTML body and buttons for edit success and send fallback.
