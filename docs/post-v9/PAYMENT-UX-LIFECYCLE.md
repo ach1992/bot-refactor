@@ -114,7 +114,7 @@ authorization. No SQL migration is needed for these editor changes.
 
 ## Acceptance
 
-tools/test_post_v9_payment_ux_lifecycle.py --run-disposable exercises actual PHP on owned original 23-table MariaDB plus only the optional disposable 003 and 006 migrations, with no external provider or Telegram network requests. It checks expiry, supersession, provenance, several messages edited, Telegram retry, manual receipt evidence and competing PHP/MySQLi clients. tools/check_post_v9.py must require all named cases. Frozen V0-V9 evidence remains unchanged. Installed E2E payment/provider and any real SQL activation require separate approval.
+tools/test_post_v9_payment_ux_lifecycle.py --run-disposable exercises actual current PHP on owned original 23-table MariaDB plus only the optional disposable 003 and 006 migrations, with no external provider or Telegram network requests. It checks expiry, supersession, provenance, several messages edited, Telegram retry, manual receipt evidence and competing PHP/MySQLi clients. The [current CI policy](CI-VALIDATION.md) owns required automated selection; historical V0–V9 execution is not a current acceptance requirement. Installed E2E payment/provider and any real SQL activation require separate approval.
 
 Unresolved finance: https://github.com/ach1992/bot-refactor/issues/26
 Unified payment UX: https://github.com/ach1992/bot-refactor/issues/51

@@ -139,6 +139,8 @@ python3 tools/test_server_display_contexts.py --run-disposable
 python3 tools/test_config_qr_delivery.py --run-disposable
 ~~~
 
-Final acceptance additionally requires the complete stable PHP8.1/PHP8.4
-current/history gates and fresh author-separated independent review. Merge,
-publication, deployment and actual installed acceptance remain separate.
+Current source acceptance uses the PHP 8.5 checks required by the active
+[CI contract](CI-VALIDATION.md), plus fresh author-separated independent
+review where required. Superseded PHP 8.1/8.4 implementation/history suites
+are not current compatibility targets. Merge, publication, deployment and
+actual installed acceptance remain separate.
