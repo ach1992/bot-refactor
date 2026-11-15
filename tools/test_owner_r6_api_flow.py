@@ -184,7 +184,7 @@ def run(work,env,app,driver,url,**spec):
     except ValueError as e:raise AssertionError((p.stdout,p.stderr)) from e
     r['stderr']=p.stderr;return r
 
-def check(evidence_root,settings_root,source_root=ROOT):
+def check(evidence_root,settings_root,source_root=ROOT,*,ci_redrive=False):
     ROOT=source_root
     cases=[];srv=ThreadingHTTPServer(('127.0.0.1',0),APIs);thread=threading.Thread(target=srv.serve_forever,daemon=True);thread.start();url=f'http://127.0.0.1:{srv.server_port}'
     try:
@@ -313,6 +313,102 @@ return !empty($GLOBALS['spec']['fail_staff'])?null:(object)['ok'=>true];}""")
         def state(n):return query(work,env,f'SELECT state FROM pays WHERE id={n}')
         def gift(code,amount=101,status='active'):
             APIs.cards[code]={'card_uuid':'card-'+code,'status':status,'redeem_amount':str(amount),'display_amount':'999999','game_key':'fixture','redeem_value_id':1}
+        if ci_redrive:
+            # Current Stable only: stage the genuine ManualReceipts callback,
+            # DeliveryLedger and original encrypted packet with disposable
+            # payment evidence. No pre-Stable source or historical RED check.
+            n=seed('ci-original-unknown','BUY_SUB')
+            sms(n)
+            initial=call(pay=n,mode='telegram_unconfirmed')
+            original_packets=[e for e in initial['events'] if e['event']=='DELIVER']
+            assert initial['result']=='settled' and state(n)=='auto_cart_approved',initial
+            assert len(original_packets)==1 and len(original_packets[0]['packet_digest'])==64
+            original_digest=original_packets[0]['packet_digest']
+            assert query(work,env,
+                f'SELECT state FROM payment_delivery_intents WHERE pay_row_id={n}')=='unknown'
+            assert query(work,env,
+                f"SELECT COUNT(*) FROM service_effects WHERE pay_row_id={n} AND effect_kind='create' AND state='local_recorded'")=='1'
+            cases.append('current_paid_native_create_unknown_qr_ack_retains_original_packet')
+
+            query(work,env,(ROOT/'migrations/post-v9/022_gateway_review_archive.sql').read_text())
+            query(work,env,"INSERT INTO users(userid,name,username,refcode,wallet,date,isAdmin) "
+                "VALUES(9014,'Support','support','0',0,'1700000000',1),"
+                "(9015,'Operator','operator','0',0,'1700000000',1)")
+            query(work,env,"INSERT INTO setting(type,value) VALUES "
+                "('ADMIN_ROLE_9014','support'),('ADMIN_ROLE_9015','operator')")
+            wallet=int(query(work,env,'SELECT wallet FROM users WHERE userid=1001'))
+            effects=query(work,env,'SELECT COUNT(*) FROM service_effects')
+            orders=query(work,env,'SELECT COUNT(*) FROM orders_list')
+            txs=query(work,env,'SELECT COUNT(*) FROM payment_transactions')
+            original_count=int(query(work,env,
+                f'SELECT attempt_count FROM payment_delivery_intents WHERE pay_row_id={n}'))
+            support=call(op='redrive_route',pay=n,actor=9014,action='Confirm')
+            preview=[e for e in support['events'] if e['event']=='EDIT']
+            assert len(preview)==1 and 'ممکن است پیام قبلی' in preview[0]['text'],support
+            assert not any(e['event'] in ['MESSAGE','POST','DELIVER'] for e in support['events'])
+            callback=redrive_preview_callback(n,9014)
+            assert callback.startswith(f'attentionDeliverySend_{n}_1_')
+            assert int(query(work,env,
+                f'SELECT attempt_count FROM payment_delivery_intents WHERE pay_row_id={n}'))==original_count
+            cases.append('payments_staff_gets_explicit_readonly_preview_before_send')
+
+            for actor,chat,data in [
+                (1001,1001,callback),  # customer is not a payment reviewer
+                (9014,1001,callback),  # payments staff must use private chat
+                (9015,9015,callback),  # cannot forward another actor's callback
+                (9014,9014,'attentionDeliverySend_'+str(n)+'_1_forged'),
+                (9014,9014,None),      # cannot send without preview token
+            ]:
+                params={'callback':data} if data is not None else {'action':'Send'}
+                denied=call(op='redrive_route',pay=n,actor=actor,chat=chat,**params)
+                assert not any(e['event'] in ['MESSAGE','POST','DELIVER']
+                               for e in denied['events']),denied
+            assert int(query(work,env,
+                f'SELECT attempt_count FROM payment_delivery_intents WHERE pay_row_id={n}'))==original_count
+            cases.append('customer_wrong_chat_actor_mismatch_and_forged_send_denied')
+
+            query(work,env,'UPDATE users SET isAdmin=0 WHERE userid=9014')
+            revoked=call(op='redrive_route',pay=n,actor=9014,callback=callback)
+            assert not any(e['event'] in ['MESSAGE','POST','DELIVER']
+                           for e in revoked['events']),revoked
+            query(work,env,'UPDATE users SET isAdmin=1 WHERE userid=9014')
+            cases.append('rechecked_current_payments_permission_denies_revoked_staff')
+
+            other=redrive_preview_callback(n,9015)
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                actions=[pool.submit(call,op='redrive_route',pay=n,actor=actor,callback=token)
+                         for actor,token in ((9014,callback),(9015,other))]
+                raced=[future.result() for future in actions]
+            packets=[e for response in raced for e in response['events']
+                     if e['event']=='DELIVER']
+            assert len(packets)==1 and packets[0]['packet_digest']==original_digest,raced
+            assert query(work,env,
+                f'SELECT state FROM payment_delivery_intents WHERE pay_row_id={n}')=='acknowledged'
+            assert int(query(work,env,
+                f'SELECT attempt_count FROM payment_delivery_intents WHERE pay_row_id={n}'))==original_count+1
+            assert query(work,env,
+                f'SELECT COUNT(*) FROM payment_delivery_attempts a '
+                f'JOIN payment_delivery_intents i ON i.id=a.intent_id '
+                f'WHERE i.pay_row_id={n} AND a.actor_userid IN (9014,9015)')=='1'
+            cases.append('one_exact_original_qr_packet_claim_under_concurrent_staff_send')
+
+            repeated=call(op='redrive_route',pay=n,actor=9014,callback=callback)
+            stale=call(op='redrive_route',pay=n,actor=9015,callback=other)
+            assert not any(e['event'] in ['MESSAGE','POST','DELIVER']
+                           for response in (repeated,stale) for e in response['events'])
+            assert int(query(work,env,
+                f'SELECT attempt_count FROM payment_delivery_intents WHERE pay_row_id={n}'))==original_count+1
+            assert int(query(work,env,'SELECT wallet FROM users WHERE userid=1001'))==wallet
+            assert query(work,env,'SELECT COUNT(*) FROM service_effects')==effects
+            assert query(work,env,'SELECT COUNT(*) FROM orders_list')==orders
+            assert query(work,env,'SELECT COUNT(*) FROM payment_transactions')==txs
+            cases.append('replay_and_stale_staff_actions_leave_finance_native_and_send_unchanged')
+            return {'complete':True,'cases':len(cases),'scenarios':cases,
+                    'mode':'stable-current-manual-unknown-redrive',
+                    'source_real_php':True,'socket_mariadb':True,
+                    'local_loopback_only':True,'real_telegram_merchant_native_calls':0,
+                    'pre_stable_execution':False}
+
         # The unrelated legacy timer cannot bypass SMS proof on an API-pinned invoice.
         n=seed('timerapibank');before=query(work,env,'SELECT wallet FROM users WHERE userid=1001');offset=len(APIs.events)
         r=call(op='timer',pay=n);assert r['result']=={'eligible':False,'claimed':False} and state(n)=='have_sent',r
@@ -919,6 +1015,6 @@ DELIMITER ;''')
     finally:srv.shutdown();srv.server_close();thread.join()
 
 def main():
-    p=argparse.ArgumentParser();p.add_argument('--run-disposable',action='store_true',required=True);p.add_argument('--evidence-root',type=Path,default=ROOT);p.add_argument('--settings-root',type=Path,default=ROOT);p.add_argument('--report',type=Path);p.add_argument('--source-root',type=Path,default=ROOT);a=p.parse_args();r=check(a.evidence_root,a.settings_root,a.source_root);raw=json.dumps(r,ensure_ascii=False);print(raw)
+    p=argparse.ArgumentParser();p.add_argument('--run-disposable',action='store_true',required=True);p.add_argument('--evidence-root',type=Path,default=ROOT);p.add_argument('--settings-root',type=Path,default=ROOT);p.add_argument('--report',type=Path);p.add_argument('--source-root',type=Path,default=ROOT);p.add_argument('--ci-redrive',action='store_true');a=p.parse_args();r=check(a.evidence_root,a.settings_root,a.source_root,ci_redrive=a.ci_redrive);raw=json.dumps(r,ensure_ascii=False);print(raw)
     if a.report:a.report.write_text(raw+'\n')
 if __name__=='__main__':main()

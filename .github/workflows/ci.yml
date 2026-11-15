@@ -1,0 +1,162 @@
+name: AChBot CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: achbot-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: php85-validation
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - name: Checkout exact source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Skip runtime checks for documentation-only changes
+        id: docs
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          python3 - <<'PYDOC'
+          import os, re, subprocess
+          def valid_sha(value):
+              return bool(re.fullmatch(r"[0-9a-f]{40}", value or "")) and value != "0"*40
+          base, head = os.environ.get("BASE_SHA"), os.environ["HEAD_SHA"]
+          docs_only = False
+          if valid_sha(base) and valid_sha(head):
+              available = subprocess.run(["git","cat-file","-e",base+"^{commit}"],check=False)
+              if available.returncode == 0:
+                  raw = subprocess.check_output(["git","diff","--name-status","-z",base,head,"--"])
+                  fields = raw.rstrip(b"\0").split(b"\0") if raw else []
+                  pairs = list(zip(fields[::2],fields[1::2])) if len(fields)%2 == 0 else []
+                  docs_only = bool(pairs) and len(pairs)*2 == len(fields) and all(
+                      status in (b"M",b"A",b"D") and
+                      (path == b"README.md" or
+                       (path.startswith(b"docs/") and path.endswith(b".md")))
+                      for status,path in pairs)
+          with open(os.environ["GITHUB_OUTPUT"],"a",encoding="utf-8") as fh:
+              fh.write(f"docs_only={str(docs_only).lower()}\n")
+          print("Docs-only change:",docs_only)
+          PYDOC
+
+      - name: Setup PHP 8.5
+        if: steps.docs.outputs.docs_only != 'true'
+        uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # v2
+        with:
+          php-version: '8.5'
+          extensions: mysqli, tokenizer, curl, zip, gd
+          coverage: none
+          tools: none
+
+      - name: Restore MariaDB fixture binary
+        if: steps.docs.outputs.docs_only != 'true'
+        id: mariadb_cache
+        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: ${{ runner.temp }}/mariadb-10.11.19-linux-systemd-x86_64.tar.gz
+          key: achbot-mariadb-ubuntu2404-x64-10.11.19-7efb257927f31f4422f496246b32590d0b7617f3d9dd900e575de761b302d919
+
+      - name: Verify and prepare isolated MariaDB fixtures
+        if: steps.docs.outputs.docs_only != 'true'
+        run: |
+          set -euo pipefail
+          version=10.11.19
+          name="mariadb-${version}-linux-systemd-x86_64.tar.gz"
+          archive="$RUNNER_TEMP/$name"
+          root="$RUNNER_TEMP/mariadb-${version}-linux-systemd-x86_64"
+          if [[ ! -f "$archive" ]]; then
+            downloaded=false
+            for mirror in https://mirror.netcologne.de/mariadb https://mirror.leaseweb.com/mariadb https://archive.mariadb.org; do
+              rm -f -- "$archive"
+              if curl --fail --location --silent --show-error --connect-timeout 20 --max-time 300                 "$mirror/mariadb-${version}/bintar-linux-systemd-x86_64/$name" --output "$archive"; then
+                downloaded=true
+                break
+              fi
+            done
+            if [[ "$downloaded" != true ]]; then
+              echo "MariaDB test archive unavailable" >&2
+              exit 1
+            fi
+          fi
+          printf '%s  %s\n' '7efb257927f31f4422f496246b32590d0b7617f3d9dd900e575de761b302d919' "$archive" | sha256sum --check -
+          tar -xzf "$archive" -C "$RUNNER_TEMP"
+          test -x "$root/bin/mariadbd"
+          test -x "$root/bin/mariadb"
+          test -x "$root/scripts/mariadb-install-db"
+          printf '%s\n' "$root/bin" "$root/scripts" >> "$GITHUB_PATH"
+
+      - name: Cache verified MariaDB fixture binary
+        if: steps.docs.outputs.docs_only != 'true' && steps.mariadb_cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: ${{ runner.temp }}/mariadb-10.11.19-linux-systemd-x86_64.tar.gz
+          key: achbot-mariadb-ubuntu2404-x64-10.11.19-7efb257927f31f4422f496246b32590d0b7617f3d9dd900e575de761b302d919
+
+      - name: Test real current PHP/payment/customer/provider routes
+        if: steps.docs.outputs.docs_only != 'true'
+        env:
+          TMPDIR: ${{ runner.temp }}
+        run: |
+          set -euo pipefail
+          python3 -m py_compile tools/ci_quick.py tools/package_current.py
+          python3 tools/ci_quick.py --report "$RUNNER_TEMP/ci-quick.json"
+
+      - name: Rebuild and verify exact-head runtime ZIP
+        if: steps.docs.outputs.docs_only != 'true'
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/achbot-current"
+          python3 tools/package_current.py create --output "$RUNNER_TEMP/achbot-current/runtime.zip"
+          python3 tools/package_current.py verify             --zip "$RUNNER_TEMP/achbot-current/runtime.zip"             --manifest "$RUNNER_TEMP/achbot-current/runtime.zip.manifest.json"
+          cp "$RUNNER_TEMP/ci-quick.json" "$RUNNER_TEMP/achbot-current/ci-quick.json"
+          (cd "$RUNNER_TEMP/achbot-current" && sha256sum runtime.zip runtime.zip.manifest.json > SHA256SUMS)
+
+      - name: Publish check evidence and runtime package
+        if: steps.docs.outputs.docs_only != 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: achbot-current-${{ github.event.pull_request.head.sha || github.sha }}
+          path: ${{ runner.temp }}/achbot-current/
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
+
+      - name: Describe actual CI coverage
+        if: always()
+        env:
+          DOCS_ONLY: ${{ steps.docs.outputs.docs_only }}
+        run: |
+          echo "## AChBot PHP 8.5" >> "$GITHUB_STEP_SUMMARY"
+          echo "Documentation only: $DOCS_ONLY" >> "$GITHUB_STEP_SUMMARY"
+          if [[ -f "$RUNNER_TEMP/ci-quick.json" ]]; then
+            python3 - <<'PY'
+          import json,os
+          data=json.load(open(os.environ["RUNNER_TEMP"]+"/ci-quick.json"))
+          with open(os.environ["GITHUB_STEP_SUMMARY"],"a") as f:
+              f.write("Current functional regression: "+data["status"]+"\n")
+              f.write("Measured test seconds: "+str(data["elapsed_seconds"])+"\n")
+              f.write("Old pre-Stable version tests: NOT RUN and not required.\n")
+              for case in data["checks"]:
+                  f.write("- "+case["name"]+": "+case["status"]+" ("+str(case["elapsed_seconds"])+" s)\n")
+          PY
+          elif [[ "$DOCS_ONLY" == true ]]; then
+            echo "No PHP/runtime files changed; native tests skipped." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Functional run did not produce complete evidence." >> "$GITHUB_STEP_SUMMARY"
+          fi

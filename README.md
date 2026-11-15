@@ -50,13 +50,13 @@ Historical V0–V9/RC release notes and obsolete transition instructions are ava
 
 ## Development and release integrity
 
-Use `AGENTS.md` and the product contract before changing behavior. PHP runtime changes require the relevant isolated regression tests and full current PHP 8.5 acceptance: **eight independent families plus the protected aggregate**. Independent review precedes consequential source integration. Tests and packaging use owned temporary data, not customer or live provider state.
+Use `AGENTS.md` and the product contract before changing behavior. PHP runtime changes require relevant isolated regression tests and the fast, current PHP 8.5 `php85-validation` gate; run additional current Stable integration tests for high-risk changes when relevant; pre-Stable suites are retired. Independent review precedes consequential source integration. Test fixtures and packaging never use customer or live provider state.
 
 From a **clean committed source checkout** at the exact intended release commit:
 
 ```sh
-python3 tools/package_post_v9.py create --output /private/release/achbot-runtime.zip
-python3 tools/package_post_v9.py verify \
+python3 tools/package_current.py create --output /private/release/achbot-runtime.zip
+python3 tools/package_current.py verify \
   --zip /private/release/achbot-runtime.zip \
   --manifest /private/release/achbot-runtime.zip.manifest.json
 ```

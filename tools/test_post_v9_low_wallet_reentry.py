@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Exact native PHP 8.5/MariaDB historical low-wallet choice bridge.
+"""Current Stable PHP 8.5/MariaDB low-wallet choice integration.
 
 Real PrePayment.php and pay/checkout.php execute against a disposable,
 socket-only original+003/007/017 schema. No provider, live Telegram, wallet,

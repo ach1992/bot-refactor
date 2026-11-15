@@ -1,122 +1,89 @@
-# Current PHP 8.5 validation and CI policy
+# Current AChBot CI contract (PHP 8.5)
 
-This document applies to the **forward Stable development line established by v0.10.0** in `ach1992/bot-refactor`. Published releases and immutable historical commits retain their original evidence. It does not authorize installation, database changes, payments or production Cron operations.
+The accepted Stable line checks **current bot functionality**, not every archived
+source revision. This is source acceptance only: live payment finality, provider
+behavior, Telegram delivery and production schema/install acceptance remain
+separate operator decisions.
 
-## Documentation boundary
+## Required fast check
 
-The lightweight `docs` scope uses a **positive exact-path allowlist**:
-only modified-in-place, regular `README.md` and `docs/post-v9/README.md`.
-Financial, security, CI/policy, installation, migration and release-note
-contracts (including `docs/post-v9/FRESH-INSTALL.md`) remain `full`, even
-when only their prose changes. New or deleted documents, symlinks, mode
-changes and ambiguous renames/add-delete pairs also require `full`.
-This preserves the independent-review correction previously accepted
-under Issue #104 while allowing explicit affected-family test selection.
+[.github/workflows/ci.yml](../../.github/workflows/ci.yml) runs on PRs and
+main pushes under the single `php85-validation` required status:
 
-## Decision and selection
+- Exactly one PHP 8.5 runner and one SHA256-verified cached MariaDB fixture
+  toolchain. No Docker-in-Docker, APT mirror installation or eight duplicate
+  MariaDB downloads. Independent cases use isolated, disposable socket-only
+  databases and local loopback providers.
+- `tools/ci_quick.py` runs the focused current `test_stable_nowpayments.py`
+  for signed IPN, exact invoice/quote identity, nonfinal vs finished provider
+  outcome and replay without double wallet/Native effects; and the
+  `--ci-redrive` mode of `test_owner_r6_api_flow.py` for private,
+  permission-checked preview/confirmation and original-packet single claim.
+  Neither exercises pre-Stable source or makes live requests.
+- `tools/ci_quick.py` also runs real-source PHP, finance, payment/checkout,
+  customer/service operations, subscription/payment flows, onboarding, wallet, Native,
+  operator permissions, Telegram error diagnostics, Cron and
+  payment-browser checks. Runs are parallel but retain each test's own
+  assertions and failure details. The JSON receipt records exact HEAD/tree,
+  PHP runtime, actual checks and elapsed times.
+- Every relevant build produces a reproducible current-source-only runtime
+  ZIP, manifest and checksums at the **current exact Git commit**, separate
+  from any real database migration or deployment.
+- Pure `README.md` and `docs/**/*.md` changes (proven from two existing
+  Git commit objects, not a filename guess) skip PHP/native tests while
+  retaining the required status. Unknown/ambiguous changes run the checks.
+  Superseded PR runs are cancelled.
 
-`tools/ci_plan.py` uses immutable Git base/head objects and a clean exact
-checkout. PRs execute the classifier from the **trusted base revision**,
-never from the unreviewed candidate. Unknown, changed policy/CI/validation
-infrastructure and unprovable diffs retain the full fallback.
+The required status is **representative current Stable functional coverage**, not an
+exhaustive claim about every fixture and negative test. It fails if any
+required suite, source/Cron check or package verification fails; it never
+calls the real merchant, Telegram API or production database.
 
-| Scope | Trigger | Validation | Evidence |
-| --- | --- | --- | --- |
-| `docs` | Existing allowlisted README files, modified in place | Git SHA/tree, ancestry, file mode and changed-path verification | Informational-only, no PHP/native claims |
-| `none` | Exact same tree/no effective changes | Git identity and ancestry | No source impact |
-| `source` | Reserved for previously supported bounded source selection | Source checks + PHP lint | Incomplete targeted only |
-| `cron` | Dedicated Cron test or byte-bounded Cron lock preparation | Source checks and actual isolated Cron regression | Incomplete targeted only |
-| `families` | Existing, explicitly mapped test files with verified native runner ownership | Shared PHP 8.5 source foundation plus only impacted native family shards | Incomplete, lists selected **and omitted** families |
-| `full` | PHP runtime/source (pending complete transitive dependency proof), shared/high-risk/unknown source, CI/policy/financial/release/installation docs, migrations and ambiguous changes | Source foundation and all eight PHP 8.5 families | Complete only after strict eight-family aggregation |
+## Stable-only coverage boundary
 
-The `families` scope currently has **21 existing mapped test paths** with
-verified native runner ownership (including transitive Python fixture imports)
-across the eight `post_v9_suites.RUNNERS` families. Multiple changed test files
-take the **union** of their owner families. Added/deleted tests, non-regular
-files, unknown tests and mixed Cron/source changes retain `full`; an all-eight
-union also uses `full`. For example:
+Only **Stable v0.10.0 and later** is supported. Historical V0-V9 execution,
+archived RED fixtures, old PHP 8.1/8.4 matrices and byte-for-byte comparisons
+against pre-Stable implementations do **not** run in CI, even manually. Their
+published results remain recoverable from Git history; they are not current
+compatibility requirements. Avoid reintroducing them in new acceptance tests.
 
-- `tools/test_post_v9_onboarding.py` selects only `admin` (1).
-- `tools/test_post_v9_api_staff_digest.py` selects only `api` (2).
-- Changing both selects `admin/api` (1/2).
-- `src/Finance/ApiPayments.php`, `src/Finance/AutomaticRenewal.php`,
-  `src/Finance/Routes/WalletRecharge.php`, `src/Presentation/Text.php`,
-  `src/Jobs/BroadcastSend.php` and all other PHP runtime files select
-  **full**. The initial 16 PHP mappings omitted native consumers found during
-  independent review; source-to-family PHP include and dynamic entrypoint
-  closure is not yet proven, so no narrower PHP claim is made.
+Existing customers' live contracts (original issued subscriptions, unpaid
+payments, wallets, permission grants and previously imported provider accounts)
+remain a current Stable obligation: test these workflows against the **current
+Stable source/schema** without running obsolete bot implementations.
 
-Any future PHP source exemption requires concrete, current direct and transitive
-native test consumer evidence plus regression tests before it can be reviewed
-and introduced. This deliberately prioritizes truthful coverage over a
-speculative runner-count reduction. Current selected-family savings are for
-bounded test changes, not yet for executable PHP changes.
+Use targeted **current-only** functional integration checks during development
+for high-risk changes. Expand the representative CI roster only where evidence
+shows an active path is otherwise untested. No separate historical eight-family
+workflows or mandatory retroactive migration suite.
 
-`php85-validation` remains the protected required status for every scope.
-For `families`, it consumes the trusted path-selection receipt plus the
-source foundation and **exactly** the selected shard artifacts. The targeted
-aggregator rejects missing, duplicate, extra, tampered or mismatched
-SHA/tree/PHP/validator inputs and must always report
-`complete: false`, `targeted_complete: true`, and omitted families.
-Only a full eight-family aggregation may report full current PHP 8.5
-acceptance. Manual `workflow_dispatch` always selects full. Targeted checks
-do not authorize production rollout or real financial/provider operations.
+## Baseline and measurement
 
-`python3 tools/check_post_v9.py --report <path>` remains the full local
-entrypoint; `--suite source` and `--suite cron` remain explicitly targeted.
-Historical V0–V9 execution is not relabelled as new PHP 8.5 proof.
+The last exact full PHP 8.5 [Actions run #43747843516](https://github.com/ach1992/bot-refactor/actions/runs/43747843516)
+took about **4m47s wall time** (first job to aggregator finish) with eight
+native-family jobs, one foundation, a planning job and an aggregator.
+Individual family job durations ranged approximately 88–262 seconds; the
+longest were `services` and `presentation`. A large portion is source-real
+fixture execution, not PHP startup. The old per-run runner-minute cost
+includes *all* jobs, not just critical-path time.
 
-## Full-current sharding
+Do not claim the new 2–3 minute target is achieved until the same-class
+`php85-validation` Actions job has passed and its **actual start/end and
+per-check durations** are measured. Review its result before adjusting the
+representative test roster, concurrency or MariaDB setup. CI optimizations
+must not silently turn an incomplete smoke check into a full acceptance claim.
 
-Full acceptance runs eight isolated native families under **PHP 8.5 only**.
-For explicitly mapped changes, the workflow starts only the selected subset
-using the same runners, MariaDB bootstrap and real PHP 8.5 test contracts: `admin`, `api`, `services`, `wallet`, `presentation`, `authorization`, `effects`, `funding`. Each family has disjoint declared report-field ownership. Shared source/payment-identity/privacy checks run once in `foundation`. Each family can use its own disposable MariaDB and loopback fixtures.
+## Local use
 
-The eight hosted native-family runners use the official MariaDB 10.11.19 Linux x86-64 binary tarball, ordered HTTPS availability mirrors and verified immutable SHA-256, placed under each job's temporary directory. The `mariadbd`, `mariadb` and `mariadb-install-db` tools run without Ubuntu APT mirrors; every source-real test continues to create and own its separate socket-only database. No shared SQL service, fixture assertions, PHP version checks, source hashes, shard count or protected aggregation is replaced. An unavailable archive, checksum mismatch or missing native executable fails the family before acceptance. This eliminates the observed GitHub-hosted Ubuntu APT/DNS dependency rather than bypassing native tests.
+From a clean, exact source checkout with PHP 8.5 and MariaDB fixture
+executables on PATH:
 
-`tools/post_v9_shards.py foundation --report <file>`, `run --index 1..8 --count 8 --report <file>`, and `aggregate --source <file> --reports <directory> --report <file>` are the individual stages. Each shard and the foundation are explicitly incomplete. Aggregation rejects missing, duplicate, unknown, version-mismatched or inconsistent reports, and checks exact current Git HEAD/tree, PHP 8.5, runtime and validator hashes, catalog ownership, execution evidence and required migration proof. Only an accepted complete aggregation may set `complete: true` for **current PHP 8.5 acceptance**. Full reports include per-family timings; rebalance only after measured CI evidence.
+```bash
+python3 tools/ci_quick.py --report /tmp/achbot-ci-quick.json
+```
 
-The protected aggregate job is `php85-validation`. It verifies upstream job
-outcomes before assembling the current-head source ZIP and checksum-verified
-SQL sidecars, without executing migrations. Incomplete targeted, full and
-same-tree reuse evidence have distinct files and cannot be silently relabelled
-as a complete eight-family result. A successful old PHP 8.1/8.4 job does not satisfy a PHP 8.5 requirement.
-
-## Main-push reuse
-
-After integration into `main`, `tools/ci_reuse.py` may avoid rerunning the identical accepted source pipeline **only if** read-only GitHub evidence unambiguously establishes the same full source tree, matching merged PR/main SHA, original successful exact-source PR workflow/run/attempt, and a successful single `php85-validation` job. Any ambiguity, API error, workflow change or partial result means ordinary current validation runs.
-
-A reused result is an **attestation of the original PR pipeline** (full or
-explicitly targeted as originally run), not a newly executed native/full run. Its receipt contains the original source/run identity and the new `main` identity; current-`main` source ZIP is rebuilt and verified independently when runtime-relevant validation or reused acceptance actually requires a package. For trusted `docs`/`none` changes no runtime ZIP is rebuilt; explicit `workflow_dispatch` continues to require full PHP 8.5 acceptance and exact-head packaging.
-
-The read-only REST client pins `X-GitHub-Api-Version: 2022-11-28` deliberately. Verified against merged PR #105/main: the newer `2026-03-10` representation returns `merge_commit_sha: null` for an already merged PR, disabling attestation and redundantly triggering the full PHP 8.5 suite. The pinned version supplies the verified exact merge SHA. Never infer a missing merge identity or relax any other evidence checks; verify live API behavior before changing the pin.
-
-## Historical constraints and interpretation
-
-The frozen V9 full historical driver requires PHP 8.4. It cannot provide an honest new PHP 8.5 full-history result without changing frozen artifacts. The Owner explicitly retired new PHP 8.1/8.4 executions: the older successful V0–V9 runs remain archived as **historical evidence only** and existing byte/schema pins still protect history. Never alter old fixtures or invoke `--focused` to imply historical full acceptance.
-
-Previously observed full CI critical path: approximately **17m27s (PHP 8.1)** and **22m01s (PHP 8.4)** on main run [41110763256](https://github.com/ach1992/bot-refactor/actions/runs/41110763256). The Cron candidate [PR #103](https://github.com/ach1992/bot-refactor/pull/103) completed its earlier required checks [run 41450937783](https://github.com/ach1992/bot-refactor/actions/runs/41450937783). Neither is a PHP 8.5 timing baseline. New critical path and family timings must come from actual PHP 8.5 Actions runs; do not claim an optimization percentage before comparable evidence exists.
-
-## Development and integration
-
-Keep the Cron first-run behavior in the separate stabilized PR #103 until author-independent review and Owner integration authorization. The CI implementation is stacked on that source for testing, but its own changes require a new exact-candidate review and required CI. Do not rewrite or rerun an unchanged RED baseline, duplicate Dev-full with CI-full, or repeat a complete suite after an unrelated local change. Narrow feedback during edits and run required broad checks when the candidate is stable.
-
-Repository branch protection settings were not readable with the current GitHub integration. Before replacing any required contexts, a repository administrator must verify whether legacy job names `phase1-php81-compatibility` / `phase1-php84-full-history` are required and, if so, replace only those with `php85-validation`. Do not change unrelated protections, bypass checks or auto-merge an unreviewed candidate.
-
-Live target installation, scheduler changes, PHP/FPM compatibility, external provider behavior, bank settlement and manual operator acceptance remain **unverified by CI**.
-
-## Actual PHP 8.5 compatibility findings (issue #104)
-
-The first full PHP 8.5 matrix runs [41462988501](https://github.com/ach1992/bot-refactor/actions/runs/41462988501) and [41463994951](https://github.com/ach1992/bot-refactor/actions/runs/41463994951) exposed **real E_DEPRECATED failures**, not a CI routing defect: PHP 8.5 deprecates curl_close() (an inert no-op since PHP 8.0) and case 'k'; in the JDF switch. Only the current exercised HTTP/Marzban paths have the redundant no-op calls removed and the current JDF case syntax corrected. Frozen Git history remains byte-identical. The current JDF is byte-equal to the original baseline after exactly one PHP 8.5 case-delimiter substitution, and this exception is enforced by the native unified-services fixture. The archived date comparison, which executes the older JDF only as fixture, omits only E_DEPRECATED; all other errors and the current live-source JDF path remain strict.
-
-Do **not** claim that every PHP runtime code path is proven PHP 8.5 compatible: other curl_close() calls remain, including the exact byte-guarded canonical checkout flow. Any changes to frozen byte-parity paths require a separate explicit contract/review decision, not test suppression or silent rewrite. Full current acceptance remains blocked until the actual matrix and aggregator succeed.
-
-The historical V9 Marzban differential keeps checking the exact original Git SHA and all native SQL/HTTP/result comparisons; on PHP 8.5, its comparison normalizes **only** the exact historical no-op curl_close() E_DEPRECATED message, records the number of those archival messages, and rejects every other historical/current warning. The old gift/getter race RED fixture similarly reads the exact archived source and removes **exactly 11** inert close calls in its temporary executable copy only. Neither operation rewrites historical Git objects, changes the candidate source, exempts a current warning, nor claims a new PHP 8.4 test.
-
-
-### Verified isolated MariaDB runtime bootstrap
-All eight required PHP 8.5 native-family shards use a SHA-256-pinned official
-MariaDB 10.11.19 binary archive, replacing intermittent GitHub APT mirror/DNS
-failures. Each family still initializes its own socket-only database and
-strict acceptance/aggregate contracts remain unchanged. A mismatched archive
-necessarily fails validation.
+For deeper testing of a high-risk change, run additional **current Stable**
+source-real integration tests individually in an isolated development
+environment. Do not run archived pre-Stable test drivers. Never execute
+test fixtures against live bot configuration, customer/payment databases
+or external Native provider endpoints.
