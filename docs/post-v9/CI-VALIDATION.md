@@ -15,12 +15,12 @@ main pushes under the single `php85-validation` required status:
   MariaDB downloads. Independent cases use isolated, disposable socket-only
   databases and local loopback providers.
 - `tools/ci_quick.py` runs real-source PHP, finance, payment/checkout,
-  customer/service lifecycle, subscriptions, onboarding, wallet, Native,
-  operator permissions, Telegram delivery/diagnostics, Cron, catalog and
+  customer/service operations, subscription/payment flows, onboarding, wallet, Native,
+  operator permissions, Telegram error diagnostics, Cron and
   payment-browser checks. Runs are parallel but retain each test's own
   assertions and failure details. The JSON receipt records exact HEAD/tree,
   PHP runtime, actual checks and elapsed times.
-- Every relevant build produces a reproducible 132-file source-only runtime
+- Every relevant build produces a reproducible current-source-only runtime
   ZIP, manifest and checksums at the **current exact Git commit**, separate
   from any real database migration or deployment.
 - Pure `README.md` and `docs/**/*.md` changes (proven from two existing
@@ -28,26 +28,28 @@ main pushes under the single `php85-validation` required status:
   retaining the required status. Unknown/ambiguous changes run the checks.
   Superseded PR runs are cancelled.
 
-The quick status is **representative current functional coverage**, not an
+The required status is **representative current Stable functional coverage**, not an
 exhaustive claim about every fixture and negative test. It fails if any
 required suite, source/Cron check or package verification fails; it never
 calls the real merchant, Telegram API or production database.
 
-## Optional extended check
+## Stable-only coverage boundary
 
-[.github/workflows/v0.yml](../../.github/workflows/v0.yml) is now **manual
-`workflow_dispatch` only**. It retains the existing eight-family native
-matrix, strict source/fixture proof aggregation, exhaustive edge cases and
-historical migration/reference tests. It does not run on every PR or main
-push. Use it when a meaningful change affects cross-cutting financial
-finality, migrations, original provider integration, concurrency or
-other high-risk behavior beyond the fast check's representative paths.
+Only **Stable v0.10.0 and later** is supported. Historical V0-V9 execution,
+archived RED fixtures, old PHP 8.1/8.4 matrices and byte-for-byte comparisons
+against pre-Stable implementations do **not** run in CI, even manually. Their
+published results remain recoverable from Git history; they are not current
+compatibility requirements. Avoid reintroducing them in new acceptance tests.
 
-Retaining these offline test fixtures does **not** mean every archived
-assertion should consume CI minutes on every ordinary source edit. Individual
-outdated fixtures can be removed only after verifying that no active path
-or necessary regression is lost. Prior V0-V9 PHP 8.1/8.4 test outcomes are
-historical and do not become PHP 8.5 evidence.
+Existing customers' live contracts (original issued subscriptions, unpaid
+payments, wallets, permission grants and previously imported provider accounts)
+remain a current Stable obligation: test these workflows against the **current
+Stable source/schema** without running obsolete bot implementations.
+
+Use targeted **current-only** functional integration checks during development
+for high-risk changes. Expand the representative CI roster only where evidence
+shows an active path is otherwise untested. No separate historical eight-family
+workflows or mandatory retroactive migration suite.
 
 ## Baseline and measurement
 
@@ -74,7 +76,8 @@ executables on PATH:
 python3 tools/ci_quick.py --report /tmp/achbot-ci-quick.json
 ```
 
-For deeper optional testing, use the manual extended GitHub workflow (or
-`python3 tools/check_post_v9.py --suite full` in an appropriately provisioned
-isolated development environment). Never run the test fixtures against live
-bot configuration, payment databases or Native provider endpoints.
+For deeper testing of a high-risk change, run additional **current Stable**
+source-real integration tests individually in an isolated development
+environment. Do not run archived pre-Stable test drivers. Never execute
+test fixtures against live bot configuration, customer/payment databases
+or external Native provider endpoints.

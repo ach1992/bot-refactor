@@ -4,6 +4,7 @@ on:
   pull_request:
   push:
     branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -113,7 +114,7 @@ jobs:
           TMPDIR: ${{ runner.temp }}
         run: |
           set -euo pipefail
-          python3 -m py_compile tools/ci_quick.py
+          python3 -m py_compile tools/ci_quick.py tools/package_current.py
           python3 tools/ci_quick.py --report "$RUNNER_TEMP/ci-quick.json"
 
       - name: Rebuild and verify exact-head runtime ZIP
@@ -121,8 +122,8 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/achbot-current"
-          python3 tools/package_post_v9.py create --output "$RUNNER_TEMP/achbot-current/runtime.zip"
-          python3 tools/package_post_v9.py verify             --zip "$RUNNER_TEMP/achbot-current/runtime.zip"             --manifest "$RUNNER_TEMP/achbot-current/runtime.zip.manifest.json"
+          python3 tools/package_current.py create --output "$RUNNER_TEMP/achbot-current/runtime.zip"
+          python3 tools/package_current.py verify             --zip "$RUNNER_TEMP/achbot-current/runtime.zip"             --manifest "$RUNNER_TEMP/achbot-current/runtime.zip.manifest.json"
           cp "$RUNNER_TEMP/ci-quick.json" "$RUNNER_TEMP/achbot-current/ci-quick.json"
           (cd "$RUNNER_TEMP/achbot-current" && sha256sum runtime.zip runtime.zip.manifest.json > SHA256SUMS)
 
@@ -150,7 +151,7 @@ jobs:
           with open(os.environ["GITHUB_STEP_SUMMARY"],"a") as f:
               f.write("Current functional regression: "+data["status"]+"\n")
               f.write("Measured test seconds: "+str(data["elapsed_seconds"])+"\n")
-              f.write("Extended/historical exhaustive suite: NOT RUN; optional manual workflow.\n")
+              f.write("Old pre-Stable version tests: NOT RUN and not required.\n")
               for case in data["checks"]:
                   f.write("- "+case["name"]+": "+case["status"]+" ("+str(case["elapsed_seconds"])+" s)\n")
           PY

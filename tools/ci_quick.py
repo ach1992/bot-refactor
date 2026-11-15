@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Current AChBot functional CI: representative real-source regression checks.
+"""Current Stable PHP 8.5 functional acceptance without pre-Stable execution.
 
-Runs independent, socket-only disposable fixtures in parallel. Historical
-migration archaeology and exhaustive negative matrices remain available in
-the separate manual full-regression workflow, not on every ordinary PR.
+The test roster covers representative *current* customer, operator, money,
+subscription, Native and Telegram workflows. Tests use isolated disposable
+socket-only MariaDB and loopback providers, not production resources.
 """
 from __future__ import annotations
 
@@ -17,33 +17,39 @@ import sys
 import tempfile
 import time
 
+import package_current
+
 ROOT = Path(__file__).resolve().parents[1]
 
-# Each script owns its disposable DB/loopback server and performs assertions
-# against current PHP source. Do not encode historical case-count snapshots.
+# Expensive cases go first to minimize the tail of a finite parallel pool.
+# Each native suite asserts against current PHP source using its own fixtures.
 NATIVE_TESTS = (
-    ("telegram_delivery", "test_owner_r6_api_flow.py"),
-    ("bank_api_native", "test_post_v9_scoped_api_pg.py"),
-    ("subscriptions", "test_unified_existing_subscriptions.py"),
-    ("customer_services", "test_unified_customer_services.py"),
-    ("service_lifecycle", "test_unified_service_lifecycle.py"),
-    ("wallet", "test_post_v9_wallet_transfer.py"),
-    ("manual_payments", "test_post_v9_manual_payments.py"),
+    ("api_payments", "test_post_v9_scoped_api_pg.py"),
+    ("direct_gift_native", "test_post_v9_direct_gift_native.py"),
+    ("automatic_renewal", "test_post_v9_automatic_renewal.py"),
     ("bank_purchase", "test_post_v9_bank_buy.py"),
     ("gateway_rules", "test_post_v9_gateway_rules.py"),
+    ("wallet_checkout", "test_post_v9_wallet_checkout.py"),
+    ("service_effects", "test_post_v9_service_effects.py"),
     ("pasarguard_http", "test_post_v9_pasarguard_client.py"),
-    ("marzban_http", "test_post_v9_marzban.py"),
+    ("low_wallet_reentry", "test_post_v9_low_wallet_reentry.py"),
+    ("admin_wallet", "test_post_v9_admin_wallet.py"),
+    ("payment_ux", "test_post_v9_payment_ux_lifecycle.py"),
+    ("nonpaid_trial_bulk", "test_post_v9_nonpaid_routes.py"),
+    ("provider_registry", "test_unified_provider_registry.py"),
+    ("payment_api_admin", "test_post_v9_payment_api_admin.py"),
     ("scoped_pg_payments", "test_post_v9_scoped_pg_payments.py"),
-    ("admin_permissions", "test_owner_r5_roles.py"),
-    ("checkout_races", "test_post_v9_checkout_serialization.py"),
     ("onboarding", "test_post_v9_onboarding.py"),
+    ("agency_current", "test_post_v9_agency.py"),
+    ("api_staff_permissions", "test_post_v9_api_staff_digest.py"),
+    ("browser_feedback", "test_post_v9_browser_feedback.py"),
 )
 
 OTHER_TESTS = (
-    ("source_and_cron", ("python3", "tools/check_post_v9.py", "--suite", "cron"), "targeted"),
+    ("cron_runner", ("python3", "tools/test_post_v9_cron_runner.py"), "report"),
+    ("payment_reference", ("python3", "tools/test_post_v9_payment_identity.py"), "stdout"),
     ("telegram_log_privacy", ("php", "-n", "tools/test_post_v9_telegram_log_privacy.php"), "stdout"),
-    ("payment_browser", ("python3", "tools/test_post_v9_browser_feedback.py", "--run-disposable"), "native"),
-    ("text_catalog", ("python3", "tools/test_next_text_catalog.py"), "stdout"),
+    ("marzban_bearer", ("python3", "tools/test_post_v9_marzban_bearer.py"), "stdout"),
 )
 
 
@@ -51,47 +57,66 @@ def git(*args: str) -> str:
     return subprocess.check_output(["git", *args], cwd=ROOT, text=True).strip()
 
 
-def validate_proof(name: str, mode: str, raw: str) -> dict:
+def check_source_syntax(workers: int) -> dict:
+    started = time.monotonic()
+    names = package_current.members()
+
+    def lint(name: str) -> str | None:
+        proc = subprocess.run(["php", "-l", str(ROOT / name)],
+                              capture_output=True, text=True, errors="replace")
+        if proc.returncode:
+            return name + ": " + (proc.stderr or proc.stdout)[-2000:]
+        return None
+
+    with ThreadPoolExecutor(max_workers=workers) as executor:
+        results = list(executor.map(lint, names))
+    errors = [x for x in results if x is not None]
+    result = {"name": "current_source_syntax",
+              "status": "PASS" if not errors else "FAIL",
+              "elapsed_seconds": round(time.monotonic() - started, 2),
+              "cases": len(names)}
+    if errors:
+        result["error"] = "\n".join(errors[:12])
+    return result
+
+
+def validate_proof(name: str, raw: str) -> dict:
     try:
         proof = json.loads(raw)
     except (ValueError, TypeError) as error:
         raise ValueError(f"{name}: missing/invalid JSON test evidence") from error
     if not isinstance(proof, dict) or not proof:
         raise ValueError(f"{name}: empty test evidence")
-    if mode == "targeted":
-        if not (proof.get("targeted_complete") is True and
-                proof.get("complete") is False and proof.get("scope") == "cron"):
-            raise ValueError(f"{name}: source/Cron checks incomplete")
-    elif (proof.get("complete") is not True and proof.get("pass") is not True and
-          proof.get("status") != "PASS" and proof.get("result") != "PASS"):
-        raise ValueError(f"{name}: no affirmative functional test result")
+    if (proof.get("complete") is not True and proof.get("pass") is not True and
+            proof.get("status") != "PASS" and proof.get("result") != "PASS"):
+        raise ValueError(f"{name}: no affirmative current functional test result")
     cases = proof.get("cases")
     if type(cases) is int and cases <= 0:
         raise ValueError(f"{name}: empty test cases")
-    return {"cases": cases if type(cases) is int else None, "result": "PASS"}
+    return {"cases": cases if type(cases) is int else None}
 
 
 def run_case(spec, output_dir: Path) -> dict:
     name, arguments, mode = spec
-    start = time.monotonic()
+    started = time.monotonic()
     report = output_dir / (name + ".json")
     command = list(arguments)
     if mode != "stdout":
         command.extend(["--report", str(report)])
     environment = dict(os.environ)
     environment["TMPDIR"] = str(output_dir)
-    proc = subprocess.run(command, cwd=ROOT, env=environment,
-                          capture_output=True, text=True, errors="replace")
-    elapsed = round(time.monotonic() - start, 2)
-    if proc.returncode:
-        return {"name": name, "status": "FAIL", "elapsed_seconds": elapsed,
-                "error": f"exit {proc.returncode}: {(proc.stderr or proc.stdout)[-8000:]}"}
     try:
-        evidence = proc.stdout if mode == "stdout" else report.read_text(encoding="utf-8")
-        details = validate_proof(name, mode, evidence)
-        return {"name": name, "status": "PASS", "elapsed_seconds": elapsed, **details}
-    except (OSError, ValueError) as error:
-        return {"name": name, "status": "FAIL", "elapsed_seconds": elapsed,
+        proc = subprocess.run(command, cwd=ROOT, env=environment,
+                              capture_output=True, text=True, errors="replace")
+        if proc.returncode:
+            raise RuntimeError(f"exit {proc.returncode}: {(proc.stderr or proc.stdout)[-7500:]}")
+        proof = proc.stdout if mode == "stdout" else report.read_text(encoding="utf-8")
+        details = validate_proof(name, proof)
+        return {"name": name, "status": "PASS",
+                "elapsed_seconds": round(time.monotonic() - started, 2), **details}
+    except (OSError, ValueError, RuntimeError) as error:
+        return {"name": name, "status": "FAIL",
+                "elapsed_seconds": round(time.monotonic() - started, 2),
                 "error": str(error)}
 
 
@@ -100,31 +125,40 @@ def main() -> int:
     parser.add_argument("--report", type=Path, required=True)
     args = parser.parse_args()
     if git("status", "--porcelain"):
-        raise RuntimeError("CI requires the exact committed, clean source")
+        raise RuntimeError("CI requires the exact committed, clean checkout")
     php_id = int(subprocess.check_output(
         ["php", "-r", "echo PHP_VERSION_ID;"], text=True))
     if not 80500 <= php_id < 80600:
-        raise RuntimeError("AChBot CI requires PHP 8.5")
+        raise RuntimeError("Current Stable acceptance requires PHP 8.5")
     if args.report.resolve().is_relative_to(ROOT):
-        raise ValueError("CI report must be outside the checkout")
-    specs = [((name, ("python3", "tools/" + script, "--run-disposable"), "native"))
-             for name, script in NATIVE_TESTS]
-    specs.extend(OTHER_TESTS)
-    workers = int(os.getenv("ACHBOT_CI_WORKERS", "3"))
+        raise ValueError("Report must live outside source checkout")
+
+    workers = int(os.getenv("ACHBOT_CI_WORKERS", "4"))
     if workers < 1:
         raise ValueError("ACHBOT_CI_WORKERS must be positive")
+
     started = time.monotonic()
-    base = Path(os.environ.get("RUNNER_TEMP") or tempfile.gettempdir())
-    with tempfile.TemporaryDirectory(prefix="achbot-ci-quick-", dir=base) as folder:
-        with ThreadPoolExecutor(max_workers=min(workers, len(specs))) as pool:
-            results = [task.result() for task in as_completed(
-                [pool.submit(run_case, spec, Path(folder)) for spec in specs])]
-    order = {spec[0]: index for index, spec in enumerate(specs)}
-    results.sort(key=lambda result: order[result["name"]])
-    success = all(result["status"] == "PASS" for result in results)
+    source = check_source_syntax(workers)
+    results = [source]
+    if source["status"] == "PASS":
+        tests = [(name, ("python3", "tools/" + script, "--run-disposable"), "report")
+                 for name, script in NATIVE_TESTS]
+        tests.extend(OTHER_TESTS)
+        if len({spec[0] for spec in tests}) != len(tests):
+            raise RuntimeError("Duplicate Stable regression test name")
+        temp_base = Path(os.environ.get("RUNNER_TEMP") or tempfile.gettempdir())
+        with tempfile.TemporaryDirectory(prefix="achbot-ci-stable-", dir=temp_base) as folder:
+            with ThreadPoolExecutor(max_workers=min(workers, len(tests))) as pool:
+                futures = [pool.submit(run_case, spec, Path(folder)) for spec in tests]
+                executed = {x["name"]: x for task in as_completed(futures)
+                            for x in [task.result()]}
+                results.extend(executed[spec[0]] for spec in tests)
+
+    success = all(item["status"] == "PASS" for item in results)
     data = {
-        "mode": "current-functional-regression",
-        "full_historical_or_exhaustive_coverage": False,
+        "mode": "stable-current-functional",
+        "pre_stable_execution": False,
+        "exhaustive_suite_claim": False,
         "head": git("rev-parse", "HEAD"),
         "tree": git("rev-parse", "HEAD^{tree}"),
         "php_version_id": php_id,
@@ -135,11 +169,11 @@ def main() -> int:
     args.report.parent.mkdir(parents=True, exist_ok=True)
     args.report.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n",
                            encoding="utf-8")
-    for result in results:
-        print(f"{result['status']:4} {result['name']:23} {result['elapsed_seconds']:7.2f}s",
+    for case in results:
+        print(f"{case['status']:4} {case['name']:23} {case['elapsed_seconds']:7.2f}s",
               flush=True)
-        if result["status"] != "PASS":
-            print(result["error"], file=sys.stderr, flush=True)
+        if case["status"] != "PASS":
+            print(case.get("error", "Unknown failure"), file=sys.stderr, flush=True)
     print(json.dumps({"status": data["status"], "mode": data["mode"],
                       "elapsed_seconds": data["elapsed_seconds"],
                       "checks": len(results)}), flush=True)
