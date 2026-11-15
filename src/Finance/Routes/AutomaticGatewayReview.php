@@ -207,8 +207,19 @@ if (preg_match('/^attention(?:Inbox(?:_[1-9][0-9]{0,17})?|Case_[1-9][0-9]{0,17})
                 $q->bind_param('i',$payId);$q->execute();
                 $nativeTotal=(int)($q->get_result()->fetch_assoc()['total']??0);$q->close();
                 if ($nativeTotal>0) {
+                    // 007 payment-effect evidence is valid even if optional
+                    // 012 provider-storage columns were never installed.
+                    // Preserve the existing original record; only its extra
+                    // native-state display field is absent in that schema.
+                    $column=$connection->query(
+                        "SHOW COLUMNS FROM service_effects LIKE 'provider_state'");
+                    if (!($column instanceof mysqli_result))
+                        throw new RuntimeException('gateway_review_effect_columns_unavailable');
+                    $nativeState=$column->num_rows>0
+                        ?'provider_state':'NULL AS provider_state';
+                    $column->free();
                     $q=$connection->prepare("SELECT id,ordinal,state,effect_kind,operation_id,
-                        remote_username,target_server_id,order_id,provider_state
+                        remote_username,target_server_id,order_id,$nativeState
                         FROM service_effects WHERE pay_row_id=?
                           AND effect_kind IN ('create','replacement')
                         ORDER BY ordinal DESC LIMIT 5");
@@ -334,7 +345,12 @@ if (preg_match('/^attention(?:Inbox(?:_[1-9][0-9]{0,17})?|Case_[1-9][0-9]{0,17})
                 $terminalDelivery=achbotApiPaymentTerminal($item) &&
                     ($proof['mode']??null)==='settle';
                 if ($eligible || $terminalDelivery)
-                    $recover=['text'=>achbotMessage('automatic_gateway_review.recover'),
+                    // A final payment/native effect only needs a delivery
+                    // status check. Do not promise to rerun an operation that
+                    // has already completed or has an UNKNOWN Telegram ACK.
+                    $recover=['text'=>achbotMessage($terminalDelivery
+                        ?'automatic_gateway_review.open_case'
+                        :'automatic_gateway_review.recover'),
                         'callback_data'=>'apiEvidenceResume_'.$payId];
                 // An API-unproven receipt remains a human decision, using
                 // the SAME existing Approve/Reject callbacks and reason flow.

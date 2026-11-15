@@ -36,6 +36,7 @@ class APIs(BaseHTTPRequestHandler):
         except (BrokenPipeError,ConnectionResetError):pass
     def auth(self,body=b''):
         if '/ach-pay-manager/' in self.path:return self.headers.get('Authorization')=='Bearer synthetic-bank-token'
+        if '/ach-gcw/v2' not in self.path:return False
         route='/ach-gcw/v2'+self.path.split('/ach-gcw/v2',1)[1]
         parts=[self.headers.get('X-ACH-Timestamp',''),self.headers.get('X-ACH-Nonce',''),self.command,route,body.decode()]
         sig=base64.urlsafe_b64encode(hmac.new(b'synthetic-gift-secret','\n'.join(parts).encode(),hashlib.sha256).digest()).decode().rstrip('=')
@@ -143,6 +144,13 @@ elseif($op==='review_resume'){
  require $root.'/src/Finance/Routes/ManualReceipts.php';
  $value='routed';
 }
+elseif($op==='inbox_case'){
+ $from_id=(int)($spec['actor']??9001);$chat_id=(int)($spec['chat']??$from_id);
+ $callbackId='fixture-api-case';$message_id=456;$data='attentionCase_'.$id;
+ $userInfo=['step'=>'none'];$text=null;
+ require $root.'/src/Finance/Routes/ManualReceipts.php';
+ $value='routed';
+}
 elseif($op==='profile_shift'){$a=achbotApiPaymentAttempt($connection,$id);$p=achbotPaymentEvidenceSnapshot($a);$p['issued_at']=time()-(int)($spec['age']??90000);unset($p['profile_sha256']);$sealed=achbotPaymentEvidenceProtect('profile:'.$a['id'].':'.$id,$p);$q=$connection->prepare('UPDATE payment_attempts SET evidence_profile=? WHERE id=?');$q->bind_param('si',$sealed,$a['id']);$q->execute();$q->close();$value=true;}
 elseif($op==='photo_race'){$v=achbotManualBeginEvidence($connection,$pay,'bank_transfer',1001,'race-photo');$value=$v?sendReceiptToAdminsAndUpdatePay($connection,'race-photo','رسید تست',achbotApiPaymentReviewKeyboard($pay),9001,$pay['hash_id'],$v):false;if($value)achbotManualAcknowledgeAndVerify($connection,$pay,'bank_transfer','Start','FixtureBot');}
 else throw new RuntimeException('unknown fixture op');
@@ -240,6 +248,11 @@ return !empty($GLOBALS['spec']['fail_staff'])?null:(object)['ok'=>true];}""")
         driver=work/'api-flow.php';driver.write_text(php)
         human_driver=work/'human-flow.php';human_driver.write_text(manual.PHP_ROUTE.replace("$GLOBALS['spec']=$spec;","$GLOBALS['spec']=$spec;\n"+PREP).replace("['name'=>'sendMessage','args'=>$args]","['name'=>'sendMessage','args'=>$args,'at'=>hrtime(true)/1000000000]").replace("['name'=>'sendPhoto','args'=>$args]","['name'=>'sendPhoto','args'=>$args,'at'=>hrtime(true)/1000000000]").replace("['name'=>'editKeys']","['name'=>'editKeys','args'=>$args]"))
         def call(**s):return run(work,env,app,driver,url,**s)
+        def inbox_return(result):
+            replies=[e for e in result['events'] if e.get('event')=='EDIT' and isinstance(e.get('buttons'),dict)]
+            expected={'inline_keyboard':[[{'text':'↪️ بازگشت به لیست بررسی','callback_data':'attentionInbox'}]]}
+            assert len(replies)==1 and replies[0]['buttons']==expected,(replies,result)
+            return True
         def human(route,data):
             r=run(work,env,app,human_driver,url,route=route,data=data,actor=9001)
             assert not r.get('fatal'),r
@@ -505,6 +518,23 @@ return !empty($GLOBALS['spec']['fail_staff'])?null:(object)['ok'=>true];}""")
         callback=call(op='review_resume',pay=n)
         edits=[e['text'] for e in callback['events'] if e['event']=='EDIT']
         assert callback['result']=='routed' and len(edits)==1 and 'تأیید دریافت همهٔ پیام‌های مشتری موجود نیست' in edits[0],callback
+        assert inbox_return(callback)
+        # The inbox UI requires 022, unlike the older original API fixture.
+        # Stage that additive schema ONLY around this one isolated UI case.
+        query(work,env,(ROOT/'migrations/post-v9/022_gateway_review_archive.sql').read_text())
+        try:
+            case_view=call(op='inbox_case',pay=n)
+        finally:
+            query(work,env,'ALTER TABLE payment_attempts DROP COLUMN review_archived_at, DROP COLUMN review_archived_by')
+        case_replies=[e for e in case_view['events'] if e.get('event')=='EDIT' and isinstance(e.get('buttons'),dict)]
+        assert case_view['result']=='routed' and len(case_replies)==1,case_view
+        rows=case_replies[0]['buttons']['inline_keyboard']
+        buttons=[b for row in rows for b in row]
+        assert any(b.get('callback_data')=='apiEvidenceResume_'+str(n) and b.get('text')=='🔎 بررسی پرونده' for b in buttons),buttons
+        assert not any(b.get('text')=='🔄 بررسی و بازیابی عملیات' for b in buttons),buttons
+        assert any(b.get('callback_data')=='attentionInbox' and b.get('text')=='↪️ بازگشت به لیست بررسی' for b in buttons),buttons
+        assert 'delivery_unconfirmed' in case_replies[0].get('text',''),case_replies
+        cases.append('terminal_unconfirmed_original_inbox_shows_status_check_not_second_operation')
         assert not any(e['event'] in ['DELIVER','POST','MESSAGE'] for e in callback['events']),callback
         assert int(query(work,env,f'SELECT attempt_count FROM payment_delivery_intents WHERE pay_row_id={n}'))==beforeDeliveries
         cases.append('actual_api_resume_telegram_unknown_native_create_not_replayed_or_misreported')
@@ -519,6 +549,7 @@ return !empty($GLOBALS['spec']['fail_staff'])?null:(object)['ok'=>true];}""")
         settled=call(op='review_resume',pay=n)
         edits=[e['text'] for e in settled['events'] if e['event']=='EDIT']
         assert len(edits)==1 and 'سفارش تأیید و پیام‌های ثبت‌شده تحویل شدند' in edits[0],settled
+        assert inbox_return(settled)
         assert not any(e['event'] in ['MESSAGE','DELIVER','POST'] for e in settled['events']),settled
         assert int(query(work,env,'SELECT wallet FROM users WHERE userid=1001'))==walletAfter
         assert query(work,env,f'SELECT state FROM payment_delivery_intents WHERE pay_row_id={n}')=='acknowledged'
@@ -530,6 +561,7 @@ return !empty($GLOBALS['spec']['fail_staff'])?null:(object)['ok'=>true];}""")
         edits=[e['text'] for e in pending['events'] if e['event']=='EDIT']
         sends=[e for e in pending['events'] if e['event']=='MESSAGE']
         assert len(sends)==1 and sends[0]['to']==1001 and len(edits)==1 and 'سفارش تأیید و پیام‌های ثبت‌شده تحویل شدند' in edits[0],pending
+        assert inbox_return(pending)
         assert query(work,env,f'SELECT state FROM payment_delivery_intents WHERE pay_row_id={n}')=='acknowledged'
         assert int(query(work,env,'SELECT wallet FROM users WHERE userid=1001'))==walletAfter
         cases.append('actual_api_resume_terminal_pending_only_ack_returns_complete_no_double_credit')
@@ -537,11 +569,14 @@ return !empty($GLOBALS['spec']['fail_staff'])?null:(object)['ok'=>true];}""")
         failed=call(op='review_resume',pay=n,fail_terminal_customer=True)
         edits=[e['text'] for e in failed['events'] if e['event']=='EDIT']
         assert len(edits)==1 and 'تأیید دریافت همهٔ پیام‌های مشتری موجود نیست' in edits[0],failed
+        assert inbox_return(failed)
         assert query(work,env,f'SELECT state FROM payment_delivery_intents WHERE pay_row_id={n}')=='unknown'
         attempts=int(query(work,env,f'SELECT attempt_count FROM payment_delivery_intents WHERE pay_row_id={n}'))
         again=call(op='review_resume',pay=n)
         edits=[e['text'] for e in again['events'] if e['event']=='EDIT']
         assert len(edits)==1 and 'تأیید دریافت همهٔ پیام‌های مشتری موجود نیست' in edits[0],again
+        assert inbox_return(again)
+        cases.append('api_resume_all_financially_terminal_outcomes_return_to_attention_inbox')
         assert not any(e['event'] in ['MESSAGE','DELIVER','POST'] for e in again['events'])
         assert int(query(work,env,f'SELECT attempt_count FROM payment_delivery_intents WHERE pay_row_id={n}'))==attempts
         assert int(query(work,env,'SELECT wallet FROM users WHERE userid=1001'))==walletAfter

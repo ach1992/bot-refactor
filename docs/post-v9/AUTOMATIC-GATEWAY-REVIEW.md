@@ -42,11 +42,20 @@ does not send duplicate standalone administrator messages.
 - **Approve/Reject + reject reason** for an unverified manual bank/gift
   receipt remain the **existing manual callbacks**, not a new hosted-like
   operator attestation. The original receipt and reports are preserved.
-- **🔄 بررسی و بازیابی عملیات** for a bank/gift API case is shown only
-  with the existing authenticated, pinned `settle` proof and one-shot
-  original coordinator; `dispatched/unknown` Native work is read-only and
-  never blindly retried. A terminal original with pending delivery may only
-  dispatch previously unattempted `PENDING` packets.
+- **🔄 بررسی و بازیابی عملیات** for an unfinished bank/gift API case uses
+  only its existing authenticated, pinned `settle` proof and one-shot original
+  coordinator; `dispatched/unknown` Native work is read-only and never
+  blindly retried. When the **original payment and service are already
+  terminal**, the same protected callback is labeled with the existing
+  **🔎 بررسی پرونده**, not a promise to repeat the operation. A terminal
+  original may dispatch only never-attempted `PENDING` customer packets;
+  `UNKNOWN` Telegram acknowledgement is a genuine unresolved delivery
+  result and is never automatically resent or represented as confirmed.
+- Details, resolved cases, hosted Approve/Reject/Recover/Archive results,
+  and the bank/gift API continuation result return through the existing
+  **↪️ بازگشت به لیست بررسی** to `attentionInbox`. Only the top-level inbox
+  navigates back to `managePanel`. Legacy manual-receipt staff actions remain
+  their original permission-checked workflows, not a replacement settlement.
 - **NOWPayments amount_mismatch** left by the older second crypto
   amount-check gate may be recovered after an authenticated merchant GET
   proves `finished` for the **exact original** payment, invoice, hash,

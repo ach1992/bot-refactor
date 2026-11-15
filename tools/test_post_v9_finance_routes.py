@@ -4747,6 +4747,15 @@ def main():
             actor=9001,chat_id=9001,callback_data='gatewayReview_H_'+str(archived_id)))
         assert any(e['name']=='editText' and 'قبلاً بررسی شده' in str(e['args'][1])
             for e in previous['events']) and not previous['network_calls']
+        for result in (approved,replay,rejected,archived,previous):
+            rendered=[e for e in result['events'] if e['name']=='editText']
+            if not rendered or not all('attentionInbox' in str(e['args'][2]) and
+                                       'بازگشت به لیست بررسی' in str(e['args'][2]) and
+                                       'managePanel' not in str(e['args'][2])
+                                       for e in rendered):
+                raise RuntimeError('Hosted approve/reject/archive result lost attention-inbox return: '+repr(rendered)[:450])
+        records.append(dict(case='hosted_reviewer_all_terminal_and_stale_results_return_to_attention_inbox',
+                            pass_=True,external_requests=0))
         records.append(dict(case='owner_archive_terminal_once_only_no_financial_action',
                             pass_=True,external_requests=0))
         late={
