@@ -1,6 +1,6 @@
 # AChBot — verify installed runtime before any change
 
-The current supported release is [v0.10.0 Stable](https://github.com/ach1992/bot-refactor/releases/tag/v0.10.0). Use the **actual selected release's** Manifest/SHA256SUMS and source-bound installed-runtime verifier. This is a **read-only disk source identity check**, not a database migration, live webhook test or deployment.
+Find the [current Stable release](https://github.com/ach1992/bot-refactor/releases/latest); [v0.10.0](https://github.com/ach1992/bot-refactor/releases/tag/v0.10.0) remains the first Stable baseline. Use the **actual selected release's** Manifest/SHA256SUMS and source-bound installed-runtime verifier. This is a **read-only disk source identity check**, not a database migration, live webhook test or deployment.
 
 ## Verify exact installed source
 

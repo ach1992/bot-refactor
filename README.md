@@ -1,6 +1,6 @@
 # AChBot
 
-**Current stable release:** [v0.10.0](https://github.com/ach1992/bot-refactor/releases/tag/v0.10.0) · [Downloads and earlier releases](https://github.com/ach1992/bot-refactor/releases)
+**Current stable release:** [Latest stable](https://github.com/ach1992/bot-refactor/releases/latest) · [First Stable baseline v0.10.0](https://github.com/ach1992/bot-refactor/releases/tag/v0.10.0) · [All releases](https://github.com/ach1992/bot-refactor/releases)
 
 AChBot is a Persian-language PHP Telegram bot for VPN subscriptions, native **Marzban** and **PasarGuard** account management, wallets and payments, support, administrator operations and scheduled service maintenance. This is the **first supported stable source baseline**; compatibility with superseded bot implementation versions is no longer a development requirement. Existing customer subscription URLs, Native credentials, active accounts, financial records and recovery safeguards **must remain valid**.
 
@@ -34,7 +34,7 @@ Use the **official runtime ZIP**, its manifest and SHA256SUMS from the selected 
 
 Each bot has its own database, webhook, private configuration and Cron job. The default Cron lock location is `/var/lib/achbot/cron-locks`. For different OS users, use their separately owned private directories via `ACHBOT_CRON_LOCK_DIR` (mode `0700`), outside served paths. Never delete an active lock file.
 
-**Release != installation:** GitHub publication does not deploy a bot, run SQL, enable payments/Cron or validate real Native/Telegram transactions. Separate operator authorization and installed acceptance apply.
+**Release != installation:** GitHub publication or merely placing a runtime ZIP in a bot directory does not replace live bot files, run SQL, enable payments/Cron or validate real Native/Telegram transactions. Separate operator authorization and installed acceptance apply.
 
 ## Documentation
 
@@ -42,7 +42,7 @@ Each bot has its own database, webhook, private configuration and Cron job. The 
 - [Fresh installation](docs/post-v9/FRESH-INSTALL.md) · [Installed-runtime diagnostics](docs/post-v9/INSTALL-DIAGNOSTICS.md)
 - [Provider storage and account identity](docs/post-v9/SHARED-PROVIDER-STORAGE.md) · [Service/plan changes](docs/post-v9/SHARED-SERVICE-TRANSFER.md)
 - [PasarGuard API and groups](docs/post-v9/PASARGUARD-CONTRACT.md) · [Unified service management](docs/post-v9/UNIFIED-SERVICE-MANAGEMENT.md)
-- [Financial safeguards](docs/post-v9/FINANCIAL-CONSOLIDATION.md) · [Payment recovery](docs/post-v9/PAYMENT-DELIVERY-RECOVERY.md) · [API evidence](docs/post-v9/API-PAYMENT-EVIDENCE.md)
+- [Financial safeguards](docs/post-v9/FINANCIAL-CONSOLIDATION.md) · [Payment recovery](docs/post-v9/PAYMENT-DELIVERY-RECOVERY.md) · [Operator exception inbox](docs/post-v9/AUTOMATIC-GATEWAY-REVIEW.md) · [API evidence](docs/post-v9/API-PAYMENT-EVIDENCE.md)
 - [Subscription presentation](docs/post-v9/SUBSCRIPTION-PRESENTATION.md) · [Scheduled renewals](docs/post-v9/AUTOMATIC-RENEWAL-SAFETY.md)
 - [Current CI contract](docs/post-v9/CI-VALIDATION.md) · [Security](docs/SECURITY.md)
 
