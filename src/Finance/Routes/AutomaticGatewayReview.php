@@ -59,6 +59,70 @@ $gatewayFitCase=static function(string $core,array $optional,string $footer) use
     return $result;
 };
 
+// An explicit private, payments-authorized human decision to send exactly
+// one original UNKNOWN packet again. The preview NEVER sends or claims.
+$deliveryAction=[];
+if (preg_match('/^attentionDelivery(Confirm|Send)_([1-9][0-9]{0,17})_([1-9][0-9]{0,17})(?:_([a-f0-9]{20}))?$/D',
+    (string)($data??''),$deliveryAction)===1) {
+    if (!achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'payments') ||
+        (int)($chat_id??0)!==(int)$from_id) {
+        answerCallbackQuery($callbackId,achbotMessage('automatic_gateway_review.denied'),true);
+        return;
+    }
+    require_once __DIR__.'/../DeliveryLedger.php';
+    $payId=(int)$deliveryAction[2];$ordinal=(int)$deliveryAction[3];
+    $caseBack=[['text'=>achbotMessage('automatic_gateway_review.redrive_cancel'),
+        'callback_data'=>'attentionCase_'.$payId]];
+    $rows=[];$message='';
+    try {
+        $candidate=achbotDeliveryManualCandidate($connection,$payId,$ordinal);
+        if (!$candidate) {
+            $message=achbotMessage('automatic_gateway_review.redrive_stale');
+        } elseif ($deliveryAction[1]==='Confirm' &&
+            (string)($deliveryAction[4]??'')==='') {
+            $message=achbotMessageHtml('automatic_gateway_review.redrive_confirm',[
+                'user'=>(int)$candidate['user_id'],
+                'payment'=>$payId,'ordinal'=>$ordinal]);
+            $callback='attentionDeliverySend_'.$payId.'_'.$ordinal.'_'.
+                achbotDeliveryManualConfirmationToken($candidate,$payId,(int)$from_id);
+            if (strlen($callback)>64)
+                throw new RuntimeException('manual_redrive_callback_limit');
+            $rows[]=[['text'=>achbotMessage('automatic_gateway_review.redrive_send'),
+                'callback_data'=>$callback]];
+        } elseif ($deliveryAction[1]==='Send' &&
+            hash_equals(achbotDeliveryManualConfirmationToken(
+                $candidate,$payId,(int)$from_id),(string)($deliveryAction[4]??''))) {
+            answerCallbackQuery($callbackId,achbotMessage('automatic_gateway_review.checking'));
+            $result=achbotDeliveryManualRedrive(
+                $connection,$payId,$ordinal,(int)$from_id,(int)$admin);
+            $message=achbotMessage(match($result) {
+                'acknowledged'=>'automatic_gateway_review.redrive_ack',
+                'unknown'=>'automatic_gateway_review.redrive_unknown',
+                'busy'=>'automatic_gateway_review.redrive_busy',
+                'denied'=>'automatic_gateway_review.denied',
+                'stale'=>'automatic_gateway_review.redrive_stale',
+                default=>'automatic_gateway_review.redrive_unavailable',
+            });
+        } else {
+            // Forged/unconfirmed/other-actor/stale callback: no customer send.
+            $message=achbotMessage('automatic_gateway_review.redrive_stale');
+        }
+        $rows[]=$caseBack;
+        $keys=json_encode(['inline_keyboard'=>$rows],
+            JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
+        $edited=editText($message_id,$message,$keys,'HTML',(int)$from_id);
+        if (!is_object($edited)||($edited->ok??false)!==true)
+            sendMessage($message,$keys,'HTML',(int)$from_id);
+        if ($deliveryAction[1]==='Confirm') answerCallbackQuery($callbackId);
+    } catch(Throwable $error) {
+        error_log('achbot_delivery_manual_ui_unavailable pay_id='.$payId.
+            ' ordinal='.$ordinal.' class='.get_class($error));
+        answerCallbackQuery($callbackId,
+            achbotMessage('automatic_gateway_review.redrive_unavailable'),true);
+    }
+    return;
+}
+
 // One operator inbox for genuinely unfinished original hosted/manual/API cases.
 if (preg_match('/^attention(?:Inbox(?:_[1-9][0-9]{0,17})?|Case_[1-9][0-9]{0,17})$/D',
     (string)($data??''))===1) {
@@ -365,6 +429,14 @@ if (preg_match('/^attention(?:Inbox(?:_[1-9][0-9]{0,17})?|Case_[1-9][0-9]{0,17})
             }
             if ($actions) $rows[]=$actions;
             if ($recover) $rows[]=[$recover];
+            // Only unresolved original Telegram ACKs, never an unproven
+            // payment or a second financial/Native continuation.
+            require_once __DIR__.'/../DeliveryLedger.php';
+            $manualDelivery=achbotDeliveryManualCandidate($connection,$payId);
+            if ($manualDelivery)
+                $rows[]=[['text'=>achbotMessage('automatic_gateway_review.redrive_action'),
+                    'callback_data'=>'attentionDeliveryConfirm_'.$payId.'_'.
+                        (int)$manualDelivery['ordinal']]];
             if (!$actions && !$recover)
                 $footer.="\n".achbotMessage('automatic_gateway_review.manual_hold');
             $rows[]=[['text'=>achbotMessage('automatic_gateway_review.archive'),

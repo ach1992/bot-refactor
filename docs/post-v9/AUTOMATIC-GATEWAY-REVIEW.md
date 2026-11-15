@@ -68,6 +68,54 @@ does not send duplicate standalone administrator messages.
 - If there is no safe action beyond review, show why; do not manufacture a
   recovery button or require a payment decision before Archive.
 
+## 📨 Explicit customer message redelivery — authorized staff, not a financial retry
+
+When a **terminal** payment/service has an original immutable 018 customer
+packet with `UNKNOWN` Telegram acknowledgement and no previous human attempt,
+the existing case shows **📨 ارسال مجدد پیام مشتری**. This button is available
+to **all staff who actually retain `payments` authorization** for the shared
+review screen (Owner, Manager, Operator and Support according to their current
+roles); it is not an Owner-only bypass. The action is accepted only from the
+operator's own private chat and the current role is checked **again inside**
+the original, payment-scoped InnoDB claim transaction.
+
+The first click is **read-only** and displays the original recipient, payment
+and packet ordinal, plus a clear warning that the earlier Telegram message may
+have reached the customer. It offers **✅ تأیید و ارسال** or
+**↪️ بازگشت به پرونده**. No customer send happens on preview or Back.
+The confirmation callback carries a short, actor-bound proof of this
+specific original packet/version; a forged `Send` callback or a button
+forwarded from another administrator cannot bypass the warning. Permission
+and payment/effect provenance are checked again at execution under locks.
+The Back button uses an ordinary valid Telegram inline keyboard row.
+
+The confirmation sends the **exact originally encrypted and authenticated
+018 packet**, including the original text/mode or original QR/caption/keyboard,
+not a rebuilt message with changed plan/configuration values. The packet's
+payment, attempt, customer, service, order and SHA256 pins are revalidated.
+The original per-database/per-payment session lease is held for the entire
+send and journal finalization, with no InnoDB transaction spanning HTTP.
+The original `payment_delivery_attempts` journal records the current actor,
+attempt count and result. A durable once-only test for **any prior human
+attempt** prevents a second manual send after success, uncertainty, stale
+buttons or simultaneous operator clicks. The existing automatic dispatcher
+remains **PENDING-only**. `UNKNOWN` can never be reclassified as successful
+delivery without a positive Telegram ACK.
+
+Sending the packet touches **only** its original delivery intent and attempts,
+plus the existing aggregate display of receipt status. It does not invoke any
+financial coordinator, payment provider, wallet, Native PUT/CREATE, renewal
+or quota modification. A successful Telegram ACK means the API accepted the
+message, not that the recipient read it. After an ambiguous manual send, no
+additional manual resend is offered for that same ordinal; if customer
+contact remains necessary, handle it via separately authorized support
+outside this original delivery journal. An already archived attempt cannot
+be redriven.
+
+The UI button concerns only the **first eligible packet in an open case**;
+other original packets remain independently reviewable on subsequent case
+visits, without inventing an account-count ceiling.
+
 ## 📦 بایگانی — terminal LOCAL operator stop
 
 An authorized payments administrator in a private chat may choose Archive

@@ -121,6 +121,10 @@ elseif($op==='view'){$c=achbotApiPaymentContext($connection,$pay['hash_id'],1001
 elseif($op==='track'){achbotApiPaymentTrackInvoice($connection,$pay['hash_id'],1001,(object)['ok'=>true,'result'=>(object)['message_id'=>567]]);$value=true;}
 elseif($op==='expire')$value=achbotPayUxExpireUnstartedManual($connection,$id);
 elseif($op==='maintain')$value=achbotApiPaymentMaintain($connection,(int)($spec['limit']??12));
+elseif($op==='dispatch_pending'){
+ require_once $root.'/src/Finance/DeliveryLedger.php';
+ $value=achbotDeliveryDispatchPending($connection,$id);
+}
 elseif($op==='notice'){achbotApiPaymentNotice($connection,$pay,$spec['status']??'confirmed');$value=true;}
 elseif($op==='manual_text')$value=achbotApiPaymentManualCustomerText($connection,$pay);
 elseif($op==='presentation'){
@@ -147,6 +151,17 @@ elseif($op==='review_resume'){
 elseif($op==='inbox_case'){
  $from_id=(int)($spec['actor']??9001);$chat_id=(int)($spec['chat']??$from_id);
  $callbackId='fixture-api-case';$message_id=456;$data='attentionCase_'.$id;
+ $userInfo=['step'=>'none'];$text=null;
+ require $root.'/src/Finance/Routes/ManualReceipts.php';
+ $value='routed';
+}
+elseif($op==='redrive_route'){
+ $from_id=(int)($spec['actor']??9001);
+ $chat_id=(int)($spec['chat']??$from_id);
+ $callbackId='fixture-delivery-decision';$message_id=456;
+ $action=(string)($spec['action']??'Confirm');
+ $ordinal=(int)($spec['ordinal']??1);
+ $data=(string)($spec['callback']??('attentionDelivery'.$action.'_'.$id.'_'.$ordinal));
  $userInfo=['step'=>'none'];$text=null;
  require $root.'/src/Finance/Routes/ManualReceipts.php';
  $value='routed';
@@ -188,6 +203,14 @@ def check(evidence_root,settings_root,source_root=ROOT):
         query(work,env,"UPDATE server_info SET ucount=100 WHERE id=2")
         query(work,env,"INSERT INTO setting(type,value) VALUES('BOT_STATES','{\"cartToCartState\":\"on\",\"giftCardState\":\"on\"}')")
         php=bank.PHP[:bank.PHP.index("$op=$spec['op']??'auto';")]+PREP+OPS
+        # Compare the actual five original QR transport arguments byte-for-byte
+        # via their digest without exposing customer text/QR in test output.
+        qr_spy="'has_text'=>trim((string)($args[1]??''))!==''];"
+        assert php.count(qr_spy)==1
+        php=php.replace(qr_spy,
+            "'has_text'=>trim((string)($args[1]??''))!=='',"+
+            "'packet_digest'=>hash('sha256',json_encode(array_slice($args,0,5),"+
+            "JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES))];")
         # The composed original Telegram spy must capture the actual admin
         # reply body, not only its keyboard, to prove source UI semantics.
         spy_before="'buttons'=>json_decode((string)($args[2]??''),true)];"
@@ -248,6 +271,20 @@ return !empty($GLOBALS['spec']['fail_staff'])?null:(object)['ok'=>true];}""")
         driver=work/'api-flow.php';driver.write_text(php)
         human_driver=work/'human-flow.php';human_driver.write_text(manual.PHP_ROUTE.replace("$GLOBALS['spec']=$spec;","$GLOBALS['spec']=$spec;\n"+PREP).replace("['name'=>'sendMessage','args'=>$args]","['name'=>'sendMessage','args'=>$args,'at'=>hrtime(true)/1000000000]").replace("['name'=>'sendPhoto','args'=>$args]","['name'=>'sendPhoto','args'=>$args,'at'=>hrtime(true)/1000000000]").replace("['name'=>'editKeys']","['name'=>'editKeys','args'=>$args]"))
         def call(**s):return run(work,env,app,driver,url,**s)
+        def redrive_preview_callback(pay,actor):
+            response=call(op='redrive_route',pay=pay,actor=actor,action='Confirm')
+            previews=[e for e in response['events'] if e['event']=='EDIT']
+            assert len(previews)==1 and 'ممکن است پیام قبلی' in previews[0]['text'],response
+            keyboard=previews[0]['buttons']['inline_keyboard']
+            assert all(isinstance(row,list) and row and all(
+                isinstance(b,dict) and isinstance(b.get('text'),str) and
+                isinstance(b.get('callback_data'),str) for b in row)
+                       for row in keyboard),keyboard
+            callbacks=[b['callback_data'] for row in keyboard for b in row
+                       if b['callback_data'].startswith('attentionDeliverySend_')]
+            assert keyboard[-1][0]['callback_data']==f'attentionCase_{pay}',keyboard
+            assert len(callbacks)==1 and len(callbacks[0].encode('utf-8'))<=64,callbacks
+            return callbacks[0]
         def inbox_return(result):
             replies=[e for e in result['events'] if e.get('event')=='EDIT' and isinstance(e.get('buttons'),dict)]
             expected={'inline_keyboard':[[{'text':'↪️ بازگشت به لیست بررسی','callback_data':'attentionInbox'}]]}
@@ -505,6 +542,9 @@ return !empty($GLOBALS['spec']['fail_staff'])?null:(object)['ok'=>true];}""")
         APIs.rows={};n=seed('deliveryfailed','BUY_SUB');rid=sms(n)
         reserved=int(query(work,env,'SELECT ucount FROM server_info WHERE id=2'))
         r=call(pay=n,mode='telegram_unconfirmed')
+        original_qr=[e for e in r['events'] if e['event']=='DELIVER']
+        assert len(original_qr)==1 and len(original_qr[0]['packet_digest'])==64,r
+        original_qr_digest=original_qr[0]['packet_digest']
         assert r['result']=='settled' and state(n)=='auto_cart_approved',r
         assert query(work,env,f'SELECT evidence_fulfillment_state FROM payment_attempts WHERE pay_row_id={n}')=='delivery_unconfirmed',r
         assert int(query(work,env,'SELECT ucount FROM server_info WHERE id=2'))==reserved-1
@@ -538,6 +578,75 @@ return !empty($GLOBALS['spec']['fail_staff'])?null:(object)['ok'=>true];}""")
         assert not any(e['event'] in ['DELIVER','POST','MESSAGE'] for e in callback['events']),callback
         assert int(query(work,env,f'SELECT attempt_count FROM payment_delivery_intents WHERE pay_row_id={n}'))==beforeDeliveries
         cases.append('actual_api_resume_telegram_unknown_native_create_not_replayed_or_misreported')
+        # Real source-routed admin confirmation: its preview is read-only, the
+        # eventual action alone may dispatch the exact ORIGINAL QR packet.
+        query(work,env,(ROOT/'migrations/post-v9/022_gateway_review_archive.sql').read_text())
+        try:
+            query(work,env,"INSERT INTO users(userid,name,username,refcode,wallet,date,isAdmin) VALUES(9014,'Support','support','0',0,'1700000000',1),(9015,'Operator','operator','0',0,'1700000000',1),(9016,'Manager','manager','0',0,'1700000000',1)")
+            query(work,env,"INSERT INTO setting(type,value) VALUES('ADMIN_ROLE_9014','support'),('ADMIN_ROLE_9015','operator'),('ADMIN_ROLE_9016','manager')")
+            beforeCount=int(query(work,env,f'SELECT attempt_count FROM payment_delivery_intents WHERE pay_row_id={n}'))
+            originalCount=int(query(work,env,f"SELECT COUNT(*) FROM service_effects WHERE pay_row_id={n} AND effect_kind='create'"))
+            support_preview=call(op='redrive_route',pay=n,actor=9014,action='Confirm')
+            support_ui=[e for e in support_preview['events'] if e['event']=='EDIT']
+            assert len(support_ui)==1 and 'ممکن است پیام قبلی' in support_ui[0]['text'],support_preview
+            support_callback=redrive_preview_callback(n,9014)
+            assert support_callback.startswith(f'attentionDeliverySend_{n}_1_')
+            assert not any(e['event'] in ['DELIVER','POST','MESSAGE'] for e in support_preview['events'])
+            case_reloaded=call(op='inbox_case',pay=n,actor=9016)
+            choices=[b for e in case_reloaded['events'] if e['event']=='EDIT'
+                for row in e['buttons']['inline_keyboard'] for b in row]
+            assert any(b['callback_data']==f'attentionDeliveryConfirm_{n}_1'
+                       for b in choices),choices
+            for actor,chat,callback in [
+                (1001,1001,support_callback),
+                (9014,1001,support_callback),
+                (9015,9015,support_callback),  # actor-bound preview
+                (9014,9014,None),             # forged Send without warning
+            ]:
+                params={'callback':callback} if callback is not None else {'action':'Send'}
+                forbidden=call(op='redrive_route',pay=n,actor=actor,chat=chat,**params)
+                assert not any(e['event'] in ['DELIVER','POST','MESSAGE'] for e in forbidden['events']),forbidden
+            assert int(query(work,env,f'SELECT attempt_count FROM payment_delivery_intents WHERE pay_row_id={n}'))==beforeCount
+            # A preview is not an enduring role grant. Revoking current staff
+            # access after preview makes the already issued send callback inert.
+            query(work,env,'UPDATE users SET isAdmin=0 WHERE userid=9014')
+            revoked=call(op='redrive_route',pay=n,actor=9014,callback=support_callback)
+            assert not any(e['event'] in ['DELIVER','POST','MESSAGE'] for e in revoked['events']),revoked
+            query(work,env,'UPDATE users SET isAdmin=1 WHERE userid=9014')
+            assert int(query(work,env,f'SELECT attempt_count FROM payment_delivery_intents WHERE pay_row_id={n}'))==beforeCount
+            # Two concurrent staff clicks, same source; the named lease and
+            # durable actor journal allow EXACTLY one customer send.
+            operator_callback=redrive_preview_callback(n,9015)
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                futures=[pool.submit(call,op='redrive_route',pay=n,actor=actor,
+                                     callback=callback)
+                         for actor,callback in ((9014,support_callback),(9015,operator_callback))]
+                raced=[future.result() for future in futures]
+            deliveries=[e for x in raced for e in x['events'] if e['event']=='DELIVER']
+            assert len(deliveries)==1 and deliveries[0]['packet_digest']==original_qr_digest,raced
+            assert query(work,env,f'SELECT state FROM payment_delivery_intents WHERE pay_row_id={n}')=='acknowledged'
+            assert int(query(work,env,f'SELECT attempt_count FROM payment_delivery_intents WHERE pay_row_id={n}'))==beforeCount+1
+            assert query(work,env,f"SELECT COUNT(*) FROM payment_delivery_attempts a JOIN payment_delivery_intents i ON i.id=a.intent_id WHERE i.pay_row_id={n} AND a.actor_userid IN (9014,9015)")== '1'
+            assert int(query(work,env,f"SELECT COUNT(*) FROM service_effects WHERE pay_row_id={n} AND effect_kind='create'"))==originalCount
+            replay=call(op='redrive_route',pay=n,actor=9016,action='Send')
+            assert not any(e['event'] in ['DELIVER','POST','MESSAGE'] for e in replay['events'])
+            cases.append('explicit_staff_preview_permissions_cas_one_qr_send_and_no_native_replay')
+            # Model a process loss after an HTTP Telegram response but before
+            # the final journal COMMIT. It is impossible to know whether the
+            # message was received, so no operator/Cron callback may repeat it.
+            delivered_id=query(work,env,f"SELECT id FROM payment_delivery_intents WHERE pay_row_id={n}")
+            query(work,env,f"UPDATE payment_delivery_attempts SET result='dispatching',finished_at=NULL WHERE intent_id={delivered_id} AND actor_userid>0")
+            query(work,env,f"UPDATE payment_delivery_intents d JOIN payment_delivery_attempts h ON h.intent_id=d.id AND h.actor_userid>0 SET d.state='dispatching',d.dispatch_token=h.dispatch_token,d.acknowledged_at=NULL,d.last_result=NULL WHERE d.id={delivered_id}")
+            abandoned=call(op='redrive_route',pay=n,actor=9015,callback=operator_callback)
+            assert not any(e['event'] in ['DELIVER','POST','MESSAGE'] for e in abandoned['events']),abandoned
+            assert query(work,env,f"SELECT state FROM payment_delivery_intents WHERE id={delivered_id}")=='dispatching'
+            assert int(query(work,env,f'SELECT attempt_count FROM payment_delivery_intents WHERE id={delivered_id}'))==beforeCount+1
+            check=call(op='dispatch_pending',pay=n)
+            assert check['result']==[] and not any(
+                e['event'] in ['DELIVER','POST','MESSAGE'] for e in check['events']),check
+            cases.append('staff_abandoned_manual_journal_after_http_not_replayed')
+        finally:
+            query(work,env,'ALTER TABLE payment_attempts DROP COLUMN review_archived_at, DROP COLUMN review_archived_by')
         # A valid terminal wallet payment is still owned by the original user,
         # and an existing Owner callback is delivery-only even after settlement.
         APIs.rows={};n=seed('api-route-acked');sms(n)
@@ -620,6 +729,41 @@ return !empty($GLOBALS['spec']['fail_staff'])?null:(object)['ok'=>true];}""")
         replay=call(op='settle',pay=n)
         assert replay['result']=='settled' and not any(e['event']=='EDIT' for e in replay['events']),replay
         cases.append('edit_telegram_ack_failure_leaves_funds_and_native_once_delivery_unconfirmed')
+        query(work,env,(ROOT/'migrations/post-v9/022_gateway_review_archive.sql').read_text())
+        try:
+            original=call(op='manual_text',pay=n)['result']
+            wallet=int(query(work,env,'SELECT wallet FROM users WHERE userid=1001'))
+            before=int(query(work,env,f'SELECT attempt_count FROM payment_delivery_intents WHERE pay_row_id={n}'))
+            result=call(op='redrive_route',pay=n,actor=9014,
+                        callback=redrive_preview_callback(n,9014))
+            sent=[e['text'] for e in result['events'] if e['event']=='MESSAGE' and e.get('to')==1001]
+            assert sent==[original],(original,result)
+            assert query(work,env,f'SELECT state FROM payment_delivery_intents WHERE pay_row_id={n}')=='acknowledged'
+            assert int(query(work,env,f'SELECT attempt_count FROM payment_delivery_intents WHERE pay_row_id={n}'))==before+1
+            assert int(query(work,env,'SELECT wallet FROM users WHERE userid=1001'))==wallet
+            assert not any(e['event'] in ('POST','DELIVER') or (e['event']=='EDIT' and 'change' in e) for e in result['events'])
+            second=call(op='redrive_route',pay=n,actor=9014,action='Send')
+            assert not any(e['event']=='MESSAGE' and e.get('to')==1001 for e in second['events'])
+            cases.append('staff_manual_renewal_redrive_exact_sealed_text_no_second_effect')
+        finally:
+            query(work,env,'ALTER TABLE payment_attempts DROP COLUMN review_archived_at, DROP COLUMN review_archived_by')
+        # A second failure remains UNKNOWN and is forever one human attempt
+        # for that original ordinal, with no silent ACK or retry.
+        n=seed('edit-redrive-unknown','RENEW_ACCOUNT',order=oid);sms(n)
+        assert call(pay=n,fail_terminal_customer=True)['result']=='settled'
+        query(work,env,(ROOT/'migrations/post-v9/022_gateway_review_archive.sql').read_text())
+        try:
+            bad=call(op='redrive_route',pay=n,actor=9016,
+                     callback=redrive_preview_callback(n,9016),fail_terminal_customer=True)
+            assert query(work,env,f'SELECT state FROM payment_delivery_intents WHERE pay_row_id={n}')=='unknown',bad
+            old_count=int(query(work,env,f'SELECT attempt_count FROM payment_delivery_intents WHERE pay_row_id={n}'))
+            assert old_count==2
+            retry=call(op='redrive_route',pay=n,actor=9015,action='Send')
+            assert not any(e['event']=='MESSAGE' and e.get('to')==1001 for e in retry['events'])
+            assert int(query(work,env,f'SELECT attempt_count FROM payment_delivery_intents WHERE pay_row_id={n}'))==old_count
+            cases.append('staff_unknown_redrive_one_human_attempt_no_auto_or_repeat')
+        finally:
+            query(work,env,'ALTER TABLE payment_attempts DROP COLUMN review_archived_at, DROP COLUMN review_archived_by')
         # Real human route/API contenders share one actual local claim for every subject.
         subjects=[('rstandard','BUY_SUB',0,0,1,'standard_approval','accept',0),('rcustom','BUY_SUB',12,3,1,'checkout','accCustom',0),('rbulk','BUY_SUB',0,0,3,'standard_approval','accept',0),('rrenew','RENEW_ACCOUNT',0,0,1,'renewal','approveRenewAcc',oid),('rday',f'INCREASE_DAY_{oid}_1',4,0,1,'extension','approveIncreaseDay',oid),('rvolume',f'INCREASE_VOLUME_{oid}_1',0,5,1,'extension','approveIncreaseVolume',oid),('rexternal','RENEW_SCONFIG',0,0,1,'standard_approval','accept',0)]
         for label,kind,days,vol,count,route,prefix,order in subjects:

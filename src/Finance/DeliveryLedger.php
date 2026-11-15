@@ -459,6 +459,30 @@ function achbotDeliveryValidateLocked(mysqli $db,array $pay,array $d): ?array {
               !in_array($packet['mode']??null,['HTML','plain'],true)) return null;
     return $packet;
 }
+/** Reuse the sealed ORIGINAL Telegram packet in both dispatch paths.
+ * The per-request context is diagnostic only, never input to the message.
+ */
+function achbotDeliverySendPacket(array $packet,int $payId,int $ordinal,
+                                  int $attemptNo,int $actor): bool {
+    $old=$GLOBALS['achbotTelegramDiagnosticContext']??null;
+    $GLOBALS['achbotTelegramDiagnosticContext']=[
+        'pay_id'=>$payId,'delivery_ordinal'=>$ordinal,
+        'delivery_attempt'=>$attemptNo,'delivery_actor'=>$actor,
+    ];
+    try {
+        if ($packet['kind']==='qr')
+            return sendQrFromLink($packet['qr'],$packet['caption'],$packet['keys'],
+                $packet['bot_url'],(int)$packet['uid'])===true;
+        $mode=$packet['mode']==='plain'?null:'HTML';
+        $answer=sendMessage($packet['text'],null,$mode,(int)$packet['uid']);
+        return $answer===true ||
+            (is_object($answer)&&($answer->ok??false)===true) ||
+            (is_array($answer)&&($answer['ok']??false)===true);
+    } finally {
+        if ($old===null) unset($GLOBALS['achbotTelegramDiagnosticContext']);
+        else $GLOBALS['achbotTelegramDiagnosticContext']=$old;
+    }
+}
 /** One CAS winner is allowed to emit; ambiguous outcome is never retried. */
 function achbotDeliveryDispatch(mysqli $db,int $payId,int $ordinal): string {
     if (!achbotDeliverySchemaReady($db)) return 'unavailable';
@@ -504,15 +528,7 @@ function achbotDeliveryDispatch(mysqli $db,int $payId,int $ordinal): string {
     }
     $ack=false;
     try {
-        if ($packet['kind']==='qr') {
-            $ack=sendQrFromLink($packet['qr'],$packet['caption'],$packet['keys'],
-                $packet['bot_url'],(int)$packet['uid'])===true;
-        } else {
-            $mode=$packet['mode']==='plain'?null:'HTML';
-            $answer=sendMessage($packet['text'],null,$mode,(int)$packet['uid']);
-            $ack=($answer===true || (is_object($answer)&&($answer->ok??false)===true)
-                || (is_array($answer)&&($answer['ok']??false)===true));
-        }
+        $ack=achbotDeliverySendPacket($packet,$payId,$ordinal,$next,0);
     } catch(Throwable $e) {
         error_log('achbot_delivery_telegram_uncertain pay_id='.$payId.' ordinal='.$ordinal.
             ' class='.get_class($e));
@@ -539,6 +555,190 @@ function achbotDeliveryDispatch(mysqli $db,int $payId,int $ordinal): string {
         error_log('achbot_delivery_finalize_unknown pay_id='.$payId.' ordinal='.$ordinal);
     }
     return $finished?$state:'unknown';
+    } finally {
+        achbotOriginalDispatchLeaseEnd($db,$payId,$lease);
+    }
+}
+/** Read-only gate for a SINGLE deliberate operator resend of an UNKNOWN
+ * original packet. This is distinct from the pending-only automated worker.
+ * An existing human attempt permanently consumes the one manual opportunity;
+ * the original UNKNOWN acknowledgement is never rewritten or inferred.
+ */
+function achbotDeliveryManualCandidate(mysqli $db,int $payId,int $ordinal=0): ?array {
+    if ($payId<=0 || $ordinal<0 || !achbotDeliverySchemaReady($db)) return null;
+    try {
+        $q=$db->prepare("SELECT d.id,d.ordinal,d.user_id,d.attempt_count,d.payload_sha256
+            FROM pays p
+            JOIN payment_attempts a ON a.pay_row_id=p.id
+            JOIN payment_delivery_intents d ON d.pay_row_id=p.id AND d.attempt_id=a.id
+            WHERE p.id=? AND (?=0 OR d.ordinal=?)
+              AND p.state IN ('approved','paid','auto_cart_approved','paid_with_wallet')
+              AND a.review_archived_at IS NULL AND d.state='unknown'
+              AND d.attempt_count>0 AND NOT EXISTS
+                (SELECT 1 FROM payment_delivery_attempts h
+                 WHERE h.intent_id=d.id AND h.actor_userid>0)
+            ORDER BY d.ordinal LIMIT 1");
+        // Non-exception mysqli modes are also supported; optional 022 must
+        // fail closed rather than dereference a false prepare result.
+        if (!$q) {
+            if ((int)$db->errno===1054) return null;
+            throw new RuntimeException('manual_redrive_lookup_prepare_failed');
+        }
+        $q->bind_param('iii',$payId,$ordinal,$ordinal);
+        $q->execute();$candidate=$q->get_result()->fetch_assoc();$q->close();
+        return $candidate?:null;
+    } catch(Throwable $e) {
+        // 022 Archive is optional on older installations. The shared inbox
+        // cannot serve this action there, without noisy 1054 log spam.
+        if ($e instanceof mysqli_sql_exception && (int)$e->getCode()===1054)
+            return null;
+        error_log('achbot_delivery_manual_lookup_unavailable pay_id='.$payId.
+            ' class='.get_class($e));
+        return null;
+    }
+}
+
+/** Stateless, actor-bound proof that the duplicate-warning preview was
+ * rendered for THIS original intent/version. Its callback is never an
+ * authorization by itself: the execution path rechecks staff roles, payment
+ * and immutable packet under the original database locks.
+ */
+function achbotDeliveryManualConfirmationToken(array $candidate,int $payId,int $actor): string {
+    if ($payId<=0 || $actor<=0 || (int)($candidate['id']??0)<=0 ||
+        (int)($candidate['ordinal']??0)<=0 ||
+        !preg_match('/^[a-f0-9]{64}$/D',(string)($candidate['payload_sha256']??'')))
+        throw new RuntimeException('manual_redrive_preview_identity_invalid');
+    $proof=implode('|',['manual-redrive-preview-v1',$actor,$payId,
+        (int)$candidate['id'],(int)$candidate['ordinal'],
+        (int)$candidate['attempt_count'],(string)$candidate['payload_sha256']]);
+    // 80-bit MAC leaves room for max-size current SQL ids inside Telegram's
+    // actual 64-byte callback_data limit; no arbitrary preview TTL.
+    return substr(hash_hmac('sha256',$proof,achbotPaymentEvidenceKey()),0,20);
+}
+
+/** Explicitly confirmed by a current payments-capable administrator.
+ * Never calls the original financial, Native or merchant coordinator.
+ * One human dispatch at most per original UNKNOWN intent. The original
+ * session lease covers network send and the ACK/UNKNOWN DB journal.
+ */
+function achbotDeliveryManualRedrive(mysqli $db,int $payId,int $ordinal,
+                                    int $actor,int $primary): string {
+    if ($payId<=0 || $ordinal<=0 || $actor<=0 || $primary<=0 ||
+        !achbotDeliverySchemaReady($db)) return 'unavailable';
+    require_once __DIR__.'/GatewayClient.php';
+    $lease=achbotOriginalDispatchLeaseBegin($db,$payId);
+    // A human callback must own its session lease, never borrow a financial
+    // worker's lock even if a parent happened to share the same connection.
+    if ($lease!=='owned') return $lease==='busy'||$lease==='borrowed'?'busy':'unavailable';
+    try {
+        $begun=false;$token='';$packet=null;$next=0;
+        try {
+            if (!$db->begin_transaction()) return 'unavailable';
+            $begun=true;
+            $q=$db->prepare('SELECT * FROM pays WHERE id=? FOR UPDATE');
+            $q->bind_param('i',$payId);$q->execute();
+            $pay=$q->get_result()->fetch_assoc();$q->close();
+            if (!$pay || !in_array((string)$pay['state'],
+                ['approved','paid','auto_cart_approved','paid_with_wallet'],true))
+                throw new RuntimeException('manual_redrive_not_terminal');
+            $q=$db->prepare('SELECT * FROM payment_attempts WHERE pay_row_id=? FOR UPDATE');
+            $q->bind_param('i',$payId);$q->execute();
+            $attempt=$q->get_result()->fetch_assoc();$q->close();
+            if (!$attempt || ($attempt['review_archived_at']??null)!==null)
+                throw new RuntimeException('manual_redrive_archived_or_missing');
+            $q=$db->prepare('SELECT * FROM payment_delivery_intents
+                WHERE pay_row_id=? AND ordinal=? FOR UPDATE');
+            $q->bind_param('ii',$payId,$ordinal);$q->execute();
+            $d=$q->get_result()->fetch_assoc();$q->close();
+            if (!$d || (int)$d['attempt_id']!==(int)$attempt['id'] ||
+                $d['state']!=='unknown' || (int)$d['attempt_count']<1)
+                throw new RuntimeException('manual_redrive_not_unknown');
+            if (!achbotAdminCanLocked($db,$actor,$primary,'payments'))
+                throw new RuntimeException('manual_redrive_denied');
+            $q=$db->prepare('SELECT id FROM payment_delivery_attempts
+                WHERE intent_id=? AND actor_userid>0 LIMIT 1');
+            $did=(int)$d['id'];$q->bind_param('i',$did);$q->execute();
+            $prior=$q->get_result()->fetch_assoc();$q->close();
+            if ($prior) throw new RuntimeException('manual_redrive_already_attempted');
+            $packet=achbotDeliveryValidateLocked($db,$pay,$d);
+            if ($packet===null)
+                throw new RuntimeException('manual_redrive_original_proof_invalid');
+            $token=bin2hex(random_bytes(16));
+            $count=(int)$d['attempt_count'];$next=$count+1;
+            $digest=(string)$d['payload_sha256'];
+            $q=$db->prepare("UPDATE payment_delivery_intents SET
+                state='dispatching',attempt_count=attempt_count+1,
+                dispatch_token=?,dispatched_at=NOW(),last_actor=?,last_result=NULL
+                WHERE id=? AND state='unknown' AND attempt_count=? AND payload_sha256=?");
+            $q->bind_param('siiis',$token,$actor,$did,$count,$digest);
+            $ok=$q->execute() && $q->affected_rows===1;$q->close();
+            if (!$ok) throw new RuntimeException('manual_redrive_claim_conflict');
+            $q=$db->prepare('INSERT INTO payment_delivery_attempts
+                (intent_id,attempt_no,dispatch_token,actor_userid) VALUES(?,?,?,?)');
+            $q->bind_param('iisi',$did,$next,$token,$actor);
+            $ok=$q->execute() && $q->affected_rows===1;$q->close();
+            if (!$ok || !$db->commit())
+                throw new RuntimeException('manual_redrive_claim_unconfirmed');
+            $begun=false;
+        } catch(Throwable $e) {
+            if ($begun) try {$db->rollback();}catch(Throwable $ignored){}
+            error_log('achbot_delivery_manual_claim_held pay_id='.$payId.
+                ' ordinal='.$ordinal.' actor='.$actor.' class='.get_class($e).
+                ' code='.preg_replace('/[^a-z0-9_]/','',
+                     substr($e->getMessage(),0,80)));
+            return match($e->getMessage()) {
+                'manual_redrive_denied'=>'denied',
+                'manual_redrive_not_terminal',
+                'manual_redrive_archived_or_missing',
+                'manual_redrive_not_unknown',
+                'manual_redrive_already_attempted',
+                'manual_redrive_original_proof_invalid',
+                'manual_redrive_claim_conflict'=>'stale',
+                default=>'unavailable',
+            };
+        }
+        error_log('achbot_delivery_manual_attempt_started pay_id='.$payId.
+            ' ordinal='.$ordinal.' attempt='.$next.' actor='.$actor);
+        $ack=false;
+        try {
+            $ack=achbotDeliverySendPacket($packet,$payId,$ordinal,$next,$actor);
+        } catch(Throwable $e) {
+            error_log('achbot_delivery_manual_telegram_uncertain pay_id='.$payId.
+                ' ordinal='.$ordinal.' attempt='.$next.' actor='.$actor.
+                ' class='.get_class($e));
+        }
+        $result=$ack?'ack':'unknown';$state=$ack?'acknowledged':'unknown';
+        $finished=false;
+        try {
+            if (!$db->begin_transaction()) return 'unknown';
+            $q=$db->prepare("UPDATE payment_delivery_intents SET
+                state=?,dispatch_token=NULL,acknowledged_at=IF(?='ack',NOW(),NULL),
+                last_result=? WHERE pay_row_id=? AND ordinal=?
+                AND state='dispatching' AND dispatch_token=?");
+            $q->bind_param('sssiis',$state,$result,$result,$payId,$ordinal,$token);
+            $ok=$q->execute() && $q->affected_rows===1;$q->close();
+            if (!$ok) throw new RuntimeException('manual_redrive_finalize_conflict');
+            $q=$db->prepare("UPDATE payment_delivery_attempts SET
+                result=?,finished_at=NOW()
+                WHERE dispatch_token=? AND actor_userid=? AND result='dispatching'");
+            $q->bind_param('ssi',$state,$token,$actor);
+            $ok=$q->execute() && $q->affected_rows===1;$q->close();
+            if (!$ok || !$db->commit())
+                throw new RuntimeException('manual_redrive_finalize_unconfirmed');
+            $finished=true;
+        } catch(Throwable $e) {
+            try {$db->rollback();}catch(Throwable $ignored){}
+            error_log('achbot_delivery_manual_finalize_unknown pay_id='.$payId.
+                ' ordinal='.$ordinal.' attempt='.$next.' actor='.$actor.
+                ' class='.get_class($e));
+        }
+        if ($finished) {
+            achbotDeliverySyncAggregate($db,$payId);
+            error_log('achbot_delivery_manual_attempt_result pay_id='.$payId.
+                ' ordinal='.$ordinal.' attempt='.$next.' actor='.$actor.
+                ' result='.$state);
+        }
+        return $finished?$state:'unknown';
     } finally {
         achbotOriginalDispatchLeaseEnd($db,$payId,$lease);
     }
