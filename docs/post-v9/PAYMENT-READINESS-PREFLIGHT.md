@@ -20,7 +20,7 @@ It checks:
 
 - Every **current runtime file's** byte length and SHA-256 against the
   **provided** release-matched manifest, plus the current verifier's pinned
-  filename inventory (**132 members in the verified Stable release**),
+  filename inventory (release-dependent, verified against the selected manifest),
   with no retired automatic TRON/WeSwap PHP files. The locally
   executed policy and wallet validation helpers must also match the supplied runtime
   manifest; a tool checkout from another source version is rejected.

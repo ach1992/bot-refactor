@@ -24,7 +24,7 @@ Unused legacy X-UI, WeSwap and automatic TRON checker integrations are **not** s
 
 ## Installation and upgrade
 
-Use the **official runtime ZIP**, its manifest and SHA256SUMS from the selected GitHub release. The automatically generated GitHub *Source code* ZIP is **not** the deployable runtime. The current package has 132 source-bound runtime members, with no live `baseInfo.php`, customer data, database installer, payment credentials, or Cron configuration.
+Use the **official runtime ZIP**, its manifest and SHA256SUMS from the selected GitHub release. The automatically generated GitHub *Source code* ZIP is **not** the deployable runtime. The release manifest lists the exact dynamically selected source-bound runtime members; it excludes live `baseInfo.php`, customer data, database installers, payment credentials and Cron configuration.
 
 1. **New empty database:** follow [Fresh installation](docs/post-v9/FRESH-INSTALL.md) for the release-matched schema and migration order, private configuration, webhook, and safe Cron setup.
 2. **Existing bot:** compare the installed file hashes, real DB migration state, private settings, pending effects and available rollback before replacing source. Follow [Installed-runtime diagnostics](docs/post-v9/INSTALL-DIAGNOSTICS.md); **never replay completed migrations or the one-time Hell/Vivan PasarGuard cutover**.

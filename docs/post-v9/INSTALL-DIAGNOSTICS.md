@@ -20,7 +20,7 @@ python3 tools/verify_installed_runtime.py \
 - Exit **2**: invalid input, untrusted manifest or unavailable root.
 - Matching on-disk files **does not** prove which compiled bytes PHP-FPM/LSAPI OPcache serves, webhook routing, real provider access, financial settlement or Cron execution. The verifier deliberately does not read `baseInfo.php`, contact Telegram, access SQL or traverse unexpected extra files.
 
-Verify the exact host, application document root, PHP handler, OPcache state, public `index.php`, scoped `health.php`, and Telegram webhook through the authorized private operational route. Old unexpected scripts can be publicly callable even if all 132 current runtime members match: reconcile obsolete paths against the exact current ZIP and documented reverse-proxy/webserver behavior; do not delete unidentified private or custom files.
+Verify the exact host, application document root, PHP handler, OPcache state, public `index.php`, scoped `health.php`, and Telegram webhook through the authorized private operational route. Old unexpected scripts can be publicly callable even if all members in the selected release manifest match: reconcile obsolete paths against the exact current ZIP and documented reverse-proxy/webserver behavior; do not delete unidentified private or custom files.
 
 ## Production installation and safe rollback
 
