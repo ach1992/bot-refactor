@@ -27,6 +27,11 @@ never replayed as another payment or Native operation. Missing optional
 API/delivery schema must never invent financial evidence or make a
 hosted-only read fail.
 
+The staff recovery entry described here is implemented for **original
+bank/gift API-pinned proven claims**; hosted and non-API manual settlement
+eligibility remain with their existing financial coordinators and must not
+be represented as auto-recoverable until that source path is verified.
+
 Opening a case presents original subject/customer/amount/ids, locally
 observed provider status and service-effect history, with the relevant API
 evidence/fulfillment status only when that invoice was API-pinned. The same
@@ -42,15 +47,39 @@ does not send duplicate standalone administrator messages.
 - **Approve/Reject + reject reason** for an unverified manual bank/gift
   receipt remain the **existing manual callbacks**, not a new hosted-like
   operator attestation. The original receipt and reports are preserved.
-- **🔄 بررسی و بازیابی عملیات** for an unfinished bank/gift API case uses
-  only its existing authenticated, pinned `settle` proof and one-shot original
-  coordinator; `dispatched/unknown` Native work is read-only and never
-  blindly retried. When the **original payment and service are already
-  terminal**, the same protected callback is labeled with the existing
-  **🔎 بررسی پرونده**, not a promise to repeat the operation. A terminal
-  original may dispatch only never-attempted `PENDING` customer packets;
-  `UNKNOWN` Telegram acknowledgement is a genuine unresolved delivery
-  result and is never automatically resent or represented as confirmed.
+- **✅ تأیید و تکمیل عملیات** for an unfinished bank/gift API-pinned
+  payment keeps the same original `settle` evidence, payment and order. It
+  does not require the Native work to be `reserved` or `verified` first:
+  `dispatched` is an actionable interrupted state, not an endless dead end.
+  If Native may already have been called, staff first sees a **read-only,
+  actor-bound confirmation**. The second click rechecks current `payments`
+  permission, private chat, archived status, original evidence, invoice
+  fingerprint and original worker lease. No new payment, wallet credit,
+  capacity reservation or synthetic order is permitted. If the original
+  payment/service is already terminal, the same callback is **🔎 بررسی
+  پرونده**, for existing `PENDING` Telegram delivery only; `UNKNOWN`
+  Telegram ACK remains unconfirmed and cannot be silently redelivered.
+- Native recovery is a **provider registry contract**, not a payment-method or
+  panel-name switch in the financial/UI code. For original paid **CREATE**,
+  adapters first inspect the existing immutable username/operation marker.
+  A deliberate staff retry, if no matching completed CREATE can be recovered,
+  re-dispatches the **same original effect/ordinal/username**, with no second
+  capacity debit. Unique provider account names remain the remote duplicate
+  backstop. For **renewal**, repeating the absolute plan/reset is permitted
+  automatically on the already-funded original invoice, including a small
+  expiry-time difference. For **volume/time extensions**, an automatic retry
+  cannot add the purchased units twice. The staff-confirmed adapter recovers
+  or reapplies the **original persisted absolute target** and finishes the
+  same local accounting once. The same four operation meanings apply to any
+  registered provider; a future Native adapter must implement the registered recovery
+  callbacks before it can accept payment operations.
+- A failed staff retry remains on the original case and logs payment, actor,
+  effect, stage and bounded reason for diagnosis. A successful service readback
+  finishes the existing local payment/order and uses the original delivery
+  journal; it never interprets success of the Native API alone as confirmed
+  Telegram delivery. No arbitrary number of retries is encoded in business
+  logic; active same-payment worker leases and exact native identities still
+  protect against concurrent or unrelated operations.
 - Details, resolved cases, hosted Approve/Reject/Recover/Archive results,
   and the bank/gift API continuation result return through the existing
   **↪️ بازگشت به لیست بررسی** to `attentionInbox`. Only the top-level inbox

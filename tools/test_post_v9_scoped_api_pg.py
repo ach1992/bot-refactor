@@ -200,6 +200,12 @@ try {
  } elseif ($op==='settle') {
     $id=(int)$spec['pay_id'];$proof=achbotPaymentEvidenceGetProof($connection,$id);
     $result=$proof?achbotApiPaymentSettle($connection,$id,$proof):'missing_proof';
+ } elseif ($op==='operator') {
+    $id=(int)$spec['pay_id'];
+    $proof=achbotPaymentEvidenceGetProof($connection,$id);
+    $actor=(int)($spec['actor']??9001);
+    $result=$proof?achbotApiPaymentSettle($connection,$id,$proof,$actor,9001)
+        :'missing_proof';
  } elseif ($op==='finisher_probe') {
     // Deliberately synthetic remote-verification object only for a negative
     // AUTHORIZATION test. This never dispatches provider traffic or commits
@@ -445,6 +451,7 @@ def sandbox(*, imported_empty=False):
                     if any(not line.startswith((
                             "achbot_api_claim_review pay_id=",
                             "achbot_api_effect_review pay_id=",
+                            "achbot_operator_service_completed pay_id=",
                             "achbot_pg_edit_needs_review pay_id=",
                             "achbot_api_paid_delivery_review pay_id=",
                             # No real Telegram delivery exists in this isolated
@@ -778,6 +785,52 @@ def test():
                sql("SELECT COUNT(*) FROM increase_order") == "0",
                "unknown_pg_put_ack_never_replays_or_refunds")
 
+    # The same source, provider adapter and original payment recover native
+    # timeouts. An operator who inspected the panel can finish both additive
+    # types; the original absolute effect is never applied twice.
+    for kind in ('day','volume'):
+        with sandbox() as (sql,run,provider,bank,old_expiry):
+            issued,msg=claim_proof(run,bank,kind,'operator_redrive_'+kind)
+            pay=issued['pay_id']
+            assert run('reserve',pay_id=pay,sms=msg) is not None
+            assert run('consume',pay_id=pay)['status']=='proven'
+            provider.mode='write_lost'
+            first=run('settle',pay_id=pay)
+            assert first=='review' and provider.write_count==1
+            assert terminal_state(sql,pay).startswith('processing|dispatched|')
+            assert sql("SELECT provider_state FROM service_effects WHERE id=1")=='mutating'
+            provider.mode='ok'
+            before=provider.write_count
+            recovered=run('operator',pay_id=pay)
+            passed(recovered=='confirmed' and
+                   terminal_state(sql,pay).startswith('auto_cart_approved|done|') and
+                   provider.write_count==before and
+                   sql("SELECT provider_state FROM service_effects WHERE id=1")=='linked' and
+                   sql("SELECT COUNT(*) FROM increase_order")=='1',
+                   'operator_'+kind+'_lost_ack_finalized_without_second_native_write',
+                   [recovered,terminal_state(sql,pay),provider.write_count])
+            passed(run('operator',pay_id=pay)=='settled' and
+                   provider.write_count==before and
+                   sql('SELECT COUNT(*) FROM increase_order')=='1',
+                   'operator_'+kind+'_completed_payment_never_adds_again')
+    # If the first worker died before any remote PUT, the actor's deliberate
+    # confirmation restarts only the saved absolute service operation.
+    for kind in ('day','volume'):
+        with sandbox() as (sql,run,provider,bank,old_expiry):
+            issued,msg=claim_proof(run,bank,kind,'operator_preput_'+kind)
+            pay=issued['pay_id']
+            assert run('reserve',pay_id=pay,sms=msg) is not None
+            assert run('consume',pay_id=pay)['status']=='proven'
+            provider.drift='authority_fail'
+            assert run('settle',pay_id=pay)=='review'
+            assert provider.write_count==0
+            provider.mode='ok'
+            recovered=run('operator',pay_id=pay)
+            passed(recovered=='confirmed' and provider.write_count==1 and
+                   sql("SELECT provider_state FROM service_effects WHERE id=1")=='linked' and
+                   terminal_state(sql,pay).startswith('auto_cart_approved|done|'),
+                   'operator_'+kind+'_can_complete_earlier_preput_failure',
+                   [recovered,provider.write_count,terminal_state(sql,pay)])
     with sandbox() as (sql, run, provider, bank, _):
         issued, wrong = claim_proof(
             run, bank, "day", "scoped_api_pg_wrong_amount",

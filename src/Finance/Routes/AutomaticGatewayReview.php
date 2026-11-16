@@ -414,7 +414,7 @@ if (preg_match('/^attention(?:Inbox(?:_[1-9][0-9]{0,17})?|Case_[1-9][0-9]{0,17})
                     // has already completed or has an UNKNOWN Telegram ACK.
                     $recover=['text'=>achbotMessage($terminalDelivery
                         ?'automatic_gateway_review.open_case'
-                        :'automatic_gateway_review.recover'),
+                        :'automatic_gateway_review.service_action'),
                         'callback_data'=>'apiEvidenceResume_'.$payId];
                 // An API-unproven receipt remains a human decision, using
                 // the SAME existing Approve/Reject callbacks and reason flow.

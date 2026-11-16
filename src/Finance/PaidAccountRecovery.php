@@ -9,7 +9,8 @@ require_once __DIR__.'/ServiceEffects.php';
 
 /** Native CREATE replay gate shared by bank/API/manual fulfillment. */
 function achbotContinuePaidAccount(mysqli $db,int $payId,int $ordinal,array $request,
-                                   ?callable $exactAccountGet=null): array {
+                                   ?callable $exactAccountGet=null,
+                                   int $actor=0,int $primary=0): array {
     achbotEffectRequireAutocommit($db);
     achbotEffectRequireUniqueLine($db);
     if ($payId<=0 || $ordinal<=0) throw new RuntimeException('paid_resume_invalid_line');
@@ -50,11 +51,99 @@ function achbotContinuePaidAccount(mysqli $db,int $payId,int $ordinal,array $req
         (int)$e['requested_expire']<=0 ||
         (int)$e['agent_count']<0 || $ordinal>max(1,(int)$e['agent_count']))
         throw new RuntimeException('paid_resume_original_effect_changed');
-    if ($e['panel_type']==='marzban')
-        return achbotContinueMarzbanPaidAccount($db,$payId,$ordinal,$e,$exactAccountGet);
-    if ($e['panel_type']==='pasarguard')
-        return achbotContinuePasarGuardPaidAccount($db,$payId,$ordinal,$e);
-    throw new RuntimeException('paid_resume_provider_unsupported');
+    return achbotProviderRecoverCreate($db,$payId,$ordinal,$e,$request,
+        $actor,$primary,$exactAccountGet);
+}
+
+/**
+ * Re-arm only a genuinely unfinished original CREATE, under the existing
+ * payment session lease and payment/effect locks. Reuse its operation ID,
+ * username, entitlement and capacity reservation. The staff decision is not
+ * a second payment and never allocates a second local effect.
+ */
+function achbotRetryOriginalPaidCreate(mysqli $db,int $payId,int $ordinal,
+    array $effect,array $request,int $actor,int $primary): array {
+    require_once __DIR__.'/../Admin/Access.php';
+    require_once __DIR__.'/GatewayClient.php';
+    if ($actor<=0 || $primary<=0 || $payId<=0 || $ordinal<=0)
+        throw new RuntimeException('paid_create_recovery_invalid');
+    $name=achbotHostedWorkerLockName($db,$payId);
+    $lock=$db->prepare('SELECT IS_USED_LOCK(?) AS holder,CONNECTION_ID() AS me');
+    $lock->bind_param('s',$name);$lock->execute();
+    $lease=$lock->get_result()->fetch_assoc();$lock->close();
+    if (!$lease || $lease['holder']===null || (int)$lease['holder']!==(int)$lease['me'])
+        throw new RuntimeException('paid_create_recovery_worker_busy');
+
+    $started=false;
+    try {
+        if (!$db->begin_transaction()) throw new RuntimeException('paid_create_recovery_begin');
+        $started=true;
+        $q=$db->prepare('SELECT * FROM pays WHERE id=? FOR UPDATE');
+        $q->bind_param('i',$payId);$q->execute();$pay=$q->get_result()->fetch_assoc();$q->close();
+        if (!$pay || $pay['type']!=='BUY_SUB' ||
+            !in_array($pay['state'],['processing','paid','processing_wallet'],true) ||
+            !achbotAdminCanLocked($db,$actor,$primary,'payments'))
+            throw new RuntimeException('paid_create_recovery_payment_changed');
+        achbotEffectAssertNotArchivedLocked($db,$payId,$pay['state']==='processing');
+        $q=$db->prepare('SELECT * FROM service_effects WHERE id=? FOR UPDATE');
+        $id=(int)$effect['id'];$q->bind_param('i',$id);$q->execute();
+        $row=$q->get_result()->fetch_assoc();$q->close();
+        if (!$row || (int)$row['pay_row_id']!==$payId ||
+            (int)$row['ordinal']!==$ordinal || $row['effect_kind']!=='create' ||
+            $row['state']!=='dispatching' || $row['order_id']!==null ||
+            $row['request_sha256']!==$effect['request_sha256'] ||
+            $row['operation_id']!==$effect['operation_id'] ||
+            $row['remote_username']!==$effect['remote_username'] ||
+            (int)$row['requested_bytes']!==(int)$effect['requested_bytes'] ||
+            (int)$row['requested_expire']!==(int)$effect['requested_expire'] ||
+            (($row['provider_remote_user_id']??null)!==null) ||
+            (($row['provider_reference_id']??null)!==null &&
+             ($row['provider_state']??null)!=='dispatching'))
+            throw new RuntimeException('paid_create_recovery_effect_changed');
+        $server=(int)$row['target_server_id'];$plan=(int)$row['plan_id'];
+        if ($server!==(int)$pay['server_id'] || $plan!==(int)$pay['plan_id'] ||
+            $server!==(int)($request['server_id']??0) ||
+            $plan!==(int)($request['plan_id']??0))
+            throw new RuntimeException('paid_create_recovery_target_changed');
+        $q=$db->prepare('SELECT c.type,c.panel_url,c.username AS panel_username,
+            c.password AS panel_password,i.panel_group_id
+            FROM server_config c JOIN server_info i ON i.id=c.id WHERE c.id=?');
+        $q->bind_param('i',$server);$q->execute();$panel=$q->get_result()->fetch_assoc();$q->close();
+        if (!$panel || $panel['type']!==(string)$effect['panel_type'])
+            throw new RuntimeException('paid_create_recovery_provider_changed');
+        $target=achbotEffectTargetIdentity($db,$server,$plan,$payId,
+            $panel+['panel_type'=>$panel['type']]);
+        if ((string)$target['endpoint']!==(string)$row['endpoint_sha256'] ||
+            (string)$target['key']!==(string)$row['target_key'] ||
+            $target['group']!==($row['target_group_id']===null
+                ?null:(int)$row['target_group_id']))
+            throw new RuntimeException('paid_create_recovery_native_target_changed');
+        // 007 is a shared paid effect; 012 Native storage is optional and
+        // owned solely by its registered adapter, not by this coordinator.
+        $q=$db->prepare("UPDATE service_effects SET state='reserved'
+            WHERE id=? AND state='dispatching' AND order_id IS NULL");
+        $q->bind_param('i',$id);
+        if (!$q->execute() || $q->affected_rows!==1)
+            throw new RuntimeException('paid_create_recovery_claim_failed');
+        $q->close();
+        achbotProviderRecoverRearm($db,$effect);
+        if (!$db->commit()) throw new RuntimeException('paid_create_recovery_commit_unknown');
+        $started=false;
+    } catch (Throwable $error) {
+        if ($started) try {$db->rollback();} catch(Throwable $ignored) {}
+        throw $error;
+    }
+    error_log('achbot_operator_create_redrive pay_id='.$payId.' ordinal='.$ordinal.
+        ' actor='.$actor.' effect_id='.(int)$effect['id']);
+    $volume=intdiv((int)$effect['requested_bytes'],1073741824);
+    $days=(int)($request['days']??0);
+    return achbotEffectDispatchReservedAccount($db,(int)$effect['id'],
+        (int)$effect['target_server_id'],
+        $effect['target_group_id']===null?null:(int)$effect['target_group_id'],
+        (string)$effect['endpoint_sha256'],(string)$effect['remote_username'],
+        $volume,$days,(int)$effect['plan_id'],(string)$effect['operation_id'],
+        (int)$effect['requested_expire'],(int)$effect['requested_bytes'],
+        $request,$target['credentials']);
 }
 
 function achbotContinueMarzbanPaidAccount(mysqli $db,int $payId,int $ordinal,array $e,

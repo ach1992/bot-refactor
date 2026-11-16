@@ -163,7 +163,8 @@ function achbotAutoBankFinishBuySub(mysqli $db, array $pay, array $lines, ?array
 function achbotAutoBankProvisionBuySub(
     mysqli $db, array $pay, array $botState, array $buttonValues,
     array $unusedLinkIndices, bool $unusedHideConfigIfMany, string $botUrl,
-    ?array $apiProof=null, ?callable $exactAccountGet=null
+    ?array $apiProof=null, ?callable $exactAccountGet=null,
+    int $recoveryActor=0,int $primaryOwner=0
 ): array {
     achbotEffectRequireAutocommit($db);
     // Stop BEFORE a remote CREATE if the forward delivery schema is absent.
@@ -260,7 +261,7 @@ function achbotAutoBankProvisionBuySub(
             'protocol'=>(string)$p['protocol'],'port'=>$port,
             'expire_microdate'=>0,'net_type'=>(string)$p['net_type'],
             'rahgozar'=>(int)$p['rahgozar'],'limitip'=>(int)$p['limitip']
-        ],$exactAccountGet);
+        ],$exactAccountGet,$recoveryActor,$primaryOwner);
         if (!is_object($response) || ($response->success??false)!==true)
             throw new RuntimeException('bank_buy_create_unconfirmed');
 

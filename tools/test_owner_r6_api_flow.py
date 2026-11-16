@@ -115,6 +115,9 @@ elseif($op==='save'){$value=achbotPaymentEvidenceSaveGiftCode($connection,$id,10
 elseif($op==='timer')$value=['eligible'=>achbotAutoBankEligible($connection,$pay),'claimed'=>achbotAutoBankClaim($connection,$pay)];
 elseif($op==='check')$value=achbotApiPaymentCheck($connection,$id);
 elseif($op==='settle'){$proof=achbotPaymentEvidenceGetProof($connection,$id);$value=$proof?achbotApiPaymentSettle($connection,$id,$proof):'no-proof';}
+elseif($op==='operator'){$proof=achbotPaymentEvidenceGetProof($connection,$id);
+ $value=$proof?achbotApiPaymentSettle($connection,$id,$proof,
+     (int)($spec['actor']??9001),9001):'no-proof';}
 elseif($op==='human')$value=achbotApproveManualWalletTopup($connection,$pay['hash_id'],9001,9001);
 elseif($op==='receipt'){if($pay['state']==='have_sent')$value=true;else{$v=achbotManualBeginEvidence($connection,$pay,'bank_transfer',1001,'fixture-photo');$value=$v?achbotManualFinishEvidence($connection,$pay['hash_id'],'fixture-photo',$v,222,9001):false;}}
 elseif($op==='view'){$c=achbotApiPaymentContext($connection,$pay['hash_id'],1001);$value=['keys'=>$c?json_decode(achbotApiPaymentKeyboard($c),true):null,'text'=>$c?achbotApiPaymentInvoiceText($c):null,'allowed'=>achbotManualReceiptAllowed($connection,$pay,'bank_transfer',1001)];}
@@ -139,6 +142,14 @@ elseif($op==='resume_hint'){
  require_once $root.'/src/Finance/ApiPayments.php';
  $pay['attempt']=achbotApiPaymentAttempt($connection,$id);
  $value=achbotApiPaymentCanResume($connection,$pay);
+}
+elseif($op==='review_execute'){
+ // Actor-bound confirmation callback after the live original-case preview.
+ $from_id=(int)($spec['actor']??9001);$chat_id=(int)($spec['chat']??$from_id);
+ $callbackId='fixture-api-confirm';$message_id=456;
+ $data=(string)$spec['callback'];$userInfo=['step'=>'none'];$text=null;
+ require $root.'/src/Finance/Routes/ManualReceipts.php';
+ $value='routed';
 }
 elseif($op==='review_resume'){
  // Actual admin callback, without requiring an earlier inbox visit.
@@ -217,7 +228,7 @@ def check(evidence_root,settings_root,source_root=ROOT,*,ci_redrive=False):
         assert php.count(spy_before)==1
         php=php.replace(spy_before,
             "'buttons'=>json_decode((string)($args[2]??''),true),'text'=>(string)($args[1]??'')];")
-        php=php.replace("function achbotApplyServiceEdit(...$args) {throw new RuntimeException('unexpected_edit');}","function achbotApplyServiceEdit($db,$sid,$change) {$GLOBALS['events'][]=['event'=>'EDIT','change'=>$change,'tx'=>(int)$db->query('SELECT @@in_transaction')->fetch_row()[0]];return(object)['success'=>true,'verified'=>true,'applied_expire'=>1802000000,'applied_bytes'=>3221225472];}")
+        php=php.replace("function achbotApplyServiceEdit(...$args) {throw new RuntimeException('unexpected_edit');}","function achbotApplyServiceEdit($db,$sid,$change) {$GLOBALS['events'][]=['event'=>'EDIT','change'=>$change,'tx'=>(int)$db->query('SELECT @@in_transaction')->fetch_row()[0]];if(!empty($GLOBALS['spec']['lost_edit_ack']))return(object)['success'=>false,'uncertain'=>true];return(object)['success'=>true,'verified'=>true,'applied_expire'=>1802000000,'applied_bytes'=>3221225472];}")
         php=php.replace("function getMainKeys() {return '{}';}",r"""function getMainKeys() {return '{}';}
 function bot($method,$data){
     $GLOBALS['events'][]=['event'=>'BOT','method'=>$method,'data'=>$data,'tx'=>(int)$GLOBALS['connection']->query('SELECT @@in_transaction')->fetch_row()[0]];
@@ -925,6 +936,37 @@ DELIMITER ;''')
         # Unknown CREATE keeps existing no-replay journal and no false refund/success.
         APIs.rows={};n=seed('unknowncreate','BUY_SUB');sms(n);r=call(pay=n,mode='lost');assert r['result']=='review' and state(n)=='processing',r
         r=call(op='settle',pay=n);assert r['result']=='review' and not any(e['event']=='POST' for e in r['events']),r;cases.append('uncertain_create_journal_never_redispatched')
+        assert call(op='resume_hint',pay=n)['result'] is True
+        # One preview is read-only and binds the decision to this actor and
+        # exact committed attempt. A forbidden/stale actor cannot execute it.
+        preview=call(op='review_resume',pay=n,actor=9001)
+        confirm_buttons=[b for e in preview['events'] if e['event']=='EDIT'
+                         for row in e['buttons']['inline_keyboard'] for b in row
+                         if b['callback_data'].startswith('apiEvidenceExecute_')]
+        assert len(confirm_buttons)==1 and not any(
+            e['event']=='POST' for e in preview['events']),preview
+        callback=confirm_buttons[0]['callback_data']
+        denied=call(op='review_execute',pay=n,actor=1001,callback=callback)
+        assert not any(e['event']=='POST' for e in denied['events']) and state(n)=='processing',denied
+        completed=call(op='review_execute',pay=n,actor=9001,callback=callback)
+        assert state(n)=='auto_cart_approved' and sum(
+            e['event']=='POST' for e in completed['events'])==1,completed
+        assert call(op='settle',pay=n)['result']=='settled'
+        cases.append('authorized_create_retries_original_ordinal_after_lost_response_without_double_payment')
+
+        # Renewal is an absolute plan: the normal maintainer may repeat it
+        # after a lost Native ACK, with NO operator grant and no second charge.
+        APIs.rows={};n=seed('unknownrenew','RENEW_ACCOUNT',order=oid)
+        sms(n);r=call(pay=n,lost_edit_ack=True)
+        assert r['result']=='review' and state(n)=='processing',r
+        assert call(op='resume_hint',pay=n)['result'] is True
+        assert query(work,env,
+            f"SELECT evidence_fulfillment_state FROM payment_attempts WHERE pay_row_id={n}")=='dispatched'
+        due(n);restored=call(op='maintain',pay=n)
+        assert state(n)=='auto_cart_approved' and sum(
+            e['event']=='EDIT' for e in restored['events'])==1,restored
+        assert call(op='settle',pay=n)['result']=='settled'
+        cases.append('renewal_automatic_retry_completes_lost_native_ack_without_double_payment')
         # Durable monitoring horizon stops NEW API scans, while the original invoice stays manual.
         APIs.rows={};n=seed('horizon');call(op='profile_shift',pay=n,age=90000);before=len(APIs.events);assert call(pay=n)['result']=='manual' and len(APIs.events)==before
         query(work,env,f'UPDATE payment_attempts SET created_at=NOW()-INTERVAL 90000 SECOND WHERE pay_row_id={n}');assert not call(op='view',pay=n)['result']['allowed'];assert call(op='expire',pay=n)['result'] is False;cases.append('configured_horizon_stops_new_scans_without_financial_expiry')

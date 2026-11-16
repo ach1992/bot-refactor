@@ -19,10 +19,10 @@ function achbotProviderType(mysqli $db,int $serverId): string {
 function achbotServerCommerceAvailable(mysqli $db,int $serverId,bool $newPurchase,bool $lock=false): bool {
     if ($serverId<=0) return false;
     try {
-        $s=$db->prepare("SELECT i.active,i.state FROM server_info i JOIN server_config c ON c.id=i.id
-            WHERE i.id=? AND c.type IN ('marzban','pasarguard')");
+        $s=$db->prepare('SELECT i.active,i.state,c.type FROM server_info i JOIN server_config c ON c.id=i.id
+            WHERE i.id=?');
         $s->bind_param('i',$serverId);$s->execute();$row=$s->get_result()->fetch_assoc();$s->close();
-        return $row && (int)$row['active']===1 &&
+        return $row && achbotSupportsProviderType($row['type']) && (int)$row['active']===1 &&
             ($newPurchase ? (int)$row['state']===1 : in_array((int)$row['state'],[1,2],true));
     } catch (Throwable $error) {return false;}
 }
@@ -1074,7 +1074,7 @@ function achbotOrderPresentation(mysqli $db,array $order,array $server,array $st
  */
 function achbotProviderRequiredOperations(): array {
     return ['plan','order','same_panel','user','user_info','deletion_target','action_preflight','action',
-        'edit','pin_payment','quote','target','reserve','dispatch','link'];
+        'edit','recover_edit','recover_create','recover_rearm','pin_payment','quote','target','reserve','dispatch','link'];
 }
 function achbotProviderRegistry(): array {
     return [
@@ -1085,6 +1085,8 @@ function achbotProviderRegistry(): array {
             'user_info'=>'achbotMarzbanUserInfoAdapter','deletion_target'=>'achbotMarzbanDeletionTargetAdapter',
             'action_preflight'=>'achbotMarzbanActionPreflightAdapter',
             'action'=>'achbotMarzbanActionAdapter','edit'=>'achbotMarzbanServiceEditAdapter',
+            'recover_edit'=>'achbotMarzbanRecoverEdit','recover_create'=>'achbotMarzbanRecoverCreate',
+            'recover_rearm'=>'achbotMarzbanRecoverRearm',
             'pin_payment'=>'achbotMarzbanPinPaymentAdapter','quote'=>'achbotMarzbanQuoteAdapter',
             'target'=>'achbotMarzbanEffectTargetAdapter','reserve'=>'achbotMarzbanReserveEffectAdapter',
             'dispatch'=>'achbotMarzbanDispatchEffectAdapter','link'=>'achbotMarzbanLinkEffectAdapter',
@@ -1097,6 +1099,8 @@ function achbotProviderRegistry(): array {
             'user_info'=>'achbotPasarGuardUserInfoAdapter','deletion_target'=>'achbotPasarGuardDeletionTargetAdapter',
             'action_preflight'=>'achbotPasarGuardActionPreflightAdapter',
             'action'=>'achbotPasarGuardActionAdapter','edit'=>'achbotPasarGuardServiceEditAdapter',
+            'recover_edit'=>'achbotPgRecoverEdit','recover_create'=>'achbotPgRecoverCreate',
+            'recover_rearm'=>'achbotPgRecoverRearm',
             'pin_payment'=>'achbotPgPinPayment','quote'=>'achbotPasarGuardQuoteAdapter',
             'target'=>'achbotPasarGuardEffectTargetAdapter','reserve'=>'achbotPasarGuardReserveEffectAdapter',
             'dispatch'=>'achbotPasarGuardDispatchEffectAdapter','link'=>'achbotPasarGuardLinkEffectAdapter',
@@ -1153,6 +1157,32 @@ function achbotMarzbanPlanAdapter($db,$planId,$inbound=0,$serverId=null,bool $lo
 }
 function achbotMarzbanOrderAdapter($db,$orderId,$planId=null,$userId=null,bool $lock=false): bool {
     return achbotSupportsMarzbanOrder($db,$orderId,$planId,$userId,$lock);
+}
+/**
+ * Common paid-service recovery contract. No payment/UI flow decides which
+ * panel can recover a started operation: the registered adapter owns native
+ * identity, readback and any re-dispatch. Future panels implement this contract.
+ */
+function achbotProviderRecoverEdit(mysqli $db,int $serverId,array $params,
+    array $source,bool $operator): object {
+    $adapter=achbotProviderDefinition(achbotProviderType($db,$serverId));
+    if ($adapter===null) return achbotProviderFailure('recovery_provider_unavailable',false);
+    return ($adapter['recover_edit'])($db,$serverId,$params,$source,$operator);
+}
+/** Transaction-scoped Native-specific part of re-arming the same original
+ * CREATE effect; the shared payment coordinator owns every other guard. */
+function achbotProviderRecoverRearm(mysqli $db,array $effect): void {
+    $adapter=achbotProviderDefinition((string)($effect['panel_type']??''));
+    if ($adapter===null) throw new RuntimeException('recovery_provider_unavailable');
+    ($adapter['recover_rearm'])($db,$effect);
+}
+function achbotProviderRecoverCreate(mysqli $db,int $payId,int $ordinal,
+    array $effect,array $request,int $actor,int $primary,
+    ?callable $exactAccountGet=null): array {
+    $adapter=achbotProviderDefinition((string)$effect['panel_type']);
+    if ($adapter===null) throw new RuntimeException('recovery_provider_unavailable');
+    return ($adapter['recover_create'])($db,$payId,$ordinal,$effect,$request,
+        $actor,$primary,$exactAccountGet);
 }
 function achbotProviderServiceEdit(mysqli $db,string $type,int $serverId,array $change,?array $giftTarget=null) {
     $adapter=achbotProviderDefinition($type);
@@ -1287,3 +1317,5 @@ function achbotMarzbanLinkEffectAdapter(mysqli $db,int $effectId,int $orderId,bo
 function achbotPasarGuardLinkEffectAdapter(mysqli $db,int $effectId,int $orderId,bool $paid): void {
     if (!achbotPgLinkEffect($db,$effectId,$orderId)) throw new RuntimeException('pg_effect_link_unverified');
 }
+
+require_once __DIR__.'/ProviderRecovery.php';

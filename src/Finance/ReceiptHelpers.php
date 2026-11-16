@@ -721,7 +721,8 @@ function achbotAutoBankClaim(mysqli $connection, array $seen): bool {
  */
 function achbotAutoBankEditPreflight(mysqli $db, array $pay, string $kind,
                                     int $serverId, int $orderId,
-                                    string $remark, int $units=0): bool {
+                                    string $remark, int $units=0,
+                                    bool $originalRecovery=false): bool {
     $payId=(int)($pay['id']??0);
     $owner=(int)($pay['user_id']??0);
     if ($payId<=0 || $owner<=0 || $serverId<=0 || $remark==='' ||
@@ -794,8 +795,11 @@ function achbotAutoBankEditPreflight(mysqli $db, array $pay, string $kind,
             // A genuinely imported PG subscription keeps fileid/plan_id=0.
             // The exact stored order and payment IDs were checked above;
             // pass NULL to Core's planless-order contract, never a fake plan.
-            achbotSupportsOrder($db,$orderId,
-                (int)$paid['plan_id']>0?(int)$paid['plan_id']:null,$owner);
+            // A previously claimed Native mutation can make ordinary new-
+            // purchase eligibility intentionally fail. Its original identity
+            // is checked inside the registered recovery adapter instead.
+            ($originalRecovery || achbotSupportsOrder($db,$orderId,
+                (int)$paid['plan_id']>0?(int)$paid['plan_id']:null,$owner));
     } catch (Throwable $error) {
         error_log('achbot_auto_service_preflight_deferred pay_id='.$payId.
             ' class='.get_class($error).' code='.(int)$error->getCode());
