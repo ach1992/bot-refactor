@@ -162,6 +162,27 @@ try {
     $result=['pay_id'=>$payId,'price'=>$price,'units'=>$units,
         'profile'=>$channel==='api'
             && achbotPaymentEvidenceSnapshot(achbotApiPaymentAttempt($connection,$payId))!==null];
+ } elseif ($op==='issue_renew') {
+    $hash=$spec['hash'];$price=3150;
+    $plan=$connection->query('SELECT days,volume FROM server_plans WHERE id=7')->fetch_assoc();
+    $stmt=$connection->prepare("INSERT INTO pays(hash_id,user_id,type,plan_id,server_id,order_id,volume,day,price,request_date,state)
+        VALUES (?,1001,'RENEW_ACCOUNT',7,2,41,?,?,?,UNIX_TIMESTAMP(),'pending')");
+    $days=(int)$plan['days'];$volume=(int)$plan['volume'];
+    $stmt->bind_param('siii',$hash,$volume,$days,$price);$stmt->execute();
+    $payId=(int)$stmt->insert_id;$stmt->close();
+    achbotPgPinPayment($connection,$payId);
+    $stmt=$connection->prepare("INSERT INTO payment_attempts
+       (pay_row_id,provider,order_hash,quote_amount,quote_currency,local_amount_toman,checkout_url,stage)
+       VALUES (?,'bank_transfer',?,?,'toman',?,'{\"v\":1,\"method\":\"bank_transfer\"}','review')");
+    $stmt->bind_param('isii',$payId,$hash,$price,$price);$stmt->execute();$stmt->close();
+    if(!$connection->begin_transaction())throw new RuntimeException('renew_pin_begin');
+    $pay=achbotApiPaymentRow($connection,$payId,true);
+    $attempt=achbotApiPaymentAttempt($connection,$payId,true);
+    achbotApiPaymentPinLocked($connection,$pay,$attempt);
+    if(!$connection->commit())throw new RuntimeException('renew_pin_commit');
+    $stmt=$connection->prepare("UPDATE pays SET state='have_sent',message_id=222,chat_id='9001' WHERE id=?");
+    $stmt->bind_param('i',$payId);$stmt->execute();$stmt->close();
+    $result=['pay_id'=>$payId,'price'=>$price,'units'=>$days,'profile'=>true];
  } elseif ($op==='policy_probe') {
     $createSnap=achbotProviderSnapshot($connection,2,7);
     $createSnap['group_ids']=[];
@@ -785,6 +806,29 @@ def test():
                sql("SELECT COUNT(*) FROM increase_order") == "0",
                "unknown_pg_put_ack_never_replays_or_refunds")
 
+    # Absolute renewal: no operator or manual action is required after an
+    # uncertain Native response. A lost reset acknowledgement is permitted
+    # to run reset again and then finish the saved absolute PUT; the original
+    # payment must not be charged twice.
+    with sandbox() as (sql,run,provider,bank,_):
+        issued=run('issue_renew',hash='operator_auto_renewal')
+        pay=issued['pay_id'];message=evidence_sms(1,issued['price'])
+        bank.messages['1']=dict(message)
+        assert run('reserve',pay_id=pay,sms=message) is not None
+        assert run('consume',pay_id=pay)['status']=='proven'
+        provider.mode='write_lost'
+        assert run('settle',pay_id=pay)=='review'
+        assert terminal_state(sql,pay).startswith('processing|dispatched|')
+        first=provider.write_count
+        provider.mode='ok'
+        response=run('settle',pay_id=pay)
+        passed(response=='confirmed' and
+            terminal_state(sql,pay).startswith('auto_cart_approved|done|') and
+            provider.write_count==first+2 and
+            sql("SELECT provider_state FROM service_effects WHERE id=1")=='linked' and
+            sql("SELECT COUNT(*) FROM increase_order")=='1',
+            'real_pg_renewal_auto_retries_lost_reset_ack_once',
+            [response,first,provider.write_count,terminal_state(sql,pay)])
     # The same source, provider adapter and original payment recover native
     # timeouts. An operator who inspected the panel can finish both additive
     # types; the original absolute effect is never applied twice.
