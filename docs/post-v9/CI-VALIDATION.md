@@ -23,8 +23,11 @@ main pushes under the single `php85-validation` required status:
 - `tools/ci_quick.py` also runs real-source PHP, finance, payment/checkout,
   customer/service operations, subscription/payment flows, onboarding, wallet, Native,
   operator permissions, Telegram error diagnostics, Cron and
-  payment-browser checks. Runs are parallel but retain each test's own
-  assertions and failure details. The JSON receipt records exact HEAD/tree,
+  payment-browser checks. The current roster additionally exercises
+  independently proven post-cutover PasarGuard order-attachment recovery and
+  malformed bank/gift HTTP diagnostics without leaking external response text.
+  Runs are parallel but retain each test's own assertions and failure details.
+  The JSON receipt records exact HEAD/tree,
   PHP runtime, actual checks and elapsed times.
 - Every relevant build produces a reproducible current-source-only runtime
   ZIP, manifest and checksums at the **current exact Git commit**, separate

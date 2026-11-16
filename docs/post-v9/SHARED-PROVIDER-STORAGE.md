@@ -31,7 +31,12 @@ moves `provider_state` from `linked` to `mutating` without invalidating
 that immutable provenance; the active mutation key/identity journal must
 match the original adoption. Paid edit recovery resolves the customer's
 order via the authenticated migration reference, not by inventing or
-backfilling an originating `order_id`. Independent Native entitlement drift
+backfilling an originating `order_id`. A later real PasarGuard external
+attachment to that same physical migrated account is **not** appended to the
+historical migration reference list: its independent
+`ACHBOT_SERVICE_ORIGIN:<order_id>` must pass the shared import-origin,
+owner and exact Native account/incarnation checks at recovery admission.
+Independent Native entitlement drift
 still requires operator reconciliation; it is not evidence that the original
 purchase was reapplied, nor permission for a blind additive write.
 

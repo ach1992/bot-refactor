@@ -294,6 +294,39 @@ function achbotPaymentEvidenceSnapshot(array $attempt): ?array {
     return $p;
 }
 
+/**
+ * Response fields are untrusted even on authenticated HTTPS. Preserve only
+ * protocol-defined machine statuses and canonical producer IDs. Hash any
+ * other upstream ID for correlation without copying response content.
+ * This is logging only; callers still receive the original JSON unchanged.
+ */
+function achbotPaymentEvidenceHttpDiagnostic(array $json,string $kind,int $http): array {
+    $code=is_string($json['code']??null)?$json['code']:null;
+    $recognized=$code!==null && achbotDiagnosticUpstreamCodeKnown($kind,$code);
+    $httpSuccess=$http>=200 && $http<300;
+    $giftSuccessCode=in_array($code,[
+        'card_verified','card_redeemed','card_redeem_idempotent',
+        'card_revoked','card_restored','card_unredeemed'],true);
+    $envelope=$kind==='gift_card'
+        ? (($json['api_version']??null)==='2' && is_bool($json['ok']??null) &&
+            $recognized && $httpSuccess===$json['ok'] &&
+            $giftSuccessCode===$json['ok'])
+        : ($httpSuccess
+            ? is_array($json['data']??null) && $code===null
+            : ($http>=400 && $http<600 && $recognized));
+    $safeCode=$code===null?'none':($recognized && $envelope
+        ? $code:'unrecognized_upstream_code');
+    $id=$json['request_id']??null;
+    if (!is_string($id) || $id==='') return [
+        'http_reason'=>$safeCode,'upstream_request_id'=>'none'];
+    $idShape=$kind==='gift_card'
+        ? preg_match('/\Areq_[a-f0-9]{24}(?:[a-f0-9]{8})?\z/D',$id)===1
+        : preg_match('/\A[a-f0-9]{24}\z/D',$id)===1;
+    return ['http_reason'=>$safeCode,
+        'upstream_request_id'=>$envelope && $idShape
+            ? $id : 'sha256:'.hash('sha256',$id)];
+}
+
 /** Bounded transport. Only owned loopback fixtures may opt into HTTP. */
 function achbotPaymentEvidenceHttp(array $profile,string $method,string $path,?array $body=null,array $extra=[]): array {
     $bad=['ok'=>false,'http'=>0,'status'=>'unavailable','json'=>null];
@@ -389,8 +422,10 @@ function achbotPaymentEvidenceHttp(array $profile,string $method,string $path,?a
                 'status'=>'unavailable','json'=>$json];
             $operation=$kind==='bank_transfer'?'sms':
                 ($path==='/verify'?'gift_verify':($path==='/redeem'?'gift_redeem':'gift'));
-            $apiCode=is_string($json['code']??null)?$json['code']:'none';
             $diagnosticPayId=$GLOBALS['achbotPaymentDiagnosticPayId']??0;
+            $diagnosticResponse=is_array($json)
+                ? achbotPaymentEvidenceHttpDiagnostic($json,$kind,$http)
+                : ['http_reason'=>'none','upstream_request_id'=>'none'];
             achbotDiagnosticEvent('achbot.finance.evidence_http',[
                 'pay_id'=>is_int($diagnosticPayId)?$diagnosticPayId:0,
                 'provider'=>$kind,'operation'=>$operation,'method'=>$method,
@@ -398,10 +433,7 @@ function achbotPaymentEvidenceHttp(array $profile,string $method,string $path,?a
                 'curl_errno'=>$errno,'retry_after'=>$retryAfter,
                 'reason'=>$overflow?'response_overflow':($result['ok']?'response_received':
                     ($json===null?'response_unavailable':'http_unexpected')),
-                'http_reason'=>$apiCode,
-                'upstream_request_id'=>is_string($json['request_id']??null)?
-                    $json['request_id']:'none'
-            ],$result['ok']?'info':'warning');
+            ]+$diagnosticResponse,$result['ok']?'info':'warning');
             if ($result['ok']){$result['status']='ok';return $result;}
 
             // A 404, rejected scope/credential, bad identity or incompatible

@@ -69,11 +69,12 @@ function achbotPgRecoveryDisposition(array $before,array $target,array $native):
 }
 
 /**
- * Originating CREATE/IMPORT rows pin their one local order. A historical
- * Marzban-to-PasarGuard adoption instead has NULL originating order by
- * design: its immutable migration evidence lists every original customer
- * reference. Resolve THAT validated list, never backfill a fictional order
- * ID or waive account/owner/incarnation checks.
+ * Originating CREATE/IMPORT rows pin their one local order. Historical
+ * migrations keep a NULL origin and admit either an immutable old customer
+ * reference OR a later independently proven PasarGuard external attachment.
+ * The shared account-by-order validator owns both proofs and rechecks the
+ * current owner, Native incarnation, imported origin and provider account.
+ * Never rewrite the migration reference list or invent an originating order.
  */
 function achbotPgRecoveryOrderOriginMatches(mysqli $db,array $ctx,int $orderId): bool {
     $account=$ctx['account']??null;
@@ -85,13 +86,21 @@ function achbotPgRecoveryOrderOriginMatches(mysqli $db,array $ctx,int $orderId):
     if ($account['order_id']!==null)
         return (int)$account['order_id']===$orderId;
     try {
-        $e=achbotProviderRow($db,'SELECT * FROM service_effects WHERE id=?',
-            'i',[(int)$account['effect_id']]);
-        if (($e['source_kind']??null)!=='legacy_migration')
-            return false;
-        $refs=achbotProviderLegacyCutoverEvidence($e,$account);
-        return isset($refs[$orderId]) &&
-            (int)$refs[$orderId]['owner_id']===(int)($order['userid']??0);
+        // Already used by achbotPgOrderContext(): includes the immutable
+        // migration refs AND modern ACHBOT_SERVICE_ORIGIN PasarGuard imports.
+        // Recheck at recovery admission; the returned account must still be
+        // precisely the same physical account captured by this payment.
+        $validated=achbotProviderAccountByOrder($db,$orderId);
+        return $validated!==null && $validated['order_id']===null &&
+            $validated['id']===$account['id'] &&
+            $validated['effect_id']===$account['effect_id'] &&
+            $validated['panel_id']===$account['panel_id'] &&
+            $validated['instance_key']===$account['instance_key'] &&
+            $validated['endpoint_sha256']===$account['endpoint_sha256'] &&
+            $validated['remote_user_id']===$account['remote_user_id'] &&
+            $validated['remote_created_at']===$account['remote_created_at'] &&
+            $validated['remote_username']===$account['remote_username'] &&
+            $validated['operation_marker']===$account['operation_marker'];
     } catch (Throwable $error) {
         return false;
     }

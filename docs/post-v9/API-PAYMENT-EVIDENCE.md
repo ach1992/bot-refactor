@@ -17,7 +17,13 @@ The private PHP error log receives structured `[AChBot]` JSON events for
 `achbot.finance.evidence_tick`, and the shared Native/wallet/delivery recovery
 boundaries. Each event includes UTC microsecond timestamp, a process-local
 `trace_id`, installation label, and only applicable typed identifiers,
-stage/result/reason, HTTP status, cURL errno and the upstream request ID.
+stage/result/reason, HTTP status, cURL errno and safe upstream correlation.
+Recognized API machine codes remain visible. A raw upstream request ID is
+logged only for a valid provider response envelope and its documented
+producer-generated ID format; other nonempty values are represented by a
+`sha256:` fingerprint, never the original response text. Unknown status
+strings become `unrecognized_upstream_code`. This filtering changes no
+verification, matching, settlement or retry result.
 The checking coordinator scopes `pay_id` to each original invoice while it
 calls the evidence API. A failed Telegram ACK is recorded as unknown, not
 delivered. The existing aaPanel/system log rotation policy remains the owner

@@ -13,6 +13,7 @@ import hmac
 import http.server
 import urllib.parse
 import json
+import re
 import subprocess
 import threading
 import tempfile
@@ -361,11 +362,49 @@ def run(module):
                 '-d','allow_url_fopen=0','-d','disable_functions=exec,shell_exec,system,passthru,popen,proc_open,mail',
                 str(driver),str(module),str(work/'mysql.sock'),DB,json.dumps(data)],
                 env=env,capture_output=True,text=True,timeout=25)
-            if expected_reuse_log is not None:
-                expected=('achbot_gift_proven_reuse_deferred pay_id='+str(spec['pay_id'])+
-                    ' reason='+expected_reuse_log+'\n')
-                if p.stderr!=expected:raise RuntimeError('unexpected gift replay diagnostic: '+repr(p.stderr[-1500:]))
-            elif p.stderr:raise RuntimeError('owned PHP failure: '+p.stderr[-1500:])
+            # The real evidence HTTP module now records typed private events.
+            # Validate them; arbitrary stderr, leaked credentials and malformed
+            # event objects are NOT accepted as harmless fixture noise.
+            plain=[]
+            allowed={'event','time_utc','level','trace_id','instance','pay_id',
+                     'provider','operation','method','request_attempt',
+                     'http_status','curl_errno','retry_after','reason',
+                     'http_reason','upstream_request_id','class'}
+            for raw in p.stderr.splitlines():
+                line=re.sub(r'^\[\d{2}-[A-Za-z]{3}-\d{4} '
+                            r'\d{2}:\d{2}:\d{2} UTC\] ','',raw)
+                if not line.startswith('[AChBot] '):
+                    plain.append(line)
+                    continue
+                try: event=json.loads(line[len('[AChBot] '):])
+                except ValueError as error:
+                    raise RuntimeError('Malformed structured evidence event') from error
+                if not isinstance(event,dict) or set(event)-allowed or (
+                    event.get('event') not in (
+                        'achbot.finance.evidence_http',
+                        'achbot.finance.evidence_http_exception',
+                    )) or not re.fullmatch(r'[a-f0-9]{16}',str(event.get('trace_id',''))):
+                    raise RuntimeError('Unexpected structured evidence diagnostic')
+                if event['event']=='achbot.finance.evidence_http':
+                    if (event.get('provider') not in ('bank_transfer','gift_card') or
+                        not isinstance(event.get('http_status'),int) or
+                        not isinstance(event.get('curl_errno'),int) or
+                        not isinstance(event.get('request_attempt'),int) or
+                        not re.fullmatch(
+                            r'(?:none|[a-f0-9]{24}|req_[a-f0-9]{24}(?:[a-f0-9]{8})?|sha256:[a-f0-9]{64})',
+                            str(event.get('upstream_request_id','')))):
+                        raise RuntimeError('Untrusted evidence HTTP fields emitted')
+            if any(value in p.stderr for value in (
+                'fixture-sms-secret','fixture-gift-secret',
+                'SENSITIVE_TOKEN_DO_NOT_LOG','SENSITIVE_REQUEST_ID_DO_NOT_LOG',
+                'Bearer ')):
+                raise RuntimeError('Sensitive evidence diagnostics emitted')
+            expected_plain=(
+                ['achbot_gift_proven_reuse_deferred pay_id='+str(spec['pay_id'])+
+                 ' reason='+expected_reuse_log]
+                if expected_reuse_log is not None else [])
+            if plain!=expected_plain:
+                raise RuntimeError('Unexpected PHP stderr: '+repr(plain[-5:]))
             if p.returncode:raise RuntimeError('owned PHP failed: '+repr((p.returncode,p.stderr)))
             return json.loads(p.stdout)['result']
         try:
