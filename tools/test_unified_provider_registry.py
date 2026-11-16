@@ -43,6 +43,9 @@ function fixtureDeleteTarget($db,$sid,$remark,$row){return['provider'=>'fixture_
 function fixtureActionPreflight(...$a){$GLOBALS['events'][]='fixture_action_preflight';return true;}
 function fixtureAction(...$a){$GLOBALS['events'][]='fixture_action';return(object)['success'=>true,'verified'=>true];}
 function fixtureEdit(...$a){$GLOBALS['events'][]=['fixture_edit'=>$a[2]];return(object)['success'=>true,'verified'=>true,'applied_expire'=>2000000000,'applied_bytes'=>2147483648];}
+function fixtureRecoverEdit($db,$sid,$params,$source,$operator){$GLOBALS['events'][]=['fixture_recover_edit'=>[$source['kind'],$operator]];return(object)['success'=>true,'verified'=>true,'applied_expire'=>2000000000,'applied_bytes'=>2147483648];}
+function fixtureRecoverCreate($db,$pay,$ordinal,$effect,$request,$actor,$primary,$reader=null){$GLOBALS['events'][]=['fixture_recover_create'=>[$pay,$ordinal,$actor]];return[(object)['success'=>true,'verified'=>true],$effect['remote_username'],0,(int)$effect['id']];}
+function fixtureRecoverRearm($db,$effect){$GLOBALS['events'][]=['fixture_recover_rearm'=>$effect['id']];}
 function fixturePin(...$a){$GLOBALS['events'][]='fixture_pin';}
 function fixtureQuote(...$a){return true;}
 function fixtureTarget(...$a){return['group'=>null,'endpoint'=>str_repeat('a',64),'credentials'=>str_repeat('b',64),'key'=>'fixture:test-only'];}
@@ -121,6 +124,9 @@ try{
    'display'=>achbotServerDisplayValid(['mode'=>'native','policy'=>['max_links'=>10]],'fixture_native')];
   $out['plus_day']=achbotApplyServiceEdit($connection,2,['remark'=>'fixture_user','plus_day'=>3]);
   $out['plus_volume']=achbotApplyServiceEdit($connection,2,['remark'=>'fixture_user','plus_volume'=>7]);
+  $out['recover_volume']=achbotProviderRecoverEdit($connection,2,['remark'=>'fixture_user','plus_volume'=>7],['kind'=>'volume'],true);
+  $out['recover_create']=achbotProviderRecoverCreate($connection,1,1,['panel_type'=>'fixture_native','id'=>111,'remote_username'=>'fixture_user'],[],9001,9001);
+  achbotProviderRecoverRearm($connection,['panel_type'=>'fixture_native','id'=>111]);
   $out['read']=achbotProviderUser(2,'fixture_user',false);
   $out['action_eligible']=achbotProviderActionEligible($connection,2,'fixture_user','delete');
   $out['target']=achbotEffectTargetIdentity($connection,2,7,1,['type'=>'fixture_native']);
@@ -303,6 +309,7 @@ def main():
   fixture=stage('fixture-adapter');path=fixture/'src/Panel/ProviderRuntime.php';raw=path.read_text()
   callbacks=dict(label='admin_settings.management.marzban',plan='fixturePlan',order='fixtureOrder',same_panel='fixtureSame',
    user='fixtureUser',user_info='fixtureInfo',deletion_target='fixtureDeleteTarget',action_preflight='fixtureActionPreflight',action='fixtureAction',edit='fixtureEdit',
+   recover_edit='fixtureRecoverEdit',recover_create='fixtureRecoverCreate',recover_rearm='fixtureRecoverRearm',
    pin_payment='fixturePin',quote='fixtureQuote',target='fixtureTarget',reserve='fixtureReserve',dispatch='fixtureDispatch',link='fixtureLink')
   literal="'fixture_native'=>["+",".join("'"+key+"'=>'"+value+"'"for key,value in callbacks.items())+"],\n        "
   needle="        'marzban'=>[";yes(raw.count(needle)==1,'fixture_registry_entry_has_one_source_insertion')
@@ -326,6 +333,12 @@ def main():
   yes(d['action_eligible'] and events.count('fixture_action_preflight')==1,'registered_fixture_supplies_readonly_action_admission_without_provider_branch')
   yes(d['types']==['fixture_native','marzban','pasarguard']and d['sql']=="'fixture_native','marzban','pasarguard'",'registered_fixture_automatically_enters_shared_SQL_filter')
   yes(d['plus_day']['verified']and d['plus_volume']['verified'],'time_and_volume_use_same_verified_edit_contract')
+  yes(d['recover_volume']['verified']and d['recover_create'][1]=='fixture_user',
+      'future_provider_uses_registered_operator_recovery_without_core_changes')
+  yes({'fixture_recover_edit':['volume',True]} in events and
+      {'fixture_recover_create':[1,1,9001]} in events and
+      {'fixture_recover_rearm':111} in events,
+      'future_provider_recovery_receives_original_action_and_staff')
   yes([e['fixture_edit']for e in events if isinstance(e,dict)and'fixture_edit'in e]==[
    dict(remark='fixture_user',plus_day=3),dict(remark='fixture_user',plus_volume=7)],'shared_edit_passes_exact_requested_units')
   yes(d['target']['provider']=='fixture_native'and d['target']['key']=='fixture:test-only','registered_fixture_owns_its_target_identity')

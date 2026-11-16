@@ -162,6 +162,112 @@ try {
     $result=['pay_id'=>$payId,'price'=>$price,'units'=>$units,
         'profile'=>$channel==='api'
             && achbotPaymentEvidenceSnapshot(achbotApiPaymentAttempt($connection,$payId))!==null];
+ } elseif ($op==='issue_renew') {
+    $hash=$spec['hash'];$price=3150;
+    $plan=$connection->query('SELECT days,volume FROM server_plans WHERE id=7')->fetch_assoc();
+    $stmt=$connection->prepare("INSERT INTO pays(hash_id,user_id,type,plan_id,server_id,order_id,volume,day,price,request_date,state)
+        VALUES (?,1001,'RENEW_ACCOUNT',7,2,41,?,?,?,UNIX_TIMESTAMP(),'pending')");
+    $days=(int)$plan['days'];$volume=(int)$plan['volume'];
+    $stmt->bind_param('siii',$hash,$volume,$days,$price);$stmt->execute();
+    $payId=(int)$stmt->insert_id;$stmt->close();
+    achbotPgPinPayment($connection,$payId);
+    $stmt=$connection->prepare("INSERT INTO payment_attempts
+       (pay_row_id,provider,order_hash,quote_amount,quote_currency,local_amount_toman,checkout_url,stage)
+       VALUES (?,'bank_transfer',?,?,'toman',?,'{\"v\":1,\"method\":\"bank_transfer\"}','review')");
+    $stmt->bind_param('isii',$payId,$hash,$price,$price);$stmt->execute();$stmt->close();
+    if(!$connection->begin_transaction())throw new RuntimeException('renew_pin_begin');
+    $pay=achbotApiPaymentRow($connection,$payId,true);
+    $attempt=achbotApiPaymentAttempt($connection,$payId,true);
+    achbotApiPaymentPinLocked($connection,$pay,$attempt);
+    if(!$connection->commit())throw new RuntimeException('renew_pin_commit');
+    $stmt=$connection->prepare("UPDATE pays SET state='have_sent',message_id=222,chat_id='9001' WHERE id=?");
+    $stmt->bind_param('i',$payId);$stmt->execute();$stmt->close();
+    $result=['pay_id'=>$payId,'price'=>$price,'units'=>$days,'profile'=>true];
+ } elseif ($op==='seed_rearmed_create') {
+    // A real original PG CREATE reservation with a committed source/Native
+    // identity, as if the worker terminated after rearm COMMIT.
+    $target=achbotEffectTargetIdentity($connection,2,7,null,
+        ['panel_type'=>'pasarguard']);
+    $snapshot=$target['snapshot'];
+    $epoch=time()+30*86400;$bytes=2*1073741824;
+    $opId=str_repeat('e',32);$remark='fixture_rearmed';
+    $hash='fixture-rearmed-paid-create';
+    $p=$connection->prepare("INSERT INTO pays
+        (hash_id,user_id,type,plan_id,server_id,price,request_date,
+         state,approved_by,agent_count)
+        VALUES (?,1001,'BUY_SUB',7,2,3150,UNIX_TIMESTAMP(),'processing',0,1)");
+    $p->bind_param('s',$hash);$p->execute();
+    $payId=(int)$p->insert_id;$p->close();
+    achbotPgPinPayment($connection,$payId);
+    if (!$connection->begin_transaction()) throw new RuntimeException('create_rearm_test_begin');
+    $snapJson=json_encode($snapshot,JSON_THROW_ON_ERROR);
+    $requestHash=hash('sha256',$snapJson);
+    $endpoint=$target['endpoint'];$key=$target['key'];
+    $e=$connection->prepare("INSERT INTO service_effects
+        (pay_row_id,ordinal,reserved_count,operation_id,effect_kind,
+         target_server_id,target_key,endpoint_sha256,plan_id,
+         remote_username,requested_expire,requested_bytes,
+         request_sha256,state,provider_snapshot)
+         VALUES (?,1,1,?,'create',2,?,?,7,?,?,?,?,'reserved',?)");
+    $e->bind_param('issssiiss',$payId,$opId,$key,$endpoint,$remark,
+        $epoch,$bytes,$requestHash,$snapJson);
+    $e->execute();$effectId=(int)$e->insert_id;$e->close();
+    $reserved=achbotProviderReserveAccount($connection,$effectId,$snapshot,
+        $remark,'achbot:v1:'.$opId,
+        ['data_limit'=>$bytes,'expire'=>$epoch,
+         'group_ids'=>$snapshot['group_ids'],'status'=>'active']);
+    if (($reserved['newly_reserved']??false)!==true)
+        throw new RuntimeException('create_rearm_test_reserve_failed');
+    $connection->query('UPDATE server_info SET ucount=ucount-1 WHERE id=2');
+    if (!$connection->commit()) throw new RuntimeException('create_rearm_test_commit');
+    $result=['pay_id'=>$payId,'effect_id'=>$effectId,'name'=>$remark,
+        'operation'=>$opId,'expiry'=>$epoch,'bytes'=>$bytes];
+ } elseif ($op==='seed_original_create_post') {
+    // Original provider POST really succeeds via the Native PHP adapter,
+    // but the fixture intentionally loses the acknowledgement before any
+    // service_effect verification. Its original local row stays reserved.
+    $effectId=(int)$spec['effect_id'];
+    $e=$connection->query('SELECT * FROM service_effects WHERE id='.$effectId)->fetch_assoc();
+    if (!$e || $e['state']!=='reserved')
+        throw new RuntimeException('fixture_original_reserved_create_missing');
+    $panel=achbotPgServerPanel($connection,(int)$e['target_server_id']);
+    $snapshot=json_decode($e['provider_snapshot'],true,64,JSON_THROW_ON_ERROR);
+    $remote=achbotPgCreate($panel,[
+        'username'=>$e['remote_username'],
+        'operation_marker'=>'achbot:v1:'.$e['operation_id'],
+        'data_limit'=>(int)$e['requested_bytes'],
+        'expire'=>(int)$e['requested_expire'],
+        'group_ids'=>$snapshot['group_ids'],
+    ]);
+    $result=['native_success'=>($remote['success']??false)===true,
+        'effect_still_reserved'=>$connection->query('SELECT state FROM service_effects
+            WHERE id='.$effectId)->fetch_row()[0]==='reserved'];
+ } elseif ($op==='continue_rearmed_create') {
+    require_once $root.'/src/Finance/PaidAccountRecovery.php';
+    $payId=(int)$spec['pay_id'];$effectId=(int)$spec['effect_id'];
+    $e=$connection->query('SELECT * FROM service_effects WHERE id='.$effectId)->fetch_assoc();
+    $request=['server_id'=>2,'plan_id'=>7,'inbound_id'=>0,
+        'server_type'=>'pasarguard','user_id'=>1001,'days'=>30,'volume'=>2,
+        'remark'=>$e['remote_username'],'protocol'=>'vless','net_type'=>'tcp'];
+    require_once $root.'/src/Finance/GatewayClient.php';
+    $lease=achbotHostedWorkerLockName($connection,$payId);
+    $lock=$connection->prepare('SELECT GET_LOCK(?,0) AS acquired');
+    $lock->bind_param('s',$lease);$lock->execute();
+    $hasLease=$lock->get_result()->fetch_assoc();$lock->close();
+    if ((int)($hasLease['acquired']??0)!==1)
+        throw new RuntimeException('fixture_original_payment_lease_missing');
+    try {
+        $continued=achbotContinuePaidAccount($connection,$payId,1,$request,
+            null,9001,9001);
+    } finally {
+        $release=$connection->prepare('SELECT RELEASE_LOCK(?)');
+        $release->bind_param('s',$lease);$release->execute();$release->close();
+    }
+    $effect=$connection->query('SELECT id,state,operation_id,remote_username,reserved_count
+        FROM service_effects WHERE id='.$effectId)->fetch_assoc();
+    $result=['effect_id'=>$continued[3], 'state'=>$effect['state'],
+        'username'=>$continued[1],'operation'=>$effect['operation_id'],
+        'reserved_count'=>(int)$effect['reserved_count']];
  } elseif ($op==='policy_probe') {
     $createSnap=achbotProviderSnapshot($connection,2,7);
     $createSnap['group_ids']=[];
@@ -200,6 +306,12 @@ try {
  } elseif ($op==='settle') {
     $id=(int)$spec['pay_id'];$proof=achbotPaymentEvidenceGetProof($connection,$id);
     $result=$proof?achbotApiPaymentSettle($connection,$id,$proof):'missing_proof';
+ } elseif ($op==='operator') {
+    $id=(int)$spec['pay_id'];
+    $proof=achbotPaymentEvidenceGetProof($connection,$id);
+    $actor=(int)($spec['actor']??9001);
+    $result=$proof?achbotApiPaymentSettle($connection,$id,$proof,$actor,9001)
+        :'missing_proof';
  } elseif ($op==='finisher_probe') {
     // Deliberately synthetic remote-verification object only for a negative
     // AUTHORIZATION test. This never dispatches provider traffic or commits
@@ -230,7 +342,7 @@ try {
  echo json_encode(['ok'=>true,'result'=>$result,'events'=>$GLOBALS['events']],
       JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE);
 } catch(Throwable $e) {
- echo json_encode(['ok'=>false,'error'=>get_class($e).':'.$e->getMessage()],
+ echo json_encode(['ok'=>false,'error'=>get_class($e).':'.$e->getMessage().':'.basename($e->getFile()).':'.$e->getLine()],
       JSON_THROW_ON_ERROR);
 }
 '''
@@ -242,6 +354,24 @@ class DriftHandler(pg.Handler):
     def handle_request(self):
         s = self.server
         path = urlsplit(self.path).path
+        # Separate original CREATE race: the owner closes the payment after
+        # the staff lease/permission preflight but during Native observation.
+        # Local verification must re-check payment/Archive under its own lock.
+        hook=getattr(s,'create_reconcile_hook',None)
+        if (self.command=='GET' and path.startswith('/api/user/by-username/')
+                and callable(hook)):
+            s.create_reconcile_hook=None
+            hook()
+            s.create_reconcile_hook_fired=True
+        # Recovery-only intermediate race: another panel operator changes
+        # Native state AFTER the coordinator GET but BEFORE the provider's
+        # separate authenticated GET immediately preceding RESET or PUT.
+        if (self.command == 'GET' and path == '/api/user/by-id/17' and
+                getattr(s,'recovery_drift_at',None) is not None):
+            s.recovery_drift_seen=getattr(s,'recovery_drift_seen',0)+1
+            if s.recovery_drift_seen==s.recovery_drift_at:
+                s.user.update(json.loads(json.dumps(s.recovery_drift_change)))
+                s.recovery_drift_fired=True
         if (self.command == "GET" and path == "/api/user/by-id/17"
                 and getattr(s, "drift", None) and not getattr(s, "drift_fired", False)
                 and s.mutation_claimed()):
@@ -445,7 +575,10 @@ def sandbox(*, imported_empty=False):
                     if any(not line.startswith((
                             "achbot_api_claim_review pay_id=",
                             "achbot_api_effect_review pay_id=",
+                            "achbot_operator_service_completed pay_id=",
                             "achbot_pg_edit_needs_review pay_id=",
+                            "achbot_provider_edit_recovery_deferred pay_id=",
+                            "achbot_operator_create_redrive pay_id=",
                             "achbot_api_paid_delivery_review pay_id=",
                             # No real Telegram delivery exists in this isolated
                             # source-real financial acceptance; the separate
@@ -778,6 +911,276 @@ def test():
                sql("SELECT COUNT(*) FROM increase_order") == "0",
                "unknown_pg_put_ack_never_replays_or_refunds")
 
+    # Independent review REQUIRED A: do not trust only the coordinator's
+    # first Native GET. Inject a real provider-side external change immediately
+    # before the separate GET inside achbotPgAction(reset) or achbotPgModify.
+    # The original payment/effect journal stays unchanged and reviewable.
+    native_changes=(
+        ('quota',{'data_limit':17*1073741824}),
+        ('expiry',{'expire':'2035-04-01T00:00:00Z'}),
+        ('status',{'status':'disabled'}),
+        ('groups',{'group_ids':[5]}),
+    )
+    for kind in ('day','volume','renew'):
+        with sandbox() as (sql,run,provider,bank,_):
+            if kind=='renew':
+                issued=run('issue_renew',hash='review197_middle_renew')
+                msg=evidence_sms(1,issued['price'])
+                bank.messages['1']=dict(msg)
+            else:
+                issued,msg=claim_proof(run,bank,kind,
+                    'review197_middle_'+kind)
+            pay=issued['pay_id']
+            assert run('reserve',pay_id=pay,sms=msg) is not None
+            assert run('consume',pay_id=pay)['status']=='proven'
+            provider.mode='modify_lie'
+            assert run('settle',pay_id=pay)=='review'
+            assert terminal_state(sql,pay).startswith('processing|dispatched|')
+            assert sql('SELECT provider_state FROM service_effects WHERE id=1')=='mutating'
+            provider.mode='ok'
+            baseline=json.loads(json.dumps(provider.user))
+            stages=(('reset',2),('put',4)) if kind=='renew' else (('put',2),)
+            for stage,get_at in stages:
+                for change,foreign in native_changes:
+                    provider.user=json.loads(json.dumps(baseline))
+                    provider.recovery_drift_at=get_at
+                    provider.recovery_drift_seen=0
+                    provider.recovery_drift_fired=False
+                    provider.recovery_drift_change=foreign
+                    trace_start=len(provider.trace)
+                    result=run('operator',pay_id=pay)
+                    actions=[(method,path) for method,path,_ in provider.trace[trace_start:]
+                             if method in ('PUT','POST') and
+                                (method=='PUT' or path.endswith('/reset'))]
+                    assert provider.recovery_drift_fired,(kind,stage,change,provider.trace[trace_start:])
+                    assert result=='review' and ('PUT','/api/user/by-id/17') not in actions,(kind,stage,change,result,actions)
+                    expected_resets=1 if stage=='put' and kind=='renew' else 0
+                    assert actions==[('POST','/api/user/by-id/17/reset')]*expected_resets,(kind,stage,change,actions)
+                    for field,value in foreign.items():
+                        assert provider.user[field]==value,(kind,stage,change,provider.user)
+                    assert terminal_state(sql,pay).startswith('processing|dispatched|') and                         sql('SELECT provider_state FROM service_effects WHERE id=1')=='mutating' and                         sql('SELECT COUNT(*) FROM increase_order')=='0',(kind,stage,change)
+                    checks.append('review197_'+kind+'_'+stage+'_'+change+'_native_intermediate_drift_blocks_write')
+            provider.recovery_drift_at=None
+            provider.user=json.loads(json.dumps(baseline))
+            finished=run('operator',pay_id=pay)
+            assert finished=='confirmed' and                 sql('SELECT provider_state FROM service_effects WHERE id=1')=='linked' and                 sql('SELECT COUNT(*) FROM increase_order')=='1',(kind,finished)
+            checks.append('review197_'+kind+'_unchanged_baseline_recovery_completes_once')
+
+    # Review #197: an actual PasarGuard paid CREATE whose original rearm
+    # COMMIT survived while PHP died before POST admission. The next staff
+    # action resumes the same reserved effect, Native identity and capacity.
+    with sandbox() as (sql,run,provider,bank,_):
+        original=run('seed_rearmed_create')
+        pay=original['pay_id'];eid=original['effect_id']
+        assert sql(f"SELECT state FROM service_effects WHERE id={eid}")=='reserved'
+        capacity=sql("SELECT ucount FROM server_info WHERE id=2")
+        provider.user=None
+        # The linked original account owns remote id=17. The new paid
+        # CREATE receives a different physical ID, as a real provider would.
+        first_native_id=pg.USER['id']
+        pg.USER['id']=first_native_id+1
+        before=[x for x in provider.trace if x[0]=='POST' and x[1]=='/api/user']
+        try:
+            first=run('continue_rearmed_create',pay_id=pay,effect_id=eid)
+            after=[x for x in provider.trace if x[0]=='POST' and x[1]=='/api/user']
+            passed(first['state']=='verified' and first['effect_id']==eid and
+                first['username']==original['name'] and
+                first['operation']==original['operation'] and
+                first['reserved_count']==1 and len(after)==len(before)+1 and
+                sql("SELECT ucount FROM server_info WHERE id=2")==capacity,
+                'pg_original_reserved_create_rearm_crash_recovers_same_effect_once',
+                [first,len(after),capacity])
+            repeated=run('continue_rearmed_create',pay_id=pay,effect_id=eid)
+            after_repeat=[x for x in provider.trace if x[0]=='POST' and x[1]=='/api/user']
+            passed(repeated['effect_id']==eid and
+                repeated['state']=='verified' and
+                len(after_repeat)==len(after) and
+                sql("SELECT ucount FROM server_info WHERE id=2")==capacity,
+                'pg_verified_original_create_readback_no_second_post_or_capacity',
+                [repeated,len(after_repeat)])
+        finally:
+            pg.USER['id']=first_native_id
+            provider.user=pg.USER.copy()
+
+    # REQUIRED B: the original Native CREATE truly succeeds via provider
+    # POST, then its PHP acknowledgement is lost. With local effect rearmed
+    # and still reserved, staff must observe this EXISTING physical account
+    # before deciding on an additional POST.
+    with sandbox() as (sql,run,provider,bank,_):
+        original=run('seed_rearmed_create')
+        pay=original['pay_id'];eid=original['effect_id']
+        capacity=sql('SELECT ucount FROM server_info WHERE id=2')
+        first_native_id=pg.USER['id']
+        pg.USER['id']=first_native_id+1
+        try:
+            provider.user=None
+            created=run('seed_original_create_post',effect_id=eid)
+            assert created['native_success'] and created['effect_still_reserved'],created
+            old_posts=[x for x in provider.trace if x[0]=='POST' and x[1]=='/api/user']
+            assert len(old_posts)==1 and sql(f"SELECT state FROM service_effects WHERE id={eid}")=='reserved'
+            native_copy=json.loads(json.dumps(provider.user))
+            complete=run('continue_rearmed_create',pay_id=pay,effect_id=eid)
+            current_posts=[x for x in provider.trace if x[0]=='POST' and x[1]=='/api/user']
+            passed(complete['state']=='verified' and complete['effect_id']==eid and
+                complete['operation']==original['operation'] and
+                complete['username']==original['name'] and
+                len(current_posts)==len(old_posts) and
+                provider.user==native_copy and
+                sql('SELECT ucount FROM server_info WHERE id=2')==capacity,
+                'pg_rearmed_original_native_create_preexists_read_first_no_post',
+                [complete,len(current_posts),capacity])
+            repeat=run('continue_rearmed_create',pay_id=pay,effect_id=eid)
+            passed(repeat['state']=='verified' and repeat['effect_id']==eid and
+                len([x for x in provider.trace if x[0]=='POST' and x[1]=='/api/user'])==1,
+                'pg_existing_native_rearmed_repeat_never_posts_create')
+        finally:
+            pg.USER['id']=first_native_id
+
+    with sandbox() as (sql,run,provider,bank,_):
+        original=run('seed_rearmed_create')
+        eid=original['effect_id']
+        provider.user=json.loads(json.dumps(pg.USER))
+        provider.user.update(username=original['name'],id=pg.USER['id']+1,
+            note='achbot:v1:'+str('f'*32))
+        before_posts=len([x for x in provider.trace if x[0]=='POST' and x[1]=='/api/user'])
+        try:
+            run('continue_rearmed_create',pay_id=original['pay_id'],effect_id=eid)
+        except AssertionError as error:
+            passed('paid_resume_native_mismatch' in str(error) and
+                len([x for x in provider.trace if x[0]=='POST' and x[1]=='/api/user'])==before_posts and
+                sql(f"SELECT state FROM service_effects WHERE id={eid}")=='reserved',
+                'pg_rearmed_foreign_native_identity_never_reissues_create',str(error))
+        else: raise AssertionError('pg_rearmed_foreign_account_was_not_held')
+
+    # The existing Native proof is not license to settle after the original
+    # payment was independently closed between staff preview and effect
+    # verification. This exercises the final locked payment check, not only
+    # the initial worker lease gate.
+    with sandbox() as (sql,run,provider,bank,_):
+        original=run('seed_rearmed_create')
+        pay=original['pay_id'];eid=original['effect_id']
+        provider.user=json.loads(json.dumps(pg.USER))
+        provider.user.update(id=pg.USER['id']+1,username=original['name'],
+            note='achbot:v1:'+original['operation'],
+            data_limit=original['bytes'],
+            expire=dt.datetime.fromtimestamp(original['expiry'],dt.timezone.utc
+                ).strftime('%Y-%m-%dT%H:%M:%SZ'))
+        provider.create_reconcile_hook=lambda:sql(
+            f"UPDATE pays SET state='declined' WHERE id={pay}")
+        provider.create_reconcile_hook_fired=False
+        try:
+            run('continue_rearmed_create',pay_id=pay,effect_id=eid)
+        except AssertionError as error:
+            passed('paid_resume_reconciliation_payment_changed' in str(error) and
+                provider.create_reconcile_hook_fired and
+                sql(f"SELECT state FROM service_effects WHERE id={eid}")=='reserved' and
+                sql(f"SELECT state FROM pays WHERE id={pay}")=='declined' and
+                len([x for x in provider.trace if x[0]=='POST' and x[1]=='/api/user'])==0,
+                'pg_native_observation_payment_closed_before_locked_verify_holds',
+                str(error))
+        else: raise AssertionError('pg_payment_closed_during_get_was_finalized')
+
+    # Absolute renewal: no operator or manual action is required after an
+    # uncertain Native response. A lost reset acknowledgement is permitted
+    # to run reset again and then finish the saved absolute PUT; the original
+    # payment must not be charged twice.
+    with sandbox() as (sql,run,provider,bank,_):
+        issued=run('issue_renew',hash='operator_auto_renewal')
+        pay=issued['pay_id'];message=evidence_sms(1,issued['price'])
+        bank.messages['1']=dict(message)
+        assert run('reserve',pay_id=pay,sms=message) is not None
+        assert run('consume',pay_id=pay)['status']=='proven'
+        provider.mode='write_lost'
+        assert run('settle',pay_id=pay)=='review'
+        assert terminal_state(sql,pay).startswith('processing|dispatched|')
+        first=provider.write_count
+        provider.mode='ok'
+        response=run('settle',pay_id=pay)
+        passed(response=='confirmed' and
+            terminal_state(sql,pay).startswith('auto_cart_approved|done|') and
+            provider.write_count==first+2 and
+            sql("SELECT provider_state FROM service_effects WHERE id=1")=='linked' and
+            sql("SELECT COUNT(*) FROM increase_order")=='1',
+            'real_pg_renewal_auto_retries_lost_reset_ack_once',
+            [response,first,provider.write_count,terminal_state(sql,pay)])
+    # The same source, provider adapter and original payment recover native
+    # timeouts. An operator who inspected the panel can finish both additive
+    # types; the original absolute effect is never applied twice.
+    for kind in ('day','volume'):
+        with sandbox() as (sql,run,provider,bank,old_expiry):
+            issued,msg=claim_proof(run,bank,kind,'operator_redrive_'+kind)
+            pay=issued['pay_id']
+            assert run('reserve',pay_id=pay,sms=msg) is not None
+            assert run('consume',pay_id=pay)['status']=='proven'
+            provider.mode='write_lost'
+            first=run('settle',pay_id=pay)
+            assert first=='review' and provider.write_count==1
+            assert terminal_state(sql,pay).startswith('processing|dispatched|')
+            assert sql("SELECT provider_state FROM service_effects WHERE id=1")=='mutating'
+            provider.mode='ok'
+            before=provider.write_count
+            recovered=run('operator',pay_id=pay)
+            passed(recovered=='confirmed' and
+                   terminal_state(sql,pay).startswith('auto_cart_approved|done|') and
+                   provider.write_count==before and
+                   sql("SELECT provider_state FROM service_effects WHERE id=1")=='linked' and
+                   sql("SELECT COUNT(*) FROM increase_order")=='1',
+                   'operator_'+kind+'_lost_ack_finalized_without_second_native_write',
+                   [recovered,terminal_state(sql,pay),provider.write_count])
+            passed(run('operator',pay_id=pay)=='settled' and
+                   provider.write_count==before and
+                   sql('SELECT COUNT(*) FROM increase_order')=='1',
+                   'operator_'+kind+'_completed_payment_never_adds_again')
+    # Reviewer #197: independently edited Native quota/expiry/status after
+    # a lost remote acknowledgement is not permission to replace that edit
+    # with an older absolute target, nor to RESET traffic again.
+    for kind in ('day','volume'):
+        for drift,field,changed in (
+            ('quota','data_limit',17*1073741824),
+            ('expiry','expire',1950000000),
+            ('status','status','disabled')):
+            with sandbox() as (sql,run,provider,bank,_):
+                issued,message=claim_proof(
+                    run,bank,kind,'review197_pg_drift_'+kind+'_'+drift)
+                pay=issued['pay_id']
+                assert run('reserve',pay_id=pay,sms=message) is not None
+                assert run('consume',pay_id=pay)['status']=='proven'
+                provider.mode='write_lost'
+                assert run('settle',pay_id=pay)=='review'
+                assert terminal_state(sql,pay).startswith('processing|dispatched|')
+                provider.mode='ok'
+                provider.user[field]=changed
+                before_writes=provider.write_count
+                before_native=dict(provider.user)
+                attempt=run('operator',pay_id=pay)
+                passed(attempt=='review' and provider.write_count==before_writes and
+                    provider.user==before_native and
+                    terminal_state(sql,pay).startswith('processing|dispatched|') and
+                    sql('SELECT COUNT(*) FROM increase_order')=='0' and
+                    sql("SELECT provider_state FROM service_effects WHERE id=1")=='mutating',
+                    'operator_'+kind+'_postdispatch_'+drift+'_never_overwritten',
+                    [attempt,provider.write_count,before_writes])
+                passed(run('operator',pay_id=pay)=='review' and
+                    provider.write_count==before_writes,
+                    'operator_'+kind+'_repeated_'+drift+'_stays_reviewable')
+    # If the first worker died before any remote PUT, the actor's deliberate
+    # confirmation restarts only the saved absolute service operation.
+    for kind in ('day','volume'):
+        with sandbox() as (sql,run,provider,bank,old_expiry):
+            issued,msg=claim_proof(run,bank,kind,'operator_preput_'+kind)
+            pay=issued['pay_id']
+            assert run('reserve',pay_id=pay,sms=msg) is not None
+            assert run('consume',pay_id=pay)['status']=='proven'
+            provider.drift='authority_fail'
+            assert run('settle',pay_id=pay)=='review'
+            assert provider.write_count==0
+            provider.mode='ok'
+            recovered=run('operator',pay_id=pay)
+            passed(recovered=='confirmed' and provider.write_count==1 and
+                   sql("SELECT provider_state FROM service_effects WHERE id=1")=='linked' and
+                   terminal_state(sql,pay).startswith('auto_cart_approved|done|'),
+                   'operator_'+kind+'_can_complete_earlier_preput_failure',
+                   [recovered,provider.write_count,terminal_state(sql,pay)])
     with sandbox() as (sql, run, provider, bank, _):
         issued, wrong = claim_proof(
             run, bank, "day", "scoped_api_pg_wrong_amount",

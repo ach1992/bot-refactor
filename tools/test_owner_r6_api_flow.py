@@ -115,6 +115,9 @@ elseif($op==='save'){$value=achbotPaymentEvidenceSaveGiftCode($connection,$id,10
 elseif($op==='timer')$value=['eligible'=>achbotAutoBankEligible($connection,$pay),'claimed'=>achbotAutoBankClaim($connection,$pay)];
 elseif($op==='check')$value=achbotApiPaymentCheck($connection,$id);
 elseif($op==='settle'){$proof=achbotPaymentEvidenceGetProof($connection,$id);$value=$proof?achbotApiPaymentSettle($connection,$id,$proof):'no-proof';}
+elseif($op==='operator'){$proof=achbotPaymentEvidenceGetProof($connection,$id);
+ $value=$proof?achbotApiPaymentSettle($connection,$id,$proof,
+     (int)($spec['actor']??9001),9001):'no-proof';}
 elseif($op==='human')$value=achbotApproveManualWalletTopup($connection,$pay['hash_id'],9001,9001);
 elseif($op==='receipt'){if($pay['state']==='have_sent')$value=true;else{$v=achbotManualBeginEvidence($connection,$pay,'bank_transfer',1001,'fixture-photo');$value=$v?achbotManualFinishEvidence($connection,$pay['hash_id'],'fixture-photo',$v,222,9001):false;}}
 elseif($op==='view'){$c=achbotApiPaymentContext($connection,$pay['hash_id'],1001);$value=['keys'=>$c?json_decode(achbotApiPaymentKeyboard($c),true):null,'text'=>$c?achbotApiPaymentInvoiceText($c):null,'allowed'=>achbotManualReceiptAllowed($connection,$pay,'bank_transfer',1001)];}
@@ -139,6 +142,26 @@ elseif($op==='resume_hint'){
  require_once $root.'/src/Finance/ApiPayments.php';
  $pay['attempt']=achbotApiPaymentAttempt($connection,$id);
  $value=achbotApiPaymentCanResume($connection,$pay);
+}
+elseif($op==='review_execute'){
+ // Actor-bound confirmation callback after the live original-case preview.
+ $from_id=(int)($spec['actor']??9001);$chat_id=(int)($spec['chat']??$from_id);
+ $callbackId='fixture-api-confirm';$message_id=456;
+ $data=(string)$spec['callback'];$userInfo=['step'=>'none'];$text=null;
+ require $root.'/src/Finance/Routes/ManualReceipts.php';
+ $value='routed';
+}
+elseif($op==='native_intent') {
+ $a=achbotApiPaymentAttempt($connection,$id);
+ $proof=achbotPaymentEvidenceGetProof($connection,$id);
+ $original=$proof?achbotPaymentEvidenceUnprotect(
+     'fulfillment:'.$id.':'.$proof['operation'],
+     (string)($a['evidence_fulfillment_payload']??'')):null;
+ $value=['state'=>$a['evidence_fulfillment_state']??null,
+     'capture_required'=>$original['capture_required']??null,
+     'native_intent'=>$original['native_intent']??null,
+     'operation'=>$original['operation']??null,
+     'pay_id'=>$id];
 }
 elseif($op==='review_resume'){
  // Actual admin callback, without requiring an earlier inbox visit.
@@ -217,7 +240,7 @@ def check(evidence_root,settings_root,source_root=ROOT,*,ci_redrive=False):
         assert php.count(spy_before)==1
         php=php.replace(spy_before,
             "'buttons'=>json_decode((string)($args[2]??''),true),'text'=>(string)($args[1]??'')];")
-        php=php.replace("function achbotApplyServiceEdit(...$args) {throw new RuntimeException('unexpected_edit');}","function achbotApplyServiceEdit($db,$sid,$change) {$GLOBALS['events'][]=['event'=>'EDIT','change'=>$change,'tx'=>(int)$db->query('SELECT @@in_transaction')->fetch_row()[0]];return(object)['success'=>true,'verified'=>true,'applied_expire'=>1802000000,'applied_bytes'=>3221225472];}")
+        php=php.replace("function achbotApplyServiceEdit(...$args) {throw new RuntimeException('unexpected_edit');}","function achbotApplyServiceEdit($db,$sid,$change) {$GLOBALS['events'][]=['event'=>'EDIT','change'=>$change,'tx'=>(int)$db->query('SELECT @@in_transaction')->fetch_row()[0]];if(isset($change['_paid_intent_capture'])){$source=['version'=>1,'kind'=>isset($change['plus_day'])?'day':'volume','scope_sha256'=>str_repeat('a',64),'username_sha256'=>str_repeat('b',64),'before'=>['expire'=>1900000000,'data_limit'=>2147483648],'absolute'=>['expire'=>1802000000,'data_limit'=>3221225472]];if($change['_paid_intent_capture']($source)!==true)return(object)['success'=>false,'uncertain'=>true];}if(!empty($GLOBALS['spec']['lost_edit_ack']))return(object)['success'=>false,'uncertain'=>true];return(object)['success'=>true,'verified'=>true,'applied_expire'=>1802000000,'applied_bytes'=>3221225472];}")
         php=php.replace("function getMainKeys() {return '{}';}",r"""function getMainKeys() {return '{}';}
 function bot($method,$data){
     $GLOBALS['events'][]=['event'=>'BOT','method'=>$method,'data'=>$data,'tx'=>(int)$GLOBALS['connection']->query('SELECT @@in_transaction')->fetch_row()[0]];
@@ -265,6 +288,39 @@ return !empty($GLOBALS['spec']['fail_staff'])?null:(object)['ok'=>true];}""")
         php=php.replace("function sendMessage($text=null,$keys=null,$mode=null,$to=null) {","function sendMessage($text=null,$keys=null,$mode=null,$to=null) {if(!empty($GLOBALS['spec']['fail_customer_ack']) && $to===null)throw new RuntimeException('fixture_customer_ack_failure');if(!empty($GLOBALS['spec']['fail_terminal_customer']) && (int)$to===1001 && in_array(fixtureState(),['approved','auto_cart_approved'],true))return(object)['ok'=>false];")
         php=php.replace("return (object)['ok'=>true];\n}\nfunction editKeys", "return (object)['ok'=>true,'result'=>(object)['message_id'=>456]];\n}\nfunction editKeys")
         php=php.replace("    if ($strict!==true) throw new RuntimeException('non_strict_remote_get');", "    if((int)$GLOBALS['connection']->query('SELECT @@in_transaction')->fetch_row()[0]!==0)throw new RuntimeException('fixture_native_get_under_financial_lock');\n    if(str_starts_with($name,'api_edit'))return(object)['username'=>$name,'status'=>'active','expire'=>1900000000,'data_limit'=>10737418240,'used_traffic'=>0];\n    if ($strict!==true) throw new RuntimeException('non_strict_remote_get');")
+        # Strict transport is covered by the real authenticated Marzban
+        # HTTP loopback suite. Only this private financial fixture may
+        # recover a physical account from a previous PHP process.
+        transport=app/'src/Finance/RecoveryTransport.php'
+        old_transport=transport.read_text()
+        transport_anchor="    $base=achbotRecoveryEndpoint($endpoint);"
+        assert old_transport.count(transport_anchor)==1
+        transport.write_text(old_transport.replace(transport_anchor,r'''
+    if (($GLOBALS['spec']['remote_reappeared']??false)===true) {
+        global $connection;
+        $payId=(int)($GLOBALS['spec']['pay']??0);
+        $q=$connection->prepare("SELECT e.*,c.panel_url,c.username AS panel_user,
+            c.password AS panel_password FROM service_effects e
+            JOIN server_config c ON c.id=e.target_server_id
+            WHERE e.pay_row_id=? AND e.effect_kind='create'
+              AND e.remote_username=? LIMIT 1");
+        $q->bind_param('is',$payId,$username);$q->execute();
+        $old=$q->get_result()->fetch_assoc();$q->close();
+        if (!$old || $endpoint!==rtrim((string)$old['panel_url'],'/') ||
+            $adminUser!==$old['panel_user'] || $adminPassword!==$old['panel_password'])
+            throw new RuntimeException('fixture_original_native_target_changed');
+        $GLOBALS['events'][]=['event'=>'NATIVE_GET','username'=>$username,
+            'effect_id'=>(int)$old['id']];
+        return (object)[
+            'username'=>$username,'note'=>'achbot:v1:'.$old['operation_id'],
+            'expire'=>(int)$old['requested_expire'],
+            'data_limit'=>(int)$old['requested_bytes'],
+            'status'=>'active',
+            'subscription_url'=>'https://fixture.invalid/sub/original-verified',
+            'links'=>['vless://native-fixture.invalid:443'],
+        ];
+    }
+''' + transport_anchor,1))
         # Controlled process-loss injection in disposable source, never runtime hooks.
         flow=app/'src/Finance/ApiPayments.php';flow.write_text(flow.read_text().replace('$delivery=achbotAutoBankProvisionBuySub(',"if(!empty($GLOBALS['spec']['crash_before_native']))throw new RuntimeException('fixture_crash_after_claim');\n            $delivery=achbotAutoBankProvisionBuySub(").replace("$result=(object)($payload['result']??[]);","if(!empty($GLOBALS['spec']['crash_after_verified']))throw new RuntimeException('fixture_crash_after_verified');\n    $result=(object)($payload['result']??[]);"))
 
@@ -925,6 +981,137 @@ DELIMITER ;''')
         # Unknown CREATE keeps existing no-replay journal and no false refund/success.
         APIs.rows={};n=seed('unknowncreate','BUY_SUB');sms(n);r=call(pay=n,mode='lost');assert r['result']=='review' and state(n)=='processing',r
         r=call(op='settle',pay=n);assert r['result']=='review' and not any(e['event']=='POST' for e in r['events']),r;cases.append('uncertain_create_journal_never_redispatched')
+        assert call(op='resume_hint',pay=n)['result'] is True
+        # One preview is read-only and binds the decision to this actor and
+        # exact committed attempt. A forbidden/stale actor cannot execute it.
+        preview=call(op='review_resume',pay=n,actor=9001)
+        confirm_buttons=[b for e in preview['events'] if e['event']=='EDIT'
+                         for row in e['buttons']['inline_keyboard'] for b in row
+                         if b['callback_data'].startswith('apiEvidenceExecute_')]
+        assert len(confirm_buttons)==1 and not any(
+            e['event']=='POST' for e in preview['events']),preview
+        callback=confirm_buttons[0]['callback_data']
+        denied=call(op='review_execute',pay=n,actor=1001,callback=callback)
+        assert not any(e['event']=='POST' for e in denied['events']) and state(n)=='processing',denied
+        completed=call(op='review_execute',pay=n,actor=9001,callback=callback)
+        assert state(n)=='auto_cart_approved' and sum(
+            e['event']=='POST' for e in completed['events'])==1,completed
+        assert call(op='settle',pay=n)['result']=='settled'
+        cases.append('authorized_create_retries_original_ordinal_after_lost_response_without_double_payment')
+
+        # Independent review #197: crash AFTER original CREATE rearm COMMIT
+        # but BEFORE effect dispatch admission. The original reserved ordinal
+        # remains actionable only by staff and never reserves capacity again.
+        APIs.rows={}
+        n=seed('rearmcrashcreate','BUY_SUB')
+        sms(n)
+        first=call(pay=n,mode='lost')
+        assert first['result']=='review' and state(n)=='processing',first
+        original=query(work,env,f"""SELECT id,ordinal,operation_id,remote_username,
+            reserved_count FROM service_effects WHERE pay_row_id={n}
+            AND effect_kind='create'""").split('	')
+        assert len(original)==5 and original[1]=='1',original
+        capacity_now=query(work,env,'SELECT ucount FROM server_info WHERE id=2')
+        before_rearm=query(work,env,
+            f"""SELECT state FROM service_effects WHERE pay_row_id={n} AND effect_kind='create'""")
+        query(work,env,f"""UPDATE service_effects SET state='reserved'
+            WHERE pay_row_id={n} AND effect_kind='create' AND state='dispatching'""")
+        after_rearm=query(work,env,
+            f"""SELECT state FROM service_effects WHERE pay_row_id={n} AND effect_kind='create'""")
+        assert after_rearm=='reserved',(before_rearm,after_rearm,original)
+        assert call(op='resume_hint',pay=n)['result'] is True
+        unattended=call(op='settle',pay=n)
+        assert unattended['result']=='review' and not any(
+            e['event']=='POST' for e in unattended['events']),unattended
+        preview=call(op='review_resume',pay=n,actor=9001)
+        confirms=[b['callback_data'] for e in preview['events']
+                  if e['event']=='EDIT' for row in e['buttons']['inline_keyboard']
+                  for b in row if b['callback_data'].startswith('apiEvidenceExecute_')]
+        assert len(confirms)==1 and not any(e['event']=='POST' for e in preview['events']),preview
+        finished=call(op='review_execute',pay=n,actor=9001,callback=confirms[0])
+        after=query(work,env,f"""SELECT id,ordinal,operation_id,remote_username,
+            reserved_count FROM service_effects WHERE pay_row_id={n}
+            AND effect_kind='create'""").split('	')
+        assert after==original and state(n)=='auto_cart_approved' and sum(
+            e['event']=='POST' for e in finished['events'])==1,finished
+        assert query(work,env,'SELECT ucount FROM server_info WHERE id=2')==capacity_now
+        assert query(work,env,f"""SELECT state FROM service_effects WHERE
+            pay_row_id={n} AND effect_kind='create'""")=='local_recorded'
+        assert call(op='settle',pay=n)['result']=='settled'
+        cases.append('marzban_original_reserved_rearm_crash_recovers_without_duplicate_capacity')
+
+        # REQUIRED B: a first paid CREATE reached Native, lost its ACK,
+        # and the original effect was rearmed to reserved before PHP exited.
+        # Staff must reconcile that existing original account without POST.
+        APIs.rows={}
+        n=seed('rearm_exists_original','BUY_SUB')
+        sms(n)
+        first=call(pay=n,mode='lost')
+        assert first['result']=='review' and state(n)=='processing',first
+        original=query(work,env,f"""SELECT id,ordinal,operation_id,remote_username,
+            reserved_count FROM service_effects WHERE pay_row_id={n}
+            AND effect_kind='create'""").split('\t')
+        capacity_now=query(work,env,'SELECT ucount FROM server_info WHERE id=2')
+        query(work,env,f"""UPDATE service_effects SET state='reserved'
+            WHERE pay_row_id={n} AND effect_kind='create' AND state='dispatching'""")
+        assert query(work,env,f"""SELECT state FROM service_effects
+            WHERE pay_row_id={n} AND effect_kind='create'""")=='reserved'
+        preview=call(op='review_resume',pay=n,actor=9001)
+        confirms=[b['callback_data'] for e in preview['events']
+                  if e['event']=='EDIT' for row in e['buttons']['inline_keyboard']
+                  for b in row if b['callback_data'].startswith('apiEvidenceExecute_')]
+        assert len(confirms)==1,preview
+        done=call(op='review_execute',pay=n,actor=9001,
+                  callback=confirms[0],remote_reappeared=True)
+        assert state(n)=='auto_cart_approved' and \
+            sum(e['event']=='POST' for e in done['events'])==0 and \
+            sum(e['event']=='NATIVE_GET' for e in done['events'])==1,done
+        after=query(work,env,f"""SELECT id,ordinal,operation_id,remote_username,
+            reserved_count FROM service_effects WHERE pay_row_id={n}
+            AND effect_kind='create'""").split('\t')
+        assert after==original and \
+            query(work,env,'SELECT ucount FROM server_info WHERE id=2')==capacity_now
+        assert query(work,env,f"""SELECT state FROM service_effects
+            WHERE pay_row_id={n} AND effect_kind='create'""")=='local_recorded'
+        assert int(query(work,env,
+            f"SELECT COUNT(*) FROM service_effects WHERE pay_row_id={n} AND effect_kind='create'"))==1
+        assert int(query(work,env,
+            f"SELECT COUNT(*) FROM payment_delivery_intents WHERE pay_row_id={n}"))==1
+        assert call(op='settle',pay=n)['result']=='settled'
+        cases.append('marzban_remote_create_preexisting_rearmed_original_payment_completed_without_post')
+
+        # Original API evidence is encrypted and committed BEFORE the
+        # additive adapter may report a lost Native acknowledgement.
+        for label,kind,days,volume in (
+            ('day',f'INCREASE_DAY_{oid}_1',4,0),
+            ('volume',f'INCREASE_VOLUME_{oid}_1',0,5)):
+            APIs.rows={}
+            candidate=seed('captured_'+label,kind,days=days,volume=volume,order=oid)
+            sms(candidate)
+            failed=call(pay=candidate,lost_edit_ack=True)
+            assert failed['result']=='review' and state(candidate)=='processing',failed
+            inspected=call(op='native_intent',pay=candidate)['result']
+            assert inspected['state']=='dispatched' and inspected['capture_required'] is True
+            assert inspected['native_intent']['version']==1 and inspected['native_intent']['kind']==label
+            assert inspected['native_intent']['absolute']['data_limit']==3221225472
+            assert inspected['operation'] and inspected['pay_id']==candidate
+            assert query(work,env,
+                f'SELECT state FROM pays WHERE id={candidate}')=='processing'
+            cases.append('financial_'+label+'_original_aead_native_intent_survives_lost_ack')
+
+        # Renewal is an absolute plan: the normal maintainer may repeat it
+        # after a lost Native ACK, with NO operator grant and no second charge.
+        APIs.rows={};n=seed('unknownrenew','RENEW_ACCOUNT',order=oid)
+        sms(n);r=call(pay=n,lost_edit_ack=True)
+        assert r['result']=='review' and state(n)=='processing',r
+        assert call(op='resume_hint',pay=n)['result'] is True
+        assert query(work,env,
+            f"SELECT evidence_fulfillment_state FROM payment_attempts WHERE pay_row_id={n}")=='dispatched'
+        due(n);restored=call(op='maintain',pay=n)
+        assert state(n)=='auto_cart_approved' and sum(
+            e['event']=='EDIT' for e in restored['events'])==1,restored
+        assert call(op='settle',pay=n)['result']=='settled'
+        cases.append('renewal_automatic_retry_completes_lost_native_ack_without_double_payment')
         # Durable monitoring horizon stops NEW API scans, while the original invoice stays manual.
         APIs.rows={};n=seed('horizon');call(op='profile_shift',pay=n,age=90000);before=len(APIs.events);assert call(pay=n)['result']=='manual' and len(APIs.events)==before
         query(work,env,f'UPDATE payment_attempts SET created_at=NOW()-INTERVAL 90000 SECOND WHERE pay_row_id={n}');assert not call(op='view',pay=n)['result']['allowed'];assert call(op='expire',pay=n)['result'] is False;cases.append('configured_horizon_stops_new_scans_without_financial_expiry')

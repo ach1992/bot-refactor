@@ -22,13 +22,14 @@ if (str_starts_with($adminCallback,'attentionInbox') ||
 
 // An existing authenticated bank/gift API proof can finish the ORIGINAL
 // payment. No provider GET, second financial ledger, or new access grant.
-if (preg_match('/^apiEvidenceResume_([1-9][0-9]{0,17})$/D',(string)$data,$apiResume)) {
+if (preg_match('/^apiEvidence(Resume|Execute)_([1-9][0-9]{0,17})(?:_([a-f0-9]{20}))?$/D',
+    (string)$data,$apiResume)) {
     if (!achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'payments') ||
         (int)($chat_id??0)!==(int)$from_id) {
         answerCallbackQuery($callbackId,achbotMessage('manual_payment.manual_receipts.alert.0a23f88410'),true);
         return;
     }
-    $payId=(int)$apiResume[1];
+    $payId=(int)$apiResume[2];
     try {
         // The direct callback may be the first admin route in this process.
         // Do not depend on having opened the attention inbox beforehand.
@@ -52,8 +53,40 @@ if (preg_match('/^apiEvidenceResume_([1-9][0-9]{0,17})$/D',(string)$data,$apiRes
             answerCallbackQuery($callbackId,achbotMessage('manual_receipt_final.status_stale'),true);
             return;
         }
+        $confirmed=$apiResume[1]==='Execute';
+        $needsConfirmation=achbotApiPaymentNeedsOperatorConfirmation(
+            $connection,$pay,$attempt);
+        if ($confirmed) {
+            $expected=achbotApiPaymentOperatorToken(
+                $pay,$attempt,$proof,(int)$from_id);
+            if (!$needsConfirmation || !hash_equals(
+                $expected,(string)($apiResume[3]??''))) {
+                answerCallbackQuery($callbackId,
+                    achbotMessage('manual_receipt_final.status_stale'),true);
+                return;
+            }
+        } elseif ($needsConfirmation) {
+            // First click is read-only. The real actor/permission/source
+            // checks run again after this preview, before dispatch.
+            $token=achbotApiPaymentOperatorToken(
+                $pay,$attempt,$proof,(int)$from_id);
+            $buttons=json_encode(['inline_keyboard'=>[
+                [['text'=>achbotMessage('automatic_gateway_review.service_execute'),
+                  'callback_data'=>'apiEvidenceExecute_'.$payId.'_'.$token]],
+                [['text'=>achbotMessage('automatic_gateway_review.redrive_cancel'),
+                  'callback_data'=>'attentionCase_'.$payId]]
+            ]],JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
+            $message=achbotMessageHtml('automatic_gateway_review.service_confirm',[
+                'payment'=>$payId]);
+            $reply=editText($message_id,$message,$buttons,'HTML',(int)$from_id);
+            if (!is_object($reply)||($reply->ok??false)!==true)
+                sendMessage($message,$buttons,'HTML',(int)$from_id);
+            answerCallbackQuery($callbackId);
+            return;
+        }
         answerCallbackQuery($callbackId,achbotMessage('manual_receipt_final.checking'));
-        $outcome=achbotApiPaymentSettle($connection,$payId,$proof);
+        $outcome=achbotApiPaymentSettle($connection,$payId,$proof,
+            $confirmed?(int)$from_id:0,$confirmed?(int)$admin:0);
         // A settled invoice is not necessarily an ACKed customer message.
         // The terminal fast-path returns 'settled' after pending-only delivery;
         // inspect the original per-message journal before reporting success.

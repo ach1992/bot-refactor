@@ -700,6 +700,59 @@ function editMarzbanConfig($server_id,$info,?array $giftTarget=null){
 
         $oldExpire=$remoteExpiry($current);
         $oldVolume=$remoteQuota($current);
+        // A paid additive retry must use its FIRST captured absolute target.
+        // If that target is already present, reconcile without a second PUT.
+        // A different Native state is NOT a reason to add the same units again.
+        $paidRecovery=$info['_paid_recovery_intent']??null;
+        if (array_key_exists('_paid_recovery_intent',$info) &&
+            !is_array($paidRecovery))
+            return (object)['success'=>false,'uncertain'=>true,
+                            'msg'=>'marzban_recovery_intent_invalid'];
+        if ($paidRecovery!==null) {
+            $kind=isset($info['plus_day'])?'day':
+                (isset($info['plus_volume'])?'volume':'');
+            $before=$paidRecovery['before']??[];
+            $absolute=$paidRecovery['absolute']??[];
+            $originalConfig=$before['configuration']??null;
+            $originalTargetConfig=is_array($originalConfig)?$originalConfig:null;
+            if ($originalTargetConfig!==null) $originalTargetConfig[0]='active';
+            if (($paidRecovery['version']??null)!==1 ||
+                ($paidRecovery['kind']??null)!==$kind || $kind==='' ||
+                ($paidRecovery['scope_sha256']??null)!==
+                    hash('sha256',$scope."\n".$panelUrl) ||
+                ($paidRecovery['username_sha256']??null)!==hash('sha256',$remark) ||
+                !is_int($before['expire']??null) ||
+                !is_int($before['data_limit']??null) ||
+                !is_int($absolute['expire']??null) ||
+                !is_int($absolute['data_limit']??null) ||
+                $absolute['expire']<0 || $absolute['expire']>2147483647 ||
+                ($kind==='day' && $absolute['expire']===0) ||
+                $absolute['data_limit']<0 ||
+                !is_array($originalConfig) || count($originalConfig)!==5 ||
+                !in_array($originalConfig[0]??null,
+                    ['active','expired','limited'],true))
+                return (object)['success'=>false,'uncertain'=>true,
+                                'msg'=>'marzban_recovery_intent_invalid'];
+            $alreadyApplied=$oldExpire===$absolute['expire'] &&
+                $oldVolume===$absolute['data_limit'] &&
+                $baseline===$originalTargetConfig &&
+                ($current->status??null)==='active';
+            if ($alreadyApplied) {
+                if (!$isPinned())
+                    return (object)['success'=>false,'uncertain'=>true,
+                                    'msg'=>'marzban_recovery_target_changed'];
+                return (object)['success'=>true,'verified'=>true,
+                    'before_expire'=>$before['expire'],
+                    'applied_expire'=>$absolute['expire'],
+                    'applied_bytes'=>$absolute['data_limit'],
+                    'reconciled'=>true,'repaired'=>false];
+            }
+            if ($oldExpire!==$before['expire'] ||
+                $oldVolume!==$before['data_limit'] ||
+                $baseline!==$originalConfig)
+                return (object)['success'=>false,'uncertain'=>true,
+                                'msg'=>'marzban_recovery_native_drift'];
+        }
         // The current orders_list.expire_date is a SIGNED INT (32-bit).
         // Even a valid remote 64-bit timestamp cannot be marked locally
         // complete if it exceeds the published original schema contract.
@@ -710,10 +763,18 @@ function editMarzbanConfig($server_id,$info,?array $giftTarget=null){
         $volume=$oldVolume;
         if (isset($info['plus_day'])) {
             $days=$wholeUnits($info['plus_day'],36500);
-            if ($days===null || $days<=0 || $days>36500 || $days>intdiv(PHP_INT_MAX,86400) ||
-                max($expire,time())>PHP_INT_MAX-$days*86400)
+            if ($days===null || $days<=0 || $days>36500 || $days>intdiv(PHP_INT_MAX,86400))
                 return (object)['success'=>false,'uncertain'=>false,'msg'=>'invalid_days'];
-            $expire=max($expire,time())+86400*$days;
+            if ($paidRecovery!==null) {
+                $expire=$paidRecovery['absolute']['expire'];
+                if ($expire<=$oldExpire || $expire-max($oldExpire,0)<86400*$days)
+                    return (object)['success'=>false,'uncertain'=>true,
+                                    'msg'=>'marzban_recovery_days_changed'];
+            } else {
+                if (max($expire,time())>PHP_INT_MAX-$days*86400)
+                    return (object)['success'=>false,'uncertain'=>false,'msg'=>'invalid_days'];
+                $expire=max($expire,time())+86400*$days;
+            }
         } elseif (isset($info['days'])) {
             $days=$wholeUnits($info['days'],36500);
             if ($days===null || $days<=0 || $days>36500 || time()>PHP_INT_MAX-$days*86400)
@@ -764,6 +825,10 @@ function editMarzbanConfig($server_id,$info,?array $giftTarget=null){
                 $volume>PHP_INT_MAX-$extra*1073741824)
                 return (object)['success'=>false,'uncertain'=>false,'msg'=>'invalid_volume'];
             $volume+=$extra*1073741824;
+            if ($paidRecovery!==null &&
+                $volume!==$paidRecovery['absolute']['data_limit'])
+                return (object)['success'=>false,'uncertain'=>true,
+                                'msg'=>'marzban_recovery_volume_changed'];
         } elseif (isset($info['volume'])) {
             $gigabytes=$wholeUnits($info['volume'],intdiv(PHP_INT_MAX,1073741824),true);
             if ($gigabytes===null || $gigabytes<0 || $gigabytes>intdiv(PHP_INT_MAX,1073741824))
@@ -812,6 +877,35 @@ function editMarzbanConfig($server_id,$info,?array $giftTarget=null){
         if (!$postFields)
             return (object)['success'=>false,'uncertain'=>false,
                             'msg'=>'service_edit_missing_change'];
+        // Persist the original physical identity + before + absolute intent
+        // while the account lock is held, BEFORE any Native side effect.
+        // Only the financial coordinator provides this callable. It writes
+        // the already-claimed, encrypted original payment evidence journal.
+        if (array_key_exists('_paid_intent_capture',$info)) {
+            if (!is_callable($info['_paid_intent_capture']) ||
+                $paidRecovery!==null ||
+                count(array_intersect(array_keys($info),['plus_day','plus_volume']))!==1 ||
+                count(array_intersect(array_keys($info),['days','volume']))!==0)
+                return (object)['success'=>false,'uncertain'=>true,
+                                'msg'=>'marzban_intent_capture_invalid'];
+            $kind=isset($info['plus_day'])?'day':'volume';
+            $intent=[
+                'version'=>1,'kind'=>$kind,
+                'scope_sha256'=>hash('sha256',$scope."\n".$panelUrl),
+                'username_sha256'=>hash('sha256',$remark),
+                'before'=>['expire'=>$oldExpire,'data_limit'=>$oldVolume,
+                    'configuration'=>$baseline],
+                'absolute'=>['expire'=>$expire,'data_limit'=>$volume]
+            ];
+            try {
+                $captured=($info['_paid_intent_capture'])($intent);
+            } catch (\Throwable $error) {
+                $captured=false;
+            }
+            if ($captured!==true)
+                return (object)['success'=>false,'uncertain'=>true,
+                                'msg'=>'marzban_intent_capture_unverified'];
+        }
         $json=json_encode($postFields);
         if ($json===false)
             return (object)['success'=>false,'uncertain'=>true,'msg'=>'marzban_encode_failure'];

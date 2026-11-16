@@ -43,12 +43,15 @@ function achbotRecoveryTarget(mysqli $db, int $payId, int $ordinal): ?array {
 }
 
 /** Must be a pinned original paid target, not a guessed panel/server. */
-function achbotRecoveryTargetValid(?array $e, int $payId, int $ordinal): bool {
+function achbotRecoveryTargetValid(?array $e, int $payId, int $ordinal,
+                                    bool $allowReserved=false): bool {
     if (!$e || (int)$e['pay_row_id']!==$payId ||
         (int)$e['ordinal']!==$ordinal ||
         $e['pay_type']!=='BUY_SUB' ||
         !in_array($e['pay_state'],['processing','paid','processing_wallet'],true) ||
-        !in_array($e['state'],['dispatching','verified','local_recorded'],true) ||
+        !in_array($e['state'],$allowReserved
+            ?['reserved','dispatching','verified','local_recorded']
+            :['dispatching','verified','local_recorded'],true) ||
         (int)$e['user_id']<=0 ||
         (int)$e['paid_plan']<=0 ||
         (int)$e['price']<0 ||
@@ -103,13 +106,14 @@ function achbotRecoveryExactInt($value): ?int {
  * No result permits automatic repair, refund, replay or terminal transition.
  */
 function achbotRecoveryInspectLine(mysqli $db, int $payId, int $ordinal,
-                                   callable $getExactAccount): array {
+                                   callable $getExactAccount,
+                                   bool $allowReserved=false): array {
     $result=['status'=>'unknown','pay_id'=>$payId,'ordinal'=>$ordinal,
              'remote_gets'=>0,'read_only'=>true,'settlement_proven'=>false];
     if ($payId<=0 || $ordinal<=0) return $result;
     achbotEffectRequireUniqueLine($db);
     $first=achbotRecoveryTarget($db,$payId,$ordinal);
-    if (!achbotRecoveryTargetValid($first,$payId,$ordinal)) {
+    if (!achbotRecoveryTargetValid($first,$payId,$ordinal,$allowReserved)) {
         $result['status']='target_or_identity_changed';
         return $result;
     }
@@ -134,7 +138,7 @@ function achbotRecoveryInspectLine(mysqli $db, int $payId, int $ordinal,
         return $result;
     }
     $last=achbotRecoveryTarget($db,$payId,$ordinal);
-    if (!achbotRecoveryTargetValid($last,$payId,$ordinal) ||
+    if (!achbotRecoveryTargetValid($last,$payId,$ordinal,$allowReserved) ||
         $first!==$last) {
         $result['status']='changed_during_inspection';
         return $result;

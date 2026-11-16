@@ -201,8 +201,22 @@ function achbotPgCreate(array $panel,array $request): array {
         return $read;
     } catch (Throwable $e) { return achbotPgFailure($dispatched?'pg_create_unconfirmed':'pg_create_invalid',$dispatched); }
 }
+/**
+ * Recovery-only final Native pre-write fence. Compare the full entitlement
+ * observable at the provider's own last authenticated GET, not an earlier
+ * coordinator observation. This is not an atomic provider-side CAS.
+ */
+function achbotPgExpectedEntitlementMatches(array $actual,array $expected): bool {
+    foreach (['data_limit','expire','status','group_ids'] as $field)
+        if (!array_key_exists($field,$actual) ||
+            !array_key_exists($field,$expected) ||
+            $actual[$field]!==$expected[$field])
+            return false;
+    return true;
+}
 function achbotPgModify(array $panel,array $identity,array $absoluteChanges,
-                         ?array $requiredCurrentGroups=null,?callable $beforeWrite=null): array {
+                         ?array $requiredCurrentGroups=null,?callable $beforeWrite=null,
+                         ?array $expectedNativeEntitlement=null): array {
     $dispatched=false;
     try {
         if (!$absoluteChanges || array_diff(array_keys($absoluteChanges),['data_limit','expire','status','group_ids']))
@@ -222,6 +236,9 @@ function achbotPgModify(array $panel,array $identity,array $absoluteChanges,
         $before=achbotPgRead($panel,$identity);
         if (!$before['success']) return $before;
         if (!achbotPgManaged($before['user'])) return achbotPgFailure('pg_native_schedule_conflict');
+        if ($expectedNativeEntitlement!==null &&
+            !achbotPgExpectedEntitlementMatches($before['user'],$expectedNativeEntitlement))
+            return achbotPgFailure('pg_recovery_native_drift_before_write');
         if ($requiredCurrentGroups!==null) {
             // Scoped financial effects own their durable account mutation
             // fence already. Reverify the complete native Group membership
@@ -264,10 +281,15 @@ function achbotPgModify(array $panel,array $identity,array $absoluteChanges,
         return $read;
     } catch (Throwable $e) {return achbotPgFailure($dispatched?'pg_modify_unconfirmed':'pg_modify_invalid',$dispatched);}
 }
-function achbotPgAction(array $panel,array $identity,string $action): array {
+function achbotPgAction(array $panel,array $identity,string $action,
+                       ?array $expectedNativeEntitlement=null): array {
     $before=achbotPgRead($panel,$identity);
     if (!$before['success']) return $before;
     if (!achbotPgManaged($before['user'])) return achbotPgFailure('pg_native_schedule_conflict');
+    if ($expectedNativeEntitlement!==null &&
+        ($action!=='reset' ||
+         !achbotPgExpectedEntitlementMatches($before['user'],$expectedNativeEntitlement)))
+        return achbotPgFailure('pg_recovery_native_drift_before_reset');
     $r=achbotPgRequest($panel,$action==='delete'?'DELETE':'POST',
         '/api/user/by-id/'.$identity['remote_user_id'].($action==='delete'?'':'/'.$action));
     if (!$r['success']) return $r;
@@ -294,7 +316,10 @@ function achbotPgAction(array $panel,array $identity,string $action): array {
         return achbotPgFailure('pg_revoke_identity_unconfirmed',true,$read['http']);
     return $read;
 }
-function achbotPgReset(array $panel,array $identity): array {return achbotPgAction($panel,$identity,'reset');}
+function achbotPgReset(array $panel,array $identity,
+                       ?array $expectedNativeEntitlement=null): array {
+    return achbotPgAction($panel,$identity,'reset',$expectedNativeEntitlement);
+}
 function achbotPgRevoke(array $panel,array $identity): array {return achbotPgAction($panel,$identity,'revoke_sub');}
 function achbotPgDelete(array $panel,array $identity): array {return achbotPgAction($panel,$identity,'delete');}
 function achbotPgLinks(array $panel,array $identity,string $format='links'): array {

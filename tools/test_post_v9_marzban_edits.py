@@ -202,6 +202,22 @@ def main():
                          "global $connection;"
                          "return achbotApplyServiceEdit($connection,$serverId,$change);}\n")
 
+        with (source/'functions-under-test.php').open('a') as facade:
+            facade.write("""
+function achbotOwnedPaidCapture($sid,$change,$file){
+ global $connection;
+ $change['_paid_intent_capture']=static function(array $intent)use($file):bool{
+     return file_put_contents($file,json_encode($intent,JSON_THROW_ON_ERROR))!==false;};
+ return achbotApplyServiceEdit($connection,$sid,$change);
+}
+function achbotOwnedPaidRecover($sid,$change,$intent,$operator=true){
+ global $connection;
+ return achbotMarzbanRecoverEdit($connection,$sid,$change,
+     ['kind'=>isset($change['plus_day'])?'day':'volume',
+      'native_intent'=>$intent],$operator);
+}
+""")
+
         for mode,kwargs,want,puts,resets in (
             ('edit-verified',{'plus_volume':1},'verified',1,0),
             ('edit-lost-applied',{'plus_volume':1},'reconciled',1,0),
@@ -250,6 +266,73 @@ def main():
                 if panel.edit_account['data_limit']!=expected_volume:
                     raise RuntimeError('Remote quota did not really change: '+mode)
             cases.append(mode+'_source_native_'+want)
+
+        # Review #197: the FIRST remote baseline/absolute target is stored
+        # before a paid additive PUT. The lost PHP response cannot grant a
+        # second relative increment when staff completes the same invoice.
+        for label,change,field,delta in (
+            ('volume',{'plus_volume':1},'data_limit',GIB),
+            ('day',{'plus_day':1},'expire',86400)):
+            intent_file=source/('paid-'+label+'.json')
+            def run_paid(fn,args):
+                got=native.run(work,env,source,native.DBS[1],
+                    {'function':fn,'args':args})
+                assert got['exception'] is None and not got['warnings'] and not got['stdout'],got
+                return got['result']
+            for first_mode in ('edit-lost-applied','edit-noop'):
+                panel.mode=first_mode
+                panel.trace.clear();panel.edit_account=copy.deepcopy(INITIAL)
+                panel.edit_put_count=0;panel.edit_reset_count=0
+                if intent_file.exists():intent_file.unlink()
+                financial_before=native.sql(work,env,
+                    'SELECT wallet FROM users ORDER BY id; SELECT state FROM pays ORDER BY id;'
+                    'SELECT id FROM increase_order ORDER BY id',native.DBS[1])
+                original=run_paid('achbotOwnedPaidCapture',
+                    [2,{'remark':'fixture-user',**change},str(intent_file)])
+                assert intent_file.exists(),(label,first_mode,original)
+                intent=json.loads(intent_file.read_text())
+                expected=intent['absolute'][field]
+                assert intent['version']==1 and intent['kind']==label
+                assert intent['before'][field]==INITIAL[field]
+                assert expected==INITIAL[field]+delta
+                if first_mode=='edit-lost-applied':
+                    assert panel.edit_account[field]==expected,(label,panel.edit_account)
+                else:
+                    assert original['success'] is False and panel.edit_account[field]==INITIAL[field]
+                count=panel.edit_put_count
+                panel.mode='edit-verified'
+                recovered=run_paid('achbotOwnedPaidRecover',
+                    [2,{'remark':'fixture-user',**change},intent,True])
+                assert recovered['success'] is True and recovered['verified'] is True,(label,first_mode,recovered)
+                assert panel.edit_account[field]==expected,(label,first_mode,panel.edit_account)
+                want=count+(0 if first_mode=='edit-lost-applied' else 1)
+                assert panel.edit_put_count==want,(label,first_mode,panel.trace)
+                repeat=run_paid('achbotOwnedPaidRecover',
+                    [2,{'remark':'fixture-user',**change},intent,True])
+                assert repeat['success'] is True and panel.edit_put_count==want
+                denied=run_paid('achbotOwnedPaidRecover',
+                    [2,{'remark':'fixture-user',**change},intent,False])
+                assert denied['success'] is False and panel.edit_put_count==want
+                assert native.sql(work,env,
+                    'SELECT wallet FROM users ORDER BY id; SELECT state FROM pays ORDER BY id;'
+                    'SELECT id FROM increase_order ORDER BY id',native.DBS[1])==financial_before
+                cases.append('operator_'+label+'_'+first_mode+'_original_absolute_once')
+
+                for drift,changed in (
+                    ('quota',{'data_limit':6*GIB}),
+                    ('expiry',{'expire':1900000000}),
+                    ('status',{'status':'disabled'}),
+                    ('protocol',{'inbounds':{'vless':['other']}})):
+                    panel.edit_account.update(copy.deepcopy(changed))
+                    saved_account=copy.deepcopy(panel.edit_account)
+                    puts=panel.edit_put_count
+                    held=run_paid('achbotOwnedPaidRecover',
+                        [2,{'remark':'fixture-user',**change},intent,True])
+                    assert held['success'] is False and panel.edit_put_count==puts,(label,drift,held)
+                    assert panel.edit_account==saved_account
+                    panel.edit_account=copy.deepcopy(INITIAL)
+                    panel.edit_account[field]=expected
+                cases.append('operator_'+label+'_independent_native_drift_held')
 
         # Exact 240 adapter control: a present JSON NULL expiry previously
         # blocked even a complete positive-days renewal before RESET/PUT.
