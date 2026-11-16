@@ -336,6 +336,25 @@ function achbotEffectAssertNotArchivedLocked(mysqli $db,int $payId,bool $process
     if ($archived) throw new RuntimeException('effect_original_archived');
 }
 
+/** Used by a rearmed CREATE's read-first final verification. Caller must
+ * already own a short SQL transaction; this acquires the same pay -> attempt
+ * locks used by original staff authorization and Archive.
+ */
+function achbotEffectAssertRecoveryPaymentLocked(mysqli $db,int $payId,
+    int $actor,int $primary): void {
+    require_once __DIR__.'/../Admin/Access.php';
+    if ($payId<=0 || $actor<=0 || $primary<=0)
+        throw new RuntimeException('paid_resume_reconciliation_not_authorized');
+    $q=$db->prepare('SELECT type,state FROM pays WHERE id=? FOR UPDATE');
+    $q->bind_param('i',$payId);$q->execute();
+    $pay=$q->get_result()->fetch_assoc();$q->close();
+    if (!$pay || $pay['type']!=='BUY_SUB' ||
+        !in_array($pay['state'],['processing','paid','processing_wallet'],true) ||
+        !achbotAdminCanLocked($db,$actor,$primary,'payments'))
+        throw new RuntimeException('paid_resume_reconciliation_payment_changed');
+    achbotEffectAssertNotArchivedLocked($db,$payId,$pay['state']==='processing');
+}
+
 /**
  * Local reservation is not proof of remote dispatch. In one short transaction,
  * coordinate the actual dispatch admission with Archive via the original
@@ -700,8 +719,12 @@ function achbotEffectLockLinkRows(mysqli $db,int $effectId,bool $paid): array {
  */
 function achbotVerifyMarzbanCreatedEffect(
     mysqli $db,int $effectId,int $serverId,?int $group,
-    string $endpoint,string $operation,array $pinnedTarget
+    string $endpoint,string $operation,array $pinnedTarget,
+    string $expectedState='dispatching',int $payId=0,
+    int $actor=0,int $primary=0
 ): void {
+    if (!in_array($expectedState,['reserved','dispatching'],true))
+        throw new RuntimeException('effect_verification_state_invalid');
     $transaction=false;
     try {
         $status=$db->query('SELECT @@in_transaction AS active_transaction');
@@ -709,6 +732,8 @@ function achbotVerifyMarzbanCreatedEffect(
             throw new RuntimeException('effect_verification_requires_autocommit');
         if (!$db->begin_transaction()) throw new RuntimeException('effect_verification_begin_failed');
         $transaction=true;
+        if ($expectedState==='reserved')
+            achbotEffectAssertRecoveryPaymentLocked($db,$payId,$actor,$primary);
         // Claimants already lock config via the plan preflight, then info for
         // capacity. Explicit PK locks prevent an UPDATE JOIN from taking the
         // inverse info -> config order after the remote CREATE has succeeded.
@@ -729,11 +754,11 @@ function achbotVerifyMarzbanCreatedEffect(
             ($server['panel_group_id']===null?null:(int)$server['panel_group_id'])!==$group)
             throw new RuntimeException('effect_credentials_changed_post');
         $stmt=$db->prepare("UPDATE service_effects SET state='verified',verified_at=NOW()
-            WHERE id=? AND state='dispatching' AND order_id IS NULL
+            WHERE id=? AND state=? AND order_id IS NULL
               AND target_server_id=? AND target_group_id <=> ?
               AND endpoint_sha256=? AND operation_id=?");
         if (!$stmt) throw new RuntimeException('effect_verification_prepare_failed');
-        $stmt->bind_param('iiiss',$effectId,$serverId,$group,$endpoint,$operation);
+        $stmt->bind_param('isiiss',$effectId,$expectedState,$serverId,$group,$endpoint,$operation);
         if (!$stmt->execute() || $stmt->affected_rows!==1)
             throw new RuntimeException('effect_verification_unconfirmed');
         $stmt->close();

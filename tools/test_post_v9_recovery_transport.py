@@ -14,6 +14,7 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs
+from urllib.request import Request,urlopen
 
 import test_access_state as owned
 import test_v8_native as purchase
@@ -67,11 +68,30 @@ if ($spec['op']==='native_resume') {
         require_once $root.'/src/Finance/PaidAccountRecovery.php';
         $payId=(int)$spec['pay'];
         $n=(int)($spec['ordinal']??1);
-        $answer=achbotContinuePaidAccount($connection,$payId,$n,[
-            'user_id'=>1001,'server_type'=>'marzban','server_id'=>2,
-            'plan_id'=>7,'inbound_id'=>0,'volume'=>8,'days'=>9]);
-        $result=['status'=>'verified','effect_id'=>$answer[3],
-            'remark'=>$answer[1],'subscription'=>$answer[0]->sub_link];
+        $actor=(int)($spec['actor']??0);
+        $lease=null;
+        if ($actor>0) {
+            require_once $root.'/src/Finance/GatewayClient.php';
+            $lease=achbotHostedWorkerLockName($connection,$payId);
+            $q=$connection->prepare('SELECT GET_LOCK(?,0) AS acquired');
+            $q->bind_param('s',$lease);$q->execute();
+            $ok=$q->get_result()->fetch_assoc();$q->close();
+            if ((int)($ok['acquired']??0)!==1)
+                throw new RuntimeException('fixture_original_payment_lease_unavailable');
+        }
+        try {
+            $answer=achbotContinuePaidAccount($connection,$payId,$n,[
+                'user_id'=>1001,'server_type'=>'marzban','server_id'=>2,
+                'plan_id'=>7,'inbound_id'=>0,'volume'=>8,'days'=>9],
+                null,$actor,$actor);
+            $result=['status'=>'verified','effect_id'=>$answer[3],
+                'remark'=>$answer[1],'subscription'=>$answer[0]->sub_link];
+        } finally {
+            if ($lease!==null) {
+                $q=$connection->prepare('SELECT RELEASE_LOCK(?)');
+                $q->bind_param('s',$lease);$q->execute();$q->close();
+            }
+        }
     } catch(Throwable $error) {
         // Synthetic fixture only: a bounded native reason code makes a
         // failed login/identity witness actionable in exact PHP85 CI.
@@ -107,6 +127,16 @@ class FixtureHandler(BaseHTTPRequestHandler):
             pass
 
     def do_POST(self):
+        if self.path=='/api/user':
+            # A real loopback Native CREATE, deliberately not acknowledged
+            # to the local paid effect. Simulate PHP terminating after the
+            # provider accepted the FIRST operation.
+            length=int(self.headers.get('Content-Length','0'))
+            created=json.loads(self.rfile.read(length))
+            self.server.trace.append(('POST','/api/user',False))
+            self.server.username=created['username']
+            self.server.account=created
+            return self.reply(201,json.dumps(created).encode())
         length = int(self.headers.get('Content-Length', '0'))
         form = parse_qs(self.rfile.read(min(length, 8192)).decode())
         self.server.trace.append(('POST',self.path, bool(self.headers.get('Authorization'))))
@@ -307,6 +337,76 @@ def check():
         assert recovery.sql(work,env,f'SELECT state FROM service_effects WHERE pay_row_id={pay}')=='verified'
         assert recovery.sql(work,env,'SELECT COUNT(*) FROM orders_list')==baseline[2]
         scenarios.append('native_resume_repeat_read_only_same_identity_no_second_create')
+        # REQUIRED B: the original remote CREATE has really happened and
+        # the local original effect was rearmed to reserved after a lost ACK.
+        # The authenticated Native GET must reconcile it, without another
+        # POST, financial settlement, or capacity debit.
+        rearmed=recovery.create_case(work,env,'loopback-rearmed-existing',
+            count=1,effect_state='reserved')
+        recovery.sql(work,env,
+            f"UPDATE service_effects SET reserved_count=1 WHERE pay_row_id={rearmed}")
+        capacity_before=int(recovery.sql(work,env,"SELECT ucount FROM server_info WHERE id=2"))
+        recovery.sql(work,env,"UPDATE server_info SET ucount=ucount-1 WHERE id=2")
+        paid_capacity=capacity_before-1
+        rearmed_name=f'fx_{rearmed}_1'
+        remote={
+            'username':rearmed_name,
+            'note':'achbot:v1:'+recovery.sql(work,env,
+                f"SELECT operation_id FROM service_effects WHERE pay_row_id={rearmed}"),
+            'expire':int(recovery.sql(work,env,
+                f"SELECT requested_expire FROM service_effects WHERE pay_row_id={rearmed}")),
+            'data_limit':int(recovery.sql(work,env,
+                f"SELECT requested_bytes FROM service_effects WHERE pay_row_id={rearmed}")),
+            'status':'active',
+            'subscription_url':'https://owned.example.invalid/sub/rearmed-native-token',
+            'links':['vless://fixture.native.invalid?security=tls'],
+        }
+        server.trace.clear()
+        with urlopen(Request(server.url+'/api/user',
+              data=json.dumps(remote).encode(),
+              headers={'Content-Type':'application/json'},
+              method='POST'),timeout=5) as reply:
+            assert reply.status==201
+        before_posts=[event for event in server.trace
+                      if event[:2]==('POST','/api/user')]
+        assert len(before_posts)==1
+        assert recovery.sql(work,env,f"SELECT state FROM service_effects WHERE pay_row_id={rearmed}")=='reserved'
+        before_finances=recovery.unchanged(work,env,rearmed)
+        server.mode='ok'
+        repaired=call(work,env,driver,op='native_resume',pay=rearmed,actor=9001)
+        assert repaired['result']['status']=='verified',repaired
+        assert repaired['result']['remark']==rearmed_name
+        assert repaired['result']['subscription']=='/sub/rearmed-native-token'
+        assert recovery.sql(work,env,f"SELECT state FROM service_effects WHERE pay_row_id={rearmed}")=='verified'
+        assert recovery.sql(work,env,f"SELECT ucount FROM server_info WHERE id=2")==str(paid_capacity)
+        assert recovery.unchanged(work,env,rearmed)[0]==before_finances[0]
+        assert recovery.unchanged(work,env,rearmed)[2]==before_finances[2]
+        assert len([event for event in server.trace
+                    if event[:2]==('POST','/api/user')])==1,server.trace
+        scenarios.append('marzban_rearmed_original_native_post_lost_ack_readfirst_zero_additional_posts')
+        server.trace.clear()
+        repeated=call(work,env,driver,op='native_resume',pay=rearmed)
+        assert repeated['result']==repaired['result']
+        assert len([event for event in server.trace
+                    if event[:2]==('POST','/api/user')])==0
+        scenarios.append('marzban_rearmed_verified_repeat_remains_readonly_same_effect')
+
+        # Verified foreign account presence holds, rather than attempting
+        # a second native CREATE on an occupied username.
+        foreign=recovery.create_case(work,env,'loopback-rearmed-foreign',
+            count=1,effect_state='reserved')
+        server.username=f'fx_{foreign}_1'
+        server.account={
+            **remote,
+            'username':server.username,
+            'note':'foreign-operator',
+        }
+        server.trace.clear()
+        held=call(work,env,driver,op='native_resume',pay=foreign,actor=9001)
+        assert held['result']['status']=='deferred' and             held['result']['reason']=='paid_resume_native_mismatch',held
+        assert recovery.sql(work,env,f"SELECT state FROM service_effects WHERE pay_row_id={foreign}")=='reserved'
+        assert all(event[:2]!=('POST','/api/user') for event in server.trace)
+        scenarios.append('marzban_rearmed_foreign_account_holds_without_repost')
     return {'complete':True,'cases':len(scenarios),'scenarios':scenarios,
             'real_curl_login_and_get':True,
             'loopback_only':True,'max_account_get_per_inspection':1,

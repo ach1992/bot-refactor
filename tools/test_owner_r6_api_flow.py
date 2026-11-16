@@ -288,6 +288,39 @@ return !empty($GLOBALS['spec']['fail_staff'])?null:(object)['ok'=>true];}""")
         php=php.replace("function sendMessage($text=null,$keys=null,$mode=null,$to=null) {","function sendMessage($text=null,$keys=null,$mode=null,$to=null) {if(!empty($GLOBALS['spec']['fail_customer_ack']) && $to===null)throw new RuntimeException('fixture_customer_ack_failure');if(!empty($GLOBALS['spec']['fail_terminal_customer']) && (int)$to===1001 && in_array(fixtureState(),['approved','auto_cart_approved'],true))return(object)['ok'=>false];")
         php=php.replace("return (object)['ok'=>true];\n}\nfunction editKeys", "return (object)['ok'=>true,'result'=>(object)['message_id'=>456]];\n}\nfunction editKeys")
         php=php.replace("    if ($strict!==true) throw new RuntimeException('non_strict_remote_get');", "    if((int)$GLOBALS['connection']->query('SELECT @@in_transaction')->fetch_row()[0]!==0)throw new RuntimeException('fixture_native_get_under_financial_lock');\n    if(str_starts_with($name,'api_edit'))return(object)['username'=>$name,'status'=>'active','expire'=>1900000000,'data_limit'=>10737418240,'used_traffic'=>0];\n    if ($strict!==true) throw new RuntimeException('non_strict_remote_get');")
+        # Strict transport is covered by the real authenticated Marzban
+        # HTTP loopback suite. Only this private financial fixture may
+        # recover a physical account from a previous PHP process.
+        transport=app/'src/Finance/RecoveryTransport.php'
+        old_transport=transport.read_text()
+        transport_anchor="    $base=achbotRecoveryEndpoint($endpoint);"
+        assert old_transport.count(transport_anchor)==1
+        transport.write_text(old_transport.replace(transport_anchor,r'''
+    if (($GLOBALS['spec']['remote_reappeared']??false)===true) {
+        global $connection;
+        $payId=(int)($GLOBALS['spec']['pay']??0);
+        $q=$connection->prepare("SELECT e.*,c.panel_url,c.username AS panel_user,
+            c.password AS panel_password FROM service_effects e
+            JOIN server_config c ON c.id=e.target_server_id
+            WHERE e.pay_row_id=? AND e.effect_kind='create'
+              AND e.remote_username=? LIMIT 1");
+        $q->bind_param('is',$payId,$username);$q->execute();
+        $old=$q->get_result()->fetch_assoc();$q->close();
+        if (!$old || $endpoint!==rtrim((string)$old['panel_url'],'/') ||
+            $adminUser!==$old['panel_user'] || $adminPassword!==$old['panel_password'])
+            throw new RuntimeException('fixture_original_native_target_changed');
+        $GLOBALS['events'][]=['event'=>'NATIVE_GET','username'=>$username,
+            'effect_id'=>(int)$old['id']];
+        return (object)[
+            'username'=>$username,'note'=>'achbot:v1:'.$old['operation_id'],
+            'expire'=>(int)$old['requested_expire'],
+            'data_limit'=>(int)$old['requested_bytes'],
+            'status'=>'active',
+            'subscription_url'=>'https://fixture.invalid/sub/original-verified',
+            'links'=>['vless://native-fixture.invalid:443'],
+        ];
+    }
+''' + transport_anchor,1))
         # Controlled process-loss injection in disposable source, never runtime hooks.
         flow=app/'src/Finance/ApiPayments.php';flow.write_text(flow.read_text().replace('$delivery=achbotAutoBankProvisionBuySub(',"if(!empty($GLOBALS['spec']['crash_before_native']))throw new RuntimeException('fixture_crash_after_claim');\n            $delivery=achbotAutoBankProvisionBuySub(").replace("$result=(object)($payload['result']??[]);","if(!empty($GLOBALS['spec']['crash_after_verified']))throw new RuntimeException('fixture_crash_after_verified');\n    $result=(object)($payload['result']??[]);"))
 
@@ -1006,6 +1039,46 @@ DELIMITER ;''')
             pay_row_id={n} AND effect_kind='create'""")=='local_recorded'
         assert call(op='settle',pay=n)['result']=='settled'
         cases.append('marzban_original_reserved_rearm_crash_recovers_without_duplicate_capacity')
+
+        # REQUIRED B: a first paid CREATE reached Native, lost its ACK,
+        # and the original effect was rearmed to reserved before PHP exited.
+        # Staff must reconcile that existing original account without POST.
+        APIs.rows={}
+        n=seed('rearm_exists_original','BUY_SUB')
+        sms(n)
+        first=call(pay=n,mode='lost')
+        assert first['result']=='review' and state(n)=='processing',first
+        original=query(work,env,f"""SELECT id,ordinal,operation_id,remote_username,
+            reserved_count FROM service_effects WHERE pay_row_id={n}
+            AND effect_kind='create'""").split('\t')
+        capacity_now=query(work,env,'SELECT ucount FROM server_info WHERE id=2')
+        query(work,env,f"""UPDATE service_effects SET state='reserved'
+            WHERE pay_row_id={n} AND effect_kind='create' AND state='dispatching'""")
+        assert query(work,env,f"""SELECT state FROM service_effects
+            WHERE pay_row_id={n} AND effect_kind='create'""")=='reserved'
+        preview=call(op='review_resume',pay=n,actor=9001)
+        confirms=[b['callback_data'] for e in preview['events']
+                  if e['event']=='EDIT' for row in e['buttons']['inline_keyboard']
+                  for b in row if b['callback_data'].startswith('apiEvidenceExecute_')]
+        assert len(confirms)==1,preview
+        done=call(op='review_execute',pay=n,actor=9001,
+                  callback=confirms[0],remote_reappeared=True)
+        assert state(n)=='auto_cart_approved' and \
+            sum(e['event']=='POST' for e in done['events'])==0 and \
+            sum(e['event']=='NATIVE_GET' for e in done['events'])==1,done
+        after=query(work,env,f"""SELECT id,ordinal,operation_id,remote_username,
+            reserved_count FROM service_effects WHERE pay_row_id={n}
+            AND effect_kind='create'""").split('\t')
+        assert after==original and \
+            query(work,env,'SELECT ucount FROM server_info WHERE id=2')==capacity_now
+        assert query(work,env,f"""SELECT state FROM service_effects
+            WHERE pay_row_id={n} AND effect_kind='create'""")=='local_recorded'
+        assert int(query(work,env,
+            f"SELECT COUNT(*) FROM service_effects WHERE pay_row_id={n} AND effect_kind='create'"))==1
+        assert int(query(work,env,
+            f"SELECT COUNT(*) FROM payment_delivery_intents WHERE pay_row_id={n}"))==1
+        assert call(op='settle',pay=n)['result']=='settled'
+        cases.append('marzban_remote_create_preexisting_rearmed_original_payment_completed_without_post')
 
         # Original API evidence is encrypted and committed BEFORE the
         # additive adapter may report a lost Native acknowledgement.

@@ -66,8 +66,14 @@ does not send duplicate standalone administrator messages.
   re-dispatches the **same original effect/ordinal/username**, with no second
   capacity debit. If rearm commits the original CREATE effect to `reserved`
   and PHP stops before dispatch admission, the next authorized staff action
-  continues that same reservation rather than allocating a new effect. Unique
-  provider account names remain the remote duplicate backstop. For **renewal**,
+  **first performs the registered provider's authenticated Native observation**
+  again. A matching previously created account is reconciled into the same
+  original effect with zero additional POSTs. A verified foreign account holds
+  for review; if Native is unavailable, only the authorized original staff
+  recovery path may attempt reissue under provider duplicate safeguards.
+  Original payment/Archive/permission are checked again under the local final
+  verification transaction. Unique provider account names remain the remote
+  duplicate backstop. For **renewal**,
   repeating the absolute plan/reset is permitted
   automatically on the already-funded original invoice, including a small
   expiry-time difference. For **volume/time extensions**, an automatic retry
@@ -81,9 +87,15 @@ does not send duplicate standalone administrator messages.
   on the reviewable case; it never invents baseline proof or repeats a
   relative increment. The PasarGuard adapter uses its existing durable
   original mutation snapshot with the same baseline/target reconciliation.
+  PasarGuard recovery also carries the expected Native entitlement into the
+  provider's final authenticated GET immediately before RESET and PUT. When a
+  legitimate RESET has occurred, PUT must match that RESET's verified
+  entitlement (including status), not the stale pre-RESET observation.
   Native quota, expiry, status, Groups or account-configuration drift is a
   **reviewable hold**, not permission to overwrite a later panel edit or
-  reset usage unexpectedly. Both adapters preserve the same local accounting
+  reset usage unexpectedly. A provider without atomic conditional Native
+  writes still has an external race after that final GET; never claim a
+  cross-provider exactly-once guarantee. Both adapters preserve the same local accounting
   once and the original delivery journal. The same four operation meanings
   apply to any registered provider; future Native adapters must implement
   the registered recovery callbacks and prove equivalent reconciliation

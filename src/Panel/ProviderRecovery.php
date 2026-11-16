@@ -157,14 +157,33 @@ function achbotPgRecoverEdit(mysqli $db,int $serverId,array $params,
                 // caller. This PUT uses a stored ABSOLUTE target, never
                 // current + purchased units, so even additive retry does not
                 // grant another copy of the original purchase.
+                $expectedNative=$native;
                 if (($changes['reset_usage']??false)===true ||
                     array_key_exists('volume',$params)) {
-                    $reset=achbotPgReset($ctx['panel'],$ctx['identity']);
+                    // RESET performs a second authenticated GET. Enforce the
+                    // original persisted baseline at THAT boundary, not only
+                    // at the coordinator's first observation.
+                    $reset=achbotPgReset($ctx['panel'],$ctx['identity'],$native);
                     if (($reset['success']??false)!==true)
                         throw new RuntimeException('pg_recovery_reset_unverified');
+                    $expectedNative=$reset['user']??null;
+                    // RESET may naturally reactivate an expired/limited
+                    // account, but it cannot authorize a quota/expiry/group
+                    // edit or an unrelated disable before the following PUT.
+                    if (!is_array($expectedNative) ||
+                        $expectedNative['data_limit']!==$native['data_limit'] ||
+                        $expectedNative['expire']!==$native['expire'] ||
+                        $expectedNative['group_ids']!==$native['group_ids'] ||
+                        ($expectedNative['status']!==$native['status'] &&
+                         !($expectedNative['status']==='active' &&
+                           in_array($native['status'],['expired','limited'],true))))
+                        throw new RuntimeException('pg_recovery_reset_entitlement_changed');
                 }
+                // PUT performs its own fresh authenticated GET. Require the
+                // exact state observed after RESET (or initial baseline when
+                // there was no RESET) right before the physical write.
                 $write=achbotPgModify($ctx['panel'],$ctx['identity'],$absolute,
-                    $native['group_ids']);
+                    $native['group_ids'],null,$expectedNative);
                 if (($write['success']??false)!==true ||
                     $write['user']['group_ids']!==$native['group_ids'])
                     throw new RuntimeException('pg_recovery_native_write_unverified');
@@ -224,9 +243,12 @@ function achbotMarzbanRecoverCreate(mysqli $db,int $payId,int $ordinal,
     array $effect,array $request,int $actor,int $primary,
     ?callable $exactAccountGet=null): array {
     try {
-        return achbotContinueMarzbanPaidAccount($db,$payId,$ordinal,$effect,$exactAccountGet);
+        return achbotContinueMarzbanPaidAccount($db,$payId,$ordinal,$effect,
+            $exactAccountGet,$actor>0 && $effect['state']==='reserved',
+            $actor,$primary);
     } catch (RuntimeException $error) {
-        if ($actor<=0 || $effect['state']!=='dispatching' ||
+        if ($actor<=0 ||
+            !in_array($effect['state'],['dispatching','reserved'],true) ||
             $error->getMessage()!=='paid_resume_native_not_proven')
             throw $error;
         return achbotRetryOriginalPaidCreate($db,$payId,$ordinal,$effect,$request,
@@ -237,9 +259,11 @@ function achbotPgRecoverCreate(mysqli $db,int $payId,int $ordinal,
     array $effect,array $request,int $actor,int $primary,
     ?callable $exactAccountGet=null): array {
     try {
-        return achbotContinuePasarGuardPaidAccount($db,$payId,$ordinal,$effect);
+        return achbotContinuePasarGuardPaidAccount($db,$payId,$ordinal,$effect,
+            $actor,$primary);
     } catch (RuntimeException $error) {
-        if ($actor<=0 || $effect['state']!=='dispatching' ||
+        if ($actor<=0 ||
+            !in_array($effect['state'],['dispatching','reserved'],true) ||
             $error->getMessage()!=='paid_resume_native_unavailable')
             throw $error;
         return achbotRetryOriginalPaidCreate($db,$payId,$ordinal,$effect,$request,
