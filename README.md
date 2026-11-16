@@ -42,7 +42,7 @@ Each bot has its own database, webhook, private configuration and Cron job. The 
 - [Fresh installation](docs/post-v9/FRESH-INSTALL.md) · [Installed-runtime diagnostics](docs/post-v9/INSTALL-DIAGNOSTICS.md)
 - [Provider storage and account identity](docs/post-v9/SHARED-PROVIDER-STORAGE.md) · [Service/plan changes](docs/post-v9/SHARED-SERVICE-TRANSFER.md)
 - [PasarGuard API and groups](docs/post-v9/PASARGUARD-CONTRACT.md) · [Unified service management](docs/post-v9/UNIFIED-SERVICE-MANAGEMENT.md)
-- [Financial safeguards](docs/post-v9/FINANCIAL-CONSOLIDATION.md) · [Payment recovery](docs/post-v9/PAYMENT-DELIVERY-RECOVERY.md) · [Operator exception inbox](docs/post-v9/AUTOMATIC-GATEWAY-REVIEW.md) · [API evidence](docs/post-v9/API-PAYMENT-EVIDENCE.md)
+- [Financial safeguards](docs/post-v9/FINANCIAL-CONSOLIDATION.md) · [Wallet finality and recovery](docs/post-v9/WALLET-FINALITY-RECOVERY.md) · [Payment recovery](docs/post-v9/PAYMENT-DELIVERY-RECOVERY.md) · [Operator exception inbox](docs/post-v9/AUTOMATIC-GATEWAY-REVIEW.md) · [API evidence](docs/post-v9/API-PAYMENT-EVIDENCE.md)
 - [Subscription presentation](docs/post-v9/SUBSCRIPTION-PRESENTATION.md) · [Scheduled renewals](docs/post-v9/AUTOMATIC-RENEWAL-SAFETY.md)
 - [Telegram transport diagnostics](docs/post-v9/TELEGRAM-DIAGNOSTICS.md) · [Current CI contract](docs/post-v9/CI-VALIDATION.md) · [Security](docs/SECURITY.md)
 

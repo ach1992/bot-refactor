@@ -1,6 +1,6 @@
 # Wallet finality, Native uncertainty, and original-operation recovery
 
-Owner: Finance (Issue [#26](https://github.com/ach1992/bot-refactor/issues/26)). This describes the **current source candidate**, not an installed Production release, recovery authorization or deployment instruction.
+Owner: Finance (Issue [#26](https://github.com/ach1992/bot-refactor/issues/26)). This describes the **current supported source contract**, not proof of installed Production behavior, recovery authorization or deployment instructions.
 
 ## Contract and transaction boundaries
 
