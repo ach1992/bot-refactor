@@ -591,8 +591,25 @@ def sandbox(*, imported_empty=False):
                             'achbot.native.account_action',
                             'achbot.delivery.',
                         )
-                        if not isinstance(name,str) or not name.startswith(expected):
+                        if not isinstance(name,str) or not (
+                            name.startswith(expected) or
+                            name=='achbot.native.edit_result_unverified'):
                             return False
+                        if name=='achbot.native.edit_result_unverified':
+                            # This new readback/ACK diagnostic is deliberately
+                            # accepted by exact name only. Require bounded,
+                            # typed payment identity and machine-only reason;
+                            # unexpected log events remain test failures.
+                            reason=event.get('reason')
+                            if (not isinstance(event.get('pay_id'),int) or
+                                event['pay_id']<=0 or
+                                not isinstance(event.get('order_id'),int) or
+                                event['order_id']<=0 or
+                                event.get('stage')!='native_result' or
+                                event.get('result')!='review' or
+                                not isinstance(reason,str) or
+                                re.fullmatch(r'pg_[a-z0-9_]{2,90}',reason) is None):
+                                return False
                         disallowed={'token','secret','password','url',
                             'payload','raw_text','bank_account','sms_text','username'}
                         return (isinstance(event.get('trace_id'),str)
