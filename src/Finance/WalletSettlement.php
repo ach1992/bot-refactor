@@ -14,6 +14,7 @@ if (!function_exists('processWalletPayment')) {
         global $from_id, $admin, $botState;
         // A confirmed commit cannot be undone after calling Marzban.
         $heldDebit=false;
+        $holdCommitAttempted=false;
 
         try {
             // The preview is an autocommit read OUTSIDE the financial
@@ -315,6 +316,35 @@ if (!function_exists('processWalletPayment')) {
                 $payInfo['_achbot_wallet_locked_plan']=$plan;
             }
 
+            if (!$paidCreate) {
+                // An external Marzban renewal must use the SAME locked plan
+                // and original account quote after the debit COMMIT. No
+                // mutable plan reread may change the paid service dimensions.
+                if (($payInfo['type']??null)!=='RENEW_SCONFIG')
+                    throw new RuntimeException('wallet_renew_subject_invalid');
+                $subject=json_decode((string)($payInfo['description']??''),true);
+                if (!is_array($subject) || ($subject['marzban']??null)!==true ||
+                    !is_string($subject['remark']??null) || $subject['remark']==='' ||
+                    (int)($subject['server_id']??0)!==(int)$payInfo['server_id'] ||
+                    (int)($payInfo['volume']??-1)!==0)
+                    throw new RuntimeException('wallet_renew_account_invalid');
+                $planId=(int)$payInfo['plan_id'];
+                $renewStmt=$connection->prepare('SELECT p.*,c.type AS panel_type,c.panel_url AS panel_url
+                    FROM server_plans p JOIN server_config c ON c.id=p.server_id
+                    WHERE p.id=? FOR UPDATE');
+                if (!$renewStmt) throw new RuntimeException('wallet_renew_plan_prepare');
+                $renewStmt->bind_param('i',$planId);
+                if (!$renewStmt->execute()) throw new RuntimeException('wallet_renew_plan_read');
+                $renewPlan=$renewStmt->get_result()->fetch_assoc();$renewStmt->close();
+                if (!$renewPlan || (int)$renewPlan['server_id']!==(int)$payInfo['server_id'] ||
+                    (int)$renewPlan['inbound_id']!==0 || (int)$renewPlan['active']!==1 ||
+                    $renewPlan['panel_type']!=='marzban' ||
+                    achbotWholeServiceUnits($renewPlan['days'],36500)===null ||
+                    achbotWholeServiceUnits($renewPlan['volume'],achbotServiceVolumeMax(),true)===null)
+                    throw new RuntimeException('wallet_renew_plan_changed');
+                $payInfo['_achbot_wallet_locked_plan']=$renewPlan;
+            }
+
             $stmt = $connection->prepare("UPDATE `pays` SET `state`='processing_wallet' WHERE `hash_id`=? LIMIT 1");
             $stmt->bind_param("s", $hashId);
             $marked=$stmt->execute();
@@ -341,6 +371,7 @@ if (!function_exists('processWalletPayment')) {
                 // Durable payment state and debit COMMIT before HTTP.
                 // The effect helper commits full-count capacity + operation
                 // identity separately before it sends the first POST.
+                $holdCommitAttempted=true;
                 if ($connection->commit()!==true)
                     throw new RuntimeException('wallet_hold_commit_unknown');
                 $heldDebit=true;
@@ -361,24 +392,62 @@ if (!function_exists('processWalletPayment')) {
                 if ($connection->commit()!==true)
                     throw new RuntimeException('wallet_finish_commit_unknown');
             } else {
-                // Existing non-CREATE financial workflow remains unchanged.
-                if (!call_user_func($handler,$payInfo,$userRow)) {
-                    $connection->rollback();
-                    return [
-                        'status'=>'business_failed','payInfo'=>$payInfo,
-                        'userRow'=>$userRow,'userReferrer'=>$userReferrer,
-                        'uid'=>$uid,'price'=>$price
-                    ];
-                }
-                $stmt=$connection->prepare("UPDATE pays SET state='paid_with_wallet'
-                    WHERE hash_id=? AND state='processing_wallet'");
-                if (!$stmt) throw new RuntimeException('wallet_finish_prepare');
-                $stmt->bind_param('s',$hashId);
-                if (!$stmt->execute() || $stmt->affected_rows!==1)
-                    throw new RuntimeException('wallet_commit_unverified');
-                $stmt->close();
+                // The original payment claim and debit are now durable before
+                // ANY renewal-side Marzban GET/RESET/PUT. Never roll back the
+                // wallet for an uncertain external result or SQL finalization.
+                $holdCommitAttempted=true;
                 if ($connection->commit()!==true)
-                    throw new RuntimeException('wallet_commit_unverified');
+                    throw new RuntimeException('wallet_renew_hold_commit_unknown');
+                $heldDebit=true;
+                $payInfo['state']='processing_wallet';
+                $outcome=call_user_func($handler,$payInfo,$userRow);
+                $audit=is_array($outcome)?($outcome['wallet_renewal']??null):null;
+                $pinned=$payInfo['_achbot_wallet_locked_plan'];
+                $account=json_decode((string)$payInfo['description'],true);
+                if (!is_array($audit) || !is_array($account) ||
+                    (int)($audit['pay_id']??0)!==(int)$payInfo['id'] ||
+                    (int)($audit['user_id']??0)!==$uid ||
+                    (int)($audit['server_id']??0)!==(int)$pinned['server_id'] ||
+                    (int)($audit['inbound_id']??-1)!==0 ||
+                    (string)($audit['remark']??'')!==(string)$account['remark'] ||
+                    (int)($audit['amount']??0)!==$price ||
+                    (int)($audit['days']??0)!==(int)$pinned['days'] ||
+                    (int)($audit['volume']??-1)!==(int)$pinned['volume'] ||
+                    (int)($audit['date']??0)<=0)
+                    throw new RuntimeException('wallet_renew_verified_audit_missing');
+                if ($connection->begin_transaction()!==true)
+                    throw new RuntimeException('wallet_renew_finish_begin');
+                $finish=$connection->prepare('SELECT id,state,type,user_id,hash_id,price,
+                    plan_id,server_id,description,volume FROM pays WHERE id=? FOR UPDATE');
+                if (!$finish) throw new RuntimeException('wallet_renew_finish_prepare');
+                $payId=(int)$payInfo['id'];
+                $finish->bind_param('i',$payId);
+                if (!$finish->execute()) throw new RuntimeException('wallet_renew_finish_read');
+                $locked=$finish->get_result()->fetch_assoc();$finish->close();
+                if (!$locked || $locked['state']!=='processing_wallet' ||
+                    $locked['type']!=='RENEW_SCONFIG' ||
+                    (int)$locked['user_id']!==$uid ||
+                    (string)$locked['hash_id']!==(string)$hashId ||
+                    (int)$locked['price']!==$price ||
+                    (int)$locked['plan_id']!==(int)$pinned['id'] ||
+                    (int)$locked['server_id']!==(int)$pinned['server_id'] ||
+                    (int)$locked['volume']!==0 ||
+                    (string)$locked['description']!==(string)$payInfo['description'])
+                    throw new RuntimeException('wallet_renew_finish_claim_changed');
+                require_once __DIR__.'/../Purchase/OrderWrites.php';
+                createIncreaseOrder($connection,$uid,(int)$audit['server_id'],
+                    0,(string)$audit['remark'],$price,(int)$audit['date'],
+                    (int)$audit['volume'],(int)$audit['days'],true);
+                $finish=$connection->prepare("UPDATE pays SET state='paid_with_wallet'
+                    WHERE id=? AND user_id=? AND hash_id=? AND type='RENEW_SCONFIG'
+                    AND state='processing_wallet'");
+                if (!$finish) throw new RuntimeException('wallet_renew_finish_prepare');
+                $finish->bind_param('iis',$payId,$uid,$hashId);
+                if (!$finish->execute() || $finish->affected_rows!==1)
+                    throw new RuntimeException('wallet_renew_finish_unconfirmed');
+                $finish->close();
+                if ($connection->commit()!==true)
+                    throw new RuntimeException('wallet_renew_finish_commit_unknown');
             }
             $payInfo['state']='paid_with_wallet';
             achbotDiagnosticEvent('achbot.finance.wallet_settled',[
@@ -400,12 +469,13 @@ if (!function_exists('processWalletPayment')) {
                 'pay_id'=>(int)($payInfo['id']??0),
                 'operation'=>(string)($payInfo['type']??'unknown'),
                 'reason'=>(string)$e->getMessage(),'class'=>get_class($e),
-                'stage'=>$heldDebit?'post_commit':'pre_commit'],'warning');
+                'stage'=>$heldDebit?'post_commit':
+                    ($holdCommitAttempted?'claim_commit_unknown':'pre_commit')],'warning');
             // The SQL commit or remote effect may be ambiguous. A missing
             // connection can also make ROLLBACK fail: never report success.
             try { $connection->rollback(); } catch (Throwable $ignored) {}
 
-            if ($heldDebit)
+            if ($heldDebit || $holdCommitAttempted)
                 error_log('achbot_wallet_held_debit_review hash='.
                     preg_replace('/[^A-Za-z0-9_-]/','',(string)$hashId));
             if ($heldDebit && (int)($payInfo['id']??0)>0) {

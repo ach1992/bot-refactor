@@ -29,6 +29,11 @@ main pushes under the single `php85-validation` required status:
   Runs are parallel but retain each test's own assertions and failure details.
   The JSON receipt records exact HEAD/tree,
   PHP runtime, actual checks and elapsed times.
+- Wallet finality regression suites cover live-source `RENEW_SCONFIG`
+  commit-before-Native ordering (including unknown COMMIT/ACK, crash, races,
+  native panel and plan drift), and **GET-only** original PasarGuard wallet
+  DAY/VOLUME reconciliation, including migration-backed NULL order origin and
+  local accounting failure. See [Wallet finality and recovery](WALLET-FINALITY-RECOVERY.md).
 - Every relevant build produces a reproducible current-source-only runtime
   ZIP, manifest and checksums at the **current exact Git commit**, separate
   from any real database migration or deployment.

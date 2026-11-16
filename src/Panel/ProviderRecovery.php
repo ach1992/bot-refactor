@@ -166,6 +166,11 @@ function achbotPgRecoverEdit(mysqli $db,int $serverId,array $params,
         $native=$read['user'];
         $before=$changes['before']??[];
         $absolute=$changes['absolute']??null;
+        // Wallet reconciliation is GET-only. A claimed-but-unsent original
+        // operation has no applied result to reconcile and must not acquire
+        // a new write intent merely because the operator is authorized.
+        if (($source['observe_only']??false)===true && !is_array($absolute))
+            throw new RuntimeException('pg_recovery_original_result_missing');
         if ($absolute===null && $account['state']==='mutating' &&
             ($changes['phase']??null)==='claimed') {
             // The first worker stopped BEFORE the Native write intent.
@@ -191,6 +196,11 @@ function achbotPgRecoverEdit(mysqli $db,int $serverId,array $params,
             'state'=>(string)$account['state']],$disposition==='drift'?'warning':'info');
         if ($disposition==='drift')
             throw new RuntimeException('pg_recovery_native_entitlement_drift');
+        // Applied-only continuation must NEVER issue a PUT or RESET, even
+        // when an untouched baseline could theoretically be replayed with an
+        // absolute target. Require fresh authenticated proof of application.
+        if (($source['observe_only']??false)===true && $disposition!=='applied')
+            throw new RuntimeException('pg_recovery_original_not_applied');
         if ($account['state']==='linked' &&
             (($saved['result']??null)!=='verified' || $disposition!=='applied'))
             throw new RuntimeException('pg_recovery_already_finished_changed');

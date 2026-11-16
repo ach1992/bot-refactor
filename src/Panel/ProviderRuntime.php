@@ -871,8 +871,24 @@ function achbotPgServiceEdit(mysqli $db,int $serverId,array $change,?array $gift
             if (($reset['success']??false)!==true) throw new RuntimeException('pg_reset_requires_review');
         }
         $r=achbotPgModify($ctx['panel'],$ctx['identity'],$absolute,$scopedGroups);
-        if (($r['success']??false)!==true || $r['user']['group_ids']!==$read['user']['group_ids'])
+        if (($r['success']??false)!==true ||
+            ($r['user']['group_ids']??null)!==$read['user']['group_ids']) {
+            // The outbound PUT may ALREADY have succeeded. Preserve the
+            // original operation fence and log the bounded provider failure
+            // code, rather than reducing every readback/ACK to one opaque
+            // exception. This is diagnostics, never authority to replay.
+            $reason=($r['success']??false)===true?'pg_edit_groups_changed':
+                (string)($r['reason']??'pg_edit_response_unverified');
+            if (preg_match('/^pg_[a-z0-9_]{2,90}$/D',$reason)!==1)
+                $reason='pg_edit_response_unverified';
+            achbotDiagnosticEvent('achbot.native.edit_result_unverified',[
+                'pay_id'=>(int)($change['pay_id']??0),
+                'order_id'=>$referenceOrder,'server_id'=>$serverId,
+                'reason'=>$reason,'stage'=>'native_result',
+                'http_status'=>(int)($r['http']??0),
+                'result'=>'review'],'warning');
             throw new RuntimeException('pg_edit_readback_requires_review');
+        }
         achbotPgFinishMutation($db,$ctx,$intent,$r);
         return (object)['success'=>true,'verified'=>true,
             'before_expire'=>$read['user']['expire'],'applied_expire'=>$r['user']['expire'],
