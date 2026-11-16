@@ -125,7 +125,6 @@ function request($botToken,$runtimeDir,$method,$datas=[]) {
     curl_setopt($ch,CURLOPT_RETURNTRANSFER,true);
     curl_setopt($ch,CURLOPT_TIMEOUT,10);
     curl_setopt($ch,CURLOPT_CONNECTTIMEOUT,5);
-    curl_setopt($ch,CURLOPT_IPRESOLVE,CURL_IPRESOLVE_V4);
     curl_setopt($ch,CURLOPT_HTTPHEADER,['Expect:']);
     curl_setopt($ch,CURLOPT_HTTP_VERSION,CURL_HTTP_VERSION_1_1);
     curl_setopt($ch,CURLOPT_NOSIGNAL,true);
@@ -164,7 +163,6 @@ function sendFile($botToken,$runtimeDir,$method,$datas=[]) {
     curl_setopt($ch,CURLOPT_POSTFIELDS,$datas);
     curl_setopt($ch,CURLOPT_TIMEOUT,20);
     curl_setopt($ch,CURLOPT_CONNECTTIMEOUT,8);
-    curl_setopt($ch,CURLOPT_IPRESOLVE,CURL_IPRESOLVE_V4);
     curl_setopt($ch,CURLOPT_HTTPHEADER,['Expect:']);
     curl_setopt($ch,CURLOPT_HTTP_VERSION,CURL_HTTP_VERSION_1_1);
     curl_setopt($ch,CURLOPT_NOSIGNAL,true);

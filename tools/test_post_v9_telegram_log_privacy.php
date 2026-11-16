@@ -21,8 +21,14 @@ foreach ($curlConstants as $i => $name) {
 }
 $GLOBALS['owned_curl_mode'] = 'success';
 
-function curl_init() { return (object)['mock'=>true]; }
-function curl_setopt($handle, $option, $value) { return true; }
+function curl_init() {
+    $GLOBALS['owned_curl_options'] = [];
+    return (object)['mock'=>true];
+}
+function curl_setopt($handle, $option, $value) {
+    $GLOBALS['owned_curl_options'][$option] = $value;
+    return true;
+}
 function curl_close($handle) {}
 function curl_errno($handle) {
     return str_contains($GLOBALS['owned_curl_mode'], 'curl_error') ? 28 : 0;
@@ -102,6 +108,10 @@ try {
                 $runtime,'sendMessage',$payload)
             : \AchBot\Telegram\Transport\sendFile('PRIVATE-BOT-TOKEN-SENTINEL',
                 $runtime,'sendDocument',$payload);
+        // Let libcurl select a working address family on IPv4-only and dual-stack hosts.
+        if (array_key_exists(CURLOPT_IPRESOLVE, $GLOBALS['owned_curl_options'])) {
+            throw new RuntimeException('Telegram transport forced an IP family: '.$mode);
+        }
         if (str_contains($mode,'curl_error')) {
             if ($result!==($kind==='request' ? null : false)) {
                 throw new RuntimeException('cURL error contract drift: '.$mode);
