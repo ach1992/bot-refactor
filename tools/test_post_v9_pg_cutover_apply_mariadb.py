@@ -47,6 +47,7 @@ CREATE TABLE service_effects(
  provider_reference_id BIGINT NULL,provider_connection_id INT NULL,
  provider_remote_user_id BIGINT NULL,provider_remote_created_at VARCHAR(40) NULL,
  provider_operation_marker VARCHAR(64) NULL,provider_entitlement_snapshot LONGTEXT NULL,
+ provider_mutation_key VARCHAR(100) NULL,provider_mutation_snapshot LONGTEXT NULL,
  provider_state VARCHAR(24) NULL,
  provider_verified_at DATETIME NULL,provider_evidence_created_at DATETIME NULL,
  provider_evidence_updated_at DATETIME NULL,
@@ -396,22 +397,70 @@ echo json_encode([
             helper.write_text("""<?php
 $_SERVER['SCRIPT_FILENAME']=__FILE__;
 require $argv[1].'/src/Panel/ProviderStorage.php';
+require $argv[1].'/src/Panel/ProviderRecovery.php';
 $db=new mysqli('localhost','root','','bothell',0,$argv[2]);
 $e=$db->query("SELECT * FROM service_effects WHERE source_kind='legacy_migration' ORDER BY id LIMIT 1")->fetch_assoc();
 $a=achbotProviderAccountRow($e);
 $refs=achbotProviderLegacyCutoverEvidence($e,$a);
 $id=achbotProviderAccountIdentity($db,$a);
+$orders=[];
+foreach ([101,102,103] as $orderId)
+    $orders[$orderId]=$db->query('SELECT * FROM orders_list WHERE id='.$orderId)->fetch_assoc();
+$original1=achbotPgRecoveryOrderOriginMatches($db,
+    ['account'=>$a,'order'=>$orders[101]],101);
+$original2=achbotPgRecoveryOrderOriginMatches($db,
+    ['account'=>$a,'order'=>$orders[102]],102);
+$foreign=achbotPgRecoveryOrderOriginMatches($db,
+    ['account'=>$a,'order'=>$orders[103]],103);
 echo json_encode(['refs'=>count($refs),'id_mode'=>$id['identity_mode'],
   'match'=>achbotPgIdentityMatches(['id'=>$a['remote_user_id'],
-    'created_at'=>$a['remote_created_at'],'username'=>$a['remote_username'],'note'=>''], $id)]);
+    'created_at'=>$a['remote_created_at'],'username'=>$a['remote_username'],'note'=>''], $id),
+  'original_references'=>[$original1,$original2],
+  'foreign_reference_rejected'=>!$foreign]);
 """)
             process = subprocess.run(["php", str(helper), str(ROOT), str(work/"mysql.sock")],
                                      env=os_env, capture_output=True, text=True, timeout=15)
             assert process.returncode == 0, (process.stdout, process.stderr)
             assert json.loads(process.stdout) == {
-                "refs": 2, "id_mode": "adopted", "match": True
+                "refs": 2, "id_mode": "adopted", "match": True,
+                "original_references": [True, True],
+                "foreign_reference_rejected": True
             }, process.stdout
-            checks.append("source_real_historical_provenance")
+            checks.append("source_real_historical_provenance_and_order_refs")
+
+            # Real cutover accounts can be in-flight on their original edit or
+            # delete journal. That must not invalidate immutable migration
+            # evidence or enable an unrelated mutation.
+            native.sql(work, env,
+                "UPDATE service_effects SET provider_state='mutating',"
+                "provider_mutation_key='pay:9001',"
+                "provider_mutation_snapshot=JSON_OBJECT("
+                "'version',1,'key','pay:9001','action','edit',"
+                "'consumed_keys',JSON_ARRAY('pay:9001'),"
+                "'identity',JSON_OBJECT("
+                "'remote_user_id',provider_remote_user_id,"
+                "'remote_created_at',provider_remote_created_at,"
+                "'operation_marker',provider_operation_marker,"
+                "'identity_mode','adopted',"
+                "'remote_username',remote_username,"
+                "'adoption_sha256',SHA2(provider_snapshot,256)))"
+                " WHERE source_kind='legacy_migration'", database)
+            process = subprocess.run(["php", str(helper), str(ROOT), str(work/"mysql.sock")],
+                                     env=os_env, capture_output=True, text=True, timeout=15)
+            assert process.returncode == 0, (process.stdout, process.stderr)
+            assert json.loads(process.stdout)['id_mode'] == 'adopted', process.stdout
+            checks.append("inflight_mutation_preserves_historical_provenance")
+
+            native.sql(work, env, "UPDATE service_effects SET "
+                       "provider_mutation_key='pay:wrong' "
+                       "WHERE source_kind='legacy_migration'", database)
+            process = subprocess.run(["php", str(helper), str(ROOT), str(work/"mysql.sock")],
+                                     env=os_env, capture_output=True, text=True, timeout=15)
+            assert process.returncode != 0, process.stdout
+            checks.append("mismatched_mutation_journal_rejected")
+            native.sql(work, env, "UPDATE service_effects SET "
+                       "provider_mutation_key='pay:9001' "
+                       "WHERE source_kind='legacy_migration'", database)
 
             native.sql(work, env, "UPDATE service_effects SET provider_remote_created_at="
                        "'2026-11-14T20:00:00.000000Z' WHERE source_kind='legacy_migration' "

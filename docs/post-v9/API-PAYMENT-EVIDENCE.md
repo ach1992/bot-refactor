@@ -10,6 +10,31 @@ Use the existing authenticated ACh Pay Manager v1 and ACh Gift Cards for Woo v2 
 
 Reuse shared `payment_attempts`, child `payment_transactions`, the real subject-specific local settlement claim and existing service-effect journals. An HTTP response, verified code, or payment confirmation is not proof of completed native delivery.
 
+## Current operational diagnostics (no payment-policy change)
+
+The private PHP error log receives structured `[AChBot]` JSON events for
+`achbot.finance.evidence_check`, `achbot.finance.evidence_http`,
+`achbot.finance.evidence_tick`, and the shared Native/wallet/delivery recovery
+boundaries. Each event includes UTC microsecond timestamp, a process-local
+`trace_id`, installation label, and only applicable typed identifiers,
+stage/result/reason, HTTP status, cURL errno and the upstream request ID.
+The checking coordinator scopes `pay_id` to each original invoice while it
+calls the evidence API. A failed Telegram ACK is recorded as unknown, not
+delivered. The existing aaPanel/system log rotation policy remains the owner
+of disk retention; no separate unbounded AChBot log file is introduced.
+
+A Cron tick marked successful is **not** proof that a particular original
+invoice was admitted or that its SMS was found. Correlate
+`evidence_tick.selected/checked/deferred`, each
+`evidence_check.pay_id` result, and `evidence_http.pay_id`/HTTP reason;
+compare the original immutable invoice and independent provider action
+history before any financial reconciliation. Missing historical per-invoice
+events cannot be retroactively inferred. Private event logging does not
+alter SMS matching windows, exact amount, polling cadence, worker budgets,
+claims, provider consumption, service effects or a manual staff outcome.
+Do not include raw SMS, credentials, Telegram text, customer usernames,
+gateway URLs or unvalidated external response content in diagnostic events.
+
 ## Configuration before API enablement
 
 Use Gateway/Channel Settings to configure each API independently beneath its existing manual payment method. Keep `smsApiVerifyState` and `giftApiVerifyState` OFF while preparing the target.

@@ -913,7 +913,7 @@ def main() -> None:
         api_finally = (
             api_failed.returncode == 0
             and api_failed.stdout == 'owned fixture success\n' * len(JOBS)
-            and api_failed.stderr.strip() == 'achbot_payment_lifecycle_deferred'
+            and api_failed.stderr.strip().startswith('achbot_payment_lifecycle_deferred class=RuntimeException')
             and maintenance_trace.read_text().splitlines() == ['api', 'payux', 'delivery']
             and [line.split('|')[0] for line in trace.read_text().splitlines()] == list(JOBS)
         )

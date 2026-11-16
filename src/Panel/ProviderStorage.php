@@ -189,6 +189,45 @@ function achbotProviderAccountRow(?array $r): ?array {
 }
 
 /**
+ * Current Native mutation status is NOT the provenance of a historical
+ * adopted account. A legitimate edit/delete moves linked -> mutating while
+ * every original migration hash, account incarnation and local reference
+ * remains unchanged. Validate that the held mutation is attached to precisely
+ * this historical physical identity, without making it a new purchase.
+ */
+function achbotProviderLegacyCutoverMutationValid(array $e,array $account): bool {
+    $state=$e['provider_state']??null;
+    if ($state==='linked') return true;
+    if ($state!=='mutating') return false;
+    try {
+        $key=$e['provider_mutation_key']??null;
+        if (!is_string($key) || $key==='' || strlen($key)>100)
+            return false;
+        $held=json_decode((string)($e['provider_mutation_snapshot']??''),true,64,JSON_THROW_ON_ERROR);
+        if (!is_array($held) || ($held['version']??null)!==1 ||
+            ($held['key']??null)!==$key ||
+            !is_string($held['action']??null) || $held['action']==='' ||
+            !is_array($held['consumed_keys']??null) ||
+            !array_is_list($held['consumed_keys']) ||
+            !in_array($key,$held['consumed_keys'],true) ||
+            !is_array($held['identity']??null))
+            return false;
+        $expected=['remote_user_id'=>$account['remote_user_id'],
+            'remote_created_at'=>$account['remote_created_at'],
+            'operation_marker'=>$account['operation_marker'],
+            'identity_mode'=>'adopted',
+            'remote_username'=>$account['remote_username'],
+            'adoption_sha256'=>hash('sha256',(string)($e['provider_snapshot']??''))];
+        foreach ($expected as $field=>$value)
+            if (!array_key_exists($field,$held['identity']) ||
+                $held['identity'][$field]!==$value) return false;
+        return true;
+    } catch (Throwable $error) {
+        return false;
+    }
+}
+
+/**
  * A historical paid-account cutover is not a purchase or zero-price import.
  * Its single native account effect may be shared by all pre-existing local
  * references. Nothing here authorizes a Native CREATE or a financial replay.
@@ -239,7 +278,7 @@ function achbotProviderLegacyCutoverEvidence(array $e,array $account): array {
             $e['pay_row_id']!==null || $e['actor_userid']!==null ||
             (int)$e['ordinal']!==1 || (int)$e['reserved_count']!==0 ||
             $e['state']!=='local_recorded' ||
-            $e['provider_state']!=='linked' ||
+            !achbotProviderLegacyCutoverMutationValid($e,$account) ||
             (int)$e['provider_reference_id']!==(int)$e['id'] ||
             $e['source_ref']!=='legacy:'.$migration['source_server_id'].':'.hash('sha256',$account['remote_username']) ||
             (int)$e['target_server_id']!==$migration['source_server_id'] ||

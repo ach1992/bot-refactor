@@ -1,6 +1,7 @@
 <?php
 /** AChBot current provider dispatch. Native identities never use legacy UUID/inbound fields. */
 if (realpath($_SERVER['SCRIPT_FILENAME']??'')===__FILE__) { http_response_code(404); exit; }
+require_once __DIR__.'/../Diagnostics/EventLog.php';
 require_once __DIR__.'/ProviderImport.php';
 
 function achbotProviderType(mysqli $db,int $serverId): string {
@@ -221,12 +222,20 @@ function achbotPasarGuardActionPreflightAdapter(mysqli $db,int $serverId,string 
 
 function achbotProviderAction($serverId,$remark,string $action,?array $expectedTarget=null): object {
     global $connection;
-    $adapter=achbotProviderDefinition(achbotProviderType($connection,(int)$serverId));
+    $provider=achbotProviderType($connection,(int)$serverId);
+    $adapter=achbotProviderDefinition($provider);
     if ($adapter===null) return achbotProviderFailure('unsupported_provider',false);
     if ($expectedTarget!==null && ($action!=='delete' ||
         !achbotProviderDeletionTargetMatches($connection,(int)$serverId,(string)$remark,$expectedTarget)))
         return achbotProviderFailure('delete_target_changed');
-    return ($adapter['action'])($serverId,$remark,$action,$expectedTarget);
+    $result=($adapter['action'])($serverId,$remark,$action,$expectedTarget);
+    achbotDiagnosticEvent('achbot.native.account_action',[
+        'server_id'=>(int)$serverId,'action'=>$action,
+        'provider'=>$provider,
+        'result'=>($result->success??false)?'verified':'review',
+        'reason'=>(string)($result->msg??$result->reason??'none')],
+        ($result->success??false)?'info':'warning');
+    return $result;
 }
 
 /** Canonical JSON keeps native option order from becoming a false configuration change. */

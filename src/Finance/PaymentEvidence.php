@@ -5,6 +5,7 @@
 if (realpath($_SERVER['SCRIPT_FILENAME']??'')===__FILE__) {
     http_response_code(404); exit;
 }
+require_once __DIR__.'/../Diagnostics/EventLog.php';
 
 function achbotPaymentEvidenceSettingFields(): array {
     return ['smsApiUrl','smsApiToken','smsApiHorizonHours','smsApiProvider',
@@ -386,6 +387,21 @@ function achbotPaymentEvidenceHttp(array $profile,string $method,string $path,?a
             $result=['ok'=>$done!==false && !$overflow && $http>=200 && $http<300 && $json!==null,
                 'http'=>$http>=200 && $http<600?$http:0,
                 'status'=>'unavailable','json'=>$json];
+            $operation=$kind==='bank_transfer'?'sms':
+                ($path==='/verify'?'gift_verify':($path==='/redeem'?'gift_redeem':'gift'));
+            $apiCode=is_string($json['code']??null)?$json['code']:'none';
+            $diagnosticPayId=$GLOBALS['achbotPaymentDiagnosticPayId']??0;
+            achbotDiagnosticEvent('achbot.finance.evidence_http',[
+                'pay_id'=>is_int($diagnosticPayId)?$diagnosticPayId:0,
+                'provider'=>$kind,'operation'=>$operation,'method'=>$method,
+                'request_attempt'=>$attempt,'http_status'=>$result['http'],
+                'curl_errno'=>$errno,'retry_after'=>$retryAfter,
+                'reason'=>$overflow?'response_overflow':($result['ok']?'response_received':
+                    ($json===null?'response_unavailable':'http_unexpected')),
+                'http_reason'=>$apiCode,
+                'upstream_request_id'=>is_string($json['request_id']??null)?
+                    $json['request_id']:'none'
+            ],$result['ok']?'info':'warning');
             if ($result['ok']){$result['status']='ok';return $result;}
 
             // A 404, rejected scope/credential, bad identity or incompatible
@@ -408,7 +424,12 @@ function achbotPaymentEvidenceHttp(array $profile,string $method,string $path,?a
             usleep($pauseMs*1000);
         }
         return $result;
-    } catch (Throwable $error) {return $bad;}
+    } catch (Throwable $error) {
+        achbotDiagnosticEvent('achbot.finance.evidence_http_exception',[
+            'class'=>get_class($error),'reason'=>(string)$error->getMessage()],
+            'error');
+        return $bad;
+    }
 }
 /** Exact, bounded WP v1.0.16 lookup; no new evidence or settlement authority. */
 function achbotPaymentEvidenceSmsList(array $profile,int $after=0,?array $filter=null): array {

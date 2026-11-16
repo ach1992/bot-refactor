@@ -420,6 +420,12 @@ def stage_source(stage:Path,current:bool)->dict:
         dest.write_bytes(raw)
     if current:
         notification_fixture.stage_router(stage)
+        # Diagnostic events are current-source runtime dependencies. Before
+        # the first candidate commit, HEAD inventory cannot see a new file;
+        # stage its exact bytes just as package_current will after commit.
+        diagnostics=stage/'src/Diagnostics/EventLog.php'
+        diagnostics.parent.mkdir(parents=True,exist_ok=True)
+        diagnostics.write_bytes((ROOT/'src/Diagnostics/EventLog.php').read_bytes())
         # Fragment fixture executes the real common provider seam too.
         for rel in ['src/Panel/ProviderRuntime.php','src/Panel/ProviderImport.php','src/Panel/ProviderAdmin.php','src/Panel/ProviderStorage.php','src/Panel/PasarGuard.php','src/Subscription/Presentation.php']:
             dest=stage/rel;dest.parent.mkdir(parents=True,exist_ok=True);dest.write_bytes((ROOT/rel).read_bytes())

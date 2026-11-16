@@ -488,7 +488,11 @@ function achbotDeliveryDispatch(mysqli $db,int $payId,int $ordinal): string {
     if (!achbotDeliverySchemaReady($db)) return 'unavailable';
     require_once __DIR__.'/GatewayClient.php';
     $lease=achbotOriginalDispatchLeaseBegin($db,$payId);
-    if ($lease!=='owned' && $lease!=='borrowed') return $lease;
+    if ($lease!=='owned' && $lease!=='borrowed') {
+        achbotDiagnosticEvent('achbot.delivery.dispatch_deferred',
+            ['pay_id'=>$payId,'ordinal'=>$ordinal,'reason'=>'lease_'.$lease],'info');
+        return $lease;
+    }
     try {
     $token='';$packet=null;$begun=false;
     try {
@@ -523,6 +527,9 @@ function achbotDeliveryDispatch(mysqli $db,int $payId,int $ordinal): string {
         $begun=false;
     } catch(Throwable $e) {
         if ($begun) try {$db->rollback();}catch(Throwable $ignored){}
+        achbotDiagnosticEvent('achbot.delivery.claim_deferred',
+            ['pay_id'=>$payId,'ordinal'=>$ordinal,
+                'class'=>get_class($e),'reason'=>$e->getMessage()],'warning');
         error_log('achbot_delivery_claim_deferred pay_id='.$payId.' ordinal='.$ordinal.' reason='.get_class($e));
         return 'review';
     }
@@ -535,6 +542,9 @@ function achbotDeliveryDispatch(mysqli $db,int $payId,int $ordinal): string {
     }
     $result=$ack?'ack':'unknown';
     $state=$ack?'acknowledged':'unknown';
+    achbotDiagnosticEvent('achbot.delivery.telegram_attempt',
+        ['pay_id'=>$payId,'ordinal'=>$ordinal,'result'=>$state,
+            'request_attempt'=>$next],$ack?'info':'warning');
     $finished=false;
     try {
         if (!$db->begin_transaction()) return 'unknown';
@@ -552,8 +562,14 @@ function achbotDeliveryDispatch(mysqli $db,int $payId,int $ordinal): string {
         $finished=true;
     } catch(Throwable $e) {
         try {$db->rollback();} catch(Throwable $ignored) {}
+        achbotDiagnosticEvent('achbot.delivery.finalize_deferred',
+            ['pay_id'=>$payId,'ordinal'=>$ordinal,
+                'class'=>get_class($e),'reason'=>$e->getMessage()],'error');
         error_log('achbot_delivery_finalize_unknown pay_id='.$payId.' ordinal='.$ordinal);
     }
+    achbotDiagnosticEvent('achbot.delivery.dispatch_result',
+        ['pay_id'=>$payId,'ordinal'=>$ordinal,
+            'result'=>$finished?$state:'unknown'],'info');
     return $finished?$state:'unknown';
     } finally {
         achbotOriginalDispatchLeaseEnd($db,$payId,$lease);
@@ -781,6 +797,7 @@ function achbotDeliveryMaintainPending(mysqli $db,int $limit=4,float $budgetSeco
     if (!achbotDeliverySchemaReady($db)) return $stats;
     $limit=max(1,min(8,$limit));
     $budgetSeconds=max(1.0,min(15.0,$budgetSeconds));
+    $start=microtime(true);
     try {
         // idx_delivery_work(state,updated_at) is part of migration 018.
         // The terminal state is necessary but insufficient: dispatch itself
@@ -797,6 +814,9 @@ function achbotDeliveryMaintainPending(mysqli $db,int $limit=4,float $budgetSeco
         $rows=$q->fetch_all(MYSQLI_ASSOC);
         $q->free();
     } catch (Throwable $error) {
+        achbotDiagnosticEvent('achbot.delivery.maintenance_error',
+            ['class'=>get_class($error),'reason'=>$error->getMessage(),
+             'stage'=>'scan'],'warning');
         error_log('achbot_delivery_maintenance_scan_deferred class='.get_class($error));
         return $stats;
     }
@@ -836,6 +856,11 @@ function achbotDeliveryMaintainPending(mysqli $db,int $limit=4,float $budgetSeco
             }
         }
     }
+    achbotDiagnosticEvent('achbot.delivery.maintenance_tick',
+        ['checked'=>$stats['checked'],'success'=>$stats['acknowledged'],
+            'failure'=>$stats['unknown'],'deferred'=>$stats['deferred'],
+            'selected'=>count($rows),
+            'elapsed_ms'=>(int)round((microtime(true)-$start)*1000)],'info');
     return $stats;
 }
 

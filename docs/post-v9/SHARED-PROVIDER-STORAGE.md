@@ -22,6 +22,19 @@ source tables. These are evidence identifiers, not another registry. Shared
 customer references point to the same proven origin effect and native ID/creation
 time. They retain independent order/payment ownership.
 
+An original Marzban→PasarGuard migration can have one physical
+`legacy_migration` effect and multiple verified order references. Its
+`service_effects.order_id` intentionally remains **NULL**. Provenance is
+checked against the original migration hashes, provider identity, Native
+incarnation and sorted reference list. A later legitimate Native mutation
+moves `provider_state` from `linked` to `mutating` without invalidating
+that immutable provenance; the active mutation key/identity journal must
+match the original adoption. Paid edit recovery resolves the customer's
+order via the authenticated migration reference, not by inventing or
+backfilling an originating `order_id`. Independent Native entitlement drift
+still requires operator reconciliation; it is not evidence that the original
+purchase was reapplied, nor permission for a blind additive write.
+
 Native-only evidence updates keep the financial effect's `updated_at` unchanged.
 `provider_evidence_created_at` / `provider_evidence_updated_at` preserve the old
 native evidence timestamps and track future native operations separately. A
