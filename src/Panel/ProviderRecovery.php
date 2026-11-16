@@ -17,9 +17,54 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
  */
 function achbotMarzbanRecoverEdit(mysqli $db,int $serverId,array $params,
     array $source,bool $operator): object {
-    if (!$operator && !in_array((string)($source['kind']??''),['renew','standard'],true))
+    $kind=(string)($source['kind']??'');
+    if (!$operator && !in_array($kind,['renew','standard'],true))
         return achbotProviderFailure('recovery_operator_required',false);
+    if (!in_array($kind,['day','volume'],true))
+        return achbotApplyServiceEdit($db,$serverId,$params);
+    if (isset($source['native_intent'])) {
+        // The exact first planned absolute result is already committed and
+        // sealed to the original invoice. No new relative increment.
+        $params['_paid_recovery_intent']=$source['native_intent'];
+        return achbotApplyServiceEdit($db,$serverId,$params);
+    }
+    if (($source['capture_required']??false)!==true ||
+        !is_callable($source['_paid_intent_capture']??null))
+        return achbotProviderFailure('marzban_original_intent_missing');
+    // Crash before original capture: this new-code operation could not have
+    // sent any Native mutation. Begin the SAME original additive attempt
+    // with capture-first semantics, never derive this from an old fixture.
+    $params['_paid_intent_capture']=$source['_paid_intent_capture'];
     return achbotApplyServiceEdit($db,$serverId,$params);
+}
+
+/**
+ * An unknown acknowledgement does not imply the Native operation failed.
+ * Only the original complete baseline permits replay of the saved absolute
+ * target. The full expected target may instead be reconciled without a PUT.
+ * All other states (including a later operator's independent change) hold.
+ */
+function achbotPgRecoveryDisposition(array $before,array $target,array $native): string {
+    foreach (['expire','data_limit','status','group_ids'] as $field)
+        if (!array_key_exists($field,$before) ||
+            !array_key_exists($field,$native)) return 'drift';
+    if (!is_int($before['data_limit']) || !is_int($native['data_limit']) ||
+        !($native['expire']===null || is_int($native['expire'])) ||
+        !($before['expire']===null || is_int($before['expire'])) ||
+        !is_string($native['status']) || !is_string($before['status']) ||
+        !is_array($before['group_ids']) || !is_array($native['group_ids']) ||
+        !is_int($target['expire']??null) || !is_int($target['data_limit']??null) ||
+        $native['group_ids']!==$before['group_ids']) return 'drift';
+    $statusOk=$native['status']===$before['status'] ||
+        ($native['status']==='active' &&
+         in_array($before['status'],['expired','limited'],true));
+    if (!$statusOk) return 'drift';
+    if ($native['expire']===$target['expire'] &&
+        $native['data_limit']===$target['data_limit']) return 'applied';
+    if ($native['expire']===$before['expire'] &&
+        $native['data_limit']===$before['data_limit'] &&
+        $native['status']===$before['status']) return 'baseline';
+    return 'drift';
 }
 
 /**
@@ -81,8 +126,6 @@ function achbotPgRecoverEdit(mysqli $db,int $serverId,array $params,
             throw new RuntimeException('pg_recovery_native_unavailable');
         $native=$read['user'];
         $before=$changes['before']??[];
-        if (array_key_exists('group_ids',$before) && $native['group_ids']!==$before['group_ids'])
-            throw new RuntimeException('pg_recovery_native_groups_changed');
         $absolute=$changes['absolute']??null;
         if ($absolute===null && $account['state']==='mutating' &&
             ($changes['phase']??null)==='claimed') {
@@ -94,18 +137,22 @@ function achbotPgRecoverEdit(mysqli $db,int $serverId,array $params,
                 'absolute'=>$absolute,'reset_usage'=>array_key_exists('volume',$params),
                 'before'=>array_intersect_key($native,array_flip([
                     'data_limit','expire','status','group_ids','used_traffic']))]);
+            $changes=$saved['changes'];
+            $before=$changes['before'];
         }
         if (!is_array($absolute) || !array_key_exists('expire',$absolute) ||
             !array_key_exists('data_limit',$absolute) ||
             !is_int($absolute['expire']) || !is_int($absolute['data_limit']))
             throw new RuntimeException('pg_recovery_absolute_missing');
 
-        $matched=$native['expire']===$absolute['expire'] &&
-            $native['data_limit']===$absolute['data_limit'];
-        if ($account['state']==='linked' && (($saved['result']??null)!=='verified' || !$matched))
+        $disposition=achbotPgRecoveryDisposition($before,$absolute,$native);
+        if ($disposition==='drift')
+            throw new RuntimeException('pg_recovery_native_entitlement_drift');
+        if ($account['state']==='linked' &&
+            (($saved['result']??null)!=='verified' || $disposition!=='applied'))
             throw new RuntimeException('pg_recovery_already_finished_changed');
         if ($account['state']==='mutating') {
-            if (!$matched) {
+            if ($disposition==='baseline') {
                 // Original financial claim and account fence are held by the
                 // caller. This PUT uses a stored ABSOLUTE target, never
                 // current + purchased units, so even additive retry does not
@@ -148,6 +195,19 @@ function achbotMarzbanRecoverRearm(mysqli $db,array $effect): void {
 /** PasarGuard also owns the native account reservation attached to 007. */
 function achbotPgRecoverRearm(mysqli $db,array $effect): void {
     $id=(int)($effect['id']??0);
+    if ($id<=0) throw new RuntimeException('pg_recovery_rearm_invalid');
+    if ($effect['state']==='reserved') {
+        // Crash after the prior COMMIT: the original provider reservation
+        // must still exist and be unclaimed, or recovery refuses to POST.
+        $q=$db->prepare("SELECT id FROM service_effects
+            WHERE id=? AND effect_kind='create' AND state='reserved'
+              AND provider_state='reserved' AND provider_reference_id IS NOT NULL
+              AND provider_remote_user_id IS NULL LIMIT 1 FOR UPDATE");
+        $q->bind_param('i',$id);$q->execute();
+        $found=$q->get_result()->num_rows===1;$q->close();
+        if (!$found) throw new RuntimeException('pg_recovery_reservation_changed');
+        return;
+    }
     $q=$db->prepare("UPDATE service_effects SET provider_state='reserved',
         provider_evidence_updated_at=UTC_TIMESTAMP()
         WHERE id=? AND state='reserved' AND provider_state='dispatching'

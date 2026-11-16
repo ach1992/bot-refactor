@@ -1,8 +1,8 @@
 <?php
 /**
- * Issue #117: continue a previously claimed paid CREATE line by exact native
- * observation. A previously dispatched operation is NEVER sent a second POST.
- * Local verification can advance only from matching immutable provider proof.
+ * Continue the ORIGINAL paid CREATE line. Before an authorized re-dispatch,
+ * observe matching Native proof; a rearmed, still-reserved original effect is
+ * itself recoverable without allocating a second local effect or capacity.
  */
 if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) { http_response_code(404); exit; }
 require_once __DIR__.'/ServiceEffects.php';
@@ -36,7 +36,8 @@ function achbotContinuePaidAccount(mysqli $db,int $payId,int $ordinal,array $req
     $days=(int)($request['days']??0);
     if ($e['pay_type']!=='BUY_SUB' ||
         !in_array((string)$e['pay_state'],['processing','paid','processing_wallet'],true) ||
-        !in_array((string)$e['state'],['dispatching','verified'],true) ||
+        !in_array((string)$e['state'],$actor>0
+            ?['reserved','dispatching','verified']:['dispatching','verified'],true) ||
         $e['order_id']!==null ||
         (int)$e['paid_user']!==(int)($request['user_id']??0) ||
         (int)$e['paid_plan']!==(int)($request['plan_id']??0) ||
@@ -51,6 +52,12 @@ function achbotContinuePaidAccount(mysqli $db,int $payId,int $ordinal,array $req
         (int)$e['requested_expire']<=0 ||
         (int)$e['agent_count']<0 || $ordinal>max(1,(int)$e['agent_count']))
         throw new RuntimeException('paid_resume_original_effect_changed');
+    // A prior staff recovery may have committed dispatching->reserved and
+    // lost its PHP process before the same original Native dispatch began.
+    // This state is actionable by current staff, never by unattended Cron.
+    if ($e['state']==='reserved')
+        return achbotRetryOriginalPaidCreate($db,$payId,$ordinal,$e,$request,
+            $actor,$primary);
     return achbotProviderRecoverCreate($db,$payId,$ordinal,$e,$request,
         $actor,$primary,$exactAccountGet);
 }
@@ -90,7 +97,9 @@ function achbotRetryOriginalPaidCreate(mysqli $db,int $payId,int $ordinal,
         $row=$q->get_result()->fetch_assoc();$q->close();
         if (!$row || (int)$row['pay_row_id']!==$payId ||
             (int)$row['ordinal']!==$ordinal || $row['effect_kind']!=='create' ||
-            $row['state']!=='dispatching' || $row['order_id']!==null ||
+            !in_array((string)$row['state'],['dispatching','reserved'],true) ||
+            (string)$row['state']!==(string)$effect['state'] ||
+            $row['order_id']!==null ||
             $row['request_sha256']!==$effect['request_sha256'] ||
             $row['operation_id']!==$effect['operation_id'] ||
             $row['remote_username']!==$effect['remote_username'] ||
@@ -98,7 +107,8 @@ function achbotRetryOriginalPaidCreate(mysqli $db,int $payId,int $ordinal,
             (int)$row['requested_expire']!==(int)$effect['requested_expire'] ||
             (($row['provider_remote_user_id']??null)!==null) ||
             (($row['provider_reference_id']??null)!==null &&
-             ($row['provider_state']??null)!=='dispatching'))
+             ($row['provider_state']??null)!==
+                 ($row['state']==='reserved'?'reserved':'dispatching')))
             throw new RuntimeException('paid_create_recovery_effect_changed');
         $server=(int)$row['target_server_id'];$plan=(int)$row['plan_id'];
         if ($server!==(int)$pay['server_id'] || $plan!==(int)$pay['plan_id'] ||
@@ -120,13 +130,17 @@ function achbotRetryOriginalPaidCreate(mysqli $db,int $payId,int $ordinal,
             throw new RuntimeException('paid_create_recovery_native_target_changed');
         // 007 is a shared paid effect; 012 Native storage is optional and
         // owned solely by its registered adapter, not by this coordinator.
-        $q=$db->prepare("UPDATE service_effects SET state='reserved'
-            WHERE id=? AND state='dispatching' AND order_id IS NULL");
-        $q->bind_param('i',$id);
-        if (!$q->execute() || $q->affected_rows!==1)
-            throw new RuntimeException('paid_create_recovery_claim_failed');
-        $q->close();
-        achbotProviderRecoverRearm($db,$effect);
+        if ($row['state']==='dispatching') {
+            $q=$db->prepare("UPDATE service_effects SET state='reserved'
+                WHERE id=? AND state='dispatching' AND order_id IS NULL");
+            $q->bind_param('i',$id);
+            if (!$q->execute() || $q->affected_rows!==1)
+                throw new RuntimeException('paid_create_recovery_claim_failed');
+            $q->close();
+        }
+        // Even a previously reserved original must reprove its provider-
+        // owned reservation, not bypass the adapter's account identity.
+        achbotProviderRecoverRearm($db,$row+['panel_type'=>$effect['panel_type']]);
         if (!$db->commit()) throw new RuntimeException('paid_create_recovery_commit_unknown');
         $started=false;
     } catch (Throwable $error) {

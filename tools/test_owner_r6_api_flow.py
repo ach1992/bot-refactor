@@ -151,6 +151,18 @@ elseif($op==='review_execute'){
  require $root.'/src/Finance/Routes/ManualReceipts.php';
  $value='routed';
 }
+elseif($op==='native_intent') {
+ $a=achbotApiPaymentAttempt($connection,$id);
+ $proof=achbotPaymentEvidenceGetProof($connection,$id);
+ $original=$proof?achbotPaymentEvidenceUnprotect(
+     'fulfillment:'.$id.':'.$proof['operation'],
+     (string)($a['evidence_fulfillment_payload']??'')):null;
+ $value=['state'=>$a['evidence_fulfillment_state']??null,
+     'capture_required'=>$original['capture_required']??null,
+     'native_intent'=>$original['native_intent']??null,
+     'operation'=>$original['operation']??null,
+     'pay_id'=>$id];
+}
 elseif($op==='review_resume'){
  // Actual admin callback, without requiring an earlier inbox visit.
  $from_id=(int)($spec['actor']??9001);$chat_id=(int)($spec['chat']??$from_id);
@@ -228,7 +240,7 @@ def check(evidence_root,settings_root,source_root=ROOT,*,ci_redrive=False):
         assert php.count(spy_before)==1
         php=php.replace(spy_before,
             "'buttons'=>json_decode((string)($args[2]??''),true),'text'=>(string)($args[1]??'')];")
-        php=php.replace("function achbotApplyServiceEdit(...$args) {throw new RuntimeException('unexpected_edit');}","function achbotApplyServiceEdit($db,$sid,$change) {$GLOBALS['events'][]=['event'=>'EDIT','change'=>$change,'tx'=>(int)$db->query('SELECT @@in_transaction')->fetch_row()[0]];if(!empty($GLOBALS['spec']['lost_edit_ack']))return(object)['success'=>false,'uncertain'=>true];return(object)['success'=>true,'verified'=>true,'applied_expire'=>1802000000,'applied_bytes'=>3221225472];}")
+        php=php.replace("function achbotApplyServiceEdit(...$args) {throw new RuntimeException('unexpected_edit');}","function achbotApplyServiceEdit($db,$sid,$change) {$GLOBALS['events'][]=['event'=>'EDIT','change'=>$change,'tx'=>(int)$db->query('SELECT @@in_transaction')->fetch_row()[0]];if(isset($change['_paid_intent_capture'])){$source=['version'=>1,'kind'=>isset($change['plus_day'])?'day':'volume','scope_sha256'=>str_repeat('a',64),'username_sha256'=>str_repeat('b',64),'before'=>['expire'=>1900000000,'data_limit'=>2147483648],'absolute'=>['expire'=>1802000000,'data_limit'=>3221225472]];if($change['_paid_intent_capture']($source)!==true)return(object)['success'=>false,'uncertain'=>true];}if(!empty($GLOBALS['spec']['lost_edit_ack']))return(object)['success'=>false,'uncertain'=>true];return(object)['success'=>true,'verified'=>true,'applied_expire'=>1802000000,'applied_bytes'=>3221225472];}")
         php=php.replace("function getMainKeys() {return '{}';}",r"""function getMainKeys() {return '{}';}
 function bot($method,$data){
     $GLOBALS['events'][]=['event'=>'BOT','method'=>$method,'data'=>$data,'tx'=>(int)$GLOBALS['connection']->query('SELECT @@in_transaction')->fetch_row()[0]];
@@ -953,6 +965,66 @@ DELIMITER ;''')
             e['event']=='POST' for e in completed['events'])==1,completed
         assert call(op='settle',pay=n)['result']=='settled'
         cases.append('authorized_create_retries_original_ordinal_after_lost_response_without_double_payment')
+
+        # Independent review #197: crash AFTER original CREATE rearm COMMIT
+        # but BEFORE effect dispatch admission. The original reserved ordinal
+        # remains actionable only by staff and never reserves capacity again.
+        APIs.rows={}
+        n=seed('rearmcrashcreate','BUY_SUB')
+        sms(n)
+        first=call(pay=n,mode='lost')
+        assert first['result']=='review' and state(n)=='processing',first
+        original=query(work,env,f"""SELECT id,ordinal,operation_id,remote_username,
+            reserved_count FROM service_effects WHERE pay_row_id={n}
+            AND effect_kind='create'""").split('	')
+        assert len(original)==5 and original[1]=='1',original
+        capacity_now=query(work,env,'SELECT ucount FROM server_info WHERE id=2')
+        before_rearm=query(work,env,
+            f"""SELECT state FROM service_effects WHERE pay_row_id={n} AND effect_kind='create'""")
+        query(work,env,f"""UPDATE service_effects SET state='reserved'
+            WHERE pay_row_id={n} AND effect_kind='create' AND state='dispatching'""")
+        after_rearm=query(work,env,
+            f"""SELECT state FROM service_effects WHERE pay_row_id={n} AND effect_kind='create'""")
+        assert after_rearm=='reserved',(before_rearm,after_rearm,original)
+        assert call(op='resume_hint',pay=n)['result'] is True
+        unattended=call(op='settle',pay=n)
+        assert unattended['result']=='review' and not any(
+            e['event']=='POST' for e in unattended['events']),unattended
+        preview=call(op='review_resume',pay=n,actor=9001)
+        confirms=[b['callback_data'] for e in preview['events']
+                  if e['event']=='EDIT' for row in e['buttons']['inline_keyboard']
+                  for b in row if b['callback_data'].startswith('apiEvidenceExecute_')]
+        assert len(confirms)==1 and not any(e['event']=='POST' for e in preview['events']),preview
+        finished=call(op='review_execute',pay=n,actor=9001,callback=confirms[0])
+        after=query(work,env,f"""SELECT id,ordinal,operation_id,remote_username,
+            reserved_count FROM service_effects WHERE pay_row_id={n}
+            AND effect_kind='create'""").split('	')
+        assert after==original and state(n)=='auto_cart_approved' and sum(
+            e['event']=='POST' for e in finished['events'])==1,finished
+        assert query(work,env,'SELECT ucount FROM server_info WHERE id=2')==capacity_now
+        assert query(work,env,f"""SELECT state FROM service_effects WHERE
+            pay_row_id={n} AND effect_kind='create'""")=='local_recorded'
+        assert call(op='settle',pay=n)['result']=='settled'
+        cases.append('marzban_original_reserved_rearm_crash_recovers_without_duplicate_capacity')
+
+        # Original API evidence is encrypted and committed BEFORE the
+        # additive adapter may report a lost Native acknowledgement.
+        for label,kind,days,volume in (
+            ('day',f'INCREASE_DAY_{oid}_1',4,0),
+            ('volume',f'INCREASE_VOLUME_{oid}_1',0,5)):
+            APIs.rows={}
+            candidate=seed('captured_'+label,kind,days=days,volume=volume,order=oid)
+            sms(candidate)
+            failed=call(pay=candidate,lost_edit_ack=True)
+            assert failed['result']=='review' and state(candidate)=='processing',failed
+            inspected=call(op='native_intent',pay=candidate)['result']
+            assert inspected['state']=='dispatched' and inspected['capture_required'] is True
+            assert inspected['native_intent']['version']==1 and inspected['native_intent']['kind']==label
+            assert inspected['native_intent']['absolute']['data_limit']==3221225472
+            assert inspected['operation'] and inspected['pay_id']==candidate
+            assert query(work,env,
+                f'SELECT state FROM pays WHERE id={candidate}')=='processing'
+            cases.append('financial_'+label+'_original_aead_native_intent_survives_lost_ack')
 
         # Renewal is an absolute plan: the normal maintainer may repeat it
         # after a lost Native ACK, with NO operator grant and no second charge.

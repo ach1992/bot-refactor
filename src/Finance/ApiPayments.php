@@ -75,7 +75,7 @@ function achbotApiPaymentNeedsOperatorConfirmation(mysqli $db,array $pay,
     if (($attempt['evidence_fulfillment_state']??null)==='dispatched') return true;
     $q=$db->prepare("SELECT id FROM service_effects
         WHERE pay_row_id=? AND effect_kind='create'
-          AND state='dispatching' LIMIT 1");
+          AND state IN ('dispatching','reserved') LIMIT 1");
     $payId=(int)$pay['id'];$q->bind_param('i',$payId);$q->execute();
     $held=$q->get_result()->num_rows>0;$q->close();
     return $held;
@@ -668,6 +668,27 @@ function achbotApiPaymentStoreFulfillment(mysqli $db,int $id,array $proof,string
         if(!$ok||!$db->commit())throw new RuntimeException('api_fulfillment_commit_unknown');return true;
     }catch(Throwable $e){try{$db->rollback();}catch(Throwable $ignored){}return false;}
 }
+/**
+ * Only original claimed additive invoices can store a Native baseline. The
+ * provider calls this BEFORE any side effect, so a present capture_required
+ * marker with no captured intent proves this new-code attempt never wrote.
+ * Historical dispatched rows have no such guarantee and remain reviewable.
+ */
+function achbotApiPaymentNativeIntentCapture(mysqli $db,int $id,array $proof,
+    array &$payload): callable {
+    return static function(array $native) use ($db,$id,$proof,&$payload): bool {
+        if (isset($payload['native_intent']) ||
+            ($payload['capture_required']??null)!==true ||
+            ($native['version']??null)!==1)
+            return false;
+        $prepared=$payload;
+        $prepared['native_intent']=$native;
+        if (!achbotApiPaymentStoreFulfillment($db,$id,$proof,
+            'dispatched',$prepared,'dispatched')) return false;
+        $payload=$prepared;
+        return true;
+    };
+}
 function achbotApiPaymentFulfillEdit(mysqli $db,array $pay,array $proof,
     bool $operator=false): bool {
     $id=(int)$pay['id'];$type=(string)$pay['type'];$a=achbotApiPaymentAttempt($db,$id);$profile=$a?achbotPaymentEvidenceSnapshot($a):null;$subject=$profile['subject']??[];
@@ -690,10 +711,16 @@ function achbotApiPaymentFulfillEdit(mysqli $db,array $pay,array $proof,
         elseif($kind==='volume')$params['plus_volume']=$units;
         else {$params['days']=(int)($subject['days']??0);$params['volume']=(int)($subject['volume']??-1);if($params['days']<=0||$params['volume']<0)return false;}
         $payload=['kind'=>$kind,'server'=>$server,'order'=>$oid,'remark'=>$remark,'units'=>$units,'expiry'=>$order?(int)$order['expire_date']:null,'params'=>$params];
+        if (in_array($kind,['day','volume'],true))
+            $payload['capture_required']=true;
         if(!achbotApiPaymentStoreFulfillment($db,$id,$proof,'dispatched',$payload,'reserved',$seen))return false;
         // Only the winner of the persisted dispatch transition may call the
         // native adapter. A crash/timeout here stays reviewable, never replayed.
-        $response=achbotApplyServiceEdit($db,$server,$params);
+        $dispatch=$params;
+        if (($payload['capture_required']??false)===true)
+            $dispatch['_paid_intent_capture']=achbotApiPaymentNativeIntentCapture(
+                $db,$id,$proof,$payload);
+        $response=achbotApplyServiceEdit($db,$server,$dispatch);
         if(!is_object($response)||($response->success??false)!==true||($response->verified??false)!==true)return false;
         $payload['result']=['success'=>true,'verified'=>true,'applied_expire'=>$response->applied_expire??null,'applied_bytes'=>$response->applied_bytes??null];
         if(!achbotApiPaymentStoreFulfillment($db,$id,$proof,'verified',$payload,'dispatched'))return false;
@@ -721,8 +748,13 @@ function achbotApiPaymentFulfillEdit(mysqli $db,array $pay,array $proof,
                 $units,true))
             return false;
         require_once __DIR__.'/../Panel/ProviderRuntime.php';
+        $source=$payload;
+        if (($payload['capture_required']??false)===true &&
+            !isset($payload['native_intent']))
+            $source['_paid_intent_capture']=achbotApiPaymentNativeIntentCapture(
+                $db,$id,$proof,$payload);
         $response=achbotProviderRecoverEdit($db,$server,$payload['params'],
-            $payload,$operator);
+            $source,$operator);
         if (($response->success??false)!==true ||
             ($response->verified??false)!==true ||
             !is_int($response->applied_expire??null) ||

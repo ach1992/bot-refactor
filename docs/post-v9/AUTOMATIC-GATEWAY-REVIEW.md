@@ -64,15 +64,30 @@ does not send duplicate standalone administrator messages.
   adapters first inspect the existing immutable username/operation marker.
   A deliberate staff retry, if no matching completed CREATE can be recovered,
   re-dispatches the **same original effect/ordinal/username**, with no second
-  capacity debit. Unique provider account names remain the remote duplicate
-  backstop. For **renewal**, repeating the absolute plan/reset is permitted
+  capacity debit. If rearm commits the original CREATE effect to `reserved`
+  and PHP stops before dispatch admission, the next authorized staff action
+  continues that same reservation rather than allocating a new effect. Unique
+  provider account names remain the remote duplicate backstop. For **renewal**,
+  repeating the absolute plan/reset is permitted
   automatically on the already-funded original invoice, including a small
   expiry-time difference. For **volume/time extensions**, an automatic retry
-  cannot add the purchased units twice. The staff-confirmed adapter recovers
-  or reapplies the **original persisted absolute target** and finishes the
-  same local accounting once. The same four operation meanings apply to any
-  registered provider; a future Native adapter must implement the registered recovery
-  callbacks before it can accept payment operations.
+  cannot add the purchased units twice. On the **first** paid Marzban
+  additive execution, persist the exact baseline, account target and
+  calculated absolute entitlement inside the original authenticated
+  payment-attempt fulfillment evidence **before Native PUT**. Its recovery
+  may recognize an already-applied result or repeat only this same absolute
+  operation if Native still matches its original baseline. A historical
+  `dispatched` Marzban attempt without a trustworthy captured intent stays
+  on the reviewable case; it never invents baseline proof or repeats a
+  relative increment. The PasarGuard adapter uses its existing durable
+  original mutation snapshot with the same baseline/target reconciliation.
+  Native quota, expiry, status, Groups or account-configuration drift is a
+  **reviewable hold**, not permission to overwrite a later panel edit or
+  reset usage unexpectedly. Both adapters preserve the same local accounting
+  once and the original delivery journal. The same four operation meanings
+  apply to any registered provider; future Native adapters must implement
+  the registered recovery callbacks and prove equivalent reconciliation
+  before accepting paid operations.
 - A failed staff retry remains on the original case and logs payment, actor,
   effect, stage and bounded reason for diagnosis. A successful service readback
   finishes the existing local payment/order and uses the original delivery
