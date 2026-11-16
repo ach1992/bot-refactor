@@ -44,7 +44,7 @@ Each bot has its own database, webhook, private configuration and Cron job. The 
 - [PasarGuard API and groups](docs/post-v9/PASARGUARD-CONTRACT.md) · [Unified service management](docs/post-v9/UNIFIED-SERVICE-MANAGEMENT.md)
 - [Financial safeguards](docs/post-v9/FINANCIAL-CONSOLIDATION.md) · [Payment recovery](docs/post-v9/PAYMENT-DELIVERY-RECOVERY.md) · [Operator exception inbox](docs/post-v9/AUTOMATIC-GATEWAY-REVIEW.md) · [API evidence](docs/post-v9/API-PAYMENT-EVIDENCE.md)
 - [Subscription presentation](docs/post-v9/SUBSCRIPTION-PRESENTATION.md) · [Scheduled renewals](docs/post-v9/AUTOMATIC-RENEWAL-SAFETY.md)
-- [Current CI contract](docs/post-v9/CI-VALIDATION.md) · [Security](docs/SECURITY.md)
+- [Telegram transport diagnostics](docs/post-v9/TELEGRAM-DIAGNOSTICS.md) · [Current CI contract](docs/post-v9/CI-VALIDATION.md) · [Security](docs/SECURITY.md)
 
 Historical V0–V9/RC release notes and obsolete transition instructions are available in **Git history and immutable published Releases**, not duplicated as active instructions. Keep unresolved work in [GitHub Issues](https://github.com/ach1992/bot-refactor/issues), not in release-status paragraphs.
 
