@@ -124,6 +124,65 @@ does not send duplicate standalone administrator messages.
 - If there is no safe action beyond review, show why; do not manufacture a
   recovery button or require a payment decision before Archive.
 
+## Explicit operator decision after independently changed Native entitlement
+
+For an existing proven, `processing` bank/gift API claim whose ORIGINAL
+PasarGuard renewal or DAY/VOLUME effect is `dispatched` with the original
+`pay:ID` account mutation fence still held, the normal automatic or generic
+recovery does **not** silently overwrite Native quota, expiry, status or Groups
+that differ from the saved baseline and absolute target. The operator may
+still resolve the **same original** case, without a second payment, debit,
+invoice, order or additive service effect.
+
+After **✅ تأیید و تکمیل عملیات**, the existing private, payments-authorized
+admin route obtains a fresh authenticated Native **GET-only** observation.
+When the existing account, provider/instance, stored original payment,
+actor permission and mutation journal are proven but the current entitlement
+has independently drifted, a distinct warning displays current vs **original
+paid order** quota and expiry, plus current Native status and Groups. The
+administrator explicitly chooses
+**✅ اعمال دقیق سفارش و پذیرش تغییرات** or returns to the original case.
+The first click never resets usage or changes Native/payment. If the
+administrator confirms, the original stored absolute Native target is applied
+through the existing PasarGuard recovery adapter: the actual currently
+observed status, quota, expiry and Groups must still match the actor-bound
+preview; the provider's final authenticated GET before RESET and PUT independently
+rechecks Native state. A mismatch asks the operator for a fresh preview,
+not permanent denial. A renewed plan can reset usage, and a later independent
+quota/expiry change may be replaced: the warning must not hide this effect.
+
+Each explicit confirmation is bound by existing payment-evidence HMAC to
+current actor, original payment/proof/quote, immutable original absolute
+target, actual Native entitlement digest and a **single-use generation** in
+the original encrypted `payment_attempts.evidence_fulfillment_payload`.
+The generation and exact actor/Native/target attestation are durably recorded
+as append-only attempts in the original encrypted payload
+**before any additional Native request**. A lost response, duplicate button,
+stale actor or concurrent webhook cannot reuse that confirmation to reset
+usage or PUT a second time. The original payment-session lease serializes
+the same financial case; no InnoDB transaction spans Native HTTP. If recovery
+still fails, the original case remains open, with a fresh preview available
+for a new, deliberate human decision. The existing original journal, audit,
+order, payment and customer delivery contracts finalize once upon verified
+Native success. No arbitrary retry-count ceiling is introduced.
+
+Provider-side writes are not conditional atomic CAS operations; an
+out-of-band change between the adapter's final GET and PUT remains a residual
+race. This explicit decision is not a blanket bypass of account ownership,
+remote incarnation, payer evidence, permissions, payment finality, archival
+state, or double-effect protections. It does not turn a processing Wallet
+claim into a bank/gift API case. The separately outstanding Hell Wallet
+`#112719` requires its own original-claim accounting evidence and distinct
+operator authorization before any live settlement.
+
+**Acceptance:** disposable MariaDB and loopback Native execute the actual
+`ManualReceipts.php` callback and original provider coordinator for
+renew/day/volume, with original historical-dispatched Native drift,
+prewrite races, signed/expired preview, another actor, lost remote ACK,
+old callback replay, one-time invoice/audit and preserved provider identity.
+See `tools/test_post_v9_scoped_api_pg.py`. Source CI and publication do
+not prove installed Hell/Vivan/Chili behavior or authorize live mutation.
+
 ## 📨 Explicit customer message redelivery — authorized staff, not a financial retry
 
 When a **terminal** payment/service has an original immutable 018 customer

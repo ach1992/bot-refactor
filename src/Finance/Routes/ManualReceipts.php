@@ -22,7 +22,7 @@ if (str_starts_with($adminCallback,'attentionInbox') ||
 
 // An existing authenticated bank/gift API proof can finish the ORIGINAL
 // payment. No provider GET, second financial ledger, or new access grant.
-if (preg_match('/^apiEvidence(Resume|Execute)_([1-9][0-9]{0,17})(?:_([a-f0-9]{20}))?$/D',
+if (preg_match('/^apiEvidence(Resume|Execute|Override)_([1-9][0-9]{0,17})(?:_([a-f0-9]{20}))?$/D',
     (string)$data,$apiResume)) {
     if (!achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'payments') ||
         (int)($chat_id??0)!==(int)$from_id) {
@@ -53,10 +53,33 @@ if (preg_match('/^apiEvidence(Resume|Execute)_([1-9][0-9]{0,17})(?:_([a-f0-9]{20
             answerCallbackQuery($callbackId,achbotMessage('manual_receipt_final.status_stale'),true);
             return;
         }
-        $confirmed=$apiResume[1]==='Execute';
+        $confirmed=in_array($apiResume[1],['Execute','Override'],true);
         $needsConfirmation=achbotApiPaymentNeedsOperatorConfirmation(
             $connection,$pay,$attempt);
-        if ($confirmed) {
+        $operatorOverride=null;
+        // Native inspection is read-only. Only an already paid/dispatched
+        // operation with a proven original identity can offer the exceptional
+        // explicit "apply original terms" decision.
+        $preview=$needsConfirmation && $apiResume[1]!=='Execute'
+            ?achbotApiPaymentOperatorEditPreview($connection,$pay,$attempt,$proof)
+            :null;
+        if ($apiResume[1]==='Override') {
+            $expected=$preview && $preview['disposition']==='drift'
+                ?achbotApiPaymentOperatorOverrideToken($pay,$attempt,$proof,
+                    (int)$from_id,$preview)
+                :null;
+            if (!$needsConfirmation || !is_string($expected) ||
+                !hash_equals($expected,(string)($apiResume[3]??''))) {
+                answerCallbackQuery($callbackId,
+                    achbotMessage('automatic_gateway_review.service_override_changed'),true);
+                return;
+            }
+            $operatorOverride=['actor_id'=>(int)$from_id,
+                'entitlement_digest'=>$preview['entitlement_digest'],
+                'generation'=>$preview['generation'],
+                'target_expire'=>$preview['target_expire'],
+                'target_bytes'=>$preview['target_bytes']];
+        } elseif ($apiResume[1]==='Execute') {
             $expected=achbotApiPaymentOperatorToken(
                 $pay,$attempt,$proof,(int)$from_id);
             if (!$needsConfirmation || !hash_equals(
@@ -66,18 +89,40 @@ if (preg_match('/^apiEvidence(Resume|Execute)_([1-9][0-9]{0,17})(?:_([a-f0-9]{20
                 return;
             }
         } elseif ($needsConfirmation) {
-            // First click is read-only. The real actor/permission/source
-            // checks run again after this preview, before dispatch.
-            $token=achbotApiPaymentOperatorToken(
-                $pay,$attempt,$proof,(int)$from_id);
+            // One fresh Native GET establishes an informed, actor-bound
+            // override choice. The final callback GETs again before any write.
+            $override=$preview && $preview['disposition']==='drift';
+            if ($override) {
+                $token=achbotApiPaymentOperatorOverrideToken($pay,$attempt,
+                    $proof,(int)$from_id,$preview);
+                $formatDate=static fn($epoch):string => $epoch===null
+                    ?'نامحدود':gmdate('Y-m-d H:i',(int)$epoch).' UTC';
+                $formatGiB=static fn($bytes):string =>
+                    number_format((int)$bytes/1073741824,2,'.','');
+                $message=achbotMessageHtml('automatic_gateway_review.service_override_confirm',[
+                    'payment'=>$payId,
+                    'currentExpiry'=>$formatDate($preview['native_expire']),
+                    'targetExpiry'=>$formatDate($preview['target_expire']),
+                    'currentVolume'=>$formatGiB($preview['native_bytes']),
+                    'targetVolume'=>$formatGiB($preview['target_bytes']),
+                    'currentStatus'=>$preview['native_status'],
+                    'currentGroups'=>$preview['native_groups']
+                        ?implode(',',array_map('strval',$preview['native_groups'])):'[]']);
+                $callback='apiEvidenceOverride_'.$payId.'_'.$token;
+                $actionLabel=achbotMessage('automatic_gateway_review.service_override_execute');
+            } else {
+                $token=achbotApiPaymentOperatorToken(
+                    $pay,$attempt,$proof,(int)$from_id);
+                $message=achbotMessageHtml('automatic_gateway_review.service_confirm',[
+                    'payment'=>$payId]);
+                $callback='apiEvidenceExecute_'.$payId.'_'.$token;
+                $actionLabel=achbotMessage('automatic_gateway_review.service_execute');
+            }
             $buttons=json_encode(['inline_keyboard'=>[
-                [['text'=>achbotMessage('automatic_gateway_review.service_execute'),
-                  'callback_data'=>'apiEvidenceExecute_'.$payId.'_'.$token]],
+                [['text'=>$actionLabel,'callback_data'=>$callback]],
                 [['text'=>achbotMessage('automatic_gateway_review.redrive_cancel'),
                   'callback_data'=>'attentionCase_'.$payId]]
             ]],JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
-            $message=achbotMessageHtml('automatic_gateway_review.service_confirm',[
-                'payment'=>$payId]);
             $reply=editText($message_id,$message,$buttons,'HTML',(int)$from_id);
             if (!is_object($reply)||($reply->ok??false)!==true)
                 sendMessage($message,$buttons,'HTML',(int)$from_id);
@@ -86,7 +131,7 @@ if (preg_match('/^apiEvidence(Resume|Execute)_([1-9][0-9]{0,17})(?:_([a-f0-9]{20
         }
         answerCallbackQuery($callbackId,achbotMessage('manual_receipt_final.checking'));
         $outcome=achbotApiPaymentSettle($connection,$payId,$proof,
-            $confirmed?(int)$from_id:0,$confirmed?(int)$admin:0);
+            $confirmed?(int)$from_id:0,$confirmed?(int)$admin:0,$operatorOverride);
         // A settled invoice is not necessarily an ACKed customer message.
         // The terminal fast-path returns 'settled' after pending-only delivery;
         // inspect the original per-message journal before reporting success.
@@ -103,8 +148,15 @@ if (preg_match('/^apiEvidence(Resume|Execute)_([1-9][0-9]{0,17})(?:_([a-f0-9]{20
                 : achbotMessage('manual_receipt_final.status_unknown'));
         // This action began inside the shared attention inbox. Its result
         // always returns there, even if the original case is now closed.
-        $buttons=json_encode(['inline_keyboard'=>[[['text'=>achbotMessage('manual_receipt_final.back'),
-            'callback_data'=>'attentionInbox']]]],JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
+        $rows=[[['text'=>achbotMessage('manual_receipt_final.back'),
+            'callback_data'=>'attentionInbox']]];
+        // A deferred result is NOT a terminal denial: expose the original
+        // case directly, where the next confirmed preview uses fresh evidence.
+        if (!in_array($outcome,['confirmed','settled'],true))
+            array_unshift($rows,[['text'=>achbotMessage('automatic_gateway_review.redrive_cancel'),
+                'callback_data'=>'attentionCase_'.$payId]]);
+        $buttons=json_encode(['inline_keyboard'=>$rows],
+            JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
         $text=achbotMessageHtml('manual_receipt_final.result',['result'=>$result]);
         $reply=editText($message_id,$text,$buttons,'HTML',(int)$from_id);
         if (!is_object($reply)||($reply->ok??false)!==true)

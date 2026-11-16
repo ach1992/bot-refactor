@@ -69,6 +69,30 @@ function achbotPgRecoveryDisposition(array $before,array $target,array $native):
 }
 
 /**
+ * Snapshot of the physical Native entitlement that a staff actor explicitly
+ * reviewed before overriding an independently changed ORIGINAL operation.
+ * Usage is deliberately excluded: legitimate client traffic can increase
+ * between the preview and the pre-write GET without changing entitlement.
+ */
+function achbotPgOperatorEntitlementDigest(array $native): string {
+    foreach (['expire','data_limit','status','group_ids'] as $field)
+        if (!array_key_exists($field,$native))
+            throw new RuntimeException('pg_operator_preview_invalid');
+    $view=[
+        'expire'=>$native['expire'],
+        'data_limit'=>$native['data_limit'],
+        'status'=>$native['status'],
+        'group_ids'=>$native['group_ids'],
+    ];
+    if (!is_array($view['group_ids']) ||
+        !is_int($view['data_limit']) ||
+        !($view['expire']===null || is_int($view['expire'])) ||
+        !is_string($view['status']))
+        throw new RuntimeException('pg_operator_preview_invalid');
+    return hash('sha256',json_encode($view,JSON_THROW_ON_ERROR));
+}
+
+/**
  * Originating CREATE/IMPORT rows pin their one local order. Historical
  * migrations keep a NULL origin and admit either an immutable old customer
  * reference OR a later independently proven PasarGuard external attachment.
@@ -169,7 +193,8 @@ function achbotPgRecoverEdit(mysqli $db,int $serverId,array $params,
         // Wallet reconciliation is GET-only. A claimed-but-unsent original
         // operation has no applied result to reconcile and must not acquire
         // a new write intent merely because the operator is authorized.
-        if (($source['observe_only']??false)===true && !is_array($absolute))
+        if ((($source['observe_only']??false)===true ||
+             ($source['preview_only']??false)===true) && !is_array($absolute))
             throw new RuntimeException('pg_recovery_original_result_missing');
         if ($absolute===null && $account['state']==='mutating' &&
             ($changes['phase']??null)==='claimed') {
@@ -194,7 +219,43 @@ function achbotPgRecoverEdit(mysqli $db,int $serverId,array $params,
             'pay_id'=>$payId,'order_id'=>$orderId,'server_id'=>$serverId,
             'source'=>$kind,'result'=>$disposition,'phase'=>(string)($changes['phase']??'none'),
             'state'=>(string)$account['state']],$disposition==='drift'?'warning':'info');
-        if ($disposition==='drift')
+        // An operator preview is strictly GET-only and returns only typed
+        // entitlement facts, not provider credentials or a mutable journal.
+        if (($source['preview_only']??false)===true) {
+            if (!$operator || $account['state']!=='mutating' ||
+                !in_array($kind,['renew','day','volume'],true))
+                throw new RuntimeException('pg_operator_preview_unavailable');
+            return (object)['success'=>true,'verified'=>true,'preview'=>true,
+                'disposition'=>$disposition,
+                'native_expire'=>$native['expire'],
+                'native_bytes'=>$native['data_limit'],
+                'native_status'=>$native['status'],
+                'native_groups'=>$native['group_ids'],
+                'target_expire'=>$absolute['expire'],
+                'target_bytes'=>$absolute['data_limit'],
+                'entitlement_digest'=>achbotPgOperatorEntitlementDigest($native)];
+        }
+        $operatorDigest=$source['operator_override_native_digest']??null;
+        $forceOperator=$disposition==='drift' && $operator &&
+            $account['state']==='mutating' &&
+            is_string($operatorDigest) &&
+            preg_match('/\A[a-f0-9]{64}\z/D',$operatorDigest)===1 &&
+            hash_equals($operatorDigest,achbotPgOperatorEntitlementDigest($native)) &&
+            ($source['operator_override_target']??null)===[
+                'expire'=>$absolute['expire'],
+                'data_limit'=>$absolute['data_limit']];
+        if ($forceOperator) {
+            require_once __DIR__.'/../Admin/Access.php';
+            $actor=(int)($source['operator_id']??0);
+            $owner=(int)($source['primary_owner_id']??0);
+            if ($actor<=0 || $owner<=0 ||
+                !achbotAdminCanFor($db,$actor,$owner,'payments'))
+                throw new RuntimeException('pg_operator_override_denied');
+            achbotDiagnosticEvent('achbot.native.operator_override_requested',[
+                'pay_id'=>$payId,'order_id'=>$orderId,'server_id'=>$serverId,
+                'actor_id'=>$actor,'source'=>$kind,'result'=>'drift'],'warning');
+        }
+        if ($disposition==='drift' && !$forceOperator)
             throw new RuntimeException('pg_recovery_native_entitlement_drift');
         // Applied-only continuation must NEVER issue a PUT or RESET, even
         // when an untouched baseline could theoretically be replayed with an
@@ -206,7 +267,7 @@ function achbotPgRecoverEdit(mysqli $db,int $serverId,array $params,
             throw new RuntimeException('pg_recovery_already_finished_changed');
         $observeOnly=($source['observe_only']??false)===true;
         if ($account['state']==='mutating') {
-            if ($disposition==='baseline') {
+            if ($disposition==='baseline' || $forceOperator) {
                 // Original financial claim and account fence are held by the
                 // caller. This PUT uses a stored ABSOLUTE target, never
                 // current + purchased units, so even additive retry does not

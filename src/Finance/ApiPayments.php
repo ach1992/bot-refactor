@@ -98,6 +98,78 @@ function achbotApiPaymentOperatorToken(array $pay,array $attempt,
     ]);
     return substr(hash_hmac('sha256',$bound,achbotPaymentEvidenceKey()),0,20);
 }
+/**
+ * Staff-only GET preview of a proven original edit whose PasarGuard Native
+ * state has independently drifted. Preview never mutates payment or Native;
+ * it uses the same original paid intent and recovery identity as execution.
+ */
+function achbotApiPaymentOperatorEditPreview(mysqli $db,array $pay,
+    array $attempt,array $proof): ?array {
+    $id=(int)($pay['id']??0);
+    $state=(string)($attempt['evidence_fulfillment_state']??'');
+    if ($id<=0 || ($pay['state']??null)!=='processing' ||
+        (int)($pay['approved_by']??-1)!==0 ||
+        $state!=='dispatched' ||
+        !in_array((string)($attempt['provider']??''),['bank_transfer','gift_card'],true) ||
+        ($proof['mode']??null)!=='settle') return null;
+    require_once __DIR__.'/../Panel/ProviderRuntime.php';
+    $server=(int)($pay['server_id']??0);
+    // Only the provider implementing an exact-fenced recovery preview
+    // currently supports this optional operator resolution.
+    if ($server<=0 || achbotProviderType($db,$server)!=='pasarguard') return null;
+    $payload=achbotPaymentEvidenceUnprotect(
+        'fulfillment:'.$id.':'.$proof['operation'],
+        (string)($attempt['evidence_fulfillment_payload']??''));
+    if (!is_array($payload) ||
+        ($payload['operation']??null)!==$proof['operation'] ||
+        ($payload['pay_sha256']??null)!==achbotPaymentEvidencePayFingerprint($pay) ||
+        !in_array((string)($payload['kind']??''),['renew','day','volume'],true) ||
+        (int)($payload['server']??0)!==$server ||
+        !is_array($payload['params']??null) ||
+        (int)($payload['params']['pay_id']??0)!==$id)
+        return null;
+    $generation=$payload['operator_override_generation']??0;
+    if (!is_int($generation) || $generation<0 || $generation>=PHP_INT_MAX)
+        return null;
+    $source=$payload;
+    $source['preview_only']=true;
+    $response=achbotProviderRecoverEdit($db,$server,$payload['params'],$source,true);
+    if (($response->success??false)!==true ||
+        ($response->preview??false)!==true ||
+        !in_array($response->disposition??null,['drift','baseline','applied'],true) ||
+        !is_string($response->entitlement_digest??null) ||
+        preg_match('/^[a-f0-9]{64}$/D',$response->entitlement_digest)!==1)
+        return null;
+    return ['disposition'=>$response->disposition,
+        'native_expire'=>$response->native_expire,
+        'native_bytes'=>$response->native_bytes,
+        'native_status'=>$response->native_status,
+        'native_groups'=>$response->native_groups,
+        'target_expire'=>$response->target_expire,
+        'target_bytes'=>$response->target_bytes,
+        'entitlement_digest'=>$response->entitlement_digest,
+        'generation'=>$generation];
+}
+function achbotApiPaymentOperatorOverrideToken(array $pay,array $attempt,
+    array $proof,int $actor,array $preview): string {
+    $digest=$preview['entitlement_digest']??null;
+    $generation=$preview['generation']??null;
+    $expiry=$preview['target_expire']??null;
+    $bytes=$preview['target_bytes']??null;
+    if ($actor<=0 || !is_string($digest) ||
+        preg_match('/^[a-f0-9]{64}$/D',$digest)!==1 ||
+        !is_int($generation) || $generation<0 ||
+        !is_int($expiry) || $expiry<=0 ||
+        !is_int($bytes) || $bytes<0 ||
+        (int)($pay['id']??0)<=0 || ($proof['mode']??null)!=='settle')
+        throw new RuntimeException('api_operator_override_token_invalid');
+    return substr(hash_hmac('sha256',implode('|',[
+        'original-native-operator-override-v2',$actor,(int)$pay['id'],
+        achbotPaymentEvidencePayFingerprint($pay),
+        (string)($attempt['evidence_fulfillment_state']??''),
+        (string)$proof['operation'],$digest,$expiry,$bytes,$generation,
+    ]),achbotPaymentEvidenceKey()),0,20);
+}
 function achbotApiPaymentReady(mysqli $db): bool {
     return function_exists('achbotPaymentEvidenceSchemaReady') && achbotPaymentEvidenceSchemaReady($db);
 }
@@ -539,13 +611,13 @@ function achbotApiPaymentManualAddonAllowedLocked(mysqli $db,?array $pay,?array 
 }
 /** Exclusive real local financial claim. No provider or Telegram HTTP inside. */
 function achbotApiPaymentSettle(mysqli $db,int $id,array $proof,
-    int $operator=0,int $primaryOwner=0): string {
+    int $operator=0,int $primaryOwner=0,?array $operatorOverride=null): string {
     return achbotApiPaymentWithWorkerLock($db,$id,
         static fn():string=>achbotApiPaymentSettleLocked(
-            $db,$id,$proof,$operator,$primaryOwner));
+            $db,$id,$proof,$operator,$primaryOwner,$operatorOverride));
 }
 function achbotApiPaymentSettleLocked(mysqli $db,int $id,array $proof,
-    int $operator=0,int $primaryOwner=0): string {
+    int $operator=0,int $primaryOwner=0,?array $operatorOverride=null): string {
     require_once __DIR__.'/ServiceEffects.php';require_once __DIR__.'/BankPurchase.php';
     require_once __DIR__.'/DeliveryLedger.php';
     $before=achbotApiPaymentRow($db,$id);if(!$before)return 'review';
@@ -631,7 +703,8 @@ function achbotApiPaymentSettleLocked(mysqli $db,int $id,array $proof,
             if (!$delivery['committed']) return 'review';
             achbotReferralAfterCompletedPurchase($db,(int)$pay['user_id'],$id,(int)($GLOBALS['admin']??0),$GLOBALS['botState']??[]);
         } elseif($type!=='INCREASE_WALLET') {
-            if (!achbotApiPaymentFulfillEdit($db,$pay,$proof,$operator>0)) return 'review';
+            if (!achbotApiPaymentFulfillEdit($db,$pay,$proof,$operator>0,
+                $operatorOverride,$operator,$primaryOwner)) return 'review';
         }
         $fresh=achbotApiPaymentRow($db,$id);if(!$fresh || !achbotApiPaymentTerminal($fresh))return 'review';
         // Every per-ordinal intent was written by the SAME terminal COMMIT.
@@ -695,7 +768,8 @@ function achbotApiPaymentNativeIntentCapture(mysqli $db,int $id,array $proof,
     };
 }
 function achbotApiPaymentFulfillEdit(mysqli $db,array $pay,array $proof,
-    bool $operator=false): bool {
+    bool $operator=false,?array $operatorOverride=null,
+    int $actor=0,int $primaryOwner=0): bool {
     $id=(int)$pay['id'];$type=(string)$pay['type'];$a=achbotApiPaymentAttempt($db,$id);$profile=$a?achbotPaymentEvidenceSnapshot($a):null;$subject=$profile['subject']??[];
     $state=(string)($a['evidence_fulfillment_state']??'');$payload=null;
     if($state==='verified') {
@@ -754,6 +828,51 @@ function achbotApiPaymentFulfillEdit(mysqli $db,array $pay,array $proof,
             return false;
         require_once __DIR__.'/../Panel/ProviderRuntime.php';
         $source=$payload;
+        if ($operatorOverride!==null) {
+            $digest=$operatorOverride['entitlement_digest']??null;
+            $generation=$operatorOverride['generation']??null;
+            $targetExpire=$operatorOverride['target_expire']??null;
+            $targetBytes=$operatorOverride['target_bytes']??null;
+            $savedGeneration=$payload['operator_override_generation']??0;
+            if (!$operator || $actor<=0 || $primaryOwner<=0 ||
+                !in_array($kind,['renew','day','volume'],true) ||
+                !is_string($digest) ||
+                preg_match('/^[a-f0-9]{64}$/D',$digest)!==1 ||
+                !is_int($generation) || $generation<0 ||
+                !is_int($savedGeneration) || $savedGeneration!==$generation ||
+                $generation>=PHP_INT_MAX-1 ||
+                !is_int($targetExpire) || $targetExpire<=0 ||
+                !is_int($targetBytes) || $targetBytes<0 ||
+                (int)($operatorOverride['actor_id']??0)!==$actor ||
+                achbotProviderType($db,$server)!=='pasarguard')
+                return false;
+            // Consume the actor-bound one-time confirmation BEFORE any
+            // remote reset/PUT. The attempt generation means a callback
+            // replay cannot repeat a reset if the Native ACK was lost.
+            // A fresh preview may authorize a deliberate next recovery.
+            $previousAttestations=$payload['operator_override_attempts']??[];
+            if (!is_array($previousAttestations) ||
+                !array_is_list($previousAttestations) ||
+                count($previousAttestations)!==$generation)
+                return false;
+            $attestation=[
+                'actor_id'=>$actor,'native_digest'=>$digest,
+                'generation'=>$generation+1,
+                'target_expire'=>$targetExpire,'target_bytes'=>$targetBytes,
+                'confirmed_at'=>gmdate('c')];
+            $previousAttestations[]=$attestation;
+            $payload['operator_override_generation']=$generation+1;
+            $payload['operator_override_attempts']=$previousAttestations;
+            $payload['operator_override_attestation']=$attestation;
+            if (!achbotApiPaymentStoreFulfillment($db,$id,$proof,
+                'dispatched',$payload,'dispatched')) return false;
+            $source=$payload;
+            $source['operator_override_native_digest']=$digest;
+            $source['operator_override_target']=[
+                'expire'=>$targetExpire,'data_limit'=>$targetBytes];
+            $source['operator_id']=$actor;
+            $source['primary_owner_id']=$primaryOwner;
+        }
         if (($payload['capture_required']??false)===true &&
             !isset($payload['native_intent']))
             $source['_paid_intent_capture']=achbotApiPaymentNativeIntentCapture(

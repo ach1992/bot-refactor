@@ -57,6 +57,15 @@ function bot($method,$args) {
 }
 function sendMessage(...$args){$GLOBALS['events'][]=['kind'=>'send'];return (object)['ok'=>true];}
 function editKeys(...$args){$GLOBALS['events'][]=['kind'=>'edit_keys'];return (object)['ok'=>true];}
+function editText($msg,$text,$buttons=null,$mode='HTML',$chat=null){
+    $GLOBALS['events'][]=['kind'=>'admin_edit','text'=>$text,
+        'buttons'=>is_string($buttons)?json_decode($buttons,true):$buttons];
+    return (object)['ok'=>true];
+}
+function answerCallbackQuery($id,$text='',$alert=false){
+    $GLOBALS['events'][]=['kind'=>'callback','text'=>$text,'alert'=>$alert];
+    return (object)['ok'=>true];
+}
 function achbotNotifyAdmins(...$args){$GLOBALS['events'][]=['kind'=>'admin_notice'];return (object)['ok'=>true];}
 function getMainKeys(){return '{}';}
 require_once $root.'/messages/loader.php';
@@ -312,6 +321,27 @@ try {
     $actor=(int)($spec['actor']??9001);
     $result=$proof?achbotApiPaymentSettle($connection,$id,$proof,$actor,9001)
         :'missing_proof';
+ } elseif ($op==='operator_route') {
+    $id=(int)$spec['pay_id'];$from_id=(int)($spec['actor']??9001);
+    $chat_id=(int)($spec['chat']??$from_id);
+    $callbackId='fixture-operator';$message_id=456;
+    $data=(string)($spec['callback']??('apiEvidenceResume_'.$id));
+    $userInfo=['step'=>'none'];$text=null;
+    require $root.'/src/Finance/Routes/ManualReceipts.php';
+    $result=['routed'=>true,'events'=>$GLOBALS['events']];
+ } elseif ($op==='operator_override_evidence') {
+    $id=(int)$spec['pay_id'];
+    $attempt=achbotApiPaymentAttempt($connection,$id);
+    $proof=achbotPaymentEvidenceGetProof($connection,$id);
+    $payload=$proof?achbotPaymentEvidenceUnprotect(
+        'fulfillment:'.$id.':'.$proof['operation'],
+        (string)($attempt['evidence_fulfillment_payload']??'')):null;
+    $result=['status'=>$attempt['evidence_fulfillment_state'],
+        'actor'=>$payload['operator_override_attestation']['actor_id']??null,
+        'digest'=>$payload['operator_override_attestation']['native_digest']??null,
+        'generation'=>$payload['operator_override_generation']??0,
+        'attempt_count'=>count($payload['operator_override_attempts']??[]),
+        'timestamp'=>$payload['operator_override_attestation']['confirmed_at']??null];
  } elseif ($op==='finisher_probe') {
     // Deliberately synthetic remote-verification object only for a negative
     // AUTHORIZATION test. This never dispatches provider traffic or commits
@@ -588,6 +618,7 @@ def sandbox(*, imported_empty=False):
                             'achbot.finance.evidence_',
                             'achbot.finance.hosted_',
                             'achbot.native.edit_recovery_',
+                            'achbot.native.operator_override_',
                             'achbot.native.account_action',
                             'achbot.delivery.',
                         )
@@ -1207,6 +1238,129 @@ def test():
                 passed(run('operator',pay_id=pay)=='review' and
                     provider.write_count==before_writes,
                     'operator_'+kind+'_repeated_'+drift+'_stays_reviewable')
+    # Issue #26: the same operator already has a paid/dispatched original
+    # renewal, but a separate Native quota edit changed the entitlement
+    # between first dispatch and manual confirmation. The ordinary callback
+    # still holds; the NEW source-routed preview shows the precise delta and
+    # an explicit actor+Native-bound one-time recovery choice.
+    for kind in ('renew','day','volume'):
+        with sandbox() as (sql,run,provider,bank,_):
+            if kind=='renew':
+                issued=run('issue_renew',hash='operator_override_renew')
+                pay=issued['pay_id'];message=evidence_sms(1,issued['price'])
+                bank.messages['1']=dict(message)
+            else:
+                issued,message=claim_proof(run,bank,kind,
+                    'operator_override_'+kind)
+                pay=issued['pay_id']
+            assert run('reserve',pay_id=pay,sms=message) is not None
+            assert run('consume',pay_id=pay)['status']=='proven'
+            provider.mode='modify_lie'
+            assert run('settle',pay_id=pay)=='review'
+            assert terminal_state(sql,pay).startswith('processing|dispatched|')
+            assert sql('SELECT provider_state FROM service_effects WHERE id=1')=='mutating'
+            provider.mode='ok'
+            # This is a real independent Native edit, not a paid operation.
+            provider.user['data_limit']+=2*1073741824
+            before=provider.write_count
+            ordinary=run('operator',pay_id=pay)
+            assert ordinary=='review' and provider.write_count==before,ordinary
+            preview_run=run('operator_route',pay_id=pay)
+            buttons=[b for e in preview_run['events'] if e['kind']=='admin_edit'
+                     for row in e['buttons']['inline_keyboard'] for b in row]
+            previews=[b for b in buttons if b['callback_data'].startswith(
+                f'apiEvidenceOverride_{pay}_')]
+            assert len(previews)==1,(kind,preview_run)
+            assert 'تغییر مستقل سرویس' in next(e['text'] for e in preview_run['events']
+                if e['kind']=='admin_edit')
+            assert provider.write_count==before,(kind,provider.trace)
+            token=previews[0]['callback_data']
+            # Spoofed actor cannot use another actor's preview; no Native.
+            refused=run('operator_route',pay_id=pay,actor=1001,callback=token)
+            assert not any(e['kind']=='admin_edit' for e in refused['events'])
+            assert provider.write_count==before
+            # Between read-only preview and explicit confirmation, change the
+            # real Native quota. The signed preview becomes stale, not a write.
+            provider.user['data_limit']+=1073741824
+            stale=run('operator_route',pay_id=pay,callback=token)
+            assert provider.write_count==before,(kind,stale)
+            assert any(e['kind']=='callback' and e['alert'] for e in stale['events'])
+            assert terminal_state(sql,pay).startswith('processing|dispatched|')
+            # Reopen original case: reobserved state produces a new token.
+            fresh=run('operator_route',pay_id=pay)
+            button=next(b for e in fresh['events'] if e['kind']=='admin_edit'
+                for row in e['buttons']['inline_keyboard'] for b in row
+                if b['callback_data'].startswith(f'apiEvidenceOverride_{pay}_'))
+            assert button['callback_data']!=token
+            execute=run('operator_route',pay_id=pay,
+                callback=button['callback_data'])
+            assert execute['routed'] is True
+            assert terminal_state(sql,pay).startswith('auto_cart_approved|done|'),(
+                kind,terminal_state(sql,pay),provider.trace)
+            assert sql('SELECT COUNT(*) FROM increase_order')=='1'
+            assert sql('SELECT provider_state FROM service_effects WHERE id=1')=='linked'
+            attestation=run('operator_override_evidence',pay_id=pay)
+            assert attestation['actor']==9001 and len(attestation['digest'])==64
+            assert attestation['generation']==1 and attestation['attempt_count']==1
+            assert attestation['timestamp'] and attestation['status']=='done'
+            assert provider.write_count>before,(kind,provider.trace)
+            after=provider.write_count
+            replay=run('operator_route',pay_id=pay,
+                callback=button['callback_data'])
+            assert provider.write_count==after and sql(
+                'SELECT COUNT(*) FROM increase_order')=='1',replay
+            checks.append('operator_'+kind+
+                '_explicit_physical_drift_override_actor_bound_single_original_settlement')
+            checks.append('operator_'+kind+
+                '_stale_native_preview_no_mutation_repreview_required')
+
+    # An explicit authorization is consumed before the Native write. If the
+    # provider accepts a PUT but loses/misreports the response, repeated
+    # delivery of the SAME Telegram callback must not issue another PUT/RESET.
+    # A fresh operator preview reads the new attempt generation; only a new
+    # actor decision can continue the same original effect safely.
+    with sandbox() as (sql,run,provider,bank,_):
+        issued,message=claim_proof(run,bank,'day','operator_override_lost_ack_generation')
+        pay=issued['pay_id']
+        assert run('reserve',pay_id=pay,sms=message) is not None
+        assert run('consume',pay_id=pay)['status']=='proven'
+        provider.mode='modify_lie'
+        assert run('settle',pay_id=pay)=='review'
+        provider.mode='ok'
+        provider.user['data_limit']+=2*1073741824
+        preview=run('operator_route',pay_id=pay)
+        first=next(b['callback_data'] for e in preview['events']
+            if e['kind']=='admin_edit'
+            for row in e['buttons']['inline_keyboard'] for b in row
+            if b['callback_data'].startswith(f'apiEvidenceOverride_{pay}_'))
+        provider.mode='modify_lie'
+        failed=run('operator_route',pay_id=pay,callback=first)
+        assert failed['routed'] and terminal_state(sql,pay).startswith(
+            'processing|dispatched|'),failed
+        assert run('operator_override_evidence',pay_id=pay)['generation']==1
+        count=provider.write_count
+        provider.mode='ok'
+        duplicate=run('operator_route',pay_id=pay,callback=first)
+        assert provider.write_count==count,(provider.trace,duplicate)
+        assert any(e['kind']=='callback' and e['alert']
+            for e in duplicate['events']),duplicate
+        assert sql('SELECT COUNT(*) FROM increase_order')=='0'
+        assert terminal_state(sql,pay).startswith('processing|dispatched|')
+        fresh=run('operator_route',pay_id=pay)
+        second=next(b['callback_data'] for e in fresh['events']
+            if e['kind']=='admin_edit'
+            for row in e['buttons']['inline_keyboard'] for b in row
+            if b['callback_data'].startswith(f'apiEvidenceOverride_{pay}_'))
+        assert second!=first
+        approved=run('operator_route',pay_id=pay,callback=second)
+        assert approved['routed'] and terminal_state(sql,pay).startswith(
+            'auto_cart_approved|done|'),approved
+        last=run('operator_override_evidence',pay_id=pay)
+        assert last['generation']==2 and last['attempt_count']==2,last
+        assert sql('SELECT COUNT(*) FROM increase_order')=='1'
+        checks.append('operator_override_lost_ack_consumes_original_callback_before_native')
+        checks.append('operator_override_fresh_preview_after_failure_not_stuck')
+
     # If the first worker died before any remote PUT, the actor's deliberate
     # confirmation restarts only the saved absolute service operation.
     for kind in ('day','volume'):
