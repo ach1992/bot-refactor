@@ -255,9 +255,30 @@ def run(w,e,s):
                           rb'account_delete_local|warning_remote_delete|'
                           rb'warning_local_delete|operator_local_order_delete)'
                           rb'_deferred order_id=[1-9][0-9]*$')
+    # Deletion uses the real provider router, which now emits structured
+    # private diagnostics. Accept ONLY the typed local account-delete event;
+    # malformed events and unexpected PHP stderr remain test failures.
+    def known_native_diagnostic(line):
+        if not line.startswith(b'[AChBot] '): return False
+        try: event=json.loads(line[len(b'[AChBot] '):])
+        except (ValueError,UnicodeDecodeError): return False
+        if not isinstance(event,dict): return False
+        allowed={'event','time_utc','level','trace_id','instance',
+                 'server_id','action','provider','result','reason'}
+        return (set(event)<=allowed and
+            event.get('event')=='achbot.native.account_action' and
+            event.get('server_id')==2 and event.get('action')=='delete' and
+            event.get('provider')=='marzban' and
+            event.get('result') in ('verified','review') and
+            event.get('level') in ('info','warning') and
+            isinstance(event.get('instance'),str) and
+            re.fullmatch(r'[a-f0-9]{16}',event.get('trace_id','')) is not None and
+            re.fullmatch(r'\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}Z',
+                         event.get('time_utc','')) is not None)
     unexpected=[line for line in p.stderr.splitlines()
                 if line not in expected and not diagnostic.fullmatch(line)
-                and not notification_diagnostic.fullmatch(line)]
+                and not notification_diagnostic.fullmatch(line)
+                and not known_native_diagnostic(line)]
     if p.returncode or unexpected:
         raise RuntimeError(repr((p.returncode,unexpected[-8:],p.stdout[-400:])))
     return json.loads(p.stdout)

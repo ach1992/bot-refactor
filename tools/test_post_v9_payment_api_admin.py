@@ -52,8 +52,17 @@ def main():
 } elseif ($kind==='menu') {""")
     with owned.owned_database() as (w,env):
         keys.setup(w,env)
-        evidence_snapshot=w/'PaymentEvidence.php'
+        # Preserve current runtime-relative imports inside the disposable
+        # fixture: PaymentEvidence now loads the shared private diagnostics.
+        evidence_snapshot=w/'src/Finance/PaymentEvidence.php'
+        evidence_snapshot.parent.mkdir(parents=True,exist_ok=True)
         evidence_snapshot.write_bytes(evidence_bytes)
+        # PHP require_once identifies the canonical physical module. The
+        # genuine DirectGift/ProviderRuntime source also loads this shared
+        # helper, so point the fixture at the SAME file, not a second copy.
+        diagnostic=w/'src/Diagnostics/EventLog.php'
+        diagnostic.parent.mkdir(parents=True,exist_ok=True)
+        diagnostic.symlink_to(ROOT/'src/Diagnostics/EventLog.php')
         paths={}
         for name,data in [('webhook',webhook),('menu',menu),('route',route),
                           ('gateway_menu_route',gateway),('writers',writers)]:
