@@ -507,6 +507,24 @@ function editMarzbanConfig($server_id,$info,?array $giftTarget=null){
     if ($remark==='') return (object)['success'=>false,'uncertain'=>false,'msg'=>'missing_account'];
     $panelUrl=rtrim((string)$serverInfo['panel_url'],'/');
     if ($panelUrl==='') return (object)['success'=>false,'uncertain'=>true,'msg'=>'marzban_target_unknown'];
+    // Wallet renewals are anchored to the endpoint that existed at the
+    // original debit COMMIT, not the endpoint this adapter happens to read.
+    // The existing isPinned() checks then keep this exact endpoint stable
+    // before GET, RESET and PUT even when server_config changes mid-request.
+    if (array_key_exists('_wallet_renew_target',$info)) {
+        $expected=$info['_wallet_renew_target'];
+        if (!is_array($expected) ||
+            ($expected['provider']??null)!=='marzban' ||
+            (int)($expected['server_id']??0)!==(int)$server_id ||
+            (int)($expected['pay_id']??0)!==(int)($info['pay_id']??0) ||
+            (int)($info['pay_id']??0)<=0 ||
+            (string)($expected['remark']??'')!==$remark ||
+            (int)($expected['days']??-1)!==(int)($info['days']??-2) ||
+            (int)($expected['volume']??-1)!==(int)($info['volume']??-2) ||
+            rtrim((string)($expected['panel_url']??''),'/')!==$panelUrl)
+            return (object)['success'=>false,'uncertain'=>true,
+                            'msg'=>'wallet_renew_physical_target_changed'];
+    }
     if ($giftTarget!==null) {
         require_once __DIR__ . '/../Subscription/GiftBatch.php';
         if (!achbotGiftTargetMatches($connection,(int)$server_id,$giftTarget) ||

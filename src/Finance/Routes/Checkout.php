@@ -766,11 +766,12 @@ if (is_string($data) && strlen($data) <= 64 && preg_match('/\ApayBuyWithWallet([
 
             if ($payType === "RENEW_SCONFIG") {
 
-                $planDetails = getPlanDetails($connection, $fid);
-                $plan        = $planDetails['plan'];
-
-                $days   = $planDetails['days'];
-                $volume = $planDetails['volume'];
+                $plan=$payInfo['_achbot_wallet_locked_plan']??null;
+                if (!is_array($plan) || (int)($plan['id']??0)!==$fid ||
+                    (int)($plan['server_id']??0)!==(int)$payInfo['server_id'])
+                    throw new RuntimeException('wallet_renew_locked_plan_missing');
+                $days=(int)$plan['days'];
+                $volume=(int)$plan['volume'];
 
                 $server_id  = (int)$plan['server_id'];
                 $inbound_id = (int)$payInfo['volume'];
@@ -780,7 +781,14 @@ if (is_string($data) && strlen($data) <= 64 && preg_match('/\ApayBuyWithWallet([
                 $remark     = $configInfo['remark'] ?? '';
                 $isMarzban  = !empty($configInfo['marzban']);
 
-                [$serverInfo] = getServerInfoAndConfig($connection, $server_id);
+                [$serverInfo,$serverConfig] = getServerInfoAndConfig($connection, $server_id);
+                // The administrator may have repointed the logical server
+                // after our debit COMMIT. Do not mutate a different physical
+                // Marzban panel under the original customer's Wallet claim.
+                if (($serverConfig['type']??null)!=='marzban' ||
+                    rtrim((string)($serverConfig['panel_url']??''),'/')!==
+                    rtrim((string)($plan['panel_url']??''),'/'))
+                    throw new RuntimeException('wallet_renew_provider_changed');
 
                 $response = renewConfigOnServer(
                     $connection,
@@ -790,22 +798,23 @@ if (is_string($data) && strlen($data) <= 64 && preg_match('/\ApayBuyWithWallet([
                     $remark,
                     $days,
                     $volume,
-                    $isMarzban
+                    $isMarzban,
+                    (int)$payInfo['id'],
+                    // This identity was captured while the original Wallet
+                    // debit and payment claim were locked. The adapter must
+                    // reject a later provider reread that switches endpoints.
+                    ['provider'=>'marzban','server_id'=>$server_id,
+                     'panel_url'=>rtrim((string)$plan['panel_url'],'/'),
+                     'remark'=>$remark,'pay_id'=>(int)$payInfo['id'],
+                     'days'=>$days,'volume'=>$volume]
                 );
 
                 ensureAccountCreationSucceeded($response, $serverInfo, $inbound_id, $admin, true);
 
-                createIncreaseOrder(
-                    $connection,
-                    $uid,
-                    $server_id,
-                    $inbound_id,
-                    $remark,
-                    $price,
-                    $time,
-                    $volume,
-                    $days
-                );
+                // Payment and audit are committed together by the settlement
+                // coordinator AFTER the verified external renewal. An audit
+                // insert here would be independently committed and replayable.
+
 
                 $keys = json_encode([
                     'inline_keyboard' => [
@@ -825,7 +834,12 @@ if (is_string($data) && strlen($data) <= 64 && preg_match('/\ApayBuyWithWallet([
                     $deferredReferral = [$uid, (int)$userReferrer];
                 }
 
-                return true;
+                return ['wallet_renewal'=>[
+                    'pay_id'=>(int)$payInfo['id'],'user_id'=>$uid,
+                    'server_id'=>$server_id,'inbound_id'=>$inbound_id,
+                    'remark'=>$remark,'amount'=>$price,'date'=>$time,
+                    'volume'=>$volume,'days'=>$days
+                ]];
             }
 
             $accountCount = (int)($payInfo['agent_count'] ?? 1);
@@ -1088,10 +1102,13 @@ if (is_string($data) && strlen($data) <= 64 && preg_match('/\ApayBuyWithWallet([
         $days=(int)$paidPlan['days'];
         $volume=(int)$paidPlan['volume'];
     } else {
-        // Non-BUY_SUB renewal retains its existing plan/notice contract.
-        $planDetails=getPlanDetails($connection,$fid);
-        $days=$planDetails['days'];
-        $volume=$planDetails['volume'];
+        // The report must describe the same locked entitlement dispatched
+        // after the committed Wallet claim, not a newly changed plan.
+        $paidPlan=$payInfo['_achbot_wallet_locked_plan']??null;
+        if (!is_array($paidPlan) || (int)($paidPlan['id']??0)!==$fid)
+            throw new RuntimeException('wallet_renew_report_plan_missing');
+        $days=(int)$paidPlan['days'];
+        $volume=(int)$paidPlan['volume'];
     }
 
     $keys = json_encode([

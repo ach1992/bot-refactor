@@ -599,6 +599,9 @@ if (!function_exists('achbotApplyServiceEdit')) {
         $panel=$stmt->get_result()->fetch_assoc();
         $stmt->close();
         $type=(string)($panel['type']??'');
+        if (array_key_exists('_wallet_renew_target',$change) && $type!=='marzban')
+            return (object)['success'=>false,'uncertain'=>true,
+                            'msg'=>'wallet_renew_provider_changed'];
         if ($giftTarget!==null) {
             require_once __DIR__ . '/../Subscription/GiftBatch.php';
             if (!achbotSupportsAccount($type,0) ||

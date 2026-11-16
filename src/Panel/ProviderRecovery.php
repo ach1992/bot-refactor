@@ -166,6 +166,11 @@ function achbotPgRecoverEdit(mysqli $db,int $serverId,array $params,
         $native=$read['user'];
         $before=$changes['before']??[];
         $absolute=$changes['absolute']??null;
+        // Wallet reconciliation is GET-only. A claimed-but-unsent original
+        // operation has no applied result to reconcile and must not acquire
+        // a new write intent merely because the operator is authorized.
+        if (($source['observe_only']??false)===true && !is_array($absolute))
+            throw new RuntimeException('pg_recovery_original_result_missing');
         if ($absolute===null && $account['state']==='mutating' &&
             ($changes['phase']??null)==='claimed') {
             // The first worker stopped BEFORE the Native write intent.
@@ -191,9 +196,15 @@ function achbotPgRecoverEdit(mysqli $db,int $serverId,array $params,
             'state'=>(string)$account['state']],$disposition==='drift'?'warning':'info');
         if ($disposition==='drift')
             throw new RuntimeException('pg_recovery_native_entitlement_drift');
+        // Applied-only continuation must NEVER issue a PUT or RESET, even
+        // when an untouched baseline could theoretically be replayed with an
+        // absolute target. Require fresh authenticated proof of application.
+        if (($source['observe_only']??false)===true && $disposition!=='applied')
+            throw new RuntimeException('pg_recovery_original_not_applied');
         if ($account['state']==='linked' &&
             (($saved['result']??null)!=='verified' || $disposition!=='applied'))
             throw new RuntimeException('pg_recovery_already_finished_changed');
+        $observeOnly=($source['observe_only']??false)===true;
         if ($account['state']==='mutating') {
             if ($disposition==='baseline') {
                 // Original financial claim and account fence are held by the
@@ -235,13 +246,22 @@ function achbotPgRecoverEdit(mysqli $db,int $serverId,array $params,
                     $native['data_limit']!==$absolute['data_limit'])
                     throw new RuntimeException('pg_recovery_native_readback_changed');
             }
-            achbotPgFinishMutation($db,$ctx,$saved,['success'=>true,'user'=>$native]);
+            // Observation alone does not release the original account fence.
+            // Wallet finalizes this journal under the SAME short SQL
+            // transaction as its order, audit and payment; a failed local
+            // COMMIT must leave provider_state=mutating.
+            if (!$observeOnly)
+                achbotPgFinishMutation($db,$ctx,$saved,['success'=>true,'user'=>$native]);
         }
-        achbotDiagnosticEvent('achbot.native.edit_recovery_complete',[
-            'pay_id'=>$payId,'order_id'=>$orderId,'server_id'=>$serverId,
-            'source'=>$kind,'result'=>'verified'],'info');
+        // GET-only Wallet verification is an observation, not local financial
+        // completion. The Wallet coordinator logs finality after its COMMIT.
+        if (!$observeOnly)
+            achbotDiagnosticEvent('achbot.native.edit_recovery_complete',[
+                'pay_id'=>$payId,'order_id'=>$orderId,'server_id'=>$serverId,
+                'source'=>$kind,'result'=>'verified'],'info');
         return (object)['success'=>true,'verified'=>true,'uncertain'=>false,
-            'applied_expire'=>$native['expire'],'applied_bytes'=>$native['data_limit']];
+            'applied_expire'=>$native['expire'],'applied_bytes'=>$native['data_limit'],
+            'observed_group_ids'=>$observeOnly?$native['group_ids']:null];
     } catch (Throwable $error) {
         $reason=(string)$error->getMessage();
         if (preg_match('/\A(?:pg|provider|addon|effect|service|recovery)_[a-z0-9_]{2,90}\z/D',$reason)!==1)

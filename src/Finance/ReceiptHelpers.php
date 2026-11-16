@@ -864,24 +864,30 @@ function achbotStoreVerifiedServiceExpiryLocked(mysqli $db, array $original,
         (int)$current['expire_date']!==$old)
         throw new RuntimeException('day_extension_order_stale');
 
-    // Planless (fileid=0) is legal ONLY for a genuinely imported existing
-    // PasarGuard account. Under the caller's payment/order transaction, bind
-    // its immutable nonfinancial origin to the same locked order and current
-    // physically verified native account, endpoint and logical server.
+    // Planless is legal only for an independently verified imported account
+    // OR an original, immutable historical migration reference. The shared
+    // account-by-order validator proves the latter's original migration
+    // reference, owner and physical incarnation; never fabricate an origin.
     // Neither a zero plan ID nor a matching remark alone is authorization.
     if ($fileId===0) {
         try {
             $origin=achbotOrderImportOrigin($db,$original,true);
             $native=achbotPgOrderContext($db,$orderId,true);
-            if ($origin===null || $origin['provider']!=='pasarguard' ||
-                $origin['provider_account_id']!==$native['account']['id'] ||
+            $account=$native['account'];
+            $historical=$account['order_id']===null &&
+                ($account['source_kind']??null)==='legacy_migration' &&
+                ($origin===null || ($origin['provider']??null)==='marzban') &&
+                achbotPgRecoveryOrderOriginMatches($db,$native,$orderId);
+            $imported=$origin!==null && $origin['provider']==='pasarguard' &&
+                ($origin['provider_account_id']??null)===$account['id'] &&
+                ($origin['native_identity']['remote_user_id']??null)===$native['identity']['remote_user_id'] &&
+                ($origin['native_identity']['remote_created_at']??null)===$native['identity']['remote_created_at'] &&
+                ($origin['native_identity']['remote_username']??null)===$account['remote_username'];
+            if ((!$historical && !$imported) ||
                 $native['order_server_id']!==$server ||
                 (int)$native['order']['fileid']!==0 ||
                 (int)$native['order']['userid']!==$owner ||
-                (string)$native['order']['remark']!==$remark ||
-                $origin['native_identity']['remote_user_id']!==$native['identity']['remote_user_id'] ||
-                $origin['native_identity']['remote_created_at']!==$native['identity']['remote_created_at'] ||
-                $origin['native_identity']['remote_username']!==$native['account']['remote_username'])
+                (string)$native['order']['remark']!==$remark)
                 throw new RuntimeException('planless_origin_mismatch');
         } catch (Throwable $error) {
             throw new RuntimeException('day_extension_planless_import_unverified',0,$error);

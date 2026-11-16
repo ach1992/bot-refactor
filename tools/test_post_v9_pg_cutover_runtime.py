@@ -25,12 +25,12 @@ def sqlquote(s):
     return api.quote_sql(s)
 
 
-def fixture_effect(sql):
+def fixture_effect(sql, *, original_planless=False):
     endpoint=hashlib.sha256(sql("SELECT panel_url FROM server_config WHERE id=2").rstrip("/").encode()).hexdigest()
     native={"version":1,"id":REMOTE_ID,"username":USER,"created_at":CREATED,
             "group_ids":[2,5],"data_limit":123400000,"used_traffic":20123,
             "expire":None,"status":"active","native_schedules_clear":True}
-    refs=[{"order_id":101,"owner_id":1001,"plan_id":7},
+    refs=[{"order_id":101,"owner_id":1001,"plan_id":0 if original_planless else 7},
           {"order_id":102,"owner_id":1001,"plan_id":7}]
     snap={"provider":"pasarguard","panel_id":1,"instance_key":INSTANCE,
           "endpoint_sha256":endpoint,"group_ids":[2,5],
@@ -46,7 +46,7 @@ def fixture_effect(sql):
     source_ref="legacy:2:"+hashlib.sha256(USER.encode()).hexdigest()
     sql("INSERT INTO orders_list (id,userid,token,transid,fileid,server_id,inbound_id,remark,"
         "uuid,expire_date,link,amount,status,date,autoRenew) VALUES "
-        "(101,1001,'historic-token-1','',7,2,0,'historical_fixture','original-uuid-1',"
+        "(101,1001,'historic-token-1','',"+('0' if original_planless else '7')+",2,0,'historical_fixture','original-uuid-1',"
         "0,'[]',10000,1,'fixture','on'),"
         "(102,1001,'historic-token-2','',7,2,0,'historical_fixture','original-uuid-2',"
         "0,'[]',20000,1,'fixture','off')")
