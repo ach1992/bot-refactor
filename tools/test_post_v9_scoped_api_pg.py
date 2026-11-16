@@ -572,7 +572,34 @@ def sandbox(*, imported_empty=False):
                                r'\d{2}:\d{2}:\d{2} UTC\] ', '', line)
                         for line in proc.stderr.strip().splitlines()
                     ]
-                    if any(not line.startswith((
+                    # Current source emits typed diagnostic JSON in addition to
+                    # the established plain failure codes. Validate rather
+                    # than blindly ignoring STDERR: source secrets and
+                    # unexpected events must still fail this acceptance.
+                    def known_diagnostic(line):
+                        if not line.startswith('[AChBot] {'):
+                            return False
+                        try:
+                            event=json.loads(line[len('[AChBot] '):])
+                        except ValueError:
+                            return False
+                        name=event.get('event','')
+                        expected=(
+                            'achbot.finance.evidence_',
+                            'achbot.finance.hosted_',
+                            'achbot.native.edit_recovery_',
+                            'achbot.native.account_action',
+                            'achbot.delivery.',
+                        )
+                        if not isinstance(name,str) or not name.startswith(expected):
+                            return False
+                        disallowed={'token','secret','password','url',
+                            'payload','raw_text','bank_account','sms_text','username'}
+                        return (isinstance(event.get('trace_id'),str)
+                            and len(event['trace_id'])==16
+                            and not disallowed.intersection(event)
+                            and all(isinstance(k,str) for k in event))
+                    if any(not known_diagnostic(line) and not line.startswith((
                             "achbot_api_claim_review pay_id=",
                             "achbot_api_effect_review pay_id=",
                             "achbot_operator_service_completed pay_id=",

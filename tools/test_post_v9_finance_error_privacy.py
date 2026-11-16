@@ -202,9 +202,27 @@ def php(work, env, stage, case, expected_remote_calls=1):
             "-d", "disable_functions=exec,shell_exec,system,passthru,popen,proc_open,pcntl_exec,pcntl_fork,mail,dl",
             str(path), str(stage), DB, str(work / "mysql.sock"), json.dumps(spec)]
     p = subprocess.run(args, env=env, cwd=work, capture_output=True, timeout=25)
-    if p.returncode != 0 or p.stderr:
+    if p.returncode != 0:
         raise RuntimeError("Privacy route runner PHP failure: " + repr(
             (p.returncode, p.stdout[-400:], p.stderr[-500:])))
+    # New internal, typed diagnostics are welcome only when they cannot leak
+    # injected provider/SQL secrets. Other unexpected PHP stderr still fails.
+    for line in p.stderr.decode(errors='replace').strip().splitlines():
+        if not line.startswith('[AChBot] '):
+            raise RuntimeError('Unexpected PHP diagnostic: '+repr(line[:350]))
+        try:
+            log=json.loads(line[len('[AChBot] '):])
+        except ValueError as error:
+            raise RuntimeError('Unparseable PHP diagnostic') from error
+        if log.get('event') not in (
+            'achbot.finance.wallet_held_or_failed',
+            'achbot.finance.wallet_settled',
+            'achbot.native.account_action',
+        ) or not isinstance(log.get('trace_id'),str):
+            raise RuntimeError('Unexpected PHP event: '+repr(log))
+        if any(value in line for value in (SQL_SECRET,PROVIDER_SECRET,
+                'fixture-private-key','Bearer ')):
+            raise RuntimeError('Sensitive data leaked in private diagnostics')
     result = json.loads(p.stdout)
     if result["uncaught"] or result["remote_calls"] != expected_remote_calls:
         raise RuntimeError("Privacy route dispatch/exception boundary failed: "

@@ -144,7 +144,7 @@ function request($botToken,$runtimeDir,$method,$datas=[]) {
     $errno=curl_errno($ch);
     $http=(int)curl_getinfo($ch,CURLINFO_RESPONSE_CODE);
     $timing=timings($ch);
-    curl_close($ch);
+    unset($ch); // PHP 8.5: curl_close() is deprecated and has no effect.
     $decoded=is_string($res)&&$res!==''?json_decode($res):null;
     logResult($runtimeDir,$method,$timing,$http,$errno,$elapsed,$decoded,$hasFile);
     // Preserve old calling contract. Never mask an unknown send as ACK.
@@ -181,7 +181,7 @@ function sendFile($botToken,$runtimeDir,$method,$datas=[]) {
     $errno=curl_errno($ch);
     $http=(int)curl_getinfo($ch,CURLINFO_RESPONSE_CODE);
     $timing=timings($ch);
-    curl_close($ch);
+    unset($ch); // PHP 8.5: curl_close() is deprecated and has no effect.
     $decoded=is_string($res)&&$res!==''?json_decode($res,true):null;
     logResult($runtimeDir,$method,$timing,$http,$errno,$elapsed,$decoded,true);
     if ($errno!==0) return false;

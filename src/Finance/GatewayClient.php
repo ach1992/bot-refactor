@@ -4,6 +4,7 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
     http_response_code(404);
     exit;
 }
+require_once __DIR__.'/../Diagnostics/EventLog.php';
 /** MariaDB named locks are SERVER-wide, not scoped to the selected DB.
  * Independent bots have dedicated databases but may reuse payment IDs.
  * Scope the ONE hosted-worker lease by the connected database identity.
@@ -385,9 +386,16 @@ function achbotNpGetVerifiedPayment(string $paymentId, string $apiKey): ?array {
     curl_setopt($ch, CURLOPT_TIMEOUT, 7);
     curl_setopt($ch, CURLOPT_FOLLOWLOCATION, false);
     $raw = curl_exec($ch);
-    $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    curl_close($ch);
-    if ($raw === false || $code !== 200 || strlen((string)$raw) > 65536) return null;
+    $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $errno = (int)curl_errno($ch);
+    unset($ch); // PHP 8.5: curl_close() is a deprecated no-op.
+    if ($raw === false || $code !== 200 || strlen((string)$raw) > 65536) {
+        achbotDiagnosticEvent('achbot.finance.hosted_verify_http',[
+            'provider'=>'nowpayments','http_status'=>$code,'curl_errno'=>$errno,
+            'reason'=>$raw===false?'transport_unavailable':
+                ($code!==200?'http_unexpected':'response_oversized')],'warning');
+        return null;
+    }
     $result = json_decode($raw, true);
     return is_array($result) ? $result : null;
 }
@@ -431,6 +439,19 @@ function NOWPayments($method, $endpoint, $datas = []){
 
     $res = curl_exec($ch);
     
-    if(curl_error($ch)) var_dump(curl_error($ch));
-    else return json_decode($res);
+    $errno=(int)curl_errno($ch);
+    $http=(int)curl_getinfo($ch,CURLINFO_HTTP_CODE);
+    unset($ch);
+    if ($errno!==0 || $res===false) {
+        achbotDiagnosticEvent('achbot.finance.hosted_request_http',[
+            'provider'=>'nowpayments','method'=>(string)$method,
+            'http_status'=>$http,'curl_errno'=>$errno,
+            'reason'=>'transport_unavailable'],'warning');
+        return null;
+    }
+    if ($http<200 || $http>=300)
+        achbotDiagnosticEvent('achbot.finance.hosted_request_http',[
+            'provider'=>'nowpayments','method'=>(string)$method,
+            'http_status'=>$http,'reason'=>'http_unexpected'],'warning');
+    return json_decode($res);
 }

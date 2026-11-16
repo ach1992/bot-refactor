@@ -10,6 +10,7 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
     http_response_code(404);
     exit;
 }
+require_once __DIR__.'/../Diagnostics/EventLog.php';
 
 /** Marzban edits have no local Native mutation journal: only an explicit
  * operator may repeat additive changes. Renewal sets an absolute plan, so
@@ -68,6 +69,44 @@ function achbotPgRecoveryDisposition(array $before,array $target,array $native):
 }
 
 /**
+ * Originating CREATE/IMPORT rows pin their one local order. Historical
+ * migrations keep a NULL origin and admit either an immutable old customer
+ * reference OR a later independently proven PasarGuard external attachment.
+ * The shared account-by-order validator owns both proofs and rechecks the
+ * current owner, Native incarnation, imported origin and provider account.
+ * Never rewrite the migration reference list or invent an originating order.
+ */
+function achbotPgRecoveryOrderOriginMatches(mysqli $db,array $ctx,int $orderId): bool {
+    $account=$ctx['account']??null;
+    $order=$ctx['order']??null;
+    if ($orderId<=0 || !is_array($account) || !is_array($order) ||
+        (int)($order['id']??0)!==$orderId ||
+        (int)($order['provider_effect_id']??0)!==(int)($account['effect_id']??0))
+        return false;
+    if ($account['order_id']!==null)
+        return (int)$account['order_id']===$orderId;
+    try {
+        // Already used by achbotPgOrderContext(): includes the immutable
+        // migration refs AND modern ACHBOT_SERVICE_ORIGIN PasarGuard imports.
+        // Recheck at recovery admission; the returned account must still be
+        // precisely the same physical account captured by this payment.
+        $validated=achbotProviderAccountByOrder($db,$orderId);
+        return $validated!==null && $validated['order_id']===null &&
+            $validated['id']===$account['id'] &&
+            $validated['effect_id']===$account['effect_id'] &&
+            $validated['panel_id']===$account['panel_id'] &&
+            $validated['instance_key']===$account['instance_key'] &&
+            $validated['endpoint_sha256']===$account['endpoint_sha256'] &&
+            $validated['remote_user_id']===$account['remote_user_id'] &&
+            $validated['remote_created_at']===$account['remote_created_at'] &&
+            $validated['remote_username']===$account['remote_username'] &&
+            $validated['operation_marker']===$account['operation_marker'];
+    } catch (Throwable $error) {
+        return false;
+    }
+}
+
+/**
  * PasarGuard has a durable account-level mutation fence. Continue its
  * ORIGINAL key, exact account and captured absolute entitlement rather than
  * making a second additive change or freeing an unrelated account's fence.
@@ -88,7 +127,7 @@ function achbotPgRecoverEdit(mysqli $db,int $serverId,array $params,
         $account=$ctx['account'];
         if ((int)$ctx['order_server_id']!==$serverId ||
             (string)$ctx['order']['remark']!==(string)$params['remark'] ||
-            (int)$account['order_id']!==$orderId ||
+            !achbotPgRecoveryOrderOriginMatches($db,$ctx,$orderId) ||
             !in_array($account['state'],['mutating','linked'],true) ||
             (string)$account['mutation_key']!==$key)
             throw new RuntimeException('pg_recovery_identity_changed');
@@ -146,6 +185,10 @@ function achbotPgRecoverEdit(mysqli $db,int $serverId,array $params,
             throw new RuntimeException('pg_recovery_absolute_missing');
 
         $disposition=achbotPgRecoveryDisposition($before,$absolute,$native);
+        achbotDiagnosticEvent('achbot.native.edit_recovery_observed',[
+            'pay_id'=>$payId,'order_id'=>$orderId,'server_id'=>$serverId,
+            'source'=>$kind,'result'=>$disposition,'phase'=>(string)($changes['phase']??'none'),
+            'state'=>(string)$account['state']],$disposition==='drift'?'warning':'info');
         if ($disposition==='drift')
             throw new RuntimeException('pg_recovery_native_entitlement_drift');
         if ($account['state']==='linked' &&
@@ -194,12 +237,18 @@ function achbotPgRecoverEdit(mysqli $db,int $serverId,array $params,
             }
             achbotPgFinishMutation($db,$ctx,$saved,['success'=>true,'user'=>$native]);
         }
+        achbotDiagnosticEvent('achbot.native.edit_recovery_complete',[
+            'pay_id'=>$payId,'order_id'=>$orderId,'server_id'=>$serverId,
+            'source'=>$kind,'result'=>'verified'],'info');
         return (object)['success'=>true,'verified'=>true,'uncertain'=>false,
             'applied_expire'=>$native['expire'],'applied_bytes'=>$native['data_limit']];
     } catch (Throwable $error) {
         $reason=(string)$error->getMessage();
         if (preg_match('/\A(?:pg|provider|addon|effect|service|recovery)_[a-z0-9_]{2,90}\z/D',$reason)!==1)
             $reason='recovery_internal_exception';
+        achbotDiagnosticEvent('achbot.native.edit_recovery_deferred',[
+            'pay_id'=>(int)($params['pay_id']??0),'server_id'=>$serverId,
+            'reason'=>$reason,'class'=>get_class($error)],'warning');
         error_log('achbot_provider_edit_recovery_deferred pay_id='.
             (int)($params['pay_id']??0).' server_id='.$serverId.
             ' code='.$reason.' class='.get_class($error));

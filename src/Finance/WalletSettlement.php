@@ -4,6 +4,7 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
     http_response_code(404);
     exit;
 }
+require_once __DIR__.'/../Diagnostics/EventLog.php';
 require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
 
 
@@ -380,6 +381,10 @@ if (!function_exists('processWalletPayment')) {
                     throw new RuntimeException('wallet_commit_unverified');
             }
             $payInfo['state']='paid_with_wallet';
+            achbotDiagnosticEvent('achbot.finance.wallet_settled',[
+                'pay_id'=>(int)($payInfo['id']??0),
+                'operation'=>(string)($payInfo['type']??'unknown'),
+                'result'=>'paid_with_wallet'],'info');
 
             return [
                 'status'       => 'ok',
@@ -391,6 +396,11 @@ if (!function_exists('processWalletPayment')) {
             ];
 
         } catch (Throwable $e) {
+            achbotDiagnosticEvent('achbot.finance.wallet_held_or_failed',[
+                'pay_id'=>(int)($payInfo['id']??0),
+                'operation'=>(string)($payInfo['type']??'unknown'),
+                'reason'=>(string)$e->getMessage(),'class'=>get_class($e),
+                'stage'=>$heldDebit?'post_commit':'pre_commit'],'warning');
             // The SQL commit or remote effect may be ambiguous. A missing
             // connection can also make ROLLBACK fail: never report success.
             try { $connection->rollback(); } catch (Throwable $ignored) {}

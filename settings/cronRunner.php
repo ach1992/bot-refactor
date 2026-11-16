@@ -206,7 +206,8 @@ include_once __DIR__ . '/../config.php';
 try {
     require __DIR__ . '/../src/Notifications/Warnings.php';
 } catch (Throwable $error) {
-    error_log('achbot_warning_cleanup_deferred');
+    error_log('achbot_warning_cleanup_deferred class='.get_class($error).
+        ' code='.(int)$error->getCode());
 } finally {
     // Financial renewal/reconciliation has priority over optional Telegram
     // edits. Preserve the existing four-worker, one-minute Cron schedule.
@@ -217,8 +218,9 @@ try {
             require_once __DIR__ . '/../src/Finance/PaymentLifecycle.php';
             require_once __DIR__ . '/../src/Finance/ApiPayments.php';
             try {achbotApiPaymentMaintain($connection);} finally {achbotPayUxMaintain($connection);}
-        } catch (Throwable $ignored) {
-            error_log('achbot_payment_lifecycle_deferred');
+        } catch (Throwable $error) {
+            error_log('achbot_payment_lifecycle_deferred class='.get_class($error).
+                ' code='.(int)$error->getCode());
         }
         // Issue #117: crash-after-COMMIT first delivery only.  Keep this
         // separate from provider/financial maintenance, so one unavailable

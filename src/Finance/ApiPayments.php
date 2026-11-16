@@ -1,6 +1,7 @@
 <?php
 /** Optional existing-API evidence inside the original manual payment ledger. */
 if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) { http_response_code(404); exit; }
+require_once __DIR__.'/../Diagnostics/EventLog.php';
 require_once __DIR__.'/ReceiptHelpers.php';
 require_once __DIR__.'/PaymentLifecycle.php';
 require_once __DIR__.'/ApiPaymentPresentation.php';
@@ -21,7 +22,11 @@ function achbotApiPaymentWithWorkerLock(mysqli $db,int $payId,callable $action):
         $q=$db->prepare('SELECT GET_LOCK(?,0) AS acquired');
         $q->bind_param('s',$name);$q->execute();
         $row=$q->get_result()->fetch_assoc();$q->close();
-        if ((int)($row['acquired']??0)!==1) return 'review';
+        if ((int)($row['acquired']??0)!==1) {
+            achbotDiagnosticEvent('achbot.finance.worker_lock',
+                ['pay_id'=>$payId,'reason'=>'worker_busy'],'info');
+            return 'review';
+        }
     } catch (Throwable $error) {
         error_log('achbot_api_worker_lock_unavailable pay_id='.$payId.
             ' class='.get_class($error));
@@ -1023,28 +1028,84 @@ function achbotApiPaymentWithBudget(float $seconds,callable $action) {
     try{return $action();}finally{if($had)$GLOBALS[$key]=$previous;else unset($GLOBALS[$key]);}
 }
 function achbotApiPaymentCheck(mysqli $db,int $id): string {
-    return achbotApiPaymentWithWorkerLock($db,$id,
-        static fn():string=>achbotApiPaymentWithBudget(15.0,
-            static fn():string=>achbotApiPaymentCheckWithinBudget($db,$id)));
+    // The Cron child may check many invoices in one PHP process. Scope HTTP
+    // diagnostics to THIS original payment, then restore any parent context.
+    $key='achbotPaymentDiagnosticPayId';
+    $had=array_key_exists($key,$GLOBALS);
+    $old=$GLOBALS[$key]??null;
+    $GLOBALS[$key]=$id;
+    try {
+        return achbotApiPaymentWithWorkerLock($db,$id,
+            static fn():string=>achbotApiPaymentWithBudget(15.0,
+                static fn():string=>achbotApiPaymentCheckWithinBudget($db,$id)));
+    } finally {
+        if ($had) $GLOBALS[$key]=$old;
+        else unset($GLOBALS[$key]);
+    }
 }
 function achbotApiPaymentCheckWithinBudget(mysqli $db,int $id): string {
-    if(!achbotApiPaymentReady($db))return 'unavailable';
+    $checkStarted=microtime(true);
+    if(!achbotApiPaymentReady($db)) {
+        achbotDiagnosticEvent('achbot.finance.evidence_check',
+            ['pay_id'=>$id,'reason'=>'schema_not_ready'],'error');
+        return 'unavailable';
+    }
     $saved=achbotApiPaymentAttempt($db,$id);
     $pay=achbotApiPaymentRow($db,$id);
-    if(!$saved || !$pay)return 'unavailable';
-    if (($saved['review_archived_at']??null)!==null) return 'archived';
-    if(!achbotPaymentEvidenceReviewReady($pay,$saved) && !achbotPaymentEvidencePending($db,$id) && !achbotPaymentEvidenceGetProof($db,$id))return 'awaiting_receipt';
+    if(!$saved || !$pay) {
+        achbotDiagnosticEvent('achbot.finance.evidence_check',
+            ['pay_id'=>$id,'reason'=>'original_missing'],'warning');
+        return 'unavailable';
+    }
+    $context=['pay_id'=>$id,'provider'=>(string)$saved['provider'],
+        'stage'=>(string)$saved['stage'],
+        'state'=>(string)$pay['state'],
+        'evidence_state'=>(string)($saved['evidence_state']??'none')];
+    if (($saved['review_archived_at']??null)!==null) {
+        achbotDiagnosticEvent('achbot.finance.evidence_check',$context+
+            ['reason'=>'archived'],'info');
+        return 'archived';
+    }
+    if(!achbotPaymentEvidenceReviewReady($pay,$saved) &&
+        !achbotPaymentEvidencePending($db,$id) &&
+        !achbotPaymentEvidenceGetProof($db,$id)) {
+        achbotDiagnosticEvent('achbot.finance.evidence_check',$context+
+            ['reason'=>'awaiting_receipt'],'info');
+        return 'awaiting_receipt';
+    }
     if($saved && $saved['provider']==='gift_card' && ($saved['evidence_state']??'')==='invalid_code') {
         $d=achbotPaymentEvidenceUnprotect('code:'.$saved['id'].':'.$id,(string)$saved['evidence_code']);
         if(in_array($d['last_status']??'',['used','revoked','expired','mismatch'],true)){achbotApiPaymentNotice($db,$pay,$d['last_status']);return $d['last_status'];}
     }
     $claim=achbotPaymentEvidenceClaim($db,$id);
-    if(!$claim)return $saved && $saved['provider']==='gift_card' && ($saved['evidence_state']??'')==='review' && !empty($saved['evidence_review_sent_at'])?'review':'pending';
+    if(!$claim) {
+        // This is a point-in-time diagnostic hint; Claim() remains the only
+        // lock/lease authority. Never infer payment finality from a skipped poll.
+        $reason='claim_declined';
+        if (!empty($saved['evidence_next_check_at']) &&
+            strtotime((string)$saved['evidence_next_check_at'])>time())
+            $reason='check_not_due';
+        elseif (!empty($saved['evidence_claim_token']) &&
+            !empty($saved['evidence_claimed_at']) &&
+            strtotime((string)$saved['evidence_claimed_at'])>time()-120)
+            $reason='claim_lease_held';
+        achbotDiagnosticEvent('achbot.finance.evidence_check',
+            $context+['reason'=>$reason],'info');
+        return $saved && $saved['provider']==='gift_card' &&
+            ($saved['evidence_state']??'')==='review' &&
+            !empty($saved['evidence_review_sent_at'])?'review':'pending';
+    }
     $token=(string)$claim['token'];$status='review';
     try {
         $status=$claim['attempt']['provider']==='bank_transfer'?achbotApiPaymentCheckBank($db,$claim):achbotApiPaymentCheckGift($db,$claim);
 
-    }catch(Throwable $e){error_log('achbot_api_payment_check_deferred pay_id='.$id);$status='review';}
+    }catch(Throwable $e){
+        achbotDiagnosticEvent('achbot.finance.evidence_check_exception',
+            $context+['class'=>get_class($e),'reason'=>(string)$e->getMessage()],
+            'error');
+        error_log('achbot_api_payment_check_deferred pay_id='.$id);
+        $status='review';
+    }
     finally {
         // The one-minute Cron is already the polling throttle. A 60-second
         // post-receipt hint can miss the very next tick and add another
@@ -1065,6 +1126,10 @@ function achbotApiPaymentCheckWithinBudget(mysqli $db,int $id): string {
         elseif(in_array($status,['review','pending','unavailable'],true))achbotApiPaymentNotice($db,$pay,$status==='pending'?'uncertain':'review');
         elseif($status==='settled'){$proof=achbotPaymentEvidenceGetProof($db,$id);achbotApiPaymentNotice($db,$pay,($proof['mode']??'')==='evidence_only'?'evidence_only':'settled');}
     }
+    achbotDiagnosticEvent('achbot.finance.evidence_check',
+        $context+['result'=>$status,
+            'elapsed_ms'=>(int)round((microtime(true)-$checkStarted)*1000)],
+        in_array($status,['review','unavailable'],true)?'warning':'info');
     return $status;
 }
 /** Migration 022 is additive: an older API-only installation may have the
@@ -1091,7 +1156,13 @@ function achbotApiPaymentMaintain(mysqli $db,int $limit=12): array {
     return achbotApiPaymentWithBudget(35.0,static fn()=>achbotApiPaymentMaintainWithinBudget($db,$limit));
 }
 function achbotApiPaymentMaintainWithinBudget(mysqli $db,int $limit=12): array {
-    $checked=0;$edited=0;$started=microtime(true);$limit=max(1,min(12,$limit));if(!achbotApiPaymentReady($db))return ['checked'=>0,'edited'=>0];
+    $checked=0;$edited=0;$selected=0;$overflowId=0;
+    $started=microtime(true);$limit=max(1,min(12,$limit));
+    if(!achbotApiPaymentReady($db)) {
+        achbotDiagnosticEvent('achbot.finance.evidence_tick',
+            ['reason'=>'schema_not_ready'],'error');
+        return ['checked'=>0,'edited'=>0];
+    }
     try {
         $archivePredicate=achbotApiPaymentArchivePredicate($db);
         $q=$db->query("SELECT a.pay_row_id,p.hash_id FROM payment_attempts a JOIN pays p ON p.id=a.pay_row_id
@@ -1107,9 +1178,21 @@ function achbotApiPaymentMaintainWithinBudget(mysqli $db,int $limit=12): array {
                           a.evidence_fulfillment_state IN ('reserved','verified')
                           OR (a.evidence_fulfillment_state='dispatched'
                               AND p.type IN ('RENEW_ACCOUNT','RENEW_SCONFIG')))))))
-            ORDER BY COALESCE(a.evidence_next_check_at,a.created_at),a.id LIMIT {$limit}");
+            ORDER BY COALESCE(a.evidence_next_check_at,a.created_at),a.id LIMIT ".($limit+1));
         $rows=$q->fetch_all(MYSQLI_ASSOC);
-        foreach($rows as $row){if(microtime(true)-$started>=35)break;achbotApiPaymentCheck($db,(int)$row['pay_row_id']);$checked++;}
+        if (count($rows)>$limit) {
+            $overflow=array_pop($rows);
+            $overflowId=(int)$overflow['pay_row_id'];
+        }
+        $selected=count($rows);
+        if($overflowId>0)
+            achbotDiagnosticEvent('achbot.finance.evidence_batch_deferred',
+                ['pay_id'=>$overflowId,'reason'=>'batch_size'],'info');
+        foreach($rows as $row){
+            if(microtime(true)-$started>=35)break;
+            $outcome=achbotApiPaymentCheck($db,(int)$row['pay_row_id']);
+            $checked++;
+        }
         // UI convergence is independent of evidence polling/finality/leases.
         $q=$db->query("SELECT p.hash_id FROM payment_attempts a JOIN pays p ON p.id=a.pay_row_id
             WHERE a.evidence_profile IS NOT NULL
@@ -1127,8 +1210,19 @@ function achbotApiPaymentMaintainWithinBudget(mysqli $db,int $limit=12): array {
             elseif(in_array($a['evidence_state']??'',['review','uncertain'],true)||$p['state']==='processing')achbotApiPaymentNotice($db,$p,($a['evidence_state']??'')==='uncertain'?'uncertain':'review');
             $stamp=$db->prepare('UPDATE payment_attempts SET evidence_projection_checked_at=NOW(6) WHERE pay_row_id=?');$stamp->bind_param('i',$p['id']);$stamp->execute();$stamp->close();
         }
-    }catch(Throwable $e){error_log('achbot_api_payment_maintenance_deferred class='.
-        get_class($e).' code='.(int)$e->getCode().' checked='.$checked.
-        ' projected='.$edited);}
+    }catch(Throwable $e){
+        achbotDiagnosticEvent('achbot.finance.evidence_tick_exception',
+            ['class'=>get_class($e),'reason'=>(string)$e->getMessage(),
+             'checked'=>$checked,'projected'=>$edited],'error');
+        error_log('achbot_api_payment_maintenance_deferred class='.
+            get_class($e).' code='.(int)$e->getCode().' checked='.$checked.
+            ' projected='.$edited);
+    }finally{
+        achbotDiagnosticEvent('achbot.finance.evidence_tick',
+            ['selected'=>$selected,'checked'=>$checked,'projected'=>$edited,
+             'deferred'=>(int)($overflowId>0),'due_unchecked'=>max(0,$selected-$checked),
+             'budget_exhausted'=>(int)($selected>$checked),
+             'batch_ms'=>(int)round((microtime(true)-$started)*1000)],'info');
+    }
     return ['checked'=>$checked,'edited'=>$edited];
 }
