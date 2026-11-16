@@ -32,6 +32,35 @@ contract preservation, and sensitive-value redaction. Actual deployed PHP-FPM
 and Cron sinks must still be validated separately. Return-value and timeout
 policies are unchanged.
 
+## Telegram IP-family and firewall diagnosis
+
+Current Stable `request()` and `sendFile()` leave IPv4/IPv6 selection to
+libcurl instead of forcing IPv4. This permits the addresses supported by DNS,
+the host and its network; it does **not** guarantee failover around every
+firewall, routing or DNS problem. An HTTP 200 for `bot.php` confirms that a
+Webhook reached PHP, **not** that PHP could send a Telegram Bot API response.
+
+For outbound `curl_errno=28` or other connection failures, inspect the
+per-request DNS/connect/TLS timings above. From the affected host, use
+read-only probes **without bot tokens**:
+
+```sh
+getent ahosts api.telegram.org
+curl -4 -I --connect-timeout 5 --max-time 8 https://api.telegram.org/
+curl -6 -I --connect-timeout 5 --max-time 8 https://api.telegram.org/
+```
+
+Compare IPv4 and IPv6 reachability and review the actual aaPanel/OS **outbound**
+firewall and blocked-IP rules before blaming Webhook, database or bot code.
+A Telegram API HTTP response (even a redirect) proves only basic reachability,
+not a successful authenticated bot operation. Never expose the token in logs
+or a diagnostic command; do not disable broad firewall protection as a shortcut.
+An approved operator change to the live firewall or installed bot remains
+separate from source/Release work. The 2026-11-16 incident was caused by an
+aaPanel block of a Telegram API IPv4 endpoint, while IPv6 remained reachable.
+The block was removed by the operator; updating the installed runtime to the
+Dual-Stack source requires a separately authorized rollout.
+
 **Data handling:** never log the token-bearing API URL, outgoing message
 body, original sealed/encrypted packet, raw Telegram error description,
 customer's private message, bearer credential or arbitrary provider payload.
