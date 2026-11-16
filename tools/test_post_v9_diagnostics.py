@@ -25,6 +25,10 @@ achbotDiagnosticEvent('achbot.finance.evidence_http',[
 achbotDiagnosticEvent('achbot.finance.wallet_held_or_failed',[
     'reason'=>'sk_private_token','class'=>'RuntimeException',
     'operation'=>'INCREASE_DAY_10_1']);
+achbotDiagnosticEvent('achbot.finance.evidence_check',[
+    'pay_id'=>112749,'reason'=>'awaiting_receipt']);
+achbotDiagnosticEvent('achbot.delivery.dispatch_deferred',[
+    'pay_id'=>112749,'ordinal'=>1,'reason'=>'lease_busy']);
 achbotDiagnosticEvent('BAD name',['reason'=>'leak']);
 """
 def run() -> dict:
@@ -41,8 +45,8 @@ def run() -> dict:
             raise RuntimeError('Unstructured PHP stderr: '+raw[:180])
         message=json.loads(raw[index+len("[AChBot] "):])
         messages.append(message)
-    if len(messages)!=3:
-        raise AssertionError(('expected_three_events',messages))
+    if len(messages)!=5:
+        raise AssertionError(('expected_five_events',messages))
     if any(word in proc.stderr for word in (
         "SENSITIVE_TOKEN","SENSITIVE_SMS","SENSITIVE_RAW","sk_private_token")):
         raise AssertionError('Sensitive values emitted')
@@ -58,9 +62,11 @@ def run() -> dict:
     if messages[0]['pay_id']!=112749 or messages[1]['pay_id']!=112749 or (
         messages[0]['reason']!='claim_lease_held' or
         messages[1]['http_status']!=503 or
-        messages[2]['class']!='RuntimeException'):
+        messages[2]['class']!='RuntimeException' or
+        messages[3].get('reason')!='awaiting_receipt' or
+        messages[4].get('reason')!='lease_busy'):
         raise AssertionError(('Log context was not preserved',messages))
-    return {'complete':True,'cases':8,'private_log_format':True,
+    return {'complete':True,'cases':10,'private_log_format':True,
             'same_trace':True,'secrets_redacted':True,'live_calls':0}
 
 

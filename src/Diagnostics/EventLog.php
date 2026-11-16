@@ -46,7 +46,7 @@ function achbotDiagnosticEvent(string $name,array $context=[],string $level='inf
                 if ($key==='reason' &&
                     !in_array($value,['archived','pending','unknown','settled',
                         'review','unavailable','monitoring'],true) &&
-                    preg_match('/\A(?:achbot|pg|provider|payment|wallet|manual|delivery|addon|native|http|response|claim|check|schema|invoice|original|dispatch|maintenance|worker|batch|source|identity|service|recovery|transport|receipt|upstream|internal|already|operation|remote)_[a-z0-9_]{2,88}\z/D',$value)!==1)
+                    preg_match('/\A(?:achbot|pg|provider|payment|wallet|manual|delivery|addon|native|http|response|claim|check|schema|invoice|original|dispatch|maintenance|worker|batch|source|identity|service|recovery|transport|receipt|upstream|internal|already|operation|remote|awaiting|lease)_[a-z0-9_]{2,88}\z/D',$value)!==1)
                     continue;
                 $fields[$key]=$value;
             }
