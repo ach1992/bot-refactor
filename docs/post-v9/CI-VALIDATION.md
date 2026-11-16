@@ -31,7 +31,8 @@ main pushes under the single `php85-validation` required status:
   PHP runtime, actual checks and elapsed times.
 - Wallet finality regression suites cover live-source `RENEW_SCONFIG`
   commit-before-Native ordering (including unknown COMMIT/ACK, crash, races,
-  native panel and plan drift), and **GET-only** original PasarGuard wallet
+  native panel and plan drift), actual Marzban helper/adapter physical endpoint
+  handoff across a two-panel fixture, and **GET-only** original PasarGuard wallet
   DAY/VOLUME reconciliation, including migration-backed NULL order origin and
   local accounting failure. See [Wallet finality and recovery](WALLET-FINALITY-RECOVERY.md).
 - Every relevant build produces a reproducible current-source-only runtime

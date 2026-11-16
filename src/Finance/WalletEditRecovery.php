@@ -70,8 +70,8 @@ function achbotWalletPgAddonOriginal(mysqli $db,int $payId,bool $locked=false): 
         $change['absolute']['data_limit']<0)
         throw new RuntimeException('wallet_recovery_original_intent_invalid');
     // The local original payment/order reference must remain identical after
-    // the provider's GET-only inspection; a journal result may legitimately
-    // transition from mutating to linked during that inspection.
+    // the provider's GET-only inspection. Observation must NOT release the
+    // unfinished original mutation fence before local financial COMMIT.
     $fingerprint=hash('sha256',json_encode([
         'pay'=>array_intersect_key($pay,array_flip([
             'id','hash_id','state','user_id','type','order_id','plan_id',
@@ -130,15 +130,25 @@ function achbotWalletPgResumeAddon(mysqli $db,int $payId,int $actor,int $primary
         if (!$db->begin_transaction()) throw new RuntimeException('wallet_recovery_begin_failed');
         $started=true;
         $current=achbotWalletPgAddonOriginal($db,$payId,true);
-        if (!hash_equals($before['fingerprint'],$current['fingerprint']) ||
-            $current['account']['state']!=='linked')
+        if (!hash_equals($before['fingerprint'],$current['fingerprint']))
             throw new RuntimeException('wallet_recovery_original_changed');
         $proof=json_decode((string)$current['account']['mutation_snapshot'],true,64,JSON_THROW_ON_ERROR);
-        if (($proof['result']??null)!=='verified' ||
-            !is_string($proof['verified_at']??null) || $proof['verified_at']==='' ||
-            !is_array($proof['current_group_ids']??null) ||
-            $proof['current_group_ids']!==($proof['changes']['before']['group_ids']??null))
+        $expectedGroups=$proof['changes']['before']['group_ids']??null;
+        if (!is_array($expectedGroups) ||
+            !is_array($remote->observed_group_ids??null) ||
+            $remote->observed_group_ids!==$expectedGroups)
             throw new RuntimeException('wallet_recovery_native_proof_missing');
+        if ($current['account']['state']==='mutating') {
+            // This state transition and all financial writes are one local
+            // transaction; a failed audit/COMMIT cannot free the account.
+            achbotPgFinishMutation($db,$current['ctx'],$proof,
+                ['success'=>true,'user'=>['group_ids'=>$remote->observed_group_ids]]);
+        } elseif ($current['account']['state']!=='linked' ||
+            ($proof['result']??null)!=='verified' ||
+            !is_string($proof['verified_at']??null) || $proof['verified_at']==='' ||
+            ($proof['current_group_ids']??null)!==$expectedGroups) {
+            throw new RuntimeException('wallet_recovery_original_changed');
+        }
         if (!achbotAdminCanLocked($db,$actor,$primary,'payments'))
             throw new RuntimeException('wallet_recovery_operator_denied');
         achbotEffectAssertNotArchivedLocked($db,$payId);

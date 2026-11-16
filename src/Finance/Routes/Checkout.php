@@ -799,7 +799,14 @@ if (is_string($data) && strlen($data) <= 64 && preg_match('/\ApayBuyWithWallet([
                     $days,
                     $volume,
                     $isMarzban,
-                    (int)$payInfo['id']
+                    (int)$payInfo['id'],
+                    // This identity was captured while the original Wallet
+                    // debit and payment claim were locked. The adapter must
+                    // reject a later provider reread that switches endpoints.
+                    ['provider'=>'marzban','server_id'=>$server_id,
+                     'panel_url'=>rtrim((string)$plan['panel_url'],'/'),
+                     'remark'=>$remark,'pay_id'=>(int)$payInfo['id'],
+                     'days'=>$days,'volume'=>$volume]
                 );
 
                 ensureAccountCreationSucceeded($response, $serverInfo, $inbound_id, $admin, true);

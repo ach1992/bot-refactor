@@ -24,7 +24,8 @@ ROOT = Path(__file__).resolve().parents[1]
 # ordering and SQL effects execute against the isolated current-source bot.
 NATIVE_SPY = r'''
 function renewConfigOnServer($connection,$serverId,$inboundId,$uuid,$remark,
-                             $days,$volume,$isMarzban,?int $payId=null) {
+                             $days,$volume,$isMarzban,?int $payId=null,
+                             ?array $originalTarget=null) {
     $db=$GLOBALS['connection'];$spec=$GLOBALS['spec'];
     $tx=$db->query('SELECT @@in_transaction AS tx')->fetch_assoc()['tx']??-1;
     $other=new mysqli('localhost','root','',$GLOBALS['owned_db'],0,$GLOBALS['owned_socket']);
@@ -36,7 +37,8 @@ function renewConfigOnServer($connection,$serverId,$inboundId,$uuid,$remark,
     $GLOBALS['events'][]=['event'=>'NATIVE_RENEW','tx'=>(int)$tx,
         'observed_state'=>$observed['state']??null,'wallet'=>(int)$wallet,
         'pay_id'=>$payId,'days'=>$days,'volume'=>$volume,
-        'remark'=>$remark,'server'=>$serverId,'marzban'=>$isMarzban];
+        'remark'=>$remark,'server'=>$serverId,'marzban'=>$isMarzban,
+        'original_target'=>$originalTarget];
     if ((int)$tx!==0 || ($observed['state']??null)!=='processing_wallet' ||
         (int)$wallet!==(int)($spec['expected_wallet']??49900))
         throw new RuntimeException('fixture_native_before_durable_wallet');
@@ -111,8 +113,11 @@ def check() -> list[str]:
         assert observation['tx']==0 and observation['observed_state']=='processing_wallet'
         assert observation['wallet']==49900 and observation['pay_id']==good
         assert observation['days']==30 and observation['volume']==2
+        assert observation['original_target']=={
+            'provider':'marzban','server_id':2,'panel_url':'http://127.0.0.1:9',
+            'remark':'fixture_user','pay_id':good,'days':30,'volume':2}
         assert sql('SELECT day,volume,amount FROM increase_order ORDER BY id DESC LIMIT 1')=='30\t2\t100'
-        checks.append('renew_native_only_after_committed_wallet_claim_and_audit_atomic')
+        checks.append('renew_native_after_committed_claim_with_original_physical_target_and_plan')
         replay=route('wallet-renew-happy')
         assert len(native(replay))==0 and audit()==before+1 and amount()==49900
         checks.append('duplicate_wallet_button_no_second_native_or_debit')

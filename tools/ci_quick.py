@@ -33,6 +33,7 @@ NATIVE_TESTS = (
     ("gateway_rules", "test_post_v9_gateway_rules.py"),
     ("wallet_checkout", "test_post_v9_wallet_checkout.py"),
     ("wallet_sconfig_finality", "test_post_v9_wallet_sconfig.py"),
+    ("wallet_marzban_target", "test_post_v9_wallet_marzban_target.py"),
     ("wallet_pg_recovery", "test_post_v9_wallet_edit_recovery.py"),
     ("service_effects", "test_post_v9_service_effects.py"),
     ("pasarguard_http", "test_post_v9_pasarguard_client.py"),

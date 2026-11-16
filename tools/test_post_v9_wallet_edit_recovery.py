@@ -10,6 +10,7 @@ import argparse
 import datetime as dt
 import json
 import subprocess
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import test_post_v9_scoped_api_pg as api
@@ -27,15 +28,34 @@ if (PHP_VERSION_ID<80500 || PHP_VERSION_ID>=80600) throw new RuntimeException('p
 define('ACHBOT_PG_TEST_LOOPBACK',true);
 $_SERVER['SCRIPT_FILENAME']=__FILE__;
 $root=$argv[1];$spec=json_decode($argv[4],true,64,JSON_THROW_ON_ERROR);
+$GLOBALS['spec']=$spec;
 require_once $root.'/src/Purchase/Core.php';
 require_once $root.'/src/Finance/WalletEditRecovery.php';
-$db=new mysqli('localhost','root','',$argv[3],0,$argv[2]);
+class OwnedRecoveryMysqli extends mysqli {
+    public function commit(int $flags=0,?string $name=null): bool {
+        $ok=parent::commit($flags,$name);
+        if ($ok && ($GLOBALS['spec']['commit_ack_lost']??false)===true &&
+            !($GLOBALS['commit_ack_lost_fired']??false)) {
+            $id=(int)($GLOBALS['spec']['pay_id']??0);
+            $q=$this->prepare('SELECT state FROM pays WHERE id=?');
+            $q->bind_param('i',$id);$q->execute();
+            $row=$q->get_result()->fetch_assoc();$q->close();
+            if (($row['state']??null)==='paid_with_wallet') {
+                $GLOBALS['commit_ack_lost_fired']=true;
+                throw new RuntimeException('fixture_commit_ack_lost_after_success');
+            }
+        }
+        return $ok;
+    }
+}
+$db=new OwnedRecoveryMysqli('localhost','root','',$argv[3],0,$argv[2]);
 $db->set_charset('utf8mb4');
 try {
     $payId=(int)$spec['pay_id'];
+    $orderId=(int)($spec['order_id']??103);
     if ($spec['op']==='seed') {
         achbotPgPinPayment($db,$payId);
-        $ctx=achbotPgOrderContext($db,103);
+        $ctx=achbotPgOrderContext($db,$orderId);
         $read=achbotPgRead($ctx['panel'],$ctx['identity']);
         if (($read['success']??false)!==true) throw new RuntimeException('seed_native_unavailable');
         $before=$read['user'];$field=($spec['kind']??'day')==='volume'?'plus_volume':'plus_day';
@@ -58,6 +78,14 @@ try {
         $e=achbotWalletPgAddonOriginal($db,$payId);
         $result=['kind'=>$e['kind'],'units'=>$e['units'],
             'state'=>$e['account']['state'],'order_id'=>$e['account']['order_id']];
+    } elseif ($spec['op']==='compete') {
+        $ctx=achbotPgOrderContext($db,$orderId,false,true);
+        achbotPgBeginMutation($db,$ctx,'operator:competing-edit','edit',
+            ['phase'=>'claimed','requested_units'=>['plus_day'=>1]]);
+        $result=['unexpected_competing_account_claim'=>true];
+    } elseif ($spec['op']==='validate_ref') {
+        achbotPgOrderContext($db,$orderId,false,true);
+        $result=['unexpected_unlisted_reference'=>true];
     } else throw new RuntimeException('unexpected_fixture_operation');
     echo json_encode(['ok'=>true,'result'=>$result],JSON_THROW_ON_ERROR);
 } catch(Throwable $error) {
@@ -66,10 +94,14 @@ try {
 '''
 
 
-def case(*, kind: str = 'day', finalization_failure: bool = False) -> list[str]:
+def case(*, kind: str = 'day', finalization_failure: bool = False,
+         historical_planless: bool = False, commit_ack_lost: bool = False,
+         concurrent: bool = False) -> list[str]:
     checks: list[str] = []
     with api.sandbox() as (sql, run, provider, _bank, _epoch):
-        effect_id = int(cutover.fixture_effect(sql))
+        effect_id = int(cutover.fixture_effect(
+            sql, original_planless=historical_planless))
+        oid = 101 if historical_planless else 103
         provider.user.update({
             'id': cutover.REMOTE_ID, 'username': USER, 'created_at': CREATED,
             'note': 'original-existing-account', 'data_limit': 123400000,
@@ -77,12 +109,19 @@ def case(*, kind: str = 'day', finalization_failure: bool = False) -> list[str]:
             'expire': dt.datetime.fromtimestamp(ORIGINAL_EXPIRE,dt.timezone.utc).isoformat().replace('+00:00','Z'),
             'group_ids': [2,5], 'status': 'active',
         })
-        sql("INSERT INTO orders_list (id,userid,token,transid,fileid,server_id,inbound_id,"
-            "remark,uuid,expire_date,link,amount,status,date,autoRenew,"
-            "provider_effect_id,provider_remote_user_id,provider_remote_created_at) VALUES "
-            "(103,1001,'wallet-existing-ref','',7,2,0,'historical_fixture',"
-            "'unchanged-original-uuid',"+str(ORIGINAL_EXPIRE)+",'[]',1200,1,'fixture','off',"
-            f"{effect_id},72,{api.quote_sql(CREATED)})")
+        if historical_planless:
+            # An ORIGINAL migrated reference (not a later import) has fileid=0,
+            # NULL effect.order_id and no modern PasarGuard import origin.
+            sql('UPDATE orders_list SET expire_date='+str(ORIGINAL_EXPIRE)+
+                ',fileid=0 WHERE id=101')
+            assert sql('SELECT fileid FROM orders_list WHERE id=101')=='0'
+        else:
+            sql("INSERT INTO orders_list (id,userid,token,transid,fileid,server_id,inbound_id,"
+                "remark,uuid,expire_date,link,amount,status,date,autoRenew,"
+                "provider_effect_id,provider_remote_user_id,provider_remote_created_at) VALUES "
+                "(103,1001,'wallet-existing-ref','',7,2,0,'historical_fixture',"
+                "'unchanged-original-uuid',"+str(ORIGINAL_EXPIRE)+",'[]',1200,1,'fixture','off',"
+                f"{effect_id},72,{api.quote_sql(CREATED)})")
         origin = {'version': 1, 'kind': 'external_import', 'order_id': 103,
                   'owner_userid': 1001, 'actor_userid': 1001,
                   'provider': 'pasarguard', 'server_id': 2,
@@ -92,15 +131,17 @@ def case(*, kind: str = 'day', finalization_failure: bool = False) -> list[str]:
                       'remote_username': USER},
                   'capacity_reserved': False, 'provider_account_id': effect_id}
         original_origin=json.dumps(origin,separators=(',',':'))
-        sql("INSERT INTO setting(type,value) VALUES "
-            "('ACHBOT_SERVICE_ORIGIN:103',"+api.quote_sql(original_origin)+")")
+        if not historical_planless:
+            sql("INSERT INTO setting(type,value) VALUES "
+                "('ACHBOT_SERVICE_ORIGIN:103',"+api.quote_sql(original_origin)+")")
         sql('UPDATE users SET wallet=900000 WHERE userid=1001')
         sql("INSERT INTO pays(hash_id,user_id,type,plan_id,server_id,order_id,"
             "volume,day,price,request_date,state) VALUES "
-            f"('wallet-original-103',1001,'INCREASE_{kind.upper()}_103_1',7,2,103,"
+            f"('wallet-original-{oid}',1001,'INCREASE_{kind.upper()}_{oid}_1',"
+            f"{0 if historical_planless else 7},2,{oid},"
             +('0,10' if kind=='day' else '4,0')+
             ",100000,UNIX_TIMESTAMP(),'processing_wallet')")
-        pay_id=int(sql("SELECT id FROM pays WHERE hash_id='wallet-original-103'"))
+        pay_id=int(sql("SELECT id FROM pays WHERE hash_id='wallet-original-"+str(oid)+"'"))
         driver=run.fixture_work/'wallet-edit-recovery.php'
         driver.write_text(PHP)
 
@@ -109,7 +150,8 @@ def case(*, kind: str = 'day', finalization_failure: bool = False) -> list[str]:
                 'php','-n','-d','extension=mysqlnd','-d','extension=mysqli',
                 '-d','extension=curl','-d','log_errors=1','-d','error_log=/dev/stderr',
                 str(driver),str(ROOT),str(run.fixture_socket),api.DB,
-                json.dumps({'op':op,'kind':kind,'pay_id':pay_id,**args}),
+                json.dumps({'op':op,'kind':kind,'pay_id':pay_id,
+                            'order_id':oid,**args}),
             ],cwd=run.fixture_work,env=run.fixture_env,capture_output=True,
                 text=True,timeout=40)
             if proc.returncode or not proc.stdout:
@@ -152,14 +194,43 @@ def case(*, kind: str = 'day', finalization_failure: bool = False) -> list[str]:
         provider.user['data_limit']-=27
         checks.append('independent_native_entitlement_drift_remains_reviewable')
 
-        wrong=dict(origin,provider='marzban')
-        sql('UPDATE setting SET value='+api.quote_sql(json.dumps(wrong))+
-            " WHERE type='ACHBOT_SERVICE_ORIGIN:103'")
-        changed=call('resume')
-        assert changed['result']['status']=='review',changed
-        sql('UPDATE setting SET value='+api.quote_sql(original_origin)+
-            " WHERE type='ACHBOT_SERVICE_ORIGIN:103'")
-        checks.append('invalid_import_origin_never_authorizes_recovery')
+        if not historical_planless:
+            wrong=dict(origin,provider='marzban')
+            sql('UPDATE setting SET value='+api.quote_sql(json.dumps(wrong))+
+                " WHERE type='ACHBOT_SERVICE_ORIGIN:103'")
+            changed=call('resume')
+            assert changed['result']['status']=='review',changed
+            sql('UPDATE setting SET value='+api.quote_sql(original_origin)+
+                " WHERE type='ACHBOT_SERVICE_ORIGIN:103'")
+            checks.append('invalid_import_origin_never_authorizes_recovery')
+        else:
+            assert sql("SELECT COUNT(*) FROM setting WHERE type='ACHBOT_SERVICE_ORIGIN:101'")=='0'
+            for column, changed, original in (
+                ('userid','1002','1001'),
+                ('provider_remote_user_id','73','72'),
+                ('provider_remote_created_at',api.quote_sql(CREATED+'-changed'),api.quote_sql(CREATED)),
+                ('server_id','3','2'),
+            ):
+                sql('UPDATE orders_list SET '+column+'='+changed+' WHERE id=101')
+                held=call('resume')
+                assert held['result']['status']=='review',(column,held)
+                sql('UPDATE orders_list SET '+column+'='+original+' WHERE id=101')
+            checks.append('original_planless_wrong_owner_native_incarnation_and_server_denied')
+            original_url=sql('SELECT panel_url FROM server_config WHERE id=2')
+            sql("UPDATE server_config SET panel_url='https://wrong-panel.invalid' WHERE id=2")
+            held=call('resume')
+            assert held['result']['status']=='review',held
+            sql('UPDATE server_config SET panel_url='+api.quote_sql(original_url)+' WHERE id=2')
+            checks.append('original_planless_repointed_physical_endpoint_denied')
+            sql("INSERT INTO orders_list (id,userid,token,transid,fileid,server_id,inbound_id,"
+                "remark,uuid,expire_date,link,amount,status,date,autoRenew,"
+                "provider_effect_id,provider_remote_user_id,provider_remote_created_at) VALUES "
+                "(104,1001,'unlisted','',0,2,0,'historical_fixture',"
+                "'unlisted-uuid',"+str(ORIGINAL_EXPIRE)+",'[]',1200,1,'fixture','off',"
+                f"{effect_id},72,{api.quote_sql(CREATED)})")
+            unlisted=call('validate_ref',order_id=104)
+            assert not unlisted['ok'],unlisted
+            checks.append('unlisted_historical_reference_not_validated_as_planless_origin')
 
         if kind=='day':
             provider.user['expire']=dt.datetime.fromtimestamp(
@@ -171,18 +242,38 @@ def case(*, kind: str = 'day', finalization_failure: bool = False) -> list[str]:
                 "FOR EACH ROW SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='fixture_audit_failure'")
             failed=call('resume')
             assert failed['result']['status']=='review',failed
-            assert sql('SELECT provider_state FROM service_effects WHERE id='+str(effect_id))=='linked'
+            assert sql('SELECT provider_state FROM service_effects WHERE id='+str(effect_id))=='mutating'
+            assert sql('SELECT provider_mutation_key FROM service_effects WHERE id='+str(effect_id))=='pay:'+str(pay_id)
+            competitor=call('compete')
+            assert not competitor['ok'] and 'mutation_requires_review' in competitor['error'],competitor
+            assert sql('SELECT provider_state FROM service_effects WHERE id='+str(effect_id))=='mutating'
+            assert sql('SELECT provider_mutation_key FROM service_effects WHERE id='+str(effect_id))=='pay:'+str(pay_id)
             assert sql('SELECT state FROM pays WHERE id='+str(pay_id))=='processing_wallet'
-            assert sql('SELECT expire_date FROM orders_list WHERE id=103')==str(ORIGINAL_EXPIRE)
+            assert sql('SELECT expire_date FROM orders_list WHERE id='+str(oid))==str(ORIGINAL_EXPIRE)
             assert sql('SELECT COUNT(*) FROM increase_order')=='0'
             assert sql('SELECT wallet FROM users WHERE userid=1001')=='900000'
             assert provider.write_count==0
-            checks.append('local_audit_failure_keeps_wallet_claim_without_mutation_or_double_debit')
+            checks.append('audit_failure_preserves_original_mutation_fence_and_blocks_competitor')
             sql('DROP TRIGGER wallet_resume_local_audit_fail')
-        result=call('resume')
-        assert result['ok'] and result['result']['status']=='settled_delivery_unverified',result
+        if concurrent:
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                futures=[pool.submit(call,'resume') for _ in range(2)]
+                outcomes=[f.result() for f in futures]
+            statuses=[x['result'].get('status') for x in outcomes]
+            assert statuses.count('settled_delivery_unverified')==1,outcomes
+            assert all(s in ('settled_delivery_unverified','review','already_paid_state')
+                       for s in statuses),outcomes
+            checks.append('concurrent_staff_recoveries_have_one_committed_settlement')
+        else:
+            result=call('resume',commit_ack_lost=commit_ack_lost)
+            if commit_ack_lost:
+                assert result['result']['status']=='review',result
+                assert call('resume')['result']['status']=='already_paid_state'
+                checks.append('ambiguous_final_commit_ack_does_not_repeat_original_settlement')
+            else:
+                assert result['ok'] and result['result']['status']=='settled_delivery_unverified',result
         assert sql('SELECT state FROM pays WHERE id='+str(pay_id))=='paid_with_wallet'
-        assert sql('SELECT expire_date FROM orders_list WHERE id=103')==str(target['expire'])
+        assert sql('SELECT expire_date FROM orders_list WHERE id='+str(oid))==str(target['expire'])
         col='day' if kind=='day' else 'volume'
         units=10 if kind=='day' else 4
         assert sql(f'SELECT COUNT(*) FROM increase_order WHERE userid=1001 AND {col}={units} AND amount=100000')=='1'
@@ -207,7 +298,9 @@ def main():
     parser.add_argument('--run-disposable',action='store_true',required=True)
     parser.add_argument('--report',type=Path)
     args=parser.parse_args()
-    checks=case()+case(kind='volume',finalization_failure=True)
+    checks=(case()+case(kind='volume',finalization_failure=True)+
+            case(historical_planless=True)+case(concurrent=True,commit_ack_lost=False)+
+            case(commit_ack_lost=True))
     result={'complete':True,'cases':len(checks),'checks':checks,
             'real_php_source':True,'disposable_mariadb':True,
             'local_native_only':True,'production_mutations':0}

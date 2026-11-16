@@ -174,6 +174,7 @@ function achbotProviderAccountRow(?array $r): ?array {
     try {$snapshot=achbotProviderCanonicalTarget(json_decode((string)$r['provider_snapshot'],true,64,JSON_THROW_ON_ERROR));}
     catch (Throwable $e) {throw new RuntimeException('provider_effect_snapshot_missing');}
     $a=['id'=>$r['provider_reference_id'],'effect_id'=>$r['id'],'order_id'=>$r['order_id'],
+        'source_kind'=>$r['source_kind']??null,
         'provider'=>'pasarguard','panel_id'=>$r['provider_connection_id'],'instance_key'=>$snapshot['instance_key'],
         'endpoint_sha256'=>$r['endpoint_sha256'],'remote_user_id'=>$r['provider_remote_user_id'],
         'remote_created_at'=>$r['provider_remote_created_at'],'remote_username'=>$r['remote_username'],
