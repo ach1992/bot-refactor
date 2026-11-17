@@ -652,6 +652,13 @@ if(is_string($data) && strlen($data) <= 64 && preg_match('/\ApayIncreaseDayWithW
 
         if (!achbotSupportsPanel($serverType))
             throw new UnexpectedValueException('unsupported_panel');
+        if ($serverType==='pasarguard') {
+            // No Wallet debit or Native effect may start when the terminal
+            // finance+one-time delivery outbox cannot be committed.
+            require_once __DIR__.'/../WalletAddonNotices.php';
+            if (!achbotDeliverySchemaReady($connection))
+                throw new RuntimeException('wallet_original_outbox_not_ready');
+        }
         // Reserve the debit and unique payment ownership together BEFORE
         // dispatch. An unknown remote/local result remains processing_wallet
         // for operator review; callback replay cannot debit or dispatch again.
@@ -1524,6 +1531,13 @@ if(is_string($data) && strlen($data) <= 64 && preg_match('/\ApayIncreaseWithWall
 
         if (!achbotSupportsPanel($serverType))
             throw new UnexpectedValueException('unsupported_panel');
+        if ($serverType==='pasarguard') {
+            // No Wallet debit or Native effect may start when the terminal
+            // finance+one-time delivery outbox cannot be committed.
+            require_once __DIR__.'/../WalletAddonNotices.php';
+            if (!achbotDeliverySchemaReady($connection))
+                throw new RuntimeException('wallet_original_outbox_not_ready');
+        }
         // Reserve the debit and unique payment ownership together BEFORE
         // dispatch. An unknown remote/local result remains processing_wallet
         // for operator review; callback replay cannot debit or dispatch again.

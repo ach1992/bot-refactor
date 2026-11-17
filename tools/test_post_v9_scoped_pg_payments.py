@@ -26,8 +26,17 @@ ADDON_DRIVER = (route.PHP.replace(
     "if($n===E_DEPRECATED)return true;", "")
     .replace("$_SERVER['SCRIPT_FILENAME']=__FILE__;",
              "define('ACHBOT_PG_TEST_LOOPBACK',true);\n$_SERVER['SCRIPT_FILENAME']=__FILE__;")
+    .replace("$root=$argv[1];$spec=json_decode($argv[4],true,512,JSON_THROW_ON_ERROR);",
+             "$root=$argv[1];$spec=json_decode($argv[4],true,512,JSON_THROW_ON_ERROR);\n"
+             "$telegramWebhookSecret=($spec['missing_delivery_key']??false)?null:'fixture-webhook-secret-32-bytes-123456';")
     .replace(FORBIDDEN, """function editKeys(...$args){$GLOBALS['events'][]=['event'=>'DELIVERY_KEYS'];}
-function achbotNotifyAdmins(...$args){$GLOBALS['events'][]=['event'=>'ADMIN_NOTICE'];}"""))
+function achbotNotifyAdmins(...$args){
+ $GLOBALS['events'][]=['event'=>'ADMIN_NOTICE'];
+ return [['chat_id'=>9001,'response'=>(object)['ok'=>true]]];
+}
+function achbotAdminFanoutAcknowledged(array $notices):bool {
+ return count($notices)===1 && ($notices[0]['response']->ok??false)===true;
+}"""))
 
 
 def yes(checks: list[str], good: bool, label: str):
@@ -59,7 +68,8 @@ def test() -> dict:
         driver = run.fixture_work / "scoped-pg-finance.php"
         driver.write_text(ADDON_DRIVER)
 
-        def callback(kind: str, channel: str, key: str) -> dict:
+        def callback(kind: str, channel: str, key: str,
+                     missing_delivery_key: bool=False) -> dict:
             if channel == "wallet":
                 verb = "payIncreaseDayWithWallet" if kind == "day" else "payIncreaseWithWallet"
                 actor = 1001
@@ -68,6 +78,7 @@ def test() -> dict:
                 actor = 9001
             data = verb + key
             spec = {"route": "extensions", "actor": actor, "data": data,
+                    "missing_delivery_key": missing_delivery_key,
                     "frame": {"update_id": 1000, "callback_query": {
                         "id": "pg-finance-fixture", "data": data,
                         "from": {"id": actor}, "message": {
@@ -84,14 +95,51 @@ def test() -> dict:
             ]
             proc = subprocess.run(argv, cwd=run.fixture_work, env=run.fixture_env,
                                   capture_output=True, text=True, timeout=50)
-            if proc.returncode or proc.stderr:
+            # The actual source emits bounded structured diagnostics on
+            # positive Native/Wallet recovery, including Telegram first-send.
+            # Accept these known events only; reject unrecognized stderr.
+            allowed={'achbot.native.edit_recovery_observed',
+                     'achbot.finance.wallet_original_reconciled',
+                     'achbot.delivery.telegram_attempt',
+                     'achbot.delivery.dispatch_result'}
+            def expected_source_diagnostic(line:str)->bool:
+                tag='[AChBot] '
+                if tag not in line: return False
+                try: item=json.loads(line.split(tag,1)[1])
+                except ValueError: return False
+                return (isinstance(item,dict) and item.get('event') in allowed
+                    and all(x not in item for x in ('password','token','secret')))
+            unexpected=[line for line in proc.stderr.splitlines()
+                if line.strip() and not expected_source_diagnostic(line)]
+            if proc.returncode or unexpected:
                 raise AssertionError(("pg_nonapi_callback_php_error", kind, channel,
-                    proc.returncode, proc.stderr[-1500:], proc.stdout[-900:]))
+                    proc.returncode, unexpected[-6:], proc.stdout[-900:]))
             try:
                 return json.loads(proc.stdout)
             except json.JSONDecodeError as error:
                 raise AssertionError(("pg_nonapi_callback_json", proc.stdout[-1200:])) from error
 
+        # Source-real pre-debit gate: an absent 018 evidence encryption key
+        # is not permission to subtract Wallet or dispatch any Native PUT.
+        for kind in ('day','volume'):
+            key=f'pg_no_delivery_key_{kind}'
+            offer=704 if kind=='day' else 705
+            issued=run('issue',kind=kind,offer_id=offer,hash=key,
+                       channel='wallet')
+            old_balance=sql("SELECT wallet FROM users WHERE userid=1001")
+            old_audit=sql("SELECT COUNT(*) FROM increase_order")
+            old_writes=provider.write_count
+            out=callback(kind,'wallet',key,missing_delivery_key=True)
+            observed_state=sql(f"SELECT state FROM pays WHERE id={issued['pay_id']}")
+            observed_wallet=sql("SELECT wallet FROM users WHERE userid=1001")
+            observed_audit=sql("SELECT COUNT(*) FROM increase_order")
+            observed_writes=provider.write_count
+            if not (observed_state=='pending' and observed_wallet==old_balance
+                    and observed_audit==old_audit and observed_writes==old_writes):
+                raise AssertionError(('missing_key_predebit_regression',kind,
+                    observed_state,old_balance,observed_wallet,
+                    old_audit,observed_audit,old_writes,observed_writes,out))
+            yes(checks,True,f'pg_{kind}_missing_outbox_denied_before_wallet_debit_and_native')
         for kind, channel in (("day", "wallet"), ("day", "manual"),
                               ("volume", "wallet"), ("volume", "manual")):
             key = f"pgimport_{kind}_{channel}"

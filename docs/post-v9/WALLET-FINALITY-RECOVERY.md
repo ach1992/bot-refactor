@@ -23,7 +23,11 @@ The function refuses anything other than the **original** `INCREASE_DAY_*` or `I
 On successful GET-only readback, the **original account mutation fence stays `mutating`** until a short local SQL transaction locks the original payment/order/account, rechecks original staff permissions (for manual invocation), archive state, physical identity and mutation proof, then changes the original journal to `linked` **atomically with** original order expiry, the one add-on audit, `paid_with_wallet` **and original first-send notification obligations**. No SQL lock spans the Native HTTP GET. An audit, notification-outbox or COMMIT failure rolls back the journal transition and preserves the original fence. If final COMMIT acknowledgment is ambiguous, verify the original payment state before any further action; never issue another debit or Native write.
 
 **First-time wallet checkout now has the same invariant, not merely
-the recovery worker.** In the existing `payIncreaseDayWithWallet*` and
+the recovery worker.** Before committing the Wallet debit, the PasarGuard
+DAY/VOLUME callback verifies that the original durable customer-delivery
+schema and evidence key are ready. A missing outbox/key fails before any
+Wallet debit or Native edit.
+ In the existing `payIncreaseDayWithWallet*` and
 `payIncreaseWithWallet*` routes, the original debit and
 `processing_wallet` claim COMMIT before Native. On genuine
 PasarGuard DAY/VOLUME payment claims, `achbotPgServiceEdit()` preserves
