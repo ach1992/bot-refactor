@@ -656,7 +656,7 @@ if(is_string($data) && strlen($data) <= 64 && preg_match('/\ApayIncreaseDayWithW
             // No Wallet debit or Native effect may start when the terminal
             // finance+one-time delivery outbox cannot be committed.
             require_once __DIR__.'/../WalletAddonNotices.php';
-            if (!achbotDeliverySchemaReady($connection))
+            if (!achbotWalletAddonNoticesReady($connection))
                 throw new RuntimeException('wallet_original_outbox_not_ready');
         }
         // Reserve the debit and unique payment ownership together BEFORE
@@ -1535,7 +1535,7 @@ if(is_string($data) && strlen($data) <= 64 && preg_match('/\ApayIncreaseWithWall
             // No Wallet debit or Native effect may start when the terminal
             // finance+one-time delivery outbox cannot be committed.
             require_once __DIR__.'/../WalletAddonNotices.php';
-            if (!achbotDeliverySchemaReady($connection))
+            if (!achbotWalletAddonNoticesReady($connection))
                 throw new RuntimeException('wallet_original_outbox_not_ready');
         }
         // Reserve the debit and unique payment ownership together BEFORE

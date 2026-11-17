@@ -9,6 +9,87 @@ require_once __DIR__.'/DeliveryLedger.php';
 require_once __DIR__.'/GatewayClient.php';
 require_once __DIR__.'/../../messages/loader.php';
 
+/**
+ * Exact original Wallet DAY/VOLUME notification dependency preflight.
+ * Run BEFORE debit/Native, not after the irreversible external effect.
+ * 018 alone is insufficient: 014 adds the evidence payload columns used
+ * by the original notification-only attempt. Check the actual writer
+ * dependencies rather than requiring unrelated API-provider features.
+ */
+function achbotWalletAddonNoticesReady(mysqli $db): bool {
+    try {
+        if (!achbotDeliverySchemaReady($db)) return false;
+        foreach (['payment_attempts','setting'] as $table) {
+            $status=$db->query("SHOW TABLE STATUS WHERE Name='".$table."'");
+            if (!$status || strtolower((string)($status->fetch_assoc()['Engine']??''))!=='innodb')
+                return false;
+        }
+        // Structural SELECT catches a missing 014 column before Wallet debit.
+        $probe=$db->query('SELECT id,pay_row_id,provider,order_hash,quote_amount,'.
+            'quote_currency,local_amount_toman,stage,provider_status,'.
+            'evidence_fulfillment_state,evidence_fulfillment_payload '.
+            'FROM payment_attempts LIMIT 0');
+        if (!$probe) return false;
+        $probe->free();
+        $probe=$db->query('SELECT id,type,value FROM setting LIMIT 0');
+        if (!$probe) return false;
+        $probe->free();
+        $columns=[];
+        $q=$db->query("SELECT COLUMN_NAME,DATA_TYPE,CHARACTER_MAXIMUM_LENGTH,
+                NUMERIC_PRECISION,NUMERIC_SCALE
+            FROM information_schema.COLUMNS
+            WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='payment_attempts'");
+        while ($q && ($c=$q->fetch_assoc()))
+            $columns[$c['COLUMN_NAME']]=$c;
+        foreach ([
+            'id'=>['bigint',0],'pay_row_id'=>['int',0],
+            'provider'=>['varchar',6],'order_hash'=>['varchar',40],
+            'quote_amount'=>['decimal',0],'quote_currency'=>['varchar',5],
+            'local_amount_toman'=>['int',0],'stage'=>['varchar',9],
+            'provider_status'=>['varchar',24],
+            'evidence_fulfillment_state'=>['varchar',8],
+            'evidence_fulfillment_payload'=>['longtext',0]
+        ] as $name=>$expect) {
+            $col=$columns[$name]??null;
+            if (!$col || strtolower((string)$col['DATA_TYPE'])!==$expect[0] ||
+                ($expect[1]>0 &&
+                    (int)($col['CHARACTER_MAXIMUM_LENGTH']??0)<$expect[1]))
+                return false;
+        }
+        if ((int)($columns['quote_amount']['NUMERIC_SCALE']??-1)<8 ||
+            (int)($columns['quote_amount']['NUMERIC_PRECISION']??0)<24)
+            return false;
+        $unique=[];
+        $q=$db->query('SHOW INDEX FROM payment_attempts');
+        while ($q && ($idx=$q->fetch_assoc())) {
+            if ((int)$idx['Non_unique']===0)
+                $unique[$idx['Key_name']][(int)$idx['Seq_in_index']]=$idx['Column_name'];
+        }
+        foreach ([
+            'uq_payment_attempt_pay_row'=>['pay_row_id'],
+            'uq_payment_attempt_order_hash'=>['order_hash']
+        ] as $name=>$fields) {
+            if (!isset($unique[$name])) return false;
+            ksort($unique[$name]);
+            if (array_values($unique[$name])!==$fields) return false;
+        }
+        $columns=[];
+        $q=$db->query("SELECT COLUMN_NAME,DATA_TYPE,CHARACTER_MAXIMUM_LENGTH
+            FROM information_schema.COLUMNS
+            WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='setting'");
+        while ($q && ($c=$q->fetch_assoc()))
+            $columns[$c['COLUMN_NAME']]=$c;
+        if (!in_array(strtolower((string)($columns['id']['DATA_TYPE']??'')),
+                ['int','bigint'],true) ||
+            strtolower((string)($columns['type']['DATA_TYPE']??''))!=='varchar' ||
+            (int)($columns['type']['CHARACTER_MAXIMUM_LENGTH']??0)<38 ||
+            !in_array(strtolower((string)($columns['value']['DATA_TYPE']??'')),
+                ['text','mediumtext','longtext'],true))
+            return false;
+        return true;
+    } catch (Throwable $error) { return false; }
+}
+
 /** Caller holds the original pays row and the local terminal COMMIT. */
 function achbotWalletAddonMarkRecoveryNoticesLocked(mysqli $db,array $claim): void {
     $pay=$claim['pay'];$order=$claim['order'];

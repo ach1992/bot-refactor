@@ -140,6 +140,58 @@ def test() -> dict:
                     observed_state,old_balance,observed_wallet,
                     old_audit,observed_audit,old_writes,observed_writes,out))
             yes(checks,True,f'pg_{kind}_missing_outbox_denied_before_wallet_debit_and_native')
+        # REVIEW #201 REQUIRED-2: 003+018 can be installed without 014.
+        # The ordinary delivery-ledger preflight passed on such a stage,
+        # but the notification-only wallet payment_attempt INSERT could
+        # never succeed. Simulate the missing 014 writer columns in actual
+        # disposable MariaDB, NOT a mock return value.
+        sql("ALTER TABLE payment_attempts "
+            "DROP COLUMN evidence_fulfillment_state,"
+            "DROP COLUMN evidence_fulfillment_payload")
+        assert sql("SELECT COUNT(*) FROM information_schema.COLUMNS WHERE "
+            "TABLE_SCHEMA=DATABASE() AND TABLE_NAME='payment_attempts' AND "
+            "COLUMN_NAME IN ('evidence_fulfillment_state',"
+            "'evidence_fulfillment_payload')")=='0'
+        for kind in ('day','volume'):
+            key='pg_old003_018_no014_'+kind
+            issued=run('issue',kind=kind,offer_id=704 if kind=='day' else 705,
+                       hash=key,channel='wallet')
+            before_wallet=sql("SELECT wallet FROM users WHERE userid=1001")
+            before_audit=sql("SELECT COUNT(*) FROM increase_order")
+            before_writes=provider.write_count
+            callback(kind,'wallet',key)
+            assert sql(f"SELECT state FROM pays WHERE id={issued['pay_id']}")=='pending'
+            assert sql("SELECT wallet FROM users WHERE userid=1001")==before_wallet
+            assert sql("SELECT COUNT(*) FROM increase_order")==before_audit
+            assert provider.write_count==before_writes
+            assert sql("SELECT COUNT(*) FROM payment_delivery_intents")=='0'
+            assert sql("SELECT COUNT(*) FROM setting WHERE type LIKE 'WALLET_ADDON_REPORT:%'")=='0'
+            yes(checks,True,'pg_'+kind+'_003_plus_018_without_014_denied_before_debit')
+        sql("ALTER TABLE payment_attempts "
+            "ADD evidence_fulfillment_state VARCHAR(32) COLLATE utf8mb4_bin NULL,"
+            "ADD evidence_fulfillment_payload LONGTEXT COLLATE utf8mb4_bin NULL")
+
+        # A column with the correct name but incompatible storage capacity
+        # must also fail the original pre-debit readiness contract.
+        sql("ALTER TABLE payment_attempts "
+            "MODIFY evidence_fulfillment_payload VARCHAR(16) NULL")
+        for kind in ('day','volume'):
+            key='pg_malformed_014_column_'+kind
+            issued=run('issue',kind=kind,offer_id=704 if kind=='day' else 705,
+                       hash=key,channel='wallet')
+            before_wallet=sql("SELECT wallet FROM users WHERE userid=1001")
+            before_audit=sql("SELECT COUNT(*) FROM increase_order")
+            before_writes=provider.write_count
+            callback(kind,'wallet',key)
+            assert sql(f"SELECT state FROM pays WHERE id={issued['pay_id']}")=='pending'
+            assert sql("SELECT wallet FROM users WHERE userid=1001")==before_wallet
+            assert sql("SELECT COUNT(*) FROM increase_order")==before_audit
+            assert provider.write_count==before_writes
+            yes(checks,True,'pg_'+kind+'_incompatible_014_column_no_wallet_debit')
+        sql("ALTER TABLE payment_attempts "
+            "MODIFY evidence_fulfillment_payload LONGTEXT COLLATE utf8mb4_bin NULL")
+        # Normal source-real settlements below prove restored compatible
+        # schema still supports one debit, PUT, audit and durable notices.
         for kind, channel in (("day", "wallet"), ("day", "manual"),
                               ("volume", "wallet"), ("volume", "manual")):
             key = f"pgimport_{kind}_{channel}"

@@ -25,8 +25,7 @@ On successful GET-only readback, the **original account mutation fence stays `mu
 **First-time wallet checkout now has the same invariant, not merely
 the recovery worker.** Before committing the Wallet debit, the PasarGuard
 DAY/VOLUME callback verifies that the original durable customer-delivery
-schema and evidence key are ready. A missing outbox/key fails before any
-Wallet debit or Native edit.
+**entire original notice-writer dependency** is ready: InnoDB delivery tables and unique intents, `payment_attempts` writer columns from migrations `003` **and `014`** (including correctly typed evidence fulfillment payload/state, unique pay/quote constraints and required precision), transactional `setting` report-marker storage, and the evidence encryption key. Missing or incompatible columns/schema fail before any Wallet debit or Native edit. Source-real tests include the staged `003` + `018` without `014` writer columns and a present-but-incompatible fulfillment payload, for both DAY and VOLUME.
  In the existing `payIncreaseDayWithWallet*` and
 `payIncreaseWithWallet*` routes, the original debit and
 `processing_wallet` claim COMMIT before Native. On genuine
