@@ -195,9 +195,13 @@ out-of-band change between the adapter's final GET and PUT remains a residual
 race. This explicit decision is not a blanket bypass of account ownership,
 remote incarnation, payer evidence, permissions, payment finality, archival
 state, or double-effect protections. It does not turn a processing Wallet
-claim into a bank/gift API case. The separately outstanding Hell Wallet
-`#112719` requires its own original-claim accounting evidence and distinct
-operator authorization before any live settlement.
+claim into a bank/gift API case. Hell Wallet payment `#112719` was already
+reconciled under separate Owner authorization using installed v0.10.6; never
+replay it or treat this source update as installed. See
+[Wallet finality/recovery](WALLET-FINALITY-RECOVERY.md) and
+[finance Issue #26](https://github.com/ach1992/bot-refactor/issues/26).
+The separate unresolved Hell bank/API payment `#112692` requires its own
+target-specific Owner authorization before any live settlement.
 
 **Acceptance:** disposable MariaDB and loopback Native execute the actual
 `ManualReceipts.php` callback and original provider coordinator for
