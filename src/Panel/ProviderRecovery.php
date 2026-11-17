@@ -12,15 +12,13 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
 }
 require_once __DIR__.'/../Diagnostics/EventLog.php';
 
-/** Marzban edits have no local Native mutation journal: only an explicit
- * operator may repeat additive changes. Renewal sets an absolute plan, so
- * automatic re-application is allowed after the original financial claim.
+/** Marzban add-ons may resume automatically only from the sealed original
+ * absolute Native intent, or from a capture-first claim proving no write began.
+ * No second relative increment is authorized by a payment retry.
  */
 function achbotMarzbanRecoverEdit(mysqli $db,int $serverId,array $params,
     array $source,bool $operator): object {
     $kind=(string)($source['kind']??'');
-    if (!$operator && !in_array($kind,['renew','standard'],true))
-        return achbotProviderFailure('recovery_operator_required',false);
     if (!in_array($kind,['day','volume'],true))
         return achbotApplyServiceEdit($db,$serverId,$params);
     if (isset($source['native_intent'])) {
@@ -143,17 +141,28 @@ function achbotPgRecoverEdit(mysqli $db,int $serverId,array $params,
         $kind=(string)($source['kind']??'');
         if ($payId<=0 || $serverId<=0 || $orderId<=0 ||
             (string)($params['remark']??'')==='' ||
-            !$operator && !in_array($kind,['renew','standard'],true))
+            !in_array($kind,['renew','standard','day','volume'],true))
             throw new RuntimeException('pg_recovery_not_authorized');
         $key='pay:'.$payId;
         $units=achbotPgEditInputUnits($params);
         $ctx=achbotPgOrderContext($db,$orderId,false,true);
         $account=$ctx['account'];
+        // Finance records DISPATCHED before calling this Native adapter. A
+        // transient preflight failure can leave that durable finance marker
+        // but no account mutation claim. It is not proof of an HTTP write.
+        $neverClaimed=$account['state']==='linked' &&
+            (string)$account['mutation_key']!==$key;
+        // An additive operation with a prior Native claim can change the
+        // baseline or encounter permission drift. Keep existing human
+        // reconciliation for that class; only a proven never-started claim
+        // may recover automatically. Renewals are absolute replacements.
+        if (!$operator && !$neverClaimed && in_array($kind,['day','volume'],true))
+            throw new RuntimeException('pg_recovery_operator_required');
         if ((int)$ctx['order_server_id']!==$serverId ||
             (string)$ctx['order']['remark']!==(string)$params['remark'] ||
             !achbotPgRecoveryOrderOriginMatches($db,$ctx,$orderId) ||
             !in_array($account['state'],['mutating','linked'],true) ||
-            (string)$account['mutation_key']!==$key)
+            (!$neverClaimed && (string)$account['mutation_key']!==$key))
             throw new RuntimeException('pg_recovery_identity_changed');
 
         // The original quote pinned this physical identity before the
@@ -170,6 +179,35 @@ function achbotPgRecoverEdit(mysqli $db,int $serverId,array $params,
             (string)$target['instance_key']!==(string)$ctx['panel']['instance_key'] ||
             (string)$target['endpoint_sha256']!==(string)$account['endpoint_sha256'])
             throw new RuntimeException('pg_recovery_payment_target_changed');
+
+        if ($neverClaimed) {
+            // A previous pay:ID in the Native history means the original
+            // effect DID start or finish; never mistake that for pre-dispatch.
+            // Re-enter the ordinary source path with the same paid claim,
+            // immutable account and Native CAS. It claims the account before
+            // any RESET/PUT; neither a new payment nor a second quote is made.
+            if (($source['defer_account_finality']??false)!==true ||
+                ($source['observe_only']??false)===true ||
+                ($source['preview_only']??false)===true ||
+                array_key_exists('operator_override_native_digest',$source) ||
+                isset($source['native_intent']) ||
+                (in_array($kind,['day','volume'],true) &&
+                 ($source['capture_required']??false)!==true))
+                throw new RuntimeException('pg_recovery_pre_dispatch_invalid');
+            achbotPgMutationAdmission($account,$key);
+            $first=$params;
+            $first['_api_defer_account_finality']=true;
+            $response=achbotPgServiceEdit($db,$serverId,$first);
+            if (($response->success??false)!==true ||
+                ($response->verified??false)!==true ||
+                ($response->native_fence_deferred??false)!==true ||
+                !is_array($response->observed_group_ids??null))
+                throw new RuntimeException('pg_recovery_pre_dispatch_unverified');
+            achbotDiagnosticEvent('achbot.native.edit_pre_dispatch_recovered',[
+                'pay_id'=>$payId,'order_id'=>$orderId,'server_id'=>$serverId,
+                'source'=>$kind,'result'=>'verified'],'info');
+            return $response;
+        }
 
         $saved=json_decode((string)($account['mutation_snapshot']??''),true,64,JSON_THROW_ON_ERROR);
         if (!is_array($saved) || ($saved['version']??null)!==1 ||

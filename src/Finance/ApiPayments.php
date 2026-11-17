@@ -829,8 +829,9 @@ function achbotApiPaymentFulfillEdit(mysqli $db,array $pay,array $proof,
             ($payload['pay_sha256']??null)!==achbotPaymentEvidencePayFingerprint($pay) ||
             !is_array($payload['params']??null)) return false;
         $kind=(string)($payload['kind']??'');
-        if (!$operator && !in_array($kind,['renew','standard'],true))
-            return false;
+        // Automatic recovery is permitted for an original pinned add-on too:
+        // the provider must prove its captured absolute intent or pre-dispatch
+        // reservation before it may send any further Native request.
         $server=(int)($payload['server']??0);
         $oid=(int)($payload['order']??0);
         $remark=(string)($payload['remark']??'');
@@ -1333,7 +1334,8 @@ function achbotApiPaymentMaintainWithinBudget(mysqli $db,int $limit=12): array {
                        (p.state='processing' AND (
                           a.evidence_fulfillment_state IN ('reserved','verified')
                           OR (a.evidence_fulfillment_state='dispatched'
-                              AND p.type IN ('RENEW_ACCOUNT','RENEW_SCONFIG')))))))
+                              AND (p.type IN ('RENEW_ACCOUNT','RENEW_SCONFIG')
+                                  OR p.type REGEXP '^INCREASE_(DAY|VOLUME)_[1-9][0-9]*_[1-9][0-9]*$')))))))
             ORDER BY COALESCE(a.evidence_next_check_at,a.created_at),a.id LIMIT ".($limit+1));
         $rows=$q->fetch_all(MYSQLI_ASSOC);
         if (count($rows)>$limit) {

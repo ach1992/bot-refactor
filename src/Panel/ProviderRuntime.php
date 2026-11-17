@@ -930,8 +930,20 @@ function achbotPgServiceEdit(mysqli $db,int $serverId,array $change,?array $gift
         // A post-claim provider edit may already have crossed the remote
         // boundary. Keep the held result; preserve only bounded internal
         // diagnostics for the operator, not remote bodies or credentials.
-        // Preserve existing legacy PG error/log contracts. Only the new
-        // scope-fenced financial operation adds this operator diagnostic.
+        // A failure before achbotPgBeginMutation can leave a finance
+        // DISPATCHED marker with no Native claim. Make that stage observable
+        // so the safe pre-dispatch reconciler can be distinguished from a
+        // genuine unknown HTTP result without exposing provider credentials.
+        if ((int)($change['pay_id']??0)>0) {
+            $reason=(string)$error->getMessage();
+            if (preg_match('/\A(?:pg|provider|addon|effect|service|recovery|payment|api)_[a-z0-9_]{2,90}\z/D',$reason)!==1)
+                $reason='internal_exception';
+            achbotDiagnosticEvent('achbot.native.edit_deferred',[
+                'pay_id'=>(int)$change['pay_id'],'server_id'=>$serverId,
+                'reason'=>$reason,'stage'=>'native_claim_or_write'],'warning');
+        }
+        // Preserve existing legacy PG error/log contracts. Only the scoped
+        // add-on path also emits its historic operator diagnostic.
         if (($scopedGroups??null)!==null && (int)($change['pay_id']??0)>0) {
             $reason=(string)$error->getMessage();
             if (preg_match('/\\A(?:pg|provider|addon|service|effect|api|payment)_[a-z0-9_]{2,90}\\z/D',$reason)!==1)

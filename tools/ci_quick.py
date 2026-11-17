@@ -157,11 +157,24 @@ def main() -> int:
             raise RuntimeError("Duplicate Stable regression test name")
         temp_base = Path(os.environ.get("RUNNER_TEMP") or tempfile.gettempdir())
         with tempfile.TemporaryDirectory(prefix="achbot-ci-stable-", dir=temp_base) as folder:
-            with ThreadPoolExecutor(max_workers=min(workers, len(tests))) as pool:
-                futures = [pool.submit(run_case, spec, Path(folder)) for spec in tests]
+            work = Path(folder)
+            # The bank-purchase fixture seeds both original-schema databases.
+            # Running that seed concurrently with the long PHP/API MariaDB
+            # fixture loop can starve one genuine SQL import beyond its
+            # existing 30-second deadline on a small CI runner. Exercise the
+            # bank case once, alone, then retain parallelism for the rest.
+            # Never turn a timed-out/failed fixture into a synthetic PASS.
+            isolated = next((case for case in tests if case[0] == "bank_purchase"), None)
+            if isolated is None:
+                raise RuntimeError("bank_purchase acceptance missing")
+            early = run_case(isolated, work)
+            remaining = [case for case in tests if case[0] != isolated[0]]
+            with ThreadPoolExecutor(max_workers=min(workers, len(remaining))) as pool:
+                futures = [pool.submit(run_case, spec, work) for spec in remaining]
                 executed = {x["name"]: x for task in as_completed(futures)
                             for x in [task.result()]}
-                results.extend(executed[spec[0]] for spec in tests)
+            executed[isolated[0]] = early
+            results.extend(executed[spec[0]] for spec in tests)
 
     success = all(item["status"] == "PASS" for item in results)
     data = {

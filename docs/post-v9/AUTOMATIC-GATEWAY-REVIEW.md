@@ -59,6 +59,27 @@ does not send duplicate standalone administrator messages.
   payment/service is already terminal, the same callback is **🔎 بررسی
   پرونده**, for existing `PENDING` Telegram delivery only; `UNKNOWN`
   Telegram ACK remains unconfirmed and cannot be silently redelivered.
+- A finance `dispatched` marker is an intent, **not proof that a Native
+  mutation began**. On original proven bank/gift API payments, the PasarGuard
+  adapter first verifies the immutable original payment, account incarnation,
+  order and provider target. If its original `pay:ID` is absent from the
+  `linked` account mutation history, no Native claim began: the same original
+  operation may claim the account and resume automatically without another
+  payment decision. A real `mutating` claim must instead reconcile its
+  recorded absolute entitlement; an already consumed `pay:ID` cannot restart.
+  Existing Cron uses the same original claim for pending renewal and safe
+  never-started DAY/VOLUME; additive attempts that did start remain subject
+  to the original human/proof recovery rules. This repairs the Hell bank/SMS
+  `processing/dispatched` versus `linked/no mutation` deadlock observed on
+  2026-11-17 (payment #112888). The **Owner-authorized original live case** was
+  subsequently completed through a one-time, predicate-fenced restoration of
+  its never-started original claim and the installed service coordinator;
+  original bank evidence, Native GET, terminal invoice, once-only accounting,
+  customer delivery ACK, and Native entitlement were independently checked.
+  Never replay that now-terminal case. See the immutable
+  [Issue #26 incident checkpoint](https://github.com/ach1992/bot-refactor/issues/26#issuecomment-6958065097).
+  This source fix is **not** installed by that incident repair. Independent
+  review, release and deployment remain separately gated.
 - Native recovery is a **provider registry contract**, not a payment-method or
   panel-name switch in the financial/UI code. For original paid **CREATE**,
   adapters first inspect the existing immutable username/operation marker.
