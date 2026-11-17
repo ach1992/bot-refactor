@@ -29,6 +29,23 @@ define('ACHBOT_PG_TEST_LOOPBACK',true);
 $_SERVER['SCRIPT_FILENAME']=__FILE__;
 $root=$argv[1];$spec=json_decode($argv[4],true,64,JSON_THROW_ON_ERROR);
 $GLOBALS['spec']=$spec;
+$telegramWebhookSecret='fixture-webhook-secret-32-bytes-123456';
+$GLOBALS['events']=[];
+function sendMessage(...$args){
+    $GLOBALS['events'][]=['kind'=>'customer_send','text'=>(string)$args[0]];
+    if (($GLOBALS['spec']['telegram_unknown']??false)===true)
+        return (object)['ok'=>false];
+    return (object)['ok'=>true];
+}
+function achbotNotifyAdmins($method,array $data,array $options=[]):array {
+    $GLOBALS['events'][]=['kind'=>'admin_report','method'=>$method,
+        'text'=>(string)($data['text']??'')];
+    return [['chat_id'=>9001,'response'=>(object)['ok'=>true]]];
+}
+function achbotAdminFanoutAcknowledged(array $notices):bool {
+    return $notices!==[] && array_reduce($notices,
+        fn($all,$n)=>$all && ($n['response']->ok??false)===true,true);
+}
 require_once $root.'/src/Purchase/Core.php';
 require_once $root.'/src/Finance/WalletEditRecovery.php';
 class OwnedRecoveryMysqli extends mysqli {
@@ -62,18 +79,36 @@ try {
         $params=['pay_id'=>$payId,'remark'=>'historical_fixture',$field=>($field==='plus_day'?10:4)];
         $absolute=achbotPgEditChanges($before,$params);
         $units=achbotPgEditInputUnits($params);
-        $intent=achbotPgBeginMutation($db,$ctx,'pay:'.$payId,'edit',
-            ['phase'=>'claimed','requested_units'=>$units]);
-        achbotPgPersistMutationIntent($db,$ctx,$intent,[
-            'requested_units'=>$units,
-            'order_expire_before'=>(int)$ctx['order']['expire_date'],
-            'absolute'=>$absolute,'reset_usage'=>false,
-            'before'=>array_intersect_key($before,array_flip([
-                'data_limit','expire','status','group_ids','used_traffic']))]);
+        if (($spec['direct']??false)!==true) {
+            $intent=achbotPgBeginMutation($db,$ctx,'pay:'.$payId,'edit',
+                ['phase'=>'claimed','requested_units'=>$units]);
+            achbotPgPersistMutationIntent($db,$ctx,$intent,[
+                'requested_units'=>$units,
+                'order_expire_before'=>(int)$ctx['order']['expire_date'],
+                'absolute'=>$absolute,'reset_usage'=>false,
+                'before'=>array_intersect_key($before,array_flip([
+                    'data_limit','expire','status','group_ids','used_traffic']))]);
+        }
         $result=['absolute'=>$absolute,'baseline'=>$before['expire']];
+    } elseif ($spec['op']==='native_wallet_edit') {
+        $kind=(string)$spec['kind'];
+        $params=['pay_id'=>$payId,'remark'=>'historical_fixture',
+            $kind==='day'?'plus_day':'plus_volume'=>$kind==='day'?10:4];
+        $response=achbotPgServiceEdit($db,2,$params);
+        $result=['success'=>$response->success??false,
+            'verified'=>$response->verified??false,
+            'fence_deferred'=>$response->native_fence_deferred??false,
+            'expire'=>$response->applied_expire??null,
+            'bytes'=>$response->applied_bytes??null];
     } elseif ($spec['op']==='resume') {
         $result=achbotWalletPgResumeAddon($db,$payId,
             (int)($spec['actor']??9001),(int)($spec['primary']??9001));
+    } elseif ($spec['op']==='cron_recover') {
+        $result=achbotWalletAddonMaintain($db);
+    } elseif ($spec['op']==='cron_reports') {
+        $result=achbotWalletAddonMaintainReports($db);
+    } elseif ($spec['op']==='customer_first_send') {
+        $result=achbotDeliveryDispatch($db,$payId,1);
     } elseif ($spec['op']==='original') {
         $e=achbotWalletPgAddonOriginal($db,$payId);
         $result=['kind'=>$e['kind'],'units'=>$e['units'],
@@ -87,7 +122,8 @@ try {
         achbotPgOrderContext($db,$orderId,false,true);
         $result=['unexpected_unlisted_reference'=>true];
     } else throw new RuntimeException('unexpected_fixture_operation');
-    echo json_encode(['ok'=>true,'result'=>$result],JSON_THROW_ON_ERROR);
+    echo json_encode(['ok'=>true,'result'=>$result,
+        'events'=>$GLOBALS['events']],JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE);
 } catch(Throwable $error) {
     echo json_encode(['ok'=>false,'error'=>$error->getMessage()],JSON_THROW_ON_ERROR);
 }
@@ -96,7 +132,9 @@ try {
 
 def case(*, kind: str = 'day', finalization_failure: bool = False,
          historical_planless: bool = False, commit_ack_lost: bool = False,
-         concurrent: bool = False) -> list[str]:
+         concurrent: bool = False, system: bool = False,
+         direct: bool = False, notice_failure: bool = False,
+         telegram_unknown: bool = False) -> list[str]:
     checks: list[str] = []
     with api.sandbox() as (sql, run, provider, _bank, _epoch):
         effect_id = int(cutover.fixture_effect(
@@ -161,10 +199,46 @@ def case(*, kind: str = 'day', finalization_failure: bool = False,
                 raise AssertionError('provider credential leaked')
             return json.loads(proc.stdout)
 
-        saved=call('seed')
+        saved=call('seed',direct=direct)
         assert saved['ok'],saved
         target=saved['result']['absolute']
         assert saved['result']['baseline']==ORIGINAL_EXPIRE
+        if direct:
+            assert sql('SELECT provider_state FROM service_effects WHERE id='+str(effect_id))=='linked'
+            native=call('native_wallet_edit')
+            assert native['ok'] and native['result']['success'] and native['result']['verified'],native
+            assert native['result']['fence_deferred'] is True,native
+            assert sql('SELECT provider_state FROM service_effects WHERE id='+str(effect_id))=='mutating'
+            assert sql('SELECT provider_mutation_key FROM service_effects WHERE id='+str(effect_id))=='pay:'+str(pay_id)
+            assert sql('SELECT COUNT(*) FROM increase_order')=='0'
+            assert provider.write_count==1,provider.trace
+            # Simulate PHP death AFTER the original Native PUT, before
+            # the callback's local financial COMMIT. The hourly services
+            # coordinator must preserve the same paid effect, no second PUT.
+            sql("UPDATE pays SET request_date=UNIX_TIMESTAMP()-3600,"
+                "updated_at=NULL WHERE id="+str(pay_id))
+            system_result=call('cron_recover')
+            assert system_result['ok'] and system_result['result']['settled']==1,system_result
+            assert sql('SELECT state FROM pays WHERE id='+str(pay_id))=='paid_with_wallet'
+            assert sql('SELECT provider_state FROM service_effects WHERE id='+str(effect_id))=='linked'
+            assert sql('SELECT COUNT(*) FROM increase_order')=='1'
+            assert provider.write_count==1
+            assert sql('SELECT COUNT(*) FROM payment_delivery_intents')=='1'
+            assert sql('SELECT COUNT(*) FROM payment_attempts')=='1'
+            report=call('cron_reports')
+            assert report['ok'] and report['result']['acknowledged']==1,report
+            assert len(report['events'])==1 and report['events'][0]['kind']=='admin_report'
+            customer=call('customer_first_send')
+            assert customer['ok'] and customer['result']=='acknowledged',customer
+            assert len(customer['events'])==1 and customer['events'][0]['kind']=='customer_send'
+            assert provider.write_count==1
+            assert call('cron_recover')['result']['settled']==0
+            assert call('cron_reports')['result']['acknowledged']==0
+            assert call('customer_first_send')['events']==[]
+            checks.append('real_native_wallet_'+kind+'_keeps_account_fence_until_original_financial_COMMIT')
+            checks.append('crash_after_native_applied_then_cron_one_original_payment_audit')
+            checks.append('native_original_claim_once_and_customer_admin_notice_exactly_once')
+            return checks
         if kind=='day':
             assert target['expire']==ORIGINAL_EXPIRE+864000,target
         else:
@@ -255,13 +329,36 @@ def case(*, kind: str = 'day', finalization_failure: bool = False,
             assert provider.write_count==0
             checks.append('audit_failure_preserves_original_mutation_fence_and_blocks_competitor')
             sql('DROP TRIGGER wallet_resume_local_audit_fail')
-        if concurrent:
+        if notice_failure:
+            marker='WALLET_ADDON_REPORT:'+str(pay_id)
+            sql("INSERT INTO setting(type,value) VALUES ("+
+                api.quote_sql(marker)+",'do-not-overwrite-existing-original')")
+            failed=call('resume')
+            assert failed['result']['status']=='review',failed
+            assert sql('SELECT provider_state FROM service_effects WHERE id='+str(effect_id))=='mutating'
+            assert sql('SELECT provider_mutation_key FROM service_effects WHERE id='+str(effect_id))=='pay:'+str(pay_id)
+            assert sql('SELECT state FROM pays WHERE id='+str(pay_id))=='processing_wallet'
+            assert sql('SELECT COUNT(*) FROM increase_order')=='0'
+            assert sql('SELECT COUNT(*) FROM payment_attempts')=='0'
+            assert sql('SELECT COUNT(*) FROM payment_delivery_intents')=='0'
+            assert provider.write_count==0
+            checks.append('notice_commit_failure_preserves_original_finance_account_fence')
+            sql('DELETE FROM setting WHERE type='+api.quote_sql(marker))
+        if system:
+            sql("UPDATE pays SET request_date=UNIX_TIMESTAMP()-3600,"
+                "updated_at=NULL WHERE id="+str(pay_id))
+            sql("UPDATE service_effects SET provider_evidence_updated_at="
+                "DATE_SUB(NOW(),INTERVAL 10 MINUTE) WHERE id="+str(effect_id))
+            result=call('cron_recover')
+            assert result['ok'] and result['result']['settled']==1,result
+            checks.append('cron_recovers_only_native_applied_original_'+kind)
+        elif concurrent:
             with ThreadPoolExecutor(max_workers=2) as pool:
                 futures=[pool.submit(call,'resume') for _ in range(2)]
                 outcomes=[f.result() for f in futures]
             statuses=[x['result'].get('status') for x in outcomes]
-            assert statuses.count('settled_delivery_unverified')==1,outcomes
-            assert all(s in ('settled_delivery_unverified','review','already_paid_state')
+            assert statuses.count('settled_delivery_pending')==1,outcomes
+            assert all(s in ('settled_delivery_pending','review','already_paid_state')
                        for s in statuses),outcomes
             checks.append('concurrent_staff_recoveries_have_one_committed_settlement')
         else:
@@ -271,7 +368,7 @@ def case(*, kind: str = 'day', finalization_failure: bool = False,
                 assert call('resume')['result']['status']=='already_paid_state'
                 checks.append('ambiguous_final_commit_ack_does_not_repeat_original_settlement')
             else:
-                assert result['ok'] and result['result']['status']=='settled_delivery_unverified',result
+                assert result['ok'] and result['result']['status']=='settled_delivery_pending',result
         assert sql('SELECT state FROM pays WHERE id='+str(pay_id))=='paid_with_wallet'
         assert sql('SELECT expire_date FROM orders_list WHERE id='+str(oid))==str(target['expire'])
         col='day' if kind=='day' else 'volume'
@@ -288,8 +385,32 @@ def case(*, kind: str = 'day', finalization_failure: bool = False,
         assert replay['result']['status']=='already_paid_state',replay
         assert sql('SELECT COUNT(*) FROM increase_order')=='1'
         assert provider.write_count==0
-        assert sql('SELECT COUNT(*) FROM payment_delivery_intents')=='0'
-        checks.append('repeat_resume_no_native_wallet_audit_or_telegram_replay')
+        assert sql('SELECT COUNT(*) FROM payment_delivery_intents')=='1'
+        assert sql("SELECT state FROM payment_delivery_intents WHERE pay_row_id="+str(pay_id))=='pending'
+        assert sql('SELECT COUNT(*) FROM payment_attempts WHERE pay_row_id='+str(pay_id))=='1'
+        assert sql("SELECT provider_status FROM payment_attempts WHERE pay_row_id="+str(pay_id))=='wallet_reconciled_notice'
+        assert sql("SELECT JSON_UNQUOTE(JSON_EXTRACT(value,'$.state')) FROM setting WHERE type='WALLET_ADDON_REPORT:"+str(pay_id)+"'")=='pending'
+        checks.append('repeat_resume_one_original_customer_outbox_and_admin_report_no_telegram_replay')
+        if system:
+            report=call('cron_reports')
+            assert report['ok'] and report['result']['acknowledged']==1,report
+            assert [e['kind'] for e in report['events']]==['admin_report'],report
+            assert sql("SELECT JSON_UNQUOTE(JSON_EXTRACT(value,'$.state')) FROM setting WHERE type='WALLET_ADDON_REPORT:"+str(pay_id)+"'")=='acknowledged'
+            customer=call('customer_first_send',telegram_unknown=telegram_unknown)
+            expected='unknown' if telegram_unknown else 'acknowledged'
+            assert customer['ok'] and customer['result']==expected,customer
+            assert [e['kind'] for e in customer['events']]==['customer_send'],customer
+            assert sql('SELECT state FROM payment_delivery_intents WHERE pay_row_id='+str(pay_id))==expected
+            assert sql('SELECT attempt_count FROM payment_delivery_intents WHERE pay_row_id='+str(pay_id))=='1'
+            repeat_report=call('cron_reports')
+            assert repeat_report['result']['acknowledged']==0 and repeat_report['events']==[],repeat_report
+            repeat_customer=call('customer_first_send')
+            assert repeat_customer['result']!='acknowledged' and repeat_customer['events']==[],repeat_customer
+            assert provider.write_count==0
+            checks.append('cron_first_customer_notice_and_admin_fanout_once_'+kind)
+            checks.append('cron_replay_does_not_duplicate_telegram_or_native_'+kind)
+            if telegram_unknown:
+                checks.append('telegram_unknown_ack_remains_one_attempt_no_auto_resend')
     return checks
 
 
@@ -300,7 +421,10 @@ def main():
     args=parser.parse_args()
     checks=(case()+case(kind='volume',finalization_failure=True)+
             case(historical_planless=True)+case(concurrent=True,commit_ack_lost=False)+
-            case(commit_ack_lost=True))
+            case(commit_ack_lost=True)+
+            case(system=True)+case(kind='volume',system=True)+
+            case(direct=True)+case(kind='volume',direct=True)+
+            case(notice_failure=True)+case(system=True,telegram_unknown=True))
     result={'complete':True,'cases':len(checks),'checks':checks,
             'real_php_source':True,'disposable_mariadb':True,
             'local_native_only':True,'production_mutations':0}

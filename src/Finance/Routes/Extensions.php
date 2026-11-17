@@ -685,6 +685,25 @@ if(is_string($data) && strlen($data) <= 64 && preg_match('/\ApayIncreaseDayWithW
             throw new \UnexpectedValueException('unsupported_panel');
         }
 
+        if ($serverType==='pasarguard') {
+            // This paid Wallet operation was claimed and debited before any
+            // HTTP. Its PasarGuard account fence stays mutating until the
+            // SAME original finance/order/audit and notice COMMIT.
+            // Reobserve Native applied-only (even if the response was lost).
+            require_once __DIR__.'/../WalletEditRecovery.php';
+            $settlement=achbotWalletPgResumeAppliedSystem($connection,$payId);
+            if (($settlement['status']??null)!=='settled_delivery_pending')
+                throw new RuntimeException('wallet_day_original_native_uncertain');
+            $localCommitted=true;
+            try {
+                achbotDeliveryDispatchPending($connection,$payId);
+                achbotWalletAddonDispatchReport($connection,$payId);
+            } catch (Throwable $noticeError) {
+                error_log('achbot_wallet_day_pending_notice pay_id='.$payId.
+                    ' class='.get_class($noticeError));
+            }
+            return;
+        }
         if (is_null($response)) {
             throw new Exception("server_connection_null");
         }
@@ -1538,6 +1557,25 @@ if(is_string($data) && strlen($data) <= 64 && preg_match('/\ApayIncreaseWithWall
             throw new \UnexpectedValueException('unsupported_panel');
         }
 
+        if ($serverType==='pasarguard') {
+            // This paid Wallet operation was claimed and debited before any
+            // HTTP. Its PasarGuard account fence stays mutating until the
+            // SAME original finance/order/audit and notice COMMIT.
+            // Reobserve Native applied-only (even if the response was lost).
+            require_once __DIR__.'/../WalletEditRecovery.php';
+            $settlement=achbotWalletPgResumeAppliedSystem($connection,$payId);
+            if (($settlement['status']??null)!=='settled_delivery_pending')
+                throw new RuntimeException('wallet_volume_original_native_uncertain');
+            $localCommitted=true;
+            try {
+                achbotDeliveryDispatchPending($connection,$payId);
+                achbotWalletAddonDispatchReport($connection,$payId);
+            } catch (Throwable $noticeError) {
+                error_log('achbot_wallet_volume_pending_notice pay_id='.$payId.
+                    ' class='.get_class($noticeError));
+            }
+            return;
+        }
         if (is_null($response)) {
             throw new Exception("server_connection_null");
         }
