@@ -43,7 +43,8 @@ function achbotMarzbanRecoverEdit(mysqli $db,int $serverId,array $params,
  * target. The full expected target may instead be reconciled without a PUT.
  * All other states (including a later operator's independent change) hold.
  */
-function achbotPgRecoveryDisposition(array $before,array $target,array $native): string {
+function achbotPgRecoveryDisposition(array $before,array $target,array $native,
+    bool $allowFullRenewReset=false): string {
     foreach (['expire','data_limit','status','group_ids'] as $field)
         if (!array_key_exists($field,$before) ||
             !array_key_exists($field,$native)) return 'drift';
@@ -60,9 +61,15 @@ function achbotPgRecoveryDisposition(array $before,array $target,array $native):
     if (!$statusOk) return 'drift';
     if ($native['expire']===$target['expire'] &&
         $native['data_limit']===$target['data_limit']) return 'applied';
+    // A full RENEW reset may reactivate an expired/limited account before
+    // its original absolute PUT completes. Retrying the SAME paid reset
+    // is safe; additive operations cannot use this exception.
     if ($native['expire']===$before['expire'] &&
         $native['data_limit']===$before['data_limit'] &&
-        $native['status']===$before['status']) return 'baseline';
+        ($native['status']===$before['status'] ||
+         ($allowFullRenewReset && $native['status']==='active' &&
+          in_array($before['status'],['expired','limited'],true))))
+        return 'baseline';
     return 'drift';
 }
 
@@ -252,7 +259,14 @@ function achbotPgRecoverEdit(mysqli $db,int $serverId,array $params,
             !is_int($absolute['expire']) || !is_int($absolute['data_limit']))
             throw new RuntimeException('pg_recovery_absolute_missing');
 
-        $disposition=achbotPgRecoveryDisposition($before,$absolute,$native);
+        // The existing operator preview is a GET-only diagnostic UI; do not
+        // change its classification or action prompts without Owner approval.
+        $fullRenewReset=($kind==='renew' &&
+            ($source['preview_only']??false)!==true &&
+            ($changes['reset_usage']??null)===true &&
+            array_key_exists('days',$units) && array_key_exists('volume',$units));
+        $disposition=achbotPgRecoveryDisposition($before,$absolute,$native,
+            $fullRenewReset);
         achbotDiagnosticEvent('achbot.native.edit_recovery_observed',[
             'pay_id'=>$payId,'order_id'=>$orderId,'server_id'=>$serverId,
             'source'=>$kind,'result'=>$disposition,'phase'=>(string)($changes['phase']??'none'),

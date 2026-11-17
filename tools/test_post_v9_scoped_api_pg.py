@@ -1595,6 +1595,42 @@ def test():
             sql("SELECT COUNT(*) FROM increase_order")=='1',
             'real_pg_renewal_auto_retries_lost_reset_ack_once',
             [response,first,provider.write_count,terminal_state(sql,pay)])
+    # The Owner permits physical RESET repetition for the SAME full renewal.
+    # A panel can reactivate an expired account during RESET, then lose the
+    # original PUT response before its paid absolute limits are applied.
+    # The previous classifier misread that *reset-only* status as foreign
+    # drift, leaving a proven original payment indefinitely in review.
+    with sandbox() as (sql,run,provider,bank,_):
+        issued=run('issue_renew',hash='renew_reset_only_status')
+        pay=issued['pay_id'];message=evidence_sms(1,issued['price'])
+        bank.messages['1']=dict(message)
+        assert run('reserve',pay_id=pay,sms=message) is not None
+        assert run('consume',pay_id=pay)['status']=='proven'
+        provider.user['status']='expired'
+        prior=dict(provider.user)
+        provider.mode='modify_lie'
+        assert run('settle',pay_id=pay)=='review'
+        assert sql('SELECT provider_state FROM service_effects WHERE id=1')=='mutating'
+        # Simulate the real post-RESET reactivation; expiry, quota, identity
+        # and Groups have NOT changed and the paid PUT has not succeeded.
+        provider.user['status']='active'
+        assert provider.user['data_limit']==prior['data_limit'] and \
+            provider.user['expire']==prior['expire'] and \
+            provider.user['group_ids']==prior['group_ids']
+        provider.mode='ok';writes=provider.write_count
+        recovered=run('settle',pay_id=pay)
+        passed(recovered=='confirmed' and
+            terminal_state(sql,pay).startswith('auto_cart_approved|done|') and
+            sql('SELECT provider_state FROM service_effects WHERE id=1')=='linked' and
+            sql('SELECT COUNT(*) FROM increase_order')=='1' and
+            provider.write_count==writes+2,
+            'full_renew_post_reset_reactivation_recovers_original_paid_plan_once',
+            [recovered,terminal_state(sql,pay),provider.write_count])
+        assert run('settle',pay_id=pay)=='settled' and \
+            provider.write_count==writes+2 and \
+            sql('SELECT COUNT(*) FROM increase_order')=='1'
+        checks.append('full_renew_post_reset_replay_no_extra_payment_audit_or_native_write')
+
     # The same source, provider adapter and original payment recover native
     # timeouts. An operator who inspected the panel can finish both additive
     # types; the original absolute effect is never applied twice.
