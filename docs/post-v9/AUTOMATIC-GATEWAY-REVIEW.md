@@ -166,6 +166,28 @@ for a new, deliberate human decision. The existing original journal, audit,
 order, payment and customer delivery contracts finalize once upon verified
 Native success. No arbitrary retry-count ceiling is introduced.
 
+**Independent review #200 REQUIRED-1 correction:** the PasarGuard
+original `provider_state=mutating` / `pay:ID` mutation fence must stay
+held after Native has verifiably applied the operator's target. The provider
+adapter returns the authenticated Native result plus observed Groups, **but
+does not mark the original account `linked` at that point**. Even if storing
+`evidence_fulfillment_state=verified` fails or the PHP worker crashes,
+another Native operation cannot replace the original mutation key and
+absolute target. In the **same short terminal financial transaction** as
+the original order-expiry update, one `increase_order` audit,
+`pays.state=auto_cart_approved` and sealed customer-delivery intent,
+the coordinator revalidates the original account/instance/owner, pinned
+mutation key/absolute target, original source evidence, archive state and
+observed Groups. Only then it calls the original account journal finalizer
+before **the same COMMIT**. Failure or ambiguous COMMIT leaves both sides
+of the local transition consistent: either the original fence is still
+`mutating` with original payment nonterminal, or account and finance
+are fully terminal together. Staff may reobserve the applied Native result
+without a second RESET/PUT, without an additional charge and without
+inventing a new order. The general account eligibility helper remains
+strict for unrelated mutations; only this exact original finalizer can
+finish an in-flight account. No SQL transaction spans any Native HTTP.
+
 Provider-side writes are not conditional atomic CAS operations; an
 out-of-band change between the adapter's final GET and PUT remains a residual
 race. This explicit decision is not a blanket bypass of account ownership,

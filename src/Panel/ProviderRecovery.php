@@ -311,7 +311,7 @@ function achbotPgRecoverEdit(mysqli $db,int $serverId,array $params,
             // Wallet finalizes this journal under the SAME short SQL
             // transaction as its order, audit and payment; a failed local
             // COMMIT must leave provider_state=mutating.
-            if (!$observeOnly)
+            if (!$observeOnly && ($source['defer_account_finality']??false)!==true)
                 achbotPgFinishMutation($db,$ctx,$saved,['success'=>true,'user'=>$native]);
         }
         // GET-only Wallet verification is an observation, not local financial
@@ -322,7 +322,11 @@ function achbotPgRecoverEdit(mysqli $db,int $serverId,array $params,
                 'source'=>$kind,'result'=>'verified'],'info');
         return (object)['success'=>true,'verified'=>true,'uncertain'=>false,
             'applied_expire'=>$native['expire'],'applied_bytes'=>$native['data_limit'],
-            'observed_group_ids'=>$observeOnly?$native['group_ids']:null];
+            // Coordinator finalizes this original account fence INSIDE the
+            // payment/order/audit/delivery COMMIT, not after remote PUT.
+            'observed_group_ids'=>$observeOnly ||
+                ($source['defer_account_finality']??false)===true
+                ?$native['group_ids']:null];
     } catch (Throwable $error) {
         $reason=(string)$error->getMessage();
         if (preg_match('/\A(?:pg|provider|addon|effect|service|recovery)_[a-z0-9_]{2,90}\z/D',$reason)!==1)
@@ -335,6 +339,78 @@ function achbotPgRecoverEdit(mysqli $db,int $serverId,array $params,
             ' code='.$reason.' class='.get_class($error));
         return achbotProviderFailure($reason);
     }
+}
+
+/**
+ * Finish the original API PasarGuard account mutation in the SAME short
+ * transaction that writes the order expiry, increase_order, customer delivery
+ * and terminal pays state. Must be called with the original pays row locked.
+ * Native HTTP was verified earlier, OUTSIDE any SQL transaction; this
+ * function only validates immutable identity/intent and writes local state.
+ */
+function achbotPgFinishOriginalApiEditLocked(mysqli $db,array $pay,string $kind,
+    int $serverId,int $orderId,string $remark,?int $expectedExpiry,
+    object $verified,array $fence,bool $finish=true): void {
+    $payId=(int)($pay['id']??0);
+    if ($payId<=0 || $serverId<=0 || $orderId<=0 ||
+        !in_array($kind,['renew','day','volume'],true) ||
+        (int)($pay['server_id']??0)!==$serverId ||
+        (int)($pay['user_id']??0)<=0 ||
+        !is_string($remark) || $remark==='' ||
+        !is_int($expectedExpiry) || $expectedExpiry<=0 ||
+        !is_array($fence['observed_group_ids']??null))
+        throw new RuntimeException('pg_api_original_finish_invalid');
+    $tx=$db->query('SELECT @@in_transaction AS active');
+    if (!$tx || (int)($tx->fetch_assoc()['active']??0)!==1)
+        throw new RuntimeException('pg_api_original_finish_transaction_missing');
+    $ctx=achbotPgOrderContext($db,$orderId,true,true);
+    $account=$ctx['account'];
+    if ((int)$ctx['order_server_id']!==$serverId ||
+        (string)$ctx['order']['remark']!==$remark ||
+        (int)$ctx['order']['userid']!==(int)$pay['user_id'] ||
+        !achbotPgRecoveryOrderOriginMatches($db,$ctx,$orderId) ||
+        $account['state']!=='mutating' ||
+        (string)$account['mutation_key']!=='pay:'.$payId)
+        throw new RuntimeException('pg_api_original_finish_identity_changed');
+
+    $pin=json_decode((string)($pay['provider_snapshot']??''),true,64,JSON_THROW_ON_ERROR);
+    $target=achbotProviderCanonicalSnapshot($pin);
+    if ((int)($pin['provider_account_id']??0)!==(int)$account['id'] ||
+        (int)($pin['remote_user_id']??0)!==(int)$account['remote_user_id'] ||
+        (string)($pin['remote_created_at']??'')!==(string)$account['remote_created_at'] ||
+        (string)($pin['operation_marker']??'')!==(string)$account['operation_marker'] ||
+        (string)$target['instance_key']!==(string)$ctx['panel']['instance_key'] ||
+        (string)$target['endpoint_sha256']!==(string)$account['endpoint_sha256'])
+        throw new RuntimeException('pg_api_original_finish_target_changed');
+    $saved=json_decode((string)($account['mutation_snapshot']??''),true,64,JSON_THROW_ON_ERROR);
+    $changes=$saved['changes']??null;
+    $key='pay:'.$payId;
+    if (!is_array($saved) || ($saved['version']??null)!==1 ||
+        ($saved['key']??null)!==$key || ($saved['action']??null)!=='edit' ||
+        ($saved['identity']??null)!==$ctx['identity'] ||
+        !in_array($key,$saved['consumed_keys']??[],true) ||
+        !is_array($changes) || !is_array($changes['before']??null) ||
+        !is_array($changes['absolute']??null) ||
+        ($changes['order_expire_before']??null)!==$expectedExpiry ||
+        ($changes['absolute']['expire']??null)!==($verified->applied_expire??null) ||
+        ($changes['absolute']['data_limit']??null)!==($verified->applied_bytes??null) ||
+        !is_array($changes['before']['group_ids']??null) ||
+        ($changes['before']['group_ids']!==$fence['observed_group_ids'] &&
+            ($fence['operator_override_attested']??false)!==true))
+        throw new RuntimeException('pg_api_original_finish_intent_changed');
+    $units=$changes['requested_units']??null;
+    if (!is_array($units) || count($units)<1 ||
+        ($kind==='day' && $units!==['plus_day'=>achbotPinnedAddonUnits($pay)]) ||
+        ($kind==='volume' && $units!==['plus_volume'=>achbotPinnedAddonUnits($pay)]))
+        throw new RuntimeException('pg_api_original_finish_units_changed');
+
+    // This SQL update is rolled back if ANY later finalizer step fails.
+    // A lost financial COMMIT acknowledgement can be resolved from pays state;
+    // until then no second account edit can replace the held pay:ID key.
+    if ($finish)
+        achbotPgFinishMutation($db,$ctx,$saved,[
+            'success'=>true,
+            'user'=>['group_ids'=>$fence['observed_group_ids']]]);
 }
 
 /** Marzban stores the paid CREATE journal in common 007 only. */

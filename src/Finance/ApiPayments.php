@@ -828,6 +828,13 @@ function achbotApiPaymentFulfillEdit(mysqli $db,array $pay,array $proof,
             return false;
         require_once __DIR__.'/../Panel/ProviderRuntime.php';
         $source=$payload;
+        // The original account fence remains durable until the SAME local
+        // transaction closes it with payment, audit and delivery finality.
+        // A failure to persist verified fulfillment must NOT expose the
+        // account to a newer Native operation.
+        $fenceDeferred=achbotProviderType($db,$server)==='pasarguard' &&
+            in_array($kind,['renew','day','volume'],true);
+        if ($fenceDeferred) $source['defer_account_finality']=true;
         if ($operatorOverride!==null) {
             $digest=$operatorOverride['entitlement_digest']??null;
             $generation=$operatorOverride['generation']??null;
@@ -867,6 +874,7 @@ function achbotApiPaymentFulfillEdit(mysqli $db,array $pay,array $proof,
             if (!achbotApiPaymentStoreFulfillment($db,$id,$proof,
                 'dispatched',$payload,'dispatched')) return false;
             $source=$payload;
+            if ($fenceDeferred) $source['defer_account_finality']=true;
             $source['operator_override_native_digest']=$digest;
             $source['operator_override_target']=[
                 'expire'=>$targetExpire,'data_limit'=>$targetBytes];
@@ -883,9 +891,15 @@ function achbotApiPaymentFulfillEdit(mysqli $db,array $pay,array $proof,
             ($response->verified??false)!==true ||
             !is_int($response->applied_expire??null) ||
             !is_int($response->applied_bytes??null)) return false;
+        if ($fenceDeferred && !is_array($response->observed_group_ids??null))
+            return false;
         $payload['result']=['success'=>true,'verified'=>true,
             'applied_expire'=>$response->applied_expire,
             'applied_bytes'=>$response->applied_bytes];
+        if ($fenceDeferred) {
+            $payload['native_fence_deferred']=true;
+            $payload['result']['observed_group_ids']=$response->observed_group_ids;
+        }
         if (!achbotApiPaymentStoreFulfillment($db,$id,$proof,'verified',
             $payload,'dispatched'))return false;
     } else return false;
@@ -899,7 +913,15 @@ function achbotApiPaymentFulfillEdit(mysqli $db,array $pay,array $proof,
         'text'=>$text,'mode'=>$type==='RENEW_SCONFIG'?'plain':'HTML',
         'order'=>(int)$payload['order'],'server'=>(int)$payload['server'],
         'source_digest'=>hash('sha256',(string)$a['evidence_fulfillment_payload'])];
-    return achbotAutoBankFinishEdit($db,$pay,$result,(string)$payload['kind'],(int)$payload['server'],(int)$payload['order'],(string)$payload['remark'],(int)$pay['price'],(int)$payload['units'],$payload['expiry']===null?null:(int)$payload['expiry'],$deliveryIntent);
+    return achbotAutoBankFinishEdit($db,$pay,$result,(string)$payload['kind'],(int)$payload['server'],(int)$payload['order'],(string)$payload['remark'],(int)$pay['price'],(int)$payload['units'],$payload['expiry']===null?null:(int)$payload['expiry'],$deliveryIntent,
+        ($payload['native_fence_deferred']??false)===true
+            ?['observed_group_ids'=>$payload['result']['observed_group_ids']??null,
+              'operator_override_attested'=>is_array($payload['operator_override_attestation']??null)
+                && (int)($payload['operator_override_attestation']['actor_id']??0)>0
+                && is_string($payload['operator_override_attestation']['native_digest']??null)
+                && preg_match('/^[a-f0-9]{64}$/D',
+                    $payload['operator_override_attestation']['native_digest'])===1]
+            :null);
 }
 
 /** No first-match wins. A same-amount local collision is left untouched. */

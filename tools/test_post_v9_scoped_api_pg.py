@@ -44,7 +44,27 @@ define('ACHBOT_PG_TEST_LOOPBACK',true);
 define('ACHBOT_PAYMENT_EVIDENCE_TEST_TRANSPORT',true);
 $_SERVER['SCRIPT_FILENAME']=__FILE__;
 $root=$argv[1];$spec=json_decode($argv[4],true,64,JSON_THROW_ON_ERROR);
-$connection=new mysqli('localhost','root','',$argv[3],0,$argv[2]);
+$GLOBALS['spec']=$spec;
+class FixtureSqlCommitAck extends mysqli {
+    public function commit(int $flags=0,?string $name=null):bool {
+        $ok=parent::commit($flags,$name);
+        if ($ok && ($GLOBALS['spec']['lose_financial_commit_ack']??false)===true &&
+            !($GLOBALS['fixture_financial_ack_lost']??false)) {
+            $id=(int)($GLOBALS['spec']['pay_id']??0);
+            if ($id>0) {
+                $q=$this->prepare('SELECT state FROM pays WHERE id=?');
+                $q->bind_param('i',$id);$q->execute();
+                $p=$q->get_result()->fetch_assoc();$q->close();
+                if (($p['state']??null)==='auto_cart_approved') {
+                    $GLOBALS['fixture_financial_ack_lost']=true;
+                    throw new RuntimeException('fixture_financial_commit_ack_lost');
+                }
+            }
+        }
+        return $ok;
+    }
+}
+$connection=new FixtureSqlCommitAck('localhost','root','',$argv[3],0,$argv[2]);
 $connection->set_charset('utf8mb4');
 $admin=9001;$from_id=1001;$botUrl='https://fixture.invalid';
 $botState=['walletState'=>'on','cartToCartState'=>'on','smsApiVerifyState'=>'on',
@@ -342,6 +362,18 @@ try {
         'generation'=>$payload['operator_override_generation']??0,
         'attempt_count'=>count($payload['operator_override_attempts']??[]),
         'timestamp'=>$payload['operator_override_attestation']['confirmed_at']??null];
+ } elseif ($op==='compete_original_fence') {
+    $ctx=achbotPgOrderContext($connection,41,false,true);
+    try {
+        achbotPgBeginMutation($connection,$ctx,'operator:competing-edit',
+            'edit',['phase'=>'claimed','requested_units'=>['plus_day'=>1]]);
+        $result=['blocked'=>false,'reason'=>'unexpected_new_native_fence'];
+    } catch (Throwable $error) {
+        $reason=(string)$error->getMessage();
+        if (!preg_match('/^[a-z][a-z0-9_]{3,95}$/D',$reason))
+            $reason='internal_error';
+        $result=['blocked'=>true,'reason'=>$reason];
+    }
  } elseif ($op==='finisher_probe') {
     // Deliberately synthetic remote-verification object only for a negative
     // AUTHORIZATION test. This never dispatches provider traffic or commits
@@ -607,6 +639,13 @@ def sandbox(*, imported_empty=False):
                     # than blindly ignoring STDERR: source secrets and
                     # unexpected events must still fail this acceptance.
                     def known_diagnostic(line):
+                        if line.startswith('achbot_auto_service_edit_needs_review pay_id='):
+                            return re.fullmatch(
+                                r'achbot_auto_service_edit_needs_review '
+                                r'pay_id=[1-9][0-9]* '
+                                r'kind=(?:renew|standard|day|volume) '
+                                r'reason=[a-z][a-z0-9_]{2,95} '
+                                r'exception=[A-Za-z_\\]{2,120}',line) is not None
                         if not line.startswith('[AChBot] {'):
                             return False
                         try:
@@ -665,6 +704,9 @@ def sandbox(*, imported_empty=False):
                     if not response["ok"]:
                         raise AssertionError(("native_source_exception",
                             op, response["error"]))
+                    run.last_finisher_diagnostics = [
+                        line for line in lines
+                        if line.startswith('achbot_auto_service_edit_needs_review pay_id=')]
                     if op == "settle":
                         run.last_diagnostic = [
                             line.split(" code=", 1)[-1][:128]
@@ -722,6 +764,148 @@ def terminal_state(sql, pay_id):
         "COALESCE(a.evidence_state,'NULL')) "
         "FROM pays p JOIN payment_attempts a ON a.pay_row_id=p.id "
         f"WHERE p.id={pay_id}")
+
+
+def install_conditional_failure_trigger(run, name, table, condition):
+    # Use MariaDB's DELIMITER for a real conditional BEFORE trigger on the
+    # isolated socket. No source test hook is introduced into production PHP.
+    name_ok = re.fullmatch(r'[a-z][a-z0-9_]{2,60}', name)
+    assert name_ok and table == 'payment_attempts'
+    statement = f'''DELIMITER $$
+CREATE TRIGGER {name}
+BEFORE UPDATE ON {table}
+FOR EACH ROW BEGIN
+IF {condition} THEN
+ SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='fixture_original_write_failure';
+END IF;
+END$$
+DELIMITER ;
+'''
+    command = ['mariadb','--no-defaults','--protocol=SOCKET',
+        '--socket='+str(run.fixture_socket),'-uroot',DB]
+    result=subprocess.run(command,input=statement,env=run.fixture_env,
+        text=True,capture_output=True,timeout=15)
+    assert result.returncode==0,('trigger_creation',result.stderr[-700:])
+
+
+def test_review200_original_fence():
+    checks = []
+    # Independent REVIEW #200 REQUIRED-1: the original Native pay:ID fence
+    # must survive verified Native success and every possible LOCAL SQL
+    # failure until the SAME payment/order/audit/delivery COMMIT is durable.
+    # A competing legitimate account edit may not steal original evidence.
+    for failure, kind in (
+        ('verified_store', 'renew'),
+        ('audit_insert', 'renew'),
+        ('audit_insert', 'day'),
+    ):
+        with sandbox() as (sql,run,provider,bank,_):
+            if kind=='renew':
+                issued=run('issue_renew',hash='fence_'+failure+'_'+kind)
+                pay=issued['pay_id']
+                message=evidence_sms(1,issued['price'])
+                bank.messages['1']=dict(message)
+            else:
+                issued,message=claim_proof(run,bank,kind,
+                    'fence_'+failure+'_'+kind)
+                pay=issued['pay_id']
+            assert run('reserve',pay_id=pay,sms=message) is not None
+            assert run('consume',pay_id=pay)['status']=='proven'
+            provider.mode='modify_lie'
+            assert run('settle',pay_id=pay)=='review'
+            assert sql('SELECT provider_state FROM service_effects WHERE id=1')=='mutating'
+            provider.mode='ok'
+            provider.user['data_limit']+=2*1073741824
+            preview=run('operator_route',pay_id=pay)
+            confirm=next(b['callback_data'] for e in preview['events']
+                if e['kind']=='admin_edit'
+                for row in e['buttons']['inline_keyboard'] for b in row
+                if b['callback_data'].startswith(f'apiEvidenceOverride_{pay}_'))
+            if failure=='verified_store':
+                install_conditional_failure_trigger(run,'fixture_verified_store_fail',
+                    'payment_attempts',
+                    "NEW.evidence_fulfillment_state='verified' AND "
+                    "OLD.evidence_fulfillment_state='dispatched'")
+            else:
+                sql("CREATE TRIGGER fixture_audit_insert_fail "
+                    "BEFORE INSERT ON increase_order FOR EACH ROW "
+                    "SIGNAL SQLSTATE '45000' "
+                    "SET MESSAGE_TEXT='fixture_original_audit_failure'")
+            first=run('operator_route',pay_id=pay,callback=confirm)
+            assert first['routed']
+            expected='dispatched' if failure=='verified_store' else 'verified'
+            assert terminal_state(sql,pay).startswith('processing|'+expected+'|'),(
+                failure,kind,terminal_state(sql,pay),
+                getattr(run,'last_finisher_diagnostics',[]))
+            assert sql('SELECT provider_state FROM service_effects WHERE id=1')=='mutating'
+            assert sql('SELECT provider_mutation_key FROM service_effects WHERE id=1')=='pay:'+str(pay)
+            assert sql('SELECT COUNT(*) FROM increase_order')=='0'
+            # The Native target IS already written. The account fence must
+            # remain unchanged despite payment finality failure.
+            target_bytes=int(sql("SELECT JSON_UNQUOTE(JSON_EXTRACT("
+                "provider_mutation_snapshot,'$.changes.absolute.data_limit')) "
+                "FROM service_effects WHERE id=1"))
+            assert provider.user['data_limit']==target_bytes,(
+                failure,kind,provider.user['data_limit'],target_bytes)
+            consumed=run('operator_override_evidence',pay_id=pay)
+            assert consumed['generation']==1 and consumed['attempt_count']==1
+            contender=run('compete_original_fence')
+            assert contender['blocked'] and 'mutation_requires_review' in contender['reason'],contender
+            assert sql('SELECT provider_mutation_key FROM service_effects WHERE id=1')=='pay:'+str(pay)
+            native_count=provider.write_count
+            if failure=='verified_store':
+                sql('DROP TRIGGER fixture_verified_store_fail')
+            else:
+                sql('DROP TRIGGER fixture_audit_insert_fail')
+            resumed=run('operator',pay_id=pay)
+            assert resumed=='confirmed' and terminal_state(sql,pay).startswith(
+                'auto_cart_approved|done|'),(failure,kind,resumed,
+                    terminal_state(sql,pay),getattr(run,'last_finisher_diagnostics',[]))
+            assert sql('SELECT provider_state FROM service_effects WHERE id=1')=='linked'
+            assert sql('SELECT COUNT(*) FROM increase_order')=='1'
+            assert provider.write_count==native_count,(failure,kind,provider.trace)
+            assert run('operator_override_evidence',pay_id=pay)['generation']==1
+            checks.append('review200_'+failure+'_'+kind+
+                '_original_fence_survives_SQL_failure_until_atomic_financial_COMMIT')
+            checks.append('review200_'+failure+'_'+kind+
+                '_reread_applied_only_one_audit_no_repeat_native')
+
+    # The final SQL COMMIT may succeed while its acknowledgement is lost.
+    # Never confuse that response with permission to rerun Native or debit.
+    with sandbox() as (sql,run,provider,bank,_):
+        issued=run('issue_renew',hash='fence_final_commit_ack_lost')
+        pay=issued['pay_id']
+        message=evidence_sms(1,issued['price']);bank.messages['1']=dict(message)
+        assert run('reserve',pay_id=pay,sms=message) is not None
+        assert run('consume',pay_id=pay)['status']=='proven'
+        provider.mode='modify_lie'
+        assert run('settle',pay_id=pay)=='review'
+        provider.mode='ok';provider.user['data_limit']+=2*1073741824
+        preview=run('operator_route',pay_id=pay)
+        confirm=next(b['callback_data'] for e in preview['events']
+            if e['kind']=='admin_edit'
+            for row in e['buttons']['inline_keyboard'] for b in row
+            if b['callback_data'].startswith(f'apiEvidenceOverride_{pay}_'))
+        uncertain=run('operator_route',pay_id=pay,callback=confirm,
+            lose_financial_commit_ack=True)
+        # Financial COMMIT succeeded, but the post-COMMIT API fulfillment
+        # status may remain verified rather than done. The durable payment,
+        # account and one original outbox MUST already agree.
+        assert uncertain['routed'] and terminal_state(sql,pay).startswith(
+            'auto_cart_approved|verified|'),(uncertain,terminal_state(sql,pay))
+        assert sql('SELECT COUNT(*) FROM payment_delivery_intents WHERE pay_row_id='+str(pay))=='1'
+        assert sql('SELECT provider_state FROM service_effects WHERE id=1')=='linked'
+        assert sql('SELECT COUNT(*) FROM increase_order')=='1'
+        assert run('operator_override_evidence',pay_id=pay)['generation']==1
+        before=provider.write_count
+        retry=run('operator',pay_id=pay)
+        assert retry in ('settled','confirmed')
+        assert provider.write_count==before
+        assert sql('SELECT COUNT(*) FROM increase_order')=='1'
+        checks.append('review200_financial_COMMIT_ack_lost_original_fence_and_payment_atomic')
+        checks.append('review200_financial_COMMIT_ack_lost_no_repeated_native_or_audit')
+
+    return checks
 
 
 def test():
@@ -1360,6 +1544,8 @@ def test():
         assert sql('SELECT COUNT(*) FROM increase_order')=='1'
         checks.append('operator_override_lost_ack_consumes_original_callback_before_native')
         checks.append('operator_override_fresh_preview_after_failure_not_stuck')
+
+    checks.extend(test_review200_original_fence())
 
     # If the first worker died before any remote PUT, the actor's deliberate
     # confirmation restarts only the saved absolute service operation.
