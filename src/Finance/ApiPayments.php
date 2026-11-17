@@ -790,18 +790,33 @@ function achbotApiPaymentFulfillEdit(mysqli $db,array $pay,array $proof,
         elseif($kind==='volume')$params['plus_volume']=$units;
         else {$params['days']=(int)($subject['days']??0);$params['volume']=(int)($subject['volume']??-1);if($params['days']<=0||$params['volume']<0)return false;}
         $payload=['kind'=>$kind,'server'=>$server,'order'=>$oid,'remark'=>$remark,'units'=>$units,'expiry'=>$order?(int)$order['expire_date']:null,'params'=>$params];
+        // Initial RESERVED->dispatched API fulfillment has the SAME
+        // original pay:ID/native-fence finality requirement as recovery.
+        // Persist this before HTTP so a lost response can be read-first
+        // reconciled without releasing the account to competing operations.
+        $deferNativeFence=achbotProviderType($db,$server)==='pasarguard' &&
+            in_array($kind,['renew','day','volume'],true);
+        if ($deferNativeFence) $payload['native_fence_deferred']=true;
         if (in_array($kind,['day','volume'],true))
             $payload['capture_required']=true;
         if(!achbotApiPaymentStoreFulfillment($db,$id,$proof,'dispatched',$payload,'reserved',$seen))return false;
         // Only the winner of the persisted dispatch transition may call the
         // native adapter. A crash/timeout here stays reviewable, never replayed.
         $dispatch=$params;
+        if ($deferNativeFence) $dispatch['_api_defer_account_finality']=true;
         if (($payload['capture_required']??false)===true)
             $dispatch['_paid_intent_capture']=achbotApiPaymentNativeIntentCapture(
                 $db,$id,$proof,$payload);
         $response=achbotApplyServiceEdit($db,$server,$dispatch);
         if(!is_object($response)||($response->success??false)!==true||($response->verified??false)!==true)return false;
+        if ($deferNativeFence && (
+            ($response->native_fence_deferred??null)!==true ||
+            !is_array($response->observed_group_ids??null) ||
+            !is_int($response->applied_expire??null) ||
+            !is_int($response->applied_bytes??null))) return false;
         $payload['result']=['success'=>true,'verified'=>true,'applied_expire'=>$response->applied_expire??null,'applied_bytes'=>$response->applied_bytes??null];
+        if ($deferNativeFence)
+            $payload['result']['observed_group_ids']=$response->observed_group_ids;
         if(!achbotApiPaymentStoreFulfillment($db,$id,$proof,'verified',$payload,'dispatched'))return false;
     } elseif($state==='dispatched') {
         // The old attempt already crossed its irreversible claim boundary.

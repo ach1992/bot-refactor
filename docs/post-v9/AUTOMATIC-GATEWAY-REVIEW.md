@@ -166,7 +166,9 @@ for a new, deliberate human decision. The existing original journal, audit,
 order, payment and customer delivery contracts finalize once upon verified
 Native success. No arbitrary retry-count ceiling is introduced.
 
-**Independent review #200 REQUIRED-1 correction:** the PasarGuard
+**Independent review #200 REQUIRED-1 correction:** both the initial RESERVED API dispatch and the later DISPATCHED operator-recovery path preserve the ORIGINAL PasarGuard mutation fence until common local financial finality. The initial API path persists `native_fence_deferred` in its dispatched claim **before** the provider call, and the physical adapter validates an active, proven bank/gift claim before agreeing not to finalize early. A PHP crash after an initial provider PUT, verified-evidence SQL failure or audit failure therefore leaves the original `pay:ID` key recoverable without a second Native write. The source-real tests explicitly start from a proven `have_sent` invoice and exercise the first dispatch, not merely operator continuation.
+
+**Original correction details:** the PasarGuard
 original `provider_state=mutating` / `pay:ID` mutation fence must stay
 held after Native has verifiably applied the operator's target. The provider
 adapter returns the authenticated Native result plus observed Groups, **but

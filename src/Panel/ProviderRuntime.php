@@ -797,6 +797,27 @@ function achbotPgServiceEdit(mysqli $db,int $serverId,array $change,?array $gift
     try {
         $requestUnits=achbotPgEditInputUnits($change);
         $referenceOrder=(int)($change['order_id']??0);
+        $deferApiFence=($change['_api_defer_account_finality']??false)===true;
+        if ($deferApiFence) {
+            // A caller-supplied marker alone must never defer unrelated
+            // account operations. Prove an original, dispatched, financially
+            // proven bank/gift API claim before Native side effects.
+            $pid=(int)($change['pay_id']??0);
+            $q=$db->prepare('SELECT p.state,p.type,a.provider,a.evidence_fulfillment_state
+                FROM pays p JOIN payment_attempts a ON a.pay_row_id=p.id
+                WHERE p.id=?');
+            $q->bind_param('i',$pid);$q->execute();
+            $rows=$q->get_result()->fetch_all(MYSQLI_ASSOC);$q->close();
+            if ($pid<=0 || count($rows)!==1 ||
+                $rows[0]['state']!=='processing' ||
+                !in_array($rows[0]['provider'],['bank_transfer','gift_card'],true) ||
+                $rows[0]['evidence_fulfillment_state']!=='dispatched' ||
+                !($rows[0]['type']==='RENEW_ACCOUNT' ||
+                    preg_match('/^INCREASE_(?:DAY|VOLUME)_[1-9][0-9]*_[1-9][0-9]*$/D',
+                        $rows[0]['type'])===1) ||
+                achbotPaymentEvidenceGetProof($db,$pid)===null)
+                throw new RuntimeException('pg_api_original_dispatch_not_proven');
+        }
         if ((int)($change['pay_id']??0)>0) {
             $payId=(int)$change['pay_id'];
             $s=$db->prepare('SELECT order_id,type FROM pays WHERE id=?');
@@ -889,10 +910,12 @@ function achbotPgServiceEdit(mysqli $db,int $serverId,array $change,?array $gift
                 'result'=>'review'],'warning');
             throw new RuntimeException('pg_edit_readback_requires_review');
         }
-        achbotPgFinishMutation($db,$ctx,$intent,$r);
+        if (!$deferApiFence) achbotPgFinishMutation($db,$ctx,$intent,$r);
         return (object)['success'=>true,'verified'=>true,
             'before_expire'=>$read['user']['expire'],'applied_expire'=>$r['user']['expire'],
-            'applied_bytes'=>$r['user']['data_limit']];
+            'applied_bytes'=>$r['user']['data_limit'],
+            'native_fence_deferred'=>$deferApiFence,
+            'observed_group_ids'=>$deferApiFence?$r['user']['group_ids']:null];
     } catch (Throwable $error) {
         // A post-claim provider edit may already have crossed the remote
         // boundary. Keep the held result; preserve only bounded internal

@@ -788,6 +788,108 @@ DELIMITER ;
     assert result.returncode==0,('trigger_creation',result.stderr[-700:])
 
 
+def test_review200_initial_reserved_fence():
+    checks=[]
+    # Review REQUIRED-1 for the FIRST reserved->dispatched provider call,
+    # not only the already-dispatched operator override tested elsewhere.
+    # Real application PHP/SQL/Native, only the external SQL failure injected.
+    for failure,kind in (
+        ('verified_store','renew'),
+        ('audit_insert','renew'),
+        ('verified_store','day'),
+        ('audit_insert','volume'),
+    ):
+        with sandbox() as (sql,run,provider,bank,_) :
+            if kind=='renew':
+                issued=run('issue_renew',hash='initial_fence_'+failure+'_'+kind)
+                pay=issued['pay_id']
+                message=evidence_sms(1,issued['price'])
+                bank.messages['1']=dict(message)
+            else:
+                issued,message=claim_proof(run,bank,kind,
+                    'initial_fence_'+failure+'_'+kind)
+                pay=issued['pay_id']
+            assert run('reserve',pay_id=pay,sms=message) is not None
+            assert run('consume',pay_id=pay)['status']=='proven'
+            # A proven bank/gift claim remains have_sent until the source
+            # coordinator first reserves and dispatches this original effect.
+            assert terminal_state(sql,pay).startswith('have_sent|NULL|proven')
+            before=provider.write_count
+            if failure=='verified_store':
+                install_conditional_failure_trigger(run,
+                    'fixture_initial_verified_store_fail','payment_attempts',
+                    "NEW.evidence_fulfillment_state='verified' AND "
+                    "OLD.evidence_fulfillment_state='dispatched'")
+            else:
+                sql("CREATE TRIGGER fixture_initial_audit_insert_fail "
+                    "BEFORE INSERT ON increase_order FOR EACH ROW "
+                    "SIGNAL SQLSTATE '45000' "
+                    "SET MESSAGE_TEXT='fixture_original_audit_failure'")
+            failed=run('settle',pay_id=pay)
+            expected='dispatched' if failure=='verified_store' else 'verified'
+            assert failed=='review' and terminal_state(sql,pay).startswith(
+                'processing|'+expected+'|'),(
+                    failure,kind,failed,terminal_state(sql,pay),
+                    getattr(run,'last_finisher_diagnostics',[]))
+            # Renewal performs one authorized usage RESET plus one PUT.
+            # DAY/VOLUME performs only the absolute PUT.
+            expected_writes=2 if kind=='renew' else 1
+            assert provider.write_count==before+expected_writes,(failure,kind,provider.trace)
+            assert sql('SELECT provider_state FROM service_effects WHERE id=1')=='mutating'
+            assert sql('SELECT provider_mutation_key FROM service_effects WHERE id=1')=='pay:'+str(pay)
+            assert sql('SELECT COUNT(*) FROM increase_order')=='0'
+            assert sql('SELECT COUNT(*) FROM payment_delivery_intents')=='0'
+            target=int(sql("SELECT JSON_UNQUOTE(JSON_EXTRACT("
+                "provider_mutation_snapshot,'$.changes.absolute.data_limit')) "
+                "FROM service_effects WHERE id=1"))
+            assert provider.user['data_limit']==target
+            competitor=run('compete_original_fence')
+            assert competitor['blocked'] and 'mutation_requires_review' in competitor['reason'],competitor
+            assert sql('SELECT provider_mutation_key FROM service_effects WHERE id=1')=='pay:'+str(pay)
+            if failure=='verified_store':
+                sql('DROP TRIGGER fixture_initial_verified_store_fail')
+            else:
+                sql('DROP TRIGGER fixture_initial_audit_insert_fail')
+            written=provider.write_count
+            recovered=run('operator',pay_id=pay)
+            assert recovered=='confirmed' and terminal_state(sql,pay).startswith(
+                'auto_cart_approved|done|'),(failure,kind,recovered,
+                    terminal_state(sql,pay),getattr(run,'last_finisher_diagnostics',[]))
+            assert provider.write_count==written,(failure,kind,provider.trace)
+            assert sql('SELECT provider_state FROM service_effects WHERE id=1')=='linked'
+            assert sql('SELECT provider_mutation_key FROM service_effects WHERE id=1')=='pay:'+str(pay)
+            assert sql('SELECT COUNT(*) FROM increase_order')=='1'
+            assert sql('SELECT COUNT(*) FROM payment_delivery_intents')=='1'
+            assert run('operator',pay_id=pay) in ('confirmed','settled')
+            assert provider.write_count==written
+            assert sql('SELECT COUNT(*) FROM increase_order')=='1'
+            checks.append('initial_reserved_'+failure+'_'+kind+
+                '_holds_original_fence_after_native_before_finance')
+            checks.append('initial_reserved_'+failure+'_'+kind+
+                '_competing_mutation_rejected_original_recovered_once')
+
+    with sandbox() as (sql,run,provider,bank,_):
+        issued=run('issue_renew',hash='initial_reserved_financial_commit_ack')
+        pay=issued['pay_id']
+        message=evidence_sms(1,issued['price'])
+        bank.messages['1']=dict(message)
+        assert run('reserve',pay_id=pay,sms=message) is not None
+        assert run('consume',pay_id=pay)['status']=='proven'
+        result=run('settle',pay_id=pay,lose_financial_commit_ack=True)
+        assert result=='review' and terminal_state(sql,pay).startswith(
+            'auto_cart_approved|verified|'),(result,terminal_state(sql,pay))
+        assert sql('SELECT provider_state FROM service_effects WHERE id=1')=='linked'
+        assert sql('SELECT COUNT(*) FROM payment_delivery_intents')=='1'
+        assert sql('SELECT COUNT(*) FROM increase_order')=='1'
+        writes=provider.write_count
+        assert run('operator',pay_id=pay) in ('confirmed','settled')
+        assert provider.write_count==writes
+        assert sql('SELECT COUNT(*) FROM increase_order')=='1'
+        checks.append('initial_reserved_SQL_COMMIT_ack_loss_account_and_finance_atomic')
+        checks.append('initial_reserved_SQL_COMMIT_ack_loss_never_reissues_native')
+    return checks
+
+
 def test_review200_original_fence():
     checks = []
     # Independent REVIEW #200 REQUIRED-1: the original Native pay:ID fence
@@ -1546,6 +1648,7 @@ def test():
         checks.append('operator_override_fresh_preview_after_failure_not_stuck')
 
     checks.extend(test_review200_original_fence())
+    checks.extend(test_review200_initial_reserved_fence())
 
     # If the first worker died before any remote PUT, the actor's deliberate
     # confirmation restarts only the saved absolute service operation.
