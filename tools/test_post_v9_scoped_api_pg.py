@@ -669,6 +669,8 @@ def sandbox(*, imported_empty=False):
                         if not isinstance(name,str) or not (
                             name.startswith(expected) or
                             name in ('achbot.native.edit_result_unverified',
+                                     'achbot.native.edit_deferred',
+                                     'achbot.native.edit_pre_dispatch_recovered',
                                      'achbot.finance.wallet_original_recovery_deferred')):
                             return False
                         if name=='achbot.finance.wallet_original_recovery_deferred':
@@ -679,6 +681,17 @@ def sandbox(*, imported_empty=False):
                                 event.get('pay_id')!=int(params['pay_id']) or
                                 event.get('reason')!='wallet_recovery_claim_invalid' or
                                 event.get('actor_id')!=0):
+                                return False
+                        if name in ('achbot.native.edit_deferred',
+                                    'achbot.native.edit_pre_dispatch_recovered'):
+                            reason=event.get('reason')
+                            if (not isinstance(event.get('pay_id'),int) or
+                                event['pay_id']<=0 or
+                                not isinstance(event.get('server_id'),int) or
+                                event['server_id']<=0 or
+                                (name=='achbot.native.edit_deferred' and (
+                                    not isinstance(reason,str) or
+                                    re.fullmatch(r'[a-z][a-z0-9_]{2,95}',reason) is None))):
                                 return False
                         if name=='achbot.native.edit_result_unverified':
                             # This new readback/ACK diagnostic is deliberately
@@ -785,7 +798,7 @@ def install_conditional_failure_trigger(run, name, table, condition):
     # Use MariaDB's DELIMITER for a real conditional BEFORE trigger on the
     # isolated socket. No source test hook is introduced into production PHP.
     name_ok = re.fullmatch(r'[a-z][a-z0-9_]{2,60}', name)
-    assert name_ok and table == 'payment_attempts'
+    assert name_ok and table in ('payment_attempts','service_effects')
     statement = f'''DELIMITER $$
 CREATE TRIGGER {name}
 BEFORE UPDATE ON {table}
@@ -882,6 +895,76 @@ def test_review200_initial_reserved_fence():
                 '_holds_original_fence_after_native_before_finance')
             checks.append('initial_reserved_'+failure+'_'+kind+
                 '_competing_mutation_rejected_original_recovered_once')
+
+    # Reproduce Hell #112888: original bank evidence and finance dispatch
+    # were committed, but the Native account claim never started.
+    for kind in ('renew','day','volume'):
+        with sandbox() as (sql,run,provider,bank,_):
+            if kind=='renew':
+                issued=run('issue_renew',hash='pre_native_retry_'+kind)
+                msg=evidence_sms(1,issued['price'])
+                bank.messages['1']=dict(msg)
+            else:
+                issued,msg=claim_proof(run,bank,kind,'pre_native_retry_'+kind)
+            pay=issued['pay_id']
+            assert run('reserve',pay_id=pay,sms=msg) is not None
+            assert run('consume',pay_id=pay)['status']=='proven'
+            install_conditional_failure_trigger(run,'fixture_no_native_claim',
+                'service_effects',"NEW.provider_state='mutating' AND "
+                "OLD.provider_state='linked'")
+            first=run('settle',pay_id=pay)
+            assert first=='review' and terminal_state(sql,pay).startswith(
+                'processing|dispatched|'),(kind,first,terminal_state(sql,pay))
+            assert sql('SELECT provider_state FROM service_effects WHERE id=1')=='linked'
+            assert sql('SELECT provider_mutation_key FROM service_effects WHERE id=1')=='NULL'
+            assert provider.write_count==0,(kind,provider.trace)
+            sql('DROP TRIGGER fixture_no_native_claim')
+            settled=run('settle',pay_id=pay)
+            assert settled=='confirmed' and terminal_state(sql,pay).startswith(
+                'auto_cart_approved|done|'),(kind,settled,terminal_state(sql,pay))
+            expected_writes=2 if kind=='renew' else 1
+            assert provider.write_count==expected_writes,(kind,provider.trace)
+            assert sql('SELECT provider_state FROM service_effects WHERE id=1')=='linked'
+            assert sql('SELECT provider_mutation_key FROM service_effects WHERE id=1')=='pay:'+str(pay)
+            assert sql('SELECT COUNT(*) FROM increase_order')=='1'
+            assert sql('SELECT COUNT(*) FROM payment_delivery_intents')=='1'
+            assert run('settle',pay_id=pay)=='settled'
+            assert provider.write_count==expected_writes
+            checks.append('proven_'+kind+'_pre_native_claim_auto_recovered')
+            checks.append('proven_'+kind+'_recovery_reuses_original_financial_claim')
+
+    # The actual Hell order was an adopted PasarGuard account with a NULL
+    # source order on its immutable account-effect. This historical identity
+    # must not prevent the same safe recovery (including imported no-Groups).
+    for kind in ('renew','day','volume'):
+        with sandbox(imported_empty=True) as (sql,run,provider,bank,_):
+            if kind=='renew':
+                # Historical imports can later be assigned a configured plan.
+                sql('UPDATE orders_list SET fileid=7 WHERE id=41')
+                issued=run('issue_renew',hash='pre_native_adopted_renew')
+                msg=evidence_sms(1,issued['price'])
+                bank.messages['1']=dict(msg)
+            else:
+                fallback_offer=704 if kind=='day' else 705
+                issued,msg=claim_proof(run,bank,kind,
+                    'pre_native_adopted_'+kind,offer_id=fallback_offer)
+            pay=issued['pay_id']
+            assert run('reserve',pay_id=pay,sms=msg) is not None
+            assert run('consume',pay_id=pay)['status']=='proven'
+            install_conditional_failure_trigger(run,'fixture_adopted_no_claim',
+                'service_effects',"NEW.provider_state='mutating' AND "
+                "OLD.provider_state='linked'")
+            assert run('settle',pay_id=pay)=='review'
+            assert sql('SELECT provider_state FROM service_effects WHERE id=1')=='linked'
+            assert provider.write_count==0
+            sql('DROP TRIGGER fixture_adopted_no_claim')
+            assert run('settle',pay_id=pay)=='confirmed'
+            assert terminal_state(sql,pay).startswith('auto_cart_approved|done|')
+            assert provider.write_count==(2 if kind=='renew' else 1)
+            assert sql('SELECT provider_mutation_key FROM service_effects WHERE id=1')=='pay:'+str(pay)
+            assert sql('SELECT COUNT(*) FROM increase_order')=='1'
+            assert run('settle',pay_id=pay)=='settled'
+            checks.append('adopted_'+kind+'_pre_native_claim_original_recovery')
 
     with sandbox() as (sql,run,provider,bank,_):
         issued=run('issue_renew',hash='initial_reserved_financial_commit_ack')
