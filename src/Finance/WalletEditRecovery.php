@@ -3,16 +3,19 @@
  * Original Wallet add-on reconciliation, without a second debit or Native
  * operation. An authorized staff invocation inspects the original PasarGuard
  * journal and authenticated Native state, then atomically finishes the SAME
- * local payment/order/audit. No customer or Telegram send is inferred here.
+ * local payment/order/audit. The same local COMMIT records durable pending
+ * customer/admin notification markers; no Telegram request is made in it.
  *
- * This module is deliberately not exposed as a new UI callback: an operator
- * surface and production use require separate Owner authorization.
+ * An internal Cron coordinator may reconcile an ALREADY APPLIED original
+ * Native claim without a human actor. Ambiguous baseline/drift never results
+ * in a second Native request, a wallet debit or a fabricated payment.
  */
 if (realpath($_SERVER['SCRIPT_FILENAME']??'')===__FILE__) {http_response_code(404);exit;}
 require_once __DIR__.'/../Panel/ProviderRuntime.php';
 require_once __DIR__.'/../Admin/Access.php';
 require_once __DIR__.'/ReceiptHelpers.php';
 require_once __DIR__.'/ServiceEffects.php';
+require_once __DIR__.'/WalletAddonNotices.php';
 
 /** Pure original-claim evidence; no remote access or financial writes. */
 function achbotWalletPgAddonOriginal(mysqli $db,int $payId,bool $locked=false): array {
@@ -92,16 +95,24 @@ function achbotWalletPgAddonOriginal(mysqli $db,int $payId,bool $locked=false): 
 }
 
 /**
- * Explicit authorized operator action only. The provider's recovery adapter
- * enforces original identity + actual current Native entitlement and runs in
- * observe_only mode: never a second PUT or RESET, even on matching baseline.
- * Payment and increase_order are changed in one short local SQL transaction.
+ * Operator and internal-system entrypoints share the exact same original
+ * journal/identity/Native evidence and atomic financial finalization. Only
+ * the manual entrypoint needs an administrator permission check; the Cron
+ * entrypoint can never request a Native edit or take an ownership shortcut.
  */
 function achbotWalletPgResumeAddon(mysqli $db,int $payId,int $actor,int $primary): array {
-    if ($payId<=0 || $actor<=0 || $primary<=0) return ['status'=>'review'];
+    return achbotWalletPgResumeAddonCore($db,$payId,$actor,$primary,false);
+}
+function achbotWalletPgResumeAppliedSystem(mysqli $db,int $payId): array {
+    return achbotWalletPgResumeAddonCore($db,$payId,0,0,true);
+}
+function achbotWalletPgResumeAddonCore(mysqli $db,int $payId,int $actor,
+        int $primary,bool $system): array {
+    if ($payId<=0 || ($system?($actor!==0||$primary!==0):($actor<=0||$primary<=0)))
+        return ['status'=>'review'];
     $started=false;
     try {
-        if (!achbotAdminCanFor($db,$actor,$primary,'payments'))
+        if (!$system && !achbotAdminCanFor($db,$actor,$primary,'payments'))
             throw new RuntimeException('wallet_recovery_operator_denied');
         $q=$db->prepare('SELECT type,state FROM pays WHERE id=?');
         $q->bind_param('i',$payId);$q->execute();
@@ -149,7 +160,7 @@ function achbotWalletPgResumeAddon(mysqli $db,int $payId,int $actor,int $primary
             ($proof['current_group_ids']??null)!==$expectedGroups) {
             throw new RuntimeException('wallet_recovery_original_changed');
         }
-        if (!achbotAdminCanLocked($db,$actor,$primary,'payments'))
+        if (!$system && !achbotAdminCanLocked($db,$actor,$primary,'payments'))
             throw new RuntimeException('wallet_recovery_operator_denied');
         achbotEffectAssertNotArchivedLocked($db,$payId);
         achbotStoreVerifiedServiceExpiryLocked($db,$current['order'],$remote);
@@ -173,15 +184,21 @@ function achbotWalletPgResumeAddon(mysqli $db,int $payId,int $actor,int $primary
         if (!$s->execute() || $s->affected_rows!==1)
             throw new RuntimeException('wallet_recovery_payment_unconfirmed');
         $s->close();
+        // Keep the ordinary notification/report obligation durable across a
+        // crash after financial COMMIT. Telegram and administrative fanout
+        // are performed separately, never while holding payment SQL locks.
+        achbotWalletAddonMarkRecoveryNoticesLocked($db,$current);
         if ($db->commit()!==true)
             throw new RuntimeException('wallet_recovery_commit_unknown');
         $started=false;
         achbotDiagnosticEvent('achbot.finance.wallet_original_reconciled',[
             'pay_id'=>$payId,'order_id'=>$current['order_id'],
             'source'=>$current['kind'],'actor_id'=>$actor,
-            'result'=>'paid_with_wallet','fulfillment_state'=>'delivery_unverified'],'info');
-        // Original Telegram delivery has NO proved ACK and is not resent.
-        return ['status'=>'settled_delivery_unverified','pay_id'=>$payId,
+            'result'=>'paid_with_wallet','fulfillment_state'=>'delivery_pending',
+            'recovery_actor'=>$system?'system':'operator'],'info');
+        // No new send is inferred from old Telegram callbacks. The existing
+        // first-send-only 018 ledger and normal fanout coordinator own notices.
+        return ['status'=>'settled_delivery_pending','pay_id'=>$payId,
             'order_id'=>$current['order_id']];
     } catch (Throwable $error) {
         if ($started) try {$db->rollback();} catch (Throwable $ignored) {}

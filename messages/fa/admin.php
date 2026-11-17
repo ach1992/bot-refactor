@@ -21,6 +21,24 @@ return [
         'recover' => '🔄 بررسی و بازیابی عملیات',
         'service_action' => '✅ تأیید و تکمیل عملیات',
         'service_execute' => '✅ تأیید و اجرای عملیات',
+        'service_override_execute' => '✅ اعمال دقیق سفارش و پذیرش تغییرات',
+        'service_override_confirm' => ['text' => "⚠️ تغییر مستقل سرویس در پنل شناسایی شد
+
+🧾 پرونده: <code>{payment}</code>
+
+📅 انقضای فعلی: <code>{currentExpiry}</code>
+📅 انقضای سفارش اصلی: <code>{targetExpiry}</code>
+📦 حجم فعلی: <code>{currentVolume}</code> GiB
+📦 حجم سفارش اصلی: <code>{targetVolume}</code> GiB
+⚙️ وضعیت فعلی: <code>{currentStatus}</code>
+👥 گروه‌های فعلی: <code>{currentGroups}</code>
+
+⚠️ در صورت تأیید، ربات مقادیر حجم و انقضای سفارش پرداخت‌شده را روی همین حساب اعمال می‌کند؛ تغییرات مستقل ممکن است جایگزین شوند. گروه‌های فعلی حفظ می‌شوند؛ تمدید ممکن است ترافیک مصرف‌شده را Reset و وضعیت حساب را فعال کند.
+
+✅ وجه مجدد کسر نمی‌شود. این تصمیم با شناسهٔ ادمین ثبت می‌شود. در صورت عدم موافقت، به پرونده بازگردید.", 'parameters' => [
+            'payment','currentExpiry','targetExpiry','currentVolume','targetVolume',
+            'currentStatus','currentGroups']],
+        'service_override_changed' => '⚠️ وضعیت حساب در پنل تغییر کرده است. از پرونده، پیش‌نمایش جدید بگیرید.',
         'service_confirm' => ['text' => "📋 تکمیل عملیات سرویس
 
 🧾 شماره پرداخت: <code>{payment}</code>

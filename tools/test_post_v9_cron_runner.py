@@ -130,6 +130,12 @@ def setup(root: Path) -> tuple[Path, Path]:
     (root/'src/Finance/PaymentLifecycle.php').write_text(PAYUX_MAINTENANCE_PHP)
     (root/'src/Finance/ApiPayments.php').write_text(API_MAINTENANCE_PHP)
     (root/'src/Finance/DeliveryLedger.php').write_text(DELIVERY_MAINTENANCE_PHP)
+    # The services worker also invokes two Wallet maintenance functions.
+    # These are inert stand-ins for the Cron coordination fixture.
+    (root/'src/Finance/WalletEditRecovery.php').write_text(
+        '<?php function achbotWalletAddonMaintain($db){return [];}' )
+    (root/'src/Finance/WalletAddonNotices.php').write_text(
+        '<?php function achbotWalletAddonMaintainReports($db){return [];}' )
 
     work = root / "owned-cwd"
     work.mkdir()
