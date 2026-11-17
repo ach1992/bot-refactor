@@ -937,7 +937,8 @@ function achbotAutoBankFinishEdit(mysqli $db, array $pay,
                                   int $serverId, int $orderId,
                                   string $remark, int $amount,
                                   int $units=0, ?int $expectedOrderExpiry=null,
-                                  ?array $deliveryIntent=null): bool {
+                                  ?array $deliveryIntent=null,
+                                  ?array $nativeFence=null): bool {
     $id=(int)($pay['id']??0);
     $userId=(int)($pay['user_id']??0);
     if ($id<=0 || $userId<=0 || $amount<=0 || $serverId<=0 ||
@@ -1021,6 +1022,21 @@ function achbotAutoBankFinishEdit(mysqli $db, array $pay,
             if (!$stmt->execute()) throw new RuntimeException('auto_service_order_read_failed');
             $order=$stmt->get_result()->fetch_assoc();
             $stmt->close();
+            // The normal order validator excludes in-flight Native mutations.
+            // This exact original, paid API effect MUST keep provider_state
+            // mutating until our common COMMIT. Validate its full pinned
+            // physical identity+intent instead of accidentally denying the
+            // held original during the same finisher transaction.
+            if ($nativeFence!==null) {
+                require_once __DIR__.'/../Panel/ProviderRecovery.php';
+                achbotPgFinishOriginalApiEditLocked($db,$locked,$kind,$serverId,
+                    $orderId,$remark,$expectedOrderExpiry,$verified,$nativeFence,false);
+                $physicalOrderAllowed=true;
+            } else {
+                $physicalOrderAllowed=achbotSupportsOrder($db,$orderId,
+                    (int)$locked['plan_id']>0?(int)$locked['plan_id']:null,
+                    $userId,true);
+            }
             if (!$order || (int)$order['userid']!==$userId ||
                 (int)$order['server_id']!==$serverId ||
                 (int)$order['fileid']!==(int)$locked['plan_id'] ||
@@ -1030,9 +1046,7 @@ function achbotAutoBankFinishEdit(mysqli $db, array $pay,
                 // Refresh physical group membership under SQL locks after
                 // remote verification. A revoked alias cannot finalize a
                 // previously valid preflight; do not trust its old snapshot.
-                !achbotSupportsOrder($db,$orderId,
-                    (int)$locked['plan_id']>0?(int)$locked['plan_id']:null,
-                    $userId,true) ||
+                !$physicalOrderAllowed ||
                 // B may have finalized a newer edit after this payment's
                 // original pre-remote snapshot. Never let A restore old
                 // absolute expiry just because its own payment row is locked.
@@ -1103,12 +1117,25 @@ function achbotAutoBankFinishEdit(mysqli $db, array $pay,
         if (!$stmt->execute() || $stmt->affected_rows!==1)
             throw new RuntimeException('auto_service_finish_state_failed');
         $stmt->close();
+        if ($nativeFence!==null) {
+            require_once __DIR__.'/../Panel/ProviderRecovery.php';
+            // The original Native pay:ID mutation fence is released only
+            // alongside the SAME order/audit/payment/delivery SQL COMMIT.
+            // Failure here rolls back every local transition and keeps the
+            // previous recoverable account identity.
+            achbotEffectAssertNotArchivedLocked($db,$id);
+            achbotPgFinishOriginalApiEditLocked($db,$locked,$kind,$serverId,
+                $orderId,$remark,$expectedOrderExpiry,$verified,$nativeFence);
+        }
         if ($db->commit()!==true) throw new RuntimeException('auto_service_commit_unconfirmed');
         return true;
     } catch (Throwable $error) {
         try {$db->rollback();} catch (Throwable $ignored) {}
+        $reason=(string)$error->getMessage();
+        if (preg_match('/^[a-z][a-z0-9_]{2,95}$/D',$reason)!==1)
+            $reason='internal_error';
         error_log('achbot_auto_service_edit_needs_review pay_id='.$id.' kind='.$kind.
-                  ' exception='.get_class($error));
+                  ' reason='.$reason.' exception='.get_class($error));
         return false;
     }
 }

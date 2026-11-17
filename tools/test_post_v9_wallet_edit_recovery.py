@@ -94,6 +94,8 @@ try {
         $kind=(string)$spec['kind'];
         $params=['pay_id'=>$payId,'remark'=>'historical_fixture',
             $kind==='day'?'plus_day':'plus_volume'=>$kind==='day'?10:4];
+        if (($spec['api_defer']??false)===true)
+            $params['_api_defer_account_finality']=true;
         $response=achbotPgServiceEdit($db,2,$params);
         $result=['success'=>$response->success??false,
             'verified'=>$response->verified??false,
@@ -205,6 +207,16 @@ def case(*, kind: str = 'day', finalization_failure: bool = False,
         assert saved['result']['baseline']==ORIGINAL_EXPIRE
         if direct:
             assert sql('SELECT provider_state FROM service_effects WHERE id='+str(effect_id))=='linked'
+            # The bank/gift API flag must never authorize an original Wallet
+            # processing claim. An invalid cross-mode request cannot reach
+            # Native or take ownership of this account's mutation fence.
+            invalid=call('native_wallet_edit',api_defer=True)
+            assert invalid['ok'] and not invalid['result']['success'],invalid
+            assert provider.write_count==0
+            assert sql('SELECT state FROM pays WHERE id='+str(pay_id))=='processing_wallet'
+            assert sql('SELECT provider_state FROM service_effects WHERE id='+str(effect_id))=='linked'
+            assert sql('SELECT COUNT(*) FROM increase_order')=='0'
+            checks.append('api_deferred_flag_cannot_authorize_original_wallet_'+kind)
             native=call('native_wallet_edit')
             assert native['ok'] and native['result']['success'] and native['result']['verified'],native
             assert native['result']['fence_deferred'] is True,native
