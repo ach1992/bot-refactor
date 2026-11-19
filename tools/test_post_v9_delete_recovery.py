@@ -296,6 +296,37 @@ def case_concurrent():
 
 
 
+
+def case_native_finality_retry():
+    # Remote DELETE definitely ran on the first request but its ACK was lost.
+    # A second request fails specifically at the Native journal terminal write;
+    # its third attempt must commit BOTH Native and SQL finality without DELETE.
+    with api.sandbox() as (sql, run, provider, _bank, epoch):
+        url=sql('SELECT panel_url FROM server_config WHERE id=2')
+        setup(sql,url,epoch)
+        provider.mode='write_timeout'
+        assert outcome(driver(run,'yesDeleteConfig41'))=='alert'
+        assert provider.user is None and provider.write_count==1
+        assert sql('SELECT provider_state FROM service_effects WHERE id=1')=='mutating'
+        sql("CREATE TRIGGER fixture_block_effect BEFORE UPDATE ON service_effects "
+            "FOR EACH ROW SIGNAL SQLSTATE '45000' "
+            "SET MESSAGE_TEXT='fixture_block_native_finality'")
+        provider.mode='ok'
+        failed=driver(run,'yesDeleteConfig41')
+        assert outcome(failed)=='alert',failed
+        assert sql('SELECT provider_state FROM service_effects WHERE id=1')=='mutating'
+        assert sql('SELECT status FROM orders_list WHERE id=41')=='0'
+        assert provider.write_count==1
+        sql('DROP TRIGGER fixture_block_effect')
+        recovered=driver(run,'yesDeleteConfig41')
+        assert any(e['type']=='edit' and 'موفقیت' in e['text']
+                   for e in recovered['events']),recovered
+        assert sql('SELECT provider_state FROM service_effects WHERE id=1')=='deleted'
+        assert sql('SELECT COUNT(*) FROM orders_list WHERE id=41')=='0'
+        assert provider.write_count==1
+    return ['lost_remote_ack_and_failed_native_finality_recovered_without_second_delete']
+
+
 def case_shared_historical_reference():
     # A legitimate second order points at the SAME historical physical ID.
     # Neither its owner nor staff may fence one order then delete both users.
@@ -338,7 +369,7 @@ def case_unauthorized():
 def main():
     ap=argparse.ArgumentParser()
     ap.add_argument('--run-disposable',required=True,action='store_true')
-    ap.add_argument('--case',choices=['all','owner','admin','legacy','unauthorized','local','drift','concurrent','claimed','shared'],default='all')
+    ap.add_argument('--case',choices=['all','owner','admin','legacy','unauthorized','local','drift','concurrent','claimed','shared','native_finality'],default='all')
     ap.add_argument('--report',type=Path)
     args=ap.parse_args();checks=[]
     if args.case in ['all','owner']:
@@ -363,6 +394,8 @@ def main():
         checks.extend(case_atomic_claim_rollback())
     if args.case in ['all','shared']:
         checks.extend(case_shared_historical_reference())
+    if args.case in ['all','native_finality']:
+        checks.extend(case_native_finality_retry())
     payload={'complete':True,'cases':len(checks),'checks':checks,'php85_current_source':True,
         'owned_mariadb':True,'owned_http_provider':True,'live_mutations':0}
     if args.report:args.report.write_text(json.dumps(payload,indent=2)+'\n')
