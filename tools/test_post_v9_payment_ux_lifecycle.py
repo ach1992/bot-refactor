@@ -612,6 +612,27 @@ def main():
         subsequent=run(w,e,dict(action='maintain',limit=8))
         assert 6399 not in [x['message_id'] for x in subsequent['events']],subsequent
         cases.append('already_acked_old_receipts_do_not_block_unsynced_and_stale_state_still_reprojects')
+        # A continuous queue of unacknowledged messages must not starve an
+        # earlier already-ACKed original whose payment state subsequently
+        # changes. Reserve a bounded full-scan lane even while many unsynced
+        # due payments exist; no new record, backfill or financial action.
+        sql(w,e,'UPDATE payment_message_refs SET updated_at=DATE_ADD(NOW(6),INTERVAL 1 DAY)')
+        stale=add(w,e,'older-acked-then-paid',kind='INCREASE_WALLET',old=now-600)
+        sql(w,e,f"UPDATE pays SET state='have_sent' WHERE id={stale}")
+        assert run(w,e,dict(action='track',id=stale,message_id=6490))['result'] is True
+        assert run(w,e,dict(action='sync',id=stale))['result']==1
+        sql(w,e,f'UPDATE payment_message_refs SET updated_at=DATE_SUB(NOW(6),INTERVAL 5 HOUR) WHERE pay_row_id={stale}')
+        sql(w,e,f"UPDATE pays SET state='paid' WHERE id={stale}")
+        for idx in range(12):
+            pay=add(w,e,f'new-unacked-continuous-{idx}',kind='INCREASE_WALLET',old=now-300)
+            sql(w,e,f"UPDATE pays SET state='have_sent' WHERE id={pay}")
+            assert run(w,e,dict(action='track',id=pay,message_id=6500+idx))['result'] is True
+            sql(w,e,f'UPDATE payment_message_refs SET updated_at=DATE_SUB(NOW(6),INTERVAL 1 HOUR) WHERE pay_row_id={pay}')
+        busy=run(w,e,dict(action='maintain',limit=8))
+        busy_edits=[x['message_id'] for x in busy['events'] if x['method']=='editMessageText']
+        assert 6490 in busy_edits and len(busy_edits)==8,(busy,busy_edits)
+        assert count(w,e,'payment_message_refs',f'pay_row_id={stale} AND synced_digest IS NOT NULL')==1
+        cases.append('continuous_unacked_backlog_keeps_full_scan_lane_for_changed_acked_originals')
         # Incomplete provider ledger cannot prove a draft never had an invoice.
         sql(w,e,'DROP TABLE payment_transactions')
         incomplete=add(w,e,'partial-ledger-do-not-expire',kind='INCREASE_WALLET')

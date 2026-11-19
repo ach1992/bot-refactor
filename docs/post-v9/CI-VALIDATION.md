@@ -42,8 +42,9 @@ main pushes under the single `php85-validation` required status:
   negative distinction from SEND or an unknown edit rejection, and a fair
   recent-confirmed/oldest-historical Cron recovery batch that prioritizes
   due unacknowledged messages over old already-ACKed entries, while retaining
-  the fallback scan for a genuinely changed older status, without duplicate
-  payments or provider actions. Malformed bank/gift HTTP diagnostics do not leak
+  a guaranteed full-scan slot for a genuinely changed older status even under
+  continuous unacknowledged traffic, without duplicate payments or provider
+  actions. Malformed bank/gift HTTP diagnostics do not leak
   external response text.
   Runs are parallel but retain each test's own assertions and failure details.
   The JSON receipt records exact HEAD/tree,

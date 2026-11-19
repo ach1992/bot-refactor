@@ -31,11 +31,12 @@ unsynchronized and retryable; UI failure never reverses financial success.
 The existing Cron recovery retains its strict total of eight payment-message
 candidates per tick: at most half favor the newest unsynced terminal payments;
 the other slots favor the oldest **due and unacknowledged** payment messages.
-When that pool is too small to fill the batch, the existing oldest-due full
-scan fills spare slots, so already-acknowledged receipts remain eligible for
-an eventual changed-state check. This prevents a backlog of acknowledged
-older message copies from wasting bounded recovery slots while preserving
-fair re-projection and existing retry-not-before timestamps. No additional
+At least one slot remains for the rotating oldest-due full scan even under
+continuous unsynced traffic, so older acknowledged receipts with a later
+changed source state can still be re-projected. When work is sparse, the full
+scan fills all other spare slots. This avoids wasting most recovery slots on
+already-current messages without starving the full-scan lane or bypassing
+existing retry-not-before timestamps. No additional
 Cron job, persistent cursor or schema migration is introduced.
 The independent API invoice/staff projection likewise prioritizes finalized
 payments not projected since their latest authoritative state update, before
