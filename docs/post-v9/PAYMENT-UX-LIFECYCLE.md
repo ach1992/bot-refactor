@@ -33,8 +33,15 @@ candidates per tick: at most half favor the newest unsynced terminal payments,
 while the oldest-due candidates retain the remaining work and cannot starve.
 The independent API invoice/staff projection likewise prioritizes finalized
 payments not projected since their latest authoritative state update, before
-older historical rows. Neither queue polls SMS again, confirms a second time,
-provisions a second account, or discards payment/Telegram diagnostics.
+older historical rows. An exact Telegram edit rejection with HTTP 400
+`message is not modified` also acknowledges that the intended original
+invoice text or staff keyboard is already present after a lost edit ACK;
+this is never interpreted as an ACK for a new send or payment settlement.
+Other failures retain unsynchronized digests and now log the original pay ID,
+audience, bounded error category and Telegram numeric code without message
+text, chat recipient or credentials. Neither queue polls SMS again, confirms
+a second time, provisions a second account, or discards payment/Telegram
+diagnostics.
 
 Historical Telegram messages without known message ID cannot be discovered by the Bot API. Old raw third-party URLs cannot be revoked from Telegram; never offer raw provider URLs in NEW messages. New payment URLs point only to existing bot-owned gateway endpoints which re-check the exact original pays state and the authoritative newer committed draft BEFORE forwarding to a provider. Unsafe, stale and owner-mismatched callbacks fail closed. Clicking an obsolete button cannot create a replacement invoice.
 

@@ -306,7 +306,10 @@ function achbotApiPaymentSyncInvoiceLocked(mysqli $db,array $c): bool {
     if (($a['evidence_invoice_digest']??null)===$digest) return true;
     try {
         $response=bot('editMessageText',['chat_id'=>$chat,'message_id'=>$message,'text'=>$body,'parse_mode'=>'HTML','reply_markup'=>$keys,'disable_web_page_preview'=>true]);
-        if (!is_object($response) || ($response->ok??false)!==true) return false;
+        if (!achbotApiPaymentEditAccepted($response)) {
+            achbotApiPaymentEditFailure($id,'invoice',$response);
+            return false;
+        }
         // Compare current financial state after the asynchronous edit. A stale
         // pending edit may never stamp a terminal message as synchronized.
         $fresh=achbotApiPaymentRow($db,$id);
@@ -361,6 +364,20 @@ function achbotApiPaymentStampStaffDigest(mysqli $db,int $id,string $state,?int 
 function achbotApiPaymentAck($response): bool {
     return $response===true || (is_object($response)&&($response->ok??false)===true) || (is_array($response)&&($response['ok']??false)===true);
 }
+/** A Telegram 'message is not modified' response certifies an identical EDIT,
+ * but never certifies sending a fresh message or fulfilling a payment.
+ */
+function achbotApiPaymentEditAccepted($response): bool {
+    return achbotApiPaymentAck($response) || achbotPayUxEditAccepted($response);
+}
+/** Per-original-payment failure categories; no raw Telegram payload or chat ID. */
+function achbotApiPaymentEditFailure(int $payId,string $audience,$reply): void {
+    $code=is_object($reply)?max(0,min(599,(int)($reply->error_code??0))):0;
+    error_log('achbot_api_telegram_edit_deferred pay_id='.$payId.
+        ' audience='.$audience.' category='.achbotPayUxEditFailureCategory($reply).
+        ' tg_code='.$code);
+}
+
 function achbotApiPaymentNotice(mysqli $db,array $pay,string $status,bool $report=true): void {
     $id=(int)$pay['id'];$incoming=$pay;$fresh=achbotApiPaymentRow($db,$id);if(!$fresh)return;
     $incomingRefs=json_decode((string)($incoming['admins_messages']??''),true);$incomingRefs=is_array($incomingRefs)?$incomingRefs:[];
@@ -435,7 +452,17 @@ function achbotApiPaymentNotice(mysqli $db,array $pay,string $status,bool $repor
             // stored-receipt callers retain their default locking semantics.
             $allowed=achbotAdminStoredRecipientAllowed($db,$chat,(int)($GLOBALS['admin']??0),true,$complete);
             if(!$complete)$ack=false;
-            if(!$allowed)continue;try{if(!achbotApiPaymentAck(editKeys($keys,$msg,$chat)))$ack=false;}catch(Throwable $e){$ack=false;}
+            if(!$allowed)continue;
+            try {
+                $reply=editKeys($keys,$msg,$chat);
+                if (!achbotApiPaymentEditAccepted($reply)) {
+                    $ack=false;achbotApiPaymentEditFailure($id,'staff',$reply);
+                }
+            } catch(Throwable $error) {
+                $ack=false;
+                error_log('achbot_api_telegram_edit_deferred pay_id='.$id.
+                    ' audience=staff category=transport_exception tg_code=0');
+            }
         }
         // Telegram may return after a real human/API winner committed. Never
         // acknowledge a stale action keyboard; converge every stored copy.

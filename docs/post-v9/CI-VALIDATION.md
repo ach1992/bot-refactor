@@ -37,7 +37,9 @@ main pushes under the single `php85-validation` required status:
   Marzban source-real callback
   feedback for remote Timeout and local finality failure. The current SMS
   confirmation regression also checks the exact original confirmed-payment
-  callback to all registered user receipt/invoice messages, and a fair
+  callback to all registered user receipt/invoice messages, a valid Telegram
+  `message is not modified` edit ACK after lost presentation digest, the
+  negative distinction from SEND or an unknown edit rejection, and a fair
   recent-confirmed/oldest-historical Cron recovery batch without duplicated
   payments or provider actions. Malformed bank/gift HTTP diagnostics do not leak
   external response text.

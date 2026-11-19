@@ -39,7 +39,13 @@ service effect, original order and acknowledged delivery separately from
 presentation was acknowledged. After an actual original settlement, update
 that payment's registered messages immediately; if Telegram is unavailable,
 retain unsynced references for the bounded fair recovery queues, without
-re-consuming the SMS or altering the financial evidence.
+re-consuming the SMS or altering the financial evidence. When Telegram reports
+`message is not modified` for an identical original invoice edit or staff
+keyboard update, treat it as a valid edit ACK and persist the presentation
+digest; do not turn an edit no-op into proof of a customer payment or new
+message delivery. Rejections and transport failures retain diagnostic
+categories so support can distinguish an unavailable recipient or stale
+message from a delayed presentation queue.
 
 A Cron tick marked successful is **not** proof that a particular original
 invoice was admitted or that its SMS was found. Correlate
