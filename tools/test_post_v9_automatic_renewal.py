@@ -82,6 +82,8 @@ function sendMessage($message,$keys=null,$parse=null,$id=null) {
 }
 function deleteMarzban($serverId,$remark) {
     $GLOBALS['events'][]=['type'=>'remote_delete','server'=>$serverId];
+    if (!empty($GLOBALS['spec']['remote_delete_throw']))
+        throw new RuntimeException('fixture_marzban_timeout');
     if (!empty($GLOBALS['spec']['official_http_provider'])) {
         require_once $GLOBALS['root'].'/src/Panel/Accounts.php';
         return \AchBot\Panel\Accounts\deleteMarzban($serverId,$remark);
@@ -91,7 +93,7 @@ function deleteMarzban($serverId,$remark) {
 function achbotSupportsPanel($type) {return $type==='marzban';}
 function sumerize($bytes) {return '0';}
 function alert($message,$modal=false) {
-    $GLOBALS['events'][]=['type'=>'alert','modal'=>$modal];
+    $GLOBALS['events'][]=['type'=>'alert','modal'=>$modal,'text'=>(string)$message];
 }
 function editText($id,$message,$keyboard=null,$parse=null) {
     $GLOBALS['events'][]=['type'=>'editText','to'=>$id];
@@ -275,9 +277,13 @@ def run(w,e,s):
             re.fullmatch(r'[a-f0-9]{16}',event.get('trace_id','')) is not None and
             re.fullmatch(r'\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}Z',
                          event.get('time_utc','')) is not None)
+    timeout_diagnostic=re.compile(
+        rb'^achbot_subscription_delete_deferred order_id=[1-9][0-9]*'
+        rb' server_id=2 stage=remote code=fixture_marzban_timeout class=RuntimeException$')
     unexpected=[line for line in p.stderr.splitlines()
                 if line not in expected and not diagnostic.fullmatch(line)
                 and not notification_diagnostic.fullmatch(line)
+                and not timeout_diagnostic.fullmatch(line)
                 and not known_native_diagnostic(line)]
     if p.returncode or unexpected:
         raise RuntimeError(repr((p.returncode,unexpected[-8:],p.stdout[-400:])))
@@ -1055,6 +1061,39 @@ def main():
         replay=run(w,e,{'order_id':remoteUncertain,'action':'real_user_delete'})
         assert not any(x['type']=='remote_delete' for x in replay),replay
         cases.append('f1_real_user_remote_failure_fenced_without_false_success')
+
+        def assert_marzban_review(events):
+            alerts=[x.get('text','') for x in events if x['type']=='alert']
+            assert alerts and 'بررسی' in alerts[-1] and 'دوباره' not in alerts[-1],events
+        assert_marzban_review(result)
+        assert_marzban_review(replay)
+        for action in ('real_user_delete','real_admin_delete'):
+            original=seed(w,e,'marzban-timeout-'+action)
+            timed_out=run(w,e,{'order_id':original,'action':action,
+                                'remote_delete_throw':True})
+            assert sum(x['type']=='remote_delete' for x in timed_out)==1,timed_out
+            assert_marzban_review(timed_out)
+            assert count(w,e,'orders_list',f'id={original} AND status=0')==1
+            repeated=run(w,e,{'order_id':original,'action':action})
+            assert_marzban_review(repeated)
+            assert not any(x['type']=='remote_delete' for x in repeated),repeated
+            cases.append('f1_'+action+'_marzban_timeout_never_promises_unsafe_retry')
+
+        original_capacity=sql(w,e,'SELECT ucount FROM server_info WHERE id=2')
+        sql(w,e,'UPDATE server_info SET ucount=2147483647 WHERE id=2')
+        try:
+            for action in ('real_user_delete','real_admin_delete'):
+                original=seed(w,e,'marzban-local-fail-'+action)
+                failed_local=run(w,e,{'order_id':original,'action':action})
+                assert sum(x['type']=='remote_delete' for x in failed_local)==1,failed_local
+                assert_marzban_review(failed_local)
+                assert count(w,e,'orders_list',f'id={original} AND status=0')==1
+                repeated=run(w,e,{'order_id':original,'action':action})
+                assert_marzban_review(repeated)
+                assert not any(x['type']=='remote_delete' for x in repeated),repeated
+                cases.append('f1_'+action+'_marzban_local_failure_never_promises_unsafe_retry')
+        finally:
+            sql(w,e,f'UPDATE server_info SET ucount={int(original_capacity)} WHERE id=2')
 
         # The actual expiry Cron cleanup must refuse a journal under review
         # before deleting the associated remote account.

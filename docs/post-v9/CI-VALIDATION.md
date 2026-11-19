@@ -24,8 +24,28 @@ main pushes under the single `php85-validation` required status:
   customer/service operations, subscription/payment flows, onboarding, wallet, Native,
   operator permissions, Telegram error diagnostics, Cron and
   payment-browser checks. The current roster additionally exercises
-  independently proven post-cutover PasarGuard order-attachment recovery and
-  malformed bank/gift HTTP diagnostics without leaking external response text.
+  independently proven post-cutover PasarGuard order-attachment recovery,
+  user/staff original DELETE re-confirmation (including Timeout, historical
+  imported accounts, foreign identity including post-DELETE HTTP200 readback,
+  permission denial and SQL failure),
+  **deterministic real-PHP scheduled-PasarGuard DELETE versus manual callback
+  races** with single-flight checks for successful, failed and timed-out
+  Native outcomes, original scheduled-versus-manual capacity-finality
+  provenance (including Cron failure, explicit owner/staff recovery, local SQL
+  finalizer failure, older unpinned and migrated accounts, and an external
+  reactivation between Cron observation and final pinned Native GET), and
+  Marzban source-real callback
+  feedback for remote Timeout and local finality failure. The current SMS
+  confirmation regression also checks the exact original confirmed-payment
+  callback to all registered user receipt/invoice messages, a valid Telegram
+  `message is not modified` edit ACK after lost presentation digest, the
+  negative distinction from SEND or an unknown edit rejection, and a fair
+  recent-confirmed/oldest-historical Cron recovery batch that prioritizes
+  due unacknowledged messages over old already-ACKed entries, while retaining
+  a guaranteed full-scan slot for a genuinely changed older status even under
+  continuous unacknowledged traffic, without duplicate payments or provider
+  actions. Malformed bank/gift HTTP diagnostics do not leak
+  external response text.
   Runs are parallel but retain each test's own assertions and failure details.
   The JSON receipt records exact HEAD/tree,
   PHP runtime, actual checks and elapsed times.

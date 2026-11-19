@@ -1180,15 +1180,64 @@ function achbotPayUxMaintain(mysqli $db, int $maxRows=45): array {
         // from the 45-row local expiry scan to avoid delaying worker duties.
         $messageBatch=min($maxRows,8);
         try {
+            // A large backlog of old stale receipts must not delay a newly
+            // confirmed purchase for tens of Cron ticks. Reserve at most half
+            // of this existing bounded budget for the newest unsynced final
+            // payments; the other half retains oldest-first fairness.
+            $priorityLimit=intdiv($messageBatch,2);
+            $rows=[];
+            if ($priorityLimit>0) {
+                $stmt=$db->prepare(
+                    "SELECT r.pay_row_id FROM payment_message_refs r
+                     JOIN pays p ON p.id=r.pay_row_id
+                     WHERE r.updated_at<=NOW(6) AND r.synced_digest IS NULL
+                       AND p.state IN ('approved','paid','auto_cart_approved','paid_with_wallet')
+                     GROUP BY r.pay_row_id ORDER BY MAX(r.id) DESC LIMIT {$priorityLimit}"
+                );
+                $stmt->execute();
+                $rows=$stmt->get_result()->fetch_all(MYSQLI_ASSOC);$stmt->close();
+            }
+            // Do not spend the oldest-first recovery slots on payments whose
+            // previous Telegram status was already acknowledged. Keep a small
+            // always-on rotating fallback lane for later changed status even
+            // under sustained unsynced traffic, without a cursor/migration.
             $stmt=$db->prepare(
                 "SELECT pay_row_id FROM payment_message_refs
-                 WHERE updated_at<=NOW(6)
+                 WHERE updated_at<=NOW(6) AND synced_digest IS NULL
                  GROUP BY pay_row_id ORDER BY MIN(updated_at) ASC LIMIT {$messageBatch}"
             );
             $stmt->execute();
-            $rows=$stmt->get_result()->fetch_all(MYSQLI_ASSOC);$stmt->close();
+            $oldest=$stmt->get_result()->fetch_all(MYSQLI_ASSOC);$stmt->close();
+            // Keep one slot for the rotating full scan EVEN when continuous
+            // unsynced traffic fills every earlier lane. Otherwise a payment
+            // that changed after its last successful edit can starve forever.
+            // All slots remain within the original eight-payment budget.
+            $selected=[];
             foreach ($rows as $r) {
+                if (count($selected)>=$priorityLimit) break;
                 $id=(int)$r['pay_row_id'];
+                $selected[$id]=true;
+            }
+            foreach ($oldest as $r) {
+                if (count($selected)>=max(0,$messageBatch-1)) break;
+                $id=(int)$r['pay_row_id'];
+                $selected[$id]=true;
+            }
+            if (count($selected)<$messageBatch) {
+                $stmt=$db->prepare(
+                    "SELECT pay_row_id FROM payment_message_refs
+                     WHERE updated_at<=NOW(6)
+                     GROUP BY pay_row_id ORDER BY MIN(updated_at) ASC LIMIT {$messageBatch}"
+                );
+                $stmt->execute();
+                $fallback=$stmt->get_result()->fetch_all(MYSQLI_ASSOC);$stmt->close();
+                foreach ($fallback as $r) {
+                    if (count($selected)>=$messageBatch) break;
+                    $id=(int)$r['pay_row_id'];
+                    $selected[$id]=true;
+                }
+            }
+            foreach (array_keys($selected) as $id) {
                 $updated+=achbotPayUxSyncMessages($db,$id);
                 // Fair scanning; a failed Telegram edit remains eligible later.
                 $stmt=$db->prepare(

@@ -199,7 +199,7 @@ function achbotProviderAccountRow(?array $r): ?array {
 function achbotProviderLegacyCutoverMutationValid(array $e,array $account): bool {
     $state=$e['provider_state']??null;
     if ($state==='linked') return true;
-    if ($state!=='mutating') return false;
+    if (!in_array($state,['mutating','deleted'],true)) return false;
     try {
         $key=$e['provider_mutation_key']??null;
         if (!is_string($key) || $key==='' || strlen($key)>100)
@@ -208,6 +208,8 @@ function achbotProviderLegacyCutoverMutationValid(array $e,array $account): bool
         if (!is_array($held) || ($held['version']??null)!==1 ||
             ($held['key']??null)!==$key ||
             !is_string($held['action']??null) || $held['action']==='' ||
+            ($state==='deleted' && ($held['action']!=='delete' ||
+                ($held['result']??null)!=='verified')) ||
             !is_array($held['consumed_keys']??null) ||
             !array_is_list($held['consumed_keys']) ||
             !in_array($key,$held['consumed_keys'],true) ||

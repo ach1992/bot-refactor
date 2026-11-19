@@ -554,6 +554,85 @@ def main():
               clock=current,states={'receiptReviewMinutes':5}))['result']
         assert shorter is None
         cases.append('duplicate_receipt_review_window_configurable_only_inside_bounds')
+        # The installed Hell incident had hundreds of historical payment
+        # messages awaiting projection while a newly auto-approved payment
+        # had four unsynced receipt/invoice copies. Reserve newer terminal
+        # work without starving the oldest backlog; never change paid state.
+        sql(w,e,'UPDATE payment_message_refs SET updated_at=DATE_ADD(NOW(6),INTERVAL 1 DAY)')
+        oldest=[]
+        for idx in range(12):
+            pay=add(w,e,f'projection-old-{idx}',old=int(time.time())-3600)
+            sql(w,e,f"UPDATE pays SET state='paid' WHERE id={pay}")
+            mid=6100+idx
+            assert run(w,e,dict(action='track',id=pay,message_id=mid))['result'] is True
+            sql(w,e,f'UPDATE payment_message_refs SET updated_at=DATE_SUB(NOW(6),INTERVAL 4 HOUR) WHERE pay_row_id={pay}')
+            oldest.append((pay,mid))
+        recent=add(w,e,'projection-new-auto-approved',old=int(time.time()))
+        sql(w,e,f"UPDATE pays SET state='auto_cart_approved' WHERE id={recent}")
+        assert run(w,e,dict(action='track',id=recent,message_id=6199))['result'] is True
+        batch=run(w,e,dict(action='maintain',limit=8))
+        edited={x['message_id'] for x in batch['events'] if x['method']=='editMessageText'}
+        assert 6199 in edited and oldest[0][1] in edited,(batch,edited)
+        assert batch['result']['edited']==8 and len(edited)==8,batch
+        assert all('پرداخت فاکتور' not in e['keyboard'] for e in batch['events']
+                   if e['method']=='editMessageText'),batch
+        assert sql(w,e,f'SELECT COUNT(*) FROM payment_message_refs WHERE pay_row_id={recent} AND synced_digest IS NOT NULL').strip()=='1'
+        assert state(w,e,'projection-new-auto-approved')=='auto_cart_approved'
+        second=run(w,e,dict(action='maintain',limit=8))
+        assert all(e['message_id']!=6199 for e in second['events']),second
+        cases.append('recent_approved_receipt_projects_immediately_while_oldest_backlog_progresses')
+        # Real installed Hell had seven already-ACKed payments among the first
+        # eight oldest due candidates; the bounded worker wasted its capacity
+        # scanning them instead of reconciling later unacknowledged payments.
+        # Keep the old synced receipts available for future state changes,
+        # but do not let them delay currently unsynced customer messages.
+        sql(w,e,'UPDATE payment_message_refs SET updated_at=DATE_ADD(NOW(6),INTERVAL 1 DAY)')
+        old_synced=[]
+        for idx in range(12):
+            paid=add(w,e,f'old-acked-{idx}',old=now-20000)
+            sql(w,e,f"UPDATE pays SET state='paid' WHERE id={paid}")
+            mid=6350+idx
+            assert run(w,e,dict(action='track',id=paid,message_id=mid))['result'] is True
+            assert run(w,e,dict(action='sync',id=paid))['result']==1
+            sql(w,e,f'UPDATE payment_message_refs SET updated_at=DATE_SUB(NOW(6),INTERVAL 4 HOUR) WHERE pay_row_id={paid}')
+            old_synced.append((paid,mid))
+        # Changed state requires editing a previously ACKed digest; the fallback
+        # scan must still discover and reproject it when budget is available.
+        sql(w,e,f"UPDATE pays SET state='declined' WHERE id={old_synced[0][0]}")
+        due=add(w,e,'backlogged-unacked-manual',kind='INCREASE_WALLET',old=now-300)
+        sql(w,e,f"UPDATE pays SET state='have_sent' WHERE id={due}")
+        assert run(w,e,dict(action='track',id=due,message_id=6399))['result'] is True
+        sql(w,e,f'UPDATE payment_message_refs SET updated_at=DATE_SUB(NOW(6),INTERVAL 1 HOUR) WHERE pay_row_id={due}')
+        recovered=run(w,e,dict(action='maintain',limit=8))
+        edits=[x['message_id'] for x in recovered['events'] if x['method']=='editMessageText']
+        assert 6399 in edits and old_synced[0][1] in edits,(recovered,edits)
+        assert recovered['result']['edited']==2 and len(edits)==2,recovered
+        assert count(w,e,'payment_message_refs',f'pay_row_id={due} AND synced_digest IS NOT NULL')==1
+        assert count(w,e,'payment_message_refs',f'pay_row_id={old_synced[0][0]} AND synced_digest IS NOT NULL')==1
+        subsequent=run(w,e,dict(action='maintain',limit=8))
+        assert 6399 not in [x['message_id'] for x in subsequent['events']],subsequent
+        cases.append('already_acked_old_receipts_do_not_block_unsynced_and_stale_state_still_reprojects')
+        # A continuous queue of unacknowledged messages must not starve an
+        # earlier already-ACKed original whose payment state subsequently
+        # changes. Reserve a bounded full-scan lane even while many unsynced
+        # due payments exist; no new record, backfill or financial action.
+        sql(w,e,'UPDATE payment_message_refs SET updated_at=DATE_ADD(NOW(6),INTERVAL 1 DAY)')
+        stale=add(w,e,'older-acked-then-paid',kind='INCREASE_WALLET',old=now-600)
+        sql(w,e,f"UPDATE pays SET state='have_sent' WHERE id={stale}")
+        assert run(w,e,dict(action='track',id=stale,message_id=6490))['result'] is True
+        assert run(w,e,dict(action='sync',id=stale))['result']==1
+        sql(w,e,f'UPDATE payment_message_refs SET updated_at=DATE_SUB(NOW(6),INTERVAL 5 HOUR) WHERE pay_row_id={stale}')
+        sql(w,e,f"UPDATE pays SET state='paid' WHERE id={stale}")
+        for idx in range(12):
+            pay=add(w,e,f'new-unacked-continuous-{idx}',kind='INCREASE_WALLET',old=now-300)
+            sql(w,e,f"UPDATE pays SET state='have_sent' WHERE id={pay}")
+            assert run(w,e,dict(action='track',id=pay,message_id=6500+idx))['result'] is True
+            sql(w,e,f'UPDATE payment_message_refs SET updated_at=DATE_SUB(NOW(6),INTERVAL 1 HOUR) WHERE pay_row_id={pay}')
+        busy=run(w,e,dict(action='maintain',limit=8))
+        busy_edits=[x['message_id'] for x in busy['events'] if x['method']=='editMessageText']
+        assert 6490 in busy_edits and len(busy_edits)==8,(busy,busy_edits)
+        assert count(w,e,'payment_message_refs',f'pay_row_id={stale} AND synced_digest IS NOT NULL')==1
+        cases.append('continuous_unacked_backlog_keeps_full_scan_lane_for_changed_acked_originals')
         # Incomplete provider ledger cannot prove a draft never had an invoice.
         sql(w,e,'DROP TABLE payment_transactions')
         incomplete=add(w,e,'partial-ledger-do-not-expire',kind='INCREASE_WALLET')

@@ -73,10 +73,19 @@ $buttonValues=['back_to_main'=>'Back'];$telegramWebhookSecret='fixture-webhook-s
 $GLOBALS['events']=[];
 function bot($method,$args) {
     $GLOBALS['events'][]=['kind'=>'telegram','method'=>$method];
+    if ($method==='editMessageText' && ($GLOBALS['spec']['telegram_edit_noop']??false))
+        return (object)['ok'=>false,'error_code'=>400,
+            'description'=>'Bad Request: message is not modified'];
     return (object)['ok'=>true,'result'=>(object)['message_id'=>222]];
 }
 function sendMessage(...$args){$GLOBALS['events'][]=['kind'=>'send'];return (object)['ok'=>true];}
-function editKeys(...$args){$GLOBALS['events'][]=['kind'=>'edit_keys'];return (object)['ok'=>true];}
+function editKeys(...$args){
+    $GLOBALS['events'][]=['kind'=>'edit_keys'];
+    if ($GLOBALS['spec']['telegram_edit_noop']??false)
+        return (object)['ok'=>false,'error_code'=>400,
+            'description'=>'Bad Request: message is not modified'];
+    return (object)['ok'=>true];
+}
 function editText($msg,$text,$buttons=null,$mode='HTML',$chat=null){
     $GLOBALS['events'][]=['kind'=>'admin_edit','text'=>$text,
         'buttons'=>is_string($buttons)?json_decode($buttons,true):$buttons];
@@ -191,6 +200,41 @@ try {
     $result=['pay_id'=>$payId,'price'=>$price,'units'=>$units,
         'profile'=>$channel==='api'
             && achbotPaymentEvidenceSnapshot(achbotApiPaymentAttempt($connection,$payId))!==null];
+ } elseif ($op==='api_edit_ack_classification') {
+    $response=(object)['ok'=>false,'error_code'=>400,
+        'description'=>(string)($spec['description']??'')];
+    $result=['edit'=>achbotApiPaymentEditAccepted($response),
+        'send'=>achbotApiPaymentAck($response)];
+ } elseif ($op==='reproject_paid_ui') {
+    $payId=(int)$spec['pay_id'];$pay=achbotApiPaymentRow($connection,$payId);
+    if (!$pay || $pay['state']!=='auto_cart_approved')
+        throw new RuntimeException('fixture_reproject_original_not_paid');
+    // Only the existing ORIGINAL approved payment may be projected. No
+    // reserve, SMS consume, Native settlement or new account is invoked.
+    achbotApiPaymentNotice($connection,$pay,'confirmed');
+    $changed=achbotPayUxSyncMessages($connection,$payId);
+    $q=$connection->query('SELECT COUNT(*) FROM payment_message_refs WHERE pay_row_id='.$payId.' AND synced_digest IS NOT NULL');
+    $synced=(int)$q->fetch_row()[0];
+    $q=$connection->query('SELECT (evidence_invoice_digest IS NOT NULL),
+        (evidence_staff_digest IS NOT NULL) FROM payment_attempts WHERE pay_row_id='.$payId);
+    $digests=$q->fetch_row();
+    $result=['changed'=>$changed,'synced'=>$synced,
+        'invoice'=>(int)$digests[0],'staff'=>(int)$digests[1]];
+ } elseif ($op==='register_paid_ui') {
+    $payId=(int)$spec['pay_id'];$pay=achbotApiPaymentRow($connection,$payId);
+    if (!$pay || $pay['state']!=='have_sent' || (int)$pay['user_id']!==1001)
+        throw new RuntimeException('fixture_payment_ui_original_missing');
+    for ($i=0;$i<4;$i++) {
+        $reply=(object)['ok'=>true,'result'=>(object)['message_id'=>5101+$i]];
+        if (!achbotPayUxTrackMessage($connection,$payId,1001,$reply))
+            throw new RuntimeException('fixture_payment_ui_track_failed');
+    }
+    // The original customer invoice is tracked separately; Telegram edits
+    // must update both the invoice and every registered receipt message.
+    $reply=(object)['ok'=>true,'result'=>(object)['message_id'=>5100]];
+    achbotApiPaymentTrackInvoice($connection,(string)$pay['hash_id'],1001,$reply);
+    $result=['tracked'=>(int)$connection->query('SELECT COUNT(*) FROM payment_message_refs
+        WHERE pay_row_id='.$payId)->fetch_row()[0]];
  } elseif ($op==='issue_renew') {
     $hash=$spec['hash'];$price=3150;
     $plan=$connection->query('SELECT days,volume FROM server_plans WHERE id=7')->fetch_assoc();
@@ -1890,6 +1934,57 @@ def test():
                sql("SELECT COUNT(*) FROM payment_transactions") == "1" and
                provider.write_count == 0,
                "scoped_api_bank_evidence_cannot_be_reassigned_to_other_invoice")
+
+    # Source-real: SMS evidence was consumed and an original payment/Native
+    # effect committed; the same request must converge ALL customer receipts
+    # immediately, not leave them behind the global historical Cron scan.
+    with sandbox() as (sql,run,provider,bank,_):
+        issued=run('issue_renew',hash='auto_confirmation_ui_original')
+        pay=issued['pay_id']
+        registered=run('register_paid_ui',pay_id=pay)
+        assert registered['tracked']==4,registered
+        assert sql(f'SELECT COUNT(*) FROM payment_message_refs WHERE pay_row_id={pay} AND synced_digest IS NULL')=='4'
+        message=evidence_sms(1,issued['price'])
+        bank.messages['1']=dict(message)
+        assert run('reserve',pay_id=pay,sms=message) is not None
+        assert run('consume',pay_id=pay)['status']=='proven'
+        before=provider.write_count
+        result=run('settle',pay_id=pay)
+        assert result=='confirmed' and provider.write_count==before+2,(result,provider.trace)
+        assert terminal_state(sql,pay).startswith('auto_cart_approved|done|proven'),terminal_state(sql,pay)
+        assert sql(f'SELECT COUNT(*) FROM payment_message_refs WHERE pay_row_id={pay} AND synced_digest IS NOT NULL')=='4'
+        assert sql(f'SELECT evidence_invoice_digest IS NOT NULL FROM payment_attempts WHERE pay_row_id={pay}')=='1'
+        assert sql(f"SELECT COUNT(*) FROM payment_delivery_intents WHERE pay_row_id={pay} AND state='acknowledged'")=='1'
+        replay=run('settle',pay_id=pay)
+        assert replay in ('settled','confirmed') and provider.write_count==before+2
+        assert sql(f'SELECT COUNT(*) FROM payment_message_refs WHERE pay_row_id={pay} AND synced_digest IS NOT NULL')=='4'
+        checks.append('auto_sms_approved_payment_updates_all_original_user_messages_without_redelivery')
+
+        # A Telegram edit may have ALREADY applied before its response was
+        # lost and SQL digest remained NULL. On explicit reconvergence a
+        # truthful 400 'not modified' is an ACK for invoice, customer text and
+        # staff keyboard. Never treat this response as a SEND ACK or financial
+        # approval. Exercise the actual original paid source route.
+        assert run('api_edit_ack_classification',description='Bad Request: message is not modified') == {'edit':True,'send':False}
+        assert run('api_edit_ack_classification',description='Bad Request: message to edit not found') == {'edit':False,'send':False}
+        assert run('api_edit_ack_classification',description='Bad Request: message can not be edited') == {'edit':False,'send':False}
+        sql(f'UPDATE payment_message_refs SET synced_digest=NULL WHERE pay_row_id={pay}')
+        sql(f'UPDATE payment_attempts SET evidence_invoice_digest=NULL,evidence_staff_digest=NULL WHERE pay_row_id={pay}')
+        before_financial=sql(f'SELECT state,price,order_id FROM pays WHERE id={pay}')
+        before_wallet=sql('SELECT userid,wallet FROM users ORDER BY userid')
+        before_transactions=sql(f'SELECT COUNT(*) FROM payment_transactions WHERE attempt_id=(SELECT id FROM payment_attempts WHERE pay_row_id={pay})')
+        before_native=provider.write_count
+        lost_ack=run('reproject_paid_ui',pay_id=pay,telegram_edit_noop=True)
+        assert lost_ack=={'changed':4,'synced':4,'invoice':1,'staff':1},lost_ack
+        assert provider.write_count==before_native
+        assert sql(f'SELECT state,price,order_id FROM pays WHERE id={pay}')==before_financial
+        assert sql('SELECT userid,wallet FROM users ORDER BY userid')==before_wallet
+        assert sql(f'SELECT COUNT(*) FROM payment_transactions WHERE attempt_id=(SELECT id FROM payment_attempts WHERE pay_row_id={pay})')==before_transactions
+        assert sql(f"SELECT COUNT(*) FROM payment_delivery_intents WHERE pay_row_id={pay} AND state='acknowledged'")=='1'
+        again=run('reproject_paid_ui',pay_id=pay,telegram_edit_noop=True)
+        assert again=={'changed':0,'synced':4,'invoice':1,'staff':1},again
+        assert provider.write_count==before_native
+        checks.append('lost_telegram_edit_ack_reconverges_original_paid_invoice_staff_and_four_user_messages')
 
     checks.extend(test_composed_wallet_cron_boundary())
 

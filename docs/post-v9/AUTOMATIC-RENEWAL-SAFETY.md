@@ -183,6 +183,48 @@ the remote delete again to hide that partial failure. Operators must inspect
 the actual Marzban account, remote action history, local status, capacity and
 financial journal first.
 
+**PasarGuard explicit deletion retry (user and administrator):** the existing
+manual confirmation callback may resume the **same** originally fenced Native
+DELETE; this is not a scheduled or blind write retry. The existing physical
+account advisory lease, an atomic original order/native mutation claim, pinned
+provider instance and remote ID, and authenticated readback distinguish
+(1) an already absent account (finish SQL only), (2) the original matching
+account still present (re-dispatch DELETE by that pinned ID and verify 404),
+and (3) an unverified/changed identity (hold with no deletion). A successful
+Native delete with a failed SQL finalizer also remains resumable without
+another remote DELETE. Original payment/journal evidence is never discarded.
+The scheduled PasarGuard deletion path holds the **same physical-account
+advisory lease** from its guarded original order fence, through the Native
+DELETE and local finalizer. A user/staff confirmation while that Cron DELETE
+is in flight cannot send a competing DELETE; an original Cron timeout leaves
+its status=0 fence and must **never** trigger a subsequent unattended Cron
+replay. Only a separately confirmed original user/staff operation can reconcile
+the held Native state. Native's initial claimed DELETE now durably pins
+`delete_restore_capacity=false` for scheduled operations and `true` for
+explicit user/staff operations in the existing Native mutation snapshot,
+committed with the local order fence. The finalizer must honor the original
+pin on recovery, regardless of who reconfirms; the actual slot is still
+restored only when purchase/reservation provenance proves it was held.
+For older unpinned claims, a proven non-reserved order can finish without a
+capacity adjustment; reserved/ambiguous provenance requires review instead
+of silently crediting a potentially scheduled deletion. Historical migrated
+accounts have a durable `orders_list.provider_effect_id` reference to the
+original `service_effects` adoption record, even when its `order_id` is NULL;
+that verified zero-reservation link takes priority over a later positive plan.
+The Cron pre-dispatch Native by-ID read also re-verifies that the original
+account remains expired/exhausted; external reactivation must not be erased
+by automatic cleanup.
+The Marzban guarded deletion and operator-review requirements above remain
+unchanged.
+
+User-facing reconfirmation is offered only for supported PasarGuard temporary
+transport/availability failures or an already-held, recoverable finality
+failure. Changed Native incarnation, unexpected identity/permissions, an
+unrelated or absent Native delete claim, and multiple local references retain
+protected-state guidance. A Marzban timeout or failed local finalizer remains
+subject to its existing manual operator-review policy; its UI must never
+promise successful deletion by simply pressing the confirmation again.
+
 **IMPORTANT rollback rule:** migration 004 has its own separate Owner-gated
 installation and cannot be reverted by merely switching PHP source back.
 An older unguarded AccountDeletion/Warnings/OrderManagement PHP version MUST

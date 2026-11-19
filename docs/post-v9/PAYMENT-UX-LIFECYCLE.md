@@ -18,6 +18,38 @@ States are awaiting_payment, receipt_review, needs_review, payment_recorded, exp
 
 New checkout/receipt messages are recorded by exact Telegram chat_id and message_id when optional migration 006 is installed. An existing one-minute warning worker then edits each registered message after payment transitions or entering review, replacing pay buttons with read-only status/menu actions; text edits are preferred and markup-only deletion is fallback. Successful markup-only fallback is retried for truthful text. Every edit failure is retriable and cannot modify original transaction money or status. A microsecond-precision last-attempt timestamp rotates unsuccessful edits behind untouched messages, so a permanently uneditable message cannot block the other messages for the same payment. The bounded Cron sweep prioritizes automatic financial renewal before optional Telegram edits.
 
+For an **original API-assisted SMS/gift settlement**, the durable pays/payment,
+Native/financial effect and original customer delivery commit first. The same
+successful completion request then projects the confirmed status to already
+registered receipt/invoice messages without creating any new payment or Native
+effect. The bank attempt may retain historical `stage=review` and
+`provider_status=receipt_started`: these are receipt workflow provenance, **not**
+the final purchase status. Only `pays.state`, verified evidence, and the actual
+service/delivery journals decide finality. Failed Telegram edits remain
+unsynchronized and retryable; UI failure never reverses financial success.
+
+The existing Cron recovery retains its strict total of eight payment-message
+candidates per tick: at most half favor the newest unsynced terminal payments;
+the other slots favor the oldest **due and unacknowledged** payment messages.
+At least one slot remains for the rotating oldest-due full scan even under
+continuous unsynced traffic, so older acknowledged receipts with a later
+changed source state can still be re-projected. When work is sparse, the full
+scan fills all other spare slots. This avoids wasting most recovery slots on
+already-current messages without starving the full-scan lane or bypassing
+existing retry-not-before timestamps. No additional
+Cron job, persistent cursor or schema migration is introduced.
+The independent API invoice/staff projection likewise prioritizes finalized
+payments not projected since their latest authoritative state update, before
+older historical rows. An exact Telegram edit rejection with HTTP 400
+`message is not modified` also acknowledges that the intended original
+invoice text or staff keyboard is already present after a lost edit ACK;
+this is never interpreted as an ACK for a new send or payment settlement.
+Other failures retain unsynchronized digests and now log the original pay ID,
+audience, bounded error category and Telegram numeric code without message
+text, chat recipient or credentials. Neither queue polls SMS again, confirms
+a second time, provisions a second account, or discards payment/Telegram
+diagnostics.
+
 Historical Telegram messages without known message ID cannot be discovered by the Bot API. Old raw third-party URLs cannot be revoked from Telegram; never offer raw provider URLs in NEW messages. New payment URLs point only to existing bot-owned gateway endpoints which re-check the exact original pays state and the authoritative newer committed draft BEFORE forwarding to a provider. Unsafe, stale and owner-mismatched callbacks fail closed. Clicking an obsolete button cannot create a replacement invoice.
 
 ## Safe expiration and newer drafts

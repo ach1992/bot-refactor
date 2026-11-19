@@ -296,8 +296,14 @@ function achbotPgAction(array $panel,array $identity,string $action,
     if ($action==='delete') {
         if ($r['http']!==204) return achbotPgFailure('pg_delete_status_invalid',true,$r['http']);
         $read=achbotPgRead($panel,$identity);
-        if (!$read['success'] && $read['http']===404)
+        if (!$read['success'] && $read['http']===404 &&
+            ($read['reason']??null)==='pg_not_found')
             return ['success'=>true,'uncertain'=>false,'reason'=>'','http'=>204];
+        // HTTP200 alone does not prove the SAME Native account survived.
+        // A foreign incarnation, malformed response or authorization failure
+        // must never be reported as a retryable unchanged-account readback.
+        if (!$read['success'])
+            return achbotPgFailure('pg_delete_readback_unverified',true,$read['http']);
         return achbotPgFailure('pg_delete_absence_unconfirmed',true,$read['http']);
     }
     if ($r['http']!==200) return achbotPgFailure('pg_action_status_invalid',true,$r['http']);

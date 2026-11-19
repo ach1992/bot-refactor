@@ -382,6 +382,160 @@ function achbotPasarGuardActionAdapter($serverId,$remark,string $action,?array $
     } catch (Throwable $e) { return achbotProviderFailure('pg_action_requires_review'); }
 }
 
+/**
+ * Atomically claim the original DELETE inside the caller's order-fence
+ * transaction. The capacity policy belongs to this ORIGINAL operation, not
+ * whichever owner/staff actor eventually confirms its finalization.
+ */
+function achbotPgClaimOriginalDelete(mysqli $db,array $order,array $target,
+    bool $restoreCapacity): void {
+    $orderId=(int)$order['id'];$serverId=(int)$order['server_id'];
+    $remark=(string)$order['remark'];
+    $ctx=achbotPgOrderContext($db,$orderId,true);
+    if ((int)$order['status']!==1 ||
+        achbotPgDeletionContextTarget($ctx,$serverId,$remark)!==$target)
+        throw new RuntimeException('pg_delete_original_target_changed');
+    // A second local owner of this physical Native account must never lose
+    // their account when only one order was authorized for deletion.
+    $effectId=(int)$ctx['account']['effect_id'];
+    $peers=$db->prepare('SELECT id FROM orders_list WHERE provider_effect_id=? AND id<>? LIMIT 1 FOR UPDATE');
+    $peers->bind_param('ii',$effectId,$orderId);
+    $peers->execute();$other=$peers->get_result()->fetch_assoc();$peers->close();
+    if ($other) throw new RuntimeException('pg_delete_shared_account_reference');
+    $key='delete:'.(int)$ctx['account']['id'];
+    achbotPgBeginMutation($db,$ctx,$key,'delete',['phase'=>'claimed'],true,$restoreCapacity);
+}
+
+/**
+ * Resume ONLY the originally claimed deletion, under the caller's physical
+ * account lease. This includes crashes before dispatch and lost responses.
+ * The original order fence and Native identity are reused; no new key or
+ * account can be claimed here.
+ */
+function achbotPgResumeDelete(mysqli $db,int $orderId,int $serverId,string $remark,
+    bool $requireEnded=false): object {
+    try {
+        if ($orderId<=0 || $serverId<=0 || $remark==='')
+            throw new RuntimeException('pg_delete_recovery_invalid');
+        $ctx=achbotPgOrderContext($db,$orderId,false,false,true);
+        $order=$ctx['order'];$account=$ctx['account'];
+        if ((int)$order['server_id']!==$serverId || $order['remark']!==$remark ||
+            (int)$order['status']!==0 || $order['autoRenew']!=='off' ||
+            !in_array($account['state'],['mutating','deleted'],true))
+            throw new RuntimeException('pg_delete_recovery_order_changed');
+        require_once __DIR__.'/ProviderRecovery.php';
+        if (!achbotPgRecoveryOrderOriginMatches($db,$ctx,$orderId))
+            throw new RuntimeException('pg_delete_recovery_origin_changed');
+        $key='delete:'.(int)$account['id'];
+        $saved=json_decode((string)$account['mutation_snapshot'],true,64,JSON_THROW_ON_ERROR);
+        // A committed claim has no top-level phase until the original
+        // outbound intent is durably persisted; never infer dispatch from it.
+        $phase=$saved['phase']??null;
+        if ($phase===null && ($saved['changes']??null)===['phase'=>'claimed'])
+            $phase='claimed';
+        if (!is_array($saved) || ($saved['version']??null)!==1 ||
+            ($saved['key']??null)!==$key || $account['mutation_key']!==$key ||
+            ($saved['action']??null)!=='delete' || ($saved['identity']??null)!==$ctx['identity'] ||
+            !in_array($phase,['claimed','dispatching'],true) ||
+            ($phase==='claimed' &&
+                ($saved['changes']??null)!==['phase'=>'claimed']) ||
+            ($phase==='dispatching' &&
+                ($saved['changes']['expected']??null)!==['absent'=>true,'http'=>404]) ||
+            !in_array($key,$saved['consumed_keys']??[],true) ||
+            ($account['state']==='deleted' && ($saved['result']??null)!=='verified'))
+            throw new RuntimeException('pg_delete_recovery_intent_changed');
+        // Another local reference must never be silently erased by this retry.
+        $s=$db->prepare('SELECT id FROM orders_list WHERE provider_effect_id=? AND id<>? LIMIT 1');
+        $effectId=(int)$account['effect_id'];$s->bind_param('ii',$effectId,$orderId);
+        $s->execute();$peer=$s->get_result()->fetch_assoc();$s->close();
+        if ($peer) throw new RuntimeException('pg_delete_recovery_shared_reference');
+        // Version-1 Native journals already persist the original claim.
+        // No schema migration or separate per-order state is necessary.
+        // Old, unpinned claims are safe only when original order provenance
+        // proves that NO capacity slot was ever reserved. If a slot might
+        // exist, do not guess whether that prior DELETE came from Cron or UI.
+        if (array_key_exists('delete_restore_capacity',$saved)) {
+            if (!is_bool($saved['delete_restore_capacity']))
+                throw new RuntimeException('pg_delete_recovery_capacity_policy_invalid');
+            $restoreCapacity=$saved['delete_restore_capacity'];
+        } else {
+            if (achbotOrderRestoresCapacity($db,$order))
+                throw new RuntimeException('pg_delete_recovery_capacity_policy_unknown');
+            $restoreCapacity=false;
+        }
+        $read=achbotPgRead($ctx['panel'],$ctx['identity']);
+        $absent=($read['success']??false)!==true &&
+            ($read['http']??0)===404 && ($read['reason']??'')==='pg_not_found';
+        if (!$absent) {
+            if (($read['success']??false)!==true) {
+                $reason=(string)($read['reason']??'');
+                // A temporary GET failure is retryable; failed identity,
+                // authorization and protocol validation are NOT retry advice.
+                if (!in_array($reason,['pg_timeout','pg_transport_unavailable',
+                    'pg_vendor_unavailable','pg_rate_limited'],true))
+                    $reason='pg_delete_recovery_read_unverified';
+                throw new RuntimeException($reason);
+            }
+            if ($account['state']==='deleted')
+                throw new RuntimeException('pg_delete_recovery_remote_reappeared');
+            if ($requireEnded) {
+                // Cron's final verified Native read must still be ended.
+                // The public provider-user adapter rejects mutating accounts,
+                // so use this pinned by-ID GET instead of that adapter here.
+                require_once __DIR__.'/ServiceLifecycle.php';
+                $observation=achbotServiceObservation((object)$read['user'],$remark);
+                if (!achbotServiceLifecycle($observation,time())['ended'])
+                    throw new RuntimeException('pg_delete_cron_observation_changed');
+            }
+            // A locally claimed but never-dispatched original operation may
+            // safely progress its SAME Native key to the outbound stage.
+            if ($phase==='claimed') {
+                if (!achbotPgManaged($read['user']))
+                    throw new RuntimeException('pg_delete_recovery_native_unmanaged');
+                $saved=achbotPgPersistMutationIntent($db,$ctx,$saved,[
+                    'before_status'=>$read['user']['status'],
+                    'expected'=>['absent'=>true,'http'=>404]]);
+            }
+            // The ORIGINAL identity is still present. GET/identity recheck and
+            // a DELETE by pinned Native ID make an explicit retry safe.
+            $result=achbotPgDelete($ctx['panel'],$ctx['identity']);
+            if (($result['success']??false)!==true) {
+                $reason=(string)($result['reason']??'');
+                if (preg_match('/^pg_[a-z0-9_]{2,85}$/D',$reason)!==1)
+                    $reason='pg_delete_recovery_remote_unverified';
+                // An HTTP 204 followed by a verified 200 means the original
+                // account remains: a later explicit retry may advance it.
+                // A 401/403 or malformed read is NOT a recoverability proof.
+                if ($reason==='pg_delete_absence_unconfirmed' &&
+                    ($result['http']??0)!==200)
+                    $reason='pg_delete_recovery_read_unverified';
+                throw new RuntimeException($reason);
+            }
+        }
+        if ($account['state']==='mutating') {
+            try {achbotPgFinishMutation($db,$ctx,$saved,['success'=>true],'deleted');}
+            catch (Throwable $error) {
+                // Native is now independently confirmed absent. A failed SQL
+                // terminal write can be resumed without a second Native DELETE.
+                throw new RuntimeException('pg_delete_recovery_native_finality_deferred',0,$error);
+            }
+        }
+        achbotDiagnosticEvent('achbot.native.delete_resumed',[
+            'order_id'=>$orderId,'server_id'=>$serverId,
+            'outcome'=>$absent?'verified_absent':'verified_repeated_delete'],'info');
+        return (object)['success'=>true,'verified'=>true,'reconciled'=>true,
+            'delete_restore_capacity'=>$restoreCapacity];
+    } catch (Throwable $error) {
+        $reason=(string)$error->getMessage();
+        if (preg_match('/^pg_[a-z0-9_]{2,85}$/D',$reason)!==1)
+            $reason='pg_delete_recovery_internal';
+        achbotDiagnosticEvent('achbot.native.delete_recovery_deferred',[
+            'order_id'=>$orderId,'server_id'=>$serverId,
+            'reason'=>$reason,'class'=>get_class($error)],'warning');
+        return achbotProviderFailure($reason);
+    }
+}
+
 function achbotProviderDelete($serverId,$remark,?array $expectedTarget=null): object { return achbotProviderAction($serverId,$remark,'delete',$expectedTarget); }
 function achbotProviderRevoke($serverId,$remark): object { return achbotProviderAction($serverId,$remark,'revoke'); }
 function achbotProviderToggle($serverId,$remark): object { return achbotProviderAction($serverId,$remark,'toggle'); }
@@ -404,7 +558,7 @@ function achbotPgPlanSnapshot(mysqli $db,int $serverId,int $planId,bool $lock=fa
     return achbotProviderSnapshot($db,$serverId,$planId);
 }
 function achbotPgOrderContext(mysqli $db,int $orderId,bool $lock=false,
-    bool $recoverDispatchedPlan=false): array {
+    bool $recoverDispatchedPlan=false,bool $recoverDeletion=false): array {
     achbotPgLoad();
     $s=$db->prepare('SELECT o.*,c.type AS provider_type FROM orders_list o JOIN server_config c ON c.id=o.server_id WHERE o.id=?'.($lock?' FOR UPDATE':''));
     $s->bind_param('i',$orderId);$s->execute();$o=$s->get_result()->fetch_assoc();$s->close();
@@ -413,7 +567,8 @@ function achbotPgOrderContext(mysqli $db,int $orderId,bool $lock=false,
     // Only an explicit administrator GET-only plan recovery may inspect the
     // existing, durably fenced 'mutating' provider identity. All regular
     // callers still reject it and may not begin another Native effect.
-    $allowed=$recoverDispatchedPlan?['verified','linked','mutating']:['verified','linked'];
+    $allowed=$recoverDeletion?['mutating','deleted']:
+        ($recoverDispatchedPlan?['verified','linked','mutating']:['verified','linked']);
     if (!$a || !in_array($a['state'],$allowed,true) || (int)$a['remote_user_id']<=0 || empty($a['remote_created_at'])) throw new RuntimeException('pg_account_not_verified');
     if ($o['remark']!==$a['remote_username']) throw new RuntimeException('pg_order_identity_changed');
     $panel=achbotPgServerPanel($db,(int)$o['server_id']);
@@ -681,11 +836,19 @@ function achbotPgMutationAdmission(array $account,string $key): array {
 }
 
 /** One durable account fence spans reset+modify and survives lost responses. */
-function achbotPgBeginMutation(mysqli $db,array $ctx,string $key,string $action,array $changes): array {
+function achbotPgBeginMutation(mysqli $db,array $ctx,string $key,string $action,array $changes,
+    bool $useExistingTransaction=false,?bool $deleteRestoreCapacity=null): array {
     if (!achbotPgValidMutationKey($key)) throw new RuntimeException('pg_mutation_source_invalid');
+    if ($deleteRestoreCapacity!==null &&
+        ($action!=='delete' || $changes!==['phase'=>'claimed'] || !$useExistingTransaction))
+        throw new RuntimeException('pg_delete_capacity_claim_invalid');
     $tx=$db->query('SELECT @@in_transaction AS tx');
-    if (!$tx || (int)($tx->fetch_assoc()['tx']??1)!==0) throw new RuntimeException('pg_mutation_requires_autocommit');
-    if (!$db->begin_transaction()) throw new RuntimeException('pg_mutation_begin');
+    $active=$tx?(int)($tx->fetch_assoc()['tx']??-1):-1;
+    if ($active!==($useExistingTransaction?1:0))
+        throw new RuntimeException($useExistingTransaction?
+            'pg_mutation_transaction_missing':'pg_mutation_requires_autocommit');
+    if (!$useExistingTransaction && !$db->begin_transaction())
+        throw new RuntimeException('pg_mutation_begin');
     try {
         $id=(int)$ctx['account']['id'];
         $s=$db->prepare('SELECT provider_state AS state,provider_mutation_key AS mutation_key,provider_mutation_snapshot AS mutation_snapshot FROM service_effects WHERE provider_reference_id=? FOR UPDATE');
@@ -695,13 +858,19 @@ function achbotPgBeginMutation(mysqli $db,array $ctx,string $key,string $action,
         $consumed[]=$key;
         $intent=['version'=>1,'key'=>$key,'consumed_keys'=>$consumed,'action'=>$action,'changes'=>$changes,'identity'=>$ctx['identity'],
             'requested_at'=>gmdate('c')];
+        if ($deleteRestoreCapacity!==null)
+            $intent['delete_restore_capacity']=$deleteRestoreCapacity;
         $json=json_encode($intent,JSON_THROW_ON_ERROR);
         $s=$db->prepare("UPDATE service_effects SET provider_state='mutating',provider_mutation_key=?,provider_mutation_snapshot=?,provider_evidence_updated_at=UTC_TIMESTAMP(),updated_at=updated_at WHERE provider_reference_id=? AND provider_state='linked'");
         $s->bind_param('ssi',$key,$json,$id);
         if (!$s->execute() || $s->affected_rows!==1) throw new RuntimeException('pg_mutation_claim_unconfirmed');$s->close();
-        if (!$db->commit()) throw new RuntimeException('pg_mutation_commit_unknown');
+        if (!$useExistingTransaction && !$db->commit())
+            throw new RuntimeException('pg_mutation_commit_unknown');
         return $intent;
-    } catch (Throwable $error) {try{$db->rollback();}catch(Throwable $ignored){}throw $error;}
+    } catch (Throwable $error) {
+        if (!$useExistingTransaction) {try{$db->rollback();}catch(Throwable $ignored){}}
+        throw $error;
+    }
 }
 function achbotPgPersistMutationIntent(mysqli $db,array $ctx,array $intent,array $changes): array {
     $intent['changes']=$changes;$intent['phase']='dispatching';

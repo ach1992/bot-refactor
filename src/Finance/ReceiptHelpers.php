@@ -2791,8 +2791,8 @@ function achbotScheduledDeletionEffectsSettled(mysqli $db,array $order): bool {
     return true;
 }
 
-/** Legacy order deletion gate: lock + flag OFF before remote destructive call. */
-function achbotAutoRenewPrepareDeletion(mysqli $db, int $orderId,?array $expected=null): bool {
+/** Original order deletion gate: optionally atomically claim the Native DELETE. */
+function achbotAutoRenewPrepareDeletion(mysqli $db, int $orderId,?array $expected=null,?callable $nativeClaim=null): bool {
     if ($orderId<=0) return false;
     $schema=achbotAutoRenewSchemaState($db);
     if ($schema==='incompatible') return false;
@@ -2825,6 +2825,10 @@ function achbotAutoRenewPrepareDeletion(mysqli $db, int $orderId,?array $expecte
         if ($expected!==null && !achbotScheduledDeletionEffectsSettled($db,$order)) {
             $db->rollback();return false;
         }
+        // For PasarGuard, atomically persist the original Native claim with
+        // this local fence. A crash before remote preflight/DELETE is resumable
+        // without guessing whether an unmarked external write happened.
+        if ($nativeClaim!==null) $nativeClaim($db,$order);
         // Durable deletion fence before remote DELETE. Any uncertain remote
         // result cannot cause an unattended repeated delete or new renewal.
         $stmt=$db->prepare("UPDATE orders_list SET status=0,autoRenew='off'
@@ -2837,7 +2841,11 @@ function achbotAutoRenewPrepareDeletion(mysqli $db, int $orderId,?array $expecte
         return true;
     } catch (Throwable $error) {
         try {$db->rollback();} catch (Throwable $ignored) {}
-        error_log('achbot_auto_renew_deletion_guard_deferred');
+        $reason=(string)$error->getMessage();
+        if (preg_match('/^pg_[a-z0-9_]{2,85}$/D',$reason)!==1)
+            $reason='delete_guard_unverified';
+        error_log('achbot_auto_renew_deletion_guard_deferred order_id='.$orderId.
+            ' native_claim='.($nativeClaim===null?'no':'yes').' code='.$reason);
         return false;
     }
 }
@@ -2865,7 +2873,26 @@ function achbotOrderRestoresCapacity(mysqli $db,array $order): bool {
         $q->bind_param('i',$id);
         if (!$q->execute()) {$q->close();throw new RuntimeException('deletion_capacity_read_unavailable');}
         $rows=$q->get_result()->fetch_all(MYSQLI_ASSOC);$q->close();
-        if (!$rows) return $origin===null && $positivePlan;
+        if (!$rows) {
+            // Historical Marzban->PasarGuard adoption keeps its original
+            // physical service effect with order_id=NULL and may later gain
+            // a positive plan. It NEVER reserved a bot capacity slot. The
+            // ordinary order_id lookup above cannot see this immutable link.
+            $linkedId=(int)($order['provider_effect_id']??0);
+            if ($linkedId>0) {
+                $q=$db->prepare('SELECT source_kind,effect_kind,reserved_count,state,order_id,pay_row_id
+                    FROM service_effects WHERE id=? LIMIT 1');
+                $q->bind_param('i',$linkedId);$q->execute();
+                $linked=$q->get_result()->fetch_assoc();$q->close();
+                if (!$linked) throw new RuntimeException('deletion_capacity_link_missing');
+                if (in_array($linked['source_kind'],['legacy_migration','external_import'],true) &&
+                    $linked['effect_kind']==='adopt' && $linked['state']==='local_recorded' &&
+                    $linked['order_id']===null && $linked['pay_row_id']===null &&
+                    (int)$linked['reserved_count']===0) return false;
+                throw new RuntimeException('deletion_capacity_link_unverified');
+            }
+            return $origin===null && $positivePlan;
+        }
         if (count($rows)!==1) throw new RuntimeException('deletion_capacity_identity_ambiguous');
         $effect=$rows[0];
         if ($effect['state']!=='local_recorded') throw new RuntimeException('deletion_capacity_effect_unconfirmed');
@@ -2898,8 +2925,9 @@ function achbotAutoRenewFinalizeDeletion(
         achbotAutoRenewSchemaState($db)==='incompatible') return false;
     try {
         $db->begin_transaction();
-        $stmt=$db->prepare("SELECT id,userid,remark,fileid,status,server_id FROM orders_list
-            WHERE id=? FOR UPDATE");
+        // Full current order includes provider_effect_id when installed;
+        // old Marzban-only schemas remain readable without assuming 012.
+        $stmt=$db->prepare("SELECT * FROM orders_list WHERE id=? FOR UPDATE");
         $stmt->bind_param('i',$orderId);
         $stmt->execute();
         $row=$stmt->get_result()->fetch_assoc();
