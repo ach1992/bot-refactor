@@ -383,9 +383,10 @@ function achbotPasarGuardActionAdapter($serverId,$remark,string $action,?array $
 }
 
 /**
- * Resume ONLY an already-dispatched deletion, under the caller's physical
- * account lease. The original callback, order fence and Native identity are
- * reused; neither a new delete key nor a new account can be claimed here.
+ * Resume ONLY the originally claimed deletion, under the caller's physical
+ * account lease. This includes crashes before dispatch and lost responses.
+ * The original order fence and Native identity are reused; no new key or
+ * account can be claimed here.
  */
 function achbotPgResumeDelete(mysqli $db,int $orderId,int $serverId,string $remark): object {
     try {
@@ -427,8 +428,15 @@ function achbotPgResumeDelete(mysqli $db,int $orderId,int $serverId,string $rema
         $absent=($read['success']??false)!==true &&
             ($read['http']??0)===404 && ($read['reason']??'')==='pg_not_found';
         if (!$absent) {
-            if (($read['success']??false)!==true)
-                throw new RuntimeException('pg_delete_recovery_read_unverified');
+            if (($read['success']??false)!==true) {
+                $reason=(string)($read['reason']??'');
+                // A temporary GET failure is retryable; failed identity,
+                // authorization and protocol validation are NOT retry advice.
+                if (!in_array($reason,['pg_timeout','pg_transport_unavailable',
+                    'pg_vendor_unavailable','pg_rate_limited'],true))
+                    $reason='pg_delete_recovery_read_unverified';
+                throw new RuntimeException($reason);
+            }
             if ($account['state']==='deleted')
                 throw new RuntimeException('pg_delete_recovery_remote_reappeared');
             // A locally claimed but never-dispatched original operation may
@@ -447,11 +455,23 @@ function achbotPgResumeDelete(mysqli $db,int $orderId,int $serverId,string $rema
                 $reason=(string)($result['reason']??'');
                 if (preg_match('/^pg_[a-z0-9_]{2,85}$/D',$reason)!==1)
                     $reason='pg_delete_recovery_remote_unverified';
+                // An HTTP 204 followed by a verified 200 means the original
+                // account remains: a later explicit retry may advance it.
+                // A 401/403 or malformed read is NOT a recoverability proof.
+                if ($reason==='pg_delete_absence_unconfirmed' &&
+                    ($result['http']??0)!==200)
+                    $reason='pg_delete_recovery_read_unverified';
                 throw new RuntimeException($reason);
             }
         }
-        if ($account['state']==='mutating')
-            achbotPgFinishMutation($db,$ctx,$saved,['success'=>true],'deleted');
+        if ($account['state']==='mutating') {
+            try {achbotPgFinishMutation($db,$ctx,$saved,['success'=>true],'deleted');}
+            catch (Throwable $error) {
+                // Native is now independently confirmed absent. A failed SQL
+                // terminal write can be resumed without a second Native DELETE.
+                throw new RuntimeException('pg_delete_recovery_native_finality_deferred',0,$error);
+            }
+        }
         achbotDiagnosticEvent('achbot.native.delete_resumed',[
             'order_id'=>$orderId,'server_id'=>$serverId,
             'outcome'=>$absent?'verified_absent':'verified_repeated_delete'],'info');

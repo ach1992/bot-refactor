@@ -7,10 +7,12 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 import subprocess
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import provider_storage_fixture as storage
 import test_post_v9_scoped_api_pg as api
@@ -48,8 +50,15 @@ register_shutdown_function(static function() {
  echo json_encode(['events'=>$GLOBALS['events']],JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE);
 });
 try {
-    if ($data==='fixture-claim-only') $data='fixture-no-route';
-    require $root.'/src/Subscription/AccountDeletion.php';
+    if ($data==='fixture-scheduled') {
+        require_once $root.'/src/Finance/ReceiptHelpers.php';
+        $buttonValues=['back_to_main'=>'Back','my_subscriptions'=>'Subs','sharj'=>'Wallet'];
+        require $root.'/src/Notifications/Warnings.php';
+        $GLOBALS['events'][]=['type'=>'cron_done'];
+    } else {
+        if ($data==='fixture-claim-only') $data='fixture-no-route';
+        require $root.'/src/Subscription/AccountDeletion.php';
+    }
     if ($case['callback']==='fixture-claim-only') {
         $ctx=achbotPgOrderContext($connection,41);
         $key='delete:'.(int)$ctx['account']['id'];
@@ -137,6 +146,17 @@ def outcome(value) -> str:
     return value['events'][-1]['type'] if value['events'] else 'none'
 
 
+def expect_retry(value):
+    messages=[e['text'] for e in value['events'] if e['type']=='alert']
+    assert messages and 'دوباره' in messages[-1] and 'بله' in messages[-1],value
+    assert 'پشتیبانی' not in messages[-1] and 'بررسی' not in messages[-1],value
+
+
+def expect_review(value):
+    messages=[e['text'] for e in value['events'] if e['type']=='alert']
+    assert messages and 'بررسی' in messages[-1] and 'دوباره' not in messages[-1],value
+
+
 def case_retry(mode: str, actor: int, *, legacy: bool=False):
     checks=[]
     with api.sandbox() as (sql, run, provider, _bank, epoch):
@@ -149,6 +169,7 @@ def case_retry(mode: str, actor: int, *, legacy: bool=False):
         provider.mode=mode
         first=driver(run,callback,actor)
         assert outcome(first)=='alert',(mode,first)
+        expect_retry(first)
         assert sql('SELECT status FROM orders_list WHERE id=41')=='0',mode
         assert sql('SELECT autoRenew FROM orders_list WHERE id=41')=='off',mode
         assert sql('SELECT provider_state FROM service_effects WHERE id=1')=='mutating',mode
@@ -190,6 +211,7 @@ def case_local_retry(*, legacy: bool):
             sql('UPDATE server_info SET ucount=2147483647 WHERE id=2')
         first=driver(run,'yesDeleteConfig41')
         assert outcome(first)=='alert',first
+        expect_retry(first)
         assert sql('SELECT status FROM orders_list WHERE id=41')=='0'
         assert sql('SELECT provider_state FROM service_effects WHERE id=1')=='deleted'
         assert provider.user is None and provider.write_count==1
@@ -208,12 +230,16 @@ def case_changed_identity():
         url=sql('SELECT panel_url FROM server_config WHERE id=2')
         setup(sql,url,epoch)
         provider.mode='delete_lie'
-        assert outcome(driver(run,'yesDeleteConfig41'))=='alert'
+        initial=driver(run,'yesDeleteConfig41')
+        assert outcome(initial)=='alert'
+        expect_retry(initial)
         assert provider.write_count==1
         provider.mode='ok'
         original_created=provider.user['created_at']
         provider.user['created_at']='2025-01-01T00:00:00Z'
-        assert outcome(driver(run,'yesDeleteConfig41'))=='alert'
+        protected=driver(run,'yesDeleteConfig41')
+        assert outcome(protected)=='alert'
+        expect_review(protected)
         assert sql('SELECT status FROM orders_list WHERE id=41')=='0'
         assert sql('SELECT provider_state FROM service_effects WHERE id=1')=='mutating'
         assert provider.write_count==1
@@ -224,12 +250,37 @@ def case_changed_identity():
     return ['replaced_incarnation_never_deleted_original_claim_resumes_once_restored']
 
 
+
+def case_recovery_authority_denied():
+    # A real permission/identity barrier cannot be fixed merely by repeating
+    # confirmation. Error guidance must not promise another DELETE attempt.
+    with api.sandbox() as (sql,run,provider,_bank,epoch):
+        url=sql('SELECT panel_url FROM server_config WHERE id=2')
+        setup(sql,url,epoch)
+        provider.mode='delete_lie'
+        first=driver(run,'yesDeleteConfig41')
+        expect_retry(first)
+        assert provider.write_count==1
+        provider.mode='http_403'
+        blocked=driver(run,'yesDeleteConfig41')
+        expect_review(blocked)
+        assert provider.write_count==1
+        assert sql('SELECT provider_state FROM service_effects WHERE id=1')=='mutating'
+        provider.mode='ok'
+        restored=driver(run,'yesDeleteConfig41')
+        assert any(e['type']=='edit' and 'موفقیت' in e['text'] for e in restored['events'])
+        assert provider.write_count==2
+    return ['native_permission_denied_requires_review_not_reconfirm_prompt']
+
+
 def case_no_intent():
     with api.sandbox() as (sql, run, provider, _bank, epoch):
         url=sql('SELECT panel_url FROM server_config WHERE id=2')
         setup(sql,url,epoch)
         sql("UPDATE orders_list SET status=0,autoRenew='off' WHERE id=41")
-        assert outcome(driver(run,'yesDeleteConfig41'))=='alert'
+        denied=driver(run,'yesDeleteConfig41')
+        assert outcome(denied)=='alert'
+        expect_review(denied)
         assert provider.write_count==0
         assert sql('SELECT provider_state FROM service_effects WHERE id=1')=='linked'
     return ['zero_status_without_original_dispatched_deletion_cannot_trigger_native_delete']
@@ -270,6 +321,99 @@ def case_atomic_claim_rollback():
         assert sql('SELECT provider_state FROM service_effects WHERE id=1')=='linked'
         assert provider.write_count==0
     return ['failed_local_fence_rolls_back_uncommitted_native_claim_atomically']
+
+
+
+def case_scheduled_vs_manual():
+    """Cron owns the original physical lock while its DELETE is in flight.
+
+    Pause the real local HTTP DELETE after the durable Cron dispatch journal;
+    a simultaneous original user confirmation must not issue another DELETE.
+    Exercise success, verified HTTP204-but-account-remains and timed-out ACK.
+    """
+    checks=[]
+    for mode in ('ok','delete_lie','write_timeout'):
+        with api.sandbox() as (sql,run,provider,_bank,epoch):
+            url=sql('SELECT panel_url FROM server_config WHERE id=2')
+            setup(sql,url,epoch)
+            sql('UPDATE orders_list SET date=1700000000,notif=UNIX_TIMESTAMP()-1,'
+                'expire_date=1700000000 WHERE id=41')
+            provider.user['status']='expired'
+            provider.user['expire']='2025-01-01T00:00:00Z'
+            provider.mode=mode
+            wallet_before=sql('SELECT wallet FROM users WHERE userid=1001')
+            pays_before=sql('SELECT COUNT(*) FROM pays')
+            capacity_before=int(sql('SELECT ucount FROM server_info WHERE id=2'))
+            started=threading.Event();released=threading.Event()
+            gate_guard=threading.Lock()
+            in_flight=[0];highest=[0];delete_entries=[0]
+            original=api.DriftHandler.handle_request
+
+            def hold_delete(self):
+                if self.command!='DELETE' or urlsplit(self.path).path!='/api/user/by-id/17':
+                    return original(self)
+                with gate_guard:
+                    in_flight[0]+=1
+                    delete_entries[0]+=1
+                    highest[0]=max(highest[0],in_flight[0])
+                started.set()
+                try:
+                    assert released.wait(9),'fixture_original_delete_gate_timed_out'
+                    return original(self)
+                finally:
+                    with gate_guard:in_flight[0]-=1
+
+            api.DriftHandler.handle_request=hold_delete
+            try:
+                with ThreadPoolExecutor(max_workers=2) as pool:
+                    cron=pool.submit(driver,run,'fixture-scheduled')
+                    try:
+                        assert started.wait(12),'real_scheduled_delete_not_dispatched'
+                        assert sql('SELECT status FROM orders_list WHERE id=41')=='0'
+                        assert sql('SELECT provider_state FROM service_effects WHERE id=1')=='mutating'
+                        assert sql("SELECT JSON_UNQUOTE(JSON_EXTRACT(provider_mutation_snapshot,'$.phase')) FROM service_effects WHERE id=1")=='dispatching'
+                        callback='yesDeleteUserConfig41' if mode=='delete_lie' else 'yesDeleteConfig41'
+                        actor=9001 if mode=='delete_lie' else 1001
+                        pending=pool.submit(driver,run,callback,actor)
+                        blocked=pending.result(timeout=7)
+                        assert outcome(blocked)=='alert',blocked
+                        expect_retry(blocked)
+                        assert delete_entries[0]==1 and highest[0]==1,(mode,delete_entries,highest)
+                        assert provider.write_count==0,(mode,provider.trace)
+                        checks.append(mode+'_cron_original_in_flight_prevents_manual_duplicate_delete')
+                    finally:
+                        released.set()
+                    cron_result=cron.result(timeout=28)
+                assert any(e['type']=='cron_done' for e in cron_result['events']),cron_result
+            finally:
+                released.set()
+                api.DriftHandler.handle_request=original
+            assert delete_entries[0]==1 and highest[0]==1,(mode,delete_entries,highest)
+            assert provider.write_count==1,(mode,provider.trace)
+            assert sql('SELECT wallet FROM users WHERE userid=1001')==wallet_before
+            assert sql('SELECT COUNT(*) FROM pays')==pays_before
+            assert sql('SELECT ucount FROM server_info WHERE id=2')==str(capacity_before)
+            if mode=='ok':
+                assert sql('SELECT COUNT(*) FROM orders_list WHERE id=41')=='0'
+                assert sql('SELECT provider_state FROM service_effects WHERE id=1')=='deleted'
+                checks.append('cron_success_finishes_once_without_user_duplicate_or_financial_effect')
+            else:
+                assert sql('SELECT status FROM orders_list WHERE id=41')=='0'
+                assert sql('SELECT provider_state FROM service_effects WHERE id=1')=='mutating'
+                scheduled_again=driver(run,'fixture-scheduled')
+                assert any(e['type']=='cron_done' for e in scheduled_again['events'])
+                assert provider.write_count==1,'Cron must not automatically replay held DELETE'
+                provider.mode='ok'
+                resumed=driver(run,'yesDeleteConfig41')
+                assert any(e['type']=='edit' and 'موفقیت' in e['text'] for e in resumed['events']),resumed
+                assert sql('SELECT COUNT(*) FROM orders_list WHERE id=41')=='0'
+                assert sql('SELECT provider_state FROM service_effects WHERE id=1')=='deleted'
+                assert provider.write_count==(1 if mode=='write_timeout' else 2)
+                assert sql('SELECT ucount FROM server_info WHERE id=2')==str(capacity_before+1)
+                assert sql('SELECT wallet FROM users WHERE userid=1001')==wallet_before
+                assert sql('SELECT COUNT(*) FROM pays')==pays_before
+                checks.append(mode+'_cron_failure_requires_explicit_safe_reconfirmation_only')
+    return checks
 
 
 def case_concurrent():
@@ -314,6 +458,7 @@ def case_native_finality_retry():
         provider.mode='ok'
         failed=driver(run,'yesDeleteConfig41')
         assert outcome(failed)=='alert',failed
+        expect_retry(failed)
         assert sql('SELECT provider_state FROM service_effects WHERE id=1')=='mutating'
         assert sql('SELECT status FROM orders_list WHERE id=41')=='0'
         assert provider.write_count==1
@@ -348,6 +493,7 @@ def case_shared_historical_reference():
             api.quote_sql(CREATED)+")")
         first=driver(run,'yesDeleteUserConfig41',9001)
         assert outcome(first)=='alert',first
+        expect_review(first)
         assert sql('SELECT status FROM orders_list WHERE id=41')=='1'
         assert sql('SELECT status FROM orders_list WHERE id=42')=='1'
         assert sql('SELECT provider_state FROM service_effects WHERE id=1')=='linked'
@@ -369,7 +515,7 @@ def case_unauthorized():
 def main():
     ap=argparse.ArgumentParser()
     ap.add_argument('--run-disposable',required=True,action='store_true')
-    ap.add_argument('--case',choices=['all','owner','admin','legacy','unauthorized','local','drift','concurrent','claimed','shared','native_finality'],default='all')
+    ap.add_argument('--case',choices=['all','owner','admin','legacy','unauthorized','local','drift','authority','concurrent','cron_race','claimed','shared','native_finality'],default='all')
     ap.add_argument('--report',type=Path)
     args=ap.parse_args();checks=[]
     if args.case in ['all','owner']:
@@ -387,8 +533,12 @@ def main():
     if args.case in ['all','drift']:
         checks.extend(case_changed_identity())
         checks.extend(case_no_intent())
+    if args.case in ['all','authority']:
+        checks.extend(case_recovery_authority_denied())
     if args.case in ['all','concurrent']:
         checks.extend(case_concurrent())
+    if args.case in ['all','cron_race']:
+        checks.extend(case_scheduled_vs_manual())
     if args.case in ['all','claimed']:
         checks.extend(case_claimed_before_dispatch())
         checks.extend(case_atomic_claim_rollback())

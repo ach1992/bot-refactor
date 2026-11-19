@@ -193,8 +193,22 @@ account still present (re-dispatch DELETE by that pinned ID and verify 404),
 and (3) an unverified/changed identity (hold with no deletion). A successful
 Native delete with a failed SQL finalizer also remains resumable without
 another remote DELETE. Original payment/journal evidence is never discarded.
-The Marzban guarded deletion and operator-review requirements above remain
-unchanged.
+The scheduled PasarGuard deletion path holds the **same physical-account
+advisory lease** from its guarded original order fence, through the Native
+DELETE and local finalizer. A user/staff confirmation while that Cron DELETE
+is in flight cannot send a competing DELETE; an original Cron timeout leaves
+its status=0 fence and must **never** trigger a subsequent unattended Cron
+replay. Only a separately confirmed original user/staff operation can reconcile
+the held Native state. The Marzban guarded deletion and operator-review
+requirements above remain unchanged.
+
+User-facing reconfirmation is offered only for supported PasarGuard temporary
+transport/availability failures or an already-held, recoverable finality
+failure. Changed Native incarnation, unexpected identity/permissions, an
+unrelated or absent Native delete claim, and multiple local references retain
+protected-state guidance. A Marzban timeout or failed local finalizer remains
+subject to its existing manual operator-review policy; its UI must never
+promise successful deletion by simply pressing the confirmation again.
 
 **IMPORTANT rollback rule:** migration 004 has its own separate Owner-gated
 installation and cannot be reverted by merely switching PHP source back.

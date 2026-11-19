@@ -91,8 +91,17 @@ presence can resume the original pinned DELETE and require HTTP204 + by-ID404.
 An unknown GET, foreign incarnation, changed endpoint, missing original claim,
 other local reference or unrelated active mutation never authorizes DELETE.
 The original local finalizer can also resume from a verified `deleted` Native
-state if its prior SQL commit failed. No Cron replay or manual use of a new
-operation key is allowed. The purchased entitlement_snapshot remains intact.
+state if its prior SQL commit failed. The expiry Cron owns the **same
+physical-account advisory lease** through its original Native DELETE dispatch
+and local finality. This prevents the original Cron sender and a repeated
+user/staff confirmation from issuing simultaneous DELETEs for the same
+physical ID. A timeout during scheduled dispatch remains fenced and cannot
+cause an unattended Cron replay; a later explicit confirmation may recover
+the held original Native key when its identity and transport can be verified.
+Only recoverable PasarGuard outcomes present retry instructions. Auth or
+identity changes and shared references require review; Marzban's guarded
+unknown-outcome policy remains unchanged. No blind Cron replay or manual use
+of a new operation key is allowed. The purchased entitlement_snapshot remains intact.
 No production migration is implied.
 Account extension preserves existing purchased Groups. Explicit service switch
 updates remote Groups and verifies before local routing/snapshot completion.

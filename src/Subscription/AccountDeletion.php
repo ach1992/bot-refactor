@@ -21,14 +21,29 @@ if (preg_match('/^(?:delUserConfig|yesDeleteUserConfig)/',(string)$data) &&
 
 
 /**
+ * Only an explicitly resumable PasarGuard interruption may invite a second
+ * confirmation. Protected state, invalid authority and Marzban's fenced
+ * unknown DELETE outcome must retain their existing review/support route.
+ */
+function achbotSubscriptionDeleteRetryable(string $reason): bool {
+    return in_array($reason,[
+        'physical_operation_busy','pg_timeout','pg_transport_unavailable',
+        'pg_vendor_unavailable','pg_rate_limited',
+        'pg_delete_absence_unconfirmed','pg_mutation_intent_unconfirmed',
+        'pg_delete_recovery_native_finality_deferred'
+    ],true);
+}
+
+/**
  * Both owner and staff confirmations use one physical account lease and one
- * local finalizer. A second confirmation resumes a PINNED dispatched DELETE,
- * never a new purchase, payment, credential or free-standing DELETE.
+ * local finalizer. A second confirmation resumes a PINNED originally claimed
+ * DELETE, never a new purchase, payment, credential or free-standing DELETE.
  */
 function achbotSubscriptionDeleteConfirmed(mysqli $db,array $original,bool $ownerView): string {
     $orderId=(int)$original['id'];$serverId=(int)$original['server_id'];
-    $remark=(string)$original['remark'];$lease=null;$stage='preflight';
+    $remark=(string)$original['remark'];$lease=null;$stage='preflight';$provider=null;
     try {
+        $provider=achbotProviderType($db,$serverId);
         $lease=achbotPhysicalLockName($db,$original);
         achbotPhysicalAcquireLock($db,$lease);
         $s=$db->prepare('SELECT * FROM orders_list WHERE id=?');
@@ -38,19 +53,19 @@ function achbotSubscriptionDeleteConfirmed(mysqli $db,array $original,bool $owne
             (int)$fresh['inbound_id']!==0 ||
             achbotPhysicalLockName($db,$fresh)!==$lease)
             return 'blocked';
-        $provider=achbotProviderType($db,$serverId);
+        if (achbotProviderType($db,$serverId)!==$provider) return 'review';
         if ((int)$fresh['status']===1) {
             $target=achbotProviderDeletionTarget($db,$serverId,$remark);
             if (!achbotProviderActionEligible($db,$serverId,$remark,'delete',$target)) {
                 error_log('achbot_subscription_delete_preflight_deferred order_id='.$orderId.
                     ' server_id='.$serverId);
-                return 'retry';
+                return 'review';
             }
             // Native PasarGuard preflight already verified the same account.
             if ($ownerView && $provider==='marzban') {
                 $remote=achbotProviderUser($serverId,$remark,false);
                 if (!achbotServiceObservation($remote,$remark)['verified'])
-                    return 'retry';
+                    return 'review';
             }
             if (!achbotProviderDeletionTargetMatches($db,$serverId,$remark,$target))
                 return 'blocked';
@@ -76,7 +91,7 @@ function achbotSubscriptionDeleteConfirmed(mysqli $db,array $original,bool $owne
                 };
             }
             if (!achbotAutoRenewPrepareDeletion($db,$orderId,null,$claim))
-                return 'blocked';
+                return 'review';
             $stage='remote';
             $result=$provider==='pasarguard'?
                 achbotPgResumeDelete($db,$orderId,$serverId,$remark):
@@ -86,9 +101,14 @@ function achbotSubscriptionDeleteConfirmed(mysqli $db,array $original,bool $owne
             $stage='recovery';
             $result=achbotPgResumeDelete($db,$orderId,$serverId,$remark);
         } else return 'blocked';
-        if (!is_object($result) || ($result->success??false)!==true) return 'retry';
+        if (!is_object($result) || ($result->success??false)!==true) {
+            $reason=is_object($result)?(string)($result->msg??$result->reason??''):'';
+            return $provider==='pasarguard' && achbotSubscriptionDeleteRetryable($reason)?
+                'retry':'review';
+        }
         $stage='local';
-        if (!achbotAutoRenewFinalizeDeletion($db,$orderId,$serverId,true)) return 'local';
+        if (!achbotAutoRenewFinalizeDeletion($db,$orderId,$serverId,true))
+            return $provider==='pasarguard'?'local':'review';
         return 'complete';
     } catch (Throwable $error) {
         $code=(string)$error->getMessage();
@@ -97,7 +117,8 @@ function achbotSubscriptionDeleteConfirmed(mysqli $db,array $original,bool $owne
         error_log('achbot_subscription_delete_deferred order_id='.$orderId.
             ' server_id='.$serverId.' stage='.$stage.' code='.$code.
             ' class='.get_class($error));
-        return $stage==='local'?'local':'retry';
+        return $provider==='pasarguard' &&
+            achbotSubscriptionDeleteRetryable($code)?'retry':'review';
     } finally {
         if ($lease!==null) achbotPhysicalReleaseLock($db,$lease);
     }
@@ -185,9 +206,9 @@ elseif(preg_match('/^yesDeleteConfig(\d+)/',$data,$match)){
     $deleteOutcome=achbotSubscriptionDeleteConfirmed($connection,$order,true);
     if ($deleteOutcome!=='complete') {
         $key=match($deleteOutcome) {
-            'blocked'=>'subscription.account_deletion.no_dont_delete.alert.fc1b571950',
+            'retry'=>'subscription.account_deletion.no_dont_delete.alert.9347ccc8b0',
             'local'=>'subscription.account_deletion.no_dont_delete.alert.e2cbeb044b',
-            default=>'subscription.account_deletion.no_dont_delete.alert.9347ccc8b0'
+            default=>'subscription.account_deletion.no_dont_delete.alert.fc1b571950'
         };
         alert(\achbotMessage($key),true);
         exit;
@@ -255,9 +276,9 @@ elseif(preg_match('/^yesDeleteUserConfig(\d+)/',$data,$match) && ($from_id == $a
     $deleteOutcome=achbotSubscriptionDeleteConfirmed($connection,$order,false);
     if ($deleteOutcome!=='complete') {
         $key=match($deleteOutcome) {
-            'blocked'=>'subscription.account_deletion.no_dont_delete.alert.1186ae9204',
+            'retry'=>'subscription.account_deletion.no_dont_delete.alert.3c93240b6e',
             'local'=>'subscription.account_deletion.no_dont_delete.alert.e2cbeb044b',
-            default=>'subscription.account_deletion.no_dont_delete.alert.3c93240b6e'
+            default=>'subscription.account_deletion.no_dont_delete.alert.1186ae9204'
         };
         alert(\achbotMessage($key),true);
         exit;
