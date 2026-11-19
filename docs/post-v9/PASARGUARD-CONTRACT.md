@@ -98,8 +98,10 @@ user/staff confirmation from issuing simultaneous DELETEs for the same
 physical ID. A timeout during scheduled dispatch remains fenced and cannot
 cause an unattended Cron replay; a later explicit confirmation may recover
 the held original Native key when its identity and transport can be verified.
-Only recoverable PasarGuard outcomes present retry instructions. Auth or
-identity changes and shared references require review; Marzban's guarded
+Only recoverable PasarGuard outcomes present retry instructions. Even a
+post-DELETE HTTP200 is NOT retry evidence unless its normalized response
+matches the pinned original Native incarnation. Auth or identity changes,
+malformed readback and shared references require review; Marzban's guarded
 unknown-outcome policy remains unchanged. No blind Cron replay or manual use
 of a new operation key is allowed. The purchased entitlement_snapshot remains intact.
 No production migration is implied.

@@ -26,7 +26,8 @@ main pushes under the single `php85-validation` required status:
   payment-browser checks. The current roster additionally exercises
   independently proven post-cutover PasarGuard order-attachment recovery,
   user/staff original DELETE re-confirmation (including Timeout, historical
-  imported accounts, foreign identity, permission denial and SQL failure),
+  imported accounts, foreign identity including post-DELETE HTTP200 readback,
+  permission denial and SQL failure),
   **deterministic real-PHP scheduled-PasarGuard DELETE versus manual callback
   races** with single-flight checks for successful, failed and timed-out
   Native outcomes, and Marzban source-real callback feedback for remote Timeout

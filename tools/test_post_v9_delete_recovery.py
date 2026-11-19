@@ -251,6 +251,47 @@ def case_changed_identity():
 
 
 
+
+def case_delete_readback_foreign_identity():
+    # The DELETE gets HTTP204, but by-ID HTTP200 in the next GET is a FOREIGN
+    # incarnation. It must not be interpreted as a retryable original account.
+    with api.sandbox() as (sql,run,provider,_bank,epoch):
+        url=sql('SELECT panel_url FROM server_config WHERE id=2')
+        setup(sql,url,epoch)
+        provider.mode='delete_lie'
+        original=api.DriftHandler.handle_request
+        saw_delete=[False];injected=[False]
+
+        def foreign_after_delete(self):
+            path=urlsplit(self.path).path
+            if self.command=='DELETE' and path=='/api/user/by-id/17':
+                saw_delete[0]=True
+            if (self.command=='GET' and path=='/api/user/by-id/17'
+                    and saw_delete[0] and not injected[0]):
+                injected[0]=True
+                old_created=provider.user['created_at']
+                provider.user['created_at']='2025-01-01T00:00:00Z'
+                try:return original(self)
+                finally:provider.user['created_at']=old_created
+            return original(self)
+
+        api.DriftHandler.handle_request=foreign_after_delete
+        try: first=driver(run,'yesDeleteConfig41')
+        finally:api.DriftHandler.handle_request=original
+        assert saw_delete[0] and injected[0]
+        assert outcome(first)=='alert',first
+        expect_review(first)
+        assert provider.write_count==1
+        assert sql('SELECT status FROM orders_list WHERE id=41')=='0'
+        assert sql('SELECT provider_state FROM service_effects WHERE id=1')=='mutating'
+        provider.mode='ok'
+        resumed=driver(run,'yesDeleteConfig41')
+        assert any(e['type']=='edit' and 'موفقیت' in e['text'] for e in resumed['events']),resumed
+        assert provider.write_count==2
+        assert sql('SELECT COUNT(*) FROM orders_list WHERE id=41')=='0'
+    return ['post_delete_http200_foreign_native_incarnation_requires_review_not_retry']
+
+
 def case_recovery_authority_denied():
     # A real permission/identity barrier cannot be fixed merely by repeating
     # confirmation. Error guidance must not promise another DELETE attempt.
@@ -515,7 +556,7 @@ def case_unauthorized():
 def main():
     ap=argparse.ArgumentParser()
     ap.add_argument('--run-disposable',required=True,action='store_true')
-    ap.add_argument('--case',choices=['all','owner','admin','legacy','unauthorized','local','drift','authority','concurrent','cron_race','claimed','shared','native_finality'],default='all')
+    ap.add_argument('--case',choices=['all','owner','admin','legacy','unauthorized','local','drift','authority','readback_identity','concurrent','cron_race','claimed','shared','native_finality'],default='all')
     ap.add_argument('--report',type=Path)
     args=ap.parse_args();checks=[]
     if args.case in ['all','owner']:
@@ -535,6 +576,8 @@ def main():
         checks.extend(case_no_intent())
     if args.case in ['all','authority']:
         checks.extend(case_recovery_authority_denied())
+    if args.case in ['all','readback_identity']:
+        checks.extend(case_delete_readback_foreign_identity())
     if args.case in ['all','concurrent']:
         checks.extend(case_concurrent())
     if args.case in ['all','cron_race']:
