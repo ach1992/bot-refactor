@@ -29,8 +29,14 @@ service/delivery journals decide finality. Failed Telegram edits remain
 unsynchronized and retryable; UI failure never reverses financial success.
 
 The existing Cron recovery retains its strict total of eight payment-message
-candidates per tick: at most half favor the newest unsynced terminal payments,
-while the oldest-due candidates retain the remaining work and cannot starve.
+candidates per tick: at most half favor the newest unsynced terminal payments;
+the other slots favor the oldest **due and unacknowledged** payment messages.
+When that pool is too small to fill the batch, the existing oldest-due full
+scan fills spare slots, so already-acknowledged receipts remain eligible for
+an eventual changed-state check. This prevents a backlog of acknowledged
+older message copies from wasting bounded recovery slots while preserving
+fair re-projection and existing retry-not-before timestamps. No additional
+Cron job, persistent cursor or schema migration is introduced.
 The independent API invoice/staff projection likewise prioritizes finalized
 payments not projected since their latest authoritative state update, before
 older historical rows. An exact Telegram edit rejection with HTTP 400

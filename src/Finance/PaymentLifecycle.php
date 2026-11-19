@@ -1197,15 +1197,31 @@ function achbotPayUxMaintain(mysqli $db, int $maxRows=45): array {
                 $stmt->execute();
                 $rows=$stmt->get_result()->fetch_all(MYSQLI_ASSOC);$stmt->close();
             }
+            // Do not spend the oldest-first recovery slots on payments whose
+            // previous Telegram status was already acknowledged. They are
+            // still scanned when the currently due unsynced work is exhausted,
+            // so a later change in paid/receipt state can refresh a stale
+            // non-NULL digest without an extra cursor or migration.
             $stmt=$db->prepare(
                 "SELECT pay_row_id FROM payment_message_refs
-                 WHERE updated_at<=NOW(6)
+                 WHERE updated_at<=NOW(6) AND synced_digest IS NULL
                  GROUP BY pay_row_id ORDER BY MIN(updated_at) ASC LIMIT {$messageBatch}"
             );
             $stmt->execute();
             $oldest=$stmt->get_result()->fetch_all(MYSQLI_ASSOC);$stmt->close();
+            $candidates=array_merge($rows,$oldest);
+            if (count(array_unique(array_column($candidates,'pay_row_id')))<$messageBatch) {
+                $stmt=$db->prepare(
+                    "SELECT pay_row_id FROM payment_message_refs
+                     WHERE updated_at<=NOW(6)
+                     GROUP BY pay_row_id ORDER BY MIN(updated_at) ASC LIMIT {$messageBatch}"
+                );
+                $stmt->execute();
+                $candidates=array_merge($candidates,
+                    $stmt->get_result()->fetch_all(MYSQLI_ASSOC));$stmt->close();
+            }
             $selected=[];
-            foreach (array_merge($rows,$oldest) as $r) {
+            foreach ($candidates as $r) {
                 $id=(int)$r['pay_row_id'];
                 if (isset($selected[$id])) continue;
                 $selected[$id]=true;
