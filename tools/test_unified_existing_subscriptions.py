@@ -20,7 +20,7 @@ import test_v8_native as purchase
 import test_v6_panels as bodies
 import test_post_v9_pasarguard_client as pg
 import test_post_v9_marzban_edits as mb
-import package_post_v9 as package
+import package_current as package
 
 ROOT=Path(__file__).resolve().parents[1]
 DB=purchase.SIDE[1]
@@ -395,7 +395,21 @@ def main():
     run=subprocess.run(['php','-d','display_errors=0','-d','log_errors=0',str(driver),
         str(ROOT),str(legacy_work/'mysql.sock'),DB,json.dumps(dict(op=op,source=event_id,**({'actor':actor}|spec)))],
         env=legacy_env,cwd=legacy_work,capture_output=True,text=True,timeout=25)
-    allowed=all(re.fullmatch(r'achbot_existing_subscription_import_deferred reason=[A-Za-z0-9_]+ class=[A-Za-z0-9_\\]+ line=[0-9]+',line)for line in run.stderr.splitlines())
+    def admissible_log(line):
+     if re.fullmatch(r'achbot_existing_subscription_import_deferred reason=[A-Za-z0-9_]+ class=[A-Za-z0-9_\\]+ line=[0-9]+',line):return True
+     if op!='delete' or not line.startswith('[AChBot] '):return False
+     try:event=json.loads(line[len('[AChBot] '):])
+     except ValueError:return False
+     # The production Native action dispatcher emits an expected bounded
+     # diagnostic on verified legacy Marzban DELETE. Keep every other
+     # diagnostic fatal and never discard troubleshooting output wholesale.
+     return (event.get('event')=='achbot.native.account_action' and
+      event.get('action')=='delete' and event.get('provider')=='marzban' and
+      event.get('server_id')==2 and event.get('result')=='verified' and
+      isinstance(event.get('trace_id'),str) and
+      re.fullmatch('[a-f0-9]{16}',event['trace_id']) is not None and
+      not {'token','secret','password','raw_text','payload'}.intersection(event))
+    allowed=all(admissible_log(line)for line in run.stderr.splitlines())
     if run.returncode or not allowed:raise AssertionError(('legacy_MB_child',run.returncode,run.stdout,run.stderr))
     result=json.loads(run.stdout)
     if 'fixture_error'in result:raise AssertionError(result)
@@ -851,8 +865,9 @@ echo json_encode(['required'=>count(achbotProviderRequiredOperations()),
        env=env,cwd=work,capture_output=True,text=True,timeout=15)
    if run.returncode or run.stderr:raise AssertionError(('registry_probe',run.returncode,run.stdout,run.stderr))
    return json.loads(run.stdout)
-  # Stage only task-owned runtime files, removing optional callbacks in the
-  # fixture source. No implementation or frozen historical files are edited.
+  # Stage the CURRENT Stable runtime (not frozen historical V9 files).
+  # Its dispatcher requires EventLog.php and other current source modules.
+  # Remove optional callbacks only in this disposable fixture copy.
   staged=work/'no-import-capability'
   for member in package.members():
    target=staged/member;target.parent.mkdir(parents=True,exist_ok=True);shutil.copyfile(ROOT/member,target)
@@ -860,8 +875,8 @@ echo json_encode(['required'=>count(achbotProviderRequiredOperations()),
   raw=raw.replace("            'import_lookup'=>'achbotMarzbanExistingUser','import_adopt'=>'achbotMarzbanAdoptExistingLocked'",'')
   target.write_text(raw)
   optional=probe_call(staged)
-  yes(optional['required']==15 and optional['none'] and optional['plan'] and
-      optional['lookup']['success']is False,'missing_optional_import_capability_preserves_required15_and_Marzban_without011')
+  yes(optional['required']==18 and optional['none'] and optional['plan'] and
+      optional['lookup']['success']is False,'missing_optional_import_capability_preserves_current_required18_and_Marzban_without011')
   optional=probe_call(ROOT)
   yes(optional['full']and optional['none']and not optional['one']and not optional['bad']and optional['plan'],
       'optional_import_pair_is_callable_all_or_none')
@@ -891,9 +906,30 @@ echo json_encode(['required'=>count(achbotProviderRequiredOperations()),
    proc=subprocess.run(['php','-d','display_errors=0','-d','log_errors=0',
        str(driver),str(ROOT),str(work/'mysql.sock'),DB,json.dumps(dict(op=op,source=source,**spec))],
        env=env,cwd=work,capture_output=True,text=True,timeout=25)
-   allowed=[line for line in proc.stderr.splitlines()if re.fullmatch(
-      r'achbot_existing_subscription_import_deferred reason=[A-Za-z0-9_]+ class=[A-Za-z0-9_\\]+ line=[0-9]+',line)
-      or line in('achbot_existing_subscription_lookup_deferred','achbot_auto_renew_local_deletion_deferred')]
+   def permitted_diagnostic(line):
+    if re.fullmatch(
+       r'achbot_existing_subscription_import_deferred reason=[A-Za-z0-9_]+ class=[A-Za-z0-9_\\]+ line=[0-9]+',line):return True
+    if line in('achbot_existing_subscription_lookup_deferred','achbot_auto_renew_local_deletion_deferred'):return True
+    authorized=(op=='action' or (op=='customer' and
+       str(spec.get('data','')).startswith('changAccountConnectionLink')))
+    if not line.startswith('[AChBot] '):return False
+    try:event=json.loads(line[len('[AChBot] '):])
+    except ValueError:return False
+    if not (isinstance(event.get('trace_id'),str) and
+       re.fullmatch('[a-f0-9]{16}',event['trace_id']) is not None and
+       isinstance(event.get('server_id'),int) and event['server_id']>0 and
+       not {'token','secret','password','raw_text','payload'}.intersection(event)):
+     return False
+    if op=='delete' and event.get('event') in (
+        'achbot.native.delete_resumed','achbot.native.delete_recovery_deferred'):
+     return isinstance(event.get('order_id'),int) and event['order_id']>0
+    if not authorized:return False
+    expected_action=spec.get('action') if op=='action' else 'revoke'
+    return (event.get('event')=='achbot.native.account_action' and
+       event.get('action')==expected_action and
+       event.get('provider') in ('pasarguard','marzban') and
+       event.get('result') in ('verified','review'))
+   allowed=[line for line in proc.stderr.splitlines() if permitted_diagnostic(line)]
    if proc.returncode or len(allowed)!=len(proc.stderr.splitlines()):
     raise AssertionError(('native_child',proc.returncode,proc.stdout,proc.stderr[:1000]))
    if any(secret in proc.stderr for secret in ['fixture-private-key','PRIVATE_EXISTING_NOTE',url]):

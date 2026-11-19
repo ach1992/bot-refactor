@@ -191,6 +191,21 @@ try {
     $result=['pay_id'=>$payId,'price'=>$price,'units'=>$units,
         'profile'=>$channel==='api'
             && achbotPaymentEvidenceSnapshot(achbotApiPaymentAttempt($connection,$payId))!==null];
+ } elseif ($op==='register_paid_ui') {
+    $payId=(int)$spec['pay_id'];$pay=achbotApiPaymentRow($connection,$payId);
+    if (!$pay || $pay['state']!=='have_sent' || (int)$pay['user_id']!==1001)
+        throw new RuntimeException('fixture_payment_ui_original_missing');
+    for ($i=0;$i<4;$i++) {
+        $reply=(object)['ok'=>true,'result'=>(object)['message_id'=>5101+$i]];
+        if (!achbotPayUxTrackMessage($connection,$payId,1001,$reply))
+            throw new RuntimeException('fixture_payment_ui_track_failed');
+    }
+    // The original customer invoice is tracked separately; Telegram edits
+    // must update both the invoice and every registered receipt message.
+    $reply=(object)['ok'=>true,'result'=>(object)['message_id'=>5100]];
+    achbotApiPaymentTrackInvoice($connection,(string)$pay['hash_id'],1001,$reply);
+    $result=['tracked'=>(int)$connection->query('SELECT COUNT(*) FROM payment_message_refs
+        WHERE pay_row_id='.$payId)->fetch_row()[0]];
  } elseif ($op==='issue_renew') {
     $hash=$spec['hash'];$price=3150;
     $plan=$connection->query('SELECT days,volume FROM server_plans WHERE id=7')->fetch_assoc();
@@ -1890,6 +1905,31 @@ def test():
                sql("SELECT COUNT(*) FROM payment_transactions") == "1" and
                provider.write_count == 0,
                "scoped_api_bank_evidence_cannot_be_reassigned_to_other_invoice")
+
+    # Source-real: SMS evidence was consumed and an original payment/Native
+    # effect committed; the same request must converge ALL customer receipts
+    # immediately, not leave them behind the global historical Cron scan.
+    with sandbox() as (sql,run,provider,bank,_):
+        issued=run('issue_renew',hash='auto_confirmation_ui_original')
+        pay=issued['pay_id']
+        registered=run('register_paid_ui',pay_id=pay)
+        assert registered['tracked']==4,registered
+        assert sql(f'SELECT COUNT(*) FROM payment_message_refs WHERE pay_row_id={pay} AND synced_digest IS NULL')=='4'
+        message=evidence_sms(1,issued['price'])
+        bank.messages['1']=dict(message)
+        assert run('reserve',pay_id=pay,sms=message) is not None
+        assert run('consume',pay_id=pay)['status']=='proven'
+        before=provider.write_count
+        result=run('settle',pay_id=pay)
+        assert result=='confirmed' and provider.write_count==before+2,(result,provider.trace)
+        assert terminal_state(sql,pay).startswith('auto_cart_approved|done|proven'),terminal_state(sql,pay)
+        assert sql(f'SELECT COUNT(*) FROM payment_message_refs WHERE pay_row_id={pay} AND synced_digest IS NOT NULL')=='4'
+        assert sql(f'SELECT evidence_invoice_digest IS NOT NULL FROM payment_attempts WHERE pay_row_id={pay}')=='1'
+        assert sql(f"SELECT COUNT(*) FROM payment_delivery_intents WHERE pay_row_id={pay} AND state='acknowledged'")=='1'
+        replay=run('settle',pay_id=pay)
+        assert replay in ('settled','confirmed') and provider.write_count==before+2
+        assert sql(f'SELECT COUNT(*) FROM payment_message_refs WHERE pay_row_id={pay} AND synced_digest IS NOT NULL')=='4'
+        checks.append('auto_sms_approved_payment_updates_all_original_user_messages_without_redelivery')
 
     checks.extend(test_composed_wallet_cron_boundary())
 

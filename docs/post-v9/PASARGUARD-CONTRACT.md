@@ -98,6 +98,19 @@ user/staff confirmation from issuing simultaneous DELETEs for the same
 physical ID. A timeout during scheduled dispatch remains fenced and cannot
 cause an unattended Cron replay; a later explicit confirmation may recover
 the held original Native key when its identity and transport can be verified.
+The initial Native DELETE claim also pins the original local finalizer's
+`delete_restore_capacity` boolean inside its existing mutation snapshot,
+atomically with the order status fence. Explicit user/staff recovery consumes
+that original decision: scheduled deletions retain `false`, user/staff initiated
+deletions retain `true`, and actual restoration with `true` still requires
+verified purchase/reservation provenance. The pin is preserved through
+`dispatching` and `deleted` states without new schema or monetary effects.
+Older unpinned deletion claims can finalize with **no slot restoration** only
+when existing order provenance independently proves there was no reserved
+slot. Historical `legacy_migration` Native adoption has `order_id=NULL` in
+`service_effects`; its immutable `provider_effect_id` link proves zero
+reservation even if an imported order later gains a positive plan. For an unpinned order with a reservable slot, operator review is required
+rather than guessing the originating workflow from the recovering actor.
 Only recoverable PasarGuard outcomes present retry instructions. Even a
 post-DELETE HTTP200 is NOT retry evidence unless its normalized response
 matches the pinned original Native incarnation. Auth or identity changes,

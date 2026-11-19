@@ -89,28 +89,46 @@ foreach ($deletions as $order) {
     // Marzban keeps its existing guarded Cron policy unchanged.
     $deleteLease=null;$deletionComplete=false;
     try {
-        if (achbotProviderType($connection,$serverId)==='pasarguard') {
+        $native=achbotProviderType($connection,$serverId)==='pasarguard';
+        if ($native) {
             require_once __DIR__.'/../Subscription/PhysicalService.php';
             $deleteLease=achbotPhysicalLockName($connection,$order);
             achbotPhysicalAcquireLock($connection,$deleteLease);
         }
-        // Existing durable fence blocks renewal/payment effects. Bind it to
-        // the observed local cycle, then recheck before the remote DELETE.
+        // Re-observe before claiming the Native account: the normal provider
+        // user adapter intentionally disallows reads after it is mutating.
+        // The pinned by-ID GET inside ResumeDelete performs the final ended
+        // check immediately before HTTP DELETE instead.
+        if ($native && !achbotServiceLifecycle(
+            achbotServiceObserve($serverId,$remark),time())['ended']) continue;
+        // Persist Cron's original no-restoration policy in the Native claim
+        // IN THE SAME TRANSACTION as its order fence. A later explicit user
+        // or staff recovery must honor this exact original decision.
+        $claim=$native?static function(mysqli $db,array $lockedOrder) use ($target): void {
+            achbotPgClaimOriginalDelete($db,$lockedOrder,$target,false);
+        }:null;
         if (!achbotProviderDeletionTargetMatches($connection,$serverId,$remark,$target) ||
-            !achbotAutoRenewPrepareDeletion($connection,$id,$order)) continue;
-        $latest=achbotServiceObserve($serverId,$remark);
-        if (!achbotServiceLifecycle($latest,time())['ended']) {
-            error_log('achbot_warning_delete_observation_changed order_id='.$id);
-            continue; // Retain the fence; no speculative local rollback.
+            !achbotAutoRenewPrepareDeletion($connection,$id,$order,$claim)) continue;
+        if (!$native) {
+            $latest=achbotServiceObserve($serverId,$remark);
+            if (!achbotServiceLifecycle($latest,time())['ended']) {
+                error_log('achbot_warning_delete_observation_changed order_id='.$id);
+                continue; // Retain the fence; no speculative local rollback.
+            }
+            if (!achbotProviderDeletionTargetMatches($connection,$serverId,$remark,$target)) {
+                error_log('achbot_warning_delete_target_changed order_id='.$id);continue;
+            }
         }
-        if (!achbotProviderDeletionTargetMatches($connection,$serverId,$remark,$target)) {
-            error_log('achbot_warning_delete_target_changed order_id='.$id);continue;
-        }
-        try {$result=achbotProviderDelete($serverId,$remark,$target);}
+        // Native targeting was verified before the claim and is independently
+        // checked against pinned identity and credentials in ResumeDelete.
+        try {$result=$native?
+            achbotPgResumeDelete($connection,$id,$serverId,$remark,true):
+            achbotProviderDelete($serverId,$remark,$target);}
         catch (Throwable $error) {
             error_log('achbot_warning_remote_delete_deferred order_id='.$id);continue;
         }
         if (!is_object($result) || ($result->success??false)!==true ||
+            ($native && ($result->delete_restore_capacity??null)!==false) ||
             !achbotAutoRenewFinalizeDeletion($connection,$id,$serverId,false)) {
             error_log('achbot_warning_local_delete_deferred order_id='.$id);continue;
         }

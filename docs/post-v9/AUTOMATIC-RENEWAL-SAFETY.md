@@ -199,8 +199,23 @@ DELETE and local finalizer. A user/staff confirmation while that Cron DELETE
 is in flight cannot send a competing DELETE; an original Cron timeout leaves
 its status=0 fence and must **never** trigger a subsequent unattended Cron
 replay. Only a separately confirmed original user/staff operation can reconcile
-the held Native state. The Marzban guarded deletion and operator-review
-requirements above remain unchanged.
+the held Native state. Native's initial claimed DELETE now durably pins
+`delete_restore_capacity=false` for scheduled operations and `true` for
+explicit user/staff operations in the existing Native mutation snapshot,
+committed with the local order fence. The finalizer must honor the original
+pin on recovery, regardless of who reconfirms; the actual slot is still
+restored only when purchase/reservation provenance proves it was held.
+For older unpinned claims, a proven non-reserved order can finish without a
+capacity adjustment; reserved/ambiguous provenance requires review instead
+of silently crediting a potentially scheduled deletion. Historical migrated
+accounts have a durable `orders_list.provider_effect_id` reference to the
+original `service_effects` adoption record, even when its `order_id` is NULL;
+that verified zero-reservation link takes priority over a later positive plan.
+The Cron pre-dispatch Native by-ID read also re-verifies that the original
+account remains expired/exhausted; external reactivation must not be erased
+by automatic cleanup.
+The Marzban guarded deletion and operator-review requirements above remain
+unchanged.
 
 User-facing reconfirmation is offered only for supported PasarGuard temporary
 transport/availability failures or an already-held, recoverable finality

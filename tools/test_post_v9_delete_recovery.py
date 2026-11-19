@@ -56,16 +56,27 @@ try {
         require $root.'/src/Notifications/Warnings.php';
         $GLOBALS['events'][]=['type'=>'cron_done'];
     } else {
-        if ($data==='fixture-claim-only') $data='fixture-no-route';
+        if (in_array($data,['fixture-claim-only','fixture-cron-claim-only','fixture-unpinned-only'],true))
+        $data='fixture-no-route';
         require $root.'/src/Subscription/AccountDeletion.php';
     }
-    if ($case['callback']==='fixture-claim-only') {
-        $ctx=achbotPgOrderContext($connection,41);
-        $key='delete:'.(int)$ctx['account']['id'];
+    if (in_array($case['callback'],[
+        'fixture-claim-only','fixture-cron-claim-only','fixture-unpinned-only'],true)) {
+        $unpinned=$case['callback']==='fixture-unpinned-only';
+        $restoreCapacity=$case['callback']!=='fixture-cron-claim-only';
+        $target=achbotProviderDeletionTarget($connection,2,'fixture_user');
         $ok=achbotAutoRenewPrepareDeletion($connection,41,null,
-            static function(mysqli $db,array $order) use ($ctx,$key): void {
+            static function(mysqli $db,array $order) use ($target,$unpinned,$restoreCapacity): void {
                 if ((int)$order['id']!==41)throw new RuntimeException('fixture_order_changed');
-                achbotPgBeginMutation($db,$ctx,$key,'delete',['phase'=>'claimed'],true);
+                if (!$unpinned) {
+                    achbotPgClaimOriginalDelete($db,$order,$target,$restoreCapacity);
+                } else {
+                    // Old installed sources did not pin original capacity
+                    // policy, whether the DELETE began in Cron or in the UI.
+                    $ctx=achbotPgOrderContext($db,41,true);
+                    $key='delete:'.(int)$ctx['account']['id'];
+                    achbotPgBeginMutation($db,$ctx,$key,'delete',['phase'=>'claimed'],true);
+                }
             });
         $GLOBALS['events'][]=['type'=>'claim','ok'=>$ok];
     }
@@ -163,6 +174,7 @@ def case_retry(mode: str, actor: int, *, legacy: bool=False):
         provider_url=sql('SELECT panel_url FROM server_config WHERE id=2')
         if legacy: setup_legacy(sql,provider_url,epoch)
         else: setup(sql,provider_url,epoch)
+        capacity_before=int(sql('SELECT ucount FROM server_info WHERE id=2'))
         callback=('yesDeleteUserConfig41' if actor==9001 else 'yesDeleteConfig41')
         if legacy: provider.user['note']='old-note-from-migration'
         before_user=json.loads(json.dumps(provider.user))
@@ -174,6 +186,8 @@ def case_retry(mode: str, actor: int, *, legacy: bool=False):
         assert sql('SELECT autoRenew FROM orders_list WHERE id=41')=='off',mode
         assert sql('SELECT provider_state FROM service_effects WHERE id=1')=='mutating',mode
         assert sql('SELECT provider_mutation_key FROM service_effects WHERE id=1')=='delete:1',mode
+        snapshot=json.loads(sql('SELECT provider_mutation_snapshot FROM service_effects WHERE id=1'))
+        assert snapshot['delete_restore_capacity'] is True,(mode,snapshot)
         assert sql('SELECT JSON_UNQUOTE(JSON_EXTRACT(provider_mutation_snapshot,\'$.phase\')) FROM service_effects WHERE id=1')=='dispatching',mode
         assert provider.write_count==1,(mode,provider.trace)
         checks.append(f'{"legacy_" if legacy else ""}{mode}_original_callback_held_and_original_native_attempt_once')
@@ -188,10 +202,14 @@ def case_retry(mode: str, actor: int, *, legacy: bool=False):
         assert sql('SELECT COUNT(*) FROM orders_list WHERE id=41')=='0',mode
         assert sql('SELECT provider_state FROM service_effects WHERE id=1')=='deleted',mode
         assert provider.write_count==(2 if mode=='delete_lie' else 1),(mode,provider.trace)
+        assert sql('SELECT ucount FROM server_info WHERE id=2')==str(
+            capacity_before+(0 if legacy else 1)),(mode,legacy)
         checks.append(f'{"legacy_" if legacy else ""}{mode}_original_identity_resumed_without_duplicate_remote_delete')
         replay=driver(run,callback,actor)
         assert outcome(replay)=='alert',replay
         assert provider.write_count==(2 if mode=='delete_lie' else 1)
+        assert sql('SELECT ucount FROM server_info WHERE id=2')==str(
+            capacity_before+(0 if legacy else 1))
         checks.append(f'{"legacy_" if legacy else ""}{mode}_repeated_callback_after_success_no_effect')
     return checks
 
@@ -204,6 +222,7 @@ def case_local_retry(*, legacy: bool):
         url=sql('SELECT panel_url FROM server_config WHERE id=2')
         if legacy: setup_legacy(sql,url,epoch)
         else: setup(sql,url,epoch)
+        capacity_before=int(sql('SELECT ucount FROM server_info WHERE id=2'))
         if legacy:
             sql("CREATE TRIGGER test_delete_block BEFORE DELETE ON orders_list FOR EACH ROW "
                 "SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='fixture_block_delete'")
@@ -216,12 +235,18 @@ def case_local_retry(*, legacy: bool):
         assert sql('SELECT provider_state FROM service_effects WHERE id=1')=='deleted'
         assert provider.user is None and provider.write_count==1
         if legacy: sql('DROP TRIGGER test_delete_block')
-        else: sql('UPDATE server_info SET ucount=8 WHERE id=2')
+        else: sql(f'UPDATE server_info SET ucount={capacity_before} WHERE id=2')
         second=driver(run,'yesDeleteConfig41')
         assert any(e['type']=='edit' and 'موفقیت' in e['text'] for e in second['events']),second
         assert sql('SELECT COUNT(*) FROM orders_list WHERE id=41')=='0'
         assert provider.write_count==1
         assert sql('SELECT provider_state FROM service_effects WHERE id=1')=='deleted'
+        assert sql('SELECT ucount FROM server_info WHERE id=2')==str(
+            capacity_before+(0 if legacy else 1))
+        replay=driver(run,'yesDeleteConfig41')
+        assert outcome(replay)=='alert' and provider.write_count==1,replay
+        assert sql('SELECT ucount FROM server_info WHERE id=2')==str(
+            capacity_before+(0 if legacy else 1))
     return [f'{"legacy" if legacy else "created"}_verified_remote_deletion_retries_only_local_finalizer']
 
 
@@ -412,6 +437,8 @@ def case_scheduled_vs_manual():
                         assert started.wait(12),'real_scheduled_delete_not_dispatched'
                         assert sql('SELECT status FROM orders_list WHERE id=41')=='0'
                         assert sql('SELECT provider_state FROM service_effects WHERE id=1')=='mutating'
+                        snap=json.loads(sql('SELECT provider_mutation_snapshot FROM service_effects WHERE id=1'))
+                        assert snap['delete_restore_capacity'] is False,(mode,snap)
                         assert sql("SELECT JSON_UNQUOTE(JSON_EXTRACT(provider_mutation_snapshot,'$.phase')) FROM service_effects WHERE id=1")=='dispatching'
                         callback='yesDeleteUserConfig41' if mode=='delete_lie' else 'yesDeleteConfig41'
                         actor=9001 if mode=='delete_lie' else 1001
@@ -450,10 +477,164 @@ def case_scheduled_vs_manual():
                 assert sql('SELECT COUNT(*) FROM orders_list WHERE id=41')=='0'
                 assert sql('SELECT provider_state FROM service_effects WHERE id=1')=='deleted'
                 assert provider.write_count==(1 if mode=='write_timeout' else 2)
-                assert sql('SELECT ucount FROM server_info WHERE id=2')==str(capacity_before+1)
+                assert sql('SELECT ucount FROM server_info WHERE id=2')==str(capacity_before)
+                replay=driver(run,'yesDeleteConfig41')
+                assert outcome(replay)=='alert' and provider.write_count==(
+                    1 if mode=='write_timeout' else 2)
+                assert sql('SELECT ucount FROM server_info WHERE id=2')==str(capacity_before)
                 assert sql('SELECT wallet FROM users WHERE userid=1001')==wallet_before
                 assert sql('SELECT COUNT(*) FROM pays')==pays_before
                 checks.append(mode+'_cron_failure_requires_explicit_safe_reconfirmation_only')
+    return checks
+
+
+
+def case_original_capacity_claims():
+    """A crash after the atomic claim/fence must not change origin policy."""
+    checks=[]
+    for cron in (False,True):
+        for actor in (1001,9001):
+            with api.sandbox() as (sql,run,provider,_bank,epoch):
+                setup(sql,sql('SELECT panel_url FROM server_config WHERE id=2'),epoch)
+                capacity=int(sql('SELECT ucount FROM server_info WHERE id=2'))
+                before_payments=sql('SELECT * FROM pays ORDER BY id')
+                before_wallet=sql('SELECT wallet FROM users WHERE userid=1001')
+                claim='fixture-cron-claim-only' if cron else 'fixture-claim-only'
+                assert driver(run,claim)['events']==[{'type':'claim','ok':True}]
+                snap=json.loads(sql('SELECT provider_mutation_snapshot FROM service_effects WHERE id=1'))
+                assert snap['delete_restore_capacity'] is (not cron),snap
+                assert snap['changes']=={'phase':'claimed'} and 'phase' not in snap
+                assert provider.write_count==0
+                callback='yesDeleteUserConfig41' if actor==9001 else 'yesDeleteConfig41'
+                restored=driver(run,callback,actor)
+                assert any(e['type']=='edit' and 'موفقیت' in e['text'] for e in restored['events']),restored
+                assert provider.write_count==1 and provider.user is None
+                expected=capacity+(0 if cron else 1)
+                assert sql('SELECT ucount FROM server_info WHERE id=2')==str(expected)
+                assert sql('SELECT * FROM pays ORDER BY id')==before_payments
+                assert sql('SELECT wallet FROM users WHERE userid=1001')==before_wallet
+                repeat=driver(run,callback,actor)
+                assert outcome(repeat)=='alert' and provider.write_count==1
+                assert sql('SELECT ucount FROM server_info WHERE id=2')==str(expected)
+                checks.append(('cron' if cron else 'manual')+'_claimed_before_dispatch_'+
+                    ('admin' if actor==9001 else 'owner')+'_preserves_initial_capacity_pin')
+    return checks
+
+
+def case_unpinned_legacy_capacity():
+    """Do not guess whether an older unmarked claim originated in Cron/UI."""
+    checks=[]
+    for legacy in (True,False):
+        with api.sandbox() as (sql,run,provider,_bank,epoch):
+            url=sql('SELECT panel_url FROM server_config WHERE id=2')
+            if legacy:
+                setup_legacy(sql,url,epoch)
+                provider.user['note']='historical-note'
+            else: setup(sql,url,epoch)
+            capacity=int(sql('SELECT ucount FROM server_info WHERE id=2'))
+            before_payment=sql('SELECT * FROM pays ORDER BY id')
+            before_wallet=sql('SELECT wallet FROM users WHERE userid=1001')
+            assert driver(run,'fixture-unpinned-only')['events']==[{'type':'claim','ok':True}]
+            snap=json.loads(sql('SELECT provider_mutation_snapshot FROM service_effects WHERE id=1'))
+            assert 'delete_restore_capacity' not in snap
+            answer=driver(run,'yesDeleteConfig41')
+            if legacy:
+                assert any(e['type']=='edit' and 'موفقیت' in e['text'] for e in answer['events']),answer
+                assert sql('SELECT COUNT(*) FROM orders_list WHERE id=41')=='0'
+                assert provider.write_count==1
+                checks.append('old_unpinned_migrated_account_no_reserved_capacity_completes_without_slot')
+            else:
+                expect_review(answer)
+                assert sql('SELECT status FROM orders_list WHERE id=41')=='0'
+                assert sql('SELECT provider_state FROM service_effects WHERE id=1')=='mutating'
+                assert provider.write_count==0
+                checks.append('old_unpinned_reserved_account_needs_proven_policy_before_recovery')
+            assert sql('SELECT ucount FROM server_info WHERE id=2')==str(capacity)
+            assert sql('SELECT * FROM pays ORDER BY id')==before_payment
+            assert sql('SELECT wallet FROM users WHERE userid=1001')==before_wallet
+    return checks
+
+
+
+def case_cron_native_reactivated_before_delete():
+    # A service can be renewed externally after an earlier expiry observation.
+    # The Cron dispatch guard must check the final ORIGINAL Native identity
+    # and entitlement immediately before sending the irreversible DELETE.
+    with api.sandbox() as (sql,run,provider,_bank,epoch):
+        setup(sql,sql('SELECT panel_url FROM server_config WHERE id=2'),epoch)
+        sql('UPDATE orders_list SET date=1700000000,notif=UNIX_TIMESTAMP()-1,'
+            'expire_date=1700000000 WHERE id=41')
+        provider.user['status']='expired'
+        provider.user['expire']='2025-01-01T00:00:00Z'
+        capacity=int(sql('SELECT ucount FROM server_info WHERE id=2'))
+        original=api.DriftHandler.handle_request
+        changed=[False]
+
+        def renew_after_fence(self):
+            if (self.command=='GET' and urlsplit(self.path).path=='/api/user/by-id/17' and
+                sql('SELECT status FROM orders_list WHERE id=41')=='0' and not changed[0]):
+                changed[0]=True
+                provider.user['status']='active'
+                provider.user['expire']='2100-01-01T00:00:00Z'
+            return original(self)
+
+        api.DriftHandler.handle_request=renew_after_fence
+        try: cron=driver(run,'fixture-scheduled')
+        finally:api.DriftHandler.handle_request=original
+        assert changed[0] and outcome(cron)=='cron_done',cron
+        assert provider.write_count==0 and provider.user is not None
+        assert sql('SELECT status FROM orders_list WHERE id=41')=='0'
+        snapshot=json.loads(sql('SELECT provider_mutation_snapshot FROM service_effects WHERE id=1'))
+        assert snapshot['delete_restore_capacity'] is False
+        assert snapshot['changes']=={'phase':'claimed'}
+        assert sql('SELECT ucount FROM server_info WHERE id=2')==str(capacity)
+        skipped=driver(run,'fixture-scheduled')
+        assert outcome(skipped)=='cron_done' and provider.write_count==0
+        # The owner may explicitly authorize deletion of the now-active
+        # ORIGINAL account; this cannot change the original Cron capacity.
+        restored=driver(run,'yesDeleteConfig41')
+        assert any(e['type']=='edit' and 'موفقیت' in e['text'] for e in restored['events']),restored
+        assert provider.write_count==1 and provider.user is None
+        assert sql('SELECT ucount FROM server_info WHERE id=2')==str(capacity)
+    return ['cron_final_by_id_read_rejects_reactivated_native_before_remote_delete']
+
+
+def case_cron_local_finalizer_failure():
+    checks=[]
+    for actor in (1001,9001):
+        with api.sandbox() as (sql,run,provider,_bank,epoch):
+            setup(sql,sql('SELECT panel_url FROM server_config WHERE id=2'),epoch)
+            sql('UPDATE orders_list SET date=1700000000,notif=UNIX_TIMESTAMP()-1,'
+                'expire_date=1700000000 WHERE id=41')
+            provider.user['status']='expired'
+            provider.user['expire']='2025-01-01T00:00:00Z'
+            capacity=int(sql('SELECT ucount FROM server_info WHERE id=2'))
+            wallet_before=sql('SELECT wallet FROM users WHERE userid=1001')
+            pays_before=sql('SELECT * FROM pays ORDER BY id')
+            sql("CREATE TRIGGER fixture_block_cron_finalize BEFORE DELETE ON orders_list "
+                "FOR EACH ROW SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='fixture_cron_finality'")
+            cron=driver(run,'fixture-scheduled')
+            assert outcome(cron)=='cron_done' and not any(e['type']=='message' for e in cron['events']),cron
+            assert provider.user is None and provider.write_count==1
+            assert sql('SELECT provider_state FROM service_effects WHERE id=1')=='deleted'
+            assert sql('SELECT status FROM orders_list WHERE id=41')=='0'
+            assert sql('SELECT ucount FROM server_info WHERE id=2')==str(capacity)
+            held=driver(run,'fixture-scheduled')
+            assert outcome(held)=='cron_done' and provider.write_count==1
+            sql('DROP TRIGGER fixture_block_cron_finalize')
+            callback='yesDeleteUserConfig41' if actor==9001 else 'yesDeleteConfig41'
+            restored=driver(run,callback,actor)
+            assert any(e['type']=='edit' and 'موفقیت' in e['text'] for e in restored['events']),restored
+            assert provider.write_count==1
+            assert sql('SELECT COUNT(*) FROM orders_list WHERE id=41')=='0'
+            assert sql('SELECT ucount FROM server_info WHERE id=2')==str(capacity)
+            assert sql('SELECT wallet FROM users WHERE userid=1001')==wallet_before
+            assert sql('SELECT * FROM pays ORDER BY id')==pays_before
+            repeated=driver(run,callback,actor)
+            assert outcome(repeated)=='alert' and provider.write_count==1
+            assert sql('SELECT ucount FROM server_info WHERE id=2')==str(capacity)
+            checks.append('cron_native_deleted_sql_finality_failure_recovered_by_'+
+                ('admin' if actor==9001 else 'owner')+'_without_capacity_change_or_second_delete')
     return checks
 
 
@@ -556,7 +737,7 @@ def case_unauthorized():
 def main():
     ap=argparse.ArgumentParser()
     ap.add_argument('--run-disposable',required=True,action='store_true')
-    ap.add_argument('--case',choices=['all','owner','admin','legacy','unauthorized','local','drift','authority','readback_identity','concurrent','cron_race','claimed','shared','native_finality'],default='all')
+    ap.add_argument('--case',choices=['all','owner','admin','legacy','unauthorized','local','drift','authority','readback_identity','concurrent','cron_race','claimed','capacity_claims','old_unpinned','cron_drift','cron_finality','shared','native_finality'],default='all')
     ap.add_argument('--report',type=Path)
     args=ap.parse_args();checks=[]
     if args.case in ['all','owner']:
@@ -585,6 +766,14 @@ def main():
     if args.case in ['all','claimed']:
         checks.extend(case_claimed_before_dispatch())
         checks.extend(case_atomic_claim_rollback())
+    if args.case in ['all','capacity_claims']:
+        checks.extend(case_original_capacity_claims())
+    if args.case in ['all','old_unpinned']:
+        checks.extend(case_unpinned_legacy_capacity())
+    if args.case in ['all','cron_drift']:
+        checks.extend(case_cron_native_reactivated_before_delete())
+    if args.case in ['all','cron_finality']:
+        checks.extend(case_cron_local_finalizer_failure())
     if args.case in ['all','shared']:
         checks.extend(case_shared_historical_reference())
     if args.case in ['all','native_finality']:

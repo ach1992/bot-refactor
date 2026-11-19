@@ -30,8 +30,16 @@ main pushes under the single `php85-validation` required status:
   permission denial and SQL failure),
   **deterministic real-PHP scheduled-PasarGuard DELETE versus manual callback
   races** with single-flight checks for successful, failed and timed-out
-  Native outcomes, and Marzban source-real callback feedback for remote Timeout
-  and local finality failure. Malformed bank/gift HTTP diagnostics do not leak
+  Native outcomes, original scheduled-versus-manual capacity-finality
+  provenance (including Cron failure, explicit owner/staff recovery, local SQL
+  finalizer failure, older unpinned and migrated accounts, and an external
+  reactivation between Cron observation and final pinned Native GET), and
+  Marzban source-real callback
+  feedback for remote Timeout and local finality failure. The current SMS
+  confirmation regression also checks the exact original confirmed-payment
+  callback to all registered user receipt/invoice messages, and a fair
+  recent-confirmed/oldest-historical Cron recovery batch without duplicated
+  payments or provider actions. Malformed bank/gift HTTP diagnostics do not leak
   external response text.
   Runs are parallel but retain each test's own assertions and failure details.
   The JSON receipt records exact HEAD/tree,

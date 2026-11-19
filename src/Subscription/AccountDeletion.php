@@ -71,23 +71,8 @@ function achbotSubscriptionDeleteConfirmed(mysqli $db,array $original,bool $owne
                 return 'blocked';
             $claim=null;
             if ($provider==='pasarguard') {
-                $claim=static function(mysqli $db,array $lockedOrder) use (
-                    $orderId,$serverId,$remark,$target): void {
-                    $ctx=achbotPgOrderContext($db,$orderId,true);
-                    if ((int)$lockedOrder['server_id']!==$serverId ||
-                        $lockedOrder['remark']!==$remark ||
-                        achbotPgDeletionContextTarget($ctx,$serverId,$remark)!==$target)
-                        throw new RuntimeException('pg_delete_original_target_changed');
-                    // A shared historical physical account may have another
-                    // legitimate local reference. Refuse BEFORE fencing this
-                    // order or claiming the Native DELETE, not on its retry.
-                    $effectId=(int)$ctx['account']['effect_id'];
-                    $peers=$db->prepare('SELECT id FROM orders_list WHERE provider_effect_id=? AND id<>? LIMIT 1 FOR UPDATE');
-                    $peers->bind_param('ii',$effectId,$orderId);
-                    $peers->execute();$other=$peers->get_result()->fetch_assoc();$peers->close();
-                    if ($other) throw new RuntimeException('pg_delete_shared_account_reference');
-                    $key='delete:'.(int)$ctx['account']['id'];
-                    achbotPgBeginMutation($db,$ctx,$key,'delete',['phase'=>'claimed'],true);
+                $claim=static function(mysqli $db,array $lockedOrder) use ($target): void {
+                    achbotPgClaimOriginalDelete($db,$lockedOrder,$target,true);
                 };
             }
             if (!achbotAutoRenewPrepareDeletion($db,$orderId,null,$claim))
@@ -107,7 +92,10 @@ function achbotSubscriptionDeleteConfirmed(mysqli $db,array $original,bool $owne
                 'retry':'review';
         }
         $stage='local';
-        if (!achbotAutoRenewFinalizeDeletion($db,$orderId,$serverId,true))
+        $restoreCapacity=$provider==='pasarguard'?
+            ($result->delete_restore_capacity??null):true;
+        if (!is_bool($restoreCapacity)) return 'review';
+        if (!achbotAutoRenewFinalizeDeletion($db,$orderId,$serverId,$restoreCapacity))
             return $provider==='pasarguard'?'local':'review';
         return 'complete';
     } catch (Throwable $error) {

@@ -720,6 +720,11 @@ function achbotApiPaymentSettleLocked(mysqli $db,int $id,array $proof,
                 ' actor='.$operator.' type='.$type.
                 ' delivery='.($deliveryAcknowledged?'acknowledged':'unconfirmed'));
         achbotApiPaymentNotice($db,$fresh,$deliveryAcknowledged?'confirmed':'settled');
+        // This specific payment is already durably final, independent of
+        // Telegram success. Converge its existing receipt messages NOW rather
+        // than queueing behind historical invoices. Errors stay retryable in
+        // payment_message_refs; no new SMS, charge, Native or customer packet.
+        achbotPayUxSyncMessages($db,$id);
         return $deliveryAcknowledged?'confirmed':'settled';
     } catch(Throwable $e) {
         $code=(string)$e->getMessage();
@@ -1355,7 +1360,12 @@ function achbotApiPaymentMaintainWithinBudget(mysqli $db,int $limit=12): array {
         $q=$db->query("SELECT p.hash_id FROM payment_attempts a JOIN pays p ON p.id=a.pay_row_id
             WHERE a.evidence_profile IS NOT NULL
               {$archivePredicate}
-            ORDER BY a.evidence_projection_checked_at IS NOT NULL,a.evidence_projection_checked_at,a.id LIMIT {$limit}");
+            ORDER BY CASE WHEN p.state IN ('approved','paid','auto_cart_approved','paid_with_wallet')
+                    AND (a.evidence_projection_checked_at IS NULL OR
+                         a.updated_at>a.evidence_projection_checked_at)
+                THEN 0 ELSE 1 END,
+                a.evidence_projection_checked_at IS NOT NULL,
+                a.evidence_projection_checked_at,a.id LIMIT {$limit}");
         foreach($q->fetch_all(MYSQLI_ASSOC) as $row){
             $c=achbotApiPaymentContext($db,(string)$row['hash_id']);if(!$c)continue;
             if(achbotApiPaymentSyncInvoice($db,$c))$edited++;

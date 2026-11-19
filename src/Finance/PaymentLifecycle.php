@@ -1180,15 +1180,36 @@ function achbotPayUxMaintain(mysqli $db, int $maxRows=45): array {
         // from the 45-row local expiry scan to avoid delaying worker duties.
         $messageBatch=min($maxRows,8);
         try {
+            // A large backlog of old stale receipts must not delay a newly
+            // confirmed purchase for tens of Cron ticks. Reserve at most half
+            // of this existing bounded budget for the newest unsynced final
+            // payments; the other half retains oldest-first fairness.
+            $priorityLimit=intdiv($messageBatch,2);
+            $rows=[];
+            if ($priorityLimit>0) {
+                $stmt=$db->prepare(
+                    "SELECT r.pay_row_id FROM payment_message_refs r
+                     JOIN pays p ON p.id=r.pay_row_id
+                     WHERE r.updated_at<=NOW(6) AND r.synced_digest IS NULL
+                       AND p.state IN ('approved','paid','auto_cart_approved','paid_with_wallet')
+                     GROUP BY r.pay_row_id ORDER BY MAX(r.id) DESC LIMIT {$priorityLimit}"
+                );
+                $stmt->execute();
+                $rows=$stmt->get_result()->fetch_all(MYSQLI_ASSOC);$stmt->close();
+            }
             $stmt=$db->prepare(
                 "SELECT pay_row_id FROM payment_message_refs
                  WHERE updated_at<=NOW(6)
                  GROUP BY pay_row_id ORDER BY MIN(updated_at) ASC LIMIT {$messageBatch}"
             );
             $stmt->execute();
-            $rows=$stmt->get_result()->fetch_all(MYSQLI_ASSOC);$stmt->close();
-            foreach ($rows as $r) {
+            $oldest=$stmt->get_result()->fetch_all(MYSQLI_ASSOC);$stmt->close();
+            $selected=[];
+            foreach (array_merge($rows,$oldest) as $r) {
                 $id=(int)$r['pay_row_id'];
+                if (isset($selected[$id])) continue;
+                $selected[$id]=true;
+                if (count($selected)>$messageBatch) break;
                 $updated+=achbotPayUxSyncMessages($db,$id);
                 // Fair scanning; a failed Telegram edit remains eligible later.
                 $stmt=$db->prepare(
