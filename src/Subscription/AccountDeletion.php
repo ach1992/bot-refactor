@@ -9,6 +9,7 @@ require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
 require_once __DIR__ . '/../Finance/ReceiptHelpers.php';
 require_once __DIR__.'/AccountDetails.php';
 require_once __DIR__.'/../Panel/ServiceLifecycle.php';
+require_once __DIR__.'/PhysicalService.php';
 require_once __DIR__.'/../Presentation/Text.php';
 
 if (preg_match('/^(?:delUserConfig|yesDeleteUserConfig)/',(string)$data) &&
@@ -17,6 +18,90 @@ if (preg_match('/^(?:delUserConfig|yesDeleteUserConfig)/',(string)$data) &&
     return;
 }
 
+
+
+/**
+ * Both owner and staff confirmations use one physical account lease and one
+ * local finalizer. A second confirmation resumes a PINNED dispatched DELETE,
+ * never a new purchase, payment, credential or free-standing DELETE.
+ */
+function achbotSubscriptionDeleteConfirmed(mysqli $db,array $original,bool $ownerView): string {
+    $orderId=(int)$original['id'];$serverId=(int)$original['server_id'];
+    $remark=(string)$original['remark'];$lease=null;$stage='preflight';
+    try {
+        $lease=achbotPhysicalLockName($db,$original);
+        achbotPhysicalAcquireLock($db,$lease);
+        $s=$db->prepare('SELECT * FROM orders_list WHERE id=?');
+        $s->bind_param('i',$orderId);$s->execute();$fresh=$s->get_result()->fetch_assoc();$s->close();
+        if (!$fresh || (int)$fresh['userid']!==(int)$original['userid'] ||
+            (int)$fresh['server_id']!==$serverId || $fresh['remark']!==$remark ||
+            (int)$fresh['inbound_id']!==0 ||
+            achbotPhysicalLockName($db,$fresh)!==$lease)
+            return 'blocked';
+        $provider=achbotProviderType($db,$serverId);
+        if ((int)$fresh['status']===1) {
+            $target=achbotProviderDeletionTarget($db,$serverId,$remark);
+            if (!achbotProviderActionEligible($db,$serverId,$remark,'delete',$target)) {
+                error_log('achbot_subscription_delete_preflight_deferred order_id='.$orderId.
+                    ' server_id='.$serverId);
+                return 'retry';
+            }
+            // Native PasarGuard preflight already verified the same account.
+            if ($ownerView && $provider==='marzban') {
+                $remote=achbotProviderUser($serverId,$remark,false);
+                if (!achbotServiceObservation($remote,$remark)['verified'])
+                    return 'retry';
+            }
+            if (!achbotProviderDeletionTargetMatches($db,$serverId,$remark,$target))
+                return 'blocked';
+            $claim=null;
+            if ($provider==='pasarguard') {
+                $claim=static function(mysqli $db,array $lockedOrder) use (
+                    $orderId,$serverId,$remark,$target): void {
+                    $ctx=achbotPgOrderContext($db,$orderId,true);
+                    if ((int)$lockedOrder['server_id']!==$serverId ||
+                        $lockedOrder['remark']!==$remark ||
+                        achbotPgDeletionContextTarget($ctx,$serverId,$remark)!==$target)
+                        throw new RuntimeException('pg_delete_original_target_changed');
+                    // A shared historical physical account may have another
+                    // legitimate local reference. Refuse BEFORE fencing this
+                    // order or claiming the Native DELETE, not on its retry.
+                    $effectId=(int)$ctx['account']['effect_id'];
+                    $peers=$db->prepare('SELECT id FROM orders_list WHERE provider_effect_id=? AND id<>? LIMIT 1 FOR UPDATE');
+                    $peers->bind_param('ii',$effectId,$orderId);
+                    $peers->execute();$other=$peers->get_result()->fetch_assoc();$peers->close();
+                    if ($other) throw new RuntimeException('pg_delete_shared_account_reference');
+                    $key='delete:'.(int)$ctx['account']['id'];
+                    achbotPgBeginMutation($db,$ctx,$key,'delete',['phase'=>'claimed'],true);
+                };
+            }
+            if (!achbotAutoRenewPrepareDeletion($db,$orderId,null,$claim))
+                return 'blocked';
+            $stage='remote';
+            $result=$provider==='pasarguard'?
+                achbotPgResumeDelete($db,$orderId,$serverId,$remark):
+                achbotProviderDelete($serverId,$remark,$target);
+        } elseif ((int)$fresh['status']===0 && $fresh['autoRenew']==='off' &&
+            $provider==='pasarguard') {
+            $stage='recovery';
+            $result=achbotPgResumeDelete($db,$orderId,$serverId,$remark);
+        } else return 'blocked';
+        if (!is_object($result) || ($result->success??false)!==true) return 'retry';
+        $stage='local';
+        if (!achbotAutoRenewFinalizeDeletion($db,$orderId,$serverId,true)) return 'local';
+        return 'complete';
+    } catch (Throwable $error) {
+        $code=(string)$error->getMessage();
+        if (preg_match('/^[a-z][a-z0-9_]{2,90}$/D',$code)!==1)
+            $code='delete_internal';
+        error_log('achbot_subscription_delete_deferred order_id='.$orderId.
+            ' server_id='.$serverId.' stage='.$stage.' code='.$code.
+            ' class='.get_class($error));
+        return $stage==='local'?'local':'retry';
+    } finally {
+        if ($lease!==null) achbotPhysicalReleaseLock($db,$lease);
+    }
+}
 
 if(preg_match('/^deleteMyConfig(\d+)/', $data, $match)){
     $oid = $match[1];
@@ -97,39 +182,14 @@ elseif(preg_match('/^yesDeleteConfig(\d+)/',$data,$match)){
         alert(\achbotMessage('subscription.account_deletion.no_dont_delete.alert.739703d8ae'), true);
         exit;
     }
-    // An unavailable observation must not claim or hide a still-active order.
-    try {
-        $deleteTarget=achbotProviderDeletionTarget($connection,(int)$server_id,(string)$remark);
-        if (!achbotProviderActionEligible($connection,(int)$server_id,(string)$remark,'delete',$deleteTarget))
-            throw new RuntimeException('delete_action_ineligible');
-        $configInfo=achbotProviderUser($server_id,$remark,false);
-        $observation=achbotServiceObservation($configInfo,(string)$remark);
-        if (!$observation['verified']) throw new RuntimeException('delete_observation_unverified');
-    } catch (Throwable $error) {
-        error_log('achbot_account_delete_observation_deferred order_id='.(int)$oid);
-        alert(\achbotMessage('subscription.account_deletion.no_dont_delete.alert.9347ccc8b0'),true);
-        exit;
-    }
-    // Fence the original order before the remote, non-idempotent DELETE.
-    if (!achbotProviderDeletionTargetMatches($connection,(int)$server_id,(string)$remark,$deleteTarget) ||
-        !achbotAutoRenewPrepareDeletion($connection,(int)$oid)) {
-        alert(\achbotMessage('subscription.account_deletion.no_dont_delete.alert.fc1b571950'), true);
-        exit;
-    }
-    try {
-        $deleted = achbotProviderDelete($server_id, $remark,$deleteTarget);
-        if (!is_object($deleted) || ($deleted->success??false)!==true)
-            throw new RuntimeException('delete_remote_unconfirmed');
-    } catch (Throwable $error) {
-        error_log('achbot_account_delete_remote_deferred order_id='.(int)$oid);
-        alert(\achbotMessage('subscription.account_deletion.no_dont_delete.alert.9347ccc8b0'), true);
-        exit;
-    }
-
-    
-    if (!achbotAutoRenewFinalizeDeletion($connection,(int)$oid,(int)$server_id,true)) {
-        error_log('achbot_account_delete_local_deferred order_id='.(int)$oid);
-        alert(\achbotMessage('subscription.account_deletion.no_dont_delete.alert.e2cbeb044b'), true);
+    $deleteOutcome=achbotSubscriptionDeleteConfirmed($connection,$order,true);
+    if ($deleteOutcome!=='complete') {
+        $key=match($deleteOutcome) {
+            'blocked'=>'subscription.account_deletion.no_dont_delete.alert.fc1b571950',
+            'local'=>'subscription.account_deletion.no_dont_delete.alert.e2cbeb044b',
+            default=>'subscription.account_deletion.no_dont_delete.alert.9347ccc8b0'
+        };
+        alert(\achbotMessage($key),true);
         exit;
     }
 
@@ -192,34 +252,14 @@ elseif(preg_match('/^yesDeleteUserConfig(\d+)/',$data,$match) && ($from_id == $a
         alert(\achbotMessage('subscription.account_deletion.no_dont_delete.alert.739703d8ae'), true);
         exit;
     }
-    try {
-        $deleteTarget=achbotProviderDeletionTarget($connection,(int)$server_id,(string)$remark);
-        if (!achbotProviderActionEligible($connection,(int)$server_id,(string)$remark,'delete',$deleteTarget))
-            throw new RuntimeException('admin_delete_action_ineligible');
-    } catch (Throwable $error) {
-        error_log('achbot_admin_delete_observation_deferred order_id='.(int)$oid);
-        alert(\achbotMessage('subscription.account_deletion.no_dont_delete.alert.3c93240b6e'),true);
-        exit;
-    }
-    if (!achbotProviderDeletionTargetMatches($connection,(int)$server_id,(string)$remark,$deleteTarget) ||
-        !achbotAutoRenewPrepareDeletion($connection,(int)$oid)) {
-        alert(\achbotMessage('subscription.account_deletion.no_dont_delete.alert.1186ae9204'), true);
-        exit;
-    }
-    try {
-        $res = achbotProviderDelete($server_id, $remark,$deleteTarget);
-        if (!is_object($res) || ($res->success??false)!==true)
-            throw new RuntimeException('admin_delete_remote_unconfirmed');
-    } catch (Throwable $error) {
-        error_log('achbot_admin_delete_remote_deferred order_id='.(int)$oid);
-        alert(\achbotMessage('subscription.account_deletion.no_dont_delete.alert.3c93240b6e'), true);
-        exit;
-    }
-    
-
-    if (!achbotAutoRenewFinalizeDeletion($connection,(int)$oid,(int)$server_id,true)) {
-        error_log('achbot_account_delete_local_deferred order_id='.(int)$oid);
-        alert(\achbotMessage('subscription.account_deletion.no_dont_delete.alert.e2cbeb044b'), true);
+    $deleteOutcome=achbotSubscriptionDeleteConfirmed($connection,$order,false);
+    if ($deleteOutcome!=='complete') {
+        $key=match($deleteOutcome) {
+            'blocked'=>'subscription.account_deletion.no_dont_delete.alert.1186ae9204',
+            'local'=>'subscription.account_deletion.no_dont_delete.alert.e2cbeb044b',
+            default=>'subscription.account_deletion.no_dont_delete.alert.3c93240b6e'
+        };
+        alert(\achbotMessage($key),true);
         exit;
     }
 

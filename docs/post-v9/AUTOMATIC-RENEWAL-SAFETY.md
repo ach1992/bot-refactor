@@ -183,6 +183,19 @@ the remote delete again to hide that partial failure. Operators must inspect
 the actual Marzban account, remote action history, local status, capacity and
 financial journal first.
 
+**PasarGuard explicit deletion retry (user and administrator):** the existing
+manual confirmation callback may resume the **same** originally fenced Native
+DELETE; this is not a scheduled or blind write retry. The existing physical
+account advisory lease, an atomic original order/native mutation claim, pinned
+provider instance and remote ID, and authenticated readback distinguish
+(1) an already absent account (finish SQL only), (2) the original matching
+account still present (re-dispatch DELETE by that pinned ID and verify 404),
+and (3) an unverified/changed identity (hold with no deletion). A successful
+Native delete with a failed SQL finalizer also remains resumable without
+another remote DELETE. Original payment/journal evidence is never discarded.
+The Marzban guarded deletion and operator-review requirements above remain
+unchanged.
+
 **IMPORTANT rollback rule:** migration 004 has its own separate Owner-gated
 installation and cannot be reverted by merely switching PHP source back.
 An older unguarded AccountDeletion/Warnings/OrderManagement PHP version MUST

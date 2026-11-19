@@ -35,7 +35,7 @@ Native limited/expired/disabled/active statuses remain distinct.
 
 By-ID reads and writes fence created_at + original creation marker.
 CREATE is HTTP201, DELETE is HTTP204 followed by by-ID404.
-No retry on failed/malformed write, no compensation from uncertain results.
+No blind or unattended retry of failed/malformed writes, no compensation from uncertain results.
 The integration owns durable claims/reservations and operator reconciliation.
 Revoke requires changed proxy identity; URL inequality alone is insufficient.
 Links use native GET /api/user/{id}/subscription/links or links_base64;
@@ -57,7 +57,7 @@ storage model. See [shared storage and recovery](SHARED-PROVIDER-STORAGE.md).
 - orders_list: originating provider effect plus native ID/creation time.
 - service_effects: pre-order reservation, verified identity and nullable durable
   provider mutation/replay evidence on the actual create/adopt effect. No separate
-  account/connection table or deletion cascade. Unknown outcomes cannot reissue.
+  account/connection table or deletion cascade. Unknown CREATE/payment/edit outcomes cannot reissue.
 
 Global storage functions in src/Panel/ProviderStorage.php:
 
@@ -81,8 +81,19 @@ existing Marzban does not require shared native storage. Nullable existing-effec
 provider_mutation_key (VARCHAR100) and provider_mutation_snapshot (LONGTEXT) retain
 durable action/absolute-intent fencing.
 The runtime commits linked -> mutating with intent before HTTP; unconfirmed
-writes remain mutating/review and cannot authorize replay. The purchased
-entitlement_snapshot remains intact. No production migration is implied.
+writes remain mutating/review and cannot authorize blind replay. For an
+**explicitly reconfirmed user/staff DELETE only**, the local status=0/autoRenew=off
+fence and the exact Native `delete:<account-id>` claim commit together. The
+existing physical-account lease serializes repeated confirmations. The retry
+checks the same immutable provider/instance/account incarnation by ID: verified
+404 completes local cleanup without another DELETE; verified original-account
+presence can resume the original pinned DELETE and require HTTP204 + by-ID404.
+An unknown GET, foreign incarnation, changed endpoint, missing original claim,
+other local reference or unrelated active mutation never authorizes DELETE.
+The original local finalizer can also resume from a verified `deleted` Native
+state if its prior SQL commit failed. No Cron replay or manual use of a new
+operation key is allowed. The purchased entitlement_snapshot remains intact.
+No production migration is implied.
 Account extension preserves existing purchased Groups. Explicit service switch
 updates remote Groups and verifies before local routing/snapshot completion.
 Native Group contents are mutable upstream; IDs do not freeze Hosts/inbounds.

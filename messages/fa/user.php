@@ -357,13 +357,13 @@ return [
         'account_deletion.no_dont_delete.alert.739703d8ae' => '⛔️ حذف این اشتراک در حال حاضر امکان‌پذیر نیست.',
         'account_deletion.no_dont_delete.alert.fc1b571950' => '⚠️ این اشتراک در حال بررسی است؛ حذف نیازمند پیگیری پشتیبانی است.',
         'account_deletion.no_dont_delete.text.5e6ee5eaa1' => 'نامحدود',
-        'account_deletion.no_dont_delete.alert.9347ccc8b0' => '⚠️ نتیجه حذف اشتراک مشخص نیست؛ لطفاً با پشتیبانی تماس بگیرید.',
-        'account_deletion.no_dont_delete.alert.e2cbeb044b' => '⚠️ حذف اشتراک نیازمند بررسی است؛ لطفاً با پشتیبانی تماس بگیرید.',
+        'account_deletion.no_dont_delete.alert.9347ccc8b0' => '⚠️ حذف هنوز کامل نشده است؛ برای ادامه دوباره «بله» را بزنید.',
+        'account_deletion.no_dont_delete.alert.e2cbeb044b' => '⚠️ ثبت حذف هنوز تکمیل نشده است؛ دوباره «بله» را بزنید.',
         'account_deletion.no_dont_delete.message.ab50b51b1f' => ['text' => 'اشتراک {remark} با موفقیت حذف شد.', 'parameters' => ['remark']],
         'account_deletion.no_dont_delete.message.2ddfbc22e4' => ['text' => 'آیا از حذف اشتراک {remark} مطمئن هستید؟', 'parameters' => ['remark']],
         'account_deletion.no_dont_delete.alert.bd8e953385' => '⛔️ سفارش یافت نشد.',
         'account_deletion.no_dont_delete.alert.1186ae9204' => '⚠️ این اشتراک در حال بررسی است؛ حذف نیازمند پیگیری است.',
-        'account_deletion.no_dont_delete.alert.3c93240b6e' => '⚠️ نتیجه حذف اشتراک مشخص نیست؛ لطفاً بررسی دستی انجام دهید.',
+        'account_deletion.no_dont_delete.alert.3c93240b6e' => '⚠️ حذف هنوز کامل نشده است؛ برای ادامه دوباره «بله» را بزنید.',
         // account_details.get_order_traffic_info
         'account_details.get_order_traffic_info.text.f07ac0638d' => '⚠️',
         // account_details.get_order_status_text

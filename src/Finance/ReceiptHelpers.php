@@ -2791,8 +2791,8 @@ function achbotScheduledDeletionEffectsSettled(mysqli $db,array $order): bool {
     return true;
 }
 
-/** Legacy order deletion gate: lock + flag OFF before remote destructive call. */
-function achbotAutoRenewPrepareDeletion(mysqli $db, int $orderId,?array $expected=null): bool {
+/** Original order deletion gate: optionally atomically claim the Native DELETE. */
+function achbotAutoRenewPrepareDeletion(mysqli $db, int $orderId,?array $expected=null,?callable $nativeClaim=null): bool {
     if ($orderId<=0) return false;
     $schema=achbotAutoRenewSchemaState($db);
     if ($schema==='incompatible') return false;
@@ -2825,6 +2825,10 @@ function achbotAutoRenewPrepareDeletion(mysqli $db, int $orderId,?array $expecte
         if ($expected!==null && !achbotScheduledDeletionEffectsSettled($db,$order)) {
             $db->rollback();return false;
         }
+        // For PasarGuard, atomically persist the original Native claim with
+        // this local fence. A crash before remote preflight/DELETE is resumable
+        // without guessing whether an unmarked external write happened.
+        if ($nativeClaim!==null) $nativeClaim($db,$order);
         // Durable deletion fence before remote DELETE. Any uncertain remote
         // result cannot cause an unattended repeated delete or new renewal.
         $stmt=$db->prepare("UPDATE orders_list SET status=0,autoRenew='off'
@@ -2837,7 +2841,11 @@ function achbotAutoRenewPrepareDeletion(mysqli $db, int $orderId,?array $expecte
         return true;
     } catch (Throwable $error) {
         try {$db->rollback();} catch (Throwable $ignored) {}
-        error_log('achbot_auto_renew_deletion_guard_deferred');
+        $reason=(string)$error->getMessage();
+        if (preg_match('/^pg_[a-z0-9_]{2,85}$/D',$reason)!==1)
+            $reason='delete_guard_unverified';
+        error_log('achbot_auto_renew_deletion_guard_deferred order_id='.$orderId.
+            ' native_claim='.($nativeClaim===null?'no':'yes').' code='.$reason);
         return false;
     }
 }
