@@ -6,12 +6,15 @@ not a message/router, financial state, or content migration.
 
 ## Default and authority
 
-The new source keeps the current installed behavior by default: existing
-strings, HTML/Markdown/plain parse modes, JSON keyboards, callback data,
-ReplyKeyboard press text, outbound method, recipient, timing, and return types
-are sent unchanged. An older installation without the new setting also
-remains in this identity mode. No runtime database schema or migration is
-required.
+With both presentation switches disabled, the shared **transport** is
+an identity transform: payloads, JSON keyboards, callback data, ReplyKeyboard
+press text, outgoing method, recipient, timeout and return contracts remain
+unchanged. This guarantee is about the optional transport decoration layer;
+it does not negate individually reviewed, source-level Markdown-to-HTML
+conversions of static prompts. Those conversions intentionally change the
+wire-level parse mode while preserving the rendered text and formatting.
+An older installation without the new settings stays in transport identity
+mode. No runtime database schema or migration is required.
 
 The optional configuration belongs in the instance's private `baseInfo.php`,
 not in catalog entries or a shared public file. The documented sample in
@@ -47,8 +50,10 @@ availability and the intended Unicode fallback before enabling.
 - A configured Unicode grapheme maps to its custom emoji ID. An enabled HTML
   text or caption gets `<tg-emoji emoji-id="...">✅</tg-emoji>`, with the
   **original emoji** left inside the tag for native fallback. HTML tags,
-  attributes, entities, links, literal `<code>`/`<pre>` and existing
-  `<tg-emoji>` content are not replaced.
+  attributes, entities, existing `<a>` elements, untagged `http(s)://`,
+  `tg://`, `t.me/`, `www.` and other URI schemes (including VPN configuration
+  links such as `vless://` and `ss://`) with encoded query strings, literal
+  `<code>`/`<pre>` and existing `<tg-emoji>` content are not replaced.
 - Plain text containing a mapped emoji is escaped and sent with HTML parse
   mode **only when Premium is enabled**. Literal text, identifiers, and
   copyable strings remain visually identical.

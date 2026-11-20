@@ -13,7 +13,7 @@ if (!achbotAdminRequestAllowed(is_string($data??null)?$data:null,is_string($text
 if(preg_match('/^editSubLinks(\d+)/', $data, $match) && achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'servers')) {
     delMessage();
     setUser("subLinksInput" . $match[1]);
-    sendMessage(\achbotMessage('subscription.sub_link_settings.message.9f2715dc7c'), $cancelKey, "Markdown");
+    sendMessage(\achbotMessage('subscription.sub_link_settings.message.9f2715dc7c'), $cancelKey, "HTML");
     exit();
 }
 if(preg_match('/^subLinksInput(\d+)/', $userInfo['step'], $match) && $text != $buttonValues['cancel'] && achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'servers')) {
@@ -26,11 +26,11 @@ if(preg_match('/^subLinksInput(\d+)/', $userInfo['step'], $match) && $text != $b
     $stmt->execute();
     $stmt->close();
 
-    sendMessage(\achbotMessage('subscription.sub_link_settings.message.745a80a770'), $removeKeyboard);
+    sendMessage(\achbotMessage('subscription.sub_link_settings.message.745a80a770'), $removeKeyboard, 'HTML');
 
     // برگشت به منوی سرور
     $keys = getServerConfigKeys($rowId);
-    sendMessage(\achbotMessage('subscription.sub_link_settings.message.aee64f26a1'), $keys);
+    sendMessage(\achbotMessage('subscription.sub_link_settings.message.aee64f26a1'), $keys, 'HTML');
     setUser();
     exit();
 }

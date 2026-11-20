@@ -28,7 +28,7 @@ if ($achbotOrderAdminStep && ($text??null)===($buttonValues['cancel']??null)) {
     $stmt->bind_param('is',$from_id,$ownedStep);$stmt->execute();$changed=$stmt->affected_rows;$stmt->close();
     if ($changed!==1) {alert(\achbotMessage('subscription.order_management.show_order_management_panel.alert.abcbb638e7'),true);return;}
     $userInfo['step']='none';$userInfo['temp']=null;
-    sendMessage(\achbotMessage('admin_settings.management.canceled'),$removeKeyboard);
+    sendMessage(\achbotMessage('admin_settings.management.canceled'),$removeKeyboard, 'HTML');
     $order=$id>0?\AchBot\Subscription\AccountDetails\findOrder($id):null;
     if ($order) showOrderManagementPanel($order);
     else sendMessage($mainValues['reached_main_menu'], getAdminKeys(), 'HTML');
@@ -63,7 +63,7 @@ if (preg_match('/^showUserSubscriptions(\d+)/', $data, $match)) {
 // Begin of Manage a specific order
 if ($data == "manageorderdatabase" && ($from_id == $admin || $userInfo['isAdmin'] == true)) {
     delMessage();
-    sendMessage(\achbotMessage('subscription.order_management.manageorderdatabase.message.e16b131103'), $cancelKey, "Markdown");
+    sendMessage(\achbotMessage('subscription.order_management.manageorderdatabase.message.e16b131103'), $cancelKey, "HTML");
     setUser("awaitingOrderRemarkOnly");
 }
 if ($userInfo['step'] == "awaitingOrderRemarkOnly" && $text != $buttonValues['cancel']) {
@@ -72,14 +72,14 @@ if ($userInfo['step'] == "awaitingOrderRemarkOnly" && $text != $buttonValues['ca
 
     // بررسی کاراکترهای معتبر
     if (!preg_match('/^[a-zA-Z0-9\s\-_]+$/', $remark)) {
-        sendMessage(\achbotMessage('subscription.order_management.awaiting_order_remark_only.message.a94b913d39'), $cancelKey);
+        sendMessage(\achbotMessage('subscription.order_management.awaiting_order_remark_only.message.a94b913d39'), $cancelKey, 'HTML');
         setUser();
         return;
     }
 
     $stmt = $connection->prepare("SELECT * FROM orders_list WHERE remark = ?");
     if (!$stmt) {
-        sendMessage(\achbotMessage('subscription.order_management.awaiting_order_remark_only.message.99b2e0169a'), $cancelKey);
+        sendMessage(\achbotMessage('subscription.order_management.awaiting_order_remark_only.message.99b2e0169a'), $cancelKey, 'HTML');
         setUser();
         return;
     }
@@ -96,7 +96,7 @@ if ($userInfo['step'] == "awaitingOrderRemarkOnly" && $text != $buttonValues['ca
                 [['text' => \achbotMessage('subscription.order_management.awaiting_order_remark_only.button.76f3daea16'), 'callback_data' => "manageorderdatabase"]]
             ]
         ]);
-        sendMessage(\achbotMessage('subscription.order_management.awaiting_order_remark_only.message.2ae43a0263'), $keyboard);
+        sendMessage(\achbotMessage('subscription.order_management.awaiting_order_remark_only.message.2ae43a0263'), $keyboard, 'HTML');
         setUser();
         return;
     }
@@ -117,14 +117,14 @@ if ($userInfo['step'] == "awaitingOrderRemarkOnly" && $text != $buttonValues['ca
     while ($row = $result->fetch_assoc()) {
         if (!in_array($row['userid'], $useridList)) {
             if ($counter >= $maxResults) {
-                sendMessage(\achbotMessage('subscription.order_management.awaiting_order_remark_only.message.f8c9916b9c'), $cancelKey);
+                sendMessage(\achbotMessage('subscription.order_management.awaiting_order_remark_only.message.f8c9916b9c'), $cancelKey, 'HTML');
                 setUser();
                 return;
             }
             $useridList[] = $row['userid'];
             $callbackData = "selectOrderByRemark_userid_{$row['userid']}_tempId_" . $tempRemarkId;
             if (strlen($callbackData) > 64) {
-                sendMessage(\achbotMessage('subscription.order_management.awaiting_order_remark_only.message.45a8b2af73'), $cancelKey);
+                sendMessage(\achbotMessage('subscription.order_management.awaiting_order_remark_only.message.45a8b2af73'), $cancelKey, 'HTML');
                 setUser();
                 return;
             }
@@ -135,9 +135,9 @@ if ($userInfo['step'] == "awaitingOrderRemarkOnly" && $text != $buttonValues['ca
     $keyboard['inline_keyboard'][] = [['text' => \achbotMessage('subscription.order_management.awaiting_order_remark_only.button.76f3daea16'), 'callback_data' => "manageorderdatabase"]];
 
     // ارسال پیام با مدیریت خطا
-    $response = sendMessage(\achbotMessage('subscription.order_management.awaiting_order_remark_only.message.e02c72df1d'), json_encode($keyboard));
+    $response = sendMessage(\achbotMessage('subscription.order_management.awaiting_order_remark_only.message.e02c72df1d'), json_encode($keyboard), 'HTML');
     if (!$response) {
-        sendMessage(\achbotMessage('subscription.order_management.awaiting_order_remark_only.message.b345c0eb1e'), $cancelKey);
+        sendMessage(\achbotMessage('subscription.order_management.awaiting_order_remark_only.message.b345c0eb1e'), $cancelKey, 'HTML');
         setUser();
         return;
     }
@@ -154,14 +154,14 @@ if (preg_match('/^selectOrderByRemark_userid_(\d+)_tempId_(.+)/', $data, $match)
     if (preg_match('/^awaitingUserIdSelection_' . $tempRemarkId . '_(.+)/', $userInfo['step'], $remarkMatch)) {
         $remark = $remarkMatch[1];
     } else {
-        sendMessage(\achbotMessage('subscription.order_management.awaiting_order_remark_only.message.7ebcf50a27'), $cancelKey);
+        sendMessage(\achbotMessage('subscription.order_management.awaiting_order_remark_only.message.7ebcf50a27'), $cancelKey, 'HTML');
         setUser();
         return;
     }
 
     $stmt = $connection->prepare("SELECT * FROM orders_list WHERE userid = ? AND remark = ? LIMIT 1");
     if (!$stmt) {
-        sendMessage(\achbotMessage('subscription.order_management.awaiting_order_remark_only.message.99b2e0169a'), $cancelKey);
+        sendMessage(\achbotMessage('subscription.order_management.awaiting_order_remark_only.message.99b2e0169a'), $cancelKey, 'HTML');
         setUser();
         return;
     }
@@ -176,7 +176,7 @@ if (preg_match('/^selectOrderByRemark_userid_(\d+)_tempId_(.+)/', $data, $match)
                 [['text' => \achbotMessage('subscription.order_management.awaiting_order_remark_only.button.76f3daea16'), 'callback_data' => "manageorderdatabase"]]
             ]
         ]);
-        sendMessage(\achbotMessage('subscription.order_management.awaiting_order_remark_only.message.d11ef21837'), $keyboard);
+        sendMessage(\achbotMessage('subscription.order_management.awaiting_order_remark_only.message.d11ef21837'), $keyboard, 'HTML');
         setUser();
         return;
     }
@@ -441,16 +441,16 @@ if (preg_match('/^changeExpireDate_(\\d+)/', $data, $match)) {
 if (preg_match('/^awaitingExpireChange_(\\d+)/', $userInfo['step'], $match) && $text!=$buttonValues['cancel']) {
     $id = intval($match[1]);
     if (!is_string($text) || preg_match('/^-?[1-9][0-9]{0,4}$/D',$text)!==1 || abs((int)$text)>36500) {
-        sendMessage(\achbotMessage('admin_settings.management.local_expiry_prompt'),$cancelKey);return;
+        sendMessage(\achbotMessage('admin_settings.management.local_expiry_prompt'),$cancelKey,'HTML');return;
     }
     $days=(int)$text;
     $stmt = $connection->prepare("UPDATE `orders_list` SET `expire_date` = `expire_date` + (? * 86400) WHERE `id` = ? AND `expire_date` + (? * 86400) BETWEEN 1 AND 2147483647");
     $stmt->bind_param("iii", $days, $id, $days);
     $stmt->execute();$changed=$stmt->affected_rows;
     $stmt->close();
-    if ($changed!==1) {sendMessage(\achbotMessage('admin_settings.management.local_expiry_prompt'),$cancelKey);return;}
+    if ($changed!==1) {sendMessage(\achbotMessage('admin_settings.management.local_expiry_prompt'),$cancelKey,'HTML');return;}
 
-    sendMessage(\achbotMessage('subscription.order_management.show_order_management_panel.message.86c15dd0ed'));
+    sendMessage(\achbotMessage('subscription.order_management.show_order_management_panel.message.86c15dd0ed'), null, 'HTML');
     $stmt = $connection->prepare("SELECT * FROM `orders_list` WHERE `id` = ?");
     $stmt->bind_param("i", $id);
     $stmt->execute();
@@ -468,7 +468,7 @@ if (preg_match('/^changeToken_(\\d+)/', $data, $match)) {
         alert(\achbotMessage('subscription.order_management.show_order_management_panel.alert.3e801d365f'),true);
         return;
     }
-    sendMessage(\achbotMessage('subscription.order_management.show_order_management_panel.message.f6d2b05a49'), $cancelKey);
+    sendMessage(\achbotMessage('subscription.order_management.show_order_management_panel.message.f6d2b05a49'), $cancelKey, 'HTML');
     setUser("awaitingToken_$id");
 }
 
@@ -483,7 +483,7 @@ if (preg_match('/^awaitingToken_(\\d+)/', $userInfo['step'], $match) && $text !=
     $stmt->bind_param("si", $text, $id);
     $stmt->execute();
     $stmt->close();
-    sendMessage(\achbotMessage('subscription.order_management.show_order_management_panel.message.18947492b0'));
+    sendMessage(\achbotMessage('subscription.order_management.show_order_management_panel.message.18947492b0'), null, 'HTML');
     $stmt = $connection->prepare("SELECT * FROM `orders_list` WHERE `id` = ?");
     $stmt->bind_param("i", $id);
     $stmt->execute();
@@ -501,7 +501,7 @@ if (preg_match('/^changeUUID_(\\d+)/', $data, $match)) {
         alert(\achbotMessage('subscription.order_management.show_order_management_panel.alert.3e801d365f'),true);
         return;
     }
-    sendMessage(\achbotMessage('subscription.order_management.show_order_management_panel.message.1ea9c7448e'), $cancelKey);
+    sendMessage(\achbotMessage('subscription.order_management.show_order_management_panel.message.1ea9c7448e'), $cancelKey, 'HTML');
     setUser("awaitingUUID_$id");
 }
 
@@ -516,7 +516,7 @@ if (preg_match('/^awaitingUUID_(\\d+)/', $userInfo['step'], $match) && $text != 
     $stmt->bind_param("si", $text, $id);
     $stmt->execute();
     $stmt->close();
-    sendMessage(\achbotMessage('subscription.order_management.show_order_management_panel.message.3688781e63'));
+    sendMessage(\achbotMessage('subscription.order_management.show_order_management_panel.message.3688781e63'), null, 'HTML');
     $stmt = $connection->prepare("SELECT * FROM `orders_list` WHERE `id` = ?");
     $stmt->bind_param("i", $id);
     $stmt->execute();
@@ -558,7 +558,7 @@ if (preg_match('/^changeServerId_(\d+)$/D', (string)($data ?? ''), $match)) {
     }
     $keyboard[] = [['text'=>\achbotMessage('subscription.order_management.show_order_management_panel.button.b35a2352f5'), 'callback_data'=>'returnToPanel_' . $id]];
     sendMessage(\achbotMessage('subscription.order_management.show_order_management_panel.message.557fb66856'),
-        json_encode(['inline_keyboard'=>$keyboard], JSON_UNESCAPED_UNICODE));
+        json_encode(['inline_keyboard'=>$keyboard], JSON_UNESCAPED_UNICODE), 'HTML');
     return;
 }
 
@@ -576,7 +576,7 @@ if (preg_match('/^selectServerId_(\d+)_(\d+)$/D', (string)($data ?? ''), $match)
     }
     require_once __DIR__.'/PhysicalService.php';
     achbotNotifyServiceChange('server',$result,(int)$from_id,true);
-    sendMessage(\achbotMessage('subscription.order_management.show_order_management_panel.message.88e0b88b0d'));
+    sendMessage(\achbotMessage('subscription.order_management.show_order_management_panel.message.88e0b88b0d'), null, 'HTML');
     $stmt = $connection->prepare("SELECT * FROM `orders_list` WHERE `id` = ?");
     $stmt->bind_param('i', $id);
     $stmt->execute();
@@ -610,7 +610,7 @@ if (preg_match('/^changeFileId_(\\d+)_(\\d+)$/', (string) ($data ?? ''), $match)
     }
     $stmt->close();
     $keyboard[] = [["text" => \achbotMessage('subscription.order_management.show_order_management_panel.button.b35a2352f5'), "callback_data" => "returnToPanel_$id"]];
-    sendMessage(\achbotMessage('subscription.order_management.show_order_management_panel.message.877fdebc48'), json_encode(['inline_keyboard' => $keyboard]));
+    sendMessage(\achbotMessage('subscription.order_management.show_order_management_panel.message.877fdebc48'), json_encode(['inline_keyboard' => $keyboard]), 'HTML');
 }
 
 if (preg_match('/^reviewPlanCorrection_([1-9][0-9]*)_([1-9][0-9]*)$/D',
@@ -630,7 +630,7 @@ if (preg_match('/^reviewPlanCorrection_([1-9][0-9]*)_([1-9][0-9]*)$/D',
             'callback_data'=>'returnToPanel_'.$orderId ]]
     ]];
     sendMessage(\achbotMessage('subscription.service_plan_correction.warning'),
-        json_encode($keyboard,JSON_THROW_ON_ERROR));
+        json_encode($keyboard,JSON_THROW_ON_ERROR), 'HTML');
     return;
 }
 
@@ -659,7 +659,7 @@ if (preg_match('/^(recoverPlanJournal|confirmPlanCorrection)_([1-9][0-9]*)_([1-9
     } catch (Throwable $error) {
         error_log('achbot_plan_recovery_report_unconfirmed journal_id='.$journalId);
     }
-    sendMessage(\achbotMessage('subscription.order_management.show_order_management_panel.message.75785b37ae'));
+    sendMessage(\achbotMessage('subscription.order_management.show_order_management_panel.message.75785b37ae'), null, 'HTML');
     $q=$connection->prepare('SELECT * FROM orders_list WHERE id=? AND status=1');
     $q->bind_param('i',$orderId);$q->execute();
     $order=$q->get_result()->fetch_assoc();$q->close();
@@ -687,7 +687,7 @@ if (preg_match('/^selectFileId_(\d+)_(\d+)$/', (string) ($data ?? ''), $match)) 
     } catch (Throwable $noticeError) {
         error_log('achbot_service_plan_report_unconfirmed order_id='.$id);
     }
-    sendMessage(\achbotMessage('subscription.order_management.show_order_management_panel.message.75785b37ae'));
+    sendMessage(\achbotMessage('subscription.order_management.show_order_management_panel.message.75785b37ae'), null, 'HTML');
     $s=$connection->prepare('SELECT * FROM orders_list WHERE id=?');
     $s->bind_param('i',$id);$s->execute();$order=$s->get_result()->fetch_assoc();$s->close();
     if ($order) showOrderManagementPanel($order,$message_id);

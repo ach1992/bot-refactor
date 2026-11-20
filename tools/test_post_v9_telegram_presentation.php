@@ -86,6 +86,47 @@ requireSame(
     '<tg-emoji emoji-id="9">✅</tg-emoji> '.
     '<i><tg-emoji emoji-id="9876543210123456789">🧑‍💻</tg-emoji></i> &amp; &#9989;',
     $converted,'preserve code, pre, link, existing custom emoji and entities');
+// Do not turn a literal, automatically linked URL into custom emoji tags.
+// This also covers URL query strings with encoded ampersands, Telegram links,
+// and an emoji adjacent to (but outside) the URL.
+$urlInput='✅ https://example.invalid/sub/✅?x=1&amp;y=🧑‍💻 ✅';
+requireSame(
+    '<tg-emoji emoji-id="1234567890123456789">✅</tg-emoji> '.
+    'https://example.invalid/sub/✅?x=1&amp;y=🧑‍💻 '.
+    '<tg-emoji emoji-id="1234567890123456789">✅</tg-emoji>',
+    prepare('sendMessage',['text'=>$urlInput,'parse_mode'=>'HTML'])['text'],
+    'bare URL with encoded query and Unicode glyphs untouched');
+requireSame(
+    ['text'=>'https://example.invalid/✅','parse_mode'=>'HTML'],
+    prepare('sendMessage',['text'=>'https://example.invalid/✅','parse_mode'=>'HTML']),
+    'no decoration-only URL should leave payload byte-identical');
+requireSame(
+    'tg://resolve?domain=✅ <tg-emoji emoji-id="1234567890123456789">✅</tg-emoji>',
+    prepare('sendMessage',['text'=>'tg://resolve?domain=✅ ✅','parse_mode'=>'HTML'])['text'],
+    'Telegram URL untouched, following emoji converted');
+requireSame(
+    'vless://user@server.invalid:443?security=tls#✅ '.
+    '<tg-emoji emoji-id="1234567890123456789">✅</tg-emoji>',
+    prepare('sendMessage',['text'=>'vless://user@server.invalid:443?security=tls#✅ ✅',
+        'parse_mode'=>'HTML'])['text'],
+    'VPN configuration URI and fragment emoji remain copyable');
+requireSame(
+    'ss://secret@server.invalid:443#🧑‍💻 '.
+    '<tg-emoji emoji-id="1234567890123456789">✅</tg-emoji>',
+    prepare('sendMessage',['text'=>'ss://secret@server.invalid:443#🧑‍💻 ✅',
+        'parse_mode'=>'HTML'])['text'],
+    'generic scheme URI not rewritten');
+requireSame(
+    'www.example.invalid/✅ <tg-emoji emoji-id="1234567890123456789">✅</tg-emoji>',
+    prepare('sendMessage',['text'=>'www.example.invalid/✅ ✅','parse_mode'=>'HTML'])['text'],
+    'bare www URL untouched');
+requireSame(
+    '<tg-emoji emoji-id="1234567890123456789">✅</tg-emoji> '.
+    'https://example.invalid/?x=✅&amp;y=🧑‍💻 '.
+    '<tg-emoji emoji-id="1234567890123456789">✅</tg-emoji>',
+    prepare('sendMessage',['text'=>'✅ https://example.invalid/?x=✅&y=🧑‍💻 ✅'])['text'],
+    'plain input URL remains copyable after HTML escaping');
+
 $literal='A < B & C ✅ "quoted"';
 requireSame([
     'text'=>'A &lt; B &amp; C <tg-emoji emoji-id="1234567890123456789">✅</tg-emoji> &quot;quoted&quot;',
@@ -172,6 +213,30 @@ foreach($objects as $response) {
         $calls++;return $calls===1?$response:$ok;
     });
     requireSame(2,$calls,'known formatting rejection original retry');
+}
+// The two migrated fixed Markdown-code prompts have identical visible text,
+// line breaks, and literal copyable code contents in HTML. Message catalog
+// keys remain stable; no dynamic input or callback text is involved.
+require_once __DIR__ . '/../messages/loader.php';
+$legacyCodePrompts = [
+    'subscription.order_management.manageorderdatabase.message.e16b131103' => [
+        'markdown'=>'✏️ لطفا `remark` مربوط به سفارش را وارد کنید:',
+        'html'=>'✏️ لطفا <code>remark</code> مربوط به سفارش را وارد کنید:',
+    ],
+    'subscription.sub_link_settings.message.9f2715dc7c' => [
+        'markdown'=>"🔗 لطفاً لینک‌های کمکی اشتراک سرور را وارد کنید.\n".
+            "📌 لینک‌ها را با کاما (,) از هم جدا کنید.\n\n".
+            "مثال:\n`https://sub1.domain.com,https://sub2.domain.com`",
+        'html'=>"🔗 لطفاً لینک‌های کمکی اشتراک سرور را وارد کنید.\n".
+            "📌 لینک‌ها را با کاما (,) از هم جدا کنید.\n\n".
+            "مثال:\n<code>https://sub1.domain.com,https://sub2.domain.com</code>",
+    ],
+];
+foreach ($legacyCodePrompts as $key=>$pair) {
+    $candidate = achbotMessage($key);
+    requireSame($pair['html'],$candidate,'exact migrated HTML template: '.$key);
+    requireSame(str_replace('`','',$pair['markdown']),strip_tags($candidate),
+        'identical visible text and copyable content: '.$key);
 }
 echo json_encode(['status'=>'PASS','cases'=>$cases,'pass'=>true,
     'scope'=>'isolated-presentation-no-network','default_unchanged'=>true],
