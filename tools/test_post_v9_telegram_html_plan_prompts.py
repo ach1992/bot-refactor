@@ -213,6 +213,7 @@ def verify_negative_mutations(sources: dict[str, str]) -> int:
         ('src/Plans/Administration.php',
          "$title = $match[1] == \"dayPrice\"?", "$title = $text == \"dayPrice\"?"),
     ]
+    rejected = 0
     for filename, old, new in changes:
         src = sources[filename]
         if src.count(old) != 1:
@@ -221,12 +222,13 @@ def verify_negative_mutations(sources: dict[str, str]) -> int:
         variant[filename] = src.replace(old, new, 1)
         try:
             verify_provenance(variant)
-            if digest(inventory(variant)) == EXPECTED_SOURCE_SHA:
-                raise AssertionError('mutation escaped review contract')
-        except AssertionError as exc:
-            if 'mutation escaped' in str(exc):
-                raise
-    return len(changes)
+            if digest(inventory(variant)) != EXPECTED_SOURCE_SHA:
+                raise AssertionError('audited source fingerprint differs')
+        except AssertionError:
+            rejected += 1
+        else:
+            raise AssertionError('mutation escaped review contract: ' + filename)
+    return rejected
 
 
 def main() -> None:
