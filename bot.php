@@ -76,7 +76,7 @@ if (($userInfo['step'] ?? null) === "banned" &&
 $checkSpam = checkSpam();
 if(is_numeric($checkSpam)){
     $time = jdate("Y-m-d H:i:s", $checkSpam);
-    sendMessage(\achbotMessage('bot.bot.webhook_ingress_authenticated.message.5e45680470', ['time' => $time]));
+    sendMessage(\achbotMessage('bot.bot.webhook_ingress_authenticated.message.5e45680470', ['time' => $time]), null, 'HTML');
     exit();
 }
 
@@ -674,7 +674,7 @@ if (($from_id == $admin || (int)($userInfo['isAdmin']??0)===1) &&
     }
     $field=$fields[$key];
     setUser('paymentPolicyValue_'.$key);
-    sendMessage($field['label'].\achbotMessage('bot.bot.payment_policy_settings.message.0aef5ea61e').$field['min'].\achbotMessage('bot.bot.payment_policy_settings.message.1a51e219ec').$field['max'].\achbotMessage('bot.bot.payment_policy_settings.message.121434bafe'),$cancelKey);
+    sendMessage($field['label'].\achbotMessage('bot.bot.payment_policy_settings.message.0aef5ea61e').$field['min'].\achbotMessage('bot.bot.payment_policy_settings.message.1a51e219ec').$field['max'].\achbotMessage('bot.bot.payment_policy_settings.message.121434bafe'),$cancelKey, 'HTML');
     return;
 }
 if (($from_id == $admin || (int)($userInfo['isAdmin']??0)===1) &&
@@ -784,7 +784,7 @@ if (is_string($data??null) && str_starts_with($data,'changePaymentKeys')) {
             answerCallbackQuery($callbackId, \achbotMessage('bot.bot.change_config_remark_type.alert.b1f29d520c'), true);
             return;
     }
-    sendMessage(\achbotMessage('bot.bot.change_config_remark_type.message.8f40ac53e7', ['gate' => $gate]), $cancelKey);
+    sendMessage(\achbotMessage('bot.bot.change_config_remark_type.message.8f40ac53e7', ['gate' => $gate]), $cancelKey, 'HTML');
     return;
 }
 $paymentKeyStep=(string)($userInfo['step']??'');
@@ -1761,7 +1761,7 @@ if (is_string($userInfo['step']??null) &&
         try {
             if ($directClaim['reason']==='hold') {
                 sendMessage(\achbotMessage('bot.bot.gift_volume_and_day.message.71a178ae08').
-                    $directClaim['id'].\achbotMessage('bot.bot.gift_volume_and_day.message.f988eb99dc'));
+                    $directClaim['id'].\achbotMessage('bot.bot.gift_volume_and_day.message.f988eb99dc'), null, 'HTML');
             } else {
                 sendMessage(\achbotMessage('bot.bot.gift_volume_and_day.message.8c36c4327a'), null, 'HTML');
             }
@@ -1809,7 +1809,7 @@ if (is_string($userInfo['step']??null) &&
         achbotDirectGiftReview($connection,$directClaim,$directFailure);
         try {
             sendMessage(\achbotMessage('bot.bot.gift_volume_and_day.message.5999ce86f9').
-                $directClaim['id'].\achbotMessage('bot.bot.gift_volume_and_day.message.e36a2dd90a'));
+                $directClaim['id'].\achbotMessage('bot.bot.gift_volume_and_day.message.e36a2dd90a'), null, 'HTML');
         } catch (Throwable $ignored) {
             error_log('direct_gift_review_notice_unconfirmed');
         }
@@ -1820,7 +1820,7 @@ if (is_string($userInfo['step']??null) &&
         $directClaim['volume_mb'],$directClaim['days']);
     try {
         sendMessage(\achbotMessage('bot.bot.gift_volume_and_day.message.df8d2180ae').
-            $directClaim['id'].').',$removeKeyboard);
+            $directClaim['id'].').',$removeKeyboard, 'HTML');
         sendMessage($mainValues['reached_main_menu'], getMainKeys(), 'HTML');
     } catch (Throwable $noticeFailure) {
         error_log('direct_gift_success_notice_unconfirmed');

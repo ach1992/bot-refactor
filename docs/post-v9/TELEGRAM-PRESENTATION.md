@@ -188,6 +188,34 @@ bounded provenance contract, not a general PHP data-flow analyzer or a
 license to migrate user-defined messages; on intentional changes, inspect
 the effective diff before accepting a new `--print-audit` fingerprint.
 
+The next bounded source-owned migration covers exactly eleven
+`sendMessage()` producers in `bot.php` and `src/Admin/ManagementFlow.php`:
+spam-unlock date notice, typed payment-policy field/range prompt, predefined
+payment-gateway setting prompt, three direct-gift journal-ID status notices,
+and five administrative management-wizard status/result notices. Their
+original text expressions and keyboard arguments are unchanged, with an
+explicit third `HTML` argument added; previously single-argument sends now
+explicitly pass the existing default `null` keyboard. The direct-gift ID is
+from the integer-returning `achbotDirectGiftWrite()` or explicitly cast
+persisted source ID. Gateway names are selected only from catalog-defined
+administrative fields, policy field labels and min/max numbers are fixed
+catalog/integer values, and management status keys come from fixed internal
+branches. No customer names, support replies, custom copy or persisted
+captions are included. Text/whitespace, callbacks, finance/authorization,
+transaction completion and deferred-delivery semantics must not change.
+
+`python3 tools/test_post_v9_telegram_html_management_gift.py` discovers and
+pins the eleven actual executable PHP call arguments, extracts the **real**
+management-text and policy-fields functions, and executes every actual text
+and keyboard expression in PHP for fourteen source-typed fixtures (154
+text/keyboard pairs). Both fingerprints were captured before conversion from
+pre-change `main`. Its literal safety audit and negative source mutation
+checks fail for changed/missing producer calls, parse-mode drift, and unsafe
+replacement of numeric facts with arbitrary text. The golden contract is
+bounded to these source-owned statuses; deliberate Markdown code-formatting,
+URLs and arbitrary/persisted messages explicitly remain for separately
+validated migration rather than an unreviewed global parser switch.
+
 On an intentional change, inspect and review the effective diff first, then
 run the read-only `--print-audit`
 option to obtain proposed new fingerprints; never update the expected values

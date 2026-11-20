@@ -183,7 +183,7 @@ function achbotManagementRender(mysqli $db,array $draft,string $prefix='',?int $
 }
 function achbotManagementHome(string $kind,?int $id=null,string $prefix=''): void {
     global $removeKeyboard;
-    sendMessage($prefix!==''?$prefix:achbotManagementText('canceled'),$removeKeyboard??json_encode(['remove_keyboard'=>true]));
+    sendMessage($prefix!==''?$prefix:achbotManagementText('canceled'),$removeKeyboard??json_encode(['remove_keyboard'=>true]), 'HTML');
     if ($kind==='server') sendMessage(achbotManagementText('server_list'),$id?getServerConfigKeys($id):getServerListKeys(),'HTML');
     else sendMessage(achbotManagementText('plan_list'),$id?getPlanDetailsKeys($id):
         json_encode(['inline_keyboard'=>[[['text'=>achbotManagementText('open_plans'),'callback_data'=>'backplan']]]]),'HTML');
@@ -278,7 +278,7 @@ function achbotHandleManagement(): bool {
             achbotManagementStore($connection,$actor,$actorRowId,$draft);
         }
         if (!achbotManagementCommit($connection)) throw new RuntimeException('management_commit_unknown');$begun=false;
-        if ($starts) sendMessage(achbotManagementText('intro'),$cancelKey);
+        if ($starts) sendMessage(achbotManagementText('intro'),$cancelKey, 'HTML');
         // A selection changes this keyboard, not the conversation history.
         $messageId=(!$starts && $callback && in_array($action,['pick','page'],true) &&
             in_array($draft['stage'],['groups','targets','url'],true))?
@@ -293,10 +293,10 @@ function achbotHandleManagement(): bool {
         error_log('achbot_management_deferred reason='.$public);
         // A failed/unknown COMMIT is not safe to present as a failed save or retry.
         if ($reason==='management_commit_unknown') {
-            sendMessage(achbotManagementText('review_required'));return true;
+            sendMessage(achbotManagementText('review_required'), null, 'HTML');return true;
         }
         if (in_array($reason,['management_frame','management_private_required'],true)) return true;
-        sendMessage(achbotManagementText($public));
+        sendMessage(achbotManagementText($public), null, 'HTML');
         // Only a verified private, currently authorized actor may recover a draft.
         if (!$canRecover || $reason==='management_admin_required') return true;
         // Recover the committed draft, never render a partially changed local copy.
@@ -466,7 +466,7 @@ function achbotHandleManagementFields(): bool {
         error_log('achbot_management_field_deferred reason='.(in_array($code,$allowed,true)?$code:'management_unavailable'));
         sendMessage(achbotManagementText(in_array($code,['management_commit_unknown',
             'management_rebind_requires_review'],true)?'review_required':
-            (in_array($code,$allowed,true)?$code:'management_unavailable')));
+            (in_array($code,$allowed,true)?$code:'management_unavailable')), null, 'HTML');
     }
     return true;
 }
