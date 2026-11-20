@@ -54,7 +54,7 @@ if(($data=="editCustomPlan" || preg_match('/^editCustom(gbPrice|dayPrice)/',$use
             setSettings($match[1], $text);
             sendMessage($mainValues['saved_successfuly'],$removeKeyboard);
         }else{
-            sendMessage(\achbotMessage('plans.administration.edit_custom_plan.message.be59f23713'));
+            sendMessage(\achbotMessage('plans.administration.edit_custom_plan.message.be59f23713'), null, 'HTML');
             exit();
         }
     }
@@ -76,7 +76,7 @@ if(($data=="editCustomPlan" || preg_match('/^editCustom(gbPrice|dayPrice)/',$use
 
         ]]);
     if(!isset($data)){
-        sendMessage(\achbotMessage('plans.administration.edit_custom_plan.message.e3b03f6c8e'),$keys);
+        sendMessage(\achbotMessage('plans.administration.edit_custom_plan.message.e3b03f6c8e'),$keys, 'HTML');
         setUser();
     }else{
         editText($message_id,\achbotMessage('plans.administration.edit_custom_plan.message.e3b03f6c8e'),$keys);
@@ -238,7 +238,7 @@ if(preg_match('/^confirmDeletePlan([1-9][0-9]*)_([a-f0-9]{16})$/D',(string)$data
 if(preg_match('/^wizwizplanname(\d+)/',$data) and achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'plans') && $text != $buttonValues['cancel']){
     setUser($data);
     delMessage();
-    sendMessage(\achbotMessage('plans.administration.edit_custom_plan.message.0253b1982e'),$cancelKey);exit;
+    sendMessage(\achbotMessage('plans.administration.edit_custom_plan.message.0253b1982e'),$cancelKey, 'HTML');exit;
 }
 if(preg_match('/^wizwizplanname(\d+)/',$userInfo['step'], $match) && $text != $buttonValues['cancel'] && achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'plans')){
     $stmt = $connection->prepare("UPDATE `server_plans` SET `title`=? WHERE `id`=?");
@@ -246,19 +246,19 @@ if(preg_match('/^wizwizplanname(\d+)/',$userInfo['step'], $match) && $text != $b
     $stmt->execute();
     $stmt->close();
 
-    sendMessage(\achbotMessage('plans.administration.edit_custom_plan.message.43afd491f6'));
+    sendMessage(\achbotMessage('plans.administration.edit_custom_plan.message.43afd491f6'), null, 'HTML');
     setUser();
 
     $keys = getPlanDetailsKeys($match[1]);
     if($keys == null){
         alert(\achbotMessage('plans.administration.edit_custom_plan.alert.756c3005d3'));
         exit;
-    }else sendMessage(\achbotMessage('plans.administration.edit_custom_plan.message.06d5c646c1'), $keys);
+    }else sendMessage(\achbotMessage('plans.administration.edit_custom_plan.message.06d5c646c1'), $keys, 'HTML');
 }
 if(preg_match('/^wizwizplanslimit(\d+)/',$data) and achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'plans') && $text != $buttonValues['cancel']){
     setUser($data);
     delMessage();
-    sendMessage(\achbotMessage('plans.administration.edit_custom_plan.message.323e773e36'),$cancelKey);exit;
+    sendMessage(\achbotMessage('plans.administration.edit_custom_plan.message.323e773e36'),$cancelKey, 'HTML');exit;
 }
 if(preg_match('/^wizwizplanslimit(\d+)/',$userInfo['step'], $match) && $text != $buttonValues['cancel'] && achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'plans')){
     $stmt = $connection->prepare("UPDATE `server_plans` SET `acount`=? WHERE `id`=?");
@@ -266,7 +266,7 @@ if(preg_match('/^wizwizplanslimit(\d+)/',$userInfo['step'], $match) && $text != 
     $stmt->execute();
     $stmt->close();
 
-    sendMessage(\achbotMessage('plans.administration.edit_custom_plan.message.43afd491f6'));
+    sendMessage(\achbotMessage('plans.administration.edit_custom_plan.message.43afd491f6'), null, 'HTML');
     setUser();
 
     $keys = getPlanDetailsKeys($match[1]);
@@ -278,7 +278,7 @@ if(preg_match('/^wizwizplanslimit(\d+)/',$userInfo['step'], $match) && $text != 
 if(preg_match('/^wizwizplansinobundid(\d+)/',$data) and achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'plans') && $text != $buttonValues['cancel']){
     setUser($data);
     delMessage();
-    sendMessage(\achbotMessage('plans.administration.edit_custom_plan.message.4ec681ba73'),$cancelKey);exit;
+    sendMessage(\achbotMessage('plans.administration.edit_custom_plan.message.4ec681ba73'),$cancelKey, 'HTML');exit;
 }
 if(preg_match('/^wizwizplansinobundid(\d+)/',$userInfo['step'], $match) && achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'plans') && $text != $buttonValues['cancel']){
     $stmt = $connection->prepare("UPDATE `server_plans` SET `inbound_id`=? WHERE `id`=?");
@@ -286,7 +286,7 @@ if(preg_match('/^wizwizplansinobundid(\d+)/',$userInfo['step'], $match) && achbo
     $stmt->execute();
     $stmt->close();
 
-    sendMessage(\achbotMessage('plans.administration.edit_custom_plan.message.43afd491f6'));
+    sendMessage(\achbotMessage('plans.administration.edit_custom_plan.message.43afd491f6'), null, 'HTML');
     setUser();
 
     $keys = getPlanDetailsKeys($match[1]);
@@ -298,7 +298,7 @@ if(preg_match('/^wizwizplansinobundid(\d+)/',$userInfo['step'], $match) && achbo
 if(preg_match('/^wizwizplaneditdes(\d+)/',$data) and achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'plans') && $text != $buttonValues['cancel']){
     setUser($data);
     delMessage();
-    sendMessage(\achbotMessage('plans.administration.edit_custom_plan.message.090fe8ddfd'),$cancelKey);exit;
+    sendMessage(\achbotMessage('plans.administration.edit_custom_plan.message.090fe8ddfd'),$cancelKey, 'HTML');exit;
 }
 if(preg_match('/^wizwizplaneditdes(\d+)/',$userInfo['step'], $match) && achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'plans') && $text != $buttonValues['cancel']){
     $stmt = $connection->prepare("UPDATE `server_plans` SET `descr`=? WHERE `id`=?");
@@ -307,7 +307,7 @@ if(preg_match('/^wizwizplaneditdes(\d+)/',$userInfo['step'], $match) && achbotAd
     $stmt->close();
 
 
-    sendMessage(\achbotMessage('plans.administration.edit_custom_plan.message.43afd491f6'));
+    sendMessage(\achbotMessage('plans.administration.edit_custom_plan.message.43afd491f6'), null, 'HTML');
     setUser();
 
     $keys = getPlanDetailsKeys($match[1]);
@@ -319,7 +319,7 @@ if(preg_match('/^wizwizplaneditdes(\d+)/',$userInfo['step'], $match) && achbotAd
 if(preg_match('/^editDestName(\d+)/',$data) and achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'plans') && $text != $buttonValues['cancel']){
     setUser($data);
     delMessage();
-    sendMessage(\achbotMessage('plans.administration.edit_custom_plan.message.2c3264a209'),$cancelKey);exit;
+    sendMessage(\achbotMessage('plans.administration.edit_custom_plan.message.2c3264a209'),$cancelKey, 'HTML');exit;
 }
 if(preg_match('/^editDestName(\d+)/',$userInfo['step'], $match) && achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'plans') &&  $text != $buttonValues['cancel']){
     if($text == "/empty"){
@@ -333,7 +333,7 @@ if(preg_match('/^editDestName(\d+)/',$userInfo['step'], $match) && achbotAdminCa
     $stmt->close();
 
 
-    sendMessage(\achbotMessage('plans.administration.edit_custom_plan.message.43afd491f6'));
+    sendMessage(\achbotMessage('plans.administration.edit_custom_plan.message.43afd491f6'), null, 'HTML');
     setUser();
 
     $keys = getPlanDetailsKeys($match[1]);
@@ -345,7 +345,7 @@ if(preg_match('/^editDestName(\d+)/',$userInfo['step'], $match) && achbotAdminCa
 if(preg_match('/^editSpiderX(\d+)/',$data) and achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'plans') && $text != $buttonValues['cancel']){
     setUser($data);
     delMessage();
-    sendMessage(\achbotMessage('plans.administration.edit_custom_plan.message.bd5882ea41'),$cancelKey);exit;
+    sendMessage(\achbotMessage('plans.administration.edit_custom_plan.message.bd5882ea41'),$cancelKey, 'HTML');exit;
 }
 if(preg_match('/^editSpiderX(\d+)/',$userInfo['step'], $match) && achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'plans') && $text != $buttonValues['cancel']){
     if($text == "/empty"){
@@ -359,7 +359,7 @@ if(preg_match('/^editSpiderX(\d+)/',$userInfo['step'], $match) && achbotAdminCan
     $stmt->close();
 
 
-    sendMessage(\achbotMessage('plans.administration.edit_custom_plan.message.43afd491f6'));
+    sendMessage(\achbotMessage('plans.administration.edit_custom_plan.message.43afd491f6'), null, 'HTML');
     setUser();
 
     $keys = getPlanDetailsKeys($match[1]);
@@ -385,7 +385,7 @@ if(preg_match('/^editServerNames(\d+)/',$userInfo['step'], $match) && achbotAdmi
     $stmt->close();
 
 
-    sendMessage(\achbotMessage('plans.administration.edit_custom_plan.message.43afd491f6'));
+    sendMessage(\achbotMessage('plans.administration.edit_custom_plan.message.43afd491f6'), null, 'HTML');
     setUser();
 
     $keys = getPlanDetailsKeys($match[1]);
@@ -401,7 +401,7 @@ if(preg_match('/^editFlow(\d+)/',$data, $match) and achbotAdminCanFor($connectio
         [['text'=>\achbotMessage('plans.administration.edit_custom_plan.none.dc937b5989'), 'callback_data'=>"editPFlow" . $match[1] . "_None"]],
         [['text'=>\achbotMessage('plans.administration.edit_custom_plan.xtls_rprx_vision.848b11de44'), 'callback_data'=>"editPFlow" . $match[1] . "_xtls-rprx-vision"]],
         ]]);
-    sendMessage(\achbotMessage('plans.administration.edit_custom_plan.message.946863c2fa'),$keys);exit;
+    sendMessage(\achbotMessage('plans.administration.edit_custom_plan.message.946863c2fa'),$keys, 'HTML');exit;
 }
 if(preg_match('/^editPFlow(\d+)_(.*)/',$data, $match) && achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'plans') && $text != $buttonValues['cancel']){
     $stmt = $connection->prepare("UPDATE `server_plans` SET `flow`=? WHERE `id`=?");
@@ -418,7 +418,7 @@ if(preg_match('/^editPFlow(\d+)_(.*)/',$data, $match) && achbotAdminCanFor($conn
 if(preg_match('/^wizwizplanrial(\d+)/',$data) and achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'plans') && $text != $buttonValues['cancel']){
     setUser($data);
     delMessage();
-    sendMessage(\achbotMessage('plans.administration.edit_custom_plan.message.031fdf541a'),$cancelKey);exit;
+    sendMessage(\achbotMessage('plans.administration.edit_custom_plan.message.031fdf541a'),$cancelKey, 'HTML');exit;
 }
 if(preg_match('/^wizwizplanrial(\d+)/',$userInfo['step'], $match) && achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'plans')&& $text != $buttonValues['cancel']){
     if(is_numeric($text)){
@@ -427,7 +427,7 @@ if(preg_match('/^wizwizplanrial(\d+)/',$userInfo['step'], $match) && achbotAdmin
         $stmt->execute();
         $stmt->close();
 
-        sendMessage(\achbotMessage('plans.administration.edit_custom_plan.message.43afd491f6'));
+        sendMessage(\achbotMessage('plans.administration.edit_custom_plan.message.43afd491f6'), null, 'HTML');
         setUser();
 
         $keys = getPlanDetailsKeys($match[1]);
@@ -436,7 +436,7 @@ if(preg_match('/^wizwizplanrial(\d+)/',$userInfo['step'], $match) && achbotAdmin
             exit;
         }else sendMessage(\achbotMessage('plans.administration.edit_custom_plan.message.06d5c646c1'), $keys, "HTML");
     }else{
-        sendMessage(\achbotMessage('plans.administration.edit_custom_plan.message.923b819fc4'));
+        sendMessage(\achbotMessage('plans.administration.edit_custom_plan.message.923b819fc4'), null, 'HTML');
     }
 }
 

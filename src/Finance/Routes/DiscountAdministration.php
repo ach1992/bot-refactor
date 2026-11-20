@@ -37,7 +37,7 @@ if($userInfo['step'] == "addDiscountCode" && $text != $buttonValues['cancel'] &&
 
     // فقط حروف انگلیسی، عدد و زیرخط
     if(!preg_match('/^[A-Za-z0-9_]+$/', $code)){
-        sendMessage(\achbotMessage('payment.discount_administration.add_discount_code.message.3a4d5b3bcb'));
+        sendMessage(\achbotMessage('payment.discount_administration.add_discount_code.message.3a4d5b3bcb'), null, 'HTML');
         return;
     }
 
@@ -49,7 +49,7 @@ if($userInfo['step'] == "addDiscountCode" && $text != $buttonValues['cancel'] &&
     $stmt->close();
 
     if($res->num_rows > 0){
-        sendMessage(\achbotMessage('payment.discount_administration.add_discount_code.message.d4e0464259'));
+        sendMessage(\achbotMessage('payment.discount_administration.add_discount_code.message.d4e0464259'), null, 'HTML');
         return;
     }
 
@@ -82,9 +82,9 @@ if(preg_match('/^addDiscountAmount(.*)/',$userInfo['step'],$match) && $text != $
         $dInfo['amount'] = (int)$text; 
 
         setUser("addDiscountDate" . json_encode($dInfo, JSON_UNESCAPED_UNICODE)); 
-        sendMessage(\achbotMessage('payment.discount_administration.add_discount_code.message.1658fb52d4'), $cancelKey);
+        sendMessage(\achbotMessage('payment.discount_administration.add_discount_code.message.1658fb52d4'), $cancelKey, 'HTML');
     }else{
-        sendMessage(\achbotMessage('payment.discount_administration.add_discount_code.message.84d623bbac'));
+        sendMessage(\achbotMessage('payment.discount_administration.add_discount_code.message.84d623bbac'), null, 'HTML');
     }
 } 
 
@@ -98,9 +98,9 @@ if(preg_match('/^addDiscountDate(.*)/',$userInfo['step'],$match) && $text != $bu
         $dInfo['date'] = $days != 0 ? time() + ($days * 24 * 60 * 60) : 0; 
          
         setUser("addDiscountCount" . json_encode($dInfo,JSON_UNESCAPED_UNICODE)); 
-        sendMessage(\achbotMessage('payment.discount_administration.add_discount_code.message.1415403ff4'), $cancelKey);
+        sendMessage(\achbotMessage('payment.discount_administration.add_discount_code.message.1415403ff4'), $cancelKey, 'HTML');
     }else{
-        sendMessage(\achbotMessage('payment.discount_administration.add_discount_code.message.50cd9cde9a'));
+        sendMessage(\achbotMessage('payment.discount_administration.add_discount_code.message.50cd9cde9a'), null, 'HTML');
     }
 } 
 
@@ -115,9 +115,9 @@ if(preg_match('/^addDiscountCount(.*)/',$userInfo['step'],$match) && $text != $b
         $dInfo['count'] = $count > 0 ? $count : -1; 
          
         setUser('addDiscountCanUse' . json_encode($dInfo,JSON_UNESCAPED_UNICODE)); 
-        sendMessage(\achbotMessage('payment.discount_administration.add_discount_code.message.4359ee21ce'), $cancelKey);
+        sendMessage(\achbotMessage('payment.discount_administration.add_discount_code.message.4359ee21ce'), $cancelKey, 'HTML');
     }else{
-        sendMessage(\achbotMessage('payment.discount_administration.add_discount_code.message.50cd9cde9a'));
+        sendMessage(\achbotMessage('payment.discount_administration.add_discount_code.message.50cd9cde9a'), null, 'HTML');
     }
 } 
 
@@ -164,10 +164,10 @@ if(preg_match('/^addDiscountCanUse(.*)/',$userInfo['step'],$match) && $text != $
 
         sendMessage(
             \achbotMessage('payment.discount_administration.add_discount_code.message.2262c64bde'),
-            json_encode($keys)
+            json_encode($keys), 'HTML'
         );
     }else{
-        sendMessage(\achbotMessage('payment.discount_administration.add_discount_code.message.50cd9cde9a'));
+        sendMessage(\achbotMessage('payment.discount_administration.add_discount_code.message.50cd9cde9a'), null, 'HTML');
     }
 } 
 
@@ -186,7 +186,7 @@ if(preg_match('/^addDiscountAudience(.*)/',$userInfo['step'],$match) && achbotAd
             $dInfo['audience_user_id'] = 0;
 
             setUser('addDiscountAudienceUser' . json_encode($dInfo, JSON_UNESCAPED_UNICODE));
-            sendMessage(\achbotMessage('payment.discount_administration.add_discount_code.message.9480571c47'), $cancelKey);
+            sendMessage(\achbotMessage('payment.discount_administration.add_discount_code.message.9480571c47'), $cancelKey, 'HTML');
             return;
         }
 
@@ -239,7 +239,7 @@ if(preg_match('/^addDiscountAudience(.*)/',$userInfo['step'],$match) && achbotAd
 
         sendMessage(
             \achbotMessage('payment.discount_administration.add_discount_code.message.075324686f'),
-            json_encode($keys)
+            json_encode($keys), 'HTML'
         );
         return;
     }
@@ -249,7 +249,7 @@ if(preg_match('/^addDiscountAudience(.*)/',$userInfo['step'],$match) && achbotAd
 if(preg_match('/^addDiscountAudienceUser(.*)/',$userInfo['step'],$match) && $text != $buttonValues['cancel'] && achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'operations')){
     
     if(!is_numeric($text)){
-        sendMessage(\achbotMessage('payment.discount_administration.add_discount_code.message.5472913e1d'));
+        sendMessage(\achbotMessage('payment.discount_administration.add_discount_code.message.5472913e1d'), null, 'HTML');
         return;
     }
 
@@ -280,7 +280,7 @@ if(preg_match('/^addDiscountAudienceUser(.*)/',$userInfo['step'],$match) && $tex
 
     sendMessage(
         \achbotMessage('payment.discount_administration.add_discount_code.message.075324686f'),
-        json_encode($keys)
+        json_encode($keys), 'HTML'
     );
 }
 
@@ -299,7 +299,7 @@ if(preg_match('/^addDiscountTargetType(.*)/',$userInfo['step'],$match) && achbot
 
             // میریم سراغ حداقل مبلغ
             setUser('addDiscountMinPrice' . json_encode($dInfo, JSON_UNESCAPED_UNICODE));
-            sendMessage(\achbotMessage('payment.discount_administration.add_discount_code.message.ffc049ded2'), $cancelKey);
+            sendMessage(\achbotMessage('payment.discount_administration.add_discount_code.message.ffc049ded2'), $cancelKey, 'HTML');
             return;
         }
 
@@ -326,7 +326,7 @@ if(preg_match('/^addDiscountTargetType(.*)/',$userInfo['step'],$match) && achbot
                 ];
             }
 
-            sendMessage(\achbotMessage('payment.discount_administration.add_discount_code.message.4554eff310'), json_encode($keys));
+            sendMessage(\achbotMessage('payment.discount_administration.add_discount_code.message.4554eff310'), json_encode($keys), 'HTML');
             return;
         }
 
@@ -352,7 +352,7 @@ if(preg_match('/^addDiscountTargetType(.*)/',$userInfo['step'],$match) && achbot
                 ];
             }
 
-            sendMessage(\achbotMessage('payment.discount_administration.add_discount_code.message.3008556faf'), json_encode($keys));
+            sendMessage(\achbotMessage('payment.discount_administration.add_discount_code.message.3008556faf'), json_encode($keys), 'HTML');
             return;
         }
 
@@ -378,7 +378,7 @@ if(preg_match('/^addDiscountTargetType(.*)/',$userInfo['step'],$match) && achbot
                 ];
             }
 
-            sendMessage(\achbotMessage('payment.discount_administration.add_discount_code.message.b4a5143f89'), json_encode($keys));
+            sendMessage(\achbotMessage('payment.discount_administration.add_discount_code.message.b4a5143f89'), json_encode($keys), 'HTML');
             return;
         }
     }
@@ -393,7 +393,7 @@ if(preg_match('/^addDiscountTargetServer(.*)/',$userInfo['step'],$match) && achb
         $dInfo['target_id'] = (int)$m[1];
 
         setUser('addDiscountMinPrice' . json_encode($dInfo, JSON_UNESCAPED_UNICODE));
-        sendMessage(\achbotMessage('payment.discount_administration.add_discount_code.message.ffc049ded2'), $cancelKey);
+        sendMessage(\achbotMessage('payment.discount_administration.add_discount_code.message.ffc049ded2'), $cancelKey, 'HTML');
     }
 }
 
@@ -406,7 +406,7 @@ if(preg_match('/^addDiscountTargetCategory(.*)/',$userInfo['step'],$match) && ac
         $dInfo['target_id'] = (int)$m[1];
 
         setUser('addDiscountMinPrice' . json_encode($dInfo, JSON_UNESCAPED_UNICODE));
-        sendMessage(\achbotMessage('payment.discount_administration.add_discount_code.message.ffc049ded2'), $cancelKey);
+        sendMessage(\achbotMessage('payment.discount_administration.add_discount_code.message.ffc049ded2'), $cancelKey, 'HTML');
     }
 }
 
@@ -419,7 +419,7 @@ if(preg_match('/^addDiscountTargetPlan(.*)/',$userInfo['step'],$match) && achbot
         $dInfo['target_id'] = (int)$m[1];
 
         setUser('addDiscountMinPrice' . json_encode($dInfo, JSON_UNESCAPED_UNICODE));
-        sendMessage(\achbotMessage('payment.discount_administration.add_discount_code.message.ffc049ded2'), $cancelKey);
+        sendMessage(\achbotMessage('payment.discount_administration.add_discount_code.message.ffc049ded2'), $cancelKey, 'HTML');
     }
 }
 
@@ -427,7 +427,7 @@ if(preg_match('/^addDiscountTargetPlan(.*)/',$userInfo['step'],$match) && achbot
 if(preg_match('/^addDiscountMinPrice(.*)/',$userInfo['step'],$match) && $text != $buttonValues['cancel'] && achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'operations')){
 
     if(!is_numeric($text)){
-        sendMessage(\achbotMessage('payment.discount_administration.add_discount_code.message.475dad85d1'));
+        sendMessage(\achbotMessage('payment.discount_administration.add_discount_code.message.475dad85d1'), null, 'HTML');
         return;
     }
 
@@ -438,14 +438,14 @@ if(preg_match('/^addDiscountMinPrice(.*)/',$userInfo['step'],$match) && $text !=
     $dInfo['min_price'] = $minPrice > 0 ? $minPrice : 0;
 
     setUser('addDiscountMaxDiscount' . json_encode($dInfo, JSON_UNESCAPED_UNICODE));
-    sendMessage(\achbotMessage('payment.discount_administration.add_discount_code.message.685284b2e1'), $cancelKey);
+    sendMessage(\achbotMessage('payment.discount_administration.add_discount_code.message.685284b2e1'), $cancelKey, 'HTML');
 }
 
 // تعیین سقف تخفیف و ثبت نهایی
 if(preg_match('/^addDiscountMaxDiscount(.*)/',$userInfo['step'],$match) && $text != $buttonValues['cancel'] && achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'operations')){
 
     if(!is_numeric($text)){
-        sendMessage(\achbotMessage('payment.discount_administration.add_discount_code.message.ed39e0ee1b'));
+        sendMessage(\achbotMessage('payment.discount_administration.add_discount_code.message.ed39e0ee1b'), null, 'HTML');
         return;
     }
 
@@ -498,7 +498,7 @@ if(preg_match('/^addDiscountMaxDiscount(.*)/',$userInfo['step'],$match) && $text
 
     sendMessage(\achbotMessage('payment.discount_administration.add_discount_code.message.f12309f24f', ['hashId' => $hashId]), $removeKeyboard, "HTML");
     setUser(); 
-    sendMessage(\achbotMessage('payment.discount_administration.message.bfaa0cb7fb'), getDiscountCodeKeys());
+    sendMessage(\achbotMessage('payment.discount_administration.message.bfaa0cb7fb'), getDiscountCodeKeys(), 'HTML');
 } 
 
 // ❓ درخواست تأیید حذف
@@ -514,7 +514,7 @@ if(preg_match('/^delDiscountConfirm(\d+)/', $data, $m) && achbotAdminCanFor($con
         ]
     ];
 
-    sendMessage(\achbotMessage('payment.discount_administration.add_discount_code.message.e8830dbcad'), json_encode($keys));
+    sendMessage(\achbotMessage('payment.discount_administration.add_discount_code.message.e8830dbcad'), json_encode($keys), 'HTML');
 }
 
 // 🗑 حذف نهایی کد تخفیف
@@ -688,7 +688,7 @@ if(preg_match('/^editDiscountAmount(\d+)$/', $userInfo['step'], $m) && $text != 
     $val = trim(str_replace("%", "", $text));
 
     if(!is_numeric($val)){
-        sendMessage(\achbotMessage('payment.discount_administration.add_discount_code.message.84d623bbac'));
+        sendMessage(\achbotMessage('payment.discount_administration.add_discount_code.message.84d623bbac'), null, 'HTML');
         return;
     }
 
@@ -701,7 +701,7 @@ if(preg_match('/^editDiscountAmount(\d+)$/', $userInfo['step'], $m) && $text != 
 
     setUser();
 
-    sendMessage(\achbotMessage('payment.discount_administration.add_discount_code.message.04d142737e'));
+    sendMessage(\achbotMessage('payment.discount_administration.add_discount_code.message.04d142737e'), null, 'HTML');
     $data = "editDiscount".$discountId;
 }
 
@@ -721,7 +721,7 @@ if(preg_match('/^editDiscountExpire(\d+)$/', $userInfo['step'], $m) && $text != 
     $discountId = (int)$m[1];
 
     if(!is_numeric($text)){
-        sendMessage(\achbotMessage('payment.discount_administration.add_discount_code.message.50cd9cde9a'));
+        sendMessage(\achbotMessage('payment.discount_administration.add_discount_code.message.50cd9cde9a'), null, 'HTML');
         return;
     }
 
@@ -734,7 +734,7 @@ if(preg_match('/^editDiscountExpire(\d+)$/', $userInfo['step'], $m) && $text != 
     $stmt->close();
 
     setUser();
-    sendMessage(\achbotMessage('payment.discount_administration.add_discount_code.message.15c9736bbe'));
+    sendMessage(\achbotMessage('payment.discount_administration.add_discount_code.message.15c9736bbe'), null, 'HTML');
     $data = "editDiscount".$discountId;
 }
 
@@ -754,7 +754,7 @@ if(preg_match('/^editDiscountCount(\d+)$/', $userInfo['step'], $m) && $text != $
     $discountId = (int)$m[1];
 
     if(!is_numeric($text)){
-        sendMessage(\achbotMessage('payment.discount_administration.add_discount_code.message.50cd9cde9a'));
+        sendMessage(\achbotMessage('payment.discount_administration.add_discount_code.message.50cd9cde9a'), null, 'HTML');
         return;
     }
 
@@ -767,7 +767,7 @@ if(preg_match('/^editDiscountCount(\d+)$/', $userInfo['step'], $m) && $text != $
     $stmt->close();
 
     setUser();
-    sendMessage(\achbotMessage('payment.discount_administration.add_discount_code.message.ca05319dfd'));
+    sendMessage(\achbotMessage('payment.discount_administration.add_discount_code.message.ca05319dfd'), null, 'HTML');
     $data = "editDiscount".$discountId;
 }
 
@@ -787,7 +787,7 @@ if(preg_match('/^editDiscountCanUse(\d+)$/', $userInfo['step'], $m) && $text != 
     $discountId = (int)$m[1];
 
     if(!is_numeric($text)){
-        sendMessage(\achbotMessage('payment.discount_administration.add_discount_code.message.50cd9cde9a'));
+        sendMessage(\achbotMessage('payment.discount_administration.add_discount_code.message.50cd9cde9a'), null, 'HTML');
         return;
     }
 
@@ -800,7 +800,7 @@ if(preg_match('/^editDiscountCanUse(\d+)$/', $userInfo['step'], $m) && $text != 
     $stmt->close();
 
     setUser();
-    sendMessage(\achbotMessage('payment.discount_administration.add_discount_code.message.52e38e4607'));
+    sendMessage(\achbotMessage('payment.discount_administration.add_discount_code.message.52e38e4607'), null, 'HTML');
     $data = "editDiscount".$discountId;
 }
 
@@ -837,7 +837,7 @@ if(preg_match('/^editD_(\d+)_audience$/', $data, $m) && achbotAdminCanFor($conne
         ]
     ];
 
-    sendMessage(\achbotMessage('payment.discount_administration.add_discount_code.message.9c822477c9'), json_encode($keys));
+    sendMessage(\achbotMessage('payment.discount_administration.add_discount_code.message.9c822477c9'), json_encode($keys), 'HTML');
 }
 
 // ست کردن audience (به جز حالت user)
@@ -847,7 +847,7 @@ if(preg_match('/^editDAud_(\d+)_(.+)$/', $data, $m) && achbotAdminCanFor($connec
 
     if($choice == 'user'){
         setUser("editDiscountAudienceUser{$discountId}");
-        sendMessage(\achbotMessage('payment.discount_administration.add_discount_code.message.9480571c47'), $cancelKey);
+        sendMessage(\achbotMessage('payment.discount_administration.add_discount_code.message.9480571c47'), $cancelKey, 'HTML');
         return;
     }
 
@@ -870,7 +870,7 @@ if(preg_match('/^editDAud_(\d+)_(.+)$/', $data, $m) && achbotAdminCanFor($connec
     $stmt->close();
 
     setUser();
-    sendMessage(\achbotMessage('payment.discount_administration.add_discount_code.message.2cdb116acd'));
+    sendMessage(\achbotMessage('payment.discount_administration.add_discount_code.message.2cdb116acd'), null, 'HTML');
     $data = "editDiscount".$discountId;
 }
 
@@ -879,7 +879,7 @@ if(preg_match('/^editDiscountAudienceUser(\d+)$/', $userInfo['step'], $m) && $te
     $discountId = (int)$m[1];
 
     if(!is_numeric($text)){
-        sendMessage(\achbotMessage('payment.discount_administration.add_discount_code.message.575c043c0e'));
+        sendMessage(\achbotMessage('payment.discount_administration.add_discount_code.message.575c043c0e'), null, 'HTML');
         return;
     }
 
@@ -917,7 +917,7 @@ if(preg_match('/^editD_(\d+)_target$/', $data, $m) && achbotAdminCanFor($connect
         ]
     ];
 
-    sendMessage(\achbotMessage('payment.discount_administration.add_discount_code.message.44690baef6'), json_encode($keys));
+    sendMessage(\achbotMessage('payment.discount_administration.add_discount_code.message.44690baef6'), json_encode($keys), 'HTML');
 }
 
 if(preg_match('/^editDT_(\d+)_(.+)$/', $data, $m) && achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'operations')){
@@ -933,7 +933,7 @@ if(preg_match('/^editDT_(\d+)_(.+)$/', $data, $m) && achbotAdminCanFor($connecti
         $stmt->execute();
         $stmt->close();
 
-        sendMessage(\achbotMessage('payment.discount_administration.add_discount_code.message.d0ed7fc76f'));
+        sendMessage(\achbotMessage('payment.discount_administration.add_discount_code.message.d0ed7fc76f'), null, 'HTML');
         $data = "editDiscount".$discountId;
         return;
     }
@@ -958,7 +958,7 @@ if(preg_match('/^editDT_(\d+)_(.+)$/', $data, $m) && achbotAdminCanFor($connecti
             ];
         }
 
-        sendMessage(\achbotMessage('payment.discount_administration.add_discount_code.message.4554eff310'), json_encode($keys));
+        sendMessage(\achbotMessage('payment.discount_administration.add_discount_code.message.4554eff310'), json_encode($keys), 'HTML');
         return;
     }
 
@@ -980,7 +980,7 @@ if(preg_match('/^editDT_(\d+)_(.+)$/', $data, $m) && achbotAdminCanFor($connecti
             ];
         }
 
-        sendMessage(\achbotMessage('payment.discount_administration.add_discount_code.message.3008556faf'), json_encode($keys));
+        sendMessage(\achbotMessage('payment.discount_administration.add_discount_code.message.3008556faf'), json_encode($keys), 'HTML');
         return;
     }
 
@@ -1002,7 +1002,7 @@ if(preg_match('/^editDT_(\d+)_(.+)$/', $data, $m) && achbotAdminCanFor($connecti
             ];
         }
 
-        sendMessage(\achbotMessage('payment.discount_administration.add_discount_code.message.b4a5143f89'), json_encode($keys));
+        sendMessage(\achbotMessage('payment.discount_administration.add_discount_code.message.b4a5143f89'), json_encode($keys), 'HTML');
         return;
     }
 }
@@ -1018,7 +1018,7 @@ if(preg_match('/^editDTServer_(\d+)_(\d+)$/', $data, $m) && achbotAdminCanFor($c
     $stmt->execute();
     $stmt->close();
 
-    sendMessage(\achbotMessage('payment.discount_administration.add_discount_code.message.e8670a5dc8'));
+    sendMessage(\achbotMessage('payment.discount_administration.add_discount_code.message.e8670a5dc8'), null, 'HTML');
     $data = "editDiscount".$discountId;
 }
 
@@ -1033,7 +1033,7 @@ if(preg_match('/^editDTCategory_(\d+)_(\d+)$/', $data, $m) && achbotAdminCanFor(
     $stmt->execute();
     $stmt->close();
 
-    sendMessage(\achbotMessage('payment.discount_administration.add_discount_code.message.7c7e281370'));
+    sendMessage(\achbotMessage('payment.discount_administration.add_discount_code.message.7c7e281370'), null, 'HTML');
     $data = "editDiscount".$discountId;
 }
 
@@ -1048,7 +1048,7 @@ if(preg_match('/^editDTPlan_(\d+)_(\d+)$/', $data, $m) && achbotAdminCanFor($con
     $stmt->execute();
     $stmt->close();
 
-    sendMessage(\achbotMessage('payment.discount_administration.add_discount_code.message.cbc249f44a'));
+    sendMessage(\achbotMessage('payment.discount_administration.add_discount_code.message.cbc249f44a'), null, 'HTML');
     $data = "editDiscount".$discountId;
 }
 
@@ -1068,7 +1068,7 @@ if(preg_match('/^editDiscountMinPrice(\d+)$/', $userInfo['step'], $m) && $text !
     $discountId = (int)$m[1];
 
     if(!is_numeric($text)){
-        sendMessage(\achbotMessage('payment.discount_administration.add_discount_code.message.081d45bfa6'));
+        sendMessage(\achbotMessage('payment.discount_administration.add_discount_code.message.081d45bfa6'), null, 'HTML');
         return;
     }
 
@@ -1081,7 +1081,7 @@ if(preg_match('/^editDiscountMinPrice(\d+)$/', $userInfo['step'], $m) && $text !
     $stmt->close();
 
     setUser();
-    sendMessage(\achbotMessage('payment.discount_administration.add_discount_code.message.e996f76ad0'));
+    sendMessage(\achbotMessage('payment.discount_administration.add_discount_code.message.e996f76ad0'), null, 'HTML');
     $data = "editDiscount".$discountId;
 }
 
@@ -1101,7 +1101,7 @@ if(preg_match('/^editDiscountMaxDiscount(\d+)$/', $userInfo['step'], $m) && $tex
     $discountId = (int)$m[1];
 
     if(!is_numeric($text)){
-        sendMessage(\achbotMessage('payment.discount_administration.add_discount_code.message.081d45bfa6'));
+        sendMessage(\achbotMessage('payment.discount_administration.add_discount_code.message.081d45bfa6'), null, 'HTML');
         return;
     }
 
@@ -1114,7 +1114,7 @@ if(preg_match('/^editDiscountMaxDiscount(\d+)$/', $userInfo['step'], $m) && $tex
     $stmt->close();
 
     setUser();
-    sendMessage(\achbotMessage('payment.discount_administration.add_discount_code.message.81f7d3347d'));
+    sendMessage(\achbotMessage('payment.discount_administration.add_discount_code.message.81f7d3347d'), null, 'HTML');
     $data = "editDiscount".$discountId;
 }
 
@@ -1143,7 +1143,7 @@ if (preg_match('/^removeDiscountUser(\d+)$/', $userInfo['step'], $m)
     $userToRemove = trim($text);
 
     if (!ctype_digit($userToRemove)) {
-        sendMessage(\achbotMessage('payment.discount_administration.add_discount_code.message.56603da0fa'));
+        sendMessage(\achbotMessage('payment.discount_administration.add_discount_code.message.56603da0fa'), null, 'HTML');
         return;
     }
 
@@ -1157,7 +1157,7 @@ if (preg_match('/^removeDiscountUser(\d+)$/', $userInfo['step'], $m)
     $stmt->close();
 
     if (!$row) {
-        sendMessage(\achbotMessage('payment.discount_administration.add_discount_code.message.f145bd0b48'));
+        sendMessage(\achbotMessage('payment.discount_administration.add_discount_code.message.f145bd0b48'), null, 'HTML');
         setUser();
         return;
     }
@@ -1179,7 +1179,7 @@ if (preg_match('/^removeDiscountUser(\d+)$/', $userInfo['step'], $m)
     $removedCount = $beforeCount - $afterCount;
 
     if ($removedCount <= 0) {
-        sendMessage(\achbotMessage('payment.discount_administration.add_discount_code.message.dcce341470'));
+        sendMessage(\achbotMessage('payment.discount_administration.add_discount_code.message.dcce341470'), null, 'HTML');
         setUser();
         return;
     }

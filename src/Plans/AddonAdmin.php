@@ -82,7 +82,7 @@ function achbotAddonAdminSave(mysqli $db,array $flow,?int $units=null,?int $pric
     // The financial write has already committed; rendering must never turn
     // a confirmed save into a misleading "no change" failure notification.
     try {
-        sendMessage(\achbotMessage('addon_scopes.offer_saved'),$GLOBALS['removeKeyboard']??null);
+        sendMessage(\achbotMessage('addon_scopes.offer_saved'),$GLOBALS['removeKeyboard']??null, 'HTML');
         achbotIntervalShow($db,$flow['kind']);
     } catch (Throwable $error) {
         error_log('achbot_addon_admin_postcommit_ui_deferred class='.get_class($error));
@@ -98,7 +98,7 @@ function achbotAddonAdminNext(mysqli $db,array $flow): void {
     if (!achbotIntervalWrite($db,'','',[],false,'addon:units',$flow)) {
         achbotIntervalWriteNotice();return;
     }
-    sendMessage(\achbotMessage('addon_scopes.units_price'),$cancelKey);
+    sendMessage(\achbotMessage('addon_scopes.units_price'),$cancelKey, 'HTML');
 }
 /** Handles scoped routes before the legacy handlers. All SQL writes go through
  * the same authenticated, monotonic Telegram-update transaction gate.
@@ -124,7 +124,7 @@ function achbotAddonAdminHandle(mysqli $db): bool {
             // always converge to the complete list without presenting any
             // further filter picker.
             if ($step!=='none') {
-                sendMessage(\achbotMessage('addon_scopes.filter_blocked'),$cancelKey);
+                sendMessage(\achbotMessage('addon_scopes.filter_blocked'),$cancelKey, 'HTML');
                 return true;
             }
             achbotIntervalShow($db,$filterMatch[1]==='Day'?'day':'volume');
@@ -156,7 +156,7 @@ function achbotAddonAdminHandle(mysqli $db): bool {
             if (!achbotIntervalWrite($db,'','',[],false,'addon:scope',$flow)) {
                 achbotIntervalWriteNotice();return true;
             }
-            sendMessage(\achbotMessage('addon_scopes.choose_scope'),achbotAddonAdminScopeKeys($flow['session']));
+            sendMessage(\achbotMessage('addon_scopes.choose_scope'),achbotAddonAdminScopeKeys($flow['session']), 'HTML');
             return true;
         }
         $flow=achbotAddonAdminFlow();
@@ -177,7 +177,7 @@ function achbotAddonAdminHandle(mysqli $db): bool {
                     $keys[]=[['text'=>(int)$server['id'].' - '.$server['title'].' ('.$server['type'].')',
                         'callback_data'=>'addonPickServer'.$server['id'].'_'.$flow['session']]];
                 sendMessage(\achbotMessage('addon_scopes.choose_server'),json_encode(
-                    ['inline_keyboard'=>$keys],JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR));
+                    ['inline_keyboard'=>$keys],JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR), 'HTML');
             }
             return true;
         }
@@ -242,7 +242,7 @@ function achbotAddonAdminHandle(mysqli $db): bool {
         $update=$GLOBALS['update']??null;
         error_log('achbot_addon_admin_deferred reason='.$reason.
             ' actor='.(int)$from_id.' update='.(int)($update->update_id??0).' step='.$step);
-        sendMessage(\achbotMessage('addon_scopes.unavailable'),$cancelKey);
+        sendMessage(\achbotMessage('addon_scopes.unavailable'),$cancelKey, 'HTML');
         return true;
     }
 }

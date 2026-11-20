@@ -68,7 +68,7 @@ if(preg_match('/^wizwizcategorydelete(\d+)_(\d+)/',$data, $match) and achbotAdmi
 if(preg_match('/^wizwizcategoryedit/',$data) and achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'plans') && $text != $buttonValues['cancel']){
     setUser($data);
     delMessage();
-    sendMessage(\achbotMessage('plans.categories.add_new_category.message.15337e0db0'),$cancelKey);exit;
+    sendMessage(\achbotMessage('plans.categories.add_new_category.message.15337e0db0'),$cancelKey, 'HTML');exit;
 }
 if(preg_match('/wizwizcategoryedit(\d+)_(\d+)/',$userInfo['step'], $match) && achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'plans') && $text != $buttonValues['cancel']){
     $stmt = $connection->prepare("UPDATE `server_categories` SET `title`=? WHERE `id`=?");
@@ -76,8 +76,8 @@ if(preg_match('/wizwizcategoryedit(\d+)_(\d+)/',$userInfo['step'], $match) && ac
     $stmt->execute();
     $stmt->close();
 
-    sendMessage(\achbotMessage('plans.administration.edit_custom_plan.message.43afd491f6'));
+    sendMessage(\achbotMessage('plans.administration.edit_custom_plan.message.43afd491f6'), null, 'HTML');
     setUser();
     
-    sendMessage(\achbotMessage('plans.categories.categories_setting.message.12ae9f8483'), getCategoriesKeys($match[2]));
+    sendMessage(\achbotMessage('plans.categories.categories_setting.message.12ae9f8483'), getCategoriesKeys($match[2]), 'HTML');
 }
