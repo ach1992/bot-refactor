@@ -21,7 +21,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import test_post_v9_telegram_html_callsite_parity as source_audit
 
 ROOT = Path(__file__).resolve().parents[1]
-EXPECTED_GOLDEN = "c7948586f884557941ab2823ee0e139f416b6dd0f209458b12a388f48cada6cb"
+EXPECTED_GOLDEN = "57cee4c7bddae598c4744fa4bd8170174ef1ac72d1d6b276fd0c990c5cfeb336"
 EXPECTED_REASON = "62a6d5602923bd75a96e24e48c4cf1d667db2257c822979e02a9bf6c6733c2eb"
 
 # The source function is token-extracted, not copied or reimplemented here.
@@ -81,15 +81,19 @@ def cases() -> list[dict]:
             before=100, after=75, update=905)),
         ('applied_signed', 'applied', dict(kind='debit', amount=2147483647,
             before=0, after=-2147483647, update=906)),
-        ('already_applied_credit', 'already_applied', dict(kind='credit', update=907)),
+        ('already_applied_credit', 'already_applied', dict(kind='credit', after=225, update=907)),
         ('already_applied_debit', 'already_applied', dict(kind='debit', update=908)),
         ('balance_changed', 'balance_changed', {}),
         ('stale', 'stale', {}),
         ('invalid', 'invalid', {}),
         ('unknown', 'review', {}),
     ]
-    return [dict(base, name=name, result=state, **overrides)
-            for name, state, overrides in scenarios]
+    rows=[dict(base, name=name, result=state, **overrides)
+          for name, state, overrides in scenarios]
+    for row in rows:
+        expected=row['before']+(row['amount'] if row['kind']=='credit' else -row['amount'])
+        assert row['after']==expected, row['name']
+    return rows
 
 
 def actual() -> list[dict]:
