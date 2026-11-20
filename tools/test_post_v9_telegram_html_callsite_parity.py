@@ -30,6 +30,44 @@ DIRECT_SEND = re.compile(
     r"""(?<![A-Za-z0-9_])sendMessage\s*\(\s*\\?achbotMessage\s*\(\s*(['"])([^'"]+)\1\s*\)""",
 )
 DIRECT_FIRST_ARG = re.compile(r"""\\?achbotMessage\s*\(\s*(['"])([^'"]+)\1\s*\)\Z""")
+
+# PHP's lexer, not a regular expression, determines which sendMessage tokens
+# are actual PHP code. T_STRING excludes comments, quoted strings, heredocs
+# and non-PHP text. Python still checks the audited direct-call shape below.
+# PHP byte offsets are converted to Unicode source indices after tokenizing.
+PHP_SEND_TOKENS = r"""
+$source = file_get_contents('php://stdin');
+if ($source === false) { throw new RuntimeException('php_source_unreadable'); }
+if (!function_exists('token_get_all')) {
+    throw new RuntimeException('php_tokenizer_extension_required');
+}
+$offset = 0;
+$positions = [];
+$previous = null;
+$tokens = token_get_all($source);
+$trivia = [T_WHITESPACE, T_COMMENT, T_DOC_COMMENT];
+foreach ($tokens as $index => $token) {
+    $part = is_array($token) ? $token[1] : $token;
+    $type = is_array($token) ? $token[0] : null;
+    if ($type === T_STRING && strcasecmp($part, 'sendMessage') === 0 &&
+        !in_array($previous, [T_FUNCTION, T_OBJECT_OPERATOR,
+                              T_NULLSAFE_OBJECT_OPERATOR, T_DOUBLE_COLON], true)) {
+        $next = $index + 1;
+        while (isset($tokens[$next]) && is_array($tokens[$next]) &&
+               in_array($tokens[$next][0], $trivia, true)) {
+            $next++;
+        }
+        if (($tokens[$next] ?? null) === '(') {
+            $positions[] = $offset;
+        }
+    }
+    $offset += strlen($part);
+    if ($type === null || !in_array($type, $trivia, true)) {
+        $previous = $type ?? $part;
+    }
+}
+echo json_encode($positions, JSON_THROW_ON_ERROR);
+"""
 UNSAFE_HTML_OR_MARKDOWN = re.compile(r"[<>&*_`[\\]")
 HTML = re.compile(r"""\A(['"])HTML\1\Z""", re.I)
 MARKDOWN = re.compile(r"""\A(['"])MarkDown\1\Z""", re.I)
@@ -168,8 +206,37 @@ def eligible(text: str, no_parameters: bool) -> bool:
             and "{" not in text and "}" not in text)
 
 
+def executable_send_starts(source: str):
+    """Return character offsets only for PHP-tokenized sendMessage names.
+
+    PHP token_get_all() reports UTF-8 byte offsets. Convert incrementally so
+    Persian text and other multi-byte source characters do not shift the
+    positions used by the Python expression parser. Tokenization failure is
+    fatal rather than silently reducing audited coverage.
+    """
+    encoded = source.encode("utf-8")
+    offsets = json.loads(subprocess.check_output(
+        ["php", "-r", PHP_SEND_TOKENS],  # requires PHP tokenizer extension
+        cwd=ROOT, input=encoded,
+    ))
+    if not isinstance(offsets, list):
+        raise ValueError("PHP token scanner did not return an offset list")
+    last_byte = 0
+    last_character = 0
+    for byte_position in offsets:
+        if (type(byte_position) is not int or
+                byte_position < last_byte or byte_position > len(encoded)):
+            raise ValueError("PHP token scanner returned invalid offsets")
+        last_character += len(encoded[last_byte:byte_position].decode("utf-8"))
+        last_byte = byte_position
+        yield last_character
+
+
 def inventory(source: str, data: dict[str, tuple[str, bool]]):
-    for hit in DIRECT_SEND.finditer(source):
+    for start in executable_send_starts(source):
+        hit = DIRECT_SEND.match(source, start)
+        if hit is None:
+            continue
         name = hit.group(2)
         if name not in data:
             raise AssertionError(f"unknown catalog key: {name}")
@@ -184,12 +251,93 @@ def inventory(source: str, data: dict[str, tuple[str, bool]]):
         yield name, closing, arguments, source.count("\n", 0, hit.start()) + 1
 
 
+def test_source_scanner_regressions(data: dict[str, tuple[str, bool]]) -> None:
+    """Prove code-vs-comment detection against a real audited bot send.
+
+    All variants are constructed in memory. No runtime PHP, customer fixture
+    or source file is modified. The baseline fingerprints stay unchanged.
+    """
+    source = (ROOT / "bot.php").read_text()
+    baseline = list(inventory(source, data))
+    baseline_digest = audit_digest(baseline, data)
+    selected = None
+    for start in executable_send_starts(source):
+        match = DIRECT_SEND.match(source, start)
+        if match is None:
+            continue
+        closing, args = parse_arguments(source, source.index("(", start))
+        if not DIRECT_FIRST_ARG.fullmatch(args[0]):
+            continue
+        name = match.group(2)
+        if not eligible(*data[name]):
+            continue
+        line_start = source.rfind("\n", 0, start) + 1
+        line_end = source.find("\n", closing)
+        if line_end < 0:
+            line_end = len(source)
+        # A complete one-line statement permits valid PHP comment/delete
+        # mutations without accidentally swallowing neighboring code.
+        if (len(args) >= 2 and args[1] != "null" and
+                not source[line_start:start].strip() and
+                source[closing + 1:line_end].strip() == ";" and
+                "\n" not in source[start:closing]):
+            selected = (start, closing, line_start, line_end, args)
+            break
+    if selected is None:
+        raise AssertionError("no isolated audited call with a keyboard")
+    start, closing, line_start, line_end, args = selected
+
+    def expect_changed(label: str, edited: str, expected_count: int) -> None:
+        records = list(inventory(edited, data))
+        if len(records) != expected_count or audit_digest(records, data) == baseline_digest:
+            raise AssertionError(label + ": disabled or changed call escaped audit")
+
+    def expect_unchanged(label: str, edited: str) -> None:
+        records = list(inventory(edited, data))
+        if len(records) != len(baseline) or audit_digest(records, data) != baseline_digest:
+            raise AssertionError(label + ": harmless source formatting broke audit")
+
+    # Removed statements and both PHP comment forms must *reduce* the
+    # executable-call inventory; previously // passed the raw-regex audit.
+    expect_changed("physically removed send",
+                   source[:line_start] + source[line_end + 1:], len(baseline) - 1)
+    expect_changed("single-line commented-out send",
+                   source[:start] + "// " + source[start:], len(baseline) - 1)
+    expect_changed("block-commented send",
+                   source[:start] + "/*" + source[start:closing + 1] + "*/" +
+                   source[closing + 1:], len(baseline) - 1)
+
+    call = source[start:closing + 1]
+    if args[1] not in call:
+        raise AssertionError("audited keyboard not found in original call")
+    changed_call = call.replace(args[1], "null", 1)
+    if changed_call == call:
+        raise AssertionError("keyboard mutation was inert")
+    expect_changed("changed keyboard argument",
+                   source[:start] + changed_call + source[closing + 1:], len(baseline))
+
+    # Moving a line or changing spacing outside string literals is harmless.
+    expect_unchanged("moved source line", source[:line_start] + "\n" + source[line_start:])
+    expect_unchanged("insignificant indentation", source[:start] + "  \t" + source[start:])
+    expect_unchanged("call whitespace", source[:start] + source[start:].replace(
+        "sendMessage(", "sendMessage   (", 1))
+
+    # Non-code lookalikes in PHP comments, a quoted string and inline HTML
+    # must never create a phantom executable notification.
+    sample = r"sendMessage(\achbotMessage('bot.bootstrap.unavailable'), null, 'HTML')"
+    fake = ("<?php\n// " + sample + ";\n# " + sample + ";\n/* " + sample +
+            "; */\n$ignored = \"" + sample + "\";\n?>\n" + sample + ";\n")
+    if list(inventory(fake, data)):
+        raise AssertionError("non-code lookalike counted as executable send")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--print-audit", action="store_true",
                         help="show candidate audit digests without accepting them")
     options = parser.parse_args()
     data = catalog()
+    test_source_scanner_regressions(data)
     if tuple(AUDITED) != TARGETS:
         raise AssertionError("audited paths differ from live inventory targets")
     statistics: dict[str, dict[str, int | str]] = {}
