@@ -605,7 +605,7 @@ if (is_string($userInfo['step']??null) &&
             (int)$chat_id,(int)$message_id,(int)$admin,'number',
             $userInfo['step'],(string)$text)) {
         sendMessage(\achbotMessage('bot.bot.gateway_audience_settings.message.f621efb0b3'),
-                    $cancelKey);
+                    $cancelKey, 'HTML');
         return;
     }
     if (str_starts_with($userInfo['step'],'gr|exempt|')) {
@@ -622,7 +622,7 @@ if (is_string($userInfo['step']??null) &&
     }
     if ($text===$buttonValues['cancel']) {
         // Other numeric editors retain their established cancellation UX.
-        sendMessage(\achbotMessage('bot.bot.gateway_audience_settings.message.74d707fe02'));
+        sendMessage(\achbotMessage('bot.bot.gateway_audience_settings.message.74d707fe02'), null, 'HTML');
         return;
     }
     $sourceId=(int)($update->update_id??0);
@@ -683,15 +683,15 @@ if (($from_id == $admin || (int)($userInfo['isAdmin']??0)===1) &&
     $fields=achbotPaymentPolicyFields();$key=$policyMatch[1];
     if (!isset($fields[$key]) || !preg_match('/^[0-9]{1,5}$/D',(string)$text) ||
         (int)$text<$fields[$key]['min'] || (int)$text>$fields[$key]['max']) {
-        sendMessage(\achbotMessage('bot.bot.payment_policy_settings.message.bd6943ee9d'), $cancelKey);
+        sendMessage(\achbotMessage('bot.bot.payment_policy_settings.message.bd6943ee9d'), $cancelKey, 'HTML');
         return;
     }
     if (!setSettings($key,(int)$text)) {
-        sendMessage(\achbotMessage('bot.bot.payment_policy_settings.message.ed51b4cad2'), $cancelKey);
+        sendMessage(\achbotMessage('bot.bot.payment_policy_settings.message.ed51b4cad2'), $cancelKey, 'HTML');
         return;
     }
     setUser();
-    sendMessage(\achbotMessage('bot.bot.payment_policy_settings.message.8525c6215f'),achbotPaymentPolicyKeyboard());
+    sendMessage(\achbotMessage('bot.bot.payment_policy_settings.message.8525c6215f'),achbotPaymentPolicyKeyboard(), 'HTML');
     return;
 }
 if($data=="changeConfigRemarkType"){
@@ -795,7 +795,7 @@ if (str_starts_with($paymentKeyStep,'achbotPaymentKey|') ||
     if (!is_object($update->message??null) || !is_string($text??null)) return;
     $ownedStep=achbotPaymentKeyAdminStep($paymentKeyStep);
     if ($ownedStep===null) {
-        sendMessage(\achbotMessage('bot.bot.change_config_remark_type.message.1bc265a941'));
+        sendMessage(\achbotMessage('bot.bot.change_config_remark_type.message.1bc265a941'), null, 'HTML');
         return;
     }
     $kind=$text===$buttonValues['cancel']?'cancel':'save';
@@ -811,7 +811,7 @@ if (str_starts_with($paymentKeyStep,'achbotPaymentKey|') ||
         return;
     }
     if ($kind==='cancel') {
-        sendMessage(\achbotMessage('bot.bot.gateway_audience_settings.message.74d707fe02'), $removeKeyboard);
+        sendMessage(\achbotMessage('bot.bot.gateway_audience_settings.message.74d707fe02'), $removeKeyboard, 'HTML');
     } else {
         sendMessage($mainValues['saved_successfuly'],$removeKeyboard);
     }
@@ -833,7 +833,7 @@ if(preg_match('/^edit(RewaredTime|cartToCartAutoAcceptTime)/', $data, $match) &&
 }
 if ($data == "userReports" && ($from_id == $admin || $userInfo['isAdmin'] == true)) {
     delMessage();
-    sendMessage(\achbotMessage('bot.bot.user_reports.message.b1c793c917'), $cancelKey);
+    sendMessage(\achbotMessage('bot.bot.user_reports.message.b1c793c917'), $cancelKey, 'HTML');
     setUser($data);
 }
 
@@ -850,10 +850,10 @@ if ($userInfo['step'] == "userReports" && $text != $buttonValues['cancel'] && ($
 			sendMessage(\achbotMessage('bot.bot.user_reports.message.e55e5591d2', ['text' => $text]), $keys, "html");
 			setUser();
 		} else {
-            sendMessage(\achbotMessage('bot.bot.user_reports.message.c1d7ab477b'));
+            sendMessage(\achbotMessage('bot.bot.user_reports.message.c1d7ab477b'), null, 'HTML');
         }
     } else {
-        sendMessage(\achbotMessage('bot.bot.user_reports.message.a5e5f6a89b'));
+        sendMessage(\achbotMessage('bot.bot.user_reports.message.a5e5f6a89b'), null, 'HTML');
     }
 }
 
@@ -876,7 +876,7 @@ if($data=="inviteSetting" && ($from_id == $admin || $userInfo['isAdmin'] == true
     $res = editText($message_id,\achbotMessage('bot.bot.invite_setting.message.554f354e70'),$keys);
     if(!$res->ok){
         delMessage();
-        sendMessage(\achbotMessage('bot.bot.invite_setting.message.554f354e70'),$keys);
+        sendMessage(\achbotMessage('bot.bot.invite_setting.message.554f354e70'),$keys, 'HTML');
     }
 }
 if($data=="inviteBanner" && ($from_id == $admin || $userInfo['isAdmin'] == true)){
@@ -895,14 +895,14 @@ if($data=="inviteBanner" && ($from_id == $admin || $userInfo['isAdmin'] == true)
         delMessage();
         $res = sendPhoto($inviteText['file_id'], $inviteText['caption'], $keys,null);
         if(!$res->ok){
-            sendMessage(\achbotMessage('bot.bot.invite_banner.message.e5b34cbee4'),$keys);
+            sendMessage(\achbotMessage('bot.bot.invite_banner.message.e5b34cbee4'),$keys, 'HTML');
         }
     }
     setUser();
 }
 if($data=="editInviteBannerText" && ($from_id == $admin || $userInfo['isAdmin'] == true)){
     delMessage();
-    sendMessage(\achbotMessage('bot.bot.edit_invite_banner_text.message.28f265f083'),$cancelKey);
+    sendMessage(\achbotMessage('bot.bot.edit_invite_banner_text.message.28f265f083'),$cancelKey, 'HTML');
     setUser($data);
 }
 if($userInfo['step']=="editInviteBannerText" && ($from_id == $admin || $userInfo['isAdmin'] == true) && $text != $buttonValues['cancel']){
@@ -916,7 +916,7 @@ if($userInfo['step']=="editInviteBannerText" && ($from_id == $admin || $userInfo
         $data['type'] = 'text';
         $data['text'] = $text;
     }else{
-        sendMessage(\achbotMessage('bot.bot.edit_invite_banner_text.message.155c179a84'));
+        sendMessage(\achbotMessage('bot.bot.edit_invite_banner_text.message.155c179a84'), null, 'HTML');
         exit();
     }
 
@@ -953,7 +953,7 @@ if($userInfo['step']=="editInviteBannerText" && ($from_id == $admin || $userInfo
 }
 if($data=="editInviteAmount" && ($from_id == $admin || $userInfo['isAdmin'] == true)){
     delMessage();
-    sendMessage(\achbotMessage('bot.bot.edit_invite_amount.message.0372e8b9cd'),$cancelKey);
+    sendMessage(\achbotMessage('bot.bot.edit_invite_amount.message.0372e8b9cd'),$cancelKey, 'HTML');
     setUser($data);
 }
 if($userInfo['step'] == "editInviteAmount" && ($from_id == $admin || $userInfo['isAdmin'] == true)){
@@ -988,17 +988,17 @@ if($userInfo['step'] == "editInviteAmount" && ($from_id == $admin || $userInfo['
                 ['text'=>$buttonValues['back_button'],'callback_data'=>"botSettings"]
                 ],
             ]]);
-        sendMessage(\achbotMessage('bot.bot.invite_setting.message.554f354e70'),$keys);
+        sendMessage(\achbotMessage('bot.bot.invite_setting.message.554f354e70'),$keys, 'HTML');
         setUser();
     }else sendMessage($mainValues['send_only_number']);
 }
 if(preg_match('/^edit(RewaredTime|cartToCartAutoAcceptTime)/', $userInfo['step'], $match) && ($from_id == $admin || $userInfo['isAdmin'] == true) && $text != $buttonValues['cancel']){
     if(!is_numeric($text)){
-        sendMessage(\achbotMessage('bot.bot.edit_invite_amount.message.d86a0557a7'));
+        sendMessage(\achbotMessage('bot.bot.edit_invite_amount.message.d86a0557a7'), null, 'HTML');
         exit();
     }
     elseif($text <0 ){
-        sendMessage(\achbotMessage('bot.bot.edit_invite_amount.message.736a04e908'));
+        sendMessage(\achbotMessage('bot.bot.edit_invite_amount.message.736a04e908'), null, 'HTML');
         exit();
     }
 
@@ -1115,7 +1115,7 @@ if (($achbotV8Result = require __DIR__ . '/src/Finance/Routes/ManualReceipts.php
 if (($achbotV8Result = require __DIR__ . '/src/Finance/Routes/AdminWallet.php') === null) return;
 if($data=="editRewardChannel" && ($from_id == $admin || $userInfo['isAdmin'] == true)){
     delMessage();
-    sendMessage(\achbotMessage('bot.bot.edit_reward_channel.message.1f35a73f71'),$cancelKey);
+    sendMessage(\achbotMessage('bot.bot.edit_reward_channel.message.1f35a73f71'),$cancelKey, 'HTML');
     setUser($data);
 }
 // Edited by ACh
@@ -1148,12 +1148,12 @@ if (
         exit;
     }
 
-    sendMessage(\achbotMessage('bot.bot.edit_reward_channel.message.f400fa3a23'));
+    sendMessage(\achbotMessage('bot.bot.edit_reward_channel.message.f400fa3a23'), null, 'HTML');
 }
 
 if ($data == "editLockChannel" && ($from_id == $admin || $userInfo['isAdmin'] == true)) {
     delMessage();
-    sendMessage(\achbotMessage('bot.bot.edit_lock_channel.message.b324b87609'), $cancelKey);
+    sendMessage(\achbotMessage('bot.bot.edit_lock_channel.message.b324b87609'), $cancelKey, 'HTML');
     setUser($data);
 }
 
@@ -1207,7 +1207,7 @@ if($userInfo['step'] == "editSupportID" && ($from_id == $admin || $userInfo['isA
         sendMessage(achbotMessage('instance_content.save_unavailable'),$cancelKey,'HTML');
         return;
     }
-    sendMessage(\achbotMessage('bot.bot.edit_support_i_d.message.6279ae207e'), getGateWaysKeys());
+    sendMessage(\achbotMessage('bot.bot.edit_support_i_d.message.6279ae207e'), getGateWaysKeys(), 'HTML');
     setUser();
     exit();
 }
@@ -1381,7 +1381,7 @@ if($userInfo['step'] == "messageToSpeceficUser" && $text != $buttonValues['cance
     $stmt->close();
 
     if($usersCount > 0 ){
-        sendMessage(\achbotMessage('bot.bot.process_callback_query.message.d57aef02e2'));
+        sendMessage(\achbotMessage('bot.bot.process_callback_query.message.d57aef02e2'), null, 'HTML');
         setUser("sendMessageToUser" . $text);
     }else{
         sendMessage($mainValues['user_not_found']);
@@ -1495,21 +1495,21 @@ if(preg_match('/^delMainButton(\d+)/',$data,$match) && ($from_id == $admin || $u
 }
 if($data == "addNewMainButton" && ($from_id == $admin || $userInfo['isAdmin'] == true)){
     delMessage();
-    sendMessage(\achbotMessage('bot.bot.process_callback_query.message.ed098f7f93'),$cancelKey);
+    sendMessage(\achbotMessage('bot.bot.process_callback_query.message.ed098f7f93'),$cancelKey, 'HTML');
     setUser($data);
 }
 if($userInfo['step'] == "addNewMainButton" && $text != $buttonValues['cancel'] && ($from_id == $admin || $userInfo['isAdmin'] == true)){
     if(!isset($update->message->text)){
-        sendMessage(\achbotMessage('bot.bot.process_callback_query.message.0caee5986d'));
+        sendMessage(\achbotMessage('bot.bot.process_callback_query.message.0caee5986d'), null, 'HTML');
         exit();
     }
-    sendMessage(\achbotMessage('bot.bot.process_callback_query.message.ea8c224138'));
+    sendMessage(\achbotMessage('bot.bot.process_callback_query.message.ea8c224138'), null, 'HTML');
     setUser("setMainButtonAnswer" . $text);
 }
 
 if (preg_match('/^setMainButtonAnswer(.*)/', $userInfo['step'], $match) && ($from_id == $admin || $userInfo['isAdmin'] == true)) {
     if (!isset($update->message->text)) {
-        sendMessage(\achbotMessage('bot.bot.process_callback_query.message.0caee5986d'));
+        sendMessage(\achbotMessage('bot.bot.process_callback_query.message.0caee5986d'), null, 'HTML');
         exit();
     }
     setUser();
@@ -1524,7 +1524,7 @@ if (preg_match('/^setMainButtonAnswer(.*)/', $userInfo['step'], $match) && ($fro
     $stmt->execute();
     $stmt->close();
 
-    sendMessage(\achbotMessage('bot.bot.process_callback_query.message.70afb19fd8'), getMainMenuButtonsKeys());
+    sendMessage(\achbotMessage('bot.bot.process_callback_query.message.70afb19fd8'), getMainMenuButtonsKeys(), 'HTML');
 }
 
 require __DIR__ . '/src/Admin/Unban.php';
@@ -1673,10 +1673,10 @@ if(preg_match('/^giftToServer(\d+)/',$data,$match) && ($from_id == $admin || $us
         [['text' => \achbotMessage('bot.bot.process_callback_query.button.b80add87e4'), 'callback_data' => "giftToUser{$sid}"]],
         [['text' => $buttonValues['back_button'], 'callback_data' => "giftVolumeAndDay"]]
     ];
-    sendMessage(\achbotMessage('bot.bot.process_callback_query.message.41aa3dcaf2'), json_encode(['inline_keyboard' => $keyboard]));
+    sendMessage(\achbotMessage('bot.bot.process_callback_query.message.41aa3dcaf2'), json_encode(['inline_keyboard' => $keyboard]), 'HTML');
 }
 if(preg_match('/^giftToAll(\d+)/', $data, $match) && ($from_id == $admin || $userInfo['isAdmin'] == true)) {
-    sendMessage(\achbotMessage('bot.bot.process_callback_query.message.dc1943b7b1'), $cancelKey);
+    sendMessage(\achbotMessage('bot.bot.process_callback_query.message.dc1943b7b1'), $cancelKey, 'HTML');
     setUser('giftServerDay' . $match[1]);
 }
 // ACHBOT_DIRECT_GIFT_ROUTE_BEGIN
@@ -1696,13 +1696,13 @@ if (is_string($data) &&
         $created=achbotDirectGiftStart($connection,$directSource,
             (int)$directGiftMatch[1],(int)$admin);
         if ($created) {
-            sendMessage(\achbotMessage('bot.bot.process_callback_query.message.8386c28679'),$cancelKey);
+            sendMessage(\achbotMessage('bot.bot.process_callback_query.message.8386c28679'),$cancelKey, 'HTML');
         } else {
-            sendMessage(\achbotMessage('bot.bot.process_callback_query.message.a4712f82bb'));
+            sendMessage(\achbotMessage('bot.bot.process_callback_query.message.a4712f82bb'), null, 'HTML');
         }
     } catch (Throwable $e) {
         error_log('direct_gift_start_unconfirmed');
-        try {sendMessage(\achbotMessage('bot.bot.process_callback_query.message.97447b213e'));}
+        try {sendMessage(\achbotMessage('bot.bot.process_callback_query.message.97447b213e'), null, 'HTML');}
         catch (Throwable $ignored) {}
     }
     return;
@@ -1720,10 +1720,10 @@ if (is_string($userInfo['step']??null) &&
     if ($text===$buttonValues['cancel']) {
         try {
             achbotDirectGiftCancel($connection,$directSource,(int)$admin,$directStep);
-            sendMessage(\achbotMessage('bot.bot.gift_volume_and_day.message.ac0da574b4'),$removeKeyboard);
+            sendMessage(\achbotMessage('bot.bot.gift_volume_and_day.message.ac0da574b4'),$removeKeyboard, 'HTML');
         } catch (Throwable $e) {
             error_log('direct_gift_cancel_unconfirmed');
-            try {sendMessage(\achbotMessage('bot.bot.gift_volume_and_day.message.e0e7fe8fcb'));}
+            try {sendMessage(\achbotMessage('bot.bot.gift_volume_and_day.message.e0e7fe8fcb'), null, 'HTML');}
             catch (Throwable $ignored) {}
         }
         return;
@@ -1732,13 +1732,13 @@ if (is_string($userInfo['step']??null) &&
         if (str_starts_with($directStep,'achbotDirectGiftRemark:')) {
             achbotDirectGiftAdvance($connection,$directSource,(int)$admin,
                 $directStep,$text);
-            sendMessage(\achbotMessage('bot.bot.gift_volume_and_day.message.ceaba67bc5'));
+            sendMessage(\achbotMessage('bot.bot.gift_volume_and_day.message.ceaba67bc5'), null, 'HTML');
             return;
         }
         if (str_starts_with($directStep,'achbotDirectGiftDay:')) {
             achbotDirectGiftAdvance($connection,$directSource,(int)$admin,
                 $directStep,$text);
-            sendMessage(\achbotMessage('bot.bot.gift_volume_and_day.message.2ff3f6e643'));
+            sendMessage(\achbotMessage('bot.bot.gift_volume_and_day.message.2ff3f6e643'), null, 'HTML');
             return;
         }
         if (!str_starts_with($directStep,'achbotDirectGiftVolume:'))
@@ -1746,14 +1746,14 @@ if (is_string($userInfo['step']??null) &&
         $directClaim=achbotDirectGiftClaim($connection,$directSource,(int)$admin,
                                           $directStep,$text);
     } catch (InvalidArgumentException $e) {
-        try {sendMessage(\achbotMessage('bot.bot.gift_volume_and_day.message.430119925b'));}
+        try {sendMessage(\achbotMessage('bot.bot.gift_volume_and_day.message.430119925b'), null, 'HTML');}
         catch (Throwable $ignored) {}
         return;
     } catch (Throwable $e) {
         if ($e->getMessage()==='direct_gift_duplicate_source_conflict')
             error_log('direct_gift_source_provenance_conflict update_id='.(int)$directSource['update_id']);
         else error_log('direct_gift_claim_or_step_unconfirmed');
-        try {sendMessage(\achbotMessage('bot.bot.gift_volume_and_day.message.e411fd7a97'));}
+        try {sendMessage(\achbotMessage('bot.bot.gift_volume_and_day.message.e411fd7a97'), null, 'HTML');}
         catch (Throwable $ignored) {}
         return;
     }
@@ -1763,7 +1763,7 @@ if (is_string($userInfo['step']??null) &&
                 sendMessage(\achbotMessage('bot.bot.gift_volume_and_day.message.71a178ae08').
                     $directClaim['id'].\achbotMessage('bot.bot.gift_volume_and_day.message.f988eb99dc'));
             } else {
-                sendMessage(\achbotMessage('bot.bot.gift_volume_and_day.message.8c36c4327a'));
+                sendMessage(\achbotMessage('bot.bot.gift_volume_and_day.message.8c36c4327a'), null, 'HTML');
             }
         } catch (Throwable $ignored) {}
         return;
@@ -1838,9 +1838,9 @@ if (is_string($userInfo['step']??null) &&
 if(preg_match('/^giftServerDay(\d+)/',$userInfo['step'], $match) && ($from_id == $admin || $userInfo['isAdmin'] == true) && $text != $buttonValues['cancel']){
     if(is_numeric($text)){
         if($text >= 0){
-            sendMessage(\achbotMessage('bot.bot.gift_volume_and_day.message.9ab673c836'));
+            sendMessage(\achbotMessage('bot.bot.gift_volume_and_day.message.9ab673c836'), null, 'HTML');
             setUser('giftServerVolume' . $match[1] . "_" . $text);
-        }else sendMessage(\achbotMessage('bot.bot.gift_volume_and_day.message.40747d2ee6'));
+        }else sendMessage(\achbotMessage('bot.bot.gift_volume_and_day.message.40747d2ee6'), null, 'HTML');
     }else sendMessage($mainValues['send_only_number']);
 }
 if(preg_match('/^giftServerVolume(\d+)_(\d+)/',$userInfo['step'],$match) && ($from_id == $admin || $userInfo['isAdmin'] == true) && $text != $buttonValues['cancel']){
@@ -1858,7 +1858,7 @@ if(preg_match('/^giftServerVolume(\d+)_(\d+)/',$userInfo['step'],$match) && ($fr
                 $volume===false || $days===false || $sid===false ||
                 ($volume===0 && $days===0) ||
                 ($volume>0 && $volume%1024!==0)) {
-                sendMessage(\achbotMessage('bot.bot.gift_volume_and_day.message.dda8b45a3f'));
+                sendMessage(\achbotMessage('bot.bot.gift_volume_and_day.message.dda8b45a3f'), null, 'HTML');
             } else {
                 // Source authority comes from THIS received Telegram text
                 // update, not cached step text or a callback's old bot text.
@@ -1875,7 +1875,7 @@ if(preg_match('/^giftServerVolume(\d+)_(\d+)/',$userInfo['step'],$match) && ($fr
                     // An unknown COMMIT acknowledgement can mean the batch
                     // exists. Never submit a replacement job with a new
                     // source identity or claim failed SQL is absent.
-                    sendMessage(\achbotMessage('bot.bot.gift_volume_and_day.message.6463835f72'));
+                    sendMessage(\achbotMessage('bot.bot.gift_volume_and_day.message.6463835f72'), null, 'HTML');
                     return;
                 }
                 // The one-time wizard step was consumed atomically with
@@ -1886,14 +1886,14 @@ if(preg_match('/^giftServerVolume(\d+)_(\d+)/',$userInfo['step'],$match) && ($fr
                         sendMessage($mainValues['saved_successfuly'],$removeKeyboard);
                     } else {
                         sendMessage(\achbotMessage('bot.bot.gift_volume_and_day.message.b155540ffb'),
-                                    $removeKeyboard);
+                                    $removeKeyboard, 'HTML');
                     }
                     sendMessage($mainValues['reached_main_menu'], getMainKeys(), 'HTML');
                 } catch (Throwable $giftNoticeError) {
                     error_log('gift_enqueue_telegram_notice_unconfirmed');
                 }
             }
-        }else sendMessage(\achbotMessage('bot.bot.gift_volume_and_day.message.40747d2ee6'));
+        }else sendMessage(\achbotMessage('bot.bot.gift_volume_and_day.message.40747d2ee6'), null, 'HTML');
     }else sendMessage($mainValues['send_only_number']);
 }
 else {
@@ -2016,22 +2016,22 @@ if (($userInfo['step'] ?? '') === 'newMarzbanPanelGroup' &&
     $text != $buttonValues['cancel'] &&
     ($from_id == $admin || ($userInfo['isAdmin'] ?? false))) {
     if (!achbotMarzbanGroupValid((string)$text)) {
-        sendMessage(\achbotMessage('bot.bot.add_marzban_panel_group.message.c697bdb683'));
+        sendMessage(\achbotMessage('bot.bot.add_marzban_panel_group.message.c697bdb683'), null, 'HTML');
         return;
     }
     try {
         // Creation owns the transaction and cross-connection catalog lock.
         $groupId = achbotCreateMarzbanPanelGroup($connection, $text);
         if ($groupId === null) {
-            sendMessage(\achbotMessage('bot.bot.add_marzban_panel_group.message.cfb10ede6f'));
+            sendMessage(\achbotMessage('bot.bot.add_marzban_panel_group.message.cfb10ede6f'), null, 'HTML');
             return;
         }
     } catch (\Throwable $e) {
-        sendMessage(\achbotMessage('bot.bot.add_marzban_panel_group.message.7c6b361e59'));
+        sendMessage(\achbotMessage('bot.bot.add_marzban_panel_group.message.7c6b361e59'), null, 'HTML');
         return;
     }
     setUser();
-    sendMessage(\achbotMessage('bot.bot.add_marzban_panel_group.message.1de4f68601'), getMarzbanPanelGroupsManagementKeys());
+    sendMessage(\achbotMessage('bot.bot.add_marzban_panel_group.message.1de4f68601'), getMarzbanPanelGroupsManagementKeys(), 'HTML');
     return;
 }
 if (preg_match('/^deleteMarzbanPanelGroup_(\d+)$/D', (string)($data ?? ''), $groupMatch) &&
@@ -2074,7 +2074,7 @@ if (preg_match('/^(?:editPanelGroup|editMarzbanGroup)(\d+)$/D', (string)($data ?
         return;
     }
     sendMessage(\achbotMessage('bot.bot.addserver_name.message.c31e264971'),
-        getMarzbanPanelGroupKeys('edit', $id));
+        getMarzbanPanelGroupKeys('edit', $id), 'HTML');
     return;
 }
 if (preg_match('/^setServerPanelGroup_(\d+)_(\d+)$/D', (string)($data ?? ''), $groupMatch) &&
@@ -2104,7 +2104,7 @@ if (preg_match('/^setServerPanelGroup_(\d+)_(\d+)$/D', (string)($data ?? ''), $g
         alert(\achbotMessage('bot.bot.addserver_name.alert.a5625b915f'), true);
         return;
     }
-    sendMessage(\achbotMessage('bot.bot.addserver_name.message.9495c6622a'), getServerConfigKeys($id));
+    sendMessage(\achbotMessage('bot.bot.addserver_name.message.9495c6622a'), getServerConfigKeys($id), 'HTML');
     return;
 }
 // Refuse an older in-flight R3 free-text group step rather than
@@ -2113,31 +2113,31 @@ if (preg_match('/^editMarzbanGroup\d+$/D', (string)($userInfo['step'] ?? '')) &&
     $text != $buttonValues['cancel'] &&
     ($from_id == $admin || ($userInfo['isAdmin'] ?? false))) {
     setUser();
-    sendMessage(\achbotMessage('bot.bot.addserver_name.message.8dc219842f'));
+    sendMessage(\achbotMessage('bot.bot.addserver_name.message.8dc219842f'), null, 'HTML');
     return;
 }
 if(preg_match('/^changesServerLoginInfo(\d+)/',$data,$match) && ($from_id == $admin || $userInfo['isAdmin'] == true)) {
     delMessage();
     setUser($data);
-    sendMessage( \achbotMessage('bot.bot.addserver_name.message.adf1de6a42'),$cancelKey);
+    sendMessage( \achbotMessage('bot.bot.addserver_name.message.adf1de6a42'),$cancelKey, 'HTML');
 }
 if(preg_match('/^changesServerLoginInfo(\d+)/',$userInfo['step'],$match) && $text != $buttonValues['cancel'] && ($from_id == $admin || $userInfo['isAdmin'] == true)) {
     $data = array();
     $data['rowId'] = $match[1];
     $data['panel_url'] = $text;
     setUser('editServerPaneUser' . json_encode($data, JSON_UNESCAPED_UNICODE));
-    sendMessage( \achbotMessage('bot.bot.addserver_name.message.bae567d2c7'),$cancelKey);
+    sendMessage( \achbotMessage('bot.bot.addserver_name.message.bae567d2c7'),$cancelKey, 'HTML');
     exit();
 }
 if(preg_match('/^editServerPaneUser(.*)/',$userInfo['step'],$match) && $text != $buttonValues['cancel'] && ($from_id == $admin || $userInfo['isAdmin'] == true)) {
     $data = json_decode($match[1],true);
     $data['panel_user'] = $text;
     setUser('editServerPanePassword' . json_encode($data, JSON_UNESCAPED_UNICODE));
-    sendMessage( \achbotMessage('bot.bot.addserver_name.message.530a9525e2'));
+    sendMessage( \achbotMessage('bot.bot.addserver_name.message.530a9525e2'), null, 'HTML');
     exit();
 }
 if(preg_match('/^editServerPanePassword(.*)/',$userInfo['step'],$match) and $text != $buttonValues['cancel'] && ($from_id == $admin || $userInfo['isAdmin'] == true)){
-    sendMessage(\achbotMessage('bot.bot.addserver_name.message.4a29ff45e6'));
+    sendMessage(\achbotMessage('bot.bot.addserver_name.message.4a29ff45e6'), null, 'HTML');
     $data = json_decode($match[1],true);
 
     $rowId = $data['rowId'];
@@ -2190,17 +2190,17 @@ if(preg_match('/^editServerPanePassword(.*)/',$userInfo['step'],$match) and $tex
         }
 
 
-    if(!$loginResponse['success']) sendMessage( \achbotMessage('bot.bot.addserver_name.message.c7ea45277d'));
+    if(!$loginResponse['success']) sendMessage( \achbotMessage('bot.bot.addserver_name.message.c7ea45277d'), null, 'HTML');
     else{
         $stmt = $connection->prepare("UPDATE `server_config` SET `panel_url` = ?, `username` = ?, `password` = ? WHERE `id` = ?");
         $stmt->bind_param("sssi", $panel_url, $serverName, $serverPass, $rowId);
         $stmt->execute();
         $stmt->close();
 
-        sendMessage(\achbotMessage('bot.bot.addserver_name.message.bf4ac7e119'),$removeKeyboard);
+        sendMessage(\achbotMessage('bot.bot.addserver_name.message.bf4ac7e119'),$removeKeyboard, 'HTML');
     }
     $keys = getServerConfigKeys($rowId);
-    sendMessage(\achbotMessage('bot.bot.servers_setting.message.4c0e6ed6fc'),$keys);
+    sendMessage(\achbotMessage('bot.bot.servers_setting.message.4c0e6ed6fc'),$keys, 'HTML');
     setUser();
 }
 
@@ -2303,7 +2303,7 @@ if(preg_match('/^editsServer(\D+)(\d+)/',$userInfo['step'],$match) && $text != $
         if($match[1] == "sni") $stmt = $connection->prepare("UPDATE `server_config` SET `sni`=? WHERE `id`=?");
         elseif($match[1] == "header_type"){
             if($text != "http" && $text != "none"){
-                sendMessage(\achbotMessage('bot.bot.addserver_name.message.cac7dafe0d'));
+                sendMessage(\achbotMessage('bot.bot.addserver_name.message.cac7dafe0d'), null, 'HTML');
                 exit();
             }else $stmt = $connection->prepare("UPDATE `server_config` SET `header_type`=? WHERE `id`=?");
         }
@@ -2311,7 +2311,7 @@ if(preg_match('/^editsServer(\D+)(\d+)/',$userInfo['step'],$match) && $text != $
         elseif($match[1] == "response_header") $stmt = $connection->prepare("UPDATE `server_config` SET `response_header`=? WHERE `id`=?");
         elseif($match[1] == "security"){
             if($text != "tls" && $text != "none" && $text != "xtls"){
-                sendMessage(\achbotMessage('bot.bot.addserver_name.message.d763b5be93'));
+                sendMessage(\achbotMessage('bot.bot.addserver_name.message.d763b5be93'), null, 'HTML');
                 exit();
             }else $stmt = $connection->prepare("UPDATE `server_config` SET `security`=? WHERE `id`=?");
         }

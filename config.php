@@ -2880,7 +2880,7 @@ function achbotHandleChannelExemption($data, $text, $cached): bool {
         return true;
     }
     if ($start) {
-        sendMessage(\achbotMessage('admin_settings.config.handle_channel_exemption.message.f4395ba7cb'),$removeKeyboard);
+        sendMessage(\achbotMessage('admin_settings.config.handle_channel_exemption.message.f4395ba7cb'),$removeKeyboard, 'HTML');
     } elseif ($already) {
         sendMessage(\achbotMessage('admin_settings.config.handle_channel_exemption.message.cca4b2908c'),$removeKeyboard,"HTML");
     } else {

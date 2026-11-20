@@ -8,6 +8,8 @@ messages deliberately retain their existing parse modes.
 """
 from __future__ import annotations
 
+import argparse
+import hashlib
 import json
 from pathlib import Path
 import re
@@ -21,6 +23,8 @@ TARGETS = (
     "src/Plans/Administration.php",
     "src/Plans/AddonAdmin.php",
     "src/Plans/Categories.php",
+    "bot.php",
+    "config.php",
 )
 DIRECT_SEND = re.compile(
     r"""(?<![A-Za-z0-9_])sendMessage\s*\(\s*\\?achbotMessage\s*\(\s*(['"])([^'"]+)\1\s*\)""",
@@ -29,6 +33,73 @@ DIRECT_FIRST_ARG = re.compile(r"""\\?achbotMessage\s*\(\s*(['"])([^'"]+)\1\s*\)\
 UNSAFE_HTML_OR_MARKDOWN = re.compile(r"[<>&*_`[\\]")
 HTML = re.compile(r"""\A(['"])HTML\1\Z""", re.I)
 MARKDOWN = re.compile(r"""\A(['"])MarkDown\1\Z""", re.I)
+
+# Audited source/keyboard/copy contract, independent of source line numbers.
+# To update for an intentional change, review the effective source diff first,
+# then use --print-audit to propose the new digest for an independent review.
+# A changed count, key order, parsed argument, or literal catalog text fails CI.
+AUDITED = {
+    "src/Finance/Routes/DiscountAdministration.php": (53, "612fe86bd57176ecb30d7b55f0cd4779494784c6c581572f03ef63cf76256b83"),
+    "src/Plans/Intervals.php": (23, "004ed26d62dec84082559c719b95ff54df07c93afef063603f3f3929b47ac0ac"),
+    "src/Plans/Administration.php": (27, "fe9cb621f2bec4c6192b91d2fd72b9fd42383ad7ef51eb8e81afe9f386562348"),
+    "src/Plans/AddonAdmin.php": (6, "0ab447c2b7a203de01b329a00a0b78e5dddcfdf1f20fe7ba20c537713fbffadc"),
+    "src/Plans/Categories.php": (3, "f5e5f232dab62ecb5bd39adf2a808bf03672d109e5d58f9a8eff2ab1b387f82e"),
+    "bot.php": (69, "696ddd1dfcde9e07c2166dd900dc0d30aea72d2994375418c24f61190624df6e"),
+    "config.php": (15, "71f4e61ba9ffd3e4cf7b789a1cbca6a46033add9ae00407f5495cee2986ac920"),
+}
+
+
+def canonical_expression(source: str) -> str:
+    """Ignore insignificant PHP source whitespace, never quoted string bytes."""
+    normalized = []
+    quote: str | None = None
+    escaped = False
+    for char in source:
+        if quote is not None:
+            normalized.append(char)
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == quote:
+                quote = None
+        elif char in ("'", '"'):
+            quote = char
+            normalized.append(char)
+        elif not char.isspace():
+            normalized.append(char)
+    if quote is not None:
+        raise ValueError("unterminated PHP literal in audited argument")
+    return "".join(normalized)
+
+
+def audit_digest(records: list, data: dict[str, tuple[str, bool]]) -> str:
+    payload = [
+        [name, [canonical_expression(arg) for arg in args], data[name][0]]
+        for name, _, args, _ in records
+    ]
+    packed = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+    return hashlib.sha256(packed.encode("utf-8")).hexdigest()
+
+
+def test_contract_sensitivity(records: list, data: dict[str, tuple[str, bool]]) -> None:
+    """A dropped call or changed keyboard must invalidate the audit contract."""
+    if not records:
+        raise AssertionError("no auditable Telegram producers")
+    digest = audit_digest(records, data)
+    if audit_digest(records[1:], data) == digest:
+        raise AssertionError("audit did not detect a removed send")
+    sample = next((i for i, row in enumerate(records) if len(row[2]) >= 2), None)
+    if sample is None:
+        raise AssertionError("no auditable keyboard argument")
+    modified = list(records)
+    name, closing, args, line = modified[sample]
+    variant = list(args)
+    variant[1] = variant[1] + "/*unexpected-keyboard-change*/"
+    modified[sample] = (name, closing, variant, line)
+    if audit_digest(modified, data) == digest:
+        raise AssertionError("audit did not detect changed keyboard expression")
+
 
 
 def parse_arguments(source: str, opening: int) -> tuple[int, list[str]]:
@@ -114,12 +185,23 @@ def inventory(source: str, data: dict[str, tuple[str, bool]]):
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--print-audit", action="store_true",
+                        help="show candidate audit digests without accepting them")
+    options = parser.parse_args()
     data = catalog()
-    statistics: dict[str, dict[str, int]] = {}
+    if tuple(AUDITED) != TARGETS:
+        raise AssertionError("audited paths differ from live inventory targets")
+    statistics: dict[str, dict[str, int | str]] = {}
     failures: list[str] = []
+    total = 0
     for file in TARGETS:
-        counts = {"eligible": 0, "html": 0, "legacy": 0, "dynamic_or_literal": 0}
-        for name, _, arguments, line in inventory((ROOT / file).read_text(), data):
+        records = list(inventory((ROOT / file).read_text(), data))
+        test_contract_sensitivity(records, data)
+        counts: dict[str, int | str] = {
+            "eligible": 0, "html": 0, "legacy": 0, "dynamic_or_literal": 0,
+        }
+        for name, _, arguments, line in records:
             counts["eligible"] += 1
             if len(arguments) >= 3 and HTML.fullmatch(arguments[2]):
                 counts["html"] += 1
@@ -128,18 +210,31 @@ def main() -> None:
                 failures.append(f"{file}:{line}: {name}: no explicit HTML mode")
             else:
                 counts["dynamic_or_literal"] += 1
-                # An explicit non-HTML parse mode is a caller-owned contract.
+                failures.append(f"{file}:{line}: {name}: caller-owned parse mode; audit before migration")
+        digest = audit_digest(records, data)
+        counts["audit_sha256"] = digest
         statistics[file] = counts
+        total += int(counts["html"])
+        expected_count, expected_digest = AUDITED[file]
+        if not options.print_audit and (
+            int(counts["eligible"]) != expected_count or digest != expected_digest
+        ):
+            failures.append(f"{file}: audited count/digest mismatch: "
+                            f"expected ({expected_count}, {expected_digest}), "
+                            f"actual ({counts['eligible']}, {digest})")
+    if options.print_audit:
+        for file, counts in statistics.items():
+            print(f"{file}: ({counts['eligible']}, {counts['audit_sha256']!r}),")
+        return
     if failures:
         print("\n".join(failures[:40]), file=sys.stderr)
-        raise AssertionError(f"{len(failures)} plain catalog sends still use legacy Markdown")
-    if sum(c["html"] for c in statistics.values()) < 100:
-        raise AssertionError("audited admin/plan HTML producer coverage unexpectedly shrank")
+        raise AssertionError(f"{len(failures)} static send contract violations")
     print(json.dumps({
         "complete": True,
         "status": "PASS",
         "files": statistics,
-        "html_verified": sum(c["html"] for c in statistics.values()),
+        "html_verified": total,
+        "audited_exact": True,
         "network_calls": 0,
     }, ensure_ascii=False))
 

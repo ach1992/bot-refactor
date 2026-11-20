@@ -107,6 +107,16 @@ identity, HTML token boundaries, Unicode graphemes, keyboard semantics,
 method coverage and known-rejection fallback without a Telegram API request.
 It also runs inside the current `php85-validation` acceptance gate.
 
+For audited static HTML call sites, run
+`python3 tools/test_post_v9_telegram_html_callsite_parity.py`.
+The check compares exact per-file counts and source-argument/catalog fingerprints,
+not source line numbers. It detects missing sends, changed keyboard/callback
+expressions and unintended text changes. On an intentional change, inspect
+and review the effective diff first, then run the read-only `--print-audit`
+option to obtain proposed new fingerprints; never update the expected values
+solely to make CI green. Other dynamic or persisted content is outside this
+static-audit contract.
+
 A green PHP unit test or CI build does **not** prove that a live bot owner has
 Telegram Premium, that a Custom Emoji ID exists, or that every Telegram client
 renders the same style. These are separate installed/test-bot acceptance checks.
