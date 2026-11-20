@@ -113,7 +113,7 @@ function timings($ch): array {
     return $out;
 }
 
-function request($botToken,$runtimeDir,$method,$datas=[]) {
+function requestOnce($botToken,$runtimeDir,$method,$datas=[]) {
     $url="https://api.telegram.org/bot".$botToken."/".$method;
     $ch=curl_init();
     curl_setopt($ch,CURLOPT_URL,$url);
@@ -152,7 +152,7 @@ function request($botToken,$runtimeDir,$method,$datas=[]) {
     return $decoded;
 }
 
-function sendFile($botToken,$runtimeDir,$method,$datas=[]) {
+function sendFileOnce($botToken,$runtimeDir,$method,$datas=[]) {
     $url="https://api.telegram.org/bot".$botToken."/".$method;
     if (isset($datas['reply_markup'])&&is_array($datas['reply_markup']))
         $datas['reply_markup']=json_encode($datas['reply_markup'],JSON_UNESCAPED_UNICODE);
@@ -188,4 +188,24 @@ function sendFile($botToken,$runtimeDir,$method,$datas=[]) {
     // Legacy sendFile callers receive json_decode(..., true) as-is when
     // truthy, including unusual scalar JSON. Do not narrow its contract.
     return $decoded ?: false;
+}
+
+/** A single presentation boundary also covers direct bot() and Cron sends. */
+function request($botToken,$runtimeDir,$method,$datas=[]) {
+    if (!is_array($datas)) return requestOnce($botToken,$runtimeDir,$method,$datas);
+    require_once __DIR__ . '/Presentation.php';
+    return \AchBot\Telegram\Presentation\dispatch(
+        $method, $datas,
+        static fn(array $payload) => requestOnce($botToken,$runtimeDir,$method,$payload)
+    );
+}
+
+/** Multipart requests use the same opt-in presentation and fallback rules. */
+function sendFile($botToken,$runtimeDir,$method,$datas=[]) {
+    if (!is_array($datas)) return sendFileOnce($botToken,$runtimeDir,$method,$datas);
+    require_once __DIR__ . '/Presentation.php';
+    return \AchBot\Telegram\Presentation\dispatch(
+        $method, $datas,
+        static fn(array $payload) => sendFileOnce($botToken,$runtimeDir,$method,$payload)
+    );
 }

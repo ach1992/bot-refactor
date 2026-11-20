@@ -3352,12 +3352,12 @@ function getCallbackFromCommand($command) {
     switch ($command) {
         case '/buy':
             if (($botState['sellState'] ?? 'off') !== "on" && !$isRealAdmin) {
-                sendMessage(\achbotMessage('admin_settings.config.get_callback_from_command.message.616c172303'), null, "MarkDown", $chat_id);
+                sendMessage(\achbotMessage('admin_settings.config.get_callback_from_command.message.616c172303'), null, "HTML", $chat_id);
                 exit();
             }
 
             if (($botState['cartToCartState'] ?? 'off') == "off" && ($botState['giftCardState'] ?? 'off') == "off" && ($botState['manualUsdtState'] ?? 'off') == "off" && ($botState['walletState'] ?? 'off') == "off") {
-                sendMessage(\achbotMessage('admin_settings.config.get_callback_from_command.message.616c172303'), null, "MarkDown", $chat_id);
+                sendMessage(\achbotMessage('admin_settings.config.get_callback_from_command.message.616c172303'), null, "HTML", $chat_id);
                 exit();
             }
 
@@ -3373,7 +3373,7 @@ function getCallbackFromCommand($command) {
                 sendMessage(
                     \achbotMessage('admin_settings.config.get_callback_from_command.message.ce7759512b'),
                     json_encode(['inline_keyboard' => $keyboard]),
-                    "MarkDown",
+                    "HTML",
                     $chat_id
                 );
                 exit();
@@ -3425,12 +3425,12 @@ if (isset($update->message->text)) {
 
         if ($mappedText === "/buy") {
             if (($botState['sellState'] ?? 'off') !== "on" && !$isRealAdmin) {
-                sendMessage(\achbotMessage('admin_settings.config.get_callback_from_command.message.616c172303'), null, "MarkDown", $chat_id);
+                sendMessage(\achbotMessage('admin_settings.config.get_callback_from_command.message.616c172303'), null, "HTML", $chat_id);
                 exit;
             }
 
             if (($botState['cartToCartState'] ?? 'off') == "off" && ($botState['giftCardState'] ?? 'off') == "off" && ($botState['manualUsdtState'] ?? 'off') == "off" && ($botState['walletState'] ?? 'off') == "off") {
-                sendMessage(\achbotMessage('admin_settings.config.get_callback_from_command.message.616c172303'), null, "MarkDown", $chat_id);
+                sendMessage(\achbotMessage('admin_settings.config.get_callback_from_command.message.616c172303'), null, "HTML", $chat_id);
                 exit;
             }
         }

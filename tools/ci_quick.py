@@ -59,6 +59,7 @@ OTHER_TESTS = (
     ("cron_runner", ("python3", "tools/test_post_v9_cron_runner.py"), "report"),
     ("payment_reference", ("python3", "tools/test_post_v9_payment_identity.py"), "stdout"),
     ("telegram_log_privacy", ("php", "-n", "tools/test_post_v9_telegram_log_privacy.php"), "stdout"),
+    ("telegram_presentation", ("php", "-n", "tools/test_post_v9_telegram_presentation.php"), "stdout"),
     ("marzban_bearer", ("python3", "tools/test_post_v9_marzban_bearer.py"), "stdout"),
 )
 
