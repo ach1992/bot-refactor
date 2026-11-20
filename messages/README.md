@@ -60,15 +60,19 @@ request outcomes against the accepted current-Stable source, including
 exact HTML bytes, JSON response bytes and interpreted JavaScript strings.
 `tools/test_post_v9_current_copy_ownership.py` also asserts no noncatalog
 Persian text remains in the root web-login PHP/HTML/JS source.
-The current-only relocation proof pins exactly 413 retired no-consumer keys
+The current-only relocation proof pins exactly 411 retired no-consumer keys
 and 50 new exact-value, source-owned entries (46 browser labels and four
-finance/admin display labels), and verifies that every one of the
-2,525 retained pre-refactor catalog entries is byte-for-byte unchanged.
-The five additional Issue #220 R1 keys (the obsolete manual payment
-monitoring status, three legacy buttons and a retired custom-plan detail
-template) were found by resolving finite producer domains and legitimate
-indirect array indexing; quoted unrelated data names no longer count.
-Regression fixtures exercise both former false-negative classifications.
+finance/admin display labels), and verifies that all 2,527 retained
+pre-refactor catalog entries are byte-for-byte unchanged.
+The Issue #220 review restored two LIVE source-owned subscription status
+labels (legacy_buttons.active/deactive): the real customer/admin status
+renderer receives them through its $buttons parameter alias. Three
+additional truly orphaned R1 keys remain retired (the obsolete manual
+payment monitoring status, the unused manual USDT button and the retired
+custom-plan detail template). Source-traced finite producers and the PHP
+tokenizer distinguish real catalog calls and parameter aliases from
+unrelated quoted identifiers/comments. Positive and negative fixtures
+exercise these exact paths, including source-real PHP status rendering.
 This pin belongs to Issue #220 and can change only with a reviewed
 copy/cleanup outcome; later approved copy edits update their accepted
 source-real reference rather than bypassing the gate.

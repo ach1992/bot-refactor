@@ -9,6 +9,7 @@ business flows, stored user content and native provider effects are not run.
 from __future__ import annotations
 
 import json
+from functools import lru_cache
 from pathlib import Path
 import re
 import subprocess
@@ -189,9 +190,12 @@ def finite_dynamic_keys(sources: dict[str, str]) -> set[str]:
     return keys
 
 
-def indirect_legacy_keys(sources: dict[str, str]) -> dict[str, set[str]]:
-    """Resolve only observed array-index producers, never arbitrary short strings."""
-    config = php_function(sources["config.php"], "getAdminKeys")
+def indirect_legacy_keys(sources: dict[str, str],
+                         scans: dict[str, dict] | None = None) -> dict[str, set[str]]:
+    """Resolve current dynamic/aliased array consumers from actual callsites."""
+    if scans is None:
+        scans = source_call_inventory(sources)
+    config = php_function(scans["config.php"]["clean"], "getAdminKeys")
     mapping = re.search(r"\$rows\s*=\s*\[(.*?)\];\s*\$keyboard", config, re.S)
     check(mapping is not None and "$buttonValues[$key]" in config,
           "admin_button_menu_key_binding_changed")
@@ -253,31 +257,176 @@ def indirect_legacy_keys(sources: dict[str, str]) -> dict[str, set[str]]:
     check("$mainValues[$key] = $value;" in render and
           "$mainValues[$key] = replacePlaceholders(" in render,
           "presentation_index_is_no_longer_write_only")
-    return {"legacy_buttons": admin_buttons,
+    detail = scans["src/Subscription/AccountDetails.php"]["clean"]
+    status = php_function(detail, "getOrderStatusText")
+    external = scans["src/Subscription/ExternalAccounts.php"]["clean"]
+    check("array $buttons" in status and
+          detail.count("getOrderStatusText($traffic,$serverType,$buttonValues") == 2 and
+          re.search(r"getOrderStatusText\(\s*\$observation.{0,160}?\$buttonValues",
+                    external, re.S) is not None,
+          "subscription_status_catalog_alias_binding_changed")
+    status_buttons = set(re.findall(
+        r"""\$buttons\[\s*['"]([a-z_]+)['"]\s*\]""", status))
+    check({"active", "deactive"} <= status_buttons,
+          "subscription_status_button_alias_lost")
+    return {"legacy_buttons": admin_buttons | status_buttons,
             "legacy_messages": wallet_prompts | receipt_prompts}
+
+
+@lru_cache(maxsize=4)
+def _scan_php_calls(payload: bytes) -> dict[str, dict]:
+    # PHP's tokenizer distinguishes executable calls from comments and strings.
+    return json.loads(subprocess.check_output(
+        ["php", "tools/catalog_message_calls.php"], input=payload, cwd=ROOT))
+
+
+def source_call_inventory(sources: dict[str, str]) -> dict[str, dict]:
+    payload = json.dumps(sources, ensure_ascii=False, sort_keys=True).encode()
+    scans = _scan_php_calls(payload)
+    check(set(scans) == set(sources), "source_call_inventory_incomplete")
+    expected_indirect = {
+        ("bot.php", "$label"),
+        ("messages/loader.php", "$key"),
+        ("src/Finance/ReceiptHelpers.php", "$codeKey"),
+        ("src/Finance/ReceiptHelpers.php", "$key"),
+        ("src/Finance/Routes/AutomaticGatewayReview.php", "$key"),
+        ("src/Finance/WalletAddonNotices.php", "$button"),
+        ("src/Subscription/AccountDeletion.php", "$key"),
+        ("src/Subscription/OrderManagement.php", "$key"),
+    }
+    actual_indirect = {(path, var) for path, row in scans.items()
+                       for var in row["variables"]}
+    check(actual_indirect == expected_indirect,
+          "untraced_variable_message_sinks:" +
+          str(sorted(actual_indirect ^ expected_indirect)))
+    return scans
+
+
+QUALIFIED = re.compile(r"""['"]([a-z][a-z0-9_]*\.[A-Za-z0-9_.]+)['"]""")
+
+
+def finite_indirect_qualified_keys(scans: dict[str, dict]) -> set[str]:
+    """Only values produced for actual achbotMessage($variable) consumers."""
+    result = set()
+
+    def assigned(code: str, variable: str, expected: int = 1) -> set[str]:
+        expressions = re.findall(
+            r"\$" + re.escape(variable) + r"\s*=\s*(.*?);", code, re.S)
+        check(len(expressions) == expected,
+              "qualified_key_producer_changed:" + variable)
+        values = set().union(*(set(QUALIFIED.findall(expr))
+                               for expr in expressions))
+        check(bool(values), "qualified_key_producer_empty:" + variable)
+        return values
+
+    receipts = scans["src/Finance/ReceiptHelpers.php"]["clean"]
+    for fn, var, consumer in (
+        ("achbotManualGiftReviewText", "codeKey", "achbotMessageHtml($codeKey,"),
+        ("achbotManualGiftRetryMessage", "key", "achbotMessage($key)"),
+    ):
+        body = php_function(receipts, fn)
+        check(consumer in body, "qualified_receipt_key_sink_changed:" + fn)
+        result.update(assigned(body, var))
+
+    deletion = scans["src/Subscription/AccountDeletion.php"]["clean"]
+    check(deletion.count("alert(\\achbotMessage($key),true)") == 2,
+          "qualified_delete_key_sink_changed")
+    matches = re.findall(
+        r"\$key\s*=\s*match\(\$deleteOutcome\)\s*\{.*?\}\s*;",
+        deletion, re.S)
+    check(len(matches) == 2, "qualified_delete_producers_changed")
+    for expression in matches:
+        result.update(QUALIFIED.findall(expression))
+
+    management = scans["src/Subscription/OrderManagement.php"]["clean"]
+    check("alert(\\achbotMessage($key),true)" in management,
+          "qualified_management_key_sink_changed")
+    producer = re.search(r"\$key\s*=\s*\$correct\s*&&.*?;", management, re.S)
+    check(producer is not None, "qualified_management_producer_changed")
+    result.update(QUALIFIED.findall(producer.group()))
+
+    wallet = scans["src/Finance/WalletAddonNotices.php"]["clean"]
+    check("achbotMessage($button)" in wallet,
+          "qualified_wallet_button_sink_changed")
+    producer = re.search(r"\$button\s*=\s*\$kind\s*===.*?;", wallet, re.S)
+    check(producer is not None, "qualified_wallet_button_producer_changed")
+    result.update(QUALIFIED.findall(producer.group()))
+
+    gateway = scans["src/Finance/Routes/AutomaticGatewayReview.php"]["clean"]
+    check("foreach ($optional as [$key,$param,$value])" in gateway and
+          "achbotMessageHtml($key," in gateway and
+          "$gatewayFitCase($body,$optional,$footer)" in gateway,
+          "qualified_gateway_optional_sink_changed")
+    optional = re.search(r"\$optional\s*=\s*\[(.*?)\];", gateway, re.S)
+    check(optional is not None, "qualified_gateway_optional_producer_changed")
+    result.update(re.findall(
+        r"""\[\s*['"]([a-z][a-z0-9_]*\.[A-Za-z0-9_.]+)['"]\s*,""",
+        optional.group(1)))
+    check({"automatic_gateway_review.plan",
+           "payment.api_payment.code_used_retry",
+           "subscription.account_deletion.no_dont_delete.alert.9347ccc8b0",
+           "subscription.service_plan_correction.get_only"} <= result,
+          "qualified_indirect_source_reachability_lost")
+    return result
 
 
 def unresolved_copy_orphans(groups: dict[str, dict],
                             sources: dict[str, str]) -> list[str]:
-    combined = "\n".join(sources.values())
+    scans = source_call_inventory(sources)
     finite = finite_dynamic_keys(sources)
-    indirect = indirect_legacy_keys(sources)
-    direct = {"legacy_messages": set(MAIN_KEY.findall(combined)),
-              "legacy_buttons": set(BUTTON_KEY.findall(combined))}
-    referenced = set(re.findall(
-        r"""['"]([a-z][a-z0-9_]*\.[A-Za-z0-9_.]+)['"]""", combined))
+    indirect = indirect_legacy_keys(sources, scans)
+    qualified = set().union(*(set(row["literal"]) for row in scans.values()))
+    qualified.update(finite_indirect_qualified_keys(scans))
+    direct = {
+        "legacy_messages": set().union(*(set(row["main_indexes"]) for row in scans.values())),
+        "legacy_buttons": set().union(*(set(row["button_indexes"]) for row in scans.values())),
+    }
     orphans = []
     for topic, entries in groups.items():
         for key in entries:
-            qualified = topic + "." + key
             if topic in direct:
                 used = key in direct[topic] or key in indirect[topic]
             else:
-                used = qualified in referenced or qualified in finite
+                name = topic + "." + key
+                used = name in qualified or name in finite
             if not used:
-                orphans.append(qualified)
+                orphans.append(topic + "." + key)
     return sorted(orphans)
 
+
+def verify_live_subscription_status_labels(sources: dict[str, str]) -> int:
+    """Run the real status renderer with the loaded catalog; no config/DB/HTTP."""
+    detail = sources["src/Subscription/AccountDetails.php"]
+    check(detail.count("getOrderStatusText($traffic,$serverType,$buttonValues") == 2,
+          "customer_admin_status_callsite_changed")
+    script = r"""
+    error_reporting(E_ALL);
+    set_error_handler(static function(int $errno,string $message): never {
+        throw new ErrorException($message,0,$errno);
+    });
+    require "messages/loader.php";
+    require "src/Subscription/AccountDetails.php";
+    $buttons=achbotMessages('legacy_buttons');
+    $expected=['active'=>'🟢 فعال','disabled'=>'🔴 غیرفعال'];
+    $passes=0;
+    foreach (['marzban','pasarguard'] as $provider) {
+        foreach ($expected as $status=>$label) {
+            if (!array_key_exists($status==='active'?'active':'deactive',$buttons))
+                throw new RuntimeException('catalog_subscription_label_missing:'.$status);
+            $traffic=['found'=>true,'uncertain'=>false,'status'=>$status];
+            $actual=\AchBot\Subscription\AccountDetails\getOrderStatusText(
+                $traffic,$provider,$buttons);
+            if ($actual!==$label)
+                throw new RuntimeException('catalog_subscription_label_changed:'.$status);
+            $passes++;
+        }
+    }
+    echo json_encode(['passes'=>$passes],JSON_THROW_ON_ERROR);
+    """
+    proof=json.loads(subprocess.check_output(
+        ["php", "-n", "-r", script], cwd=ROOT))
+    check(proof["passes"] == 4, "source_real_subscription_status_labels_failed")
+    return proof["passes"]
 
 
 def main() -> None:
@@ -294,8 +443,9 @@ def main() -> None:
         for file in package_current.members()
         if file.endswith(".php") and file not in AUDIENCES
     }
-    combined = "\n".join(sources.values())
-    literal, dynamic = classify_keys(combined)
+    scans = source_call_inventory(sources)
+    literal = set().union(*(set(row["literal"]) for row in scans.values()))
+    dynamic = set().union(*(set(row["dynamic"]) for row in scans.values()))
     assert_bound(literal, all_keys)
     # These source-owned administrative topics are fully statically bound;
     # a new orphan here should be treated as retired rather than stockpiled.
@@ -306,8 +456,8 @@ def main() -> None:
           str(sorted(dynamic ^ DYNAMIC_PREFIXES)))
     check(all(any(key.startswith(prefix) for key in all_keys)
               for prefix in DYNAMIC_PREFIXES), "dynamic_prefix_no_catalog_entries")
-    main_keys = set(MAIN_KEY.findall(combined))
-    button_keys = set(BUTTON_KEY.findall(combined))
+    main_keys = set().union(*(set(row["main_indexes"]) for row in scans.values()))
+    button_keys = set().union(*(set(row["button_indexes"]) for row in scans.values()))
     missing_main = main_keys - set(groups["legacy_messages"])
     check(missing_main == {"start_message", "user_welcome_message",
                            "reached_main_menu"},
@@ -322,14 +472,15 @@ def main() -> None:
            "payment_settings.api.field.smsApiUrl",
            "payment_settings.api.hint.giftApiSecret"} <= finite_proof,
           "legitimate_dynamic_source_provenance_lost")
-    legacy_proof = indirect_legacy_keys(sources)
-    check({"increase_wallet", "create_account"} <=
+    legacy_proof = indirect_legacy_keys(sources, scans)
+    check({"increase_wallet", "create_account", "active", "deactive"} <=
           legacy_proof["legacy_buttons"] and
           {"enter_increase_amount", "please_send_usdt_image",
            "brw_cart_to_cart_trx"} <= legacy_proof["legacy_messages"],
           "legitimate_indirect_source_provenance_lost")
     orphans = unresolved_copy_orphans(groups, sources)
     check(not orphans, "unused_current_catalog_keys:" + str(orphans[:15]))
+    real_status_cases = verify_live_subscription_status_labels(sources)
     fake_groups = {**groups, "fake_topic": {"ghost_message": "کپی قدیمی"}}
     check(unresolved_copy_orphans(fake_groups, sources) ==
           ["fake_topic.ghost_message"], "orphan_copy_negative")
@@ -345,6 +496,20 @@ def main() -> None:
         **groups["legacy_buttons"], "spam_info": "موجود نیست"}}
     check(unresolved_copy_orphans(alias_probe, sources) ==
           ["legacy_buttons.spam_info"], "unrelated_alias_orphan_negative")
+    restored_monitoring = {**groups, "manual_payment": {
+        **groups["manual_payment"],
+        "api_payment.status_monitoring": "تست"}}
+    expected_orphan = ["manual_payment.api_payment.status_monitoring"]
+    check(unresolved_copy_orphans(restored_monitoring, sources) == expected_orphan,
+          "qualified_orphan_current_negative")
+    for injected in (
+        "// unrelated: 'manual_payment.api_payment.status_monitoring'\n",
+        "$unused = 'manual_payment.api_payment.status_monitoring';\n",
+    ):
+        unrelated = dict(sources)
+        unrelated["src/Finance/ReceiptHelpers.php"] += "\n" + injected
+        check(unresolved_copy_orphans(restored_monitoring, unrelated) == expected_orphan,
+              "unrelated_qualified_reference_false_negative")
     assert_retired_absent(sources)
     check(not (set(RETIRED_KEYS) & all_keys), "retired_text_reintroduced")
     plan_menu = sources["config.php"].split("function getPlanDetailsKeys(", 1)[1].split(
@@ -399,6 +564,7 @@ def main() -> None:
         "retired_route_markers": len(RETIRED),
         "uncatalogued_owned_php_literals": len(exceptions),
         "unreferenced_current_catalog_keys": len(orphans),
+        "source_real_subscription_status_cases": real_status_cases,
         "root_browser_login_php_literals_pending": 0,
         "standalone_browser_login_included": True,
         "network_calls": 0,

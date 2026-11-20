@@ -43,6 +43,7 @@ NATIVE_TESTS = (
     ("payment_ux", "test_post_v9_payment_ux_lifecycle.py"),
     ("nonpaid_trial_bulk", "test_post_v9_nonpaid_routes.py"),
     ("provider_registry", "test_unified_provider_registry.py"),
+    ("subscription_status_copy", "test_post_v9_subscription_status_detail.py"),
     ("payment_api_admin", "test_post_v9_payment_api_admin.py"),
     ("scoped_pg_payments", "test_post_v9_scoped_pg_payments.py"),
     ("onboarding", "test_post_v9_onboarding.py"),

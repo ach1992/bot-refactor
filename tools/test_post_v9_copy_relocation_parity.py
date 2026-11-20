@@ -17,9 +17,9 @@ import test_post_v9_current_copy_ownership as owner
 
 ROOT = Path(__file__).resolve().parents[1]
 BASE = "270840a854b06bbe899b76249db68e4748d93739"
-REMOVED_SHA256 = "a193177648c9268b3de5a70e056823fa4e8a87016757b67398291579d4028868"
+REMOVED_SHA256 = "94a529917854519c7f399589bdb770a92e4e656751d401fa5d0b1efac57befa8"
 ADDED_SHA256 = "31088e8b9a9ee6cdc6a9a015aa8418b49ac6948302eb586a2da6db7f40b1e494"
-REVIEW_R1_RETIRED = ('legacy_buttons.active', 'legacy_buttons.deactive', 'legacy_buttons.manual_usdt', 'legacy_messages.buy_custom_subscription_detail', 'manual_payment.api_payment.status_monitoring')
+REVIEW_R1_RETIRED = ('legacy_buttons.manual_usdt', 'legacy_messages.buy_custom_subscription_detail', 'manual_payment.api_payment.status_monitoring')
 EXPECTED_LABELS = {
     "automatic_gateway_review.unlimited_expiry": "نامحدود",
     "bulk_reporting.unknown_confirmed": "نامشخص",
@@ -69,7 +69,7 @@ def main() -> None:
                 for a in ("user", "admin")})
     removed = sorted(set(old) - set(new))
     added = sorted(set(new) - set(old))
-    check(len(removed) == 413 and digest(removed) == REMOVED_SHA256,
+    check(len(removed) == 411 and digest(removed) == REMOVED_SHA256,
           "retired_key_footprint_changed")
     check(len(added) == 50 and digest(added) == ADDED_SHA256,
           "new_catalog_keys_not_owner_reviewed")

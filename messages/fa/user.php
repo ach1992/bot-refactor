@@ -105,6 +105,8 @@ return [
         'plan_name' => '🚀 نام پلن:',
         'on' => '✅ روشن',
         'off' => '❌ خاموش',
+        'active' => '🟢 فعال',
+        'deactive' => '🔴 غیرفعال',
         'send_phone_number' => '📱 ارسال شماره',
         'cancel' => '❌ لغو عملیات',
         'join_channel' => '📢 عضویت در کانال',

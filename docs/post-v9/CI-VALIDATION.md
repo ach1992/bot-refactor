@@ -27,6 +27,11 @@ main pushes under the single `php85-validation` required status:
   `tools/test_post_v9_copy_relocation_parity.py`, and
   `tools/test_post_v9_web_copy_parity.py`. These compare actual owned copy,
   JS/HTML/JSON presentation and reject unreferenced or new inline text.
+  `tools/catalog_message_calls.php` scans executable PHP callsites rather
+  than accepting unrelated quoted identifiers or comments as consumers.
+  The current `subscription_status_copy` fixture uses the real message
+  catalog and customer/admin AccountDetails renderer against disposable SQL
+  for active/disabled Marzban and PasarGuard subscriptions.
 - `tools/ci_quick.py` also runs real-source PHP, finance, payment/checkout,
   customer/service operations, subscription/payment flows, onboarding, wallet, Native,
   operator permissions, Telegram error diagnostics, Cron and
