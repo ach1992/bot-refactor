@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Current-only PHP message ownership audit; source code is never executed.
+"""Current-only PHP message ownership audit; no bot/bootstrap/DB/network.
 
-The standalone root index.php web-login page is separately inventoried pending
-browser output-equivalence migration. Telegram/customer/admin/financial PHP
-copy is required to use the two existing catalog files; protocol literals,
-stored user input and native data are not editable copy.
+The standalone browser-login copy and source-owned Telegram/admin/financial
+text must live in the two existing audience catalogs. An isolated PHP CLI
+reads only declarative payment-field metadata and catalog values; runtime
+business flows, stored user content and native provider effects are not run.
 """
 from __future__ import annotations
 
@@ -113,23 +113,169 @@ def assert_bound(literal: set[str], all_keys: set[str]) -> None:
 
 
 
-def unresolved_copy_orphans(groups: dict[str, dict], source: str,
-                            dynamic_prefixes: set[str]) -> list[str]:
-    # A legacy lookup can index its source-owned array by a finite key chosen
-    # in a caller; require those key literals to exist somewhere in current
-    # runtime. Nonlegacy copy uses full topic.key names. The only permitted
-    # generated keys have the five source-proven prefixes below.
+def php_function(source: str, name: str) -> str:
+    match = re.search(r"(?ms)^function " + re.escape(name) +
+                      r"\([^;]*\)\s*(?::\s*\??[A-Za-z0-9_\\]+)?\s*\{.*?^\}", source)
+    check(match is not None, "unresolved_php_function:" + name)
+    return match.group(0)
+
+
+def php_literals(source: str) -> set[str]:
+    return set(re.findall(r"""['"]([a-zA-Z0-9_]+)['"]""", source))
+
+
+def finite_dynamic_keys(sources: dict[str, str]) -> set[str]:
+    """Follow source-proven finite producer domains, never prefix wildcards."""
+    api = php_function(sources["src/Finance/ApiPayments.php"],
+                       "achbotApiPaymentNotice")
+    invalid = re.search(
+        r"\$invalidCode\s*=\s*in_array\(\$status,\s*\[([^\]]+)\],\s*true\)", api)
+    accepted = re.search(
+        r"\$status\s*=\s*in_array\(\$status,\s*\[([^\]]+)\],\s*true\)"
+        r"\s*\?\s*\$status\s*:\s*'review'", api)
+    check(invalid is not None and accepted is not None,
+          "manual_status_normalization_changed")
+    check("achbotMessage('manual_payment.api_payment.code_'.$status)" in api and
+          "achbotMessage('manual_payment.api_payment.status_'.$status)" in api,
+          "manual_status_catalog_dispatch_changed")
+    invalid_values = php_literals(invalid.group(1))
+    accepted_values = php_literals(accepted.group(1))
+    check(invalid_values < accepted_values and "review" in accepted_values,
+          "manual_status_domain_invalid")
+    keys = {"manual_payment.api_payment.code_" + value
+            for value in invalid_values}
+    keys |= {"manual_payment.api_payment.status_" + value
+             for value in accepted_values - invalid_values}
+
+    admin = sources["src/Finance/PaymentApiAdmin.php"]
+    rows = php_function(admin, "achbotPaymentApiAdminRows")
+    page = php_function(admin, "achbotPaymentApiAdminPage")
+    prompt = php_function(admin, "achbotPaymentApiAdminPrompt")
+    for fn in (rows, page):
+        check(re.search(r"\$suffix\s*=\s*\$sms\s*\?\s*'sms'\s*:\s*'gift'", fn)
+              is not None, "payment_api_method_suffix_not_finite")
+        check("bank_transfer" in fn and "gift_card" in fn,
+              "payment_api_method_guard_changed")
+    suffixes = re.findall(
+        r"""achbotMessage\(\s*'payment_settings\.api\.'\s*\.\s*\$suffix"""
+        r"""\s*\.\s*'_([a-z_]+)'""", rows + page)
+    check(len(suffixes) == 4 and len(set(suffixes)) == 4,
+          "payment_api_dynamic_suffix_inventory_changed")
+    keys |= {"payment_settings.api." + method + "_" + suffix
+             for method in ("sms", "gift") for suffix in suffixes}
+
+    # Both functions are source-only declarative/validation code. Read the
+    # actual field map and schema-supported fields, not unrelated identifiers.
+    check("achbotPaymentApiAdminIsField($field)" in page and
+          "achbotPaymentApiAdminIsField($field)" in prompt,
+          "payment_api_field_reachability_guard_missing")
+    check("achbotMessage('payment_settings.api.field.'.$urlField)" in page and
+          "achbotMessage('payment_settings.api.field.'.$field)" in page and
+          "achbotMessage('payment_settings.api.field.'.$field)" in prompt and
+          "achbotMessage('payment_settings.api.hint.'.$field)" in prompt,
+          "payment_api_field_or_hint_dispatch_changed")
+    php = ('require "src/Finance/PaymentApiAdmin.php";'
+           'echo json_encode([achbotPaymentApiAdminFieldMap(),'
+           'achbotPaymentEvidenceSettingFields()],JSON_THROW_ON_ERROR);')
+    field_map, eligible = json.loads(subprocess.check_output(
+        ["php", "-n", "-r", php], cwd=ROOT
+    ))
+    fields = set(field_map) & set(eligible)
+    check(fields and all(meta[0] in ("bank_transfer", "gift_card")
+                         for key, meta in field_map.items() if key in fields),
+          "payment_api_field_mapping_invalid")
+    keys |= {"payment_settings.api." + prefix + field
+             for prefix in ("field.", "hint.") for field in fields}
+    return keys
+
+
+def indirect_legacy_keys(sources: dict[str, str]) -> dict[str, set[str]]:
+    """Resolve only observed array-index producers, never arbitrary short strings."""
+    config = php_function(sources["config.php"], "getAdminKeys")
+    mapping = re.search(r"\$rows\s*=\s*\[(.*?)\];\s*\$keyboard", config, re.S)
+    check(mapping is not None and "$buttonValues[$key]" in config,
+          "admin_button_menu_key_binding_changed")
+    admin_buttons = set(re.findall(
+        r"""\[\s*'([a-z_]+)'\s*,\s*'[^']+'\s*\]""", mapping.group(1)))
+    admin_buttons -= {"__review", "gateway_rules_settings"}
+    check(admin_buttons, "admin_button_menu_empty")
+
+    wallet = sources["src/Finance/Routes/AdminWallet.php"]
+    modes = re.search(r"\$achbotWalletModes\s*=\s*\[(.*?)\];", wallet, re.S)
+    check(modes is not None and "sendMessage($mainValues[$prompt])" in wallet,
+          "admin_wallet_prompt_binding_changed")
+    wallet_prompts = set(re.findall(
+        r"""'[^']+'\s*=>\s*\[\s*'[^']+'\s*,\s*'[^']+'\s*,\s*'([^']+)'\s*\]""",
+        modes.group(1)))
+    check(wallet_prompts, "admin_wallet_prompt_set_empty")
+
+    receipts = sources["src/Finance/ReceiptHelpers.php"]
+    manual = php_function(receipts, "achbotManualReceiptPrompt")
+    match = re.search(r"\$key\s*=\s*match\s*\(\s*\$method\s*\)\s*\{(.*?)\};",
+                      manual, re.S)
+    check(match is not None and "return $mainValues[$key]" in manual,
+          "manual_receipt_prompt_binding_changed")
+    receipt_prompts = set(re.findall(
+        r"""=>\s*'([a-z_]+)'""", match.group(1)))
+    check(receipt_prompts, "manual_receipt_prompt_set_empty")
+    templates = re.findall(
+        r"""\$mainValues\[\s*\$method\s*===\s*'[^']+'\s*\?\s*'([^']+)'\s*"""
+        r""":\s*'([^']+)'\s*\]""", receipts)
+    check(len(templates) == 2, "manual_receipt_invoice_templates_changed")
+    for pair in templates:
+        receipt_prompts.update(pair)
+
+    # Every current dynamic legacy index must be accounted for. The two
+    # indexes in Presentation/Text.php are assignments in the renderer,
+    # not read consumers of a catalog entry.
+    actual = []
+    for path, code in sources.items():
+        for m in re.finditer(
+            r"""\$(mainValues|buttonValues)\[\s*(?!['"])([^\]]+)\]""",
+            code, re.S,
+        ):
+            actual.append((path, m.group(1), " ".join(m.group(2).split())))
+    expected = [
+        ("config.php", "buttonValues", "$key"),
+        ("src/Finance/Routes/AdminWallet.php", "mainValues", "$prompt"),
+        ("src/Finance/ReceiptHelpers.php", "mainValues", "$key"),
+        ("src/Finance/ReceiptHelpers.php", "mainValues",
+         "$method === 'manual_trx' ? 'brw_cart_to_cart_trx' : 'brw_cart_to_cart_usdt'"),
+        ("src/Finance/ReceiptHelpers.php", "mainValues",
+         "$method === 'gift_card' ? 'brw_cart_to_cart_gift' : 'brw_cart_to_cart_detail'"),
+        ("src/Presentation/Text.php", "mainValues", "$key"),
+        ("src/Presentation/Text.php", "mainValues", "$key"),
+    ]
+    check(sorted(actual) == sorted(expected),
+          "unclassified_indirect_catalog_indexes:" +
+          str(sorted(set(actual) ^ set(expected))[:8]))
+    render = sources["src/Presentation/Text.php"]
+    check("$mainValues[$key] = $value;" in render and
+          "$mainValues[$key] = replacePlaceholders(" in render,
+          "presentation_index_is_no_longer_write_only")
+    return {"legacy_buttons": admin_buttons,
+            "legacy_messages": wallet_prompts | receipt_prompts}
+
+
+def unresolved_copy_orphans(groups: dict[str, dict],
+                            sources: dict[str, str]) -> list[str]:
+    combined = "\n".join(sources.values())
+    finite = finite_dynamic_keys(sources)
+    indirect = indirect_legacy_keys(sources)
+    direct = {"legacy_messages": set(MAIN_KEY.findall(combined)),
+              "legacy_buttons": set(BUTTON_KEY.findall(combined))}
+    referenced = set(re.findall(
+        r"""['"]([a-z][a-z0-9_]*\.[A-Za-z0-9_.]+)['"]""", combined))
     orphans = []
     for topic, entries in groups.items():
         for key in entries:
-            complete = topic + "." + key
-            if topic in ("legacy_messages", "legacy_buttons"):
-                if re.search(r"""['"]""" + re.escape(key) + r"""['"]""", source):
-                    continue
-            elif (complete in source or
-                  any(complete.startswith(prefix) for prefix in dynamic_prefixes)):
-                continue
-            orphans.append(complete)
+            qualified = topic + "." + key
+            if topic in direct:
+                used = key in direct[topic] or key in indirect[topic]
+            else:
+                used = qualified in referenced or qualified in finite
+            if not used:
+                orphans.append(qualified)
     return sorted(orphans)
 
 
@@ -168,11 +314,37 @@ def main() -> None:
           "mainValues_unknown_source:" + str(sorted(missing_main)))
     check(button_keys <= set(groups["legacy_buttons"]),
           "buttonValues_unknown_source")
-    orphans = unresolved_copy_orphans(groups, combined, DYNAMIC_PREFIXES)
+    finite_proof = finite_dynamic_keys(sources)
+    check({"manual_payment.api_payment.status_review",
+           "manual_payment.api_payment.code_used",
+           "payment_settings.api.sms_verify",
+           "payment_settings.api.gift_guidance",
+           "payment_settings.api.field.smsApiUrl",
+           "payment_settings.api.hint.giftApiSecret"} <= finite_proof,
+          "legitimate_dynamic_source_provenance_lost")
+    legacy_proof = indirect_legacy_keys(sources)
+    check({"increase_wallet", "create_account"} <=
+          legacy_proof["legacy_buttons"] and
+          {"enter_increase_amount", "please_send_usdt_image",
+           "brw_cart_to_cart_trx"} <= legacy_proof["legacy_messages"],
+          "legitimate_indirect_source_provenance_lost")
+    orphans = unresolved_copy_orphans(groups, sources)
     check(not orphans, "unused_current_catalog_keys:" + str(orphans[:15]))
     fake_groups = {**groups, "fake_topic": {"ghost_message": "کپی قدیمی"}}
-    check(unresolved_copy_orphans(fake_groups, combined, DYNAMIC_PREFIXES) ==
+    check(unresolved_copy_orphans(fake_groups, sources) ==
           ["fake_topic.ghost_message"], "orphan_copy_negative")
+    # The previous auditor treated arbitrary keys under accepted prefixes as
+    # used and confused unrelated payment-method/SQL field names with UI copy.
+    prefix_probe = {**groups, "payment_settings": {
+        **groups["payment_settings"],
+        "api.zz_fake_never_referenced_9271": "موجود نیست"}}
+    check(unresolved_copy_orphans(prefix_probe, sources) ==
+          ["payment_settings.api.zz_fake_never_referenced_9271"],
+          "dynamic_prefix_orphan_negative")
+    alias_probe = {**groups, "legacy_buttons": {
+        **groups["legacy_buttons"], "spam_info": "موجود نیست"}}
+    check(unresolved_copy_orphans(alias_probe, sources) ==
+          ["legacy_buttons.spam_info"], "unrelated_alias_orphan_negative")
     assert_retired_absent(sources)
     check(not (set(RETIRED_KEYS) & all_keys), "retired_text_reintroduced")
     plan_menu = sources["config.php"].split("function getPlanDetailsKeys(", 1)[1].split(

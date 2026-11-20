@@ -6,7 +6,6 @@ ownership cleanup. No pre-Stable bot is run and no external service is used.
 """
 from __future__ import annotations
 
-import collections
 import hashlib
 import json
 from pathlib import Path
@@ -18,8 +17,9 @@ import test_post_v9_current_copy_ownership as owner
 
 ROOT = Path(__file__).resolve().parents[1]
 BASE = "270840a854b06bbe899b76249db68e4748d93739"
-REMOVED_SHA256 = "39f54995be97088d92c8a57724c76bd7f534abf9d05470ecc528a7be90fa176b"
+REMOVED_SHA256 = "a193177648c9268b3de5a70e056823fa4e8a87016757b67398291579d4028868"
 ADDED_SHA256 = "31088e8b9a9ee6cdc6a9a015aa8418b49ac6948302eb586a2da6db7f40b1e494"
+REVIEW_R1_RETIRED = ('legacy_buttons.active', 'legacy_buttons.deactive', 'legacy_buttons.manual_usdt', 'legacy_messages.buy_custom_subscription_detail', 'manual_payment.api_payment.status_monitoring')
 EXPECTED_LABELS = {
     "automatic_gateway_review.unlimited_expiry": "نامحدود",
     "bulk_reporting.unknown_confirmed": "نامشخص",
@@ -69,10 +69,12 @@ def main() -> None:
                 for a in ("user", "admin")})
     removed = sorted(set(old) - set(new))
     added = sorted(set(new) - set(old))
-    check(len(removed) == 408 and digest(removed) == REMOVED_SHA256,
+    check(len(removed) == 413 and digest(removed) == REMOVED_SHA256,
           "retired_key_footprint_changed")
     check(len(added) == 50 and digest(added) == ADDED_SHA256,
           "new_catalog_keys_not_owner_reviewed")
+    check(set(REVIEW_R1_RETIRED) <= set(removed),
+          "R1_orphan_keys_not_retired")
     common = set(old) & set(new)
     changed = sorted(k for k in common if old[k] != new[k])
     check(not changed, "previously_rendered_copy_modified:" + str(changed[:12]))
@@ -82,23 +84,18 @@ def main() -> None:
           "legacy_label_bytes_changed")
     assert len({k for k in added if k.startswith("web_login.")}) == 46
 
-    paths = [p for p in package_current.members()
-             if p.endswith(".php") and p not in owner.AUDIENCES]
-    runtime = "\n".join((ROOT / path).read_text() for path in paths)
+    sources = {p: (ROOT / p).read_text() for p in package_current.members()
+               if p.endswith(".php") and p not in owner.AUDIENCES}
+    # A removed legacy short name may still occur in unrelated protocol/SQL
+    # data. Verify reachability at the actual catalog sinks, not lexical text.
+    restored = {topic: dict(entries)
+                for topic, entries in owner.loaded_catalog().items()}
     for qualified in removed:
         topic, short = qualified.split(".", 1)
-        if topic in ("legacy_messages", "legacy_buttons"):
-            import re
-            check(re.search(r"""['"]""" + re.escape(short) + r"""['"]""", runtime)
-                  is None, "removed_alias_still_referenced:" + qualified)
-        else:
-            check(qualified not in runtime and
-                  not any(qualified.startswith(prefix)
-                          for prefix in owner.DYNAMIC_PREFIXES),
-                  "removed_catalog_key_still_dynamic:" + qualified)
-
-    check(not owner.unresolved_copy_orphans(owner.loaded_catalog(), runtime,
-                                             owner.DYNAMIC_PREFIXES),
+        restored[topic][short] = old[qualified]
+    check(owner.unresolved_copy_orphans(restored, sources) == removed,
+          "removed_catalog_key_has_reachable_consumer")
+    check(not owner.unresolved_copy_orphans(owner.loaded_catalog(), sources),
           "remaining_catalog_has_unaccounted_copy")
     print(json.dumps({
         "complete": True, "status": "PASS",

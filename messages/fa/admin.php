@@ -856,7 +856,6 @@ return [
         'api_payment.status_settled' => "پرداخت قبلاً نهایی شده است.",
         'api_payment.status_review' => "نیازمند بررسی مدیر",
         'api_payment.status_uncertain' => "نتیجهٔ عملیات بیرونی نامشخص است.",
-        'api_payment.status_monitoring' => "بررسی ادامه دارد",
         'api_payment.status_evidence_only' => "پیامک دیررس ثبت شد؛ پرداخت قبلاً نهایی بود و عملیات مالی تکرار نشد",
         'api_payment.view_code' => "مشاهده کد گیفت‌کارت",
         // Existing API-assisted payments.
