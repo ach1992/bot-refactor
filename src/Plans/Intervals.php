@@ -176,7 +176,7 @@ function achbotIntervalWriteNotice(): void {
     global $cancelKey;
     sendMessage(($GLOBALS['achbotIntervalWriteUncertain']??false)?
         \achbotMessage('admin_settings.management.review_required'):
-        \achbotMessage('admin_settings.management.management_stale'),$cancelKey);
+        \achbotMessage('admin_settings.management.management_stale'),$cancelKey, 'HTML');
 }
 
 function achbotIntervalShow(mysqli $db,string $kind,?int $editMessageId=null): void {

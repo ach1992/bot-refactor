@@ -17,7 +17,7 @@ function achbotWalletTransferRestart(bool $unavailable = false): void
         : \achbotMessage('wallet.wallet_transfer.wallet_transfer_restart.message.03d3c27bc2'),
         json_encode(['inline_keyboard'=>[[[
             'text'=>\achbotMessage('wallet.wallet_transfer.wallet_transfer_restart.button.79f89c9b92'), 'callback_data'=>'transferMyWallet'
-        ]]]], JSON_UNESCAPED_UNICODE));
+        ]]]], JSON_UNESCAPED_UNICODE), 'HTML');
 }
 
 }

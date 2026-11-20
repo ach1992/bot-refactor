@@ -567,7 +567,7 @@ if (is_string($data??null) &&
     if ($operation['action']==='n') {
         sendMessage(\achbotMessage('bot.bot.gateway_audience_settings.message.56c51082c2').
             \achbotMessage('bot.bot.gateway_audience_settings.message.dff975b57d').
-            \achbotMessage('bot.bot.gateway_audience_settings.message.8f166cf7c0'),$cancelKey);
+            \achbotMessage('bot.bot.gateway_audience_settings.message.8f166cf7c0'),$cancelKey, 'HTML');
         return;
     }
     if (in_array($operation['action'],['s','x'],true)) {
@@ -616,7 +616,7 @@ if (is_string($userInfo['step']??null) &&
         sendMessage($text===($buttonValues['cancel']??null)
             ? \achbotMessage('bot.bot.gateway_audience_settings.message.74d707fe02')
             : \achbotMessage('payment_settings.gateway_rule_admin.exempt_saved'),
-            $removeKeyboard);
+            $removeKeyboard, 'HTML');
         sendMessage($page['text'],$page['keyboard'],'HTML');
         return;
     }
@@ -2009,7 +2009,7 @@ if ($data === 'addMarzbanPanelGroup' &&
     ($from_id == $admin || ($userInfo['isAdmin'] ?? false))) {
     setUser('newMarzbanPanelGroup');
     sendMessage(\achbotMessage('bot.bot.add_marzban_panel_group.message.01f02c2ac6')
-        . \achbotMessage('bot.bot.add_marzban_panel_group.message.31116063c0'), $cancelKey);
+        . \achbotMessage('bot.bot.add_marzban_panel_group.message.31116063c0'), $cancelKey, 'HTML');
     return;
 }
 if (($userInfo['step'] ?? '') === 'newMarzbanPanelGroup' &&

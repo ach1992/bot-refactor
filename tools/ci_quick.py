@@ -65,6 +65,8 @@ OTHER_TESTS = (
      ("python3", "tools/test_post_v9_telegram_html_discount_compositions.py"), "stdout"),
     ("telegram_html_wallet_reports",
      ("python3", "tools/test_post_v9_telegram_html_wallet_reports.py"), "stdout"),
+    ("telegram_html_composed_notices",
+     ("python3", "tools/test_post_v9_telegram_html_composed_notices.py"), "stdout"),
     ("marzban_bearer", ("python3", "tools/test_post_v9_marzban_bearer.py"), "stdout"),
 )
 

@@ -236,7 +236,7 @@ function achbotAddonAdminHandle(mysqli $db): bool {
         // operational errors or a false financial failure report.
         if ($reason==='addon_admin_stale_callback') {
             sendMessage(\achbotMessage($step==='none'
-                ?'addon_scopes.unavailable':'addon_scopes.filter_blocked'),$cancelKey);
+                ?'addon_scopes.unavailable':'addon_scopes.filter_blocked'),$cancelKey, 'HTML');
             return true;
         }
         $update=$GLOBALS['update']??null;

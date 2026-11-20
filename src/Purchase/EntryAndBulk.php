@@ -403,7 +403,7 @@ if (
         ? achbotMessage('bulk_reporting.delivery_needs_review',
             ['count'=>count($deliveryReview)])
         : achbotMessage('purchase.entry_and_bulk.create_multiple_accounts.message.62d6e89b94'),
-        getMainKeys());
+        getMainKeys(), 'HTML');
     setUser();
 }
 

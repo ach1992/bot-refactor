@@ -160,6 +160,34 @@ in private pending-step data that must never reach a notice. This bounded
 proof does **not** authorize converting customizable wallet prompts, support
 replies, stored broadcasts or arbitrary dynamic Markdown elsewhere.
 
+Eleven additional fixed-catalog and typed-numeric conditional/composed
+notices have source-owned explicit HTML: gateway-policy and panel-group prompts
+in `bot.php`, wallet-transfer restart, payment-plan invalidation, a manual
+receipt rejection prompt, interval/add-on write warnings, server-display save
+or cancellation, wallet top-up amount presentation, and bulk-account delivery
+review. These are **only** the reviewed fixed catalog branches or numeric
+`number_format($amount)`/`count($deliveryReview)` expressions; customizable
+`$mainValues`, arbitrary dynamic source strings, stored broadcasts and plain
+callback labels retain their existing modes. The source/keyboard call
+expressions and report order are unchanged: only the `sendMessage()` parse-mode
+argument was added, with no financial, authorization, persistence or delivery
+retry changes.
+
+`python3 tools/test_post_v9_telegram_html_composed_notices.py` uses the PHP
+lexer to locate exactly eleven active, reviewed callsites; pins their
+complete original text and keyboard expressions independently of parse mode;
+and executes the **actual PHP expressions** against three synthetic scenarios
+covering both conditional branches, Persian/Unicode, arbitrary string input
+that must not be displayed, formatted monetary amounts and a counted review
+list. The source and entire rendered text/keyboard golden fingerprints were
+captured from the exact pre-change `main` before this conversion. Every
+resulting text is literal-safe for Markdown/HTML with no differing formatting
+entities or automatic links. A source/keyboard drift, changed catalog,
+missing/disabled send or changed parse mode fails validation. This is a
+bounded provenance contract, not a general PHP data-flow analyzer or a
+license to migrate user-defined messages; on intentional changes, inspect
+the effective diff before accepting a new `--print-audit` fingerprint.
+
 On an intentional change, inspect and review the effective diff first, then
 run the read-only `--print-audit`
 option to obtain proposed new fingerprints; never update the expected values

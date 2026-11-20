@@ -413,7 +413,7 @@ if (preg_match('/^declineActionReason_(.+)_(\d+)$/', (string)($userInfo['step']?
             // for a shorter message BEFORE any irreversible financial state.
             // The persisted editor remains open; no unconditional rewrite.
             sendMessage(\achbotMessage('broadcast.routes.pm_noop.message.72fe3f7c5d')."\n".
-                \achbotMessage('manual_payment.manual_receipts.message.a757d0e2a6'),$cancelKey);
+                \achbotMessage('manual_payment.manual_receipts.message.a757d0e2a6'),$cancelKey, 'HTML');
             return;
         }
     }
