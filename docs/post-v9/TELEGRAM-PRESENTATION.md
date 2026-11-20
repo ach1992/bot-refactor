@@ -130,7 +130,12 @@ that removed, comment-disabled or keyboard-modified sends cannot pass the
 source contract. The userid check uses executable PHP tokens within the
 owning conditional to require the actual integer-cast assignment and reject
 later userid writes, including comment-spoofed casts and post-cast
-reassignments; rendering executes the extracted source assignment.
+reassignments. It also requires a top-level, unguarded cast statement and
+pins the reviewed branch's executable token path up to the notification,
+so newly inserted conditional or loop guards and jumps cannot silently
+skip it. Whitespace and comments remain irrelevant; any changed executable
+control flow requires deliberate review. Rendering executes the validated
+source assignment.
 This is intentionally not a generic Markdown converter:
 user-authored, customized and persisted content remains out of scope.
 

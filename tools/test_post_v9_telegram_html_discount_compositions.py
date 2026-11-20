@@ -30,6 +30,10 @@ NUMERIC = re.compile(
 NUMERIC_KEY = PREFIX + "12c329225f"
 AUDITED_COUNT = 10
 EXPECTED_SHA256 = "730215138ef69f586673516628986ec4c7104062f59c99c44144aebe50ded30b"
+# Independent of the ten sendMessage call-site fingerprints: executable PHP
+# tokens from the owning conditional through the send retain reviewed control
+# flow. Whitespace/comments are deliberately ignored.
+EXPECTED_UID_PATH_SHA256 = "16a7783b85309a54a94c7be82fd44c7e545daf4d7fa5d3f6ecc571cd30657b7f"
 
 
 
@@ -105,10 +109,10 @@ def numeric_provenance(source: str, send_start: int) -> str:
             raise AssertionError("numeric provenance: expected braced PHP branch")
         body_end = matching_bracket(tokens, body, "{", "}")
         if body < send_index < body_end:
-            scopes.append(body)
+            scopes.append((index, body))
     if len(scopes) != 1:
         raise AssertionError("numeric provenance: send left its owning branch")
-    block = scopes[0]
+    branch_start, block = scopes[0]
     uid_uses = [
         i for i in range(block + 1, send_index)
         if tokens[i][1] == "T_VARIABLE" and tokens[i][2] == "$uid"
@@ -125,6 +129,24 @@ def numeric_provenance(source: str, send_start: int) -> str:
         raise AssertionError("numeric provenance: executable integer cast changed")
     if tokens[read - 1][2] != "," or tokens[read + 1][2] != ",":
         raise AssertionError("numeric provenance: later uid usage changed")
+    # The cast must start a top-level statement after the preceding braced
+    # numeric-input validation. An unbraced if, while, for, do or
+    # alternative syntax guard immediately before the cast is not a
+    # statement boundary and must not be accepted as unconditional.
+    if tokens[assignment - 1][2] != "}":
+        raise AssertionError("numeric provenance: cast gained a statement guard")
+    # Pin all executable tokens from this specific reviewed conditional
+    # through the send, including conditionals/loops/labels that could skip
+    # the cast without adding another uid token. A harmless comment, moved
+    # line or spacing change keeps the digest; any changed executable path
+    # requires deliberate re-review rather than false assurance.
+    guarded_path = [[kind, value] for _, kind, value
+                    in tokens[branch_start:send_index]]
+    path_digest = hashlib.sha256(json.dumps(
+        guarded_path, ensure_ascii=False, separators=(",", ":")
+    ).encode("utf-8")).hexdigest()
+    if path_digest != EXPECTED_UID_PATH_SHA256:
+        raise AssertionError("numeric provenance: reviewed execution path changed: " + path_digest)
     depth = 1
     levels = {}
     for i in range(block + 1, send_index + 1):
@@ -321,6 +343,38 @@ def verify_mutation_detection(source: str, rows: list[dict], catalog: dict) -> N
         "\n    $uid++;" +
         source[cast_start + len(original_cast):],
     )
+    # D/E. Unbraced guards retain the original sendMessage fingerprint,
+    # uid token count and brace depth, but can skip the integer cast entirely.
+    expect_provenance_rejected(
+        "conditional false cast",
+        source[:cast_start] + "if (false) " + source[cast_start:],
+    )
+    expect_provenance_rejected(
+        "conditional numeric equality cast",
+        source[:cast_start] + "if ($text === '123456789') " +
+        source[cast_start:],
+    )
+    # An unbraced loop is also conditional statement ownership.
+    expect_provenance_rejected(
+        "conditional while cast",
+        source[:cast_start] + "while (false) " + source[cast_start:],
+    )
+    expect_provenance_rejected(
+        "braced guarded cast",
+        source[:cast_start] + "if (false) { " + original_cast +
+        " }" + source[cast_start + len(original_cast):],
+    )
+    # A control-flow jump may bypass the cast without changing any uid token.
+    expect_provenance_rejected(
+        "goto skips cast",
+        source[:cast_start] + "goto skipUidCast;\n    " +
+        source[cast_start:one_line["start"]] +
+        "skipUidCast:\n    " + source[one_line["start"]:],
+    )
+    # Whitespace and comments do not change the pinned executable token path.
+    benign = source[:cast_start] + "/* harmless comment */\n    " + source[cast_start:]
+    if fingerprint(inventory(benign, catalog), catalog) != baseline:
+        raise AssertionError("numeric provenance: harmless comment invalidated audit")
     moved = source[:position] + "\n \t" + source[position:]
     if fingerprint(inventory(moved, catalog), catalog) != baseline:
         raise AssertionError("line numbers/whitespace invalidated stable digest")
@@ -352,7 +406,7 @@ def main() -> None:
         "composed": counts["composed"], "integer": counts["integer"],
         "sample_user_ids": sample_count, "audited_exact": True,
         "network_calls": 0, "executable_integer_provenance": True,
-        "provenance_mutation_cases": 3
+        "provenance_mutation_cases": 8
     }))
 
 
