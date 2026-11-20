@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__ . '/messages/loader.php';
 session_start();
 
 if (empty($_SESSION['csrf_token'])) {
@@ -16,35 +17,35 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!$validCsrf) {
         $response = [
             'status' => 'error',
-            'message' => 'درخواست نامعتبر است. لطفاً صفحه را مجدداً بارگذاری کنید.'
+            'message' => achbotMessage('web_login.csrf_invalid')
         ];
     } else {
         switch ($action) {
             case 'login':
                 $response = [
                     'status' => 'error',
-                    'message' => 'حساب کاربری شما در حال حاضر دسترسی لازم به این بخش را ندارد. در صورت نیاز، درخواست دسترسی خود را از طریق مدیر سامانه پیگیری کنید.'
+                    'message' => achbotMessage('web_login.login_denied')
                 ];
                 break;
 
             case 'register':
                 $response = [
                     'status' => 'success',
-                    'message' => 'درخواست عضویت شما دریافت شد. پس از بررسی و تأیید مدیر سامانه، اطلاعات دسترسی برای شما ارسال خواهد شد.'
+                    'message' => achbotMessage('web_login.register_received')
                 ];
                 break;
 
             case 'forgot':
                 $response = [
                     'status' => 'info',
-                    'message' => 'در صورت تطابق اطلاعات واردشده با حساب کاربری، راهنمای بازیابی دسترسی برای شما ارسال خواهد شد.'
+                    'message' => achbotMessage('web_login.forgot_received')
                 ];
                 break;
 
             default:
                 $response = [
                     'status' => 'error',
-                    'message' => 'عملیات انتخاب‌شده معتبر نیست.'
+                    'message' => achbotMessage('web_login.action_unknown')
                 ];
         }
     }
@@ -65,7 +66,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <html lang="fa" dir="rtl">
 <head>
     <meta charset="UTF-8">
-    <title>ورود به پنل کاربری</title>
+    <title><?= htmlspecialchars(achbotMessage('web_login.page_title'), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
     <style>
@@ -464,36 +465,36 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <section class="hero">
         <div class="badge">
             <span></span>
-            سامانه مدیریت کاربران
+            <?= htmlspecialchars(achbotMessage('web_login.brand'), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') . "\n" ?>
         </div>
 
-        <h1>دسترسی امن به پنل کاربری</h1>
+        <h1><?= htmlspecialchars(achbotMessage('web_login.hero_title'), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></h1>
 
         <p>
-            برای ورود به پنل، حساب کاربری شما باید توسط مدیر سامانه تأیید شده باشد.
-            در صورت نداشتن حساب فعال، می‌توانید درخواست عضویت خود را ثبت کنید تا پس از بررسی، اطلاعات دسترسی برای شما ارسال شود.
+            <?= htmlspecialchars(achbotMessage('web_login.hero_line_one'), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') . "\n" ?>
+            <?= htmlspecialchars(achbotMessage('web_login.hero_line_two'), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') . "\n" ?>
         </p>
 
         <div class="features">
-            <div class="feature">ورود امن کاربران</div>
-            <div class="feature">بررسی و تأیید دسترسی</div>
-            <div class="feature">مدیریت حساب‌ها</div>
-            <div class="feature">پشتیبانی از موبایل</div>
+            <div class="feature"><?= htmlspecialchars(achbotMessage('web_login.feature_login'), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></div>
+            <div class="feature"><?= htmlspecialchars(achbotMessage('web_login.feature_approval'), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></div>
+            <div class="feature"><?= htmlspecialchars(achbotMessage('web_login.feature_accounts'), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></div>
+            <div class="feature"><?= htmlspecialchars(achbotMessage('web_login.feature_mobile'), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></div>
         </div>
     </section>
 
     <section class="card">
-        <div class="logo">A</div>
+        <div class="logo"><?= htmlspecialchars(achbotMessage("web_login.logo"), ENT_QUOTES | ENT_SUBSTITUTE, "UTF-8") ?></div>
 
-        <h2 class="form-title" id="formTitle">ورود به حساب</h2>
+        <h2 class="form-title" id="formTitle"><?= htmlspecialchars(achbotMessage('web_login.login_title'), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></h2>
         <p class="form-desc" id="formDesc">
-            برای ادامه، اطلاعات حساب کاربری خود را وارد کنید.
+            <?= htmlspecialchars(achbotMessage('web_login.login_description'), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') . "\n" ?>
         </p>
 
         <div class="tabs">
-            <button class="tab active" type="button" data-target="login">ورود</button>
-            <button class="tab" type="button" data-target="register">ثبت‌نام</button>
-            <button class="tab" type="button" data-target="forgot">فراموشی رمز</button>
+            <button class="tab active" type="button" data-target="login"><?= htmlspecialchars(achbotMessage('web_login.tab_login'), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></button>
+            <button class="tab" type="button" data-target="register"><?= htmlspecialchars(achbotMessage('web_login.tab_register'), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></button>
+            <button class="tab" type="button" data-target="forgot"><?= htmlspecialchars(achbotMessage('web_login.tab_forgot'), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></button>
         </div>
 
         <form class="active ajax-form" id="login" method="post">
@@ -501,28 +502,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <input type="hidden" name="action" value="login">
 
             <div class="field">
-                <label>ایمیل یا نام کاربری</label>
-                <input type="text" name="email" placeholder="example@email.com" autocomplete="username" required>
+                <label><?= htmlspecialchars(achbotMessage('web_login.login_username_label'), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></label>
+                <input type="text" name="email" placeholder="<?= htmlspecialchars(achbotMessage("web_login.email_example"), ENT_QUOTES | ENT_SUBSTITUTE, "UTF-8") ?>" autocomplete="username" required>
             </div>
 
             <div class="field">
-                <label>رمز عبور</label>
+                <label><?= htmlspecialchars(achbotMessage('web_login.login_password_label'), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></label>
                 <div class="password-wrap">
-                    <input type="password" placeholder="رمز عبور خود را وارد کنید" autocomplete="current-password" required>
-                    <button class="toggle-password" type="button">نمایش</button>
+                    <input type="password" placeholder="<?= htmlspecialchars(achbotMessage('web_login.login_password_placeholder'), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>" autocomplete="current-password" required>
+                    <button class="toggle-password" type="button"><?= htmlspecialchars(achbotMessage('web_login.password_show'), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></button>
                 </div>
             </div>
 
             <div class="row">
                 <label class="check">
                     <input type="checkbox">
-                    مرا به خاطر بسپار
+                    <?= htmlspecialchars(achbotMessage('web_login.remember_me'), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') . "\n" ?>
                 </label>
 
-                <a data-switch="forgot">رمز عبور را فراموش کرده‌اید؟</a>
+                <a data-switch="forgot"><?= htmlspecialchars(achbotMessage('web_login.forgot_link'), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></a>
             </div>
 
-            <button class="submit" type="submit">ورود به پنل</button>
+            <button class="submit" type="submit"><?= htmlspecialchars(achbotMessage('web_login.login_submit'), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></button>
         </form>
 
         <form class="ajax-form" id="register" method="post">
@@ -530,29 +531,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <input type="hidden" name="action" value="register">
 
             <div class="field">
-                <label>نام و نام خانوادگی</label>
-                <input type="text" name="name" placeholder="نام کامل خود را وارد کنید" autocomplete="name" required>
+                <label><?= htmlspecialchars(achbotMessage('web_login.register_name_label'), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></label>
+                <input type="text" name="name" placeholder="<?= htmlspecialchars(achbotMessage('web_login.register_name_placeholder'), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>" autocomplete="name" required>
             </div>
 
             <div class="field">
-                <label>ایمیل</label>
-                <input type="email" name="email" placeholder="example@email.com" autocomplete="email" required>
+                <label><?= htmlspecialchars(achbotMessage('web_login.email_label'), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></label>
+                <input type="email" name="email" placeholder="<?= htmlspecialchars(achbotMessage("web_login.email_example"), ENT_QUOTES | ENT_SUBSTITUTE, "UTF-8") ?>" autocomplete="email" required>
             </div>
 
             <div class="field">
-                <label>شماره تماس</label>
-                <input type="tel" name="phone" placeholder="شماره تماس خود را وارد کنید" autocomplete="tel">
+                <label><?= htmlspecialchars(achbotMessage('web_login.phone_label'), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></label>
+                <input type="tel" name="phone" placeholder="<?= htmlspecialchars(achbotMessage('web_login.phone_placeholder'), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>" autocomplete="tel">
             </div>
 
             <div class="field">
-                <label>رمز عبور پیشنهادی</label>
+                <label><?= htmlspecialchars(achbotMessage('web_login.register_password_label'), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></label>
                 <div class="password-wrap">
-                    <input type="password" placeholder="یک رمز عبور انتخاب کنید" autocomplete="new-password" required>
-                    <button class="toggle-password" type="button">نمایش</button>
+                    <input type="password" placeholder="<?= htmlspecialchars(achbotMessage('web_login.register_password_placeholder'), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>" autocomplete="new-password" required>
+                    <button class="toggle-password" type="button"><?= htmlspecialchars(achbotMessage('web_login.password_show'), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></button>
                 </div>
             </div>
 
-            <button class="submit" type="submit">ثبت درخواست عضویت</button>
+            <button class="submit" type="submit"><?= htmlspecialchars(achbotMessage('web_login.register_submit'), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></button>
         </form>
 
         <form class="ajax-form" id="forgot" method="post">
@@ -560,14 +561,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <input type="hidden" name="action" value="forgot">
 
             <div class="field">
-                <label>ایمیل حساب کاربری</label>
-                <input type="email" name="email" placeholder="example@email.com" autocomplete="email" required>
+                <label><?= htmlspecialchars(achbotMessage('web_login.forgot_email_label'), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></label>
+                <input type="email" name="email" placeholder="<?= htmlspecialchars(achbotMessage("web_login.email_example"), ENT_QUOTES | ENT_SUBSTITUTE, "UTF-8") ?>" autocomplete="email" required>
             </div>
 
-            <button class="submit" type="submit">بازیابی دسترسی</button>
+            <button class="submit" type="submit"><?= htmlspecialchars(achbotMessage('web_login.forgot_submit'), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></button>
 
             <div class="row">
-                <a data-switch="login">بازگشت به ورود</a>
+                <a data-switch="login"><?= htmlspecialchars(achbotMessage('web_login.back_login'), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></a>
             </div>
         </form>
 
@@ -576,7 +577,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         </div>
 
         <div class="footer-note">
-            تمامی درخواست‌ها پس از بررسی مدیر سامانه پردازش می‌شوند.
+            <?= htmlspecialchars(achbotMessage('web_login.footer_note'), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') . "\n" ?>
         </div>
     </section>
 </div>
@@ -590,16 +591,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     const texts = {
         login: {
-            title: 'ورود به حساب',
-            desc: 'برای ادامه، اطلاعات حساب کاربری خود را وارد کنید.'
+            title: <?= json_encode(achbotMessage('web_login.login_title'), JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_THROW_ON_ERROR) ?>,
+            desc: <?= json_encode(achbotMessage('web_login.login_description'), JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_THROW_ON_ERROR) . "\n" ?>
         },
         register: {
-            title: 'ثبت درخواست عضویت',
-            desc: 'اطلاعات خود را وارد کنید تا درخواست شما توسط مدیر سامانه بررسی شود.'
+            title: <?= json_encode(achbotMessage('web_login.register_submit'), JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_THROW_ON_ERROR) ?>,
+            desc: <?= json_encode(achbotMessage('web_login.register_description'), JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_THROW_ON_ERROR) . "\n" ?>
         },
         forgot: {
-            title: 'بازیابی دسترسی',
-            desc: 'ایمیل حساب کاربری خود را وارد کنید تا وضعیت دسترسی شما بررسی شود.'
+            title: <?= json_encode(achbotMessage('web_login.forgot_submit'), JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_THROW_ON_ERROR) ?>,
+            desc: <?= json_encode(achbotMessage('web_login.forgot_description'), JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_THROW_ON_ERROR) . "\n" ?>
         }
     };
 
@@ -646,10 +647,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             if (input.type === 'password') {
                 input.type = 'text';
-                button.textContent = 'مخفی';
+                button.textContent = <?= json_encode(achbotMessage('web_login.password_hide'), JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_THROW_ON_ERROR) ?>;
             } else {
                 input.type = 'password';
-                button.textContent = 'نمایش';
+                button.textContent = <?= json_encode(achbotMessage('web_login.password_show'), JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_THROW_ON_ERROR) ?>;
             }
         });
     });
@@ -662,7 +663,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             const originalText = submitButton.textContent;
 
             submitButton.disabled = true;
-            submitButton.textContent = 'در حال بررسی...';
+            submitButton.textContent = <?= json_encode(achbotMessage('web_login.processing'), JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_THROW_ON_ERROR) ?>;
 
             const formData = new FormData(form);
 
@@ -678,13 +679,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 const result = await response.json();
 
                 setTimeout(() => {
-                    showMessage(result.status || 'info', result.message || 'درخواست شما پردازش شد.');
+                    showMessage(result.status || 'info', result.message || <?= json_encode(achbotMessage('web_login.processed'), JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_THROW_ON_ERROR) ?>);
                     submitButton.disabled = false;
                     submitButton.textContent = originalText;
                 }, 700);
 
             } catch (error) {
-                showMessage('error', 'در حال حاضر امکان پردازش درخواست وجود ندارد. لطفاً بعداً دوباره تلاش کنید.');
+                showMessage('error', <?= json_encode(achbotMessage('web_login.unavailable'), JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_THROW_ON_ERROR) ?>);
                 submitButton.disabled = false;
                 submitButton.textContent = originalText;
             }

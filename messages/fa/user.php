@@ -15,7 +15,6 @@ return [
         'customer_custome_plan_day' => '📅 لطفا  تعداد روز اشتراک را وارد کنید.' . "\n" . '💰 هزینه هر روز: DAY-PRICE',
         'customer_custome_plan_volume' => '📦 لطفا مقدار گیگابایت سرویس رو وارد کنید.' . "\n" . '💰 هزینه هر گیگ: VOLUME-PRICE',
         'customer_custome_plan_name' => '🔢 اسم اشتراک رو وارد کنید (حروف انگیلیسی و عدد باهم وارد کنید)',
-        'amount_decreased_from_your_wallet' => '✅ مبلغ AMOUNT تومان از حساب شما کم شد.',
         'brw_cart_to_cart_detail' => '✳️ لطفا مبلغ را به شماره کارت زیر واریز کنید.' . "\n" . '⚠️ <b>مبلغ دقیق و غیر رند زیر را کپی و واریز کنید در غیر این صورت رسید تایید نمی شود.</b>' . "\n\n" . '💵 مبلغ به تومان ← <code>PRICE-TOMAN</code>' . "\n" . '💵 مبلغ به ریال ← <code>PRICE-RIAL</code>' . "\n\n" . '💳 شماره کارت:' . "\n" . '<code>ACCOUNT-NUMBER</code>' . "\n\n" . '🔑 HOLDER-NAME' . "\n\n" . '⏰ <b>بعد پرداخت فقط تا 30 دقیقه فرصت دارید رسید را بفرستید.</b>' . "\n" . '🔴 <b>به هیچ وجه رسیدی که قبلا ارسال شده را دوباره ارسال نکنید اکانت شما مسدود می شود.</b>' . "\n" . '<b>📤 ارسال رسید</b> را بزنید و بعد رسید را بفرستید.',
         'brw_cart_to_cart_gift' => '➕ روی دکمه <b>خرید گیفت کارت</b> بزنید و یک عدد گیفت کارت به مبلغ <code>PRICE-TOMAN-ROUND</code> تومان از سایت واسط خریداری کنید.' . "\n\n" . '⭐ در صورتی که <b>مشتری قدیمی یا معرفی شده</b> هستید برای دریافت شماره کارت به پشتیبانی پیام دهید.' . "\n\n" . '✅ <b>بعد از خرید از گیفت کارت اسکرین شات بگیرید</b> و با زدن دکمه <b>ارسال گیفت کارت</b> تصویر آن را ارسال کنید.' . "\n\n" . '📤 <b>ارسال گیفت کارت</b> را بزنید و بعد تصویر را بفرستید.',
         'brw_cart_to_cart_usdt' => '💰 مبلغ سفارش: <code>PRICE-TOMAN-ROUND</code> تومان' . "\n" . '💎 مقدار تتر: <code>PRICE-USDT USDT</code>' . "\n" . '🌐 شبکه: <b>USDT-NETWORK</b>' . "\n\n" . '📋 آدرس کیف پول مقصد:' . "\n" . '<code>USDT-WALLET</code>' . "\n\n" . '⚠️ فقط توکن USDT را روی شبکهٔ اعلام‌شده ارسال کنید. شبکه یا آدرس اشتباه ممکن است باعث از دست رفتن وجه شود.' . "\n" . '✅ پس از انتقال، از تأییدیهٔ انتقال همراه با هش تراکنش عکس بگیرید و دکمهٔ «ارسال رسید تتر» را بزنید.',
@@ -26,7 +25,6 @@ return [
         'please_send_gift_card_image' => '📤 تصویر واضح گیفت‌کارت خریداری‌شده را ارسال کنید. نتیجه پس از بررسی اعلام می‌شود.',
         'operation_canceled' => '❌ عملیات مورد نظر لغو شد.',
         'invite_second_text' => '🔰 پیام یا لینک بالا رو برای دوستتون بفرستید، هر کسی با استفاده از اون ربات را <b>استارت</b> یا <b>شروع</b> کند، به عنوان <b>زیرمجموعه شما</b> ثبت می‌شود.' . "\n" . '' . "\n" . '💎 همین که دوست شما ربات رو استارت کنه شما <b>{INVITE_REWARD}</b> تومان هدیه دعوت دریافت می کنید.' . "\n" . '⚠️ ربات به صورت دوره ای افراد دعوت شده را بررسی می کند در صورتی که فیک تشخیص داده شوند مبلغ هدیه از کیف پول شما کسر می شود یا اکانت خریدای شده غیرفعال می شود.' . "\n" . '' . "\n" . '💵 همچنین <b>به ازای هر خرید</b> دوست شما مبلغ <b>{INVITE_AMOUNT}</b> کیف پول شما شارژ می شود.' . "\n" . '' . "\n" . '💡 هرچی <b>تعداد زیرمجموعه های شما بیشتر</b> باشه، <b>سود شما هم بیشتره!</b> ' . "\n" . '' . "\n" . '♾️ <b>هیچ محدودیتی</b> در <b>تعداد خرید</b> یا <b>زیرمجموعه گیری</b> وجود ندارد و با هر دعوت و خرید دوستتان این <b>مبالغ برای شما شارژ می شود</b>.',
-        'order_submitted' => '✅ ممنون از اعتمادتون، درخواست شما با موفقیت ثبت شد.' . "\n" . '🔰 لطفا کمی صبر کنید تا تایید شود. 🌹' . "\n" . '🚫 ارسال درخواست تکراری باعث مسدودی اکانت می شود.' . "\n" . '<blockquote>' . "\n" . '⏳ معمولا در کمتر از 3 دقیقه تایید می شود، در ساعات غیر کاری ممکن است تا 30 دقیقه و بیشتر طول بکشد.' . "\n" . '❌ لطفا قبل از 45 دقیقه برای تایید رسید پیام ندهید؛ رسید شما رد می‌شود.' . "\n" . '</blockquote>' . "\n" . '💬 پشتیبانی: SUPPORTID',
         'please_send_only_image' => '⚠️ لطفاً فقط تصویر (عکس) را داخل ربات بفرستید متن یا فایل مورد تایید نیست.',
         'out_of_connection_capacity' => '⚠️ ظرفیت این کانکشن پر شده است.',
         'out_of_server_capacity' => '⚠️ ظرفیت این سرور پر شده است.',
@@ -42,7 +40,6 @@ return [
         'please_wait_message' => '⏳ لطفا کمی صبر کنید.',
         'send_only_number' => '🔢 لطفا فقط عدد ارسال کنید. دقت کنید اعداد انگلیسی باشند.',
         'saved_successfuly' => '✅ با موفقیت ذخیره شد.',
-        'invited_user_joined_message' => '🎉 تبریک یه نفر با لینک شما وارد ربات شد.' . "\n" . '💵 در صورتی که خریدی انجام دهد مبلغ پورسانت به صورت خودکار به کیف پول شما شارژ می شود.',
         'please_select_from_below_buttons' => '🔘 لطفا فقط از کلید زیر استفاده کنید.',
         'use_iranian_number_only' => '📱 لطفا فقط با شماره ایرانی اقدام کنید.',
         'phone_confirmed' => '✅ شماره شما با موفقیت تایید شد.',
@@ -57,7 +54,6 @@ return [
         'discount_user_limit' => '⚠️ از این کد به حداکثر تعداد مجاز استفاده کرده‌اید.',
         'valid_discount_code' => '✅ کد تخفیف با موفقیت استفاده شد.' . "\n" . '🎁 مقدار تخفیف AMOUNT',
         'send_config_uuid' => '🔰 از این بخش می توانید اشتراکی که خارج از ربات خریداری کرده اید را به ربات اضافه کنید، تمدید کنید یا مشخصات آن را ببینید.' . "\n" . '❗️ لینک اشتراک را بفرستید، نام کاربری قبول نیست. بعد از ارسال کمی صبر کنید تا اطلاعات برایتان ارسال شود.' . "\n" . '' . "\n" . '⚠️ لطفا قبل از ادامه مراحل اول بزنید روی آی دی زیر تا آموزش برایتان ارسال شود.' . "\n" . '' . "\n" . '💬 پشتیبانی: SUPPORTID',
-        'not_correct_text' => '⚠️ متن وارد شده معتبر نمی باشد.',
         'receving_information' => '♻️ در حال دریافت جزییات ... ',
         'agency_request_sent' => '✅ درخواست شما با موفقیت ارسال شد، لطفا به پشتیبانی پیام دهید!',
         'agency_request_already_sent' => '⏳ درخواست شما قبلاً ارسال شده، لطفا منتظر باشید!',
@@ -75,10 +71,8 @@ return [
         'buy_sub_select_plan' => '📋 مرحلهٔ سوم' . "\n" . '' . "\n" . '🔰 یکی از پلن هارو انتخاب کنید:',
         'buy_custom_plan' => '➕ پلن دلخواه خودتو بخر',
         'enter_account_amount' => '♻️ تعداد اکانت درخواستی رو وارد کن حداکثر در هر بار 5 عدد می توانید دریافت کنید.' . "\n" . '' . "\n" . '⚠️ نکته: در صورت وارد کردن عددی بالاتر از 5 و ایجاد اختلال مسئولیت هزینه کسر شده از حساب شما به عهده خودتان می باشد.',
-        'send_positive_number' => '🔢 لطفا عددی بزرگتر از 0 وارد کنید',
         'buy_subscription_detail' => '〽️ نام پلن: PLAN-NAME' . "\n" . '💰 قیمت پلن: PRICE' . "\n\n" . '🔖 توضیحات: DESCRIPTION' . "\n" . '🔰 لطفا یکی از روش های زیر را انتخاب کنید و روی آن بزنید.' . "\n",
         'buy_much_subscription_detail' => '〽️ نام پلن: PLAN-NAME' . "\n" . '🔢 تعداد اکانت: ACCOUNT-COUNT' . "\n" . '💰 قیمت پلن: PRICE' . "\n" . '🧮 قیمت کل: TOTAL-PRICE' . "\n\n" . '🔖 توضیحات: DESCRIPTION' . "\n" . '🔰 لطفا یکی از روش های زیر را انتخاب کنید و روی آن بزنید.' . "\n",
-        'buy_custom_subscription_detail' => '〽️ نام پلن: PLAN-NAME' . "\n" . '📦 حجم اختصاصی: VOLUME GB' . "\n" . '📅 مدت اختصاصی: DAYS روز' . "\n" . '💰 قیمت پلن: PRICE' . "\n\n" . '🔖 توضیحات: DESCRIPTION' . "\n" . '🔰 لطفا یکی از روش های زیر را انتخاب کنید و روی آن بزنید.' . "\n",
         'send_config_remark' => '🔄 لطفا نام کاربری اشتراک را وارد کنید.',
         'enter_ticket_title' => '<b>⁉️ لطفا موضوع تیکت را ارسال کنید!</b>' . "\n" . '	' . "\n" . '🛑 از ارسال درخواست های نامفهوم و بیجا خودداری کنید، بدون اخطار اکانت شما مسدود می شود.' . "\n" . '🚫 فقط به درخواست هایی که به زبان فارسی تایپ می شوند پاسخ داده می شود.',
         'enter_ticket_description' => '💠 لطفا متن و یا عکس تیکت را بصورت ساده و مختصر ارسال کنید!',
@@ -92,7 +86,6 @@ return [
         'back_to_main' => '↪️ بازگشت',
         'cart_to_cart' => '💳 کارت‌به‌کارت بانکی',
         'gift_card' => '🎁 خرید گیفت کارت | ریالی',
-        'manual_usdt' => '🧰 ارسال تتر یا ترون',
         'now_payment_gateway' => '💎 درگاه رمز ارز',
         'zarinpal_gateway' => '🌐 پرداخت آنلاین (زرین پال)',
         'nextpay_gateway' => '🌐 پرداخت آنلاین (نکست پی)',
@@ -106,8 +99,6 @@ return [
         'increase_config_volume' => '📦 افزایش حجم اشتراک',
         'increase_config_days' => '📅 افزایش زمان اشتراک',
         'renew_config' => '♻️ تمدید اشتراک',
-        'change_config_location' => '🌐 تغییر سرویس',
-        'selected_protocol' => '🚦 پروتکل انتخابی',
         'volume_left' => '📦 حجم باقیمانده:',
         'expire_date' => '📅 تاریخ انقضاء:',
         'buy_date' => '📅 تاریخ خرید:',
@@ -128,7 +119,6 @@ return [
         'shared_existence' => '❕موجودی اشتراکی',
         'individual_existence' => '❗️موجودی اختصاصی',
         'application_links' => '📚 آموزش و قوانین',
-        'my_tickets' => '💬 تیکت های من',
         'search_config' => '➕ افزودن اشتراک',
         'delete_config' => '🗑 حذف اشتراک',
         'change_plan' => '🔄 تغییر پلن',
@@ -298,8 +288,6 @@ return [
         'entry_and_bulk.create_multiple_accounts.message.141dd787b4' => '😡 مگه نمیگم فقط عدد بفرس نمیفهمی؟ یا خودتو زدی به نفهمی؟',
         'entry_and_bulk.create_multiple_accounts.message.f30d6ad265' => 'مقداری بزرگتر از 0 وارد کن',
         'entry_and_bulk.create_multiple_accounts.alert.dd52ddf02f' => '⛔️ درخواست قدیمی یا نامعتبر است؛ از منوی ساخت گروهی دوباره اقدام کنید.',
-        'entry_and_bulk.create_multiple_accounts.message.76499f65f3' => '⚠️ ساخت گروهی نیازمند تطبیق اکانت‌های ثبت‌شده است. ',
-        'entry_and_bulk.create_multiple_accounts.message.fbde023d57' => 'از اجرای دوبارهٔ خودکار خودداری کنید.',
         'entry_and_bulk.create_multiple_accounts.alert.c7ce33a4eb' => '⚠️ ساخت گروهی هنوز قطعی نیست؛ وضعیت سرویس‌ها را بررسی کنید.',
         'entry_and_bulk.create_multiple_accounts.message.62d6e89b94' => '☑️ اکانت‌ها ثبت شدند؛ در صورت نقص ارسال، وضعیت را بررسی کنید.',
         // order_writes.ensure_account_creation_succeeded
@@ -373,7 +361,6 @@ return [
         // account_details.get_order_detail_keys
         'account_details.get_order_detail_keys.button.5c38085697' => '🌐 تغییر سرویس',
         // account_transfers.alert
-        'account_transfers.alert.6b5b63fb0f' => '⛔️ تغییر سرور غیرفعال است.',
         'account_transfers.alert.2c082acb46' => '⛔️ سفارش یا سرور فعلی معتبر نیست.',
         'account_transfers.alert.33278b6a77' => '⚠️ در حال حاضر گزینه مقصد سازگار دیگری برای این اشتراک وجود ندارد.',
         // account_transfers.text
@@ -431,7 +418,6 @@ return [
         // external_accounts.extract_username_from_link
         'external_accounts.extract_username_from_link.message.02e023c2c2' => '❌ لینک نامعتبر است.',
         'external_accounts.extract_username_from_link.message.4c80cbd8b8' => '🔍 در حال بررسی اکانت، لطفاً صبر کنید...',
-        'external_accounts.extract_username_from_link.message.bb8dfc256d' => '❌ اشتراک موردنظر پیدا نشد. اگر اعتبار آن تمام شده و بیش از 15 روز گذشته باشد، ممکن است حذف شده باشد.',
         'external_accounts.extract_username_from_link.button.e2fee6e8d7' => '🔘 وضعیت اکانت',
         'external_accounts.extract_username_from_link.button.da22eb1607' => '🔖 نام کاربری',
         'external_accounts.extract_username_from_link.button.ba58ec87db' => '↕️ آپلود + دانلود',
@@ -525,8 +511,6 @@ return [
         // extensions.alert
         'extensions.alert.7a08f2df0b' => '⛔️ این افزایش زمان رسید دستی معتبر و در انتظار تأیید ندارد.',
         // extensions.button
-        'extensions.button.139c829462' => ['text' => '✅ تایید شد توسط {from_id}', 'parameters' => ['from_id']],
-        // extensions.hash_id
         'extensions.hash_id.2899228604' => ['text' => '🆔 {hash_id}', 'parameters' => ['hash_id']],
         // extensions.message
         'extensions.message.24dea9b122' => ['text' => '✅ مدت <b>{volume}</b> روز به مدت زمان اشتراک <code>{remark}</code> اضافه شد.', 'parameters' => ['volume', 'remark']],
@@ -547,10 +531,8 @@ return [
         // extensions.message
         'extensions.message.655234a584' => '⚠️ هیچ پلنی برای این سرور وجود ندارد.',
         'extensions.message.143c7f81f1' => '🎲 لطفاً یکی از پلن‌های زیر را انتخاب کنید.' . "\n" . '♻️ بعد از تغییر پلن می‌توانید اشتراک خودتان را مطابق پلن جدید تمدید کنید.' . "\n" . '⚠️ در صورت تغییر پلن پرداخت های در دست بررسی یا نیمه تمام شما برای این اشتراک نامعتبر می شوند.',
-        'extensions.message.dee2da49f3' => '❗️پلن فعلی شما همین است. لطفاً پلن متفاوتی انتخاب کنید.',
         'extensions.message.3067ddba76' => '✅ پلن اشتراک شما با موفقیت تغییر یافت.',
         // extensions.alert
-        'extensions.alert.0340c363d2' => '📆 تاریخ انقضا برای این سفارش نامعتبر است.',
         'extensions.alert.96762b5a42' => '📆 اشتراک شما منقضی شده است. لطفاً آن را تمدید کنید تا بتوانید افزایش حجم دهید.',
         'extensions.alert.e6c27b8039' => '⚠️ در حال حاضر هیچ پلن حجمی وجود ندارد.',
         // extensions.button
@@ -622,27 +604,14 @@ return [
 
     // ── خرید، پرداخت و تخفیف ──
     'payment' => [
-        'api_payment.bank_invoice' => ['text' => "✳️ لطفا مبلغ را به شماره کارت زیر واریز کنید.\n⚠️ مبلغ دقیق زیر را کپی و واریز کنید.\n\n💵 مبلغ به تومان ← <code>{amountToman}</code>\n💵 مبلغ به ریال ← <code>{amountRial}</code>\n\n💳 شماره کارت:\n<code>{account}</code>\n\n🔑 {holder}", 'parameters' => ["amountToman", "amountRial", "account", "holder"]],
         'api_payment.gift_invoice' => ['text' => "➕ روی دکمه <b>خرید گیفت کارت</b> بزنید و یک عدد گیفت کارت به مبلغ <code>{amount}</code> تومان از سایت واسط خریداری کنید.\n\n⭐️ در صورتی که <b>مشتری قدیمی یا معرفی شده</b> هستید برای دریافت شماره کارت به پشتیبانی پیام دهید.\n\n✅ بعد از خرید گیفت کارت <b>کد آن را کپی</b> کنید.\n📤دکمه <b>ارسال کد گیفت کارت</b> را بزنید و کد را بفرستید.", 'parameters' => ["amount"]],
         // Existing API-assisted payments.
-        'api_payment.check' => "بررسی پرداخت",
-        'api_payment.receipt' => "📤 ارسال رسید بانکی",
         'api_payment.code' => "📤 ارسال کد گیفت کارت",
-        'api_payment.bank_pending' => "پرداخت هنوز شناسایی نشده است. بررسی ادامه دارد؛ پس از 10 دقیقه می‌توانید رسید را هم ارسال کنید.",
-        'api_payment.bank_fallback' => "پرداخت هنوز شناسایی نشده است. اگر واریز کرده‌اید، می‌توانید رسید را برای بررسی بفرستید.",
         'api_payment.code_prompt' => "کد کامل یک گیفت‌کارت که با مبلغ دقیق فاکتور برابر است را ارسال کنید. <b>فقط کد بفرستید</b> تصویر نفرستید.",
         'api_payment.pending' => "بررسی پرداخت ادامه دارد. کد، رسید یا وجه را دوباره ارسال نکنید.",
-        'api_payment.review' => "⏳ اطلاعات پرداخت در انتظار بررسی است؛ معمولا در کمتر از 3 دقیقه تایید می شود، در ساعات غیر کاری ممکن است تا 30 دقیقه و بیشتر طول بکشد.",
-        'api_payment.used' => "این گیفت‌کارت قبلاً استفاده شده است. وضعیت سفارش را بررسی کنید؛ برای پیگیری با پشتیبانی تماس بگیرید.",
-        'api_payment.revoked' => "این گیفت‌کارت باطل شده است. برای پیگیری با پشتیبانی تماس بگیرید.",
-        'api_payment.expired' => "مهلت این گیفت‌کارت پایان یافته است. برای پیگیری با پشتیبانی تماس بگیرید.",
-        'api_payment.mismatch' => "مبلغ گیفت‌کارت با مبلغ کامل فاکتور برابر نیست. کارت مصرف نشد؛ می‌توانید کد دیگری بفرستید.",
         'api_payment.confirmed' => "پرداخت تأیید شد. ثبت پرداخت به‌تنهایی به معنی تکمیل یا تحویل سفارش نیست؛ وضعیت سفارش را بررسی کنید.",
         'api_payment.unavailable' => "بررسی پرداخت فعلاً کامل نشد و نتیجه هنوز مشخص نیست. اطلاعات دریافت‌شده برای بررسی نگه داشته شد؛ دوباره پرداخت نکنید.",
-        'api_payment.locked_code' => "کد قبلی هنوز در حال بررسی است. تا روشن‌شدن نتیجه، کد دیگری ثبت نکنید.",
         'api_payment.denied' => "این درخواست پرداخت در دسترس نیست.",
-        'api_payment.completed' => "سفارش تکمیل شد.",
-        'api_payment.receipt_review' => "⏳ رسید در انتظار بررسی است؛ معمولا در کمتر از 3 دقیقه تایید می شود، در ساعات غیر کاری ممکن است تا 30 دقیقه و بیشتر طول بکشد.",
         'api_payment.code_acknowledgement' => "✅ کد گیفت‌کارت دریافت شد.\n⏳ درخواست در انتظار بررسی است؛ معمولا در کمتر از 3 دقیقه تایید می شود، در ساعات غیر کاری ممکن است تا 30 دقیقه و بیشتر طول بکشد.",
         'api_payment.code_too_long' => 'کد همراه اطلاعات سفارش در یک پیام جا نمی‌شود. کد را دقیق و بدون متن اضافی بفرستید؛ اگر فقط کد است، با پشتیبانی تماس بگیرید.',
         'api_payment.code_not_found_retry' => "کد گیفت‌کارت در سامانه پیدا نشد. لطفاً کد درست را دوباره بفرستید یا درخواست را لغو کنید.",
@@ -652,8 +621,6 @@ return [
         'api_payment.code_expired_retry' => "مهلت این گیفت‌کارت به پایان رسیده است. لطفاً کد گیفت‌کارت معتبر دیگری بفرستید یا درخواست را لغو کنید.",
         'api_payment.code_mismatch_retry' => "مشخصات این گیفت‌کارت با مبلغ یا نوع گیفت‌کارت سفارش یکسان نیست. کد مصرف نشد؛ لطفاً کد متناسب با سفارش را بفرستید یا درخواست را لغو کنید.",
         'api_payment.code_received' => "کد دریافت شد. ثبت درخواست بررسی در حال انجام است؛ منتظر نتیجه بمانید.",
-        'api_payment.single_code' => "فقط کد کامل یک گیفت‌کارت را در یک پیام بفرستید.",
-        // agent_discounts.get_agent_discounts
         'agent_discounts.get_agent_discounts.button.526e310df4' => 'عمومی',
         'agent_discounts.get_agent_discounts.button.2b2966a54e' => '❌',
         'agent_discounts.get_agent_discounts.button.d15a8dbd6d' => '🎁 افزودن تخفیف پلن',
@@ -730,10 +697,6 @@ return [
         'checkout.message.6cee937835' => '' . "\n" . 'سرویس را بدون تطبیق مجدد ایجاد نکنید.',
         'checkout.message.5c1a932720' => '✅ اشتراک ثبت شده است.',
         // checkout.button
-        'checkout.button.139c829462' => ['text' => '✅ تایید شد توسط {from_id}', 'parameters' => ['from_id']],
-        // checkout.remark
-        'checkout.remark.4348a3fd9b' => ['text' => '🔄 {remark}', 'parameters' => ['remark']],
-        // checkout.hash_id
         'checkout.hash_id.2899228604' => ['text' => '🎫 شناسه پیگیری: {hash_id}', 'parameters' => ['hash_id']],
         // checkout.message
         'checkout.message.3f598b595a' => '⚠️ پرداخت و سفارش ثبت شده‌اند، اما اطلاع‌رسانی نیازمند بررسی است.',
@@ -1221,12 +1184,7 @@ return [
         'config.get_callback_from_command.message.616c172303' => '⛔️ سیستم فروش غیرفعال است.',
         'config.get_callback_from_command.message.ce7759512b' => '⛔️ لطفا از دکمه خرید تکی یا خرید انبوه استفاده کنید.',
         // config.get_order_detail_keys
-        'config.get_order_detail_keys.alert.2871efbc4d' => '❌ سفارش مورد نظر یافت نشد.',
         'config.get_order_detail_keys.alert.8338c921ca' => '⚠️ امکان فعالسازی تمدید خودکار برای این نوع اشتراک وجود ندارد.',
-        'config.get_order_detail_keys.alert.1bd8f019af' => '⚠️ شما اجازه تغییر این سفارش را ندارید.',
-        'config.get_order_detail_keys.alert.7e78156592' => '⚠️ دسترسی ادمین ندارید.',
-        'config.get_order_detail_keys.alert.fb223619e1' => '⚠️ پلن این سفارش مشخص نیست؛ برای بررسی با پشتیبانی تماس بگیرید.',
-        'config.get_order_detail_keys.alert.4f0ac830c9' => '⚠️ پلن مربوط به این سفارش پیدا نشد؛ برای بررسی با پشتیبانی تماس بگیرید.',
         'config.get_order_detail_keys.alert.50f82fc4e9' => '⚠️ خطایی در بروزرسانی صفحه رخ داد. دوباره امتحان کنید.',
         'config.get_order_detail_keys.alert.d0438c36e0' => ['text' => '🔄 وضعیت تمدید خودکار سفارش «{order_remark}» به حالت ', 'parameters' => ['order_remark']],
         'config.get_order_detail_keys.alert.be9fd3bd1b' => 'روشن',
@@ -1244,15 +1202,60 @@ return [
         // gift2all.message
         'gift2all.message.1bf0942a3d' => ['text' => '🎁 به اشتراک {remark} شما {giftText} اضافه شد', 'parameters' => ['remark', 'giftText']],
         // sub_link.method_not_allowed
-        'sub_link.method_not_allowed.371b26886b' => 'این روش درخواست مجاز نیست.',
-        // sub_link.wrong_token
-        'sub_link.wrong_token.9730d4c268' => 'توکن معتبر نیست.',
-        // sub_link.legacy_subscription_link_retired_use
-        'sub_link.legacy_subscription_link_retired_use.6e4eb03e96' => 'این لینک قدیمی دیگر فعال نیست؛ از لینک فعلی اشتراک استفاده کنید.',
     ],
     // متن‌ها و نشانی‌های قابل تنظیم هر ربات
     'instance_content' => [
         'unconfigured' => ['text' => '📝 متن این بخش هنوز تنظیم نشده است.' . "\n" . 'مدیر ربات می‌تواند آن را از «تنظیمات ربات ← متن‌های ربات» تنظیم کند.' . "\n" . '🎫 شناسه عددی: {userId}', 'parameters' => ['userId']],
         'help_button' => '📚 کانال آموزش و راهنما',
+    ],
+
+    // ── متن‌های صفحهٔ مستقل ورود (خروجی HTML و JavaScript) ──
+    'web_login' => [
+        'page_title' => 'ورود به پنل کاربری',
+        'logo' => 'A',
+        'email_example' => 'example@email.com',
+        'brand' => 'سامانه مدیریت کاربران',
+        'hero_title' => 'دسترسی امن به پنل کاربری',
+        'hero_line_one' => 'برای ورود به پنل، حساب کاربری شما باید توسط مدیر سامانه تأیید شده باشد.',
+        'hero_line_two' => 'در صورت نداشتن حساب فعال، می‌توانید درخواست عضویت خود را ثبت کنید تا پس از بررسی، اطلاعات دسترسی برای شما ارسال شود.',
+        'feature_login' => 'ورود امن کاربران',
+        'feature_approval' => 'بررسی و تأیید دسترسی',
+        'feature_accounts' => 'مدیریت حساب‌ها',
+        'feature_mobile' => 'پشتیبانی از موبایل',
+        'login_title' => 'ورود به حساب',
+        'login_description' => 'برای ادامه، اطلاعات حساب کاربری خود را وارد کنید.',
+        'tab_login' => 'ورود',
+        'tab_register' => 'ثبت‌نام',
+        'tab_forgot' => 'فراموشی رمز',
+        'login_username_label' => 'ایمیل یا نام کاربری',
+        'login_password_label' => 'رمز عبور',
+        'login_password_placeholder' => 'رمز عبور خود را وارد کنید',
+        'password_show' => 'نمایش',
+        'remember_me' => 'مرا به خاطر بسپار',
+        'forgot_link' => 'رمز عبور را فراموش کرده‌اید؟',
+        'login_submit' => 'ورود به پنل',
+        'register_name_label' => 'نام و نام خانوادگی',
+        'register_name_placeholder' => 'نام کامل خود را وارد کنید',
+        'email_label' => 'ایمیل',
+        'phone_label' => 'شماره تماس',
+        'phone_placeholder' => 'شماره تماس خود را وارد کنید',
+        'register_password_label' => 'رمز عبور پیشنهادی',
+        'register_password_placeholder' => 'یک رمز عبور انتخاب کنید',
+        'register_submit' => 'ثبت درخواست عضویت',
+        'forgot_email_label' => 'ایمیل حساب کاربری',
+        'forgot_submit' => 'بازیابی دسترسی',
+        'back_login' => 'بازگشت به ورود',
+        'footer_note' => 'تمامی درخواست‌ها پس از بررسی مدیر سامانه پردازش می‌شوند.',
+        'csrf_invalid' => 'درخواست نامعتبر است. لطفاً صفحه را مجدداً بارگذاری کنید.',
+        'login_denied' => 'حساب کاربری شما در حال حاضر دسترسی لازم به این بخش را ندارد. در صورت نیاز، درخواست دسترسی خود را از طریق مدیر سامانه پیگیری کنید.',
+        'register_received' => 'درخواست عضویت شما دریافت شد. پس از بررسی و تأیید مدیر سامانه، اطلاعات دسترسی برای شما ارسال خواهد شد.',
+        'forgot_received' => 'در صورت تطابق اطلاعات واردشده با حساب کاربری، راهنمای بازیابی دسترسی برای شما ارسال خواهد شد.',
+        'action_unknown' => 'عملیات انتخاب‌شده معتبر نیست.',
+        'register_description' => 'اطلاعات خود را وارد کنید تا درخواست شما توسط مدیر سامانه بررسی شود.',
+        'forgot_description' => 'ایمیل حساب کاربری خود را وارد کنید تا وضعیت دسترسی شما بررسی شود.',
+        'password_hide' => 'مخفی',
+        'processing' => 'در حال بررسی...',
+        'processed' => 'درخواست شما پردازش شد.',
+        'unavailable' => 'در حال حاضر امکان پردازش درخواست وجود ندارد. لطفاً بعداً دوباره تلاش کنید.',
     ],
 ];

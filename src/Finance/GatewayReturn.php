@@ -1608,7 +1608,7 @@ function achbotPerformPaymentEffect($payRowId, $gateType, &$effectStage = null) 
         if ($accountCount>1)
             $msg=$bulkProof===null
                 ?($msg."\n".achbotMessage('bulk_reporting.needs_review',[
-                    'confirmed'=>'نامشخص','requested'=>$accountCount]))
+                    'confirmed'=>achbotMessage('bulk_reporting.unknown_confirmed'),'requested'=>$accountCount]))
                 :achbotBulkReportAppend($msg,$bulkProof,true);
 		notifyAllAdminsSimple($msg, $admin, "html", $keys, $rewardChannel);
     }

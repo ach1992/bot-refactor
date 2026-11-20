@@ -96,7 +96,7 @@ if (preg_match('/^apiEvidence(Resume|Execute|Override)_([1-9][0-9]{0,17})(?:_([a
                 $token=achbotApiPaymentOperatorOverrideToken($pay,$attempt,
                     $proof,(int)$from_id,$preview);
                 $formatDate=static fn($epoch):string => $epoch===null
-                    ?'نامحدود':gmdate('Y-m-d H:i',(int)$epoch).' UTC';
+                    ?achbotMessage('automatic_gateway_review.unlimited_expiry'):gmdate('Y-m-d H:i',(int)$epoch).' UTC';
                 $formatGiB=static fn($bytes):string =>
                     number_format((int)$bytes/1073741824,2,'.','');
                 $message=achbotMessageHtml('automatic_gateway_review.service_override_confirm',[

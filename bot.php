@@ -1128,14 +1128,14 @@ if (
 
     $me = bot('getMe');
     if (!$me || empty($me->ok)) {
-        sendMessage($mainValues['network_error_try_again'] ?? \achbotMessage('bot.bot.edit_reward_channel.message.eef6d10f94'));
+        sendMessage(\achbotMessage('bot.bot.edit_reward_channel.message.eef6d10f94'),null,'HTML');
         exit;
     }
     $botId = $me->result->id;
 
     $chat = bot('getChat', ['chat_id' => $text]);
     if (!$chat || empty($chat->ok) || empty($chat->result->id)) {
-        sendMessage($mainValues['invalid_channel_id'] ?? \achbotMessage('bot.bot.edit_reward_channel.message.2f497eef41'));
+        sendMessage(\achbotMessage('bot.bot.edit_reward_channel.message.2f497eef41'),null,'HTML');
         exit;
     }
     $chatId = $chat->result->id;
@@ -1166,14 +1166,14 @@ if (
 
     $me = bot('getMe');
     if (!$me || empty($me->ok)) {
-        sendMessage($mainValues['network_error_try_again'] ?? \achbotMessage('bot.bot.edit_reward_channel.message.eef6d10f94'));
+        sendMessage(\achbotMessage('bot.bot.edit_reward_channel.message.eef6d10f94'),null,'HTML');
         exit;
     }
     $botId = $me->result->id;
 
     $chat = bot('getChat', ['chat_id' => $text]);
     if (!$chat || empty($chat->ok) || empty($chat->result->id)) {
-        sendMessage($mainValues['invalid_channel_id'] ?? \achbotMessage('bot.bot.edit_reward_channel.message.2f497eef41'));
+        sendMessage(\achbotMessage('bot.bot.edit_reward_channel.message.2f497eef41'),null,'HTML');
         exit;
     }
     $chatId = $chat->result->id;

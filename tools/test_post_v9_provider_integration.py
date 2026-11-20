@@ -88,7 +88,9 @@ case 'traffic':
 case 'qr':
 $from_id=$spec['op']==='adminview'?9001:1001;$admin=9001;$userInfo=['is_agent'=>1,'step'=>'none'];$showIndexes=[];$botUrl='https://bot.example.invalid/';
 $buttonValues=array_fill_keys($spec['buttons'],'fixture-label');
-$buttonValues['active']='CONFIRMED_ACTIVE_FIXTURE';$buttonValues['deactive']='CONFIRMED_DISABLED_FIXTURE';
+require_once $argv[1].'/messages/loader.php';
+$sourceButtons=achbotMessages('legacy_buttons');
+$buttonValues['active']=$sourceButtons['active'];$buttonValues['deactive']=$sourceButtons['deactive'];
 $mainValues=['config_details_message'=>"STATE\nNAME\nCONNECT-LINK\nSUB-LINK",'config_doesnt_exist'=>'missing'];
 if (!empty($spec['omit_status_template'])) $mainValues['config_details_message']="NAME\nCONNECT-LINK\nSUB-LINK";
 $botState=array_fill_keys(['renewAutoState','sellState','renewAccountState','switchLocationState','increaseVolumeState','increaseTimeState','renewConfigLinkState','updateConfigLinkState','qrConfigState','qrSubState','subLinkState','configLinkState'],'on');
@@ -413,7 +415,7 @@ def main():
   # client's unchanged10-second cURL limit on the task-owned loopback fixture.
   sql("UPDATE orders_list SET agent_bought=1 WHERE id=91")
   original_status=server.user['status']
-  status_labels={'active':'CONFIRMED_ACTIVE_FIXTURE','disabled':'CONFIRMED_DISABLED_FIXTURE',
+  status_labels={'active':'🟢 فعال','disabled':'🔴 غیرفعال',
     'expired':'مدت اشتراک تمام','limited':'حجم اشتراک تمام'}
   for status,label in status_labels.items():
    server.user['status']=status
