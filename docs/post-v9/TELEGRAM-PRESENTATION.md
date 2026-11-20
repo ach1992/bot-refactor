@@ -216,6 +216,21 @@ bounded to these source-owned statuses; deliberate Markdown code-formatting,
 URLs and arbitrary/persisted messages explicitly remain for separately
 validated migration rather than an unreviewed global parser switch.
 
+Admin plan editing has three source-owned HTML sends in `src/Plans/Administration.php`
+and `src/Plans/Intervals.php`: the fixed per-day/per-GB price prompt,
+four finite interval-list titles, and the `serverNames` JSON example. The
+example previously used a legacy Markdown backtick span; its single owned
+catalog entry now uses `<code>...</code>` with the same visible Unicode,
+line breaks, spaces, quotation marks and Telegram code entity.
+`python3 tools/test_post_v9_telegram_html_plan_prompts.py` extracts the
+actual executable sends with PHP tokens, pins first/second arguments and
+finite title provenance, runs the real PHP catalog/expressions, and compares
+full visible text, UTF-16 code-entity offsets/lengths and keyboards with
+pre-migration fixtures. Its narrow entity parser models only these proven
+owned expressions; this does not prove live Telegram-client rendering or
+authorize conversion of administrator-authored support replies, arbitrary
+backtick input, per-instance templates, stored broadcasts or photo captions.
+
 On an intentional change, inspect and review the effective diff first, then
 run the read-only `--print-audit`
 option to obtain proposed new fingerprints; never update the expected values

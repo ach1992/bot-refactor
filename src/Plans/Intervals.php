@@ -203,7 +203,7 @@ function achbotIntervalShow(mysqli $db,string $kind,?int $editMessageId=null): v
     $title=$rows?($day?\achbotMessage('plans.intervals.day_plan_settings.msg.0eb1f0debf'):\achbotMessage('plans.intervals.volume_plan_settings.msg.573ae79cf6')):
         ($day?\achbotMessage('plans.intervals.day_plan_settings.message.f253e3780e'):\achbotMessage('plans.intervals.volume_plan_settings.message.63f1e596ef'));
     $keyboard=json_encode(['inline_keyboard'=>$keys],JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE);
-    if ($editMessageId===null) sendMessage($title,$keyboard);
+    if ($editMessageId===null) sendMessage($title,$keyboard,'HTML');
     else editText($editMessageId,$title,$keyboard);
 }
 

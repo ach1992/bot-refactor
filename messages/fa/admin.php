@@ -1930,7 +1930,7 @@ return [
         'administration.edit_custom_plan.message.090fe8ddfd' => '🎯 توضیحاتت رو برام وارد کن:',
         'administration.edit_custom_plan.message.2c3264a209' => '🎯 مقدار مقصد (dest) را وارد کنید:' . "\n" . 'برای حذف کردن متن /empty رو وارد کن',
         'administration.edit_custom_plan.message.bd5882ea41' => '🎯 مقدار مسیر وب (spiderX) را وارد کنید:' . "\n" . 'برای حذف کردن متن /empty رو وارد کن',
-        'administration.edit_custom_plan.message.7b314b58c9' => '🎯 نام سرورها (serverNames) را مانند نمونه وارد کنید:' . "\n" . '' . "\n" . '`[' . "\n" . '  "yahoo.com",' . "\n" . '  "www.yahoo.com"' . "\n" . ']`' . "\n" . '    ' . "\n" . '' . "\n" . 'برای حذف کردن متن /empty رو وارد کن',
+        'administration.edit_custom_plan.message.7b314b58c9' => '🎯 نام سرورها (serverNames) را مانند نمونه وارد کنید:' . "\n" . '' . "\n" . '<code>[' . "\n" . '  "yahoo.com",' . "\n" . '  "www.yahoo.com"' . "\n" . ']</code>' . "\n" . '    ' . "\n" . '' . "\n" . 'برای حذف کردن متن /empty رو وارد کن',
         'administration.edit_custom_plan.none.dc937b5989' => 'بدون مقدار',
         'administration.edit_custom_plan.xtls_rprx_vision.848b11de44' => 'xtls-rprx-vision',
         'administration.edit_custom_plan.message.946863c2fa' => '🎯 لطفا یکی از موارد زیر رو انتخاب کن',
