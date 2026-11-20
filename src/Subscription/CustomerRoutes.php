@@ -214,7 +214,7 @@ if($data=="cantEditGrpc"){
 }
 if(preg_match('/^changeCustomPort(\d+)/',$data,$match) && ($from_id == $admin || $userInfo['isAdmin'] == true)){
     delMessage();
-    sendMessage(\achbotMessage('subscription.customer_routes.cancel_search_keyboard.message.3034785b83'), $cancelKey);
+    sendMessage(\achbotMessage('subscription.customer_routes.cancel_search_keyboard.message.3034785b83'), $cancelKey, 'HTML');
     setUser($data);
 }
 if(preg_match('/^changeCustomPort(\d+)/',$userInfo['step'],$match) && ($from_id == $admin || $userInfo['isAdmin'] == true) && $text != $buttonValues['cancel']){
@@ -225,13 +225,13 @@ if(preg_match('/^changeCustomPort(\d+)/',$userInfo['step'],$match) && ($from_id 
         $stmt->close();  
         sendMessage($mainValues['saved_successfuly'],$removeKeyboard);
          
-        sendMessage(\achbotMessage('subscription.customer_routes.cancel_search_keyboard.message.06d5c646c1'), getPlanDetailsKeys($match[1]));
+        sendMessage(\achbotMessage('subscription.customer_routes.cancel_search_keyboard.message.06d5c646c1'), getPlanDetailsKeys($match[1]), 'HTML');
         setUser();
     }else sendMessage($mainValues['send_only_number']);
 }
 if(preg_match('/^changeCustomSni(\d+)/',$data,$match) && ($from_id == $admin || $userInfo['isAdmin'] == true)){
     delMessage();
-    sendMessage(\achbotMessage('subscription.customer_routes.cancel_search_keyboard.message.d4b5f70a92'), $cancelKey);
+    sendMessage(\achbotMessage('subscription.customer_routes.cancel_search_keyboard.message.d4b5f70a92'), $cancelKey, 'HTML');
     setUser($data);
 }
 if(preg_match('/^changeCustomSni(\d+)/',$userInfo['step'],$match) && ($from_id == $admin || $userInfo['isAdmin'] == true) && $text != $buttonValues['cancel']){
@@ -247,7 +247,7 @@ if(preg_match('/^changeCustomSni(\d+)/',$userInfo['step'],$match) && ($from_id =
     $stmt->close();  
     sendMessage($mainValues['saved_successfuly'],$removeKeyboard);
      
-    sendMessage(\achbotMessage('subscription.customer_routes.cancel_search_keyboard.message.06d5c646c1'), getPlanDetailsKeys($match[1]));
+    sendMessage(\achbotMessage('subscription.customer_routes.cancel_search_keyboard.message.06d5c646c1'), getPlanDetailsKeys($match[1]), 'HTML');
     setUser();
 }
 if(preg_match('/^changeCustomPath(\d+)/',$data,$match) && ($from_id == $admin || $userInfo['isAdmin'] == true)){
@@ -463,7 +463,7 @@ if(preg_match('/changeUserConfigState(\d+)/', $data,$match)){
     
         $keys = $stateActorAdmin?getUserOrderDetailKeys($oid):getOrderDetailKeys((int)$from_id,$oid);
         \AchBot\Subscription\AccountDetails\showMessage($keys,(int)$message_id);
-    }else sendMessage(\achbotMessage('subscription.customer_routes.cancel_search_keyboard.message.b63b579845'));
+    }else sendMessage(\achbotMessage('subscription.customer_routes.cancel_search_keyboard.message.b63b579845'), null, 'HTML');
 }
 
 if (preg_match('/agentChangeUserConfigState(\d+)/', $data, $match)) {
@@ -482,7 +482,7 @@ if (preg_match('/agentChangeUserConfigState(\d+)/', $data, $match)) {
         ((int)$from_id===(int)$admin || !empty($userInfo['isAdmin']))?null:(int)$from_id) ||
         (!((int)$from_id===(int)$admin || !empty($userInfo['isAdmin'])) &&
          ((int)($userInfo['is_agent']??0)!==1 || (int)($order['agent_bought']??0)!==1))) {
-        sendMessage(\achbotMessage('subscription.customer_routes.cancel_search_keyboard.message.f0a1fc755c'));
+        sendMessage(\achbotMessage('subscription.customer_routes.cancel_search_keyboard.message.f0a1fc755c'), null, 'HTML');
         return;
     }
 
@@ -499,7 +499,7 @@ if (preg_match('/agentChangeUserConfigState(\d+)/', $data, $match)) {
     $stmt->close();
 
     if (!$server_info) {
-        sendMessage(\achbotMessage('subscription.customer_routes.cancel_search_keyboard.message.a7cb7bc569'));
+        sendMessage(\achbotMessage('subscription.customer_routes.cancel_search_keyboard.message.a7cb7bc569'), null, 'HTML');
         return;
     }
 
@@ -528,7 +528,7 @@ if (preg_match('/agentChangeUserConfigState(\d+)/', $data, $match)) {
         \AchBot\Subscription\AccountDetails\showMessage($keys,(int)$message_id);
 
     } else {
-        sendMessage(\achbotMessage('subscription.customer_routes.cancel_search_keyboard.message.b63b579845'));
+        sendMessage(\achbotMessage('subscription.customer_routes.cancel_search_keyboard.message.b63b579845'), null, 'HTML');
     }
 }
 
