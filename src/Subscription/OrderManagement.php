@@ -434,7 +434,7 @@ if (preg_match('/^(?:orderWarningStatus_|toggleNotif_)([1-9][0-9]*)$/D',(string)
 
 if (preg_match('/^changeExpireDate_(\\d+)/', $data, $match)) {
     $id = intval($match[1]);
-    sendMessage(\achbotMessage('admin_settings.management.local_expiry_prompt'), $cancelKey, "Markdown");
+    sendMessage(\achbotMessage('admin_settings.management.local_expiry_prompt'), $cancelKey, "HTML");
     setUser("awaitingExpireChange_$id");
 }
 

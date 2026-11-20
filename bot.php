@@ -1224,7 +1224,7 @@ function processCallbackQuery($data, $chat_id, $from_id) {
         if ($botState['sellState'] == "on" || $isRealAdmin) {
 
             if (($botState['cartToCartState'] ?? 'off') == "off" && ($botState['giftCardState'] ?? 'off') == "off" && ($botState['manualUsdtState'] ?? 'off') == "off" && ($botState['walletState'] ?? 'off') == "off") {
-                sendMessage(\achbotMessage('bot.bot.process_callback_query.message.616c172303'), null, "MarkDown", $chat_id);
+                sendMessage(\achbotMessage('bot.bot.process_callback_query.message.616c172303'), null, "HTML", $chat_id);
                 exit();
             }
 
@@ -1236,7 +1236,7 @@ function processCallbackQuery($data, $chat_id, $from_id) {
             $stmt->close();
 
             if ($respd->num_rows == 0) {
-                sendMessage($mainValues['no_server_available'], null, "MarkDown", $chat_id);
+                sendMessage($mainValues['no_server_available'], null, "HTML", $chat_id);
                 exit();
             }
 
@@ -1257,10 +1257,10 @@ function processCallbackQuery($data, $chat_id, $from_id) {
 
             $textToSend = \achbotMessage('bot.bot.process_callback_query.text_to_send.6f1f09466a');
 
-            sendMessage($textToSend, json_encode(['inline_keyboard' => $keyboard]), "MarkDown", $chat_id);
+            sendMessage($textToSend, json_encode(['inline_keyboard' => $keyboard]), "HTML", $chat_id);
 
         } else {
-            sendMessage(\achbotMessage('bot.bot.process_callback_query.message.616c172303'), null, "MarkDown", $chat_id);
+            sendMessage(\achbotMessage('bot.bot.process_callback_query.message.616c172303'), null, "HTML", $chat_id);
         }
     }
 
@@ -1301,7 +1301,7 @@ function processCallbackQuery($data, $chat_id, $from_id) {
         $stmt->close();
 
         if ($orders->num_rows == 0) {
-            sendMessage($mainValues['you_dont_have_config'], null, "MarkDown", $chat_id);
+            sendMessage($mainValues['you_dont_have_config'], null, "HTML", $chat_id);
             exit;
         }
 
@@ -1356,7 +1356,7 @@ function processCallbackQuery($data, $chat_id, $from_id) {
         $textToSend   = $mainValues['select_one_to_show_detail'];
         $keyboardData = json_encode(['inline_keyboard' => $keyboard]);
 
-        sendMessage($textToSend, $keyboardData, "MarkDown", $chat_id);
+        sendMessage($textToSend, $keyboardData, "HTML", $chat_id);
         exit;
     }
 }
