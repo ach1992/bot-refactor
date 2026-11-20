@@ -277,7 +277,7 @@ if (preg_match('/^declineAction_(.+)$/', $data, $match) && achbotAdminCanFor($co
     // Keep the original pay and staff identity; the typed reply is rechecked
     // against the current financial row by the guarded transaction below.
     setUser('declineActionReason_' . $hash_id . '_' . $message_id);
-    sendMessage(\achbotMessage('manual_payment.manual_receipts.message.a757d0e2a6'),$cancelKey);
+    sendMessage(\achbotMessage('manual_payment.manual_receipts.message.a757d0e2a6'),$cancelKey, 'HTML');
     return;
 }
 
@@ -288,7 +288,7 @@ if (preg_match('/^declineActionReason_(.+)_(\d+)$/', (string)($userInfo['step']?
     // Only a freshly typed administrator message can supply the reason;
     // a callback's previously rendered message must not finalize rejection.
     if (!is_string($text) || trim($text)==='') {
-        sendMessage(\achbotMessage('manual_payment.manual_receipts.message.a757d0e2a6'),$cancelKey);
+        sendMessage(\achbotMessage('manual_payment.manual_receipts.message.a757d0e2a6'),$cancelKey, 'HTML');
         return;
     }
     // This webhook's cached step may already have been canceled or replaced.

@@ -156,7 +156,7 @@ if(preg_match('/^closeTicket_([1-9][0-9]*)$/D',$data,$match) &&
 }
 if(preg_match('/^replySupport_([1-9][0-9]*)$/D',$data,$match)){
     delMessage();
-    sendMessage(\achbotMessage('support.customer_conversation.user_all_tickets.message.13e7a1cdbb'),$cancelKey);
+    sendMessage(\achbotMessage('support.customer_conversation.user_all_tickets.message.13e7a1cdbb'),$cancelKey, 'HTML');
 	setUser("sendMsg_" . $match[1]);
 }
 if(preg_match('/^sendMsg_([1-9][0-9]*)$/D',$userInfo['step'],$match)  and $text!=$buttonValues['cancel']){

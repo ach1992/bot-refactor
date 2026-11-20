@@ -26,7 +26,7 @@ if (preg_match('/^renewAccountAsk(\d+)$/', $data, $match)) {
         ]
     ]);
 
-    sendMessage(\achbotMessage('renewal.renewal_checkout.message.7159ade06f'), $keyboard);
+    sendMessage(\achbotMessage('renewal.renewal_checkout.message.7159ade06f'), $keyboard, 'HTML');
     exit();
 }
 
@@ -61,7 +61,7 @@ if (
     }
     // بررسی اگر fileid برابر 0 باشد
     if($fid == 0){
-        sendMessage(\achbotMessage('renewal.renewal_checkout.message.4c2448e6fa'));
+        sendMessage(\achbotMessage('renewal.renewal_checkout.message.4c2448e6fa'), null, 'HTML');
         exit();
     }
 	
@@ -135,7 +135,7 @@ if (
 	
 	$keyboard[] = [['text' => $buttonValues['cancel'], 'callback_data' => "mainMenu"]];
 	
-    $sent=sendMessage(\achbotMessage('renewal.renewal_checkout.message.24ae8c4399'), json_encode(['inline_keyboard' => $keyboard]));
+    $sent=sendMessage(\achbotMessage('renewal.renewal_checkout.message.24ae8c4399'), json_encode(['inline_keyboard' => $keyboard]), 'HTML');
     require_once __DIR__ . '/../PaymentLifecycle.php';
     achbotPayUxTrackByHash($connection,(string)$hash_id,(int)$from_id,$sent);
 }
@@ -265,7 +265,7 @@ if (preg_match('/wait(?:RenewCart|RenewGift|RenewUsdt)Receipt(.*)/', $userInfo['
     $requestTime = (int)$payInfo['request_date'];
     if ($now - $requestTime > 10800 && !(function_exists('achbotApiPaymentPinned') && achbotApiPaymentPinned($connection,(int)$payInfo['id']))) {
         delMessage();
-        sendMessage(\achbotMessage('renewal.renewal_checkout.message.2c9a5e948c'));
+        sendMessage(\achbotMessage('renewal.renewal_checkout.message.2c9a5e948c'), null, 'HTML');
 
         sendMessage($mainValues['reached_main_menu'], getMainKeys(), 'HTML');
         exit;
@@ -292,7 +292,7 @@ if (preg_match('/wait(?:RenewCart|RenewGift|RenewUsdt)Receipt(.*)/', $userInfo['
 
     if ($fid != $savedFid) {
         delMessage();
-        sendMessage(\achbotMessage('renewal.renewal_checkout.message.aaa858e3e6'));
+        sendMessage(\achbotMessage('renewal.renewal_checkout.message.aaa858e3e6'), null, 'HTML');
 
         sendMessage($mainValues['reached_main_menu'], getMainKeys(), 'HTML');
         exit;
@@ -351,7 +351,7 @@ if (preg_match('/wait(?:RenewCart|RenewGift|RenewUsdt)Receipt(.*)/', $userInfo['
         setUser();
         achbotManualAcknowledgeAndVerify($connection,$receiptPay,$method,$buttonValues['start_bot'],$botUsername);
     } else {
-        sendMessage(\achbotMessage('renewal.extensions.message.c346a0d62e'));
+        sendMessage(\achbotMessage('renewal.extensions.message.c346a0d62e'), null, 'HTML');
     }
 
     exit;

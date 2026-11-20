@@ -29,7 +29,7 @@ if ($data === 'transferMyWallet') {
     $status=achbotWalletTransferAdvance($connection,$start,'start');
     if ($status==='ready') {
         delMessage();
-        sendMessage(\achbotMessage('wallet.wallet_transfer.wallet_transfer_restart.message.60862c92c3'),$cancelKey);
+        sendMessage(\achbotMessage('wallet.wallet_transfer.wallet_transfer_restart.message.60862c92c3'),$cancelKey, 'HTML');
     } elseif ($status==='insufficient') {
         alert(\achbotMessage('wallet.wallet_transfer.wallet_transfer_restart.alert.e05ab0cee3'));
     } else achbotWalletTransferRestart($status==='review');
@@ -52,13 +52,13 @@ if ($text != $buttonValues['cancel'] &&
         sendMessage($mainValues['send_only_number']); return;
     }
     if ((int)$text===(int)$from_id) {
-        sendMessage(\achbotMessage('wallet.wallet_transfer.wallet_transfer_restart.message.9d368ab3bb')); return;
+        sendMessage(\achbotMessage('wallet.wallet_transfer.wallet_transfer_restart.message.9d368ab3bb'), null, 'HTML'); return;
     }
     $status=achbotWalletTransferAdvance($connection,$selection,'select',(int)$text,$transferStep);
     if ($status==='ready')
-        sendMessage(\achbotMessage('wallet.wallet_transfer.wallet_transfer_restart.message.8bd13292ba'));
+        sendMessage(\achbotMessage('wallet.wallet_transfer.wallet_transfer_restart.message.8bd13292ba'), null, 'HTML');
     elseif ($status==='missing')
-        sendMessage(\achbotMessage('wallet.wallet_transfer.wallet_transfer_restart.message.71963e9012'));
+        sendMessage(\achbotMessage('wallet.wallet_transfer.wallet_transfer_restart.message.71963e9012'), null, 'HTML');
     else achbotWalletTransferRestart($status==='review');
     return;
 }
@@ -80,19 +80,19 @@ if ((str_starts_with($transferStep,'achbotTransferAmount:') ||
     $digits = ltrim((string)$text, '0');
     if ($digits === '' || strlen($digits) > 10 ||
         (strlen($digits) === 10 && strcmp($digits, '2147483647') > 0)) {
-        sendMessage(\achbotMessage('wallet.wallet_transfer.wallet_transfer_restart.message.dcff0b471b'));
+        sendMessage(\achbotMessage('wallet.wallet_transfer.wallet_transfer_restart.message.dcff0b471b'), null, 'HTML');
         exit;
     }
     $amount = (int)$digits;
     $to_id = $pendingTransfer['recipient_id'];
 
     if ($amount <= 0) {
-        sendMessage(\achbotMessage('wallet.wallet_transfer.wallet_transfer_restart.message.a04cf98a41'));
+        sendMessage(\achbotMessage('wallet.wallet_transfer.wallet_transfer_restart.message.a04cf98a41'), null, 'HTML');
         exit;
     }
 
     if ($to_id === (int)$from_id) {
-        sendMessage(\achbotMessage('wallet.wallet_transfer.wallet_transfer_restart.message.9d368ab3bb'));
+        sendMessage(\achbotMessage('wallet.wallet_transfer.wallet_transfer_restart.message.9d368ab3bb'), null, 'HTML');
         exit;
     }
 
@@ -150,7 +150,7 @@ if ((str_starts_with($transferStep,'achbotTransferAmount:') ||
         if (!$receiver) {
             $connection->rollback();
             $transactionActive = false;
-            sendMessage(\achbotMessage('wallet.wallet_transfer.wallet_transfer_restart.message.71963e9012'));
+            sendMessage(\achbotMessage('wallet.wallet_transfer.wallet_transfer_restart.message.71963e9012'), null, 'HTML');
             exit;
         }
 
@@ -159,7 +159,7 @@ if ((str_starts_with($transferStep,'achbotTransferAmount:') ||
         if ((string)$sender['step'] !== $expectedStep) {
             $connection->rollback();
             $transactionActive = false;
-            sendMessage(\achbotMessage('wallet.wallet_transfer.wallet_transfer_restart.message.ecde76fc7f'));
+            sendMessage(\achbotMessage('wallet.wallet_transfer.wallet_transfer_restart.message.ecde76fc7f'), null, 'HTML');
             exit;
         }
 
@@ -171,7 +171,7 @@ if ((str_starts_with($transferStep,'achbotTransferAmount:') ||
         if ($sender_before < $amount) {
             $connection->rollback();
             $transactionActive = false;
-            sendMessage(\achbotMessage('wallet.wallet_transfer.wallet_transfer_restart.message.bf9e4dcf22'));
+            sendMessage(\achbotMessage('wallet.wallet_transfer.wallet_transfer_restart.message.bf9e4dcf22'), null, 'HTML');
             exit;
         }
         // The original wallet is signed INT(11): incoming genuine credit may
@@ -179,7 +179,7 @@ if ((str_starts_with($transferStep,'achbotTransferAmount:') ||
         if ($receiver_before > 2147483647 - $amount) {
             $connection->rollback();
             $transactionActive = false;
-            sendMessage(\achbotMessage('wallet.wallet_transfer.wallet_transfer_restart.message.8fb7125cfb'));
+            sendMessage(\achbotMessage('wallet.wallet_transfer.wallet_transfer_restart.message.8fb7125cfb'), null, 'HTML');
             exit;
         }
 

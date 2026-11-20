@@ -215,7 +215,7 @@ if(preg_match('/^editAgentDiscount(Server|Plan|Normal)(\d+)_(.*)/',$userInfo['st
         $users = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
         $stmt->close();
         if (count($users) !== 1) {
-            sendMessage(\achbotMessage('bot.bot.user_reports.message.c1d7ab477b'));
+            sendMessage(\achbotMessage('bot.bot.user_reports.message.c1d7ab477b'), null, 'HTML');
             return;
         }
         $info = $users[0];
@@ -243,5 +243,5 @@ if(preg_match('/^editAgentDiscount(Server|Plan|Normal)(\d+)_(.*)/',$userInfo['st
         } else {
             sendMessage(str_replace("AGENT-NAME", $userName, $mainValues['agent_discount_settings']), getAgentDiscounts($match[2]));
         }
-    } else sendMessage(\achbotMessage('admin_settings.user_info.agent_percent_invalid'));
+    } else sendMessage(\achbotMessage('admin_settings.user_info.agent_percent_invalid'), null, 'HTML');
 }

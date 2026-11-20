@@ -85,7 +85,7 @@ if ($userInfo['step']=="addTicketCategory" and ($from_id == $admin || $userInfo[
     $keys[] = [['text'=>$buttonValues['back_button'],'callback_data'=>"ticketsList"]];
     
     $keys =  json_encode(['inline_keyboard'=>$keys]);
-    sendMessage(\achbotMessage('support.categories.tickets_list.button.0e6cb76a8c'),$keys);
+    sendMessage(\achbotMessage('support.categories.tickets_list.button.0e6cb76a8c'),$keys, 'HTML');
 }
 if(preg_match("/^delTicketCat_(\d+)/",$data,$match) and ($from_id == $admin || $userInfo['isAdmin'] == true)){
     $stmt = $connection->prepare("DELETE FROM `setting` WHERE `id` = ?");

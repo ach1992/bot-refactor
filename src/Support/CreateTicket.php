@@ -62,12 +62,12 @@ if(preg_match('/^sendTicket_(.*)/',$userInfo['step'],$match)  and $text!=$button
         $stmt->close();
         
         sendMessage(\achbotMessage('support.create_ticket.message.5c9c3dda00'),$removeKeyboard,"HTML");
-        sendMessage(\achbotMessage('support.create_ticket.message.b059640ccc'),getMainKeys());
+        sendMessage(\achbotMessage('support.create_ticket.message.b059640ccc'),getMainKeys(), 'HTML');
             
         setUser(NULL,'temp');
     	setUser("none");
     }else{
-        sendMessage(\achbotMessage('support.create_ticket.message.19602d80df'));
+        sendMessage(\achbotMessage('support.create_ticket.message.19602d80df'), null, 'HTML');
     }
     
 }

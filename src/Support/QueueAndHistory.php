@@ -153,7 +153,7 @@ if(preg_match('/^moreTicket_(2|0|all)_([0-9]+)$/D',$data, $match)){
 		    $keys = json_encode(['inline_keyboard'=>[
 		        [['text'=>\achbotMessage('support.customer_conversation.user_all_tickets.button.29582a35e0'),'callback_data'=>"moreTicket_{$type}_{$cont}"]]
 		        ]]);
-            sendMessage(\achbotMessage('support.customer_conversation.user_all_tickets.text.7555aab9b2'),$keys);
+            sendMessage(\achbotMessage('support.customer_conversation.user_all_tickets.text.7555aab9b2'),$keys, 'HTML');
 		}
 	}else{
         alert(\achbotMessage('support.queue_and_history.all_tickets.alert.5974314756'));

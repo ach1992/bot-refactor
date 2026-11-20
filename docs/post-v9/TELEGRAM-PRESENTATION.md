@@ -115,6 +115,11 @@ must be available). It compares exact per-file counts and source-argument/catalo
 fingerprints, not source line numbers. An in-memory regression check verifies
 that physical removal, `//` or block-comment disabling, and keyboard mutation
 invalidate the audit, while line-number/whitespace changes do not.
+The audit also pins reviewed explicit `parse_mode = null` call signatures:
+these sends intentionally remain unformatted, rather than being converted
+only for uniformity. The HTML and explicitly unformatted counts are reported
+separately. Composed, parameterized, customized and persisted messages remain
+outside this static callsite contract.
 On an intentional change, inspect and review the effective diff first, then
 run the read-only `--print-audit`
 option to obtain proposed new fingerprints; never update the expected values

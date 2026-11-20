@@ -332,7 +332,7 @@ if (preg_match('/wait(?:IncreaseDay|IncreaseDayGift|IncreaseDayUsdt)Receipt(.*)/
         setUser();
         achbotManualAcknowledgeAndVerify($connection,$receiptPay,$method,$buttonValues['start_bot'],$botUsername);
     } else {
-        sendMessage(\achbotMessage('renewal.extensions.message.c346a0d62e'));
+        sendMessage(\achbotMessage('renewal.extensions.message.c346a0d62e'), null, 'HTML');
     }
     exit;
 }
@@ -823,7 +823,7 @@ if (is_string($data) && preg_match('/^changePlan_([1-9][0-9]{0,9})$/D', $data, $
             $buttons[]=[['text'=>$plan['title'],'callback_data'=>'confirmChangePlan_'.$orderId.'_'.$planId]];
         }
         $buttons[]=[['text'=>$buttonValues['back_button'],'callback_data'=>'mainMenu']];
-        if (count($buttons)===1) sendMessage(\achbotMessage('renewal.extensions.message.655234a584'));
+        if (count($buttons)===1) sendMessage(\achbotMessage('renewal.extensions.message.655234a584'), null, 'HTML');
         else sendMessage(\achbotMessage('renewal.extensions.message.143c7f81f1'),json_encode(['inline_keyboard'=>$buttons]),'HTML');
     } catch (Throwable $error) {
         error_log('achbot_plan_selection_unavailable order_id='.$orderId);
@@ -1211,7 +1211,7 @@ if (preg_match('/wait(?:IncreaseVolume|IncreaseVolumeGift|IncreaseVolumeUsdt)Rec
         setUser();
         achbotManualAcknowledgeAndVerify($connection,$receiptPay,$method,$buttonValues['start_bot'],$botUsername);
     } else {
-        sendMessage(\achbotMessage('renewal.extensions.message.c346a0d62e'));
+        sendMessage(\achbotMessage('renewal.extensions.message.c346a0d62e'), null, 'HTML');
     }
     exit;
 }

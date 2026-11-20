@@ -17,7 +17,7 @@ if (!achbotAdminRequestAllowed(is_string($data??null)?$data:null,is_string($text
 
 if(preg_match("/^reply_(.*)/",$data,$match) and  achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'operations')){
     setUser("answer_" . $match[1]);
-    sendMessage(\achbotMessage('support.admin_reply.message.8da2c2756b'),$cancelKey);
+    sendMessage(\achbotMessage('support.admin_reply.message.8da2c2756b'),$cancelKey, 'HTML');
 }
 if(preg_match('/^answer_(.*)/', $userInfo['step'], $match) && achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'operations') && $text != $buttonValues['cancel']){
     $chatRowId = $match[1];
@@ -71,6 +71,6 @@ if(preg_match('/^answer_(.*)/', $userInfo['step'], $match) && achbotAdminCanFor(
     $stmt->close();
     
     setUser();
-    sendMessage(\achbotMessage('support.admin_reply.message.5cd91cfb0b'),$removeKeyboard);
+    sendMessage(\achbotMessage('support.admin_reply.message.5cd91cfb0b'),$removeKeyboard, 'HTML');
 }
 

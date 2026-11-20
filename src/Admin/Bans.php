@@ -17,7 +17,7 @@ if ($data === "banUser") {
         $userInfo,(int)$admin,'startBan');
     if ($status==='started') {
         delMessage();
-        sendMessage(\achbotMessage('admin.bans.ban_user.message.e2ecb94a9c'), $cancelKey);
+        sendMessage(\achbotMessage('admin.bans.ban_user.message.e2ecb94a9c'), $cancelKey, 'HTML');
     }
 }
 if ($data === "unbanUser") {
@@ -26,7 +26,7 @@ if ($data === "unbanUser") {
         $userInfo,(int)$admin,'startUnban');
     if ($status==='started') {
         delMessage();
-        sendMessage(\achbotMessage('admin.bans.unban_user.message.450fb58659'), $cancelKey);
+        sendMessage(\achbotMessage('admin.bans.unban_user.message.450fb58659'), $cancelKey, 'HTML');
     }
 }
 if (($userInfo['step']??null)==='banUser' && $text!==$buttonValues['cancel']) {
@@ -35,11 +35,11 @@ if (($userInfo['step']??null)==='banUser' && $text!==$buttonValues['cancel']) {
             $connection,$update,(int)$from_id,(int)$chat_id,(int)$message_id,
             $userInfo,(int)$admin,'ban',$text);
         if ($status==='changed') {
-            sendMessage(\achbotMessage('admin.bans.unban_user.message.8921035044'),$removeKeyboard);
+            sendMessage(\achbotMessage('admin.bans.unban_user.message.8921035044'),$removeKeyboard, 'HTML');
         } elseif ($status==='already') {
-            sendMessage(\achbotMessage('admin.bans.unban_user.message.8b8e660e87'),$removeKeyboard);
+            sendMessage(\achbotMessage('admin.bans.unban_user.message.8b8e660e87'),$removeKeyboard, 'HTML');
         } else {
-            sendMessage(\achbotMessage('admin.bans.unban_user.message.8764ea2164'));
+            sendMessage(\achbotMessage('admin.bans.unban_user.message.8764ea2164'), null, 'HTML');
         }
         if ($status==='changed' || $status==='already')
             sendMessage($mainValues['reached_main_menu'], getAdminKeys(), 'HTML');

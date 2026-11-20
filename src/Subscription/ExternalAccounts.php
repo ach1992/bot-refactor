@@ -173,10 +173,10 @@ if ($userInfo['step'] == "showAccount" && $text != $buttonValues['cancel']) {
     $username = extractUsernameFromLink($originalLink);
     $parts=achbotExternalSubscriptionParts($originalLink);
     if (!$parts) {
-        sendMessage(\achbotMessage('subscription.external_accounts.extract_username_from_link.message.02e023c2c2'), $cancelKey);
+        sendMessage(\achbotMessage('subscription.external_accounts.extract_username_from_link.message.02e023c2c2'), $cancelKey, 'HTML');
         return;
     }
-    sendMessage(\achbotMessage('subscription.external_accounts.extract_username_from_link.message.4c80cbd8b8'), $removeKeyboard);
+    sendMessage(\achbotMessage('subscription.external_accounts.extract_username_from_link.message.4c80cbd8b8'), $removeKeyboard, 'HTML');
     $stmt = $connection->prepare("SELECT c.* FROM server_config c JOIN server_info i ON i.id=c.id WHERE i.active=1 AND c.type IN (".achbotProviderSqlTypes().") ORDER BY c.id");
     $stmt->execute();$serversList=$stmt->get_result();$stmt->close();
     $matches=[];
@@ -228,7 +228,7 @@ if ($userInfo['step'] == "showAccount" && $text != $buttonValues['cancel']) {
         $match=array_values($matches)[0];$serverId=$match['server'];$config=$match['remote'];$proof=$match['proof'];
     }
     if (!$found || empty($config)) {
-        sendMessage(\achbotMessage('subscription.manual_accounts.import_unverified'), $cancelKey);
+        sendMessage(\achbotMessage('subscription.manual_accounts.import_unverified'), $cancelKey, 'HTML');
         exit();
     }
 
@@ -295,7 +295,7 @@ if ($userInfo['step'] == "showAccount" && $text != $buttonValues['cancel']) {
         if (!achbotExternalImportStorePreview($connection,(int)$from_id,$userInfo,$configLocation,$token)) return;
     } catch (Throwable $error) {
         error_log('achbot_existing_subscription_preview_deferred');
-        sendMessage(\achbotMessage('subscription.manual_accounts.import_under_review'));
+        sendMessage(\achbotMessage('subscription.manual_accounts.import_under_review'), null, 'HTML');
         return;
     }
     $userInfo['step']='none';$userInfo['temp']=json_encode($configLocation,JSON_UNESCAPED_UNICODE);

@@ -323,7 +323,7 @@ if (preg_match('/^addToOrders([1-9][0-9]*)$/D',(string)$data,$match)) {
         error_log('achbot_existing_subscription_import_deferred reason='.$reason.' class='.get_class($error).' line='.$error->getLine());
         if ($committed) return;
         if ($error instanceof RuntimeException && $error->getMessage()==='import_commit_unknown')
-            sendMessage(\achbotMessage('subscription.manual_accounts.import_under_review'));
+            sendMessage(\achbotMessage('subscription.manual_accounts.import_under_review'), null, 'HTML');
         else alert(\achbotMessage('subscription.manual_accounts.import_unverified'),true);
     } finally {
         if ($physicalImportLease!==null)

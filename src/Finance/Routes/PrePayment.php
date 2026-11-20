@@ -126,7 +126,7 @@ if (is_string($data) && str_starts_with($data, 'prePayCheck_')) {
 
     if (!$payInfo) {
         delMessage();
-        sendMessage(\achbotMessage('payment.pre_payment.message.6fe859eb01'), getMainKeys());
+        sendMessage(\achbotMessage('payment.pre_payment.message.6fe859eb01'), getMainKeys(), 'HTML');
         exit;
     }
 
@@ -355,7 +355,7 @@ if (is_string($data) && str_starts_with($data, 'prePayCheck_')) {
 
     if (!isset($map[$payMethod])) {
         delMessage();
-        sendMessage(\achbotMessage('payment.pre_payment.message.526bf7b198'), getMainKeys());
+        sendMessage(\achbotMessage('payment.pre_payment.message.526bf7b198'), getMainKeys(), 'HTML');
         exit;
     }
 
