@@ -120,6 +120,16 @@ these sends intentionally remain unformatted, rather than being converted
 only for uniformity. The HTML and explicitly unformatted counts are reported
 separately. Composed, parameterized, customized and persisted messages remain
 outside this static callsite contract.
+
+The ten reviewed discount-administration catalog compositions have a separate
+source+rendering parity test:
+`python3 tools/test_post_v9_telegram_html_discount_compositions.py`.
+It pins the original catalog fragments and keyboard expressions, exercises
+PHP's actual rendering (including an integer-coerced userid), and verifies
+that removed, comment-disabled or keyboard-modified sends cannot pass the
+source contract. This is intentionally not a generic Markdown converter:
+user-authored, customized and persisted content remains out of scope.
+
 On an intentional change, inspect and review the effective diff first, then
 run the read-only `--print-audit`
 option to obtain proposed new fingerprints; never update the expected values

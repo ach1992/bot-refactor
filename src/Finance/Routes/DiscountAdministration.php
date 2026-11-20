@@ -24,7 +24,7 @@ if($data=="addDiscountCode" && achbotAdminCanFor($connection,(int)$from_id,(int)
     sendMessage(
         \achbotMessage('payment.discount_administration.add_discount_code.message.4c228aa43c').
         \achbotMessage('payment.discount_administration.add_discount_code.message.6d4dae8c41'),
-        $cancelKey
+        $cancelKey, 'HTML'
     ); 
     // مرحله اول: منتظر دریافت متن کد
     setUser("addDiscountCode"); 
@@ -63,7 +63,7 @@ if($userInfo['step'] == "addDiscountCode" && $text != $buttonValues['cancel'] &&
         \achbotMessage('payment.discount_administration.add_discount_code.message.75190ca5af').
         \achbotMessage('payment.discount_administration.add_discount_code.message.78fa15f8f0').
         \achbotMessage('payment.discount_administration.add_discount_code.message.90e96f0615'),
-        $cancelKey
+        $cancelKey, 'HTML'
     ); 
 } 
 
@@ -675,7 +675,7 @@ if(preg_match('/^editD_(\d+)_amount$/', $data, $m) && achbotAdminCanFor($connect
         \achbotMessage('payment.discount_administration.add_discount_code.message.d2ff3672fa').
         \achbotMessage('payment.discount_administration.add_discount_code.message.78fa15f8f0').
         \achbotMessage('payment.discount_administration.add_discount_code.message.90e96f0615'),
-        $cancelKey
+        $cancelKey, 'HTML'
     );
 }
 
@@ -713,7 +713,7 @@ if(preg_match('/^editD_(\d+)_expire$/', $data, $m) && achbotAdminCanFor($connect
     sendMessage(
         \achbotMessage('payment.discount_administration.add_discount_code.message.a12d0d9f77').
         \achbotMessage('payment.discount_administration.add_discount_code.message.615519a0c3'),
-        $cancelKey
+        $cancelKey, 'HTML'
     );
 }
 
@@ -746,7 +746,7 @@ if(preg_match('/^editD_(\d+)_count$/', $data, $m) && achbotAdminCanFor($connecti
     sendMessage(
         \achbotMessage('payment.discount_administration.add_discount_code.message.0e04aa052a').
         \achbotMessage('payment.discount_administration.add_discount_code.message.ccba40e01f'),
-        $cancelKey
+        $cancelKey, 'HTML'
     );
 }
 
@@ -779,7 +779,7 @@ if(preg_match('/^editD_(\d+)_canuse$/', $data, $m) && achbotAdminCanFor($connect
     sendMessage(
         \achbotMessage('payment.discount_administration.add_discount_code.message.dfbb7e73b3').
         \achbotMessage('payment.discount_administration.add_discount_code.message.ccba40e01f'),
-        $cancelKey
+        $cancelKey, 'HTML'
     );
 }
 
@@ -892,7 +892,7 @@ if(preg_match('/^editDiscountAudienceUser(\d+)$/', $userInfo['step'], $m) && $te
     $stmt->close();
 
     setUser();
-    sendMessage(\achbotMessage('payment.discount_administration.add_discount_code.message.12c329225f', ['uid' => $uid]));
+    sendMessage(\achbotMessage('payment.discount_administration.add_discount_code.message.12c329225f', ['uid' => $uid]), null, 'HTML');
     $data = "editDiscount".$discountId;
 }
 
@@ -1060,7 +1060,7 @@ if(preg_match('/^editD_(\d+)_minprice$/', $data, $m) && achbotAdminCanFor($conne
     sendMessage(
         \achbotMessage('payment.discount_administration.add_discount_code.message.06fba4d16a').
         \achbotMessage('payment.discount_administration.add_discount_code.message.2bf46895aa'),
-        $cancelKey
+        $cancelKey, 'HTML'
     );
 }
 
@@ -1093,7 +1093,7 @@ if(preg_match('/^editD_(\d+)_maxdiscount$/', $data, $m) && achbotAdminCanFor($co
     sendMessage(
         \achbotMessage('payment.discount_administration.add_discount_code.message.516eca7a7b').
         \achbotMessage('payment.discount_administration.add_discount_code.message.ef6e2a0bbd'),
-        $cancelKey
+        $cancelKey, 'HTML'
     );
 }
 
@@ -1130,7 +1130,7 @@ if (preg_match('/^editDRemoveUser(\d+)$/', $data, $m) && achbotAdminCanFor($conn
         \achbotMessage('payment.discount_administration.add_discount_code.message.b42c09006d').
         \achbotMessage('payment.discount_administration.add_discount_code.message.b0bd504d42').
         \achbotMessage('payment.discount_administration.add_discount_code.message.a94390879d'),
-        $cancelKey
+        $cancelKey, 'HTML'
     );
 }
 
