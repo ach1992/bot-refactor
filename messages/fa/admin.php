@@ -576,7 +576,7 @@ return [
         // order_management.message
         'order_management.message.6e1cf97901' => '⚠️ هیچ اشتراکی برای این کاربر موجود نیست.',
         // order_management.manageorderdatabase
-        'order_management.manageorderdatabase.message.e16b131103' => '✏️ لطفا `remark` مربوط به سفارش را وارد کنید:',
+        'order_management.manageorderdatabase.message.e16b131103' => '✏️ لطفا <code>remark</code> مربوط به سفارش را وارد کنید:',
         // order_management.awaiting_order_remark_only
         'order_management.awaiting_order_remark_only.message.a94b913d39' => '❌ ریمارک شامل کاراکترهای نامعتبر است. لطفاً ریمارک معتبر وارد کنید.',
         'order_management.awaiting_order_remark_only.message.99b2e0169a' => '❌ خطایی در ارتباط با دیتابیس رخ داد.',
@@ -699,7 +699,7 @@ return [
         'server_display_settings.handle_server_display_admin.text.147f04122e' => 'ویرایش لغو شد.' . "\n" . '',
         'server_display_settings.handle_server_display_admin.message.b57e3f0cb1' => '⚠️ تنظیمات نمایش تأیید نشد. دسترسی و قالب مقادیر را بررسی و ویرایش را از تنظیمات همان سرور دوباره آغاز کنید.',
         // sub_link_settings.message
-        'sub_link_settings.message.9f2715dc7c' => '🔗 لطفاً لینک‌های کمکی اشتراک سرور را وارد کنید.' . "\n" . '📌 لینک‌ها را با کاما (,) از هم جدا کنید.' . "\n" . '' . "\n" . 'مثال:' . "\n" . '`https://sub1.domain.com,https://sub2.domain.com`',
+        'sub_link_settings.message.9f2715dc7c' => '🔗 لطفاً لینک‌های کمکی اشتراک سرور را وارد کنید.' . "\n" . '📌 لینک‌ها را با کاما (,) از هم جدا کنید.' . "\n" . '' . "\n" . 'مثال:' . "\n" . '<code>https://sub1.domain.com,https://sub2.domain.com</code>',
         'sub_link_settings.message.745a80a770' => '✅ لینک‌های کمکی با موفقیت ذخیره شدند.',
         'sub_link_settings.message.aee64f26a1' => '☑️ مدیریت سرور:',
     ],

@@ -33,10 +33,11 @@ function emojiIds(array $policy): array {
 /** Custom emoji must not alter HTML attributes, URLs or literal code spans. */
 function htmlEmoji(string $html, array $ids): string {
     if (!$ids || preg_match('//u', $html) !== 1) return $html;
-    // Split at complete quoted HTML tags and named/numeric entities. Do not
-    // decode or re-encode the author's markup, whitespace or copyable data.
+    // Split only at complete quoted HTML tags; preserving entities within a
+    // text token lets a bare URL containing &amp; stay intact. Do not decode
+    // or re-encode markup, whitespace, URLs or copyable data.
     $tokens = preg_split(
-        '~(<(?:[^\x22\x27<>]|\x22[^\x22]*\x22|\x27[^\x27]*\x27)+>|&(?:#[0-9]+|#x[0-9a-fA-F]+|[A-Za-z][A-Za-z0-9]+);)~u',
+        '~(<(?:[^\x22\x27<>]|\x22[^\x22]*\x22|\x27[^\x27]*\x27)+>)~u',
         $html, -1, PREG_SPLIT_DELIM_CAPTURE
     );
     if (!is_array($tokens)) return $html;
@@ -65,12 +66,17 @@ function htmlEmoji(string $html, array $ids): string {
             continue;
         }
         if ($protected || $token === '') { $out .= $token; continue; }
-        $replaced = preg_replace_callback('/\X/u', static function (array $match) use ($ids): string {
-            $emoji = $match[0];
-            return isset($ids[$emoji])
-                ? '<tg-emoji emoji-id="'.$ids[$emoji].'">'.$emoji.'</tg-emoji>'
-                : $emoji;
-        }, $token);
+        // Leave complete URI schemes (including vless://, ss:// and trojan://),
+        // bare Telegram/web URLs and HTML entities unmodified. Replacing an
+        // emoji inside a configuration URI would corrupt copyable data.
+        $replaced = preg_replace_callback(
+            '~(?:[A-Za-z][A-Za-z0-9+.-]*://|mailto:|t\.me/|www\.)[^\s<>]+|&(?:#[0-9]+|#x[0-9a-fA-F]+|[A-Za-z][A-Za-z0-9]+);|\X~iu',
+            static function (array $match) use ($ids): string {
+                $emoji = $match[0];
+                return isset($ids[$emoji])
+                    ? '<tg-emoji emoji-id="'.$ids[$emoji].'">'.$emoji.'</tg-emoji>'
+                    : $emoji;
+            }, $token);
         $out .= $replaced ?? $token;
     }
     return $out;
