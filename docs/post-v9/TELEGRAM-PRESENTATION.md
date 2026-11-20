@@ -127,7 +127,11 @@ source+rendering parity test:
 It pins the original catalog fragments and keyboard expressions, exercises
 PHP's actual rendering (including an integer-coerced userid), and verifies
 that removed, comment-disabled or keyboard-modified sends cannot pass the
-source contract. This is intentionally not a generic Markdown converter:
+source contract. The userid check uses executable PHP tokens within the
+owning conditional to require the actual integer-cast assignment and reject
+later userid writes, including comment-spoofed casts and post-cast
+reassignments; rendering executes the extracted source assignment.
+This is intentionally not a generic Markdown converter:
 user-authored, customized and persisted content remains out of scope.
 
 On an intentional change, inspect and review the effective diff first, then
