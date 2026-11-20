@@ -139,6 +139,27 @@ source assignment.
 This is intentionally not a generic Markdown converter:
 user-authored, customized and persisted content remains out of scope.
 
+The current admin-wallet reporting path (`src/Finance/Routes/AdminWallet.php`)
+uses explicit HTML for debt preview, committed operator/recipient notices,
+changed-balance warnings, uncertain-result warnings, and the reason prompt.
+These producers concatenate only fixed catalog fragments and PHP integer
+operation facts (including formatted signed balances); the arbitrary private
+reason is not interpolated into the displayed notices. The existing
+per-instance `$mainValues` prompts retain their parse mode. The recipient,
+serialized InlineKeyboard callbacks, status paths, delivery order, and
+existing operator-menu HTML remain unchanged. The recipient notice previously
+had **no** parse mode; it is HTML only where verified literal-safe.
+
+`python3 tools/test_post_v9_telegram_html_wallet_reports.py` executes the
+actual current PHP report function with source-owned integer operation facts
+and the conditional reason prompt expression, and checks full rendered text,
+keyboard/destination parity against a golden captured from pre-migration
+Stable main. It covers positive/negative/formatted integers, Persian/Unicode,
+malformed markup input rejected at the typed boundary and special characters
+in private pending-step data that must never reach a notice. This bounded
+proof does **not** authorize converting customizable wallet prompts, support
+replies, stored broadcasts or arbitrary dynamic Markdown elsewhere.
+
 On an intentional change, inspect and review the effective diff first, then
 run the read-only `--print-audit`
 option to obtain proposed new fingerprints; never update the expected values
