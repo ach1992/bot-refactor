@@ -25,6 +25,9 @@ TARGETS = (
     "src/Plans/Categories.php",
     "bot.php",
     "config.php",
+    "src/Subscription/CustomerRoutes.php",
+    "src/Purchase/Catalogue.php",
+    "src/Purchase/EntryAndBulk.php",
 )
 DIRECT_SEND = re.compile(
     r"""(?<![A-Za-z0-9_])sendMessage\s*\(\s*\\?achbotMessage\s*\(\s*(['"])([^'"]+)\1\s*\)""",
@@ -84,6 +87,9 @@ AUDITED = {
     "src/Plans/Categories.php": (3, "f5e5f232dab62ecb5bd39adf2a808bf03672d109e5d58f9a8eff2ab1b387f82e"),
     "bot.php": (69, "696ddd1dfcde9e07c2166dd900dc0d30aea72d2994375418c24f61190624df6e"),
     "config.php": (15, "71f4e61ba9ffd3e4cf7b789a1cbca6a46033add9ae00407f5495cee2986ac920"),
+    "src/Subscription/CustomerRoutes.php": (8, "d001dbf2f2f9689c9e44f6bfdb832ebb1950d8976812b353a3d8b062408727f3"),
+    "src/Purchase/Catalogue.php": (8, "c643ca5e56331db9d32e7a4b214e1f4efbc87b48ae731116ccea7b27979ed799"),
+    "src/Purchase/EntryAndBulk.php": (6, "372a5759d1a5af7e7a940c35f6238c2f8c51e6897160da86bbb9d9c1111fb125"),
 }
 
 

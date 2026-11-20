@@ -138,19 +138,19 @@ if(preg_match('/^createAccPlan(\d+)/',$data,$match) && $text != $buttonValues['c
         return;
     }
     delMessage();
-    sendMessage(\achbotMessage('purchase.entry_and_bulk.create_multiple_accounts.message.c754e347bf'),$cancelKey);
+    sendMessage(\achbotMessage('purchase.entry_and_bulk.create_multiple_accounts.message.c754e347bf'),$cancelKey, 'HTML');
     setUser('createAccDate' . $match[1]);
 }
 if(preg_match('/^createAccDate(\d+)/',$userInfo['step'],$match) && $text != $buttonValues['cancel'] && ($from_id == $admin || $userInfo['isAdmin'] == true)){
     if(is_numeric($text)){
         if($text >0){
-            sendMessage(\achbotMessage('purchase.entry_and_bulk.create_multiple_accounts.message.f018216ab3'));
+            sendMessage(\achbotMessage('purchase.entry_and_bulk.create_multiple_accounts.message.f018216ab3'), null, 'HTML');
             setUser('createAccVolume' . $match[1] . "_" . $text);
         }else{
-            sendMessage(\achbotMessage('purchase.entry_and_bulk.create_multiple_accounts.message.9cc4de866d'));
+            sendMessage(\achbotMessage('purchase.entry_and_bulk.create_multiple_accounts.message.9cc4de866d'), null, 'HTML');
         }
     }else{
-        sendMessage(\achbotMessage('purchase.entry_and_bulk.create_multiple_accounts.message.141dd787b4'));
+        sendMessage(\achbotMessage('purchase.entry_and_bulk.create_multiple_accounts.message.141dd787b4'), null, 'HTML');
     }
 }
 if(preg_match('/^createAccVolume(\d+)_(\d+)/',$userInfo['step'],$match) && $text != $buttonValues['cancel'] && ($from_id == $admin || $userInfo['isAdmin'] == true)){
@@ -158,7 +158,7 @@ if(preg_match('/^createAccVolume(\d+)_(\d+)/',$userInfo['step'],$match) && $text
         sendMessage($mainValues['send_only_number']);
         exit();
     }elseif($text <=0){
-        sendMessage(\achbotMessage('purchase.entry_and_bulk.create_multiple_accounts.message.f30d6ad265'));
+        sendMessage(\achbotMessage('purchase.entry_and_bulk.create_multiple_accounts.message.f30d6ad265'), null, 'HTML');
         exit();
     }
     sendMessage($mainValues['enter_account_amount']);
@@ -190,7 +190,7 @@ if (
     }
     $count = (int)$text;
     if ($count <= 0) {
-        sendMessage(\achbotMessage('purchase.entry_and_bulk.create_multiple_accounts.message.f30d6ad265'));
+        sendMessage(\achbotMessage('purchase.entry_and_bulk.create_multiple_accounts.message.f30d6ad265'), null, 'HTML');
         exit();
     }
 

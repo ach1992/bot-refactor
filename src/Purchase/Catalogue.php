@@ -123,19 +123,19 @@ if(preg_match('/selectCustomePlan(?<planId>\d+)_(?<categoryId>\d+)_(?<buyType>\w
 }
 if(preg_match('/selectCustomPlanGB(?<planId>\d+)_(?<categoryId>\d+)_(?<buyType>\w+)/',$userInfo['step'], $match) && ($botState['sellState']=="on" ||$from_id == $admin) && $text != $buttonValues['cancel']){
     if(!is_numeric($text)){
-        sendMessage(\achbotMessage('purchase.catalogue.message.ef774be0a5'));
+        sendMessage(\achbotMessage('purchase.catalogue.message.ef774be0a5'), null, 'HTML');
         exit();
     }
     elseif($text <1){
-        sendMessage(\achbotMessage('purchase.catalogue.message.05308dd049'));
+        sendMessage(\achbotMessage('purchase.catalogue.message.05308dd049'), null, 'HTML');
         exit();
     }
     elseif(strstr($text,".")){
-        sendMessage(\achbotMessage('purchase.catalogue.message.bf8ff96ef3'));
+        sendMessage(\achbotMessage('purchase.catalogue.message.bf8ff96ef3'), null, 'HTML');
         exit();
     }
     elseif(substr($text, 0, 1) == '0'){
-        sendMessage(\achbotMessage('purchase.catalogue.message.b989e71b4f'));
+        sendMessage(\achbotMessage('purchase.catalogue.message.b989e71b4f'), null, 'HTML');
         exit();
     }
     
@@ -159,19 +159,19 @@ if(preg_match('/selectCustomPlanGB(?<planId>\d+)_(?<categoryId>\d+)_(?<buyType>\
 }
 if((preg_match('/selectCustomPlanDay(?<planId>\d+)_(?<categoryId>\d+)_(?<accountCount>\d+)_(?<buyType>\w+)/',$userInfo['step'], $match)) && ($botState['sellState']=="on" ||$from_id == $admin) && $text != $buttonValues['cancel']){
     if(!is_numeric($text)){
-        sendMessage(\achbotMessage('purchase.catalogue.message.ef774be0a5'));
+        sendMessage(\achbotMessage('purchase.catalogue.message.ef774be0a5'), null, 'HTML');
         exit();
     }
     elseif($text <1){
-        sendMessage(\achbotMessage('purchase.catalogue.message.05308dd049'));
+        sendMessage(\achbotMessage('purchase.catalogue.message.05308dd049'), null, 'HTML');
         exit();
     }
     elseif(strstr($text,".")){
-        sendMessage(\achbotMessage('purchase.catalogue.message.3fbe481726'));
+        sendMessage(\achbotMessage('purchase.catalogue.message.3fbe481726'), null, 'HTML');
         exit();
     }
     elseif(substr($text, 0, 1) == '0'){
-        sendMessage(\achbotMessage('purchase.catalogue.message.b989e71b4f'));
+        sendMessage(\achbotMessage('purchase.catalogue.message.b989e71b4f'), null, 'HTML');
         exit();
     }
 
