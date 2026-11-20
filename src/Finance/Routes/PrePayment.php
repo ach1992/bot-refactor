@@ -284,7 +284,7 @@ if (is_string($data) && str_starts_with($data, 'prePayCheck_')) {
             sendMessage($invalidated
                 ? \achbotMessage('payment.pre_payment.message.6a728137d5')
                 : \achbotMessage('payment.pre_payment.message.f7acca2890'),
-                getMainKeys());
+                getMainKeys(), 'HTML');
             return;
         }
         if (!$subjectSupported) {

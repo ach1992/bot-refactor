@@ -484,7 +484,7 @@ function achbotHandleServerDisplayAdmin(): bool {
             $kind=$text===($buttonValues['cancel']??null)?'cancel':'save';
             achbotServerDisplayEdit($connection,$sid,(int)$from_id,(int)$admin,$source,$kind,$text);
             sendMessage($kind==='save'?\achbotMessage('subscription.server_display_settings.handle_server_display_admin.text.ed95738546'):\achbotMessage('admin_settings.management.display_canceled'),
-                $GLOBALS['removeKeyboard']??json_encode(['remove_keyboard'=>true]));
+                $GLOBALS['removeKeyboard']??json_encode(['remove_keyboard'=>true]), 'HTML');
             if ($kind==='cancel' && !preg_match('/\|[dv]configs$/D',$step) && function_exists('getServerConfigKeys'))
                 sendMessage(\achbotMessage('admin_settings.management.server_list'),getServerConfigKeys($sid), 'HTML');
             else achbotServerDisplayShow($connection,$sid);

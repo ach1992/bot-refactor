@@ -160,7 +160,7 @@ function startWalletPayment(mysqli $connection, $botState, $buttonValues, $botUr
     $keys = json_encode(['inline_keyboard' => $keyboard], JSON_UNESCAPED_UNICODE);
     try {
         $reply = sendMessage(\achbotMessage('wallet.wallet_start.start_wallet_payment.message.1f46b2b87f') . number_format($amount) .
-            \achbotMessage('wallet.wallet_start.start_wallet_payment.message.64ab796d01'), $keys);
+            \achbotMessage('wallet.wallet_start.start_wallet_payment.message.64ab796d01'), $keys, 'HTML');
         require_once __DIR__ . '/PaymentLifecycle.php';
         achbotPayUxTrackByHash($connection,$hash_id,$actor,$reply);
         if (!is_object($reply) || ($reply->ok ?? false) !== true) {
