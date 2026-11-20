@@ -107,10 +107,10 @@ PLAIN = re.compile(r"""\Anull\Z""", re.I)
 AUDITED = {
     "src/Finance/Routes/DiscountAdministration.php": (53, "612fe86bd57176ecb30d7b55f0cd4779494784c6c581572f03ef63cf76256b83"),
     "src/Plans/Intervals.php": (23, "004ed26d62dec84082559c719b95ff54df07c93afef063603f3f3929b47ac0ac"),
-    "src/Plans/Administration.php": (27, "fe9cb621f2bec4c6192b91d2fd72b9fd42383ad7ef51eb8e81afe9f386562348"),
+    "src/Plans/Administration.php": (12, "7f5d1bbb40b7da784eeb72089006da57f2588533569932dd6681f448dde93afd"),
     "src/Plans/AddonAdmin.php": (6, "0ab447c2b7a203de01b329a00a0b78e5dddcfdf1f20fe7ba20c537713fbffadc"),
     "src/Plans/Categories.php": (3, "f5e5f232dab62ecb5bd39adf2a808bf03672d109e5d58f9a8eff2ab1b387f82e"),
-    "bot.php": (69, "696ddd1dfcde9e07c2166dd900dc0d30aea72d2994375418c24f61190624df6e"),
+    "bot.php": (73, "c6729c3c7fe03092980299d0ee34038c44af06cd2f35bdcc35c48144e091d420"),
     "config.php": (15, "71f4e61ba9ffd3e4cf7b789a1cbca6a46033add9ae00407f5495cee2986ac920"),
     "src/Subscription/CustomerRoutes.php": (8, "d001dbf2f2f9689c9e44f6bfdb832ebb1950d8976812b353a3d8b062408727f3"),
     "src/Purchase/Catalogue.php": (8, "c643ca5e56331db9d32e7a4b214e1f4efbc87b48ae731116ccea7b27979ed799"),

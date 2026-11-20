@@ -1152,7 +1152,7 @@ if (is_string($data) && strlen($data) <= 64 && preg_match('/\ApayBuyWithWallet([
                 ['count'=>count($deliveryReview)]);
         $msg=$bulkProof===null
             ?($msg."\n".achbotMessage('bulk_reporting.needs_review',[
-                'confirmed'=>'نامشخص','requested'=>(int)$payInfo['agent_count']]))
+                'confirmed'=>achbotMessage('bulk_reporting.unknown_confirmed'),'requested'=>(int)$payInfo['agent_count']]))
             :achbotBulkReportAppend($msg,$bulkProof,true);
     }
     achbotNotifyAdmins('sendMessage', ['text'=>$msg, 'reply_markup'=>$keys, 'parse_mode'=>'HTML']);

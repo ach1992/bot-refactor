@@ -1923,7 +1923,7 @@ function achbotManualCaption(mysqli $connection, array $payInfo, string $caption
  */
 function achbotManualGiftReviewText(string $caption,string $code,?array $screen=null): string {
     $missing=achbotMessage('manual_payment.api_payment.gift_not_provided');
-    $unit=($screen['amount_unit']??null)==='rial'?'ریال':'تومان';
+    $unit=($screen['amount_unit']??null)==='rial'?achbotMessage('manual_payment.api_payment.currency_rial'):achbotMessage('manual_payment.api_payment.currency_toman');
     $amount=is_int($screen['redeem_amount']??null) && $screen['redeem_amount']>0
         ? number_format($screen['redeem_amount']).' '.$unit
         : achbotMessage('manual_payment.api_payment.gift_not_verified');

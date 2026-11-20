@@ -33,8 +33,42 @@ Substitution is explicit and one-pass. Missing/extra parameters and unknown keys
 
 The original relocation inventory remains immutable evidence. Owner revision 4 permits this two-file layout and controlled style/privacy changes. `tools/text_catalog_style_amendments.json` pins each changed value against `7faac9b`, separates the retired implementation-only parser matchers, and explicitly records privacy parameter/diagnostic exceptions. Runtime parser matchers belong in implementation code, not editable copy.
 
-Run `python3 tools/test_text_catalog_style.py` for focused two-file, stable-key, digits, emoji, markup, parameter, audience and native composition checks. The full catalog/source/financial acceptance remains a separate required gate; source checks do not certify a live Telegram rendering or installed operator behavior.
+For current Stable source run `python3 tools/test_post_v9_current_copy_ownership.py`, `python3 tools/test_post_v9_copy_relocation_parity.py` and `python3 tools/test_post_v9_web_copy_parity.py`, followed by the current `php85-validation` gate. The older `test_text_catalog_style.py` / `test_next_text_catalog.py` scripts are historical baseline proofs tied to earlier package contracts and are not current-Stable CI acceptance. Source tests cannot certify live Telegram rendering or installed operator behavior.
 
 The retained relocation/source proof is pinned to released RC12 `ecd30ba`; current source still receives live unknown-key/orphan, UI-literal, audience, digits and parameter checks. The shared-USDT-rate Owner amendment retires exactly three obsolete agent-rate help/label/fallback entries, recorded separately in `retired_feature_keys`; the 23 historical parser retirements and original relocation inventory remain unchanged.
 
 The unified-management amendment pins the additional admin/customer templates against RC13 in `tools/text_catalog_management_amendment.json`; prior catalog values remain unchanged. Current binding checks parse and execute only the two declarative catalog assignments in `config.php` and `health.php`, without application bootstrap, private configuration, database or network access. The deleted RC13 facade and relocated runtime source paths are exercised only from their immutable Git versions.
+
+## Current Stable source ownership audit
+
+`python3 tools/test_post_v9_current_copy_ownership.py` checks the current
+137-file runtime membership from `tools/package_current.py`, validates
+source-literal catalog references, duplicate declared keys, both legacy
+array bindings and dynamic-key prefixes, and rejects uncatalogued Persian
+PHP literals in the bot and finance runtime (except two explicitly classified
+non-copy locale/protocol constants). It also rejects retired plan editor
+callbacks and current catalog entries while leaving Native Marzban/PasarGuard
+settings untouched. Negative fixtures prove that new literals and retired
+routes cannot silently pass. It runs in current `php85-validation` CI.
+
+The standalone `index.php` web-login page uses the `web_login` topic in
+the same `user.php` file. Its previous five PHP response strings, HTML
+text/placeholder labels and JavaScript page copy are now source-owned by the
+same catalog; runtime HTML/JSON/JavaScript rendering remains unchanged.
+`python3 tools/test_post_v9_web_copy_parity.py` compares six GET/POST
+request outcomes against the accepted current-Stable source, including
+exact HTML bytes, JSON response bytes and interpreted JavaScript strings.
+`tools/test_post_v9_current_copy_ownership.py` also asserts no noncatalog
+Persian text remains in the root web-login PHP/HTML/JS source.
+The current-only relocation proof pins exactly 408 retired no-consumer keys
+and 50 new exact-value, source-owned entries (46 browser labels and four
+finance/admin display labels), and verifies that every one of the
+2,530 retained pre-refactor catalog entries is byte-for-byte unchanged.
+This pin belongs to Issue #220 and can change only with a new reviewed
+copy/cleanup outcome; later approved copy edits must update their own
+source-real accepted reference rather than bypass this proof.
+Staff/customer-authored broadcast, ticket and invite content is stored data,
+not source-owned static text; preserve its original parse mode and entity
+semantics. `$mainValues` is currently still a live catalog-derived runtime
+array, not an independent editable file; removing it requires source-real
+parity for all dynamic and per-instance consumers first.
