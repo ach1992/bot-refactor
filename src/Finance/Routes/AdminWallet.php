@@ -431,9 +431,9 @@ if (!function_exists('achbotAdminWalletReportResult')) {
                 \achbotMessage('wallet.admin_wallet.admin_wallet_report_result.message.8e316dfa3e'),
                 $removeKeyboard);
         } elseif ($result === 'stale') {
-            sendMessage(\achbotMessage('wallet.admin_wallet.admin_wallet_report_result.message.ce5d096603'));
+            sendMessage(\achbotMessage('wallet.admin_wallet.admin_wallet_report_result.message.ce5d096603'), null, 'HTML');
         } elseif ($result === 'invalid') {
-            sendMessage(\achbotMessage('wallet.admin_wallet.admin_wallet_report_result.message.c3cca2f742'));
+            sendMessage(\achbotMessage('wallet.admin_wallet.admin_wallet_report_result.message.c3cca2f742'), null, 'HTML');
         } else {
             sendMessage(\achbotMessage('wallet.admin_wallet.admin_wallet_report_result.message.472c52debf') .
                 $updateId . \achbotMessage('wallet.admin_wallet.admin_wallet_report_result.message.1601e8a95b'));
@@ -460,7 +460,7 @@ if ($achbotWalletCanAdmin && isset($achbotWalletModes[$data]) &&
     achbotAdminWalletPrivateCallback($update ?? null, $from_id ?? null,
         $chat_id ?? null, $message_id ?? null, $data)) {
     if (!achbotWalletAdjustmentsReady($connection)) {
-        sendMessage(\achbotMessage('wallet.admin_wallet.admin_wallet_report_result.message.7f5443f0df'));
+        sendMessage(\achbotMessage('wallet.admin_wallet.admin_wallet_report_result.message.7f5443f0df'), null, 'HTML');
     } else {
         delMessage();
         sendMessage($mainValues['send_user_id'], $cancelKey);
@@ -503,7 +503,7 @@ if ($achbotWalletCanAdmin && $achbotWalletFreshText !== null &&
              'debtWalletUser'=>'debit'][$match[1]];
     if (!preg_match('/^[1-9][0-9]{0,9}$/D', $achbotWalletInput) ||
         (float)$achbotWalletInput > 2147483647) {
-        sendMessage(\achbotMessage('wallet.admin_wallet.admin_wallet_report_result.message.5022bf056a'));
+        sendMessage(\achbotMessage('wallet.admin_wallet.admin_wallet_report_result.message.5022bf056a'), null, 'HTML');
     } else {
         $target = (int)$match[2];
         $amount = (int)$achbotWalletInput;
@@ -525,7 +525,7 @@ if ($achbotWalletCanAdmin && $achbotWalletFreshText !== null &&
     $update->update_id > (int)$match[5]) {
     $reason = $achbotWalletFreshText;
     if ($reason === '' || strlen($reason) > 500) {
-        sendMessage(\achbotMessage('wallet.admin_wallet.admin_wallet_report_result.message.a4b902d78b'));
+        sendMessage(\achbotMessage('wallet.admin_wallet.admin_wallet_report_result.message.a4b902d78b'), null, 'HTML');
     } else {
         $updateId = filter_var($update->update_id ?? null, FILTER_VALIDATE_INT);
         $message = filter_var($message_id ?? null, FILTER_VALIDATE_INT);
@@ -559,7 +559,7 @@ if ($achbotWalletCanAdmin &&
             (int)$from_id, $achbotWalletStep, (int)$admin);
         if ($cancelResult === 'canceled') {
             sendMessage(\achbotMessage('wallet.admin_wallet.admin_wallet_report_result.message.2f08aabfdd'),
-                $removeKeyboard);
+                $removeKeyboard, 'HTML');
         } else {
             achbotAdminWalletReportResult($cancelResult, null, (int)$update->update_id);
         }

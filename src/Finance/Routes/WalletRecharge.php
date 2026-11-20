@@ -199,7 +199,7 @@ if (strpos($data, 'increaseWallet_') === 0) {
         return;
     }
     if (!$canSelect) {
-        sendMessage(\achbotMessage('wallet.wallet_recharge.wallet_topup_amount_problem.message.778b5776b6'));
+        sendMessage(\achbotMessage('wallet.wallet_recharge.wallet_topup_amount_problem.message.778b5776b6'), null, 'HTML');
         return;
     }
     $result = startWalletPayment($connection, $botState, $buttonValues, $botUrl,
@@ -208,16 +208,16 @@ if (strpos($data, 'increaseWallet_') === 0) {
     if ($result === 'created') {
         achbotWalletTopupRetirePrompt();
     } elseif ($result === 'review') {
-        sendMessage(\achbotMessage('wallet.wallet_recharge.wallet_topup_amount_problem.message.983d706c66'));
+        sendMessage(\achbotMessage('wallet.wallet_recharge.wallet_topup_amount_problem.message.983d706c66'), null, 'HTML');
     } else {
-        sendMessage(\achbotMessage('wallet.wallet_recharge.wallet_topup_amount_problem.message.d0531e17b9'));
+        sendMessage(\achbotMessage('wallet.wallet_recharge.wallet_topup_amount_problem.message.d0531e17b9'), null, 'HTML');
     }
     return;
 }
 
 if ($data === 'increaseWalletCustom') {
     if (!$canSelect) {
-        sendMessage(\achbotMessage('wallet.wallet_recharge.wallet_topup_amount_problem.message.778b5776b6'));
+        sendMessage(\achbotMessage('wallet.wallet_recharge.wallet_topup_amount_problem.message.778b5776b6'), null, 'HTML');
         return;
     }
     $updateId = $update->update_id;
@@ -268,9 +268,9 @@ if ($text != ($buttonValues['cancel'] ?? null) &&
         $from_id, $removeKeyboard, $amount, $amountStep,
         $update->update_id, $message_id);
     if ($result === 'review') {
-        sendMessage(\achbotMessage('wallet.wallet_recharge.wallet_topup_amount_problem.message.983d706c66'));
+        sendMessage(\achbotMessage('wallet.wallet_recharge.wallet_topup_amount_problem.message.983d706c66'), null, 'HTML');
     } elseif ($result !== 'created') {
-        sendMessage(\achbotMessage('wallet.wallet_recharge.wallet_topup_amount_problem.message.d0531e17b9'));
+        sendMessage(\achbotMessage('wallet.wallet_recharge.wallet_topup_amount_problem.message.d0531e17b9'), null, 'HTML');
     }
     return;
 }
@@ -430,7 +430,7 @@ if (preg_match('/wait(?:IncreaseWallet|IncreaseWalletGift|IncreaseWalletUsdt)Rec
         setUser();
         achbotManualAcknowledgeAndVerify($connection,$receiptPay,$method,$buttonValues['start_bot'],$botUsername);
     } else {
-        sendMessage(\achbotMessage('wallet.wallet_recharge.wallet_topup_amount_problem.message.c346a0d62e'));
+        sendMessage(\achbotMessage('wallet.wallet_recharge.wallet_topup_amount_problem.message.c346a0d62e'), null, 'HTML');
     }
     exit;
 }

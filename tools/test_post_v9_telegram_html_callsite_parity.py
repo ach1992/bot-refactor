@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Guard audited static Telegram HTML producers without contacting Telegram.
+"""Guard audited static Telegram presentation producers without contacting Telegram.
 
 A source-level contract, not a PHP/Telegram parser: only calls whose first
 argument is a direct zero-parameter achbotMessage('catalog.key') are in scope.
-Other dynamic text, persisted broadcasts, templates and legacy Markdown
-messages deliberately retain their existing parse modes.
+Other dynamic text, persisted broadcasts, templates, and explicit plain-text
+sends deliberately retain their existing parse modes.
 """
 from __future__ import annotations
 
@@ -28,6 +28,30 @@ TARGETS = (
     "src/Subscription/CustomerRoutes.php",
     "src/Purchase/Catalogue.php",
     "src/Purchase/EntryAndBulk.php",
+    "src/Admin/Bans.php",
+    "src/Admin/Roles.php",
+    "src/Admin/Unban.php",
+    "src/Agent/Discounts.php",
+    "src/Broadcast/Routes.php",
+    "src/Finance/Routes/AdminWallet.php",
+    "src/Finance/Routes/ApiPayments.php",
+    "src/Finance/Routes/Checkout.php",
+    "src/Finance/Routes/Extensions.php",
+    "src/Finance/Routes/ManualReceipts.php",
+    "src/Finance/Routes/PrePayment.php",
+    "src/Finance/Routes/RenewalCheckout.php",
+    "src/Finance/Routes/RenewalSelection.php",
+    "src/Finance/Routes/WalletRecharge.php",
+    "src/Finance/Routes/WalletTransfer.php",
+    "src/Panel/ProviderAdmin.php",
+    "src/Subscription/ExternalAccounts.php",
+    "src/Subscription/ManualAccounts.php",
+    "src/Subscription/ServerDisplaySettings.php",
+    "src/Support/AdminReply.php",
+    "src/Support/Categories.php",
+    "src/Support/CreateTicket.php",
+    "src/Support/CustomerConversation.php",
+    "src/Support/QueueAndHistory.php",
 )
 DIRECT_SEND = re.compile(
     r"""(?<![A-Za-z0-9_])sendMessage\s*\(\s*\\?achbotMessage\s*\(\s*(['"])([^'"]+)\1\s*\)""",
@@ -74,6 +98,7 @@ echo json_encode($positions, JSON_THROW_ON_ERROR);
 UNSAFE_HTML_OR_MARKDOWN = re.compile(r"[<>&*_`[\\]")
 HTML = re.compile(r"""\A(['"])HTML\1\Z""", re.I)
 MARKDOWN = re.compile(r"""\A(['"])MarkDown\1\Z""", re.I)
+PLAIN = re.compile(r"""\Anull\Z""", re.I)
 
 # Audited source/keyboard/copy contract, independent of source line numbers.
 # To update for an intentional change, review the effective source diff first,
@@ -90,6 +115,30 @@ AUDITED = {
     "src/Subscription/CustomerRoutes.php": (8, "d001dbf2f2f9689c9e44f6bfdb832ebb1950d8976812b353a3d8b062408727f3"),
     "src/Purchase/Catalogue.php": (8, "c643ca5e56331db9d32e7a4b214e1f4efbc87b48ae731116ccea7b27979ed799"),
     "src/Purchase/EntryAndBulk.php": (6, "372a5759d1a5af7e7a940c35f6238c2f8c51e6897160da86bbb9d9c1111fb125"),
+    "src/Admin/Bans.php": (5, "bac9177c4bc56d10807bc0b009ee77dff769663d0270a84eb50e49d63e6d23c6"),
+    "src/Admin/Roles.php": (3, "41d4da0e04b854679c6207828052bb6a1f019bacc13d8cb429332e179cafa1f0"),
+    "src/Admin/Unban.php": (3, "b8fa4d875a40907d57f8f1322af5053d720ac0ae4ae0088c1d746a6f0f2e9ebb"),
+    "src/Agent/Discounts.php": (2, "f6522e134173b0f7850d5f390d5f8dd3ad8ed58eb334667dfdc8d2e6aea1ce5f"),
+    "src/Broadcast/Routes.php": (23, "e84dd50ef4f129822a987a5186ed1959138951d1633798ac4312c6732f892688"),
+    "src/Finance/Routes/AdminWallet.php": (6, "9b83dd4c6aa1930f38f50195aab1868cf8b3c95f12841a83d5682a2378637f15"),
+    "src/Finance/Routes/ApiPayments.php": (2, "a737b2417fc01a6c7bea5044cdc93e501b6ef5c4f3d114fa69348e9d0a8e84e4"),
+    "src/Finance/Routes/Checkout.php": (5, "c80ebe8e8d5ef3ec8cac1cfa1593bcf8d2686652fb509ae1b964a0eb1c92a671"),
+    "src/Finance/Routes/Extensions.php": (10, "3e5be2fe156125ee4bc6eb3ab721b5b2c9915248dc708f856f978d208868da38"),
+    "src/Finance/Routes/ManualReceipts.php": (2, "786805fadd4e8234e6475dfd718160b80ce5ec70fb7881ed95b30fd88d4ecf3e"),
+    "src/Finance/Routes/PrePayment.php": (5, "8dd044efac6dfe78a1a40d4fae7cd0c745aae38223044495e99d0418de969381"),
+    "src/Finance/Routes/RenewalCheckout.php": (8, "8b3782852e1c0577ce7a1de60190682f0c1c663f041617832a8929fc91335808"),
+    "src/Finance/Routes/RenewalSelection.php": (1, "e662b8fa2f694a479939b352e98590cd2687f88355584c2862ad9bc6059111af"),
+    "src/Finance/Routes/WalletRecharge.php": (8, "ff6675f06f2b3bf0d32110d1ee084b895f405bf795466fc3394749c73e174be7"),
+    "src/Finance/Routes/WalletTransfer.php": (11, "e5b45960b44e8871355f0e905975fa04c146cf605985c03a901819b6a6adedc6"),
+    "src/Panel/ProviderAdmin.php": (8, "83172b94fa08ca51589c44a38ffcaf4fe458f549a2dde5a9e01f5b26d807102a"),
+    "src/Subscription/ExternalAccounts.php": (4, "4f0b987cfd63ac45858aa292c5eaa54faed9f0f722b0315ce4e88b10bd2240bf"),
+    "src/Subscription/ManualAccounts.php": (2, "478b9ee6891fa454375d79a200ce0f5309b198e5d6394dbab5dece0e022eb70f"),
+    "src/Subscription/ServerDisplaySettings.php": (2, "d61d0711698c58159189fd9a69146bd35fc1f5687a5326a571406d36a6b398a9"),
+    "src/Support/AdminReply.php": (2, "c8b2ac3aac3947e8b49e4bc40119e1bf7f0fca46eec28f88492b1d6d4f10b8b8"),
+    "src/Support/Categories.php": (1, "e8886cd765c03a7f6b52be32fee0a7004cb8416baf37f6aa9eca1366c28b637e"),
+    "src/Support/CreateTicket.php": (3, "6686bedfa911a9eff77307d5ca7f500aac3bef77454d817efd25aa8d353289eb"),
+    "src/Support/CustomerConversation.php": (3, "8d167415ba6e79e3699f84391a9ef8dd1e663b19dbbdd4b89b1d0e841315e61f"),
+    "src/Support/QueueAndHistory.php": (2, "d4f64c70c14d3d03eb5b15e1ebbf5a1fbcc81464c1b89f2bd2c0065b9b10cceb"),
 }
 
 
@@ -349,16 +398,22 @@ def main() -> None:
     statistics: dict[str, dict[str, int | str]] = {}
     failures: list[str] = []
     total = 0
+    plain_total = 0
     for file in TARGETS:
         records = list(inventory((ROOT / file).read_text(), data))
         test_contract_sensitivity(records, data)
         counts: dict[str, int | str] = {
-            "eligible": 0, "html": 0, "legacy": 0, "dynamic_or_literal": 0,
+            "eligible": 0, "html": 0, "explicit_plain": 0,
+            "legacy": 0, "dynamic_or_literal": 0,
         }
         for name, _, arguments, line in records:
             counts["eligible"] += 1
             if len(arguments) >= 3 and HTML.fullmatch(arguments[2]):
                 counts["html"] += 1
+            elif len(arguments) >= 3 and PLAIN.fullmatch(arguments[2]):
+                # Existing explicit no-format sends are intentional contracts.
+                # Their call signatures and null parse modes are still fingerprinted.
+                counts["explicit_plain"] += 1
             elif len(arguments) <= 2 or (len(arguments) >= 3 and MARKDOWN.fullmatch(arguments[2])):
                 counts["legacy"] += 1
                 failures.append(f"{file}:{line}: {name}: no explicit HTML mode")
@@ -369,6 +424,7 @@ def main() -> None:
         counts["audit_sha256"] = digest
         statistics[file] = counts
         total += int(counts["html"])
+        plain_total += int(counts["explicit_plain"])
         expected_count, expected_digest = AUDITED[file]
         if not options.print_audit and (
             int(counts["eligible"]) != expected_count or digest != expected_digest
@@ -388,6 +444,7 @@ def main() -> None:
         "status": "PASS",
         "files": statistics,
         "html_verified": total,
+        "explicit_plain_verified": plain_total,
         "audited_exact": True,
         "network_calls": 0,
     }, ensure_ascii=False))

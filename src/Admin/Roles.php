@@ -19,7 +19,7 @@ if (preg_match('/^delAdmin([1-9][0-9]{0,18})$/D',(string)($data??''),$match)) {
     editText($message_id,achbotMessage('admin.roles.admins_list.message.191495d5fc'),getAdminsKeys());
 }
 if (($data??null)==='addNewAdmin') {
-    sendMessage(achbotMessage('admin.roles.add_new_admin.message.026acb2e69'),$cancelKey);
+    sendMessage(achbotMessage('admin.roles.add_new_admin.message.026acb2e69'),$cancelKey, 'HTML');
     setUser('addNewAdmin');
 }
 if (preg_match('/^adminNotify\\|([1-9][0-9]{0,18})\\|(on|off)$/D',(string)($data??''),$match)) {

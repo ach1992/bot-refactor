@@ -47,6 +47,6 @@ if(preg_match('/sConfigRenew(\d+)/', $data,$match)){
         $keyboard[] = ['text' => $buttonValues['back_to_main'], 'callback_data' => "mainMenu"];
         $keyboard = array_chunk($keyboard,1);
         editText($message_id, \achbotMessage('renewal.renewal_selection.message.51ab077156'), json_encode(['inline_keyboard'=>$keyboard]));
-    } else sendMessage(\achbotMessage('renewal.renewal_selection.message.5223e5a747'));
+    } else sendMessage(\achbotMessage('renewal.renewal_selection.message.5223e5a747'), null, 'HTML');
 }
 

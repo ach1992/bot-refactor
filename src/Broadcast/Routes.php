@@ -73,7 +73,7 @@ if($data == 'message2All' && ($from_id == $admin || $userInfo['isAdmin'] == true
                 [['text'=>\achbotMessage('broadcast.routes.message2_all.button.0bb9320093'), 'callback_data'=>"broadcastHistory_0"]],
 				[['text'=>\achbotMessage('broadcast.routes.message2_all.button.b233883d0d'),'callback_data'=>"mainMenu"]],
             ]
-        ]));
+        ]), 'HTML');
     }
 }
 
@@ -85,7 +85,7 @@ if($data == 'broadcastStart' && ($from_id == $admin || $userInfo['isAdmin'] == t
             [['text'=>\achbotMessage('broadcast.routes.broadcast_start.button.49b4568f0c'),'callback_data'=>"chooseSendGroup_none"]],
             [['text'=>\achbotMessage('broadcast.routes.broadcast_start.button.706e4a7807'),'callback_data'=>"chooseSendGroup_agents"]],
         ]
-    ]));
+    ]), 'HTML');
 }
 
 if(preg_match('/^cancelBroadcast(\d+)/', $data, $m) && ($from_id == $admin || $userInfo['isAdmin'] == true)){
@@ -107,7 +107,7 @@ if(preg_match('/^cancelBroadcast(\d+)/', $data, $m) && ($from_id == $admin || $u
 if(preg_match('/^chooseSendGroup_(all|has|none|agents)$/', $data, $match) && ($from_id == $admin || $userInfo['isAdmin'] == true)){
     $group = $match[1];
     setUser("s2a_title_$group");
-    sendMessage(\achbotMessage('broadcast.routes.broadcast_start.message.f7c7bcfe5e'), $cancelKey);
+    sendMessage(\achbotMessage('broadcast.routes.broadcast_start.message.f7c7bcfe5e'), $cancelKey, 'HTML');
 }
 
 if (preg_match('/^s2a_title_(all|has|none|agents)$/', $userInfo['step'], $match)
@@ -118,7 +118,7 @@ if (preg_match('/^s2a_title_(all|has|none|agents)$/', $userInfo['step'], $match)
     $title = trim(preg_replace('/\s+/u', ' ', (string)$text));
 
     if (mb_strlen($title, 'UTF-8') > 255) {
-        sendMessage(\achbotMessage('broadcast.routes.broadcast_start.message.adb061a104'), $cancelKey);
+        sendMessage(\achbotMessage('broadcast.routes.broadcast_start.message.adb061a104'), $cancelKey, 'HTML');
         setUser("s2a_title_$group");
         return;
     }
@@ -147,13 +147,13 @@ if (preg_match('/^s2a_title_(all|has|none|agents)$/', $userInfo['step'], $match)
     $stmt->close();
 
     if ($draftId <= 0) {
-        sendMessage(\achbotMessage('broadcast.routes.broadcast_start.message.0c01c8169a'), $cancelKey);
+        sendMessage(\achbotMessage('broadcast.routes.broadcast_start.message.0c01c8169a'), $cancelKey, 'HTML');
         setUser("s2a_title_$group");
         return;
     }
 
     setUser("s2a_msg_$draftId");
-    sendMessage(\achbotMessage('broadcast.routes.broadcast_start.message.45cbfc9bc3'), $cancelKey);
+    sendMessage(\achbotMessage('broadcast.routes.broadcast_start.message.45cbfc9bc3'), $cancelKey, 'HTML');
 }
 
 if(preg_match('/^s2a_msg_(\d+)$/', $userInfo['step'], $match)
@@ -186,10 +186,10 @@ if(preg_match('/^s2a_msg_(\d+)$/', $userInfo['step'], $match)
 		$stmt->execute();
 		$stmt->close();
 
-		sendMessage(\achbotMessage('broadcast.routes.broadcast_start.message.e3d28dd838'), $removeKeyboard);
+		sendMessage(\achbotMessage('broadcast.routes.broadcast_start.message.e3d28dd838'), $removeKeyboard, 'HTML');
 		sendMessage(\achbotMessage('broadcast.routes.broadcast_start.message.a3919d081e'), json_encode(['inline_keyboard'=>[
 			[['text'=>\achbotMessage('broadcast.routes.broadcast_start.button.8157c7d122'),'callback_data'=>"yesSend2All".$sendId],['text'=>\achbotMessage('broadcast.routes.broadcast_start.button.5734fc6a07'),'callback_data'=>"noDontSend2all".$sendId]]
-		]]));
+		]]), 'HTML');
 		return;
 	}
 
@@ -213,10 +213,10 @@ if(preg_match('/^s2a_msg_(\d+)$/', $userInfo['step'], $match)
         $stmt->close();
     }
 
-    sendMessage(\achbotMessage('broadcast.routes.broadcast_start.message.e3d28dd838'), $removeKeyboard);
+    sendMessage(\achbotMessage('broadcast.routes.broadcast_start.message.e3d28dd838'), $removeKeyboard, 'HTML');
     sendMessage(\achbotMessage('broadcast.routes.broadcast_start.message.f041aa9600'), json_encode(['inline_keyboard'=>[
         [['text'=>\achbotMessage('broadcast.routes.broadcast_start.button.8157c7d122'),'callback_data'=>"yesSend2All".$sendId],['text'=>\achbotMessage('broadcast.routes.broadcast_start.button.5734fc6a07'),'callback_data'=>"noDontSend2all".$sendId]]
-    ]]));
+    ]]), 'HTML');
 }
 
 if(preg_match('/^noDontSend2all(\d+)/', $data, $match) && ($from_id == $admin || $userInfo['isAdmin'] == true)){
@@ -347,7 +347,7 @@ if(preg_match('/^pinManageAllPage_(\d+)$/', $data, $m) && ($from_id == $admin ||
                 [['text'=>\achbotMessage('broadcast.routes.pin_manage_all.button.adbdd32809'),'callback_data'=>"jobsStatus_0"]],
                 [['text'=>\achbotMessage('broadcast.routes.message2_all.button.b233883d0d'),'callback_data'=>"mainMenu"]]
             ] 
-        ])); 
+        ]), 'HTML');
         return; 
     } 
  
@@ -429,7 +429,7 @@ if(preg_match('/^pinManageSelect_(\d+)$/', $data, $m) && ($from_id == $admin || 
     if(!$r || $r->num_rows==0){ 
         sendMessage(\achbotMessage('broadcast.routes.pm_noop.message.dd6f985b6d'), json_encode(['inline_keyboard'=>[
             [['text'=>\achbotMessage('broadcast.routes.message2_all.button.b233883d0d'),'callback_data'=>"pinManageAll"]]
-        ]])); 
+        ]]), 'HTML');
         return; 
     } 
  
@@ -529,7 +529,7 @@ if(preg_match('/^jobsStatusBid_(\d+)_(\d+)$/', $data, $m) && ($from_id == $admin
             'inline_keyboard'=>[ 
                 [['text'=>\achbotMessage('broadcast.routes.message2_all.button.b233883d0d'),'callback_data'=>"pinManageSelect_$bid"]],
             ] 
-        ])); 
+        ]), 'HTML');
         return; 
     } 
  
@@ -829,7 +829,7 @@ if(preg_match('/^jobsStatus_(\d+)$/', $data, $m) && ($from_id == $admin || $user
             'inline_keyboard'=>[
                 [['text'=>\achbotMessage('broadcast.routes.message2_all.button.b233883d0d'),'callback_data'=>"pinManageAll"]],
             ]
-        ]));
+        ]), 'HTML');
         return;
     }
 

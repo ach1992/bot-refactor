@@ -17,11 +17,11 @@ if (($userInfo['step']??null)==='unbanUser' && $text!==$buttonValues['cancel']) 
             $connection,$update,(int)$from_id,(int)$chat_id,(int)$message_id,
             $userInfo,(int)$admin,'unban',$text);
         if ($status==='changed') {
-            sendMessage(\achbotMessage('admin.unban.message.b111983f26'),$removeKeyboard);
+            sendMessage(\achbotMessage('admin.unban.message.b111983f26'),$removeKeyboard, 'HTML');
         } elseif ($status==='already') {
-            sendMessage(\achbotMessage('admin.unban.message.718eb73755'),$removeKeyboard);
+            sendMessage(\achbotMessage('admin.unban.message.718eb73755'),$removeKeyboard, 'HTML');
         } else {
-            sendMessage(\achbotMessage('admin.unban.message.ee9604a51b'));
+            sendMessage(\achbotMessage('admin.unban.message.ee9604a51b'), null, 'HTML');
         }
         if ($status==='changed' || $status==='already')
             sendMessage($mainValues['reached_main_menu'], getAdminKeys(), 'HTML');

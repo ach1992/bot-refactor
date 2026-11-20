@@ -462,7 +462,7 @@ if (preg_match('/wait(?:CustomCart|CustomGift|CustomUsdt)Receipt(.*)/', $userInf
         setUser();
         achbotManualAcknowledgeAndVerify($connection,$receiptPay,$method,$buttonValues['start_bot'],$botUsername);
     } else {
-        sendMessage(\achbotMessage('payment.checkout.message.c346a0d62e'));
+        sendMessage(\achbotMessage('payment.checkout.message.c346a0d62e'), null, 'HTML');
     }
     exit;
 }
@@ -666,7 +666,7 @@ if (preg_match('/^accCustom(.+)$/D', $data, $match) && $text != $buttonValues['c
     // Presentation failures after committed financial/referral outcomes must
     // remain separate owner-visible delivery problems, never reopen CREATE.
     try {
-    sendMessage(\achbotMessage('payment.checkout.message.5c1a932720'), getMainKeys());
+    sendMessage(\achbotMessage('payment.checkout.message.5c1a932720'), getMainKeys(), 'HTML');
 
     $keys=achbotManualFinalReceiptKeyboard($connection,$payRowId,$remark);
 
@@ -1388,7 +1388,7 @@ if (sendReceiptToAdminsAndUpdatePay($connection, $fileid,
         setUser();
         achbotManualAcknowledgeAndVerify($connection,$receiptPay,$method,$buttonValues['start_bot'],$botUsername);
     } else {
-        sendMessage(\achbotMessage('payment.checkout.message.c346a0d62e'));
+        sendMessage(\achbotMessage('payment.checkout.message.c346a0d62e'), null, 'HTML');
     }
     exit;
 }
