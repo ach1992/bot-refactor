@@ -247,8 +247,11 @@ def main() -> None:
             raise AssertionError('HTML escaping/unicode entity fixture failed')
     count = verify_rendered(rows)
     negative = verify_negative_mutations(sources)
-    print(f'PASS telegram_html_plan_prompts: {count} exact PHP text/entity/keyboard pairs, '
-          f'{negative} source mutations rejected, Persian/Unicode/HTML escaped code tested')
+    print(json.dumps({'status': 'PASS', 'complete': True,
+                      'producers': len(rows), 'samples': len(CASES),
+                      'cases': count, 'rejected_mutations': negative,
+                      'source_sha256': EXPECTED_SOURCE_SHA,
+                      'network_calls': 0}, ensure_ascii=False))
 
 
 if __name__ == '__main__':
