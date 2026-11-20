@@ -63,6 +63,8 @@ OTHER_TESTS = (
     ("telegram_html_callsite_parity", ("python3", "tools/test_post_v9_telegram_html_callsite_parity.py"), "stdout"),
     ("telegram_html_discount_compositions",
      ("python3", "tools/test_post_v9_telegram_html_discount_compositions.py"), "stdout"),
+    ("telegram_html_wallet_reports",
+     ("python3", "tools/test_post_v9_telegram_html_wallet_reports.py"), "stdout"),
     ("marzban_bearer", ("python3", "tools/test_post_v9_marzban_bearer.py"), "stdout"),
 )
 

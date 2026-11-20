@@ -393,7 +393,7 @@ if (!function_exists('achbotAdminWalletReportResult')) {
                       'callback_data' => 'walletDebtYes:' . $token]],
                     [['text' => \achbotMessage('wallet.admin_wallet.admin_wallet_report_result.button.aad0953301'),
                       'callback_data' => 'walletDebtNo:' . $token]]
-                ]], JSON_UNESCAPED_UNICODE));
+                ]], JSON_UNESCAPED_UNICODE), 'HTML');
         } elseif (($result === 'applied' || $result === 'already_applied') &&
             $operation !== null) {
             // Never re-read users.wallet after COMMIT: another operation may
@@ -410,9 +410,9 @@ if (!function_exists('achbotAdminWalletReportResult')) {
                     \achbotMessage('wallet.admin_wallet.admin_wallet_report_result.text.a3e148be80') . $operation['target'] .
                     \achbotMessage('wallet.admin_wallet.admin_wallet_report_result.text.dff0fbb433') . number_format($operation['before']) .
                     \achbotMessage('wallet.admin_wallet.admin_wallet_report_result.text.a3e128be40') . number_format($operation['after']) .
-                    \achbotMessage('wallet.admin_wallet.admin_wallet_report_result.text.4a74d658e8') . $operation['correlation'], $removeKeyboard]],
+                    \achbotMessage('wallet.admin_wallet.admin_wallet_report_result.text.4a74d658e8') . $operation['correlation'], $removeKeyboard, 'HTML']],
                 ['operator_menu', [$mainValues['reached_main_menu'], getMainKeys(), 'HTML']],
-                ['target_notice', [$customer, null, null, $operation['target']]]
+                ['target_notice', [$customer, null, 'HTML', $operation['target']]]
             ];
             foreach ($notices as [$stage, $args]) {
                 try {
@@ -429,14 +429,14 @@ if (!function_exists('achbotAdminWalletReportResult')) {
         } elseif ($result === 'balance_changed') {
             sendMessage(\achbotMessage('wallet.admin_wallet.admin_wallet_report_result.message.b996aa6de3') .
                 \achbotMessage('wallet.admin_wallet.admin_wallet_report_result.message.8e316dfa3e'),
-                $removeKeyboard);
+                $removeKeyboard, 'HTML');
         } elseif ($result === 'stale') {
             sendMessage(\achbotMessage('wallet.admin_wallet.admin_wallet_report_result.message.ce5d096603'), null, 'HTML');
         } elseif ($result === 'invalid') {
             sendMessage(\achbotMessage('wallet.admin_wallet.admin_wallet_report_result.message.c3cca2f742'), null, 'HTML');
         } else {
             sendMessage(\achbotMessage('wallet.admin_wallet.admin_wallet_report_result.message.472c52debf') .
-                $updateId . \achbotMessage('wallet.admin_wallet.admin_wallet_report_result.message.1601e8a95b'));
+                $updateId . \achbotMessage('wallet.admin_wallet.admin_wallet_report_result.message.1601e8a95b'), null, 'HTML');
         }
     }
 }
@@ -513,7 +513,7 @@ if ($achbotWalletCanAdmin && $achbotWalletFreshText !== null &&
             . ':' . $update->message->message_id . ':' . $update->update_id);
         sendMessage(\achbotMessage('wallet.admin_wallet.admin_wallet_report_result.message.b890d4f5e3')
             . \achbotMessage('wallet.admin_wallet.admin_wallet_report_result.message.e8ac1326af')
-            . ($kind === 'debt' ? \achbotMessage('wallet.admin_wallet.admin_wallet_report_result.message.ff1e51077f') : ''));
+            . ($kind === 'debt' ? \achbotMessage('wallet.admin_wallet.admin_wallet_report_result.message.ff1e51077f') : ''), null, 'HTML');
     }
 }
 
