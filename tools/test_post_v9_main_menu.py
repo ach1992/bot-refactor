@@ -48,31 +48,57 @@ class Statement {
     public function execute():void {}
     public function get_result():Result {
         global $spec;
-        return new Result(!empty($spec['extra'])?
-            [['id'=>7,'type'=>'MAIN_BUTTONSسؤال متداول']]:[]);
+        $buttons=[
+            ['id'=>7,'type'=>'MAIN_BUTTONSسؤال متداول'],
+            ['id'=>8,'type'=>'MAIN_BUTTONSپیگیری سفارش'],
+            ['id'=>9,'type'=>'MAIN_BUTTONSراهنمای پرداخت'],
+        ];
+        $count=$spec['custom_buttons']??(!empty($spec['extra'])?1:0);
+        if (!is_int($count) || $count<0 || $count>count($buttons))
+            throw new RuntimeException('invalid_fixture_button_count');
+        return new Result(array_slice($buttons,0,$count));
     }
     public function close():void {}
 }
-class DB {public function prepare($query):Statement {return new Statement();}}
+class DB {
+    public function prepare($query):Statement {
+        $sql=str_replace(chr(96),'',trim($query));
+        if (!preg_match("/\ASELECT\s+\*\s+FROM\s+setting\s+WHERE\s+type\s+LIKE\s+'%MAIN_BUTTONS%'\z/i",$sql))
+            throw new RuntimeException('unexpected_custom_button_query');
+        return new Statement();
+    }
+}
 $connection=new DB();
 $source=file_get_contents($root.'/config.php');
-if (!empty($spec['mutate_callback']))
-    $source=str_replace("'callback_data'=>\"myInfo\"", "'callback_data'=>\"myInfoBROKEN\"", $source);
 $start=strpos($source,'function getMainKeys(){');
 $end=strpos($source,'function getAgentKeys(){',$start);
 if ($start===false || $end===false) throw new RuntimeException('getMainKeys source missing');
-eval(substr($source,$start,$end-$start));
+$current=substr($source,$start,$end-$start);
+// Mutations affect only the current function; the accepted Git baseline stays unchanged.
+foreach ([
+    'mutate_callback'=>["'callback_data'=>\"myInfo\"","'callback_data'=>\"myInfoBROKEN\""],
+    'mutate_empty_row'=>["    return json_encode(['inline_keyboard' => \$mainKeys]);",
+                          "    \$mainKeys[]=[];\n    return json_encode(['inline_keyboard' => \$mainKeys]);"],
+    'mutate_grouping'=>['if(count($temp) >= 2)','if(count($temp) >= 3)'],
+] as $probe=>$replacement) {
+    if (empty($spec[$probe])) continue;
+    if (substr_count($current,$replacement[0])!==1)
+        throw new RuntimeException('mutation_target_missing:'.$probe);
+    $current=str_replace($replacement[0],$replacement[1],$current);
+}
+eval($current);
 $prior=base64_decode($argv[3],true);
 if ($prior===false) throw new RuntimeException('missing_prior_source');
 eval($prior);
 $rows=json_decode(getMainKeys(),true,512,JSON_THROW_ON_ERROR)['inline_keyboard'];
 $previous=json_decode(getMainKeysBaseline(),true,512,JSON_THROW_ON_ERROR)['inline_keyboard'];
-$rows=array_values(array_filter($rows,static fn($row)=>!empty($row)));
-$previous=array_values(array_filter($previous,static fn($row)=>!empty($row)));
+// Compare complete Telegram keyboard structure, including empty rows.
+// Existing pinned visual checks separately inspect only the nonempty rows.
 if ($rows!==$previous)
     throw new RuntimeException('main_menu_wire_drift:'.json_encode(['prior'=>$previous,'now'=>$rows],
         JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR));
-echo json_encode(['rows'=>$rows,'labels'=>[
+$visibleRows=array_values(array_filter($rows,static fn($row)=>!empty($row)));
+echo json_encode(['rows'=>$visibleRows,'labels'=>[
     'my_subscriptions'=>$buttonValues['my_subscriptions'],
     'invite_friends'=>$buttonValues['invite_friends'],
     'my_info'=>$buttonValues['my_info'],
@@ -269,8 +295,9 @@ def check(root: Path = ROOT) -> dict:
 
     # Independently compare the actual wire JSON against the accepted
     # pre-refactor implementation across 32 role/feature combinations and
-    # eight additional tenant/administrative variations. This detects a
-    # changed callback, row layout, wording, or channel destination without
+    # nine additional tenant/administrative variations (including three
+    # custom buttons). This detects raw rows, callbacks, grouping, wording
+    # and channel destinations without
     # introducing an artificial translation map.
     source_parity_cases=0
     with tempfile.TemporaryDirectory(prefix='achbot-main-menu-matrix-') as tmp:
@@ -285,7 +312,7 @@ def check(root: Path = ROOT) -> dict:
             if proc.returncode:
                 raise AssertionError('menu_matrix_mismatch:'+repr(spec)+':'+
                                      proc.stderr[-1500:])
-            return True
+            return json.loads(proc.stdout)
         for agent,admin,trial,search,sales in itertools.product((False,True),repeat=5):
             verify({'agent':agent,'admin':admin,'trial_on':trial,
                     'trial_eligible':trial,'search_on':search,'sales_off':sales})
@@ -302,14 +329,35 @@ def check(root: Path = ROOT) -> dict:
         ]:
             verify(extra)
             source_parity_cases+=1
-        assert source_parity_cases==40
+        multiple=verify({'custom_buttons':3})
+        source_parity_cases+=1
+        custom_rows=[
+            [button for button in row
+             if button.get('callback_data','').startswith('showMainButtonAns')]
+            for row in multiple['rows']
+        ]
+        custom_rows=[row for row in custom_rows if row]
+        assert custom_rows==[
+            [
+                {'text':'سؤال متداول','callback_data':'showMainButtonAns7'},
+                {'text':'پیگیری سفارش','callback_data':'showMainButtonAns8'},
+            ],
+            [{'text':'راهنمای پرداخت','callback_data':'showMainButtonAns9'}],
+        ],custom_rows
+        assert source_parity_cases==41
         assert verify({'mutate_callback':True},negative=True), (
             'menu_callback_mutation_not_detected')
+        assert verify({'mutate_empty_row':True},negative=True), (
+            'menu_empty_row_mutation_not_detected')
+        assert verify({'custom_buttons':3,'mutate_grouping':True},negative=True), (
+            'menu_grouping_mutation_not_detected')
 
     return {'complete':True,'status':'PASS','verified':True,
             'real_menu_scenarios':cases,
             'source_real_before_after_menu_parity_cases':source_parity_cases,
             'negative_mutated_callback_caught':True,
+            'negative_added_empty_row_caught':True,
+            'negative_custom_grouping_caught':True,
             'copy_reference_checks':len(references),
             'original_callbacks_and_feature_gates_preserved':True,
             'no_network_or_customer_data':True}
