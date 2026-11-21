@@ -576,9 +576,10 @@ function achbotPgOrderContext(mysqli $db,int $orderId,bool $lock=false,
     return ['order_id'=>$orderId,'order'=>$o,'order_server_id'=>(int)$o['server_id'],'account'=>$a,'panel'=>$panel,'identity'=>achbotProviderAccountIdentity($db,$a,$lock)];
 }
 function achbotPgRemarkContext(mysqli $db,int $serverId,string $remark,bool $lock=false): array {
-    // Multiple authorized local references may name the same exact physical
-    // identity. Every selected reference must prove that same identity.
-    $s=$db->prepare('SELECT id FROM orders_list WHERE server_id=? AND BINARY remark=BINARY ? ORDER BY id'.($lock?' LOCK IN SHARE MODE':''));
+    // Only active local references are usable. A retired order may still
+    // carry the same username from an earlier, deleted Native incarnation.
+    // Multiple active references must resolve to one exact physical identity.
+    $s=$db->prepare('SELECT id FROM orders_list WHERE server_id=? AND status=1 AND BINARY remark=BINARY ? ORDER BY id'.($lock?' LOCK IN SHARE MODE':''));
     $s->bind_param('is',$serverId,$remark);$s->execute();$rows=$s->get_result()->fetch_all(MYSQLI_ASSOC);$s->close();
     if (!$rows) throw new RuntimeException('pg_local_account_ambiguous');
     $context=null;

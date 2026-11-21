@@ -61,7 +61,8 @@ function achbotProviderSubscriptionInfo(string $trustedUrl,bool $trustedHttp=fal
             $wire.=$chunk;return strlen($chunk);
         }]);
     $ok=curl_exec($ch);$errno=curl_errno($ch);$http=(int)curl_getinfo($ch,CURLINFO_HTTP_CODE);
-    $type=(string)curl_getinfo($ch,CURLINFO_CONTENT_TYPE);curl_close($ch);
+    $type=(string)curl_getinfo($ch,CURLINFO_CONTENT_TYPE);
+    // curl_close() is a no-op and deprecated on PHP 8.5.
     if ($ok===false || $errno!==0 || $large || $http!==200 ||
         !preg_match('#^application/(?:[a-z0-9.+-]+\\+)?json(?:;|$)#i',$type)) return $failure($http);
     try {$data=json_decode($wire,true,64,JSON_THROW_ON_ERROR|JSON_BIGINT_AS_STRING);}
@@ -156,7 +157,10 @@ function achbotPgImportHint(string $token): array {
     if (count($parts)===2) $payload=achbotProviderImportDecode($parts[0]);
     if ($payload===null) $payload=achbotProviderImportDecode(substr($token,0,-10));
     if ($payload===null) $payload=achbotProviderImportDecode($token);
-    if (is_string($payload) && preg_match('/^v[23],([1-9][0-9]*),[0-9]+$/D',$payload,$m))
+    // The token version only provides an untrusted Native-ID lookup hint.
+    // A future version with the same shape needs no bot-side allowlist;
+    // authenticated GET and the trusted /info identity remain mandatory.
+    if (is_string($payload) && preg_match('/^v[1-9][0-9]*,([1-9][0-9]*),[0-9]+$/D',$payload,$m))
         return ['id'=>achbotProviderPositiveInt($m[1])];
     if (is_string($payload) && preg_match('/^([a-zA-Z0-9_@.-]{1,100}),[0-9]+$/D',$payload,$m))
         return ['username'=>$m[1]];

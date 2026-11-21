@@ -26,6 +26,8 @@ ROOT = Path(__file__).resolve().parents[1]
 NATIVE_TESTS = (
     ("api_payments", "test_post_v9_scoped_api_pg.py"),
     ("postcutover_recovery", "test_post_v9_pg_cutover_recovery.py"),
+    ("native_import_name_reuse", "test_post_v9_import_name_reuse.py"),
+    ("native_import_alias_duplicate", "test_post_v9_import_alias_duplicate.py"),
     ("delete_reconfirmation", "test_post_v9_delete_recovery.py"),
     ("nowpayments_finality", "test_stable_nowpayments.py"),
     ("direct_gift_native", "test_post_v9_direct_gift_native.py"),
