@@ -22,6 +22,21 @@ source tables. These are evidence identifiers, not another registry. Shared
 customer references point to the same proven origin effect and native ID/creation
 time. They retain independent order/payment ownership.
 
+When adopting an existing external PasarGuard account, a **new physical**
+originating effect uses the immutable `import:<orderId>` target key, not the
+username-scoped `pg:<instance>` key that may still exist on a verified-deleted
+incarnation. Legacy `pg:<instance>` effects and their deleted/uncertain
+provenance remain intact. A newly verified Native ID and creation time may
+reuse a retired username only after the older local active references have
+been resolved; no SQL migration is required for this source change.
+
+**Deployment rollback boundary:** after the new runtime has written
+`import:<orderId>` effects, an older Stable application may not validate
+their provenance. Do not downgrade application files alone; preserve the
+matching database/runtime recovery pair and use a separately verified
+rollback or forward-recovery plan. Source release alone performs no import
+and changes no installed database.
+
 An original Marzban→PasarGuard migration can have one physical
 `legacy_migration` effect and multiple verified order references. Its
 `service_effects.order_id` intentionally remains **NULL**. Provenance is
