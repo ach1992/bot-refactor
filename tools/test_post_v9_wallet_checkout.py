@@ -16,6 +16,11 @@ import test_v6_native as native
 import test_v8_native as purchase
 
 ROOT=Path(__file__).resolve().parents[1]
+INVALID_USERNAME_COPY=json.loads(subprocess.check_output(
+    ['php','-r',('require "messages/loader.php"; echo json_encode('
+                'achbotMessage("legacy_messages.incorrect_config_name"),'
+                'JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);')],
+    cwd=ROOT, text=True))
 DB=purchase.SIDE[1]
 PHP=r'''<?php
 error_reporting(E_ALL & ~E_DEPRECATED);
@@ -73,11 +78,8 @@ $data=(string)($spec['callback_data']??
 $text='';$username='fixture';$first_name='Customer';$match=[];
 $botUrl='https://fixture.invalid/';$botState=['remark'=>(string)($spec['remark_mode']??'digits'),'rewardChannel'=>($spec['reward_channel']??null)];
 $buttonValues=['back_to_main'=>'back','cancel'=>'cancel'];
-$mainValues=['sending_config_to_user'=>'Sending...',
- 'buy_custom_account_request'=>'TYPE USER-ID USERNAME NAME PRICE REMARK volume=VOLUME days=DAYS',
- 'buy_new_account_request'=>'TYPE USER-ID USERNAME NAME PRICE REMARK volume=VOLUME days=DAYS',
- 'renew_account_request_message'=>'REMARK PRICE VOLUME DAYS',
- 'invite_buy_new_account'=>'REMARK PRICE'];
+// Runtime customer/staff copy is read from the real catalog. Local
+// placeholder fixtures must not silently change outgoing operator reports.
 $linkIndices=[];$hideConfigIfMany=false;$GLOBALS['events']=[];
 $GLOBALS['spec']=$spec;$GLOBALS['remote']=[];
 $userStmt=$connection->prepare('SELECT * FROM users WHERE userid=?');
@@ -190,9 +192,7 @@ $botState=['sellState'=>'on','remark'=>'manual','gbPrice'=>100,'dayPrice'=>10,
  'walletState'=>'on','nowPaymentOther'=>'off','zarinpal'=>'off','nextpay'=>'off',
  'cartToCartState'=>'off','giftCardState'=>'off','manualUsdtState'=>'off'];
 $paymentKeys=[]; // Actual common helpers see explicitly disabled manual methods.
-$mainValues=['incorrect_config_name'=>'Invalid account username',
- 'buy_subscription_detail'=>'Account PRICE VOLUME DAYS PLAN-NAME DESCRIPTION'];
-$buttonValues=['cancel'=>'cancel','pay_with_wallet'=>'Wallet'];
+// Source copy is loaded from the real catalog, not an English test map.
 $userInfo=['step'=>'enterCustomPlanName7_1_1_30_much','is_agent'=>false,
  'isAdmin'=>false,'userid'=>1001];
 $botUrl='https://fixture.invalid/';$username='fixture';$first_name='Synthetic';
@@ -339,10 +339,10 @@ def check():
             assert paid(standard)=='paid_with_wallet' and wallet()==49900
             assert cap()==10-count
             assert not calls(route(work,env,driver,hash=name,custom=True),'POST')
-            reports=[m for m in calls(done,'MESSAGE') if 'volume=' in m['synthetic_note']]
+            reports=[m for m in calls(done,'MESSAGE') if '📦 حجم اشتراک:' in m['synthetic_note']]
             assert len(reports)==1 and reports[0]['to']==9001,reports
-            assert 'volume=2 days=30' in reports[0]['synthetic_note'],reports
-            assert 'volume=1 days=15' not in reports[0]['synthetic_note'],reports
+            assert '📦 حجم اشتراک: 2 گیگ\n📅 مدت اشتراک: 30 روز' in reports[0]['synthetic_note'],reports
+            assert '📦 حجم اشتراک: 1 گیگ\n📅 مدت اشتراک: 15 روز' not in reports[0]['synthetic_note'],reports
             assert not calls(route(work,env,driver,hash=name),'POST')
         cases.append('r2_standard_single_multi_plan_dimensions_no_replay')
         cases.append('r4_unchanged_standard_wallet_report_matches_fulfillment')
@@ -470,10 +470,10 @@ def check():
         assert paid(frozen)=='paid_with_wallet' and wallet()==49900 and cap()==9
         assert detail(frozen)==('wallet_hold\t0\t1\tconsumed\n'
                                 'create\t1\t0\tlocal_recorded')
-        reports=[m for m in calls(drift,'MESSAGE') if 'volume=' in m['synthetic_note']]
+        reports=[m for m in calls(drift,'MESSAGE') if '📦 حجم اشتراک:' in m['synthetic_note']]
         assert sorted(m['to'] for m in reports)==[9001,9003],reports
-        assert all('volume=2 days=30' in m['synthetic_note'] and
-                   'volume=1 days=15' not in m['synthetic_note'] for m in reports),reports
+        assert all('📦 حجم اشتراک: 2 گیگ\n📅 مدت اشتراک: 30 روز' in m['synthetic_note'] and
+                   '📦 حجم اشتراک: 1 گیگ\n📅 مدت اشتراک: 15 روز' not in m['synthetic_note'] for m in reports),reports
         replay=route(work,env,driver,hash='r3_quoted_before_edit',reward_channel=9003)
         assert not calls(replay,'POST') and not calls(replay,'MESSAGE'),replay
         assert paid(frozen)=='paid_with_wallet' and wallet()==49900 and cap()==9
@@ -491,10 +491,10 @@ def check():
             sql(work,env,'UPDATE server_plans SET days=30,volume=2 WHERE id=7')
         assert [(ev['days'],ev['volume_gb']) for ev in calls(custom_drift,'POST')]==[(37,7)]
         assert paid(custom_frozen)=='paid_with_wallet'
-        reports=[m for m in calls(custom_drift,'MESSAGE') if 'volume=' in m['synthetic_note']]
+        reports=[m for m in calls(custom_drift,'MESSAGE') if '📦 حجم اشتراک:' in m['synthetic_note']]
         assert len(reports)==1 and reports[0]['to']==9001,reports
-        assert 'volume=7 days=37' in reports[0]['synthetic_note'],reports
-        assert 'volume=1 days=15' not in reports[0]['synthetic_note'],reports
+        assert '📦 حجم اشتراک: 7 گیگ\n📅 مدت اشتراک: 37 روز' in reports[0]['synthetic_note'],reports
+        assert '📦 حجم اشتراک: 1 گیگ\n📅 مدت اشتراک: 15 روز' not in reports[0]['synthetic_note'],reports
         assert not calls(route(work,env,driver,hash='r3_custom_after_edit',custom=True),'POST')
         cases.append('r3_persisted_custom_dimensions_survive_postcommit_plan_edit')
         cases.append('r4_custom_operator_report_retains_persisted_dimensions')
@@ -507,7 +507,7 @@ def check():
             events=catalogue(work,env,catalogue_driver,
                 username=bad_name,hash='badmuchdraft'+str(i))
             assert any(e['name']=='MESSAGE' and
-                       'Invalid account username' in e['text'] for e in events),events
+                       e['text']==INVALID_USERNAME_COPY for e in events),events
             assert sql(work,env,f"SELECT COUNT(*) FROM pays WHERE hash_id='badmuchdraft{i}'")=='0'
         cases.append('actual_catalogue_much_draft_rejects_invalid_remote_usernames')
 
@@ -525,7 +525,7 @@ def check():
 
         events=catalogue(work,env,catalogue_driver,
             username='valid_custom_17',hash='validmuchdraft')
-        assert any(e['name']=='MESSAGE' and 'Invalid account username' not in e['text']
+        assert any(e['name']=='MESSAGE' and e['text']!=INVALID_USERNAME_COPY
                    for e in events),events
         real_draft=int(sql(work,env,"SELECT id FROM pays WHERE hash_id='validmuchdraft' AND description='valid_custom_17'"))
         assert real_draft>0

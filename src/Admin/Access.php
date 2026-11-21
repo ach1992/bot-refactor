@@ -1,6 +1,7 @@
 <?php
 /** AChBot administrator levels stored in existing setting rows; users.isAdmin remains boolean. */
 if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) { http_response_code(404); exit; }
+require_once __DIR__.'/../../messages/loader.php';
 
 function achbotAdminLevel(?int $actor=null,?mysqli $db=null,?int $primary=null,bool $lock=false,bool $notificationRead=false,?bool &$complete=null): string {
     $complete=true;
@@ -175,7 +176,7 @@ function achbotAdminRequestAllowed(?string $callback,?string $text,string $step)
     if (in_array($callback,['mainMenu','evidenceHome'],true) ||
         (($callback??'')==='' && $text!==null &&
          (preg_match('~^/[Ss]tart(?:\\s|$)~D',$text) ||
-          $text===($GLOBALS['buttonValues']['cancel']??null)))) return true;
+          $text===achbotMessage('legacy_buttons.cancel')))) return true;
     foreach (array_unique([(string)$callback,$step]) as $value) {
         $capability=achbotAdminRequestCapability($value);
         if ($capability===null) continue;

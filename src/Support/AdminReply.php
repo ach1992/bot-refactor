@@ -19,7 +19,7 @@ if(preg_match("/^reply_(.*)/",$data,$match) and  achbotAdminCanFor($connection,(
     setUser("answer_" . $match[1]);
     sendMessage(\achbotMessage('support.admin_reply.message.8da2c2756b'),$cancelKey, 'HTML');
 }
-if(preg_match('/^answer_(.*)/', $userInfo['step'], $match) && achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'operations') && $text != $buttonValues['cancel']){
+if(preg_match('/^answer_(.*)/', $userInfo['step'], $match) && achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'operations') && $text != \achbotMessage('legacy_buttons.cancel')){
     $chatRowId = $match[1];
     $stmt = $connection->prepare("SELECT * FROM `chats` WHERE `id` = ?");
     $stmt->bind_param("i", $chatRowId);

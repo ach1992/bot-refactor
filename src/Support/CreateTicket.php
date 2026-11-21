@@ -14,15 +14,15 @@ require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
 
 if(preg_match('/^supportCat(.*)/',$data,$match)){
     delMessage();
-    sendMessage($mainValues['enter_ticket_title'], $cancelKey);
+    sendMessage(\achbotMessage('legacy_messages.enter_ticket_title'), $cancelKey);
     setUser("newTicket_" . $match[1]);
 }
-if(preg_match('/^newTicket_(.*)/',$userInfo['step'],$match)  and $text!=$buttonValues['cancel']){
+if(preg_match('/^newTicket_(.*)/',$userInfo['step'],$match)  and $text!=\achbotMessage('legacy_buttons.cancel')){
     setUser($text, 'temp');
 	setUser("sendTicket_" . $match[1]);
-    sendMessage($mainValues['enter_ticket_description']);
+    sendMessage(\achbotMessage('legacy_messages.enter_ticket_description'));
 }
-if(preg_match('/^sendTicket_(.*)/',$userInfo['step'],$match)  and $text!=$buttonValues['cancel']){
+if(preg_match('/^sendTicket_(.*)/',$userInfo['step'],$match)  and $text!=\achbotMessage('legacy_buttons.cancel')){
     if(isset($text) || isset($update->message->photo)){
         $ticketCat = $match[1];
         

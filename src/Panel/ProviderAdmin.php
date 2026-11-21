@@ -17,7 +17,6 @@ function achbotPgAdminGroupIds(string $text,array $panel): array {
     return $groups;
 }
 function achbotPgServerAdminKeys(array $info,array $config,int $offset): string {
-    global $buttonValues;
     $id=(int)$info['id'];
     return json_encode(['inline_keyboard'=>[
         [['text'=>$config['panel_url'],'callback_data'=>'wizwizch']],
@@ -35,7 +34,7 @@ function achbotPgServerAdminKeys(array $info,array $config,int $offset): string 
         [['text'=>\achbotMessage('admin_settings.management.plans'),'callback_data'=>'plansList'.$id],
          ['text'=>\achbotMessage('admin_settings.management.add_plan'),'callback_data'=>'newPlanForServer'.$id]],
         [['text'=>\achbotMessage('admin_settings.management.server_delete'),'callback_data'=>'wizwizdeleteserver'.$id]],
-        [['text'=>$buttonValues['back_button'],'callback_data'=>'nextServerPage'.max(0,$offset)]]
+        [['text'=>\achbotMessage('legacy_buttons.back_button'),'callback_data'=>'nextServerPage'.max(0,$offset)]]
     ]],JSON_UNESCAPED_UNICODE);
 }
 /** Return to the edited object; never let generic cancel process a stale step. */
@@ -98,7 +97,7 @@ function achbotHandleProviderAdmin(): bool {
         if ($step!=='none' && !str_starts_with($step,'pg:'))
             throw new RuntimeException('pg_admin_other_flow_active');
         // Cancel remains available even when optional provider schema is broken.
-        if ($text===($GLOBALS['buttonValues']['cancel']??null)) {
+        if ($text===achbotMessage('legacy_buttons.cancel')) {
             $msg=$update->message??null;
             if (!is_object($msg) || ($msg->chat->type??'')!=='private' ||
                 (int)($msg->from->id??0)!==(int)$from_id ||

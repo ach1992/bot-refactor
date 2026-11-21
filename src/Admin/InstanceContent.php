@@ -106,15 +106,40 @@ function achbotInstanceContentValues(array $values,array $state,$userId=''): arr
         if (is_string($values[$field]??null))$values[$field]=rtrim($values[$field])."\n\n".$note;
     return $values;
 }
+/**
+ * Resolve one source-owned legacy template for the current bot/request.
+ * Only instance text and the handful of context-bearing templates need
+ * runtime interpolation. Never materialize a mutable legacy global catalog.
+ */
+function achbotInstanceContextMessage(string $key): string {
+    $state=$GLOBALS['botState']??[];
+    if (!is_array($state)) $state=[];
+    $actor=$GLOBALS['from_id']??'';
+    if (in_array($key,['start_message','user_welcome_message','reached_main_menu'],true))
+        return achbotInstanceMessage($state,$key,$actor);
+
+    $text=achbotMessage('legacy_messages.'.$key);
+    if ($key==='join_channel_message')
+        $text=str_replace('CHANNEL-ID','LOCKCHANNEL',$text);
+
+    $modes=['banned'=>'Markdown','send_config_uuid'=>'Markdown',
+            'join_channel_message'=>'HTML','agency_request_declined'=>null];
+    $formatted=\AchBot\Presentation\Text\replacePlaceholders(
+        [$key=>$text],$state,$actor,$modes)[$key];
+
+    if (in_array($key,['buy_subscription_detail','buy_much_subscription_detail'],true))
+        return rtrim($formatted)."\n\n".achbotInstanceMessage($state,'purchase_note',$actor);
+    return $formatted;
+}
+
 function achbotInstanceMenu(array $state): string {
-    global $buttonValues;
     $rows=[];
     foreach(achbotInstanceMessageFields() as $field){
         $set=achbotInstanceStored($state,$field)!==null;
         $rows[]=[['text'=>achbotInstanceLabel($field).' | '.($set?achbotMessage('instance_content.configured'):achbotMessage('instance_content.unset')),
                   'callback_data'=>'ic|e|'.$field]];
     }
-    $rows[]=[['text'=>$buttonValues['back_button'],'callback_data'=>'botSettings']];
+    $rows[]=[['text'=>\achbotMessage('legacy_buttons.back_button'),'callback_data'=>'botSettings']];
     return json_encode(['inline_keyboard'=>$rows],JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
 }
 function achbotInstanceCanEdit(int $actor): bool {
@@ -145,8 +170,7 @@ function achbotInstanceSave(int $actor,string $field,$value,string $expectedStep
     );
 }
 function achbotHandleInstanceContent($update,$data,$text,array $cachedUser): bool {
-    global $from_id,$message_id,$connection,$buttonValues,$cancelKey,$mainValues;
-    $pending=str_starts_with((string)($cachedUser['step']??''),'achbotInstance:');
+    global $from_id, $message_id, $connection, $cancelKey;    $pending=str_starts_with((string)($cachedUser['step']??''),'achbotInstance:');
     $callback=is_string($data)&&str_starts_with($data,'ic|');
     if(!$callback&&!$pending)return false;
     $actor=(int)($from_id??0);$source=$callback?($update->callback_query??null):($update->message??null);
@@ -173,10 +197,10 @@ function achbotHandleInstanceContent($update,$data,$text,array $cachedUser): boo
     if(count($rows)!==1)return true;$step=(string)$rows[0]['step'];
     if(!preg_match('/^achbotInstance:([A-Za-z_]+)$/D',$step,$m)||!in_array($m[1],achbotInstanceFields(),true))return true;
     $field=$m[1];
-    if($text===($buttonValues['cancel']??null)||$text==='/cancel'){
+    if($text===(\achbotMessage('legacy_buttons.cancel')??null)||$text==='/cancel'){
         setUser();
         $isMessage=in_array($field,achbotInstanceMessageFields(),true);
-        sendMessage($isMessage?achbotMessage('instance_content.title'):$mainValues['change_bot_settings_message'],
+        sendMessage($isMessage?achbotMessage('instance_content.title'):\achbotMessage('legacy_messages.change_bot_settings_message'),
             $isMessage?achbotInstanceMenu($GLOBALS['botState']??[]):getGateWaysKeys(),'HTML');return true;
     }
     if(!is_string($text))return true;

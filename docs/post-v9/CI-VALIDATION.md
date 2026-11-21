@@ -32,6 +32,12 @@ main pushes under the single `php85-validation` required status:
   The current `subscription_status_copy` fixture uses the real message
   catalog and customer/admin AccountDetails renderer against disposable SQL
   for active/disabled Marzban and PasarGuard subscriptions.
+  Current source also requires context-output parity (1,128 real-PHP cases
+  spanning original per-installation overrides and context escaping)
+  and executable Telegram wire argument parity (898 calls for send/edit/photo/
+  callback), including negative parse-mode, keyboard and missing-send probes.
+  The old global legacy text/button maps and indirect $GLOBALS aliases must
+  not reappear. A pure local-array formatter remains in Presentation/Text.php.
 - `tools/ci_quick.py` also runs real-source PHP, finance, payment/checkout,
   customer/service operations, subscription/payment flows, onboarding, wallet, Native,
   operator permissions, Telegram error diagnostics, Cron and

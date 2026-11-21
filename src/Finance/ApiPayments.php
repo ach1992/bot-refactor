@@ -263,7 +263,7 @@ function achbotApiPaymentKeyboard(array $context,?string $sendPrefix=null,?strin
 function achbotApiPaymentInvoiceText(array $c): string {
     $p=$c['pay'];
     if ($p['state']==='have_sent') return achbotManualAcknowledgement($p,(string)$c['attempt']['provider']);
-    return buildCartToCartInfoMessage($GLOBALS['paymentKeys']??[],$GLOBALS['mainValues']??achbotMessages('legacy_messages'),(int)$p['price'],(int)$p['user_id'],(string)$c['attempt']['provider'],(string)$p['hash_id']);
+    return buildCartToCartInfoMessage($GLOBALS['paymentKeys']??[],(int)$p['price'],(int)$p['user_id'],(string)$c['attempt']['provider'],(string)$p['hash_id']);
 }
 /** Post-send source-real reference; first successful invoice response wins. */
 function achbotApiPaymentTrackInvoice(mysqli $db,string $hash,int $actor,$response): void {
@@ -724,7 +724,7 @@ function achbotApiPaymentSettleLocked(mysqli $db,int $id,array $proof,
             // and can never trigger a second POST; a never-started ordinal
             // retains its original single CREATE claim and capacity hold.
             $delivery=achbotAutoBankProvisionBuySub($db,$pay,
-                $GLOBALS['botState']??[],$GLOBALS['buttonValues']??[],[],
+                $GLOBALS['botState']??[],[],
                 false,(string)($GLOBALS['botUrl']??''),$proof,null,
                 $operator,$primaryOwner);
             if (!$delivery['committed']) return 'review';
@@ -1200,7 +1200,7 @@ function achbotApiPaymentReviewKeyboard(array $pay): string {
         default=>'accept'
     };
     $db=$GLOBALS['connection']??null;
-    if($db instanceof mysqli)return buildAdminKeyboardWithStats($db,$GLOBALS['buttonValues']??achbotMessages('legacy_buttons'),$prefix.$hash,'declineAction_'.$hash,$hash,(int)$pay['user_id']);
+    if($db instanceof mysqli)return buildAdminKeyboardWithStats($db,$prefix.$hash,'declineAction_'.$hash,$hash,(int)$pay['user_id']);
     return inlineKeyboard([
         [['text'=>achbotMessage('manual_payment.api_payment.view_code'),'callback_data'=>'apiReview_'.$hash]],
         [['text'=>achbotMessage('legacy_buttons.approve'),'callback_data'=>$prefix.$hash],

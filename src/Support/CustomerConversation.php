@@ -159,7 +159,7 @@ if(preg_match('/^replySupport_([1-9][0-9]*)$/D',$data,$match)){
     sendMessage(\achbotMessage('support.customer_conversation.user_all_tickets.message.13e7a1cdbb'),$cancelKey, 'HTML');
 	setUser("sendMsg_" . $match[1]);
 }
-if(preg_match('/^sendMsg_([1-9][0-9]*)$/D',$userInfo['step'],$match)  and $text!=$buttonValues['cancel']){
+if(preg_match('/^sendMsg_([1-9][0-9]*)$/D',$userInfo['step'],$match)  and $text!=\achbotMessage('legacy_buttons.cancel')){
     $ticketRowId = $match[1];
 
     $stmt = $connection->prepare("SELECT * FROM `chats` WHERE `id` = ?");

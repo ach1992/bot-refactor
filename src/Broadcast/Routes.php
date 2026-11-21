@@ -63,7 +63,7 @@ if($data == 'message2All' && ($from_id == $admin || $userInfo['isAdmin'] == true
             'inline_keyboard' => [
                 [['text'=>\achbotMessage('broadcast.routes.message2_all.button.bf542d764e'), 'callback_data'=>"cancelBroadcast".$jobId]],
                 [['text'=>\achbotMessage('broadcast.routes.message2_all.button.0bb9320093'), 'callback_data'=>"broadcastHistory_0"]],
-                [['text'=>$buttonValues['start_bot'], 'callback_data'=>"mainMenu"]],
+                [['text'=>\achbotMessage('legacy_buttons.start_bot'), 'callback_data'=>"mainMenu"]],
             ]
         ]));
     } else {
@@ -111,7 +111,7 @@ if(preg_match('/^chooseSendGroup_(all|has|none|agents)$/', $data, $match) && ($f
 }
 
 if (preg_match('/^s2a_title_(all|has|none|agents)$/', $userInfo['step'], $match)
-    && $text != $buttonValues['cancel']
+    && $text != \achbotMessage('legacy_buttons.cancel')
     && ($from_id == $admin || $userInfo['isAdmin'] == true)) {
 
     $group = $match[1];
@@ -157,7 +157,7 @@ if (preg_match('/^s2a_title_(all|has|none|agents)$/', $userInfo['step'], $match)
 }
 
 if(preg_match('/^s2a_msg_(\d+)$/', $userInfo['step'], $match)
-   && $text != $buttonValues['cancel']
+   && $text != \achbotMessage('legacy_buttons.cancel')
    && ($from_id == $admin || $userInfo['isAdmin'] == true)){
 
     $sendId = (int)$match[1];
@@ -700,7 +700,7 @@ if(preg_match('/^bc_edit_(\d+)$/', $userInfo['step'], $m)
     $bid = (int)$m[1];
     $input = trim((string)($text ?? $caption ?? ''));
 
-    if($input === $buttonValues['cancel']){
+    if($input === \achbotMessage('legacy_buttons.cancel')){
         setUser();
         sendMessage(\achbotMessage('broadcast.routes.pm_noop.message.3d8a2c45c2'), $removeKeyboard, null);
         return;

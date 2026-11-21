@@ -66,10 +66,10 @@ if (!function_exists('getPlanDetails')) {
 }
 
 if (!function_exists('ensureServerCapacity')) {
-    function ensureServerCapacity($connection, $server_id, $inbound_id, $acount, $mainValues)
+    function ensureServerCapacity($connection, $server_id, $inbound_id, $acount)
     {
         if ((int)$acount === 0 && (int)$inbound_id !== 0) {
-            alert($mainValues['out_of_connection_capacity']);
+            alert(\achbotMessage('legacy_messages.out_of_connection_capacity'));
             exit;
         }
 
@@ -83,7 +83,7 @@ if (!function_exists('ensureServerCapacity')) {
             $stmt->close();
 
             if (!$server_info || (int)$server_info['ucount'] <= 0) {
-                alert($mainValues['out_of_server_capacity']);
+                alert(\achbotMessage('legacy_messages.out_of_server_capacity'));
                 exit;
             }
         }

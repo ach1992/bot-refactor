@@ -308,14 +308,14 @@ function achbotFollowupDispatchPending(mysqli $db,int $payId,string $stage): arr
 /** Stage original standard purchase presentation BEFORE the paid COMMIT. */
 function achbotFollowupStageManualPurchaseLocked(mysqli $db,array $pay,int $owner,
     string $remark,int $count,int $days,int $volume,int $price,
-    string $hash,array $mainValues): void {
+    string $hash): void {
     if (!achbotFollowupSchemaReady($db) || $owner<=0 ||
         !function_exists('achbotManualFinalReceiptKeyboard'))
         throw new RuntimeException('manual_purchase_followup_preflight_missing');
     $payId=(int)$pay['id'];$buyer=(int)$pay['user_id'];
     $actor=(int)$pay['approved_by'];
     if ($payId<=0 || $buyer<=0 || $actor<=0 || $count<=0 ||
-        !is_string($mainValues['sent_config_to_user']??null))
+        !is_string(\achbotMessage('legacy_messages.sent_config_to_user')??null))
         throw new RuntimeException('manual_purchase_followup_identity_invalid');
     $bulkProof=null;
     if ($count>1) {
@@ -351,7 +351,7 @@ function achbotFollowupStageManualPurchaseLocked(mysqli $db,array $pay,int $owne
     $notice=str_replace(
         ['USERID','REMARK','VOLUME','DAYS','PRICE','HASHID'],
         [$buyer,$actualSubject,$volume,$days,$price,$hash],
-        (string)$mainValues['sent_config_to_user']);
+        (string)\achbotMessage('legacy_messages.sent_config_to_user'));
     if ($bulkProof!==null) $notice=achbotBulkReportAppend($notice,$bulkProof);
     achbotFollowupInsertLocked($db,$pay,'approved_purchase','operator','send',
         (string)$actor,null,
@@ -375,7 +375,7 @@ function achbotFollowupStageManualPurchaseLocked(mysqli $db,array $pay,int $owne
     if (count($buyers)!==1) throw new RuntimeException('manual_purchase_followup_buyer_invalid');
     $user=$buyers[0];
     if ((int)$user['refered_by']>0 && $actor!==$owner) {
-        if (!is_string($mainValues['invite_buy_new_account']??null))
+        if (!is_string(\achbotMessage('legacy_messages.invite_buy_new_account')??null))
             throw new RuntimeException('manual_purchase_invitation_template_missing');
         $actions=json_encode(['inline_keyboard'=>[[
             ['text'=>\achbotMessage('manual_payment.manual_approval.manual_standard_report_delivery.button.e401f3d5a2'),
@@ -385,7 +385,7 @@ function achbotFollowupStageManualPurchaseLocked(mysqli $db,array $pay,int $owne
             ['USER-ID','USERNAME','NAME','PRICE','REMARK','HASHID'],
             [$buyer,(string)$user['username'],(string)$user['name'],
              $price,$remark,$hash],
-            (string)$mainValues['invite_buy_new_account']);
+            (string)\achbotMessage('legacy_messages.invite_buy_new_account'));
         $complete=false;$staff=achbotAdminRecipientCandidates($db,$owner,$complete);
         if (!$complete) throw new RuntimeException('manual_purchase_staff_discovery_unknown');
         achbotFollowupInsertLocked($db,$pay,'approved_purchase','referral_admin',

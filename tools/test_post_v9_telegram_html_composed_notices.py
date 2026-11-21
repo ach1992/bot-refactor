@@ -33,7 +33,7 @@ TARGETS = (
     ('src/Purchase/EntryAndBulk.php', 'bulk_reporting.delivery_needs_review'),
 )
 EXPECTED_SOURCE_SHA256 = 'd53d5a64b328906de59a56eb7241942c55727c71a7fd9edabcef240703cdfdda'
-EXPECTED_GOLDEN_SHA256 = '00604bcfe75687fff13d3a6a3d532a0d700d0ba6dbd58ddf73d094ecce1d9195'
+EXPECTED_GOLDEN_SHA256 = 'c642bf384b913de835f10f037c76aad39eb44d5b0a85cf88b52c1912a837207d'
 HTML_UNSAFE = re.compile(r'[<>&*_`\[\]\\]|https?://|tg://|\bt\.me/', re.I)
 
 
@@ -102,7 +102,7 @@ def render(rows: list[dict]) -> list[dict]:
     function getMainKeys() {return 'fixture-main';}
     $cases=json_decode($argv[1],true,512,JSON_THROW_ON_ERROR);$out=[];
     function produce($case){
-      $text=$case['text'];$buttonValues=['cancel'=>'fixture-cancel'];
+      $text=$case['text'];$buttonValues=achbotMessages('legacy_buttons');
       $unavailable=$case['unavailable'];$invalidated=$case['invalidated'];
       $step=$case['step'];$kind=$case['kind'];
       $GLOBALS['achbotIntervalWriteUncertain']=$case['uncertain'];
@@ -186,7 +186,18 @@ def main() -> None:
     origin=source_digest(items)
     if not args.print_audit and origin!=EXPECTED_SOURCE_SHA256:
         raise AssertionError('reviewed source/keyboard expressions changed: '+origin)
+    # Preserve the exact original production-rendered button values rather
+    # than a synthetic fixture label that no real bot ever displayed.
+    # Source equivalence is established independently of the current renderer.
+    accepted='4e21e18a3ba50897abc6b393ef0c7f58db39bbf9'
+    original_sources={path:subprocess.check_output(
+        ['git','show',accepted+':'+path],cwd=ROOT).decode('utf-8')
+        for path in sources}
+    original_items=inventory(original_sources,True)
     raw=render(items)
+    before=render(original_items)
+    if raw!=before:
+        raise AssertionError('original rendered composed notice changed')
     golden=sha(raw)
     cases=check_rendered(raw)
     if args.print_audit:

@@ -37,7 +37,7 @@ if (preg_match('/^addSubscriptionToCustomer([1-9][0-9]*)$/D',(string)$data,$matc
     }
     $msg = \achbotMessage('subscription.manual_accounts.msg.a88437a461');
     $keyboard = [
-        [['text' => $buttonValues['back_to_main'], 'callback_data' => 'mainMenu']]
+        [['text' => \achbotMessage('legacy_buttons.back_to_main'), 'callback_data' => 'mainMenu']]
     ];
 
     sendMessage($msg, json_encode(['inline_keyboard' => $keyboard]), "html", $from_id);
@@ -115,7 +115,7 @@ function achbotManualAccountConsumeSelection(mysqli $db,int $actorId,
     }
 }
 
-if ($userInfo['step'] == "awaiting_userid_input" && $text !== $buttonValues['cancel']) {
+if ($userInfo['step'] == "awaiting_userid_input" && $text !== \achbotMessage('legacy_buttons.cancel')) {
     // Never treat old bot text embedded in a callback as a newly authored
     // numeric step, even when the current actor is still an administrator.
     try {
@@ -164,7 +164,7 @@ if ($userInfo['step'] == "awaiting_userid_input" && $text !== $buttonValues['can
     $keyboard = [
         [['text' => \achbotMessage('subscription.manual_accounts.manual_account_consume_selection.button.0c983c9f0f'), 'callback_data' => "addToOrders" . $serverId]],
         [['text' => \achbotMessage('subscription.manual_accounts.manual_account_consume_selection.button.11b0188fcb'), 'callback_data' => "searchUsersConfig"]],
-        [['text' => $buttonValues['back_to_main'], 'callback_data' => "mainMenu"]]
+        [['text' => \achbotMessage('legacy_buttons.back_to_main'), 'callback_data' => "mainMenu"]]
     ];
     sendMessage($msg, json_encode(['inline_keyboard' => $keyboard]), "html", $from_id);
     exit();
@@ -306,8 +306,8 @@ if (preg_match('/^addToOrders([1-9][0-9]*)$/D',(string)$data,$match)) {
         $msg=\achbotMessage('subscription.manual_accounts.import_completed',[
             'remark'=>htmlspecialchars($remark,ENT_QUOTES|ENT_SUBSTITUTE,'UTF-8')]);
         $keys=json_encode(['inline_keyboard'=>[[
-            ['text'=>$buttonValues['my_subscriptions'],'callback_data'=>'mySubscriptions'],
-            ['text'=>$buttonValues['back_to_main'],'callback_data'=>'mainMenu']
+            ['text'=>\achbotMessage('legacy_buttons.my_subscriptions'),'callback_data'=>'mySubscriptions'],
+            ['text'=>\achbotMessage('legacy_buttons.back_to_main'),'callback_data'=>'mainMenu']
         ]]]);
         sendMessage($msg,$keys,'HTML',$finalUserId);
         if ($adminActor) {

@@ -17,7 +17,7 @@ if($data=="supportSection"){
         json_encode(['inline_keyboard'=>[
         [['text'=>\achbotMessage('support.entry.support_section.button.47b4e6ab96'),'callback_data'=>"usersNewTicket"]],
         [['text'=>\achbotMessage('support.entry.support_section.button.a203213e37'),'callback_data'=>"usersOpenTickets"],['text'=>\achbotMessage('support.entry.support_section.button.b15cb57126'), 'callback_data'=>"userAllTickets"]],
-        [['text'=>$buttonValues['back_button'],'callback_data'=>"mainMenu"]]
+        [['text'=>\achbotMessage('legacy_buttons.back_button'),'callback_data'=>"mainMenu"]]
         ]]));
 }
 if($data== "usersNewTicket"){
@@ -44,7 +44,7 @@ if($data== "usersNewTicket"){
                 $temp = null;
             }
         }
-        $temp[] = ['text'=>$buttonValues['back_button'],'callback_data'=>"mainMenu"];
+        $temp[] = ['text'=>\achbotMessage('legacy_buttons.back_button'),'callback_data'=>"mainMenu"];
         array_push($keys,$temp);
         editText($message_id,\achbotMessage('support.entry.users_new_ticket.message.adca0ba3c2'),json_encode(['inline_keyboard'=>$keys]));
     }else{

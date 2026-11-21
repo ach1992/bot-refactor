@@ -76,3 +76,12 @@ function achbotMessageHtml(string $key, array $values = []): string {
     }
     return achbotMessage($key, $values);
 }
+
+/** Lazy access to per-installation and runtime-dependent copy.
+ * All bot-owned editable prose still lives in the two audience catalogs.
+ * Isolated modules can use this API without loading DB/config/bootstrap.
+ */
+function achbotCurrentMessage(string $key): string {
+    require_once __DIR__ . '/../src/Admin/InstanceContent.php';
+    return achbotInstanceContextMessage($key);
+}

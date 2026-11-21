@@ -63,6 +63,8 @@ OTHER_TESTS = (
     ("telegram_presentation", ("php", "-n", "tools/test_post_v9_telegram_presentation.php"), "stdout"),
     ("telegram_html_callsite_parity", ("python3", "tools/test_post_v9_telegram_html_callsite_parity.py"), "stdout"),
     ("current_copy_ownership", ("python3", "tools/test_post_v9_current_copy_ownership.py"), "stdout"),
+    ("current_context_parity", ("python3", "tools/test_post_v9_context_catalog_parity.py"), "stdout"),
+    ("telegram_wire_parity", ("python3", "tools/test_post_v9_telegram_wire_parity.py"), "stdout"),
     ("current_web_copy_parity", ("python3", "tools/test_post_v9_web_copy_parity.py"), "stdout"),
     ("current_copy_relocation_parity", ("python3", "tools/test_post_v9_copy_relocation_parity.py"), "stdout"),
     ("telegram_html_discount_compositions",

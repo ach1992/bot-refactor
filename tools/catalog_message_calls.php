@@ -21,11 +21,13 @@ foreach ($files as $path => $source) {
     $literal = [];
     $dynamic = [];
     $variables = [];
+    $context = [];
     $legacyMain = [];
     $legacyButtons = [];
+    $globalAliases = [];
     foreach ($tokens as $i => $token) {
         if (is_array($token) && $token[0] === T_VARIABLE &&
-            in_array($token[1], ['$mainValues', '$buttonValues'], true)) {
+            in_array($token[1], ['$mainValues', '$buttonValues', '$GLOBALS'], true)) {
             $index = $i + 1;
             while (isset($tokens[$index]) && is_array($tokens[$index]) &&
                    in_array($tokens[$index][0], [T_WHITESPACE, T_COMMENT, T_DOC_COMMENT], true))
@@ -44,14 +46,22 @@ foreach ($files as $path => $source) {
                         $end++;
                     if (($tokens[$end] ?? null) === ']') {
                         if ($token[1] === '$mainValues') $legacyMain[$match[1]] = true;
-                        else $legacyButtons[$match[1]] = true;
+                        elseif ($token[1] === '$buttonValues') $legacyButtons[$match[1]] = true;
+                        elseif (in_array($match[1], ['mainValues', 'buttonValues', 'mainVAlues'], true))
+                            $globalAliases[$match[1]] = true;
                     }
                 }
             }
         }
         if (!is_array($token) ||
             !in_array($token[0], [T_STRING, T_NAME_FULLY_QUALIFIED], true) ||
-            !preg_match('~^\\\\?achbotMessage(?:Html)?$~D', $token[1])) continue;
+            !preg_match('~^\\\\?(?:achbotMessage(?:Html)?|achbotCurrentMessage)$~D', $token[1])) continue;
+        $previous = $i - 1;
+        while ($previous >= 0 && is_array($tokens[$previous]) &&
+               in_array($tokens[$previous][0], [T_WHITESPACE, T_COMMENT, T_DOC_COMMENT], true))
+            $previous--;
+        if (isset($tokens[$previous]) && is_array($tokens[$previous]) &&
+            $tokens[$previous][0] === T_FUNCTION) continue;
         $open = $i + 1;
         while (isset($tokens[$open]) && is_array($tokens[$open]) &&
                in_array($tokens[$open][0], [T_WHITESPACE, T_COMMENT, T_DOC_COMMENT], true))
@@ -76,11 +86,17 @@ foreach ($files as $path => $source) {
                            'in_index' => in_array('[', $stack, true)];
         }
         $expression = trim(implode('', array_column($argument, 'value')));
+        if (str_ends_with($token[1], 'achbotCurrentMessage')) {
+            if (!preg_match('/^[\x27\x22]([a-z_]+)[\x27\x22]$/D', $expression, $match))
+                throw new RuntimeException('unbounded_context_message_call:' . $path);
+            $context[$match[1]] = true;
+            continue;
+        }
         if (preg_match('/^\$[A-Za-z_][A-Za-z0-9_]*$/D', $expression))
             $variables[$expression] = true;
         foreach ($argument as $n => $part) {
             if ($part['kind'] !== T_CONSTANT_ENCAPSED_STRING || $part['in_index']) continue;
-            if (!preg_match('/^[\x27\x22]([a-z][a-z0-9_]*\.[A-Za-z0-9_.]+)[\x27\x22]$/D',
+            if (!preg_match('/^[\x27\x22]([a-z][a-z0-9_]*\.[A-Za-z0-9_.]*)[\x27\x22]$/D',
                             $part['value'], $match)) continue;
             $next = $n + 1;
             while (isset($argument[$next]) &&
@@ -95,7 +111,10 @@ foreach ($files as $path => $source) {
     }
     $result[$path] = ['literal' => array_keys($literal), 'dynamic' => array_keys($dynamic),
                       'variables' => array_keys($variables),
+                      'context' => array_keys($context),
                       'main_indexes' => array_keys($legacyMain),
-                      'button_indexes' => array_keys($legacyButtons), 'clean' => $clean];
+                      'button_indexes' => array_keys($legacyButtons),
+                      'global_aliases' => array_keys($globalAliases),
+                      'clean' => $clean];
 }
 echo json_encode($result, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);

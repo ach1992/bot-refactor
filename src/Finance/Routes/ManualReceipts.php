@@ -283,7 +283,7 @@ if (preg_match('/^declineAction_(.+)$/', $data, $match) && achbotAdminCanFor($co
 
 if (preg_match('/^declineActionReason_(.+)_(\d+)$/', (string)($userInfo['step']??''), $match) &&
     (string)($data??'')==='' &&
-    $text != $buttonValues['cancel'] &&
+    $text != \achbotMessage('legacy_buttons.cancel') &&
     achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'payments')) {
     // Only a freshly typed administrator message can supply the reason;
     // a callback's previously rendered message must not finalize rejection.

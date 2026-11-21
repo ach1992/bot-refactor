@@ -31,8 +31,8 @@ foreach ($batch as $order) {
             $msg=achbotMessage('notifications.warnings.msg.804056ecc4',['remark'=>htmlspecialchars($remark,ENT_QUOTES,'UTF-8'),'send'=>$reason]);
             try {
                 $response=sendMessage($msg,json_encode(['inline_keyboard'=>[[
-                    ['text'=>$buttonValues['my_subscriptions'],'callback_data'=>'mySubscriptions'],
-                    ['text'=>$buttonValues['sharj'],'callback_data'=>'increaseMyWallet']
+                    ['text'=>\achbotMessage('legacy_buttons.my_subscriptions'),'callback_data'=>'mySubscriptions'],
+                    ['text'=>\achbotMessage('legacy_buttons.sharj'),'callback_data'=>'increaseMyWallet']
                 ]]]),'HTML',(int)$order['userid']);
             } catch (Throwable $error) {$response=null;}
             $delivered=is_object($response) && ($response->ok??false)===true;
@@ -144,7 +144,7 @@ foreach ($deletions as $order) {
     if (!$deletionComplete) continue;
     $msg=achbotMessage('notifications.warnings.msg.c7907b6342',['remark'=>htmlspecialchars($remark,ENT_QUOTES,'UTF-8')]);
     sendMessage($msg,json_encode(['inline_keyboard'=>[[[
-        'text'=>$buttonValues['back_to_main'],'callback_data'=>'mainMenu'
+        'text'=>\achbotMessage('legacy_buttons.back_to_main'),'callback_data'=>'mainMenu'
     ]]]]),'HTML',(int)$order['userid']);
     achbotNotifyAdmins('sendMessage', ['text'=>achbotMessage('notifications.warnings.channel_message.5e59a4a33e',[
         'from_id'=>(int)$order['userid'],'remark'=>htmlspecialchars($remark,ENT_QUOTES,'UTF-8')]),'parse_mode'=>'HTML']);

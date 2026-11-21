@@ -378,8 +378,7 @@ if (!function_exists('achbotAdminWalletReportResult')) {
     function achbotAdminWalletReportResult(
         string $result, ?array $operation, int $updateId
     ): void {
-        global $mainValues, $removeKeyboard, $from_id;
-        if ($result === 'debt_required' && $operation !== null) {
+        global $removeKeyboard, $from_id;        if ($result === 'debt_required' && $operation !== null) {
             $token = achbotAdminWalletDebtCallback((int)$from_id,
                 $operation['pending_step']);
             sendMessage(\achbotMessage('wallet.admin_wallet.admin_wallet_report_result.message.eb04c96492') .
@@ -411,7 +410,7 @@ if (!function_exists('achbotAdminWalletReportResult')) {
                     \achbotMessage('wallet.admin_wallet.admin_wallet_report_result.text.dff0fbb433') . number_format($operation['before']) .
                     \achbotMessage('wallet.admin_wallet.admin_wallet_report_result.text.a3e128be40') . number_format($operation['after']) .
                     \achbotMessage('wallet.admin_wallet.admin_wallet_report_result.text.4a74d658e8') . $operation['correlation'], $removeKeyboard, 'HTML']],
-                ['operator_menu', [$mainValues['reached_main_menu'], getMainKeys(), 'HTML']],
+                ['operator_menu', [\achbotCurrentMessage('reached_main_menu'), getMainKeys(), 'HTML']],
                 ['target_notice', [$customer, null, 'HTML', $operation['target']]]
             ];
             foreach ($notices as [$stage, $args]) {
@@ -450,7 +449,7 @@ $achbotWalletModes = [
 ];
 $achbotWalletStep = (string)($userInfo['step'] ?? 'none');
 $achbotWalletInput = trim((string)($text ?? ''));
-$achbotWalletCancel = (string)($buttonValues['cancel'] ?? '');
+$achbotWalletCancel = (string)(\achbotMessage('legacy_buttons.cancel') ?? '');
 // All stages of a privileged adjustment are private DM-only. The binding
 // helper also rejects a genuine message from an unrelated group chat.
 $achbotWalletFreshText = achbotAdminWalletFreshReason(
@@ -463,7 +462,7 @@ if ($achbotWalletCanAdmin && isset($achbotWalletModes[$data]) &&
         sendMessage(\achbotMessage('wallet.admin_wallet.admin_wallet_report_result.message.7f5443f0df'), null, 'HTML');
     } else {
         delMessage();
-        sendMessage($mainValues['send_user_id'], $cancelKey);
+        sendMessage(\achbotMessage('legacy_messages.send_user_id'), $cancelKey);
         setUser($data === 'createUserWalletDebt' ? 'decreaseUserWallet' : $data);
     }
 }
@@ -473,7 +472,7 @@ if ($achbotWalletCanAdmin && isset($achbotWalletModes[$achbotWalletStep]) &&
     $achbotWalletInput !== $achbotWalletCancel && $achbotWalletInput !== '') {
     if (!preg_match('/^[1-9][0-9]{0,18}$/D', $achbotWalletInput) ||
         filter_var($achbotWalletInput, FILTER_VALIDATE_INT) === false) {
-        sendMessage($mainValues['send_only_number']);
+        sendMessage(\achbotMessage('legacy_messages.send_only_number'));
     } else {
         $achbotWalletTarget = (int)$achbotWalletInput;
         $stmt = $connection->prepare('SELECT userid FROM users WHERE userid=?');
@@ -485,12 +484,12 @@ if ($achbotWalletCanAdmin && isset($achbotWalletModes[$achbotWalletStep]) &&
             setUser();
             sendMessage($matches > 1 ?
                 \achbotMessage('wallet.admin_wallet.admin_wallet_report_result.message.840dca2362') :
-                $mainValues['user_not_found'], $removeKeyboard);
-            sendMessage($mainValues['reached_main_menu'], getMainKeys(), 'HTML');
+                \achbotMessage('legacy_messages.user_not_found'), $removeKeyboard);
+            sendMessage(\achbotCurrentMessage('reached_main_menu'), getMainKeys(), 'HTML');
         } else {
             [$kind, $prefix, $prompt] = $achbotWalletModes[$achbotWalletStep];
             setUser($prefix . $achbotWalletTarget);
-            sendMessage($mainValues[$prompt]);
+            sendMessage(\achbotMessage('legacy_messages.'.$prompt));
         }
     }
 }

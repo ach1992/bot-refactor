@@ -15,25 +15,25 @@ if (!achbotAdminRequestAllowed(is_string($data??null)?$data:null,is_string($text
 
 
 if($data=="agencySettings" && $userInfo['is_agent'] == 1){
-    editText($message_id, $mainValues['agent_setting_message'] ,getAgentKeys());
+    editText($message_id, \achbotMessage('legacy_messages.agent_setting_message') ,getAgentKeys());
 }
 if($data=="requestAgency"){
     if($userInfo['is_agent'] == 2){
-        alert($mainValues['agency_request_already_sent']);
+        alert(\achbotMessage('legacy_messages.agency_request_already_sent'));
     }elseif($userInfo['is_agent'] == 0){
-        $msg = str_replace(["USERNAME", "NAME", "USERID"],[$username, $first_name, $from_id],$mainValues['request_agency_message']);
+        $msg = str_replace(["USERNAME", "NAME", "USERID"],[$username, $first_name, $from_id],\achbotMessage('legacy_messages.request_agency_message'));
 			$keys = json_encode([
 				'inline_keyboard' => [
 					[
-						['text' => $buttonValues['approve'], 'callback_data' => "agencyApprove" . $from_id],
-						['text' => $buttonValues['decline'], 'callback_data' => "agencyDecline" . $from_id]
+						['text' => \achbotMessage('legacy_buttons.approve'), 'callback_data' => "agencyApprove" . $from_id],
+						['text' => \achbotMessage('legacy_buttons.decline'), 'callback_data' => "agencyDecline" . $from_id]
 					]
 				]
 			]);
 			achbotNotifyAdmins('sendMessage', ['text'=>$msg, 'reply_markup'=>$keys, 'parse_mode'=>'HTML']);
         setUser(2, 'is_agent');
-        alert($mainValues['agency_request_sent']);
-    }elseif($userInfo['is_agent'] == -1) alert($mainValues['agency_request_declined']);
+        alert(\achbotMessage('legacy_messages.agency_request_sent'));
+    }elseif($userInfo['is_agent'] == -1) alert(\achbotCurrentMessage('agency_request_declined'));
     elseif($userInfo['is_agent'] == 1) editText($message_id,\achbotMessage('agent.applications.request_agency.message.b059640ccc'),getMainKeys());
 }
 // Resolve exactly one pending applicant before a state transition. The legacy
@@ -101,14 +101,14 @@ if(preg_match('/^agencyDecline([1-9][0-9]*)$/D', (string)$data, $match) &&
         $stmt->close();
         if ($changed) {
             editKeys(json_encode(['inline_keyboard'=>[
-                [['text'=>$buttonValues['declined'],'callback_data'=>"wizwizch"]]
+                [['text'=>\achbotMessage('legacy_buttons.declined'),'callback_data'=>"wizwizch"]]
             ]]));
-            sendMessage($mainValues['agency_request_declined'], null, null, $applicant);
+            sendMessage(\achbotCurrentMessage('agency_request_declined'), null, null, $applicant);
         } else {
-            alert($mainValues['config_not_found']);
+            alert(\achbotMessage('legacy_messages.config_not_found'));
         }
     } else {
-        alert($mainValues['config_not_found']);
+        alert(\achbotMessage('legacy_messages.config_not_found'));
     }
 }
 if(preg_match('/^agencyApprove([1-9][0-9]*)$/D', (string)$data, $match) &&
@@ -116,13 +116,13 @@ if(preg_match('/^agencyApprove([1-9][0-9]*)$/D', (string)$data, $match) &&
     $applicant = filter_var($match[1], FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
     if ($applicant !== false && achbotPendingAgencyApplicantId($connection, $applicant) !== null) {
         setUser($data . "_" . $message_id);
-        sendMessage($mainValues['send_agent_discount_percent'], $cancelKey);
+        sendMessage(\achbotMessage('legacy_messages.send_agent_discount_percent'), $cancelKey);
     } else {
-        alert($mainValues['config_not_found']);
+        alert(\achbotMessage('legacy_messages.config_not_found'));
     }
 }
 if(preg_match('/^agencyApprove([1-9][0-9]*)_([1-9][0-9]*)$/D', (string)($userInfo['step'] ?? ''), $match) &&
-    $text != $buttonValues['cancel'] && ($from_id == $admin || !empty($userInfo['isAdmin']))){
+    $text != \achbotMessage('legacy_buttons.cancel') && ($from_id == $admin || !empty($userInfo['isAdmin']))){
     if(is_numeric($text)){
         $applicant = filter_var($match[1], FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
         $originalMessage = filter_var($match[2], FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
@@ -134,16 +134,16 @@ if(preg_match('/^agencyApprove([1-9][0-9]*)_([1-9][0-9]*)$/D', (string)($userInf
             setUser(); // Only the acting administrator's wizard step is cleared.
             if ($changed) {
                 editKeys(json_encode(['inline_keyboard'=>[
-                    [['text'=>$buttonValues['approved'],'callback_data'=>"wizwizch"]]
+                    [['text'=>\achbotMessage('legacy_buttons.approved'),'callback_data'=>"wizwizch"]]
                 ]]), $originalMessage);
-                sendMessage($mainValues['saved_successfuly']);
-                sendMessage($mainValues['agency_request_approved'], null, null, $applicant);
+                sendMessage(\achbotMessage('legacy_messages.saved_successfuly'));
+                sendMessage(\achbotMessage('legacy_messages.agency_request_approved'), null, null, $applicant);
             } else {
-                alert($mainValues['config_not_found']);
+                alert(\achbotMessage('legacy_messages.config_not_found'));
             }
         } else {
             setUser();
-            alert($mainValues['config_not_found']);
+            alert(\achbotMessage('legacy_messages.config_not_found'));
         }
-    } else sendMessage($mainValues['send_only_number']);
+    } else sendMessage(\achbotMessage('legacy_messages.send_only_number'));
 }

@@ -29,7 +29,7 @@ if ($data === "unbanUser") {
         sendMessage(\achbotMessage('admin.bans.unban_user.message.450fb58659'), $cancelKey, 'HTML');
     }
 }
-if (($userInfo['step']??null)==='banUser' && $text!==$buttonValues['cancel']) {
+if (($userInfo['step']??null)==='banUser' && $text!==\achbotMessage('legacy_buttons.cancel')) {
     if (is_string($text) && preg_match('/\A[1-9][0-9]{0,18}\z/D',$text)===1) {
         $status=achbotLegacyModerationTransition(
             $connection,$update,(int)$from_id,(int)$chat_id,(int)$message_id,
@@ -42,8 +42,8 @@ if (($userInfo['step']??null)==='banUser' && $text!==$buttonValues['cancel']) {
             sendMessage(\achbotMessage('admin.bans.unban_user.message.8764ea2164'), null, 'HTML');
         }
         if ($status==='changed' || $status==='already')
-            sendMessage($mainValues['reached_main_menu'], getAdminKeys(), 'HTML');
+            sendMessage(\achbotCurrentMessage('reached_main_menu'), getAdminKeys(), 'HTML');
     } else {
-        sendMessage($mainValues['send_only_number']);
+        sendMessage(\achbotMessage('legacy_messages.send_only_number'));
     }
 }

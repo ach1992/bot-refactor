@@ -21,7 +21,7 @@ if (($achbotOrderAdminRoute || $achbotOrderAdminStep) &&
     return;
 }
 // Cancel is owned here and completes once, retaining the operator's context.
-if ($achbotOrderAdminStep && ($text??null)===($buttonValues['cancel']??null)) {
+if ($achbotOrderAdminStep && ($text??null)===(\achbotMessage('legacy_buttons.cancel')??null)) {
     $ownedStep=(string)$userInfo['step'];
     $id=preg_match('/^(?:manageOrderById_|awaitingExpireChange_|awaitingToken_|awaitingUUID_)([1-9][0-9]*)$/D',$ownedStep,$ownedMatch)?(int)$ownedMatch[1]:0;
     $stmt=$connection->prepare("UPDATE users SET step='none',temp=NULL WHERE userid=? AND step=?");
@@ -31,7 +31,7 @@ if ($achbotOrderAdminStep && ($text??null)===($buttonValues['cancel']??null)) {
     sendMessage(\achbotMessage('admin_settings.management.canceled'),$removeKeyboard, 'HTML');
     $order=$id>0?\AchBot\Subscription\AccountDetails\findOrder($id):null;
     if ($order) showOrderManagementPanel($order);
-    else sendMessage($mainValues['reached_main_menu'], getAdminKeys(), 'HTML');
+    else sendMessage(\achbotCurrentMessage('reached_main_menu'), getAdminKeys(), 'HTML');
     return;
 }
 
@@ -66,7 +66,7 @@ if ($data == "manageorderdatabase" && ($from_id == $admin || $userInfo['isAdmin'
     sendMessage(\achbotMessage('subscription.order_management.manageorderdatabase.message.e16b131103'), $cancelKey, "HTML");
     setUser("awaitingOrderRemarkOnly");
 }
-if ($userInfo['step'] == "awaitingOrderRemarkOnly" && $text != $buttonValues['cancel']) {
+if ($userInfo['step'] == "awaitingOrderRemarkOnly" && $text != \achbotMessage('legacy_buttons.cancel')) {
     $remark = trim($text);
     $remark = mysqli_real_escape_string($connection, $remark);
 
@@ -329,7 +329,7 @@ if (preg_match('/^deleteOrder_([1-9][0-9]*)$/D',(string)$data,$match)) {
     if (!$exists) {alert(\achbotMessage('subscription.order_management.show_order_management_panel.alert.0ffc3a1ad2'),true);return;}
     editText($message_id,\achbotMessage('admin_settings.management.local_delete_confirm'),json_encode(['inline_keyboard'=>[
         [['text'=>\achbotMessage('admin_settings.management.confirm_local_delete'),'callback_data'=>'confirmDeleteOrder_'.$id]],
-        [['text'=>$buttonValues['cancel'],'callback_data'=>'returnToPanel_'.$id]]
+        [['text'=>\achbotMessage('legacy_buttons.cancel'),'callback_data'=>'returnToPanel_'.$id]]
     ]]),'HTML');
     return;
 }
@@ -438,7 +438,7 @@ if (preg_match('/^changeExpireDate_(\\d+)/', $data, $match)) {
     setUser("awaitingExpireChange_$id");
 }
 
-if (preg_match('/^awaitingExpireChange_(\\d+)/', $userInfo['step'], $match) && $text!=$buttonValues['cancel']) {
+if (preg_match('/^awaitingExpireChange_(\\d+)/', $userInfo['step'], $match) && $text!=\achbotMessage('legacy_buttons.cancel')) {
     $id = intval($match[1]);
     if (!is_string($text) || preg_match('/^-?[1-9][0-9]{0,4}$/D',$text)!==1 || abs((int)$text)>36500) {
         sendMessage(\achbotMessage('admin_settings.management.local_expiry_prompt'),$cancelKey,'HTML');return;
@@ -472,7 +472,7 @@ if (preg_match('/^changeToken_(\\d+)/', $data, $match)) {
     setUser("awaitingToken_$id");
 }
 
-if (preg_match('/^awaitingToken_(\\d+)/', $userInfo['step'], $match) && $text != $buttonValues['cancel']) {
+if (preg_match('/^awaitingToken_(\\d+)/', $userInfo['step'], $match) && $text != \achbotMessage('legacy_buttons.cancel')) {
     $id = intval($match[1]);
     $identityProvider=achbotManagementIdentityProvider($connection,$id);
     if ($identityProvider!=='marzban') {
@@ -505,7 +505,7 @@ if (preg_match('/^changeUUID_(\\d+)/', $data, $match)) {
     setUser("awaitingUUID_$id");
 }
 
-if (preg_match('/^awaitingUUID_(\\d+)/', $userInfo['step'], $match) && $text != $buttonValues['cancel']) {
+if (preg_match('/^awaitingUUID_(\\d+)/', $userInfo['step'], $match) && $text != \achbotMessage('legacy_buttons.cancel')) {
     $id = intval($match[1]);
     $identityProvider=achbotManagementIdentityProvider($connection,$id);
     if ($identityProvider!=='marzban') {
@@ -626,7 +626,7 @@ if (preg_match('/^reviewPlanCorrection_([1-9][0-9]*)_([1-9][0-9]*)$/D',
     $keyboard=['inline_keyboard'=>[
         [[ 'text'=>\achbotMessage('subscription.service_plan_correction.confirm'),
             'callback_data'=>'confirmPlanCorrection_'.$journalId.'_'.$orderId ]],
-        [[ 'text'=>$buttonValues['back_button']??\achbotMessage('subscription.order_management.show_order_management_panel.button.b35a2352f5'),
+        [[ 'text'=>\achbotMessage('legacy_buttons.back_button')??\achbotMessage('subscription.order_management.show_order_management_panel.button.b35a2352f5'),
             'callback_data'=>'returnToPanel_'.$orderId ]]
     ]];
     sendMessage(\achbotMessage('subscription.service_plan_correction.warning'),

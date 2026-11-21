@@ -40,7 +40,7 @@ if (preg_match('/^adminAssign\\|([1-9][0-9]{0,18})\\|(manager|operator|support)$
     }
     editText($message_id,achbotMessage('admin.roles.saved'),getAdminsKeys(),'HTML');
 }
-if ($achbotRoleInput && ($text??null)!==($buttonValues['cancel']??null)) {
+if ($achbotRoleInput && ($text??null)!==(\achbotMessage('legacy_buttons.cancel')??null)) {
     if (!is_string($text) || !preg_match('/^[1-9][0-9]{0,18}$/D',$text) || (int)$text===(int)$admin) {
         sendMessage(achbotMessage('admin.roles.target_prompt'),$cancelKey,'HTML');return;
     }

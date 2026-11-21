@@ -161,7 +161,7 @@ function achbotAutoBankFinishBuySub(mysqli $db, array $pay, array $lines, ?array
  * Incomplete multi-account orders intentionally remain pending for review.
  */
 function achbotAutoBankProvisionBuySub(
-    mysqli $db, array $pay, array $botState, array $buttonValues,
+    mysqli $db, array $pay, array $botState,
     array $unusedLinkIndices, bool $unusedHideConfigIfMany, string $botUrl,
     ?array $apiProof=null, ?callable $exactAccountGet=null,
     int $recoveryActor=0,int $primaryOwner=0
@@ -270,7 +270,7 @@ function achbotAutoBankProvisionBuySub(
             (string)$p['protocol'],$remark,$port,(string)$p['net_type'],0,
             (int)$p['rahgozar'],(string)$p['custom_path'],
             (string)$p['custom_port'],(string)$p['custom_sni'],
-            $response,$owner,$volume,$days,$buttonValues,[],
+            $response,$owner,$volume,$days,[],
             false,'',null,false
         );
         if (!is_string($token) || ($p['panel_type']==='marzban' && $token==='') ||

@@ -24,7 +24,6 @@ if (!function_exists('buildLinksAndSendQr')) {
         $uid,
         $volume,
         $days,
-        $buttonValues,
         $unusedLinkIndices,
         $unusedHideConfigIfMany,
         $qrPublicPrefix = '',
@@ -102,7 +101,7 @@ if (!function_exists('buildLinksAndSendQr')) {
         };
         $acc_text = \AchBot\Subscription\Presentation\fitMessage($presentation, $compose);
 
-        $btnText = $buttonValues['start_bot'] ?? ($buttonValues['my_subscriptions'] ?? \achbotMessage('subscription.buy_helpers.build_links_and_send_qr.start.e4bb9f1ece'));
+        $btnText = \achbotMessage('legacy_buttons.start_bot');
         $u = (string)($botUsername ?? '');
 
         if ($u !== '') {

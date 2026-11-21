@@ -8,8 +8,7 @@ require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
 
 
 function getAgentDiscounts($agentId){
-    global $connection, $mainValues, $buttonValues, $botState;
-    
+    global $connection, $botState;
     $stmt = $connection->prepare("SELECT * FROM `users` WHERE `is_agent` = 1 AND `userid` = ?");
     $stmt->bind_param("i", $agentId);
     $stmt->execute();
@@ -57,6 +56,6 @@ function getAgentDiscounts($agentId){
     }
     if($botState['agencyPlanDiscount']=="on")$keys[] = [['text' => \achbotMessage('payment.agent_discounts.get_agent_discounts.button.d15a8dbd6d'), 'callback_data' => "addDiscountPlanAgent" . $agentId]];
     else $keys[] = [['text' => \achbotMessage('payment.agent_discounts.get_agent_discounts.button.82aaebb083'), 'callback_data' => "addDiscountServerAgent" . $agentId]];
-    $keys[] = [['text' => $buttonValues['back_button'], 'callback_data' => "agentsList"]];
+    $keys[] = [['text' => \achbotMessage('legacy_buttons.back_button'), 'callback_data' => "agentsList"]];
     return json_encode(['inline_keyboard'=>$keys]);
 }

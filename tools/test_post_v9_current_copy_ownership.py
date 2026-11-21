@@ -24,6 +24,8 @@ DYNAMIC_PREFIXES = {
     "payment_settings.api.",
     "payment_settings.api.field.",
     "payment_settings.api.hint.",
+    "legacy_messages.",
+    "legacy_buttons.",
 }
 RETIRED = (
     "editServerNames", "editDestName", "editSpiderX", "editFlow", "editPFlow",
@@ -192,84 +194,86 @@ def finite_dynamic_keys(sources: dict[str, str]) -> set[str]:
 
 def indirect_legacy_keys(sources: dict[str, str],
                          scans: dict[str, dict] | None = None) -> dict[str, set[str]]:
-    """Resolve current dynamic/aliased array consumers from actual callsites."""
+    """Resolve finite producer domains for dynamic *direct* catalog consumers.
+
+    No global mutable message/button maps are read by the current runtime.
+    A coincidental quoted short name does not prove a catalog consumer.
+    """
     if scans is None:
         scans = source_call_inventory(sources)
     config = php_function(scans["config.php"]["clean"], "getAdminKeys")
     mapping = re.search(r"\$rows\s*=\s*\[(.*?)\];\s*\$keyboard", config, re.S)
-    check(mapping is not None and "$buttonValues[$key]" in config,
+    check(mapping is not None and
+          "achbotMessage('legacy_buttons.'.$key)" in config,
           "admin_button_menu_key_binding_changed")
     admin_buttons = set(re.findall(
         r"""\[\s*'([a-z_]+)'\s*,\s*'[^']+'\s*\]""", mapping.group(1)))
     admin_buttons -= {"__review", "gateway_rules_settings"}
     check(admin_buttons, "admin_button_menu_empty")
 
-    wallet = sources["src/Finance/Routes/AdminWallet.php"]
-    modes = re.search(r"\$achbotWalletModes\s*=\s*\[(.*?)\];", wallet, re.S)
-    check(modes is not None and "sendMessage($mainValues[$prompt])" in wallet,
+    # The actual finite prompt selector is in the route body, not the
+    # report helper. Verify the route sink and its source-local producer.
+    wallet_route = scans["src/Finance/Routes/AdminWallet.php"]["clean"]
+    modes = re.search(r"\$achbotWalletModes\s*=\s*\[(.*?)\];", wallet_route, re.S)
+    check(modes is not None and
+          "sendMessage(\\achbotMessage('legacy_messages.'.$prompt))" in wallet_route,
           "admin_wallet_prompt_binding_changed")
     wallet_prompts = set(re.findall(
         r"""'[^']+'\s*=>\s*\[\s*'[^']+'\s*,\s*'[^']+'\s*,\s*'([^']+)'\s*\]""",
         modes.group(1)))
     check(wallet_prompts, "admin_wallet_prompt_set_empty")
 
-    receipts = sources["src/Finance/ReceiptHelpers.php"]
+    receipts = scans["src/Finance/ReceiptHelpers.php"]["clean"]
     manual = php_function(receipts, "achbotManualReceiptPrompt")
     match = re.search(r"\$key\s*=\s*match\s*\(\s*\$method\s*\)\s*\{(.*?)\};",
                       manual, re.S)
-    check(match is not None and "return $mainValues[$key]" in manual,
+    check(match is not None and
+          "return \\achbotMessage('legacy_messages.'.$key)" in manual,
           "manual_receipt_prompt_binding_changed")
     receipt_prompts = set(re.findall(
         r"""=>\s*'([a-z_]+)'""", match.group(1)))
     check(receipt_prompts, "manual_receipt_prompt_set_empty")
+
+    # Both manual payment quote branches are finite and source-typed.
+    quote = php_function(receipts, "buildCartToCartInfoMessage")
     templates = re.findall(
-        r"""\$mainValues\[\s*\$method\s*===\s*'[^']+'\s*\?\s*'([^']+)'\s*"""
-        r""":\s*'([^']+)'\s*\]""", receipts)
-    check(len(templates) == 2, "manual_receipt_invoice_templates_changed")
+        r"""\?\s*'([^']+)'\s*:\s*'([^']+)'\s*\)\s*\)""",
+        quote)
+    check("achbotMessage('legacy_messages.'.($method === 'manual_trx'" in quote
+          and "achbotMessage('legacy_messages.'.($method === 'gift_card'" in quote
+          and len(templates) == 2,
+          "manual_receipt_invoice_templates_changed")
     for pair in templates:
         receipt_prompts.update(pair)
 
-    # Every current dynamic legacy index must be accounted for. The two
-    # indexes in Presentation/Text.php are assignments in the renderer,
-    # not read consumers of a catalog entry.
-    actual = []
+    # A pure formatting routine takes a *local* map argument. No runtime
+    # legacy mutable globals, indexed reads or writes may creep back.
     for path, code in sources.items():
-        for m in re.finditer(
-            r"""\$(mainValues|buttonValues)\[\s*(?!['"])([^\]]+)\]""",
-            code, re.S,
-        ):
-            actual.append((path, m.group(1), " ".join(m.group(2).split())))
-    expected = [
-        ("config.php", "buttonValues", "$key"),
-        ("src/Finance/Routes/AdminWallet.php", "mainValues", "$prompt"),
-        ("src/Finance/ReceiptHelpers.php", "mainValues", "$key"),
-        ("src/Finance/ReceiptHelpers.php", "mainValues",
-         "$method === 'manual_trx' ? 'brw_cart_to_cart_trx' : 'brw_cart_to_cart_usdt'"),
-        ("src/Finance/ReceiptHelpers.php", "mainValues",
-         "$method === 'gift_card' ? 'brw_cart_to_cart_gift' : 'brw_cart_to_cart_detail'"),
-        ("src/Presentation/Text.php", "mainValues", "$key"),
-        ("src/Presentation/Text.php", "mainValues", "$key"),
-    ]
-    check(sorted(actual) == sorted(expected),
-          "unclassified_indirect_catalog_indexes:" +
-          str(sorted(set(actual) ^ set(expected))[:8]))
+        check(not scans[path]["global_aliases"],
+              "legacy_global_alias_reintroduced:" + path)
+        if path == "src/Presentation/Text.php":
+            continue
+        check(re.search(r"\$(?:mainValues|buttonValues|mainVAlues)\b",
+                        scans[path]["clean"]) is None,
+              "global_legacy_map_reintroduced:" + path)
     render = sources["src/Presentation/Text.php"]
     check("$mainValues[$key] = $value;" in render and
           "$mainValues[$key] = replacePlaceholders(" in render,
-          "presentation_index_is_no_longer_write_only")
+          "pure_presentation_map_changed")
+
+    status = php_function(scans["src/Subscription/AccountDetails.php"]["clean"],
+                          "getOrderStatusText")
     detail = scans["src/Subscription/AccountDetails.php"]["clean"]
-    status = php_function(detail, "getOrderStatusText")
     external = scans["src/Subscription/ExternalAccounts.php"]["clean"]
-    check("array $buttons" in status and
-          detail.count("getOrderStatusText($traffic,$serverType,$buttonValues") == 2 and
-          re.search(r"getOrderStatusText\(\s*\$observation.{0,160}?\$buttonValues",
+    check("array $traffic,string $serverType): string" in status and
+          "achbotMessage('legacy_buttons.active')" in status and
+          "achbotMessage('legacy_buttons.deactive')" in status and
+          detail.count("getOrderStatusText($traffic,$serverType)") == 2 and
+          re.search(r"getOrderStatusText\(\s*\$observation.{0,160}?\$match\['type'\]\)",
                     external, re.S) is not None,
-          "subscription_status_catalog_alias_binding_changed")
-    status_buttons = set(re.findall(
-        r"""\$buttons\[\s*['"]([a-z_]+)['"]\s*\]""", status))
-    check({"active", "deactive"} <= status_buttons,
-          "subscription_status_button_alias_lost")
-    return {"legacy_buttons": admin_buttons | status_buttons,
+          "subscription_status_direct_catalog_binding_changed")
+
+    return {"legacy_buttons": admin_buttons | {"active", "deactive"},
             "legacy_messages": wallet_prompts | receipt_prompts}
 
 
@@ -377,27 +381,40 @@ def unresolved_copy_orphans(groups: dict[str, dict],
     indirect = indirect_legacy_keys(sources, scans)
     qualified = set().union(*(set(row["literal"]) for row in scans.values()))
     qualified.update(finite_indirect_qualified_keys(scans))
-    direct = {
-        "legacy_messages": set().union(*(set(row["main_indexes"]) for row in scans.values())),
-        "legacy_buttons": set().union(*(set(row["button_indexes"]) for row in scans.values())),
-    }
+    qualified.update(finite)
+    contexts = set().union(*(set(row["context"]) for row in scans.values()))
+    check(contexts == {
+        "start_message", "user_welcome_message", "reached_main_menu",
+        "buy_subscription_detail", "buy_much_subscription_detail",
+        "banned", "join_channel_message", "send_config_uuid",
+        "agency_request_declined", "new_member_joined",
+    }, "context_message_producer_inventory_changed:" + str(sorted(contexts)))
+    helper = php_function(scans["src/Admin/InstanceContent.php"]["clean"],
+                          "achbotInstanceContextMessage")
+    check("achbotMessage('legacy_messages.'.$key)" in helper and
+          "achbotInstanceMessage($state,$key,$actor)" in helper and
+          "replacePlaceholders(" in helper and
+          "achbotInstanceContextMessage($key)" in
+          scans["messages/loader.php"]["clean"],
+          "context_message_bindings_changed")
+    qualified.update("legacy_messages." + key for key in contexts
+                     if key not in ("start_message", "user_welcome_message",
+                                    "reached_main_menu"))
+    # Per-instance fields are not global editable catalog keys.
     orphans = []
     for topic, entries in groups.items():
         for key in entries:
-            if topic in direct:
-                used = key in direct[topic] or key in indirect[topic]
-            else:
-                name = topic + "." + key
-                used = name in qualified or name in finite
+            name = topic + "." + key
+            used = name in qualified or key in indirect.get(topic, set())
             if not used:
-                orphans.append(topic + "." + key)
+                orphans.append(name)
     return sorted(orphans)
 
 
 def verify_live_subscription_status_labels(sources: dict[str, str]) -> int:
     """Run the real status renderer with the loaded catalog; no config/DB/HTTP."""
     detail = sources["src/Subscription/AccountDetails.php"]
-    check(detail.count("getOrderStatusText($traffic,$serverType,$buttonValues") == 2,
+    check(detail.count("getOrderStatusText($traffic,$serverType)") == 2,
           "customer_admin_status_callsite_changed")
     script = r"""
     error_reporting(E_ALL);
@@ -415,7 +432,7 @@ def verify_live_subscription_status_labels(sources: dict[str, str]) -> int:
                 throw new RuntimeException('catalog_subscription_label_missing:'.$status);
             $traffic=['found'=>true,'uncertain'=>false,'status'=>$status];
             $actual=\AchBot\Subscription\AccountDetails\getOrderStatusText(
-                $traffic,$provider,$buttons);
+                $traffic,$provider);
             if ($actual!==$label)
                 throw new RuntimeException('catalog_subscription_label_changed:'.$status);
             $passes++;
@@ -459,9 +476,9 @@ def main() -> None:
     main_keys = set().union(*(set(row["main_indexes"]) for row in scans.values()))
     button_keys = set().union(*(set(row["button_indexes"]) for row in scans.values()))
     missing_main = main_keys - set(groups["legacy_messages"])
-    check(missing_main == {"start_message", "user_welcome_message",
-                           "reached_main_menu"},
-          "mainValues_unknown_source:" + str(sorted(missing_main)))
+    check(not main_keys and not button_keys,
+          "global_legacy_catalog_index_reintroduced:" +
+          str(sorted(main_keys | button_keys)))
     check(button_keys <= set(groups["legacy_buttons"]),
           "buttonValues_unknown_source")
     finite_proof = finite_dynamic_keys(sources)
@@ -502,6 +519,22 @@ def main() -> None:
     expected_orphan = ["manual_payment.api_payment.status_monitoring"]
     check(unresolved_copy_orphans(restored_monitoring, sources) == expected_orphan,
           "qualified_orphan_current_negative")
+    shadow_alias = dict(sources)
+    shadow_alias["src/Admin/Access.php"] += (
+        "\n$GLOBALS['mainValues']['cancel'] ?? null;\n")
+    try:
+        unresolved_copy_orphans(groups, shadow_alias)
+    except AssertionError as error:
+        check("legacy_global_alias_reintroduced" in str(error),
+              "legacy_alias_negative_wrong_failure")
+    else:
+        raise AssertionError("legacy_global_alias_escaped_detection")
+    comment_only = dict(sources)
+    comment_only["src/Admin/Access.php"] += (
+        "\n// $GLOBALS['mainValues']['cancel'] is not executable.\n")
+    check(not unresolved_copy_orphans(groups, comment_only),
+          "legacy_global_alias_comment_false_positive")
+
     for injected in (
         "// unrelated: 'manual_payment.api_payment.status_monitoring'\n",
         "$unused = 'manual_payment.api_payment.status_monitoring';\n",

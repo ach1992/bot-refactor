@@ -163,7 +163,16 @@ def canonical_expression(source: str) -> str:
             normalized.append(char)
     if quote is not None:
         raise ValueError("unterminated PHP literal in audited argument")
-    return "".join(normalized)
+    expression = "".join(normalized)
+    # The original reviewed keyboards read catalog-derived $buttonValues.
+    # A direct lookup of the *same immutable catalog key* has identical text.
+    # This canonical form retains the established goldens, including each
+    # callback/parse-mode argument, instead of accepting new fingerprints.
+    return re.sub(
+        r"""\\achbotMessage\(['"]legacy_buttons\.([a-z0-9_]+)['"]\)""",
+        lambda hit: "$buttonValues['" + hit.group(1) + "']",
+        expression,
+    )
 
 
 def audit_digest(records: list, data: dict[str, tuple[str, bool]]) -> str:
@@ -293,6 +302,12 @@ def inventory(source: str, data: dict[str, tuple[str, bool]]):
         if hit is None:
             continue
         name = hit.group(2)
+        # The legacy source-map removal exposes many previously indirect
+        # Markdown/plain producers as direct literal catalog lookups.
+        # They were never among the separately approved static HTML sends:
+        # preserve their original wire modes, audited by source-output parity.
+        if name.startswith("legacy_messages."):
+            continue
         if name not in data:
             raise AssertionError(f"unknown catalog key: {name}")
         opening = source.index("(", hit.start())
@@ -324,6 +339,8 @@ def test_source_scanner_regressions(data: dict[str, tuple[str, bool]]) -> None:
         if not DIRECT_FIRST_ARG.fullmatch(args[0]):
             continue
         name = match.group(2)
+        if name.startswith("legacy_messages."):
+            continue
         if not eligible(*data[name]):
             continue
         line_start = source.rfind("\n", 0, start) + 1

@@ -160,7 +160,7 @@ if ($data === 'increaseMyWallet') {
             ['text' => \achbotMessage('wallet.wallet_recharge.wallet_topup_amount_problem.button.5e7e50f6fe'), 'callback_data' => 'increaseWalletCustom'],
         ],
         [
-            ['text' => $buttonValues['cancel'], 'callback_data' => 'mainMenu'],
+            ['text' => \achbotMessage('legacy_buttons.cancel'), 'callback_data' => 'mainMenu'],
         ],
     ];
     $keys = json_encode(['inline_keyboard' => $keyboard], JSON_UNESCAPED_UNICODE);
@@ -202,7 +202,7 @@ if (strpos($data, 'increaseWallet_') === 0) {
         sendMessage(\achbotMessage('wallet.wallet_recharge.wallet_topup_amount_problem.message.778b5776b6'), null, 'HTML');
         return;
     }
-    $result = startWalletPayment($connection, $botState, $buttonValues, $botUrl,
+    $result = startWalletPayment($connection, $botState, $botUrl,
         $from_id, $removeKeyboard, $amount, $selectStep,
         $update->update_id, $message_id);
     if ($result === 'created') {
@@ -247,7 +247,7 @@ if ($data === 'increaseWalletCustom') {
 }
 
 $amountStep = (string)($userInfo['step'] ?? 'none');
-if ($text != ($buttonValues['cancel'] ?? null) &&
+if ($text != (\achbotMessage('legacy_buttons.cancel') ?? null) &&
     preg_match('/\AachbotWalletTopup:amount:([1-9][0-9]*):([1-9][0-9]*):([1-9][0-9]*)\z/D',
                $amountStep, $pending) === 1 &&
     achbotWalletTopupPrivateText($update ?? null, $from_id ?? null,
@@ -264,7 +264,7 @@ if ($text != ($buttonValues['cancel'] ?? null) &&
         sendMessage($problem);
         return;
     }
-    $result = startWalletPayment($connection, $botState, $buttonValues, $botUrl,
+    $result = startWalletPayment($connection, $botState, $botUrl,
         $from_id, $removeKeyboard, $amount, $amountStep,
         $update->update_id, $message_id);
     if ($result === 'review') {
@@ -292,7 +292,7 @@ if (is_string($data) && (strlen($data) <= 64 || ($GLOBALS['achbotManualCryptoVer
         return;
     }
 
-	$msg = buildCartToCartInfoMessage($paymentKeys, $mainValues, (int)$payInfo['price'], (int)$payInfo['user_id'], $method, (string)$payInfo['hash_id']);
+	$msg = buildCartToCartInfoMessage($paymentKeys, (int)$payInfo['price'], (int)$payInfo['user_id'], $method, (string)$payInfo['hash_id']);
     if ($msg === "") {
         alert(\achbotMessage('wallet.wallet_recharge.wallet_topup_amount_problem.alert.07ee06b4bc'), true);
         return;
@@ -345,14 +345,14 @@ if (preg_match('/send(?:IncreaseWallet|IncreaseWalletGift|IncreaseWalletUsdt)Rec
     setUser((in_array($method, ['manual_usdt','manual_trx'], true) ? "waitIncreaseWalletUsdtReceipt" : ($method === 'gift_card' ? "waitIncreaseWalletGiftReceipt" : "waitIncreaseWalletReceipt")) . $match['hashId']);
 
     $keyboard = kbOnlyCancel("cancelIncreaseWalletReceipt", $match['hashId']);
-    $sent=sendMessage(achbotManualEvidencePrompt($mainValues,$connection,$payInfo,$method), $keyboard, "HTML");
+    $sent=sendMessage(achbotManualEvidencePrompt($connection,$payInfo,$method), $keyboard, "HTML");
     require_once __DIR__ . '/../PaymentLifecycle.php';
     achbotPayUxTrackByHash($connection,(string)$match['hashId'],(int)$from_id,$sent);
     exit;
 }
 
 if (preg_match('/cancelIncreaseWalletReceipt(?<hashId>.*)/', $data, $match)) {
-    handleCancelFlow($mainValues, $removeKeyboard);
+    handleCancelFlow( $removeKeyboard);
 }
 
 if (preg_match('/wait(?:IncreaseWallet|IncreaseWalletGift|IncreaseWalletUsdt)Receipt(.*)/', $userInfo['step'], $match)) {
@@ -368,7 +368,7 @@ if (preg_match('/wait(?:IncreaseWallet|IncreaseWalletGift|IncreaseWalletUsdt)Rec
     $fileid = achbotManualEvidenceInput($update, $connection, $receiptPay, $method);
     if ($fileid === null) {
         $keyboard = kbOnlyCancel("cancelIncreaseWalletReceipt", $match[1]);
-        sendMessage(achbotManualEvidencePrompt($mainValues,$connection,$receiptPay,$method,true), $keyboard, "HTML");
+        sendMessage(achbotManualEvidencePrompt($connection,$receiptPay,$method,true), $keyboard, "HTML");
         exit;
     }
 
@@ -394,7 +394,7 @@ if (preg_match('/wait(?:IncreaseWallet|IncreaseWalletGift|IncreaseWalletUsdt)Rec
     $msg = str_replace(
         ['PRICE', 'USERNAME', 'NAME', 'USER-ID'],
         [$price, $username, $name, $from_id],
-        achbotManualCaption($connection, $receiptPay, $mainValues['increase_wallet_request_message'])
+        achbotManualCaption($connection, $receiptPay, \achbotMessage('legacy_messages.increase_wallet_request_message'))
     );
 
     // The code is checked against this ORIGINAL pinned invoice before any
@@ -417,7 +417,6 @@ if (preg_match('/wait(?:IncreaseWallet|IncreaseWalletGift|IncreaseWalletUsdt)Rec
 
     $adminKeyboard = buildAdminKeyboardWithStats(
         $connection,
-        $buttonValues,
         "approvePayment{$match[1]}",
         "declineAction_{$match[1]}",
         $match[1],
@@ -428,7 +427,7 @@ if (preg_match('/wait(?:IncreaseWallet|IncreaseWalletGift|IncreaseWalletUsdt)Rec
         $msg, $adminKeyboard, $admin, $match[1],
         $deliveryToken,$giftScreen)) {
         setUser();
-        achbotManualAcknowledgeAndVerify($connection,$receiptPay,$method,$buttonValues['start_bot'],$botUsername);
+        achbotManualAcknowledgeAndVerify($connection,$receiptPay,$method,\achbotMessage('legacy_buttons.start_bot'),$botUsername);
     } else {
         sendMessage(\achbotMessage('wallet.wallet_recharge.wallet_topup_amount_problem.message.c346a0d62e'), null, 'HTML');
     }

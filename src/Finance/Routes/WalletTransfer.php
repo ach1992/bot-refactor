@@ -38,7 +38,7 @@ if ($data === 'transferMyWallet') {
 
 $transferStep=(string)$userInfo['step'];
 $pendingTransfer=achbotWalletTransferPending($transferStep);
-if ($text != $buttonValues['cancel'] &&
+if ($text != \achbotMessage('legacy_buttons.cancel') &&
     (($pendingTransfer['stage'] ?? null)==='recipient')) {
     $selection=achbotWalletTransferSource($update ?? null,$from_id ?? null,
         $chat_id ?? null,$message_id ?? null,$text,'message');
@@ -49,7 +49,7 @@ if ($text != $buttonValues['cancel'] &&
     }
     if (preg_match('/^[1-9][0-9]*$/D',(string)$text)!==1 ||
         strlen((string)$text)>19 || (string)(int)$text!==(string)$text) {
-        sendMessage($mainValues['send_only_number']); return;
+        sendMessage(\achbotMessage('legacy_messages.send_only_number')); return;
     }
     if ((int)$text===(int)$from_id) {
         sendMessage(\achbotMessage('wallet.wallet_transfer.wallet_transfer_restart.message.9d368ab3bb'), null, 'HTML'); return;
@@ -66,14 +66,14 @@ if ($text != $buttonValues['cancel'] &&
 if ((str_starts_with($transferStep,'achbotTransferAmount:') ||
      str_starts_with($transferStep,'achbotTransferRecipient:') ||
      str_starts_with($transferStep,'tranfserUserAmount') ||
-     $transferStep==='transferMyWallet') && $text != $buttonValues['cancel']) {
+     $transferStep==='transferMyWallet') && $text != \achbotMessage('legacy_buttons.cancel')) {
     if (($pendingTransfer['stage'] ?? null)!=='amount') {
         // All unversioned/old generations require an authenticated fresh start.
         achbotWalletTransferRestart(); exit;
     }
 
     if (!preg_match('/^[0-9]+$/D', (string)$text)) {
-        sendMessage($mainValues['send_only_number']);
+        sendMessage(\achbotMessage('legacy_messages.send_only_number'));
         exit;
     }
 

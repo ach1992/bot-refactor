@@ -34,7 +34,7 @@ if (is_string($data ?? null) && preg_match('/\AuserInfoDetails([1-9][0-9]*)\z/D'
 
 if(($data == "agentsList" || preg_match('/^nextAgentList(\d+)/',$data,$match)) && $agentDiscountAccess){
     $keys = getAgentsList($match[1]??0);
-    if($keys != null) editText($message_id,$mainValues['agents_list'], $keys);
+    if($keys != null) editText($message_id,\achbotMessage('legacy_messages.agents_list'), $keys);
     else alert(\achbotMessage('agent.discounts.agents_list.alert.6a01bdb6c4'));
 }
 if(preg_match('/^agentDetails(\d+)/',$data,$match) && $agentDiscountAccess){
@@ -42,7 +42,7 @@ if(preg_match('/^agentDetails(\d+)/',$data,$match) && $agentDiscountAccess){
     $userUserName = $userDetail->username;
     $fullName = $userDetail->first_name . " " . $userDetail->last_name;
 
-    editText($message_id,str_replace("AGENT-NAME", $fullName, $mainValues['agent_details']), getAgentDetails($match[1]));
+    editText($message_id,str_replace("AGENT-NAME", $fullName, \achbotMessage('legacy_messages.agent_details')), getAgentDetails($match[1]));
 }
 if(preg_match('/^removeAgent(\d+)/',$data,$match) && $agentDiscountAccess){
     $stmt = $connection->prepare("UPDATE `users` SET `is_agent` = 0 WHERE `userid` = ?");
@@ -50,10 +50,10 @@ if(preg_match('/^removeAgent(\d+)/',$data,$match) && $agentDiscountAccess){
     $stmt->execute();
     $stmt->close();
     
-    alert($mainValues['agent_deleted_successfuly']);
+    alert(\achbotMessage('legacy_messages.agent_deleted_successfuly'));
     $keys = getAgentsList();
     if($keys != null) editKeys($keys);
-    else editKeys(json_encode(['inline_keyboard'=>[[['text'=>$buttonValues['back_button'],'callback_data'=>"managePanel"]]]]));
+    else editKeys(json_encode(['inline_keyboard'=>[[['text'=>\achbotMessage('legacy_buttons.back_button'),'callback_data'=>"managePanel"]]]]));
 }
 if(preg_match('/^agentPercentDetails(\d+)/',$data,$match) && $agentDiscountAccess){
     $stmt = $connection->prepare("SELECT * FROM `users` WHERE `userid` = ?");
@@ -63,7 +63,7 @@ if(preg_match('/^agentPercentDetails(\d+)/',$data,$match) && $agentDiscountAcces
     $stmt->close();
     
     $userName = $info['name'];
-    editText($message_id, str_replace("AGENT-NAME", $userName, $mainValues['agent_discount_settings']), getAgentDiscounts($match[1]));
+    editText($message_id, str_replace("AGENT-NAME", $userName, \achbotMessage('legacy_messages.agent_discount_settings')), getAgentDiscounts($match[1]));
 }
 if(preg_match('/^addDiscount(Server|Plan)Agent(\d+)/',$data,$match) && $agentDiscountAccess){
     $stmt = $connection->prepare("SELECT * FROM `users` WHERE `userid` = ?");
@@ -100,7 +100,7 @@ if(preg_match('/^addDiscount(Server|Plan)Agent(\d+)/',$data,$match) && $agentDis
             if($list->num_rows >= $limit){
                 $keys[] = [['text'=>\achbotMessage('agent.discounts.agents_list.button.8f9628264c'),'callback_data'=>"nextAgentDiscountPlan" . $match[2] . "_" . ($offset + $limit)]];
             }
-            $keys[] = [['text' => $buttonValues['back_button'], 'callback_data' => "agentPercentDetails" . $match[2]]];
+            $keys[] = [['text' => \achbotMessage('legacy_buttons.back_button'), 'callback_data' => "agentPercentDetails" . $match[2]]];
             $keys = json_encode(['inline_keyboard'=>$keys]);
             
             editText($message_id,\achbotMessage('agent.discounts.agents_list.message.3c0d01e71b', ['userName' => $userName]),$keys);
@@ -119,7 +119,7 @@ if(preg_match('/^addDiscount(Server|Plan)Agent(\d+)/',$data,$match) && $agentDis
                 $keys[] = [['text'=>$row['title'],'callback_data'=>"editAgentDiscountServer" . $match[2] . "_" . $row['id']]];
             }
             
-            $keys[] = [['text' => $buttonValues['back_button'], 'callback_data' => "agentPercentDetails" . $match[2]]];
+            $keys[] = [['text' => \achbotMessage('legacy_buttons.back_button'), 'callback_data' => "agentPercentDetails" . $match[2]]];
             $keys = json_encode(['inline_keyboard'=>$keys]);
             
             editText($message_id,\achbotMessage('agent.discounts.agents_list.message.3c0d01e71b', ['userName' => $userName]),$keys);
@@ -171,7 +171,7 @@ if(preg_match('/^nextAgentDiscountPlan(?<agentId>\d+)_(?<offset>\d+)/',$data,$ma
                 ['text'=>\achbotMessage('agent.discounts.agents_list.button.a38a46edb9'),'callback_data'=>"nextAgentDiscountPlan" . $match['agentId'] . "_" . ($offset - $limit)]
                 ];
         }
-        $keys[] = [['text' => $buttonValues['back_button'], 'callback_data' => "agentPercentDetails" . $match['agentId']]];
+        $keys[] = [['text' => \achbotMessage('legacy_buttons.back_button'), 'callback_data' => "agentPercentDetails" . $match['agentId']]];
         $keys = json_encode(['inline_keyboard'=>$keys]);
         
         editText($message_id,\achbotMessage('agent.discounts.agents_list.message.3c0d01e71b', ['userName' => $userName]),$keys);
@@ -195,19 +195,19 @@ if(preg_match('/^removePercentOfAgent(?<type>Server|Plan)(?<agentId>\d+)_(?<serv
     $stmt->close();
     
     alert(\achbotMessage('agent.discounts.agents_list.alert.e1e7245408'));
-    editText($message_id, str_replace("AGENT-NAME", $userName, $mainValues['agent_discount_settings']), getAgentDiscounts($match['agentId']));
+    editText($message_id, str_replace("AGENT-NAME", $userName, \achbotMessage('legacy_messages.agent_discount_settings')), getAgentDiscounts($match['agentId']));
 }
 if(preg_match('/^editAgentDiscount(Server|Plan|Normal)(\d+)_(.*)/',$data,$match) && $agentDiscountAccess){
     delMessage();
     $fromUserInfo = $match[1] === 'Normal' && $match[3] === 'userinfo';
     $editorKeys = $fromUserInfo ? json_encode(['inline_keyboard'=>[[
-        ['text'=>$buttonValues['back_button'], 'callback_data'=>'userInfoDetails'.$match[2]]
+        ['text'=>\achbotMessage('legacy_buttons.back_button'), 'callback_data'=>'userInfoDetails'.$match[2]]
     ]]], JSON_UNESCAPED_UNICODE) : $cancelKey;
     sendMessage($fromUserInfo ? \achbotMessage('admin_settings.user_info.agent_percent_prompt')
-        : $mainValues['send_agent_discount_percent'], $editorKeys, 'html');
+        : \achbotMessage('legacy_messages.send_agent_discount_percent'), $editorKeys, 'html');
     setUser($data);
 }
-if(preg_match('/^editAgentDiscount(Server|Plan|Normal)(\d+)_(.*)/',$userInfo['step'],$match) && $agentDiscountAccess && !isset($update->callback_query) && $text != $buttonValues['cancel']){
+if(preg_match('/^editAgentDiscount(Server|Plan|Normal)(\d+)_(.*)/',$userInfo['step'],$match) && $agentDiscountAccess && !isset($update->callback_query) && $text != \achbotMessage('legacy_buttons.cancel')){
     if(is_string($text) && preg_match('/\A[0-9]{1,3}\z/D', $text) && (int)$text <= 100){
         $stmt = $connection->prepare("SELECT * FROM users WHERE userid = ? LIMIT 2");
         $stmt->bind_param('i',$match[2]);
@@ -233,7 +233,7 @@ if(preg_match('/^editAgentDiscount(Server|Plan|Normal)(\d+)_(.*)/',$userInfo['st
         $stmt->bind_param("si", $encodedDiscount, $targetPk);
         $stmt->execute();
         $stmt->close();
-        sendMessage($mainValues['saved_successfuly'],$removeKeyboard);
+        sendMessage(\achbotMessage('legacy_messages.saved_successfuly'),$removeKeyboard);
         setUser();
         if ($match[1] === 'Normal' && $match[3] === 'userinfo') {
             $details = getUserInfoKeys($match[2]);
@@ -241,7 +241,7 @@ if(preg_match('/^editAgentDiscount(Server|Plan|Normal)(\d+)_(.*)/',$userInfo['st
                 \achbotMessage('bot.bot.user_reports.message.e55e5591d2', ['text'=>$match[2]]),
                 json_encode(['inline_keyboard'=>$details['inline_keyboard']], JSON_UNESCAPED_UNICODE), 'html');
         } else {
-            sendMessage(str_replace("AGENT-NAME", $userName, $mainValues['agent_discount_settings']), getAgentDiscounts($match[2]));
+            sendMessage(str_replace("AGENT-NAME", $userName, \achbotMessage('legacy_messages.agent_discount_settings')), getAgentDiscounts($match[2]));
         }
     } else sendMessage(\achbotMessage('admin_settings.user_info.agent_percent_invalid'), null, 'HTML');
 }

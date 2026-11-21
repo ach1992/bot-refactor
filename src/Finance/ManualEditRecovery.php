@@ -146,7 +146,7 @@ function achbotManualPgEditRecoverable(mysqli $db,array $pay): bool {
  * the local finalization and never authorizes another native PUT/reset.
  */
 function achbotManualPgStageEditNoticesLocked(mysqli $db,array $e,
-                                              array $mainValues,int $owner): void {
+                                              int $owner): void {
     $pay=$e['pay'];$id=(int)$pay['id'];$actor=(int)$pay['approved_by'];
     $kind=(string)$e['kind'];$remark=(string)$e['order']['remark'];
     if (!achbotFollowupSchemaReady($db) || $owner<=0 || $actor<=0 ||
@@ -178,13 +178,13 @@ function achbotManualPgStageEditNoticesLocked(mysqli $db,array $e,
     }
 
     if ($kind==='renew') {
-        if (!is_string($mainValues['renewed_config_to_user']??null))
+        if (!is_string(\achbotMessage('legacy_messages.renewed_config_to_user')??null))
             throw new RuntimeException('manual_edit_recovery_notice_template_missing');
         $operator=str_replace(
             ['USERID','REMARK','VOLUME','DAYS','PRICE','HASHID'],
             [(int)$pay['user_id'],$remark,$e['volume'],$e['days'],
              (int)$pay['price'],$pay['hash_id']],
-            $mainValues['renewed_config_to_user']);
+            \achbotMessage('legacy_messages.renewed_config_to_user'));
         achbotFollowupInsertLocked($db,$pay,'approved_edit','operator','send',
             (string)$actor,null,
             ['text'=>$operator,'keys'=>getMainKeys(),'mode'=>null]);
@@ -221,7 +221,7 @@ function achbotManualPgEditPending(mysqli $db,array $pay): bool {
  * approved: single local payment, order-expiry and audit COMMIT.
  */
 function achbotManualPgResumeEdit(mysqli $db,string $hash,int $actor,string $kind,
-                                      array $mainValues=[],int $owner=0): ?array {
+                                      int $owner=0): ?array {
     if ($actor<=0 || preg_match('/^[A-Za-z0-9_-]{1,50}$/D',$hash)!==1)
         return ['status'=>'review'];
     $s=$db->prepare('SELECT * FROM pays WHERE hash_id=? LIMIT 1');
@@ -280,7 +280,7 @@ function achbotManualPgResumeEdit(mysqli $db,string $hash,int $actor,string $kin
         if (!$ok) throw new RuntimeException('manual_edit_recovery_payment_unconfirmed');
         $current['pay']['approved_by']=$originalApprover;
         $current['pay']['state']='approved';
-        achbotManualPgStageEditNoticesLocked($db,$current,$mainValues,$owner);
+        achbotManualPgStageEditNoticesLocked($db,$current,$owner);
         if ($db->commit()!==true)
             throw new RuntimeException('manual_edit_recovery_commit_unconfirmed');
         $started=false;

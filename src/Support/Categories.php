@@ -25,7 +25,7 @@ if($data=="ticketsList" and ($from_id == $admin || $userInfo['isAdmin'] == true)
             ['text'=>\achbotMessage('support.categories.tickets_list.button.c77cd22d1c'),'callback_data'=>"allTickets"],
             ['text'=>\achbotMessage('support.categories.tickets_list.button.0e6cb76a8c'),'callback_data'=>"ticketsCategory"]
             ],
-        [['text' => $buttonValues['back_button'], 'callback_data' => "managePanel"]]
+        [['text' => \achbotMessage('legacy_buttons.back_button'), 'callback_data' => "managePanel"]]
         ]]);
     editText($message_id, \achbotMessage('support.categories.tickets_list.message.41905ef3f3'),$ticketSection);
 }
@@ -47,7 +47,7 @@ if($data=='ticketsCategory' and ($from_id == $admin || $userInfo['isAdmin'] == t
         $keys[] = [['text'=>\achbotMessage('support.categories.tickets_category.button.7f9f2e3157'),'callback_data'=>"wizwizch"]];
     }
     $keys[] = [['text'=>\achbotMessage('support.categories.tickets_category.button.ee4edcb19e'),'callback_data'=>"addTicketCategory"]];
-    $keys[] = [['text'=>$buttonValues['back_button'],'callback_data'=>"ticketsList"]];
+    $keys[] = [['text'=>\achbotMessage('legacy_buttons.back_button'),'callback_data'=>"ticketsList"]];
     
     $keys =  json_encode(['inline_keyboard'=>$keys]);
     editText($message_id,\achbotMessage('support.categories.tickets_list.button.0e6cb76a8c'),$keys);
@@ -62,7 +62,7 @@ if ($userInfo['step']=="addTicketCategory" and ($from_id == $admin || $userInfo[
 	$stmt->execute();
 	$stmt->close();
     setUser();
-    sendMessage($mainValues['saved_successfuly']);
+    sendMessage(\achbotMessage('legacy_messages.saved_successfuly'));
     $stmt = $connection->prepare("SELECT * FROM `setting` WHERE `type` = 'TICKETS_CATEGORY'");
     $stmt->execute();
     $ticketCategory = $stmt->get_result();
@@ -82,7 +82,7 @@ if ($userInfo['step']=="addTicketCategory" and ($from_id == $admin || $userInfo[
         $keys[] = [['text'=>\achbotMessage('support.categories.tickets_category.button.7f9f2e3157'),'callback_data'=>"wizwizch"]];
     }
     $keys[] = [['text'=>\achbotMessage('support.categories.tickets_category.button.ee4edcb19e'),'callback_data'=>"addTicketCategory"]];
-    $keys[] = [['text'=>$buttonValues['back_button'],'callback_data'=>"ticketsList"]];
+    $keys[] = [['text'=>\achbotMessage('legacy_buttons.back_button'),'callback_data'=>"ticketsList"]];
     
     $keys =  json_encode(['inline_keyboard'=>$keys]);
     sendMessage(\achbotMessage('support.categories.tickets_list.button.0e6cb76a8c'),$keys, 'HTML');
@@ -115,7 +115,7 @@ if(preg_match("/^delTicketCat_(\d+)/",$data,$match) and ($from_id == $admin || $
         $keys[] = [['text'=>\achbotMessage('support.categories.add_ticket_category.button.fba2c6927b'),'callback_data'=>"wizwizch"]];
     }
     $keys[] = [['text'=>\achbotMessage('support.categories.tickets_category.button.ee4edcb19e'),'callback_data'=>"addTicketCategory"]];
-    $keys[] = [['text'=>$buttonValues['back_button'],'callback_data'=>"ticketsList"]];
+    $keys[] = [['text'=>\achbotMessage('legacy_buttons.back_button'),'callback_data'=>"ticketsList"]];
     
     $keys =  json_encode(['inline_keyboard'=>$keys]);
     editText($message_id, \achbotMessage('support.categories.tickets_list.button.0e6cb76a8c'),$keys);
