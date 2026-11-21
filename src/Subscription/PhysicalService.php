@@ -197,6 +197,57 @@ function achbotPhysicalAssertImportAdmission(mysqli $db,?string $lease,
             [],'physical_import_plan_requires_review');
     }
 }
+/**
+ * Import admission is per customer and proven physical account, not per
+ * logical server. A legitimate transfer may move the customer's one active
+ * reference to another server while the original URL still resolves here.
+ * Caller holds the recipient row lock and the physical import lease inside
+ * its adoption transaction. Retired references never reserve a new account.
+ */
+function achbotPhysicalImportAlreadyAttached(mysqli $db,int $serverId,
+    object $remote,array $proof,int $ownerId): bool {
+    $type=achbotProviderType($db,$serverId);
+    $identity=$proof['identity']??null;
+    $username=$remote->username??null;
+    if ($ownerId<=0 || ($proof['verified']??null)!==true ||
+        ($proof['provider']??null)!==$type || !is_array($identity) ||
+        !is_string($username) || $username==='' ||
+        ($identity['remote_username']??null)!==$username ||
+        !is_string($identity['remote_created_at']??null))
+        throw new RuntimeException('physical_import_identity_unverified');
+    $s=$db->prepare('SELECT o.* FROM orders_list o
+        WHERE o.userid=? AND o.status=1 AND BINARY o.remark=BINARY ?
+        ORDER BY o.id FOR UPDATE');
+    $s->bind_param('is',$ownerId,$username);$s->execute();
+    $orders=$s->get_result()->fetch_all(MYSQLI_ASSOC);$s->close();
+    foreach ($orders as $order) {
+        if (!achbotSameProviderPanel($db,$serverId,(int)$order['server_id'])) continue;
+        if ($type==='pasarguard') {
+            achbotPgLoad();
+            $account=achbotProviderAccountByOrder($db,(int)$order['id'],true);
+            if (!$account || !in_array($account['state'],['linked','verified'],true) ||
+                $account['remote_username']!==$username ||
+                !isset($identity['remote_user_id']) ||
+                !is_int($identity['remote_user_id']))
+                throw new RuntimeException('physical_import_active_identity_ambiguous');
+            if ((int)$account['remote_user_id']!==$identity['remote_user_id'] ||
+                $account['remote_created_at']!==$identity['remote_created_at'])
+                throw new RuntimeException('physical_import_active_incarnation_conflict');
+        } elseif ($type==='marzban') {
+            // Origin is immutable even after a logical-server transfer.
+            // Purchased orders may have no imported origin; their declared
+            // panel scope + exact username still identifies the active peer.
+            require_once __DIR__.'/../Purchase/OrderWrites.php';
+            $origin=achbotOrderImportOrigin($db,$order,true);
+            if ($origin!==null && ($origin['provider']!=='marzban' ||
+                ($origin['native_identity']['remote_created_at']??null)!==
+                    $identity['remote_created_at']))
+                throw new RuntimeException('physical_import_active_incarnation_conflict');
+        } else throw new RuntimeException('physical_import_provider_unavailable');
+        return true;
+    }
+    return false;
+}
 function achbotPhysicalAcquireLock(mysqli $db,string $name): void {
     $s=$db->prepare('SELECT GET_LOCK(?,3) AS acquired');
     $s->bind_param('s',$name);$s->execute();

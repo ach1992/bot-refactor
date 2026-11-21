@@ -276,11 +276,11 @@ if (preg_match('/^addToOrders([1-9][0-9]*)$/D',(string)$data,$match)) {
         // A Native plan journal is an account-wide admission hold, even if
         // this new local reference belongs to a third customer.
         achbotPhysicalAssertImportAdmission($connection,$physicalImportLease,$serverId,$remote);
-        // Retired references can share a username with a new Native account.
-        // Match current references and case-sensitive Native usernames only.
-        $q=$connection->prepare('SELECT id FROM orders_list WHERE server_id=? AND BINARY remark=BINARY ? AND userid=? AND status=1 LIMIT 1 FOR UPDATE');
-        $q->bind_param('isi',$serverId,$remark,$finalUserId);$q->execute();$exists=$q->get_result()->num_rows>0;$q->close();
-        if ($exists) throw new RuntimeException('import_already_attached');
+        // Physical identity, not the chosen logical server, owns duplicate
+        // prevention. A customer may have transferred this same account to
+        // another alias; other customers and retired records remain eligible.
+        if (achbotPhysicalImportAlreadyAttached($connection,$serverId,$remote,$proof,$finalUserId))
+            throw new RuntimeException('import_already_attached');
         $q=$connection->prepare('SELECT token FROM add_link WHERE added_by=? AND remark=? AND BINARY token=BINARY ? LIMIT 1 FOR UPDATE');
         $token=$proof['token'];$q->bind_param('iss',$actor,$remark,$token);$q->execute();$credential=$q->get_result()->fetch_assoc();$q->close();
         if (!$credential) throw new RuntimeException('import_credential_missing');

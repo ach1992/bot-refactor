@@ -186,7 +186,9 @@ def run() -> list[str]:
         sql("UPDATE orders_list SET status=0 WHERE id=102")
         checks.append("stale_live_reference_blocks_same_name_reimport")
         handler=(ROOT/'src/Subscription/ManualAccounts.php').read_text()
-        assert "BINARY remark=BINARY ? AND userid=? AND status=1" in handler
+        shared=(ROOT/'src/Subscription/PhysicalService.php').read_text()
+        assert "achbotPhysicalImportAlreadyAttached(" in handler
+        assert "o.userid=? AND o.status=1 AND BINARY o.remark=BINARY ?" in shared
         checks.append("retired_order_and_exact_case_do_not_block_new_native")
 
         result = php_case("new_incarnation")
