@@ -306,7 +306,8 @@ def check(root: Path = ROOT) -> dict:
         assert verify({'mutate_callback':True},negative=True), (
             'menu_callback_mutation_not_detected')
 
-    return {'verified':True,'real_menu_scenarios':cases,
+    return {'complete':True,'status':'PASS','verified':True,
+            'real_menu_scenarios':cases,
             'source_real_before_after_menu_parity_cases':source_parity_cases,
             'negative_mutated_callback_caught':True,
             'copy_reference_checks':len(references),
