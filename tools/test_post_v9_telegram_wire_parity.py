@@ -10,6 +10,7 @@ No Telegram, user database, production connection or provider is loaded.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 import re
@@ -22,6 +23,13 @@ ROOT = Path(__file__).resolve().parents[1]
 BASE = "4e21e18a3ba50897abc6b393ef0c7f58db39bbf9"
 EXPECTED = {"sendMessage": 694, "editText": 130, "sendPhoto": 12,
             "answerCallbackQuery": 62}
+# Intentional parse-only changes to source-owned, markup-free legacy catalog
+# sends. All other pre-refactor wire arguments retain exact comparison.
+LEGACY_HTML_TRANSITIONS = 74
+LEGACY_HTML_AUDIT = "16eed331aeb2e2fd8c4133fe03d3c0d8318761cd371ebf24d6a073852136009b"
+LEGACY_DIRECT = re.compile(
+    r"""\\achbotMessage\(['"]legacy_messages\.([a-z0-9_]+)['"]\)\Z"""
+)
 PHP_TOKENS = r"""
 $files = json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR);
 $methods = ['sendmessage'=>'sendMessage', 'edittext'=>'editText',
@@ -100,9 +108,44 @@ def original_argument(value: str) -> str:
     return text
 
 
+def intended_legacy_html_change(
+    path: str, index: int, previous_args: list[str], args: list[str],
+    catalog: dict,
+) -> list | None:
+    """Admit only a formerly implicit Markdown -> HTML literal-catalog send.
+
+    The PHP-resolved catalog text must contain no meaningful Markdown/HTML
+    delimiters or parameters. Original text/keyboard expressions and recipient
+    stay byte-equivalent after canonical catalog-lookup relocation. Any new
+    dynamic template, Markdown syntax, changed keyboard or parse mode fails.
+    """
+    if len(previous_args) not in (1, 2) or len(args) != 3:
+        return None
+    first = php_args.canonical_expression(args[0])
+    match = LEGACY_DIRECT.fullmatch(first)
+    if not match or php_args.canonical_expression(args[2]) not in ("'HTML'", '"HTML"'):
+        return None
+    key = match.group(1)
+    catalog_key = 'legacy_messages.' + key
+    if catalog_key not in catalog or not php_args.eligible(*catalog[catalog_key]):
+        return None
+    expected = [php_args.canonical_expression(arg) for arg in previous_args]
+    actual = [original_argument(arg) for arg in args]
+    if expected[0] != "$mainValues['" + key + "']":
+        return None
+    if len(previous_args) == 1:
+        if actual[:2] != [expected[0], 'null']:
+            return None
+    elif actual[:2] != expected:
+        return None
+    return [path, index, key, len(previous_args)]
+
+
 def compare(before: dict, after: dict) -> dict[str, int]:
     assert set(before) == set(after), "telegram_source_membership_changed"
     counts = dict.fromkeys(EXPECTED, 0)
+    catalog = php_args.catalog()
+    transitions = []
     for path in sorted(before):
         previous = before[path]
         current = after[path]
@@ -113,9 +156,17 @@ def compare(before: dict, after: dict) -> dict[str, int]:
             counts[method] += 1
             expected = [php_args.canonical_expression(arg) for arg in previous_args]
             actual = [original_argument(arg) for arg in args]
-            assert expected == actual, ("telegram_wire_argument_changed",
-                                        path, index, expected, actual)
+            if expected != actual:
+                change = (intended_legacy_html_change(path, index, previous_args, args, catalog)
+                          if method == 'sendMessage' else None)
+                assert change is not None, ("telegram_wire_argument_changed",
+                                            path, index, expected, actual)
+                transitions.append(change)
     assert counts == EXPECTED, ("telegram_contract_coverage_changed", counts)
+    digest = hashlib.sha256(json.dumps(transitions, ensure_ascii=False,
+        separators=(',', ':')).encode('utf-8')).hexdigest()
+    assert len(transitions) == LEGACY_HTML_TRANSITIONS and digest == LEGACY_HTML_AUDIT, (
+        'scoped_legacy_html_audit', len(transitions), digest)
     return counts
 
 
@@ -150,6 +201,19 @@ def main() -> None:
     else:
         raise AssertionError("parse_mode_drift_not_detected")
 
+    # A scoped legacy-catalog HTML conversion must fail if its explicit mode
+    # is removed or changed, even when its text and keyboard remain identical.
+    legacy = "sendMessage(\\achbotMessage('legacy_messages.bot_is_updating'), null, 'HTML')"
+    assert legacy in bot, "scoped_legacy_html_negative_fixture_missing"
+    mutation = dict(now)
+    mutation["bot.php"] = bot.replace(legacy, legacy.replace("'HTML'", "'MarkDown'"), 1)
+    try:
+        compare(previous, calls(mutation))
+    except AssertionError:
+        pass
+    else:
+        raise AssertionError("scoped_legacy_html_mode_drift_not_detected")
+
     # A new active code path is not equivalent to an ignored PHP comment.
     mutation = dict(now)
     assert bot.startswith("<?php"), "bot_php_entrypoint_changed"
@@ -165,9 +229,11 @@ def main() -> None:
 
     print(json.dumps({"complete": True, "status": "PASS", "baseline": BASE,
                       "calls": total, "cases": sum(total.values()),
-                      "source_argument_bytes_preserved": True,
-                      "method_keyboard_parse_mode_preserved": True,
-                      "negative_fixtures": 3, "network_calls": 0}))
+                      "message_keyboard_arguments_preserved": True,
+                      "unchanged_parse_modes_outside_scoped_html": True,
+                      "scoped_legacy_html_transitions": LEGACY_HTML_TRANSITIONS,
+                      "scoped_legacy_html_audit": LEGACY_HTML_AUDIT,
+                      "negative_fixtures": 4, "network_calls": 0}))
 
 
 if __name__ == "__main__":

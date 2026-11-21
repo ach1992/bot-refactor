@@ -156,7 +156,7 @@ if ($joinRequired) {
     }
 }
 if ($robotState === "off" && $from_id != $admin) {
-    sendMessage(\achbotMessage('legacy_messages.bot_is_updating'));
+    sendMessage(\achbotMessage('legacy_messages.bot_is_updating'), null, 'HTML');
     exit();
 }
 
@@ -210,16 +210,16 @@ if($userInfo['phone'] == null && $from_id != $admin && $userInfo['isAdmin'] != t
         $phone_number = $contact->phone_number;
         $phone_id = $contact->user_id;
         if($phone_id != $from_id){
-            sendMessage(\achbotMessage('legacy_messages.please_select_from_below_buttons'));
+            sendMessage(\achbotMessage('legacy_messages.please_select_from_below_buttons'), null, 'HTML');
             exit();
         }else{
             if(!preg_match('/^\+98(\d+)/',$phone_number) && !preg_match('/^98(\d+)/',$phone_number) && !preg_match('/^0098(\d+)/',$phone_number) && $botState['requireIranPhone'] == 'on'){
-                sendMessage(\achbotMessage('legacy_messages.use_iranian_number_only'));
+                sendMessage(\achbotMessage('legacy_messages.use_iranian_number_only'), null, 'HTML');
                 exit();
             }
             setUser($phone_number, 'phone');
 
-            sendMessage(\achbotMessage('legacy_messages.phone_confirmed'),$removeKeyboard);
+            sendMessage(\achbotMessage('legacy_messages.phone_confirmed'),$removeKeyboard, 'HTML');
             $text = "/start";
 
             $stmt = $connection->prepare("SELECT * FROM `users` WHERE `userid`=?");
@@ -236,7 +236,7 @@ if($userInfo['phone'] == null && $from_id != $admin && $userInfo['isAdmin'] != t
 					'request_contact' => true,
 				]]],
 			'resize_keyboard' => true
-		]));
+		]), 'HTML');
 		exit();
     }
 }
@@ -813,12 +813,12 @@ if (str_starts_with($paymentKeyStep,'achbotPaymentKey|') ||
     if ($kind==='cancel') {
         sendMessage(\achbotMessage('bot.bot.gateway_audience_settings.message.74d707fe02'), $removeKeyboard, 'HTML');
     } else {
-        sendMessage(\achbotMessage('legacy_messages.saved_successfuly'),$removeKeyboard);
+        sendMessage(\achbotMessage('legacy_messages.saved_successfuly'),$removeKeyboard, 'HTML');
     }
     if (achbotPaymentApiAdminIsField($ownedStep['field'])) {
         achbotPaymentApiAdminReturn($ownedStep['field']);
     } else {
-        sendMessage(\achbotMessage('legacy_messages.change_bot_settings_message'),getGateWaysKeys());
+        sendMessage(\achbotMessage('legacy_messages.change_bot_settings_message'),getGateWaysKeys(), 'HTML');
     }
     return;
 }
@@ -842,7 +842,7 @@ if ($userInfo['step'] == "userReports" && $text != \achbotMessage('legacy_button
         $keysData = getUserInfoKeys($text);
 
 		if ($keysData != null) {
-			sendMessage(\achbotMessage('legacy_messages.please_wait_message'), $removeKeyboard);
+			sendMessage(\achbotMessage('legacy_messages.please_wait_message'), $removeKeyboard, 'HTML');
 
 			$keys = json_encode([
 				'inline_keyboard' => $keysData['inline_keyboard']
@@ -939,7 +939,7 @@ if($userInfo['step']=="editInviteBannerText" && ($from_id == $admin || $userInfo
         $stmt->close();
     }
 
-    sendMessage(\achbotMessage('legacy_messages.saved_successfuly'),$removeKeyboard);
+    sendMessage(\achbotMessage('legacy_messages.saved_successfuly'),$removeKeyboard, 'HTML');
     $keys = json_encode(['inline_keyboard'=>[
         [['text'=>\achbotMessage('bot.bot.invite_banner.button.d6aa12d559'),'callback_data'=>'editInviteBannerText']],
         [['text'=>\achbotMessage('legacy_buttons.back_button'),'callback_data'=>'inviteSetting']]
@@ -976,7 +976,7 @@ if($userInfo['step'] == "editInviteAmount" && ($from_id == $admin || $userInfo['
             $checkExist = $stmt->get_result();
             $stmt->close();
         }
-        sendMessage(\achbotMessage('legacy_messages.saved_successfuly'),$removeKeyboard);
+        sendMessage(\achbotMessage('legacy_messages.saved_successfuly'),$removeKeyboard, 'HTML');
 
         $keys = json_encode(['inline_keyboard'=>[
             [['text'=>\achbotMessage('bot.bot.invite_setting.button.e5798de28e'),'callback_data'=>"inviteBanner"]],
@@ -990,7 +990,7 @@ if($userInfo['step'] == "editInviteAmount" && ($from_id == $admin || $userInfo['
             ]]);
         sendMessage(\achbotMessage('bot.bot.invite_setting.message.554f354e70'),$keys, 'HTML');
         setUser();
-    }else sendMessage(\achbotMessage('legacy_messages.send_only_number'));
+    }else sendMessage(\achbotMessage('legacy_messages.send_only_number'), null, 'HTML');
 }
 if(preg_match('/^edit(RewaredTime|cartToCartAutoAcceptTime)/', $userInfo['step'], $match) && ($from_id == $admin || $userInfo['isAdmin'] == true) && $text != \achbotMessage('legacy_buttons.cancel')){
     if(!is_numeric($text)){
@@ -1003,7 +1003,7 @@ if(preg_match('/^edit(RewaredTime|cartToCartAutoAcceptTime)/', $userInfo['step']
     }
 
     setSettings(lcfirst($match[1]), $text);
-    sendMessage(\achbotMessage('legacy_messages.change_bot_settings_message'),getBotSettingKeys());
+    sendMessage(\achbotMessage('legacy_messages.change_bot_settings_message'),getBotSettingKeys(), 'HTML');
     setUser();
     exit();
 }
@@ -1143,7 +1143,7 @@ if (
     $result = bot('getChatMember', ['chat_id' => $chatId, 'user_id' => $botId]);
     if ($result && !empty($result->ok) && isset($result->result->status) && $result->result->status === "administrator") {
         setSettings('rewardChannel', $text);
-        sendMessage(\achbotMessage('legacy_messages.change_bot_settings_message'), getGateWaysKeys());
+        sendMessage(\achbotMessage('legacy_messages.change_bot_settings_message'), getGateWaysKeys(), 'HTML');
         setUser();
         exit;
     }
@@ -1181,7 +1181,7 @@ if (
     $result = bot('getChatMember', ['chat_id' => $chatId, 'user_id' => $botId]);
     if ($result && !empty($result->ok) && isset($result->result->status) && $result->result->status === "administrator") {
         setSettings("lockChannel", $text);
-        sendMessage(\achbotMessage('legacy_messages.change_bot_settings_message'), getGateWaysKeys());
+        sendMessage(\achbotMessage('legacy_messages.change_bot_settings_message'), getGateWaysKeys(), 'HTML');
         setUser();
         exit;
     }
@@ -1365,12 +1365,12 @@ function processCallbackQuery($data, $chat_id, $from_id) {
 if ((require __DIR__ . '/src/Purchase/EntryAndBulk.php') === null) return;
 if($data=="messageToSpeceficUser" && ($from_id == $admin || $userInfo['isAdmin'] == true)){
     delMessage();
-    sendMessage(\achbotMessage('legacy_messages.send_user_id'), $cancelKey);
+    sendMessage(\achbotMessage('legacy_messages.send_user_id'), $cancelKey, 'HTML');
     setUser($data);
 }
 if($userInfo['step'] == "messageToSpeceficUser" && $text != \achbotMessage('legacy_buttons.cancel') && ($from_id == $admin || $userInfo['isAdmin'] == true)){
     if(!is_numeric($text)){
-        sendMessage(\achbotMessage('legacy_messages.send_only_number'));
+        sendMessage(\achbotMessage('legacy_messages.send_only_number'), null, 'HTML');
         exit();
     }
     $stmt = $connection->prepare("SELECT * FROM `users` WHERE `userid` = ?");
@@ -1383,7 +1383,7 @@ if($userInfo['step'] == "messageToSpeceficUser" && $text != \achbotMessage('lega
         sendMessage(\achbotMessage('bot.bot.process_callback_query.message.d57aef02e2'), null, 'HTML');
         setUser("sendMessageToUser" . $text);
     }else{
-        sendMessage(\achbotMessage('legacy_messages.user_not_found'));
+        sendMessage(\achbotMessage('legacy_messages.user_not_found'), null, 'HTML');
     }
 }
 
@@ -1840,7 +1840,7 @@ if(preg_match('/^giftServerDay(\d+)/',$userInfo['step'], $match) && ($from_id ==
             sendMessage(\achbotMessage('bot.bot.gift_volume_and_day.message.9ab673c836'), null, 'HTML');
             setUser('giftServerVolume' . $match[1] . "_" . $text);
         }else sendMessage(\achbotMessage('bot.bot.gift_volume_and_day.message.40747d2ee6'), null, 'HTML');
-    }else sendMessage(\achbotMessage('legacy_messages.send_only_number'));
+    }else sendMessage(\achbotMessage('legacy_messages.send_only_number'), null, 'HTML');
 }
 if(preg_match('/^giftServerVolume(\d+)_(\d+)/',$userInfo['step'],$match) && ($from_id == $admin || $userInfo['isAdmin'] == true) && $text != \achbotMessage('legacy_buttons.cancel')){
     if(is_numeric($text)){
@@ -1882,7 +1882,7 @@ if(preg_match('/^giftServerVolume(\d+)_(\d+)/',$userInfo['step'],$match) && ($fr
                 // administrator state. Only notifications follow COMMIT.
                 try {
                     if ($giftEnqueue['created']) {
-                        sendMessage(\achbotMessage('legacy_messages.saved_successfuly'),$removeKeyboard);
+                        sendMessage(\achbotMessage('legacy_messages.saved_successfuly'),$removeKeyboard, 'HTML');
                     } else {
                         sendMessage(\achbotMessage('bot.bot.gift_volume_and_day.message.b155540ffb'),
                                     $removeKeyboard, 'HTML');
@@ -1893,7 +1893,7 @@ if(preg_match('/^giftServerVolume(\d+)_(\d+)/',$userInfo['step'],$match) && ($fr
                 }
             }
         }else sendMessage(\achbotMessage('bot.bot.gift_volume_and_day.message.40747d2ee6'), null, 'HTML');
-    }else sendMessage(\achbotMessage('legacy_messages.send_only_number'));
+    }else sendMessage(\achbotMessage('legacy_messages.send_only_number'), null, 'HTML');
 }
 else {
     require __DIR__ . '/src/Subscription/AccountDeletion.php';
@@ -1971,7 +1971,7 @@ if(preg_match('/^changesServerIp(\d+)/',$userInfo['step'],$match) && ($from_id =
     $stmt->bind_param("si", $text, $match[1]);
     $stmt->execute();
     $stmt->close();
-    sendMessage(\achbotMessage('legacy_messages.saved_successfuly'),$removeKeyboard);
+    sendMessage(\achbotMessage('legacy_messages.saved_successfuly'),$removeKeyboard, 'HTML');
     setUser();
 
     $keys = getServerConfigKeys($match[1]);
@@ -2274,7 +2274,7 @@ if(preg_match('/^editServer(\D+)(\d+)/',$userInfo['step'],$match) && $text != \a
         $stmt->close();
     }
 
-    sendMessage(\achbotMessage('legacy_messages.saved_successfuly'),$removeKeyboard);
+    sendMessage(\achbotMessage('legacy_messages.saved_successfuly'),$removeKeyboard, 'HTML');
     setUser();
 
     $keys = getServerConfigKeys($match[2]);
@@ -2320,7 +2320,7 @@ if(preg_match('/^editsServer(\D+)(\d+)/',$userInfo['step'],$match) && $text != \
     $stmt->execute();
     $stmt->close();
 
-    sendMessage(\achbotMessage('legacy_messages.saved_successfuly'),$removeKeyboard);
+    sendMessage(\achbotMessage('legacy_messages.saved_successfuly'),$removeKeyboard, 'HTML');
     setUser();
 
     $keys = getServerConfigKeys($match[2]);
@@ -2366,7 +2366,7 @@ if(preg_match('/^editServer(\D+)(\d+)/',$userInfo['step'],$match) && $text != \a
     $stmt->execute();
     $stmt->close();
 
-    sendMessage(\achbotMessage('legacy_messages.saved_successfuly'),$removeKeyboard);
+    sendMessage(\achbotMessage('legacy_messages.saved_successfuly'),$removeKeyboard, 'HTML');
     setUser();
 
     $keys = getServerConfigKeys($match[2]);
@@ -2430,7 +2430,7 @@ if ($text == \achbotMessage('legacy_buttons.cancel')) {
         return;
     }
     // Cancellation never deletes other administrators' plan rows.
-    sendMessage(\achbotMessage('legacy_messages.waiting_message'), $removeKeyboard);
+    sendMessage(\achbotMessage('legacy_messages.waiting_message'), $removeKeyboard, 'HTML');
     sendMessage(\achbotCurrentMessage('reached_main_menu'), getMainKeys(), 'HTML');
 }
 ?>

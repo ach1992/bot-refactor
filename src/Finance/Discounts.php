@@ -17,7 +17,7 @@ function applyDiscountToPay($connection, $rowId, $discountCode, $from_id, $usern
 
     if(!$payInfo){
         // پرداخت یافت نشد
-        sendMessage(\achbotMessage('legacy_messages.not_valid_discount_code'));
+        sendMessage(\achbotMessage('legacy_messages.not_valid_discount_code'), null, 'HTML');
         return [
             'success'        => false,
             'price'          => 0,
@@ -46,9 +46,9 @@ function applyDiscountToPay($connection, $rowId, $discountCode, $from_id, $usern
     if($list->num_rows <= 0){
         // کد اصلاً وجود ندارد یا منقضی شده
         if (!empty(\achbotMessage('legacy_messages.discount_not_found'))) {
-            sendMessage(\achbotMessage('legacy_messages.discount_not_found'));
+            sendMessage(\achbotMessage('legacy_messages.discount_not_found'), null, 'HTML');
         } else {
-            sendMessage(\achbotMessage('legacy_messages.not_valid_discount_code'));
+            sendMessage(\achbotMessage('legacy_messages.not_valid_discount_code'), null, 'HTML');
         }
 
         return [
@@ -156,9 +156,9 @@ function applyDiscountToPay($connection, $rowId, $discountCode, $from_id, $usern
     if (!$allowedForUser) {
         // این کد مخصوص این کاربر/شرایط نیست
         if (!empty(\achbotMessage('legacy_messages.discount_not_for_user'))) {
-            sendMessage(\achbotMessage('legacy_messages.discount_not_for_user'));
+            sendMessage(\achbotMessage('legacy_messages.discount_not_for_user'), null, 'HTML');
         } else {
-            sendMessage(\achbotMessage('legacy_messages.not_valid_discount_code'));
+            sendMessage(\achbotMessage('legacy_messages.not_valid_discount_code'), null, 'HTML');
         }
 
         return [
@@ -208,9 +208,9 @@ function applyDiscountToPay($connection, $rowId, $discountCode, $from_id, $usern
     if (!$allowedForPlan) {
         // این کد برای این پلن/سرور/دسته معتبر نیست
         if (!empty(\achbotMessage('legacy_messages.discount_not_for_service'))) {
-            sendMessage(\achbotMessage('legacy_messages.discount_not_for_service'));
+            sendMessage(\achbotMessage('legacy_messages.discount_not_for_service'), null, 'HTML');
         } else {
-            sendMessage(\achbotMessage('legacy_messages.not_valid_discount_code'));
+            sendMessage(\achbotMessage('legacy_messages.not_valid_discount_code'), null, 'HTML');
         }
 
         return [
@@ -230,7 +230,7 @@ function applyDiscountToPay($connection, $rowId, $discountCode, $from_id, $usern
             $msg = str_replace("MINPRICE", number_format($minPrice) . \achbotMessage('payment.discounts.apply_discount_to_pay.text.2cc98f7f7c'), \achbotMessage('legacy_messages.discount_min_price'));
             sendMessage($msg);
         } else {
-            sendMessage(\achbotMessage('legacy_messages.not_valid_discount_code'));
+            sendMessage(\achbotMessage('legacy_messages.not_valid_discount_code'), null, 'HTML');
         }
 
         return [
@@ -254,9 +254,9 @@ function applyDiscountToPay($connection, $rowId, $discountCode, $from_id, $usern
     // اگر can_use = -1 یعنی نامحدود، محدودیتی نباید اعمال شود
     if($canUse != -1 && $canUse <= $userUsedCount){
         if (!empty(\achbotMessage('legacy_messages.discount_user_limit'))) {
-            sendMessage(\achbotMessage('legacy_messages.discount_user_limit'));
+            sendMessage(\achbotMessage('legacy_messages.discount_user_limit'), null, 'HTML');
         } else {
-            sendMessage(\achbotMessage('legacy_messages.not_valid_discount_code'));
+            sendMessage(\achbotMessage('legacy_messages.not_valid_discount_code'), null, 'HTML');
         }
 
         return [

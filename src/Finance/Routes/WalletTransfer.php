@@ -49,7 +49,7 @@ if ($text != \achbotMessage('legacy_buttons.cancel') &&
     }
     if (preg_match('/^[1-9][0-9]*$/D',(string)$text)!==1 ||
         strlen((string)$text)>19 || (string)(int)$text!==(string)$text) {
-        sendMessage(\achbotMessage('legacy_messages.send_only_number')); return;
+        sendMessage(\achbotMessage('legacy_messages.send_only_number'), null, 'HTML'); return;
     }
     if ((int)$text===(int)$from_id) {
         sendMessage(\achbotMessage('wallet.wallet_transfer.wallet_transfer_restart.message.9d368ab3bb'), null, 'HTML'); return;
@@ -73,7 +73,7 @@ if ((str_starts_with($transferStep,'achbotTransferAmount:') ||
     }
 
     if (!preg_match('/^[0-9]+$/D', (string)$text)) {
-        sendMessage(\achbotMessage('legacy_messages.send_only_number'));
+        sendMessage(\achbotMessage('legacy_messages.send_only_number'), null, 'HTML');
         exit;
     }
 

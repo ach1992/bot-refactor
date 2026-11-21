@@ -52,7 +52,7 @@ if(($data=="editCustomPlan" || preg_match('/^editCustom(gbPrice|dayPrice)/',$use
     if(!isset($data)){
         if(is_numeric($text)){
             setSettings($match[1], $text);
-            sendMessage(\achbotMessage('legacy_messages.saved_successfuly'),$removeKeyboard);
+            sendMessage(\achbotMessage('legacy_messages.saved_successfuly'),$removeKeyboard, 'HTML');
         }else{
             sendMessage(\achbotMessage('plans.administration.edit_custom_plan.message.be59f23713'), null, 'HTML');
             exit();

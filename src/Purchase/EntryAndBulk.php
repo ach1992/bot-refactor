@@ -60,7 +60,7 @@ if($data=='createMultipleAccounts' && ($from_id == $admin || $userInfo['isAdmin'
     $respd = $stmt->get_result();
     $stmt->close();
     if($respd->num_rows==0){
-        sendMessage(\achbotMessage('legacy_messages.no_server_available'));
+        sendMessage(\achbotMessage('legacy_messages.no_server_available'), null, 'HTML');
         exit;
     }
     $keyboard = [];
@@ -155,13 +155,13 @@ if(preg_match('/^createAccDate(\d+)/',$userInfo['step'],$match) && $text != \ach
 }
 if(preg_match('/^createAccVolume(\d+)_(\d+)/',$userInfo['step'],$match) && $text != \achbotMessage('legacy_buttons.cancel') && ($from_id == $admin || $userInfo['isAdmin'] == true)){
     if(!is_numeric($text)){
-        sendMessage(\achbotMessage('legacy_messages.send_only_number'));
+        sendMessage(\achbotMessage('legacy_messages.send_only_number'), null, 'HTML');
         exit();
     }elseif($text <=0){
         sendMessage(\achbotMessage('purchase.entry_and_bulk.create_multiple_accounts.message.f30d6ad265'), null, 'HTML');
         exit();
     }
-    sendMessage(\achbotMessage('legacy_messages.enter_account_amount'));
+    sendMessage(\achbotMessage('legacy_messages.enter_account_amount'), null, 'HTML');
     setUser("createAccAmount" . $match[1] . "_" . $match[2] . "_" . $text);
 }
 
@@ -185,7 +185,7 @@ if (
 
     if (!is_string($text) || preg_match('/^[1-9][0-9]*$/D',$text)!==1 ||
         filter_var($text,FILTER_VALIDATE_INT)===false) {
-        sendMessage(\achbotMessage('legacy_messages.send_only_number'));
+        sendMessage(\achbotMessage('legacy_messages.send_only_number'), null, 'HTML');
         exit();
     }
     $count = (int)$text;

@@ -44,6 +44,6 @@ if (($userInfo['step']??null)==='banUser' && $text!==\achbotMessage('legacy_butt
         if ($status==='changed' || $status==='already')
             sendMessage(\achbotCurrentMessage('reached_main_menu'), getAdminKeys(), 'HTML');
     } else {
-        sendMessage(\achbotMessage('legacy_messages.send_only_number'));
+        sendMessage(\achbotMessage('legacy_messages.send_only_number'), null, 'HTML');
     }
 }

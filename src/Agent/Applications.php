@@ -116,7 +116,7 @@ if(preg_match('/^agencyApprove([1-9][0-9]*)$/D', (string)$data, $match) &&
     $applicant = filter_var($match[1], FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
     if ($applicant !== false && achbotPendingAgencyApplicantId($connection, $applicant) !== null) {
         setUser($data . "_" . $message_id);
-        sendMessage(\achbotMessage('legacy_messages.send_agent_discount_percent'), $cancelKey);
+        sendMessage(\achbotMessage('legacy_messages.send_agent_discount_percent'), $cancelKey, 'HTML');
     } else {
         alert(\achbotMessage('legacy_messages.config_not_found'));
     }
@@ -136,7 +136,7 @@ if(preg_match('/^agencyApprove([1-9][0-9]*)_([1-9][0-9]*)$/D', (string)($userInf
                 editKeys(json_encode(['inline_keyboard'=>[
                     [['text'=>\achbotMessage('legacy_buttons.approved'),'callback_data'=>"wizwizch"]]
                 ]]), $originalMessage);
-                sendMessage(\achbotMessage('legacy_messages.saved_successfuly'));
+                sendMessage(\achbotMessage('legacy_messages.saved_successfuly'), null, 'HTML');
                 sendMessage(\achbotMessage('legacy_messages.agency_request_approved'), null, null, $applicant);
             } else {
                 alert(\achbotMessage('legacy_messages.config_not_found'));
@@ -145,5 +145,5 @@ if(preg_match('/^agencyApprove([1-9][0-9]*)_([1-9][0-9]*)$/D', (string)($userInf
             setUser();
             alert(\achbotMessage('legacy_messages.config_not_found'));
         }
-    } else sendMessage(\achbotMessage('legacy_messages.send_only_number'));
+    } else sendMessage(\achbotMessage('legacy_messages.send_only_number'), null, 'HTML');
 }

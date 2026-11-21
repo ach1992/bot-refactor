@@ -3,8 +3,8 @@
 
 A source-level contract, not a PHP/Telegram parser: only calls whose first
 argument is a direct zero-parameter achbotMessage('catalog.key') are in scope.
-Other dynamic text, persisted broadcasts, templates, and explicit plain-text
-sends deliberately retain their existing parse modes.
+Other dynamic text, persisted broadcasts and customizable templates retain
+their existing parse modes. Explicit plain-text sends remain pinned.
 """
 from __future__ import annotations
 
@@ -28,12 +28,17 @@ TARGETS = (
     "src/Subscription/CustomerRoutes.php",
     "src/Purchase/Catalogue.php",
     "src/Purchase/EntryAndBulk.php",
+    "src/Purchase/SelectPlan.php",
     "src/Admin/Bans.php",
     "src/Admin/Roles.php",
     "src/Admin/Unban.php",
+    "src/Agent/Applications.php",
     "src/Agent/Discounts.php",
     "src/Broadcast/Routes.php",
+    "src/Finance/Discounts.php",
+    "src/Finance/ReceiptHelpers.php",
     "src/Finance/Routes/AdminWallet.php",
+    "src/Finance/Routes/DiscountEntry.php",
     "src/Finance/Routes/ApiPayments.php",
     "src/Finance/Routes/Checkout.php",
     "src/Finance/Routes/Extensions.php",
@@ -105,40 +110,45 @@ PLAIN = re.compile(r"""\Anull\Z""", re.I)
 # then use --print-audit to propose the new digest for an independent review.
 # A changed count, key order, parsed argument, or literal catalog text fails CI.
 AUDITED = {
-    "src/Finance/Routes/DiscountAdministration.php": (53, "612fe86bd57176ecb30d7b55f0cd4779494784c6c581572f03ef63cf76256b83"),
-    "src/Plans/Intervals.php": (23, "004ed26d62dec84082559c719b95ff54df07c93afef063603f3f3929b47ac0ac"),
-    "src/Plans/Administration.php": (12, "7f5d1bbb40b7da784eeb72089006da57f2588533569932dd6681f448dde93afd"),
-    "src/Plans/AddonAdmin.php": (6, "0ab447c2b7a203de01b329a00a0b78e5dddcfdf1f20fe7ba20c537713fbffadc"),
-    "src/Plans/Categories.php": (3, "f5e5f232dab62ecb5bd39adf2a808bf03672d109e5d58f9a8eff2ab1b387f82e"),
-    "bot.php": (73, "c6729c3c7fe03092980299d0ee34038c44af06cd2f35bdcc35c48144e091d420"),
-    "config.php": (15, "71f4e61ba9ffd3e4cf7b789a1cbca6a46033add9ae00407f5495cee2986ac920"),
-    "src/Subscription/CustomerRoutes.php": (8, "d001dbf2f2f9689c9e44f6bfdb832ebb1950d8976812b353a3d8b062408727f3"),
-    "src/Purchase/Catalogue.php": (8, "c643ca5e56331db9d32e7a4b214e1f4efbc87b48ae731116ccea7b27979ed799"),
-    "src/Purchase/EntryAndBulk.php": (6, "372a5759d1a5af7e7a940c35f6238c2f8c51e6897160da86bbb9d9c1111fb125"),
-    "src/Admin/Bans.php": (5, "bac9177c4bc56d10807bc0b009ee77dff769663d0270a84eb50e49d63e6d23c6"),
-    "src/Admin/Roles.php": (3, "41d4da0e04b854679c6207828052bb6a1f019bacc13d8cb429332e179cafa1f0"),
-    "src/Admin/Unban.php": (3, "b8fa4d875a40907d57f8f1322af5053d720ac0ae4ae0088c1d746a6f0f2e9ebb"),
-    "src/Agent/Discounts.php": (2, "f6522e134173b0f7850d5f390d5f8dd3ad8ed58eb334667dfdc8d2e6aea1ce5f"),
-    "src/Broadcast/Routes.php": (23, "e84dd50ef4f129822a987a5186ed1959138951d1633798ac4312c6732f892688"),
-    "src/Finance/Routes/AdminWallet.php": (6, "9b83dd4c6aa1930f38f50195aab1868cf8b3c95f12841a83d5682a2378637f15"),
-    "src/Finance/Routes/ApiPayments.php": (2, "a737b2417fc01a6c7bea5044cdc93e501b6ef5c4f3d114fa69348e9d0a8e84e4"),
-    "src/Finance/Routes/Checkout.php": (5, "c80ebe8e8d5ef3ec8cac1cfa1593bcf8d2686652fb509ae1b964a0eb1c92a671"),
-    "src/Finance/Routes/Extensions.php": (10, "3e5be2fe156125ee4bc6eb3ab721b5b2c9915248dc708f856f978d208868da38"),
-    "src/Finance/Routes/ManualReceipts.php": (2, "786805fadd4e8234e6475dfd718160b80ce5ec70fb7881ed95b30fd88d4ecf3e"),
-    "src/Finance/Routes/PrePayment.php": (5, "8dd044efac6dfe78a1a40d4fae7cd0c745aae38223044495e99d0418de969381"),
-    "src/Finance/Routes/RenewalCheckout.php": (8, "8b3782852e1c0577ce7a1de60190682f0c1c663f041617832a8929fc91335808"),
-    "src/Finance/Routes/RenewalSelection.php": (1, "e662b8fa2f694a479939b352e98590cd2687f88355584c2862ad9bc6059111af"),
-    "src/Finance/Routes/WalletRecharge.php": (8, "ff6675f06f2b3bf0d32110d1ee084b895f405bf795466fc3394749c73e174be7"),
-    "src/Finance/Routes/WalletTransfer.php": (11, "e5b45960b44e8871355f0e905975fa04c146cf605985c03a901819b6a6adedc6"),
-    "src/Panel/ProviderAdmin.php": (8, "83172b94fa08ca51589c44a38ffcaf4fe458f549a2dde5a9e01f5b26d807102a"),
-    "src/Subscription/ExternalAccounts.php": (4, "4f0b987cfd63ac45858aa292c5eaa54faed9f0f722b0315ce4e88b10bd2240bf"),
-    "src/Subscription/ManualAccounts.php": (2, "478b9ee6891fa454375d79a200ce0f5309b198e5d6394dbab5dece0e022eb70f"),
-    "src/Subscription/ServerDisplaySettings.php": (2, "d61d0711698c58159189fd9a69146bd35fc1f5687a5326a571406d36a6b398a9"),
-    "src/Support/AdminReply.php": (2, "c8b2ac3aac3947e8b49e4bc40119e1bf7f0fca46eec28f88492b1d6d4f10b8b8"),
-    "src/Support/Categories.php": (1, "e8886cd765c03a7f6b52be32fee0a7004cb8416baf37f6aa9eca1366c28b637e"),
-    "src/Support/CreateTicket.php": (3, "6686bedfa911a9eff77307d5ca7f500aac3bef77454d817efd25aa8d353289eb"),
-    "src/Support/CustomerConversation.php": (3, "8d167415ba6e79e3699f84391a9ef8dd1e663b19dbbdd4b89b1d0e841315e61f"),
-    "src/Support/QueueAndHistory.php": (2, "d4f64c70c14d3d03eb5b15e1ebbf5a1fbcc81464c1b89f2bd2c0065b9b10cceb"),
+    'src/Finance/Routes/DiscountAdministration.php': (53, '612fe86bd57176ecb30d7b55f0cd4779494784c6c581572f03ef63cf76256b83'),
+    'src/Plans/Intervals.php': (23, '004ed26d62dec84082559c719b95ff54df07c93afef063603f3f3929b47ac0ac'),
+    'src/Plans/Administration.php': (13, '7bc479ac209460e9f3270644655a881cda730f9ed5e18f529047d36187404587'),
+    'src/Plans/AddonAdmin.php': (6, '0ab447c2b7a203de01b329a00a0b78e5dddcfdf1f20fe7ba20c537713fbffadc'),
+    'src/Plans/Categories.php': (3, 'f5e5f232dab62ecb5bd39adf2a808bf03672d109e5d58f9a8eff2ab1b387f82e'),
+    'bot.php': (100, '5bd3112e9bf2a79ae88a635e2d6a79e744952c83308d5e739619027ab0294f9d'),
+    'config.php': (15, '71f4e61ba9ffd3e4cf7b789a1cbca6a46033add9ae00407f5495cee2986ac920'),
+    'src/Subscription/CustomerRoutes.php': (18, '874a1a9e3baf6d83ce9e5a866ab62911f1ba1cca0457482429a88438ce16ae38'),
+    'src/Purchase/Catalogue.php': (12, 'c4f2a0463c00b6ef88bc9b63e00979a3b218f5023b5a9b449a1e159a4770f2ef'),
+    'src/Purchase/EntryAndBulk.php': (10, '17894206f3e7e10e2afc67a970e3a4d7bb50ebeba7c3fc8f01b3fbf278a1cd16'),
+    'src/Purchase/SelectPlan.php': (4, '840035bdcc4a375f4fbabe2b3191f237aae348dcb2589f270f77de177e635c9f'),
+    'src/Admin/Bans.php': (6, 'ff02810a6dc6751775fe1720acf411360c5e2cfaccbedb6e75107aa5d815c51f'),
+    'src/Admin/Roles.php': (3, '41d4da0e04b854679c6207828052bb6a1f019bacc13d8cb429332e179cafa1f0'),
+    'src/Admin/Unban.php': (4, 'cb598e3f049d24aa820cb5d587010ebea0a79cb1d7b3f847df1b9764c2cabd91'),
+    'src/Agent/Applications.php': (4, '5511af16a2ca617600afd0ef2b3073ca9e9c5fbd154bd0729ff4fb6fe495a2f5'),
+    'src/Agent/Discounts.php': (3, 'f65c70afe55e9fb16b12cf878ced107ce6647f63e999354421621a94c0ab2a78'),
+    'src/Broadcast/Routes.php': (23, 'e84dd50ef4f129822a987a5186ed1959138951d1633798ac4312c6732f892688'),
+    'src/Finance/Discounts.php': (10, '055d0c760a6b7a760cdef2f59f8ca990eed5af552f7de05292c7e59c9be51ae8'),
+    'src/Finance/ReceiptHelpers.php': (1, '0231bfa34c85136afce04b2fc1d876c9ac7296e6504a100d5a3ff1e2319b09cb'),
+    'src/Finance/Routes/AdminWallet.php': (8, '0658a0ac6b539ad790c23cb504178ad3ca2303a8d2019b5132828ab1b0f7a28b'),
+    'src/Finance/Routes/DiscountEntry.php': (1, '99afafe7ed77d1159448fb5b37e93bf07e6497b209ce96c2bd4bebebf50cb5d5'),
+    'src/Finance/Routes/ApiPayments.php': (2, 'a737b2417fc01a6c7bea5044cdc93e501b6ef5c4f3d114fa69348e9d0a8e84e4'),
+    'src/Finance/Routes/Checkout.php': (5, 'c80ebe8e8d5ef3ec8cac1cfa1593bcf8d2686652fb509ae1b964a0eb1c92a671'),
+    'src/Finance/Routes/Extensions.php': (10, '3e5be2fe156125ee4bc6eb3ab721b5b2c9915248dc708f856f978d208868da38'),
+    'src/Finance/Routes/ManualReceipts.php': (2, '786805fadd4e8234e6475dfd718160b80ce5ec70fb7881ed95b30fd88d4ecf3e'),
+    'src/Finance/Routes/PrePayment.php': (5, '8dd044efac6dfe78a1a40d4fae7cd0c745aae38223044495e99d0418de969381'),
+    'src/Finance/Routes/RenewalCheckout.php': (15, '87c6adb2862bdf7aa6b5c44b5a5a9921a4ee53a90dbb9041e39037338ff0511e'),
+    'src/Finance/Routes/RenewalSelection.php': (1, 'e662b8fa2f694a479939b352e98590cd2687f88355584c2862ad9bc6059111af'),
+    'src/Finance/Routes/WalletRecharge.php': (8, 'ff6675f06f2b3bf0d32110d1ee084b895f405bf795466fc3394749c73e174be7'),
+    'src/Finance/Routes/WalletTransfer.php': (13, '08b78de4a9ec758301b184ff78384095064c18d2f284557753fce60af6de63e3'),
+    'src/Panel/ProviderAdmin.php': (8, '83172b94fa08ca51589c44a38ffcaf4fe458f549a2dde5a9e01f5b26d807102a'),
+    'src/Subscription/ExternalAccounts.php': (4, '4f0b987cfd63ac45858aa292c5eaa54faed9f0f722b0315ce4e88b10bd2240bf'),
+    'src/Subscription/ManualAccounts.php': (2, '478b9ee6891fa454375d79a200ce0f5309b198e5d6394dbab5dece0e022eb70f'),
+    'src/Subscription/ServerDisplaySettings.php': (2, 'd61d0711698c58159189fd9a69146bd35fc1f5687a5326a571406d36a6b398a9'),
+    'src/Support/AdminReply.php': (2, 'c8b2ac3aac3947e8b49e4bc40119e1bf7f0fca46eec28f88492b1d6d4f10b8b8'),
+    'src/Support/Categories.php': (2, '28176076ffb1fab5faec8741e0f5cb85956f559e2bdb80770f293df3a11f1f81'),
+    'src/Support/CreateTicket.php': (4, '9bfd056498c192738b9abcd85e68345a4bf1ea18b37018388d9b45c417587202'),
+    'src/Support/CustomerConversation.php': (3, '8d167415ba6e79e3699f84391a9ef8dd1e663b19dbbdd4b89b1d0e841315e61f'),
+    'src/Support/QueueAndHistory.php': (2, 'd4f64c70c14d3d03eb5b15e1ebbf5a1fbcc81464c1b89f2bd2c0065b9b10cceb'),
 }
 
 
@@ -302,12 +312,6 @@ def inventory(source: str, data: dict[str, tuple[str, bool]]):
         if hit is None:
             continue
         name = hit.group(2)
-        # The legacy source-map removal exposes many previously indirect
-        # Markdown/plain producers as direct literal catalog lookups.
-        # They were never among the separately approved static HTML sends:
-        # preserve their original wire modes, audited by source-output parity.
-        if name.startswith("legacy_messages."):
-            continue
         if name not in data:
             raise AssertionError(f"unknown catalog key: {name}")
         opening = source.index("(", hit.start())

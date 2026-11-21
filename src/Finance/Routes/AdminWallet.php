@@ -462,7 +462,7 @@ if ($achbotWalletCanAdmin && isset($achbotWalletModes[$data]) &&
         sendMessage(\achbotMessage('wallet.admin_wallet.admin_wallet_report_result.message.7f5443f0df'), null, 'HTML');
     } else {
         delMessage();
-        sendMessage(\achbotMessage('legacy_messages.send_user_id'), $cancelKey);
+        sendMessage(\achbotMessage('legacy_messages.send_user_id'), $cancelKey, 'HTML');
         setUser($data === 'createUserWalletDebt' ? 'decreaseUserWallet' : $data);
     }
 }
@@ -472,7 +472,7 @@ if ($achbotWalletCanAdmin && isset($achbotWalletModes[$achbotWalletStep]) &&
     $achbotWalletInput !== $achbotWalletCancel && $achbotWalletInput !== '') {
     if (!preg_match('/^[1-9][0-9]{0,18}$/D', $achbotWalletInput) ||
         filter_var($achbotWalletInput, FILTER_VALIDATE_INT) === false) {
-        sendMessage(\achbotMessage('legacy_messages.send_only_number'));
+        sendMessage(\achbotMessage('legacy_messages.send_only_number'), null, 'HTML');
     } else {
         $achbotWalletTarget = (int)$achbotWalletInput;
         $stmt = $connection->prepare('SELECT userid FROM users WHERE userid=?');

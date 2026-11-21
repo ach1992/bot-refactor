@@ -233,7 +233,7 @@ if(preg_match('/^editAgentDiscount(Server|Plan|Normal)(\d+)_(.*)/',$userInfo['st
         $stmt->bind_param("si", $encodedDiscount, $targetPk);
         $stmt->execute();
         $stmt->close();
-        sendMessage(\achbotMessage('legacy_messages.saved_successfuly'),$removeKeyboard);
+        sendMessage(\achbotMessage('legacy_messages.saved_successfuly'),$removeKeyboard, 'HTML');
         setUser();
         if ($match[1] === 'Normal' && $match[3] === 'userinfo') {
             $details = getUserInfoKeys($match[2]);
