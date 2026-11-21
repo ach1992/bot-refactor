@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""AChBot server/plan menus and one-action contextual cancellation on owned MariaDB."""
+"""AChBot source-real server/plan menus and context cancellation on disposable SQL."""
 from __future__ import annotations
 import argparse
 import json
@@ -54,8 +54,8 @@ foreach ([
     $a=strpos($config,$start);$b=strpos($config,$end,$a);
     eval(str_replace('__DIR__',var_export($root,true),substr($config,$a,$b-$a)));
 }
-$buttonValues=['back_button'=>'Back','active'=>'On','deactive'=>'Off','cancel'=>'Cancel'];
-$removeKeyboard=json_encode(['remove_keyboard'=>true]);$cancelKey=json_encode(['keyboard'=>[['Cancel']]]);
+$buttonValues=achbotMessages('legacy_buttons');
+$removeKeyboard=json_encode(['remove_keyboard'=>true]);$cancelKey=json_encode(['keyboard'=>[[$buttonValues['cancel']]]]);
 $admin=9001;$from_id=$chat_id=9001;$message_id=10;
 $connection->query('ALTER TABLE server_info ADD panel_group_id INT NULL');
 $connection->query("INSERT INTO server_info(id,title,ucount,remark,flag,active,state) VALUES
@@ -189,9 +189,9 @@ foreach ([
     $stmt=$connection->prepare('UPDATE users SET step=?,temp=? WHERE userid=9001');
     $temporary='private-draft-not-echoed';$stmt->bind_param('ss',$step,$temporary);$stmt->execute();$stmt->close();
     $userInfo=$connection->query('SELECT * FROM users WHERE userid=9001')->fetch_assoc();
-    $data='';$text='Cancel';$events=[];
+    $data='';$text=$buttonValues['cancel'];$events=[];
     $update=(object)['update_id'=>100+$index,'message'=>(object)[
-        'message_id'=>10,'text'=>'Cancel','from'=>(object)['id'=>9001],
+        'message_id'=>10,'text'=>$buttonValues['cancel'],'from'=>(object)['id'=>9001],
         'chat'=>(object)['id'=>9001,'type'=>'private']]];
     yes(achbotHandleProviderAdmin()===true,'cancel is fully consumed');
     $current=$connection->query('SELECT step,temp FROM users WHERE userid=9001')->fetch_assoc();
@@ -202,15 +202,15 @@ foreach ([
     yes(!str_contains(json_encode($events),'private-draft-not-echoed'),'cancel never echoes private state');
 }
 $connection->query("UPDATE users SET step='pg:groups:server:2',isAdmin=0 WHERE userid=9002");
-$from_id=$chat_id=9002;$userInfo=['step'=>'pg:groups:server:2','isAdmin'=>1];$data='';$text='Cancel';
-$update=(object)['update_id'=>200,'message'=>(object)['message_id'=>10,'text'=>'Cancel',
+$from_id=$chat_id=9002;$userInfo=['step'=>'pg:groups:server:2','isAdmin'=>1];$data='';$text=$buttonValues['cancel'];
+$update=(object)['update_id'=>200,'message'=>(object)['message_id'=>10,'text'=>$buttonValues['cancel'],
     'from'=>(object)['id'=>9002],'chat'=>(object)['id'=>9002,'type'=>'private']]];
 yes(achbotHandleProviderAdmin()===true,'revoked cached administrator receives safe response');
 yes($connection->query('SELECT step FROM users WHERE userid=9002')->fetch_row()[0]==='pg:groups:server:2',
     'revoked administrator cannot mutate state');
 $from_id=$chat_id=9001;$userInfo=['step'=>'pg:groups:server:2','isAdmin'=>1];
 $connection->query("UPDATE users SET step='protected-new-flow',temp='keep' WHERE userid=9001");
-$update=(object)['update_id'=>201,'message'=>(object)['message_id'=>10,'text'=>'Cancel',
+$update=(object)['update_id'=>201,'message'=>(object)['message_id'=>10,'text'=>$buttonValues['cancel'],
     'from'=>(object)['id'=>9001],'chat'=>(object)['id'=>9001,'type'=>'private']]];
 yes(achbotHandleProviderAdmin()===true,'stale cancel consumed without generic fallthrough');
 yes($connection->query('SELECT step FROM users WHERE userid=9001')->fetch_row()[0]==='protected-new-flow',
