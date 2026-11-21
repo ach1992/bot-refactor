@@ -31,6 +31,16 @@ $db=new mysqli('localhost','root','',$argv[3],0,$argv[2]);
 $db->set_charset('utf8mb4');
 $spec=json_decode($argv[4],true,64,JSON_THROW_ON_ERROR);
 try {
+    if ($spec['op']==='hint_versions') {
+        $hints=[];
+        foreach ([2,3,4,27] as $version) {
+            $payload='v'.$version.',73,1700000000';
+            $token=rtrim(strtr(base64_encode($payload),'+/','-_'),'=').'0123456789';
+            $hints[]=achbotPgImportHint($token);
+        }
+        echo json_encode(['ok'=>true,'hints'=>$hints],JSON_THROW_ON_ERROR);
+        exit;
+    }
     $old=achbotProviderAccountByEffect($db,(int)$spec['old_effect']);
     $oldIdentity=achbotProviderAccountIdentity($db,$old,true);
     if ($old['state']!=='deleted' || $oldIdentity['remote_user_id']!==72)
@@ -52,6 +62,9 @@ try {
     achbotProviderAdoptAccount($db,2,$native,$proof,1001,201,9001,9001);
     $db->commit();
     $account=achbotProviderAccountByOrder($db,201);
+    $byRemark=achbotPgRemarkContext($db,2,$native['username']);
+    if ($byRemark['account']['id']!==$account['id'])
+        throw new RuntimeException('reused_username_remark_misrouted');
     echo json_encode(['ok'=>true,
         'account_id'=>$account['id'],
         'native_id'=>$account['remote_user_id'],
@@ -143,6 +156,12 @@ def run() -> list[str]:
             assert "new-token" not in proc.stderr
             return json.loads(proc.stdout)
 
+        # Accept future token versions with the same ID-hint shape, while
+        # actual Native GET and signed /info verification remain mandatory.
+        hints = php_case("hint_versions")
+        assert hints == {"ok": True, "hints": [{"id": NEW_ID}]*4}, hints
+        checks.append("token_version_is_not_an_arbitrary_lookup_allowlist")
+
         # The previously deleted ID must never be resurrected.
         negative = php_case("wrong_id")
         assert negative["ok"] is False and negative["error"] == (
@@ -163,8 +182,12 @@ def run() -> list[str]:
         conflicting = php_case("new_incarnation")
         assert conflicting == {"ok": False,
                               "error": "provider_adoption_username_conflict"}, conflicting
-        sql("DELETE FROM orders_list WHERE id=102")
+        # A truly retired reference does not reserve a newly reused name.
+        sql("UPDATE orders_list SET status=0 WHERE id=102")
         checks.append("stale_live_reference_blocks_same_name_reimport")
+        handler=(ROOT/'src/Subscription/ManualAccounts.php').read_text()
+        assert "BINARY remark=BINARY ? AND userid=? AND status=1" in handler
+        checks.append("retired_order_and_exact_case_do_not_block_new_native")
 
         result = php_case("new_incarnation")
         assert result["ok"] is True, result
@@ -173,6 +196,8 @@ def run() -> list[str]:
         assert result["target_key"] == "import:201", result
         assert result["old_state"] == "deleted"
         checks.append("fresh_native_id_same_username_adopts_without_name_collision")
+        assert sql("SELECT COUNT(*) FROM orders_list WHERE id=102 AND status=0") == "1"
+        checks.append("retired_order_preserved_and_live_username_resolves_new_identity")
         assert sql(
             "SELECT source_kind,source_ref,target_key,provider_remote_user_id,"
             "provider_remote_created_at,provider_state,provider_snapshot,"
