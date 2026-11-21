@@ -175,7 +175,7 @@ if((preg_match('/selectCustomPlanDay(?<planId>\d+)_(?<categoryId>\d+)_(?<account
         exit();
     }
 
-	sendMessage(\achbotMessage('legacy_messages.customer_custome_plan_name'));
+	sendMessage(\achbotMessage('legacy_messages.customer_custome_plan_name'), null, 'HTML');
 	setUser("enterCustomPlanName" . $match['planId'] . "_" . $match['categoryId'] . "_" . $match['accountCount'] . "_" . $text . "_" . $match['buyType']);
 }
 
@@ -218,7 +218,7 @@ if((preg_match('/^discountCustomPlanDay(\d+)/',$userInfo['step'], $match) || pre
             $days    = $payInfo['day'];
         } else {
             // اگر به هر دلیلی payInfo برنگشت، به عنوان کد نامعتبر رفتار می‌کنیم
-            sendMessage(\achbotMessage('legacy_messages.not_valid_discount_code'));
+            sendMessage(\achbotMessage('legacy_messages.not_valid_discount_code'), null, 'HTML');
             exit();
         }
     }else{ 
@@ -233,7 +233,7 @@ if((preg_match('/^discountCustomPlanDay(\d+)/',$userInfo['step'], $match) || pre
         if (!achbotEffectValidUsername((string)$text) ||
             ($match['buyType'] !== 'much' &&
              preg_match('/^[a-z]+[0-9]+$/D',(string)$text)!==1)) {
-            sendMessage(\achbotMessage('legacy_messages.incorrect_config_name'));
+            sendMessage(\achbotMessage('legacy_messages.incorrect_config_name'), null, 'HTML');
             exit();
         }
     } 
@@ -251,7 +251,7 @@ if((preg_match('/^discountCustomPlanDay(\d+)/',$userInfo['step'], $match) || pre
         $sid=(int)$respd['server_id'];$q->bind_param('i',$sid);
         $q->execute();$provider=$q->get_result()->fetch_assoc();$q->close();
         if (($provider['type']??'')==='marzban') {
-            sendMessage(\achbotMessage('legacy_messages.incorrect_config_name'));exit();
+            sendMessage(\achbotMessage('legacy_messages.incorrect_config_name'), null, 'HTML');exit();
         }
     }
 

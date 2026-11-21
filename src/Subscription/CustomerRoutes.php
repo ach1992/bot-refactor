@@ -119,7 +119,7 @@ if (
         sendAction('typing');
         sendMessage(
             \achbotMessage('legacy_messages.select_one_to_show_detail'),
-            json_encode(['inline_keyboard' => $keyboard])
+            json_encode(['inline_keyboard' => $keyboard]), 'HTML'
         );
     }
 
@@ -134,13 +134,13 @@ if($data=="searchAgentConfig" || $data == "searchMyConfig" || $data=="searchUser
         }
     }
     //delMessage();
-    sendMessage(\achbotMessage('legacy_messages.send_config_remark'),$cancelKey);
+    sendMessage(\achbotMessage('legacy_messages.send_config_remark'),$cancelKey, 'HTML');
     setUser($data);
 }
 
 
 if(($userInfo['step'] == "searchAgentConfig" || $userInfo['step'] == "searchMyConfig") && $text != \achbotMessage('legacy_buttons.cancel')){
-    sendMessage(\achbotMessage('legacy_messages.please_wait_message'), $removeKeyboard);
+    sendMessage(\achbotMessage('legacy_messages.please_wait_message'), $removeKeyboard, 'HTML');
 
     if($userInfo['step'] == "searchMyConfig") $condition = "AND `agent_bought` = 0";
     $stmt = $connection->prepare("SELECT * FROM `orders_list` WHERE `userid` = ? AND `remark` LIKE CONCAT('%', ?, '%') $condition");
@@ -151,7 +151,7 @@ if(($userInfo['step'] == "searchAgentConfig" || $userInfo['step'] == "searchMyCo
     
     $keys = getOrderDetailKeys($from_id, $orderId);
 
-    if($keys == null) sendMessage(\achbotMessage('legacy_messages.no_order_found'), cancelSearchKeyboard());
+    if($keys == null) sendMessage(\achbotMessage('legacy_messages.no_order_found'), cancelSearchKeyboard(), 'HTML');
     else {
         \AchBot\Subscription\AccountDetails\showMessage($keys);
         setUser();
@@ -169,7 +169,7 @@ if(($userInfo['step'] == "searchUsersConfig" && $text != \achbotMessage('legacy_
         $stmt->bind_param("i", $adminOrderDetailMatch[1]);
     }
     else{
-        sendMessage(\achbotMessage('legacy_messages.please_wait_message'), $removeKeyboard);
+        sendMessage(\achbotMessage('legacy_messages.please_wait_message'), $removeKeyboard, 'HTML');
         $stmt = $connection->prepare("SELECT * FROM `orders_list` WHERE `remark` LIKE CONCAT('%', ?, '%')");
         $stmt->bind_param("s", $text);
     }
@@ -178,12 +178,12 @@ if(($userInfo['step'] == "searchUsersConfig" && $text != \achbotMessage('legacy_
     $orderInfo = $stmt->get_result();
     $stmt->close();
 
-    if($orderInfo->num_rows == 0) sendMessage(\achbotMessage('legacy_messages.no_order_found'), cancelSearchKeyboard());
+    if($orderInfo->num_rows == 0) sendMessage(\achbotMessage('legacy_messages.no_order_found'), cancelSearchKeyboard(), 'HTML');
     else {
         $orderId = $orderInfo->fetch_assoc()['id'];
         $keys = getUserOrderDetailKeys($orderId, $adminOrderDetailCallback?$adminOrderDetailMatch[2]:0);
 
-        if($keys == null) sendMessage(\achbotMessage('legacy_messages.no_order_found'), cancelSearchKeyboard());
+        if($keys == null) sendMessage(\achbotMessage('legacy_messages.no_order_found'), cancelSearchKeyboard(), 'HTML');
         else{
             if(!$adminOrderDetailCallback) \AchBot\Subscription\AccountDetails\showMessage($keys);
             else \AchBot\Subscription\AccountDetails\showMessage($keys,(int)$message_id);
@@ -223,11 +223,11 @@ if(preg_match('/^changeCustomPort(\d+)/',$userInfo['step'],$match) && ($from_id 
         $stmt->bind_param("ii", $text, $match[1]);
         $stmt->execute();
         $stmt->close();  
-        sendMessage(\achbotMessage('legacy_messages.saved_successfuly'),$removeKeyboard);
+        sendMessage(\achbotMessage('legacy_messages.saved_successfuly'),$removeKeyboard, 'HTML');
          
         sendMessage(\achbotMessage('subscription.customer_routes.cancel_search_keyboard.message.06d5c646c1'), getPlanDetailsKeys($match[1]), 'HTML');
         setUser();
-    }else sendMessage(\achbotMessage('legacy_messages.send_only_number'));
+    }else sendMessage(\achbotMessage('legacy_messages.send_only_number'), null, 'HTML');
 }
 if(preg_match('/^changeCustomSni(\d+)/',$data,$match) && ($from_id == $admin || $userInfo['isAdmin'] == true)){
     delMessage();
@@ -245,7 +245,7 @@ if(preg_match('/^changeCustomSni(\d+)/',$userInfo['step'],$match) && ($from_id =
     }
     $stmt->execute();
     $stmt->close();  
-    sendMessage(\achbotMessage('legacy_messages.saved_successfuly'),$removeKeyboard);
+    sendMessage(\achbotMessage('legacy_messages.saved_successfuly'),$removeKeyboard, 'HTML');
      
     sendMessage(\achbotMessage('subscription.customer_routes.cancel_search_keyboard.message.06d5c646c1'), getPlanDetailsKeys($match[1]), 'HTML');
     setUser();

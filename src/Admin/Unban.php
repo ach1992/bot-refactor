@@ -26,6 +26,6 @@ if (($userInfo['step']??null)==='unbanUser' && $text!==\achbotMessage('legacy_bu
         if ($status==='changed' || $status==='already')
             sendMessage(\achbotCurrentMessage('reached_main_menu'), getAdminKeys(), 'HTML');
     } else {
-        sendMessage(\achbotMessage('legacy_messages.send_only_number'));
+        sendMessage(\achbotMessage('legacy_messages.send_only_number'), null, 'HTML');
     }
 }

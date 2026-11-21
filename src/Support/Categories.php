@@ -62,7 +62,7 @@ if ($userInfo['step']=="addTicketCategory" and ($from_id == $admin || $userInfo[
 	$stmt->execute();
 	$stmt->close();
     setUser();
-    sendMessage(\achbotMessage('legacy_messages.saved_successfuly'));
+    sendMessage(\achbotMessage('legacy_messages.saved_successfuly'), null, 'HTML');
     $stmt = $connection->prepare("SELECT * FROM `setting` WHERE `type` = 'TICKETS_CATEGORY'");
     $stmt->execute();
     $ticketCategory = $stmt->get_result();

@@ -43,7 +43,7 @@ if((preg_match('/^discountSelectPlan(\d+)_(\d+)_(\d+)/',$userInfo['step'],$match
  
  
     if($botState['remark'] ==  "manual" && preg_match('/^selectPlan/',$data) && $match['buyType'] != "much"){ 
-        sendMessage(\achbotMessage('legacy_messages.customer_custome_plan_name'), $cancelKey);
+        sendMessage(\achbotMessage('legacy_messages.customer_custome_plan_name'), $cancelKey, 'HTML');
         setUser('enterAccountName' . $match[1] . "_" . $match[2] . "_" . $match['buyType']); 
         exit(); 
     } 
@@ -55,7 +55,7 @@ if((preg_match('/^discountSelectPlan(\d+)_(\d+)_(\d+)/',$userInfo['step'],$match
             // decimal or a value which PHP will silently cast during INSERT.
             if (!is_string($text) || preg_match('/^0*[1-9][0-9]*$/D',$text)!==1 ||
                 filter_var(ltrim($text,'0'),FILTER_VALIDATE_INT)===false) {
-                sendMessage(\achbotMessage('legacy_messages.send_only_number')); exit();
+                sendMessage(\achbotMessage('legacy_messages.send_only_number'), null, 'HTML'); exit();
             }
             $accountCount=(int)$text;
             setUser();
@@ -66,14 +66,14 @@ if((preg_match('/^discountSelectPlan(\d+)_(\d+)_(\d+)/',$userInfo['step'],$match
             $remark = $text; 
             setUser(); 
         } else{ 
-            sendMessage(\achbotMessage('legacy_messages.incorrect_config_name'));
+            sendMessage(\achbotMessage('legacy_messages.incorrect_config_name'), null, 'HTML');
             exit(); 
         } 
     } 
     else{ 
         if($match['buyType'] == "much"){ 
             setUser($data); 
-            sendMessage(\achbotMessage('legacy_messages.enter_account_amount'), $cancelKey);
+            sendMessage(\achbotMessage('legacy_messages.enter_account_amount'), $cancelKey, 'HTML');
             exit(); 
         } 
     } 

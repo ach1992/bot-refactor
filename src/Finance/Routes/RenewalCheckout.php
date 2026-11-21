@@ -49,7 +49,7 @@ if (
 
     if($order->num_rows == 0){
         delMessage();
-        sendMessage(\achbotMessage('legacy_messages.config_not_found'), getMainKeys());
+        sendMessage(\achbotMessage('legacy_messages.config_not_found'), getMainKeys(), 'HTML');
         exit();
     }
 
@@ -158,7 +158,7 @@ if (is_string($data) && (strlen($data) <= 64 || ($GLOBALS['achbotManualCryptoVer
 
     if (!$orderRes || $orderRes->num_rows == 0) {
         delMessage();
-        sendMessage(\achbotMessage('legacy_messages.config_not_found'), getMainKeys());
+        sendMessage(\achbotMessage('legacy_messages.config_not_found'), getMainKeys(), 'HTML');
         exit;
     }
 
@@ -280,7 +280,7 @@ if (preg_match('/wait(?:RenewCart|RenewGift|RenewUsdt)Receipt(.*)/', $userInfo['
 
     if (!$orderRes || $orderRes->num_rows == 0) {
         delMessage();
-        sendMessage(\achbotMessage('legacy_messages.config_not_found'), getMainKeys());
+        sendMessage(\achbotMessage('legacy_messages.config_not_found'), getMainKeys(), 'HTML');
         exit;
     }
 

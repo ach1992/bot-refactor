@@ -100,6 +100,20 @@ zero/long text, optional per-instance templates, scheduled broadcasts and
 retries. Preserve existing Golden/Stable test evidence and extend it rather
 than rewriting it as if no behavior changed.
 
+Direct, parameter-free `legacy_messages` catalog sends with no Markdown or
+HTML delimiter characters use explicit HTML in the current source. The
+source-real static catalog audit pins their original text, source expressions,
+keyboards and parse modes; the Telegram wire parity test admits only the 74
+fingerprinted additions of the HTML argument, with PHP-resolved catalog
+values verified markup-free. This preserves the exact displayed characters,
+whitespace, absence of formatting entities, and keyboard/callback behavior,
+while intentionally changing the transport's parse-mode field. The source
+still contains dynamic/instance-owned and persisted legacy producers; notably
+support admin replies and photo captions remain Markdown, and broadcast jobs
+keep their stored parse modes. Never infer format safety from a catalog key
+whose values contain markup, from arbitrary stored or admin text, or from
+HTML already embedded inside an old Markdown message.
+
 ## Validation and rollout
 
 `php -n tools/test_post_v9_telegram_presentation.php` exercises default
