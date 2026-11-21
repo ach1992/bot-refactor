@@ -125,7 +125,7 @@ function achbotGatewayRuleMutate(array $state,string $kind,string $key,
         if ($s && $s['phase']==='exempt') {
             if ($step!==$key || $value===null)
                 throw new RuntimeException('gateway_exempt_input_not_owned');
-            if ($value===($GLOBALS['buttonValues']['cancel']??null)) {
+            if ($value===achbotMessage('legacy_buttons.cancel')) {
                 $newStep='none';return $state;
             }
             $changes=achbotGatewayExemptChanges($value);
@@ -147,7 +147,7 @@ function achbotGatewayRuleMutate(array $state,string $kind,string $key,
         }
         if (!$s || $s['phase']!=='edit' || $step!==$key || $value===null)
             throw new RuntimeException('gateway_rule_input_not_owned');
-        if ($value===($GLOBALS['buttonValues']['cancel']??null)) {
+        if ($value===achbotMessage('legacy_buttons.cancel')) {
             $newStep='none';
             return $state;
         }

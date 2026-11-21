@@ -17,7 +17,7 @@ if(preg_match('/selectServer(?<serverId>\d+)_(?<buyType>\w+)/',$data, $match) &&
     $respd = $stmt->get_result();
     $stmt->close();
     if($respd->num_rows == 0){
-        alert($mainValues['category_not_avilable']);
+        alert(\achbotMessage('legacy_messages.category_not_avilable'));
     }else{
         
         $keyboard = [];
@@ -32,14 +32,14 @@ if(preg_match('/selectServer(?<serverId>\d+)_(?<buyType>\w+)/',$data, $match) &&
             if($rowcount>0) $keyboard[] = ['text' => "$name", 'callback_data' => "selectCategory{$id}_{$sid}_{$match['buyType']}"];
         }
         if(empty($keyboard)){
-            alert($mainValues['category_not_avilable']);exit;
+            alert(\achbotMessage('legacy_messages.category_not_avilable'));exit;
         }
-        alert($mainValues['receive_categories']);
+        alert(\achbotMessage('legacy_messages.receive_categories'));
 
-        $keyboard[] = ['text' => $buttonValues['back_to_main'], 'callback_data' => 
+        $keyboard[] = ['text' => \achbotMessage('legacy_buttons.back_to_main'), 'callback_data' =>
         ($match['buyType'] == "one"?"agentOneBuy":($match['buyType'] == "much"?"agentMuchBuy":"buySubscription"))];
         $keyboard = array_chunk($keyboard,1);
-        editText($message_id,$mainValues['buy_sub_select_category'], json_encode(['inline_keyboard'=>$keyboard]));
+        editText($message_id,\achbotMessage('legacy_messages.buy_sub_select_category'), json_encode(['inline_keyboard'=>$keyboard]));
     }
 
 }
@@ -52,9 +52,9 @@ if(preg_match('/selectCategory(?<categoryId>\d+)_(?<serverId>\d+)_(?<buyType>\w+
     $respd = $stmt->get_result();
     $stmt->close();
     if($respd->num_rows==0){
-        alert($mainValues['no_plan_available']); 
+        alert(\achbotMessage('legacy_messages.no_plan_available'));
     }else{
-        alert($mainValues['receive_plans']);
+        alert(\achbotMessage('legacy_messages.receive_plans'));
         $keyboard = [];
         while($file = $respd->fetch_assoc()){
             $id = $file['id'];
@@ -71,11 +71,11 @@ if(preg_match('/selectCategory(?<categoryId>\d+)_(?<serverId>\d+)_(?<buyType>\w+
             $keyboard[] = ['text' => "$name - $price", 'callback_data' => "selectPlan{$id}_{$call_id}_{$match['buyType']}"];
         }
         if($botState['plandelkhahState'] == "on" && $match['buyType'] != "much"){
-	        $keyboard[] = ['text' => $mainValues['buy_custom_plan'], 'callback_data' => "selectCustomPlan{$call_id}_{$sid}_{$match['buyType']}"];
+	        $keyboard[] = ['text' => \achbotMessage('legacy_messages.buy_custom_plan'), 'callback_data' => "selectCustomPlan{$call_id}_{$sid}_{$match['buyType']}"];
         }
-        $keyboard[] = ['text' => $buttonValues['back_to_main'], 'callback_data' => "selectServer{$sid}_{$match['buyType']}"];
+        $keyboard[] = ['text' => \achbotMessage('legacy_buttons.back_to_main'), 'callback_data' => "selectServer{$sid}_{$match['buyType']}"];
         $keyboard = array_chunk($keyboard,1);
-        editText($message_id,$mainValues['buy_sub_select_plan'], json_encode(['inline_keyboard'=>$keyboard]));
+        editText($message_id,\achbotMessage('legacy_messages.buy_sub_select_plan'), json_encode(['inline_keyboard'=>$keyboard]));
     }
 
 }
@@ -87,16 +87,16 @@ if(preg_match('/selectCustomPlan(?<categoryId>\d+)_(?<serverId>\d+)_(?<buyType>\
     $stmt->execute();
     $respd = $stmt->get_result();
     $stmt->close();
-    alert($mainValues['receive_plans']);
+    alert(\achbotMessage('legacy_messages.receive_plans'));
     $keyboard = [];
     while($file = $respd->fetch_assoc()){
         $id = $file['id'];
         $name = preg_replace(\achbotMessage('purchase.catalogue.text.1bc7ba6a31'),"",$file['title']);
         $keyboard[] = ['text' => "$name", 'callback_data' => "selectCustomePlan{$id}_{$call_id}_{$match['buyType']}"];
     }
-    $keyboard[] = ['text' => $buttonValues['back_to_main'], 'callback_data' => "selectServer{$sid}_{$match['buyType']}"];
+    $keyboard[] = ['text' => \achbotMessage('legacy_buttons.back_to_main'), 'callback_data' => "selectServer{$sid}_{$match['buyType']}"];
     $keyboard = array_chunk($keyboard,1);
-    editText($message_id, $mainValues['select_one_plan_to_edit'], json_encode(['inline_keyboard'=>$keyboard]));
+    editText($message_id, \achbotMessage('legacy_messages.select_one_plan_to_edit'), json_encode(['inline_keyboard'=>$keyboard]));
 
 }
 if(preg_match('/selectCustomePlan(?<planId>\d+)_(?<categoryId>\d+)_(?<buyType>\w+)/',$data, $match) && ($botState['sellState']=="on" ||$from_id == $admin)){
@@ -118,10 +118,10 @@ if(preg_match('/selectCustomePlan(?<planId>\d+)_(?<categoryId>\d+)_(?<buyType>\w
         else $discount = $discounts['servers'][$serverId]?? $discounts['normal'];
         $price -= floor($price * $discount / 100);
 	}
-	sendMessage(str_replace("VOLUME-PRICE", $price, $mainValues['customer_custome_plan_volume']),$cancelKey);
+	sendMessage(str_replace("VOLUME-PRICE", $price, \achbotMessage('legacy_messages.customer_custome_plan_volume')),$cancelKey);
 	setUser("selectCustomPlanGB" . $match[1] . "_" . $match[2] . "_" . $match['buyType']);
 }
-if(preg_match('/selectCustomPlanGB(?<planId>\d+)_(?<categoryId>\d+)_(?<buyType>\w+)/',$userInfo['step'], $match) && ($botState['sellState']=="on" ||$from_id == $admin) && $text != $buttonValues['cancel']){
+if(preg_match('/selectCustomPlanGB(?<planId>\d+)_(?<categoryId>\d+)_(?<buyType>\w+)/',$userInfo['step'], $match) && ($botState['sellState']=="on" ||$from_id == $admin) && $text != \achbotMessage('legacy_buttons.cancel')){
     if(!is_numeric($text)){
         sendMessage(\achbotMessage('purchase.catalogue.message.ef774be0a5'), null, 'HTML');
         exit();
@@ -154,10 +154,10 @@ if(preg_match('/selectCustomPlanGB(?<planId>\d+)_(?<categoryId>\d+)_(?<buyType>\
         $price -= floor($price * $discount / 100);
 	}
     
-	sendMessage(str_replace("DAY-PRICE", $price, $mainValues['customer_custome_plan_day']));
+	sendMessage(str_replace("DAY-PRICE", $price, \achbotMessage('legacy_messages.customer_custome_plan_day')));
 	setUser("selectCustomPlanDay" . $id . "_" . $match['categoryId'] . "_" . $text . "_" . $match['buyType']);
 }
-if((preg_match('/selectCustomPlanDay(?<planId>\d+)_(?<categoryId>\d+)_(?<accountCount>\d+)_(?<buyType>\w+)/',$userInfo['step'], $match)) && ($botState['sellState']=="on" ||$from_id == $admin) && $text != $buttonValues['cancel']){
+if((preg_match('/selectCustomPlanDay(?<planId>\d+)_(?<categoryId>\d+)_(?<accountCount>\d+)_(?<buyType>\w+)/',$userInfo['step'], $match)) && ($botState['sellState']=="on" ||$from_id == $admin) && $text != \achbotMessage('legacy_buttons.cancel')){
     if(!is_numeric($text)){
         sendMessage(\achbotMessage('purchase.catalogue.message.ef774be0a5'), null, 'HTML');
         exit();
@@ -175,11 +175,11 @@ if((preg_match('/selectCustomPlanDay(?<planId>\d+)_(?<categoryId>\d+)_(?<account
         exit();
     }
 
-	sendMessage($mainValues['customer_custome_plan_name']);
+	sendMessage(\achbotMessage('legacy_messages.customer_custome_plan_name'));
 	setUser("enterCustomPlanName" . $match['planId'] . "_" . $match['categoryId'] . "_" . $match['accountCount'] . "_" . $text . "_" . $match['buyType']);
 }
 
-if((preg_match('/^discountCustomPlanDay(\d+)/',$userInfo['step'], $match) || preg_match('/enterCustomPlanName(\d+)_(\d+)_(\d+)_(\d+)_(?<buyType>\w+)/',$userInfo['step'], $match)) && ($botState['sellState']=="on" ||$from_id ==$admin) && $text != $buttonValues['cancel']){ 
+if((preg_match('/^discountCustomPlanDay(\d+)/',$userInfo['step'], $match) || preg_match('/enterCustomPlanName(\d+)_(\d+)_(\d+)_(\d+)_(?<buyType>\w+)/',$userInfo['step'], $match)) && ($botState['sellState']=="on" ||$from_id ==$admin) && $text != \achbotMessage('legacy_buttons.cancel')){
     $selectedCustomPlanId = (int)($match[1] ?? 0);
     if (preg_match('/^discountCustomPlanDay/', $userInfo['step'])) {
         $stmt = $connection->prepare("SELECT plan_id FROM pays WHERE id = ? LIMIT 1");
@@ -205,7 +205,6 @@ if((preg_match('/^discountCustomPlanDay(\d+)/',$userInfo['step'], $match) || pre
             $username,
             $first_name,
             $admin,
-            $mainValues,
             $botState
         );
 
@@ -219,7 +218,7 @@ if((preg_match('/^discountCustomPlanDay(\d+)/',$userInfo['step'], $match) || pre
             $days    = $payInfo['day'];
         } else {
             // اگر به هر دلیلی payInfo برنگشت، به عنوان کد نامعتبر رفتار می‌کنیم
-            sendMessage($mainValues['not_valid_discount_code']);
+            sendMessage(\achbotMessage('legacy_messages.not_valid_discount_code'));
             exit();
         }
     }else{ 
@@ -234,7 +233,7 @@ if((preg_match('/^discountCustomPlanDay(\d+)/',$userInfo['step'], $match) || pre
         if (!achbotEffectValidUsername((string)$text) ||
             ($match['buyType'] !== 'much' &&
              preg_match('/^[a-z]+[0-9]+$/D',(string)$text)!==1)) {
-            sendMessage($mainValues['incorrect_config_name']);
+            sendMessage(\achbotMessage('legacy_messages.incorrect_config_name'));
             exit();
         }
     } 
@@ -252,7 +251,7 @@ if((preg_match('/^discountCustomPlanDay(\d+)/',$userInfo['step'], $match) || pre
         $sid=(int)$respd['server_id'];$q->bind_param('i',$sid);
         $q->execute();$provider=$q->get_result()->fetch_assoc();$q->close();
         if (($provider['type']??'')==='marzban') {
-            sendMessage($mainValues['incorrect_config_name']);exit();
+            sendMessage(\achbotMessage('legacy_messages.incorrect_config_name'));exit();
         }
     }
 
@@ -311,18 +310,18 @@ if((preg_match('/^discountCustomPlanDay(\d+)/',$userInfo['step'], $match) || pre
     } 
      
      
-    if(achbotManualEnabled('bank_transfer') && achbotPayUxAudienceAllowed($connection,'bank_transfer',(int)$from_id)) $keyboard[] = [['text' => $buttonValues['cart_to_cart'],  'callback_data' => "payCustomWithCartToCart$hash_id"]];
-    if(achbotManualEnabled('gift_card') && achbotPayUxAudienceAllowed($connection,'gift_card',(int)$from_id)) $keyboard[] = [['text' => $buttonValues['gift_card'], 'callback_data' => "payCustomWithGiftCard$hash_id"]];
+    if(achbotManualEnabled('bank_transfer') && achbotPayUxAudienceAllowed($connection,'bank_transfer',(int)$from_id)) $keyboard[] = [['text' => \achbotMessage('legacy_buttons.cart_to_cart'),  'callback_data' => "payCustomWithCartToCart$hash_id"]];
+    if(achbotManualEnabled('gift_card') && achbotPayUxAudienceAllowed($connection,'gift_card',(int)$from_id)) $keyboard[] = [['text' => \achbotMessage('legacy_buttons.gift_card'), 'callback_data' => "payCustomWithGiftCard$hash_id"]];
     if ((achbotManualCryptoEnabled((int)$from_id) && (achbotPayUxAudienceAllowed($connection,'manual_usdt',(int)$from_id) || achbotPayUxAudienceAllowed($connection,'manual_trx',(int)$from_id)))) $keyboard[] = [['text' => \achbotMessage('purchase.catalogue.button.e729457ba2'), 'callback_data' => "mcm_$hash_id"]];
-    if(($botState['nowPaymentOther'] == "on" && achbotPayUxAudienceAllowed($connection,'nowpayments',(int)$from_id) && achbotUsdtRateForUser($connection,(int)$from_id)!==null)) $keyboard[] = [['text' => $buttonValues['now_payment_gateway'],  'url' => $botUrl . "pay/checkout.php?nowpayment&hash_id=" . $hash_id]];
-    if(($botState['zarinpal'] == "on" && achbotPayUxAudienceAllowed($connection,'zarinpal',(int)$from_id))) $keyboard[] = [['text' => $buttonValues['zarinpal_gateway'],  'url' => $botUrl . "pay/checkout.php?zarinpal&hash_id=" . $hash_id]];
-    if(($botState['nextpay'] == "on" && achbotPayUxAudienceAllowed($connection,'nextpay',(int)$from_id))) $keyboard[] = [['text' => $buttonValues['nextpay_gateway'],  'url' => $botUrl . "pay/checkout.php?nextpay&hash_id=" . $hash_id]];
-    if(($botState['walletState'] == "on" && achbotPayUxAudienceAllowed($connection,'wallet',(int)$from_id))) $keyboard[] = [['text' => $buttonValues['pay_with_wallet'],  'callback_data' => "payCustomWithWallet$hash_id"]];
+    if(($botState['nowPaymentOther'] == "on" && achbotPayUxAudienceAllowed($connection,'nowpayments',(int)$from_id) && achbotUsdtRateForUser($connection,(int)$from_id)!==null)) $keyboard[] = [['text' => \achbotMessage('legacy_buttons.now_payment_gateway'),  'url' => $botUrl . "pay/checkout.php?nowpayment&hash_id=" . $hash_id]];
+    if(($botState['zarinpal'] == "on" && achbotPayUxAudienceAllowed($connection,'zarinpal',(int)$from_id))) $keyboard[] = [['text' => \achbotMessage('legacy_buttons.zarinpal_gateway'),  'url' => $botUrl . "pay/checkout.php?zarinpal&hash_id=" . $hash_id]];
+    if(($botState['nextpay'] == "on" && achbotPayUxAudienceAllowed($connection,'nextpay',(int)$from_id))) $keyboard[] = [['text' => \achbotMessage('legacy_buttons.nextpay_gateway'),  'url' => $botUrl . "pay/checkout.php?nextpay&hash_id=" . $hash_id]];
+    if(($botState['walletState'] == "on" && achbotPayUxAudienceAllowed($connection,'wallet',(int)$from_id))) $keyboard[] = [['text' => \achbotMessage('legacy_buttons.pay_with_wallet'),  'callback_data' => "payCustomWithWallet$hash_id"]];
  
     if(!preg_match('/^discountCustomPlanDay/', $userInfo['step'])) $keyboard[] = [['text' => \achbotMessage('purchase.catalogue.button.05c3a1e3f4'),  'callback_data' => "haveDiscountCustom_" . $rowId]];
-	$keyboard[] = [['text' => $buttonValues['cancel'], 'callback_data' => "mainMenu"]]; 
+	$keyboard[] = [['text' => \achbotMessage('legacy_buttons.cancel'), 'callback_data' => "mainMenu"]];
     $price = ($price == 0) ? \achbotMessage('purchase.catalogue.text.dda7ff2974') : number_format($price).\achbotMessage('purchase.catalogue.text.bfb7221456');
-    $sent=sendMessage(str_replace(['VOLUME', 'DAYS', 'PLAN-NAME', 'PRICE', 'DESCRIPTION'], [$volume, $days, $name, $price, $desc], $mainValues['buy_subscription_detail']),json_encode(['inline_keyboard'=>$keyboard]), "HTML");
+    $sent=sendMessage(str_replace(['VOLUME', 'DAYS', 'PLAN-NAME', 'PRICE', 'DESCRIPTION'], [$volume, $days, $name, $price, $desc], \achbotCurrentMessage('buy_subscription_detail')),json_encode(['inline_keyboard'=>$keyboard]), "HTML");
     require_once __DIR__ . '/../Finance/PaymentLifecycle.php';
     achbotPayUxTrackByHash($connection,(string)$hash_id,(int)$from_id,$sent);
     setUser(); 

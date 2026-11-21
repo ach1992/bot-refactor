@@ -358,8 +358,7 @@ function achbotAutoRenewFinalize(mysqli $db, array $claim,
 
 /** A duplicate invocation only sees the durable claim and does no work. */
 function handleAutoRenewCallback($data): void {
-    global $connection,$botState,$admin,$mainValues,$buttonValues;
-    if (($botState['renewAutoState']??'off')!=='on' ||
+    global $connection, $botState, $admin;    if (($botState['renewAutoState']??'off')!=='on' ||
         !preg_match('/^renewAuto_with_wallet\|([1-9][0-9]*)\|([1-9][0-9]*)$/D',
                     (string)$data,$m)) return;
     $userId=(int)$m[1];
@@ -376,9 +375,9 @@ function handleAutoRenewCallback($data): void {
                 'shortfall'=>number_format($claim['amount']-$claim['wallet'])
             ]);
             $keys=json_encode(['inline_keyboard'=>[[
-                ['text'=>$buttonValues['my_subscriptions'],
+                ['text'=>\achbotMessage('legacy_buttons.my_subscriptions'),
                  'callback_data'=>'mySubscriptions'],
-                ['text'=>$buttonValues['sharj'],
+                ['text'=>\achbotMessage('legacy_buttons.sharj'),
                  'callback_data'=>'increaseMyWallet']
             ]]],JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
             sendMessage($notice,$keys,'HTML',$userId);

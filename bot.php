@@ -69,7 +69,7 @@ $inviteReward = achbotInviteReward($connection);
 GOTOSTART:
 if (($userInfo['step'] ?? null) === "banned" &&
     $from_id != $admin && empty($userInfo['isAdmin'])) {
-    sendMessage($mainValues['banned']);
+    sendMessage(\achbotCurrentMessage('banned'));
     exit();
 }
 
@@ -129,7 +129,7 @@ if ($joinRequired) {
     if (!is_array($exemptedUsers)) $exemptedUsers = [];
     if (!in_array((string)$from_id, array_map('strval', $exemptedUsers), true)) {
         if ($isJoinCallback) {
-            alert($mainValues['not_joine_yet']);
+            alert(\achbotMessage('legacy_messages.not_joine_yet'));
             exit;
         }
         $joinUrl = \AchBot\Presentation\Text\lockChannelJoinUrl(
@@ -143,20 +143,20 @@ if ($joinRequired) {
         $joinKeyboard = [];
         if ($joinUrl !== '') {
             $joinKeyboard[] = [
-                ['text' => $buttonValues['join_channel'], 'url' => $joinUrl]
+                ['text' => \achbotMessage('legacy_buttons.join_channel'), 'url' => $joinUrl]
             ];
         }
         $joinKeyboard[] = [
-            ['text' => $buttonValues['have_joined'],
+            ['text' => \achbotMessage('legacy_buttons.have_joined'),
              'callback_data' => 'haveJoined' . $startContinuation]
         ];
-        sendMessage($mainValues['join_channel_message'],
+        sendMessage(\achbotCurrentMessage('join_channel_message'),
             json_encode(['inline_keyboard' => $joinKeyboard]), 'HTML');
         exit;
     }
 }
 if ($robotState === "off" && $from_id != $admin) {
-    sendMessage($mainValues['bot_is_updating']);
+    sendMessage(\achbotMessage('legacy_messages.bot_is_updating'));
     exit();
 }
 
@@ -210,16 +210,16 @@ if($userInfo['phone'] == null && $from_id != $admin && $userInfo['isAdmin'] != t
         $phone_number = $contact->phone_number;
         $phone_id = $contact->user_id;
         if($phone_id != $from_id){
-            sendMessage($mainValues['please_select_from_below_buttons']);
+            sendMessage(\achbotMessage('legacy_messages.please_select_from_below_buttons'));
             exit();
         }else{
             if(!preg_match('/^\+98(\d+)/',$phone_number) && !preg_match('/^98(\d+)/',$phone_number) && !preg_match('/^0098(\d+)/',$phone_number) && $botState['requireIranPhone'] == 'on'){
-                sendMessage($mainValues['use_iranian_number_only']);
+                sendMessage(\achbotMessage('legacy_messages.use_iranian_number_only'));
                 exit();
             }
             setUser($phone_number, 'phone');
 
-            sendMessage($mainValues['phone_confirmed'],$removeKeyboard);
+            sendMessage(\achbotMessage('legacy_messages.phone_confirmed'),$removeKeyboard);
             $text = "/start";
 
             $stmt = $connection->prepare("SELECT * FROM `users` WHERE `userid`=?");
@@ -230,9 +230,9 @@ if($userInfo['phone'] == null && $from_id != $admin && $userInfo['isAdmin'] != t
             $stmt->close();
         }
     }else{
-        sendMessage($mainValues['send_your_phone_number'], json_encode([
+        sendMessage(\achbotMessage('legacy_messages.send_your_phone_number'), json_encode([
 			'keyboard' => [[[
-					'text' => $buttonValues['send_phone_number'],
+					'text' => \achbotMessage('legacy_buttons.send_phone_number'),
 					'request_contact' => true,
 				]]],
 			'resize_keyboard' => true
@@ -243,7 +243,7 @@ if($userInfo['phone'] == null && $from_id != $admin && $userInfo['isAdmin'] != t
 
 $paymentHomeMatch=[];
 $paymentHome=is_string($data) && preg_match('/^ph_([A-Za-z0-9_-]{1,50})$/D',$data,$paymentHomeMatch)===1;
-if (preg_match('/^\/([Ss]tart)/', $text) || $text == $buttonValues['back_to_main'] || $data == 'mainMenu' || $data == 'evidenceHome' || $paymentHome) {
+if (preg_match('/^\/([Ss]tart)/', $text) || $text == \achbotMessage('legacy_buttons.back_to_main') || $data == 'mainMenu' || $data == 'evidenceHome' || $paymentHome) {
 
     // Config has an early cached userInfo. A newer moderation ban or an
     // active DirectGift wizard takes precedence over old menu callbacks.
@@ -272,7 +272,7 @@ if (preg_match('/^\/([Ss]tart)/', $text) || $text == $buttonValues['back_to_main
         // Legacy Home buttons can be on untracked financial/support evidence.
         // Always send the actor's own menu; never edit/delete the source or
         // read another customer's invoice merely to navigate Home.
-        sendMessage($mainValues['start_message'], getMainKeys(), 'HTML');
+        sendMessage(\achbotCurrentMessage('start_message'), getMainKeys(), 'HTML');
 
     } else {
 
@@ -300,7 +300,7 @@ if (preg_match('/^\/([Ss]tart)/', $text) || $text == $buttonValues['back_to_main
             $keys = json_encode([
                 'inline_keyboard' => [
                     [
-                        ['text' => $buttonValues['send_message_to_user'], 'callback_data' => 'sendMessageToUser' . $from_id]
+                        ['text' => \achbotMessage('legacy_buttons.send_message_to_user'), 'callback_data' => 'sendMessageToUser' . $from_id]
                     ]
                 ]
             ]);
@@ -312,25 +312,25 @@ if (preg_match('/^\/([Ss]tart)/', $text) || $text == $buttonValues['back_to_main
                     $username,
                     $from_id
                 ],
-                $mainValues['new_member_joined']
+                \achbotCurrentMessage('new_member_joined')
             );
 
             achbotNotifyAdmins('sendMessage', ['text'=>$msg, 'reply_markup'=>$keys, 'parse_mode'=>'HTML']);
         }
 
-        sendMessage($mainValues['start_message'], getMainKeys(), 'HTML');
+        sendMessage(\achbotCurrentMessage('start_message'), getMainKeys(), 'HTML');
 
         if ($isFirstStart) {
 
-            $userMessage = $mainValues['user_welcome_message'];
+            $userMessage = \achbotCurrentMessage('user_welcome_message');
 
             $secondButton = $canBuy
-                ? ['text' => $buttonValues['buy_subscriptions'], 'callback_data' => 'buySubscription']
-                : ['text' => $buttonValues['back_to_main'], 'callback_data' => 'mainMenu'];
+                ? ['text' => \achbotMessage('legacy_buttons.buy_subscriptions'), 'callback_data' => 'buySubscription']
+                : ['text' => \achbotMessage('legacy_buttons.back_to_main'), 'callback_data' => 'mainMenu'];
 
             $keyboard = [
                 [
-                    ['text' => $buttonValues['my_subscriptions'], 'callback_data' => 'mySubscriptions'],
+                    ['text' => \achbotMessage('legacy_buttons.my_subscriptions'), 'callback_data' => 'mySubscriptions'],
                     $secondButton
                 ]
             ];
@@ -347,14 +347,14 @@ if (preg_match('/^\/([Ss]tart)/', $text) || $text == $buttonValues['back_to_main
     exit;
 }
 
-if(preg_match('/^sendMessageToUser(\d+)/',$data,$match) && ($from_id == $admin || $userInfo['isAdmin'] == true) && $text != $buttonValues['cancel']){
+if(preg_match('/^sendMessageToUser(\d+)/',$data,$match) && ($from_id == $admin || $userInfo['isAdmin'] == true) && $text != \achbotMessage('legacy_buttons.cancel')){
     editText($message_id,\achbotMessage('bot.bot.webhook_ingress_authenticated.message.305cb98154'));
     setUser($data);
 }
-if(preg_match('/^sendMessageToUser(\d+)/',$userInfo['step'],$match) && ($from_id == $admin || $userInfo['isAdmin'] == true) && $text != $buttonValues['cancel']){
+if(preg_match('/^sendMessageToUser(\d+)/',$userInfo['step'],$match) && ($from_id == $admin || $userInfo['isAdmin'] == true) && $text != \achbotMessage('legacy_buttons.cancel')){
     sendMessage($text,null,null,$match[1]);
 	sendMessage(\achbotMessage('bot.bot.webhook_ingress_authenticated.message.21095e090c', ['match_1' => $match[1]]), $removeKeyboard, "html");
-    sendMessage($mainValues['reached_main_menu'], getAdminKeys(), 'HTML');
+    sendMessage(\achbotCurrentMessage('reached_main_menu'), getAdminKeys(), 'HTML');
     setUser();
 }
 
@@ -378,7 +378,7 @@ if (
     $userInfo['step'] == "awaitingDateRange" &&
     ($from_id == $admin || $userInfo['isAdmin'] == true)
 ) {
-    if (isset($text) && $text == $buttonValues['cancel']) {
+    if (isset($text) && $text == \achbotMessage('legacy_buttons.cancel')) {
         setUser("none", "step");
         sendMessage(\achbotMessage('bot.bot.webhook_ingress_authenticated.message.0108e71350'), $removeKeyboard, "HTML");
         exit;
@@ -481,12 +481,12 @@ if(($data=="botSettings" or preg_match('/^changeBot([A-Za-z0-9_]+)$/D',$data,$ma
         else $newValue = ($botState[$match[1]] ?? ($match[1] === 'changePlanState' ? 'on' : 'off')) === "on" ? "off" : "on";
         setSettings($match[1], $newValue);
     }
-    editText($message_id,$mainValues['change_bot_settings_message'],getBotSettingKeys());
+    editText($message_id,\achbotMessage('legacy_messages.change_bot_settings_message'),getBotSettingKeys());
 }
 if($data=="changeUpdateConfigLinkState" && ($from_id == $admin || $userInfo['isAdmin'] == true)){
     $newValue = $botState['updateConnectionState']=="robot"?"site":"robot";
     setSettings('updateConnectionState', $newValue);
-    editText($message_id,$mainValues['change_bot_settings_message'],getBotSettingKeys());
+    editText($message_id,\achbotMessage('legacy_messages.change_bot_settings_message'),getBotSettingKeys());
 }
 if(($data=="gateWays_Channels" or preg_match('/^changeGateWays([A-Za-z0-9_]+)$/D',$data,$match)) && ($from_id == $admin || $userInfo['isAdmin'] == true)){
     // Merchant/public-destination menu also requires CURRENT authorization,
@@ -519,7 +519,7 @@ if(($data=="gateWays_Channels" or preg_match('/^changeGateWays([A-Za-z0-9_]+)$/D
             return;
         }
     }
-    editText($message_id,$mainValues['change_bot_settings_message'],getGateWaysKeys());
+    editText($message_id,\achbotMessage('legacy_messages.change_bot_settings_message'),getGateWaysKeys());
 }
 // Strict, source-authenticated private operator rules. The older audience
 // keyboard remains an alias, but new methods have independent category rules.
@@ -613,14 +613,14 @@ if (is_string($userInfo['step']??null) &&
         $page=achbotGatewayAdminPage('gr|m|'.$method);
         // An inline keyboard cannot also remove the temporary ReplyKeyboard.
         // Finish the wizard first, then show the same method's current menu.
-        sendMessage($text===($buttonValues['cancel']??null)
+        sendMessage($text===(\achbotMessage('legacy_buttons.cancel')??null)
             ? \achbotMessage('bot.bot.gateway_audience_settings.message.74d707fe02')
             : \achbotMessage('payment_settings.gateway_rule_admin.exempt_saved'),
             $removeKeyboard, 'HTML');
         sendMessage($page['text'],$page['keyboard'],'HTML');
         return;
     }
-    if ($text===$buttonValues['cancel']) {
+    if ($text===\achbotMessage('legacy_buttons.cancel')) {
         // Other numeric editors retain their established cancellation UX.
         sendMessage(\achbotMessage('bot.bot.gateway_audience_settings.message.74d707fe02'), null, 'HTML');
         return;
@@ -679,7 +679,7 @@ if (($from_id == $admin || (int)($userInfo['isAdmin']??0)===1) &&
 }
 if (($from_id == $admin || (int)($userInfo['isAdmin']??0)===1) &&
     preg_match('/^paymentPolicyValue_([A-Za-z]+)$/D',(string)($userInfo['step']??''),$policyMatch) &&
-    $text!==$buttonValues['cancel']) {
+    $text!==\achbotMessage('legacy_buttons.cancel')) {
     $fields=achbotPaymentPolicyFields();$key=$policyMatch[1];
     if (!isset($fields[$key]) || !preg_match('/^[0-9]{1,5}$/D',(string)$text) ||
         (int)$text<$fields[$key]['min'] || (int)$text>$fields[$key]['max']) {
@@ -707,7 +707,7 @@ if($data=="changeConfigRemarkType"){
             break;
     }
     setSettings('remark', $newValue);
-    editText($message_id,$mainValues['change_bot_settings_message'],getBotSettingKeys());
+    editText($message_id,\achbotMessage('legacy_messages.change_bot_settings_message'),getBotSettingKeys());
 }
 // Existing API settings use the same current private gateway authority.
 if (is_string($data??null) &&
@@ -798,7 +798,7 @@ if (str_starts_with($paymentKeyStep,'achbotPaymentKey|') ||
         sendMessage(\achbotMessage('bot.bot.change_config_remark_type.message.1bc265a941'), null, 'HTML');
         return;
     }
-    $kind=$text===$buttonValues['cancel']?'cancel':'save';
+    $kind=$text===\achbotMessage('legacy_buttons.cancel')?'cancel':'save';
     if (!achbotAdminPaymentKeyChange($update,(int)$from_id,(int)$chat_id,
             (int)$message_id,(int)$admin,$kind,$ownedStep['field'],
             (string)$text)) {
@@ -813,12 +813,12 @@ if (str_starts_with($paymentKeyStep,'achbotPaymentKey|') ||
     if ($kind==='cancel') {
         sendMessage(\achbotMessage('bot.bot.gateway_audience_settings.message.74d707fe02'), $removeKeyboard, 'HTML');
     } else {
-        sendMessage($mainValues['saved_successfuly'],$removeKeyboard);
+        sendMessage(\achbotMessage('legacy_messages.saved_successfuly'),$removeKeyboard);
     }
     if (achbotPaymentApiAdminIsField($ownedStep['field'])) {
         achbotPaymentApiAdminReturn($ownedStep['field']);
     } else {
-        sendMessage($mainValues['change_bot_settings_message'],getGateWaysKeys());
+        sendMessage(\achbotMessage('legacy_messages.change_bot_settings_message'),getGateWaysKeys());
     }
     return;
 }
@@ -837,12 +837,12 @@ if ($data == "userReports" && ($from_id == $admin || $userInfo['isAdmin'] == tru
     setUser($data);
 }
 
-if ($userInfo['step'] == "userReports" && $text != $buttonValues['cancel'] && ($from_id == $admin || $userInfo['isAdmin'] == true)) {
+if ($userInfo['step'] == "userReports" && $text != \achbotMessage('legacy_buttons.cancel') && ($from_id == $admin || $userInfo['isAdmin'] == true)) {
     if (is_numeric($text)) {
         $keysData = getUserInfoKeys($text);
 
 		if ($keysData != null) {
-			sendMessage($mainValues['please_wait_message'], $removeKeyboard);
+			sendMessage(\achbotMessage('legacy_messages.please_wait_message'), $removeKeyboard);
 
 			$keys = json_encode([
 				'inline_keyboard' => $keysData['inline_keyboard']
@@ -870,7 +870,7 @@ if($data=="inviteSetting" && ($from_id == $admin || $userInfo['isAdmin'] == true
             ['text'=>\achbotMessage('bot.bot.invite_setting.button.0854688c71'),'callback_data'=>"wizwizch"]
             ],
         [
-            ['text'=>$buttonValues['back_button'],'callback_data'=>"botSettings"]
+            ['text'=>\achbotMessage('legacy_buttons.back_button'),'callback_data'=>"botSettings"]
             ],
         ]]);
     $res = editText($message_id,\achbotMessage('bot.bot.invite_setting.message.554f354e70'),$keys);
@@ -887,7 +887,7 @@ if($data=="inviteBanner" && ($from_id == $admin || $userInfo['isAdmin'] == true)
     $stmt->close();
     $keys = json_encode(['inline_keyboard'=>[
         [['text'=>\achbotMessage('bot.bot.invite_banner.button.d6aa12d559'),'callback_data'=>'editInviteBannerText']],
-        [['text'=>$buttonValues['back_button'],'callback_data'=>'inviteSetting']]
+        [['text'=>\achbotMessage('legacy_buttons.back_button'),'callback_data'=>'inviteSetting']]
         ]]);
     if($inviteText['type'] == "text"){
         editText($message_id,\achbotMessage('bot.bot.invite_banner.message.379af3c42e') . $inviteText['text'],$keys);
@@ -905,7 +905,7 @@ if($data=="editInviteBannerText" && ($from_id == $admin || $userInfo['isAdmin'] 
     sendMessage(\achbotMessage('bot.bot.edit_invite_banner_text.message.28f265f083'),$cancelKey, 'HTML');
     setUser($data);
 }
-if($userInfo['step']=="editInviteBannerText" && ($from_id == $admin || $userInfo['isAdmin'] == true) && $text != $buttonValues['cancel']){
+if($userInfo['step']=="editInviteBannerText" && ($from_id == $admin || $userInfo['isAdmin'] == true) && $text != \achbotMessage('legacy_buttons.cancel')){
     $data = array();
     if(isset($update->message->photo)){
         $data['type'] = 'photo';
@@ -939,10 +939,10 @@ if($userInfo['step']=="editInviteBannerText" && ($from_id == $admin || $userInfo
         $stmt->close();
     }
 
-    sendMessage($mainValues['saved_successfuly'],$removeKeyboard);
+    sendMessage(\achbotMessage('legacy_messages.saved_successfuly'),$removeKeyboard);
     $keys = json_encode(['inline_keyboard'=>[
         [['text'=>\achbotMessage('bot.bot.invite_banner.button.d6aa12d559'),'callback_data'=>'editInviteBannerText']],
-        [['text'=>$buttonValues['back_button'],'callback_data'=>'inviteSetting']]
+        [['text'=>\achbotMessage('legacy_buttons.back_button'),'callback_data'=>'inviteSetting']]
         ]]);
     if(isset($update->message->text)){
         sendMessage(\achbotMessage('bot.bot.invite_banner.message.379af3c42e') . $text,$keys);
@@ -976,7 +976,7 @@ if($userInfo['step'] == "editInviteAmount" && ($from_id == $admin || $userInfo['
             $checkExist = $stmt->get_result();
             $stmt->close();
         }
-        sendMessage($mainValues['saved_successfuly'],$removeKeyboard);
+        sendMessage(\achbotMessage('legacy_messages.saved_successfuly'),$removeKeyboard);
 
         $keys = json_encode(['inline_keyboard'=>[
             [['text'=>\achbotMessage('bot.bot.invite_setting.button.e5798de28e'),'callback_data'=>"inviteBanner"]],
@@ -985,14 +985,14 @@ if($userInfo['step'] == "editInviteAmount" && ($from_id == $admin || $userInfo['
                 ['text'=>\achbotMessage('bot.bot.invite_setting.button.0854688c71'),'callback_data'=>"wizwizch"]
                 ],
             [
-                ['text'=>$buttonValues['back_button'],'callback_data'=>"botSettings"]
+                ['text'=>\achbotMessage('legacy_buttons.back_button'),'callback_data'=>"botSettings"]
                 ],
             ]]);
         sendMessage(\achbotMessage('bot.bot.invite_setting.message.554f354e70'),$keys, 'HTML');
         setUser();
-    }else sendMessage($mainValues['send_only_number']);
+    }else sendMessage(\achbotMessage('legacy_messages.send_only_number'));
 }
-if(preg_match('/^edit(RewaredTime|cartToCartAutoAcceptTime)/', $userInfo['step'], $match) && ($from_id == $admin || $userInfo['isAdmin'] == true) && $text != $buttonValues['cancel']){
+if(preg_match('/^edit(RewaredTime|cartToCartAutoAcceptTime)/', $userInfo['step'], $match) && ($from_id == $admin || $userInfo['isAdmin'] == true) && $text != \achbotMessage('legacy_buttons.cancel')){
     if(!is_numeric($text)){
         sendMessage(\achbotMessage('bot.bot.edit_invite_amount.message.d86a0557a7'), null, 'HTML');
         exit();
@@ -1003,7 +1003,7 @@ if(preg_match('/^edit(RewaredTime|cartToCartAutoAcceptTime)/', $userInfo['step']
     }
 
     setSettings(lcfirst($match[1]), $text);
-    sendMessage($mainValues['change_bot_settings_message'],getBotSettingKeys());
+    sendMessage(\achbotMessage('legacy_messages.change_bot_settings_message'),getBotSettingKeys());
     setUser();
     exit();
 }
@@ -1042,13 +1042,13 @@ if($data=="inviteFriends"){
         $secondText = str_replace(
             ['{INVITE_REWARD}', '{INVITE_AMOUNT}'],
             [$inviteReward, $inviteAmount],
-            $mainValues['invite_second_text']
+            \achbotMessage('legacy_messages.invite_second_text')
         );
 
         $keyboard = json_encode([
             'inline_keyboard' => [
                 [
-                    ['text' => $buttonValues['back_to_main'], 'callback_data' => "mainMenu"]
+                    ['text' => \achbotMessage('legacy_buttons.back_to_main'), 'callback_data' => "mainMenu"]
                 ]
             ]
         ]);
@@ -1102,7 +1102,7 @@ if($data=="myInfo"){
             ['text'=>\achbotMessage('bot.bot.my_info.button.2aa445c2af'),'callback_data'=>"transferMyWallet"]
         ],
         [
-            ['text'=>$buttonValues['back_button'],'callback_data'=>"mainMenu"]
+            ['text'=>\achbotMessage('legacy_buttons.back_button'),'callback_data'=>"mainMenu"]
             ]
         ]]);
     editText($message_id, \achbotMessage('bot.bot.my_info.message.4fb6af58ae', ['from_id' => $from_id, 'username' => $username, 'first_name' => $first_name, 'myWallet' => $myWallet, 'totalBuys' => $totalBuys]),
@@ -1122,7 +1122,7 @@ if($data=="editRewardChannel" && ($from_id == $admin || $userInfo['isAdmin'] == 
 if (
     $userInfo['step'] == "editRewardChannel" &&
     ($from_id == $admin || $userInfo['isAdmin'] == true) &&
-    $text != $buttonValues['cancel']
+    $text != \achbotMessage('legacy_buttons.cancel')
 ) {
     $text = trim($text);
 
@@ -1143,7 +1143,7 @@ if (
     $result = bot('getChatMember', ['chat_id' => $chatId, 'user_id' => $botId]);
     if ($result && !empty($result->ok) && isset($result->result->status) && $result->result->status === "administrator") {
         setSettings('rewardChannel', $text);
-        sendMessage($mainValues['change_bot_settings_message'], getGateWaysKeys());
+        sendMessage(\achbotMessage('legacy_messages.change_bot_settings_message'), getGateWaysKeys());
         setUser();
         exit;
     }
@@ -1160,7 +1160,7 @@ if ($data == "editLockChannel" && ($from_id == $admin || $userInfo['isAdmin'] ==
 if (
     $userInfo['step'] == "editLockChannel" &&
     ($from_id == $admin || $userInfo['isAdmin'] == true) &&
-    $text != $buttonValues['cancel']
+    $text != \achbotMessage('legacy_buttons.cancel')
 ) {
     $text = trim($text);
 
@@ -1181,12 +1181,12 @@ if (
     $result = bot('getChatMember', ['chat_id' => $chatId, 'user_id' => $botId]);
     if ($result && !empty($result->ok) && isset($result->result->status) && $result->result->status === "administrator") {
         setSettings("lockChannel", $text);
-        sendMessage($mainValues['change_bot_settings_message'], getGateWaysKeys());
+        sendMessage(\achbotMessage('legacy_messages.change_bot_settings_message'), getGateWaysKeys());
         setUser();
         exit;
     }
 
-    sendMessage($mainValues['the_bot_in_not_admin'] ?? \achbotMessage('bot.bot.edit_lock_channel.message.949fda751f'));
+    sendMessage(\achbotMessage('legacy_messages.the_bot_in_not_admin') ?? \achbotMessage('bot.bot.edit_lock_channel.message.949fda751f'));
 }
 // End Edited by ACh
 
@@ -1196,7 +1196,7 @@ if($data=="editSupportID" && ($from_id == $admin || $userInfo['isAdmin'] == true
     setUser($data);
 }
 
-if($userInfo['step'] == "editSupportID" && ($from_id == $admin || $userInfo['isAdmin'] == true) && $text != $buttonValues['cancel']){
+if($userInfo['step'] == "editSupportID" && ($from_id == $admin || $userInfo['isAdmin'] == true) && $text != \achbotMessage('legacy_buttons.cancel')){
     $supportText=is_string($text)?trim($text):'';
     $supportUrl=\AchBot\Presentation\Text\destinationUrl($supportText);
     if ($supportText!=='/clear' && $supportUrl==='') {
@@ -1215,8 +1215,7 @@ if($userInfo['step'] == "editSupportID" && ($from_id == $admin || $userInfo['isA
 // Command Created by ACh
 
 function processCallbackQuery($data, $chat_id, $from_id) {
-    global $connection, $userInfo, $from_id, $admin, $botState, $mainValues, $buttonValues;
-
+    global $connection, $userInfo, $from_id, $admin, $botState;
     if ($data == 'buySubscription') {
 
         $isRealAdmin = ($from_id == $admin || $userInfo['isAdmin'] == true);
@@ -1236,7 +1235,7 @@ function processCallbackQuery($data, $chat_id, $from_id) {
             $stmt->close();
 
             if ($respd->num_rows == 0) {
-                sendMessage($mainValues['no_server_available'], null, "HTML", $chat_id);
+                sendMessage(\achbotMessage('legacy_messages.no_server_available'), null, "HTML", $chat_id);
                 exit();
             }
 
@@ -1253,7 +1252,7 @@ function processCallbackQuery($data, $chat_id, $from_id) {
             }
 
             $keyboard = array_chunk($keyboard, 1);
-            $keyboard[] = [['text' => $buttonValues['back_to_main'], 'callback_data' => "mainMenu"]];
+            $keyboard[] = [['text' => \achbotMessage('legacy_buttons.back_to_main'), 'callback_data' => "mainMenu"]];
 
             $textToSend = \achbotMessage('bot.bot.process_callback_query.text_to_send.6f1f09466a');
 
@@ -1301,7 +1300,7 @@ function processCallbackQuery($data, $chat_id, $from_id) {
         $stmt->close();
 
         if ($orders->num_rows == 0) {
-            sendMessage($mainValues['you_dont_have_config'], null, "HTML", $chat_id);
+            sendMessage(\achbotMessage('legacy_messages.you_dont_have_config'), null, "HTML", $chat_id);
             exit;
         }
 
@@ -1343,17 +1342,17 @@ function processCallbackQuery($data, $chat_id, $from_id) {
 
         if ($isAgentView) {
             $keyboard[] = [[
-                'text' => $buttonValues['search_agent_config'],
+                'text' => \achbotMessage('legacy_buttons.search_agent_config'),
                 'callback_data' => "searchAgentConfig"
             ]];
         }
 
         $keyboard[] = [[
-            'text' => $buttonValues['back_to_main'],
+            'text' => \achbotMessage('legacy_buttons.back_to_main'),
             'callback_data' => "mainMenu"
         ]];
 
-        $textToSend   = $mainValues['select_one_to_show_detail'];
+        $textToSend   = \achbotMessage('legacy_messages.select_one_to_show_detail');
         $keyboardData = json_encode(['inline_keyboard' => $keyboard]);
 
         sendMessage($textToSend, $keyboardData, "HTML", $chat_id);
@@ -1366,12 +1365,12 @@ function processCallbackQuery($data, $chat_id, $from_id) {
 if ((require __DIR__ . '/src/Purchase/EntryAndBulk.php') === null) return;
 if($data=="messageToSpeceficUser" && ($from_id == $admin || $userInfo['isAdmin'] == true)){
     delMessage();
-    sendMessage($mainValues['send_user_id'], $cancelKey);
+    sendMessage(\achbotMessage('legacy_messages.send_user_id'), $cancelKey);
     setUser($data);
 }
-if($userInfo['step'] == "messageToSpeceficUser" && $text != $buttonValues['cancel'] && ($from_id == $admin || $userInfo['isAdmin'] == true)){
+if($userInfo['step'] == "messageToSpeceficUser" && $text != \achbotMessage('legacy_buttons.cancel') && ($from_id == $admin || $userInfo['isAdmin'] == true)){
     if(!is_numeric($text)){
-        sendMessage($mainValues['send_only_number']);
+        sendMessage(\achbotMessage('legacy_messages.send_only_number'));
         exit();
     }
     $stmt = $connection->prepare("SELECT * FROM `users` WHERE `userid` = ?");
@@ -1384,7 +1383,7 @@ if($userInfo['step'] == "messageToSpeceficUser" && $text != $buttonValues['cance
         sendMessage(\achbotMessage('bot.bot.process_callback_query.message.d57aef02e2'), null, 'HTML');
         setUser("sendMessageToUser" . $text);
     }else{
-        sendMessage($mainValues['user_not_found']);
+        sendMessage(\achbotMessage('legacy_messages.user_not_found'));
     }
 }
 
@@ -1430,7 +1429,7 @@ if($data=="availableServers"){
                 ];
         }
     }
-    $keys[] = [['text'=>$buttonValues['back_button'],'callback_data'=>"mainMenu"]];
+    $keys[] = [['text'=>\achbotMessage('legacy_buttons.back_button'),'callback_data'=>"mainMenu"]];
     $keys = json_encode(['inline_keyboard'=>$keys]);
     editText($message_id, \achbotMessage('bot.bot.process_callback_query.message.dda719f1cb'), $keys);
 }
@@ -1468,7 +1467,7 @@ if($data=="availableServers2"){
                 ];
         }
     }
-    $keys[] = [['text'=>$buttonValues['back_button'],'callback_data'=>"mainMenu"]];
+    $keys[] = [['text'=>\achbotMessage('legacy_buttons.back_button'),'callback_data'=>"mainMenu"]];
     $keys = json_encode(['inline_keyboard'=>$keys]);
     editText($message_id, \achbotMessage('bot.bot.process_callback_query.message.e8f25aae49'), $keys);
 }
@@ -1498,7 +1497,7 @@ if($data == "addNewMainButton" && ($from_id == $admin || $userInfo['isAdmin'] ==
     sendMessage(\achbotMessage('bot.bot.process_callback_query.message.ed098f7f93'),$cancelKey, 'HTML');
     setUser($data);
 }
-if($userInfo['step'] == "addNewMainButton" && $text != $buttonValues['cancel'] && ($from_id == $admin || $userInfo['isAdmin'] == true)){
+if($userInfo['step'] == "addNewMainButton" && $text != \achbotMessage('legacy_buttons.cancel') && ($from_id == $admin || $userInfo['isAdmin'] == true)){
     if(!isset($update->message->text)){
         sendMessage(\achbotMessage('bot.bot.process_callback_query.message.0caee5986d'), null, 'HTML');
         exit();
@@ -1540,8 +1539,8 @@ if (preg_match('/^showMainButtonAns(\d+)/', $data, $match)) {
     $keys = json_encode([
         'inline_keyboard' => [
             [
-                ['text' => $buttonValues['back_to_main'], 'callback_data' => "mainMenu"],
-                ['text' => $buttonValues['invite_friends'], 'callback_data' => "inviteFriends"]
+                ['text' => \achbotMessage('legacy_buttons.back_to_main'), 'callback_data' => "mainMenu"],
+                ['text' => \achbotMessage('legacy_buttons.invite_friends'), 'callback_data' => "inviteFriends"]
             ]
         ]
     ], JSON_UNESCAPED_UNICODE);
@@ -1575,7 +1574,7 @@ if(preg_match('/^marzbanHostSettings(\d+)/',$data,$match) && ($from_id == $admin
     foreach($hosts as $key => $inbound){
         $networkType[] = [['text'=>$inbound->tag, 'callback_data'=>"selectHost{$match[1]}*_*{$inbound->protocol}*_*{$inbound->tag}"]];
     }
-    $networkType[] = [['text'=>$buttonValues['cancel'], 'callback_data'=>"planDetails" . $match[1]]];
+    $networkType[] = [['text'=>\achbotMessage('legacy_buttons.cancel'), 'callback_data'=>"planDetails" . $match[1]]];
     $networkType = json_encode(['inline_keyboard'=>$networkType]);
     editText($message_id, \achbotMessage('bot.bot.process_callback_query.message.2c4ec0c4cc'),$networkType);
 }
@@ -1590,7 +1589,7 @@ if(preg_match('/^selectHost(?<planId>\d+)\*_\*(?<protocol>.+)\*_\*(?<tag>.*)/',$
     if(strstr(json_encode($markup,JSON_UNESCAPED_UNICODE), \achbotMessage('bot.bot.process_callback_query.text.1d456424c3')) && !strstr(json_encode($markup,JSON_UNESCAPED_UNICODE), $saveBtn)){
         $markup[] = [['text'=>$saveBtn,'callback_data'=>"saveServerHost" . $match['planId']]];
     }
-    $markup[] = [['text'=>$buttonValues['cancel'], 'callback_data'=>"planDetails" . $match['planId']]];
+    $markup[] = [['text'=>\achbotMessage('legacy_buttons.cancel'), 'callback_data'=>"planDetails" . $match['planId']]];
     $markup = json_encode(['inline_keyboard'=>array_values($markup)]);
     editKeys($markup);
 }
@@ -1660,7 +1659,7 @@ if($data=="giftVolumeAndDay" && ($from_id == $admin || $userInfo['isAdmin'] == t
         $keyboard[] = ['text' => "$name", 'callback_data' => "giftToServer{$sid}"];
     }
     $keyboard = array_chunk($keyboard,2);
-    $keyboard[] = [['text' => $buttonValues['back_button'], 'callback_data' => "managePanel"]];
+    $keyboard[] = [['text' => \achbotMessage('legacy_buttons.back_button'), 'callback_data' => "managePanel"]];
     editText($message_id, \achbotMessage('bot.bot.process_callback_query.message.997b4e1b83'),json_encode([
             'inline_keyboard' => $keyboard
         ]));
@@ -1671,7 +1670,7 @@ if(preg_match('/^giftToServer(\d+)/',$data,$match) && ($from_id == $admin || $us
     $keyboard = [
         [['text' => \achbotMessage('bot.bot.process_callback_query.button.e2a9773071'), 'callback_data' => "giftToAll{$sid}"]],
         [['text' => \achbotMessage('bot.bot.process_callback_query.button.b80add87e4'), 'callback_data' => "giftToUser{$sid}"]],
-        [['text' => $buttonValues['back_button'], 'callback_data' => "giftVolumeAndDay"]]
+        [['text' => \achbotMessage('legacy_buttons.back_button'), 'callback_data' => "giftVolumeAndDay"]]
     ];
     sendMessage(\achbotMessage('bot.bot.process_callback_query.message.41aa3dcaf2'), json_encode(['inline_keyboard' => $keyboard]), 'HTML');
 }
@@ -1717,7 +1716,7 @@ if (is_string($userInfo['step']??null) &&
         error_log('direct_gift_message_untrusted');
         return;
     }
-    if ($text===$buttonValues['cancel']) {
+    if ($text===\achbotMessage('legacy_buttons.cancel')) {
         try {
             achbotDirectGiftCancel($connection,$directSource,(int)$admin,$directStep);
             sendMessage(\achbotMessage('bot.bot.gift_volume_and_day.message.ac0da574b4'),$removeKeyboard, 'HTML');
@@ -1821,7 +1820,7 @@ if (is_string($userInfo['step']??null) &&
     try {
         sendMessage(\achbotMessage('bot.bot.gift_volume_and_day.message.df8d2180ae').
             $directClaim['id'].').',$removeKeyboard, 'HTML');
-        sendMessage($mainValues['reached_main_menu'], getMainKeys(), 'HTML');
+        sendMessage(\achbotCurrentMessage('reached_main_menu'), getMainKeys(), 'HTML');
     } catch (Throwable $noticeFailure) {
         error_log('direct_gift_success_notice_unconfirmed');
     }
@@ -1835,15 +1834,15 @@ if (is_string($userInfo['step']??null) &&
 }
 // ACHBOT_DIRECT_GIFT_ROUTE_END
 
-if(preg_match('/^giftServerDay(\d+)/',$userInfo['step'], $match) && ($from_id == $admin || $userInfo['isAdmin'] == true) && $text != $buttonValues['cancel']){
+if(preg_match('/^giftServerDay(\d+)/',$userInfo['step'], $match) && ($from_id == $admin || $userInfo['isAdmin'] == true) && $text != \achbotMessage('legacy_buttons.cancel')){
     if(is_numeric($text)){
         if($text >= 0){
             sendMessage(\achbotMessage('bot.bot.gift_volume_and_day.message.9ab673c836'), null, 'HTML');
             setUser('giftServerVolume' . $match[1] . "_" . $text);
         }else sendMessage(\achbotMessage('bot.bot.gift_volume_and_day.message.40747d2ee6'), null, 'HTML');
-    }else sendMessage($mainValues['send_only_number']);
+    }else sendMessage(\achbotMessage('legacy_messages.send_only_number'));
 }
-if(preg_match('/^giftServerVolume(\d+)_(\d+)/',$userInfo['step'],$match) && ($from_id == $admin || $userInfo['isAdmin'] == true) && $text != $buttonValues['cancel']){
+if(preg_match('/^giftServerVolume(\d+)_(\d+)/',$userInfo['step'],$match) && ($from_id == $admin || $userInfo['isAdmin'] == true) && $text != \achbotMessage('legacy_buttons.cancel')){
     if(is_numeric($text)){
         if($text >= 0){
             // Bind the new-format job provenance atomically with its queue
@@ -1883,18 +1882,18 @@ if(preg_match('/^giftServerVolume(\d+)_(\d+)/',$userInfo['step'],$match) && ($fr
                 // administrator state. Only notifications follow COMMIT.
                 try {
                     if ($giftEnqueue['created']) {
-                        sendMessage($mainValues['saved_successfuly'],$removeKeyboard);
+                        sendMessage(\achbotMessage('legacy_messages.saved_successfuly'),$removeKeyboard);
                     } else {
                         sendMessage(\achbotMessage('bot.bot.gift_volume_and_day.message.b155540ffb'),
                                     $removeKeyboard, 'HTML');
                     }
-                    sendMessage($mainValues['reached_main_menu'], getMainKeys(), 'HTML');
+                    sendMessage(\achbotCurrentMessage('reached_main_menu'), getMainKeys(), 'HTML');
                 } catch (Throwable $giftNoticeError) {
                     error_log('gift_enqueue_telegram_notice_unconfirmed');
                 }
             }
         }else sendMessage(\achbotMessage('bot.bot.gift_volume_and_day.message.40747d2ee6'), null, 'HTML');
-    }else sendMessage($mainValues['send_only_number']);
+    }else sendMessage(\achbotMessage('legacy_messages.send_only_number'));
 }
 else {
     require __DIR__ . '/src/Subscription/AccountDeletion.php';
@@ -1927,7 +1926,7 @@ if(preg_match('/^toggleServerState([1-9][0-9]*)_([0-9]+)$/D',(string)$data,$matc
     foreach ($choices as [$mode,$label]) $keys[]=[[
         'text'=>\achbotMessage($label),'callback_data'=>"setServerState{$serverId}_{$mode}_{$offset}"
     ]];
-    $keys[]=[['text'=>$buttonValues['back_button'],'callback_data'=>'nextServerPage'.$offset]];
+    $keys[]=[['text'=>\achbotMessage('legacy_buttons.back_button'),'callback_data'=>'nextServerPage'.$offset]];
     editText($message_id,\achbotMessage('admin_settings.management.server_state_prompt'),
         json_encode(['inline_keyboard'=>$keys],JSON_UNESCAPED_UNICODE),'HTML');
 }
@@ -1966,13 +1965,13 @@ if(preg_match('/^changesServerIp(\d+)/',$data,$match) && ($from_id == $admin || 
     setUser($data);
     exit();
 }
-if(preg_match('/^changesServerIp(\d+)/',$userInfo['step'],$match) && ($from_id == $admin || $userInfo['isAdmin'] == true) && $text != $buttonValues['cancel']){
+if(preg_match('/^changesServerIp(\d+)/',$userInfo['step'],$match) && ($from_id == $admin || $userInfo['isAdmin'] == true) && $text != \achbotMessage('legacy_buttons.cancel')){
     $stmt = $connection->prepare("UPDATE `server_config` SET `ip` = ? WHERE `id`=?");
     if($text == "/empty") $text = "";
     $stmt->bind_param("si", $text, $match[1]);
     $stmt->execute();
     $stmt->close();
-    sendMessage($mainValues['saved_successfuly'],$removeKeyboard);
+    sendMessage(\achbotMessage('legacy_messages.saved_successfuly'),$removeKeyboard);
     setUser();
 
     $keys = getServerConfigKeys($match[1]);
@@ -2013,7 +2012,7 @@ if ($data === 'addMarzbanPanelGroup' &&
     return;
 }
 if (($userInfo['step'] ?? '') === 'newMarzbanPanelGroup' &&
-    $text != $buttonValues['cancel'] &&
+    $text != \achbotMessage('legacy_buttons.cancel') &&
     ($from_id == $admin || ($userInfo['isAdmin'] ?? false))) {
     if (!achbotMarzbanGroupValid((string)$text)) {
         sendMessage(\achbotMessage('bot.bot.add_marzban_panel_group.message.c697bdb683'), null, 'HTML');
@@ -2110,7 +2109,7 @@ if (preg_match('/^setServerPanelGroup_(\d+)_(\d+)$/D', (string)($data ?? ''), $g
 // Refuse an older in-flight R3 free-text group step rather than
 // accepting an arbitrary new group not defined by the administrator.
 if (preg_match('/^editMarzbanGroup\d+$/D', (string)($userInfo['step'] ?? '')) &&
-    $text != $buttonValues['cancel'] &&
+    $text != \achbotMessage('legacy_buttons.cancel') &&
     ($from_id == $admin || ($userInfo['isAdmin'] ?? false))) {
     setUser();
     sendMessage(\achbotMessage('bot.bot.addserver_name.message.8dc219842f'), null, 'HTML');
@@ -2121,7 +2120,7 @@ if(preg_match('/^changesServerLoginInfo(\d+)/',$data,$match) && ($from_id == $ad
     setUser($data);
     sendMessage( \achbotMessage('bot.bot.addserver_name.message.adf1de6a42'),$cancelKey, 'HTML');
 }
-if(preg_match('/^changesServerLoginInfo(\d+)/',$userInfo['step'],$match) && $text != $buttonValues['cancel'] && ($from_id == $admin || $userInfo['isAdmin'] == true)) {
+if(preg_match('/^changesServerLoginInfo(\d+)/',$userInfo['step'],$match) && $text != \achbotMessage('legacy_buttons.cancel') && ($from_id == $admin || $userInfo['isAdmin'] == true)) {
     $data = array();
     $data['rowId'] = $match[1];
     $data['panel_url'] = $text;
@@ -2129,14 +2128,14 @@ if(preg_match('/^changesServerLoginInfo(\d+)/',$userInfo['step'],$match) && $tex
     sendMessage( \achbotMessage('bot.bot.addserver_name.message.bae567d2c7'),$cancelKey, 'HTML');
     exit();
 }
-if(preg_match('/^editServerPaneUser(.*)/',$userInfo['step'],$match) && $text != $buttonValues['cancel'] && ($from_id == $admin || $userInfo['isAdmin'] == true)) {
+if(preg_match('/^editServerPaneUser(.*)/',$userInfo['step'],$match) && $text != \achbotMessage('legacy_buttons.cancel') && ($from_id == $admin || $userInfo['isAdmin'] == true)) {
     $data = json_decode($match[1],true);
     $data['panel_user'] = $text;
     setUser('editServerPanePassword' . json_encode($data, JSON_UNESCAPED_UNICODE));
     sendMessage( \achbotMessage('bot.bot.addserver_name.message.530a9525e2'), null, 'HTML');
     exit();
 }
-if(preg_match('/^editServerPanePassword(.*)/',$userInfo['step'],$match) and $text != $buttonValues['cancel'] && ($from_id == $admin || $userInfo['isAdmin'] == true)){
+if(preg_match('/^editServerPanePassword(.*)/',$userInfo['step'],$match) and $text != \achbotMessage('legacy_buttons.cancel') && ($from_id == $admin || $userInfo['isAdmin'] == true)){
     sendMessage(\achbotMessage('bot.bot.addserver_name.message.4a29ff45e6'), null, 'HTML');
     $data = json_decode($match[1],true);
 
@@ -2223,7 +2222,7 @@ if(preg_match('/^wizwizdeleteserver([1-9][0-9]*)$/D',(string)$data,$match)){
 // Confirmed server deletion is handled exclusively by achbotHandleManagementFields()
 // at ingress. Never retain a broader legacy fallback that can bypass the
 // physical-account, payment and journal recovery admission checks.
-if(preg_match('/^editServer(\D+)(\d+)/',$data,$match) && $text != $buttonValues['cancel'] && ($from_id == $admin || $userInfo['isAdmin'] == true)){
+if(preg_match('/^editServer(\D+)(\d+)/',$data,$match) && $text != \achbotMessage('legacy_buttons.cancel') && ($from_id == $admin || $userInfo['isAdmin'] == true)){
     switch($match[1]){
         case "Name":
             $txt =\achbotMessage('bot.bot.addserver_name.txt.437acc9f7f');
@@ -2247,7 +2246,7 @@ if(preg_match('/^editServer(\D+)(\d+)/',$data,$match) && $text != $buttonValues[
     setUser($data);
     exit();
 }
-if(preg_match('/^editServer(\D+)(\d+)/',$userInfo['step'],$match) && $text != $buttonValues['cancel'] && ($from_id == $admin || $userInfo['isAdmin'] == true)){
+if(preg_match('/^editServer(\D+)(\d+)/',$userInfo['step'],$match) && $text != \achbotMessage('legacy_buttons.cancel') && ($from_id == $admin || $userInfo['isAdmin'] == true)){
     switch($match[1]){
         case "Name":
             $sql = "UPDATE `server_info` SET `title`";
@@ -2275,21 +2274,21 @@ if(preg_match('/^editServer(\D+)(\d+)/',$userInfo['step'],$match) && $text != $b
         $stmt->close();
     }
 
-    sendMessage($mainValues['saved_successfuly'],$removeKeyboard);
+    sendMessage(\achbotMessage('legacy_messages.saved_successfuly'),$removeKeyboard);
     setUser();
 
     $keys = getServerConfigKeys($match[2]);
     sendMessage(\achbotMessage('bot.bot.addserver_name.message.664df12986', ['cname' => $cname]),$keys);
     exit();
 }
-if(preg_match('/^editsServer(\D+)(\d+)/',$data,$match) && $text != $buttonValues['cancel'] && ($from_id == $admin || $userInfo['isAdmin'] == true)){
+if(preg_match('/^editsServer(\D+)(\d+)/',$data,$match) && $text != \achbotMessage('legacy_buttons.cancel') && ($from_id == $admin || $userInfo['isAdmin'] == true)){
     $txt = str_replace("_", " ", $match[1]);
     delMessage();
     sendMessage(\achbotMessage('bot.bot.addserver_name.message.8f3366957d') . $txt . \achbotMessage('bot.bot.addserver_name.message.25ce426865'),$cancelKey);
     setUser($data);
     exit();
 }
-if(preg_match('/^editsServer(\D+)(\d+)/',$userInfo['step'],$match) && $text != $buttonValues['cancel'] && ($from_id == $admin || $userInfo['isAdmin'] == true)){
+if(preg_match('/^editsServer(\D+)(\d+)/',$userInfo['step'],$match) && $text != \achbotMessage('legacy_buttons.cancel') && ($from_id == $admin || $userInfo['isAdmin'] == true)){
     if($text == "/empty"){
         if($match[1] == "sni") $stmt = $connection->prepare("UPDATE `server_config` SET `sni` = '' WHERE `id`=?");
         elseif($match[1] == "header_type") $stmt = $connection->prepare("UPDATE `server_config` SET `header_type` = 'none' WHERE `id`=?");
@@ -2321,14 +2320,14 @@ if(preg_match('/^editsServer(\D+)(\d+)/',$userInfo['step'],$match) && $text != $
     $stmt->execute();
     $stmt->close();
 
-    sendMessage($mainValues['saved_successfuly'],$removeKeyboard);
+    sendMessage(\achbotMessage('legacy_messages.saved_successfuly'),$removeKeyboard);
     setUser();
 
     $keys = getServerConfigKeys($match[2]);
     sendMessage(\achbotMessage('bot.bot.addserver_name.message.664df12986', ['cname' => $cname]),$keys);
     exit();
 }
-if(preg_match('/^editServer(\D+)(\d+)/',$data,$match) && $text != $buttonValues['cancel'] && ($from_id == $admin || $userInfo['isAdmin'] == true)){
+if(preg_match('/^editServer(\D+)(\d+)/',$data,$match) && $text != \achbotMessage('legacy_buttons.cancel') && ($from_id == $admin || $userInfo['isAdmin'] == true)){
     switch($match[1]){
         case "Name":
             $txt =\achbotMessage('bot.bot.addserver_name.txt.437acc9f7f');
@@ -2347,7 +2346,7 @@ if(preg_match('/^editServer(\D+)(\d+)/',$data,$match) && $text != $buttonValues[
     sendMessage(\achbotMessage('bot.bot.addserver_name.message.8f3366957d') . $txt . \achbotMessage('bot.bot.addserver_name.message.035f46db23'),$cancelKey);
     setUser($data);
 }
-if(preg_match('/^editServer(\D+)(\d+)/',$userInfo['step'],$match) && $text != $buttonValues['cancel'] && ($from_id == $admin || $userInfo['isAdmin'] == true)){
+if(preg_match('/^editServer(\D+)(\d+)/',$userInfo['step'],$match) && $text != \achbotMessage('legacy_buttons.cancel') && ($from_id == $admin || $userInfo['isAdmin'] == true)){
     switch($match[1]){
         case "Name":
             $stmt = $connection->prepare("UPDATE `server_info` SET `title`=? WHERE `id`=?");
@@ -2367,7 +2366,7 @@ if(preg_match('/^editServer(\D+)(\d+)/',$userInfo['step'],$match) && $text != $b
     $stmt->execute();
     $stmt->close();
 
-    sendMessage($mainValues['saved_successfuly'],$removeKeyboard);
+    sendMessage(\achbotMessage('legacy_messages.saved_successfuly'),$removeKeyboard);
     setUser();
 
     $keys = getServerConfigKeys($match[2]);
@@ -2412,11 +2411,11 @@ if($data == 'reciveApplications') {
         $title = $file['title'];
         $keyboard[] = ['text' => "$title", 'url' => $link];
     }
-	$keyboard[] = ['text'=>$buttonValues['back_to_main'],'callback_data'=>"mainMenu"];
+	$keyboard[] = ['text'=>\achbotMessage('legacy_buttons.back_to_main'),'callback_data'=>"mainMenu"];
     $keyboard = array_chunk($keyboard,1);
     editText($message_id, \achbotMessageHtml('bot.bot.recive_applications.message.ec86dead1a', ['supportID' => $supportID]), json_encode(['inline_keyboard'=>$keyboard]), "html");
 }
-if ($text == $buttonValues['cancel']) {
+if ($text == \achbotMessage('legacy_buttons.cancel')) {
     // config.php loaded userInfo before any concurrent direct-gift callback.
     // Never let a stale generic CANCEL erase a newer nonce-protected step.
     try {
@@ -2431,7 +2430,7 @@ if ($text == $buttonValues['cancel']) {
         return;
     }
     // Cancellation never deletes other administrators' plan rows.
-    sendMessage($mainValues['waiting_message'], $removeKeyboard);
-    sendMessage($mainValues['reached_main_menu'], getMainKeys(), 'HTML');
+    sendMessage(\achbotMessage('legacy_messages.waiting_message'), $removeKeyboard);
+    sendMessage(\achbotCurrentMessage('reached_main_menu'), getMainKeys(), 'HTML');
 }
 ?>

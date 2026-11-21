@@ -144,8 +144,7 @@ uses explicit HTML for debt preview, committed operator/recipient notices,
 changed-balance warnings, uncertain-result warnings, and the reason prompt.
 These producers concatenate only fixed catalog fragments and PHP integer
 operation facts (including formatted signed balances); the arbitrary private
-reason is not interpolated into the displayed notices. The existing
-per-instance `$mainValues` prompts retain their parse mode. The recipient,
+reason is not interpolated into the displayed notices. Existing per-installation and other configurable source templates retain their original parse modes. The recipient,
 serialized InlineKeyboard callbacks, status paths, delivery order, and
 existing operator-menu HTML remain unchanged. The recipient notice previously
 had **no** parse mode; it is HTML only where verified literal-safe.
@@ -167,7 +166,7 @@ receipt rejection prompt, interval/add-on write warnings, server-display save
 or cancellation, wallet top-up amount presentation, and bulk-account delivery
 review. These are **only** the reviewed fixed catalog branches or numeric
 `number_format($amount)`/`count($deliveryReview)` expressions; customizable
-`$mainValues`, arbitrary dynamic source strings, stored broadcasts and plain
+Per-instance HTML, arbitrary dynamic source strings, stored broadcasts and plain
 callback labels retain their existing modes. The source/keyboard call
 expressions and report order are unchanged: only the `sendMessage()` parse-mode
 argument was added, with no financial, authorization, persistence or delivery

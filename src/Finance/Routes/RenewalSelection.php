@@ -8,9 +8,9 @@ require_once __DIR__ . '/../../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
 
 
 if(preg_match('/sConfigRenew(\d+)/', $data,$match)){
-    if($botState['sellState']=="off" && $from_id !=$admin){ alert($mainValues['bot_is_updating']); exit(); }
+    if($botState['sellState']=="off" && $from_id !=$admin){ alert(\achbotMessage('legacy_messages.bot_is_updating')); exit(); }
     
-    alert($mainValues['please_wait_message']);
+    alert(\achbotMessage('legacy_messages.please_wait_message'));
     $server_id = $match[1];
     if (!achbotServerCommerceAvailable($connection,(int)$server_id,false)) {
         alert(\achbotMessage('payment.pre_payment.alert.fa55f5201f'),true);
@@ -44,7 +44,7 @@ if(preg_match('/sConfigRenew(\d+)/', $data,$match)){
         $keyboard[] = ['text' => "$name - $price", 'callback_data' => "sConfigRenewPlan{$id}_{$inboundId}"];
     }
     if ($keyboard) {
-        $keyboard[] = ['text' => $buttonValues['back_to_main'], 'callback_data' => "mainMenu"];
+        $keyboard[] = ['text' => \achbotMessage('legacy_buttons.back_to_main'), 'callback_data' => "mainMenu"];
         $keyboard = array_chunk($keyboard,1);
         editText($message_id, \achbotMessage('renewal.renewal_selection.message.51ab077156'), json_encode(['inline_keyboard'=>$keyboard]));
     } else sendMessage(\achbotMessage('renewal.renewal_selection.message.5223e5a747'), null, 'HTML');

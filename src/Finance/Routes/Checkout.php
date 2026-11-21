@@ -20,10 +20,8 @@ if (is_string($data) && strlen($data) <= 64 && preg_match('/\ApayCustomWithWalle
 
     $result = processWalletPayment($connection, $hashId, function($payInfo, $userRow) use (
         $connection,
-        $mainValues,
         $botState,
         $botUrl,
-        $buttonValues,
         $admin,
         $userInfo,
         $username,
@@ -87,7 +85,7 @@ if (is_string($data) && strlen($data) <= 64 && preg_match('/\ApayCustomWithWalle
 
         ensureAccountCreationSucceeded($response, $serverInfo, $inbound_id, $admin);
 
-        alert($mainValues['sending_config_to_user']);
+        alert(\achbotMessage('legacy_messages.sending_config_to_user'));
 
         [$token, $vray_link, $uniqid, $accText, $userKeys, $qrLink] = buildLinksAndSendQr(
             $serverType,
@@ -109,8 +107,7 @@ if (is_string($data) && strlen($data) <= 64 && preg_match('/\ApayCustomWithWalle
             $uid,
             $volume,
             $days,
-            $buttonValues,
-            [],
+                [],
             false,
             '',
             null,
@@ -156,7 +153,7 @@ if (is_string($data) && strlen($data) <= 64 && preg_match('/\ApayCustomWithWalle
         $msg = str_replace(
             ['TYPE', 'USER-ID', 'USERNAME', 'NAME', 'PRICE', 'REMARK', 'VOLUME', 'DAYS'],
             [\achbotMessage('payment.payment_lifecycle.pay_ux_audience_methods.text.6295c35212'), $uid, $username, $first_name, $price, $remark, $volume, $days],
-            $mainValues['buy_custom_account_request']
+            \achbotMessage('legacy_messages.buy_custom_account_request')
         );
 
         $pendingCustomDelivery['admin_msg']=$msg;
@@ -231,7 +228,7 @@ if (is_string($data) && strlen($data)<=64 &&
     if ($match[1] == "Sub") {
         $subLink=$presentation['qr_subscription_url'];
         if ($subLink==='') {alert(\achbotMessage('payment.checkout.alert.bfa5553444'),true);return;}
-        $keys=json_encode(['inline_keyboard'=>[[['text'=>$buttonValues['back_to_main'],'callback_data'=>'mainMenu']]]]);
+        $keys=json_encode(['inline_keyboard'=>[[['text'=>\achbotMessage('legacy_buttons.back_to_main'),'callback_data'=>'mainMenu']]]]);
         if (!sendQrFromLink($subLink,\AchBot\Subscription\Presentation\codeLinks([$subLink]),
             $keys,(string)$botUrl,(int)$from_id))
             alert(\achbotMessage('subscription.presentation.config_qr_delivery_unconfirmed'),true);
@@ -278,7 +275,7 @@ if (is_string($data) && (strlen($data) <= 64 || ($GLOBALS['achbotManualCryptoVer
     $inbound_id = (int)$file_detail['inbound_id'];
 
     if ($acount == 0 && $inbound_id != 0) {
-        alert($mainValues['out_of_connection_capacity'], true);
+        alert(\achbotMessage('legacy_messages.out_of_connection_capacity'), true);
         exit;
     }
 
@@ -290,12 +287,12 @@ if (is_string($data) && (strlen($data) <= 64 || ($GLOBALS['achbotManualCryptoVer
         $stmt->close();
 
         if ((int)$server_info['ucount'] <= 0) {
-            alert($mainValues['out_of_server_capacity'], true);
+            alert(\achbotMessage('legacy_messages.out_of_server_capacity'), true);
             exit;
         }
     } else {
         if ($acount != 0 && $acount <= 0) {
-            sendMessage(str_replace("AMOUNT", $acount, $mainValues['can_create_specific_account']));
+            sendMessage(str_replace("AMOUNT", $acount, \achbotMessage('legacy_messages.can_create_specific_account')));
             exit;
         }
     }
@@ -308,7 +305,7 @@ if (is_string($data) && (strlen($data) <= 64 || ($GLOBALS['achbotManualCryptoVer
         return;
     }
 
-	$msg = buildCartToCartInfoMessage($paymentKeys, $mainValues, (int)$payInfo['price'], (int)$payInfo['user_id'], $method, (string)$payInfo['hash_id']);
+	$msg = buildCartToCartInfoMessage($paymentKeys, (int)$payInfo['price'], (int)$payInfo['user_id'], $method, (string)$payInfo['hash_id']);
     if ($msg === "") {
         alert(\achbotMessage('payment.checkout.alert.07ee06b4bc'), true);
         return;
@@ -361,14 +358,14 @@ if (preg_match('/send(?:CustomCart|CustomGift|CustomUsdt)Receipt(?<hashId>.*)/',
     setUser((in_array($method, ['manual_usdt','manual_trx'], true) ? "waitCustomUsdtReceipt" : ($method === 'gift_card' ? "waitCustomGiftReceipt" : "waitCustomCartReceipt")) . $match['hashId']);
 
     $keyboard = kbOnlyCancel("cancelCustomCartReceipt", $match['hashId']);
-    $sent=sendMessage(achbotManualEvidencePrompt($mainValues,$connection,$payInfo,$method), $keyboard, "HTML");
+    $sent=sendMessage(achbotManualEvidencePrompt($connection,$payInfo,$method), $keyboard, "HTML");
     require_once __DIR__ . '/../PaymentLifecycle.php';
     achbotPayUxTrackByHash($connection,(string)$match['hashId'],(int)$from_id,$sent);
     exit;
 }
 
 if (preg_match('/cancelCustomCartReceipt(?<hashId>.*)/', $data, $match)) {
-    handleCancelFlow($mainValues, $removeKeyboard);
+    handleCancelFlow( $removeKeyboard);
 }
 
 if (preg_match('/wait(?:CustomCart|CustomGift|CustomUsdt)Receipt(.*)/', $userInfo['step'], $match)) {
@@ -384,7 +381,7 @@ if (preg_match('/wait(?:CustomCart|CustomGift|CustomUsdt)Receipt(.*)/', $userInf
     $fileid = achbotManualEvidenceInput($update, $connection, $receiptPay, $method);
     if ($fileid === null) {
         $keyboard = kbOnlyCancel("cancelCustomCartReceipt", $match[1]);
-        sendMessage(achbotManualEvidencePrompt($mainValues,$connection,$receiptPay,$method,true), $keyboard, "HTML");
+        sendMessage(achbotManualEvidencePrompt($connection,$receiptPay,$method,true), $keyboard, "HTML");
         exit;
     }
 
@@ -426,7 +423,7 @@ if (preg_match('/wait(?:CustomCart|CustomGift|CustomUsdt)Receipt(.*)/', $userInf
     $msg = str_replace(
         ['TYPE', 'USER-ID', 'USERNAME', 'NAME', 'PRICE', 'REMARK', 'VOLUME', 'DAYS'],
         [\achbotMessage('payment.checkout.text.04029e7ea7'), $from_id, $username, $first_name, $fileprice, $remark, $volume, $days],
-        achbotManualCaption($connection, $receiptPay, $mainValues['buy_custom_account_request'])
+        achbotManualCaption($connection, $receiptPay, \achbotMessage('legacy_messages.buy_custom_account_request'))
     );
 
     // The code is checked against this ORIGINAL pinned invoice before any
@@ -449,7 +446,6 @@ if (preg_match('/wait(?:CustomCart|CustomGift|CustomUsdt)Receipt(.*)/', $userInf
 
     $adminKeyboard = buildAdminKeyboardWithStats(
         $connection,
-        $buttonValues,
         "accCustom{$match[1]}",
         "declineAction_{$match[1]}",
         $match[1],
@@ -460,14 +456,14 @@ if (preg_match('/wait(?:CustomCart|CustomGift|CustomUsdt)Receipt(.*)/', $userInf
         $msg, $adminKeyboard, $admin, $match[1],
         $deliveryToken,$giftScreen)) {
         setUser();
-        achbotManualAcknowledgeAndVerify($connection,$receiptPay,$method,$buttonValues['start_bot'],$botUsername);
+        achbotManualAcknowledgeAndVerify($connection,$receiptPay,$method,\achbotMessage('legacy_buttons.start_bot'),$botUsername);
     } else {
         sendMessage(\achbotMessage('payment.checkout.message.c346a0d62e'), null, 'HTML');
     }
     exit;
 }
 
-if (preg_match('/^accCustom(.+)$/D', $data, $match) && $text != $buttonValues['cancel']) {
+if (preg_match('/^accCustom(.+)$/D', $data, $match) && $text != \achbotMessage('legacy_buttons.cancel')) {
     if (!achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'payments')) {
         alert(\achbotMessage('payment.checkout.alert.873a4950ab'), true);
         return;
@@ -543,7 +539,7 @@ if (preg_match('/^accCustom(.+)$/D', $data, $match) && $text != $buttonValues['c
         $customPort = $plan['custom_port'];
         $customSni  = $plan['custom_sni'];
 
-        ensureServerCapacity($connection, $server_id, $inbound_id, $acount, $mainValues);
+        ensureServerCapacity($connection, $server_id, $inbound_id, $acount);
 
         [$serverInfo, $serverConfig] = getServerInfoAndConfig($connection, $server_id);
         $srv_remark  = $serverInfo['remark'];
@@ -569,7 +565,7 @@ if (preg_match('/^accCustom(.+)$/D', $data, $match) && $text != $buttonValues['c
 
         ensureAccountCreationSucceeded($response, $serverInfo, $inbound_id, $admin, true);
 
-        alert($mainValues['sending_config_to_user']);
+        alert(\achbotMessage('legacy_messages.sending_config_to_user'));
 
         [$token, $vray_link, $uniqid, $caption, $keys, $qrLink] = buildLinksAndSendQr(
             $serverType,
@@ -591,8 +587,7 @@ if (preg_match('/^accCustom(.+)$/D', $data, $match) && $text != $buttonValues['c
             $uid,
             $volume,
             $days,
-            $buttonValues,
-            [],
+                [],
             false,
             '',
             null,
@@ -702,7 +697,7 @@ if (preg_match('/^accCustom(.+)$/D', $data, $match) && $text != $buttonValues['c
             $msg = str_replace(
                 ['USER-ID', 'USERNAME', 'NAME', 'PRICE', 'REMARK', 'HASHID'],
                 [$uid, $user_name, $uname, $price, $remark, $hash_id],
-                $mainValues['invite_buy_new_account']
+                \achbotMessage('legacy_messages.invite_buy_new_account')
             );
 
             achbotNotifyAdmins('sendMessage', ['text'=>$msg, 'reply_markup'=>$keys2, 'parse_mode'=>'HTML']);
@@ -741,11 +736,9 @@ if (is_string($data) && strlen($data) <= 64 && preg_match('/\ApayBuyWithWallet([
         $hashId,
         function($payInfo, $userRow) use (
             $connection,
-            $mainValues,
             $botState,
             $botUrl,
-            $buttonValues,
-            $admin,
+                $admin,
             $from_id,
             $message_id,
             $time,
@@ -818,7 +811,7 @@ if (is_string($data) && strlen($data) <= 64 && preg_match('/\ApayBuyWithWallet([
 
                 $keys = json_encode([
                     'inline_keyboard' => [
-                        [ ['text' => $buttonValues['back_to_main'], 'callback_data' => "mainMenu"] ]
+                        [ ['text' => \achbotMessage('legacy_buttons.back_to_main'), 'callback_data' => "mainMenu"] ]
                     ]
                 ], JSON_UNESCAPED_UNICODE);
 
@@ -880,7 +873,7 @@ if (is_string($data) && strlen($data) <= 64 && preg_match('/\ApayBuyWithWallet([
 
             $agent_bought = (int)($payInfo['agent_bought'] ?? 0);
 
-            alert($mainValues['sending_config_to_user']);
+            alert(\achbotMessage('legacy_messages.sending_config_to_user'));
 
             $msgToDeleteAfterOk = $message_id;
 
@@ -945,8 +938,7 @@ if (is_string($data) && strlen($data) <= 64 && preg_match('/\ApayBuyWithWallet([
                     $uid,
                     $volume,
                     $days,
-                    $buttonValues,
-                    [],
+                                [],
                     false,
                     '',
                     null,
@@ -1136,13 +1128,13 @@ if (is_string($data) && strlen($data) <= 64 && preg_match('/\ApayBuyWithWallet([
         $msg = str_replace(
             ['TYPE', 'USER-ID', 'USERNAME', 'NAME', 'PRICE', 'REMARK', 'VOLUME', 'DAYS'],
             [\achbotMessage('payment.payment_lifecycle.pay_ux_audience_methods.text.6295c35212'), $from_id, $username, $first_name, $price, $lastRemark, $volume, $days],
-            $mainValues['renew_account_request_message']
+            \achbotMessage('legacy_messages.renew_account_request_message')
         );
     } else {
         $msg = str_replace(
             ['SERVERNAME', 'TYPE', 'USER-ID', 'USERNAME', 'NAME', 'PRICE', 'REMARK', 'VOLUME', 'DAYS'],
             [$serverTitle, \achbotMessage('payment.payment_lifecycle.pay_ux_audience_methods.text.6295c35212'), $from_id, $username, $first_name, $price, $lastRemark, $volume, $days],
-            $mainValues['buy_new_account_request']
+            \achbotMessage('legacy_messages.buy_new_account_request')
         );
     }
 
@@ -1182,7 +1174,7 @@ if (is_string($data) && (strlen($data) <= 64 || ($GLOBALS['achbotManualCryptoVer
     if ($payInfo['type'] != "RENEW_SCONFIG") {
 
         if ($acount == 0 && $inbound_id != 0) {
-            alert($mainValues['out_of_connection_capacity'], true);
+            alert(\achbotMessage('legacy_messages.out_of_connection_capacity'), true);
             exit;
         }
 
@@ -1194,12 +1186,12 @@ if (is_string($data) && (strlen($data) <= 64 || ($GLOBALS['achbotManualCryptoVer
             $stmt->close();
 
             if ((int)$server_info['ucount'] <= 0) {
-                alert($mainValues['out_of_server_capacity'], true);
+                alert(\achbotMessage('legacy_messages.out_of_server_capacity'), true);
                 exit;
             }
         } else {
             if ($acount <= 0) {
-                alert(str_replace("AMOUNT", $acount, $mainValues['can_create_specific_account']), true);
+                alert(str_replace("AMOUNT", $acount, \achbotMessage('legacy_messages.can_create_specific_account')), true);
                 exit;
             }
         }
@@ -1213,7 +1205,7 @@ if (is_string($data) && (strlen($data) <= 64 || ($GLOBALS['achbotManualCryptoVer
         return;
     }
 
-	$msg = buildCartToCartInfoMessage($paymentKeys, $mainValues, (int)$payInfo['price'], (int)$payInfo['user_id'], $method, (string)$payInfo['hash_id']);
+	$msg = buildCartToCartInfoMessage($paymentKeys, (int)$payInfo['price'], (int)$payInfo['user_id'], $method, (string)$payInfo['hash_id']);
     if ($msg === "") {
         alert(\achbotMessage('payment.checkout.alert.07ee06b4bc'), true);
         return;
@@ -1266,14 +1258,14 @@ if (preg_match('/send(?:BuyCart|BuyGift|BuyUsdt)Receipt(?<hashId>.*)/', $data, $
     setUser((in_array($method, ['manual_usdt','manual_trx'], true) ? "waitBuyUsdtReceipt" : ($method === 'gift_card' ? "waitBuyGiftReceipt" : "waitBuyCartReceipt")) . $match['hashId']);
 
     $keyboard = kbOnlyCancel("cancelBuyCartReceipt", $match['hashId']);
-    $sent=sendMessage(achbotManualEvidencePrompt($mainValues,$connection,$payInfo,$method), $keyboard, "HTML");
+    $sent=sendMessage(achbotManualEvidencePrompt($connection,$payInfo,$method), $keyboard, "HTML");
     require_once __DIR__ . '/../PaymentLifecycle.php';
     achbotPayUxTrackByHash($connection,(string)$match['hashId'],(int)$from_id,$sent);
     exit;
 }
 
 if (preg_match('/cancelBuyCartReceipt(?<hashId>.*)/', $data, $match)) {
-    handleCancelFlow($mainValues, $removeKeyboard);
+    handleCancelFlow( $removeKeyboard);
 }
 
 if (preg_match('/wait(?:BuyCart|BuyGift|BuyUsdt)Receipt(.*)/', $userInfo['step'], $match)) {
@@ -1289,7 +1281,7 @@ if (preg_match('/wait(?:BuyCart|BuyGift|BuyUsdt)Receipt(.*)/', $userInfo['step']
     $fileid = achbotManualEvidenceInput($update, $connection, $receiptPay, $method);
     if ($fileid === null) {
         $keyboard = kbOnlyCancel("cancelBuyCartReceipt", $match[1]);
-        sendMessage(achbotManualEvidencePrompt($mainValues,$connection,$receiptPay,$method,true), $keyboard, "HTML");
+        sendMessage(achbotManualEvidencePrompt($connection,$receiptPay,$method,true), $keyboard, "HTML");
         exit;
     }
 
@@ -1345,13 +1337,13 @@ if (preg_match('/wait(?:BuyCart|BuyGift|BuyUsdt)Receipt(.*)/', $userInfo['step']
         $msg = str_replace(
             ['ACCOUNT-COUNT', 'TYPE', 'USER-ID', "USERNAME", "NAME", "PRICE", "REMARK"],
             [$payInfo['agent_count'], achbotManualLabel($method), $from_id, $username, $name, $fileprice, $filename],
-            achbotManualCaption($connection, $receiptPay, $mainValues['buy_new_much_account_request'])
+            achbotManualCaption($connection, $receiptPay, \achbotMessage('legacy_messages.buy_new_much_account_request'))
         );
     } else {
         $msg = str_replace(
             ['SERVERNAME', 'TYPE', 'USER-ID', "USERNAME", "NAME", "PRICE", "REMARK", "VOLUME", "DAYS"],
             [$serverTitle, achbotManualLabel($method), $from_id, $username, $name, $fileprice, $filename, $volume, $days],
-            achbotManualCaption($connection, $receiptPay, $mainValues['buy_new_account_request'])
+            achbotManualCaption($connection, $receiptPay, \achbotMessage('legacy_messages.buy_new_account_request'))
         );
     }
 
@@ -1375,7 +1367,6 @@ if (preg_match('/wait(?:BuyCart|BuyGift|BuyUsdt)Receipt(.*)/', $userInfo['step']
 
     $adminKeyboard = buildAdminKeyboardWithStats(
         $connection,
-        $buttonValues,
         "accept{$match[1]}",
         "declineAction_{$match[1]}",
         $match[1],
@@ -1386,7 +1377,7 @@ if (sendReceiptToAdminsAndUpdatePay($connection, $fileid,
         $msg, $adminKeyboard, $admin, $match[1],
         $deliveryToken,$giftScreen)) {
         setUser();
-        achbotManualAcknowledgeAndVerify($connection,$receiptPay,$method,$buttonValues['start_bot'],$botUsername);
+        achbotManualAcknowledgeAndVerify($connection,$receiptPay,$method,\achbotMessage('legacy_buttons.start_bot'),$botUsername);
     } else {
         sendMessage(\achbotMessage('payment.checkout.message.c346a0d62e'), null, 'HTML');
     }

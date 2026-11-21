@@ -92,6 +92,11 @@ function achbotNotifyAdmins($method,$args) {$GLOBALS['events'][]=['kind'=>'admin
 function delMessage() {$GLOBALS['events'][]=['kind'=>'delete'];}
 function alert($text) {$GLOBALS['events'][]=['kind'=>'alert','text'=>$text];}
 function achbotMessage($key,$params=[]) {return $key==='bot.bootstrap.unavailable'?'UNAVAILABLE':'CATALOG_'.$key;}
+function achbotCurrentMessage(string $key): string {
+    if (!array_key_exists($key,$GLOBALS['mainValues']))
+        throw new OutOfBoundsException('fixture_context_key_missing:'.$key);
+    return $GLOBALS['mainValues'][$key];
+}
 require __DIR__.'/auth.php';
 require __DIR__.'/set-user.php';
 require __DIR__.'/get-main-keys.php';

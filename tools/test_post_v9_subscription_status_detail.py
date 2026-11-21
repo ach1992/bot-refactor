@@ -60,7 +60,7 @@ def main() -> None:
                     request = json.dumps({
                         "op": audience, "actor": actor, "remote": remote})
                     result = subprocess.run(
-                        ["php", "-d", "display_errors=0", "-d", "log_errors=0",
+                        ["php", "-d", "display_errors=stderr", "-d", "log_errors=1",
                          str(script), str(ROOT), str(work / "mysql.sock"), db,
                          request],
                         capture_output=True, text=True, timeout=25, check=False)

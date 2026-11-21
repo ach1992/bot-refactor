@@ -104,13 +104,10 @@ $stmt->close();
 if (!empty($spec['cached_admin_override'])) {
     $userInfo['isAdmin']=1;
 }
-$mainValues=[
- 'send_user_id'=>'send-user', 'send_only_number'=>'send-number',
- 'user_not_found'=>'user-not-found', 'reached_main_menu'=>'main',
- 'enter_increase_amount'=>'enter-increase', 'enter_decrease_amount'=>'enter-decrease',
- 'enter_debt_amount'=>'enter-debt',
-];
-$buttonValues=['cancel'=>'cancel'];
+// Runtime labels are resolved by the real two-file source catalog; no
+// synthetic translation arrays can make this fixture pass incorrectly.
+$botState=['instanceMessages'=>[
+    'reached_main_menu'=>['format'=>'html','text'=>'main']]];
 $cancelKey='cancel';
 $removeKeyboard='remove';
 function sendMessage(...$args) {
@@ -186,7 +183,7 @@ def setstep(work,env,act,expected):
     sql(work,env,f"UPDATE users SET step='{safe}' WHERE userid={act}")
 
 def cmd(work, spec):
-    return ['php','-n','-d','extension=mysqlnd','-d','extension=mysqli',
+    return ['php','-n','-d','extension=mysqlnd','-d','extension=mysqli','-d','extension=mbstring',
         '-d','allow_url_fopen=0','-d','log_errors=1',
         '-d','disable_functions=exec,shell_exec,system,passthru,popen,proc_open,mail',
         str(work/'owned-wallet-driver.php'),str(ROOT),str(work/'mysql.sock'),
@@ -253,6 +250,12 @@ def main():
     a.add_argument('--report',type=Path)
     args=a.parse_args()
     cases=[]
+    labels=json.loads(subprocess.check_output(
+        ['php','-r',('require "messages/loader.php";echo json_encode(['
+          '"send"=>achbotMessage("legacy_messages.send_user_id"),'
+          '"increase"=>achbotMessage("legacy_messages.enter_increase_amount")'
+          '],JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);')],
+        cwd=ROOT, text=True))
     with owned.owned_database() as (work,env):
         (work/'owned-wallet-driver.php').write_text(PHP)
         # Migration is deliberately absent on legacy installation.
@@ -311,10 +314,10 @@ def main():
         # Native three-stage Telegram flow and durable final transaction.
         setstep(work,env,9001,'none')
         start=execute(work,env,data='increaseUserWallet',update_id=695,message_id=88)
-        assert step(work,env)=='increaseUserWallet' and 'send-user' in messages(start)
+        assert step(work,env)=='increaseUserWallet' and labels['send'] in messages(start)
         choose=execute(work,env,text='1001',update_id=696,message_id=89)
         assert step(work,env)=='increaseWalletUser1001'
-        assert 'enter-increase' in messages(choose)
+        assert labels['increase'] in messages(choose)
         amount=execute(work,env,text='350',update_id=697,message_id=90)
         assert step(work,env)=='achbotWalletReason:credit:1001:350:90:697'
         assert any('دلیل' in m for m in messages(amount))
@@ -671,7 +674,7 @@ def main():
             wire_chat=group_chat,wire_chat_type='supergroup')
         assert step(work,env)=='none'
         assert_state(work,env,base_wallet,base_rows)
-        assert 'send-user' not in messages(group_entry)
+        assert labels['send'] not in messages(group_entry)
         cases.append('r1_group_callback_cannot_begin_admin_adjustment')
 
         setstep(work,env,9001,'increaseUserWallet')
@@ -679,7 +682,7 @@ def main():
             wire_chat=group_chat,wire_chat_type='supergroup')
         assert step(work,env)=='increaseUserWallet'
         assert_state(work,env,base_wallet,base_rows)
-        assert 'enter-increase' not in messages(group_target)
+        assert labels['increase'] not in messages(group_target)
         cases.append('r1_group_user_selection_cannot_advance_adjustment')
 
         setstep(work,env,9001,'increaseWalletUser1001')

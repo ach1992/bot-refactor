@@ -17,7 +17,7 @@ import test_post_v9_current_copy_ownership as owner
 
 ROOT = Path(__file__).resolve().parents[1]
 BASE = "270840a854b06bbe899b76249db68e4748d93739"
-REMOVED_SHA256 = "94a529917854519c7f399589bdb770a92e4e656751d401fa5d0b1efac57befa8"
+REMOVED_SHA256 = "7b7eb72cb6cc43de76b03ac3a63c4367f40ed3dce4c26008928452b0780d8482"
 ADDED_SHA256 = "31088e8b9a9ee6cdc6a9a015aa8418b49ac6948302eb586a2da6db7f40b1e494"
 REVIEW_R1_RETIRED = ('legacy_buttons.manual_usdt', 'legacy_messages.buy_custom_subscription_detail', 'manual_payment.api_payment.status_monitoring')
 EXPECTED_LABELS = {
@@ -69,12 +69,12 @@ def main() -> None:
                 for a in ("user", "admin")})
     removed = sorted(set(old) - set(new))
     added = sorted(set(new) - set(old))
-    check(len(removed) == 411 and digest(removed) == REMOVED_SHA256,
+    check(len(removed) == 413 and digest(removed) == REMOVED_SHA256,
           "retired_key_footprint_changed")
     check(len(added) == 50 and digest(added) == ADDED_SHA256,
           "new_catalog_keys_not_owner_reviewed")
-    check(set(REVIEW_R1_RETIRED) <= set(removed),
-          "R1_orphan_keys_not_retired")
+    check(set(REVIEW_R1_RETIRED) | {"legacy_messages.config_doesnt_exist", "subscription.buy_helpers.build_links_and_send_qr.start.e4bb9f1ece"} <= set(removed),
+          "current_source_orphan_keys_not_retired")
     common = set(old) & set(new)
     changed = sorted(k for k in common if old[k] != new[k])
     check(not changed, "previously_rendered_copy_modified:" + str(changed[:12]))

@@ -89,7 +89,7 @@ if(($data=="openTickets" || $data=="newTickets" || $data == "allTickets") && ach
 	}
 }
 if(preg_match('/^moreTicket_(2|0|all)_([0-9]+)$/D',$data, $match)){
-    editText($message_id,$mainValues['please_wait_message']);
+    editText($message_id,\achbotMessage('legacy_messages.please_wait_message'));
     $type = $match[1];
     $offset = $match[2];
     $ticketStaff=achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'operations');

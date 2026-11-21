@@ -12,6 +12,11 @@ import test_access_state as owned
 ROOT=Path(__file__).resolve().parents[1]
 TOKEN='SYNTHETIC_SMS_ADMIN_SECRET_2026'
 SECRET='SYNTHETIC_GIFT_ADMIN_SECRET_2026'
+CANCEL_COPY=json.loads(subprocess.check_output(
+    ['php','-r',('require "messages/loader.php";echo json_encode('
+                 'achbotMessage("legacy_buttons.cancel"),'
+                 'JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);')],
+    cwd=ROOT, text=True))
 
 def main():
     parser=argparse.ArgumentParser()
@@ -43,10 +48,9 @@ def main():
     )
     driver=driver.replace("} elseif ($kind==='menu') {", """} elseif ($kind==='manual_ui') {
     require_once $root.'/src/Finance/ReceiptHelpers.php';
-    $manualValues=achbotMessages('legacy_messages');
     $GLOBALS['events'][]=['manual',
-        achbotManualReceiptPrompt($manualValues,'bank_transfer'),
-        achbotManualReceiptPrompt($manualValues,'gift_card'),
+        achbotManualReceiptPrompt('bank_transfer'),
+        achbotManualReceiptPrompt('gift_card'),
         kbSendReceiptAndCancel('sendBuyCartReceipt','cancelBuyCartReceipt','owned-quote','bank_transfer'),
         kbSendReceiptAndCancel('sendBuyGiftReceipt','cancelBuyCartReceipt','owned-quote','gift_card')];
 } elseif ($kind==='menu') {""")
@@ -100,12 +104,19 @@ def main():
         def no_save(result):
             assert not any(x[0]=='send' and x[1]=='SAVED' for x in result['events']),result
 
+        # Verify the real production button text, not the pre-refactor
+        # synthetic $buttonValues labels in the isolated menu harness.
+        off_label=json.loads(subprocess.check_output(
+            ['php','-r',('require "messages/loader.php";echo json_encode('
+                         'achbotMessage("legacy_buttons.off"),'
+                         'JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);')],
+            cwd=ROOT, text=True))
         # Absent flags are OFF and inserted immediately below their manual method.
         menu_result=call(kind='menu')
         keyboard=json.loads(menu_result['events'][0][1])['inline_keyboard']
         for manual,api in [('giftCardState','giftApiVerifyState'),('cartToCartState','smsApiVerifyState')]:
             pos=next(i for i,row in enumerate(keyboard) if row[0].get('callback_data')=='changeGateWays'+manual)
-            assert keyboard[pos+1][0]=={'text':'OFF','callback_data':'changeGateWays'+api}
+            assert keyboard[pos+1][0]=={'text':off_label,'callback_data':'changeGateWays'+api}
         assert 'cartToCartAutoAcceptState' not in str(keyboard)
         manual=call(kind='manual_ui')['events'][0]
         assert 'تصویر' in manual[1] and 'تصویر' in manual[2],manual
@@ -165,7 +176,7 @@ def main():
         # Cancellation preserves value and incoming administrator history.
         old=values()['smsApiToken']
         editor('smsApiToken')
-        canceled=call(kind='message',text='Cancel')
+        canceled=call(kind='message',text=CANCEL_COPY)
         assert values()['smsApiToken']==old and keys.step(w,env)=='none'
         assert not any(x[0]=='delete' for x in canceled['events'])
         assert any('تنظیمات اتصال پیامک بانکی' in str(x) for x in canceled['events'])
@@ -179,7 +190,7 @@ def main():
             editor(field)
             result=call(kind='message',text=value)
             no_save(result);assert values().get(field)==old
-            call(kind='message',text='Cancel')
+            call(kind='message',text=CANCEL_COPY)
         editor('smsApiHorizonHours','/clear')
         assert values()['smsApiHorizonHours']==''
         before=states();toggle('smsApiVerifyState');assert states()==before
@@ -213,12 +224,12 @@ def main():
         old=values()
         no_save(call(kind='message',text='24',actor=9002))
         assert values()==old and values()['smsApiHorizonHours']=='72'
-        call(kind='message',text='Cancel',actor=9002)
+        call(kind='message',text=CANCEL_COPY,actor=9002)
         opened=editor('smsApiHorizonHours')
         replay_seq=seq[0]
         no_save(call(kind='message',text='24',update_id=replay_seq))
         assert values()['smsApiHorizonHours']=='72'
-        call(kind='message',text='Cancel')
+        call(kind='message',text=CANCEL_COPY)
         checks.append('field_revision_conflict_and_replayed_message_cannot_overwrite')
 
         # Clearing protected settings does not retain plaintext or make a valid profile.

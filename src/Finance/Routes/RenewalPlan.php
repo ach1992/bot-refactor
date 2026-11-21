@@ -9,7 +9,7 @@ require_once __DIR__ . '/../../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
 
 require_once __DIR__ . '/../PaymentLifecycle.php';
 
-if(preg_match('/sConfigRenewPlan(\d+)_(\d+)/',$data, $match) && ($botState['sellState']=="on" ||$from_id ==$admin) && $text != $buttonValues['cancel']){
+if(preg_match('/sConfigRenewPlan(\d+)_(\d+)/',$data, $match) && ($botState['sellState']=="on" ||$from_id ==$admin) && $text != \achbotMessage('legacy_buttons.cancel')){
     $id = $match[1];
 	$inbound_id = $match[2];
     if (!achbotSupportsPlan($connection, (int)$id, (int)$inbound_id)) {
@@ -36,7 +36,7 @@ if(preg_match('/sConfigRenewPlan(\d+)_(\d+)/',$data, $match) && ($botState['sell
     $uuid = $configInfo['uuid'] ?? '';
     $remark = $configInfo['remark'];
 
-    alert($mainValues['receving_information']);
+    alert(\achbotMessage('legacy_messages.receving_information'));
     delMessage();
     $stmt = $connection->prepare("SELECT * FROM `server_plans` WHERE `id`=? and `active`=1");
     $stmt->bind_param("i", $id);
@@ -75,16 +75,16 @@ if(preg_match('/sConfigRenewPlan(\d+)_(\d+)/',$data, $match) && ($botState['sell
     }
 
 
-    if(achbotManualEnabled('bank_transfer') && achbotPayUxAudienceAllowed($connection,'bank_transfer',(int)$from_id)) $keyboard[] = [['text' => $buttonValues['cart_to_cart'],  'callback_data' => "payBuyWithCartToCart$hash_id"]];
-    if(achbotManualEnabled('gift_card') && achbotPayUxAudienceAllowed($connection,'gift_card',(int)$from_id)) $keyboard[] = [['text' => $buttonValues['gift_card'], 'callback_data' => "payBuyWithGiftCard$hash_id"]];
+    if(achbotManualEnabled('bank_transfer') && achbotPayUxAudienceAllowed($connection,'bank_transfer',(int)$from_id)) $keyboard[] = [['text' => \achbotMessage('legacy_buttons.cart_to_cart'),  'callback_data' => "payBuyWithCartToCart$hash_id"]];
+    if(achbotManualEnabled('gift_card') && achbotPayUxAudienceAllowed($connection,'gift_card',(int)$from_id)) $keyboard[] = [['text' => \achbotMessage('legacy_buttons.gift_card'), 'callback_data' => "payBuyWithGiftCard$hash_id"]];
     if ((achbotManualCryptoEnabled((int)$from_id) && (achbotPayUxAudienceAllowed($connection,'manual_usdt',(int)$from_id) || achbotPayUxAudienceAllowed($connection,'manual_trx',(int)$from_id)))) $keyboard[] = [['text' => \achbotMessage('renewal.extensions.button.e729457ba2'), 'callback_data' => "mcm_$hash_id"]];
-    if(($botState['nowPaymentOther'] == "on" && achbotPayUxAudienceAllowed($connection,'nowpayments',(int)$from_id) && achbotUsdtRateForUser($connection,(int)$from_id)!==null)) $keyboard[] = [['text' => $buttonValues['now_payment_gateway'],  'url' => $botUrl . "pay/checkout.php?nowpayment&hash_id=" . $hash_id]];
-    if(($botState['zarinpal'] == "on" && achbotPayUxAudienceAllowed($connection,'zarinpal',(int)$from_id))) $keyboard[] = [['text' => $buttonValues['zarinpal_gateway'],  'url' => $botUrl . "pay/checkout.php?zarinpal&hash_id=" . $hash_id]];
-    if(($botState['nextpay'] == "on" && achbotPayUxAudienceAllowed($connection,'nextpay',(int)$from_id))) $keyboard[] = [['text' => $buttonValues['nextpay_gateway'],  'url' => $botUrl . "pay/checkout.php?nextpay&hash_id=" . $hash_id]];
-    if(($botState['walletState'] == "on" && achbotPayUxAudienceAllowed($connection,'wallet',(int)$from_id))) $keyboard[] = [['text' => $buttonValues['pay_with_wallet'],  'callback_data' => "payBuyWithWallet$hash_id"]];
+    if(($botState['nowPaymentOther'] == "on" && achbotPayUxAudienceAllowed($connection,'nowpayments',(int)$from_id) && achbotUsdtRateForUser($connection,(int)$from_id)!==null)) $keyboard[] = [['text' => \achbotMessage('legacy_buttons.now_payment_gateway'),  'url' => $botUrl . "pay/checkout.php?nowpayment&hash_id=" . $hash_id]];
+    if(($botState['zarinpal'] == "on" && achbotPayUxAudienceAllowed($connection,'zarinpal',(int)$from_id))) $keyboard[] = [['text' => \achbotMessage('legacy_buttons.zarinpal_gateway'),  'url' => $botUrl . "pay/checkout.php?zarinpal&hash_id=" . $hash_id]];
+    if(($botState['nextpay'] == "on" && achbotPayUxAudienceAllowed($connection,'nextpay',(int)$from_id))) $keyboard[] = [['text' => \achbotMessage('legacy_buttons.nextpay_gateway'),  'url' => $botUrl . "pay/checkout.php?nextpay&hash_id=" . $hash_id]];
+    if(($botState['walletState'] == "on" && achbotPayUxAudienceAllowed($connection,'wallet',(int)$from_id))) $keyboard[] = [['text' => \achbotMessage('legacy_buttons.pay_with_wallet'),  'callback_data' => "payBuyWithWallet$hash_id"]];
 
-	$keyboard[] = [['text' => $buttonValues['back_to_main'], 'callback_data' => "mainMenu"]];
-    $sent=sendMessage(str_replace(['PLAN-NAME', 'PRICE', 'DESCRIPTION'], [$name, $price, $desc], $mainValues['buy_subscription_detail']), json_encode(['inline_keyboard'=>$keyboard]), "HTML");
+	$keyboard[] = [['text' => \achbotMessage('legacy_buttons.back_to_main'), 'callback_data' => "mainMenu"]];
+    $sent=sendMessage(str_replace(['PLAN-NAME', 'PRICE', 'DESCRIPTION'], [$name, $price, $desc], \achbotCurrentMessage('buy_subscription_detail')), json_encode(['inline_keyboard'=>$keyboard]), "HTML");
     require_once __DIR__ . '/../PaymentLifecycle.php';
     achbotPayUxTrackByHash($connection,(string)$hash_id,(int)$from_id,$sent);
 }

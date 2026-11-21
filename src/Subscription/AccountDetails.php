@@ -88,12 +88,12 @@ function getOrderTrafficInfo($serverType, $server_id, $remark, $uuid, $inbound_i
 }
 
 
-function getOrderStatusText(array $traffic,string $serverType,array $buttons,?string $missing=null): string {
+function getOrderStatusText(array $traffic,string $serverType): string {
     if (($traffic['uncertain']??true)===true || ($traffic['found']??false)!==true)
         return \achbotMessage('subscription.account_details.get_order_status_text.label.ff02acf7a2');
     return match($traffic['status']??null) {
-        'active'=>$buttons['active'],
-        'disabled'=>$buttons['deactive'],
+        'active'=>\achbotMessage('legacy_buttons.active'),
+        'disabled'=>\achbotMessage('legacy_buttons.deactive'),
         'expired'=>\achbotMessage('subscription.account_details.get_order_status_text.text.63ef396546'),
         'limited'=>\achbotMessage('subscription.account_details.get_order_status_text.text.e9216d0d0c'),
         'on_hold'=>\achbotMessage('subscription.account_details.status_on_hold'),
@@ -180,8 +180,7 @@ function orderPlanActions(\mysqli $db,array $order): array {
 }
 
 function getUserOrderDetailKeys($id, $offset = 0){
-    global $botState, $buttonValues, $botUrl;
-
+    global $botState, $botUrl;
     if (!canReadAdminOrderDetails()) return null;
     $order = findOrder($id);
     if (!$order) return null;
@@ -218,7 +217,7 @@ function getUserOrderDetailKeys($id, $offset = 0){
     $expire_date=$uncertain?\achbotMessage('subscription.account_details.get_order_traffic_info.text.f07ac0638d'):
         ($traffic['expire']===null?\achbotMessage('subscription.account_deletion.no_dont_delete.text.5e6ee5eaa1'):jdate('Y-m-d H:i',$traffic['expire'],'','Asia/Tehran','en'));
     $canToggle=in_array($traffic['status']??null,['active','disabled'],true);
-    $enableText=getOrderStatusText($traffic,$serverType,$buttonValues);
+    $enableText=getOrderStatusText($traffic,$serverType);
 
     $presentation=$uncertain?['config_html'=>'','subscription_html'=>'','backup_html'=>'','notice_html'=>'']:
         achbotOrderPresentation($GLOBALS['connection'],$order,$server,$botState,$renderRemote);
@@ -251,22 +250,22 @@ function getUserOrderDetailKeys($id, $offset = 0){
 
     $keyboard[] = [
         ['text' => $name, 'callback_data' => "wizwizch"],
-        ['text' => $buttonValues['plan_name'], 'callback_data' => "wizwizch"],
+        ['text' => \achbotMessage('legacy_buttons.plan_name'), 'callback_data' => "wizwizch"],
     ];
 
     $keyboard[] = [
         ['text' => $date, 'callback_data' => "wizwizch"],
-        ['text' => $buttonValues['buy_date'], 'callback_data' => "wizwizch"],
+        ['text' => \achbotMessage('legacy_buttons.buy_date'), 'callback_data' => "wizwizch"],
     ];
 
     $keyboard[] = [
         ['text' => $expire_date, 'callback_data' => "wizwizch"],
-        ['text' => $buttonValues['expire_date'], 'callback_data' => "wizwizch"],
+        ['text' => \achbotMessage('legacy_buttons.expire_date'), 'callback_data' => "wizwizch"],
     ];
 
     $keyboard[] = [
         ['text' => $leftgb, 'callback_data' => "wizwizch"],
-        ['text' => $buttonValues['volume_left'], 'callback_data' => "wizwizch"],
+        ['text' => \achbotMessage('legacy_buttons.volume_left'), 'callback_data' => "wizwizch"],
     ];
 
     // Admin always sees transfer, even when there is no eligible destination
@@ -278,7 +277,7 @@ function getUserOrderDetailKeys($id, $offset = 0){
         'callback_data'=>"switchLocation{$id}_{$server_id}_0_0"
     ];
     if (!$uncertain && $actionable) $servicePlanActions[] = [
-        'text' => $buttonValues['change_plan'], 'callback_data' => "changePlan_{$id}"
+        'text' => \achbotMessage('legacy_buttons.change_plan'), 'callback_data' => "changePlan_{$id}"
     ];
     if ($servicePlanActions) $keyboard[] = $servicePlanActions;
 
@@ -296,18 +295,18 @@ function getUserOrderDetailKeys($id, $offset = 0){
     if (!$uncertain && $actionable) {
         $stateActions=[];
         if ($canToggle) $stateActions[]=[
-            'text'=>($enableBool?$buttonValues['disable_config']:$buttonValues['enable_config']),
+            'text'=>($enableBool?\achbotMessage('legacy_buttons.disable_config'):\achbotMessage('legacy_buttons.enable_config')),
             'callback_data'=>"changeUserConfigState".$order['id']
         ];
         $stateActions[]=[
-            'text'=>$buttonValues['delete_config'],
+            'text'=>\achbotMessage('legacy_buttons.delete_config'),
             'callback_data'=>"delUserConfig".$order['id']
         ];
         $keyboard[]=$stateActions;
     }
 
     $keyboard[] = [[
-        'text' => $buttonValues['back_button'],
+        'text' => \achbotMessage('legacy_buttons.back_button'),
         'callback_data' => "managePanel"
     ]];
 
@@ -319,8 +318,7 @@ function getUserOrderDetailKeys($id, $offset = 0){
 
 
 function getOrderDetailKeys($from_id, $id, $offset = 0){
-    global $botState, $mainValues, $buttonValues, $botUrl, $userInfo;
-
+    global $botState, $botUrl, $userInfo;
     $actor=currentOrderDetailActor();
     if ($actor===null || ((int)$actor['userid']!==(int)$from_id && !canReadAdminOrderDetails())) return null;
     $order = findOrder($id, $from_id);
@@ -362,7 +360,7 @@ function getOrderDetailKeys($from_id, $id, $offset = 0){
     $canExtendTime=!$uncertain && $traffic['expire']!==null;
     // Use the verified total allowance, not the finite remaining balance.
     $canExtendVolume=$canExtendTime && (int)($renderRemote->data_limit??0)>0;
-    $enableText=getOrderStatusText($traffic,$serverType,$buttonValues,$mainValues['config_doesnt_exist']);
+    $enableText=getOrderStatusText($traffic,$serverType);
 
     $presentation=$uncertain?['config_html'=>'','subscription_html'=>'','backup_html'=>'','notice_html'=>'']:
         achbotOrderPresentation($GLOBALS['connection'],$order,$server,$botState,$renderRemote);
@@ -380,24 +378,24 @@ function getOrderDetailKeys($from_id, $id, $offset = 0){
 
     $keyboard[] = [
         ['text' => $name, 'callback_data' => "wizwizch"],
-        ['text' => $buttonValues['plan_name'], 'callback_data' => "wizwizch"],
+        ['text' => \achbotMessage('legacy_buttons.plan_name'), 'callback_data' => "wizwizch"],
     ];
 
     /*
     $keyboard[] = [
         ['text' => jdate("Y-m-d H:i", $order['date']), 'callback_data' => "wizwizch"],
-        ['text' => $buttonValues['buy_date'], 'callback_data' => "wizwizch"],
+        ['text' => \achbotMessage('legacy_buttons.buy_date'), 'callback_data' => "wizwizch"],
     ];
     */
 
     $keyboard[] = [
         ['text' => $expire_date, 'callback_data' => "wizwizch"],
-        ['text' => $buttonValues['expire_date'], 'callback_data' => "wizwizch"],
+        ['text' => \achbotMessage('legacy_buttons.expire_date'), 'callback_data' => "wizwizch"],
     ];
 
     $keyboard[] = [
         ['text' => $leftgb, 'callback_data' => "wizwizch"],
-        ['text' => $buttonValues['volume_left'], 'callback_data' => "wizwizch"],
+        ['text' => \achbotMessage('legacy_buttons.volume_left'), 'callback_data' => "wizwizch"],
     ];
 
     // Existing consent can always be withdrawn from an active local order.
@@ -426,7 +424,7 @@ function getOrderDetailKeys($from_id, $id, $offset = 0){
             $planActions['manual']!==null &&
             ($botState['renewAccountState'] ?? "off") == "on"
         ) {
-            $temp[] = ['text' => $buttonValues['renew_config'], 'callback_data' => "renewAccountAsk{$id}"];
+            $temp[] = ['text' => \achbotMessage('legacy_buttons.renew_config'), 'callback_data' => "renewAccountAsk{$id}"];
         }
 
         if (!empty($temp)) {
@@ -445,7 +443,7 @@ function getOrderDetailKeys($from_id, $id, $offset = 0){
             $canExtendVolume &&
             $planActions['manual']!==null
         ) {
-            $flatButtons[] = ['text' => $buttonValues['increase_config_volume'], 'callback_data' => "increaseAVolume{$id}"];
+            $flatButtons[] = ['text' => \achbotMessage('legacy_buttons.increase_config_volume'), 'callback_data' => "increaseAVolume{$id}"];
         }
 
         if (
@@ -454,29 +452,29 @@ function getOrderDetailKeys($from_id, $id, $offset = 0){
             $canExtendTime &&
             $planActions['manual']!==null
         ) {
-            $flatButtons[] = ['text' => $buttonValues['increase_config_days'], 'callback_data' => "increaseADay{$id}"];
+            $flatButtons[] = ['text' => \achbotMessage('legacy_buttons.increase_config_days'), 'callback_data' => "increaseADay{$id}"];
         }
 
         if (($botState['renewConfigLinkState'] ?? "off") == "on")
-            $flatButtons[] = ['text' => $buttonValues['renew_connection_link'], 'callback_data' => "changAccountConnectionLink{$id}"];
+            $flatButtons[] = ['text' => \achbotMessage('legacy_buttons.renew_connection_link'), 'callback_data' => "changAccountConnectionLink{$id}"];
 
         if (($botState['updateConfigLinkState'] ?? "off") == "on")
-            $flatButtons[] = ['text' => $buttonValues['update_config_connection'], 'callback_data' => "updateConfigConnectionLink{$id}"];
+            $flatButtons[] = ['text' => \achbotMessage('legacy_buttons.update_config_connection'), 'callback_data' => "updateConfigConnectionLink{$id}"];
 
         if ($planActions['choose'] && (canReadAdminOrderDetails() ||
             ($botState['changePlanState'] ?? 'on')==='on'))
-            $flatButtons[] = ['text' => $buttonValues['change_plan'], 'callback_data' => "changePlan_{$id}"];
+            $flatButtons[] = ['text' => \achbotMessage('legacy_buttons.change_plan'), 'callback_data' => "changePlan_{$id}"];
 
         if (($botState['qrConfigState'] ?? "off") == "on" && !empty($presentation['qr_config_links']))
-            $flatButtons[] = ['text' => $buttonValues['qr_config'], 'callback_data' => "showQrConfig{$id}"];
+            $flatButtons[] = ['text' => \achbotMessage('legacy_buttons.qr_config'), 'callback_data' => "showQrConfig{$id}"];
 
         if (($botState['qrSubState'] ?? "off") == "on" && !empty($presentation['qr_subscription_url']))
-            $flatButtons[] = ['text' => $buttonValues['qr_sub'], 'callback_data' => "showQrSub{$id}"];
+            $flatButtons[] = ['text' => \achbotMessage('legacy_buttons.qr_sub'), 'callback_data' => "showQrSub{$id}"];
 
         // همکار enable/disable
         if ($canToggle && $agentBought == true && !empty($userInfo['is_agent']) && (int)$userInfo['is_agent'] == 1) {
             $flatButtons[] = [
-                'text' => ($enableBool ? $buttonValues['disable_config'] : $buttonValues['enable_config']),
+                'text' => ($enableBool ? \achbotMessage('legacy_buttons.disable_config') : \achbotMessage('legacy_buttons.enable_config')),
                 'callback_data' => "agentChangeUserConfigState{$id}"
             ];
         }
@@ -488,7 +486,7 @@ function getOrderDetailKeys($from_id, $id, $offset = 0){
         $lastButton = (count($flatButtons) % 2 == 1) ? $flatButtons[count($flatButtons) - 1] : null;
 
         // delete
-        $deleteButton = ['text' => $buttonValues['delete_config'], 'callback_data' => "deleteMyConfig{$id}"];
+        $deleteButton = ['text' => \achbotMessage('legacy_buttons.delete_config'), 'callback_data' => "deleteMyConfig{$id}"];
 
         if ($lastButton) {
             $keyboard[] = [$lastButton, $deleteButton];
@@ -498,7 +496,7 @@ function getOrderDetailKeys($from_id, $id, $offset = 0){
     }
 
     $keyboard[] = [[
-        'text' => $buttonValues['back_button'],
+        'text' => \achbotMessage('legacy_buttons.back_button'),
         'callback_data' => ($agentBought == true ? "agentConfigsList" : "mySubscriptions")
     ]];
 

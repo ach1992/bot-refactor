@@ -24,7 +24,7 @@ if(preg_match('/^api(Check|Gift)_([A-Za-z0-9_-]{1,50})$/D',(string)($data??''),$
     $data=$send.$apiCallback[2];return 1;
 }
 if(preg_match('/^apiGiftCode_([A-Za-z0-9_-]{1,50})$/D',(string)($userInfo['step']??''),$apiStep)) {
-    $navigation=in_array((string)($text??''),array_filter([$buttonValues['cancel']??null,$buttonValues['back_to_main']??null,$buttonValues['back_button']??null],static fn($v)=>is_string($v)&&$v!==''),true) || preg_match('/^\/[Ss]tart(?:@[A-Za-z0-9_]+)?(?:\s|$)/D',(string)($text??''));
+    $navigation=in_array((string)($text??''),array_filter([\achbotMessage('legacy_buttons.cancel')??null,\achbotMessage('legacy_buttons.back_to_main')??null,\achbotMessage('legacy_buttons.back_button')??null],static fn($v)=>is_string($v)&&$v!==''),true) || preg_match('/^\/[Ss]tart(?:@[A-Za-z0-9_]+)?(?:\s|$)/D',(string)($text??''));
     if((string)($data??'')!=='' || $navigation){setUser();$userInfo['step']='none';if($navigation&&!preg_match('/^\/[Ss]tart/',(string)($text??'')))$text='/start';return 1;}
     $c=achbotApiPaymentContext($connection,$apiStep[1],(int)$from_id);
     if(!$c || $c['attempt']['provider']!=='gift_card' || !achbotManualReceiptAllowed($connection,$c['pay'],'gift_card',(int)$from_id)){setUser();sendMessage(achbotMessage('payment.api_payment.denied'), null, 'HTML');return;}

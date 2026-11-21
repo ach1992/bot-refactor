@@ -108,7 +108,7 @@ if($botState['cartToCartAutoAcceptState']=="on"){
             require_once __DIR__.'/ServiceEffects.php';
             require_once __DIR__.'/BankPurchase.php';
             $delivery=achbotAutoBankProvisionBuySub(
-                $connection,$payInfo,$botState,$buttonValues,
+                $connection,$payInfo,$botState,
                 [],
                 false,(string)$botUrl
             );

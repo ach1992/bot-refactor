@@ -183,7 +183,7 @@ require __DIR__ . '/../src/Jobs/Checkpoint.php';
 $inlineStartKey = json_encode([
     'inline_keyboard' => [
         [[
-            'text' => $buttonValues['start_bot'],
+            'text' => \achbotMessage('legacy_buttons.start_bot'),
             'url'  => "https://t.me/$botUsername?start=mainMenu"
         ]]
     ]

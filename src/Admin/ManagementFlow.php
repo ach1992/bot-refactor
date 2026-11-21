@@ -190,8 +190,7 @@ function achbotManagementHome(string $kind,?int $id=null,string $prefix=''): voi
 }
 /** Own one request completely, including cancel; callers never replay it through generic cancel. */
 function achbotHandleManagement(): bool {
-    global $connection,$from_id,$admin,$data,$text,$update,$userInfo,$buttonValues,$cancelKey,$message_id,$chat_id;
-    $data=is_string($data??null)?$data:'';
+    global $connection, $from_id, $admin, $data, $text, $update, $userInfo, $cancelKey, $message_id, $chat_id;    $data=is_string($data??null)?$data:'';
     $text=is_string($text??null)?$text:null;
     $starts=in_array($data,['addManagedServer','addNewMarzbanPanel','pgConnections','pgAddConnection',
         'addManagedPlan','addNewMarzbanPlan'],true) ||
@@ -247,7 +246,7 @@ function achbotHandleManagement(): bool {
                     throw new RuntimeException('management_stale');
                 $action=$m[3];$value=$m[4];
             } elseif ($data!=='') throw new RuntimeException('management_other_action');
-            if (!$callback && $text===($buttonValues['cancel']??null)) $action='cancel';
+            if (!$callback && $text===(\achbotMessage('legacy_buttons.cancel')??null)) $action='cancel';
             if ($action==='cancel') {
                 $kind=$draft['kind'];achbotManagementStore($connection,$actor,$actorRowId,null);
                 if (!achbotManagementCommit($connection)) throw new RuntimeException('management_commit_unknown');$begun=false;
@@ -320,12 +319,11 @@ function achbotManagementFieldBaseline(array $row,string $field): string {
 }
 /** Contextual server/plan field editors; shared validation and private cancel. */
 function achbotHandleManagementFields(): bool {
-    global $connection,$from_id,$admin,$data,$text,$update,$userInfo,$buttonValues,$cancelKey,$message_id,$chat_id;
-    $cb=is_string($data??null)?$data:'';
+    global $connection, $from_id, $admin, $data, $text, $update, $userInfo, $cancelKey, $message_id, $chat_id;    $cb=is_string($data??null)?$data:'';
     $step=(string)($userInfo['step']??'');
     $active=str_starts_with($step,'achbotField|');
     $start=preg_match('/^(editServer(Name|Flag|Remark|Max)|plan(Days|Volume)|changesServerLoginInfo)([1-9][0-9]*)$/D',$cb,$match)===1;
-    $legacyCancel=is_string($text??null) && $text===($buttonValues['cancel']??null) &&
+    $legacyCancel=is_string($text??null) && $text===(\achbotMessage('legacy_buttons.cancel')??null) &&
         preg_match('/^(?:editServer(?:Name|Flag|Remark|Max)|plan(?:Days|Volume)|changesServerLoginInfo)([1-9][0-9]*)$/D',$step,$old);
     $delete=preg_match('/^yesDeleteServer([1-9][0-9]*)_([a-f0-9]{16})$/D',$cb,$deletion)===1;
     $cancelDelete=preg_match('/^cancelDeleteServer([1-9][0-9]*)_([a-f0-9]{16})$/D',$cb,$cancellation)===1;
@@ -393,7 +391,7 @@ function achbotHandleManagementFields(): bool {
                 'baseline'=>achbotManagementFieldBaseline($row,$field)];
         } else {
             $context=$d['context'];$entity=(int)$d['id'];
-            if (is_string($text??null) && $text===($buttonValues['cancel']??null)) {
+            if (is_string($text??null) && $text===(\achbotMessage('legacy_buttons.cancel')??null)) {
                 achbotManagementStore($connection,$actor,$actorRowId,null);
                 if (!achbotManagementCommit($connection)) throw new RuntimeException('management_commit_unknown');$begun=false;
                 achbotManagementHome($context,$entity);return true;

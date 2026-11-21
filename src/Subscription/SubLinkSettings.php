@@ -16,7 +16,7 @@ if(preg_match('/^editSubLinks(\d+)/', $data, $match) && achbotAdminCanFor($conne
     sendMessage(\achbotMessage('subscription.sub_link_settings.message.9f2715dc7c'), $cancelKey, "HTML");
     exit();
 }
-if(preg_match('/^subLinksInput(\d+)/', $userInfo['step'], $match) && $text != $buttonValues['cancel'] && achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'servers')) {
+if(preg_match('/^subLinksInput(\d+)/', $userInfo['step'], $match) && $text != \achbotMessage('legacy_buttons.cancel') && achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'servers')) {
     $rowId = $match[1];
     $subLinks = trim($text);
 

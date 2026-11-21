@@ -5,7 +5,7 @@ Only **two files contain editable bot/PHP payment-page copy**:
 - `fa/user.php`: customer and agent messages, customer buttons and harmless shared labels/date words.
 - `fa/admin.php`: administrator controls, operational reports and administrator-only diagnostics.
 
-Both files have named topic sections. Search for the current sentence, then edit its value in place. Keep the stable key, parameter names and placeholders unchanged. For example, keep `{amount}`, `USER-ID`, `PRICE-TOMAN` or `CONNECT-LINK` exactly as written. `config.php` and `health.php` initialize the existing `$mainValues` and `$buttonValues` bindings directly through `messages/loader.php`. The old `settings/values.php` facade is removed. `loader.php` is loading/substitution code, not a third text file.
+Both files have named topic sections. Search for the current sentence, then edit its value in place. Keep the stable key, parameter names and placeholders unchanged (for example: {amount}, USER-ID, PRICE-TOMAN or CONNECT-LINK). The former global $mainValues and $buttonValues runtime arrays are removed. PHP consumers resolve source copy through `messages/loader.php` and its lazy `achbotCurrentMessage()` entrypoint, which delegates per-installation copy to `src/Admin/InstanceContent.php`. Neither is an additional editable text source. The obsolete `settings/values.php` facade remains removed.
 
 Classify editing placement from the actual recipient, including forwarded support reports and shared controls; a route filename alone is not an audience. Choose status/action emoji from the complete outcome and action, not an isolated word such as success, unsuccessful, delete or duplicate.
 
@@ -60,24 +60,26 @@ request outcomes against the accepted current-Stable source, including
 exact HTML bytes, JSON response bytes and interpreted JavaScript strings.
 `tools/test_post_v9_current_copy_ownership.py` also asserts no noncatalog
 Persian text remains in the root web-login PHP/HTML/JS source.
-The current-only relocation proof pins exactly 411 retired no-consumer keys
-and 50 new exact-value, source-owned entries (46 browser labels and four
-finance/admin display labels), and verifies that all 2,527 retained
-pre-refactor catalog entries are byte-for-byte unchanged.
-The Issue #220 review restored two LIVE source-owned subscription status
-labels (legacy_buttons.active/deactive): the real customer/admin status
-renderer receives them through its $buttons parameter alias. Three
-additional truly orphaned R1 keys remain retired (the obsolete manual
-payment monitoring status, the unused manual USDT button and the retired
-custom-plan detail template). Source-traced finite producers and the PHP
-tokenizer distinguish real catalog calls and parameter aliases from
-unrelated quoted identifiers/comments. Positive and negative fixtures
-exercise these exact paths, including source-real PHP status rendering.
-This pin belongs to Issue #220 and can change only with a reviewed
-copy/cleanup outcome; later approved copy edits update their accepted
-source-real reference rather than bypassing the gate.
-Staff/customer-authored broadcast, ticket and invite content is stored data,
-not source-owned static text; preserve its original parse mode and entity
-semantics. `$mainValues` is currently still a live catalog-derived runtime
-array, not an independent editable file; removing it requires source-real
-parity for all dynamic and per-instance consumers first.
+The current-only relocation proof now pins **413** retired no-consumer
+keys and 50 new exact-value, source-owned entries (46 browser labels and four
+finance/admin display labels); all **2,525** retained values remain byte-exact.
+Two more dead keys are retired: the unused subscription-status fallback `legacy_messages.config_doesnt_exist` and the unreachable QR-link button fallback `subscription.buy_helpers.build_links_and_send_qr.start.e4bb9f1ece`. The active subscription status/Start labels remain unchanged.
+
+The global "$mainValues" and "$buttonValues" mutable runtime bindings are
+removed. Static source lookups use achbotMessage() with the original
+legacy_messages/legacy_buttons keys directly. Ten context-sensitive messages
+resolve through the loader entrypoint and existing instance content module;
+saved BOT_STATES.instanceMessages retains its HTML format and per-bot precedence.
+Finite payment/receipt/wallet/admin key producers resolve through the same
+catalog API without legacy array copies. A pure local-array formatter in
+src/Presentation/Text.php remains for template interpolation, not as a global
+message store.
+
+Both live subscription status labels legacy_buttons.active/deactive remain
+byte-identical and sourced directly from the catalog in the status renderer.
+The other three obsolete R1 keys remain retired. Token-based source audits
+reject undeclared copy, new orphaned keys, unrelated quoted-name impostors,
+missing direct bindings and unbounded new dynamic producers. Source-real
+context, subscription, finance and static HTML contracts verify behavior.
+Staff/customer-authored broadcasts, tickets and invites are stored data, not
+editable fixed copy; their original parse modes are preserved.

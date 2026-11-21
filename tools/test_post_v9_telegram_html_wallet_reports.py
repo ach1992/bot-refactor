@@ -29,6 +29,7 @@ DRIVER = r'''
 error_reporting(E_ALL);
 require $argv[1].'/tools/source_scan.php';
 require $argv[1].'/messages/loader.php';
+require $argv[1].'/src/Admin/InstanceContent.php';
 $events=[];
 function sendMessage(...$args) {
     $GLOBALS['events'][] = $args;
@@ -37,7 +38,9 @@ function sendMessage(...$args) {
 function getMainKeys() { return 'fixture-main-keyboard'; }
 $from_id=9001;
 $removeKeyboard='fixture-remove-keyboard';
-$mainValues=['reached_main_menu'=>'فهرست اصلی'];
+$botState=['instanceMessages'=>[
+    'reached_main_menu'=>['format'=>'html','text'=>'فهرست اصلی']]];
+
 $source=$argv[1].'/src/Finance/Routes/AdminWallet.php';
 foreach (['achbotAdminWalletDebtCallback',
           'achbotAdminWalletOperation',
@@ -97,7 +100,7 @@ def cases() -> list[dict]:
 
 
 def actual() -> list[dict]:
-    run = subprocess.run(['php','-n','-d','extension=tokenizer','-r',DRIVER,str(ROOT),
+    run = subprocess.run(['php','-r',DRIVER,str(ROOT),
                           json.dumps(cases(), ensure_ascii=False)],
                          cwd=ROOT,capture_output=True,text=True)
     if run.returncode: raise RuntimeError(repr((run.stdout[-4000:],run.stderr[-4000:])))

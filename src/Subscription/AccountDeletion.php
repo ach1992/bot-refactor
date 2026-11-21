@@ -140,7 +140,7 @@ if(preg_match('/^deleteMyConfig(\d+)/', $data, $match)){
 elseif($data=="noDontDelete"){
     editText($message_id, \achbotMessage('subscription.account_deletion.no_dont_delete.message.4ca0ffd711'),json_encode([
         'inline_keyboard' => [
-            [['text'=>$buttonValues['back_to_main'],'callback_data'=>"mainMenu"]]
+            [['text'=>\achbotMessage('legacy_buttons.back_to_main'),'callback_data'=>"mainMenu"]]
             ]
     ]));
 }
@@ -204,7 +204,7 @@ elseif(preg_match('/^yesDeleteConfig(\d+)/',$data,$match)){
 
     editText($message_id, \achbotMessage('subscription.account_deletion.no_dont_delete.message.ab50b51b1f', ['remark' => $remark]),json_encode([
             'inline_keyboard' => [
-                [['text'=>$buttonValues['back_to_main'],'callback_data'=>"mainMenu"]]
+                [['text'=>\achbotMessage('legacy_buttons.back_to_main'),'callback_data'=>"mainMenu"]]
                 ]
         ]));
         
@@ -274,7 +274,7 @@ elseif(preg_match('/^yesDeleteUserConfig(\d+)/',$data,$match) && ($from_id == $a
 
     editText($message_id, \achbotMessage('subscription.account_deletion.no_dont_delete.message.ab50b51b1f', ['remark' => $remark]),json_encode([
             'inline_keyboard' => [
-                [['text'=>$buttonValues['back_to_main'],'callback_data'=>"mainMenu"]]
+                [['text'=>\achbotMessage('legacy_buttons.back_to_main'),'callback_data'=>"mainMenu"]]
                 ]
 	]));
 	// ارسال پیام به ادمین

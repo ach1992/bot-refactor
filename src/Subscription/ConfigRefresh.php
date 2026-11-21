@@ -23,7 +23,7 @@ if (is_string($data) && str_starts_with($data,'sConfigUpdate')) {
         alert(\achbotMessage('subscription.config_refresh.alert.05e5654640'),true);
         return;
     }
-    alert($mainValues['please_wait_message']);
+    alert(\achbotMessage('legacy_messages.please_wait_message'));
     $info=achbotProviderUserInfo($server_id,$configInfo['remark']);
     $presentation=buildSubscriptionPresentation($type,[
         'links'=>$info->links??[],

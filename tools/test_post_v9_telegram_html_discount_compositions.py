@@ -142,8 +142,28 @@ def numeric_provenance(source: str, send_start: int) -> str:
     # requires deliberate re-review rather than false assurance.
     guarded_path = [[kind, value] for _, kind, value
                     in tokens[branch_start:send_index]]
+    # This only translates the proven original catalog-derived button lookup
+    # to its equivalent direct immutable catalog call. Preserve the original
+    # control-flow digest and fail on every other changed executable token.
+    normalized = []
+    index = 0
+    while index < len(guarded_path):
+        part = guarded_path[index:index + 4]
+        if (len(part) == 4 and
+                part[0] == ["T_NAME_FULLY_QUALIFIED", "\\achbotMessage"] and
+                part[1] == [None, "("] and
+                part[2] == ["T_CONSTANT_ENCAPSED_STRING", "'legacy_buttons.cancel'"] and
+                part[3] == [None, ")"]):
+            normalized.extend([
+                ["T_VARIABLE", "$buttonValues"], [None, "["],
+                ["T_CONSTANT_ENCAPSED_STRING", "'cancel'"], [None, "]"],
+            ])
+            index += 4
+        else:
+            normalized.append(guarded_path[index])
+            index += 1
     path_digest = hashlib.sha256(json.dumps(
-        guarded_path, ensure_ascii=False, separators=(",", ":")
+        normalized, ensure_ascii=False, separators=(",", ":")
     ).encode("utf-8")).hexdigest()
     if path_digest != EXPECTED_UID_PATH_SHA256:
         raise AssertionError("numeric provenance: reviewed execution path changed: " + path_digest)

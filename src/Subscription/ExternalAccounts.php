@@ -106,7 +106,7 @@ if ($data==='showUUIDLeft') {
         error_log('achbot_existing_subscription_entry_deferred');return;
     }
     delMessage();
-    sendMessage($mainValues['send_config_uuid'], $cancelKey);
+    sendMessage(\achbotCurrentMessage('send_config_uuid'), $cancelKey);
     return;
 }
 
@@ -164,7 +164,7 @@ function extractUsernameFromLink($text) {
     return null;
 }
 
-if ($userInfo['step'] == "showAccount" && $text != $buttonValues['cancel']) {
+if ($userInfo['step'] == "showAccount" && $text != \achbotMessage('legacy_buttons.cancel')) {
     try {require_once __DIR__.'/GiftBatch.php';achbotGiftTelegramSource($update,$from_id,$chat_id,$message_id,$text);}
     catch (Throwable $error) {return;}
     date_default_timezone_set('Asia/Tehran');
@@ -236,7 +236,7 @@ if ($userInfo['step'] == "showAccount" && $text != $buttonValues['cancel']) {
     $token=$proof['token'];$observation=$proof['observation'];
     require_once __DIR__.'/AccountDetails.php';
     $state=\AchBot\Subscription\AccountDetails\getOrderStatusText(
-        $observation+['found'=>true,'uncertain'=>false],$match['type'],$buttonValues);
+        $observation+['found'=>true,'uncertain'=>false],$match['type']);
     $unlimited=\achbotMessage('subscription.account_deletion.no_dont_delete.text.5e6ee5eaa1');
     $total=$observation['quota']===null?$unlimited:sumerize($observation['quota']);
     $totalUsed=sumerize($observation['used']);

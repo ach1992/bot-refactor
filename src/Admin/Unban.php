@@ -11,7 +11,7 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
 require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
 
 
-if (($userInfo['step']??null)==='unbanUser' && $text!==$buttonValues['cancel']) {
+if (($userInfo['step']??null)==='unbanUser' && $text!==\achbotMessage('legacy_buttons.cancel')) {
     if (is_string($text) && preg_match('/\A[1-9][0-9]{0,18}\z/D',$text)===1) {
         $status=achbotLegacyModerationTransition(
             $connection,$update,(int)$from_id,(int)$chat_id,(int)$message_id,
@@ -24,8 +24,8 @@ if (($userInfo['step']??null)==='unbanUser' && $text!==$buttonValues['cancel']) 
             sendMessage(\achbotMessage('admin.unban.message.ee9604a51b'), null, 'HTML');
         }
         if ($status==='changed' || $status==='already')
-            sendMessage($mainValues['reached_main_menu'], getAdminKeys(), 'HTML');
+            sendMessage(\achbotCurrentMessage('reached_main_menu'), getAdminKeys(), 'HTML');
     } else {
-        sendMessage($mainValues['send_only_number']);
+        sendMessage(\achbotMessage('legacy_messages.send_only_number'));
     }
 }

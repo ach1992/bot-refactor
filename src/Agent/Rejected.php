@@ -26,10 +26,10 @@ if(preg_match('/^releaseRejectedAgent(\d+)/',$data,$match) && ($from_id == $admi
     $stmt->execute();
     $stmt->close();
     
-    alert($mainValues['saved_successfuly']);
+    alert(\achbotMessage('legacy_messages.saved_successfuly'));
     $keys = getRejectedAgentList();
     if($keys != null){
         editText($message_id,\achbotMessage('agent.rejected.rejected_agent_list.message.4bb2ce6b81'),$keys);
-    }else editText($message_id,\achbotMessage('agent.rejected.rejected_agent_list.alert.d5290e0a13'),json_encode(['inline_keyboard'=>[[['text'=>$buttonValues['back_to_main'],'callback_data'=>"managePanel"]]]]));
+    }else editText($message_id,\achbotMessage('agent.rejected.rejected_agent_list.alert.d5290e0a13'),json_encode(['inline_keyboard'=>[[['text'=>\achbotMessage('legacy_buttons.back_to_main'),'callback_data'=>"managePanel"]]]]));
 }
 

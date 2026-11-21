@@ -18,7 +18,7 @@ if($data=="getTestAccount"){
     $stmt->close();
     
     if($respd->num_rows > 0){
-        alert($mainValues['receving_information']);
+        alert(\achbotMessage('legacy_messages.receving_information'));
     	$keyboard = array();
         while ($row = $respd->fetch_assoc()){
             $id = $row['id'];
@@ -36,7 +36,7 @@ if($data=="getTestAccount"){
             $keyboard[] = [['text' => $name, 'callback_data' => "freeTrial{$id}_normal"]];
 
         }
-    	$keyboard[] = [['text' => $buttonValues['back_to_main'], 'callback_data' => "mainMenu"]];
+	$keyboard[] = [['text' => \achbotMessage('legacy_buttons.back_to_main'), 'callback_data' => "mainMenu"]];
         editText($message_id,\achbotMessage('purchase.trial_catalogue.get_test_account.message.b059640ccc'), json_encode(['inline_keyboard'=>$keyboard]), "HTML");
     }else alert(\achbotMessage('purchase.trial_catalogue.get_test_account.alert.d1ae7ac011'));
 }

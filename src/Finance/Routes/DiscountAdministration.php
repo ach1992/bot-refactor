@@ -31,7 +31,7 @@ if($data=="addDiscountCode" && achbotAdminCanFor($connection,(int)$from_id,(int)
 } 
 
 // دریافت متن کد تخفیف از ادمین
-if($userInfo['step'] == "addDiscountCode" && $text != $buttonValues['cancel'] && achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'operations')){
+if($userInfo['step'] == "addDiscountCode" && $text != \achbotMessage('legacy_buttons.cancel') && achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'operations')){
     
     $code = trim($text);
 
@@ -68,7 +68,7 @@ if($userInfo['step'] == "addDiscountCode" && $text != $buttonValues['cancel'] &&
 } 
 
 // مقدار تخفیف (درصدی یا مبلغ ثابت)
-if(preg_match('/^addDiscountAmount(.*)/',$userInfo['step'],$match) && $text != $buttonValues['cancel'] && achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'operations')){
+if(preg_match('/^addDiscountAmount(.*)/',$userInfo['step'],$match) && $text != \achbotMessage('legacy_buttons.cancel') && achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'operations')){
     
     $dInfo = json_decode($match[1], true);
     if(!is_array($dInfo)) $dInfo = array();
@@ -89,7 +89,7 @@ if(preg_match('/^addDiscountAmount(.*)/',$userInfo['step'],$match) && $text != $
 } 
 
 // مدت زمان (تاریخ انقضا بر حسب روز)
-if(preg_match('/^addDiscountDate(.*)/',$userInfo['step'],$match) && $text != $buttonValues['cancel'] && achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'operations')){
+if(preg_match('/^addDiscountDate(.*)/',$userInfo['step'],$match) && $text != \achbotMessage('legacy_buttons.cancel') && achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'operations')){
     if(is_numeric($text)){ 
         $dInfo = json_decode($match[1],true); 
         if(!is_array($dInfo)) $dInfo = array();
@@ -105,7 +105,7 @@ if(preg_match('/^addDiscountDate(.*)/',$userInfo['step'],$match) && $text != $bu
 } 
 
 // تعداد کل استفاده از کد
-if(preg_match('/^addDiscountCount(.*)/',$userInfo['step'],$match) && $text != $buttonValues['cancel'] && achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'operations')){
+if(preg_match('/^addDiscountCount(.*)/',$userInfo['step'],$match) && $text != \achbotMessage('legacy_buttons.cancel') && achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'operations')){
     if(is_numeric($text)){  
         $dInfo = json_decode($match[1],true); 
         if(!is_array($dInfo)) $dInfo = array();
@@ -122,7 +122,7 @@ if(preg_match('/^addDiscountCount(.*)/',$userInfo['step'],$match) && $text != $b
 } 
 
 // تعداد استفاده برای هر کاربر → بعدش انتخاب نوع کاربر (audience_type)
-if(preg_match('/^addDiscountCanUse(.*)/',$userInfo['step'],$match) && $text != $buttonValues['cancel'] && achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'operations')){
+if(preg_match('/^addDiscountCanUse(.*)/',$userInfo['step'],$match) && $text != \achbotMessage('legacy_buttons.cancel') && achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'operations')){
     if(is_numeric($text)){  
         $dInfo = json_decode($match[1],true); 
         if(!is_array($dInfo)) $dInfo = array();
@@ -246,7 +246,7 @@ if(preg_match('/^addDiscountAudience(.*)/',$userInfo['step'],$match) && achbotAd
 }
 
 // اگر audience_type = user باشد → گرفتن userid کاربر
-if(preg_match('/^addDiscountAudienceUser(.*)/',$userInfo['step'],$match) && $text != $buttonValues['cancel'] && achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'operations')){
+if(preg_match('/^addDiscountAudienceUser(.*)/',$userInfo['step'],$match) && $text != \achbotMessage('legacy_buttons.cancel') && achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'operations')){
     
     if(!is_numeric($text)){
         sendMessage(\achbotMessage('payment.discount_administration.add_discount_code.message.5472913e1d'), null, 'HTML');
@@ -424,7 +424,7 @@ if(preg_match('/^addDiscountTargetPlan(.*)/',$userInfo['step'],$match) && achbot
 }
 
 // تعیین حداقل مبلغ سفارش
-if(preg_match('/^addDiscountMinPrice(.*)/',$userInfo['step'],$match) && $text != $buttonValues['cancel'] && achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'operations')){
+if(preg_match('/^addDiscountMinPrice(.*)/',$userInfo['step'],$match) && $text != \achbotMessage('legacy_buttons.cancel') && achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'operations')){
 
     if(!is_numeric($text)){
         sendMessage(\achbotMessage('payment.discount_administration.add_discount_code.message.475dad85d1'), null, 'HTML');
@@ -442,7 +442,7 @@ if(preg_match('/^addDiscountMinPrice(.*)/',$userInfo['step'],$match) && $text !=
 }
 
 // تعیین سقف تخفیف و ثبت نهایی
-if(preg_match('/^addDiscountMaxDiscount(.*)/',$userInfo['step'],$match) && $text != $buttonValues['cancel'] && achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'operations')){
+if(preg_match('/^addDiscountMaxDiscount(.*)/',$userInfo['step'],$match) && $text != \achbotMessage('legacy_buttons.cancel') && achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'operations')){
 
     if(!is_numeric($text)){
         sendMessage(\achbotMessage('payment.discount_administration.add_discount_code.message.ed39e0ee1b'), null, 'HTML');
@@ -679,7 +679,7 @@ if(preg_match('/^editD_(\d+)_amount$/', $data, $m) && achbotAdminCanFor($connect
     );
 }
 
-if(preg_match('/^editDiscountAmount(\d+)$/', $userInfo['step'], $m) && $text != $buttonValues['cancel'] && achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'operations')){
+if(preg_match('/^editDiscountAmount(\d+)$/', $userInfo['step'], $m) && $text != \achbotMessage('legacy_buttons.cancel') && achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'operations')){
     $discountId = (int)$m[1];
 
     $newType = 'amount';
@@ -717,7 +717,7 @@ if(preg_match('/^editD_(\d+)_expire$/', $data, $m) && achbotAdminCanFor($connect
     );
 }
 
-if(preg_match('/^editDiscountExpire(\d+)$/', $userInfo['step'], $m) && $text != $buttonValues['cancel'] && achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'operations')){
+if(preg_match('/^editDiscountExpire(\d+)$/', $userInfo['step'], $m) && $text != \achbotMessage('legacy_buttons.cancel') && achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'operations')){
     $discountId = (int)$m[1];
 
     if(!is_numeric($text)){
@@ -750,7 +750,7 @@ if(preg_match('/^editD_(\d+)_count$/', $data, $m) && achbotAdminCanFor($connecti
     );
 }
 
-if(preg_match('/^editDiscountCount(\d+)$/', $userInfo['step'], $m) && $text != $buttonValues['cancel'] && achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'operations')){
+if(preg_match('/^editDiscountCount(\d+)$/', $userInfo['step'], $m) && $text != \achbotMessage('legacy_buttons.cancel') && achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'operations')){
     $discountId = (int)$m[1];
 
     if(!is_numeric($text)){
@@ -783,7 +783,7 @@ if(preg_match('/^editD_(\d+)_canuse$/', $data, $m) && achbotAdminCanFor($connect
     );
 }
 
-if(preg_match('/^editDiscountCanUse(\d+)$/', $userInfo['step'], $m) && $text != $buttonValues['cancel'] && achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'operations')){
+if(preg_match('/^editDiscountCanUse(\d+)$/', $userInfo['step'], $m) && $text != \achbotMessage('legacy_buttons.cancel') && achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'operations')){
     $discountId = (int)$m[1];
 
     if(!is_numeric($text)){
@@ -875,7 +875,7 @@ if(preg_match('/^editDAud_(\d+)_(.+)$/', $data, $m) && achbotAdminCanFor($connec
 }
 
 // گرفتن userid برای audience = user
-if(preg_match('/^editDiscountAudienceUser(\d+)$/', $userInfo['step'], $m) && $text != $buttonValues['cancel'] && achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'operations')){
+if(preg_match('/^editDiscountAudienceUser(\d+)$/', $userInfo['step'], $m) && $text != \achbotMessage('legacy_buttons.cancel') && achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'operations')){
     $discountId = (int)$m[1];
 
     if(!is_numeric($text)){
@@ -1064,7 +1064,7 @@ if(preg_match('/^editD_(\d+)_minprice$/', $data, $m) && achbotAdminCanFor($conne
     );
 }
 
-if(preg_match('/^editDiscountMinPrice(\d+)$/', $userInfo['step'], $m) && $text != $buttonValues['cancel'] && achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'operations')){
+if(preg_match('/^editDiscountMinPrice(\d+)$/', $userInfo['step'], $m) && $text != \achbotMessage('legacy_buttons.cancel') && achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'operations')){
     $discountId = (int)$m[1];
 
     if(!is_numeric($text)){
@@ -1097,7 +1097,7 @@ if(preg_match('/^editD_(\d+)_maxdiscount$/', $data, $m) && achbotAdminCanFor($co
     );
 }
 
-if(preg_match('/^editDiscountMaxDiscount(\d+)$/', $userInfo['step'], $m) && $text != $buttonValues['cancel'] && achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'operations')){
+if(preg_match('/^editDiscountMaxDiscount(\d+)$/', $userInfo['step'], $m) && $text != \achbotMessage('legacy_buttons.cancel') && achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'operations')){
     $discountId = (int)$m[1];
 
     if(!is_numeric($text)){
@@ -1136,7 +1136,7 @@ if (preg_match('/^editDRemoveUser(\d+)$/', $data, $m) && achbotAdminCanFor($conn
 
 // 🧹 گرفتن userid و حذفش از used_by
 if (preg_match('/^removeDiscountUser(\d+)$/', $userInfo['step'], $m) 
-    && $text != $buttonValues['cancel'] 
+    && $text != \achbotMessage('legacy_buttons.cancel')
     && achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'operations')
 ) {
     $discountId   = (int)$m[1];

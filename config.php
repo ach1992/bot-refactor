@@ -7,8 +7,6 @@ if (realpath($_SERVER['SCRIPT_FILENAME']??'')===__FILE__) {
 require_once __DIR__ . '/messages/loader.php'; // ACHBOT_TEXT_CATALOG
 
 
-$mainValues=achbotMessages('legacy_messages');
-$buttonValues=achbotMessages('legacy_buttons');
 include_once 'settings/jdf.php';
 require_once 'baseInfo.php';
 
@@ -350,22 +348,7 @@ if (defined('ACHBOT_VERIFIED_WEBHOOK_ENTRYPOINT') && (int)$from_id > 0 &&
 
 // تابع مشترک ساخت درخواست پرداخت
 require_once __DIR__ . '/src/Finance/WalletStart.php';
-function replaceAllPlaceholdersInMainValues(array $mainValues, array $botState, $userId = '') {
-    require_once __DIR__ . '/src/Presentation/Text.php';
-    // Canonicalize the historical join slot while it is still template source.
-    // Never replace CHANNEL-ID after a literal destination has been inserted.
-    if (is_string($mainValues['join_channel_message']??null))
-        $mainValues['join_channel_message']=str_replace('CHANNEL-ID','LOCKCHANNEL',$mainValues['join_channel_message']);
-    // Match the actual current consumers: two legacy Markdown messages,
-    // HTML mandatory-join delivery, and plain agency notices/alerts.
-    return \AchBot\Presentation\Text\replacePlaceholders($mainValues, $botState, $userId, [
-        'banned'=>'Markdown','send_config_uuid'=>'Markdown',
-        'join_channel_message'=>'HTML','agency_request_declined'=>null
-    ]);
-}
-$mainValues = replaceAllPlaceholdersInMainValues($mainValues, $botState, $from_id ?? '');
 require_once __DIR__ . '/src/Admin/InstanceContent.php';
-$mainValues = achbotInstanceContentValues($mainValues, $botState, $from_id ?? '');
 
 function getSupportUrl(array $botState, string $fallback = '') {
     require_once __DIR__ . '/src/Presentation/Text.php';
@@ -402,13 +385,12 @@ if (isset($update->message->document->file_id)) {
 }
 
 $cancelKey=json_encode(['keyboard'=>[
-    [['text'=>$buttonValues['cancel']]]
+    [['text'=>\achbotMessage('legacy_buttons.cancel')]]
 ],'resize_keyboard'=>true]);
 $removeKeyboard = json_encode(['remove_keyboard'=>true]);
 
 function getMainKeys(){
-    global $connection, $userInfo, $from_id, $admin, $botState, $buttonValues;
-    $mainKeys = array();
+    global $connection, $userInfo, $from_id, $admin, $botState;    $mainKeys = array();
     $temp = array();
     $isAdminMenu = ($from_id == $admin || $userInfo['isAdmin'] == true);
     $cooperationUrl = \AchBot\Presentation\Text\configuredDestination($botState,'cooperationUrl',true);
@@ -416,25 +398,25 @@ function getMainKeys(){
 
     if(($botState['agencyState'] ?? 'off') == "on" && $userInfo['is_agent'] == 1){
 		$mainKeys = array_merge($mainKeys, [
-			[['text'=>$buttonValues['agency_setting'],'callback_data'=>"agencySettings"]],
-			[['text'=>$buttonValues['sharj'],'callback_data'=>"increaseMyWallet"]],
+			[['text'=>\achbotMessage('legacy_buttons.agency_setting'),'callback_data'=>"agencySettings"]],
+			[['text'=>\achbotMessage('legacy_buttons.sharj'),'callback_data'=>"increaseMyWallet"]],
 		]);
 
 		if ((($botState['sellState'] ?? 'off') ?? 'off') == "on" || $from_id == $admin || !empty($userInfo['isAdmin'])) {
 			$mainKeys[] = [
-				['text'=>$buttonValues['agent_one_buy'],'callback_data'=>"agentOneBuy"],
-				['text'=>$buttonValues['agent_much_buy'],'callback_data'=>"agentMuchBuy"]
+				['text'=>\achbotMessage('legacy_buttons.agent_one_buy'),'callback_data'=>"agentOneBuy"],
+				['text'=>\achbotMessage('legacy_buttons.agent_much_buy'),'callback_data'=>"agentMuchBuy"]
 			];
 		}
 	}else{
         $mainKeys = array_merge($mainKeys,[
             ((($botState['agencyState'] ?? 'off') == "on" && $userInfo['is_agent'] == 0)?[
-                ['text'=>$buttonValues['request_agency'],'callback_data'=>"requestAgency"]
+                ['text'=>\achbotMessage('legacy_buttons.request_agency'),'callback_data'=>"requestAgency"]
             ]: []),
             ((($botState['sellState'] ?? 'off') == "on" || $from_id == $admin || $userInfo['isAdmin'] == true)?
-                [['text'=>$buttonValues['sharj'],'callback_data'=>"increaseMyWallet"],['text'=>$buttonValues['buy_subscriptions'],'callback_data'=>"buySubscription"]]
+                [['text'=>\achbotMessage('legacy_buttons.sharj'),'callback_data'=>"increaseMyWallet"],['text'=>\achbotMessage('legacy_buttons.buy_subscriptions'),'callback_data'=>"buySubscription"]]
                 :
-                [['text'=>$buttonValues['sharj'],'callback_data'=>"increaseMyWallet"]]
+                [['text'=>\achbotMessage('legacy_buttons.sharj'),'callback_data'=>"increaseMyWallet"]]
             )
         ]);
     }
@@ -443,30 +425,30 @@ function getMainKeys(){
         // Owner-approved conditional row: free trial precedes account/view
         // whenever the unchanged eligibility gate makes it visible.
         ((($botState['testAccount'] ?? 'off') == "on" && ($from_id == $admin || $userInfo['freetrial'] != 'used')) ?
-            [['text'=>$buttonValues['test_account'],'callback_data'=>"getTestAccount"]] : []),
+            [['text'=>\achbotMessage('legacy_buttons.test_account'),'callback_data'=>"getTestAccount"]] : []),
         [
-            ['text'=>$buttonValues['my_info'],'callback_data'=>"myInfo"],
-            ['text'=>$buttonValues['my_subscriptions'],'callback_data'=>
+            ['text'=>\achbotMessage('legacy_buttons.my_info'),'callback_data'=>"myInfo"],
+            ['text'=>\achbotMessage('legacy_buttons.my_subscriptions'),'callback_data'=>
                 $userInfo['is_agent']==1?'agentConfigsList':'mySubscriptions']
         ],
         (!$isAdminMenu ? [
-            ['text'=>$buttonValues['invite_friends'],'callback_data'=>"inviteFriends"],
-            ['text'=>$buttonValues['application_links'],'callback_data'=>"reciveApplications"]
+            ['text'=>\achbotMessage('legacy_buttons.invite_friends'),'callback_data'=>"inviteFriends"],
+            ['text'=>\achbotMessage('legacy_buttons.application_links'),'callback_data'=>"reciveApplications"]
         ] : []),
         ((($botState['sharedExistence'] ?? 'off') == "on" && ($botState['individualExistence'] ?? 'off') == "on")?
-            [['text'=>$buttonValues['shared_existence'],'callback_data'=>"availableServers"],['text'=>$buttonValues['individual_existence'],'callback_data'=>"availableServers2"]] : []
+            [['text'=>\achbotMessage('legacy_buttons.shared_existence'),'callback_data'=>"availableServers"],['text'=>\achbotMessage('legacy_buttons.individual_existence'),'callback_data'=>"availableServers2"]] : []
         ),
         ((($botState['sharedExistence'] ?? 'off') == "on" && ($botState['individualExistence'] ?? 'off') != "on")?
-            [['text'=>$buttonValues['shared_existence'],'callback_data'=>"availableServers"]] : []
+            [['text'=>\achbotMessage('legacy_buttons.shared_existence'),'callback_data'=>"availableServers"]] : []
         ),
         ((($botState['sharedExistence'] ?? 'off') != "on" && ($botState['individualExistence'] ?? 'off') == "on")?
-            [['text'=>$buttonValues['individual_existence'],'callback_data'=>"availableServers2"]] : []
+            [['text'=>\achbotMessage('legacy_buttons.individual_existence'),'callback_data'=>"availableServers2"]] : []
         ),
         // Keep the optional customer import action above the configured
         // cooperation/support URL; the staff search pair stays on one row.
         ((($botState['searchState'] ?? 'off')=="on" || $isAdminMenu)?
             array_merge(
-                [['text'=>$buttonValues['search_config'],'callback_data'=>"showUUIDLeft"]],
+                [['text'=>\achbotMessage('legacy_buttons.search_config'),'callback_data'=>"showUUIDLeft"]],
                 ($isAdminMenu ? [[
                     'text'=>\achbotMessage('admin_settings.config.get_main_keys.button.11b0188fcb'),
                     'callback_data'=>"searchUsersConfig"
@@ -506,8 +488,7 @@ function getMainKeys(){
 }
 
 function getAgentKeys(){
-    global $buttonValues, $mainValues, $from_id, $userInfo, $connection;
-    $agencyDate = jdate("Y-m-d H:i:s",$userInfo['agent_date']);
+    global $from_id, $userInfo, $connection;    $agencyDate = jdate("Y-m-d H:i:s",$userInfo['agent_date']);
     $joinedDate = jdate("Y-m-d H:i:s",$userInfo['date']);
     $stmt = $connection->prepare("SELECT * FROM `orders_list` WHERE `userid` = ? AND `agent_bought` = 1");
     $stmt->bind_param("i", $from_id);
@@ -516,15 +497,14 @@ function getAgentKeys(){
     $stmt->close();
     
     return json_encode(['inline_keyboard'=>[
-        [['text'=>$boughtAccounts,'callback_data'=>"wizwizch"],['text'=>$buttonValues['agent_bought_accounts'],'callback_data'=>"wizwizch"]],
-        [['text'=>$joinedDate,'callback_data'=>"wizwizch"],['text'=>$buttonValues['agent_joined_date'],'callback_data'=>"wizwizch"]],
-        [['text'=>$agencyDate,'callback_data'=>"wizwizch"],['text'=>$buttonValues['agent_agency_date'],'callback_data'=>"wizwizch"]],
-        [['text'=>$buttonValues['back_to_main'],'callback_data'=>"mainMenu"]],
+        [['text'=>$boughtAccounts,'callback_data'=>"wizwizch"],['text'=>\achbotMessage('legacy_buttons.agent_bought_accounts'),'callback_data'=>"wizwizch"]],
+        [['text'=>$joinedDate,'callback_data'=>"wizwizch"],['text'=>\achbotMessage('legacy_buttons.agent_joined_date'),'callback_data'=>"wizwizch"]],
+        [['text'=>$agencyDate,'callback_data'=>"wizwizch"],['text'=>\achbotMessage('legacy_buttons.agent_agency_date'),'callback_data'=>"wizwizch"]],
+        [['text'=>\achbotMessage('legacy_buttons.back_to_main'),'callback_data'=>"mainMenu"]],
     ]]);
 }
 
 function getAdminKeys(){
-    global $buttonValues;
     $level=achbotAdminLevel();
     $rows=[
         [['bot_reports','botReports']],
@@ -552,12 +532,12 @@ function getAdminKeys(){
             $line[]=['text'=>$key==='__review'?achbotMessage('automatic_gateway_review.menu'):
                 ($key==='gateway_rules_settings'
                     ? achbotMessage('admin_settings.config.get_gate_ways_keys.button.2110b39744')
-                    : $buttonValues[$key]),
+                    : \achbotMessage('legacy_buttons.'.$key)),
                 'callback_data'=>$callback];
         }
         if ($line) $keyboard[]=$line;
     }
-    $keyboard[]=[['text'=>$buttonValues['back_to_main'],'callback_data'=>'mainMenu']];
+    $keyboard[]=[['text'=>\achbotMessage('legacy_buttons.back_to_main'),'callback_data'=>'mainMenu']];
     return json_encode(['inline_keyboard'=>$keyboard],JSON_UNESCAPED_UNICODE);
 }
 
@@ -846,8 +826,7 @@ function achbotAdminGatewayChange($update,int $actor,int $chat,int $message,
 }
 
 function getRejectedAgentList(){
-    global $connection, $mainValues, $buttonValues;
-    
+    global $connection;
     $stmt = $connection->prepare("SELECT * FROM `users` WHERE `is_agent` = 2");
     $stmt->execute();
     $list = $stmt->get_result();
@@ -864,13 +843,12 @@ function getRejectedAgentList(){
             
             $keys[] = [['text'=>\achbotMessage('admin_settings.config.get_rejected_agent_list.button.1d456424c3'),'callback_data'=>"releaseRejectedAgent" . $userId],['text'=>$fullName,'callback_data'=>"wizwizch"],['text'=>$userId,'callback_data'=>"wizwizch"]];
         }
-        $keys[] = [['text'=>$buttonValues['back_button'],'callback_data'=>"managePanel"]];
+        $keys[] = [['text'=>\achbotMessage('legacy_buttons.back_button'),'callback_data'=>"managePanel"]];
         return json_encode(['inline_keyboard'=>$keys]);
     }else return null;
 }
 function getAgentDetails($userId){
-    global $connection, $mainVAlues, $buttonValues;
-    
+    global $connection;
     $stmt = $connection->prepare("SELECT * FROM `users` WHERE `userid` = ? AND `is_agent` = 1");
     $stmt->bind_param("i", $userId);
     $stmt->execute();
@@ -921,7 +899,7 @@ function getAgentDetails($userId){
             ['text'=>"(" . $lastMonthIncome['count'] . ") " . number_format($lastMonthIncome['total']),'callback_data'=>"wizwizch"],
             ['text'=>\achbotMessage('admin_settings.config.get_agent_details.button.12c33cffe7'),'callback_data'=>"wizwizch"]
             ],
-        [['text' => $buttonValues['back_button'], 'callback_data' => "agentsList"]]
+        [['text' => \achbotMessage('legacy_buttons.back_button'), 'callback_data' => "agentsList"]]
         ]]);
 }
 function checkSpam(){
@@ -952,8 +930,7 @@ function checkSpam(){
     }else return null;
 }
 function getAgentsList($offset = 0){
-    global $connection, $mainValues, $buttonValues;
-    $limit = 15;
+    global $connection;    $limit = 15;
     
     $stmt = $connection->prepare("SELECT * FROM `users` WHERE `is_agent` = 1 LIMIT ? OFFSET ?");
     $stmt->bind_param('ii', $limit, $offset);
@@ -991,14 +968,13 @@ function getAgentsList($offset = 0){
             ['text'=>\achbotMessage('admin_settings.config.get_agents_list.button.78d753bffb'),'callback_data'=>"nextAgentList" . ($offset - $limit)]
             ];
             
-    $keys[] = [['text' => $buttonValues['back_button'], 'callback_data' => "managePanel"]];
+    $keys[] = [['text' => \achbotMessage('legacy_buttons.back_button'), 'callback_data' => "managePanel"]];
     return json_encode(['inline_keyboard'=>$keys]);
 }
 require_once __DIR__ . '/src/Finance/AgentDiscounts.php';
 require_once __DIR__ . '/src/Finance/GatewayClient.php';
 function getMarzbanPanelGroupKeys($mode, $serverId = 0) {
-    global $connection, $buttonValues;
-    $keys = [];
+    global $connection;    $keys = [];
     foreach (achbotPanelGroups($connection) as $group) {
         $id = (int)$group['id'];
         $cb = $mode === 'add'
@@ -1010,13 +986,12 @@ function getMarzbanPanelGroupKeys($mode, $serverId = 0) {
         ? 'selectNewPanelGroup_0'
         : "setServerPanelGroup_{$serverId}_0";
     $keys[] = [['text'=>\achbotMessage('admin_settings.config.get_marzban_panel_group_keys.button.9bdffdaedc'), 'callback_data'=>$none]];
-    $keys[] = [['text'=>$buttonValues['back_button'] ?? \achbotMessage('admin_settings.config.get_marzban_panel_group_keys.text.b35a2352f5'),
+    $keys[] = [['text'=>\achbotMessage('legacy_buttons.back_button') ?? \achbotMessage('admin_settings.config.get_marzban_panel_group_keys.text.b35a2352f5'),
                 'callback_data'=>$mode === 'add' ? 'serversSetting' : "showServerSettings{$serverId}_0"]];
     return json_encode(['inline_keyboard'=>$keys], JSON_UNESCAPED_UNICODE);
 }
 function getMarzbanPanelGroupsManagementKeys() {
-    global $connection, $buttonValues;
-    $keys = [];
+    global $connection;    $keys = [];
     foreach (achbotPanelGroups($connection) as $group) {
         $id = (int)$group['id'];
         $keys[] = [
@@ -1026,19 +1001,18 @@ function getMarzbanPanelGroupsManagementKeys() {
     }
     if (!$keys) $keys[] = [['text'=>\achbotMessage('admin_settings.config.get_marzban_panel_groups_management_keys.button.d376787114'), 'callback_data'=>'wizwizch']];
     $keys[] = [['text'=>\achbotMessage('admin_settings.config.get_marzban_panel_groups_management_keys.button.a6b2138672'), 'callback_data'=>'addMarzbanPanelGroup']];
-    $keys[] = [['text'=>$buttonValues['back_button'] ?? \achbotMessage('admin_settings.config.get_marzban_panel_group_keys.text.b35a2352f5'), 'callback_data'=>'serversSetting']];
+    $keys[] = [['text'=>\achbotMessage('legacy_buttons.back_button') ?? \achbotMessage('admin_settings.config.get_marzban_panel_group_keys.text.b35a2352f5'), 'callback_data'=>'serversSetting']];
     return json_encode(['inline_keyboard'=>$keys], JSON_UNESCAPED_UNICODE);
 }
 function getServerConfigKeys($serverId,$offset = 0){
-    global $connection, $buttonValues;
-    $serverId=(int)$serverId;$offset=max(0,(int)$offset);
+    global $connection;    $serverId=(int)$serverId;$offset=max(0,(int)$offset);
     $stmt=$connection->prepare("SELECT * FROM server_info WHERE id=?");
     $stmt->bind_param('i',$serverId);$stmt->execute();
     $info=$stmt->get_result()->fetch_assoc();$stmt->close();
     $stmt=$connection->prepare("SELECT * FROM server_config WHERE id=?");
     $stmt->bind_param('i',$serverId);$stmt->execute();
     $config=$stmt->get_result()->fetch_assoc();$stmt->close();
-    $back=[['text'=>$buttonValues['back_button'],'callback_data'=>'nextServerPage'.$offset]];
+    $back=[['text'=>\achbotMessage('legacy_buttons.back_button'),'callback_data'=>'nextServerPage'.$offset]];
     if (!$info || !achbotSupportsPanel($config['type']??null)) {
         return json_encode(['inline_keyboard'=>[
             [['text'=>\achbotMessage('admin_settings.config.get_server_config_keys.button.a726d3f27d'),'callback_data'=>'wizwizch']],$back
@@ -1070,8 +1044,7 @@ function getServerConfigKeys($serverId,$offset = 0){
     return json_encode(['inline_keyboard'=>$keys],JSON_UNESCAPED_UNICODE);
 }
 function getServerListKeys($offset = 0){
-    global $connection, $mainValues, $buttonValues;
-    
+    global $connection;
     $limit = 15;
     $offset=max(0,(int)$offset);
     
@@ -1122,14 +1095,13 @@ function getServerListKeys($offset = 0){
     }
     $keys[] = [['text'=>\achbotMessage('admin_settings.management.add_server'),'callback_data'=>'addManagedServer']];
     $keys[] = [['text'=>\achbotMessage('admin_settings.config.get_server_list_keys.button.def9f141f2'), 'callback_data'=>'managePanelGroups']];
-    $keys[] = [['text' => $buttonValues['back_button'], 'callback_data' => "managePanel"]];
+    $keys[] = [['text' => \achbotMessage('legacy_buttons.back_button'), 'callback_data' => "managePanel"]];
     return json_encode(['inline_keyboard'=>$keys]);
 }
 function getCategoriesKeys($offset = 0){
     $limit = 15;
     
-    global $connection, $mainValues, $buttonValues;
-    $stmt = $connection->prepare("SELECT * FROM `server_categories` WHERE `active`=1 AND `parent`=0 LIMIT ? OFFSET ?");
+    global $connection;    $stmt = $connection->prepare("SELECT * FROM `server_categories` WHERE `active`=1 AND `parent`=0 LIMIT ? OFFSET ?");
     $stmt->bind_param('ii', $limit, $offset);
     $stmt->execute();
     $cats = $stmt->get_result();
@@ -1162,7 +1134,7 @@ function getCategoriesKeys($offset = 0){
     }
     
     $keys[] = [['text'=>\achbotMessage('admin_settings.config.get_categories_keys.button.5c2a29a6ab'),'callback_data'=>"addNewCategory"]];
-    $keys[] = [['text' => $buttonValues['back_button'], 'callback_data' => "managePanel"]];
+    $keys[] = [['text' => \achbotMessage('legacy_buttons.back_button'), 'callback_data' => "managePanel"]];
     return json_encode(['inline_keyboard'=>$keys]);
 }
 /** Strictly bounded per-instance financial UX policy editor. */
@@ -1212,8 +1184,7 @@ function achbotGatewayAudienceKeyboard(): string {
     return json_encode(['inline_keyboard'=>$rows],JSON_UNESCAPED_UNICODE);
 }
 function getGateWaysKeys(){
-    global $connection, $mainValues, $buttonValues;
-    
+    global $connection;
     $stmt = $connection->prepare("SELECT * FROM `setting` WHERE `type` = 'BOT_STATES'");
     $stmt->execute();
     $botState = $stmt->get_result()->fetch_assoc()['value'];
@@ -1221,16 +1192,16 @@ function getGateWaysKeys(){
     else $botState = array();
     $stmt->close();
     
-    $cartToCartState = $botState['cartToCartState']=="on"?$buttonValues['on']:$buttonValues['off'];
-    $walletState = $botState['walletState']=="on"?$buttonValues['on']:$buttonValues['off'];
-    $sellState = $botState['sellState']=="on"?$buttonValues['on']:$buttonValues['off'];
-    $giftCardState = ($botState['giftCardState'] ?? 'off')==='on'?$buttonValues['on']:$buttonValues['off'];
-    $manualUsdtState = ($botState['manualUsdtState'] ?? 'off')==='on'?$buttonValues['on']:$buttonValues['off'];
-    $robotState = $botState['botState']=="on"?$buttonValues['on']:$buttonValues['off'];
-    $nowPaymentWallet = $botState['nowPaymentWallet']=="on"?$buttonValues['on']:$buttonValues['off'];
-    $nowPaymentOther = $botState['nowPaymentOther']=="on"?$buttonValues['on']:$buttonValues['off'];
-    $zarinpal = $botState['zarinpal']=="on"?$buttonValues['on']:$buttonValues['off'];
-    $nextpay = $botState['nextpay']=="on"?$buttonValues['on']:$buttonValues['off'];
+    $cartToCartState = $botState['cartToCartState']=="on"?\achbotMessage('legacy_buttons.on'):\achbotMessage('legacy_buttons.off');
+    $walletState = $botState['walletState']=="on"?\achbotMessage('legacy_buttons.on'):\achbotMessage('legacy_buttons.off');
+    $sellState = $botState['sellState']=="on"?\achbotMessage('legacy_buttons.on'):\achbotMessage('legacy_buttons.off');
+    $giftCardState = ($botState['giftCardState'] ?? 'off')==='on'?\achbotMessage('legacy_buttons.on'):\achbotMessage('legacy_buttons.off');
+    $manualUsdtState = ($botState['manualUsdtState'] ?? 'off')==='on'?\achbotMessage('legacy_buttons.on'):\achbotMessage('legacy_buttons.off');
+    $robotState = $botState['botState']=="on"?\achbotMessage('legacy_buttons.on'):\achbotMessage('legacy_buttons.off');
+    $nowPaymentWallet = $botState['nowPaymentWallet']=="on"?\achbotMessage('legacy_buttons.on'):\achbotMessage('legacy_buttons.off');
+    $nowPaymentOther = $botState['nowPaymentOther']=="on"?\achbotMessage('legacy_buttons.on'):\achbotMessage('legacy_buttons.off');
+    $zarinpal = $botState['zarinpal']=="on"?\achbotMessage('legacy_buttons.on'):\achbotMessage('legacy_buttons.off');
+    $nextpay = $botState['nextpay']=="on"?\achbotMessage('legacy_buttons.on'):\achbotMessage('legacy_buttons.off');
     $rewaredChannel = $botState['rewardChannel']??" ";
     $lockChannel = $botState['lockChannel']??" ";
 	$supportID = $botState['supportID']??" ";
@@ -1369,12 +1340,11 @@ function getGateWaysKeys(){
 		],
         [['text'=>\achbotMessage('admin_settings.config.get_gate_ways_keys.button.fff77fef22'),
           'callback_data'=>'paymentPolicySettings']],
-			[['text'=>$buttonValues['back_button'],'callback_data'=>"managePanel"]]
+			[['text'=>\achbotMessage('legacy_buttons.back_button'),'callback_data'=>"managePanel"]]
         ]]);
 }
 function getBotSettingKeys(){
-    global $connection, $mainValues, $buttonValues;
-    
+    global $connection;
     $stmt = $connection->prepare("SELECT * FROM `setting` WHERE `type` = 'BOT_STATES'");
     $stmt->execute();
     $botState = $stmt->get_result()->fetch_assoc()['value'];
@@ -1382,28 +1352,28 @@ function getBotSettingKeys(){
     else $botState = array();
     $stmt->close();
 
-    $changeProtocole = $botState['changeProtocolState']=="on"?$buttonValues['on']:$buttonValues['off'];
+    $changeProtocole = $botState['changeProtocolState']=="on"?\achbotMessage('legacy_buttons.on'):\achbotMessage('legacy_buttons.off');
     // Backward compatible: customer plan selection was previously available.
-    $customerPlanSwitch = ($botState['changePlanState'] ?? 'on')==='on'?$buttonValues['on']:$buttonValues['off'];
-    $renewAccount = $botState['renewAccountState']=="on"?$buttonValues['on']:$buttonValues['off'];
-    $plandelkhahwiz = $botState['plandelkhahState']=="on"?$buttonValues['on']:$buttonValues['off'];
-    $increaseTime = $botState['increaseTimeState']=="on"?$buttonValues['on']:$buttonValues['off'];
-    $increaseVolume = $botState['increaseVolumeState']=="on"?$buttonValues['on']:$buttonValues['off'];
-    $renewConfigLink = $botState['renewConfigLinkState']=="on"?$buttonValues['on']:$buttonValues['off'];
-    $updateConfigLink = $botState['updateConfigLinkState']=="on"?$buttonValues['on']:$buttonValues['off'];
-    $individualExistence = $botState['individualExistence']=="on"?$buttonValues['on']:$buttonValues['off'];
-    $sharedExistence = $botState['sharedExistence']=="on"?$buttonValues['on']:$buttonValues['off'];
-    $testAccount = $botState['testAccount']=="on"?$buttonValues['on']:$buttonValues['off'];
-    $agency = $botState['agencyState']=="on"?$buttonValues['on']:$buttonValues['off'];
-    $agencyPlanDiscount = $botState['agencyPlanDiscount']=="on"?$buttonValues['plan_discount']:$buttonValues['server_discount'];
-    $qrConfig = $botState['qrConfigState']=="on"?$buttonValues['on']:$buttonValues['off'];
-    $qrSub = $botState['qrSubState']=="on"?$buttonValues['on']:$buttonValues['off'];
-	$renewAuto = $botState['renewAutoState'] == "on" ? $buttonValues['on'] : $buttonValues['off'];
-    $requirePhone = $botState['requirePhone']=="on"?$buttonValues['on']:$buttonValues['off'];
-    $requireIranPhone = $botState['requireIranPhone']=="on"?$buttonValues['on']:$buttonValues['off'];
-    $sellState = $botState['sellState']=="on"?$buttonValues['on']:$buttonValues['off'];
-    $robotState = $botState['botState']=="on"?$buttonValues['on']:$buttonValues['off'];
-    $searchState = $botState['searchState']=="on"?$buttonValues['on']:$buttonValues['off'];
+    $customerPlanSwitch = ($botState['changePlanState'] ?? 'on')==='on'?\achbotMessage('legacy_buttons.on'):\achbotMessage('legacy_buttons.off');
+    $renewAccount = $botState['renewAccountState']=="on"?\achbotMessage('legacy_buttons.on'):\achbotMessage('legacy_buttons.off');
+    $plandelkhahwiz = $botState['plandelkhahState']=="on"?\achbotMessage('legacy_buttons.on'):\achbotMessage('legacy_buttons.off');
+    $increaseTime = $botState['increaseTimeState']=="on"?\achbotMessage('legacy_buttons.on'):\achbotMessage('legacy_buttons.off');
+    $increaseVolume = $botState['increaseVolumeState']=="on"?\achbotMessage('legacy_buttons.on'):\achbotMessage('legacy_buttons.off');
+    $renewConfigLink = $botState['renewConfigLinkState']=="on"?\achbotMessage('legacy_buttons.on'):\achbotMessage('legacy_buttons.off');
+    $updateConfigLink = $botState['updateConfigLinkState']=="on"?\achbotMessage('legacy_buttons.on'):\achbotMessage('legacy_buttons.off');
+    $individualExistence = $botState['individualExistence']=="on"?\achbotMessage('legacy_buttons.on'):\achbotMessage('legacy_buttons.off');
+    $sharedExistence = $botState['sharedExistence']=="on"?\achbotMessage('legacy_buttons.on'):\achbotMessage('legacy_buttons.off');
+    $testAccount = $botState['testAccount']=="on"?\achbotMessage('legacy_buttons.on'):\achbotMessage('legacy_buttons.off');
+    $agency = $botState['agencyState']=="on"?\achbotMessage('legacy_buttons.on'):\achbotMessage('legacy_buttons.off');
+    $agencyPlanDiscount = $botState['agencyPlanDiscount']=="on"?\achbotMessage('legacy_buttons.plan_discount'):\achbotMessage('legacy_buttons.server_discount');
+    $qrConfig = $botState['qrConfigState']=="on"?\achbotMessage('legacy_buttons.on'):\achbotMessage('legacy_buttons.off');
+    $qrSub = $botState['qrSubState']=="on"?\achbotMessage('legacy_buttons.on'):\achbotMessage('legacy_buttons.off');
+	$renewAuto = $botState['renewAutoState'] == "on" ? \achbotMessage('legacy_buttons.on') : \achbotMessage('legacy_buttons.off');
+    $requirePhone = $botState['requirePhone']=="on"?\achbotMessage('legacy_buttons.on'):\achbotMessage('legacy_buttons.off');
+    $requireIranPhone = $botState['requireIranPhone']=="on"?\achbotMessage('legacy_buttons.on'):\achbotMessage('legacy_buttons.off');
+    $sellState = $botState['sellState']=="on"?\achbotMessage('legacy_buttons.on'):\achbotMessage('legacy_buttons.off');
+    $robotState = $botState['botState']=="on"?\achbotMessage('legacy_buttons.on'):\achbotMessage('legacy_buttons.off');
+    $searchState = $botState['searchState']=="on"?\achbotMessage('legacy_buttons.on'):\achbotMessage('legacy_buttons.off');
     $updateConnectionState = $botState['updateConnectionState']=="robot"?\achbotMessage('admin_settings.config.get_bot_setting_keys.text.0fbe848798'):\achbotMessage('admin_settings.config.get_bot_setting_keys.text.c840773241');
     $rewaredTime = ($botState['rewaredTime']??0) . \achbotMessage('admin_settings.config.get_bot_setting_keys.text.69419edd93');
     switch($botState['remark']){
@@ -1526,7 +1496,7 @@ function getBotSettingKeys(){
             ['text'=>\achbotMessage('admin_settings.config.get_bot_setting_keys.button.2d0dc535a6'), 'callback_data'=>'wizwizch']
             ],
         [
-            ['text'=>$botState['cartToCartAutoAcceptState']=="on"?$buttonValues['on']:$buttonValues['off'],'callback_data'=>"changeBotcartToCartAutoAcceptState"],
+            ['text'=>$botState['cartToCartAutoAcceptState']=="on"?\achbotMessage('legacy_buttons.on'):\achbotMessage('legacy_buttons.off'),'callback_data'=>"changeBotcartToCartAutoAcceptState"],
             ['text'=>\achbotMessage('admin_settings.config.get_bot_setting_keys.button.f5d3c64f2a'),'callback_data'=>"wizwizch"]
         ],
         ($botState['cartToCartAutoAcceptState']=="on"?[
@@ -1537,7 +1507,7 @@ function getBotSettingKeys(){
             ['text'=>($botState['cartToCartAutoAcceptTime']??"10") . \achbotMessage('admin_settings.config.get_bot_setting_keys.text.5e2c83ade1'),'callback_data'=>"editcartToCartAutoAcceptTime"],
             ['text'=>\achbotMessage('admin_settings.config.get_bot_setting_keys.button.333513e744'),'callback_data'=>"wizwizch"]
         ]:[]),
-        [['text'=>$buttonValues['back_button'],'callback_data'=>"managePanel"]]
+        [['text'=>\achbotMessage('legacy_buttons.back_button'),'callback_data'=>"managePanel"]]
         ]]);
 }
 
@@ -2364,16 +2334,14 @@ if ($data == 'cancel_operation') {
 // انتهای بخش آمار ربات
 
 function achbotAdminRoleKeys(int $target): string {
-    global $buttonValues;
     $rows=[];
     foreach (['manager','operator','support'] as $level)
         $rows[]=[['text'=>achbotAdminLevelLabel($level),'callback_data'=>'adminAssign|'.$target.'|'.$level]];
-    $rows[]=[['text'=>$buttonValues['back_button'],'callback_data'=>'adminsList']];
+    $rows[]=[['text'=>\achbotMessage('legacy_buttons.back_button'),'callback_data'=>'adminsList']];
     return json_encode(['inline_keyboard'=>$rows],JSON_UNESCAPED_UNICODE);
 }
 function getAdminsKeys(){
-    global $connection,$buttonValues,$admin;
-    if (!achbotAdminCan('admins')) return json_encode(['inline_keyboard'=>[]]);
+    global $connection, $admin;    if (!achbotAdminCan('admins')) return json_encode(['inline_keyboard'=>[]]);
     $keys=[[['text'=>achbotMessage('admin.roles.owner_row',['userId'=>(string)$admin]),'callback_data'=>'wizwizch']]];
     $stmt=$connection->prepare('SELECT userid,name FROM users WHERE isAdmin=1 AND userid<>? ORDER BY id');
     $owner=(int)$admin;$stmt->bind_param('i',$owner);$stmt->execute();$users=$stmt->get_result()->fetch_all(MYSQLI_ASSOC);$stmt->close();
@@ -2390,15 +2358,14 @@ function getAdminsKeys(){
             'callback_data'=>'adminNotify|'.$target.'|'.($notify?'off':'on')]];
     }
     $keys[]=[['text'=>achbotMessage('admin_settings.config.get_admins_keys.button.bc56086ddd'),'callback_data'=>'addNewAdmin']];
-    $keys[]=[['text'=>$buttonValues['back_button'],'callback_data'=>'managePanel']];
+    $keys[]=[['text'=>\achbotMessage('legacy_buttons.back_button'),'callback_data'=>'managePanel']];
     return json_encode(['inline_keyboard'=>$keys],JSON_UNESCAPED_UNICODE);
 }
 
 // BEGIN By ACh
 
 function getUserInfoKeys($userId) { 
-    global $connection, $mainValues, $buttonValues, $from_id, $admin;
-    if (function_exists('achbotAdminCan') &&
+    global $connection, $from_id, $admin;    if (function_exists('achbotAdminCan') &&
         !achbotAdminCan('customers', (int)$from_id)) return null;
     require_once __DIR__.'/src/Presentation/Text.php';
  
@@ -2612,10 +2579,10 @@ function getUserInfoKeys($userId) {
                     ['text' => \achbotMessage('admin_settings.config.get_user_info_keys.button.05b7dda9cc'), 'callback_data' => "wizwizch"]
                 ],
                 [ 
-                    ['text' => $buttonValues['subscriptions_list'], 'callback_data' => "showUserSubscriptions$userId"] 
+                    ['text' => \achbotMessage('legacy_buttons.subscriptions_list'), 'callback_data' => "showUserSubscriptions$userId"]
                 ], 
                 [ 
-                    ['text' => $buttonValues['back_button'], 'callback_data' => "managePanel"] 
+                    ['text' => \achbotMessage('legacy_buttons.back_button'), 'callback_data' => "managePanel"]
                 ] 
             ], 
             'subscriptionMessages' => $subscriptionMessages 
@@ -3345,8 +3312,7 @@ function achbotLegacyModerationTransition(
 //---
 
 function getCallbackFromCommand($command) {
-    global $connection, $userInfo, $from_id, $admin, $botState, $buttonValues, $chat_id;
-
+    global $connection, $userInfo, $from_id, $admin, $botState, $chat_id;
     $isRealAdmin = ($from_id == $admin || !empty($userInfo['isAdmin']));
 
     switch ($command) {
@@ -3364,10 +3330,10 @@ function getCallbackFromCommand($command) {
             if (($botState['agencyState'] ?? 'off') == "on" && !empty($userInfo['is_agent']) && $userInfo['is_agent'] == 1) {
                 $keyboard = [
                     [
-                        ['text' => $buttonValues['agent_one_buy'], 'callback_data' => "agentOneBuy"],
-                        ['text' => $buttonValues['agent_much_buy'], 'callback_data' => "agentMuchBuy"]
+                        ['text' => \achbotMessage('legacy_buttons.agent_one_buy'), 'callback_data' => "agentOneBuy"],
+                        ['text' => \achbotMessage('legacy_buttons.agent_much_buy'), 'callback_data' => "agentMuchBuy"]
                     ],
-                    [['text' => $buttonValues['back_to_main'], 'callback_data' => "mainMenu"]]
+                    [['text' => \achbotMessage('legacy_buttons.back_to_main'), 'callback_data' => "mainMenu"]]
                 ];
 
                 sendMessage(
@@ -3448,8 +3414,7 @@ if (isset($update->message->text)) {
 // BEGIN Apply Discount
 require_once __DIR__ . '/src/Finance/Discounts.php';
 function getMainMenuButtonsKeys(){
-    global $connection, $mainValues, $buttonValues;
-    
+    global $connection;
     $stmt = $connection->prepare("SELECT * FROM `setting` WHERE `type` LIKE '%MAIN_BUTTONS%'");
     $stmt->execute();
     $buttons = $stmt->get_result();
@@ -3469,12 +3434,11 @@ function getMainMenuButtonsKeys(){
         $keys[] = [['text'=>\achbotMessage('admin_settings.config.get_main_menu_buttons_keys.button.e8debfae48'),'callback_data'=>"wizwizch"]];
     }
     $keys[] = [['text'=>\achbotMessage('admin_settings.config.get_main_menu_buttons_keys.button.6c3bcb48ce'),'callback_data'=>"addNewMainButton"]];
-    $keys[] = [['text'=>$buttonValues['back_button'],'callback_data'=>"managePanel"]];
+    $keys[] = [['text'=>\achbotMessage('legacy_buttons.back_button'),'callback_data'=>"managePanel"]];
     return json_encode(['inline_keyboard'=>$keys]);
 }
 function getPlanDetailsKeys($planId){
-    global $connection,$buttonValues;
-    require_once __DIR__.'/src/Admin/IntentSafety.php';
+    global $connection;    require_once __DIR__.'/src/Admin/IntentSafety.php';
     require_once __DIR__.'/src/Presentation/Text.php';
     $planId=(int)$planId;
     $stmt=$connection->prepare("SELECT * FROM server_plans WHERE id=?");
@@ -3518,7 +3482,7 @@ function getPlanDetailsKeys($planId){
             \achbotMessage('admin_settings.management.plan_offer_for_sale'),
             'callback_data'=>'setPlanSale'.$planId.'_' . ((int)$plan['active']===1?0:1).'_'.$revision]],
         [['text'=>\achbotMessage('admin_settings.config.get_plan_details_keys.button.c3a5bc0cbd'),'callback_data'=>'wizwizplandelete'.$planId]],
-        [['text'=>$buttonValues['back_button'],'callback_data'=>'plansList'.$serverId]]
+        [['text'=>\achbotMessage('legacy_buttons.back_button'),'callback_data'=>'plansList'.$serverId]]
     ];
     return json_encode(['inline_keyboard'=>$keys],JSON_UNESCAPED_UNICODE);
 }
@@ -3564,10 +3528,9 @@ function buildSubBackupSection($subRaw, $token) {
 }
 
 function buildConfigMessage($enableText, $remark, $configLinks, $subLink, $backupSection, $serverType) {
-    global $mainValues;
     require_once __DIR__ . '/src/Subscription/Presentation.php';
     return \AchBot\Subscription\Presentation\configMessage(
-        $mainValues['config_details_message'], $enableText, $remark,
+        \achbotMessage('legacy_messages.config_details_message'), $enableText, $remark,
         $configLinks, $subLink, $backupSection
     );
 }

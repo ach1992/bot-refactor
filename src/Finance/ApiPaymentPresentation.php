@@ -99,14 +99,13 @@ function achbotApiPaymentPresentation(mysqli $db,array $pay,array $attempt): arr
         if ($recordedCount<$count)
             $subject.=' ('.$recordedCount.'/'.$count.')';
     }
-    $templates=$GLOBALS['mainValues']??achbotMessages('legacy_messages');
     $templateKey=match(true) {
         $type==='INCREASE_WALLET'=>'increase_wallet_request_message',
         $type==='BUY_SUB'=>'buy_new_account_request',
         in_array($type,['RENEW_ACCOUNT','RENEW_SCONFIG'],true)=>'renew_account_request_message',
         default=>''
     };
-    $template=is_array($templates)&&$templateKey!==''?($templates[$templateKey]??''):'';
+    $template=$templateKey!==''?achbotMessage('legacy_messages.'.$templateKey):'';
     if (!is_string($template) || (($type!=='INCREASE_WALLET') && !$terms))
         $template='';
     $typeWord=achbotManualLabel((string)($attempt['provider']??''));

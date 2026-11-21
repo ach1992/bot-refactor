@@ -27,7 +27,7 @@ function achbotCustomerHasPaymentMethod(mysqli $db,int $userId,array $state): bo
 
 if(($data == "agentOneBuy" || $data=='buySubscription' || $data == "agentMuchBuy") && ($botState['sellState']=="on" || ($from_id == $admin || $userInfo['isAdmin'] == true))){
     if(!achbotCustomerHasPaymentMethod($connection,(int)$from_id,$botState)){
-        alert($mainValues['selling_is_off']);
+        alert(\achbotMessage('legacy_messages.selling_is_off'));
         exit();
     }
     if($data=="buySubscription") $buyType = "none";
@@ -39,7 +39,7 @@ if(($data == "agentOneBuy" || $data=='buySubscription' || $data == "agentMuchBuy
     $respd = $stmt->get_result();
     $stmt->close();
     if($respd->num_rows==0){
-        alert($mainValues['no_server_available']);
+        alert(\achbotMessage('legacy_messages.no_server_available'));
         exit;
     }
     $keyboard = [];
@@ -50,8 +50,8 @@ if(($data == "agentOneBuy" || $data=='buySubscription' || $data == "agentMuchBuy
         $keyboard[] = ['text' => "$flag $name", 'callback_data' => "selectServer{$id}_{$buyType}"];
     }
     $keyboard = array_chunk($keyboard,1);
-    $keyboard[] = [['text'=>$buttonValues['back_to_main'],'callback_data'=>"mainMenu"]];
-    editText($message_id, $mainValues['buy_sub_select_location'], json_encode(['inline_keyboard'=>$keyboard]));
+    $keyboard[] = [['text'=>\achbotMessage('legacy_buttons.back_to_main'),'callback_data'=>"mainMenu"]];
+    editText($message_id, \achbotMessage('legacy_messages.buy_sub_select_location'), json_encode(['inline_keyboard'=>$keyboard]));
 }
 
 if($data=='createMultipleAccounts' && ($from_id == $admin || $userInfo['isAdmin'] == true)){
@@ -60,7 +60,7 @@ if($data=='createMultipleAccounts' && ($from_id == $admin || $userInfo['isAdmin'
     $respd = $stmt->get_result();
     $stmt->close();
     if($respd->num_rows==0){
-        sendMessage($mainValues['no_server_available']);
+        sendMessage(\achbotMessage('legacy_messages.no_server_available'));
         exit;
     }
     $keyboard = [];
@@ -70,9 +70,9 @@ if($data=='createMultipleAccounts' && ($from_id == $admin || $userInfo['isAdmin'
         $flag = $cat['flag'];
         $keyboard[] = ['text' => "$flag $name", 'callback_data' => "createAccServer$id"];
     }
-    $keyboard[] = ['text'=>$buttonValues['back_to_main'],'callback_data'=>"managePanel"];
+    $keyboard[] = ['text'=>\achbotMessage('legacy_buttons.back_to_main'),'callback_data'=>"managePanel"];
     $keyboard = array_chunk($keyboard,1);
-    editText($message_id, $mainValues['buy_sub_select_location'], json_encode(['inline_keyboard'=>$keyboard]));
+    editText($message_id, \achbotMessage('legacy_messages.buy_sub_select_location'), json_encode(['inline_keyboard'=>$keyboard]));
     
 
 }
@@ -102,7 +102,7 @@ if(preg_match('/createAccServer(\d+)/',$data, $match) && ($from_id == $admin || 
             alert(\achbotMessage('purchase.entry_and_bulk.create_multiple_accounts.alert.de33518bf8'));exit;
         }
         alert(\achbotMessage('purchase.entry_and_bulk.create_multiple_accounts.alert.174c6a61d7'));
-        $keyboard[] = ['text' => $buttonValues['back_to_main'], 'callback_data' => "createMultipleAccounts"];
+        $keyboard[] = ['text' => \achbotMessage('legacy_buttons.back_to_main'), 'callback_data' => "createMultipleAccounts"];
         $keyboard = array_chunk($keyboard,1);
         editText($message_id, \achbotMessage('purchase.entry_and_bulk.create_multiple_accounts.message.2f3dfcbe8e'), json_encode(['inline_keyboard'=>$keyboard]));
     }
@@ -126,13 +126,13 @@ if(preg_match('/createAccCategory(\d+)_(\d+)/',$data,$match) && ($from_id == $ad
             $name = $file['title'];
             $keyboard[] = ['text' => "$name", 'callback_data' => "createAccPlan{$id}"];
         }
-        $keyboard[] = ['text' => $buttonValues['back_to_main'], 'callback_data' => "createAccServer$sid"];
+        $keyboard[] = ['text' => \achbotMessage('legacy_buttons.back_to_main'), 'callback_data' => "createAccServer$sid"];
         $keyboard = array_chunk($keyboard,1);
         editText($message_id, \achbotMessage('purchase.entry_and_bulk.create_multiple_accounts.message.7f4d98ab9b'), json_encode(['inline_keyboard'=>$keyboard]));
     }
 
 }
-if(preg_match('/^createAccPlan(\d+)/',$data,$match) && $text != $buttonValues['cancel'] && ($from_id == $admin || $userInfo['isAdmin'] == true)){
+if(preg_match('/^createAccPlan(\d+)/',$data,$match) && $text != \achbotMessage('legacy_buttons.cancel') && ($from_id == $admin || $userInfo['isAdmin'] == true)){
     if (!achbotSupportsPlan($connection, (int)$match[1])) {
         alert(\achbotMessage('purchase.entry_and_bulk.create_multiple_accounts.alert.d3fb64c4d9'), true);
         return;
@@ -141,7 +141,7 @@ if(preg_match('/^createAccPlan(\d+)/',$data,$match) && $text != $buttonValues['c
     sendMessage(\achbotMessage('purchase.entry_and_bulk.create_multiple_accounts.message.c754e347bf'),$cancelKey, 'HTML');
     setUser('createAccDate' . $match[1]);
 }
-if(preg_match('/^createAccDate(\d+)/',$userInfo['step'],$match) && $text != $buttonValues['cancel'] && ($from_id == $admin || $userInfo['isAdmin'] == true)){
+if(preg_match('/^createAccDate(\d+)/',$userInfo['step'],$match) && $text != \achbotMessage('legacy_buttons.cancel') && ($from_id == $admin || $userInfo['isAdmin'] == true)){
     if(is_numeric($text)){
         if($text >0){
             sendMessage(\achbotMessage('purchase.entry_and_bulk.create_multiple_accounts.message.f018216ab3'), null, 'HTML');
@@ -153,21 +153,21 @@ if(preg_match('/^createAccDate(\d+)/',$userInfo['step'],$match) && $text != $but
         sendMessage(\achbotMessage('purchase.entry_and_bulk.create_multiple_accounts.message.141dd787b4'), null, 'HTML');
     }
 }
-if(preg_match('/^createAccVolume(\d+)_(\d+)/',$userInfo['step'],$match) && $text != $buttonValues['cancel'] && ($from_id == $admin || $userInfo['isAdmin'] == true)){
+if(preg_match('/^createAccVolume(\d+)_(\d+)/',$userInfo['step'],$match) && $text != \achbotMessage('legacy_buttons.cancel') && ($from_id == $admin || $userInfo['isAdmin'] == true)){
     if(!is_numeric($text)){
-        sendMessage($mainValues['send_only_number']);
+        sendMessage(\achbotMessage('legacy_messages.send_only_number'));
         exit();
     }elseif($text <=0){
         sendMessage(\achbotMessage('purchase.entry_and_bulk.create_multiple_accounts.message.f30d6ad265'), null, 'HTML');
         exit();
     }
-    sendMessage($mainValues['enter_account_amount']);
+    sendMessage(\achbotMessage('legacy_messages.enter_account_amount'));
     setUser("createAccAmount" . $match[1] . "_" . $match[2] . "_" . $text);
 }
 
 if (
     preg_match('/^createAccAmount(\d+)_(\d+)_(\d+)/', $userInfo['step'], $match) &&
-    $text != $buttonValues['cancel'] &&
+    $text != \achbotMessage('legacy_buttons.cancel') &&
     ($from_id == $admin || ($userInfo['isAdmin'] ?? false) == true)
 ) {
 
@@ -185,7 +185,7 @@ if (
 
     if (!is_string($text) || preg_match('/^[1-9][0-9]*$/D',$text)!==1 ||
         filter_var($text,FILTER_VALIDATE_INT)===false) {
-        sendMessage($mainValues['send_only_number']);
+        sendMessage(\achbotMessage('legacy_messages.send_only_number'));
         exit();
     }
     $count = (int)$text;
@@ -230,10 +230,10 @@ if (
     $customSni  = $plan['custom_sni'];
     $limitip    = $plan['limitip'];
 
-    ensureServerCapacity($connection, $server_id, $inbound_id, $acount, $mainValues);
+    ensureServerCapacity($connection, $server_id, $inbound_id, $acount);
 
     if ($inbound_id != 0 && $acount < $count) {
-        sendMessage(str_replace("AMOUNT", $acount, $mainValues['can_create_specific_account']));
+        sendMessage(str_replace("AMOUNT", $acount, \achbotMessage('legacy_messages.can_create_specific_account')));
         exit();
     }
 
@@ -243,7 +243,7 @@ if (
     $serverType = $serverConfig['type'] ?? '';
     $portType   = $serverConfig['port_type'] ?? 'rand';
 
-    alert($mainValues['sending_config_to_user']);
+    alert(\achbotMessage('legacy_messages.sending_config_to_user'));
 
     $lastRemark = '';
     $pendingDeliveries=[];
@@ -324,7 +324,6 @@ if (
             $uid,
             $volume,
             $days,
-            $buttonValues,
             [],
             false,
             '',

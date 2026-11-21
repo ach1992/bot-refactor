@@ -143,15 +143,15 @@ if(preg_match('/selectPlanDayIncrease(?<orderId>.+)_(?<dayId>.+)/',$data,$match)
 
 
     $keyboard = array();
-    if(achbotManualEnabled('bank_transfer') && achbotPayUxAudienceAllowed($connection,'bank_transfer',(int)$from_id)) $keyboard[] = [['text' => $buttonValues['cart_to_cart'],  'callback_data' => "payIncreaseDayWithCartToCart$hash_id"]];
-    if(achbotManualEnabled('gift_card') && achbotPayUxAudienceAllowed($connection,'gift_card',(int)$from_id)) $keyboard[] = [['text' => $buttonValues['gift_card'], 'callback_data' => "payIncreaseDayWithGiftCard$hash_id"]];
+    if(achbotManualEnabled('bank_transfer') && achbotPayUxAudienceAllowed($connection,'bank_transfer',(int)$from_id)) $keyboard[] = [['text' => \achbotMessage('legacy_buttons.cart_to_cart'),  'callback_data' => "payIncreaseDayWithCartToCart$hash_id"]];
+    if(achbotManualEnabled('gift_card') && achbotPayUxAudienceAllowed($connection,'gift_card',(int)$from_id)) $keyboard[] = [['text' => \achbotMessage('legacy_buttons.gift_card'), 'callback_data' => "payIncreaseDayWithGiftCard$hash_id"]];
     if (achbotManualCryptoEnabled((int)$from_id) && (achbotPayUxAudienceAllowed($connection,'manual_usdt',(int)$from_id) || achbotPayUxAudienceAllowed($connection,'manual_trx',(int)$from_id))) $keyboard[] = [['text' => \achbotMessage('renewal.extensions.button.e729457ba2'), 'callback_data' => "mcm_$hash_id"]];
-    if(($botState['nowPaymentOther'] == "on" && achbotPayUxAudienceAllowed($connection,'nowpayments',(int)$from_id) && achbotUsdtRateForUser($connection,(int)$from_id)!==null)) $keyboard[] = [['text' => $buttonValues['now_payment_gateway'],  'url' => $botUrl . "pay/checkout.php?nowpayment&hash_id=" . $hash_id]];
-    if(($botState['zarinpal'] == "on" && achbotPayUxAudienceAllowed($connection,'zarinpal',(int)$from_id))) $keyboard[] = [['text' => $buttonValues['zarinpal_gateway'],  'url' => $botUrl . "pay/checkout.php?zarinpal&hash_id=" . $hash_id]];
-    if(($botState['nextpay'] == "on" && achbotPayUxAudienceAllowed($connection,'nextpay',(int)$from_id))) $keyboard[] = [['text' => $buttonValues['nextpay_gateway'],  'url' => $botUrl . "pay/checkout.php?nextpay&hash_id=" . $hash_id]];
-    if(($botState['walletState'] == "on" && achbotPayUxAudienceAllowed($connection,'wallet',(int)$from_id))) $keyboard[] = [['text' => $buttonValues['pay_with_wallet'],  'callback_data' => "payIncreaseDayWithWallet$hash_id"]];
+    if(($botState['nowPaymentOther'] == "on" && achbotPayUxAudienceAllowed($connection,'nowpayments',(int)$from_id) && achbotUsdtRateForUser($connection,(int)$from_id)!==null)) $keyboard[] = [['text' => \achbotMessage('legacy_buttons.now_payment_gateway'),  'url' => $botUrl . "pay/checkout.php?nowpayment&hash_id=" . $hash_id]];
+    if(($botState['zarinpal'] == "on" && achbotPayUxAudienceAllowed($connection,'zarinpal',(int)$from_id))) $keyboard[] = [['text' => \achbotMessage('legacy_buttons.zarinpal_gateway'),  'url' => $botUrl . "pay/checkout.php?zarinpal&hash_id=" . $hash_id]];
+    if(($botState['nextpay'] == "on" && achbotPayUxAudienceAllowed($connection,'nextpay',(int)$from_id))) $keyboard[] = [['text' => \achbotMessage('legacy_buttons.nextpay_gateway'),  'url' => $botUrl . "pay/checkout.php?nextpay&hash_id=" . $hash_id]];
+    if(($botState['walletState'] == "on" && achbotPayUxAudienceAllowed($connection,'wallet',(int)$from_id))) $keyboard[] = [['text' => \achbotMessage('legacy_buttons.pay_with_wallet'),  'callback_data' => "payIncreaseDayWithWallet$hash_id"]];
 
-    $keyboard[] = [['text'=>$buttonValues['cancel'], 'callback_data'=> "mainMenu"]];
+    $keyboard[] = [['text'=>\achbotMessage('legacy_buttons.cancel'), 'callback_data'=> "mainMenu"]];
     $sent=sendMessage(\achbotMessage('renewal.extensions.message.48930749a9'),
         json_encode(['inline_keyboard'=>$keyboard]),'HTML',$from_id);
     require_once __DIR__ . '/../PaymentLifecycle.php';
@@ -175,7 +175,7 @@ if (is_string($data) && (strlen($data) <= 64 || ($GLOBALS['achbotManualCryptoVer
         return;
     }
 
-	$msg = buildCartToCartInfoMessage($paymentKeys, $mainValues, (int)$payInfo['price'], (int)$payInfo['user_id'], $method, (string)$payInfo['hash_id']);
+	$msg = buildCartToCartInfoMessage($paymentKeys, (int)$payInfo['price'], (int)$payInfo['user_id'], $method, (string)$payInfo['hash_id']);
     if ($msg === "") {
         alert(\achbotMessage('renewal.extensions.alert.07ee06b4bc'), true);
         return;
@@ -228,14 +228,14 @@ if (preg_match('/send(?:IncreaseDay|IncreaseDayGift|IncreaseDayUsdt)Receipt(?<ha
     setUser((in_array($method, ['manual_usdt','manual_trx'], true) ? "waitIncreaseDayUsdtReceipt" : ($method === 'gift_card' ? "waitIncreaseDayGiftReceipt" : "waitIncreaseDayReceipt")) . $match['hashId']);
 
     $keyboard = kbOnlyCancel("cancelIncreaseDayReceipt", $match['hashId']);
-    $sent=sendMessage(achbotManualEvidencePrompt($mainValues,$connection,$payInfo,$method), $keyboard, "HTML");
+    $sent=sendMessage(achbotManualEvidencePrompt($connection,$payInfo,$method), $keyboard, "HTML");
     require_once __DIR__ . '/../PaymentLifecycle.php';
     achbotPayUxTrackByHash($connection,(string)$match['hashId'],(int)$from_id,$sent);
     exit;
 }
 
 if (preg_match('/cancelIncreaseDayReceipt(?<hashId>.*)/', $data, $match)) {
-    handleCancelFlow($mainValues, $removeKeyboard);
+    handleCancelFlow( $removeKeyboard);
 }
 
 if (preg_match('/wait(?:IncreaseDay|IncreaseDayGift|IncreaseDayUsdt)Receipt(.*)/', $userInfo['step'], $match)) {
@@ -251,7 +251,7 @@ if (preg_match('/wait(?:IncreaseDay|IncreaseDayGift|IncreaseDayUsdt)Receipt(.*)/
     $fileid = achbotManualEvidenceInput($update, $connection, $receiptPay, $method);
     if ($fileid === null) {
         $keyboard = kbOnlyCancel("cancelIncreaseDayReceipt", $match[1]);
-        sendMessage(achbotManualEvidencePrompt($mainValues,$connection,$receiptPay,$method,true), $keyboard, "HTML");
+        sendMessage(achbotManualEvidencePrompt($connection,$receiptPay,$method,true), $keyboard, "HTML");
         exit;
     }
 
@@ -296,7 +296,7 @@ if (preg_match('/wait(?:IncreaseDay|IncreaseDayGift|IncreaseDayUsdt)Receipt(.*)/
     $msg = str_replace(
         ['INCREASE', 'TYPE', "USER-ID", "USERNAME", "NAME", "PRICE", "REMARK"],
         [$volume, \achbotMessage('renewal.extensions.text.9699c34220'), $from_id, $username, $first_name, $price, $remark],
-        achbotManualCaption($connection, $receiptPay, $mainValues['increase_account_request_message'])
+        achbotManualCaption($connection, $receiptPay, \achbotMessage('legacy_messages.increase_account_request_message'))
     );
 
     // The code is checked against this ORIGINAL pinned invoice before any
@@ -319,7 +319,6 @@ if (preg_match('/wait(?:IncreaseDay|IncreaseDayGift|IncreaseDayUsdt)Receipt(.*)/
 
     $adminKeyboard = buildAdminKeyboardWithStats(
         $connection,
-        $buttonValues,
         "approveIncreaseDay{$match[1]}",
         "declineAction_{$match[1]}",
         $match[1],
@@ -330,7 +329,7 @@ if (preg_match('/wait(?:IncreaseDay|IncreaseDayGift|IncreaseDayUsdt)Receipt(.*)/
         $msg, $adminKeyboard, $admin, $match[1],
         $deliveryToken,$giftScreen)) {
         setUser();
-        achbotManualAcknowledgeAndVerify($connection,$receiptPay,$method,$buttonValues['start_bot'],$botUsername);
+        achbotManualAcknowledgeAndVerify($connection,$receiptPay,$method,\achbotMessage('legacy_buttons.start_bot'),$botUsername);
     } else {
         sendMessage(\achbotMessage('renewal.extensions.message.c346a0d62e'), null, 'HTML');
     }
@@ -340,7 +339,7 @@ if (preg_match('/wait(?:IncreaseDay|IncreaseDayGift|IncreaseDayUsdt)Receipt(.*)/
 if (preg_match('/^approveIncreaseDay(.*)/', $data, $match) && achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'payments')) {
     require_once __DIR__.'/../ManualEditRecovery.php';
     $resume=achbotManualPgResumeEdit($connection,(string)$match[1],(int)$from_id,'day',
-        $mainValues,(int)$admin);
+        (int)$admin);
     if ($resume!==null) {
         if (in_array($resume['status'],['approved','delivery_only'],true)) {
             achbotManualPgEditNotify($connection,(int)$resume['pay_id']);
@@ -822,7 +821,7 @@ if (is_string($data) && preg_match('/^changePlan_([1-9][0-9]{0,9})$/D', $data, $
             if (\AchBot\Subscription\AccountDetails\paidPlanForOrder($connection,$orderInfo,$planId)===null) continue;
             $buttons[]=[['text'=>$plan['title'],'callback_data'=>'confirmChangePlan_'.$orderId.'_'.$planId]];
         }
-        $buttons[]=[['text'=>$buttonValues['back_button'],'callback_data'=>'mainMenu']];
+        $buttons[]=[['text'=>\achbotMessage('legacy_buttons.back_button'),'callback_data'=>'mainMenu']];
         if (count($buttons)===1) sendMessage(\achbotMessage('renewal.extensions.message.655234a584'), null, 'HTML');
         else sendMessage(\achbotMessage('renewal.extensions.message.143c7f81f1'),json_encode(['inline_keyboard'=>$buttons]),'HTML');
     } catch (Throwable $error) {
@@ -1022,15 +1021,15 @@ if(preg_match('/^increaseVolumePlan(?<orderId>[1-9][0-9]{0,9})_(?<volumeId>[1-9]
     else $planprice = " " . number_format($planprice) . \achbotMessage('renewal.extensions.text.2cc98f7f7c');
 
     
-    if(achbotManualEnabled('bank_transfer') && achbotPayUxAudienceAllowed($connection,'bank_transfer',(int)$from_id)) $keyboard[] = [['text' => $buttonValues['cart_to_cart'] . $planprice,  'callback_data' => "payIncreaseWithCartToCart$hash_id"]];
-    if(achbotManualEnabled('gift_card') && achbotPayUxAudienceAllowed($connection,'gift_card',(int)$from_id)) $keyboard[] = [['text' => $buttonValues['gift_card'], 'callback_data' => "payIncreaseWithGiftCard$hash_id"]];
+    if(achbotManualEnabled('bank_transfer') && achbotPayUxAudienceAllowed($connection,'bank_transfer',(int)$from_id)) $keyboard[] = [['text' => \achbotMessage('legacy_buttons.cart_to_cart') . $planprice,  'callback_data' => "payIncreaseWithCartToCart$hash_id"]];
+    if(achbotManualEnabled('gift_card') && achbotPayUxAudienceAllowed($connection,'gift_card',(int)$from_id)) $keyboard[] = [['text' => \achbotMessage('legacy_buttons.gift_card'), 'callback_data' => "payIncreaseWithGiftCard$hash_id"]];
     if (achbotManualCryptoEnabled((int)$from_id) && (achbotPayUxAudienceAllowed($connection,'manual_usdt',(int)$from_id) || achbotPayUxAudienceAllowed($connection,'manual_trx',(int)$from_id))) $keyboard[] = [['text' => \achbotMessage('renewal.extensions.button.e729457ba2'), 'callback_data' => "mcm_$hash_id"]];
-    if(($botState['nowPaymentOther'] == "on" && achbotPayUxAudienceAllowed($connection,'nowpayments',(int)$from_id) && achbotUsdtRateForUser($connection,(int)$from_id)!==null)) $keyboard[] = [['text' => $buttonValues['now_payment_gateway'],  'url' => $botUrl . "pay/checkout.php?nowpayment&hash_id=" . $hash_id]];
-    if(($botState['zarinpal'] == "on" && achbotPayUxAudienceAllowed($connection,'zarinpal',(int)$from_id))) $keyboard[] = [['text' => $buttonValues['zarinpal_gateway'],  'url' => $botUrl . "pay/checkout.php?zarinpal&hash_id=" . $hash_id]];
-    if(($botState['nextpay'] == "on" && achbotPayUxAudienceAllowed($connection,'nextpay',(int)$from_id))) $keyboard[] = [['text' => $buttonValues['nextpay_gateway'],  'url' => $botUrl . "pay/checkout.php?nextpay&hash_id=" . $hash_id]];
+    if(($botState['nowPaymentOther'] == "on" && achbotPayUxAudienceAllowed($connection,'nowpayments',(int)$from_id) && achbotUsdtRateForUser($connection,(int)$from_id)!==null)) $keyboard[] = [['text' => \achbotMessage('legacy_buttons.now_payment_gateway'),  'url' => $botUrl . "pay/checkout.php?nowpayment&hash_id=" . $hash_id]];
+    if(($botState['zarinpal'] == "on" && achbotPayUxAudienceAllowed($connection,'zarinpal',(int)$from_id))) $keyboard[] = [['text' => \achbotMessage('legacy_buttons.zarinpal_gateway'),  'url' => $botUrl . "pay/checkout.php?zarinpal&hash_id=" . $hash_id]];
+    if(($botState['nextpay'] == "on" && achbotPayUxAudienceAllowed($connection,'nextpay',(int)$from_id))) $keyboard[] = [['text' => \achbotMessage('legacy_buttons.nextpay_gateway'),  'url' => $botUrl . "pay/checkout.php?nextpay&hash_id=" . $hash_id]];
     if(($botState['walletState'] == "on" && achbotPayUxAudienceAllowed($connection,'wallet',(int)$from_id))) $keyboard[] = [['text' => \achbotMessage('renewal.extensions.button.5adbd64a32') . $planprice,  'callback_data' => "payIncreaseWithWallet$hash_id"]];
 
-    $keyboard[] = [['text'=>$buttonValues['cancel'], 'callback_data'=> "mainMenu"]];
+    $keyboard[] = [['text'=>\achbotMessage('legacy_buttons.cancel'), 'callback_data'=> "mainMenu"]];
     $sent=sendMessage(\achbotMessage('renewal.extensions.message.48930749a9'),
         json_encode(['inline_keyboard'=>$keyboard]),'HTML',$from_id);
     require_once __DIR__ . '/../PaymentLifecycle.php';
@@ -1054,7 +1053,7 @@ if (is_string($data) && (strlen($data) <= 64 || ($GLOBALS['achbotManualCryptoVer
         return;
     }
 
-	$msg = buildCartToCartInfoMessage($paymentKeys, $mainValues, (int)$payInfo['price'], (int)$payInfo['user_id'], $method, (string)$payInfo['hash_id']);
+	$msg = buildCartToCartInfoMessage($paymentKeys, (int)$payInfo['price'], (int)$payInfo['user_id'], $method, (string)$payInfo['hash_id']);
     if ($msg === "") {
         alert(\achbotMessage('renewal.extensions.alert.07ee06b4bc'), true);
         return;
@@ -1107,14 +1106,14 @@ if (preg_match('/send(?:IncreaseVolume|IncreaseVolumeGift|IncreaseVolumeUsdt)Rec
     setUser((in_array($method, ['manual_usdt','manual_trx'], true) ? "waitIncreaseVolumeUsdtReceipt" : ($method === 'gift_card' ? "waitIncreaseVolumeGiftReceipt" : "waitIncreaseVolumeReceipt")) . $match['hashId']);
 
     $keyboard = kbOnlyCancel("cancelIncreaseVolumeReceipt", $match['hashId']);
-    $sent=sendMessage(achbotManualEvidencePrompt($mainValues,$connection,$payInfo,$method), $keyboard, "HTML");
+    $sent=sendMessage(achbotManualEvidencePrompt($connection,$payInfo,$method), $keyboard, "HTML");
     require_once __DIR__ . '/../PaymentLifecycle.php';
     achbotPayUxTrackByHash($connection,(string)$match['hashId'],(int)$from_id,$sent);
     exit;
 }
 
 if (preg_match('/cancelIncreaseVolumeReceipt(?<hashId>.*)/', $data, $match)) {
-    handleCancelFlow($mainValues, $removeKeyboard);
+    handleCancelFlow( $removeKeyboard);
 }
 
 if (preg_match('/wait(?:IncreaseVolume|IncreaseVolumeGift|IncreaseVolumeUsdt)Receipt(.*)/', $userInfo['step'], $match)) {
@@ -1130,7 +1129,7 @@ if (preg_match('/wait(?:IncreaseVolume|IncreaseVolumeGift|IncreaseVolumeUsdt)Rec
     $fileid = achbotManualEvidenceInput($update, $connection, $receiptPay, $method);
     if ($fileid === null) {
         $keyboard = kbOnlyCancel("cancelIncreaseVolumeReceipt", $match[1]);
-        sendMessage(achbotManualEvidencePrompt($mainValues,$connection,$receiptPay,$method,true), $keyboard, "HTML");
+        sendMessage(achbotManualEvidencePrompt($connection,$receiptPay,$method,true), $keyboard, "HTML");
         exit;
     }
 
@@ -1175,7 +1174,7 @@ if (preg_match('/wait(?:IncreaseVolume|IncreaseVolumeGift|IncreaseVolumeUsdt)Rec
     $msg = str_replace(
         ['INCREASE', 'TYPE', "USER-ID", "USERNAME", "NAME", "PRICE", "REMARK"],
         [$volume, \achbotMessage('renewal.extensions.text.4123904480'), $from_id, $username, $first_name, $price, $remark],
-        achbotManualCaption($connection, $receiptPay, $mainValues['increase_account_request_message'])
+        achbotManualCaption($connection, $receiptPay, \achbotMessage('legacy_messages.increase_account_request_message'))
     );
 
     // The code is checked against this ORIGINAL pinned invoice before any
@@ -1198,7 +1197,6 @@ if (preg_match('/wait(?:IncreaseVolume|IncreaseVolumeGift|IncreaseVolumeUsdt)Rec
 
     $adminKeyboard = buildAdminKeyboardWithStats(
         $connection,
-        $buttonValues,
         "approveIncreaseVolume{$match[1]}",
         "declineAction_{$match[1]}",
         $match[1],
@@ -1209,7 +1207,7 @@ if (preg_match('/wait(?:IncreaseVolume|IncreaseVolumeGift|IncreaseVolumeUsdt)Rec
         $msg, $adminKeyboard, $admin, $match[1],
         $deliveryToken,$giftScreen)) {
         setUser();
-        achbotManualAcknowledgeAndVerify($connection,$receiptPay,$method,$buttonValues['start_bot'],$botUsername);
+        achbotManualAcknowledgeAndVerify($connection,$receiptPay,$method,\achbotMessage('legacy_buttons.start_bot'),$botUsername);
     } else {
         sendMessage(\achbotMessage('renewal.extensions.message.c346a0d62e'), null, 'HTML');
     }
@@ -1219,7 +1217,7 @@ if (preg_match('/wait(?:IncreaseVolume|IncreaseVolumeGift|IncreaseVolumeUsdt)Rec
 if (preg_match('/^approveIncreaseVolume(.*)/', $data, $match) && achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'payments')) {
     require_once __DIR__.'/../ManualEditRecovery.php';
     $resume=achbotManualPgResumeEdit($connection,(string)$match[1],(int)$from_id,'volume',
-        $mainValues,(int)$admin);
+        (int)$admin);
     if ($resume!==null) {
         if (in_array($resume['status'],['approved','delivery_only'],true)) {
             achbotManualPgEditNotify($connection,(int)$resume['pay_id']);

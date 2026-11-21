@@ -243,7 +243,7 @@ if ($op==='claim') {
             };
         }
         $value=achbotAutoBankProvisionBuySub(
-            $connection,$pay,$botState,$buttonValues,[0],false,$botUrl,null,$nativeGet);
+            $connection,$pay,$botState,[0],false,$botUrl,null,$nativeGet);
     } catch (Throwable $error) {
         $value=['committed'=>false,'deferred'=>true];
     }

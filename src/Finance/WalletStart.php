@@ -84,7 +84,7 @@ function achbotWalletTopupAdvance(mysqli $db, int $actorId, ?string $expected,
  * stage claim, unclaimed-draft cleanup and INSERT inside ONE transaction.
  * Telegram messages are sent only after a verified COMMIT, never inside locks.
  */
-function startWalletPayment(mysqli $connection, $botState, $buttonValues, $botUrl,
+function startWalletPayment(mysqli $connection, $botState, $botUrl,
                             $from_id, $removeKeyboard, $amount,
                             string $expectedStep, int $updateId, int $sourceMessageId): string {
     $actor = (int)$from_id;
@@ -145,18 +145,18 @@ function startWalletPayment(mysqli $connection, $botState, $buttonValues, $botUr
 
     $keyboard = [];
     if (achbotManualEnabled('bank_transfer') && achbotPayUxAudienceAllowed($connection,'bank_transfer',(int)$actor))
-        $keyboard[] = [['text' => $buttonValues['cart_to_cart'], 'callback_data' => "payIncreaseWalletWithCartToCart$hash_id"]];
+        $keyboard[] = [['text' => \achbotMessage('legacy_buttons.cart_to_cart'), 'callback_data' => "payIncreaseWalletWithCartToCart$hash_id"]];
     if (achbotManualEnabled('gift_card') && achbotPayUxAudienceAllowed($connection,'gift_card',(int)$actor))
-        $keyboard[] = [['text' => $buttonValues['gift_card'], 'callback_data' => "payIncreaseWalletWithGiftCard$hash_id"]];
+        $keyboard[] = [['text' => \achbotMessage('legacy_buttons.gift_card'), 'callback_data' => "payIncreaseWalletWithGiftCard$hash_id"]];
     if (achbotManualCryptoEnabled((int)$actor) && (achbotPayUxAudienceAllowed($connection,'manual_usdt',(int)$actor) || achbotPayUxAudienceAllowed($connection,'manual_trx',(int)$actor)))
         $keyboard[] = [['text' => \achbotMessage('wallet.wallet_start.start_wallet_payment.button.e729457ba2'), 'callback_data' => "mcm_$hash_id"]];
     if (($botState['nowPaymentWallet'] == 'on' && achbotPayUxAudienceAllowed($connection,'nowpayments',(int)$actor) && achbotUsdtRateForUser($connection,(int)$actor)!==null))
-        $keyboard[] = [['text' => $buttonValues['now_payment_gateway'], 'url' => $botUrl . 'pay/checkout.php?nowpayment&hash_id=' . $hash_id]];
+        $keyboard[] = [['text' => \achbotMessage('legacy_buttons.now_payment_gateway'), 'url' => $botUrl . 'pay/checkout.php?nowpayment&hash_id=' . $hash_id]];
     if (($botState['zarinpal'] == 'on' && achbotPayUxAudienceAllowed($connection,'zarinpal',(int)$actor)))
-        $keyboard[] = [['text' => $buttonValues['zarinpal_gateway'], 'url' => $botUrl . 'pay/checkout.php?zarinpal&hash_id=' . $hash_id]];
+        $keyboard[] = [['text' => \achbotMessage('legacy_buttons.zarinpal_gateway'), 'url' => $botUrl . 'pay/checkout.php?zarinpal&hash_id=' . $hash_id]];
     if (($botState['nextpay'] == 'on' && achbotPayUxAudienceAllowed($connection,'nextpay',(int)$actor)))
-        $keyboard[] = [['text' => $buttonValues['nextpay_gateway'], 'url' => $botUrl . 'pay/checkout.php?nextpay&hash_id=' . $hash_id]];
-    $keyboard[] = [['text' => $buttonValues['cancel'], 'callback_data' => 'mainMenu']];
+        $keyboard[] = [['text' => \achbotMessage('legacy_buttons.nextpay_gateway'), 'url' => $botUrl . 'pay/checkout.php?nextpay&hash_id=' . $hash_id]];
+    $keyboard[] = [['text' => \achbotMessage('legacy_buttons.cancel'), 'callback_data' => 'mainMenu']];
     $keys = json_encode(['inline_keyboard' => $keyboard], JSON_UNESCAPED_UNICODE);
     try {
         $reply = sendMessage(\achbotMessage('wallet.wallet_start.start_wallet_payment.message.1f46b2b87f') . number_format($amount) .

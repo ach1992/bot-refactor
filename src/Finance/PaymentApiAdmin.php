@@ -68,7 +68,6 @@ function achbotPaymentApiAdminToggleAllowed(mysqli $db,string $flag): bool {
     return $keys!==null && achbotPaymentEvidenceSettingsValid($method,$keys);
 }
 function achbotPaymentApiAdminRows(string $method,array $keys,array $states): array {
-    global $buttonValues;
     if (!in_array($method,['bank_transfer','gift_card'],true)) return [];
     $sms=$method==='bank_transfer';
     $flag=$sms?'smsApiVerifyState':'giftApiVerifyState';
@@ -76,7 +75,7 @@ function achbotPaymentApiAdminRows(string $method,array $keys,array $states): ar
     return [
         [
             ['text'=>($states[$flag]??'off')==='on'
-                ? $buttonValues['on'] : $buttonValues['off'],
+                ? \achbotMessage('legacy_buttons.on') : \achbotMessage('legacy_buttons.off'),
              'callback_data'=>'changeGateWays'.$flag],
             ['text'=>achbotMessage('payment_settings.api.'.$suffix.'_verify'),
              'callback_data'=>'wizwizch']

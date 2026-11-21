@@ -310,7 +310,7 @@ if(mysqli_num_rows($payInfo)==0){
         $stmt->close();
 
         if($order->num_rows == 0){
-            showForm($mainValues['config_not_found']);
+            showForm(\achbotMessage('legacy_messages.config_not_found'));
             exit();
         }
 

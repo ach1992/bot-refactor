@@ -73,7 +73,7 @@ if (!function_exists('achbotManualStandardReportDelivery')) {
 
 if (
     preg_match('/^accept([A-Za-z0-9_-]{1,50})$/D', (string)$data, $match) &&
-    $text != $buttonValues['cancel'] &&
+    $text != \achbotMessage('legacy_buttons.cancel') &&
     achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'payments')
 ) {
     require_once __DIR__ . '/../PaidAccountRecovery.php';
@@ -289,7 +289,7 @@ if (
             achbotManualStandardNotice(
                 static fn()=>sendMessage(
                     str_replace(["REMARK","VOLUME","DAYS"],[$remark,$volume,$days],
-                        $mainValues['renewed_config_to_user']),getMainKeys(),null,null),
+                        \achbotMessage('legacy_messages.renewed_config_to_user')),getMainKeys(),null,null),
                 'renewal_customer',$payId,$deliveryIssues,0,(int)$from_id);
             achbotManualStandardNotice(
                 static fn()=>sendMessage(\achbotMessage('manual_payment.automatic_receipts.message.cca1075329', ['remark' => $remark]),null,null,$uid),
@@ -364,7 +364,7 @@ if (
         $serverType  = $serverConfig['type'];
         $portType    = $serverConfig['port_type'];
 
-        alert($mainValues['sending_config_to_user']);
+        alert(\achbotMessage('legacy_messages.sending_config_to_user'));
 
         $agent_bought = (int)($payInfo['agent_bought'] ?? 0);
 
@@ -429,7 +429,6 @@ if (
                 $uid,
                 $volume,
                 $days,
-                $buttonValues,
                 [],
                 false,
                 '',
@@ -525,7 +524,7 @@ if (
             achbotReferralReserveManualLocked($connection,$lockedPay);
             achbotFollowupStageManualPurchaseLocked($connection,$lockedPay,(int)$admin,
                 $lastRemarkForAdminMsg,$accountCount,$days,$volume,$price,
-                $hash_id,$mainValues);
+                $hash_id);
             $localCommitAttempted=true;
             if ($connection->commit() !== true)
                 throw new RuntimeException('manual_standard_finish_commit_unconfirmed');

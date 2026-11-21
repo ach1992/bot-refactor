@@ -78,7 +78,6 @@ return [
         'enter_ticket_description' => '💠 لطفا متن و یا عکس تیکت را بصورت ساده و مختصر ارسال کنید!',
         'config_not_found' => '⚠️ مشکلی پیش آمده است، لطفا دوباره انجام دهید.',
         'incorrect_config_name' => '⚠️ اسم وارد شده معتبر نمی باشد.',
-        'config_doesnt_exist' => '⚠️ اشتراک یافت نشد.',
     ],
 
     // ── دکمه‌ها و برچسب‌های اصلی ──
@@ -331,7 +330,6 @@ return [
         'buy_helpers.build_links_and_send_qr.acc_text.8eb803f6b0' => '🌐 لینک اصلی اشتراک:' . "\n" . '',
         'buy_helpers.build_links_and_send_qr.acc_text.a2bb8da6b7' => '' . "\n" . '' . "\n" . '💡 همیشه اکانت را با لینک اشتراک وارد کنید تا به همه کانفیگ ها دسترسی داشته باشد. در صورتی که لینک اصلی اشتراک کار نکرد از لینک کمکی اشتراک استفاده کنید.',
         'buy_helpers.build_links_and_send_qr.acc_text.d5f471a600' => '',
-        'buy_helpers.build_links_and_send_qr.start.e4bb9f1ece' => 'شروع',
         'account_deletion.shared_effect_notice' => "🚫 با تأیید، خود اشتراک برای همیشه حذف می‌شود و دسترسی همه افرادی که از آن استفاده می‌کنند قطع خواهد شد.",
         // account_deletion.alert
         'account_deletion.alert.a370755120' => '⛔️ این اشتراک متعلق به حساب شما نیست.',

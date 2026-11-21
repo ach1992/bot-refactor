@@ -34,9 +34,9 @@ if($data=='addNewCategory' and (achbotAdminCanFor($connection,(int)$from_id,(int
     sendMessage($msg,$cancelKey);
     exit;
 }
-if(preg_match('/^addNewCategory/',$userInfo['step']) and $text!=$buttonValues['cancel'] && achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'plans')){
+if(preg_match('/^addNewCategory/',$userInfo['step']) and $text!=\achbotMessage('legacy_buttons.cancel') && achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'plans')){
     $step = checkStep('server_categories');
-    if($step==2 and $text!=$buttonValues['cancel'] ){
+    if($step==2 and $text!=\achbotMessage('legacy_buttons.cancel') ){
         
         $stmt = $connection->prepare("UPDATE `server_categories` SET `title`=?,`step`=4,`active`=1 WHERE `active`=0");
         $stmt->bind_param("s", $text);
@@ -46,7 +46,7 @@ if(preg_match('/^addNewCategory/',$userInfo['step']) and $text!=$buttonValues['c
 
         $msg = \achbotMessage('plans.categories.add_new_category.msg.5ba2f5c693');
         sendMessage($msg,$removeKeyboard);
-        sendMessage($mainValues['reached_main_menu'], getCategoriesKeys(), 'HTML');
+        sendMessage(\achbotCurrentMessage('reached_main_menu'), getCategoriesKeys(), 'HTML');
     }
 }
 if(preg_match('/^wizwizcategorydelete(\d+)_(\d+)/',$data, $match) and achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'plans')){
@@ -65,12 +65,12 @@ if(preg_match('/^wizwizcategorydelete(\d+)_(\d+)/',$data, $match) and achbotAdmi
     $keys = getCategoriesKeys($match[2]);
     editText($message_id,\achbotMessage('plans.categories.categories_setting.message.12ae9f8483'), $keys);
 }
-if(preg_match('/^wizwizcategoryedit/',$data) and achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'plans') && $text != $buttonValues['cancel']){
+if(preg_match('/^wizwizcategoryedit/',$data) and achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'plans') && $text != \achbotMessage('legacy_buttons.cancel')){
     setUser($data);
     delMessage();
     sendMessage(\achbotMessage('plans.categories.add_new_category.message.15337e0db0'),$cancelKey, 'HTML');exit;
 }
-if(preg_match('/wizwizcategoryedit(\d+)_(\d+)/',$userInfo['step'], $match) && achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'plans') && $text != $buttonValues['cancel']){
+if(preg_match('/wizwizcategoryedit(\d+)_(\d+)/',$userInfo['step'], $match) && achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'plans') && $text != \achbotMessage('legacy_buttons.cancel')){
     $stmt = $connection->prepare("UPDATE `server_categories` SET `title`=? WHERE `id`=?");
     $stmt->bind_param("si", $text, $match[1]);
     $stmt->execute();

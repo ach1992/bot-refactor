@@ -118,7 +118,14 @@ def setup(root: Path) -> tuple[Path, Path]:
         if name.endswith('.php'):
             (settings/name).write_text(CHILD_PHP,encoding='utf-8')
     (root/'baseInfo.php').write_text('<?php /* owned fixture */')
-    (root/'config.php').write_text("<?php $buttonValues=['start_bot'=>'Fixture'];$botUsername='fixture';$connection=null;")
+    (root/'messages').mkdir()
+    for part in ('loader.php','fa/user.php','fa/admin.php'):
+        target=root/'messages'/part
+        target.parent.mkdir(parents=True,exist_ok=True)
+        target.write_bytes((ROOT/'messages'/part).read_bytes())
+    (root/'config.php').write_text(
+        "<?php require_once __DIR__.'/messages/loader.php';"
+        "$botUsername='fixture';$connection=null;")
     (settings/'jdf.php').write_text('<?php /* owned fixture */')
     for rel in ['src/Jobs','src/Notifications','src/Finance']:
         (root/rel).mkdir(parents=True,exist_ok=True)

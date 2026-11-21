@@ -2032,20 +2032,20 @@ function achbotManualEvidenceInput($update,mysqli $db,array $pay,string $method)
     if(!is_string($code))return null;$code=trim($code);
     return achbotPaymentEvidenceGiftCodeFormatValid($code)?$code:null;
 }
-function achbotManualEvidencePrompt(array $mainValues,mysqli $db,array $pay,string $method,bool $invalid=false): string {
+function achbotManualEvidencePrompt(mysqli $db,array $pay,string $method,bool $invalid=false): string {
     if(achbotManualTypedGift($db,$pay,$method))
         return achbotMessage($invalid?'payment.api_payment.code_invalid_retry':'payment.api_payment.code_prompt');
-    return $invalid?$mainValues['please_send_only_image']:achbotManualReceiptPrompt($mainValues,$method);
+    return $invalid?\achbotMessage('legacy_messages.please_send_only_image'):achbotManualReceiptPrompt($method);
 }
 
-function achbotManualReceiptPrompt(array $mainValues, string $method): string {
+function achbotManualReceiptPrompt(string $method): string {
     $key = match ($method) {
         'gift_card' => 'please_send_gift_card_image',
         'manual_usdt' => 'please_send_usdt_image',
         'manual_trx' => 'please_send_trx_image',
         default => 'please_send_receipt_image'
     };
-    return $mainValues[$key];
+    return \achbotMessage('legacy_messages.'.$key);
 }
 
 function achbotManualAcknowledgement(array $payInfo, string $method): string {
@@ -2068,7 +2068,7 @@ function getCartToCartMessageKey(string $messageType): string {
 
 
 /** Read only the original pinned manual quote and destination, never changed settings. */
-function buildCartToCartInfoMessage(array $paymentKeys, array $mainValues, int $priceToman,
+function buildCartToCartInfoMessage(array $paymentKeys, int $priceToman,
                                     int $userId = 0, string $method = 'bank_transfer',
                                     string $hashId = ''): string {
     global $connection;
@@ -2100,8 +2100,8 @@ function buildCartToCartInfoMessage(array $paymentKeys, array $mainValues, int $
                 !$addressValid ||
                 !preg_match('/^[0-9]{1,15}\.[0-9]{2,8}$/D', (string)$attempt['quote_amount']) ||
                 (float)$attempt['quote_amount'] <= 0) return '';
-            $template = (string)($mainValues[$method === 'manual_trx'
-                ? 'brw_cart_to_cart_trx' : 'brw_cart_to_cart_usdt'] ?? '');
+            $template = \achbotMessage('legacy_messages.'.($method === 'manual_trx'
+                ? 'brw_cart_to_cart_trx' : 'brw_cart_to_cart_usdt'));
             return strtr($template, [
                 'PRICE-TOMAN-ROUND' => number_format($priceToman),
                 'PRICE-USDT' => number_format((float)$attempt['quote_amount'], 2, '.', ''),
@@ -2118,8 +2118,8 @@ function buildCartToCartInfoMessage(array $paymentKeys, array $mainValues, int $
             (trim((string)($intent['account'] ?? '')) === '' ||
              trim((string)($intent['holder'] ?? '')) === '')) return '';
         if(achbotManualTypedGift($connection,$pay,$method))return achbotMessageHtml('payment.api_payment.gift_invoice',['amount'=>number_format($amount)]);
-        $template = (string)($mainValues[$method === 'gift_card' ?
-            'brw_cart_to_cart_gift' : 'brw_cart_to_cart_detail'] ?? '');
+        $template = \achbotMessage('legacy_messages.'.($method === 'gift_card' ?
+            'brw_cart_to_cart_gift' : 'brw_cart_to_cart_detail'));
         return strtr($template, [
             'PRICE-TOMAN-ROUND' => number_format($priceToman),
             'PRICE-TOMAN' => number_format($amount),
@@ -2162,11 +2162,11 @@ function kbOnlyCancel(string $cancelPrefix, string $hashId): string {
     return \AchBot\Telegram\Markup\onlyCancel($cancelPrefix, $hashId);
 }
 
-function handleCancelFlow(array $mainValues, $removeKeyboard) {
+function handleCancelFlow($removeKeyboard) {
     delMessage();
     setUser();
-    sendMessage($mainValues['operation_canceled'], $removeKeyboard, "HTML");
-    sendMessage($mainValues['reached_main_menu'], getMainKeys(), 'HTML');
+    sendMessage(\achbotMessage('legacy_messages.operation_canceled'), $removeKeyboard, "HTML");
+    sendMessage(\achbotCurrentMessage('reached_main_menu'), getMainKeys(), 'HTML');
     exit;
 }
 
@@ -2322,7 +2322,6 @@ function sumUserPaysByState(mysqli $connection, int $userId, string $state): int
 
 function buildAdminKeyboardWithStats(
     mysqli $connection,
-    array $buttonValues,
     string $approveCb,
     string $declineCb,
     string $hashId,
@@ -2335,8 +2334,8 @@ function buildAdminKeyboardWithStats(
 
     return inlineKeyboard([
         [
-            ['text' => $buttonValues['decline'], 'callback_data' => $declineCb],
-            ['text' => $buttonValues['approve'], 'callback_data' => $approveCb],
+            ['text' => \achbotMessage('legacy_buttons.decline'), 'callback_data' => $declineCb],
+            ['text' => \achbotMessage('legacy_buttons.approve'), 'callback_data' => $approveCb],
         ],
         [
             ['text' => $approvedCount . \achbotMessage('manual_payment.receipt_helpers.build_admin_keyboard_with_stats.text.839cad204e'), 'callback_data' => "noop_okc_{$hashId}"],

@@ -35,7 +35,7 @@ if (
         preg_match('/^discountRenew(\d+)_(\d+)$/', $userInfo['step'], $match) ||
         preg_match('/^renewAccount(\d+)$/', $data, $match)
     ) &&
-    $text != $buttonValues['cancel']
+    $text != \achbotMessage('legacy_buttons.cancel')
 ) {
 
     // اضافه کردن بررسی برای ستون fileid
@@ -49,7 +49,7 @@ if (
 
     if($order->num_rows == 0){
         delMessage();
-        sendMessage($mainValues['config_not_found'], getMainKeys());
+        sendMessage(\achbotMessage('legacy_messages.config_not_found'), getMainKeys());
         exit();
     }
 
@@ -80,7 +80,6 @@ if (
             $username,
             $first_name,
             $admin,
-            $mainValues,
             $botState
         );
 
@@ -127,13 +126,13 @@ if (
 	if (achbotManualEnabled('bank_transfer') && achbotPayUxAudienceAllowed($connection,'bank_transfer',(int)$from_id)) $keyboard[] = [['text' => \achbotMessage('renewal.renewal_checkout.button.5b3252c790', ['price' => $price]), 'callback_data' => "prePayCheck_{$actionType}_CartToCart_{$hash_id}"]];
 	if (achbotManualEnabled('gift_card') && achbotPayUxAudienceAllowed($connection,'gift_card',(int)$from_id)) $keyboard[] = [['text' => \achbotMessage('renewal.renewal_checkout.button.cf580700a3', ['price' => $price]), 'callback_data' => "prePayCheck_{$actionType}_GiftCard_{$hash_id}"]];
 	if (achbotManualCryptoEnabled((int)$from_id) && (achbotPayUxAudienceAllowed($connection,'manual_usdt',(int)$from_id) || achbotPayUxAudienceAllowed($connection,'manual_trx',(int)$from_id))) $keyboard[] = [['text' => \achbotMessage('renewal.renewal_checkout.button.73f7c8deeb', ['price' => $price]), 'callback_data' => "prePayCheck_{$actionType}_ManualUsdt_{$hash_id}"]];
-	if (($botState['nowPaymentOther'] == "on" && achbotPayUxAudienceAllowed($connection,'nowpayments',(int)$from_id) && achbotUsdtRateForUser($connection,(int)$from_id)!==null)) $keyboard[] = [['text' => $buttonValues['now_payment_gateway'], 'callback_data' => "prePayCheck_{$actionType}_nowpayment_{$hash_id}"]];
-	if (($botState['zarinpal'] == "on" && achbotPayUxAudienceAllowed($connection,'zarinpal',(int)$from_id))) $keyboard[] = [['text' => $buttonValues['zarinpal_gateway'], 'callback_data' => "prePayCheck_{$actionType}_zarinpal_{$hash_id}"]];
-	if (($botState['nextpay'] == "on" && achbotPayUxAudienceAllowed($connection,'nextpay',(int)$from_id))) $keyboard[] = [['text' => $buttonValues['nextpay_gateway'], 'callback_data' => "prePayCheck_{$actionType}_nextpay_{$hash_id}"]];
+	if (($botState['nowPaymentOther'] == "on" && achbotPayUxAudienceAllowed($connection,'nowpayments',(int)$from_id) && achbotUsdtRateForUser($connection,(int)$from_id)!==null)) $keyboard[] = [['text' => \achbotMessage('legacy_buttons.now_payment_gateway'), 'callback_data' => "prePayCheck_{$actionType}_nowpayment_{$hash_id}"]];
+	if (($botState['zarinpal'] == "on" && achbotPayUxAudienceAllowed($connection,'zarinpal',(int)$from_id))) $keyboard[] = [['text' => \achbotMessage('legacy_buttons.zarinpal_gateway'), 'callback_data' => "prePayCheck_{$actionType}_zarinpal_{$hash_id}"]];
+	if (($botState['nextpay'] == "on" && achbotPayUxAudienceAllowed($connection,'nextpay',(int)$from_id))) $keyboard[] = [['text' => \achbotMessage('legacy_buttons.nextpay_gateway'), 'callback_data' => "prePayCheck_{$actionType}_nextpay_{$hash_id}"]];
 	if (($botState['walletState'] == "on" && achbotPayUxAudienceAllowed($connection,'wallet',(int)$from_id))) $keyboard[] = [['text' => \achbotMessage('renewal.renewal_checkout.button.0eed1dd8e8', ['price' => $price]), 'callback_data' => "prePayCheck_{$actionType}_Wallet_{$hash_id}"]];
 	if (!preg_match('/^discountRenew/', $userInfo['step'])) $keyboard[] = [['text' => \achbotMessage('renewal.renewal_checkout.button.05c3a1e3f4'), 'callback_data' => "haveDiscountRenew_{$match[1]}_{$rowId}"]];
 	
-	$keyboard[] = [['text' => $buttonValues['cancel'], 'callback_data' => "mainMenu"]];
+	$keyboard[] = [['text' => \achbotMessage('legacy_buttons.cancel'), 'callback_data' => "mainMenu"]];
 	
     $sent=sendMessage(\achbotMessage('renewal.renewal_checkout.message.24ae8c4399'), json_encode(['inline_keyboard' => $keyboard]), 'HTML');
     require_once __DIR__ . '/../PaymentLifecycle.php';
@@ -159,7 +158,7 @@ if (is_string($data) && (strlen($data) <= 64 || ($GLOBALS['achbotManualCryptoVer
 
     if (!$orderRes || $orderRes->num_rows == 0) {
         delMessage();
-        sendMessage($mainValues['config_not_found'], getMainKeys());
+        sendMessage(\achbotMessage('legacy_messages.config_not_found'), getMainKeys());
         exit;
     }
 
@@ -171,7 +170,7 @@ if (is_string($data) && (strlen($data) <= 64 || ($GLOBALS['achbotManualCryptoVer
         return;
     }
 
-	$msg = buildCartToCartInfoMessage($paymentKeys, $mainValues, (int)$payInfo['price'], (int)$payInfo['user_id'], $method, (string)$payInfo['hash_id']);
+	$msg = buildCartToCartInfoMessage($paymentKeys, (int)$payInfo['price'], (int)$payInfo['user_id'], $method, (string)$payInfo['hash_id']);
     if ($msg === "") {
         alert(\achbotMessage('renewal.extensions.alert.07ee06b4bc'), true);
         return;
@@ -224,14 +223,14 @@ if (preg_match('/send(?:RenewCart|RenewGift|RenewUsdt)Receipt(?<hashId>.*)/', $d
     setUser((in_array($method, ['manual_usdt','manual_trx'], true) ? "waitRenewUsdtReceipt" : ($method === 'gift_card' ? "waitRenewGiftReceipt" : "waitRenewCartReceipt")) . $match['hashId']);
 
     $keyboard = kbOnlyCancel("cancelRenewCartReceipt", $match['hashId']);
-    $sent=sendMessage(achbotManualEvidencePrompt($mainValues,$connection,$payInfo,$method), $keyboard, "HTML");
+    $sent=sendMessage(achbotManualEvidencePrompt($connection,$payInfo,$method), $keyboard, "HTML");
     require_once __DIR__ . '/../PaymentLifecycle.php';
     achbotPayUxTrackByHash($connection,(string)$match['hashId'],(int)$from_id,$sent);
     exit;
 }
 
 if (preg_match('/cancelRenewCartReceipt(?<hashId>.*)/', $data, $match)) {
-    handleCancelFlow($mainValues, $removeKeyboard);
+    handleCancelFlow( $removeKeyboard);
 }
 
 if (preg_match('/wait(?:RenewCart|RenewGift|RenewUsdt)Receipt(.*)/', $userInfo['step'], $match)) {
@@ -247,7 +246,7 @@ if (preg_match('/wait(?:RenewCart|RenewGift|RenewUsdt)Receipt(.*)/', $userInfo['
     $fileid = achbotManualEvidenceInput($update, $connection, $receiptPay, $method);
     if ($fileid === null) {
         $keyboard = kbOnlyCancel("cancelRenewCartReceipt", $match[1]);
-        sendMessage(achbotManualEvidencePrompt($mainValues,$connection,$receiptPay,$method,true), $keyboard, "HTML");
+        sendMessage(achbotManualEvidencePrompt($connection,$receiptPay,$method,true), $keyboard, "HTML");
         exit;
     }
 
@@ -267,7 +266,7 @@ if (preg_match('/wait(?:RenewCart|RenewGift|RenewUsdt)Receipt(.*)/', $userInfo['
         delMessage();
         sendMessage(\achbotMessage('renewal.renewal_checkout.message.2c9a5e948c'), null, 'HTML');
 
-        sendMessage($mainValues['reached_main_menu'], getMainKeys(), 'HTML');
+        sendMessage(\achbotCurrentMessage('reached_main_menu'), getMainKeys(), 'HTML');
         exit;
     }
 
@@ -281,7 +280,7 @@ if (preg_match('/wait(?:RenewCart|RenewGift|RenewUsdt)Receipt(.*)/', $userInfo['
 
     if (!$orderRes || $orderRes->num_rows == 0) {
         delMessage();
-        sendMessage($mainValues['config_not_found'], getMainKeys());
+        sendMessage(\achbotMessage('legacy_messages.config_not_found'), getMainKeys());
         exit;
     }
 
@@ -294,7 +293,7 @@ if (preg_match('/wait(?:RenewCart|RenewGift|RenewUsdt)Receipt(.*)/', $userInfo['
         delMessage();
         sendMessage(\achbotMessage('renewal.renewal_checkout.message.aaa858e3e6'), null, 'HTML');
 
-        sendMessage($mainValues['reached_main_menu'], getMainKeys(), 'HTML');
+        sendMessage(\achbotCurrentMessage('reached_main_menu'), getMainKeys(), 'HTML');
         exit;
     }
 
@@ -315,7 +314,7 @@ if (preg_match('/wait(?:RenewCart|RenewGift|RenewUsdt)Receipt(.*)/', $userInfo['
     $msg = str_replace(
         ['TYPE', "USER-ID", "USERNAME", "NAME", "PRICE", "REMARK", "VOLUME", "DAYS"],
         [achbotManualLabel($method), $from_id, $username, $first_name, $price, $remark, $volume, $days],
-        achbotManualCaption($connection, $receiptPay, $mainValues['renew_account_request_message'])
+        achbotManualCaption($connection, $receiptPay, \achbotMessage('legacy_messages.renew_account_request_message'))
     );
 
     // The code is checked against this ORIGINAL pinned invoice before any
@@ -338,7 +337,6 @@ if (preg_match('/wait(?:RenewCart|RenewGift|RenewUsdt)Receipt(.*)/', $userInfo['
 
     $adminKeyboard = buildAdminKeyboardWithStats(
         $connection,
-        $buttonValues,
         "approveRenewAcc{$hash_id}",
         "declineAction_{$hash_id}",
         $hash_id,
@@ -349,7 +347,7 @@ if (preg_match('/wait(?:RenewCart|RenewGift|RenewUsdt)Receipt(.*)/', $userInfo['
         $msg, $adminKeyboard, $admin, $match[1],
         $deliveryToken,$giftScreen)) {
         setUser();
-        achbotManualAcknowledgeAndVerify($connection,$receiptPay,$method,$buttonValues['start_bot'],$botUsername);
+        achbotManualAcknowledgeAndVerify($connection,$receiptPay,$method,\achbotMessage('legacy_buttons.start_bot'),$botUsername);
     } else {
         sendMessage(\achbotMessage('renewal.extensions.message.c346a0d62e'), null, 'HTML');
     }
@@ -360,7 +358,7 @@ if (preg_match('/wait(?:RenewCart|RenewGift|RenewUsdt)Receipt(.*)/', $userInfo['
 if(preg_match('/^approveRenewAcc(.*)/',$data,$match) && achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'payments')){
     require_once __DIR__.'/../ManualEditRecovery.php';
     $resume=achbotManualPgResumeEdit($connection,(string)$match[1],(int)$from_id,'renew',
-        $mainValues,(int)$admin);
+        (int)$admin);
     if ($resume!==null) {
         if (in_array($resume['status'],['approved','delivery_only'],true)) {
             achbotManualPgEditNotify($connection,(int)$resume['pay_id']);
@@ -402,7 +400,7 @@ if(preg_match('/^approveRenewAcc(.*)/',$data,$match) && achbotAdminCanFor($conne
         if (!$order){
             $connection->rollback();
             delMessage();
-            sendMessage($mainValues['config_not_found'], getMainKeys(), null, $uid);
+            sendMessage(\achbotMessage('legacy_messages.config_not_found'), getMainKeys(), null, $uid);
             return;
         }
 
@@ -419,7 +417,7 @@ if(preg_match('/^approveRenewAcc(.*)/',$data,$match) && achbotAdminCanFor($conne
         $stmt->close(); 
         if(!$respd){
             $connection->rollback();
-            sendMessage($mainValues['config_not_found'], getMainKeys(), null, $uid);
+            sendMessage(\achbotMessage('legacy_messages.config_not_found'), getMainKeys(), null, $uid);
             return;
         }
         $name   = $respd['title']; 
@@ -538,7 +536,7 @@ if(preg_match('/^approveRenewAcc(.*)/',$data,$match) && achbotAdminCanFor($conne
 
         // پیام موفقیت به کاربر
         sendMessage(str_replace(["USERID", "REMARK", "VOLUME", "DAYS", "PRICE", "HASHID"],
-                    [$uid, $remark, $volume, $days, $price, $hash_id], $mainValues['renewed_config_to_user']),
+                    [$uid, $remark, $volume, $days, $price, $hash_id], \achbotMessage('legacy_messages.renewed_config_to_user')),
                     getMainKeys(), null, null); 
         sendMessage(\achbotMessage('renewal.renewal_checkout.message.47b1149fb0', ['remark' => $remark]), null, "HTML", $uid);
         return;
@@ -615,7 +613,7 @@ if(is_string($data) && strlen($data) <= 64 && preg_match('/\ApayRenewWithWallet(
         if ($orderRes->num_rows == 0){
             $connection->rollback();
             delMessage();
-            sendMessage($mainValues['config_not_found'], getMainKeys(), null, $uid);
+            sendMessage(\achbotMessage('legacy_messages.config_not_found'), getMainKeys(), null, $uid);
             return;
         }
 
@@ -634,7 +632,7 @@ if(is_string($data) && strlen($data) <= 64 && preg_match('/\ApayRenewWithWallet(
 
         if (!$plan){
             $connection->rollback();
-            sendMessage($mainValues['config_not_found'], getMainKeys(), null, $uid);
+            sendMessage(\achbotMessage('legacy_messages.config_not_found'), getMainKeys(), null, $uid);
             return;
         }
 
@@ -770,7 +768,7 @@ if(is_string($data) && strlen($data) <= 64 && preg_match('/\ApayRenewWithWallet(
         $msg = str_replace(
             ['TYPE', "USER-ID", "USERNAME", "NAME", "PRICE", "REMARK", "VOLUME", "DAYS"],
             [\achbotMessage('renewal.renewal_checkout.text.6295c35212'), $from_id, $username, $first_name, $price, $remark, $volume, $days],
-            $mainValues['renew_account_request_message']
+            \achbotMessage('legacy_messages.renew_account_request_message')
         );
         achbotNotifyAdmins('sendMessage', ['text'=>$msg, 'reply_markup'=>$keys, 'parse_mode'=>'HTML']);
 

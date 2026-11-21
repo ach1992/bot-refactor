@@ -40,7 +40,7 @@ if (preg_match('/^switchLocation([0-9]+)_([0-9]+)_[^_]{1,40}_[^_]{1,40}$/D', (st
     if (!$targets) {
         editText($message_id,\achbotMessage('subscription.account_transfers.alert.33278b6a77'),
             json_encode(['inline_keyboard'=>[[[
-                'text'=>$buttonValues['back_button'],
+                'text'=>\achbotMessage('legacy_buttons.back_button'),
                 'callback_data'=>'quickUserOrderDetails_'.$orderId
             ]]]],JSON_UNESCAPED_UNICODE));
         return;
@@ -51,7 +51,7 @@ if (preg_match('/^switchLocation([0-9]+)_([0-9]+)_[^_]{1,40}_[^_]{1,40}$/D', (st
                       'callback_data'=>'switchServer' . (int)$server['id'] . '_' . $orderId];
     }
     $keyboard = array_chunk($buttons, 2);
-    $keyboard[] = [['text'=>$buttonValues['back_button'] ?? \achbotMessage('subscription.account_transfers.text.b233883d0d'),
+    $keyboard[] = [['text'=>\achbotMessage('legacy_buttons.back_button') ?? \achbotMessage('subscription.account_transfers.text.b233883d0d'),
                     'callback_data'=>'quickUserOrderDetails_' . $orderId]];
     editText($message_id,
         \achbotMessage('subscription.account_transfers.message.3f6bd6c3c8'),
@@ -76,7 +76,7 @@ if (preg_match('/^switchServer([0-9]+)_([0-9]+)$/D', (string)($data ?? ''), $mat
         json_encode(['inline_keyboard'=>[
             [['text'=>\achbotMessage('subscription.account_transfers.choose_destination_plan'),
               'callback_data'=>'changeFileId_'.$orderId.'_'.$targetId]],
-            [['text'=>$buttonValues['back_button'] ?? \achbotMessage('subscription.account_transfers.text.b233883d0d'),
+            [['text'=>\achbotMessage('legacy_buttons.back_button') ?? \achbotMessage('subscription.account_transfers.text.b233883d0d'),
               'callback_data'=>'quickUserOrderDetails_'.$orderId]]
         ]],JSON_UNESCAPED_UNICODE));
     require_once __DIR__.'/PhysicalService.php';

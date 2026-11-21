@@ -410,8 +410,7 @@ function achbotServerDisplayGuide(string $provider): string {
     return $guide;
 }
 function achbotHandleServerDisplayAdmin(): bool {
-    global $connection,$data,$text,$userInfo,$from_id,$admin,$chat_id,$message_id,$update,$cancelKey,$buttonValues;
-    $callback=is_string($data??null) && str_starts_with($data,'serverDisplay');
+    global $connection, $data, $text, $userInfo, $from_id, $admin, $chat_id, $message_id, $update, $cancelKey;    $callback=is_string($data??null) && str_starts_with($data,'serverDisplay');
     $step=(string)($userInfo['step']??'');
     if (!$callback && !str_starts_with($step,'achbotDisplay|')) return false;
     try {
@@ -481,7 +480,7 @@ function achbotHandleServerDisplayAdmin(): bool {
                 throw new RuntimeException('display_step_invalid');
             $sid=(int)$m[1];
             $source=achbotServerDisplayFrame($update,(int)$from_id,(int)$chat_id,(int)$message_id,$text,'message');
-            $kind=$text===($buttonValues['cancel']??null)?'cancel':'save';
+            $kind=$text===(\achbotMessage('legacy_buttons.cancel')??null)?'cancel':'save';
             achbotServerDisplayEdit($connection,$sid,(int)$from_id,(int)$admin,$source,$kind,$text);
             sendMessage($kind==='save'?\achbotMessage('subscription.server_display_settings.handle_server_display_admin.text.ed95738546'):\achbotMessage('admin_settings.management.display_canceled'),
                 $GLOBALS['removeKeyboard']??json_encode(['remove_keyboard'=>true]), 'HTML');

@@ -7,7 +7,7 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
 require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
 
 
-function applyDiscountToPay($connection, $rowId, $discountCode, $from_id, $username, $first_name, $admin, $mainValues, $botState){
+function applyDiscountToPay($connection, $rowId, $discountCode, $from_id, $username, $first_name, $admin, $botState){
     // گرفتن اطلاعات پرداخت
     $stmt = $connection->prepare("SELECT * FROM `pays` WHERE `id` = ?");
     $stmt->bind_param("i", $rowId);
@@ -17,7 +17,7 @@ function applyDiscountToPay($connection, $rowId, $discountCode, $from_id, $usern
 
     if(!$payInfo){
         // پرداخت یافت نشد
-        sendMessage($mainValues['not_valid_discount_code']);
+        sendMessage(\achbotMessage('legacy_messages.not_valid_discount_code'));
         return [
             'success'        => false,
             'price'          => 0,
@@ -45,10 +45,10 @@ function applyDiscountToPay($connection, $rowId, $discountCode, $from_id, $usern
     // اگر کد تخفیف پیدا نشد
     if($list->num_rows <= 0){
         // کد اصلاً وجود ندارد یا منقضی شده
-        if (!empty($mainValues['discount_not_found'])) {
-            sendMessage($mainValues['discount_not_found']);
+        if (!empty(\achbotMessage('legacy_messages.discount_not_found'))) {
+            sendMessage(\achbotMessage('legacy_messages.discount_not_found'));
         } else {
-            sendMessage($mainValues['not_valid_discount_code']);
+            sendMessage(\achbotMessage('legacy_messages.not_valid_discount_code'));
         }
 
         return [
@@ -155,10 +155,10 @@ function applyDiscountToPay($connection, $rowId, $discountCode, $from_id, $usern
 
     if (!$allowedForUser) {
         // این کد مخصوص این کاربر/شرایط نیست
-        if (!empty($mainValues['discount_not_for_user'])) {
-            sendMessage($mainValues['discount_not_for_user']);
+        if (!empty(\achbotMessage('legacy_messages.discount_not_for_user'))) {
+            sendMessage(\achbotMessage('legacy_messages.discount_not_for_user'));
         } else {
-            sendMessage($mainValues['not_valid_discount_code']);
+            sendMessage(\achbotMessage('legacy_messages.not_valid_discount_code'));
         }
 
         return [
@@ -207,10 +207,10 @@ function applyDiscountToPay($connection, $rowId, $discountCode, $from_id, $usern
 
     if (!$allowedForPlan) {
         // این کد برای این پلن/سرور/دسته معتبر نیست
-        if (!empty($mainValues['discount_not_for_service'])) {
-            sendMessage($mainValues['discount_not_for_service']);
+        if (!empty(\achbotMessage('legacy_messages.discount_not_for_service'))) {
+            sendMessage(\achbotMessage('legacy_messages.discount_not_for_service'));
         } else {
-            sendMessage($mainValues['not_valid_discount_code']);
+            sendMessage(\achbotMessage('legacy_messages.not_valid_discount_code'));
         }
 
         return [
@@ -226,11 +226,11 @@ function applyDiscountToPay($connection, $rowId, $discountCode, $from_id, $usern
     // چک حداقل مبلغ سفارش
 
     if ($minPrice > 0 && $price < $minPrice) {
-        if (!empty($mainValues['discount_min_price'])) {
-            $msg = str_replace("MINPRICE", number_format($minPrice) . \achbotMessage('payment.discounts.apply_discount_to_pay.text.2cc98f7f7c'), $mainValues['discount_min_price']);
+        if (!empty(\achbotMessage('legacy_messages.discount_min_price'))) {
+            $msg = str_replace("MINPRICE", number_format($minPrice) . \achbotMessage('payment.discounts.apply_discount_to_pay.text.2cc98f7f7c'), \achbotMessage('legacy_messages.discount_min_price'));
             sendMessage($msg);
         } else {
-            sendMessage($mainValues['not_valid_discount_code']);
+            sendMessage(\achbotMessage('legacy_messages.not_valid_discount_code'));
         }
 
         return [
@@ -253,10 +253,10 @@ function applyDiscountToPay($connection, $rowId, $discountCode, $from_id, $usern
 
     // اگر can_use = -1 یعنی نامحدود، محدودیتی نباید اعمال شود
     if($canUse != -1 && $canUse <= $userUsedCount){
-        if (!empty($mainValues['discount_user_limit'])) {
-            sendMessage($mainValues['discount_user_limit']);
+        if (!empty(\achbotMessage('legacy_messages.discount_user_limit'))) {
+            sendMessage(\achbotMessage('legacy_messages.discount_user_limit'));
         } else {
-            sendMessage($mainValues['not_valid_discount_code']);
+            sendMessage(\achbotMessage('legacy_messages.not_valid_discount_code'));
         }
 
         return [
@@ -309,8 +309,8 @@ function applyDiscountToPay($connection, $rowId, $discountCode, $from_id, $usern
 
     $discountText = number_format($discountValue) . \achbotMessage('payment.discounts.apply_discount_to_pay.text.2cc98f7f7c');
 
-    if (!empty($mainValues['valid_discount_code'])) {
-        sendMessage(str_replace("AMOUNT", $discountText, $mainValues['valid_discount_code']));
+    if (!empty(\achbotMessage('legacy_messages.valid_discount_code'))) {
+        sendMessage(str_replace("AMOUNT", $discountText, \achbotMessage('legacy_messages.valid_discount_code')));
     } else {
         sendMessage(\achbotMessage('payment.discounts.apply_discount_to_pay.message.e3c216313a') . $discountText);
     }
@@ -326,7 +326,7 @@ function applyDiscountToPay($connection, $rowId, $discountCode, $from_id, $usern
     $msg = str_replace(
         ['USERID', 'USERNAME', 'NAME', 'AMOUNT', 'DISCOUNTCODE'],
         [$from_id, $username, $first_name, $discountText, $discountCode],
-        $mainValues['used_discount_code']
+        \achbotMessage('legacy_messages.used_discount_code')
     );
 
     // ارسال پیام به ادمین خاص
@@ -346,8 +346,7 @@ function applyDiscountToPay($connection, $rowId, $discountCode, $from_id, $usern
 
 // END Apply Discount
 function getDiscountCodeKeys($page = 1){
-    global $connection, $buttonValues;
-
+    global $connection;
     $perPage = 20;
     if($page < 1) $page = 1;
 
@@ -499,7 +498,7 @@ function getDiscountCodeKeys($page = 1){
         ['text'=>\achbotMessage('payment.discounts.get_discount_code_keys.button.87e5644bfa'), 'callback_data'=>"addDiscountCode"]
     ];
     $keys[] = [
-        ['text'=>$buttonValues['back_button'],'callback_data'=>"managePanel"]
+        ['text'=>\achbotMessage('legacy_buttons.back_button'),'callback_data'=>"managePanel"]
     ];
 
     return json_encode(['inline_keyboard'=>$keys]);

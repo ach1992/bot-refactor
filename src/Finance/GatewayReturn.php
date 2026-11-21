@@ -1220,14 +1220,9 @@ function achbotPerformPaymentEffect($payRowId, $gateType, &$effectStage = null) 
     // settlement/review row is assured before the paid claim succeeds.
     $effectStage='preclaim';
     global $connection, $admin, $userInfo, $from_id, $botUrl, $botState;
-    global $buttonValues;
 	
 	$supportID = $botState['supportID'] ?? '';
     $rewardChannel = $botState['rewardChannel'] ?? null;
-    $buttonValuesLocal = (isset($buttonValues) && is_array($buttonValues))
-        ? $buttonValues
-        : ['back_to_main' => \achbotMessage('gateway.gateway_return.perform_payment_effect.text.275b4903d9')];
-
 
     $time = time();
 
@@ -1522,7 +1517,6 @@ function achbotPerformPaymentEffect($payRowId, $gateType, &$effectStage = null) 
                 $user_id,
                 $volume,
                 $days,
-                $buttonValuesLocal,
                 [],
                 false,
                 "pay/",

@@ -12,7 +12,6 @@ error_reporting(E_ALL);
 set_error_handler(static function($n,$m){if($n===E_DEPRECATED)return true;throw new ErrorException($m,0,$n);});
 $_SERVER['SCRIPT_FILENAME']=__FILE__;
 $spec=json_decode($argv[4],true);$root=$argv[1];
-require $root.'/messages/loader.php';
 require_once $root.'/messages/loader.php';
 $mainValues=achbotMessages('legacy_messages');
 $buttonValues=achbotMessages('legacy_buttons');

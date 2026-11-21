@@ -72,7 +72,7 @@ if (preg_match('/freeTrial(\d+)_(?<buyType>\w+)/', $data, $match)) {
         $price
     );
 
-    ensureServerCapacity($connection, $server_id, $inbound_id, $acount, $mainValues);
+    ensureServerCapacity($connection, $server_id, $inbound_id, $acount);
     $uniqid = generateRandomString(42, $protocol);
 
     [$serverInfo, $serverConfig] = getServerInfoAndConfig($connection, $server_id);
@@ -109,7 +109,7 @@ if (preg_match('/freeTrial(\d+)_(?<buyType>\w+)/', $data, $match)) {
     // چک موفقیت ساخت اکانت
     ensureAccountCreationSucceeded($response, $serverInfo, $inbound_id, $admin);
 
-    alert($mainValues['sending_config_to_user']);
+    alert(\achbotMessage('legacy_messages.sending_config_to_user'));
 
     [$token, $vray_link, $uniqid, $caption, $keys, $qrLink] = buildLinksAndSendQr(
         $serverType,
@@ -131,7 +131,6 @@ if (preg_match('/freeTrial(\d+)_(?<buyType>\w+)/', $data, $match)) {
         $from_id,
         $volume,
         $days,
-        $buttonValues,
         [],
         false,
         '',

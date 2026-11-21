@@ -14,7 +14,7 @@ if((preg_match('/^discountSelectPlan(\d+)_(\d+)_(\d+)/',$userInfo['step'],$match
     preg_match('/enterAccountName(\d+)_(\d+)_(?<buyType>\w+)/',$userInfo['step'], $match) ||  
     preg_match('/selectPlan(\d+)_(\d+)_(?<buyType>\w+)/',$data, $match)) &&  
     ($botState['sellState']=="on" ||$from_id ==$admin) &&  
-    $text != $buttonValues['cancel']){ 
+    $text != \achbotMessage('legacy_buttons.cancel')){
     if (!achbotSupportsPlan($connection, (int)($match[1] ?? 0))) {
         alert(\achbotMessage('purchase.entry_and_bulk.create_multiple_accounts.alert.d3fb64c4d9'), true);
         return;
@@ -31,7 +31,6 @@ if((preg_match('/^discountSelectPlan(\d+)_(\d+)_(\d+)/',$userInfo['step'],$match
             $username,
             $first_name,
             $admin,
-            $mainValues,
             $botState
         );
 
@@ -44,7 +43,7 @@ if((preg_match('/^discountSelectPlan(\d+)_(\d+)_(\d+)/',$userInfo['step'],$match
  
  
     if($botState['remark'] ==  "manual" && preg_match('/^selectPlan/',$data) && $match['buyType'] != "much"){ 
-        sendMessage($mainValues['customer_custome_plan_name'], $cancelKey); 
+        sendMessage(\achbotMessage('legacy_messages.customer_custome_plan_name'), $cancelKey);
         setUser('enterAccountName' . $match[1] . "_" . $match[2] . "_" . $match['buyType']); 
         exit(); 
     } 
@@ -56,7 +55,7 @@ if((preg_match('/^discountSelectPlan(\d+)_(\d+)_(\d+)/',$userInfo['step'],$match
             // decimal or a value which PHP will silently cast during INSERT.
             if (!is_string($text) || preg_match('/^0*[1-9][0-9]*$/D',$text)!==1 ||
                 filter_var(ltrim($text,'0'),FILTER_VALIDATE_INT)===false) {
-                sendMessage($mainValues['send_only_number']); exit();
+                sendMessage(\achbotMessage('legacy_messages.send_only_number')); exit();
             }
             $accountCount=(int)$text;
             setUser();
@@ -67,14 +66,14 @@ if((preg_match('/^discountSelectPlan(\d+)_(\d+)_(\d+)/',$userInfo['step'],$match
             $remark = $text; 
             setUser(); 
         } else{ 
-            sendMessage($mainValues['incorrect_config_name']); 
+            sendMessage(\achbotMessage('legacy_messages.incorrect_config_name'));
             exit(); 
         } 
     } 
     else{ 
         if($match['buyType'] == "much"){ 
             setUser($data); 
-            sendMessage($mainValues['enter_account_amount'], $cancelKey); 
+            sendMessage(\achbotMessage('legacy_messages.enter_account_amount'), $cancelKey);
             exit(); 
         } 
     } 
@@ -82,7 +81,7 @@ if((preg_match('/^discountSelectPlan(\d+)_(\d+)_(\d+)/',$userInfo['step'],$match
      
     $id = $match[1]; 
 	$call_id = $match[2]; 
-    alert($mainValues['receving_information']); 
+    alert(\achbotMessage('legacy_messages.receving_information'));
     $stmt = $connection->prepare("SELECT * FROM `server_plans` WHERE `id`=? and `active`=1"); 
     $stmt->bind_param("i", $id); 
     $stmt->execute(); 
@@ -106,7 +105,7 @@ if((preg_match('/^discountSelectPlan(\d+)_(\d+)_(\d+)/',$userInfo['step'],$match
     $price=(int)$respd['price'];
     if (isset($accountCount)) {
         if ($price<0 || $price>0 && $accountCount>intdiv(PHP_INT_MAX,$price)) {
-            alert($mainValues['send_only_number']); return;
+            alert(\achbotMessage('legacy_messages.send_only_number')); return;
         }
         $price*=$accountCount;
     }
@@ -150,24 +149,24 @@ if((preg_match('/^discountSelectPlan(\d+)_(\d+)_(\d+)/',$userInfo['step'],$match
             $price = $afterDiscount; 
         } 
          
-        if(achbotManualEnabled('bank_transfer') && achbotPayUxAudienceAllowed($connection,'bank_transfer',(int)$from_id)) $keyboard[] = [['text' => $buttonValues['cart_to_cart'],  'callback_data' => "payBuyWithCartToCart$hash_id"]];
-        if(achbotManualEnabled('gift_card') && achbotPayUxAudienceAllowed($connection,'gift_card',(int)$from_id)) $keyboard[] = [['text' => $buttonValues['gift_card'], 'callback_data' => "payBuyWithGiftCard$hash_id"]];
+        if(achbotManualEnabled('bank_transfer') && achbotPayUxAudienceAllowed($connection,'bank_transfer',(int)$from_id)) $keyboard[] = [['text' => \achbotMessage('legacy_buttons.cart_to_cart'),  'callback_data' => "payBuyWithCartToCart$hash_id"]];
+        if(achbotManualEnabled('gift_card') && achbotPayUxAudienceAllowed($connection,'gift_card',(int)$from_id)) $keyboard[] = [['text' => \achbotMessage('legacy_buttons.gift_card'), 'callback_data' => "payBuyWithGiftCard$hash_id"]];
     if ((achbotManualCryptoEnabled((int)$from_id) && (achbotPayUxAudienceAllowed($connection,'manual_usdt',(int)$from_id) || achbotPayUxAudienceAllowed($connection,'manual_trx',(int)$from_id)))) $keyboard[] = [['text' => \achbotMessage('purchase.catalogue.button.e729457ba2'), 'callback_data' => "mcm_$hash_id"]];
-        if(($botState['nowPaymentOther'] == "on" && achbotPayUxAudienceAllowed($connection,'nowpayments',(int)$from_id) && achbotUsdtRateForUser($connection,(int)$from_id)!==null)) $keyboard[] = [['text' => $buttonValues['now_payment_gateway'],  'url' => $botUrl . "pay/checkout.php?nowpayment&hash_id=" . $hash_id]];
-        if(($botState['zarinpal'] == "on" && achbotPayUxAudienceAllowed($connection,'zarinpal',(int)$from_id))) $keyboard[] = [['text' => $buttonValues['zarinpal_gateway'],  'url' => $botUrl . "pay/checkout.php?zarinpal&hash_id=" . $hash_id]];
-        if(($botState['nextpay'] == "on" && achbotPayUxAudienceAllowed($connection,'nextpay',(int)$from_id))) $keyboard[] = [['text' => $buttonValues['nextpay_gateway'],  'url' => $botUrl . "pay/checkout.php?nextpay&hash_id=" . $hash_id]];
-        if(($botState['walletState'] == "on" && achbotPayUxAudienceAllowed($connection,'wallet',(int)$from_id))) $keyboard[] = [['text' => $buttonValues['pay_with_wallet'],  'callback_data' => "payBuyWithWallet$hash_id"]];
+        if(($botState['nowPaymentOther'] == "on" && achbotPayUxAudienceAllowed($connection,'nowpayments',(int)$from_id) && achbotUsdtRateForUser($connection,(int)$from_id)!==null)) $keyboard[] = [['text' => \achbotMessage('legacy_buttons.now_payment_gateway'),  'url' => $botUrl . "pay/checkout.php?nowpayment&hash_id=" . $hash_id]];
+        if(($botState['zarinpal'] == "on" && achbotPayUxAudienceAllowed($connection,'zarinpal',(int)$from_id))) $keyboard[] = [['text' => \achbotMessage('legacy_buttons.zarinpal_gateway'),  'url' => $botUrl . "pay/checkout.php?zarinpal&hash_id=" . $hash_id]];
+        if(($botState['nextpay'] == "on" && achbotPayUxAudienceAllowed($connection,'nextpay',(int)$from_id))) $keyboard[] = [['text' => \achbotMessage('legacy_buttons.nextpay_gateway'),  'url' => $botUrl . "pay/checkout.php?nextpay&hash_id=" . $hash_id]];
+        if(($botState['walletState'] == "on" && achbotPayUxAudienceAllowed($connection,'wallet',(int)$from_id))) $keyboard[] = [['text' => \achbotMessage('legacy_buttons.pay_with_wallet'),  'callback_data' => "payBuyWithWallet$hash_id"]];
          
         if(!preg_match('/^discountSelectPlan/', $userInfo['step'])) $keyboard[] = [['text' => \achbotMessage('purchase.catalogue.button.05c3a1e3f4'),  'callback_data' => "haveDiscountSelectPlan_" . $match[1] . "_" . $match[2] . "_" . $rowId]];
  
     } 
-	$keyboard[] = [['text' => $buttonValues['back_to_main'], 'callback_data' => "selectCategory{$call_id}_{$sid}_{$match['buyType']}"]]; 
+	$keyboard[] = [['text' => \achbotMessage('legacy_buttons.back_to_main'), 'callback_data' => "selectCategory{$call_id}_{$sid}_{$match['buyType']}"]];
     $priceC = ($price == 0) ? \achbotMessage('purchase.catalogue.text.dda7ff2974') : number_format($price).\achbotMessage('purchase.catalogue.text.bfb7221456');
     if(isset($accountCount)){ 
         $eachPrice = number_format($price / $accountCount) . \achbotMessage('purchase.select_plan.text.2cc98f7f7c');
-        $msg = str_replace(['ACCOUNT-COUNT', 'TOTAL-PRICE', 'PLAN-NAME', 'PRICE', 'DESCRIPTION'], [$accountCount, $priceC, $name, $eachPrice, $desc], $mainValues['buy_much_subscription_detail']); 
+        $msg = str_replace(['ACCOUNT-COUNT', 'TOTAL-PRICE', 'PLAN-NAME', 'PRICE', 'DESCRIPTION'], [$accountCount, $priceC, $name, $eachPrice, $desc], \achbotCurrentMessage('buy_much_subscription_detail'));
     } 
-    else $msg = str_replace(['PLAN-NAME', 'PRICE', 'DESCRIPTION'], [$name, $priceC, $desc], $mainValues['buy_subscription_detail']); 
+    else $msg = str_replace(['PLAN-NAME', 'PRICE', 'DESCRIPTION'], [$name, $priceC, $desc], \achbotCurrentMessage('buy_subscription_detail'));
     $sent=sendMessage($msg, json_encode(['inline_keyboard'=>$keyboard]), "HTML");
     require_once __DIR__ . '/../Finance/PaymentLifecycle.php';
     achbotPayUxTrackByHash($connection,(string)$hash_id,(int)$from_id,$sent);

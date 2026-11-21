@@ -285,14 +285,14 @@ def setup(work: Path, env: dict) -> Path:
            'Current bot.php no longer uses strictly guarded direct-gift source')
     # Execute the *actual* final global CANCEL fallback after the protected
     # route; otherwise an obsolete config.php userInfo snapshot can bypass it.
-    legacy_start=bot.rfind("if ($text == $buttonValues['cancel']) {")
+    legacy_start=bot.rfind("if ($text == \\achbotMessage('legacy_buttons.cancel')) {")
     ensure(legacy_start>end,
            'Actual final legacy CANCEL fallback unavailable or unexpected')
     legacy_end=bot.index('\n?>',legacy_start)
     fallback=bot[legacy_start:legacy_end]
     ensure(fallback.count('achbotDirectGiftGuardLegacyCancel(')==1 and
            fallback.index('achbotDirectGiftGuardLegacyCancel(') <
-               fallback.index("sendMessage($mainValues['waiting_message']"),
+               fallback.index("sendMessage(\\achbotMessage('legacy_messages.waiting_message')"),
            'Actual final CANCEL no longer guards persisted actor/step before feedback')
     ensure(re.search(r'\bDELETE\s+FROM\s+\x60?server_plans\x60?(?:\s|$)',
                      fallback,re.I) is None,
