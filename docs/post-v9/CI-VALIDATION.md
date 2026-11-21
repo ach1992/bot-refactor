@@ -36,6 +36,13 @@ main pushes under the single `php85-validation` required status:
   spanning original per-installation overrides and context escaping)
   and executable Telegram wire argument parity (898 calls for send/edit/photo/
   callback), including negative parse-mode, keyboard and missing-send probes.
+  The source-real main-menu suite compares 40 customer/agent/staff/feature-
+  flag configurations to the accepted pre-refactor menu's full JSON keyboard
+  (exact text, order, callback and URLs), plus 18 pinned current-layout cases
+  and a negative callback mutation. The current management-menu suite runs
+  473 source-real server/plan/permission/cancellation assertions using the
+  actual two-file catalog and disposable MariaDB, not the retired test-only
+  English Cancel/button maps.
   The old global legacy text/button maps and indirect $GLOBALS aliases must
   not reappear. A pure local-array formatter remains in Presentation/Text.php.
 - `tools/ci_quick.py` also runs real-source PHP, finance, payment/checkout,

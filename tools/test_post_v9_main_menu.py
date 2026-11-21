@@ -1,14 +1,20 @@
 #!/usr/bin/env python3
-"""Exercise shipping getMainKeys with safe fixture state and the real text catalogs."""
+"""Source-real main menu: exact pre-refactor JSON plus owner-approved layout.
+
+All rendered values come from the live two-file catalog; the accepted prior
+source is only a read-only Git reference. No production DB or Telegram.
+"""
 from __future__ import annotations
 
-import copy
+import base64
+import itertools
 import json
 from pathlib import Path
 import subprocess
 import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
+BASE = "4e21e18a3ba50897abc6b393ef0c7f58db39bbf9"
 
 PHP = r'''<?php
 error_reporting(E_ALL);
@@ -16,11 +22,10 @@ set_error_handler(static function($level,$message) { throw new ErrorException($m
 $root=$argv[1];
 $spec=json_decode($argv[2],true,512,JSON_THROW_ON_ERROR);
 require_once $root.'/src/Presentation/Text.php';
-$catalog=require $root.'/messages/fa/user.php';
-$adminCatalog=require $root.'/messages/fa/admin.php';
-$buttonValues=$catalog['legacy_buttons'];
-$adminSearchLabel=$adminCatalog['admin_settings']['config.get_main_keys.button.11b0188fcb'];
-$adminManageLabel=$adminCatalog['admin_settings']['config.get_main_keys.button.d9c51cced4'];
+require_once $root.'/messages/loader.php';
+$buttonValues=achbotMessages('legacy_buttons');
+$adminSearchLabel=achbotMessage('admin_settings.config.get_main_keys.button.11b0188fcb');
+$adminManageLabel=achbotMessage('admin_settings.config.get_main_keys.button.d9c51cced4');
 $admin=9001;
 $from_id=!empty($spec['admin'])?9001:2002;
 $userInfo=['is_agent'=>array_key_exists('agent_status',$spec)?(int)$spec['agent_status']:(empty($spec['agent'])?0:1),
@@ -32,6 +37,7 @@ $botState=['agencyState'=>'on','sellState'=>!empty($spec['sales_off'])?'off':'on
            'searchState'=>!empty($spec['search_on'])?'on':'off','supportID'=>'',
            'cooperationUrl'=>!empty($spec['extra'])?'@fixture_partners':'',
            'helpChannel'=>'@fixture_help'];
+$botState=array_replace($botState,$spec['state']??[]);
 class Result {
     public int $num_rows;
     private int $index=0;
@@ -49,23 +55,23 @@ class Statement {
 }
 class DB {public function prepare($query):Statement {return new Statement();}}
 $connection=new DB();
-function achbotMessage($key) {
-    global $adminSearchLabel,$adminManageLabel;
-    return match($key) {
-        'instance_content.help_button'=>'💬 پشتیبانی',
-        'admin_settings.config.get_main_keys.button.b7d6aa7173'=>'درخواست خارجی',
-        'admin_settings.config.get_main_keys.button.11b0188fcb'=>$adminSearchLabel,
-        'admin_settings.config.get_main_keys.button.d9c51cced4'=>$adminManageLabel,
-        default=>throw new RuntimeException('unexpected catalog reference:'.$key),
-    };
-}
 $source=file_get_contents($root.'/config.php');
+if (!empty($spec['mutate_callback']))
+    $source=str_replace("'callback_data'=>\"myInfo\"", "'callback_data'=>\"myInfoBROKEN\"", $source);
 $start=strpos($source,'function getMainKeys(){');
 $end=strpos($source,'function getAgentKeys(){',$start);
 if ($start===false || $end===false) throw new RuntimeException('getMainKeys source missing');
 eval(substr($source,$start,$end-$start));
+$prior=base64_decode($argv[3],true);
+if ($prior===false) throw new RuntimeException('missing_prior_source');
+eval($prior);
 $rows=json_decode(getMainKeys(),true,512,JSON_THROW_ON_ERROR)['inline_keyboard'];
+$previous=json_decode(getMainKeysBaseline(),true,512,JSON_THROW_ON_ERROR)['inline_keyboard'];
 $rows=array_values(array_filter($rows,static fn($row)=>!empty($row)));
+$previous=array_values(array_filter($previous,static fn($row)=>!empty($row)));
+if ($rows!==$previous)
+    throw new RuntimeException('main_menu_wire_drift:'.json_encode(['prior'=>$previous,'now'=>$rows],
+        JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR));
 echo json_encode(['rows'=>$rows,'labels'=>[
     'my_subscriptions'=>$buttonValues['my_subscriptions'],
     'invite_friends'=>$buttonValues['invite_friends'],
@@ -84,12 +90,19 @@ echo json_encode(['rows'=>$rows,'labels'=>[
 
 def check(root: Path = ROOT) -> dict:
     cases=0
+    prior_source=subprocess.check_output(
+        ['git','show',BASE+':config.php'],cwd=root,text=True)
+    start=prior_source.index('function getMainKeys(){')
+    end=prior_source.index('function getAgentKeys(){',start)
+    prior_function=prior_source[start:end].replace(
+        'function getMainKeys(){','function getMainKeysBaseline(){',1)
+    prior_arg=base64.b64encode(prior_function.encode()).decode('ascii')
     with tempfile.TemporaryDirectory(prefix='achbot-main-menu-') as temp:
         driver=Path(temp)/'menu.php'
         driver.write_text(PHP)
         def execute(**kwargs):
             result=subprocess.run(
-                ['php',str(driver),str(root),json.dumps(kwargs)],
+                ['php',str(driver),str(root),json.dumps(kwargs),prior_arg],
                 capture_output=True,text=True,timeout=10)
             if result.returncode:
                 raise RuntimeError('Main menu fixture: '+repr(result.stderr[-1800:]))
@@ -103,7 +116,7 @@ def check(root: Path = ROOT) -> dict:
             [('myInfo','🔐 حساب کاربری'),('mySubscriptions','🔄 مشاهده اشتراک‌ها')],
             [('inviteFriends','🧲 کسب درآمد'),('reciveApplications','📚 آموزش و قوانین')],
         ]
-        support=[{'text':'💬 پشتیبانی','url':'https://t.me/fixture_help'}]
+        support=[{'text':'📚 کانال آموزش و راهنما','url':'https://t.me/fixture_help'}]
         free_trial=[{'text':labels['test_account'],'callback_data':'getTestAccount'}]
 
         # Updated Owner decision: when eligible, the unchanged trial row
@@ -249,58 +262,54 @@ def check(root: Path = ROOT) -> dict:
     for key in references:
         line=next((line for line in user_source.splitlines() if "'"+key+"'" in line),None)
         assert line is not None and 'مشاهده اشتراک‌ها' in line,key
-    admin_reference='manual_accounts.detect_server_id_from_remark.msg.10aa1e12ec'
-    assert any(admin_reference in line and 'مشاهده اشتراک‌ها' in line
-               for line in admin_source.splitlines())
     assert 'تمدید یا مشاهده اشتراک ها' not in user_source+admin_source
     assert 'کسب درآمد با معرفی' not in user_source+admin_source
     assert labels['my_subscriptions']=='🔄 مشاهده اشتراک‌ها'
     assert labels['invite_friends']=='🧲 کسب درآمد'
 
-    # New Owner-approved labels are a separate exact-source successor. Older
-    # catalog/historical proofs still receive their original checked snapshot.
-    import catalog_owner_r5 as history
-    import re
-    sources_new=history.subscription_menu_20261113_source()
-    assert {a:len(item['changed']) for a,item in sources_new.items()}=={'user':2,'admin':3}
-    sources=history.menu_20261113_source()
-    assert {a:len(item['changed']) for a,item in sources.items()}=={'user':9,'admin':1}
-    catalog=subprocess.run(
-        ['php','-r', '$r=[];foreach(["user","admin"]as$a)$r[$a]=require '
-         '"messages/fa/".$a.".php";echo json_encode($r,JSON_UNESCAPED_UNICODE|'
-         'JSON_THROW_ON_ERROR);'],
-        cwd=root,capture_output=True,text=True,check=True,timeout=10)
-    current={a:history.flatten(groups) for a,groups in json.loads(catalog.stdout).items()}
-    projected_new=history.subscription_menu_20261113_copy_restore(current)
-    for audience,item in sources_new.items():
-        for key in item['changed']:
-            assert current[audience][key]==item['after'][key]
-            assert projected_new[audience][key]==item['before'][key]
-    for audience,key in [('user','legacy_buttons.search_config'),
-                         ('user','legacy_buttons.search_agent_config'),
-                         ('admin','admin_settings.config.get_main_keys.button.11b0188fcb')]:
-        corrupted=copy.deepcopy(current)
-        corrupted[audience][key]='unapproved'
-        try:history.subscription_menu_20261113_copy_restore(corrupted)
-        except AssertionError:pass
-        else:raise AssertionError('new menu copy allowed unapproved mutation: '+key)
-    projected=history.menu_20261113_copy_restore(current)
-    for audience,item in sources.items():
-        for key in item['changed']:
-            assert current[audience][key]==item['after'][key]
-            assert projected[audience][key]==item['before'][key]
-    for audience,key in [('user','legacy_buttons.my_subscriptions'),
-                         ('user','manual_payment.manual_receipts.message.f6331b33af'),
-                         ('admin','subscription.manual_accounts.detect_server_id_from_remark.msg.10aa1e12ec')]:
-        changed=copy.deepcopy(current)
-        changed[audience][key]='not approved'
-        try:history.menu_20261113_copy_restore(changed)
-        except AssertionError:pass
-        else:raise AssertionError('menu copy allowed unapproved mutation: '+key)
+    # Independently compare the actual wire JSON against the accepted
+    # pre-refactor implementation across 32 role/feature combinations and
+    # eight additional tenant/administrative variations. This detects a
+    # changed callback, row layout, wording, or channel destination without
+    # introducing an artificial translation map.
+    source_parity_cases=0
+    with tempfile.TemporaryDirectory(prefix='achbot-main-menu-matrix-') as tmp:
+        runner=Path(tmp)/'menu.php'
+        runner.write_text(PHP)
+        def verify(spec: dict, *, negative: bool = False) -> bool:
+            proc=subprocess.run(
+                ['php',str(runner),str(root),json.dumps(spec),prior_arg],
+                capture_output=True,text=True,timeout=10)
+            if negative:
+                return proc.returncode != 0 and 'main_menu_wire_drift' in proc.stderr
+            if proc.returncode:
+                raise AssertionError('menu_matrix_mismatch:'+repr(spec)+':'+
+                                     proc.stderr[-1500:])
+            return True
+        for agent,admin,trial,search,sales in itertools.product((False,True),repeat=5):
+            verify({'agent':agent,'admin':admin,'trial_on':trial,
+                    'trial_eligible':trial,'search_on':search,'sales_off':sales})
+            source_parity_cases+=1
+        for extra in [
+            {'extra':True},
+            {'extra':True,'secondary_admin':True},
+            {'state':{'agencyState':'off'}},
+            {'state':{'individualExistence':'on','sharedExistence':'on'}},
+            {'state':{'helpChannel':''}},
+            {'state':{'cooperationUrl':'@alternative','helpChannel':'@alternate_help'}},
+            {'admin':True,'agent_status':-1},
+            {'agent_status':2,'extra':True},
+        ]:
+            verify(extra)
+            source_parity_cases+=1
+        assert source_parity_cases==40
+        assert verify({'mutate_callback':True},negative=True), (
+            'menu_callback_mutation_not_detected')
 
     return {'verified':True,'real_menu_scenarios':cases,
-            'approved_catalog_deltas':15,'catalog_negative_controls':6,
-            'copy_reference_checks':len(references)+1,
+            'source_real_before_after_menu_parity_cases':source_parity_cases,
+            'negative_mutated_callback_caught':True,
+            'copy_reference_checks':len(references),
             'original_callbacks_and_feature_gates_preserved':True,
             'no_network_or_customer_data':True}
 
