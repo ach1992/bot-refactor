@@ -10,7 +10,11 @@ function achbotProviderStatement(mysqli $db,string $sql,string $types='',array $
         if (!$s || ($types!=='' && !$s->bind_param($types,...$values)) || !$s->execute())
             throw new RuntimeException('provider_storage_unavailable');
         return $s;
-    } catch (Throwable $e) { throw new RuntimeException('provider_storage_unavailable'); }
+    } catch (Throwable $e) {
+        // Keep SQLSTATE/errno available to the owning operation without
+        // exposing SQL text, bound values or provider credentials in logs.
+        throw new RuntimeException('provider_storage_unavailable',0,$e);
+    }
 }
 function achbotProviderRow(mysqli $db,string $sql,string $types='',array $values=[]): ?array {
     $s=achbotProviderStatement($db,$sql,$types,$values);
@@ -518,7 +522,8 @@ function achbotProviderAccountIdentity(mysqli $db,array $account,bool $lock=fals
             (int)$e['order_id']!==$account['order_id'] || (int)$e['plan_id']!==0 ||
             (int)$e['actor_userid']!==$snap['adoption']['actor_userid'] ||
             (int)$e['target_server_id']!==($snap['adoption']['server_id']??null) ||
-            $e['target_key']!=='pg:'.$account['instance_key'] ||
+            !in_array($e['target_key'],['pg:'.$account['instance_key'],
+                'import:'.$account['order_id']],true) ||
             $e['endpoint_sha256']!==$account['endpoint_sha256'] ||
             $e['remote_username']!==$account['remote_username'] ||
             (string)$e['requested_expire']!==(string)($native['expire']??0) ||
@@ -569,6 +574,18 @@ function achbotProviderAdoptAccount(mysqli $db,int $serverId,array $native,array
         'SELECT * FROM service_effects WHERE provider_connection_id=? AND provider_remote_user_id=? LIMIT 1 LOCK IN SHARE MODE',
         'ii',[$panel['id'],$native['id']]));
     $physicalIdentity=null;
+    if ($physical===null) {
+        // Reused Native usernames must not hide an active old identity or
+        // a deleted account that still has live local references.
+        $conflict=achbotProviderRow($db,"SELECT e.id FROM service_effects e
+            WHERE e.provider_connection_id=? AND e.remote_username=?
+              AND e.provider_reference_id IS NOT NULL
+              AND (e.provider_remote_user_id IS NULL OR e.provider_remote_user_id<>?)
+              AND (e.provider_state IS NULL OR e.provider_state<>'deleted' OR EXISTS
+                  (SELECT 1 FROM orders_list o WHERE o.provider_effect_id=e.id AND o.status=1))
+            LIMIT 1 FOR UPDATE",'isi',[$panel['id'],$native['username'],$native['id']]);
+        if ($conflict!==null) throw new RuntimeException('provider_adoption_username_conflict');
+    }
     if ($physical!==null) {
         $physicalIdentity=achbotProviderAccountIdentity($db,$physical,true);
         if ($physical['provider']!=='pasarguard' || $physical['state']!=='linked' ||
@@ -591,7 +608,11 @@ function achbotProviderAdoptAccount(mysqli $db,int $serverId,array $native,array
     }
     $json=json_encode($snapshot,JSON_THROW_ON_ERROR);$hash=hash('sha256',$json);
     $source='order:'.$orderId;
-    $target=$physical===null?'pg:'.$panel['instance_key']:'attachment:'.$orderId;
+    // Deleted physical incarnations retain their historical pg:<instance>
+    // username fence. An independent new Native ID may reuse that username.
+    // Each import uses its immutable order ID; the Native ID unique index
+    // still prevents double-binding the same physical account.
+    $target=$physical===null?'import:'.$orderId:'attachment:'.$orderId;
     $expiry=$native['expire']??0;
     $s=achbotProviderStatement($db,"INSERT INTO service_effects
         (pay_row_id,source_kind,source_ref,actor_userid,ordinal,reserved_count,operation_id,effect_kind,

@@ -319,8 +319,13 @@ if (preg_match('/^addToOrders([1-9][0-9]*)$/D',(string)$data,$match)) {
         }
     } catch (Throwable $error) {
         if ($begun) {try {$connection->rollback();} catch (Throwable $ignored) {}}
-        $reason=$error instanceof RuntimeException && in_array($error->getMessage(),['import_identity_missing','import_stale','import_actor','import_provider_identity','import_proof','import_begin','import_target_missing','import_server_changed','import_already_attached','import_credential_missing','import_insert','import_commit_unknown'],true)?$error->getMessage():'import_unavailable';
-        error_log('achbot_existing_subscription_import_deferred reason='.$reason.' class='.get_class($error).' line='.$error->getLine());
+        $reason=$error instanceof RuntimeException && in_array($error->getMessage(),['import_identity_missing','import_stale','import_actor','import_provider_identity','import_proof','import_begin','import_target_missing','import_server_changed','import_already_attached','import_credential_missing','import_insert','import_commit_unknown','provider_storage_unavailable'],true)?$error->getMessage():'import_unavailable';
+        $cause=$error;
+        while ($cause->getPrevious()!==null) $cause=$cause->getPrevious();
+        $databaseCode=$cause instanceof mysqli_sql_exception?
+            ' db_errno='.$cause->getCode().' db_sqlstate='.$cause->getSqlState():'';
+        error_log('achbot_existing_subscription_import_deferred reason='.$reason.
+            ' class='.get_class($error).' line='.$error->getLine().$databaseCode);
         if ($committed) return;
         if ($error instanceof RuntimeException && $error->getMessage()==='import_commit_unknown')
             sendMessage(\achbotMessage('subscription.manual_accounts.import_under_review'), null, 'HTML');
