@@ -122,6 +122,21 @@ function achbotGatewayAttentionScope(?mysqli $db=null): string {
                     WHERE dl.pay_row_id=p.id
                       AND dl.state IN ('pending','dispatching','unknown'))
                  $followupSql))" : '';
+    // An original Wallet admin report is independent of customer delivery.
+    // Preserve unresolved original fanout even when the finance pay and
+    // customer acknowledgement have both become terminal. The JSON marker
+    // is exact per payment; a plain old paid invoice is never admitted.
+    $reportSql=$manualReady ? " OR (p.state='paid_with_wallet'
+        AND a.provider='wallet'
+        AND (p.type='RENEW_ACCOUNT'
+            OR p.type LIKE 'INCREASE\\_DAY\\_%'
+            OR p.type LIKE 'INCREASE\\_VOLUME\\_%')
+        AND EXISTS (SELECT 1 FROM setting sr
+            WHERE sr.type=CONCAT('WALLET_ADDON_REPORT:',p.id)
+              AND JSON_VALID(sr.value)
+              AND JSON_UNQUOTE(JSON_EXTRACT(sr.value,'$.pay_id'))=CAST(p.id AS CHAR)
+              AND JSON_UNQUOTE(JSON_EXTRACT(sr.value,'$.state')) IN
+                ('pending','dispatching','unknown_or_partial','manual_dispatching')))" : '';
     // Wallet debits are already committed before `processing_wallet`. Older
     // untouched invoices are NOT admitted. A wallet invoice may intentionally
     // have no hosted payment_attempt: INNER JOIN hid Hell #113346 forever.
@@ -172,6 +187,7 @@ function achbotGatewayAttentionScope(?mysqli $db=null): string {
             $apiSql
             $manualSql
             $deliverySql
+            $reportSql
             $walletSql
         )";
 }

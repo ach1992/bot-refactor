@@ -123,6 +123,181 @@ if (preg_match('/^attentionDelivery(Confirm|Send)_([1-9][0-9]{0,17})_([1-9][0-9]
     return;
 }
 
+// Recover original Wallet creates only when every original CREATE has
+// already been linked and independently verified by authenticated Native GET.
+// For Marzban renewal, provide evidence but never infer additive finality.
+$originalAction=[];
+if (preg_match('/^attWOriginal([IC])_([1-9][0-9]{0,17})(?:_([a-f0-9]{20}))?$/D',
+    (string)($data??''),$originalAction)===1) {
+    if (!achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'payments') ||
+        (int)($chat_id??0)!==(int)$from_id) {
+        answerCallbackQuery($callbackId,achbotMessage('automatic_gateway_review.denied'),true);
+        return;
+    }
+    require_once __DIR__.'/../WalletOriginalRecovery.php';
+    $payId=(int)$originalAction[2];$actor=(int)$from_id;$lines=[];
+    try {
+        $q=$connection->prepare('SELECT type FROM pays WHERE id=?');
+        $q->bind_param('i',$payId);$q->execute();
+        $p=$q->get_result()->fetch_assoc();$q->close();
+        $message='';
+        if ($originalAction[1]==='I' && ($originalAction[3]??'')==='') {
+            if (($p['type']??null)==='RENEW_SCONFIG') {
+                $evidence=achbotWalletOriginalMarzbanInspect(
+                    $connection,$payId,$actor,(int)$admin);
+                $safeOriginal=static fn($v)=>mb_substr((string)($v??''),0,180,'UTF-8');
+                $message=achbotMessageHtml('automatic_gateway_review.wallet_marzban_evidence',[
+                    'payment'=>$payId,'order'=>(int)($evidence['order_id']??0),
+                    'price'=>number_format((int)($evidence['price']??0)),
+                    'original_days'=>(int)($evidence['original_days']??0),
+                    'original_volume'=>(int)($evidence['original_volume']??0),
+                    'plan'=>(int)($evidence['plan_id']??0),
+                    'server'=>(int)($evidence['server_id']??0),
+                    'account'=>$safeOriginal($evidence['remark']??''),
+                    'endpoint'=>$safeOriginal($evidence['endpoint_sha256']??''),
+                    'observed'=>$safeOriginal($evidence['observation']??
+                        $evidence['reason']??'unknown'),
+                    'days'=>(int)($evidence['current_plan_days']??0),
+                    'volume'=>(int)($evidence['current_plan_volume']??0),
+                    'native_state'=>$safeOriginal($evidence['current_native']['status']??
+                        achbotMessage('automatic_gateway_review.unknown')),
+                    'native_expiry'=>$safeOriginal($evidence['current_native']['expire']??
+                        achbotMessage('automatic_gateway_review.unknown')),
+                    'native_bytes'=>$safeOriginal($evidence['current_native']['bytes']??
+                        achbotMessage('automatic_gateway_review.unknown'))]);
+            } elseif (($p['type']??null)==='BUY_SUB') {
+                $result=achbotWalletOriginalBuyInspect(
+                    $connection,$payId,$actor,(int)$admin);
+                $safeOriginal=static fn($v)=>mb_substr((string)($v??''),0,160,'UTF-8');
+                $lineStatus=static fn($s)=>achbotMessage(match((string)$s) {
+                    'matching_original_linked'=>
+                        'automatic_gateway_review.wallet_original_status_linked',
+                    'native_matches_but_original_order_unlinked'=>
+                        'automatic_gateway_review.wallet_original_status_unlinked',
+                    'native_unverified'=>
+                        'automatic_gateway_review.wallet_original_status_unverified',
+                    default=>'automatic_gateway_review.wallet_original_status_missing',
+                });
+                foreach (array_slice($result['lines']??[],0,8) as $line) {
+                    $lines[]=achbotMessageHtml('automatic_gateway_review.wallet_original_line',[
+                        'ordinal'=>$line['ordinal'],'effect'=>$line['effect_id'],
+                        'operation'=>$safeOriginal($line['operation']),
+                        'account'=>$safeOriginal($line['username']),
+                        'order'=>$line['order_id'],'status'=>$lineStatus($line['status']),
+                        'expiry'=>$line['expiry'],'bytes'=>$line['bytes']]);
+                }
+                $message=($result['status']??null)==='ready'
+                    ?achbotMessageHtml('automatic_gateway_review.wallet_original_ready',[
+                        'count'=>$result['count'],'payment'=>$payId])
+                    :achbotMessageHtml('automatic_gateway_review.wallet_original_hold',[
+                        'payment'=>$payId,'reason'=>$safeOriginal(
+                            $result['reason']??$result['status']??'unknown')]);
+                if ($lines) $message.="\n\n".implode("\n",$lines);
+                if (count($result['lines']??[])>8)
+                    $message.="\n".achbotMessageHtml(
+                        'automatic_gateway_review.wallet_original_lines_truncated',[
+                        'visible'=>8,'total'=>count($result['lines'])]);
+                if (($result['status']??null)==='ready') {
+                    $token=achbotWalletOriginalBuyToken($result,$actor);
+                    $lines=[['text'=>achbotMessage('automatic_gateway_review.wallet_original_confirm'),
+                        'callback_data'=>'attWOriginalC_'.$payId.'_'.$token]];
+                } else $lines=[];
+            } else {
+                $message=achbotMessage('automatic_gateway_review.wallet_review_stale');
+            }
+        } elseif ($originalAction[1]==='C' &&
+            ($p['type']??null)==='BUY_SUB' &&
+            preg_match('/^[a-f0-9]{20}$/D',(string)($originalAction[3]??''))===1) {
+            answerCallbackQuery($callbackId,achbotMessage('automatic_gateway_review.checking'));
+            $result=achbotWalletOriginalBuyComplete($connection,$payId,$actor,
+                (int)$admin,(string)$originalAction[3]);
+            $message=achbotMessage(match($result['status']??'review') {
+                'settled_delivery_pending','already_paid'=>'automatic_gateway_review.wallet_original_done',
+                default=>'automatic_gateway_review.wallet_review_stale',
+            });
+        } else $message=achbotMessage('automatic_gateway_review.wallet_review_stale');
+        $buttons=[];
+        if ($lines && isset($lines[0]['callback_data'])) $buttons[]=[$lines[0]];
+        $buttons[]=[['text'=>achbotMessage('automatic_gateway_review.back_list'),
+            'callback_data'=>'attentionCase_'.$payId]];
+        $keyboard=json_encode(['inline_keyboard'=>$buttons],
+            JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
+        $edited=editText($message_id,$message,$keyboard,'HTML',$actor);
+        if (!is_object($edited) || ($edited->ok??false)!==true)
+            sendMessage($message,$keyboard,'HTML',$actor);
+        if ($originalAction[1]==='I') answerCallbackQuery($callbackId);
+    } catch(Throwable $error) {
+        error_log('achbot_wallet_original_ui_deferred pay_id='.$payId.
+            ' actor='.$actor.' reason='.achbotFinanceDiagnosticReason($error));
+        answerCallbackQuery($callbackId,
+            achbotMessage('automatic_gateway_review.wallet_original_hold',[
+                'payment'=>$payId,'reason'=>'operator_unavailable']),true);
+    }
+    return;
+}
+
+// Separate original administrator report lifecycle: no financial/native action.
+// A second send requires the explicit human duplicate-warning confirmation,
+// never a Cron retry or inferred Telegram acknowledgement.
+$reportAction=[];
+if (preg_match('/^attWReport([IS])_([1-9][0-9]{0,17})(?:_([a-f0-9]{20}))?$/D',
+    (string)($data??''),$reportAction)===1) {
+    if (!achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'payments') ||
+        (int)($chat_id??0)!==(int)$from_id) {
+        answerCallbackQuery($callbackId,achbotMessage('automatic_gateway_review.denied'),true);
+        return;
+    }
+    require_once __DIR__.'/../WalletAddonNotices.php';
+    $payId=(int)$reportAction[2];$actor=(int)$from_id;
+    $rows=[];$message='';
+    try {
+        $case=achbotWalletAddonReportCase($connection,$payId);
+        if ($reportAction[1]==='I' && ($reportAction[3]??'')==='') {
+            if ($case && $case['state']==='unknown_or_partial' &&
+                $case['manual_attempts']===0) {
+                $message=achbotMessageHtml('automatic_gateway_review.wallet_report_confirm',
+                    ['payment'=>$payId]);
+                $token=achbotWalletAddonReportToken($case,$actor);
+                $rows[]=[['text'=>achbotMessage('automatic_gateway_review.wallet_report_send'),
+                    'callback_data'=>'attWReportS_'.$payId.'_'.$token]];
+            } elseif ($case && $case['state']==='pending') {
+                $message=achbotMessage('automatic_gateway_review.wallet_report_pending');
+            } else {
+                $message=achbotMessage('automatic_gateway_review.wallet_report_hold');
+            }
+        } elseif ($reportAction[1]==='S' &&
+            preg_match('/^[a-f0-9]{20}$/D',(string)($reportAction[3]??''))===1) {
+            answerCallbackQuery($callbackId,achbotMessage('automatic_gateway_review.checking'));
+            $result=achbotWalletAddonReportManualSend($connection,$payId,$actor,
+                (int)$admin,(string)$reportAction[3]);
+            $message=achbotMessage(match($result) {
+                'acknowledged'=>'automatic_gateway_review.wallet_report_ack',
+                'unknown_or_partial'=>'automatic_gateway_review.wallet_report_unknown',
+                'denied'=>'automatic_gateway_review.denied',
+                'busy'=>'automatic_gateway_review.redrive_busy',
+                'stale'=>'automatic_gateway_review.wallet_review_stale',
+                default=>'automatic_gateway_review.redrive_unavailable',
+            });
+        } else {
+            $message=achbotMessage('automatic_gateway_review.wallet_review_stale');
+        }
+        $rows[]=[['text'=>achbotMessage('automatic_gateway_review.back_list'),
+            'callback_data'=>'attentionCase_'.$payId]];
+        $keyboard=json_encode(['inline_keyboard'=>$rows],
+            JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
+        $edited=editText($message_id,$message,$keyboard,'HTML',$actor);
+        if (!is_object($edited) || ($edited->ok??false)!==true)
+            sendMessage($message,$keyboard,'HTML',$actor);
+        if ($reportAction[1]==='I') answerCallbackQuery($callbackId);
+    } catch(Throwable $error) {
+        error_log('achbot_wallet_report_operator_ui_deferred pay_id='.$payId.
+            ' actor='.$actor.' reason='.achbotFinanceDiagnosticReason($error));
+        answerCallbackQuery($callbackId,
+            achbotMessage('automatic_gateway_review.wallet_report_hold'),true);
+    }
+    return;
+}
+
 // Original Wallet additive exceptions are not safe to reapply. Staff can
 // inspect their exact Native-applied proof, then finish the original local
 // debit/order/audit/notices, never another DAY/VOLUME PUT.
@@ -658,6 +833,32 @@ if (preg_match('/^attention(?:Inbox(?:_[1-9][0-9]{0,17})?|Case_[1-9][0-9]{0,17})
                             if (preg_match('/^(?:approve|accept|accCustom|declineAction_)/D',
                                 (string)($button['callback_data']??''))===1)
                                 $actions[]=$button;
+                }
+            }
+            if ($walletCase && $item['state']==='processing_wallet' &&
+                in_array($type,['BUY_SUB','RENEW_SCONFIG'],true)) {
+                $recover=['text'=>achbotMessage(
+                    'automatic_gateway_review.wallet_original_action'),
+                    'callback_data'=>'attWOriginalI_'.$payId];
+            }
+            if ($walletCase && $item['state']==='paid_with_wallet') {
+                require_once __DIR__.'/../WalletAddonNotices.php';
+                $report=achbotWalletAddonReportCase($connection,$payId);
+                if ($report && $report['state']!=='acknowledged') {
+                    $reportState=achbotMessage(match($report['state']) {
+                        'pending'=>'automatic_gateway_review.wallet_report_state_pending',
+                        'dispatching'=>'automatic_gateway_review.wallet_report_state_dispatching',
+                        'manual_dispatching'=>
+                            'automatic_gateway_review.wallet_report_state_manual_dispatching',
+                        default=>'automatic_gateway_review.wallet_report_state_unknown',
+                    });
+                    $body.="\n".achbotMessageHtml(
+                        'automatic_gateway_review.wallet_report_status',[
+                        'payment'=>$payId,'state'=>$reportState,
+                        'attempts'=>$report['attempts']]);
+                    $recover=['text'=>achbotMessage(
+                        'automatic_gateway_review.wallet_report_action'),
+                        'callback_data'=>'attWReportI_'.$payId];
                 }
             }
             if ($actions) $rows[]=$actions;

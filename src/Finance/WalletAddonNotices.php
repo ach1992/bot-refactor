@@ -297,6 +297,163 @@ function achbotWalletAddonDispatchReport(mysqli $db,int $payId): string {
     }
 }
 
+/** Inspect ONLY a preserved original Wallet administrator report, not a
+ * generic Telegram message or payment. This read does not dispatch anything.
+ */
+function achbotWalletAddonReportCase(mysqli $db,int $payId): ?array {
+    if ($payId<=0) return null;
+    $type='WALLET_ADDON_REPORT:'.$payId;
+    $q=$db->prepare("SELECT p.*,s.id AS marker_id,s.value AS marker_value
+        FROM pays p JOIN payment_attempts a ON a.pay_row_id=p.id
+        JOIN setting s ON s.type=?
+        WHERE p.id=? AND p.state='paid_with_wallet' AND a.provider='wallet'
+        ORDER BY s.id LIMIT 2");
+    if (!$q) throw new RuntimeException('wallet_report_case_prepare');
+    $q->bind_param('si',$type,$payId);$q->execute();
+    $matches=$q->get_result()->fetch_all(MYSQLI_ASSOC);$q->close();
+    if (count($matches)!==1) return null;
+    $record=$matches[0];
+    if (!$record || !in_array(true,[
+        $record['type']==='RENEW_ACCOUNT',
+        preg_match('/^INCREASE_DAY_[1-9][0-9]*_[1-9][0-9]*$/D',(string)$record['type'])===1,
+        preg_match('/^INCREASE_VOLUME_[1-9][0-9]*_[1-9][0-9]*$/D',(string)$record['type'])===1],true))
+        return null;
+    try {
+        $meta=json_decode((string)$record['marker_value'],true,64,JSON_THROW_ON_ERROR);
+        if (!is_array($meta) || ($meta['version']??null)!==1 ||
+            ($meta['pay_id']??null)!==$payId ||
+            !in_array(($meta['state']??null),[
+                'pending','dispatching','unknown_or_partial','manual_dispatching','acknowledged'],true) ||
+            !is_string($meta['sealed']??null) || $meta['sealed']==='' ||
+            !is_int($meta['attempts']??null) || $meta['attempts']<0 ||
+            !is_int($meta['manual_attempts']??0) || ($meta['manual_attempts']??0)<0)
+            return null;
+        $packet=achbotPaymentEvidenceUnprotect(
+            'wallet-addon-admin-report:'.$payId,$meta['sealed']);
+        if (!is_array($packet) || ($packet['version']??null)!==1 ||
+            ($packet['pay_id']??null)!==$payId ||
+            ($packet['order_id']??null)!==(int)$record['order_id'] ||
+            ($packet['pay_sha256']??null)!==achbotPaymentEvidencePayFingerprint($record) ||
+            !in_array(($packet['kind']??null),['renew','day','volume'],true) ||
+            !is_string($packet['report_text']??null) || $packet['report_text']==='' ||
+            !is_string($packet['report_buttons']??null))
+            return null;
+    } catch(Throwable $error) {
+        error_log('achbot_wallet_report_case_invalid pay_id='.$payId.
+            ' class='.get_class($error));
+        return null;
+    }
+    return ['pay_id'=>$payId,'marker_id'=>(int)$record['marker_id'],
+        'state'=>(string)$meta['state'],'attempts'=>$meta['attempts'],
+        'manual_attempts'=>$meta['manual_attempts']??0,
+        'sealed_digest'=>hash('sha256',$meta['sealed']),
+        'value'=>(string)$record['marker_value'],'kind'=>$packet['kind'],
+        'order_id'=>(int)$record['order_id']];
+}
+
+/** Bound to one actor, original marker and exact persisted report version. */
+function achbotWalletAddonReportToken(array $case,int $actor): string {
+    if ($actor<=0 || (int)($case['pay_id']??0)<=0 ||
+        (int)($case['marker_id']??0)<=0 ||
+        !preg_match('/^[a-f0-9]{64}$/D',(string)($case['sealed_digest']??'')))
+        throw new RuntimeException('wallet_report_confirmation_invalid');
+    return substr(hash_hmac('sha256',implode('|',[
+        'wallet-admin-report-confirm-v1',$actor,$case['pay_id'],$case['marker_id'],
+        $case['state'],$case['attempts'],$case['manual_attempts'],
+        $case['sealed_digest']]),achbotPaymentEvidenceKey()),0,20);
+}
+
+/** An explicit staff decision can make at most ONE additional send attempt
+ * of the SAME encrypted report after UNKNOWN first fanout. This never claims
+ * an old Telegram ACK, reopens finance, or retries Native/Wallet mutations.
+ * Retain a crash-mid-send marker for human review, never auto-repeat it.
+ */
+function achbotWalletAddonReportManualSend(mysqli $db,int $payId,
+    int $actor,int $primary,string $token): string {
+    if ($payId<=0 || $actor<=0 || $primary<=0 ||
+        preg_match('/^[a-f0-9]{20}$/D',$token)!==1) return 'stale';
+    $lease=achbotOriginalDispatchLeaseBegin($db,$payId);
+    if ($lease!=='owned') return $lease==='busy'||$lease==='borrowed'?'busy':'unavailable';
+    $type='WALLET_ADDON_REPORT:'.$payId;$started=false;
+    try {
+        try {
+            $before=achbotWalletAddonReportCase($db,$payId);
+            if (!$before || $before['state']!=='unknown_or_partial' ||
+                $before['manual_attempts']!==0 ||
+                !hash_equals(achbotWalletAddonReportToken($before,$actor),$token))
+                return 'stale';
+            if (!$db->begin_transaction()) throw new RuntimeException('wallet_report_manual_begin');
+            $started=true;
+            $q=$db->prepare('SELECT * FROM pays WHERE id=? FOR UPDATE');
+            $q->bind_param('i',$payId);$q->execute();
+            $pay=$q->get_result()->fetch_assoc();$q->close();
+            require_once __DIR__.'/../Admin/Access.php';
+            if (!achbotAdminCanLocked($db,$actor,$primary,'payments')) {
+                $db->rollback();$started=false;return 'denied';
+            }
+            $q=$db->prepare('SELECT id,value FROM setting WHERE type=? FOR UPDATE');
+            $q->bind_param('s',$type);$q->execute();
+            $row=$q->get_result()->fetch_assoc();$q->close();
+            if (!$pay || $pay['state']!=='paid_with_wallet' || !$row ||
+                (int)$row['id']!==$before['marker_id'] ||
+                $row['value']!==$before['value']) {
+                $db->rollback();$started=false;return 'stale';
+            }
+            $meta=json_decode($row['value'],true,64,JSON_THROW_ON_ERROR);
+            $packet=achbotPaymentEvidenceUnprotect(
+                'wallet-addon-admin-report:'.$payId,$meta['sealed']);
+            if (!is_array($packet) ||
+                ($packet['pay_sha256']??null)!==achbotPaymentEvidencePayFingerprint($pay))
+                throw new RuntimeException('wallet_report_manual_original_changed');
+            $meta['state']='manual_dispatching';
+            $meta['attempts']++;
+            $meta['manual_attempts']=1;
+            $meta['manual_actor']=$actor;
+            $meta['updated_at']=gmdate('c');
+            $claimed=json_encode($meta,JSON_THROW_ON_ERROR);
+            $q=$db->prepare('UPDATE setting SET value=? WHERE id=? AND value=?');
+            $id=$before['marker_id'];$prior=$row['value'];
+            $q->bind_param('sis',$claimed,$id,$prior);
+            if (!$q->execute() || $q->affected_rows!==1)
+                throw new RuntimeException('wallet_report_manual_claim_changed');
+            $q->close();
+            if (!$db->commit()) throw new RuntimeException('wallet_report_manual_commit_unknown');
+            $started=false;
+        } catch (Throwable $error) {
+            if ($started) try {$db->rollback();} catch(Throwable $ignored) {}
+            error_log('achbot_wallet_report_manual_deferred pay_id='.$payId.
+                ' actor='.$actor.' reason='.achbotFinanceDiagnosticReason($error));
+            return 'unavailable';
+        }
+        $ack=false;
+        try {
+            if (function_exists('achbotNotifyAdmins') &&
+                function_exists('achbotAdminFanoutAcknowledged')) {
+                $result=achbotNotifyAdmins('sendMessage',[
+                    'text'=>$packet['report_text'],
+                    'reply_markup'=>$packet['report_buttons'],'parse_mode'=>'HTML']);
+                $ack=achbotAdminFanoutAcknowledged($result);
+            }
+        } catch(Throwable $error) {
+            error_log('achbot_wallet_report_manual_telegram_unknown pay_id='.$payId.
+                ' actor='.$actor.' class='.get_class($error));
+        }
+        $meta['state']=$ack?'acknowledged':'unknown_or_partial';
+        $meta['updated_at']=gmdate('c');
+        $final=json_encode($meta,JSON_THROW_ON_ERROR);
+        $q=$db->prepare('UPDATE setting SET value=? WHERE id=? AND type=? AND value=?');
+        $id=$before['marker_id'];
+        $q->bind_param('siss',$final,$id,$type,$claimed);
+        $ok=$q->execute() && $q->affected_rows===1;$q->close();
+        achbotDiagnosticEvent('achbot.finance.wallet_report_manual_result',[
+            'pay_id'=>$payId,'actor_id'=>$actor,'state'=>$ack?'acknowledged':'unknown_or_partial',
+            'saved'=>$ok],'info');
+        return $ok?$meta['state']:'unavailable';
+    } finally {
+        achbotOriginalDispatchLeaseEnd($db,$payId,$lease);
+    }
+}
+
 /**
  * Two independent Cron duties: source-proven applied-only original settlement
  * and separately persisted first-send admin fanout. No hidden total retries:

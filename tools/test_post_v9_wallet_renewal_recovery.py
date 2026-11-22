@@ -227,6 +227,13 @@ def case(*, variant:str)->list[str]:
             "('ACHBOT_SERVICE_ORIGIN:103',"+api.quote_sql(
                 json.dumps(origin,separators=(',',':')))+")")
         sql("UPDATE users SET wallet=900000 WHERE userid=1001")
+        if variant=='same_order_three_wallet_claims':
+            # Older independent original paid claim exists before the Native
+            # owner. Its payment identity can never borrow another pay:ID.
+            sql("INSERT INTO pays(hash_id,user_id,type,plan_id,server_id,order_id,"
+                "volume,day,price,request_date,state) VALUES "
+                "('wallet-older-independent',1001,'RENEW_ACCOUNT',7,2,103,"
+                "0,0,185000,UNIX_TIMESTAMP()-7400,'processing_wallet')")
         sql("INSERT INTO pays(hash_id,user_id,type,plan_id,server_id,order_id,"
             "volume,day,price,request_date,state) VALUES "
             "('wallet-renew-original-103',1001,'RENEW_ACCOUNT',7,2,103,"
@@ -246,6 +253,52 @@ def case(*, variant:str)->list[str]:
                 raise AssertionError(('fixture_php_failed',cp.returncode,cp.stdout[-1200:],
                                       cp.stderr[-2500:]))
             return json.loads(cp.stdout)
+        if variant=='same_order_three_wallet_claims':
+            older=int(sql("SELECT id FROM pays WHERE hash_id='wallet-older-independent'"))
+            native=call('seed_native')
+            assert native['ok'] and native['result']['verified'],native
+            sql("INSERT INTO pays(hash_id,user_id,type,plan_id,server_id,order_id,"
+                "volume,day,price,request_date,state) VALUES "
+                "('wallet-second-unknown',1001,'RENEW_ACCOUNT',7,2,103,"
+                "0,0,185000,UNIX_TIMESTAMP()-3600,'processing_wallet')")
+            unknown=int(sql("SELECT id FROM pays WHERE hash_id='wallet-second-unknown'"))
+            assert older<pay_id<unknown
+            # Even identical stored provider identity is NOT proof of
+            # a separate payment's original Native operation.
+            snapshot=sql('SELECT provider_snapshot FROM pays WHERE id='+str(pay_id))
+            sql('UPDATE pays SET provider_snapshot='+api.quote_sql(snapshot)+
+                ' WHERE id IN ('+str(older)+','+str(unknown)+')')
+            initial_wallet=sql('SELECT wallet FROM users WHERE userid=1001')
+            with ThreadPoolExecutor(max_workers=3) as pool:
+                actions=[pool.submit(call,'resume',pay_id=pid) for pid in
+                         (unknown,pay_id,older)]
+                results=[f.result() for f in actions]
+            byid=dict(zip((unknown,pay_id,older),results))
+            assert byid[pay_id]['result']['status']=='settled_delivery_pending',byid
+            assert all(byid[pid]['result']['status']=='review'
+                       for pid in (older,unknown)),byid
+            assert sql('SELECT state FROM pays WHERE id='+str(pay_id))=='paid_with_wallet'
+            assert all(sql('SELECT state FROM pays WHERE id='+str(pid))=='processing_wallet'
+                       for pid in (older,unknown))
+            assert sql('SELECT wallet FROM users WHERE userid=1001')==initial_wallet
+            assert sql('SELECT COUNT(*) FROM increase_order')=='1'
+            assert sql('SELECT COUNT(*) FROM payment_delivery_intents')=='1'
+            assert sql('SELECT COUNT(*) FROM payment_attempts')=='1'
+            assert provider.write_count==2,provider.trace
+            assert call('inspect',pay_id=unknown)['result']['status']=='review'
+            assert call('resume',pay_id=older)['result']['status']=='review'
+            assert call('cron_recover',pay_id=unknown)['result']['settled']==0
+            assert all(sql('SELECT state FROM pays WHERE id='+str(pid))=='processing_wallet'
+                       for pid in (older,unknown))
+            assert sql('SELECT COUNT(*) FROM increase_order')=='1'
+            assert provider.write_count==2
+            checks.extend([
+                'one_order_older_original_and_later_unknown_distinct_wallet_claims',
+                'concurrent_operator_proof_belongs_only_to_exact_original_pay_id',
+                'foreign_payment_cannot_borrow_identical_provider_snapshot',
+                'other_original_wallet_claims_remain_reviewable_after_local_settlement',
+                'three_claims_do_not_repeat_native_wallet_audit_or_telegram'])
+            return checks
         if variant=='addon_mutating_live':
             # This is a REAL additive (not synthetic edited state) wallet
             # Native PUT with deferred local financial COMMIT. It creates the
@@ -627,7 +680,8 @@ def main():
                     'auto_cycle_applied','auto_cycle_zero_price',
                     'auto_cycle_partial_native',
                     'render_mutating_live','native_identity_wrong',
-                    'retired_order','addon_mutating_live')
+                    'retired_order','addon_mutating_live',
+                    'same_order_three_wallet_claims')
     for variant in variants:
         checks += [variant+':'+x for x in case(variant=variant)]
     result={'complete':True,'status':'PASS','checks':len(checks),'cases':checks,'real_php':True,
