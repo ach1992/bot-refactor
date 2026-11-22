@@ -117,7 +117,7 @@ As documented in Issue #26 on **2026-11-17**, a target-specific Owner-authorized
 
 `python3 tools/test_post_v9_wallet_marzban_target.py --run-disposable` exercises actual renewal helper, Core dispatcher and Marzban adapter against disposable MariaDB and two independent loopback Marzban HTTP providers with the same account username. It checks endpoint/provider substitution after the initial Wallet Checkout comparison, at the final adapter handoff, during authenticated GET, and normal unchanged-target fulfillment. Only timing/configuration changes are fault-injected in the fixture; Native adapter and HTTP remain current source.
 
-## Original Wallet BUY_SUB and Marzban review (Issue #227, PR #228)
+## Original Wallet BUY_SUB recovery and Marzban renewal review (Issue #227, PR #228)
 
 The existing shared **Payments Requiring Review** inbox retains original
 `BUY_SUB` and `RENEW_SCONFIG` cases when `pays.state=processing_wallet`
@@ -161,8 +161,8 @@ persists verification of **only the original effect**, and returns verified
 subscription links; it never retries Native CREATE. If verification commits
 but subsequent local finality fails, the verified original effect remains
 recoverable with a fresh confirmation token. This may result in a newly minted
-confirmation token for subsequent attempts. The confirmed action owns the original payment
-lease; after preparing first-send customer packets, it locks original payment,
+confirmation token for subsequent attempts. The confirmed action owns the
+original payment lease; after preparing first-send customer packets, it locks original payment,
 hold, effects, orders, archive and current staff permission in a short SQL
 transaction. Each proven `verified` CREATE with no order gets only its
 missing **LOCAL** `orders_list` row, using the original effect entitlement,
