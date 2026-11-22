@@ -19,13 +19,13 @@ ROOT = Path(__file__).resolve().parents[1]
 BASE = "270840a854b06bbe899b76249db68e4748d93739"
 REMOVED_SHA256 = "7b7eb72cb6cc43de76b03ac3a63c4367f40ed3dce4c26008928452b0780d8482"
 ADDED_SHA256 = "31088e8b9a9ee6cdc6a9a015aa8418b49ac6948302eb586a2da6db7f40b1e494"
-# 14 new, source-owned staff Wallet recovery UI entries are an additive
+# 38 new, source-owned staff Wallet recovery UI entries are an additive
 # candidate, not alterations to the Owner-approved original 50 entries.
 # Their literal bytes are frozen for exact-head review and cannot grow or
 # silently change. Owner approval for this new UI remains a separate gate.
-WALLET_RECOVERY_KEY_SHA256 = "d15f58113512b6b7808dbef03c6157abfca5cba632a817fd176341294af62bc6"
-WALLET_RECOVERY_VALUES_SHA256 = "67497b21f07bc7bbafe320c313aeea36d15719dd7b2fff11c8fc74a06d68b33a"
-WALLET_RECOVERY_COUNT = 14
+WALLET_RECOVERY_KEY_SHA256 = "87bb18bef2ddaa8cc3f6a79c6efd46aae773b5e0f23c3d1d80159ed22361d2f1"
+WALLET_RECOVERY_VALUES_SHA256 = "5b56e762d93f8e9ea2cf664f806dfc6498db5bb34b8575ba56858b41f6122ab5"
+WALLET_RECOVERY_COUNT = 38
 REVIEW_R1_RETIRED = ('legacy_buttons.manual_usdt', 'legacy_messages.buy_custom_subscription_detail', 'manual_payment.api_payment.status_monitoring')
 EXPECTED_LABELS = {
     "automatic_gateway_review.unlimited_expiry": "نامحدود",

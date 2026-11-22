@@ -27,13 +27,17 @@ EXPECTED = {"sendMessage": 694, "editText": 130, "sendPhoto": 12,
 # sends. All other pre-refactor wire arguments retain exact comparison.
 LEGACY_HTML_TRANSITIONS = 74
 LEGACY_HTML_AUDIT = "16eed331aeb2e2fd8c4133fe03d3c0d8318761cd371ebf24d6a073852136009b"
-# Wallet exception operator callbacks are a reviewed, additive *new* block.
+# Wallet exception operator callbacks form an additive exact-hash candidate
+# for independent review; this source audit does not grant approval.
 # Every preexisting wire call retains its baseline arguments, order and modes.
 WALLET_UI_PATH = "src/Finance/Routes/AutomaticGatewayReview.php"
 WALLET_UI_START = 6
-WALLET_UI_NEW_CALLS = 13
-WALLET_UI_SHA256 = "5d1c31fcd7cee8387977d2fef0c251845088120d9a505bd74ea297d254892998"
-NEW_RUNTIME_WITHOUT_TELEGRAM = frozenset({"src/Finance/WalletRenewalRecovery.php"})
+WALLET_UI_NEW_CALLS = 25
+WALLET_UI_SHA256 = "73bc45620d974f28e58ddbc4a94be6abfd7ffac6df8ffe6d0b7801cf932ead4b"
+NEW_RUNTIME_WITHOUT_TELEGRAM = frozenset({
+    "src/Finance/WalletRenewalRecovery.php",
+    "src/Finance/WalletOriginalRecovery.php",
+})
 LEGACY_DIRECT = re.compile(
     r"""\\achbotMessage\(['"]legacy_messages\.([a-z0-9_]+)['"]\)\Z"""
 )
