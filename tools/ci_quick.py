@@ -66,6 +66,7 @@ OTHER_TESTS = (
      "report"),
     ("cron_runner", ("python3", "tools/test_post_v9_cron_runner.py"), "report"),
     ("payment_reference", ("python3", "tools/test_post_v9_payment_identity.py"), "stdout"),
+    ("wallet_callback_dispatch", ("python3", "tools/test_post_v9_wallet_callback_dispatch.py"), "stdout"),
     ("telegram_log_privacy", ("php", "-n", "tools/test_post_v9_telegram_log_privacy.php"), "stdout"),
     ("telegram_presentation", ("php", "-n", "tools/test_post_v9_telegram_presentation.php"), "stdout"),
     ("telegram_html_callsite_parity", ("python3", "tools/test_post_v9_telegram_html_callsite_parity.py"), "stdout"),

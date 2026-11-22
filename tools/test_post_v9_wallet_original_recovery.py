@@ -117,7 +117,7 @@ try {
         $data=(string)$spec['data'];
         $from_id=$actor;$chat_id=$actor;$callbackId='fixture-callback';
         $message_id=77;
-        require $root.'/src/Finance/Routes/AutomaticGatewayReview.php';
+        require $root.'/src/Finance/Routes/ManualReceipts.php';
         $result=['handled'=>true];
     } elseif ($op==='inspect'){
         $e=achbotWalletOriginalBuyInspect($db,$payId,$actor,$primary);

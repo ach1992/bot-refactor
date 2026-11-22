@@ -12,9 +12,16 @@ if (!achbotAdminRequestAllowed(is_string($data??null)?$data:null,is_string($text
 
 // Keep hosted-gateway exceptions outside the manual receipt handler.
 $adminCallback=(string)($data??'');
+// These are all action families issued by the same payments-attention inbox.
+// Forward the actual Telegram callback, not just the inbox/card callbacks;
+// the receiving route performs fresh payment, actor and Native checks.
 if (str_starts_with($adminCallback,'attentionInbox') ||
     str_starts_with($adminCallback,'attentionCase_') ||
     str_starts_with($adminCallback,'attentionDelivery') ||
+    str_starts_with($adminCallback,'attentionWallet') ||
+    str_starts_with($adminCallback,'attWOriginal') ||
+    str_starts_with($adminCallback,'attWAdd') ||
+    str_starts_with($adminCallback,'attWReport') ||
     str_starts_with($adminCallback,'gatewayReview_')) {
     require __DIR__.'/AutomaticGatewayReview.php';
     return;

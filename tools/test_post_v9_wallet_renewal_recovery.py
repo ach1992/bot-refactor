@@ -178,7 +178,7 @@ try {
         $chat_id=$from_id;$admin=9001;$message_id=41;
         $callbackId='wallet-fixture-callback';
         $data=(string)($spec['callback']??'');
-        require $root.'/src/Finance/Routes/AutomaticGatewayReview.php';
+        require $root.'/src/Finance/Routes/ManualReceipts.php';
         $result=['handled'=>true];
     }elseif($op==='cron_recover'){
         $result=achbotWalletPgRenewMaintain($db);
