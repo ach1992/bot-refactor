@@ -108,12 +108,12 @@ return [
         'wallet' => 'افزایش موجودی کیف پول',
         'wallet_provider' => 'کیف پول',
         'wallet_original_action' => '🔎 بررسی اثر اصلی Wallet',
-        'wallet_original_ready' => ['text' => '✅ هر {count} حساب اصلی Native و سفارش محلی با پرداخت <code>{payment}</code> مطابقت دارند. تسویهٔ محلی، بدون کسر کیف پول یا CREATE، فقط با تأیید شما انجام می‌شود.', 'parameters' => ['count','payment']],
+        'wallet_original_ready' => ['text' => '✅ هر {count} حساب اصلی Native برای پرداخت <code>{payment}</code> با شواهد عملیات اصلی مطابقت دارند. با تأیید شما، رکوردهای محلی ناقص بازیابی و همان پرداخت نهایی می‌شود؛ بدون ساخت حساب Native، کسر کیف پول یا تخصیص مجدد ظرفیت.', 'parameters' => ['count','payment']],
         'wallet_original_confirm' => '✅ تکمیل همین پرداخت و ثبت پیام‌های اولیه',
         'wallet_original_line' => ['text' => '▫️ ردیف {ordinal} | Effect: <code>{effect}</code> | Operation: <code>{operation}</code> | حساب: <code>{account}</code> | سفارش: <code>{order}</code> | وضعیت: {status} | انقضا: {expiry} | حجم: {bytes} بایت', 'parameters' => ['ordinal','effect','operation','account','order','status','expiry','bytes']],
         'wallet_original_lines_truncated' => ['text' => 'ℹ️ نمایش {visible} ردیف از {total} ردیف؛ پیش از تأیید، همهٔ ردیف‌ها در Native بررسی می‌شوند.', 'parameters' => ['visible','total']],
         'wallet_original_status_linked' => '✅ حساب و سفارش اصلی تأیید شد',
-        'wallet_original_status_unlinked' => '⚠️ حساب Native پیدا شد اما سفارش محلی اصلی قابل اثبات نیست',
+        'wallet_original_status_unlinked' => '🧾 حساب Native تأیید شد؛ رکورد محلی اصلی قابل بازیابی است',
         'wallet_original_status_unverified' => '⚠️ پاسخ Native یا هویت حساب تأیید نشد',
         'wallet_original_status_missing' => '⏳ عملیات اصلی به سفارش معتبر متصل نشده است',
         'wallet_report_state_pending' => '⏳ در صف ارسال اولیه',
@@ -122,7 +122,7 @@ return [
         'wallet_report_state_unknown' => '⚠️ تحویل نامعلوم یا ناقص',
 
         'wallet_original_hold' => ['text' => '⚠️ پرداخت <code>{payment}</code> هنوز قابل نهایی‌سازی نیست. دلیل: <code>{reason}</code>. نتیجهٔ نامعلوم Native اجازهٔ ساخت حساب یا تخصیص ظرفیت دوباره نیست.', 'parameters' => ['payment','reason']],
-        'wallet_original_done' => '✅ همان پرداخت Wallet نهایی و پیام‌های اولیهٔ هر حساب به صف ارسال امن اضافه شد. هیچ حساب، ظرفیت یا بدهی تازه‌ای ایجاد نشد.',
+        'wallet_original_done' => '✅ همان پرداخت Wallet نهایی شد؛ رکوردهای محلیِ لازم بازیابی و پیام‌های اولیهٔ هر حساب و گزارش ادمین ثبت شد. هیچ حساب Native، ظرفیت یا بدهی تازه‌ای ایجاد نشد.',
         'wallet_marzban_evidence' => ['text' => "⚠️ بررسی تمدید اصلی Marzban (بدون ژورنال قطعی)
 🧾 پرداخت: <code>{payment}</code> | سفارش: <code>{order}</code>
 📦 پلن: <code>{plan}</code> | سرور: <code>{server}</code> | مبلغ اصلی: {price} تومان

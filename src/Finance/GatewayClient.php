@@ -128,7 +128,7 @@ function achbotGatewayAttentionScope(?mysqli $db=null): string {
     // is exact per payment; a plain old paid invoice is never admitted.
     $reportSql=$manualReady ? " OR (p.state='paid_with_wallet'
         AND a.provider='wallet'
-        AND (p.type='RENEW_ACCOUNT'
+        AND (p.type='RENEW_ACCOUNT' OR p.type='BUY_SUB'
             OR p.type LIKE 'INCREASE\\_DAY\\_%'
             OR p.type LIKE 'INCREASE\\_VOLUME\\_%')
         AND EXISTS (SELECT 1 FROM setting sr

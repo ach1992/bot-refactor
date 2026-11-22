@@ -134,24 +134,51 @@ expiry and bytes. A linked line is accepted only if the original local order
 belongs to the same purchaser, physical server, account, plan and allocated
 price. An authenticated, pinned **Native GET**, with exact operation marker,
 original expiry/quota and a second identity read, independently corroborates
-each existing account. A matching Native account **without a proven linked
-original local order** remains explicitly marked for staff investigation;
-GET success alone is not authority to manufacture an order or repeat CREATE.
+each existing account. An independently Native-verified original CREATE
+**without a linked local order** is a separate, bounded reconciliation class:
+the originally consumed `wallet_hold`, reserved count, payment/effect ordinal,
+operation marker, identity, requested expiry and bytes must all agree.
+The source records the original CREATE reservation timestamp; recovery accepts
+a missing order's originally purchased duration only if that timestamp and
+pinned absolute expiry corroborate whole purchased days within a strict
+clock/dispatch tolerance. No mutable current plan price/duration/quota is used
+as a substitute for the original purchase. A conflicting existing order,
+unknown entitlement, foreign Native GET or unverified payment remains an
+operator hold, not fabricated fulfillment.
 
-Only when **all** original lines were already linked and corroborated can
-payments-authorized staff receive an actor-bound confirmation token. The
-confirmed action acquires the existing per-payment worker lease and repeats
-all reads, reconstructs the **original first-send account-details message**
-from current verified Native data, then locks the same Wallet payment,
-original hold/effects/orders and staff authority in one short SQL transaction.
-It inserts **one original notification-only Wallet attempt** and exactly one
-sealed delivery intent per account, and changes the **same** payment to
-`paid_with_wallet` in that transaction. It does not generate a CREATE,
-reserve/release capacity, insert a new order, generate an additional debit,
-or claim a prior Telegram acknowledgement. A SQL or Native uncertainty leaves
-the original claim reviewable. The historical Wallet debit is **not**
-independently audited by this reconstruction; an Owner must verify the
-specific tenant's original Wallet balance/quote history before any live use.
+After fresh authenticated Native GET corroborates **every original ordinal**,
+payments-authorized staff receive an actor-bound confirmation token. Original
+`reserved/dispatching` Marzban effects with a matching CREATE operation may
+be independently marked `verified` **only after that explicit confirmation**
+and another strict GET. This may result in a newly minted confirmation token
+for subsequent attempts. The confirmed action owns the original payment
+lease; after preparing first-send customer packets, it locks original payment,
+hold, effects, orders, archive and current staff permission in a short SQL
+transaction. Each proven `verified` CREATE with no order gets only its
+missing **LOCAL** `orders_list` row, using the original effect entitlement,
+allocated purchase amount, physical identity and recovered Native link.
+Those rows are linked to their **original** effects; verified preexisting
+orders are preserved. All original ordinals and uniqueness are rechecked
+before finality. Exactly one notification-only Wallet payment attempt,
+one durable customer first-send QR intent **per original account**, and a
+sealed, one-shot ordinary administrator purchase-report obligation are
+created **in the SAME COMMIT** as `paid_with_wallet`. The admin report uses
+the original recorded account identities, amount, quota/days, original
+server ID and local order references rather than potentially changed catalog
+values; multi-account purchases yield one summary and distinct customer
+intents. First-send ACK is durable, an UNKNOWN/partial fanout stays visible
+in the shared Payments Requiring Review inbox, and only an explicitly
+authorized, auditable staff decision may initiate the bounded duplicate-risk
+report resend. No unknown Telegram send is automatically repeated.
+
+Restoring a missing local record **never** issues Native CREATE/RESET/PUT,
+reserves/releases capacity, debits/refunds Wallet, creates a new payment, or
+claims a prior Telegram ACK. Any incomplete SQL transaction rolls back the
+local order and both notification obligations. A lost terminal COMMIT ACK
+is resolved from the already-committed original payment, not by inserting
+another order. The historical Wallet debit remains **not independently audited**
+by this reconstruction; obtain owner-approved tenant-specific original
+Wallet/quote evidence before any live use.
 
 For `RENEW_SCONFIG`, the existing original Wallet claim, description,
 server/endpoint, account identity and **current** plan values are displayed
@@ -189,8 +216,12 @@ independent investigation for multi-recipient partial fanout.
 `tools/test_post_v9_wallet_original_recovery.py` exercises original
 WalletSettlement/ServiceEffects CREATE and local order against socket-only
 MariaDB, authenticated HTTP Marzban GET, actual original-identity matching,
-permissions, forged confirmation, concurrent operator finality, durable
-one-shot Telegram intent and conservative Marzban renewal hold. The existing
+permissions, forged confirmation, concurrent operator finality, missing
+local record recovery, verified Native CREATE with lost callback ACK,
+mixed linked/unlinked original multi-account ordinals, SQL order failure
+rollback, lost COMMIT ACK, one-shot customer and administrator reports,
+UNKNOWN administrator fanout/manual resend and conservative Marzban
+additive renewal hold. The existing
 `test_post_v9_wallet_edit_recovery.py` now checks customer ACK + original
 admin report UNKNOWN, denial, concurrent manual report resend, and one-shot
 ACK, and `test_post_v9_wallet_renewal_recovery.py` now covers an original

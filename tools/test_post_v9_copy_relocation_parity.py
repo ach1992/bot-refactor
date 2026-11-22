@@ -24,7 +24,7 @@ ADDED_SHA256 = "31088e8b9a9ee6cdc6a9a015aa8418b49ac6948302eb586a2da6db7f40b1e494
 # Their literal bytes are frozen for exact-head review and cannot grow or
 # silently change. Owner approval for this new UI remains a separate gate.
 WALLET_RECOVERY_KEY_SHA256 = "87bb18bef2ddaa8cc3f6a79c6efd46aae773b5e0f23c3d1d80159ed22361d2f1"
-WALLET_RECOVERY_VALUES_SHA256 = "5b56e762d93f8e9ea2cf664f806dfc6498db5bb34b8575ba56858b41f6122ab5"
+WALLET_RECOVERY_VALUES_SHA256 = "79e11603ef5a21f0b769b04467dd483128c95e29d269eb3df69afc25d212eae0"
 WALLET_RECOVERY_COUNT = 38
 REVIEW_R1_RETIRED = ('legacy_buttons.manual_usdt', 'legacy_messages.buy_custom_subscription_detail', 'manual_payment.api_payment.status_monitoring')
 EXPECTED_LABELS = {

@@ -1,7 +1,7 @@
 <?php
 /**
  * Durable first-send customer notice and ordinary admin report for a
- * recovered ORIGINAL Wallet RENEW/DAY/VOLUME effect. No financial/Native writes
+ * recovered ORIGINAL Wallet RENEW/DAY/VOLUME/BUY_SUB effect. No Native writes
  * live in these dispatchers, and Telegram is never called inside SQL.
  */
 if (realpath($_SERVER['SCRIPT_FILENAME']??'')===__FILE__) {http_response_code(404);exit;}
@@ -204,6 +204,94 @@ function achbotWalletAddonMarkRecoveryNoticesLocked(mysqli $db,array $claim): vo
     $q->close();
 }
 
+/**
+ * Persist the SAME original successful-purchase report used by Checkout,
+ * sourced only from original payment/effect/order proof. Calling transaction
+ * inserts both original customer intents and this staff report atomically.
+ */
+function achbotWalletOriginalBuyMarkAdminReportLocked(mysqli $db,array $claim): void {
+    $pay=$claim['pay'];$payId=(int)$pay['id'];$count=(int)$claim['count'];
+    if ($payId<=0 || $count<=0 || $pay['type']!=='BUY_SUB' ||
+        $pay['state']!=='processing_wallet' ||
+        count($claim['lines'])!==$count || count($claim['orders'])!==$count)
+        throw new RuntimeException('wallet_buy_report_original_claim_incomplete');
+    $tx=$db->query('SELECT @@in_transaction AS active');
+    if (!$tx || (int)($tx->fetch_assoc()['active']??0)!==1)
+        throw new RuntimeException('wallet_buy_report_transaction_required');
+
+    $uid=(int)$pay['user_id'];$sid=(int)$pay['server_id'];
+    $q=$db->prepare('SELECT name,username FROM users WHERE userid=?');
+    $q->bind_param('i',$uid);$q->execute();$users=$q->get_result()->fetch_all(MYSQLI_ASSOC);$q->close();
+    if (count($users)!==1)
+        throw new RuntimeException('wallet_buy_report_subject_missing');
+    $days=null;$volume=null;$names=[];
+    foreach ($claim['lines'] as $ordinal=>$e) {
+        $order=$claim['orders'][$ordinal]??null;
+        $original=achbotWalletOriginalBuyEntitlement($e);
+        if (!$order || $e['state']!=='local_recorded' ||
+            (int)$e['order_id']!==(int)$order['id'] || !$original ||
+            (int)$order['userid']!==$uid || (int)$order['server_id']!==$sid ||
+            (int)$order['fileid']!==(int)$pay['plan_id'] ||
+            (int)$order['amount']!==achbotAllocateOrderAmount(
+                (int)$pay['price'],$count,$ordinal) ||
+            (int)$order['expire_date']-(int)$order['date']!==$original['days']*86400 ||
+            abs((int)$order['expire_date']-$original['expiry'])>60)
+            throw new RuntimeException('wallet_buy_report_immutable_quote_unproven');
+        if ($days!==null && ($days!==$original['days'] ||
+            $volume!==$original['volume']))
+            throw new RuntimeException('wallet_buy_report_mixed_original_entitlement');
+        $days=$original['days'];$volume=$original['volume'];
+        $names[]=['ordinal'=>$ordinal,'name'=>(string)$e['remote_username'],
+            'order_id'=>(int)$order['id']];
+    }
+    $escape=static fn($v)=>htmlspecialchars((string)$v,ENT_QUOTES|ENT_SUBSTITUTE,'UTF-8');
+    $hash=(string)$pay['hash_id'];$amount=(int)$pay['price'];
+    $name=$count>1?achbotMessage('bulk_reporting.bulk_subject'):$names[0]['name'];
+    $report=strtr(achbotMessage('legacy_messages.buy_new_account_request'),[
+        // Only original server ID is immutable. Its current display title
+        // can change later and would misrepresent an old paid purchase.
+        'SERVERNAME'=>'#'.$sid,
+        'TYPE'=>achbotMessage('payment.payment_lifecycle.pay_ux_audience_methods.text.6295c35212'),
+        'USER-ID'=>(string)$uid,
+        'USERNAME'=>$escape($users[0]['username']??''),
+        'NAME'=>$escape($users[0]['name']??''),
+        'PRICE'=>(string)$amount,'REMARK'=>$escape($name),
+        'VOLUME'=>(string)$volume,'DAYS'=>(string)$days]);
+    if ($count>1) {
+        require_once __DIR__.'/../Purchase/BulkReport.php';
+        $report=achbotBulkReportAppend($report,[
+            'requested'=>$count,'confirmed'=>$count,'complete'=>true,
+            'accounts'=>$names,'reference'=>'#'.$payId],true);
+    }
+    $buttons=json_encode(['inline_keyboard'=>[
+        [['text'=>achbotMessage('payment.checkout.button.e401f3d5a2'),
+            'callback_data'=>'wizwizch']],
+        [['text'=>achbotMessage('payment.checkout.hash_id.286c7d3faf',
+            ['hashId'=>$hash]),'callback_data'=>'noop_'.$hash]]
+    ]],JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
+    $sealed=achbotPaymentEvidenceProtect('wallet-addon-admin-report:'.$payId,[
+        'version'=>1,'pay_id'=>$payId,'order_id'=>(int)$pay['order_id'],
+        'pay_sha256'=>achbotPaymentEvidencePayFingerprint($pay),
+        'kind'=>'buy','count'=>$count,
+        'source_proof_sha256'=>$claim['proof'],
+        'original_orders'=>array_map(static fn($row)=>[
+            'ordinal'=>$row['ordinal'],'order_id'=>$row['order_id'],
+            'name'=>$row['name']],$names),
+        'report_text'=>$report,'report_buttons'=>$buttons]);
+    $type='WALLET_ADDON_REPORT:'.$payId;
+    $q=$db->prepare('SELECT id FROM setting WHERE type=? FOR UPDATE');
+    $q->bind_param('s',$type);$q->execute();
+    $prior=$q->get_result()->fetch_all(MYSQLI_ASSOC);$q->close();
+    if ($prior!==[]) throw new RuntimeException('wallet_buy_report_duplicate');
+    $value=json_encode(['version'=>1,'pay_id'=>$payId,'state'=>'pending',
+        'sealed'=>$sealed,'attempts'=>0],JSON_THROW_ON_ERROR);
+    $q=$db->prepare('INSERT INTO setting(type,value) VALUES (?,?)');
+    $q->bind_param('ss',$type,$value);
+    if (!$q->execute() || $q->affected_rows!==1)
+        throw new RuntimeException('wallet_buy_report_insert_unconfirmed');
+    $q->close();
+}
+
 /** Never create a second admin report; claim once before any Telegram HTTP. */
 function achbotWalletAddonDispatchReport(mysqli $db,int $payId): string {
     if ($payId<=0) return 'unavailable';
@@ -222,6 +310,7 @@ function achbotWalletAddonDispatchReport(mysqli $db,int $payId): string {
             if (count($markers)!==1 || !$pay || $pay['state']!=='paid_with_wallet' ||
                 !in_array(true,[
                     $pay['type']==='RENEW_ACCOUNT',
+                    $pay['type']==='BUY_SUB',
                     preg_match('/^INCREASE_DAY_[1-9][0-9]*_[1-9][0-9]*$/D',$pay['type'])===1,
                     preg_match('/^INCREASE_VOLUME_[1-9][0-9]*_[1-9][0-9]*$/D',$pay['type'])===1],true))
                 throw new RuntimeException('wallet_report_identity_missing');
@@ -239,17 +328,27 @@ function achbotWalletAddonDispatchReport(mysqli $db,int $payId): string {
                 ($packet['pay_id']??null)!==$payId ||
                 ($packet['order_id']??null)!==(int)$pay['order_id'] ||
                 ($packet['pay_sha256']??null)!==achbotPaymentEvidencePayFingerprint($pay) ||
-                !in_array($packet['kind']??null,['renew','day','volume'],true) ||
+                !in_array($packet['kind']??null,['renew','day','volume','buy'],true) ||
+                (($pay['type']==='BUY_SUB')!==(
+                    ($packet['kind']??null)==='buy')) ||
+                (($packet['kind']??null)==='buy' &&
+                    ($packet['count']??null)!==max(1,(int)$pay['agent_count'])) ||
                 !is_string($packet['report_text']??null) ||
                 !is_string($packet['report_buttons']??null))
                 throw new RuntimeException('wallet_report_packet_invalid');
-            $q=$db->prepare('SELECT state FROM payment_delivery_intents
-                WHERE pay_row_id=? AND ordinal=1 FOR UPDATE');
+            $q=$db->prepare('SELECT ordinal,state FROM payment_delivery_intents
+                WHERE pay_row_id=? ORDER BY ordinal FOR UPDATE');
             $q->bind_param('i',$payId);$q->execute();
-            $delivery=$q->get_result()->fetch_assoc();$q->close();
-            if (!$delivery || !in_array($delivery['state'],
-                ['pending','dispatching','unknown','acknowledged'],true))
+            $delivery=$q->get_result()->fetch_all(MYSQLI_ASSOC);$q->close();
+            $expected=$pay['type']==='BUY_SUB'?max(1,(int)$pay['agent_count']):1;
+            if (count($delivery)!==$expected)
                 throw new RuntimeException('wallet_report_customer_intent_missing');
+            foreach ($delivery as $i=>$notice) {
+                if ((int)$notice['ordinal']!==$i+1 ||
+                    !in_array($notice['state'],[
+                        'pending','dispatching','unknown','acknowledged'],true))
+                    throw new RuntimeException('wallet_report_customer_intent_missing');
+            }
             $meta['state']='dispatching';$meta['attempts']=1;
             $claimed=json_encode($meta,JSON_THROW_ON_ERROR);
             $q=$db->prepare('UPDATE setting SET value=? WHERE id=? AND value=?');
@@ -315,6 +414,7 @@ function achbotWalletAddonReportCase(mysqli $db,int $payId): ?array {
     $record=$matches[0];
     if (!$record || !in_array(true,[
         $record['type']==='RENEW_ACCOUNT',
+        $record['type']==='BUY_SUB',
         preg_match('/^INCREASE_DAY_[1-9][0-9]*_[1-9][0-9]*$/D',(string)$record['type'])===1,
         preg_match('/^INCREASE_VOLUME_[1-9][0-9]*_[1-9][0-9]*$/D',(string)$record['type'])===1],true))
         return null;
@@ -334,7 +434,11 @@ function achbotWalletAddonReportCase(mysqli $db,int $payId): ?array {
             ($packet['pay_id']??null)!==$payId ||
             ($packet['order_id']??null)!==(int)$record['order_id'] ||
             ($packet['pay_sha256']??null)!==achbotPaymentEvidencePayFingerprint($record) ||
-            !in_array(($packet['kind']??null),['renew','day','volume'],true) ||
+            !in_array(($packet['kind']??null),['renew','day','volume','buy'],true) ||
+            (($record['type']==='BUY_SUB')!==(
+                ($packet['kind']??null)==='buy')) ||
+            (($packet['kind']??null)==='buy' &&
+                ($packet['count']??null)!==max(1,(int)$record['agent_count'])) ||
             !is_string($packet['report_text']??null) || $packet['report_text']==='' ||
             !is_string($packet['report_buttons']??null))
             return null;

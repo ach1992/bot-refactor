@@ -59,7 +59,16 @@ $root=$argv[1];$spec=json_decode($argv[4],true,64,JSON_THROW_ON_ERROR);
 $telegramWebhookSecret='fixture-wallet-original-secret-32-bytes-ok';
 $botState=['subLinkState'=>'on','configLinkState'=>'off'];
 $botUrl='https://fixture.invalid';$admin=9001;$connection=null;
-$GLOBALS['events']=[];
+$GLOBALS['events']=[];$GLOBALS['spec']=$spec;
+function achbotNotifyAdmins($method,array $data,array $options=[]):array {
+    $GLOBALS['events'][]=['type'=>'admin_report','method'=>$method,
+        'text'=>(string)($data['text']??'')];
+    return [['chat_id'=>9001,'response'=>(object)['ok'=>(($GLOBALS['spec']['report_ack']??true)===true)]]];
+}
+function achbotAdminFanoutAcknowledged(array $notices):bool {
+    return $notices!==[] && array_reduce($notices,
+        fn($all,$n)=>$all && ($n['response']->ok??false)===true,true);
+}
 function buildLinksAndSendQr(...$args) {
     if (end($args)!==false) throw new RuntimeException('early_telegram_send');
     $GLOBALS['events'][]=['type'=>'native_delivery_render'];
@@ -84,7 +93,21 @@ function sendQrFromLink(...$args) {
 }
 require_once $root.'/src/Purchase/Core.php';
 require_once $root.'/src/Finance/WalletOriginalRecovery.php';
-$db=new mysqli('localhost','root','',$argv[3],0,$argv[2]);
+class OwnedOriginalDB extends mysqli {
+    public function commit(int $flags=0,?string $name=null): bool {
+        $saved=parent::commit($flags,$name);
+        if ($saved && ($GLOBALS['spec']['commit_ack_lost']??false)===true) {
+            $id=(int)($GLOBALS['spec']['pay']??0);
+            $q=$this->prepare('SELECT state FROM pays WHERE id=?');
+            $q->bind_param('i',$id);$q->execute();
+            $row=$q->get_result()->fetch_assoc();$q->close();
+            if (($row['state']??null)==='paid_with_wallet')
+                throw new RuntimeException('fixture_commit_ack_lost_after_sql_commit');
+        }
+        return $saved;
+    }
+}
+$db=new OwnedOriginalDB('localhost','root','',$argv[3],0,$argv[2]);
 $db->set_charset('utf8mb4');$connection=$db;
 try {
     $op=$spec['op'];$payId=(int)($spec['pay']??0);
@@ -109,6 +132,18 @@ try {
             (string)($spec['token']??''));
     } elseif ($op==='deliver') {
         $result=achbotDeliveryDispatch($db,$payId,1);
+    } elseif ($op==='report_case') {
+        $c=achbotWalletAddonReportCase($db,$payId);
+        $result=['case'=>$c?array_diff_key($c,['value'=>true]):null,
+            'inbox'=>achbotGatewayAttentionCaseOpen($db,$payId)];
+    } elseif ($op==='reports') {
+        $result=achbotWalletAddonMaintainReports($db);
+    } elseif ($op==='report_token') {
+        $c=achbotWalletAddonReportCase($db,$payId);
+        $result=$c?achbotWalletAddonReportToken($c,$actor):null;
+    } elseif ($op==='report_manual') {
+        $result=achbotWalletAddonReportManualSend($db,$payId,
+            $actor,$primary,(string)($spec['token']??''));
     } elseif ($op==='marzban') {
         $result=achbotWalletOriginalMarzbanInspect($db,$payId,$actor,$primary);
     } elseif ($op==='inbox') {
@@ -149,7 +184,44 @@ def test() -> dict:
             new="""            $realName,'testuuid',time()+30*86400,
             'fixture-link',(int)$pay['price'],time(),0,true);"""
             assert creation_php.count(old)==1
-            original.write_text(creation_php.replace(old,new))
+            creation_php=creation_php.replace(old,new)
+            first_quote="(int)$pay['price'],time(),0,true);"
+            assert creation_php.count(first_quote)==1
+            creation_php=creation_php.replace(first_quote,
+                "achbotAllocateOrderAmount((int)$pay['price'],max(1,(int)$pay['agent_count']),1),time(),0,true);")
+            original.write_text(creation_php)
+            # Isolated second-ordinal original PHP variant: uses the SAME
+            # production CREATE, insertOrder and effect-link functions.
+            multi=work/'original-wallet-multi.php'
+            end="    return true;\n}, 'standard');"
+            assert creation_php.count(end)==1
+            extra=r'''    if (($spec['multi']??false)===true) {
+        [$remote2,$name2,$port2,$effect2]=achbotCreatePaidAccount(
+            $db,$pid,2,['user_id'=>$uid,'server_type'=>'marzban',
+            'server_id'=>$server,'inbound_id'=>0,'plan_id'=>$plan,
+            'remark'=>substr($name,0,23).'_second','volume'=>2,'days'=>30,
+            'uniqid'=>'second-original-uuid','protocol'=>'vless',
+            'port'=>12346,'expire_microdate'=>0,'net_type'=>'normal',
+            'rahgozar'=>0,'limitip'=>0]);
+        if (!$db->begin_transaction())
+            throw new RuntimeException('fixture_second_order_begin');
+        try {
+            if (($spec['order_failure_second']??false)===true)
+                throw new RuntimeException('fixture_second_order_failed');
+            $orderId2=insertOrder($db,$uid,'second-native-token',$plan,$server,0,
+                $name2,'second-original-uuid',time()+30*86400,
+                'second-original-link',
+                achbotAllocateOrderAmount((int)$pay['price'],(int)$pay['agent_count'],2),
+                time(),0,true);
+            achbotLinkPaidAccountEffect($db,$effect2,$orderId2);
+            if (!$db->commit())throw new RuntimeException('fixture_second_order_commit');
+        } catch(Throwable $error) {
+            try {$db->rollback();}catch(Throwable $ignored){}
+            throw $error;
+        }
+    }
+'''
+            multi.write_text(creation_php.replace(end,extra+end))
             driver=work/'original-wallet-recover.php'
             driver.write_text(PHP)
             def execute(op,**opts):
@@ -165,7 +237,7 @@ def test() -> dict:
                 if 'fixture-wallet-original-secret' in cp.stderr:
                     raise AssertionError('wallet original fixture secret leaked')
                 return json.loads(cp.stdout)
-            def payment_seed(name):
+            def payment_seed(name,count=1):
                 sql('UPDATE users SET wallet=50000 WHERE userid=1001')
                 sql("DELETE FROM setting WHERE type='BOT_STATES'")
                 sql("INSERT INTO setting(type,value) VALUES "
@@ -173,8 +245,23 @@ def test() -> dict:
                     "ON DUPLICATE KEY UPDATE value=VALUES(value)")
                 sql("INSERT INTO pays(hash_id,user_id,type,plan_id,server_id,"
                     "agent_count,price,day,volume,request_date,state) "
-                    f"VALUES('{name}',1001,'BUY_SUB',7,2,1,100,0,0,UNIX_TIMESTAMP(),'pending')")
+                    f"VALUES('{name}',1001,'BUY_SUB',7,2,{count},100,0,0,UNIX_TIMESTAMP(),'pending')")
                 return int(sql(f"SELECT id FROM pays WHERE hash_id='{name}'"))
+            def original_unlinked_fixture(name):
+                original_pay=payment_seed(name)
+                failed=creation.run(work,env,original,hash=name,order_failure=True)
+                assert failed['result']['status']=='error',failed
+                q=sql(f"SELECT remote_username,operation_id,requested_expire,"
+                      f"requested_bytes FROM service_effects "
+                      f"WHERE pay_row_id={original_pay} AND effect_kind='create'")
+                uname,op,expiry,quota=q.split('\t')
+                server.accounts[uname]={
+                    'username':uname,'note':'achbot:v1:'+op,
+                    'expire':int(expiry),'data_limit':int(quota),
+                    'status':'active','used_traffic':0,
+                    'subscription_url':url+'/sub/fixture-'+uname,
+                    'links':['vless://fixture.invalid']}
+                return original_pay,uname,int(expiry)
             pay=payment_seed('wallet-original-227')
             created=creation.run(work,env,original,hash='wallet-original-227')
             assert created['result']['status']=='ok',created
@@ -237,6 +324,10 @@ def test() -> dict:
             assert sql('SELECT COUNT(*) FROM payment_attempts')=='1'
             assert sql('SELECT COUNT(*) FROM payment_delivery_intents')=='1'
             assert sql('SELECT COUNT(*) FROM orders_list')==initial_order
+            assert sql("SELECT COUNT(*) FROM setting WHERE type='WALLET_ADDON_REPORT:"+str(pay)+"'")=='1'
+            report=execute('report_case',pay=pay)
+            assert report['result']['case']['state']=='pending' and report['result']['inbox'],report
+            checks.append('linked_original_wallet_customer_and_admin_reports_are_atomic')
             assert sql('SELECT wallet FROM users WHERE userid=1001')==initial_wallet
             assert sql('SELECT ucount FROM server_info WHERE id=2')==initial_capacity
             assert server.other_posts==0
@@ -249,9 +340,29 @@ def test() -> dict:
             assert execute('complete',pay=pay,token=token)['result']['status']=='already_paid'
             assert server.other_posts==0
             checks.append('customer_first_send_telegram_ack_once_no_replay')
+            # First-send report is independent from customer delivery, and
+            # an ambiguous fanout is NOT a license for Cron to resend.
+            first=execute('reports',report_ack=False)
+            assert first['result']['unknown']==1,first
+            assert [e['type'] for e in first['events']]==['admin_report'],first
+            case=execute('report_case',pay=pay)['result']
+            assert case['case']['state']=='unknown_or_partial' and case['inbox'],case
+            assert execute('reports')['events']==[]
+            denied=execute('report_manual',pay=pay,actor=999999,token='0'*20)
+            assert denied['result'] in ('denied','stale'),denied
+            report_token=execute('report_token',pay=pay)['result']
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                repeats=[f.result() for f in (
+                    pool.submit(execute,'report_manual',pay=pay,token=report_token),
+                    pool.submit(execute,'report_manual',pay=pay,token=report_token))]
+            assert sum(len([e for e in x['events'] if e['type']=='admin_report']) for x in repeats)==1,repeats
+            assert sql("SELECT JSON_UNQUOTE(JSON_EXTRACT(value,'$.state')) FROM setting WHERE type='WALLET_ADDON_REPORT:"+str(pay)+"'")=='acknowledged'
+            assert execute('report_manual',pay=pay,token=report_token)['result']=='stale'
+            assert execute('report_case',pay=pay)['result']['inbox'] is False
+            checks.append('original_buy_report_unknown_stays_inbox_and_one_explicit_staff_resend')
             # A genuinely original Native CREATE may have verified but its
-            # per-account local order SQL failed. GET can observe the exact
-            # account, but MUST NOT create a second order or infer finality.
+            # per-account local order SQL failed. Local restoration must
+            # reuse ONLY that original evidence, never another CREATE.
             partial=payment_seed('wallet-original-unlinked-227')
             failed=creation.run(work,env,original,hash='wallet-original-unlinked-227',
                                 order_failure=True)
@@ -268,22 +379,272 @@ def test() -> dict:
                 'status':'active','used_traffic':0,
                 'subscription_url':url+'/sub/fixture-'+pname,
                 'links':['vless://fixture.invalid']}
-            # Already processing_wallet from original source.
+            # The original crash left its verified CREATE without a local
+            # record. An authorized operator may repair only that local row.
             unlinked=execute('inspect',pay=partial)
-            assert unlinked['result']['status']=='review',unlinked
+            assert unlinked['result']['status']=='ready',unlinked
+            assert unlinked['result']['missing_orders']==1,unlinked
             assert unlinked['result']['lines'][0]['status']==(
-                'native_matches_but_original_order_unlinked'),unlinked
-            assert execute('token',pay=partial)['result'] is None
+                'matching_original_unlinked_recoverable'),unlinked
             assert server.other_posts==0
-            assert sql('SELECT COUNT(*) FROM orders_list')==initial_order
-            checks.append('native_verified_unlinked_original_create_reviewable_not_recreated')
+            before_order=sql('SELECT COUNT(*) FROM orders_list')
+            before_wallet=sql('SELECT wallet FROM users WHERE userid=1001')
+            before_capacity=sql('SELECT ucount FROM server_info WHERE id=2')
+            token=execute('token',pay=partial)['result']
+            assert len(token)==20,token
+            denied=execute('complete',pay=partial,token=token,actor=999999)
+            assert denied['result']['status']=='review',denied
+            forged=execute('complete',pay=partial,token='0'*20)
+            assert forged['result']['status']=='review',forged
+            assert sql('SELECT COUNT(*) FROM orders_list')==before_order
+            checks.append('unlinked_buy_actor_bound_confirmation_denies_forged_or_different_staff')
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                done=[f.result() for f in (
+                    pool.submit(execute,'complete',pay=partial,token=token),
+                    pool.submit(execute,'complete',pay=partial,token=token))]
+            statuses=[x['result']['status'] for x in done]
+            assert statuses.count('settled_delivery_pending')==1,done
+            assert set(statuses)<=set(['settled_delivery_pending','already_paid','review']),done
+            assert sql(f"SELECT state FROM pays WHERE id={partial}")=='paid_with_wallet'
+            assert sql(f"SELECT state FROM service_effects WHERE pay_row_id={partial} AND effect_kind='create'")=='local_recorded'
+            assert sql('SELECT COUNT(*) FROM orders_list')==str(int(before_order)+1)
+            assert sql('SELECT wallet FROM users WHERE userid=1001')==before_wallet
+            assert sql('SELECT ucount FROM server_info WHERE id=2')==before_capacity
+            assert sql(f"SELECT COUNT(*) FROM payment_attempts WHERE pay_row_id={partial}")=='1'
+            assert sql(f"SELECT COUNT(*) FROM payment_delivery_intents WHERE pay_row_id={partial}")=='1'
+            assert sql(f"SELECT COUNT(*) FROM setting WHERE type='WALLET_ADDON_REPORT:{partial}'")=='1'
+            assert server.other_posts==0
+            checks.append('verified_native_create_restores_one_local_order_without_remote_or_finance_replay')
+            checks.append('competing_original_buy_confirmations_are_idempotent')
+            delivered=execute('deliver',pay=partial)
+            assert delivered['result']=='acknowledged' and len(delivered['events'])==1,delivered
+            assert execute('deliver',pay=partial)['events']==[]
+            assert execute('complete',pay=partial,token=token)['result']['status']=='already_paid'
+            checks.append('restored_buy_customer_delivery_is_once_only')
+            unlinked_report=execute('reports')
+            assert unlinked_report['result']['acknowledged']==1,unlinked_report
+            assert len([e for e in unlinked_report['events'] if e['type']=='admin_report'])==1
+            assert execute('reports')['events']==[]
+            checks.append('unlinked_original_buy_admin_first_send_once')
+            # Two original CREATE ordinals: first order committed, second
+            # Native CREATE verified but second local order insertion crashed.
+            multi_id=payment_seed('wallet-original-multi-227',count=2)
+            multi_failed=creation.run(work,env,multi,
+                hash='wallet-original-multi-227',multi=True,
+                order_failure_second=True)
+            assert len([e for e in multi_failed['events'] if e['event']=='POST'])==2,multi_failed
+            assert multi_failed['result']['status']=='error',multi_failed
+
+            originals=sql(f"SELECT ordinal,state,remote_username,operation_id,"
+                          f"requested_expire,requested_bytes FROM service_effects "
+                          f"WHERE pay_row_id={multi_id} AND effect_kind='create' "
+                          "ORDER BY ordinal").splitlines()
+            assert len(originals)==2,originals
+            for entry in originals:
+                ord_,state,uname,operation,expiry,bytes_=entry.split('\t')
+                assert state==('local_recorded' if ord_=='1' else 'verified'),originals
+                server.accounts[uname]={
+                    'username':uname,'note':'achbot:v1:'+operation,
+                    'expire':int(expiry),'data_limit':int(bytes_),
+                    'status':'active','used_traffic':0,
+                    'subscription_url':url+'/sub/fixture-'+uname,
+                    'links':['vless://fixture.invalid']}
+            assert sql(f"SELECT state FROM pays WHERE id={multi_id}")=='processing_wallet'
+            assert sql(f"SELECT reserved_count FROM service_effects WHERE pay_row_id={multi_id} "
+                       "AND effect_kind='wallet_hold'")=='2'
+            before=sql('SELECT COUNT(*) FROM orders_list')
+            before_balance=sql('SELECT wallet FROM users WHERE userid=1001')
+            before_capacity=sql('SELECT ucount FROM server_info WHERE id=2')
+            inspected=execute('inspect',pay=multi_id)
+            assert inspected['result']['status']=='ready',inspected
+            assert inspected['result']['missing_orders']==1,inspected
+            assert [r['status'] for r in inspected['result']['lines']]==[
+                'matching_original_linked','matching_original_unlinked_recoverable'],inspected
+            checks.append('multi_original_buy_mixed_linked_and_verified_unlinked_preflight')
+            second_name=originals[1].split('\t')[2]
+            server.accounts[second_name]['note']='foreign-operation'
+            foreign=execute('inspect',pay=multi_id)
+            assert foreign['result']['status']=='review',foreign
+            assert execute('token',pay=multi_id)['result'] is None
+            server.accounts[second_name]['note']='achbot:v1:'+originals[1].split('\t')[3]
+            token_multi=execute('token',pay=multi_id)['result']
+            assert len(token_multi)==20,token_multi
+            result=execute('complete',pay=multi_id,token=token_multi)
+            assert result['result']['status']=='settled_delivery_pending',result
+            assert sql('SELECT COUNT(*) FROM orders_list')==str(int(before)+1)
+            assert sql(f"SELECT state FROM pays WHERE id={multi_id}")=='paid_with_wallet'
+            assert sql(f"SELECT state FROM service_effects WHERE pay_row_id={multi_id} "
+                       "AND effect_kind='create' ORDER BY ordinal")==(
+                       'local_recorded\nlocal_recorded')
+            assert sql(f"SELECT COUNT(*) FROM payment_delivery_intents WHERE pay_row_id={multi_id}")=='2'
+            assert sql(f"SELECT GROUP_CONCAT(ordinal ORDER BY ordinal) "
+                       f"FROM payment_delivery_intents WHERE pay_row_id={multi_id}")=='1,2'
+            assert sql(f"SELECT COUNT(*) FROM payment_attempts WHERE pay_row_id={multi_id}")=='1'
+            assert sql(f"SELECT COUNT(*) FROM setting WHERE type='WALLET_ADDON_REPORT:{multi_id}'")=='1'
+            assert sql(f"SELECT COUNT(DISTINCT order_id) FROM service_effects "
+                       f"WHERE pay_row_id={multi_id} AND effect_kind='create'")=='2'
+            assert sql(f"SELECT SUM(amount) FROM orders_list WHERE id IN "
+                       f"(SELECT order_id FROM service_effects WHERE pay_row_id={multi_id} "
+                       "AND effect_kind='create')")=='100'
+            assert sql('SELECT wallet FROM users WHERE userid=1001')==before_balance
+            assert sql('SELECT ucount FROM server_info WHERE id=2')==before_capacity
+            assert server.other_posts==0
+            checks.append('multi_original_buy_recovers_one_missing_local_without_cross_ordinal_borrow')
+            dispatch=execute('reports')
+            assert dispatch['result']['acknowledged']==1,dispatch
+            assert len([e for e in dispatch['events'] if e['type']=='admin_report'])==1,dispatch
+            text=[e['text'] for e in dispatch['events'] if e['type']=='admin_report'][0]
+            assert originals[0].split('\t')[2] in text and second_name in text,text
+            assert execute('reports')['events']==[]
+            assert execute('complete',pay=multi_id,token=token_multi)['result']['status']=='already_paid'
+            checks.append('multi_original_wallet_one_admin_summary_and_two_customer_intents')
+            # Original CREATE HTTP reply was lost after Native applied:
+            # effect remained dispatching and no local order was written.
+            # Authorized staff may verify the SAME operation via strict GET
+            # before restoring local finality; untrusted callback cannot.
+            lost_id=payment_seed('wallet-original-lost-ack-227')
+            lost=creation.run(work,env,original,
+                hash='wallet-original-lost-ack-227',remote='lost')
+            assert lost['result']['status']=='error',lost
+            line=sql(f"SELECT state,remote_username,operation_id,requested_expire,"
+                     f"requested_bytes FROM service_effects WHERE pay_row_id={lost_id} "
+                     "AND effect_kind='create'").split('\t')
+            assert line[0]=='dispatching',line
+            server.accounts[line[1]]={
+                'username':line[1],'note':'achbot:v1:'+line[2],
+                'expire':int(line[3]),'data_limit':int(line[4]),
+                'status':'active','used_traffic':0,
+                'subscription_url':url+'/sub/fixture-'+line[1],
+                'links':['vless://fixture.invalid']}
+            proof=execute('inspect',pay=lost_id)
+            assert proof['result']['status']=='ready' and proof['result']['missing_orders']==1,proof
+            assert sql(f"SELECT state FROM service_effects WHERE pay_row_id={lost_id} "
+                       "AND effect_kind='create'")=='dispatching'
+            forged=execute('complete',pay=lost_id,token='0'*20)
+            assert forged['result']['status']=='review',forged
+            assert sql(f"SELECT state FROM service_effects WHERE pay_row_id={lost_id} "
+                       "AND effect_kind='create'")=='dispatching'
+            actual=execute('complete',pay=lost_id,token=execute('token',pay=lost_id)['result'])
+            assert actual['result']['status']=='settled_delivery_pending',actual
+            assert sql(f"SELECT state FROM service_effects WHERE pay_row_id={lost_id} "
+                       "AND effect_kind='create'")=='local_recorded'
+            assert sql(f"SELECT state FROM pays WHERE id={lost_id}")=='paid_with_wallet'
+            assert sql(f"SELECT COUNT(*) FROM payment_delivery_intents WHERE pay_row_id={lost_id}")=='1'
+            assert sql(f"SELECT COUNT(*) FROM setting WHERE type='WALLET_ADDON_REPORT:{lost_id}'")=='1'
+            assert server.other_posts==0
+            checks.append('lost_native_create_ack_verified_by_staff_no_second_post_or_debit')
+            # A reversible SQL failure during restoration must roll back
+            # the inserted LOCAL record and ALL original delivery/report
+            # obligations, leaving the held claim available for a retry.
+            fail_id=payment_seed('wallet-original-fault-227')
+            failed=creation.run(work,env,original,
+                hash='wallet-original-fault-227',order_failure=True)
+            assert failed['result']['status']=='error',failed
+            line=sql(f"SELECT remote_username,operation_id,requested_expire,"
+                     f"requested_bytes FROM service_effects WHERE pay_row_id={fail_id} "
+                     "AND effect_kind='create'").split('\t')
+            server.accounts[line[0]]={
+                'username':line[0],'note':'achbot:v1:'+line[1],
+                'expire':int(line[2]),'data_limit':int(line[3]),
+                'status':'active','used_traffic':0,
+                'subscription_url':url+'/sub/fixture-'+line[0],
+                'links':['vless://fixture.invalid']}
+            held_token=execute('token',pay=fail_id)['result']
+            assert len(held_token)==20,held_token
+            start_orders=sql('SELECT COUNT(*) FROM orders_list')
+            sql("CREATE TRIGGER wallet_original_order_insertion_fault "
+                "BEFORE INSERT ON orders_list FOR EACH ROW "
+                "SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='fixture_order_fault'")
+            blocked=execute('complete',pay=fail_id,token=held_token)
+            assert blocked['result']['status']=='review',blocked
+            assert sql(f"SELECT state FROM pays WHERE id={fail_id}")=='processing_wallet'
+            assert sql('SELECT COUNT(*) FROM orders_list')==start_orders
+            assert sql(f"SELECT state FROM service_effects WHERE pay_row_id={fail_id} "
+                       "AND effect_kind='create'")=='verified'
+            assert sql(f"SELECT COUNT(*) FROM payment_attempts WHERE pay_row_id={fail_id}")=='0'
+            assert sql(f"SELECT COUNT(*) FROM payment_delivery_intents WHERE pay_row_id={fail_id}")=='0'
+            assert sql(f"SELECT COUNT(*) FROM setting WHERE type='WALLET_ADDON_REPORT:{fail_id}'")=='0'
+            sql('DROP TRIGGER wallet_original_order_insertion_fault')
+            success=execute('complete',pay=fail_id,token=held_token)
+            assert success['result']['status']=='settled_delivery_pending',success
+            checks.append('sql_local_order_failure_rolls_back_payment_customer_admin_atomic_finality')
+            # A lost final COMMIT ACK is not permission for a second order,
+            # invoice or Telegram report; the already-committed pay is proof.
+            ack_id=payment_seed('wallet-original-commit-227')
+            failed=creation.run(work,env,original,
+                hash='wallet-original-commit-227',order_failure=True)
+            assert failed['result']['status']=='error',failed
+            line=sql(f"SELECT remote_username,operation_id,requested_expire,"
+                     f"requested_bytes FROM service_effects WHERE pay_row_id={ack_id} "
+                     "AND effect_kind='create'").split('\t')
+            server.accounts[line[0]]={
+                'username':line[0],'note':'achbot:v1:'+line[1],
+                'expire':int(line[2]),'data_limit':int(line[3]),
+                'status':'active','used_traffic':0,
+                'subscription_url':url+'/sub/fixture-'+line[0],
+                'links':['vless://fixture.invalid']}
+            token_ack=execute('token',pay=ack_id)['result']
+            ambiguous=execute('complete',pay=ack_id,token=token_ack,commit_ack_lost=True)
+            assert ambiguous['result']['status']=='already_paid',ambiguous
+            assert sql(f"SELECT state FROM pays WHERE id={ack_id}")=='paid_with_wallet'
+            assert sql(f"SELECT COUNT(*) FROM payment_attempts WHERE pay_row_id={ack_id}")=='1'
+            assert sql(f"SELECT COUNT(*) FROM setting WHERE type='WALLET_ADDON_REPORT:{ack_id}'")=='1'
+            orders_before=sql('SELECT COUNT(*) FROM orders_list')
+            assert execute('complete',pay=ack_id,token=token_ack)['result']['status']=='already_paid'
+            assert sql('SELECT COUNT(*) FROM orders_list')==orders_before
+            checks.append('original_buy_final_commit_ack_lost_no_duplicate_local_or_admin')
+            # Another order with the same physical account identity may
+            # predate this operator callback; do not adopt it as the BUY_SUB's
+            # missing local order or ignore the competing finality.
+            foreign_id,foreign_name,foreign_expiry=original_unlinked_fixture(
+                'wallet-original-foreign-227')
+            foreign_token=execute('token',pay=foreign_id)['result']
+            assert len(foreign_token)==20
+            sql("INSERT INTO orders_list "
+                "(userid,token,transid,fileid,server_id,inbound_id,remark,uuid,"
+                "expire_date,link,amount,status,date,notif,agent_bought,autoRenew) "
+                "VALUES (887788,'other-owner','','7',2,0,'"+foreign_name+
+                "','other',"+str(foreign_expiry)+
+                ",'foreign-link',0,1,UNIX_TIMESTAMP(),0,0,'off')")
+            foreign=execute('inspect',pay=foreign_id)
+            assert foreign['result']['status']=='review',foreign
+            assert execute('token',pay=foreign_id)['result'] is None
+            denied=execute('complete',pay=foreign_id,token=foreign_token)
+            assert denied['result']['status']=='review',denied
+            assert sql(f"SELECT state FROM pays WHERE id={foreign_id}")=='processing_wallet'
+            assert sql(f"SELECT state FROM service_effects WHERE pay_row_id={foreign_id} "
+                       "AND effect_kind='create'")=='verified'
+            assert sql(f"SELECT COUNT(*) FROM payment_attempts WHERE pay_row_id={foreign_id}")=='0'
+            checks.append('foreign_equivalent_local_order_blocks_stale_confirm_and_cross_link')
+            # If the original administrator report marker is occupied, the
+            # successful local account link and customer intent MUST both
+            # roll back, not leave a silently paid invoice without staff.
+            report_id,_,_=original_unlinked_fixture(
+                'wallet-adminfault-227')
+            original_token=execute('token',pay=report_id)['result']
+            before_orders=sql('SELECT COUNT(*) FROM orders_list')
+            marker='WALLET_ADDON_REPORT:'+str(report_id)
+            sql("INSERT INTO setting(type,value) VALUES ('"+marker+
+                "','fixture-conflicting-original')")
+            blocked=execute('complete',pay=report_id,token=original_token)
+            assert blocked['result']['status']=='review',blocked
+            assert sql(f"SELECT state FROM pays WHERE id={report_id}")=='processing_wallet'
+            assert sql('SELECT COUNT(*) FROM orders_list')==before_orders
+            assert sql(f"SELECT state FROM service_effects WHERE pay_row_id={report_id} "
+                       "AND effect_kind='create'")=='verified'
+            assert sql(f"SELECT COUNT(*) FROM payment_attempts WHERE pay_row_id={report_id}")=='0'
+            assert sql(f"SELECT COUNT(*) FROM payment_delivery_intents WHERE pay_row_id={report_id}")=='0'
+            sql("DELETE FROM setting WHERE type='"+marker+"'")
+            done=execute('complete',pay=report_id,token=original_token)
+            assert done['result']['status']=='settled_delivery_pending',done
+            checks.append('admin_original_report_failure_rolls_back_new_local_and_customer')
             # Original unknown CREATE: a separate invoice cannot borrow the
             # previous payment's remotely applied account or delivery proof.
             unknown=payment_seed('wallet-second-unknown-227')
             sql(f"UPDATE pays SET state='processing_wallet',request_date=UNIX_TIMESTAMP()-900 WHERE id={unknown}")
             assert execute('inspect',pay=unknown)['result']['status']=='review'
             assert execute('inbox',pay=unknown)['result'] is True
-            assert sql('SELECT COUNT(*) FROM payment_delivery_intents')=='1'
+            assert sql('SELECT COUNT(*) FROM payment_delivery_intents')=='8'
             checks.append('separate_wallet_claim_has_no_borrowed_original_create_proof')
             sql("INSERT INTO pays(hash_id,user_id,type,plan_id,server_id,"
                 "order_id,price,day,volume,description,request_date,state) "

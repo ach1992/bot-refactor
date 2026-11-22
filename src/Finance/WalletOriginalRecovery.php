@@ -1,7 +1,7 @@
 <?php
 /**
  * #227: evidence-based original Wallet BUY_SUB finality / Marzban renewal
- * inspection. Only an existing linked original CREATE may settle: never
+ * inspection. A proven CREATE may restore a missing LOCAL order; never
  * allocate capacity, issue Native CREATE/RESET/PUT, or debit Wallet again.
  * A still-unknown original Native operation remains in the shared inbox.
  */
@@ -27,7 +27,8 @@ function achbotWalletBuyOriginalSource(mysqli $db,int $payId,bool $locked=false)
         (int)$pay['price']<=0 || (int)($pay['agent_count']??0)<0 ||
         (string)($pay['payid']??'')!=='') return null;
     $count=max(1,(int)$pay['agent_count']);
-    $q=$db->prepare("SELECT * FROM service_effects WHERE pay_row_id=?
+    $q=$db->prepare("SELECT *,UNIX_TIMESTAMP(created_at) AS original_effect_at
+        FROM service_effects WHERE pay_row_id=?
         AND effect_kind IN ('wallet_hold','create') ORDER BY ordinal,id".$suffix);
     $q->bind_param('i',$payId);$q->execute();
     $all=$q->get_result()->fetch_all(MYSQLI_ASSOC);$q->close();
@@ -84,7 +85,8 @@ function achbotWalletBuyOriginalSource(mysqli $db,int $payId,bool $locked=false)
         array_map(static fn($e)=>[
             $e['id'],$e['ordinal'],$e['operation_id'],$e['request_sha256'],
             $e['state'],$e['order_id'],$e['target_key'],$e['endpoint_sha256'],
-            $e['remote_username'],$e['requested_expire'],$e['requested_bytes']],$lines),
+            $e['remote_username'],$e['requested_expire'],$e['requested_bytes'],
+            $e['original_effect_at']],$lines),
         array_map(static fn($o)=>[
             $o['id'],$o['userid'],$o['fileid'],$o['server_id'],$o['remark'],
             $o['expire_date'],$o['token'],$o['uuid'],$o['link'],$o['amount'],
@@ -92,6 +94,32 @@ function achbotWalletBuyOriginalSource(mysqli $db,int $payId,bool $locked=false)
     ],JSON_THROW_ON_ERROR));
     return ['pay'=>$pay,'count'=>$count,'hold'=>$hold,'lines'=>$lines,
         'orders'=>$orderRows,'proof'=>$proof];
+}
+
+/** Source CREATE commits its original days as time()+86400*days. The
+ * journal timestamp corroborates duration without a mutable plan reread.
+ */
+function achbotWalletOriginalBuyEntitlement(array $e): ?array {
+    $created=(int)($e['original_effect_at']??0);
+    $expiry=(int)($e['requested_expire']??0);
+    $bytes=(int)($e['requested_bytes']??0);
+    if ($created<=0 || $expiry<=$created || $bytes<=0 ||
+        $bytes%1073741824!==0) return null;
+    $seconds=$expiry-$created;
+    $days=intdiv($seconds+43200,86400);
+    if ($days<=0 || $days>36500 ||
+        abs($seconds-$days*86400)>120) return null;
+    return ['days'=>$days,'volume'=>intdiv($bytes,1073741824),
+        'date'=>$expiry-$days*86400,'expiry'=>$expiry];
+}
+
+/** An equivalent existing local subscription is not ours to duplicate. */
+function achbotWalletOriginalBuyExistingOrder(mysqli $db,array $e): bool {
+    $q=$db->prepare('SELECT id FROM orders_list WHERE server_id=? AND remark=? LIMIT 2');
+    $server=(int)$e['target_server_id'];$remark=(string)$e['remote_username'];
+    $q->bind_param('is',$server,$remark);$q->execute();
+    $rows=$q->get_result()->fetch_all(MYSQLI_ASSOC);$q->close();
+    return $rows!==[];
 }
 
 /** Native GET is advisory until every original row also passes local proof. */
@@ -113,23 +141,63 @@ function achbotWalletOriginalBuyInspect(mysqli $db,int $payId,
         foreach ($claim['lines'] as $ordinal=>$e) {
             $status='original_effect_not_linked';
             if (in_array((string)$e['state'],['reserved','dispatching','verified'],true)) {
-                // Source-original Native observation is actionable evidence
-                // for staff, but it CANNOT manufacture a missing local order
-                // or authorize a second CREATE in this conservative path.
                 try {
-                    $q=$db->prepare('SELECT type FROM server_config WHERE id=?');
-                    $server=(int)$e['target_server_id'];
-                    $q->bind_param('i',$server);$q->execute();
-                    $panelType=$q->get_result()->fetch_assoc();$q->close();
-                    if (($panelType['type']??null)==='marzban') {
-                        $observation=achbotRecoveryInspectLine($db,$payId,
-                            $ordinal,'achbotRecoveryStrictAccountGet',false);
-                        $status=($observation['status']??null)==='matching_observation'
-                            ?'native_matches_but_original_order_unlinked'
-                            :'native_unlinked_'.($observation['status']??'unverified');
+                    $q=$db->prepare('SELECT c.type,c.panel_url,c.sub_links,
+                        sp.protocol,sp.type AS net_type,sp.rahgozar,sp.custom_path,
+                        sp.custom_port,sp.custom_sni
+                        FROM server_config c JOIN server_plans sp ON sp.server_id=c.id
+                        WHERE c.id=? AND sp.id=?');
+                    $server=(int)$e['target_server_id'];$plan=(int)$e['plan_id'];
+                    $q->bind_param('ii',$server,$plan);$q->execute();
+                    $panel=$q->get_result()->fetch_assoc();$q->close();
+                    if (!$panel || !in_array($panel['type'],['marzban','pasarguard'],true) ||
+                        !achbotWalletOriginalBuyEntitlement($e) ||
+                        achbotWalletOriginalBuyExistingOrder($db,$e))
+                        throw new RuntimeException('wallet_buy_original_order_proof_missing');
+                    if ($e['state']==='verified') {
+                        if ($panel['type']==='marzban') {
+                            [$native]=achbotContinueMarzbanPaidAccount(
+                                $db,$payId,$ordinal,$e,null,false,0,0);
+                        } else {
+                            [$native]=achbotContinuePasarGuardPaidAccount(
+                                $db,$payId,$ordinal,$e);
+                        }
+                        if (($native->verified??false)!==true)
+                            throw new RuntimeException('wallet_buy_original_native_unverified');
+                        $status='matching_original_unlinked_recoverable';
+                        $packets[$ordinal]=['native'=>$native,'panel'=>$panel];
+                    } elseif ($panel['type']==='marzban') {
+                        // Observe a lost CREATE acknowledgement without
+                        // changing the original reserved/dispatching effect.
+                        // The staff confirmation alone may mark that exact
+                        // effect verified, then create its missing local row.
+                        $seen=null;
+                        $observed=achbotRecoveryInspectLine($db,$payId,
+                            $ordinal,static function($url,$user,$pass,$name) use (&$seen) {
+                                $seen=achbotRecoveryStrictAccountGet($url,$user,$pass,$name);
+                                return $seen;
+                            },$e['state']==='reserved');
+                        $sub=$seen instanceof stdClass
+                            ?($seen->subscription_url??null):null;
+                        $path=is_string($sub)?parse_url($sub,PHP_URL_PATH):null;
+                        if (($observed['status']??null)==='matching_observation' &&
+                            is_string($path) &&
+                            preg_match('#^/sub/[a-zA-Z0-9_.~%/-]{1,512}$#D',$path)===1 &&
+                            is_array($seen->links??null)) {
+                            $status='matching_original_unlinked_recoverable';
+                            $native=(object)['success'=>true,'verified'=>true,
+                                'username'=>(string)$e['remote_username'],
+                                'sub_link'=>$path,'vray_links'=>$seen->links];
+                            $packets[$ordinal]=['native'=>$native,'panel'=>$panel];
+                        } else {
+                            $status='native_unlinked_'.($observed['status']??'unverified');
+                        }
                     }
                 } catch(Throwable $error) {
                     $status='native_unlinked_inspection_unavailable';
+                    achbotDiagnosticEvent('achbot.finance.wallet_buy_unlinked_hold',[
+                        'pay_id'=>$payId,'ordinal'=>$ordinal,
+                        'reason'=>achbotFinanceDiagnosticReason($error)],'warning');
                 }
             }
             if ($e['state']==='local_recorded' &&
@@ -169,7 +237,8 @@ function achbotWalletOriginalBuyInspect(mysqli $db,int $payId,
                         'stage'=>'native_get'], 'warning');
                 }
             }
-            if ($status!=='matching_original_linked') $ready=false;
+            if (!in_array($status,['matching_original_linked',
+                'matching_original_unlinked_recoverable'],true)) $ready=false;
             $lines[]=['ordinal'=>$ordinal,'effect_id'=>(int)$e['id'],
                 'operation'=>(string)$e['operation_id'],
                 'username'=>(string)$e['remote_username'],
@@ -181,9 +250,10 @@ function achbotWalletOriginalBuyInspect(mysqli $db,int $payId,
         }
         if (count($lines)!==$claim['count']) $ready=false;
         return ['status'=>$ready?'ready':'review',
-            'reason'=>$ready?'original_linked_native_verified':
+            'reason'=>$ready?'original_native_and_local_recovery_proven':
                 'native_or_original_order_unproven',
             'pay_id'=>$payId,'count'=>$claim['count'],
+            'missing_orders'=>$claim['count']-count($claim['orders']),
             'lines'=>$lines,'proof'=>$claim['proof'],
             // Private server-side packets only; never include in UI text/logs.
             '_prepared'=>$packets,'_claim'=>$claim];
@@ -203,9 +273,8 @@ function achbotWalletOriginalBuyToken(array $inspection,int $actor): string {
         $inspection['proof'],achbotPaymentEvidenceKey()),0,20);
 }
 
-/** Local payment and original FIRST-SEND QR intents in one SQL COMMIT.
- * Only previously linked orders and separately verified Native CREATEs are
- * eligible. No new service/order/capacity entry can be manufactured here.
+/** Original LOCAL record recovery, payment finality and first-send
+ * obligations share one SQL COMMIT. Never CREATE, debit or reserve again.
  */
 function achbotWalletOriginalBuyComplete(mysqli $db,int $payId,int $actor,
     int $primary,string $token): array {
@@ -224,30 +293,47 @@ function achbotWalletOriginalBuyComplete(mysqli $db,int $payId,int $actor,
             return ['status'=>'review','reason'=>'original_proof_changed'];
         if (!achbotWalletAddonNoticesReady($db))
             return ['status'=>'review','reason'=>'original_delivery_schema_missing'];
+        // Original CREATE completed remotely but its local verified mark
+        // may have been interrupted. Only AFTER this actor-bound confirmation
+        // do we authenticate/GET again and commit an exact verification mark.
+        // No CREATE/RESET/PUT, capacity or financial mutation occurs here.
+        $originalClaim=$inspection['_claim'];
+        foreach ($originalClaim['lines'] as $ordinal=>$effect) {
+            if (in_array($effect['state'],['reserved','dispatching'],true)) {
+                $stage='original_native_verification';
+                $panel=$inspection['_prepared'][$ordinal]['panel']??null;
+                if (!$panel || $panel['type']!=='marzban')
+                    throw new RuntimeException('wallet_buy_original_native_unverified');
+                achbotContinueMarzbanPaidAccount($db,$payId,$ordinal,$effect,
+                    null,$effect['state']==='reserved',$actor,$primary);
+            }
+        }
+        $inspection=achbotWalletOriginalBuyInspect($db,$payId,$actor,$primary);
+        if (($inspection['status']??null)!=='ready')
+            return ['status'=>'review','reason'=>'original_verification_changed'];
         $stage='original_first_send_render';
         require_once __DIR__.'/../Subscription/Delivery.php';
         $claim=$inspection['_claim'];$pay=$claim['pay'];$count=$claim['count'];
-        $packets=[];
+        $packets=[];$localOrders=[];
         for ($i=1;$i<=$count;$i++) {
-            $e=$claim['lines'][$i];$o=$claim['orders'][$i];
+            $e=$claim['lines'][$i];$o=$claim['orders'][$i]??null;
             $item=$inspection['_prepared'][$i];$panel=$item['panel'];
-            $created=(int)$o['date'];$expiry=(int)$o['expire_date'];
-            $nativeExpiry=(int)$e['requested_expire'];
+            $original=achbotWalletOriginalBuyEntitlement($e);
+            if (!$original) throw new RuntimeException('wallet_buy_original_quote_unproven');
+            $created=$o?(int)$o['date']:$original['date'];
+            $expiry=$o?(int)$o['expire_date']:$original['expiry'];
             $seconds=$expiry-$created;
             if ($created<=0 || $seconds<=0 || $seconds%86400!==0 ||
-                abs($expiry-$nativeExpiry)>60 ||
-                $seconds>36500*86400)
+                abs($expiry-(int)$e['requested_expire'])>60 ||
+                $seconds>36500*86400 ||
+                intdiv($seconds,86400)!==$original['days'])
                 throw new RuntimeException('wallet_buy_original_order_entitlement_changed');
-            $days=intdiv($seconds,86400);
-            $bytes=(int)$e['requested_bytes'];
-            if ($bytes<=0 || $bytes%1073741824!==0)
-                throw new RuntimeException('wallet_buy_original_quota_invalid');
-            $volume=intdiv($bytes,1073741824);
-            [,,$nativeId,$caption,$keys,$qr]=buildLinksAndSendQr(
+            $days=intdiv($seconds,86400);$volume=$original['volume'];
+            [$token,$link,$nativeId,$caption,$keys,$qr]=buildLinksAndSendQr(
                 $panel['type'],
                 ['panel_url'=>$panel['panel_url'],'sub_links'=>$panel['sub_links']],
                 $GLOBALS['botState']??[],(string)($GLOBALS['botUrl']??''),
-                (int)$e['target_server_id'],(string)$o['uuid'],
+                (int)$e['target_server_id'],(string)($o['uuid']??''),
                 (string)$panel['protocol'],(string)$e['remote_username'],
                 0,(string)$panel['net_type'],0,(int)$panel['rahgozar'],
                 (string)$panel['custom_path'],(string)$panel['custom_port'],
@@ -260,6 +346,18 @@ function achbotWalletOriginalBuyComplete(mysqli $db,int $payId,int $actor,
             $packets[$i]=['kind'=>'qr','uid'=>(int)$pay['user_id'],
                 'qr'=>$qr,'caption'=>$caption,'keys'=>$keys,
                 'bot_url'=>(string)($GLOBALS['botUrl']??'')];
+            if (!$o) {
+                // Original Marzban subscription token comes from authenticated
+                // GET. PasarGuard's random historical local UUID is unknown:
+                // never invent it. Native ownership lives in the effect.
+                if ($e['state']!=='verified' ||
+                    ($panel['type']==='marzban' &&
+                        (!is_string($token) || $token==='')))
+                    throw new RuntimeException('wallet_buy_original_record_identity_missing');
+                $localOrders[$i]=['token'=>(string)$token,
+                    'uuid'=>$panel['type']==='marzban'?(string)$nativeId:'',
+                    'link'=>(string)$link,'date'=>$created,'expiry'=>$expiry];
+            }
         }
         $stage='sql_original_claim_lock';
         if (!$db->begin_transaction())
@@ -268,7 +366,7 @@ function achbotWalletOriginalBuyComplete(mysqli $db,int $payId,int $actor,
         $current=achbotWalletBuyOriginalSource($db,$payId,true);
         if (!$current || !hash_equals($claim['proof'],$current['proof']) ||
             count($current['lines'])!==$count ||
-            count($current['orders'])!==$count ||
+            count($current['orders'])!==count($claim['orders']) ||
             !achbotAdminCanLocked($db,$actor,$primary,'payments'))
             throw new RuntimeException('wallet_buy_original_finality_stale');
         achbotEffectAssertNotArchivedLocked($db,$payId,false);
@@ -294,6 +392,23 @@ function achbotWalletOriginalBuyComplete(mysqli $db,int $payId,int $actor,
             ($claim['hold']['target_group_id']??null)!==
                 ($livePanel['panel_group_id']??null))
             throw new RuntimeException('wallet_buy_original_panel_repointed');
+        $stage='sql_original_local_reconciliation';
+        foreach ($localOrders as $i=>$record) {
+            $effect=$claim['lines'][$i];
+            if (achbotWalletOriginalBuyExistingOrder($db,$effect))
+                throw new RuntimeException('wallet_buy_original_existing_order_conflict');
+            $orderId=insertOrder($db,(int)$pay['user_id'],$record['token'],
+                (int)$pay['plan_id'],(int)$pay['server_id'],0,
+                (string)$effect['remote_username'],$record['uuid'],
+                $record['expiry'],$record['link'],
+                achbotAllocateOrderAmount((int)$pay['price'],$count,$i),
+                $record['date'],(int)($pay['agent_bought']??0),true);
+            achbotLinkPaidAccountEffect($db,(int)$effect['id'],$orderId);
+        }
+        $restored=achbotWalletBuyOriginalSource($db,$payId,true);
+        if (!$restored || count($restored['lines'])!==$count ||
+            count($restored['orders'])!==$count)
+            throw new RuntimeException('wallet_buy_original_local_record_incomplete');
         $stage='sql_first_send_ledger';
         $sealed=achbotPaymentEvidenceProtect('wallet-buy-original-notice:'.$payId,[
             'version'=>1,'pay_id'=>$payId,
@@ -302,7 +417,7 @@ function achbotWalletOriginalBuyComplete(mysqli $db,int $payId,int $actor,
             'original_operations'=>array_values(array_map(
                 static fn($e)=>(string)$e['operation_id'],$claim['lines'])),
             'historical_debit_independently_audited'=>false,
-            'purpose'=>'already_linked_original_wallet_purchase_notice']);
+            'purpose'=>'original_wallet_purchase_reconciled_notice']);
         $provider='wallet';$hash=(string)$pay['hash_id'];
         $quote=sprintf('%d.00000000',(int)$pay['price']);
         $currency='toman';$stage='completed';$providerStatus='wallet_debited';
@@ -322,9 +437,10 @@ function achbotWalletOriginalBuyComplete(mysqli $db,int $payId,int $actor,
         $attempt=$q->get_result()->fetch_assoc();$q->close();
         if (!$attempt || (int)$attempt['pay_row_id']!==$payId)
             throw new RuntimeException('wallet_buy_original_attempt_readback');
-        foreach ($claim['lines'] as $i=>$e)
+        foreach ($restored['lines'] as $i=>$e)
             achbotDeliveryInsertWalletBuyLocked($db,$pay,$attempt,$e,
-                $claim['hold'],$i,(int)$claim['orders'][$i]['id'],$packets[$i]);
+                $restored['hold'],$i,(int)$restored['orders'][$i]['id'],$packets[$i]);
+        achbotWalletOriginalBuyMarkAdminReportLocked($db,$restored);
         $q=$db->prepare("UPDATE pays SET state='paid_with_wallet'
             WHERE id=? AND user_id=? AND type='BUY_SUB' AND state='processing_wallet'");
         $uid=(int)$pay['user_id'];$q->bind_param('ii',$payId,$uid);

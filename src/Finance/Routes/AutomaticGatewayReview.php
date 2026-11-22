@@ -123,9 +123,10 @@ if (preg_match('/^attentionDelivery(Confirm|Send)_([1-9][0-9]{0,17})_([1-9][0-9]
     return;
 }
 
-// Recover original Wallet creates only when every original CREATE has
-// already been linked and independently verified by authenticated Native GET.
-// For Marzban renewal, provide evidence but never infer additive finality.
+// Recover original Wallet CREATEs only with independent authenticated GET.
+// Original LOCAL orders can be restored after explicit staff confirmation;
+// uncertain Native outcomes cannot trigger another CREATE or debit.
+// Marzban additive renewal remains evidence-only and must never infer finality.
 $originalAction=[];
 if (preg_match('/^attWOriginal([IC])_([1-9][0-9]{0,17})(?:_([a-f0-9]{20}))?$/D',
     (string)($data??''),$originalAction)===1) {
@@ -172,8 +173,10 @@ if (preg_match('/^attWOriginal([IC])_([1-9][0-9]{0,17})(?:_([a-f0-9]{20}))?$/D',
                 $lineStatus=static fn($s)=>achbotMessage(match((string)$s) {
                     'matching_original_linked'=>
                         'automatic_gateway_review.wallet_original_status_linked',
-                    'native_matches_but_original_order_unlinked'=>
+                    'matching_original_unlinked_recoverable'=>
                         'automatic_gateway_review.wallet_original_status_unlinked',
+                    'native_matches_but_original_order_unlinked'=>
+                        'automatic_gateway_review.wallet_original_status_unverified',
                     'native_unverified'=>
                         'automatic_gateway_review.wallet_original_status_unverified',
                     default=>'automatic_gateway_review.wallet_original_status_missing',
