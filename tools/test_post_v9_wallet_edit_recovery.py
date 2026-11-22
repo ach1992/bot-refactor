@@ -122,7 +122,7 @@ try {
         $admin=9001;$chat_id=$from_id;$callbackId='fixture-callback';
         $message_id=77;
         $data=(string)($spec['data']??'');
-        require $root.'/src/Finance/Routes/AutomaticGatewayReview.php';
+        require $root.'/src/Finance/Routes/ManualReceipts.php';
         $result=['handled'=>true];
     } elseif ($spec['op']==='report_case') {
         require_once $root.'/src/Finance/GatewayClient.php';
