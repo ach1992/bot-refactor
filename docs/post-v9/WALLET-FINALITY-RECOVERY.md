@@ -148,10 +148,20 @@ operator hold, not fabricated fulfillment.
 
 After fresh authenticated Native GET corroborates **every original ordinal**,
 payments-authorized staff receive an actor-bound confirmation token. Original
-`reserved/dispatching` Marzban effects with a matching CREATE operation may
-be independently marked `verified` **only after that explicit confirmation**
-and another strict GET. This may result in a newly minted confirmation token
-for subsequent attempts. The confirmed action owns the original payment
+`reserved/dispatching` Marzban **and PasarGuard** effects with a matching
+original CREATE can be marked `verified` **only after explicit staff
+confirmation** and another independently authenticated GET. PasarGuard
+inspection uses the original persisted provider connection/instance,
+endpoint, operation marker, membership, expiry and quota; GET by username
+also requires a valid remote Native ID and normalized creation time. Preview
+is strictly read-only. Its staff-bound confirmation token pins that observed
+Native ID/incarnation, so an exchanged account cannot inherit stale proof.
+The same existing PasarGuard continuation re-observes the original identity,
+persists verification of **only the original effect**, and returns verified
+subscription links; it never retries Native CREATE. If verification commits
+but subsequent local finality fails, the verified original effect remains
+recoverable with a fresh confirmation token. This may result in a newly minted
+confirmation token for subsequent attempts. The confirmed action owns the original payment
 lease; after preparing first-send customer packets, it locks original payment,
 hold, effects, orders, archive and current staff permission in a short SQL
 transaction. Each proven `verified` CREATE with no order gets only its
@@ -226,7 +236,14 @@ additive renewal hold. The existing
 admin report UNKNOWN, denial, concurrent manual report resend, and one-shot
 ACK, and `test_post_v9_wallet_renewal_recovery.py` now covers an original
 order with three independent `processing_wallet` claims and concurrent
-operator/Cron actions. All are in `tools/ci_quick.py`.
+operator/Cron actions. The separate source-real
+`tools/test_post_v9_wallet_pg_original_recovery.py` reproduces original
+PasarGuard Native CREATE with its HTTP response lost after the remote write,
+then exercises GET-only inspection, staff confirmation, remote ID and
+incarnation pinning, original effect/order links, customer subscription GET,
+Wallet and capacity invariance, foreign evidence, SQL/COMMIT uncertainty,
+concurrent callbacks, previously verified and linked effects and the shared
+administrator-report obligation. All are in `tools/ci_quick.py`.
 
 These scenarios are **disposable source tests**, not proof that the historical
 Hell payments `113037/113331/113346` for order `30271` were resolved. No

@@ -166,6 +166,19 @@ function achbotWalletOriginalBuyInspect(mysqli $db,int $payId,
                             throw new RuntimeException('wallet_buy_original_native_unverified');
                         $status='matching_original_unlinked_recoverable';
                         $packets[$ordinal]=['native'=>$native,'panel'=>$panel];
+                    } elseif ($panel['type']==='pasarguard') {
+                        // GET-only original provider/instance/operation evidence.
+                        // Even a matching account cannot mutate local state
+                        // until the actor-bound operator confirmation arrives.
+                        $observed=achbotObservePasarGuardPaidAccount(
+                            $db,$payId,$ordinal,$e);
+                        $user=$observed['user'];
+                        $status='matching_original_unlinked_recoverable';
+                        $packets[$ordinal]=['native'=>(object)[
+                            'success'=>true,'verified'=>true,
+                            'username'=>(string)$e['remote_username']],
+                            'panel'=>$panel,'native_identity'=>[
+                                'id'=>$user['id'],'created_at'=>$user['created_at']]];
                     } elseif ($panel['type']==='marzban') {
                         // Observe a lost CREATE acknowledgement without
                         // changing the original reserved/dispatching effect.
@@ -254,7 +267,13 @@ function achbotWalletOriginalBuyInspect(mysqli $db,int $payId,
                 'native_or_original_order_unproven',
             'pay_id'=>$payId,'count'=>$claim['count'],
             'missing_orders'=>$claim['count']-count($claim['orders']),
-            'lines'=>$lines,'proof'=>$claim['proof'],
+            'lines'=>$lines,
+            // An operator token for an unverified PG CREATE binds the actual
+            // GET-observed incarnation. A replaced Native account with the
+            // same username/operation marker cannot inherit a stale token.
+            'proof'=>hash('sha256',$claim['proof'].'|'.json_encode(
+                array_map(static fn($row)=>$row['native_identity']??null,
+                    $packets),JSON_THROW_ON_ERROR)),
             // Private server-side packets only; never include in UI text/logs.
             '_prepared'=>$packets,'_claim'=>$claim];
     } catch(Throwable $error) {
@@ -302,10 +321,17 @@ function achbotWalletOriginalBuyComplete(mysqli $db,int $payId,int $actor,
             if (in_array($effect['state'],['reserved','dispatching'],true)) {
                 $stage='original_native_verification';
                 $panel=$inspection['_prepared'][$ordinal]['panel']??null;
-                if (!$panel || $panel['type']!=='marzban')
-                    throw new RuntimeException('wallet_buy_original_native_unverified');
-                achbotContinueMarzbanPaidAccount($db,$payId,$ordinal,$effect,
-                    null,$effect['state']==='reserved',$actor,$primary);
+                if (!$panel) throw new RuntimeException('wallet_buy_original_native_unverified');
+                if ($panel['type']==='marzban') {
+                    achbotContinueMarzbanPaidAccount($db,$payId,$ordinal,$effect,
+                        null,$effect['state']==='reserved',$actor,$primary);
+                } elseif ($panel['type']==='pasarguard') {
+                    $identity=$inspection['_prepared'][$ordinal]['native_identity']??null;
+                    if (!is_array($identity))
+                        throw new RuntimeException('wallet_buy_original_native_identity_missing');
+                    achbotContinuePasarGuardPaidAccount($db,$payId,$ordinal,$effect,
+                        $actor,$primary,$identity);
+                } else throw new RuntimeException('wallet_buy_original_native_unverified');
             }
         }
         $inspection=achbotWalletOriginalBuyInspect($db,$payId,$actor,$primary);
