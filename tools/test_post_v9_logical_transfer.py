@@ -112,6 +112,12 @@ def main():
         # The current transfer protocol consults its held-plan journal even
         # on a Marzban-only fixture. This isolated table is additive.
         sql(work,env,(ROOT/'migrations/post-v9/017_shared_plan_changes.sql').read_text())
+        # Current transfer's payment guard needs the two bounded 023 ranges.
+        sql(work,env,(ROOT/'migrations/post-v9/023_scoped_payment_lock_indexes.sql').read_text())
+        # Baseline 'after' intentionally captured only 001; source-current
+        # logical operations must be compared against AFTER mandatory 023 DDL,
+        # not mistaken for an application schema mutation.
+        current_schema_after_migrations=stages.ddl(work,env,DB,tables)
         if len(sql(work,env,'SHOW TABLES').splitlines())!=24:
             raise RuntimeError('Physical-plan journal migration not installed in fixture')
         passed('shared_plan_journal_present_before_transfer')
@@ -639,7 +645,7 @@ achEvent('probe',[
                 raise RuntimeError('Unassigned group could not be removed')
             passed('unassigned_group_deletion')
             if (len(sql(work,env,'SHOW TABLES').splitlines())!=24 or
-                    stages.ddl(work,env,DB,tables)!=after or
+                    stages.ddl(work,env,DB,tables)!=current_schema_after_migrations or
                     sql(work,env,'SELECT COUNT(*) FROM service_plan_changes').strip()!='0'):
                 raise RuntimeError('Application mutated schema or journal during logical-only transfer')
             passed('post_migration_schema_stable')

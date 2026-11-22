@@ -1,7 +1,7 @@
 <?php
 /**
  * Durable first-send customer notice and ordinary admin report for a
- * recovered ORIGINAL Wallet DAY/VOLUME effect. No financial/Native writes
+ * recovered ORIGINAL Wallet RENEW/DAY/VOLUME effect. No financial/Native writes
  * live in these dispatchers, and Telegram is never called inside SQL.
  */
 if (realpath($_SERVER['SCRIPT_FILENAME']??'')===__FILE__) {http_response_code(404);exit;}
@@ -10,7 +10,7 @@ require_once __DIR__.'/GatewayClient.php';
 require_once __DIR__.'/../../messages/loader.php';
 
 /**
- * Exact original Wallet DAY/VOLUME notification dependency preflight.
+ * Exact original Wallet service-edit notification dependency preflight.
  * Run BEFORE debit/Native, not after the irreversible external effect.
  * 018 alone is insufficient: 014 adds the evidence payload columns used
  * by the original notification-only attempt. Check the actual writer
@@ -98,7 +98,7 @@ function achbotWalletAddonMarkRecoveryNoticesLocked(mysqli $db,array $claim): vo
     $kind=(string)$claim['kind'];$units=(int)$claim['units'];
     $amount=(int)$pay['price'];$hash=(string)$pay['hash_id'];
     if ($id<=0 || $uid<=0 || $oid<=0 || $sid<=0 || $amount<=0 ||
-        !in_array($kind,['day','volume'],true) || $units<=0 ||
+        !in_array($kind,['renew','day','volume'],true) || $units<=0 ||
         (int)$order['userid']!==$uid || (int)$order['server_id']!==$sid ||
         !achbotDeliverySchemaReady($db))
         throw new RuntimeException('wallet_recovery_notice_preflight_invalid');
@@ -115,7 +115,8 @@ function achbotWalletAddonMarkRecoveryNoticesLocked(mysqli $db,array $claim): vo
         (string)$claim['account']['id'].'|'.(string)$claim['absolute']['expire'].'|'.
         (string)$claim['absolute']['data_limit']);
     $sealed=achbotPaymentEvidenceProtect('wallet-addon-notification:'.$id,[
-        'version'=>1,'purpose'=>'original_applied_wallet_addon_notice',
+        'version'=>1,'purpose'=>$kind==='renew'?'original_applied_wallet_renew_notice':
+                   'original_applied_wallet_addon_notice',
         'pay_id'=>$id,'order_id'=>$oid,'pay_sha256'=>achbotPaymentEvidencePayFingerprint($pay),
         'native_proof_digest'=>$proof,'historical_debit_independently_audited'=>false,
         'units'=>$units,'kind'=>$kind,'recorded_at'=>gmdate('c')]);
@@ -136,9 +137,13 @@ function achbotWalletAddonMarkRecoveryNoticesLocked(mysqli $db,array $claim): vo
     $a=$q->get_result()->fetch_assoc();$q->close();
     if (!$a || (int)$a['pay_row_id']!==$id || $a['provider']!=='wallet')
         throw new RuntimeException('wallet_recovery_notice_attempt_readback');
-    $userText=achbotMessage($kind==='day'
-        ?'renewal.extensions.message.cce260f97e'
-        :'renewal.extensions.message.2d27ba4eea',['volume'=>$units]);
+    $userText=$kind==='renew'
+        ?achbotMessage('renewal.renewal_checkout.message.cca1075329',
+            ['remark'=>htmlspecialchars((string)$order['remark'],
+                ENT_QUOTES|ENT_SUBSTITUTE,'UTF-8')])
+        :achbotMessage($kind==='day'
+            ?'renewal.extensions.message.cce260f97e'
+            :'renewal.extensions.message.2d27ba4eea',['volume'=>$units]);
     achbotDeliveryInsertTextLocked($db,$pay,$a,$userText,'HTML',
         $oid,$sid,hash('sha256',$sealed));
 
@@ -147,15 +152,29 @@ function achbotWalletAddonMarkRecoveryNoticesLocked(mysqli $db,array $claim): vo
     $users=$q->get_result()->fetch_all(MYSQLI_ASSOC);$q->close();
     if (count($users)!==1)
         throw new RuntimeException('wallet_recovery_notice_customer_unavailable');
-    $report=achbotMessageHtml($kind==='day'
-        ?'renewal.extensions.msg.bfc1b46322'
-        :'renewal.extensions.msg.0e12e9ce3d',[
-        'from_id'=>$uid,'first_name'=>(string)($users[0]['name']??''),
-        'username'=>(string)($users[0]['username']??''),
-        'remark'=>(string)$order['remark'],'volume'=>$units,'price'=>$amount]);
-    $button=$kind==='day'
-        ?'renewal.extensions.button.aba3054570'
-        :'renewal.extensions.button.9a3cb8176f';
+    if ($kind==='renew') {
+        $escape=static fn($v)=>htmlspecialchars((string)$v,ENT_QUOTES|ENT_SUBSTITUTE,'UTF-8');
+        $report=strtr(achbotMessage('legacy_messages.renew_account_request_message'),[
+            'TYPE'=>achbotMessage('renewal.renewal_checkout.text.6295c35212'),
+            'USER-ID'=>(string)$uid,
+            'USERNAME'=>$escape($users[0]['username']??''),
+            'NAME'=>$escape($users[0]['name']??''),
+            'PRICE'=>(string)$amount,
+            'REMARK'=>$escape($order['remark']),
+            'VOLUME'=>(string)$claim['volume'],
+            'DAYS'=>(string)$claim['days']]);
+        $button='renewal.renewal_checkout.button.7deb81ef97';
+    } else {
+        $report=achbotMessageHtml($kind==='day'
+            ?'renewal.extensions.msg.bfc1b46322'
+            :'renewal.extensions.msg.0e12e9ce3d',[
+            'from_id'=>$uid,'first_name'=>(string)($users[0]['name']??''),
+            'username'=>(string)($users[0]['username']??''),
+            'remark'=>(string)$order['remark'],'volume'=>$units,'price'=>$amount]);
+        $button=$kind==='day'
+            ?'renewal.extensions.button.aba3054570'
+            :'renewal.extensions.button.9a3cb8176f';
+    }
     $keys=json_encode(['inline_keyboard'=>[
         [['text'=>achbotMessage($button),'callback_data'=>'wizwizch']],
         [['text'=>achbotMessage('renewal.extensions.hash_id.2899228604',
@@ -196,6 +215,7 @@ function achbotWalletAddonDispatchReport(mysqli $db,int $payId): string {
             $markers=$q->get_result()->fetch_all(MYSQLI_ASSOC);$q->close();
             if (count($markers)!==1 || !$pay || $pay['state']!=='paid_with_wallet' ||
                 !in_array(true,[
+                    $pay['type']==='RENEW_ACCOUNT',
                     preg_match('/^INCREASE_DAY_[1-9][0-9]*_[1-9][0-9]*$/D',$pay['type'])===1,
                     preg_match('/^INCREASE_VOLUME_[1-9][0-9]*_[1-9][0-9]*$/D',$pay['type'])===1],true))
                 throw new RuntimeException('wallet_report_identity_missing');
@@ -213,7 +233,7 @@ function achbotWalletAddonDispatchReport(mysqli $db,int $payId): string {
                 ($packet['pay_id']??null)!==$payId ||
                 ($packet['order_id']??null)!==(int)$pay['order_id'] ||
                 ($packet['pay_sha256']??null)!==achbotPaymentEvidencePayFingerprint($pay) ||
-                !in_array($packet['kind']??null,['day','volume'],true) ||
+                !in_array($packet['kind']??null,['renew','day','volume'],true) ||
                 !is_string($packet['report_text']??null) ||
                 !is_string($packet['report_buttons']??null))
                 throw new RuntimeException('wallet_report_packet_invalid');

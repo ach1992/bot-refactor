@@ -203,6 +203,14 @@ function getUserOrderDetailKeys($id, $offset = 0){
 
     $server      = getServerConfigById($server_id);
     $serverType  = $server['type'] ?? '';
+    // A successful Native GET is independent from the permission to START
+    // another Native write. A pending PasarGuard mutation must never hide
+    // live status/links/QR; it must still fence new renewal/addon/revoke/
+    // toggle/delete/plan-change buttons until its original claim is settled.
+    // Marzban's existing button admission behavior is unchanged.
+    $mutationEligible=$serverType!=='pasarguard' ||
+        \achbotSupportsOrder($GLOBALS['connection'],(int)$order['id'],
+            null,(int)$order['userid']);
     $panelUrl    = $server['panel_url'] ?? '';
     $subLinksRaw = $server['sub_links'] ?? '';
 
@@ -276,7 +284,7 @@ function getUserOrderDetailKeys($id, $offset = 0){
         'text'=>\achbotMessage('subscription.account_details.get_order_detail_keys.button.5c38085697'),
         'callback_data'=>"switchLocation{$id}_{$server_id}_0_0"
     ];
-    if (!$uncertain && $actionable) $servicePlanActions[] = [
+    if (!$uncertain && $actionable && $mutationEligible) $servicePlanActions[] = [
         'text' => \achbotMessage('legacy_buttons.change_plan'), 'callback_data' => "changePlan_{$id}"
     ];
     if ($servicePlanActions) $keyboard[] = $servicePlanActions;
@@ -284,7 +292,8 @@ function getUserOrderDetailKeys($id, $offset = 0){
     // Existing consent can always be withdrawn from an active local order.
     // The original eligibility checks still control offering new consent.
     if ((int)($order['status']??0)===1 && ($autoRenew==='on' ||
-        (!$uncertain && $actionable && $planActions['paid']!==null && ($botState['renewAutoState'] ?? "off") == "on"))) {
+        (!$uncertain && $actionable && $mutationEligible &&
+            $planActions['paid']!==null && ($botState['renewAutoState'] ?? "off") == "on"))) {
         $keyboard[] = [[
             'text' => (($autoRenew ?? 'off') == "on" ? \achbotMessage('subscription.account_details.get_user_order_detail_keys.text.ed76444585') : \achbotMessage('subscription.account_details.get_user_order_detail_keys.text.fb6d00ad8d')),
             'callback_data' => "adminToggleAutoRenew{$order['id']}"
@@ -292,7 +301,7 @@ function getUserOrderDetailKeys($id, $offset = 0){
     }
 
     // enable/disable + delete
-    if (!$uncertain && $actionable) {
+    if (!$uncertain && $actionable && $mutationEligible) {
         $stateActions=[];
         if ($canToggle) $stateActions[]=[
             'text'=>($enableBool?\achbotMessage('legacy_buttons.disable_config'):\achbotMessage('legacy_buttons.enable_config')),
@@ -341,6 +350,14 @@ function getOrderDetailKeys($from_id, $id, $offset = 0){
 
     $server      = getServerConfigById($server_id);
     $serverType  = $server['type'] ?? '';
+    // A successful Native GET is independent from the permission to START
+    // another Native write. A pending PasarGuard mutation must never hide
+    // live status/links/QR; it must still fence new renewal/addon/revoke/
+    // toggle/delete/plan-change buttons until its original claim is settled.
+    // Marzban's existing button admission behavior is unchanged.
+    $mutationEligible=$serverType!=='pasarguard' ||
+        \achbotSupportsOrder($GLOBALS['connection'],(int)$order['id'],
+            null,(int)$order['userid']);
     $panelUrl    = $server['panel_url'] ?? '';
     $subLinksRaw = $server['sub_links'] ?? '';
 
@@ -401,7 +418,8 @@ function getOrderDetailKeys($from_id, $id, $offset = 0){
     // Existing consent can always be withdrawn from an active local order.
     // The original eligibility checks still control offering new consent.
     if ((int)($order['status']??0)===1 && ($autoRenew==='on' ||
-        (!$uncertain && $actionable && $planActions['paid']!==null && ($botState['renewAutoState'] ?? "off") == "on"))) {
+        (!$uncertain && $actionable && $mutationEligible &&
+            $planActions['paid']!==null && ($botState['renewAutoState'] ?? "off") == "on"))) {
         $keyboard[] = [[
             'text' => (($autoRenew ?? 'off') == "on" ? \achbotMessage('subscription.account_details.get_user_order_detail_keys.text.ed76444585') : \achbotMessage('subscription.account_details.get_user_order_detail_keys.text.fb6d00ad8d')),
             'callback_data' => "toggleAutoRenew{$id}"
@@ -415,11 +433,12 @@ function getOrderDetailKeys($from_id, $id, $offset = 0){
         'callback_data'=>"switchLocation{$id}_{$server_id}_0_0"
     ]];
 
-    // ---- Renewal
+    // Read-only refresh and QR remain visible while the original Native
+    // mutation is held; only the effect-producing buttons are conditional.
     if ($found && $actionable) {
         $temp = [];
 
-        if (
+        if ($mutationEligible &&
             ($botState['sellState'] ?? "off") == "on" &&
             $planActions['manual']!==null &&
             ($botState['renewAccountState'] ?? "off") == "on"
@@ -441,7 +460,7 @@ function getOrderDetailKeys($from_id, $id, $offset = 0){
             ($botState['sellState'] ?? "off") == "on" &&
             ($botState['increaseVolumeState'] ?? "off") == "on" &&
             $canExtendVolume &&
-            $planActions['manual']!==null
+            $mutationEligible && $planActions['manual']!==null
         ) {
             $flatButtons[] = ['text' => \achbotMessage('legacy_buttons.increase_config_volume'), 'callback_data' => "increaseAVolume{$id}"];
         }
@@ -450,18 +469,18 @@ function getOrderDetailKeys($from_id, $id, $offset = 0){
             ($botState['sellState'] ?? "off") == "on" &&
             ($botState['increaseTimeState'] ?? "off") == "on" &&
             $canExtendTime &&
-            $planActions['manual']!==null
+            $mutationEligible && $planActions['manual']!==null
         ) {
             $flatButtons[] = ['text' => \achbotMessage('legacy_buttons.increase_config_days'), 'callback_data' => "increaseADay{$id}"];
         }
 
-        if (($botState['renewConfigLinkState'] ?? "off") == "on")
+        if ($mutationEligible && ($botState['renewConfigLinkState'] ?? "off") == "on")
             $flatButtons[] = ['text' => \achbotMessage('legacy_buttons.renew_connection_link'), 'callback_data' => "changAccountConnectionLink{$id}"];
 
         if (($botState['updateConfigLinkState'] ?? "off") == "on")
             $flatButtons[] = ['text' => \achbotMessage('legacy_buttons.update_config_connection'), 'callback_data' => "updateConfigConnectionLink{$id}"];
 
-        if ($planActions['choose'] && (canReadAdminOrderDetails() ||
+        if ($mutationEligible && $planActions['choose'] && (canReadAdminOrderDetails() ||
             ($botState['changePlanState'] ?? 'on')==='on'))
             $flatButtons[] = ['text' => \achbotMessage('legacy_buttons.change_plan'), 'callback_data' => "changePlan_{$id}"];
 
@@ -472,7 +491,7 @@ function getOrderDetailKeys($from_id, $id, $offset = 0){
             $flatButtons[] = ['text' => \achbotMessage('legacy_buttons.qr_sub'), 'callback_data' => "showQrSub{$id}"];
 
         // همکار enable/disable
-        if ($canToggle && $agentBought == true && !empty($userInfo['is_agent']) && (int)$userInfo['is_agent'] == 1) {
+        if ($mutationEligible && $canToggle && $agentBought == true && !empty($userInfo['is_agent']) && (int)$userInfo['is_agent'] == 1) {
             $flatButtons[] = [
                 'text' => ($enableBool ? \achbotMessage('legacy_buttons.disable_config') : \achbotMessage('legacy_buttons.enable_config')),
                 'callback_data' => "agentChangeUserConfigState{$id}"
@@ -486,12 +505,15 @@ function getOrderDetailKeys($from_id, $id, $offset = 0){
         $lastButton = (count($flatButtons) % 2 == 1) ? $flatButtons[count($flatButtons) - 1] : null;
 
         // delete
-        $deleteButton = ['text' => \achbotMessage('legacy_buttons.delete_config'), 'callback_data' => "deleteMyConfig{$id}"];
-
-        if ($lastButton) {
-            $keyboard[] = [$lastButton, $deleteButton];
-        } else {
-            $keyboard[] = [$deleteButton];
+        if ($mutationEligible) {
+            $deleteButton = ['text' => \achbotMessage('legacy_buttons.delete_config'), 'callback_data' => "deleteMyConfig{$id}"];
+            if ($lastButton) {
+                $keyboard[] = [$lastButton, $deleteButton];
+            } else {
+                $keyboard[] = [$deleteButton];
+            }
+        } elseif ($lastButton) {
+            $keyboard[] = [$lastButton];
         }
     }
 

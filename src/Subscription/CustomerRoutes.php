@@ -277,7 +277,7 @@ if(preg_match('/updateConfigConnectionLink(\d+)/', $data,$match)){
     $order = $stmt->get_result()->fetch_assoc();
     $stmt->close();
 
-    if (!$order || !achbotSupportsOrder($connection, (int)$oid, null, \AchBot\Subscription\AccountDetails\canReadAdminOrderDetails()?null:(int)$from_id)) {
+    if (!$order || !achbotSupportsOrderObservation($connection, (int)$oid, \AchBot\Subscription\AccountDetails\canReadAdminOrderDetails()?null:(int)$from_id)) {
         alert(\achbotMessage('subscription.customer_routes.cancel_search_keyboard.alert.724ff90245'), true);
         return;
     }
@@ -308,13 +308,21 @@ if(preg_match('/updateConfigConnectionLink(\d+)/', $data,$match)){
         }
     
     if($success) {
-        // ذخیره لینک در دیتابیس
-        $vray_link = json_encode($vraylink);
-        $stmt = $connection->prepare("UPDATE `orders_list` SET `link`=? WHERE `id`=?");
-        $stmt->bind_param("si", $vray_link, $oid);
-        $stmt->execute();
-        $stmt->close();
-        
+        // Verified Native refresh is always available as a GET-only view,
+        // including while an original PasarGuard write is being reconciled.
+        // That observation must NOT grant permission to rewrite even local
+        // order metadata while the service is durably fenced as mutating.
+        if ($serverType!=='pasarguard' ||
+            achbotSupportsOrder($connection,(int)$oid,null,
+                \AchBot\Subscription\AccountDetails\canReadAdminOrderDetails()
+                    ?null:(int)$from_id)) {
+            $vray_link=json_encode($vraylink);
+            $stmt=$connection->prepare("UPDATE `orders_list` SET `link`=? WHERE `id`=?");
+            $stmt->bind_param('si',$vray_link,$oid);
+            $stmt->execute();
+            $stmt->close();
+        }
+
         // ارسال پیام موفقیت با HTML
         $successMessage = \achbotMessage('subscription.customer_routes.cancel_search_keyboard.success_message.6d1ad0af39')
             . \achbotMessage('subscription.customer_routes.cancel_search_keyboard.text.02845d07de')

@@ -25,6 +25,9 @@ $data=$spec['data']??'';$text='';$message_id=1;$cancelKey='{}';$removeKeyboard='
 $GLOBALS['response_emitted']=false;register_shutdown_function(static function(){if(!$GLOBALS['response_emitted'])echo json_encode(['out'=>$GLOBALS['out']??$GLOBALS['events'],'reads'=>$GLOBALS['reads'],'presentations'=>$GLOBALS['presentations']],JSON_THROW_ON_ERROR);});
 $GLOBALS['reads']=0;$GLOBALS['presentations']=0;$GLOBALS['events']=[];
 function achbotSupportsAccount($type,$inbound){return in_array($type,['marzban','pasarguard'],true)&&(int)$inbound===0;}
+// Stub ONLY the separate Native mutation-admission seam. The source-real
+// provider integration exercises actual PasarGuard mutating fences.
+function achbotSupportsOrder($db,$orderId,$planId=null,$userId=null,$lock=false){return $orderId===91;}
 // This composition harness controls native packets and the plan-admission
 // seam. Actual adapter eligibility/import/payment are tested separately by
 // test_imported_plan_selection.py and the native existing-subscription suite.

@@ -229,6 +229,8 @@ try {
         try {
             require_once __DIR__.'/../src/Finance/WalletEditRecovery.php';
             achbotWalletAddonMaintain($connection);
+            require_once __DIR__.'/../src/Finance/WalletRenewalRecovery.php';
+            achbotWalletPgRenewMaintain($connection);
         } catch (Throwable $error) {
             error_log('achbot_wallet_original_maintenance_deferred class='.
                 get_class($error));

@@ -669,8 +669,8 @@ try {
                 throw new RuntimeException('fixture_user_stage_not_unique');
             $stmt->close();
         }
-        $status=startWalletPayment($connection,$state,['cancel'=>'لغو'],
-            $botUrl,1001,null,(int)($spec['topup_amount']??100000),
+        $status=startWalletPayment($connection,$state,$botUrl,
+            1001,null,(int)($spec['topup_amount']??100000),
             $expected,990002,500);
         $GLOBALS['events'][]=['name'=>'wallet_start_result','status'=>$status];
     } elseif ($spec['route'] === 'wallet_refund') {
@@ -1153,6 +1153,7 @@ def main():
         native.sql(work,env,(ROOT/'migrations/post-v9/007_service_effects.sql').read_text(),DB)
         assert len(sql(work,env,'SHOW TABLES').splitlines()) == 26
         native.sql(work,env,(ROOT/'migrations/post-v9/022_gateway_review_archive.sql').read_text(),DB)
+        native.sql(work,env,(ROOT/'migrations/post-v9/023_scoped_payment_lock_indexes.sql').read_text(),DB)
 
         # O1-R2: real MariaDB table privilege boundaries, not mocked error
         # strings. All grants/users live only in owned_database()'s socket-only
@@ -1715,6 +1716,73 @@ def main():
         records.append(dict(case='simple_gateway_inbox_original_case_and_merchant_ids',
                             pass_=True,real_provider_requests=0))
         records.append(dict(case='simple_gateway_admin_private_access_and_no_provider_get',
+                            pass_=True,real_provider_requests=0))
+        # #227: a committed Wallet debit and unfinished service edit has no
+        # hosted payment_attempt row. The ORIGINAL Payments Requiring Review
+        # inbox must still expose the case and never offer gateway approval.
+        sql(work,env,"INSERT INTO pays(hash_id,user_id,type,plan_id,server_id,"
+            "order_id,price,request_date,state) VALUES "
+            "('wallet-renew-held-inbox',1001,'RENEW_ACCOUNT',7,2,777,"
+            "185000,UNIX_TIMESTAMP()-3600,'processing_wallet')")
+        wallet_held=int(sql(work,env,
+            "SELECT id FROM pays WHERE hash_id='wallet-renew-held-inbox'").strip())
+        held_before=snapshot(work,env)
+        held_list=run_php(work,env,stage,dict(admin_identity,
+            callback_data='attentionInbox'))
+        held_cards=[e for e in held_list['events'] if e['name']=='editText']
+        if len(held_cards)!=1 or (
+            'attentionCase_'+str(wallet_held)) not in str(held_cards[0]['args'][2]):
+            raise RuntimeError('Original Wallet debit absent from shared admin inbox')
+        held_case=run_php(work,env,stage,dict(admin_identity,
+            callback_data='attentionCase_'+str(wallet_held)))
+        held_details=[e for e in held_case['events'] if e['name']=='editText']
+        if len(held_details)!=1 or (
+            'attentionWalletInspect_'+str(wallet_held)) not in str(
+                held_details[0]['args'][2]) or (
+            'gatewayReview_A_' in str(held_details[0]['args'][2]) or
+            'gatewayReview_R_' in str(held_details[0]['args'][2]) or
+            'gatewayReview_H_' in str(held_details[0]['args'][2]) or
+            held_case['network_calls']):
+            raise RuntimeError('Wallet exception cannot be inspected without a fake approve/reject/archive')
+        denied=run_php(work,env,stage,dict(admin_identity,
+            actor=1001,chat_id=1001,
+            callback_data='attentionCase_'+str(wallet_held)))
+        if any(e['name']=='editText' for e in denied['events']):
+            raise RuntimeError('Customer gained payments-staff Wallet case access')
+        verify_unchanged(work,env,held_before,'wallet_original_review_read_only')
+        records.append(dict(case='wallet_processing_original_without_gateway_attempt_visible',
+                            pass_=True,real_provider_requests=0))
+        records.append(dict(case='wallet_original_staff_only_no_fake_gateway_action',
+                            pass_=True,real_provider_requests=0))
+        # A second ORIGINAL Wallet kind (additive edit) has the same missing
+        # hosted-attempt issue, but may only be GET-verified then locally
+        # finalized. Repeated Native DAY/VOLUME is never an operator action.
+        sql(work,env,"INSERT INTO pays(hash_id,user_id,type,plan_id,server_id,"
+            "order_id,volume,price,request_date,state) VALUES "
+            "('wallet-addon-held-inbox',1001,'INCREASE_VOLUME_777_10',7,2,"
+            "777,3,25000,UNIX_TIMESTAMP()-3600,'processing_wallet')")
+        additive_id=int(sql(work,env,
+            "SELECT id FROM pays WHERE hash_id='wallet-addon-held-inbox'"))
+        additive_before=snapshot(work,env)
+        additive_list=run_php(work,env,stage,dict(admin_identity,
+            callback_data='attentionInbox'))
+        additive_cards=[e for e in additive_list['events'] if e['name']=='editText']
+        if len(additive_cards)!=1 or (
+            'attentionCase_'+str(additive_id)) not in str(
+            additive_cards[0]['args'][2]):
+            raise RuntimeError('Unfinished Wallet DAY/VOLUME absent from shared inbox')
+        additive_case=run_php(work,env,stage,dict(admin_identity,
+            callback_data='attentionCase_'+str(additive_id)))
+        additive_details=[e for e in additive_case['events'] if e['name']=='editText']
+        addon_markup=str(additive_details[0]['args'][2]) if len(additive_details)==1 else ''
+        if ('attWAddI_'+str(additive_id)) not in addon_markup or (
+            'gatewayReview_A_' in addon_markup or
+            'gatewayReview_R_' in addon_markup or
+            'gatewayReview_H_' in addon_markup or
+            additive_case['network_calls']):
+            raise RuntimeError('Original Wallet add-on lacks GET-only admin action')
+        verify_unchanged(work,env,additive_before,'wallet_addon_review_read_only')
+        records.append(dict(case='wallet_additive_original_get_only_staff_recovery_visible',
                             pass_=True,real_provider_requests=0))
 
         for n in range(15):

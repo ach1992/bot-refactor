@@ -329,6 +329,10 @@ def main():
         cases.append('missing_schema_fails_closed')
         sql(w,e,(ROOT/'migrations/post-v9/004_automatic_renewal_attempts.sql').read_text())
         assert len(sql(w,e,'SHOW TABLES').splitlines())==24
+        # Current physical account/payment locking requires 023 on the
+        # disposable 004-only ledger, before the first renewal reservation.
+        sql(w,e,(ROOT/'migrations/post-v9/023_scoped_payment_lock_indexes.sql').read_text())
+        assert 'idx_pays_order_ref_v1' in sql(w,e,'SHOW INDEX FROM pays')
         assert_no_remote(run(w,e,{'order_id':oid,'enabled':'off'}))
         assert wallet(w,e)==500000
         cases.append('disabled_flag_no_effect')

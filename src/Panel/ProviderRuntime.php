@@ -52,6 +52,40 @@ function achbotPasarGuardSupportsPlan($db,$planId,$inbound=0,$serverId=null,bool
         return true;
     } catch (Throwable $e) { return false; }
 }
+/**
+ * Read-only order eligibility, deliberately independent of mutation admission.
+ *
+ * An unfinished Native effect is allowed to be OBSERVED by its exact
+ * existing order identity (including during a mutating fence). It may not
+ * authorize new payment, plan change, deletion, addon, gift or reset.
+ * Never substitute a username-only lookup for PasarGuard's pinned account.
+ */
+function achbotSupportsOrderObservation(mysqli $db,int $orderId,?int $userId=null): bool {
+    if ($orderId<=0 || ($userId!==null && $userId<=0)) return false;
+    try {
+        $s=$db->prepare('SELECT o.id,o.userid,o.status,o.inbound_id,o.server_id,c.type
+            FROM orders_list o JOIN server_config c ON c.id=o.server_id
+            WHERE o.id=? LIMIT 1');
+        $s->bind_param('i',$orderId);$s->execute();
+        $order=$s->get_result()->fetch_assoc();$s->close();
+        if (!$order || (int)$order['status']!==1 ||
+            !achbotSupportsAccount($order['type'],$order['inbound_id']) ||
+            ($userId!==null && (int)$order['userid']!==$userId))
+            return false;
+        if ($order['type']==='pasarguard') {
+            $ctx=achbotPgObserveOrderContext($db,$orderId);
+            return (int)$ctx['order']['id']===$orderId &&
+                (int)$ctx['order']['userid']===(int)$order['userid'] &&
+                (int)$ctx['order']['server_id']===(int)$order['server_id'];
+        }
+        // Preserve the existing Marzban eligibility contract (its panel does
+        // not use PasarGuard's local provider_state mutation fence). Rendering
+        // still relies on its own verified Native observation where required.
+        return $order['type']==='marzban' &&
+            achbotSupportsOrder($db,$orderId,null,$userId);
+    } catch (Throwable $error) {return false;}
+}
+
 function achbotSupportsOrder($db,$orderId,$planId=null,$userId=null,bool $lock=false): bool {
     if (!($db instanceof mysqli) || (int)$orderId<=0) return false;
     try {
@@ -105,7 +139,12 @@ function achbotMarzbanUserAdapter($serverId,$remark,bool $withLinks=true,bool $s
 function achbotPasarGuardUserAdapter($serverId,$remark,bool $withLinks=true): object {
     global $connection;
     try {
-        $ctx=achbotPgRemarkContext($connection,(int)$serverId,(string)$remark);
+        // Rendering and independent subscription observations are GET-only.
+        // A wallet/native edit may have a durable mutating fence after a
+        // reset/PUT failure; it must block other edits, not hide the LIVE
+        // account from its owner. Never authorize a mutation from this context.
+        $ctx=achbotPgRemarkContext($connection,(int)$serverId,(string)$remark,
+            false,true);
         $links=$withLinks?achbotPgLinks($ctx['panel'],$ctx['identity']):null;
         // A successful links proof already contains the final exact-identity read.
         $r=$withLinks && ($links['success']??false)===true?$links:
@@ -575,7 +614,23 @@ function achbotPgOrderContext(mysqli $db,int $orderId,bool $lock=false,
     if ((int)$panel['id']!==(int)$a['panel_id'] || $panel['instance_key']!==$a['instance_key'] || hash('sha256',rtrim($panel['api_url'],'/'))!==$a['endpoint_sha256']) throw new RuntimeException('pg_account_panel_changed');
     return ['order_id'=>$orderId,'order'=>$o,'order_server_id'=>(int)$o['server_id'],'account'=>$a,'panel'=>$panel,'identity'=>achbotProviderAccountIdentity($db,$a,$lock)];
 }
-function achbotPgRemarkContext(mysqli $db,int $serverId,string $remark,bool $lock=false): array {
+/** Exact pinned account identity for GET-only pages/links, even if an
+ * unfinished operation holds a Native mutation fence. This function MUST
+ * NOT be used as admission for an effect or a financial state transition.
+ */
+function achbotPgObserveOrderContext(mysqli $db,int $orderId): array {
+    $ctx=achbotPgOrderContext($db,$orderId,false,true);
+    if ((int)$ctx['order']['status']!==1)
+        throw new RuntimeException('pg_observation_inactive_order');
+    return $ctx;
+}
+function achbotPgRemarkContext(mysqli $db,int $serverId,string $remark,
+    bool $lock=false,bool $observationOnly=false): array {
+    // Only the provider read adapter can explicitly request an observation
+    // of a fenced mutating account. Never expose this option to the
+    // mutation/dispatch/deletion callers or to a FOR UPDATE lock path.
+    if ($observationOnly && $lock)
+        throw new RuntimeException('pg_live_observation_must_be_readonly');
     // Only active local references are usable. A retired order may still
     // carry the same username from an earlier, deleted Native incarnation.
     // Multiple active references must resolve to one exact physical identity.
@@ -584,7 +639,9 @@ function achbotPgRemarkContext(mysqli $db,int $serverId,string $remark,bool $loc
     if (!$rows) throw new RuntimeException('pg_local_account_ambiguous');
     $context=null;
     foreach ($rows as $row) {
-        $candidate=achbotPgOrderContext($db,(int)$row['id'],$lock);
+        $candidate=$observationOnly
+            ?achbotPgObserveOrderContext($db,(int)$row['id'])
+            :achbotPgOrderContext($db,(int)$row['id'],$lock);
         if ($context!==null && ($candidate['account']['id']!==$context['account']['id'] ||
             $candidate['identity']!==$context['identity'])) throw new RuntimeException('pg_local_account_ambiguous');
         $context=$candidate;
@@ -1293,7 +1350,7 @@ function achbotOrderPresentation(mysqli $db,array $order,array $server,array $st
                 $native['subscription_url']=(string)$provenRemote->subscription_url;
                 $native['links']=is_array($provenRemote->links??null)?$provenRemote->links:[];
             } else {
-                $ctx=achbotPgOrderContext($db,(int)$order['id']);
+                $ctx=achbotPgObserveOrderContext($db,(int)$order['id']);
                 $links=achbotPgLinks($ctx['panel'],$ctx['identity']);
                 $r=($links['success']??false)===true?$links:achbotPgRead($ctx['panel'],$ctx['identity']);
                 if (($r['success']??false)!==true) throw new RuntimeException('pg_presentation_read_unverified');

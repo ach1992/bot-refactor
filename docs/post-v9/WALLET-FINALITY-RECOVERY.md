@@ -10,6 +10,34 @@ Owner: Finance (Issue [#26](https://github.com/ach1992/bot-refactor/issues/26)).
 4. Verify the exact resulting Native entitlement. Finalize `increase_order`, local order expiry (where applicable), and `pays.state=paid_with_wallet` atomically in a separate short SQL transaction. A failed finalization leaves the original claim held for review; no second charge or automatic remote retry.
 5. Handle Telegram delivery separately from payment and Native finality. Never infer a successful delivery from a committed local payment or a repeated callback.
 
+**PasarGuard reset-renewal clarification (Issue #227):** the original,
+durably claimed `RENEW_ACCOUNT` is an **absolute** plan replacement
+(reset usage, set exact purchased volume and expiry), not an additive
+`INCREASE_DAY`/`INCREASE_VOLUME`. If an original Native RESET succeeded
+but the absolute PUT/SQL COMMIT failed, a payments-authorized operator may
+observe the **same pinned native identity and immutable original operation**
+and explicitly confirm finishing that original reset (including a measured
+native entitlement-drift warning). It does not create another payment or
+debit the wallet. Prefer GET-only local reconciliation when Native already
+has the exact originally verified target. Additive DAY/VOLUME remains
+non-replayable: only verified-original-Native evidence can authorize a
+single local COMMIT. Paid CREATE recovery reuses its original reserved
+effect/line and cannot provision a second account. An unknown Telegram
+acknowledgment never authorizes an automatic second send.
+
+**Observation is not admission:** a long-lived, original Native
+`provider_state=mutating` fence blocks further edits, plan changes, bulk
+gifts, deletion, add-ons and new financial claims, **not** authenticated
+GET-only status, quota, expiry or subscription/config-link rendering.
+Only the original immutable provider panel/account identity may be
+observed; foreign, missing, retired, or unverified Native data remains
+unavailable. No stale local quota/expiry is substituted. User/admin
+subscription-detail presentation and warning semantics remain unchanged.
+The matching CI scenarios exercise reset-only 12-to-10 GiB correction,
+additive pending Native work, wrong account identity, concurrent workers
+and original first-send obligations.
+
+
 `RENEW_SCONFIG` (external Marzban plan renewal) uses the original Wallet claim, a plan snapshot pinned by the locked payment transaction, and original `pay_id` passed to the Native adapter. The service call no longer runs inside the Wallet transaction; the renewal audit and paid state commit together. A committed but ambiguous Native result remains `processing_wallet`, and the old button cannot charge or renew again. A Wallet Marzban renewal carries the original **physical endpoint, provider type, logical server, account remark, payment ID and purchased days/volume** through the helper, service router and Native adapter. The adapter compares the original endpoint before its first authenticated GET and rechecks the same pinned target at every existing Native reset/write boundary; a later provider/endpoint substitution leaves the original claim held. The Marzban renewal does **not** have the PasarGuard original absolute-mutation journal: this source package does not grant automatic recovery or re-issuance authority for that class. Operations must establish the original remotely applied renewal independently before deciding a target-specific manual resolution.
 
 The `processWalletPayment()` diagnostic `claim_commit_unknown` means the SQL COMMIT acknowledgement itself was ambiguous. The payment row and wallet balance must be inspected; never treat that log as proof of rollback. The `post_commit` stage means the durable claim was acknowledged but subsequent work is incomplete or uncertain.

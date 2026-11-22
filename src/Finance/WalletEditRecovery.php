@@ -95,6 +95,56 @@ function achbotWalletPgAddonOriginal(mysqli $db,int $payId,bool $locked=false): 
 }
 
 /**
+ * Staff GET-only inspection for the ORIGINAL Wallet DAY/VOLUME.
+ * Unlike the absolute/reset renewal, an additive edit cannot be replayed:
+ * staff may finalize locally only after strict Native proof of the exact
+ * original applied delta and group IDs.
+ */
+function achbotWalletPgAddonInspect(mysqli $db,int $payId,int $actor,int $primary): array {
+    if ($payId<=0 || !achbotAdminCanFor($db,$actor,$primary,'payments'))
+        return ['status'=>'denied','pay_id'=>$payId];
+    try {
+        $original=achbotWalletPgAddonOriginal($db,$payId);
+        $kind=$original['kind'];
+        $params=['pay_id'=>$payId,'remark'=>(string)$original['order']['remark'],
+            $kind==='day'?'plus_day':'plus_volume'=>$original['units']];
+        $source=['kind'=>$kind,'order'=>$original['order_id'],
+            'expiry'=>(int)$original['order']['expire_date'],'observe_only'=>true];
+        $remote=achbotPgRecoverEdit($db,(int)$original['order']['server_id'],
+            $params,$source,true);
+        $proof=json_decode((string)$original['account']['mutation_snapshot'],
+            true,64,JSON_THROW_ON_ERROR);
+        $expectedGroups=$proof['changes']['before']['group_ids']??null;
+        if (($remote->success??false)!==true ||
+            ($remote->verified??false)!==true ||
+            ($remote->applied_expire??null)!==$original['absolute']['expire'] ||
+            ($remote->applied_bytes??null)!==$original['absolute']['data_limit'] ||
+            !is_array($remote->observed_group_ids??null) ||
+            !is_array($expectedGroups) ||
+            $remote->observed_group_ids!==$expectedGroups)
+            return ['status'=>'review','pay_id'=>$payId];
+        return ['status'=>'applied','pay_id'=>$payId,'kind'=>$kind];
+    } catch (Throwable $error) {
+        $reason=(string)$error->getMessage();
+        if (preg_match('/^wallet_recovery_[a-z0-9_]{2,95}$/D',$reason)!==1)
+            $reason='wallet_recovery_read_unverified';
+        achbotDiagnosticEvent('achbot.finance.wallet_addon_inspection_deferred',[
+            'pay_id'=>$payId,'actor_id'=>$actor,'reason'=>$reason,
+            'class'=>get_class($error)],'warning');
+        return ['status'=>'review','pay_id'=>$payId];
+    }
+}
+function achbotWalletPgAddonConfirmationToken(array $original,int $actor): string {
+    if ($actor<=0 || (int)($original['pay']['id']??0)<=0 ||
+        !is_string($original['fingerprint']??null))
+        throw new RuntimeException('wallet_recovery_confirmation_invalid');
+    return substr(hash_hmac('sha256',
+        'wallet-addon-reconcile:v1:'.(int)$original['pay']['id'].':'.
+            $actor.':'.$original['fingerprint'],
+        achbotPaymentEvidenceKey()),0,20);
+}
+
+/**
  * Operator and internal-system entrypoints share the exact same original
  * journal/identity/Native evidence and atomic financial finalization. Only
  * the manual entrypoint needs an administrator permission check; the Cron
