@@ -6,8 +6,8 @@ Owner: Finance (Issue [#26](https://github.com/ach1992/bot-refactor/issues/26)).
 
 1. Validate the original payment, authenticated customer/quote and eligibility under the existing per-payment lock. Insufficient funds or an unsupported service means **no Wallet debit and no Native write**.
 2. For Wallet, claim the original `pays.id`/`hash_id` and debit `users.wallet` in one SQL transaction. Commit the resulting `processing_wallet` state **before** dispatching any external service operation. This state means financially *held*, **not** fulfilled or customer-notified.
-3. Invoke Native once for that claimed operation. An HTTP error, bad acknowledgment, first-readback mismatch, or worker crash **does not establish failure**. Do not replay uncertain Native mutations.
-4. Verify the exact resulting Native entitlement. Finalize `increase_order`, local order expiry (where applicable), and `pays.state=paid_with_wallet` atomically in a separate short SQL transaction. A failed finalization leaves the original claim held for review; no second charge or automatic remote retry.
+3. Invoke Native for that claimed operation. An HTTP error, bad acknowledgment, first-readback mismatch, or worker crash **does not establish failure**. Read back the exact Native account before deciding whether another physical operation is necessary. The Owner explicitly authorizes reapplying the **same original absolute PasarGuard RESET/PUT renewal** when incomplete or unknown, using its pinned original account/entitlement and the same held Wallet claim. This exception does not apply to additive operations, CREATE, Marzban, or a different payment.
+4. Verify the exact resulting Native entitlement. Finalize `increase_order`, local order expiry (where applicable), and `pays.state=paid_with_wallet` atomically in a separate short SQL transaction. A failed finalization leaves the original claim eligible for later GET-first reconciliation or original PasarGuard absolute Retry; **never charge again**.
 5. Handle Telegram delivery separately from payment and Native finality. Never infer a successful delivery from a committed local payment or a repeated callback.
 
 **PasarGuard reset-renewal clarification (Issue #227):** the original,
@@ -17,13 +17,37 @@ durably claimed `RENEW_ACCOUNT` is an **absolute** plan replacement
 but the absolute PUT/SQL COMMIT failed, a payments-authorized operator may
 observe the **same pinned native identity and immutable original operation**
 and explicitly confirm finishing that original reset (including a measured
-native entitlement-drift warning). It does not create another payment or
-debit the wallet. Prefer GET-only local reconciliation when Native already
+native entitlement-drift warning). The ordinary services Cron may also retry
+that **same immutable absolute operation automatically** when its original
+`pay:ID` mutation remains `mutating`, the authenticated Native account,
+instance and access groups still match the pinned original, and the
+already-purchased target has not been reached. Transient GET/RESET/PUT
+failures defer the held claim to later Cron passes, not a second Wallet
+debit. A staff confirmation rechecks live evidence and executes that
+same original continuation rather than requiring a stale Native preview
+digest; a confirmation made after Cron already completed the exact
+payment reports its terminal status, without a second Native write. A changed
+account identity, changed access groups, another conflicting operation or
+unavailable provider is not permission for an unverified write. Prefer GET-only local reconciliation when Native already
 has the exact originally verified target. Additive DAY/VOLUME remains
 non-replayable: only verified-original-Native evidence can authorize a
 single local COMMIT. Paid CREATE recovery reuses its original reserved
 effect/line and cannot provision a second account. An unknown Telegram
 acknowledgment never authorizes an automatic second send.
+
+**Automatic renewal cycles (migration 004):** an automatic `RENEW_ACCOUNT`
+also owns a unique `automatic_renewal_attempts` row. Original-wallet
+recovery validates this immutable captured cycle (original pay, customer,
+order, server, plan, amount, days and volume) before Native or financial
+finality. Recovery seals `pays.state=paid_with_wallet`, the original
+once-only renewal audit, exact live-verified order expiry, one-shot
+customer/admin notice obligations, and `automatic_renewal_attempts.stage=done`
+in the **same** local transaction. It clears the cycle's `notif` flag.
+A legitimate zero-price/100%-discount cycle is allowed only with matching
+original automatic-renewal evidence; other Wallet recoveries still require
+a positive original amount. There is no second auto-renewal reservation
+or debit. Original payments with no valid, pinned Native mutation/attempt
+evidence remain review cases, not invented successes.
 
 **Observation is not admission:** a long-lived, original Native
 `provider_state=mutating` fence blocks further edits, plan changes, bulk
@@ -79,7 +103,7 @@ The internal Cron scans only old enough `processing_wallet` DAY/VOLUME claims wi
 
 Before any real Hell/Vivan/Chili SQL, authenticated Native read/write, Wallet correction, customer message or recovery action, obtain explicit target-specific Owner approval. Provide the original payment ID, known wallet/quote provenance, current `pays`, order, original `service_effects` and `provider_accounts` state, current Native GET evidence, pending attempts/notifications, expected changes, backup and roll-forward plan. Runtime ZIP and GitHub Release are not installation/OPcache evidence.
 
-For approved once-only settlement, verify: original Wallet balance **unchanged by recovery**, `pays.state=paid_with_wallet`, the order's exact Native-verified absolute entitlement, precisely one local add-on accounting row from this finalization, original `pay:ID` still consumed, original imported provenance/NULL order unmodified, no new Native PUT/RESET, no fabricated Telegram acknowledgment. Report any communication gap separately. If the Native entitlement differs from the original absolute target, **stop and review**; never overwrite independent drift. After a committed reconciliation, use only explicitly approved compensating operations, not ad hoc rollback SQL.
+For approved once-only settlement, verify: original Wallet balance **unchanged by recovery**, `pays.state=paid_with_wallet`, the order's exact Native-verified absolute entitlement, precisely one local renewal/add-on accounting row from this finalization, original `pay:ID` still consumed, original imported provenance/NULL order unmodified, no duplicate Native operation for an already-applied entitlement, and no fabricated Telegram acknowledgment. For an incomplete or unknown **original absolute PasarGuard renewal only**, a repeated RESET/PUT must use the same persisted absolute target and be followed by independently verified Native readback. If the Native account/instance, access groups, original payment or entitlement evidence is unrelated or cannot be authenticated, defer the operation for review rather than claim success. Report communication gaps separately. After a committed reconciliation, use only explicitly approved compensating operations, not ad hoc rollback SQL.
 
 ### Hell original payment #112719
 

@@ -235,10 +235,23 @@ if (preg_match('/^attentionWallet(Inspect|Complete|Retry)_([1-9][0-9]{0,17})(?:_
                         'automatic_gateway_review.service_confirm',
                         ['payment'=>$payId]);
                 }
+                // The operator confirms the same immutable invoice, not a
+                // stale preview digest. Re-observe and finish/retry on click.
+                // This avoids a merely changed Native readback becoming a
+                // permanent button-level lock on an already-debited renewal.
+                $token=achbotWalletPgRenewConfirmationToken($original,$actor);
                 $rows[]=[['text'=>achbotMessage($drift
                     ?'automatic_gateway_review.service_override_execute'
                     :'automatic_gateway_review.wallet_retry_action'),
-                    'callback_data'=>'attentionWalletRetry_'.$payId.'_'.$token]];
+                    'callback_data'=>'attentionWalletComplete_'.$payId.'_'.$token]];
+            } elseif (($result['status']??null)==='retry_pending') {
+                $original=achbotWalletPgRenewOriginal($connection,$payId);
+                $token=achbotWalletPgRenewConfirmationToken($original,$actor);
+                $resultMessage=achbotMessage(
+                    'automatic_gateway_review.wallet_review_warning');
+                $rows[]=[['text'=>achbotMessage(
+                    'automatic_gateway_review.wallet_retry_action'),
+                    'callback_data'=>'attentionWalletComplete_'.$payId.'_'.$token]];
             } else {
                 $resultMessage=achbotMessage('automatic_gateway_review.wallet_review_hold');
             }
@@ -253,17 +266,32 @@ if (preg_match('/^attentionWallet(Inspect|Complete|Retry)_([1-9][0-9]{0,17})(?:_
                 :'automatic_gateway_review.wallet_review_stale');
         } elseif ($walletAction[1]==='Complete' &&
             preg_match('/^[a-f0-9]{20}$/D',(string)($walletAction[3]??''))===1) {
-            $original=achbotWalletPgRenewOriginal($connection,$payId);
-            $expected=achbotWalletPgRenewConfirmationToken($original,$actor);
-            if (!hash_equals($expected,(string)$walletAction[3])) {
-                $resultMessage=achbotMessage('automatic_gateway_review.wallet_review_stale');
+            // Cron may have finished this ORIGINAL pay after the staff preview.
+            // Do not misreport a successful concurrent completion as a stale
+            // or blocked operation. The payments permission/private chat
+            // boundary already applies to this read-only terminal status.
+            $q=$connection->prepare('SELECT type,state FROM pays WHERE id=?');
+            $q->bind_param('i',$payId);$q->execute();
+            $terminal=$q->get_result()->fetch_assoc();$q->close();
+            if ($terminal && $terminal['type']==='RENEW_ACCOUNT' &&
+                $terminal['state']==='paid_with_wallet') {
+                $resultMessage=achbotMessage('automatic_gateway_review.wallet_review_done');
             } else {
-                answerCallbackQuery($callbackId,achbotMessage('automatic_gateway_review.checking'));
-                $result=achbotWalletPgResumeRenew($connection,$payId,$actor,$owner);
-                $resultMessage=achbotMessage(
-                    ($result['status']??null)==='settled_delivery_pending'
+                $original=achbotWalletPgRenewOriginal($connection,$payId);
+                $expected=achbotWalletPgRenewConfirmationToken($original,$actor);
+                if (!hash_equals($expected,(string)$walletAction[3])) {
+                    $resultMessage=achbotMessage('automatic_gateway_review.wallet_review_stale');
+                } else {
+                    answerCallbackQuery($callbackId,
+                        achbotMessage('automatic_gateway_review.checking'));
+                    $result=achbotWalletPgResumeRenew($connection,$payId,$actor,$owner);
+                    $state=(string)($result['status']??'');
+                    $resultMessage=achbotMessage(
+                        in_array($state,['settled_delivery_pending',
+                                'already_paid_state'],true)
                         ?'automatic_gateway_review.wallet_review_done'
                         :'automatic_gateway_review.wallet_review_hold');
+                }
             }
         } else {
             $resultMessage=achbotMessage('automatic_gateway_review.wallet_review_stale');

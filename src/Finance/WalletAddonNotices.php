@@ -97,7 +97,13 @@ function achbotWalletAddonMarkRecoveryNoticesLocked(mysqli $db,array $claim): vo
     $oid=(int)$claim['order_id'];$sid=(int)$pay['server_id'];
     $kind=(string)$claim['kind'];$units=(int)$claim['units'];
     $amount=(int)$pay['price'];$hash=(string)$pay['hash_id'];
-    if ($id<=0 || $uid<=0 || $oid<=0 || $sid<=0 || $amount<=0 ||
+    // A verified automatic renewal can have a legitimate 100% discount.
+    // It still needs the same durable first-send customer/admin obligations.
+    $zeroCostAutoRenew=$amount===0 && $kind==='renew' &&
+        is_array($claim['automatic_attempt']??null) &&
+        (int)$claim['automatic_attempt']['price_toman']===0;
+    if ($id<=0 || $uid<=0 || $oid<=0 || $sid<=0 ||
+        ($amount<=0 && !$zeroCostAutoRenew) ||
         !in_array($kind,['renew','day','volume'],true) || $units<=0 ||
         (int)$order['userid']!==$uid || (int)$order['server_id']!==$sid ||
         !achbotDeliverySchemaReady($db))

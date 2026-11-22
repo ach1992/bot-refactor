@@ -31,6 +31,16 @@ function sendMessage(...$args){
     return ($GLOBALS['spec']['telegram_unknown']??false)===true
         ?(object)['ok'=>false]:(object)['ok'=>true];
 }
+function editText(...$args){
+    $GLOBALS['events'][]=['kind'=>'operator_edit',
+        'text'=>(string)($args[1]??''),
+        'keyboard'=>(string)($args[2]??'')];
+    return (object)['ok'=>true];
+}
+function answerCallbackQuery(...$args){
+    $GLOBALS['events'][]=['kind'=>'operator_ack'];
+    return (object)['ok'=>true];
+}
 function achbotNotifyAdmins($method,array $data,array $options=[]):array {
     $GLOBALS['events'][]=['kind'=>'admin_report','text'=>(string)($data['text']??'')];
     return [['chat_id'=>9001,'response'=>(object)['ok'=>true]]];
@@ -163,6 +173,13 @@ try {
     }elseif($op==='resume'){
         $result=achbotWalletPgResumeRenew($db,$payId,
             (int)($spec['actor']??9001),9001);
+    }elseif($op==='operator_ui'){
+        $connection=$db;$from_id=(int)($spec['actor']??9001);
+        $chat_id=$from_id;$admin=9001;$message_id=41;
+        $callbackId='wallet-fixture-callback';
+        $data=(string)($spec['callback']??'');
+        require $root.'/src/Finance/Routes/AutomaticGatewayReview.php';
+        $result=['handled'=>true];
     }elseif($op==='cron_recover'){
         $result=achbotWalletPgRenewMaintain($db);
     }elseif($op==='cron_reports'){
@@ -270,6 +287,73 @@ def case(*, variant:str)->list[str]:
             checks.append('real_additive_payment_still_pending_and_mutation_admission_fenced')
             checks.append('real_additive_fence_live_links_do_not_send_second_native_write')
             return checks
+        if variant=='admin_ui_partial_original':
+            native=call('seed_native')
+            assert native['ok'] and native['result']['verified'],native
+            provider.user['data_limit']=12*1073741824
+            sql("UPDATE service_effects SET provider_state='mutating',"
+                "provider_mutation_snapshot=JSON_REMOVE("
+                "provider_mutation_snapshot,'$.result','$.verified_at','$.current_group_ids')"
+                " WHERE id="+str(effect_id))
+            wallet_before=sql('SELECT wallet FROM users WHERE userid=1001')
+            inspect=call('operator_ui',callback='attentionWalletInspect_'+str(pay_id))
+            assert inspect['ok'],inspect
+            edits=[e for e in inspect['events'] if e['kind']=='operator_edit']
+            assert len(edits)==1,inspect
+            import re
+            matches=re.findall(r'attentionWalletComplete_'+str(pay_id)+
+                r'_([a-f0-9]{20})',edits[0]['keyboard'])
+            assert len(matches)==1 and 'attentionWalletRetry_' not in edits[0]['keyboard'],inspect
+            assert provider.write_count==2
+            callback='attentionWalletComplete_'+str(pay_id)+'_'+matches[0]
+            completed=call('operator_ui',callback=callback)
+            assert completed['ok'],completed
+            assert sql('SELECT state FROM pays WHERE id='+str(pay_id))=='paid_with_wallet'
+            assert provider.write_count==4
+            assert sql('SELECT wallet FROM users WHERE userid=1001')==wallet_before
+            again=call('operator_ui',callback=callback)
+            assert again['ok'] and provider.write_count==4,again
+            assert any(e['kind']=='operator_edit' for e in again['events'])
+            checks.extend(['admin_button_exposes_original_confirmation_not_stale_native_digest',
+                'admin_confirm_retries_incomplete_absolute_exact_once',
+                'admin_second_click_reports_completed_without_new_native_or_wallet'])
+            return checks
+        if variant=='unknown_reset_ack_then_cron':
+            # The first RESET reached Native but its HTTP ACK was lost.
+            # The original absolute intent and Wallet hold predate that POST.
+            provider.mode='write_lost'
+            unknown=call('seed_native')
+            assert unknown['ok'] and not unknown['result']['success'],unknown
+            assert provider.write_count==1,provider.trace
+            assert sql('SELECT provider_state FROM service_effects WHERE id='+str(effect_id))=='mutating'
+            wallet_before=sql('SELECT wallet FROM users WHERE userid=1001')
+            provider.mode='ok'
+            sql('UPDATE pays SET updated_at=NULL WHERE id='+str(pay_id))
+            resumed=call('cron_recover')
+            assert resumed['ok'] and resumed['result']['settled']==1,resumed
+            assert sql('SELECT state FROM pays WHERE id='+str(pay_id))=='paid_with_wallet'
+            assert sql('SELECT wallet FROM users WHERE userid=1001')==wallet_before
+            assert sql('SELECT COUNT(*) FROM increase_order')=='1'
+            assert sql('SELECT COUNT(*) FROM payment_delivery_intents')=='1'
+            assert provider.write_count==3,provider.trace
+            assert call('cron_recover')['result']['settled']==0
+            assert provider.write_count==3
+            checks.extend(['unknown_first_reset_ack_retries_same_original_absolute_on_cron',
+                'unknown_first_reset_ack_never_debits_twice_or_duplicates_audit_delivery'])
+            return checks
+        auto_variants=('auto_cycle_applied','auto_cycle_zero_price',
+                       'auto_cycle_partial_native')
+        if variant in auto_variants:
+            sql((ROOT/'migrations/post-v9/004_automatic_renewal_attempts.sql').read_text())
+            sql("UPDATE pays SET description='automatic_renewal',day=31,volume=10"
+                " WHERE id="+str(pay_id))
+            sql("INSERT INTO automatic_renewal_attempts "
+                "(order_id,cycle_expire,pay_row_id,user_id,plan_id,server_id,"
+                "account_remark,price_toman,duration_days,volume_gb,new_expire,stage) "
+                "VALUES (103,"+str(EXPIRY)+","+str(pay_id)+
+                ",1001,7,2,'historical_fixture',185000,31,10,"+
+                str(EXPIRY+31*86400)+",'remote_started')")
+            sql("UPDATE orders_list SET notif=1 WHERE id=103")
         native=call('seed_native')
         assert native['ok'] and native['result']['success'] and native['result']['verified'],native
         target=native['result']['expire']
@@ -335,6 +419,36 @@ def case(*, variant:str)->list[str]:
             assert provider.write_count==2
             checks.append('retired_or_unattached_order_never_authorizes_live_link')
             return checks
+        if variant in auto_variants:
+            sql("UPDATE automatic_renewal_attempts SET stage='review'"
+                " WHERE pay_row_id="+str(pay_id))
+            if variant=='auto_cycle_zero_price':
+                # Synthetic 100% agent quote: no Wallet debit is created.
+                sql("UPDATE pays SET price=0 WHERE id="+str(pay_id))
+                sql("UPDATE automatic_renewal_attempts SET price_toman=0"
+                    " WHERE pay_row_id="+str(pay_id))
+            if variant=='auto_cycle_partial_native':
+                provider.user['data_limit']=12*1073741824
+                sql("UPDATE service_effects SET provider_state='mutating',"
+                    "provider_mutation_snapshot=JSON_REMOVE("
+                    "provider_mutation_snapshot,'$.result','$.verified_at','$.current_group_ids')"
+                    " WHERE id="+str(effect_id))
+            before_wallet=sql("SELECT wallet FROM users WHERE userid=1001")
+            sql("UPDATE pays SET updated_at=NULL WHERE id="+str(pay_id))
+            result=call('cron_recover')
+            assert result['result']['settled']==1,result
+            assert sql("SELECT state FROM pays WHERE id="+str(pay_id))=='paid_with_wallet'
+            assert sql("SELECT stage FROM automatic_renewal_attempts"
+                " WHERE pay_row_id="+str(pay_id))=='done'
+            assert sql("SELECT notif FROM orders_list WHERE id=103")=='0'
+            assert sql("SELECT COUNT(*) FROM increase_order")=='1'
+            assert sql("SELECT COUNT(*) FROM payment_delivery_intents")=='1'
+            assert sql("SELECT wallet FROM users WHERE userid=1001")==before_wallet
+            assert provider.write_count==(4 if variant=='auto_cycle_partial_native' else 2)
+            assert call('cron_recover')['result']['settled']==0
+            checks.extend(['automatic_cycle_and_original_payment_finality_atomic',
+                'auto_renew_no_second_debit_no_duplicate_native_or_notification'])
+            return checks
         if variant=='native_drift':
             provider.user['data_limit']+=777
             assert call('inspect')['result']['status']=='review'
@@ -344,7 +458,12 @@ def case(*, variant:str)->list[str]:
             checks.append('unrelated_native_change_cannot_be_claimed_as_original_renewal')
             return checks
         expected_writes=2
-        if variant in ('reset_only_baseline','reset_only_drift'):
+        reset_variants=(
+            'reset_only_baseline','reset_only_drift',
+            'cron_reset_only_baseline','cron_reset_only_drift',
+            'manual_reset_only_drift','transient_native_outage',
+            'cron_groups_changed')
+        if variant in reset_variants:
             # Identical Native reset-only partial failure to Hell #113331:
             # prior quota 12GiB, zero usage, original plan target 10GiB.
             # A fresh operator preview uses GET-only and the ORIGINAL journal
@@ -357,25 +476,64 @@ def case(*, variant:str)->list[str]:
                 "provider_mutation_snapshot=JSON_REMOVE("
                 "provider_mutation_snapshot,'$.result','$.verified_at','$.current_group_ids')"
                 " WHERE id="+str(effect_id))
-            if variant=='reset_only_baseline':
+            if variant in ('reset_only_baseline','cron_reset_only_baseline'):
                 sql("UPDATE service_effects SET provider_mutation_snapshot="
                     "JSON_SET(provider_mutation_snapshot,"
                     "'$.changes.before.data_limit',"+str(12*1073741824)+","
                     "'$.changes.before.expire',"+str(EXPIRY)+")"
                     " WHERE id="+str(effect_id))
             assert provider.user['used_traffic']==0
-            preview=call('preview_retry')
-            assert preview['ok'] and preview['result']['status']=='retryable',preview
-            disposition='baseline' if variant=='reset_only_baseline' else 'drift'
-            assert preview['result']['disposition']==disposition,preview
-            stale=call('retry',token='00000000000000000000')
-            assert stale['result']['status']=='review',stale
-            assert provider.write_count==2,provider.trace
-            recovered=call('retry',token=preview['result']['token'])
-            assert recovered['result']['status']=='settled_delivery_pending',recovered
-            expected_writes=4
-            checks.append('reset_only_12g_native_get_plus_staff_confirm_restores_original_10g_31days')
-            checks.append('forged_or_stale_operator_token_cannot_repeat_native')
+            if variant=='cron_groups_changed':
+                provider.user['group_ids']=[5]
+                sql('UPDATE pays SET updated_at=NULL WHERE id='+str(pay_id))
+                held=call('cron_recover')
+                assert held['result']['settled']==0 and held['result']['review']==1,held
+                assert provider.write_count==2,provider.trace
+                assert sql('SELECT state FROM pays WHERE id='+str(pay_id))=='processing_wallet'
+                checks.append('original_account_groups_changed_auto_retry_refuses_foreign_entitlement')
+                return checks
+            if variant=='transient_native_outage':
+                provider.mode='http_503'
+                sql('UPDATE pays SET updated_at=NULL WHERE id='+str(pay_id))
+                pending=call('cron_recover')
+                assert pending['result']['settled']==0 and pending['result']['review']==1,pending
+                assert provider.write_count==2,provider.trace
+                assert call('inspect')['result']['status']=='retry_pending'
+                provider.mode='ok'
+                sql('UPDATE pays SET updated_at=NULL WHERE id='+str(pay_id))
+                resumed=call('cron_recover')
+                assert resumed['result']['settled']==1,resumed
+                expected_writes=4
+                checks.extend(['temporary_native_get_outage_keeps_original_retry_eligible',
+                    'later_cron_recovers_same_original_without_new_charge'])
+            elif variant.startswith('cron_reset_only_'):
+                sql('UPDATE pays SET updated_at=NULL WHERE id='+str(pay_id))
+                ready=call('inspect')
+                assert ready['result']['status']=='retryable',ready
+                resumed=call('cron_recover')
+                assert resumed['result']['settled']==1,resumed
+                expected_writes=4
+                checks.append('cron_replays_original_reset_for_partial_native_entitlement')
+            elif variant=='manual_reset_only_drift':
+                ready=call('inspect')
+                assert ready['result']['status']=='retryable',ready
+                resumed=call('resume')
+                assert resumed['result']['status']=='settled_delivery_pending',resumed
+                expected_writes=4
+                checks.append('admin_confirm_one_action_follows_original_drift_without_stale_preview_digest')
+            else:
+                preview=call('preview_retry')
+                assert preview['ok'] and preview['result']['status']=='retryable',preview
+                disposition='baseline' if variant=='reset_only_baseline' else 'drift'
+                assert preview['result']['disposition']==disposition,preview
+                stale=call('retry',token='00000000000000000000')
+                assert stale['result']['status']=='review',stale
+                assert provider.write_count==2,provider.trace
+                recovered=call('retry',token=preview['result']['token'])
+                assert recovered['result']['status']=='settled_delivery_pending',recovered
+                expected_writes=4
+                checks.append('reset_only_12g_native_get_plus_staff_confirm_restores_original_10g_31days')
+                checks.append('forged_or_stale_operator_token_cannot_repeat_native')
         if variant=='plan_changed':
             sql("UPDATE server_plans SET volume=18,days=60 WHERE id=7")
             assert call('original')['result']['volume']==10
@@ -408,8 +566,8 @@ def case(*, variant:str)->list[str]:
             assert sql('SELECT COUNT(*) FROM payment_attempts')=='0'
             sql("DELETE FROM setting WHERE type='WALLET_ADDON_REPORT:"+str(pay_id)+"'")
             checks.append('outbox_failure_rolls_back_original_local_finality')
-        if variant in ('reset_only_baseline','reset_only_drift'):
-            pass  # original operator retry already completed above
+        if variant in reset_variants:
+            pass  # original Cron/operator replay already completed above
         elif variant=='race':
             with ThreadPoolExecutor(max_workers=2) as pool:
                 results=list(pool.map(lambda _:call('resume'),range(2)))
@@ -459,16 +617,23 @@ def main():
     ap.add_argument('--report',type=Path)
     args=ap.parse_args()
     checks=[]
-    for variant in ('applied','native_drift','identity_drift','audit_failure',
+    variants=('applied','native_drift','identity_drift','audit_failure',
                     'notice_failure','commit_ack','race','cron','plan_changed',
                     'reset_only_baseline','reset_only_drift',
+                    'cron_reset_only_baseline','cron_reset_only_drift',
+                    'manual_reset_only_drift','transient_native_outage',
+                    'cron_groups_changed','unknown_reset_ack_then_cron',
+                    'admin_ui_partial_original',
+                    'auto_cycle_applied','auto_cycle_zero_price',
+                    'auto_cycle_partial_native',
                     'render_mutating_live','native_identity_wrong',
-                    'retired_order','addon_mutating_live'):
+                    'retired_order','addon_mutating_live')
+    for variant in variants:
         checks += [variant+':'+x for x in case(variant=variant)]
     result={'complete':True,'status':'PASS','checks':len(checks),'cases':checks,'real_php':True,
             'native':'loopback-only','database':'owned-temporary-socket',
             'real_payment_writes':False}
     if args.report:args.report.write_text(json.dumps(result,indent=2)+'\n')
-    print(json.dumps({'checks':len(checks),'variants':15},sort_keys=True))
+    print(json.dumps({'checks':len(checks),'variants':len(variants)},sort_keys=True))
 
 if __name__=='__main__':main()

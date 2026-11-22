@@ -58,7 +58,10 @@ def owned_database():
             client=['mariadb','--no-defaults','--protocol=SOCKET','--socket='+str(d/'mysql.sock'),'-uroot','--batch']
             try:
                 for _ in range(100):
-                    if server.poll() is not None:raise RuntimeError('Owned fixture exited before readiness')
+                    if server.poll() is not None:
+                        log_path=d/'server.log'
+                        detail=log_path.read_text(errors='replace')[-2500:] if log_path.exists() else 'no server log'
+                        raise RuntimeError('Owned fixture exited before readiness: '+detail)
                     if (d/'mysql.sock').exists() and subprocess.run(client+['-e','SELECT 1'],env=env,capture_output=True,timeout=3).returncode==0:break
                     time.sleep(.1)
                 else:raise RuntimeError('Owned fixture not ready')

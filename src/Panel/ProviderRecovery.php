@@ -307,8 +307,38 @@ function achbotPgRecoverEdit(mysqli $db,int $serverId,array $params,
                 'pay_id'=>$payId,'order_id'=>$orderId,'server_id'=>$serverId,
                 'actor_id'=>$actor,'source'=>$kind,'result'=>'drift'],'warning');
         }
-        if ($disposition==='drift' && !$forceOperator)
+        // Owner-authorized original Wallet RENEW_ACCOUNT replay is different
+        // from an additive reapplication: one debited, fenced account and one
+        // previously persisted ABSOLUTE reset target. An unknown Native ACK
+        // cannot require a permanent manual unlock. A verified identity,
+        // unchanged access groups and an owned mutation key are still required;
+        // a separate operator's group/disable change is not our purchase.
+        $originalRenewReplay=($source['original_absolute_replay']??false)===true
+            && $kind==='renew'
+            && $account['state']==='mutating'
+            && (string)$account['mutation_key']===$key
+            && ($changes['reset_usage']??null)===true
+            && $units===['days'=>(int)($params['days']??0),
+                        'volume'=>(int)($params['volume']??-1)]
+            && is_array($before['group_ids']??null)
+            && $native['group_ids']===$before['group_ids']
+            && $native['status']!=='disabled';
+        if ($originalRenewReplay) {
+            $q=$db->prepare("SELECT type,state,user_id,order_id FROM pays WHERE id=?");
+            $q->bind_param('i',$payId);$q->execute();
+            $originalPay=$q->get_result()->fetch_assoc();$q->close();
+            $originalRenewReplay=$originalPay
+                && $originalPay['type']==='RENEW_ACCOUNT'
+                && $originalPay['state']==='processing_wallet'
+                && (int)$originalPay['order_id']===$orderId
+                && (int)$originalPay['user_id']===(int)$ctx['order']['userid'];
+        }
+        if ($disposition==='drift' && !$forceOperator && !$originalRenewReplay)
             throw new RuntimeException('pg_recovery_native_entitlement_drift');
+        if ($originalRenewReplay && $disposition!=='applied')
+            achbotDiagnosticEvent('achbot.native.original_renew_replay',[
+                'pay_id'=>$payId,'order_id'=>$orderId,'server_id'=>$serverId,
+                'disposition'=>$disposition,'state'=>$account['state']], 'info');
         // Applied-only continuation must NEVER issue a PUT or RESET, even
         // when an untouched baseline could theoretically be replayed with an
         // absolute target. Require fresh authenticated proof of application.
@@ -319,7 +349,8 @@ function achbotPgRecoverEdit(mysqli $db,int $serverId,array $params,
             throw new RuntimeException('pg_recovery_already_finished_changed');
         $observeOnly=($source['observe_only']??false)===true;
         if ($account['state']==='mutating') {
-            if ($disposition==='baseline' || $forceOperator) {
+            if ($disposition==='baseline' || $forceOperator ||
+                ($originalRenewReplay && $disposition==='drift')) {
                 // Original financial claim and account fence are held by the
                 // caller. This PUT uses a stored ABSOLUTE target, never
                 // current + purchased units, so even additive retry does not

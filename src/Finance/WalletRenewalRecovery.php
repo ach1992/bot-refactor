@@ -2,8 +2,10 @@
 /**
  * #227: finish an ORIGINAL, already debited PasarGuard wallet renewal.
  *
- * Native GET is outside SQL; this coordinator never debits the wallet or
- * dispatches a new RESET/PUT. A verified original native absolute renewal,
+ * Native GET is outside SQL; this coordinator never debits the wallet.
+ * On an incomplete/unknown original absolute renewal, it can replay the
+ * ORIGINAL pinned RESET/PUT while holding the original payment lease.
+ * A verified original native absolute renewal,
  * the original local order, audit, payment and one-shot notification intents
  * are committed together. An unresolved effect stays in operator review.
  */
@@ -22,12 +24,42 @@ function achbotWalletPgRenewOriginal(mysqli $db,int $payId,bool $locked=false): 
     $q=$db->prepare('SELECT * FROM pays WHERE id=?'.($locked?' FOR UPDATE':''));
     $q->bind_param('i',$payId);$q->execute();
     $pay=$q->get_result()->fetch_assoc();$q->close();
+    $automatic=$pay && (string)($pay['description']??'')==='automatic_renewal';
     if (!$pay || $pay['type']!=='RENEW_ACCOUNT' ||
         $pay['state']!=='processing_wallet' ||
-        (int)$pay['user_id']<=0 || (int)$pay['price']<=0 ||
+        (int)$pay['user_id']<=0 ||
+        (int)$pay['price']<($automatic?0:1) ||
         (int)$pay['order_id']<=0 || (int)$pay['plan_id']<=0 ||
         (int)$pay['server_id']<=0 || (string)($pay['payid']??'')!=='')
         throw new RuntimeException('wallet_renew_recovery_claim_invalid');
+
+    $auto=null;
+    if ($automatic) {
+        // An auto-renew claim owns TWO financial lifecycle records. Never
+        // settle pays alone and leave the cycle in the permanent 'review'
+        // fence (nor synthesize a cycle from an old manual Wallet payment).
+        $q=$db->prepare('SELECT id,order_id,cycle_expire,pay_row_id,user_id,
+            plan_id,server_id,account_remark,price_toman,duration_days,
+            volume_gb,new_expire,stage FROM automatic_renewal_attempts
+            WHERE pay_row_id=?'.($locked?' FOR UPDATE':''));
+        $q->bind_param('i',$payId);$q->execute();
+        $rows=$q->get_result()->fetch_all(MYSQLI_ASSOC);$q->close();
+        $auto=count($rows)===1?$rows[0]:null;
+        if (!$auto || !in_array((string)$auto['stage'],
+                ['remote_started','review'],true) ||
+            (int)$auto['order_id']!==(int)$pay['order_id'] ||
+            (int)$auto['pay_row_id']!==$payId ||
+            (int)$auto['user_id']!==(int)$pay['user_id'] ||
+            (int)$auto['plan_id']!==(int)$pay['plan_id'] ||
+            (int)$auto['server_id']!==(int)$pay['server_id'] ||
+            (int)$auto['price_toman']!==(int)$pay['price'] ||
+            (int)$auto['duration_days']!==(int)$pay['day'] ||
+            (int)$auto['volume_gb']!==(int)$pay['volume'] ||
+            (int)$auto['duration_days']<=0 ||
+            (int)$auto['volume_gb']<0 ||
+            (int)$auto['new_expire']<=0)
+            throw new RuntimeException('wallet_renew_recovery_auto_cycle_changed');
+    }
 
     $ctx=achbotPgOrderContext($db,(int)$pay['order_id'],$locked,true);
     $order=$ctx['order'];$account=$ctx['account'];$key='pay:'.$payId;
@@ -37,6 +69,8 @@ function achbotWalletPgRenewOriginal(mysqli $db,int $payId,bool $locked=false): 
         (int)$order['server_id']!==(int)$pay['server_id'] ||
         (int)$order['inbound_id']!==0 || (int)$order['status']!==1 ||
         (string)$order['remark']==='' ||
+        ($automatic && ((int)$auto['cycle_expire']!==(int)$order['expire_date'] ||
+            (string)$auto['account_remark']!==(string)$order['remark'])) ||
         !in_array((string)$account['state'],['mutating','linked'],true) ||
         (string)($account['mutation_key']??'')!==$key ||
         !achbotPgRecoveryOrderOriginMatches($db,$ctx,(int)$order['id']))
@@ -69,6 +103,9 @@ function achbotWalletPgRenewOriginal(mysqli $db,int $payId,bool $locked=false): 
         !is_int($days) || $days<=0 || $days>36500 ||
         !is_int($volume) || $volume<0 || $volume>achbotServiceVolumeMax())
         throw new RuntimeException('wallet_renew_recovery_original_units_invalid');
+    if ($automatic && ((int)$auto['duration_days']!==$days ||
+        (int)$auto['volume_gb']!==$volume))
+        throw new RuntimeException('wallet_renew_recovery_auto_units_changed');
     if (!is_array($proof) || ($proof['version']??null)!==1 ||
         ($proof['key']??null)!==$key || ($proof['action']??null)!=='edit' ||
         !in_array($key,$proof['consumed_keys']??[],true) ||
@@ -99,6 +136,8 @@ function achbotWalletPgRenewOriginal(mysqli $db,int $payId,bool $locked=false): 
             $account['mutation_snapshot'],$account['remote_user_id'],
             $account['remote_created_at'],$account['operation_marker']],
         'original_plan_id'=>(int)$pay['plan_id'],
+        'automatic_cycle'=>$auto?[(int)$auto['id'],(int)$auto['cycle_expire'],
+            (int)$auto['duration_days'],(int)$auto['volume_gb']]:null,
         'original_units'=>[$days,$volume],
         'identity'=>$ctx['identity'],
         'panel'=>[$ctx['panel']['id'],$ctx['panel']['instance_key'],$ctx['panel']['api_url']]
@@ -106,6 +145,7 @@ function achbotWalletPgRenewOriginal(mysqli $db,int $payId,bool $locked=false): 
     return ['fingerprint'=>$fingerprint,'pay'=>$pay,'order'=>$order,
         'account'=>$account,'ctx'=>$ctx,'days'=>$days,'volume'=>$volume,
         'absolute'=>$absolute,'order_id'=>(int)$order['id'],
+        'automatic_attempt'=>$auto,
         'kind'=>'renew','units'=>$days];
 }
 
@@ -180,7 +220,8 @@ function achbotWalletPgRenewInspect(mysqli $db,int $payId,int $actor,int $primar
         $original=achbotWalletPgRenewOriginal($db,$payId);
         $remote=achbotWalletPgRenewObserved($db,$original);
         $retry=$remote===null?achbotWalletPgRenewRetryPreview($db,$original):null;
-        return ['status'=>$remote?'applied':($retry?'retryable':'review'),
+        return ['status'=>$remote?'applied':($retry?'retryable':
+                ($original['account']['state']==='mutating'?'retry_pending':'review')),
             'pay_id'=>$payId,'order_id'=>$original['order_id'],
             'disposition'=>$retry->disposition??null,
             'native_expire'=>$retry->native_expire??null,
@@ -279,6 +320,23 @@ function achbotWalletPgResumeRenewCore(mysqli $db,int $payId,int $actor,int $pri
             $before=achbotWalletPgRenewOriginal($db,$payId);
         } else {
             $remote=achbotWalletPgRenewObserved($db,$before);
+            if ($remote===null && $before['account']['state']==='mutating') {
+                // GET-only finality first; then retry EXACTLY this held
+                // original absolute RESET/PUT. A Native outage defers the
+                // same claim to a future Cron pass, not a second charge.
+                $params=['pay_id'=>$payId,
+                    'remark'=>(string)$before['order']['remark'],
+                    'days'=>$before['days'],'volume'=>$before['volume']];
+                $source=['kind'=>'renew','order'=>$before['order_id'],
+                    'expiry'=>(int)$before['order']['expire_date'],
+                    'defer_account_finality'=>true,
+                    'original_absolute_replay'=>true];
+                $remote=achbotPgRecoverEdit($db,(int)$before['order']['server_id'],
+                    $params,$source,true);
+                if (($remote->success??false)===true &&
+                    ($remote->verified??false)===true)
+                    $before=achbotWalletPgRenewOriginal($db,$payId);
+            }
         }
         if (($remote->success??false)!==true ||
             ($remote->verified??false)!==true ||
@@ -322,6 +380,25 @@ function achbotWalletPgResumeRenewCore(mysqli $db,int $payId,int $actor,int $pri
         if (!$q->execute() || $q->affected_rows!==1)
             throw new RuntimeException('wallet_renew_recovery_payment_unconfirmed');
         $q->close();
+        if ($current['automatic_attempt']!==null) {
+            // Close the exact captured automatic cycle, not just pays. A
+            // pending cycle otherwise blocks every subsequent auto-renewal.
+            $autoId=(int)$current['automatic_attempt']['id'];
+            $q=$db->prepare("UPDATE automatic_renewal_attempts
+                SET stage='done' WHERE id=? AND pay_row_id=?
+                AND stage IN ('remote_started','review')");
+            $q->bind_param('ii',$autoId,$payId);
+            if (!$q->execute() || $q->affected_rows!==1)
+                throw new RuntimeException('wallet_renew_recovery_auto_finality_unconfirmed');
+            $q->close();
+            $q=$db->prepare('UPDATE orders_list SET notif=0
+                WHERE id=? AND userid=? AND notif<>0');
+            $orderId=$current['order_id'];
+            $q->bind_param('ii',$orderId,$uid);
+            if (!$q->execute())
+                throw new RuntimeException('wallet_renew_recovery_auto_order_flag_unconfirmed');
+            $q->close();
+        }
         achbotWalletAddonMarkRecoveryNoticesLocked($db,$current);
         if ($db->commit()!==true)
             throw new RuntimeException('wallet_renew_recovery_commit_unknown');
@@ -350,7 +427,8 @@ function achbotWalletPgResumeRenewCore(mysqli $db,int $payId,int $actor,int $pri
 /**
  * System recovery only for an original, already started Native edit. An old
  * wallet payment whose original key is absent on the account stays in inbox.
- * Never replay a native renewal, wallet debit or Telegram delivery from Cron.
+ * The original absolute PasarGuard renewal can be replayed after Native
+ * uncertainty, but never the wallet debit, additive edit or Telegram send.
  */
 function achbotWalletPgRenewMaintain(mysqli $db,int $batch=4): array {
     $stats=['considered'=>0,'settled'=>0,'review'=>0];
