@@ -41,6 +41,32 @@ AFTER_OWNER=HOOK.replace("$GLOBALS['f1_pause']??false", "$GLOBALS['f1_after_owne
     "$GLOBALS['f1_ready']", "$GLOBALS['f1_after_ready']").replace(
     "$GLOBALS['f1_release']", "$GLOBALS['f1_after_release']")
 
+# Pause the real original callback after its Wallet debit COMMIT, before its
+# first Native mutation; only disposable staged PHP contains this hook.
+AFTER_DEBIT=r'''
+        if (($GLOBALS['r232_pause']??false)===true) {
+            file_put_contents((string)$GLOBALS['r232_ready'],'debited');
+            $deadline=microtime(true)+12;
+            while (!is_file((string)$GLOBALS['r232_release']) &&
+                   microtime(true)<$deadline) usleep(10000);
+            if (!is_file((string)$GLOBALS['r232_release']))
+                throw new RuntimeException('r232_native_release_timeout');
+        }
+'''
+ARCHIVE_GATE=r'''<?php
+error_reporting(E_ALL & ~E_DEPRECATED);
+set_error_handler(static function($n,$m){throw new ErrorException($m,0,$n);});
+$_SERVER['SCRIPT_FILENAME']=__FILE__;
+$root=$argv[1];$dbname=$argv[2];$socket=$argv[3];$payId=(int)$argv[4];
+$db=new mysqli('localhost','root','',$dbname,0,$socket);
+$db->set_charset('utf8mb4');
+require_once $root.'/src/Purchase/Core.php';
+require_once $root.'/src/Finance/GatewayReview.php';
+echo json_encode(['status'=>achbotWalletReviewArchive($db,9001,$payId,9001)],
+    JSON_THROW_ON_ERROR);
+'''
+
+
 WRITER=r"""<?php
 error_reporting(E_ALL);
 $root=$argv[1];$dbname=$argv[2];$socket=$argv[3];
@@ -85,6 +111,11 @@ def stage_source(w,previous):
             if not previous:
                 end=source.index(anchor,pos+len(marker))+len(anchor)
                 source=source[:end]+AFTER_OWNER.encode()+source[end:]
+                reason=('wallet_renew_claim_unconfirmed' if callback=='payRenewWithWallet'
+                        else 'wallet_day_claim_unconfirmed')
+                committed=("            throw new RuntimeException('"+reason+"');").encode()
+                position=source.index(committed,start)+len(committed)
+                source=source[:position]+AFTER_DEBIT.encode()+source[position:]
         p.write_bytes(source)
     return stage
 
@@ -124,6 +155,9 @@ $GLOBALS['f1_release']=$spec['f1_release']??'';
 $GLOBALS['f1_after_owner']=$spec['f1_after_owner']??false;
 $GLOBALS['f1_after_ready']=$spec['f1_after_ready']??'';
 $GLOBALS['f1_after_release']=$spec['f1_after_release']??'';
+$GLOBALS['r232_pause']=$spec['r232_pause']??false;
+$GLOBALS['r232_ready']=$spec['r232_ready']??'';
+$GLOBALS['r232_release']=$spec['r232_release']??'';
 $GLOBALS['spec']=$spec;""")
     old="$connection->set_charset('utf8mb4');"
     assert driver.count(old)==1
@@ -262,6 +296,53 @@ def run_a_first(w,e,stage,driver,writer,route,n,iso):
         if writer_process and writer_process.poll() is None:
             writer_process.kill();writer_process.communicate(timeout=4)
 
+def review_archive_race(w,e,stage,driver,archive_driver,route,n):
+    actor=11800+n
+    hash_,typ,oid=setup_case(w,e,route,actor,n)
+    # Ten-minute Archive threshold is exceeded but the quote is still
+    # within its supported thirty-minute checkout TTL.
+    sql(w,e,f"UPDATE pays SET request_date=UNIX_TIMESTAMP()-900 WHERE hash_id='{hash_}'")
+    pay_id=int(sql(w,e,f"SELECT id FROM pays WHERE hash_id='{hash_}'"))
+    folder=w/('r232-original-'+str(n));folder.mkdir()
+    ready=folder/'debit-ready';release=folder/'native-release'
+    spec=dict(data=route[1]+hash_,step='none',actor=actor,
+        route='renewal' if route[0]=='renewal' else 'extension',
+        remote_mode='success',isolation='REPEATABLE-READ',
+        existing_native=existing_native(n),
+        r232_pause=True,r232_ready=str(ready),r232_release=str(release))
+    action=subprocess.Popen(['php','-n','-d','extension=mysqlnd','-d',
+        'extension=mysqli','-d','display_errors=0',
+        '-d','allow_url_fopen=0',
+        '-d','disable_functions=exec,shell_exec,system,passthru,popen,proc_open,mail,dl',
+        str(driver),str(stage),str(w/'mysql.sock'),DB,json.dumps(spec)],
+        cwd=w,env=e,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+    try:
+        wait(ready,action,timeout=8)
+        assert sql(w,e,f'SELECT state FROM pays WHERE id={pay_id}')=='processing_wallet'
+        assert sql(w,e,f'SELECT wallet FROM users WHERE userid={actor}')=='600000'
+        blocked=subprocess.run(['php','-n','-d','extension=mysqlnd','-d',
+            'extension=mysqli',str(archive_driver),str(stage),DB,
+            str(w/'mysql.sock'),str(pay_id)],cwd=w,env=e,
+            capture_output=True,timeout=8)
+        assert blocked.returncode==0 and not blocked.stderr,(blocked.stdout,blocked.stderr)
+        report=json.loads(blocked.stdout)
+        assert report=={'status':'busy'},(route,report)
+        assert sql(w,e,f'SELECT COUNT(*) FROM payment_attempts WHERE pay_row_id={pay_id}')=='0'
+        release.write_text('finish-original-native')
+        stdout,stderr=action.communicate(timeout=17)
+        assert action.returncode==0 and not stderr,(stdout[-700:],stderr[-1200:])
+        result=json.loads(stdout)
+        assert result['fatal'] is None,result['fatal']
+        assert sum(event['name']=='remote_edit' for event in result['events'])==1,result
+        assert sql(w,e,f'SELECT state FROM pays WHERE id={pay_id}')=='paid_with_wallet'
+        assert sql(w,e,f'SELECT wallet FROM users WHERE userid={actor}')=='600000'
+        return 'r232_'+route[0]+'_aged_debited_original_archive_busy_until_native_and_notice'
+    finally:
+        release.write_text('stop')
+        if action.poll() is None:
+            action.kill();action.communicate(timeout=4)
+
+
 def main():
     ap=argparse.ArgumentParser()
     ap.add_argument('--run-disposable',action='store_true',required=True)
@@ -273,11 +354,14 @@ def main():
         old=stage_source(w,True)
         purchase.init(w,e,'http://127.0.0.1:9')
         sql(w,e,(ROOT/'migrations/post-v9/003_payment_attempts.sql').read_text())
+        sql(w,e,(ROOT/'migrations/post-v9/022_gateway_review_archive.sql').read_text())
         sql(w,e,"INSERT INTO setting (type,value) VALUES ('BOT_STATES','{\"walletState\":\"on\",\"cartToCartState\":\"on\",\"giftCardState\":\"on\",\"manualUsdtState\":\"on\",\"nowPaymentWallet\":\"on\",\"nowPaymentOther\":\"on\",\"zarinpal\":\"on\",\"nextpay\":\"on\"}')")
         sql(w,e,'INSERT INTO increase_day (id,volume,price) VALUES (901,7,100)')
         sql(w,e,'INSERT INTO increase_plan (id,volume,price) VALUES (902,8,100)')
         writer=w/'f1-draft-writer.php';writer.write_text(WRITER)
         driver=w/'f1-action-driver.php';driver.write_text(driver_source())
+        archive_driver=w/'r232-original-archive-gate.php'
+        archive_driver.write_text(ARCHIVE_GATE)
         n=0
         for route in ROUTES:
             scenarios.append(run_case(w,e,old,driver,writer,route,n,True))
@@ -287,6 +371,11 @@ def main():
                 n+=1
                 scenarios.append(run_a_first(w,e,current,driver,writer,route,n,iso))
                 n+=1
+        # Genuine *active* original RENEW_ACCOUNT/DAY/VOLUME payments share
+        # the same pay-scoped Archive session fence as BUY_SUB.
+        for i,route in enumerate(ROUTES):
+            scenarios.append(review_archive_race(
+                w,e,current,driver,archive_driver,route,110+i))
         route=ROUTES[2];n=99;actor=11800+n
         hash_,typ,oid=setup_case(w,e,route,actor,n)
         dir_=w/'f1-unknown-native';dir_.mkdir()

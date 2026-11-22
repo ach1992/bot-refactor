@@ -102,7 +102,11 @@ standard/custom `BUY_SUB` (including multi-account) and Marzban
 `RENEW_SCONFIG`, the original `pays.id`-scoped MariaDB session lease is
 acquired before the customer Wallet debit, held across the original Native
 operation and SQL finality, and preserved by the owning Checkout callback
-until the direct customer QR/Telegram phase ends. Nested settlement and
+until the direct customer QR/Telegram phase ends. The separate
+RENEW_ACCOUNT and INCREASE_DAY/INCREASE_VOLUME original Wallet callbacks
+also acquire this same payment-scoped lease before their own debit
+transaction and retain it through their original Native edit, SQL
+finality and direct customer/staff message. Nested settlement and
 dispatcher code may borrow, never release, that outer lease. A late
 attempt to Archive an already aged `processing_wallet` invoice reports
 `busy` while original checkout is active. On owner exit, Archive is a
@@ -114,7 +118,9 @@ evidence review; Archive does not release a genuine Native account fence.
 The source-real test fixtures exercise competing MariaDB connections
 during the committed Wallet hold, direct multi/custom QR delivery, a lost
 second CREATE response, an ambiguous debit COMMIT acknowledgement, and
-a Native GET paused under an original staff-confirmation lease.
+a Native GET paused under an original staff-confirmation lease,
+and three distinct original renewal/day/volume callbacks paused after
+the debit COMMIT while a second MariaDB connection tries to Archive.
 
 **Evidence boundary:** The source cannot independently reconstruct a historical Wallet debit ledger where none was recorded. `processing_wallet` is the guarded original claim under current transaction rules; that does not, alone, prove the entire past balance timeline or exclude out-of-band changes. The Owner must verify target-specific financial history before approving live reconciliation.
 

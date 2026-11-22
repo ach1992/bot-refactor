@@ -316,7 +316,10 @@ Archive returns **busy** when a genuine original worker is active rather than
 claiming to cancel an already-dispatched Native or Telegram operation. Original
 Wallet standard/custom/renewal checkout acquires the same original payment
 lease **before** its Wallet debit transaction and retains it through Native
-service work and local finality. A real Checkout parent retains the lease
+service work and local finality. Separate legacy RENEW_ACCOUNT, INCREASE_DAY
+and INCREASE_VOLUME callbacks have the same payment-wide lease across their
+own debit, provider edit, audit COMMIT and direct Telegram report. A real
+Checkout parent retains the lease
 through its **direct QR/customer/admin delivery** as well; the internal
 settlement worker borrows rather than releasing the parent's lease. A
 customer's wrong-mode or nonexistent invoice is rejected by the unchanged

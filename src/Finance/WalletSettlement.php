@@ -15,7 +15,11 @@ require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
  */
 if (!function_exists('achbotWalletModeMatchesRequest')) {
     function achbotWalletModeMatchesRequest(array $pay,?string $expectedBuyMode): bool {
-        if (($pay['type']??null)!=='BUY_SUB')
+        $type=(string)($pay['type']??'');
+        if ($expectedBuyMode==='renew') return $type==='RENEW_ACCOUNT';
+        if ($expectedBuyMode==='day') return str_starts_with($type,'INCREASE_DAY_');
+        if ($expectedBuyMode==='volume') return str_starts_with($type,'INCREASE_VOLUME_');
+        if ($type!=='BUY_SUB')
             return $expectedBuyMode===null || $expectedBuyMode==='standard';
         $day=(int)($pay['day']??0);$volume=(int)($pay['volume']??0);
         return ($expectedBuyMode==='standard' && $day===0 && $volume===0) ||
