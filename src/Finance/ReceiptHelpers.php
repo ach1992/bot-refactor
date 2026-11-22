@@ -2635,6 +2635,62 @@ function achbotUnclaimedServiceQuote(array $payment, ?array $attempt): bool {
         in_array((string)($payment['state']??''),['pending','send','low_wallet'],true);
 }
 
+/**
+ * Lock only service-bound payments. Never combine an unindexed REGEXP with
+ * FOR UPDATE: MariaDB may scan/lock the entire pays PRIMARY and deadlock
+ * unrelated wallet edits (confirmed Hell #113346, InnoDB 2026-11-22).
+ *
+ * 023 provides independent order_id and literal type-prefix ranges. Separate
+ * index ranges include historical add-on drafts with NULL/zero order_id;
+ * collect the union without changing the original invoice/evidence semantics.
+ * Every candidate is a CURRENT locking read, including its index gap: a
+ * concurrent new invoice cannot silently appear behind the safety guard.
+ */
+function achbotServicePaymentRowsLocked(mysqli $db,array $orderIds): array {
+    $ids=[];
+    foreach ($orderIds as $id) {
+        if (!is_int($id) || $id<=0) throw new RuntimeException('service_payment_order_invalid');
+        $ids[$id]=$id;
+    }
+    if (!$ids) return [];
+    ksort($ids,SORT_NUMERIC);
+    $list=implode(',',$ids);
+    $rows=[];
+    $query=$db->query("SELECT id,state,type,payid,user_id,order_id
+        FROM pays FORCE INDEX (idx_pays_order_ref_v1)
+        WHERE order_id IN ($list) ORDER BY order_id,id FOR UPDATE");
+    if (!($query instanceof mysqli_result))
+        throw new RuntimeException('service_payment_order_index_unavailable');
+    foreach ($query->fetch_all(MYSQLI_ASSOC) as $row) $rows[(int)$row['id']]=$row;
+    $query->free();
+    // Literal underscores are escaped with '=' so the optimizer can seek the
+    // prefix of idx_pays_type_ref_v1 (no unindexed regexp or primary scan).
+    $patterns=[];
+    foreach ($ids as $id) {
+        $patterns[]='INCREASE=_DAY=_'.$id.'=_%';
+        $patterns[]='INCREASE=_VOLUME=_'.$id.'=_%';
+    }
+    // Batches cap statement size, not invoice count or operator work.
+    foreach (array_chunk($patterns,128) as $batch) {
+        $predicates=implode(' OR ',array_fill(0,count($batch),"type LIKE ? ESCAPE '='"));
+        $q=$db->prepare("SELECT id,state,type,payid,user_id,order_id
+            FROM pays FORCE INDEX (idx_pays_type_ref_v1)
+            WHERE ($predicates) ORDER BY type,id FOR UPDATE");
+        if (!$q) throw new RuntimeException('service_payment_type_index_unavailable');
+        $values=$batch;
+        $q->bind_param(str_repeat('s',count($values)),...$values);
+        if (!$q->execute()) {
+            $q->close();
+            throw new RuntimeException('service_payment_type_read_failed');
+        }
+        foreach ($q->get_result()->fetch_all(MYSQLI_ASSOC) as $row)
+            $rows[(int)$row['id']]=$row;
+        $q->close();
+    }
+    ksort($rows,SORT_NUMERIC);
+    return array_values($rows);
+}
+
 /** Pending claims serialize a shared account; completed references are not an ownership restriction. */
 function achbotSharedAccountWorkSettledLocked(mysqli $db,array $peers,int $ownAttempt=0,
     int $ownPay=0,bool $blockUnclaimedQuotes=false,bool $strictCompletion=false,
@@ -2656,11 +2712,9 @@ function achbotSharedAccountWorkSettledLocked(mysqli $db,array $peers,int $ownAt
     }
     $mode=achbotManualLedgerMode($db);
     if ($mode==='invalid') return false;
-    $pattern='^INCREASE_(DAY|VOLUME)_('.implode('|',$ids).')_';
-    $q=$db->prepare("SELECT id,state,type,payid FROM pays WHERE id<>? AND
-        (order_id IN ($list) OR type REGEXP ?) ORDER BY id FOR UPDATE");
-    $q->bind_param('is',$ownPay,$pattern);$q->execute();$payments=$q->get_result()->fetch_all(MYSQLI_ASSOC);$q->close();
+    $payments=achbotServicePaymentRowsLocked($db,$ids);
     foreach ($payments as $payment) {
+        if ((int)$payment['id']===$ownPay) continue;
         $attempt=null;
         if ($mode==='current') {
             $id=(int)$payment['id'];
@@ -2738,12 +2792,7 @@ function achbotScheduledDeletionEffectsSettled(mysqli $db,array $order): bool {
     $mode=achbotManualLedgerMode($db);
     if ($mode==='invalid') return false;
     $id=(int)$order['id'];
-    $pattern='^INCREASE_(DAY|VOLUME)_'.$id.'_';
-    $stmt=$db->prepare("SELECT id,state,type,payid FROM pays WHERE (order_id=? OR type REGEXP ?) AND state NOT IN ('approved','paid_with_wallet') ORDER BY id FOR UPDATE");
-    if (!$stmt) return false;
-    $stmt->bind_param('is',$id,$pattern);
-    if (!$stmt->execute()) {$stmt->close();return false;}
-    $payments=$stmt->get_result()->fetch_all(MYSQLI_ASSOC);$stmt->close();
+    $payments=achbotServicePaymentRowsLocked($db,[$id]);
     foreach ($payments as $payment) {
         // These states are committed only with the verified local effect.
         // A manual receipt's attempt can legitimately remain stage=review.

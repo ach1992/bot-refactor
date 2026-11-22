@@ -106,6 +106,62 @@ return [
         'purchase' => 'خرید اشتراک',
         'renew' => 'تمدید اشتراک',
         'wallet' => 'افزایش موجودی کیف پول',
+        'wallet_provider' => 'کیف پول',
+        'wallet_original_action' => '🔎 بررسی اثر اصلی Wallet',
+        'wallet_original_ready' => ['text' => '✅ هر {count} حساب اصلی Native برای پرداخت <code>{payment}</code> با شواهد عملیات اصلی مطابقت دارند. با تأیید شما، رکوردهای محلی ناقص بازیابی و همان پرداخت نهایی می‌شود؛ بدون ساخت حساب Native، کسر کیف پول یا تخصیص مجدد ظرفیت.', 'parameters' => ['count','payment']],
+        'wallet_original_confirm' => '✅ تکمیل همین پرداخت و ثبت پیام‌های اولیه',
+        'wallet_original_line' => ['text' => '▫️ ردیف {ordinal} | Effect: <code>{effect}</code> | Operation: <code>{operation}</code> | حساب: <code>{account}</code> | سفارش: <code>{order}</code> | وضعیت: {status} | انقضا: {expiry} | حجم: {bytes} بایت', 'parameters' => ['ordinal','effect','operation','account','order','status','expiry','bytes']],
+        'wallet_original_lines_truncated' => ['text' => 'ℹ️ نمایش {visible} ردیف از {total} ردیف؛ پیش از تأیید، همهٔ ردیف‌ها در Native بررسی می‌شوند.', 'parameters' => ['visible','total']],
+        'wallet_original_status_linked' => '✅ حساب و سفارش اصلی تأیید شد',
+        'wallet_original_status_unlinked' => '🧾 حساب Native تأیید شد؛ رکورد محلی اصلی قابل بازیابی است',
+        'wallet_original_status_unverified' => '⚠️ پاسخ Native یا هویت حساب تأیید نشد',
+        'wallet_original_status_missing' => '⏳ عملیات اصلی به سفارش معتبر متصل نشده است',
+        'wallet_report_state_pending' => '⏳ در صف ارسال اولیه',
+        'wallet_report_state_dispatching' => '⏳ ارسال اولیه در جریان یا نامطمئن',
+        'wallet_report_state_manual_dispatching' => '⏳ ارسال دستی در جریان یا نامطمئن',
+        'wallet_report_state_unknown' => '⚠️ تحویل نامعلوم یا ناقص',
+
+        'wallet_original_hold' => ['text' => '⚠️ پرداخت <code>{payment}</code> هنوز قابل نهایی‌سازی نیست. دلیل: <code>{reason}</code>. نتیجهٔ نامعلوم Native اجازهٔ ساخت حساب یا تخصیص ظرفیت دوباره نیست.', 'parameters' => ['payment','reason']],
+        'wallet_original_done' => '✅ همان پرداخت Wallet نهایی شد؛ رکوردهای محلیِ لازم بازیابی و پیام‌های اولیهٔ هر حساب و گزارش ادمین ثبت شد. هیچ حساب Native، ظرفیت یا بدهی تازه‌ای ایجاد نشد.',
+        'wallet_marzban_evidence' => ['text' => "⚠️ بررسی تمدید اصلی Marzban (بدون ژورنال قطعی)
+🧾 پرداخت: <code>{payment}</code> | سفارش: <code>{order}</code>
+📦 پلن: <code>{plan}</code> | سرور: <code>{server}</code> | مبلغ اصلی: {price} تومان
+🎯 خرید ثبت‌شده در پرداخت: {original_days} روز / {original_volume} گیگابایت
+👤 حساب Native: <code>{account}</code>
+🔗 Fingerprint مقصد فعلی: <code>{endpoint}</code>
+🔍 نتیجهٔ GET: {observed}
+📊 دادهٔ فعلی Native: وضعیت <code>{native_state}</code>، انقضا <code>{native_expiry}</code>، حجم <code>{native_bytes}</code> بایت
+📅 مقادیر پلن فعلی (نه اثبات خرید قدیمی): {days} روز / {volume} گیگابایت
+
+این GET فقط وضعیت فعلی را نشان می‌دهد و اجرای همان تمدید اصلی را اثبات نمی‌کند. برای تصمیم انسانی باید سابقهٔ پرداخت، مقصد اصلی و عملیات Native مستقلاً بررسی شود. هیچ RESET/PUT یا کسر Wallet دوباره اجرا نمی‌شود.", 'parameters' => ['payment','order','plan','server','price','original_days','original_volume','account','endpoint','observed','native_state','native_expiry','native_bytes','days','volume']],
+        'wallet_report_status' => ['text' => '📨 گزارش اصلی مدیر، پرداخت <code>{payment}</code>، وضعیت Telegram: <code>{state}</code>، تلاش‌ها: {attempts}', 'parameters' => ['payment','state','attempts']],
+        'wallet_report_action' => '🔎 بررسی گزارش ادمین',
+        'wallet_report_confirm' => ['text' => "⚠️ تأیید تلاش مجدد برای گزارش اصلی ادمین
+
+🧾 پرداخت: <code>{payment}</code>
+
+ممکن است گزارش قبلی به بعضی مدیران رسیده باشد؛ تأیید دریافت Telegram قطعی نیست. تنها یک بار دیگر همان گزارش اصلی ارسال می‌شود. هیچ پرداخت، اشتراک یا کیف پولی تغییر نمی‌کند.", 'parameters' => ['payment']],
+        'wallet_report_send' => '✅ تأیید ارسال گزارش اصلی',
+        'wallet_report_ack' => '✅ تلاش دستی گزارش اصلی ادمین با تأیید Telegram ثبت شد. عملیات مالی یا سرویس تکرار نشد.',
+        'wallet_report_unknown' => '⚠️ تلاش دستی گزارش ثبت شد اما تحویل Telegram نامعلوم یا ناقص است. پرونده برای بررسی مستقل باقی می‌ماند؛ ارسال دیگری انجام نمی‌شود.',
+        'wallet_report_pending' => '⏳ گزارش اصلی در صف ارسال اولیه است؛ ارسال مجدد دستی مجاز نیست.',
+        'wallet_report_hold' => '⚠️ وضعیت گزارش اصلی هنوز نامعلوم است. ارسال دستی قبلاً استفاده شده یا پردازش قبلی ممکن است انجام شده باشد؛ مدارک Telegram را مستقل بررسی کنید.',
+        'wallet_review_action' => '🔎 بررسی تمدید کیف پول',
+        'wallet_review_ready' => ['text' => "✅ عملیات تمدید اصلی روی PasarGuard با مدارک Native تأیید شد.\n\n🧾 شناسه پرداخت: <code>{payment}</code>\n\n✅ با تأیید، فقط ثبت مالی/محلی و پیام اصلی مشتری تکمیل می‌شود؛ مبلغ مجدد کسر و تمدید دیگری اجرا نمی‌شود.", 'parameters' => ['payment']],
+        'wallet_review_confirm' => '✅ تأیید و تکمیل ثبت',
+        'wallet_review_hold' => '⚠️ نتیجهٔ اصلی عملیات روی سرویس قابل تأیید نیست یا وضعیت آن تغییر کرده است. وجه دیگری کسر یا تمدید دیگری اجرا نشد. پرونده برای بررسی باقی می‌ماند.',
+        'wallet_review_done' => '✅ تمدید قبلی بدون کسر وجه یا اجرای دوباره سرویس، در دیتابیس تکمیل شد. پیام اصلی مشتری و گزارش ادمین برای ارسالِ یک‌باره ثبت شدند.',
+        'wallet_addon_review_action' => '🔎 بررسی افزایش زمان/حجم کیف پول',
+        'wallet_addon_ready' => ['text' => "✅ افزایش زمان/حجم قبلی بر اساس مدارک اصلی و وضعیت زندهٔ PasarGuard تأیید شد.\n\n🧾 شناسه پرداخت: <code>{payment}</code>\n\nبا تأیید، فقط ثبت مالی و اطلاع‌رسانی اولیه کامل می‌شود؛ هیچ افزایشی دوباره اجرا یا وجهی کسر نمی‌شود.", 'parameters' => ['payment']],
+        'wallet_addon_done' => '✅ افزایش زمان/حجم قبلی بدون اجرای دوباره روی سرویس، در دیتابیس ثبت نهایی شد. پیام اصلی مشتری و گزارش ادمین برای ارسال یک‌باره ثبت شدند.',
+
+        'wallet_review_stale' => '⚠️ وضعیت پرونده یا مدارک تغییر کرده است. از فهرست دوباره بررسی کنید.',
+        'wallet_retry_action' => '✅ ادامهٔ همان تمدید اصلی',
+        'wallet_retry_done' => '✅ عملیات همان تمدید اصلی روی حساب قبلی انجام و ثبت شد؛ وجه دیگری کسر نشد. پیام اصلی مشتری و گزارش ادمین برای ارسال یک‌باره ثبت شدند.',
+        'wallet_review_warning' => '⚠️ وجه از کیف پول قبلاً کسر شده است. پیش از هر تصمیم، هویت حساب و وضعیت واقعی PasarGuard را بررسی کنید. تمدید با همان سفارش و تأیید مجدد مدیر مجاز است؛ افزایش حجم/زمان یا ساخت اکانت تکراری نیست.',
+        'wallet_native_evidence' => ['text' => '🔍 عملیات سرویس: <code>{operation}</code> / وضعیت: <code>{state}</code>', 'parameters' => ['operation','state']],
+
+
         'days' => 'افزایش مدت اشتراک',
         'volume' => 'افزایش حجم اشتراک',
         'unknown' => 'ثبت نشده',

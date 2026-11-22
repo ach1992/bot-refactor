@@ -51,7 +51,8 @@ def run() -> list[str]:
                 '006_payment_message_refs.sql', '007_service_effects.sql',
                 '011_provider_identity.sql', '012_shared_provider_storage.sql',
                 '016_remove_pasarguard_server_groups.sql',
-                '017_shared_plan_changes.sql'):
+                '017_shared_plan_changes.sql',
+                '023_scoped_payment_lock_indexes.sql'):
                 db((ROOT / 'migrations/post-v9' / migration).read_text())
             db("INSERT INTO users(userid,name,username,refcode,wallet,date,isAdmin,first_start,step)"
                " VALUES (1002,'B','b','0',50000,'1700000000',0,'sent','none'),"

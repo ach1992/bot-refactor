@@ -40,7 +40,15 @@ function sendMessage(...$args){
 function achbotNotifyAdmins($method,array $data,array $options=[]):array {
     $GLOBALS['events'][]=['kind'=>'admin_report','method'=>$method,
         'text'=>(string)($data['text']??'')];
-    return [['chat_id'=>9001,'response'=>(object)['ok'=>true]]];
+    return [['chat_id'=>9001,'response'=>(object)['ok'=>(($GLOBALS['spec']['report_ack']??true)===true)]]];
+}
+function editText(...$args) {
+    $GLOBALS['events'][]=['kind'=>'ui_edit',
+        'text'=>(string)$args[1], 'keyboard'=>(string)($args[2]??'')];
+    return (object)['ok'=>true];
+}
+function answerCallbackQuery(...$args) {
+    $GLOBALS['events'][]=['kind'=>'ui_callback'];
 }
 function achbotAdminFanoutAcknowledged(array $notices):bool {
     return $notices!==[] && array_reduce($notices,
@@ -109,6 +117,25 @@ try {
         $result=achbotWalletAddonMaintain($db);
     } elseif ($spec['op']==='cron_reports') {
         $result=achbotWalletAddonMaintainReports($db);
+    } elseif ($spec['op']==='report_ui') {
+        $connection=$db;$from_id=(int)($spec['actor']??9001);
+        $admin=9001;$chat_id=$from_id;$callbackId='fixture-callback';
+        $message_id=77;
+        $data=(string)($spec['data']??'');
+        require $root.'/src/Finance/Routes/AutomaticGatewayReview.php';
+        $result=['handled'=>true];
+    } elseif ($spec['op']==='report_case') {
+        require_once $root.'/src/Finance/GatewayClient.php';
+        $case=achbotWalletAddonReportCase($db,$payId);
+        $result=['case'=>$case?array_diff_key($case,['value'=>true]):null,
+            'inbox'=>achbotGatewayAttentionCaseOpen($db,$payId)];
+    } elseif ($spec['op']==='report_token') {
+        $case=achbotWalletAddonReportCase($db,$payId);
+        $result=['token'=>$case?achbotWalletAddonReportToken($case,
+            (int)($spec['actor']??9001)):null];
+    } elseif ($spec['op']==='report_manual') {
+        $result=achbotWalletAddonReportManualSend($db,$payId,
+            (int)($spec['actor']??9001),9001,(string)($spec['token']??''));
     } elseif ($spec['op']==='customer_first_send') {
         $result=achbotDeliveryDispatch($db,$payId,1);
     } elseif ($spec['op']==='original') {
@@ -136,7 +163,8 @@ def case(*, kind: str = 'day', finalization_failure: bool = False,
          historical_planless: bool = False, commit_ack_lost: bool = False,
          concurrent: bool = False, system: bool = False,
          direct: bool = False, notice_failure: bool = False,
-         telegram_unknown: bool = False) -> list[str]:
+         telegram_unknown: bool = False, report_scenarios: bool = False,
+         report_manual_unknown: bool = False) -> list[str]:
     checks: list[str] = []
     with api.sandbox() as (sql, run, provider, _bank, _epoch):
         effect_id = int(cutover.fixture_effect(
@@ -188,7 +216,7 @@ def case(*, kind: str = 'day', finalization_failure: bool = False,
         def call(op:str,**args):
             proc=subprocess.run([
                 'php','-n','-d','extension=mysqlnd','-d','extension=mysqli',
-                '-d','extension=curl','-d','log_errors=1','-d','error_log=/dev/stderr',
+                '-d','extension=curl','-d','extension=mbstring','-d','log_errors=1','-d','error_log=/dev/stderr',
                 str(driver),str(ROOT),str(run.fixture_socket),api.DB,
                 json.dumps({'op':op,'kind':kind,'pay_id':pay_id,
                             'order_id':oid,**args}),
@@ -403,6 +431,62 @@ def case(*, kind: str = 'day', finalization_failure: bool = False,
         assert sql("SELECT provider_status FROM payment_attempts WHERE pay_row_id="+str(pay_id))=='wallet_reconciled_notice'
         assert sql("SELECT JSON_UNQUOTE(JSON_EXTRACT(value,'$.state')) FROM setting WHERE type='WALLET_ADDON_REPORT:"+str(pay_id)+"'")=='pending'
         checks.append('repeat_resume_one_original_customer_outbox_and_admin_report_no_telegram_replay')
+        if report_scenarios:
+            # Customer success may be entirely independent of an admin fanout
+            # with an ambiguous ACK. It must remain in the SAME attention inbox.
+            before=call('report_case')
+            assert before['result']['case']['state']=='pending',before
+            assert before['result']['inbox'],before
+            first=call('cron_reports',report_ack=False)
+            assert first['result']['unknown']==1 and len(first['events'])==1,first
+            customer=call('customer_first_send')
+            assert customer['result']=='acknowledged',customer
+            pending=call('report_case')
+            assert pending['result']['case']['state']=='unknown_or_partial',pending
+            assert pending['result']['inbox'] is True,pending
+            ui=call('report_ui',data='attWReportI_'+str(pay_id))
+            edits=[event for event in ui['events'] if event['kind']=='ui_edit']
+            assert ui['ok'] and len(edits)==1,ui
+            assert 'گزارش اصلی ادمین' in edits[0]['text'],ui
+            assert 'attWReportS_'+str(pay_id)+'_' in edits[0]['keyboard'],ui
+            ui_denied=call('report_ui',actor=9999999,
+                           data='attWReportI_'+str(pay_id))
+            assert not [event for event in ui_denied['events'] if
+                        event['kind']=='ui_edit'],ui_denied
+            checks.append('persian_report_unknown_preview_and_staff_private_callback')
+            bad=call('report_token',actor=9999999)['result']['token']
+            denied=call('report_manual',actor=9999999,token=bad)
+            assert denied['result']=='denied' and not denied['events'],denied
+            assert call('report_case')['result']['case']['manual_attempts']==0
+            token=call('report_token')['result']['token']
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                done=[future.result() for future in
+                    (pool.submit(call,'report_manual',token=token,
+                                 report_ack=not report_manual_unknown),
+                     pool.submit(call,'report_manual',token=token,
+                                 report_ack=not report_manual_unknown))]
+            statuses=[item['result'] for item in done]
+            terminal='unknown_or_partial' if report_manual_unknown else 'acknowledged'
+            assert statuses.count(terminal)==1 and set(statuses)<=set(
+                [terminal,'busy','stale']),done
+            assert sum(len(x['events']) for x in done)==1,done
+            latest=call('report_case')['result']['case']
+            assert latest['state']==terminal and latest['manual_attempts']==1,latest
+            assert call('report_case')['result']['inbox'] is report_manual_unknown
+            assert call('cron_reports')['events']==[]
+            assert call('report_manual',token=token)['result']=='stale'
+            if report_manual_unknown:
+                assert call('report_token')['result']['token']!=token
+                assert call('report_manual',token=token,
+                    report_ack=True)['events']==[]
+                checks.append('admin_retry_unknown_remains_attention_and_cannot_auto_or_manual_resend')
+            else:
+                checks.append('admin_real_ack_closes_attention_without_second_wallet_native_or_audit')
+            assert sql('SELECT wallet FROM users WHERE userid=1001')=='900000'
+            assert sql('SELECT COUNT(*) FROM increase_order')=='1'
+            assert provider.write_count==0
+            checks.append('customer_ack_admin_unknown_retained_in_shared_attention_inbox')
+            checks.append('operator_denial_and_concurrent_manual_report_one_retry')
         if system:
             report=call('cron_reports')
             assert report['ok'] and report['result']['acknowledged']==1,report
@@ -436,7 +520,9 @@ def main():
             case(commit_ack_lost=True)+
             case(system=True)+case(kind='volume',system=True)+
             case(direct=True)+case(kind='volume',direct=True)+
-            case(notice_failure=True)+case(system=True,telegram_unknown=True))
+            case(notice_failure=True)+case(system=True,telegram_unknown=True)+
+            case(report_scenarios=True)+
+            case(report_scenarios=True,report_manual_unknown=True))
     result={'complete':True,'cases':len(checks),'checks':checks,
             'real_php_source':True,'disposable_mariadb':True,
             'local_native_only':True,'production_mutations':0}

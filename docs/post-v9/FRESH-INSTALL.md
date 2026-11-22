@@ -53,6 +53,19 @@ Import `database/legacy-schema.sql` exactly once into that empty database, then 
 | 16 | `migrations/post-v9/018_payment_delivery_intents.sql` | Per-payment sealed delivery intents and Telegram attempt journal; requires 003 and 007, no historical backfill |
 | 17 | `migrations/post-v9/020_payment_followup_intents.sql` | Once-only staff/customer follow-up presentation journal; requires 018 and reviewed payment evidence |
 | 18 | `migrations/post-v9/022_gateway_review_archive.sql` | Two audit fields on the original attempt; safely archive completed operator review without changing payment/provider state |
+| 19 | `migrations/post-v9/023_scoped_payment_lock_indexes.sql` | Two selective indexes on existing `pays` (`order_id,id` and `type,id`) required for bounded invoice locking and avoiding unrelated-payment deadlocks; run before the matching runtime |
+
+**Existing Hell/Vivan databases (in-place upgrade, NOT a fresh import):** migration 023
+must be applied separately **before** installing the corresponding runtime that
+uses `FORCE INDEX (idx_pays_order_ref_v1)` and
+`FORCE INDEX (idx_pays_type_ref_v1)`. Review the existing schema/indexes,
+backup and DDL lock impact, run the migration once with the target owner's
+approval, then verify both indexes via `SHOW INDEX FROM pays` and `EXPLAIN`
+on the service-bound queries. MariaDB `ALTER TABLE` implicitly commits;
+on any interrupted statement inspect the resulting schema rather than
+blindly rerunning it. Do not mutate live wallets, payments or PasarGuard
+Native effects as part of index installation. The runtime ZIP does **not**
+contain or run migration 023.
 
 For example, the MariaDB client can import the baseline with a prompted password:
 

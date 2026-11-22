@@ -141,6 +141,8 @@ def setup(root: Path) -> tuple[Path, Path]:
     # These are inert stand-ins for the Cron coordination fixture.
     (root/'src/Finance/WalletEditRecovery.php').write_text(
         '<?php function achbotWalletAddonMaintain($db){return [];}' )
+    (root/'src/Finance/WalletRenewalRecovery.php').write_text(
+        '<?php function achbotWalletPgRenewMaintain($db){return [];}' )
     (root/'src/Finance/WalletAddonNotices.php').write_text(
         '<?php function achbotWalletAddonMaintainReports($db){return [];}' )
 

@@ -217,7 +217,7 @@ if (is_string($data) && strlen($data)<=64 &&
     $order = $stmt->get_result()->fetch_assoc();
     $stmt->close();
 
-    if (!$order || !achbotSupportsOrder($connection, (int)$order['id'])) {
+    if (!$order || !achbotSupportsOrderObservation($connection, (int)$order['id'],(int)$from_id)) {
         alert(\achbotMessage('payment.checkout.alert.7f1f245514'), true);
         return;
     }

@@ -256,8 +256,12 @@ function achbotContinueMarzbanPaidAccount(mysqli $db,int $payId,int $ordinal,arr
     return [$reply,(string)$e['remote_username'],0,(int)$e['id']];
 }
 
-function achbotContinuePasarGuardPaidAccount(mysqli $db,int $payId,int $ordinal,array $e,
-                                             int $actor=0,int $primary=0): array {
+/** Read-only, exact-original PasarGuard CREATE observation. This must never
+ * mark a provider effect verified or dispatch a Native CREATE. The original
+ * payment / effect / provider-instance identity is checked before and after GET.
+ */
+function achbotObservePasarGuardPaidAccount(mysqli $db,int $payId,int $ordinal,
+    array $e): array {
     $effectId=(int)$e['id'];
     $current=achbotPgEffect($db,$effectId);
     if (!$current || (int)$current['pay_row_id']!==$payId ||
@@ -296,6 +300,30 @@ function achbotContinuePasarGuardPaidAccount(mysqli $db,int $payId,int $ordinal,
     if (!$after || $after!==$current ||
         !achbotProviderPanelForSnapshot($db,$snapshot))
         throw new RuntimeException('paid_resume_target_changed');
+    // A by-username lookup of an unverified CREATE still has to return a
+    // real Native incarnation (id + created_at), not just a matching name.
+    if (!is_int($user['id']??null) || $user['id']<=0 ||
+        !is_string($user['created_at']??null) ||
+        ($user['created_at']??'')!==achbotPgDate($user['created_at']))
+        throw new RuntimeException('paid_resume_native_identity_invalid');
+    return ['current'=>$current,'snapshot'=>$snapshot,'panel'=>$panel,
+        'account'=>$account,'linked'=>$linked,'user'=>$user];
+}
+
+/** Reuse the strict read-only observation, then persist ONLY original evidence
+ * after the caller has obtained any required worker lease/staff confirmation.
+ */
+function achbotContinuePasarGuardPaidAccount(mysqli $db,int $payId,int $ordinal,array $e,
+    int $actor=0,int $primary=0,?array $expectedNativeIdentity=null): array {
+    $observation=achbotObservePasarGuardPaidAccount($db,$payId,$ordinal,$e);
+    $effectId=(int)$e['id'];
+    $current=$observation['current'];$snapshot=$observation['snapshot'];
+    $panel=$observation['panel'];$account=$observation['account'];
+    $linked=$observation['linked'];$user=$observation['user'];
+    if ($expectedNativeIdentity!==null &&
+        ($expectedNativeIdentity!==['id'=>$user['id'],
+            'created_at'=>$user['created_at']]))
+        throw new RuntimeException('paid_resume_native_incarnation_changed');
     if (in_array($e['state'],['reserved','dispatching'],true)) {
         $begun=false;
         try {

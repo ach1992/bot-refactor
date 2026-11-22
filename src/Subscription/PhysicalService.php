@@ -407,12 +407,8 @@ function achbotPhysicalRetireOpenPaymentsLocked(mysqli $db,array $rows,
                 throw new RuntimeException('physical_payment_evidence_unavailable');
         }
     }
-    $list=implode(',',$ids); // validated positive local integer IDs
-    $pattern='^INCREASE_(DAY|VOLUME)_('.implode('|',$ids).')_';
-    $q=$db->prepare("SELECT id,state,type,payid,user_id,order_id FROM pays WHERE
-        (order_id IN ($list) OR type REGEXP ?) ORDER BY id FOR UPDATE");
-    $q->bind_param('s',$pattern);$q->execute();
-    $payments=$q->get_result()->fetch_all(MYSQLI_ASSOC);$q->close();
+    // One indexed locking reader also protects legacy add-ons (order_id=0).
+    $payments=achbotServicePaymentRowsLocked($db,$ids);
     $retired=[];
     foreach ($payments as $payment) {
         $state=(string)$payment['state'];

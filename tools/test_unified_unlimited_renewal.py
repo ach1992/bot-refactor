@@ -79,7 +79,11 @@ def acceptance(root:Path=ROOT,baseline_only:bool=False,providers=('pasarguard','
    for migration in ['001_marzban_panel_group_id.sql','004_automatic_renewal_attempts.sql',
                      '007_service_effects.sql','011_provider_identity.sql']:
     sql((source/'migrations/post-v9'/migration).read_text())
-   if not baseline:sql((source/'migrations/post-v9/012_shared_provider_storage.sql').read_text())
+   if not baseline:
+    sql((source/'migrations/post-v9/012_shared_provider_storage.sql').read_text())
+    # Current shared-account renewal requires narrow pay-index locks. The
+    # historical RED runtime never depends on source migration 023.
+    sql((source/'migrations/post-v9/023_scoped_payment_lock_indexes.sql').read_text())
    native_table='provider_accounts' if baseline else 'service_effects'
    native_state='state' if baseline else 'provider_state'
    native_history='mutation_snapshot' if baseline else 'provider_mutation_snapshot'

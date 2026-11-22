@@ -122,6 +122,32 @@ function achbotGatewayAttentionScope(?mysqli $db=null): string {
                     WHERE dl.pay_row_id=p.id
                       AND dl.state IN ('pending','dispatching','unknown'))
                  $followupSql))" : '';
+    // An original Wallet admin report is independent of customer delivery.
+    // Preserve unresolved original fanout even when the finance pay and
+    // customer acknowledgement have both become terminal. The JSON marker
+    // is exact per payment; a plain old paid invoice is never admitted.
+    $reportSql=$manualReady ? " OR (p.state='paid_with_wallet'
+        AND a.provider='wallet'
+        AND (p.type='RENEW_ACCOUNT' OR p.type='BUY_SUB'
+            OR p.type LIKE 'INCREASE\\_DAY\\_%'
+            OR p.type LIKE 'INCREASE\\_VOLUME\\_%')
+        AND EXISTS (SELECT 1 FROM setting sr
+            WHERE sr.type=CONCAT('WALLET_ADDON_REPORT:',p.id)
+              AND JSON_VALID(sr.value)
+              AND JSON_UNQUOTE(JSON_EXTRACT(sr.value,'$.pay_id'))=CAST(p.id AS CHAR)
+              AND JSON_UNQUOTE(JSON_EXTRACT(sr.value,'$.state')) IN
+                ('pending','dispatching','unknown_or_partial','manual_dispatching')))" : '';
+    // Wallet debits are already committed before `processing_wallet`. Older
+    // untouched invoices are NOT admitted. A wallet invoice may intentionally
+    // have no hosted payment_attempt: INNER JOIN hid Hell #113346 forever.
+    // Suppress a transient active callback for ten minutes; its original
+    // Native/pay journals are not yet safe to interpret as terminal.
+    $walletSql=" OR (p.state='processing_wallet'
+        AND p.request_date<=UNIX_TIMESTAMP()-600
+        AND (p.type IN ('BUY_SUB','RENEW_ACCOUNT','RENEW_SCONFIG')
+            OR p.type LIKE 'INCREASE\_DAY\_%'
+            OR p.type LIKE 'INCREASE\_VOLUME\_%')
+        AND (a.id IS NULL OR a.provider='wallet'))";
     return "a.review_archived_at IS NULL
         AND (a.provider IN ('nowpayments','nextpay','zarinpal')
         AND (
@@ -161,6 +187,8 @@ function achbotGatewayAttentionScope(?mysqli $db=null): string {
             $apiSql
             $manualSql
             $deliverySql
+            $reportSql
+            $walletSql
         )";
 }
 
@@ -187,8 +215,10 @@ function achbotGatewayAttentionCaseOpen(mysqli $db,int $payId): bool {
         }
         $probe->free();
         $scope=achbotGatewayAttentionScope($db);
+        // Original wallet payments can have no hosted attempt; this read
+        // must use the same LEFT JOIN as the inbox/detail renderer.
         $q=$db->prepare("SELECT p.id FROM pays p
-            JOIN payment_attempts a ON a.pay_row_id=p.id
+            LEFT JOIN payment_attempts a ON a.pay_row_id=p.id
             WHERE p.id=? AND $scope LIMIT 1");
         $q->bind_param('i',$payId);$q->execute();
         $found=$q->get_result()->fetch_assoc();$q->close();

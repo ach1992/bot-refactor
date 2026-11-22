@@ -278,7 +278,41 @@ def main():
   def call(op,expected_stderr="",**spec):
    if op=='route':spec.setdefault('buttons',buttons)
    out=subprocess.run(['php','-d','display_errors=0','-d','log_errors=0',str(script),str(ROOT),str(work/'mysql.sock'),db,json.dumps(dict(op=op,**spec))],capture_output=True,text=True,timeout=25)
-   if out.returncode or out.stderr!=expected_stderr:raise AssertionError((out.returncode,out.stdout[-1800:],out.stderr))
+   if out.returncode:raise AssertionError((out.returncode,out.stdout[-1800:],out.stderr))
+   # Native account actions and refused exact-original edit replays both
+   # emit bounded structured diagnostics. Validate each actual event instead
+   # of silencing the PHP log; reject opaque stderr or unrelated signals.
+   if out.stderr!=expected_stderr:
+    diagnostics=out.stderr.splitlines()
+    if expected_stderr or op not in ('action','route','edit') or not diagnostics:
+     raise AssertionError((out.returncode,out.stdout[-1800:],out.stderr))
+    for line in diagnostics:
+     if not line.startswith('[AChBot] '):
+      raise AssertionError(('unexpected_provider_stderr',line))
+     event=json.loads(line[len('[AChBot] '):])
+     name=event.get('event')
+     reason=event.get('reason')
+     good_reason=(reason is None or
+       isinstance(reason,str) and re.fullmatch('[a-z][a-z0-9_]{0,95}',reason) is not None)
+     if not good_reason:
+      raise AssertionError(('invalid_native_reason',event))
+     if name=='achbot.native.account_action' and op in ('action','route'):
+      good=event.get('server_id')==2 and event.get('provider')=='pasarguard' and \
+        event.get('action') in ('toggle','reset','revoke','delete') and \
+        event.get('result') in ('verified','review') and \
+        (event.get('result')!='review' or isinstance(reason,str))
+     elif name=='achbot.native.edit_deferred' and op=='edit':
+      good=event.get('server_id')==2 and event.get('pay_id')==int(spec.get('pay',0)) and \
+        event.get('level')=='warning' and isinstance(reason,str) and \
+        event.get('stage')=='native_claim_or_write'
+     elif name=='achbot.native.edit_result_unverified' and op=='edit':
+      good=event.get('server_id')==2 and event.get('pay_id')==int(spec.get('pay',0)) and \
+        event.get('level')=='warning' and isinstance(reason,str) and \
+        event.get('stage')=='native_result' and event.get('result')=='review'
+     else:
+      good=False
+     if not good:
+      raise AssertionError(('invalid_native_action_diagnostic',event,op))
    return json.loads(out.stdout)
   def sql(s):return native.sql(work,env,s,db)
   def yes(condition,name,detail=None):
@@ -302,6 +336,9 @@ def main():
        " VALUES(1,'pasarguard',REPEAT('b',32),'Fixture','"+url+"','fixture-private-key','5.5.1');"
        "UPDATE server_config SET type='pasarguard',panel_url='"+url+"' WHERE id=2;"
        "UPDATE server_info SET provider_panel_id=1,provider_group_ids='[2,5]' WHERE id=2;")
+  # The current source requires service-bound pays indexes 023 for every
+  # real FOR UPDATE payment guard. The fixture is fresh-owned MariaDB only.
+  sql((ROOT/'migrations/post-v9/023_scoped_payment_lock_indexes.sql').read_text())
   sql("INSERT INTO pays(id,hash_id,user_id,plan_id,server_id,type,state,price,request_date) VALUES(1,'pgbuy',1001,7,2,'BUY_SUB','paid',100,1700000000)")
   snap=call('pin',pay=1)['out'];yes(snap['group_ids']==[2,5],'quote_pins_native_groups')
   sql("UPDATE server_plans SET provider_group_ids='[5]' WHERE id=7")
@@ -437,15 +474,60 @@ def main():
    server.mode='ok' if mode=='held_mutating' else mode
    if mode=='held_mutating':sql("UPDATE service_effects SET provider_state='mutating' WHERE order_id=91")
    traffic=call('traffic',buttons=buttons)['out']
-   yes(traffic['uncertain'] is True and traffic['found'] is False,mode+'_traffic_reports_uncertainty')
+   if mode=='held_mutating':
+    # An unfinished Native edit must only fence competing MUTATIONS; an
+    # existing account's exact-id authenticated LIVE data remains readable.
+    yes(traffic['uncertain'] is False and traffic['found'] is True and
+      traffic['status']=='active',mode+'_traffic_remains_live')
+   else:
+    yes(traffic['uncertain'] is True and traffic['found'] is False,
+      mode+'_traffic_reports_uncertainty')
    for audience in ['view','adminview']:
     state_before=sql("SELECT * FROM service_effects WHERE provider_reference_id IS NOT NULL AND order_id=91;SELECT * FROM orders_list WHERE id=91")
     writes=server.write_count;requests=len(server.trace)
     result=call(audience,buttons=buttons)['out'];shown=result['msg']+result['keyboard']
-    yes('قابل تأیید نیست' in result['msg'] and 'در حال بررسی' in result['msg'] and 'missing' not in shown and 'CONFIRMED_' not in shown and 'pg_' not in shown and 'pasarguard' not in shown.lower(),mode+'_'+audience+'_truthful_private_copy')
-    yes(not any(action in result['keyboard'] for action in dangerous),mode+'_'+audience+'_no_unconfirmed_actions')
-    yes(server.write_count==writes and sql("SELECT * FROM service_effects WHERE provider_reference_id IS NOT NULL AND order_id=91;SELECT * FROM orders_list WHERE id=91")==state_before and (mode!='held_mutating' or len(server.trace)==requests),mode+'_'+audience+'_preserves_rows_and_no_external_writes')
-   if mode=='held_mutating':sql("UPDATE service_effects SET provider_state='linked' WHERE order_id=91")
+    if mode=='held_mutating':
+     yes('https://sub.example.invalid/token' in result['msg'] and
+       'vless://native-identity' in result['msg'] and
+       'قابل تأیید نیست' not in result['msg'],
+       mode+'_'+audience+'_actual_verified_live_data')
+     yes(len(server.trace)>requests and server.write_count==writes,
+       mode+'_'+audience+'_authenticated_GET_only')
+     # The customer has QR/link buttons. Admin detail presents the same
+     # live provider links directly, but does not duplicate customer buttons.
+     safe=('showQrConfig91','showQrSub91','updateConfigConnectionLink91') if audience=='view' else ()
+     yes(all(action in result['keyboard'] for action in safe),
+       mode+'_'+audience+'_read_only_qr_and_link_refresh_stay_visible')
+     unsafe=('renewAccountAsk91','increaseAVolume91','increaseADay91','changePlan_91',
+       'changAccountConnectionLink91','deleteMyConfig91','delUserConfig91',
+       'changeUserConfigState91','agentChangeUserConfigState91')
+     yes(not any(action in result['keyboard'] for action in unsafe),
+       mode+'_'+audience+'_dangerous_mutation_controls_stay_hidden')
+    else:
+     yes('قابل تأیید نیست' in result['msg'] and 'در حال بررسی' in result['msg'] and 'missing' not in shown and 'CONFIRMED_' not in shown and 'pg_' not in shown and 'pasarguard' not in shown.lower(),mode+'_'+audience+'_truthful_private_copy')
+     yes(not any(action in result['keyboard'] for action in dangerous),mode+'_'+audience+'_no_unconfirmed_actions')
+    yes(server.write_count==writes and sql("SELECT * FROM service_effects WHERE provider_reference_id IS NOT NULL AND order_id=91;SELECT * FROM orders_list WHERE id=91")==state_before,
+      mode+'_'+audience+'_preserves_rows_and_no_external_writes')
+   if mode=='held_mutating':
+    before=sql("SELECT * FROM service_effects WHERE provider_reference_id IS NOT NULL AND order_id=91;SELECT * FROM orders_list WHERE id=91")
+    requests=len(server.trace);writes=server.write_count
+    rejected=call('rawedit',source=6001,field='plus_day',value=1)
+    yes(rejected['out']['success'] is False and server.write_count==writes and
+      len(server.trace)==requests and
+      sql("SELECT * FROM service_effects WHERE provider_reference_id IS NOT NULL AND order_id=91;SELECT * FROM orders_list WHERE id=91")==before,
+      'held_mutating_live_view_never_allows_second_provider_edit')
+    # An explicit config-link refresh must retain fresh authenticated Native
+    # GETs and customer response, but cannot rewrite local order cache from an
+    # observation while another original Native effect is fenced.
+    before=sql("SELECT HEX(link) FROM orders_list WHERE id=91")
+    reads=len(server.trace);writes=server.write_count
+    refreshed=call('route',actor=1001,source=6010,
+      callback='updateConfigConnectionLink91')
+    yes('out' in refreshed and len(server.trace)>reads and
+      server.write_count==writes and
+      sql("SELECT HEX(link) FROM orders_list WHERE id=91")==before,
+      'held_mutating_config_refresh_live_GET_no_local_cached_link_write')
+    sql("UPDATE service_effects SET provider_state='linked' WHERE order_id=91")
   server.mode='foreign_created'
   for audience in ['view','adminview']:
    result=call(audience,buttons=buttons,omit_status_template=True)['out']
@@ -515,7 +597,15 @@ def main():
   r=call('route',actor=1001,source=205,callback='changeUserConfigState91')
   text=json.dumps(r,ensure_ascii=False)
   yes('pg_' not in text and 'pasarguard' not in text.lower() and ('نیاز' in text or 'قطعی' in text),'customer_action_error_hides_provider_diagnostics')
-  server.mode='ok';sql("UPDATE service_effects SET provider_state='linked' WHERE order_id=91");server.user['status']='active'
+  server.mode='ok'
+  yes(sql("SELECT provider_state FROM service_effects WHERE order_id=91").strip()
+      =='mutating','lost_native_ack_holds_original_effect_for_review')
+  # Disposable fixture transition to the next INDEPENDENT scenario. This is
+  # not a production reconciliation recipe: only the original Native key and
+  # verified readback could safely finalize the unknown action in a real bot.
+  sql("UPDATE service_effects SET provider_state='linked',"
+      "provider_mutation_key=NULL,provider_mutation_snapshot=NULL WHERE order_id=91")
+  server.user['status']='active'
   posts=sum(t[0]=='POST' and t[1]=='/api/user' for t in server.trace)
   yes('error' in call('create') and sum(t[0]=='POST' and t[1]=='/api/user' for t in server.trace)==posts,'duplicate_create_never_dispatches')
   yes(call('gate')['out']=={'plan':True,'marzban':False},'neutral_gate_admits_pg_without_marzban_alias')
@@ -589,6 +679,27 @@ def main():
   pinned=call('edit',pay=10,change={'plus_volume':2})
   yes(pinned['out']['success'] is True and server.user['data_limit']==quota+2147483648 and server.user['group_ids']==groups and sql("SELECT price FROM pays WHERE id=10").strip()=='100','wallet_style_pinned_volume_fulfills_exactly_after_SKU_absent')
   expiry=pinned['out']['applied_expire'];quota=server.user['data_limit']
+  # Wallet Volume intentionally KEEPS the exact original pay:10 Native fence
+  # until the original financial/audit/notification finality COMMIT. Its
+  # successful Native PUT cannot admit any different DAY payment yet.
+  original_state=sql("SELECT CONCAT(provider_state,':',provider_mutation_key) "
+                     "FROM service_effects WHERE order_id=91").strip()
+  prior_writes=server.write_count
+  blocked=call('edit',pay=11,change={'plus_day':2})
+  yes(original_state=='mutating:pay:10' and
+      blocked['out']['success'] is False and server.write_count==prior_writes,
+      'wallet_volume_deferred_fence_blocks_independent_manual_day_until_finance')
+  # This is an isolated provider adapter fixture, not the Wallet finalizer.
+  # Source-real WalletEditRecovery tests verify the REAL atomic original
+  # payment/audit/notice COMMIT; here synthetically advance that completed
+  # state only to isolate the next manual source-key test.
+  sql("UPDATE service_effects SET provider_state='linked',"
+      "provider_mutation_snapshot=JSON_SET(provider_mutation_snapshot,"
+      "'$.result','verified','$.verified_at','fixture-only',"
+      "'$.current_group_ids',JSON_ARRAY(5)) "
+      "WHERE order_id=91 AND provider_state='mutating' "
+      "AND provider_mutation_key='pay:10';"
+      "UPDATE pays SET state='paid_with_wallet' WHERE id=10 AND state='processing_wallet'")
   pinned=call('edit',pay=11,change={'plus_day':2})
   yes(pinned['out']['success'] is True and pinned['out']['applied_expire']==expiry+172800 and server.user['data_limit']==quota and server.user['group_ids']==groups and sql("SELECT price FROM pays WHERE id=11").strip()=='200','manual_style_pinned_day_fulfills_exactly_after_SKU_absent')
   server.mode='write_lost'
@@ -786,7 +897,13 @@ def main():
   source=subprocess.check_output(['git','-C',str(ROOT),'archive',baseline])
   with tarfile.open(fileobj=io.BytesIO(source)) as archive:archive.extractall(root,filter='data')
   shutil.copyfile(Path(__file__),root/'tools/test_post_v9_provider_integration.py')
-  # Test fixture code may be current; all archived runtime files remain byte-exact.
+  # Preserve the historical runtime BYTE-EXACT while supplying the current
+  # fixture's additive indexed-ledger prerequisite as TEST DATA only.
+  # The RED must still reproduce the archived admin read-authorization bug.
+  # No archived PHP source is patched, and no SQL ever reaches production.
+  (root/'migrations/post-v9').mkdir(parents=True,exist_ok=True)
+  shutil.copyfile(ROOT/'migrations/post-v9/023_scoped_payment_lock_indexes.sql',
+                  root/'migrations/post-v9/023_scoped_payment_lock_indexes.sql')
   shutil.copyfile(Path(__file__).with_name('provider_storage_fixture.py'),root/'tools/provider_storage_fixture.py')
   red=subprocess.run([sys.executable,str(root/'tools/test_post_v9_provider_integration.py'),'--run-disposable'],capture_output=True,text=True,timeout=60)
   baseline_red=red.returncode!=0 and 'read_auth_1011_directadmin_direct_no_privileged_query_or_disclosure' in red.stderr

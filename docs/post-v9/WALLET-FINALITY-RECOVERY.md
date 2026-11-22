@@ -6,9 +6,61 @@ Owner: Finance (Issue [#26](https://github.com/ach1992/bot-refactor/issues/26)).
 
 1. Validate the original payment, authenticated customer/quote and eligibility under the existing per-payment lock. Insufficient funds or an unsupported service means **no Wallet debit and no Native write**.
 2. For Wallet, claim the original `pays.id`/`hash_id` and debit `users.wallet` in one SQL transaction. Commit the resulting `processing_wallet` state **before** dispatching any external service operation. This state means financially *held*, **not** fulfilled or customer-notified.
-3. Invoke Native once for that claimed operation. An HTTP error, bad acknowledgment, first-readback mismatch, or worker crash **does not establish failure**. Do not replay uncertain Native mutations.
-4. Verify the exact resulting Native entitlement. Finalize `increase_order`, local order expiry (where applicable), and `pays.state=paid_with_wallet` atomically in a separate short SQL transaction. A failed finalization leaves the original claim held for review; no second charge or automatic remote retry.
+3. Invoke Native for that claimed operation. An HTTP error, bad acknowledgment, first-readback mismatch, or worker crash **does not establish failure**. Read back the exact Native account before deciding whether another physical operation is necessary. The Owner explicitly authorizes reapplying the **same original absolute PasarGuard RESET/PUT renewal** when incomplete or unknown, using its pinned original account/entitlement and the same held Wallet claim. This exception does not apply to additive operations, CREATE, Marzban, or a different payment.
+4. Verify the exact resulting Native entitlement. Finalize `increase_order`, local order expiry (where applicable), and `pays.state=paid_with_wallet` atomically in a separate short SQL transaction. A failed finalization leaves the original claim eligible for later GET-first reconciliation or original PasarGuard absolute Retry; **never charge again**.
 5. Handle Telegram delivery separately from payment and Native finality. Never infer a successful delivery from a committed local payment or a repeated callback.
+
+**PasarGuard reset-renewal clarification (Issue #227):** the original,
+durably claimed `RENEW_ACCOUNT` is an **absolute** plan replacement
+(reset usage, set exact purchased volume and expiry), not an additive
+`INCREASE_DAY`/`INCREASE_VOLUME`. If an original Native RESET succeeded
+but the absolute PUT/SQL COMMIT failed, a payments-authorized operator may
+observe the **same pinned native identity and immutable original operation**
+and explicitly confirm finishing that original reset (including a measured
+native entitlement-drift warning). The ordinary services Cron may also retry
+that **same immutable absolute operation automatically** when its original
+`pay:ID` mutation remains `mutating`, the authenticated Native account,
+instance and access groups still match the pinned original, and the
+already-purchased target has not been reached. Transient GET/RESET/PUT
+failures defer the held claim to later Cron passes, not a second Wallet
+debit. A staff confirmation rechecks live evidence and executes that
+same original continuation rather than requiring a stale Native preview
+digest; a confirmation made after Cron already completed the exact
+payment reports its terminal status, without a second Native write. A changed
+account identity, changed access groups, another conflicting operation or
+unavailable provider is not permission for an unverified write. Prefer GET-only local reconciliation when Native already
+has the exact originally verified target. Additive DAY/VOLUME remains
+non-replayable: only verified-original-Native evidence can authorize a
+single local COMMIT. Paid CREATE recovery reuses its original reserved
+effect/line and cannot provision a second account. An unknown Telegram
+acknowledgment never authorizes an automatic second send.
+
+**Automatic renewal cycles (migration 004):** an automatic `RENEW_ACCOUNT`
+also owns a unique `automatic_renewal_attempts` row. Original-wallet
+recovery validates this immutable captured cycle (original pay, customer,
+order, server, plan, amount, days and volume) before Native or financial
+finality. Recovery seals `pays.state=paid_with_wallet`, the original
+once-only renewal audit, exact live-verified order expiry, one-shot
+customer/admin notice obligations, and `automatic_renewal_attempts.stage=done`
+in the **same** local transaction. It clears the cycle's `notif` flag.
+A legitimate zero-price/100%-discount cycle is allowed only with matching
+original automatic-renewal evidence; other Wallet recoveries still require
+a positive original amount. There is no second auto-renewal reservation
+or debit. Original payments with no valid, pinned Native mutation/attempt
+evidence remain review cases, not invented successes.
+
+**Observation is not admission:** a long-lived, original Native
+`provider_state=mutating` fence blocks further edits, plan changes, bulk
+gifts, deletion, add-ons and new financial claims, **not** authenticated
+GET-only status, quota, expiry or subscription/config-link rendering.
+Only the original immutable provider panel/account identity may be
+observed; foreign, missing, retired, or unverified Native data remains
+unavailable. No stale local quota/expiry is substituted. User/admin
+subscription-detail presentation and warning semantics remain unchanged.
+The matching CI scenarios exercise reset-only 12-to-10 GiB correction,
+additive pending Native work, wrong account identity, concurrent workers
+and original first-send obligations.
+
 
 `RENEW_SCONFIG` (external Marzban plan renewal) uses the original Wallet claim, a plan snapshot pinned by the locked payment transaction, and original `pay_id` passed to the Native adapter. The service call no longer runs inside the Wallet transaction; the renewal audit and paid state commit together. A committed but ambiguous Native result remains `processing_wallet`, and the old button cannot charge or renew again. A Wallet Marzban renewal carries the original **physical endpoint, provider type, logical server, account remark, payment ID and purchased days/volume** through the helper, service router and Native adapter. The adapter compares the original endpoint before its first authenticated GET and rechecks the same pinned target at every existing Native reset/write boundary; a later provider/endpoint substitution leaves the original claim held. The Marzban renewal does **not** have the PasarGuard original absolute-mutation journal: this source package does not grant automatic recovery or re-issuance authority for that class. Operations must establish the original remotely applied renewal independently before deciding a target-specific manual resolution.
 
@@ -51,7 +103,7 @@ The internal Cron scans only old enough `processing_wallet` DAY/VOLUME claims wi
 
 Before any real Hell/Vivan/Chili SQL, authenticated Native read/write, Wallet correction, customer message or recovery action, obtain explicit target-specific Owner approval. Provide the original payment ID, known wallet/quote provenance, current `pays`, order, original `service_effects` and `provider_accounts` state, current Native GET evidence, pending attempts/notifications, expected changes, backup and roll-forward plan. Runtime ZIP and GitHub Release are not installation/OPcache evidence.
 
-For approved once-only settlement, verify: original Wallet balance **unchanged by recovery**, `pays.state=paid_with_wallet`, the order's exact Native-verified absolute entitlement, precisely one local add-on accounting row from this finalization, original `pay:ID` still consumed, original imported provenance/NULL order unmodified, no new Native PUT/RESET, no fabricated Telegram acknowledgment. Report any communication gap separately. If the Native entitlement differs from the original absolute target, **stop and review**; never overwrite independent drift. After a committed reconciliation, use only explicitly approved compensating operations, not ad hoc rollback SQL.
+For approved once-only settlement, verify: original Wallet balance **unchanged by recovery**, `pays.state=paid_with_wallet`, the order's exact Native-verified absolute entitlement, precisely one local renewal/add-on accounting row from this finalization, original `pay:ID` still consumed, original imported provenance/NULL order unmodified, no duplicate Native operation for an already-applied entitlement, and no fabricated Telegram acknowledgment. For an incomplete or unknown **original absolute PasarGuard renewal only**, a repeated RESET/PUT must use the same persisted absolute target and be followed by independently verified Native readback. If the Native account/instance, access groups, original payment or entitlement evidence is unrelated or cannot be authenticated, defer the operation for review rather than claim success. Report communication gaps separately. After a committed reconciliation, use only explicitly approved compensating operations, not ad hoc rollback SQL.
 
 ### Hell original payment #112719
 
@@ -64,3 +116,140 @@ As documented in Issue #26 on **2026-11-17**, a target-specific Owner-authorized
 `python3 tools/test_post_v9_wallet_edit_recovery.py --run-disposable` exercises the real PasarGuard adapter with a loopback Native server, real PHP 8.5 and disposable MariaDB. Both DAY and VOLUME, imported `order_id=NULL`, original `fileid=0` historical migration references validated without modern import-origin records, permissions, wrong origin, original baseline, independent drift, SQL audit rollback with competing-mutation refusal, concurrent operator recovery, ambiguous final COMMIT and one-time finalization are checked. The enhanced fixture also exercises old-enough internal Cron recovery and exactly-once normal first-send customer/admin notification journals, with no real Telegram messages. These suites also join required `tools/ci_quick.py`; source tests are not a substitute for the exact-HEAD GitHub CI gate, independent read-only review, Owner Merge/Release approval or production acceptance.
 
 `python3 tools/test_post_v9_wallet_marzban_target.py --run-disposable` exercises actual renewal helper, Core dispatcher and Marzban adapter against disposable MariaDB and two independent loopback Marzban HTTP providers with the same account username. It checks endpoint/provider substitution after the initial Wallet Checkout comparison, at the final adapter handoff, during authenticated GET, and normal unchanged-target fulfillment. Only timing/configuration changes are fault-injected in the fixture; Native adapter and HTTP remain current source.
+
+## Original Wallet BUY_SUB and Marzban review (Issue #227, PR #228)
+
+The existing shared **Payments Requiring Review** inbox retains original
+`BUY_SUB` and `RENEW_SCONFIG` cases when `pays.state=processing_wallet`
+and the ten-minute inactivity window has elapsed. An authorized payments
+administrator can open **Review original Wallet effect**; this does **not**
+charge the Wallet, create an account, mutate Native, or settle a payment.
+
+For `BUY_SUB`, `src/Finance/WalletOriginalRecovery.php` first reads the
+original immutable `pays.id` and per-ordinal `service_effects` ledger,
+including the consumed `wallet_hold` and the **already committed** complete
+capacity reservation. Each `create` line is checked against the same original
+payment, plan, server, group, endpoint, `operation_id`, remote username,
+expiry and bytes. A linked line is accepted only if the original local order
+belongs to the same purchaser, physical server, account, plan and allocated
+price. An authenticated, pinned **Native GET**, with exact operation marker,
+original expiry/quota and a second identity read, independently corroborates
+each existing account. An independently Native-verified original CREATE
+**without a linked local order** is a separate, bounded reconciliation class:
+the originally consumed `wallet_hold`, reserved count, payment/effect ordinal,
+operation marker, identity, requested expiry and bytes must all agree.
+The source records the original CREATE reservation timestamp; recovery accepts
+a missing order's originally purchased duration only if that timestamp and
+pinned absolute expiry corroborate whole purchased days within a strict
+clock/dispatch tolerance. No mutable current plan price/duration/quota is used
+as a substitute for the original purchase. A conflicting existing order,
+unknown entitlement, foreign Native GET or unverified payment remains an
+operator hold, not fabricated fulfillment.
+
+After fresh authenticated Native GET corroborates **every original ordinal**,
+payments-authorized staff receive an actor-bound confirmation token. Original
+`reserved/dispatching` Marzban **and PasarGuard** effects with a matching
+original CREATE can be marked `verified` **only after explicit staff
+confirmation** and another independently authenticated GET. PasarGuard
+inspection uses the original persisted provider connection/instance,
+endpoint, operation marker, membership, expiry and quota; GET by username
+also requires a valid remote Native ID and normalized creation time. Preview
+is strictly read-only. Its staff-bound confirmation token pins that observed
+Native ID/incarnation, so an exchanged account cannot inherit stale proof.
+The same existing PasarGuard continuation re-observes the original identity,
+persists verification of **only the original effect**, and returns verified
+subscription links; it never retries Native CREATE. If verification commits
+but subsequent local finality fails, the verified original effect remains
+recoverable with a fresh confirmation token. This may result in a newly minted
+confirmation token for subsequent attempts. The confirmed action owns the original payment
+lease; after preparing first-send customer packets, it locks original payment,
+hold, effects, orders, archive and current staff permission in a short SQL
+transaction. Each proven `verified` CREATE with no order gets only its
+missing **LOCAL** `orders_list` row, using the original effect entitlement,
+allocated purchase amount, physical identity and recovered Native link.
+Those rows are linked to their **original** effects; verified preexisting
+orders are preserved. All original ordinals and uniqueness are rechecked
+before finality. Exactly one notification-only Wallet payment attempt,
+one durable customer first-send QR intent **per original account**, and a
+sealed, one-shot ordinary administrator purchase-report obligation are
+created **in the SAME COMMIT** as `paid_with_wallet`. The admin report uses
+the original recorded account identities, amount, quota/days, original
+server ID and local order references rather than potentially changed catalog
+values; multi-account purchases yield one summary and distinct customer
+intents. First-send ACK is durable, an UNKNOWN/partial fanout stays visible
+in the shared Payments Requiring Review inbox, and only an explicitly
+authorized, auditable staff decision may initiate the bounded duplicate-risk
+report resend. No unknown Telegram send is automatically repeated.
+
+Restoring a missing local record **never** issues Native CREATE/RESET/PUT,
+reserves/releases capacity, debits/refunds Wallet, creates a new payment, or
+claims a prior Telegram ACK. Any incomplete SQL transaction rolls back the
+local order and both notification obligations. A lost terminal COMMIT ACK
+is resolved from the already-committed original payment, not by inserting
+another order. The historical Wallet debit remains **not independently audited**
+by this reconstruction; obtain owner-approved tenant-specific original
+Wallet/quote evidence before any live use.
+
+For `RENEW_SCONFIG`, the existing original Wallet claim, description,
+server/endpoint, account identity and **current** plan values are displayed
+in the operator evidence view. An authenticated current Marzban GET is
+advisory only. Unlike PasarGuard, the old Marzban renewal has no durable
+original absolute mutation journal that proves the original purchased
+expiry and quota were applied: a matching current account or today's mutable
+plan **does not establish** that the old paid renewal succeeded. This path
+never issues another Marzban RESET/PUT, recharges Wallet, or fabricates a
+successful local payment. Independently reconciled provider and payment
+history is needed before any target-specific Owner-authorized intervention.
+
+### Separate administrator Telegram report obligation
+
+`WALLET_ADDON_REPORT:<pay_id>` is a separate original notification obligation.
+Its unacknowledged `pending`, in-flight `dispatching` or
+`manual_dispatching`, and `unknown_or_partial` states remain visible in the
+**same** inbox even after customer Telegram ACK and financial settlement.
+The operator sees the exact payment/marker and real delivery state. The
+first `pending` send belongs to the existing first-send Cron only;
+`unknown_or_partial` is **never resent automatically**. An authorized
+administrator may explicitly consent to **one** separately journaled manual
+re-send of the **same encrypted original report** after the UI warns about
+possible duplicate recipient messages. This sends no Wallet/Native/account
+operation. A new `manual_dispatching` marker is durably claimed *before*
+Telegram; a lost ACK or mid-send crash stays in human review and cannot
+trigger another automatic or manual send. Only a real returned Telegram
+acknowledgement marks that attempt `acknowledged` and removes the case from
+attention; it must not retroactively assert that the earlier unknown send
+was successful. Actual recipient acknowledgement may still require
+independent investigation for multi-recipient partial fanout.
+
+### Source-real CI / owner gates
+
+`tools/test_post_v9_wallet_original_recovery.py` exercises original
+WalletSettlement/ServiceEffects CREATE and local order against socket-only
+MariaDB, authenticated HTTP Marzban GET, actual original-identity matching,
+permissions, forged confirmation, concurrent operator finality, missing
+local record recovery, verified Native CREATE with lost callback ACK,
+mixed linked/unlinked original multi-account ordinals, SQL order failure
+rollback, lost COMMIT ACK, one-shot customer and administrator reports,
+UNKNOWN administrator fanout/manual resend and conservative Marzban
+additive renewal hold. The existing
+`test_post_v9_wallet_edit_recovery.py` now checks customer ACK + original
+admin report UNKNOWN, denial, concurrent manual report resend, and one-shot
+ACK, and `test_post_v9_wallet_renewal_recovery.py` now covers an original
+order with three independent `processing_wallet` claims and concurrent
+operator/Cron actions. The separate source-real
+`tools/test_post_v9_wallet_pg_original_recovery.py` reproduces original
+PasarGuard Native CREATE with its HTTP response lost after the remote write,
+then exercises GET-only inspection, staff confirmation, remote ID and
+incarnation pinning, original effect/order links, customer subscription GET,
+Wallet and capacity invariance, foreign evidence, SQL/COMMIT uncertainty,
+concurrent callbacks, previously verified and linked effects and the shared
+administrator-report obligation. All are in `tools/ci_quick.py`.
+
+These scenarios are **disposable source tests**, not proof that the historical
+Hell payments `113037/113331/113346` for order `30271` were resolved. No
+live data/provider/Telegram operation is authorized here. The operator's
+Persian review copy remains subject to explicit Owner UI/copy approval.
+The current `023_scoped_payment_lock_indexes.sql` migration is **not included
+in the runtime ZIP**: obtain exact tenant authorization, schema preflight,
+backup, rollback plan and index verification before matching production
+runtime installation. Preserve independent review/merge/release gates.
