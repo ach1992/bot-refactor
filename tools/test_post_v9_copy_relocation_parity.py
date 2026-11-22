@@ -19,6 +19,13 @@ ROOT = Path(__file__).resolve().parents[1]
 BASE = "270840a854b06bbe899b76249db68e4748d93739"
 REMOVED_SHA256 = "7b7eb72cb6cc43de76b03ac3a63c4367f40ed3dce4c26008928452b0780d8482"
 ADDED_SHA256 = "31088e8b9a9ee6cdc6a9a015aa8418b49ac6948302eb586a2da6db7f40b1e494"
+# 14 new, source-owned staff Wallet recovery UI entries are an additive
+# candidate, not alterations to the Owner-approved original 50 entries.
+# Their literal bytes are frozen for exact-head review and cannot grow or
+# silently change. Owner approval for this new UI remains a separate gate.
+WALLET_RECOVERY_KEY_SHA256 = "d15f58113512b6b7808dbef03c6157abfca5cba632a817fd176341294af62bc6"
+WALLET_RECOVERY_VALUES_SHA256 = "67497b21f07bc7bbafe320c313aeea36d15719dd7b2fff11c8fc74a06d68b33a"
+WALLET_RECOVERY_COUNT = 14
 REVIEW_R1_RETIRED = ('legacy_buttons.manual_usdt', 'legacy_messages.buy_custom_subscription_detail', 'manual_payment.api_payment.status_monitoring')
 EXPECTED_LABELS = {
     "automatic_gateway_review.unlimited_expiry": "نامحدود",
@@ -71,15 +78,32 @@ def main() -> None:
     added = sorted(set(new) - set(old))
     check(len(removed) == 413 and digest(removed) == REMOVED_SHA256,
           "retired_key_footprint_changed")
-    check(len(added) == 50 and digest(added) == ADDED_SHA256,
-          "new_catalog_keys_not_owner_reviewed")
+    # The legacy 50-key approval is still exact, including its digest.
+    previously_approved_added = sorted(k for k in added if
+        k.startswith("web_login.") or k in EXPECTED_LABELS)
+    check(len(previously_approved_added) == 50 and
+          digest(previously_approved_added) == ADDED_SHA256,
+          "original_owner_approved_catalog_keys_changed")
+    wallet_entries = sorted(k for k in added if
+        k.startswith("automatic_gateway_review.wallet_"))
+    check(len(wallet_entries) == WALLET_RECOVERY_COUNT and
+          digest(wallet_entries) == WALLET_RECOVERY_KEY_SHA256,
+          "unreviewed_wallet_operator_catalog_keys")
+    wallet_values = {k: new[k] for k in wallet_entries}
+    value_hash = hashlib.sha256(json.dumps(wallet_values, sort_keys=True,
+        ensure_ascii=False, separators=(",", ":")).encode()).hexdigest()
+    check(value_hash == WALLET_RECOVERY_VALUES_SHA256,
+          "wallet_operator_copy_bytes_changed")
+    check(set(added) == set(previously_approved_added) | set(wallet_entries),
+          "unexpected_non_owner_catalog_added")
     check(set(REVIEW_R1_RETIRED) | {"legacy_messages.config_doesnt_exist", "subscription.buy_helpers.build_links_and_send_qr.start.e4bb9f1ece"} <= set(removed),
           "current_source_orphan_keys_not_retired")
     common = set(old) & set(new)
     changed = sorted(k for k in common if old[k] != new[k])
     check(not changed, "previously_rendered_copy_modified:" + str(changed[:12]))
-    check({k for k in added if not k.startswith("web_login.")} ==
-          set(EXPECTED_LABELS), "unexpected_nonweb_copy_added")
+    check({k for k in previously_approved_added if
+           not k.startswith("web_login.")} == set(EXPECTED_LABELS),
+          "historical_approved_nonweb_copy_changed")
     check(all(new[k] == v for k, v in EXPECTED_LABELS.items()),
           "legacy_label_bytes_changed")
     assert len({k for k in added if k.startswith("web_login.")}) == 46
@@ -105,6 +129,10 @@ def main() -> None:
         "removed_source_dead_copy": len(removed),
         "new_web_copy_entries": 46,
         "new_admin_label_entries": 4,
+        "wallet_operator_candidate_entries": WALLET_RECOVERY_COUNT,
+        "wallet_operator_candidate_keys_sha256": WALLET_RECOVERY_KEY_SHA256,
+        "wallet_operator_candidate_text_sha256": value_hash,
+        "wallet_operator_owner_review_pending": True,
         "current_catalog_entries": len(new),
         "removed_key_sha256": digest(removed),
         "added_key_sha256": digest(added),

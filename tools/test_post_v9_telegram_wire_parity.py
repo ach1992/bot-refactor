@@ -27,6 +27,13 @@ EXPECTED = {"sendMessage": 694, "editText": 130, "sendPhoto": 12,
 # sends. All other pre-refactor wire arguments retain exact comparison.
 LEGACY_HTML_TRANSITIONS = 74
 LEGACY_HTML_AUDIT = "16eed331aeb2e2fd8c4133fe03d3c0d8318761cd371ebf24d6a073852136009b"
+# Wallet exception operator callbacks are a reviewed, additive *new* block.
+# Every preexisting wire call retains its baseline arguments, order and modes.
+WALLET_UI_PATH = "src/Finance/Routes/AutomaticGatewayReview.php"
+WALLET_UI_START = 6
+WALLET_UI_NEW_CALLS = 13
+WALLET_UI_SHA256 = "5d1c31fcd7cee8387977d2fef0c251845088120d9a505bd74ea297d254892998"
+NEW_RUNTIME_WITHOUT_TELEGRAM = frozenset({"src/Finance/WalletRenewalRecovery.php"})
 LEGACY_DIRECT = re.compile(
     r"""\\achbotMessage\(['"]legacy_messages\.([a-z0-9_]+)['"]\)\Z"""
 )
@@ -146,9 +153,23 @@ def compare(before: dict, after: dict) -> dict[str, int]:
     counts = dict.fromkeys(EXPECTED, 0)
     catalog = php_args.catalog()
     transitions = []
+    wallet_ui_audited = False
     for path in sorted(before):
         previous = before[path]
         current = after[path]
+        if path == WALLET_UI_PATH:
+            assert len(current) == len(previous) + WALLET_UI_NEW_CALLS, (
+                "wallet_operator_telegram_call_count_drift", len(current), len(previous))
+            introduced = current[WALLET_UI_START:WALLET_UI_START+WALLET_UI_NEW_CALLS]
+            audit = [[method, [original_argument(arg) for arg in args]]
+                     for method, args in introduced]
+            actual_hash = hashlib.sha256(json.dumps(audit, ensure_ascii=False,
+                separators=(',', ':')).encode('utf-8')).hexdigest()
+            assert actual_hash == WALLET_UI_SHA256, (
+                "wallet_operator_telegram_calls_unreviewed", actual_hash)
+            current = (current[:WALLET_UI_START] +
+                       current[WALLET_UI_START+WALLET_UI_NEW_CALLS:])
+            wallet_ui_audited = True
         assert len(previous) == len(current), ("telegram_call_count_drift", path)
         for index, ((previous_method, previous_args), (method, args)) in enumerate(
                 zip(previous, current, strict=True)):
@@ -162,6 +183,7 @@ def compare(before: dict, after: dict) -> dict[str, int]:
                 assert change is not None, ("telegram_wire_argument_changed",
                                             path, index, expected, actual)
                 transitions.append(change)
+    assert wallet_ui_audited, "wallet_operator_additive_wire_audit_not_exercised"
     assert counts == EXPECTED, ("telegram_contract_coverage_changed", counts)
     digest = hashlib.sha256(json.dumps(transitions, ensure_ascii=False,
         separators=(',', ':')).encode('utf-8')).hexdigest()
@@ -173,10 +195,20 @@ def compare(before: dict, after: dict) -> dict[str, int]:
 def main() -> None:
     names = [p for p in package_current.members()
              if p.endswith(".php") and not p.startswith("messages/fa/")]
+    original_names = set(subprocess.check_output(
+        ["git", "ls-tree", "-r", "--name-only", BASE, "--"], cwd=ROOT,
+        text=True).splitlines())
+    new_names = set(names) - original_names
+    assert new_names == NEW_RUNTIME_WITHOUT_TELEGRAM, (
+        "unreviewed_new_runtime_file", sorted(new_names))
+    new_source = {name: (ROOT / name).read_text() for name in new_names}
+    assert all(not values for values in calls(new_source).values()), (
+        "new_financial_recovery_module_must_not_send_telegram")
+    common_names = [name for name in names if name in original_names]
     old = {name: subprocess.check_output(
         ["git", "show", BASE + ":" + name], cwd=ROOT).decode("utf-8")
-        for name in names}
-    now = {name: (ROOT / name).read_text() for name in names}
+        for name in common_names}
+    now = {name: (ROOT / name).read_text() for name in common_names}
     previous = calls(old)
     current = calls(now)
     total = compare(previous, current)
