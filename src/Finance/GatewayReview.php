@@ -349,6 +349,99 @@ function achbotGatewayReviewRecover(mysqli $db,int $actor,int $attemptId,
     }
 }
 
+/** Archive one ORIGINAL wallet-attention case, even when it has no hosted
+ * payment_attempts row. This is a local automation fence, not a settlement,
+ * refund, Native success claim or replacement of the original paid debit.
+ *
+ * Acquire the SAME session-wide payment lease before SQL, so a worker cannot
+ * start a provider write in the interval between an IS_USED_LOCK probe and
+ * our terminal Archive COMMIT. Keep existing pay -> attempt row lock order.
+ */
+function achbotWalletReviewArchive(mysqli $db,int $actor,int $payId,
+                                  int $primaryOwner): string {
+    if ($payId<=0 || $actor<=0 || $primaryOwner<=0) return 'stale';
+    $lease=achbotOriginalDispatchLeaseBegin($db,$payId);
+    if ($lease!=='owned') return $lease==='busy'||$lease==='borrowed'
+        ?'busy':'unavailable';
+    $open=false;
+    try {
+        $q=$db->query('SELECT review_archived_at,review_archived_by
+            FROM payment_attempts LIMIT 0');
+        if (!$q) throw new RuntimeException('wallet_archive_schema_unavailable');
+        $q->free();
+        if (!$db->begin_transaction())
+            throw new RuntimeException('wallet_archive_begin_failed');
+        $open=true;
+        $q=$db->prepare('SELECT id,hash_id,price,type,state
+            FROM pays WHERE id=? FOR UPDATE');
+        $q->bind_param('i',$payId);$q->execute();
+        $pay=$q->get_result()->fetch_assoc();$q->close();
+        $q=$db->prepare('SELECT id,provider,review_archived_at
+            FROM payment_attempts WHERE pay_row_id=? FOR UPDATE');
+        $q->bind_param('i',$payId);$q->execute();
+        $attempts=$q->get_result()->fetch_all(MYSQLI_ASSOC);$q->close();
+        if (!$pay || count($attempts)>1 ||
+            ($attempts && ($attempts[0]['provider']!=='wallet' ||
+                           $attempts[0]['review_archived_at']!==null))) {
+            $db->rollback();$open=false;return 'stale';
+        }
+        if (!achbotAdminCanLocked($db,$actor,$primaryOwner,'payments')) {
+            $db->rollback();$open=false;return 'denied';
+        }
+        // The current shared inbox, not an old button, determines eligibility.
+        // The LEFT JOIN admits an unfinished Wallet even without an attempt.
+        $scope=achbotGatewayAttentionScope($db);
+        $q=$db->prepare("SELECT p.id FROM pays p
+            LEFT JOIN payment_attempts a ON a.pay_row_id=p.id
+            WHERE p.id=? AND (a.id IS NULL OR a.provider='wallet')
+              AND $scope LIMIT 1");
+        $q->bind_param('i',$payId);$q->execute();
+        $visible=$q->get_result()->fetch_assoc();$q->close();
+        if (!$visible) {
+            $db->rollback();$open=false;return 'stale';
+        }
+        if ($attempts) {
+            $id=(int)$attempts[0]['id'];
+            $q=$db->prepare('UPDATE payment_attempts
+                SET review_archived_at=UTC_TIMESTAMP(),review_archived_by=?
+                WHERE id=? AND pay_row_id=? AND review_archived_at IS NULL');
+            $q->bind_param('iii',$actor,$id,$payId);
+        } else {
+            // The original Wallet payment had NO hosted attempt. Create its
+            // immutable local Archive marker using the original payment ID
+            // and hash. A 'review' row does NOT claim a completed provider
+            // attempt, settlement, delivery, or a second financial effect.
+            $hash=(string)$pay['hash_id'];$amount=(int)$pay['price'];
+            if ($hash==='' || $amount<0)
+                throw new RuntimeException('wallet_archive_original_invalid');
+            $provider='wallet';$quote=sprintf('%d.00000000',$amount);
+            $currency='toman';$stage='review';$status='wallet_archived';
+            $q=$db->prepare('INSERT INTO payment_attempts
+                (pay_row_id,provider,order_hash,quote_amount,quote_currency,
+                 local_amount_toman,stage,provider_status,
+                 review_archived_at,review_archived_by)
+                VALUES (?,?,?,?,?,?,?,?,UTC_TIMESTAMP(),?)');
+            $q->bind_param('issssissi',$payId,$provider,$hash,$quote,$currency,
+                $amount,$stage,$status,$actor);
+        }
+        $ok=$q->execute() && $q->affected_rows===1;
+        $q->close();
+        if (!$ok || $db->commit()!==true)
+            throw new RuntimeException('wallet_archive_commit_unknown');
+        $open=false;
+        achbotDiagnosticEvent('achbot.finance.wallet_review_archived',[
+            'pay_id'=>$payId,'actor_id'=>$actor,'result'=>'local_archive'],'info');
+        return 'archived';
+    } catch (Throwable $error) {
+        error_log('achbot_wallet_review_archive_deferred pay_id='.$payId.
+            ' actor='.$actor.' reason='.achbotFinanceDiagnosticReason($error));
+        return 'unavailable';
+    } finally {
+        if ($open) try {$db->rollback();} catch (Throwable $ignored) {}
+        achbotOriginalDispatchLeaseEnd($db,$payId,$lease);
+    }
+}
+
 /** End local automated processing for an already reviewed exception.
  * The operator action never changes the original provider/order/effect state,
  * but all subsequent automatic financial paths must honor this terminal fence.

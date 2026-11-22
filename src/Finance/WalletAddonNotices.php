@@ -304,6 +304,7 @@ function achbotWalletAddonDispatchReport(mysqli $db,int $payId): string {
             $begun=true;
             $q=$db->prepare('SELECT * FROM pays WHERE id=? FOR UPDATE');
             $q->bind_param('i',$payId);$q->execute();$pay=$q->get_result()->fetch_assoc();$q->close();
+            achbotEffectAssertNotArchivedLocked($db,$payId);
             $q=$db->prepare('SELECT id,value FROM setting WHERE type=? FOR UPDATE');
             $q->bind_param('s',$type);$q->execute();
             $markers=$q->get_result()->fetch_all(MYSQLI_ASSOC);$q->close();
@@ -406,6 +407,7 @@ function achbotWalletAddonReportCase(mysqli $db,int $payId): ?array {
         FROM pays p JOIN payment_attempts a ON a.pay_row_id=p.id
         JOIN setting s ON s.type=?
         WHERE p.id=? AND p.state='paid_with_wallet' AND a.provider='wallet'
+          AND a.review_archived_at IS NULL
         ORDER BY s.id LIMIT 2");
     if (!$q) throw new RuntimeException('wallet_report_case_prepare');
     $q->bind_param('si',$type,$payId);$q->execute();
@@ -491,6 +493,7 @@ function achbotWalletAddonReportManualSend(mysqli $db,int $payId,
             $q=$db->prepare('SELECT * FROM pays WHERE id=? FOR UPDATE');
             $q->bind_param('i',$payId);$q->execute();
             $pay=$q->get_result()->fetch_assoc();$q->close();
+            achbotEffectAssertNotArchivedLocked($db,$payId);
             require_once __DIR__.'/../Admin/Access.php';
             if (!achbotAdminCanLocked($db,$actor,$primary,'payments')) {
                 $db->rollback();$started=false;return 'denied';
@@ -569,7 +572,9 @@ function achbotWalletAddonMaintain(mysqli $db,int $batch=4): array {
     try {
         $q=$db->prepare("SELECT DISTINCT p.id FROM pays p
             JOIN service_effects e ON e.provider_mutation_key=CONCAT('pay:',p.id)
+            LEFT JOIN payment_attempts a ON a.pay_row_id=p.id
             WHERE p.state='processing_wallet' AND p.request_date<=?
+              AND a.review_archived_at IS NULL
               AND (p.updated_at IS NULL OR p.updated_at<=DATE_SUB(NOW(),INTERVAL 2 MINUTE))
               AND e.provider_state='mutating'
               AND (p.type LIKE 'INCREASE_DAY_%' OR p.type LIKE 'INCREASE_VOLUME_%')
@@ -617,6 +622,8 @@ function achbotWalletAddonMaintainReports(mysqli $db,int $batch=4): array {
     foreach($rows as $row) {
         if (preg_match('/^WALLET_ADDON_REPORT:([1-9][0-9]*)$/D',
             (string)$row['type'],$m)!==1) continue;
+        // Original administrator report is not delivered after terminal Archive.
+        if (achbotGatewayOriginalArchived($db,(int)$m[1])) continue;
         $stats['pending']++;
         $result=achbotWalletAddonDispatchReport($db,(int)$m[1]);
         if ($result==='acknowledged') $stats['acknowledged']++;

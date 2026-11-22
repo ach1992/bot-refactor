@@ -290,8 +290,14 @@ quota scenario in bot logic.
 
 Archive records `payment_attempts.review_archived_at` and
 `review_archived_by` exactly once under the original payment/attempt
-InnoDB locks. It does **not** settle, reject, refund, credit, mutate Native,
-rewrite provider observations, delete history or mark Telegram delivered.
+InnoDB locks. Original Wallet cases may have no prior hosted attempt:
+Archive creates one original-hash-bound `provider=wallet` local archival
+attempt with no claimed external outcome. A Wallet case whose actual
+payment is already terminal retains its original attempt and financial
+state; an unresolved administrator report or delivery does not make
+Archive a financial reversal. It does **not** settle, reject, refund, credit,
+mutate Native, rewrite provider observations, delete history or mark
+Telegram delivered.
 The archived case exits the live inbox; old callbacks cannot reopen it.
 An authentic late NOWPayments IPN may still preserve signed child evidence
 without changing the archived original.
@@ -303,15 +309,23 @@ lease through the entire webhook. Independent original 018 customer delivery
 and 020 customer/staff follow-up dispatchers hold or borrow that lease across
 the durable one-shot claim, outbound Telegram request and acknowledgement
 recording, without holding an InnoDB transaction over HTTP. A nested dispatcher
-must never release its parent's lease. Archive returns **busy** when a genuine
-original worker is active rather than claiming to cancel an already-dispatched
-Native or Telegram operation. An already-open manual rejection-reason editor
+must never release its parent's lease. Wallet Archive acquires that same
+original-payment session lease **before** its short SQL Archive transaction,
+preventing a new original recovery from beginning across the Archive boundary.
+Archive returns **busy** when a genuine original worker is active rather than
+claiming to cancel an already-dispatched Native or Telegram operation. An already-open manual rejection-reason editor
 must recheck the original Archive marker under payment/attempt locks before
 consuming the editor or committing any rejection or follow-up.
 Original financial/API proof, Native service-effect admission, and first
 customer/staff delivery-fence checks must refuse new work after Archive.
-Previously unknown remote results remain unknown. New independent customer
-purchases/renewals and original financial history are unaffected.
+Previously unknown remote results remain unknown. An unresolved Wallet
+Native account-level mutation fence is **not** cleared merely by Archive;
+it remains subject to separately verified original entitlement/identity
+reconciliation. Original Wallet GET-only checks, operator continuation, Cron
+and report dispatch must honor the local Archive record rather than retrying
+the original or resending an unknown notification. New independent customer
+purchases/renewals and original financial history are unaffected where no
+real Native/account conflict exists.
 
 There is **no automatic detection, reconciliation or compensation of manual
 Native quota edits**. An external operator action cannot silently make an
