@@ -313,7 +313,27 @@ must never release its parent's lease. Wallet Archive acquires that same
 original-payment session lease **before** its short SQL Archive transaction,
 preventing a new original recovery from beginning across the Archive boundary.
 Archive returns **busy** when a genuine original worker is active rather than
-claiming to cancel an already-dispatched Native or Telegram operation. An already-open manual rejection-reason editor
+claiming to cancel an already-dispatched Native or Telegram operation. Original
+Wallet standard/custom/renewal checkout acquires the same original payment
+lease **before** its Wallet debit transaction and retains it through Native
+service work and local finality. A real Checkout parent retains the lease
+through its **direct QR/customer/admin delivery** as well; the internal
+settlement worker borrows rather than releasing the parent's lease. A
+customer's wrong-mode or nonexistent invoice is rejected by the unchanged
+financial admission checks without claiming another buyer's lease. A payment
+draft may predate the ten-minute inbox threshold when it first becomes
+`processing_wallet`; the lease, rather than draft age, serializes that
+freshly active worker against Archive.
+
+Archive is now checked at original `processing_wallet` Native
+reservation/dispatch, verified CREATE journal writes, and local order-link
+boundaries, not only at financial settlement. A stale original BUY_SUB
+administrator token cannot verify a previously `dispatching` Native effect
+after Archive: the original lease is checked before Native inspection, and
+the original payment Archive marker is rechecked under the payment row
+lock before any permitted verified-effect SQL transition. Unknown remote
+results and genuine Native account-level mutation fences remain intact.
+An already-open manual rejection-reason editor
 must recheck the original Archive marker under payment/attempt locks before
 consuming the editor or committing any rejection or follow-up.
 Original financial/API proof, Native service-effect admission, and first

@@ -16,6 +16,17 @@ if (is_string($data) && strlen($data) <= 64 && preg_match('/\ApayCustomWithWalle
     setUser();
 
     $hashId = trim($match[1] ?? '');
+    // Keep the original payment lease across Wallet debit, Native CREATE,
+    // local finality AND direct QR/admin delivery in this same callback.
+    $checkoutLease=achbotWalletCheckoutLeaseBegin(
+        $connection,$hashId,(int)$from_id,'custom');
+    if ($checkoutLease['lease']==='unavailable' ||
+        ($checkoutLease['pay_id']>0 &&
+         !in_array($checkoutLease['lease'],['owned','borrowed'],true))) {
+        alert(\achbotMessage('wallet.wallet_settlement.process_wallet_payment.alert.978c658074'),true);
+        return;
+    }
+    try {
     $pendingCustomDelivery=null;
 
     $result = processWalletPayment($connection, $hashId, function($payInfo, $userRow) use (
@@ -202,6 +213,13 @@ if (is_string($data) && strlen($data) <= 64 && preg_match('/\ApayCustomWithWalle
         }
     }
     return;
+    } finally {
+        // An early invalid/missing draft owns no lease and may not have
+        // loaded the Archive/lease module. Borrowed locks stay with parent.
+        if ($checkoutLease['lease']==='owned')
+            achbotOriginalDispatchLeaseEnd($connection,
+                (int)$checkoutLease['pay_id'],(string)$checkoutLease['lease']);
+    }
 }
 
 if (is_string($data) && strlen($data)<=64 &&
@@ -723,6 +741,17 @@ if (is_string($data) && strlen($data) <= 64 && preg_match('/\ApayBuyWithWallet([
     setUser();
 
     $hashId = trim($match[1] ?? '');
+    // Match the custom Wallet route: settlement internally borrows this
+    // same session-wide lease, while direct QR/Telegram uses its owner.
+    $checkoutLease=achbotWalletCheckoutLeaseBegin(
+        $connection,$hashId,(int)$from_id,'standard');
+    if ($checkoutLease['lease']==='unavailable' ||
+        ($checkoutLease['pay_id']>0 &&
+         !in_array($checkoutLease['lease'],['owned','borrowed'],true))) {
+        alert(\achbotMessage('wallet.wallet_settlement.process_wallet_payment.alert.978c658074'),true);
+        return;
+    }
+    try {
     $deferredRenewSuccess = null;
     $pendingUserQrs = [];
     $msgToDeleteAfterOk = null;
@@ -1148,6 +1177,13 @@ if (is_string($data) && strlen($data) <= 64 && preg_match('/\ApayBuyWithWallet([
             :achbotBulkReportAppend($msg,$bulkProof,true);
     }
     achbotNotifyAdmins('sendMessage', ['text'=>$msg, 'reply_markup'=>$keys, 'parse_mode'=>'HTML']);
+    } finally {
+        // An early invalid/missing draft owns no lease and may not have
+        // loaded the Archive/lease module. Borrowed locks stay with parent.
+        if ($checkoutLease['lease']==='owned')
+            achbotOriginalDispatchLeaseEnd($connection,
+                (int)$checkoutLease['pay_id'],(string)$checkoutLease['lease']);
+    }
 }
 
 if (is_string($data) && (strlen($data) <= 64 || ($GLOBALS['achbotManualCryptoVerifiedDispatch'] ?? null) === $data) && preg_match('/\ApayBuyWith(?:CartToCart|GiftCard|ManualUsdt)([A-Za-z0-9_-]{1,50})\z/D', $data, $match)) {

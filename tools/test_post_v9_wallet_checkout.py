@@ -63,6 +63,9 @@ class OwnedCheckoutMysqli extends mysqli {
             }
             if (!$released) throw new RuntimeException('fixture_barrier_timeout');
             $GLOBALS['events'][]=['event'=>'POST_COMMIT_RIVAL_FINISHED'];
+        } elseif ($hook==='lost_ack') {
+            // The REAL SQL debit COMMIT succeeded, only PHP's ACK was lost.
+            throw new RuntimeException('fixture_original_wallet_commit_ack_lost');
         } else {
             throw new RuntimeException('unknown_fixture_hook');
         }
@@ -109,6 +112,22 @@ function sendQrFromLink(...$args) {
     $stmt->bind_param('s',$name);$stmt->execute();
     $state=$stmt->get_result()->fetch_assoc()['state']??null;$stmt->close();
     $GLOBALS['events'][]=['event'=>'QR','user'=>$args[4]??null,'state'=>$state];
+    if (($GLOBALS['spec']['delivery']??'')==='pause_for_archive') {
+        // Source-real Checkout is paused after local finality, while its
+        // original session lease must still span direct customer delivery.
+        $db=$GLOBALS['connection'];
+        if (!$db->query('UPDATE wallet_fixture_barrier SET arrived=1 WHERE id=1'))
+            throw new RuntimeException('fixture_qr_pause_signal_failed');
+        $released=false;
+        for ($i=0;$i<280;$i++) {
+            $r=$db->query('SELECT released FROM wallet_fixture_barrier WHERE id=1');
+            if ($r && (int)($r->fetch_assoc()['released']??0)===1) {
+                $released=true;break;
+            }
+            usleep(50000);
+        }
+        if (!$released) throw new RuntimeException('fixture_qr_pause_timeout');
+    }
     if (($GLOBALS['spec']['delivery']??'')==='throw')
         throw new RuntimeException('fixture_unacknowledged_customer_delivery');
     if (($GLOBALS['spec']['delivery']??'')==='false') return false;
@@ -213,6 +232,31 @@ require_once $root.'/src/Purchase/Core.php';
 require $root.'/src/Purchase/Catalogue.php';
 '''
 
+# Separate MariaDB session using the ACTUAL original Wallet Archive and
+# Native dispatch admission; neither action is mocked by the PHP fixture.
+PHP_ARCHIVE_GATE=r'''<?php
+error_reporting(E_ALL & ~E_DEPRECATED);
+set_error_handler(static function($n,$message){throw new ErrorException($message,0,$n);});
+$_SERVER['SCRIPT_FILENAME']=__FILE__;
+$root=$argv[1];
+$db=new mysqli('localhost','root','',$argv[3],0,$argv[2]);
+$db->set_charset('utf8mb4');
+require_once $root.'/src/Purchase/Core.php';
+require_once $root.'/src/Finance/GatewayReview.php';
+$op=(string)$argv[5];$id=(int)$argv[4];
+try {
+    if ($op==='archive') $result=achbotWalletReviewArchive($db,9001,$id,9001);
+    elseif ($op==='admit') {
+        require_once $root.'/src/Finance/ServiceEffects.php';
+        achbotEffectAdmitPaidDispatch($db,$id);
+        $result='admitted';
+    } else throw new RuntimeException('fixture_op_unknown');
+    echo json_encode(['status'=>$result],JSON_THROW_ON_ERROR);
+} catch(Throwable $error) {
+    echo json_encode(['error'=>$error->getMessage()],JSON_THROW_ON_ERROR);
+}
+'''
+
 def sql(work,env,query):
     return native.sql(work,env,query,DB).strip()
 
@@ -246,10 +290,20 @@ def check():
     with owned.owned_database() as (work,env):
         purchase.init(work,env,'http://127.0.0.1:9')
         for file in ('001_marzban_panel_group_id.sql','003_payment_attempts.sql',
-                     '007_service_effects.sql'):
+                     '007_service_effects.sql','022_gateway_review_archive.sql'):
             sql(work,env,(ROOT/'migrations/post-v9'/file).read_text())
         driver=work/'checkout-wallet-source.php'
         driver.write_text(PHP)
+        archive_driver=work/'wallet-original-archive-gate.php'
+        archive_driver.write_text(PHP_ARCHIVE_GATE)
+        def gate(op,identity):
+            p=subprocess.run(['php','-n','-d','extension=mysqlnd','-d','extension=mysqli',
+                str(archive_driver),str(ROOT),str(work/'mysql.sock'),DB,
+                str(identity),op],cwd=work,env=env,capture_output=True,text=True,
+                timeout=12)
+            if p.returncode or not p.stdout:
+                raise RuntimeError('archive gate fixture error '+p.stderr[-900:])
+            return json.loads(p.stdout)
         sql(work,env,"CREATE TABLE wallet_fixture_barrier "
             "(id INT PRIMARY KEY,arrived TINYINT NOT NULL,released TINYINT NOT NULL); "
             "INSERT INTO wallet_fixture_barrier VALUES (1,0,0)")
@@ -745,6 +799,100 @@ def check():
                                  'create\t1\t0\tverified'),detail(sqlfail)
         assert not calls(route(work,env,driver,hash='native_sqlfail',custom=True),'POST')
         cases.append('real_custom_wallet_verified_remote_failed_order_retained_review')
+
+        # Review #232: an older DRAFT enters processing_wallet only now.
+        # Archive must report busy after the committed Wallet debit while
+        # the original callback owns the lease and before first Native POST.
+        from concurrent.futures import ThreadPoolExecutor
+        from time import monotonic,sleep
+        aged=newpay('r232_aged_debit_inflight',2)
+        sql(work,env,f'UPDATE pays SET request_date=UNIX_TIMESTAMP()-900 WHERE id={aged}')
+        sql(work,env,'UPDATE wallet_fixture_barrier SET arrived=0,released=0 WHERE id=1')
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            future=pool.submit(route,work,env,driver,hash='r232_aged_debit_inflight',
+                               after_wallet_commit='pause_for_rival')
+            deadline=monotonic()+12
+            while monotonic()<deadline and sql(work,env,
+                    'SELECT arrived FROM wallet_fixture_barrier WHERE id=1')!='1':
+                sleep(.05)
+            try:
+                reached=sql(work,env,'SELECT arrived FROM wallet_fixture_barrier WHERE id=1')
+                if reached!='1':
+                    details=future.result(timeout=45)
+                    raise AssertionError(('aged_callback_never_paused',details,
+                                          paid(aged),wallet(),detail(aged)))
+                assert paid(aged)=='processing_wallet' and wallet()==49900
+                assert gate('archive',aged)=={'status':'busy'}
+                assert sql(work,env,f'SELECT COUNT(*) FROM payment_attempts WHERE pay_row_id={aged}')=='0'
+            finally:
+                sql(work,env,'UPDATE wallet_fixture_barrier SET released=1 WHERE id=1')
+            completed=future.result(timeout=45)
+        assert len(calls(completed,'POST'))==2 and len(calls(completed,'QR'))==2
+        assert paid(aged)=='paid_with_wallet' and wallet()==49900
+        assert detail(aged).endswith('create	2	0	local_recorded'),detail(aged)
+        cases.append('r232_aged_draft_new_wallet_hold_blocks_archive_across_two_native_creates')
+
+        # After LOCAL paid finality, the public QR callback still belongs to
+        # the same session lease and cannot race a terminal Archive.
+        for custom,count in ((False,2),(True,1)):
+            name='r232_qr_custom' if custom else 'r232_qr_multi'
+            pay=newpay(name,count,custom=custom)
+            sql(work,env,f'UPDATE pays SET request_date=UNIX_TIMESTAMP()-900 WHERE id={pay}')
+            sql(work,env,'UPDATE wallet_fixture_barrier SET arrived=0,released=0 WHERE id=1')
+            with ThreadPoolExecutor(max_workers=1) as pool:
+                future=pool.submit(route,work,env,driver,hash=name,custom=custom,
+                                   delivery='pause_for_archive')
+                deadline=monotonic()+12
+                while monotonic()<deadline and sql(work,env,
+                        'SELECT arrived FROM wallet_fixture_barrier WHERE id=1')!='1':
+                    sleep(.05)
+                try:
+                    assert sql(work,env,'SELECT arrived FROM wallet_fixture_barrier WHERE id=1')=='1'
+                    assert paid(pay)=='paid_with_wallet'
+                    assert gate('archive',pay)=={'status':'busy'}
+                finally:
+                    sql(work,env,'UPDATE wallet_fixture_barrier SET released=1 WHERE id=1')
+                delivered=future.result(timeout=45)
+            assert len(calls(delivered,'POST'))==count
+            assert len(calls(delivered,'QR'))==count
+            assert wallet()==49900
+            cases.append('r232_wallet_lease_covers_direct_qr_'+('custom' if custom else 'multi'))
+
+        # Native response is lost on ordinal 2. The worker has exited; the
+        # original local payment remains debited/unresolved and old enough
+        # for Archive. No Native/account/financial truth is fabricated.
+        partial=newpay('r232_partial_archive',2)
+        sql(work,env,f'UPDATE pays SET request_date=UNIX_TIMESTAMP()-900 WHERE id={partial}')
+        before=route(work,env,driver,hash='r232_partial_archive',remote='second_lost')
+        assert len(calls(before,'POST'))==2 and not calls(before,'QR')
+        assert paid(partial)=='processing_wallet' and wallet()==49900
+        original=detail(partial)
+        assert original.endswith('create	2	0	dispatching'),original
+        second=int(sql(work,env,f'SELECT id FROM service_effects WHERE pay_row_id={partial} '
+            "AND effect_kind='create' AND ordinal=2"))
+        assert gate('archive',partial)=={'status':'archived'}
+        archived=sql(work,env,f'SELECT review_archived_by FROM payment_attempts WHERE pay_row_id={partial}')
+        assert archived=='9001'
+        stale=route(work,env,driver,hash='r232_partial_archive')
+        assert not calls(stale,'POST') and not calls(stale,'QR'),stale
+        assert gate('admit',second)=={'error':'effect_original_archived'}
+        assert detail(partial)==original and wallet()==49900
+        assert paid(partial)=='processing_wallet'
+        cases.append('r232_post_worker_archive_blocks_stale_native_admission_and_callback')
+
+        # The first SQL COMMIT succeeded but PHP lost its acknowledgement.
+        # Neither Native nor direct QR is permitted, even after Archive.
+        uncertain=newpay('r232_commit_ack_unknown',1)
+        sql(work,env,f'UPDATE pays SET request_date=UNIX_TIMESTAMP()-900 WHERE id={uncertain}')
+        ambiguous=route(work,env,driver,hash='r232_commit_ack_unknown',
+                        after_wallet_commit='lost_ack')
+        assert not calls(ambiguous,'POST') and not calls(ambiguous,'QR')
+        assert paid(uncertain)=='processing_wallet' and wallet()==49900
+        assert gate('archive',uncertain)=={'status':'archived'}
+        replay=route(work,env,driver,hash='r232_commit_ack_unknown')
+        assert not calls(replay,'POST') and not calls(replay,'QR')
+        assert paid(uncertain)=='processing_wallet' and wallet()==49900
+        cases.append('r232_commit_ack_uncertainty_then_archive_never_reissues_native')
 
     return {'complete':True,'cases':len(cases),'scenarios':cases,
             'actual_checkout_php':True,'isolated_mariadb':True,

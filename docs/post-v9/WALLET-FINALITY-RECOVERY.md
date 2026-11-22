@@ -97,6 +97,25 @@ The **existing** `payment_attempts` and `payment_delivery_intents` schemas hold 
 
 The internal Cron scans only old enough `processing_wallet` DAY/VOLUME claims with a matching original `pay:ID` PasarGuard `mutating` fence and uses the very same original identity/Native applied-only reconciliation as the human path. Per-case deferrals rotate `pays.updated_at` as an inbox retry schedule (no paid-state, money, Native or quote changes), so old baseline/drift cases cannot starve newer provable cases. No arbitrary total retry ceiling or extra Cron worker is introduced. This path does not automatically resolve uncertain Wallet Marzban renewals or buy-subs, which do not have the required exact PasarGuard absolute-journal evidence.
 
+**Original Wallet checkout / Archive concurrency:** For source-real
+standard/custom `BUY_SUB` (including multi-account) and Marzban
+`RENEW_SCONFIG`, the original `pays.id`-scoped MariaDB session lease is
+acquired before the customer Wallet debit, held across the original Native
+operation and SQL finality, and preserved by the owning Checkout callback
+until the direct customer QR/Telegram phase ends. Nested settlement and
+dispatcher code may borrow, never release, that outer lease. A late
+attempt to Archive an already aged `processing_wallet` invoice reports
+`busy` while original checkout is active. On owner exit, Archive is a
+terminal local stop: stale customer callbacks, Native reservation/admission,
+paid effect verification/order linking, and staff BUY_SUB confirmation
+must respect it. Archived original payments remain debited, with
+undetermined Native/financial results still subject to independent
+evidence review; Archive does not release a genuine Native account fence.
+The source-real test fixtures exercise competing MariaDB connections
+during the committed Wallet hold, direct multi/custom QR delivery, a lost
+second CREATE response, an ambiguous debit COMMIT acknowledgement, and
+a Native GET paused under an original staff-confirmation lease.
+
 **Evidence boundary:** The source cannot independently reconstruct a historical Wallet debit ledger where none was recorded. `processing_wallet` is the guarded original claim under current transaction rules; that does not, alone, prove the entire past balance timeline or exclude out-of-band changes. The Owner must verify target-specific financial history before approving live reconciliation.
 
 ## Mandatory production approval and verification

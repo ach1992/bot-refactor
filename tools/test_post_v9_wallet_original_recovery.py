@@ -40,6 +40,13 @@ class NativeHandler(BaseHTTPRequestHandler):
             return self._reply(404,{'detail':'not found'})
         self.server.gets+=1
         username=unquote(self.path[len('/api/user/'):])
+        if username==getattr(self.server,'pause_username',None):
+            # Pause an authenticated Native GET while the *real* original
+            # completion owns the per-payment lease. Another DB session
+            # must not archive that in-flight payment.
+            self.server.pause_started.set()
+            if not self.server.pause_release.wait(timeout=10):
+                return self._reply(503,{'detail':'fixture_native_get_timeout'})
         info=self.server.accounts.get(username)
         if not info:return self._reply(404,{'detail':'not found'})
         data=dict(info)
@@ -119,6 +126,9 @@ try {
         $message_id=77;
         require $root.'/src/Finance/Routes/ManualReceipts.php';
         $result=['handled'=>true];
+    } elseif ($op==='archive'){
+        require_once $root.'/src/Finance/GatewayReview.php';
+        $result=achbotWalletReviewArchive($db,$actor,$payId,$primary);
     } elseif ($op==='inspect'){
         $e=achbotWalletOriginalBuyInspect($db,$payId,$actor,$primary);
         unset($e['_claim'],$e['_prepared']);
@@ -162,6 +172,9 @@ def test() -> dict:
     server=ThreadingHTTPServer(('127.0.0.1',0),NativeHandler)
     server.accounts={};server.wrong_note=False
     server.token_logins=0;server.gets=0;server.other_posts=0
+    server.pause_username=None
+    server.pause_started=threading.Event()
+    server.pause_release=threading.Event()
     thread=threading.Thread(target=server.serve_forever,daemon=True)
     thread.start()
     try:
@@ -533,6 +546,7 @@ def test() -> dict:
             assert sql(f"SELECT COUNT(*) FROM setting WHERE type='WALLET_ADDON_REPORT:{lost_id}'")=='1'
             assert server.other_posts==0
             checks.append('lost_native_create_ack_verified_by_staff_no_second_post_or_debit')
+
             # A reversible SQL failure during restoration must roll back
             # the inserted LOCAL record and ALL original delivery/report
             # obligations, leaving the held claim available for a retry.
@@ -659,6 +673,101 @@ def test() -> dict:
             assert reviewed['result']['original_entitlement_snapshot'] is False
             assert server.other_posts==0
             checks.append('original_marzban_current_get_never_proves_unknown_additive_renewal')
+            # Fresh disposable capacity for the new, independent #232 race
+            # acceptance. Existing original cases have finished, and these
+            # originals legitimately reserve one capacity slot each.
+            sql('UPDATE server_info SET ucount=3 WHERE id=2')
+            # Review #232 REQUIRED-1: the old staff-confirmation token
+            # remains cryptographically valid after local Archive, but must
+            # no longer mutate the dispatching original Native effect row.
+            stale_id=payment_seed('warchive-stale-232')
+            lost_stale=creation.run(work,env,original,
+                hash='warchive-stale-232',remote='lost')
+            assert lost_stale['result']['status']=='error',lost_stale
+            se=sql(f"SELECT state,remote_username,operation_id,requested_expire,"
+                   f"requested_bytes FROM service_effects WHERE pay_row_id={stale_id} "
+                   "AND effect_kind='create'").split('	')
+            assert se[0]=='dispatching',(se,lost_stale,
+                sql(f'SELECT state,price FROM pays WHERE id={stale_id}'),
+                sql('SELECT ucount FROM server_info WHERE id=2'))
+            server.accounts[se[1]]={
+                'username':se[1],'note':'achbot:v1:'+se[2],
+                'expire':int(se[3]),'data_limit':int(se[4]),
+                'status':'active','used_traffic':0,
+                'subscription_url':url+'/sub/fixture-'+se[1],
+                'links':['vless://fixture.invalid']}
+            sql(f'UPDATE pays SET request_date=UNIX_TIMESTAMP()-900 WHERE id={stale_id}')
+            stale_proof=execute('inspect',pay=stale_id)
+            assert stale_proof['result']['status']=='ready',stale_proof
+            stale_token=execute('token',pay=stale_id)['result']
+            assert len(stale_token)==20
+            original_state=sql(f"SELECT id,state,verified_at FROM service_effects "
+                               f"WHERE pay_row_id={stale_id} AND effect_kind='create'")
+            initial_wallet=sql('SELECT wallet FROM users WHERE userid=1001')
+            initial_gets=server.gets
+            archived=execute('archive',pay=stale_id)
+            assert archived['ok'] and archived['result']=='archived',archived
+            assert sql(f'SELECT review_archived_by FROM payment_attempts WHERE pay_row_id={stale_id}')=='9001'
+            arch_at=sql(f'SELECT review_archived_at FROM payment_attempts WHERE pay_row_id={stale_id}')
+            old_confirm=execute('complete',pay=stale_id,token=stale_token)
+            assert old_confirm['result']['status']=='archived',old_confirm
+            assert server.gets==initial_gets,old_confirm
+            old_ui=execute('ui',pay=stale_id,
+                data='attWOriginalC_'+str(stale_id)+'_'+stale_token)
+            assert old_ui['ok'] and all(
+                item['type'] not in ('first_customer_delivery','admin_report')
+                for item in old_ui['events']),old_ui
+            assert execute('inspect',pay=stale_id)['result']['status']=='archived'
+            assert sql(f'SELECT review_archived_at FROM payment_attempts WHERE pay_row_id={stale_id}')==arch_at
+            assert sql(f"SELECT id,state,verified_at FROM service_effects "
+                       f"WHERE pay_row_id={stale_id} AND effect_kind='create'")==original_state
+            assert sql(f'SELECT state FROM pays WHERE id={stale_id}')=='processing_wallet'
+            assert sql('SELECT wallet FROM users WHERE userid=1001')==initial_wallet
+            assert sql(f'SELECT COUNT(*) FROM payment_delivery_intents '
+                       f'WHERE pay_row_id={stale_id}')=='0'
+            assert server.other_posts==0
+            checks.append('archived_original_dispatching_staff_token_cannot_mutate_native_effect_or_finance')
+
+            # Review #232: the operator can finish an original still-active
+            # Native-verification operation while Archive must return BUSY.
+            racing_id=payment_seed('warchive-busy-232')
+            racing=creation.run(work,env,original,
+                hash='warchive-busy-232',remote='lost')
+            assert racing['result']['status']=='error',racing
+            re=sql(f"SELECT state,remote_username,operation_id,requested_expire,"
+                   f"requested_bytes FROM service_effects WHERE pay_row_id={racing_id} "
+                   "AND effect_kind='create'").split('	')
+            assert re[0]=='dispatching'
+            server.accounts[re[1]]={
+                'username':re[1],'note':'achbot:v1:'+re[2],
+                'expire':int(re[3]),'data_limit':int(re[4]),
+                'status':'active','used_traffic':0,
+                'subscription_url':url+'/sub/fixture-'+re[1],
+                'links':['vless://fixture.invalid']}
+            token_racing=execute('token',pay=racing_id)['result']
+            assert len(token_racing)==20
+            sql(f'UPDATE pays SET request_date=UNIX_TIMESTAMP()-900 WHERE id={racing_id}')
+            server.pause_username=re[1]
+            server.pause_started.clear()
+            server.pause_release.clear()
+            with ThreadPoolExecutor(max_workers=1) as pool:
+                current=pool.submit(execute,'complete',pay=racing_id,token=token_racing)
+                try:
+                    assert server.pause_started.wait(timeout=7), 'real_staff_native_get_not_reached'
+                    busy=execute('archive',pay=racing_id)
+                    assert busy['ok'] and busy['result']=='busy',busy
+                    assert sql(f'SELECT COUNT(*) FROM payment_attempts WHERE pay_row_id={racing_id}')=='0'
+                finally:
+                    server.pause_release.set()
+                    server.pause_username=None
+                finished=current.result(timeout=35)
+            assert finished['result']['status']=='settled_delivery_pending',finished
+            assert sql(f'SELECT state FROM pays WHERE id={racing_id}')=='paid_with_wallet'
+            assert sql(f'SELECT state FROM service_effects WHERE pay_row_id={racing_id} '
+                       "AND effect_kind='create'")=='local_recorded'
+            assert sql(f'SELECT COUNT(*) FROM payment_attempts WHERE pay_row_id={racing_id}')=='1'
+            assert server.other_posts==0
+            checks.append('active_staff_native_get_holds_original_lease_archive_busy_until_finality')
             assert int(initial_wallet)==49900
             return {'complete':True,'cases':len(checks),'checks':len(checks),'scenarios':checks,
                 'php85':True,'disposable_mariadb':True,
