@@ -362,7 +362,6 @@ if (
         [$serverInfo, $serverConfig] = getServerInfoAndConfig($connection, $server_id);
         $srv_remark  = $serverInfo['remark'];
         $serverType  = $serverConfig['type'];
-        $portType    = $serverConfig['port_type'];
 
         alert(\achbotMessage('legacy_messages.sending_config_to_user'));
 
@@ -374,7 +373,8 @@ if (
         for ($i = 1; $i <= $accountCount; $i++) {
 
             $uniqid = generateRandomString(42, $protocol);
-            [$port] = getNextPortAndIncrease('settings/temp.txt', $portType);
+            // Marzban/PasarGuard Native subscriptions do not consume a local port.
+            $port = 0;
 
             $remarkMode=(string)($botState['remark']??'');
             $remark=buildRemark($botState,$srv_remark,$payInfo['description'],$uid);

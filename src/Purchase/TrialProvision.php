@@ -79,7 +79,6 @@ if (preg_match('/freeTrial(\d+)_(?<buyType>\w+)/', $data, $match)) {
     $srv_remark = $serverInfo['remark'];
 
     $serverType = $serverConfig['type'];
-    $portType   = $serverConfig['port_type'];
 
     // تعیین remark (با امکان override توسط ادمین از temp)
     $forcedRemark = null;
@@ -91,8 +90,8 @@ if (preg_match('/freeTrial(\d+)_(?<buyType>\w+)/', $data, $match)) {
     $remarkUserId = $from_id;
     $remark       = buildRemark($botState, $srv_remark, '', $remarkUserId, $forcedRemark);
 
-    // گرفتن پورت (auto / random) از temp.txt
-    [$port, $last_num] = getNextPortAndIncrease('settings/temp.txt', $portType);
+    // Native responses supply subscription/listener URLs; no local port file.
+    $port = 0;
 
     try {
         [$response, $remark, $port, $effectId] = achbotCreateNonPaymentAccount(

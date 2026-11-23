@@ -240,7 +240,7 @@ function achbotAutoBankProvisionBuySub(
     for ($i=1;$i<=$count;$i++) {
         $uniqid=generateRandomString(42,(string)$p['protocol']);
         // Marzban does not consume the legacy per-file port allocator.
-        $port=random_int(1111,65000);
+        $port=0; // Native response owns actual links.
         $description=(string)($p['description']??'');
         $remark=buildRemark($botState,(string)$p['server_remark'],
             $description,$owner,$description!==''?$description:null);
