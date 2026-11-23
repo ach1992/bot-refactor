@@ -192,6 +192,28 @@ function achbotGatewayAttentionScope(?mysqli $db=null): string {
         )";
 }
 
+/** Only the missing 022 column or missing 003 ledger can mean there is no
+ * historical Archive. SQL 1054 on another column of the calling query is
+ * NOT evidence that the Archive column is missing. This probe works in both
+ * throwing and MYSQLI_REPORT_OFF modes, and never treats 1142 as absence.
+ */
+function achbotGatewayArchiveSchemaMissing(mysqli $db): bool {
+    try {
+        $probe=$db->query('SELECT review_archived_at FROM payment_attempts LIMIT 0');
+        if ($probe instanceof mysqli_result) {
+            $probe->free();
+            return false;
+        }
+        $error=(int)$db->errno;
+    } catch (mysqli_sql_exception $error) {
+        if (!in_array((int)$error->getCode(),[1054,1146],true))
+            throw $error;
+        return true;
+    }
+    if (in_array($error,[1054,1146],true)) return true;
+    throw new RuntimeException('original_archive_schema_probe_unavailable');
+}
+
 /** Local original-claim Archive fence. A wallet claim may have no attempt
  * until its first successful Native/local recovery. A missing historical 022
  * column means no Archive has occurred; other SQL errors must surface.
@@ -201,12 +223,19 @@ function achbotGatewayOriginalArchived(mysqli $db,int $payId): bool {
     try {
         $q=$db->prepare('SELECT review_archived_at FROM payment_attempts
             WHERE pay_row_id=? LIMIT 1');
-        if (!$q) throw new RuntimeException('original_archive_read_unavailable');
-        $q->bind_param('i',$payId);$q->execute();
+        if (!$q) {
+            $code=(int)$db->errno;
+            if (in_array($code,[1054,1146],true) &&
+                achbotGatewayArchiveSchemaMissing($db)) return false;
+            throw new RuntimeException('original_archive_read_unavailable');
+        }
+        $q->bind_param('i',$payId);
+        if (!$q->execute()) throw new RuntimeException('original_archive_read_failed');
         $row=$q->get_result()->fetch_assoc();$q->close();
         return $row!==null && $row['review_archived_at']!==null;
     } catch (mysqli_sql_exception $error) {
-        if (in_array((int)$error->getCode(),[1054,1146],true)) return false;
+        if (in_array((int)$error->getCode(),[1054,1146],true) &&
+            achbotGatewayArchiveSchemaMissing($db)) return false;
         throw $error;
     }
 }

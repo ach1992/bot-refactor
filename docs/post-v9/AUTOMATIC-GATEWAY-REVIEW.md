@@ -330,7 +330,17 @@ freshly active worker against Archive.
 
 Archive is now checked at original `processing_wallet` Native
 reservation/dispatch, verified CREATE journal writes, and local order-link
-boundaries, not only at financial settlement. A stale original BUY_SUB
+boundaries, not only at financial settlement. For installations with 003
+but not additive migration 022, the Wallet and staff inspection paths
+accept only the positively verified absence of the Archive column;
+they handle both strict MySQLi exceptions and
+`MYSQLI_REPORT_OFF` (`prepare() === false`, errno 1054).
+The absence of the entire legacy ledger (1146) remains supported by
+the local Archive inspection helper. Privilege denial (1142), missing
+unrelated columns and unexpected SQL failures cannot disable an
+existing Archive fence. A disposable 003/022 × strict/off test matrix
+covers real BUY_SUB checkout, stale staff callbacks, active-worker
+leases and these negative schema/permission cases. A stale original BUY_SUB
 administrator token cannot verify a previously `dispatching` Native effect
 after Archive: the original lease is checked before Native inspection, and
 the original payment Archive marker is rechecked under the payment row

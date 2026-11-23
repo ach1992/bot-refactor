@@ -320,8 +320,15 @@ function achbotEffectAssertNotArchivedLocked(mysqli $db,int $payId,
         $missing022=true;
     }
     if (!$fence) {
+        // With MYSQLI_REPORT_OFF, prepare() returns false/errno=1054
+        // instead of throwing. Preserve that exact code; independently
+        // confirm that 022, not an unrelated required column, is absent.
         if (!$missing022 && (int)$db->errno!==1054)
             throw new RuntimeException('effect_archive_fence_unavailable');
+        require_once __DIR__.'/GatewayClient.php';
+        if (!achbotGatewayArchiveSchemaMissing($db))
+            throw new RuntimeException('effect_archive_fence_unavailable');
+        $missing022=true;
         $q=$db->prepare('SELECT provider FROM payment_attempts
             WHERE pay_row_id=? LIMIT 1 FOR UPDATE');
         $q->bind_param('i',$payId);$q->execute();

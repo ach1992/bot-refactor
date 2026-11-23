@@ -115,7 +115,11 @@ paid effect verification/order linking, and staff BUY_SUB confirmation
 must respect it. Archived original payments remain debited, with
 undetermined Native/financial results still subject to independent
 evidence review; Archive does not release a genuine Native account fence.
-The source-real test fixtures exercise competing MariaDB connections
+The source-real test fixtures exercise 003-without-022 and 003+022
+in both strict and nonthrowing MySQLi modes. Missing 022 is not a
+requirement to migrate before historical original BUY_SUB checkout or
+inspection; missing other required columns or privileges fails closed.
+They also exercise competing MariaDB connections
 during the committed Wallet hold, direct multi/custom QR delivery, a lost
 second CREATE response, an ambiguous debit COMMIT acknowledgement, and
 a Native GET paused under an original staff-confirmation lease,
