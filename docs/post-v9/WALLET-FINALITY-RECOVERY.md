@@ -119,6 +119,9 @@ The source-real test fixtures exercise 003-without-022 and 003+022
 in both strict and nonthrowing MySQLi modes. Missing 022 is not a
 requirement to migrate before historical original BUY_SUB checkout or
 inspection; missing other required columns or privileges fails closed.
+The missing-column probe validates the core 003 payment lookup columns
+even when the Archive column itself is absent, so malformed combinations
+cannot authorize pre-Native staff inspection.
 They also exercise competing MariaDB connections
 during the committed Wallet hold, direct multi/custom QR delivery, a lost
 second CREATE response, an ambiguous debit COMMIT acknowledgement, and

@@ -217,6 +217,31 @@ def check():
                 assert malformed['ok'] is False,malformed
                 cases.append('unexpected_missing_pay_row_id_'+mode+'_'+op+'_fails_closed')
 
+        # A malformed *present* table with the 022 Archive column missing
+        # but core 003 columns also absent must not be treated as an older
+        # valid 003-only installation. Preserve original finance/effect state
+        # and refuse staff Native inspection before even reaching a GET.
+        for missing_name,columns in (
+            ('both_archive_and_pay_lookup', 'id INT PRIMARY KEY'),
+            ('archive_and_required_id', 'pay_row_id INT,provider VARCHAR(32)'),
+            ('archive_and_required_provider', 'id INT PRIMARY KEY,pay_row_id INT'),
+        ):
+            sql('SET FOREIGN_KEY_CHECKS=0; DROP TABLE payment_attempts; '
+                f'CREATE TABLE payment_attempts ({columns}); '
+                'SET FOREIGN_KEY_CHECKS=1')
+            for mode in ('strict','off'):
+                missing=fences(mode,pay,'probe')
+                assert (missing=={'ok':True,'result':1054} if mode=='off'
+                        else missing['ok'] is False and missing['code']==1054),missing
+                before=snap(pay)
+                malformed=fences(mode,pay,'helper')
+                assert malformed['ok'] is False,malformed
+                denial=inspect(mode,pay)
+                assert denial['ok'] is False and not denial['events'],denial
+                assert fences(mode,pay,'fence')['ok'] is False
+                assert snap(pay)==before,'malformed ledger modified a payment'
+                cases.append(missing_name+'_'+mode+'_fails_before_native')
+
         # Older pre-003 installs also lack a local Archive. The absence of
         # the whole table is explicitly allowed, unlike permission errors.
         sql('SET FOREIGN_KEY_CHECKS=0; DROP TABLE payment_attempts; '

@@ -192,10 +192,11 @@ function achbotGatewayAttentionScope(?mysqli $db=null): string {
         )";
 }
 
-/** Only the missing 022 column or missing 003 ledger can mean there is no
- * historical Archive. SQL 1054 on another column of the calling query is
- * NOT evidence that the Archive column is missing. This probe works in both
- * throwing and MYSQLI_REPORT_OFF modes, and never treats 1142 as absence.
+/** A missing 022 Archive column is acceptable only on a readable 003
+ * ledger with the required lookup columns. A genuinely absent pre-003 table
+ * (1146) is also supported. Checking only review_archived_at is insufficient:
+ * a broken table can be missing BOTH that column and pay_row_id. Handle both
+ * throwing and MYSQLI_REPORT_OFF without swallowing any unrelated SQL error.
  */
 function achbotGatewayArchiveSchemaMissing(mysqli $db): bool {
     try {
@@ -204,14 +205,23 @@ function achbotGatewayArchiveSchemaMissing(mysqli $db): bool {
             $probe->free();
             return false;
         }
-        $error=(int)$db->errno;
+        $code=(int)$db->errno;
     } catch (mysqli_sql_exception $error) {
-        if (!in_array((int)$error->getCode(),[1054,1146],true))
-            throw $error;
-        return true;
+        $code=(int)$error->getCode();
+        if (!in_array($code,[1054,1146],true)) throw $error;
     }
-    if (in_array($error,[1054,1146],true)) return true;
-    throw new RuntimeException('original_archive_schema_probe_unavailable');
+    if ($code===1146) return true;
+    if ($code!==1054)
+        throw new RuntimeException('original_archive_schema_probe_unavailable');
+
+    // The Archive column is missing, but migration 003 itself must still be
+    // valid enough for the original pay lookup and fallback provider check.
+    // Missing pay_row_id/id/provider or inaccessible SQL fails closed.
+    $required=$db->query('SELECT id,pay_row_id,provider FROM payment_attempts LIMIT 0');
+    if (!($required instanceof mysqli_result))
+        throw new RuntimeException('original_archive_ledger_schema_unavailable');
+    $required->free();
+    return true;
 }
 
 /** Local original-claim Archive fence. A wallet claim may have no attempt
