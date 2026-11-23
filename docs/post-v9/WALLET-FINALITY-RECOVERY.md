@@ -97,13 +97,45 @@ The **existing** `payment_attempts` and `payment_delivery_intents` schemas hold 
 
 The internal Cron scans only old enough `processing_wallet` DAY/VOLUME claims with a matching original `pay:ID` PasarGuard `mutating` fence and uses the very same original identity/Native applied-only reconciliation as the human path. Per-case deferrals rotate `pays.updated_at` as an inbox retry schedule (no paid-state, money, Native or quote changes), so old baseline/drift cases cannot starve newer provable cases. No arbitrary total retry ceiling or extra Cron worker is introduced. This path does not automatically resolve uncertain Wallet Marzban renewals or buy-subs, which do not have the required exact PasarGuard absolute-journal evidence.
 
+**Original Wallet checkout / Archive concurrency:** For source-real
+standard/custom `BUY_SUB` (including multi-account) and Marzban
+`RENEW_SCONFIG`, the original `pays.id`-scoped MariaDB session lease is
+acquired before the customer Wallet debit, held across the original Native
+operation and SQL finality, and preserved by the owning Checkout callback
+until the direct customer QR/Telegram phase ends. The separate
+RENEW_ACCOUNT and INCREASE_DAY/INCREASE_VOLUME original Wallet callbacks
+also acquire this same payment-scoped lease before their own debit
+transaction and retain it through their original Native edit, SQL
+finality and direct customer/staff message. Nested settlement and
+dispatcher code may borrow, never release, that outer lease. A late
+attempt to Archive an already aged `processing_wallet` invoice reports
+`busy` while original checkout is active. On owner exit, Archive is a
+terminal local stop: stale customer callbacks, Native reservation/admission,
+paid effect verification/order linking, and staff BUY_SUB confirmation
+must respect it. Archived original payments remain debited, with
+undetermined Native/financial results still subject to independent
+evidence review; Archive does not release a genuine Native account fence.
+The source-real test fixtures exercise 003-without-022 and 003+022
+in both strict and nonthrowing MySQLi modes. Missing 022 is not a
+requirement to migrate before historical original BUY_SUB checkout or
+inspection; missing other required columns or privileges fails closed.
+The missing-column probe validates the core 003 payment lookup columns
+even when the Archive column itself is absent, so malformed combinations
+cannot authorize pre-Native staff inspection.
+They also exercise competing MariaDB connections
+during the committed Wallet hold, direct multi/custom QR delivery, a lost
+second CREATE response, an ambiguous debit COMMIT acknowledgement, and
+a Native GET paused under an original staff-confirmation lease,
+and three distinct original renewal/day/volume callbacks paused after
+the debit COMMIT while a second MariaDB connection tries to Archive.
+
 **Evidence boundary:** The source cannot independently reconstruct a historical Wallet debit ledger where none was recorded. `processing_wallet` is the guarded original claim under current transaction rules; that does not, alone, prove the entire past balance timeline or exclude out-of-band changes. The Owner must verify target-specific financial history before approving live reconciliation.
 
 ## Mandatory production approval and verification
 
 Before any real Hell/Vivan/Chili SQL, authenticated Native read/write, Wallet correction, customer message or recovery action, obtain explicit target-specific Owner approval. Provide the original payment ID, known wallet/quote provenance, current `pays`, order, original `service_effects` and `provider_accounts` state, current Native GET evidence, pending attempts/notifications, expected changes, backup and roll-forward plan. Runtime ZIP and GitHub Release are not installation/OPcache evidence.
 
-For approved once-only settlement, verify: original Wallet balance **unchanged by recovery**, `pays.state=paid_with_wallet`, the order's exact Native-verified absolute entitlement, precisely one local renewal/add-on accounting row from this finalization, original `pay:ID` still consumed, original imported provenance/NULL order unmodified, no duplicate Native operation for an already-applied entitlement, and no fabricated Telegram acknowledgment. For an incomplete or unknown **original absolute PasarGuard renewal only**, a repeated RESET/PUT must use the same persisted absolute target and be followed by independently verified Native readback. If the Native account/instance, access groups, original payment or entitlement evidence is unrelated or cannot be authenticated, defer the operation for review rather than claim success. Report communication gaps separately. After a committed reconciliation, use only explicitly approved compensating operations, not ad hoc rollback SQL.
+For approved once-only settlement, verify: original Wallet balance **unchanged by recovery**, `pays.state=paid_with_wallet`, the order's exact Native-verified absolute entitlement, precisely one local renewal/add-on accounting row from this finalization, original `pay:ID` still consumed, original imported provenance/NULL order unmodified, no duplicate Native operation for an already-applied entitlement, and no fabricated Telegram acknowledgment. For an incomplete or unknown **original absolute PasarGuard renewal only**, a repeated RESET/PUT after the write intent must use the **same persisted absolute target** and independently verified Native readback. One narrower pre-write case exists: if the original Wallet debit and immutable `pay:ID` account claim were committed with `phase=claimed` and the original purchased `requested_units`, but the process stopped **before the first authenticated Native GET or absolute target capture**, the same claim can perform its first GET and durably capture its absolute target before its first RESET/PUT. It never debits again or adopts another payment's Native result. An operator confirmation and internal eligible Cron use the same original one-shot continuation, and a terminal Archive prevents further bot-owned continuation. If the Native account/instance, access groups, original payment or entitlement evidence is unrelated or cannot be authenticated, defer the operation for review rather than claim success. Report communication gaps separately. After a committed reconciliation, use only explicitly approved compensating operations, not ad hoc rollback SQL.
 
 ### Hell original payment #112719
 

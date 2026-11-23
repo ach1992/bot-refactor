@@ -192,6 +192,64 @@ function achbotGatewayAttentionScope(?mysqli $db=null): string {
         )";
 }
 
+/** A missing 022 Archive column is acceptable only on a readable 003
+ * ledger with the required lookup columns. A genuinely absent pre-003 table
+ * (1146) is also supported. Checking only review_archived_at is insufficient:
+ * a broken table can be missing BOTH that column and pay_row_id. Handle both
+ * throwing and MYSQLI_REPORT_OFF without swallowing any unrelated SQL error.
+ */
+function achbotGatewayArchiveSchemaMissing(mysqli $db): bool {
+    try {
+        $probe=$db->query('SELECT review_archived_at FROM payment_attempts LIMIT 0');
+        if ($probe instanceof mysqli_result) {
+            $probe->free();
+            return false;
+        }
+        $code=(int)$db->errno;
+    } catch (mysqli_sql_exception $error) {
+        $code=(int)$error->getCode();
+        if (!in_array($code,[1054,1146],true)) throw $error;
+    }
+    if ($code===1146) return true;
+    if ($code!==1054)
+        throw new RuntimeException('original_archive_schema_probe_unavailable');
+
+    // The Archive column is missing, but migration 003 itself must still be
+    // valid enough for the original pay lookup and fallback provider check.
+    // Missing pay_row_id/id/provider or inaccessible SQL fails closed.
+    $required=$db->query('SELECT id,pay_row_id,provider FROM payment_attempts LIMIT 0');
+    if (!($required instanceof mysqli_result))
+        throw new RuntimeException('original_archive_ledger_schema_unavailable');
+    $required->free();
+    return true;
+}
+
+/** Local original-claim Archive fence. A wallet claim may have no attempt
+ * until its first successful Native/local recovery. A missing historical 022
+ * column means no Archive has occurred; other SQL errors must surface.
+ */
+function achbotGatewayOriginalArchived(mysqli $db,int $payId): bool {
+    if ($payId<=0) return false;
+    try {
+        $q=$db->prepare('SELECT review_archived_at FROM payment_attempts
+            WHERE pay_row_id=? LIMIT 1');
+        if (!$q) {
+            $code=(int)$db->errno;
+            if (in_array($code,[1054,1146],true) &&
+                achbotGatewayArchiveSchemaMissing($db)) return false;
+            throw new RuntimeException('original_archive_read_unavailable');
+        }
+        $q->bind_param('i',$payId);
+        if (!$q->execute()) throw new RuntimeException('original_archive_read_failed');
+        $row=$q->get_result()->fetch_assoc();$q->close();
+        return $row!==null && $row['review_archived_at']!==null;
+    } catch (mysqli_sql_exception $error) {
+        if (in_array((int)$error->getCode(),[1054,1146],true) &&
+            achbotGatewayArchiveSchemaMissing($db)) return false;
+        throw $error;
+    }
+}
+
 /** Same query powers the inbox and the original API receipt's review link.
  * Pure local read: no customer/provider side effects.
  */

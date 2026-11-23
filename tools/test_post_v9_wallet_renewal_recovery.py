@@ -87,7 +87,16 @@ $GLOBALS['connection']=$db;
 try {
     $payId=(int)$spec['pay_id'];
     $op=$spec['op'];
-    if($op==='seed_native'){
+    if($op==='seed_claimed'){
+        // Reproduce an original Wallet debit whose Native fence COMMIT
+        // succeeded, but PHP stopped before the first Native GET/RESET/PUT.
+        achbotPgPinPayment($db,$payId);
+        $ctx=achbotPgOrderContext($db,103);
+        $intent=achbotPgBeginMutation($db,$ctx,'pay:'.$payId,'edit',[
+            'phase'=>'claimed','requested_units'=>['days'=>31,'volume'=>10]]);
+        $result=['phase'=>$intent['changes']['phase']??null,
+            'has_absolute'=>isset($intent['changes']['absolute'])];
+    }elseif($op==='seed_native'){
         achbotPgPinPayment($db,$payId);
         $q=$db->prepare('SELECT days,volume FROM server_plans WHERE id=7');
         $q->execute();$plan=$q->get_result()->fetch_assoc();$q->close();
@@ -173,9 +182,30 @@ try {
     }elseif($op==='resume'){
         $result=achbotWalletPgResumeRenew($db,$payId,
             (int)($spec['actor']??9001),9001);
+    }elseif($op==='archive_wallet'){
+        require_once $root.'/src/Finance/GatewayReview.php';
+        $result=achbotWalletReviewArchive($db,
+            (int)($spec['actor']??9001),$payId,9001);
+    }elseif($op==='archive_busy'){
+        require_once $root.'/src/Finance/GatewayReview.php';
+        $second=new mysqli('localhost','root','',$argv[3],0,$argv[2]);
+        $lock=achbotHostedWorkerLockName($second,$payId);
+        $stmt=$second->prepare('SELECT GET_LOCK(?,0) AS owned');
+        $stmt->bind_param('s',$lock);$stmt->execute();
+        $held=$stmt->get_result()->fetch_assoc();$stmt->close();
+        if((int)($held['owned']??0)!==1)
+            throw new RuntimeException('fixture_archive_lock_unavailable');
+        try {
+            $result=achbotWalletReviewArchive($db,9001,$payId,9001);
+        } finally {
+            $stmt=$second->prepare('SELECT RELEASE_LOCK(?)');
+            $stmt->bind_param('s',$lock);$stmt->execute();$stmt->close();
+            $second->close();
+        }
     }elseif($op==='operator_ui'){
         $connection=$db;$from_id=(int)($spec['actor']??9001);
-        $chat_id=$from_id;$admin=9001;$message_id=41;
+        $chat_id=($spec['group']??false)?1001:$from_id;
+        $admin=9001;$message_id=41;
         $callbackId='wallet-fixture-callback';
         $data=(string)($spec['callback']??'');
         require $root.'/src/Finance/Routes/ManualReceipts.php';
@@ -253,6 +283,107 @@ def case(*, variant:str)->list[str]:
                 raise AssertionError(('fixture_php_failed',cp.returncode,cp.stdout[-1200:],
                                       cp.stderr[-2500:]))
             return json.loads(cp.stdout)
+        if variant in ('claimed_before_native_operator','claimed_before_native_cron',
+                       'claimed_before_native_outage','claimed_wallet_archive'):
+            claimed=call('seed_claimed')
+            assert claimed['ok'] and claimed['result']=={
+                'phase':'claimed','has_absolute':False},claimed
+            assert provider.write_count==0
+            assert sql('SELECT state FROM pays WHERE id='+str(pay_id))=='processing_wallet'
+            assert sql('SELECT provider_state FROM service_effects WHERE id='+
+                       str(effect_id))=='mutating'
+            initial_wallet=sql('SELECT wallet FROM users WHERE userid=1001')
+            if variant=='claimed_wallet_archive':
+                case_ui=call('operator_ui',callback='attentionCase_'+str(pay_id))
+                assert case_ui['ok'],case_ui
+                edits=[e for e in case_ui['events']
+                       if e['kind']=='operator_edit']
+                assert len(edits)==1,case_ui
+                archive_cb='attentionWalletArchive_'+str(pay_id)
+                assert archive_cb in edits[0]['keyboard'],case_ui
+                denied=call('operator_ui',actor=1001,callback=archive_cb)
+                grouped=call('operator_ui',actor=9001,group=True,callback=archive_cb)
+                assert denied['ok'] and grouped['ok'],(denied,grouped)
+                assert sql('SELECT COUNT(*) FROM payment_attempts')=='0'
+                busy=call('archive_busy')
+                assert busy['ok'] and busy['result']=='busy',busy
+                assert sql('SELECT COUNT(*) FROM payment_attempts')=='0'
+                archived=call('operator_ui',callback=archive_cb)
+                assert archived['ok'],archived
+                assert sql('SELECT state FROM pays WHERE id='+str(pay_id))=='processing_wallet'
+                assert sql('SELECT COUNT(*) FROM payment_attempts')=='1'
+                assert sql("SELECT provider FROM payment_attempts WHERE pay_row_id="+
+                           str(pay_id))=='wallet'
+                assert sql("SELECT provider_status FROM payment_attempts WHERE pay_row_id="+
+                           str(pay_id))=='wallet_archived'
+                assert sql("SELECT review_archived_by FROM payment_attempts WHERE pay_row_id="+
+                           str(pay_id))=='9001'
+                assert sql("SELECT review_archived_at IS NOT NULL FROM payment_attempts WHERE pay_row_id="+
+                           str(pay_id))=='1'
+                assert call('inspect')['result']['status']=='archived'
+                assert call('resume')['result']['status']=='archived'
+                assert call('cron_recover')['result']['considered']==0
+                assert sql('SELECT wallet FROM users WHERE userid=1001')==initial_wallet
+                assert sql('SELECT COUNT(*) FROM increase_order')=='0'
+                assert sql('SELECT COUNT(*) FROM payment_delivery_intents')=='0'
+                assert provider.write_count==0
+                assert call('archive_wallet')['result']=='stale'
+                after=call('operator_ui',callback='attentionCase_'+str(pay_id))
+                assert after['ok']
+                assert all(archive_cb not in str(e) for e in after['events'])
+                checks.extend([
+                    'wallet_review_case_shows_archive_without_existing_attempt',
+                    'archive_denies_customer_and_group_and_inflight_lease',
+                    'archive_creates_original_wallet_marker_without_money_or_native',
+                    'archive_hides_case_and_fences_recovery_cron_old_callback',
+                    'archive_preserves_original_paid_claim_financial_evidence'])
+                return checks
+            if variant=='claimed_before_native_cron':
+                sql('UPDATE pays SET updated_at=NULL WHERE id='+str(pay_id))
+                recovered=call('cron_recover')
+                assert recovered['ok'] and recovered['result']['settled']==1,recovered
+            elif variant=='claimed_before_native_outage':
+                provider.mode='http_503'
+                pending=call('resume')
+                assert pending['result']['status']=='review',pending
+                assert provider.write_count==0
+                assert sql('SELECT provider_mutation_snapshot FROM service_effects WHERE id='+
+                           str(effect_id)).find('"phase":"claimed"')>=0
+                provider.mode='ok'
+                recovered=call('resume')
+                assert recovered['result']['status']=='settled_delivery_pending',recovered
+            else:
+                inspected=call('operator_ui',
+                               callback='attentionWalletInspect_'+str(pay_id))
+                assert inspected['ok'],inspected
+                edits=[e for e in inspected['events']
+                       if e['kind']=='operator_edit']
+                assert len(edits)==1,inspected
+                import re
+                match=re.search(r'attentionWalletComplete_'+str(pay_id)+
+                                r'_([a-f0-9]{20})',edits[0]['keyboard'])
+                assert match,inspected
+                completed=call('operator_ui',
+                               callback='attentionWalletComplete_'+
+                                        str(pay_id)+'_'+match.group(1))
+                assert completed['ok'],completed
+                recovered={'result':{'status':sql('SELECT state FROM pays WHERE id='+
+                                                  str(pay_id))}}
+            assert sql('SELECT state FROM pays WHERE id='+str(pay_id))=='paid_with_wallet'
+            assert sql('SELECT wallet FROM users WHERE userid=1001')==initial_wallet
+            assert sql('SELECT COUNT(*) FROM increase_order')=='1'
+            assert sql('SELECT COUNT(*) FROM payment_delivery_intents')=='1'
+            assert sql('SELECT COUNT(*) FROM payment_attempts')=='1'
+            assert provider.write_count==2,provider.trace
+            repeat=call('resume')
+            assert repeat['result']['status']=='already_paid_state',repeat
+            assert provider.write_count==2
+            checks.extend([
+                'pre_write_wallet_claim_has_original_sealed_days_volume_no_second_debit',
+                'recovery_captures_first_absolute_target_then_one_reset_put',
+                'original_wallet_account_audit_delivery_finality_committed_once',
+                'original_claim_cannot_replay_after_financial_terminal_state'])
+            return checks
         if variant=='same_order_three_wallet_claims':
             older=int(sql("SELECT id FROM pays WHERE hash_id='wallet-older-independent'"))
             native=call('seed_native')
@@ -298,6 +429,44 @@ def case(*, variant:str)->list[str]:
                 'foreign_payment_cannot_borrow_identical_provider_snapshot',
                 'other_original_wallet_claims_remain_reviewable_after_local_settlement',
                 'three_claims_do_not_repeat_native_wallet_audit_or_telegram'])
+            return checks
+        if variant=='paid_wallet_report_archive':
+            native=call('seed_native')
+            assert native['ok'] and native['result']['verified'],native
+            settled=call('resume')
+            assert settled['ok'] and settled['result']['status']=='settled_delivery_pending',settled
+            assert sql('SELECT state FROM pays WHERE id='+str(pay_id))=='paid_with_wallet'
+            assert sql('SELECT COUNT(*) FROM payment_attempts')=='1'
+            assert sql('SELECT COUNT(*) FROM payment_delivery_intents')=='1'
+            original_attempt=sql('SELECT id FROM payment_attempts WHERE pay_row_id='+str(pay_id))
+            original_stage=sql('SELECT stage FROM payment_attempts WHERE pay_row_id='+str(pay_id))
+            report_sql=("SELECT value FROM setting WHERE type='WALLET_ADDON_REPORT:"+
+                        str(pay_id)+"'")
+            pending=json.loads(sql(report_sql))['state']
+            assert pending=='pending',pending
+            initial_wallet=sql('SELECT wallet FROM users WHERE userid=1001')
+            original_writes=provider.write_count
+            case_ui=call('operator_ui',callback='attentionCase_'+str(pay_id))
+            archive_cb='attentionWalletArchive_'+str(pay_id)
+            assert case_ui['ok'] and any(archive_cb in e.get('keyboard','')
+                                        for e in case_ui['events']),case_ui
+            result=call('archive_wallet')
+            assert result['ok'] and result['result']=='archived',result
+            assert sql('SELECT id FROM payment_attempts WHERE pay_row_id='+str(pay_id))==original_attempt
+            assert sql('SELECT stage FROM payment_attempts WHERE pay_row_id='+str(pay_id))==original_stage
+            assert sql('SELECT review_archived_by FROM payment_attempts WHERE pay_row_id='+str(pay_id))=='9001'
+            cron=call('cron_reports')
+            assert cron['ok'] and cron['result']['pending']==0,cron
+            assert json.loads(sql(report_sql))['state']=='pending'
+            assert sql('SELECT wallet FROM users WHERE userid=1001')==initial_wallet
+            assert sql('SELECT COUNT(*) FROM increase_order')=='1'
+            assert sql('SELECT COUNT(*) FROM payment_delivery_intents')=='1'
+            assert provider.write_count==original_writes
+            assert not any(e['kind']=='admin_report' for e in cron['events'])
+            checks.extend([
+                'terminal_wallet_report_archive_reuses_original_attempt_not_new_payment',
+                'archive_keeps_original_paid_service_audit_and_delivery_journal',
+                'archive_stops_pending_admin_report_cron_without_fabricated_ack'])
             return checks
         if variant=='addon_mutating_live':
             # This is a REAL additive (not synthetic edited state) wallet
@@ -670,7 +839,10 @@ def main():
     ap.add_argument('--report',type=Path)
     args=ap.parse_args()
     checks=[]
-    variants=('applied','native_drift','identity_drift','audit_failure',
+    variants=('claimed_before_native_operator','claimed_before_native_cron',
+              'claimed_before_native_outage','claimed_wallet_archive',
+              'paid_wallet_report_archive',
+              'applied','native_drift','identity_drift','audit_failure',
                     'notice_failure','commit_ack','race','cron','plan_changed',
                     'reset_only_baseline','reset_only_drift',
                     'cron_reset_only_baseline','cron_reset_only_drift',

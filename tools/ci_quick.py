@@ -35,6 +35,7 @@ NATIVE_TESTS = (
     ("bank_purchase", "test_post_v9_bank_buy.py"),
     ("gateway_rules", "test_post_v9_gateway_rules.py"),
     ("wallet_checkout", "test_post_v9_wallet_checkout.py"),
+    ("wallet_archive_schema_modes", "test_post_v9_wallet_archive_schema_modes.py"),
     ("wallet_sconfig_finality", "test_post_v9_wallet_sconfig.py"),
     ("wallet_marzban_target", "test_post_v9_wallet_marzban_target.py"),
     ("wallet_pg_recovery", "test_post_v9_wallet_edit_recovery.py"),

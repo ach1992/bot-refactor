@@ -8,6 +8,54 @@ require_once __DIR__.'/../Diagnostics/EventLog.php';
 require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
 
 
+/** Reject-only preflight for the persisted BUY_SUB fulfillment shape.
+ * Rechecked under the original owner + payment row locks before debit.
+ * A stale wrong-mode callback must not briefly occupy a payment-wide
+ * session lease and starve a simultaneous legitimate checkout.
+ */
+if (!function_exists('achbotWalletModeMatchesRequest')) {
+    function achbotWalletModeMatchesRequest(array $pay,?string $expectedBuyMode): bool {
+        $type=(string)($pay['type']??'');
+        if ($expectedBuyMode==='renew') return $type==='RENEW_ACCOUNT';
+        if ($expectedBuyMode==='day') return str_starts_with($type,'INCREASE_DAY_');
+        if ($expectedBuyMode==='volume') return str_starts_with($type,'INCREASE_VOLUME_');
+        if ($type!=='BUY_SUB')
+            return $expectedBuyMode===null || $expectedBuyMode==='standard';
+        $day=(int)($pay['day']??0);$volume=(int)($pay['volume']??0);
+        return ($expectedBuyMode==='standard' && $day===0 && $volume===0) ||
+            ($expectedBuyMode==='custom' && $day>0 && $volume>0);
+    }
+}
+
+/** An outer Checkout scope owns the same lease through its post-commit
+ * direct QR/admin delivery. A missing or foreign draft is left to the
+ * existing wallet processor's normal not-found/owner response.
+ */
+if (!function_exists('achbotWalletCheckoutLeaseBegin')) {
+    function achbotWalletCheckoutLeaseBegin(mysqli $db,string $hash,int $actor,
+        ?string $expectedBuyMode=null): array {
+        if ($hash==='' || $actor<=0) return ['pay_id'=>0,'lease'=>'none'];
+        try {
+            $q=$db->prepare('SELECT id,type,day,volume FROM pays WHERE hash_id=? AND user_id=? LIMIT 1');
+            if (!$q) throw new RuntimeException('wallet_checkout_lease_lookup_unavailable');
+            $q->bind_param('si',$hash,$actor);
+            $q->execute();$row=$q->get_result()->fetch_assoc();$q->close();
+            if (!$row || !achbotWalletModeMatchesRequest($row,$expectedBuyMode))
+                return ['pay_id'=>0,'lease'=>'none'];
+            $payId=(int)$row['id'];
+            require_once __DIR__.'/GatewayClient.php';
+            return ['pay_id'=>$payId,
+                'lease'=>achbotOriginalDispatchLeaseBegin($db,$payId)];
+        } catch (Throwable $error) {
+            // Do not continue to the wallet debit if even the pre-claim
+            // lease lookup became unavailable. The action can be retried.
+            error_log('achbot_wallet_checkout_lease_unavailable class='.
+                get_class($error));
+            return ['pay_id'=>0,'lease'=>'unavailable'];
+        }
+    }
+}
+
 if (!function_exists('processWalletPayment')) {
     function processWalletPayment($connection, $hashId, $handler, ?string $expectedBuyMode = null)
     {
@@ -15,6 +63,8 @@ if (!function_exists('processWalletPayment')) {
         // A confirmed commit cannot be undone after calling Marzban.
         $heldDebit=false;
         $holdCommitAttempted=false;
+        $paymentLease='unavailable';
+        $leasePayId=0;
 
         try {
             // The preview is an autocommit read OUTSIDE the financial
@@ -43,8 +93,28 @@ if (!function_exists('processWalletPayment')) {
                     'price'=>null,
                 ];
             }
-            // Begin a NEW financial transaction only AFTER the reject-only
-            // preview has completed. No pre-lock read view survives.
+            if ($previewPay && (int)$previewPay['user_id']===(int)$from_id &&
+                !achbotWalletModeMatchesRequest($previewPay,$expectedBuyMode)) {
+                alert(\achbotMessage('wallet.wallet_settlement.process_wallet_payment.alert.5d2e89e5ed'),true);
+                return ['status'=>'invalid_request','payInfo'=>$previewPay];
+            }
+            // Archive and the original Wallet worker must own the SAME
+            // payment-wide session lease from BEFORE the debit transaction
+            // until the original fulfillment has finished. An existing
+            // draft can be ten minutes old when the debit first commits.
+            $leasePayId=(int)($previewPay['id']??0);
+            if ($leasePayId>0 &&
+                (int)$previewPay['user_id']===(int)$from_id) {
+                require_once __DIR__.'/GatewayClient.php';
+                $paymentLease=achbotOriginalDispatchLeaseBegin(
+                    $connection,$leasePayId);
+                if (!in_array($paymentLease,['owned','borrowed'],true)) {
+                    alert(\achbotMessage('wallet.wallet_settlement.process_wallet_payment.alert.978c658074'),true);
+                    return ['status'=>'in_progress','payInfo'=>$previewPay];
+                }
+            }
+            // Begin the financial transaction only AFTER the original
+            // payment-wide lease. No stale read view survives.
             if (!$connection->begin_transaction())
                 throw new RuntimeException('wallet_begin_failed');
             // Serialize the FINAL new wallet method selection against the
@@ -107,6 +177,11 @@ if (!function_exists('processWalletPayment')) {
                 ];
             }
 
+            // Confirm that the SELECT FOR UPDATE still refers to the exact
+            // leased original payment, including late/invisible inserts.
+            if ((int)$payInfo['id']!==$leasePayId ||
+                !in_array($paymentLease,['owned','borrowed'],true))
+                throw new RuntimeException('wallet_original_payment_lease_missing');
             // Old Telegram wallet buttons bypass the pre-payment menu.
             // Serializing on pays, reject every durable competing provider.
             if (!in_array((string)$payInfo['state'], ['pending','send','low_wallet'], true) ||
@@ -170,14 +245,8 @@ if (!function_exists('processWalletPayment')) {
             // can claim the other mode, even when the provider request would
             // otherwise pass its own generic dimensions validation.
             $paidCreate=(($payInfo['type']??'')==='BUY_SUB');
-            $quotedDay=(int)($payInfo['day']??0);
-            $quotedVolume=(int)($payInfo['volume']??0);
-            $modeMatchesLockedRequest=$paidCreate
-                ? (($expectedBuyMode==='standard' &&
-                    $quotedDay===0 && $quotedVolume===0) ||
-                   ($expectedBuyMode==='custom' &&
-                    $quotedDay>0 && $quotedVolume>0))
-                : ($expectedBuyMode===null || $expectedBuyMode==='standard');
+            $modeMatchesLockedRequest=achbotWalletModeMatchesRequest(
+                $payInfo,$expectedBuyMode);
             if (!$modeMatchesLockedRequest) {
                 $connection->rollback();
                 alert(\achbotMessage('wallet.wallet_settlement.process_wallet_payment.alert.5d2e89e5ed'),true);
@@ -510,6 +579,12 @@ if (!function_exists('processWalletPayment')) {
                 'uid'          => null,
                 'price'        => null,
             ];
+        } finally {
+            // A Checkout route may own the same session lock through direct
+            // customer QR delivery; never release a borrowed lease.
+            if ($leasePayId>0 && $paymentLease==='owned')
+                achbotOriginalDispatchLeaseEnd(
+                    $connection,$leasePayId,$paymentLease);
         }
     }
 }

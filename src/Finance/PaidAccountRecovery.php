@@ -329,8 +329,10 @@ function achbotContinuePasarGuardPaidAccount(mysqli $db,int $payId,int $ordinal,
         try {
             if (!$db->begin_transaction()) throw new RuntimeException('paid_resume_verify_begin');
             $begun=true;
-            if ($e['state']==='reserved')
-                achbotEffectAssertRecoveryPaymentLocked($db,$payId,$actor,$primary);
+            // Dispatching is not a bypass: a stale operator confirmation
+            // must lock and recheck Archive before recording Native evidence
+            // just as a never-dispatched reserved original does.
+            achbotEffectAssertRecoveryPaymentLocked($db,$payId,$actor,$primary);
             $q=$db->prepare('SELECT id,state,request_sha256,provider_state,provider_remote_user_id FROM service_effects WHERE id=? FOR UPDATE');
             $q->bind_param('i',$effectId);$q->execute();$locked=$q->get_result()->fetch_assoc();$q->close();
             if (!$locked || $locked['state']!==$e['state'] ||

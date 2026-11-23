@@ -1739,11 +1739,13 @@ def main():
         if len(held_details)!=1 or (
             'attentionWalletInspect_'+str(wallet_held)) not in str(
                 held_details[0]['args'][2]) or (
+            'attentionWalletArchive_'+str(wallet_held)) not in str(
+                held_details[0]['args'][2]) or (
             'gatewayReview_A_' in str(held_details[0]['args'][2]) or
             'gatewayReview_R_' in str(held_details[0]['args'][2]) or
             'gatewayReview_H_' in str(held_details[0]['args'][2]) or
             held_case['network_calls']):
-            raise RuntimeError('Wallet exception cannot be inspected without a fake approve/reject/archive')
+            raise RuntimeError('Wallet case must expose native inspection and original-local Archive without hosted approval')
         denied=run_php(work,env,stage,dict(admin_identity,
             actor=1001,chat_id=1001,
             callback_data='attentionCase_'+str(wallet_held)))
@@ -1776,6 +1778,7 @@ def main():
         additive_details=[e for e in additive_case['events'] if e['name']=='editText']
         addon_markup=str(additive_details[0]['args'][2]) if len(additive_details)==1 else ''
         if ('attWAddI_'+str(additive_id)) not in addon_markup or (
+            'attentionWalletArchive_'+str(additive_id)) not in addon_markup or (
             'gatewayReview_A_' in addon_markup or
             'gatewayReview_R_' in addon_markup or
             'gatewayReview_H_' in addon_markup or

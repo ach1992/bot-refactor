@@ -34,6 +34,13 @@ WALLET_UI_PATH = "src/Finance/Routes/AutomaticGatewayReview.php"
 WALLET_UI_START = 6
 WALLET_UI_NEW_CALLS = 25
 WALLET_UI_SHA256 = "73bc45620d974f28e58ddbc4a94be6abfd7ffac6df8ffe6d0b7801cf932ead4b"
+# The original-Wallet Archive callback adds five more source-owned
+# callsites AFTER the existing 25-call review section. Pin its exact
+# normalized arguments separately; never turn the historical parity
+# assertion into a wildcard or a new unreviewed Telegram route.
+WALLET_ARCHIVE_UI_START = 14
+WALLET_ARCHIVE_UI_NEW_CALLS = 5
+WALLET_ARCHIVE_UI_SHA256 = "66fa7313965c06b22e278136a88def18b19cefa9feb6ee55380a189653dfeade"
 NEW_RUNTIME_WITHOUT_TELEGRAM = frozenset({
     "src/Finance/WalletRenewalRecovery.php",
     "src/Finance/WalletOriginalRecovery.php",
@@ -162,7 +169,8 @@ def compare(before: dict, after: dict) -> dict[str, int]:
         previous = before[path]
         current = after[path]
         if path == WALLET_UI_PATH:
-            assert len(current) == len(previous) + WALLET_UI_NEW_CALLS, (
+            assert len(current) == (len(previous) + WALLET_UI_NEW_CALLS
+                                    + WALLET_ARCHIVE_UI_NEW_CALLS), (
                 "wallet_operator_telegram_call_count_drift", len(current), len(previous))
             introduced = current[WALLET_UI_START:WALLET_UI_START+WALLET_UI_NEW_CALLS]
             audit = [[method, [original_argument(arg) for arg in args]]
@@ -173,6 +181,16 @@ def compare(before: dict, after: dict) -> dict[str, int]:
                 "wallet_operator_telegram_calls_unreviewed", actual_hash)
             current = (current[:WALLET_UI_START] +
                        current[WALLET_UI_START+WALLET_UI_NEW_CALLS:])
+            archive = current[WALLET_ARCHIVE_UI_START:
+                              WALLET_ARCHIVE_UI_START+WALLET_ARCHIVE_UI_NEW_CALLS]
+            archive_audit = [[method, [original_argument(arg) for arg in args]]
+                             for method,args in archive]
+            archive_hash = hashlib.sha256(json.dumps(archive_audit, ensure_ascii=False,
+                separators=(',', ':')).encode('utf-8')).hexdigest()
+            assert archive_hash == WALLET_ARCHIVE_UI_SHA256, (
+                "wallet_archive_telegram_calls_unreviewed", archive_hash)
+            current = (current[:WALLET_ARCHIVE_UI_START] +
+                       current[WALLET_ARCHIVE_UI_START+WALLET_ARCHIVE_UI_NEW_CALLS:])
             wallet_ui_audited = True
         assert len(previous) == len(current), ("telegram_call_count_drift", path)
         for index, ((previous_method, previous_args), (method, args)) in enumerate(

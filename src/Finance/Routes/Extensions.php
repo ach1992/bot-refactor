@@ -544,6 +544,19 @@ if (preg_match('/^approveIncreaseDay(.*)/', $data, $match) && achbotAdminCanFor(
 }
 
 if(is_string($data) && strlen($data) <= 64 && preg_match('/\ApayIncreaseDayWithWallet([A-Za-z0-9_-]{1,50})\z/D', $data, $match)){
+    require_once __DIR__.'/../WalletSettlement.php';
+    // One original-pay session lease spans debit, Native, local finality
+    // and the direct Telegram report. Archive cannot win during an active
+    // original callback, even when the draft is older than ten minutes.
+    $walletLease=achbotWalletCheckoutLeaseBegin(
+        $connection,(string)$match[1],(int)$from_id,'day');
+    if ($walletLease['lease']==='unavailable' ||
+        ($walletLease['pay_id']>0 &&
+         !in_array($walletLease['lease'],['owned','borrowed'],true))) {
+        alert(\achbotMessage('wallet.wallet_settlement.process_wallet_payment.alert.978c658074'),true);
+        return;
+    }
+    try {
     $connection->begin_transaction();
     $localCommitted=false;
     try {
@@ -790,6 +803,11 @@ if(is_string($data) && strlen($data) <= 64 && preg_match('/\ApayIncreaseDayWithW
         sendMessage(\achbotMessage('renewal.extensions.message.ba8adc7121'), null, null, $uid);
 
         return;
+    }
+    } finally {
+        if ($walletLease['lease']==='owned')
+            achbotOriginalDispatchLeaseEnd($connection,
+                (int)$walletLease['pay_id'],(string)$walletLease['lease']);
     }
 }
 
@@ -1422,6 +1440,19 @@ if (preg_match('/^approveIncreaseVolume(.*)/', $data, $match) && achbotAdminCanF
 }
 
 if(is_string($data) && strlen($data) <= 64 && preg_match('/\ApayIncreaseWithWallet([A-Za-z0-9_-]{1,50})\z/D', $data, $match)){
+    require_once __DIR__.'/../WalletSettlement.php';
+    // One original-pay session lease spans debit, Native, local finality
+    // and the direct Telegram report. Archive cannot win during an active
+    // original callback, even when the draft is older than ten minutes.
+    $walletLease=achbotWalletCheckoutLeaseBegin(
+        $connection,(string)$match[1],(int)$from_id,'volume');
+    if ($walletLease['lease']==='unavailable' ||
+        ($walletLease['pay_id']>0 &&
+         !in_array($walletLease['lease'],['owned','borrowed'],true))) {
+        alert(\achbotMessage('wallet.wallet_settlement.process_wallet_payment.alert.978c658074'),true);
+        return;
+    }
+    try {
     $connection->begin_transaction();
     $localCommitted=false;
     try {
@@ -1668,5 +1699,10 @@ if(is_string($data) && strlen($data) <= 64 && preg_match('/\ApayIncreaseWithWall
         sendMessage(\achbotMessage('renewal.extensions.message.ba8adc7121'), null, null, $uid);
 
         return;
+    }
+    } finally {
+        if ($walletLease['lease']==='owned')
+            achbotOriginalDispatchLeaseEnd($connection,
+                (int)$walletLease['pay_id'],(string)$walletLease['lease']);
     }
 }

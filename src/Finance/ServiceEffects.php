@@ -280,7 +280,8 @@ function achbotPaidPurchaseRemark(string $base,string $provider,int $payId,
  * The 003 ledger is optional for very old non-hosted orders, but a hidden
  * table, missing 022 or other SQL error must never bypass Archive.
  */
-function achbotEffectAssertNotArchivedLocked(mysqli $db,int $payId,bool $processing=false): void {
+function achbotEffectAssertNotArchivedLocked(mysqli $db,int $payId,
+    bool $processing=false,bool $wallet=false): void {
     $hasLedger=true;
     try {
         $probe=$db->query('SELECT 1 FROM payment_attempts LIMIT 0');
@@ -319,14 +320,26 @@ function achbotEffectAssertNotArchivedLocked(mysqli $db,int $payId,bool $process
         $missing022=true;
     }
     if (!$fence) {
+        // With MYSQLI_REPORT_OFF, prepare() returns false/errno=1054
+        // instead of throwing. Preserve that exact code; independently
+        // confirm that 022, not an unrelated required column, is absent.
         if (!$missing022 && (int)$db->errno!==1054)
             throw new RuntimeException('effect_archive_fence_unavailable');
+        require_once __DIR__.'/GatewayClient.php';
+        if (!achbotGatewayArchiveSchemaMissing($db))
+            throw new RuntimeException('effect_archive_fence_unavailable');
+        $missing022=true;
         $q=$db->prepare('SELECT provider FROM payment_attempts
             WHERE pay_row_id=? LIMIT 1 FOR UPDATE');
         $q->bind_param('i',$payId);$q->execute();
         $row=$q->get_result()->fetch_assoc();$q->close();
         if ($row && in_array((string)$row['provider'],
             ['bank_transfer','gift_card','manual_usdt','manual_trx'],true)) return;
+        // A historical Wallet checkout on an installation with 003 but
+        // without 022 cannot have an Archive marker. The original Wallet
+        // payment remains usable; when 022 is installed the check below
+        // enforces the marker even for processing_wallet.
+        if ($wallet && $missing022) return;
         throw new RuntimeException('effect_archive_fence_unavailable');
     }
     $fence->bind_param('i',$payId);
@@ -352,7 +365,8 @@ function achbotEffectAssertRecoveryPaymentLocked(mysqli $db,int $payId,
         !in_array($pay['state'],['processing','paid','processing_wallet'],true) ||
         !achbotAdminCanLocked($db,$actor,$primary,'payments'))
         throw new RuntimeException('paid_resume_reconciliation_payment_changed');
-    achbotEffectAssertNotArchivedLocked($db,$payId,$pay['state']==='processing');
+    achbotEffectAssertNotArchivedLocked($db,$payId,
+        $pay['state']==='processing',$pay['state']==='processing_wallet');
 }
 
 /**
@@ -381,9 +395,8 @@ function achbotEffectAdmitPaidDispatch(mysqli $db,int $effectId): void {
         if (!$pay || !in_array((string)$pay['state'],
                 ['paid','processing','processing_wallet'],true))
             throw new RuntimeException('effect_dispatch_payment_changed');
-        if (in_array((string)$pay['state'],['paid','processing'],true))
-            achbotEffectAssertNotArchivedLocked(
-                $db,$payId,$pay['state']==='processing');
+        achbotEffectAssertNotArchivedLocked($db,$payId,
+            $pay['state']==='processing',$pay['state']==='processing_wallet');
         $q=$db->prepare("UPDATE service_effects SET state='dispatching'
             WHERE id=? AND pay_row_id=? AND effect_kind='create'
             AND state='reserved' AND order_id IS NULL");
@@ -478,9 +491,9 @@ function achbotCreatePaidAccount(mysqli $db, int $payId, int $ordinal, array $p,
 
         // The local reservation is not a remote send. Both reservation and
         // final dispatch admission must honor a terminal Archive.
-        if (in_array($claim['state'],['paid','processing'],true))
-            achbotEffectAssertNotArchivedLocked(
-                $db,$payId,$claim['state']==='processing');
+        achbotEffectAssertNotArchivedLocked($db,$payId,
+            $claim['state']==='processing',
+            $claim['state']==='processing_wallet');
 
         $targetIdentity=achbotEffectTargetIdentity($db,$serverId,$planId,$payId,$claim);
         $group=$targetIdentity['group'];$endpoint=$targetIdentity['endpoint'];
@@ -707,9 +720,11 @@ function achbotEffectLockLinkRows(mysqli $db,int $effectId,bool $paid): array {
         $q=$db->prepare('SELECT state FROM pays WHERE id=?');
         $q->bind_param('i',$payId);$q->execute();
         $owner=$q->get_result()->fetch_assoc();$q->close();
-        if ($owner && in_array((string)$owner['state'],['paid','processing'],true))
-            achbotEffectAssertNotArchivedLocked(
-                $db,$payId,$owner['state']==='processing');
+        if ($owner && in_array((string)$owner['state'],
+                ['paid','processing','processing_wallet'],true))
+            achbotEffectAssertNotArchivedLocked($db,$payId,
+                $owner['state']==='processing',
+                $owner['state']==='processing_wallet');
     }
     return [$serverId,$payId];
 }
@@ -725,6 +740,20 @@ function achbotVerifyMarzbanCreatedEffect(
 ): void {
     if (!in_array($expectedState,['reserved','dispatching'],true))
         throw new RuntimeException('effect_verification_state_invalid');
+    // The ordinary original CREATE dispatcher does not pass its pay_id.
+    // Resolve that immutable parent BEFORE the transaction so even this
+    // direct post-Native verified journal path checks Archive. Non-payment
+    // CREATEs have a NULL parent and retain their existing behavior.
+    $owner=$db->prepare('SELECT pay_row_id FROM service_effects WHERE id=?');
+    if (!$owner) throw new RuntimeException('effect_verification_owner_read_unavailable');
+    $owner->bind_param('i',$effectId);$owner->execute();
+    $belongs=$owner->get_result()->fetch_assoc();$owner->close();
+    if (!$belongs) throw new RuntimeException('effect_verification_owner_missing');
+    $originalPay=$belongs['pay_row_id']===null?0:(int)$belongs['pay_row_id'];
+    if (($payId>0 && $payId!==$originalPay) ||
+        ($payId===0 && $originalPay<0))
+        throw new RuntimeException('effect_verification_owner_changed');
+    $payId=$originalPay;
     $transaction=false;
     try {
         $status=$db->query('SELECT @@in_transaction AS active_transaction');
@@ -732,8 +761,19 @@ function achbotVerifyMarzbanCreatedEffect(
             throw new RuntimeException('effect_verification_requires_autocommit');
         if (!$db->begin_transaction()) throw new RuntimeException('effect_verification_begin_failed');
         $transaction=true;
-        if ($expectedState==='reserved')
+        if ($expectedState==='reserved' || ($payId>0 && $actor>0)) {
             achbotEffectAssertRecoveryPaymentLocked($db,$payId,$actor,$primary);
+        } elseif ($payId>0) {
+            $payLock=$db->prepare('SELECT state FROM pays WHERE id=? FOR UPDATE');
+            $payLock->bind_param('i',$payId);$payLock->execute();
+            $payment=$payLock->get_result()->fetch_assoc();$payLock->close();
+            if (!$payment || !in_array((string)$payment['state'],
+                ['paid','processing','processing_wallet'],true))
+                throw new RuntimeException('effect_verification_payment_changed');
+            achbotEffectAssertNotArchivedLocked($db,$payId,
+                $payment['state']==='processing',
+                $payment['state']==='processing_wallet');
+        }
         // Claimants already lock config via the plan preflight, then info for
         // capacity. Explicit PK locks prevent an UPDATE JOIN from taking the
         // inverse info -> config order after the remote CREATE has succeeded.
@@ -1160,6 +1200,7 @@ function achbotEffectReserveWalletCapacityLocked(mysqli $db, array $pay): void {
         (string)$row['panel_url']==='')
         throw new RuntimeException('wallet_hold_plan_changed');
 
+    achbotEffectAssertNotArchivedLocked($db,$payId,false,true);
     $check=$db->prepare("SELECT id FROM service_effects
         WHERE pay_row_id=? AND effect_kind='wallet_hold' AND ordinal=0
         FOR UPDATE");

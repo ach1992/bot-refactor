@@ -128,6 +128,10 @@ function achbotWalletOriginalBuyInspect(mysqli $db,int $payId,
     if ($actor<=0 || $primary<=0 ||
         !achbotAdminCanFor($db,$actor,$primary,'payments'))
         return ['status'=>'denied'];
+    // Inspection stays GET-only, but must not advertise a valid completion
+    // token or inspect Native for a locally archived original payment.
+    if (achbotGatewayOriginalArchived($db,$payId))
+        return ['status'=>'archived','pay_id'=>$payId];
     $q=$db->prepare('SELECT state,type FROM pays WHERE id=?');
     $q->bind_param('i',$payId);$q->execute();
     $state=$q->get_result()->fetch_assoc();$q->close();
@@ -304,6 +308,10 @@ function achbotWalletOriginalBuyComplete(mysqli $db,int $payId,int $actor,
     if ($lease!=='owned') return ['status'=>'review','reason'=>'payment_busy'];
     $started=false;$stage='native_reinspection';
     try {
+        // The same original-payment session lease synchronizes this check
+        // with Archive, BEFORE any verified provider/effect journal write.
+        if (achbotGatewayOriginalArchived($db,$payId))
+            return ['status'=>'archived','pay_id'=>$payId];
         $inspection=achbotWalletOriginalBuyInspect($db,$payId,$actor,$primary);
         if (($inspection['status']??null)==='already_paid')
             return ['status'=>'already_paid'];

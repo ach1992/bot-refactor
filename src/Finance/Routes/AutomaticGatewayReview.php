@@ -431,7 +431,10 @@ if (preg_match('/^attentionWallet(Inspect|Complete|Retry)_([1-9][0-9]{0,17})(?:_
                     'automatic_gateway_review.wallet_retry_action'),
                     'callback_data'=>'attentionWalletComplete_'.$payId.'_'.$token]];
             } else {
-                $resultMessage=achbotMessage('automatic_gateway_review.wallet_review_hold');
+                $resultMessage=achbotMessage(
+                    ($result['status']??null)==='archived'
+                        ?'automatic_gateway_review.status_archived'
+                        :'automatic_gateway_review.wallet_review_hold');
             }
         } elseif ($walletAction[1]==='Retry' &&
             preg_match('/^[a-f0-9]{20}$/D',(string)($walletAction[3]??''))===1) {
@@ -468,7 +471,9 @@ if (preg_match('/^attentionWallet(Inspect|Complete|Retry)_([1-9][0-9]{0,17})(?:_
                         in_array($state,['settled_delivery_pending',
                                 'already_paid_state'],true)
                         ?'automatic_gateway_review.wallet_review_done'
-                        :'automatic_gateway_review.wallet_review_hold');
+                        :($state==='archived'
+                            ?'automatic_gateway_review.status_archived'
+                            :'automatic_gateway_review.wallet_review_hold'));
                 }
             }
         } else {
@@ -876,11 +881,14 @@ if (preg_match('/^attention(?:Inbox(?:_[1-9][0-9]{0,17})?|Case_[1-9][0-9]{0,17})
                         (int)$manualDelivery['ordinal']]];
             if (!$actions && !$recover)
                 $footer.="\n".achbotMessage('automatic_gateway_review.manual_hold');
-            if (!$walletCase) {
-                $rows[]=[['text'=>achbotMessage('automatic_gateway_review.archive'),
-                    'callback_data'=>'gatewayReview_H_'.$attempt]];
-                $footer.="\n".achbotMessage('automatic_gateway_review.archive_notice');
-            }
+            // Both hosted/manual and original Wallet exceptions have the
+            // same independent terminal LOCAL Archive choice. Wallet cases
+            // may have no hosted attempt and use their original pay_id.
+            $rows[]=[['text'=>achbotMessage('automatic_gateway_review.archive'),
+                'callback_data'=>$walletCase
+                    ?'attentionWalletArchive_'.$payId
+                    :'gatewayReview_H_'.$attempt]];
+            $footer.="\n".achbotMessage('automatic_gateway_review.archive_notice');
             $body=$gatewayFitCase($body,$optional,$footer);
             $rows[]=[['text'=>achbotMessage('automatic_gateway_review.back_list'),
                 'callback_data'=>'attentionInbox']];
@@ -895,6 +903,46 @@ if (preg_match('/^attention(?:Inbox(?:_[1-9][0-9]{0,17})?|Case_[1-9][0-9]{0,17})
     return;
 }
 
+
+// Wallet cases can exist without a hosted attempt. Archive is a local,
+// original-payment terminal fence: no new debit, Native, refund or delivery.
+$walletArchive=[];
+if (preg_match('/^attentionWalletArchive_([1-9][0-9]{0,17})$/D',
+    (string)($data??''),$walletArchive)===1) {
+    if (!achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'payments') ||
+        (int)($chat_id??0)!==(int)$from_id) {
+        answerCallbackQuery($callbackId,achbotMessage('automatic_gateway_review.denied'),true);
+        return;
+    }
+    require_once __DIR__.'/../GatewayReview.php';
+    $payId=(int)$walletArchive[1];$actor=(int)$from_id;
+    $keys=json_encode(['inline_keyboard'=>[[[
+        'text'=>achbotMessage('automatic_gateway_review.back_list'),
+        'callback_data'=>'attentionInbox']]]],
+        JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
+    try {
+        answerCallbackQuery($callbackId,achbotMessage('automatic_gateway_review.checking'));
+        $status=achbotWalletReviewArchive($connection,$actor,$payId,(int)$admin);
+        $label=achbotMessage(match($status) {
+            'archived'=>'automatic_gateway_review.status_archived',
+            'busy'=>'automatic_gateway_review.status_busy',
+            'stale'=>'automatic_gateway_review.status_stale',
+            'denied'=>'automatic_gateway_review.denied',
+            default=>'automatic_gateway_review.status_unavailable',
+        });
+        $message=achbotMessageHtml('automatic_gateway_review.result',
+            ['result'=>$label]);
+        $edited=editText($message_id,$message,$keys,'HTML',$actor);
+        if (!is_object($edited) || ($edited->ok??false)!==true)
+            sendMessage($message,$keys,'HTML',$actor);
+    } catch (Throwable $error) {
+        error_log('achbot_wallet_archive_ui_unavailable pay_id='.$payId.
+            ' actor='.$actor.' reason='.achbotFinanceDiagnosticReason($error));
+        answerCallbackQuery($callbackId,
+            achbotMessage('automatic_gateway_review.unavailable'),true);
+    }
+    return;
+}
 
 // Same original financial effect, with one-shot provider-attempt claim.
 $gatewayAction=[];

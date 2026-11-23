@@ -106,21 +106,33 @@ function achbotWalletPgRenewOriginal(mysqli $db,int $payId,bool $locked=false): 
     if ($automatic && ((int)$auto['duration_days']!==$days ||
         (int)$auto['volume_gb']!==$volume))
         throw new RuntimeException('wallet_renew_recovery_auto_units_changed');
+    // The original worker may have crashed after the durable Native account
+    // claim but BEFORE its first GET, absolute target capture, RESET or PUT.
+    // In that exact phase the sealed requested_units already belong to this
+    // debited invoice; the provider can capture the target on its first safe
+    // continuation, without taking another Wallet debit or inventing units.
+    $preWriteClaim=$account['state']==='mutating' &&
+        is_array($change) && count($change)===2 &&
+        ($change['phase']??null)==='claimed' &&
+        array_key_exists('requested_units',$change) &&
+        ($proof['result']??null)===null &&
+        ($proof['verified_at']??null)===null;
     if (!is_array($proof) || ($proof['version']??null)!==1 ||
         ($proof['key']??null)!==$key || ($proof['action']??null)!=='edit' ||
         !in_array($key,$proof['consumed_keys']??[],true) ||
         ($proof['identity']??null)!==$ctx['identity'] ||
         !is_array($change) ||
         ($change['requested_units']??null)!==['days'=>$days,'volume'=>$volume] ||
-        ($change['reset_usage']??null)!==true ||
-        ($change['order_expire_before']??null)!==(int)$order['expire_date'] ||
-        !is_array($change['before']??null) ||
-        !is_array($change['before']['group_ids']??null) ||
-        !is_array($absolute) ||
-        !is_int($absolute['expire']??null) ||
-        $absolute['expire']<=0 || $absolute['expire']>2147483647 ||
-        !is_int($absolute['data_limit']??null) ||
-        $absolute['data_limit']!==1073741824*$volume ||
+        (!$preWriteClaim && (
+            ($change['reset_usage']??null)!==true ||
+            ($change['order_expire_before']??null)!==(int)$order['expire_date'] ||
+            !is_array($change['before']??null) ||
+            !is_array($change['before']['group_ids']??null) ||
+            !is_array($absolute) ||
+            !is_int($absolute['expire']??null) ||
+            $absolute['expire']<=0 || $absolute['expire']>2147483647 ||
+            !is_int($absolute['data_limit']??null) ||
+            $absolute['data_limit']!==1073741824*$volume)) ||
         ($account['state']==='linked' &&
             (($proof['result']??null)!=='verified' ||
              !is_string($proof['verified_at']??null) ||
@@ -151,6 +163,9 @@ function achbotWalletPgRenewOriginal(mysqli $db,int $payId,bool $locked=false): 
 
 /** Provider GET only; no SQL/remote mutation and no financial finality claim. */
 function achbotWalletPgRenewObserved(mysqli $db,array $original): ?object {
+    // There cannot be an applied absolute result before the first pre-write
+    // intent was captured. Recovery, not GET-only finality, owns that phase.
+    if ($original['absolute']===null) return null;
     $id=(int)$original['pay']['id'];
     $params=['pay_id'=>$id,'remark'=>(string)$original['order']['remark'],
         'days'=>$original['days'],'volume'=>$original['volume']];
@@ -176,7 +191,8 @@ function achbotWalletPgRenewObserved(mysqli $db,array $original): ?object {
  * are mandatory. This does not reset consumption or write Native data.
  */
 function achbotWalletPgRenewRetryPreview(mysqli $db,array $original): ?object {
-    if ($original['account']['state']!=='mutating') return null;
+    if ($original['account']['state']!=='mutating' ||
+        $original['absolute']===null) return null;
     $id=(int)$original['pay']['id'];
     $params=['pay_id'=>$id,'remark'=>(string)$original['order']['remark'],
         'days'=>$original['days'],'volume'=>$original['volume']];
@@ -217,6 +233,8 @@ function achbotWalletPgRenewInspect(mysqli $db,int $payId,int $actor,int $primar
     if ($payId<=0 || !achbotAdminCanFor($db,$actor,$primary,'payments'))
         return ['status'=>'denied'];
     try {
+        if (achbotGatewayOriginalArchived($db,$payId))
+            return ['status'=>'archived','pay_id'=>$payId];
         $original=achbotWalletPgRenewOriginal($db,$payId);
         $remote=achbotWalletPgRenewObserved($db,$original);
         $retry=$remote===null?achbotWalletPgRenewRetryPreview($db,$original):null;
@@ -274,6 +292,11 @@ function achbotWalletPgResumeRenewCore(mysqli $db,int $payId,int $actor,int $pri
         return ['status'=>$lease,'pay_id'=>$payId];
     $begun=false;
     try {
+        // Archive and recovery share the original session lease. Check the
+        // terminal LOCAL fence BEFORE a Native GET/RESET/PUT, not just inside
+        // the later financial COMMIT, so old callbacks cannot restart work.
+        if (achbotGatewayOriginalArchived($db,$payId))
+            return ['status'=>'archived','pay_id'=>$payId];
         $s=$db->prepare('SELECT type,state FROM pays WHERE id=?');
         $s->bind_param('i',$payId);$s->execute();
         $previous=$s->get_result()->fetch_assoc();$s->close();
@@ -437,7 +460,9 @@ function achbotWalletPgRenewMaintain(mysqli $db,int $batch=4): array {
         $q=$db->prepare("SELECT p.id FROM pays p
             JOIN orders_list o ON o.id=p.order_id
             JOIN service_effects e ON e.provider_reference_id=o.provider_effect_id
+            LEFT JOIN payment_attempts a ON a.pay_row_id=p.id
             WHERE p.state='processing_wallet' AND p.type='RENEW_ACCOUNT'
+              AND a.review_archived_at IS NULL
               AND p.request_date<=?
               AND (p.updated_at IS NULL OR p.updated_at<=DATE_SUB(NOW(),INTERVAL 2 MINUTE))
               AND e.provider_state IN ('mutating','linked')

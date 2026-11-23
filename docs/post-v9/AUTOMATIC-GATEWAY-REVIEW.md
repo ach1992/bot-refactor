@@ -290,8 +290,14 @@ quota scenario in bot logic.
 
 Archive records `payment_attempts.review_archived_at` and
 `review_archived_by` exactly once under the original payment/attempt
-InnoDB locks. It does **not** settle, reject, refund, credit, mutate Native,
-rewrite provider observations, delete history or mark Telegram delivered.
+InnoDB locks. Original Wallet cases may have no prior hosted attempt:
+Archive creates one original-hash-bound `provider=wallet` local archival
+attempt with no claimed external outcome. A Wallet case whose actual
+payment is already terminal retains its original attempt and financial
+state; an unresolved administrator report or delivery does not make
+Archive a financial reversal. It does **not** settle, reject, refund, credit,
+mutate Native, rewrite provider observations, delete history or mark
+Telegram delivered.
 The archived case exits the live inbox; old callbacks cannot reopen it.
 An authentic late NOWPayments IPN may still preserve signed child evidence
 without changing the archived original.
@@ -303,15 +309,60 @@ lease through the entire webhook. Independent original 018 customer delivery
 and 020 customer/staff follow-up dispatchers hold or borrow that lease across
 the durable one-shot claim, outbound Telegram request and acknowledgement
 recording, without holding an InnoDB transaction over HTTP. A nested dispatcher
-must never release its parent's lease. Archive returns **busy** when a genuine
-original worker is active rather than claiming to cancel an already-dispatched
-Native or Telegram operation. An already-open manual rejection-reason editor
+must never release its parent's lease. Wallet Archive acquires that same
+original-payment session lease **before** its short SQL Archive transaction,
+preventing a new original recovery from beginning across the Archive boundary.
+Archive returns **busy** when a genuine original worker is active rather than
+claiming to cancel an already-dispatched Native or Telegram operation. Original
+Wallet standard/custom/renewal checkout acquires the same original payment
+lease **before** its Wallet debit transaction and retains it through Native
+service work and local finality. Separate legacy RENEW_ACCOUNT, INCREASE_DAY
+and INCREASE_VOLUME callbacks have the same payment-wide lease across their
+own debit, provider edit, audit COMMIT and direct Telegram report. A real
+Checkout parent retains the lease
+through its **direct QR/customer/admin delivery** as well; the internal
+settlement worker borrows rather than releasing the parent's lease. A
+customer's wrong-mode or nonexistent invoice is rejected by the unchanged
+financial admission checks without claiming another buyer's lease. A payment
+draft may predate the ten-minute inbox threshold when it first becomes
+`processing_wallet`; the lease, rather than draft age, serializes that
+freshly active worker against Archive.
+
+Archive is now checked at original `processing_wallet` Native
+reservation/dispatch, verified CREATE journal writes, and local order-link
+boundaries, not only at financial settlement. For installations with 003
+but not additive migration 022, the Wallet and staff inspection paths
+accept only the positively verified absence of the Archive column;
+they handle both strict MySQLi exceptions and
+`MYSQLI_REPORT_OFF` (`prepare() === false`, errno 1054).
+The absence of the entire legacy ledger (1146) remains supported by
+the local Archive inspection helper. A present 003 table with no 022
+Archive column must also have readable original lookup columns
+`id`, `pay_row_id` and `provider` before the compatibility fallback is
+allowed. A malformed table missing both the Archive column and one of
+those required 003 columns is **not** treated as a legitimate old install.
+Privilege denial (1142), missing unrelated columns and unexpected SQL
+failures cannot disable an existing Archive fence. A disposable 003/022
+× strict/off test matrix covers real BUY_SUB checkout, stale staff callbacks, active-worker
+leases and these negative schema/permission cases. A stale original BUY_SUB
+administrator token cannot verify a previously `dispatching` Native effect
+after Archive: the original lease is checked before Native inspection, and
+the original payment Archive marker is rechecked under the payment row
+lock before any permitted verified-effect SQL transition. Unknown remote
+results and genuine Native account-level mutation fences remain intact.
+An already-open manual rejection-reason editor
 must recheck the original Archive marker under payment/attempt locks before
 consuming the editor or committing any rejection or follow-up.
 Original financial/API proof, Native service-effect admission, and first
 customer/staff delivery-fence checks must refuse new work after Archive.
-Previously unknown remote results remain unknown. New independent customer
-purchases/renewals and original financial history are unaffected.
+Previously unknown remote results remain unknown. An unresolved Wallet
+Native account-level mutation fence is **not** cleared merely by Archive;
+it remains subject to separately verified original entitlement/identity
+reconciliation. Original Wallet GET-only checks, operator continuation, Cron
+and report dispatch must honor the local Archive record rather than retrying
+the original or resending an unknown notification. New independent customer
+purchases/renewals and original financial history are unaffected where no
+real Native/account conflict exists.
 
 There is **no automatic detection, reconciliation or compensation of manual
 Native quota edits**. An external operator action cannot silently make an
