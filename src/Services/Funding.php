@@ -17,7 +17,7 @@ function achbotServiceQuoteRequest(array $r): array {
     $kind=$r['kind']??null;$variant=$r['variant']??null;
     if (!is_string($kind) || !in_array($kind,['BUY','RENEW','ADD_VOLUME','ADD_TIME'],true) ||
         !in_array($variant,match($kind){
-            'BUY'=>['standard','custom'], 'RENEW'=>['managed','external'],
+            'BUY'=>['standard','custom'],
             default=>['managed']
         },true)) throw new InvalidArgumentException('service_quote_kind');
     $q=['kind'=>$kind,'variant'=>$variant];
@@ -33,7 +33,7 @@ function achbotServiceQuoteRequest(array $r): array {
         ($kind==='BUY' && ($q['order_id']!==0 || $q['plan_id']===0 ||
             $q['days']===0 || $q['volume']===0 || ($variant==='custom' && $q['quantity']!==1))) ||
         ($kind==='RENEW' && ($q['plan_id']===0 || $q['days']===0 ||
-            ($variant==='external' ? $q['order_id']!==0 : $q['order_id']===0))) ||
+            $q['order_id']===0)) ||
         ($kind==='ADD_VOLUME' && ($q['order_id']===0 || $q['days']!==0 || $q['volume']===0)) ||
         ($kind==='ADD_TIME' && ($q['order_id']===0 || $q['days']===0 || $q['volume']!==0)))
         throw new InvalidArgumentException('service_quote_dimensions');
@@ -44,8 +44,7 @@ function achbotServiceQuoteRequest(array $r): array {
     if (!is_string($q['remark']) || strlen($q['remark'])>255 ||
         !is_string($q['uuid']) || strlen($q['uuid'])>200 ||
         !is_string($q['naming_mode']) || !is_bool($q['explicit_name']) ||
-        ($kind==='BUY' && $q['remark']==='') ||
-        ($variant==='external' && ($q['remark']==='' || $q['uuid']==='')))
+        ($kind==='BUY' && $q['remark']===''))
         throw new InvalidArgumentException('service_quote_identity');
     // The business adapter pins the original authorization/pricing/agent
     // policy inputs here. Never reprice from the mutable menu during funding.
@@ -63,30 +62,19 @@ function achbotServiceJson(array $value): string {
  * mistaken for a business refusal or a successful settlement. */
 function achbotServiceLocalTargetLocked(mysqli $db,int $userId,array $q,bool $issuing): array {
     $sid=$q['server_id'];$buy=$q['kind']==='BUY';
-    $s=achbotProviderRow($db,'SELECT i.active,i.state,i.panel_group_id,i.ucount,
+    $s=achbotProviderRow($db,'SELECT i.active,i.state,i.ucount,
         c.type,c.panel_url,c.provider_connection_id
         FROM server_info i JOIN server_config c ON c.id=i.id WHERE i.id=? FOR UPDATE','i',[$sid]);
     if (!$s || (int)$s['active']!==1 ||
         !in_array((int)$s['state'],$buy?[1]:[1,2],true) ||
-        !in_array($s['type'],['marzban','pasarguard'],true))
+        $s['type']!=='pasarguard')
         throw new DomainException('service_server_unavailable');
-    $provider=$s['type'];
-    $target=['provider'=>$provider,'endpoint'=>hash('sha256',rtrim($s['panel_url'],'/'))];
-    if ($provider==='marzban') {
-        $group=$s['panel_group_id'];
-        if ($group!==null && !achbotProviderRow($db,
-            "SELECT id FROM setting WHERE id=? AND type='ACHBOT_MARZBAN_PANEL_GROUP' FOR UPDATE",
-            'i',[(int)$group])) throw new DomainException('service_panel_group_invalid');
-        $target['physical']=$group===null?'server:'.$sid:'group:'.$group;
-    } else {
-        $panel=achbotProviderPanel($db,(int)$s['provider_connection_id'],true);
-        if ($target['endpoint']!==hash('sha256',rtrim($panel['api_url'],'/')))
-            throw new DomainException('service_panel_changed');
-        $target['physical']='pg:'.$panel['instance_key'];
-        $target['panel_id']=$panel['id'];
-    }
-    if ($q['variant']==='external' && $provider!=='marzban')
-        throw new DomainException('service_external_provider');
+    $target=['provider'=>'pasarguard','endpoint'=>hash('sha256',rtrim($s['panel_url'],'/'))];
+    $panel=achbotProviderPanel($db,(int)$s['provider_connection_id'],true);
+    if ($target['endpoint']!==hash('sha256',rtrim($panel['api_url'],'/')))
+        throw new DomainException('service_panel_changed');
+    $target['physical']='pg:'.$panel['instance_key'];
+    $target['panel_id']=$panel['id'];
     if ($q['order_id']>0) {
         $o=achbotProviderRow($db,'SELECT id,userid,server_id,fileid,inbound_id,status,remark,uuid
             FROM orders_list WHERE id=? FOR UPDATE','i',[$q['order_id']]);
@@ -95,30 +83,24 @@ function achbotServiceLocalTargetLocked(mysqli $db,int $userId,array $q,bool $is
             (int)$o['inbound_id']!==0 || $o['remark']!==$q['remark'] ||
             (string)$o['uuid']!==$q['uuid']) throw new DomainException('service_order_changed');
         $target['account']=['remark'=>$o['remark'],'uuid'=>(string)$o['uuid']];
-        if ($provider==='pasarguard') {
-            // SQL-only persisted incarnation; a prior pending Native mutation
-            // is not proof of cancellation. Worker admission must fence it.
-            $ctx=achbotPgOrderContext($db,$q['order_id'],true,true);
-            $target['account']['native']=$ctx['identity'];
-        }
-    } elseif ($q['variant']==='external') {
-        $target['account']=['remark'=>$q['remark'],'uuid'=>$q['uuid']];
+        // SQL-only persisted incarnation; a prior pending Native mutation
+        // is not proof of cancellation. Worker admission must serialize it.
+        $ctx=achbotPgOrderContext($db,$q['order_id'],true,true);
+        $target['account']['native']=$ctx['identity'];
     }
     if ($q['plan_id']>0) {
         $p=achbotProviderRow($db,'SELECT * FROM server_plans WHERE id=? FOR UPDATE','i',[$q['plan_id']]);
         if (!$p || (int)$p['inbound_id']!==0 ||
-            (($buy || $q['variant']==='external') && (int)$p['active']!==1))
+            ($buy && (int)$p['active']!==1))
             throw new DomainException('service_plan_unavailable');
         $planServer=(int)$p['server_id'];
         if ($planServer!==$sid) {
-            if ($buy || $q['variant']==='external')
+            if ($buy)
                 throw new DomainException('service_plan_target_changed');
-            $alias=achbotProviderRow($db,'SELECT i.panel_group_id,c.type,c.provider_connection_id
+            $alias=achbotProviderRow($db,'SELECT c.type,c.provider_connection_id
                 FROM server_info i JOIN server_config c ON c.id=i.id WHERE i.id=? FOR UPDATE','i',[$planServer]);
-            if (!$alias || $alias['type']!==$provider ||
-                ($provider==='marzban'
-                    ? ($s['panel_group_id']===null || $alias['panel_group_id']!==$s['panel_group_id'])
-                    : $alias['provider_connection_id']!==$s['provider_connection_id']))
+            if (!$alias || $alias['type']!=='pasarguard' ||
+                $alias['provider_connection_id']!==$s['provider_connection_id'])
                 throw new DomainException('service_plan_target_changed');
         }
         // Only at quote creation compare standard plan units. Afterwards use
@@ -126,16 +108,12 @@ function achbotServiceLocalTargetLocked(mysqli $db,int $userId,array $q,bool $is
         if ($issuing && (($buy && $q['variant']==='standard') || $q['kind']==='RENEW') &&
             ((float)$p['days']!==(float)$q['days'] || (float)$p['volume']!==(float)$q['volume']))
             throw new DomainException('service_plan_units_changed');
-        if ($buy && $provider==='pasarguard')
+        if ($buy)
             $target['groups']=achbotProviderGroups($p['provider_group_ids']);
-    }
-    if ($buy && $provider==='marzban') {
-        // Keep the original protocol/inbound request; not a later plan edit.
-        $target['create_template']=['protocol'=>$p['protocol'],'custom_sni'=>$p['custom_sni']];
     }
     if ($buy) {
         // Validate the existing naming policy without minting a Native effect.
-        achbotStyledAccountRemark($q['remark'],$provider,'service:quote-check',
+        achbotStyledAccountRemark($q['remark'],'pasarguard','service:quote-check',
             1,$q['quantity'],$q['naming_mode'],$q['explicit_name']);
     }
     return ['identity'=>$target,'capacity'=>$s['ucount']];

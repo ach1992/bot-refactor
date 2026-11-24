@@ -28,23 +28,26 @@ effect is not made safe by human approval of an unexplained status.
 Preserve the current Persian customer/admin copy, pricing, account naming (including
 bulk), discounts, agent terms, referral rules, balances including intentional
 administrator debt, URLs, credentials, Native identity, active entitlements and
-staff permissions. PasarGuard is the primary target; preserve standard/custom
-single/bulk, managed renewal, add-ons and auto renewal. Owner clarification
-(2026-11-24): no development, patch, fork, direct database write or new component on
-Marzban/PasarGuard; AChBot uses their existing APIs and existing authorized
-connection information only. Future Marzban support is no longer a requirement.
-Prefer removing its runtime paths if that simplifies the refactor and existing
-customer/unfinished-operation dependencies can be preserved without them.
-Otherwise retain only the minimal evidenced existing-use adapter, including
-external RENEW_SCONFIG only if genuinely required. Do not build new Marzban
-features, artificial compatibility or provider-specific restrictions to keep
-a likely unused provider alive. The baseline [read-only audit](https://github.com/ach1992/bot-refactor/issues/204#issuecomment-7111121827)
-found Hell 5 PasarGuard servers, Vivan 4, Chili 0 and no Marzban server entries;
-this does not establish absence of historical references, external subscriptions,
-unfinished claims or other installations. Resolve those dependencies through
-migration rehearsal and separately authorized read-only pre-cutover evidence
-before removal. Never drop balances, historical evidence, live entitlements or
-working subscription credentials to remove a provider.
+staff permissions. PasarGuard is the sole supported Native runtime target;
+preserve standard/custom single/bulk, managed renewal, add-ons and auto renewal.
+Owner clarification (2026-11-24): all current subscriptions are on PasarGuard.
+Remove Marzban runtime support completely, including external RENEW_SCONFIG,
+rather than maintain a compatibility adapter. No development, patch, fork,
+direct database write or new component on either panel; AChBot uses existing
+PasarGuard APIs and authorized connection information only. The baseline
+[read-only audit](https://github.com/ach1992/bot-refactor/issues/204#issuecomment-7111121827)
+found Hell 5 PasarGuard servers, Vivan 4, Chili 0 and no Marzban server entries.
+The Owner explicitly permits abandoning unfinished operations whose actual
+remaining Native target is Marzban; record a durable retired-provider
+disposition without replay or pretending success, and do not import them as
+runnable new service operations. Do not infer this disposition merely from an
+old Marzban origin/snapshot: migrated live PasarGuard subscriptions and their
+valid pending PasarGuard operations remain supported. Preserve historical
+identifiers, evidence, balances and legitimate payment verification/credit;
+abandoning Native execution does not authorize deleting financial records,
+taking received money, fabricating a refund or altering existing entitlements.
+Rehearse classification and financial reconciliation before cutover. No
+production effects are authorized by this clarification.
 No resurrection of retired payment/providers; no old-bot compatibility shims.
 Plan/service change, import, deletion, status, gifts and trial remain distinct
 business commands but share physical-account/CREATE primitives where appropriate.
@@ -139,9 +142,8 @@ scheduled cycle, or explicit historical mapping), user, kind, fixed quote
 (price, quantity/plan, units, provider/panel/account identity, policy snapshot),
 funding/debit reference, stage, due-at/attempt metadata, and last classified
 failure. A mutable menu is not the quote authority. New orders are BUY, RENEW,
-ADD_VOLUME, ADD_TIME. If existing-use Marzban RENEW_SCONFIG is retained
-under section 1, it is a RENEW variant with its own validated original target
-and quote, not a fifth payment route.
+ADD_VOLUME, ADD_TIME. RENEW operates on an existing local PasarGuard
+subscription; Marzban-only external RENEW_SCONFIG is retired.
 A recurring renewal has one unique account/cycle command; no separate debit
 or renewal executor. Preserve manual and auto renewal timing semantics.
 
@@ -213,9 +215,7 @@ PasarGuard the reviewed upstream has unique username, by-username and by-id
 GET, and note marker; same-name original POST and 409->GET can converge under
 tested provider semantics. Never generate a new username as an uncertain-write
 fallback or recreate an account already proven created and later deleted.
-Foreign same-name account is a real conflict, not evidence of success. If
-Marzban remains necessary, reuse supported lookup and actual identity evidence;
-do not impose PasarGuard-specific fields or new provider restrictions on it.
+Foreign same-name account is a real conflict, not evidence of success.
 Multi-account only executes missing original ordinals. Complete local
 Order/intent exactly once per account.
 
@@ -326,11 +326,10 @@ do not absorb unapproved work or revive the obsolete counter.
    delivery and referral semantics. Test each actual adapter, not a stubbed
    common function alone.
 3. Service vertical slices: BUY (single/custom/bulk + original identity,
-   capacity and result), RENEW (manual/automatic, external Marzban variant
-   only if retained under section 1), ADD_VOLUME/TIME (shared fixed-target
-   engine). Introduce operation ownership and reuse physical identities and
-   existing API capabilities. Prioritize PasarGuard. Test actual provider
-   response/commit failure sequences before replacing each retained path.
+   capacity and result), RENEW (manual/automatic), ADD_VOLUME/TIME (shared
+   fixed-target engine). Introduce operation ownership and reuse physical
+   identities and existing PasarGuard API capabilities. Test actual API
+   response/commit failure sequences before replacing each path.
 4. Converge all callers and maintenance: admin/transfer/reward/onboarding
    wallet writes, checkout, auto renew, free/admin primitives, delivery and
    read models. Ensure the common worker continues all funded operations.
@@ -340,14 +339,16 @@ do not absorb unapproved work or revive the obsolete counter.
    WalletRenewal/WalletEdit recovery coordinators; payment-method switches
    inside ProviderRuntime, mutation history cap and old direct wallet SQL.
    Preserve genuinely unique contract, test and historical read-only migration
-   logic before removing code. Retire unnecessary Marzban runtime paths where
-   dependency evidence permits, including menus/configuration/routes for any
-   fully retired capability; keep required historical identifiers and records.
+   logic before removing code. Remove all Marzban runtime API calls, adapters,
+   routes, menu/configuration choices and recovery branches; retain historical
+   identifiers and evidence readers required for migrated PasarGuard accounts
+   and accounting. Do not preserve a runtime Marzban fallback.
    Verify actual call graph after removal. No legacy execution fallback.
 5. Migration/cutover: implement reviewed forward schema transition using
    release-matched migration sequence; preserve old records and imported
-   unfinished effects, existing active Native identities, balances and
-   subscription/config URLs. Rehearse on synthetic copies of actual supported
+   unfinished PasarGuard effects, existing active Native identities, balances
+   and subscription/config URLs. Retire truly Marzban-targeted unfinished
+   Native work under section 1 without altering the original financial proof. Rehearse on synthetic copies of actual supported
    schemas including all relevant 003..023 structures and data cases. No
    speculative schema drop or customer data in tests. Quiesce webhook/Cron/
    workers/payment callbacks safely, prevent dual writers, reconcile all
@@ -382,8 +383,8 @@ not authorization to mutate them. No blanket reprocessing.
   and initial zero/accounting migration; exact replay and conflicting identity
   covered; no lost or doubled money, debt policy maintained.
 - Each service operation works with Wallet independent of funding route; no
-  Native references to payment method. Test PasarGuard and only the evidenced
-  retained Marzban paths, if any; verify removal/migration of retired paths.
+  Native references to payment method. Test PasarGuard only; verify removal
+  of Marzban runtime paths and historical migration/retirement classification.
   Cover actual operation variants, standard/custom/bulk, zero-cost, auto
   renewal, same-physical aliases, price/plan drift and immutable snapshots.
 - Deliberate crashes before/after each durable/remote boundary, lost SQL ACK,
@@ -443,6 +444,17 @@ or definition-of-done acceptance.
   Both MySQLi strict and report-off modes. New modules have no direct
   Telegram wire calls; existing exact wire-parity check retains that rule.
 
+The preceding test matrix describes the earlier foundation commit. Following
+the Owner's PasarGuard-only decision, new service quote/funding admission
+no longer implements Marzban or external RENEW_SCONFIG. The revised
+`test_wallet_first_funding.py` passes 42 cases on PHP 8.5.12 / disposable
+MariaDB (strict and report-off): PasarGuard standard/custom/bulk, managed
+renewal and both add-ons with real local identity evidence; retired target
+and external renewal admission refusals; verified receipt for a retired
+target credits once without service debit or capacity reservation. This
+does not yet remove Marzban from the old runtime or implement historical
+retirement/migration and Native execution.
+
 ### Verified Native limitation of existing APIs, not an accepted retry contract
 
 `python3 tools/test_wallet_first_native_write_fence.py --run-disposable`
@@ -470,6 +482,6 @@ remains valid, but the earlier remote-side conditional/idempotent or proven
 quiescence prerequisite is superseded by the existing-API recovery contract
 in section 5. The counterexample must remain visible in acceptance; do not
 relabel reproduction as safety. No new edit executor or retry behavior has
-yet been enabled. Prioritize PasarGuard and continue financial, service,
+yet been enabled. Use PasarGuard only and continue financial, service,
 migration and caller convergence work using existing APIs only.
 PR #233 retains its separate review/integration gate.

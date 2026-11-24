@@ -63,17 +63,30 @@ def main():
                   '025_wallet_receipt_credit.sql','026_service_operations.sql'):
             sql((ROOT/'migrations/post-v9'/m).read_text())
         sql("""INSERT INTO server_config(id,panel_url,ip,sni,header_type,request_header,response_header,security,tlsSettings,type,username,password)
-            VALUES (2,'http://127.0.0.1:9','127.0.0.1','','none','','','none','{}','marzban','fixture','fixture'),
-                   (3,'https://fixture.invalid','127.0.0.1','','none','','','none','{}','pasarguard','fixture','fixture');
+            VALUES (2,'https://fixture.invalid','127.0.0.1','','none','','','none','{}','pasarguard','fixture','fixture'),
+                   (3,'http://127.0.0.1:9','127.0.0.1','','none','','','none','{}','marzban','fixture','fixture');
             INSERT INTO server_info(id,title,ucount,remark,flag,active,state) VALUES
-                (2,'Fixture M','100','fixture','',1,1),(3,'Fixture PG','100','pgfixture','',1,1);
-            UPDATE server_config SET provider_connection_id=3,provider_instance_key=REPEAT('a',32),
-                provider_version='5.5.1',provider_enabled=1 WHERE id=3;
+                (2,'Fixture PG','100','pgfixture','',1,1),(3,'Retired M','100','fixture','',1,1);
+            UPDATE server_config SET provider_connection_id=2,provider_instance_key=REPEAT('a',32),
+                provider_version='5.5.1',provider_enabled=1 WHERE id=2;
             INSERT INTO server_plans(id,fileid,catid,server_id,inbound_id,acount,title,protocol,days,volume,type,price,descr,pic,active,step,date,custom_sni,provider_group_ids)
-            VALUES (7,'7',1,2,0,6,'Fixture','vless',30,2,'normal',100,'description','',1,0,'fixture','{"inbounds":{"vless":["inbound"]}}',NULL),
-                   (8,'8',1,3,0,6,'Fixture PG','vless',30,2,'normal',100,'description','',1,0,'fixture',NULL,'[1,2]');
-            INSERT INTO orders_list(id,userid,token,transid,fileid,server_id,inbound_id,remark,uuid,expire_date,link,amount,status,date)
-            VALUES (91,1001,REPEAT('a',30),'fixture',7,2,0,'fixture-user','fixture-uuid',1800000100,'["vless://fixture"]',100,1,'fixture');
+            VALUES (7,'7',1,2,0,6,'Fixture PG','vless',30,2,'normal',100,'description','',1,0,'fixture',NULL,'[1,2]'),
+                   (8,'8',1,3,0,6,'Retired M','vless',30,2,'normal',100,'description','',1,0,'fixture','{"inbounds":{"vless":["inbound"]}}',NULL);
+            INSERT INTO orders_list(id,userid,token,transid,fileid,server_id,inbound_id,remark,uuid,expire_date,link,amount,status,date,
+                provider_effect_id,provider_remote_user_id,provider_remote_created_at)
+            VALUES (91,1001,REPEAT('a',30),'fixture',7,2,0,'fixture-user','fixture-uuid',1800000100,'["vless://fixture"]',100,1,'fixture',
+                91,17,'2026-10-26T05:00:00Z');
+            INSERT INTO service_effects(id,source_kind,source_ref,actor_userid,ordinal,reserved_count,operation_id,effect_kind,
+                target_server_id,target_key,endpoint_sha256,plan_id,remote_username,requested_expire,requested_bytes,request_sha256,
+                state,order_id,verified_at,provider_snapshot,provider_reference_id,provider_connection_id,provider_remote_user_id,
+                provider_remote_created_at,provider_operation_marker,provider_entitlement_snapshot,provider_state,provider_verified_at)
+            VALUES (91,'admin_bulk','fixture-existing',1001,1,1,REPEAT('b',32),'create',
+                2,CONCAT('pg:',REPEAT('a',32)),SHA2('https://fixture.invalid',256),7,'fixture-user',1800000100,2147483648,REPEAT('c',64),
+                'local_recorded',91,UTC_TIMESTAMP(),
+                JSON_OBJECT('provider','pasarguard','panel_id',2,'instance_key',REPEAT('a',32),
+                  'endpoint_sha256',SHA2('https://fixture.invalid',256),'group_ids',JSON_ARRAY(1,2)),
+                91,2,17,'2026-10-26T05:00:00Z',CONCAT('achbot:v1:',REPEAT('b',32)),
+                '{"data_limit":2147483648,"expire":1800000100,"group_ids":[1,2],"status":"active"}','linked',UTC_TIMESTAMP());
         """)
         driver=work/'funding.php';driver.write_text(PHP)
         def php(mode,*commands,**kw):
@@ -137,16 +150,17 @@ def main():
             assert balance()==b and sql(f'SELECT debit_entry_id FROM service_operations WHERE id={oid}')=='NULL';case('zero')
             for kind,variant,days,volume,order,remark,uuid in (
                 ('RENEW','managed',30,2,91,'fixture-user','fixture-uuid'),
-                ('RENEW','external',30,2,0,'external-user','external-uuid'),
                 ('ADD_TIME','managed',3,0,91,'fixture-user','fixture-uuid'),
                 ('ADD_VOLUME','managed',0,1,91,'fixture-user','fixture-uuid')):
                 oid=issue(mode,mode+'-'+kind+'-'+variant,kind=kind,variant=variant,days=days,
                     volume=volume,order_id=order,remark=remark,uuid=uuid)
                 b=balance();c=capacity();fund(mode,oid);fund(mode,oid,'already_funded')
                 assert (balance(),capacity())==(b-100,c);case(kind+'-'+variant)
-            oid=issue(mode,mode+'-pg-buy',server_id=3,plan_id=8)
-            b=balance();c=capacity(3);fund(mode,oid)
-            assert (balance(),capacity(3))==(b-100,c-1);case('pg_buy')
+            fail(mode,cmd('issue',ref=mode+'-retired-buy',quote=quote(server_id=3,plan_id=8)),
+                 'service_server_unavailable');case('retired_marzban_buy_rejected')
+            fail(mode,cmd('issue',ref=mode+'-retired-renew',quote=quote(kind='RENEW',variant='external',
+                 server_id=3,plan_id=8,remark='external-user',uuid='external-uuid')),
+                 'service_quote_kind');case('retired_external_renew_rejected')
             oid=issue(mode,mode+'-price')
             sql('UPDATE server_plans SET price=99999,days=45,volume=9 WHERE id=7')
             b=balance();fund(mode,oid)
@@ -175,10 +189,18 @@ def main():
             r=php(mode,settle);assert r['out'][0]['funding']=='request_invalidated',r
             assert (balance(),capacity())==(b+100,c);case('cancelled_receipt_preserved')
             oid=issue(mode,mode+'-changed');settle=invoice(mode,mode+'-changed',oid)
-            sql("UPDATE server_config SET panel_url='http://127.0.0.1:7' WHERE id=2")
+            sql("UPDATE server_config SET panel_url='https://changed.invalid' WHERE id=2")
             b=balance();c=capacity();r=php(mode,settle)
             assert r['out'][0]['funding']=='request_invalidated' and (balance(),capacity())==(b+100,c),r
-            sql("UPDATE server_config SET panel_url='http://127.0.0.1:9' WHERE id=2");case('changed_panel_receipt_preserved')
+            sql("UPDATE server_config SET panel_url='https://fixture.invalid' WHERE id=2");case('changed_panel_receipt_preserved')
+            oid=issue(mode,mode+'-retired-after-quote');settle=invoice(mode,mode+'-retired-after-quote',oid)
+            sql("UPDATE server_config SET type='marzban' WHERE id=2")
+            b=balance();c=capacity();r=php(mode,settle)
+            assert r['ok'] and r['out'][0]['funding']=='request_invalidated' and (balance(),capacity())==(b+100,c),r
+            assert php(mode,settle)['out'][0]['credit']['replayed']
+            assert (balance(),capacity())==(b+100,c)
+            sql("UPDATE server_config SET type='pasarguard' WHERE id=2")
+            case('retired_target_receipt_preserved')
             oid=issue(mode,mode+'-rollback');settle=invoice(mode,mode+'-rollback',oid)
             before=snap();r=php(mode,settle,rollback=True);assert r['ok'] and snap()==before,r
             # Trigger a failure AFTER the credit and capacity update; all
