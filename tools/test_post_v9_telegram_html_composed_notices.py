@@ -24,7 +24,6 @@ TARGETS = (
     ('bot.php', 'payment_settings.gateway_rule_admin.exempt_saved'),
     ('bot.php', 'add_marzban_panel_group.message.01f02c2ac6'),
     ('src/Finance/Routes/WalletTransfer.php', 'wallet_transfer_restart.message.1286cd29ed'),
-    ('src/Finance/Routes/PrePayment.php', 'pre_payment.message.6a728137d5'),
     ('src/Finance/Routes/ManualReceipts.php', 'broadcast.routes.pm_noop.message.72fe3f7c5d'),
     ('src/Plans/Intervals.php', 'admin_settings.management.review_required'),
     ('src/Plans/AddonAdmin.php', 'addon_scopes.unavailable&addon_scopes.filter_blocked'),
@@ -32,8 +31,8 @@ TARGETS = (
     ('src/Finance/WalletStart.php', 'start_wallet_payment.message.1f46b2b87f'),
     ('src/Purchase/EntryAndBulk.php', 'bulk_reporting.delivery_needs_review'),
 )
-EXPECTED_SOURCE_SHA256 = 'd53d5a64b328906de59a56eb7241942c55727c71a7fd9edabcef240703cdfdda'
-EXPECTED_GOLDEN_SHA256 = 'c642bf384b913de835f10f037c76aad39eb44d5b0a85cf88b52c1912a837207d'
+EXPECTED_SOURCE_SHA256 = 'e54b3aac06f09041ffb68cea6a070cea10a75d3e4fcfc279f2f9c13b4ae20b8e'
+EXPECTED_GOLDEN_SHA256 = '20a9afd6ba65922867597336c13a0ed7a393759c32996d782461f32809b58f20'
 HTML_UNSAFE = re.compile(r'[<>&*_`\[\]\\]|https?://|tg://|\bt\.me/', re.I)
 
 
@@ -181,6 +180,14 @@ def main() -> None:
     p=argparse.ArgumentParser()
     p.add_argument('--print-audit',action='store_true')
     args=p.parse_args()
+    # The former pre-payment compatibility notice was removed with the
+    # retired workflow. Assert its source and catalog keys stay retired,
+    # instead of demanding that a deleted route keep sending old copy.
+    retired=(ROOT/'src/Finance/Routes/PrePayment.php').read_text(encoding='utf-8')
+    for marker in ('pre_payment.message.6a728137d5','pre_payment.message.f7acca2890'):
+        if marker in retired or any(marker in (ROOT/'messages/fa'/name).read_text(encoding='utf-8')
+                                    for name in ('user.php','admin.php')):
+            raise AssertionError('retired pre-payment notice reintroduced: '+marker)
     sources={file:(ROOT/file).read_text(encoding='utf-8') for file,_ in TARGETS}
     items=inventory(sources,html_required=not args.print_audit)
     origin=source_digest(items)
