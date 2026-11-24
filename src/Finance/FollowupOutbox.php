@@ -259,12 +259,14 @@ function achbotFollowupValidateLocked(mysqli $db,array $pay,array $r): ?array {
 
 }
 /**
- * Exactly one attempt for an intended message. A crash after CAS yields
- * dispatching (uncertain); no later ordinary callback sends it again.
+ * One logical message per original intent. Historical v1 rows retain
+ * one-shot behavior. New service sources keep explicit attempt evidence;
+ * only proven non-application is eligible for automatic redelivery.
  * Per-recipient attempts do not block independent pending recipients.
  */
-function achbotFollowupDispatchOne(mysqli $db,int $id): string {
-    if (!achbotFollowupSchemaReady($db) || $id<=0) return 'unavailable';
+function achbotFollowupDispatchOne(mysqli $db,int $id,int $actor=0,?string $confirmation=null): string {
+    if (!achbotFollowupSchemaReady($db) || $id<=0 || $actor<0 ||
+        ($actor===0 && $confirmation!==null)) return 'unavailable';
     // Resolve the immutable original owner before the first SQL claim. The
     // in-transaction read below verifies it again after acquiring the lease.
     try {
@@ -274,6 +276,10 @@ function achbotFollowupDispatchOne(mysqli $db,int $id): string {
         $payId=(int)($owner['pay_row_id']??0);
         $serviceId=isset($owner['service_operation_id'])?(int)$owner['service_operation_id']:null;
         if ($payId<=0 && ($serviceId===null || $serviceId<=0)) return 'unavailable';
+        if ($serviceId!==null) {
+            require_once __DIR__.'/FollowupAttempts.php';
+            achbotPaymentEvidenceRequireAutocommit($db);
+        } elseif ($actor>0) return 'unavailable';
     } catch (Throwable $error) {
         error_log('achbot_followup_owner_unavailable id='.$id.' class='.get_class($error));
         return 'unavailable';
@@ -283,6 +289,7 @@ function achbotFollowupDispatchOne(mysqli $db,int $id): string {
     if ($payId>0) {
         $lease=achbotOriginalDispatchLeaseBegin($db,$payId);
         if ($lease!=='owned' && $lease!=='borrowed') return $lease;
+        if ($actor>0 && $lease!=='owned') return 'busy';
     } else {
         require_once __DIR__.'/ServiceReports.php';
         require_once __DIR__.'/../Services/Execution.php';
@@ -315,28 +322,34 @@ function achbotFollowupDispatchOne(mysqli $db,int $id): string {
         if (!$r || (int)$r['pay_row_id']!==$payId ||
             (isset($r['service_operation_id'])?(int)$r['service_operation_id']:null)!==$serviceId)
             throw new RuntimeException('followup_owner_changed');
-        if (isset($r['service_operation_id']) && $r['state']==='dispatching') {
-            $q=$db->prepare("UPDATE payment_followup_intents SET state='unknown',
-                last_result='unknown',dispatch_token=NULL
-                WHERE id=? AND state='dispatching'");
-            if (!$q) throw new RuntimeException('followup_abandoned_prepare');
-            $q->bind_param('i',$id);
-            $ok=$q->execute() && $q->affected_rows===1;$q->close();
-            if (!$ok || !$db->commit()) throw new RuntimeException('followup_abandoned_commit');
-            $opened=false;return 'unknown';
+        if ($serviceId!==null && $r['state']==='dispatching') {
+            $state=achbotFollowupAttemptFinishLocked($db,$id,(string)$r['dispatch_token'],
+                ['result'=>'unknown','code'=>null,'retry_after'=>null],true);
+            if (!$db->commit()) throw new RuntimeException('followup_abandoned_commit');
+            $opened=false;return $state;
         }
-        if ($r['state']!=='pending') {
-            $state=(string)$r['state'];$db->rollback();$opened=false;return $state;
+        if (($actor===0 && $r['state']!=='pending') ||
+            ($actor>0 && !in_array($r['state'],['unknown','rejected'],true))) {
+            $state=$actor===0?(string)$r['state']:'stale';
+            $db->rollback();$opened=false;return $state;
         }
         $packet=$payId>0?achbotFollowupValidateLocked($db,$pay,$r):
             achbotServiceReportValidateLocked($db,$op,$quote,$r);
         if (!$packet) throw new RuntimeException('followup_identity_invalid');
-        $token=bin2hex(random_bytes(16));
-        $q=$db->prepare("UPDATE payment_followup_intents SET state='dispatching',
-            dispatch_token=?,attempt_count=attempt_count+1,dispatched_at=NOW(),
-            last_result=NULL WHERE id=? AND state='pending' AND attempt_count=0");
-        $q->bind_param('si',$token,$id);
-        $ok=$q->execute() && $q->affected_rows===1;$q->close();
+        if ($serviceId!==null) {
+            $claim=achbotFollowupAttemptClaimLocked($db,$r,$actor,$confirmation);
+            if ($claim['status']!=='claimed') {
+                $db->rollback();$opened=false;return $claim['status'];
+            }
+            $token=$claim['token'];$ok=true;
+        } else {
+            $token=bin2hex(random_bytes(16));
+            $q=$db->prepare("UPDATE payment_followup_intents SET state='dispatching',
+                dispatch_token=?,attempt_count=attempt_count+1,dispatched_at=NOW(),
+                last_result=NULL WHERE id=? AND state='pending' AND attempt_count=0");
+            $q->bind_param('si',$token,$id);
+            $ok=$q->execute() && $q->affected_rows===1;$q->close();
+        }
         if (!$ok || !$db->commit()) throw new RuntimeException('followup_claim_unknown');
         $opened=false;
     } catch(Throwable $error) {
@@ -344,7 +357,12 @@ function achbotFollowupDispatchOne(mysqli $db,int $id): string {
         error_log('achbot_followup_prepare_unknown id='.$id.' class='.get_class($error));
         return 'unavailable';
     }
-    $status='unknown';
+    $status='unknown';$outcome=['result'=>'unknown','code'=>null,'retry_after'=>null];
+    $priorContext=$GLOBALS['achbotTelegramDiagnosticContext']??null;
+    if ($serviceId!==null)
+        $GLOBALS['achbotTelegramDiagnosticContext']=['followup_id'=>$id,'pay_id'=>$payId,
+            'service_operation_id'=>$serviceId,'delivery_attempt'=>(int)$r['attempt_count']+1,
+            'delivery_actor'=>$actor];
     try {
         if ($serviceLock!==null) {
             if (!achbotServiceExecutionOwnsLock($db,$serviceLock))
@@ -363,19 +381,41 @@ function achbotFollowupDispatchOne(mysqli $db,int $id): string {
             $mode=($packet['mode']??null)==='plain'?null:$packet['mode'];
             $result=sendMessage((string)$packet['text'],$packet['keys']??null,$mode,$target);
         }
-        if (is_object($result) && ($result->ok??false)===true)
+        if ($serviceId!==null)
+            $outcome=\AchBot\Telegram\Response\deliveryOutcome($result);
+        elseif (is_object($result) && ($result->ok??false)===true)
             $status='acknowledged';
     } catch(Throwable $error) {
         error_log('achbot_followup_telegram_uncertain id='.$id.' class='.get_class($error));
+    } finally {
+        if ($serviceId!==null) {
+            if ($priorContext===null) unset($GLOBALS['achbotTelegramDiagnosticContext']);
+            else $GLOBALS['achbotTelegramDiagnosticContext']=$priorContext;
+        }
     }
     try {
-        $q=$db->prepare("UPDATE payment_followup_intents SET state=?,
-            last_result=?,acknowledged_at=CASE WHEN ?='acknowledged' THEN NOW() ELSE NULL END,
-            dispatch_token=NULL WHERE id=? AND dispatch_token=? AND state='dispatching'");
-        $q->bind_param('sssis',$status,$status,$status,$id,$token);
-        $ok=$q->execute() && $q->affected_rows===1;$q->close();
-        if (!$ok) throw new RuntimeException('followup_ack_commit_unknown');
+        if ($serviceId!==null) {
+            if (!$db->begin_transaction()) throw new RuntimeException('followup_finish_begin');
+            $name=$serviceLock??achbotHostedWorkerLockName($db,$payId);
+            $lock=achbotProviderRow($db,'SELECT IS_USED_LOCK(?)=CONNECTION_ID() AS owned','s',[$name]);
+            if ((int)($lock['owned']??0)!==1) throw new RuntimeException('followup_service_ownership_lost');
+            $status=achbotFollowupAttemptFinishLocked($db,$id,$token,$outcome);
+            if (!$db->commit()) throw new RuntimeException('followup_ack_commit_unknown');
+            achbotDiagnosticEvent('achbot.delivery.followup_result',[
+                'followup_id'=>$id,'service_operation_id'=>$serviceId,'actor_id'=>$actor,
+                'request_attempt'=>(int)$r['attempt_count']+1,'state'=>$status,
+                'telegram_error_code'=>$outcome['code'],'retry_after'=>$outcome['retry_after'],
+                'result'=>$outcome['result']],$status==='acknowledged'?'info':'warning');
+        } else {
+            $q=$db->prepare("UPDATE payment_followup_intents SET state=?,
+                last_result=?,acknowledged_at=CASE WHEN ?='acknowledged' THEN NOW() ELSE NULL END,
+                dispatch_token=NULL WHERE id=? AND dispatch_token=? AND state='dispatching'");
+            $q->bind_param('sssis',$status,$status,$status,$id,$token);
+            $ok=$q->execute() && $q->affected_rows===1;$q->close();
+            if (!$ok) throw new RuntimeException('followup_ack_commit_unknown');
+        }
     } catch(Throwable $error) {
+        if ($serviceId!==null) try {$db->rollback();}catch(Throwable $ignored){}
         error_log('achbot_followup_ack_unknown id='.$id);
         return 'unknown';
     }
@@ -518,17 +558,22 @@ function achbotFollowupMaintainServicePending(mysqli $db,int $limit,float $budge
     $deadline=hrtime(true)/1000000000+$budgetSeconds;
     $s=achbotProviderStatement($db,"SELECT id FROM payment_followup_intents
         WHERE service_operation_id IS NOT NULL AND state IN ('pending','dispatching')
-          AND updated_at<=DATE_SUB(NOW(),INTERVAL 2 MINUTE)
-        ORDER BY updated_at,id LIMIT ?",'i',[$limit]);
+          AND ((next_attempt_at IS NULL AND updated_at<=DATE_SUB(NOW(),INTERVAL 2 MINUTE))
+               OR next_attempt_at<=NOW(6))
+        ORDER BY COALESCE(next_attempt_at,updated_at),id LIMIT ?",'i',[$limit]);
     $rows=$s->get_result()->fetch_all(MYSQLI_ASSOC);$s->close();$out=[];
     foreach ($rows as $r) {
         if (hrtime(true)/1000000000>=$deadline) break;
         $id=(int)$r['id'];
         $state=achbotFollowupDispatchOne($db,$id);
         $out[$id]=$state;
-        if (in_array($state,['acknowledged','unknown'],true)) continue;
+        if (!in_array($state,['unavailable','busy'],true)) continue;
         try {
-            $s=achbotProviderStatement($db,"UPDATE payment_followup_intents SET updated_at=NOW()
+            // Defer an unavailable already-due retry behind healthy peers;
+            // do not shorten or rewrite a newly committed Telegram wait.
+            $s=achbotProviderStatement($db,"UPDATE payment_followup_intents SET updated_at=NOW(),
+                next_attempt_at=CASE WHEN next_attempt_at<=NOW(6)
+                    THEN DATE_ADD(NOW(6),INTERVAL 2 MINUTE) ELSE next_attempt_at END
                 WHERE id=? AND state IN ('pending','dispatching')",'i',[$id]);$s->close();
         } catch (Throwable $e) {
             error_log('achbot_followup_maintenance_deferred id='.$id.' class='.get_class($e));

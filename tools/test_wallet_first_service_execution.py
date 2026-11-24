@@ -50,12 +50,18 @@ function sendMessage($text,$keys=null,$mode=null,$uid=null) {
     global $db,$x;
     if ((int)achbotProviderRow($db,'SELECT @@in_transaction AS tx')['tx']!==0)
         throw new RuntimeException('fixture_telegram_inside_transaction');
-    if ($x['op']==='followup') {
-        $d=achbotProviderRow($db,'SELECT id,state,attempt_count FROM payment_followup_intents WHERE id=?','i',[$x['id']]);
-        if ($d['state']!=='dispatching' || (int)$d['attempt_count']!==1)
+    $fid=$GLOBALS['achbotTelegramDiagnosticContext']['followup_id']??null;
+    if ($fid!==null) {
+        $d=achbotProviderRow($db,'SELECT id,state,attempt_count,dispatch_token FROM payment_followup_intents WHERE id=?','i',[$fid]);
+        $a=achbotProviderRow($db,'SELECT result,attempt_no,actor_userid FROM payment_followup_attempts
+            WHERE intent_id=? AND dispatch_token=?','is',[$fid,$d['dispatch_token']]);
+        if ($d['state']!=='dispatching' || !$a || $a['result']!=='dispatching' ||
+            (int)$a['attempt_no']!==(int)$d['attempt_count'] ||
+            (int)$a['actor_userid']!==(int)($x['actor']??0))
             throw new RuntimeException('fixture_followup_claim_not_committed');
         $s=achbotProviderStatement($db,'INSERT INTO fixture_followup(intent_id,recipient,text,mode) VALUES (?,?,?,?)',
             'isss',[$d['id'],(string)$uid,$text,$mode]);$s->close();
+        if (isset($x['response'])) return json_decode(json_encode($x['response'],JSON_THROW_ON_ERROR),false,64,JSON_THROW_ON_ERROR);
         return (object)['ok'=>!($x['unknown_ack']??false)];
     }
     $ctx=$GLOBALS['achbotTelegramDiagnosticContext'];
@@ -90,8 +96,28 @@ try {
     elseif ($x['op']==='maintain_delivery') $r=achbotDeliveryMaintainPending($db,$x['limit'],10.0);
     elseif ($x['op']==='referral') $r=achbotServiceReferralComplete($db,$x['id'],9001);
     elseif ($x['op']==='maintain_referrals') $r=achbotServiceReferralMaintainPending($db,9001,$x['limit'],10.0);
-    elseif ($x['op']==='followup') $r=achbotFollowupDispatchOne($db,$x['id']);
-    elseif ($x['op']==='maintain_followups') $r=achbotFollowupMaintainServicePending($db,$x['limit'],10.0);
+    elseif ($x['op']==='followup') $r=achbotFollowupDispatchOne($db,$x['id'],(int)($x['actor']??0),$x['confirmation']??null);
+    elseif ($x['op']==='preview_followup') {
+        require_once $argv[1].'/src/Finance/FollowupAttempts.php';
+        $r=achbotFollowupRedriveToken(achbotProviderRow($db,'SELECT * FROM payment_followup_intents WHERE id=?','i',[$x['id']]),$x['actor']);
+    }
+    elseif ($x['op']==='claim_followup') {
+        require_once $argv[1].'/src/Finance/FollowupAttempts.php';
+        $db->begin_transaction();
+        $r=achbotFollowupAttemptClaimLocked($db,achbotProviderRow($db,'SELECT * FROM payment_followup_intents WHERE id=? FOR UPDATE','i',[$x['id']]),0,null);
+        $db->commit();
+    }
+    elseif ($x['op']==='maintain_followups') {
+        $other=null;
+        if (isset($x['block_service'])) {
+            $other=new mysqli('localhost','root','',$argv[3],0,$argv[2]);
+            $lock=achbotServiceExecutionLock($other,$x['block_service']);
+            if ((int)achbotProviderRow($other,'SELECT GET_LOCK(?,0) AS acquired','s',[$lock])['acquired']!==1)
+                throw new RuntimeException('fixture_block_service');
+        }
+        try {$r=achbotFollowupMaintainServicePending($db,$x['limit'],10.0);}
+        finally {if ($other!==null) $other->close();}
+    }
     elseif ($x['op']==='plan') $r=achbotPhysicalSelectPlan($db,$x['order'],$x['plan'],1001);
     elseif ($x['op']==='reassign') $r=achbotReassignLogicalServer($db,$x['order'],$x['server'],9001,true);
     elseif (in_array($x['op'],['delete','local_delete'],true)) {
@@ -299,6 +325,7 @@ def main():
             original_report=sql("SELECT id,pay_row_id,sealed_payload,state FROM payment_followup_intents")
             sql((ROOT/'migrations/post-v9/029_service_purchase_referral.sql').read_text())
             sql((ROOT/'migrations/post-v9/030_service_followup_sources.sql').read_text())
+            sql((ROOT/'migrations/post-v9/031_service_followup_attempts.sql').read_text())
             assert sql("SELECT id,pay_row_id,amount_toman,state,before_balance,after_balance FROM referral_awards")==original_award
             assert sql("SELECT id,pay_row_id,sealed_payload,state FROM payment_followup_intents")==original_report
             assert sql("SELECT COUNT(*) FROM referral_awards WHERE service_operation_id IS NOT NULL")=='0'
@@ -335,7 +362,7 @@ def main():
                     return None
                 assert p.returncode==0,(p.returncode,p.stdout,p.stderr)
                 for line in p.stderr.splitlines():
-                    assert line.startswith(('[AChBot] ','achbot_auto_renew_','achbot_shared_plan_','achbot_shared_transfer_','achbot_subscription_delete_')),line
+                    assert line.startswith(('[AChBot] ','achbot_auto_renew_','achbot_shared_plan_','achbot_shared_transfer_','achbot_subscription_delete_')) or re.fullmatch(r'achbot_followup_ack_unknown id=[1-9][0-9]*',line),line
                 r=json.loads(p.stdout)
                 if 'expect_error' in kw:
                     assert not r['ok'] and r['reason']==kw['expect_error'],r
@@ -688,13 +715,39 @@ DELIMITER ;
                 reports=sql(f"SELECT id,role,pay_row_id FROM payment_followup_intents WHERE service_operation_id={winner} ORDER BY id").splitlines()
                 assert len(reports)==2 and all(x.endswith('\tNULL') for x in reports),reports
                 report_id=int(reports[0].split('\t')[0])
-                php(mode,'followup',id=report_id,lost_ack=True)
-                assert php(mode,'followup',id=report_id)=='acknowledged'
-                assert sql(f"SELECT COUNT(*) FROM fixture_followup WHERE intent_id={report_id} AND text LIKE '%rn_%'")=='1'
-                report_id=int(reports[1].split('\t')[0])
-                assert php(mode,'followup',id=report_id,unknown_ack=True)=='unknown'
-                assert php(mode,'followup',id=report_id)=='unknown'
+                rate_limit=dict(ok=False,error_code=429,description='Too Many Requests',parameters=dict(retry_after=35))
+                assert php(mode,'followup',id=report_id,response=rate_limit)=='pending'
+                assert sql(f"SELECT CONCAT(result,':',telegram_error_code,':',retry_after_seconds) FROM payment_followup_attempts WHERE intent_id={report_id}")=='rejected:429:35'
+                assert sql(f"SELECT next_attempt_at>NOW(6) FROM payment_followup_intents WHERE id={report_id}")=='1'
+                assert php(mode,'followup',id=report_id)=='not_due'
+                assert php(mode,'maintain_followups',limit=10)==[]
                 assert sql(f"SELECT COUNT(*) FROM fixture_followup WHERE intent_id={report_id}")=='1'
+                sql(f"UPDATE payment_followup_intents SET next_attempt_at=NOW(6) WHERE id={report_id}")
+                assert php(mode,'maintain_followups',limit=10,block_service=winner)=={str(report_id):'busy'}
+                assert sql(f"SELECT next_attempt_at>NOW(6) FROM payment_followup_intents WHERE id={report_id}")=='1'
+                assert php(mode,'maintain_followups',limit=10)==[]
+                assert sql(f"SELECT COUNT(*) FROM fixture_followup WHERE intent_id={report_id}")=='1'
+                cases.append(mode+'_followup_busy_due_row_deferred_fairly')
+                sql(f"UPDATE payment_followup_intents SET next_attempt_at=NOW(6) WHERE id={report_id}")
+                assert php(mode,'maintain_followups',limit=10)=={str(report_id):'acknowledged'}
+                assert php(mode,'followup',id=report_id)=='acknowledged'
+                assert sql(f"SELECT COUNT(*) FROM fixture_followup WHERE intent_id={report_id} AND text LIKE '%rn_%'")=='2'
+                assert sql(f"SELECT GROUP_CONCAT(result ORDER BY attempt_no) FROM payment_followup_attempts WHERE intent_id={report_id}")=='rejected,acknowledged'
+                cases.append(mode+'_followup_known_429_due_redelivery')
+                report_id=int(reports[1].split('\t')[0])
+                assert php(mode,'followup',id=report_id,response=dict(ok=False,error_code=500,description='Internal error'))=='unknown'
+                assert php(mode,'followup',id=report_id)=='unknown'
+                denied=php(mode,'preview_followup',id=report_id,actor=1001)
+                assert php(mode,'followup',id=report_id,actor=1001,confirmation=denied)=='denied'
+                preview=php(mode,'preview_followup',id=report_id,actor=9001)
+                assert php(mode,'followup',id=report_id,actor=9001,confirmation='0'*20)=='stale'
+                assert sql(f"SELECT COUNT(*) FROM fixture_followup WHERE intent_id={report_id}")=='1'
+                php(mode,'followup',id=report_id,actor=9001,confirmation=preview,lost_ack=True)
+                assert php(mode,'followup',id=report_id)=='acknowledged'
+                assert php(mode,'followup',id=report_id,actor=9001,confirmation=preview)=='stale'
+                assert sql(f"SELECT COUNT(*) FROM fixture_followup WHERE intent_id={report_id}")=='2'
+                assert sql(f"SELECT GROUP_CONCAT(CONCAT(claim_state,':',result,':',actor_userid) ORDER BY attempt_no) FROM payment_followup_attempts WHERE intent_id={report_id}")=='pending:unknown:0,unknown:acknowledged:9001'
+                cases.append(mode+'_followup_unknown_explicit_actor_bound_redrive')
                 assert finance()==before and len(writes())==n+2
                 cases.append(mode+'_automatic_renewal_source_only_reports_independent_ack')
                 cases.append(mode+'_automatic_renewal_alias_single_charge_original_notice')
@@ -723,9 +776,14 @@ DELIMITER ;
                 assert sql(f"SELECT CONCAT(stage,':',failure_code,':',COALESCE(debit_entry_id,0)) FROM service_operations WHERE id={refusal}")=='cancelled:wallet_balance_insufficient:0'
                 notice=int(sql(f"SELECT id FROM payment_followup_intents WHERE service_operation_id={refusal} AND pay_row_id IS NULL AND stage='auto_renewal_low_wallet'"))
                 assert php(mode,'auto',order=lo)['status']=='ineligible'
+                assert php(mode,'followup',id=notice,response=dict(ok=False,error_code=403,description='Forbidden'))=='rejected'
+                assert php(mode,'followup',id=notice)=='rejected'
+                assert sql(f"SELECT COUNT(*) FROM fixture_followup WHERE intent_id={notice}")=='1'
+                preview=php(mode,'preview_followup',id=notice,actor=9001)
+                assert php(mode,'followup',id=notice,actor=9001,confirmation=preview)=='acknowledged'
                 assert php(mode,'followup',id=notice)=='acknowledged'
-                assert php(mode,'followup',id=notice)=='acknowledged'
-                assert sql(f"SELECT COUNT(*) FROM fixture_followup WHERE intent_id={notice} AND recipient='1001'")=='1'
+                assert sql(f"SELECT COUNT(*) FROM fixture_followup WHERE intent_id={notice} AND recipient='1001'")=='2'
+                cases.append(mode+'_followup_definite_permanent_rejection_authorized_retry')
                 # A later intentional re-enable can still renew the original cycle.
                 sql(f"UPDATE orders_list SET autoRenew='on' WHERE id={lo}")
                 r=php(mode,'auto',order=lo);assert r['status']=='funded',r
@@ -762,8 +820,23 @@ DELIMITER ;
                 did=int(sql(f"SELECT id FROM payment_delivery_intents WHERE service_operation_id={aid}"))
                 assert php(mode,'deliver',id=did)=='acknowledged'
                 sql(f"UPDATE users SET wallet={saved},is_agent=0,discount_percent='' WHERE userid=1001")
-                for row in sql(f"SELECT id FROM payment_followup_intents WHERE service_operation_id={aid}").splitlines():
-                    assert php(mode,'followup',id=int(row))=='acknowledged'
+                rids=[int(row) for row in sql(f"SELECT id FROM payment_followup_intents WHERE service_operation_id={aid} ORDER BY id").splitlines()]
+                assert len(rids)==2
+                before=finance();n=len(writes());rid=rids[0]
+                sql("CREATE TRIGGER fixture_followup_result_fail BEFORE UPDATE ON payment_followup_attempts FOR EACH ROW SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='fixture acknowledgement rollback'")
+                try:
+                    assert php(mode,'followup',id=rid)=='unknown'
+                    assert sql(f"SELECT state FROM payment_followup_intents WHERE id={rid}")=='dispatching'
+                    assert sql(f"SELECT result FROM payment_followup_attempts WHERE intent_id={rid}")=='dispatching'
+                    assert sql(f"SELECT COUNT(*) FROM fixture_followup WHERE intent_id={rid}")=='1'
+                finally:sql('DROP TRIGGER fixture_followup_result_fail')
+                assert php(mode,'followup',id=rid)=='unknown'
+                assert sql(f"SELECT result FROM payment_followup_attempts WHERE intent_id={rid}")=='unknown'
+                assert php(mode,'followup',id=rid)=='unknown'
+                assert sql(f"SELECT COUNT(*) FROM fixture_followup WHERE intent_id={rid}")=='1'
+                assert php(mode,'followup',id=rids[1])=='acknowledged'
+                assert finance()==before and len(writes())==n
+                cases.append(mode+'_followup_post_send_sql_rollback_never_auto_replays')
                 cases.append(mode+'_automatic_renewal_full_discount_signed_debt_no_wallet_write')
                 # A funded edit owns the original subject even BEFORE a
                 # Native mutation journal exists. Shared plan/transfer and
@@ -921,11 +994,19 @@ DELIMITER ;
                 assert php(mode,'followup',id=rid,unknown_ack=True)=='unknown'
                 assert php(mode,'followup',id=rid)=='unknown'
                 assert sql(f"SELECT COUNT(*) FROM fixture_followup WHERE intent_id={rid}")=='1'
+                preview=php(mode,'preview_followup',id=rid,actor=9001)
+                assert php(mode,'followup',id=rid,actor=9001,confirmation=preview,unknown_ack=True)=='unknown'
+                preview=php(mode,'preview_followup',id=rid,actor=9001)
+                assert php(mode,'followup',id=rid,actor=9001,confirmation=preview)=='stale'
+                assert sql(f"SELECT COUNT(*) FROM fixture_followup WHERE intent_id={rid}")=='2'
+                cases.append(mode+'_followup_unknown_manual_attempt_not_repeated')
                 rid=int(targets['referral_channel'])
-                sql(f"UPDATE payment_followup_intents SET state='dispatching',attempt_count=1,dispatch_token=REPEAT('a',32),dispatched_at=NOW(),updated_at=DATE_SUB(NOW(),INTERVAL 3 MINUTE) WHERE id={rid}")
+                assert php(mode,'claim_followup',id=rid)['status']=='claimed'
+                sql(f"UPDATE payment_followup_intents SET updated_at=DATE_SUB(NOW(),INTERVAL 3 MINUTE) WHERE id={rid}")
                 assert php(mode,'maintain_followups',limit=10)=={str(rid):'unknown'}
                 assert php(mode,'followup',id=rid)=='unknown'
                 assert sql(f"SELECT COUNT(*) FROM fixture_followup WHERE intent_id={rid}")=='0'
+                assert sql(f"SELECT result FROM payment_followup_attempts WHERE intent_id={rid}")=='unknown'
                 assert len(requests)==n
                 cases.append(mode+'_referral_reports_committed_claim_single_send_unknown_never_replayed')
                 sql("UPDATE users SET refered_by=9002 WHERE userid=1001")

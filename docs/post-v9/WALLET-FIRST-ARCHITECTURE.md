@@ -870,6 +870,45 @@ or production database. Still outstanding: general BUY/RENEW/add-on
 reports and receipt-credit reports, per-part definite rejection and
 authorized delivery redrive, actual routes and scheduler activation.
 
+### Definite single-message report rejection and explicit recovery (draft 031)
+
+The existing 020 follow-up dispatcher now journals each attempt for new
+service-sourced v2/v3 reports. Migration 031 adds due time and a separate
+append-only attempt identity/history; original v1 payment-only reports keep
+their existing one-shot behavior. Historical attempts are not fabricated.
+The same source lease, immutable sealed payload, recipient and exact source
+are retained. A committed attempt precedes the external send, and the attempt
+outcome and intent transition commit together. An abandoned claim or failed
+SQL finalization after a possible send remains UNKNOWN, not assumed rejected.
+
+A complete explicit Bot API rejection with a recognized integer 4xx error
+code and nonempty description is a definite rejection. A valid positive
+429 retry_after schedules a due retry automatically; the dispatcher will not
+send before that due time. Other definite rejections remain visible for
+correction and authorized retry. Missing/malformed responses, transport
+failures and 5xx remain UNKNOWN, with no automatic re-send. Retry work is
+deferred fairly when its source lease is busy or temporarily unavailable.
+Each attempt preserves its own outcome and timing.
+
+An explicitly authorized redrive reuses the exact original packet. The
+current actor must have payment permission and confirm an actor-, attempt-,
+state- and payload-bound token. The existing one-explicit-UNKNOWN-redrive
+policy is enforced; no ordinary duplicate callback or worker can repeat an
+uncertain send. There is no new UI route yet. Safe diagnostics retain intent,
+actor, attempt and Telegram error code without raw payload or secret logs.
+
+Disposable PHP 8.5.12 / MariaDB tests: 94/94 cases across strict and report-off
+MySQLi, 470 owned loopback HTTP requests, 52 CREATE POSTs; includes 429 wait
+and due recovery, blocked-source fairness, rejected/UNKNOWN permission-bound
+redrive, stale confirmation, failure after send but before SQL finalization,
+abandoned claim and lost caller response after commit. Old referral award
+journal 16/16, presentation 57/57 and isolated log privacy 13/13 pass; no
+real Telegram sends. PHP lint and diff checks pass. This is single-message
+service report recovery, not completion of 018 multi-part customer delivery
+or legacy v1 replacement. General service/receipt reports, multipart
+QR/text and authorized delivery recovery, actual route/scheduler integration,
+migration rehearsal and all other #204 acceptance criteria remain open.
+
 ### Verified Native limitation of existing APIs, not an accepted retry contract
 
 `python3 tools/test_wallet_first_native_write_fence.py --run-disposable`
