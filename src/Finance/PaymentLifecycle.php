@@ -568,7 +568,7 @@ function achbotPayUxAudienceAllowed(mysqli $db, string $method, int $userId,
         if ($mode==='agents') return (int)$people[0]['is_agent']===1;
         if ($mode==='non_agents') return (int)$people[0]['is_agent']!==1;
         if ($mode==='buyers' || $mode==='non_buyers') {
-            $purchased=achbotGatewayRuleHistoryCount(
+            $purchased=achbotCustomerHistoryCount(
                 $db,$userId,'buy',0,'older',$final,time());
             return $purchased!==null && ($purchased>0)===($mode==='buyers');
         }

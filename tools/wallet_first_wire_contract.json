@@ -1,6 +1,7 @@
 {
   "baseline": "484c80e6ee030e8656da96edc3000311d10327b5",
   "added_without_direct_send": [
+    "src/Finance/ServiceHistory.php",
     "src/Finance/CheckoutAdmission.php",
     "src/Finance/CheckoutRoutes.php",
     "src/Finance/DeliveryParts.php",

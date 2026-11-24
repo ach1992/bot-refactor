@@ -7,22 +7,17 @@ require_once __DIR__ . '/../messages/loader.php'; // ACHBOT_TEXT_CATALOG
 include_once __DIR__ . '/../baseInfo.php';
 include_once __DIR__ . '/../config.php';
 
-$sellState=$botState['sellState']=="off"?\achbotMessage('jobs.reward_report.text.c2dd5f586f'):\achbotMessage('jobs.reward_report.text.f28e680498');
-$searchState=$botState['searchState']=="off"?\achbotMessage('jobs.reward_report.text.c2dd5f586f'):\achbotMessage('jobs.reward_report.text.f28e680498');
 $rewaredTime = ($botState['rewaredTime']??0);
-$rewaredChannel = $botState['rewardChannel'];
+$rewaredChannel = $botState['rewardChannel']??'';
 
 if($rewaredTime>0){
     $lastTime = $botState['lastRewardMessage']??0;
     if(time() > $lastTime){
         $time = time() - ($rewaredTime * 60 * 60);
         
-		$stmt = $connection->prepare("SELECT SUM(price) as total FROM `pays` WHERE `request_date` > ? AND (`state` = 'paid' OR `state` = 'approved' OR `state` = 'auto_cart_approved')");
-        $stmt->bind_param("i", $time);
-        $stmt->execute();
-        $totalRewards = number_format($stmt->get_result()->fetch_assoc()['total']);
-        $stmt->close();
-        
+        require_once __DIR__.'/../src/Finance/ServiceHistory.php';
+        $totalRewards=number_format(achbotServiceSalesTotal($connection,$time+1));
+
         // BOT_STATES must be updated from its locked persisted document:
         // this Cron request may have a stale in-memory $botState. Never
         // overwrite a concurrent administrator's gateway restriction.

@@ -236,3 +236,13 @@ execution suite also checks the same renewal-history query before funding and
 after verified completion, counting only the original charged owner. The
 readiness gate additionally tests valid per-method exemptions and rejects extra
 PHP runtime entries and root index shadows without opening their contents.
+
+The required current sales/discount suite exercises the actual administrator
+sales menu, custom-date and scheduled report consumers on the consolidated
+schema: completed external/Wallet/automatic operations, cancelled and funded
+operations, partial refunds, original date windows and retained historical
+facts. Incoming-payment totals remain independently asserted. The actual
+discount consumer tests buyer/non-buyer parity, unchanged ineligible
+price/counters, target restrictions and an owner-lock race. The service
+execution suite additionally verifies sales deltas from real checkout,
+automatic renewal, full/partial resolution and delivery/report retries.

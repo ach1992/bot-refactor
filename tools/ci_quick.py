@@ -31,6 +31,7 @@ NATIVE_TESTS = (
     ("wallet_first_retirement", "test_wallet_first_retirement.py"),
     ("wallet_first_fresh_schema", "test_wallet_first_fresh_schema.py"),
     ("current_payment_readiness", "test_post_v9_payment_readiness.py"),
+    ("current_sales_discount", "test_current_sales_discount.py"),
     ("wallet_first_hosted", "test_wallet_first_hosted.py"),
     ("wallet_first_manual", "test_wallet_first_manual.py"),
     ("wallet_first_service_execution", "test_wallet_first_service_execution.py"),
@@ -120,6 +121,10 @@ REQUIRED_CURRENT_CASES = {
         "automatic_renewal_without_historical_table",
         "automatic_renewal_alias_single_charge_original_notice",
         "gateway_history_counts_only_actual_completed_automatic_renewal",
+        "actual_auto_renewal_sales_once_despite_delivery_and_report_retries",
+        "actual_external_sale_not_double_counted_as_wallet_or_delivery",
+        "actual_full_refund_not_service_sale",
+        "actual_partial_checkout_sale_uses_exact_original_refund",
         "alias_fence_and_lost_put_absolute_addons",
         "local_commit_failure_recovery",
         "reset_ack_with_new_traffic_no_repeat_on_put_outage",
@@ -210,6 +215,15 @@ REQUIRED_SCENARIOS = {
     ),
     "gateway_rules": (
         "current_service_history_funding_only_excluded_auto_renew_counted_once",
+    ),
+    "current_sales_discount": (
+        "actual_sales_keyboard_net_completed_value_wallet_origin_and_original_windows",
+        "actual_payment_reports_preserve_incoming_receipts",
+        "actual_custom_date_sales_and_receipt_count_are_distinct",
+        "actual_scheduled_sales_report_uses_same_completed_value",
+        "actual_discount_buyer_inverse_matches_completed_history_and_no_ineligible_consumption",
+        "actual_discount_target_policy_preserved_at_consumption",
+        "actual_discount_revalidates_buyer_history_under_owner_lock",
     ),
 }
 

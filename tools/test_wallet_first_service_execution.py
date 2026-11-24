@@ -165,7 +165,14 @@ try {
     elseif ($x['op']==='auto') $r=achbotServiceAutoRenewAdmit($db,$x['order'],(int)($x['owner']??1001),$x['bot_state']??['renewAutoState'=>'on']);
     elseif ($x['op']==='gateway_history') {
         require_once $argv[1].'/src/Finance/PaymentLifecycle.php';
-        $r=achbotGatewayRuleHistoryCount($db,(int)$x['owner'],(string)$x['metric'],0,'older',false,time());
+        $r=achbotCustomerHistoryCount($db,(int)$x['owner'],(string)$x['metric'],0,'older',false,time());
+    }
+    elseif ($x['op']==='sales_snapshot') {
+        require_once $argv[1].'/src/Finance/ServiceHistory.php';
+        $r=array_map('intval',achbotProviderRow($db,"SELECT COUNT(*) AS n,
+            COALESCE(SUM(amount),0) AS total,COALESCE(SUM(wallet_origin),0) AS wallet_count,
+            COALESCE(SUM(CASE WHEN wallet_origin THEN amount ELSE 0 END),0) AS wallet_total
+            FROM (".achbotServiceSalesSql().") s"));
     }
     elseif ($x['op']==='due') {
         $other=null;
@@ -1344,6 +1351,7 @@ DELIMITER ;
                 n=len(writes());pays=sql("SELECT COUNT(*) FROM pays");attempts=sql("SELECT COUNT(*) FROM payment_attempts")
                 f0=finance()
                 histories={u:php(mode,'gateway_history',owner=u,metric='renew') for u in (1001,9002)}
+                sales_before=php(mode,'sales_snapshot')
                 assert all(isinstance(x,int) for x in histories.values()),histories
                 assert php(mode,'auto',order=ao,bot_state={'renewAutoState':'off'})['status']=='ineligible'
                 assert finance()==f0
@@ -1359,6 +1367,7 @@ DELIMITER ;
                 assert php(mode,'auto',order=owner_order,owner=uid)=={'status':'already_claimed','id':winner}
                 assert len(writes())==n and mutation(winner).startswith('reset')
                 assert all(php(mode,'gateway_history',owner=u,metric='renew')==v for u,v in histories.items())
+                assert php(mode,'sales_snapshot')==sales_before
                 before=finance()
                 step(mode,winner,'progressed');step(mode,winner,'applied')
                 reqs=len(requests)
@@ -1378,6 +1387,11 @@ DELIMITER ;
                 assert sql(f"SELECT COUNT(*) FROM wallet_entries WHERE source_kind='service_debit' AND source_ref='{winner}'")== '1'
                 assert all(php(mode,'gateway_history',owner=u,metric='renew')==v+int(u==uid) for u,v in histories.items())
                 cases.append(mode+'_gateway_history_counts_only_actual_completed_automatic_renewal')
+                auto_price=int(sql(f"SELECT price_toman FROM service_operations WHERE id={winner}"))
+                auto_sales=dict(sales_before)
+                auto_sales['n']+=1;auto_sales['total']+=auto_price
+                auto_sales['wallet_count']+=1;auto_sales['wallet_total']+=auto_price
+                assert php(mode,'sales_snapshot')==auto_sales
                 loser=alias if owner_order==ao else ao
                 assert php(mode,'auto',order=loser,owner=9002 if loser==alias else 1001)['status']=='ineligible'
                 did=int(sql(f"SELECT id FROM payment_delivery_intents WHERE service_operation_id={winner}"))
@@ -1426,6 +1440,8 @@ DELIMITER ;
                 cases.append(mode+'_automatic_renewal_source_only_reports_independent_ack')
                 cases.append(mode+'_automatic_renewal_alias_single_charge_original_notice')
                 cases.append(mode+'_automatic_renewal_without_historical_table')
+                assert php(mode,'sales_snapshot')==auto_sales
+                cases.append(mode+'_actual_auto_renewal_sales_once_despite_delivery_and_report_retries')
                 # Original low-balance policy: disable auto renewal, no debit,
                 # and no synthetic paid invoice or remote write.
                 buy=issue(mode,'auto-low');fund(mode,buy);step(mode,buy,'applied');step(mode,buy,'completed')
@@ -2046,6 +2062,7 @@ DELIMITER ;
                 assert r['status']=='funded',r
                 for stage in ('applied','completed'):step(mode,r['operation'],stage)
                 cases.append(mode+'_discount_counter_and_quote_atomic_and_owner_bound')
+                sales_before=php(mode,'sales_snapshot')
                 h,pid=draft('wallet')
                 before=len(requests)
                 assert php(mode,'checkout_wallet',hash=h,actor=9002,expect_error='checkout_draft_unavailable')
@@ -2057,6 +2074,10 @@ DELIMITER ;
                 assert php(mode,'checkout_wallet',hash=h)['status']=='already_funded'
                 assert sql(f"SELECT COUNT(*) FROM wallet_entries WHERE source_kind='service_debit' AND source_ref='{op}'")=='1'
                 for stage in ('applied','completed'):step(mode,op,stage)
+                wallet_sales=dict(sales_before)
+                wallet_sales['n']+=1;wallet_sales['total']+=100
+                wallet_sales['wallet_count']+=1;wallet_sales['wallet_total']+=100
+                assert php(mode,'sales_snapshot')==wallet_sales
                 cases.append(mode+'_real_wallet_draft_admission_and_execution')
                 h,pid=draft('low',1000000)
                 assert php(mode,'checkout_wallet',hash=h)['status']=='insufficient_funds'
@@ -2121,10 +2142,12 @@ DELIMITER ;
                 rh,rpid=insert_checkout('receipt-outcome','BUY_SUB')
                 assert php(mode,'checkout_manual',pay=rpid,submit=True)
                 assert php(mode,'receipt_outcome',pay=rpid)=='unknown'
+                sales_before=php(mode,'sales_snapshot')
                 rr=php(mode,'checkout_approve',hash=rh)
                 assert rr['funding']=='funded',rr
                 rop=rr['operation']
                 assert php(mode,'receipt_outcome',pay=rpid)=='service_pending'
+                assert php(mode,'sales_snapshot')==sales_before
                 for stage in ('applied','completed'):step(mode,rop,stage)
                 assert php(mode,'receipt_outcome',pay=rpid)=='delivery_unconfirmed'
                 did=int(sql(f"SELECT id FROM payment_delivery_intents WHERE service_operation_id={rop}"))
@@ -2136,6 +2159,10 @@ DELIMITER ;
                 assert php(mode,'deliver',id=did)=='acknowledged'
                 assert php(mode,'receipt_outcome',pay=rpid)=='completed'
                 assert php(mode,'checkout_approve',hash=rh)['credit']['replayed']
+                external_sales=dict(sales_before)
+                external_sales['n']+=1;external_sales['total']+=100
+                assert php(mode,'sales_snapshot')==external_sales
+                cases.append(mode+'_actual_external_sale_not_double_counted_as_wallet_or_delivery')
                 cases.append(mode+'_receipt_projection_original_funding_service_and_delivery')
                 rh,rpid=insert_checkout('receipt-resolution','BUY_SUB')
                 assert php(mode,'checkout_manual',pay=rpid,submit=True)
@@ -2147,6 +2174,8 @@ DELIMITER ;
                 assert php(mode,'receipt_outcome',pay=rpid)=='resolved'
                 assert php(mode,'checkout_approve',hash=rh)['credit']['replayed']
                 assert php(mode,'receipt_outcome',pay=rpid)=='resolved'
+                assert php(mode,'sales_snapshot')==external_sales
+                cases.append(mode+'_actual_full_refund_not_service_sale')
                 cases.append(mode+'_receipt_projection_resolved_original_never_reopened')
                 h,pid=insert_checkout('bulk','BUY_SUB',quantity=2)
                 r=php(mode,'checkout_wallet',hash=h)
@@ -2155,6 +2184,27 @@ DELIMITER ;
                 for stage in ('applied','progressed','applied','completed'):step(mode,op,stage)
                 assert sql(f"SELECT COUNT(*) FROM service_effects WHERE source_kind='service_operation' AND source_ref='{op}' AND state='local_recorded'")=='2'
                 cases.append(mode+'_actual_bulk_checkout_draft')
+                # The same real current checkout can keep one of three
+                # originally allocated accounts and refund the exact rest.
+                sales_before=php(mode,'sales_snapshot')
+                ph,ppid=insert_checkout('sales-partial','BUY_SUB',quantity=3)
+                pr=php(mode,'checkout_wallet',hash=ph);assert pr['status']=='funded',pr
+                pop=pr['operation'];step(mode,pop,'applied');step(mode,pop,'progressed')
+                faults.append('get_unavailable');step(mode,pop,'pending','pg_vendor_unavailable')
+                assert php(mode,'sales_snapshot')==sales_before
+                plan=php(mode,'resolution_preview',id=pop,decision='refunded')
+                assert plan['refund']==66 and plan['retained']==1,plan
+                assert php(mode,'resolve',id=pop,decision='refunded',token=plan['token'])['status']=='refunded'
+                partial_sales=dict(sales_before)
+                partial_sales['n']+=1;partial_sales['total']+=34
+                partial_sales['wallet_count']+=1;partial_sales['wallet_total']+=34
+                assert php(mode,'sales_snapshot')==partial_sales
+                did=int(sql(f"SELECT id FROM payment_delivery_intents WHERE service_operation_id={pop}"))
+                assert php(mode,'deliver',id=did)=='acknowledged'
+                step(mode,pop,'completed')
+                assert php(mode,'sales_snapshot')==partial_sales
+                cases.append(mode+'_actual_partial_checkout_sale_uses_exact_original_refund')
+
                 h,pid=insert_checkout('renew','RENEW_ACCOUNT',order=order)
                 r=php(mode,'checkout_wallet',hash=h,mode='renew')
                 assert r['status']=='funded',r

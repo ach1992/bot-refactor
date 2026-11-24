@@ -7,6 +7,43 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
 require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
 
 
+/** Preview and definitive redemption share the same audience predicate.
+ * The existing order-based audiences mean a stored order reference, not
+ * the gateway's active-entitlement category. Keep that distinction. */
+function achbotDiscountAudienceAllowed(mysqli $db,array $discount,int $userId,bool $final): bool {
+    require_once __DIR__.'/ServiceHistory.php';
+    $mode=$discount['audience_type']?:'all';
+    if ($mode==='all') return true;
+    if ($mode==='user') return (int)$discount['audience_user_id']===$userId;
+    if ($mode==='buyers' || $mode==='non_buyers') {
+        $count=achbotCustomerHistoryCount($db,$userId,'buy',0,'older',$final,time());
+        return $count!==null && ($count>0)===($mode==='buyers');
+    }
+    $lock=$final?' FOR UPDATE':'';
+    if ($mode==='agents' || $mode==='non_agents') {
+        $user=achbotProviderRow($db,'SELECT is_agent FROM users WHERE userid=?'.$lock,'i',[$userId]);
+        return $user!==null && ((int)$user['is_agent']===1)===($mode==='agents');
+    }
+    if ($mode==='has_active_order' || $mode==='no_active_order') {
+        $order=achbotProviderRow($db,'SELECT id FROM orders_list'.
+            ($final?' FORCE INDEX (idx_orders_userid_v1)':'').' WHERE userid=? LIMIT 1'.$lock,'i',[$userId]);
+        return ($order!==null)===($mode==='has_active_order');
+    }
+    return false;
+}
+
+function achbotDiscountTargetAllowed(mysqli $db,array $discount,int $planId,bool $final): bool {
+    $mode=$discount['target_type']?:'all';
+    $id=(int)$discount['target_id'];
+    if ($mode==='all') return true;
+    if ($planId<=0) return false;
+    if ($mode==='plan') return $planId===$id;
+    if ($mode!=='server' && $mode!=='category') return false;
+    $plan=achbotProviderRow($db,'SELECT server_id,catid FROM server_plans WHERE id=?'.
+        ($final?' FOR UPDATE':''),'i',[$planId]);
+    return $plan!==null && (int)$plan[$mode==='server'?'server_id':'catid']===$id;
+}
+
 function applyDiscountToPay($connection, $rowId, $discountCode, $from_id, $username, $first_name, $admin, $botState){
     // گرفتن اطلاعات پرداخت
     $stmt = $connection->prepare("SELECT * FROM `pays` WHERE `id` = ?");
@@ -71,86 +108,12 @@ function applyDiscountToPay($connection, $rowId, $discountCode, $from_id, $usern
     $maxDiscount  = isset($discountInfo['max_discount']) && $discountInfo['max_discount'] !== null
                     ? (int)$discountInfo['max_discount'] : 0;
 
-    $audienceType    = !empty($discountInfo['audience_type']) ? $discountInfo['audience_type'] : 'all';
-    $audienceUserId  = !empty($discountInfo['audience_user_id']) ? (int)$discountInfo['audience_user_id'] : null;
-    $targetType      = !empty($discountInfo['target_type']) ? $discountInfo['target_type'] : 'all';
-    $targetId        = !empty($discountInfo['target_id']) ? (int)$discountInfo['target_id'] : null;
-
-    // چک نوع کاربر (audience_type)
-
-    // گرفتن اطلاعات کاربر از جدول users
-    $stmt = $connection->prepare("SELECT `is_agent` FROM `users` WHERE `userid` = ? LIMIT 1");
-    $stmt->bind_param("i", $from_id);
-    $stmt->execute();
-    $userRow = $stmt->get_result()->fetch_assoc();
-    $stmt->close();
-
-    $isAgent = ($userRow && isset($userRow['is_agent'])) ? (int)$userRow['is_agent'] : 0;
-
-    $allowedForUser = true;
-
-    switch ($audienceType) {
-        case 'user':
-            // کد فقط برای یک userid خاص
-            $allowedForUser = ($audienceUserId == $from_id);
-            break;
-
-        case 'agents':
-            // فقط برای همکاران (is_agent = 1)
-            $allowedForUser = ($isAgent == 1);
-            break;
-			
-		case 'non_agents':
-            // کاربران غیر همکار = هر کسی که is_agent != 1
-            $allowedForUser = ($isAgent != 1);
-            break;
-
-        case 'buyers':
-        case 'non_buyers':
-            // چک خرید موفق در جدول pays
-            $stmt = $connection->prepare("
-                SELECT COUNT(*) AS c FROM `pays`
-                WHERE `user_id` = ? AND `state` IN ('auto_cart_approved','approved','paid')
-            ");
-            $stmt->bind_param("i", $from_id);
-            $stmt->execute();
-            $result = $stmt->get_result()->fetch_assoc();
-            $stmt->close();
-
-            $hasBuy = $result && $result['c'] > 0;
-
-            if ($audienceType == 'buyers') {
-                $allowedForUser = $hasBuy;
-            } else { // non_buyers
-                $allowedForUser = !$hasBuy;
-            }
-            break;
-
-        case 'has_active_order':
-        case 'no_active_order':
-            // تعریف شما: هر رکورد در orders_list = سفارش فعال
-            $stmt = $connection->prepare("
-                SELECT COUNT(*) AS c FROM `orders_list`
-                WHERE `userid` = ?
-            ");
-            $stmt->bind_param("i", $from_id);
-            $stmt->execute();
-            $result = $stmt->get_result()->fetch_assoc();
-            $stmt->close();
-
-            $hasActiveOrder = $result && $result['c'] > 0;
-
-            if ($audienceType == 'has_active_order') {
-                $allowedForUser = $hasActiveOrder;
-            } else { // no_active_order
-                $allowedForUser = !$hasActiveOrder;
-            }
-            break;
-
-        case 'all':
-        default:
-            $allowedForUser = true;
-            break;
+    try {
+        require_once __DIR__.'/../Panel/ProviderStorage.php';
+        $allowedForUser=achbotDiscountAudienceAllowed($connection,$discountInfo,(int)$from_id,false);
+    } catch (Throwable $e) {
+        $allowedForUser=false;
+        error_log('achbot_discount_audience_deferred user_id='.(int)$from_id.' class='.get_class($e));
     }
 
     if (!$allowedForUser) {
@@ -171,38 +134,11 @@ function applyDiscountToPay($connection, $rowId, $discountCode, $from_id, $usern
         ];
     }
 
-    // چک هدف سرویس (target_type)
-
-    // اگر کد محدود به پلن/سرور/دسته است، باید پلن پرداخت را هم داشته باشیم
-    if ($targetType !== 'all' && $planId > 0) {
-        $stmt = $connection->prepare("SELECT `server_id`, `catid` FROM `server_plans` WHERE `id` = ? LIMIT 1");
-        $stmt->bind_param("i", $planId);
-        $stmt->execute();
-        $planRow = $stmt->get_result()->fetch_assoc();
-        $stmt->close();
-    } else {
-        $planRow = null;
-    }
-
-    $allowedForPlan = true;
-
-    switch ($targetType) {
-        case 'plan':
-            $allowedForPlan = ($planId > 0 && $targetId == $planId);
-            break;
-
-        case 'server':
-            $allowedForPlan = ($planRow && $targetId == (int)$planRow['server_id']);
-            break;
-
-        case 'category':
-            $allowedForPlan = ($planRow && $targetId == (int)$planRow['catid']);
-            break;
-
-        case 'all':
-        default:
-            $allowedForPlan = true;
-            break;
+    try {
+        $allowedForPlan=achbotDiscountTargetAllowed($connection,$discountInfo,$planId,false);
+    } catch (Throwable $e) {
+        $allowedForPlan=false;
+        error_log('achbot_discount_target_deferred user_id='.(int)$from_id.' class='.get_class($e));
     }
 
     if (!$allowedForPlan) {
@@ -291,6 +227,10 @@ function applyDiscountToPay($connection, $rowId, $discountCode, $from_id, $usern
             ((int)$locked['expire_date']!==0 && (int)$locked['expire_date']<=time()) ||
             (int)$locked['is_active']!==1)
             throw new DomainException('discount_changed');
+        if (!achbotDiscountAudienceAllowed($connection,$locked,(int)$from_id,true))
+            throw new DomainException('discount_audience_changed');
+        if (!achbotDiscountTargetAllowed($connection,$locked,(int)$current['plan_id'],true))
+            throw new DomainException('discount_target_changed');
         $usedBy[] = $from_id;
         $encodeUsedBy = json_encode($usedBy, JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
         $discountValue=$type==='percent'?(int)floor($price*$amount/100):$amount;

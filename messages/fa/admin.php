@@ -1764,8 +1764,6 @@ return [
         'gift2all.message.e6f582671d' => ['text' => '📅 عملیات هدیه حجم و زمان سرور {serverName} به اتمام رسید.', 'parameters' => ['serverName']],
         'gift2all.message.4d3e24cb7c' => '⚠️ جمع‌بندی فهرست هدیه تأیید نشد؛ بررسی مدیر لازم است.',
         // reward_report.text
-        'reward_report.text.c2dd5f586f' => 'خاموش ❌',
-        'reward_report.text.f28e680498' => 'روشن ✅',
         // reward_report.txt
         'reward_report.txt.1bceb49379' => ['text' => '' . "\n" . '🔰 فروش من در {rewaredTime} ساعت گذشته' . "\n" . '' . "\n" . '💰 مبلغ: {totalRewards} تومان' . "\n" . '' . "\n" . '☑️ {channelLock}' . "\n" . '' . "\n" . '', 'parameters' => ['rewaredTime', 'totalRewards', 'channelLock']],
         // broadcast_send.text

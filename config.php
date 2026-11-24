@@ -1700,281 +1700,33 @@ function getBotReportKeys($data = null) {
 		$sixMonthStart = strtotime("-180 days");
 		$oneYearStart = strtotime("-365 days");
 		
-        // محاسبه فروش بر اساس (paid، approved، auto_cart_approved)
-		$salesTotalResult = fetchData("SELECT SUM(price) as total FROM pays WHERE state IN ('paid', 'approved', 'auto_cart_approved')");
-		$salesTotal = $salesTotalResult->fetch_assoc()['total'] ?? 0;
-		$salesTodayResult = fetchData("SELECT SUM(price) as total FROM pays WHERE request_date >= ? AND state IN ('paid', 'approved', 'auto_cart_approved')", ["i", $todayStart]);
-		$salesToday = $salesTodayResult->fetch_assoc()['total'] ?? 0;
-		$salesWeekResult = fetchData("SELECT SUM(price) as total FROM pays WHERE request_date >= ? AND state IN ('paid', 'approved', 'auto_cart_approved')", ["i", $weekStart]);
-		$salesWeek = $salesWeekResult->fetch_assoc()['total'] ?? 0;
-		$salesMonthResult = fetchData("SELECT SUM(price) as total FROM pays WHERE request_date >= ? AND state IN ('paid', 'approved', 'auto_cart_approved')", ["i", $monthStart]);
-		$salesMonth = $salesMonthResult->fetch_assoc()['total'] ?? 0;
-		$salesThreeMonthResult = fetchData("SELECT SUM(price) as total FROM pays WHERE request_date >= ? AND state IN ('paid', 'approved', 'auto_cart_approved')", ["i", $threeMonthStart]);
-		$salesThreeMonth = $salesThreeMonthResult->fetch_assoc()['total'] ?? 0;
-		$salesSixMonthResult = fetchData("SELECT SUM(price) as total FROM pays WHERE request_date >= ? AND state IN ('paid', 'approved', 'auto_cart_approved')", ["i", $sixMonthStart]);
-		$salesSixMonth = $salesSixMonthResult->fetch_assoc()['total'] ?? 0;
-		$salesYearResult = fetchData("SELECT SUM(price) as total FROM pays WHERE request_date >= ? AND state IN ('paid', 'approved', 'auto_cart_approved')", ["i", $oneYearStart]);
-		$salesYear = $salesYearResult->fetch_assoc()['total'] ?? 0;
-		
-		// تابع برای استخراج کاربران همکار
-		function getAgentUsers() {
-			global $connection;
-			// کوئری برای پیدا کردن کاربران همکار
-			$query = "SELECT userid FROM users WHERE is_agent = 1";
-			$result = $connection->query($query);
-			if ($result && $result->num_rows > 0) {
-				$agentUsers = [];
-				// اضافه کردن کاربران به آرایه
-				while ($row = $result->fetch_assoc()) {
-					$agentUsers[] = $row;
-				}
-				return $agentUsers;
-			}
-			return [];
-		}
-		// تابع برای محاسبه فروش کاربران همکار در بازه‌های زمانی مختلف
-		function calculateAgentSales($agentUsers, $startDate, $endDate = null) {
-			global $connection;
-			$totalSales = 0;
-
-			if ($endDate === null) {
-				$endDate = time(); // تاریخ کنونی
-			}
-			$startDate = date('Y-m-d H:i:s', $startDate);
-			$endDate = date('Y-m-d H:i:s', $endDate);
-
-			// یکجا آماده کردن کوئری برای همه کاربران همکار در یکبار
-			$userIds = array_map(function($user) { return $user['userid']; }, $agentUsers);
-			$userIdsStr = implode(",", $userIds);
-
-			// آماده کردن کوئری برای دریافت مجموع فروش برای همه کاربران
-			$query = "SELECT user_id, SUM(price) as total 
-				FROM pays 
-				WHERE user_id IN ($userIdsStr) 
-				AND FROM_UNIXTIME(request_date) BETWEEN ? AND ? 
-				AND LOWER(state) IN ('paid', 'approved', 'auto_cart_approved') 
-				GROUP BY user_id";
-
-			// اجرای کوئری با پارامترهای مناسب
-			$stmt = $connection->prepare($query);
-			$stmt->bind_param("ss", $startDate, $endDate);
-			$stmt->execute();
-			$result = $stmt->get_result();
-
-			// جمع‌آوری نتایج و محاسبه مجموع فروش
-			while ($data = $result->fetch_assoc()) {
-				if (isset($data['total'])) {
-					$totalSales += $data['total'];
-				}
-			}
-			return $totalSales;
-		}
-
-		// استخراج کاربران همکار
-		$agentUsers = getAgentUsers();
-
-		if (empty($agentUsers)) {
-			$agentSalesToday = $agentSalesWeek = $agentSalesMonth = $agentSalesThreeMonth = $agentSalesSixMonth = $agentSalesYear = 0;
-		} else {
-			// محاسبه فروش برای هر بازه زمانی فقط در صورتی که کاربران همکار موجود باشند
-			$agentSalesToday = calculateAgentSales($agentUsers, $todayStart);
-			$agentSalesWeek = calculateAgentSales($agentUsers, $weekStart);
-			$agentSalesMonth = calculateAgentSales($agentUsers, $monthStart);
-			$agentSalesThreeMonth = calculateAgentSales($agentUsers, $threeMonthStart);
-			$agentSalesSixMonth = calculateAgentSales($agentUsers, $sixMonthStart);
-			$agentSalesYear = calculateAgentSales($agentUsers, $oneYearStart);
-		}
-		
-		// تابع برای استخراج سرورها
-		function getServers() {
-			global $connection;
-
-			// کوئری برای استخراج عنوان سرورها
-			$query = "SELECT id, title FROM server_info";
-			
-			if ($stmt = $connection->prepare($query)) {
-				$stmt->execute();
-				$result = $stmt->get_result();
-        
-				if ($result && $result->num_rows > 0) {
-					$servers = [];
-		
-					while ($row = $result->fetch_assoc()) {
-						$servers[] = $row;
-					}
-
-					// بازگشت لیست سرورها
-					return $servers;
-				} else {
-					return [];
-				}
-			} else {
-				return [];
-			}
-		}
-
-		// تابع برای محاسبه فروش کلی هر سرور
-		function calculateServerSales($serverId) {
-			global $connection;
-
-			// کوئری برای محاسبه فروش کلی هر سرور (باید type != 'INCREASE_WALLET' و state یکی از مقادیر معتبر باشد)
-			$query = "SELECT SUM(price) AS total
-				FROM pays
-				WHERE server_id = ? 
-				AND type != 'INCREASE_WALLET'
-				AND state IN ('paid', 'approved', 'auto_cart_approved', 'paid_with_wallet')";
-
-			if ($stmt = $connection->prepare($query)) {
-				$stmt->bind_param("i", $serverId);  // بایند کردن پارامتر server_id
-				$stmt->execute();
-				$result = $stmt->get_result();
-        
-				// بررسی نتایج
-				if ($result && $row = $result->fetch_assoc()) {
-					return $row['total'] ?? 0;
-				} else {
-					return 0;
-				}
-			} else {
-				return 0;
-			}
-		}
-
-		// تابع برای محاسبه فروش ماهانه هر سرور
-		function calculateServerMonthlySales($serverId) {
-			global $connection;
-			$oneMonthAgo = strtotime("-30 days");
-
-			// کوئری برای محاسبه فروش ماهانه هر سرور (باید type != 'INCREASE_WALLET' و state یکی از مقادیر معتبر باشد)
-			$query = "SELECT SUM(price) AS total
-				FROM pays
-				WHERE server_id = ? 
-				AND request_date >= ? 
-				AND type != 'INCREASE_WALLET'
-				AND state IN ('paid', 'approved', 'auto_cart_approved', 'paid_with_wallet')";
-
-			if ($stmt = $connection->prepare($query)) {
-				$stmt->bind_param("ii", $serverId, $oneMonthAgo);  // بایند کردن پارامترها
-				$stmt->execute();
-				$result = $stmt->get_result();
-        
-				// بررسی نتایج
-				if ($result && $row = $result->fetch_assoc()) {
-					return $row['total'] ?? 0;
-				} else {
-					return 0;
-				}
-			} else {
-				return 0;
-			}
-		}
-
-		$servers = getServers();
-
-		$serverSales = [];
-		$serverSalesMonth = [];
-
-		foreach ($servers as $server) {
-			// فروش کلی هر سرور
-			$totalSales = calculateServerSales($server['id']);
-			$serverSales[$server['id']] = $totalSales;
-
-			// فروش ماهانه هر سرور
-			$monthlySales = calculateServerMonthlySales($server['id']);
-			$serverSalesMonth[$server['id']] = $monthlySales;
-		}
-		
-		// تابع برای استخراج پنج پلن برتر فروش کلی
-		function getTopPlans() {
-			global $connection;
-
-			// کوئری برای پیدا کردن پنج پلن برتر کل تاریخ
-			$query = "SELECT plan_id, SUM(price) as total
-					FROM pays
-					WHERE type != 'INCREASE_WALLET'
-					AND state IN ('paid', 'approved', 'auto_cart_approved', 'paid_with_wallet')
-					GROUP BY plan_id
-					ORDER BY total DESC
-					LIMIT 5";  // فقط پنج پلن برتر
-
-			if ($stmt = $connection->prepare($query)) {
-				$stmt->execute();
-				$result = $stmt->get_result();
-
-				$topPlans = [];
-				while ($row = $result->fetch_assoc()) {
-					$topPlans[] = $row;
-				}
-				return $topPlans;
-			} else {
-				return [];
-			}
-		}
-
-		// تابع برای استخراج پنج پلن برتر فروش ماهانه
-		function getTopPlansMonth() {
-			global $connection;
-			$oneMonthAgo = strtotime("-30 days");
-
-			// کوئری برای پیدا کردن پنج پلن برتر ماه
-			$query = "SELECT plan_id, SUM(price) as total
-					FROM pays
-					WHERE type != 'INCREASE_WALLET'
-					AND state IN ('paid', 'approved', 'auto_cart_approved', 'paid_with_wallet')
-					AND request_date >= ?
-					GROUP BY plan_id
-					ORDER BY total DESC
-					LIMIT 5";  // فقط پنج پلن برتر
-
-			if ($stmt = $connection->prepare($query)) {
-				$stmt->bind_param("i", $oneMonthAgo);  // بایند کردن تاریخ ماه گذشته
-				$stmt->execute();
-				$result = $stmt->get_result();
-
-				$topPlansMonth = [];
-				while ($row = $result->fetch_assoc()) {
-					$topPlansMonth[] = $row;
-				}
-				return $topPlansMonth;
-			} else {
-				return [];
-			}
-		}
-
-		// تابع برای استخراج نام پلن‌ها از جدول server_plans
-		function getPlanTitle($planId) {
-			global $connection;
-
-			// کوئری برای استخراج نام پلن
-			$query = "SELECT title FROM server_plans WHERE id = ?";
-
-			if ($stmt = $connection->prepare($query)) {
-				$stmt->bind_param("i", $planId);  // بایند کردن plan_id
-				$stmt->execute();
-				$result = $stmt->get_result();
-
-				if ($row = $result->fetch_assoc()) {
-					return $row['title'];  // بازگشت نام پلن
-				} else {
-					return \achbotMessage('admin_settings.config.get_plan_title.unknown__plan.53f2a99925');  // اگر نام پلن یافت نشد
-				}
-			} else {
-				return \achbotMessage('admin_settings.config.get_plan_title.error.54a0e8c17e');
-			}
-		}
-
-		// کد اصلی برای ایجاد دکمه‌های پلن‌ها
-		$topPlans = getTopPlans();
-		$topPlansMonth = getTopPlansMonth();
-		
-		// تعداد پرداخت‌ها با وضعیت paid_with_wallet
-		$totalPaidWithWalletCount = fetchData("SELECT COUNT(*) as total FROM pays WHERE state = 'paid_with_wallet'")->fetch_assoc()['total'] ?? 0;
-		// مجموع فروش با وضعیت paid_with_wallet
-		$totalPaidWithWalletSum = fetchData("SELECT SUM(price) as total FROM pays WHERE state = 'paid_with_wallet'")->fetch_assoc()['total'] ?? 0;
-
-        // خریدهای نهایی نشده
-		$unfinishedPurchases = fetchData("SELECT COUNT(DISTINCT user_id) as total FROM pays WHERE state IN ('expired_pending', 'expired') AND user_id NOT IN (SELECT user_id FROM pays WHERE state IN ('paid', 'approved', 'auto_cart_approved', 'paid_with_wallet'))")->fetch_assoc()['total'] ?? 0;
-
+        require_once __DIR__.'/src/Finance/ServiceHistory.php';
+        $sales=achbotServiceSalesSummary($connection,[
+            'today'=>$todayStart,'week'=>$weekStart,'month'=>$monthStart,
+            'three'=>$threeMonthStart,'six'=>$sixMonthStart,'year'=>$oneYearStart
+        ],time());
+        $t=$sales['totals'];
+        $salesTotal=$t['total'];
+        $salesToday=$t['total_today'];$salesWeek=$t['total_week'];$salesMonth=$t['total_month'];
+        $salesThreeMonth=$t['total_three'];$salesSixMonth=$t['total_six'];$salesYear=$t['total_year'];
+        $agentSalesToday=$t['agent_today'];$agentSalesWeek=$t['agent_week'];$agentSalesMonth=$t['agent_month'];
+        $agentSalesThreeMonth=$t['agent_three'];$agentSalesSixMonth=$t['agent_six'];$agentSalesYear=$t['agent_year'];
+        $totalPaidWithWalletCount=$t['wallet_count'];$totalPaidWithWalletSum=$t['wallet_total'];
+        $unfinishedPurchases=$sales['unfinished'];
+        $servers=fetchData("SELECT id,title FROM server_info")->fetch_all(MYSQLI_ASSOC);
+        $serverSales=[];$serverSalesMonth=[];
+        foreach ($sales['servers'] as $row) {
+            $serverSales[$row['server_id']]=$row['total'];
+            $serverSalesMonth[$row['server_id']]=$row['month'];
+        }
+        [$topPlans,$topPlansMonth]=$sales['plans'];
+        $getPlanTitle=static function($planId) use ($connection) {
+            $stmt=$connection->prepare("SELECT title FROM server_plans WHERE id=?");
+            if (!$stmt) return \achbotMessage('admin_settings.config.get_plan_title.error.54a0e8c17e');
+            $stmt->bind_param('i',$planId);$stmt->execute();
+            $row=$stmt->get_result()->fetch_assoc();$stmt->close();
+            return $row['title']??\achbotMessage('admin_settings.config.get_plan_title.unknown__plan.53f2a99925');
+        };
 
         return json_encode([
             'inline_keyboard' => [
@@ -2000,7 +1752,7 @@ function getBotReportKeys($data = null) {
 				...array_map(function ($server) use ($serverSales) {
 					return [
 						[
-							'text' => number_format($serverSales[$server['id']]) . \achbotMessage('admin_settings.config.get_gate_ways_keys.text.2cc98f7f7c'), // میزان فروش کلی
+							'text' => number_format($serverSales[$server['id']]??0) . \achbotMessage('admin_settings.config.get_gate_ways_keys.text.2cc98f7f7c'), // میزان فروش کلی
 							'callback_data' => 'server_sales_' . $server['id']
 						],
 						[
@@ -2014,7 +1766,7 @@ function getBotReportKeys($data = null) {
 				...array_map(function ($server) use ($serverSalesMonth) {
 					return [
 						[
-							'text' => number_format($serverSalesMonth[$server['id']]) . \achbotMessage('admin_settings.config.get_gate_ways_keys.text.2cc98f7f7c'), // فروش ماهانه به تومان
+							'text' => number_format($serverSalesMonth[$server['id']]??0) . \achbotMessage('admin_settings.config.get_gate_ways_keys.text.2cc98f7f7c'), // فروش ماهانه به تومان
 							'callback_data' => 'server_sales_month_' . $server['id']
 						],
 						[
@@ -2025,8 +1777,8 @@ function getBotReportKeys($data = null) {
 				}, $servers),
 				[['text' => \achbotMessage('admin_settings.config.get_plan_title.button.ee3938f6be'), 'callback_data' => 'wizwizch']],
 				// دکمه های پلن های برتر کل تاریخ
-				...array_map(function ($plan) {
-					$planTitle = getPlanTitle($plan['plan_id']);  // استخراج عنوان پلن
+				...array_map(function ($plan) use ($getPlanTitle) {
+					$planTitle = $getPlanTitle($plan['plan_id']);  // استخراج عنوان پلن
 					return [
 						[
 							'text' => number_format($plan['total']) . \achbotMessage('admin_settings.config.get_gate_ways_keys.text.2cc98f7f7c'),  // فروش کل پلن به تومان
@@ -2040,8 +1792,8 @@ function getBotReportKeys($data = null) {
 				}, $topPlans),
 				[['text' => \achbotMessage('admin_settings.config.get_plan_title.button.a2b1f547e5'), 'callback_data' => 'wizwizch']],
 				// دکمه های پلن های برتر ماه
-				...array_map(function ($plan) {
-					$planTitle = getPlanTitle($plan['plan_id']);  // استخراج عنوان پلن
+				...array_map(function ($plan) use ($getPlanTitle) {
+					$planTitle = $getPlanTitle($plan['plan_id']);  // استخراج عنوان پلن
 					return [
 						[
 							'text' => number_format($plan['total']) . \achbotMessage('admin_settings.config.get_gate_ways_keys.text.2cc98f7f7c'),  // فروش ماهانه پلن به تومان
@@ -2151,28 +1903,18 @@ function calculateSalesBetweenDates($startDate, $endDate) {
         return;
     }
 
-    $stmt = $connection->prepare("
-        SELECT
-            COALESCE(SUM(price), 0) AS totalSales,
-            COUNT(*) AS totalPayments
-        FROM pays
-        WHERE state IN ('paid', 'approved', 'auto_cart_approved')
-          AND request_date BETWEEN ? AND ?
-    ");
-
-    if (!$stmt) {
+    require_once __DIR__.'/src/Finance/ServiceHistory.php';
+    try {
+        $totalSales=achbotServiceSalesTotal($connection,$startTimestamp,$endTimestamp);
+        $row=achbotProviderRow($connection,"SELECT COUNT(*) AS totalPayments FROM pays
+            WHERE state IN ('paid','approved','auto_cart_approved')
+            AND request_date BETWEEN ? AND ?",'ii',[$startTimestamp,$endTimestamp]);
+        $totalPayments=(int)$row['totalPayments'];
+    } catch (Throwable $e) {
         sendMessage(\achbotMessage('admin_settings.config.calculate_sales_between_dates.message.85858f5676'), $cancelKey, "HTML");
+        error_log('achbot_sales_range_deferred class='.get_class($e));
         return;
     }
-
-    $stmt->bind_param("ii", $startTimestamp, $endTimestamp);
-    $stmt->execute();
-    $result = $stmt->get_result();
-    $row = $result ? $result->fetch_assoc() : null;
-    $stmt->close();
-
-    $totalSales = (int)($row['totalSales'] ?? 0);
-    $totalPayments = (int)($row['totalPayments'] ?? 0);
 
     sendMessage(
         \achbotMessage('admin_settings.config.calculate_sales_between_dates.message.020a3bcea9') . date("Y-m-d", $startTimestamp) . \achbotMessage('admin_settings.config.calculate_sales_between_dates.message.bd8ed16d1e') . date("Y-m-d", $endTimestamp) . \achbotMessage('admin_settings.config.calculate_sales_between_dates.message.28ec14e2c0') . number_format($totalSales) . \achbotMessage('admin_settings.config.calculate_sales_between_dates.text.9944ee4dd6') .

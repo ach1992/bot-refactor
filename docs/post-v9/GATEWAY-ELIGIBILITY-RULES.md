@@ -88,6 +88,12 @@ requires at least one corresponding successful event in that window; both zero
 disable only that metric. Registration age zero disables the age criterion.
 The numeric editor does not embed example thresholds.
 
+The same completed BUY history in `ServiceHistory.php` defines discount
+buyer/non-buyer audiences. Discount redemption rechecks audience and target
+under the definitive owner/draft/discount transaction, not just the earlier
+preview. The separate discount stored-order audience retains its existing
+meaning; it is not the gateway active-entitlement category.
+
 ## Persian Telegram operator path
 
 From gateway settings select **«مدیریت دسترسی به روش‌های پرداخت»**. Choose

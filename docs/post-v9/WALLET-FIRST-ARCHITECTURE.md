@@ -1402,3 +1402,41 @@ duration, an overflow rejected before funding, successful long renewal,
 missing current report attempts, and exact catalog integer boundaries.
 These changes require fresh exact-candidate CI and independent review;
 they do not remove the operational acceptance limitations above.
+
+### Completed-service sales and customer history
+
+`src/Finance/ServiceHistory.php` owns the shared original-checkout completion
+predicate, customer history and commercial sales projection. A linked receipt
+is not a service sale until its matching original operation is completed.
+The net commercial amount is the original debit (or zero for a free completed
+commercial command) less its original compensating refund, validated against
+the owning wallet entries. A fully cancelled operation is not a sale; a partial
+BUY retaining accounts counts once with only the retained value. Automatic
+renewals count once on their original completed command, without synthetic
+`pays` records. Server and plan attribution comes from the original service
+target and frozen quote, not the current catalog. Historical unbound terminal
+non-top-up payments retain their historical reporting value; they do not
+become executable current commands.
+
+The existing sales-labelled administrator totals, agent sales, server/plan
+rankings, custom-date sales amount and scheduled sales report use this
+projection. Date windows retain original request timestamps (automatic
+renewal uses command creation time); agent classification remains the current
+agent flag. Wallet-origin sales mean direct Wallet checkout and automatic
+Wallet renewal, not every externally funded checkout that passes through
+the ledger. Sales counts are original operations, not provisioned accounts,
+delivery parts or report attempts. The abandoned-purchase statistic counts
+distinct users with expired/cancelled BUY requests and no completed original
+purchase.
+
+Incoming-payment metrics remain separate: top individual payments, top users
+by paid amount, per-user payment totals, agent-list payment sums, receipt
+statistics and the successful-payment count in the custom-date report still
+use receipt facts. The existing top-user detail displays paid amounts, not
+service value; the existing order inventory statistics describe stored
+orders. No payment amounts, historical evidence, or report labels are rewritten.
+
+Discount buyer/non-buyer audiences reuse the same completed-purchase fact
+as gateway eligibility. Eligibility and target restrictions are checked again
+inside the owner/draft/discount transaction before consumption. A stored-order
+audience remains distinct from gateway active-entitlement classification.

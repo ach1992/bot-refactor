@@ -29,7 +29,7 @@ $connection->set_charset('utf8mb4');
 $botState=$spec['snapshot']??[];
 require $argv[1].'/src/Finance/PaymentLifecycle.php';
 if (!empty($spec['history_boundary'])) {
-    $result=achbotGatewayRuleHistoryCount(
+    $result=achbotCustomerHistoryCount(
        $connection,(int)$spec['actor'],'buy',90,
        (string)$spec['direction'],false,(int)$spec['clock']);
     echo json_encode(['count'=>$result],JSON_THROW_ON_ERROR);
