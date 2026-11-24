@@ -163,13 +163,14 @@ function achbotFixtureServiceTargetLocked(mysqli $db,array $q,?array $o,?array $
 }
 ''')
         path=fixture/'src/Finance/ReceiptMethods.php';raw=path.read_text()
-        needle="        'bank_transfer'=>$bank,"
+        needle="    $api['api_checker']='achbotCreditCheckGiftApi';\n    return ["
         assert raw.count(needle)==1
-        path.write_text(raw.replace(needle,"""
-        'fixture_gateway'=>['invoice'=>'achbotCreditValidateTomanInvoice','proofs'=>[
+        path.write_text(raw.replace(needle,needle+"""
+        'fixture_gateway'=>['label'=>static fn()=>'Fixture Gateway',
+            'invoice'=>'achbotCreditValidateTomanInvoice','proofs'=>[
             'fixture_gateway'=>'achbotFixtureVerifyGatewayLocked'],'additional_evidence'=>true],
-        'fixture_receipt'=>$manual,
-"""+needle,1)+'''
+        'fixture_receipt'=>$manual+['label'=>static fn()=>'Fixture Receipt'],
+""",1)+'''
 function achbotFixtureVerifyGatewayLocked(mysqli $db,array $pay,array $attempt,array $proof,int $actor,int $primary): ?int {
     // Deliberately broken return for the negative binding test only.
     if (($proof['status']??null)==='fixture-invalid-binding') return (int)$proof['transaction_id'];
