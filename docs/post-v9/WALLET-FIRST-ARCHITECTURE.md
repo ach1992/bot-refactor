@@ -28,8 +28,23 @@ effect is not made safe by human approval of an unexplained status.
 Preserve the current Persian customer/admin copy, pricing, account naming (including
 bulk), discounts, agent terms, referral rules, balances including intentional
 administrator debt, URLs, credentials, Native identity, active entitlements and
-staff permissions. Preserve Marzban and PasarGuard, standard/custom single/bulk,
-managed renewal, supported Marzban external RENEW_SCONFIG, add-ons and auto renewal.
+staff permissions. PasarGuard is the primary target; preserve standard/custom
+single/bulk, managed renewal, add-ons and auto renewal. Owner clarification
+(2026-11-24): no development, patch, fork, direct database write or new component on
+Marzban/PasarGuard; AChBot uses their existing APIs and existing authorized
+connection information only. Future Marzban support is no longer a requirement.
+Prefer removing its runtime paths if that simplifies the refactor and existing
+customer/unfinished-operation dependencies can be preserved without them.
+Otherwise retain only the minimal evidenced existing-use adapter, including
+external RENEW_SCONFIG only if genuinely required. Do not build new Marzban
+features, artificial compatibility or provider-specific restrictions to keep
+a likely unused provider alive. The baseline [read-only audit](https://github.com/ach1992/bot-refactor/issues/204#issuecomment-7111121827)
+found Hell 5 PasarGuard servers, Vivan 4, Chili 0 and no Marzban server entries;
+this does not establish absence of historical references, external subscriptions,
+unfinished claims or other installations. Resolve those dependencies through
+migration rehearsal and separately authorized read-only pre-cutover evidence
+before removal. Never drop balances, historical evidence, live entitlements or
+working subscription credentials to remove a provider.
 No resurrection of retired payment/providers; no old-bot compatibility shims.
 Plan/service change, import, deletion, status, gifts and trial remain distinct
 business commands but share physical-account/CREATE primitives where appropriate.
@@ -55,7 +70,10 @@ shortfall or allow partial settlement of an original invoice.
 Route adapters and webhook/Cron callbacks all enter the same domain commands.
 Use existing auth, provider registry, HTTP, evidence validation, catalog and
 subscription rendering. Move code only when ownership changes; no wrapper
-around two long-lived legacy/new engines.
+around two long-lived legacy/new engines. Replace the old payment/service runtime
+as a coherent completed implementation, remove redundant legacy execution paths
+and use a data-preserving migration where needed. Historical data and migration
+readers are not a second runtime. No incomplete candidate replaces production.
 
 ## 3. Financial data model and invariants
 
@@ -121,8 +139,9 @@ scheduled cycle, or explicit historical mapping), user, kind, fixed quote
 (price, quantity/plan, units, provider/panel/account identity, policy snapshot),
 funding/debit reference, stage, due-at/attempt metadata, and last classified
 failure. A mutable menu is not the quote authority. New orders are BUY, RENEW,
-ADD_VOLUME, ADD_TIME; external Marzban RENEW_SCONFIG is a RENEW variant with
-its own validated original target and quote, not a fifth payment route.
+ADD_VOLUME, ADD_TIME. If existing-use Marzban RENEW_SCONFIG is retained
+under section 1, it is a RENEW variant with its own validated original target
+and quote, not a fifth payment route.
 A recurring renewal has one unique account/cycle command; no separate debit
 or renewal executor. Preserve manual and auto renewal timing semantics.
 
@@ -137,9 +156,11 @@ the old account mutation history authority only after migrating its outstanding
 claims and preserving historical consumption evidence. Account-level ownership
 must cover paid, free, gift, change, deletion and other conflicting local
 mutations and all aliases of the physical subscription, not just order_id.
-Multiple independent databases managing the same Native user require a proven
-single-writer boundary or provider-level coordination; independent local locks
-alone do not suffice.
+Independent databases managing the same Native user are outside one local
+transaction boundary. Reuse existing configured ownership and shared physical
+identity within AChBot; diagnose actual conflicting ownership rather than add
+a cross-installation service, require a new provider coordination API, or
+pretend local locks cover external writers.
 
 Stage meanings (stored, not guessed from error text):
 - awaiting_funds: no committed debit; no Native effect allowed.
@@ -158,8 +179,11 @@ Stage meanings (stored, not guessed from error text):
 Retry/wait are scheduling metadata (reason, dependency, next attempt),
 not an independent state that discards the previous phase. Use due-time/indexed
 fair work selection, small local transaction claims and recoverable leases.
-Do not release the account fence for a conflicting write while the prior remote
-outcome is unresolved. A stale worker must not finalize another worker's claim.
+Serialize conflicting bot-owned writes to the same physical account while the
+original operation is unresolved, using the existing API recovery contract
+below. A stale worker must not finalize another worker's claim. Do not make an
+unavailable remote fencing API or proof of perpetual remote quiescence a
+prerequisite for ordinary work.
 No arbitrary global lock or per-order operator confirmation for a known safe
 retry. Keep payment verification and service processing independently progressable.
 
@@ -189,10 +213,11 @@ PasarGuard the reviewed upstream has unique username, by-username and by-id
 GET, and note marker; same-name original POST and 409->GET can converge under
 tested provider semantics. Never generate a new username as an uncertain-write
 fallback or recreate an account already proven created and later deleted.
-Foreign same-name account is a real conflict, not evidence of success. Preserve
-existing Marzban constraints, supported lookup and identity proof; verify
-actual behavior before permitting retries. Multi-account only executes missing
-original ordinals. Complete local Order/intent exactly once per account.
+Foreign same-name account is a real conflict, not evidence of success. If
+Marzban remains necessary, reuse supported lookup and actual identity evidence;
+do not impose PasarGuard-specific fields or new provider restrictions on it.
+Multi-account only executes missing original ordinals. Complete local
+Order/intent exactly once per account.
 
 **RENEW:** exact original account, reset usage and set fixed absolute plan
 quota and expiry. Freeze renewal period anchor at the first valid dispatch
@@ -211,24 +236,41 @@ after claiming physical-account ownership. Persist target data_limit or expiry
 Use an absolute set of only the necessary field(s) and no reset; preserve
 other entitlement, identity, group and administrative status. GET first on
 retry: if target observed and original proof matches, finalize; if original
-baseline confirmed unchanged and same-target retry is safe, apply fixed
-target, not another delta; divergent state requires actual reconciliation,
-not overwrite or second relative increment. Next operation calculates its
-target after previous completed. No repeated DAY/VOLUME arithmetic on retry.
+baseline confirmed unchanged, retry the same fixed target under the existing
+API recovery contract below, not another delta; divergent state requires
+actual reconciliation, not overwrite or second relative increment. Next
+operation calculates its target after the previous operation completes.
+No repeated DAY/VOLUME arithmetic on retry.
 
-Provider feasibility gate: same-value PUT is idempotent in isolation, not an
-atomic compare-and-set against concurrent writers. A delayed older request
-can arrive after a later update; a local lock cannot fence the remote server.
-Before enabling autonomous retry prove a safe provider-specific execution
-contract (provider conditional update/idempotency or proven ordered/quiescent
-single-writer execution and reconciliation). Explicitly test delayed stale
-PUT, competing administrator/other bot, delete/recreate, foreign marker, API
-scope drift, real account aliases. Do not claim exactly-once external behavior
-from HTTP status or a pre-write GET alone. If a provider lacks necessary
-evidence, stop only the affected unsafe operation with a precise technical
-cause; choose the smallest supported repair, or surface the remaining actual
-provider limitation/owner decision before release. This is not an excuse for
-generic manual review of normal valid operations.
+Existing-API recovery contract (Owner clarification, 2026-11-24): keep the
+smallest practical bot-side coordination. Persist immutable targets and
+original identity, serialize conflicting local writes, classify real API
+responses, use authenticated readback after ambiguous outcomes and retry
+recoverable original operations only under their original semantics. Never
+start another money movement, relative increment, new CREATE identity or
+terminal renewal/reset because of a timeout or local finalization/delivery
+failure. A genuine identity/entitlement conflict or insufficient evidence for
+an affected mutation gets a specific diagnosis; a normal timeout/outage is not
+by itself a permanent manual-review condition. Use only capabilities actually
+exposed by the existing provider API. Do not require provider modifications,
+new remote coordination components, arbitrary wait-as-proof, speculative
+version gates or indefinite holds merely because a stronger hypothetical API
+does not exist.
+
+Same-value PUT is idempotent in isolation, not an atomic compare-and-set
+against concurrent writers. A delayed older request can arrive after a later
+update; a local lock or readback cannot fence the remote server. Exactly-once
+local funding/finality remains mandatory; do not promise exactly-once physical
+execution or prove remote quiescence from HTTP status, pre-write GET or elapsed
+time. Explicitly test delayed stale PUT, competing administrator/other bot,
+delete/recreate, foreign identity, API scope drift and account aliases.
+Detect/reconcile genuine divergence using current authorized observations and
+original operation evidence; do not blindly reassert completed entitlements
+over legitimate later mutations. Record any residual limitation of the
+existing API and the actual recovery behavior in final independent review
+and Owner acceptance. Absence of a stronger remote API is not a blanket
+development or release prerequisite; unresolved material correctness defects
+must still be disclosed and resolved or explicitly accepted before cutover.
 [PasarGuard reviewed source](https://github.com/PasarGuard/panel/blob/eba70d68eaa5a89e34ffebb47c8fd5ce054d0e43/app/db/crud/user.py#L1254-L1317);
 [Koinon external-effect contract](https://github.com/AChWorks/koinon/blob/main/docs/contracts/external-effect-safety.md).
 Do not version-gate adapters based on the reviewed reference commit.
@@ -284,10 +326,11 @@ do not absorb unapproved work or revive the obsolete counter.
    delivery and referral semantics. Test each actual adapter, not a stubbed
    common function alone.
 3. Service vertical slices: BUY (single/custom/bulk + original identity,
-   capacity and result), RENEW (manual/automatic + external Marzban variant),
-   ADD_VOLUME/TIME (shared fixed-target engine). Introduce operation ownership
-   and reuse physical identities/verified Adapter capabilities. Test actual
-   provider response/commit failure sequences before replacing each path.
+   capacity and result), RENEW (manual/automatic, external Marzban variant
+   only if retained under section 1), ADD_VOLUME/TIME (shared fixed-target
+   engine). Introduce operation ownership and reuse physical identities and
+   existing API capabilities. Prioritize PasarGuard. Test actual provider
+   response/commit failure sequences before replacing each retained path.
 4. Converge all callers and maintenance: admin/transfer/reward/onboarding
    wallet writes, checkout, auto renew, free/admin primitives, delivery and
    read models. Ensure the common worker continues all funded operations.
@@ -297,7 +340,10 @@ do not absorb unapproved work or revive the obsolete counter.
    WalletRenewal/WalletEdit recovery coordinators; payment-method switches
    inside ProviderRuntime, mutation history cap and old direct wallet SQL.
    Preserve genuinely unique contract, test and historical read-only migration
-   logic before removing code. Verify actual call graph after removal.
+   logic before removing code. Retire unnecessary Marzban runtime paths where
+   dependency evidence permits, including menus/configuration/routes for any
+   fully retired capability; keep required historical identifiers and records.
+   Verify actual call graph after removal. No legacy execution fallback.
 5. Migration/cutover: implement reviewed forward schema transition using
    release-matched migration sequence; preserve old records and imported
    unfinished effects, existing active Native identities, balances and
@@ -336,8 +382,9 @@ not authorization to mutate them. No blanket reprocessing.
   and initial zero/accounting migration; exact replay and conflicting identity
   covered; no lost or doubled money, debt policy maintained.
 - Each service operation works with Wallet independent of funding route; no
-  Native references to payment method. Test both providers and actual
-  applicable operation variants, standard/custom/bulk, zero-cost, auto
+  Native references to payment method. Test PasarGuard and only the evidenced
+  retained Marzban paths, if any; verify removal/migration of retired paths.
+  Cover actual operation variants, standard/custom/bulk, zero-cost, auto
   renewal, same-physical aliases, price/plan drift and immutable snapshots.
 - Deliberate crashes before/after each durable/remote boundary, lost SQL ACK,
   HTTP timeout after apply and before apply, stale response/worker, overlapping
@@ -396,7 +443,7 @@ or definition-of-done acceptance.
   Both MySQLi strict and report-off modes. New modules have no direct
   Telegram wire calls; existing exact wire-parity check retains that rule.
 
-### Verified Native feasibility gap, not an accepted retry contract
+### Verified Native limitation of existing APIs, not an accepted retry contract
 
 `python3 tools/test_wallet_first_native_write_fence.py --run-disposable`
 executes the current real PHP PasarGuard HTTP adapter against an isolated
@@ -418,10 +465,11 @@ but cannot be a remote commit fence. These are source observations at the
 specified references, not an inventory of every deployed provider/version
 or a claim that an actual installed account was mutated.
 
-A complete edit executor requires a proven remote-side conditional/idempotent
-operation contract or an independently verified single-writer/order/quiescence
-boundary including delayed requests and other mutators. No unconditional
-retry or fabricated exactly-once acceptance has been enabled. Provider-side
-changes/infrastructure beyond this repository need a separate Owner scope
-decision. Independent payment/Wallet/BUY and migration work remains possible.
+The Owner subsequently ruled out provider-side development. This evidence
+remains valid, but the earlier remote-side conditional/idempotent or proven
+quiescence prerequisite is superseded by the existing-API recovery contract
+in section 5. The counterexample must remain visible in acceptance; do not
+relabel reproduction as safety. No new edit executor or retry behavior has
+yet been enabled. Prioritize PasarGuard and continue financial, service,
+migration and caller convergence work using existing APIs only.
 PR #233 retains its separate review/integration gate.

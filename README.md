@@ -12,7 +12,7 @@ AChBot is a Persian-language PHP Telegram bot for VPN subscriptions, native **Ma
 - Explicit administrator-defined physical Panel Groups, per-server presentation policies and configurable subscription/QR/auxiliary-link display.
 - One per-bot Cron coordinator for notifications, rewards, service maintenance and recoverable financial follow-ups.
 
-Unused legacy X-UI, WeSwap and automatic TRON checker integrations are **not** supported. Future Marzban installations remain supported even though current Hell/Vivan installations use PasarGuard.
+Unused legacy X-UI, WeSwap and automatic TRON checker integrations are **not** supported. The current Stable baseline includes Marzban; the approved [Wallet-first target](docs/post-v9/WALLET-FIRST-ARCHITECTURE.md) prioritizes PasarGuard and may retire unused Marzban runtime support after preserving real existing dependencies. No provider-side development is required or authorized.
 
 ## Requirements
 
