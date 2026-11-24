@@ -93,8 +93,8 @@ function sendMessage($text,$keys=null,$mode=null,$uid=null) {
             (int)$a['attempt_no']!==(int)$d['attempt_count'] ||
             (int)$a['actor_userid']!==(int)($x['actor']??0))
             throw new RuntimeException('fixture_followup_claim_not_committed');
-        $s=achbotProviderStatement($db,'INSERT INTO fixture_followup(intent_id,recipient,text,mode) VALUES (?,?,?,?)',
-            'isss',[$d['id'],(string)$uid,$text,$mode]);$s->close();
+        $s=achbotProviderStatement($db,'INSERT INTO fixture_followup(intent_id,recipient,text,mode,keys_json) VALUES (?,?,?,?,?)',
+            'issss',[$d['id'],(string)$uid,$text,$mode,$keys]);$s->close();
         if (isset($x['response'])) return json_decode(json_encode($x['response'],JSON_THROW_ON_ERROR),false,64,JSON_THROW_ON_ERROR);
         return (object)['ok'=>!($x['unknown_ack']??false)];
     }
@@ -118,7 +118,11 @@ if ($x['qr_local_fail']??false) {
     class QRcode {public static function png(...$args) {throw new RuntimeException('fixture_qr_prepare');}}
 }
 
-$GLOBALS['botState']=['rewardChannel'=>'@fixture_report'];
+$GLOBALS['botState']=array_replace(['rewardChannel'=>'@fixture_report'],$x['menu_state']??[]);
+if (isset($x['menu_state'])) {
+    // Deliberately unrelated webhook user; the notice must not use it.
+    $GLOBALS['from_id']=1001;$GLOBALS['userInfo']=['isAdmin'=>0,'is_agent'=>0,'freetrial'=>'used'];
+}
 $GLOBALS['paymentKeys']=['bankAccount'=>'fixture-bank','holderName'=>'fixture-holder'];
 try {
     $presentation=['bot_state'=>[],'bot_url'=>'https://bot.fixture.invalid','bot_username'=>'fixture_bot'];
@@ -152,7 +156,7 @@ try {
         $token=achbotManualBeginEvidence($db,$pay,'bank_transfer',1001,'fixture-photo');
         if (!$token || !achbotManualFinishEvidence($db,$pay['hash_id'],'fixture-photo',$token,222,9001))
             throw new RuntimeException('fixture_manual_receipt');
-        $r=achbotCheckoutSettleReceipt($db,$pid,1001,'manual',[],9001,9001);
+        $r=achbotCheckoutSettleReceipt($db,$pid,1001,'manual',[],(int)($x['actor']??9001),9001);
     }
     elseif ($x['op']==='referral') $r=achbotServiceReferralComplete($db,$x['id'],9001);
     elseif ($x['op']==='maintain_referrals') $r=achbotServiceReferralMaintainPending($db,9001,$x['limit'],10.0);
@@ -401,7 +405,7 @@ def main():
             assert sql("SELECT id,pay_row_id,sealed_payload,state FROM payment_followup_intents")==original_report
             assert sql("SELECT COUNT(*) FROM referral_awards WHERE service_operation_id IS NOT NULL")=='0'
             sql("""CREATE TABLE fixture_followup(id INT AUTO_INCREMENT PRIMARY KEY,intent_id BIGINT UNSIGNED NOT NULL,
-                recipient VARCHAR(128),text TEXT,mode VARCHAR(20)) ENGINE=InnoDB""")
+                recipient VARCHAR(128),text TEXT,mode VARCHAR(20),keys_json TEXT) ENGINE=InnoDB""")
             sql("""CREATE TABLE fixture_telegram (
                 id INT AUTO_INCREMENT PRIMARY KEY, intent_id BIGINT UNSIGNED NOT NULL,
                 user_id BIGINT NOT NULL, part_no INT NOT NULL,kind VARCHAR(12), qr TEXT, caption TEXT, keys_json TEXT, mode VARCHAR(12)) ENGINE=InnoDB""")
@@ -1166,8 +1170,13 @@ DELIMITER ;
                     assert php(mode,'followup',id=report_id)=='acknowledged'
                     assert php(mode,'followup',id=report_id)=='acknowledged'
                     assert sql(f"SELECT COUNT(*) FROM fixture_followup WHERE intent_id={report_id}")=='1'
+                    did=int(sql(f"SELECT id FROM payment_delivery_intents WHERE service_operation_id={eid}"))
+                    assert php(mode,'deliver',id=did)=='acknowledged'
+                    wire=sql(f"SELECT caption,keys_json,mode FROM fixture_telegram WHERE intent_id={did}").split('	')
+                    assert len(wire)==3 and wire[2]=='NULL' and json.loads(wire[1])['inline_keyboard'][0][0]['callback_data']=='mainMenu',wire
+                    assert sql(f"SELECT COUNT(*) FROM payment_followup_intents WHERE service_operation_id={eid} AND stage='service_delivered'")=='0'
                     assert finance()==before and len(requests)==n
-                    cases.append(mode+'_hosted_'+kind.lower()+'_original_report')
+                    cases.append(mode+'_hosted_'+kind.lower()+'_original_report_and_customer_menu')
                 mid=edit(mode,'manual-addon',order,'ADD_TIME',days=2)
                 ref=mode+'-manual-addon'
                 sql(f"INSERT INTO pays(hash_id,user_id,type,price,request_date,state) VALUES ('{ref}',1001,'INCREASE_DAY',100,UNIX_TIMESTAMP(),'pending')")
@@ -1197,6 +1206,12 @@ DELIMITER ;
                 assert sql(f"SELECT COUNT(*) FROM fixture_followup WHERE intent_id={rid} AND mode='edit:222'")=='1'
                 assert finance()==before and len(requests)==n
                 cases.append(mode+'_manual_service_completion_rollback_and_exact_receipt_edit')
+                did=int(sql(f"SELECT id FROM payment_delivery_intents WHERE service_operation_id={mid}"))
+                assert php(mode,'deliver',id=did)=='acknowledged'
+                wire=sql(f"SELECT caption,mode FROM fixture_telegram WHERE intent_id={did}")
+                assert '<code>'+sql(f"SELECT remark FROM orders_list WHERE id={order}")+'</code>' in wire and wire.endswith('	HTML'),wire
+                assert finance()==before and len(requests)==n
+                cases.append(mode+'_manual_edit_original_named_customer_copy')
                 # Real multi-message BUY, not a fabricated packet. Long
                 # backup aliases force the existing Telegram HTML splitter.
                 aliases=','.join(f'https://backup{i}.fixture.invalid/'+('a'*1000) for i in range(6))
@@ -1302,6 +1317,106 @@ DELIMITER ;
                 assert part_states(did)==['acknowledged','unknown'] and wire_counts(did)=={1:1,2:1}
                 assert finance()==before and len(requests)==n
                 cases.append(mode+'_part_ack_sql_rollback_never_auto_replays')
+                # Human approval of a real multi-order purchase. The
+                # original operator may differ from both owner and worker.
+                menu_state=dict(agencyState='on',sellState='off',testAccount='on',searchState='off',
+                    helpChannel='@fixture_help')
+                sql("UPDATE users SET isAdmin=1,is_agent=1,freetrial='not_used' WHERE userid=9002")
+                sql("INSERT INTO setting(type,value) VALUES ('ADMIN_ROLE_9002','operator')")
+                op=issue(mode,'manual-delivered-bulk',2)
+                ref=mode+'-manual-delivered-bulk'
+                sql(f"INSERT INTO pays(hash_id,user_id,type,price,request_date,state,agent_count) VALUES ('{ref}',1001,'BUY_SUB',100,UNIX_TIMESTAMP(),'pending',2)")
+                pid=int(sql(f"SELECT id FROM pays WHERE hash_id='{ref}'"))
+                assert php(mode,'manual_receipt',pay=pid,id=op,actor=9002)['funding']=='funded'
+                step(mode,op,'progressed');step(mode,op,'applied');step(mode,op,'progressed')
+                before=finance();n=posts()
+                sql("""DELIMITER //
+CREATE TRIGGER fixture_manual_delivery_notice_fail BEFORE INSERT ON payment_followup_intents FOR EACH ROW
+                    BEGIN IF NEW.stage='service_delivered' THEN SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='fixture delivered report rollback'; END IF; END//
+DELIMITER ;
+""")
+                try:
+                    step(mode,op,'pending')
+                    assert sql(f"SELECT COUNT(*) FROM payment_followup_intents WHERE service_operation_id={op}")=='0'
+                    assert sql(f"SELECT COUNT(*) FROM payment_delivery_intents WHERE service_operation_id={op}")=='1'
+                finally:sql('DROP TRIGGER fixture_manual_delivery_notice_fail')
+                retry(op)
+                assert php(mode,'step',id=op,menu_state=menu_state)['status']=='completed'
+                assert finance()==before and posts()==n
+                notices=dict((role,int(rid)) for role,rid in (row.split('	') for row in sql(
+                    f"SELECT role,id FROM payment_followup_intents WHERE service_operation_id={op} AND stage='service_delivered'").splitlines()))
+                assert set(notices)=={'operator','purchase_owner','purchase_channel'},notices
+                operator=notices['operator']
+                edit_id=int(sql(f"SELECT id FROM payment_followup_intents WHERE service_operation_id={op} AND stage='service_completed' AND role='receipt_primary'"))
+                dids=list(map(int,sql(f"SELECT id FROM payment_delivery_intents WHERE service_operation_id={op} ORDER BY ordinal").splitlines()))
+                assert len(dids)==2
+                before=finance();n=len(requests)
+                # Awaiting delivery must not enter the bounded due queue or
+                # prevent the independent terminal receipt edit.
+                sql("UPDATE payment_followup_intents SET next_attempt_at=DATE_ADD(NOW(6),INTERVAL 1 DAY) WHERE state='pending'")
+                sql(f"UPDATE payment_followup_intents SET next_attempt_at=NULL,updated_at=DATE_SUB(NOW(),INTERVAL 4 MINUTE) WHERE service_operation_id={op} AND stage IN ('service_delivered','service_completed')")
+                assert php(mode,'followup',id=operator)=='not_ready'
+                assert php(mode,'maintain_followups',limit=1)=={str(edit_id):'acknowledged'}
+                assert php(mode,'maintain_followups',limit=1)==[]
+                assert sql(f"SELECT SUM(attempt_count) FROM payment_followup_intents WHERE service_operation_id={op} AND stage='service_delivered'")=='0'
+                assert php(mode,'deliver',id=dids[0])=='acknowledged'
+                assert php(mode,'deliver',id=dids[1],responses={2:None})=='unknown'
+                assert php(mode,'followup',id=operator)=='not_ready'
+                assert php(mode,'maintain_followups',limit=1)==[]
+                # Neither a forged parent ACK nor a forged child projection
+                # can replace the original per-message attempt evidence.
+                sql(f"UPDATE payment_delivery_intents SET state='acknowledged',acknowledged_at=NOW(),last_result='acknowledged' WHERE id={dids[1]}")
+                assert php(mode,'followup',id=operator)=='unavailable'
+                sql(f"UPDATE payment_delivery_parts SET state='acknowledged' WHERE intent_id={dids[1]} AND part_no=2")
+                assert php(mode,'followup',id=operator)=='unavailable'
+                sql(f"UPDATE payment_delivery_parts SET state='unknown' WHERE intent_id={dids[1]} AND part_no=2; UPDATE payment_delivery_intents SET state='unknown',acknowledged_at=NULL,last_result='unknown' WHERE id={dids[1]}")
+                token=php(mode,'preview_delivery',id=dids[1],part=2,actor=9001)
+                assert php(mode,'deliver',id=dids[1],part=2,actor=9001,confirmation=token)=='acknowledged'
+                assert wire_counts(dids[1])=={1:1,2:2}
+                # Recipient remains the ORIGINAL approving operator, and
+                # changing role/channel does not redirect sealed reports.
+                sql("UPDATE users SET isAdmin=0,is_agent=0 WHERE userid=9002")
+                assert php(mode,'followup',id=operator)=='unavailable'
+                assert php(mode,'followup',id=notices['purchase_channel'],menu_state={'rewardChannel':'@different_fixture'})=='unavailable'
+                sql("UPDATE users SET isAdmin=1 WHERE userid=9002")
+                with ThreadPoolExecutor(max_workers=3) as ex:
+                    results=list(ex.map(lambda _:php(mode,'followup',id=operator),range(3)))
+                assert 'acknowledged' in results and set(results)<={'acknowledged','busy'},results
+                wire=sql(f"SELECT recipient,keys_json,mode FROM fixture_followup WHERE intent_id={operator}").split('	')
+                assert wire[0]=='9002' and wire[2]=='NULL',wire
+                callbacks=[b.get('callback_data') for row in json.loads(wire[1])['inline_keyboard'] for b in row]
+                assert {'agencySettings','agentOneBuy','agentConfigsList','managePanel','searchUsersConfig'}<=set(callbacks),callbacks
+                assert 'mySubscriptions' not in callbacks and 'inviteFriends' not in callbacks,callbacks
+                text=sql(f"SELECT text FROM fixture_followup WHERE intent_id={operator}")
+                for original in rows(op):assert original.split('	')[2] in text
+                assert ref in text
+                out=php(mode,'maintain_followups',limit=4)
+                assert out=={str(notices['purchase_owner']):'acknowledged',str(notices['purchase_channel']):'acknowledged'},out
+                assert php(mode,'followup',id=operator)=='acknowledged'
+                assert sql(f"SELECT COUNT(*) FROM fixture_followup WHERE intent_id IN ({','.join(map(str,notices.values()))})")=='3'
+                assert sql(f"SELECT COUNT(*) FROM fixture_followup WHERE intent_id IN ({notices['purchase_owner']},{notices['purchase_channel']}) AND keys_json IS NULL")=='2'
+                assert finance()==before and len(requests)==n
+                cases.append(mode+'_manual_bulk_delivered_requires_all_real_parts_actor_context_and_fair_queue')
+                # Renewal operator copy claims local renewal, not Telegram
+                # delivery. It must remain independent of the customer ACK.
+                ord_id=int(sql(f"SELECT order_id FROM payment_delivery_intents WHERE id={dids[0]}"))
+                eid=edit(mode,'manual-renew-notice',ord_id,'RENEW',days=30,volume=2)
+                ref=mode+'-manual-renew-notice'
+                sql(f"INSERT INTO pays(hash_id,user_id,type,price,request_date,state) VALUES ('{ref}',1001,'RENEW_SCONFIG',100,UNIX_TIMESTAMP(),'pending')")
+                pid=int(sql(f"SELECT id FROM pays WHERE hash_id='{ref}'"))
+                assert php(mode,'manual_receipt',pay=pid,id=eid,actor=9002)['funding']=='funded'
+                for stage in ['progressed','progressed','applied','completed']:step(mode,eid,stage)
+                did=int(sql(f"SELECT id FROM payment_delivery_intents WHERE service_operation_id={eid}"))
+                rid=int(sql(f"SELECT id FROM payment_followup_intents WHERE service_operation_id={eid} AND stage='service_completed' AND role='operator'"))
+                before=finance();n=len(requests)
+                assert php(mode,'followup',id=rid)=='acknowledged'
+                assert sql(f"SELECT state FROM payment_delivery_intents WHERE id={did}")=='pending'
+                assert php(mode,'deliver',id=did)=='acknowledged'
+                assert sql(f"SELECT mode FROM fixture_telegram WHERE intent_id={did}")=='NULL'
+                assert sql(f"SELECT COUNT(*) FROM fixture_followup WHERE intent_id={rid} AND recipient='9002'")=='1'
+                assert finance()==before and len(requests)==n
+                cases.append(mode+'_manual_renewal_operator_independent_of_delivery_ack')
+                sql("UPDATE users SET isAdmin=0,is_agent=0,freetrial=NULL WHERE userid=9002; DELETE FROM setting WHERE type='ADMIN_ROLE_9002'")
                 assert not faults and not errors,(faults,errors)
         finally:
             release.set();server.shutdown();server.server_close();thread.join(5)

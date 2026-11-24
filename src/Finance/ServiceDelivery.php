@@ -111,7 +111,8 @@ function achbotServiceEditDeliveryBindingLocked(mysqli $db,array $op,array $quot
 function achbotServiceTextPacketValid(array $packet,int $owner): bool {
     return ($packet['kind']??null)==='text' && ($packet['uid']??null)===$owner &&
         is_string($packet['text']??null) && trim($packet['text'])!=='' &&
-        in_array($packet['mode']??null,['HTML','plain'],true);
+        in_array($packet['mode']??null,['HTML','plain'],true) &&
+        (($packet['keys']??null)===null || is_string($packet['keys']));
 }
 function achbotServiceEditDeliveryInsertLocked(mysqli $db,array $op,array $quote,array $m,array $packet): void {
     $b=achbotServiceEditDeliveryBindingLocked($db,$op,$quote,$m);
@@ -136,15 +137,47 @@ function achbotServiceDeliveryInsertBindingLocked(mysqli $db,array $b,array $pac
     achbotDeliveryPartsInsertLocked($db,$id,$parts);
 }
 
-/** Validate the committed source and the original sealed payload. No remote
- * request, new money, re-rendering or inferred service result. */
+/** Shared original completion evidence for historical reports and actual
+ * delivery. No mutable order, provider or delivery ACK is required here. */
+function achbotServiceDeliveryOriginalBody(array $op,array $quote,array $d,int $ordinal): array {
+    $id=(int)$op['id'];$uid=(int)$op['userid'];$q=$quote['request'];
+    $buy=$op['kind']==='BUY';$effect=$d['effect_id']===null?null:(int)$d['effect_id'];
+    $order=(int)$d['order_id'];
+    if (!in_array($op['stage'],['applied','completed'],true) ||
+        (int)$d['service_operation_id']!==$id || $ordinal<1 ||
+        $ordinal>($buy?$q['quantity']:1) || (int)$d['ordinal']!==$ordinal ||
+        (int)$d['user_id']!==$uid || (int)$d['server_id']!==$q['server_id'] || $order<=0 ||
+        ($buy?($effect===null || $effect<=0):($effect!==null || $order!==$q['order_id'])) ||
+        $d['pay_row_id']!==null || $d['attempt_id']!==null ||
+        $d['pay_type']!==null || $d['pay_fingerprint']!==null ||
+        !hash_equals($d['payload_sha256'],hash('sha256',$d['sealed_payload'])))
+        throw new RuntimeException('service_delivery_original_line_conflict');
+    $body=achbotPaymentEvidenceUnprotect(achbotServiceDeliveryPurpose($id,$ordinal,$effect??0,$order),
+        $d['sealed_payload']);
+    $b=$body['binding']??null;$packet=$body['packet']??null;
+    if (!is_array($b) || !is_array($packet) ||
+        ($b['v']??null)!==2 || ($b['service_id']??null)!==$id ||
+        ($b['quote_sha256']??null)!==$op['quote_sha256'] ||
+        ($b['ordinal']??null)!==$ordinal || ($b['user_id']??null)!==$uid ||
+        !array_key_exists('effect_id',$b) || $b['effect_id']!==$effect ||
+        ($b['order_id']??null)!==$order || ($b['server_id']??null)!==$q['server_id'] ||
+        !array_key_exists('native_operation',$b) || $b['native_operation']!==$d['native_operation'] ||
+        !array_key_exists('native_target_key',$b) || $b['native_target_key']!==$d['native_target_key'] ||
+        !hash_equals($d['source_digest'],hash('sha256',achbotServiceJson($b))) ||
+        !($buy?achbotServiceBuyPacketValid($packet,$uid):achbotServiceTextPacketValid($packet,$uid)))
+        throw new RuntimeException('service_delivery_original_binding_conflict');
+    if ($buy && (!is_string($b['remark']??null) || $b['remark']==='' ||
+        $b['native_target_key']!==$quote['target']['physical']))
+        throw new RuntimeException('service_delivery_original_account_conflict');
+    return $body;
+}
+
+/** Delivery additionally requires the current exact credential owner or
+ * original verified edit/audit. Historical financial notices need not. */
 function achbotServiceDeliveryValidateLocked(mysqli $db,array $op,array $quote,array $d): array {
     require_once __DIR__.'/../Purchase/OrderWrites.php';
-    if ($op['stage']!=='completed' || (int)$d['service_operation_id']!==(int)$op['id'] ||
-        (int)$d['user_id']!==(int)$op['userid'] || $d['pay_row_id']!==null ||
-        $d['attempt_id']!==null || $d['pay_type']!==null || $d['pay_fingerprint']!==null ||
-        !hash_equals($d['payload_sha256'],hash('sha256',$d['sealed_payload'])))
-        throw new RuntimeException('service_delivery_source_unavailable');
+    if ($op['stage']!=='completed') throw new RuntimeException('service_delivery_source_unavailable');
+    $body=achbotServiceDeliveryOriginalBody($op,$quote,$d,(int)$d['ordinal']);
     if ($op['kind']==='BUY') {
         $e=achbotProviderRow($db,'SELECT * FROM service_effects WHERE id=? FOR UPDATE','i',[(int)$d['effect_id']]);
         $o=achbotProviderRow($db,'SELECT * FROM orders_list WHERE id=? FOR UPDATE','i',[(int)$d['order_id']]);
@@ -155,20 +188,24 @@ function achbotServiceDeliveryValidateLocked(mysqli $db,array $op,array $quote,a
         if (!$m || $d['effect_id']!==null) throw new RuntimeException('service_delivery_edit_missing');
         $b=achbotServiceEditDeliveryBindingLocked($db,$op,$quote,$m);
     }
-    if ($b['ordinal']!==(int)$d['ordinal'] || $b['server_id']!==(int)$d['server_id'] ||
-        $b['order_id']!==(int)$d['order_id'] ||
-        $b['native_operation']!==$d['native_operation'] || $b['native_target_key']!==$d['native_target_key'] ||
-        !hash_equals($d['source_digest'],hash('sha256',achbotServiceJson($b))))
+    if ($body['binding']!==$b || !is_array($body['parts']??null))
         throw new RuntimeException('service_delivery_source_conflict');
-    $body=achbotPaymentEvidenceUnprotect(achbotServiceDeliveryPurpose(
-        $b['service_id'],$b['ordinal'],$b['effect_id']??0,$b['order_id']),$d['sealed_payload']);
-    if (!is_array($body) || ($body['binding']??null)!==$b || !is_array($body['packet']??null) ||
-        !($op['kind']==='BUY'?achbotServiceBuyPacketValid($body['packet'],$b['user_id']):
-            achbotServiceTextPacketValid($body['packet'],$b['user_id'])))
-        throw new RuntimeException('service_delivery_packet_invalid');
-    if (!is_array($body['parts']??null))
-        throw new RuntimeException('service_delivery_parts_missing');
     return $body['parts'];
+}
+
+/** A parent projection alone cannot certify a delivered report. Only
+ * acknowledged original 032 parts with matching latest attempt history
+ * prove historical Telegram acceptance. No current account read required. */
+function achbotServiceDeliveryAcknowledgedLocked(mysqli $db,array $d,array $body): bool {
+    if ($d['state']!=='acknowledged' || !isset($d['part_count'])) return false;
+    if ($d['acknowledged_at']===null || $d['dispatch_token']!==null ||
+        $d['last_result']!=='acknowledged' || !is_array($body['parts']??null))
+        throw new RuntimeException('service_delivery_ack_projection_conflict');
+    foreach (achbotDeliveryPartsValidateLocked($db,$d,$body['parts']) as $part) {
+        if ($part['state']!=='acknowledged')
+            throw new RuntimeException('service_delivery_ack_part_conflict');
+    }
+    return true;
 }
 
 /** One original session lease per delivery, plus the existing physical

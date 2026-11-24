@@ -32,6 +32,7 @@ require_once __DIR__ . '/src/Finance/GatewayRuleAdmin.php';
 require_once __DIR__ . '/src/Finance/PaymentKeyAdmin.php';
 require_once __DIR__.'/src/Finance/ApiPayments.php';
 require_once __DIR__.'/src/Admin/Access.php';
+require_once __DIR__.'/src/Presentation/MainMenu.php';
 
 function tgRetryAfter($res){
     require_once __DIR__ . '/src/Telegram/Response.php';
@@ -390,101 +391,8 @@ $cancelKey=json_encode(['keyboard'=>[
 $removeKeyboard = json_encode(['remove_keyboard'=>true]);
 
 function getMainKeys(){
-    global $connection, $userInfo, $from_id, $admin, $botState;    $mainKeys = array();
-    $temp = array();
-    $isAdminMenu = ($from_id == $admin || $userInfo['isAdmin'] == true);
-    $cooperationUrl = \AchBot\Presentation\Text\configuredDestination($botState,'cooperationUrl',true);
-    $helpChannelUrl = \AchBot\Presentation\Text\configuredDestination($botState,'helpChannel');
-
-    if(($botState['agencyState'] ?? 'off') == "on" && $userInfo['is_agent'] == 1){
-		$mainKeys = array_merge($mainKeys, [
-			[['text'=>\achbotMessage('legacy_buttons.agency_setting'),'callback_data'=>"agencySettings"]],
-			[['text'=>\achbotMessage('legacy_buttons.sharj'),'callback_data'=>"increaseMyWallet"]],
-		]);
-
-		if ((($botState['sellState'] ?? 'off') ?? 'off') == "on" || $from_id == $admin || !empty($userInfo['isAdmin'])) {
-			$mainKeys[] = [
-				['text'=>\achbotMessage('legacy_buttons.agent_one_buy'),'callback_data'=>"agentOneBuy"],
-				['text'=>\achbotMessage('legacy_buttons.agent_much_buy'),'callback_data'=>"agentMuchBuy"]
-			];
-		}
-	}else{
-        $mainKeys = array_merge($mainKeys,[
-            ((($botState['agencyState'] ?? 'off') == "on" && $userInfo['is_agent'] == 0)?[
-                ['text'=>\achbotMessage('legacy_buttons.request_agency'),'callback_data'=>"requestAgency"]
-            ]: []),
-            ((($botState['sellState'] ?? 'off') == "on" || $from_id == $admin || $userInfo['isAdmin'] == true)?
-                [['text'=>\achbotMessage('legacy_buttons.sharj'),'callback_data'=>"increaseMyWallet"],['text'=>\achbotMessage('legacy_buttons.buy_subscriptions'),'callback_data'=>"buySubscription"]]
-                :
-                [['text'=>\achbotMessage('legacy_buttons.sharj'),'callback_data'=>"increaseMyWallet"]]
-            )
-        ]);
-    }
-
-    $mainKeys = array_merge($mainKeys, [
-        // Owner-approved conditional row: free trial precedes account/view
-        // whenever the unchanged eligibility gate makes it visible.
-        ((($botState['testAccount'] ?? 'off') == "on" && ($from_id == $admin || $userInfo['freetrial'] != 'used')) ?
-            [['text'=>\achbotMessage('legacy_buttons.test_account'),'callback_data'=>"getTestAccount"]] : []),
-        [
-            ['text'=>\achbotMessage('legacy_buttons.my_info'),'callback_data'=>"myInfo"],
-            ['text'=>\achbotMessage('legacy_buttons.my_subscriptions'),'callback_data'=>
-                $userInfo['is_agent']==1?'agentConfigsList':'mySubscriptions']
-        ],
-        (!$isAdminMenu ? [
-            ['text'=>\achbotMessage('legacy_buttons.invite_friends'),'callback_data'=>"inviteFriends"],
-            ['text'=>\achbotMessage('legacy_buttons.application_links'),'callback_data'=>"reciveApplications"]
-        ] : []),
-        ((($botState['sharedExistence'] ?? 'off') == "on" && ($botState['individualExistence'] ?? 'off') == "on")?
-            [['text'=>\achbotMessage('legacy_buttons.shared_existence'),'callback_data'=>"availableServers"],['text'=>\achbotMessage('legacy_buttons.individual_existence'),'callback_data'=>"availableServers2"]] : []
-        ),
-        ((($botState['sharedExistence'] ?? 'off') == "on" && ($botState['individualExistence'] ?? 'off') != "on")?
-            [['text'=>\achbotMessage('legacy_buttons.shared_existence'),'callback_data'=>"availableServers"]] : []
-        ),
-        ((($botState['sharedExistence'] ?? 'off') != "on" && ($botState['individualExistence'] ?? 'off') == "on")?
-            [['text'=>\achbotMessage('legacy_buttons.individual_existence'),'callback_data'=>"availableServers2"]] : []
-        ),
-        // Keep the optional customer import action above the configured
-        // cooperation/support URL; the staff search pair stays on one row.
-        ((($botState['searchState'] ?? 'off')=="on" || $isAdminMenu)?
-            array_merge(
-                [['text'=>\achbotMessage('legacy_buttons.search_config'),'callback_data'=>"showUUIDLeft"]],
-                ($isAdminMenu ? [[
-                    'text'=>\achbotMessage('admin_settings.config.get_main_keys.button.11b0188fcb'),
-                    'callback_data'=>"searchUsersConfig"
-                ]] : [])
-            ) : []
-        ),
-		(($from_id != $admin && $userInfo['isAdmin'] != true && $cooperationUrl!=='') ?
-			[['text' => \achbotMessage('admin_settings.config.get_main_keys.button.b7d6aa7173'), 'url' => $cooperationUrl]] : []
-		),
-    ]);
-
-    $stmt = $connection->prepare("SELECT * FROM `setting` WHERE `type` LIKE '%MAIN_BUTTONS%'");
-    $stmt->execute();
-    $buttons = $stmt->get_result();
-    $stmt->close();
-    if($buttons->num_rows > 0){
-        while($row = $buttons->fetch_assoc()){
-            $rowId = $row['id'];
-            $title = str_replace("MAIN_BUTTONS","",$row['type']);
-            
-            $temp[] = ['text'=>$title,'callback_data'=>"showMainButtonAns" . $rowId];
-            if(count($temp) >= 2){
-                array_push($mainKeys, $temp);
-                $temp = array();
-            }
-        }
-    }
-    array_push($mainKeys, $temp);
-
-    if ($isAdminMenu) {
-        array_push($mainKeys, [['text' => \achbotMessage('admin_settings.config.get_main_keys.button.d9c51cced4'), 'callback_data' => "managePanel"]]);
-    }
-
-    if ($helpChannelUrl!=='') $mainKeys[]=[['text'=>achbotMessage('instance_content.help_button'),'url'=>$helpChannelUrl]];
-
-    return json_encode(['inline_keyboard' => $mainKeys]);
+    global $connection,$userInfo,$from_id,$admin,$botState;
+    return achbotMainMenuForContext($connection,$userInfo,$from_id,$admin,$botState);
 }
 
 function getAgentKeys(){

@@ -129,6 +129,15 @@ per-check durations** are measured. Review its result before adjusting the
 representative test roster, concurrency or MariaDB setup. CI optimizations
 must not silently turn an incomplete smoke check into a full acceptance claim.
 
+The full Wallet-first draft run
+[#45375429587](https://github.com/ach1992/bot-refactor/actions/runs/45375429587)
+recorded 63/63 passing functional checks in 464.15 seconds. The former
+8-minute job deadline cancelled the job immediately after the functional
+result, before runtime packaging and artifact verification. This is not
+a successful required CI status. The 12-minute job ceiling leaves room
+for setup, the full unchanged test roster, packaging, and runner variation.
+It does not increase individual test deadlines or reduce coverage.
+
 ## Local use
 
 From a clean, exact source checkout with PHP 8.5 and MariaDB fixture

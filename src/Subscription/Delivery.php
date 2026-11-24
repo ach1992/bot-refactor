@@ -149,7 +149,7 @@ if (!function_exists('buildLinksAndSendQr')) {
  * No QR for an empty link; the original keyboard belongs to the last text. */
 function achbotSubscriptionDeliveryParts(array $packet): array {
     if ($packet['kind']==='text') {
-        return [['kind'=>'text','text'=>$packet['text'],'keys'=>null,
+        return [['kind'=>'text','text'=>$packet['text'],'keys'=>$packet['keys']??null,
             'mode'=>$packet['mode']==='plain'?null:'HTML']];
     }
     if ($packet['kind']!=='qr') throw new InvalidArgumentException('delivery_packet_kind');

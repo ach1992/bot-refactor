@@ -244,6 +244,15 @@ try {
         } catch (Throwable $error) {
             error_log('achbot_pending_delivery_maintenance_deferred class='.get_class($error));
         }
+        // The original-source service/credit reports have their own attempt
+        // journal. A delivery-dependent notice checks all 032 ACKs; other
+        // reports remain independent of customer delivery.
+        try {
+            require_once __DIR__.'/../src/Finance/FollowupOutbox.php';
+            achbotFollowupMaintainOriginalPending($connection,4,8.0);
+        } catch (Throwable $error) {
+            error_log('achbot_original_followup_maintenance_deferred class='.get_class($error));
+        }
         // This ordinary admin/report fanout has its own persisted, one-time
         // claim. It is independent of Telegram customer ACK and does not
         // extend any financial transaction across a network request.

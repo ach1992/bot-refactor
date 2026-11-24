@@ -4,6 +4,7 @@ if (realpath($_SERVER['SCRIPT_FILENAME']??'')===__FILE__) {http_response_code(40
 require_once __DIR__.'/FollowupOutbox.php';
 require_once __DIR__.'/ServiceDelivery.php';
 require_once __DIR__.'/ReceiptReports.php';
+require_once __DIR__.'/../Presentation/MainMenu.php';
 require_once __DIR__.'/../Purchase/BulkReport.php';
 require_once __DIR__.'/../Services/EditFinalization.php';
 require_once __DIR__.'/../../messages/loader.php';
@@ -94,7 +95,7 @@ function achbotServiceAutoRenewStageLowWalletLocked(mysqli $db,array $op,array $
  * order/audit finality. Their immutable bindings prove the original result
  * even after a legitimate later plan change, deletion or delivery attempt.
  * This report never exposes config/link/token bytes or implies Telegram ACK. */
-function achbotServiceCompletionReportSourceLocked(mysqli $db,array $op,array $quote): array {
+function achbotServiceCompletionReportSourceLocked(mysqli $db,array $op,array $quote,bool $verifyDelivery=false): array {
     $id=(int)$op['id'];$uid=(int)$op['userid'];$q=$quote['request'];
     $buy=$op['kind']==='BUY';$count=$buy?$q['quantity']:1;
     if (!in_array($op['stage'],['applied','completed'],true) ||
@@ -105,36 +106,14 @@ function achbotServiceCompletionReportSourceLocked(mysqli $db,array $op,array $q
         WHERE service_operation_id=? ORDER BY ordinal FOR UPDATE','i',[$id]);
     $rows=$s->get_result()->fetch_all(MYSQLI_ASSOC);$s->close();
     if (count($rows)!==$count) throw new RuntimeException('service_report_original_lines_missing');
-    $lines=[];$accounts=[];
+    $lines=[];$accounts=[];$delivered=$verifyDelivery;
     foreach ($rows as $i=>$d) {
-        $ordinal=$i+1;$effect=$d['effect_id']===null?null:(int)$d['effect_id'];$order=(int)$d['order_id'];
-        if ((int)$d['ordinal']!==$ordinal || (int)$d['user_id']!==$uid ||
-            (int)$d['server_id']!==$q['server_id'] || $order<=0 ||
-            ($buy?($effect===null || $effect<=0):($effect!==null || $order!==$q['order_id'])) ||
-            $d['pay_row_id']!==null || $d['attempt_id']!==null ||
-            $d['pay_type']!==null || $d['pay_fingerprint']!==null ||
-            !hash_equals($d['payload_sha256'],hash('sha256',$d['sealed_payload'])))
-            throw new RuntimeException('service_report_original_line_conflict');
-        $body=achbotPaymentEvidenceUnprotect(achbotServiceDeliveryPurpose(
-            $id,$ordinal,$effect??0,$order),$d['sealed_payload']);
-        $b=$body['binding']??null;$packet=$body['packet']??null;
-        if (!is_array($b) || !is_array($packet) ||
-            ($b['v']??null)!==2 || ($b['service_id']??null)!==$id ||
-            ($b['quote_sha256']??null)!==$op['quote_sha256'] ||
-            ($b['ordinal']??null)!==$ordinal || ($b['user_id']??null)!==$uid ||
-            !array_key_exists('effect_id',$b) || $b['effect_id']!==$effect ||
-            ($b['order_id']??null)!==$order || ($b['server_id']??null)!==$q['server_id'] ||
-            !array_key_exists('native_operation',$b) || $b['native_operation']!==$d['native_operation'] ||
-            !array_key_exists('native_target_key',$b) || $b['native_target_key']!==$d['native_target_key'] ||
-            !hash_equals($d['source_digest'],hash('sha256',achbotServiceJson($b))) ||
-            !($buy?achbotServiceBuyPacketValid($packet,$uid):achbotServiceTextPacketValid($packet,$uid)))
-            throw new RuntimeException('service_report_original_binding_conflict');
-        if ($buy) {
-            if (!is_string($b['remark']??null) || $b['remark']==='' ||
-                $b['native_target_key']!==$quote['target']['physical'])
-                throw new RuntimeException('service_report_original_account_conflict');
-            $accounts[]=['ordinal'=>$ordinal,'name'=>$b['remark'],'order_id'=>$order];
-        }
+        $ordinal=$i+1;
+        $body=achbotServiceDeliveryOriginalBody($op,$quote,$d,$ordinal);
+        if ($buy) $accounts[]=['ordinal'=>$ordinal,'name'=>$body['binding']['remark'],
+            'order_id'=>(int)$d['order_id']];
+        if ($verifyDelivery && !achbotServiceDeliveryAcknowledgedLocked($db,$d,$body))
+            $delivered=false;
         // Digests, never the confidential customer packet itself.
         $lines[]=[(int)$d['id'],$d['source_digest'],$d['payload_sha256']];
     }
@@ -142,7 +121,7 @@ function achbotServiceCompletionReportSourceLocked(mysqli $db,array $op,array $q
         'service_id'=>$id,'userid'=>$uid,'owner_row'=>(int)$op['user_row_id'],
         'quote'=>$op['quote_sha256'],'debit'=>$op['debit_entry_id']===null?null:(int)$op['debit_entry_id'],
         'receipt'=>$receipt===null?null:$receipt['fingerprint'],'lines'=>$lines]));
-    return ['fingerprint'=>$fingerprint,'receipt'=>$receipt,'accounts'=>$accounts];
+    return ['fingerprint'=>$fingerprint,'receipt'=>$receipt,'accounts'=>$accounts,'delivered'=>$delivered];
 }
 
 /** Existing Wallet/hosted reports from one source-neutral completion. The
@@ -164,6 +143,7 @@ function achbotServiceStageCompletionReportsLocked(mysqli $db,array $op,array $q
             default=>$remark
         };
         achbotReceiptReportStageEditsLocked($db,$receipt,null,$id,$stage,$source['fingerprint'],$subject);
+        achbotServiceStageManualNoticesLocked($db,$op,$quote,$source,$remark);
         return;
     }
     $u=achbotProviderRow($db,'SELECT name,username FROM users WHERE id=? AND userid=? FOR UPDATE',
@@ -216,15 +196,81 @@ function achbotServiceStageCompletionReportsLocked(mysqli $db,array $op,array $q
         ['text'=>$text,'keys'=>$keys,'mode'=>'HTML']);
 }
 
+/** The original human approval has its existing success notice. A BUY
+ * message that says "sent" is staged with local completion but cannot
+ * dispatch until every original customer message has acknowledged. A
+ * renewal message asserts completed service, not Telegram delivery. */
+function achbotServiceManualNoticeActor(array $source): ?int {
+    $receipt=$source['receipt'];
+    if ($receipt===null || $receipt['attempt']['wallet_credit_basis']!=='manual' ||
+        $receipt['attempt']['review_archived_at']!==null ||
+        achbotReceiptReportGateway($receipt['attempt'])!==null) return null;
+    $actor=$receipt['entry']['actor'];
+    return $actor>0?$actor:null;
+}
+function achbotServiceStageManualNoticesLocked(mysqli $db,array $op,array $quote,array $source,string $remark): void {
+    $actor=achbotServiceManualNoticeActor($source);$kind=$op['kind'];
+    if ($actor===null || !in_array($kind,['BUY','RENEW'],true)) return;
+    $q=$quote['request'];$id=(int)$op['id'];$owner=(int)($GLOBALS['admin']??0);
+    $hash=(string)$source['receipt']['pay']['hash_id'];
+    $stage=$kind==='BUY'?'service_delivered':'service_completed';
+    $notice=strtr(achbotMessage($kind==='BUY'?'legacy_messages.sent_config_to_user':
+        'legacy_messages.renewed_config_to_user'),[
+        'USERID'=>(string)$op['userid'],'REMARK'=>$remark,'VOLUME'=>(string)$q['volume'],
+        'DAYS'=>(string)$q['days'],'PRICE'=>(string)$q['price'],'HASHID'=>$hash]);
+    $bulk=$kind==='BUY' && $q['quantity']>1;
+    if ($bulk) $notice=achbotBulkReportAppend($notice,['requested'=>$q['quantity'],
+        'confirmed'=>count($source['accounts']),'complete'=>true,'accounts'=>$source['accounts'],
+        'reference'=>'#'.(int)$source['receipt']['pay']['id']]);
+    $keys=achbotMainMenuForActor($db,$actor,$owner,$GLOBALS['botState']??[]);
+    if ($keys===null) achbotDiagnosticEvent('achbot.delivery.actor_menu_unavailable',[
+        'service_operation_id'=>$id,'actor_id'=>$actor,'reason'=>'service_report_actor_profile_missing'],'warning');
+    $content=['text'=>$notice,'keys'=>$keys,'mode'=>null];
+    achbotFollowupStoreLocked($db,null,$id,$stage,'operator','send',(string)$actor,null,
+        $source['fingerprint'],$content);
+    if (!$bulk) return;
+    $content['keys']=null;
+    if ($owner!==$actor)
+        achbotFollowupStoreLocked($db,null,$id,$stage,'purchase_owner','send',(string)$owner,null,
+            $source['fingerprint'],$content);
+    $channel=(string)($GLOBALS['botState']['rewardChannel']??'');
+    if ($channel!=='' && $channel!==(string)$actor && $channel!==(string)$owner)
+        achbotFollowupStoreLocked($db,null,$id,$stage,'purchase_channel','send',$channel,null,
+            $source['fingerprint'],$content);
+}
+
+function achbotServiceManualNoticeAllowedLocked(mysqli $db,array $op,array $quote,array $source,array $r): bool {
+    $actor=achbotServiceManualNoticeActor($source);$owner=(int)($GLOBALS['admin']??0);
+    if ($actor===null || $owner<=0 || $r['kind']!=='send' || $r['message_id']!==null) return false;
+    $buy=$op['kind']==='BUY';$recipient=(string)$r['recipient'];
+    if ($r['stage']!==($buy?'service_delivered':'service_completed') ||
+        !in_array($op['kind'],['BUY','RENEW'],true)) return false;
+    if ($r['role']==='operator')
+        return $recipient===(string)$actor && achbotAdminCanLocked($db,$actor,$owner,'payments');
+    if (!$buy || $quote['request']['quantity']<=1) return false;
+    if ($r['role']==='purchase_owner') return $owner!==$actor && $recipient===(string)$owner;
+    if ($r['role']==='purchase_channel') {
+        $channel=(string)($GLOBALS['botState']['rewardChannel']??'');
+        return $channel!=='' && $recipient===$channel && $channel!==(string)$actor &&
+            $channel!==(string)$owner;
+    }
+    return false;
+}
+
 function achbotServiceReportValidateLocked(mysqli $db,array $op,array $quote,array $r): ?array {
     if ($r['pay_row_id']!==null || (int)$r['service_operation_id']!==(int)$op['id']) return null;
-    if ($r['stage']==='service_completed') {
+    if (in_array($r['stage'],['service_completed','service_delivered'],true)) {
         if ($op['stage']!=='completed' || $op['command_kind']==='automatic_renewal') return null;
-        $source=achbotServiceCompletionReportSourceLocked($db,$op,$quote);
+        $requiresAck=$r['stage']==='service_delivered';
+        $source=achbotServiceCompletionReportSourceLocked($db,$op,$quote,$requiresAck);
         $receipt=$source['receipt'];
         $manual=$receipt!==null && achbotReceiptReportGateway($receipt['attempt'])===null;
-        if ($manual?!achbotReceiptReportEditAllowed($db,$receipt,$r):
-            !achbotFollowupAdminReportAllowed($db,$r)) return null;
+        if (in_array($r['role'],['operator','purchase_owner','purchase_channel'],true)) {
+            if (!$manual || !achbotServiceManualNoticeAllowedLocked($db,$op,$quote,$source,$r)) return null;
+            if ($requiresAck && !$source['delivered'])
+                throw new RuntimeException('service_delivery_not_ready');
+        } elseif ($requiresAck || ($manual?!achbotReceiptReportEditAllowed($db,$receipt,$r):
+            !achbotFollowupAdminReportAllowed($db,$r))) return null;
         return achbotFollowupDecodePacket(null,$r,$source['fingerprint']);
     }
     if ($r['kind']!=='send' || $r['message_id']!==null) return null;

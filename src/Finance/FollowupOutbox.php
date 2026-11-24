@@ -376,6 +376,8 @@ function achbotFollowupDispatchOne(mysqli $db,int $id,int $actor=0,?string $conf
         $opened=false;
     } catch(Throwable $error) {
         if ($opened) try {$db->rollback();}catch(Throwable $ignored){}
+        if ($journaled && $error instanceof RuntimeException &&
+            $error->getMessage()==='service_delivery_not_ready') return 'not_ready';
         if ($journaled) {
             $reason=$error->getMessage();
             achbotDiagnosticEvent('achbot.delivery.followup_prepare_failed',[
@@ -583,20 +585,27 @@ function achbotFollowupStageManualPurchaseLocked(mysqli $db,array $pay,int $owne
 function achbotFollowupMaintainOriginalPending(mysqli $db,int $limit,float $budgetSeconds): array {
     if ($limit<=0 || !is_finite($budgetSeconds) || $budgetSeconds<=0)
         throw new InvalidArgumentException('followup_original_budget_invalid');
-    require_once __DIR__.'/../Panel/ProviderStorage.php';
+    require_once __DIR__.'/../Services/Ownership.php';
+    // The existing services Cron also runs before the Wallet-first cutover.
+    // With no 026 schema there cannot be any new original-source work.
+    if (!achbotServiceOperationsPresent($db)) return [];
     $deadline=hrtime(true)/1000000000+$budgetSeconds;
-    $s=achbotProviderStatement($db,"SELECT id FROM payment_followup_intents
-        WHERE (service_operation_id IS NOT NULL OR stage='wallet_credit') AND state IN ('pending','dispatching')
-          AND ((next_attempt_at IS NULL AND updated_at<=DATE_SUB(NOW(),INTERVAL 2 MINUTE))
-               OR next_attempt_at<=NOW(6))
-        ORDER BY COALESCE(next_attempt_at,updated_at),id LIMIT ?",'i',[$limit]);
+    $s=achbotProviderStatement($db,"SELECT f.id FROM payment_followup_intents f
+        WHERE (f.service_operation_id IS NOT NULL OR f.stage='wallet_credit')
+          AND f.state IN ('pending','dispatching')
+          AND ((f.next_attempt_at IS NULL AND f.updated_at<=DATE_SUB(NOW(),INTERVAL 2 MINUTE))
+               OR f.next_attempt_at<=NOW(6))
+          AND (f.state='dispatching' OR f.stage<>'service_delivered' OR NOT EXISTS (
+              SELECT 1 FROM payment_delivery_intents d WHERE d.service_operation_id=f.service_operation_id
+              AND (d.state<>'acknowledged' OR d.part_count IS NULL)))
+        ORDER BY COALESCE(f.next_attempt_at,f.updated_at),f.id LIMIT ?",'i',[$limit]);
     $rows=$s->get_result()->fetch_all(MYSQLI_ASSOC);$s->close();$out=[];
     foreach ($rows as $r) {
         if (hrtime(true)/1000000000>=$deadline) break;
         $id=(int)$r['id'];
         $state=achbotFollowupDispatchOne($db,$id);
         $out[$id]=$state;
-        if (!in_array($state,['unavailable','busy'],true)) continue;
+        if (!in_array($state,['unavailable','busy','not_ready'],true)) continue;
         try {
             // Defer an unavailable already-due retry behind healthy peers;
             // do not shorten or rewrite a newly committed Telegram wait.

@@ -1005,6 +1005,53 @@ delivery-dependent manual operator notices, outstanding payment-policy
 coverage, historical mapping/rehearsal, old runtime removal, and independent
 review remain separate acceptance gates.
 
+### Delivery-dependent human approval reports and original-source maintenance
+
+A manually funded BUY seals the existing operator purchase notice together
+with original service completion. A bulk purchase also seals the original
+Owner and configured channel copies where distinct. A delivery-dependent
+report cannot claim a Telegram send until every original account's sealed
+032 manifest and latest per-message attempt history proves acknowledged
+delivery. Parent or child state projections alone are insufficient. The
+original credit, completed service and recipient permission are revalidated
+under lock. No recipient is inferred from a later callback; revocation or
+channel changes do not redirect the sealed report. The receipt card update
+is independent of customer ACK, as is the manual RENEW success notice,
+whose wording asserts service completion rather than customer delivery.
+Timer/API approval continues to update receipt cards without adding
+manual-operator fanout. The supplementary legacy referred-purchase alert
+and remaining payment-policy parity are still cutover checklist items.
+
+The main menu is rendered by the existing shared layout with explicit
+recipient context. The original approver's persisted profile supplies the
+operator notice keyboard, rather than an unrelated webhook or Cron user.
+Hosted renew/time/volume customer notices reuse their original text,
+plain parse mode and mainMenu button. Manual/API notices retain the named
+subscription presentation, and original RENEW_SCONFIG/timer plain copy.
+Wallet and automatic-renewal copy is unchanged. Presentation is sealed
+from the actual funding receipt at verified local completion, not rebuilt
+from an unrelated later receipt or a current Native account.
+
+The existing services Cron source now invokes bounded original-source
+follow-up maintenance after customer delivery maintenance, with an
+independent exception boundary. Before 026 exists it has no new work.
+Delivery-dependent pending reports whose parent manifests are incomplete
+do not occupy the due batch; the complete proof is always rechecked before
+claim. Other reports can proceed even while a delivery is UNKNOWN. All
+effects use the existing 031 attempt history, lease, definite-rejection,
+429 and explicit redrive policies. No new schema or callback is introduced.
+
+Disposable real PHP 8.5/MariaDB and owned-loopback execution: 122/122
+scenarios (632 HTTP requests, 66 CREATE POSTs), including both strict and
+report-off MySQLi modes. The new cases exercise atomic rollback of the
+operator report, exact actor menu context, partial multi-order delivery,
+forged ACK projections, role/channel revocation, concurrent single claim,
+receipt-card progress, hosted navigation and manual renewal independent
+of customer delivery. Migrated account recovery 16/16 and exact menu
+parity 41/41 also pass. This is a source-level maintenance connection,
+not live execution, admission/callback cutover, or production deployment.
+Full payment/service route convergence and independent review remain open.
+
 ### Verified Native limitation of existing APIs, not an accepted retry contract
 
 `python3 tools/test_wallet_first_native_write_fence.py --run-disposable`

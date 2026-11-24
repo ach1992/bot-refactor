@@ -73,7 +73,11 @@ $source=file_get_contents($root.'/config.php');
 $start=strpos($source,'function getMainKeys(){');
 $end=strpos($source,'function getAgentKeys(){',$start);
 if ($start===false || $end===false) throw new RuntimeException('getMainKeys source missing');
-$current=substr($source,$start,$end-$start);
+$wrapper=substr($source,$start,$end-$start);
+$helper=file_get_contents($root.'/src/Presentation/MainMenu.php');
+$start=strpos($helper,'function achbotMainMenuForContext(');
+if ($start===false) throw new RuntimeException('main menu context source missing');
+$current=substr($helper,$start);
 // Mutations affect only the current function; the accepted Git baseline stays unchanged.
 foreach ([
     'mutate_callback'=>["'callback_data'=>\"myInfo\"","'callback_data'=>\"myInfoBROKEN\""],
@@ -86,7 +90,7 @@ foreach ([
         throw new RuntimeException('mutation_target_missing:'.$probe);
     $current=str_replace($replacement[0],$replacement[1],$current);
 }
-eval($current);
+eval($current);eval($wrapper);
 $prior=base64_decode($argv[3],true);
 if ($prior===false) throw new RuntimeException('missing_prior_source');
 eval($prior);

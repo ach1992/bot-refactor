@@ -255,7 +255,7 @@ function achbotPgServiceEditFinalizeApplyLocked(mysqli $db,array $op,array $quot
     if ($current!==$row) throw new RuntimeException('service_edit_finalization_stale');
     achbotPgServiceEditClaimMatches($op,$ctx,$row);
     $entitlement=achbotPgServiceEditVerified($op,$row);
-    achbotServiceEditCommitLocalLocked($db,$op,$quote,$row,$o,$entitlement['expire'],$result['packet']);
+    achbotServiceEditCommitLocalLocked($db,$op,$quote,$row,$o,$entitlement['expire']);
     // The temporary service marker is removed only in the same commit as
     // the original local order, audit, delivery and terminal operation.
     // Do not overwrite any original historical mutation snapshot.

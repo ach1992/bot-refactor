@@ -18,22 +18,51 @@ function achbotServiceMutationRow(mysqli $db,int $id,bool $lock=false): ?array {
     return achbotProviderRow($db,'SELECT * FROM service_mutations WHERE service_operation_id=?'.
         ($lock?' FOR UPDATE':''),'i',[$id]);
 }
-/** Local-only finalization. No GET, PUT, reset, or payment provider. */
+/** Local-only finalization has no external effect. The original receipt
+ * and exact customer presentation are read under the completion lock. */
 function achbotServiceEditFinalizePerform(mysqli $db,array $op,array $quote,array $row,array $presentation): array {
-    require_once __DIR__.'/../../messages/loader.php';
-    $q=$quote['request'];
-    // The automatic-renewal detail uses only the original committed debit
-    // and the real service reference, not a synthetic payment invoice.
+    return ['success'=>true];
+}
+
+/** Preserve the existing customer copy, parse mode and navigation for the
+ * receipt that actually funded this edit. No unrelated late receipt can
+ * change the original Wallet/automatic-renewal presentation. */
+function achbotServiceEditCustomerPacketLocked(mysqli $db,array $op,array $quote): array {
+    require_once __DIR__.'/../Finance/ServiceReports.php';
+    $q=$quote['request'];$kind=$op['kind'];$keys=null;$mode='HTML';
     if ($op['command_kind']==='automatic_renewal') {
-        require_once __DIR__.'/../Finance/ServiceReports.php';
         $text=achbotMessageHtml('renewal.automatic_renewal.success_customer',
             achbotServiceAutoRenewNoticeValues($db,$op,$quote));
-    } else $text=match($op['kind']) {
-        'RENEW'=>achbotMessageHtml('renewal.renewal_checkout.message.cca1075329',['remark'=>$q['remark']]),
-        'ADD_TIME'=>achbotMessage('renewal.extensions.message.cce260f97e',['volume'=>$q['days']]),
-        'ADD_VOLUME'=>achbotMessage('renewal.extensions.message.2d27ba4eea',['volume'=>$q['volume']]),
-    };
-    return ['success'=>true,'packet'=>['kind'=>'text','text'=>$text,'mode'=>'HTML','uid'=>(int)$op['userid']]];
+    } else {
+        $receipt=achbotServiceFundingReceiptLocked($db,$op);
+        if ($receipt!==null && achbotReceiptReportGateway($receipt['attempt'])!==null) {
+            $text=match($kind) {
+                'RENEW'=>achbotMessage('gateway.gateway_return.perform_payment_effect.message.a3b46e7d37',['remark'=>$q['remark']]),
+                'ADD_TIME'=>achbotMessage('gateway.gateway_return.perform_payment_effect.message.8ab1d455cf',['plusDays'=>$q['days']]),
+                'ADD_VOLUME'=>achbotMessage('gateway.gateway_return.perform_payment_effect.message.20ac3e8049',['plusVolume'=>$q['volume']]),
+            };
+            $keys=inlineKeyboard([[['text'=>achbotMessage('gateway.gateway_return.perform_payment_effect.text.275b4903d9'),
+                'callback_data'=>'mainMenu']]]);
+            $mode='plain';
+        } elseif ($receipt!==null) {
+            if ($kind==='RENEW' && ($receipt['pay']['type']==='RENEW_SCONFIG' ||
+                $receipt['attempt']['wallet_credit_basis']==='bank_timer')) {
+                $text=achbotMessage('manual_payment.automatic_receipts.message.cca1075329',['remark'=>$q['remark']]);
+                $mode='plain';
+            } else {
+                $text=match($kind) {
+                    'RENEW'=>achbotMessageHtml('renewal.renewal_checkout.message.47b1149fb0',['remark'=>$q['remark']]),
+                    'ADD_TIME'=>achbotMessageHtml('renewal.extensions.message.24dea9b122',['volume'=>$q['days'],'remark'=>$q['remark']]),
+                    'ADD_VOLUME'=>achbotMessageHtml('renewal.extensions.message.d5b6a4e6e7',['volume'=>$q['volume'],'remark'=>$q['remark']]),
+                };
+            }
+        } else $text=match($kind) {
+            'RENEW'=>achbotMessageHtml('renewal.renewal_checkout.message.cca1075329',['remark'=>$q['remark']]),
+            'ADD_TIME'=>achbotMessage('renewal.extensions.message.cce260f97e',['volume'=>$q['days']]),
+            'ADD_VOLUME'=>achbotMessage('renewal.extensions.message.2d27ba4eea',['volume'=>$q['volume']]),
+        };
+    }
+    return ['kind'=>'text','text'=>$text,'mode'=>$mode,'uid'=>(int)$op['userid'],'keys'=>$keys];
 }
 /**
  * Shared local completion of a verified original service edit. The provider
@@ -41,7 +70,7 @@ function achbotServiceEditFinalizePerform(mysqli $db,array $op,array $quote,arra
  * neither accounting nor customer copy is provider-specific.
  */
 function achbotServiceEditCommitLocalLocked(mysqli $db,array $op,array $quote,array $row,array $o,
-    ?int $verifiedExpiry,array $packet): void {
+    ?int $verifiedExpiry): void {
     require_once __DIR__.'/../Finance/ServiceDelivery.php';
     $id=(int)$op['id'];$q=$quote['request'];$oid=(int)$o['id'];
     if ((int)$row['service_operation_id']!==$id || $row['phase']!=='verified' ||
@@ -70,7 +99,8 @@ function achbotServiceEditCommitLocalLocked(mysqli $db,array $op,array $quote,ar
     $n=$s->affected_rows;$s->close();
     if ($n!==1) throw new RuntimeException('service_edit_complete_write');
     $completed=achbotServiceMutationRow($db,$id,true);
-    achbotServiceEditDeliveryInsertLocked($db,$op,$quote,$completed,$packet);
+    achbotServiceEditDeliveryInsertLocked($db,$op,$quote,$completed,
+        achbotServiceEditCustomerPacketLocked($db,$op,$quote));
     if ($op['command_kind']==='automatic_renewal') {
         require_once __DIR__.'/../Finance/ServiceReports.php';
         achbotServiceAutoRenewStageReportsLocked($db,$op,$quote,(int)($GLOBALS['admin']??0),
