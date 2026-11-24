@@ -183,41 +183,28 @@ if ((str_starts_with($transferStep,'achbotTransferAmount:') ||
             exit;
         }
 
-        // Both wallet effects and step consumption must commit atomically.
-        $maxReceiverBefore = 2147483647 - $amount;
-        $receiverPk = (int)$receiver['id'];
-        $senderPk = (int)$sender['id'];
-        $stmt = $connection->prepare(
-            "UPDATE users SET wallet = wallet + ? "
-            . "WHERE id = ? AND userid = ? AND wallet <= ?"
-        );
-        $stmt->bind_param("iiii", $amount, $receiverPk, $to_id, $maxReceiverBefore);
-        if ($stmt->execute() !== true) {
-            throw new RuntimeException('transfer_recipient_credit_execution_failed');
-        }
-        $credited = $stmt->affected_rows;
-        $stmt->close();
-        if ($credited !== 1) {
-            throw new RuntimeException('transfer_recipient_credit_missing');
-        }
+        // Both users are already locked in stable userid order. The two
+        // shared ledger entries, original 005 evidence and step/cursor claim
+        // commit together; a replay or either-leg failure rolls back all.
+        $senderPk=(int)$sender['id'];
+        $senderUserId=(int)$from_id;
+        $sender_after=$sender_before-$amount;
+        $receiver_after=$receiver_before+$amount;
+        $credit=achbotWalletApplyLocked($connection,$to_id,'transfer',
+            (string)$transferUpdateId,2,$amount,$senderUserId);
+        $debit=achbotWalletApplyLocked($connection,$senderUserId,'transfer',
+            (string)$transferUpdateId,1,-$amount,$senderUserId);
+        if ($credit['replayed'] || $debit['replayed'] ||
+            $credit['before']!==$receiver_before || $credit['after']!==$receiver_after ||
+            $debit['before']!==$sender_before || $debit['after']!==$sender_after)
+            throw new RuntimeException('transfer_wallet_entry_conflict');
 
-        $stmt = $connection->prepare(
-            "UPDATE users SET wallet = wallet - ?, step = 'none' "
-            . "WHERE id = ? AND userid = ? AND step = ? AND wallet >= ?"
-        );
-        $senderUserId = (int)$from_id;
-        $stmt->bind_param("iiisi", $amount, $senderPk, $senderUserId, $expectedStep, $amount);
-        if ($stmt->execute() !== true) {
-            throw new RuntimeException('transfer_sender_debit_execution_failed');
-        }
-        $debited = $stmt->affected_rows;
+        $stmt=$connection->prepare("UPDATE users SET step='none'
+            WHERE id=? AND userid=? AND step=?");
+        $stmt->bind_param('iis',$senderPk,$senderUserId,$expectedStep);
+        $claimed=$stmt->execute() && $stmt->affected_rows===1;
         $stmt->close();
-        if ($debited !== 1) {
-            throw new RuntimeException('transfer_sender_debit_claim_missing');
-        }
-
-        $sender_after = $sender_before - $amount;
-        $receiver_after = $receiver_before + $amount;
+        if (!$claimed) throw new RuntimeException('transfer_sender_debit_claim_missing');
 
         // Both immutable legs commit WITH balances and the consumed step.
         // A failure on either INSERT rolls all of them back.

@@ -7,6 +7,63 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
 }
 
 /**
+ * Cutover/route preflight for the shared monetary journal. Missing or
+ * nontransactional storage cannot be used as a balance-write fallback.
+ * Schema changes require quiescing financial writers.
+ */
+function achbotWalletLedgerReady(mysqli $db): bool {
+    try {
+        $r=$db->query("SELECT TABLE_NAME,ENGINE FROM information_schema.TABLES
+            WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME IN ('users','wallet_entries')");
+        if (!$r) return false;
+        $tables=array_column($r->fetch_all(MYSQLI_ASSOC),'ENGINE','TABLE_NAME');
+        if (strtoupper((string)($tables['users']??''))!=='INNODB' ||
+            strtoupper((string)($tables['wallet_entries']??''))!=='INNODB') return false;
+        $r=$db->query("SELECT TABLE_NAME,COLUMN_NAME,DATA_TYPE,COLUMN_TYPE,IS_NULLABLE,
+            CHARACTER_MAXIMUM_LENGTH FROM information_schema.COLUMNS
+            WHERE TABLE_SCHEMA=DATABASE() AND
+            (TABLE_NAME='wallet_entries' OR (TABLE_NAME='users' AND COLUMN_NAME IN ('id','userid','wallet')))");
+        if (!$r) return false;
+        $columns=[];
+        foreach ($r->fetch_all(MYSQLI_ASSOC) as $c)
+            $columns[$c['TABLE_NAME']][$c['COLUMN_NAME']]=$c;
+        $required=[
+            'users'=>['id'=>'int','userid'=>'bigint','wallet'=>'int'],
+            'wallet_entries'=>['id'=>'bigint unsigned','source_kind'=>'varbinary',
+                'source_ref'=>'varbinary','leg'=>'int unsigned','user_row_id'=>'int',
+                'userid'=>'bigint','delta_toman'=>'bigint','balance_before'=>'bigint',
+                'balance_after'=>'bigint','actor_userid'=>'bigint','created_at'=>'datetime']
+        ];
+        foreach ($required as $table=>$fields) foreach ($fields as $name=>$type) {
+            $c=$columns[$table][$name]??null;
+            if (!$c || $c['IS_NULLABLE']!=='NO' ||
+                ($c['DATA_TYPE'].(str_contains($c['COLUMN_TYPE'],'unsigned')?' unsigned':''))!==$type)
+                return false;
+        }
+        if ((int)$columns['wallet_entries']['source_kind']['CHARACTER_MAXIMUM_LENGTH']!==32 ||
+            (int)$columns['wallet_entries']['source_ref']['CHARACTER_MAXIMUM_LENGTH']!==128) return false;
+        $r=$db->query("SELECT TABLE_NAME,INDEX_NAME,NON_UNIQUE,SEQ_IN_INDEX,COLUMN_NAME,SUB_PART
+            FROM information_schema.STATISTICS WHERE TABLE_SCHEMA=DATABASE() AND
+            ((TABLE_NAME='wallet_entries' AND INDEX_NAME IN ('PRIMARY','uq_wallet_entry_source'))
+            OR (TABLE_NAME='users' AND INDEX_NAME IN ('PRIMARY','idx_users_userid_v1')))
+            ORDER BY TABLE_NAME,INDEX_NAME,SEQ_IN_INDEX");
+        if (!$r) return false;
+        $keys=[];
+        foreach ($r->fetch_all(MYSQLI_ASSOC) as $row) {
+            if ($row['SUB_PART']!==null) return false;
+            $keys[$row['TABLE_NAME']][$row['INDEX_NAME']][]=[(int)$row['NON_UNIQUE'],$row['COLUMN_NAME']];
+        }
+        return ($keys['wallet_entries']['PRIMARY']??null)===[[0,'id']] &&
+            ($keys['wallet_entries']['uq_wallet_entry_source']??null)===
+                [[0,'source_kind'],[0,'source_ref'],[0,'leg']] &&
+            ($keys['users']['PRIMARY']??null)===[[0,'id']] &&
+            in_array($keys['users']['idx_users_userid_v1']??null,[[[0,'userid']],[[1,'userid']]],true);
+    } catch (Throwable $error) {
+        return false;
+    }
+}
+
+/**
  * A current unique owner row is the common lock for monetary commands.
  * Acquire it before invoice/operation rows in the new financial paths.
  */

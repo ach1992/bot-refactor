@@ -101,6 +101,8 @@ def prepare(work, env, sender=50000, recipient=50000,
     purchase.init(work, env, "http://127.0.0.1:9")
     query(work, env, "DROP TABLE IF EXISTS wallet_adjustments")
     query(work, env, (ROOT / 'migrations/post-v9/005_wallet_adjustments.sql').read_text())
+    query(work, env, "DROP TABLE IF EXISTS wallet_entries")
+    query(work, env, (ROOT / 'migrations/post-v9/024_wallet_entries.sql').read_text())
     query(work, env, "UPDATE users SET wallet={},step='{}' WHERE userid=1001;".format(sender, step))
     query(work, env, "UPDATE users SET wallet={},step='none' WHERE userid=9002;".format(recipient))
     query(work,env,"DELETE FROM setting WHERE type LIKE 'ACHBOT_WALLET_TRANSFER_%'")
@@ -202,23 +204,26 @@ def race(work, env, workers, label):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--run-disposable", action="store_true", required=True)
+    parser.add_argument("--current-only", action="store_true",
+                        help="Current Stable CI; do not execute historical RED source")
     parser.add_argument("--report", type=Path)
     args = parser.parse_args()
     reports = []
     with owned.owned_database() as (work, env):
         stage = work / "current-wallet"
         stage_mod.stage_source(stage, True)
-        baseline_stage = work / "baseline-wallet"
-        stage_mod.stage_source(baseline_stage, True)
-        (baseline_stage / "src/Finance/Routes/WalletTransfer.php").write_bytes(
-            subprocess.check_output(["git","-C",str(ROOT),"show",
-                "ea6834cb0612b5fa687ec492fbd9c6e1fd0b6a50:src/Finance/Routes/WalletTransfer.php"]))
-        prepare(work, env, step="tranfserUserAmount9002")
-        assert_events(execute(work, env, baseline_stage, "300"),True)
-        if balances(work, env) != [(1001,49700,"none"),(9002,50300,"none")] or query(
-                work, env,"SELECT COUNT(*) FROM wallet_adjustments").strip() != "0":
-            raise RuntimeError("Baseline no longer reproduces unjournaled transfer")
-        reports.append("transfer_baseline_red_money_moves_without_journal")
+        if not args.current_only:
+            baseline_stage = work / "baseline-wallet"
+            stage_mod.stage_source(baseline_stage, True)
+            (baseline_stage / "src/Finance/Routes/WalletTransfer.php").write_bytes(
+                subprocess.check_output(["git","-C",str(ROOT),"show",
+                    "ea6834cb0612b5fa687ec492fbd9c6e1fd0b6a50:src/Finance/Routes/WalletTransfer.php"]))
+            prepare(work, env, step="tranfserUserAmount9002")
+            assert_events(execute(work, env, baseline_stage, "300"),True)
+            if balances(work, env) != [(1001,49700,"none"),(9002,50300,"none")] or query(
+                    work, env,"SELECT COUNT(*) FROM wallet_adjustments").strip() != "0":
+                raise RuntimeError("Baseline no longer reproduces unjournaled transfer")
+            reports.append("transfer_baseline_red_money_moves_without_journal")
         prepare(work, env)
         expected = [(1001, 49700, "none"), (9002, 50300, "none")]
         first = execute(work, env, stage, "300")
@@ -235,6 +240,13 @@ def main():
             raise RuntimeError("Transfer legs do not retain exact identity and balances: "+rows)
         reports.append("transfer_positive_atomic")
         reports.append("transfer_paired_immutable_journal_exact_evidence")
+        money_rows=query(work,env,"SELECT CONCAT(source_kind,':',source_ref,':',leg,':',userid,':',"
+            "delta_toman,':',balance_before,':',balance_after,':',actor_userid) "
+            "FROM wallet_entries ORDER BY leg").strip()
+        assert money_rows==("transfer:9001:1:1001:-300:50000:49700:1001\n"
+                            "transfer:9001:2:9002:300:50000:50300:1001"),money_rows
+        reports.append("transfer_both_legs_use_shared_money_journal")
+
 
         # Redelivery cannot debit again even if the UI starts another transfer.
         # Unique journal identity is independent of the consumed legacy step.
@@ -276,6 +288,30 @@ def main():
             if balances(work, env) != before:
                 raise RuntimeError("Incompatible journal permitted transfer: "+drift)
         reports.append("transfer_missing_or_incompatible_journal_fails_closed")
+        for drift in ("DROP TABLE wallet_entries",
+                      "ALTER TABLE wallet_entries DROP INDEX uq_wallet_entry_source",
+                      "ALTER TABLE wallet_entries ENGINE=MyISAM"):
+            prepare(work,env)
+            before=balances(work,env)
+            query(work,env,drift)
+            assert_events(execute(work,env,stage,"300"),False)
+            assert balances(work,env)==before,drift
+            assert query(work,env,"SELECT COUNT(*) FROM wallet_adjustments").strip()=="0"
+        reports.append("transfer_shared_journal_schema_drift_fails_closed")
+
+        prepare(work,env)
+        before=balances(work,env)
+        query(work,env,"CREATE TRIGGER owned_money_leg_failure BEFORE INSERT ON wallet_entries "
+            "FOR EACH ROW SET NEW.leg=IF(NEW.leg=1,NULL,NEW.leg)")
+        try:
+            assert_events(execute(work,env,stage,"300"),False)
+            assert balances(work,env)==before
+            assert query(work,env,"SELECT COUNT(*) FROM wallet_entries").strip()=="0"
+            assert query(work,env,"SELECT COUNT(*) FROM wallet_adjustments").strip()=="0"
+        finally:
+            query(work,env,"DROP TRIGGER owned_money_leg_failure")
+        reports.append("transfer_second_money_leg_failure_rolls_back_everything")
+
 
         # Second-leg failure happens AFTER BOTH monetary writes and first leg.
         # Test-only trigger forces a real MariaDB insert failure.
@@ -666,7 +702,7 @@ def main():
 
     result = {"complete": True, "cases": len(reports), "scenarios": reports,
               "original_mariadb_socket_only": True, "external_requests": 0,
-              "active_schema_migration": False, "baseline_red": True}
+              "active_schema_migration": False, "baseline_red": not args.current_only}
     if args.report:
         args.report.write_text(json.dumps(result, indent=2, ensure_ascii=False) + "\n")
     print(json.dumps(result, ensure_ascii=False))

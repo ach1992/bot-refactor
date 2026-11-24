@@ -128,6 +128,10 @@ function achbotRegisterStartUser(
         if (count($rows) === 1) return ['user'=>$rows[0], 'created'=>false, 'reward'=>null];
         if ($rows) throw new RuntimeException('identity_ambiguous');
 
+        $stage = 'schema';
+        require_once __DIR__.'/../Wallet/Ledger.php';
+        if (!achbotWalletLedgerReady($db)) throw new RuntimeException('wallet_schema_unavailable');
+
         $stage = 'begin';
         if (!$db->begin_transaction()) throw new RuntimeException('begin_failed');
         $begun = true;
@@ -160,7 +164,9 @@ function achbotRegisterStartUser(
         }
         if (!$stmt->execute() || $stmt->affected_rows !== 1)
             throw new RuntimeException('insert_failed');
+        $newUserPk=(int)$stmt->insert_id;
         $stmt->close();
+        if ($newUserPk<=0) throw new RuntimeException('registration_identity_missing');
 
         if ($referrer !== null && $inviteReward > 0) {
             $stage = 'reward';
@@ -170,12 +176,13 @@ function achbotRegisterStartUser(
             if ($inviteReward > 2147483647 - $old)
                 throw new RuntimeException('reward_out_of_range');
             $new = $old + $inviteReward;
-            $referrerId = (int)$referrer['id'];
-            $stmt = $db->prepare('UPDATE users SET wallet=? WHERE id=? AND wallet=?');
-            $stmt->bind_param('iii', $new, $referrerId, $old);
-            if (!$stmt->execute() || $stmt->affected_rows !== 1)
+            // Preserve the current one-reward-per-created-account policy.
+            // The new durable registration PK distinguishes a genuinely
+            // deleted/re-created account from repeated delivery of /start.
+            $entry=achbotWalletApplyLocked($db,$inviter,'onboarding_referral',
+                $actor.':'.$newUserPk,0,$inviteReward);
+            if ($entry['replayed'] || $entry['before']!==$old || $entry['after']!==$new)
                 throw new RuntimeException('reward_write_failed');
-            $stmt->close();
             $reward = ['inviter'=>$inviter, 'old_wallet'=>$old,
                        'new_wallet'=>$new, 'amount'=>$inviteReward];
         }

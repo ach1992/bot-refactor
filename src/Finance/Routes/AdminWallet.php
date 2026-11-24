@@ -214,14 +214,13 @@ if (!function_exists('achbotApplyAdminWalletAdjustment')) {
                 $operatorId, $targetId, $chatId, $messageId, $kind, $amount,
                 $before, $after, $reason);
 
-            $stmt = $db->prepare("UPDATE users SET wallet=? WHERE userid=? AND wallet=?");
-            $stmt->bind_param('iii', $after, $targetId, $before);
-            $stmt->execute();
-            $affected = $stmt->affected_rows;
-            $stmt->close();
-            if ($affected !== 1) {
+            // The 005 row preserves the authenticated operator evidence;
+            // only the shared 024 journal may change the balance projection.
+            $entry=achbotWalletApplyLocked($db,$targetId,'admin_adjustment',
+                (string)$updateId,1,$delta,$operatorId,$kind==='debt');
+            if ($entry['replayed'] || $entry['before']!==$before ||
+                $entry['after']!==$after || $entry['actor']!==$operatorId)
                 throw new RuntimeException('balance_guard_failed');
-            }
             achbotAdminWalletClaimStep($db, $operatorId, $expectedStep, 'none');
             if (!$db->commit()) {
                 throw new RuntimeException('journal_commit_unconfirmed');

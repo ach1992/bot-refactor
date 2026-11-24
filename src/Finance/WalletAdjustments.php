@@ -9,6 +9,8 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
     exit;
 }
 
+require_once __DIR__.'/../Wallet/Ledger.php';
+
 if (!function_exists('achbotWalletAdjustmentsReady')) {
     function achbotWalletAdjustmentsReady(mysqli $db): bool
     {
@@ -154,7 +156,7 @@ if (!function_exists('achbotWalletAdjustmentsReady')) {
             if ((int)$userColumns['step']['CHARACTER_MAXIMUM_LENGTH'] !== 1000) {
                 return false;
             }
-            return true;
+            return achbotWalletLedgerReady($db);
         } catch (Throwable $error) {
             error_log('achbot_wallet_adjustments_preflight_unavailable');
             return false;

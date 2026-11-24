@@ -17,6 +17,7 @@ import test_v6_native as native
 ROOT = Path(__file__).resolve().parents[1]
 DB = "achbot_v4_new"
 MIGRATION = ROOT / "migrations/post-v9/005_wallet_adjustments.sql"
+WALLET_MIGRATION = ROOT / "migrations/post-v9/024_wallet_entries.sql"
 
 PHP = r"""<?php
 if (PHP_SAPI!=='cli' || !extension_loaded('mysqli')) exit(3);
@@ -243,6 +244,13 @@ def move_to_reason(work,env,kind,amount,actor=9001,target=1001,
 def assert_state(work,env,expected_wallet,expected_rows):
     assert balance(work,env)==expected_wallet,(balance(work,env),expected_wallet)
     assert nledger(work,env)==expected_rows,(nledger(work,env),expected_rows)
+    assert sql(work,env,"SELECT COUNT(*) FROM wallet_entries WHERE source_kind='admin_adjustment'").strip()==str(expected_rows)
+    assert sql(work,env,"SELECT COUNT(*) FROM wallet_adjustments a JOIN wallet_entries w "
+        "ON w.source_kind='admin_adjustment' AND w.source_ref=a.source_id AND w.leg=a.entry_no "
+        "AND w.userid=a.target_userid AND w.actor_userid=a.actor_userid "
+        "AND w.balance_before=a.before_balance AND w.balance_after=a.after_balance "
+        "AND w.delta_toman=a.after_balance-a.before_balance").strip()==str(expected_rows)
+
 
 def main():
     a=argparse.ArgumentParser()
@@ -273,6 +281,13 @@ def main():
 
         sql(work,env,MIGRATION.read_text())
         assert nledger(work,env)==0
+        move_to_reason(work,env,'credit',17)
+        before=balance(work,env)
+        blocked=execute(work,env,text='requires shared ledger',update_id=699)
+        assert balance(work,env)==before and nledger(work,env)==0
+        assert not any('✅' in m for m in messages(blocked))
+        cases.append('missing_024_fails_closed_without_legacy_balance_fallback')
+        sql(work,env,WALLET_MIGRATION.read_text())
 
         # F1 regression uses real UpdateBindings.php, NOT a fabricated
         # $text independent of the Telegram update. Old inline bot text
@@ -845,6 +860,18 @@ def main():
                 nav.kill()
                 nav.wait(timeout=4)
         cases.append('r3_finance_commit_wins_stale_managepanel_no_false_cancel')
+        move_to_reason(work,env,'credit',17)
+        before_balance=balance(work,env); before_rows=nledger(work,env)
+        sql(work,env,"CREATE TRIGGER owned_wallet_entry_failure BEFORE INSERT ON wallet_entries "
+            "FOR EACH ROW SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='owned test failure'")
+        try:
+            result=execute(work,env,text='shared journal insert failure',update_id=1860)
+            assert_state(work,env,before_balance,before_rows)
+            assert not any('✅' in m for m in messages(result))
+        finally:
+            sql(work,env,"DROP TRIGGER owned_wallet_entry_failure")
+        cases.append('shared_wallet_entry_failure_rolls_back_operator_evidence_and_money')
+
 
         # NAVIGATION FIRST: finance reason worker has cached the pending
         # flow, then conditional cancellation wins the lock/step claim.

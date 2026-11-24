@@ -3655,6 +3655,8 @@ function checkStep($table){
 function setUser($value = 'none', $field = 'step'){
     global $connection, $from_id, $username, $first_name;
 
+    if ($field === 'wallet') throw new LogicException('wallet_requires_monetary_command');
+
     $stmt = $connection->prepare("SELECT * FROM `users` WHERE `userid`=?");
     $stmt->bind_param("i", $from_id);
     $stmt->execute();
@@ -3671,8 +3673,7 @@ function setUser($value = 'none', $field = 'step'){
         $stmt->close();
     }
     
-    if($field == "wallet") $stmt = $connection->prepare("UPDATE `users` SET `wallet` = ? WHERE `userid` = ?");
-    elseif($field == "phone") $stmt = $connection->prepare("UPDATE `users` SET `phone` = ? WHERE `userid` = ?");
+    if($field == "phone") $stmt = $connection->prepare("UPDATE `users` SET `phone` = ? WHERE `userid` = ?");
     elseif($field == "refered_by") $stmt = $connection->prepare("UPDATE `users` SET `refered_by` = ? WHERE `userid` = ?");
     // The guarded direct-gift wizard exclusively owns its active nonce step.
     // Generic legacy routes have neither a verified ban/unban source nor

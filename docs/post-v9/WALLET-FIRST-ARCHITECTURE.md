@@ -634,6 +634,43 @@ boundary spy; no live send. Existing subscription presentation 251,
 bank-buy 72 and original manual redrive 6 tests pass. Existing Native API
 limitations and the still-inactive overall cutover remain unchanged.
 
+### Shared monetary writer convergence slice
+
+Administrator credit/debit and explicitly consented debt, user-to-user
+transfer, and onboarding referral rewards now enter `achbotWalletApplyLocked`
+instead of their independent direct SQL balance writers. Original role,
+Telegram update/actor/step/cursor evidence and the existing 005 audit records
+remain binding. The 005 audit is a domain record, not another balance
+projection. Both transfer legs, original 005 evidence and consumed step
+commit together under the existing sorted owner-lock order. Registration
+and its invitation reward commit together; the original registration's
+local row ID distinguishes an actual new account from delivery replay.
+No arbitrary debt or amount policy was added. The unused generic
+`setUser(..., 'wallet')` mutation is explicitly refused before any write.
+
+The new shared journal readiness check validates transactional engines,
+monetary column shapes, source uniqueness and owner-index shape. These
+converted domains refuse missing/incompatible 024 rather than falling back
+to legacy balance writes. This is **not** an approved partial cutover:
+024 opening balances and migration are still outstanding; the remaining
+payment/service/referral paths must converge before installation.
+
+Current-source validation: ledger 42, admin adjustment 59, onboarding 56,
+and transfer 41 (40 current-source cases plus the preserved historical RED
+control in an isolated fixture). Tests prove exact common journal entries,
+authorization and explicit debt consent, replay/parallel events, missing or
+incompatible schema, rollback of first and second legs, preserved legacy
+audit evidence, registration rollback on reward failure, and generic
+profile-setter refusal. The current-only transfer mode is included in the
+representative CI roster without running its historical source there.
+Telegram wire parity remains 898/898. No production database, provider or
+Telegram effects. The remaining direct financial writers are in
+`ReferralReward.php`, `ReceiptHelpers.php`, `GatewayReturn.php`,
+`WalletSettlement.php`, `Routes/RenewalCheckout.php`,
+`Routes/Extensions.php` and `AutomaticRenewal.php`. Replace those through
+their real receipt/service/referral ownership, not a mechanical SQL wrapper
+that preserves the duplicate execution model.
+
 ### Verified Native limitation of existing APIs, not an accepted retry contract
 
 `python3 tools/test_wallet_first_native_write_fence.py --run-disposable`

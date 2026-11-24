@@ -69,6 +69,8 @@ NATIVE_TESTS = (
 )
 
 OTHER_TESTS = (
+    ("wallet_transfer", ("python3", "tools/test_post_v9_wallet_transfer.py",
+        "--run-disposable", "--current-only"), "report"),
     ("evidence_http_privacy", ("python3", "tools/test_post_v9_evidence_http_diagnostics.py"), "report"),
     ("manual_unknown_redrive",
      ("python3", "tools/test_owner_r6_api_flow.py", "--run-disposable", "--ci-redrive"),
