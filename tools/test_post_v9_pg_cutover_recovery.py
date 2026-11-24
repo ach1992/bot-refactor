@@ -27,6 +27,8 @@ set_error_handler(static function($l,$m){throw new ErrorException($m,0,$l);});
 $_SERVER['SCRIPT_FILENAME']=__FILE__;
 define('ACHBOT_PG_TEST_LOOPBACK',true);
 require_once $argv[1].'/src/Panel/ProviderRuntime.php';
+require_once $argv[1].'/src/Services/Execution.php';
+$GLOBALS['telegramWebhookSecret']='SyntheticHistoricalServiceDeliveryKey_2026';
 $db=new mysqli('localhost','root','',$argv[3],0,$argv[2]);
 $db->set_charset('utf8mb4');
 $spec=json_decode($argv[4],true,64,JSON_THROW_ON_ERROR);
@@ -53,6 +55,16 @@ try {
     } elseif ($spec['op']==='recover') {
         $result=achbotPgRecoverEdit($db,2,$params,
             ['kind'=>'renew','order'=>$orderId,'expiry'=>0],true);
+    } elseif ($spec['op']==='new_issue') {
+        $db->begin_transaction();
+        $id=achbotServiceIssueLocked($db,1001,'fixture','historical-add-time',[
+            'kind'=>'ADD_TIME','variant'=>'managed','price'=>100,'server_id'=>2,
+            'plan_id'=>7,'order_id'=>103,'quantity'=>1,'days'=>1,'volume'=>0,
+            'remark'=>'historical_fixture','uuid'=>'distinct-local-token']);
+        $result=['id'=>$id,'funding'=>achbotServiceFundLocked($db,1001,$id)];
+        if (!$db->commit()) throw new RuntimeException('fixture_commit');
+    } elseif ($spec['op']==='new_step') {
+        $result=achbotServiceExecuteStep($db,(int)$spec['id']);
     } elseif ($spec['op']==='context') {
         $ctx=achbotPgOrderContext($db,$orderId,false,true);
         $result=['physical_id'=>$ctx['account']['id'],'state'=>$ctx['account']['state']];
@@ -101,13 +113,13 @@ def isolated_case(mode: str) -> list[str]:
         driver = run.fixture_work / "post-cutover-recovery.php"
         driver.write_text(PHP)
 
-        def call(op: str):
+        def call(op: str, **extra):
             proc = subprocess.run([
                 "php", "-n", "-d", "extension=mysqlnd", "-d", "extension=mysqli",
                 "-d", "extension=curl", "-d", "allow_url_fopen=0",
                 "-d", "log_errors=1", "-d", "error_log=/dev/stderr",
                 str(driver), str(ROOT), str(run.fixture_socket), api.DB,
-                json.dumps({"op": op, "pay_id": pay_id}),
+                json.dumps({"op": op, "pay_id": pay_id, **extra}),
             ], cwd=run.fixture_work, env=run.fixture_env, capture_output=True,
                 text=True, timeout=35)
             if proc.returncode or not proc.stdout:
@@ -200,6 +212,46 @@ def isolated_case(mode: str) -> list[str]:
         assert sql("SELECT COUNT(*) FROM payment_delivery_intents") == "0"
         assert sql("SELECT COUNT(*) FROM service_effects WHERE source_kind='legacy_migration'") == "1"
         checks.append(mode+"_original_financial_and_migration_journals_preserved")
+        # Continue with the same migrated physical account and independently
+        # imported reference, without changing the historical purchase or
+        # origin. The new normalized journal must temporarily own the anchor
+        # and then restore the original historical key/snapshot.
+        for name in (
+            "023_scoped_payment_lock_indexes.sql", "024_wallet_entries.sql",
+            "025_wallet_receipt_credit.sql", "026_service_operations.sql",
+            "027_service_delivery_sources.sql", "028_service_mutations.sql",
+        ):
+            sql((ROOT / "migrations/post-v9" / name).read_text())
+        prior_mutation=sql("SELECT provider_mutation_snapshot FROM service_effects WHERE id="+str(effect_id))
+        prior_wallet=int(sql("SELECT wallet FROM users WHERE userid=1001"))
+        prior_audits=int(sql("SELECT COUNT(*) FROM increase_order"))
+        prior_requests=provider.write_count
+        issued=call("new_issue")
+        assert issued["ok"] and issued["result"]["funding"]=="funded",issued
+        new_id=issued["result"]["id"]
+        for expected in ("progressed","applied","completed"):
+            result=call("new_step",id=new_id)
+            assert result["ok"] and result["result"]["status"]==expected,result
+            if expected!="completed":
+                assert call("context")["result"]=={"physical_id":effect_id,"state":"mutating"}
+        assert call("context")["result"]=={"physical_id":effect_id,"state":"linked"}
+        assert call("new_step",id=new_id)["result"]["status"]=="completed"
+        assert call("new_issue")["result"]=={"id":new_id,"funding":"already_funded"}
+        assert provider.write_count==prior_requests+1
+        assert int(sql("SELECT wallet FROM users WHERE userid=1001"))==prior_wallet-100
+        assert int(sql("SELECT COUNT(*) FROM increase_order"))==prior_audits+1
+        assert sql(f"SELECT COUNT(*) FROM wallet_entries WHERE source_kind='service_debit' AND source_ref='{new_id}'")=="1"
+        assert sql(f"SELECT COUNT(*) FROM service_mutations WHERE service_operation_id={new_id} AND account_effect_id={effect_id} AND phase='completed'")=="1"
+        assert sql(f"SELECT COUNT(*) FROM payment_delivery_intents WHERE service_operation_id={new_id} AND pay_row_id IS NULL AND attempt_id IS NULL")=="1"
+        assert sql("SELECT provider_mutation_key FROM service_effects WHERE id="+str(effect_id))==original_key
+        assert sql("SELECT provider_mutation_snapshot FROM service_effects WHERE id="+str(effect_id))==prior_mutation
+        assert sql("SELECT provider_snapshot FROM service_effects WHERE id="+str(effect_id))==initial_snapshot
+        assert sql("SELECT value FROM setting WHERE type='ACHBOT_SERVICE_ORIGIN:103'")==original_origin
+        assert sql("SELECT COUNT(*) FROM pays")=="1"
+        assert sql("SELECT state FROM pays WHERE id="+str(pay_id))=="processing"
+        assert sql("SELECT COUNT(*) FROM payment_transactions")=="0"
+        checks.append(mode+"_new_journal_edit_on_migrated_imported_account")
+
     return checks
 
 

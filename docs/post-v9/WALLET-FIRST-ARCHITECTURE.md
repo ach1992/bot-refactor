@@ -677,8 +677,8 @@ Migration 028 records the original mutation as one normalized row per service
 operation. Its immutable, hashed initial observation and absolute target,
 verified reset acknowledgement, verified result, and original local audit ID
 replace growing mutation-key lists for the new executor. The real existing
-physical account effect is claimed as \`mutating\` under the common
-\`service:<id>\` marker, with a nonblocking session lease on that account
+physical account effect is claimed as `mutating` under the common
+`service:<id>` marker, with a nonblocking session lease on that account
 shared with existing plan/reassignment operations. Local aliases therefore
 cannot execute conflicting operations concurrently. The old historical
 snapshot/key are not rewritten as a new purchase. During the claim, the
@@ -698,7 +698,7 @@ result, and one sealed customer intent in a transaction with release of the
 physical ownership. A local/Telegram failure does not restart Native I/O.
 Existing 018 packets and schema semantics are preserved.
 
-New scheduled-renewal admission (\`src/Services/AutomaticRenewal.php\`) reads
+New scheduled-renewal admission (`src/Services/AutomaticRenewal.php`) reads
 the existing auto-renew setting, original Order/cycle, server eligibility,
 and exact agent discount; observes the actual authenticated account while
 holding its shared physical lease **before** entering the money transaction.
@@ -715,7 +715,7 @@ convergence. The old scheduler/Telegram entrypoints remain inactive with
 respect to these new commands until the coherent cutover.
 
 Disposable PHP/MySQLi (strict and report-off), MariaDB and loopback Native
-contract tests: \`test_wallet_first_service_execution.py\` 46/46 cases, 270
+contract tests: `test_wallet_first_service_execution.py` 46/46 cases, 270
 actual HTTP requests including 32 original CREATE POSTs. Includes reset
 ACK with later traffic and PUT outage, uncertain PUT readback, fixed ADD
 targets, alias serialization, independent drift, atomic finalization failure
@@ -724,10 +724,20 @@ admission, low balance, funded observation drift and full agent discount
 with existing debt. No deployed Native service, actual Telegram delivery or
 production money was used. These are actual new source paths in an isolated
 candidate, not completed end-to-end production route/migration acceptance.
+Regression on the committed engine also passed funding 54/54, adapter
+registry 94/94, hosted payment 18/18 and Telegram wire parity 898/898.
+The historical cutover recovery suite now includes the new journal's actual
+ADD_TIME mutation on a migrated physical account and independently imported
+local reference. Both original recovery outcomes (first write and observed
+already-applied result) preserve the historical mutation key, snapshot,
+provider provenance, import origin and payment/transaction records across
+the new edit; exactly one new debit, audit and delivery intent are recorded.
+The expanded suite passed 16/16 on disposable PHP/MariaDB and loopback Native.
+
 The known delayed older PUT limitation below still requires explicit
 recovery/reconciliation evidence, including stale arrival after a later
-successful update. Real new-route tests for migrated identities, scoped
-add-ons and other current account policies, report/referral convergence and
+successful update. Expanded new-route tests for scoped add-ons and other
+current account policies, report/referral convergence and
 all remaining activation/removal gates are still required.
 
 ### Verified Native limitation of existing APIs, not an accepted retry contract
