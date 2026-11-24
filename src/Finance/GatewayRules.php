@@ -97,7 +97,7 @@ function achbotGatewayRuleHistoryCount(mysqli $db,int $userId,string $metric,
                                        bool $final,int $now): ?int {
     $predicates=[
         'buy'=>"type='BUY_SUB'",
-        'renew'=>"type IN ('RENEW_ACCOUNT','RENEW_SCONFIG')",
+        'renew'=>"type='RENEW_ACCOUNT'",
         'volume'=>"type LIKE 'INCREASE!_VOLUME!_%' ESCAPE '!'",
         'time'=>"type LIKE 'INCREASE!_DAY!_%' ESCAPE '!'",
         'topup'=>"type='INCREASE_WALLET'"

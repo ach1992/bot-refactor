@@ -86,6 +86,7 @@ if (
         // قیمت بعد از تخفیف (یا همان قیمت قبلی در صورت نامعتبر بودن کد)
         $afterDiscount = $discountResult['price'];
 		$hash_id = $discountResult['hash_id'];
+        if ($hash_id==='') { setUser(); return; }
 
         setUser();
     }else delMessage();
@@ -110,7 +111,7 @@ if (
 		$stmt = $connection->prepare("INSERT INTO `pays` (`hash_id`, `user_id`, `type`, `plan_id`, `server_id`, `volume`, `day`, `price`, `request_date`, `state`, `order_id`)
 									VALUES (?, ?, 'RENEW_ACCOUNT', ?, ?, '0', '0', ?, ?, 'pending', ?)");
 		$stmt->bind_param("siiiiii", $hash_id, $from_id, $fid, $serverId, $price, $time, $oid);
-        $rowId=achbotPayUxInsertDraft($connection,(int)$from_id,$stmt);
+        $rowId=achbotPayUxInsertDraft($connection,(int)$from_id,$stmt,false,$respd,$botState);
         $stmt->close();
         if ($rowId<=0) {
             alert(\achbotMessage('renewal.renewal_checkout.alert.201380d8bf'),true);

@@ -15,18 +15,8 @@ function achbotPlanWizardFingerprint(mysqli $db,array $server): string {
     return hash('sha256',json_encode($identity,JSON_THROW_ON_ERROR));
 }
 function achbotPlanWizardChoices(mysqli $db,array $server): array {
-    if ($server['type']==='pasarguard') return achbotManagementPgChoices(achbotPgServerPanel($db,(int)$server['id']));
-    $r=getMarzbanHosts((int)$server['id']);
-    if (!is_object($r) || !is_array($r->inbounds??null)) throw new RuntimeException('management_connection');
-    $out=[];
-    foreach ($r->inbounds as $host) {
-        if (!is_object($host) || !is_string($host->tag??null) || $host->tag==='' ||
-            !in_array($host->protocol??null,['vmess','vless','trojan','shadowsocks'],true)) continue;
-        $id=hash('sha256',$host->protocol."\0".$host->tag);
-        $out[]=['id'=>$id,'name'=>$host->tag,'protocol'=>$host->protocol,'tag'=>$host->tag];
-    }
-    if (!$out) throw new RuntimeException('management_targets');
-    return $out;
+    if ($server['type']!=='pasarguard') throw new RuntimeException('management_targets');
+    return achbotManagementPgChoices(achbotPgServerPanel($db,(int)$server['id']));
 }
 function achbotPlanWizardPrepare(mysqli $db,array &$d): void {
     if ($d['stage']!=='targets' || isset($d['choices'])) return;
@@ -50,7 +40,7 @@ function achbotPlanWizardView(mysqli $db,array $d): array {
     } elseif ($stage==='targets') {
         $keys=achbotManagementChoices($d,$v['targets']??[]);
         $keys[]=[['text'=>achbotManagementText('selection_done'),'callback_data'=>achbotManagementButton($d,'done')]];
-        return [achbotManagementText($v['provider']==='pasarguard'?'plan_groups':'plan_inbounds'),$keys];
+        return [achbotManagementText('plan_groups'),$keys];
     } elseif ($stage==='review') {
         $body=achbotManagementText('plan_review',[
             'title'=>achbotManagementEscape($v['title']),'price'=>number_format($v['price']),
@@ -126,19 +116,8 @@ function achbotPlanWizardAdvance(mysqli $db,array &$d,string $action,string $inp
     $selected=$v['targets']??[];
     if (!$selected || array_diff($selected,$allowed))
         throw new RuntimeException('management_targets');
-    $custom=null;$groups=null;
-    if ($server['type']==='pasarguard') {
-        $groups=json_encode(achbotPgGroupsCanonical($selected),JSON_THROW_ON_ERROR);
-    } else {
-        $inbounds=[];$proxies=[];
-        foreach ($choices as $choice) if (in_array($choice['id'],$selected,true)) {
-            $protocol=$choice['protocol'];$inbounds[$protocol][]=$choice['tag'];
-            $proxies[$protocol]=match($protocol) {
-                'vless'=>['flow'=>''],'shadowsocks'=>['method'=>'chacha20-ietf-poly1305'],default=>new stdClass()
-            };
-        }
-        $custom=json_encode(['inbounds'=>$inbounds,'proxies'=>$proxies],JSON_THROW_ON_ERROR);
-    }
+    $custom=null;
+    $groups=json_encode(achbotPgGroupsCanonical($selected),JSON_THROW_ON_ERROR);
     $sql="INSERT INTO server_plans(fileid,catid,server_id,inbound_id,acount,limitip,title,protocol,days,volume,type,price,descr,pic,active,step,date,custom_sni";
     $columns=$server['type']==='pasarguard'?',provider_group_ids':'';
     $sql.=$columns.") VALUES('',?,?,0,0,1,?,'',?,?,'ws',?,?,'',1,10,?,?".($columns!==''?',?':'').")";

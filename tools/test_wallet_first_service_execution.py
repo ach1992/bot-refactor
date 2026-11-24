@@ -99,8 +99,10 @@ function sendMessage($text,$keys=null,$mode=null,$uid=null) {
         if (isset($x['response'])) return json_decode(json_encode($x['response'],JSON_THROW_ON_ERROR),false,64,JSON_THROW_ON_ERROR);
         return (object)['ok'=>!($x['unknown_ack']??false)];
     }
+    if ($x['op']==='checkout_discount') return (object)['ok'=>true];
     return fixtureDeliverySend('text',$uid,$text,$keys,$mode);
 }
+function achbotNotifyAdmins(...$args) {return true;}
 function editKeys($keys,$msgId,$ci) {return sendMessage($keys,null,'edit:'.$msgId,$ci);}
 function fixtureAlias(mysqli $db,int $order): int {
     $ctx=achbotPgOrderContext($db,$order,true);$o=$ctx['order'];$a=$ctx['account'];
@@ -170,7 +172,17 @@ try {
         };
     }
     elseif ($x['op']==='checkout_pin') {
-        achbotProviderPinPayment($db,$x['pay']);$r=true;
+        require_once $argv[1].'/src/Finance/CheckoutAdmission.php';
+        $db->begin_transaction();
+        achbotProviderPinPayment($db,$x['pay']);
+        $p=achbotProviderRow($db,'SELECT * FROM pays WHERE id=? FOR UPDATE','i',[$x['pay']]);
+        $plan=achbotProviderRow($db,'SELECT days,volume FROM server_plans WHERE id=?','i',[(int)$p['plan_id']]);
+        achbotCheckoutSealDraftLocked($db,$x['pay'],$p,$plan,['remark'=>'digits']);
+        $db->commit();$r=true;
+    }
+    elseif ($x['op']==='checkout_discount') {
+        require_once $argv[1].'/src/Finance/Discounts.php';
+        $r=applyDiscountToPay($db,(int)$x['pay'],$x['code'],(int)($x['actor']??1001),'fixture','Fixture',9001,[]);
     }
     elseif ($x['op']==='checkout_wallet') {
         require_once $argv[1].'/src/Finance/CheckoutAdmission.php';
@@ -1558,6 +1570,36 @@ DELIMITER ;
                     pid=int(sql(f"SELECT id FROM pays WHERE hash_id='{h}'"))
                     assert php(mode,'checkout_pin',pay=pid)
                     return h,pid
+                h,pid=draft('changed-entitlement')
+                prior=finance();before=len(requests)
+                sql("UPDATE server_plans SET days=31 WHERE id=7")
+                php(mode,'checkout_wallet',hash=h,expect_error='service_plan_units_changed')
+                assert finance()==prior and len(requests)==before
+                assert sql(f"SELECT checkout_operation_id IS NULL FROM pays WHERE id={pid}")=='1'
+                sql("UPDATE server_plans SET days=30 WHERE id=7")
+                cases.append(mode+'_displayed_plan_cannot_be_silently_requoted')
+                code=mode+'-discount'
+                sql(f"INSERT INTO discounts(hash_id,type,amount,expire_date,expire_count,can_use) VALUES ('{code}','percent',20,0,2,1)")
+                h,pid=draft('discount')
+                assert not php(mode,'checkout_discount',pay=pid,code=code,actor=9002)['success']
+                assert sql(f"SELECT expire_count FROM discounts WHERE hash_id='{code}'")=='2'
+                sql("CREATE TRIGGER fixture_discount_fail BEFORE UPDATE ON pays FOR EACH ROW SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='fixture_discount_failure'")
+                try:
+                    assert not php(mode,'checkout_discount',pay=pid,code=code)['success']
+                    assert sql(f"SELECT expire_count FROM discounts WHERE hash_id='{code}'")=='2'
+                    assert sql(f"SELECT price FROM pays WHERE id={pid}")=='100'
+                finally:
+                    sql("DROP TRIGGER fixture_discount_fail")
+                r=php(mode,'checkout_discount',pay=pid,code=code)
+                assert r['success'] and r['price']==80,r
+                assert sql(f"SELECT price FROM pays WHERE id={pid}")=='80'
+                assert sql(f"SELECT expire_count FROM discounts WHERE hash_id='{code}'")=='1'
+                assert not php(mode,'checkout_discount',pay=pid,code=code)['success']
+                assert sql(f"SELECT expire_count FROM discounts WHERE hash_id='{code}'")=='1'
+                r=php(mode,'checkout_wallet',hash=h)
+                assert r['status']=='funded',r
+                for stage in ('applied','completed'):step(mode,r['operation'],stage)
+                cases.append(mode+'_discount_counter_and_quote_atomic_and_owner_bound')
                 h,pid=draft('wallet')
                 before=len(requests)
                 assert php(mode,'checkout_wallet',hash=h,actor=9002,expect_error='checkout_draft_unavailable')

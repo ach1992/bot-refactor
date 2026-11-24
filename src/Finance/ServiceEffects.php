@@ -294,7 +294,6 @@ function achbotCreateNonPaymentAccount(
         $locked=$plan->get_result()->fetch_assoc();$plan->close();
         if (!$locked || (int)$locked['server_id']!==$serverId ||
             (int)$locked['inbound_id']!==0 || !achbotSupportsAccount($locked['type'],0) ||
-            ($locked['type']==='marzban' && $locked['panel_group_id']!==null && $locked['valid_group']===null) ||
             (string)$locked['panel_url']==='')
             throw new RuntimeException('nonpaid_effect_target_changed');
         $targetIdentity=achbotEffectTargetIdentity($db,$serverId,$planId,null,$locked);

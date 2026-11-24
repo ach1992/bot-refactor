@@ -60,7 +60,7 @@ try {
             $c['quote']??[], $c['keys']??['nextpay'=>'next-original','zarinpal'=>'zarin-original','nowpayment'=>'np-original'],
             'https://bot.fixture.invalid/','Fixture description',$c['draft_states']??null,$c['ipn_secret']??'fixture-ipn'),
         'verify'=>achbotHostedReceiptVerify($db,$id,$owner,$c['method'],$c['ref']),
-        'ipn'=>achbotNpIngestIpn($db,'changed-current-key',$c['raw'],$c['sig']),
+        'ipn'=>achbotHostedReceiptIngestIpn($db,$c['raw'],$c['sig']),
         'maintain'=>achbotHostedReceiptMaintain($db,3),
         default=>throw new RuntimeException('fixture_unknown_op')
     };

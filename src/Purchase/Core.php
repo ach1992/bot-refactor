@@ -19,7 +19,7 @@ if (!function_exists('achbotRemoveUnclaimedPendingPayments')) {
     function achbotRemoveUnclaimedPendingPayments(mysqli $db, int $userId,
                                                    string $type): void {
         if ($userId<=0 || !in_array($type,[
-            'BUY_SUB','RENEW_SCONFIG','RENEW_ACCOUNT',
+            'BUY_SUB','RENEW_ACCOUNT',
             'INCREASE_DAY','INCREASE_VOLUME','INCREASE_WALLET'
         ],true)) throw new InvalidArgumentException('unsupported_payment_draft_cleanup');
         // Called BEFORE creating the replacement. Do not delete, expire or
@@ -93,44 +93,15 @@ if (!function_exists('ensureServerCapacity')) {
 
 // Shared read-only preflight for current purchase/manual approval/wallet.
 // Type + inbound are validated as one provider contract before settlement.
-if (!function_exists('achbotSupportsMarzbanPlan')) {
-    function achbotSupportsMarzbanPlan($connection, $planId, $requestedInboundId = 0, $requiredServerId = null, bool $lock = false, bool $allowInactive = false)
-    {
-        $planId = (int)$planId;
-        $stmt = $connection->prepare(
-            "SELECT p.`inbound_id`, p.`server_id`, p.`active`, c.`type`
-             FROM `server_plans` p
-             INNER JOIN `server_config` c ON c.`id` = p.`server_id`
-             WHERE p.`id` = ? LIMIT 1".($lock ? ' FOR UPDATE' : '')
-        );
-        $stmt->bind_param("i", $planId);
-        $stmt->execute();
-        $row = $stmt->get_result()->fetch_assoc();
-        $stmt->close();
-        return $planId > 0 && (int)$requestedInboundId === 0 &&
-            $row && ($allowInactive || (int)$row['active']===1) && $row['type'] === 'marzban' &&
-            (int)$row['inbound_id'] === 0 &&
-            ($requiredServerId === null || (int)$requiredServerId === 0 ||
-             (int)$requiredServerId === (int)$row['server_id']);
-    }
-}
-
 // Post-V9: read-only order and payment-subject validation at *entrance*.
 // All consumers use the same current provider and 23-table schema; R4 adds
 // only one separately migrated nullable server_info column.
-if (!function_exists('achbotSupportsMarzbanAccount')) {
-    function achbotSupportsMarzbanAccount($type, $inboundId)
-    {
-        return $type === 'marzban' && (int)$inboundId === 0;
-    }
-}
-
 // R4: physical panel is explicitly identified by an admin-managed group.
 // Different API URLs and admin users can access the SAME backend.
 // Only a nullable server_info.panel_group_id column is added by separate SQL
 // migration; historical V9 DDL remains frozen.
-if (!function_exists('achbotMarzbanGroupValid')) {
-    function achbotMarzbanGroupValid($name) {
+if (!function_exists('achbotGroupNameValid')) {
+    function achbotGroupNameValid($name) {
         $name = is_string($name) ? $name : '';
         // Reject ALL line breaks, including trailing ones before trimming.
         // 60 Unicode characters fit setting.value TEXT, including emoji.
@@ -139,8 +110,8 @@ if (!function_exists('achbotMarzbanGroupValid')) {
         return $name !== '' && preg_match('/\A.{1,60}\z/u', $name) === 1;
     }
 }
-if (!function_exists('achbotMarzbanPanelGroups')) {
-    function achbotMarzbanPanelGroups($connection) {
+if (!function_exists('achbotListPanelGroups')) {
+    function achbotListPanelGroups($connection) {
         $stmt = $connection->prepare(
             "SELECT id, value AS name FROM setting WHERE type = 'ACHBOT_MARZBAN_PANEL_GROUP' ORDER BY id"
         );
@@ -154,9 +125,9 @@ if (!function_exists('achbotMarzbanPanelGroups')) {
         return $groups;
     }
 }
-if (!function_exists('achbotCreateMarzbanPanelGroup')) {
-    function achbotCreateMarzbanPanelGroup($connection, $name) {
-        if (!achbotMarzbanGroupValid($name)) return null;
+if (!function_exists('achbotCreatePanelGroupRecord')) {
+    function achbotCreatePanelGroupRecord($connection, $name) {
+        if (!achbotGroupNameValid($name)) return null;
         $name = trim((string)$name);
         // No extra schema/index is authorized. MariaDB's connection-scoped
         // advisory lock serializes ALL group-name checks and inserts.
@@ -207,26 +178,8 @@ if (!function_exists('achbotCreateMarzbanPanelGroup')) {
         }
     }
 }
-if (!function_exists('achbotMarzbanGroup')) {
-    function achbotMarzbanGroup($connection, $serverId) {
-        if ((int)$serverId <= 0) return null;
-        $stmt = $connection->prepare(
-            "SELECT g.id, g.value AS name
-             FROM server_info s INNER JOIN server_config c ON c.id = s.id
-             INNER JOIN setting g ON g.id = s.panel_group_id
-                     AND g.type = 'ACHBOT_MARZBAN_PANEL_GROUP'
-             WHERE s.id = ? AND c.type = 'marzban' LIMIT 1"
-        );
-        $serverId = (int)$serverId;
-        $stmt->bind_param('i', $serverId);
-        $stmt->execute();
-        $row = $stmt->get_result()->fetch_assoc();
-        $stmt->close();
-        return $row ? ['id'=>(int)$row['id'], 'name'=>(string)$row['name']] : null;
-    }
-}
-if (!function_exists('achbotSetMarzbanGroup')) {
-    function achbotSetMarzbanGroup($connection, $serverId, $groupId) {
+if (!function_exists('achbotSetPanelGroupRecord')) {
+    function achbotSetPanelGroupRecord($connection, $serverId, $groupId) {
         // Caller must own SQL transaction and server_config row lock.
         $serverId = (int)$serverId;
         $groupId = ($groupId === null || (int)$groupId === 0) ? null : (int)$groupId;
@@ -259,8 +212,8 @@ if (!function_exists('achbotSetMarzbanGroup')) {
         $stmt->close();
     }
 }
-if (!function_exists('achbotDeleteMarzbanPanelGroup')) {
-    function achbotDeleteMarzbanPanelGroup($connection, $groupId) {
+if (!function_exists('achbotDeletePanelGroupRecord')) {
+    function achbotDeletePanelGroupRecord($connection, $groupId) {
         $groupId = (int)$groupId;
         if ($groupId <= 0) return false;
         $stmt = $connection->prepare(
@@ -275,47 +228,22 @@ if (!function_exists('achbotDeleteMarzbanPanelGroup')) {
         return $success;
     }
 }
-if (!function_exists('achbotSameMarzbanPanel')) {
-    function achbotSameMarzbanPanel($connection, $sourceId, $targetId, bool $lock = false) {
-        $sourceId = (int)$sourceId;
-        $targetId = (int)$targetId;
-        if ($sourceId <= 0 || $targetId <= 0 || $sourceId === $targetId) return false;
-        // ONLY explicit valid shared group membership is authoritative;
-        // no assumptions from URL, username, an empty group or panel type.
-        $stmt = $connection->prepare(
-            "SELECT a.id FROM server_info a
-             INNER JOIN server_config ac ON ac.id = a.id AND ac.type = 'marzban'
-             INNER JOIN server_info b ON b.id = ?
-             INNER JOIN server_config bc ON bc.id = b.id AND bc.type = 'marzban'
-             INNER JOIN setting g ON g.id = a.panel_group_id
-                  AND g.type = 'ACHBOT_MARZBAN_PANEL_GROUP'
-             WHERE a.id = ? AND a.panel_group_id IS NOT NULL
-                   AND a.panel_group_id = b.panel_group_id LIMIT 1".($lock ? ' FOR UPDATE' : '')
-        );
-        $stmt->bind_param('ii', $targetId, $sourceId);
-        $stmt->execute();
-        $same = $stmt->get_result()->num_rows === 1;
-        $stmt->close();
-        return $same;
-    }
-}
-
 // Panel grouping is a permission to remap the bot's logical server label,
 // not an authorization to modify or migrate the actual Marzban account.
 // Physical panel membership is administrator-declared, provider-neutral.
 // Keep the original setting.type and nullable column to preserve all installed
 // group IDs and pre-existing Marzban API compatibility without a data migration.
 if (!function_exists('achbotPanelGroups')) {
-    function achbotPanelGroups($db): array { return achbotMarzbanPanelGroups($db); }
-    function achbotPanelGroupValid($name): bool { return achbotMarzbanGroupValid($name); }
-    function achbotCreatePanelGroup($db,$name): ?int { return achbotCreateMarzbanPanelGroup($db,$name); }
-    function achbotDeletePanelGroup($db,int $id): bool { return achbotDeleteMarzbanPanelGroup($db,$id); }
+    function achbotPanelGroups($db): array { return achbotListPanelGroups($db); }
+    function achbotPanelGroupValid($name): bool { return achbotGroupNameValid($name); }
+    function achbotCreatePanelGroup($db,$name): ?int { return achbotCreatePanelGroupRecord($db,$name); }
+    function achbotDeletePanelGroup($db,int $id): bool { return achbotDeletePanelGroupRecord($db,$id); }
     function achbotPanelGroup($db,int $serverId): ?array {
         if ($serverId<=0) return null;
         $s=$db->prepare("SELECT g.id,g.value AS name FROM server_info i
             JOIN server_config c ON c.id=i.id
             JOIN setting g ON g.id=i.panel_group_id AND g.type='ACHBOT_MARZBAN_PANEL_GROUP'
-            WHERE i.id=? AND c.type IN ('marzban','pasarguard') LIMIT 1");
+            WHERE i.id=? AND c.type='pasarguard' LIMIT 1");
         $s->bind_param('i',$serverId);$s->execute();
         $row=$s->get_result()->fetch_assoc();$s->close();
         return $row ? ['id'=>(int)$row['id'],'name'=>(string)$row['name']] : null;
@@ -324,79 +252,15 @@ if (!function_exists('achbotPanelGroups')) {
         $s=$db->prepare("SELECT c.type FROM server_config c
             JOIN server_info i ON i.id=c.id WHERE c.id=? FOR UPDATE");
         $s->bind_param('i',$serverId);$s->execute();$row=$s->get_result()->fetch_assoc();$s->close();
-        if (!$row || !in_array($row['type'],['marzban','pasarguard'],true))
+        if (!$row || $row['type']!=='pasarguard')
             throw new \RuntimeException('panel_group_server_unavailable');
-        achbotSetMarzbanGroup($db,$serverId,$groupId);
+        achbotSetPanelGroupRecord($db,$serverId,$groupId);
     }
     function achbotSamePanelGroup($db,int $sourceId,int $targetId): bool {
         if ($sourceId<1 || $targetId<1 || $sourceId===$targetId) return false;
         $a=achbotPanelGroup($db,$sourceId);
         $b=achbotPanelGroup($db,$targetId);
         return $a!==null && $b!==null && $a['id']===$b['id'];
-    }
-}
-
-if (!function_exists('achbotMarzbanRelocationTargets')) {
-    function achbotMarzbanRelocationTargets($connection, $sourceId)
-    {
-        $stmt = $connection->prepare(
-            "SELECT s.`id`, s.`title` FROM `server_info` s
-             INNER JOIN `server_config` c ON c.`id` = s.`id`
-             WHERE s.`active` = 1 AND s.`state` = 1 AND s.`ucount` > 0
-               AND c.`type` = 'marzban' AND s.`id` != ? ORDER BY s.`id`"
-        );
-        $sourceId = (int)$sourceId;
-        $stmt->bind_param('i', $sourceId);
-        $stmt->execute();
-        $res = $stmt->get_result();
-        $targets = [];
-        while ($server = $res->fetch_assoc()) {
-            if (achbotSameMarzbanPanel($connection, $sourceId, (int)$server['id'])) {
-                $targets[] = $server;
-            }
-        }
-        $stmt->close();
-        return $targets;
-    }
-}
-
-if (!function_exists('achbotReassignMarzbanLogicalServer')) {
-    function achbotReassignMarzbanLogicalServer($connection,$orderId,$targetId,$actorId,$adminAllowed=false) {
-        return achbotReassignLogicalServer($connection,(int)$orderId,(int)$targetId,(int)$actorId,(bool)$adminAllowed);
-    }
-}
-
-if (!function_exists('achbotSupportsMarzbanOrder')) {
-    function achbotSupportsMarzbanOrder($connection, $orderId, $requiredPlanId = null, $requiredUser = null, bool $lock = false)
-    {
-        if ((int)$orderId <= 0) return false;
-        $stmt = $connection->prepare(
-            "SELECT o.`userid`, o.`fileid`, o.`server_id`, o.`inbound_id`,
-                    c.`type`, p.`server_id` AS plan_server,
-                    p.`inbound_id` AS plan_inbound
-             FROM `orders_list` o
-             LEFT JOIN `server_config` c ON c.`id` = o.`server_id`
-             LEFT JOIN `server_plans` p ON p.`id` = o.`fileid`
-             WHERE o.`id` = ? LIMIT 1".($lock ? ' FOR UPDATE' : '')
-        );
-        $orderId = (int)$orderId;
-        $stmt->bind_param('i', $orderId);
-        $stmt->execute();
-        $order = $stmt->get_result()->fetch_assoc();
-        $stmt->close();
-        if (!$order || !achbotSupportsMarzbanAccount($order['type'], $order['inbound_id'])) {
-            return false;
-        }
-        if ($requiredUser !== null && (int)$order['userid'] !== (int)$requiredUser) return false;
-        if ($requiredPlanId !== null && (int)$order['fileid'] !== (int)$requiredPlanId) return false;
-        // Existing manually provisioned accounts may have fileid=0. For
-        // financial renewal a real matching plan is explicitly required.
-        if ((int)$order['fileid'] === 0) return $requiredPlanId === null;
-        return $order['plan_server'] !== null &&
-            (int)$order['plan_inbound'] === 0 &&
-            ((int)$order['plan_server'] === (int)$order['server_id'] ||
-             achbotSameMarzbanPanel($connection,
-                 (int)$order['plan_server'], (int)$order['server_id'], $lock));
     }
 }
 
@@ -518,20 +382,6 @@ if (!function_exists('achbotSupportsPaymentSubject')) {
                 $connection, $pid, 0, $pay['server_id'] ?? null, $lock
             );
         }
-        if ($type === 'RENEW_SCONFIG') {
-            // External-account renewal is not an orders_list renewal. Its
-            // saved Marzban identity must match the selected plan server;
-            // a stale X-UI-shaped receipt or another server's remark must
-            // never be treated as the current Marzban account.
-            $source = json_decode((string)($pay['description'] ?? ''), true);
-            $sid = (int)($pay['server_id'] ?? 0);
-            return $pid > 0 && $uid > 0 && $sid > 0 &&
-                (int)($pay['volume'] ?? -1) === 0 &&
-                is_array($source) && ($source['marzban'] ?? null) === true &&
-                !empty($source['remark']) &&
-                (int)($source['server_id'] ?? 0) === $sid &&
-                achbotSupportsMarzbanPlan($connection, $pid, 0, $sid, $lock);
-        }
         if ($type === 'RENEW_ACCOUNT') {
             $oid=(int)($pay['order_id']??0);
             return $pid > 0 && achbotUnissuedServiceOrderActive($connection,$pay,$oid,$lock) &&
@@ -599,9 +449,6 @@ if (!function_exists('achbotApplyServiceEdit')) {
         $panel=$stmt->get_result()->fetch_assoc();
         $stmt->close();
         $type=(string)($panel['type']??'');
-        if (array_key_exists('_wallet_renew_target',$change) && $type!=='marzban')
-            return (object)['success'=>false,'uncertain'=>true,
-                            'msg'=>'wallet_renew_provider_changed'];
         if ($giftTarget!==null) {
             require_once __DIR__ . '/../Subscription/GiftBatch.php';
             if (!achbotSupportsAccount($type,0) ||
@@ -617,21 +464,12 @@ if (!function_exists('achbotApplyServiceEdit')) {
                             'msg'=>'service_edit_invalid_outcome'];
         $outcome=is_array($outcome)?(object)$outcome:$outcome;
         if (($outcome->success??false)!==true) return $outcome;
-        // Native Marzban preserves literal zero expiry on a quota-only gift.
-        // Admit that exact verified observation only for the already pinned
-        // gift transport; other edits and financial callers retain the guard.
-        $zeroExpiryQuotaGift=$giftTarget!==null && $type==='marzban' &&
-            array_diff(array_keys($change),['remark','plus_volume','operation_key'])===[] &&
-            is_int($change['plus_volume']??null) && $change['plus_volume']>0 &&
-            ($outcome->verified??false)===true && ($outcome->uncertain??false)===false &&
-            ($outcome->before_expire??null)===0 && ($outcome->applied_expire??null)===0 &&
-            is_int($outcome->applied_bytes??null) && $outcome->applied_bytes>0;
         // Every adapter must expose a verified, absolute remote readback.
         if (($outcome->verified??false)!==true ||
             !isset($outcome->applied_expire,$outcome->applied_bytes) ||
             !is_numeric($outcome->applied_expire) ||
             !is_numeric($outcome->applied_bytes) ||
-            ((int)$outcome->applied_expire<=0 && !$zeroExpiryQuotaGift) ||
+            (int)$outcome->applied_expire<=0 ||
             (int)$outcome->applied_bytes<0)
             return (object)['success'=>false,'uncertain'=>true,
                             'msg'=>'service_edit_unverified_outcome'];

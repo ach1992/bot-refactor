@@ -161,7 +161,7 @@ function achbotPayUxLockDraftOwner(mysqli $db, int $userId): void {
 }
 
 /** Execute a NEW customer draft under the same lock held by all issuers. */
-function achbotPayUxInsertDraft(mysqli $db, int $actor, mysqli_stmt $insert, bool $scopedAddon = false): int {
+function achbotPayUxInsertDraft(mysqli $db, int $actor, mysqli_stmt $insert, bool $scopedAddon = false, array $display = [], array $states = []): int {
     $started=false;
     try {
         if (!$db->begin_transaction()) throw new RuntimeException('draft_begin_failed');
@@ -201,7 +201,7 @@ function achbotPayUxInsertDraft(mysqli $db, int $actor, mysqli_stmt $insert, boo
             $buy=(string)$pay['type']==='BUY_SUB';
             if (!achbotServerCommerceAvailable($db,(int)$pay['server_id'],$buy,true))
                 throw new RuntimeException('draft_server_disabled');
-            if (($buy || (string)$pay['type']==='RENEW_SCONFIG') &&
+            if ($buy &&
                 !achbotSupportsPlan($db,(int)$pay['plan_id'],0,(int)$pay['server_id'],true))
                 throw new RuntimeException('draft_new_plan_unavailable');
         }
@@ -210,6 +210,9 @@ function achbotPayUxInsertDraft(mysqli $db, int $actor, mysqli_stmt $insert, boo
             if (!achbotAddonDraftCurrent($db,$draftId))
                 throw new RuntimeException('addon_draft_scope_or_price_changed');
         }
+        require_once __DIR__.'/CheckoutAdmission.php';
+        achbotCheckoutRequireSchema($db);
+        achbotCheckoutSealDraftLocked($db,$draftId,$pay,$display,$states);
         if ($draftId<=0 || !$db->commit())
             throw new RuntimeException('draft_commit_unknown');
         return $draftId;
@@ -335,8 +338,7 @@ function achbotPayUxLegacyTelegramChoice(string $data): ?array {
 function achbotPayUxLegacyChoiceMatches(array $pay, string $kind): bool {
     $type=(string)($pay['type']??'');
     return match($kind) {
-        'Buy' => $type==='RENEW_SCONFIG' ||
-            ($type==='BUY_SUB' && (int)($pay['day']??0)===0 &&
+        'Buy' => ($type==='BUY_SUB' && (int)($pay['day']??0)===0 &&
              (int)($pay['volume']??0)===0),
         'Custom'=>$type==='BUY_SUB' &&
             ((int)($pay['day']??0)>0 || (int)($pay['volume']??0)>0),
@@ -344,7 +346,7 @@ function achbotPayUxLegacyChoiceMatches(array $pay, string $kind): bool {
         'IncreaseDay'=>preg_match('/\AINCREASE_DAY_[0-9]+_[0-9]+\z/D',$type)===1,
         'Increase'=>preg_match('/\AINCREASE_VOLUME_[0-9]+_[0-9]+\z/D',$type)===1,
         'crypto_menu','crypto_pick'=>in_array($type,
-            ['BUY_SUB','RENEW_SCONFIG','RENEW_ACCOUNT'],true) ||
+            ['BUY_SUB','RENEW_ACCOUNT'],true) ||
             preg_match('/\AINCREASE_(?:DAY|VOLUME)_[0-9]+_[0-9]+\z/D',$type)===1,
         default=>false,
     };

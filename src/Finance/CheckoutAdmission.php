@@ -17,6 +17,10 @@ function achbotCheckoutRequireSchema(mysqli $db): void {
         $r['IS_NULLABLE']!=='YES' || !achbotWalletLedgerReady($db) ||
         !achbotServiceOperationsPresent($db))
         throw new RuntimeException('checkout_command_schema_invalid');
+    $context=achbotProviderRow($db,"SELECT DATA_TYPE,IS_NULLABLE FROM information_schema.COLUMNS
+        WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='pays' AND COLUMN_NAME='checkout_draft_context'");
+    if (!$context || !in_array($context['DATA_TYPE'],['json','longtext'],true) || $context['IS_NULLABLE']!=='YES')
+        throw new RuntimeException('checkout_draft_context_schema_missing');
     // 033 has multiple auto-committing DDL statements. The first ALTER
     // alone is not permission to activate the new receipt coordinator.
     $s=achbotProviderStatement($db,"SELECT COLUMN_NAME,DATA_TYPE,IS_NULLABLE,DATETIME_PRECISION
@@ -47,6 +51,7 @@ function achbotCheckoutDraftFingerprint(array $p): string {
         (string)$p['day'],(string)$p['volume'],(string)$p['description'],
         (int)$p['agent_bought'],(int)$p['agent_count'],
         (string)($p['provider_snapshot']??''),(string)($p['addon_scope_snapshot']??''),
+        (string)($p['checkout_draft_context']??''),
     ]));
 }
 
@@ -63,7 +68,33 @@ function achbotCheckoutOriginalCommandLocked(mysqli $db,array $pay): array {
     return [$op,$quote,$owner];
 }
 
-/** Original legacy UI draft -> immutable provider-neutral service request.
+/** Seal the entitlement and naming policy before the customer sees a standard
+ * purchase/renewal quote. NULL is never permission to rebuild a stale quote. */
+function achbotCheckoutSealDraftLocked(mysqli $db,int $id,array $pay,array $display,array $states): void {
+    $standard=$pay['type']==='BUY_SUB' && (float)$pay['day']===0.0 && (float)$pay['volume']===0.0;
+    if (!$standard && $pay['type']!=='RENEW_ACCOUNT') return;
+    $plan=achbotProviderRow($db,'SELECT days,volume FROM server_plans WHERE id=? FOR UPDATE','i',[(int)$pay['plan_id']]);
+    $server=achbotProviderRow($db,'SELECT remark FROM server_info WHERE id=? FOR UPDATE','i',[(int)$pay['server_id']]);
+    $days=achbotWholeServiceUnits($display['days']??null,3650);
+    $volume=achbotWholeServiceUnits($display['volume']??null,achbotServiceVolumeMax(),!$standard);
+    if (!$plan || !$server || $days===null || $volume===null ||
+        (float)$plan['days']!==(float)$days || (float)$plan['volume']!==(float)$volume)
+        throw new DomainException('checkout_displayed_plan_changed');
+    $context=achbotServiceJson(['days'=>$days,'volume'=>$volume,
+        'naming_mode'=>(string)($states['remark']??''),'prefix'=>(string)$server['remark']]);
+    $s=achbotProviderStatement($db,'UPDATE pays SET checkout_draft_context=? WHERE id=? AND checkout_draft_context IS NULL','si',[$context,$id]);
+    $n=$s->affected_rows;$s->close();
+    if ($n!==1) throw new RuntimeException('checkout_draft_context_bind_failed');
+}
+function achbotCheckoutReadDraftContext(array $pay): array {
+    $context=json_decode((string)($pay['checkout_draft_context']??''),true);
+    if (!is_array($context) || !is_int($context['days']??null) || !is_int($context['volume']??null) ||
+        !is_string($context['naming_mode']??null) || !is_string($context['prefix']??null))
+        throw new DomainException('checkout_draft_context_missing');
+    return $context;
+}
+
+/** Original UI draft -> immutable provider-neutral service request.
  * Only the authenticated route supplies this already persisted draft. */
 function achbotCheckoutDraftRequestLocked(mysqli $db,array $pay,array $states): array {
     $uid=(int)$pay['user_id'];$sid=(int)$pay['server_id'];$pid=(int)$pay['plan_id'];
@@ -81,15 +112,16 @@ function achbotCheckoutDraftRequestLocked(mysqli $db,array $pay,array $states): 
         $custom=(float)$pay['day']!==0.0 || (float)$pay['volume']!==0.0;
         $q['kind']='BUY';$q['variant']=$custom?'custom':'standard';
         $q['quantity']=max(1,(int)$pay['agent_count']);
-        $q['days']=achbotWholeServiceUnits($custom?$pay['day']:$p['days'],3650);
-        $q['volume']=achbotWholeServiceUnits($custom?$pay['volume']:$p['volume'],achbotServiceVolumeMax());
-        $mode=(string)($states['remark']??'');
+        $context=$custom?null:achbotCheckoutReadDraftContext($pay);
+        $q['days']=achbotWholeServiceUnits($custom?$pay['day']:$context['days'],3650);
+        $q['volume']=achbotWholeServiceUnits($custom?$pay['volume']:$context['volume'],achbotServiceVolumeMax());
+        $mode=$custom?'manual':$context['naming_mode'];
         if ($custom) {$q['remark']=(string)$pay['description'];$q['explicit_name']=true;}
         else {
             // The existing empty manual bulk description falls back to
             // generated names; preserve an explicit single name exactly.
             if ($mode==='manual' && $q['quantity']>1 && trim((string)$pay['description'])==='') $mode='';
-            $q['remark']=buildRemark(['remark'=>$mode],$s['remark'],$pay['description'],$uid);
+            $q['remark']=buildRemark(['remark'=>$mode],$context['prefix'],$pay['description'],$uid);
             $q['explicit_name']=$mode==='manual';
         }
         $q['naming_mode']=$mode;
@@ -118,8 +150,9 @@ function achbotCheckoutDraftRequestLocked(mysqli $db,array $pay,array $states): 
             $p=achbotProviderRow($db,'SELECT days,volume FROM server_plans WHERE id=? FOR UPDATE','i',[$pid]);
             if (!$p) throw new DomainException('checkout_plan_changed');
             $q['kind']='RENEW';
-            $q['days']=achbotWholeServiceUnits($p['days'],3650);
-            $q['volume']=achbotWholeServiceUnits($p['volume'],achbotServiceVolumeMax(),true);
+            $context=achbotCheckoutReadDraftContext($pay);
+            $q['days']=achbotWholeServiceUnits($context['days'],3650);
+            $q['volume']=achbotWholeServiceUnits($context['volume'],achbotServiceVolumeMax(),true);
         }
     }
     if ($q['days']===null || $q['volume']===null) throw new DomainException('checkout_units_invalid');

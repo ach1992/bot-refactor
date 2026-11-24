@@ -3382,8 +3382,6 @@ function getPlanDetailsKeys($planId){
         [['text'=>$count,'callback_data'=>'wizwizch'],
          ['text'=>\achbotMessage('admin_settings.config.get_plan_details_keys.button.a3ec946c94'),'callback_data'=>'wizwizch']],
         [['text'=>\achbotMessage('admin_settings.config.get_plan_details_keys.button.c1c11f088f'),'callback_data'=>'wizwizplanacclist'.$planId]],
-        $server['type']==='marzban'?
-            [['text'=>\achbotMessage('admin_settings.config.get_plan_details_keys.button.51a75fa72c'),'callback_data'=>'marzbanHostSettings'.$planId]]:
             [['text'=>\achbotMessage('admin_settings.config.get_plan_details_keys.button.6399e067cb'),'callback_data'=>'pgPlanGroups'.$planId]],
         [['text'=>(int)$plan['active']===1?
             \achbotMessage('admin_settings.management.plan_hide_from_sale'):
@@ -3633,52 +3631,6 @@ function achbotSupportsPanel($type) {
     return achbotSupportsProviderType($type);
 }
 
-function getMarzbanToken($server_id, ?string $expectedPanelUrl = null, ?array $effectTarget = null) {
-    require_once __DIR__ . '/src/Panel/Accounts.php';
-    return \AchBot\Panel\Accounts\getMarzbanToken($server_id, $expectedPanelUrl, $effectTarget);
-}
-function getMarzbanJson($server_id, $token = null, ?array $giftTarget=null) {
-    require_once __DIR__ . '/src/Panel/Accounts.php';
-    return \AchBot\Panel\Accounts\getMarzbanJson($server_id,$token,$giftTarget);
-}
-function getMarzbanUserInfo($server_id, $remark) {
-    require_once __DIR__ . '/src/Panel/Accounts.php';
-    return \AchBot\Panel\Accounts\getMarzbanUserInfo($server_id, $remark);
-}
-function getMarzbanUser($server_id, $remark, $token = null, bool $strict = false, ?string $expectedPanelUrl = null, ?array $effectTarget = null) {
-    require_once __DIR__ . '/src/Panel/Accounts.php';
-    return \AchBot\Panel\Accounts\getMarzbanUser(
-        $server_id, $remark, $token, $strict, $expectedPanelUrl, $effectTarget);
-}
-function getMarzbanHosts($server_id) {
-    require_once __DIR__ . '/src/Panel/Accounts.php';
-    return \AchBot\Panel\Accounts\getMarzbanHosts($server_id);
-}
-function addMarzbanUser($server_id, $remark, $volume, $days, $plan_id, ?string $operationNote = null, ?int $fixedExpire = null, ?array $effectTarget = null) {
-    require_once __DIR__ . '/src/Panel/Accounts.php';
-    return \AchBot\Panel\Accounts\addMarzbanUser(
-        $server_id,$remark,$volume,$days,$plan_id,$operationNote,$fixedExpire,$effectTarget);
-}
-function editMarzbanConfig($server_id,$info,?array $giftTarget=null) {
-    require_once __DIR__ . '/src/Panel/Accounts.php';
-    return \AchBot\Panel\Accounts\editMarzbanConfig($server_id,$info,$giftTarget);
-}
-function resetMarzbanTraffic($server_id, $remark, $token) {
-    require_once __DIR__ . '/src/Panel/Accounts.php';
-    return \AchBot\Panel\Accounts\resetMarzbanTraffic($server_id, $remark, $token);
-}
-function renewMarzbanUUID($server_id,$remark) {
-    require_once __DIR__ . '/src/Panel/Accounts.php';
-    return \AchBot\Panel\Accounts\renewMarzbanUUID($server_id, $remark);
-}
-function deleteMarzban($server_id,$remark,?array $expectedTarget=null) {
-    require_once __DIR__ . '/src/Panel/Accounts.php';
-    return \AchBot\Panel\Accounts\deleteMarzban($server_id, $remark,$expectedTarget);
-}
-function changeMarzbanState($server_id,$remark) {
-    require_once __DIR__ . '/src/Panel/Accounts.php';
-    return \AchBot\Panel\Accounts\changeMarzbanState($server_id, $remark);
-}
 // Added by ACh
 
 /** Owner/general reports plus enabled Managers and the existing report channel.

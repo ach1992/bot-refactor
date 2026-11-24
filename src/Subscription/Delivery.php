@@ -102,17 +102,7 @@ if (!function_exists('buildLinksAndSendQr')) {
             throw new \UnexpectedValueException('unsupported_panel');
         }
         $backupUrls = [];
-        if ($serverType === 'marzban') {
-            // Preserve the existing token and URL contract only for Marzban.
-            $uniqid = $token = str_replace("/sub/", "", $response['sub_link'] ?? '');
-            $subPath = $response['sub_link'] ?? '';
-            $mainSubLink = $panelUrl !== '' && $subPath !== '' ? $panelUrl . $subPath : '';
-            if ($subPath !== '' && $subLinksRaw !== '') {
-                foreach (array_filter(array_map('trim', explode(',', $subLinksRaw))) as $domain) {
-                    $backupUrls[] = $domain . $subPath;
-                }
-            }
-        } elseif ($serverType === 'pasarguard') {
+        if ($serverType === 'pasarguard') {
             // Native URL is opaque. Never invent a Marzban token or rebuild a
             // vendor config; provider identity is retained in existing service-effect evidence.
             $token = '';
@@ -121,8 +111,7 @@ if (!function_exists('buildLinksAndSendQr')) {
         } else {
             throw new \UnexpectedValueException('unsupported_panel');
         }
-        $nativeLinks = $serverType === 'pasarguard'
-            ? ($response['links'] ?? []) : ($response['vray_links'] ?? []);
+        $nativeLinks = ($response['links'] ?? []);
         $native = [
             'links' => $nativeLinks,
             'subscription_url' => $mainSubLink,

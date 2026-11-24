@@ -110,7 +110,7 @@ if ($isMenu || $isPick) {
             $type==='RENEW_ACCOUNT' => 'payRenewWithManualUsdt',
             $type==='BUY_SUB' && ((int)$selectedPay['day']>0 || (int)$selectedPay['volume']>0)
                 => 'payCustomWithManualUsdt',
-            $type==='BUY_SUB', $type==='RENEW_SCONFIG' => 'payBuyWithManualUsdt',
+            $type==='BUY_SUB' => 'payBuyWithManualUsdt',
             preg_match('/^INCREASE_DAY_[0-9]+_[0-9]+$/D',$type)===1
                 => 'payIncreaseDayWithManualUsdt',
             preg_match('/^INCREASE_VOLUME_[0-9]+_[0-9]+$/D',$type)===1

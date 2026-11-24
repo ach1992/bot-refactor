@@ -190,11 +190,6 @@ function achbotAddonContext(mysqli $db,array $order): array {
             throw new RuntimeException('addon_native_group_access_changed');
         $native=achbotServiceObservation((object)$read['user'],$remark);
         $identity=hash('sha256',json_encode($ctx['identity'],JSON_THROW_ON_ERROR));
-    } elseif ($provider==='marzban') {
-        require_once __DIR__.'/../Panel/ServiceLifecycle.php';
-        $native=achbotServiceObserve($sid,$remark);
-        $groups=[];
-        $identity=null;
     } else throw new RuntimeException('addon_provider_unsupported');
     if (($native['verified']??false)!==true) throw new RuntimeException('addon_native_unverified');
     return ['server_id'=>$sid,'order_id'=>$oid,'remark'=>$remark,
@@ -258,10 +253,9 @@ function achbotAddonPayLocal(mysqli $db,array $pay,array $order): bool {
         ($s['final_price']??null)!==(int)$pay['price'] ||
         !is_int($s['base_price']??null) ||
         !is_string($s['scope_hash']??null) ||
-        !in_array($s['provider']??null,['marzban','pasarguard'],true) ||
+        ($s['provider']??null)!=='pasarguard' ||
         !is_array($s['native_groups']??null) ||
         $s['native_groups']!==achbotAddonGroups($s['native_groups']) ||
-        ($s['provider']==='marzban' && ($s['native_groups']!==[] || ($s['native_identity']??null)!==null)) ||
         ($s['provider']==='pasarguard' && !is_string($s['native_identity']??null)))
         return false;
     $row=$db->prepare("SELECT * FROM ".achbotAddonTable($kind)." WHERE id=?");

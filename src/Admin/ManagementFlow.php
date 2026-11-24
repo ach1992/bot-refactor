@@ -226,7 +226,7 @@ function achbotHandleManagement(): bool {
                 str_starts_with($data,'newPlanForServer')?'plan':'server';
             $draft=['version'=>1,'kind'=>$kind,'nonce'=>bin2hex(random_bytes(6)),
                 'rev'=>0,'source'=>$source,'stage'=>$kind==='server'?'provider':'title','values'=>[],'history'=>[]];
-            if ($data==='addNewMarzbanPanel') {$draft['values']['provider']='marzban';$draft['stage']='title';}
+            if ($data==='addNewMarzbanPanel') throw new RuntimeException('management_targets');
             if ($data==='pgAddConnection') {$draft['values']['provider']='pasarguard';$draft['stage']='title';}
             if (preg_match('/^pgNewServer([1-9][0-9]*)$/D',$data,$m)) {
                 $draft['values']=['provider'=>'pasarguard','panel_id'=>(int)$m[1]];$draft['stage']='title';
@@ -384,7 +384,7 @@ function achbotHandleManagementFields(): bool {
             $field=$context==='plan'?strtolower($match[3]):($match[1]==='changesServerLoginInfo'?'login':strtolower($match[2]));
             $row=$context==='plan'?achbotManagementRow($connection,'SELECT p.*,c.type FROM server_plans p JOIN server_config c ON c.id=p.server_id WHERE p.id=? AND p.active=1 FOR UPDATE','i',[$entity]):
                 achbotManagementRow($connection,'SELECT i.*,c.type,c.panel_url,c.username,c.password FROM server_info i JOIN server_config c ON c.id=i.id WHERE i.id=? FOR UPDATE','i',[$entity]);
-            if (!$row || !achbotSupportsAccount($row['type'],0) || ($field==='login' && $row['type']!=='marzban'))
+            if (!$row || !achbotSupportsAccount($row['type'],0) || $field==='login')
                 throw new RuntimeException('management_targets');
             $d=['nonce'=>bin2hex(random_bytes(6)),'source'=>$source,'context'=>$context,'id'=>$entity,
                 'field'=>$field,'stage'=>$field==='login'?'url':$field,'values'=>[],
@@ -398,16 +398,8 @@ function achbotHandleManagementFields(): bool {
             }
             if ($cb!=='' || !is_string($text)) throw new RuntimeException('management_other_action');
             $field=$d['field'];$input=trim($text);$save=true;
-            if ($field==='login') {
-                if ($d['stage']==='url') {$d['values']['url']=achbotManagementUrl($input);$d['stage']='username';$save=false;}
-                elseif ($d['stage']==='username') {
-                    if ($input==='' || mb_strlen($input)>100) throw new RuntimeException('management_input');
-                    $d['values']['username']=$input;$d['stage']='password';$save=false;
-                } else {
-                    if ($text==='' || mb_strlen($text)>100 || preg_match('/[\\x00-\\x1f\\x7f]/',$text)) throw new RuntimeException('management_input');
-                    $d['values']['password']=$text;achbotManagementMarzbanCheck($d['values']);
-                }
-            } elseif (in_array($field,['max','days','volume'],true)) {
+            if ($field==='login') throw new RuntimeException('management_targets');
+            if (in_array($field,['max','days','volume'],true)) {
                 $input=achbotManagementInteger($input,1,$field==='days'?36500:($field==='volume'?1000000:100000000));
                 if ($field==='days' && time()+$input*86400>2147483647) throw new RuntimeException('management_input');
             } elseif ($input==='' || mb_strlen($input)>100 ||
@@ -416,30 +408,11 @@ function achbotHandleManagementFields(): bool {
                 $row=$context==='plan'?achbotManagementRow($connection,'SELECT p.*,c.type FROM server_plans p JOIN server_config c ON c.id=p.server_id WHERE p.id=? AND p.active=1 FOR UPDATE','i',[$entity]):
                     achbotManagementRow($connection,'SELECT i.*,c.type,c.panel_url,c.username,c.password FROM server_info i JOIN server_config c ON c.id=i.id WHERE i.id=? FOR UPDATE','i',[$entity]);
                 if (!$row || !hash_equals($d['baseline'],achbotManagementFieldBaseline($row,$field))) throw new RuntimeException('management_stale');
-                if ($field==='login') {
-                    $v=$d['values'];
-                    $endpointChanged=$v['url']!==$row['panel_url'];
-                    if ($endpointChanged ||
-                        $v['username']!==$row['username'] ||
-                        $v['password']!==$row['password']) {
-                        require_once __DIR__.'/../Subscription/PhysicalService.php';
-                        // Rebinding an endpoint is unsafe for active references.
-                        // Safe credential rotation on an unchanged endpoint is
-                        // still permitted when no plan journal is outstanding.
-                        try {achbotPhysicalAssertRebindSafe($connection,$entity,true,$endpointChanged);}
-                        catch (RuntimeException $e) {
-                            if ($e->getMessage()==='physical_rebind_active_references')
-                                throw new RuntimeException('server_referenced');
-                            throw new RuntimeException('management_rebind_requires_review');
-                        }
-                    }
-                    achbotManagementSql($connection,'UPDATE server_config SET panel_url=?,username=?,password=? WHERE id=? AND type=\'marzban\'','sssi',[$v['url'],$v['username'],$v['password'],$entity])->close();
-                } else {
-                    $column=['name'=>'title','flag'=>'flag','remark'=>'remark','max'=>'ucount','days'=>'days','volume'=>'volume'][$field]??null;
-                    if ($column===null) throw new RuntimeException('management_input');
-                    $table=$context==='plan'?'server_plans':'server_info';
-                    achbotManagementSql($connection,"UPDATE $table SET $column=? WHERE id=?",'si',[(string)$input,$entity])->close();
-                }
+                if ($field==='login') throw new RuntimeException('management_targets');
+                $column=['name'=>'title','flag'=>'flag','remark'=>'remark','max'=>'ucount','days'=>'days','volume'=>'volume'][$field]??null;
+                if ($column===null) throw new RuntimeException('management_input');
+                $table=$context==='plan'?'server_plans':'server_info';
+                achbotManagementSql($connection,"UPDATE $table SET $column=? WHERE id=?",'si',[(string)$input,$entity])->close();
                 achbotManagementStore($connection,$actor,$actorRowId,null);
                 if (!achbotManagementCommit($connection)) throw new RuntimeException('management_commit_unknown');$begun=false;
                 achbotManagementHome($context,$entity,achbotManagementText($context==='plan'?'plan_updated':'settings_saved'));return true;

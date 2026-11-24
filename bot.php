@@ -1562,67 +1562,6 @@ if (preg_match('/^showMainButtonAns(\d+)/', $data, $match)) {
     }
 }
 
-if(preg_match('/^marzbanHostSettings(\d+)/',$data,$match) && ($from_id == $admin || $userInfo['isAdmin'] == true)){
-    $stmt = $connection->prepare("SELECT * FROM `server_plans` WHERE `id` = ?");
-    $stmt->bind_param('i', $match[1]);
-    $stmt->execute();
-    $serverId = $stmt->get_result()->fetch_assoc()['server_id'];
-    $stmt->close();
-
-    $hosts = getMarzbanHosts($serverId)->inbounds;
-    $networkType = array();
-    foreach($hosts as $key => $inbound){
-        $networkType[] = [['text'=>$inbound->tag, 'callback_data'=>"selectHost{$match[1]}*_*{$inbound->protocol}*_*{$inbound->tag}"]];
-    }
-    $networkType[] = [['text'=>\achbotMessage('legacy_buttons.cancel'), 'callback_data'=>"planDetails" . $match[1]]];
-    $networkType = json_encode(['inline_keyboard'=>$networkType]);
-    editText($message_id, \achbotMessage('bot.bot.process_callback_query.message.2c4ec0c4cc'),$networkType);
-}
-if(preg_match('/^selectHost(?<planId>\d+)\*_\*(?<protocol>.+)\*_\*(?<tag>.*)/',$data,$match) && ($from_id == $admin || $userInfo['isAdmin'] == true)){
-    $saveBtn = \achbotMessage('bot.bot.process_callback_query.save_btn.b3a82cd642');
-    unset($markup[count($markup)-1]);
-    if($markup[count($markup)-1][0]['text'] == $saveBtn) unset($markup[count($markup)-1]);
-    foreach($markup as $key => $keyboard){
-        if($keyboard[0]['callback_data'] == $data) $markup[$key][0]['text'] = $keyboard['0']['text'] == $match['tag'] . \achbotMessage('bot.bot.process_callback_query.text.64554c955e') ? $match['tag']:$match['tag'] . \achbotMessage('bot.bot.process_callback_query.text.64554c955e');
-    }
-
-    if(strstr(json_encode($markup,JSON_UNESCAPED_UNICODE), \achbotMessage('bot.bot.process_callback_query.text.1d456424c3')) && !strstr(json_encode($markup,JSON_UNESCAPED_UNICODE), $saveBtn)){
-        $markup[] = [['text'=>$saveBtn,'callback_data'=>"saveServerHost" . $match['planId']]];
-    }
-    $markup[] = [['text'=>\achbotMessage('legacy_buttons.cancel'), 'callback_data'=>"planDetails" . $match['planId']]];
-    $markup = json_encode(['inline_keyboard'=>array_values($markup)]);
-    editKeys($markup);
-}
-if(preg_match('/^saveServerHost(\d+)/',$data,$match) && ($from_id == $admin || $userInfo['isAdmin'] == true)){
-    $inbounds = array();
-    $proxies = array();
-    unset($markup[count($markup)-1]);
-    unset($markup[count($markup)-1]);
-
-    foreach($markup as $key=>$value){
-        $tag = trim(str_replace(\achbotMessage('bot.bot.process_callback_query.text.1d456424c3'), "", $value[0]['text'], $state));
-        if($state > 0){
-            preg_match('/^selectHost(?<serverId>\d+)\*_\*(?<protocol>.+)\*_\*(?<tag>.*)/',$value[0]['callback_data'],$info);
-            $inbounds[$info['protocol']][] = $tag;
-            $proxies[$info['protocol']] = array();
-
-            if($info['protocol'] == "vless"){
-                $proxies["vless"] = ["flow" => ""];
-            }
-            elseif($info['protocol'] == "shadowsocks"){
-                $proxies["shadowsocks"] = ['method' => "chacha20-ietf-poly1305"];
-            }
-        }
-    }
-    $info = json_encode(['inbounds'=>$inbounds, 'proxies'=>$proxies]);
-    $stmt = $connection->prepare("UPDATE `server_plans` SET `custom_sni`=? WHERE `id`=?");
-    $stmt->bind_param("si", $info, $match[1]);
-    $stmt->execute();
-    $stmt->close();
-
-    editText($message_id, \achbotMessage('bot.bot.process_callback_query.message.e3bd301365'),getPlanDetailsKeys($match[1]));
-    setUser();
-}
 require __DIR__ . '/src/Agent/Rejected.php';
 if ((require __DIR__ . '/src/Subscription/ExternalAccounts.php') === null) return;
 
@@ -1766,8 +1705,7 @@ if (is_string($userInfo['step']??null) &&
         return;
     }
     $directChange=['remark'=>$directClaim['order']['remark']];
-    if (($directClaim['target']['provider']??'marzban')==='pasarguard')
-        $directChange['order_id']=$directClaim['order']['id'];
+    $directChange['order_id']=$directClaim['order']['id'];
     if ($directClaim['days']>0) $directChange['plus_day']=$directClaim['days'];
     if ($directClaim['volume_mb']>0)
         $directChange['plus_volume']=intdiv($directClaim['volume_mb'],1024);
@@ -2012,13 +1950,13 @@ if ($data === 'addMarzbanPanelGroup' &&
 if (($userInfo['step'] ?? '') === 'newMarzbanPanelGroup' &&
     $text != \achbotMessage('legacy_buttons.cancel') &&
     ($from_id == $admin || ($userInfo['isAdmin'] ?? false))) {
-    if (!achbotMarzbanGroupValid((string)$text)) {
+    if (!achbotGroupNameValid((string)$text)) {
         sendMessage(\achbotMessage('bot.bot.add_marzban_panel_group.message.c697bdb683'), null, 'HTML');
         return;
     }
     try {
         // Creation owns the transaction and cross-connection catalog lock.
-        $groupId = achbotCreateMarzbanPanelGroup($connection, $text);
+        $groupId = achbotCreatePanelGroupRecord($connection, $text);
         if ($groupId === null) {
             sendMessage(\achbotMessage('bot.bot.add_marzban_panel_group.message.cfb10ede6f'), null, 'HTML');
             return;
@@ -2043,7 +1981,7 @@ if (preg_match('/^deleteMarzbanPanelGroup_(\d+)$/D', (string)($data ?? ''), $gro
         $stmt->execute();
         $exists = $stmt->get_result()->num_rows === 1;
         $stmt->close();
-        $removed = $exists && achbotDeleteMarzbanPanelGroup($connection, $gid);
+        $removed = $exists && achbotDeletePanelGroupRecord($connection, $gid);
         $connection->commit();
     } catch (\Throwable $e) {
         $connection->rollback();
@@ -2113,94 +2051,6 @@ if (preg_match('/^editMarzbanGroup\d+$/D', (string)($userInfo['step'] ?? '')) &&
     sendMessage(\achbotMessage('bot.bot.addserver_name.message.8dc219842f'), null, 'HTML');
     return;
 }
-if(preg_match('/^changesServerLoginInfo(\d+)/',$data,$match) && ($from_id == $admin || $userInfo['isAdmin'] == true)) {
-    delMessage();
-    setUser($data);
-    sendMessage( \achbotMessage('bot.bot.addserver_name.message.adf1de6a42'),$cancelKey, 'HTML');
-}
-if(preg_match('/^changesServerLoginInfo(\d+)/',$userInfo['step'],$match) && $text != \achbotMessage('legacy_buttons.cancel') && ($from_id == $admin || $userInfo['isAdmin'] == true)) {
-    $data = array();
-    $data['rowId'] = $match[1];
-    $data['panel_url'] = $text;
-    setUser('editServerPaneUser' . json_encode($data, JSON_UNESCAPED_UNICODE));
-    sendMessage( \achbotMessage('bot.bot.addserver_name.message.bae567d2c7'),$cancelKey, 'HTML');
-    exit();
-}
-if(preg_match('/^editServerPaneUser(.*)/',$userInfo['step'],$match) && $text != \achbotMessage('legacy_buttons.cancel') && ($from_id == $admin || $userInfo['isAdmin'] == true)) {
-    $data = json_decode($match[1],true);
-    $data['panel_user'] = $text;
-    setUser('editServerPanePassword' . json_encode($data, JSON_UNESCAPED_UNICODE));
-    sendMessage( \achbotMessage('bot.bot.addserver_name.message.530a9525e2'), null, 'HTML');
-    exit();
-}
-if(preg_match('/^editServerPanePassword(.*)/',$userInfo['step'],$match) and $text != \achbotMessage('legacy_buttons.cancel') && ($from_id == $admin || $userInfo['isAdmin'] == true)){
-    sendMessage(\achbotMessage('bot.bot.addserver_name.message.4a29ff45e6'), null, 'HTML');
-    $data = json_decode($match[1],true);
-
-    $rowId = $data['rowId'];
-    $panel_url = $data['panel_url'];
-    $serverName = $data['panel_user'];
-    $serverPass = $text;
-
-
-    $stmt = $connection->prepare("SELECT * FROM `server_config` WHERE `id` = ?");
-    $stmt->bind_param('i', $rowId);
-    $stmt->execute();
-    $serverInfo = $stmt->get_result()->fetch_assoc();
-    $stmt->close();
-    if(!achbotSupportsPanel($serverInfo['type'] ?? null)){
-        alert(\achbotMessage('bot.bot.addserver_name.alert.f1fb84ec27'), true);
-        setUser();
-        return;
-    }
-    $serverType = $serverInfo['type'];
-    $loginResponse['success'] = false;
-
-
-        $loginUrl = $panel_url .'/api/admin/token';
-        $postFields = array(
-            'username' => $serverName,
-            'password' => $serverPass
-        );
-
-        $curl = curl_init();
-        curl_setopt($curl, CURLOPT_URL, $loginUrl);
-        curl_setopt($curl, CURLOPT_FOLLOWLOCATION, 1);
-        curl_setopt($curl, CURLOPT_RETURNTRANSFER, 1);
-        curl_setopt($curl, CURLOPT_POST, 1);
-        curl_setopt($curl, CURLOPT_CONNECTTIMEOUT, 3);
-        curl_setopt($curl, CURLOPT_TIMEOUT, 3);
-        curl_setopt($curl, CURLOPT_POSTFIELDS, http_build_query($postFields));
-        curl_setopt($curl, CURLOPT_HTTPHEADER, array(
-                'Content-Type: application/x-www-form-urlencoded',
-                'accept: application/json'
-            ));
-        $response = json_decode(curl_exec($curl),true);
-
-        if(curl_error($curl)){
-            $loginResponse = ['success' => false, 'error'=>curl_error($curl)];
-        }
-        curl_close($curl);
-
-        if(isset($response['access_token'])){
-            $loginResponse['success'] = true;
-        }
-
-
-    if(!$loginResponse['success']) sendMessage( \achbotMessage('bot.bot.addserver_name.message.c7ea45277d'), null, 'HTML');
-    else{
-        $stmt = $connection->prepare("UPDATE `server_config` SET `panel_url` = ?, `username` = ?, `password` = ? WHERE `id` = ?");
-        $stmt->bind_param("sssi", $panel_url, $serverName, $serverPass, $rowId);
-        $stmt->execute();
-        $stmt->close();
-
-        sendMessage(\achbotMessage('bot.bot.addserver_name.message.bf4ac7e119'),$removeKeyboard, 'HTML');
-    }
-    $keys = getServerConfigKeys($rowId);
-    sendMessage(\achbotMessage('bot.bot.servers_setting.message.4c0e6ed6fc'),$keys, 'HTML');
-    setUser();
-}
-
 if ((require __DIR__ . '/src/Subscription/SubLinkSettings.php') === null) return;
 
 if(preg_match('/^wizwizdeleteserver([1-9][0-9]*)$/D',(string)$data,$match)){

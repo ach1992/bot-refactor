@@ -34,7 +34,7 @@ function achbotCheckoutAdvance(mysqli $db,?int $operation,?int $payId=null): voi
         if ($operation!==null || $payId!==null) {
             $s=achbotProviderStatement($db,"SELECT id FROM payment_followup_intents
                 WHERE ((service_operation_id IS NOT NULL AND service_operation_id=?) OR
-                    (pay_row_id IS NOT NULL AND pay_row_id=?))
+                    (pay_row_id IS NOT NULL AND pay_row_id=? AND stage='wallet_credit'))
                 AND state IN ('pending','dispatching') ORDER BY id LIMIT 8",
                 'ii',[$operation,$payId]);
             $rows=$s->get_result()->fetch_all(MYSQLI_ASSOC);$s->close();

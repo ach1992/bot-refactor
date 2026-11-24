@@ -1352,7 +1352,7 @@ function achbotProviderPaymentSubjectServer(mysqli $db,array $pay,bool $lock=fal
         $s->bind_param('i',$oid);$s->execute();$subject=$s->get_result()->fetch_assoc();$s->close();
         if (!$subject || ($pid>0 && (int)$subject['fileid']!==$pid) ||
             ($uid>0 && (int)$subject['userid']!==$uid)) return null;
-    } elseif ($type==='BUY_SUB' || $type==='RENEW_SCONFIG') {
+    } elseif ($type==='BUY_SUB') {
         if ($pid<=0) return null;
         $s=$db->prepare('SELECT server_id FROM server_plans WHERE id=?'.($lock?' FOR UPDATE':''));
         $s->bind_param('i',$pid);$s->execute();$subject=$s->get_result()->fetch_assoc();$s->close();
@@ -1373,7 +1373,7 @@ function achbotProviderQuoteEligible(mysqli $db,array $pay,bool $lock=false): bo
         if (!achbotServerCommerceAvailable($db,$sid,$type==='BUY_SUB',$lock)) return false;
         // A new purchase or external-plan checkout cannot select an inactive plan.
         // Existing RENEW_ACCOUNT uses its already-bound order and saved plan.
-        if (in_array($type,['BUY_SUB','RENEW_SCONFIG'],true) &&
+        if ($type==='BUY_SUB' &&
             !achbotSupportsPlan($db,(int)($pay['plan_id']??0),0,$sid,$lock)) return false;
         $adapter=achbotProviderDefinition(achbotProviderType($db,$sid));
         $pay['server_id']=$sid;

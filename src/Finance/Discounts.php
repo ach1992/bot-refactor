@@ -15,7 +15,7 @@ function applyDiscountToPay($connection, $rowId, $discountCode, $from_id, $usern
     $payInfo = $stmt->get_result()->fetch_assoc();
     $stmt->close();
 
-    if(!$payInfo){
+    if(!$payInfo || (int)$payInfo['user_id']!==(int)$from_id){
         // پرداخت یافت نشد
         sendMessage(\achbotMessage('legacy_messages.not_valid_discount_code'), null, 'HTML');
         return [
@@ -269,41 +269,49 @@ function applyDiscountToPay($connection, $rowId, $discountCode, $from_id, $usern
         ];
     }
 
-    $usedBy[] = $from_id;
-    $encodeUsedBy = json_encode($usedBy, JSON_UNESCAPED_UNICODE);
-
-    if ($count != -1) {
-        $query = "UPDATE `discounts` SET `expire_count` = `expire_count` - 1, `used_by` = ? WHERE `id` = ?";
-    } else {
-        $query = "UPDATE `discounts` SET `used_by` = ? WHERE `id` = ?";
+    // Revalidate both source rows under the same owner/checkout lock.
+    // A failed or concurrent redemption must never consume a discount
+    // independently of the original unpaid invoice.
+    require_once __DIR__.'/CheckoutAdmission.php';
+    $started=false;
+    try {
+        achbotCheckoutRequireSchema($connection);
+        if (!$connection->begin_transaction()) throw new RuntimeException('discount_begin_failed');
+        $started=true;
+        achbotPayUxLockDraftOwner($connection,(int)$from_id);
+        $current=achbotProviderRow($connection,'SELECT * FROM pays WHERE id=? FOR UPDATE','i',[(int)$rowId]);
+        if (!$current || $current!==$payInfo || $current['checkout_operation_id']!==null ||
+            !achbotPayUxUnclaimedDraftUsable($connection,$current,true) ||
+            achbotProviderRow($connection,'SELECT id FROM payment_attempts WHERE pay_row_id=? LIMIT 1 FOR UPDATE','i',[(int)$rowId]) ||
+            achbotProviderRow($connection,'SELECT id FROM service_effects WHERE pay_row_id=? LIMIT 1 FOR UPDATE','i',[(int)$rowId]))
+            throw new DomainException('discount_draft_closed');
+        $locked=achbotProviderRow($connection,'SELECT * FROM discounts WHERE id=? FOR UPDATE','i',[(int)$discountInfo['id']]);
+        if (!$locked || $locked!==$discountInfo ||
+            ((int)$locked['expire_date']!==0 && (int)$locked['expire_date']<=time()) ||
+            (int)$locked['is_active']!==1)
+            throw new DomainException('discount_changed');
+        $usedBy[] = $from_id;
+        $encodeUsedBy = json_encode($usedBy, JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
+        $discountValue=$type==='percent'?(int)floor($price*$amount/100):$amount;
+        if ($maxDiscount>0) $discountValue=min($maxDiscount,$discountValue);
+        $discountValue=max(0,min($price,$discountValue));
+        $newPrice=$price-$discountValue;
+        $query=$count!=-1
+            ? 'UPDATE discounts SET expire_count=expire_count-1,used_by=? WHERE id=?'
+            : 'UPDATE discounts SET used_by=? WHERE id=?';
+        $stmt=achbotProviderStatement($connection,$query,'si',[$encodeUsedBy,(int)$discountInfo['id']]);
+        $n=$stmt->affected_rows;$stmt->close();
+        if ($n!==1) throw new RuntimeException('discount_counter_failed');
+        $stmt=achbotProviderStatement($connection,'UPDATE pays SET price=? WHERE id=?','ii',[$newPrice,(int)$rowId]);
+        $stmt->close();
+        if (!$connection->commit()) throw new RuntimeException('discount_commit_unknown');
+        $started=false;
+        $price=$newPrice;
+    } catch (Throwable $e) {
+        if ($started) {try {$connection->rollback();} catch (Throwable $ignored) {}}
+        sendMessage(\achbotMessage('legacy_messages.not_valid_discount_code'),null,'HTML');
+        return ['success'=>false,'price'=>0,'hash_id'=>'','discount_value'=>0,'discount_text'=>'','payInfo'=>null];
     }
-
-    $stmt = $connection->prepare($query);
-    $stmt->bind_param("si", $encodeUsedBy, $discountInfo['id']);
-    $stmt->execute();
-    $stmt->close();
-
-    // اعمال تخفیف روی قیمت
-
-    if($type == "percent"){
-        $discountValue = floor($price * $amount / 100);
-    } else {
-        $discountValue = $amount;
-    }
-
-    // اعمال سقف تخفیف اگر تعیین شده باشد
-    if ($maxDiscount > 0 && $discountValue > $maxDiscount) {
-        $discountValue = $maxDiscount;
-    }
-
-    $price -= $discountValue;
-    if($price < 0) $price = 0;
-
-    // آپدیت قیمت در جدول pays
-    $stmt = $connection->prepare("UPDATE `pays` SET `price` = ? WHERE `id` = ?");
-    $stmt->bind_param("ii", $price, $rowId);
-    $stmt->execute();
-    $stmt->close();
 
     // پیام به کاربر
 

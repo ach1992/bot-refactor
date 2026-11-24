@@ -37,6 +37,7 @@ if((preg_match('/^discountSelectPlan(\d+)_(\d+)_(\d+)/',$userInfo['step'],$match
         // قیمت بعد از تخفیف (یا همان قیمت قبلی در صورت نامعتبر بودن کد)
         $afterDiscount = $discountResult['price'];
 		$hash_id = $discountResult['hash_id'];
+        if ($hash_id==='') { setUser(); return; }
 
         setUser(); 
     }elseif(isset($data)) delMessage(); 
@@ -139,7 +140,7 @@ if((preg_match('/^discountSelectPlan(\d+)_(\d+)_(\d+)/',$userInfo['step'],$match
 											VALUES (?, ?, ?, 'BUY_SUB', ?, ?, '0', '0', ?, ?, 'pending', ?)"); 
 				$stmt->bind_param("ssiiiiii", $hash_id, $remark, $from_id, $id, $sid, $price, $time, $agentBought); 
             } 
-            $rowId=achbotPayUxInsertDraft($connection,(int)$from_id,$stmt);
+            $rowId=achbotPayUxInsertDraft($connection,(int)$from_id,$stmt,false,$respd,$botState);
             $stmt->close();
             if ($rowId<=0) {
                 alert(\achbotMessage('purchase.catalogue.alert.201380d8bf'),true);

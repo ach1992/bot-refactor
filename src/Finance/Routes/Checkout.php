@@ -317,7 +317,7 @@ if (is_string($data) && (strlen($data) <= 64 || ($GLOBALS['achbotManualCryptoVer
     $acount     = (int)$file_detail['acount'];
     $inbound_id = (int)$file_detail['inbound_id'];
 
-    if ($payInfo['type'] != "RENEW_SCONFIG") {
+    if ($payInfo['type'] === "BUY_SUB") {
 
         if ($acount == 0 && $inbound_id != 0) {
             alert(\achbotMessage('legacy_messages.out_of_connection_capacity'), true);
@@ -463,10 +463,7 @@ if (preg_match('/wait(?:BuyCart|BuyGift|BuyUsdt)Receipt(.*)/', $userInfo['step']
 
     $serverTitle = $serverInfo['title'];
 
-    if ($payInfo['type'] == "RENEW_SCONFIG") {
-        $configInfo = json_decode($payInfo['description'], true);
-        $filename = $configInfo['remark'];
-    } else {
+    {
         $stmt = $connection->prepare("SELECT * FROM `server_categories` WHERE `id`=?");
         $stmt->bind_param("i", $res['catid']);
         $stmt->execute();
