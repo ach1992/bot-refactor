@@ -368,7 +368,9 @@ def main():
     ap=argparse.ArgumentParser(description=__doc__)
     ap.add_argument('--run-disposable',required=True,action='store_true')
     ap.add_argument('--report',type=Path)
-    ap.add_argument('--resolution-only',action='store_true',help='Run focused current-schema resolution cases during development')
+    focus=ap.add_mutually_exclusive_group()
+    focus.add_argument('--resolution-only',action='store_true',help='Run focused current-schema resolution cases during development')
+    focus.add_argument('--referral-agent-only',action='store_true',help='Run focused agent purchase referral cases')
     args=ap.parse_args()
     cases=[]
     with owned.owned_database(ROOT/'database/current-schema.sql') as (work,env):
@@ -576,10 +578,10 @@ def main():
                     return r['reason']
                 assert r['ok'],r
                 return r['result']
-            def issue(mode,ref,quantity=1,server=2,plan=7):
+            def issue(mode,ref,quantity=1,server=2,plan=7,policy=None):
                 return php(mode,'issue',ref=mode+'-'+ref,quote=dict(kind='BUY',variant='standard',price=100,
                     server_id=server,plan_id=plan,order_id=0,quantity=quantity,days=30,volume=2,
-                    remark=mode+'-'+ref+'-12345',uuid='',naming_mode='digits',explicit_name=False))
+                    remark=mode+'-'+ref+'-12345',uuid='',naming_mode='digits',explicit_name=False,policy=policy or {}))
             def step(mode,id,status,reason=None):
                 r=php(mode,'step',id=id)
                 assert r['status']==status and (reason is None or r.get('reason')==reason),(id,r,status,reason)
@@ -622,6 +624,52 @@ def main():
             def native(order):
                 remark=sql(f"SELECT remark FROM orders_list WHERE id={order}")
                 return users[remark]
+            def agent_referral_cases(mode):
+                # Original external receipt funds the actual service and
+                # finalization owns the decision; no simulated award writer.
+                # A zero-discount agent, including bulk purchases, is excluded.
+                sql("UPDATE users SET refered_by=9002,is_agent=1 WHERE userid=1001; "
+                    "UPDATE users SET is_agent=0 WHERE userid=9002; "
+                    "INSERT INTO setting(type,value) VALUES ('INVITE_BANNER_AMOUNT','75')")
+                before=int(sql("SELECT wallet FROM users WHERE userid=9002"))
+                for label,quantity,pinned,demote in (
+                    ('current-agent',1,False,False),
+                    ('agent-bulk',3,True,True),
+                ):
+                    sql("UPDATE users SET is_agent=1 WHERE userid=1001")
+                    op=issue(mode,label,quantity,policy={'agent_bought':pinned})
+                    receipt=invoice(mode,label+'-receipt',op)
+                    assert settle(mode,receipt)['funding']=='funded'
+                    if demote:
+                        sql("UPDATE users SET is_agent=0 WHERE userid=1001")
+                    for j in range(quantity):
+                        step(mode,op,'applied')
+                        step(mode,op,'completed' if j==quantity-1 else 'progressed')
+                    assert not award(op)
+                    assert php(mode,'referral',id=op)=='not_applicable'
+                    assert sql(f"SELECT COUNT(*) FROM payment_followup_intents WHERE service_operation_id={op} AND stage='referral_reward'")=='0'
+                    assert sql(f"SELECT COUNT(*) FROM wallet_entries WHERE source_kind='purchase_referral' AND source_ref='{op}'")=='0'
+                    assert int(sql("SELECT wallet FROM users WHERE userid=9002"))==before
+                    assert sql(f"SELECT COUNT(*) FROM orders_list o JOIN service_effects e ON e.order_id=o.id WHERE e.source_kind='service_operation' AND e.source_ref='{op}'")==str(quantity)
+                    # Demotion after completion must not backfill a reward.
+                    sql("UPDATE users SET is_agent=0 WHERE userid=1001")
+                    assert php(mode,'referral',id=op)=='not_applicable'
+                    cases.append(mode+'_referral_excludes_'+label.replace('-','_'))
+                # Ineligibility belongs to the buyer, not the inviter.
+                sql("UPDATE users SET is_agent=1 WHERE userid=9002")
+                op=issue(mode,'customer-agent-inviter',policy={'agent_bought':False})
+                receipt=invoice(mode,'customer-agent-inviter-receipt',op)
+                assert settle(mode,receipt)['funding']=='funded'
+                step(mode,op,'applied');step(mode,op,'completed')
+                assert award(op)==f'{receipt[0]}:75:NOT_ATTEMPTED'
+                assert php(mode,'referral',id=op)=='confirmed'
+                assert php(mode,'referral',id=op)=='confirmed'
+                assert int(sql("SELECT wallet FROM users WHERE userid=9002"))==before+75
+                assert sql(f"SELECT COUNT(*) FROM wallet_entries WHERE source_kind='purchase_referral' AND source_ref='{op}'")=='1'
+                cases.append(mode+'_referral_customer_purchase_agent_inviter_eligible')
+                sql("UPDATE users SET refered_by=0,is_agent=0 WHERE userid=1001; "
+                    "UPDATE users SET is_agent=0 WHERE userid=9002; "
+                    "DELETE FROM setting WHERE type='INVITE_BANNER_AMOUNT'")
             def resolution_cases(mode):
                 def review(cb,actor=9001,**kw):
                     return php(mode,'telegram_review',actor=actor,callback=cb,**kw)
@@ -764,7 +812,7 @@ def main():
             # Old prepaid claims are historical only. Neither the current
             # wallet callback nor a worker may adopt/replay them. Keep the
             # actual debit/capacity evidence for separate manual reconciliation.
-            cases.append('current_schema_source_execution_without_migrations')
+            cases.extend(mode+'_current_schema_source_execution_without_migrations' for mode in ('strict','off'))
             historical={}
             for mode in ('strict','off'):
                 ref=mode+'-prepaid-custom'
@@ -783,7 +831,7 @@ def main():
                 assert sql(f"SELECT state FROM service_effects WHERE pay_row_id={pid}")=='reserved'
                 assert finance()==before and len(requests)==n
                 cases.append(mode+'_historical_prepaid_claim_no_adoption_or_new_effect')
-            for mode in (() if args.resolution_only else ('strict','off')):
+            for mode in (() if args.resolution_only or args.referral_agent_only else ('strict','off')):
                 # Isolate each test mode's scheduler from previously deferred
                 # conflict fixtures; no terminal evidence is changed.
                 sql("UPDATE service_operations SET next_attempt_at=DATE_ADD(NOW(6),INTERVAL 1 DAY) WHERE stage IN ('funded','prepared','dispatching','applied')")
@@ -1955,8 +2003,13 @@ DELIMITER ;
                 cases.append(mode+'_actual_private_operator_delivery_and_report_confirmation_once')
 
                 resolution_cases(mode)
+                agent_referral_cases(mode)
 
                 assert not faults and not errors,(faults,errors)
+            if args.referral_agent_only:
+                for mode in ('strict','off'):
+                    agent_referral_cases(mode)
+                    assert not faults and not errors,(faults,errors)
             if args.resolution_only:
                 for mode in ('strict','off'):
                     resolution_cases(mode)

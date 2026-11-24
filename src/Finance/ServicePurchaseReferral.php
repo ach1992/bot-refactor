@@ -7,7 +7,8 @@ require_once __DIR__.'/FundingCheckout.php';
 
 /** Only the verified receipt that actually funded this original BUY is
  * eligible. A direct Wallet purchase, unrelated top-up, cancelled quote,
- * or second/later receipt cannot create a purchase referral reward. */
+ * or second/later receipt cannot create a purchase referral reward.
+ * Purchases by agents are excluded at the shared completion boundary. */
 function achbotServiceReferralReceiptLocked(mysqli $db,array $op): ?array {
     if ($op['kind']!=='BUY') throw new RuntimeException('service_referral_kind_conflict');
     $source=achbotServiceFundingReceiptLocked($db,$op);
@@ -18,15 +19,21 @@ function achbotServiceReferralReceiptLocked(mysqli $db,array $op): ?array {
  * completed purchase. Never depend on subsequent Telegram delivery, order
  * survival, or changes to the invitation policy. Called only by the shared
  * service engine after all original lines have been locally finalized. */
-function achbotServiceReferralReserveLocked(mysqli $db,array $op): void {
+function achbotServiceReferralReserveLocked(mysqli $db,array $op,array $quote): void {
     if ($op['kind']!=='BUY') return;
     if ($op['stage']!=='applied') throw new RuntimeException('service_referral_not_finalizing');
     $pay=achbotServiceReferralReceiptLocked($db,$op);
     if (!$pay) return;
     $buyer=(int)$op['userid'];$id=(int)$op['id'];
-    $u=achbotProviderRow($db,'SELECT refered_by FROM users WHERE id=? AND userid=? FOR UPDATE',
+    $u=achbotProviderRow($db,'SELECT refered_by,is_agent FROM users WHERE id=? AND userid=? FOR UPDATE',
         'ii',[(int)$op['user_row_id'],$buyer]);
     if (!$u) throw new RuntimeException('service_referral_buyer_missing');
+    // Exclude both a currently registered agent and the original agent
+    // purchase, even if the account lost agent status during execution.
+    // The immutable completion decision is never re-evaluated by the
+    // reward credit/report workers.
+    if ((int)$u['is_agent']===1 ||
+        ($quote['request']['policy']['agent_bought']??false)===true) return;
     $inviter=(int)$u['refered_by'];
     if ($inviter<=0 || $inviter===$buyer) return;
     $amount=achbotPurchaseReferralPolicyAmount($db,'service_referral_policy');

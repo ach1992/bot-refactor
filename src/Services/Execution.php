@@ -68,7 +68,7 @@ function achbotServiceExecuteStep(mysqli $db,int $id,array $presentation=[],bool
             // The adapter has verified every original line in this phase.
             $stage=$finalizing?'completed':'applied';
             if ($finalizing) {
-                achbotServiceReferralReserveLocked($db,$op);
+                achbotServiceReferralReserveLocked($db,$op,$quote);
                 achbotServiceStageCompletionReportsLocked($db,$op,$quote);
             }
             $s=achbotProviderStatement($db,"UPDATE service_operations SET stage=?,next_attempt_at=IF(?=1,NULL,NOW(6)),
@@ -96,7 +96,7 @@ function achbotServiceExecuteStep(mysqli $db,int $id,array $presentation=[],bool
             if (!is_bool($done)) throw new RuntimeException('service_worker_result_invalid');
             $stage=$done?($finalizing?'completed':'applied'):($finalizing && $op['kind']==='BUY'?'dispatching':$claimStage);
             if ($done && $finalizing) {
-                achbotServiceReferralReserveLocked($db,$current);
+                achbotServiceReferralReserveLocked($db,$current,$original);
                 achbotServiceStageCompletionReportsLocked($db,$current,$original);
             }
             $s=achbotProviderStatement($db,"UPDATE service_operations SET stage=?,

@@ -113,6 +113,9 @@ REQUIRED_CURRENT_CASES = {
         "resolution_close_releases_account_and_next_operation",
         "resolution_edit_refund_and_known_applied_fence",
         "resolution_auto_renewal_service_only_and_reenable",
+        "referral_excludes_current_agent",
+        "referral_excludes_agent_bulk",
+        "referral_customer_purchase_agent_inviter_eligible",
     ),
     "wallet_first_manual": (
         "bank_transfer_actual_issue_and_manual_approval",

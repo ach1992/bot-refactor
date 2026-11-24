@@ -871,7 +871,8 @@ Draft 029 extends existing 008 and 020 journals without changing historical
 rows or sealed packets. A completed original BUY qualifies only if its
 actual verified receipt atomically funded the original operation. Direct
 Wallet purchases, later receipts for already-funded or cancelled commands,
-unrelated top-ups, and zero-cost operations do not earn a purchase referral.
+unrelated top-ups, zero-cost operations, and agent purchases do not earn a purchase referral.
+Exclude a buyer with current agent status at final local completion or an original quote marked agent_bought, regardless of discount, purchase quantity or external payment method. The inviter's own agent status is not an exclusion.
 The existing fixed amount and original inviter are captured at final local
 completion, once per entire purchase, not once per bulk ordinal. Preserve
 disabled decisions; a missing or replaced inviter row is contradictory
