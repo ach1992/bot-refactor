@@ -397,6 +397,7 @@ def main():
     focus.add_argument('--plan-recovery-only',action='store_true',help='Run focused plan recovery cases')
     focus.add_argument('--resolution-only',action='store_true',help='Run focused current-schema resolution cases during development')
     focus.add_argument('--referral-agent-only',action='store_true',help='Run focused agent purchase referral cases')
+    focus.add_argument('--bulk-report-only',action='store_true',help='Run real large purchase report continuation proof')
     args=ap.parse_args()
     cases=[]
     with owned.owned_database(ROOT/'database/current-schema.sql') as (work,env):
@@ -1031,7 +1032,7 @@ def main():
                 assert sql(f"SELECT state FROM service_effects WHERE pay_row_id={pid}")=='reserved'
                 assert finance()==before and len(requests)==n
                 cases.append(mode+'_historical_prepaid_claim_no_adoption_or_new_effect')
-            for mode in (() if args.resolution_only or args.referral_agent_only or args.plan_recovery_only else ('strict','off')):
+            for mode in (() if args.resolution_only or args.referral_agent_only or args.plan_recovery_only or args.bulk_report_only else ('strict','off')):
                 # Isolate each test mode's scheduler from previously deferred
                 # conflict fixtures; no terminal evidence is changed.
                 sql("UPDATE service_operations SET next_attempt_at=DATE_ADD(NOW(6),INTERVAL 1 DAY) WHERE stage IN ('funded','prepared','dispatching','applied')")
@@ -1977,9 +1978,11 @@ DELIMITER ;
                 assert php(mode,'manual_receipt',pay=pid,id=eid,actor=9002)['funding']=='funded'
                 for stage in ['progressed','progressed','applied','completed']:step(mode,eid,stage)
                 did=int(sql(f"SELECT id FROM payment_delivery_intents WHERE service_operation_id={eid}"))
-                rid=int(sql(f"SELECT id FROM payment_followup_intents WHERE service_operation_id={eid} AND stage='service_completed' AND role='operator'"))
+                rid=int(sql(f"SELECT id FROM payment_followup_intents WHERE service_operation_id={eid} AND stage='service_completed' AND role='report_actor'"))
+                assert sql(f"SELECT COUNT(*) FROM payment_followup_intents WHERE service_operation_id={eid} AND stage='service_completed' AND kind='send' AND recipient='9002'")=='1'
                 before=finance();n=len(requests)
                 assert php(mode,'followup',id=rid)=='acknowledged'
+                assert sql(f"SELECT COUNT(*) FROM fixture_followup WHERE intent_id={rid} AND keys_json IS NOT NULL")=='1'
                 assert sql(f"SELECT state FROM payment_delivery_intents WHERE id={did}")=='pending'
                 assert php(mode,'deliver',id=did)=='acknowledged'
                 assert sql(f"SELECT mode FROM fixture_telegram WHERE intent_id={did}")=='HTML'
@@ -2298,6 +2301,35 @@ DELIMITER ;
                 agent_referral_cases(mode)
 
                 assert not faults and not errors,(faults,errors)
+            if not (args.plan_recovery_only or args.referral_agent_only or args.resolution_only):
+                # Actual large BUY: every Native name and original order ID
+                # is present in exactly one bounded report per recipient.
+                mode='strict'
+                sql('UPDATE users SET wallet=50000 WHERE userid=1001; UPDATE server_info SET ucount=100 WHERE id=2')
+                op=issue(mode,'bulk-report-'+('x'*76),42)
+                fund(mode,op)
+                for i in range(42):
+                    step(mode,op,'applied')
+                    step(mode,op,'completed' if i==41 else 'progressed')
+                names=sql(f"SELECT remote_username,order_id FROM service_effects WHERE source_kind='service_operation' AND source_ref='{op}' ORDER BY ordinal").splitlines()
+                assert len(names)==42 and all(len(v.split('\t')[0])>=80 for v in names),names
+                before=finance();n=len(requests)
+                for role in ('service_admin','service_channel'):
+                    ids=list(map(int,sql(f"SELECT id FROM payment_followup_intents WHERE service_operation_id={op} AND role='{role}' AND (stage='service_completed' OR stage LIKE 'service_completed_p%') ORDER BY id").splitlines()))
+                    assert len(ids)>1,(role,ids)
+                    bodies=[]
+                    for rid in ids:
+                        assert php(mode,'followup',id=rid)=='acknowledged'
+                        assert php(mode,'followup',id=rid)=='acknowledged'
+                        assert sql(f"SELECT COUNT(*) FROM fixture_followup WHERE intent_id={rid}")=='1'
+                        body=sql(f"SELECT text FROM fixture_followup WHERE intent_id={rid}")
+                        assert len(body.encode('utf-8'))<=4000
+                        bodies.append(body)
+                    for line in names:
+                        name,oid=line.split('\t')
+                        assert sum(f'<code>{name}</code> (#{oid})' in body for body in bodies)==1,(role,name,oid)
+                assert finance()==before and len(requests)==n
+                cases.append('actual_large_buy_all_names_bounded_durable_owner_channel_reports')
             if args.plan_recovery_only:
                 for mode in ('strict','off'):
                     plan_recovery_cases(mode)

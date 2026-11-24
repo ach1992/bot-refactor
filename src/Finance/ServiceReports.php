@@ -137,7 +137,7 @@ function achbotServiceStageCompletionReportsLocked(mysqli $db,array $op,array $q
         $original=achbotProviderRow($db,'SELECT * FROM pays WHERE checkout_operation_id=? FOR UPDATE','i',[$id]);
         if (!$original) throw new RuntimeException('checkout_original_command_missing');
         achbotCheckoutOriginalCommandLocked($db,$original);
-        $reference='P'.$original['id'].' / '.$original['hash_id'];
+        if ($receipt===null) $reference='P'.$original['id'].' / '.$original['hash_id'];
     }
     $remark=$kind!=='BUY'?$q['remark']:
         ($q['quantity']>1?achbotMessage('bulk_reporting.bulk_subject'):$accounts[0]['name']);
@@ -178,18 +178,25 @@ function achbotServiceStageCompletionReportsLocked(mysqli $db,array $op,array $q
     }
     $actor=$receipt===null?0:$receipt['entry']['actor'];
     if ($actor>0) $text.="\n".achbotMessageHtml('operational_reports.actor',['actor'=>$actor]);
-    if ($kind==='BUY' && $q['quantity']>1)
-        $text=achbotBulkReportAppend($text,['requested'=>$q['quantity'],'confirmed'=>count($accounts),
+    $pages=[];
+    if ($kind==='BUY' && $q['quantity']>1) {
+        $report=achbotBulkReportBuild($text,['requested'=>$q['quantity'],'confirmed'=>count($accounts),
             'complete'=>true,'accounts'=>$accounts,'reference'=>$reference],true);
+        $text=$report['summary'];$pages=$report['pages'];
+    }
+    $owner=(int)($GLOBALS['admin']??0);
+    // A renewed subscription is complete independently of customer delivery.
+    // Preserve the original approving operator's menu on the one common
+    // completion report instead of staging a second success message.
+    $actorKeys=$kind==='RENEW' && achbotServiceManualNoticeActor($source)!==null
+        ? achbotServiceReportActorKeys($db,$id,$actor,$owner):null;
     achbotFollowupStageAdminReportLocked($db,null,$id,$stage,$source['fingerprint'],
-        (int)($GLOBALS['admin']??0),(string)($GLOBALS['botState']['rewardChannel']??''),
-        ['text'=>$text,'keys'=>null,'mode'=>'HTML'],$actor);
+        $owner,(string)($GLOBALS['botState']['rewardChannel']??''),
+        ['text'=>$text,'keys'=>null,'mode'=>'HTML'],$actor,null,$actorKeys,$pages);
 }
 
-/** The original human approval has its existing success notice. A BUY
- * message that says "sent" is staged with local completion but cannot
- * dispatch until every original customer message has acknowledged. A
- * renewal message asserts completed service, not Telegram delivery. */
+/** Only the BUY delivery notice is separate from the common completion
+ * report: "sent" requires every original customer part to acknowledge. */
 function achbotServiceManualNoticeActor(array $source): ?int {
     $receipt=$source['receipt'];
     if ($receipt===null || $receipt['attempt']['wallet_credit_basis']!=='manual' ||
@@ -197,23 +204,26 @@ function achbotServiceManualNoticeActor(array $source): ?int {
     $actor=$receipt['entry']['actor'];
     return $actor>0?$actor:null;
 }
-function achbotServiceStageManualNoticesLocked(mysqli $db,array $op,array $quote,array $source,string $remark): void {
-    $actor=achbotServiceManualNoticeActor($source);$kind=$op['kind'];
-    if ($actor===null || !in_array($kind,['BUY','RENEW'],true)) return;
-    $q=$quote['request'];$id=(int)$op['id'];$owner=(int)($GLOBALS['admin']??0);
-    $hash=(string)$source['receipt']['pay']['hash_id'];
-    $stage=$kind==='BUY'?'service_delivered':'service_completed';
-    $notice=strtr(achbotMessage($kind==='BUY'?'legacy_messages.sent_config_to_user':
-        'legacy_messages.renewed_config_to_user'),[
-        'USERID'=>(string)$op['userid'],'REMARK'=>$remark,'VOLUME'=>(string)$q['volume'],
-        'DAYS'=>(string)$q['days'],'PRICE'=>(string)$q['price'],'HASHID'=>$hash]);
-    $bulk=$kind==='BUY' && $q['quantity']>1;
-    if ($bulk) $notice=achbotBulkReportAppend($notice,['requested'=>$q['quantity'],
-        'confirmed'=>count($source['accounts']),'complete'=>true,'accounts'=>$source['accounts'],
-        'reference'=>'#'.(int)$source['receipt']['pay']['id']]);
+function achbotServiceReportActorKeys(mysqli $db,int $id,int $actor,int $owner): ?string {
     $keys=achbotMainMenuForActor($db,$actor,$owner,$GLOBALS['botState']??[]);
     if ($keys===null) achbotDiagnosticEvent('achbot.delivery.actor_menu_unavailable',[
         'service_operation_id'=>$id,'actor_id'=>$actor,'reason'=>'service_report_actor_profile_missing'],'warning');
+    return $keys;
+}
+function achbotServiceStageManualNoticesLocked(mysqli $db,array $op,array $quote,array $source,string $remark): void {
+    $actor=achbotServiceManualNoticeActor($source);$kind=$op['kind'];
+    if ($actor===null || $kind!=='BUY') return;
+    $q=$quote['request'];$id=(int)$op['id'];$owner=(int)($GLOBALS['admin']??0);
+    $hash=(string)$source['receipt']['pay']['hash_id'];
+    $stage='service_delivered';
+    $notice=strtr(achbotMessage('legacy_messages.sent_config_to_user'),[
+        'USERID'=>(string)$op['userid'],'REMARK'=>$remark,'VOLUME'=>(string)$q['volume'],
+        'DAYS'=>(string)$q['days'],'PRICE'=>(string)$q['price'],'HASHID'=>$hash]);
+    $bulk=$q['quantity']>1;
+    if ($bulk) $notice=achbotBulkReportAppend($notice,['requested'=>$q['quantity'],
+        'confirmed'=>count($source['accounts']),'complete'=>true,'accounts'=>$source['accounts'],
+        'reference'=>'#'.(int)$source['receipt']['pay']['id']]);
+    $keys=achbotServiceReportActorKeys($db,$id,$actor,$owner);
     $content=['text'=>$notice,'keys'=>$keys,'mode'=>null];
     achbotFollowupStoreLocked($db,null,$id,$stage,'operator','send',(string)$actor,null,
         $source['fingerprint'],$content);
@@ -231,12 +241,11 @@ function achbotServiceStageManualNoticesLocked(mysqli $db,array $op,array $quote
 function achbotServiceManualNoticeAllowedLocked(mysqli $db,array $op,array $quote,array $source,array $r): bool {
     $actor=achbotServiceManualNoticeActor($source);$owner=(int)($GLOBALS['admin']??0);
     if ($actor===null || $owner<=0 || $r['kind']!=='send' || $r['message_id']!==null) return false;
-    $buy=$op['kind']==='BUY';$recipient=(string)$r['recipient'];
-    if ($r['stage']!==($buy?'service_delivered':'service_completed') ||
-        !in_array($op['kind'],['BUY','RENEW'],true)) return false;
+    $recipient=(string)$r['recipient'];
+    if ($r['stage']!=='service_delivered' || $op['kind']!=='BUY') return false;
     if ($r['role']==='operator')
         return $recipient===(string)$actor && achbotAdminCanLocked($db,$actor,$owner,'payments');
-    if (!$buy || $quote['request']['quantity']<=1) return false;
+    if ($quote['request']['quantity']<=1) return false;
     if ($r['role']==='purchase_owner') return $owner!==$actor && $recipient===(string)$owner;
     if ($r['role']==='purchase_channel') {
         $channel=achbotFollowupReportChannel((string)($GLOBALS['botState']['rewardChannel']??''));
@@ -296,6 +305,7 @@ function achbotServiceStageResolutionReportsLocked(mysqli $db,array $op,array $q
         require_once __DIR__.'/WalletReports.php';
         $content['text'].="\n".achbotWalletReportFacts(achbotWalletReportEntryLocked($db,(int)$op['refund_entry_id']));
     }
+    $pages=[];
     if ($op['kind']==='BUY' && $e['retained']>0) {
         $s=achbotProviderStatement($db,'SELECT * FROM payment_delivery_intents WHERE service_operation_id=? ORDER BY ordinal FOR UPDATE','i',[$id]);
         $lines=$s->get_result()->fetch_all(MYSQLI_ASSOC);$s->close();
@@ -305,16 +315,25 @@ function achbotServiceStageResolutionReportsLocked(mysqli $db,array $op,array $q
             $body=achbotServiceDeliveryOriginalBody($op,$quote,$d,$i+1);
             $accounts[]=['ordinal'=>$i+1,'name'=>$body['binding']['remark'],'order_id'=>(int)$d['order_id']];
         }
-        $content['text']=achbotBulkReportAppend($content['text'],['requested'=>$q['quantity'],'confirmed'=>$e['retained'],
+        $report=achbotBulkReportBuild($content['text'],['requested'=>$q['quantity'],'confirmed'=>$e['retained'],
             'complete'=>false,'resolved'=>true,'accounts'=>$accounts,'reference'=>'svc_'.$id],true);
+        $content['text']=$report['summary'];$pages=$report['pages'];
     }
     achbotFollowupStageAdminReportLocked($db,null,$id,$stage,$e['fingerprint'],$primary,
-        (string)($GLOBALS['botState']['rewardChannel']??''),$content,(int)$op['resolved_by']);
+        (string)($GLOBALS['botState']['rewardChannel']??''),$content,(int)$op['resolved_by'],null,null,$pages);
 }
 
 function achbotServiceReportValidateLocked(mysqli $db,array $op,array $quote,array $r): ?array {
     if ($r['pay_row_id']!==null || (int)$r['service_operation_id']!==(int)$op['id']) return null;
-    if ($r['stage']==='service_resolution') {
+    // Continuations are independently sealed admin report events; never
+    // treat a continuation as a customer packet or receipt edit.
+    $stage=(string)$r['stage'];
+    if (preg_match('/\A(service_completed|service_resolution)_p[1-9][0-9]{0,9}\z/D',$stage,$match)) {
+        if ($op['kind']!=='BUY' || !in_array($r['role'],['service_admin','report_actor','service_channel'],true) ||
+            $r['kind']!=='send' || $r['message_id']!==null) return null;
+        $stage=$match[1];
+    }
+    if ($stage==='service_resolution') {
         if ($r['kind']!=='send' || $r['message_id']!==null) return null;
         if ($r['role']==='service_customer') {
             if ((string)$r['recipient']!==(string)$op['userid']) return null;
@@ -322,7 +341,7 @@ function achbotServiceReportValidateLocked(mysqli $db,array $op,array $quote,arr
         $e=achbotServiceResolutionEvidenceLocked($db,$op,$quote);
         return achbotFollowupDecodePacket(null,$r,$e['fingerprint']);
     }
-    if (in_array($r['stage'],['service_completed','service_delivered'],true)) {
+    if (in_array($stage,['service_completed','service_delivered'],true)) {
         if ($op['stage']!=='completed' || $op['command_kind']==='automatic_renewal') return null;
         $requiresAck=$r['stage']==='service_delivered';
         $source=achbotServiceCompletionReportSourceLocked($db,$op,$quote,$requiresAck);

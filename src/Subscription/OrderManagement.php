@@ -364,13 +364,14 @@ if (preg_match('/^confirmDeleteOrder_([1-9][0-9]*)$/D', (string)$data, $match)) 
         return;
     }
 
-    // پیام برای کاربر
-    alert(\achbotMessage('subscription.order_management.show_order_management_panel.alert.1340fd2124'));
-    sendMessage(\achbotMessage('subscription.order_management.show_order_management_panel.message.606600ccca', ['userid' => $userid, 'remark' => $remark]), null, "html");
+    $adminMessage=achbotMessageHtml('subscription.order_management.show_order_management_panel.admin_message.c7c4748cee',[
+        'userid'=>$userid,'remark'=>$remark,'from_id'=>$from_id])."\n".
+        achbotMessageHtml('operational_reports.service_order',['order'=>$id]);
+    achbotNotifyAdmins('sendMessage',['text'=>$adminMessage,'parse_mode'=>'HTML'],
+        ['report_actor'=>(int)$from_id,'actor_capability'=>'orders','report_ref'=>'local-delete:'.$id]);
 
-    // پیام برای ادمین ها
-    $adminMessage = \achbotMessage('subscription.order_management.show_order_management_panel.admin_message.c7c4748cee', ['userid' => $userid, 'remark' => $remark, 'from_id' => $from_id]);
-    achbotNotifyAdmins('sendMessage', ['text'=>$adminMessage,'parse_mode'=>'HTML']);
+    alert(\achbotMessage('subscription.order_management.show_order_management_panel.alert.1340fd2124'));
+    sendMessage(\achbotMessageHtml('subscription.order_management.show_order_management_panel.message.606600ccca', ['userid' => $userid, 'remark' => $remark]), null, "html");
 
     setUser();
 }

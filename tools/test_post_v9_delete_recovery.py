@@ -59,7 +59,7 @@ function achbotSupportsPanel($type){return in_array($type,['pasarguard','marzban
 function jdate(...$args){return 'fixture-date';}
 function alert(...$args){$GLOBALS['events'][]=['type'=>'alert','text'=>$args[0]];return (object)['ok'=>true];}
 function editText(...$args){$GLOBALS['events'][]=['type'=>'edit','text'=>$args[1]];return (object)['ok'=>true];}
-function achbotNotifyAdmins(...$args){$GLOBALS['events'][]=['type'=>'staff_notice'];return (object)['ok'=>true];}
+function achbotNotifyAdmins(...$args){$GLOBALS['events'][]=['type'=>'staff_notice','data'=>$args[1],'options'=>$args[2]??[]];return [['response'=>(object)['ok'=>true]]];}
 function sendToAllAdmins(...$args){$GLOBALS['events'][]=['type'=>'staff_notice'];return (object)['ok'=>true];}
 function sendMessage(...$args){$GLOBALS['events'][]=['type'=>'message'];return (object)['ok'=>true];}
 register_shutdown_function(static function() {
@@ -215,6 +215,11 @@ def case_retry(mode: str, actor: int, *, legacy: bool=False):
         provider.mode='ok'
         second=driver(run,callback,actor)
         assert any(event['type']=='edit' and 'موفقیت' in event['text'] for event in second['events']),(mode,second)
+        reports=[e for e in second['events'] if e['type']=='staff_notice']
+        assert len(reports)==1 and reports[0]['options']['report_ref']=='delete:41',second
+        assert '41' in reports[0]['data']['text'] and reports[0]['data']['parse_mode']=='HTML'
+        assert reports[0]['options'].get('report_actor',0)==(9001 if actor==9001 else 0)
+        assert second['events'].index(reports[0])<next(i for i,e in enumerate(second['events']) if e['type']=='edit')
         assert sql('SELECT COUNT(*) FROM orders_list WHERE id=41')=='0',mode
         assert sql('SELECT provider_state FROM service_effects WHERE id=1')=='deleted',mode
         assert provider.write_count==(2 if mode=='delete_lie' else 1),(mode,provider.trace)

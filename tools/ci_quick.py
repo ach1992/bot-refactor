@@ -38,6 +38,7 @@ NATIVE_TESTS = (
     ("native_import_name_reuse", "test_post_v9_import_name_reuse.py"),
     ("native_import_alias_duplicate", "test_post_v9_import_alias_duplicate.py"),
     ("delete_reconfirmation", "test_post_v9_delete_recovery.py"),
+    ("operational_report_fanout", "test_operational_report_fanout.py"),
     ("direct_gift_native", "test_post_v9_direct_gift_native.py"),
     ("gateway_rules", "test_post_v9_gateway_rules.py"),
     ("indexed_payment_locks", "test_post_v9_payment_lock_scope.py"),

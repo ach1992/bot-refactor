@@ -186,8 +186,8 @@
       "before_count": 33,
       "after_count": 29,
       "before_sha256": "77aa64673ce8da62ffcecc02d50f00579503b2868690b154b52844b96e357b05",
-      "after_sha256": "e28f0f269b8b58e17d724bad8b34bb864f85e1e9e907c6d29e70f9fe3639de17",
-      "reason": "Retire local Marzban token/UUID mutations and retain stale callback denial; PasarGuard order management unchanged."
+      "after_sha256": "56154f0b61819ce0807e28a812b7dfbf56d8f054527b6423b30f8529d8c09262",
+      "reason": "Retire local Marzban token/UUID mutations and retain stale callback denial; PasarGuard order management unchanged.; Escape actual local-order-deletion UI remark; retain existing callback and message semantics."
     },
     "src/Finance/Routes/PrePayment.php": {
       "before_count": 26,
@@ -216,6 +216,13 @@
       "after_count": 8,
       "before_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
       "after_sha256": "d080909451050c8d3131fb6a5b515561babd9eb2a763e073f8f92b2f6864e43c"
+    },
+    "src/Subscription/AccountDeletion.php": {
+      "before_count": 6,
+      "after_count": 5,
+      "before_sha256": "d3ad36766eb6a66ecb40cc49aa666ea5ea573b6ef7919f4f0f1458893d85b5e1",
+      "after_sha256": "b55d1346e086c045be04cb4874ddb32f3d91e15b9ef9fa564dd25c2c67b5cc0b",
+      "reason": "Unify committed delete reporting with normal owner/actor/channel fanout; remove standalone owner send and escape dynamic remarks in HTML UI."
     }
   },
   "added_with_direct_send": [

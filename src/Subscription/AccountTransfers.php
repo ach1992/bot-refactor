@@ -70,6 +70,8 @@ if (preg_match('/^switchServer([0-9]+)_([0-9]+)$/D', (string)($data ?? ''), $mat
         return;
     }
 
+    require_once __DIR__.'/PhysicalService.php';
+    achbotNotifyServiceChange('server',$result,(int)$from_id,true);
     $title = htmlspecialchars((string)$result['title'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
     $remark = htmlspecialchars((string)$result['remark'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
     editText($message_id, \achbotMessage('subscription.account_transfers.message.9d93daa0a7', ['remark' => $remark, 'title' => $title]),
@@ -79,7 +81,5 @@ if (preg_match('/^switchServer([0-9]+)_([0-9]+)$/D', (string)($data ?? ''), $mat
             [['text'=>\achbotMessage('legacy_buttons.back_button') ?? \achbotMessage('subscription.account_transfers.text.b233883d0d'),
               'callback_data'=>'quickUserOrderDetails_'.$orderId]]
         ]],JSON_UNESCAPED_UNICODE));
-    require_once __DIR__.'/PhysicalService.php';
-    achbotNotifyServiceChange('server',$result,(int)$from_id,true);
     return;
 }

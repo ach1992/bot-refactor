@@ -498,7 +498,7 @@ function achbotFollowupReportChannel(string $raw,string $stage='',?int $payId=nu
  * A caller explicitly supplies the existing channel policy (empty = none). */
 function achbotFollowupStageAdminReportLocked(mysqli $db,?int $payId,?int $serviceId,
     string $stage,string $fingerprint,int $owner,string $channel,array $content,int $actor=0,?int $walletId=null,
-    ?string $actorKeys=null): void {
+    ?string $actorKeys=null,array $pages=[]): void {
     if ($owner<=0) throw new RuntimeException('followup_report_owner_missing');
     $complete=false;$staff=achbotAdminRecipientCandidates($db,$owner,$complete);
     if (!$complete) error_log('achbot_report_optional_staff_deferred stage='.$stage);
@@ -513,16 +513,22 @@ function achbotFollowupStageAdminReportLocked(mysqli $db,?int $payId,?int $servi
     // their unsolicited general-report preference is off. Do not duplicate
     // a manager or the primary owner who is also the original actor.
     if ($actor>0 && $actor!==$owner) $targets[(string)$actor]='report_actor';
+    $channel=achbotFollowupReportChannel($channel,$stage,$payId,$serviceId,$walletId);
+    if ($channel!=='' && !isset($targets[$channel])) $targets[$channel]='service_channel';
+    if ($pages!==[] && ($serviceId===null || $payId!==null || $walletId!==null ||
+        !in_array($stage,['service_completed','service_resolution'],true)))
+        throw new RuntimeException('followup_report_pages_source_invalid');
     foreach ($targets as $recipient=>$role) {
+        $role=$role===true?'service_admin':$role;
         $packet=$content;
         if ($actorKeys!==null && (string)$recipient===(string)$actor) $packet['keys']=$actorKeys;
-        achbotFollowupStoreLocked($db,$payId,$serviceId,$stage,$role===true?'service_admin':$role,'send',
+        achbotFollowupStoreLocked($db,$payId,$serviceId,$stage,$role,'send',
             (string)$recipient,null,$fingerprint,$packet,$walletId);
+        foreach (array_values($pages) as $i=>$page) {
+            achbotFollowupStoreLocked($db,null,$serviceId,$stage.'_p'.($i+1),$role,'send',
+                (string)$recipient,null,$fingerprint,['text'=>$page,'keys'=>null,'mode'=>$content['mode']]);
+        }
     }
-    $channel=achbotFollowupReportChannel($channel,$stage,$payId,$serviceId,$walletId);
-    if ($channel!=='' && !isset($targets[$channel]))
-        achbotFollowupStoreLocked($db,$payId,$serviceId,$stage,'service_channel','send',
-            $channel,null,$fingerprint,$content,$walletId);
 }
 function achbotFollowupAdminReportAllowed(mysqli $db,array $r,int $actor=0,string $capability='payments'): bool {
     $owner=(int)($GLOBALS['admin']??0);$recipient=(string)$r['recipient'];

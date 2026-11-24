@@ -190,12 +190,6 @@ elseif(preg_match('/^yesDeleteConfig(\d+)/',$data,$match)){
         exit;
     }
 
-    editText($message_id, \achbotMessage('subscription.account_deletion.no_dont_delete.message.ab50b51b1f', ['remark' => $remark]),json_encode([
-            'inline_keyboard' => [
-                [['text'=>\achbotMessage('legacy_buttons.back_to_main'),'callback_data'=>"mainMenu"]]
-                ]
-        ]));
-        
 $reportSender=$update->callback_query->from??null;
 $reportFirstName=is_string($reportSender->first_name??null)?$reportSender->first_name:
     html_entity_decode((string)$first_name,ENT_QUOTES|ENT_HTML5,'UTF-8');
@@ -204,7 +198,14 @@ $reportUsername=is_string($reportSender->username??null)?$reportSender->username
 $channelMessage = \achbotMessageHtml('subscription.account_deletion.report', ['from_id' => $from_id, 'first_name' => $reportFirstName, 'username' => $reportUsername, 'remark' => $remark, 'volumeDisplay' => $volume, 'daysDisplay' => $days]);
 
 // ارسال پیام به ادمین خاص
-achbotNotifyAdmins('sendMessage', ['text'=>$channelMessage, 'reply_markup'=>null, 'parse_mode'=>'HTML']);
+$channelMessage.="\n".achbotMessageHtml('operational_reports.service_order',['order'=>(int)$oid]);
+achbotNotifyAdmins('sendMessage', ['text'=>$channelMessage, 'reply_markup'=>null, 'parse_mode'=>'HTML'],
+    ['report_ref'=>'delete:'.(int)$oid]);
+    editText($message_id, \achbotMessageHtml('subscription.account_deletion.no_dont_delete.message.ab50b51b1f', ['remark' => $remark]),json_encode([
+            'inline_keyboard' => [
+                [['text'=>\achbotMessage('legacy_buttons.back_to_main'),'callback_data'=>"mainMenu"]]
+                ]
+        ]));
     exit();
 }
 elseif(preg_match('/^delUserConfig(\d+)/',$data,$match) && ($from_id == $admin || $userInfo['isAdmin'] == true)){
@@ -217,7 +218,7 @@ elseif(preg_match('/^delUserConfig(\d+)/',$data,$match) && ($from_id == $admin |
     if (!$order) {alert(\achbotMessage('subscription.account_deletion.no_dont_delete.alert.bd8e953385'),true);exit;}
     $remark = $order['remark'];
 
-    editText($message_id, \achbotMessage('subscription.account_deletion.no_dont_delete.message.2ddfbc22e4', ['remark' => $remark]) . "\n\n" . \achbotMessage('subscription.account_deletion.shared_effect_notice'),json_encode([
+    editText($message_id, \achbotMessageHtml('subscription.account_deletion.no_dont_delete.message.2ddfbc22e4', ['remark' => $remark]) . "\n\n" . \achbotMessage('subscription.account_deletion.shared_effect_notice'),json_encode([
         'inline_keyboard' => [
             [['text'=>\achbotMessage('subscription.account_deletion.button.13159f8c74'),'callback_data'=>"yesDeleteUserConfig" . $match[1]],['text'=>\achbotMessage('subscription.account_deletion.button.5f5c4c72bd'),'callback_data'=>"noDontDelete"]]
             ]
@@ -260,15 +261,16 @@ elseif(preg_match('/^yesDeleteUserConfig(\d+)/',$data,$match) && ($from_id == $a
         exit;
     }
 
-    editText($message_id, \achbotMessage('subscription.account_deletion.no_dont_delete.message.ab50b51b1f', ['remark' => $remark]),json_encode([
+    $adminMessage=achbotMessageHtml('subscription.account_deletion.no_dont_delete.admin_message.53224aee55',[
+        'userId'=>$userId,'remark'=>$remark])."\n".
+        achbotMessageHtml('operational_reports.service_order',['order'=>(int)$oid])."\n".
+        achbotMessageHtml('operational_reports.actor',['actor'=>(int)$from_id]);
+    achbotNotifyAdmins('sendMessage',['text'=>$adminMessage,'parse_mode'=>'HTML'],
+        ['report_actor'=>(int)$from_id,'actor_capability'=>'orders','report_ref'=>'delete:'.(int)$oid]);
+    editText($message_id, \achbotMessageHtml('subscription.account_deletion.no_dont_delete.message.ab50b51b1f', ['remark' => $remark]),json_encode([
             'inline_keyboard' => [
                 [['text'=>\achbotMessage('legacy_buttons.back_to_main'),'callback_data'=>"mainMenu"]]
                 ]
 	]));
-	// ارسال پیام به ادمین
-	$adminMessage = \achbotMessage('subscription.account_deletion.no_dont_delete.admin_message.53224aee55', ['userId' => $userId, 'remark' => $remark]);
-	sendMessage($adminMessage, null, "html", $admin);
-	sendToAllAdmins('sendMessage', ['text' => $adminMessage,'parse_mode' => "html"]);
-        
     exit();
 }

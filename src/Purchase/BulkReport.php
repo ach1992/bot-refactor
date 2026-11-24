@@ -56,14 +56,13 @@ function achbotBulkRecordedAccounts(mysqli $db,int $expected,int $owner,
         'reference'=>$payId!==null?'#'.$payId:(string)$source];
 }
 
-/** Include every account that fits in the actual Telegram message budget.
- * Omitted names are COUNTED, never silently presented as one account.
- */
-function achbotBulkReportAppend(string $base,array $proof,bool $html=false): string {
+/** Keep the existing bounded summary; partition every remaining confirmed
+ * account into independently searchable, complete Telegram messages. */
+function achbotBulkReportBuild(string $base,array $proof,bool $html=false): array {
     $expected=(int)($proof['requested']??0);
     $known=(int)($proof['confirmed']??0);
     if ($expected<=0 || $known<0 || $known>$expected ||
-        !is_array($proof['accounts']??null))
+        !is_array($proof['accounts']??null) || count($proof['accounts'])!==$known)
         throw new InvalidArgumentException('bulk_report_projection_invalid');
     $head="\n\n".achbotMessage(($proof['resolved']??false)
         ?'bulk_reporting.resolved_retained':(($proof['complete']??false)
@@ -73,12 +72,16 @@ function achbotBulkReportAppend(string $base,array $proof,bool $html=false): str
     // strlen is a conservative bound for UTF-16 Telegram characters.
     $limit=4000;
     $body=$base.$head;$shown=0;
+    $lines=[];
     foreach ($proof['accounts'] as $account) {
         $name=(string)($account['name']??'');
         $safe=$html?htmlspecialchars($name,ENT_QUOTES|ENT_SUBSTITUTE,'UTF-8'):$name;
         $line="\n".(int)$account['ordinal'].'. '.
             ($html?'<code>'.$safe.'</code>':$safe).' (#'.(int)$account['order_id'].')';
-        $remaining=count($proof['accounts'])-$shown-1;
+        $lines[]=$line;
+    }
+    foreach ($lines as $line) {
+        $remaining=count($lines)-$shown-1;
         $reserve=$remaining>0?'\n'.achbotMessage('bulk_reporting.more',['count'=>$remaining]):'';
         if (strlen($body.$line.$reserve)>$limit)break;
         $body.=$line;++$shown;
@@ -91,7 +94,22 @@ function achbotBulkReportAppend(string $base,array $proof,bool $html=false): str
         $short=achbotMessage('bulk_reporting.short_reference').' '.
             ($html?htmlspecialchars((string)($proof['reference']??''),ENT_QUOTES|ENT_SUBSTITUTE,'UTF-8'):
                 (string)($proof['reference']??''));
-        if ($short!==$base)return achbotBulkReportAppend($short,$proof,$html);
+        if ($short!==$base)return achbotBulkReportBuild($short,$proof,$html);
     }
-    return $body;
+    $pages=[];$page='';
+    foreach (array_slice($lines,$shown) as $line) {
+        if ($page==='' || strlen($page.$line)>$limit) {
+            if ($page!=='') $pages[]=$page;
+            $params=['page'=>count($pages)+1,'reference'=>(string)($proof['reference']??'')];
+            $page=$html?achbotMessageHtml('bulk_reporting.continuation',$params):
+                achbotMessage('bulk_reporting.continuation',$params);
+        }
+        if (strlen($page.$line)>$limit) throw new RuntimeException('bulk_report_line_too_long');
+        $page.=$line;
+    }
+    if ($page!=='') $pages[]=$page;
+    return ['summary'=>$body,'pages'=>$pages];
+}
+function achbotBulkReportAppend(string $base,array $proof,bool $html=false): string {
+    return achbotBulkReportBuild($base,$proof,$html)['summary'];
 }

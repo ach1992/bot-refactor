@@ -1289,11 +1289,39 @@ loopback peers, and validates rendered source packets and callbacks. It is
 not installed/live acceptance, nor a proof of every possible user-facing
 message or external Native ordering. Non-financial trial, direct gift,
 admin bulk creation, subscription import, plan change, transfer/reassignment
-and deletion notifications still include best-effort direct reporting paths;
-complete durable fanout and deliberate per-event recovery acceptance of
-those paths is a remaining audit requirement, not established by a green
-financial CI. Large bulk summaries may omit names that do not fit a single
-Telegram message; omitted counts are shown but not every omitted name is
-searchable in that report. The prior delayed-write counterexample remains
+and deletion share the general direct fanout, including the actual authorized
+administrator when applicable (even with general unsolicited notifications
+disabled), and the configured channel. The primary, actor and channel are
+deduplicated. Private import controls are omitted from channel copies.
+Committed deletion, plan selection, transfer and import reports are attempted
+before their fallible success UI. Report failures carry the original event
+reference and recipient class; they do not repeat Native work.
+
+Manual RENEW completion now has one report per recipient, preserving the
+actual approving operator's menu. BUY delivery acknowledgement remains a
+separate event, never inferred from successful local creation. Report
+references prefer the receipt that actually funded the service over a draft
+that did not fund it. Unused renewal-success copy is retired.
+
+Large paid BUY and partial-retained resolution reports partition overflow
+account names and original order IDs into bounded continuation messages.
+Each continuation is sealed to the same original service evidence using the
+existing outbox and recipient revalidation, with a deterministic page event
+identity and separate delivery attempts. The first message retains the
+summary/count; every confirmed account appears once across the complete
+report for each audience. Administrator bulk creation uses the same
+partitioning with its existing best-effort direct fanout. No new financial
+engine or database schema was introduced.
+
+Durability assessment: money and funded service outcomes require the existing
+transactional outbox, while the non-financial direct notifications remain
+best effort. A crash between their local commit and report send can still
+lose a notice; a deliberate operator recovery workflow for those events is
+not established. A changed channel or revoked administrator is not silently
+retargeted; original sealed reports are held pending current authorization.
+Automatic retries are bounded/deferred behind healthy work, but permanent
+recipient replacement/dismissal needs a separate explicit recovery decision.
+These are remaining operational acceptance limitations, not proven
+by green financial CI. The prior delayed-write counterexample remains
 an explicit Native API limitation. Keep the independent review, owner
 decision and installed acceptance gates separate.

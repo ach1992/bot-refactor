@@ -177,15 +177,18 @@ function achbotGiftIdentityHash(mysqli $db,array $orders): string {
 }
 
 function achbotGiftCompletionReport(string $reference,string $remark,int $days,int $volume,
-    array $references,array $notices): bool {
+    array $references,array $notices,int $actor=0): bool {
     try {
-        $ack=achbotNotifyAdmins('sendMessage',['text'=>\achbotMessage('gifts.completed_report',[
+        $text=\achbotMessage('gifts.completed_report',[
             'reference'=>htmlspecialchars($reference,ENT_QUOTES|ENT_SUBSTITUTE,'UTF-8'),
             'remark'=>htmlspecialchars($remark,ENT_QUOTES|ENT_SUBSTITUTE,'UTF-8'),
             'days'=>$days,'volume_mb'=>$volume,'reference_count'=>count($references),
             'recipient_count'=>count(achbotGiftReferenceProof($references)['recipient_userids']),
             'notice_unconfirmed_count'=>count($notices['unconfirmed'])
-        ]),'parse_mode'=>'HTML'],['event'=>'general']);
+        ]);
+        if ($actor>0) $text.="\n".achbotMessageHtml('operational_reports.actor',['actor'=>$actor]);
+        $ack=achbotNotifyAdmins('sendMessage',['text'=>$text,'parse_mode'=>'HTML'],[
+            'event'=>'general','report_actor'=>$actor,'actor_capability'=>'operations','report_ref'=>$reference]);
         if (!achbotAdminFanoutAcknowledged($ack))
             throw new RuntimeException('gift_report_partial_acknowledgement');
         return true;
@@ -196,11 +199,11 @@ function achbotGiftCompletionReport(string $reference,string $remark,int $days,i
 }
 
 function achbotGiftDeliverNotices(mysqli $db,int $journalId,string $reference,
-    array $orders,string $remark,int $volume,int $days): array {
+    array $orders,string $remark,int $volume,int $days,int $actor=0): array {
     $notices=['acknowledged'=>[],'unconfirmed'=>achbotGiftReferenceProof($orders)['recipient_userids'],'send_exceptions'=>[]];
     try {$notices=achbotGiftNotifyCustomers($db,$orders,$remark,achbotGiftCustomerText($volume,$days));}
     catch (Throwable $error) {error_log('achbot_gift_customer_text_unconfirmed source_id='.$journalId);}
-    $notices['report_acknowledged']=achbotGiftCompletionReport($reference,$remark,$days,$volume,$orders,$notices);
+    $notices['report_acknowledged']=achbotGiftCompletionReport($reference,$remark,$days,$volume,$orders,$notices,$actor);
     achbotGiftRecordNotices($db,$journalId,$notices);
     return $notices;
 }

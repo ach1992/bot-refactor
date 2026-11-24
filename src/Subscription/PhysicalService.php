@@ -1099,7 +1099,9 @@ function achbotNotifyServiceChange(string $kind,array $subject,int $actorId,bool
         );
         // Default general notification fanout includes botState.rewardChannel.
         // Do not pass report_channel=null: that explicitly disables it.
-        achbotNotifyAdmins('sendMessage',['text'=>$text,'parse_mode'=>'HTML']);
+        achbotNotifyAdmins('sendMessage',['text'=>$text,'parse_mode'=>'HTML'],[
+            'report_actor'=>$adminActor?$actorId:0,'actor_capability'=>'orders',
+            'report_ref'=>$kind.':'.(int)$subject['id']]);
     } catch (Throwable $error) {
         error_log('achbot_service_change_report_unconfirmed order_id='.
             (int)$subject['id'].' kind='.$kind.' class='.get_class($error));

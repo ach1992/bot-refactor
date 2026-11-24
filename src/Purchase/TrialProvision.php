@@ -179,10 +179,13 @@ if (preg_match('/freeTrial(\d+)_(?<buyType>\w+)/', $data, $match)) {
 
     $usernameText = !empty($username) ? '@' . $username : \achbotMessage('purchase.trial_provision.text.8c2d826d72');
 
-    $channelMessage = \achbotMessage('purchase.trial_provision.channel_message.d22e3c7448', ['userId' => $userId, 'fullName' => $fullName, 'usernameText' => $usernameText, 'remark' => $remark, 'volume' => $volume, 'days' => $days]);
+    $channelMessage = \achbotMessageHtml('purchase.trial_provision.channel_message.d22e3c7448', ['userId' => $userId, 'fullName' => $fullName, 'usernameText' => $usernameText, 'remark' => $remark, 'volume' => $volume, 'days' => $days]);
 
     // ارسال پیام به ادمین اصلی
-    achbotNotifyAdmins('sendMessage', ['text'=>$channelMessage, 'reply_markup'=>null, 'parse_mode'=>'HTML']);
+    $channelMessage.="\n".achbotMessageHtml('operational_reports.service_order',['order'=>$orderId])."\n".
+        achbotMessageHtml('operational_reports.source_reference',['reference'=>'trial:'.$effectId]);
+    achbotNotifyAdmins('sendMessage', ['text'=>$channelMessage, 'reply_markup'=>null, 'parse_mode'=>'HTML'],
+        ['report_ref'=>'trial:'.$effectId]);
 
     setUser('used', 'freetrial');
 }

@@ -259,7 +259,8 @@ if (
         if ($deliveryReview)
             $base.="\n".achbotMessage('bulk_reporting.delivery_needs_review',
                 ['count'=>count($deliveryReview)]);
-        return ['proof'=>$proof,'text'=>achbotBulkReportAppend($base,$proof,true)];
+        $report=achbotBulkReportBuild($base,$proof,true);
+        return ['proof'=>$proof,'text'=>$report['summary'],'pages'=>$report['pages']];
     };
     try {
     for ($i = 1; $i <= $count; $i++) {
@@ -357,7 +358,13 @@ if (
         try {
             $summary=$reportBulk();
             $notice=achbotNotifyAdmins('sendMessage', [
-                'text'=>$summary['text'],'reply_markup'=>null,'parse_mode'=>'HTML']);
+                'text'=>$summary['text'],'reply_markup'=>null,'parse_mode'=>'HTML'],
+            ['report_actor'=>(int)$uid,'actor_capability'=>'operations','report_ref'=>$bulkSource]);
+            foreach ($summary['pages'] as $i=>$page) {
+                $extra=achbotNotifyAdmins('sendMessage',['text'=>$page,'parse_mode'=>'HTML'],[
+                    'report_actor'=>(int)$uid,'actor_capability'=>'operations','report_ref'=>$bulkSource.':p'.($i+1)]);
+                $notice=array_merge($notice,$extra);
+            }
             if (!achbotAdminFanoutAcknowledged($notice))
                 error_log('achbot_admin_bulk_partial_notice_unconfirmed source='.
                     preg_replace('/[^A-Za-z0-9_:]/','',$bulkSource));
@@ -385,7 +392,13 @@ if (
     try {
         $summary=$reportBulk($deliveryReview);
         $notices=achbotNotifyAdmins('sendMessage',[
-            'text'=>$summary['text'],'reply_markup'=>null,'parse_mode'=>'HTML']);
+            'text'=>$summary['text'],'reply_markup'=>null,'parse_mode'=>'HTML'],
+            ['report_actor'=>(int)$uid,'actor_capability'=>'operations','report_ref'=>$bulkSource]);
+        foreach ($summary['pages'] as $i=>$page) {
+            $extra=achbotNotifyAdmins('sendMessage',['text'=>$page,'parse_mode'=>'HTML'],[
+                'report_actor'=>(int)$uid,'actor_capability'=>'operations','report_ref'=>$bulkSource.':p'.($i+1)]);
+            $notices=array_merge($notices,$extra);
+        }
         if (!achbotAdminFanoutAcknowledged($notices))
             error_log('achbot_admin_bulk_report_delivery_unconfirmed source='.
                 preg_replace('/[^A-Za-z0-9_:]/','',$bulkSource));

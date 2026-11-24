@@ -3609,7 +3609,9 @@ function achbotNotifyAdmins($method, array $data, array $options = []): array {
         return preg_match('/^-?[0-9]+$/D',$value) ? (string)(int)$value : strtolower($value);
     };
     $sent=[];$results=[];
-    $deliver=static function($recipient,string $kind,?array $override=null) use ($method,$data,$key,$event,&$sent,&$results): void {
+    $ref=$options['report_ref']??null;
+    $ref=is_string($ref) && preg_match('/\A[A-Za-z0-9_:-]{1,128}\z/D',$ref)?$ref:null;
+    $deliver=static function($recipient,string $kind,?array $override=null) use ($method,$data,$key,$event,$ref,&$sent,&$results): void {
         $payload=$override??$data;
         $identity=$key($recipient);
         if ($identity==='' || isset($sent[$identity])) return;
@@ -3631,12 +3633,24 @@ function achbotNotifyAdmins($method, array $data, array $options = []): array {
             error_log('achbot_admin_notice_exception event='.$event.' method='.$method.
                 ' target='.$kind.' class='.$class.$context);
         }
+        if ($ref!==null && (!is_object($response) || ($response->ok??false)!==true))
+            error_log('achbot_operational_report_unconfirmed source='.$ref.' target='.$kind.
+                ' telegram_code='.(int)($response->error_code??0));
         $results[]=['chat_id'=>$recipient,'response'=>$response];
     };
     $deliver($primary,'owner');
     if ($connection instanceof mysqli) {
         $complete=false;
         $candidates=achbotAdminRecipientCandidates($connection,$primary,$complete);
+        $actor=$options['report_actor']??0;
+        if ($event==='general' && is_int($actor) && $actor>0 && $actor!==$primary) {
+            $capability=$options['actor_capability']??'orders';
+            $admissionComplete=true;
+            $level=achbotAdminLevel($actor,$connection,$primary,true,true,$admissionComplete);
+            if (is_string($capability) && achbotAdminLevelCan($level,$capability))
+                $deliver($actor,'actor');
+            if (!$admissionComplete) $complete=false;
+        }
         foreach ($candidates as $recipient) {
             $admissionComplete=true;
             if (achbotAdminNotificationAllowed($connection,$recipient,$primary,$event,$admissionComplete))
@@ -3645,13 +3659,17 @@ function achbotNotifyAdmins($method, array $data, array $options = []): array {
         }
         // Keep primary acknowledgement first. Durable report callers must not
         // mistake a contended recipient read for a fully delivered fanout.
-        if (!$complete) $results[]=['chat_id'=>null,'response'=>null,
-            'deferred'=>'recipient_discovery'];
+        if (!$complete) {
+            if ($ref!==null) error_log('achbot_operational_report_recipient_deferred source='.$ref);
+            $results[]=['chat_id'=>null,'response'=>null,'deferred'=>'recipient_discovery'];
+        }
     }
     if (is_int($channel) || is_string($channel)) {
         if (trim((string)$channel)!=='') {
             $reportData=array_key_exists('report_parse_mode',$options)
                 ? array_replace($data,['parse_mode'=>$options['report_parse_mode']]) : $data;
+            if (array_key_exists('report_reply_markup',$options))
+                $reportData['reply_markup']=$options['report_reply_markup'];
             $deliver($channel,'channel',$reportData);
         }
     }
