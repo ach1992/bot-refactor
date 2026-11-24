@@ -11,6 +11,13 @@ function achbotServiceDeliverySchemaReady(mysqli $db): bool {
     try {
         if (!function_exists('openssl_encrypt') || !function_exists('openssl_decrypt') ||
             strlen(achbotPaymentEvidenceKey())!==32) return false;
+        return achbotServiceDeliveryStorageReady($db);
+    } catch (Throwable $e) {return false;}
+}
+
+/** Read-only storage contract, independent of the private encryption key. */
+function achbotServiceDeliveryStorageReady(mysqli $db): bool {
+    try {
         $tables=[
             'payment_delivery_intents'=>[
                 'columns'=>'id,ordinal,effect_id,order_id,user_id,server_id,source_digest,native_operation,native_target_key,sealed_payload,payload_sha256,state,attempt_count,dispatch_token,dispatched_at,acknowledged_at,last_actor,last_result,created_at,updated_at,service_operation_id,part_count,next_attempt_at',

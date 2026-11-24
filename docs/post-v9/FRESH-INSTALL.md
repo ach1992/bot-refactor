@@ -99,7 +99,7 @@ Before public use, configure:
 - Supported servers and plans. Native PasarGuard requires actual Groups/Hosts, scoped API access and a verified absolute subscription URL prefix before account admission; see its [contract](PASARGUARD-CONTRACT.md).
 - Each server's purchase-delivery and order-page display choices. Current runtime supports subscription/config/auxiliary toggles, ordered exact-name selections (default 3/max 10 inline), purchase-only QR cycling and separate explicit order QR actions; see [presentation](SUBSCRIPTION-PRESENTATION.md).
 - Intended payment credentials, destinations, rates and eligibility before enabling a method. Shared `manualUsdtRateToman` covers USDT/NOWPayments; TRX has its own rate. Manual crypto still needs human receipt verification. The managed invitation gift starts disabled until deliberately set in the same gateway/channel editor.
-- Keep `smsApiVerifyState` and `giftApiVerifyState` OFF until the complete 014 schema, OpenSSL AES-256-GCM support and the existing per-bot webhook secret are verified. Then configure the actual SMS API URL/token and positive monitoring horizon, or gift API URL/key ID/secret and explicit rial/toman unit, through the administrator UI. Optional filters remain optional. See [API setup](API-PAYMENT-EVIDENCE.md#configuration-before-api-enablement); configuration alone does not test a remote credential or consume evidence.
+- Keep `smsApiVerifyState` and `giftApiVerifyState` OFF until the complete current schema, OpenSSL AES-256-GCM support and the existing per-bot webhook secret are verified. Then configure the actual SMS API URL/token and positive monitoring horizon, or gift API URL/key ID/secret and explicit rial/toman unit, through the administrator UI. Optional filters remain optional. See [API setup](API-PAYMENT-EVIDENCE.md#configuration-before-api-enablement); configuration alone does not test a remote credential or consume evidence.
 
 ## 6. Configure Cron and its private lock
 
@@ -143,7 +143,16 @@ The coordinator runs four separate processes, in order: `gift2all.php`, admitted
 
 ## 7. Verify before customer use
 
-Confirm the exact runtime/manifest, expected schema and intended settings. The [read-only readiness preflight](PAYMENT-READINESS-PREFLIGHT.md) uses a dedicated SELECT-only account and does not load private configuration or invoke workers/providers. It expects configured `BOT_STATES`/`PAYMENT_KEYS` documents and a potentially usable payment method; an untouched new database is not yet payment-ready. Its PASS is local readiness, not proof of a real payment. For 014 it reports runtime schema capability rather than full DDL certification; it never decrypts API credentials or verifies their live authentication. Audit exact column/index definitions and target history separately before API activation. For the current schema, additionally verify the obsolete server-level PasarGuard Native Group column is absent, active plans have valid plan-level Native Groups and the service_plan_changes table has the expected schema; never infer this from a successful ZIP extraction. Also verify both scoped add-on UNIQUE indexes, their exact key order, all seven columns and InnoDB as documented in [scoped add-ons](ADDON-SCOPES.md); do not treat a successful ZIP extraction as schema readiness.
+Confirm the exact runtime/manifest, expected schema and intended settings with the
+[read-only readiness preflight](PAYMENT-READINESS-PREFLIGHT.md). It binds the trusted
+manifest to the clean release checkout and installed source, derives required
+database metadata from the consolidated current schema, and uses current runtime
+storage guards with a SELECT-only account. Exit 3 on an untouched database
+means the structure is ready but payment configuration is not yet complete.
+It does not decrypt credentials, verify the private encryption key, execute
+workers or certify live provider access. Validate actual Native plan groups,
+private configuration and real operational acceptance separately. See the
+[current automatic renewal contract](AUTOMATIC-RENEWAL-SAFETY.md).
 
 On the selected isolated bot, verify Owner access, ordinary-user restrictions, current server/config display, explicit QR actions, cancellation and safe invalid-input behavior. Observe the actual scheduler's private logs and absence of overlapping batches. Use a separately authorized representative provider/payment acceptance plan with controlled accounts and funds; this source guide does not execute or approve live tests. A successful browser payment return is not settlement proof; never automatically retry a transaction or provider mutation after an ambiguous result.
 

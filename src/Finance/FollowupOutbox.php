@@ -13,6 +13,13 @@ function achbotFollowupSchemaReady(mysqli $db): bool {
     try {
         if (!function_exists('openssl_encrypt') ||
             strlen(achbotPaymentEvidenceKey())!==32) return false;
+        return achbotFollowupStorageReady($db);
+    } catch (Throwable $e) {return false;}
+}
+
+/** Read-only storage contract, independent of the private encryption key. */
+function achbotFollowupStorageReady(mysqli $db): bool {
+    try {
         $tables=[
             'payment_followup_intents'=>[
                 'columns'=>'id,pay_row_id,service_operation_id,wallet_entry_id,operational_ref,intent_key,stage,kind,role,recipient,'.

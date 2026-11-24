@@ -37,6 +37,11 @@ main pushes under the single `php85-validation` required status:
   payment-only delivery columns, mandatory source/part identities, unique
   source/attempt indexes, historical-row rejection by construction-only
   DDL, exact retained table definitions and empty/partial settings menus.
+- The actual documented payment-readiness CLI is required CI coverage:
+  trusted current manifest and installed members, empty consolidated schema,
+  representative current settings and SELECT-only account, missing current
+  constraints/indexes and tampered source. Structural readiness is distinct
+  from payment configuration. No private key or external call is needed.
 - Existing current-provider import, alias, DELETE, gift, account
   management, indexed payment lock, payment audience, permission, browser,
   onboarding, agency, Wallet transfer/admin and diagnostic suites remain

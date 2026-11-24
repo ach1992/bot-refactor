@@ -30,6 +30,7 @@ NATIVE_TESTS = (
     ("wallet_first_funding", "test_wallet_first_funding.py"),
     ("wallet_first_retirement", "test_wallet_first_retirement.py"),
     ("wallet_first_fresh_schema", "test_wallet_first_fresh_schema.py"),
+    ("current_payment_readiness", "test_post_v9_payment_readiness.py"),
     ("wallet_first_hosted", "test_wallet_first_hosted.py"),
     ("wallet_first_manual", "test_wallet_first_manual.py"),
     ("wallet_first_service_execution", "test_wallet_first_service_execution.py"),
