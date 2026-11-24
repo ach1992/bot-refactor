@@ -563,9 +563,8 @@ function achbotPgPinPayment(mysqli $db,int $payId): void {
 function achbotPgQuote(mysqli $db,int $payId,bool $lock=false): array {
     achbotPgLoad();
     require_once __DIR__.'/../Plans/Addons.php';
-    $migrated=achbotAddonSchema($db);
-    $columns='provider_snapshot,server_id,plan_id,type,order_id'.
-        ($migrated?',addon_scope_snapshot':'');
+    achbotAddonSchema($db);
+    $columns='provider_snapshot,server_id,plan_id,type,order_id,addon_scope_snapshot';
     $s=$db->prepare('SELECT '.$columns.' FROM pays WHERE id=?'.($lock?' FOR UPDATE':''));
     $s->bind_param('i',$payId);$s->execute();$p=$s->get_result()->fetch_assoc();$s->close();
     $snap=json_decode((string)($p['provider_snapshot']??''),true,64,JSON_THROW_ON_ERROR);

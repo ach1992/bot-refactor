@@ -9,7 +9,7 @@ require_once __DIR__.'/ReceiptHelpers.php';
  * An optional verified-evidence API profile is snapshotted on the same commit,
  * without a Native subject preflight or a duplicate service-money owner. */
 function achbotManualReceiptIssue(mysqli $db,int $payId,int $userId,string $method,
-    ?int $operationId,?string $network=null,?array $draftStates=null): array {
+    ?int $operationId,?string $network=null,?array $draftStates=null,?string $expectedMode=null): array {
     achbotPaymentEvidenceRequireAutocommit($db);
     $def=achbotCreditMethodDefinition($method);
     if (!$def || !isset($def['manual_quote']))
@@ -21,6 +21,8 @@ function achbotManualReceiptIssue(mysqli $db,int $payId,int $userId,string $meth
         if ($draftStates!==null) {
             require_once __DIR__.'/CheckoutAdmission.php';
             achbotCheckoutRequireSchema($db);
+            if ($expectedMode!==null && !achbotCheckoutModeMatchesRequest($pay,$expectedMode))
+                throw new DomainException('checkout_draft_unavailable');
             if ($a===null && !achbotManualEnabled($method)) throw new DomainException('manual_method_unavailable');
             $operationId=achbotCheckoutAdmitDraftLocked($db,$pay,$a,$method,$draftStates);
             // Read back the exact committed-in-this-transaction binding.

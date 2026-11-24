@@ -72,23 +72,27 @@ function achbotCheckoutOriginalCommandLocked(mysqli $db,array $pay): array {
  * purchase/renewal quote. NULL is never permission to rebuild a stale quote. */
 function achbotCheckoutSealDraftLocked(mysqli $db,int $id,array $pay,array $display,array $states): void {
     $standard=$pay['type']==='BUY_SUB' && (float)$pay['day']===0.0 && (float)$pay['volume']===0.0;
-    if (!$standard && $pay['type']!=='RENEW_ACCOUNT') return;
-    $plan=achbotProviderRow($db,'SELECT days,volume FROM server_plans WHERE id=? FOR UPDATE','i',[(int)$pay['plan_id']]);
-    $server=achbotProviderRow($db,'SELECT remark FROM server_info WHERE id=? FOR UPDATE','i',[(int)$pay['server_id']]);
-    $days=achbotWholeServiceUnits($display['days']??null,3650);
-    $volume=achbotWholeServiceUnits($display['volume']??null,achbotServiceVolumeMax(),!$standard);
-    if (!$plan || !$server || $days===null || $volume===null ||
-        (float)$plan['days']!==(float)$days || (float)$plan['volume']!==(float)$volume)
-        throw new DomainException('checkout_displayed_plan_changed');
-    $context=achbotServiceJson(['days'=>$days,'volume'=>$volume,
-        'naming_mode'=>(string)($states['remark']??''),'prefix'=>(string)$server['remark']]);
+    // NULL is an inactive historical draft, never a current command.
+    $context=['version'=>1];
+    if ($standard || $pay['type']==='RENEW_ACCOUNT') {
+        $plan=achbotProviderRow($db,'SELECT days,volume FROM server_plans WHERE id=? FOR UPDATE','i',[(int)$pay['plan_id']]);
+        $server=achbotProviderRow($db,'SELECT remark FROM server_info WHERE id=? FOR UPDATE','i',[(int)$pay['server_id']]);
+        $days=achbotWholeServiceUnits($display['days']??null,3650);
+        $volume=achbotWholeServiceUnits($display['volume']??null,achbotServiceVolumeMax(),!$standard);
+        if (!$plan || !$server || $days===null || $volume===null ||
+            (float)$plan['days']!==(float)$days || (float)$plan['volume']!==(float)$volume)
+            throw new DomainException('checkout_displayed_plan_changed');
+        $context+=['days'=>$days,'volume'=>$volume,
+            'naming_mode'=>(string)($states['remark']??''),'prefix'=>(string)$server['remark']];
+    }
+    $context=achbotServiceJson($context);
     $s=achbotProviderStatement($db,'UPDATE pays SET checkout_draft_context=? WHERE id=? AND checkout_draft_context IS NULL','si',[$context,$id]);
     $n=$s->affected_rows;$s->close();
     if ($n!==1) throw new RuntimeException('checkout_draft_context_bind_failed');
 }
 function achbotCheckoutReadDraftContext(array $pay): array {
     $context=json_decode((string)($pay['checkout_draft_context']??''),true);
-    if (!is_array($context) || !is_int($context['days']??null) || !is_int($context['volume']??null) ||
+    if (!is_array($context) || ($context['version']??null)!==1 || !is_int($context['days']??null) || !is_int($context['volume']??null) ||
         !is_string($context['naming_mode']??null) || !is_string($context['prefix']??null))
         throw new DomainException('checkout_draft_context_missing');
     return $context;
@@ -164,6 +168,8 @@ function achbotCheckoutDraftRequestLocked(mysqli $db,array $pay,array $states): 
 function achbotCheckoutAdmitDraftLocked(mysqli $db,array $pay,?array $attempt,
     string $method,array $states): ?int {
     $uid=(int)$pay['user_id'];$id=(int)$pay['id'];
+    if (!achbotPayUxCurrentDraft($pay))
+        throw new DomainException('checkout_draft_unavailable');
     if ($attempt!==null) {
         if ($method==='wallet' || ($attempt['provider']??null)!==$method ||
             !is_string($attempt['wallet_invoice_sha256']??null) ||
@@ -203,7 +209,10 @@ function achbotCheckoutAdmitDraftLocked(mysqli $db,array $pay,?array $attempt,
         return (int)$op['id'];
     }
     $q=achbotCheckoutDraftRequestLocked($db,$pay,$states);
-    $target=achbotServiceLocalTargetLocked($db,$uid,$q,true)['identity'];
+    $local=achbotServiceLocalTargetLocked($db,$uid,$q,true);
+    if ($method!=='wallet' && $q['kind']==='BUY' && (int)$local['capacity']<$q['quantity'])
+        throw new DomainException('checkout_capacity_unavailable');
+    $target=$local['identity'];
     $adapter=achbotProviderDefinition($target['provider']);
     if (!isset($adapter['service_checkout_pin']) ||
         !($adapter['service_checkout_pin'])($pay,$target,$q))
@@ -216,9 +225,10 @@ function achbotCheckoutAdmitDraftLocked(mysqli $db,array $pay,?array $attempt,
 }
 
 /** Exact persisted callback family; no external renewal route. */
-function achbotWalletModeMatchesRequest(array $pay,string $mode): bool {
+function achbotCheckoutModeMatchesRequest(array $pay,string $mode): bool {
     $type=(string)($pay['type']??'');
     return match($mode) {
+        'topup'=>$type==='INCREASE_WALLET',
         'renew'=>$type==='RENEW_ACCOUNT',
         'day'=>preg_match('/\AINCREASE_DAY_[1-9][0-9]*_[1-9][0-9]*\z/D',$type)===1,
         'volume'=>preg_match('/\AINCREASE_VOLUME_[1-9][0-9]*_[1-9][0-9]*\z/D',$type)===1,
@@ -240,7 +250,7 @@ function achbotCheckoutWallet(mysqli $db,string $hash,int $actor,string $mode,ar
         $s=achbotProviderStatement($db,'SELECT * FROM pays WHERE hash_id=? AND user_id=? LIMIT 2 FOR UPDATE','si',[$hash,$actor]);
         $rows=$s->get_result()->fetch_all(MYSQLI_ASSOC);$s->close();
         $pay=count($rows)===1?$rows[0]:null;
-        if (!$pay || !achbotWalletModeMatchesRequest($pay,$mode) || !in_array($mode,['standard','custom','renew','day','volume'],true) ||
+        if (!$pay || !achbotCheckoutModeMatchesRequest($pay,$mode) || !in_array($mode,['standard','custom','renew','day','volume'],true) ||
             ($mode==='standard' && $pay['type']!=='BUY_SUB'))
             throw new DomainException('checkout_draft_unavailable');
         $id=(int)$pay['id'];

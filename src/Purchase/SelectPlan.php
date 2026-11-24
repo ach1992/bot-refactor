@@ -129,7 +129,7 @@ if((preg_match('/^discountSelectPlan(\d+)_(\d+)_(\d+)/',$userInfo['step'],$match
          
         if(!preg_match('/^discountSelectPlan/', $userInfo['step'])){ 
             $hash_id = RandomString(); 
-            achbotRemoveUnclaimedPendingPayments($connection,$from_id,'BUY_SUB');
+
              
             $time = time(); 
             if(isset($accountCount)){ 

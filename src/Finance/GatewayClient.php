@@ -123,32 +123,6 @@ function achbotGatewayArchiveSchemaMissing(mysqli $db): bool {
     return true;
 }
 
-/** Local original-claim Archive fence. A wallet claim may have no attempt
- * until its first successful Native/local recovery. A missing historical 022
- * column means no Archive has occurred; other SQL errors must surface.
- */
-function achbotGatewayOriginalArchived(mysqli $db,int $payId): bool {
-    if ($payId<=0) return false;
-    try {
-        $q=$db->prepare('SELECT review_archived_at FROM payment_attempts
-            WHERE pay_row_id=? LIMIT 1');
-        if (!$q) {
-            $code=(int)$db->errno;
-            if (in_array($code,[1054,1146],true) &&
-                achbotGatewayArchiveSchemaMissing($db)) return false;
-            throw new RuntimeException('original_archive_read_unavailable');
-        }
-        $q->bind_param('i',$payId);
-        if (!$q->execute()) throw new RuntimeException('original_archive_read_failed');
-        $row=$q->get_result()->fetch_assoc();$q->close();
-        return $row!==null && $row['review_archived_at']!==null;
-    } catch (mysqli_sql_exception $error) {
-        if (in_array((int)$error->getCode(),[1054,1146],true) &&
-            achbotGatewayArchiveSchemaMissing($db)) return false;
-        throw $error;
-    }
-}
-
 /** Same query powers the inbox and the original API receipt's review link.
  * Pure local read: no customer/provider side effects.
  */

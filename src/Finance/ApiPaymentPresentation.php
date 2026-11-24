@@ -135,24 +135,6 @@ function achbotApiPaymentRichReport(array $pay,string $body,array $presentation)
     return $body."\n\n".$details;
 }
 
-/**
- * Read the actual committed human actor and original payment identity.
- * All receipt copies can reuse this informational three-row projection;
- * presentation never changes financial/native state or sends notifications.
- */
-function achbotManualFinalReceiptKeyboard(mysqli $db,int $payId,string $subject): string {
-    if ($payId<=0 || $subject==='') throw new RuntimeException('manual_final_subject_invalid');
-    $q=$db->prepare('SELECT hash_id,type,state,approved_by FROM pays WHERE id=? LIMIT 1');
-    $q->bind_param('i',$payId);$q->execute();
-    $pay=$q->get_result()->fetch_assoc();$q->close();
-    if (!$pay || !in_array((string)$pay['state'],
-            ['approved','paid','auto_cart_approved'],true) ||
-        (int)$pay['approved_by']<=0 ||
-        !preg_match('/^[A-Za-z0-9_-]{1,50}$/D',(string)$pay['hash_id']))
-        throw new RuntimeException('manual_final_commit_not_verified');
-    return achbotApiPaymentFinalKeyboard($pay,'',false,['subject'=>$subject]);
-}
-
 function achbotApiPaymentFinalKeyboard(array $pay,string $fallback,bool $automatic,array $presentation,?bool $walletSubject=null): string {
     $hash=(string)($pay['hash_id']??'');
     $actor=(int)($pay['approved_by']??0);

@@ -1,5 +1,5 @@
 <?php
-/** AChBot V8: source-pinned financial compatibility module. */
+/** AChBot current payment route and shared receipt presentation. */
 if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
     http_response_code(404);
     exit;
@@ -46,12 +46,16 @@ function dbFetchPayByHash(mysqli $connection, string $hashId): ?array {
     return $res->fetch_assoc();
 }
 
+/** Only retired action names, never old payment evidence or live callbacks. */
+function achbotObsoleteCallback(string $data): bool {
+    return preg_match('/\A(?:prePayCheck_|addonFilter(?:Day|Volume)|sConfigRenew|changeToken_|changeUUID_|changeNetworkType|changeAccProtocol|changeProtocolIsDisable$|addNewMarzbanPanel$|addNewMarzbanPlan$|addNewServer$|addNewPlan$|addNewRahgozarPlan$|changePortType|changeRealityState|changeServerType|chhangeServerType|marzbanHostSettings|pay(?:Buy|Custom|Renew|IncreaseWallet|IncreaseDay|Increase)WithManualUsdt)/D',$data)===1;
+}
+
 function prepareStartFallback() {
-    global $text, $data;
-    setUser("none");
-    setUser("", "temp");
-    $text = "/start";
-    $data = "";
+    global $text, $data, $callbackId;
+    if (is_string($callbackId??null) && $callbackId!=='') answerCallbackQuery($callbackId);
+    $text = '';
+    $data = 'mainMenu';
 }
 
 function inlineKeyboard(array $rows): string {
@@ -73,20 +77,6 @@ function generateHigherRandomizedAmount(int $amountToman): array {
         'toman' => $randomizedToman,
         'rial'  => $randomizedRial,
     ];
-}
-
-/**
- * Manual payment choice is durable and mutually exclusive with hosted
- * gateway claims in the existing shared ledger. No schema or pays.payid reuse.
- */
-function achbotManualMethod(string $choice): ?string {
-    return match ($choice) {
-        'CartToCart', 'bank_transfer' => 'bank_transfer',
-        'GiftCard', 'gift_card' => 'gift_card',
-        'ManualUsdt', 'manual_usdt' => 'manual_usdt',
-        'ManualTrx', 'manual_trx' => 'manual_trx',
-        default => null
-    };
 }
 
 function achbotManualLabel(string $method): string {
@@ -326,7 +316,7 @@ function achbotManualLedgerMode(mysqli $db): string {
 }
 
 function achbotManualClaim(mysqli $connection, array $payInfo, string $method, int $userId,
-                           ?string $chosenNetwork = null): bool {
+                           ?string $chosenNetwork = null,?string $expectedMode=null): bool {
     if (!in_array($method, ['bank_transfer', 'gift_card', 'manual_usdt','manual_trx'], true) ||
         (int)$payInfo['user_id'] !== $userId) return false;
     try {
@@ -334,7 +324,7 @@ function achbotManualClaim(mysqli $connection, array $payInfo, string $method, i
         achbotCheckoutRequireSchema($connection);
         require_once __DIR__.'/ManualReceipt.php';
         $result=achbotManualReceiptIssue($connection,(int)$payInfo['id'],$userId,$method,
-            null,$chosenNetwork,(array)($GLOBALS['botState']??[]));
+            null,$chosenNetwork,(array)($GLOBALS['botState']??[]),$expectedMode);
         return $result['status']==='issued';
     } catch (Throwable $e) {
         error_log('achbot_checkout_manual_admission_deferred pay_id='.(int)$payInfo['id'].' class='.get_class($e));
@@ -352,7 +342,7 @@ function achbotManualReceiptAllowed(mysqli $connection, array $payInfo, string $
         $api=function_exists('achbotApiPaymentContext') ? achbotApiPaymentContext($connection,(string)$payInfo['hash_id'],$userId) : null;
         if (function_exists('achbotApiPaymentPinned') && achbotApiPaymentPinned($connection,(int)$payInfo['id']) && !$api) return false;
 
-        $stmt = $connection->prepare('SELECT provider,stage,checkout_url,provider_status,
+        $stmt = $connection->prepare('SELECT provider,stage,checkout_url,provider_status,wallet_invoice_sha256,
             TIMESTAMPDIFF(SECOND,created_at,NOW()) AS age_seconds
             FROM payment_attempts WHERE pay_row_id=? LIMIT 1');
         $id = (int)$payInfo['id'];
@@ -360,7 +350,7 @@ function achbotManualReceiptAllowed(mysqli $connection, array $payInfo, string $
         $stmt->execute();
         $attempt = $stmt->get_result()->fetch_assoc();
         $stmt->close();
-        $validWindow=$attempt && (
+        $validWindow=$attempt && achbotCurrentReceiptPin($attempt) && (
             $api!==null || $attempt['stage']==='receiving' ||
             (string)($attempt['provider_status']??'')==='receipt_started' ||
             ((string)($attempt['provider_status']??'')==='' &&
@@ -383,6 +373,7 @@ function achbotManualReceiptAllowed(mysqli $connection, array $payInfo, string $
  */
 function achbotManualBeginEvidence(mysqli $connection, array $payInfo, string $method,
                                    int $userId, string $fileId): ?string {
+    if (!achbotManualReceiptAllowed($connection,$payInfo,$method,$userId)) return null;
     $typed=achbotManualTypedGift($connection,$payInfo,$method);
     if ($userId <= 0 || $fileId === '' || strlen($fileId) > ($typed?4096:1200) ||
         !in_array($method, ['bank_transfer','gift_card','manual_usdt','manual_trx'], true)) return null;
@@ -398,14 +389,14 @@ function achbotManualBeginEvidence(mysqli $connection, array $payInfo, string $m
         $stmt->close();
         if (!$pay || (int)$pay['user_id'] !== $userId || $pay['state'] !== 'pending' ||
             (string)($pay['payid'] ?? '') !== '') { $connection->rollback(); return null; }
-        $stmt = $connection->prepare('SELECT id,provider,stage,checkout_url,provider_status,
+        $stmt = $connection->prepare('SELECT id,provider,stage,checkout_url,provider_status,wallet_invoice_sha256,
             TIMESTAMPDIFF(SECOND,created_at,NOW()) AS age_seconds
             FROM payment_attempts WHERE pay_row_id=? LIMIT 1 FOR UPDATE');
         $stmt->bind_param('i', $id);
         $stmt->execute();
         $attempt = $stmt->get_result()->fetch_assoc();
         $stmt->close();
-        if (!$attempt || (string)$attempt['provider'] !== $method ||
+        if (!$attempt || !achbotCurrentReceiptPin($attempt) || (string)$attempt['provider'] !== $method ||
             !in_array((string)$attempt['stage'], ['pending','receiving'], true)) {
             $connection->rollback(); return null;
         }
@@ -482,13 +473,13 @@ function achbotManualFinishEvidence(mysqli $connection, string $hashId, string $
             $connection->rollback(); return false;
         }
         $id = (int)$pay['id'];
-        $stmt = $connection->prepare('SELECT id,provider,stage,checkout_url,review_notice_claim_token
+        $stmt = $connection->prepare('SELECT id,provider,stage,checkout_url,review_notice_claim_token,wallet_invoice_sha256
             FROM payment_attempts WHERE pay_row_id=? LIMIT 1 FOR UPDATE');
         $stmt->bind_param('i', $id);
         $stmt->execute();
         $attempt = $stmt->get_result()->fetch_assoc();
         $stmt->close();
-        if (!$attempt || !in_array((string)$attempt['provider'],
+        if (!$attempt || !achbotCurrentReceiptPin($attempt) || !in_array((string)$attempt['provider'],
             ['bank_transfer','gift_card','manual_usdt','manual_trx'], true) ||
             $attempt['stage'] !== 'receiving' ||
             (string)$attempt['review_notice_claim_token'] !== $token) {

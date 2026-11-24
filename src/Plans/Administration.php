@@ -11,13 +11,6 @@ require_once __DIR__.'/../Admin/IntentSafety.php';
 if (!achbotAdminRequestAllowed(is_string($data??null)?$data:null,is_string($text??null)?$text:null,(string)($userInfo['step']??''))) {achbotAdminDeny();return;}
 
 
-// A cached admin keyboard may still send a former X-UI plan callback.
-if (in_array((string)$data, ['addNewPlan','addNewRahgozarPlan'], true) &&
-    achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'plans')) {
-    alert(\achbotMessage('plans.administration.alert.f785716e8a'), true);
-    return;
-}
-// addNewMarzbanPlan and addManagedPlan use the shared, actor-owned wizard.
 if($data == 'backplan' and achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'plans')){
     $stmt = $connection->prepare("SELECT si.* FROM `server_info` si INNER JOIN `server_config` sc ON sc.`id`=si.`id` AND sc.`type` IN (".achbotProviderSqlTypes().") WHERE si.`active`=1");
     $stmt->execute();

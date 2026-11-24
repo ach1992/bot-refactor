@@ -20,15 +20,30 @@ not authorize production actions.
 Before a separately approved transfer, stop all old writers and schedulers,
 take and restore-test a full backup, snapshot every user's exact integer
 balance and active Native identity/entitlement, preserve configuration,
-orders, receipts, and pending/unknown/terminal evidence. Map only proved
-historical claims to the new command/journal format. Never invent proof,
-replay a terminal operation, or charge an already debited operation again.
-Unknown claims stay isolated and documented until reconciled. Verify
+orders, receipts, and pending/unknown/terminal evidence. Close old
+interactive workflows, stale requests and unissued drafts. They must not
+become executable current commands. Reconcile actual funds, already charged
+orders, reserved capacity and uncertain Native effects explicitly in the
+separate manual transfer; retain the evidence in the protected source archive.
+Never invent proof, replay a terminal operation, or charge an already
+debited operation again. Unknown claims stay isolated and documented until
+reconciled. Verify
 per-user balances (including zero and debt), unique user identity, original
 payment references, Native ownership and reserved capacity before activating
 the new runtime. Retain the old database read-only; rollback is only safe
 before new live effects, otherwise reconcile and roll forward.
 
+Owner's final clarification: [fresh-runtime decision](https://github.com/ach1992/bot-refactor/issues/204#issuecomment-7133896850).
+There is no old callback execution or pending-invoice compatibility contract.
+Known retired callbacks navigate ordinary Home. Current draft admission
+requires the current version marker in `checkout_draft_context`; historical
+NULL drafts cannot create a new invoice or service command. A current
+receipt intake requires its issued immutable pin. The only paid service
+funding proof is its own wallet debit. The prior historical prepaid service
+executor/adoption column are removed from the unpublished candidate.
+New deployments use the single empty `database/current-schema.sql` and
+need no automated migration or replay. Current retry, idempotency, account
+incarnation and actual migrated Native provenance remain essential.
 This replaces earlier requirements for automated historical adoption logic.
 The target schema, business invariants, source-cleanup acceptance, and
 independent review/deployment gates are unchanged.
@@ -437,17 +452,14 @@ runtime divergence must be reconciled against actual current installed hashes
 before selecting any cutover artifact. These incident references are evidence,
 not authorization to mutate them. No blanket reprocessing.
 
-The source-only adoption rehearsal now supports a proven never-dispatched,
-single custom BUY: its original positive amount, persisted units and name,
-provider pin, sole original wallet hold, owner and opening entry are all
-checked. A unique `historical_pay_id` is an alternative to a new debit, not
-a synthetic ledger movement. The same transaction transfers the already
-reserved capacity and binds the original payment; the shared executor
-finalizes its original payment only after verified creation. The importer
-rejects competing evidence, terminal claims and unknown entitlement/name
-values. The legacy auto-renewal journal remains a read-only conflict fence
-for all aliases of the same physical account and for an already claimed
-cycle. Neither helper is a complete migration or runtime activation gate.
+The old prepaid-adoption rehearsal is superseded. The current source-only
+inventory and opening-balance rehearsal preserves old evidence but never
+adopts a historical operation into the current executor. No special prepaid
+funding path exists. The historical auto-renewal/native identity fences are
+read-only conflict checks for actual retained evidence, not old workflow
+support. During manual transfer resolve every outstanding historical claim,
+reconcile capacity and preserve the original physical account before activation.
+The new runtime must not carry unresolved old workflows forward.
 
 A subsequent read-only Hell reconciliation (2026-11-24) reconfirmed that
 #113457 has zero persisted day/volume, one untouched capacity hold, no CREATE,
@@ -455,8 +467,7 @@ no bank quote, and no linked delivery/follow-up/referral claim. Current plan
 values are not proof of its original quote; binary logging is disabled.
 #113434 is still `review / remote_unconfirmed` with a different or missing
 original mutation key. #113445 remains monitoring without recorded approval;
-#113453 remains terminal. Recover authentic original evidence before running
-any of these historical operations; do not guess, automatically compensate,
+#113453 remains terminal. Recover authentic original evidence during separate manual reconciliation; do not guess, automatically compensate,
 or replay the terminal purchase. Independent source replacement and actual
 route validation remain necessary even while historical evidence is missing.
 

@@ -24,6 +24,12 @@ Unused legacy X-UI, WeSwap and automatic TRON checker integrations are **not** s
 
 ## Installation and upgrade
 
+For the Wallet-first release, initialize a new empty database with
+`database/current-schema.sql`. No historical migration sequence or old
+workflow continuation is part of first installation. Existing installations
+require separate, approved manual data transfer/reconciliation. See
+[Fresh installation](docs/post-v9/FRESH-INSTALL.md).
+
 Use the **official runtime ZIP**, its manifest and SHA256SUMS from the selected GitHub release. The automatically generated GitHub *Source code* ZIP is **not** the deployable runtime. The release manifest lists the exact dynamically selected source-bound runtime members; it excludes live `baseInfo.php`, customer data, database installers, payment credentials and Cron configuration.
 
 1. **New empty database:** follow [Fresh installation](docs/post-v9/FRESH-INSTALL.md) for the release-matched schema and migration order, private configuration, webhook, and safe Cron setup.

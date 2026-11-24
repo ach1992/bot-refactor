@@ -16,7 +16,7 @@ import package_current
 import test_post_v9_current_copy_ownership as owner
 
 ROOT = Path(__file__).resolve().parents[1]
-RETIREMENT_SHA256 = "c80b7ae2b9073ee90313322c21d7741fe48969b211097ad5f07a564532d894ad"
+RETIREMENT_SHA256 = "12ea99b61cf1b1899306790cd6a2d74d17df7c167382006482208897c1298fc7"
 
 
 def check(ok: bool, name: str) -> None:
@@ -60,8 +60,10 @@ def main() -> None:
     new = load({a: ROOT / "messages/fa" / (a + ".php") for a in ("user","admin")})
     retired = sorted(set(old)-set(new))
     check(not set(new)-set(old), "unapproved_new_copy")
-    check(all(old[k]==new[k] for k in new), "retained_copy_bytes_changed")
-    check(len(retired)==269 and digest(retired)==RETIREMENT_SHA256, "retired_copy_set_changed")
+    allowed = json.loads((ROOT / "tools/wallet_first_copy_corrections.json").read_text())
+    actual = {k: {"before": old[k], "after": new[k]} for k in new if old[k]!=new[k]}
+    check(actual == allowed, "retained_copy_bytes_changed")
+    check(len(retired)==304 and digest(retired)==RETIREMENT_SHA256, "retired_copy_set_changed")
     sources = {p:(ROOT/p).read_text() for p in package_current.members()
                if p.endswith(".php") and p not in owner.AUDIENCES}
     restored = {topic:dict(entries) for topic,entries in owner.loaded_catalog().items()}
@@ -71,7 +73,7 @@ def main() -> None:
     check(owner.unresolved_copy_orphans(restored,sources)==retired,"retired_copy_has_live_consumer")
     check(not owner.unresolved_copy_orphans(owner.loaded_catalog(),sources),"unresolved_current_copy")
     print(json.dumps({"complete":True,"status":"PASS","baseline":stable,
-        "existing_copy_values_preserved":len(new),"existing_copy_values_changed":0,
+        "existing_copy_values_preserved":len(new)-len(allowed),"existing_copy_values_changed":len(allowed),
         "removed_source_dead_copy":len(retired),"retired_key_sha256":digest(retired),
         "network_calls":0},ensure_ascii=False))
 

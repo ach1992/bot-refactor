@@ -9,29 +9,6 @@ require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
 require_once __DIR__.'/../Panel/ProviderRuntime.php';
 require_once __DIR__.'/../Plans/Addons.php';
 
-/**
- * Compatibility hook called before new payment-draft INSERTs. It MUST remain
- * non-destructive: the successor INSERT/COMMIT can still fail and some callers
- * already hold a MariaDB transaction. Shared PaymentLifecycle expiry later
- * transitions only unclaimed old drafts and preserves the original pays ID.
- */
-if (!function_exists('achbotRemoveUnclaimedPendingPayments')) {
-    function achbotRemoveUnclaimedPendingPayments(mysqli $db, int $userId,
-                                                   string $type): void {
-        if ($userId<=0 || !in_array($type,[
-            'BUY_SUB','RENEW_ACCOUNT',
-            'INCREASE_DAY','INCREASE_VOLUME','INCREASE_WALLET'
-        ],true)) throw new InvalidArgumentException('unsupported_payment_draft_cleanup');
-        // Called BEFORE creating the replacement. Do not delete, expire or
-        // touch the old draft yet: an insert or COMMIT can still fail, and a
-        // wallet top-up caller already owns an InnoDB transaction here.
-        // The one-minute lifecycle worker + guarded URL/callback checks expire
-        // only a genuinely old unclaimed draft once a successor commits.
-        // Existing signature remains for backward-compatible callsites.
-        return;
-    }
-}
-
 if (!function_exists('getPlanDetails')) {
     function getPlanDetails($connection, $planId)
     {
@@ -402,8 +379,7 @@ if (!function_exists('achbotSupportsPaymentSubject')) {
             $stmt->bind_param('i',$oid);$stmt->execute();$order=$stmt->get_result()->fetch_assoc();$stmt->close();
             if (!$order) return false;
             try {
-                if (!achbotAddonSchema($connection))
-                    return achbotOrderAddonEligibility($connection,$order,strtolower($match[1]))['eligible'];
+                achbotAddonSchema($connection);
                 $context=achbotAddonContext($connection,$order);
                 return achbotOrderAddonEligibility($connection,$order,strtolower($match[1]),$context)['eligible'] &&
                     achbotAddonPayEligible($connection,$pay,$order,$context);

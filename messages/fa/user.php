@@ -372,8 +372,6 @@ return [
         'customer_routes.cancel_search_keyboard.message.3034785b83' => '📝 لطفا پورت مورد نظر خود را وارد کنید.' . "\n" . 'برای حذف پورت دلخواه عدد 0 را وارد کنید.',
         'customer_routes.cancel_search_keyboard.message.06d5c646c1' => '✏️ ویرایش تنظیمات پلن:',
         'customer_routes.cancel_search_keyboard.message.d4b5f70a92' => '📝 لطفا sni مورد نظر خود را وارد کنید.' . "\n" . 'برای حذف متن /empty را وارد کنید.',
-        'customer_routes.cancel_search_keyboard.alert.77c239f956' => '⛔️ تغییر نوع شبکه برای این اشتراک در دسترس نیست.',
-        'customer_routes.cancel_search_keyboard.alert.477e4570c3' => '⛔️ تغییر پروتکل غیر فعال است.',
         'customer_routes.cancel_search_keyboard.alert.724ff90245' => '⛔️ انجام این درخواست برای اشتراک انتخاب‌شده امکان‌پذیر نیست.',
         'customer_routes.cancel_search_keyboard.vraylink.cde59051f4' => 'خطا در دریافت لینک',
         'customer_routes.cancel_search_keyboard.success_message.6d1ad0af39' => '<b>✅ بروزرسانی موفق بود!</b>' . "\n" . '' . "\n" . '',
@@ -400,8 +398,6 @@ return [
         'customer_routes.cancel_search_keyboard.message.b63b579845' => '⚠️ نتیجه تغییر وضعیت هنوز قطعی نیست؛ برای بررسی با پشتیبانی تماس بگیرید.',
         'customer_routes.cancel_search_keyboard.message.f0a1fc755c' => '⚠️ سفارش مورد نظر یافت نشد.',
         'customer_routes.cancel_search_keyboard.message.a7cb7bc569' => '⚠️ اطلاعات سرور یافت نشد.',
-        'customer_routes.cancel_search_keyboard.alert.d6602f696a' => '⛔️ تغییر نوع اتصال برای این اشتراک در دسترس نیست.',
-        // external_accounts.extract_username_from_link
         'external_accounts.extract_username_from_link.message.02e023c2c2' => '❌ لینک نامعتبر است.',
         'external_accounts.extract_username_from_link.message.4c80cbd8b8' => '🔍 در حال بررسی اکانت، لطفاً صبر کنید...',
         'external_accounts.extract_username_from_link.button.e2fee6e8d7' => '🔘 وضعیت اکانت',
@@ -661,39 +657,7 @@ return [
         'pre_payment.button.ea1db2132d' => '🔄 بررسی دوباره وضعیت',
         // pre_payment.alert
         'pre_payment.alert.fdf0d1d6f9' => 'وضعیت سفارش از اطلاعات ثبت‌شده خوانده شد.',
-        'pre_payment.alert.d4b0660226' => 'این دکمهٔ پرداخت معتبر نیست؛ لطفاً از فاکتور جدید استفاده کنید.',
-        'pre_payment.alert.192c7f896f' => 'این روش پرداخت پشتیبانی نمی‌شود.',
-        // pre_payment.message
-        'pre_payment.message.6fe859eb01' => '❌ سفارش یافت نشد یا حذف شده است.',
-        // pre_payment.alert
-        'pre_payment.alert.4b56f62df2' => 'این درخواست پرداخت متعلق به حساب شما نیست.',
-        'pre_payment.alert.bf99a9262b' => 'این سفارش دیگر در انتظار پرداخت نیست.',
-        'pre_payment.alert.cb95ca3290' => 'این روش پرداخت برای گروه کاربری شما فعال نیست.',
-        'pre_payment.alert.15d949aabf' => 'مهلت این درخواست پایان یافته است.',
-        // pre_payment.message
-        'pre_payment.message.e3aaf3c571' => '⌛️ این درخواست پرداخت منقضی شده است. از منوی ربات درخواست جدید بسازید.',
-        // pre_payment.alert
         'pre_payment.alert.fa55f5201f' => '⛔️ انجام این درخواست برای اشتراک انتخاب‌شده امکان‌پذیر نیست. با پشتیبانی تماس بگیرید.',
-        'pre_payment.alert.6871e8bfbf' => 'مهلت لینک آنلاین پایان یافته است؛ وضعیت را پیگیری کنید.',
-        // pre_payment.message
-        'pre_payment.message.904e919e0e' => '⏳ مهلت لینک فاکتور گذشته است؛ پرداخت یا تحویل هنوز باید بررسی شود. اگر وجهی ارسال کرده‌اید مجدداً پرداخت نکنید.',
-        // pre_payment.alert
-        'pre_payment.alert.e3336d72e2' => 'وضعیت فاکتور درگاه نامشخص است؛ از پرداخت تکراری پرهیز کنید.',
-        'pre_payment.alert.b801192b87' => 'این پرداخت قبلاً ثبت شده یا در حال بررسی است.',
-        // pre_payment.message
-        'pre_payment.message.34461be871' => '📋 پلن اشتراک تغییر کرده ولی وضعیت پرداخت/فاکتور قبلی محفوظ است. لطفاً برای تطبیق پرداخت با پشتیبانی تماس بگیرید.',
-        'pre_payment.message.6a728137d5' => '❗️ پلن فعلی شما تغییر کرده است.' . "\n" . '♻️ لطفاً دوباره روی دکمه تمدید اشتراک بزنید تا قیمت جدید محاسبه شود.',
-        'pre_payment.message.f7acca2890' => 'وضعیت پرداخت این سفارش تغییر کرده است؛ برای جلوگیری از پرداخت تکراری با پشتیبانی تماس بگیرید.',
-        // pre_payment.alert
-        'pre_payment.alert.a421affc40' => 'این سفارش قبلاً در یک درگاه پرداخت ثبت شده است.',
-        // pre_payment.button
-        'pre_payment.button.9638a59ddc' => '🔄 مشاهده وضعیت فاکتور',
-        // pre_payment.message
-        'pre_payment.message.08a2b0a6f6' => '💳 فاکتور این سفارش محفوظ است؛ با لینک زیر وضعیت آن را بررسی کنید. اگر پرداختی انجام داده‌اید دوباره پرداخت نکنید.',
-        'pre_payment.message.59e3040876' => '⏳ وضعیت صدور فاکتور این سفارش در حال بررسی است. برای جلوگیری از درخواست تکراری با پشتیبانی تماس بگیرید.',
-        // pre_payment.alert
-        'pre_payment.alert.5ba8749860' => 'مهلت پیش‌نویس پایان یافته یا وضعیت آن نیازمند بررسی است.',
-        // pre_payment.button
         'pre_payment.button.f81a8cfcdd' => '💳 پرداخت فاکتور',
         // pre_payment.alert
         'pre_payment.alert.093b359bab' => 'فاکتور آمادهٔ پرداخت است.',
@@ -703,7 +667,6 @@ return [
         // pre_payment.message
         'pre_payment.message.b3b3cf5aae' => '🧾 <b>فاکتور آماده است</b>' . "\n" . '',
         'pre_payment.message.69b0efb715' => '' . "\n" . 'پس از پرداخت، وضعیت سفارش را در ربات بررسی کنید.',
-        'pre_payment.message.526bf7b198' => '⛔️ روش پرداخت ناشناخته است.',
     ],
 
     // ── رسیدهای پرداخت دستی ──

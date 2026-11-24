@@ -61,7 +61,7 @@ def main():
         'src/Finance/Routes/RenewalPlan.php','src/Finance/Routes/RenewalSelection.php',
         'src/Finance/WalletAddonNotices.php','src/Finance/WalletEditRecovery.php',
         'src/Finance/WalletOriginalRecovery.php','src/Finance/WalletRenewalRecovery.php',
-        'src/Finance/WalletSettlement.php','src/Panel/Accounts.php','src/Panel/MarzbanPlanAccess.php'}
+        'src/Finance/WalletSettlement.php','src/Services/HistoricalFunding.php','src/Panel/Accounts.php','src/Panel/MarzbanPlanAccess.php'}
     assert not (retired & runtime)
     checks.append('old_executors_absent_from_runtime')
     for path in runtime:

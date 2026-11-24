@@ -1,5 +1,5 @@
 <?php
-/** AChBot V8: source-pinned financial compatibility module. */
+/** AChBot current payment route and shared receipt presentation. */
 if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
     http_response_code(404);
     exit;
@@ -25,17 +25,13 @@ if(preg_match('/increaseADay(.*)/', $data, $match)){
     }
 
     try {
-        $scoped=achbotAddonSchema($connection);
-        $addonContext=$scoped?achbotAddonContext($connection,$orderInfo):null;
+        achbotAddonSchema($connection);
+        $addonContext=achbotAddonContext($connection,$orderInfo);
         if (!achbotOrderAddonEligibility($connection,$orderInfo,'day',$addonContext)['eligible']) {
             alert(\achbotMessage('payment.pre_payment.alert.fa55f5201f'),true);
             return;
         }
-        if ($scoped) $catalog=achbotAddonCatalog($connection,'day',$addonContext);
-        else {
-            $q=$connection->prepare("SELECT * FROM increase_day ORDER BY id");
-            $q->execute();$catalog=$q->get_result()->fetch_all(MYSQLI_ASSOC);$q->close();
-        }
+        $catalog=achbotAddonCatalog($connection,'day',$addonContext);
     } catch (Throwable $error) {
         alert(\achbotMessage('payment.pre_payment.alert.fa55f5201f'),true);
         return;
@@ -89,17 +85,15 @@ if(preg_match('/selectPlanDayIncrease(?<orderId>.+)_(?<dayId>.+)/',$data,$match)
     }
 
     try {
-        $scoped=achbotAddonSchema($connection);
-        $addonContext=$scoped?achbotAddonContext($connection,$orderInfo):null;
+        achbotAddonSchema($connection);
+        $addonContext=achbotAddonContext($connection,$orderInfo);
         if (!achbotOrderAddonEligibility($connection,$orderInfo,'day',$addonContext)['eligible']) {
             alert(\achbotMessage('payment.pre_payment.alert.fa55f5201f'),true);
             return;
         }
-        if ($scoped) {
-            $res=achbotAddonOfferById($connection,'day',$addonContext,(int)$pid);
-            if (!$res) throw new RuntimeException('addon_offer_not_applicable');
-            $quotedUnits=$res['volume'];$planprice=$res['price'];
-        }
+        $res=achbotAddonOfferById($connection,'day',$addonContext,(int)$pid);
+        if (!$res) throw new RuntimeException('addon_offer_not_applicable');
+        $quotedUnits=$res['volume'];$planprice=$res['price'];
     } catch (Throwable $error) {
         alert(\achbotMessage('payment.pre_payment.alert.fa55f5201f'),true);
         return;
@@ -116,7 +110,7 @@ if(preg_match('/selectPlanDayIncrease(?<orderId>.+)_(?<dayId>.+)/',$data,$match)
 
     
     $hash_id = RandomString();
-    achbotRemoveUnclaimedPendingPayments($connection,$from_id,'INCREASE_DAY');
+
 	
     $time = time();
     $plan_id = $orderInfo['fileid'];
@@ -124,17 +118,11 @@ if(preg_match('/selectPlanDayIncrease(?<orderId>.+)_(?<dayId>.+)/',$data,$match)
 	$order_id = $match['orderId'];
 
     $type = "INCREASE_DAY_$data";
-    if ($scoped) {
-        $addonQuote=achbotAddonQuote($orderInfo,$addonContext,'day',$res,(int)$planprice);
-        $stmt=$connection->prepare("INSERT INTO pays (hash_id,user_id,type,plan_id,server_id,order_id,volume,day,price,request_date,state,addon_scope_snapshot)
-            VALUES (?,?,?,?,?,?,'0',?,?,?,'pending',?)");
-        $stmt->bind_param("sisiiiiiis",$hash_id,$from_id,$type,$plan_id,$server_id,$order_id,$quotedUnits,$planprice,$time,$addonQuote);
-    } else {
-        $stmt=$connection->prepare("INSERT INTO pays (hash_id,user_id,type,plan_id,server_id,order_id,volume,day,price,request_date,state)
-            VALUES (?,?,?,?,?,?,'0',?,?,?,'pending')");
-        $stmt->bind_param("sisiiiiii",$hash_id,$from_id,$type,$plan_id,$server_id,$order_id,$quotedUnits,$planprice,$time);
-    }
-    $newDraftId=achbotPayUxInsertDraft($connection,(int)$from_id,$stmt,$scoped);
+    $addonQuote=achbotAddonQuote($orderInfo,$addonContext,'day',$res,(int)$planprice);
+    $stmt=$connection->prepare("INSERT INTO pays (hash_id,user_id,type,plan_id,server_id,order_id,volume,day,price,request_date,state,addon_scope_snapshot)
+        VALUES (?,?,?,?,?,?,'0',?,?,?,'pending',?)");
+    $stmt->bind_param("sisiiiiiis",$hash_id,$from_id,$type,$plan_id,$server_id,$order_id,$quotedUnits,$planprice,$time,$addonQuote);
+    $newDraftId=achbotPayUxInsertDraft($connection,(int)$from_id,$stmt,true);
     $stmt->close();
     if ($newDraftId<=0) {
         alert(\achbotMessage('renewal.extensions.alert.ae271a2d1d'),true);
@@ -163,14 +151,13 @@ if (is_string($data) && (strlen($data) <= 64 || ($GLOBALS['achbotManualCryptoVer
     $payInfo = dbFetchPayByHash($connection, $match[1]);
     if (!$payInfo) {
         prepareStartFallback();
-        delMessage();
         return '__ACHBOT_V8_GOTO_START__';
     }
 
     $method = str_starts_with($data, 'payIncreaseDayWithManualUsdt') ? (($GLOBALS['achbotManualCryptoChoice'] ?? '') === 'TRON' ? 'manual_trx' : 'manual_usdt') :
         (str_starts_with($data, 'payIncreaseDayWithGiftCard') ? 'gift_card' : 'bank_transfer');
     if (!achbotManualClaim($connection, $payInfo, $method, (int)$from_id,
-                           $GLOBALS['achbotManualCryptoChoice'] ?? null)) {
+                           $GLOBALS['achbotManualCryptoChoice'] ?? null,'day')) {
         alert(\achbotMessage('renewal.extensions.alert.1a885aaca4'), true);
         return;
     }
@@ -187,7 +174,7 @@ if (is_string($data) && (strlen($data) <= 64 || ($GLOBALS['achbotManualCryptoVer
     achbotPayUxTrackByHash($connection,(string)$payInfo['hash_id'],(int)$from_id,$delivered);
     if (function_exists('achbotApiPaymentTrackInvoice')) achbotApiPaymentTrackInvoice($connection,(string)$payInfo['hash_id'],(int)$from_id,$delivered);
     if (is_object($delivered) && !empty($delivered->ok)) {
-    setUser(function_exists('achbotApiPaymentInitialStep') ? achbotApiPaymentInitialStep($connection,(string)$match[1],"payIncreaseDayWith" . (in_array($method, ['manual_usdt','manual_trx'], true) ? 'ManualUsdt' : ($method === 'gift_card' ? 'GiftCard' : 'CartToCart')) . $match[1]) : "payIncreaseDayWith" . (in_array($method, ['manual_usdt','manual_trx'], true) ? 'ManualUsdt' : ($method === 'gift_card' ? 'GiftCard' : 'CartToCart')) . $match[1]);
+    setUser("payIncreaseDayWith" . (in_array($method, ['manual_usdt','manual_trx'], true) ? 'ManualUsdt' : ($method === 'gift_card' ? 'GiftCard' : 'CartToCart')) . $match[1]);
         delMessage();
     } else {
         // The pinned attempt may be reopened. Never erase the selection menu
@@ -202,7 +189,6 @@ if (preg_match('/send(?:IncreaseDay|IncreaseDayGift|IncreaseDayUsdt)Receipt(?<ha
     $payInfo = dbFetchPayByHash($connection, $match['hashId']);
     if (!$payInfo) {
         prepareStartFallback();
-        delMessage();
         return '__ACHBOT_V8_GOTO_START__';
     }
 
@@ -259,7 +245,6 @@ if (preg_match('/wait(?:IncreaseDay|IncreaseDayGift|IncreaseDayUsdt)Receipt(.*)/
     $payInfoRes = dbFetchPayByHash($connection, $match[1]);
     if (!$payInfoRes) {
         prepareStartFallback();
-        delMessage();
         return '__ACHBOT_V8_GOTO_START__';
     }
 
@@ -443,19 +428,15 @@ if (preg_match('/^increaseAVolume([1-9][0-9]{0,9})$/D', $data, $match)) {
 
     $agentBought = (bool)$orderInfo['agent_bought'];
     try {
-        $scoped=achbotAddonSchema($connection);
-        $addonContext=$scoped?achbotAddonContext($connection,$orderInfo):null;
+        achbotAddonSchema($connection);
+        $addonContext=achbotAddonContext($connection,$orderInfo);
         $eligibility=achbotOrderAddonEligibility($connection,$orderInfo,'volume',$addonContext);
         if (!$eligibility['eligible']) {
             alert(\achbotMessage($eligibility['reason']==='expired'
                 ? 'renewal.extensions.alert.96762b5a42' : 'payment.pre_payment.alert.fa55f5201f'),true);
             return;
         }
-        if ($scoped) $catalog=achbotAddonCatalog($connection,'volume',$addonContext);
-        else {
-            $q=$connection->prepare("SELECT * FROM increase_plan ORDER BY id");
-            $q->execute();$catalog=$q->get_result()->fetch_all(MYSQLI_ASSOC);$q->close();
-        }
+        $catalog=achbotAddonCatalog($connection,'volume',$addonContext);
     } catch(Throwable $error) {
         alert(\achbotMessage('payment.pre_payment.alert.fa55f5201f'),true);
         return;
@@ -517,19 +498,17 @@ if(preg_match('/^increaseVolumePlan(?<orderId>[1-9][0-9]{0,9})_(?<volumeId>[1-9]
     }
 
     try {
-        $scoped=achbotAddonSchema($connection);
-        $addonContext=$scoped?achbotAddonContext($connection,$orderInfo):null;
+        achbotAddonSchema($connection);
+        $addonContext=achbotAddonContext($connection,$orderInfo);
         $eligibility=achbotOrderAddonEligibility($connection,$orderInfo,'volume',$addonContext);
         if (!$eligibility['eligible']) {
             alert(\achbotMessage($eligibility['reason']==='expired'
                 ? 'renewal.extensions.alert.f5aab191db' : 'payment.pre_payment.alert.fa55f5201f'),true);
             return;
         }
-        if ($scoped) {
-            $res=achbotAddonOfferById($connection,'volume',$addonContext,(int)$match['volumeId']);
-            if (!$res) throw new RuntimeException('addon_offer_not_applicable');
-            $planprice=$res['price'];$plangb=$res['volume'];
-        }
+        $res=achbotAddonOfferById($connection,'volume',$addonContext,(int)$match['volumeId']);
+        if (!$res) throw new RuntimeException('addon_offer_not_applicable');
+        $planprice=$res['price'];$plangb=$res['volume'];
     } catch(Throwable $error) {
         alert(\achbotMessage('payment.pre_payment.alert.fa55f5201f'),true);
         return;
@@ -545,7 +524,7 @@ if(preg_match('/^increaseVolumePlan(?<orderId>[1-9][0-9]{0,9})_(?<volumeId>[1-9]
     }
 
     $hash_id = RandomString();
-    achbotRemoveUnclaimedPendingPayments($connection,$from_id,'INCREASE_VOLUME');
+
 
     $time = time();
     $plan_id = $orderInfo['fileid'];
@@ -553,17 +532,11 @@ if(preg_match('/^increaseVolumePlan(?<orderId>[1-9][0-9]{0,9})_(?<volumeId>[1-9]
 	$order_id = $match['orderId'];
 	
     $type = "INCREASE_VOLUME_$data";
-    if ($scoped) {
-        $addonQuote=achbotAddonQuote($orderInfo,$addonContext,'volume',$res,(int)$planprice);
-        $stmt=$connection->prepare("INSERT INTO pays (hash_id,user_id,type,plan_id,server_id,order_id,volume,day,price,request_date,state,addon_scope_snapshot)
-            VALUES (?,?,?,?,?,?,?,'0',?,?,'pending',?)");
-        $stmt->bind_param("sisiiiiiis",$hash_id,$from_id,$type,$plan_id,$server_id,$order_id,$plangb,$planprice,$time,$addonQuote);
-    } else {
-        $stmt=$connection->prepare("INSERT INTO pays (hash_id,user_id,type,plan_id,server_id,order_id,volume,day,price,request_date,state)
-            VALUES (?,?,?,?,?,?,?,'0',?,?,'pending')");
-        $stmt->bind_param("sisiiiiii",$hash_id,$from_id,$type,$plan_id,$server_id,$order_id,$plangb,$planprice,$time);
-    }
-    $newDraftId=achbotPayUxInsertDraft($connection,(int)$from_id,$stmt,$scoped);
+    $addonQuote=achbotAddonQuote($orderInfo,$addonContext,'volume',$res,(int)$planprice);
+    $stmt=$connection->prepare("INSERT INTO pays (hash_id,user_id,type,plan_id,server_id,order_id,volume,day,price,request_date,state,addon_scope_snapshot)
+        VALUES (?,?,?,?,?,?,?,'0',?,?,'pending',?)");
+    $stmt->bind_param("sisiiiiiis",$hash_id,$from_id,$type,$plan_id,$server_id,$order_id,$plangb,$planprice,$time,$addonQuote);
+    $newDraftId=achbotPayUxInsertDraft($connection,(int)$from_id,$stmt,true);
 	$stmt->close();
 	if ($newDraftId<=0) {
 	    alert(\achbotMessage('renewal.extensions.alert.ae271a2d1d'),true);
@@ -596,14 +569,13 @@ if (is_string($data) && (strlen($data) <= 64 || ($GLOBALS['achbotManualCryptoVer
     $payInfo = dbFetchPayByHash($connection, $match[1]);
     if (!$payInfo) {
         prepareStartFallback();
-        delMessage();
         return '__ACHBOT_V8_GOTO_START__';
     }
 
     $method = str_starts_with($data, 'payIncreaseWithManualUsdt') ? (($GLOBALS['achbotManualCryptoChoice'] ?? '') === 'TRON' ? 'manual_trx' : 'manual_usdt') :
         (str_starts_with($data, 'payIncreaseWithGiftCard') ? 'gift_card' : 'bank_transfer');
     if (!achbotManualClaim($connection, $payInfo, $method, (int)$from_id,
-                           $GLOBALS['achbotManualCryptoChoice'] ?? null)) {
+                           $GLOBALS['achbotManualCryptoChoice'] ?? null,'volume')) {
         alert(\achbotMessage('renewal.extensions.alert.1a885aaca4'), true);
         return;
     }
@@ -620,7 +592,7 @@ if (is_string($data) && (strlen($data) <= 64 || ($GLOBALS['achbotManualCryptoVer
     achbotPayUxTrackByHash($connection,(string)$payInfo['hash_id'],(int)$from_id,$delivered);
     if (function_exists('achbotApiPaymentTrackInvoice')) achbotApiPaymentTrackInvoice($connection,(string)$payInfo['hash_id'],(int)$from_id,$delivered);
     if (is_object($delivered) && !empty($delivered->ok)) {
-    setUser(function_exists('achbotApiPaymentInitialStep') ? achbotApiPaymentInitialStep($connection,(string)$match[1],"payIncreaseWith" . (in_array($method, ['manual_usdt','manual_trx'], true) ? 'ManualUsdt' : ($method === 'gift_card' ? 'GiftCard' : 'CartToCart')) . $match[1]) : "payIncreaseWith" . (in_array($method, ['manual_usdt','manual_trx'], true) ? 'ManualUsdt' : ($method === 'gift_card' ? 'GiftCard' : 'CartToCart')) . $match[1]);
+    setUser("payIncreaseWith" . (in_array($method, ['manual_usdt','manual_trx'], true) ? 'ManualUsdt' : ($method === 'gift_card' ? 'GiftCard' : 'CartToCart')) . $match[1]);
         delMessage();
     } else {
         // The pinned attempt may be reopened. Never erase the selection menu
@@ -635,7 +607,6 @@ if (preg_match('/send(?:IncreaseVolume|IncreaseVolumeGift|IncreaseVolumeUsdt)Rec
     $payInfo = dbFetchPayByHash($connection, $match['hashId']);
     if (!$payInfo) {
         prepareStartFallback();
-        delMessage();
         return '__ACHBOT_V8_GOTO_START__';
     }
 
@@ -692,7 +663,6 @@ if (preg_match('/wait(?:IncreaseVolume|IncreaseVolumeGift|IncreaseVolumeUsdt)Rec
     $payParam = dbFetchPayByHash($connection, $match[1]);
     if (!$payParam) {
         prepareStartFallback();
-        delMessage();
         return '__ACHBOT_V8_GOTO_START__';
     }
 

@@ -397,9 +397,10 @@ def main():
             intent=jsonlib.dumps(valid_intents[provider],separators=(',',':'))
             literal="'"+intent.replace("'","''")+"'"
             sql(w,e,f"INSERT INTO payment_attempts "
-                f"(pay_row_id,provider,order_hash,quote_amount,quote_currency,checkout_url,stage) "
-                f"VALUES ({pay_id},'{provider}','{key}',100,'toman',{literal},'pending')")
+                f"(pay_row_id,provider,order_hash,quote_amount,quote_currency,checkout_url,stage,wallet_invoice_sha256) "
+                f"VALUES ({pay_id},'{provider}','{key}',100,'toman',{literal},'pending',REPEAT('a',64))")
             return pay_id
+        sql(w,e,"ALTER TABLE payment_attempts ADD wallet_invoice_sha256 CHAR(64) DEFAULT NULL")
         for method in valid_intents:
             late=manual_quote('idle-'+method,method,who=9431)
             sql(w,e,f"UPDATE payment_attempts SET created_at=DATE_SUB(NOW(),INTERVAL 21600 SECOND) "

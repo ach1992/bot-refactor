@@ -79,7 +79,7 @@ function achbotApiPaymentContext(mysqli $db,string $hash,int $actor=0): ?array {
         $q->execute();$pay=$q->get_result()->fetch_assoc();$q->close();
         if (!$pay || ($actor>0 && (int)$pay['user_id']!==$actor)) return null;
         $attempt=achbotApiPaymentAttempt($db,(int)$pay['id']);
-        $profile=$attempt?achbotPaymentEvidenceSnapshot($attempt):null;
+        $profile=$attempt && achbotCurrentReceiptPin($attempt)?achbotPaymentEvidenceSnapshot($attempt):null;
         return $profile===null?null:['pay'=>$pay,'attempt'=>$attempt,'profile'=>$profile];
     } catch (Throwable $e) {return null;}
 }
@@ -95,10 +95,6 @@ function achbotApiPaymentReceiptPrefixes(array $pay,string $method='bank_transfe
     if (str_starts_with($t,'INCREASE_VOLUME_')) return [$gift?'sendIncreaseVolumeGiftReceipt':'sendIncreaseVolumeReceipt','cancelIncreaseVolumeReceipt'];
     if ((int)$pay['day']>0 || (int)$pay['volume']>0) return [$gift?'sendCustomGiftReceipt':'sendCustomCartReceipt','cancelCustomCartReceipt'];
     return [$gift?'sendBuyGiftReceipt':'sendBuyCartReceipt','cancelBuyCartReceipt'];
-}
-/** Customer evidence submission follows the established manual journey. */
-function achbotApiPaymentInitialStep(mysqli $db,string $hash,string $legacy): string {
-    return $legacy;
 }
 function achbotApiPaymentKeyboard(array $context,?string $sendPrefix=null,?string $cancelPrefix=null): string {
     $pay=$context['pay'];$hash=(string)$pay['hash_id'];
@@ -332,10 +328,6 @@ function achbotApiPaymentNotice(mysqli $db,array $pay,string $status,bool $repor
             $pay['approved_by']===null?null:(int)$pay['approved_by'],$staffDigest);
     }
     $c=achbotApiPaymentContext($db,$hash);if($c)achbotApiPaymentSyncInvoice($db,$c);
-}
-/** Valid only with a genuine recoverable typed-code review, never a fake photo. */
-function achbotApiPaymentTypedReviewLocked(mysqli $db,array $pay): bool {
-    return function_exists('achbotPaymentEvidenceHasTypedReviewLocked') && achbotPaymentEvidenceHasTypedReviewLocked($db,$pay);
 }
 /** Resume an already persisted proof through the common credit transaction. */
 function achbotApiPaymentSettle(mysqli $db,int $id,array $proof): string {

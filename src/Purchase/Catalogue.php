@@ -281,7 +281,7 @@ if((preg_match('/^discountCustomPlanDay(\d+)/',$userInfo['step'], $match) || pre
          
         $price =  ($volume * $gbPrice) + ($days * $dayPrice); 
         $hash_id = RandomString(); 
-        achbotRemoveUnclaimedPendingPayments($connection,$from_id,'BUY_SUB');
+
          
         $time = time(); 
         $stmt = $connection->prepare("INSERT INTO `pays` (`hash_id`, `description`, `user_id`, `type`, `plan_id`, `server_id`, `volume`, `day`, `price`, `request_date`, `state`, `agent_bought`) 

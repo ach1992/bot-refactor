@@ -25,7 +25,6 @@
     "src/Services/EditFinalization.php",
     "src/Services/Execution.php",
     "src/Services/Funding.php",
-    "src/Services/HistoricalFunding.php",
     "src/Services/Ownership.php",
     "src/Wallet/Ledger.php"
   ],
@@ -98,10 +97,10 @@
     },
     "src/Finance/ReceiptHelpers.php": {
       "before_count": 6,
-      "after_count": 5,
+      "after_count": 6,
       "before_sha256": "a5b5ce5c92c2a86efa446fa6fe0bb66c54651c88d0c879bb7b06a023ed53b428",
-      "after_sha256": "ff7912038eda15c04ae92be794b2e3c092d41e6f5d12ddb08b3f4aee3bf0fb11",
-      "reason": "Remove obsolete payment-path refund notice."
+      "after_sha256": "fdc5b495b0b39be9a5b8bab9147d6c6a7b3cb443e46750503d99483f0505a4b6",
+      "reason": "Remove obsolete payment-path refund notice. Single guarded Home navigation acknowledges a retired callback; retired manual-selection helpers removed."
     },
     "src/Finance/ReferralReward.php": {
       "before_count": 1,
@@ -119,10 +118,10 @@
     },
     "src/Finance/Routes/Checkout.php": {
       "before_count": 15,
-      "after_count": 13,
+      "after_count": 12,
       "before_sha256": "87aa9564ac301428ae9513a81af203cb095982481a24171f13b81af88ab939fc",
-      "after_sha256": "3f7d8d466ff0f50ee8eb99df89737633780d10dff12a047b7be2f224cb13cf45",
-      "reason": "Success delivery owned by shared command; remove obsolete inline wallet notices."
+      "after_sha256": "ad08c9838a2cd71fc9ce7413bbaeec9d9af120d88befd2f86e4fd1c1fff29c0b",
+      "reason": "Success delivery owned by shared command; remove obsolete inline wallet notices. Current manual and wallet admission own all validation; duplicate pre-admission branches removed."
     },
     "src/Finance/Routes/Extensions.php": {
       "before_count": 25,
@@ -147,10 +146,10 @@
     },
     "src/Finance/Routes/RenewalCheckout.php": {
       "before_count": 24,
-      "after_count": 16,
+      "after_count": 15,
       "before_sha256": "9ed2ba8682b3d73714fdb16169453d6e192042357453cba395fa3733c4398809",
-      "after_sha256": "c2c30ff3f9bcb936fe29f896d3d42d2af940df9d9e0706db942e15a43e72b0be",
-      "reason": "Shared renewal service and delivery replace old inline recovery and unsupported external branch."
+      "after_sha256": "b6cf507f335fd82ada65e473e857f54fa80e5975185d427604c3bf3618b94174",
+      "reason": "Shared renewal service and delivery replace old inline recovery and unsupported external branch. Current payment selection and admission replace old pre-payment flow."
     },
     "src/Finance/Routes/RenewalPlan.php": {
       "before_count": 1,
@@ -186,6 +185,27 @@
       "before_sha256": "77aa64673ce8da62ffcecc02d50f00579503b2868690b154b52844b96e357b05",
       "after_sha256": "e28f0f269b8b58e17d724bad8b34bb864f85e1e9e907c6d29e70f9fe3639de17",
       "reason": "Retire local Marzban token/UUID mutations and retain stale callback denial; PasarGuard order management unchanged."
+    },
+    "src/Finance/Routes/PrePayment.php": {
+      "before_count": 26,
+      "after_count": 5,
+      "before_sha256": "d147120088ad0375ab9888055dda0239edbfc9a10b383ec9ab02a239fc20463c",
+      "after_sha256": "1cd099df4a9a87ec26044e7cf299c3a7082355ba244cf2aa56805d1936872a5d",
+      "reason": "Replace obsolete method-selection workflow with current pinned renewal hosted-link action; old draft routes removed."
+    },
+    "src/Plans/AddonAdmin.php": {
+      "before_count": 8,
+      "after_count": 7,
+      "before_sha256": "6ccc11cb33fcde65aca38988282724f847776989397553f7b4e3b8c7844c0930",
+      "after_sha256": "24a75301d4f7e23a5e6bb6ef1ca310fa96c650d000f43d638fbacb81ba730776",
+      "reason": "Remove obsolete filter callback handler; current scope editor retained."
+    },
+    "src/Plans/Intervals.php": {
+      "before_count": 28,
+      "after_count": 16,
+      "before_sha256": "fe9a847311992187e04f08d297d16ed5c025e2e40c0231c6e7db4a9d415d508d",
+      "after_sha256": "ba451ca98ddd9a0053069ab702a93b24b073928fffe429f267832f2a53c670b2",
+      "reason": "Remove old unscoped catalog creation and editing; current scoped editor is sole owner."
     }
   }
 }

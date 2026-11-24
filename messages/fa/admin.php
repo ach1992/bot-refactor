@@ -323,14 +323,10 @@ return [
         'bot.servers_setting.text.7267d348aa' => 'اطلاعاتی یافت نشد',
         'bot.servers_setting.message.47c8f910e4' => ['text' => '📝 لیست آیپی های فعلی: ' . "\n" . '{serverIp}' . "\n" . 'لطفا آیپی های جدید را در خط های جدا بفرستید' . "\n" . '' . "\n" . 'برای خالی کردن متن /empty را وارد کنید', 'parameters' => ['serverIp']],
         // bot.add_new_server
-        'bot.add_new_server.alert.649a7042c3' => '🗑 ثبت پنل‌های قدیمی حذف شده است؛ از ثبت سرور مرزبان استفاده کنید.',
-        'bot.add_new_server.alert.e9e9974e92' => '⚠️ تنظیمات پنل‌های قدیمی دیگر پشتیبانی نمی‌شود.',
-        'bot.add_new_server.alert.3340eb9465' => '🗑 پنل‌های قدیمی حذف شده‌اند؛ تنها مرزبان پشتیبانی می‌شود.',
-        // bot.manage_marzban_panel_groups
-        'bot.manage_marzban_panel_groups.message.59d5170317' => '🗂 گروه‌های مشترک پنل: فقط سرورهای متصل به یک پنل واقعی و از یک نوع (مرزبان یا پاسارگارد) را هم‌گروه کنید. صرفاً مشابه بودن آدرس، نام یا نوع پنل به‌تنهایی دلیل یکسان بودن پنل فیزیکی نیست. تشخیص پنل واقعی برعهده ادمین است.',
+        'bot.manage_marzban_panel_groups.message.59d5170317' => '🗂 گروه‌های مشترک پنل: فقط سرورهای متصل به یک پنل واقعی پاسارگارد را هم‌گروه کنید. مشابه بودن آدرس یا نام، دلیل یکسان بودن پنل فیزیکی نیست. تشخیص پنل واقعی بر عهدهٔ ادمین است.',
         // bot.add_marzban_panel_group
         'bot.add_marzban_panel_group.message.01f02c2ac6' => 'نام گروه پنل جدید را وارد کنید (1 تا 60 حرف؛ فارسی مجاز است).' . "\n" . '',
-        'bot.add_marzban_panel_group.message.31116063c0' => 'توجه: گروه مشترک فقط برای سرورهایی است که واقعاً به یک پنل فیزیکی با همان نوع متصل‌اند؛ بین پنل‌های متفاوت یا بین مرزبان و پاسارگارد نباید یک گروه انتخاب شود.',
+        'bot.add_marzban_panel_group.message.31116063c0' => 'توجه: گروه مشترک فقط برای سرورهایی است که واقعاً به یک پنل فیزیکی پاسارگارد متصل‌اند. سرورهای متصل به پنل‌های متفاوت را در یک گروه قرار ندهید.',
         'bot.add_marzban_panel_group.message.c697bdb683' => '⚠️ نام گروه نامعتبر است؛ حداکثر 60 کاراکتر و بدون خط جدید.',
         'bot.add_marzban_panel_group.message.cfb10ede6f' => '⚠️ این نام قبلاً تعریف شده است یا معتبر نیست؛ نام دیگری وارد کنید.',
         'bot.add_marzban_panel_group.message.7c6b361e59' => '⚠️ ذخیره گروه پنل انجام نشد.',
@@ -530,8 +526,8 @@ return [
         'order_management.show_order_management_panel.admin_message.c7c4748cee' => ['text' => '🗑 سفارش از دیتابیس حذف شد.' . "\n" . '' . "\n" . '🎫 شناسه عددی: <code>{userid}</code>' . "\n" . '🔄 نام کاربری اشتراک: <code>{remark}</code>' . "\n" . '👤 مدیر: <code>{from_id}</code>', 'parameters' => ['userid', 'remark', 'from_id']],
         'order_management.show_order_management_panel.message.86c15dd0ed' => '✅ تاریخ انقضا با موفقیت ویرایش شد.',
         'order_management.show_order_management_panel.alert.057ec5448c' => '⛔️ دسترسی لازم وجود ندارد.',
-        'order_management.show_order_management_panel.alert.3e801d365f' => '⛔️ سفارش مرزبان معتبر نیست.',
-        'order_management.show_order_management_panel.alert.7a6ebab798' => '⚠️ هیچ سرور دیگری با همان پنل مرزبان وجود ندارد.',
+        'order_management.show_order_management_panel.alert.3e801d365f' => '⛔️ سفارش یا اتصال پاسارگارد معتبر نیست.',
+        'order_management.show_order_management_panel.alert.7a6ebab798' => '⚠️ هیچ سرور دیگری متصل به همین پنل پاسارگارد وجود ندارد.',
         'order_management.show_order_management_panel.button.b35a2352f5' => '↪️ بازگشت',
         'order_management.show_order_management_panel.message.557fb66856' => '🌐 سرور منطقی مقصد را انتخاب کنید. تنظیمات مقصد پس از بررسی اشتراک اعمال می‌شود.',
         'order_management.show_order_management_panel.alert.c5dae93802' => '⛔️ مقصد با اشتراک فعلی سازگار نیست یا نتیجه نیاز به بررسی دارد.',
@@ -975,7 +971,6 @@ return [
         'management.warning_explanation' => "ℹ️ این بخش وضعیت پردازش هشدار را نشان می‌دهد و کلید روشن یا خاموش نیست. «پردازش شده» به معنی تضمین تحویل پیام نیست. پایان مهلت نگهداری فقط زمان بررسی برای حذف سرویسی است که همچنان تمام شده است.",
         'management.warning_grace_state' => "⏳ مهلت نگهداری",
 
-        'management.interval_input' => "⚠️ مقدار و قیمت را با عدد صحیح وارد کنید. مقدار باید بیشتر از 0 و قیمت بین 0 تا 2147483647 تومان باشد؛ مثال: 10-50000 یعنی 10 روز یا 10 گیگابایت با قیمت 50000 تومان.",
         'management.interval_price' => "⚠️ قیمت را به تومان، با عدد صحیح بین 0 تا 2147483647 وارد کنید؛ مثال: 50000.",
         'management.order_context' => ['text'=>"\n\n📋 سفارش {order_id}\nسرور: {server}\nپلن ثبت‌شده: {plan}\nتاریخ ثبت‌شده: {recorded_expiry}\n\n📝 این بخش مشخصات ثبت‌شده سفارش را اصلاح می‌کند؛ تغییر این اطلاعات به‌تنهایی اعتبار یا حجم سرویس را تغییر نمی‌دهد.",'parameters'=>["order_id", "server", "plan", "recorded_expiry"]],
         'management.local_expiry' => "🗓 اصلاح تاریخ ثبت‌شده",
@@ -1023,7 +1018,6 @@ return [
         'management.management_unavailable' => "⚠️ ذخیره یا نمایش این مرحله ممکن نشد. وضعیت را بررسی کنید و دوباره از بخش مدیریت وارد شوید.",
         'management.review_required' => "⚠️ نتیجه ذخیره هنوز مشخص نیست. ابتدا فهرست را بررسی کنید؛ از ثبت دوباره تا بررسی نتیجه خودداری کنید.",
         'management.restart' => "ℹ️ فرم قبلی پایان یافت. برای ادامه از «افزودن سرور» یا «افزودن پلن» استفاده کنید.",
-        'management.marzban' => "مرزبان",
         'management.pasarguard' => "پاسارگارد",
         'management.previous_page' => "◀️ قبلی",
         'management.next_page' => "▶️ بعدی",
@@ -1055,7 +1049,6 @@ return [
         'management.no_categories' => "ℹ️ هنوز دسته‌بندی فعالی وجود ندارد. ابتدا از مدیریت دسته‌ها یک دسته بسازید.",
         'management.no_servers' => "ℹ️ هنوز سرور فعالی ثبت نشده است. ابتدا یک سرور اضافه کنید.",
         'management.plan_groups' => "🗂 گروه‌های Native این پلن پاسارگارد را انتخاب کنید و سپس «تأیید انتخاب‌ها» را بزنید. این گروه‌ها مستقل از گروه مشترک پنل هستند.",
-        'management.plan_inbounds' => "🗂 اینباندهای مرزبان برای این پلن را انتخاب کنید؛ سپس انتخاب‌ها را تأیید کنید:",
         'management.plan_review' => ['text'=>"📋 تأیید نهایی پلن\n\nنام: {title}\nقیمت: {price} تومان\nدسته: {category}\nسرور: {server}\nاعتبار: {days} روز\nحجم: {volume} گیگابایت\nدسترسی: {access}\nتوضیح: {description}",'parameters'=>["title", "price", "category", "server", "days", "volume", "access", "description"]],
         'management.add_server' => "➕ افزودن سرور",
         'management.add_plan' => "➕ افزودن پلن",
@@ -1376,10 +1369,6 @@ return [
     // ── مدیریت پلن‌ها ──
     'plans' => [
         // administration.alert
-        'administration.alert.f785716e8a' => '🗑 ثبت پلن پنل قدیمی حذف شده است؛ از پلن مرزبان استفاده کنید.',
-        // administration.add_new_marzban_plan
-        // administration.save_plan_network_type
-        // administration.backplan
         'administration.backplan.button.9708693ebe' => '➖',
         'administration.backplan.button.2abde87b2a' => '➕ افزودن پلن حجمی',
         'administration.backplan.button.92c1307fe6' => '➕ افزودن پلن زمانی',
@@ -1421,9 +1410,7 @@ return [
         'intervals.day_plan_settings.button.2b2966a54e' => '❌',
         'intervals.day_plan_settings.msg.0eb1f0debf' => ' 📍 برای دیدن جزییات پلن زمانی روی آن بزنید👇',
         // intervals.add_new_day_plan
-        'intervals.add_new_day_plan.message.3bf1033cb0' => 'تعداد روز و قیمت آن را بصورت زیر وارد کنید:' . "\n" . '10-30000' . "\n" . '' . "\n" . 'مقدار اول مدت زمان (10) روز' . "\n" . 'مقدار دوم قیمت (30000) تومان' . "\n" . ' ',
         'intervals.add_new_day_plan.message.a2684ce4cc' => '⚠️ حجم را به گیگابایت کامل وارد کنید؛ مقدار اعشاری پشتیبانی نمی‌شود.',
-        'intervals.add_new_day_plan.message.9acd097b34' => '✅ پلن زمانی جدید با موفقیت اضافه شد',
         'intervals.add_new_day_plan.alert.b7bba0b0c0' => '✅ پلن موردنظر با موفقیت حذف شد.',
         'intervals.add_new_day_plan.message.b9989bb7c2' => '💰 قیمت جدید را وارد کنید:',
         'intervals.add_new_day_plan.message.d03501095b' => '✅ عملیات با موفقیت انجام شد.',
@@ -1433,8 +1420,6 @@ return [
         'intervals.volume_plan_settings.button.a3524cb835' => '📦 افزودن پلن حجمی جدید',
         'intervals.volume_plan_settings.msg.573ae79cf6' => ' 📍 برای دیدن جزییات پلن حجمی روی آن بزنید👇',
         // intervals.add_new_volume_plan
-        'intervals.add_new_volume_plan.message.d36c49c30e' => 'حجم و قیمت آن را بصورت زیر وارد کنید:' . "\n" . '10-30000' . "\n" . '' . "\n" . 'مقدار اول حجم صحیح و کامل (10) گیگابایت؛ مقدار اعشاری پشتیبانی نمی‌شود.' . "\n" . 'مقدار دوم قیمت (30000) تومان' . "\n" . ' ',
-        'intervals.add_new_volume_plan.message.b003cdcfab' => '✅ پلن حجمی جدید با موفقیت اضافه شد.',
         'intervals.add_new_volume_plan.alert.d5009733f9' => '✅ پلن مورد نظر با موفقیت حذف شد.',
         'intervals.add_new_volume_plan.message.76731ef62b' => '✅ عملیات با موفقیت انجام شد.',
         'intervals.add_new_volume_plan.message.149e31d927' => '⚠️ حجم جدید را به گیگابایت کامل وارد کنید؛ مقدار اعشاری پشتیبانی نمی‌شود.',

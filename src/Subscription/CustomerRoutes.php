@@ -258,15 +258,6 @@ if(preg_match('/^changeCustomPath(\d+)/',$data,$match) && ($from_id == $admin ||
     
     editKeys(getPlanDetailsKeys($match[1]));
 }
-// Retired inbound/X-UI network-mode callbacks have no Marzban analogue.
-if(preg_match('/changeNetworkType(\d+)_(\d+)/', $data, $match)){
-    alert(\achbotMessage('subscription.customer_routes.cancel_search_keyboard.alert.77c239f956'), true);
-    return;
-}
-if($data=="changeProtocolIsDisable"){
-    alert(\achbotMessage('subscription.customer_routes.cancel_search_keyboard.alert.477e4570c3'));
-}
-
 if(preg_match('/updateConfigConnectionLink(\d+)/', $data,$match)){
     alert(\achbotMessage('legacy_messages.please_wait_message'));
     $oid = $match[1];
@@ -530,10 +521,4 @@ if (preg_match('/agentChangeUserConfigState(\d+)/', $data, $match)) {
     } else {
         sendMessage(\achbotMessage('subscription.customer_routes.cancel_search_keyboard.message.b63b579845'), null, 'HTML');
     }
-}
-
-// Old X-UI protocol mutation must not alter a Marzban order or its payment.
-if(preg_match('/changeAccProtocol(\d+)_(\d+)_(.*)/', $data, $match)){
-    alert(\achbotMessage('subscription.customer_routes.cancel_search_keyboard.alert.d6602f696a'), true);
-    return;
 }

@@ -5,7 +5,6 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '')===__FILE__) {http_response_code(
 require_once __DIR__.'/../Wallet/Ledger.php';
 require_once __DIR__.'/../Purchase/Core.php';
 require_once __DIR__.'/../Panel/ProviderStorage.php';
-require_once __DIR__.'/HistoricalFunding.php';
 
 /**
  * Local quote admission and Wallet funding only. The trusted business adapter
@@ -154,10 +153,6 @@ function achbotServiceFundLocked(mysqli $db,int $userId,int $operationId): strin
     $q=$quote['request'];$price=$q['price'];$count=$q['kind']==='BUY'?$q['quantity']:0;
     if ($op['stage']==='cancelled' || ($op['stage']==='awaiting_funds' && $op['archived_at']!==null)) return 'request_invalidated';
     if (in_array($op['stage'],['funded','prepared','dispatching','applied','completed'],true)) {
-        if (($op['historical_pay_id']??null)!==null) {
-            achbotServiceHistoricalBuyFundingLocked($db,$op,$quote,$owner);
-            return 'already_funded';
-        }
         if ($price>0) {
             $e=achbotWalletFindEntryLocked($db,$owner['id'],$userId,'service_debit',(string)$operationId,0,-$price);
             if (!$e || $e['id']!==(int)$op['debit_entry_id'])

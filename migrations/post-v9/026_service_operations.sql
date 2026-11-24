@@ -1,6 +1,6 @@
 -- #204: independent original service command and atomic Wallet funding.
 -- Additive development schema; NOT an authorization for live migration.
--- Historical prepaid claims reference their original pays row, never a synthetic debit.
+-- Historical claims are reconciled separately; only new commands are executable.
 CREATE TABLE service_operations (
     id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
     command_kind VARBINARY(32) NOT NULL,
@@ -17,7 +17,6 @@ CREATE TABLE service_operations (
     price_toman INT UNSIGNED NOT NULL,
     stage VARCHAR(24) COLLATE utf8mb4_bin NOT NULL DEFAULT 'awaiting_funds',
     debit_entry_id BIGINT UNSIGNED DEFAULT NULL,
-    historical_pay_id INT DEFAULT NULL,
     reserved_count INT UNSIGNED NOT NULL DEFAULT 0,
     next_attempt_at DATETIME(6) DEFAULT NULL,
     attempt_count BIGINT UNSIGNED NOT NULL DEFAULT 0,
@@ -31,18 +30,12 @@ CREATE TABLE service_operations (
     PRIMARY KEY (id),
     UNIQUE KEY uq_service_command (command_kind,command_ref),
     UNIQUE KEY uq_service_debit (debit_entry_id),
-    UNIQUE KEY uq_service_historical_payment (historical_pay_id),
     KEY idx_service_due (stage,next_attempt_at,id),
     KEY idx_service_owner (userid,id),
     KEY idx_service_subject_stage (subject_order_id,stage,id),
     KEY idx_service_target_stage (target_server_id,stage,id),
     CONSTRAINT fk_service_debit FOREIGN KEY (debit_entry_id)
         REFERENCES wallet_entries(id) ON DELETE RESTRICT ON UPDATE RESTRICT,
-    CONSTRAINT fk_service_historical_payment FOREIGN KEY (historical_pay_id)
-        REFERENCES pays(id) ON DELETE RESTRICT ON UPDATE RESTRICT,
-    CONSTRAINT ck_service_historical_funding CHECK (historical_pay_id IS NULL OR
-        (command_kind='checkout' AND kind='BUY' AND price_toman>0 AND debit_entry_id IS NULL
-         AND stage IN ('funded','prepared','dispatching','applied','completed'))),
     CONSTRAINT ck_service_archive CHECK ((archived_at IS NULL) = (archived_by IS NULL)),
     CONSTRAINT ck_service_kind CHECK (kind IN ('BUY','RENEW','ADD_VOLUME','ADD_TIME')),
     CONSTRAINT ck_service_price CHECK (price_toman<=2147483647),
@@ -56,7 +49,7 @@ CREATE TABLE service_operations (
     CONSTRAINT ck_service_funded CHECK (
         stage NOT IN ('funded','prepared','dispatching','applied','completed')
         OR ((price_toman=0 AND debit_entry_id IS NULL) OR
-            (price_toman>0 AND ((debit_entry_id IS NOT NULL) <> (historical_pay_id IS NOT NULL)))))
+            (price_toman>0 AND debit_entry_id IS NOT NULL)))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 ALTER TABLE payment_attempts

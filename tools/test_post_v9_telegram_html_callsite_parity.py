@@ -110,9 +110,9 @@ PLAIN = re.compile(r"""\Anull\Z""", re.I)
 # A changed count, key order, parsed argument, or literal catalog text fails CI.
 AUDITED = {
     'src/Finance/Routes/DiscountAdministration.php': (53, '612fe86bd57176ecb30d7b55f0cd4779494784c6c581572f03ef63cf76256b83'),
-    'src/Plans/Intervals.php': (23, '004ed26d62dec84082559c719b95ff54df07c93afef063603f3f3929b47ac0ac'),
+    'src/Plans/Intervals.php': (13, '57b3a0e239d448b46404fc7af0fb56944d4e902b71962958836ff155dd14a666'),
     'src/Plans/Administration.php': (13, '7bc479ac209460e9f3270644655a881cda730f9ed5e18f529047d36187404587'),
-    'src/Plans/AddonAdmin.php': (6, '0ab447c2b7a203de01b329a00a0b78e5dddcfdf1f20fe7ba20c537713fbffadc'),
+    'src/Plans/AddonAdmin.php': (5, '77eb5d7a03d05ab9da955a61f38be342857f3d08f620ec7d0c07b6f1cac1bc22'),
     'src/Plans/Categories.php': (3, 'f5e5f232dab62ecb5bd39adf2a808bf03672d109e5d58f9a8eff2ab1b387f82e'),
     'bot.php': (93, '9a331984ad962622a27ce161ee8bd0cee9beb67b0042eea205e1551c457d8b6c'),
     'config.php': (15, '71f4e61ba9ffd3e4cf7b789a1cbca6a46033add9ae00407f5495cee2986ac920'),
@@ -134,8 +134,8 @@ AUDITED = {
     'src/Finance/Routes/Checkout.php': (4, 'bb5da20580176f2fc1929ac4735bf1cb86630631ba77120c0658452fb1e26551'),
     'src/Finance/Routes/Extensions.php': (8, '713c4811836cb404d815545d4fe715765884c6f724c499bd4fb5d29c1698a89a'),
     'src/Finance/Routes/ManualReceipts.php': (2, '786805fadd4e8234e6475dfd718160b80ce5ec70fb7881ed95b30fd88d4ecf3e'),
-    'src/Finance/Routes/PrePayment.php': (5, '8dd044efac6dfe78a1a40d4fae7cd0c745aae38223044495e99d0418de969381'),
-    'src/Finance/Routes/RenewalCheckout.php': (10, '6c1211f3e521257aece4da067930cb977c578ed633eb761569127b7148ff43e2'),
+    'src/Finance/Routes/PrePayment.php': (0, '4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945'),
+    'src/Finance/Routes/RenewalCheckout.php': (9, 'd5b2d2a2e82a2c4c2d6564f399dc428aad9c3e807ac2694e63585cd2d6519c54'),
     'src/Finance/Routes/WalletRecharge.php': (8, 'ff6675f06f2b3bf0d32110d1ee084b895f405bf795466fc3394749c73e174be7'),
     'src/Finance/Routes/WalletTransfer.php': (13, '08b78de4a9ec758301b184ff78384095064c18d2f284557753fce60af6de63e3'),
     'src/Panel/ProviderAdmin.php': (8, '83172b94fa08ca51589c44a38ffcaf4fe458f549a2dde5a9e01f5b26d807102a'),
@@ -420,7 +420,8 @@ def main() -> None:
     plain_total = 0
     for file in TARGETS:
         records = list(inventory((ROOT / file).read_text(), data))
-        test_contract_sensitivity(records, data)
+        if records or AUDITED[file][0]!=0:
+            test_contract_sensitivity(records, data)
         counts: dict[str, int | str] = {
             "eligible": 0, "html": 0, "explicit_plain": 0,
             "legacy": 0, "dynamic_or_literal": 0,

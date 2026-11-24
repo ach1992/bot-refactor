@@ -42,7 +42,6 @@ function achbotManagementText(string $key,array $params=[]): string {
         'management_unavailable'=>achbotMessage('admin_settings.management.management_unavailable',$params),
         'review_required'=>achbotMessage('admin_settings.management.review_required',$params),
         'restart'=>achbotMessage('admin_settings.management.restart',$params),
-        'marzban'=>achbotMessage('admin_settings.management.marzban',$params),
         'pasarguard'=>achbotMessage('admin_settings.management.pasarguard',$params),
         'previous_page'=>achbotMessage('admin_settings.management.previous_page',$params),
         'next_page'=>achbotMessage('admin_settings.management.next_page',$params),
@@ -74,7 +73,6 @@ function achbotManagementText(string $key,array $params=[]): string {
         'no_categories'=>achbotMessage('admin_settings.management.no_categories',$params),
         'no_servers'=>achbotMessage('admin_settings.management.no_servers',$params),
         'plan_groups'=>achbotMessage('admin_settings.management.plan_groups',$params),
-        'plan_inbounds'=>achbotMessage('admin_settings.management.plan_inbounds',$params),
         'plan_review'=>achbotMessage('admin_settings.management.plan_review',$params),
         'add_server'=>achbotMessage('admin_settings.management.add_server',$params),
         'add_plan'=>achbotMessage('admin_settings.management.add_plan',$params),
@@ -192,8 +190,8 @@ function achbotManagementHome(string $kind,?int $id=null,string $prefix=''): voi
 function achbotHandleManagement(): bool {
     global $connection, $from_id, $admin, $data, $text, $update, $userInfo, $cancelKey, $message_id, $chat_id;    $data=is_string($data??null)?$data:'';
     $text=is_string($text??null)?$text:null;
-    $starts=in_array($data,['addManagedServer','addNewMarzbanPanel','pgConnections','pgAddConnection',
-        'addManagedPlan','addNewMarzbanPlan'],true) ||
+    $starts=in_array($data,['addManagedServer','pgConnections','pgAddConnection',
+        'addManagedPlan'],true) ||
         preg_match('/^(?:pgNewServer|newPlanForServer)([1-9][0-9]*)$/D',$data);
     $owned=str_starts_with((string)($userInfo['step']??''),'achbotManage|');
     $callback=str_starts_with($data,'am|');
@@ -222,11 +220,10 @@ function achbotHandleManagement(): bool {
             if ($draft===null && !in_array($user['step'],['none',''],true))
                 throw new RuntimeException('management_other_flow');
             if ($draft!==null && $source<=$draft['source']) throw new RuntimeException('management_stale');
-            $kind=in_array($data,['addManagedPlan','addNewMarzbanPlan'],true) ||
+            $kind=in_array($data,['addManagedPlan'],true) ||
                 str_starts_with($data,'newPlanForServer')?'plan':'server';
             $draft=['version'=>1,'kind'=>$kind,'nonce'=>bin2hex(random_bytes(6)),
                 'rev'=>0,'source'=>$source,'stage'=>$kind==='server'?'provider':'title','values'=>[],'history'=>[]];
-            if ($data==='addNewMarzbanPanel') throw new RuntimeException('management_targets');
             if ($data==='pgAddConnection') {$draft['values']['provider']='pasarguard';$draft['stage']='title';}
             if (preg_match('/^pgNewServer([1-9][0-9]*)$/D',$data,$m)) {
                 $draft['values']=['provider'=>'pasarguard','panel_id'=>(int)$m[1]];$draft['stage']='title';

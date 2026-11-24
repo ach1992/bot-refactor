@@ -13,8 +13,8 @@ require_once __DIR__.'/../Presentation/Text.php';
 // Every local-record management callback is privileged. A forged old button
 // or stale cached role must not disclose or mutate another customer's order.
 $achbotOrderAdminRoute=is_string($data??null) &&
-    ($data==='manageorderdatabase' || preg_match('/^(?:showUserSubscriptions|selectOrderByRemark_userid_|returnToPanel_|deleteOrder_|confirmDeleteOrder_|toggleAgent_|toggleNotif_|orderWarningStatus_|changeExpireDate_|changeToken_|changeUUID_|changeServerId_|selectServerId_|changeFileId_|selectFileId_|recoverPlanJournal_|reviewPlanCorrection_|confirmPlanCorrection_|quickUserOrderDetails_)/D',$data));
-$achbotOrderAdminStep=preg_match('/^(?:awaitingOrderRemarkOnly$|awaitingUserIdSelection_|manageOrderById_|awaitingExpireChange_|awaitingToken_|awaitingUUID_)/D',(string)($userInfo['step']??''));
+    ($data==='manageorderdatabase' || preg_match('/^(?:showUserSubscriptions|selectOrderByRemark_userid_|returnToPanel_|deleteOrder_|confirmDeleteOrder_|toggleAgent_|toggleNotif_|orderWarningStatus_|changeExpireDate_|changeServerId_|selectServerId_|changeFileId_|selectFileId_|recoverPlanJournal_|reviewPlanCorrection_|confirmPlanCorrection_|quickUserOrderDetails_)/D',$data));
+$achbotOrderAdminStep=preg_match('/^(?:awaitingOrderRemarkOnly$|awaitingUserIdSelection_|manageOrderById_|awaitingExpireChange_)/D',(string)($userInfo['step']??''));
 if (($achbotOrderAdminRoute || $achbotOrderAdminStep) &&
     !\AchBot\Subscription\AccountDetails\canReadAdminOrderDetails()) {
     alert(\achbotMessage('subscription.order_management.show_order_management_panel.alert.057ec5448c'),true);
@@ -23,7 +23,7 @@ if (($achbotOrderAdminRoute || $achbotOrderAdminStep) &&
 // Cancel is owned here and completes once, retaining the operator's context.
 if ($achbotOrderAdminStep && ($text??null)===(\achbotMessage('legacy_buttons.cancel')??null)) {
     $ownedStep=(string)$userInfo['step'];
-    $id=preg_match('/^(?:manageOrderById_|awaitingExpireChange_|awaitingToken_|awaitingUUID_)([1-9][0-9]*)$/D',$ownedStep,$ownedMatch)?(int)$ownedMatch[1]:0;
+    $id=preg_match('/^(?:manageOrderById_|awaitingExpireChange_)([1-9][0-9]*)$/D',$ownedStep,$ownedMatch)?(int)$ownedMatch[1]:0;
     $stmt=$connection->prepare("UPDATE users SET step='none',temp=NULL WHERE userid=? AND step=?");
     $stmt->bind_param('is',$from_id,$ownedStep);$stmt->execute();$changed=$stmt->affected_rows;$stmt->close();
     if ($changed!==1) {alert(\achbotMessage('subscription.order_management.show_order_management_panel.alert.abcbb638e7'),true);return;}
@@ -445,13 +445,6 @@ if (preg_match('/^awaitingExpireChange_(\\d+)/', $userInfo['step'], $match) && $
     $order = $result->fetch_assoc();
     showOrderManagementPanel($order, $message_id);
     setUser();
-}
-
-// Old cached identity-edit buttons/steps are denied, never executable.
-if (preg_match('/^(?:changeToken|changeUUID)_[0-9]+$/D',(string)($data??'')) ||
-    preg_match('/^(?:awaitingToken|awaitingUUID)_[0-9]+$/D',(string)($userInfo['step']??''))) {
-    alert(\achbotMessage('subscription.order_management.show_order_management_panel.alert.3e801d365f'),true);
-    return;
 }
 
 // An admin may change the logical service label only within one verified

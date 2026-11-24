@@ -281,6 +281,7 @@ function applyDiscountToPay($connection, $rowId, $discountCode, $from_id, $usern
         achbotPayUxLockDraftOwner($connection,(int)$from_id);
         $current=achbotProviderRow($connection,'SELECT * FROM pays WHERE id=? FOR UPDATE','i',[(int)$rowId]);
         if (!$current || $current!==$payInfo || $current['checkout_operation_id']!==null ||
+            !achbotPayUxCurrentDraft($current) ||
             !achbotPayUxUnclaimedDraftUsable($connection,$current,true) ||
             achbotProviderRow($connection,'SELECT id FROM payment_attempts WHERE pay_row_id=? LIMIT 1 FOR UPDATE','i',[(int)$rowId]) ||
             achbotProviderRow($connection,'SELECT id FROM service_effects WHERE pay_row_id=? LIMIT 1 FOR UPDATE','i',[(int)$rowId]))

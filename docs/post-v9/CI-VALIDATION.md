@@ -59,7 +59,7 @@ receipts in both MySQLi modes for the critical replacements.
 | Old CI driver | Current source-real replacement / retirement proof |
 | --- | --- |
 | api_payments | wallet_first_credit, wallet_first_manual: SMS/gift verified identity, one credit, lost evidence ACK, local rollback, archive, service invalidation; service execution owns subsequent Native/Telegram effects |
-| postcutover_recovery | wallet_first_cutover_openings, wallet_first_service_execution: historical prepaid original identity, uncertain CREATE/readback/commit recovery, migrated alias identity fences; native_import_name_reuse, native_import_alias_duplicate remain |
+| postcutover_recovery | wallet_first_cutover_openings, wallet_first_service_execution: historical prepaid evidence cannot execute, current uncertain CREATE/readback/commit recovery, migrated alias identity fences; native_import_name_reuse, native_import_alias_duplicate remain |
 | nowpayments_finality | wallet_first_hosted: original credential, signed child, exact amount/order/invoice, confirmed not final, uncertain issuance, actual public checkout/return, poll and replay |
 | automatic_renewal | wallet_first_service_execution: actual scheduled cycle, alias one-charge, low balance, frozen target, old pending cycle, reset lost ACK, fair worker, durable notices |
 | bank_purchase | wallet_first_manual, wallet_first_service_execution: original bank receipt and timer, manual service completion, rollback, exact receipt edits, standard/custom/bulk, durable delivery |
@@ -67,15 +67,14 @@ receipts in both MySQLi modes for the critical replacements.
 | wallet_archive_schema_modes | wallet_first_retirement: old schema rejected, partial 033 and nonunique command index rejected; service execution: archive preserves original receipt, no post-archive service delivery |
 | wallet_sconfig_finality, wallet_marzban_target, marzban_bearer | retired as authorized; negative original callback, unsupported Native provider and absent executors in wallet_first_retirement and wallet_first_service_execution |
 | wallet_pg_recovery, wallet_original_renewal | wallet_first_service_execution: absolute add-on/renewal, original account/alias fence, lost reset and PUT, local finality rollback, foreign/drift denial |
-| wallet_original_buy_and_marzban, wallet_original_buy_pasarguard | wallet_first_service_execution: original prepaid/funded BUY, unique ordinal, lost response, 409/readback, identity/physical target, no second debit or capacity; Marzban retired |
+| wallet_original_buy_and_marzban, wallet_original_buy_pasarguard | wallet_first_service_execution: current funded BUY, old prepaid claim refusal, unique ordinal, lost response, 409/readback, identity/physical target, no second debit or capacity; Marzban retired |
 | service_effects | wallet_first_service_execution, wallet_first_funding: one command, effect/ordinal, original quote and capacity, ownership, commit/recovery, delivery |
 | low_wallet_reentry | wallet_first_service_execution: actual low-wallet callback, unchanged draft and alternative receipt, no duplicate credit/debit |
 | provider_registry | wallet_first_retirement: exact current registration, incomplete adapter and unsupported provider denial; wallet_first_funding: isolated test-only Native and payment registrations through unchanged common engines |
 | scoped_pg_payments | wallet_first_service_execution: actual scoped DAY/VOLUME drafts, approval and wallet callbacks; gateway, permissions and existing-provider tests remain |
 | manual_unknown_redrive | wallet_first_service_execution: original immutable packet attempts, private operator confirmation, recipient/role and attempt binding, 429, unknown, stale/replay denial |
 
-An original pending historical claim is not automatically runnable on the new
-schema. Owner-authorized manual transfer/reconciliation is a separate operation;
+An original pending historical claim is never runnable as an old workflow on the new schema. The first-install schema is checked against the retained historical construction definitions; old unused tables are omitted. Owner-authorized manual transfer/reconciliation is a separate operation;
 do not manufacture a debit or Native result. The delayed Native write
 counterexample remains a required characterization of the upstream API limit,
 not an affirmative remote exactly-once guarantee.

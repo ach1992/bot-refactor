@@ -176,7 +176,6 @@ try {
         $r=match($x['op']) {
             'cutover_snapshot'=>walletFirstCutoverSnapshot($db),
             'cutover_open'=>walletFirstCutoverOpen($db,$x['expected']),
-            'cutover_adopt'=>walletFirstCutoverAdoptWalletBuy($db,$x['pay'],$x['expected']),
             'legacy_reserve'=>fixtureLegacyReserve($db,$x['pay'])
         };
     }
@@ -204,7 +203,7 @@ try {
     elseif ($x['op']==='retired_callback') {
         require_once $argv[1].'/src/Finance/CheckoutAdmission.php';
         $p=achbotProviderRow($db,'SELECT * FROM pays WHERE id=?','i',[$x['pay']]);
-        $r=['modes'=>array_map(static fn($mode)=>achbotWalletModeMatchesRequest($p,$mode),['standard','custom','renew','day','volume','sconfig']),
+        $r=['modes'=>array_map(static fn($mode)=>achbotCheckoutModeMatchesRequest($p,$mode),['standard','custom','renew','day','volume','sconfig']),
             'provider'=>achbotSupportsProviderType('marzban'),'subject'=>achbotProviderPaymentSubjectServer($db,$p)];
     }
     elseif ($x['op']==='checkout_insert') {
@@ -630,9 +629,9 @@ def main():
             def native(order):
                 remark=sql(f"SELECT remark FROM orders_list WHERE id={order}")
                 return users[remark]
-            # Rehearse the original old-wallet transaction, then the exact
-            # opening, adoption and first Native CREATE in the SAME DB.
-            # Both claims are adopted before any new monetary movement.
+            # Old prepaid claims are historical only. Neither the current
+            # wallet callback nor a worker may adopt/replay them. Keep the
+            # actual debit/capacity evidence for separate manual reconciliation.
             sql((ROOT/'migrations/post-v9/034_wallet_owner_uniqueness.sql').read_text())
             historical={}
             for mode in ('strict','off'):
@@ -644,37 +643,14 @@ def main():
                 historical[mode]=pid
             snap=php('strict','cutover_snapshot')
             php('strict','cutover_open',expected=snap['sha256'])
-            before=finance();n=len(requests);ops={}
+            before=finance();n=len(requests)
             for mode,pid in historical.items():
-                r=php(mode,'cutover_adopt',pay=pid,expected=snap['sha256'])
-                oid=r['operation'];ops[mode]=oid
-                assert php(mode,'cutover_adopt',pay=pid,expected=snap['sha256'])['replayed']
+                ref=mode+'-prepaid-custom'
+                assert php(mode,'checkout_wallet',hash=ref,mode='custom',expect_error='checkout_draft_unavailable')
+                assert sql(f"SELECT CONCAT(state,':',checkout_operation_id IS NULL) FROM pays WHERE id={pid}")=='processing_wallet:1'
+                assert sql(f"SELECT state FROM service_effects WHERE pay_row_id={pid}")=='reserved'
                 assert finance()==before and len(requests)==n
-            for mode,pid in historical.items():
-                op=ops[mode];ref=mode+'-prepaid-custom';n=posts()
-                faults.append('lost_response')
-                step(mode,op,'pending','pg_vendor_unavailable')
-                assert posts()==n+1 and finance()==before
-                retry(op);step(mode,op,'applied')
-                assert posts()==n+1
-                sql(f"CREATE TRIGGER fixture_adopt_completion_fail BEFORE UPDATE ON pays FOR EACH ROW SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='fixture completion rollback'")
-                try:
-                    step(mode,op,'pending','provider_storage_unavailable')
-                    assert sql(f"SELECT state FROM pays WHERE id={pid}")=='processing_wallet'
-                    assert sql(f"SELECT COUNT(*) FROM payment_delivery_intents WHERE service_operation_id={op}")=='0'
-                    assert finance()==before and posts()==n+1
-                finally:sql('DROP TRIGGER fixture_adopt_completion_fail')
-                retry(op);step(mode,op,'completed')
-                assert sql(f"SELECT state FROM pays WHERE id={pid}")=='paid_with_wallet'
-                assert sql(f"SELECT CONCAT(stage,':',historical_pay_id,':',COALESCE(debit_entry_id,0)) FROM service_operations WHERE id={op}")==f'completed:{pid}:0'
-                assert php(mode,'checkout_wallet',hash=ref,mode='custom')['status']=='already_funded'
-                assert sql(f"SELECT COUNT(*) FROM orders_list WHERE remark='{ref}' AND userid=1001")== '1'
-                did=int(sql(f"SELECT id FROM payment_delivery_intents WHERE service_operation_id={op}"))
-                assert php(mode,'deliver',id=did)=='acknowledged'
-                for rid in sql(f"SELECT id FROM payment_followup_intents WHERE service_operation_id={op}").splitlines():
-                    assert php(mode,'followup',id=int(rid))=='acknowledged'
-                assert finance()==before and posts()==n+1
-                cases.append(mode+'_historical_prepaid_create_lost_response_completion_rollback_no_second_debit_or_capacity')
+                cases.append(mode+'_historical_prepaid_claim_no_adoption_or_new_effect')
             for mode in ('strict','off'):
                 # Isolate each test mode's scheduler from previously deferred
                 # conflict fixtures; no terminal evidence is changed.

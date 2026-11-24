@@ -185,7 +185,7 @@ def main():
                 r=run(mode,op,**kw);assert r['ok'],r
                 return r['result']
             def seed(name,price=100,kind='INCREASE_WALLET'):
-                sql(f"INSERT INTO pays(hash_id,user_id,type,price,request_date,state) VALUES ('{name}',1001,'{kind}',{price},UNIX_TIMESTAMP(),'pending')")
+                sql(f"INSERT INTO pays(hash_id,user_id,type,price,request_date,state,checkout_draft_context) VALUES ('{name}',1001,'{kind}',{price},UNIX_TIMESTAMP(),'pending',JSON_OBJECT('version',1))")
                 return int(sql(f"SELECT id FROM pays WHERE hash_id='{name}'"))
             def snapshot():
                 return tuple(sql(q) for q in [
@@ -351,6 +351,14 @@ $id=achbotServiceIssueLocked($db,1001,'fixture',$argv[4],$q);$db->commit();echo 
                 case('actual_admission_lost_creation_original_secret_ipn_recovery_and_poll_once')
                 # Source-real public checkout and browser return controllers.
                 sql("DELETE FROM setting WHERE type IN ('BOT_STATES','PAYMENT_KEYS'); INSERT INTO setting(type,value) VALUES ('BOT_STATES','{\"nowPaymentWallet\":\"on\",\"nextpay\":\"on\",\"zarinpal\":\"on\"}'),('PAYMENT_KEYS','{\"nextpay\":\"next-original\",\"zarinpal\":\"zarin-original\",\"nowpayment\":\"np-original\",\"manualUsdtRateToman\":100}')")
+                pid=seed(mode+'-old-browser')
+                sql(f"UPDATE pays SET checkout_draft_context=NULL WHERE id={pid}")
+                before=snapshot();start=len(calls)
+                for flag in ('nextpay','zarinpal','nowpayment'):
+                    assert result(mode,'browser_issue',flag=flag,hash=mode+'-old-browser')['status']!=302
+                assert snapshot()==before and len(calls)==start
+                assert sql(f"SELECT COUNT(*) FROM payment_attempts WHERE pay_row_id={pid}")=='0'
+                case('historical_browser_draft_never_issued')
                 for flag,method in [('nextpay','nextpay'),('zarinpal','zarinpal'),('nowpayment','nowpayments')]:
                     name=mode+'-browser-'+flag;pid=seed(name,price=205)
                     ref=mode+'-browser-'+flag+'-ref';child=ref+'-child';b=bal()

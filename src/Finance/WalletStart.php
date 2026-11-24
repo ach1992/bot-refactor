@@ -120,12 +120,14 @@ function startWalletPayment(mysqli $connection, $botState, $botUrl,
         $stmt->close();
         if ($claimed !== 1) throw new RuntimeException('topup_claim_unconfirmed');
 
+        require_once __DIR__.'/CheckoutAdmission.php';
+        achbotCheckoutRequireSchema($connection);
         $hash_id = RandomString();
-        achbotRemoveUnclaimedPendingPayments($connection, $actor, 'INCREASE_WALLET');
+
         $time = time();
         $stmt = $connection->prepare("INSERT INTO pays
-            (hash_id,user_id,type,plan_id,volume,day,price,request_date,state)
-            VALUES (?,?,'INCREASE_WALLET','0','0','0',?,?,'pending')");
+            (hash_id,user_id,type,plan_id,volume,day,price,request_date,state,checkout_draft_context)
+            VALUES (?,?,'INCREASE_WALLET','0','0','0',?,?,'pending',JSON_OBJECT('version',1))");
         if (!$stmt) throw new RuntimeException('topup_insert_unavailable');
         $stmt->bind_param('siii', $hash_id, $actor, $amount, $time);
         if (!$stmt->execute()) throw new RuntimeException('topup_insert_failed');

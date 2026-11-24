@@ -104,30 +104,14 @@ function achbotAddonAdminNext(mysqli $db,array $flow): void {
 function achbotAddonAdminHandle(mysqli $db): bool {
     global $data,$text,$from_id,$admin,$userInfo,$cancelKey;
     $cb=(string)($data??'');$step=(string)($userInfo['step']??'');
-    $filterMatch=[];
-    $filterOwned=preg_match('/^addonFilter(Day|Volume)(All|Global|Servers|Server[1-9][0-9]*)$/D',
-        $cb,$filterMatch)===1;
     $owned=in_array($cb,['dayPlanSettings','volumePlanSettings','addNewDayPlan','addNewVolumePlan'],true) ||
-        $filterOwned ||
         preg_match('/^addon(?:EditScope(?:Day|Volume)[1-9][0-9]*_[a-f0-9]{20}|Scope(?:Global|Server|Groups)_[a-f0-9]{16}|PickServer[1-9][0-9]*_[a-f0-9]{16})$/D',$cb) ||
         str_starts_with($step,'addon:');
     if (!$owned) return false;
     try {
-        if (!achbotAddonSchema($db)) return false;
+        achbotAddonSchema($db);
         if (!achbotAdminCanFor($db,(int)$from_id,(int)$admin,'plans'))
             throw new RuntimeException('addon_admin_denied');
-        if ($filterOwned) {
-            // Previously sent Telegram keyboards can still contain filter
-            // callbacks. Preserve authorization and editor-state checks, but
-            // always converge to the complete list without presenting any
-            // further filter picker.
-            if ($step!=='none') {
-                sendMessage(\achbotMessage('addon_scopes.filter_blocked'),$cancelKey, 'HTML');
-                return true;
-            }
-            achbotIntervalShow($db,$filterMatch[1]==='Day'?'day':'volume');
-            return true;
-        }
         if ($cb==='dayPlanSettings' || $cb==='volumePlanSettings') {
             if ($step!=='none') throw new RuntimeException('addon_admin_editor_in_progress');
             achbotIntervalShow($db,$cb==='dayPlanSettings'?'day':'volume');return true;
@@ -145,7 +129,7 @@ function achbotAddonAdminHandle(mysqli $db): bool {
                 if (!$row) throw new RuntimeException('addon_admin_offer_missing');
                 if (!hash_equals(achbotAddonOfferRevision($kind,$row),$edit[3]))
                     throw new RuntimeException('addon_admin_stale_callback');
-                $scope=achbotAddonScopeRow($row,true);
+                $scope=achbotAddonScopeRow($row);
                 $units=achbotWholeServiceUnits($row['volume'],$kind==='day'?36500:achbotServiceVolumeMax());
                 if ($units===null || (int)$row['price']<0) throw new RuntimeException('addon_admin_offer_invalid');
                 $flow['original']=['id'=>$id,'scope_hash'=>$scope['scope_hash'],

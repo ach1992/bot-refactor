@@ -56,7 +56,6 @@ try {
     $r=match($c['op']) {
         'audit'=>walletFirstCutoverAudit($db),
         'open'=>walletFirstCutoverOpen($db,$c['expected']),
-        'adopt'=>walletFirstCutoverAdoptWalletBuy($db,$c['pay'],$c['expected']),
         'legacy_reserve'=>fixtureLegacyReserve($db,$c['pay']),
         'snapshot'=>walletFirstCutoverSnapshot($db),
         default=>throw new RuntimeException('fixture_operation')
@@ -157,34 +156,14 @@ def main():
             assert sql('SELECT * FROM pays ORDER BY id')==oldp
             assert ok('open',expected=snap['sha256'])['replayed']
             case('signed_exact_openings_and_idempotent_rehearsal')
-            reject('adopt','service_historical_wallet_quote_unproven',pay=standard,expected=snap['sha256'])
-            reject('adopt','service_historical_wallet_payment_invalid',pay=int(sql("SELECT id FROM pays WHERE hash_id='completed'")),expected=snap['sha256'])
-            # Force a local failure after the historical operation and hold
-            # transfer: no partial ownership may survive that transaction.
-            sql("CREATE TRIGGER fixture_adopt_fail BEFORE UPDATE ON pays FOR EACH ROW SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='fixture adoption rollback'")
-            try:
-                reject('adopt','provider_storage_unavailable',pay=custom,expected=snap['sha256'])
-                assert sql('SELECT COUNT(*) FROM service_operations')=='0'
-                assert sql(f"SELECT state FROM service_effects WHERE pay_row_id={custom}")=='reserved'
-                assert sql('SELECT * FROM pays ORDER BY id')==oldp
-            finally:sql('DROP TRIGGER fixture_adopt_fail')
-            case('original_claim_adoption_failure_atomic')
-            # A later plan edit cannot redefine the prepaid custom quote.
-            sql("UPDATE server_plans SET days=31,volume=9,price=900 WHERE id=7")
-            adopted=ok('adopt',pay=custom,expected=snap['sha256'])
-            op=adopted['operation']
-            assert not adopted['replayed'] and not adopted['runtime_activation_authorized']
-            assert sql(f"SELECT stage,debit_entry_id,historical_pay_id,reserved_count FROM service_operations WHERE id={op}")==f'funded\tNULL\t{custom}\t1'
-            assert sql(f"SELECT JSON_VALUE(quote_payload,'$.request.days'),JSON_VALUE(quote_payload,'$.request.volume') FROM service_operations WHERE id={op}")=='17\t5'
-            assert sql(f"SELECT state FROM service_effects WHERE pay_row_id={custom}")=='consumed'
+            # No old claim may become a new executable service command.
+            assert sql('SELECT COUNT(*) FROM service_operations')=='0'
+            assert sql(f"SELECT COUNT(*) FROM service_effects WHERE pay_row_id IN ({custom},{standard}) AND state='reserved'")== '2'
             assert sql("SELECT ucount FROM server_info WHERE id=2")=='98'
+            assert sql('SELECT * FROM pays ORDER BY id')==oldp
             assert sql('SELECT id,userid,wallet FROM users ORDER BY id')==old
-            assert sql('SELECT COUNT(*) FROM wallet_entries')=='3'
-            assert ok('adopt',pay=custom,expected=snap['sha256'])['replayed']
-            sql(f"UPDATE pays SET description='changed' WHERE id={custom}")
-            reject('adopt','checkout_original_command_changed',pay=custom,expected=snap['sha256'])
-            sql(f"UPDATE pays SET description='original-custom-name' WHERE id={custom}")
-            case('original_custom_prepaid_claim_adopted_no_second_money_or_capacity')
+            assert not ok('audit')['legacy_claims_clear']
+            case('historical_paid_claims_preserved_not_adopted')
             sql("UPDATE users SET wallet=wallet+10 WHERE userid=9002")
             reject('open','cutover_snapshot_changed',expected=snap['sha256'])
             reject('open','cutover_open_reconciliation',expected=ok('snapshot')['sha256'])

@@ -31,6 +31,18 @@ define('ACHBOT_VERIFIED_WEBHOOK_ENTRYPOINT', true);
 require_once 'config.php';
 require_once __DIR__.'/src/Purchase/Core.php';
 check();
+// Obsolete callback names do not own a workflow. Navigate through the
+// ordinary guarded Home route before any staff or financial dispatch.
+$robotState = $botState['botState']??"on";
+$inviteReward = achbotInviteReward($connection);
+if (achbotObsoleteCallback((string)($data??''))) {
+    $oldFrame=$update->callback_query??null;
+    if (!is_object($oldFrame) || ($oldFrame->from->id??null)!==(int)$from_id ||
+        ($oldFrame->message->chat->type??null)!=='private' ||
+        ($oldFrame->message->chat->id??null)!==(int)$from_id) return;
+    prepareStartFallback();
+    goto GOTOSTART;
+}
 if (!achbotAdminRequestAllowed(is_string($data??null)?$data:null,is_string($text??null)?$text:null,(string)($userInfo['step']??''))) {achbotAdminDeny();return;}
 
 require_once __DIR__.'/src/Panel/ProviderAdmin.php';
@@ -44,8 +56,6 @@ if (achbotHandleProviderAdmin()) return;
 // Source-authenticated and IP-checked before any administrative moderation.
 if (handleToggleCallbacks($data??null,$chat_id??null,$message_id??null)) return;
 // Channel-exemption settings are admin-only and cannot execute before check().
-if (achbotHandleChannelExemption($data??null,$text??null,$userInfo??null)) return;
-// Privileged exemption changes are never allowed inside config bootstrap.
 if (achbotHandleChannelExemption($data??null,$text??null,$userInfo??null)) return;
 
 /*
@@ -61,10 +71,6 @@ $log_data .= "--------------------------\n";
 // ذخیره در فایل لاگ
 file_put_contents(__DIR__ . "/full_log.txt", $log_data, FILE_APPEND);
 */
-
-$robotState = $botState['botState']??"on";
-// Ignore the retired private invitation amount; resolve current managed settings.
-$inviteReward = achbotInviteReward($connection);
 
 GOTOSTART:
 if (($userInfo['step'] ?? null) === "banned" &&
@@ -95,8 +101,12 @@ if (is_string($data) && preg_match(
 }
 
 if (($achbotApiPaymentResult = require __DIR__.'/src/Finance/Routes/ApiPayments.php') === null) return;
-if (($achbotV8Result = require __DIR__ . '/src/Finance/Routes/PrePayment.php') === null) return;
-if (($achbotManualCryptoResult = require __DIR__ . '/src/Finance/Routes/ManualCrypto.php') === null) return;
+$achbotV8Result = require __DIR__ . '/src/Finance/Routes/PrePayment.php';
+if ($achbotV8Result === '__ACHBOT_V8_GOTO_START__') goto GOTOSTART;
+if ($achbotV8Result === null) return;
+$achbotManualCryptoResult = require __DIR__ . '/src/Finance/Routes/ManualCrypto.php';
+if ($achbotManualCryptoResult === '__ACHBOT_V8_GOTO_START__') goto GOTOSTART;
+if ($achbotManualCryptoResult === null) return;
 // END Pre Pay Check By ACh
 
 // "عضو شدم" is a navigation continuation, not proof of membership. Only
@@ -1914,23 +1924,6 @@ if(preg_match('/^changesServerIp(\d+)/',$userInfo['step'],$match) && ($from_id =
     $keys = getServerConfigKeys($match[1]);
     sendMessage(\achbotMessage('bot.bot.servers_setting.message.ac9cd6d52a', ['cname' => $cname]),$keys);
     exit();
-}
-// Old buttons can still arrive from a Telegram message sent before
-// upgrading. Respond safely instead of silently dropping the callback.
-if ($data === 'addNewServer' && ($from_id == $admin || ($userInfo['isAdmin'] ?? false) == true)) {
-    alert(\achbotMessage('bot.bot.add_new_server.alert.649a7042c3'), true);
-    return;
-}
-// Obsolete X-UI transport/Reality callbacks are intentionally retired.
-if(preg_match('/^(?:changePortType|changeRealityState)\d+$/', (string)$data)){
-    alert(\achbotMessage('bot.bot.add_new_server.alert.e9e9974e92'), true);
-    return;
-}
-// Previously sent legacy admin panel-selector callbacks must never
-// mutate provider type or accidentally switch a Marzban server to X-UI.
-if(preg_match('/^(?:changeServerType\d+|chhangeServerType\w+_\d+)$/', (string)$data)){
-    alert(\achbotMessage('bot.bot.add_new_server.alert.3340eb9465'), true);
-    return;
 }
 // Define real-panel identity groups centrally, before assigning them to
 // logical server entries. A group is trusted admin configuration, never

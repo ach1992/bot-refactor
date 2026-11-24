@@ -166,22 +166,6 @@ function achbotEffectLockTargetRows(
     }
 }
 
-/** Discover immutable effect routing, then lock its exact current local target. */
-function achbotEffectLockLinkRows(mysqli $db,int $effectId,bool $paid): array {
-    $stmt=$db->prepare('SELECT target_server_id,pay_row_id FROM service_effects WHERE id=?');
-    if (!$stmt) throw new RuntimeException('effect_link_target_prepare');
-    $stmt->bind_param('i',$effectId);
-    if (!$stmt->execute()) throw new RuntimeException('effect_link_target_read');
-    $target=$stmt->get_result()->fetch_assoc();$stmt->close();
-    $serverId=(int)($target['target_server_id']??0);
-    $payId=$target && $target['pay_row_id']!==null?(int)$target['pay_row_id']:null;
-    if (!$target || $serverId<=0 || ($paid?($payId===null || $payId<=0):$payId!==null))
-        throw new RuntimeException('effect_link_target_invalid');
-    achbotEffectLockTargetRows($db,$serverId,null,$payId);
-    if ($paid) throw new RuntimeException('nonpaid_link_required');
-    return [$serverId,$payId];
-}
-
 /** Shared remote dispatch/readback for paid and authenticated non-paid claims. */
 function achbotEffectDispatchReservedAccount(
     mysqli $db, int $effectId, int $serverId, ?int $group,
