@@ -163,7 +163,10 @@ try {
     elseif ($x['op']==='resolve') $r=achbotServiceResolve($db,$x['id'],(int)($x['actor']??9001),9001,$x['decision'],$x['token']);
     elseif ($x['op']==='service_attention') $r=achbotServiceAttentionCaseOpen($db,$x['id']);
     elseif ($x['op']==='auto') $r=achbotServiceAutoRenewAdmit($db,$x['order'],(int)($x['owner']??1001),$x['bot_state']??['renewAutoState'=>'on']);
-    elseif ($x['op']==='gateway_history') $r=achbotGatewayRuleHistoryCount($db,(int)$x['owner'],(string)$x['metric'],0,'older',false,time());
+    elseif ($x['op']==='gateway_history') {
+        require_once $argv[1].'/src/Finance/PaymentLifecycle.php';
+        $r=achbotGatewayRuleHistoryCount($db,(int)$x['owner'],(string)$x['metric'],0,'older',false,time());
+    }
     elseif ($x['op']==='due') {
         $other=null;
         if (isset($x['block_service'])) {

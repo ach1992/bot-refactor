@@ -139,19 +139,6 @@ REQUIRED_CURRENT_CASES = {
         "referral_customer_purchase_agent_inviter_eligible",
         "referral_actual_funding_actor_common_audience",
     ),
-    "current_payment_readiness": (
-        "fresh_empty_structure_ready_not_payment_configured",
-        "select_only_account_cannot_write",
-        "configured_current_methods_and_no_private_output_or_database_writes",
-        "explicit_exemptions_are_potential_not_actual_authorization",
-        "missing_check_nonunique_command_and_missing_foreign_key_block",
-        "untrusted_manifest_commit_or_private_member_rejected_before_db",
-        "tampered_and_symlinked_runtime_member_blocked",
-        "unexpected_executables_and_index_shadow_rejected_without_reading_contents",
-    ),
-    "gateway_rules": (
-        "current_service_history_funding_only_excluded_auto_renew_counted_once",
-    ),
     "wallet_first_manual": (
         "bank_transfer_actual_issue_and_manual_approval",
         "actual_approver_owner_channel_reports_without_duplicate_money",
@@ -209,6 +196,23 @@ REQUIRED_CURRENT_CASES = {
     ),
 }
 
+# These suites expose single-scenario evidence rather than strict/off pairs.
+REQUIRED_SCENARIOS = {
+    "current_payment_readiness": (
+        "fresh_empty_structure_ready_not_payment_configured",
+        "select_only_account_cannot_write",
+        "configured_current_methods_and_no_private_output_or_database_writes",
+        "explicit_exemptions_are_potential_not_actual_authorization",
+        "missing_check_nonunique_command_and_missing_foreign_key_block",
+        "untrusted_manifest_commit_or_private_member_rejected_before_db",
+        "tampered_and_symlinked_runtime_member_blocked",
+        "unexpected_executables_and_index_shadow_rejected_without_reading_contents",
+    ),
+    "gateway_rules": (
+        "current_service_history_funding_only_excluded_auto_renew_counted_once",
+    ),
+}
+
 def git(*args: str) -> str:
     return subprocess.check_output(["git", *args], cwd=ROOT, text=True).strip()
 
@@ -254,6 +258,13 @@ def validate_proof(name: str, raw: str) -> dict:
             for mode in ("strict", "off"):
                 if f"{mode}:{case}" not in reported and f"{mode}_{case}" not in reported:
                     raise ValueError(f"{name}: missing {mode}:{case}")
+    if name in REQUIRED_SCENARIOS:
+        reported = proof.get("scenarios")
+        if not isinstance(reported, list):
+            raise ValueError(f"{name}: missing named scenarios")
+        for case in REQUIRED_SCENARIOS[name]:
+            if case not in reported:
+                raise ValueError(f"{name}: missing {case}")
     cases = proof.get("cases")
     if type(cases) is int and cases <= 0:
         raise ValueError(f"{name}: empty test cases")
