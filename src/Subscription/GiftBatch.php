@@ -420,7 +420,7 @@ if (!function_exists('achbotGiftPhysicalTarget')) {
     ): array {
         $sourceType=achbotGiftSourceType($source);
         $actor=$source['actor_id'];
-        if ($serverId<=0 || $volume<0 || $days<0 ||
+        if ($serverId<=0 || $volume<0 || $volume>2147483647 || $days<0 || $days>achbotServiceDaysMax() ||
             ($volume===0 && $days===0) ||
             ($volume>0 && $volume%1024!==0) ||
             $primaryAdminId<=0 ||

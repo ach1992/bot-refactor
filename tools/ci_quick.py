@@ -41,6 +41,7 @@ NATIVE_TESTS = (
     ("operational_report_fanout", "test_operational_report_fanout.py"),
     ("operational_report_outbox", "test_operational_report_outbox.py"),
     ("direct_gift_native", "test_post_v9_direct_gift_native.py"),
+    ("scheduled_gift_native", "test_post_v9_scheduled_gift_native.py"),
     ("gateway_rules", "test_post_v9_gateway_rules.py"),
     ("indexed_payment_locks", "test_post_v9_payment_lock_scope.py"),
     ("pasarguard_http", "test_post_v9_pasarguard_client.py"),

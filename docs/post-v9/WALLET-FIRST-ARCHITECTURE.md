@@ -1326,10 +1326,14 @@ Customer-facing trial/bulk QR and gift notices are not yet part of this
 administrator report journal; ordinary UI and diagnostics stay separate.
 The existing attention inbox now includes unknown/rejected operational
 report deliveries and allows explicit recovery of their original packet.
-A changed channel or revoked administrator is not silently retargeted;
-original sealed reports are held pending current authorization. Permanent
-recipient replacement/dismissal remains a separate policy decision. The
-prior delayed-write counterexample remains a Native API limitation. Keep
+Owner decision (24 Nov 2026): a definitively ineligible report recipient
+is terminally skipped without redirection, another Telegram attempt, or
+manufactured acknowledgement. Incomplete permission reads remain retryable;
+other original recipients proceed independently. Restored access does not
+reactivate a skipped packet. Previously unknown/rejected deliveries preserve
+their attempt evidence and are never automatically replayed; a permitted
+explicit redrive detects ineligibility and skips only that recipient.
+The prior delayed-write counterexample remains a Native API limitation. Keep
 independent review, owner decision and installed acceptance gates separate.
 
 ### Forward-only runtime and entitlement bounds

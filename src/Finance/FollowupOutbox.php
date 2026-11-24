@@ -170,6 +170,32 @@ function achbotFollowupOperationalPurpose(string $ref,string $stage,string $key)
 function achbotFollowupWalletPurpose(int $id,string $stage,string $key): string {
     return 'wallet-followup:v5:'.$id.':'.$stage.':'.$key;
 }
+/** A definitive current permission denial ends only this recipient's
+ * presentation. An incomplete permission read must remain recoverable. */
+final class AchbotFollowupRecipientIneligible extends RuntimeException {}
+function achbotFollowupRequireRecipient(bool $allowed,bool $complete=true): bool {
+    if (!$allowed && $complete) throw new AchbotFollowupRecipientIneligible('followup_recipient_ineligible');
+    return $allowed;
+}
+function achbotFollowupStaffAllowed(mysqli $db,int $who,int $owner,?string $capability=null): bool {
+    if ($owner<=0) return false;
+    $complete=true;
+    $allowed=$capability===null
+        ?achbotAdminStoredRecipientAllowed($db,$who,$owner,false,$complete)
+        :achbotAdminLevelCan(achbotAdminLevel($who,$db,$owner,true,false,$complete),$capability);
+    return achbotFollowupRequireRecipient($allowed,$complete);
+}
+function achbotFollowupGeneralRecipientAllowed(mysqli $db,int $who,int $owner): bool {
+    if ($owner<=0) return false;
+    $complete=true;
+    $allowed=achbotAdminNotificationAllowed($db,$who,$owner,'general',$complete);
+    return achbotFollowupRequireRecipient($allowed,$complete);
+}
+function achbotFollowupChannelAllowed(string $recipient): bool {
+    if (!isset($GLOBALS['botState']['rewardChannel'])) return false;
+    $channel=achbotFollowupReportChannel((string)$GLOBALS['botState']['rewardChannel']);
+    return achbotFollowupRequireRecipient($channel!=='' && $recipient===$channel);
+}
 /** Who is STILL eligible to receive a previously intended report? */
 function achbotFollowupRecipientAllowed(mysqli $db,array $pay,array $r): bool {
     $owner=(int)($GLOBALS['admin']??0);
@@ -179,14 +205,14 @@ function achbotFollowupRecipientAllowed(mysqli $db,array $pay,array $r): bool {
         return achbotFollowupAdminReportAllowed($db,$r,(int)$pay['approved_by']);
     if ($role==='customer') return $recipient===(string)(int)$pay['user_id'];
     if ($role==='receipt_primary')
-        return achbotAdminStoredRecipientAllowed($db,$who,$owner) && $who===(int)$pay['chat_id'] && (int)$r['message_id']===(int)$pay['message_id'];
+        return $who===(int)$pay['chat_id'] && (int)$r['message_id']===(int)$pay['message_id'] && achbotFollowupStaffAllowed($db,$who,$owner);
     if ($role==='receipt_mirror') {
         $copies=json_decode((string)($pay['admins_messages']??''),true);
-        if (!is_array($copies) || !achbotAdminStoredRecipientAllowed($db,$who,$owner))
+        if (!is_array($copies))
             return false;
         foreach ($copies as $copy)
             if ((int)($copy['chat_id']??0)===$who &&
-                (int)($copy['message_id']??0)===(int)$r['message_id']) return true;
+                (int)($copy['message_id']??0)===(int)$r['message_id']) return achbotFollowupStaffAllowed($db,$who,$owner);
         return false;
     }
     return false;
@@ -363,10 +389,38 @@ function achbotFollowupDispatchOne(mysqli $db,int $id,int $actor=0,?string $conf
             $state=$actor===0?(string)$r['state']:'stale';
             $db->rollback();$opened=false;return $state;
         }
-        $packet=$ref!==null?achbotOperationalReportValidateLocked($db,$r):
-            ($walletId!==null?achbotWalletReportValidateLocked($db,$wallet,$r):
-            ($payId>0?achbotFollowupValidateLocked($db,$pay,$r):
-            achbotServiceReportValidateLocked($db,$op,$quote,$r)));
+        try {
+            $packet=$ref!==null?achbotOperationalReportValidateLocked($db,$r):
+                ($walletId!==null?achbotWalletReportValidateLocked($db,$wallet,$r):
+                ($payId>0?achbotFollowupValidateLocked($db,$pay,$r):
+                achbotServiceReportValidateLocked($db,$op,$quote,$r)));
+        } catch (AchbotFollowupRecipientIneligible $denied) {
+            // Never discard a corrupt or forged packet as an authorization
+            // decision. Keep all original attempt evidence, including UNKNOWN.
+            if (!achbotFollowupDecodePacket($pay,$r,(string)$r['pay_fingerprint']))
+                throw new RuntimeException('followup_identity_invalid');
+            if ($actor>0) {
+                $primary=(int)($GLOBALS['admin']??0);
+                if ($primary<=0 || !achbotAdminCanLocked($db,$actor,$primary,'payments')) {
+                    $db->rollback();$opened=false;return 'denied';
+                }
+                if (!is_string($confirmation) || !hash_equals(achbotFollowupRedriveToken($r,$actor),$confirmation)) {
+                    $db->rollback();$opened=false;return 'stale';
+                }
+            }
+            $s=achbotProviderStatement($db,"UPDATE payment_followup_intents
+                SET state='skipped',last_result='recipient_ineligible',next_attempt_at=NULL
+                WHERE id=? AND state=? AND attempt_count=? AND dispatch_token IS NULL",
+                'isi',[$id,$r['state'],(int)$r['attempt_count']]);
+            $n=$s->affected_rows;$s->close();
+            if ($n!==1 || !$db->commit()) throw new RuntimeException('followup_recipient_skip_unconfirmed');
+            $opened=false;
+            achbotDiagnosticEvent('achbot.delivery.followup_recipient_skipped',[
+                'followup_id'=>$id,'pay_id'=>$payId,'service_operation_id'=>$serviceId,
+                'wallet_entry_id'=>$walletId,'operational_ref'=>$ref,
+                'reason'=>'recipient_ineligible'],'info');
+            return 'skipped';
+        }
         if (!$packet) throw new RuntimeException('followup_identity_invalid');
         $claim=achbotFollowupAttemptClaimLocked($db,$r,$actor,$confirmation);
         if ($claim['status']!=='claimed') {
@@ -561,12 +615,11 @@ function achbotFollowupAdminReportAllowed(mysqli $db,array $r,int $actor=0,strin
     if ($r['kind']!=='send' || $r['message_id']!==null) return false;
     if ($r['role']==='report_actor')
         return $actor>0 && $owner>0 && $recipient===(string)$actor &&
-            achbotAdminCanLocked($db,$actor,$owner,$capability);
+            achbotFollowupStaffAllowed($db,$actor,$owner,$capability);
     if ($r['role']==='service_admin')
-        return $owner>0 && achbotAdminNotificationAllowed($db,(int)$recipient,$owner,'general');
+        return achbotFollowupGeneralRecipientAllowed($db,(int)$recipient,$owner);
     if ($r['role']==='service_channel') {
-        $channel=achbotFollowupReportChannel((string)($GLOBALS['botState']['rewardChannel']??''));
-        return $channel!=='' && $recipient===$channel;
+        return achbotFollowupChannelAllowed($recipient);
     }
     return false;
 }

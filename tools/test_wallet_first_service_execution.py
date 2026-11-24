@@ -1959,12 +1959,11 @@ DELIMITER ;
                 token=php(mode,'preview_delivery',id=dids[1],part=2,actor=9001)
                 assert php(mode,'deliver',id=dids[1],part=2,actor=9001,confirmation=token)=='acknowledged'
                 assert wire_counts(dids[1])=={1:1,2:2}
-                # Recipient remains the ORIGINAL approving operator, and
-                # changing role/channel does not redirect sealed reports.
-                sql("UPDATE users SET isAdmin=0,is_agent=0 WHERE userid=9002")
-                assert php(mode,'followup',id=operator)=='unavailable'
-                assert php(mode,'followup',id=notices['purchase_channel'],menu_state={'rewardChannel':'@different_fixture'})=='unavailable'
-                sql("UPDATE users SET isAdmin=1 WHERE userid=9002")
+                # The original approving operator remains eligible here to
+                # verify their actual menu. Changed channel is terminal and
+                # never rerouted; revoked staff are exercised by the outbox suite.
+                assert php(mode,'followup',id=notices['purchase_channel'],menu_state={'rewardChannel':'@different_fixture'})=='skipped'
+                assert sql(f"SELECT state,attempt_count,last_result FROM payment_followup_intents WHERE id={notices['purchase_channel']}")=='skipped\t0\trecipient_ineligible'
                 with ThreadPoolExecutor(max_workers=3) as ex:
                     results=list(ex.map(lambda _:php(mode,'followup',id=operator),range(3)))
                 assert 'acknowledged' in results and set(results)<={'acknowledged','busy'},results
@@ -1977,10 +1976,11 @@ DELIMITER ;
                 for original in rows(op):assert original.split('	')[2] in text
                 assert ref in text
                 out=php(mode,'maintain_followups',limit=4)
-                assert out=={str(notices['purchase_owner']):'acknowledged',str(notices['purchase_channel']):'acknowledged'},out
+                assert out=={str(notices['purchase_owner']):'acknowledged'},out
+                assert php(mode,'followup',id=notices['purchase_channel'])=='skipped'
                 assert php(mode,'followup',id=operator)=='acknowledged'
-                assert sql(f"SELECT COUNT(*) FROM fixture_followup WHERE intent_id IN ({','.join(map(str,notices.values()))})")=='3'
-                assert sql(f"SELECT COUNT(*) FROM fixture_followup WHERE intent_id IN ({notices['purchase_owner']},{notices['purchase_channel']}) AND keys_json IS NULL")=='2'
+                assert sql(f"SELECT COUNT(*) FROM fixture_followup WHERE intent_id IN ({','.join(map(str,notices.values()))})")=='2'
+                assert sql(f"SELECT COUNT(*) FROM fixture_followup WHERE intent_id IN ({notices['purchase_owner']},{notices['purchase_channel']}) AND keys_json IS NULL")=='1'
                 assert finance()==before and len(requests)==n
                 cases.append(mode+'_manual_bulk_delivered_requires_all_real_parts_actor_context_and_fair_queue')
                 # Renewal operator copy claims local renewal, not Telegram

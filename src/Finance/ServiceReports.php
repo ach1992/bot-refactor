@@ -244,13 +244,12 @@ function achbotServiceManualNoticeAllowedLocked(mysqli $db,array $op,array $quot
     $recipient=(string)$r['recipient'];
     if ($r['stage']!=='service_delivered' || $op['kind']!=='BUY') return false;
     if ($r['role']==='operator')
-        return $recipient===(string)$actor && achbotAdminCanLocked($db,$actor,$owner,'payments');
+        return $recipient===(string)$actor && achbotFollowupStaffAllowed($db,$actor,$owner,'payments');
     if ($quote['request']['quantity']<=1) return false;
-    if ($r['role']==='purchase_owner') return $owner!==$actor && $recipient===(string)$owner;
+    if ($r['role']==='purchase_owner') return achbotFollowupRequireRecipient($owner!==$actor && $recipient===(string)$owner);
     if ($r['role']==='purchase_channel') {
-        $channel=achbotFollowupReportChannel((string)($GLOBALS['botState']['rewardChannel']??''));
-        return $channel!=='' && $recipient===$channel && $channel!==(string)$actor &&
-            $channel!==(string)$owner;
+        return $recipient!==(string)$actor && $recipient!==(string)$owner &&
+            achbotFollowupChannelAllowed($recipient);
     }
     return false;
 }
@@ -362,10 +361,9 @@ function achbotServiceReportValidateLocked(mysqli $db,array $op,array $quote,arr
     if ($r['stage']==='auto_renewal_report') {
         if ($op['stage']!=='completed') return null;
         if ($r['role']==='service_admin') {
-            if ($owner<=0 || !achbotAdminNotificationAllowed($db,(int)$recipient,$owner,'general')) return null;
+            if (!achbotFollowupGeneralRecipientAllowed($db,(int)$recipient,$owner)) return null;
         } elseif ($r['role']==='service_channel') {
-            $channel=achbotFollowupReportChannel((string)($GLOBALS['botState']['rewardChannel']??''));
-            if ($channel==='' || $channel!==$recipient) return null;
+            if (!achbotFollowupChannelAllowed($recipient)) return null;
         } else return null;
     } elseif ($r['stage']==='auto_renewal_low_wallet') {
         if ($r['role']!=='service_customer' || $recipient!==(string)(int)$op['userid']) return null;

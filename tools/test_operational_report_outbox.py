@@ -84,15 +84,61 @@ ensure(achbotFollowupDispatchOne($connection,$id)==='acknowledged','due_retry_se
 $r=reportRow('plan:102','9002');$id=(int)$r['id'];
 query('UPDATE users SET isAdmin=0 WHERE userid=9002');
 $n=count($events);
-ensure(achbotFollowupDispatchOne($connection,$id)==='unavailable' && count($events)===$n,'revoked_actor_never_receives');
+ensure(achbotFollowupDispatchOne($connection,$id)==='skipped' && count($events)===$n &&
+    reportRow('plan:102','9002')['last_result']==='recipient_ineligible' &&
+    (int)reportRow('plan:102','9002')['attempt_count']===0 &&
+    reportRow('plan:102','9002')['next_attempt_at']===null,
+    'revoked_actor_terminal_no_telegram_attempt');
+ensure(achbotOperationalReportDispatch($connection,'plan:102'),'skipped_recipient_does_not_block_acknowledged_siblings');
 query('UPDATE users SET isAdmin=1 WHERE userid=9002');
+ensure(achbotFollowupDispatchOne($connection,$id)==='skipped' && count($events)===$n,
+    'restored_permission_does_not_replay_skipped_report');
 $connection->begin_transaction();stage('server:103');$connection->commit();
 $r=reportRow('server:103','@fixturereport');$id=(int)$r['id'];
 $botState['rewardChannel']='@OtherReport';
-ensure(achbotFollowupDispatchOne($connection,$id)==='unavailable' && count($events)===$n,'changed_channel_no_silent_retarget');
+ensure(achbotFollowupDispatchOne($connection,$id)==='skipped' && count($events)===$n &&
+    reportRow('server:103','@fixturereport')['state']==='skipped','changed_channel_no_silent_retarget');
 $botState['rewardChannel']='@FixtureReport';
+$connection->begin_transaction();stage('server:106');$connection->commit();
+$r=reportRow('server:106','@fixturereport');$id=(int)$r['id'];
 query("UPDATE payment_followup_intents SET sealed_payload='corrupt' WHERE id=".$id);
-ensure(achbotFollowupDispatchOne($connection,$id)==='unavailable' && count($events)===$n,'tampered_envelope_denied');
+$botState['rewardChannel']='@OtherReport';
+ensure(achbotFollowupDispatchOne($connection,$id)==='unavailable' && count($events)===$n &&
+    reportRow('server:106','@fixturereport')['state']==='pending','tampered_envelope_not_mislabeled_as_skipped');
+$botState['rewardChannel']='@FixtureReport';
+// A transient NOWAIT permission read must defer, not permanently skip.
+query("UPDATE setting SET value='on' WHERE type='ADMIN_NOTIFY_9002'");
+query("INSERT INTO setting(type,value) VALUES ('ADMIN_ROLE_9002','manager')");
+$connection->begin_transaction();
+achbotOperationalReportStageLocked($connection,'server:107',1001,0,'orders','Fixture');
+$connection->commit();
+$r=reportRow('server:107','9002');$id=(int)$r['id'];
+$other=new mysqli('localhost','root','',$argv[3],0,$argv[2]);
+$other->begin_transaction();
+$other->query("SELECT id FROM users WHERE userid=9002 FOR UPDATE");
+ensure(achbotFollowupDispatchOne($connection,$id)==='unavailable' &&
+    reportRow('server:107','9002')['state']==='pending','contended_permission_read_not_definitive');
+$other->rollback();$other->close();
+ensure(achbotFollowupDispatchOne($connection,$id)==='acknowledged','deferred_permission_recovers');
+query("DELETE FROM setting WHERE type='ADMIN_ROLE_9002'");
+query("UPDATE setting SET value='off' WHERE type='ADMIN_NOTIFY_9002'");
+// Unknown transport evidence remains immutable when a later authorized
+// redrive detects that the original recipient is no longer staff.
+$connection->begin_transaction();stage('server:108');$connection->commit();
+$r=reportRow('server:108','9002');$id=(int)$r['id'];
+$reply=(object)['ok'=>false,'error_code'=>500,'description'=>'Internal error'];
+ensure(achbotFollowupDispatchOne($connection,$id)==='unknown','actor_original_attempt_unknown');
+$reply=(object)['ok'=>true];
+$r=reportRow('server:108','9002');$token=achbotFollowupRedriveToken($r,9001);
+query('UPDATE users SET isAdmin=0 WHERE userid=9002');
+$n=count($events);
+ensure(achbotFollowupDispatchOne($connection,$id,9001,str_repeat('a',20))==='stale' &&
+    reportRow('server:108','9002')['state']==='unknown','stale_manual_skip_cannot_mutate');
+ensure(achbotFollowupDispatchOne($connection,$id,9001,$token)==='skipped' && count($events)===$n &&
+    (int)reportRow('server:108','9002')['attempt_count']===1 &&
+    row('SELECT result FROM payment_followup_attempts WHERE intent_id='.$id)['result']==='unknown',
+    'authorized_skip_preserves_unknown_original_attempt');
+query('UPDATE users SET isAdmin=1 WHERE userid=9002');
 $connection->begin_transaction();stage('bulk:9002:104',[],'operational_report_p1');stage('bulk:9002:104',[],'operational_report_p2');$connection->commit();
 $lease=achbotOperationalReportLock($connection,'bulk:9002:104');
 $s=achbotProviderStatement($connection,'SELECT GET_LOCK(?,0)','s',[$lease]);$s->close();

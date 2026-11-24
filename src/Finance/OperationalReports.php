@@ -50,7 +50,7 @@ function achbotOperationalReportDispatch(mysqli $db,string $reference): bool {
         $complete=true;
         foreach ($rows as $r) {
             $status=$r['state']==='pending'?achbotFollowupDispatchOne($db,(int)$r['id']):$r['state'];
-            if ($status!=='acknowledged') $complete=false;
+            if (!in_array($status,['acknowledged','skipped'],true)) $complete=false;
         }
         return $complete;
     } catch (Throwable $e) {

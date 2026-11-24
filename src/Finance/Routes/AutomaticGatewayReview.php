@@ -223,6 +223,7 @@ if (preg_match('/^attentionReport([CS])_([1-9][0-9]{0,17})(?:_([a-f0-9]{20}))?$/
                 'acknowledged'=>'automatic_gateway_review.wallet_report_ack',
                 'unknown'=>'automatic_gateway_review.wallet_report_unknown',
                 'busy'=>'automatic_gateway_review.redrive_busy',
+                'skipped'=>'automatic_gateway_review.redrive_stale',
                 default=>'automatic_gateway_review.wallet_report_hold',
             });
         } else throw new RuntimeException('followup_review_stale');

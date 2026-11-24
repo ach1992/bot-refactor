@@ -21,7 +21,7 @@ function achbotReceiptReportEditAllowed(mysqli $db,array $source,array $r): bool
         !in_array($role,['receipt_primary','receipt_mirror'],true)) return false;
     $who=(int)$r['recipient'];$message=(int)$r['message_id'];
     if ((string)$who!==$r['recipient'] ||
-        !achbotAdminStoredRecipientAllowed($db,$who,(int)($GLOBALS['admin']??0))) return false;
+        !achbotFollowupStaffAllowed($db,$who,(int)($GLOBALS['admin']??0))) return false;
     $primary=$who===(int)$pay['chat_id'] && $message===(int)$pay['message_id'];
     if ($role==='receipt_primary') return $primary;
     if ($primary) return false;

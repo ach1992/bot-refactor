@@ -1765,15 +1765,16 @@ if (is_string($userInfo['step']??null) &&
 }
 // ACHBOT_DIRECT_GIFT_ROUTE_END
 
-if(preg_match('/^giftServerDay(\d+)/',$userInfo['step'], $match) && ($from_id == $admin || $userInfo['isAdmin'] == true) && $text != \achbotMessage('legacy_buttons.cancel')){
+if(preg_match('/^giftServerDay([1-9][0-9]*)$/D',$userInfo['step'], $match) && ($from_id == $admin || $userInfo['isAdmin'] == true) && $text != \achbotMessage('legacy_buttons.cancel')){
     if(is_numeric($text)){
-        if($text >= 0){
+        $giftDays=achbotWholeServiceUnits($text,achbotServiceDaysMax(),true);
+        if($giftDays!==null){
             sendMessage(\achbotMessage('bot.bot.gift_volume_and_day.message.9ab673c836'), null, 'HTML');
-            setUser('giftServerVolume' . $match[1] . "_" . $text);
+            setUser('giftServerVolume' . $match[1] . "_" . $giftDays);
         }else sendMessage(\achbotMessage('bot.bot.gift_volume_and_day.message.40747d2ee6'), null, 'HTML');
     }else sendMessage(\achbotMessage('legacy_messages.send_only_number'), null, 'HTML');
 }
-if(preg_match('/^giftServerVolume(\d+)_(\d+)/',$userInfo['step'],$match) && ($from_id == $admin || $userInfo['isAdmin'] == true) && $text != \achbotMessage('legacy_buttons.cancel')){
+if(preg_match('/^giftServerVolume([1-9][0-9]*)_(0|[1-9][0-9]*)$/D',$userInfo['step'],$match) && ($from_id == $admin || $userInfo['isAdmin'] == true) && $text != \achbotMessage('legacy_buttons.cancel')){
     if(is_numeric($text)){
         if($text >= 0){
             // Bind the new-format job provenance atomically with its queue
@@ -1781,7 +1782,7 @@ if(preg_match('/^giftServerVolume(\d+)_(\d+)/',$userInfo['step'],$match) && ($fr
             $volume=filter_var((string)$text,FILTER_VALIDATE_INT,
                 ['options'=>['min_range'=>0,'max_range'=>2147483647]]);
             $days=filter_var($match[2],FILTER_VALIDATE_INT,
-                ['options'=>['min_range'=>0,'max_range'=>2147483647]]);
+                ['options'=>['min_range'=>0,'max_range'=>achbotServiceDaysMax()]]);
             $sid=filter_var($match[1],FILTER_VALIDATE_INT,
                 ['options'=>['min_range'=>1,'max_range'=>2147483647]]);
             if (!preg_match('/^(0|[1-9][0-9]*)$/D',(string)$text) ||

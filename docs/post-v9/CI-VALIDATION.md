@@ -201,6 +201,11 @@ nonpaid, direct gift, delete/reconfirm, and import/reassignment fixtures use
 the same current report schema and actual sender. Nonpaid bulk interruption
 exits after committed local effects and before report compaction, then
 recovers the exact committed per-account reports without another Native
-create. The scheduled gift actor/report test is domain-level, not a complete
-scheduled-gift worker loopback run. Live provider/Telegram and production
-acceptance remain separate gates.
+create. The dedicated scheduled-gift suite now executes the actual Cron
+worker and current PasarGuard adapter with owned MariaDB and loopback HTTP:
+canonical whole-day input, verified entitlement change, original
+customer/owner/actor/channel delivery, duplicate source and worker replay,
+and an uncertain write that holds without a second write or success report.
+Recipient tests distinguish definitive permission denial (terminal skipped)
+from SQL contention (deferred) and preserve original unknown attempts.
+Live provider/Telegram and production acceptance remain separate gates.
