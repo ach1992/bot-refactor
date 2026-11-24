@@ -168,3 +168,6 @@ real customer, merchant or Native account is mutated.
 ### Wallet-first plan lifecycle and repair acceptance (Issue #204)
 
 The current-schema service suite exercises actual plan PUT, committed pre-dispatch markers, no-effect GET outage and abandoned preparation cleanup, >4096 original mutation keys, scoped journal locking, current administrator credential rotation and GET-only recovery after lost ACK, direct receipt case links, corrective preflight retry without a dispatch, and exact refund after local server deletion. The credit suite uses the current atomic manual-evidence route, including typed gift-card evidence. No real panel, Telegram, customer money or production database is used.
+
+
+Reporting coverage: the existing strict/non-strict native suites verify manual, API, timer and hosted credit recipient matrices, actual independent approval-actor delivery when general notifications are disabled, superseded API credit content, funded vs retained receipts, original service completion reports, refund/partial retention and referral source evidence. The admin Wallet, transfer and onboarding route suites verify actual standalone source staging and independent Telegram delivery; the empty-schema equivalence test includes 039. No live Telegram or provider calls.

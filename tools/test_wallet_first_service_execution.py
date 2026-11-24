@@ -1588,7 +1588,7 @@ DELIMITER ;
                 php(mode,'step',id=op,lost_ack=True)
                 assert sql(f"SELECT stage FROM service_operations WHERE id={op}")=='completed'
                 assert award(op)==f'{first[0]}:75:NOT_ATTEMPTED'
-                assert sql(f"SELECT COUNT(*) FROM payment_followup_intents WHERE pay_row_id={first[0]} AND stage='wallet_credit'")=='0'
+                assert sql(f"SELECT COUNT(*) FROM payment_followup_intents WHERE pay_row_id={first[0]} AND stage='wallet_credit'")=='2'
                 assert sql(f"SELECT COUNT(*) FROM payment_followup_intents WHERE pay_row_id={late[0]} AND stage='wallet_credit'")=='3'
                 report_id=int(sql(f"SELECT id FROM payment_followup_intents WHERE service_operation_id={op} AND stage='service_completed' AND role='service_admin'"))
                 assert php(mode,'followup',id=report_id)=='acknowledged'
@@ -1688,7 +1688,7 @@ DELIMITER ;
                     eid=edit(mode,'hosted-'+kind.lower(),order,kind,days=days,volume=volume)
                     receipt=invoice(mode,'hosted-'+kind.lower(),eid)
                     assert settle(mode,receipt)['funding']=='funded'
-                    assert sql(f"SELECT COUNT(*) FROM payment_followup_intents WHERE pay_row_id={receipt[0]}")=='0'
+                    assert sql(f"SELECT COUNT(*) FROM payment_followup_intents WHERE pay_row_id={receipt[0]}")=='2'
                     for stage in (['progressed','progressed','applied','completed'] if kind=='RENEW' else ['progressed','applied','completed']):
                         step(mode,eid,stage)
                     report_id=int(sql(f"SELECT id FROM payment_followup_intents WHERE service_operation_id={eid} AND stage='service_completed' AND role='service_admin'"))
@@ -1708,7 +1708,7 @@ DELIMITER ;
                 sql(f"INSERT INTO pays(hash_id,user_id,type,price,request_date,state) VALUES ('{ref}',1001,'INCREASE_DAY',100,UNIX_TIMESTAMP(),'pending')")
                 pid=int(sql(f"SELECT id FROM pays WHERE hash_id='{ref}'"))
                 assert php(mode,'manual_receipt',pay=pid,id=mid)['funding']=='funded'
-                assert sql(f"SELECT COUNT(*) FROM payment_followup_intents WHERE pay_row_id={pid}")=='0'
+                assert sql(f"SELECT COUNT(*) FROM payment_followup_intents WHERE pay_row_id={pid}")=='2'
                 step(mode,mid,'progressed');step(mode,mid,'applied')
                 # The service completion transaction cannot lose its report.
                 before=finance();n=len(requests)
@@ -1720,7 +1720,7 @@ DELIMITER ;
                 finally:sql('DROP TRIGGER fixture_service_report_fail')
                 retry(mid);step(mode,mid,'completed')
                 assert finance()==before and len(requests)==n
-                row=sql(f"SELECT id,role,recipient,message_id FROM payment_followup_intents WHERE service_operation_id={mid} AND stage='service_completed'").split('\t')
+                row=sql(f"SELECT id,role,recipient,message_id FROM payment_followup_intents WHERE service_operation_id={mid} AND stage='service_completed' AND role='receipt_primary'").split('\t')
                 assert row[1:]==['receipt_primary','9001','222'],row
                 rid=int(row[0])
                 # Changing a stored receipt target cannot re-route the sealed edit.
@@ -1883,6 +1883,10 @@ DELIMITER ;
                 sql(f"UPDATE payment_followup_intents SET next_attempt_at=NULL,updated_at=DATE_SUB(NOW(),INTERVAL 4 MINUTE) WHERE service_operation_id={op} AND stage IN ('service_delivered','service_completed')")
                 assert php(mode,'followup',id=operator)=='not_ready'
                 assert php(mode,'maintain_followups',limit=1)=={str(edit_id):'acknowledged'}
+                completion_ids=sql(f"SELECT id FROM payment_followup_intents WHERE service_operation_id={op} AND stage='service_completed' AND kind='send' ORDER BY id").splitlines()
+                assert len(completion_ids)==3,completion_ids
+                for cid in completion_ids:
+                    assert php(mode,'maintain_followups',limit=1)=={cid:'acknowledged'}
                 assert php(mode,'maintain_followups',limit=1)==[]
                 assert sql(f"SELECT SUM(attempt_count) FROM payment_followup_intents WHERE service_operation_id={op} AND stage='service_delivered'")=='0'
                 assert php(mode,'deliver',id=dids[0])=='acknowledged'

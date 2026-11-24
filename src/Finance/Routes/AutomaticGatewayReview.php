@@ -193,6 +193,7 @@ if (preg_match('/^attentionReport([CS])_([1-9][0-9]{0,17})(?:_([a-f0-9]{20}))?$/
         $r=achbotProviderRow($connection,'SELECT * FROM payment_followup_intents WHERE id=?','i',[$id]);
         $receiptId=(int)($r['pay_row_id']??0);
         $operationId=(int)($r['service_operation_id']??0);
+        $walletId=(int)($r['wallet_entry_id']??0);
         if (!$r) throw new RuntimeException('followup_review_stale');
         if ($operationId>0) {
             if (!achbotServiceAttentionCaseOpen($connection,$operationId))
@@ -204,6 +205,8 @@ if (preg_match('/^attentionReport([CS])_([1-9][0-9]{0,17})(?:_([a-f0-9]{20}))?$/
             $back='attentionService_'.$operationId;$payId=$operationId;
         } elseif ($receiptId>0 && achbotGatewayAttentionCaseOpen($connection,$receiptId)) {
             $back='attentionCase_'.$receiptId;$payId=$receiptId;
+        } elseif ($walletId>0 && $r['stage']==='wallet_movement' && $receiptId===0 && $operationId===0) {
+            $back='attentionInbox';$payId='W'.$walletId;
         } else throw new RuntimeException('followup_review_stale');
         $token=achbotFollowupRedriveToken($r,$actor);$rows=[];
         if ($reviewAction[1]==='C' && !isset($reviewAction[3])) {
@@ -279,11 +282,15 @@ if (preg_match('/^attention(?:Inbox(?:_[1-9][0-9]{0,17})?|Case_[1-9][0-9]{0,17})
             $before=(int)($inbox[1]??0);
             $serviceScope=achbotServiceAttentionScope();
             $q=achbotProviderStatement($connection,"SELECT * FROM (
-                SELECT p.id,p.user_id,p.price,COALESCE(a.provider,'wallet') AS provider,'receipt' AS source,p.id*2 AS cursor
+                SELECT p.id,p.user_id,p.price,COALESCE(a.provider,'wallet') AS provider,'receipt' AS source,p.id*3 AS cursor
                   FROM pays p LEFT JOIN payment_attempts a ON a.pay_row_id=p.id WHERE $scope
                 UNION ALL
-                SELECT o.id,o.userid,o.price_toman,o.kind,'service',o.id*2+1
+                SELECT o.id,o.userid,o.price_toman,o.kind,'service',o.id*3+1
                   FROM service_operations o WHERE $serviceScope
+                UNION ALL
+                SELECT f.id,w.userid,ABS(w.delta_toman),CONCAT('W',w.id),'wallet_report',f.id*3+2
+                  FROM payment_followup_intents f JOIN wallet_entries w ON w.id=f.wallet_entry_id
+                  WHERE f.stage='wallet_movement' AND f.state IN ('unknown','rejected')
                 ) AS cases WHERE (?=0 OR cursor<?) ORDER BY cursor DESC LIMIT 13",
                 'ii',[$before,$before]);
             $items=$q->get_result()->fetch_all(MYSQLI_ASSOC);$q->close();
@@ -294,11 +301,12 @@ if (preg_match('/^attention(?:Inbox(?:_[1-9][0-9]{0,17})?|Case_[1-9][0-9]{0,17})
                 'ADD_VOLUME'=>achbotMessage('automatic_gateway_review.volume')];
             foreach ($items as $item) {
                 $service=$item['source']==='service';
-                $kind=$service?$kinds[$item['provider']]:
-                    ($labels[$item['provider']]??$item['provider']);
+                $walletReport=$item['source']==='wallet_report';
+                $kind=$walletReport?achbotMessage('operational_reports.wallet_report_case').' '.$item['provider']:($service?$kinds[$item['provider']]:
+                    ($labels[$item['provider']]??$item['provider']));
                 $label=($service?'⚙️ ':'💳 ').number_format((int)$item['price']).' '.
                     achbotMessage('automatic_gateway_review.toman').' | '.(int)$item['user_id'].' | '.$kind;
-                $rows[]=[['text'=>$label,'callback_data'=>($service?'attentionService_':'attentionCase_').(int)$item['id']]];
+                $rows[]=[['text'=>$label,'callback_data'=>($walletReport?'attentionReportC_':($service?'attentionService_':'attentionCase_')).(int)$item['id']]];
             }
             if ($more && $items) $rows[]=[['text'=>achbotMessage('automatic_gateway_review.older'),
                 'callback_data'=>'attentionInbox_'.(int)end($items)['cursor']]];

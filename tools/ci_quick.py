@@ -132,6 +132,8 @@ REQUIRED_CURRENT_CASES = {
     ),
     "wallet_first_manual": (
         "bank_transfer_actual_issue_and_manual_approval",
+        "actual_approver_owner_channel_reports_without_duplicate_money",
+        "superseded_api_wallet_report_searchable_and_delivered",
         "gift_card_actual_issue_and_manual_approval",
         "manual_usdt_actual_issue_and_manual_approval",
         "manual_trx_actual_issue_and_manual_approval",

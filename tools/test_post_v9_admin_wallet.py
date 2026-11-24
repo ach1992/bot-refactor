@@ -32,7 +32,7 @@ if (!empty($spec['mysqli_report_off'])) {
     mysqli_report(MYSQLI_REPORT_OFF);
     set_error_handler(function($n,$m){return true;});
 }
-$admin=9001;
+$admin=9001;$telegramWebhookSecret='fixture-admin-wallet-report-secret-2026';
 $actor=(int)($spec['actor']??9001);
 $wireType=(string)($spec['update_kind']??(
     !empty($spec['data'])?'callback':'message'));
@@ -107,7 +107,7 @@ if (!empty($spec['cached_admin_override'])) {
 }
 // Runtime labels are resolved by the real two-file source catalog; no
 // synthetic translation arrays can make this fixture pass incorrectly.
-$botState=['instanceMessages'=>[
+$botState=['rewardChannel'=>'@fixture_report','instanceMessages'=>[
     'reached_main_menu'=>['format'=>'html','text'=>'main']]];
 $cancelKey='cancel';
 $removeKeyboard='remove';
@@ -136,6 +136,12 @@ if (!empty($spec['barrier'])) {
         if (microtime(true)>$end) throw new RuntimeException('barrier_expired');
         usleep(10000);
     }
+}
+if (isset($spec['report_id'])) {
+    require_once $root.'/src/Finance/FollowupOutbox.php';
+    $status=achbotFollowupDispatchOne($connection,(int)$spec['report_id']);
+    echo json_encode(['events'=>$events,'status'=>$status],JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE);
+    exit;
 }
 require $root.'/src/Finance/Routes/AdminWallet.php';
 // Execute the EXACT existing managePanel handler extracted from the real
@@ -288,6 +294,7 @@ def main():
         assert not any('✅' in m for m in messages(blocked))
         cases.append('missing_024_fails_closed_without_legacy_balance_fallback')
         sql(work,env,WALLET_MIGRATION.read_text())
+        sql(work,env,owned.current_wallet_report_ddl())
 
         # F1 regression uses real UpdateBindings.php, NOT a fabricated
         # $text independent of the Telegram update. Old inline bot text
@@ -342,11 +349,22 @@ def main():
         assert journal(work,env,701)=='9001:1001:credit:350:50000:50350'
         assert any('✅' in m for m in messages(final))
         cases.append('credit_full_ui_and_single_atomic_audit')
+        targets=sql(work,env,"SELECT GROUP_CONCAT(f.recipient ORDER BY f.recipient) FROM payment_followup_intents f JOIN wallet_entries w ON w.id=f.wallet_entry_id WHERE w.source_kind='admin_adjustment' AND w.source_ref='701'")
+        assert targets=="9001,@fixture_report",targets
+        cases.append('actual_adjustment_stages_owner_and_channel_report')
 
         replay=execute(work,env,text='synthetic operator reason',update_id=701)
         assert_state(work,env,50350,1)
         assert not any('✅' in m for m in messages(replay))
         cases.append('replayed_update_no_second_credit')
+        assert sql(work,env,"SELECT COUNT(*) FROM payment_followup_intents f JOIN wallet_entries w ON w.id=f.wallet_entry_id WHERE w.source_ref='701'")=='2'
+        rid=int(sql(work,env,"SELECT f.id FROM payment_followup_intents f JOIN wallet_entries w ON w.id=f.wallet_entry_id WHERE w.source_ref='701' AND f.recipient='@fixture_report'"))
+        out=execute(work,env,report_id=rid)
+        assert out['status']=='acknowledged' and len(out['events'])==1,out
+        assert '701' in messages(out)[0] and '350' in messages(out)[0],out
+        assert execute(work,env,report_id=rid)['events']==[]
+        assert_state(work,env,50350,1)
+        cases.append('actual_standalone_wallet_report_delivered_once_without_money_replay')
 
         # Even after another admin starts a distinct operation, old identity
         # can never authorize a second wallet effect.

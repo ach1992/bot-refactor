@@ -221,6 +221,8 @@ if (!function_exists('achbotApplyAdminWalletAdjustment')) {
             if ($entry['replayed'] || $entry['before']!==$before ||
                 $entry['after']!==$after || $entry['actor']!==$operatorId)
                 throw new RuntimeException('balance_guard_failed');
+            require_once dirname(__DIR__).'/WalletReports.php';
+            achbotWalletReportStageLocked($db,$entry['id'],$primaryAdmin);
             achbotAdminWalletClaimStep($db, $operatorId, $expectedStep, 'none');
             if (!$db->commit()) {
                 throw new RuntimeException('journal_commit_unconfirmed');

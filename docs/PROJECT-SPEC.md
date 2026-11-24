@@ -48,3 +48,8 @@ The Owner accepted Wallet-first settlement, an independent Wallet ledger, one fu
 - Use [stable baseline](post-v9/STABLE-BASELINE.md), [CI validation](post-v9/CI-VALIDATION.md), [security](SECURITY.md), [GitHub Issues](https://github.com/ach1992/bot-refactor/issues) and [GitHub Releases](https://github.com/ach1992/bot-refactor/releases) as their respective authoritative sources.
 
 Older phase-by-phase contracts and release guidance live in Git history and the corresponding immutable GitHub releases. They are **not** instructions to rerun a historic cutover or downgrade current source.
+
+
+### Searchable operational reports (Issue #204)
+
+Every original positive Wallet movement has an auditable report to the primary administrator and configured report channel. The actual human approving/adjusting/refunding operator receives the same standalone report independently of general notification preference; overlapping targets are deduplicated. Automatic confirmations have no fictitious human actor. A financial receipt report identifies the original payment, Wallet entry, user, amount, before/after ledger balance, method, approval basis and funding outcome (including retained credits after supersession). A confirmed service report identifies the actual completed service independently of receipt confirmation and customer delivery. Standalone Wallet movements (adjustment, transfer, onboarding referral) use the same persisted followup worker with the original Wallet entry as source. Purchase referral and service refund keep their existing source-bound reports. Existing role and channel revalidation remains mandatory; unknown Telegram results require explicit redrive, never repeat money or Native effects.

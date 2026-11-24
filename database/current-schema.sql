@@ -385,14 +385,17 @@ CREATE TABLE `payment_followup_intents` (
   `updated_at` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
   `service_operation_id` bigint(20) unsigned DEFAULT NULL,
   `next_attempt_at` datetime(6) DEFAULT NULL,
+  `wallet_entry_id` bigint(20) unsigned DEFAULT NULL,
   PRIMARY KEY (`id`),
   UNIQUE KEY `uq_followup_pay_key` (`pay_row_id`,`intent_key`),
   UNIQUE KEY `uq_followup_service_key` (`service_operation_id`,`intent_key`),
+  UNIQUE KEY `uq_followup_wallet_key` (`wallet_entry_id`,`intent_key`),
   KEY `idx_followup_pending` (`state`,`updated_at`),
   KEY `idx_followup_due` (`state`,`next_attempt_at`,`id`),
   CONSTRAINT `fk_followup_payment` FOREIGN KEY (`pay_row_id`) REFERENCES `pays` (`id`),
   CONSTRAINT `fk_followup_service` FOREIGN KEY (`service_operation_id`) REFERENCES `service_operations` (`id`),
-  CONSTRAINT `ck_followup_original_source` CHECK (`pay_row_id` is not null or `service_operation_id` is not null)
+  CONSTRAINT `fk_followup_wallet` FOREIGN KEY (`wallet_entry_id`) REFERENCES `wallet_entries` (`id`),
+  CONSTRAINT `ck_followup_original_source` CHECK (`wallet_entry_id` is null and (`pay_row_id` is not null or `service_operation_id` is not null) or `wallet_entry_id` is not null and `pay_row_id` is null and `service_operation_id` is null)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;

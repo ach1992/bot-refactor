@@ -110,7 +110,7 @@ function achbotServiceReferralComplete(mysqli $db,int $id,int $owner): string {
         $n=$s->affected_rows;$s->close();
         if ($n!==1) throw new RuntimeException('service_referral_confirm_failed');
         achbotPurchaseReferralStageReportsLocked($db,$pay,$buyer,$inviter,$amount,
-            $entry['before'],$entry['after'],$owner,$id);
+            $entry['before'],$entry['after'],$owner,$id,$entry['id']);
         if (!$db->commit()) throw new RuntimeException('service_referral_commit');
         return 'confirmed';
     } catch (Throwable $e) {

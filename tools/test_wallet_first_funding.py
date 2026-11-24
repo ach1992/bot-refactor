@@ -137,7 +137,7 @@ def main():
         # Source-owned extension proof, never a production adapter or runtime
         # injection. Copy only current runtime members into the owned sandbox.
         fixture=work/'adapter-extension-source'
-        members=set(package.members())|{'src/Panel/PasarGuardServiceExecution.php','src/Panel/PasarGuardServiceTarget.php','src/Finance/ReceiptMethods.php','src/Finance/HostedMethods.php','src/Finance/HostedReceipt.php','src/Finance/ReceiptReports.php'}
+        members=set(package.members())|{'src/Finance/WalletReports.php','src/Panel/PasarGuardServiceExecution.php','src/Panel/PasarGuardServiceTarget.php','src/Finance/ReceiptMethods.php','src/Finance/HostedMethods.php','src/Finance/HostedReceipt.php','src/Finance/ReceiptReports.php'}
         for member in members:
             target=fixture/member;target.parent.mkdir(parents=True,exist_ok=True)
             shutil.copyfile(ROOT/member,target)

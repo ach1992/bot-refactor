@@ -22,6 +22,8 @@ import test_v8_native as purchase
 ROOT = Path(__file__).resolve().parents[1]
 DB = purchase.SIDE[1]
 TEST_ROUTE = rb"""<?php
+$telegramWebhookSecret='fixture-transfer-report-secret-2026';
+$botState['rewardChannel']='@fixture_report';
 $message_id=(int)($spec['message_id']??$message_id);
 $update=(object)['update_id'=>(int)($spec['update_id']??(8000+$from_id)),
     'message'=>(object)['from'=>(object)['id'=>$from_id,'is_bot'=>false,'username'=>'fixture','first_name'=>'Fixture'],
@@ -98,11 +100,13 @@ def seed_flow(work, env, actor, step):
 def prepare(work, env, sender=50000, recipient=50000,
             step="achbotTransferAmount:9002:8000:70:7900:69"):
 
+    query(work,env,"DROP TABLE IF EXISTS payment_followup_attempts; DROP TABLE IF EXISTS payment_followup_intents; DROP TABLE IF EXISTS service_operations;")
     purchase.init(work, env, "http://127.0.0.1:9")
     query(work, env, "DROP TABLE IF EXISTS wallet_adjustments")
     query(work, env, (ROOT / 'migrations/post-v9/005_wallet_adjustments.sql').read_text())
     query(work, env, "DROP TABLE IF EXISTS wallet_entries")
     query(work, env, (ROOT / 'migrations/post-v9/024_wallet_entries.sql').read_text())
+    query(work,env,owned.current_wallet_report_ddl())
     query(work, env, "UPDATE users SET wallet={},step='{}' WHERE userid=1001;".format(sender, step))
     query(work, env, "UPDATE users SET wallet={},step='none' WHERE userid=9002;".format(recipient))
     query(work,env,"DELETE FROM setting WHERE type LIKE 'ACHBOT_WALLET_TRANSFER_%'")
@@ -240,6 +244,9 @@ def main():
             raise RuntimeError("Transfer legs do not retain exact identity and balances: "+rows)
         reports.append("transfer_positive_atomic")
         reports.append("transfer_paired_immutable_journal_exact_evidence")
+        targets=query(work,env,"SELECT GROUP_CONCAT(f.recipient ORDER BY f.recipient) FROM payment_followup_intents f JOIN wallet_entries w ON w.id=f.wallet_entry_id WHERE w.source_kind='transfer' AND w.leg=2").strip()
+        assert targets=="9001,@fixture_report",targets
+        reports.append("transfer_credit_has_owner_and_channel_report")
         money_rows=query(work,env,"SELECT CONCAT(source_kind,':',source_ref,':',leg,':',userid,':',"
             "delta_toman,':',balance_before,':',balance_after,':',actor_userid) "
             "FROM wallet_entries ORDER BY leg").strip()
@@ -288,9 +295,9 @@ def main():
             if balances(work, env) != before:
                 raise RuntimeError("Incompatible journal permitted transfer: "+drift)
         reports.append("transfer_missing_or_incompatible_journal_fails_closed")
-        for drift in ("DROP TABLE wallet_entries",
+        for drift in ("DROP TABLE payment_followup_attempts; DROP TABLE payment_followup_intents; DROP TABLE service_operations; DROP TABLE wallet_entries",
                       "ALTER TABLE wallet_entries DROP INDEX uq_wallet_entry_source",
-                      "ALTER TABLE wallet_entries ENGINE=MyISAM"):
+                      "DROP TABLE payment_followup_attempts; DROP TABLE payment_followup_intents; DROP TABLE service_operations; ALTER TABLE wallet_entries ENGINE=MyISAM"):
             prepare(work,env)
             before=balances(work,env)
             query(work,env,drift)

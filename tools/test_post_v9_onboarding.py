@@ -49,7 +49,7 @@ $joinLink='https://t.me/fixture_channel';
 $botState=['lockChannel'=>$channelLock,'supportID'=>'@fixture_support',
     'cooperationUrl'=>'@fixture_support','helpChannel'=>'',
     'agencyState'=>'off','sellState'=>'on','testAccount'=>'off','sharedExistence'=>'off',
-    'individualExistence'=>'off','searchState'=>'off'];
+    'individualExistence'=>'off','searchState'=>'off','rewardChannel'=>'@fixture_report'];
 if(!empty($spec['missing_optional_flags'])) {
     unset($botState['individualExistence'],$botState['sharedExistence'],$botState['agencyState']);
 }
@@ -92,8 +92,8 @@ function achbotNotifyAdmins($method,$args) {$GLOBALS['events'][]=['kind'=>'admin
 function delMessage() {$GLOBALS['events'][]=['kind'=>'delete'];}
 function answerCallbackQuery($id) {$GLOBALS['events'][]=['kind'=>'ack','id'=>$id];}
 function alert($text) {$GLOBALS['events'][]=['kind'=>'alert','text'=>$text];}
-function achbotMessage($key,$params=[]) {return $key==='bot.bootstrap.unavailable'?'UNAVAILABLE':'CATALOG_'.$key;}
-function achbotCurrentMessage(string $key): string {
+require_once $root.'/messages/loader.php';
+function fixtureCurrentMessage(string $key): string {
     if (!array_key_exists($key,$GLOBALS['mainValues']))
         throw new OutOfBoundsException('fixture_context_key_missing:'.$key);
     return $GLOBALS['mainValues'][$key];
@@ -102,7 +102,7 @@ require __DIR__.'/auth.php';
 require __DIR__.'/set-user.php';
 require __DIR__.'/get-main-keys.php';
 require __DIR__.'/src/Presentation/Text.php';
-require __DIR__.'/src/Telegram/UserProfile.php';
+require $root.'/src/Telegram/UserProfile.php';
 $userInfo=null;
 $stmt=$connection->prepare('SELECT * FROM users WHERE userid=? LIMIT 2');
 $stmt->bind_param('i',$actor);$stmt->execute();
@@ -162,7 +162,7 @@ def write_runtime(w: Path) -> None:
             "if(preg_match('/^sendMessageToUser"),
     }
     for file,body in files.items():
-        (w/file).write_text(body,encoding="utf-8")
+        (w/file).write_text(body.replace('achbotCurrentMessage(', 'fixtureCurrentMessage(').replace("__DIR__ . '/src/Telegram/UserProfile.php'","$root . '/src/Telegram/UserProfile.php'").replace("__DIR__.'/src/Telegram/UserProfile.php'","$root.'/src/Telegram/UserProfile.php'"),encoding="utf-8")
     for f in ("src/Telegram/UserProfile.php","src/Presentation/Text.php","src/Wallet/Ledger.php"):
         to=w/f;to.parent.mkdir(parents=True,exist_ok=True)
         shutil.copyfile(ROOT/f,to)
@@ -252,6 +252,7 @@ def main() -> None:
         yes(not r['rows'] and int(r['inviter_wallet'])==50000,
             "registration_requires_transactional_shared_ledger")
         native.sql(w,env,(ROOT/'migrations/post-v9/024_wallet_entries.sql').read_text(),DB)
+        native.sql(w,env,owned.current_wallet_report_ddl(),DB)
         r=run(actor=1001,mode='forbidden_wallet_set')
         yes(int(r['inviter_wallet'])==50000 and r['events']==[
             {'kind':'denied','reason':'wallet_requires_monetary_command'}],
@@ -364,6 +365,8 @@ def main() -> None:
         money=native.sql(w,env,"SELECT COUNT(*),SUM(delta_toman) FROM wallet_entries "
             "WHERE source_kind='onboarding_referral' AND userid=1001",DB).strip()
         yes(money=="2\t300","parallel_and_replayed_registration_have_exact_shared_money_entries")
+        reports=native.sql(w,env,"SELECT COUNT(*) FROM payment_followup_intents f JOIN wallet_entries w ON w.id=f.wallet_entry_id WHERE w.source_kind='onboarding_referral' AND f.recipient IN ('9001','@fixture_report')",DB).strip()
+        yes(reports=='4','onboarding_reward_exact_owner_channel_reports')
         native.sql(w,env,"CREATE TRIGGER owned_referral_failure BEFORE INSERT ON wallet_entries "
             "FOR EACH ROW SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='owned test failure'",DB)
         try:
@@ -443,7 +446,7 @@ def main() -> None:
         native.sql(w,env,"UPDATE users SET wallet=2147483600 WHERE userid=1001",DB)
         r=run(actor=2443,text='/start 1001',reward=250)
         yes(not r['rows'] and int(r['inviter_wallet'])==2147483600 and
-            any(e['text']=='UNAVAILABLE' for e in r['events'] if e['kind']=='send'),
+            any(e['text']==subprocess.check_output(['php','-r','require "messages/loader.php"; echo achbotMessage("bot.bootstrap.unavailable");'],cwd=ROOT,text=True) for e in r['events'] if e['kind']=='send'),
             "signed_int_overflow_rolls_back_registration_and_reward")
         native.sql(w,env,"UPDATE users SET wallet=-2147483648 WHERE userid=1001",DB)
         r=run(actor=2444,text='/start 1001',reward=1)

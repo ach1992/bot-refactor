@@ -85,7 +85,7 @@ function achbotCheckoutSettleReceiptLocked(mysqli $db,int $payId,int $userId,str
         'iii',[$actor,$actor,$payId]);$s->close();
     $s=achbotProviderStatement($db,"UPDATE payment_attempts SET stage='done' WHERE id=?",'i',[(int)$attempt['id']]);$s->close();
     require_once __DIR__.'/ReceiptReports.php';
-    achbotReceiptReportStageLocked($db,$payId,$userId);
+    achbotReceiptReportStageLocked($db,$payId,$userId,(string)$pay['state']);
     return ['credit'=>$entry,'operation'=>$operation,'funding'=>$result];
 }
 

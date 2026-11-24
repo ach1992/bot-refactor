@@ -312,13 +312,11 @@ if (preg_match('/^addToOrders([1-9][0-9]*)$/D',(string)$data,$match)) {
             ['text'=>\achbotMessage('legacy_buttons.back_to_main'),'callback_data'=>'mainMenu']
         ]]]);
         sendMessage($msg,$keys,'HTML',$finalUserId);
-        if ($adminActor) {
-            $keys=json_encode(['inline_keyboard'=>[[['text'=>\achbotMessage('subscription.manual_accounts.detect_server_id_from_remark.button.48f23552b7'),'callback_data'=>'quickUserOrderDetails_'.$orderId]]]]);
-            $adminMessage=\achbotMessage('subscription.manual_accounts.detect_server_id_from_remark.admin_message.7e7a367cc0',[
-                'finalUserId'=>$finalUserId,'first_name'=>htmlspecialchars((string)$first_name,ENT_QUOTES,'UTF-8'),
-                'username'=>htmlspecialchars((string)$username,ENT_QUOTES,'UTF-8'),'remark'=>htmlspecialchars($remark,ENT_QUOTES,'UTF-8')]);
-            achbotNotifyAdmins('sendMessage', ['text'=>$adminMessage,'reply_markup'=>$keys,'parse_mode'=>'HTML'], ['report_channel'=>null]);
-        }
+        $adminMessage=achbotMessageHtml('operational_reports.import_report',[
+            'user'=>$finalUserId,'remark'=>$remark,'order'=>$orderId,'server'=>$serverId,'actor'=>$actor]);
+        $keys=json_encode(['inline_keyboard'=>[[['text'=>achbotMessage('subscription.manual_accounts.detect_server_id_from_remark.button.48f23552b7'),'callback_data'=>'quickUserOrderDetails_'.$orderId]]]]);
+        achbotNotifyAdmins('sendMessage',['text'=>$adminMessage,'parse_mode'=>'HTML','reply_markup'=>$keys]);
+
     } catch (Throwable $error) {
         if ($begun) {try {$connection->rollback();} catch (Throwable $ignored) {}}
         $reason=$error instanceof RuntimeException && in_array($error->getMessage(),['import_identity_missing','import_stale','import_actor','import_provider_identity','import_proof','import_begin','import_target_missing','import_server_changed','import_already_attached','import_credential_missing','import_insert','import_commit_unknown','provider_storage_unavailable'],true)?$error->getMessage():'import_unavailable';

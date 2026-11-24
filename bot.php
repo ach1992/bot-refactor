@@ -194,12 +194,6 @@ if ($isStart) {
             . \achbotMessage('bot.bot.webhook_ingress_authenticated.text.87d0794e8e') . number_format($oldWallet) . \achbotMessage('bot.bot.webhook_ingress_authenticated.text.81a62ff6c6')
             . \achbotMessage('bot.bot.webhook_ingress_authenticated.text.447278518a') . number_format($newWallet) . \achbotMessage('bot.bot.webhook_ingress_authenticated.text.2cc98f7f7c');
         sendMessage($inviterMsg, null, 'html', $inviter);
-        $adminMsg = \achbotMessage('bot.bot.webhook_ingress_authenticated.admin_msg.a511ccf2ec', ['inviter' => $inviter])
-            . \achbotMessage('bot.bot.webhook_ingress_authenticated.text.c69814bacf', ['from_id' => $from_id])
-            . \achbotMessage('bot.bot.webhook_ingress_authenticated.text.5f8f2b70e9') . number_format($actualReward) . \achbotMessage('bot.bot.webhook_ingress_authenticated.text.81a62ff6c6')
-            . \achbotMessage('bot.bot.webhook_ingress_authenticated.text.87d0794e8e') . number_format($oldWallet) . \achbotMessage('bot.bot.webhook_ingress_authenticated.text.81a62ff6c6')
-            . \achbotMessage('bot.bot.webhook_ingress_authenticated.text.447278518a') . number_format($newWallet) . \achbotMessage('bot.bot.webhook_ingress_authenticated.text.2cc98f7f7c');
-        achbotNotifyAdmins('sendMessage', ['text'=>$adminMsg, 'parse_mode'=>'HTML']);
     }
     $text = '/start';
 }

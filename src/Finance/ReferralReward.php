@@ -29,7 +29,7 @@ function achbotPurchaseReferralPolicyAmount(mysqli $db,string $prefix='referral_
  * with the credit. The optional service ID identifies the real completed
  * source, while the displayed pay ID is the real funding receipt. */
 function achbotPurchaseReferralStageReportsLocked(mysqli $db,array $pay,int $buyer,int $inviter,
-    int $amount,int $before,int $after,int $owner,?int $serviceId=null): void {
+    int $amount,int $before,int $after,int $owner,?int $serviceId=null,?int $walletId=null): void {
     $payId=(int)$pay['id'];
     $buyerMsg=\achbotMessage('payment.referral_reward.give_referral_reward.buyer_msg.51caba68b5').
         number_format($amount).
@@ -43,6 +43,11 @@ function achbotPurchaseReferralStageReportsLocked(mysqli $db,array $pay,int $buy
         $buyer.\achbotMessage('payment.referral_reward.give_referral_reward.text.6aaba1c235').
         $inviter.\achbotMessage('payment.referral_reward.give_referral_reward.text.534fd54cb9').
         number_format($amount).\achbotMessage('payment.discounts.apply_discount_to_pay.text.2cc98f7f7c');
+    if ($walletId!==null) {
+        require_once __DIR__.'/WalletReports.php';
+        $operatorMsg.="\n".achbotWalletReportFacts(achbotWalletReportEntryLocked($db,$walletId)).
+            "\n".achbotMessageHtml('operational_reports.source_reference',['reference'=>$pay['hash_id'].' / svc_'.$serviceId]);
+    }
     achbotFollowupInsertLocked($db,$pay,'referral_reward','referral_inviter',
         'send',(string)$inviter,null,['text'=>$buyerMsg,'keys'=>null,'mode'=>null],$serviceId);
     $complete=false;$staff=achbotAdminRecipientCandidates($db,$owner,$complete);

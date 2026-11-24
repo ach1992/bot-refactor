@@ -54,6 +54,7 @@ $connection=$db;$botUrl='https://bot.fixture.invalid/';$botUsername='fixture_bot
 $paymentKeys=['nextpay'=>'next-original','zarinpal'=>'zarin-original','nowpayment'=>'np-original','manualUsdtRateToman'=>100];
 $nowpaymentsIpnSecret='fixture-ipn';
 $botState=json_decode($db->query("SELECT value FROM setting WHERE type='BOT_STATES' LIMIT 1")->fetch_row()[0]??'{}',true);
+$botState['rewardChannel']='@fixture_report';
 function sendMessage(...$args){return (object)['ok'=>true,'result'=>(object)['message_id'=>572]];}
 if ($c['op']==='browser_issue') {
     // The actual public script calls exit; capture its final status without
@@ -150,7 +151,7 @@ def main():
         thread=threading.Thread(target=server.serve_forever,daemon=True);thread.start()
         base='http://127.0.0.1:'+str(server.server_port)
         try:
-            source=work/'source';members=set(package.members())|{'src/Panel/PasarGuardServiceExecution.php','src/Finance/HostedMethods.php','src/Finance/HostedReceipt.php','src/Finance/ReceiptReports.php'}
+            source=work/'source';members=set(package.members())|{'src/Finance/WalletReports.php','src/Panel/PasarGuardServiceExecution.php','src/Finance/HostedMethods.php','src/Finance/HostedReceipt.php','src/Finance/ReceiptReports.php'}
             for member in members:
                 target=source/member;target.parent.mkdir(parents=True,exist_ok=True);shutil.copyfile(ROOT/member,target)
             for file,replacements in {
@@ -230,7 +231,7 @@ def main():
                 replay=verify(mode,pid,'nextpay',ref)
                 assert replay['credit']['replayed'] and len(calls)==start and bal()==b+100
                 assert sql(f"SELECT p.state,a.stage FROM pays p JOIN payment_attempts a ON p.id=a.pay_row_id WHERE p.id={pid}")=='paid\tdone'
-                assert sql(f"SELECT GROUP_CONCAT(role ORDER BY role) FROM payment_followup_intents WHERE pay_row_id={pid} AND service_operation_id IS NULL AND stage='wallet_credit'")=='customer,service_admin'
+                assert sql(f"SELECT GROUP_CONCAT(role ORDER BY role) FROM payment_followup_intents WHERE pay_row_id={pid} AND service_operation_id IS NULL AND stage='wallet_credit'")=='customer,service_admin,service_channel'
                 case('nextpay_receipt_once')
                 pid=seed(mode+'-zarin');ref=mode+'-authority'
                 responses['/soap/issue']=(200,dict(Status=100,Authority=ref))
@@ -250,7 +251,7 @@ def main():
                 assert verify(mode,pid,'zarinpal',ref)['status']=='credited' and bal()==b+100
                 assert calls[-1][2]==dict(MerchantID='zarin-original',Authority=ref,Amount=100)
                 assert verify(mode,pid,'zarinpal',ref)['credit']['replayed'] and bal()==b+100
-                assert sql(f"SELECT GROUP_CONCAT(role ORDER BY role) FROM payment_followup_intents WHERE pay_row_id={pid} AND service_operation_id IS NULL AND stage='wallet_credit'")=='customer,service_admin'
+                assert sql(f"SELECT GROUP_CONCAT(role ORDER BY role) FROM payment_followup_intents WHERE pay_row_id={pid} AND service_operation_id IS NULL AND stage='wallet_credit'")=='customer,service_admin,service_channel'
                 case('zarinpal_101_after_local_rollback')
                 pid=seed(mode+'-np');ref=mode+'-invoice';child=mode+'-child'
                 responses['/np/issue']=(200,dict(id=ref,invoice_url='https://nowpayments.io/payment/'+ref))
@@ -273,7 +274,7 @@ def main():
                 responses['/np/payment/'+child2]=(200,payload2)
                 assert verify(mode,pid,'nowpayments',child2)['credit']['replayed'] and bal()==b+100
                 assert sql(f"SELECT COUNT(*) FROM payment_transactions t JOIN payment_attempts a ON a.id=t.attempt_id WHERE a.pay_row_id={pid}")=='2'
-                assert sql(f"SELECT GROUP_CONCAT(role ORDER BY role) FROM payment_followup_intents WHERE pay_row_id={pid} AND service_operation_id IS NULL AND stage='wallet_credit'")=='customer,service_admin'
+                assert sql(f"SELECT GROUP_CONCAT(role ORDER BY role) FROM payment_followup_intents WHERE pay_row_id={pid} AND service_operation_id IS NULL AND stage='wallet_credit'")=='customer,service_admin,service_channel'
                 case('signed_child_verified_exact_quote_once')
                 pid=seed(mode+'-uncertain')
                 responses['/next/issue']=(503,dict(code=-1,trans_id='lost-reference'))
@@ -317,7 +318,7 @@ $id=achbotServiceIssueLocked($db,1001,'fixture',$argv[4],$q);$db->commit();echo 
                 assert r['status']=='rejected',r
                 assert result(mode,'review',attempt=aid,decision='reject')['status']=='stale'
                 assert sql(f"SELECT stage FROM service_operations WHERE id={oid}")=='cancelled'
-                assert sql(f"SELECT COUNT(*) FROM payment_followup_intents WHERE pay_row_id={pid} AND stage='manual_reject'")=='2'
+                assert sql(f"SELECT COUNT(*) FROM payment_followup_intents WHERE pay_row_id={pid} AND stage='manual_reject'")=='3'
                 assert bal()==b
                 # A later unverified observation cannot reopen the declined receipt.
                 assert verify(mode,pid,'nextpay',ref)['status']=='unavailable'

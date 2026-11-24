@@ -26,6 +26,15 @@ INSERT INTO chats (id,user_id,create_date,title,category,state,rate) VALUES(7,10
 INSERT INTO chats_info (id,chat_id,sent_date,msg_type,text) VALUES (70,7,1700000000,'USER','Existing message');
 """
 
+def current_wallet_report_ddl():
+    # Partial route fixtures keep their historical negative-schema checks,
+    # then install the exact current report dependencies, not mock DDL.
+    import re
+    source=(ROOT/'database/current-schema.sql').read_text()
+    return "\n".join(re.search(r"CREATE TABLE `"+name+r"` \(.*?\n\) ENGINE=.*?;",source,re.S)[0]
+                      for name in ("service_operations","payment_followup_intents","payment_followup_attempts"))
+
+
 @contextlib.contextmanager
 def owned_database(schema_path=ROOT/'database/legacy-schema.sql'):
     for tool in ['mariadb-install-db','mariadbd','mariadb','php']:

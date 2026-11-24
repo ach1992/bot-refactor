@@ -74,7 +74,7 @@ function achbotServiceAutoRenewStageReportsLocked(mysqli $db,array $op,array $qu
     $fingerprint=achbotServiceReportFingerprintLocked($db,$op,$quote,$stage);
     $values=achbotServiceAutoRenewNoticeValues($db,$op,$quote);
     $content=['text'=>achbotMessageHtml('renewal.automatic_renewal.success_report',
-        ['user_id'=>(string)$op['userid']]+$values),'keys'=>null,'mode'=>'HTML'];
+        ['user_id'=>(string)$op['userid']]+$values)."\n".achbotMessageHtml('operational_reports.service_order',['order'=>$quote['request']['order_id']])."\n".achbotMessageHtml('operational_reports.source_reference',['reference'=>'svc_'.$id]),'keys'=>null,'mode'=>'HTML'];
     achbotFollowupStageAdminReportLocked($db,null,$id,$stage,$fingerprint,$owner,$channel,$content);
 }
 
@@ -124,9 +124,8 @@ function achbotServiceCompletionReportSourceLocked(mysqli $db,array $op,array $q
     return ['fingerprint'=>$fingerprint,'receipt'=>$receipt,'accounts'=>$accounts,'delivered'=>$delivered];
 }
 
-/** Existing Wallet/hosted reports from one source-neutral completion. The
- * original manual receipt cards are edited rather than inventing a new
- * unsolicited report for an API/timer approval. */
+/** All funding methods share one locally completed service report.
+ * Receipt edits and confirmed customer delivery are distinct events. */
 function achbotServiceStageCompletionReportsLocked(mysqli $db,array $op,array $quote): void {
     if ($op['command_kind']==='automatic_renewal') return; // existing special copy
     $source=achbotServiceCompletionReportSourceLocked($db,$op,$quote);
@@ -151,56 +150,33 @@ function achbotServiceStageCompletionReportsLocked(mysqli $db,array $op,array $q
         };
         achbotReceiptReportStageEditsLocked($db,$receipt,null,$id,$stage,$source['fingerprint'],$subject);
         achbotServiceStageManualNoticesLocked($db,$op,$quote,$source,$remark);
-        return;
     }
-    $u=achbotProviderRow($db,'SELECT name,username FROM users WHERE id=? AND userid=? FOR UPDATE',
-        'ii',[(int)$op['user_row_id'],$uid]);
-    if (!$u) throw new RuntimeException('service_report_buyer_missing');
-    $values=['user_id'=>$uid,'first_name'=>(string)$u['name'],'username'=>(string)$u['username'],
-        'amount'=>$q['price'],'remark'=>$remark];
-    if ($gateway!==null) {
-        $text=match($kind) {
-            'BUY'=>achbotMessageHtml('gateway.gateway_return.perform_payment_effect.msg.8205ac68fa',$values+
-                ['gateType'=>$gateway,'volume'=>$q['volume'],'days'=>$q['days']]),
-            'RENEW'=>achbotMessageHtml('gateway.gateway_return.perform_payment_effect.msg.c281132242',$values+
-                ['gateType'=>$gateway,'volume'=>$q['volume'],'days'=>$q['days']]),
-            'ADD_TIME'=>achbotMessageHtml('gateway.gateway_return.perform_payment_effect.msg.3337e72606',$values+
-                ['gateType'=>$gateway,'plusDays'=>$q['days']]),
-            'ADD_VOLUME'=>achbotMessageHtml('gateway.gateway_return.perform_payment_effect.msg.05d5688689',$values+
-                ['gateType'=>$gateway,'plusVolume'=>$q['volume']]),
-        };
-        $label=achbotMessage('gateway.gateway_return.perform_payment_effect.button.b9d052f74c',['gateType'=>$gateway]);
-        $refLabel=achbotMessage('gateway.gateway_return.perform_payment_effect.hash_id.2899228604',['hash_id'=>$reference]);
-    } else {
-        if (in_array($kind,['BUY','RENEW'],true)) {
-            $template=$kind==='RENEW'?'renew_account_request_message':
-                ($q['variant']==='custom'?'buy_custom_account_request':'buy_new_account_request');
-            $esc=static fn($value)=>htmlspecialchars((string)$value,ENT_QUOTES|ENT_SUBSTITUTE,'UTF-8');
-            $text=strtr(achbotMessage('legacy_messages.'.$template),[
-                'USER-ID'=>(string)$uid,'NAME'=>$esc($u['name']),'USERNAME'=>$esc($u['username']),
-                'PRICE'=>(string)$q['price'],'REMARK'=>$esc($remark),'VOLUME'=>(string)$q['volume'],
-                'DAYS'=>(string)$q['days'],'SERVERNAME'=>'#'.$q['server_id'],
-                'TYPE'=>achbotMessage('payment.payment_lifecycle.pay_ux_audience_methods.text.6295c35212')]);
-        } else {
-            $text=achbotMessageHtml($kind==='ADD_TIME'?'renewal.extensions.msg.bfc1b46322':
-                'renewal.extensions.msg.0e12e9ce3d',[
-                'from_id'=>$uid,'first_name'=>$u['name'],'username'=>$u['username'],
-                'remark'=>$remark,'volume'=>$kind==='ADD_TIME'?$q['days']:$q['volume'],'price'=>$q['price']]);
-        }
-        $label=achbotMessage(match($kind) {
-            'BUY'=>'payment.checkout.button.e401f3d5a2','RENEW'=>'renewal.renewal_checkout.button.7deb81ef97',
-            'ADD_TIME'=>'renewal.extensions.button.aba3054570','ADD_VOLUME'=>'renewal.extensions.button.9a3cb8176f'});
-        $refLabel=achbotMessage('renewal.extensions.hash_id.2899228604',['hash_id'=>$reference]);
-    }
+    $method=$receipt===null?achbotMessage('automatic_gateway_review.wallet_provider'):
+        achbotReceiptReportMethod($receipt['attempt']).' | '.achbotReceiptReportBasis($receipt['attempt']);
+    $text=achbotMessage(match($kind) {
+        'BUY'=>'operational_reports.service_buy',
+        'RENEW'=>'operational_reports.service_renew',
+        'ADD_TIME'=>'operational_reports.service_days',
+        'ADD_VOLUME'=>'operational_reports.service_volume'
+    })."\n\n".achbotMessageHtml('operational_reports.service_context',[
+        'user'=>$uid,'method'=>$method,'amount'=>number_format($q['price']),'remark'=>$remark,
+        'server'=>$q['server_id'],'plan'=>$q['plan_id'],'reference'=>$reference,'service'=>$id
+    ])."\n".match($kind) {
+        'BUY','RENEW'=>achbotMessageHtml('operational_reports.service_units',['volume'=>$q['volume'],'days'=>$q['days']]),
+        'ADD_TIME'=>achbotMessageHtml('operational_reports.service_added_days',['days'=>$q['days']]),
+        'ADD_VOLUME'=>achbotMessageHtml('operational_reports.service_added_volume',['volume'=>$q['volume']])
+    };
+    if ($kind!=='BUY' || $q['quantity']===1)
+        $text.="\n".achbotMessageHtml('operational_reports.service_order',
+            ['order'=>$kind==='BUY'?$accounts[0]['order_id']:$q['order_id']]);
+    $actor=$receipt===null?0:$receipt['entry']['actor'];
+    if ($actor>0) $text.="\n".achbotMessageHtml('operational_reports.actor',['actor'=>$actor]);
     if ($kind==='BUY' && $q['quantity']>1)
         $text=achbotBulkReportAppend($text,['requested'=>$q['quantity'],'confirmed'=>count($accounts),
             'complete'=>true,'accounts'=>$accounts,'reference'=>$reference],true);
-    // Only the real receipt hash or actual service ID, never a fake pays row.
-    $keys=inlineKeyboard([[['text'=>$label,'callback_data'=>'wizwizch']],
-        [['text'=>$refLabel,'callback_data'=>'noop_'.$reference]]]);
     achbotFollowupStageAdminReportLocked($db,null,$id,$stage,$source['fingerprint'],
         (int)($GLOBALS['admin']??0),(string)($GLOBALS['botState']['rewardChannel']??''),
-        ['text'=>$text,'keys'=>$keys,'mode'=>'HTML']);
+        ['text'=>$text,'keys'=>null,'mode'=>'HTML'],$actor);
 }
 
 /** The original human approval has its existing success notice. A BUY
@@ -305,8 +281,28 @@ function achbotServiceStageResolutionReportsLocked(mysqli $db,array $op,array $q
         (string)$op['userid'],null,$e['fingerprint'],$content);
     $content['text'].="\n".achbotMessageHtml('automatic_gateway_review.resolution_admin_context',[
         'user'=>$op['userid'],'actor'=>$op['resolved_by']]);
+    $q=$quote['request'];
+    $content['text'].="\n".achbotMessageHtml('operational_reports.source_reference',['reference'=>'svc_'.$id]);
+    if ($op['kind']!=='BUY')
+        $content['text'].="\n".achbotMessageHtml('operational_reports.resolution_subject',['remark'=>$q['remark'],'order'=>$q['order_id']]);
+    if ($e['amount']>0) {
+        require_once __DIR__.'/WalletReports.php';
+        $content['text'].="\n".achbotWalletReportFacts(achbotWalletReportEntryLocked($db,(int)$op['refund_entry_id']));
+    }
+    if ($op['kind']==='BUY' && $e['retained']>0) {
+        $s=achbotProviderStatement($db,'SELECT * FROM payment_delivery_intents WHERE service_operation_id=? ORDER BY ordinal FOR UPDATE','i',[$id]);
+        $lines=$s->get_result()->fetch_all(MYSQLI_ASSOC);$s->close();
+        if (count($lines)!==$e['retained']) throw new RuntimeException('service_resolution_retained_lines_missing');
+        $accounts=[];
+        foreach ($lines as $i=>$d) {
+            $body=achbotServiceDeliveryOriginalBody($op,$quote,$d,$i+1);
+            $accounts[]=['ordinal'=>$i+1,'name'=>$body['binding']['remark'],'order_id'=>(int)$d['order_id']];
+        }
+        $content['text']=achbotBulkReportAppend($content['text'],['requested'=>$q['quantity'],'confirmed'=>$e['retained'],
+            'complete'=>false,'accounts'=>$accounts,'reference'=>'svc_'.$id],true);
+    }
     achbotFollowupStageAdminReportLocked($db,null,$id,$stage,$e['fingerprint'],$primary,
-        (string)($GLOBALS['botState']['rewardChannel']??''),$content);
+        (string)($GLOBALS['botState']['rewardChannel']??''),$content,(int)$op['resolved_by']);
 }
 
 function achbotServiceReportValidateLocked(mysqli $db,array $op,array $quote,array $r): ?array {
@@ -315,7 +311,7 @@ function achbotServiceReportValidateLocked(mysqli $db,array $op,array $quote,arr
         if ($r['kind']!=='send' || $r['message_id']!==null) return null;
         if ($r['role']==='service_customer') {
             if ((string)$r['recipient']!==(string)$op['userid']) return null;
-        } elseif (!achbotFollowupAdminReportAllowed($db,$r)) return null;
+        } elseif (!achbotFollowupAdminReportAllowed($db,$r,(int)$op['resolved_by'])) return null;
         $e=achbotServiceResolutionEvidenceLocked($db,$op,$quote);
         return achbotFollowupDecodePacket(null,$r,$e['fingerprint']);
     }
@@ -329,8 +325,10 @@ function achbotServiceReportValidateLocked(mysqli $db,array $op,array $quote,arr
             if (!$manual || !achbotServiceManualNoticeAllowedLocked($db,$op,$quote,$source,$r)) return null;
             if ($requiresAck && !$source['delivered'])
                 throw new RuntimeException('service_delivery_not_ready');
-        } elseif ($requiresAck || ($manual?!achbotReceiptReportEditAllowed($db,$receipt,$r):
-            !achbotFollowupAdminReportAllowed($db,$r))) return null;
+        } elseif ($requiresAck) return null;
+        elseif ($r['kind']==='edit') {
+            if (!$manual || !achbotReceiptReportEditAllowed($db,$receipt,$r)) return null;
+        } elseif (!achbotFollowupAdminReportAllowed($db,$r,$receipt===null?0:$receipt['entry']['actor'])) return null;
         return achbotFollowupDecodePacket(null,$r,$source['fingerprint']);
     }
     if ($r['kind']!=='send' || $r['message_id']!==null) return null;

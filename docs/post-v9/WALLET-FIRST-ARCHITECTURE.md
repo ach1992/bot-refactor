@@ -1239,3 +1239,12 @@ Do not install 033 or 034 separately on any bot. The prior delayed Native
 write counterexample remains an explicit limitation of the existing
 provider API, not a test of safe remote CAS. Exact candidate validation,
 independent review and installed acceptance remain separate gates.
+
+
+### Operational reporting acceptance (current fresh schema 039)
+
+- Payment credit: primary + configured report channel + actual human approval actor, if any. Applies to all registered receipt methods, including API/timer/hosted, duplicate receipt replay, service supersession and credits immediately allocated to a service. No misleading customer top-up notice for a consumed credit. Report the credit ledger before/after, not a later balance snapshot.
+- Service result: BUY/RENEW/ADD_TIME/ADD_VOLUME all emit source-neutral completion reports after verified local finality, independently of Telegram customer delivery; original manual receipt edit and delivery-dependent confirmation remain separate. Automatic renewal retains its dedicated report with the service and order identifiers.
+- Other Wallet credits: original ledger-backed adjustment, transfer and onboarding reward use a wallet_entry_id followup source (039, no synthetic invoice); purchase referral and resolution use their existing verified sources with the Wallet entry correlation. Administrative debits and refund/close decisions are also searchable. Transfer sender is not a fabricated administrator; report both original balance movements. A primary recipient who also approved receives one report.
+- Other useful service events: manual/existing subscription import now uses the general report audience for both customer/admin registration. Trial, administrator bulk creation, plan change, transfer/reassignment, direct gift and deletion retain their existing notification paths; their direct reports are best-effort and are not upgraded to financial outbox sources in this slice. Failure diagnostics remain private to authorized administrators.
+- Report channels are the configured rewardChannel. Channel/role changes do not silently redirect sealed reports; the same original attempt journal and attention inbox support explicit redrive of unknown/rejected packets. Optional general-manager copies do not block mandatory owner/actor/channel staging on a contended preference read. No credentials, original receipt image, or private subscription URLs in financial/service summary reports.

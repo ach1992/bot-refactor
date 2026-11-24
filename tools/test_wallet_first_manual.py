@@ -49,7 +49,7 @@ $GLOBALS['paymentKeys']=$keys+['bankAccount'=>'fixture-bank','holderName'=>'fixt
     'giftCardUrl'=>'https://fixture.invalid/gift',
     'manualUsdtWalletERC20'=>'0x'.str_repeat('1',40),'manualUsdtRateToman'=>100000,
     'manualTrxWallet'=>'TJRabPrwbZy45sbavfcjinPJC18kjpRTv8','manualTrxRateToman'=>10000];
-$GLOBALS['botState']=$states+['cartToCartState'=>'on','giftCardState'=>'on','manualUsdtState'=>'on'];
+$GLOBALS['botState']=$states+['cartToCartState'=>'on','giftCardState'=>'on','manualUsdtState'=>'on','rewardChannel'=>'@fixture_report'];
 if (!($spec['api']??false)) {$GLOBALS['botState']['smsApiVerifyState']='off';$GLOBALS['botState']['giftApiVerifyState']='off';}
 try {
     $result=match ($spec['op']) {
@@ -71,6 +71,12 @@ try {
         })(),
         'outcome'=>achbotCheckoutReceiptOutcome($db,$id),
         'review'=>fixtureReview($db,$spec),
+        'report'=>(static function() use ($db,$spec) {
+            require_once dirname($GLOBALS['argv'][1]).'/FollowupOutbox.php';
+            $GLOBALS['review_sends']=[];
+            $status=achbotFollowupDispatchOne($db,(int)$spec['report']);
+            return ['status'=>$status,'sends'=>$GLOBALS['review_sends']];
+        })(),
         'issue'=>achbotManualReceiptIssue($db,$id,(int)($spec['owner']??1001),$method,$spec['service']??null,$spec['network']??null),
         'begin'=>achbotManualBeginEvidence($db,$pay,$method,(int)($spec['owner']??1001),$spec['file']),
         'finish'=>achbotManualFinishEvidence($db,$pay['hash_id'],$spec['file'],$spec['token'],222,9001),
@@ -150,8 +156,28 @@ def main():
                     r=result(mode,'approve',pid,actor=9001)
                     assert r['funding']=='wallet_only' and balance()==b+1000 and not r['credit']['replayed'],r
                     assert result(mode,'approve',pid)['credit']['replayed'] and balance()==b+1000
-                    assert roles(pid)=='customer,receipt_primary,service_admin',roles(pid)
+                    assert roles(pid)=='customer,receipt_primary,service_admin,service_channel',roles(pid)
                     case(method+'_actual_issue_and_manual_approval')
+                # The approving operator receives a standalone report even
+                # when general unsolicited notifications are disabled.
+                sql("INSERT INTO setting(type,value) VALUES ('ADMIN_NOTIFY_9002','off')")
+                pid=seed(mode+'-operator-report')
+                result(mode,'issue',pid,method='bank_transfer')
+                submit(mode,pid,'bank_transfer','fixture-operator-report')
+                b=balance()
+                assert result(mode,'approve',pid,actor=9002)['funding']=='wallet_only'
+                assert balance()==b+1000
+                targets=sql(f"SELECT CONCAT(role,':',recipient) FROM payment_followup_intents WHERE pay_row_id={pid} AND kind='send' ORDER BY role").splitlines()
+                assert targets==['customer:1001','report_actor:9002','service_admin:9001','service_channel:@fixture_report'],targets
+                for target in ('9001','9002','@fixture_report'):
+                    rid=int(sql(f"SELECT id FROM payment_followup_intents WHERE pay_row_id={pid} AND recipient='{target}' AND kind='send'"))
+                    report=result(mode,'report',pid,report=rid)
+                    assert report['status']=='acknowledged' and len(report['sends'])==1,report
+                    assert mode+'-operator-report' in report['sends'][0]['args'][0] and '9002' in report['sends'][0]['args'][0],report
+                    assert result(mode,'report',pid,report=rid)['sends']==[]
+                assert balance()==b+1000
+                sql("DELETE FROM setting WHERE type='ADMIN_NOTIFY_9002'")
+                case('actual_approver_owner_channel_reports_without_duplicate_money')
                 # Real private recovery route, lost ACK and independent delivery.
                 for method in ('bank_transfer','gift_card','manual_usdt','manual_trx'):
                     pid=seed(mode+'-recover-'+method)
@@ -221,7 +247,7 @@ def main():
                 submit(mode,pid,'bank_transfer','fixture-timer')
                 b=balance()
                 assert result(mode,'approve',pid,basis='bank_timer',actor=0)['funding']=='wallet_only' and balance()==b+1000
-                assert roles(pid)=='customer,receipt_primary',roles(pid)
+                assert roles(pid)=='customer,receipt_primary,service_admin,service_channel',roles(pid)
                 case('actual_explicit_timer')
                 # The real bank checker must find and consume exactly the
                 # provider-owned original SMS, then use the common funding
@@ -320,7 +346,7 @@ DELIMITER ;
                 assert result(mode,'check',pid)=='settled' and balance()==b+100 and server.consumes[ident]==1
                 assert sql(f'SELECT wallet_funding_result FROM payment_attempts WHERE pay_row_id={pid}')=='request_invalidated'
                 sql('UPDATE server_info SET active=1 WHERE id=2')
-                assert roles(pid)=='customer,receipt_primary',roles(pid)
+                assert roles(pid)=='customer,receipt_primary,service_admin,service_channel',roles(pid)
                 case('actual_bank_scan_lost_remote_ack_service_invalidated')
                 # A receipt already submitted before service supersession is
                 # still real money. Never revive the invalidated service.
@@ -339,6 +365,13 @@ DELIMITER ;
                 assert result(mode,'check',pid)=='settled' and balance()==b+100 and server.consumes[ident]==1
                 assert sql(f"SELECT wallet_funding_result FROM payment_attempts WHERE pay_row_id={pid}")=='request_invalidated'
                 assert sql(f"SELECT COUNT(*) FROM wallet_entries WHERE source_kind='service_debit' AND source_ref='{oid}'")=='0'
+                assert sql(f"SELECT GROUP_CONCAT(recipient ORDER BY recipient) FROM payment_followup_intents WHERE pay_row_id={pid} AND role IN ('service_admin','service_channel')")=='9001,@fixture_report'
+                rid=int(sql(f"SELECT id FROM payment_followup_intents WHERE pay_row_id={pid} AND role='service_channel'"))
+                report=result(mode,'report',pid,report=rid)
+                assert report['status']=='acknowledged' and len(report['sends'])==1,report
+                text=report['sends'][0]['args'][0]
+                assert 'API' in text and mode+'-superseded' in text and 'تغییر یا حذف سرویس' in text,text
+                case('superseded_api_wallet_report_searchable_and_delivered')
                 case('superseded_submitted_api_receipt_credits_without_service')
                 # An unfunded superseded receipt must still allow a real reject,
                 # not require a removed archive or silently remain in review.
@@ -371,7 +404,7 @@ DELIMITER ;
                 assert run(mode,'reject',pid)['reason']=='manual_reject_original_evidence_pending'
                 assert result(mode,'check',pid)=='settled' and balance()==b+1000
                 assert result(mode,'check',pid)=='settled' and balance()==b+1000
-                assert roles(pid)=='customer,receipt_primary',roles(pid)
+                assert roles(pid)=='customer,receipt_primary,service_admin,service_channel',roles(pid)
                 case('actual_gift_proven_local_rollback_recovery_reject_denied')
 
                 # Existing cooldown policy must use current receipt facts,

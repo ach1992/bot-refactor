@@ -183,6 +183,8 @@ function achbotRegisterStartUser(
                 $actor.':'.$newUserPk,0,$inviteReward);
             if ($entry['replayed'] || $entry['before']!==$old || $entry['after']!==$new)
                 throw new RuntimeException('reward_write_failed');
+            require_once __DIR__.'/../Finance/WalletReports.php';
+            achbotWalletReportStageLocked($db,$entry['id'],(int)($GLOBALS['admin']??0));
             $reward = ['inviter'=>$inviter, 'old_wallet'=>$old,
                        'new_wallet'=>$new, 'amount'=>$inviteReward];
         }
