@@ -1672,7 +1672,7 @@ DELIMITER ;
                 r=php(mode,'checkout_wallet',hash=h)
                 assert r['status']=='funded',r
                 op=r['operation']
-                for stage in ('applied','applied','completed'):step(mode,op,stage)
+                for stage in ('progressed','applied','progressed','completed'):step(mode,op,stage)
                 assert sql(f"SELECT COUNT(*) FROM service_effects WHERE source_kind='service_operation' AND source_ref='{op}' AND state='local_recorded'")=='2'
                 cases.append(mode+'_actual_bulk_checkout_draft')
                 h,pid=insert_checkout('renew','RENEW_ACCOUNT',order=order)
