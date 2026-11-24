@@ -61,7 +61,7 @@ function textValue($value): string {
  * No SQL from the contract is executed and no arbitrary table names are queried. */
 function inspectSchema(mysqli $db,array $expected): bool {
     global $report;
-    $tables=[];$columns=[];$indexes=[];$constraints=[];$foreign=[];
+    $tables=[];$columns=[];$indexes=[];
     foreach ($db->query("SELECT TABLE_NAME,ENGINE FROM information_schema.TABLES
         WHERE TABLE_SCHEMA=DATABASE() AND TABLE_TYPE='BASE TABLE'") as $r)
         $tables[$r['TABLE_NAME']]=$r['ENGINE'];
@@ -74,15 +74,6 @@ function inspectSchema(mysqli $db,array $expected): bool {
         $indexes[$r['TABLE_NAME']][$r['INDEX_NAME']][]=
             [$r['COLUMN_NAME'],(int)$r['NON_UNIQUE']===0,$r['SUB_PART']];
     }
-    foreach ($db->query("SELECT TABLE_NAME,CONSTRAINT_NAME,CONSTRAINT_TYPE FROM information_schema.TABLE_CONSTRAINTS
-        WHERE TABLE_SCHEMA=DATABASE()") as $r)
-        $constraints[$r['TABLE_NAME']][$r['CONSTRAINT_NAME']]=$r['CONSTRAINT_TYPE'];
-    foreach ($db->query("SELECT TABLE_NAME,CONSTRAINT_NAME,COLUMN_NAME,REFERENCED_TABLE_NAME,REFERENCED_COLUMN_NAME,
-        REFERENCED_TABLE_SCHEMA FROM information_schema.KEY_COLUMN_USAGE WHERE TABLE_SCHEMA=DATABASE()
-        AND REFERENCED_TABLE_NAME IS NOT NULL AND REFERENCED_TABLE_SCHEMA=DATABASE()
-        ORDER BY TABLE_NAME,CONSTRAINT_NAME,ORDINAL_POSITION") as $r)
-        $foreign[$r['TABLE_NAME']][$r['CONSTRAINT_NAME']][]=
-            [$r['COLUMN_NAME'],$r['REFERENCED_TABLE_NAME'],$r['REFERENCED_COLUMN_NAME']];
     $ready=true;
     foreach ($expected as $table=>$spec) {
         $issues=[];
@@ -93,12 +84,26 @@ function inspectSchema(mysqli $db,array $expected): bool {
             $want=array_map(static fn($c)=>[$c,$index['unique'],null],$index['columns']);
             if (($indexes[$table][$name]??null)!==$want) $issues[]='index:'.$name;
         }
-        foreach ($spec['constraints'] as $name=>$c) {
-            if (($constraints[$table][$name]??null)!==$c['type']) {$issues[]='constraint:'.$name;continue;}
-            if ($c['type']==='FOREIGN KEY') {
-                $want=[];
-                foreach ($c['columns'] as $i=>$col) $want[]=[$col,$c['target'],$c['target_columns'][$i]];
-                if (($foreign[$table][$name]??null)!==$want) $issues[]='foreign_key:'.$name;
+        // SELECT alone does not expose every TABLE_CONSTRAINTS row in
+        // MariaDB. Read the existing definition with the same privilege;
+        // compare only named current constraints and FK endpoints, not raw
+        // DDL or column defaults in the public report.
+        if ($spec['constraints'] && isset($tables[$table])) {
+            if (!preg_match('/^[a-zA-Z0-9_]+$/D',$table))
+                throw new RuntimeException('invalid_schema_table');
+            $ddl=$db->query('SHOW CREATE TABLE `'.$table.'`')->fetch_assoc()['Create Table']??'';
+            foreach ($spec['constraints'] as $name=>$c) {
+                $prefix='/^\\s*CONSTRAINT `'.preg_quote($name,'/').'` ';
+                if ($c['type']==='CHECK') {
+                    if (!preg_match($prefix.'CHECK\\s*\\(/mi',$ddl)) $issues[]='constraint:'.$name;
+                    continue;
+                }
+                $pattern=$prefix.'FOREIGN KEY\\s*\\(([^)]+)\\) REFERENCES `([a-zA-Z0-9_]+)`\\s*\\(([^)]+)\\)/mi';
+                if (!preg_match($pattern,$ddl,$m)) {$issues[]='constraint:'.$name;continue;}
+                preg_match_all('/`([a-zA-Z0-9_]+)`/',$m[1],$from);
+                preg_match_all('/`([a-zA-Z0-9_]+)`/',$m[3],$to);
+                if ($from[1]!==$c['columns'] || $m[2]!==$c['target'] || $to[1]!==$c['target_columns'])
+                    $issues[]='foreign_key:'.$name;
             }
         }
         if ($issues) {$ready=false;$report['schema'][$table]=$issues;}

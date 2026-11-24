@@ -48,10 +48,11 @@ function achbotServiceDeliveryStorageReady(mysqli $db): bool {
                 if (array_values($keys[$key])!==$fields) return false;
             }
         }
-        $constraint=achbotProviderRow($db,"SELECT CONSTRAINT_NAME FROM information_schema.TABLE_CONSTRAINTS
-            WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='payment_delivery_intents'
-            AND CONSTRAINT_NAME='ck_delivery_source_v2' AND CONSTRAINT_TYPE='CHECK'");
-        return $constraint!==null;
+        // SHOW CREATE is visible to SELECT-only accounts; MariaDB may hide
+        // TABLE_CONSTRAINTS from them even when the constraint exists.
+        $ddl=achbotProviderRow($db,'SHOW CREATE TABLE payment_delivery_intents');
+        return preg_match('/^\s*CONSTRAINT `ck_delivery_source_v2` CHECK\s*\(/mi',
+            (string)($ddl['Create Table']??''))===1;
     } catch (Throwable $e) {return false;}
 }
 
