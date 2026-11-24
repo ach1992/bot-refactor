@@ -1,5 +1,7 @@
 # AChBot financial lifecycle — current contract and controlled consolidation
 
+**Wallet-first candidate boundary:** For the current PR #234, [Wallet-first architecture](WALLET-FIRST-ARCHITECTURE.md), [the shared exception inbox](AUTOMATIC-GATEWAY-REVIEW.md) and [fresh installation](FRESH-INSTALL.md) take precedence. The following pre-Wallet-first material describes the earlier Stable/RC implementation and historical evidence; it is not an active runtime contract, migration procedure or authorization to replay old effects in the replacement. Use the exact installed release documentation for an older deployment.
+
 **Current baseline note:** This detailed financial behavior and recovery reference contains historical source/RC design checkpoints. The supported forward version is [v0.10.0 Stable](STABLE-BASELINE.md); use the actual current payment/effect journals and [payment delivery recovery](PAYMENT-DELIVERY-RECOVERY.md), not dated rollout checkpoints, for production decisions. Its historical sections remain for nontrivial financial reasoning and source regression provenance.
 
 **Integrated bulk-account identity ([PR #152](https://github.com/ach1992/bot-refactor/pull/152)):** New PasarGuard and

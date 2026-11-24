@@ -19,7 +19,7 @@ Unused legacy X-UI, WeSwap and automatic TRON checker integrations are **not** s
 - Linux with HTTPS, PHP web/CLI and the PHP extensions `mysqli`/mysqlnd, `curl`, `zip`, `gd`; current source acceptance uses **PHP 8.5**.
 - MariaDB, with a **separate database/account per bot** and the full matching current schema. The original `database/legacy-schema.sql` by itself is not the current schema.
 - Telegram bot token, numeric Owner ID and a unique `$telegramWebhookSecret` per bot.
-- A native Marzban or PasarGuard panel with the required API permissions. [PasarGuard contract](docs/post-v9/PASARGUARD-CONTRACT.md).
+- For the Wallet-first candidate, a native PasarGuard panel with the required API permissions; the published pre-Wallet-first Stable release also supported Marzban. [PasarGuard contract](docs/post-v9/PASARGUARD-CONTRACT.md).
 - For Cron: Linux `/proc`, PHP CLI `posix_geteuid`, `flock`, `proc_open`, and a trusted external lock directory.
 
 ## Installation and upgrade
@@ -32,8 +32,8 @@ require separate, approved manual data transfer/reconciliation. See
 
 Use the **official runtime ZIP**, its manifest and SHA256SUMS from the selected GitHub release. The automatically generated GitHub *Source code* ZIP is **not** the deployable runtime. The release manifest lists the exact dynamically selected source-bound runtime members; it excludes live `baseInfo.php`, customer data, database installers, payment credentials and Cron configuration.
 
-1. **New empty database:** follow [Fresh installation](docs/post-v9/FRESH-INSTALL.md) for the release-matched schema and migration order, private configuration, webhook, and safe Cron setup.
-2. **Existing bot:** compare the installed file hashes, real DB migration state, private settings, pending effects and available rollback before replacing source. Follow [Installed-runtime diagnostics](docs/post-v9/INSTALL-DIAGNOSTICS.md). The current Wallet recovery runtime requires the separately approved and verified [`023_scoped_payment_lock_indexes.sql`](migrations/post-v9/023_scoped_payment_lock_indexes.sql) indexes **before** runtime replacement; see [the migration boundary](docs/post-v9/FRESH-INSTALL.md). **Never replay completed migrations or the one-time Hell/Vivan PasarGuard cutover**.
+1. **New empty database:** follow [Fresh installation](docs/post-v9/FRESH-INSTALL.md) for the release-matched schema, private configuration, webhook, and safe Cron setup. For Wallet-first, import only the matching consolidated schema.
+2. **Existing bot:** Wallet-first is not an in-place upgrade. Prepare a separate fresh database and perform the separately authorized [manual transfer and reconciliation](docs/post-v9/WALLET-FIRST-ARCHITECTURE.md#cutover-decision--controlled-manual-database-transfer-owner-2026-11-24). Use [Installed-runtime diagnostics](docs/post-v9/INSTALL-DIAGNOSTICS.md) and the exact installed release documentation to inspect the old runtime. Do not run the fresh-construction migration sequence on the existing database or resume its old pending workflows. **Never replay completed migrations or the one-time Hell/Vivan PasarGuard cutover**.
 3. Populate the private `baseInfo.php` from the matching example only for a new installation. Preserve the existing real private file and encryption-dependent secrets during upgrades.
 4. Configure the HTTPS `bot.php` Telegram webhook with the matching secret token. Opening the webhook in a browser does not prove Telegram delivery.
 5. Configure one `settings/cronRunner.php` task per minute using the intended PHP CLI and bot working directory. The coordinator owns four sequential jobs and skips an overlapping tick. Never run the live coordinator as a harmless smoke test: workers can perform real service and financial effects.

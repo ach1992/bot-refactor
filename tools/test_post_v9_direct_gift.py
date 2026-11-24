@@ -317,7 +317,9 @@ def setup(work: Path, env: dict) -> Path:
     # The membership binding is explicitly guarded against Cron/anonymous
     # callbacks now. Search the actual section by its stable role boundary,
     # retaining both negative controls against pre-ingress state mutations.
-    membership_section=config[config.index("$channelLock = $botState['lockChannel'];"):
+    membership_start=re.search(r"(?m)^\$channelLock\s*=\s*\$botState\['lockChannel'\][^;]*;",config)
+    ensure(membership_start is not None,'Current membership binding missing')
+    membership_section=config[membership_start.start():
                               config.index('// تابع مشترک ساخت درخواست پرداخت')]
     ensure(exemption_start<moderation_start and
            'if ($data == "addExemptUser")' not in membership_section and
