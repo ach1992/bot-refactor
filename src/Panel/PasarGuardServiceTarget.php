@@ -34,6 +34,8 @@ function achbotPasarGuardServiceTargetLocked(mysqli $db,array $q,?array $o,?arra
             // worker serializes it using the pinned physical identity.
             $ctx=achbotPgOrderContext($db,$q['order_id'],true,true);
             $a=$ctx['account'];
+            if (achbotServiceHistoricalAutoPending($db,$q['order_id'],(int)$a['effect_id'],true))
+                throw new DomainException('service_historical_auto_pending');
             if ($a['state']==='mutating' &&
                 !preg_match('/^service:[1-9][0-9]*$/D',(string)$a['mutation_key']))
                 throw new DomainException('service_account_mutation_pending');

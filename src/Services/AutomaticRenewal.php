@@ -2,6 +2,7 @@
 declare(strict_types=1);
 if (realpath($_SERVER['SCRIPT_FILENAME']??'')===__FILE__) {http_response_code(404);exit;}
 require_once __DIR__.'/Funding.php';
+require_once __DIR__.'/Ownership.php';
 require_once __DIR__.'/../Panel/ServiceLifecycle.php';
 
 /** Same existing cycle and discount policy; no payment invoice or second
@@ -46,6 +47,12 @@ function achbotServiceAutoRenewAdmit(mysqli $db,int $orderId,int $userId,array $
             if ((int)$old['userid']!==$userId) throw new RuntimeException('service_auto_cycle_owner');
             return ['status'=>'already_claimed','id'=>(int)$old['id']];
         }
+        // A completed legacy cycle is not a new command. An unfinished
+        // legacy claim can exist before any provider mutation is visible.
+        if (achbotServiceHistoricalAutoCycle($db,$orderId,(int)$initial['expire_date']) ||
+            achbotServiceHistoricalAutoPending($db,$orderId,
+                isset($initial['provider_effect_id'])?(int)$initial['provider_effect_id']:null))
+            return ['status'=>'deferred','reason'=>'service_historical_auto_pending'];
         // All Native I/O happens before locking the owner's money.
         $live=($adapter['service_auto_observe'])($db,$orderId);
         if (!$live['success']) return ['status'=>($live['reason']??'')==='service_edit_account_busy'?'account_busy':'deferred',
@@ -59,6 +66,11 @@ function achbotServiceAutoRenewAdmit(mysqli $db,int $orderId,int $userId,array $
             (int)$o['expire_date']!==(int)$initial['expire_date'] ||
             (int)$o['server_id']!==$sid || (int)$o['fileid']!==(int)$initial['fileid']) {
             $db->rollback();return ['status'=>'ineligible'];
+        }
+        if (achbotServiceHistoricalAutoCycle($db,$orderId,(int)$o['expire_date'],true) ||
+            achbotServiceHistoricalAutoPending($db,$orderId,
+                isset($o['provider_effect_id'])?(int)$o['provider_effect_id']:null,true)) {
+            $db->rollback();return ['status'=>'deferred','reason'=>'service_historical_auto_pending'];
         }
         $planId=(int)$o['fileid'];
         $p=achbotProviderRow($db,'SELECT * FROM server_plans WHERE id=? FOR UPDATE','i',[$planId]);

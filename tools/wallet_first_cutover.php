@@ -9,6 +9,7 @@ declare(strict_types=1);
 if (PHP_SAPI!=='cli') {http_response_code(404);exit(1);}
 require_once __DIR__.'/../src/Wallet/Ledger.php';
 require_once __DIR__.'/../src/Panel/ProviderStorage.php';
+require_once __DIR__.'/../src/Services/Funding.php';
 
 function walletFirstCutoverRows(mysqli $db,string $sql): array {
     $s=achbotProviderStatement($db,$sql);
@@ -47,7 +48,7 @@ function walletFirstCutoverAudit(mysqli $db): array {
             'historical_receipt_or_payment_claim'=>"
                 SELECT p.id FROM pays p LEFT JOIN payment_attempts a ON a.pay_row_id=p.id
                 WHERE (a.id IS NULL OR a.wallet_invoice_sha256 IS NULL)
-                  AND (p.state='processing'
+                  AND (p.state IN ('processing','processing_wallet')
                     OR (p.state NOT IN ('paid','paid_with_wallet','approved','auto_cart_approved')
                         AND (p.state IN ('have_sent','expired_have_sent') OR a.id IS NOT NULL OR COALESCE(p.payid,'')<>''))
                     OR (p.state='paid' AND (a.id IS NULL OR a.stage<>'done'))
@@ -109,14 +110,89 @@ function walletFirstCutoverOpen(mysqli $db,string $expectedSha256): array {
             $n=$s->affected_rows;$s->close();
             if ($n!==$snap['owners']) throw new RuntimeException('cutover_open_count');
         } elseif ($total!==$snap['owners']) throw new RuntimeException('cutover_existing_journal');
-        $match=achbotProviderRow($db,"SELECT COUNT(*) AS n FROM wallet_entries w
-            JOIN users u ON u.id=w.user_row_id AND u.userid=w.userid
-            WHERE w.source_kind='opening' AND w.source_ref=CAST(u.id AS CHAR)
-                AND w.leg=0 AND w.delta_toman=u.wallet AND w.balance_before=0
-                AND w.balance_after=u.wallet AND w.actor_userid=0");
-        if ((int)$match['n']!==$snap['owners'] || walletFirstCutoverSnapshot($db,true)!==$snap)
-            throw new RuntimeException('cutover_open_reconciliation');
+        walletFirstCutoverVerifyOpeningsLocked($db,$snap);
         if (!$db->commit()) throw new RuntimeException('cutover_open_commit');
         return ['snapshot'=>$snap,'replayed'=>$total!==0,'runtime_activation_authorized'=>false];
+    } catch (Throwable $e) {$db->rollback();throw $e;}
+}
+
+/** All monetary writers must be quiesced. Adoption is permitted only before
+ * any new ledger movements. Every owner, including zero/debt, matches the
+ * exact reviewed snapshot and the complete opening set. */
+function walletFirstCutoverVerifyOpeningsLocked(mysqli $db,array $snap): void {
+    $total=(int)achbotProviderRow($db,'SELECT COUNT(*) AS n FROM wallet_entries')['n'];
+    if ($total!==$snap['owners']) throw new RuntimeException('cutover_existing_journal');
+    $match=achbotProviderRow($db,"SELECT COUNT(*) AS n FROM wallet_entries w
+        JOIN users u ON u.id=w.user_row_id AND u.userid=w.userid
+        WHERE w.source_kind='opening' AND w.source_ref=CAST(u.id AS CHAR)
+            AND w.leg=0 AND w.delta_toman=u.wallet AND w.balance_before=0
+            AND w.balance_after=u.wallet AND w.actor_userid=0");
+    if ((int)$match['n']!==$snap['owners'] || walletFirstCutoverSnapshot($db,true)!==$snap)
+        throw new RuntimeException('cutover_open_reconciliation');
+}
+
+/** Source-only, quiesced, pre-activation adoption of an unambiguous original
+ * prepaid custom BUY. Transfer ownership of its existing capacity hold
+ * without decrementing capacity or creating ANY wallet entry. The normal
+ * engine, not this importer, performs the first CREATE and finalization.
+ * Standard quotes lacking immutable units and existing CREATE evidence must
+ * take their own evidence-based adoption path; never guess or replay them. */
+function walletFirstCutoverAdoptWalletBuy(mysqli $db,int $payId,string $expectedSha256): array {
+    require_once __DIR__.'/../src/Finance/CheckoutAdmission.php';
+    if ($payId<=0 || !preg_match('/\A[a-f0-9]{64}\z/D',$expectedSha256))
+        throw new InvalidArgumentException('cutover_adoption_input');
+    if (!achbotCheckoutCommandsPresent($db)) throw new RuntimeException('cutover_checkout_schema');
+    if (!$db->begin_transaction()) throw new RuntimeException('cutover_adoption_begin');
+    try {
+        $snap=walletFirstCutoverSnapshot($db,true);
+        if (!hash_equals($snap['sha256'],$expectedSha256)) throw new RuntimeException('cutover_snapshot_changed');
+        $index=walletFirstCutoverRows($db,"SELECT COLUMN_NAME,NON_UNIQUE,SUB_PART FROM information_schema.STATISTICS
+            WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='users' AND INDEX_NAME='idx_users_userid_v1'");
+        if (count($index)!==1 || $index[0]['COLUMN_NAME']!=='userid' ||
+            (int)$index[0]['NON_UNIQUE']!==0 || $index[0]['SUB_PART']!==null)
+            throw new RuntimeException('cutover_unique_owner_required');
+        walletFirstCutoverVerifyOpeningsLocked($db,$snap);
+        $pay=achbotProviderRow($db,'SELECT * FROM pays WHERE id=? FOR UPDATE','i',[$payId]);
+        if (!$pay) throw new RuntimeException('service_historical_wallet_payment_invalid');
+        $uid=(int)$pay['user_id'];
+        $owner=achbotWalletLockOwnerLocked($db,$uid);
+        if ($pay['checkout_operation_id']!==null) {
+            $id=(int)$pay['checkout_operation_id'];
+            [$op,$quote]=achbotCheckoutOriginalCommandLocked($db,$pay);
+            if ((int)($op['historical_pay_id']??0)!==$payId || $op['stage']!=='funded')
+                throw new RuntimeException('cutover_adoption_existing_command');
+            achbotServiceHistoricalBuyFundingLocked($db,$op,$quote,$owner);
+            $db->rollback();
+            return ['operation'=>$id,'replayed'=>true,'runtime_activation_authorized'=>false];
+        }
+        $quote=achbotServiceHistoricalBuySourceLocked($db,$payId,$owner,null);
+        // The original provider pin, not the current plan's commercial
+        // values, is the authority for an already charged purchase.
+        require_once __DIR__.'/../src/Panel/PasarGuardServiceExecution.php';
+        achbotPasarGuardBuySnapshot($db,$quote);
+        if (time()>2147483647-$quote['request']['days']*86400)
+            throw new RuntimeException('service_historical_wallet_expiry_unrepresentable');
+        $payload=achbotServiceJson($quote);$hash=hash('sha256',$payload);
+        $q=$quote['request'];$hold=$q['policy']['historical_wallet']['hold_id'];
+        $s=achbotProviderStatement($db,"INSERT INTO service_operations
+            (command_kind,command_ref,user_row_id,userid,kind,quote_payload,quote_sha256,price_toman,
+             stage,historical_pay_id,reserved_count,next_attempt_at,created_at,updated_at)
+            VALUES ('checkout',?,?,?,'BUY',?,?,?,'funded',?,1,NOW(6),NOW(6),NOW(6))",
+            'siissii',[(string)$payId,$owner['id'],$uid,$payload,$hash,$q['price'],$payId]);
+        $id=(int)$s->insert_id;$n=$s->affected_rows;$s->close();
+        if ($id<=0 || $n!==1) throw new RuntimeException('cutover_adoption_insert');
+        $s=achbotProviderStatement($db,"UPDATE service_effects SET state='consumed'
+            WHERE id=? AND pay_row_id=? AND effect_kind='wallet_hold' AND state='reserved'",'ii',[$hold,$payId]);
+        $n=$s->affected_rows;$s->close();
+        if ($n!==1) throw new RuntimeException('cutover_adoption_hold_transfer');
+        $s=achbotProviderStatement($db,"UPDATE pays SET checkout_operation_id=?
+            WHERE id=? AND checkout_operation_id IS NULL AND state='processing_wallet'",'ii',[$id,$payId]);
+        $n=$s->affected_rows;$s->close();
+        if ($n!==1) throw new RuntimeException('cutover_adoption_payment_bind');
+        [$op,$original]=achbotServiceReadLocked($db,$uid,$id);
+        achbotServiceHistoricalBuyFundingLocked($db,$op,$original,$owner);
+        walletFirstCutoverVerifyOpeningsLocked($db,$snap);
+        if (!$db->commit()) throw new RuntimeException('cutover_adoption_commit');
+        return ['operation'=>$id,'replayed'=>false,'runtime_activation_authorized'=>false];
     } catch (Throwable $e) {$db->rollback();throw $e;}
 }

@@ -14,6 +14,28 @@ function achbotServiceOperationsPresent(mysqli $db): bool {
     return true;
 }
 
+/** Historical 004 claims own their original subscription until proven
+ * terminal. Include aliases of the same physical account, even when the
+ * old journal was written before its Native mutation marker. The caller
+ * holds the physical account lease for scheduling and the owner/order locks
+ * for financial admission. 004 is retained as historical evidence. */
+function achbotServiceHistoricalAutoPending(mysqli $db,int $orderId,?int $effectId,bool $lock=false): ?array {
+    $suffix=$lock?' FOR UPDATE':'';
+    if ($effectId!==null && $effectId>0)
+        return achbotProviderRow($db,"SELECT a.id,a.order_id,a.stage
+            FROM orders_list o FORCE INDEX(idx_order_provider_effect)
+            JOIN automatic_renewal_attempts a FORCE INDEX(idx_renewal_inflight) ON a.order_id=o.id
+            WHERE o.provider_effect_id=? AND a.stage<>'done' LIMIT 1".$suffix,'i',[$effectId]);
+    return achbotProviderRow($db,"SELECT id,order_id,stage FROM automatic_renewal_attempts
+        WHERE order_id=? AND stage<>'done' LIMIT 1".$suffix,'i',[$orderId]);
+}
+
+/** Exact original cycle replay, including a historical terminal cycle. */
+function achbotServiceHistoricalAutoCycle(mysqli $db,int $orderId,int $cycle,bool $lock=false): ?array {
+    return achbotProviderRow($db,'SELECT id,stage FROM automatic_renewal_attempts
+        WHERE order_id=? AND cycle_expire=?'.($lock?' FOR UPDATE':''),'ii',[$orderId,$cycle]);
+}
+
 /** Original purchased account provenance. The caller already holds the
  * relevant order and physical account locks; no balance or Native I/O. */
 function achbotServiceOriginalBuyLocked(mysqli $db,array $effect): array {

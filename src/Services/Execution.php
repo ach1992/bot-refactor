@@ -70,6 +70,7 @@ function achbotServiceExecuteStep(mysqli $db,int $id,array $presentation=[]): ar
             if ($finalizing) {
                 achbotServiceReferralReserveLocked($db,$op);
                 achbotServiceStageCompletionReportsLocked($db,$op,$quote);
+                achbotServiceHistoricalBuyCompleteLocked($db,$op);
             }
             $s=achbotProviderStatement($db,"UPDATE service_operations SET stage=?,next_attempt_at=IF(?=1,NULL,NOW(6)),
                 claim_token=NULL,claim_until=NULL,failure_code=NULL,updated_at=NOW(6) WHERE id=?",
@@ -98,6 +99,7 @@ function achbotServiceExecuteStep(mysqli $db,int $id,array $presentation=[]): ar
             if ($done && $finalizing) {
                 achbotServiceReferralReserveLocked($db,$current);
                 achbotServiceStageCompletionReportsLocked($db,$current,$original);
+                achbotServiceHistoricalBuyCompleteLocked($db,$current);
             }
             $s=achbotProviderStatement($db,"UPDATE service_operations SET stage=?,
                 next_attempt_at=IF(?='completed',NULL,NOW(6)),claim_token=NULL,claim_until=NULL,

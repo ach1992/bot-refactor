@@ -218,7 +218,7 @@ def isolated_case(mode: str) -> list[str]:
         # origin. The new normalized journal must temporarily own the anchor
         # and then restore the original historical key/snapshot.
         for name in (
-            "023_scoped_payment_lock_indexes.sql", "024_wallet_entries.sql",
+            "004_automatic_renewal_attempts.sql", "023_scoped_payment_lock_indexes.sql", "024_wallet_entries.sql",
             "025_wallet_receipt_credit.sql", "026_service_operations.sql",
             "027_service_delivery_sources.sql", "028_service_mutations.sql",
             "020_payment_followup_intents.sql", "029_service_purchase_referral.sql",

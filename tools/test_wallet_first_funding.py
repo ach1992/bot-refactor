@@ -61,7 +61,7 @@ def main():
             p=subprocess.run(client,input=query,text=True,env=env,capture_output=True,timeout=30)
             assert p.returncode==0,(p.stderr,query[:200])
             return p.stdout.strip()
-        for m in ('001_marzban_panel_group_id.sql','003_payment_attempts.sql',
+        for m in ('001_marzban_panel_group_id.sql','003_payment_attempts.sql','004_automatic_renewal_attempts.sql',
                   '007_service_effects.sql','011_provider_identity.sql','012_shared_provider_storage.sql',
                   '014_api_payment_evidence.sql','022_gateway_review_archive.sql',
                   '023_scoped_payment_lock_indexes.sql','024_wallet_entries.sql',

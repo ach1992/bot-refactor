@@ -56,7 +56,7 @@ def main():
         cli=['mariadb','--no-defaults','--protocol=SOCKET','--socket='+str(work/'mysql.sock'),'-uroot','--batch','--skip-column-names',DB]
         def sql(q):
             return subprocess.run(cli,input="SET time_zone='+00:00';"+q,text=True,env=env,check=True,capture_output=True,timeout=20).stdout.strip()
-        for m in ('001_marzban_panel_group_id.sql','003_payment_attempts.sql','007_service_effects.sql',
+        for m in ('001_marzban_panel_group_id.sql','003_payment_attempts.sql','004_automatic_renewal_attempts.sql','007_service_effects.sql',
                   '011_provider_identity.sql','012_shared_provider_storage.sql','014_api_payment_evidence.sql',
                   '022_gateway_review_archive.sql','023_scoped_payment_lock_indexes.sql','024_wallet_entries.sql',
                   '025_wallet_receipt_credit.sql','026_service_operations.sql',

@@ -13,16 +13,36 @@ import subprocess
 import test_access_state as owned
 
 ROOT=Path(__file__).resolve().parents[1]
+LEGACY_RESERVE_PHP=r'''
+function fixtureLegacyReserve(mysqli $db,int $id): bool {
+    global $argv;
+    require_once $argv[1].'/src/Finance/ServiceEffects.php';
+    if (!$db->begin_transaction()) throw new RuntimeException('fixture_legacy_begin');
+    try {
+        $p=achbotProviderRow($db,'SELECT * FROM pays WHERE id=? FOR UPDATE','i',[$id]);
+        achbotProviderPinPayment($db,$id);
+        $s=achbotProviderStatement($db,"UPDATE users SET wallet=wallet-? WHERE userid=?",
+            'ii',[(int)$p['price'],(int)$p['user_id']]);$s->close();
+        $s=achbotProviderStatement($db,"UPDATE pays SET state='processing_wallet' WHERE id=?",'i',[$id]);$s->close();
+        achbotEffectReserveWalletCapacityLocked($db,$p);
+        if (!$db->commit()) throw new RuntimeException('fixture_legacy_commit');
+        return true;
+    } catch (Throwable $e) {$db->rollback();throw $e;}
+}
+'''
 PHP=r'''<?php
 declare(strict_types=1);
 mysqli_report($argv[4]==='strict'?MYSQLI_REPORT_ERROR|MYSQLI_REPORT_STRICT:MYSQLI_REPORT_OFF);
 require $argv[1].'/tools/wallet_first_cutover.php';
 $db=new mysqli('localhost','root','',$argv[3],0,$argv[2]);
+''' + LEGACY_RESERVE_PHP + r'''
 try {
     $c=json_decode($argv[5],true,32,JSON_THROW_ON_ERROR);
     $r=match($c['op']) {
         'audit'=>walletFirstCutoverAudit($db),
         'open'=>walletFirstCutoverOpen($db,$c['expected']),
+        'adopt'=>walletFirstCutoverAdoptWalletBuy($db,$c['pay'],$c['expected']),
+        'legacy_reserve'=>fixtureLegacyReserve($db,$c['pay']),
         'snapshot'=>walletFirstCutoverSnapshot($db),
         default=>throw new RuntimeException('fixture_operation')
     };
@@ -55,7 +75,7 @@ def main():
             def reject(op,why,**kwargs):
                 r=run(op,**kwargs);assert not r['ok'] and r['reason']==why,r
             def case(name):checks.append(mode+':'+name)
-            for m in ('003_payment_attempts.sql','004_automatic_renewal_attempts.sql',
+            for m in ('001_marzban_panel_group_id.sql','003_payment_attempts.sql','004_automatic_renewal_attempts.sql',
                 '007_service_effects.sql','008_referral_awards.sql','011_provider_identity.sql',
                 '012_shared_provider_storage.sql','014_api_payment_evidence.sql',
                 '018_payment_delivery_intents.sql','020_payment_followup_intents.sql',
@@ -71,12 +91,27 @@ def main():
                 ('reserved',1001,'BUY_SUB',200,UNIX_TIMESTAMP(),'processing'),
                 ('unverified',9002,'INCREASE_WALLET',300,UNIX_TIMESTAMP(),'have_sent'),
                 ('unissued',1001,'BUY_SUB',400,UNIX_TIMESTAMP(),'pending')""")
+            sql("""INSERT INTO server_config(id,panel_url,ip,sni,header_type,request_header,response_header,security,tlsSettings,type,username,password)
+                VALUES (2,'https://fixture.invalid','127.0.0.1','','none','','','none','{}','pasarguard','fixture','fixture');
+                INSERT INTO server_info(id,title,ucount,remark,flag,active,state) VALUES (2,'Fixture','100','fixture','',1,1);
+                UPDATE server_config SET provider_connection_id=2,provider_instance_key=REPEAT('a',32),
+                    provider_version='5.5.1',provider_enabled=1 WHERE id=2;
+                INSERT INTO server_plans(id,fileid,catid,server_id,inbound_id,acount,title,protocol,days,volume,type,price,descr,pic,active,step,date,custom_sni,provider_group_ids)
+                VALUES (7,'7',1,2,0,6,'Fixture','vless',30,2,'normal',100,'description','',1,0,'fixture',NULL,'[1,2]');
+                INSERT INTO pays(hash_id,user_id,type,price,request_date,state,server_id,plan_id,day,volume,description)
+                VALUES ('prepaid-custom',1001,'BUY_SUB',100,UNIX_TIMESTAMP(),'pending',2,7,17,5,'original-custom-name'),
+                       ('prepaid-standard',1001,'BUY_SUB',200,UNIX_TIMESTAMP(),'pending',2,7,0,0,'old-standard-name')""")
+            custom=int(sql("SELECT id FROM pays WHERE hash_id='prepaid-custom'"))
+            standard=int(sql("SELECT id FROM pays WHERE hash_id='prepaid-standard'"))
+            assert ok('legacy_reserve',pay=custom)
+            assert ok('legacy_reserve',pay=standard)
+            assert sql("SELECT ucount FROM server_info WHERE id=2")=='98'
             old=sql('SELECT id,userid,wallet FROM users ORDER BY id')
             oldp=sql('SELECT * FROM pays ORDER BY id')
             report=ok('audit')
             snap=report['snapshot']
-            assert snap['owners']==3 and snap['sum_toman']==49700 and snap['zero']==1 and snap['negative']==1,report
-            assert report['inventory']['historical_receipt_or_payment_claim']['count']==2
+            assert snap['owners']==3 and snap['sum_toman']==49400 and snap['zero']==1 and snap['negative']==1,report
+            assert report['inventory']['historical_receipt_or_payment_claim']['count']==4
             assert not report['legacy_claims_clear'] and not report['runtime_activation_authorized']
             assert sql('SELECT COUNT(*) FROM wallet_entries')=='0'
             case('read_only_original_claim_inventory')
@@ -101,12 +136,40 @@ def main():
             r=ok('open',expected=snap['sha256'])
             assert r['snapshot']==snap and not r['replayed']
             assert sql('SELECT COUNT(*) FROM wallet_entries')=='3'
-            assert sql('SELECT SUM(delta_toman) FROM wallet_entries')=='49700'
+            assert sql('SELECT SUM(delta_toman) FROM wallet_entries')=='49400'
             assert sql('SELECT COUNT(*) FROM wallet_entries w JOIN users u ON u.id=w.user_row_id AND u.userid=w.userid WHERE w.balance_after=u.wallet')=='3'
             assert sql('SELECT id,userid,wallet FROM users ORDER BY id')==old
             assert sql('SELECT * FROM pays ORDER BY id')==oldp
             assert ok('open',expected=snap['sha256'])['replayed']
             case('signed_exact_openings_and_idempotent_rehearsal')
+            reject('adopt','service_historical_wallet_quote_unproven',pay=standard,expected=snap['sha256'])
+            reject('adopt','service_historical_wallet_payment_invalid',pay=int(sql("SELECT id FROM pays WHERE hash_id='completed'")),expected=snap['sha256'])
+            # Force a local failure after the historical operation and hold
+            # transfer: no partial ownership may survive that transaction.
+            sql("CREATE TRIGGER fixture_adopt_fail BEFORE UPDATE ON pays FOR EACH ROW SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='fixture adoption rollback'")
+            try:
+                reject('adopt','provider_storage_unavailable',pay=custom,expected=snap['sha256'])
+                assert sql('SELECT COUNT(*) FROM service_operations')=='0'
+                assert sql(f"SELECT state FROM service_effects WHERE pay_row_id={custom}")=='reserved'
+                assert sql('SELECT * FROM pays ORDER BY id')==oldp
+            finally:sql('DROP TRIGGER fixture_adopt_fail')
+            case('original_claim_adoption_failure_atomic')
+            # A later plan edit cannot redefine the prepaid custom quote.
+            sql("UPDATE server_plans SET days=31,volume=9,price=900 WHERE id=7")
+            adopted=ok('adopt',pay=custom,expected=snap['sha256'])
+            op=adopted['operation']
+            assert not adopted['replayed'] and not adopted['runtime_activation_authorized']
+            assert sql(f"SELECT stage,debit_entry_id,historical_pay_id,reserved_count FROM service_operations WHERE id={op}")==f'funded\tNULL\t{custom}\t1'
+            assert sql(f"SELECT JSON_VALUE(quote_payload,'$.request.days'),JSON_VALUE(quote_payload,'$.request.volume') FROM service_operations WHERE id={op}")=='17\t5'
+            assert sql(f"SELECT state FROM service_effects WHERE pay_row_id={custom}")=='consumed'
+            assert sql("SELECT ucount FROM server_info WHERE id=2")=='98'
+            assert sql('SELECT id,userid,wallet FROM users ORDER BY id')==old
+            assert sql('SELECT COUNT(*) FROM wallet_entries')=='3'
+            assert ok('adopt',pay=custom,expected=snap['sha256'])['replayed']
+            sql(f"UPDATE pays SET description='changed' WHERE id={custom}")
+            reject('adopt','checkout_original_command_changed',pay=custom,expected=snap['sha256'])
+            sql(f"UPDATE pays SET description='original-custom-name' WHERE id={custom}")
+            case('original_custom_prepaid_claim_adopted_no_second_money_or_capacity')
             sql("UPDATE users SET wallet=wallet+10 WHERE userid=9002")
             reject('open','cutover_snapshot_changed',expected=snap['sha256'])
             reject('open','cutover_open_reconciliation',expected=ok('snapshot')['sha256'])

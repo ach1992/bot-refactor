@@ -17,6 +17,7 @@ import re
 from urllib.parse import unquote
 
 import test_access_state as owned
+from test_wallet_first_cutover import LEGACY_RESERVE_PHP
 
 ROOT=Path(__file__).resolve().parents[1]
 DB=owned.NAMES[1]
@@ -124,6 +125,7 @@ if (isset($x['menu_state'])) {
     $GLOBALS['from_id']=1001;$GLOBALS['userInfo']=['isAdmin'=>0,'is_agent'=>0,'freetrial'=>'used'];
 }
 $GLOBALS['paymentKeys']=['bankAccount'=>'fixture-bank','holderName'=>'fixture-holder'];
+''' + LEGACY_RESERVE_PHP + r'''
 try {
     $presentation=['bot_state'=>[],'bot_url'=>'https://bot.fixture.invalid','bot_username'=>'fixture_bot'];
     if ($x['op']==='step') $r=achbotServiceExecuteStep($db,$x['id'],$presentation);
@@ -158,6 +160,15 @@ try {
         $r=achbotDeliveryPartRedriveToken($d,$p,$x['actor']);
     }
     elseif ($x['op']==='maintain_delivery') $r=achbotDeliveryMaintainPending($db,$x['limit'],10.0);
+    elseif (in_array($x['op'],['cutover_snapshot','cutover_open','cutover_adopt','legacy_reserve'],true)) {
+        require_once $argv[1].'/tools/wallet_first_cutover.php';
+        $r=match($x['op']) {
+            'cutover_snapshot'=>walletFirstCutoverSnapshot($db),
+            'cutover_open'=>walletFirstCutoverOpen($db,$x['expected']),
+            'cutover_adopt'=>walletFirstCutoverAdoptWalletBuy($db,$x['pay'],$x['expected']),
+            'legacy_reserve'=>fixtureLegacyReserve($db,$x['pay'])
+        };
+    }
     elseif ($x['op']==='checkout_pin') {
         achbotProviderPinPayment($db,$x['pay']);$r=true;
     }
@@ -397,7 +408,7 @@ def main():
         thread=threading.Thread(target=server.serve_forever,daemon=True);thread.start()
         base='http://127.0.0.1:'+str(server.server_port)
         try:
-            for m in ('001_marzban_panel_group_id.sql','003_payment_attempts.sql',
+            for m in ('001_marzban_panel_group_id.sql','003_payment_attempts.sql','004_automatic_renewal_attempts.sql',
                       '007_service_effects.sql','008_referral_awards.sql','011_provider_identity.sql','012_shared_provider_storage.sql',
                       '014_api_payment_evidence.sql','017_shared_plan_changes.sql','018_payment_delivery_intents.sql','020_payment_followup_intents.sql','022_gateway_review_archive.sql',
                       '023_scoped_payment_lock_indexes.sql','024_wallet_entries.sql',
@@ -463,10 +474,10 @@ def main():
                        (9,'9',1,3,0,6,'Fixture PG alias','vless',30,2,'normal',100,'description','',1,0,'fixture',NULL,'[1,2]');""")
             sql('UPDATE users SET wallet=50000 WHERE userid=9002')
             driver=work/'execution.php';driver.write_text(PHP)
-            def php(mode,op,**kw):
+            def php(mysqli_mode,op,**kw):
                 p=subprocess.run(['php','-n','-d','extension=mysqlnd','-d','extension=mysqli','-d','extension=curl','-d','extension=gd',
                     '-d','allow_url_fopen=0','-d','disable_functions=exec,shell_exec,system,passthru,popen,proc_open,mail',
-                    str(driver),str(ROOT),str(work/'mysql.sock'),DB,mode,json.dumps(dict(op=op,**kw))],
+                    str(driver),str(ROOT),str(work/'mysql.sock'),DB,mysqli_mode,json.dumps(dict(op=op,**kw))],
                     env=env,text=True,capture_output=True,timeout=25)
                 if kw.get('crash_after_part'):
                     assert p.returncode==29 and not p.stdout,(p.returncode,p.stdout,p.stderr)
@@ -530,6 +541,51 @@ def main():
             def native(order):
                 remark=sql(f"SELECT remark FROM orders_list WHERE id={order}")
                 return users[remark]
+            # Rehearse the original old-wallet transaction, then the exact
+            # opening, adoption and first Native CREATE in the SAME DB.
+            # Both claims are adopted before any new monetary movement.
+            sql((ROOT/'migrations/post-v9/034_wallet_owner_uniqueness.sql').read_text())
+            historical={}
+            for mode in ('strict','off'):
+                ref=mode+'-prepaid-custom'
+                sql(f"""INSERT INTO pays(hash_id,user_id,type,price,request_date,state,server_id,plan_id,day,volume,agent_count,description)
+                    VALUES ('{ref}',1001,'BUY_SUB',100,UNIX_TIMESTAMP(),'pending',2,7,17,5,1,'{ref}')""")
+                pid=int(sql(f"SELECT id FROM pays WHERE hash_id='{ref}'"))
+                assert php(mode,'legacy_reserve',pay=pid)
+                historical[mode]=pid
+            snap=php('strict','cutover_snapshot')
+            php('strict','cutover_open',expected=snap['sha256'])
+            before=finance();n=len(requests);ops={}
+            for mode,pid in historical.items():
+                r=php(mode,'cutover_adopt',pay=pid,expected=snap['sha256'])
+                oid=r['operation'];ops[mode]=oid
+                assert php(mode,'cutover_adopt',pay=pid,expected=snap['sha256'])['replayed']
+                assert finance()==before and len(requests)==n
+            for mode,pid in historical.items():
+                op=ops[mode];ref=mode+'-prepaid-custom';n=posts()
+                faults.append('lost_response')
+                step(mode,op,'pending','pg_vendor_unavailable')
+                assert posts()==n+1 and finance()==before
+                retry(op);step(mode,op,'applied')
+                assert posts()==n+1
+                sql(f"CREATE TRIGGER fixture_adopt_completion_fail BEFORE UPDATE ON pays FOR EACH ROW SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='fixture completion rollback'")
+                try:
+                    step(mode,op,'pending','provider_storage_unavailable')
+                    assert sql(f"SELECT state FROM pays WHERE id={pid}")=='processing_wallet'
+                    assert sql(f"SELECT COUNT(*) FROM payment_delivery_intents WHERE service_operation_id={op}")=='0'
+                    assert finance()==before and posts()==n+1
+                finally:sql('DROP TRIGGER fixture_adopt_completion_fail')
+                retry(op);step(mode,op,'completed')
+                assert sql(f"SELECT state FROM pays WHERE id={pid}")=='paid_with_wallet'
+                assert sql(f"SELECT CONCAT(stage,':',historical_pay_id,':',COALESCE(debit_entry_id,0)) FROM service_operations WHERE id={op}")==f'completed:{pid}:0'
+                assert php(mode,'checkout_wallet',hash=ref,mode='custom')['status']=='already_funded'
+                assert sql(f"SELECT COUNT(*) FROM orders_list WHERE remark='{ref}' AND userid=1001")== '1'
+                did=int(sql(f"SELECT id FROM payment_delivery_intents WHERE service_operation_id={op}"))
+                assert php(mode,'deliver',id=did)=='acknowledged'
+                for rid in sql(f"SELECT id FROM payment_followup_intents WHERE service_operation_id={op}").splitlines():
+                    assert php(mode,'followup',id=int(rid))=='acknowledged'
+                assert finance()==before and posts()==n+1
+                cases.append(mode+'_historical_prepaid_create_lost_response_completion_rollback_no_second_debit_or_capacity')
             for mode in ('strict','off'):
                 # Isolate each test mode's scheduler from previously deferred
                 # conflict fixtures; no terminal evidence is changed.
@@ -815,6 +871,36 @@ DELIMITER ;
                 step(mode,conflict,'pending','pg_service_edit_entitlement_conflict')
                 assert len(writes())==n and finance()==before
                 cases.append(mode+'_edit_external_drift_no_blind_overwrite')
+                # A legacy charged automatic cycle may have committed before
+                # the first Native mutation marker. Neither alias can buy a
+                # second renewal or edit over that original pending work.
+                buy=issue(mode,'legacy-auto-fence');fund(mode,buy)
+                step(mode,buy,'applied');step(mode,buy,'completed')
+                old_order=int(sql(f"SELECT order_id FROM service_effects WHERE source_kind='service_operation' AND source_ref='{buy}'"))
+                old_alias=php(mode,'alias',order=old_order)
+                sql(f"UPDATE orders_list SET fileid=7,notif=1,autoRenew='on' WHERE id IN ({old_order},{old_alias})")
+                native(old_order)['used_traffic']=native(old_order)['data_limit']
+                expiry=sql(f"SELECT expire_date FROM orders_list WHERE id={old_alias}")
+                old_ref=mode+'-old-cycle'
+                sql(f"""INSERT INTO pays(hash_id,user_id,type,price,request_date,state,server_id,plan_id,order_id)
+                    VALUES ('{old_ref}',9002,'RENEW_ACCOUNT',100,UNIX_TIMESTAMP(),'processing_wallet',2,7,{old_alias});
+                    INSERT INTO automatic_renewal_attempts(order_id,cycle_expire,pay_row_id,user_id,plan_id,server_id,account_remark,price_toman,duration_days,volume_gb,new_expire,stage)
+                    SELECT {old_alias},{expiry},p.id,9002,7,2,o.remark,100,30,2,{expiry}+2592000,'reserved'
+                    FROM pays p JOIN orders_list o ON o.id={old_alias} WHERE p.hash_id='{old_ref}'""")
+                before=finance();n=len(requests)
+                for oid,uid in ((old_order,1001),(old_alias,9002)):
+                    assert php(mode,'auto',order=oid,owner=uid)=={'status':'deferred','reason':'service_historical_auto_pending'}
+                sid,plan,remark,uuid=sql(f"SELECT server_id,fileid,remark,uuid FROM orders_list WHERE id={old_order}").split('\t')
+                assert php(mode,'issue',ref=mode+'-legacy-auto-edit',quote=dict(kind='ADD_TIME',variant='managed',price=100,
+                    server_id=int(sid),plan_id=int(plan),order_id=old_order,quantity=1,days=1,volume=0,remark=remark,uuid=uuid),
+                    expect_error='service_historical_auto_pending')
+                assert finance()==before and len(requests)==n
+                # A terminal original cycle is not a second charge even
+                # if its local scheduling flag still refers to the old date.
+                sql(f"UPDATE automatic_renewal_attempts SET stage='done' WHERE order_id={old_alias}; UPDATE pays SET state='paid_with_wallet' WHERE hash_id='{old_ref}'")
+                assert php(mode,'auto',order=old_alias,owner=9002)=={'status':'deferred','reason':'service_historical_auto_pending'}
+                assert finance()==before and len(requests)==n
+                cases.append(mode+'_historical_auto_alias_pending_and_terminal_cycle_fenced')
                 # Scheduled renewal uses the exact same operation/physical
                 # journal, without creating a synthetic payment or attempt.
                 buy=issue(mode,'auto-source');fund(mode,buy)
