@@ -464,6 +464,8 @@ function achbotDirectGiftClaim(mysqli $db,array $source,int $primary,
     $expected=$payload['order'];
     if (!is_int($expected['id']??null) || $expected['id']<=0)
         throw new RuntimeException('direct_gift_order_missing');
+    require_once __DIR__.'/../Finance/OperationalReports.php';
+    achbotOperationalReportRequireReady($db);
     achbotDirectGiftEngines($db);
     $actorPks=achbotDirectGiftActorPks($db,$source['actor_id'],$primary);
     if (!$db->begin_transaction()) throw new RuntimeException('direct_gift_begin_failed');
@@ -658,6 +660,8 @@ function achbotDirectGiftComplete(mysqli $db,array $claim,object $result): void 
         $marker['state']='completed';
         achbotDirectGiftWrite($db,$claim['type'],$record,$claim['id']);
         achbotDirectGiftWrite($db,$claim['marker_type'],$marker,$markerId);
+        achbotGiftStageReportLocked($db,'direct:'.$claim['id'],$order['remark'],$claim['days'],
+            $claim['volume_mb'],$claim['references'],(int)$record['actor_id']);
         if (!$db->commit()) throw new RuntimeException('direct_gift_finish_commit_unknown');
     } catch (Throwable $e) {
         try {$db->rollback();} catch (Throwable $ignored) {}

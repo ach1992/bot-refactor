@@ -16,6 +16,7 @@ from pathlib import Path
 import subprocess
 
 import provider_storage_fixture as storage
+import operational_report_fixture as reports
 import test_access_state as owned
 import test_post_v9_direct_gift as direct
 import test_post_v9_gift_physical as physical
@@ -73,6 +74,7 @@ def migration_setup(work,env):
                  '003_payment_attempts.sql','007_service_effects.sql','011_provider_identity.sql','012_shared_provider_storage.sql',
                  '017_shared_plan_changes.sql','014_api_payment_evidence.sql','022_gateway_review_archive.sql','023_scoped_payment_lock_indexes.sql','024_wallet_entries.sql','025_wallet_receipt_credit.sql','026_service_operations.sql','035_service_resolution.sql']:
         direct.q(work,env,(ROOT/'migrations/post-v9'/name).read_text())
+    reports.install(lambda statement: direct.q(work,env,statement),has_service_schema=True)
 
 
 def wizard(work,env,stage,days,volume,update=500,message=50):
@@ -126,6 +128,7 @@ def main():
             negative+=['unlimited_time','unlimited_volume']
             cases += [(name,2,1024,0) for name in negative]
             for name,days,volume,local_delta in cases:
+                direct.q(work,env,'DELETE FROM payment_followup_attempts; DELETE FROM payment_followup_intents')
                 direct.reset(work,env)
                 local_expire=direct.OLD_EXPIRY+local_delta
                 direct.q(work,env,'UPDATE orders_list SET expire_date='+str(local_expire)+',notif=1 WHERE id=91')

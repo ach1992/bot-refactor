@@ -15,12 +15,13 @@ function achbotFollowupSchemaReady(mysqli $db): bool {
             strlen(achbotPaymentEvidenceKey())!==32) return false;
         $tables=[
             'payment_followup_intents'=>[
-                'columns'=>'id,pay_row_id,service_operation_id,wallet_entry_id,intent_key,stage,kind,role,recipient,'.
+                'columns'=>'id,pay_row_id,service_operation_id,wallet_entry_id,operational_ref,intent_key,stage,kind,role,recipient,'.
                     'message_id,pay_fingerprint,sealed_payload,payload_sha256,state,attempt_count,dispatch_token,'.
                     'dispatched_at,acknowledged_at,last_result,created_at,updated_at,next_attempt_at',
                 'unique'=>['uq_followup_pay_key'=>['pay_row_id','intent_key'],
                     'uq_followup_service_key'=>['service_operation_id','intent_key'],
-                    'uq_followup_wallet_key'=>['wallet_entry_id','intent_key']]],
+                    'uq_followup_wallet_key'=>['wallet_entry_id','intent_key'],
+                    'uq_followup_operational_key'=>['operational_ref','intent_key']]],
             'payment_followup_attempts'=>[
                 'columns'=>'id,intent_id,attempt_no,dispatch_token,actor_userid,claim_state,result,'.
                     'telegram_error_code,retry_after_seconds,started_at,finished_at',
@@ -55,7 +56,8 @@ function achbotFollowupSchemaReady(mysqli $db): bool {
     } catch(Throwable $error) {return false;}
 }
 function achbotFollowupJournaled(array $r): bool {
-    return (int)($r['wallet_entry_id']??0)>0 || (int)($r['service_operation_id']??0)>0 ||
+    return (is_string($r['operational_ref']??null) &&
+        preg_match('/^operational_report(?:_p[1-9][0-9]*)?$/D',(string)($r['stage']??''))===1) || (int)($r['wallet_entry_id']??0)>0 || (int)($r['service_operation_id']??0)>0 ||
         (in_array($r['stage']??null,['wallet_credit','manual_reject'],true) && (int)($r['pay_row_id']??0)>0);
 }
 function achbotFollowupPurpose(int $payId,string $stage,string $key): string {
@@ -100,10 +102,16 @@ function achbotFollowupInsertLocked(mysqli $db,array $pay,string $stage,string $
 /** Existing 020 storage for an actual payment, actual service, or both.
  * The historical pay_fingerprint column carries the source digest for v3/v4. */
 function achbotFollowupStoreLocked(mysqli $db,?int $payId,?int $serviceId,string $stage,string $role,
-    string $kind,string $recipient,?int $messageId,string $fingerprint,array $content,?int $walletId=null): void {
+    string $kind,string $recipient,?int $messageId,string $fingerprint,array $content,?int $walletId=null,?array $event=null): void {
+    $ref=$event['reference']??null;
     $tx=$db->query('SELECT @@in_transaction AS tx');
     if (!$tx || (int)($tx->fetch_assoc()['tx']??0)!==1 ||
-        ($walletId===null && $payId===null && $serviceId===null) ||
+        ($ref===null && $walletId===null && $payId===null && $serviceId===null) ||
+        ($event!==null && (!achbotFollowupOperationalEventValid($event) ||
+            $walletId!==null || $payId!==null || $serviceId!==null ||
+            !preg_match('/^operational_report(?:_p[1-9][0-9]*)?$/D',$stage) ||
+            $kind!=='send' || !hash_equals(achbotFollowupOperationalFingerprint($event),$fingerprint))) ||
+        ($event===null && str_starts_with($stage,'operational_report')) ||
         ($walletId!==null && ($walletId<=0 || $payId!==null || $serviceId!==null || $stage!=='wallet_movement')) ||
         ($stage==='wallet_movement' && $walletId===null) ||
         ($stage==='wallet_credit' && ($payId===null || $serviceId!==null || $walletId!==null)) ||
@@ -117,45 +125,47 @@ function achbotFollowupStoreLocked(mysqli $db,?int $payId,?int $serviceId,string
         (!is_null($content['keys']??null) && !is_string($content['keys']??null)))
         throw new RuntimeException('followup_source_packet_invalid');
     $key=achbotFollowupIntentKey($stage,$role,$kind,$recipient,$messageId);
-    $body=['v'=>$walletId!==null?5:($stage==='wallet_credit'?4:($payId===null?3:($serviceId===null?1:2))),'pay_id'=>$payId,'stage'=>$stage,'role'=>$role,
+    $body=['v'=>$event!==null?6:($walletId!==null?5:($stage==='wallet_credit'?4:($payId===null?3:($serviceId===null?1:2)))),'pay_id'=>$payId,'stage'=>$stage,'role'=>$role,
            'kind'=>$kind,'recipient'=>$recipient,'message_id'=>$messageId,
            'pay_fingerprint'=>$fingerprint,'content'=>$content];
     if ($serviceId!==null) $body['service_operation_id']=$serviceId;
     if ($walletId!==null) $body['wallet_entry_id']=$walletId;
-    $purpose=$walletId!==null?achbotFollowupWalletPurpose($walletId,$stage,$key):
+    if ($event!==null) $body['operational_event']=$event;
+    $purpose=$event!==null?achbotFollowupOperationalPurpose($ref,$stage,$key):
+        ($walletId!==null?achbotFollowupWalletPurpose($walletId,$stage,$key):
         ($payId===null?achbotFollowupServicePurpose($serviceId,$stage,$key):
-        achbotFollowupPurpose($payId,$stage,$key));
+        achbotFollowupPurpose($payId,$stage,$key)));
     $sealed=achbotPaymentEvidenceProtect($purpose,$body);
     $sha=hash('sha256',$sealed);
-    if ($walletId!==null) {
-        $q=$db->prepare("INSERT INTO payment_followup_intents
-            (intent_key,stage,kind,role,recipient,message_id,pay_fingerprint,sealed_payload,payload_sha256,state,wallet_entry_id,next_attempt_at)
-            VALUES (?,?,?,?,?,?,?,?,?,'pending',?,NOW(6))");
-        if (!$q) throw new RuntimeException('followup_insert_prepare');
-        $q->bind_param('sssssisssi',$key,$stage,$kind,$role,$recipient,$messageId,$fingerprint,$sealed,$sha,$walletId);
-    } elseif ($serviceId===null) {
-        $q=$db->prepare("INSERT INTO payment_followup_intents
-            (pay_row_id,intent_key,stage,kind,role,recipient,message_id,
-             pay_fingerprint,sealed_payload,payload_sha256,state)
-            VALUES (?,?,?,?,?,?,?,?,?,?,'pending')");
-        if (!$q) throw new RuntimeException('followup_insert_prepare');
-        $q->bind_param('isssssisss',$payId,$key,$stage,$kind,$role,$recipient,
-            $messageId,$fingerprint,$sealed,$sha);
-    } else {
-        $q=$db->prepare("INSERT INTO payment_followup_intents
-            (pay_row_id,intent_key,stage,kind,role,recipient,message_id,
-             pay_fingerprint,sealed_payload,payload_sha256,state,service_operation_id)
-            VALUES (?,?,?,?,?,?,?,?,?,?,'pending',?)");
-        if (!$q) throw new RuntimeException('followup_insert_prepare');
-        $q->bind_param('isssssisssi',$payId,$key,$stage,$kind,$role,$recipient,
-            $messageId,$fingerprint,$sealed,$sha,$serviceId);
-    }
+    // One insertion path for all original source types. Preserve the
+    // existing immediate wallet/operational retry schedule.
+    $immediate=$walletId!==null || $event!==null?1:0;
+    $q=$db->prepare("INSERT INTO payment_followup_intents
+        (pay_row_id,service_operation_id,wallet_entry_id,operational_ref,intent_key,stage,kind,role,
+         recipient,message_id,pay_fingerprint,sealed_payload,payload_sha256,state,next_attempt_at)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,'pending',IF(?=1,NOW(6),NULL))");
+    if (!$q) throw new RuntimeException('followup_insert_prepare');
+    $q->bind_param('iiissssssisssi',$payId,$serviceId,$walletId,$ref,$key,$stage,$kind,$role,
+        $recipient,$messageId,$fingerprint,$sealed,$sha,$immediate);
     if (!$q->execute() || $q->affected_rows!==1)
         throw new RuntimeException('followup_insert_unconfirmed');
     $q->close();
 }
 function achbotFollowupServicePurpose(int $id,string $stage,string $key): string {
     return 'service-followup:v3:'.$id.':'.$stage.':'.$key;
+}
+function achbotFollowupOperationalEventValid(array $event): bool {
+    return array_keys($event)===['reference','actor','capability','user'] &&
+        is_string($event['reference']) && strlen($event['reference'])<=128 && preg_match('/^[a-z][a-z0-9_-]*:[A-Za-z0-9:_-]+$/D',$event['reference'])===1 &&
+        is_int($event['actor']) && $event['actor']>=0 &&
+        in_array($event['capability'],['orders','operations'],true) &&
+        is_int($event['user']) && $event['user']>=0;
+}
+function achbotFollowupOperationalFingerprint(array $event): string {
+    return hash('sha256',json_encode($event,JSON_THROW_ON_ERROR));
+}
+function achbotFollowupOperationalPurpose(string $ref,string $stage,string $key): string {
+    return 'operational-followup:v6:'.$ref.':'.$stage.':'.$key;
 }
 function achbotFollowupWalletPurpose(int $id,string $stage,string $key): string {
     return 'wallet-followup:v5:'.$id.':'.$stage.':'.$key;
@@ -182,14 +192,17 @@ function achbotFollowupRecipientAllowed(mysqli $db,array $pay,array $r): bool {
     return false;
 }
 /** Shared sealed original packet verification for historical and service sources. */
-function achbotFollowupDecodePacket(?array $pay,array $r,?string $sourceFingerprint=null): ?array {
+function achbotFollowupDecodePacket(?array $pay,array $r,?string $sourceFingerprint=null,?array &$event=null): ?array {
     $serviceId=isset($r['service_operation_id'])?(int)$r['service_operation_id']:null;
     $walletId=isset($r['wallet_entry_id'])?(int)$r['wallet_entry_id']:null;
+    $ref=$r['operational_ref']??null;
     $payId=$pay===null?null:(int)$pay['id'];
     $fingerprint=$sourceFingerprint??($pay===null?null:achbotPaymentEvidencePayFingerprint($pay));
-    if (($payId===null?($r['pay_row_id']!==null || ($serviceId===null && $walletId===null)):
+    if (($payId===null?($r['pay_row_id']!==null || ($serviceId===null && $walletId===null && $ref===null)):
             $payId!==(int)$r['pay_row_id']) ||
         ($walletId!==null && ($payId!==null || $serviceId!==null || $r['stage']!=='wallet_movement')) ||
+        ($ref!==null && ($walletId!==null || $payId!==null || $serviceId!==null ||
+            !preg_match('/^operational_report(?:_p[1-9][0-9]*)?$/D',$r['stage']))) ||
         !is_string($fingerprint) ||
         !hash_equals((string)$r['pay_fingerprint'],$fingerprint) ||
         !hash_equals((string)$r['payload_sha256'],hash('sha256',(string)$r['sealed_payload'])) ||
@@ -197,11 +210,12 @@ function achbotFollowupDecodePacket(?array $pay,array $r,?string $sourceFingerpr
             (string)$r['stage'],(string)$r['role'],(string)$r['kind'],
             (string)$r['recipient'],$r['message_id']===null?null:(int)$r['message_id'])))
         return null;
-    $purpose=$walletId!==null?achbotFollowupWalletPurpose($walletId,(string)$r['stage'],(string)$r['intent_key']):
+    $purpose=$ref!==null?achbotFollowupOperationalPurpose($ref,(string)$r['stage'],(string)$r['intent_key']):
+        ($walletId!==null?achbotFollowupWalletPurpose($walletId,(string)$r['stage'],(string)$r['intent_key']):
         ($payId===null?achbotFollowupServicePurpose($serviceId,(string)$r['stage'],(string)$r['intent_key']):
-        achbotFollowupPurpose($payId,(string)$r['stage'],(string)$r['intent_key']));
+        achbotFollowupPurpose($payId,(string)$r['stage'],(string)$r['intent_key'])));
     $body=achbotPaymentEvidenceUnprotect($purpose,(string)$r['sealed_payload']);
-    $version=$walletId!==null?5:($r['stage']==='wallet_credit'?4:($payId===null?3:($serviceId===null?1:2)));
+    $version=$ref!==null?6:($walletId!==null?5:($r['stage']==='wallet_credit'?4:($payId===null?3:($serviceId===null?1:2))));
     if (!is_array($body) || ($body['v']??null)!==$version ||
         ($walletId!==null && ($body['wallet_entry_id']??null)!==$walletId) ||
         ($serviceId!==null && ($body['service_operation_id']??null)!==$serviceId)) return null;
@@ -211,6 +225,12 @@ function achbotFollowupDecodePacket(?array $pay,array $r,?string $sourceFingerpr
        'message_id'=>$r['message_id']===null?null:(int)$r['message_id'],
        'pay_fingerprint'=>(string)$r['pay_fingerprint']] as $key=>$value)
         if (($body[$key]??null)!==$value) return null;
+    if ($ref!==null) {
+        $event=$body['operational_event']??null;
+        if (!is_array($event) || !achbotFollowupOperationalEventValid($event) ||
+            $event['reference']!==$ref ||
+            !hash_equals(achbotFollowupOperationalFingerprint($event),$fingerprint)) return null;
+    }
     $packet=$body['content']??null;
     return is_array($packet) && is_string($packet['text']??null) &&
         ($packet['text']??'')!=='' &&
@@ -264,7 +284,8 @@ function achbotFollowupDispatchOne(mysqli $db,int $id,int $actor=0,?string $conf
         $payId=(int)($owner['pay_row_id']??0);
         $serviceId=isset($owner['service_operation_id'])?(int)$owner['service_operation_id']:null;
         $walletId=isset($owner['wallet_entry_id'])?(int)$owner['wallet_entry_id']:null;
-        if ($payId<=0 && ($serviceId===null || $serviceId<=0) && ($walletId===null || $walletId<=0)) return 'unavailable';
+        $ref=$owner['operational_ref']??null;
+        if ($payId<=0 && ($serviceId===null || $serviceId<=0) && ($walletId===null || $walletId<=0) && $ref===null) return 'unavailable';
         if (!achbotFollowupJournaled($owner)) return 'unavailable';
         require_once __DIR__.'/FollowupAttempts.php';
         achbotPaymentEvidenceRequireAutocommit($db);
@@ -280,9 +301,12 @@ function achbotFollowupDispatchOne(mysqli $db,int $id,int $actor=0,?string $conf
         if ($actor>0 && $lease!=='owned') return 'busy';
     } else {
         require_once __DIR__.'/ServiceReports.php';
+        require_once __DIR__.'/OperationalReports.php';
         require_once __DIR__.'/../Services/Execution.php';
         try {
-            if ($walletId!==null) {
+            if ($ref!==null) {
+                $name=achbotOperationalReportLock($db,$ref);
+            } elseif ($walletId!==null) {
                 $dbName=achbotProviderRow($db,'SELECT DATABASE() AS db')['db'];
                 $name='achbot-wallet-report-'.substr(hash('sha256',$dbName.':'.$walletId),0,40);
             } else $name=achbotServiceExecutionLock($db,$serviceId);
@@ -316,7 +340,7 @@ function achbotFollowupDispatchOne(mysqli $db,int $id,int $actor=0,?string $conf
         } elseif ($walletId!==null) {
             require_once __DIR__.'/WalletReports.php';
             $wallet=achbotWalletReportEntryLocked($db,$walletId);
-        } else {
+        } elseif ($ref===null) {
             $loc=achbotProviderRow($db,'SELECT userid FROM service_operations WHERE id=?','i',[$serviceId]);
             if (!$loc) throw new RuntimeException('followup_service_missing');
             [$op,$quote]=achbotServiceReadLocked($db,(int)$loc['userid'],$serviceId);
@@ -325,7 +349,8 @@ function achbotFollowupDispatchOne(mysqli $db,int $id,int $actor=0,?string $conf
         $q->bind_param('i',$id);$q->execute();$r=$q->get_result()->fetch_assoc();$q->close();
         if (!$r || $r['stage']!==$owner['stage'] || !achbotFollowupJournaled($r) || (int)$r['pay_row_id']!==$payId ||
             (isset($r['service_operation_id'])?(int)$r['service_operation_id']:null)!==$serviceId ||
-            (isset($r['wallet_entry_id'])?(int)$r['wallet_entry_id']:null)!==$walletId)
+            (isset($r['wallet_entry_id'])?(int)$r['wallet_entry_id']:null)!==$walletId ||
+            ($r['operational_ref']??null)!==$ref)
             throw new RuntimeException('followup_owner_changed');
         if ($r['state']==='dispatching') {
             $state=achbotFollowupAttemptFinishLocked($db,$id,(string)$r['dispatch_token'],
@@ -338,9 +363,10 @@ function achbotFollowupDispatchOne(mysqli $db,int $id,int $actor=0,?string $conf
             $state=$actor===0?(string)$r['state']:'stale';
             $db->rollback();$opened=false;return $state;
         }
-        $packet=$walletId!==null?achbotWalletReportValidateLocked($db,$wallet,$r):
+        $packet=$ref!==null?achbotOperationalReportValidateLocked($db,$r):
+            ($walletId!==null?achbotWalletReportValidateLocked($db,$wallet,$r):
             ($payId>0?achbotFollowupValidateLocked($db,$pay,$r):
-            achbotServiceReportValidateLocked($db,$op,$quote,$r));
+            achbotServiceReportValidateLocked($db,$op,$quote,$r)));
         if (!$packet) throw new RuntimeException('followup_identity_invalid');
         $claim=achbotFollowupAttemptClaimLocked($db,$r,$actor,$confirmation);
         if ($claim['status']!=='claimed') {
@@ -356,7 +382,7 @@ function achbotFollowupDispatchOne(mysqli $db,int $id,int $actor=0,?string $conf
         {
             $reason=$error->getMessage();
             achbotDiagnosticEvent('achbot.delivery.followup_prepare_failed',[
-                'followup_id'=>$id,'pay_id'=>$payId,'service_operation_id'=>$serviceId,'wallet_entry_id'=>$walletId,
+                'followup_id'=>$id,'pay_id'=>$payId,'service_operation_id'=>$serviceId,'wallet_entry_id'=>$walletId,'operational_ref'=>$ref,
                 'reason'=>preg_match('/\A(?:followup|service|payment_credit|wallet|provider)_[a-z0-9_]{1,80}\z/D',$reason)
                     ?$reason:'followup_storage_unavailable',
                 'class'=>get_class($error)],'warning');
@@ -366,7 +392,7 @@ function achbotFollowupDispatchOne(mysqli $db,int $id,int $actor=0,?string $conf
     $status='unknown';$outcome=['result'=>'unknown','code'=>null,'retry_after'=>null];
     $priorContext=$GLOBALS['achbotTelegramDiagnosticContext']??null;
     $GLOBALS['achbotTelegramDiagnosticContext']=['followup_id'=>$id,'pay_id'=>$payId,
-            'service_operation_id'=>$serviceId,'wallet_entry_id'=>$walletId,'delivery_attempt'=>(int)$r['attempt_count']+1,
+            'service_operation_id'=>$serviceId,'wallet_entry_id'=>$walletId,'operational_ref'=>$ref,'delivery_attempt'=>(int)$r['attempt_count']+1,
             'delivery_actor'=>$actor];
     try {
         if ($serviceLock!==null) {
@@ -401,7 +427,7 @@ function achbotFollowupDispatchOne(mysqli $db,int $id,int $actor=0,?string $conf
         $status=achbotFollowupAttemptFinishLocked($db,$id,$token,$outcome);
         if (!$db->commit()) throw new RuntimeException('followup_ack_commit_unknown');
         achbotDiagnosticEvent('achbot.delivery.followup_result',[
-            'followup_id'=>$id,'pay_id'=>$payId,'service_operation_id'=>$serviceId,'wallet_entry_id'=>$walletId,'actor_id'=>$actor,
+            'followup_id'=>$id,'pay_id'=>$payId,'service_operation_id'=>$serviceId,'wallet_entry_id'=>$walletId,'operational_ref'=>$ref,'actor_id'=>$actor,
             'request_attempt'=>(int)$r['attempt_count']+1,'state'=>$status,
             'telegram_error_code'=>$outcome['code'],'retry_after'=>$outcome['retry_after'],
             'result'=>$outcome['result']],$status==='acknowledged'?'info':'warning');
@@ -445,7 +471,7 @@ function achbotFollowupMaintainOriginalPending(mysqli $db,int $limit,float $budg
     achbotServiceOperationsPresent($db);
     $deadline=hrtime(true)/1000000000+$budgetSeconds;
     $s=achbotProviderStatement($db,"SELECT f.id FROM payment_followup_intents f
-        WHERE (f.service_operation_id IS NOT NULL OR f.wallet_entry_id IS NOT NULL OR f.stage IN ('wallet_credit','manual_reject'))
+        WHERE (f.service_operation_id IS NOT NULL OR f.wallet_entry_id IS NOT NULL OR f.operational_ref IS NOT NULL OR f.stage IN ('wallet_credit','manual_reject'))
           AND f.state IN ('pending','dispatching')
           AND ((f.next_attempt_at IS NULL AND f.updated_at<=DATE_SUB(NOW(),INTERVAL 2 MINUTE))
                OR f.next_attempt_at<=NOW(6))
@@ -497,7 +523,7 @@ function achbotFollowupReportChannel(string $raw,string $stage='',?int $payId=nu
  * A caller explicitly supplies the existing channel policy (empty = none). */
 function achbotFollowupStageAdminReportLocked(mysqli $db,?int $payId,?int $serviceId,
     string $stage,string $fingerprint,int $owner,string $channel,array $content,int $actor=0,?int $walletId=null,
-    ?string $actorKeys=null,array $pages=[]): void {
+    ?string $actorKeys=null,array $pages=[],?array $event=null,?string $staffKeys=null): void {
     if ($owner<=0) throw new RuntimeException('followup_report_owner_missing');
     $complete=false;$staff=achbotAdminRecipientCandidates($db,$owner,$complete);
     if (!$complete) error_log('achbot_report_optional_staff_deferred stage='.$stage);
@@ -514,18 +540,19 @@ function achbotFollowupStageAdminReportLocked(mysqli $db,?int $payId,?int $servi
     if ($actor>0 && $actor!==$owner) $targets[(string)$actor]='report_actor';
     $channel=achbotFollowupReportChannel($channel,$stage,$payId,$serviceId,$walletId);
     if ($channel!=='' && !isset($targets[$channel])) $targets[$channel]='service_channel';
-    if ($pages!==[] && ($serviceId===null || $payId!==null || $walletId!==null ||
+    if ($pages!==[] && $event===null && ($serviceId===null || $payId!==null || $walletId!==null ||
         !in_array($stage,['service_completed','service_resolution'],true)))
         throw new RuntimeException('followup_report_pages_source_invalid');
     foreach ($targets as $recipient=>$role) {
         $role=$role===true?'service_admin':$role;
         $packet=$content;
+        if ($staffKeys!==null && $role!=='service_channel') $packet['keys']=$staffKeys;
         if ($actorKeys!==null && (string)$recipient===(string)$actor) $packet['keys']=$actorKeys;
         achbotFollowupStoreLocked($db,$payId,$serviceId,$stage,$role,'send',
-            (string)$recipient,null,$fingerprint,$packet,$walletId);
+            (string)$recipient,null,$fingerprint,$packet,$walletId,$event);
         foreach (array_values($pages) as $i=>$page) {
             achbotFollowupStoreLocked($db,null,$serviceId,$stage.'_p'.($i+1),$role,'send',
-                (string)$recipient,null,$fingerprint,['text'=>$page,'keys'=>null,'mode'=>$content['mode']]);
+                (string)$recipient,null,$fingerprint,['text'=>$page,'keys'=>null,'mode'=>$content['mode']],null,$event);
         }
     }
 }

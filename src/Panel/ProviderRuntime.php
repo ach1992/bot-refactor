@@ -1001,6 +1001,11 @@ function achbotReassignLogicalServer(mysqli $db,int $orderId,int $targetId,int $
                 throw new RuntimeException('physical_transfer_reference_group_conflict');
         }
         $count=achbotPhysicalUpdateOrders($db,$all,$targetId,0,true);
+        // The random event ID identifies this actual committed reassignment.
+        // A later move back to the same server is a different real event.
+        $reportRef='server:'.$orderId.':'.bin2hex(random_bytes(16));
+        achbotPhysicalStageServiceChangeLocked($db,'server',$reportRef,$order+[
+            'title'=>$target['title'],'source_id'=>$old,'target_id'=>$targetId],$actor,true);
         $commitAttempted=true;
         if (!$db->commit()) throw new RuntimeException('physical_transfer_commit_unknown');
         $started=false;
@@ -1009,7 +1014,7 @@ function achbotReassignLogicalServer(mysqli $db,int $orderId,int $targetId,int $
         achbotPhysicalHideRetiredReceiptActions($db,$all);
         return ['id'=>$orderId,'userid'=>$order['userid'],'remark'=>$order['remark'],
             'title'=>$target['title'],'source_id'=>$old,'target_id'=>$targetId,
-            'provider'=>achbotProviderType($db,$targetId),'shared_count'=>$count];
+            'provider'=>achbotProviderType($db,$targetId),'shared_count'=>$count,'report_ref'=>$reportRef];
     } catch (Throwable $error) {
         if ($started) {try{$db->rollback();}catch(Throwable $ignored){}}
         $reason=(string)$error->getMessage();

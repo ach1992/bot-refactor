@@ -543,5 +543,30 @@
   "subscription.order_management.show_order_management_panel.alert.7a6ebab798": {
     "after": "⚠️ هیچ سرور دیگری متصل به همین پنل پاسارگارد وجود ندارد.",
     "before": "⚠️ هیچ سرور دیگری با همان پنل مرزبان وجود ندارد."
+  },
+  "gifts.completed_report": {
+    "before": {
+      "text": "🎁 هدیهٔ اشتراک اعمال شد\n🔖 شناسه عملیات: <code>{reference}</code>\n👤 اشتراک: <code>{remark}</code>\n📅 زمان هدیه: {days} روز\n📦 حجم هدیه: {volume_mb} مگابایت\n👥 ثبت‌های مرتبط: {reference_count}\n✉️ کاربران مرتبط: {recipient_count}\n⚠️ پیام‌های بدون تأیید ارسال: {notice_unconfirmed_count}",
+      "parameters": [
+        "reference",
+        "remark",
+        "days",
+        "volume_mb",
+        "reference_count",
+        "recipient_count",
+        "notice_unconfirmed_count"
+      ]
+    },
+    "after": {
+      "text": "🎁 هدیهٔ اشتراک اعمال شد\n🔖 شناسه عملیات: <code>{reference}</code>\n👤 اشتراک: <code>{remark}</code>\n📅 زمان هدیه: {days} روز\n📦 حجم هدیه: {volume_mb} مگابایت\n👥 ثبت‌های مرتبط: {reference_count}\n✉️ کاربران مرتبط: {recipient_count}",
+      "parameters": [
+        "reference",
+        "remark",
+        "days",
+        "volume_mb",
+        "reference_count",
+        "recipient_count"
+      ]
+    }
   }
 }

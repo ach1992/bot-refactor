@@ -14,6 +14,7 @@ import test_access_state as owned
 import test_v6_native as native
 import test_v8_native as purchase
 import provider_storage_fixture as storage
+import operational_report_fixture as report_fixture
 
 ROOT=Path(__file__).resolve().parents[1]
 DB=purchase.SIDE[1]
@@ -26,7 +27,7 @@ $root=$argv[1];$spec=json_decode($argv[4],true,512,JSON_THROW_ON_ERROR);
 $connection=new mysqli('localhost','root','',$argv[3],0,$argv[2]);
 $connection->set_charset('utf8mb4');
 $actor=(int)($spec['actor']??1001);
-$from_id=$actor;$admin=9001;$chat_id=$actor;$message_id=92;
+$from_id=$actor;$admin=9001;$telegramWebhookSecret='FixtureNonpaidReportSecret2026';$chat_id=$actor;$message_id=92;
 $data=(string)($spec['data']??'freeTrial8_normal');
 $text=(string)($spec['text']??'');
 $updateId=(int)($spec['update_id']??987650);
@@ -77,6 +78,7 @@ function sendMessage($body=null,$keys=null,$format=null,$to=null){
 }
 function sendQrFromLink(...$args) {
     $GLOBALS['events'][]=['name'=>'DELIVER','uid'=>$args[4]??null];
+    if (($GLOBALS['spec']['notice']??'')==='interrupt') exit(0);
     if (($GLOBALS['spec']['notice']??'')==='throw')
         throw new RuntimeException('lost_qr_ack');
     if (($GLOBALS['spec']['notice']??'')==='false') return false;
@@ -141,6 +143,9 @@ if (($spec['route']??'trial')==='trial') {
         'plan_copy'=>achbotMessage('renewal.extensions.message.143c7f81f1'),
         'purchase_report'=>achbotMessages('legacy_messages')['sent_config_to_user'],
         'pasarguard_base'=>$first];
+} elseif ($spec['route']==='report_recovery') {
+    require_once $root.'/src/Finance/OperationalReports.php';
+    achbotOperationalReportDispatch($connection,$spec['reference']);
 } else {
     require $root.'/src/Purchase/EntryAndBulk.php';
 }
@@ -253,6 +258,7 @@ def check():
         for migration in ('011_provider_identity.sql','012_shared_provider_storage.sql'):
             sql(work,env,(ROOT/'migrations/post-v9'/migration).read_text())
         sql(work,env,'ALTER TABLE service_effects'+(ROOT/'migrations/post-v9/035_service_resolution.sql').read_text().split('ALTER TABLE service_effects',1)[1])
+        report_fixture.install(lambda statement: sql(work,env,statement))
         def configure_pg():
             sql(work,env,storage.connection(2,2,url))
             sql(work,env,"UPDATE server_plans SET provider_group_ids='[1,2]' WHERE server_id=2")
@@ -302,7 +308,7 @@ def check():
         cases.append('configured_single_style_and_source_stable_bulk_decimal_identifiers')
         cases.append('pasarguard_forced_random_collision_source_bound_bulk_and_provider_limits')
         def reset():
-            sql(work,env,'DELETE FROM service_effects')
+            sql(work,env,'DELETE FROM payment_followup_attempts; DELETE FROM payment_followup_intents; DELETE FROM service_effects')
             purchase.init(work,env,'http://127.0.0.1:9')
             configure_pg()
             with PEER.lock:PEER.users.clear();PEER.sources.clear();PEER.trace.clear();PEER.faults.clear()
@@ -346,12 +352,31 @@ def check():
         assert not any(e['name']=='POST' for e in php(work,env,driver,route='bulk',
             actor=9001,text='2',force_cached_step=True))
         reports=[e for e in bulk if e['name']=='MESSAGE' and 'ساخت گروهی اکانت' in e['text']]
-        assert {e['to'] for e in reports}>={9001,'@fixtureReport'} and all(e['format']=='HTML' for e in reports)
+        assert {e['to'] for e in reports}>={9001,'@fixturereport'} and all(e['format']=='HTML' for e in reports)
         assert '2 از 2' in reports[0]['text'] and 'مدیر: 9001' in reports[0]['text'] and 'شناسه عملیات:' in reports[0]['text']
         for index,post in enumerate([e for e in bulk if e['name']=='POST'],1):
             assert (post['remark'] in reports[0]['text'] and
                 f'{index}.' in reports[0]['text']),reports
         cases.append('actual_admin_bulk_two_accounts_full_reservation_and_complete_owner_report')
+
+        reset()
+        sql(work,env,"UPDATE users SET step='createAccAmount7_30_2' WHERE userid=9001")
+        interrupted=php(work,env,driver,route='bulk',actor=9001,text='2',notice='interrupt')
+        names=[e['remark'] for e in interrupted if e['name']=='POST']
+        assert len(names)==2 and capacity()==8
+        assert len([e for e in interrupted if e['name']=='DELIVER'])==1
+        assert effects('admin_bulk')=='1\tlocal_recorded\t2\n2\tlocal_recorded\t0'
+        ref='bulk:9001:987650'
+        assert sql(work,env,f"SELECT COUNT(*) FROM payment_followup_intents WHERE operational_ref='{ref}' AND state='pending' AND attempt_count=0")=='4'
+        native_count=len(PEER.trace)
+        recovered=php(work,env,driver,route='report_recovery',actor=9001,reference=ref)
+        for target in (9001,'@fixturereport'):
+            packets=[e['text'] for e in recovered if e['name']=='MESSAGE' and e['to']==target]
+            assert len(packets)==2 and all(sum(name in packet for packet in packets)==1 for name in names),recovered
+        assert sql(work,env,f"SELECT COUNT(*) FROM payment_followup_intents WHERE operational_ref='{ref}' AND state='acknowledged'")=='4'
+        assert not php(work,env,driver,route='report_recovery',actor=9001,reference=ref)
+        assert len(PEER.trace)==native_count and capacity()==8
+        cases.append('actual_admin_bulk_process_exit_recovers_every_original_report_without_native_replay')
 
         reset()
         sql(work,env,"UPDATE users SET step='createAccAmount7_30_2' WHERE userid=9001")
@@ -363,7 +388,7 @@ def check():
             actor=9001,text='2',force_cached_step=True))
         partial_reports=[e for e in partial if e['name']=='MESSAGE'
                          and 'ساخت گروهی اکانت' in e.get('text','')]
-        assert {e['to'] for e in partial_reports}>={9001,'@fixtureReport'}
+        assert {e['to'] for e in partial_reports}>={9001,'@fixturereport'}
         assert all('1 از 2' in e['text'] and '2 از 2' not in e['text']
                    and 'شناسه عملیات:' in e['text'] for e in partial_reports),partial
         assert any(e['remark'] in partial_reports[0]['text'] for e in partial
@@ -375,7 +400,7 @@ def check():
         qr_unknown=php(work,env,driver,route='bulk',actor=9001,text='2',notice='false')
         assert len([e for e in qr_unknown if e['name']=='POST'])==2
         delivery=[e for e in qr_unknown if e['name']=='MESSAGE' and 'ساخت گروهی اکانت' in e['text']]
-        assert {e['to'] for e in delivery}>={9001,'@fixtureReport'} and all('2 از 2' in e['text'] and 'ارسال اطلاعات 2 اکانت' in e['text'] for e in delivery)
+        assert {e['to'] for e in delivery}>={9001,'@fixturereport'} and all('2 از 2' in e['text'] and 'ارسال اطلاعات 2 اکانت' in e['text'] for e in delivery)
         assert capacity()==8
         cases.append('admin_bulk_delivery_uncertain_reports_verified_creates_and_missing_telegram_ack')
 

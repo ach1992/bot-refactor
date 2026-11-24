@@ -36,6 +36,7 @@ assert "elseif($op==='transfer')" in DRIVER
 # The shared historical fixture driver still loads the retired adapter.
 # Remove only its retired adapter include; the PG controllers are unmodified.
 DRIVER = DRIVER.replace("require_once $root.'/src/Panel/Accounts.php';", "")
+DRIVER = DRIVER.replace("$botState=array_fill_keys(", "$telegramWebhookSecret='FixtureImportReportSecret2026';$botState=array_fill_keys(")
 
 
 
@@ -100,7 +101,7 @@ def run() -> list[str]:
                 assert all(line.startswith(('achbot_existing_subscription_import_deferred reason=',
                     'achbot_existing_subscription_lookup_deferred',
                     'achbot_customer_draft_creation_deferred',
-                    'achbot_shared_transfer_committed')) for line in (re.sub(r'^\[[^\]]+\] ', '', item) for item in result.stderr.splitlines())), (
+                    'achbot_shared_transfer_committed','[AChBot] {"event":"achbot.delivery.followup_result"')) for line in (re.sub(r'^\[[^\]]+\] ', '', item) for item in result.stderr.splitlines())), (
                         provider,op,'unexpected_logs',result.stderr[-1400:])
                 return output, result.stderr
 

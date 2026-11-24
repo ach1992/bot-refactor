@@ -301,15 +301,17 @@ if (preg_match('/^addToOrders([1-9][0-9]*)$/D',(string)$data,$match)) {
         achbotProviderAdoptExistingLocked($connection,$serverId,$remote,$proof,$finalUserId,$orderId,$actor,(int)$admin);
         $q=$connection->prepare("UPDATE users SET temp=NULL,step='none' WHERE id=? AND userid=?");
         $q->bind_param('ii',$id,$actor);$q->execute();$q->close();
-        try {if (!$connection->commit()) throw new RuntimeException('import_commit_unknown');}
-        catch (Throwable $error) {throw new RuntimeException('import_commit_unknown');}
-        $begun=false;$committed=true;
+        require_once __DIR__.'/../Finance/OperationalReports.php';
         $adminMessage=achbotMessageHtml('operational_reports.import_report',[
             'user'=>$finalUserId,'remark'=>$remark,'order'=>$orderId,'server'=>$serverId,'actor'=>$actor]);
         $keys=json_encode(['inline_keyboard'=>[[['text'=>achbotMessage('subscription.manual_accounts.detect_server_id_from_remark.button.48f23552b7'),'callback_data'=>'quickUserOrderDetails_'.$orderId]]]]);
-        achbotNotifyAdmins('sendMessage',['text'=>$adminMessage,'parse_mode'=>'HTML','reply_markup'=>$keys],[
-            'report_actor'=>$adminActor?$actor:0,'actor_capability'=>'operations',
-            'report_ref'=>'import:'.$orderId,'report_reply_markup'=>null]);
+        $reportRef='import:'.$orderId;
+        achbotOperationalReportStageLocked($connection,$reportRef,$finalUserId,
+            $adminActor?$actor:0,'operations',$adminMessage,$keys);
+        try {if (!$connection->commit()) throw new RuntimeException('import_commit_unknown');}
+        catch (Throwable $error) {throw new RuntimeException('import_commit_unknown');}
+        $begun=false;$committed=true;
+        achbotOperationalReportDispatch($connection,$reportRef);
         alert(\achbotMessage('subscription.manual_accounts.detect_server_id_from_remark.alert.ecf2df32d7'));
         $msg=\achbotMessage('subscription.manual_accounts.import_completed',[
             'remark'=>htmlspecialchars($remark,ENT_QUOTES|ENT_SUBSTITUTE,'UTF-8')]);

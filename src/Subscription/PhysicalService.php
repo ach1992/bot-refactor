@@ -421,6 +421,8 @@ function achbotPhysicalSelectPlan(mysqli $db,int $orderId,int $newPlanId,int $ac
     require_once __DIR__.'/../Admin/Access.php';
     $lease=null;$tx=false;$journalId=0;$dispatch=false;$commitAttempted=false;
     try {
+        require_once __DIR__.'/../Finance/OperationalReports.php';
+        achbotOperationalReportRequireReady($db);
         $s=$db->prepare('SELECT * FROM orders_list WHERE id=? AND status=1');
         $s->bind_param('i',$orderId);$s->execute();$initial=$s->get_result()->fetch_assoc();$s->close();
         if (!$initial) throw new RuntimeException('physical_order_unavailable');
@@ -606,6 +608,9 @@ function achbotPhysicalSelectPlan(mysqli $db,int $orderId,int $newPlanId,int $ac
         if (!$s->execute() || $s->affected_rows!==1)
             throw new RuntimeException('physical_plan_finalize_unknown');
         $s->close();
+        $reportRef='plan:'.$journalId;
+        achbotPhysicalStageServiceChangeLocked($db,'plan',$reportRef,
+            $freshOrder+['plan_id'=>$newPlanId,'plan_title'=>$freshPlan['title']],$actorId,$admin);
         $commitAttempted=true;
         if (!$db->commit()) throw new RuntimeException('physical_plan_finalize_commit_unknown');
         $tx=false;$commitAttempted=false;
@@ -613,7 +618,7 @@ function achbotPhysicalSelectPlan(mysqli $db,int $orderId,int $newPlanId,int $ac
             ' source_order_id='.$orderId.' active_refs='.$count);
         if (achbotPhysicalPlanChangesLocalPlan($fresh,$newPlanId))
             achbotPhysicalHideRetiredReceiptActions($db,$fresh);
-        return achbotPhysicalPlanResult(true,'committed',$count);
+        return achbotPhysicalPlanResult(true,'committed',$count)+['report_ref'=>$reportRef];
     } catch (Throwable $error) {
         if ($tx) {try{$db->rollback();}catch(Throwable $ignored){}}
         $reason=(string)$error->getMessage();
@@ -713,7 +718,7 @@ function achbotPhysicalRecoverySnapshotLocked(
     // is atomic with the verified GET-only Native plan finalization below.
     achbotPhysicalNoPendingPayments($db,$peers,
         achbotPhysicalPlanChangesLocalPlan($peers,$newPlan),$verifiedNative);
-    return ['order'=>$order,'peers'=>$peers,'pg'=>$pg,'mutation'=>$mutation];
+    return ['order'=>$order,'peers'=>$peers,'pg'=>$pg,'mutation'=>$mutation,'plan'=>$plan];
 }
 
 /**
@@ -861,6 +866,9 @@ function achbotPhysicalRecoverPlan(mysqli $db,int $journalId,int $actorId,
         if (!$s->execute() || $s->affected_rows!==1)
             throw new RuntimeException('physical_recovery_finalize_unconfirmed');
         $s->close();
+        $reportRef='plan:'.$journalId;
+        achbotPhysicalStageServiceChangeLocked($db,'plan',$reportRef,
+            $final['order']+['plan_id'=>(int)$journal['plan_id'],'plan_title'=>$final['plan']['title']],$actorId,true);
         $commitAttempted=true;
         if (!$db->commit()) throw new RuntimeException('physical_recovery_finalize_commit_unknown');
         $tx=false;$commitAttempted=false;
@@ -877,7 +885,7 @@ function achbotPhysicalRecoverPlan(mysqli $db,int $journalId,int $actorId,
             error_log('achbot_plan_recovery_receipt_cleanup_unconfirmed journal_id='.$journalId.
                 ' class='.get_class($cleanupError));
         }
-        return achbotPhysicalPlanResult(true,'recovered',$count);
+        return achbotPhysicalPlanResult(true,'recovered',$count)+['report_ref'=>$reportRef];
     } catch (Throwable $error) {
         if ($tx && !$commitAttempted) {try{$db->rollback();}catch(Throwable $ignored){}}
         $reason=(string)$error->getMessage();
@@ -905,6 +913,8 @@ function achbotPhysicalCorrectPlan(mysqli $db,int $journalId,int $actorId,
     require_once __DIR__.'/../Admin/Access.php';
     $lease=null;$tx=false;$correctionId=0;
     try {
+        require_once __DIR__.'/../Finance/OperationalReports.php';
+        achbotOperationalReportRequireReady($db);
         [$journal,$intent]=achbotPhysicalRecoveryOriginal($db,$journalId,$expectedOrderId);
         $lease=$journal['lock_key'];
         achbotPhysicalAcquireLock($db,$lease);
@@ -1035,7 +1045,7 @@ function achbotPhysicalCorrectPlan(mysqli $db,int $journalId,int $actorId,
         error_log('achbot_plan_correction_verified journal_id='.$journalId.
             ' correction_id='.$correctionId.' actor_id='.$actorId.
             ' shared_count='.$final['shared_count']);
-        return achbotPhysicalPlanResult(true,'corrected',$final['shared_count']);
+        return achbotPhysicalPlanResult(true,'corrected',$final['shared_count'])+['report_ref'=>$final['report_ref']];
     } catch (Throwable $error) {
         if ($tx) {
             try {$db->rollback();} catch (Throwable $ignored) {}
@@ -1055,55 +1065,28 @@ function achbotPhysicalCorrectPlan(mysqli $db,int $journalId,int $actorId,
     } finally {if ($lease!==null) achbotPhysicalReleaseLock($db,$lease);}
 }
 
-/**
- * Every successful admin/customer service change should reach normal staff
- * recipients AND the configured reporting channel. No report is issued before
- * the authoritative local/Native commit. Telegram failure never replays it.
- */
-function achbotNotifyServiceChange(string $kind,array $subject,int $actorId,bool $adminActor): void {
-    if (!in_array($kind,['server','plan'],true) ||
-        $actorId<=0 || (int)($subject['id']??0)<=0 ||
-        (int)($subject['userid']??0)<=0 ||
-        !is_string($subject['remark']??null) ||
-        (string)$subject['remark']==='') return;
-    try {
-        $escape=static fn($s): string =>
-            htmlspecialchars((string)$s,ENT_QUOTES|ENT_SUBSTITUTE,'UTF-8');
-        $params=[
-            'remark'=>$escape($subject['remark']),
-            'order_id'=>(string)(int)$subject['id'],
-            'user_id'=>(string)(int)$subject['userid'],
-            'actor_id'=>(string)$actorId
-        ];
-        if ($kind==='server') {
-            $source=(int)($subject['source_id']??0);
-            $target=(int)($subject['target_id']??0);
-            if (!$adminActor || $source<=0 || $target<=0) return;
-            $params['source_id']=(string)$source;
-            $params['target_id']=(string)$target;
-            $params['target_title']=$escape($subject['title']??'');
-        } else {
-            $id=(int)($subject['plan_id']??0);
-            if ($id<=0) return;
-            $params['actor_role']=$adminActor
-                ? achbotMessage('subscription.service_change_report.admin')
-                : achbotMessage('subscription.service_change_report.customer');
-            $params['plan_id']=(string)$id;
-            $params['plan_title']=$escape($subject['plan_title']??'');
-        }
-        $text=achbotMessage(
-            $kind==='server'
-                ? 'subscription.service_change_report.server'
-                : 'subscription.service_change_report.plan',
-            $params
-        );
-        // Default general notification fanout includes botState.rewardChannel.
-        // Do not pass report_channel=null: that explicitly disables it.
-        achbotNotifyAdmins('sendMessage',['text'=>$text,'parse_mode'=>'HTML'],[
-            'report_actor'=>$adminActor?$actorId:0,'actor_capability'=>'orders',
-            'report_ref'=>$kind.':'.(int)$subject['id']]);
-    } catch (Throwable $error) {
-        error_log('achbot_service_change_report_unconfirmed order_id='.
-            (int)$subject['id'].' kind='.$kind.' class='.get_class($error));
+/** The original local/Native commit owns the report, not a UI reread. */
+function achbotPhysicalStageServiceChangeLocked(mysqli $db,string $kind,string $reference,
+    array $subject,int $actorId,bool $adminActor): void {
+    if (!in_array($kind,['server','plan'],true) || $actorId<=0 ||
+        (int)($subject['id']??0)<=0 || (int)($subject['userid']??0)<=0 ||
+        !is_string($subject['remark']??null) || $subject['remark']==='')
+        throw new RuntimeException('physical_report_source_invalid');
+    require_once __DIR__.'/../Finance/OperationalReports.php';
+    $params=['remark'=>$subject['remark'],'order_id'=>(int)$subject['id'],
+        'user_id'=>(int)$subject['userid'],'actor_id'=>$actorId];
+    if ($kind==='server') {
+        $source=(int)($subject['source_id']??0);$target=(int)($subject['target_id']??0);
+        if (!$adminActor || $source<=0 || $target<=0) throw new RuntimeException('physical_report_source_invalid');
+        $params+=['source_id'=>$source,'target_id'=>$target,'target_title'=>$subject['title']];
+    } else {
+        $id=(int)($subject['plan_id']??0);
+        if ($id<=0) throw new RuntimeException('physical_report_source_invalid');
+        $params+=['actor_role'=>achbotMessage($adminActor?'subscription.service_change_report.admin':'subscription.service_change_report.customer'),
+            'plan_id'=>$id,'plan_title'=>$subject['plan_title']];
     }
+    $text=($kind==='server'?achbotMessageHtml('subscription.service_change_report.server',$params):achbotMessageHtml('subscription.service_change_report.plan',$params))."\n".
+        achbotMessageHtml('operational_reports.source_reference',['reference'=>$reference]);
+    achbotOperationalReportStageLocked($db,$reference,(int)$subject['userid'],
+        $adminActor?$actorId:0,'orders',$text);
 }

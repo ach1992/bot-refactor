@@ -10,6 +10,7 @@
     "src/Finance/HostedReceipt.php",
     "src/Finance/ManualReceipt.php",
     "src/Finance/ManualReceiptIntent.php",
+    "src/Finance/OperationalReports.php",
     "src/Finance/PaymentCredit.php",
     "src/Finance/ReceiptMethods.php",
     "src/Finance/ReceiptReports.php",

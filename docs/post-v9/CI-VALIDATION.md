@@ -185,3 +185,22 @@ schema negative checks independently remove Wallet and attempt uniqueness
 while retaining the supporting foreign-key indexes. Persian resolution
 fixtures explicitly negotiate utf8mb4 with both clients and verify stored
 bytes as well as returned text; retain the semantic Persian assertions.
+
+
+### Shared operational outbox (040)
+
+The operational report suite tests the actual common sender and original
+source journal in both strict/non-strict MySQLi modes, including transactional
+rollback, committed pending recovery, recipient deduplication, actor-bound
+explicit redrive, known 429 timing, revoked/changed recipients, tampered
+seals, unattempted batch compaction and scheduled gift enqueue actor
+provenance. It verifies that reporting creates no synthetic financial or
+Native work. Current-schema construction equivalence checks all 36
+migrations and the required operational source uniqueness. Source-real
+nonpaid, direct gift, delete/reconfirm, and import/reassignment fixtures use
+the same current report schema and actual sender. Nonpaid bulk interruption
+exits after committed local effects and before report compaction, then
+recovers the exact committed per-account reports without another Native
+create. The scheduled gift actor/report test is domain-level, not a complete
+scheduled-gift worker loopback run. Live provider/Telegram and production
+acceptance remain separate gates.

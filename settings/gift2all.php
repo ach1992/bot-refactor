@@ -26,6 +26,9 @@ $stmt=$connection->prepare('SELECT * FROM gift_list ORDER BY id LIMIT 1');
 if (!$stmt || !$stmt->execute()) return;
 $gift=$stmt->get_result()->fetch_assoc();$stmt->close();
 if (!$gift) return;
+require_once __DIR__.'/../src/Finance/OperationalReports.php';
+try {achbotOperationalReportRequireReady($connection);}
+catch (Throwable $e) {error_log('achbot_gift_report_schema_unavailable');return;}
 
 $rowId=(int)$gift['id'];
 $serverId=(int)$gift['server_id'];
@@ -366,6 +369,8 @@ $finish=static function(
             if (!$ok || $count!==1)
                 throw new RuntimeException('gift_finish_hold_unconfirmed');
         }
+        if ($result!==null) achbotGiftStageReportLocked($connection,'batch:'.$rowId.':'.$index,
+            $referenceProof['username'],$day,$volume,$orders,achbotGiftReportActor($connection,$receipt));
         if ($connection->commit()!==true)
             throw new RuntimeException('gift_finish_commit_unconfirmed');
     } catch (Throwable $e) {

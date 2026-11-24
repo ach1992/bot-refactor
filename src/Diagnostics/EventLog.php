@@ -59,6 +59,9 @@ function achbotDiagnosticEvent(string $name,array $context=[],string $level='inf
         foreach ($context as $key=>$value) {
             if (in_array($key,$numeric,true) && is_int($value) && $value>=0)
                 $fields[$key]=$value;
+            elseif ($key==='operational_ref' && is_string($value) &&
+                preg_match('/\A[a-z][a-z0-9_-]*:[A-Za-z0-9:_-]+\z/D',$value)===1 && strlen($value)<=128)
+                $fields[$key]=$value;
             elseif ($key==='upstream_request_id' && is_string($value) &&
                 ($value==='none' ||
                  preg_match('/\Asha256:[a-f0-9]{64}\z/D',$value)===1 ||

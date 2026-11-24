@@ -402,13 +402,7 @@ if (is_string($data) && preg_match('/^confirmChangePlan_([1-9][0-9]{0,9})_([1-9]
         alert(\achbotMessage('renewal.extensions.plan_selection_review'),true);
         return;
     }
-    // Failed notifications cannot change a committed product selection.
-    require_once __DIR__.'/../../Subscription/PhysicalService.php';
-    achbotNotifyServiceChange('plan',[
-        'id'=>$orderId,'userid'=>$orderInfo['userid'],
-        'remark'=>$orderInfo['remark'],'plan_id'=>$newPlanId,
-        'plan_title'=>$plan['title']
-    ],$actorId,$isAdmin);
+    achbotOperationalReportDispatch($connection,$result['report_ref']);
     editText($message_id,\achbotMessage('renewal.extensions.message.3067ddba76'));
     return;
 }

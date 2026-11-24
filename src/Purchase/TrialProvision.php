@@ -144,6 +144,21 @@ if (preg_match('/freeTrial(\d+)_(?<buyType>\w+)/', $data, $match)) {
             $remark,$uniqid,$expire_date,$vray_link,
             $price,$date,$agentBought?1:0,true);
         achbotLinkNonPaymentAccountEffect($connection,$effectId,$orderId);
+        require_once __DIR__.'/../Finance/OperationalReports.php';
+        $userId   = $userInfo['userid'] ?? $from_id;
+        $fullName = $userInfo['name'] ?? '---';
+        $username = $userInfo['username'] ?? '';
+
+        $usernameText = !empty($username) ? '@' . $username : \achbotMessage('purchase.trial_provision.text.8c2d826d72');
+
+        $channelMessage = \achbotMessageHtml('purchase.trial_provision.channel_message.d22e3c7448', ['userId' => $userId, 'fullName' => $fullName, 'usernameText' => $usernameText, 'remark' => $remark, 'volume' => $volume, 'days' => $days]);
+
+        $channelMessage.="\n".achbotMessageHtml('operational_reports.service_order',['order'=>$orderId])."\n".
+            achbotMessageHtml('operational_reports.source_reference',['reference'=>'trial:'.$effectId]);
+        $reportRef='trial:'.$effectId;
+        achbotOperationalReportStageLocked($connection,$reportRef,(int)$from_id,
+            (int)$from_id===(int)$admin?(int)$admin:0,'operations',$channelMessage);
+        $s=achbotProviderStatement($connection,"UPDATE users SET freetrial='used' WHERE userid=?",'i',[(int)$from_id]);$s->close();
         if ($connection->commit()!==true)
             throw new RuntimeException('trial_order_commit_unknown');
     } catch (Throwable $error) {
@@ -164,6 +179,7 @@ if (preg_match('/freeTrial(\d+)_(?<buyType>\w+)/', $data, $match)) {
         return;
     }
 
+    achbotOperationalReportDispatch($connection,$reportRef);
     try {
         if (!sendQrFromLink($qrLink,$caption,$keys,$botUrl,(int)$from_id,'',null))
             throw new RuntimeException('trial_delivery_unconfirmed');
@@ -172,20 +188,5 @@ if (preg_match('/freeTrial(\d+)_(?<buyType>\w+)/', $data, $match)) {
             ' class='.get_class($error));
     }
 
-    $userId   = $userInfo['userid'] ?? $from_id;
-    $fullName = $userInfo['name'] ?? '---';
-    $username = $userInfo['username'] ?? '';
-
-    $usernameText = !empty($username) ? '@' . $username : \achbotMessage('purchase.trial_provision.text.8c2d826d72');
-
-    $channelMessage = \achbotMessageHtml('purchase.trial_provision.channel_message.d22e3c7448', ['userId' => $userId, 'fullName' => $fullName, 'usernameText' => $usernameText, 'remark' => $remark, 'volume' => $volume, 'days' => $days]);
-
-    // ارسال پیام به ادمین اصلی
-    $channelMessage.="\n".achbotMessageHtml('operational_reports.service_order',['order'=>$orderId])."\n".
-        achbotMessageHtml('operational_reports.source_reference',['reference'=>'trial:'.$effectId]);
-    achbotNotifyAdmins('sendMessage', ['text'=>$channelMessage, 'reply_markup'=>null, 'parse_mode'=>'HTML'],
-        ['report_ref'=>'trial:'.$effectId]);
-
-    setUser('used', 'freetrial');
 }
 

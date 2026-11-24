@@ -71,7 +71,7 @@ if (preg_match('/^switchServer([0-9]+)_([0-9]+)$/D', (string)($data ?? ''), $mat
     }
 
     require_once __DIR__.'/PhysicalService.php';
-    achbotNotifyServiceChange('server',$result,(int)$from_id,true);
+    achbotOperationalReportDispatch($connection,$result['report_ref']);
     $title = htmlspecialchars((string)$result['title'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
     $remark = htmlspecialchars((string)$result['remark'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
     editText($message_id, \achbotMessage('subscription.account_transfers.message.9d93daa0a7', ['remark' => $remark, 'title' => $title]),

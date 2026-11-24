@@ -23,8 +23,8 @@ function achbotBulkRecordedAccounts(mysqli $db,int $expected,int $owner,
             throw new InvalidArgumentException('bulk_report_source_invalid');
         $kind='admin_bulk';
         $q=$db->prepare("SELECT e.ordinal,e.state,e.remote_username,e.order_id,
-            o.id AS linked_id,o.remark,o.userid
-            FROM service_effects e LEFT JOIN orders_list o ON o.id=e.order_id
+            e.order_id AS linked_id,e.remote_username AS remark,e.actor_userid AS userid
+            FROM service_effects e
             WHERE e.source_kind=? AND e.source_ref=? AND e.effect_kind='create'
             ORDER BY e.ordinal");
         $q->bind_param('ss',$kind,$source);

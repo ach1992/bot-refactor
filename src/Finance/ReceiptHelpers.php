@@ -1169,7 +1169,7 @@ function achbotOrderRestoresCapacity(mysqli $db,array $order): bool {
  * eligible for a Cron-driven second remote deletion.
  */
 function achbotAutoRenewFinalizeDeletion(
-    mysqli $db, int $orderId, int $serverId, bool $restoreCapacity
+    mysqli $db, int $orderId, int $serverId, bool $restoreCapacity,string $reportMode,int $reportActor=0
 ): bool {
     if ($orderId<=0 || $serverId<=0) return false;
     try {
@@ -1199,6 +1199,8 @@ function achbotAutoRenewFinalizeDeletion(
             $stmt->close();
             if ($saved!==1) { $db->rollback(); return false; }
         }
+        require_once __DIR__.'/OperationalReports.php';
+        achbotDeletionReportStageLocked($db,$row,$reportMode,$reportActor);
         if ($db->commit()!==true) throw new RuntimeException('delete_commit_unknown');
         return true;
     } catch (Throwable $error) {

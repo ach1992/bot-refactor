@@ -176,34 +176,45 @@ function achbotGiftIdentityHash(mysqli $db,array $orders): string {
     return hash('sha256',json_encode($proof,JSON_THROW_ON_ERROR));
 }
 
-function achbotGiftCompletionReport(string $reference,string $remark,int $days,int $volume,
-    array $references,array $notices,int $actor=0): bool {
+/** Capture the verified entitlement change, independently of customer delivery. */
+function achbotGiftStageReportLocked(mysqli $db,string $reference,string $remark,int $days,int $volume,
+    array $references,int $actor=0): void {
+    require_once __DIR__.'/../Finance/OperationalReports.php';
+    $text=achbotMessageHtml('gifts.completed_report',[
+        'reference'=>$reference,'remark'=>$remark,'days'=>$days,'volume_mb'=>$volume,
+        'reference_count'=>count($references),
+        'recipient_count'=>count(achbotGiftReferenceProof($references)['recipient_userids'])
+    ]);
+    if ($actor>0) $text.="\n".achbotMessageHtml('operational_reports.actor',['actor'=>$actor]);
+    achbotOperationalReportStageLocked($db,$reference,0,$actor,'operations',$text);
+}
+
+/** Resolve the actual administrator from the original durable enqueue claim.
+ * No actor is inferred from the current Cron worker or current admin. */
+function achbotGiftReportActor(mysqli $db,array $receipt): int {
+    $type=$receipt['enqueue_source_type']??null;
+    if (!is_string($type) || !preg_match('/^ACHBOT_GIFT_SOURCE_[a-f0-9]{64}$/D',$type)) return 0;
+    $s=achbotProviderStatement($db,'SELECT value FROM setting WHERE type=? LIMIT 2','s',[$type]);
+    $rows=$s->get_result()->fetch_all(MYSQLI_ASSOC);$s->close();
+    if (count($rows)!==1) return 0;
+    $claim=json_decode($rows[0]['value'],true);
+    if (!is_array($claim) || ($claim['gift_id']??null)!==$receipt['gift_id'] ||
+        ($claim['server_id']??null)!==$receipt['server_id'] ||
+        ($claim['volume_mb']??null)!==$receipt['volume_mb'] ||
+        ($claim['days']??null)!==$receipt['days'] || ($claim['source_type']??null)!==$type ||
+        !is_array($claim['source']??null)) return 0;
     try {
-        $text=\achbotMessage('gifts.completed_report',[
-            'reference'=>htmlspecialchars($reference,ENT_QUOTES|ENT_SUBSTITUTE,'UTF-8'),
-            'remark'=>htmlspecialchars($remark,ENT_QUOTES|ENT_SUBSTITUTE,'UTF-8'),
-            'days'=>$days,'volume_mb'=>$volume,'reference_count'=>count($references),
-            'recipient_count'=>count(achbotGiftReferenceProof($references)['recipient_userids']),
-            'notice_unconfirmed_count'=>count($notices['unconfirmed'])
-        ]);
-        if ($actor>0) $text.="\n".achbotMessageHtml('operational_reports.actor',['actor'=>$actor]);
-        $ack=achbotNotifyAdmins('sendMessage',['text'=>$text,'parse_mode'=>'HTML'],[
-            'event'=>'general','report_actor'=>$actor,'actor_capability'=>'operations','report_ref'=>$reference]);
-        if (!achbotAdminFanoutAcknowledged($ack))
-            throw new RuntimeException('gift_report_partial_acknowledgement');
-        return true;
-    } catch (Throwable $error) {
-        error_log('achbot_gift_completion_report_unconfirmed reference='.$reference);
-        return false;
-    }
+        return achbotGiftSourceType($claim['source'])===$type?$claim['source']['actor_id']:0;
+    } catch (Throwable $e) {return 0;}
 }
 
 function achbotGiftDeliverNotices(mysqli $db,int $journalId,string $reference,
-    array $orders,string $remark,int $volume,int $days,int $actor=0): array {
+    array $orders,string $remark,int $volume,int $days): array {
     $notices=['acknowledged'=>[],'unconfirmed'=>achbotGiftReferenceProof($orders)['recipient_userids'],'send_exceptions'=>[]];
     try {$notices=achbotGiftNotifyCustomers($db,$orders,$remark,achbotGiftCustomerText($volume,$days));}
     catch (Throwable $error) {error_log('achbot_gift_customer_text_unconfirmed source_id='.$journalId);}
-    $notices['report_acknowledged']=achbotGiftCompletionReport($reference,$remark,$days,$volume,$orders,$notices,$actor);
+    require_once __DIR__.'/../Finance/OperationalReports.php';
+    achbotOperationalReportDispatch($db,$reference);
     achbotGiftRecordNotices($db,$journalId,$notices);
     return $notices;
 }

@@ -360,7 +360,7 @@ try {
         if (!$o) $r='missing';
         elseif ($x['op']==='delete') $r=achbotSubscriptionDeleteConfirmed($db,$o,true);
         else $r=achbotAutoRenewPrepareDeletion($db,(int)$o['id']) &&
-            achbotAutoRenewFinalizeDeletion($db,(int)$o['id'],(int)$o['server_id'],false);
+            achbotAutoRenewFinalizeDeletion($db,(int)$o['id'],(int)$o['server_id'],false,'local',9001);
     }
     elseif ($x['op']==='claim_delivery') {
         $db->begin_transaction();
@@ -1385,6 +1385,8 @@ DELIMITER ;
                 reports=sql(f"SELECT id,role,pay_row_id FROM payment_followup_intents WHERE service_operation_id={winner} ORDER BY id").splitlines()
                 assert len(reports)==2 and all(x.endswith('\tNULL') for x in reports),reports
                 sql("UPDATE payment_followup_intents SET updated_at=NOW() WHERE state='pending' AND next_attempt_at IS NULL")
+                for oid in sql("SELECT id FROM payment_followup_intents WHERE operational_ref IS NOT NULL AND state='pending' ORDER BY id").splitlines():
+                    assert php(mode,'followup',id=int(oid))=='acknowledged'
                 report_id=int(reports[0].split('\t')[0])
                 rate_limit=dict(ok=False,error_code=429,description='Too Many Requests',parameters=dict(retry_after=35))
                 assert php(mode,'followup',id=report_id,response=rate_limit)=='pending'
@@ -1698,6 +1700,8 @@ DELIMITER ;
                 assert sql(f"SELECT COUNT(*) FROM fixture_followup WHERE intent_id={rid}")=='3'
                 cases.append(mode+'_followup_unknown_manual_attempt_not_repeated')
                 sql("UPDATE payment_followup_intents SET updated_at=NOW() WHERE state='pending' AND next_attempt_at IS NULL")
+                for oid in sql("SELECT id FROM payment_followup_intents WHERE operational_ref IS NOT NULL AND state='pending' ORDER BY id").splitlines():
+                    assert php(mode,'followup',id=int(oid))=='acknowledged'
                 rid=int(targets['service_channel'])
                 assert php(mode,'claim_followup',id=rid)['status']=='claimed'
                 sql(f"UPDATE payment_followup_intents SET updated_at=DATE_SUB(NOW(),INTERVAL 3 MINUTE) WHERE id={rid}")

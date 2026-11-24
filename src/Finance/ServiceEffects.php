@@ -215,6 +215,8 @@ function achbotCreateNonPaymentAccount(
     mysqli $db, string $kind, string $sourceRef, int $actor,
     int $ordinal, int $count, array $p
 ): array {
+    require_once __DIR__.'/OperationalReports.php';
+    achbotOperationalReportRequireReady($db);
     achbotEffectRequireAutocommit($db);
     achbotEffectRequireUniqueLine($db);
     $serverId=(int)($p['server_id']??0);

@@ -16,6 +16,7 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 import provider_storage_fixture as storage
+import operational_report_fixture as reports
 import test_post_v9_scoped_api_pg as api
 import test_post_v9_pasarguard_client as native
 
@@ -32,6 +33,7 @@ def current_delete_sandbox():
         for name in ('023_scoped_payment_lock_indexes.sql','024_wallet_entries.sql',
                      '025_wallet_receipt_credit.sql','026_service_operations.sql','033_checkout_commands.sql','035_service_resolution.sql'):
             sql((ROOT / 'migrations/post-v9' / name).read_text())
+        reports.install(sql,has_service_schema=True)
         assert 'idx_pays_order_ref_v1' in sql('SHOW INDEX FROM pays')
         assert 'idx_pays_type_ref_v1' in sql('SHOW INDEX FROM pays')
         yield fixture
@@ -46,7 +48,7 @@ $root=$argv[1];
 $case=json_decode($argv[4],true,64,JSON_THROW_ON_ERROR);
 $connection=new mysqli('localhost','root','',$argv[3],0,$argv[2]);
 $connection->set_charset('utf8mb4');
-$from_id=(int)($case['actor']??1001);$admin=9001;$userInfo=[];
+$from_id=(int)($case['actor']??1001);$admin=9001;$telegramWebhookSecret='FixtureDeleteReportSecret2026';$userInfo=[];
 $user=$connection->prepare('SELECT * FROM users WHERE userid=?');
 $user->bind_param('i',$from_id);$user->execute();
 $userInfo=$user->get_result()->fetch_assoc()??['isAdmin'=>0];$user->close();
@@ -61,7 +63,18 @@ function alert(...$args){$GLOBALS['events'][]=['type'=>'alert','text'=>$args[0]]
 function editText(...$args){$GLOBALS['events'][]=['type'=>'edit','text'=>$args[1]];return (object)['ok'=>true];}
 function achbotNotifyAdmins(...$args){$GLOBALS['events'][]=['type'=>'staff_notice','data'=>$args[1],'options'=>$args[2]??[]];return [['response'=>(object)['ok'=>true]]];}
 function sendToAllAdmins(...$args){$GLOBALS['events'][]=['type'=>'staff_notice'];return (object)['ok'=>true];}
-function sendMessage(...$args){$GLOBALS['events'][]=['type'=>'message'];return (object)['ok'=>true];}
+function sendMessage(...$args){
+    $ctx=$GLOBALS['achbotTelegramDiagnosticContext']??[];
+    if (isset($ctx['operational_ref'])) {
+        $r=achbotProviderRow($GLOBALS['connection'],'SELECT * FROM payment_followup_intents WHERE id=?','i',[$ctx['followup_id']]);
+        $event=null;
+        $packet=achbotFollowupDecodePacket(null,$r,$r['pay_fingerprint'],$event);
+        if (!$packet || $r['state']!=='dispatching') throw new RuntimeException('fixture_uncommitted_report');
+        $GLOBALS['events'][]=['type'=>'staff_notice','data'=>['text'=>$args[0],'parse_mode'=>$args[2]],
+            'options'=>['report_ref'=>$event['reference'],'report_actor'=>$event['actor']]];
+    } else $GLOBALS['events'][]=['type'=>'message'];
+    return (object)['ok'=>true];
+}
 register_shutdown_function(static function() {
  echo json_encode(['events'=>$GLOBALS['events']],JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE);
 });

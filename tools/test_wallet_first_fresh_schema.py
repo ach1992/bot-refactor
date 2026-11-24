@@ -73,6 +73,7 @@ def main():
             checks.append(mode+':current_schema_gates')
         for table,key,columns in (
             ('payment_followup_intents','uq_followup_wallet_key','wallet_entry_id,intent_key'),
+            ('payment_followup_intents','uq_followup_operational_key','operational_ref,intent_key'),
             ('payment_followup_attempts','uq_followup_attempt_no','intent_id,attempt_no'),
         ):
             sql('fresh_single',f'ALTER TABLE {table} ADD INDEX fixture_fk ({columns}); ALTER TABLE {table} DROP INDEX {key}')

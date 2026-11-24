@@ -244,7 +244,14 @@ if (
 
     alert(\achbotMessage('legacy_messages.sending_config_to_user'));
 
-    $lastRemark = '';
+    require_once __DIR__.'/../Finance/OperationalReports.php';
+    $batchLease=achbotOperationalReportLock($connection,$bulkSource);
+    $leaseRow=achbotProviderRow($connection,'SELECT GET_LOCK(?,0) AS acquired','s',[$batchLease]);
+    if ((int)($leaseRow['acquired']??0)!==1) return;
+    try {
+    // A replay cannot rebuild or replace the reports of a prior batch.
+    if (achbotProviderRow($connection,"SELECT id FROM service_effects
+        WHERE source_kind='admin_bulk' AND source_ref=? LIMIT 1",'s',[$bulkSource])) return;
     $pendingDeliveries=[];
     $reportBulk=static function(array $deliveryReview=[]) use (
         $connection,$count,$uid,$bulkSource,$serverInfo,$server_id,
@@ -303,8 +310,6 @@ if (
         ensureAccountCreationSucceeded($response, $serverInfo, $inbound_id, $admin);
         $expire_date=(int)$response->expire;
 
-        $lastRemark = $remark;
-
         [$token, $vray_link, $uniqidReturned, $caption, $keys, $qrLink] = buildLinksAndSendQr(
             $serverType,
             $serverConfig,
@@ -340,6 +345,10 @@ if (
                 $inbound_id,$remark,$uniqidReturned?:$uniqid,$expire_date,$vray_link,$price,
                 $date,0,true);
             achbotLinkNonPaymentAccountEffect($connection,$effectId,$orderId);
+            $line=achbotMessageHtml('bulk_reporting.continuation',['page'=>$i,'reference'=>$bulkSource]).
+                "\n".$i.'. <code>'.htmlspecialchars($remark,ENT_QUOTES|ENT_SUBSTITUTE,'UTF-8').'</code> (#'.$orderId.')';
+            achbotOperationalReportStageLocked($connection,$bulkSource,$uid,$uid,'operations',
+                $line,null,[],'operational_report_p'.$i);
             if ($connection->commit()!==true)
                 throw new RuntimeException('admin_bulk_order_commit_unknown');
         } catch (Throwable $error) {
@@ -358,17 +367,7 @@ if (
             ' class='.get_class($error));
         try {
             $summary=$reportBulk();
-            $notice=achbotNotifyAdmins('sendMessage', [
-                'text'=>$summary['text'],'reply_markup'=>null,'parse_mode'=>'HTML'],
-            ['report_actor'=>(int)$uid,'actor_capability'=>'operations','report_ref'=>$bulkSource]);
-            foreach ($summary['pages'] as $i=>$page) {
-                $extra=achbotNotifyAdmins('sendMessage',['text'=>$page,'parse_mode'=>'HTML'],[
-                    'report_actor'=>(int)$uid,'actor_capability'=>'operations','report_ref'=>$bulkSource.':p'.($i+1)]);
-                $notice=array_merge($notice,$extra);
-            }
-            if (!achbotAdminFanoutAcknowledged($notice))
-                error_log('achbot_admin_bulk_partial_notice_unconfirmed source='.
-                    preg_replace('/[^A-Za-z0-9_:]/','',$bulkSource));
+            achbotOperationalReportCompactBatch($connection,$bulkSource,$uid,$summary['text'],$summary['pages']);
         } catch (Throwable $notificationError) {
             error_log('achbot_admin_bulk_partial_notice_failed source='.
                 preg_replace('/[^A-Za-z0-9_:]/','',$bulkSource).
@@ -392,17 +391,7 @@ if (
     }
     try {
         $summary=$reportBulk($deliveryReview);
-        $notices=achbotNotifyAdmins('sendMessage',[
-            'text'=>$summary['text'],'reply_markup'=>null,'parse_mode'=>'HTML'],
-            ['report_actor'=>(int)$uid,'actor_capability'=>'operations','report_ref'=>$bulkSource]);
-        foreach ($summary['pages'] as $i=>$page) {
-            $extra=achbotNotifyAdmins('sendMessage',['text'=>$page,'parse_mode'=>'HTML'],[
-                'report_actor'=>(int)$uid,'actor_capability'=>'operations','report_ref'=>$bulkSource.':p'.($i+1)]);
-            $notices=array_merge($notices,$extra);
-        }
-        if (!achbotAdminFanoutAcknowledged($notices))
-            error_log('achbot_admin_bulk_report_delivery_unconfirmed source='.
-                preg_replace('/[^A-Za-z0-9_:]/','',$bulkSource));
+        achbotOperationalReportCompactBatch($connection,$bulkSource,$uid,$summary['text'],$summary['pages']);
         if (!$summary['proof']['complete'])
             error_log('achbot_admin_bulk_report_incomplete source='.
                 preg_replace('/[^A-Za-z0-9_:]/','',$bulkSource));
@@ -417,5 +406,9 @@ if (
         : achbotMessage('purchase.entry_and_bulk.create_multiple_accounts.message.62d6e89b94'),
         getMainKeys(), 'HTML');
     setUser();
+    } finally {
+        try {$s=achbotProviderStatement($connection,'SELECT RELEASE_LOCK(?)','s',[$batchLease]);$s->close();}
+        catch (Throwable $ignored) {}
+        achbotOperationalReportDispatch($connection,$bulkSource);
+    }
 }
-

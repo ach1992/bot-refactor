@@ -39,10 +39,12 @@ function achbotSubscriptionDeleteRetryable(string $reason): bool {
  * local finalizer. A second confirmation resumes a PINNED originally claimed
  * DELETE, never a new purchase, payment, credential or free-standing DELETE.
  */
-function achbotSubscriptionDeleteConfirmed(mysqli $db,array $original,bool $ownerView): string {
+function achbotSubscriptionDeleteConfirmed(mysqli $db,array $original,bool $ownerView,int $actor=0): string {
     $orderId=(int)$original['id'];$serverId=(int)$original['server_id'];
     $remark=(string)$original['remark'];$lease=null;$stage='preflight';$provider=null;
     try {
+        require_once __DIR__.'/../Finance/OperationalReports.php';
+        achbotOperationalReportRequireReady($db);
         $provider=achbotProviderType($db,$serverId);
         $lease=achbotPhysicalLockName($db,$original);
         achbotPhysicalAcquireLock($db,$lease);
@@ -83,7 +85,7 @@ function achbotSubscriptionDeleteConfirmed(mysqli $db,array $original,bool $owne
         $stage='local';
         $restoreCapacity=$result->delete_restore_capacity??null;
         if (!is_bool($restoreCapacity)) return 'review';
-        if (!achbotAutoRenewFinalizeDeletion($db,$orderId,$serverId,$restoreCapacity))
+        if (!achbotAutoRenewFinalizeDeletion($db,$orderId,$serverId,$restoreCapacity,$ownerView?'customer':'admin',$ownerView?0:$actor))
             return $provider==='pasarguard'?'local':'review';
         return 'complete';
     } catch (Throwable $error) {
@@ -149,24 +151,6 @@ elseif(preg_match('/^yesDeleteConfig(\d+)/',$data,$match)){
     $uuid = $order['uuid']??"0";
     $fileid = $order['fileid'];
     
-    $stmt = $connection->prepare("SELECT * FROM `server_plans` WHERE `id` = ?");
-    $stmt->bind_param("i", $fileid);
-    $stmt->execute();
-    $planDetail = $stmt->get_result()->fetch_assoc();
-    $stmt->close();
-    $volumeState=\AchBot\Presentation\Text\serviceAllowanceState($planDetail['volume']??null,true);
-    $daysState=\AchBot\Presentation\Text\serviceAllowanceState($planDetail['days']??null,true);
-    $volume=match($volumeState['state']) {
-        'finite'=>$volumeState['display'].\achbotMessage('subscription.presentation.format_traffic.text.2acc4ef207'),
-        'unlimited'=>\achbotMessage('subscription.account_deletion.no_dont_delete.text.5e6ee5eaa1'),
-        default=>\achbotMessage('payment.pre_payment.text.f07a81a062')
-    };
-    $days=match($daysState['state']) {
-        'finite'=>$daysState['display'].\achbotMessage('payment_settings.gateway_rule_admin.gateway_admin_page.text.69ff4a27e5'),
-        'unlimited'=>\achbotMessage('subscription.account_deletion.no_dont_delete.text.5e6ee5eaa1'),
-        default=>\achbotMessage('payment.pre_payment.text.f07a81a062')
-    };
-	
     $stmt = $connection->prepare("SELECT * FROM `server_config` WHERE `id` = ?");
     $stmt->bind_param('i', $server_id);
     $stmt->execute();
@@ -190,17 +174,7 @@ elseif(preg_match('/^yesDeleteConfig(\d+)/',$data,$match)){
         exit;
     }
 
-$reportSender=$update->callback_query->from??null;
-$reportFirstName=is_string($reportSender->first_name??null)?$reportSender->first_name:
-    html_entity_decode((string)$first_name,ENT_QUOTES|ENT_HTML5,'UTF-8');
-$reportUsername=is_string($reportSender->username??null)?$reportSender->username:
-    html_entity_decode((string)$username,ENT_QUOTES|ENT_HTML5,'UTF-8');
-$channelMessage = \achbotMessageHtml('subscription.account_deletion.report', ['from_id' => $from_id, 'first_name' => $reportFirstName, 'username' => $reportUsername, 'remark' => $remark, 'volumeDisplay' => $volume, 'daysDisplay' => $days]);
-
-// ارسال پیام به ادمین خاص
-$channelMessage.="\n".achbotMessageHtml('operational_reports.service_order',['order'=>(int)$oid]);
-achbotNotifyAdmins('sendMessage', ['text'=>$channelMessage, 'reply_markup'=>null, 'parse_mode'=>'HTML'],
-    ['report_ref'=>'delete:'.(int)$oid]);
+    achbotOperationalReportDispatch($connection,'delete:'.(int)$oid);
     editText($message_id, \achbotMessageHtml('subscription.account_deletion.no_dont_delete.message.ab50b51b1f', ['remark' => $remark]),json_encode([
             'inline_keyboard' => [
                 [['text'=>\achbotMessage('legacy_buttons.back_to_main'),'callback_data'=>"mainMenu"]]
@@ -250,7 +224,7 @@ elseif(preg_match('/^yesDeleteUserConfig(\d+)/',$data,$match) && ($from_id == $a
         alert(\achbotMessage('subscription.account_deletion.no_dont_delete.alert.739703d8ae'), true);
         exit;
     }
-    $deleteOutcome=achbotSubscriptionDeleteConfirmed($connection,$order,false);
+    $deleteOutcome=achbotSubscriptionDeleteConfirmed($connection,$order,false,(int)$from_id);
     if ($deleteOutcome!=='complete') {
         $key=match($deleteOutcome) {
             'retry'=>'subscription.account_deletion.no_dont_delete.alert.3c93240b6e',
@@ -261,12 +235,7 @@ elseif(preg_match('/^yesDeleteUserConfig(\d+)/',$data,$match) && ($from_id == $a
         exit;
     }
 
-    $adminMessage=achbotMessageHtml('subscription.account_deletion.no_dont_delete.admin_message.53224aee55',[
-        'userId'=>$userId,'remark'=>$remark])."\n".
-        achbotMessageHtml('operational_reports.service_order',['order'=>(int)$oid])."\n".
-        achbotMessageHtml('operational_reports.actor',['actor'=>(int)$from_id]);
-    achbotNotifyAdmins('sendMessage',['text'=>$adminMessage,'parse_mode'=>'HTML'],
-        ['report_actor'=>(int)$from_id,'actor_capability'=>'orders','report_ref'=>'delete:'.(int)$oid]);
+    achbotOperationalReportDispatch($connection,'delete:'.(int)$oid);
     editText($message_id, \achbotMessageHtml('subscription.account_deletion.no_dont_delete.message.ab50b51b1f', ['remark' => $remark]),json_encode([
             'inline_keyboard' => [
                 [['text'=>\achbotMessage('legacy_buttons.back_to_main'),'callback_data'=>"mainMenu"]]

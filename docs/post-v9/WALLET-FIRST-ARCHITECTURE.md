@@ -1286,45 +1286,51 @@ b6e2c10eb397b0a3338d8b318bd2ddc2ef6acb75). It does not authorize activation.
 
 The current functional suite uses real PHP, disposable MariaDB and owned
 loopback peers, and validates rendered source packets and callbacks. It is
-not installed/live acceptance, nor a proof of every possible user-facing
-message or external Native ordering. Non-financial trial, direct gift,
-admin bulk creation, subscription import, plan change, transfer/reassignment
-and deletion share the general direct fanout, including the actual authorized
-administrator when applicable (even with general unsolicited notifications
-disabled), and the configured channel. The primary, actor and channel are
-deduplicated. Private import controls are omitted from channel copies.
-Committed deletion, plan selection, transfer and import reports are attempted
-before their fallible success UI. Report failures carry the original event
-reference and recipient class; they do not repeat Native work.
+not installed/live acceptance or proof of every external Native ordering.
 
-Manual RENEW completion now has one report per recipient, preserving the
-actual approving operator's menu. BUY delivery acknowledgement remains a
-separate event, never inferred from successful local creation. Report
-references prefer the receipt that actually funded the service over a draft
-that did not fund it. Unused renewal-success copy is retired.
+### Shared financial and operational reports
+
+Successful non-financial trial, direct/scheduled gift, administrator bulk
+creation, subscription import, plan change, transfer/reassignment and
+deletion now stage reports in the same local transaction that commits their
+verified effect. Migration 040 adds an exclusive, unique operational source
+identity to the existing followup intent table. No fake payment, ledger
+entry, service operation, additional outbox table or worker is needed.
+The sealed original event and recipient-specific packet remain valid after
+the order changes or is deleted. The common claim/attempt/acknowledgement,
+429 retry, ambiguous-delivery recovery and current recipient authorization
+rules apply equally to financial and operational reports. Original staff
+actor and primary owner/channel are deduplicated; unsolicited notification
+preferences do not suppress the actual actor's result. Private import
+controls remain off channel copies. Scheduled gifts resolve the actual
+enqueue actor from their bound original source claim; no actor is invented.
+
+Manual RENEW completion has one report per recipient, preserving the actual
+approving operator's menu. BUY delivery acknowledgement remains a separate
+event, never inferred from successful local creation. Report references
+prefer the receipt that actually funded the service over a draft that did not
+fund it. Unused renewal-success copy is retired.
 
 Large paid BUY and partial-retained resolution reports partition overflow
 account names and original order IDs into bounded continuation messages.
-Each continuation is sealed to the same original service evidence using the
-existing outbox and recipient revalidation, with a deterministic page event
-identity and separate delivery attempts. The first message retains the
-summary/count; every confirmed account appears once across the complete
-report for each audience. Administrator bulk creation uses the same
-partitioning with its existing best-effort direct fanout. No new financial
-engine or database schema was introduced.
+Each page is sealed with a deterministic event identity and separate
+delivery attempts. Administrator bulk uses the same partitioning: each
+verified local creation commits its own report first, then a completed or
+partially completed batch may compact untouched packets into a summary and
+continuation pages under its source lease. Compaction verifies original
+seals and the unchanged audience and cannot replace an attempted message.
+If the process stops before compaction, the individual committed packets
+remain deliverable, with no Native recreation.
 
-Durability assessment: money and funded service outcomes require the existing
-transactional outbox, while the non-financial direct notifications remain
-best effort. A crash between their local commit and report send can still
-lose a notice; a deliberate operator recovery workflow for those events is
-not established. A changed channel or revoked administrator is not silently
-retargeted; original sealed reports are held pending current authorization.
-Automatic retries are bounded/deferred behind healthy work, but permanent
-recipient replacement/dismissal needs a separate explicit recovery decision.
-These are remaining operational acceptance limitations, not proven
-by green financial CI. The prior delayed-write counterexample remains
-an explicit Native API limitation. Keep the independent review, owner
-decision and installed acceptance gates separate.
+Customer-facing trial/bulk QR and gift notices are not yet part of this
+administrator report journal; ordinary UI and diagnostics stay separate.
+The existing attention inbox now includes unknown/rejected operational
+report deliveries and allows explicit recovery of their original packet.
+A changed channel or revoked administrator is not silently retargeted;
+original sealed reports are held pending current authorization. Permanent
+recipient replacement/dismissal remains a separate policy decision. The
+prior delayed-write counterexample remains a Native API limitation. Keep
+independent review, owner decision and installed acceptance gates separate.
 
 ### Forward-only runtime and entitlement bounds
 

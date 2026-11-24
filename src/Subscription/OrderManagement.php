@@ -358,17 +358,13 @@ if (preg_match('/^confirmDeleteOrder_([1-9][0-9]*)$/D', (string)$data, $match)) 
     $stmt->execute();
     $server=(int)($stmt->get_result()->fetch_assoc()['server_id']??0);
     $stmt->close();
-    if (!achbotAutoRenewFinalizeDeletion($connection,(int)$id,$server,false)) {
+    if (!achbotAutoRenewFinalizeDeletion($connection,(int)$id,$server,false,'local',(int)$from_id)) {
         error_log('achbot_operator_local_order_delete_deferred order_id='.(int)$id);
         alert(\achbotMessage('subscription.order_management.show_order_management_panel.alert.3781a25fa3'), true);
         return;
     }
 
-    $adminMessage=achbotMessageHtml('subscription.order_management.show_order_management_panel.admin_message.c7c4748cee',[
-        'userid'=>$userid,'remark'=>$remark,'from_id'=>$from_id])."\n".
-        achbotMessageHtml('operational_reports.service_order',['order'=>$id]);
-    achbotNotifyAdmins('sendMessage',['text'=>$adminMessage,'parse_mode'=>'HTML'],
-        ['report_actor'=>(int)$from_id,'actor_capability'=>'orders','report_ref'=>'local-delete:'.$id]);
+    achbotOperationalReportDispatch($connection,'local-delete:'.$id);
 
     alert(\achbotMessage('subscription.order_management.show_order_management_panel.alert.1340fd2124'));
     sendMessage(\achbotMessageHtml('subscription.order_management.show_order_management_panel.message.606600ccca', ['userid' => $userid, 'remark' => $remark]), null, "html");
@@ -495,7 +491,7 @@ if (preg_match('/^selectServerId_(\d+)_(\d+)$/D', (string)($data ?? ''), $match)
         return;
     }
     require_once __DIR__.'/PhysicalService.php';
-    achbotNotifyServiceChange('server',$result,(int)$from_id,true);
+    achbotOperationalReportDispatch($connection,$result['report_ref']);
     sendMessage(\achbotMessage('subscription.order_management.show_order_management_panel.message.88e0b88b0d'), null, 'HTML');
     $stmt = $connection->prepare("SELECT * FROM `orders_list` WHERE `id` = ?");
     $stmt->bind_param('i', $id);
@@ -569,16 +565,7 @@ if (preg_match('/^(recoverPlanJournal|confirmPlanCorrection)_([1-9][0-9]*)_([1-9
         alert(\achbotMessage($key),true);
         return;
     }
-    try {
-        $q=$connection->prepare('SELECT o.id,o.userid,o.remark,p.id AS plan_id,
-            p.title AS plan_title FROM orders_list o JOIN server_plans p
-            ON p.id=o.fileid WHERE o.id=? AND o.status=1');
-        $q->bind_param('i',$orderId);$q->execute();
-        $subject=$q->get_result()->fetch_assoc();$q->close();
-        if ($subject) achbotNotifyServiceChange('plan',$subject,(int)$from_id,true);
-    } catch (Throwable $error) {
-        error_log('achbot_plan_recovery_report_unconfirmed journal_id='.$journalId);
-    }
+    achbotOperationalReportDispatch($connection,$result['report_ref']);
     sendMessage(\achbotMessage('subscription.order_management.show_order_management_panel.message.75785b37ae'), null, 'HTML');
     $q=$connection->prepare('SELECT * FROM orders_list WHERE id=? AND status=1');
     $q->bind_param('i',$orderId);$q->execute();
@@ -595,18 +582,7 @@ if (preg_match('/^selectFileId_(\d+)_(\d+)$/', (string) ($data ?? ''), $match)) 
         alert(\achbotMessage('subscription.order_management.show_order_management_panel.alert.99d247fc18'),true);
         return;
     }
-    // Source of truth is the committed order+plan, not stale callback text.
-    try {
-        $q=$connection->prepare('SELECT o.id,o.userid,o.remark,p.title AS plan_title FROM orders_list o JOIN server_plans p ON p.id=o.fileid WHERE o.id=? AND o.fileid=?');
-        $q->bind_param('ii',$id,$newFileId);$q->execute();$subject=$q->get_result()->fetch_assoc();$q->close();
-        if ($subject) {
-            $subject['plan_id']=$newFileId;
-            require_once __DIR__.'/PhysicalService.php';
-            achbotNotifyServiceChange('plan',$subject,(int)$from_id,true);
-        }
-    } catch (Throwable $noticeError) {
-        error_log('achbot_service_plan_report_unconfirmed order_id='.$id);
-    }
+    achbotOperationalReportDispatch($connection,$result['report_ref']);
     sendMessage(\achbotMessage('subscription.order_management.show_order_management_panel.message.75785b37ae'), null, 'HTML');
     $s=$connection->prepare('SELECT * FROM orders_list WHERE id=?');
     $s->bind_param('i',$id);$s->execute();$order=$s->get_result()->fetch_assoc();$s->close();

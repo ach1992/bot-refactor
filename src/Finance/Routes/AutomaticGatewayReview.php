@@ -207,6 +207,9 @@ if (preg_match('/^attentionReport([CS])_([1-9][0-9]{0,17})(?:_([a-f0-9]{20}))?$/
             $back='attentionCase_'.$receiptId;$payId=$receiptId;
         } elseif ($walletId>0 && $r['stage']==='wallet_movement' && $receiptId===0 && $operationId===0) {
             $back='attentionInbox';$payId='W'.$walletId;
+        } elseif (is_string($r['operational_ref']??null) && $receiptId===0 && $operationId===0 && $walletId===0 &&
+            achbotFollowupJournaled($r)) {
+            $back='attentionInbox';$payId=$r['operational_ref'];
         } else throw new RuntimeException('followup_review_stale');
         $token=achbotFollowupRedriveToken($r,$actor);$rows=[];
         if ($reviewAction[1]==='C' && !isset($reviewAction[3])) {
@@ -282,15 +285,19 @@ if (preg_match('/^attention(?:Inbox(?:_[1-9][0-9]{0,17})?|Case_[1-9][0-9]{0,17})
             $before=(int)($inbox[1]??0);
             $serviceScope=achbotServiceAttentionScope();
             $q=achbotProviderStatement($connection,"SELECT * FROM (
-                SELECT p.id,p.user_id,p.price,COALESCE(a.provider,'wallet') AS provider,'receipt' AS source,p.id*3 AS cursor
+                SELECT p.id,p.user_id,p.price,COALESCE(a.provider,'wallet') AS provider,'receipt' AS source,p.id*4 AS cursor
                   FROM pays p LEFT JOIN payment_attempts a ON a.pay_row_id=p.id WHERE $scope
                 UNION ALL
-                SELECT o.id,o.userid,o.price_toman,o.kind,'service',o.id*3+1
+                SELECT o.id,o.userid,o.price_toman,o.kind,'service',o.id*4+1
                   FROM service_operations o WHERE $serviceScope
                 UNION ALL
-                SELECT f.id,w.userid,ABS(w.delta_toman),CONCAT('W',w.id),'wallet_report',f.id*3+2
+                SELECT f.id,w.userid,ABS(w.delta_toman),CONCAT('W',w.id),'wallet_report',f.id*4+2
                   FROM payment_followup_intents f JOIN wallet_entries w ON w.id=f.wallet_entry_id
                   WHERE f.stage='wallet_movement' AND f.state IN ('unknown','rejected')
+                UNION ALL
+                SELECT f.id,0,0,f.operational_ref,'operational_report',f.id*4+3
+                  FROM payment_followup_intents f
+                  WHERE f.operational_ref IS NOT NULL AND f.state IN ('unknown','rejected')
                 ) AS cases WHERE (?=0 OR cursor<?) ORDER BY cursor DESC LIMIT 13",
                 'ii',[$before,$before]);
             $items=$q->get_result()->fetch_all(MYSQLI_ASSOC);$q->close();
@@ -301,6 +308,11 @@ if (preg_match('/^attention(?:Inbox(?:_[1-9][0-9]{0,17})?|Case_[1-9][0-9]{0,17})
                 'ADD_VOLUME'=>achbotMessage('automatic_gateway_review.volume')];
             foreach ($items as $item) {
                 $service=$item['source']==='service';
+                if ($item['source']==='operational_report') {
+                    $rows[]=[['text'=>achbotMessage('automatic_gateway_review.wallet_report_action').' | '.$item['provider'],
+                        'callback_data'=>'attentionReportC_'.(int)$item['id']]];
+                    continue;
+                }
                 $walletReport=$item['source']==='wallet_report';
                 $kind=$walletReport?achbotMessage('operational_reports.wallet_report_case').' '.$item['provider']:($service?$kinds[$item['provider']]:
                     ($labels[$item['provider']]??$item['provider']));
