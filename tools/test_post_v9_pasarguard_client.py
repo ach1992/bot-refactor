@@ -298,6 +298,7 @@ def storage_checks(work,env):
     r=php(script,ROOT,work/'mysql.sock',db,json.dumps({'op':'missing'}));cases+=r['cases']
     for name in ['001_marzban_panel_group_id.sql','007_service_effects.sql','011_provider_identity.sql','012_shared_provider_storage.sql']:
         native.sql(work,env,(ROOT/'migrations/post-v9'/name).read_text(),db)
+    native.sql(work,env,'ALTER TABLE service_effects'+(ROOT/'migrations/post-v9/035_service_resolution.sql').read_text().split('ALTER TABLE service_effects',1)[1],db)
     snap=dict(provider='pasarguard',panel_id=1,instance_key='b'*32,
         endpoint_sha256=__import__('hashlib').sha256(b'https://panel.example.invalid').hexdigest(),group_ids=[2,5])
     quoted=json.dumps(snap,separators=(',',':'))

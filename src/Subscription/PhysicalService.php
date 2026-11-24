@@ -514,7 +514,7 @@ function achbotPhysicalNoPendingPayments(mysqli $db,array $rows,
     // Terminal retirement occurs only during the verified local plan commit.
     $eligible=$retireOpen?
         achbotPhysicalRetireOpenPaymentsLocked($db,$rows,$nativeVerifiedFinal):[];
-    if (!achbotSharedAccountWorkSettledLocked($db,$rows,0,0,$retireOpen,true,
+    if (!achbotSharedAccountWorkSettledLocked($db,$rows,$retireOpen,true,
         $nativeVerifiedFinal?[]:$eligible))
         throw new RuntimeException('physical_pending_financial_effect');
     if ($retireOpen && $nativeVerifiedFinal && !achbotServiceSubjectWorkSettledLocked($db,$rows,true))

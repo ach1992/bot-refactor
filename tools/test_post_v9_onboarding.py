@@ -99,7 +99,6 @@ function achbotCurrentMessage(string $key): string {
     return $GLOBALS['mainValues'][$key];
 }
 require __DIR__.'/auth.php';
-require __DIR__.'/retired-functions.php';
 require __DIR__.'/set-user.php';
 require __DIR__.'/get-main-keys.php';
 require __DIR__.'/src/Presentation/Text.php';
@@ -130,8 +129,6 @@ if(($spec['mode']??'flow')==='forbidden_wallet_set') {
       (int)($spec['inviter']??0),(int)($spec['reward']??0),$dbName);
 } else {
   $callbackId=$update->callback_query->id??null;
-  eval(file_get_contents(__DIR__.'/retired-navigation.php'));
-  if (achbotObsoleteCallback($data)) return;
   eval(file_get_contents(__DIR__.'/membership-source.php'));
   eval(file_get_contents(__DIR__.'/onboarding-source.php'));
   eval(file_get_contents(__DIR__.'/menu-source.php'));
@@ -152,8 +149,6 @@ def current_section(path: str, start: str, end: str) -> str:
 def write_runtime(w: Path) -> None:
     (w/"onboarding-driver.php").write_text(DRIVER,encoding="utf-8")
     files={
-        "retired-functions.php": '<?php\n'+extract_function(ROOT/"src/Finance/ReceiptHelpers.php","achbotObsoleteCallback")+'\n'+extract_function(ROOT/"src/Finance/ReceiptHelpers.php","prepareStartFallback"),
-        "retired-navigation.php": current_section("bot.php","if (achbotObsoleteCallback(","if (!achbotAdminRequestAllowed")+"\nGOTOSTART:",
         "auth.php": '<?php\n'+extract_function(ROOT/"bot.php","achbotWebhookIngressAuthenticated"),
         "set-user.php": '<?php\n'+extract_function(ROOT/"config.php","setUser"),
         "get-main-keys.php": '<?php\n'+extract_function(ROOT/"src/Presentation/MainMenu.php","achbotMainMenuForContext")+'\n'+extract_function(ROOT/"config.php","getMainKeys"),
@@ -278,15 +273,12 @@ def main() -> None:
         yes(len(r['rows'])==1 and r['registered'] is False and
             [e['text'] for e in r['events'] if e['kind']=='send']==['HOME'],
             "repeat_start_reuses_identity_no_repeat_welcome")
-        for old_callback in ('prePayCheck_Renew_Wallet_123','changeToken_123','addonFilterDayAll','payBuyWithManualUsdt123'):
-            native.sql(w,env,"UPDATE users SET step='old_fixture_step' WHERE userid=2401",DB)
-            r=run(actor=2401,callback=old_callback)
-            yes(r['rows'][0]['step']=='none' and int(r['rows'][0]['wallet'])==0 and
-                [e['kind'] for e in r['events']]==['ack','send'] and
-                r['events'][-1]['text']=='HOME',
-                'retired_callback_navigates_home_only:'+old_callback)
-        r=run(actor=2401,callback='changeToken_123',chat_type='group',chat_id=-100)
-        yes(not r['events'],'retired_group_frame_does_not_navigate')
+        # A fresh install has no retired callback navigation or stale step
+        # migration. The onboarding slice must not turn an unrelated
+        # callback into a registration, menu, or money movement.
+        r=run(actor=2401,callback='unknown_fixture_callback')
+        yes(not r['events'] and int(r['rows'][0]['wallet'])==0,
+            'unrelated_callback_does_not_activate_onboarding')
         r=run(actor=2402,forced=True,membership='left')
         join_buttons=[button for row in json.loads(r['events'][0]['markup'])['inline_keyboard']
                       for button in row] if r['events'] and r['events'][0]['kind']=='send' else []

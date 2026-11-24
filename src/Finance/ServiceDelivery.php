@@ -32,7 +32,7 @@ function achbotServiceBuyDeliveryBinding(array $op,array $quote,array $e,array $
     $owner=(int)$op['userid'];$id=(int)$op['id'];
     if ($op['kind']!=='BUY' || !in_array($op['stage'],['applied','completed'],true) ||
         (int)$op['reserved_count']!==$q['quantity'] ||
-        $ordinal<1 || $ordinal>$q['quantity'] ||
+        $ordinal<1 || $ordinal>$q['quantity']-(int)$op['cancelled_count'] ||
         $e['source_kind']!=='service_operation' || $e['source_ref']!==(string)$id ||
         $e['pay_row_id']!==null || $e['effect_kind']!=='create' ||
         $e['target_key']!==$quote['target']['physical'] ||
@@ -48,7 +48,6 @@ function achbotServiceBuyDeliveryBinding(array $op,array $quote,array $e,array $
         (int)$o['provider_remote_user_id']!==(int)$e['provider_remote_user_id'] ||
         !is_string($o['provider_remote_created_at']) ||
         $o['provider_remote_created_at']!==$e['provider_remote_created_at'] ||
-        (int)$o['expire_date']!==(int)$e['requested_expire'] ||
         (int)$o['amount']!==achbotAllocateOrderAmount($q['price'],$q['quantity'],$ordinal))
         throw new RuntimeException('service_delivery_source_conflict');
     return ['v'=>2,'service_id'=>$id,'quote_sha256'=>$op['quote_sha256'],'ordinal'=>$ordinal,
@@ -56,7 +55,7 @@ function achbotServiceBuyDeliveryBinding(array $op,array $quote,array $e,array $
         'server_id'=>$q['server_id'],'native_operation'=>$e['operation_id'],
         'native_target_key'=>$e['target_key'],'native_request_sha256'=>$e['request_sha256'],
         'native_user_id'=>(int)$e['provider_remote_user_id'],'native_created_at'=>$e['provider_remote_created_at'],
-        'remark'=>$o['remark'],'uuid'=>(string)$o['uuid'],'expire'=>(int)$o['expire_date'],
+        'remark'=>$o['remark'],'uuid'=>(string)$o['uuid'],'expire'=>(int)$e['requested_expire'],
         'link_sha256'=>hash('sha256',(string)$o['link']),'token_sha256'=>hash('sha256',(string)$o['token'])];
 }
 function achbotServiceDeliveryPurpose(int $id,int $ordinal,int $effect,int $order): string {
@@ -145,7 +144,7 @@ function achbotServiceDeliveryOriginalBody(array $op,array $quote,array $d,int $
     $order=(int)$d['order_id'];
     if (!in_array($op['stage'],['applied','completed'],true) ||
         (int)$d['service_operation_id']!==$id || $ordinal<1 ||
-        $ordinal>($buy?$q['quantity']:1) || (int)$d['ordinal']!==$ordinal ||
+        $ordinal>($buy?$q['quantity']-(int)$op['cancelled_count']:1) || (int)$d['ordinal']!==$ordinal ||
         (int)$d['user_id']!==$uid || (int)$d['server_id']!==$q['server_id'] || $order<=0 ||
         ($buy?($effect===null || $effect<=0):($effect!==null || $order!==$q['order_id'])) ||
         $d['pay_row_id']!==null || $d['attempt_id']!==null ||
@@ -237,8 +236,7 @@ function achbotServiceDeliveryDispatch(mysqli $db,int $id,int $actor=0,int $part
         while (true) {
             $claim=null;
             if (!$db->begin_transaction()) throw new RuntimeException('service_delivery_begin');
-            [$op,$quote]=achbotServiceReadLocked($db,$owner,$serviceId);
-            if ($op['archived_at']!==null) {$db->rollback();return 'archived';}
+            [$op,$quote,$walletOwner]=achbotServiceReadLocked($db,$owner,$serviceId);
             $d=achbotProviderRow($db,'SELECT * FROM payment_delivery_intents WHERE id=? FOR UPDATE','i',[$id]);
             if (!$d || (int)$d['service_operation_id']!==$serviceId || (int)$d['user_id']!==$owner)
                 throw new RuntimeException('service_delivery_source_changed');
@@ -256,8 +254,7 @@ function achbotServiceDeliveryDispatch(mysqli $db,int $id,int $actor=0,int $part
             if ($actor===0 && $d['state']!=='pending') {$db->rollback();return $d['state'];}
             if ($actor>0 && $d['state']==='acknowledged') {$db->rollback();return 'stale';}
             if ($op['stage']!=='completed') {$db->rollback();return 'not_ready';}
-            if (achbotServiceFundLocked($db,$owner,$serviceId)!=='already_funded')
-                throw new RuntimeException('service_delivery_funding_missing');
+            achbotServiceVerifyFundingLocked($db,$op,$walletOwner);
             $parts=achbotServiceDeliveryValidateLocked($db,$op,$quote,$d);
             $rows=achbotDeliveryPartsValidateLocked($db,$d,$parts);
             $p=null;

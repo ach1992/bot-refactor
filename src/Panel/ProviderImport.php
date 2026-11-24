@@ -16,16 +16,6 @@ function achbotProviderImportParts(string $url): ?array {
     return ['origin'=>strtolower($p['scheme']).'://'.strtolower($p['host']).':'.$port,
         'prefix'=>$m[1],'token'=>$token];
 }
-function achbotProviderImportBase(string $base,string $prefix): ?array {
-    $p=parse_url($base);
-    if (!$p || empty($p['host']) || isset($p['user']) || isset($p['pass']) ||
-        isset($p['query']) || isset($p['fragment']) || preg_match('/[\x00-\x20\x7f]/',$base)) return null;
-    $path=rtrim((string)($p['path']??''),'/');
-    // Native paths may already contain the deployment prefix.
-    $suffix=$path!=='' && ($prefix===$path || str_starts_with($prefix,$path.'/'))?$prefix:$path.$prefix;
-    $origin=$p['scheme'].'://'.$p['host'].(isset($p['port'])?':'.$p['port']:'');
-    return achbotProviderImportParts($origin.$suffix.'/probe');
-}
 function achbotProviderImportServer(mysqli $db,int $serverId,bool $lock=false): array {
     $s=$db->prepare('SELECT c.* FROM server_config c JOIN server_info i ON i.id=c.id
         WHERE c.id=? AND i.active=1'.($lock?' FOR UPDATE':''));
@@ -68,14 +58,6 @@ function achbotProviderSubscriptionInfo(string $trustedUrl,bool $trustedHttp=fal
     try {$data=json_decode($wire,true,64,JSON_THROW_ON_ERROR|JSON_BIGINT_AS_STRING);}
     catch (Throwable $e) {return $failure($http);}
     return is_array($data)?['success'=>true,'uncertain'=>false,'http'=>$http,'data'=>$data]:$failure($http);
-}
-function achbotProviderImportDate(string $value): string {
-    if (!preg_match('/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?(?:Z|[+-]\d{2}:\d{2})?$/D',$value))
-        throw new RuntimeException('import_created_at_invalid');
-    $date=new DateTimeImmutable($value,new DateTimeZone('UTC'));$errors=DateTimeImmutable::getLastErrors();
-    if ($errors!==false && ($errors['warning_count'] || $errors['error_count']))
-        throw new RuntimeException('import_created_at_invalid');
-    return $date->setTimezone(new DateTimeZone('UTC'))->format('Y-m-d\TH:i:s.u\Z');
 }
 function achbotProviderImportDecode(string $value): ?string {
     if ($value==='' || !preg_match('/^[A-Za-z0-9_-]+={0,2}$/D',$value)) return null;

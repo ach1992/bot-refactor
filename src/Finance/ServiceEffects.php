@@ -88,7 +88,7 @@ function achbotEffectRequireUniqueLine(mysqli $db): void {
     foreach ([
         'uq_effect_pay_line'=>['pay_row_id','effect_kind','ordinal'],
         'uq_effect_source_line'=>['source_kind','source_ref','ordinal'],
-        'uq_effect_target_username'=>['target_key','remote_username'],
+        'uq_effect_target_username'=>['target_key','active_username'],
         'uq_effect_operation'=>['operation_id'],
         'uq_effect_order'=>['order_id']
     ] as $name=>$expected) {

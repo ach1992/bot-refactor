@@ -9,7 +9,7 @@ import subprocess
 import test_access_state as owned
 
 ROOT=Path(__file__).resolve().parents[1]
-RETIRED={'admins','black_list','servers','bank_buy_invoice_claims'}
+RETIRED={'admins','black_list','servers','bank_buy_invoice_claims','automatic_renewal_attempts'}
 PHP=r'''<?php
 mysqli_report($argv[3]==='strict'?MYSQLI_REPORT_ERROR|MYSQLI_REPORT_STRICT:MYSQLI_REPORT_OFF);
 $GLOBALS['telegramWebhookSecret']='Synthetic_Fresh_Schema_Only_2026';

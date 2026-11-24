@@ -139,7 +139,7 @@ if (
     achbotPayUxTrackByHash($connection,(string)$hash_id,(int)$from_id,$sent);
 }
 
-if (is_string($data) && (strlen($data) <= 64 || ($GLOBALS['achbotManualCryptoVerifiedDispatch'] ?? null) === $data) && preg_match('/\ApayRenewWith(?:CartToCart|GiftCard|ManualUsdt)([A-Za-z0-9_-]{1,50})\z/D', $data, $match)) {
+if (is_string($data) && (str_contains($data,'WithManualUsdt') ? ($GLOBALS['achbotManualCryptoVerifiedDispatch'] ?? null) === $data : strlen($data) <= 64) && preg_match('/\ApayRenewWith(?:CartToCart|GiftCard|ManualUsdt)([A-Za-z0-9_-]{1,50})\z/D', $data, $match)) {
 
     $payInfo = dbFetchPayByHash($connection, $match[1]);
     if (!$payInfo) {

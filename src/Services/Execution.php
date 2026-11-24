@@ -29,7 +29,7 @@ function achbotServiceExecutionReason(Throwable $e): string {
  * preparation, actual authenticated execution/readback and local result
  * persistence. Only this owner schedules the original funded operation.
  * No payment method, Telegram, price calculation or extra debit here. */
-function achbotServiceExecuteStep(mysqli $db,int $id,array $presentation=[]): array {
+function achbotServiceExecuteStep(mysqli $db,int $id,array $presentation=[],bool $force=false): array {
     $tx=achbotProviderRow($db,'SELECT @@in_transaction AS tx');
     if ((int)($tx['tx']??1)!==0) throw new LogicException('service_worker_requires_autocommit');
     $name=achbotServiceExecutionLock($db,$id);
@@ -42,12 +42,11 @@ function achbotServiceExecuteStep(mysqli $db,int $id,array $presentation=[]): ar
         $owner=(int)$locator['userid'];
         if (!$db->begin_transaction()) throw new RuntimeException('service_worker_begin');
         [$op,$quote]=achbotServiceReadLocked($db,$owner,$id);
-        if ($op['archived_at']!==null) {$db->rollback();return ['status'=>'archived'];}
         if (!in_array($op['stage'],['funded','prepared','dispatching','applied'],true)) {
             $db->rollback();return ['status'=>$op['stage']];
         }
         $due=achbotProviderRow($db,'SELECT next_attempt_at IS NOT NULL AND next_attempt_at<=NOW(6) AS due FROM service_operations WHERE id=?','i',[$id]);
-        if ((int)$due['due']!==1) {$db->rollback();return ['status'=>'not_due'];}
+        if (!$force && (int)$due['due']!==1) {$db->rollback();return ['status'=>'not_due'];}
         // Read-only exact replay checks the already committed debit, never
         // calls admission or funds another operation in these stages.
         if (achbotServiceFundLocked($db,$owner,$id)!=='already_funded')
@@ -95,7 +94,7 @@ function achbotServiceExecuteStep(mysqli $db,int $id,array $presentation=[]): ar
         if (($result['success']??false)===true) {
             $done=($def['apply'])($db,$current,$original,$work,$result);
             if (!is_bool($done)) throw new RuntimeException('service_worker_result_invalid');
-            $stage=$done?($finalizing?'completed':'applied'):$claimStage;
+            $stage=$done?($finalizing?'completed':'applied'):($finalizing && $op['kind']==='BUY'?'dispatching':$claimStage);
             if ($done && $finalizing) {
                 achbotServiceReferralReserveLocked($db,$current);
                 achbotServiceStageCompletionReportsLocked($db,$current,$original);
@@ -153,7 +152,7 @@ function achbotServiceExecuteDue(mysqli $db,int $limit,float $budgetSeconds,arra
     // every bounded pass. This is only a scheduling hint; ExecuteStep
     // independently acquires and verifies the exact lock before any I/O.
     $s=achbotProviderStatement($db,"SELECT id FROM service_operations
-        WHERE archived_at IS NULL AND stage IN ('funded','prepared','dispatching','applied') AND next_attempt_at<=NOW(6)
+        WHERE stage IN ('funded','prepared','dispatching','applied') AND next_attempt_at<=NOW(6)
           AND IS_FREE_LOCK(CONCAT('achbot-service-',LEFT(SHA2(DATABASE(),256),20),'-',id))=1
         ORDER BY next_attempt_at,id LIMIT ?",'i',[$limit]);
     $rows=$s->get_result()->fetch_all(MYSQLI_ASSOC);$s->close();$out=[];

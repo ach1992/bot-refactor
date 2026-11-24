@@ -40,24 +40,31 @@ function achbotServiceAutoRenewAdmit(mysqli $db,int $orderId,int $userId,array $
         $held=achbotProviderRow($db,'SELECT GET_LOCK(?,0) AS acquired','s',[$name]);
         if ((int)($held['acquired']??0)!==1) return ['status'=>'account_busy'];
         $lock=$name;
-        $cycle=$orderId.':'.(int)$initial['expire_date'];
         $old=achbotProviderRow($db,"SELECT id,userid FROM service_operations
-            WHERE command_kind='automatic_renewal' AND command_ref=?",'s',[$cycle]);
+            WHERE command_kind='automatic_renewal' AND subject_order_id=?
+                AND stage IN ('funded','prepared','dispatching','applied') ORDER BY id DESC LIMIT 1",'i',[$orderId]);
         if ($old) {
             if ((int)$old['userid']!==$userId) throw new RuntimeException('service_auto_cycle_owner');
             return ['status'=>'already_claimed','id'=>(int)$old['id']];
         }
-        // A completed legacy cycle is not a new command. An unfinished
-        // legacy claim can exist before any provider mutation is visible.
-        if (achbotServiceHistoricalAutoCycle($db,$orderId,(int)$initial['expire_date']) ||
-            achbotServiceHistoricalAutoPending($db,$orderId,
-                isset($initial['provider_effect_id'])?(int)$initial['provider_effect_id']:null))
-            return ['status'=>'deferred','reason'=>'service_historical_auto_pending'];
         // All Native I/O happens before locking the owner's money.
         $live=($adapter['service_auto_observe'])($db,$orderId);
         if (!$live['success']) return ['status'=>($live['reason']??'')==='service_edit_account_busy'?'account_busy':'deferred',
             'reason'=>$live['reason']??'service_auto_observation_failed'];
         if (!achbotServiceLifecycle($live['observation'],time())['renew']) return ['status'=>'ineligible'];
+
+        // The provider's current expiry, not the stale local expiry, defines
+        // the renewal cycle. A refunded cycle can be retried only after the
+        // operator-disabled automatic renewal has been deliberately reenabled.
+        $cycle=$orderId.':'.(int)($live['observation']['expire']??0);
+        $old=achbotProviderRow($db,"SELECT id,userid,resolution_kind FROM service_operations
+            WHERE command_kind='automatic_renewal' AND subject_order_id=? AND
+                (command_ref=? OR command_ref LIKE CONCAT(?,':%')) ORDER BY id DESC LIMIT 1",'iss',[$orderId,$cycle,$cycle]);
+        if ($old) {
+            if ((int)$old['userid']!==$userId) throw new RuntimeException('service_auto_cycle_owner');
+            if ($old['resolution_kind']!=='refunded') return ['status'=>'already_claimed','id'=>(int)$old['id']];
+            $cycle.=':'.(int)$old['id'];
+        }
 
         if (!$db->begin_transaction()) throw new RuntimeException('service_auto_begin');
         $owner=achbotWalletLockOwnerLocked($db,$userId);
@@ -66,11 +73,6 @@ function achbotServiceAutoRenewAdmit(mysqli $db,int $orderId,int $userId,array $
             (int)$o['expire_date']!==(int)$initial['expire_date'] ||
             (int)$o['server_id']!==$sid || (int)$o['fileid']!==(int)$initial['fileid']) {
             $db->rollback();return ['status'=>'ineligible'];
-        }
-        if (achbotServiceHistoricalAutoCycle($db,$orderId,(int)$o['expire_date'],true) ||
-            achbotServiceHistoricalAutoPending($db,$orderId,
-                isset($o['provider_effect_id'])?(int)$o['provider_effect_id']:null,true)) {
-            $db->rollback();return ['status'=>'deferred','reason'=>'service_historical_auto_pending'];
         }
         $planId=(int)$o['fileid'];
         $p=achbotProviderRow($db,'SELECT * FROM server_plans WHERE id=? FOR UPDATE','i',[$planId]);

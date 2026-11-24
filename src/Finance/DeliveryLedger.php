@@ -48,7 +48,7 @@ function achbotDeliverySchemaReady(mysqli $db): bool {
     } catch (Throwable $error) { return false; }
 }
 /**
- * Recover first, never-attempted legacy payment delivery and due service
+ * Recover due current service
  * message parts after a committed order. The 018/032 journal has an exact
  * claim and attempt history; this sweep never changes money or Native
  * provider state and never resends UNKNOWN parts. Abandoned service claims
@@ -74,9 +74,9 @@ function achbotDeliveryMaintainPending(mysqli $db,int $limit=4,float $budgetSeco
         require_once __DIR__.'/ServiceDelivery.php';
         if (!achbotServiceDeliverySchemaReady($db))
             throw new RuntimeException('delivery_service_schema_invalid');
-        $q=$db->query("SELECT d.id,d.pay_row_id,d.ordinal,d.service_operation_id
+        $q=$db->query("SELECT d.id,d.pay_row_id,d.ordinal
             FROM payment_delivery_intents d JOIN service_operations o ON o.id=d.service_operation_id
-            WHERE d.state IN ('pending','dispatching') AND o.stage='completed' AND o.archived_at IS NULL
+            WHERE d.state IN ('pending','dispatching') AND o.stage='completed'
                 AND d.part_count IS NOT NULL AND ((d.next_attempt_at IS NULL
                     AND d.updated_at<=DATE_SUB(NOW(),INTERVAL 2 MINUTE)) OR d.next_attempt_at<=NOW(6))
             ORDER BY COALESCE(d.next_attempt_at,d.updated_at),d.id LIMIT {$limit}");
@@ -117,15 +117,11 @@ function achbotDeliveryMaintainPending(mysqli $db,int $limit=4,float $budgetSeco
                 // and cannot monopolize the head of the bounded queue.
                 // Also defer abandoned service claim reconciliation on a
                 // transient SQL/ownership error, without changing its token.
-                $where=($d['service_operation_id']??null)!==null?
-                    "(part_count IS NOT NULL AND state IN ('pending','dispatching'))":
-                    "(state='pending' AND attempt_count=0)";
-                $set=($d['service_operation_id']??null)!==null?
-                    "updated_at=NOW(),next_attempt_at=CASE WHEN next_attempt_at<=NOW(6)
-                        THEN DATE_ADD(NOW(6),INTERVAL 2 MINUTE) ELSE next_attempt_at END":
-                    "updated_at=NOW()";
                 $q=$db->prepare("UPDATE payment_delivery_intents
-                    SET ".$set." WHERE id=? AND ".$where);
+                    SET updated_at=NOW(),next_attempt_at=CASE WHEN next_attempt_at<=NOW(6)
+                        THEN DATE_ADD(NOW(6),INTERVAL 2 MINUTE) ELSE next_attempt_at END
+                    WHERE id=? AND service_operation_id IS NOT NULL
+                        AND part_count IS NOT NULL AND state IN ('pending','dispatching')");
                 $q->bind_param('i',$id);
                 $q->execute();$q->close();
             } catch (Throwable $error) {

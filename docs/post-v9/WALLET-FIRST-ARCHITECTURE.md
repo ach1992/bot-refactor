@@ -35,7 +35,7 @@ before new live effects, otherwise reconcile and roll forward.
 
 Owner's final clarification: [fresh-runtime decision](https://github.com/ach1992/bot-refactor/issues/204#issuecomment-7133896850).
 There is no old callback execution or pending-invoice compatibility contract.
-Known retired callbacks navigate ordinary Home. Current draft admission
+Retired callbacks have no compatibility handler or authority to execute. Current draft admission
 requires the current version marker in `checkout_draft_context`; historical
 NULL drafts cannot create a new invoice or service command. A current
 receipt intake requires its issued immutable pin. The only paid service
@@ -99,6 +99,16 @@ No silent new UX, funding policy, refund policy, expiry/deletion rule, or provid
 requirement: current owner-approved policy applies until a specific change is
 approved. In particular, do not silently switch checkout to paying only the
 shortfall or allow partial settlement of an original invoice.
+
+### Current-operation recovery and explicit final disposition (035)
+
+The approved recovery contract is recorded in [Issue #204](https://github.com/ach1992/bot-refactor/issues/204#issuecomment-7135092291). A new operation observes the actual Native entitlement; the completed previous operation is not an entitlement precondition. While an operation is in flight, only its owned fields, physical identity, and applicable authorization are frozen for replay/readback. Unrelated Native changes do not invalidate an otherwise valid add-on.
+
+The common service attention surface is keyed by service operation, including scheduled renewals with no payment row. Retry continues the original operation immediately without another debit. Closing without a refund is available only for edits. Cancellation/refund is an explicit terminal decision: BUY retains each successfully recorded ordinal and its delivery intent, and returns only the unfulfilled original allocation through the common wallet ledger. Each ordinal is finalized before attempting the next. No refund may conceal an existing unrecorded Native account; reconcile it first. An uncertain outcome requires an explicit operator assertion based on external verification, not an assumption of failure. Remote requests are not guaranteed to be quiescent merely because a local request timed out. Automatic renewal refund disables automatic renewal until deliberately enabled again.
+
+Resolution, refund entry, capacity release, physical ownership release and reports are committed together. No service archive can hide nonterminal operations or retain stale ownership. Receipt archive is a separate financial intake decision, never service disposition. Subsequent verified receipts may credit the wallet but must not resurrect a resolved operation. Delivery and report recovery reuses immutable payloads, with a fresh actor-bound confirmation for an unknown send.
+
+035 is schema construction evidence only. Fresh installations use the consolidated empty current schema, not a migration chain. Preserve real account provenance and financial history during the separately authorized manual transfer; do not import obsolete interaction state as runnable work.
 
 ## 2. Single ownership / permitted dependency direction
 
@@ -455,9 +465,10 @@ not authorization to mutate them. No blanket reprocessing.
 The old prepaid-adoption rehearsal is superseded. The current source-only
 inventory and opening-balance rehearsal preserves old evidence but never
 adopts a historical operation into the current executor. No special prepaid
-funding path exists. The historical auto-renewal/native identity fences are
-read-only conflict checks for actual retained evidence, not old workflow
-support. During manual transfer resolve every outstanding historical claim,
+funding path exists. The old automatic-renewal journal is outside the current runtime and empty
+schema. Preserve it as external historical evidence if needed; do not transfer
+its execution state. Verified Native account identity/provenance remains a
+current safety requirement. During manual transfer resolve every outstanding historical claim,
 reconcile capacity and preserve the original physical account before activation.
 The new runtime must not carry unresolved old workflows forward.
 

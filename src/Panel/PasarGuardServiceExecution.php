@@ -63,9 +63,9 @@ function achbotPasarGuardBuyPrepareLocked(mysqli $db,array $op,array $quote): ?a
     foreach ($rows as $i=>$e) {
         $ordinal=$i+1;
         $account=achbotPasarGuardBuyEffectAccount($op,$quote,$snapshot,$e,$ordinal);
-        if (in_array($e['state'],['verified','local_recorded'],true)) {
+        if ($e['state']==='local_recorded') {
             if ($work!==null || $account['remote_user_id']===null ||
-                !in_array($account['state'],['verified','linked'],true))
+                $account['state']!=='linked')
                 throw new RuntimeException('service_buy_ordinal_result_conflict');
             continue;
         }
@@ -74,7 +74,7 @@ function achbotPasarGuardBuyPrepareLocked(mysqli $db,array $op,array $quote): ?a
             throw new RuntimeException('service_buy_ordinal_state_conflict');
         $work=$e;
     }
-    if ($work===null && count($rows)===$count) return null;
+    if ($work===null && count($rows)===$count) throw new RuntimeException('service_buy_already_recorded');
     if ($work===null) {
         require_once __DIR__.'/../Finance/ServiceDelivery.php';
         if (!achbotServiceDeliverySchemaReady($db))
@@ -153,7 +153,7 @@ function achbotPasarGuardBuyApplyLocked(mysqli $db,array $op,array $quote,array 
         WHERE id=? AND state='dispatching' AND order_id IS NULL",'i',[(int)$e['id']]);
     $n=$s->affected_rows;$s->close();
     if ($n!==1) throw new RuntimeException('service_buy_result_write');
-    return (int)$e['ordinal']===$quote['request']['quantity'];
+    return true;
 }
 
 /** Native success has already been recorded. This phase only reads the
@@ -168,7 +168,7 @@ function achbotPasarGuardBuyFinalizePrepareLocked(mysqli $db,array $op,array $qu
     $s=achbotProviderStatement($db,"SELECT * FROM service_effects
         WHERE source_kind='service_operation' AND source_ref=? ORDER BY ordinal FOR UPDATE",'s',[(string)$id]);
     $rows=$s->get_result()->fetch_all(MYSQLI_ASSOC);$s->close();
-    if (count($rows)!==$count) throw new RuntimeException('service_buy_finalize_count');
+    if (!$rows || count($rows)>$count) throw new RuntimeException('service_buy_finalize_count');
     $work=null;
     foreach ($rows as $i=>$e) {
         $a=achbotPasarGuardBuyEffectAccount($op,$quote,$snapshot,$e,$i+1);
@@ -182,9 +182,11 @@ function achbotPasarGuardBuyFinalizePrepareLocked(mysqli $db,array $op,array $qu
                 (int)$d['user_id']!==(int)$op['userid'])
                 throw new RuntimeException('service_buy_finalize_intent_missing');
         } elseif ($e['state']==='verified' && $a['state']==='verified' && $e['order_id']===null) {
-            $work??=$e;
+            if ($work!==null || $i!==count($rows)-1) throw new RuntimeException('service_buy_finalize_ordinal_gap');
+            $work=$e;
         } else throw new RuntimeException('service_buy_finalize_effect_state');
     }
+    if ($work===null) throw new RuntimeException('service_buy_finalize_missing');
     return $work;
 }
 function achbotPasarGuardBuyFinalizePerform(mysqli $db,array $op,array $quote,array $e,array $presentation): array {

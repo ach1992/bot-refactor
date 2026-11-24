@@ -195,8 +195,7 @@ function achbotHandleManagement(): bool {
         preg_match('/^(?:pgNewServer|newPlanForServer)([1-9][0-9]*)$/D',$data);
     $owned=str_starts_with((string)($userInfo['step']??''),'achbotManage|');
     $callback=str_starts_with($data,'am|');
-    $legacy=preg_match('/^(?:addserverName$|addServer(?:UCount|Remark|Flag|PanelUrl|PanelGroup|PanelUser|PanePassword)|addNewMarzbanPlan$)/D',(string)($userInfo['step']??''))===1;
-    if (!$starts && !$owned && !$callback && !$legacy) return false;
+    if (!$starts && !$owned && !$callback) return false;
     $draft=null;$begun=false;$canRecover=false;
     try {
         $actor=(int)$from_id;$source=achbotManagementFrame($update,$actor,$data,$text);
@@ -209,11 +208,6 @@ function achbotHandleManagement(): bool {
             !in_array((string)$user['step'],['none',''],true))
             throw new RuntimeException('management_other_flow');
         $draft=achbotManagementDraft($user);
-        if ($legacy && $user['step']===(string)($userInfo['step']??'')) {
-            achbotManagementStore($connection,$actor,$actorRowId,null);
-            if (!achbotManagementCommit($connection)) throw new RuntimeException('management_commit_unknown');$begun=false;
-            achbotManagementHome($user['step']==='addNewMarzbanPlan'?'plan':'server',null,achbotManagementText('restart'));return true;
-        }
         if ($starts) {
             // Financial/privileged editors own their state. Starting a wizard
             // from an old message must not erase one of their active drafts.

@@ -70,8 +70,6 @@ function achbotOriginalDispatchLeaseEnd(mysqli $db,int $payId,string $lease): vo
  */
 function achbotGatewayAttentionScope(?mysqli $db=null): string {
     return "a.review_archived_at IS NULL
-        AND NOT EXISTS (SELECT 1 FROM service_operations archived
-            WHERE archived.id=p.checkout_operation_id AND archived.archived_at IS NOT NULL)
         AND (
             (a.wallet_credit_entry_id IS NULL AND a.wallet_invoice_sha256<>'' AND (
                 (a.stage='review' AND a.provider IN ('nowpayments','nextpay','zarinpal')
@@ -80,47 +78,10 @@ function achbotGatewayAttentionScope(?mysqli $db=null): string {
                     a.evidence_state IN ('review','uncertain','manual','invalid_code')
                     OR EXISTS (SELECT 1 FROM payment_transactions t WHERE t.attempt_id=a.id AND t.evidence_state='proven')))
             ))
-            OR EXISTS (SELECT 1 FROM service_operations o WHERE o.id=p.checkout_operation_id
-                AND o.archived_at IS NULL AND o.stage IN ('funded','prepared','dispatching','applied')
-                AND o.failure_code IS NOT NULL)
-            OR EXISTS (SELECT 1 FROM payment_delivery_intents d WHERE d.service_operation_id=p.checkout_operation_id
-                AND d.state IN ('unknown','rejected'))
             OR EXISTS (SELECT 1 FROM payment_followup_intents f WHERE
-                (f.service_operation_id=p.checkout_operation_id OR (f.pay_row_id=p.id AND f.stage IN ('wallet_credit','manual_reject')))
+                f.pay_row_id=p.id AND f.service_operation_id IS NULL AND f.stage IN ('wallet_credit','manual_reject')
                 AND f.state IN ('unknown','rejected'))
         )";
-}
-
-/** A missing 022 Archive column is acceptable only on a readable 003
- * ledger with the required lookup columns. A genuinely absent pre-003 table
- * (1146) is also supported. Checking only review_archived_at is insufficient:
- * a broken table can be missing BOTH that column and pay_row_id. Handle both
- * throwing and MYSQLI_REPORT_OFF without swallowing any unrelated SQL error.
- */
-function achbotGatewayArchiveSchemaMissing(mysqli $db): bool {
-    try {
-        $probe=$db->query('SELECT review_archived_at FROM payment_attempts LIMIT 0');
-        if ($probe instanceof mysqli_result) {
-            $probe->free();
-            return false;
-        }
-        $code=(int)$db->errno;
-    } catch (mysqli_sql_exception $error) {
-        $code=(int)$error->getCode();
-        if (!in_array($code,[1054,1146],true)) throw $error;
-    }
-    if ($code===1146) return true;
-    if ($code!==1054)
-        throw new RuntimeException('original_archive_schema_probe_unavailable');
-
-    // The Archive column is missing, but migration 003 itself must still be
-    // valid enough for the original pay lookup and fallback provider check.
-    // Missing pay_row_id/id/provider or inaccessible SQL fails closed.
-    $required=$db->query('SELECT id,pay_row_id,provider FROM payment_attempts LIMIT 0');
-    if (!($required instanceof mysqli_result))
-        throw new RuntimeException('original_archive_ledger_schema_unavailable');
-    $required->free();
-    return true;
 }
 
 /** Same query powers the inbox and the original API receipt's review link.
@@ -129,22 +90,6 @@ function achbotGatewayArchiveSchemaMissing(mysqli $db): bool {
 function achbotGatewayAttentionCaseOpen(mysqli $db,int $payId): bool {
     if ($payId<=0) return false;
     try {
-        // The original API evidence schema can be present before the additive
-        // 022 Archive migration. Do not offer a case link whose action cannot
-        // run, or emit an SQL warning on every legitimate older API receipt.
-        // Only the known absent column is optional; other SQL failures remain
-        // diagnosable instead of being mistaken for missing installation.
-        try {
-            $probe=$db->query('SELECT review_archived_at FROM payment_attempts LIMIT 0');
-        } catch (mysqli_sql_exception $error) {
-            if ((int)$error->getCode()===1054) return false;
-            throw $error;
-        }
-        if (!($probe instanceof mysqli_result)) {
-            if ((int)$db->errno===1054) return false;
-            throw new RuntimeException('attention_archive_schema_probe_failed');
-        }
-        $probe->free();
         $scope=achbotGatewayAttentionScope($db);
         // Original wallet payments can have no hosted attempt; this read
         // must use the same LEFT JOIN as the inbox/detail renderer.
@@ -174,25 +119,6 @@ function achbotGatewayAttentionCaseOpen(mysqli $db,int $payId): bool {
  * This small adapter decision is shared by the present callback routes;
  * durable payment/effect claims and external fulfillment need a later gate.
  */
-/**
- * A partial 003 schema must not permit checkout issuance: a NOWPayments
- * invoice without child-evidence persistence would strand paid customers.
- * This is a basic availability probe, NOT approval of actual DDL/install.
- */
-function achbotSharedPaymentTablesReady(mysqli $db): bool {
-    try {
-        foreach (['payment_attempts','payment_transactions'] as $table) {
-            // Names are selected from a fixed internal allowlist only.
-            $probe=$db->query('SELECT id FROM '.$table.' LIMIT 0');
-            if (!($probe instanceof mysqli_result)) return false;
-            $probe->free();
-        }
-        return true;
-    } catch (Throwable $ignored) {
-        return false;
-    }
-}
-
 /**
  * Legacy pays.payid has no provider dimension or uniqueness constraint.
  * New provider-scoped attempts MAY reuse an ID held by a different NEW

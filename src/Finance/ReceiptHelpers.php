@@ -46,11 +46,6 @@ function dbFetchPayByHash(mysqli $connection, string $hashId): ?array {
     return $res->fetch_assoc();
 }
 
-/** Only retired action names, never old payment evidence or live callbacks. */
-function achbotObsoleteCallback(string $data): bool {
-    return preg_match('/\A(?:prePayCheck_|addonFilter(?:Day|Volume)|sConfigRenew|changeToken_|changeUUID_|changeNetworkType|changeAccProtocol|changeProtocolIsDisable$|addNewMarzbanPanel$|addNewMarzbanPlan$|addNewServer$|addNewPlan$|addNewRahgozarPlan$|changePortType|changeRealityState|changeServerType|chhangeServerType|marzbanHostSettings|pay(?:Buy|Custom|Renew|IncreaseWallet|IncreaseDay|Increase)WithManualUsdt)/D',$data)===1;
-}
-
 function prepareStartFallback() {
     global $text, $data, $callbackId;
     if (is_string($callbackId??null) && $callbackId!=='') answerCallbackQuery($callbackId);
@@ -1105,115 +1100,6 @@ function sendWithStartButton($text, $buttonText, $botUsername, $startPayload = '
 }
 
 
-/** AChBot 004 schema proof, shared by payment reservation and deletion guards.
- * Preflight absent/incompatible separately; never assume table name is enough.
- * Privilege denial or schema drift blocks all new financial remote effects.
- */
-function achbotAutoRenewSchemaState(mysqli $db): string {
-    static $states=[];
-    $conn=spl_object_id($db);
-    if (isset($states[$conn])) return $states[$conn];
-    $states[$conn]='incompatible';
-    try {
-        $r=$db->query("SELECT ENGINE FROM information_schema.TABLES
-            WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='automatic_renewal_attempts'
-              AND TABLE_TYPE='BASE TABLE'");
-        $t=$r->fetch_assoc();
-        if (!$t) return $states[$conn]='absent';
-        if ($r->num_rows!==1 || strcasecmp((string)$t['ENGINE'],'InnoDB')!==0)
-            return 'incompatible';
-        $r=$db->query("SELECT COLUMN_NAME,DATA_TYPE,COLUMN_TYPE,
-                CHARACTER_MAXIMUM_LENGTH,COLLATION_NAME,IS_NULLABLE,COLUMN_DEFAULT
-            FROM information_schema.COLUMNS
-            WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='automatic_renewal_attempts'");
-        $cols=[];
-        while ($row=$r->fetch_assoc()) $cols[$row['COLUMN_NAME']]=$row;
-        $expected=[
-          'id'=>['bigint',false,true,null],
-          'order_id'=>['int',false,false,null],
-          'cycle_expire'=>['int',false,false,null],
-          'pay_row_id'=>['int',false,false,null],
-          'user_id'=>['bigint',false,false,null],
-          'plan_id'=>['int',false,false,null],
-          'server_id'=>['int',false,false,null],
-          'account_remark'=>['varchar',false,false,100],
-          'price_toman'=>['int',false,false,null],
-          'duration_days'=>['int',false,false,null],
-          'volume_gb'=>['int',false,false,null],
-          'new_expire'=>['int',false,false,null],
-          'stage'=>['varchar',false,false,32],
-          'reason_code'=>['varchar',true,false,32],
-          'review_notified_at'=>['datetime',true,false,null],
-          'review_claim_token'=>['char',true,false,32],
-          'review_claimed_at'=>['datetime',true,false,null],
-          'created_at'=>['datetime',false,false,null],
-          'updated_at'=>['datetime',false,false,null],
-        ];
-        if (count($cols)!==count($expected)) return 'incompatible';
-        foreach ($expected as $name=>$spec) {
-            $c=$cols[$name]??null;
-            if (!$c || strtolower((string)$c['DATA_TYPE'])!==$spec[0] ||
-                ($c['IS_NULLABLE']==='YES')!==$spec[1] ||
-                str_contains(strtolower((string)$c['COLUMN_TYPE']),'unsigned')!==$spec[2] ||
-                ($spec[3]!==null && (int)$c['CHARACTER_MAXIMUM_LENGTH']!==$spec[3]))
-                return 'incompatible';
-        }
-        foreach (['stage','reason_code','review_claim_token'] as $name)
-            if (($cols[$name]['COLLATION_NAME']??'')!=='utf8mb4_bin')
-                return 'incompatible';
-        if (trim((string)$cols['stage']['COLUMN_DEFAULT'],"'")!=='reserved')
-            return 'incompatible';
-        $r=$db->query("SELECT INDEX_NAME,NON_UNIQUE,SEQ_IN_INDEX,COLUMN_NAME
-            FROM information_schema.STATISTICS
-            WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='automatic_renewal_attempts'
-            ORDER BY INDEX_NAME,SEQ_IN_INDEX");
-        $idx=[];
-        while ($i=$r->fetch_assoc()) {
-            $n=$i['INDEX_NAME'];
-            $idx[$n]['unique']=((int)$i['NON_UNIQUE']===0);
-            $idx[$n]['cols'][]=$i['COLUMN_NAME'];
-        }
-        $required=[
-          'PRIMARY'=>[true,['id']],
-          'uq_renewal_cycle'=>[true,['order_id','cycle_expire']],
-          'uq_renewal_payment'=>[true,['pay_row_id']],
-          'idx_renewal_inflight'=>[false,['order_id','stage']],
-          'idx_renewal_review'=>[false,['stage','updated_at','review_notified_at']],
-        ];
-        if (count($idx)!==count($required)) return 'incompatible';
-        foreach ($required as $n=>$spec)
-            if (!isset($idx[$n]) || $idx[$n]['unique']!==$spec[0] ||
-                $idx[$n]['cols']!==$spec[1]) return 'incompatible';
-
-        // Exactly one restrictive FK to historical pays. No order FK: the
-        // order itself must remain deletable when renewal evidence is done.
-        $r=$db->query("SELECT k.CONSTRAINT_NAME,k.COLUMN_NAME,
-                k.REFERENCED_TABLE_NAME,k.REFERENCED_COLUMN_NAME,
-                rc.UPDATE_RULE,rc.DELETE_RULE
-            FROM information_schema.KEY_COLUMN_USAGE k
-            INNER JOIN information_schema.REFERENTIAL_CONSTRAINTS rc
-             ON rc.CONSTRAINT_SCHEMA=k.CONSTRAINT_SCHEMA
-             AND rc.TABLE_NAME=k.TABLE_NAME
-             AND rc.CONSTRAINT_NAME=k.CONSTRAINT_NAME
-            WHERE k.TABLE_SCHEMA=DATABASE()
-              AND k.TABLE_NAME='automatic_renewal_attempts'
-              AND k.REFERENCED_TABLE_NAME IS NOT NULL");
-        $fk=$r->fetch_all(MYSQLI_ASSOC);
-        if (count($fk)!==1 ||
-            $fk[0]['CONSTRAINT_NAME']!=='fk_renewal_pay' ||
-            $fk[0]['COLUMN_NAME']!=='pay_row_id' ||
-            $fk[0]['REFERENCED_TABLE_NAME']!=='pays' ||
-            $fk[0]['REFERENCED_COLUMN_NAME']!=='id' ||
-            !in_array($fk[0]['UPDATE_RULE'],['RESTRICT','NO ACTION'],true) ||
-            !in_array($fk[0]['DELETE_RULE'],['RESTRICT','NO ACTION'],true))
-            return 'incompatible';
-        return $states[$conn]='ready';
-    } catch (Throwable $error) {
-        error_log('achbot_auto_renew_schema_preflight_unavailable');
-        return 'incompatible';
-    }
-}
-
 /** Never infer physical panel identity from URLs or credentials. */
 function achbotAutoRenewSameAccount(mysqli $db, int $serverA, int $serverB): bool {
     return $serverA>0 && $serverB>0 &&
@@ -1341,8 +1227,7 @@ function achbotServicePaymentRowsLocked(mysqli $db,array $orderIds): array {
 }
 
 /** Pending claims serialize a shared account; completed references are not an ownership restriction. */
-function achbotSharedAccountWorkSettledLocked(mysqli $db,array $peers,int $ownAttempt=0,
-    int $ownPay=0,bool $blockUnclaimedQuotes=false,bool $strictCompletion=false,
+function achbotSharedAccountWorkSettledLocked(mysqli $db,array $peers,bool $blockUnclaimedQuotes=false,bool $strictCompletion=false,
     array $preverifiedUnclaimedQuoteIds=[]): bool {
     $ids=[];
     foreach ($peers as $row) {
@@ -1350,20 +1235,10 @@ function achbotSharedAccountWorkSettledLocked(mysqli $db,array $peers,int $ownAt
         $ids[]=(int)$row['id'];
     }
     if (!$ids || !achbotServiceSubjectWorkSettledLocked($db,$peers)) return false;
-    $list=implode(',',array_values(array_unique($ids)));
-    $schema=achbotAutoRenewSchemaState($db);
-    if ($schema==='incompatible') return false;
-    if ($schema==='ready') {
-        $q=$db->prepare("SELECT id FROM automatic_renewal_attempts WHERE order_id IN ($list)
-            AND stage<>'done' AND id<>? LIMIT 1 FOR UPDATE");
-        $q->bind_param('i',$ownAttempt);$q->execute();$pending=$q->get_result()->fetch_assoc();$q->close();
-        if ($pending) return false;
-    }
     $mode=achbotManualLedgerMode($db);
     if ($mode==='invalid') return false;
     $payments=achbotServicePaymentRowsLocked($db,$ids);
     foreach ($payments as $payment) {
-        if ((int)$payment['id']===$ownPay) continue;
         $attempt=null;
         if ($mode==='current') {
             $id=(int)$payment['id'];
@@ -1417,7 +1292,7 @@ function achbotSharedAccountWorkSettledLocked(mysqli $db,array $peers,int $ownAt
             strcasecmp((string)$table['ENGINE'],'InnoDB')!==0) return false;
         $remark=(string)$peers[0]['remark'];
         $q=$db->prepare("SELECT target_server_id FROM service_effects
-            WHERE BINARY remote_username=BINARY ? AND state<>'local_recorded' FOR UPDATE");
+            WHERE BINARY remote_username=BINARY ? AND state NOT IN ('local_recorded','cancelled') FOR UPDATE");
         $q->bind_param('s',$remark);$q->execute();$effects=$q->get_result()->fetch_all(MYSQLI_ASSOC);$q->close();
         foreach ($effects as $effect)
             if (achbotAutoRenewSameAccount($db,(int)$peers[0]['server_id'],(int)$effect['target_server_id'])) return false;
@@ -1429,7 +1304,7 @@ function achbotSharedAccountWorkSettledLocked(mysqli $db,array $peers,int $ownAt
 function achbotAutoRenewAccountExclusiveLocked(mysqli $db,int $orderId,int $serverId,string $remark,
     ?array &$peers=null,bool $blockUnclaimedQuotes=false): bool {
     $peers=achbotSharedAccountReferencesLocked($db,$orderId,$serverId,$remark);
-    return achbotSharedAccountWorkSettledLocked($db,$peers,0,0,$blockUnclaimedQuotes);
+    return achbotSharedAccountWorkSettledLocked($db,$peers,$blockUnclaimedQuotes);
 }
 
 /**
@@ -1476,7 +1351,7 @@ function achbotScheduledDeletionEffectsSettled(mysqli $db,array $order): bool {
             strcasecmp((string)$table['ENGINE'],'InnoDB')!==0) return false;
         $remark=(string)$order['remark'];
         $stmt=$db->prepare("SELECT target_server_id FROM service_effects
-            WHERE remote_username=? AND state<>'local_recorded' FOR UPDATE");
+            WHERE remote_username=? AND state NOT IN ('local_recorded','cancelled') FOR UPDATE");
         if (!$stmt) return false;
         $stmt->bind_param('s',$remark);
         if (!$stmt->execute()) {$stmt->close();return false;}
@@ -1491,8 +1366,6 @@ function achbotScheduledDeletionEffectsSettled(mysqli $db,array $order): bool {
 /** Original order deletion gate: optionally atomically claim the Native DELETE. */
 function achbotAutoRenewPrepareDeletion(mysqli $db, int $orderId,?array $expected=null,?callable $nativeClaim=null): bool {
     if ($orderId<=0) return false;
-    $schema=achbotAutoRenewSchemaState($db);
-    if ($schema==='incompatible') return false;
     try {
         $db->begin_transaction();
         $stmt=$db->prepare("SELECT id,server_id,remark,status,notif,expire_date FROM orders_list
@@ -1509,15 +1382,6 @@ function achbotAutoRenewPrepareDeletion(mysqli $db, int $orderId,?array $expecte
             !achbotAutoRenewAccountExclusiveLocked($db,$orderId,
             (int)$order['server_id'],(string)$order['remark'],$peerOrders)) {
             $db->rollback(); return false;
-        }
-        if ($schema==='ready') {
-            $stmt=$db->prepare("SELECT id FROM automatic_renewal_attempts
-                WHERE order_id=? AND stage<>'done' LIMIT 1 FOR UPDATE");
-            $stmt->bind_param('i',$orderId);
-            $stmt->execute();
-            $pending=$stmt->get_result()->fetch_assoc();
-            $stmt->close();
-            if ($pending) { $db->rollback(); return false; }
         }
         if ($expected!==null && !achbotScheduledDeletionEffectsSettled($db,$order)) {
             $db->rollback();return false;
@@ -1639,8 +1503,7 @@ function achbotOrderRestoresCapacity(mysqli $db,array $order): bool {
 function achbotAutoRenewFinalizeDeletion(
     mysqli $db, int $orderId, int $serverId, bool $restoreCapacity
 ): bool {
-    if ($orderId<=0 || $serverId<=0 ||
-        achbotAutoRenewSchemaState($db)==='incompatible') return false;
+    if ($orderId<=0 || $serverId<=0) return false;
     try {
         $db->begin_transaction();
         // Full current order includes provider_effect_id when installed;

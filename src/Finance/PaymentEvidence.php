@@ -971,14 +971,6 @@ function achbotPaymentEvidenceGiftNormalizationStatus(array $data,array $profile
     }
     return 'review';
 }
-function achbotPaymentEvidenceSmsActions(array $profile,int $after=0): array {
-    if ($after<0) return ['ok'=>false,'data'=>[]];
-    $r=achbotPaymentEvidenceHttp($profile,'GET','/actions?after_id='.$after.'&per_page=100');
-    $j=$r['json'];
-    return $r['ok'] && is_array($j['data']??null) && array_is_list($j['data'])
-        ?['ok'=>true,'data'=>$j['data'],'pagination'=>$j['pagination']??[]]
-        :['ok'=>false,'data'=>[]];
-}
 function achbotPaymentEvidenceStoreOutcome(mysqli $db,array $handle,string $state,array $changes=[]): bool {
     if (!in_array($state,['reserved','uncertain','proven','review'],true)) return false;
     try {

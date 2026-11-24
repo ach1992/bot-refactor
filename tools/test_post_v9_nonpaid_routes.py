@@ -252,6 +252,7 @@ def check():
         sql(work,env,(ROOT/'migrations/post-v9/007_service_effects.sql').read_text())
         for migration in ('011_provider_identity.sql','012_shared_provider_storage.sql'):
             sql(work,env,(ROOT/'migrations/post-v9'/migration).read_text())
+        sql(work,env,'ALTER TABLE service_effects'+(ROOT/'migrations/post-v9/035_service_resolution.sql').read_text().split('ALTER TABLE service_effects',1)[1])
         def configure_pg():
             sql(work,env,storage.connection(2,2,url))
             sql(work,env,"UPDATE server_plans SET provider_group_ids='[1,2]' WHERE server_id=2")

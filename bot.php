@@ -31,18 +31,8 @@ define('ACHBOT_VERIFIED_WEBHOOK_ENTRYPOINT', true);
 require_once 'config.php';
 require_once __DIR__.'/src/Purchase/Core.php';
 check();
-// Obsolete callback names do not own a workflow. Navigate through the
-// ordinary guarded Home route before any staff or financial dispatch.
 $robotState = $botState['botState']??"on";
 $inviteReward = achbotInviteReward($connection);
-if (achbotObsoleteCallback((string)($data??''))) {
-    $oldFrame=$update->callback_query??null;
-    if (!is_object($oldFrame) || ($oldFrame->from->id??null)!==(int)$from_id ||
-        ($oldFrame->message->chat->type??null)!=='private' ||
-        ($oldFrame->message->chat->id??null)!==(int)$from_id) return;
-    prepareStartFallback();
-    goto GOTOSTART;
-}
 if (!achbotAdminRequestAllowed(is_string($data??null)?$data:null,is_string($text??null)?$text:null,(string)($userInfo['step']??''))) {achbotAdminDeny();return;}
 
 require_once __DIR__.'/src/Panel/ProviderAdmin.php';
@@ -1987,7 +1977,7 @@ if (preg_match('/^deleteMarzbanPanelGroup_(\d+)$/D', (string)($data ?? ''), $gro
     editText($message_id, \achbotMessage('bot.bot.add_marzban_panel_group.message.def9f141f2'), getMarzbanPanelGroupsManagementKeys());
     return;
 }
-// addNewMarzbanPanel and addManagedServer use the actor-owned management wizard above.
+// Server creation uses the actor-owned management wizard above.
 // Admin server settings: select an EXISTING panel group, never a
 // free-text value or automatic URL/username-based identity.
 if (preg_match('/^(?:editPanelGroup|editMarzbanGroup)(\d+)$/D', (string)($data ?? ''), $groupMatch) &&

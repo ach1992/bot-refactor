@@ -590,7 +590,7 @@ function achbotProviderAdoptAccount(mysqli $db,int $serverId,array $native,array
         // a deleted account that still has live local references.
         $conflict=achbotProviderRow($db,"SELECT e.id FROM service_effects e
             WHERE e.provider_connection_id=? AND e.remote_username=?
-              AND e.provider_reference_id IS NOT NULL
+              AND e.provider_reference_id IS NOT NULL AND e.state<>'cancelled'
               AND (e.provider_remote_user_id IS NULL OR e.provider_remote_user_id<>?)
               AND (e.provider_state IS NULL OR e.provider_state<>'deleted' OR EXISTS
                   (SELECT 1 FROM orders_list o WHERE o.provider_effect_id=e.id AND o.status=1))

@@ -125,9 +125,6 @@ function achbotDeliveryPartClaimLocked(mysqli $db,array $d,array $p,int $actor=0
         if ($primary<=0 || !achbotAdminCanLocked($db,$actor,$primary,'payments')) return ['status'=>'denied'];
         if (!hash_equals(achbotDeliveryPartRedriveToken($d,$p,$actor),$confirmation))
             return ['status'=>'stale'];
-        if ($state==='unknown' && achbotProviderRow($db,"SELECT id FROM payment_delivery_attempts
-            WHERE intent_id=? AND part_no=? AND claim_state='unknown' AND actor_userid>0 LIMIT 1",'ii',[$id,$part]))
-            return ['status'=>'stale'];
     } else {
         if ($state!=='pending' || $confirmation!==null) return ['status'=>'stale'];
         if ((int)$p['due']!==1) return ['status'=>'not_due'];

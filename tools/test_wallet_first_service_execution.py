@@ -26,6 +26,7 @@ declare(strict_types=1);
 mysqli_report($argv[4]==='strict'?MYSQLI_REPORT_ERROR|MYSQLI_REPORT_STRICT:MYSQLI_REPORT_OFF);
 define('ACHBOT_PG_TEST_LOOPBACK',true);
 require $argv[1].'/src/Services/Execution.php';
+require_once $argv[1].'/src/Services/Resolution.php';
 require $argv[1].'/src/Services/AutomaticRenewal.php';
 require_once $argv[1].'/src/Finance/ServiceDelivery.php';
 require_once $argv[1].'/src/Purchase/OrderWrites.php';
@@ -47,7 +48,7 @@ function fixtureDeliverySend(string $kind,int $uid,?string $text,?string $keys,?
     if ($d['state']!=='dispatching' || $p['state']!=='dispatching' || $a['result']!=='dispatching' ||
         (int)$d['attempt_count']!==$ctx['delivery_attempt'] || (int)$p['last_attempt_no']!==$ctx['delivery_attempt'] ||
         $a['dispatch_token']!==$d['dispatch_token'] || (int)$a['part_no']!==$ctx['delivery_part'] ||
-        (int)$a['actor_userid']!==(int)($x['actor']??0) || (int)$d['user_id']!==$uid)
+        (int)$a['actor_userid']!==(int)($x['op']==='telegram_review' && str_starts_with($x['callback'],'attentionService')?0:($x['actor']??0)) || (int)$d['user_id']!==$uid)
         throw new RuntimeException('fixture_telegram_claim_not_committed');
     $body=achbotPaymentEvidenceUnprotect(achbotServiceDeliveryPurpose((int)$d['service_operation_id'],
         (int)$d['ordinal'],(int)$d['effect_id'],(int)$d['order_id']),$d['sealed_payload']);
@@ -95,7 +96,7 @@ function sendMessage($text,$keys=null,$mode=null,$uid=null) {
             WHERE intent_id=? AND dispatch_token=?','is',[$fid,$d['dispatch_token']]);
         if ($d['state']!=='dispatching' || !$a || $a['result']!=='dispatching' ||
             (int)$a['attempt_no']!==(int)$d['attempt_count'] ||
-            (int)$a['actor_userid']!==(int)($x['actor']??0))
+            (int)$a['actor_userid']!==(int)($x['op']==='telegram_review' && str_starts_with($x['callback'],'attentionService')?0:($x['actor']??0)))
             throw new RuntimeException('fixture_followup_claim_not_committed');
         $s=achbotProviderStatement($db,'INSERT INTO fixture_followup(intent_id,recipient,text,mode,keys_json) VALUES (?,?,?,?,?)',
             'issss',[$d['id'],(string)$uid,$text,$mode,$keys]);$s->close();
@@ -139,7 +140,14 @@ $GLOBALS['paymentKeys']=['bankAccount'=>'fixture-bank','holderName'=>'fixture-ho
 ''' + LEGACY_RESERVE_PHP + r'''
 try {
     $presentation=['bot_state'=>[],'bot_url'=>'https://bot.fixture.invalid','bot_username'=>'fixture_bot'];
-    if ($x['op']==='step') $r=achbotServiceExecuteStep($db,$x['id'],$presentation);
+    if ($x['op']==='step') $r=achbotServiceExecuteStep($db,$x['id'],$presentation,(bool)($x['force']??false));
+    elseif ($x['op']==='resolution_preview') {
+        $actor=(int)($x['actor']??9001);
+        $r=achbotServiceResolutionPreview($db,$x['id'],$actor,9001);
+        if ($r) $r['token']=achbotServiceResolutionToken($r,$actor,$x['decision']);
+    }
+    elseif ($x['op']==='resolve') $r=achbotServiceResolve($db,$x['id'],(int)($x['actor']??9001),9001,$x['decision'],$x['token']);
+    elseif ($x['op']==='service_attention') $r=achbotServiceAttentionCaseOpen($db,$x['id']);
     elseif ($x['op']==='auto') $r=achbotServiceAutoRenewAdmit($db,$x['order'],(int)($x['owner']??1001),$x['bot_state']??['renewAutoState'=>'on']);
     elseif ($x['op']==='due') {
         $other=null;
@@ -360,9 +368,10 @@ def main():
     ap=argparse.ArgumentParser(description=__doc__)
     ap.add_argument('--run-disposable',required=True,action='store_true')
     ap.add_argument('--report',type=Path)
+    ap.add_argument('--resolution-only',action='store_true',help='Run focused current-schema resolution cases during development')
     args=ap.parse_args()
     cases=[]
-    with owned.owned_database() as (work,env):
+    with owned.owned_database(ROOT/'database/current-schema.sql') as (work,env):
         client=['mariadb','--no-defaults','--protocol=SOCKET','--socket='+str(work/'mysql.sock'),'-uroot','--batch','--skip-column-names',DB]
         def sql(q):
             p=subprocess.run(client,input=q,text=True,env=env,capture_output=True,timeout=15)
@@ -496,13 +505,6 @@ def main():
         thread=threading.Thread(target=server.serve_forever,daemon=True);thread.start()
         base='http://127.0.0.1:'+str(server.server_port)
         try:
-            for m in ('001_marzban_panel_group_id.sql','003_payment_attempts.sql','004_automatic_renewal_attempts.sql',
-                      '007_service_effects.sql','008_referral_awards.sql','011_provider_identity.sql','012_shared_provider_storage.sql',
-                      '014_api_payment_evidence.sql','015_scoped_addons.sql','017_shared_plan_changes.sql','018_payment_delivery_intents.sql','020_payment_followup_intents.sql','022_gateway_review_archive.sql',
-                      '023_scoped_payment_lock_indexes.sql','024_wallet_entries.sql',
-                      '025_wallet_receipt_credit.sql','026_service_operations.sql'):
-                sql((ROOT/'migrations/post-v9'/m).read_text())
-            # Rehearse forward alteration with an original 018 row present.
             sql("""INSERT INTO pays(hash_id,user_id,type,price,request_date,state)
                 VALUES ('legacy-delivery-fixture',1001,'INCREASE_WALLET',100,1700000000,'paid');
                 INSERT INTO payment_attempts(pay_row_id,provider,order_hash,quote_amount,quote_currency,local_amount_toman,stage)
@@ -510,10 +512,6 @@ def main():
                 INSERT INTO payment_delivery_intents(pay_row_id,ordinal,attempt_id,user_id,pay_type,pay_fingerprint,source_digest,sealed_payload,payload_sha256,state)
                 SELECT p.id,1,a.id,p.user_id,p.type,REPEAT('a',64),REPEAT('b',64),'original-packet',REPEAT('c',64),'unknown'
                 FROM pays p JOIN payment_attempts a ON a.pay_row_id=p.id WHERE p.hash_id='legacy-delivery-fixture';""")
-            original=sql("SELECT id,pay_row_id,attempt_id,pay_type,sealed_payload,state FROM payment_delivery_intents")
-            sql((ROOT/'migrations/post-v9/027_service_delivery_sources.sql').read_text())
-            sql((ROOT/'migrations/post-v9/028_service_mutations.sql').read_text())
-            assert sql("SELECT id,pay_row_id,attempt_id,pay_type,sealed_payload,state FROM payment_delivery_intents")==original
             sql("""INSERT INTO referral_awards(pay_row_id,buyer_userid,inviter_userid,amount_toman,state,before_balance,after_balance)
                 SELECT id,1001,9002,50,'CONFIRMED',0,50 FROM pays WHERE hash_id='legacy-delivery-fixture';
                 INSERT INTO payment_followup_intents(pay_row_id,intent_key,stage,kind,role,recipient,pay_fingerprint,sealed_payload,payload_sha256,state)
@@ -521,14 +519,10 @@ def main():
                 FROM pays WHERE hash_id='legacy-delivery-fixture'""")
             original_award=sql("SELECT id,pay_row_id,amount_toman,state,before_balance,after_balance FROM referral_awards")
             original_report=sql("SELECT id,pay_row_id,sealed_payload,state FROM payment_followup_intents")
-            sql((ROOT/'migrations/post-v9/029_service_purchase_referral.sql').read_text())
-            sql((ROOT/'migrations/post-v9/030_service_followup_sources.sql').read_text())
-            sql((ROOT/'migrations/post-v9/031_service_followup_attempts.sql').read_text())
             sql("UPDATE payment_delivery_intents SET attempt_count=1 WHERE pay_row_id IS NOT NULL")
             sql("INSERT INTO payment_delivery_attempts(intent_id,attempt_no,dispatch_token,result) SELECT id,1,REPEAT('d',32),'unknown' FROM payment_delivery_intents WHERE pay_row_id IS NOT NULL")
             original_delivery=sql("SELECT id,pay_row_id,attempt_id,sealed_payload,state,attempt_count FROM payment_delivery_intents")
             original_attempt=sql("SELECT id,intent_id,attempt_no,dispatch_token,result FROM payment_delivery_attempts")
-            sql((ROOT/'migrations/post-v9/032_service_delivery_parts.sql').read_text())
             assert sql("SELECT id,pay_row_id,attempt_id,sealed_payload,state,attempt_count FROM payment_delivery_intents")==original_delivery
             assert sql("SELECT id,intent_id,attempt_no,dispatch_token,result FROM payment_delivery_attempts")==original_attempt
             assert sql("SELECT COUNT(*) FROM payment_delivery_parts")=='0'
@@ -536,7 +530,6 @@ def main():
             assert sql("SELECT id,pay_row_id,amount_toman,state,before_balance,after_balance FROM referral_awards")==original_award
             assert sql("SELECT id,pay_row_id,sealed_payload,state FROM payment_followup_intents")==original_report
             assert sql("SELECT COUNT(*) FROM referral_awards WHERE service_operation_id IS NOT NULL")=='0'
-            sql((ROOT/'migrations/post-v9/033_checkout_commands.sql').read_text())
             assert sql("SELECT COUNT(*) FROM pays WHERE checkout_operation_id IS NOT NULL")=='0'
 
             sql("""CREATE TABLE fixture_followup(id INT AUTO_INCREMENT PRIMARY KEY,intent_id BIGINT UNSIGNED NOT NULL,
@@ -629,10 +622,149 @@ def main():
             def native(order):
                 remark=sql(f"SELECT remark FROM orders_list WHERE id={order}")
                 return users[remark]
+            def resolution_cases(mode):
+                def review(cb,actor=9001,**kw):
+                    return php(mode,'telegram_review',actor=actor,callback=cb,**kw)
+                def confirmation(r,prefix):
+                    assert len(r['review'])==1 and r['review'][0]['mode']=='HTML',r
+                    return next(b['callback_data'] for row in r['review'][0]['keys']['inline_keyboard']
+                                for b in row if b['callback_data'].startswith(prefix))
+                # Resolution on the actual current-schema execution and UI paths.
+                def resolve_op(op,decision='refunded',actor=9001):
+                    plan=php(mode,'resolution_preview',id=op,decision=decision,actor=actor)
+                    assert plan,plan
+                    return php(mode,'resolve',id=op,decision=decision,actor=actor,token=plan['token'])
+                # Full cancellation before any remote dispatch; no old name,
+                # invoice, or claim can consume the original debit again.
+                op=issue(mode,'resolution-full');fund(mode,op)
+                cap=int(sql('SELECT ucount FROM server_info WHERE id=2'))
+                bal=int(sql('SELECT wallet FROM users WHERE userid=1001'))
+                before=len(requests)
+                plan=php(mode,'resolution_preview',id=op,decision='refunded')
+                assert plan['refund']==100 and plan['cancel_count']==1 and not plan['can_close'],plan
+                assert php(mode,'resolve',id=op,decision='refunded',actor=1001,token=plan['token'])['status']=='denied'
+                assert php(mode,'resolve',id=op,decision='refunded',token='0'*20)['status']=='stale'
+                r=php(mode,'resolve',id=op,decision='refunded',token=plan['token'])
+                assert r==dict(status='refunded',refund=100,retained=0,cancelled=1),r
+                assert php(mode,'resolve',id=op,decision='refunded',token=plan['token'])['status']=='stale'
+                assert php(mode,'fund',id=op)=='request_invalidated'
+                assert int(sql('SELECT ucount FROM server_info WHERE id=2'))==cap+1
+                assert int(sql('SELECT wallet FROM users WHERE userid=1001'))==bal+100
+                assert len(requests)==before
+                step(mode,op,'cancelled')
+                assert sql(f"SELECT COUNT(*) FROM wallet_entries WHERE source_kind='service_refund' AND source_ref='{op}' AND delta_toman=100")=='1'
+                for rid in sql(f"SELECT id FROM payment_followup_intents WHERE service_operation_id={op} AND stage='service_resolution'").splitlines():
+                    assert php(mode,'followup',id=int(rid))=='acknowledged'
+                cases.append(mode+'_resolution_full_refund_once_and_reports')
+
+                # A failed second ordinal does not strand or refund the first.
+                op=issue(mode,'resolution-partial',3);fund(mode,op)
+                step(mode,op,'applied');step(mode,op,'progressed')
+                faults.append('get_unavailable');step(mode,op,'pending','pg_vendor_unavailable')
+                assert php(mode,'service_attention',id=op)
+                plan=php(mode,'resolution_preview',id=op,decision='refunded')
+                assert plan['retained']==1 and plan['cancel_count']==2 and plan['refund']==66 and len(plan['unlinked'])==1,plan
+                n=posts();cap=int(sql('SELECT ucount FROM server_info WHERE id=2'))
+                bal=int(sql('SELECT wallet FROM users WHERE userid=1001'))
+                assert not review(f'attentionServiceRefundC_{op}',actor=1001)['review']
+                confirm=confirmation(review(f'attentionServiceRefundC_{op}'),'attentionServiceRefundS_')
+                # UI's confirmation goes through the same atomic resolver.
+                review(confirm)
+                review(confirm)
+                assert sql(f"SELECT CONCAT(stage,':',resolution_kind,':',cancelled_count) FROM service_operations WHERE id={op}")=='completed:refunded:2'
+                assert int(sql('SELECT ucount FROM server_info WHERE id=2'))==cap+2
+                assert int(sql('SELECT wallet FROM users WHERE userid=1001'))==bal+66
+                assert posts()==n
+                assert sql(f"SELECT COUNT(*) FROM service_effects WHERE source_kind='service_operation' AND source_ref='{op}' AND state='cancelled'")=='1'
+                assert sql(f"SELECT COUNT(*) FROM orders_list o JOIN service_effects e ON o.id=e.order_id WHERE e.source_kind='service_operation' AND e.source_ref='{op}' AND o.amount=34")=='1'
+                did=int(sql(f"SELECT id FROM payment_delivery_intents WHERE service_operation_id={op}"))
+                assert php(mode,'deliver',id=did)=='acknowledged'
+                step(mode,op,'completed')
+                assert posts()==n
+                cases.append(mode+'_resolution_partial_buy_exact_allocation_and_delivery')
+
+                # Verified remote existence cannot be silently refunded.
+                op=issue(mode,'resolution-created');fund(mode,op)
+                faults.append('lost_response');step(mode,op,'pending','pg_vendor_unavailable')
+                plan=php(mode,'resolution_preview',id=op,decision='refunded')
+                f=finance()
+                assert php(mode,'resolve',id=op,decision='refunded',token=plan['token'])['status']=='account_exists'
+                assert finance()==f
+                n=posts()
+                assert php(mode,'step',id=op,force=True)['status']=='applied'
+                step(mode,op,'completed')
+                assert posts()==n
+                cases.append(mode+'_resolution_existing_native_blocks_refund_and_immediate_retry')
+                oid=int(sql(f"SELECT order_id FROM service_effects WHERE source_kind='service_operation' AND source_ref='{op}'"))
+
+                # No dependency on a previous operation's entitlement. While
+                # an operation is open, only its own field is a replay fence.
+                native(oid)['data_limit']+=7
+                e=edit(mode,'resolution-unrelated-edit',oid,'ADD_VOLUME',volume=1);fund(mode,e)
+                step(mode,e,'progressed')
+                before_quota=native(oid)['data_limit'];native(oid)['expire']=1800000000
+                new_expiry=native(oid)['expire']
+                step(mode,e,'applied');step(mode,e,'completed')
+                assert native(oid)['data_limit']==before_quota+1073741824 and native(oid)['expire']==new_expiry
+                cases.append(mode+'_resolution_independent_native_state_and_unrelated_field')
+
+                # Explicit external closure releases the physical marker,
+                # does not manufacture a provider result or financial credit.
+                e=edit(mode,'resolution-close',oid,'ADD_VOLUME',volume=1);fund(mode,e)
+                step(mode,e,'progressed');native(oid)['data_limit']+=19
+                step(mode,e,'pending','pg_service_edit_entitlement_conflict')
+                before=finance();n=len(writes())
+                assert resolve_op(e,'closed')['status']=='closed'
+                assert finance()==before and len(writes())==n
+                step(mode,e,'cancelled')
+                assert sql(f"SELECT CONCAT(stage,':',resolution_kind) FROM service_operations WHERE id={e}")=='cancelled:closed'
+                effect=int(sql(f'SELECT provider_effect_id FROM orders_list WHERE id={oid}'))
+                assert sql(f"SELECT provider_state FROM service_effects WHERE id={effect}")=='linked'
+                e=edit(mode,'resolution-new-edit',oid,'ADD_TIME',days=2);fund(mode,e)
+                step(mode,e,'progressed');step(mode,e,'applied');step(mode,e,'completed')
+                cases.append(mode+'_resolution_close_releases_account_and_next_operation')
+
+                # Unperformed edit may be refunded, but a readback proving
+                # the requested target was applied blocks a refund.
+                e=edit(mode,'resolution-edit-refund',oid,'ADD_VOLUME',volume=1);fund(mode,e)
+                step(mode,e,'progressed')
+                bal=int(sql('SELECT wallet FROM users WHERE userid=1001'))
+                assert resolve_op(e)['status']=='refunded'
+                assert int(sql('SELECT wallet FROM users WHERE userid=1001'))==bal+100
+                e=edit(mode,'resolution-edit-applied',oid,'ADD_VOLUME',volume=1);fund(mode,e)
+                step(mode,e,'progressed');faults.append('modify_lost')
+                step(mode,e,'pending','pg_vendor_unavailable')
+                f=finance()
+                assert resolve_op(e)['status']=='service_applied'
+                assert finance()==f
+                assert resolve_op(e,'closed')['status']=='closed'
+                cases.append(mode+'_resolution_edit_refund_and_known_applied_fence')
+
+                # A scheduled renewal has no pays row, yet appears in the
+                # same admin inbox and can be explicitly finalized.
+                sql(f"UPDATE orders_list SET notif=1,autoRenew='on' WHERE id={oid}")
+                native(oid)['used_traffic']=native(oid)['data_limit']
+                r=php(mode,'auto',order=oid);assert r['status']=='funded',r
+                aid=r['id'];native(oid)['data_limit']+=11
+                step(mode,aid,'pending','pg_service_reset_baseline_conflict')
+                assert php(mode,'service_attention',id=aid)
+                assert sql(f'SELECT COUNT(*) FROM pays WHERE checkout_operation_id={aid}')=='0'
+                card=review(f'attentionService_{aid}')
+                confirm=confirmation(card,'attentionServiceCloseC_')
+                assert confirm==f'attentionServiceCloseC_{aid}'
+                r=resolve_op(aid);assert r['status']=='refunded',r
+                assert sql(f'SELECT autoRenew FROM orders_list WHERE id={oid}')=='off'
+                assert php(mode,'auto',order=oid)['status']=='ineligible'
+                sql(f"UPDATE orders_list SET autoRenew='on' WHERE id={oid}")
+                r=php(mode,'auto',order=oid);assert r['status']=='funded',r
+                assert r['id']!=aid
+                assert resolve_op(r['id'],'closed')['status']=='closed'
+                cases.append(mode+'_resolution_auto_renewal_service_only_and_reenable')
+
             # Old prepaid claims are historical only. Neither the current
             # wallet callback nor a worker may adopt/replay them. Keep the
             # actual debit/capacity evidence for separate manual reconciliation.
-            sql((ROOT/'migrations/post-v9/034_wallet_owner_uniqueness.sql').read_text())
+            cases.append('current_schema_source_execution_without_migrations')
             historical={}
             for mode in ('strict','off'):
                 ref=mode+'-prepaid-custom'
@@ -651,7 +783,7 @@ def main():
                 assert sql(f"SELECT state FROM service_effects WHERE pay_row_id={pid}")=='reserved'
                 assert finance()==before and len(requests)==n
                 cases.append(mode+'_historical_prepaid_claim_no_adoption_or_new_effect')
-            for mode in ('strict','off'):
+            for mode in (() if args.resolution_only else ('strict','off')):
                 # Isolate each test mode's scheduler from previously deferred
                 # conflict fixtures; no terminal evidence is changed.
                 sql("UPDATE service_operations SET next_attempt_at=DATE_ADD(NOW(6),INTERVAL 1 DAY) WHERE stage IN ('funded','prepared','dispatching','applied')")
@@ -672,19 +804,7 @@ def main():
                 step(mode,id,'awaiting_funds');assert len(requests)==n and not rows(id)
                 cases.append(mode+'_unfunded_no_io')
                 fund(mode,id);before=finance();n=posts()
-                step(mode,id,'progressed');assert posts()==n+1 and len(rows(id))==1
-                faults.append('lost_response')
-                step(mode,id,'pending','pg_vendor_unavailable')
-                original=rows(id)[1].split('\t')[:5]
-                assert posts()==n+2 and len(rows(id))==2
-                step(mode,id,'not_due')
-                retry(id);step(mode,id,'progressed')
-                assert rows(id)[1].split('\t')[:5]==original and posts()==n+2
-                step(mode,id,'applied');assert posts()==n+3 and len(rows(id))==3
-                assert all('\tverified\t' in row for row in rows(id))
-                assert len({row.split('\t')[2] for row in rows(id)})==3
-                assert finance()==before
-                cases.append(mode+'_bulk_lost_response_exact_ordinal')
+                step(mode,id,'applied');assert posts()==n+1 and len(rows(id))==1
                 # Verify atomic finalization after the Native success is
                 # already committed. A failed delivery insert rolls back the
                 # Order and link. Retry is GET-only, never another CREATE.
@@ -705,7 +825,18 @@ def main():
                 assert php(mode,'plan',order=first_order,plan=8)['reason']=='physical_pending_financial_effect'
                 assert finance()==before and len(requests)==reqs
                 cases.append(mode+'_unfinished_bulk_ordinal_keeps_ownership')
+                faults.append('lost_response')
+                step(mode,id,'pending','pg_vendor_unavailable')
+                original=rows(id)[1].split('\t')[:5]
+                assert posts()==n+2 and len(rows(id))==2
+                step(mode,id,'not_due')
+                retry(id);step(mode,id,'applied')
+                assert rows(id)[1].split('\t')[:5]==original and posts()==n+2
                 step(mode,id,'progressed')
+                step(mode,id,'applied');assert posts()==n+3 and len(rows(id))==3
+                assert len({row.split('\t')[2] for row in rows(id)})==3
+                assert finance()==before
+                cases.append(mode+'_bulk_lost_response_exact_ordinal')
                 # The last ordinal and completed state commit together.
                 php(mode,'step',id=id,lost_ack=True)
                 step(mode,id,'completed')
@@ -745,10 +876,11 @@ def main():
                 token=php(mode,'preview_delivery',id=delivery_ids[1],part=2,actor=9001)
                 assert php(mode,'deliver',id=delivery_ids[1],part=2,actor=9001,confirmation='0'*20)=='stale'
                 assert php(mode,'deliver',id=delivery_ids[1],part=2,actor=9001,confirmation=token,responses={2:None})=='unknown'
-                token=php(mode,'preview_delivery',id=delivery_ids[1],part=2,actor=9001)
                 assert php(mode,'deliver',id=delivery_ids[1],part=2,actor=9001,confirmation=token)=='stale'
+                token=php(mode,'preview_delivery',id=delivery_ids[1],part=2,actor=9001)
+                assert php(mode,'deliver',id=delivery_ids[1],part=2,actor=9001,confirmation=token)=='acknowledged'
                 assert sql(f"SELECT COUNT(*) FROM fixture_telegram WHERE intent_id={delivery_ids[1]} AND part_no=1")=='1'
-                assert sql(f"SELECT COUNT(*) FROM fixture_telegram WHERE intent_id={delivery_ids[1]} AND part_no=2")=='2'
+                assert sql(f"SELECT COUNT(*) FROM fixture_telegram WHERE intent_id={delivery_ids[1]} AND part_no=2")=='3'
                 php(mode,'claim_delivery',id=delivery_ids[2])
                 assert php(mode,'deliver',id=delivery_ids[2])=='unknown'
                 assert sql(f"SELECT COUNT(*) FROM fixture_telegram WHERE intent_id={delivery_ids[2]} AND part_no=1")=='0'
@@ -757,7 +889,7 @@ def main():
                 token=php(mode,'preview_delivery',id=delivery_ids[2],part=1,actor=9001)
                 assert php(mode,'deliver',id=delivery_ids[2],part=1,actor=9001,confirmation=token)=='acknowledged'
                 assert php(mode,'deliver',id=delivery_ids[2])=='acknowledged'
-                assert sql(f"SELECT COUNT(*) FROM payment_delivery_attempts a JOIN payment_delivery_intents d ON d.id=a.intent_id WHERE d.service_operation_id={id} AND a.result IN ('acknowledged','unknown')")=='8'
+                assert sql(f"SELECT COUNT(*) FROM payment_delivery_attempts a JOIN payment_delivery_intents d ON d.id=a.intent_id WHERE d.service_operation_id={id} AND a.result IN ('acknowledged','unknown')")=='9'
                 assert len(requests)==reqs and finance()==before
                 step(mode,id,'completed')
                 cases.append(mode+'_delivery_ack_unknown_and_abandoned_claim')
@@ -936,36 +1068,8 @@ DELIMITER ;
                 step(mode,conflict,'pending','pg_service_edit_entitlement_conflict')
                 assert len(writes())==n and finance()==before
                 cases.append(mode+'_edit_external_drift_no_blind_overwrite')
-                # A legacy charged automatic cycle may have committed before
-                # the first Native mutation marker. Neither alias can buy a
-                # second renewal or edit over that original pending work.
-                buy=issue(mode,'legacy-auto-fence');fund(mode,buy)
-                step(mode,buy,'applied');step(mode,buy,'completed')
-                old_order=int(sql(f"SELECT order_id FROM service_effects WHERE source_kind='service_operation' AND source_ref='{buy}'"))
-                old_alias=php(mode,'alias',order=old_order)
-                sql(f"UPDATE orders_list SET fileid=7,notif=1,autoRenew='on' WHERE id IN ({old_order},{old_alias})")
-                native(old_order)['used_traffic']=native(old_order)['data_limit']
-                expiry=sql(f"SELECT expire_date FROM orders_list WHERE id={old_alias}")
-                old_ref=mode+'-old-cycle'
-                sql(f"""INSERT INTO pays(hash_id,user_id,type,price,request_date,state,server_id,plan_id,order_id)
-                    VALUES ('{old_ref}',9002,'RENEW_ACCOUNT',100,UNIX_TIMESTAMP(),'processing_wallet',2,7,{old_alias});
-                    INSERT INTO automatic_renewal_attempts(order_id,cycle_expire,pay_row_id,user_id,plan_id,server_id,account_remark,price_toman,duration_days,volume_gb,new_expire,stage)
-                    SELECT {old_alias},{expiry},p.id,9002,7,2,o.remark,100,30,2,{expiry}+2592000,'reserved'
-                    FROM pays p JOIN orders_list o ON o.id={old_alias} WHERE p.hash_id='{old_ref}'""")
-                before=finance();n=len(requests)
-                for oid,uid in ((old_order,1001),(old_alias,9002)):
-                    assert php(mode,'auto',order=oid,owner=uid)=={'status':'deferred','reason':'service_historical_auto_pending'}
-                sid,plan,remark,uuid=sql(f"SELECT server_id,fileid,remark,uuid FROM orders_list WHERE id={old_order}").split('\t')
-                assert php(mode,'issue',ref=mode+'-legacy-auto-edit',quote=dict(kind='ADD_TIME',variant='managed',price=100,
-                    server_id=int(sid),plan_id=int(plan),order_id=old_order,quantity=1,days=1,volume=0,remark=remark,uuid=uuid),
-                    expect_error='service_historical_auto_pending')
-                assert finance()==before and len(requests)==n
-                # A terminal original cycle is not a second charge even
-                # if its local scheduling flag still refers to the old date.
-                sql(f"UPDATE automatic_renewal_attempts SET stage='done' WHERE order_id={old_alias}; UPDATE pays SET state='paid_with_wallet' WHERE hash_id='{old_ref}'")
-                assert php(mode,'auto',order=old_alias,owner=9002)=={'status':'deferred','reason':'service_historical_auto_pending'}
-                assert finance()==before and len(requests)==n
-                cases.append(mode+'_historical_auto_alias_pending_and_terminal_cycle_fenced')
+                # No historical renewal journal exists in this fixture.
+                assert sql("SHOW TABLES LIKE 'automatic_renewal_attempts'")==''
                 # Scheduled renewal uses the exact same operation/physical
                 # journal, without creating a synthetic payment or attempt.
                 buy=issue(mode,'auto-source');fund(mode,buy)
@@ -1053,6 +1157,7 @@ DELIMITER ;
                 assert finance()==before and len(writes())==n+2
                 cases.append(mode+'_automatic_renewal_source_only_reports_independent_ack')
                 cases.append(mode+'_automatic_renewal_alias_single_charge_original_notice')
+                cases.append(mode+'_automatic_renewal_without_historical_table')
                 # Original low-balance policy: disable auto renewal, no debit,
                 # and no synthetic paid invoice or remote write.
                 buy=issue(mode,'auto-low');fund(mode,buy);step(mode,buy,'applied');step(mode,buy,'completed')
@@ -1254,7 +1359,7 @@ DELIMITER ;
                 assert settle(mode,first)['credit']['replayed']
                 assert settle(mode,late)['funding']=='already_funded'
                 assert not award(op)
-                for stage in ('progressed','progressed','applied','progressed','progressed'):
+                for stage in ('applied','progressed','applied','progressed','applied'):
                     step(mode,op,stage);assert not award(op)
                 php(mode,'step',id=op,lost_ack=True)
                 assert sql(f"SELECT stage FROM service_operations WHERE id={op}")=='completed'
@@ -1311,9 +1416,10 @@ DELIMITER ;
                 assert sql(f"SELECT COUNT(*) FROM fixture_followup WHERE intent_id={rid}")=='1'
                 preview=php(mode,'preview_followup',id=rid,actor=9001)
                 assert php(mode,'followup',id=rid,actor=9001,confirmation=preview,unknown_ack=True)=='unknown'
-                preview=php(mode,'preview_followup',id=rid,actor=9001)
                 assert php(mode,'followup',id=rid,actor=9001,confirmation=preview)=='stale'
-                assert sql(f"SELECT COUNT(*) FROM fixture_followup WHERE intent_id={rid}")=='2'
+                preview=php(mode,'preview_followup',id=rid,actor=9001)
+                assert php(mode,'followup',id=rid,actor=9001,confirmation=preview)=='acknowledged'
+                assert sql(f"SELECT COUNT(*) FROM fixture_followup WHERE intent_id={rid}")=='3'
                 cases.append(mode+'_followup_unknown_manual_attempt_not_repeated')
                 sql("UPDATE payment_followup_intents SET updated_at=NOW() WHERE state='pending' AND next_attempt_at IS NULL")
                 rid=int(targets['referral_channel'])
@@ -1524,7 +1630,7 @@ DELIMITER ;
                 sql(f"INSERT INTO pays(hash_id,user_id,type,price,request_date,state,agent_count) VALUES ('{ref}',1001,'BUY_SUB',100,UNIX_TIMESTAMP(),'pending',2)")
                 pid=int(sql(f"SELECT id FROM pays WHERE hash_id='{ref}'"))
                 assert php(mode,'manual_receipt',pay=pid,id=op,actor=9002)['funding']=='funded'
-                step(mode,op,'progressed');step(mode,op,'applied');step(mode,op,'progressed')
+                step(mode,op,'applied');step(mode,op,'progressed');step(mode,op,'applied')
                 before=finance();n=posts()
                 sql("""DELIMITER //
 CREATE TRIGGER fixture_manual_delivery_notice_fail BEFORE INSERT ON payment_followup_intents FOR EACH ROW
@@ -1700,7 +1806,7 @@ DELIMITER ;
                 r=php(mode,'checkout_wallet',hash=h)
                 assert r['status']=='funded',r
                 op=r['operation']
-                for stage in ('progressed','applied','progressed','completed'):step(mode,op,stage)
+                for stage in ('applied','progressed','applied','completed'):step(mode,op,stage)
                 assert sql(f"SELECT COUNT(*) FROM service_effects WHERE source_kind='service_operation' AND source_ref='{op}' AND state='local_recorded'")=='2'
                 cases.append(mode+'_actual_bulk_checkout_draft')
                 h,pid=insert_checkout('renew','RENEW_ACCOUNT',order=order)
@@ -1848,7 +1954,13 @@ DELIMITER ;
                 assert finance()==before and len(requests)==wire
                 cases.append(mode+'_actual_private_operator_delivery_and_report_confirmation_once')
 
+                resolution_cases(mode)
+
                 assert not faults and not errors,(faults,errors)
+            if args.resolution_only:
+                for mode in ('strict','off'):
+                    resolution_cases(mode)
+                    assert not faults and not errors,(faults,errors)
         finally:
             release.set();server.shutdown();server.server_close();thread.join(5)
     result=dict(complete=True,cases=len(cases),checks=cases,requests=len(requests),posts=posts())

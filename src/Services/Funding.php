@@ -5,6 +5,7 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '')===__FILE__) {http_response_code(
 require_once __DIR__.'/../Wallet/Ledger.php';
 require_once __DIR__.'/../Purchase/Core.php';
 require_once __DIR__.'/../Panel/ProviderStorage.php';
+require_once __DIR__.'/Ownership.php';
 
 /**
  * Local quote admission and Wallet funding only. The trusted business adapter
@@ -105,6 +106,7 @@ function achbotServiceLocalTargetLocked(mysqli $db,int $userId,array $q,bool $is
 function achbotServiceReadLocked(mysqli $db,int $userId,int $operationId): array {
     $owner=achbotWalletLockOwnerLocked($db,$userId);
     $op=achbotProviderRow($db,'SELECT * FROM service_operations WHERE id=? FOR UPDATE','i',[$operationId]);
+    if ($op && !array_key_exists('resolution_kind',$op)) throw new RuntimeException('service_ownership_schema_invalid');
     if (!$op || (int)$op['userid']!==$userId || (int)$op['user_row_id']!==$owner['id'])
         throw new RuntimeException('service_operation_owner');
     $payload=(string)$op['quote_payload'];
@@ -123,6 +125,7 @@ function achbotServiceReadLocked(mysqli $db,int $userId,int $operationId): array
 /** Exact command replay returns the original immutable quote, not a new quote
  * or a new debit. Caller owns the surrounding transaction. */
 function achbotServiceIssueLocked(mysqli $db,int $userId,string $commandKind,string $commandRef,array $request): int {
+    achbotServiceOperationsPresent($db);
     $owner=achbotWalletLockOwnerLocked($db,$userId);
     if (!preg_match('/\A[a-z][a-z0-9_]{0,31}\z/D',$commandKind) ||
         $commandRef==='' || strlen($commandRef)>128) throw new InvalidArgumentException('service_command_identity');
@@ -146,18 +149,23 @@ function achbotServiceIssueLocked(mysqli $db,int $userId,string $commandKind,str
     return $id;
 }
 
+function achbotServiceVerifyFundingLocked(mysqli $db,array $op,array $owner): void {
+    $price=(int)$op['price_toman'];$userId=(int)$op['userid'];$operationId=(int)$op['id'];
+    if ($price>0) {
+        $e=achbotWalletFindEntryLocked($db,$owner['id'],$userId,'service_debit',(string)$operationId,0,-$price);
+        if (!$e || $e['id']!==(int)$op['debit_entry_id'])
+            throw new RuntimeException('service_debit_finality_conflict');
+    } elseif ($op['debit_entry_id']!==null) throw new RuntimeException('service_zero_debit_conflict');
+}
+
 /** Only this transition reserves service money and BUY capacity. No Native
  * execution is authorized by a payment method or an unfunded operation. */
 function achbotServiceFundLocked(mysqli $db,int $userId,int $operationId): string {
     [$op,$quote,$owner]=achbotServiceReadLocked($db,$userId,$operationId);
     $q=$quote['request'];$price=$q['price'];$count=$q['kind']==='BUY'?$q['quantity']:0;
-    if ($op['stage']==='cancelled' || ($op['stage']==='awaiting_funds' && $op['archived_at']!==null)) return 'request_invalidated';
+    if ($op['resolution_kind']!==null || $op['stage']==='cancelled') return 'request_invalidated';
     if (in_array($op['stage'],['funded','prepared','dispatching','applied','completed'],true)) {
-        if ($price>0) {
-            $e=achbotWalletFindEntryLocked($db,$owner['id'],$userId,'service_debit',(string)$operationId,0,-$price);
-            if (!$e || $e['id']!==(int)$op['debit_entry_id'])
-                throw new RuntimeException('service_debit_finality_conflict');
-        } elseif ($op['debit_entry_id']!==null) throw new RuntimeException('service_zero_debit_conflict');
+        achbotServiceVerifyFundingLocked($db,$op,$owner);
         return 'already_funded';
     }
     if ($op['stage']!=='awaiting_funds' || $op['debit_entry_id']!==null ||

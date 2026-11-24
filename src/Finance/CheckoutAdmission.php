@@ -258,6 +258,10 @@ function achbotCheckoutWallet(mysqli $db,string $hash,int $actor,string $mode,ar
         if ($attempt) throw new DomainException('checkout_original_attempt_conflict');
         if ($pay['checkout_operation_id']!==null && $pay['state']==='paid_with_wallet') {
             [$op]=achbotCheckoutOriginalCommandLocked($db,$pay);
+            if (($op['resolution_kind']??null)!==null) {
+                $db->rollback();
+                return ['status'=>'request_invalidated','wallet'=>$owner['wallet'],'price'=>(int)$pay['price']];
+            }
             if (achbotServiceFundLocked($db,$actor,(int)$op['id'])!=='already_funded')
                 throw new RuntimeException('checkout_wallet_projection_invalid');
             $db->rollback();

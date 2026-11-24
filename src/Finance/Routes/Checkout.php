@@ -70,7 +70,7 @@ if (is_string($data) && strlen($data)<=64 &&
     }
 }
 
-if (is_string($data) && (strlen($data) <= 64 || ($GLOBALS['achbotManualCryptoVerifiedDispatch'] ?? null) === $data) && preg_match('/\ApayCustomWith(?:CartToCart|GiftCard|ManualUsdt)([A-Za-z0-9_-]{1,50})\z/D', $data, $match)) {
+if (is_string($data) && (str_contains($data,'WithManualUsdt') ? ($GLOBALS['achbotManualCryptoVerifiedDispatch'] ?? null) === $data : strlen($data) <= 64) && preg_match('/\ApayCustomWith(?:CartToCart|GiftCard|ManualUsdt)([A-Za-z0-9_-]{1,50})\z/D', $data, $match)) {
 
     $payInfo = dbFetchPayByHash($connection, $match[1]);
     if (!$payInfo) {
@@ -258,7 +258,7 @@ if (is_string($data) && strlen($data) <= 64 && preg_match('/\ApayBuyWithWallet([
     return;
 }
 
-if (is_string($data) && (strlen($data) <= 64 || ($GLOBALS['achbotManualCryptoVerifiedDispatch'] ?? null) === $data) && preg_match('/\ApayBuyWith(?:CartToCart|GiftCard|ManualUsdt)([A-Za-z0-9_-]{1,50})\z/D', $data, $match)) {
+if (is_string($data) && (str_contains($data,'WithManualUsdt') ? ($GLOBALS['achbotManualCryptoVerifiedDispatch'] ?? null) === $data : strlen($data) <= 64) && preg_match('/\ApayBuyWith(?:CartToCart|GiftCard|ManualUsdt)([A-Za-z0-9_-]{1,50})\z/D', $data, $match)) {
 
     $payInfo = dbFetchPayByHash($connection, $match[1]);
     if (!$payInfo) {

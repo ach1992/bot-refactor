@@ -33,11 +33,6 @@ function achbotFollowupAttemptClaimLocked(mysqli $db,array $r,int $actor,?string
         if ($primary<=0 || !achbotAdminCanLocked($db,$actor,$primary,'payments')) return ['status'=>'denied'];
         if (!hash_equals(achbotFollowupRedriveToken($r,$actor),$confirmation) ||
             !$last || $last['result']!==$state) return ['status'=>'stale'];
-        // Preserve the existing one explicitly authorized unknown resend
-        // rule. A known rejection can be corrected without guessing delivery.
-        if ($state==='unknown' && achbotProviderRow($db,
-            "SELECT id FROM payment_followup_attempts WHERE intent_id=? AND claim_state='unknown' AND actor_userid>0 LIMIT 1",
-            'i',[$id])) return ['status'=>'stale'];
     } else {
         if ($confirmation!==null || $state!=='pending') return ['status'=>'stale'];
         if ($count>0 && (!$last || $last['result']!=='rejected' ||

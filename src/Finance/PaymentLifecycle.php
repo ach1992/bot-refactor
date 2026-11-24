@@ -13,9 +13,7 @@ require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
 
 function achbotPayUxTable(mysqli $db, string $name): bool {
     if (!in_array($name, ['payment_attempts','payment_transactions',
-                          'payment_message_refs','service_effects','automatic_renewal_attempts',
-                          'payment_delivery_intents',
-                          'payment_followup_intents'], true)) return false;
+                          'payment_message_refs'], true)) return false;
     try {
         $result = $db->query("SHOW TABLES LIKE '".$name."'");
         return $result instanceof mysqli_result && $result->num_rows === 1;
@@ -181,11 +179,9 @@ function achbotPayUxInsertDraft(mysqli $db, int $actor, mysqli_stmt $insert, boo
         if ($type==='RENEW_ACCOUNT' || $addon) {
             $orderId=$addon?(int)$match[1]:(int)$pay['order_id'];
             // The issued invoice must belong to this owner and currently
-            // selected service. A legacy add-on may have order_id=0, but its
-            // canonical type still pins the exact original order.
+            // selected service. The current add-on type and order_id must agree.
             if ($orderId<=0 || (int)$pay['user_id']!==$actor ||
-                ($addon && (int)($pay['order_id']??0)!==0 &&
-                 (int)$pay['order_id']!==$orderId) ||
+                ($addon && (int)$pay['order_id']!==$orderId) ||
                 achbotProviderPaymentSubjectServer($db,$pay)!==(int)$pay['server_id'])
                 throw new RuntimeException('draft_service_identity_changed');
             require_once __DIR__.'/../Purchase/Core.php';

@@ -275,7 +275,7 @@ if ($text != (\achbotMessage('legacy_buttons.cancel') ?? null) &&
     return;
 }
 
-if (is_string($data) && (strlen($data) <= 64 || ($GLOBALS['achbotManualCryptoVerifiedDispatch'] ?? null) === $data) && preg_match('/\ApayIncreaseWalletWith(?:CartToCart|GiftCard|ManualUsdt)(?<hashId>[A-Za-z0-9_-]{1,50})\z/D', $data, $match)) {
+if (is_string($data) && (str_contains($data,'WithManualUsdt') ? ($GLOBALS['achbotManualCryptoVerifiedDispatch'] ?? null) === $data : strlen($data) <= 64) && preg_match('/\ApayIncreaseWalletWith(?:CartToCart|GiftCard|ManualUsdt)(?<hashId>[A-Za-z0-9_-]{1,50})\z/D', $data, $match)) {
 
     $payInfo = dbFetchPayByHash($connection, $match['hashId']);
     if (!$payInfo) {

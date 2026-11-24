@@ -10,29 +10,9 @@ function achbotServiceOperationsPresent(mysqli $db): bool {
     if ($r===null) throw new RuntimeException('service_ownership_schema_missing');
     if ($r['TABLE_TYPE']!=='BASE TABLE' || strcasecmp((string)$r['ENGINE'],'InnoDB')!==0)
         throw new RuntimeException('service_ownership_schema_invalid');
+    $s=achbotProviderStatement($db,'SELECT resolution_kind,resolved_by,resolved_at,refund_entry_id,cancelled_count FROM service_operations LIMIT 0');
+    $s->close();
     return true;
-}
-
-/** Historical 004 claims own their original subscription until proven
- * terminal. Include aliases of the same physical account, even when the
- * old journal was written before its Native mutation marker. The caller
- * holds the physical account lease for scheduling and the owner/order locks
- * for financial admission. 004 is retained as historical evidence. */
-function achbotServiceHistoricalAutoPending(mysqli $db,int $orderId,?int $effectId,bool $lock=false): ?array {
-    $suffix=$lock?' FOR UPDATE':'';
-    if ($effectId!==null && $effectId>0)
-        return achbotProviderRow($db,"SELECT a.id,a.order_id,a.stage
-            FROM orders_list o FORCE INDEX(idx_order_provider_effect)
-            JOIN automatic_renewal_attempts a FORCE INDEX(idx_renewal_inflight) ON a.order_id=o.id
-            WHERE o.provider_effect_id=? AND a.stage<>'done' LIMIT 1".$suffix,'i',[$effectId]);
-    return achbotProviderRow($db,"SELECT id,order_id,stage FROM automatic_renewal_attempts
-        WHERE order_id=? AND stage<>'done' LIMIT 1".$suffix,'i',[$orderId]);
-}
-
-/** Exact original cycle replay, including a historical terminal cycle. */
-function achbotServiceHistoricalAutoCycle(mysqli $db,int $orderId,int $cycle,bool $lock=false): ?array {
-    return achbotProviderRow($db,'SELECT id,stage FROM automatic_renewal_attempts
-        WHERE order_id=? AND cycle_expire=?'.($lock?' FOR UPDATE':''),'ii',[$orderId,$cycle]);
 }
 
 /** Original purchased account provenance. The caller already holds the
@@ -55,7 +35,7 @@ function achbotServiceOriginalBuyLocked(mysqli $db,array $effect): array {
         (int)$op['subject_order_id']!==0 ||
         (int)$op['target_server_id']!==(int)$effect['target_server_id'] ||
         (int)$op['reserved_count']!==$q['quantity'] ||
-        (int)$effect['ordinal']<1 || (int)$effect['ordinal']>$q['quantity'] ||
+        (int)$effect['ordinal']<1 || (int)$effect['ordinal']>$q['quantity']-(int)$op['cancelled_count'] ||
         (int)$op['userid']!==(int)$effect['actor_userid'] ||
         ($q['server_id']??null)!==(int)$effect['target_server_id'] ||
         ($q['plan_id']??null)!==(int)$effect['plan_id'] ||
@@ -70,7 +50,7 @@ function achbotServiceOriginalBuyLocked(mysqli $db,array $effect): array {
  * database-wide scan or a new session lock. Only genuinely funded work
  * holds the subject; unpaid quotes are retired in the real change commit. */
 function achbotServiceSubjectWorkSettledLocked(mysqli $db,array $peers,bool $retire=false): bool {
-    if (!achbotServiceOperationsPresent($db)) return true;
+    achbotServiceOperationsPresent($db);
     $ids=[];$anchors=[];
     foreach ($peers as $o) {
         $id=(int)($o['id']??0);
@@ -110,7 +90,7 @@ function achbotServiceSubjectWorkSettledLocked(mysqli $db,array $peers,bool $ret
 function achbotServicePlanChangePendingLocked(mysqli $db,string $lock): bool {
     $r=achbotProviderRow($db,"SELECT TABLE_TYPE,ENGINE FROM information_schema.TABLES
         WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='service_plan_changes'");
-    if (!$r) return false;
+    if (!$r) throw new RuntimeException('service_plan_journal_missing');
     if ($r['TABLE_TYPE']!=='BASE TABLE' || strcasecmp((string)$r['ENGINE'],'InnoDB')!==0)
         throw new RuntimeException('service_plan_journal_invalid');
     return achbotProviderRow($db,"SELECT id FROM service_plan_changes FORCE INDEX(idx_shared_plan_lock_state)
@@ -120,7 +100,7 @@ function achbotServicePlanChangePendingLocked(mysqli $db,string $lock): bool {
 /** Rebinding a logical endpoint must not strand a charged purchase before
  * its first order exists. Ordinary credential rotation remains allowed. */
 function achbotServiceServerWorkSettledLocked(mysqli $db,array $serverIds): bool {
-    if (!achbotServiceOperationsPresent($db)) return true;
+    achbotServiceOperationsPresent($db);
     $ids=[];
     foreach ($serverIds as $id) {
         if (!is_int($id) || $id<=0) throw new RuntimeException('service_ownership_server_invalid');

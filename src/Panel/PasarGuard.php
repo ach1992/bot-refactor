@@ -207,11 +207,9 @@ function achbotPgCreate(array $panel,array $request): array {
  * coordinator observation. This is not an atomic provider-side CAS.
  */
 function achbotPgExpectedEntitlementMatches(array $actual,array $expected): bool {
-    foreach (['data_limit','expire','status','group_ids'] as $field)
-        if (!array_key_exists($field,$actual) ||
-            !array_key_exists($field,$expected) ||
-            $actual[$field]!==$expected[$field])
-            return false;
+    if (!$expected || array_diff(array_keys($expected),['data_limit','expire','status','group_ids'])) return false;
+    foreach ($expected as $field=>$value)
+        if (!array_key_exists($field,$actual) || $actual[$field]!==$value) return false;
     return true;
 }
 function achbotPgModify(array $panel,array $identity,array $absoluteChanges,
@@ -268,7 +266,7 @@ function achbotPgModify(array $panel,array $identity,array $absoluteChanges,
             return achbotPgFailure('pg_modify_identity_unconfirmed',true,$r['http']);
         $read=achbotPgRead($panel,$identity);
         if (!$read['success']) return achbotPgFailure('pg_modify_readback_unconfirmed',true,$read['http']);
-        $target=array_merge(array_intersect_key($before['user'],array_flip(['data_limit','expire','status','group_ids'])),$expected);
+        $target=array_merge(array_intersect_key($before['user'],($expectedNativeEntitlement??array_flip(['data_limit','expire','status','group_ids']))),$expected);
         // An expiry/quota change may naturally activate expired/limited users.
         foreach ($target as $key=>$value) {
             if ($key==='status' && !array_key_exists('status',$expected)) continue;
@@ -313,7 +311,7 @@ function achbotPgAction(array $panel,array $identity,string $action,
         return achbotPgFailure('pg_action_identity_unconfirmed',true,$r['http']);
     $read=achbotPgRead($panel,$identity);
     if (!$read['success']) return achbotPgFailure('pg_action_readback_unconfirmed',true,$read['http']);
-    foreach (['data_limit','expire','group_ids'] as $key) if ($read['user'][$key]!==$before['user'][$key])
+    foreach (['data_limit','expire','group_ids'] as $key) if (($expectedNativeEntitlement===null || array_key_exists($key,$expectedNativeEntitlement)) && $read['user'][$key]!==$before['user'][$key])
         return achbotPgFailure('pg_action_entitlement_changed',true,$read['http']);
     if (!achbotPgManaged($read['user'])) return achbotPgFailure('pg_native_schedule_conflict',true,$read['http']);
     if ($action==='reset' && $ack['user']['used_traffic']!==0)

@@ -52,17 +52,10 @@ def main():
     ap.add_argument('--run-disposable',required=True,action='store_true')
     ap.add_argument('--report',type=Path)
     args=ap.parse_args();cases=[]
-    with owned.owned_database() as (work,env):
+    with owned.owned_database(ROOT/'database/current-schema.sql') as (work,env):
         cli=['mariadb','--no-defaults','--protocol=SOCKET','--socket='+str(work/'mysql.sock'),'-uroot','--batch','--skip-column-names',DB]
         def sql(q):
             return subprocess.run(cli,input="SET time_zone='+00:00';"+q,text=True,env=env,check=True,capture_output=True,timeout=20).stdout.strip()
-        for m in ('001_marzban_panel_group_id.sql','003_payment_attempts.sql','004_automatic_renewal_attempts.sql','007_service_effects.sql',
-                  '011_provider_identity.sql','012_shared_provider_storage.sql','014_api_payment_evidence.sql',
-                  '022_gateway_review_archive.sql','023_scoped_payment_lock_indexes.sql','024_wallet_entries.sql',
-                  '025_wallet_receipt_credit.sql','026_service_operations.sql',
-                  '008_referral_awards.sql','020_payment_followup_intents.sql','029_service_purchase_referral.sql',
-                  '030_service_followup_sources.sql','031_service_followup_attempts.sql'):
-            sql((ROOT/'migrations/post-v9'/m).read_text())
         sql("""INSERT INTO setting(type,value) VALUES ('BOT_STATES','{"cartToCartAutoAcceptState":"on","cartToCartAutoAcceptTime":5,"cartToCartAutoAcceptType":2}');
             INSERT INTO server_config(id,panel_url,ip,sni,header_type,request_header,response_header,security,tlsSettings,type,username,password)
             VALUES (2,'https://fixture.invalid','127.0.0.1','','none','','','none','{}','pasarguard','fixture','fixture');

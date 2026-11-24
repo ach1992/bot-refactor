@@ -97,7 +97,7 @@ def main():
                 '024_wallet_entries.sql','025_wallet_receipt_credit.sql','026_service_operations.sql',
                 '027_service_delivery_sources.sql','028_service_mutations.sql','029_service_purchase_referral.sql',
                 '030_service_followup_sources.sql','031_service_followup_attempts.sql',
-                '032_service_delivery_parts.sql','033_checkout_commands.sql'):
+                '032_service_delivery_parts.sql','033_checkout_commands.sql','035_service_resolution.sql'):
                 sql((ROOT/'migrations/post-v9'/m).read_text())
             sql("UPDATE users SET wallet=-300 WHERE userid=9002")
             sql("""INSERT INTO pays(hash_id,user_id,type,price,request_date,state)

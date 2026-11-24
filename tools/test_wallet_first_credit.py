@@ -70,17 +70,13 @@ def main():
     ap.add_argument('--report', type=Path)
     args = ap.parse_args()
     cases = []
-    with owned.owned_database() as (work, env):
+    with owned.owned_database(ROOT/'database/current-schema.sql') as (work, env):
         client = ['mariadb', '--no-defaults', '--protocol=SOCKET',
                   '--socket='+str(work/'mysql.sock'), '-uroot', '--batch',
                   '--skip-column-names', DB]
         def sql(query):
             return subprocess.run(client, input="SET time_zone='+00:00';"+query,
                 text=True, env=env, check=True, capture_output=True, timeout=15).stdout.strip()
-        for migration in ('003_payment_attempts.sql','014_api_payment_evidence.sql',
-                          '022_gateway_review_archive.sql','024_wallet_entries.sql',
-                          '025_wallet_receipt_credit.sql'):
-            sql((ROOT/'migrations/post-v9'/migration).read_text())
         sql("INSERT INTO setting(type,value) VALUES ('BOT_STATES','{\"cartToCartAutoAcceptState\":\"on\",\"cartToCartAutoAcceptTime\":5,\"cartToCartAutoAcceptType\":2}')")
         server=evidence.Server(lambda:sql('SET innodb_lock_wait_timeout=1; UPDATE payment_attempts SET last_checked_at=NOW()'))
         thread=threading.Thread(target=server.serve_forever,daemon=True)

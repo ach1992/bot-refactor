@@ -88,6 +88,7 @@ OTHER_TESTS = (
 # not merely removed from the roster. See docs/post-v9/CI-VALIDATION.md.
 REQUIRED_CURRENT_CASES = {
     "wallet_first_service_execution": (
+        "current_schema_source_execution_without_migrations",
         "five_real_wallet_callbacks_owner_schema_and_replay_fences",
         "actual_low_wallet_callback_switch_to_manual",
         "invalid_native_names_never_debit_or_allocate",
@@ -98,13 +99,20 @@ REQUIRED_CURRENT_CASES = {
         "actual_scoped_day_manual_checkout_draft",
         "actual_scoped_volume_manual_checkout_draft",
         "historical_prepaid_claim_no_adoption_or_new_effect",
-        "historical_auto_alias_pending_and_terminal_cycle_fenced",
+        "automatic_renewal_without_historical_table",
         "automatic_renewal_alias_single_charge_original_notice",
         "alias_fence_and_lost_put_absolute_addons",
         "local_commit_failure_recovery",
         "reset_ack_with_new_traffic_no_repeat_on_put_outage",
         "manual_rejection_cancels_original_and_recovers_notice_without_money",
         "actual_private_operator_delivery_and_report_confirmation_once",
+        "resolution_full_refund_once_and_reports",
+        "resolution_partial_buy_exact_allocation_and_delivery",
+        "resolution_existing_native_blocks_refund_and_immediate_retry",
+        "resolution_independent_native_state_and_unrelated_field",
+        "resolution_close_releases_account_and_next_operation",
+        "resolution_edit_refund_and_known_applied_fence",
+        "resolution_auto_renewal_service_only_and_reenable",
     ),
     "wallet_first_manual": (
         "bank_transfer_actual_issue_and_manual_approval",

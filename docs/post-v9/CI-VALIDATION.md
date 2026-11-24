@@ -61,10 +61,10 @@ receipts in both MySQLi modes for the critical replacements.
 | api_payments | wallet_first_credit, wallet_first_manual: SMS/gift verified identity, one credit, lost evidence ACK, local rollback, archive, service invalidation; service execution owns subsequent Native/Telegram effects |
 | postcutover_recovery | wallet_first_cutover_openings, wallet_first_service_execution: historical prepaid evidence cannot execute, current uncertain CREATE/readback/commit recovery, migrated alias identity fences; native_import_name_reuse, native_import_alias_duplicate remain |
 | nowpayments_finality | wallet_first_hosted: original credential, signed child, exact amount/order/invoice, confirmed not final, uncertain issuance, actual public checkout/return, poll and replay |
-| automatic_renewal | wallet_first_service_execution: actual scheduled cycle, alias one-charge, low balance, frozen target, old pending cycle, reset lost ACK, fair worker, durable notices |
+| automatic_renewal | wallet_first_service_execution: actual scheduled cycle, alias one-charge, low balance, frozen target, no historical renewal table, reset lost ACK, fair worker, durable notices |
 | bank_purchase | wallet_first_manual, wallet_first_service_execution: original bank receipt and timer, manual service completion, rollback, exact receipt edits, standard/custom/bulk, durable delivery |
 | wallet_checkout | wallet_first_funding, wallet_first_service_execution: five real wallet callback families, atomic owner/amount/capacity and exact draft, replay, invalid names, insufficient funds |
-| wallet_archive_schema_modes | wallet_first_retirement: old schema rejected, partial 033 and nonunique command index rejected; service execution: archive preserves original receipt, no post-archive service delivery |
+| wallet_archive_schema_modes | wallet_first_retirement: old schema rejected, partial 033 and nonunique command index rejected; service execution: receipt archive is separate from service disposition; explicit terminal close/refund and partial BUY delivery |
 | wallet_sconfig_finality, wallet_marzban_target, marzban_bearer | retired as authorized; negative original callback, unsupported Native provider and absent executors in wallet_first_retirement and wallet_first_service_execution |
 | wallet_pg_recovery, wallet_original_renewal | wallet_first_service_execution: absolute add-on/renewal, original account/alias fence, lost reset and PUT, local finality rollback, foreign/drift denial |
 | wallet_original_buy_and_marzban, wallet_original_buy_pasarguard | wallet_first_service_execution: current funded BUY, old prepaid claim refusal, unique ordinal, lost response, 409/readback, identity/physical target, no second debit or capacity; Marzban retired |
@@ -136,3 +136,5 @@ source-real integration tests individually in an isolated development
 environment. Do not run archived pre-Stable test drivers. Never execute
 test fixtures against live bot configuration, customer/payment databases
 or external Native provider endpoints.
+
+The wallet-first funding, hosted, manual, credit and service-execution suites exercise the consolidated empty current schema directly. Recovery cases cover exact and once-only refunds, partial BUY, existing Native account refusal, fresh Native state, terminal lock release, edit readback and service-only automatic renewal in strict and non-strict execution modes. The migration construction comparison is separate from runtime installation.

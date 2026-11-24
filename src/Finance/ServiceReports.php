@@ -264,8 +264,63 @@ function achbotServiceManualNoticeAllowedLocked(mysqli $db,array $op,array $quot
     return false;
 }
 
+/** A terminal operator decision is not a provider success assertion. The
+ * original debit and compensating credit are independently verifiable. */
+function achbotServiceResolutionEvidenceLocked(mysqli $db,array $op,array $quote): array {
+    $id=(int)$op['id'];$q=$quote['request'];$uid=(int)$op['userid'];
+    $kind=$op['resolution_kind'];$count=(int)$op['cancelled_count'];
+    $retained=$op['kind']==='BUY'?$q['quantity']-$count:0;
+    if (!in_array($kind,['closed','refunded'],true) || (int)$op['resolved_by']<=0 ||
+        !$op['resolved_at'] || !in_array($op['stage'],['completed','cancelled'],true) ||
+        ($kind==='closed' && ($count!==0 || $op['kind']==='BUY')) ||
+        ($kind==='refunded' && ($count<1 || $count>$q['quantity'])) ||
+        ($op['stage']==='completed')!==($op['kind']==='BUY' && $retained>0))
+        throw new RuntimeException('service_resolution_evidence_invalid');
+    $owner=achbotWalletLockOwnerLocked($db,$uid);
+    achbotServiceVerifyFundingLocked($db,$op,$owner);
+    $amount=$kind==='closed'?0:($op['kind']==='BUY'?
+        $q['price']-intdiv($q['price'],$q['quantity'])*$retained-min($retained,$q['price']%$q['quantity']):$q['price']);
+    if ($amount>0) {
+        $entry=achbotWalletFindEntryLocked($db,$owner['id'],$uid,'service_refund',(string)$id,0,$amount);
+        if (!$entry || $entry['id']!==(int)$op['refund_entry_id'] || $entry['actor']!==(int)$op['resolved_by'])
+            throw new RuntimeException('service_resolution_refund_evidence');
+    } elseif ($op['refund_entry_id']!==null) throw new RuntimeException('service_resolution_unexpected_credit');
+    $fingerprint=hash('sha256',achbotServiceJson([
+        'id'=>$id,'owner'=>$uid,'owner_row'=>(int)$op['user_row_id'],'quote'=>$op['quote_sha256'],
+        'debit'=>$op['debit_entry_id'],'refund'=>$op['refund_entry_id'],'resolution'=>$kind,
+        'actor'=>$op['resolved_by'],'at'=>$op['resolved_at'],'cancelled'=>$count]));
+    return ['fingerprint'=>$fingerprint,'amount'=>$amount,'retained'=>$retained,'cancelled'=>$count];
+}
+function achbotServiceStageResolutionReportsLocked(mysqli $db,array $op,array $quote,int $primary): void {
+    $e=achbotServiceResolutionEvidenceLocked($db,$op,$quote);
+    $stage='service_resolution';$id=(int)$op['id'];
+    $values=['id'=>$id,'amount'=>number_format($e['amount']),'retained'=>$e['retained'],'cancelled'=>$e['cancelled']];
+    $key=$op['resolution_kind']==='closed'?'resolution_closed_notice':
+        ($op['kind']==='BUY'?'resolution_buy_notice':'resolution_refunded_notice');
+    $params=match($key) {
+        'resolution_closed_notice'=>['id'=>$id],
+        'resolution_refunded_notice'=>array_intersect_key($values,array_flip(['id','amount'])),
+        default=>$values,
+    };
+    $content=['text'=>achbotMessageHtml('automatic_gateway_review.'.$key,$params),'keys'=>null,'mode'=>'HTML'];
+    achbotFollowupStoreLocked($db,null,$id,$stage,'service_customer','send',
+        (string)$op['userid'],null,$e['fingerprint'],$content);
+    $content['text'].="\n".achbotMessageHtml('automatic_gateway_review.resolution_admin_context',[
+        'user'=>$op['userid'],'actor'=>$op['resolved_by']]);
+    achbotFollowupStageAdminReportLocked($db,null,$id,$stage,$e['fingerprint'],$primary,
+        (string)($GLOBALS['botState']['rewardChannel']??''),$content);
+}
+
 function achbotServiceReportValidateLocked(mysqli $db,array $op,array $quote,array $r): ?array {
-    if ($op['archived_at']!==null || $r['pay_row_id']!==null || (int)$r['service_operation_id']!==(int)$op['id']) return null;
+    if ($r['pay_row_id']!==null || (int)$r['service_operation_id']!==(int)$op['id']) return null;
+    if ($r['stage']==='service_resolution') {
+        if ($r['kind']!=='send' || $r['message_id']!==null) return null;
+        if ($r['role']==='service_customer') {
+            if ((string)$r['recipient']!==(string)$op['userid']) return null;
+        } elseif (!achbotFollowupAdminReportAllowed($db,$r)) return null;
+        $e=achbotServiceResolutionEvidenceLocked($db,$op,$quote);
+        return achbotFollowupDecodePacket(null,$r,$e['fingerprint']);
+    }
     if (in_array($r['stage'],['service_completed','service_delivered'],true)) {
         if ($op['stage']!=='completed' || $op['command_kind']==='automatic_renewal') return null;
         $requiresAck=$r['stage']==='service_delivered';

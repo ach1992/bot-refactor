@@ -1,6 +1,6 @@
 -- AChBot Wallet-first: complete EMPTY schema for first installation.
 -- Use once in a dedicated empty database. Contains no tenant data, automatic upgrade or cleanup.
--- Based on the reviewed schema sequence through 034; four unused historical tables omitted.
+-- Based on the reviewed schema sequence through 034; five unused historical tables omitted.
 /*M!999999\- enable the sandbox mode */
 /*!40103 SET @OLD_TIME_ZONE=@@TIME_ZONE */;
 /*!40103 SET TIME_ZONE='+00:00' */;
@@ -20,36 +20,6 @@ CREATE TABLE `add_link` (
   KEY `added_by_idx` (`added_by`),
   KEY `remark_idx` (`remark`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
-/*!40101 SET character_set_client = @saved_cs_client */;
-/*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!40101 SET character_set_client = utf8mb4 */;
-CREATE TABLE `automatic_renewal_attempts` (
-  `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
-  `order_id` int(11) NOT NULL,
-  `cycle_expire` int(11) NOT NULL,
-  `pay_row_id` int(11) NOT NULL,
-  `user_id` bigint(20) NOT NULL,
-  `plan_id` int(11) NOT NULL,
-  `server_id` int(11) NOT NULL,
-  `account_remark` varchar(100) NOT NULL,
-  `price_toman` int(11) NOT NULL,
-  `duration_days` int(11) NOT NULL,
-  `volume_gb` int(11) NOT NULL,
-  `new_expire` int(11) NOT NULL,
-  `stage` varchar(32) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL DEFAULT 'reserved',
-  `reason_code` varchar(32) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL,
-  `review_notified_at` datetime DEFAULT NULL,
-  `review_claim_token` char(32) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL,
-  `review_claimed_at` datetime DEFAULT NULL,
-  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
-  `updated_at` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
-  PRIMARY KEY (`id`),
-  UNIQUE KEY `uq_renewal_cycle` (`order_id`,`cycle_expire`),
-  UNIQUE KEY `uq_renewal_payment` (`pay_row_id`),
-  KEY `idx_renewal_inflight` (`order_id`,`stage`),
-  KEY `idx_renewal_review` (`stage`,`updated_at`,`review_notified_at`),
-  CONSTRAINT `fk_renewal_pay` FOREIGN KEY (`pay_row_id`) REFERENCES `pays` (`id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!40101 SET character_set_client = utf8mb4 */;
@@ -698,14 +668,15 @@ CREATE TABLE `service_effects` (
   `provider_verified_at` datetime DEFAULT NULL,
   `provider_evidence_created_at` datetime DEFAULT NULL,
   `provider_evidence_updated_at` datetime DEFAULT NULL,
+  `active_username` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin GENERATED ALWAYS AS (if(`state` = 'cancelled',NULL,`remote_username`)) VIRTUAL,
   PRIMARY KEY (`id`),
   UNIQUE KEY `uq_effect_operation` (`operation_id`),
-  UNIQUE KEY `uq_effect_target_username` (`target_key`,`remote_username`),
   UNIQUE KEY `uq_effect_source_line` (`source_kind`,`source_ref`,`ordinal`),
   UNIQUE KEY `uq_effect_pay_line` (`pay_row_id`,`effect_kind`,`ordinal`),
   UNIQUE KEY `uq_effect_order` (`order_id`),
   UNIQUE KEY `uq_effect_provider_reference` (`provider_reference_id`),
   UNIQUE KEY `uq_effect_provider_remote` (`provider_connection_id`,`provider_remote_user_id`),
+  UNIQUE KEY `uq_effect_target_username` (`target_key`,`active_username`),
   KEY `idx_effect_panel_username` (`target_server_id`,`remote_username`),
   KEY `idx_effect_review` (`state`,`updated_at`),
   CONSTRAINT `fk_effect_pay` FOREIGN KEY (`pay_row_id`) REFERENCES `pays` (`id`)
@@ -760,25 +731,30 @@ CREATE TABLE `service_operations` (
   `claim_token` char(32) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL,
   `claim_until` datetime(6) DEFAULT NULL,
   `failure_code` varchar(96) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL,
-  `archived_at` datetime(6) DEFAULT NULL,
-  `archived_by` bigint(20) DEFAULT NULL,
   `created_at` datetime(6) NOT NULL,
   `updated_at` datetime(6) NOT NULL,
+  `resolution_kind` varchar(16) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL,
+  `resolved_by` bigint(20) DEFAULT NULL,
+  `resolved_at` datetime(6) DEFAULT NULL,
+  `refund_entry_id` bigint(20) unsigned DEFAULT NULL,
+  `cancelled_count` int(10) unsigned NOT NULL DEFAULT 0,
   PRIMARY KEY (`id`),
   UNIQUE KEY `uq_service_command` (`command_kind`,`command_ref`),
   UNIQUE KEY `uq_service_debit` (`debit_entry_id`),
+  UNIQUE KEY `uq_service_refund` (`refund_entry_id`),
   KEY `idx_service_due` (`stage`,`next_attempt_at`,`id`),
   KEY `idx_service_owner` (`userid`,`id`),
   KEY `idx_service_subject_stage` (`subject_order_id`,`stage`,`id`),
   KEY `idx_service_target_stage` (`target_server_id`,`stage`,`id`),
   CONSTRAINT `fk_service_debit` FOREIGN KEY (`debit_entry_id`) REFERENCES `wallet_entries` (`id`),
-  CONSTRAINT `ck_service_archive` CHECK (`archived_at` is null = (`archived_by` is null)),
+  CONSTRAINT `fk_service_refund` FOREIGN KEY (`refund_entry_id`) REFERENCES `wallet_entries` (`id`),
   CONSTRAINT `ck_service_kind` CHECK (`kind` in ('BUY','RENEW','ADD_VOLUME','ADD_TIME')),
   CONSTRAINT `ck_service_price` CHECK (`price_toman` <= 2147483647),
   CONSTRAINT `ck_service_quote` CHECK (json_valid(`quote_payload`) and `subject_order_id` is not null and `subject_order_id` >= 0 and `target_server_id` is not null and `target_server_id` > 0 and `kind` = 'BUY' = (`subject_order_id` = 0)),
   CONSTRAINT `ck_service_stage` CHECK (`stage` in ('awaiting_funds','funded','prepared','dispatching','applied','completed','cancelled')),
   CONSTRAINT `ck_service_unfunded` CHECK (`stage` <> 'awaiting_funds' or `debit_entry_id` is null and `reserved_count` = 0),
-  CONSTRAINT `ck_service_funded` CHECK (`stage` not in ('funded','prepared','dispatching','applied','completed') or `price_toman` = 0 and `debit_entry_id` is null or `price_toman` > 0 and `debit_entry_id` is not null)
+  CONSTRAINT `ck_service_funded` CHECK (`stage` not in ('funded','prepared','dispatching','applied','completed') or `price_toman` = 0 and `debit_entry_id` is null or `price_toman` > 0 and `debit_entry_id` is not null),
+  CONSTRAINT `ck_service_resolution` CHECK (`resolution_kind` is null and `resolved_by` is null and `resolved_at` is null and `refund_entry_id` is null and `cancelled_count` = 0 or `resolution_kind` in ('closed','refunded') and `resolved_by` > 0 and `resolved_at` is not null and `stage` in ('completed','cancelled') and `next_attempt_at` is null and (`resolution_kind` = 'refunded' or `refund_entry_id` is null and `cancelled_count` = 0) and (`kind` <> 'BUY' or `resolution_kind` = 'refunded'))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;

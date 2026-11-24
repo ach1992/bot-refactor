@@ -121,8 +121,8 @@ function achbotGatewayReviewEligible(mysqli $db,int $attemptId,
 /** A committed receipt is not proof of completed service execution. */
 function achbotGatewayReviewCompletionStatus(mysqli $db,?int $operation): string {
     if ($operation===null) return 'completed';
-    $row=achbotProviderRow($db,'SELECT stage FROM service_operations WHERE id=?','i',[$operation]);
-    return ($row['stage']??null)==='completed'?'completed':'unknown';
+    $row=achbotProviderRow($db,'SELECT stage,resolution_kind FROM service_operations WHERE id=?','i',[$operation]);
+    return ($row['stage']??null)==='completed' && $row['resolution_kind']===null?'completed':'unknown';
 }
 
 /** One human decision, serialized against receipt verification and using
@@ -196,7 +196,7 @@ function achbotGatewayReviewRecover(mysqli $db,int $actor,int $attemptId,
 
 /** Archive only local execution. Never reverse an existing debit or fabricate
  * a payment attempt. Both worker session locks fence the entire action. */
-function achbotCheckoutArchive(mysqli $db,int $actor,int $payId,int $primary,?int $attemptId): string {
+function achbotCheckoutArchive(mysqli $db,int $actor,int $payId,int $primary,int $attemptId): string {
     if (!achbotAdminCanFor($db,$actor,$primary,'payments')) return 'denied';
     $lease=achbotOriginalDispatchLeaseBegin($db,$payId);
     if ($lease!=='owned') return $lease==='busy'?'busy':'unavailable';
@@ -217,12 +217,16 @@ function achbotCheckoutArchive(mysqli $db,int $actor,int $payId,int $primary,?in
             $pay=achbotCheckoutPayLocked($db,$payId,(int)$loc['user_id']);
             $a=achbotProviderRow($db,'SELECT * FROM payment_attempts WHERE pay_row_id=? FOR UPDATE','i',[$payId]);
             if ((int)$pay['checkout_operation_id']!==$opId ||
-                ($attemptId===null?$a!==null:(!$a || (int)$a['id']!==$attemptId)) ||
+                (!$a || (int)$a['id']!==$attemptId) ||
                 !achbotGatewayAttentionCaseOpen($db,$payId)) {$db->rollback();return 'stale';}
             if (!achbotAdminCanLocked($db,$actor,$primary,'payments')) {$db->rollback();return 'denied';}
             if ($opId>0) {
-                $s=achbotProviderStatement($db,"UPDATE service_operations SET archived_at=NOW(6),archived_by=?,next_attempt_at=NULL
-                    WHERE id=? AND archived_at IS NULL",'ii',[$actor,$opId]);$s->close();
+                [$op]=achbotServiceReadLocked($db,(int)$loc['user_id'],$opId);
+                if ($op['stage']==='awaiting_funds')
+                    achbotServiceCancelUnfundedLocked($db,(int)$loc['user_id'],$opId);
+                elseif (in_array($op['stage'],['funded','prepared','dispatching','applied'],true)) {
+                    $db->rollback();return 'service_resolution_required';
+                }
             }
             if ($a!==null) {
                 $s=achbotProviderStatement($db,"UPDATE payment_attempts SET review_archived_at=UTC_TIMESTAMP(),review_archived_by=?
@@ -238,9 +242,6 @@ function achbotCheckoutArchive(mysqli $db,int $actor,int $payId,int $primary,?in
         }
         achbotOriginalDispatchLeaseEnd($db,$payId,$lease);
     }
-}
-function achbotWalletReviewArchive(mysqli $db,int $actor,int $payId,int $primaryOwner): string {
-    return achbotCheckoutArchive($db,$actor,$payId,$primaryOwner,null);
 }
 function achbotGatewayReviewArchive(mysqli $db,int $actor,int $attemptId,int $primaryOwner): string {
     if (!achbotAdminCanFor($db,$actor,$primaryOwner,'payments')) return 'denied';

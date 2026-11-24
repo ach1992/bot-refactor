@@ -212,9 +212,6 @@ if (!function_exists('achbotDeletePanelGroupRecord')) {
 // group IDs and pre-existing Marzban API compatibility without a data migration.
 if (!function_exists('achbotPanelGroups')) {
     function achbotPanelGroups($db): array { return achbotListPanelGroups($db); }
-    function achbotPanelGroupValid($name): bool { return achbotGroupNameValid($name); }
-    function achbotCreatePanelGroup($db,$name): ?int { return achbotCreatePanelGroupRecord($db,$name); }
-    function achbotDeletePanelGroup($db,int $id): bool { return achbotDeletePanelGroupRecord($db,$id); }
     function achbotPanelGroup($db,int $serverId): ?array {
         if ($serverId<=0) return null;
         $s=$db->prepare("SELECT g.id,g.value AS name FROM server_info i
@@ -267,8 +264,8 @@ function achbotOrderAddonEligibility($connection,array $order,string $kind,?arra
  * change has a durable, not-yet-committed journal, including when another
  * owner is the selected source. Called after order validation/locking.
  *
- * The 017 table is optional only when truly absent. An invalid installed
- * journal or unreadable old_rows is NOT proof of eligibility.
+ * The current schema requires the plan journal. Missing or unreadable
+ * journal evidence is not proof of eligibility.
  */
 if (!function_exists('achbotServicePaymentJournalClear')) {
     function achbotServicePaymentJournalClear(mysqli $db,int $orderId,bool $lock=false): bool {
@@ -278,7 +275,7 @@ if (!function_exists('achbotServicePaymentJournalClear')) {
                 WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='service_plan_changes'");
             if (!($q instanceof mysqli_result)) return false;
             $row=$q->fetch_assoc();$count=$q->num_rows;$q->free();
-            if ($row===null) return $count===0;
+            if ($row===null) return false;
             if ($count!==1 || $row['TABLE_TYPE']!=='BASE TABLE' ||
                 strcasecmp((string)$row['ENGINE'],'InnoDB')!==0) return false;
             $q=$db->query("SELECT source_order_id,intent_json

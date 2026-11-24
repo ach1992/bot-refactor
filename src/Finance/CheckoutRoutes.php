@@ -12,7 +12,7 @@ function achbotCheckoutPresentation(): array {
 
 /** Fast-path only. The durable worker owns progress after this request ends.
  * Never interpret an exhausted budget or failed Telegram call as a refund. */
-function achbotCheckoutAdvance(mysqli $db,?int $operation,?int $payId=null): void {
+function achbotCheckoutAdvance(mysqli $db,?int $operation,?int $payId=null,bool $force=false): void {
     require_once __DIR__.'/../Services/Execution.php';
     require_once __DIR__.'/ServiceDelivery.php';
     require_once __DIR__.'/FollowupOutbox.php';
@@ -20,7 +20,7 @@ function achbotCheckoutAdvance(mysqli $db,?int $operation,?int $payId=null): voi
     try {
         if ($operation!==null) {
             for ($i=0;$i<16 && hrtime(true)/1000000000<$deadline;$i++) {
-                $r=achbotServiceExecuteStep($db,$operation,achbotCheckoutPresentation());
+                $r=achbotServiceExecuteStep($db,$operation,achbotCheckoutPresentation(),$force && $i===0);
                 if (!in_array($r['status'],['progressed','applied'],true)) break;
             }
             $s=achbotProviderStatement($db,"SELECT id FROM payment_delivery_intents

@@ -6,6 +6,7 @@ require_once __DIR__.'/ProviderImport.php';
 require_once __DIR__.'/PasarGuardServiceTarget.php';
 require_once __DIR__.'/PasarGuardServiceExecution.php';
 require_once __DIR__.'/PasarGuardServiceEdit.php';
+require_once __DIR__.'/PasarGuardServiceResolution.php';
 
 function achbotProviderType(mysqli $db,int $serverId): string {
     $s=$db->prepare('SELECT type FROM server_config WHERE id=?');
@@ -1131,6 +1132,9 @@ function achbotProviderRegistry(): array {
             'service_target'=>'achbotPasarGuardServiceTargetLocked',
             'service_checkout_pin'=>'achbotPasarGuardCheckoutPinMatches',
             'service_account_lock'=>'achbotPgServiceAccountLock',
+            'service_resolution_lock'=>'achbotPgServiceResolutionLock',
+            'service_resolution_check'=>'achbotPgServiceResolutionCheck',
+            'service_resolution_release'=>'achbotPgServiceResolutionRelease',
             'service_auto_observe'=>'achbotPgServiceAutoObserve',
             'service_auto_reserve'=>'achbotPgServiceAutoReserveLocked',
             'service_execution'=>['BUY'=>['prepare'=>'achbotPasarGuardBuyPrepareLocked',
@@ -1151,12 +1155,12 @@ function achbotProviderRegistryEntryValid($type,$adapter): bool {
         !is_array($adapter) || !is_string($adapter['label']??null) ||
         preg_match('/^[a-z][a-z0-9_.]+$/D',$adapter['label'])!==1) return false;
     $required=achbotProviderRequiredOperations();
-    if (array_diff(array_keys($adapter),array_merge(['label','import_lookup','import_adopt','service_target','service_checkout_pin','service_execution','service_finalization','service_account_lock','service_auto_observe','service_auto_reserve'],$required))) return false;
+    if (array_diff(array_keys($adapter),array_merge(['label','import_lookup','import_adopt','service_target','service_checkout_pin','service_execution','service_finalization','service_account_lock','service_auto_observe','service_auto_reserve','service_resolution_lock','service_resolution_check','service_resolution_release'],$required))) return false;
     foreach ($required as $operation)
         if (!is_string($adapter[$operation]??null) || !is_callable($adapter[$operation]))
             return false;
     // A registered paid service kind must have both execution and finalization.
-    foreach (['service_target','service_checkout_pin','service_account_lock','service_auto_observe','service_auto_reserve'] as $operation)
+    foreach (['service_target','service_checkout_pin','service_account_lock','service_auto_observe','service_auto_reserve','service_resolution_lock','service_resolution_check','service_resolution_release'] as $operation)
         if (array_key_exists($operation,$adapter) &&
             (!is_string($adapter[$operation]) || !is_callable($adapter[$operation]))) return false;
     if (isset($adapter['service_auto_observe'])!==isset($adapter['service_auto_reserve']) ||

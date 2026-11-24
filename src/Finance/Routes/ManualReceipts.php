@@ -18,7 +18,7 @@ $adminCallback=(string)($data??'');
 if (str_starts_with($adminCallback,'attentionInbox') ||
     str_starts_with($adminCallback,'attentionCase_') ||
     str_starts_with($adminCallback,'attentionDelivery') ||
-    str_starts_with($adminCallback,'attentionWallet') ||
+    str_starts_with($adminCallback,'attentionService') ||
     str_starts_with($adminCallback,'attentionReport') ||
     str_starts_with($adminCallback,'gatewayReview_')) {
     require __DIR__.'/AutomaticGatewayReview.php';
@@ -27,14 +27,14 @@ if (str_starts_with($adminCallback,'attentionInbox') ||
 
 // An existing authenticated bank/gift API proof can finish the ORIGINAL
 // payment. No provider GET, second financial ledger, or new access grant.
-if (preg_match('/^apiEvidence(Resume|Execute|Override)_([1-9][0-9]{0,17})(?:_([a-f0-9]{20}))?$/D',
+if (preg_match('/^apiEvidenceResume_([1-9][0-9]{0,17})$/D',
     (string)$data,$apiResume)) {
     if (!achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'payments') ||
         (int)($chat_id??0)!==(int)$from_id) {
         answerCallbackQuery($callbackId,achbotMessage('manual_payment.manual_receipts.alert.0a23f88410'),true);
         return;
     }
-    $payId=(int)$apiResume[2];
+    $payId=(int)$apiResume[1];
     try {
         // The direct callback may be the first admin route in this process.
         // Do not depend on having opened the attention inbox beforehand.
@@ -55,12 +55,6 @@ if (preg_match('/^apiEvidence(Resume|Execute|Override)_([1-9][0-9]{0,17})(?:_([a
             ($proof['mode']??null)==='settle';
         if ((!achbotApiPaymentCanResume($connection,$pay) && !$terminalDeliveryOnly) ||
             !is_array($proof)) {
-            answerCallbackQuery($callbackId,achbotMessage('manual_receipt_final.status_stale'),true);
-            return;
-        }
-        // New operations have a durable immutable target and one execution owner.
-        // A previous-generation execute/override token must not grant a new action.
-        if ($apiResume[1]!=='Resume') {
             answerCallbackQuery($callbackId,achbotMessage('manual_receipt_final.status_stale'),true);
             return;
         }
@@ -86,7 +80,13 @@ if (preg_match('/^apiEvidence(Resume|Execute|Override)_([1-9][0-9]{0,17})(?:_([a
             'callback_data'=>'attentionInbox']]];
         // A deferred result is NOT a terminal denial: expose the original
         // case directly, where the next confirmed preview uses fresh evidence.
-        if (!in_array($outcome,['confirmed','settled'],true))
+        require_once __DIR__.'/../../Services/Resolution.php';
+        require_once __DIR__.'/../GatewayClient.php';
+        $serviceId=(int)($pay['checkout_operation_id']??0);
+        if ($serviceId>0 && achbotServiceAttentionCaseOpen($connection,$serviceId))
+            array_unshift($rows,[['text'=>achbotMessage('automatic_gateway_review.open_case'),
+                'callback_data'=>'attentionService_'.$serviceId]]);
+        elseif (!in_array($outcome,['confirmed','settled'],true) && achbotGatewayAttentionCaseOpen($connection,$payId))
             array_unshift($rows,[['text'=>achbotMessage('automatic_gateway_review.redrive_cancel'),
                 'callback_data'=>'attentionCase_'.$payId]]);
         $buttons=json_encode(['inline_keyboard'=>$rows],

@@ -97,9 +97,20 @@ function achbotPgServiceEditPrepareLocked(mysqli $db,array $op,array $quote): ?a
 /** Only stable entitlement fields participate in target comparison. Traffic
  * and derived active/expired/limited states can advance normally, but an
  * administrator's disabled state cannot be overwritten by recovery. */
-function achbotPgServiceEditEntitlement(array $u): array {
-    return ['data_limit'=>$u['data_limit'],'expire'=>$u['expire'],
-        'group_ids'=>$u['group_ids'],'disabled'=>$u['status']==='disabled'];
+function achbotPgServiceEditEntitlement(array $u,string $kind): array {
+    return match($kind) {
+        'ADD_VOLUME'=>['data_limit'=>$u['data_limit']],
+        'ADD_TIME'=>['expire'=>$u['expire']],
+        'RENEW'=>['data_limit'=>$u['data_limit'],'expire'=>$u['expire'],'disabled'=>$u['status']==='disabled'],
+    };
+}
+function achbotPgServiceEditExpectedNative(array $u,string $kind): array {
+    $fields=match($kind) {
+        'ADD_VOLUME'=>['data_limit'],
+        'ADD_TIME'=>['expire'],
+        'RENEW'=>['data_limit','expire','status'],
+    };
+    return array_intersect_key($u,array_flip($fields));
 }
 function achbotPgServiceEditIntent(array $op,array $quote,array $u): array {
     $q=$quote['request'];
@@ -119,7 +130,7 @@ function achbotPgServiceEditIntent(array $op,array $quote,array $u): array {
     };
     // Never explicitly enable an administratively disabled subscription.
     // ADD only sends its owned entitlement field, not stale unrelated values.
-    $before=achbotPgServiceEditEntitlement($u);
+    $before=achbotPgServiceEditEntitlement($u,$op['kind']);
     $target=array_replace($before,array_intersect_key($changes,array_flip(['expire','data_limit'])));
     return ['version'=>1,'quote_sha256'=>$op['quote_sha256'],'anchor'=>$anchor,
         'before'=>$before,'target'=>$target,'changes'=>$changes];
@@ -178,7 +189,7 @@ function achbotPgServiceEditPerform(mysqli $db,array $op,array $quote,array $row
             achbotServiceMutationRow($db,(int)$op['id'])!==$row)
             throw new RuntimeException('service_edit_dispatch_changed');
     };
-    $current=achbotPgServiceEditEntitlement($u);
+    $current=achbotPgServiceEditEntitlement($u,$op['kind']);
     $baseline=$current===$intent['before'];$target=$current===$intent['target'];
     if ($row['phase']==='reset') {
         if ($op['kind']!=='RENEW' || $row['reset_ack_at']!==null || !$baseline)
@@ -186,9 +197,9 @@ function achbotPgServiceEditPerform(mysqli $db,array $op,array $quote,array $row
         // Acknowledged reset and subsequent traffic are different facts.
         // A lost reset ACK may be retried only for this unresolved renewal.
         $r=achbotPgReset($ctx['panel'],$ctx['identity'],
-            array_intersect_key($u,array_flip(['expire','data_limit','status','group_ids'])),$beforeWrite);
+            achbotPgServiceEditExpectedNative($u,$op['kind']),$beforeWrite);
         if (!$r['success']) return $r;
-        if (achbotPgServiceEditEntitlement($r['user'])!==$intent['before'])
+        if (achbotPgServiceEditEntitlement($r['user'],$op['kind'])!==$intent['before'])
             return achbotPgFailure('pg_service_reset_entitlement_changed',true);
         return ['success'=>true,'reset_ack'=>true];
     }
@@ -198,12 +209,12 @@ function achbotPgServiceEditPerform(mysqli $db,array $op,array $quote,array $row
         return achbotPgFailure('pg_service_edit_entitlement_conflict');
     if (!$target) {
         $r=achbotPgModify($ctx['panel'],$ctx['identity'],$intent['changes'],$scope['groups'],
-            $beforeWrite,array_intersect_key($u,array_flip(['expire','data_limit','status','group_ids'])));
+            $beforeWrite,achbotPgServiceEditExpectedNative($u,$op['kind']));
         if (!$r['success']) return $r;
         $u=$r['user'];
     }
     if ($u['username']!==$quote['request']['remark'] ||
-        achbotPgServiceEditEntitlement($u)!==$intent['target'])
+        achbotPgServiceEditEntitlement($u,$op['kind'])!==$intent['target'])
         return achbotPgFailure('pg_service_edit_target_unconfirmed',true);
     return ['success'=>true,'result'=>['quote_sha256'=>$op['quote_sha256'],
         'intent_sha256'=>$row['intent_sha256'],'entitlement'=>$intent['target']]];
@@ -257,7 +268,7 @@ function achbotPgServiceEditFinalizeApplyLocked(mysqli $db,array $op,array $quot
     if ($current!==$row) throw new RuntimeException('service_edit_finalization_stale');
     achbotPgServiceEditClaimMatches($op,$ctx,$row);
     $entitlement=achbotPgServiceEditVerified($op,$row);
-    achbotServiceEditCommitLocalLocked($db,$op,$quote,$row,$o,$entitlement['expire']);
+    achbotServiceEditCommitLocalLocked($db,$op,$quote,$row,$o,$entitlement['expire']??null);
     // The temporary service marker is removed only in the same commit as
     // the original local order, audit, delivery and terminal operation.
     // Do not overwrite any original historical mutation snapshot.
