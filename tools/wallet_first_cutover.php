@@ -141,7 +141,7 @@ function walletFirstCutoverAdoptWalletBuy(mysqli $db,int $payId,string $expected
     require_once __DIR__.'/../src/Finance/CheckoutAdmission.php';
     if ($payId<=0 || !preg_match('/\A[a-f0-9]{64}\z/D',$expectedSha256))
         throw new InvalidArgumentException('cutover_adoption_input');
-    if (!achbotCheckoutCommandsPresent($db)) throw new RuntimeException('cutover_checkout_schema');
+    achbotCheckoutRequireSchema($db);
     if (!$db->begin_transaction()) throw new RuntimeException('cutover_adoption_begin');
     try {
         $snap=walletFirstCutoverSnapshot($db,true);

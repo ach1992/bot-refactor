@@ -223,16 +223,22 @@ function achbotServiceDeliveryDispatch(mysqli $db,int $id,int $actor=0,int $part
     $lock='achbot-delivery-'.substr(hash('sha256',$dbName),0,20).'-'.$id;
     $r=achbotProviderRow($db,'SELECT GET_LOCK(?,0) AS acquired','s',[$lock]);
     if ((int)($r['acquired']??0)!==1) return 'busy';
-    $serviceId=0;$claim=null;$physicalLock=null;$cursor=0;
+    $serviceId=0;$claim=null;$physicalLock=null;$serviceLock=null;$cursor=0;
     $priorContext=$GLOBALS['achbotTelegramDiagnosticContext']??null;
     try {
         $loc=achbotProviderRow($db,'SELECT service_operation_id,user_id FROM payment_delivery_intents WHERE id=?','i',[$id]);
         if (!$loc || $loc['service_operation_id']===null) return 'missing';
         $serviceId=(int)$loc['service_operation_id'];$owner=(int)$loc['user_id'];
+        require_once __DIR__.'/../Services/Execution.php';
+        $name=achbotServiceExecutionLock($db,$serviceId);
+        $held=achbotProviderRow($db,'SELECT GET_LOCK(?,0) AS acquired','s',[$name]);
+        if ((int)($held['acquired']??0)!==1) return 'busy';
+        $serviceLock=$name;
         while (true) {
             $claim=null;
             if (!$db->begin_transaction()) throw new RuntimeException('service_delivery_begin');
             [$op,$quote]=achbotServiceReadLocked($db,$owner,$serviceId);
+            if ($op['archived_at']!==null) {$db->rollback();return 'archived';}
             $d=achbotProviderRow($db,'SELECT * FROM payment_delivery_intents WHERE id=? FOR UPDATE','i',[$id]);
             if (!$d || (int)$d['service_operation_id']!==$serviceId || (int)$d['user_id']!==$owner)
                 throw new RuntimeException('service_delivery_source_changed');
@@ -277,7 +283,7 @@ function achbotServiceDeliveryDispatch(mysqli $db,int $id,int $actor=0,int $part
             if ($claim['status']!=='claimed') {$db->rollback();return $claim['status'];}
             $cursor=$claim['part_no'];
             if (!$db->commit()) throw new RuntimeException('service_delivery_claim_commit');
-            foreach (array_filter([$lock,$physicalLock]) as $name) {
+            foreach (array_filter([$lock,$physicalLock,$serviceLock]) as $name) {
                 $owned=achbotProviderRow($db,'SELECT IS_USED_LOCK(?)=CONNECTION_ID() AS owned','s',[$name]);
                 if ((int)($owned['owned']??0)!==1) throw new RuntimeException('service_delivery_ownership_lost');
             }
@@ -296,7 +302,7 @@ function achbotServiceDeliveryDispatch(mysqli $db,int $id,int $actor=0,int $part
                 else $GLOBALS['achbotTelegramDiagnosticContext']=$priorContext;
             }
             if (!$db->begin_transaction()) throw new RuntimeException('service_delivery_finish_begin');
-            foreach (array_filter([$lock,$physicalLock]) as $name) {
+            foreach (array_filter([$lock,$physicalLock,$serviceLock]) as $name) {
                 $owned=achbotProviderRow($db,'SELECT IS_USED_LOCK(?)=CONNECTION_ID() AS owned','s',[$name]);
                 if ((int)($owned['owned']??0)!==1) throw new RuntimeException('service_delivery_ownership_lost');
             }
@@ -319,7 +325,7 @@ function achbotServiceDeliveryDispatch(mysqli $db,int $id,int $actor=0,int $part
             'class'=>get_class($e),'reason'=>$e->getMessage()],'warning');
         return ($claim['status']??null)==='claimed'?'unknown':'deferred';
     } finally {
-        foreach (array_filter([$physicalLock,$lock]) as $name) {
+        foreach (array_filter([$physicalLock,$serviceLock,$lock]) as $name) {
             try {$s=achbotProviderStatement($db,'SELECT RELEASE_LOCK(?)','s',[$name]);$s->close();}
             catch (Throwable $ignored) {}
         }

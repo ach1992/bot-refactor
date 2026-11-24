@@ -8,11 +8,11 @@ require_once __DIR__.'/../Services/Ownership.php';
 
 /** The final schema owns newly selected payment methods. An error is never
  * interpreted as permission to fall back to a legacy balance writer. */
-function achbotCheckoutCommandsPresent(mysqli $db): bool {
+function achbotCheckoutRequireSchema(mysqli $db): void {
     $r=achbotProviderRow($db,"SELECT DATA_TYPE,COLUMN_TYPE,IS_NULLABLE
         FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE()
         AND TABLE_NAME='pays' AND COLUMN_NAME='checkout_operation_id'");
-    if ($r===null) return false; // pre-cutover source compatibility only
+    if ($r===null) throw new RuntimeException('checkout_command_schema_missing');
     if ($r['DATA_TYPE']!=='bigint' || !str_contains($r['COLUMN_TYPE'],'unsigned') ||
         $r['IS_NULLABLE']!=='YES' || !achbotWalletLedgerReady($db) ||
         !achbotServiceOperationsPresent($db))
@@ -35,7 +35,6 @@ function achbotCheckoutCommandsPresent(mysqli $db): bool {
     if (count($idx)!==1 || $idx[0]['COLUMN_NAME']!=='checkout_operation_id' ||
         (int)$idx[0]['NON_UNIQUE']!==0 || $idx[0]['SUB_PART']!==null)
         throw new RuntimeException('checkout_command_schema_invalid');
-    return true;
 }
 
 /** Bind all persisted UI service coordinates, not a callback's price/order
@@ -170,13 +169,25 @@ function achbotCheckoutAdmitDraftLocked(mysqli $db,array $pay,?array $attempt,
     return $operation;
 }
 
+/** Exact persisted callback family; no external renewal route. */
+function achbotWalletModeMatchesRequest(array $pay,string $mode): bool {
+    $type=(string)($pay['type']??'');
+    return match($mode) {
+        'renew'=>$type==='RENEW_ACCOUNT',
+        'day'=>preg_match('/\AINCREASE_DAY_[1-9][0-9]*_[1-9][0-9]*\z/D',$type)===1,
+        'volume'=>preg_match('/\AINCREASE_VOLUME_[1-9][0-9]*_[1-9][0-9]*\z/D',$type)===1,
+        'standard'=>$type==='BUY_SUB' && (int)$pay['day']===0 && (int)$pay['volume']===0,
+        'custom'=>$type==='BUY_SUB' && (int)$pay['day']>0 && (int)$pay['volume']>0,
+        default=>false
+    };
+}
+
 /** The actual customer wallet callback: exact owner/hash/family, no remote
  * calls, one debit and capacity reservation. Replaying the callback reads
  * the original funded command rather than executing old service handlers. */
 function achbotCheckoutWallet(mysqli $db,string $hash,int $actor,string $mode,array $states): array {
-    require_once __DIR__.'/WalletSettlement.php';
     achbotPaymentEvidenceRequireAutocommit($db);
-    if (!achbotCheckoutCommandsPresent($db)) throw new RuntimeException('checkout_command_schema_missing');
+    achbotCheckoutRequireSchema($db);
     if (!$db->begin_transaction()) throw new RuntimeException('checkout_wallet_begin');
     try {
         $owner=achbotWalletLockOwnerLocked($db,$actor);

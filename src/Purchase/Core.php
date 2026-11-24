@@ -684,29 +684,6 @@ if (!function_exists('buildRemark')) {
     }
 }
 
-/**
- * Sole current CREATE facade for a previously reserved, pinned Marzban 007
- * effect. Historical collision retries are unsafe after a durable dispatch.
- * The PG provider uses its own 007 adapter and never reaches this branch.
- */
-if (!function_exists('createServerAccount')) {
-    function createServerAccount($serverType,$serverId,$inboundId,$planId,
-        $remark,$volume,$days,$uniqid,$protocol,$port,$expireMicrodate,
-        $netType,$rahgozar,$limitIp,?string $operationNote=null,
-        ?int $fixedExpire=null,?array $effectTarget=null): array {
-        if ($serverType!=='marzban' || (int)$inboundId!==0)
-            return [(object)['success'=>false,'msg'=>'unsupported_panel'],
-                (string)$remark,(int)$port];
-        if ($operationNote===null || $operationNote==='' ||
-            $fixedExpire===null || $effectTarget===null ||
-            preg_match('/^[a-f0-9]{32}$/D',$operationNote)!==1)
-            throw new RuntimeException('native_create_pinned_target_required');
-        $response=addMarzbanUser((int)$serverId,(string)$remark,(int)$volume,
-            (int)$days,(int)$planId,'achbot:v1:'.$operationNote,$fixedExpire,$effectTarget);
-        return [$response,(string)$remark,(int)$port];
-    }
-}
-
 // Only bounded, internally defined reasons may be forwarded to Telegram
 // operators. Never send provider response bodies or Throwable::getMessage().
 if (!function_exists('achbotFinanceDiagnosticReason')) {
@@ -734,7 +711,5 @@ if (!function_exists('achbotFinanceDiagnosticReason')) {
 require_once __DIR__.'/../Subscription/Delivery.php';
 require_once __DIR__.'/OrderWrites.php';
 require_once __DIR__.'/../Finance/ReferralReward.php';
-require_once __DIR__.'/../Finance/RenewalHelper.php';
-require_once __DIR__.'/../Finance/WalletSettlement.php';
 require_once __DIR__.'/AgentPricing.php';
 require_once __DIR__.'/../Finance/ReceiptHelpers.php';

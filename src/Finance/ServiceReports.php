@@ -265,7 +265,7 @@ function achbotServiceManualNoticeAllowedLocked(mysqli $db,array $op,array $quot
 }
 
 function achbotServiceReportValidateLocked(mysqli $db,array $op,array $quote,array $r): ?array {
-    if ($r['pay_row_id']!==null || (int)$r['service_operation_id']!==(int)$op['id']) return null;
+    if ($op['archived_at']!==null || $r['pay_row_id']!==null || (int)$r['service_operation_id']!==(int)$op['id']) return null;
     if (in_array($r['stage'],['service_completed','service_delivered'],true)) {
         if ($op['stage']!=='completed' || $op['command_kind']==='automatic_renewal') return null;
         $requiresAck=$r['stage']==='service_delivered';

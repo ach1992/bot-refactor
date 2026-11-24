@@ -50,9 +50,9 @@ function achbotCheckoutAdvance(mysqli $db,?int $operation,?int $payId=null): voi
 
 /** Consume the original Wallet callback when the command schema is present.
  * Keep its original callback family, existing alerts and receipt reference. */
-function achbotCheckoutWalletCallback(mysqli $db,string $hash,int $actor,string $mode,array $states): bool {
+function achbotCheckoutWalletCallback(mysqli $db,string $hash,int $actor,string $mode,array $states): void {
     try {
-        if (!achbotCheckoutCommandsPresent($db)) return false;
+        achbotCheckoutRequireSchema($db);
         $r=achbotCheckoutWallet($db,$hash,$actor,$mode,$states);
         if ($r['status']==='insufficient_funds') {
             $wallet=$r['wallet'];$need=$r['price']-$wallet;
@@ -77,7 +77,6 @@ function achbotCheckoutWalletCallback(mysqli $db,string $hash,int $actor,string 
         error_log('achbot_checkout_wallet_route_deferred class='.get_class($e));
         alert(achbotMessage('wallet.wallet_settlement.process_wallet_payment.alert.978c658074'),true);
     }
-    return true;
 }
 
 /** Human approval must use the exact persisted receipt and matching old
@@ -118,14 +117,13 @@ function achbotCheckoutApproveReceipt(mysqli $db,string $hash,int $actor,int $pr
     } finally {achbotOriginalDispatchLeaseEnd($db,$id,$lease);}
 }
 
-function achbotCheckoutApprovalCallback(mysqli $db,string $hash,int $actor,int $primary,string $mode): bool {
+function achbotCheckoutApprovalCallback(mysqli $db,string $hash,int $actor,int $primary,string $mode): void {
     try {
-        if (!achbotCheckoutCommandsPresent($db)) return false;
+        achbotCheckoutRequireSchema($db);
         $r=achbotCheckoutApproveReceipt($db,$hash,$actor,$primary,$mode);
         achbotCheckoutAdvance($db,$r['operation'],(int)$r['pay_id']);
     } catch (Throwable $e) {
         error_log('achbot_checkout_approval_deferred class='.get_class($e));
         alert(achbotMessage('manual_payment.manual_receipts.alert.2d252fd96f'),true);
     }
-    return true;
 }

@@ -24,7 +24,22 @@ function fixtureLegacyReserve(mysqli $db,int $id): bool {
         $s=achbotProviderStatement($db,"UPDATE users SET wallet=wallet-? WHERE userid=?",
             'ii',[(int)$p['price'],(int)$p['user_id']]);$s->close();
         $s=achbotProviderStatement($db,"UPDATE pays SET state='processing_wallet' WHERE id=?",'i',[$id]);$s->close();
-        achbotEffectReserveWalletCapacityLocked($db,$p);
+        // Model the already committed historical row in the disposable
+        // database. This is fixture data, not an obsolete runtime writer.
+        $fresh=achbotProviderRow($db,'SELECT provider_snapshot FROM pays WHERE id=?','i',[$id]);
+        $snap=achbotProviderCanonicalSnapshot(json_decode($fresh['provider_snapshot'],true,64,JSON_THROW_ON_ERROR));
+        $sid=(int)$p['server_id'];$pid=(int)$p['plan_id'];$count=max(1,(int)$p['agent_count']);
+        $endpoint=$snap['endpoint_sha256'];$target='pg:'.$snap['instance_key'];
+        $op=bin2hex(random_bytes(16));$remark='#wallet_hold_'.$id;
+        $digest=hash('sha256',json_encode(['wallet_hold',$id,$count,$pid,$sid,null,$endpoint],JSON_THROW_ON_ERROR));
+        $s=achbotProviderStatement($db,'UPDATE server_info SET ucount=ucount-? WHERE id=? AND ucount>=?',
+            'iii',[$count,$sid,$count]);
+        if ($s->affected_rows!==1) throw new RuntimeException('fixture_legacy_capacity');$s->close();
+        $s=achbotProviderStatement($db,"INSERT INTO service_effects
+            (pay_row_id,ordinal,operation_id,effect_kind,target_server_id,target_group_id,target_key,
+             endpoint_sha256,plan_id,remote_username,requested_expire,requested_bytes,request_sha256,reserved_count,state)
+            VALUES (?,0,?,'wallet_hold',?,NULL,?,?,?, ?,0,0,?,?,'reserved')",
+            'isississi',[$id,$op,$sid,$target,$endpoint,$pid,$remark,$digest,$count]);$s->close();
         if (!$db->commit()) throw new RuntimeException('fixture_legacy_commit');
         return true;
     } catch (Throwable $e) {$db->rollback();throw $e;}

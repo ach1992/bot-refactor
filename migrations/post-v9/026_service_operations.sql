@@ -24,6 +24,8 @@ CREATE TABLE service_operations (
     claim_token CHAR(32) COLLATE utf8mb4_bin DEFAULT NULL,
     claim_until DATETIME(6) DEFAULT NULL,
     failure_code VARCHAR(96) COLLATE utf8mb4_bin DEFAULT NULL,
+    archived_at DATETIME(6) DEFAULT NULL,
+    archived_by BIGINT DEFAULT NULL,
     created_at DATETIME(6) NOT NULL,
     updated_at DATETIME(6) NOT NULL,
     PRIMARY KEY (id),
@@ -41,6 +43,7 @@ CREATE TABLE service_operations (
     CONSTRAINT ck_service_historical_funding CHECK (historical_pay_id IS NULL OR
         (command_kind='checkout' AND kind='BUY' AND price_toman>0 AND debit_entry_id IS NULL
          AND stage IN ('funded','prepared','dispatching','applied','completed'))),
+    CONSTRAINT ck_service_archive CHECK ((archived_at IS NULL) = (archived_by IS NULL)),
     CONSTRAINT ck_service_kind CHECK (kind IN ('BUY','RENEW','ADD_VOLUME','ADD_TIME')),
     CONSTRAINT ck_service_price CHECK (price_toman<=2147483647),
     CONSTRAINT ck_service_quote CHECK (JSON_VALID(quote_payload) AND

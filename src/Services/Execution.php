@@ -42,6 +42,7 @@ function achbotServiceExecuteStep(mysqli $db,int $id,array $presentation=[]): ar
         $owner=(int)$locator['userid'];
         if (!$db->begin_transaction()) throw new RuntimeException('service_worker_begin');
         [$op,$quote]=achbotServiceReadLocked($db,$owner,$id);
+        if ($op['archived_at']!==null) {$db->rollback();return ['status'=>'archived'];}
         if (!in_array($op['stage'],['funded','prepared','dispatching','applied'],true)) {
             $db->rollback();return ['status'=>$op['stage']];
         }
@@ -154,7 +155,7 @@ function achbotServiceExecuteDue(mysqli $db,int $limit,float $budgetSeconds,arra
     // every bounded pass. This is only a scheduling hint; ExecuteStep
     // independently acquires and verifies the exact lock before any I/O.
     $s=achbotProviderStatement($db,"SELECT id FROM service_operations
-        WHERE stage IN ('funded','prepared','dispatching','applied') AND next_attempt_at<=NOW(6)
+        WHERE archived_at IS NULL AND stage IN ('funded','prepared','dispatching','applied') AND next_attempt_at<=NOW(6)
           AND IS_FREE_LOCK(CONCAT('achbot-service-',LEFT(SHA2(DATABASE(),256),20),'-',id))=1
         ORDER BY next_attempt_at,id LIMIT ?",'i',[$limit]);
     $rows=$s->get_result()->fetch_all(MYSQLI_ASSOC);$s->close();$out=[];

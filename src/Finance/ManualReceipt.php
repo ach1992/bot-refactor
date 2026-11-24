@@ -20,7 +20,7 @@ function achbotManualReceiptIssue(mysqli $db,int $payId,int $userId,string $meth
         $a=achbotProviderRow($db,'SELECT * FROM payment_attempts WHERE pay_row_id=? FOR UPDATE','i',[$payId]);
         if ($draftStates!==null) {
             require_once __DIR__.'/CheckoutAdmission.php';
-            if (!achbotCheckoutCommandsPresent($db)) throw new RuntimeException('checkout_command_schema_missing');
+            achbotCheckoutRequireSchema($db);
             if ($a===null && !achbotManualEnabled($method)) throw new DomainException('manual_method_unavailable');
             $operationId=achbotCheckoutAdmitDraftLocked($db,$pay,$a,$method,$draftStates);
             // Read back the exact committed-in-this-transaction binding.

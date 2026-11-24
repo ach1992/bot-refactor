@@ -30,19 +30,19 @@ function achbotCreditMethodRegistry(): array {
         'manual_usdt'=>$manual,
         'manual_trx'=>$manual,
         'nowpayments'=>['invoice'=>'achbotCreditValidateUsdInvoice','proofs'=>[
-            'nowpayments'=>'achbotCreditVerifyNowpaymentsLocked'],'additional_evidence'=>true,
+            'nowpayments'=>'achbotCreditVerifyNowpaymentsLocked','manual'=>'achbotCreditVerifyHostedAttestationLocked'],'additional_evidence'=>true,
             'hosted'=>['credential_setting'=>'nowpayment','report_gateway'=>'nowpayment','quote'=>'achbotHostedUsdQuote',
                 'issue'=>'achbotHostedNowpaymentsIssue','verify'=>'achbotHostedNowpaymentsVerify',
                 'url'=>'achbotHostedNowpaymentsUrl','reference'=>'achbotHostedChildReference',
                 'child_transactions'=>true]],
         'nextpay'=>['invoice'=>'achbotCreditValidateTomanInvoice','proofs'=>[
-            'nextpay'=>'achbotCreditVerifyNextpayLocked'],'additional_evidence'=>true,
+            'nextpay'=>'achbotCreditVerifyNextpayLocked','manual'=>'achbotCreditVerifyHostedAttestationLocked'],'additional_evidence'=>true,
             'hosted'=>['credential_setting'=>'nextpay','quote'=>'achbotHostedTomanQuote',
                 'issue'=>'achbotHostedNextpayIssue','verify'=>'achbotHostedNextpayVerify',
                 'url'=>'achbotHostedNextpayUrl','reference'=>'achbotHostedExactReference',
                 'child_transactions'=>false]],
         'zarinpal'=>['invoice'=>'achbotCreditValidateTomanInvoice','proofs'=>[
-            'zarinpal'=>'achbotCreditVerifyZarinpalLocked'],'additional_evidence'=>true,
+            'zarinpal'=>'achbotCreditVerifyZarinpalLocked','manual'=>'achbotCreditVerifyHostedAttestationLocked'],'additional_evidence'=>true,
             'hosted'=>['credential_setting'=>'zarinpal','quote'=>'achbotHostedTomanQuote',
                 'issue'=>'achbotHostedZarinpalIssue','verify'=>'achbotHostedZarinpalVerify',
                 'url'=>'achbotHostedZarinpalUrl','reference'=>'achbotHostedExactReference',
@@ -205,6 +205,18 @@ function achbotCreditVerifyManualLocked(mysqli $db,array $pay,array $attempt,arr
     // invoice share the one monetary source; the adapter cannot credit itself.
     return null;
 }
+/** Explicit staff attestation is local evidence, never a synthetic merchant transaction. */
+function achbotCreditVerifyHostedAttestationLocked(mysqli $db,array $pay,array $attempt,array $proof,int $actor,int $primary): ?int {
+    require_once __DIR__.'/GatewayReview.php';
+    if (!achbotAdminCanLocked($db,$actor,$primary,'payments'))
+        throw new RuntimeException('payment_credit_hosted_actor_invalid');
+    $r=achbotGatewayReviewEligible($db,(int)$attempt['id'],'approve',true);
+    if (!$r || (int)$r['pay']['id']!==(int)$pay['id'] ||
+        !hash_equals($r['digest'],(string)($proof['review_digest']??'')))
+        throw new RuntimeException('payment_credit_hosted_review_changed');
+    return null;
+}
+
 function achbotCreditVerifyTimerLocked(mysqli $db,array $pay,array $attempt,array $proof,int $actor,int $primary): ?int {
     achbotCreditValidateManualReceiptLocked($db,$pay,$attempt);
     if ($actor!==0 || !achbotCreditBankTimerEligibleLocked($db,$pay,$attempt))

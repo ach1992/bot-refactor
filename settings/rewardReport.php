@@ -45,20 +45,10 @@ require_once __DIR__ . '/../src/Backup/Database.php';
 );
 
 
-// Existing operator-managed Cron runner also reconciles signed NOWPayments
-// status notifications. It is not a public anonymous payment trigger.
-if (!defined('ACHBOT_NP_RECONCILE_ONLY')) define('ACHBOT_NP_RECONCILE_ONLY',true);
-// Existing browser gateway always loads these QR/subscription helpers. Cron
-// must load the same source before processing BUY_SUB or RENEW_ACCOUNT.
-require_once __DIR__.'/../src/Purchase/Core.php';
-require_once __DIR__ . '/../src/Finance/GatewayReturn.php';
-// A partially applied 003 migration may leave attempts without the child
-// transaction ledger. Skip ONLY NOWPayments work until both are available;
-// automatic receipts below must still run during schema repair.
-if (achbotSharedPaymentTablesReady($connection)) {
-    achbotNpReconcileBatch($connection, is_array($paymentKeys ?? null)?$paymentKeys:[], 3);
-    // Review is a quiet, admin-initiated inbox. Only normal finalized
-    // business-operation reports are delivered outside the payment ledger.
-}
+// Authenticated merchant reconciliation does not execute services itself.
+require_once __DIR__.'/../src/Finance/CheckoutAdmission.php';
+require_once __DIR__.'/../src/Finance/HostedReceipt.php';
+achbotCheckoutRequireSchema($connection);
+achbotHostedReceiptMaintain($connection,3);
 
 require __DIR__ . '/../src/Finance/AutomaticReceipts.php';

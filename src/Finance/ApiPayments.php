@@ -46,130 +46,16 @@ function achbotApiPaymentWithWorkerLock(mysqli $db,int $payId,callable $action):
     }
 }
 
-/** Display-only proof of a safe original API continuation; settlement
- * repeats all immutable evidence and native-effect checks under its locks.
- * A processing service belongs to technical recovery, not financial review.
- */
+/** A recorded original proof can only resume its admitted invoice. */
 function achbotApiPaymentCanResume(mysqli $db,array $pay): bool {
-    $provider=(string)($pay['attempt']['provider']??'');
-    $state=(string)($pay['state']??'');
-    $id=(int)($pay['id']??0);
-    if (($pay['attempt']['review_archived_at']??null)!==null) return false;
-    if ($id<=0 || !in_array($provider,['bank_transfer','gift_card'],true) ||
-        !in_array($state,['pending','have_sent','processing'],true) ||
-        ($state==='processing' && (int)($pay['approved_by']??-1)!==0)) return false;
+    $id=(int)($pay['id']??0);$a=$pay['attempt']??null;
+    if ($id<=0 || !$a || ($a['review_archived_at']??null)!==null ||
+        !is_string($a['wallet_invoice_sha256']??null) || $a['wallet_invoice_sha256']==='' ||
+        !in_array($a['provider'],['bank_transfer','gift_card'],true)) return false;
     $proof=achbotPaymentEvidenceGetProof($db,$id);
-    if (($proof['mode']??null)!=='settle') return false;
-    if ($state!=='processing' || (string)($pay['type']??'')==='BUY_SUB') return true;
-    $attempt=achbotApiPaymentAttempt($db,$id);
-    // A committed Native dispatch is precisely where an administrator must
-    // have an available completion action, not a permanently hidden button.
-    return in_array((string)($attempt['evidence_fulfillment_state']??''),
-        ['reserved','dispatched','verified'],true);
+    return ($proof['mode']??null)==='settle';
 }
 
-
-/**
- * Staff confirmation applies ONLY when an original Native operation may
- * already have been sent. Mere receipt verification/review has no such
- * re-dispatch authority. Same rule for CREATE, renewal and add-ons.
- */
-function achbotApiPaymentNeedsOperatorConfirmation(mysqli $db,array $pay,
-    array $attempt): bool {
-    if (($pay['state']??null)!=='processing') return false;
-    if (($attempt['evidence_fulfillment_state']??null)==='dispatched') return true;
-    $q=$db->prepare("SELECT id FROM service_effects
-        WHERE pay_row_id=? AND effect_kind='create'
-          AND state IN ('dispatching','reserved') LIMIT 1");
-    $payId=(int)$pay['id'];$q->bind_param('i',$payId);$q->execute();
-    $held=$q->get_result()->num_rows>0;$q->close();
-    return $held;
-}
-function achbotApiPaymentOperatorToken(array $pay,array $attempt,
-    array $proof,int $actor): string {
-    if ($actor<=0 || (int)($pay['id']??0)<=0 ||
-        ($proof['mode']??null)!=='settle')
-        throw new RuntimeException('api_operator_confirmation_invalid');
-    $bound=implode('|',[
-        'original-service-confirm-v1',$actor,(int)$pay['id'],
-        achbotPaymentEvidencePayFingerprint($pay),
-        (string)($attempt['evidence_fulfillment_state']??''),
-        (string)$proof['operation']
-    ]);
-    return substr(hash_hmac('sha256',$bound,achbotPaymentEvidenceKey()),0,20);
-}
-/**
- * Staff-only GET preview of a proven original edit whose PasarGuard Native
- * state has independently drifted. Preview never mutates payment or Native;
- * it uses the same original paid intent and recovery identity as execution.
- */
-function achbotApiPaymentOperatorEditPreview(mysqli $db,array $pay,
-    array $attempt,array $proof): ?array {
-    $id=(int)($pay['id']??0);
-    $state=(string)($attempt['evidence_fulfillment_state']??'');
-    if ($id<=0 || ($pay['state']??null)!=='processing' ||
-        (int)($pay['approved_by']??-1)!==0 ||
-        $state!=='dispatched' ||
-        !in_array((string)($attempt['provider']??''),['bank_transfer','gift_card'],true) ||
-        ($proof['mode']??null)!=='settle') return null;
-    require_once __DIR__.'/../Panel/ProviderRuntime.php';
-    $server=(int)($pay['server_id']??0);
-    // Only the provider implementing an exact-fenced recovery preview
-    // currently supports this optional operator resolution.
-    if ($server<=0 || achbotProviderType($db,$server)!=='pasarguard') return null;
-    $payload=achbotPaymentEvidenceUnprotect(
-        'fulfillment:'.$id.':'.$proof['operation'],
-        (string)($attempt['evidence_fulfillment_payload']??''));
-    if (!is_array($payload) ||
-        ($payload['operation']??null)!==$proof['operation'] ||
-        ($payload['pay_sha256']??null)!==achbotPaymentEvidencePayFingerprint($pay) ||
-        !in_array((string)($payload['kind']??''),['renew','day','volume'],true) ||
-        (int)($payload['server']??0)!==$server ||
-        !is_array($payload['params']??null) ||
-        (int)($payload['params']['pay_id']??0)!==$id)
-        return null;
-    $generation=$payload['operator_override_generation']??0;
-    if (!is_int($generation) || $generation<0 || $generation>=PHP_INT_MAX)
-        return null;
-    $source=$payload;
-    $source['preview_only']=true;
-    $response=achbotProviderRecoverEdit($db,$server,$payload['params'],$source,true);
-    if (($response->success??false)!==true ||
-        ($response->preview??false)!==true ||
-        !in_array($response->disposition??null,['drift','baseline','applied'],true) ||
-        !is_string($response->entitlement_digest??null) ||
-        preg_match('/^[a-f0-9]{64}$/D',$response->entitlement_digest)!==1)
-        return null;
-    return ['disposition'=>$response->disposition,
-        'native_expire'=>$response->native_expire,
-        'native_bytes'=>$response->native_bytes,
-        'native_status'=>$response->native_status,
-        'native_groups'=>$response->native_groups,
-        'target_expire'=>$response->target_expire,
-        'target_bytes'=>$response->target_bytes,
-        'entitlement_digest'=>$response->entitlement_digest,
-        'generation'=>$generation];
-}
-function achbotApiPaymentOperatorOverrideToken(array $pay,array $attempt,
-    array $proof,int $actor,array $preview): string {
-    $digest=$preview['entitlement_digest']??null;
-    $generation=$preview['generation']??null;
-    $expiry=$preview['target_expire']??null;
-    $bytes=$preview['target_bytes']??null;
-    if ($actor<=0 || !is_string($digest) ||
-        preg_match('/^[a-f0-9]{64}$/D',$digest)!==1 ||
-        !is_int($generation) || $generation<0 ||
-        !is_int($expiry) || $expiry<=0 ||
-        !is_int($bytes) || $bytes<0 ||
-        (int)($pay['id']??0)<=0 || ($proof['mode']??null)!=='settle')
-        throw new RuntimeException('api_operator_override_token_invalid');
-    return substr(hash_hmac('sha256',implode('|',[
-        'original-native-operator-override-v2',$actor,(int)$pay['id'],
-        achbotPaymentEvidencePayFingerprint($pay),
-        (string)($attempt['evidence_fulfillment_state']??''),
-        (string)$proof['operation'],$digest,$expiry,$bytes,$generation,
-    ]),achbotPaymentEvidenceKey()),0,20);
-}
 function achbotApiPaymentReady(mysqli $db): bool {
     return function_exists('achbotPaymentEvidenceSchemaReady') && achbotPaymentEvidenceSchemaReady($db);
 }
@@ -185,38 +71,6 @@ function achbotApiPaymentRow(mysqli $db,int $id,bool $locked=false): ?array {
 function achbotApiPaymentAttempt(mysqli $db,int $id,bool $locked=false): ?array {
     $q=$db->prepare('SELECT *,TIMESTAMPDIFF(SECOND,created_at,NOW()) AS age_seconds FROM payment_attempts WHERE pay_row_id=?'.($locked?' FOR UPDATE':''));
     $q->bind_param('i',$id);$q->execute();$row=$q->get_result()->fetch_assoc();$q->close();return $row?:null;
-}
-/** Called only during ORIGINAL issuance, inside its existing transaction. */
-function achbotApiPaymentPinLocked(mysqli $db,array $pay,array $attempt): void {
-    if (!function_exists('achbotPaymentEvidenceProfile')) return;
-    $profile=achbotPaymentEvidenceProfile((string)$attempt['provider']);
-    if ($profile===null) return;
-    if (!achbotApiPaymentReady($db)) throw new RuntimeException('api_payment_schema_unavailable');
-    $subject=[];$type=(string)$pay['type'];
-    if (in_array($type,['BUY_SUB','RENEW_ACCOUNT','RENEW_SCONFIG'],true)) {
-        $id=(int)$pay['plan_id'];
-        $q=$db->prepare('SELECT server_id,inbound_id,days,volume,active FROM server_plans WHERE id=? FOR UPDATE');
-        $q->bind_param('i',$id);$q->execute();$plan=$q->get_result()->fetch_assoc();$q->close();
-        if (!$plan || ($type!=='RENEW_ACCOUNT' && (int)$plan['active']!==1) ||
-            (int)$plan['inbound_id']!==0 ||
-            ($type!=='RENEW_ACCOUNT' && (int)$plan['server_id']!==(int)$pay['server_id']))
-            throw new RuntimeException('api_payment_subject_unavailable');
-        $custom=$type==='BUY_SUB' && ((int)$pay['day']>0 || (int)$pay['volume']>0);
-        $subject=['days'=>$custom?(int)$pay['day']:(int)$plan['days'],
-            'volume'=>$custom?(int)$pay['volume']:(int)$plan['volume'],
-            'count'=>max(1,(int)($pay['agent_count']??0))];
-        if ($subject['days']<=0 || $subject['days']>36500 ||
-            ($type==='BUY_SUB' ? $subject['volume']<=0 : $subject['volume']<0) ||
-            $subject['volume']>intdiv(PHP_INT_MAX,1073741824) || $subject['count']>(int)$pay['price'])
-            throw new RuntimeException('api_payment_entitlement_invalid');
-    } elseif (preg_match('/^INCREASE_(DAY|VOLUME)_/', $type)) {
-        $units=achbotPinnedAddonUnits($pay);
-        if ($units===null) throw new RuntimeException('api_payment_units_invalid');
-        $subject=['units'=>$units];
-    } elseif ($type!=='INCREASE_WALLET') throw new RuntimeException('api_payment_subject_unsupported');
-    $profile['subject']=$subject;
-    if (!achbotPaymentEvidencePinLocked($db,$pay,$attempt,$profile))
-        throw new RuntimeException('api_payment_pin_unconfirmed');
 }
 function achbotApiPaymentContext(mysqli $db,string $hash,int $actor=0): ?array {
     if (!achbotApiPaymentReady($db)) return null;
@@ -484,510 +338,26 @@ function achbotApiPaymentNotice(mysqli $db,array $pay,string $status,bool $repor
 function achbotApiPaymentTypedReviewLocked(mysqli $db,array $pay): bool {
     return function_exists('achbotPaymentEvidenceHasTypedReviewLocked') && achbotPaymentEvidenceHasTypedReviewLocked($db,$pay);
 }
-/** Called under the actual locked pays claim, also used by CREATE ownership. */
-function achbotApiPaymentProcessingProofLocked(mysqli $db,int $id): bool {
-    if (!achbotApiPaymentReady($db)) return false;
-    $pay=achbotApiPaymentRow($db,$id,true);
-    if (!$pay || $pay['state']!=='processing' || (int)($pay['approved_by']??-1)!==0) return false;
-    $proof=achbotPaymentEvidenceGetProof($db,$id);
-    return $proof!==null && ($proof['mode']??'')==='settle' && achbotPaymentEvidenceValidateProofLocked($db,$pay,$proof);
-}
-/** Short preflight only. Never retain SQL locks across a provider request. */
-function achbotApiPaymentValidateProof(mysqli $db,array $pay,array $proof): bool {
-    $tx=$db->query('SELECT @@in_transaction');$inside=$tx&&(int)$tx->fetch_row()[0]===1;
-    if($inside)return achbotPaymentEvidenceValidateProofLocked($db,$pay,$proof);
-    try {
-        if(!$db->begin_transaction())return false;
-        $fresh=achbotApiPaymentRow($db,(int)$pay['id'],true);
-        $valid=$fresh && achbotPaymentEvidencePayFingerprint($fresh)===achbotPaymentEvidencePayFingerprint($pay) && achbotPaymentEvidenceValidateProofLocked($db,$fresh,$proof);
-        $db->rollback();return (bool)$valid;
-    }catch(Throwable $e){try{$db->rollback();}catch(Throwable $ignored){}return false;}
-}
-/** Canonical purchase dimensions read from the ORIGINAL encrypted issuance pin. */
-function achbotApiPaymentPurchaseIntent(mysqli $db,array $pay,array $proof): ?array {
-    if (!achbotApiPaymentValidateProof($db,$pay,$proof) || ($proof['mode']??'')!=='settle') return null;
-    $a=achbotApiPaymentAttempt($db,(int)$pay['id'],true);$p=$a?achbotPaymentEvidenceSnapshot($a):null;$s=$p['subject']??null;
-    if(($a['provider']??'')==='bank_transfer') {
-        $id=(int)$pay['id'];$q=$db->prepare('SELECT * FROM bank_buy_invoice_claims WHERE pay_row_id=? FOR UPDATE');$q->bind_param('i',$id);$q->execute();$original=$q->get_result()->fetch_assoc();$q->close();
-        if(!achbotBankBuyClaimMatches($pay,$original)||!achbotBankBuyAttemptMatches($pay,$a,$original))return null;
-    }
-
-    if (!is_array($s) || (int)($s['days']??0)<=0 || (int)($s['volume']??0)<=0 || (int)($s['count']??0)<=0) return null;
-    return ['invoice_sha256'=>achbotBankBuyInvoiceFingerprint($pay),'account_count'=>(int)$s['count'],
-        'amount'=>(int)$pay['price'],'server_id'=>(int)$pay['server_id'],'plan_id'=>(int)$pay['plan_id'],
-        'entitled_days'=>(int)$s['days'],'entitled_volume'=>(int)$s['volume']];
-}
-/** SQL-only snapshot of the exact local quote, target and native incarnation.
- * The common provider validators below perform storage reads only. In
- * particular, achbotPgQuote/achbotSupportsPaymentSubject are NOT called here:
- * both may perform authenticated native HTTP even when their lock flag is true.
- */
-function achbotApiPaymentLocalSubjectContext(mysqli $db,array $pay,bool $locked=false): ?string {
-    try {
-        $type=(string)($pay['type']??'');
-        $context=['pay'=>achbotPaymentEvidencePayFingerprint($pay),
-            'provider_quote'=>(string)($pay['provider_snapshot']??'')];
-        if($type==='INCREASE_WALLET')return hash('sha256',json_encode($context,JSON_THROW_ON_ERROR));
-        $sid=achbotProviderPaymentSubjectServer($db,$pay,$locked);
-        if($sid===null)return null;
-        $lock=$locked?' FOR UPDATE':'';
-        $read=static function(string $table,int $id) use($db,$lock):?array {
-            // All identifiers are fixed by this function, never user input.
-            $q=$db->prepare('SELECT * FROM '.$table.' WHERE id=?'.$lock);
-            $q->bind_param('i',$id);$q->execute();$row=$q->get_result()->fetch_assoc();$q->close();return $row?:null;
-        };
-        $server=$read('server_config',$sid);$info=$read('server_info',$sid);
-        $pid=(int)($pay['plan_id']??0);$uid=(int)($pay['user_id']??0);
-        $plan=$pid>0?$read('server_plans',$pid):null;$order=null;$oid=0;
-        if(!$server||!$info||!achbotSupportsAccount($server['type'],0))return null;
-        // A committed processing claim is recovery evidence, NOT a new
-        // authorization to charge or mutate an account. New claims must obey
-        // the CURRENT locked server policy even if remote preflight passed.
-        $alreadyClaimed=($pay['state']??'')==='processing' &&
-            (int)($pay['approved_by']??-1)===0;
-        if (!$alreadyClaimed && ((int)$info['active']!==1 ||
-            ($type==='BUY_SUB' ? (int)$info['state']!==1 :
-                !in_array((int)$info['state'],[1,2],true))))return null;
-        if($type==='BUY_SUB') {
-            if($pid<=0||!achbotSupportsPlan($db,$pid,0,$sid,$locked))return null;
-        } elseif($type==='RENEW_SCONFIG') {
-            $source=json_decode((string)($pay['description']??''),true);
-            if($pid<=0||$uid<=0||(int)($pay['volume']??-1)!==0||
-                !is_array($source)||($source['marzban']??null)!==true||
-                empty($source['remark'])||(int)($source['server_id']??0)!==$sid||
-                !achbotSupportsMarzbanPlan($db,$pid,0,$sid,$locked))return null;
-        } elseif($type==='RENEW_ACCOUNT'||
-            preg_match('/^INCREASE_(DAY|VOLUME)_([1-9][0-9]*)_[1-9][0-9]*$/D',$type,$m)) {
-            $oid=$type==='RENEW_ACCOUNT'?(int)($pay['order_id']??0):(int)$m[2];
-            if($oid<=0||($type==='RENEW_ACCOUNT'&&$pid<=0)||
-                (!empty($pay['order_id'])&&(int)$pay['order_id']!==$oid)||
-                ($type!=='RENEW_ACCOUNT'&&achbotPinnedAddonUnits($pay)===null)||
-                !achbotSupportsOrder($db,$oid,$pid>0?$pid:null,$uid>0?$uid:null,$locked))return null;
-            $order=$read('orders_list',$oid);if(!$order)return null;
-            if ($type!=='RENEW_ACCOUNT') {
-                require_once __DIR__.'/../Plans/Addons.php';
-                if (achbotAddonSchema($db) && !achbotAddonPayLocal($db,$pay,$order)) return null;
-                $context['addon_scope_snapshot']=(string)($pay['addon_scope_snapshot']??'');
-            }
-        } else return null;
-        $context['server']=$server;
-        // Capacity and display metadata are not provider/quote identity.
-        // Bind preflight to the actual commerce policy; a state flip after
-        // native HTTP invalidates this fingerprint at the final SQL claim.
-        $context['server_identity']=array_intersect_key($info,array_flip(
-            ['id','panel_group_id','provider_group_ids','active','state']));
-        $context['plan']=$plan;
-        $context['order']=$order;
-        if($server['type']==='pasarguard') {
-            achbotPgLoad();
-            $snap=json_decode((string)($pay['provider_snapshot']??''),true,64,JSON_THROW_ON_ERROR);
-            $target=achbotProviderCanonicalSnapshot($snap);
-            $panel=achbotProviderPanel($db,$target['panel_id'],$locked);
-            if($panel['id']!==(int)$server['provider_connection_id']||
-                $panel['instance_key']!==$server['provider_instance_key']||
-                $target['instance_key']!==$panel['instance_key']||
-                $target['endpoint_sha256']!==hash('sha256',rtrim($panel['api_url'],'/'))||
-                rtrim($server['panel_url'],'/')!==rtrim($panel['api_url'],'/'))return null;
-            $context['panel']=$panel;
-            if($type!=='BUY_SUB') {
-                $ctx=achbotPgOrderContext($db,$oid,$locked);
-                foreach($ctx['identity'] as $key=>$value)
-                    if((string)($snap[$key]??'')!==(string)$value)return null;
-                $history=achbotPgMutationHistory($ctx['account']);
-                if(count($history['consumed_keys'])>=4096&&
-                    !in_array('pay:'.(int)$pay['id'],$history['consumed_keys'],true))return null;
-                $context['native_identity']=$ctx['identity'];
-                $context['account']=$ctx['account'];
-            }
-        }
-        return hash('sha256',json_encode($context,JSON_THROW_ON_ERROR));
-    }catch(Throwable $e){return null;}
-}
-/** Authenticated provider/native eligibility is captured without SQL locks.
- * Comparing both sides of HTTP prevents a mixed observation of two local
- * identities from authorizing a later financial claim.
- */
-function achbotApiPaymentSubjectPreflight(mysqli $db,array $pay): array {
-    $out=['valid'=>false,'fingerprint'=>achbotPaymentEvidencePayFingerprint($pay),'context'=>null];
-    try {
-        if((int)$db->query('SELECT @@in_transaction')->fetch_row()[0]!==0)return $out;
-        $before=achbotApiPaymentLocalSubjectContext($db,$pay);
-        if($before===null||!achbotSupportsPaymentSubject($db,$pay,false))return $out;
-        $fresh=achbotApiPaymentRow($db,(int)$pay['id']);
-        if(!$fresh||!hash_equals($out['fingerprint'],achbotPaymentEvidencePayFingerprint($fresh)))return $out;
-        $after=achbotApiPaymentLocalSubjectContext($db,$fresh);
-        if($after===null||!hash_equals($before,$after))return $out;
-        return ['valid'=>true,'fingerprint'=>$out['fingerprint'],'context'=>$after];
-    }catch(Throwable $e){return $out;}
-}
-/** Current locked local context only; never native HTTP. */
-function achbotApiPaymentLocalSubjectAllowed(mysqli $db,array $pay,?array $seen=null): bool {
-    $context=achbotApiPaymentLocalSubjectContext($db,$pay,true);
-    return $context!==null&&($seen===null||(($seen['valid']??false)===true&&
-        hash_equals((string)$seen['fingerprint'],achbotPaymentEvidencePayFingerprint($pay))&&
-        hash_equals((string)$seen['context'],$context)));
-}
-/** Fresh native eligibility for a pinned API invoice's genuine human review. */
-function achbotApiPaymentManualAddonPreflight(mysqli $db,string $hash): ?array {
-    $pay=dbFetchPayByHash($db,$hash);
-    if(!$pay||!achbotApiPaymentPinned($db,(int)$pay['id']))return null;
-    if($pay['state']!=='have_sent')return ['valid'=>false];
-    return achbotApiPaymentSubjectPreflight($db,$pay);
-}
-function achbotApiPaymentManualAddonAllowedLocked(mysqli $db,?array $pay,?array $seen): bool {
-    if($pay===null)return false;
-    if($seen===null)return achbotSupportsPaymentSubject($db,$pay,true);
-    return achbotApiPaymentLocalSubjectAllowed($db,$pay,$seen);
-}
-/** Exclusive real local financial claim. No provider or Telegram HTTP inside. */
-function achbotApiPaymentSettle(mysqli $db,int $id,array $proof,
-    int $operator=0,int $primaryOwner=0,?array $operatorOverride=null): string {
-    return achbotApiPaymentWithWorkerLock($db,$id,
-        static fn():string=>achbotApiPaymentSettleLocked(
-            $db,$id,$proof,$operator,$primaryOwner,$operatorOverride));
-}
-function achbotApiPaymentSettleLocked(mysqli $db,int $id,array $proof,
-    int $operator=0,int $primaryOwner=0,?array $operatorOverride=null): string {
+/** Resume an already persisted proof through the common credit transaction. */
+function achbotApiPaymentSettle(mysqli $db,int $id,array $proof): string {
     require_once __DIR__.'/CheckoutAdmission.php';
-    if (achbotCheckoutCommandsPresent($db)) {
-        $before=achbotApiPaymentRow($db,$id);
-        if (!$before || $operator!==0 || $operatorOverride!==null) return 'review';
+    return achbotApiPaymentWithWorkerLock($db,$id,static function() use ($db,$id,$proof): string {
         try {
-            achbotCheckoutSettleReceipt($db,$id,(int)$before['user_id'],'api',$proof);
+            achbotCheckoutRequireSchema($db);
+            $pay=achbotApiPaymentRow($db,$id);
+            if (!$pay || ($proof['mode']??null)!=='settle') return 'review';
+            $r=achbotCheckoutSettleReceipt($db,$id,(int)$pay['user_id'],'api',$proof);
+            require_once __DIR__.'/CheckoutRoutes.php';
+            achbotCheckoutAdvance($db,$r['operation'],$id);
             return 'settled';
         } catch (Throwable $e) {
-            achbotDiagnosticEvent('achbot.finance.evidence_settlement',['pay_id'=>$id,'reason'=>'checkout_settlement_deferred','class'=>get_class($e)],'warning');
+            achbotDiagnosticEvent('achbot.finance.evidence_settlement',
+                ['pay_id'=>$id,'reason'=>'checkout_settlement_deferred','class'=>get_class($e)],'warning');
             return 'review';
         }
-    }
-    require_once __DIR__.'/ServiceEffects.php';require_once __DIR__.'/BankPurchase.php';
-    require_once __DIR__.'/DeliveryLedger.php';
-    $before=achbotApiPaymentRow($db,$id);if(!$before)return 'review';
-    $beforeAttempt=achbotApiPaymentAttempt($db,$id);
-    if (!$beforeAttempt || ($beforeAttempt['review_archived_at']??null)!==null)
-        return 'archived';
-    if (achbotApiPaymentTerminal($before)) {
-        // The original invoice is final: only CAS-protected PENDING deliveries
-        // may continue. Uncertain sends never auto-resend or replay money.
-        achbotDeliveryDispatchPending($db,$id);
-        achbotDeliverySyncAggregate($db,$id);
-        return 'settled';
-    }
-    if (!achbotDeliverySchemaReady($db)) return 'review';
-    $attempt=achbotApiPaymentAttempt($db,$id);
-    // Already verified native effects recover solely from their sealed result.
-    $started=$before['state']==='processing'&&(int)($before['approved_by']??-1)===0&&
-        in_array((string)($attempt['evidence_fulfillment_state']??''),
-            ['dispatched','verified'],true);
-    // Native state may be held while the original payment and provider proof
-    // are already pinned. Do not re-run pre-claim provider eligibility on an
-    // account whose in-flight journal deliberately refuses new mutations.
-    $seen=$started?null:achbotApiPaymentSubjectPreflight($db,$before);
-    if($seen!==null&&empty($seen['valid']))return 'review';
-    try {
-        if (!$db->begin_transaction()) return 'review';
-        $pay=achbotApiPaymentRow($db,$id,true);
-        if (!$pay) {$db->rollback();return 'review';}
-        if (achbotApiPaymentTerminal($pay)) {$db->rollback();return 'settled';}
-        $resuming=$pay['state']==='processing' && (int)($pay['approved_by']??-1)===0;
-        if ($operator>0) {
-            require_once __DIR__.'/../Admin/Access.php';
-            if ($primaryOwner<=0 ||
-                !achbotAdminCanLocked($db,$operator,$primaryOwner,'payments')) {
-                $db->rollback();return 'review';
-            }
-        }
-        $pinnedContinuation=$started && $resuming;
-        if ((!in_array($pay['state'],['pending','have_sent'],true) && !$resuming) || (string)($pay['payid']??'')!=='' ||
-            ($proof['mode']??'')!=='settle' || !achbotPaymentEvidenceValidateProofLocked($db,$pay,$proof) ||
-            (!$pinnedContinuation && !achbotApiPaymentLocalSubjectAllowed($db,$pay,$seen))) {
-            $db->rollback();return 'review';
-        }
-        $type=(string)$pay['type'];
-        if (!$resuming && $type==='BUY_SUB') {
-            $intent=achbotApiPaymentPurchaseIntent($db,$pay,$proof);if(!$intent)throw new RuntimeException('api_purchase_pin_invalid');
-            achbotEffectRequireUniqueLine($db);
-            $count=achbotManualBuyReserveCapacityLocked($db,$pay,(int)$pay['day']>0 || (int)$pay['volume']>0);
-            if($count!==$intent['account_count'])throw new RuntimeException('api_purchase_count_drift');
-            achbotEffectRecordManualCapacityLocked($db,$pay,$count,$proof);
-        } elseif (!$resuming && $type==='INCREASE_WALLET') {
-            if (!addToWallet($db,(int)$pay['user_id'],(int)$pay['price'])) throw new RuntimeException('api_wallet_credit_unconfirmed');
-        } elseif (!$resuming && !in_array($type,['RENEW_ACCOUNT','RENEW_SCONFIG'],true) &&
-            !preg_match('/^INCREASE_(DAY|VOLUME)_[1-9][0-9]*_[1-9][0-9]*$/D',$type)) throw new RuntimeException('api_subject_unsupported');
-        if (!$resuming && $type==='INCREASE_WALLET') {
-            // A credit without an atomic customer text-intent is forbidden.
-            $a=achbotApiPaymentAttempt($db,$id,true);
-            $text=achbotApiPaymentManualCustomerText($db,$pay);
-            if (!$a || $text===null) throw new RuntimeException('api_wallet_delivery_intent_missing');
-            achbotDeliveryInsertTextLocked($db,$pay,$a,$text,'HTML',0,0,
-                hash('sha256','wallet:'.(int)$a['id']));
-        }
-        if (!$resuming) {
-        $state=$type==='INCREASE_WALLET'?'approved':'processing';$before=(string)$pay['state'];
-        $q=$db->prepare('UPDATE pays SET state=?,approved_by=0 WHERE id=? AND state=? AND (payid IS NULL OR payid=\'\')');
-        $q->bind_param('sis',$state,$id,$before);if(!$q->execute() || $q->affected_rows!==1)throw new RuntimeException('api_claim_unconfirmed');$q->close();
-        if ($type!=='INCREASE_WALLET') {
-            $f=$db->prepare("UPDATE payment_attempts SET evidence_fulfillment_state='reserved' WHERE pay_row_id=? AND evidence_fulfillment_state IS NULL");$f->bind_param('i',$id);$f->execute();$f->close();
-        }
-        }
-        if (!$db->commit()) throw new RuntimeException('api_claim_commit_unknown');
-    } catch(Throwable $e) {try{$db->rollback();}catch(Throwable $ignored){}error_log('achbot_api_claim_review pay_id='.$id);return 'review';}
-    try {
-        if ($type==='BUY_SUB') {
-            // Continue each original ordinal through the same pinned native
-            // observation used by manual BUY_SUB. A prior dispatch is GET-only
-            // and can never trigger a second POST; a never-started ordinal
-            // retains its original single CREATE claim and capacity hold.
-            $delivery=achbotAutoBankProvisionBuySub($db,$pay,
-                $GLOBALS['botState']??[],[],
-                false,(string)($GLOBALS['botUrl']??''),$proof,null,
-                $operator,$primaryOwner);
-            if (!$delivery['committed']) return 'review';
-            achbotReferralAfterCompletedPurchase($db,(int)$pay['user_id'],$id,(int)($GLOBALS['admin']??0),$GLOBALS['botState']??[]);
-        } elseif($type!=='INCREASE_WALLET') {
-            if (!achbotApiPaymentFulfillEdit($db,$pay,$proof,$operator>0,
-                $operatorOverride,$operator,$primaryOwner)) return 'review';
-        }
-        $fresh=achbotApiPaymentRow($db,$id);if(!$fresh || !achbotApiPaymentTerminal($fresh))return 'review';
-        // Every per-ordinal intent was written by the SAME terminal COMMIT.
-        // Only pending lines may be dispatched automatically. ACK/unknown is
-        // per line; a split-bulk failure cannot be erased by one global flag.
-        achbotDeliveryDispatchPending($db,$id);
-        $aggregate=achbotDeliveryAggregate($db,$id);
-        if (!$aggregate || (int)$aggregate['total']===0) return 'review';
-        $deliveryAcknowledged=(int)$aggregate['ack']===(int)$aggregate['total'];
-        achbotDeliverySyncAggregate($db,$id);
-        if ($operator>0)
-            error_log('achbot_operator_service_completed pay_id='.$id.
-                ' actor='.$operator.' type='.$type.
-                ' delivery='.($deliveryAcknowledged?'acknowledged':'unconfirmed'));
-        achbotApiPaymentNotice($db,$fresh,$deliveryAcknowledged?'confirmed':'settled');
-        // This specific payment is already durably final, independent of
-        // Telegram success. Converge its existing receipt messages NOW rather
-        // than queueing behind historical invoices. Errors stay retryable in
-        // payment_message_refs; no new SMS, charge, Native or customer packet.
-        achbotPayUxSyncMessages($db,$id);
-        return $deliveryAcknowledged?'confirmed':'settled';
-    } catch(Throwable $e) {
-        $code=(string)$e->getMessage();
-        if (preg_match('/\A[a-z][a-z0-9_]{2,100}\z/D',$code)!==1)
-            $code='internal_exception';
-        error_log('achbot_api_effect_review pay_id='.$id.
-            ' actor='.$operator.' code='.$code.' class='.get_class($e).
-            ' at='.basename($e->getFile()).':'.$e->getLine());
-        $fresh=achbotApiPaymentRow($db,$id);
-        if($fresh)achbotApiPaymentNotice($db,$fresh,'review');
-        return 'review';
-    }
-}
-/** Reuse actual panel edit and exact local finisher, with pinned quantities. */
-function achbotApiPaymentStoreFulfillment(mysqli $db,int $id,array $proof,string $state,array $payload,string $expected,?array $seen=null): bool {
-    try {
-        if(!$db->begin_transaction())return false;$pay=achbotApiPaymentRow($db,$id,true);
-        if(!$pay||$pay['state']!=='processing'||!achbotPaymentEvidenceValidateProofLocked($db,$pay,$proof)||
-            ($seen!==null&&!achbotApiPaymentLocalSubjectAllowed($db,$pay,$seen))){$db->rollback();return false;}
-        $payload['pay_sha256']=achbotPaymentEvidencePayFingerprint($pay);$payload['operation']=$proof['operation'];
-        $sealed=achbotPaymentEvidenceProtect('fulfillment:'.$id.':'.$proof['operation'],$payload);
-        $q=$db->prepare('UPDATE payment_attempts SET evidence_fulfillment_state=?,evidence_fulfillment_payload=? WHERE pay_row_id=? AND evidence_fulfillment_state=?');
-        $q->bind_param('ssis',$state,$sealed,$id,$expected);$q->execute();$ok=$q->affected_rows===1;$q->close();
-        if(!$ok||!$db->commit())throw new RuntimeException('api_fulfillment_commit_unknown');return true;
-    }catch(Throwable $e){try{$db->rollback();}catch(Throwable $ignored){}return false;}
-}
-/**
- * Only original claimed additive invoices can store a Native baseline. The
- * provider calls this BEFORE any side effect, so a present capture_required
- * marker with no captured intent proves this new-code attempt never wrote.
- * Historical dispatched rows have no such guarantee and remain reviewable.
- */
-function achbotApiPaymentNativeIntentCapture(mysqli $db,int $id,array $proof,
-    array &$payload): callable {
-    return static function(array $native) use ($db,$id,$proof,&$payload): bool {
-        if (isset($payload['native_intent']) ||
-            ($payload['capture_required']??null)!==true ||
-            ($native['version']??null)!==1)
-            return false;
-        $prepared=$payload;
-        $prepared['native_intent']=$native;
-        if (!achbotApiPaymentStoreFulfillment($db,$id,$proof,
-            'dispatched',$prepared,'dispatched')) return false;
-        $payload=$prepared;
-        return true;
-    };
-}
-function achbotApiPaymentFulfillEdit(mysqli $db,array $pay,array $proof,
-    bool $operator=false,?array $operatorOverride=null,
-    int $actor=0,int $primaryOwner=0): bool {
-    $id=(int)$pay['id'];$type=(string)$pay['type'];$a=achbotApiPaymentAttempt($db,$id);$profile=$a?achbotPaymentEvidenceSnapshot($a):null;$subject=$profile['subject']??[];
-    $state=(string)($a['evidence_fulfillment_state']??'');$payload=null;
-    if($state==='verified') {
-        $payload=achbotPaymentEvidenceUnprotect('fulfillment:'.$id.':'.$proof['operation'],(string)$a['evidence_fulfillment_payload']);
-        if(!$payload||($payload['operation']??null)!==$proof['operation']||($payload['pay_sha256']??null)!==achbotPaymentEvidencePayFingerprint($pay))return false;
-    } elseif($state==='reserved') {
-        $kind=$type==='RENEW_SCONFIG'?'standard':($type==='RENEW_ACCOUNT'?'renew':(str_starts_with($type,'INCREASE_DAY_')?'day':'volume'));
-        $oid=(int)($pay['order_id']??0);$server=(int)$pay['server_id'];$units=0;$order=null;
-        if($kind==='standard'){$desc=json_decode((string)$pay['description'],true);$remark=(string)($desc['remark']??'');}
-        else {
-            if($kind==='day'||$kind==='volume'){preg_match('/^INCREASE_(?:DAY|VOLUME)_([1-9][0-9]*)_/',$type,$m);$oid=(int)($m[1]??0);$units=(int)($subject['units']??0);if($units!==achbotPinnedAddonUnits($pay))return false;}
-            $q=$db->prepare('SELECT * FROM orders_list WHERE id=?');$q->bind_param('i',$oid);$q->execute();$order=$q->get_result()->fetch_assoc();$q->close();if(!$order)return false;$remark=(string)$order['remark'];$server=(int)$order['server_id'];
-        }
-        $seen=achbotApiPaymentSubjectPreflight($db,$pay);
-        if(empty($seen['valid'])||!achbotAutoBankEditPreflight($db,$pay,$kind,$server,$oid,$remark,$units))return false;
-        $params=['pay_id'=>$id,'remark'=>$remark];
-        if($kind==='day')$params['plus_day']=$units;
-        elseif($kind==='volume')$params['plus_volume']=$units;
-        else {$params['days']=(int)($subject['days']??0);$params['volume']=(int)($subject['volume']??-1);if($params['days']<=0||$params['volume']<0)return false;}
-        $payload=['kind'=>$kind,'server'=>$server,'order'=>$oid,'remark'=>$remark,'units'=>$units,'expiry'=>$order?(int)$order['expire_date']:null,'params'=>$params];
-        // Initial RESERVED->dispatched API fulfillment has the SAME
-        // original pay:ID/native-fence finality requirement as recovery.
-        // Persist this before HTTP so a lost response can be read-first
-        // reconciled without releasing the account to competing operations.
-        $deferNativeFence=achbotProviderType($db,$server)==='pasarguard' &&
-            in_array($kind,['renew','day','volume'],true);
-        if ($deferNativeFence) $payload['native_fence_deferred']=true;
-        if (in_array($kind,['day','volume'],true))
-            $payload['capture_required']=true;
-        if(!achbotApiPaymentStoreFulfillment($db,$id,$proof,'dispatched',$payload,'reserved',$seen))return false;
-        // Only the winner of the persisted dispatch transition may call the
-        // native adapter. A crash/timeout here stays reviewable, never replayed.
-        $dispatch=$params;
-        if ($deferNativeFence) $dispatch['_api_defer_account_finality']=true;
-        if (($payload['capture_required']??false)===true)
-            $dispatch['_paid_intent_capture']=achbotApiPaymentNativeIntentCapture(
-                $db,$id,$proof,$payload);
-        $response=achbotApplyServiceEdit($db,$server,$dispatch);
-        if(!is_object($response)||($response->success??false)!==true||($response->verified??false)!==true)return false;
-        if ($deferNativeFence && (
-            ($response->native_fence_deferred??null)!==true ||
-            !is_array($response->observed_group_ids??null) ||
-            !is_int($response->applied_expire??null) ||
-            !is_int($response->applied_bytes??null))) return false;
-        $payload['result']=['success'=>true,'verified'=>true,'applied_expire'=>$response->applied_expire??null,'applied_bytes'=>$response->applied_bytes??null];
-        if ($deferNativeFence)
-            $payload['result']['observed_group_ids']=$response->observed_group_ids;
-        if(!achbotApiPaymentStoreFulfillment($db,$id,$proof,'verified',$payload,'dispatched'))return false;
-    } elseif($state==='dispatched') {
-        // The old attempt already crossed its irreversible claim boundary.
-        // Resume its sealed original payload, never claim another payment.
-        $payload=achbotPaymentEvidenceUnprotect(
-            'fulfillment:'.$id.':'.$proof['operation'],
-            (string)$a['evidence_fulfillment_payload']);
-        if (!is_array($payload) ||
-            ($payload['operation']??null)!==$proof['operation'] ||
-            ($payload['pay_sha256']??null)!==achbotPaymentEvidencePayFingerprint($pay) ||
-            !is_array($payload['params']??null)) return false;
-        $kind=(string)($payload['kind']??'');
-        // Automatic recovery is permitted for an original pinned add-on too:
-        // the provider must prove its captured absolute intent or pre-dispatch
-        // reservation before it may send any further Native request.
-        $server=(int)($payload['server']??0);
-        $oid=(int)($payload['order']??0);
-        $remark=(string)($payload['remark']??'');
-        $units=(int)($payload['units']??0);
-        if ($server<=0 || $remark==='' ||
-            $payload['params']['pay_id']!==$id ||
-            (string)($payload['params']['remark']??'')!==$remark ||
-            !achbotAutoBankEditPreflight($db,$pay,$kind,$server,$oid,$remark,
-                $units,true))
-            return false;
-        require_once __DIR__.'/../Panel/ProviderRuntime.php';
-        $source=$payload;
-        // The original account fence remains durable until the SAME local
-        // transaction closes it with payment, audit and delivery finality.
-        // A failure to persist verified fulfillment must NOT expose the
-        // account to a newer Native operation.
-        $fenceDeferred=achbotProviderType($db,$server)==='pasarguard' &&
-            in_array($kind,['renew','day','volume'],true);
-        if ($fenceDeferred) $source['defer_account_finality']=true;
-        if ($operatorOverride!==null) {
-            $digest=$operatorOverride['entitlement_digest']??null;
-            $generation=$operatorOverride['generation']??null;
-            $targetExpire=$operatorOverride['target_expire']??null;
-            $targetBytes=$operatorOverride['target_bytes']??null;
-            $savedGeneration=$payload['operator_override_generation']??0;
-            if (!$operator || $actor<=0 || $primaryOwner<=0 ||
-                !in_array($kind,['renew','day','volume'],true) ||
-                !is_string($digest) ||
-                preg_match('/^[a-f0-9]{64}$/D',$digest)!==1 ||
-                !is_int($generation) || $generation<0 ||
-                !is_int($savedGeneration) || $savedGeneration!==$generation ||
-                $generation>=PHP_INT_MAX-1 ||
-                !is_int($targetExpire) || $targetExpire<=0 ||
-                !is_int($targetBytes) || $targetBytes<0 ||
-                (int)($operatorOverride['actor_id']??0)!==$actor ||
-                achbotProviderType($db,$server)!=='pasarguard')
-                return false;
-            // Consume the actor-bound one-time confirmation BEFORE any
-            // remote reset/PUT. The attempt generation means a callback
-            // replay cannot repeat a reset if the Native ACK was lost.
-            // A fresh preview may authorize a deliberate next recovery.
-            $previousAttestations=$payload['operator_override_attempts']??[];
-            if (!is_array($previousAttestations) ||
-                !array_is_list($previousAttestations) ||
-                count($previousAttestations)!==$generation)
-                return false;
-            $attestation=[
-                'actor_id'=>$actor,'native_digest'=>$digest,
-                'generation'=>$generation+1,
-                'target_expire'=>$targetExpire,'target_bytes'=>$targetBytes,
-                'confirmed_at'=>gmdate('c')];
-            $previousAttestations[]=$attestation;
-            $payload['operator_override_generation']=$generation+1;
-            $payload['operator_override_attempts']=$previousAttestations;
-            $payload['operator_override_attestation']=$attestation;
-            if (!achbotApiPaymentStoreFulfillment($db,$id,$proof,
-                'dispatched',$payload,'dispatched')) return false;
-            $source=$payload;
-            if ($fenceDeferred) $source['defer_account_finality']=true;
-            $source['operator_override_native_digest']=$digest;
-            $source['operator_override_target']=[
-                'expire'=>$targetExpire,'data_limit'=>$targetBytes];
-            $source['operator_id']=$actor;
-            $source['primary_owner_id']=$primaryOwner;
-        }
-        if (($payload['capture_required']??false)===true &&
-            !isset($payload['native_intent']))
-            $source['_paid_intent_capture']=achbotApiPaymentNativeIntentCapture(
-                $db,$id,$proof,$payload);
-        $response=achbotProviderRecoverEdit($db,$server,$payload['params'],
-            $source,$operator);
-        if (($response->success??false)!==true ||
-            ($response->verified??false)!==true ||
-            !is_int($response->applied_expire??null) ||
-            !is_int($response->applied_bytes??null)) return false;
-        if ($fenceDeferred && !is_array($response->observed_group_ids??null))
-            return false;
-        $payload['result']=['success'=>true,'verified'=>true,
-            'applied_expire'=>$response->applied_expire,
-            'applied_bytes'=>$response->applied_bytes];
-        if ($fenceDeferred) {
-            $payload['native_fence_deferred']=true;
-            $payload['result']['observed_group_ids']=$response->observed_group_ids;
-        }
-        if (!achbotApiPaymentStoreFulfillment($db,$id,$proof,'verified',
-            $payload,'dispatched'))return false;
-    } else return false;
-    $result=(object)($payload['result']??[]);
-    $a=achbotApiPaymentAttempt($db,$id);
-    $text=achbotApiPaymentManualCustomerText($db,$pay);
-    if (!$a || $a['evidence_fulfillment_state']!=='verified' ||
-        !is_string($a['evidence_fulfillment_payload']??null) ||
-        $text===null) return false;
-    $deliveryIntent=[
-        'text'=>$text,'mode'=>$type==='RENEW_SCONFIG'?'plain':'HTML',
-        'order'=>(int)$payload['order'],'server'=>(int)$payload['server'],
-        'source_digest'=>hash('sha256',(string)$a['evidence_fulfillment_payload'])];
-    return achbotAutoBankFinishEdit($db,$pay,$result,(string)$payload['kind'],(int)$payload['server'],(int)$payload['order'],(string)$payload['remark'],(int)$pay['price'],(int)$payload['units'],$payload['expiry']===null?null:(int)$payload['expiry'],$deliveryIntent,
-        ($payload['native_fence_deferred']??false)===true
-            ?['observed_group_ids'=>$payload['result']['observed_group_ids']??null,
-              'operator_override_attested'=>is_array($payload['operator_override_attestation']??null)
-                && (int)($payload['operator_override_attestation']['actor_id']??0)>0
-                && is_string($payload['operator_override_attestation']['native_digest']??null)
-                && preg_match('/^[a-f0-9]{64}$/D',
-                    $payload['operator_override_attestation']['native_digest'])===1]
-            :null);
+    });
 }
 
-/** No first-match wins. A same-amount local collision is left untouched. */
 function achbotApiPaymentSmsUniqueLocked(mysqli $db,array $evidence,int $id): bool {
     $amount=(string)($evidence['amount_toman']??'');
     if (!preg_match('/^[1-9][0-9]*$/D',$amount)) return false;
@@ -1022,8 +392,7 @@ function achbotApiPaymentSmsUniqueLocked(mysqli $db,array $evidence,int $id): bo
     return count($matches)===1 && $matches[0]===$id;
 }
 /** A bounded page is revisited from its start. No unpersisted cursor can lose evidence. */
-function achbotApiPaymentCheckBank(mysqli $db,array $claim,?callable $settle=null): string {
-    $settle??='achbotApiPaymentSettle';
+function achbotApiPaymentCheckBank(mysqli $db,array $claim,callable $settle): string {
     $p=$claim['pay'];$a=$claim['attempt'];$profile=$claim['profile'];$id=(int)$p['id'];
     $existing=achbotPaymentEvidenceGetProof($db,$id);
     if($existing) {
@@ -1159,8 +528,7 @@ function achbotApiPaymentGiftPreviouslyProven(mysqli $db,int $payId,?string $cod
 }
 
 /** Customer code is encrypted before verification HTTP. Never log or fan it out. */
-function achbotApiPaymentCheckGift(mysqli $db,array $claim,?callable $settle=null): string {
-    $settle??='achbotApiPaymentSettle';
+function achbotApiPaymentCheckGift(mysqli $db,array $claim,callable $settle): string {
     $pay=$claim['pay'];$id=(int)$pay['id'];
     if(achbotApiPaymentTerminal($pay))return 'settled';
     $proof=achbotPaymentEvidenceGetProof($db,$id);if($proof)return $settle($db,$id,$proof);
@@ -1242,129 +610,27 @@ function achbotApiPaymentCheck(mysqli $db,int $id): string {
     $GLOBALS[$key]=$id;
     try {
         require_once __DIR__.'/CheckoutAdmission.php';
-        if (achbotCheckoutCommandsPresent($db)) {
-            require_once __DIR__.'/ManualReceipt.php';
-            try { return achbotManualReceiptCheckApi($db,$id); }
-            catch (Throwable $e) {
-                achbotDiagnosticEvent('achbot.finance.evidence_check',['pay_id'=>$id,'reason'=>'checkout_evidence_deferred','class'=>get_class($e)],'warning');
-                return 'review';
+        achbotCheckoutRequireSchema($db);
+        require_once __DIR__.'/ManualReceipt.php';
+        try {
+            $status=achbotManualReceiptCheckApi($db,$id);
+            $pay=achbotApiPaymentRow($db,$id);
+            if ($pay && !in_array($status,['archived','awaiting_receipt'],true)) {
+                if (in_array($status,['used','revoked','expired','mismatch'],true))
+                    achbotApiPaymentNotice($db,$pay,$status);
+                elseif (in_array($status,['review','pending','unavailable'],true))
+                    achbotApiPaymentNotice($db,$pay,$status==='pending'?'uncertain':'review');
+                $c=achbotApiPaymentContext($db,(string)$pay['hash_id']);
+                if ($c) achbotApiPaymentSyncInvoice($db,$c);
             }
+            return $status;
+        } catch (Throwable $e) {
+            achbotDiagnosticEvent('achbot.finance.evidence_check',['pay_id'=>$id,'reason'=>'checkout_evidence_deferred','class'=>get_class($e)],'warning');
+            return 'review';
         }
-        return achbotApiPaymentWithWorkerLock($db,$id,
-            static fn():string=>achbotApiPaymentWithBudget(15.0,
-                static fn():string=>achbotApiPaymentCheckWithinBudget($db,$id)));
     } finally {
         if ($had) $GLOBALS[$key]=$old;
         else unset($GLOBALS[$key]);
-    }
-}
-function achbotApiPaymentCheckWithinBudget(mysqli $db,int $id): string {
-    $checkStarted=microtime(true);
-    if(!achbotApiPaymentReady($db)) {
-        achbotDiagnosticEvent('achbot.finance.evidence_check',
-            ['pay_id'=>$id,'reason'=>'schema_not_ready'],'error');
-        return 'unavailable';
-    }
-    $saved=achbotApiPaymentAttempt($db,$id);
-    $pay=achbotApiPaymentRow($db,$id);
-    if(!$saved || !$pay) {
-        achbotDiagnosticEvent('achbot.finance.evidence_check',
-            ['pay_id'=>$id,'reason'=>'original_missing'],'warning');
-        return 'unavailable';
-    }
-    $context=['pay_id'=>$id,'provider'=>(string)$saved['provider'],
-        'stage'=>(string)$saved['stage'],
-        'state'=>(string)$pay['state'],
-        'evidence_state'=>(string)($saved['evidence_state']??'none')];
-    if (($saved['review_archived_at']??null)!==null) {
-        achbotDiagnosticEvent('achbot.finance.evidence_check',$context+
-            ['reason'=>'archived'],'info');
-        return 'archived';
-    }
-    if(!achbotPaymentEvidenceReviewReady($pay,$saved) &&
-        !achbotPaymentEvidencePending($db,$id) &&
-        !achbotPaymentEvidenceGetProof($db,$id)) {
-        achbotDiagnosticEvent('achbot.finance.evidence_check',$context+
-            ['reason'=>'awaiting_receipt'],'info');
-        return 'awaiting_receipt';
-    }
-    if($saved && $saved['provider']==='gift_card' && ($saved['evidence_state']??'')==='invalid_code') {
-        $d=achbotPaymentEvidenceUnprotect('code:'.$saved['id'].':'.$id,(string)$saved['evidence_code']);
-        if(in_array($d['last_status']??'',['used','revoked','expired','mismatch'],true)){achbotApiPaymentNotice($db,$pay,$d['last_status']);return $d['last_status'];}
-    }
-    $claim=achbotPaymentEvidenceClaim($db,$id);
-    if(!$claim) {
-        // This is a point-in-time diagnostic hint; Claim() remains the only
-        // lock/lease authority. Never infer payment finality from a skipped poll.
-        $reason='claim_declined';
-        if (!empty($saved['evidence_next_check_at']) &&
-            strtotime((string)$saved['evidence_next_check_at'])>time())
-            $reason='check_not_due';
-        elseif (!empty($saved['evidence_claim_token']) &&
-            !empty($saved['evidence_claimed_at']) &&
-            strtotime((string)$saved['evidence_claimed_at'])>time()-120)
-            $reason='claim_lease_held';
-        achbotDiagnosticEvent('achbot.finance.evidence_check',
-            $context+['reason'=>$reason],'info');
-        return $saved && $saved['provider']==='gift_card' &&
-            ($saved['evidence_state']??'')==='review' &&
-            !empty($saved['evidence_review_sent_at'])?'review':'pending';
-    }
-    $token=(string)$claim['token'];$status='review';
-    try {
-        $status=$claim['attempt']['provider']==='bank_transfer'?achbotApiPaymentCheckBank($db,$claim):achbotApiPaymentCheckGift($db,$claim);
-
-    }catch(Throwable $e){
-        achbotDiagnosticEvent('achbot.finance.evidence_check_exception',
-            $context+['class'=>get_class($e),'reason'=>(string)$e->getMessage()],
-            'error');
-        error_log('achbot_api_payment_check_deferred pay_id='.$id);
-        $status='review';
-    }
-    finally {
-        // The one-minute Cron is already the polling throttle. A 60-second
-        // post-receipt hint can miss the very next tick and add another
-        // minute when bank SMS arrives just after the first check. Keep
-        // provider Retry-After and evidence/operation idempotency fences.
-        $delay=($claim['attempt']['provider']==='bank_transfer' &&
-            in_array($status,['monitoring','pending'],true))?20:60;
-        achbotPaymentEvidenceDefer($db,$id,$token,
-            in_array($status,['confirmed','settled'],true)?'proven':
-            (in_array($status,['review','unavailable'],true)?'review':
-            (in_array($status,['used','expired','revoked','mismatch'],true)?'invalid_code':
-            ($status==='pending'?'uncertain':($status==='manual'?'manual':'monitoring')))),
-            $delay);
-    }
-    $pay=achbotApiPaymentRow($db,$id);if($pay){
-        $c=achbotApiPaymentContext($db,(string)$pay['hash_id']);if($c)achbotApiPaymentSyncInvoice($db,$c);
-        if(in_array($status,['used','revoked','expired','mismatch'],true))achbotApiPaymentNotice($db,$pay,$status);
-        elseif(in_array($status,['review','pending','unavailable'],true))achbotApiPaymentNotice($db,$pay,$status==='pending'?'uncertain':'review');
-        elseif($status==='settled'){$proof=achbotPaymentEvidenceGetProof($db,$id);achbotApiPaymentNotice($db,$pay,($proof['mode']??'')==='evidence_only'?'evidence_only':'settled');}
-    }
-    achbotDiagnosticEvent('achbot.finance.evidence_check',
-        $context+['result'=>$status,
-            'elapsed_ms'=>(int)round((microtime(true)-$checkStarted)*1000)],
-        in_array($status,['review','unavailable'],true)?'warning':'info');
-    return $status;
-}
-/** Migration 022 is additive: an older API-only installation may have the
- * original evidence ledger but not yet the operator Archive column. Its
- * genuine pending payment must keep working. On 022 installations the
- * exclusion is mandatory; any error other than a missing column fails
- * closed rather than silently admitting an archived original.
- */
-function achbotApiPaymentArchivePredicate(mysqli $db): string {
-    try {
-        $probe=$db->query('SELECT review_archived_at FROM payment_attempts LIMIT 0');
-        if ($probe instanceof mysqli_result) {
-            $probe->free();
-            return ' AND a.review_archived_at IS NULL';
-        }
-        if ((int)$db->errno===1054) return '';
-        throw new RuntimeException('api_archive_schema_unavailable');
-    } catch (mysqli_sql_exception $error) {
-        if ((int)$error->getCode()===1054) return '';
-        throw $error;
     }
 }
 function achbotApiPaymentMaintain(mysqli $db,int $limit=12): array {
@@ -1379,10 +645,9 @@ function achbotApiPaymentMaintainWithinBudget(mysqli $db,int $limit=12): array {
         return ['checked'=>0,'edited'=>0];
     }
     try {
-        $archivePredicate=achbotApiPaymentArchivePredicate($db);
         require_once __DIR__.'/CheckoutAdmission.php';
-        $walletFirst=achbotCheckoutCommandsPresent($db);
-        if ($walletFirst) {
+        achbotCheckoutRequireSchema($db);
+        $archivePredicate=' AND a.review_archived_at IS NULL';
             $q=$db->query("SELECT a.pay_row_id,p.hash_id FROM payment_attempts a JOIN pays p ON p.id=a.pay_row_id
                 WHERE a.evidence_profile IS NOT NULL AND a.provider IN ('bank_transfer','gift_card')
                   AND a.wallet_invoice_sha256 IS NOT NULL AND a.wallet_invoice_sha256<>'' AND a.wallet_credit_entry_id IS NULL
@@ -1391,21 +656,6 @@ function achbotApiPaymentMaintainWithinBudget(mysqli $db,int $limit=12): array {
                        (a.review_archived_at IS NULL AND (a.evidence_state IS NULL OR a.evidence_state NOT IN ('invalid_code','manual')) AND
                          (p.state='have_sent' OR EXISTS (SELECT 1 FROM payment_transactions t WHERE t.attempt_id=a.id AND t.evidence_operation IS NOT NULL))))
                 ORDER BY COALESCE(a.evidence_next_check_at,a.created_at),a.id LIMIT ".($limit+1));
-        } else $q=$db->query("SELECT a.pay_row_id,p.hash_id FROM payment_attempts a JOIN pays p ON p.id=a.pay_row_id
-            WHERE a.evidence_profile IS NOT NULL AND a.provider IN ('bank_transfer','gift_card')
-              {$archivePredicate}
-              AND ((p.state='have_sent' AND a.stage='review' AND p.message_id>0 AND p.chat_id>0)
-                   OR p.state IN ('approved','paid','auto_cart_approved','paid_with_wallet','processing')
-                   OR EXISTS (SELECT 1 FROM payment_transactions t WHERE t.attempt_id=a.id AND t.evidence_operation IS NOT NULL))
-              AND (a.evidence_next_check_at IS NULL OR a.evidence_next_check_at<=NOW())
-              AND (a.evidence_state IS NULL OR a.evidence_state NOT IN ('proven','invalid_code','manual')
-                   OR (a.evidence_state='proven' AND (p.state IN ('pending','have_sent') OR
-                       (p.state='processing' AND (
-                          a.evidence_fulfillment_state IN ('reserved','verified')
-                          OR (a.evidence_fulfillment_state='dispatched'
-                              AND (p.type IN ('RENEW_ACCOUNT','RENEW_SCONFIG')
-                                  OR p.type REGEXP '^INCREASE_(DAY|VOLUME)_[1-9][0-9]*_[1-9][0-9]*$')))))))
-            ORDER BY COALESCE(a.evidence_next_check_at,a.created_at),a.id LIMIT ".($limit+1));
         $rows=$q->fetch_all(MYSQLI_ASSOC);
         if (count($rows)>$limit) {
             $overflow=array_pop($rows);

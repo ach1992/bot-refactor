@@ -3,12 +3,11 @@ declare(strict_types=1);
 if (realpath($_SERVER['SCRIPT_FILENAME']??'')===__FILE__) {http_response_code(404);exit;}
 require_once __DIR__.'/../Panel/ProviderStorage.php';
 
-/** The old, unactivated schema has no new operations. An installed but
- * malformed table is never absence. The final cutover will require 026. */
+/** New runtime requires transactional service ownership storage. */
 function achbotServiceOperationsPresent(mysqli $db): bool {
     $r=achbotProviderRow($db,"SELECT TABLE_TYPE,ENGINE FROM information_schema.TABLES
         WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='service_operations'");
-    if ($r===null) return false;
+    if ($r===null) throw new RuntimeException('service_ownership_schema_missing');
     if ($r['TABLE_TYPE']!=='BASE TABLE' || strcasecmp((string)$r['ENGINE'],'InnoDB')!==0)
         throw new RuntimeException('service_ownership_schema_invalid');
     return true;

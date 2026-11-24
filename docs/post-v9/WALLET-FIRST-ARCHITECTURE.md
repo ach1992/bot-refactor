@@ -8,6 +8,31 @@ acceptance evidence belong there and in the implementing PR. Baseline source:
 `484c80e6ee030e8656da96edc3000311d10327b5` (Stable v0.10.14).
 [Audit evidence](https://github.com/ach1992/bot-refactor/issues/204#issuecomment-7111121827).
 
+## Cutover decision — controlled manual database transfer (Owner, 2026-11-24)
+
+The runtime is a clean replacement requiring the new schema. Automated
+historical migration/import, dual-write, old-schema mode, and old financial
+executors are **not** product requirements. The owner approved manual transfer
+from each old installation into a separately prepared new-schema database.
+Existing offline rehearsal/audit helpers are not part of the runtime and do
+not authorize production actions.
+
+Before a separately approved transfer, stop all old writers and schedulers,
+take and restore-test a full backup, snapshot every user's exact integer
+balance and active Native identity/entitlement, preserve configuration,
+orders, receipts, and pending/unknown/terminal evidence. Map only proved
+historical claims to the new command/journal format. Never invent proof,
+replay a terminal operation, or charge an already debited operation again.
+Unknown claims stay isolated and documented until reconciled. Verify
+per-user balances (including zero and debt), unique user identity, original
+payment references, Native ownership and reserved capacity before activating
+the new runtime. Retain the old database read-only; rollback is only safe
+before new live effects, otherwise reconcile and roll forward.
+
+This replaces earlier requirements for automated historical adoption logic.
+The target schema, business invariants, source-cleanup acceptance, and
+independent review/deployment gates are unchanged.
+
 ## 1. Goals and boundaries
 
 Payment adapters verify receipt of value; exactly one common local settlement

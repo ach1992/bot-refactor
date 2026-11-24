@@ -151,7 +151,7 @@ function achbotServiceIssueLocked(mysqli $db,int $userId,string $commandKind,str
 function achbotServiceFundLocked(mysqli $db,int $userId,int $operationId): string {
     [$op,$quote,$owner]=achbotServiceReadLocked($db,$userId,$operationId);
     $q=$quote['request'];$price=$q['price'];$count=$q['kind']==='BUY'?$q['quantity']:0;
-    if ($op['stage']==='cancelled') return 'request_invalidated';
+    if ($op['stage']==='cancelled' || ($op['stage']==='awaiting_funds' && $op['archived_at']!==null)) return 'request_invalidated';
     if (in_array($op['stage'],['funded','prepared','dispatching','applied','completed'],true)) {
         if (($op['historical_pay_id']??null)!==null) {
             achbotServiceHistoricalBuyFundingLocked($db,$op,$quote,$owner);

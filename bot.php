@@ -1628,12 +1628,10 @@ if ((require __DIR__ . '/src/Subscription/ExternalAccounts.php') === null) retur
 
 // END Edit by ACh
 
-if (($achbotV8Result = require __DIR__ . '/src/Finance/Routes/RenewalSelection.php') === null) return;
 if ((require __DIR__ . '/src/Subscription/ManualAccounts.php') === null) return;
 
 if ((require __DIR__ . '/src/Subscription/OrderManagement.php') === null) return;
 
-if (($achbotV8Result = require __DIR__ . '/src/Finance/Routes/RenewalPlan.php') === null) return;
 if ((require __DIR__ . '/src/Subscription/ConfigRefresh.php') === null) return;
 
 if ((require __DIR__ . '/src/Plans/Administration.php') === null) return;

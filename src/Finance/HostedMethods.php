@@ -148,7 +148,7 @@ function achbotHostedNowpaymentsVerify(array $pay,array $a,string $credential,st
         (string)($r['order_id']??'')!==(string)$a['order_hash'])
         return ['status'=>'review','reason'=>'nowpayments_identity_mismatch'];
     $outcome=achbotVerifiedGatewayOutcome('nowpayment',$r['payment_status']??null);
-    if ($outcome!=='verified') return ['status'=>$outcome,'reason'=>'nowpayments_not_verified'];
-    if (!achbotNpValidFinalAmount($a,$r)) return ['status'=>'review','reason'=>'nowpayments_quote_mismatch'];
+    if ($outcome!=='verified') return ['status'=>$outcome,'reason'=>'nowpayments_not_verified','observed_status'=>$r['payment_status']??null];
+    if (!achbotNpValidFinalAmount($a,$r)) return ['status'=>'review','reason'=>'nowpayments_quote_mismatch','observed_status'=>'amount_mismatch'];
     return ['status'=>'verified','proof'=>$r];
 }

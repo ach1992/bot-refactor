@@ -10,6 +10,19 @@ require_once __DIR__.'/FundingCheckout.php';
  * draft lifetime, authorization and its original issued commercial quote.
  * No callback data may choose the amount, merchant, service or verifier.
  */
+function achbotNpChildEvidenceRank($status): int {
+    return match ((string)$status) {
+        'waiting', 'failed', 'expired' => 0,
+        'confirming' => 1,
+        'confirmed' => 2,
+        'sending' => 3,
+        'partially_paid' => 4,
+        'finished' => 5,
+        'refunded' => 6,
+        default => 0,
+    };
+}
+
 function achbotHostedReceiptDefinition(string $method): ?array {
     $r=achbotCreditMethodDefinition($method);
     return isset($r['hosted'])?$r['hosted']:null;
@@ -134,7 +147,7 @@ function achbotHostedReceiptIssue(mysqli $db,int $payId,int $userId,string $meth
     try {
         if ($draftStates!==null) {
             require_once __DIR__.'/CheckoutAdmission.php';
-            if (!achbotCheckoutCommandsPresent($db)) throw new RuntimeException('checkout_command_schema_missing');
+            achbotCheckoutRequireSchema($db);
             $pay=achbotCheckoutPayLocked($db,$payId,$userId);
             $a=achbotProviderRow($db,'SELECT * FROM payment_attempts WHERE pay_row_id=? FOR UPDATE','i',[$payId]);
             if ($a===null && ((int)$pay['price']!==($quote['local_price']??null) ||
@@ -198,7 +211,25 @@ function achbotHostedReceiptVerify(mysqli $db,int $payId,int $userId,string $met
         $proof=[];
     } else {
         $verified=($def['verify'])($pay,$a,$profile['credential'],$reference);
-        if (($verified['status']??null)!=='verified') return $verified;
+        if (($verified['status']??null)!=='verified') {
+            $status=$verified['observed_status']??null;
+            if (!$def['child_transactions'] && ($verified['status']??null)==='unavailable')
+                $status='verification_unavailable';
+            if (in_array($status,['partially_paid','confirming','confirmed','sending','finished','refunded','amount_mismatch','verification_unavailable'],true)) {
+                if (!$db->begin_transaction()) throw new RuntimeException('hosted_observation_begin');
+                try {
+                    [$current,$attempt]=achbotCreditInvoiceLocked($db,$payId,$userId);
+                    if ($attempt['wallet_invoice_sha256']!==$a['wallet_invoice_sha256'] ||
+                        !hash_equals($a['wallet_invoice_sha256'],achbotCreditInvoiceFingerprint($current,$attempt)))
+                        throw new RuntimeException('hosted_invoice_changed_after_verify');
+                    $s=achbotProviderStatement($db,"UPDATE payment_attempts SET stage='review',provider_status=?
+                        WHERE id=? AND wallet_credit_entry_id IS NULL AND review_archived_at IS NULL",
+                        'si',[$status,(int)$a['id']]);$s->close();
+                    if (!$db->commit()) throw new RuntimeException('hosted_observation_commit');
+                } catch (Throwable $e) {$db->rollback();throw $e;}
+            }
+            return $verified;
+        }
         $proof=$verified['proof'];
         $proof['merchant_profile_sha256']=hash('sha256',$a['wallet_merchant_profile']);
     }

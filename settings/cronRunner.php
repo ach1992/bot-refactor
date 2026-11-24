@@ -222,27 +222,13 @@ try {
             error_log('achbot_payment_lifecycle_deferred class='.get_class($error).
                 ' code='.(int)$error->getCode());
         }
-        // Original Wallet DAY/VOLUME: reconcile only when the ORIGINAL
-        // physical Native entitlement is already applied. The single
-        // payment/account/audit COMMIT also seals first-send customer/admin
-        // notices. Never debit or dispatch a second Native edit from Cron.
-        try {
-            require_once __DIR__.'/../src/Finance/WalletEditRecovery.php';
-            achbotWalletAddonMaintain($connection);
-            require_once __DIR__.'/../src/Finance/WalletRenewalRecovery.php';
-            achbotWalletPgRenewMaintain($connection);
-        } catch (Throwable $error) {
-            error_log('achbot_wallet_original_maintenance_deferred class='.
-                get_class($error));
-        }
         try {
             require_once __DIR__.'/../src/Finance/CheckoutRoutes.php';
-            if (achbotCheckoutCommandsPresent($connection)) {
-                require_once __DIR__.'/../src/Services/Execution.php';
-                achbotServiceExecuteDue($connection,8,10.0,achbotCheckoutPresentation());
-                require_once __DIR__.'/../src/Finance/ServicePurchaseReferral.php';
-                achbotServiceReferralMaintainPending($connection,(int)$admin,4,5.0);
-            }
+            achbotCheckoutRequireSchema($connection);
+            require_once __DIR__.'/../src/Services/Execution.php';
+            achbotServiceExecuteDue($connection,8,10.0,achbotCheckoutPresentation());
+            require_once __DIR__.'/../src/Finance/ServicePurchaseReferral.php';
+            achbotServiceReferralMaintainPending($connection,(int)$admin,4,5.0);
         } catch (Throwable $error) {
             error_log('achbot_service_command_maintenance_deferred class='.get_class($error));
         }
@@ -264,16 +250,7 @@ try {
         } catch (Throwable $error) {
             error_log('achbot_original_followup_maintenance_deferred class='.get_class($error));
         }
-        // This ordinary admin/report fanout has its own persisted, one-time
-        // claim. It is independent of Telegram customer ACK and does not
-        // extend any financial transaction across a network request.
-        try {
-            require_once __DIR__.'/../src/Finance/WalletAddonNotices.php';
-            achbotWalletAddonMaintainReports($connection);
-        } catch (Throwable $error) {
-            error_log('achbot_wallet_admin_report_maintenance_deferred class='.
-                get_class($error));
-        }
+
     }
 }
         exit(0);

@@ -65,6 +65,7 @@ function achbotServiceReferralComplete(mysqli $db,int $id,int $owner): string {
         $buyer=(int)$loc['buyer_userid'];
         if (!$db->begin_transaction()) throw new RuntimeException('service_referral_begin');
         [$op]=achbotServiceReadLocked($db,$buyer,$id);
+        if ($op['archived_at']!==null) {$db->rollback();return 'archived';}
         if ($op['kind']!=='BUY' || $op['stage']!=='completed' ||
             achbotServiceFundLocked($db,$buyer,$id)!=='already_funded')
             throw new RuntimeException('service_referral_purchase_unconfirmed');
@@ -136,7 +137,7 @@ function achbotServiceReferralReportValid(mysqli $db,array $pay,array $r): bool 
         JOIN wallet_entries c ON c.id=p.wallet_credit_entry_id
         JOIN wallet_entries w ON w.id=a.wallet_entry_id
         WHERE a.service_operation_id=? AND a.pay_row_id=? AND a.state='CONFIRMED'
-          AND o.stage='completed' AND o.kind='BUY' AND o.userid=a.buyer_userid
+          AND o.stage='completed' AND o.archived_at IS NULL AND o.kind='BUY' AND o.userid=a.buyer_userid
           AND o.userid=? AND o.price_toman=? AND p.wallet_funding_result='funded'
           AND c.source_kind='payment_credit' AND c.source_ref=CAST(a.pay_row_id AS CHAR)
           AND c.leg=0 AND c.userid=o.userid AND c.user_row_id=o.user_row_id

@@ -69,126 +69,25 @@ function achbotOriginalDispatchLeaseEnd(mysqli $db,int $payId,string $lease): vo
  * Late signed IPN evidence is separate from the immutable archived attempt.
  */
 function achbotGatewayAttentionScope(?mysqli $db=null): string {
-    // Hosted-only installations still have the original review schema.
-    // API cases enter the shared inbox only when their optional evidence
-    // and delivery tables are actually installed.
-    $apiReady=false;$manualReady=false;$followupReady=false;
-    if ($db instanceof mysqli) {
-        try {
-            $q=$db->query('SELECT pay_row_id,state FROM payment_delivery_intents LIMIT 0');
-            if ($q) {$q->free();$manualReady=true;}
-            $q=$db->query('SELECT pay_row_id,effect_kind,state FROM service_effects LIMIT 0');
-            if ($q) $q->free();else $manualReady=false;
-            $q=$db->query('SELECT evidence_profile,evidence_state,evidence_review_sent_at,
-                evidence_fulfillment_state FROM payment_attempts LIMIT 0');
-            if ($q) {$q->free();$apiReady=$manualReady;}
-            $q=$db->query('SELECT pay_row_id,state FROM payment_followup_intents LIMIT 0');
-            if ($q) {$q->free();$followupReady=true;}
-        } catch (Throwable $error) {
-            // A missing optional schema phase is not an unpaid invoice or
-            // permission to fabricate evidence. Hosted cases remain visible.
-        }
-    }
-    // Age, a never-paid invoice, or generic unknown verification is NOT
-    // financial evidence. The inbox is for observed money, a genuine
-    // verification transport outage, or a previously started local effect.
-    $apiSql=$apiReady ? "            OR (a.provider IN ('bank_transfer','gift_card')
-                AND a.evidence_profile IS NOT NULL
-                AND (
-                    (p.state='processing' AND p.approved_by=0)
-                    OR (p.state IN ('pending','have_sent')
-                        AND EXISTS (SELECT 1 FROM payment_transactions et
-                            WHERE et.attempt_id=a.id AND et.evidence_state='proven'))
-                    OR (p.state='have_sent'
-                        AND a.evidence_review_sent_at IS NOT NULL
-                        AND a.evidence_state IN ('review','uncertain','manual','invalid_code'))
-                ))" : '';
-    $followupSql=$followupReady
-        ? " OR EXISTS (SELECT 1 FROM payment_followup_intents fu
-                WHERE fu.pay_row_id=p.id
-                  AND fu.state IN ('pending','dispatching','unknown'))"
-        : '';
-    $manualSql=$manualReady ? " OR (a.provider IN (
-                'bank_transfer','gift_card','manual_usdt','manual_trx')
-            AND p.state='processing'
-            AND (p.approved_by>0 OR EXISTS (
-                SELECT 1 FROM service_effects se WHERE se.pay_row_id=p.id)))" : '';
-    // Terminal finance/native state is not notification completion.
-    // Include PENDING/UNKNOWN original packets for any hosted/manual method,
-    // but never invent a new payment or re-dispatch an UNKNOWN notification.
-    $deliverySql=$manualReady ? " OR (p.state IN (
-            'approved','paid','auto_cart_approved','paid_with_wallet')
-            AND (EXISTS (SELECT 1 FROM payment_delivery_intents dl
-                    WHERE dl.pay_row_id=p.id
-                      AND dl.state IN ('pending','dispatching','unknown'))
-                 $followupSql))" : '';
-    // An original Wallet admin report is independent of customer delivery.
-    // Preserve unresolved original fanout even when the finance pay and
-    // customer acknowledgement have both become terminal. The JSON marker
-    // is exact per payment; a plain old paid invoice is never admitted.
-    $reportSql=$manualReady ? " OR (p.state='paid_with_wallet'
-        AND a.provider='wallet'
-        AND (p.type='RENEW_ACCOUNT' OR p.type='BUY_SUB'
-            OR p.type LIKE 'INCREASE\\_DAY\\_%'
-            OR p.type LIKE 'INCREASE\\_VOLUME\\_%')
-        AND EXISTS (SELECT 1 FROM setting sr
-            WHERE sr.type=CONCAT('WALLET_ADDON_REPORT:',p.id)
-              AND JSON_VALID(sr.value)
-              AND JSON_UNQUOTE(JSON_EXTRACT(sr.value,'$.pay_id'))=CAST(p.id AS CHAR)
-              AND JSON_UNQUOTE(JSON_EXTRACT(sr.value,'$.state')) IN
-                ('pending','dispatching','unknown_or_partial','manual_dispatching')))" : '';
-    // Wallet debits are already committed before `processing_wallet`. Older
-    // untouched invoices are NOT admitted. A wallet invoice may intentionally
-    // have no hosted payment_attempt: INNER JOIN hid Hell #113346 forever.
-    // Suppress a transient active callback for ten minutes; its original
-    // Native/pay journals are not yet safe to interpret as terminal.
-    $walletSql=" OR (p.state='processing_wallet'
-        AND p.request_date<=UNIX_TIMESTAMP()-600
-        AND (p.type IN ('BUY_SUB','RENEW_ACCOUNT','RENEW_SCONFIG')
-            OR p.type LIKE 'INCREASE\_DAY\_%'
-            OR p.type LIKE 'INCREASE\_VOLUME\_%')
-        AND (a.id IS NULL OR a.provider='wallet'))";
     return "a.review_archived_at IS NULL
-        AND (a.provider IN ('nowpayments','nextpay','zarinpal')
+        AND NOT EXISTS (SELECT 1 FROM service_operations archived
+            WHERE archived.id=p.checkout_operation_id AND archived.archived_at IS NOT NULL)
         AND (
-            (p.state IN ('pending','send') AND (
-                (a.stage='review' AND (
-                    (a.provider='nowpayments' AND a.provider_status IN (
-                        'partially_paid','confirming','confirmed','sending',
-                        'finished','refunded','amount_mismatch','multiple_payments'))
-                    OR (a.provider IN ('nextpay','zarinpal') AND
-                        a.provider_status='verification_unavailable')
-                    OR a.provider_status='operator_fulfillment_unconfirmed'
-                    OR (a.provider_status IN (
-                        'fulfillment_failed','fulfillment_unconfirmed',
-                        'fulfillment_needs_review')
-                        AND a.updated_at<=NOW()-INTERVAL 10 MINUTE)))
-                OR (a.stage='fulfilling' AND
-                    a.updated_at<=NOW()-INTERVAL 10 MINUTE)))
-            OR (p.state IN ('processing','paid') AND
-                a.stage IN ('review','fulfilling') AND
-                a.provider_status IN ('fulfillment_started',
-                    'fulfillment_unconfirmed','fulfillment_failed',
-                    'fulfillment_needs_review','operator_fulfillment_unconfirmed')
-                AND a.updated_at<=NOW()-INTERVAL 10 MINUTE)
-            OR (p.state='service_superseded' AND a.provider='nowpayments'
-                AND EXISTS (SELECT 1 FROM payment_transactions t
-                    WHERE t.attempt_id=a.id AND t.provider=a.provider
-                    AND t.observed_status IN (
-                        'partially_paid','confirming','confirmed','sending','finished')))
-            OR (p.state='service_superseded' AND
-                a.provider IN ('nextpay','zarinpal') AND
-                a.stage='review' AND a.provider_status='retired_verified_funds'
-                AND EXISTS (SELECT 1 FROM payment_transactions t
-                    WHERE t.attempt_id=a.id AND t.provider=a.provider
-                      AND t.payment_id=a.provider_reference
-                      AND t.observed_status='finished'))
-        )
-            $apiSql
-            $manualSql
-            $deliverySql
-            $reportSql
-            $walletSql
+            (a.wallet_credit_entry_id IS NULL AND a.wallet_invoice_sha256<>'' AND (
+                (a.stage='review' AND a.provider IN ('nowpayments','nextpay','zarinpal')
+                    AND a.provider_status IN ('partially_paid','confirming','confirmed','sending','finished','refunded','amount_mismatch','multiple_payments','verification_unavailable'))
+                OR (a.evidence_profile IS NOT NULL AND p.state='have_sent' AND (
+                    a.evidence_state IN ('review','uncertain','manual','invalid_code')
+                    OR EXISTS (SELECT 1 FROM payment_transactions t WHERE t.attempt_id=a.id AND t.evidence_state='proven')))
+            ))
+            OR EXISTS (SELECT 1 FROM service_operations o WHERE o.id=p.checkout_operation_id
+                AND o.archived_at IS NULL AND o.stage IN ('funded','prepared','dispatching','applied')
+                AND o.failure_code IS NOT NULL)
+            OR EXISTS (SELECT 1 FROM payment_delivery_intents d WHERE d.service_operation_id=p.checkout_operation_id
+                AND d.state IN ('unknown','rejected'))
+            OR EXISTS (SELECT 1 FROM payment_followup_intents f WHERE
+                (f.service_operation_id=p.checkout_operation_id OR (f.pay_row_id=p.id AND f.stage='wallet_credit'))
+                AND f.state IN ('unknown','rejected'))
         )";
 }
 
