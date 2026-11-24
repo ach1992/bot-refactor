@@ -172,19 +172,18 @@ function achbotServiceStageCompletionReportsLocked(mysqli $db,array $op,array $q
     $values=['user_id'=>$uid,'first_name'=>(string)$u['name'],'username'=>(string)$u['username'],
         'amount'=>$q['price'],'remark'=>$remark];
     if ($gateway!==null) {
-        $prefix='gateway.gateway_return.perform_payment_effect.';
         $text=match($kind) {
-            'BUY'=>achbotMessageHtml($prefix.'msg.8205ac68fa',$values+
+            'BUY'=>achbotMessageHtml('gateway.gateway_return.perform_payment_effect.msg.8205ac68fa',$values+
                 ['gateType'=>$gateway,'volume'=>$q['volume'],'days'=>$q['days']]),
-            'RENEW'=>achbotMessageHtml($prefix.'msg.c281132242',$values+
+            'RENEW'=>achbotMessageHtml('gateway.gateway_return.perform_payment_effect.msg.c281132242',$values+
                 ['gateType'=>$gateway,'volume'=>$q['volume'],'days'=>$q['days']]),
-            'ADD_TIME'=>achbotMessageHtml($prefix.'msg.3337e72606',$values+
+            'ADD_TIME'=>achbotMessageHtml('gateway.gateway_return.perform_payment_effect.msg.3337e72606',$values+
                 ['gateType'=>$gateway,'plusDays'=>$q['days']]),
-            'ADD_VOLUME'=>achbotMessageHtml($prefix.'msg.05d5688689',$values+
+            'ADD_VOLUME'=>achbotMessageHtml('gateway.gateway_return.perform_payment_effect.msg.05d5688689',$values+
                 ['gateType'=>$gateway,'plusVolume'=>$q['volume']]),
         };
-        $label=achbotMessage($prefix.'button.b9d052f74c',['gateType'=>$gateway]);
-        $refLabel=achbotMessage($prefix.'hash_id.2899228604',['hash_id'=>$reference]);
+        $label=achbotMessage('gateway.gateway_return.perform_payment_effect.button.b9d052f74c',['gateType'=>$gateway]);
+        $refLabel=achbotMessage('gateway.gateway_return.perform_payment_effect.hash_id.2899228604',['hash_id'=>$reference]);
     } else {
         if (in_array($kind,['BUY','RENEW'],true)) {
             $template=$kind==='RENEW'?'renew_account_request_message':

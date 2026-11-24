@@ -2,6 +2,7 @@
 declare(strict_types=1);
 if (realpath($_SERVER['SCRIPT_FILENAME']??'')===__FILE__) {http_response_code(404);exit;}
 require_once __DIR__.'/DeliveryLedger.php';
+require_once __DIR__.'/DeliveryParts.php';
 require_once __DIR__.'/../Services/Funding.php';
 
 /** Reuse the existing 018 journal with an actual service source, never a
@@ -20,7 +21,7 @@ function achbotServiceDeliverySchemaReady(mysqli $db): bool {
             $keys[(int)$row['Seq_in_index']]=$row['Column_name'];
         }
         $q->free();ksort($keys);
-        return array_values($keys)===['service_operation_id','ordinal'];
+        return array_values($keys)===['service_operation_id','ordinal'] && achbotDeliveryPartsSchemaReady($db);
     } catch (Throwable $e) {return false;}
 }
 
@@ -120,16 +121,19 @@ function achbotServiceEditDeliveryInsertLocked(mysqli $db,array $op,array $quote
 }
 function achbotServiceDeliveryInsertBindingLocked(mysqli $db,array $b,array $packet): void {
     $source=hash('sha256',achbotServiceJson($b));
+    $parts=achbotSubscriptionDeliveryParts($packet);
     $sealed=achbotPaymentEvidenceProtect(achbotServiceDeliveryPurpose(
-        $b['service_id'],$b['ordinal'],$b['effect_id']??0,$b['order_id']),['binding'=>$b,'packet'=>$packet]);
+        $b['service_id'],$b['ordinal'],$b['effect_id']??0,$b['order_id']),
+        ['binding'=>$b,'packet'=>$packet,'parts'=>$parts]);
     $s=achbotProviderStatement($db,"INSERT INTO payment_delivery_intents
         (service_operation_id,ordinal,effect_id,order_id,user_id,server_id,source_digest,
-         native_operation,native_target_key,sealed_payload,payload_sha256)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?)",'iiiiiisssss',
+         native_operation,native_target_key,sealed_payload,payload_sha256,part_count)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",'iiiiiisssssi',
         [$b['service_id'],$b['ordinal'],$b['effect_id'],$b['order_id'],$b['user_id'],$b['server_id'],
-        $source,$b['native_operation'],$b['native_target_key'],$sealed,hash('sha256',$sealed)]);
-    $n=$s->affected_rows;$s->close();
-    if ($n!==1) throw new RuntimeException('service_delivery_insert_failed');
+        $source,$b['native_operation'],$b['native_target_key'],$sealed,hash('sha256',$sealed),count($parts)]);
+    $n=$s->affected_rows;$id=(int)$s->insert_id;$s->close();
+    if ($n!==1 || $id<=0) throw new RuntimeException('service_delivery_insert_failed');
+    achbotDeliveryPartsInsertLocked($db,$id,$parts);
 }
 
 /** Validate the committed source and the original sealed payload. No remote
@@ -162,69 +166,125 @@ function achbotServiceDeliveryValidateLocked(mysqli $db,array $op,array $quote,a
         !($op['kind']==='BUY'?achbotServiceBuyPacketValid($body['packet'],$b['user_id']):
             achbotServiceTextPacketValid($body['packet'],$b['user_id'])))
         throw new RuntimeException('service_delivery_packet_invalid');
-    return $body['packet'];
+    if (!is_array($body['parts']??null))
+        throw new RuntimeException('service_delivery_parts_missing');
+    return $body['parts'];
 }
 
-/** A session-local lock prevents an active sender from being mistaken for
- * an abandoned dispatch. After process/session loss classify UNKNOWN, never
- * infer a failed Telegram send or repeat it automatically. */
-function achbotServiceDeliveryDispatch(mysqli $db,int $id): string {
-    if ($id<=0 || (int)(achbotProviderRow($db,'SELECT @@in_transaction AS tx')['tx']??1)!==0)
-        throw new RuntimeException('service_delivery_dispatch_context');
+/** One original session lease per delivery, plus the existing physical
+ * account lease for credential-bearing BUY packets. Commit each part claim,
+ * send without SQL locks, then commit its own outcome. A failed/unknown
+ * part never prevents an independent, never-started sibling from progressing.
+ * An explicit redrive addresses exactly one part, not the entire packet. */
+function achbotServiceDeliveryDispatch(mysqli $db,int $id,int $actor=0,int $partNo=0,?string $confirmation=null): string {
+    if ($id<=0 || $actor<0 || ($actor===0?($partNo!==0 || $confirmation!==null):
+        ($partNo<=0 || $confirmation===null)))
+        throw new InvalidArgumentException('service_delivery_dispatch_context');
+    achbotPaymentEvidenceRequireAutocommit($db);
     $dbName=achbotProviderRow($db,'SELECT DATABASE() AS name')['name']??null;
     if (!is_string($dbName) || $dbName==='') throw new RuntimeException('service_delivery_database');
     $lock='achbot-delivery-'.substr(hash('sha256',$dbName),0,20).'-'.$id;
     $r=achbotProviderRow($db,'SELECT GET_LOCK(?,0) AS acquired','s',[$lock]);
     if ((int)($r['acquired']??0)!==1) return 'busy';
-    $serviceId=0;$claim=null;
+    $serviceId=0;$claim=null;$physicalLock=null;$cursor=0;
+    $priorContext=$GLOBALS['achbotTelegramDiagnosticContext']??null;
     try {
         $loc=achbotProviderRow($db,'SELECT service_operation_id,user_id FROM payment_delivery_intents WHERE id=?','i',[$id]);
         if (!$loc || $loc['service_operation_id']===null) return 'missing';
-        $serviceId=(int)$loc['service_operation_id'];
-        $owner=(int)$loc['user_id'];
-        if (!$db->begin_transaction()) throw new RuntimeException('service_delivery_begin');
-        // Same owner->operation lock order as financial and finalization
-        // writers. Terminal unknown/ACK remains terminal.
-        [$op,$quote]=achbotServiceReadLocked($db,$owner,$serviceId);
-        $d=achbotProviderRow($db,'SELECT * FROM payment_delivery_intents WHERE id=? FOR UPDATE','i',[$id]);
-        if (!$d || (int)$d['service_operation_id']!==$serviceId || (int)$d['user_id']!==$owner)
-            throw new RuntimeException('service_delivery_source_changed');
-        if ($d['state']==='dispatching') {
-            $claim=['id'=>$id,'token'=>$d['dispatch_token'],'attempt'=>(int)$d['attempt_count']];
-            $state=achbotDeliveryFinishClaimLocked($db,$claim,false);
-            if (!$db->commit()) throw new RuntimeException('service_delivery_unknown_commit');
-            return $state;
+        $serviceId=(int)$loc['service_operation_id'];$owner=(int)$loc['user_id'];
+        while (true) {
+            $claim=null;
+            if (!$db->begin_transaction()) throw new RuntimeException('service_delivery_begin');
+            [$op,$quote]=achbotServiceReadLocked($db,$owner,$serviceId);
+            $d=achbotProviderRow($db,'SELECT * FROM payment_delivery_intents WHERE id=? FOR UPDATE','i',[$id]);
+            if (!$d || (int)$d['service_operation_id']!==$serviceId || (int)$d['user_id']!==$owner)
+                throw new RuntimeException('service_delivery_source_changed');
+            // Source-only pre-032 service drafts have no verified part
+            // boundaries. Never fabricate part outcomes from old claims.
+            if (!isset($d['part_count']))
+                throw new RuntimeException('service_delivery_parts_unadmitted');
+            if ($d['state']==='dispatching') {
+                $r=achbotDeliveryPartFinishLocked($db,$id,(string)$d['dispatch_token'],
+                    ['result'=>'unknown','code'=>null,'retry_after'=>null]);
+                if (!$db->commit()) throw new RuntimeException('service_delivery_unknown_commit');
+                if ($actor>0) return 'stale';
+                continue;
+            }
+            if ($actor===0 && $d['state']!=='pending') {$db->rollback();return $d['state'];}
+            if ($actor>0 && $d['state']==='acknowledged') {$db->rollback();return 'stale';}
+            if ($op['stage']!=='completed') {$db->rollback();return 'not_ready';}
+            if (achbotServiceFundLocked($db,$owner,$serviceId)!=='already_funded')
+                throw new RuntimeException('service_delivery_funding_missing');
+            $parts=achbotServiceDeliveryValidateLocked($db,$op,$quote,$d);
+            $rows=achbotDeliveryPartsValidateLocked($db,$d,$parts);
+            $p=null;
+            foreach ($rows as $row) {
+                if ($actor>0?(int)$row['part_no']===$partNo:
+                    ($row['state']==='pending' && (int)$row['due']===1 && (int)$row['part_no']>$cursor)) {
+                    $p=$row;break;
+                }
+            }
+            if ($p===null) {$db->rollback();return $actor>0?'stale':$d['state'];}
+            // Reuse the physical lease already used by account edits,
+            // deletion and plan/ownership changes, without a new lock family.
+            if ($op['kind']==='BUY' && $physicalLock===null) {
+                $adapter=achbotProviderDefinition($quote['target']['provider']??null);
+                if (isset($adapter['service_account_lock'])) {
+                    $name=($adapter['service_account_lock'])($db,(int)$d['order_id']);
+                    $held=achbotProviderRow($db,'SELECT GET_LOCK(?,0) AS acquired','s',[$name]);
+                    if ((int)($held['acquired']??0)!==1) {$db->rollback();return 'busy';}
+                    $physicalLock=$name;
+                }
+            }
+            $claim=achbotDeliveryPartClaimLocked($db,$d,$p,$actor,$confirmation);
+            if ($claim['status']!=='claimed') {$db->rollback();return $claim['status'];}
+            $cursor=$claim['part_no'];
+            if (!$db->commit()) throw new RuntimeException('service_delivery_claim_commit');
+            foreach (array_filter([$lock,$physicalLock]) as $name) {
+                $owned=achbotProviderRow($db,'SELECT IS_USED_LOCK(?)=CONNECTION_ID() AS owned','s',[$name]);
+                if ((int)($owned['owned']??0)!==1) throw new RuntimeException('service_delivery_ownership_lost');
+            }
+            $GLOBALS['achbotTelegramDiagnosticContext']=[
+                'service_operation_id'=>$serviceId,'delivery_id'=>$id,'delivery_ordinal'=>(int)$d['ordinal'],
+                'delivery_part'=>$cursor,'delivery_attempt'=>$claim['attempt'],'delivery_actor'=>$actor];
+            $outcome=['result'=>'unknown','code'=>null,'retry_after'=>null];
+            try {
+                $outcome=achbotSubscriptionSendPart($parts[$cursor-1],$owner);
+            } catch (Throwable $e) {
+                achbotDiagnosticEvent('achbot.delivery.service_transport_unconfirmed',
+                    ['service_operation_id'=>$serviceId,'delivery_id'=>$id,'ordinal'=>(int)$d['ordinal'],
+                        'delivery_part'=>$cursor,'request_attempt'=>$claim['attempt'],'class'=>get_class($e)],'warning');
+            } finally {
+                if ($priorContext===null) unset($GLOBALS['achbotTelegramDiagnosticContext']);
+                else $GLOBALS['achbotTelegramDiagnosticContext']=$priorContext;
+            }
+            if (!$db->begin_transaction()) throw new RuntimeException('service_delivery_finish_begin');
+            foreach (array_filter([$lock,$physicalLock]) as $name) {
+                $owned=achbotProviderRow($db,'SELECT IS_USED_LOCK(?)=CONNECTION_ID() AS owned','s',[$name]);
+                if ((int)($owned['owned']??0)!==1) throw new RuntimeException('service_delivery_ownership_lost');
+            }
+            $r=achbotDeliveryPartFinishLocked($db,$id,$claim['token'],$outcome);
+            if (!$db->commit()) throw new RuntimeException('service_delivery_finish_commit');
+            achbotDiagnosticEvent('achbot.delivery.part_result',[
+                'service_operation_id'=>$serviceId,'delivery_id'=>$id,'ordinal'=>(int)$d['ordinal'],
+                'delivery_part'=>$cursor,'actor_id'=>$actor,'request_attempt'=>$claim['attempt'],
+                'state'=>$r['state'],'result'=>$outcome['result'],'telegram_error_code'=>$outcome['code'],
+                'retry_after'=>$outcome['retry_after']],$outcome['result']==='acknowledged'?'info':'warning');
+            if ($actor>0) return $r['part_state'];
+            if ($r['state']!=='pending') return $r['state'];
+            // Scan each part at most once during this invocation, even if
+            // a very short 429 wait expires while another part is sent.
         }
-        if ($d['state']!=='pending') {$db->rollback();return $d['state'];}
-        if ($op['stage']!=='completed') {$db->rollback();return 'not_ready';}
-        if (achbotServiceFundLocked($db,$owner,$serviceId)!=='already_funded')
-            throw new RuntimeException('service_delivery_funding_missing');
-        $packet=achbotServiceDeliveryValidateLocked($db,$op,$quote,$d);
-        $claim=achbotDeliveryClaimLocked($db,$d);
-        if (!$db->commit()) throw new RuntimeException('service_delivery_claim_commit');
-        $owned=achbotProviderRow($db,'SELECT IS_USED_LOCK(?)=CONNECTION_ID() AS owned','s',[$lock]);
-        if ((int)($owned['owned']??0)!==1) throw new RuntimeException('service_delivery_ownership_lost');
-        $ack=false;
-        try {
-            $ack=achbotDeliverySendPacket($packet,0,(int)$d['ordinal'],$claim['attempt'],0,$serviceId);
-        } catch (Throwable $e) {
-            achbotDiagnosticEvent('achbot.delivery.service_transport_unconfirmed',
-                ['service_operation_id'=>$serviceId,'ordinal'=>(int)$d['ordinal'],'class'=>get_class($e)],'warning');
-        }
-        if (!$db->begin_transaction()) throw new RuntimeException('service_delivery_finish_begin');
-        $owned=achbotProviderRow($db,'SELECT IS_USED_LOCK(?)=CONNECTION_ID() AS owned','s',[$lock]);
-        if ((int)($owned['owned']??0)!==1) throw new RuntimeException('service_delivery_ownership_lost');
-        $state=achbotDeliveryFinishClaimLocked($db,$claim,$ack);
-        if (!$db->commit()) throw new RuntimeException('service_delivery_finish_commit');
-        return $state;
     } catch (Throwable $e) {
         try {$db->rollback();} catch (Throwable $ignored) {}
         achbotDiagnosticEvent('achbot.delivery.service_deferred',[
-            'service_operation_id'=>$serviceId,'class'=>get_class($e),
-            'reason'=>$e->getMessage()],'warning');
-        return $claim===null?'deferred':'unknown';
+            'service_operation_id'=>$serviceId,'delivery_id'=>$id,'delivery_part'=>$cursor,
+            'class'=>get_class($e),'reason'=>$e->getMessage()],'warning');
+        return ($claim['status']??null)==='claimed'?'unknown':'deferred';
     } finally {
-        try {$s=achbotProviderStatement($db,'SELECT RELEASE_LOCK(?)','s',[$lock]);$s->close();}
-        catch (Throwable $ignored) {}
+        foreach (array_filter([$physicalLock,$lock]) as $name) {
+            try {$s=achbotProviderStatement($db,'SELECT RELEASE_LOCK(?)','s',[$name]);$s->close();}
+            catch (Throwable $ignored) {}
+        }
     }
 }

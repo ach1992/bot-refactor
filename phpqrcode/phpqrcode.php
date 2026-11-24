@@ -1110,7 +1110,7 @@
                 }
             }
             
-            ImageDestroy($image);
+            unset($image);
         }
     
         //----------------------------------------------------------------------
@@ -1134,7 +1134,7 @@
                 ImageJpeg($image, $filename, $q);            
             }
             
-            ImageDestroy($image);
+            unset($image);
         }
     
         //----------------------------------------------------------------------
@@ -1143,7 +1143,7 @@
         @param Array $frame frame containing code
         @param Integer $pixelPerPoint (optional) pixel size, multiplier for each 'virtual' pixel
         @param Integer $outerFrame (optional) code margin (silent zone) in 'virtual'  pixels
-        @return __Resource__ GD2 image resource (remember to ImageDestroy it!)
+        @return GD image (released when no longer referenced)
         */
         public static function image($frame, $pixelPerPoint = 4, $outerFrame = 4) 
         {
@@ -1170,7 +1170,7 @@
             
             $target_image =ImageCreate($imgW * $pixelPerPoint, $imgH * $pixelPerPoint);
             ImageCopyResized($target_image, $base_image, 0, 0, 0, 0, $imgW * $pixelPerPoint, $imgH * $pixelPerPoint, $imgW, $imgH);
-            ImageDestroy($base_image);
+            unset($base_image);
             
             return $target_image;
         }

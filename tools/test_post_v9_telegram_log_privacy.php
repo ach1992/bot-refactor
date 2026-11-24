@@ -36,9 +36,9 @@ function curl_errno($handle) {
 function curl_error($handle) { return 'PRIVATE-TRANSPORT-ERROR-SENTINEL'; }
 function curl_getinfo($handle, $opt) {
     return match($GLOBALS['owned_curl_mode']) {
-        'request_http_500','file_http_500'=>500,
+        'request_http_500','file_http_500','journal_conflict_429','journal_conflict_ack'=>500,
         'entities_400'=>400,'blocked_403'=>403,
-        'rate_429'=>429,default=>200,
+        'rate_429','journal_rate_429'=>429,'journal_conflict_entities'=>503,default=>200,
     };
 }
 function curl_exec($handle) {
@@ -47,6 +47,10 @@ function curl_exec($handle) {
     if (str_contains($mode, 'http_500')) {
         return '{"ok":false,"description":"PRIVATE-TELEGRAM-RESPONSE-SENTINEL"}';
     }
+    if (in_array($mode,['journal_rate_429','journal_conflict_429'],true)) {
+        return '{"ok":false,"error_code":429,"description":"Too Many Requests","parameters":{"retry_after":7}}';
+    }
+    if ($mode==='journal_conflict_entities') return '{"ok":false,"error_code":400,"description":"can\'t parse entities"}';
     if ($mode==='rate_429') {
         return '{"ok":false,"error_code":429,"parameters":{"retry_after":7}}';
     }
@@ -90,6 +94,11 @@ $cases=[
     ['file_http_500','file',true],
     ['success','request',false],
     ['success','file',false],
+    ['journal_success','request',true],
+    ['journal_rate_429','request',true],
+    ['journal_conflict_429','request',true],
+    ['journal_conflict_ack','request',true],
+    ['journal_conflict_entities','request',true],
 ];
 $passed=0;
 try {
@@ -102,7 +111,7 @@ try {
         foreach ([$webLog,$cronLog] as $path) if (is_file($path)) unlink($path);
         $GLOBALS['achbotTelegramDiagnosticContext']=$mode==='financial_success'
             ? ['pay_id'=>1234,'delivery_ordinal'=>1,'delivery_attempt'=>2,'delivery_actor'=>9014]
-            : null;
+            : (str_starts_with($mode,'journal_')?['service_operation_id'=>456,'delivery_id'=>789,'delivery_part'=>2,'delivery_attempt'=>3]:null);
         $result=$kind==='request'
             ? \AchBot\Telegram\Transport\request('PRIVATE-BOT-TOKEN-SENTINEL',
                 $runtime,'sendMessage',$payload)
@@ -116,15 +125,20 @@ try {
             if ($result!==($kind==='request' ? null : false)) {
                 throw new RuntimeException('cURL error contract drift: '.$mode);
             }
+        } elseif (str_starts_with($mode,'journal_conflict_')) {
+            if ($result!==null) throw new RuntimeException('Contradictory HTTP response certified: '.$mode);
+        } elseif ($mode==='journal_rate_429') {
+            if (\AchBot\Telegram\Response\deliveryOutcome($result)!==['result'=>'rejected','code'=>429,'retry_after'=>7])
+                throw new RuntimeException('Confirmed rate limit lost');
         } elseif (in_array($mode,['scalar_request','scalar_file'],true)) {
             if ($result!=='synthetic-unusual-telegram-scalar')
                 throw new RuntimeException('Legacy scalar response contract drift: '.$mode);
         } elseif ($kind==='request') {
-            if (!is_object($result) || ($result->ok ?? null)!==in_array($mode,['success','financial_success'],true)) {
+            if (!is_object($result) || ($result->ok ?? null)!==in_array($mode,['success','financial_success','journal_success'],true)) {
                 throw new RuntimeException('Telegram response object contract drift: '.$mode);
             }
         } elseif (!is_array($result) ||
-            ($result['ok']??null)!==in_array($mode,['success','financial_success'],true)) {
+            ($result['ok']??null)!==in_array($mode,['success','financial_success','journal_success'],true)) {
             throw new RuntimeException('Telegram file response contract drift: '.$mode);
         }
 
@@ -162,7 +176,10 @@ try {
                         throw new RuntimeException('Payment correlation missing '.$key);
                 if (($item['telegram_ok']??null)!==true)
                     throw new RuntimeException('ACK not recorded for financial customer send');
-            } elseif (isset($item['pay_id']) || isset($item['delivery_actor'])) {
+            } elseif (str_starts_with($mode,'journal_')) {
+                foreach (['service_operation_id'=>456,'delivery_id'=>789,'delivery_part'=>2,'delivery_attempt'=>3] as $key=>$value)
+                    if (($item[$key]??null)!==$value) throw new RuntimeException('Part correlation missing '.$key);
+            } elseif (isset($item['pay_id']) || isset($item['delivery_actor']) || isset($item['delivery_part'])) {
                 throw new RuntimeException('Unrelated Telegram call inherited delivery context');
             }
             if ($mode==='cron_sink_429' && is_file($webLog))

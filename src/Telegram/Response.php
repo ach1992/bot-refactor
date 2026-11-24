@@ -45,6 +45,15 @@ function deliveryOutcome($res): array {
     return ['result'=>'rejected','code'=>$res['error_code'],'retry_after'=>$retry];
 }
 
+/** A contradictory HTTP envelope is not a proven ACK or rejection. */
+function deliveryTransportResponse($res,int $http,int $errno) {
+    if ($errno!==0) return null;
+    $outcome=deliveryOutcome($res);
+    if ($outcome['result']==='acknowledged' && $http>=200 && $http<300) return $res;
+    if ($outcome['result']==='rejected' && $outcome['code']===$http) return $res;
+    return null;
+}
+
 function messageId($res){
     if(is_object($res) && isset($res->result) && isset($res->result->message_id)){
         return (int)$res->result->message_id;

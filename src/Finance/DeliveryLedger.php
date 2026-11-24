@@ -487,7 +487,7 @@ function achbotDeliverySendPacket(array $packet,int $payId,int $ordinal,
  * The source-specific owner has already validated and locked its intent.
  * The caller commits before transport and never holds SQL locks across it. */
 function achbotDeliveryClaimLocked(mysqli $db,array $d): array {
-    if ($d['state']!=='pending') throw new RuntimeException('delivery_not_pending');
+    if ($d['state']!=='pending' || isset($d['part_count'])) throw new RuntimeException('delivery_not_pending');
     $id=(int)$d['id'];$count=(int)$d['attempt_count'];
     $token=bin2hex(random_bytes(16));$digest=(string)$d['payload_sha256'];
     $q=$db->prepare("UPDATE payment_delivery_intents SET state='dispatching',attempt_count=attempt_count+1,
@@ -800,16 +800,17 @@ function achbotDeliveryDispatchPending(mysqli $db,int $payId): array {
     return $out;
 }
 /**
- * Recover only first, never-attempted customer delivery after a committed
- * payment/order.  The 018 journal already has a unique per-ordinal claim and
- * a CAS-based dispatch history; this sweep never changes money or Native
- * provider state and never resends UNKNOWN/dispatching packets.
+ * Recover first, never-attempted legacy payment delivery and due service
+ * message parts after a committed order. The 018/032 journal has an exact
+ * claim and attempt history; this sweep never changes money or Native
+ * provider state and never resends UNKNOWN parts. Abandoned service claims
+ * are reconciled, not replayed.
  *
  * A quiet two-minute window lets the original callback finish first.  A
  * deferred preflight merely rotates updated_at to avoid starving later valid
  * packets; it is NOT a Telegram attempt or permission to rebuild the packet.
- * This worker has a bounded batch and soft wall-time budget (one transport
- * call can still take longer than the budget).
+ * This worker has a bounded batch and soft wall-time budget (one delivery
+ * intent may contain multiple transport calls).
  */
 function achbotDeliveryMaintainPending(mysqli $db,int $limit=4,float $budgetSeconds=8.0): array {
     $stats=['checked'=>0,'acknowledged'=>0,'unknown'=>0,'deferred'=>0];
@@ -836,12 +837,14 @@ function achbotDeliveryMaintainPending(mysqli $db,int $limit=4,float $budgetSeco
                 LEFT JOIN pays p ON p.id=d.pay_row_id
                 LEFT JOIN service_operations o ON o.id=d.service_operation_id
                 WHERE d.state IN ('pending','dispatching')
-                  AND d.updated_at<=DATE_SUB(NOW(),INTERVAL 2 MINUTE)
                   AND ((d.service_operation_id IS NULL AND d.state='pending' AND d.attempt_count=0
+                      AND d.updated_at<=DATE_SUB(NOW(),INTERVAL 2 MINUTE)
                       AND p.state IN ('approved','paid','auto_cart_approved','paid_with_wallet'))
                     OR (o.stage='completed' AND d.service_operation_id IS NOT NULL
-                      AND ((d.state='pending' AND d.attempt_count=0) OR d.state='dispatching')))
-                ORDER BY d.updated_at,d.id LIMIT {$limit}");
+                      AND d.part_count IS NOT NULL
+                      AND ((d.next_attempt_at IS NULL AND d.updated_at<=DATE_SUB(NOW(),INTERVAL 2 MINUTE))
+                          OR d.next_attempt_at<=NOW(6))))
+                ORDER BY COALESCE(d.next_attempt_at,d.updated_at),d.id LIMIT {$limit}");
         } else {
             // The original 018 schema remains readable until the approved
             // forward migration. No new service row exists in that schema.
@@ -892,10 +895,14 @@ function achbotDeliveryMaintainPending(mysqli $db,int $limit=4,float $budgetSeco
                 // Also defer abandoned service claim reconciliation on a
                 // transient SQL/ownership error, without changing its token.
                 $where=($d['service_operation_id']??null)!==null?
-                    "((state='pending' AND attempt_count=0) OR state='dispatching')":
+                    "(part_count IS NOT NULL AND state IN ('pending','dispatching'))":
                     "(state='pending' AND attempt_count=0)";
+                $set=($d['service_operation_id']??null)!==null?
+                    "updated_at=NOW(),next_attempt_at=CASE WHEN next_attempt_at<=NOW(6)
+                        THEN DATE_ADD(NOW(6),INTERVAL 2 MINUTE) ELSE next_attempt_at END":
+                    "updated_at=NOW()";
                 $q=$db->prepare("UPDATE payment_delivery_intents
-                    SET updated_at=NOW() WHERE id=? AND ".$where);
+                    SET ".$set." WHERE id=? AND ".$where);
                 $q->bind_param('i',$id);
                 $q->execute();$q->close();
             } catch (Throwable $error) {

@@ -52,7 +52,7 @@ function achbotDiagnosticEvent(string $name,array $context=[],string $level='inf
             'page','checked','selected','projected','deferred','due_unchecked',
             'elapsed_ms','batch_ms','message_count','candidate_count',
             'next_check_seconds','total','success','failure','budget_exhausted',
-            'request_attempt','followup_id','telegram_error_code'];
+            'request_attempt','followup_id','delivery_id','delivery_part','telegram_error_code'];
         $codes=['provider','method','operation','stage','phase','state','reason',
             'result','source','class','worker','evidence_state','fulfillment_state',
             'http_reason','action','mode','upstream_request_id'];

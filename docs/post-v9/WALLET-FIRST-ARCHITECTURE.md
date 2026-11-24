@@ -961,6 +961,50 @@ Presentation 57/57, wallet-report HTML 12/12 (22 fixture sends) and
 isolated log privacy 13/13 also passed. Runtime route and scheduler
 activation, multipart 018 recovery and remaining #204 gates remain open.
 
+### Independent customer delivery message effects (032)
+
+Migration 032 extends the existing 018/027 journal, rather than introducing
+a second financial or provider execution owner. On local service completion,
+the actual renderer's QR (if present) and all HTML text parts, with the
+original keyboard on the last text, are sealed in the original packet.
+The parent and per-part digests are inserted atomically with the local
+order/audit. Text-only edit notices retain their original mode. No later
+display-setting, pricing or account lookup reconstructs that manifest.
+
+The parent owns one session lease and a monotone attempt sequence; each
+part has its own state and latest attempt. A BUY additionally holds the
+existing physical account lease against transfer, plan change and deletion.
+Before dispatch, the original debit, completed operation, identity, manifest,
+part and attempt history are checked. Commit the exact claim before Telegram;
+no SQL transaction spans its network call. Finish the part and aggregate
+parent together. ACK means all parts are acknowledged, not just one photo.
+Other never-attempted or due parts can progress despite a sibling failure.
+No delivery or redrive changes wallet, reservation, provider or order data.
+
+Explicit Telegram 4xx rejections require a matching HTTP envelope. A positive
+valid 429 retry_after schedules only that part; a known local preparation
+failure before the send is also retryable, with its own recorded outcome
+and no invented remote error. Other definite rejections require explicit
+correction/redrive. Unknown transport or 5xx, contradictory or malformed
+response, abandoned claim, and uncertain SQL finality after sending are
+UNKNOWN, not automatically replayed. The original actor-bound confirmation
+policy now targets one exact part and its latest attempt; a single explicitly
+authorized UNKNOWN redrive is allowed per part. Permission and source
+identity are rechecked at dispatch. Existing quiet-window maintenance and
+bounded selection include due parts and abandoned service claims.
+
+The original 018 pay-only records retain their whole-packet contract and
+history. Migration 032 does not backfill part boundaries, manufacture ACKs,
+or replay old uncertain packets. Pre-032 service draft records without
+verified part evidence are not admitted by the new sender. There are no
+new callback routes, no production migration, and no live cutover in this
+slice. Existing rendering/keyboard/copy and one-shot legacy callers are
+retained; PHP 8.5 QR encoder deprecations are corrected without changing the
+encoding algorithm. The actual service-route and scheduler activation,
+delivery-dependent manual operator notices, outstanding payment-policy
+coverage, historical mapping/rehearsal, old runtime removal, and independent
+review remain separate acceptance gates.
+
 ### Verified Native limitation of existing APIs, not an accepted retry contract
 
 `python3 tools/test_wallet_first_native_write_fence.py --run-disposable`

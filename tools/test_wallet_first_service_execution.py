@@ -32,18 +32,52 @@ require_once $argv[1].'/src/Finance/FundingCheckout.php';
 $data='';
 require_once $argv[1].'/src/Subscription/AccountDeletion.php';
 $GLOBALS['telegramWebhookSecret']='SyntheticServiceDeliveryKey_2026';
-function sendQrFromLink(string $qr,string $caption,string $keys,string $botUrl,int $uid): bool {
+function fixtureDeliverySend(string $kind,int $uid,?string $text,?string $keys,?string $mode,$photo=null) {
     global $db,$x;
+    $ctx=$GLOBALS['achbotTelegramDiagnosticContext'];
     if ((int)achbotProviderRow($db,'SELECT @@in_transaction AS tx')['tx']!==0)
         throw new RuntimeException('fixture_telegram_inside_transaction');
-    $ctx=$GLOBALS['achbotTelegramDiagnosticContext'];
-    $d=achbotProviderRow($db,'SELECT id,state,attempt_count FROM payment_delivery_intents WHERE service_operation_id=? AND ordinal=?','ii',
-        [$ctx['service_operation_id'],$ctx['delivery_ordinal']]);
-    if ($d['state']!=='dispatching' || (int)$d['attempt_count']!==1)
+    $d=achbotProviderRow($db,'SELECT * FROM payment_delivery_intents WHERE id=?','i',[$ctx['delivery_id']]);
+    $p=achbotProviderRow($db,'SELECT * FROM payment_delivery_parts WHERE intent_id=? AND part_no=?','ii',[$d['id'],$ctx['delivery_part']]);
+    $a=achbotProviderRow($db,'SELECT * FROM payment_delivery_attempts WHERE intent_id=? AND attempt_no=?','ii',[$d['id'],$ctx['delivery_attempt']]);
+    if ($d['state']!=='dispatching' || $p['state']!=='dispatching' || $a['result']!=='dispatching' ||
+        (int)$d['attempt_count']!==$ctx['delivery_attempt'] || (int)$p['last_attempt_no']!==$ctx['delivery_attempt'] ||
+        $a['dispatch_token']!==$d['dispatch_token'] || (int)$a['part_no']!==$ctx['delivery_part'] ||
+        (int)$a['actor_userid']!==(int)($x['actor']??0) || (int)$d['user_id']!==$uid)
         throw new RuntimeException('fixture_telegram_claim_not_committed');
-    $s=achbotProviderStatement($db,'INSERT INTO fixture_telegram(intent_id,user_id,qr,caption,keys_json,bot_url)
-        VALUES (?,?,?,?,?,?)','iissss',[$d['id'],$uid,$qr,$caption,$keys,$botUrl]);$s->close();
-    return !($x['unknown_ack']??false);
+    $body=achbotPaymentEvidenceUnprotect(achbotServiceDeliveryPurpose((int)$d['service_operation_id'],
+        (int)$d['ordinal'],(int)$d['effect_id'],(int)$d['order_id']),$d['sealed_payload']);
+    $part=$body['parts'][$ctx['delivery_part']-1];
+    if ($part['kind']!==$kind || !hash_equals($p['payload_sha256'],achbotDeliveryPartDigest($part)))
+        throw new RuntimeException('fixture_part_source');
+    $qr=null;
+    if ($kind==='qr') {
+        $path=$photo instanceof CURLFile?$photo->getFilename():$photo;
+        if (!is_string($path) || !is_file($path) || (getimagesize($path)[2]??null)!==IMAGETYPE_PNG ||
+            $text!==$part['caption'] || $keys!==null || $mode!==null)
+            throw new RuntimeException('fixture_qr_wire');
+        // Compare real generated image against original immutable URL.
+        if ($x['op']==='deliver') {
+            $expected=tempnam(sys_get_temp_dir(),'fixture-qr-');
+            try {
+                mt_srand(20261124);QRcode::png($part['qr'],$expected,'L',11,4);
+                if (hash_file('sha256',$expected)!==hash_file('sha256',$path))
+                    throw new RuntimeException('fixture_qr_bytes');
+            } finally {unlink($expected);}
+        }
+        $GLOBALS['fixturePhotoPaths'][]=$path;
+        $qr=$part['qr'];
+    } elseif ($part['text']!==$text || $part['keys']!==$keys || $part['mode']!==$mode)
+        throw new RuntimeException('fixture_text_wire');
+    $s=achbotProviderStatement($db,'INSERT INTO fixture_telegram(intent_id,user_id,part_no,kind,qr,caption,keys_json,mode)
+        VALUES (?,?,?,?,?,?,?,?)','iiisssss',[$d['id'],$uid,$ctx['delivery_part'],$kind,$qr,$text,$keys,$mode]);$s->close();
+    if (($x['crash_after_part']??null)===$ctx['delivery_part']) exit(29);
+    if (array_key_exists($ctx['delivery_part'],$x['responses']??[]))
+        return json_decode(json_encode($x['responses'][$ctx['delivery_part']],JSON_THROW_ON_ERROR),false,64,JSON_THROW_ON_ERROR);
+    return (object)['ok'=>!($x['unknown_ack']??false)];
+}
+function sendPhoto($photo,$caption=null,$keys=null,$mode=null,$uid=null) {
+    return fixtureDeliverySend('qr',$uid,$caption,$keys,$mode,$photo);
 }
 
 function sendMessage($text,$keys=null,$mode=null,$uid=null) {
@@ -64,14 +98,7 @@ function sendMessage($text,$keys=null,$mode=null,$uid=null) {
         if (isset($x['response'])) return json_decode(json_encode($x['response'],JSON_THROW_ON_ERROR),false,64,JSON_THROW_ON_ERROR);
         return (object)['ok'=>!($x['unknown_ack']??false)];
     }
-    $ctx=$GLOBALS['achbotTelegramDiagnosticContext'];
-    $d=achbotProviderRow($db,'SELECT id,state,attempt_count FROM payment_delivery_intents WHERE service_operation_id=? AND ordinal=?','ii',
-        [$ctx['service_operation_id'],$ctx['delivery_ordinal']]);
-    if ($d['state']!=='dispatching' || (int)$d['attempt_count']!==1)
-        throw new RuntimeException('fixture_telegram_claim_not_committed');
-    $s=achbotProviderStatement($db,'INSERT INTO fixture_telegram(intent_id,user_id,caption) VALUES (?,?,?)',
-        'iis',[$d['id'],$uid,$text]);$s->close();
-    return (object)['ok'=>!($x['unknown_ack']??false)];
+    return fixtureDeliverySend('text',$uid,$text,$keys,$mode);
 }
 function editKeys($keys,$msgId,$ci) {return sendMessage($keys,null,'edit:'.$msgId,$ci);}
 function fixtureAlias(mysqli $db,int $order): int {
@@ -87,6 +114,10 @@ function fixtureAlias(mysqli $db,int $order): int {
 $db=new mysqli('localhost','root','',$argv[3],0,$argv[2]);
 $connection=$db;$GLOBALS['admin']=9001;
 $x=json_decode($argv[5],true,512,JSON_THROW_ON_ERROR);
+if ($x['qr_local_fail']??false) {
+    class QRcode {public static function png(...$args) {throw new RuntimeException('fixture_qr_prepare');}}
+}
+
 $GLOBALS['botState']=['rewardChannel'=>'@fixture_report'];
 $GLOBALS['paymentKeys']=['bankAccount'=>'fixture-bank','holderName'=>'fixture-holder'];
 try {
@@ -94,7 +125,24 @@ try {
     if ($x['op']==='step') $r=achbotServiceExecuteStep($db,$x['id'],$presentation);
     elseif ($x['op']==='auto') $r=achbotServiceAutoRenewAdmit($db,$x['order'],(int)($x['owner']??1001),$x['bot_state']??['renewAutoState'=>'on']);
     elseif ($x['op']==='due') $r=achbotServiceExecuteDue($db,$x['limit'],10.0,$presentation);
-    elseif ($x['op']==='deliver') $r=achbotServiceDeliveryDispatch($db,$x['id']);
+    elseif ($x['op']==='deliver') {
+        $other=null;
+        if ($x['block_account']??false) {
+            $other=new mysqli('localhost','root','',$argv[3],0,$argv[2]);
+            $d=achbotProviderRow($db,'SELECT order_id FROM payment_delivery_intents WHERE id=?','i',[$x['id']]);
+            $name=achbotPgServiceAccountLock($other,(int)$d['order_id']);
+            if ((int)achbotProviderRow($other,'SELECT GET_LOCK(?,0) AS acquired','s',[$name])['acquired']!==1)
+                throw new RuntimeException('fixture_delivery_block_account');
+        }
+        mt_srand(20261124);
+        try {$r=achbotServiceDeliveryDispatch($db,$x['id'],(int)($x['actor']??0),(int)($x['part']??0),$x['confirmation']??null);}
+        finally {if ($other!==null) $other->close();}
+    }
+    elseif ($x['op']==='preview_delivery') {
+        $d=achbotProviderRow($db,'SELECT * FROM payment_delivery_intents WHERE id=?','i',[$x['id']]);
+        $p=achbotProviderRow($db,'SELECT * FROM payment_delivery_parts WHERE intent_id=? AND part_no=?','ii',[$x['id'],$x['part']]);
+        $r=achbotDeliveryPartRedriveToken($d,$p,$x['actor']);
+    }
     elseif ($x['op']==='maintain_delivery') $r=achbotDeliveryMaintainPending($db,$x['limit'],10.0);
     elseif ($x['op']==='manual_receipt') {
         require_once $argv[1].'/src/Finance/ManualReceipt.php';
@@ -147,7 +195,8 @@ try {
     elseif ($x['op']==='claim_delivery') {
         $db->begin_transaction();
         $d=achbotProviderRow($db,'SELECT * FROM payment_delivery_intents WHERE id=? FOR UPDATE','i',[$x['id']]);
-        $r=achbotDeliveryClaimLocked($db,$d);$db->commit();
+        $p=achbotProviderRow($db,'SELECT *,1 AS due FROM payment_delivery_parts WHERE intent_id=? AND part_no=? FOR UPDATE','ii',[$x['id'],$x['part']??1]);
+        $r=achbotDeliveryPartClaimLocked($db,$d,$p);$db->commit();
     }
     else {
         if (!$db->begin_transaction()) throw new RuntimeException('fixture_begin');
@@ -162,6 +211,7 @@ try {
         };
         if (!$db->commit()) throw new RuntimeException('fixture_commit');
     }
+    foreach ($GLOBALS['fixturePhotoPaths']??[] as $path) if (file_exists($path)) throw new RuntimeException('fixture_qr_temp_leaked');
     if ($x['lost_ack']??false) exit(19);
     echo json_encode(['ok'=>true,'result'=>$r],JSON_THROW_ON_ERROR);
 } catch(Throwable $e) {
@@ -338,6 +388,15 @@ def main():
             sql((ROOT/'migrations/post-v9/029_service_purchase_referral.sql').read_text())
             sql((ROOT/'migrations/post-v9/030_service_followup_sources.sql').read_text())
             sql((ROOT/'migrations/post-v9/031_service_followup_attempts.sql').read_text())
+            sql("UPDATE payment_delivery_intents SET attempt_count=1 WHERE pay_row_id IS NOT NULL")
+            sql("INSERT INTO payment_delivery_attempts(intent_id,attempt_no,dispatch_token,result) SELECT id,1,REPEAT('d',32),'unknown' FROM payment_delivery_intents WHERE pay_row_id IS NOT NULL")
+            original_delivery=sql("SELECT id,pay_row_id,attempt_id,sealed_payload,state,attempt_count FROM payment_delivery_intents")
+            original_attempt=sql("SELECT id,intent_id,attempt_no,dispatch_token,result FROM payment_delivery_attempts")
+            sql((ROOT/'migrations/post-v9/032_service_delivery_parts.sql').read_text())
+            assert sql("SELECT id,pay_row_id,attempt_id,sealed_payload,state,attempt_count FROM payment_delivery_intents")==original_delivery
+            assert sql("SELECT id,intent_id,attempt_no,dispatch_token,result FROM payment_delivery_attempts")==original_attempt
+            assert sql("SELECT COUNT(*) FROM payment_delivery_parts")=='0'
+            assert sql("SELECT COUNT(*) FROM payment_delivery_attempts WHERE part_no IS NOT NULL")=='0'
             assert sql("SELECT id,pay_row_id,amount_toman,state,before_balance,after_balance FROM referral_awards")==original_award
             assert sql("SELECT id,pay_row_id,sealed_payload,state FROM payment_followup_intents")==original_report
             assert sql("SELECT COUNT(*) FROM referral_awards WHERE service_operation_id IS NOT NULL")=='0'
@@ -345,7 +404,7 @@ def main():
                 recipient VARCHAR(128),text TEXT,mode VARCHAR(20)) ENGINE=InnoDB""")
             sql("""CREATE TABLE fixture_telegram (
                 id INT AUTO_INCREMENT PRIMARY KEY, intent_id BIGINT UNSIGNED NOT NULL,
-                user_id BIGINT NOT NULL, qr TEXT, caption TEXT, keys_json TEXT, bot_url TEXT) ENGINE=InnoDB""")
+                user_id BIGINT NOT NULL, part_no INT NOT NULL,kind VARCHAR(12), qr TEXT, caption TEXT, keys_json TEXT, mode VARCHAR(12)) ENGINE=InnoDB""")
 
             sql(f"""INSERT INTO server_config(id,panel_url,ip,sni,header_type,request_header,response_header,security,tlsSettings,type,username,password)
                 VALUES (2,'{base}','127.0.0.1','','none','','','none','{{}}','pasarguard','fixture','fixture');
@@ -365,17 +424,21 @@ def main():
             sql('UPDATE users SET wallet=50000 WHERE userid=9002')
             driver=work/'execution.php';driver.write_text(PHP)
             def php(mode,op,**kw):
-                p=subprocess.run(['php','-n','-d','extension=mysqlnd','-d','extension=mysqli','-d','extension=curl',
+                p=subprocess.run(['php','-n','-d','extension=mysqlnd','-d','extension=mysqli','-d','extension=curl','-d','extension=gd',
                     '-d','allow_url_fopen=0','-d','disable_functions=exec,shell_exec,system,passthru,popen,proc_open,mail',
                     str(driver),str(ROOT),str(work/'mysql.sock'),DB,mode,json.dumps(dict(op=op,**kw))],
                     env=env,text=True,capture_output=True,timeout=25)
+                if kw.get('crash_after_part'):
+                    assert p.returncode==29 and not p.stdout,(p.returncode,p.stdout,p.stderr)
+                    return None
                 if kw.get('lost_ack'):
                     assert p.returncode==19 and not p.stdout,(p.returncode,p.stdout,p.stderr)
                     return None
                 assert p.returncode==0,(p.returncode,p.stdout,p.stderr)
                 for line in p.stderr.splitlines():
-                    assert line.startswith(('[AChBot] ','achbot_auto_renew_','achbot_shared_plan_','achbot_shared_transfer_','achbot_subscription_delete_')) or re.fullmatch(r'achbot_followup_ack_unknown id=[1-9][0-9]*',line),line
-                r=json.loads(p.stdout)
+                    assert line.startswith(('[AChBot] ','achbot_auto_renew_','achbot_shared_plan_','achbot_shared_transfer_','achbot_subscription_delete_')) or re.fullmatch(r'achbot_followup_ack_unknown id=[1-9][0-9]*|achbot_qr_prepare_failed class=RuntimeException',line),line
+                try:r=json.loads(p.stdout)
+                except ValueError as e:raise AssertionError((op,p.stdout,p.stderr)) from e
                 if 'expect_error' in kw:
                     assert not r['ok'] and r['reason']==kw['expect_error'],r
                     return r['reason']
@@ -508,17 +571,32 @@ def main():
                 with ThreadPoolExecutor(3) as ex:
                     outcomes=list(ex.map(lambda _:php(mode,'deliver',id=delivery_ids[0]),range(3)))
                 assert 'acknowledged' in outcomes and set(outcomes)<={'acknowledged','busy'},outcomes
-                assert sql(f"SELECT COUNT(*) FROM fixture_telegram WHERE intent_id={delivery_ids[0]}")=='1'
-                wire=sql(f"SELECT user_id,qr,caption,keys_json FROM fixture_telegram WHERE intent_id={delivery_ids[0]}")
+                assert sql(f"SELECT COUNT(*) FROM fixture_telegram WHERE intent_id={delivery_ids[0]}")=='2'
+                wire=sql(f"SELECT user_id,qr,caption,keys_json FROM fixture_telegram WHERE intent_id={delivery_ids[0]} ORDER BY part_no")
                 assert wire.startswith('1001\t') and 'fixture_bot' in wire,wire
                 assert sql(f"SELECT sealed_payload FROM payment_delivery_intents WHERE id={delivery_ids[0]}").startswith('achpe1:')
-                assert php(mode,'deliver',id=delivery_ids[1],unknown_ack=True)=='unknown'
+                assert php(mode,'deliver',id=delivery_ids[1],responses={2:None})=='unknown'
                 assert php(mode,'deliver',id=delivery_ids[1])=='unknown'
-                assert sql(f"SELECT COUNT(*) FROM fixture_telegram WHERE intent_id={delivery_ids[1]}")=='1'
+                assert sql(f"SELECT GROUP_CONCAT(CONCAT(part_no,':',state) ORDER BY part_no) FROM payment_delivery_parts WHERE intent_id={delivery_ids[1]}")=='1:acknowledged,2:unknown'
+                assert sql(f"SELECT COUNT(*) FROM fixture_telegram WHERE intent_id={delivery_ids[1]}")=='2'
+                token=php(mode,'preview_delivery',id=delivery_ids[1],part=2,actor=1001)
+                assert php(mode,'deliver',id=delivery_ids[1],part=2,actor=1001,confirmation=token)=='denied'
+                token=php(mode,'preview_delivery',id=delivery_ids[1],part=2,actor=9001)
+                assert php(mode,'deliver',id=delivery_ids[1],part=2,actor=9001,confirmation='0'*20)=='stale'
+                assert php(mode,'deliver',id=delivery_ids[1],part=2,actor=9001,confirmation=token,responses={2:None})=='unknown'
+                token=php(mode,'preview_delivery',id=delivery_ids[1],part=2,actor=9001)
+                assert php(mode,'deliver',id=delivery_ids[1],part=2,actor=9001,confirmation=token)=='stale'
+                assert sql(f"SELECT COUNT(*) FROM fixture_telegram WHERE intent_id={delivery_ids[1]} AND part_no=1")=='1'
+                assert sql(f"SELECT COUNT(*) FROM fixture_telegram WHERE intent_id={delivery_ids[1]} AND part_no=2")=='2'
                 php(mode,'claim_delivery',id=delivery_ids[2])
                 assert php(mode,'deliver',id=delivery_ids[2])=='unknown'
-                assert sql(f"SELECT COUNT(*) FROM fixture_telegram WHERE intent_id={delivery_ids[2]}")=='0'
-                assert sql(f"SELECT COUNT(*) FROM payment_delivery_attempts a JOIN payment_delivery_intents d ON d.id=a.intent_id WHERE d.service_operation_id={id} AND a.result IN ('acknowledged','unknown')")=='3'
+                assert sql(f"SELECT COUNT(*) FROM fixture_telegram WHERE intent_id={delivery_ids[2]} AND part_no=1")=='0'
+                assert sql(f"SELECT COUNT(*) FROM fixture_telegram WHERE intent_id={delivery_ids[2]} AND part_no=2")=='1'
+                assert sql(f"SELECT GROUP_CONCAT(CONCAT(part_no,':',state) ORDER BY part_no) FROM payment_delivery_parts WHERE intent_id={delivery_ids[2]}")=='1:unknown,2:acknowledged'
+                token=php(mode,'preview_delivery',id=delivery_ids[2],part=1,actor=9001)
+                assert php(mode,'deliver',id=delivery_ids[2],part=1,actor=9001,confirmation=token)=='acknowledged'
+                assert php(mode,'deliver',id=delivery_ids[2])=='acknowledged'
+                assert sql(f"SELECT COUNT(*) FROM payment_delivery_attempts a JOIN payment_delivery_intents d ON d.id=a.intent_id WHERE d.service_operation_id={id} AND a.result IN ('acknowledged','unknown')")=='8'
                 assert len(requests)==reqs and finance()==before
                 step(mode,id,'completed')
                 cases.append(mode+'_delivery_ack_unknown_and_abandoned_claim')
@@ -583,7 +661,7 @@ DELIMITER ;
                 reqs=len(requests);before=finance()
                 stats=php(mode,'maintain_delivery',limit=2)
                 assert stats==dict(checked=2,acknowledged=1,unknown=0,deferred=1),stats
-                assert sql(f"SELECT COUNT(*) FROM fixture_telegram WHERE intent_id={next_delivery}")=='1'
+                assert sql(f"SELECT COUNT(*) FROM fixture_telegram WHERE intent_id={next_delivery}")=='2'
                 assert php(mode,'maintain_delivery',limit=2)['checked']==0
                 assert len(requests)==reqs and finance()==before
                 cases.append(mode+'_shared_delivery_worker_fair_progress')
@@ -1119,6 +1197,111 @@ DELIMITER ;
                 assert sql(f"SELECT COUNT(*) FROM fixture_followup WHERE intent_id={rid} AND mode='edit:222'")=='1'
                 assert finance()==before and len(requests)==n
                 cases.append(mode+'_manual_service_completion_rollback_and_exact_receipt_edit')
+                # Real multi-message BUY, not a fabricated packet. Long
+                # backup aliases force the existing Telegram HTML splitter.
+                aliases=','.join(f'https://backup{i}.fixture.invalid/'+('a'*1000) for i in range(6))
+                sql(f"UPDATE server_config SET sub_links='{aliases}' WHERE id=2")
+                multi=issue(mode,'multipart');fund(mode,multi);step(mode,multi,'applied')
+                before=finance();n=posts()
+                sql("CREATE TRIGGER fixture_part_insert_fail BEFORE INSERT ON payment_delivery_parts FOR EACH ROW SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='fixture part rollback'")
+                try:
+                    step(mode,multi,'pending','provider_storage_unavailable')
+                    assert sql(f"SELECT COUNT(*) FROM payment_delivery_intents WHERE service_operation_id={multi}")=='0'
+                    assert sql(f"SELECT COUNT(*) FROM service_effects WHERE source_kind='service_operation' AND source_ref='{multi}' AND order_id IS NOT NULL")=='0'
+                finally:sql('DROP TRIGGER fixture_part_insert_fail')
+                retry(multi);step(mode,multi,'completed')
+                assert finance()==before and posts()==n
+                did,count=map(int,sql(f"SELECT id,part_count FROM payment_delivery_intents WHERE service_operation_id={multi}").split('	'))
+                assert count>=3,count
+                sql("UPDATE server_config SET sub_links='' WHERE id=2")
+                def part_states(d):
+                    return sql(f"SELECT GROUP_CONCAT(state ORDER BY part_no) FROM payment_delivery_parts WHERE intent_id={d}").split(',')
+                def wire_counts(d):
+                    return dict((int(k),int(v)) for k,v in (r.split('	') for r in sql(f"SELECT part_no,COUNT(*) FROM fixture_telegram WHERE intent_id={d} GROUP BY part_no ORDER BY part_no").splitlines()))
+                def due_part(d,p):
+                    sql(f"UPDATE payment_delivery_parts SET next_attempt_at=NOW(6) WHERE intent_id={d} AND part_no={p}; UPDATE payment_delivery_intents SET next_attempt_at=NOW(6) WHERE id={d}")
+                def buy_delivery(tag):
+                    sid=issue(mode,tag);fund(mode,sid);step(mode,sid,'applied');step(mode,sid,'completed')
+                    return int(sql(f"SELECT id FROM payment_delivery_intents WHERE service_operation_id={sid}"))
+                before=finance();n=len(requests)
+                rate=dict(ok=False,error_code=429,description='Too Many Requests',parameters=dict(retry_after=35))
+                assert php(mode,'deliver',id=did,responses={2:rate})=='pending'
+                assert part_states(did)==['acknowledged','pending']+['acknowledged']*(count-2)
+                assert wire_counts(did)=={p:1 for p in range(1,count+1)}
+                assert sql(f"SELECT CONCAT(result,':',telegram_error_code,':',retry_after_seconds) FROM payment_delivery_attempts WHERE intent_id={did} AND part_no=2")=='rejected:429:35'
+                assert sql(f"SELECT COUNT(*) FROM fixture_telegram WHERE intent_id={did} AND keys_json IS NOT NULL AND keys_json<>'' AND part_no={count}")=='1'
+                assert sql(f"SELECT COUNT(*) FROM fixture_telegram WHERE intent_id={did} AND keys_json IS NOT NULL AND keys_json<>'' AND part_no<>{count}")=='0'
+                assert php(mode,'deliver',id=did)=='pending'
+                assert wire_counts(did)=={p:1 for p in range(1,count+1)}
+                # A false projection must not certify an unsent/rejected part.
+                sql(f"UPDATE payment_delivery_parts SET state='acknowledged' WHERE intent_id={did} AND part_no=2")
+                assert php(mode,'deliver',id=did)=='deferred'
+                sql(f"UPDATE payment_delivery_parts SET state='pending' WHERE intent_id={did} AND part_no=2")
+                sql(f"UPDATE payment_delivery_intents SET updated_at=NOW(),next_attempt_at=DATE_ADD(NOW(6),INTERVAL 1 DAY) WHERE service_operation_id IS NOT NULL AND state='pending' AND id<>{did}")
+                due_part(did,2)
+                assert php(mode,'maintain_delivery',limit=1)==dict(checked=1,acknowledged=1,unknown=0,deferred=0)
+                assert part_states(did)==['acknowledged']*count
+                assert wire_counts(did)=={p:(2 if p==2 else 1) for p in range(1,count+1)}
+                assert finance()==before and len(requests)==n
+                cases.append(mode+'_multipart_atomic_manifest_frozen_text_429_due_only')
+                # Local account lease and original credential proof must
+                # remain valid on a part-specific operator redrive.
+                did=buy_delivery('part-reject')
+                before=finance();n=len(requests)
+                assert php(mode,'deliver',id=did,block_account=True)=='busy'
+                assert wire_counts(did)=={}
+                digest=sql(f"SELECT payload_sha256 FROM payment_delivery_parts WHERE intent_id={did} AND part_no=1")
+                sql(f"UPDATE payment_delivery_parts SET payload_sha256=REPEAT('0',64) WHERE intent_id={did} AND part_no=1")
+                assert php(mode,'deliver',id=did)=='deferred' and wire_counts(did)=={}
+                sql(f"UPDATE payment_delivery_parts SET payload_sha256='{digest}' WHERE intent_id={did} AND part_no=1")
+                assert php(mode,'deliver',id=did,responses={1:dict(ok=False,error_code=403,description='Forbidden')})=='rejected'
+                assert part_states(did)==['rejected','acknowledged']
+                assert php(mode,'deliver',id=did)=='rejected'
+                token=php(mode,'preview_delivery',id=did,part=1,actor=9001)
+                oid=int(sql(f"SELECT order_id FROM payment_delivery_intents WHERE id={did}"))
+                uuid=sql(f"SELECT uuid FROM orders_list WHERE id={oid}")
+                sql(f"UPDATE orders_list SET uuid='fixture-changed' WHERE id={oid}")
+                assert php(mode,'deliver',id=did,part=1,actor=9001,confirmation=token)=='deferred'
+                sql(f"UPDATE orders_list SET uuid='{uuid}' WHERE id={oid}")
+                assert php(mode,'deliver',id=did,part=1,actor=9001,confirmation=token)=='acknowledged'
+                assert wire_counts(did)=={1:2,2:1} and part_states(did)==['acknowledged']*2
+                assert finance()==before and len(requests)==n
+                cases.append(mode+'_part_rejection_redrive_exact_identity_and_account_lease')
+                did=buy_delivery('qr-local-fail')
+                before=finance();n=len(requests)
+                assert php(mode,'deliver',id=did,qr_local_fail=True)=='pending'
+                assert part_states(did)==['pending','acknowledged'] and wire_counts(did)=={2:1}
+                assert sql(f"SELECT CONCAT(result,':',retry_after_seconds) FROM payment_delivery_attempts WHERE intent_id={did} AND part_no=1")=='local_failed:120'
+                assert php(mode,'deliver',id=did)=='pending'
+                assert wire_counts(did)=={2:1}
+                due_part(did,1)
+                assert php(mode,'deliver',id=did)=='acknowledged'
+                assert wire_counts(did)=={1:1,2:1} and finance()==before and len(requests)==n
+                cases.append(mode+'_qr_local_failure_never_claims_remote_rejection')
+                did=buy_delivery('part-crash')
+                before=finance();n=len(requests)
+                php(mode,'deliver',id=did,crash_after_part=2)
+                assert part_states(did)==['acknowledged','dispatching'] and wire_counts(did)=={1:1,2:1}
+                assert php(mode,'deliver',id=did)=='unknown'
+                assert php(mode,'deliver',id=did)=='unknown'
+                assert part_states(did)==['acknowledged','unknown'] and wire_counts(did)=={1:1,2:1}
+                assert finance()==before and len(requests)==n
+                cases.append(mode+'_process_exit_after_wire_never_replays_confirmed_part')
+                did=buy_delivery('part-ack-rollback')
+                before=finance();n=len(requests)
+                sql("""DELIMITER //
+CREATE TRIGGER fixture_part_ack_fail BEFORE UPDATE ON payment_delivery_attempts FOR EACH ROW
+                    BEGIN IF NEW.result='acknowledged' AND OLD.part_no=2 THEN SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='fixture ack rollback'; END IF; END//
+DELIMITER ;
+""")
+                try:
+                    assert php(mode,'deliver',id=did)=='unknown'
+                    assert part_states(did)==['acknowledged','dispatching'] and wire_counts(did)=={1:1,2:1}
+                finally:sql('DROP TRIGGER fixture_part_ack_fail')
+                assert php(mode,'deliver',id=did)=='unknown'
+                assert part_states(did)==['acknowledged','unknown'] and wire_counts(did)=={1:1,2:1}
+                assert finance()==before and len(requests)==n
+                cases.append(mode+'_part_ack_sql_rollback_never_auto_replays')
                 assert not faults and not errors,(faults,errors)
         finally:
             release.set();server.shutdown();server.server_close();thread.join(5)

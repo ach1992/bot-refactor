@@ -145,6 +145,64 @@ if (!function_exists('buildLinksAndSendQr')) {
     }
 }
 
+/** Freeze the real Telegram message boundaries before the completion commit.
+ * No QR for an empty link; the original keyboard belongs to the last text. */
+function achbotSubscriptionDeliveryParts(array $packet): array {
+    if ($packet['kind']==='text') {
+        return [['kind'=>'text','text'=>$packet['text'],'keys'=>null,
+            'mode'=>$packet['mode']==='plain'?null:'HTML']];
+    }
+    if ($packet['kind']!=='qr') throw new InvalidArgumentException('delivery_packet_kind');
+    $parts=[];
+    if ($packet['qr']!=='') $parts[]=['kind'=>'qr','qr'=>$packet['qr'],'caption'=>null];
+    $text=\AchBot\Subscription\Presentation\messageParts($packet['caption']);
+    foreach ($text as $index=>$part)
+        $parts[]=['kind'=>'text','text'=>$part,
+            'keys'=>$index===count($text)-1?$packet['keys']:null,'mode'=>'HTML'];
+    return $parts;
+}
+
+/** One message effect. Only preparation errors before calling Telegram
+ * may be reported as local_failed. Transport exceptions are uncertain. */
+function achbotSubscriptionSendQrPart(array $part,int $uid,?string $qrFsDir=null): array {
+    require_once __DIR__.'/../Telegram/Response.php';
+    if ($part['kind']!=='qr') throw new InvalidArgumentException('delivery_part_kind');
+    $fsPath=null;
+    try {
+        try {
+            if (!class_exists('QRcode')) require_once dirname(__DIR__,2).'/phpqrcode/qrlib.php';
+            if (!class_exists('QRcode')) throw new RuntimeException('delivery_qr_encoder_missing');
+            $dir=$qrFsDir??sys_get_temp_dir();
+            $fsPath=@tempnam($dir,'achqr-');
+            if ($fsPath===false) throw new RuntimeException('delivery_qr_tempfile_failed');
+            QRcode::png($part['qr'],$fsPath,'L',11,4);
+            if (!is_file($fsPath) || filesize($fsPath)<=0)
+                throw new RuntimeException('delivery_qr_image_missing');
+            $file=basename($fsPath).'.png';
+            $photo=class_exists('CURLFile')?new CURLFile($fsPath,'image/png',$file):$fsPath;
+        } catch (Throwable $error) {
+            error_log('achbot_qr_prepare_failed class='.get_class($error));
+            // No transport call occurred. Use the existing maintenance
+            // deferral interval; do not invent a Telegram rejection code.
+            return ['result'=>'local_failed','code'=>null,'retry_after'=>120];
+        }
+        $photoCaption=$part['caption'];
+        $resPhoto=sendPhoto($photo, $photoCaption, null, $photoCaption === null ? null : 'HTML', $uid);
+        return \AchBot\Telegram\Response\deliveryOutcome($resPhoto);
+    } finally {
+        if (is_string($fsPath)) @unlink($fsPath);
+    }
+}
+
+function achbotSubscriptionSendPart(array $part,int $uid,?string $qrFsDir=null): array {
+    if ($part['kind']==='qr') return achbotSubscriptionSendQrPart($part,$uid,$qrFsDir);
+    if ($part['kind']!=='text') throw new InvalidArgumentException('delivery_part_kind');
+    require_once __DIR__.'/../Telegram/Response.php';
+    $text=$part['text'];$keys=$part['keys'];$mode=$part['mode'];
+    $res=sendMessage($text,$keys,$mode,$uid);
+    return \AchBot\Telegram\Response\deliveryOutcome($res);
+}
+
 if (!function_exists('sendQrFromLink')) {
     function sendQrFromLink(
         string $qrLink,
@@ -156,42 +214,30 @@ if (!function_exists('sendQrFromLink')) {
         ?string $qrFsDir = null,
         ?string $photoCaption = null
     ): bool {
-        if (!class_exists('QRcode')) require_once dirname(__DIR__, 2).'/phpqrcode/qrlib.php';
-        $photoConfirmed = false;
-        // Photo and account details are TWO independent Telegram effects.
-        // A successful photo cannot certify delivery of the account text.
-        if ($qrLink !== '' && class_exists('QRcode')) {
-            if (empty($qrFsDir)) $qrFsDir = getcwd();
-            $qrFsDir = rtrim($qrFsDir, "/\\");
-            $file = RandomString() . ".png";
-            $fsPath = $qrFsDir . DIRECTORY_SEPARATOR . $file;
+        // Retain the historical whole-packet caller's UX and bool contract.
+        // Only new journaled service delivery owns individual durable parts.
+        $photoConfirmed=$qrLink==='';
+        if ($qrLink!=='') {
             try {
-                QRcode::png($qrLink, $fsPath, 'L', 11, 4);
-                $photo = class_exists('CURLFile')
-                    ? new CURLFile($fsPath, 'image/png', $file)
-                    : $fsPath;
-                $resPhoto = sendPhoto($photo, $photoCaption, null, $photoCaption === null ? null : 'HTML', $uid);
-                $photoConfirmed = is_object($resPhoto) && ($resPhoto->ok ?? false) === true;
+                $photoConfirmed=achbotSubscriptionSendPart(
+                    ['kind'=>'qr','qr'=>$qrLink,'caption'=>$photoCaption],$uid,
+                    empty($qrFsDir)?getcwd():$qrFsDir)['result']==='acknowledged';
             } catch (Throwable $error) {
-                // A network error says nothing about whether Telegram
-                // accepted the image; do not repeat automatically.
                 error_log('achbot_qr_photo_unconfirmed class='.get_class($error));
-            } finally {
-                @unlink($fsPath);
             }
         }
-        $textConfirmed = false;
+        $textConfirmed=false;
         try {
-            $textConfirmed = true;
-            $parts = \AchBot\Subscription\Presentation\messageParts($acc_text);
-            foreach ($parts as $index => $part) {
-                $resText = sendMessage($part, $index === count($parts)-1 ? $keys : null, "HTML", $uid);
-                if (!is_object($resText) || ($resText->ok ?? false) !== true) $textConfirmed = false;
+            $textConfirmed=true;
+            foreach (achbotSubscriptionDeliveryParts(['kind'=>'qr','qr'=>'',
+                'caption'=>$acc_text,'keys'=>$keys]) as $part) {
+                if (achbotSubscriptionSendPart($part,$uid)['result']!=='acknowledged')
+                    $textConfirmed=false;
             }
         } catch (Throwable $error) {
-            $textConfirmed = false;
+            $textConfirmed=false;
             error_log('achbot_account_text_unconfirmed class='.get_class($error));
         }
-        return ($qrLink === '' || $photoConfirmed) && $textConfirmed;
+        return $photoConfirmed && $textConfirmed;
     }
 }

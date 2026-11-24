@@ -223,6 +223,7 @@ def isolated_case(mode: str) -> list[str]:
             "027_service_delivery_sources.sql", "028_service_mutations.sql",
             "020_payment_followup_intents.sql", "029_service_purchase_referral.sql",
             "030_service_followup_sources.sql", "031_service_followup_attempts.sql",
+            "032_service_delivery_parts.sql",
         ):
             sql((ROOT / "migrations/post-v9" / name).read_text())
         prior_mutation=sql("SELECT provider_mutation_snapshot FROM service_effects WHERE id="+str(effect_id))
