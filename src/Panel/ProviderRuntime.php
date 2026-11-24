@@ -3,6 +3,7 @@
 if (realpath($_SERVER['SCRIPT_FILENAME']??'')===__FILE__) { http_response_code(404); exit; }
 require_once __DIR__.'/../Diagnostics/EventLog.php';
 require_once __DIR__.'/ProviderImport.php';
+require_once __DIR__.'/PasarGuardServiceTarget.php';
 
 function achbotProviderType(mysqli $db,int $serverId): string {
     $s=$db->prepare('SELECT type FROM server_config WHERE id=?');
@@ -1401,7 +1402,8 @@ function achbotProviderRegistry(): array {
             'pin_payment'=>'achbotPgPinPayment','quote'=>'achbotPasarGuardQuoteAdapter',
             'target'=>'achbotPasarGuardEffectTargetAdapter','reserve'=>'achbotPasarGuardReserveEffectAdapter',
             'dispatch'=>'achbotPasarGuardDispatchEffectAdapter','link'=>'achbotPasarGuardLinkEffectAdapter',
-            'import_lookup'=>'achbotPasarGuardExistingUser','import_adopt'=>'achbotPasarGuardAdoptExistingLocked'
+            'import_lookup'=>'achbotPasarGuardExistingUser','import_adopt'=>'achbotPasarGuardAdoptExistingLocked',
+            'service_target'=>'achbotPasarGuardServiceTargetLocked'
         ]
     ];
 }
@@ -1410,10 +1412,13 @@ function achbotProviderRegistryEntryValid($type,$adapter): bool {
         !is_array($adapter) || !is_string($adapter['label']??null) ||
         preg_match('/^[a-z][a-z0-9_.]+$/D',$adapter['label'])!==1) return false;
     $required=achbotProviderRequiredOperations();
-    if (array_diff(array_keys($adapter),array_merge(['label','import_lookup','import_adopt'],$required))) return false;
+    if (array_diff(array_keys($adapter),array_merge(['label','import_lookup','import_adopt','service_target'],$required))) return false;
     foreach ($required as $operation)
         if (!is_string($adapter[$operation]??null) || !is_callable($adapter[$operation]))
             return false;
+    // During the refactor legacy adapters have no new service admission.
+    if (array_key_exists('service_target',$adapter) &&
+        (!is_string($adapter['service_target']) || !is_callable($adapter['service_target']))) return false;
     $lookup=array_key_exists('import_lookup',$adapter);$adopt=array_key_exists('import_adopt',$adapter);
     if ($lookup!==$adopt) return false;
     if ($lookup) foreach (['import_lookup','import_adopt'] as $operation)

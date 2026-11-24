@@ -5,7 +5,6 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '')===__FILE__) {http_response_code(
 require_once __DIR__.'/../Wallet/Ledger.php';
 require_once __DIR__.'/../Purchase/Core.php';
 require_once __DIR__.'/../Panel/ProviderStorage.php';
-require_once __DIR__.'/../Panel/AccountNaming.php';
 
 /**
  * Local quote admission and Wallet funding only. The trusted business adapter
@@ -62,60 +61,43 @@ function achbotServiceJson(array $value): string {
  * mistaken for a business refusal or a successful settlement. */
 function achbotServiceLocalTargetLocked(mysqli $db,int $userId,array $q,bool $issuing): array {
     $sid=$q['server_id'];$buy=$q['kind']==='BUY';
-    $s=achbotProviderRow($db,'SELECT i.active,i.state,i.ucount,
-        c.type,c.panel_url,c.provider_connection_id
+    $s=achbotProviderRow($db,'SELECT i.active,i.state,i.ucount,c.type
         FROM server_info i JOIN server_config c ON c.id=i.id WHERE i.id=? FOR UPDATE','i',[$sid]);
     if (!$s || (int)$s['active']!==1 ||
-        !in_array((int)$s['state'],$buy?[1]:[1,2],true) ||
-        $s['type']!=='pasarguard')
+        !in_array((int)$s['state'],$buy?[1]:[1,2],true))
         throw new DomainException('service_server_unavailable');
-    $target=['provider'=>'pasarguard','endpoint'=>hash('sha256',rtrim($s['panel_url'],'/'))];
-    $panel=achbotProviderPanel($db,(int)$s['provider_connection_id'],true);
-    if ($target['endpoint']!==hash('sha256',rtrim($panel['api_url'],'/')))
-        throw new DomainException('service_panel_changed');
-    $target['physical']='pg:'.$panel['instance_key'];
-    $target['panel_id']=$panel['id'];
+    $adapter=achbotProviderDefinition($s['type']);
+    if ($adapter===null || !isset($adapter['service_target']))
+        throw new DomainException('service_server_unavailable');
+    $o=null;$p=null;
     if ($q['order_id']>0) {
         $o=achbotProviderRow($db,'SELECT id,userid,server_id,fileid,inbound_id,status,remark,uuid
             FROM orders_list WHERE id=? FOR UPDATE','i',[$q['order_id']]);
         if (!$o || (int)$o['userid']!==$userId || (int)$o['status']!==1 ||
             (int)$o['server_id']!==$sid || (int)$o['fileid']!==$q['plan_id'] ||
-            (int)$o['inbound_id']!==0 || $o['remark']!==$q['remark'] ||
-            (string)$o['uuid']!==$q['uuid']) throw new DomainException('service_order_changed');
-        $target['account']=['remark'=>$o['remark'],'uuid'=>(string)$o['uuid']];
-        // SQL-only persisted incarnation; a prior pending Native mutation
-        // is not proof of cancellation. Worker admission must serialize it.
-        $ctx=achbotPgOrderContext($db,$q['order_id'],true,true);
-        $target['account']['native']=$ctx['identity'];
+            $o['remark']!==$q['remark'] || (string)$o['uuid']!==$q['uuid'])
+            throw new DomainException('service_order_changed');
     }
     if ($q['plan_id']>0) {
         $p=achbotProviderRow($db,'SELECT * FROM server_plans WHERE id=? FOR UPDATE','i',[$q['plan_id']]);
-        if (!$p || (int)$p['inbound_id']!==0 ||
-            ($buy && (int)$p['active']!==1))
+        if (!$p || ($buy && (int)$p['active']!==1))
             throw new DomainException('service_plan_unavailable');
-        $planServer=(int)$p['server_id'];
-        if ($planServer!==$sid) {
-            if ($buy)
-                throw new DomainException('service_plan_target_changed');
-            $alias=achbotProviderRow($db,'SELECT c.type,c.provider_connection_id
-                FROM server_info i JOIN server_config c ON c.id=i.id WHERE i.id=? FOR UPDATE','i',[$planServer]);
-            if (!$alias || $alias['type']!=='pasarguard' ||
-                $alias['provider_connection_id']!==$s['provider_connection_id'])
-                throw new DomainException('service_plan_target_changed');
-        }
+        if ($buy && (int)$p['server_id']!==$sid)
+            throw new DomainException('service_plan_target_changed');
         // Only at quote creation compare standard plan units. Afterwards use
         // the pinned units even when the commercial plan is repriced.
         if ($issuing && (($buy && $q['variant']==='standard') || $q['kind']==='RENEW') &&
             ((float)$p['days']!==(float)$q['days'] || (float)$p['volume']!==(float)$q['volume']))
             throw new DomainException('service_plan_units_changed');
-        if ($buy)
-            $target['groups']=achbotProviderGroups($p['provider_group_ids']);
     }
-    if ($buy) {
-        // Validate the existing naming policy without minting a Native effect.
-        achbotStyledAccountRemark($q['remark'],'pasarguard','service:quote-check',
-            1,$q['quantity'],$q['naming_mode'],$q['explicit_name']);
-    }
+    // The source-owned adapter validates its supported operation, physical
+    // identity, plan/account compatibility and naming; SQL only, no HTTP.
+    // Its DomainException means known ineligibility, not failed storage.
+    $identity=($adapter['service_target'])($db,$q,$o,$p);
+    if (!is_array($identity) || isset($identity['provider']) ||
+        !is_string($identity['physical']??null) || $identity['physical']==='')
+        throw new RuntimeException('service_adapter_target_invalid');
+    $target=['provider'=>$s['type']]+$identity;
     return ['identity'=>$target,'capacity'=>$s['ucount']];
 }
 
@@ -179,18 +161,6 @@ function achbotServiceFundLocked(mysqli $db,int $userId,int $operationId): strin
         (int)$op['reserved_count']!==0) throw new RuntimeException('service_funding_state');
     try {$local=achbotServiceLocalTargetLocked($db,$userId,$q,false);}
     catch (DomainException $invalid) {return achbotServiceFundingRefusedLocked($db,$operationId,'request_invalidated',$invalid->getMessage());}
-    catch (RuntimeException $invalid) {
-        // These are exact current local identity/configuration failures,
-        // not HTTP or SQL failure. The receipt must still be credited.
-        $reason=$invalid->getMessage();
-        if (!in_array($reason,['provider_panel_invalid','provider_panel_unavailable',
-            'provider_connection_ambiguous','provider_groups_invalid',
-            'pg_order_identity_changed','pg_account_not_verified','pg_account_panel_changed',
-            'provider_order_identity_invalid','provider_order_origin_invalid',
-            'provider_order_origin_identity_invalid','provider_account_provenance_invalid'],true))
-            throw $invalid;
-        return achbotServiceFundingRefusedLocked($db,$operationId,'request_invalidated',$reason);
-    }
     if ($quote['target']!==$local['identity'])
         return achbotServiceFundingRefusedLocked($db,$operationId,'request_invalidated','service_target_changed');
     if ($price>0 && $owner['wallet']<$price)

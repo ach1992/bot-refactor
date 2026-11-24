@@ -28,7 +28,8 @@ effect is not made safe by human approval of an unexplained status.
 Preserve the current Persian customer/admin copy, pricing, account naming (including
 bulk), discounts, agent terms, referral rules, balances including intentional
 administrator debt, URLs, credentials, Native identity, active entitlements and
-staff permissions. PasarGuard is the sole supported Native runtime target;
+staff permissions. PasarGuard is the sole Native adapter shipped in this
+refactor, not a restriction on the service architecture or future providers;
 preserve standard/custom single/bulk, managed renewal, add-ons and auto renewal.
 Owner clarification (2026-11-24): all current subscriptions are on PasarGuard.
 Remove Marzban runtime support completely, including external RENEW_SCONFIG,
@@ -77,6 +78,44 @@ around two long-lived legacy/new engines. Replace the old payment/service runtim
 as a coherent completed implementation, remove redundant legacy execution paths
 and use a data-preserving migration where needed. Historical data and migration
 readers are not a second runtime. No incomplete candidate replaces production.
+
+### Provider and payment-method extension boundaries
+
+Owner clarification (2026-11-24): adding a future Native panel, payment gateway
+or payment method must not require another implementation of service execution,
+Wallet settlement, delivery or recovery. PasarGuard is the only Native adapter
+being shipped now, not a hardcoded provider in the shared engine. Keep a
+source-owned, explicitly registered adapter boundary; no dynamic code loading,
+fake compatibility adapters or generalized plugin framework.
+
+- Native: select the adapter by the actual configured provider identity;
+  keep account incarnation, physical-panel identity, provider-specific plan
+  settings, naming limits, authentication/transport, unit conversion,
+  readback and result classification in that adapter. The service engine
+  owns original commands, immutable quotes, funding, scheduling, operation
+  order, local finality and delivery. Admit only operations supported by the
+  selected implemented adapter and actual configuration. Unknown/partial
+  adapters must fail before funding or a remote effect. Pin the selected
+  provider and target; do not silently switch on retry. The existing registry
+  is the natural extension point; replace obsolete payment-coupled callbacks
+  as their callers converge.
+- Payment: register source-owned method/gateway definitions and their
+  issuer, verification/proof, callback/polling and configuration/UI metadata
+  as needed. Manual confirmation, evidence APIs and hosted gateways have
+  different actual proof rules; keep those rules inside their adapters.
+  All use one local invoice identity, evidence consumption, credit and
+  optional service-funding transaction. Receipt validity is independent of
+  Native availability. A new method changes its adapter, registration,
+  method-specific configuration/UI and tests, not Wallet arithmetic or
+  service dispatch. No arbitrary provider/method ENUM or cross-product
+  switch tables in shared storage/engine; retain real field/protocol limits,
+  stable method identifiers and merchant-account-scoped evidence.
+- Acceptance: add a test-only registered Native adapter and payment method
+  in isolated source fixtures, using the actual common admission/credit/
+  funding commands. Prove extension by adapter/registration only, including
+  refusal of unregistered methods and no duplicate financial effect. Such
+  fixtures do not claim another production provider is implemented. Later
+  actual adapters require source-real protocol and failure-path tests.
 
 ## 3. Financial data model and invariants
 
@@ -383,8 +422,10 @@ not authorization to mutate them. No blanket reprocessing.
   and initial zero/accounting migration; exact replay and conflicting identity
   covered; no lost or doubled money, debt policy maintained.
 - Each service operation works with Wallet independent of funding route; no
-  Native references to payment method. Test PasarGuard only; verify removal
-  of Marzban runtime paths and historical migration/retirement classification.
+  Native references to payment method. PasarGuard is the sole current real
+  adapter; verify removal of Marzban runtime paths and historical
+  migration/retirement classification. Verify new Native and payment adapter
+  registration through test-only fixtures without edits to shared engines.
   Cover actual operation variants, standard/custom/bulk, zero-cost, auto
   renewal, same-physical aliases, price/plan drift and immutable snapshots.
 - Deliberate crashes before/after each durable/remote boundary, lost SQL ACK,
@@ -454,6 +495,21 @@ and external renewal admission refusals; verified receipt for a retired
 target credits once without service debit or capacity reservation. This
 does not yet remove Marzban from the old runtime or implement historical
 retirement/migration and Native execution.
+
+The next extension-boundary slice moves PasarGuard's local target admission
+into its registered `service_target` adapter and current method-specific
+invoice/proof rules into `src/Finance/ReceiptMethods.php`. The common service
+funding and credit transactions no longer branch on concrete provider names.
+The Native callback is temporarily optional in the existing legacy registry
+while old callers remain; the final registry must require the actual new
+service capabilities, not obsolete payment-coupled callbacks. The payment
+registry currently owns local invoice/proof validation; real issuance,
+authenticated external verification, callbacks/polling and UI registration
+still need convergence. No production extension or runtime activation.
+The funding suite now uses owned source copies with a test-only Native adapter,
+hosted gateway and manual method; common engine files remain byte-identical.
+Unknown registrations, invalid proof, mismatched evidence and unauthorized
+manual proof are refused; valid new methods settle and fund once on replay.
 
 ### Verified Native limitation of existing APIs, not an accepted retry contract
 

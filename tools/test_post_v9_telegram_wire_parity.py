@@ -47,9 +47,11 @@ NEW_RUNTIME_WITHOUT_TELEGRAM = frozenset({
     "src/Wallet/Ledger.php",
     "src/Finance/ManualReceiptIntent.php",
     "src/Finance/PaymentCredit.php",
+    "src/Finance/ReceiptMethods.php",
     "src/Finance/FundingCheckout.php",
     "src/Services/Funding.php",
     "src/Panel/AccountNaming.php",
+    "src/Panel/PasarGuardServiceTarget.php",
 })
 LEGACY_DIRECT = re.compile(
     r"""\\achbotMessage\(['"]legacy_messages\.([a-z0-9_]+)['"]\)\Z"""

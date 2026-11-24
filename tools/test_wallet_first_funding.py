@@ -7,6 +7,9 @@ from concurrent.futures import ThreadPoolExecutor
 import json
 from pathlib import Path
 import subprocess
+import shutil
+
+import package_current as package
 
 import test_access_state as owned
 
@@ -27,7 +30,7 @@ try {
             'fund'=>achbotServiceFundLocked($db,$user,$x['id']),
             'cancel'=>achbotServiceCancelUnfundedLocked($db,$user,$x['id']),
             'pin'=>achbotCheckoutPinReceiptLocked($db,$x['pay'],$user),
-            'settle'=>achbotCheckoutSettleReceiptLocked($db,$x['pay'],$user,'nextpay',$x['proof']),
+            'settle'=>achbotCheckoutSettleReceiptLocked($db,$x['pay'],$user,$x['basis']??'nextpay',$x['proof'],(int)($x['actor']??0),(int)($x['primary']??0)),
             'move'=>achbotWalletApplyLocked($db,$user,'fixture',$x['ref'],0,$x['delta']),
         };
     }
@@ -89,10 +92,10 @@ def main():
                 '{"data_limit":2147483648,"expire":1800000100,"group_ids":[1,2],"status":"active"}','linked',UTC_TIMESTAMP());
         """)
         driver=work/'funding.php';driver.write_text(PHP)
-        def php(mode,*commands,**kw):
+        def php(mode,*commands,source_root=ROOT,**kw):
             p=subprocess.run(['php','-n','-d','extension=mysqlnd','-d','extension=mysqli',
                 '-d','allow_url_fopen=0','-d','disable_functions=exec,shell_exec,system,passthru,popen,proc_open,mail',
-                str(driver),str(ROOT),str(work/'mysql.sock'),DB,mode,
+                str(driver),str(source_root),str(work/'mysql.sock'),DB,mode,
                 json.dumps(dict(commands=commands,**kw))],env=env,text=True,capture_output=True,timeout=30)
             if kw.get('lost_ack'):
                 assert p.returncode==19 and not p.stdout,(p.returncode,p.stdout,p.stderr)
@@ -120,19 +123,62 @@ def main():
         def fund(mode,id,expected='funded'):
             r=php(mode,cmd('fund',id=id))
             assert r=={'ok':True,'out':[expected]},r
-        def invoice(mode,ref,oid=None,amount=100):
+        def invoice(mode,ref,oid=None,amount=100,provider='nextpay',pin=True):
             sql(f"""INSERT INTO pays(hash_id,user_id,type,price,request_date,state,payid)
                 VALUES ('{ref}',1001,'INCREASE_WALLET',{amount},UNIX_TIMESTAMP(),'pending','inv-{ref}')""")
             pid=int(sql(f"SELECT id FROM pays WHERE hash_id='{ref}'"))
             sql(f"""INSERT INTO payment_attempts(pay_row_id,provider,order_hash,provider_reference,
                 quote_amount,quote_currency,local_amount_toman,checkout_url,wallet_invoice_sha256,service_operation_id)
-                VALUES ({pid},'nextpay','{ref}','inv-{ref}',{amount},'toman',{amount},'https://fixture.invalid/checkout','',{oid or 'NULL'})""")
-            r=php(mode,cmd('pin',pay=pid));assert r['ok'],r
-            return cmd('settle',pay=pid,proof=dict(reference='inv-'+ref,status=0,amount=amount))
+                VALUES ({pid},'{provider}','{ref}','inv-{ref}',{amount},'toman',{amount},'https://fixture.invalid/checkout','',{oid or 'NULL'})""")
+            if pin:
+                r=php(mode,cmd('pin',pay=pid));assert r['ok'],r
+            return cmd('settle',pay=pid,basis=provider,proof=dict(reference='inv-'+ref,status=0,amount=amount))
         def fail(mode,command,reason=None):
             before=snap();r=php(mode,command)
             assert not r['ok'] and (reason is None or r['reason']==reason),r
             assert snap()==before,(command,r)
+        # Source-owned extension proof, never a production adapter or runtime
+        # injection. Copy only current runtime members into the owned sandbox.
+        fixture=work/'adapter-extension-source'
+        members=set(package.members())|{'src/Panel/PasarGuardServiceTarget.php','src/Finance/ReceiptMethods.php'}
+        for member in members:
+            target=fixture/member;target.parent.mkdir(parents=True,exist_ok=True)
+            shutil.copyfile(ROOT/member,target)
+        path=fixture/'src/Panel/ProviderRuntime.php';raw=path.read_text()
+        needle='function achbotProviderRegistry(): array {\n    return ['
+        assert raw.count(needle)==1
+        path.write_text(raw.replace(needle,needle+'''
+        'fixture_native'=>array_fill_keys(achbotProviderRequiredOperations(),'achbotFixtureUnexpectedLegacyCall')+[
+            'label'=>'admin_settings.management.pasarguard',
+            'service_target'=>'achbotFixtureServiceTargetLocked'],
+''',1)+'''
+function achbotFixtureUnexpectedLegacyCall(...$args) {
+    throw new RuntimeException('fixture_must_not_use_legacy_dispatch');
+}
+function achbotFixtureServiceTargetLocked(mysqli $db,array $q,?array $o,?array $p): array {
+    if ($q['kind']!=='BUY' || $o!==null || $p===null)
+        throw new DomainException('fixture_operation_unavailable');
+    return ['physical'=>'fixture:'.$q['server_id'],'fixture_plan'=>(int)$p['id']];
+}
+''')
+        path=fixture/'src/Finance/ReceiptMethods.php';raw=path.read_text()
+        needle="        'bank_transfer'=>$bank,"
+        assert raw.count(needle)==1
+        path.write_text(raw.replace(needle,"""
+        'fixture_gateway'=>['invoice'=>'achbotCreditValidateTomanInvoice','proofs'=>[
+            'fixture_gateway'=>'achbotFixtureVerifyGatewayLocked'],'additional_evidence'=>true],
+        'fixture_receipt'=>$manual,
+"""+needle,1)+'''
+function achbotFixtureVerifyGatewayLocked(mysqli $db,array $pay,array $attempt,array $proof,int $actor,int $primary): ?int {
+    // Deliberately broken return for the negative binding test only.
+    if (($proof['status']??null)==='fixture-invalid-binding') return (int)$proof['transaction_id'];
+    return achbotCreditVerifyReferenceLocked($db,$pay,$attempt,$proof,$actor,($proof['status']??null)==='fixture-settled');
+}
+''')
+        for member in ('src/Services/Funding.php','src/Finance/PaymentCredit.php',
+                       'src/Finance/FundingCheckout.php','src/Wallet/Ledger.php'):
+            assert (fixture/member).read_bytes()==(ROOT/member).read_bytes(),member
+
         for mode in ('strict','off'):
             def case(name):cases.append(mode+':'+name)
             b=balance();c=capacity()
@@ -228,6 +274,61 @@ def main():
             settle=invoice(mode,mode+'-topup');b=balance()
             assert php(mode,settle)['out'][0]['funding']=='wallet_only'
             assert balance()==b+100;case('topup')
+            # Same common commands; only the fixture source registrations and
+            # fixture-specific proof/identity callbacks differ.
+            sql("UPDATE server_config SET type='fixture_native' WHERE id=3")
+            extension=cmd('issue',ref=mode+'-extension',quote=quote(server_id=3,plan_id=8))
+            fail(mode,extension,'service_server_unavailable');case('unregistered_native_refused')
+            r=php(mode,extension,source_root=fixture);assert r['ok'],r
+            oid=r['out'][0]
+            target=json.loads(sql(f'SELECT quote_payload FROM service_operations WHERE id={oid}'))['target']
+            assert target==dict(provider='fixture_native',physical='fixture:3',fixture_plan=8),target
+            settle=invoice(mode,mode+'-extension',oid,provider='fixture_gateway',pin=False)
+            fail(mode,cmd('pin',pay=settle['pay']),'payment_credit_method_unsupported')
+            case('unregistered_gateway_refused')
+            r=php(mode,cmd('pin',pay=settle['pay']),source_root=fixture);assert r['ok'],r
+            before=snap()
+            wrong=php(mode,settle,source_root=fixture)
+            assert wrong==dict(ok=False,reason='payment_credit_hosted_proof') and snap()==before,wrong
+            case('registered_gateway_rejects_unverified')
+            settle['proof']['status']='fixture-settled'
+            b=balance();c=capacity(3)
+            first=php(mode,settle,source_root=fixture)
+            assert first['ok'] and first['out'][0]['funding']=='funded' and not first['out'][0]['credit']['replayed'],first
+            assert (balance(),capacity(3))==(b,c-1)
+            second=php(mode,settle,source_root=fixture)
+            assert second['ok'] and second['out'][0]['funding']=='funded' and second['out'][0]['credit']['replayed'],second
+            assert (balance(),capacity(3))==(b,c-1)
+            assert sql(f"SELECT COUNT(*) FROM wallet_entries WHERE source_kind='service_debit' AND source_ref='{oid}'")=='1'
+            assert sql(f"SELECT COUNT(*) FROM wallet_entries WHERE source_kind='payment_credit' AND source_ref='{settle['pay']}'")=='1'
+            case('registered_native_gateway_same_engines_once')
+            foreign=invoice(mode,mode+'-foreign-evidence',provider='fixture_gateway',pin=False)
+            assert php(mode,cmd('pin',pay=foreign['pay']),source_root=fixture)['ok']
+            transaction_id=int(sql(f"SELECT wallet_credit_transaction_id FROM payment_attempts WHERE pay_row_id={settle['pay']}"))
+            foreign['proof'].update(status='fixture-invalid-binding',transaction_id=transaction_id)
+            before=snap();r=php(mode,foreign,source_root=fixture)
+            assert r==dict(ok=False,reason='payment_credit_proof_binding_conflict') and snap()==before,r
+            case('registered_gateway_foreign_evidence_rejected_by_core')
+            ref=mode+'-new-manual'
+            intent=json.dumps(dict(v=1,method='fixture_receipt'),separators=(',',':'))
+            sql(f"INSERT INTO pays(hash_id,user_id,type,price,request_date,state,payid) VALUES ('{ref}',1001,'INCREASE_WALLET',100,UNIX_TIMESTAMP(),'pending',NULL)")
+            pid=int(sql(f"SELECT id FROM pays WHERE hash_id='{ref}'"))
+            sql(f"INSERT INTO payment_attempts(pay_row_id,provider,order_hash,quote_amount,quote_currency,local_amount_toman,checkout_url,wallet_invoice_sha256) VALUES ({pid},'fixture_receipt','{ref}',100,'toman',100,'{intent}','')")
+            fail(mode,cmd('pin',pay=pid),'payment_credit_method_unsupported')
+            assert php(mode,cmd('pin',pay=pid),source_root=fixture)['ok']
+            intent=json.dumps(dict(v=1,method='fixture_receipt',receipt_file_id='fixture'),separators=(',',':'))
+            sql(f"UPDATE pays SET state='have_sent',message_id=222,chat_id=9001 WHERE id={pid}; UPDATE payment_attempts SET stage='review',checkout_url='{intent}' WHERE pay_row_id={pid}")
+            manual=cmd('settle',pay=pid,basis='manual',proof={},actor=1001,primary=9001)
+            before=snap();r=php(mode,manual,source_root=fixture)
+            assert r==dict(ok=False,reason='payment_credit_manual_authority') and snap()==before,r
+            manual['actor']=9001;b=balance()
+            first=php(mode,manual,source_root=fixture)
+            assert first['ok'] and first['out'][0]['funding']=='wallet_only' and not first['out'][0]['credit']['replayed'],first
+            replay=php(mode,manual,source_root=fixture)
+            assert replay['ok'] and replay['out'][0]['credit']['replayed'] and balance()==b+100,replay
+            case('registered_new_manual_method_same_credit_once')
+            sql("UPDATE server_config SET type='marzban' WHERE id=3")
+
     report=dict(complete=True,cases=len(cases),case_names=cases,php_version=subprocess.check_output(['php','-r','echo PHP_VERSION;'],text=True))
     if args.report:args.report.write_text(json.dumps(report,ensure_ascii=False,indent=2)+'\n')
     print(json.dumps(report,ensure_ascii=False))
