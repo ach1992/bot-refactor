@@ -600,6 +600,40 @@ operation kinds before activation; temporary incomplete adapters are only
 a development boundary. The legacy runtime, writers and Cron entrypoints
 remain unconverted; migration rehearsal and independent review are pending.
 
+### BUY local completion and independent delivery slice
+
+The same due worker now progresses verified BUY from applied through local
+Order creation and durable delivery, to completed. No payment-method
+branch, second debit or second Native CREATE in finalization. Registered
+adapter finalization reads the already-verified incarnation and actual native
+links outside the SQL transaction; reused purchase presentation preserves the
+existing catalog, links, QR and keyboard. Each original ordinal commits its
+local order, provider linkage and sealed delivery intent together, with
+integer amount allocation summing to the original paid price. Last ordinal
+and completed state commit together. The original capacity reservation is
+unchanged; deletion capacity/referral/report convergence is still pending.
+
+Draft 027 extends the original 018 journal with the real service operation
+source and nullable legacy payment references. Existing payment packets and
+attempts remain unchanged; no synthetic pay or attempt. Automatic dispatch
+shares the original claim and acknowledgement primitives and sender. An
+abandoned service delivery claim becomes unknown after session loss; it
+never authorizes another automatic send. Source changes prevent obsolete
+packets from being sent. The existing maintenance worker can select both
+historical payment packets and completed service packets fairly. The
+existing whole-packet QR/text acknowledgement contract is preserved; explicit
+per-part definite-rejection retry and operator retry convergence remain work.
+
+Source-real PHP/MariaDB/loopback execution suite now passes 30 cases
+(118 owned HTTP requests / 22 POSTs), including a forward 018→027 migration
+with a historical packet, bulk lost response, atomic rollback after failed
+delivery insert, completed-state commit acknowledgement loss, concurrent
+delivery, abandoned claim, stale order refusal, sales-disabled catalogue
+finalization and shared delivery queue progress. Telegram is a fixture
+boundary spy; no live send. Existing subscription presentation 251,
+bank-buy 72 and original manual redrive 6 tests pass. Existing Native API
+limitations and the still-inactive overall cutover remain unchanged.
+
 ### Verified Native limitation of existing APIs, not an accepted retry contract
 
 `python3 tools/test_wallet_first_native_write_fence.py --run-disposable`

@@ -1406,7 +1406,9 @@ function achbotProviderRegistry(): array {
             'import_lookup'=>'achbotPasarGuardExistingUser','import_adopt'=>'achbotPasarGuardAdoptExistingLocked',
             'service_target'=>'achbotPasarGuardServiceTargetLocked',
             'service_execution'=>['BUY'=>['prepare'=>'achbotPasarGuardBuyPrepareLocked',
-                'perform'=>'achbotPasarGuardBuyPerform','apply'=>'achbotPasarGuardBuyApplyLocked']]
+                'perform'=>'achbotPasarGuardBuyPerform','apply'=>'achbotPasarGuardBuyApplyLocked']],
+            'service_finalization'=>['BUY'=>['prepare'=>'achbotPasarGuardBuyFinalizePrepareLocked',
+                'perform'=>'achbotPasarGuardBuyFinalizePerform','apply'=>'achbotPasarGuardBuyFinalizeApplyLocked']]
         ]
     ];
 }
@@ -1415,16 +1417,16 @@ function achbotProviderRegistryEntryValid($type,$adapter): bool {
         !is_array($adapter) || !is_string($adapter['label']??null) ||
         preg_match('/^[a-z][a-z0-9_.]+$/D',$adapter['label'])!==1) return false;
     $required=achbotProviderRequiredOperations();
-    if (array_diff(array_keys($adapter),array_merge(['label','import_lookup','import_adopt','service_target','service_execution'],$required))) return false;
+    if (array_diff(array_keys($adapter),array_merge(['label','import_lookup','import_adopt','service_target','service_execution','service_finalization'],$required))) return false;
     foreach ($required as $operation)
         if (!is_string($adapter[$operation]??null) || !is_callable($adapter[$operation]))
             return false;
     // During the refactor legacy adapters have no new service admission.
     if (array_key_exists('service_target',$adapter) &&
         (!is_string($adapter['service_target']) || !is_callable($adapter['service_target']))) return false;
-    if (array_key_exists('service_execution',$adapter)) {
-        if (!is_array($adapter['service_execution']) || !$adapter['service_execution']) return false;
-        foreach ($adapter['service_execution'] as $kind=>$callbacks) {
+    foreach (['service_execution','service_finalization'] as $phase) if (array_key_exists($phase,$adapter)) {
+        if (!is_array($adapter[$phase]) || !$adapter[$phase]) return false;
+        foreach ($adapter[$phase] as $kind=>$callbacks) {
             if (!in_array($kind,['BUY','RENEW','ADD_VOLUME','ADD_TIME'],true) ||
                 !is_array($callbacks) || count($callbacks)!==3) return false;
             foreach (['prepare','perform','apply'] as $callback)

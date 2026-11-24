@@ -76,6 +76,9 @@ function achbotPasarGuardBuyPrepareLocked(mysqli $db,array $op,array $quote): ?a
     }
     if ($work===null && count($rows)===$count) return null;
     if ($work===null) {
+        require_once __DIR__.'/../Finance/ServiceDelivery.php';
+        if (!achbotServiceDeliverySchemaReady($db))
+            throw new RuntimeException('service_delivery_schema_unavailable');
         $ordinal=count($rows)+1;
         $remark=achbotStyledAccountRemark($q['remark'],'pasarguard','service:'.$id,
             $ordinal,$count,$q['naming_mode'],$q['explicit_name']);
@@ -151,4 +154,103 @@ function achbotPasarGuardBuyApplyLocked(mysqli $db,array $op,array $quote,array 
     $n=$s->affected_rows;$s->close();
     if ($n!==1) throw new RuntimeException('service_buy_result_write');
     return (int)$e['ordinal']===$quote['request']['quantity'];
+}
+
+/** Native success has already been recorded. This phase only reads the
+ * original incarnation and materializes its local result. No CREATE path. */
+function achbotPasarGuardBuyFinalizePrepareLocked(mysqli $db,array $op,array $quote): ?array {
+    require_once __DIR__.'/../Finance/ServiceDelivery.php';
+    if (!achbotServiceDeliverySchemaReady($db)) throw new RuntimeException('service_delivery_schema_unavailable');
+    [$snapshot]=achbotPasarGuardBuySnapshot($db,$quote);
+    $id=(int)$op['id'];$count=$quote['request']['quantity'];
+    if ($op['stage']!=='applied' || (int)$op['reserved_count']!==$count)
+        throw new RuntimeException('service_buy_finalize_stage');
+    $s=achbotProviderStatement($db,"SELECT * FROM service_effects
+        WHERE source_kind='service_operation' AND source_ref=? ORDER BY ordinal FOR UPDATE",'s',[(string)$id]);
+    $rows=$s->get_result()->fetch_all(MYSQLI_ASSOC);$s->close();
+    if (count($rows)!==$count) throw new RuntimeException('service_buy_finalize_count');
+    $work=null;
+    foreach ($rows as $i=>$e) {
+        $a=achbotPasarGuardBuyEffectAccount($op,$quote,$snapshot,$e,$i+1);
+        if ($a['remote_user_id']===null || $a['remote_created_at']===null)
+            throw new RuntimeException('service_buy_finalize_identity');
+        if ($e['state']==='local_recorded' && $a['state']==='linked' && (int)$e['order_id']>0) {
+            if ($work!==null) throw new RuntimeException('service_buy_finalize_ordinal_gap');
+            $d=achbotProviderRow($db,"SELECT id,effect_id,order_id,user_id FROM payment_delivery_intents
+                WHERE service_operation_id=? AND ordinal=? FOR UPDATE",'ii',[$id,$i+1]);
+            if (!$d || (int)$d['effect_id']!==(int)$e['id'] || (int)$d['order_id']!==(int)$e['order_id'] ||
+                (int)$d['user_id']!==(int)$op['userid'])
+                throw new RuntimeException('service_buy_finalize_intent_missing');
+        } elseif ($e['state']==='verified' && $a['state']==='verified' && $e['order_id']===null) {
+            $work??=$e;
+        } else throw new RuntimeException('service_buy_finalize_effect_state');
+    }
+    return $work;
+}
+function achbotPasarGuardBuyFinalizePerform(mysqli $db,array $op,array $quote,array $e,array $presentation): array {
+    require_once __DIR__.'/../Subscription/Delivery.php';
+    require_once __DIR__.'/../Subscription/ServerDisplaySettings.php';
+    if (!is_array($presentation['bot_state']??null) ||
+        !is_string($presentation['bot_username']??null) ||
+        !is_string($presentation['bot_url']??null))
+        throw new RuntimeException('service_buy_presentation_context_missing');
+    [$snapshot,$panel]=achbotPasarGuardBuySnapshot($db,$quote);
+    $a=achbotPasarGuardBuyEffectAccount($op,$quote,$snapshot,$e,(int)$e['ordinal']);
+    $identity=achbotProviderAccountIdentity($db,$a);
+    $links=achbotPgLinks($panel,$identity);
+    if (!$links['success']) return $links;
+    $u=$links['user'];
+    if ($u['username']!==$e['remote_username'] ||
+        $u['data_limit']!==(int)$e['requested_bytes'] ||
+        $u['expire']!==(int)$e['requested_expire'] || $u['group_ids']!==$snapshot['group_ids'])
+        return achbotPgFailure('pg_create_entitlement_conflict');
+    $q=$quote['request'];$sid=$q['server_id'];
+    $cfg=achbotProviderRow($db,'SELECT type,sub_links FROM server_config WHERE id=?','i',[$sid]);
+    if (!$cfg || $cfg['type']!=='pasarguard') throw new RuntimeException('service_buy_target_changed');
+    // An inactive catalogue is not a cancelled funded purchase. Apply its
+    // original provider's actual display policy without the sales-active gate.
+    $options=achbotServerDisplayDocument(achbotServerDisplayRow($db,$sid),$sid,'pasarguard');
+    $native=['links'=>$links['links'],'subscription_url'=>$links['subscription_url'],
+        'backup_urls'=>\AchBot\Subscription\Presentation\subscriptionAliases($links['subscription_url'],$cfg['sub_links']??'')];
+    $packet=achbotPurchaseRenderPacket('pasarguard',$native,$presentation['bot_state'],$options,
+        $presentation['bot_username'],$e['remote_username'],$q['volume'],$q['days']);
+    return ['success'=>true,'user'=>$u,'link'=>json_encode($links['links'],JSON_THROW_ON_ERROR),
+        'packet'=>['kind'=>'qr','uid'=>(int)$op['userid'],'bot_url'=>$presentation['bot_url']]+$packet];
+}
+/** Stable local reference; never an invented Native proxy credential. */
+function achbotPasarGuardBuyLocalUuid(string $operation): string {
+    if (preg_match('/^[a-f0-9]{32}$/D',$operation)!==1) throw new RuntimeException('service_buy_local_uuid');
+    $operation[12]='4';$operation[16]=dechex((hexdec($operation[16])&3)|8);
+    return substr($operation,0,8).'-'.substr($operation,8,4).'-'.substr($operation,12,4).'-'.
+        substr($operation,16,4).'-'.substr($operation,20,12);
+}
+function achbotPasarGuardBuyFinalizeApplyLocked(mysqli $db,array $op,array $quote,array $e,array $result): bool {
+    require_once __DIR__.'/../Purchase/OrderWrites.php';
+    require_once __DIR__.'/../Finance/ServiceDelivery.php';
+    [$snapshot]=achbotPasarGuardBuySnapshot($db,$quote);
+    $current=achbotProviderRow($db,'SELECT * FROM service_effects WHERE id=? FOR UPDATE','i',[(int)$e['id']]);
+    if (!$current || $current['state']!=='verified' || $current['order_id']!==null ||
+        !hash_equals($current['request_sha256'],achbotPasarGuardBuyDigest($op,$snapshot,$e)))
+        throw new RuntimeException('service_buy_finalize_result_changed');
+    $ordinal=(int)$e['ordinal'];$a=achbotPasarGuardBuyEffectAccount($op,$quote,$snapshot,$current,$ordinal);
+    $u=$result['user'];$q=$quote['request'];
+    if ($a['state']!=='verified' || !achbotPgIdentityMatches($u,achbotProviderAccountIdentity($db,$a)) ||
+        $u['username']!==$current['remote_username'] ||
+        $u['data_limit']!==(int)$current['requested_bytes'] ||
+        $u['expire']!==(int)$current['requested_expire'] || $u['group_ids']!==$snapshot['group_ids'])
+        throw new RuntimeException('service_buy_finalize_identity_changed');
+    $agent=$q['policy']['agent_bought']??false;
+    if (!in_array($agent,[0,1,false,true],true)) throw new RuntimeException('service_buy_agent_policy_invalid');
+    $orderId=insertOrder($db,(int)$op['userid'],'',$q['plan_id'],$q['server_id'],0,
+        $current['remote_username'],achbotPasarGuardBuyLocalUuid($current['operation_id']),
+        (int)$current['requested_expire'],$result['link'],
+        achbotAllocateOrderAmount($q['price'],$q['quantity'],$ordinal),
+        time(),(int)$agent,true);
+    if (!achbotPgLinkEffect($db,(int)$current['id'],$orderId))
+        throw new RuntimeException('service_buy_order_link_failed');
+    $current=achbotProviderRow($db,'SELECT * FROM service_effects WHERE id=? FOR UPDATE','i',[(int)$current['id']]);
+    $order=achbotProviderRow($db,'SELECT * FROM orders_list WHERE id=? FOR UPDATE','i',[$orderId]);
+    if (!$current || !$order) throw new RuntimeException('service_buy_order_missing');
+    achbotServiceBuyDeliveryInsertLocked($db,$op,$quote,$current,$order,$result['packet']);
+    return $ordinal===$q['quantity'];
 }

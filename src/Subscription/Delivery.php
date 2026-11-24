@@ -3,6 +3,68 @@
 if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) { http_response_code(404); exit; }
 require_once __DIR__.'/Presentation.php';
 
+
+/** Shared pure purchase rendering, without Telegram or a payment attempt. */
+function achbotPurchaseRenderPacket(string $provider,array $native,array $botState,array $options,
+    string $botUsername,string $remark,$volume,$days): array {
+    $presentation = \AchBot\Subscription\Presentation\present(
+        $provider, $native, $botState, $options, 'delivery'
+    );
+    $qrLink = $presentation['qr_link'];
+    $safeRemark = \AchBot\Subscription\Presentation\escape($remark);
+    $safeVolume = \AchBot\Subscription\Presentation\escape($volume);
+    $safeDays = \AchBot\Subscription\Presentation\escape($days);
+    $compose = static function(array $presentation) use ($safeRemark, $safeVolume, $safeDays): string {
+        $acc_text = \achbotMessage('subscription.buy_helpers.build_links_and_send_qr.acc_text.698f512161', ['safeRemark' => $safeRemark, 'safeVolume' => $safeVolume, 'safeDays' => $safeDays]);
+        if ($presentation['config_html'] !== '') {
+            $acc_text .= \achbotMessage('subscription.buy_helpers.build_links_and_send_qr.acc_text.2f530a8e37') . $presentation['config_html'] . "\n\n";
+        }
+        if ($presentation['subscription_html'] !== '') {
+            $acc_text .= \achbotMessage('subscription.buy_helpers.build_links_and_send_qr.acc_text.8eb803f6b0') . $presentation['subscription_html'];
+        }
+        if ($presentation['backup_html'] !== '') {
+            $acc_text .= "\n" . $presentation['backup_html'];
+        }
+        if ($presentation['subscription_url'] !== '') {
+            $acc_text .= \achbotMessage('subscription.buy_helpers.build_links_and_send_qr.acc_text.a2bb8da6b7');
+            if ($presentation['backup_html'] !== '') {
+                $acc_text .= \achbotMessage('subscription.buy_helpers.build_links_and_send_qr.acc_text.d5f471a600');
+            }
+        }
+        if ($presentation['notice_html'] !== '') {
+            $acc_text .= "\n\n" . $presentation['notice_html'];
+        }
+
+        return $acc_text;
+    };
+    $acc_text = \AchBot\Subscription\Presentation\fitMessage($presentation, $compose);
+
+    $btnText = \achbotMessage('legacy_buttons.start_bot');
+    $u = $botUsername;
+
+    if ($u !== '') {
+        $keys = json_encode([
+            'inline_keyboard' => [
+                [[
+                    'text' => $btnText,
+                    'url'  => "https://t.me/{$u}?start=mainMenu"
+                ]]
+            ]
+        ], JSON_UNESCAPED_UNICODE);
+    } else {
+        $keys = json_encode([
+            'inline_keyboard' => [
+                [[
+                    'text' => $btnText,
+                    'callback_data' => "mySubscriptions"
+                ]]
+            ]
+        ], JSON_UNESCAPED_UNICODE);
+    }
+
+    return ['caption'=>$acc_text,'keys'=>$keys,'qr'=>$qrLink];
+}
+
 if (!function_exists('buildLinksAndSendQr')) {
     function buildLinksAndSendQr(
         $serverType,
@@ -68,61 +130,10 @@ if (!function_exists('buildLinksAndSendQr')) {
         ];
         require_once __DIR__ . '/ServerDisplaySettings.php';
         $options = achbotServerDisplayOptions($connection ?? null, (int)$server_id, (string)$serverType);
-        $presentation = \AchBot\Subscription\Presentation\present(
-            $serverType, $native, $botState, $options, 'delivery'
-        );
         $vray_link = json_encode($nativeLinks, JSON_INVALID_UTF8_SUBSTITUTE);
-        $qrLink = $presentation['qr_link'];
-        $safeRemark = \AchBot\Subscription\Presentation\escape($remark);
-        $safeVolume = \AchBot\Subscription\Presentation\escape($volume);
-        $safeDays = \AchBot\Subscription\Presentation\escape($days);
-        $compose = static function(array $presentation) use ($safeRemark, $safeVolume, $safeDays): string {
-            $acc_text = \achbotMessage('subscription.buy_helpers.build_links_and_send_qr.acc_text.698f512161', ['safeRemark' => $safeRemark, 'safeVolume' => $safeVolume, 'safeDays' => $safeDays]);
-            if ($presentation['config_html'] !== '') {
-                $acc_text .= \achbotMessage('subscription.buy_helpers.build_links_and_send_qr.acc_text.2f530a8e37') . $presentation['config_html'] . "\n\n";
-            }
-            if ($presentation['subscription_html'] !== '') {
-                $acc_text .= \achbotMessage('subscription.buy_helpers.build_links_and_send_qr.acc_text.8eb803f6b0') . $presentation['subscription_html'];
-            }
-            if ($presentation['backup_html'] !== '') {
-                $acc_text .= "\n" . $presentation['backup_html'];
-            }
-            if ($presentation['subscription_url'] !== '') {
-                $acc_text .= \achbotMessage('subscription.buy_helpers.build_links_and_send_qr.acc_text.a2bb8da6b7');
-                if ($presentation['backup_html'] !== '') {
-                    $acc_text .= \achbotMessage('subscription.buy_helpers.build_links_and_send_qr.acc_text.d5f471a600');
-                }
-            }
-            if ($presentation['notice_html'] !== '') {
-                $acc_text .= "\n\n" . $presentation['notice_html'];
-            }
-
-            return $acc_text;
-        };
-        $acc_text = \AchBot\Subscription\Presentation\fitMessage($presentation, $compose);
-
-        $btnText = \achbotMessage('legacy_buttons.start_bot');
-        $u = (string)($botUsername ?? '');
-
-        if ($u !== '') {
-            $keys = json_encode([
-                'inline_keyboard' => [
-                    [[
-                        'text' => $btnText,
-                        'url'  => "https://t.me/{$u}?start=mainMenu"
-                    ]]
-                ]
-            ], JSON_UNESCAPED_UNICODE);
-        } else {
-            $keys = json_encode([
-                'inline_keyboard' => [
-                    [[
-                        'text' => $btnText,
-                        'callback_data' => "mySubscriptions"
-                    ]]
-                ]
-            ], JSON_UNESCAPED_UNICODE);
-        }
+        $packet = achbotPurchaseRenderPacket($serverType,$native,$botState,$options,
+            (string)($botUsername??''),(string)$remark,$volume,$days);
+        $acc_text=$packet['caption'];$keys=$packet['keys'];$qrLink=$packet['qr'];
 
         if (!$sendToUser) {
             return [$token, $vray_link, $uniqid, $acc_text, $keys, $qrLink];

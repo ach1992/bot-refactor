@@ -16,7 +16,7 @@ function diagnosticContext(): array {
     $source=$GLOBALS['achbotTelegramDiagnosticContext']??null;
     if (!is_array($source)) return [];
     $out=[];
-    foreach (['pay_id','delivery_ordinal','delivery_attempt','delivery_actor'] as $k) {
+    foreach (['pay_id','service_operation_id','delivery_ordinal','delivery_attempt','delivery_actor'] as $k) {
         if (isset($source[$k]) && is_int($source[$k]) && $source[$k]>=0)
             $out[$k]=$source[$k];
     }

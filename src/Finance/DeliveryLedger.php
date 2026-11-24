@@ -463,12 +463,12 @@ function achbotDeliveryValidateLocked(mysqli $db,array $pay,array $d): ?array {
  * The per-request context is diagnostic only, never input to the message.
  */
 function achbotDeliverySendPacket(array $packet,int $payId,int $ordinal,
-                                  int $attemptNo,int $actor): bool {
+                                  int $attemptNo,int $actor,?int $serviceId=null): bool {
     $old=$GLOBALS['achbotTelegramDiagnosticContext']??null;
     $GLOBALS['achbotTelegramDiagnosticContext']=[
-        'pay_id'=>$payId,'delivery_ordinal'=>$ordinal,
+        'delivery_ordinal'=>$ordinal,
         'delivery_attempt'=>$attemptNo,'delivery_actor'=>$actor,
-    ];
+    ]+($serviceId===null?['pay_id'=>$payId]:['service_operation_id'=>$serviceId]);
     try {
         if ($packet['kind']==='qr')
             return sendQrFromLink($packet['qr'],$packet['caption'],$packet['keys'],
@@ -482,6 +482,47 @@ function achbotDeliverySendPacket(array $packet,int $payId,int $ordinal,
         if ($old===null) unset($GLOBALS['achbotTelegramDiagnosticContext']);
         else $GLOBALS['achbotTelegramDiagnosticContext']=$old;
     }
+}
+/** All automatic deliveries use these same local journal transitions.
+ * The source-specific owner has already validated and locked its intent.
+ * The caller commits before transport and never holds SQL locks across it. */
+function achbotDeliveryClaimLocked(mysqli $db,array $d): array {
+    if ($d['state']!=='pending') throw new RuntimeException('delivery_not_pending');
+    $id=(int)$d['id'];$count=(int)$d['attempt_count'];
+    $token=bin2hex(random_bytes(16));$digest=(string)$d['payload_sha256'];
+    $q=$db->prepare("UPDATE payment_delivery_intents SET state='dispatching',attempt_count=attempt_count+1,
+        dispatch_token=?,dispatched_at=NOW(),last_actor=0,last_result=NULL
+        WHERE id=? AND state='pending' AND attempt_count=? AND payload_sha256=?");
+    if (!$q) throw new RuntimeException('delivery_claim_prepare');
+    $q->bind_param('siis',$token,$id,$count,$digest);
+    $ok=$q->execute() && $q->affected_rows===1;$q->close();
+    if (!$ok) throw new RuntimeException('delivery_claim_not_saved');
+    $next=$count+1;
+    $a=$db->prepare("INSERT INTO payment_delivery_attempts
+        (intent_id,attempt_no,dispatch_token,actor_userid) VALUES (?,?,?,0)");
+    if (!$a) throw new RuntimeException('delivery_attempt_prepare');
+    $a->bind_param('iis',$id,$next,$token);
+    $ok=$a->execute() && $a->affected_rows===1;$a->close();
+    if (!$ok) throw new RuntimeException('delivery_attempt_not_saved');
+    return ['id'=>$id,'token'=>$token,'attempt'=>$next];
+}
+function achbotDeliveryFinishClaimLocked(mysqli $db,array $claim,bool $ack): string {
+    $id=(int)$claim['id'];$token=$claim['token'];$next=(int)$claim['attempt'];
+    $state=$ack?'acknowledged':'unknown';$result=$ack?'ack':'unknown';
+    $q=$db->prepare("UPDATE payment_delivery_intents SET state=?,dispatch_token=NULL,
+        acknowledged_at=IF(?='ack',NOW(),NULL),last_result=?
+        WHERE id=? AND state='dispatching' AND dispatch_token=? AND attempt_count=?");
+    if (!$q) throw new RuntimeException('delivery_finalize_prepare');
+    $q->bind_param('sssisi',$state,$result,$result,$id,$token,$next);
+    $ok=$q->execute() && $q->affected_rows===1;$q->close();
+    if (!$ok) throw new RuntimeException('delivery_finalize_token_mismatch');
+    $a=$db->prepare("UPDATE payment_delivery_attempts SET result=?,finished_at=NOW()
+        WHERE intent_id=? AND attempt_no=? AND dispatch_token=? AND result='dispatching'");
+    if (!$a) throw new RuntimeException('delivery_finalize_attempt_prepare');
+    $a->bind_param('siis',$state,$id,$next,$token);
+    $ok=$a->execute() && $a->affected_rows===1;$a->close();
+    if (!$ok) throw new RuntimeException('delivery_finalize_attempt_unknown');
+    return $state;
 }
 /** One CAS winner is allowed to emit; ambiguous outcome is never retried. */
 function achbotDeliveryDispatch(mysqli $db,int $payId,int $ordinal): string {
@@ -508,22 +549,9 @@ function achbotDeliveryDispatch(mysqli $db,int $payId,int $ordinal): string {
         if ($d['state']!=='pending') throw new RuntimeException('delivery_not_pending');
         $packet=achbotDeliveryValidateLocked($db,$pay,$d);
         if ($packet===null) throw new RuntimeException('delivery_identity_or_payload_invalid');
-        $token=bin2hex(random_bytes(16));
-        $id=(int)$d['id'];$state=(string)$d['state'];$count=(int)$d['attempt_count'];
-        $q=$db->prepare("UPDATE payment_delivery_intents SET state='dispatching',attempt_count=attempt_count+1,
-            dispatch_token=?,dispatched_at=NOW(),last_actor=?,last_result=NULL
-            WHERE id=? AND state=? AND attempt_count=? AND payload_sha256=?");
-        $digest=(string)$d['payload_sha256'];
-        $systemActor=0;$q->bind_param('siisis',$token,$systemActor,$id,$state,$count,$digest);
-        $ok=$q->execute() && $q->affected_rows===1;$q->close();
-        if (!$ok) throw new RuntimeException('delivery_claim_not_saved');
-        $next=$count+1;
-        $a=$db->prepare("INSERT INTO payment_delivery_attempts
-            (intent_id,attempt_no,dispatch_token,actor_userid)
-            VALUES (?,?,?,?)");
-        $a->bind_param('iisi',$id,$next,$token,$systemActor);
-        $ok=$a->execute() && $a->affected_rows===1;$a->close();
-        if (!$ok || !$db->commit()) throw new RuntimeException('delivery_claim_unknown');
+        $claim=achbotDeliveryClaimLocked($db,$d);
+        $next=$claim['attempt'];
+        if (!$db->commit()) throw new RuntimeException('delivery_claim_unknown');
         $begun=false;
     } catch(Throwable $e) {
         if ($begun) try {$db->rollback();}catch(Throwable $ignored){}
@@ -548,17 +576,8 @@ function achbotDeliveryDispatch(mysqli $db,int $payId,int $ordinal): string {
     $finished=false;
     try {
         if (!$db->begin_transaction()) return 'unknown';
-        $q=$db->prepare("UPDATE payment_delivery_intents SET
-            state=?,dispatch_token=NULL,acknowledged_at=IF(?='ack',NOW(),NULL),last_result=?
-            WHERE pay_row_id=? AND ordinal=? AND state='dispatching' AND dispatch_token=?");
-        $q->bind_param('sssiis',$state,$result,$result,$payId,$ordinal,$token);
-        $ok=$q->execute() && $q->affected_rows===1;$q->close();
-        if (!$ok) throw new RuntimeException('delivery_finalize_token_mismatch');
-        $a=$db->prepare("UPDATE payment_delivery_attempts SET result=?,finished_at=NOW()
-            WHERE dispatch_token=? AND result='dispatching'");
-        $a->bind_param('ss',$state,$token);
-        $ok=$a->execute() && $a->affected_rows===1;$a->close();
-        if (!$ok || !$db->commit()) throw new RuntimeException('delivery_finalize_unknown');
+        achbotDeliveryFinishClaimLocked($db,$claim,$ack);
+        if (!$db->commit()) throw new RuntimeException('delivery_finalize_unknown');
         $finished=true;
     } catch(Throwable $e) {
         try {$db->rollback();} catch(Throwable $ignored) {}
@@ -803,13 +822,37 @@ function achbotDeliveryMaintainPending(mysqli $db,int $limit=4,float $budgetSeco
         // The terminal state is necessary but insufficient: dispatch itself
         // verifies the immutable financial/native/order/delivery provenance
         // again under row locks before contacting Telegram.
-        $q=$db->query("SELECT d.id,d.pay_row_id,d.ordinal
-            FROM payment_delivery_intents d
-            JOIN pays p ON p.id=d.pay_row_id
-            WHERE d.state='pending' AND d.attempt_count=0
-              AND p.state IN ('approved','paid','auto_cart_approved','paid_with_wallet')
-              AND d.updated_at<=DATE_SUB(NOW(),INTERVAL 2 MINUTE)
-            ORDER BY d.updated_at,d.id LIMIT {$limit}");
+        $column=$db->query("SELECT 1 FROM information_schema.COLUMNS
+            WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='payment_delivery_intents'
+              AND COLUMN_NAME='service_operation_id'");
+        if (!$column) throw new RuntimeException('delivery_maintenance_schema_unavailable');
+        $hasService=$column->num_rows===1;$column->free();
+        if ($hasService) {
+            require_once __DIR__.'/ServiceDelivery.php';
+            if (!achbotServiceDeliverySchemaReady($db))
+                throw new RuntimeException('delivery_service_schema_invalid');
+            $q=$db->query("SELECT d.id,d.pay_row_id,d.ordinal,d.service_operation_id
+                FROM payment_delivery_intents d
+                LEFT JOIN pays p ON p.id=d.pay_row_id
+                LEFT JOIN service_operations o ON o.id=d.service_operation_id
+                WHERE d.state IN ('pending','dispatching')
+                  AND d.updated_at<=DATE_SUB(NOW(),INTERVAL 2 MINUTE)
+                  AND ((d.service_operation_id IS NULL AND d.state='pending' AND d.attempt_count=0
+                      AND p.state IN ('approved','paid','auto_cart_approved','paid_with_wallet'))
+                    OR (o.stage='completed' AND d.service_operation_id IS NOT NULL
+                      AND ((d.state='pending' AND d.attempt_count=0) OR d.state='dispatching')))
+                ORDER BY d.updated_at,d.id LIMIT {$limit}");
+        } else {
+            // The original 018 schema remains readable until the approved
+            // forward migration. No new service row exists in that schema.
+            $q=$db->query("SELECT d.id,d.pay_row_id,d.ordinal
+                FROM payment_delivery_intents d
+                JOIN pays p ON p.id=d.pay_row_id
+                WHERE d.state='pending' AND d.attempt_count=0
+                  AND p.state IN ('approved','paid','auto_cart_approved','paid_with_wallet')
+                  AND d.updated_at<=DATE_SUB(NOW(),INTERVAL 2 MINUTE)
+                ORDER BY d.updated_at,d.id LIMIT {$limit}");
+        }
         if (!$q) throw new RuntimeException('delivery_maintenance_scan_failed');
         $rows=$q->fetch_all(MYSQLI_ASSOC);
         $q->free();
@@ -827,7 +870,8 @@ function achbotDeliveryMaintainPending(mysqli $db,int $limit=4,float $budgetSeco
         $ordinal=(int)$d['ordinal'];
         $stats['checked']++;
         try {
-            $outcome=achbotDeliveryDispatch($db,$payId,$ordinal);
+            $outcome=($d['service_operation_id']??null)!==null?
+                achbotServiceDeliveryDispatch($db,$id):achbotDeliveryDispatch($db,$payId,$ordinal);
         } catch (Throwable $error) {
             error_log('achbot_delivery_maintenance_dispatch_deferred pay_id='.$payId.
                 ' ordinal='.$ordinal.' class='.get_class($error));
@@ -845,9 +889,13 @@ function achbotDeliveryMaintainPending(mysqli $db,int $limit=4,float $budgetSeco
                 // No packet/state/attempt/actor changes.  A failed readiness
                 // check is retried no sooner than another two-minute window
                 // and cannot monopolize the head of the bounded queue.
+                // Also defer abandoned service claim reconciliation on a
+                // transient SQL/ownership error, without changing its token.
+                $where=($d['service_operation_id']??null)!==null?
+                    "((state='pending' AND attempt_count=0) OR state='dispatching')":
+                    "(state='pending' AND attempt_count=0)";
                 $q=$db->prepare("UPDATE payment_delivery_intents
-                    SET updated_at=NOW() WHERE id=?
-                    AND state='pending' AND attempt_count=0");
+                    SET updated_at=NOW() WHERE id=? AND ".$where);
                 $q->bind_param('i',$id);
                 $q->execute();$q->close();
             } catch (Throwable $error) {
