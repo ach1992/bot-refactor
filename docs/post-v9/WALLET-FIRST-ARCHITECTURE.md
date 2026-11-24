@@ -779,6 +779,16 @@ local order, owner and server in the original Native claim, so a sole
 remaining independently proven import can recover its own delete without
 pretending to be the original BUY order. Recovery rejects a changed subject.
 
+Committed-source execution passed 62/62 cases in strict and report-off
+MySQLi modes, 378 loopback HTTP requests and 40 CREATE POSTs. The 16 new
+cases cover funded-before-first-order rebind, partially recorded bulk
+ownership, funded-before-dispatch lifecycle exclusion, late receipt credit
+after successful plan change and return, relocated deletion with SQL
+failure, wrong deletion-subject recovery, funded alias exclusion and
+no unreserved slot for an imported reference, and a genuine unresolved
+plan intent. Funding passed 54/54. Previous exact candidate CI
+45353358384 (bee6770) passed; do not attribute that run to the new tree.
+
 This package does not activate the new payment/service callers or complete
 migration of historical pending claims. The existing-provider delayed PUT
 limitation remains as documented below.
