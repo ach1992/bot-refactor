@@ -112,14 +112,6 @@ function nativeLinks($input): array {
     return $out;
 }
 
-/** Preserve the original Marzban array positions, duplicates and index bases. */
-function legacyLinks($input): array {
-    if (!is_array($input)) return [];
-    return array_values(array_map(static function ($item) {
-        return is_string($item) ? $item : '';
-    }, $input));
-}
-
 function selectorMatches(array $record, $selector): bool {
     if (!is_array($selector) || $selector === []) return false;
     foreach ($selector as $field => $value) {
@@ -211,8 +203,7 @@ function contextPolicy(array $policy, string $context): array {
 /**
  * Neutral renderer contract:
  * native = {links: array|string, subscription_url: absolute URL, backup_urls?:array}
- * options = {policy?: array, mode?: native|marzban_legacy, legacy?: managed values}
- * Legacy compatibility requires an explicit validated per-server mode.
+ * options = {policy?: array, mode?: native}
  * Native context selectors override shared selectors, including an empty list.
  * Unconfigured text selects the first three native configs. Explicit order QR
  * keeps every native config independently of text visibility/selection/limits.
@@ -232,12 +223,9 @@ function present(string $provider, array $native, array $botState, array $option
         return $result;
     }
     $url = subscriptionUrl($native['subscription_url'] ?? '');
-    $legacy = is_array($options['legacy'] ?? null) ? $options['legacy'] : [];
     $rawPolicy = $options['policy'] ?? null;
     $mode = $options['mode'] ?? 'native';
-    $compat = $provider === 'marzban' && $mode === 'marzban_legacy';
-    if (!in_array($mode, ['native', 'marzban_legacy'], true)
-        || ($mode === 'marzban_legacy' && $provider !== 'marzban')
+    if ($mode !== 'native' || array_key_exists('legacy',$options)
         || ($rawPolicy !== null && !is_array($rawPolicy))
         || (is_array($rawPolicy) && !validPolicy($rawPolicy))) {
         $result['reason'] = 'invalid_policy';
@@ -245,72 +233,36 @@ function present(string $provider, array $native, array $botState, array $option
         return $result;
     }
     $policy = contextPolicy($rawPolicy ?? [], $context);
-    // Explicit name editing retires positional selection for this context only.
-    if (array_key_exists('names', ($rawPolicy ?? [])[$context] ?? [])) $compat = false;
     $result['qr_subscription_url'] = $url;
     $subscriptionVisible = ($policy['show_subscription'] ?? true) === true;
     $visibleUrl = $subscriptionVisible ? $url : '';
     $configsVisible = ($policy['show_configs'] ?? true) === true;
-    $explicitConfigSwitch=array_key_exists('show_configs',($rawPolicy??[])[$context]??[]);
-    if ($compat) {
-        $all = legacyLinks($native['links'] ?? []);
-        $selected = [];
-        if ($context === 'delivery') {
-            // Original delivery substitutes the subscription URL only when no
-            // native configs exist, and falls back to first on missing indices.
-            $delivery = $all ?: ($visibleUrl !== '' ? [$visibleUrl] : ['']);
-            foreach ((is_array($legacy['linkIndices'] ?? null) ? $legacy['linkIndices'] : []) as $index) {
-                $selected[] = is_int($index) || is_string($index) ? ($delivery[$index] ?? $delivery[0]) : $delivery[0];
+    $records = nativeLinks($native['links'] ?? []);
+    $selected = [];
+    $contextKey = $context === 'delivery' ? 'delivery_selectors' : 'view_selectors';
+    $selectorKey = array_key_exists($contextKey, $policy) ? $contextKey : 'selectors';
+    if (array_key_exists($selectorKey, $policy)) {
+        // Selector order first, native order within each selector.
+        foreach ($policy[$selectorKey] as $selector) {
+            foreach ($records as $record) {
+                if (selectorMatches($record, $selector)) $selected[] = $record['uri'];
             }
-            if ($selected === []) $selected[] = $delivery[0];
-            $selected = array_values(array_filter($selected, static function ($uri) { return $uri !== ''; }));
-            if (!$explicitConfigSwitch && !empty($legacy['hideConfigIfMany']) && count($delivery) > 10) $configsVisible = false;
-        } else {
-            // Original view uses one-based showIndexes only above three links.
-            foreach ($all as $i => $link) {
-                if (count($all) <= 3 || in_array($i + 1, is_array($legacy['showIndexes'] ?? null) ? $legacy['showIndexes'] : [])) $selected[] = $link;
-            }
-            if (!$explicitConfigSwitch && !empty($legacy['hideConnectLinkForMarzban'])) $configsVisible = false;
         }
-        // Existing explicit config QR actions include every Marzban config,
-        // even when inline text is hidden. Preserve this intentional boundary.
-        $result['qr_config_links'] = array_values(array_filter($all, static function ($uri) { return $uri !== ''; }));
-        $result['missing_links'] = $all === [];
+        $result['selection_missing'] = $selected === [] && $policy[$selectorKey] !== [];
     } else {
-        $records = nativeLinks($native['links'] ?? []);
-        $selected = [];
-        $contextKey = $context === 'delivery' ? 'delivery_selectors' : 'view_selectors';
-        $selectorKey = array_key_exists($contextKey, $policy) ? $contextKey : 'selectors';
-        if (array_key_exists($selectorKey, $policy)) {
-            // Selector order first, native order within each selector.
-            foreach ($policy[$selectorKey] as $selector) {
-                foreach ($records as $record) {
-                    if (selectorMatches($record, $selector)) $selected[] = $record['uri'];
-                }
-            }
-            $result['selection_missing'] = $selected === [] && $policy[$selectorKey] !== [];
-        } else {
-            $selected = array_column($records, 'uri');
-        }
-        $selected = array_values(array_unique($selected));
-        $hasSelectors = array_key_exists($selectorKey, $policy);
-        $policy['max_links'] = min(10, $policy['max_links'] ?? ($hasSelectors ? 10 : 3));
-        if (isset($policy['max_links']) && is_int($policy['max_links']) && $policy['max_links'] >= 0) {
-            if ($policy['max_links'] > 0 && count($selected) > $policy['max_links']) $result['limited'] = true;
-            $selected = array_slice($selected, 0, $policy['max_links']);
-        }
-        if (isset($policy['hide_if_more_than']) && is_int($policy['hide_if_more_than'])
-            && count($records) > $policy['hide_if_more_than']) $configsVisible = false;
-        $result['missing_links'] = $records === [];
-        $result['qr_config_links'] = $configsVisible ? $selected : [];
+        $selected = array_column($records, 'uri');
+    }
+    $selected = array_values(array_unique($selected));
+    $hasSelectors = array_key_exists($selectorKey, $policy);
+    $policy['max_links'] = min(10, $policy['max_links'] ?? ($hasSelectors ? 10 : 3));
+    if (isset($policy['max_links']) && is_int($policy['max_links']) && $policy['max_links'] >= 0) {
+        if ($policy['max_links'] > 0 && count($selected) > $policy['max_links']) $result['limited'] = true;
+        $selected = array_slice($selected, 0, $policy['max_links']);
+    }
+    if (isset($policy['hide_if_more_than']) && is_int($policy['hide_if_more_than'])
+        && count($records) > $policy['hide_if_more_than']) $configsVisible = false;
+    $result['missing_links'] = $records === [];
 
-    }
-    // The inline count boundary also applies to retained positional policies.
-    // Preserve selection order/duplicates; explicit QR records remain independent.
-    if (count($selected) > 10) {
-        $selected = array_slice($selected, 0, 10);
-        $result['limited'] = true;
-    }
     // QR actions are explicit and independent from inline-text selection/budgets.
     // Every accepted native URI is sent separately by the authorized order action.
     $result['qr_config_links'] = array_column(nativeLinks($native['links'] ?? []), 'uri');
@@ -407,20 +359,6 @@ function messageParts(string $html, int $limit = 4096): array {
 function configLinks($acc_link, $botState, $unusedIndexes) {
     return present('marzban', ['links' => $acc_link], $botState,
         ['policy' => []])['config_html'];
-}
-
-function primaryLink($serverType, $panelUrl, $botUrl, $token, $botState) {
-    if ($serverType !== 'marzban') return '';
-    return codeLinks([rtrim($panelUrl, '/') . "/sub/$token"]);
-}
-
-function backupLinks($subRaw, $token) {
-    if (empty($subRaw)) return '';
-    $links = [];
-    foreach (array_filter(array_map('trim', explode(',', $subRaw))) as $domain) {
-        $links[] = rtrim($domain, '/') . "/sub/$token";
-    }
-    return \achbotMessage('subscription.presentation.present.text.3ff0456031') . codeLinks($links);
 }
 
 function configMessage($template, $enableText, $remark, $configLinks, $subLink, $backupSection, bool $hideConfigs = false): string {

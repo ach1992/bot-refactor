@@ -475,7 +475,7 @@ if (preg_match('/^attention(?:Inbox(?:_[1-9][0-9]{0,17})?|Case_[1-9][0-9]{0,17})
                 $q->close();
             }
             $q=achbotProviderStatement($connection,"SELECT id FROM payment_followup_intents
-                WHERE (service_operation_id=? OR (pay_row_id=? AND stage='wallet_credit'))
+                WHERE (service_operation_id=? OR (pay_row_id=? AND stage IN ('wallet_credit','manual_reject')))
                     AND state IN ('unknown','rejected') ORDER BY id LIMIT 5",'ii',[$opId,$payId]);
             foreach ($q->get_result()->fetch_all(MYSQLI_ASSOC) as $report)
                 $rows[]=[['text'=>achbotMessage('automatic_gateway_review.wallet_report_action').' #'.$report['id'],

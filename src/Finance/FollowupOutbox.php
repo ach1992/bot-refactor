@@ -32,7 +32,7 @@ function achbotFollowupSchemaReady(mysqli $db): bool {
 }
 function achbotFollowupJournaled(array $r): bool {
     return isset($r['service_operation_id']) ||
-        (($r['stage']??null)==='wallet_credit' && (int)($r['pay_row_id']??0)>0);
+        (in_array($r['stage']??null,['wallet_credit','manual_reject'],true) && (int)($r['pay_row_id']??0)>0);
 }
 function achbotFollowupPurpose(int $payId,string $stage,string $key): string {
     return 'payment-followup:v1:'.$payId.':'.$stage.':'.$key;
@@ -49,12 +49,10 @@ function achbotFollowupInsertLocked(mysqli $db,array $pay,string $stage,string $
         !in_array($role,['referral_inviter','referral_admin','referral_channel'],true) ||
         $kind!=='send' || ($pay['state']??null)!=='paid'))
         throw new RuntimeException('followup_service_source_invalid');
-    if (!in_array($stage,['approved_purchase','approved_edit','manual_reject','referral_reward'],true) ||
+    if (!in_array($stage,['manual_reject','referral_reward'],true) ||
         !in_array($role,['customer','operator','receipt_primary','receipt_mirror',
                           'referral_admin','referral_channel','referral_inviter',
                           'purchase_owner','purchase_channel'],true) ||
-        (in_array($role,['purchase_owner','purchase_channel'],true) &&
-            $stage!=='approved_purchase') ||
         !in_array($kind,['send','edit'],true) ||
         preg_match('/^(?:-?[0-9]{1,19}|@[A-Za-z0-9_]{3,64})$/D',$recipient)!==1 ||
         ($kind==='edit'?($messageId===null || $messageId<=0):$messageId!==null) ||
@@ -67,12 +65,6 @@ function achbotFollowupInsertLocked(mysqli $db,array $pay,string $stage,string $
         throw new RuntimeException('followup_requires_payment_transaction');
     $payId=(int)($pay['id']??0);
     if ($payId<=0 || (int)($pay['user_id']??0)<=0 ||
-        ($stage==='approved_purchase' && ($pay['type']??'')!=='BUY_SUB') ||
-        ($stage==='approved_edit' &&
-            (($pay['state']??null)!=='approved' ||
-             !((string)($pay['type']??'')==='RENEW_ACCOUNT' ||
-               preg_match('/^INCREASE_(?:DAY|VOLUME)_[1-9][0-9]*_[1-9][0-9]*$/D',
-                          (string)($pay['type']??''))===1))) ||
         ($role==='customer' && $recipient!==(string)(int)$pay['user_id']) ||
         ($role==='receipt_primary' &&
             ($recipient!==(string)(int)$pay['chat_id'] ||
@@ -141,7 +133,7 @@ function achbotFollowupRecipientAllowed(mysqli $db,array $pay,array $r): bool {
     $role=(string)$r['role'];
     if ($role==='customer') return $recipient===(string)(int)$pay['user_id'];
     if ($role==='receipt_primary')
-        return $who===(int)$pay['chat_id'] && (int)$r['message_id']===(int)$pay['message_id'];
+        return achbotAdminStoredRecipientAllowed($db,$who,$owner) && $who===(int)$pay['chat_id'] && (int)$r['message_id']===(int)$pay['message_id'];
     if ($role==='receipt_mirror') {
         $copies=json_decode((string)($pay['admins_messages']??''),true);
         if (!is_array($copies) || !achbotAdminStoredRecipientAllowed($db,$who,$owner))
@@ -222,8 +214,13 @@ function achbotFollowupValidateLocked(mysqli $db,array $pay,array $r): ?array {
     // only. Current service and receipt reports have their own validators.
     if ($r['stage']!=='manual_reject') return null;
     $payId=(int)($pay['id']??0);
-    $attempt=achbotProviderRow($db,'SELECT review_archived_at FROM payment_attempts WHERE pay_row_id=? FOR UPDATE','i',[$payId]);
-    if (($attempt['review_archived_at']??null)!==null ||
+    $attempt=achbotProviderRow($db,'SELECT * FROM payment_attempts WHERE pay_row_id=? FOR UPDATE','i',[$payId]);
+    require_once __DIR__.'/PaymentCredit.php';
+    if (!$attempt || ($attempt['review_archived_at']??null)!==null ||
+        $attempt['wallet_credit_entry_id']!==null || $attempt['stage']!=='done' ||
+        $attempt['provider_status']!=='operator_rejected' ||
+        !is_string($attempt['wallet_invoice_sha256']) ||
+        !hash_equals($attempt['wallet_invoice_sha256'],achbotCreditInvoiceFingerprint($pay,$attempt)) ||
         $payId!==(int)$r['pay_row_id'] || $pay['state']!=='declined' ||
         !in_array((string)$r['kind'],['send','edit'],true) ||
         (int)$pay['approved_by']<=0) return null;
@@ -285,7 +282,7 @@ function achbotFollowupDispatchOne(mysqli $db,int $id,int $actor=0,?string $conf
         if ($payId>0) {
             // New credit reports must follow the common owner-first order,
             // never lock a receipt and then wait on its financial owner.
-            if ($owner['stage']==='wallet_credit') {
+            if (in_array($owner['stage'],['wallet_credit','manual_reject'],true)) {
                 require_once __DIR__.'/PaymentCredit.php';
                 $loc=achbotProviderRow($db,'SELECT user_id FROM pays WHERE id=?','i',[$payId]);
                 if (!$loc) throw new RuntimeException('followup_missing');
@@ -294,7 +291,7 @@ function achbotFollowupDispatchOne(mysqli $db,int $id,int $actor=0,?string $conf
             $q=$db->prepare('SELECT * FROM pays WHERE id=? FOR UPDATE');
             $q->bind_param('i',$payId);$q->execute();$pay=$q->get_result()->fetch_assoc();$q->close();
             if (!$pay) throw new RuntimeException('followup_missing');
-            if ($owner['stage']==='wallet_credit' && (int)$pay['user_id']!==(int)$loc['user_id'])
+            if (in_array($owner['stage'],['wallet_credit','manual_reject'],true) && (int)$pay['user_id']!==(int)$loc['user_id'])
                 throw new RuntimeException('followup_owner_changed');
         } else {
             $loc=achbotProviderRow($db,'SELECT userid FROM service_operations WHERE id=?','i',[$serviceId]);
@@ -423,7 +420,7 @@ function achbotFollowupDispatchOne(mysqli $db,int $id,int $actor=0,?string $conf
 /** All pending rows only, including previous-crash rows. UNKNOWN untouched. */
 function achbotFollowupDispatchPending(mysqli $db,int $payId,string $stage): array {
     if (!achbotFollowupSchemaReady($db) || $payId<=0 ||
-        !in_array($stage,['approved_purchase','approved_edit','manual_reject','referral_reward','wallet_credit'],true)) return [];
+        !in_array($stage,['manual_reject','referral_reward','wallet_credit'],true)) return [];
     $cursor=0;$out=[];
     while (true) {
         $q=$db->prepare("SELECT id FROM payment_followup_intents
@@ -439,111 +436,6 @@ function achbotFollowupDispatchPending(mysqli $db,int $payId,string $stage): arr
     }
     return $out;
 }
-/** Stage original standard purchase presentation BEFORE the paid COMMIT. */
-function achbotFollowupStageManualPurchaseLocked(mysqli $db,array $pay,int $owner,
-    string $remark,int $count,int $days,int $volume,int $price,
-    string $hash): void {
-    if (!achbotFollowupSchemaReady($db) || $owner<=0 ||
-        !function_exists('achbotManualFinalReceiptKeyboard'))
-        throw new RuntimeException('manual_purchase_followup_preflight_missing');
-    $payId=(int)$pay['id'];$buyer=(int)$pay['user_id'];
-    $actor=(int)$pay['approved_by'];
-    if ($payId<=0 || $buyer<=0 || $actor<=0 || $count<=0 ||
-        !is_string(\achbotMessage('legacy_messages.sent_config_to_user')??null))
-        throw new RuntimeException('manual_purchase_followup_identity_invalid');
-    $bulkProof=null;
-    if ($count>1) {
-        require_once __DIR__.'/../Purchase/BulkReport.php';
-        $bulkProof=achbotBulkRecordedAccounts($db,$count,$buyer,$payId);
-        if (!$bulkProof['complete'])
-            throw new RuntimeException('manual_bulk_report_original_effect_unverified');
-    }
-    $actualSubject=$count>1?achbotMessage('bulk_reporting.bulk_subject'):$remark;
-    $keys=achbotManualFinalReceiptKeyboard($db,$payId,$actualSubject);
-    achbotFollowupInsertLocked($db,$pay,'approved_purchase','receipt_primary','edit',
-        (string)(int)$pay['chat_id'],(int)$pay['message_id'],
-        ['text'=>$keys,'keys'=>null,'mode'=>null]);
-    $copies=json_decode((string)($pay['admins_messages']??''),true);
-    $seenMirrors=[];
-    if (is_array($copies)) foreach ($copies as $copy) {
-        if (!is_array($copy) || !isset($copy['chat_id'],$copy['message_id'])) continue;
-        $chat=(int)$copy['chat_id'];$msg=(int)$copy['message_id'];
-        // Only the exact original Telegram pair is the primary receipt.
-        // Another message in that same chat is a distinct historical copy.
-        if (($chat===(int)$pay['chat_id'] && $msg===(int)$pay['message_id']) ||
-            $chat<=0 || $msg<=0 ||
-            !achbotAdminStoredRecipientAllowed($db,$copy['chat_id'],$owner)) continue;
-        // Historical fan-out may contain repeated references to the SAME
-        // Telegram message. Journal it once, preserving different messages.
-        $ref=$chat.':'.$msg;
-        if (isset($seenMirrors[$ref])) continue;
-        achbotFollowupInsertLocked($db,$pay,'approved_purchase',
-            'receipt_mirror','edit',(string)$chat,$msg,
-            ['text'=>$keys,'keys'=>null,'mode'=>null]);
-        $seenMirrors[$ref]=true;
-    }
-    $notice=str_replace(
-        ['USERID','REMARK','VOLUME','DAYS','PRICE','HASHID'],
-        [$buyer,$actualSubject,$volume,$days,$price,$hash],
-        (string)\achbotMessage('legacy_messages.sent_config_to_user'));
-    if ($bulkProof!==null) $notice=achbotBulkReportAppend($notice,$bulkProof);
-    achbotFollowupInsertLocked($db,$pay,'approved_purchase','operator','send',
-        (string)$actor,null,
-        ['text'=>$notice,'keys'=>getMainKeys(),'mode'=>null]);
-    if ($bulkProof!==null) {
-        // A one-shot report for the original Owner and the configured
-        // channel, even when a delegated administrator approved the receipt.
-        if ($owner!==$actor)
-            achbotFollowupInsertLocked($db,$pay,'approved_purchase',
-                'purchase_owner','send',(string)$owner,null,
-                ['text'=>$notice,'keys'=>null,'mode'=>null]);
-        $channel=(string)($GLOBALS['botState']['rewardChannel']??'');
-        if ($channel!=='')
-            achbotFollowupInsertLocked($db,$pay,'approved_purchase',
-                'purchase_channel','send',$channel,null,
-                ['text'=>$notice,'keys'=>null,'mode'=>null]);
-    }
-    $q=$db->prepare('SELECT name,username,refered_by FROM users WHERE userid=? LIMIT 2');
-    $q->bind_param('i',$buyer);$q->execute();
-    $buyers=$q->get_result()->fetch_all(MYSQLI_ASSOC);$q->close();
-    if (count($buyers)!==1) throw new RuntimeException('manual_purchase_followup_buyer_invalid');
-    $user=$buyers[0];
-    if ((int)$user['refered_by']>0 && $actor!==$owner) {
-        if (!is_string(\achbotMessage('legacy_messages.invite_buy_new_account')??null))
-            throw new RuntimeException('manual_purchase_invitation_template_missing');
-        $actions=json_encode(['inline_keyboard'=>[[
-            ['text'=>\achbotMessage('manual_payment.manual_approval.manual_standard_report_delivery.button.e401f3d5a2'),
-             'callback_data'=>'wizwizch']
-        ]]],JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
-        $text=str_replace(
-            ['USER-ID','USERNAME','NAME','PRICE','REMARK','HASHID'],
-            [$buyer,(string)$user['username'],(string)$user['name'],
-             $price,$remark,$hash],
-            (string)\achbotMessage('legacy_messages.invite_buy_new_account'));
-        $complete=false;$staff=achbotAdminRecipientCandidates($db,$owner,$complete);
-        if (!$complete) throw new RuntimeException('manual_purchase_staff_discovery_unknown');
-        achbotFollowupInsertLocked($db,$pay,'approved_purchase','referral_admin',
-            'send',(string)$owner,null,['text'=>$text,'keys'=>$actions,'mode'=>'HTML']);
-        $seen=[(string)$owner=>true];
-        foreach ($staff as $id) {
-            $allowed=true;$recipient=(string)(int)$id;
-            if (achbotAdminNotificationAllowed($db,$id,$owner,'general',$allowed) &&
-                !isset($seen[$recipient])) {
-                achbotFollowupInsertLocked($db,$pay,'approved_purchase','referral_admin',
-                    'send',$recipient,null,['text'=>$text,'keys'=>$actions,'mode'=>'HTML']);
-                $seen[$recipient]=true;
-            }
-            if (!$allowed) throw new RuntimeException('manual_purchase_staff_auth_unknown');
-        }
-        $channel=(string)($GLOBALS['botState']['rewardChannel']??'');
-        if ($channel!=='' && !isset($seen[$channel]))
-            achbotFollowupInsertLocked($db,$pay,'approved_purchase','referral_channel',
-                'send',$channel,null,['text'=>$text,'keys'=>$actions,'mode'=>'HTML']);
-    }
-}
-
-/** Only new service/credit-sourced reports; historical pending claims retain their
- * own disposition until cutover rehearsal. Reuse the existing 020 sender. */
 function achbotFollowupMaintainOriginalPending(mysqli $db,int $limit,float $budgetSeconds): array {
     if ($limit<=0 || !is_finite($budgetSeconds) || $budgetSeconds<=0)
         throw new InvalidArgumentException('followup_original_budget_invalid');
@@ -553,7 +445,7 @@ function achbotFollowupMaintainOriginalPending(mysqli $db,int $limit,float $budg
     if (!achbotServiceOperationsPresent($db)) return [];
     $deadline=hrtime(true)/1000000000+$budgetSeconds;
     $s=achbotProviderStatement($db,"SELECT f.id FROM payment_followup_intents f
-        WHERE (f.service_operation_id IS NOT NULL OR f.stage='wallet_credit')
+        WHERE (f.service_operation_id IS NOT NULL OR f.stage IN ('wallet_credit','manual_reject'))
           AND f.state IN ('pending','dispatching')
           AND ((f.next_attempt_at IS NULL AND f.updated_at<=DATE_SUB(NOW(),INTERVAL 2 MINUTE))
                OR f.next_attempt_at<=NOW(6))

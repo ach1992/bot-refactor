@@ -157,6 +157,7 @@ if (preg_match('/^declineActionReason_(.+)_(\d+)$/', (string)($userInfo['step']?
     (string)($data??'')==='' &&
     $text != \achbotMessage('legacy_buttons.cancel') &&
     achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'payments')) {
+    if ((int)($chat_id??0)!==(int)$from_id) return;
     // Only a freshly typed administrator message can supply the reason;
     // a callback's previously rendered message must not finalize rejection.
     if (!is_string($text) || trim($text)==='') {
@@ -294,62 +295,27 @@ if (preg_match('/^declineActionReason_(.+)_(\d+)$/', (string)($userInfo['step']?
         'callback_data'=>'banUserDirect_'.$uid]]]],JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
     // These messages are staged BEFORE Telegram is called. Never assert that
     // the customer's rejection notice was delivered: its ACK may be unknown.
+    require_once __DIR__.'/../CheckoutRoutes.php';
+    require_once __DIR__.'/../GatewayClient.php';
+    $lease=achbotOriginalDispatchLeaseBegin($connection,$payId);
+    if ($lease!=='owned') {
+        alert(achbotMessage('manual_payment.manual_receipts.alert.872f260882'));return;
+    }
     $opened=false;
     try {
         if (!$connection->begin_transaction()) throw new RuntimeException('manual_reject_begin');
         $opened=true;
-        $q=$connection->prepare('SELECT * FROM pays WHERE id=? FOR UPDATE');
-        $q->bind_param('i',$payId);$q->execute();$locked=$q->get_result()->fetch_assoc();$q->close();
-        if (!$locked || $locked['state']!=='have_sent' ||
-            (string)$locked['hash_id']!==(string)$hash_id ||
-            (int)$locked['user_id']!==(int)$uid ||
-            (int)$locked['chat_id']!==(int)$payInfo['chat_id'] ||
+        $actor=(int)$from_id;
+        $locked=achbotCheckoutRejectReceiptLocked($connection,$payId,(int)$uid,$actor,(int)$admin,(string)$hash_id);
+        if ((int)$locked['chat_id']!==(int)$payInfo['chat_id'] ||
             (int)$locked['message_id']!==(int)$payInfo['message_id'])
             throw new RuntimeException('manual_reject_stale');
-        // A previously opened reason editor cannot reject an original after
-        // another authorized operator Archives it. Match Archive's lock order
-        // (pays -> original attempt) and inspect before consuming users.step.
-        // Only absent pre-003/022 schema is optional; other SQL failures
-        // must roll back the financial decision and its follow-up intents.
-        $archiveProbe=null;$archiveSchemaMissing=false;
-        try {
-            $archiveProbe=$connection->prepare('SELECT review_archived_at
-                FROM payment_attempts WHERE pay_row_id=? LIMIT 1 FOR UPDATE');
-        } catch (mysqli_sql_exception $error) {
-            if (!in_array((int)$error->getCode(),[1054,1146],true)) throw $error;
-            $archiveSchemaMissing=true;
-        }
-        if (!$archiveProbe && !$archiveSchemaMissing) {
-            if (!in_array((int)$connection->errno,[1054,1146],true))
-                throw new RuntimeException('manual_reject_archive_probe_unavailable');
-            $archiveSchemaMissing=true;
-        }
-        if ($archiveProbe) {
-            $archiveProbe->bind_param('i',$payId);
-            if (!$archiveProbe->execute())
-                throw new RuntimeException('manual_reject_archive_read_unavailable');
-            $original=$archiveProbe->get_result()->fetch_assoc();$archiveProbe->close();
-            if (($original['review_archived_at']??null)!==null)
-                throw new RuntimeException('manual_reject_archived');
-        }
-        // The pays lock alone cannot freeze staff authority or the active
-        // reason editor. Lock current membership/role, then atomically claim
-        // only the same persisted editor before financial settlement.
-        $actor=(int)$from_id;
-        if (!achbotAdminCanLocked($connection,$actor,(int)$admin,'payments'))
-            throw new RuntimeException('manual_reject_actor_revoked');
-        // users.step uses a case-insensitive legacy collation. Compare bytes,
-        // not collation-equivalent text, to consume only this exact editor.
+        // Consume only the current private reason editor; rollback also
+        // restores the payment/command if another editor replaced it.
         $q=$connection->prepare("UPDATE users SET step='none' WHERE userid=? AND BINARY step=BINARY ?");
         $q->bind_param('is',$actor,$expectedEditor);
         $editorClaimed=$q->execute() && $q->affected_rows===1;$q->close();
         if (!$editorClaimed) throw new RuntimeException('manual_reject_editor_stale');
-        $q=$connection->prepare("UPDATE pays SET state='declined',approved_by=?
-            WHERE id=? AND state='have_sent'");
-        $q->bind_param('ii',$actor,$payId);
-        $ok=$q->execute() && $q->affected_rows===1;$q->close();
-        if (!$ok) throw new RuntimeException('manual_reject_cas_failed');
-        $locked['state']='declined';$locked['approved_by']=$actor;
         achbotFollowupInsertLocked($connection,$locked,'manual_reject',
             'receipt_primary','edit',(string)(int)$locked['chat_id'],
             (int)$locked['message_id'],['text'=>$keys,'keys'=>null,'mode'=>null]);
@@ -387,13 +353,13 @@ if (preg_match('/^declineActionReason_(.+)_(\d+)$/', (string)($userInfo['step']?
         $code=in_array($error->getMessage(),[
             'manual_reject_stale','manual_reject_archived',
             'manual_reject_actor_revoked','manual_reject_editor_stale',
-            'manual_reject_cas_failed',
+            'manual_reject_cas_failed','manual_reject_original_evidence_pending',
         ],true)?$error->getMessage():'transaction_unconfirmed';
         error_log('achbot_manual_reject_claim_unconfirmed pay_id='.$payId.
             ' code='.$code.' class='.get_class($error));
         alert(\achbotMessage('manual_payment.manual_receipts.alert.872f260882'));
         return;
-    }
+    } finally {achbotOriginalDispatchLeaseEnd($connection,$payId,$lease);}
     // An edit exception never suppresses independent customer/staff notices.
     // Missing ACK is UNKNOWN, not permission for a duplicate message.
     achbotFollowupDispatchPending($connection,$payId,'manual_reject');

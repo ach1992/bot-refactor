@@ -229,6 +229,22 @@ try {
         require_once $argv[1].'/src/Finance/CheckoutRoutes.php';
         $r=achbotCheckoutApproveReceipt($db,$x['hash'],(int)($x['actor']??9001),9001,$x['mode']??'standard');
     }
+    elseif ($x['op']==='checkout_reject') {
+        require_once $argv[1].'/src/Finance/CheckoutRoutes.php';
+        require_once $argv[1].'/src/Finance/GatewayClient.php';
+        $pid=(int)$x['pay'];$lease=achbotOriginalDispatchLeaseBegin($db,$pid);
+        if ($lease!=='owned') throw new RuntimeException('fixture_reject_lease');
+        try {
+            if (!$db->begin_transaction()) throw new RuntimeException('fixture_reject_begin');
+            try {
+                $pay=achbotCheckoutRejectReceiptLocked($db,$pid,1001,(int)($x['actor']??9001),9001,$x['hash']);
+                achbotFollowupInsertLocked($db,$pay,'manual_reject','customer','send','1001',null,
+                    ['text'=>'fixture original rejection','keys'=>null,'mode'=>'HTML']);
+                if (!$db->commit()) throw new RuntimeException('fixture_reject_commit');
+                $r=true;
+            } catch (Throwable $e) {$db->rollback();throw $e;}
+        } finally {achbotOriginalDispatchLeaseEnd($db,$pid,$lease);}
+    }
     elseif ($x['op']==='manual_receipt') {
         require_once $argv[1].'/src/Finance/ManualReceipt.php';
         $pid=$x['pay'];$pay=achbotProviderRow($db,'SELECT * FROM pays WHERE id=?','i',[$pid]);
@@ -1694,6 +1710,29 @@ DELIMITER ;
                     for stage in ('progressed','applied','completed'):step(mode,op,stage)
                     assert php(mode,'checkout_approve',hash=h,mode=kind)['credit']['replayed']
                     cases.append(mode+'_actual_scoped_'+kind+'_manual_checkout_draft')
+                h,pid=insert_checkout('reject','BUY_SUB')
+                assert php(mode,'checkout_manual',pay=pid,submit=True)
+                op=int(sql(f"SELECT checkout_operation_id FROM pays WHERE id={pid}"))
+                prior=finance();before=len(requests)
+                assert php(mode,'checkout_reject',pay=pid,hash=h,actor=9002,expect_error='manual_reject_stale')
+                assert sql(f"SELECT state FROM pays WHERE id={pid}")=='have_sent'
+                sql(f"UPDATE payment_attempts SET review_archived_at=NOW() WHERE pay_row_id={pid}")
+                assert php(mode,'checkout_reject',pay=pid,hash=h,expect_error='manual_reject_stale')
+                assert sql(f"SELECT state FROM pays WHERE id={pid}")=='have_sent' and finance()==prior
+                sql(f"UPDATE payment_attempts SET review_archived_at=NULL WHERE pay_row_id={pid}")
+                assert php(mode,'checkout_reject',pay=pid,hash=h)
+                assert sql(f"SELECT CONCAT(state,':',approved_by) FROM pays WHERE id={pid}")=='declined:9001'
+                assert sql(f"SELECT stage FROM service_operations WHERE id={op}")=='cancelled'
+                assert sql(f"SELECT CONCAT(stage,':',provider_status) FROM payment_attempts WHERE pay_row_id={pid}")=='done:operator_rejected'
+                assert php(mode,'checkout_approve',hash=h,expect_error='manual_receipt_original_unadmitted')
+                assert php(mode,'checkout_reject',pay=pid,hash=h,expect_error='manual_reject_stale')
+                rid=int(sql(f"SELECT id FROM payment_followup_intents WHERE pay_row_id={pid} AND stage='manual_reject'"))
+                assert php(mode,'followup',id=rid,response=dict(ok=False,error_code=429,description='Too Many Requests',parameters=dict(retry_after=35)))=='pending'
+                sql(f"UPDATE payment_followup_intents SET next_attempt_at=DATE_SUB(NOW(6),INTERVAL 1 SECOND) WHERE id={rid}")
+                assert php(mode,'maintain_followups',limit=100).get(str(rid))=='acknowledged'
+                assert sql(f"SELECT COUNT(*) FROM payment_followup_attempts WHERE intent_id={rid}")=='2'
+                assert finance()==prior and len(requests)==before
+                cases.append(mode+'_manual_rejection_cancels_original_and_recovers_notice_without_money')
                 assert not faults and not errors,(faults,errors)
         finally:
             release.set();server.shutdown();server.server_close();thread.join(5)

@@ -70,6 +70,7 @@ NATIVE_TESTS = (
 )
 
 OTHER_TESTS = (
+    ("simple_server_display", ("php", "tools/test_simple_server_display.php"), "stdout"),
     ("wallet_transfer", ("python3", "tools/test_post_v9_wallet_transfer.py",
         "--run-disposable", "--current-only"), "report"),
     ("evidence_http_privacy", ("python3", "tools/test_post_v9_evidence_http_diagnostics.py"), "report"),

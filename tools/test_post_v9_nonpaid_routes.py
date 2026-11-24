@@ -1,16 +1,19 @@
 #!/usr/bin/env python3
 """Real trial and administrator bulk handlers, isolated PHP/MariaDB + fake wire.
 
-No production updates, real customers, real Marzban, or payment operations.
+Current PasarGuard HTTP adapter, real SQL claims, no real customer or provider.
 """
 from __future__ import annotations
-import argparse,hashlib,json,subprocess
+import argparse,contextlib,hashlib,json,subprocess,threading
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from urllib.parse import unquote,urlsplit
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import test_access_state as owned
 import test_v6_native as native
 import test_v8_native as purchase
+import provider_storage_fixture as storage
 
 ROOT=Path(__file__).resolve().parents[1]
 DB=purchase.SIDE[1]
@@ -18,6 +21,7 @@ PHP=r'''<?php
 error_reporting(E_ALL & ~E_DEPRECATED);
 set_error_handler(static function($n,$m){throw new ErrorException($m,0,$n);});
 $_SERVER['SCRIPT_FILENAME']=__FILE__;
+define('ACHBOT_PG_TEST_LOOPBACK',true);
 $root=$argv[1];$spec=json_decode($argv[4],true,512,JSON_THROW_ON_ERROR);
 $connection=new mysqli('localhost','root','',$argv[3],0,$argv[2]);
 $connection->set_charset('utf8mb4');
@@ -91,28 +95,6 @@ function getServerInfoAndConfig($connection,$sid) {
 }
 function generateRandomString(){return 'fixtureuuid';}
 function getNextPortAndIncrease(...$args){throw new RuntimeException('unexpected_native_port_allocation');}
-function createServerAccount(...$args) {
-    $GLOBALS['events'][]=['name'=>'POST','remark'=>$args[4]];
-    // Marzban documents 3..32 ASCII bytes; a too-long name gets a failed
-    // upstream CREATE, not a successful account. Do not fake success here.
-    if (strlen((string)$args[4])<3 || strlen((string)$args[4])>32)
-        return [(object)['success'=>false,'msg'=>'fixture_mbz_username_invalid'],
-                $args[4],12345];
-    $count=($GLOBALS['posts']??0)+1;$GLOBALS['posts']=$count;
-    $remote=[
-        'username'=>(string)$args[4],'note'=>'achbot:v1:'.(string)$args[14],
-        'expire'=>(int)$args[15],'data_limit'=>(int)$args[5]*1073741824];
-    $GLOBALS['remote'][(string)$args[4]]=$remote;
-    if (($GLOBALS['spec']['remote']??'ok')==='lost' ||
-       (($GLOBALS['spec']['remote']??'ok')==='second_lost' && $count===2))
-        throw new RuntimeException('fixture_post_unknown');
-    return [(object)['success'=>true,'sub_link'=>'/sub/fixture','vray_links'=>['vless://fixture']],$args[4],12345];
-}
-function getMarzbanUser($serverId,$remark,$token=null,$strict=false) {
-    if (!$strict) throw new RuntimeException('strict_read_required');
-    $GLOBALS['events'][]=['name'=>'GET','remark'=>$remark];
-    return isset($GLOBALS['remote'][$remark])?(object)$GLOBALS['remote'][$remark]:null;
-}
 function buildLinksAndSendQr(...$args) {
     if (end($args)!==false)
         throw new RuntimeException('premature_link_delivery');
@@ -135,20 +117,8 @@ if (($spec['route']??'trial')==='trial') {
     $second=buildRemark(['remark'=>'digits'],'mbz','',1001);
     $default=buildRemark(['remark'=>'default'],'someserver','',1001);
     $GLOBALS['events'][]=['name'=>'STYLE_IDENTITY','different_base'=>$first!==$second,
-        'bulk_first'=>achbotAdminBulkAccountRemark($first,'bulk:9001:987811',1,2,'marzban','digits'),
-        'bulk_second'=>achbotAdminBulkAccountRemark($second,'bulk:9001:987811',1,2,'marzban','digits'),
-        'bulk_other_line'=>achbotAdminBulkAccountRemark($first,'bulk:9001:987811',2,2,'marzban','digits'),
-        'bulk_other_source'=>achbotAdminBulkAccountRemark($first,'bulk:9001:987812',1,2,'marzban','digits'),
-        'paid_first'=>achbotPaidPurchaseRemark($first,'marzban',12345,1,2,false,'digits'),
-        'paid_second'=>achbotPaidPurchaseRemark($second,'marzban',12345,1,2,false,'digits'),
-        'paid_other_line'=>achbotPaidPurchaseRemark($first,'marzban',12345,2,2,false,'digits'),
-        'paid_other_source'=>achbotPaidPurchaseRemark($first,'marzban',12346,1,2,false,'digits'),
-        'paid_single_first'=>achbotPaidPurchaseRemark($first,'marzban',12345,1,1,false,'digits'),
-        'paid_single_second'=>achbotPaidPurchaseRemark($second,'marzban',12345,1,1,false,'digits'),
-        'paid_explicit'=>achbotPaidPurchaseRemark('chosen_name','marzban',12345,1,1,true,'manual'),
-        'paid_manual_multi'=>achbotPaidPurchaseRemark('chosen_name','marzban',12345,2,2,true,'manual'),
-        'admin_default'=>achbotAdminBulkAccountRemark($default,'bulk:9001:987811',1,2,'marzban','default'),
-        'admin_manual'=>achbotAdminBulkAccountRemark('batch_custom','bulk:9001:987811',1,2,'marzban','manual'),
+        'admin_default'=>achbotAdminBulkAccountRemark($default,'bulk:9001:987811',1,2,'pasarguard','default'),
+        'admin_manual'=>achbotAdminBulkAccountRemark('batch_custom','bulk:9001:987811',1,2,'pasarguard','manual'),
         // Force the same buildRemark() random output for every ordinal.
         // The actual PHP formatter must not inherit those collisions.
         'pg_generated_base'=>'pg-12345',
@@ -156,15 +126,15 @@ if (($spec['route']??'trial')==='trial') {
         'pg_admin_line2'=>achbotAdminBulkAccountRemark('pg-12345','bulk:9001:987811',2,2,'pasarguard','digits'),
         'pg_admin_replay'=>achbotAdminBulkAccountRemark('pg-99999','bulk:9001:987811',1,2,'pasarguard','digits'),
         'pg_admin_new_source'=>achbotAdminBulkAccountRemark('pg-12345','bulk:9001:987812',1,2,'pasarguard','digits'),
-        'pg_paid_line1'=>achbotPaidPurchaseRemark('pg-12345','pasarguard',12345,1,2,false,'digits'),
-        'pg_paid_line2'=>achbotPaidPurchaseRemark('pg-12345','pasarguard',12345,2,2,false,'digits'),
-        'pg_paid_replay'=>achbotPaidPurchaseRemark('pg-99999','pasarguard',12345,1,2,false,'digits'),
-        'pg_paid_new_source'=>achbotPaidPurchaseRemark('pg-12345','pasarguard',12346,1,2,false,'digits'),
-        'pg_paid_normal'=>achbotPaidPurchaseRemark('pg-1001-12345','pasarguard',12345,1,2,false,''),
+        'pg_paid_line1'=>achbotStyledAccountRemark('pg-12345','pasarguard','checkout:12345',1,2,'digits',false,false),
+        'pg_paid_line2'=>achbotStyledAccountRemark('pg-12345','pasarguard','checkout:12345',2,2,'digits',false,false),
+        'pg_paid_replay'=>achbotStyledAccountRemark('pg-99999','pasarguard','checkout:12345',1,2,'digits',false,false),
+        'pg_paid_new_source'=>achbotStyledAccountRemark('pg-12345','pasarguard','checkout:12346',1,2,'digits',false,false),
+        'pg_paid_normal'=>achbotStyledAccountRemark('pg-1001-12345','pasarguard','checkout:12345',1,2,'',false,false),
         'pg_admin_normal'=>achbotAdminBulkAccountRemark('pg-1001-12345','bulk:9001:987811',1,2,'pasarguard',''),
-        'pg_paid_single'=>achbotPaidPurchaseRemark('pg-12345','pasarguard',12345,1,1,false,'digits'),
-        'pg_paid_explicit_single'=>achbotPaidPurchaseRemark('chosen_name','pasarguard',12345,1,1,true,'manual'),
-        'pg_paid_explicit_multi'=>achbotPaidPurchaseRemark('chosen_name','pasarguard',12345,2,2,true,'manual'),
+        'pg_paid_single'=>achbotStyledAccountRemark('pg-12345','pasarguard','checkout:12345',1,1,'digits',false,false),
+        'pg_paid_explicit_single'=>achbotStyledAccountRemark('chosen_name','pasarguard','checkout:12345',1,1,'manual',true,false),
+        'pg_paid_explicit_multi'=>achbotStyledAccountRemark('chosen_name','pasarguard','checkout:12345',2,2,'manual',true,false),
         'pg_admin_manual'=>achbotAdminBulkAccountRemark('batch_custom','bulk:9001:987811',1,2,'pasarguard','manual'),
         'pg_long_prefix'=>achbotAdminBulkAccountRemark(str_repeat('x',96).'-12345','bulk:9001:987811',1,2,'pasarguard','digits'),
         'batch_tokens'=>array_map(static fn($i)=>achbotAccountNumericToken('bulk:9001:987811',$i),range(1,500)),
@@ -180,14 +150,89 @@ def sql(work,env,cmd):
     return native.sql(work,env,cmd,DB).strip()
 
 def php(work,env,driver,**spec):
+    actor=spec.get('actor',1001)
+    update=spec.get('update_id',987650)
+    route=spec.get('route','trial')
+    source=('bulk:'+str(actor)+':'+str(update)) if route=='bulk' else (
+        ('trial_admin:'+str(actor)+':'+str(update)) if actor==9001 else 'trial:'+str(actor))
+    with PEER.lock:
+        start=len(PEER.trace)
+        PEER.faults[source]=spec.get('remote','ok')
     p=subprocess.run(['php','-n','-d','extension=mysqlnd','-d','extension=mysqli',
-        '-d','disable_functions=curl_init,curl_exec,exec,shell_exec,system,passthru,popen,proc_open,mail',
+        '-d','extension=curl','-d','allow_url_fopen=0',
+        '-d','disable_functions=exec,shell_exec,system,passthru,popen,proc_open,mail',
         str(driver),str(ROOT),str(work/'mysql.sock'),DB,json.dumps(spec)],
         cwd=work,env=env,capture_output=True,text=True,timeout=25)
     if p.returncode:raise RuntimeError('PHP fatal '+repr((p.returncode,p.stderr[-900:],p.stdout[-700:])))
     data=json.loads(p.stdout)
     if data.get('fatal'):raise RuntimeError('Native PHP fatal '+str(data['fatal'])[:400])
-    return data['events']
+    with PEER.lock:
+        trace=[event for ref,event in PEER.trace[start:] if ref==source]
+    assert not PEER.errors,PEER.errors
+    return trace+data['events']
+
+@contextlib.contextmanager
+def provider(work,env):
+    class Handler(BaseHTTPRequestHandler):
+        def log_message(self,*args):pass
+        def reply(self,status,data,ctype='application/json'):
+            body=json.dumps(data).encode() if ctype=='application/json' else data.encode()
+            self.send_response(status);self.send_header('Content-Type',ctype)
+            self.send_header('Content-Length',str(len(body)));self.end_headers()
+            self.wfile.write(body)
+        def do_GET(self):
+            try:
+                assert self.headers['X-Api-Key']=='fixture-private-key'
+                path=urlsplit(self.path).path
+                if path=='/api/system': return self.reply(200,{'version':'5.5.1'})
+                if path=='/api/admin': return self.reply(200,{'role':{'is_owner':True,'access':{'require_template':False,'allowed_group_ids':[1,2]}}})
+                if path=='/api/groups':
+                    return self.reply(200,{'total':2,'groups':[{'id':i,'name':'group','is_disabled':False,'inbound_tags':['vless']} for i in (1,2)]})
+                with self.server.lock:
+                    if '/subscription/' in path:
+                        return self.reply(200,'vless://fixture@example.invalid:443#Native','text/plain')
+                    if '/by-id/' in path:
+                        user=next((u for u in self.server.users.values() if str(u['id'])==path.rsplit('/',1)[1]),None)
+                    elif '/by-username/' in path:
+                        user=self.server.users.get(unquote(path.rsplit('/',1)[1]))
+                    else:raise AssertionError(path)
+                    if user:
+                        ref=self.server.sources[user['username']]
+                        if not any(r==ref and e['name']=='GET' and e['remark']==user['username'] for r,e in self.server.trace):
+                            self.server.trace.append((ref,{'name':'GET','remark':user['username']}))
+                    return self.reply(200,user) if user else self.reply(404,{})
+            except Exception as e:
+                self.server.errors.append(repr(e));self.reply(500,{})
+        def do_POST(self):
+            try:
+                assert self.path=='/api/user' and self.headers['X-Api-Key']=='fixture-private-key'
+                body=json.loads(self.rfile.read(int(self.headers['Content-Length'])))
+                assert body['note'].startswith('achbot:v1:')
+                op=body['note'].split(':')[-1]
+                assert len(op)==32 and all(c in '0123456789abcdef' for c in op)
+                # A second SQL connection sees committed reservation before I/O.
+                state=sql(work,env,"SELECT CONCAT(state,':',provider_state),source_ref,ordinal FROM service_effects WHERE operation_id='"+op+"'")
+                stage,ref,ordinal=state.split('\t')
+                assert stage=='dispatching:dispatching',state
+                with self.server.lock:
+                    name=body['username']
+                    assert name not in self.server.users,'duplicate Native CREATE'
+                    self.server.next_id+=1
+                    user=dict(body,id=self.server.next_id,created_at='2026-01-01T00:00:00Z',used_traffic=0,
+                        subscription_url='https://fixture.invalid/sub/'+str(self.server.next_id),proxy_settings={'vless':{'id':'fixture'}})
+                    self.server.users[name]=user;self.server.sources[name]=ref
+                    self.server.trace.append((ref,{'name':'POST','remark':name}))
+                    fault=self.server.faults.get(ref,'ok')
+                if fault=='lost' or (fault=='second_lost' and ordinal=='2'):return self.reply(503,{})
+                self.reply(201,user)
+            except Exception as e:
+                self.server.errors.append(repr(e));self.reply(500,{})
+    global PEER
+    PEER=ThreadingHTTPServer(('127.0.0.1',0),Handler)
+    PEER.lock=threading.Lock();PEER.users={};PEER.sources={};PEER.trace=[];PEER.errors=[];PEER.faults={};PEER.next_id=0
+    thread=threading.Thread(target=PEER.serve_forever,daemon=True);thread.start()
+    try:yield 'http://127.0.0.1:'+str(PEER.server_port)
+    finally:PEER.shutdown();PEER.server_close();thread.join(5)
 
 def check():
     cases=[]
@@ -201,10 +246,16 @@ def check():
               if 'getNextPortAndIncrease(' in p.read_text()]
     assert not obsolete,obsolete
     cases.append('native_create_routes_do_not_use_mutable_temp_port_allocator')
-    with owned.owned_database() as (work,env):
+    with owned.owned_database() as (work,env),provider(work,env) as url:
         purchase.init(work,env,'http://127.0.0.1:9')
         sql(work,env,(ROOT/'migrations/post-v9/001_marzban_panel_group_id.sql').read_text())
         sql(work,env,(ROOT/'migrations/post-v9/007_service_effects.sql').read_text())
+        for migration in ('011_provider_identity.sql','012_shared_provider_storage.sql'):
+            sql(work,env,(ROOT/'migrations/post-v9'/migration).read_text())
+        def configure_pg():
+            sql(work,env,storage.connection(2,2,url))
+            sql(work,env,"UPDATE server_plans SET provider_group_ids='[1,2]' WHERE server_id=2")
+        configure_pg()
         driver=work/'nonpaid-route.php';driver.write_text(PHP)
         observed=php(work,env,driver,route='alias_identity')
         assert len(observed)==1 and observed[0]['name']=='STYLE_IDENTITY',observed
@@ -227,22 +278,6 @@ def check():
             '💰 هزینه پرداختی: PRICE تومان\n'
             '🔖 شناسه پرداخت: HASHID\n'
         )
-        assert evidence['bulk_first']==evidence['bulk_second'] and all(
-            len(evidence[key])<=32 and
-            __import__('re').fullmatch(r'mbz-[0-9]{5}',evidence[key])
-            for key in ('bulk_first','bulk_second','bulk_other_line','bulk_other_source'))
-        assert len(set(evidence[key] for key in
-            ('bulk_first','bulk_other_line','bulk_other_source')))==3
-        assert evidence['paid_first']==evidence['paid_second']
-        assert all(__import__('re').fullmatch(r'mbz-[0-9]{5}',evidence[key])
-                   for key in ('paid_first','paid_second','paid_other_line','paid_other_source'))
-        assert len(set(evidence[key] for key in
-            ('paid_first','paid_other_line','paid_other_source')))==3
-        assert evidence['paid_single_first']==evidence['pasarguard_base'] and (
-            evidence['paid_single_second']!=evidence['paid_single_first'])
-        assert evidence['paid_explicit']=='chosen_name'
-        assert evidence['paid_manual_multi'].startswith('chosen_name_') and (
-            evidence['paid_manual_multi'].endswith('_2'))
         assert __import__('re').fullmatch(r'someserver-1001-[0-9]{5}',evidence['admin_default'])
         assert evidence['admin_manual'].startswith('batch_custom_') and (
             evidence['admin_manual'].endswith('_1'))
@@ -268,6 +303,8 @@ def check():
         def reset():
             sql(work,env,'DELETE FROM service_effects')
             purchase.init(work,env,'http://127.0.0.1:9')
+            configure_pg()
+            with PEER.lock:PEER.users.clear();PEER.sources.clear();PEER.trace.clear();PEER.faults.clear()
             sql(work,env,'UPDATE users SET freetrial=NULL WHERE userid=1001')
         def capacity():
             return int(sql(work,env,'SELECT ucount FROM server_info WHERE id=2'))
@@ -361,7 +398,7 @@ def check():
                 assert len(new_names)==n,(n,update_id,created)
                 assert all(
                     name.startswith('batch_custom_') and
-                    name.endswith('_'+str(i+1)) and len(name)<=32
+                    name.endswith('_'+str(i+1)) and len(name)<=100
                     for i,name in enumerate(new_names)),new_names
                 assert not set(new_names).intersection(manual_names)
                 assert not set(new_names).intersection(firstnames)
@@ -392,9 +429,7 @@ def check():
         cases.append('admin_bulk_empty_manual_description_uses_normal_single_account_shape')
 
         reset()
-        # Regression from real installed RC30: the bot accepted up to 100
-        # username bytes, while the Marzban /api/user backing SQL field is 32.
-        # Verify real PHP bulk route/007 capacity and a strict fake 32-byte API.
+        # Preserve the current provider limit while keeping ordinal uniqueness.
         very_long='prefix_'+'x'*93
         sql(work,env,"UPDATE server_plans SET descr='"+very_long+"' WHERE id=7")
         sql(work,env,"UPDATE users SET step='createAccAmount7_30_2' WHERE userid=9001")
@@ -404,7 +439,7 @@ def check():
         assert len(compact_posts)==2 and len([e for e in compact if e['name']=='DELIVER'])==2,compact
         compact_names=[e['remark'] for e in compact_posts]
         assert (len(set(compact_names))==2 and all(
-            name.startswith('prefix_') and len(name)==32
+            name.startswith('prefix_') and len(name)==100
             and name.endswith('_'+str(i+1))
             for i,name in enumerate(compact_names))),compact_names
         assert capacity()==8 and effects('admin_bulk')=='1\tlocal_recorded\t2\n2\tlocal_recorded\t0'
@@ -414,7 +449,7 @@ def check():
         compact_reports=[e['text'] for e in compact if e['name']=='MESSAGE'
             and 'ساخت گروهی اکانت' in e['text']]
         assert compact_reports and all(name in compact_reports[0] for name in compact_names)
-        cases.append('admin_bulk_long_base_compact_marzban_username_32_no_remote_replay')
+        cases.append('admin_bulk_long_base_compact_pasarguard_username_100_no_remote_replay')
 
         reset()
         sql(work,env,"UPDATE server_plans SET descr='name with spaces' WHERE id=7")
@@ -444,7 +479,7 @@ def check():
         cases.append('trial_postcommit_telegram_failure_no_recreate')
 
     return dict(complete=True,cases=len(cases),scenarios=cases,source_real_php=True,
-        socket_only=True,production_mutations=0,provider_requests=0)
+        socket_only=True,production_mutations=0,actual_native_http=True,external_requests=0)
 
 
 # Current domain fixture imports the real event-aware notification router.

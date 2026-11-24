@@ -700,7 +700,7 @@ function achbotPaymentEvidenceGiftNormalize(array $data,array $profile,array $at
 /** Genuine stored staff delivery, independent from remote evidence/finality. */
 function achbotPaymentEvidenceReviewReady(array $pay,array $attempt): bool {
     return (int)($pay['message_id']??0)>0 && (int)($pay['chat_id']??0)>0 &&
-        (($pay['state']==='have_sent' && $attempt['stage']==='review') ||
+        ((in_array($pay['state'],['have_sent','service_superseded'],true) && $attempt['stage']==='review') ||
          in_array($pay['state'],['approved','paid','auto_cart_approved','paid_with_wallet'],true));
 }
 function achbotPaymentEvidenceClaim(mysqli $db,int $payId): ?array {
@@ -877,7 +877,8 @@ function achbotPaymentEvidenceReserve(mysqli $db,int $payId,array $evidence,stri
         $p=$a?achbotPaymentEvidenceSnapshot($a):null;
         if (!$pay || !$p || ($a['review_archived_at']??null)!==null ||
             !hash_equals($p['pay_sha256'],achbotPaymentEvidencePayFingerprint($pay)) ||
-            !in_array($pay['state'],['pending','have_sent','approved','auto_cart_approved','paid','paid_with_wallet'],true)) {
+            !in_array($pay['state'],['pending','have_sent','service_superseded','approved','auto_cart_approved','paid','paid_with_wallet'],true) ||
+            ($pay['state']==='service_superseded' && !achbotPaymentEvidenceReviewReady($pay,$a))) {
             $db->rollback();return null;
         }
         $settled=in_array($pay['state'],['approved','auto_cart_approved','paid','paid_with_wallet'],true);

@@ -415,7 +415,7 @@ function achbotApiPaymentCheckBank(mysqli $db,array $claim,callable $settle): st
             if($e===null || !achbotPaymentEvidenceSmsMatches($e,$a,$profile))continue;
             $fresh=achbotApiPaymentRow($db,$id);if(!$fresh)return 'review';
             $mode=achbotApiPaymentTerminal($fresh)?'evidence_only':'settle';
-            if($mode==='settle' && !in_array($fresh['state'],['pending','have_sent'],true))return 'review';
+            if($mode==='settle' && !in_array($fresh['state'],['pending','have_sent','service_superseded'],true))return 'review';
             $guard=static fn(mysqli $lockedDb)=>achbotApiPaymentSmsUniqueLocked($lockedDb,$e,$id);
             $handle=achbotPaymentEvidenceReserve($db,$id,$e,$mode,null,$guard);
             if(!$handle)return 'review';
@@ -613,6 +613,16 @@ function achbotApiPaymentCheck(mysqli $db,int $id): string {
         try {
             $status=achbotManualReceiptCheckApi($db,$id);
             $pay=achbotApiPaymentRow($db,$id);
+            if ($status==='settled' && $pay) {
+                // The API callback and polling worker both use the original
+                // funded service and its durable delivery packets. No
+                // payment-specific Native executor and no second credit.
+                $attempt=achbotApiPaymentAttempt($db,$id);
+                if ($attempt && $attempt['wallet_credit_entry_id']!==null) {
+                    require_once __DIR__.'/CheckoutRoutes.php';
+                    achbotCheckoutAdvance($db,$attempt['service_operation_id']===null?null:(int)$attempt['service_operation_id'],$id);
+                }
+            }
             if ($pay && !in_array($status,['archived','awaiting_receipt'],true)) {
                 if (in_array($status,['used','revoked','expired','mismatch'],true))
                     achbotApiPaymentNotice($db,$pay,$status);
@@ -652,7 +662,7 @@ function achbotApiPaymentMaintainWithinBudget(mysqli $db,int $limit=12): array {
                   AND (a.evidence_next_check_at IS NULL OR a.evidence_next_check_at<=NOW())
                   AND (a.evidence_state='proven' OR
                        (a.review_archived_at IS NULL AND (a.evidence_state IS NULL OR a.evidence_state NOT IN ('invalid_code','manual')) AND
-                         (p.state='have_sent' OR EXISTS (SELECT 1 FROM payment_transactions t WHERE t.attempt_id=a.id AND t.evidence_operation IS NOT NULL))))
+                         ((p.state IN ('have_sent','service_superseded') AND p.message_id>0 AND p.chat_id>0) OR EXISTS (SELECT 1 FROM payment_transactions t WHERE t.attempt_id=a.id AND t.evidence_operation IS NOT NULL))))
                 ORDER BY COALESCE(a.evidence_next_check_at,a.created_at),a.id LIMIT ".($limit+1));
         $rows=$q->fetch_all(MYSQLI_ASSOC);
         if (count($rows)>$limit) {

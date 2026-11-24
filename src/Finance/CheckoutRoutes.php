@@ -79,6 +79,42 @@ function achbotCheckoutWalletCallback(mysqli $db,string $hash,int $actor,string 
     }
 }
 
+/** Reject only the original admitted, unpaid receipt. Caller owns the
+ * original session lease and SQL transaction; notification packets commit
+ * with the decision. No uncertain API consumption can be discarded. */
+function achbotCheckoutRejectReceiptLocked(mysqli $db,int $id,int $uid,int $actor,int $primary,string $hash): array {
+    achbotCheckoutRequireSchema($db);
+    [$pay,$attempt]=achbotCreditInvoiceLocked($db,$id,$uid);
+    if ($pay['state']!=='have_sent' || $pay['hash_id']!==$hash ||
+        $attempt['wallet_credit_entry_id']!==null || ($attempt['review_archived_at']??null)!==null ||
+        !achbotPayUxManualProvider($attempt['provider']) ||
+        !is_string($attempt['wallet_invoice_sha256']) ||
+        !hash_equals($attempt['wallet_invoice_sha256'],achbotCreditInvoiceFingerprint($pay,$attempt)) ||
+        !achbotAdminCanLocked($db,$actor,$primary,'payments'))
+        throw new DomainException('manual_reject_stale');
+    achbotCreditValidateManualReceiptLocked($db,$pay,$attempt);
+    if (achbotProviderRow($db,"SELECT id FROM payment_transactions WHERE attempt_id=?
+        AND evidence_operation IS NOT NULL LIMIT 1 FOR UPDATE",'i',[(int)$attempt['id']]))
+        throw new DomainException('manual_reject_original_evidence_pending');
+    $operation=$attempt['service_operation_id']===null?null:(int)$attempt['service_operation_id'];
+    if ($operation!==null) {
+        achbotCheckoutOriginalCommandLocked($db,$pay);
+        if ((int)$pay['checkout_operation_id']!==$operation)
+            throw new RuntimeException('manual_reject_original_command_changed');
+        achbotServiceCancelUnfundedLocked($db,$uid,$operation);
+    } elseif ($pay['type']!=='INCREASE_WALLET') {
+        throw new RuntimeException('manual_reject_original_command_missing');
+    }
+    $s=achbotProviderStatement($db,"UPDATE payment_attempts SET stage='done',provider_status='operator_rejected'
+        WHERE id=? AND wallet_credit_entry_id IS NULL",'i',[(int)$attempt['id']]);$s->close();
+    $s=achbotProviderStatement($db,"UPDATE pays SET state='declined',approved_by=? WHERE id=? AND state='have_sent'",
+        'ii',[$actor,$id]);
+    $n=$s->affected_rows;$s->close();
+    if ($n!==1) throw new RuntimeException('manual_reject_cas_failed');
+    $pay['state']='declined';$pay['approved_by']=$actor;
+    return $pay;
+}
+
 /** Human approval must use the exact persisted receipt and matching old
  * approval callback, not a price or order carried in Telegram data. */
 function achbotCheckoutApproveReceipt(mysqli $db,string $hash,int $actor,int $primary,string $mode): array {

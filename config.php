@@ -3396,21 +3396,6 @@ function buildSubscriptionPresentation($provider, $native, $botState, $options =
     return \AchBot\Subscription\Presentation\present($provider, $native, $botState, $resolved, $context);
 }
 
-function buildConfigLinks($acc_link, $botState, $unusedIndexes = [], $serverId = 0) {
-    return buildSubscriptionPresentation('marzban', ['links' => $acc_link], $botState,
-        [], 'view', $serverId)['config_html'];
-}
-
-function buildSubLink($serverType, $panelUrl, $botUrl, $token, $botState) {
-    require_once __DIR__ . '/src/Subscription/Presentation.php';
-    return \AchBot\Subscription\Presentation\primaryLink($serverType, $panelUrl, $botUrl, $token, $botState);
-}
-
-function buildSubBackupSection($subRaw, $token) {
-    require_once __DIR__ . '/src/Subscription/Presentation.php';
-    return \AchBot\Subscription\Presentation\backupLinks($subRaw, $token);
-}
-
 function buildConfigMessage($enableText, $remark, $configLinks, $subLink, $backupSection, $serverType) {
     require_once __DIR__ . '/src/Subscription/Presentation.php';
     return \AchBot\Subscription\Presentation\configMessage(

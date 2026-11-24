@@ -152,6 +152,24 @@ def main():
                 sql('UPDATE server_info SET active=1 WHERE id=2')
                 assert roles(pid)=='customer,receipt_primary',roles(pid)
                 case('actual_bank_scan_lost_remote_ack_service_invalidated')
+                # A receipt already submitted before service supersession is
+                # still real money. Never revive the invalidated service.
+                oid=result(mode,'quote',reference=mode+'-superseded',request=q)
+                pid=seed(mode+'-superseded',price=100,kind='BUY_SUB')
+                issued=result(mode,'issue',pid,method='bank_transfer',api=True,service=oid)
+                submit(mode,pid,'bank_transfer','fixture-late-sms',api=True)
+                sql(f"UPDATE pays SET state='service_superseded' WHERE id={pid}")
+                ident='101' if mode=='strict' else '201'
+                now=datetime.now(timezone.utc).replace(microsecond=0)
+                server.messages[ident]=dict(id=int(ident),public_uid='UID'+ident,provider='BANK_FIXTURE',provider_sms_id='sms'+ident,
+                    sender='BANK',mobile_source='phone',bank_key='fixture',rule_id=7,amount=int(float(issued['amount'])),display_unit='toman',
+                    sms_date=now.strftime('%Y-%m-%d'),sms_time=now.strftime('%H:%M:%S'),created_at=now.strftime('%Y-%m-%d %H:%M:%S'),status='ready')
+                b=balance()
+                assert result(mode,'check',pid)=='settled' and balance()==b+100
+                assert result(mode,'check',pid)=='settled' and balance()==b+100 and server.consumes[ident]==1
+                assert sql(f"SELECT wallet_funding_result FROM payment_attempts WHERE pay_row_id={pid}")=='request_invalidated'
+                assert sql(f"SELECT COUNT(*) FROM wallet_entries WHERE source_kind='service_debit' AND source_ref='{oid}'")=='0'
+                case('superseded_submitted_api_receipt_credits_without_service')
                 pid=seed(mode+'-gift-api',price=1000)
                 result(mode,'issue',pid,method='gift_card',api=True)
                 code=evidence.fixture_gift_code(mode+'-gift-api')
@@ -172,7 +190,7 @@ def main():
                 assert result(mode,'check',pid)=='settled' and balance()==b+1000
                 assert roles(pid)=='customer',roles(pid)
                 case('actual_gift_proven_local_rollback_then_archive')
-            assert sum(server.consumes.values())==2 and server.gift_consumes==2
+            assert sum(server.consumes.values())==4 and server.gift_consumes==2
         finally:server.shutdown();server.server_close();thread.join(timeout=5)
     report=dict(complete=True,cases=len(cases),checks=cases,owned_socket_mariadb=True,
         actual_protected_api_http=True,actual_manual_receipt_ack_contract=True,external_requests=0,production_effects=0)

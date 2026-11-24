@@ -76,7 +76,7 @@ function achbotGatewayAttentionScope(?mysqli $db=null): string {
             (a.wallet_credit_entry_id IS NULL AND a.wallet_invoice_sha256<>'' AND (
                 (a.stage='review' AND a.provider IN ('nowpayments','nextpay','zarinpal')
                     AND a.provider_status IN ('partially_paid','confirming','confirmed','sending','finished','refunded','amount_mismatch','multiple_payments','verification_unavailable'))
-                OR (a.evidence_profile IS NOT NULL AND p.state='have_sent' AND (
+                OR (a.evidence_profile IS NOT NULL AND p.state IN ('have_sent','service_superseded') AND (
                     a.evidence_state IN ('review','uncertain','manual','invalid_code')
                     OR EXISTS (SELECT 1 FROM payment_transactions t WHERE t.attempt_id=a.id AND t.evidence_state='proven')))
             ))
@@ -86,7 +86,7 @@ function achbotGatewayAttentionScope(?mysqli $db=null): string {
             OR EXISTS (SELECT 1 FROM payment_delivery_intents d WHERE d.service_operation_id=p.checkout_operation_id
                 AND d.state IN ('unknown','rejected'))
             OR EXISTS (SELECT 1 FROM payment_followup_intents f WHERE
-                (f.service_operation_id=p.checkout_operation_id OR (f.pay_row_id=p.id AND f.stage='wallet_credit'))
+                (f.service_operation_id=p.checkout_operation_id OR (f.pay_row_id=p.id AND f.stage IN ('wallet_credit','manual_reject')))
                 AND f.state IN ('unknown','rejected'))
         )";
 }
