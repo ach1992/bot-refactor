@@ -82,9 +82,8 @@ if (is_string($data) && strlen($data) <= 64 && preg_match('/\ApayCustomWithWalle
         [$serverInfo, $serverConfig] = getServerInfoAndConfig($connection, $server_id);
         $srv_remark  = $serverInfo['remark'];
         $serverType  = $serverConfig['type'];
-        $portType    = $serverConfig['port_type'];
 
-        [$port, $last_num] = getNextPortAndIncrease('settings/temp.txt', $portType);
+        $port = 0;
 
         [$response, $remark, $port, $effectId] = achbotCreatePaidAccount(
             $connection,(int)$payInfo['id'],1,[
@@ -568,10 +567,9 @@ if (preg_match('/^accCustom(.+)$/D', $data, $match) && $text != \achbotMessage('
         [$serverInfo, $serverConfig] = getServerInfoAndConfig($connection, $server_id);
         $srv_remark  = $serverInfo['remark'];
         $serverType  = $serverConfig['type'];
-        $portType    = $serverConfig['port_type'];
 
         $uniqid = generateRandomString(42, $protocol);
-        [$port] = getNextPortAndIncrease('settings/temp.txt', $portType);
+        $port = 0;
 
         // اگر خواستی fallback برای remark داشته باشی:
         // $remark = buildRemark($botState, $srv_remark, $payInfo['description'], $uid, $payInfo['description']);
@@ -907,7 +905,6 @@ if (is_string($data) && strlen($data) <= 64 && preg_match('/\ApayBuyWithWallet([
             $serverTitle = $serverInfo['title'] ?? '-';
             $srv_remark  = $serverInfo['remark'];
             $serverType  = $serverConfig['type'];
-            $portType    = $serverConfig['port_type'];
 
             $agent_bought = (int)($payInfo['agent_bought'] ?? 0);
 
@@ -918,7 +915,7 @@ if (is_string($data) && strlen($data) <= 64 && preg_match('/\ApayBuyWithWallet([
             for ($i = 1; $i <= $accountCount; $i++) {
 
                 $uniqid = generateRandomString(42, $protocol);
-                [$port] = getNextPortAndIncrease('settings/temp.txt', $portType);
+                $port = 0;
 
                 $remark = buildRemark(
                     $botState,

@@ -162,7 +162,7 @@ function editMarzbanConfig($server,$opts) {
     ];
 }
 function generateRandomString(...$args){return 'fixture-alphanumeric-uuid';}
-function getNextPortAndIncrease(...$args){return [15001,0];}
+function getNextPortAndIncrease(...$args){throw new RuntimeException('unexpected_native_port_allocation');}
 function buildLinksAndSendQr(...$args) {
     $GLOBALS['events'][]=['name'=>'LINKS'];
     return ['fixture-token','["vless://fixture.invalid"]','fixture-uuid',

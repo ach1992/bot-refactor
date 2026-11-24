@@ -241,7 +241,6 @@ if (
 
     $srv_remark = $serverInfo['remark'] ?? '';
     $serverType = $serverConfig['type'] ?? '';
-    $portType   = $serverConfig['port_type'] ?? 'rand';
 
     alert(\achbotMessage('legacy_messages.sending_config_to_user'));
 
@@ -267,7 +266,7 @@ if (
 
         $uniqid = generateRandomString(42, $protocol);
 
-        [$port] = getNextPortAndIncrease('settings/temp.txt', $portType);
+        $port = 0;
 
         $remark = buildRemark(
             $botState,

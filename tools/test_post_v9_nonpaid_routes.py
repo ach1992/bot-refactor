@@ -90,7 +90,7 @@ function getServerInfoAndConfig($connection,$sid) {
     return [['remark'=>$row['remark'],'title'=>'Test server'], $row];
 }
 function generateRandomString(){return 'fixtureuuid';}
-function getNextPortAndIncrease(){return [12345,0];}
+function getNextPortAndIncrease(...$args){throw new RuntimeException('unexpected_native_port_allocation');}
 function createServerAccount(...$args) {
     $GLOBALS['events'][]=['name'=>'POST','remark'=>$args[4]];
     // Marzban documents 3..32 ASCII bytes; a too-long name gets a failed
@@ -191,6 +191,16 @@ def php(work,env,driver,**spec):
 
 def check():
     cases=[]
+    # Current Native Marzban/PasarGuard creation must never depend on the
+    # mutable settings/temp.txt auto-port cursor (root-owned on Hell).
+    # The archived utility definition in Core.php is not an active call.
+    runtime=(ROOT/'src',ROOT/'pay',ROOT/'settings')
+    active=[p for base in runtime for p in base.rglob('*.php')]
+    active.extend(ROOT/name for name in ('bot.php','config.php','index.php','health.php'))
+    obsolete=[str(p.relative_to(ROOT)) for p in active
+              if 'getNextPortAndIncrease(' in p.read_text()]
+    assert not obsolete,obsolete
+    cases.append('native_create_routes_do_not_use_mutable_temp_port_allocator')
     with owned.owned_database() as (work,env):
         purchase.init(work,env,'http://127.0.0.1:9')
         sql(work,env,(ROOT/'migrations/post-v9/001_marzban_panel_group_id.sql').read_text())

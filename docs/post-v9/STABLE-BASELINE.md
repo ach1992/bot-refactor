@@ -8,6 +8,7 @@ This retirement of **old bot versions** does not authorize changing customers' r
 
 - Native PasarGuard plan Groups live in `server_plans.provider_group_ids`; new PasarGuard plans store `custom_sni=NULL`. Keep `custom_sni` available for Marzban inbound/proxy metadata.
 - Current PasarGuard subscription URL/config links are returned by authenticated Native GET, rather than trusting historic `orders_list.link` cache. That shared order column remains in the schema for current purchase/import and Marzban fallback behavior.
+- Current native Marzban/PasarGuard account creation, including Wallet/manual/hosted purchases, trial and administrator bulk, does **not** allocate a listener port from the mutable `settings/temp.txt` counter. Providers supply the actual subscription and proxy links. Do not create or reset a local port file as an installation prerequisite; the runtime ZIP excludes it.
 - Obsolete commented import-preview actions are removed. The inactive old external-renewal picker does not search text inside `custom_sni`; the associated historical Marzban callback validates native Marzban plan access. Current PasarGuard renewal uses the provider-aware path.
 - Financial `RENEW_SCONFIG` history, protected provider and Telegram message evidence, original customer balances and active subscription references remain available for legitimate reconciliation. Removing old bot versions does not erase customer history.
 

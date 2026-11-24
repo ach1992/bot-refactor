@@ -134,7 +134,7 @@ function sendQrFromLink(...$args) {
     return true;
 }
 function generateRandomString($len=42,$protocol='vless'){return 'testuuid';}
-function getNextPortAndIncrease(...$args){return [12345,0];}
+function getNextPortAndIncrease(...$args){throw new RuntimeException('unexpected_native_port_allocation');}
 function buildRemark(...$args) {
     // The production generator returns server-[uid-]4/5 digits. A fixture
     // name like checkout_invoice_1 is not a valid generated identity.
