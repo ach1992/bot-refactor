@@ -685,6 +685,11 @@ def main():
                 # Full cancellation before any remote dispatch; no old name,
                 # invoice, or claim can consume the original debit again.
                 op=issue(mode,'resolution-full');fund(mode,op)
+                assert not php(mode,'service_attention',id=op)
+                sql(f"UPDATE service_operations SET next_attempt_at=NOW(6)-INTERVAL 3 MINUTE WHERE id={op}")
+                assert php(mode,'service_attention',id=op)
+                cases.append(mode+'_stalled_funded_worker_visible_without_failure_code')
+
                 cap=int(sql('SELECT ucount FROM server_info WHERE id=2'))
                 bal=int(sql('SELECT wallet FROM users WHERE userid=1001'))
                 before=len(requests)
@@ -1971,6 +1976,18 @@ DELIMITER ;
                 assert sql(f"SELECT stage FROM service_operations WHERE id={op}")=='completed'
                 d=int(sql(f"SELECT id FROM payment_delivery_intents WHERE service_operation_id={op}"))
                 part=int(sql(f"SELECT part_no FROM payment_delivery_parts WHERE intent_id={d} AND state='unknown' LIMIT 1"))
+                # Pending aggregate must not hide individual unknown parts.
+                original=sql(f"SELECT state FROM payment_delivery_intents WHERE id={d}")
+                original_followups=sql(f"SELECT CONCAT(id,':',state) FROM payment_followup_intents WHERE service_operation_id={op}").splitlines()
+                sql(f"UPDATE payment_delivery_intents SET state='pending' WHERE id={d}")
+                sql(f"UPDATE payment_followup_intents SET state='pending' WHERE service_operation_id={op} AND state IN ('unknown','rejected')")
+                assert php(mode,'service_attention',id=op)
+                for saved in original_followups:
+                    fid,state=saved.split(':')
+                    sql(f"UPDATE payment_followup_intents SET state='{state}' WHERE id={fid}")
+                sql(f"UPDATE payment_delivery_intents SET state='{original}' WHERE id={d}")
+                cases.append(mode+'_unknown_delivery_part_visible_even_with_pending_aggregate')
+
                 before=finance();wire=len(requests)
                 def review(cb,actor=9001,**kw):
                     return php(mode,'telegram_review',actor=actor,callback=cb,**kw)

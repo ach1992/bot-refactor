@@ -20,15 +20,42 @@ PHP=evidence.DRIVER[:evidence.DRIVER.index("switch($spec['op'])")].replace(
 )+r"""
 require_once dirname($argv[1]).'/ManualReceipt.php';
 require_once dirname($argv[1]).'/ApiPayments.php';
-$GLOBALS['admin']=9001;
+require_once dirname($argv[1]).'/GatewayReview.php';
+function sendPhoto(...$args) {
+    $GLOBALS['review_sends'][]=['kind'=>'photo','args'=>$args];
+    return (object)['ok'=>!($GLOBALS['spec']['fail_send']??false),'result'=>(object)['message_id'=>333]];
+}
+function sendMessage(...$args) {
+    $GLOBALS['review_sends'][]=['kind'=>'message','args'=>$args];
+    return (object)['ok'=>!($GLOBALS['spec']['fail_send']??false),'result'=>(object)['message_id'=>333]];
+}
+function answerCallbackQuery(...$args) {$GLOBALS['review_alerts'][]=$args;}
+function editText(...$args) {
+    $GLOBALS['review_sends'][]=['kind'=>'edit','args'=>$args];
+    return (object)['ok'=>true];
+}
+function fixtureReview(mysqli $db,array $spec): array {
+    $connection=$db;$admin=9001;$from_id=(int)($spec['actor']??9001);
+    $chat_id=(int)($spec['chat']??$from_id);$message_id=111;$callbackId='test-review';
+    $data=$spec['callback'];$text='';$userInfo=['step'=>'none'];
+    $GLOBALS['from_id']=$from_id;$GLOBALS['chat_id']=$chat_id;$GLOBALS['data']=$data;$GLOBALS['callbackId']=$callbackId;
+    $GLOBALS['review_sends']=[];$GLOBALS['review_alerts']=[];
+    require dirname($GLOBALS['argv'][1]).'/Routes/ManualReceipts.php';
+    return ['sends'=>$GLOBALS['review_sends'],'alerts'=>$GLOBALS['review_alerts']];
+}
+
+$GLOBALS['admin']=9001;$GLOBALS['connection']=$db;
 $GLOBALS['paymentKeys']=$keys+['bankAccount'=>'fixture-bank','holderName'=>'fixture-holder',
-    'giftCardUrl'=>'https://fixture.invalid/gift','manualUsdtNetwork'=>'ERC20',
+    'giftCardUrl'=>'https://fixture.invalid/gift',
     'manualUsdtWalletERC20'=>'0x'.str_repeat('1',40),'manualUsdtRateToman'=>100000,
     'manualTrxWallet'=>'TJRabPrwbZy45sbavfcjinPJC18kjpRTv8','manualTrxRateToman'=>10000];
 $GLOBALS['botState']=$states+['cartToCartState'=>'on','giftCardState'=>'on','manualUsdtState'=>'on'];
 if (!($spec['api']??false)) {$GLOBALS['botState']['smsApiVerifyState']='off';$GLOBALS['botState']['giftApiVerifyState']='off';}
 try {
     $result=match ($spec['op']) {
+        'attention'=>achbotGatewayAttentionCaseOpen($db,$id),
+        'archive'=>achbotCheckoutArchive($db,(int)($spec['actor']??9001),$id,9001,(int)$a['id']),
+        'review'=>fixtureReview($db,$spec),
         'issue'=>achbotManualReceiptIssue($db,$id,(int)($spec['owner']??1001),$method,$spec['service']??null,$spec['network']??null),
         'begin'=>achbotManualBeginEvidence($db,$pay,$method,(int)($spec['owner']??1001),$spec['file']),
         'finish'=>achbotManualFinishEvidence($db,$pay['hash_id'],$spec['file'],$spec['token'],222,9001),
@@ -110,6 +137,58 @@ def main():
                     assert result(mode,'approve',pid)['credit']['replayed'] and balance()==b+1000
                     assert roles(pid)=='customer,receipt_primary,service_admin',roles(pid)
                     case(method+'_actual_issue_and_manual_approval')
+                # Real private recovery route, lost ACK and independent delivery.
+                for method in ('bank_transfer','gift_card','manual_usdt','manual_trx'):
+                    pid=seed(mode+'-recover-'+method)
+                    result(mode,'issue',pid,method=method)
+                    assert result(mode,'attention',pid) is False
+                    token=result(mode,'begin',pid,method=method,file='fixture-original-photo')
+                    assert token and result(mode,'attention',pid) is False
+                    sql(f'UPDATE payment_attempts SET review_notice_claimed_at=NOW()-INTERVAL 3 MINUTE WHERE pay_row_id={pid}')
+                    assert result(mode,'attention',pid) is True
+                    b=balance();cb=f'attentionReceipt_{pid}'
+                    assert not result(mode,'review',pid,callback=cb,actor=1001)['sends']
+                    assert not result(mode,'review',pid,callback=cb,chat=1001)['sends']
+                    assert result(mode,'begin',pid,method=method,file='replacement-photo') is None
+                    lost=result(mode,'review',pid,callback=cb,fail_send=True)
+                    assert len(lost['sends'])==1 and lost['sends'][0]['args'][0]=='fixture-original-photo',lost
+                    assert sql(f'SELECT state FROM pays WHERE id={pid}')=='pending'
+                    recovered=result(mode,'review',pid,callback=cb)
+                    assert len(recovered['sends'])==1 and recovered['sends'][0]['args'][0]=='fixture-original-photo',recovered
+                    assert sql(f'SELECT state FROM pays WHERE id={pid}')=='have_sent'
+                    assert balance()==b and result(mode,'attention',pid)
+                    assert result(mode,'approve',pid)['funding']=='wallet_only'
+                    assert result(mode,'approve',pid)['credit']['replayed'] and balance()==b+1000
+                    assert not result(mode,'review',pid,callback=cb)['sends']
+                    assert result(mode,'attention',pid) is False
+                    sql(f"UPDATE payment_attempts SET review_archived_at=NOW() WHERE pay_row_id={pid}")
+                    sql(f"UPDATE payment_followup_intents SET state='unknown' WHERE pay_row_id={pid} AND role='customer'")
+                    assert result(mode,'attention',pid) is True
+                    assert result(mode,'archive',pid)=='stale'
+                    case(method+'_lost_receipt_ack_recovery_and_independent_report')
+                pid=seed(mode+'-recover-typed-gift')
+                result(mode,'issue',pid,method='gift_card',api=True)
+                code=evidence.fixture_gift_code(mode+'-recover-typed-gift')
+                token=result(mode,'begin',pid,method='gift_card',file=code,api=True)
+                assert token
+                sql(f'UPDATE payment_attempts SET review_notice_claimed_at=NOW()-INTERVAL 3 MINUTE WHERE pay_row_id={pid}')
+                recovered=result(mode,'review',pid,callback=f'attentionReceipt_{pid}',api=True)
+                assert len(recovered['sends'])==1 and recovered['sends'][0]['kind']=='message' and code in recovered['sends'][0]['args'][0],recovered
+                assert sql(f'SELECT state FROM pays WHERE id={pid}')=='have_sent'
+                b=balance()
+                assert result(mode,'approve',pid)['funding']=='wallet_only' and balance()==b+1000
+                assert result(mode,'approve',pid)['credit']['replayed'] and balance()==b+1000
+                case('typed_gift_lost_receipt_ack_recovery')
+                pid=seed(mode+'-archive-receiving')
+                result(mode,'issue',pid,method='bank_transfer')
+                token=result(mode,'begin',pid,file='original-photo')
+                sql(f'UPDATE payment_attempts SET review_notice_claimed_at=NOW()-INTERVAL 3 MINUTE WHERE pay_row_id={pid}')
+                assert result(mode,'archive',pid)=='archived'
+                assert result(mode,'attention',pid) is False
+                assert result(mode,'finish',pid,file='original-photo',token=token) is False
+                assert result(mode,'begin',pid,file='original-photo') is None
+                assert not result(mode,'review',pid,callback=f'attentionReceipt_{pid}')['sends']
+                case('archived_receipt_cannot_reopen')
                 pid=seed(mode+'-orphan',kind='BUY_SUB')
                 assert run(mode,'issue',pid,method='bank_transfer')['reason']=='checkout_service_invoice_missing'
                 assert sql(f'SELECT COUNT(*) FROM payment_attempts WHERE pay_row_id={pid}')=='0'

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Current-Stable proof: retired catalog entries only; all retained copy exact.
+"""Current-Stable proof: explicit retired, added and changed catalog entries; all other copy exact.
 
 Reference is the approved current Stable source before the source/handler
 ownership cleanup. No pre-Stable bot is run and no external service is used.
@@ -16,7 +16,7 @@ import package_current
 import test_post_v9_current_copy_ownership as owner
 
 ROOT = Path(__file__).resolve().parents[1]
-RETIREMENT_SHA256 = "12ea99b61cf1b1899306790cd6a2d74d17df7c167382006482208897c1298fc7"
+RETIREMENT_SHA256 = "2c1b8790945b5bebdd06ba04ba84585b9ba49451e059b3cc0b236099556b8224"
 
 
 def check(ok: bool, name: str) -> None:
@@ -59,21 +59,21 @@ def main() -> None:
         old = load(files)
     new = load({a: ROOT / "messages/fa" / (a + ".php") for a in ("user","admin")})
     retired = sorted(set(old)-set(new))
-    check(not set(new)-set(old), "unapproved_new_copy")
     allowed = json.loads((ROOT / "tools/wallet_first_copy_corrections.json").read_text())
-    actual = {k: {"before": old[k], "after": new[k]} for k in new if old[k]!=new[k]}
+    actual = {k: {"before": old.get(k), "after": new[k]} for k in new if k not in old or old[k]!=new[k]}
     check(actual == allowed, "retained_copy_bytes_changed")
-    check(len(retired)==304 and digest(retired)==RETIREMENT_SHA256, "retired_copy_set_changed")
+    check(len(retired)==303 and digest(retired)==RETIREMENT_SHA256, "retired_copy_set_changed")
     sources = {p:(ROOT/p).read_text() for p in package_current.members()
                if p.endswith(".php") and p not in owner.AUDIENCES}
     restored = {topic:dict(entries) for topic,entries in owner.loaded_catalog().items()}
     for name in retired:
         topic,key=name.split(".",1)
-        restored[topic][key]=old[name]
+        restored.setdefault(topic,{})[key]=old[name]
     check(owner.unresolved_copy_orphans(restored,sources)==retired,"retired_copy_has_live_consumer")
     check(not owner.unresolved_copy_orphans(owner.loaded_catalog(),sources),"unresolved_current_copy")
     print(json.dumps({"complete":True,"status":"PASS","baseline":stable,
-        "existing_copy_values_preserved":len(new)-len(allowed),"existing_copy_values_changed":len(allowed),
+        "existing_copy_values_preserved":len(new)-len(allowed),"existing_copy_values_changed":sum(v["before"] is not None for v in allowed.values()),
+        "explicit_new_copy":sum(v["before"] is None for v in allowed.values()),
         "removed_source_dead_copy":len(retired),"retired_key_sha256":digest(retired),
         "network_calls":0},ensure_ascii=False))
 

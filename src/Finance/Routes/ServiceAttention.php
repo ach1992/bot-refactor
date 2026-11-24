@@ -67,20 +67,38 @@ try {
         $render($body,$rows);return;
     }
     if ($action!=='' && $action!=='Page') throw new DomainException('service_resolution_stale');
-    $kind=match($op['kind']) {'BUY'=>'purchase','RENEW'=>'renew','ADD_TIME'=>'days','ADD_VOLUME'=>'volume'};
+    $kind=match($op['kind']) {
+        'BUY'=>achbotMessage('automatic_gateway_review.purchase'),
+        'RENEW'=>achbotMessage('automatic_gateway_review.renew'),
+        'ADD_TIME'=>achbotMessage('automatic_gateway_review.days'),
+        'ADD_VOLUME'=>achbotMessage('automatic_gateway_review.volume'),
+    };
     $body=achbotMessageHtml('automatic_gateway_review.service_title',[
-        'id'=>$id,'user'=>$op['userid'],'kind'=>achbotMessage('automatic_gateway_review.'.$kind),
+        'id'=>$id,'user'=>$op['userid'],'kind'=>$kind,
         'amount'=>number_format((int)$op['price_toman']),'stage'=>$op['resolution_kind']??$op['stage'],
         'error'=>$op['failure_code']??'—','updated'=>$op['updated_at']]);
+    $q=json_decode($op['quote_payload'],true,64,JSON_THROW_ON_ERROR)['request'];
+    if ((int)$op['subject_order_id']>0) {
+        $body.="
+".achbotMessageHtml('automatic_gateway_review.order',['id'=>$op['subject_order_id']]).
+            "
+".achbotMessageHtml('automatic_gateway_review.username',['username'=>$q['remark']]);
+    }
     $rows=[];
     if (in_array($op['stage'],['funded','prepared','dispatching','applied'],true)) {
-        $plan=achbotServiceResolutionPreview($connection,$id,$actor,$primary);
-        if (!$plan) throw new DomainException('service_resolution_stale');
-        if ($op['kind']==='BUY') $body.="\n".achbotMessageHtml('automatic_gateway_review.service_details',[
-            'quantity'=>$plan['retained']+$plan['cancel_count'],'retained'=>$plan['retained'],'amount'=>number_format($plan['refund'])]);
         $rows[]=[['text'=>achbotMessage('automatic_gateway_review.service_continue'),'callback_data'=>'attentionServiceResume_'.$id]];
-        if ($plan['can_close']) $rows[]=[['text'=>achbotMessage('automatic_gateway_review.service_close'),'callback_data'=>'attentionServiceCloseC_'.$id]];
-        if ($plan['can_refund']) $rows[]=[['text'=>achbotMessage('automatic_gateway_review.service_refund'),'callback_data'=>'attentionServiceRefundC_'.$id]];
+        try {$plan=achbotServiceResolutionPreview($connection,$id,$actor,$primary);}
+        catch (Throwable $e) {
+            $plan=null;
+            achbotDiagnosticEvent('achbot.service.attention_preview',['service_operation_id'=>$id,
+                'reason'=>achbotServiceExecutionReason($e),'class'=>get_class($e)],'error');
+        }
+        if (!$plan) $body.="
+".achbotMessage('automatic_gateway_review.unavailable');
+        if ($plan && $op['kind']==='BUY') $body.="\n".achbotMessageHtml('automatic_gateway_review.service_details',[
+            'quantity'=>$plan['retained']+$plan['cancel_count'],'retained'=>$plan['retained'],'amount'=>number_format($plan['refund'])]);
+        if ($plan && $plan['can_close']) $rows[]=[['text'=>achbotMessage('automatic_gateway_review.service_close'),'callback_data'=>'attentionServiceCloseC_'.$id]];
+        if ($plan && $plan['can_refund']) $rows[]=[['text'=>achbotMessage('automatic_gateway_review.service_refund'),'callback_data'=>'attentionServiceRefundC_'.$id]];
     }
     $offset=$action==='Page'?(int)$suffix:0;
     $s=achbotProviderStatement($connection,"SELECT * FROM (
@@ -94,7 +112,7 @@ try {
     $items=$s->get_result()->fetch_all(MYSQLI_ASSOC);$s->close();
     foreach (array_slice($items,0,10) as $item) {
         $delivery=$item['source']==='delivery';
-        $rows[]=[['text'=>achbotMessage('automatic_gateway_review.'.($delivery?'redrive_action':'wallet_report_action')).
+        $rows[]=[['text'=>achbotMessage($delivery?'automatic_gateway_review.redrive_action':'automatic_gateway_review.wallet_report_action').
             ' #'.($delivery?$item['ordinal'].'.'.$item['part_no']:$item['id']),
             'callback_data'=>$delivery?'attentionDeliveryC_'.$item['id'].'_'.$item['part_no']:'attentionReportC_'.$item['id']]];
     }

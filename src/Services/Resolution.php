@@ -8,9 +8,12 @@ require_once __DIR__.'/../Purchase/OrderWrites.php';
 /** Shared attention is keyed by actual operations, including scheduled
  * renewals without an invoice. A notification is not a financial failure. */
 function achbotServiceAttentionScope(): string {
-    return "(o.stage IN ('funded','prepared','dispatching','applied') AND o.failure_code IS NOT NULL
-        OR EXISTS (SELECT 1 FROM payment_delivery_intents d WHERE d.service_operation_id=o.id
-            AND d.state IN ('unknown','rejected'))
+    return "(o.stage IN ('funded','prepared','dispatching','applied') AND (
+            o.failure_code IS NOT NULL OR o.claim_until<=NOW(6)
+            OR (o.claim_token IS NULL AND o.next_attempt_at<=NOW(6)-INTERVAL 2 MINUTE))
+        OR EXISTS (SELECT 1 FROM payment_delivery_intents d
+            JOIN payment_delivery_parts p ON p.intent_id=d.id
+            WHERE d.service_operation_id=o.id AND p.state IN ('unknown','rejected'))
         OR EXISTS (SELECT 1 FROM payment_followup_intents f WHERE f.service_operation_id=o.id
             AND f.state IN ('unknown','rejected')))";
 }

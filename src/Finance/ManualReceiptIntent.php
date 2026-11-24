@@ -79,12 +79,6 @@ function achbotManualIntentDecode(string $saved, string $method): ?array {
         }
         return $intent;
     }
-    // A previous PR candidate saved only an on-chain intent URI.
-    if ($method === 'manual_usdt' &&
-        preg_match('/^usdt:(BEP20|ERC20|TRC20):(.+)$/D', $saved, $m) &&
-        achbotManualUsdtWalletValid($m[2], $m[1])) {
-        return ['v'=>1, 'method'=>'manual_usdt','network'=>$m[1],'wallet'=>$m[2]];
-    }
     return null;
 }
 

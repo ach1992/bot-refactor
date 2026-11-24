@@ -71,6 +71,74 @@ if (str_starts_with((string)($data??''),'attentionService')) {
     return;
 }
 
+// Recover the exact stored manual evidence; a lost first Telegram ACK
+// is not a reason to ask the customer to pay or upload another receipt.
+if (preg_match('/^attentionReceipt_([1-9][0-9]{0,17})$/D',(string)($data??''),$receiptAction)) {
+    $actor=(int)$from_id;$payId=(int)$receiptAction[1];
+    if (!achbotAdminCanFor($connection,$actor,(int)$admin,'payments') || (int)($chat_id??0)!==$actor) {
+        answerCallbackQuery($callbackId,achbotMessage('automatic_gateway_review.denied'),true);return;
+    }
+    require_once __DIR__.'/../ApiPayments.php';
+    $token=null;$pay=null;
+    try {
+        $eligible=achbotProviderRow($connection,'SELECT p.id FROM pays p JOIN payment_attempts a ON a.pay_row_id=p.id
+            WHERE p.id=? AND '.achbotGatewayAttentionReceiptScope(),'i',[$payId]);
+        $pay=$eligible?achbotApiPaymentRow($connection,$payId):null;
+        $a=$pay?achbotApiPaymentAttempt($connection,$payId):null;
+        if (!$a || !achbotPayUxManualProvider($a['provider']) ||
+            !in_array($a['stage'],['receiving','review'],true) ||
+            $a['review_archived_at']!==null || $a['wallet_credit_entry_id']!==null ||
+            !hash_equals((string)$a['wallet_invoice_sha256'],achbotCreditInvoiceFingerprint($pay,$a)))
+            throw new DomainException('manual_review_stale');
+        $intent=achbotManualIntentDecode((string)$a['checkout_url'],$a['provider']);
+        if (!$intent) throw new DomainException('manual_review_evidence_invalid');
+        $typed=achbotManualTypedGift($connection,$pay,$a['provider']);
+        $file=$typed?achbotPaymentEvidenceReadGiftCode($connection,$payId):($intent['receipt_file_id']??null);
+        if (!is_string($file) || $file==='' || ($typed && !achbotPaymentEvidenceGiftCodeFormatValid($file)))
+            throw new DomainException('manual_review_evidence_invalid');
+        if ($a['stage']==='receiving') {
+            $token=achbotManualBeginEvidence($connection,$pay,$a['provider'],(int)$pay['user_id'],$file);
+            if ($token===null) throw new DomainException('manual_review_busy');
+        } else {
+            if (!in_array($pay['state'],['have_sent','service_superseded'],true))
+                throw new DomainException('manual_review_stale');
+            achbotCreditValidateManualReceiptLocked($connection,$pay,$a);
+        }
+        // Never reveal proof in a group, to a support-only actor, or to a
+        // revoked member. The actual approval independently rechecks it.
+        if (!achbotAdminCanFor($connection,$actor,(int)$admin,'payments'))
+            throw new DomainException('manual_review_denied');
+        $body=achbotMessage('automatic_gateway_review.case_title')."\n".
+            achbotMessageHtml('automatic_gateway_review.customer',['id'=>$pay['user_id']])."\n".
+            achbotMessageHtml('automatic_gateway_review.amount',['amount'=>number_format((int)$pay['price'])])."\n".
+            achbotMessageHtml('automatic_gateway_review.reference',['hash'=>$pay['hash_id']])."\n".
+            achbotMessageHtml('automatic_gateway_review.api_quote',['amount'=>$a['quote_amount'],'currency'=>$a['quote_currency']]);
+        $actions=[['text'=>achbotMessage('legacy_buttons.approve'),
+            'callback_data'=>achbotManualApprovalPrefix($pay).$pay['hash_id']]];
+        if ($pay['state']!=='service_superseded')
+            array_unshift($actions,['text'=>achbotMessage('legacy_buttons.decline'),'callback_data'=>'declineAction_'.$pay['hash_id']]);
+        $keys=inlineKeyboard([$actions,[['text'=>achbotMessage('automatic_gateway_review.open_case'),
+            'callback_data'=>'attentionCase_'.$payId]]]);
+        if ($typed) {
+            $body.="\n<code>".htmlspecialchars($file,ENT_QUOTES|ENT_SUBSTITUTE,'UTF-8').'</code>';
+            $response=sendMessage($body,$keys,'HTML',$actor);
+        } else $response=sendPhoto($file,$body,$keys,'HTML',$actor);
+        if (!is_object($response) || ($response->ok??false)!==true)
+            throw new RuntimeException('manual_review_delivery_unconfirmed');
+        if ($token!==null && !achbotManualFinishEvidence($connection,$pay['hash_id'],$file,$token,
+            (int)($response->result->message_id??0),$actor))
+            throw new RuntimeException('manual_review_commit_unconfirmed');
+        $token=null;
+        answerCallbackQuery($callbackId);
+    } catch (Throwable $e) {
+        if ($token!==null && $pay) achbotManualReleaseEvidenceLease($connection,$pay['hash_id'],$token);
+        achbotDiagnosticEvent('achbot.finance.receipt_review',['pay_id'=>$payId,'actor_id'=>$actor,
+            'class'=>get_class($e),'reason'=>preg_match('/^manual_review_[a-z0-9_]{1,64}$/D',$e->getMessage())?$e->getMessage():'manual_review_failed'],'warning');
+        answerCallbackQuery($callbackId,achbotMessage('automatic_gateway_review.unavailable'),true);
+    }
+    return;
+}
+
 $reviewAction=[];
 if (preg_match('/^attentionDelivery([CS])_([1-9][0-9]{0,17})_([1-9][0-9]{0,8})(?:_([a-f0-9]{20}))?$/D',
     (string)($data??''),$reviewAction)) {
@@ -212,8 +280,8 @@ if (preg_match('/^attention(?:Inbox(?:_[1-9][0-9]{0,17})?|Case_[1-9][0-9]{0,17})
             $before=(int)($inbox[1]??0);
             $serviceScope=achbotServiceAttentionScope();
             $q=achbotProviderStatement($connection,"SELECT * FROM (
-                SELECT p.id,p.user_id,p.price,a.provider,'receipt' AS source,p.id*2 AS cursor
-                  FROM pays p JOIN payment_attempts a ON a.pay_row_id=p.id WHERE $scope
+                SELECT p.id,p.user_id,p.price,COALESCE(a.provider,'wallet') AS provider,'receipt' AS source,p.id*2 AS cursor
+                  FROM pays p LEFT JOIN payment_attempts a ON a.pay_row_id=p.id WHERE $scope
                 UNION ALL
                 SELECT o.id,o.userid,o.price_toman,o.kind,'service',o.id*2+1
                   FROM service_operations o WHERE $serviceScope
@@ -221,10 +289,13 @@ if (preg_match('/^attention(?:Inbox(?:_[1-9][0-9]{0,17})?|Case_[1-9][0-9]{0,17})
                 'ii',[$before,$before]);
             $items=$q->get_result()->fetch_all(MYSQLI_ASSOC);$q->close();
             $more=count($items)>12;$items=array_slice($items,0,12);
-            $kinds=['BUY'=>'purchase','RENEW'=>'renew','ADD_TIME'=>'days','ADD_VOLUME'=>'volume'];
+            $kinds=['BUY'=>achbotMessage('automatic_gateway_review.purchase'),
+                'RENEW'=>achbotMessage('automatic_gateway_review.renew'),
+                'ADD_TIME'=>achbotMessage('automatic_gateway_review.days'),
+                'ADD_VOLUME'=>achbotMessage('automatic_gateway_review.volume')];
             foreach ($items as $item) {
                 $service=$item['source']==='service';
-                $kind=$service?achbotMessage('automatic_gateway_review.'.$kinds[$item['provider']]):
+                $kind=$service?$kinds[$item['provider']]:
                     ($labels[$item['provider']]??$item['provider']);
                 $label=($service?'⚙️ ':'💳 ').number_format((int)$item['price']).' '.
                     achbotMessage('automatic_gateway_review.toman').' | '.(int)$item['user_id'].' | '.$kind;
@@ -244,7 +315,7 @@ if (preg_match('/^attention(?:Inbox(?:_[1-9][0-9]{0,17})?|Case_[1-9][0-9]{0,17})
                 p.checkout_operation_id,p.plan_id,p.order_id,p.server_id,p.day,p.volume,p.description,\n                p.agent_count,p.request_date,p.approved_by,
                 a.id AS attempt_id,COALESCE(a.provider,'wallet') AS provider,a.order_hash,a.provider_reference,
                 a.payment_id,a.quote_amount,a.quote_currency,a.stage,a.provider_status,
-                a.created_at,a.updated_at,a.last_checked_at
+                a.created_at,a.updated_at,a.last_checked_at,(".achbotGatewayAttentionReceiptScope().") AS financial_review
                 FROM pays p LEFT JOIN payment_attempts a ON a.pay_row_id=p.id
                 WHERE p.id=? AND $scope LIMIT 1");
             $q->bind_param('i',$payId);$q->execute();
@@ -288,8 +359,6 @@ if (preg_match('/^attention(?:Inbox(?:_[1-9][0-9]{0,17})?|Case_[1-9][0-9]{0,17})
                 default => $safe($type),
             };
             $orderId=(int)($item['order_id']??0);
-            if ($orderId<=0 && preg_match('/^INCREASE_(?:DAY|VOLUME)_([1-9][0-9]*)_/D',$type,$m))
-                $orderId=(int)$m[1];
             $orderName='';
             if ($orderId>0) {
                 $q=$connection->prepare('SELECT remark FROM orders_list
@@ -386,7 +455,6 @@ if (preg_match('/^attention(?:Inbox(?:_[1-9][0-9]{0,17})?|Case_[1-9][0-9]{0,17})
                 !empty($apiAttempt['evidence_profile']);
             if ($apiCase) {
                 $item['evidence_state']=$apiAttempt['evidence_state']??null;
-                $item['evidence_fulfillment_state']=$apiAttempt['evidence_fulfillment_state']??null;
                 $body.="\n".achbotMessageHtml('automatic_gateway_review.api_status',[
                     'evidence'=>$item['evidence_state']?:achbotMessage('automatic_gateway_review.unknown'),
                     'fulfillment'=>($operation['stage']??null)?:achbotMessage('automatic_gateway_review.unknown')]);
@@ -433,7 +501,6 @@ if (preg_match('/^attention(?:Inbox(?:_[1-9][0-9]{0,17})?|Case_[1-9][0-9]{0,17})
                         'callback_data'=>'gatewayReview_V_'.$attempt];
             } elseif ($apiCase) {
                 $item['attempt']=$apiAttempt;
-                $item['evidence_fulfillment_state']=$apiAttempt['evidence_fulfillment_state']??null;
                 $proof=achbotPaymentEvidenceGetProof($connection,$payId);
                 $eligible=achbotApiPaymentCanResume($connection,$item);
                 $terminalDelivery=achbotApiPaymentTerminal($item) &&
@@ -457,6 +524,11 @@ if (preg_match('/^attention(?:Inbox(?:_[1-9][0-9]{0,17})?|Case_[1-9][0-9]{0,17})
                                 $actions[]=$button;
                 }
             }
+            if ($manualCase && (int)$item['financial_review']===1 &&
+                in_array($item['stage'],['receiving','review'],true)) {
+                $rows[]=[['text'=>achbotMessage('automatic_gateway_review.view_receipt'),
+                    'callback_data'=>'attentionReceipt_'.$payId]];
+            }
             if ($actions) $rows[]=$actions;
             if ($recover) $rows[]=[$recover];
             if ($opId>0 && achbotServiceAttentionCaseOpen($connection,$opId))
@@ -471,7 +543,7 @@ if (preg_match('/^attention(?:Inbox(?:_[1-9][0-9]{0,17})?|Case_[1-9][0-9]{0,17})
             $q->close();
             if (!$actions && !$recover)
                 $footer.="\n".achbotMessage('automatic_gateway_review.manual_hold');
-            if ($attempt>0 && (!$operation || !in_array($operation['stage'],['funded','prepared','dispatching','applied'],true))) {
+            if ((int)$item['financial_review']===1 && $attempt>0 && (!$operation || !in_array($operation['stage'],['funded','prepared','dispatching','applied'],true))) {
                 $rows[]=[['text'=>achbotMessage('automatic_gateway_review.archive'),
                     'callback_data'=>'gatewayReview_H_'.$attempt]];
                 $footer.="\n".achbotMessage('automatic_gateway_review.archive_notice');

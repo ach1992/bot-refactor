@@ -325,7 +325,7 @@ function achbotPhysicalRetireOpenPaymentsLocked(mysqli $db,array $rows,
     require_once __DIR__.'/../Finance/PaymentEvidence.php';
     if (!achbotPaymentEvidenceSchemaReady($db))
         throw new RuntimeException('physical_payment_evidence_unavailable');
-    // One indexed locking reader also protects legacy add-ons (order_id=0).
+    // Current invoices bind the exact order_id before they can be issued.
     $payments=achbotServicePaymentRowsLocked($db,$ids);
     $retired=[];
     foreach ($payments as $payment) {
@@ -340,8 +340,7 @@ function achbotPhysicalRetireOpenPaymentsLocked(mysqli $db,array $rows,
         if ($type==='RENEW_ACCOUNT') $target=(int)$payment['order_id'];
         elseif (preg_match('/^INCREASE_(?:DAY|VOLUME)_([1-9][0-9]*)_([1-9][0-9]*)$/D',$type,$m)===1) {
             $target=(int)$m[1];
-            if ((int)($payment['order_id']??0)!==0 &&
-                (int)$payment['order_id']!==$target)
+            if ((int)$payment['order_id']!==$target)
                 throw new RuntimeException('physical_payment_subject_invalid');
         } else continue; // Unrelated payment type never silently retired.
         if (!isset($owners[$target]) ||
@@ -350,7 +349,7 @@ function achbotPhysicalRetireOpenPaymentsLocked(mysqli $db,array $rows,
         // Lock the exact attempt after its pays parent, in the same order
         // as authenticated provider/webhook/manual/finance claims.
         $payId=(int)$payment['id'];
-        $fields='id,stage,provider_status,evidence_claim_token,evidence_fulfillment_state';
+        $fields='id,stage,provider_status,evidence_claim_token,wallet_credit_entry_id';
         $q=$db->prepare("SELECT $fields FROM payment_attempts
             WHERE pay_row_id=? FOR UPDATE");
         $q->bind_param('i',$payId);$q->execute();
@@ -370,7 +369,7 @@ function achbotPhysicalRetireOpenPaymentsLocked(mysqli $db,array $rows,
                 !in_array($stage,['pending','review'],true))
                 throw new RuntimeException('physical_pending_financial_effect');
             if ($attempt['evidence_claim_token']!==null ||
-                $attempt['evidence_fulfillment_state']!==null)
+                $attempt['wallet_credit_entry_id']!==null)
                 throw new RuntimeException('physical_pending_financial_effect');
             $aid=(int)$attempt['id'];
             $q=$db->prepare('SELECT id FROM payment_transactions
@@ -417,12 +416,11 @@ function achbotPhysicalHideRetiredReceiptActions(mysqli $db,array $rows): void {
         if (!$ids) return;
         $list=implode(',',$ids);
         $userIds=implode(',',array_unique(array_values($owners)));
-        $pattern='^INCREASE_(DAY|VOLUME)_('.implode('|',$ids).')_';
         $q=$db->prepare("SELECT id,type,order_id,user_id,chat_id,message_id,
             admins_messages FROM pays WHERE state='service_superseded'
             AND user_id IN ($userIds)
-            AND (order_id IN ($list) OR type REGEXP ?) ORDER BY id");
-        $q->bind_param('s',$pattern);$q->execute();$pays=$q->get_result()->fetch_all(MYSQLI_ASSOC);$q->close();
+            AND order_id IN ($list) ORDER BY id");
+        $q->execute();$pays=$q->get_result()->fetch_all(MYSQLI_ASSOC);$q->close();
         $sent=[];$ownerAdmin=(int)($GLOBALS['admin']??0);
         foreach ($pays as $pay) {
             $type=(string)$pay['type'];$oid=0;

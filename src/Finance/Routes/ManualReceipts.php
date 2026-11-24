@@ -17,6 +17,7 @@ $adminCallback=(string)($data??'');
 // the receiving route performs fresh payment, actor and Native checks.
 if (str_starts_with($adminCallback,'attentionInbox') ||
     str_starts_with($adminCallback,'attentionCase_') ||
+    str_starts_with($adminCallback,'attentionReceipt_') ||
     str_starts_with($adminCallback,'attentionDelivery') ||
     str_starts_with($adminCallback,'attentionService') ||
     str_starts_with($adminCallback,'attentionReport') ||
@@ -60,20 +61,28 @@ if (preg_match('/^apiEvidenceResume_([1-9][0-9]{0,17})$/D',
         }
         answerCallbackQuery($callbackId,achbotMessage('manual_receipt_final.checking'));
         $outcome=achbotApiPaymentSettle($connection,$payId,$proof);
-        // A settled invoice is not necessarily an ACKed customer message.
-        // The terminal fast-path returns 'settled' after pending-only delivery;
-        // inspect the original per-message journal before reporting success.
-        $acknowledged=false;
+        $result=achbotMessage('manual_receipt_final.status_unknown');
         if (in_array($outcome,['confirmed','settled'],true)) {
-            $delivery=achbotDeliveryAggregate($connection,$payId);
-            $acknowledged=$delivery && (int)$delivery['total']>0 &&
-                (int)$delivery['ack']===(int)$delivery['total'];
+            $fresh=achbotApiPaymentAttempt($connection,$payId);
+            if ($fresh && $fresh['wallet_credit_entry_id']!==null) {
+                $serviceId=(int)($fresh['service_operation_id']??0);
+                if ($fresh['wallet_funding_result']!=='funded') {
+                    $result=achbotMessage('manual_receipt_final.status_wallet_credited');
+                } elseif ($serviceId>0) {
+                    $op=achbotProviderRow($connection,'SELECT stage,resolution_kind,kind,quote_payload FROM service_operations WHERE id=?','i',[$serviceId]);
+                    if ($op && $op['resolution_kind']!==null)
+                        $result=achbotMessage('automatic_gateway_review.status_stale');
+                    elseif ($op && $op['stage']==='completed') {
+                        $delivery=achbotProviderRow($connection,"SELECT COUNT(*) AS total,COALESCE(SUM(state='acknowledged'),0) AS ack
+                            FROM payment_delivery_intents WHERE service_operation_id=?",'i',[$serviceId]);
+                        $request=json_decode($op['quote_payload'],true,64,JSON_THROW_ON_ERROR)['request'];
+                        $expected=$op['kind']==='BUY'?(int)$request['quantity']:1;
+                        $complete=$expected>0 && (int)$delivery['total']===$expected && (int)$delivery['ack']===$expected;
+                        $result=achbotMessage(!$complete?'manual_receipt_final.status_delivery_unconfirmed':'manual_receipt_final.status_completed');
+                    } else $result=achbotMessage('manual_receipt_final.status_service_pending');
+                }
+            }
         }
-        $result=$acknowledged
-            ? achbotMessage('manual_receipt_final.status_completed')
-            : (in_array($outcome,['confirmed','settled'],true)
-                ? achbotMessage('manual_receipt_final.status_delivery_unconfirmed')
-                : achbotMessage('manual_receipt_final.status_unknown'));
         // This action began inside the shared attention inbox. Its result
         // always returns there, even if the original case is now closed.
         $rows=[[['text'=>achbotMessage('manual_receipt_final.back'),

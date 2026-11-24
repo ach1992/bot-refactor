@@ -58,6 +58,10 @@ def main():
         assert sql('fresh_single',"SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='service_operations' AND COLUMN_NAME='historical_pay_id'")=='0'
         assert sql('fresh_single',"SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='users' AND COLUMN_NAME='userid' AND NON_UNIQUE=0")!='0'
         checks+=['no_historical_funding_column','unique_wallet_owner']
+        retired_columns=['review_notified_at', 'evidence_review_claim_token', 'evidence_review_claimed_at', 'evidence_report_digest', 'evidence_fulfillment_state', 'evidence_fulfillment_payload']
+        for column in retired_columns:
+            assert sql('fresh_single',"SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='payment_attempts' AND COLUMN_NAME='"+column+"'")== '0',column
+            checks.append('retired_payment_column:'+column)
         path=work/'fresh.php';path.write_text(PHP)
         for mode in ('strict','off'):
             p=subprocess.run(['php',str(path),str(ROOT),str(work/'mysql.sock'),mode],

@@ -73,7 +73,14 @@ def main() -> None:
     # Every button family used by the existing attention-case renderer,
     # including confirmation callbacks, must reach the real top-level route.
     actions = [
-        f'attentionWalletResume_{PAY}',
+        f'attentionReceipt_{PAY}',
+        f'attentionService_{PAY}',
+        f'attentionServiceResume_{PAY}',
+        f'attentionServiceCloseC_{PAY}',
+        f'attentionServiceCloseS_{PAY}_{TOKEN}',
+        f'attentionServiceRefundC_{PAY}',
+        f'attentionServiceRefundS_{PAY}_{TOKEN}',
+        f'attentionServicePage_{PAY}_10',
         f'attentionDeliveryC_{PAY}_1',
         f'attentionDeliveryS_{PAY}_1_{TOKEN}',
         f'attentionReportC_{PAY}',
@@ -99,6 +106,12 @@ def main() -> None:
                     for event in result['events']):
                 raise AssertionError(f'untrusted callback not denied: {callback}/{mode}: {result}')
             checked += 1
+    for callback in (f'attentionWalletResume_{PAY}',f'attentionWalletArchive_{PAY}',
+                     f'attentionWalletInspect_{PAY}',f'apiEvidenceExecute_{PAY}',
+                     f'apiEvidenceOverride_{PAY}'):
+        result=invoke(callback,'owner')
+        assert result['capability'] is None and not result['events'],(callback,result)
+        checked+=1
     print(json.dumps({'complete': True, 'status': 'PASS', 'cases': checked,
                       'real_manual_receipts_route': True,
                       'native_or_telegram_calls': 0,

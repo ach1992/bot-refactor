@@ -43,7 +43,7 @@ def main():
     with api.sandbox() as (sql, runner, _provider, _bank, _epoch):
         # DDL is only against the owned DB; production rollout remains gated.
         sql((ROOT/'migrations/post-v9/023_scoped_payment_lock_indexes.sql').read_text())
-        # Exact original late add-on shapes, including historical order_id=0.
+        # Only canonical current order_id binds service ownership; unbound legacy rows are inert.
         sql("INSERT INTO pays(hash_id,user_id,type,server_id,order_id,price,request_date,state)"
             " VALUES ('lock-renew',1001,'RENEW_ACCOUNT',2,777,100,UNIX_TIMESTAMP(),'processing_wallet'),"
             "('lock-addon-zero',1001,'INCREASE_DAY_777_10',2,0,100,UNIX_TIMESTAMP(),'pending'),"
@@ -59,20 +59,17 @@ def main():
                 +','.join(values[i:i+200]))
         def id_of(hash_:str)->int:
             return int(sql("SELECT id FROM pays WHERE hash_id="+api.quote_sql(hash_)))
-        expected={id_of('lock-renew'),id_of('lock-addon-zero'),id_of('lock-addon-volume')}
+        expected={id_of('lock-renew'),id_of('lock-addon-volume')}
         unrelated=id_of('lock-unrelated')
         neighbor=id_of('lock-neighbor')
         expl=sql("EXPLAIN SELECT id,state FROM pays FORCE INDEX (idx_pays_order_ref_v1)"
-                 " WHERE order_id IN (777) ORDER BY order_id,id FOR UPDATE; "
-                 "EXPLAIN SELECT id,state FROM pays FORCE INDEX (idx_pays_type_ref_v1)"
-                 " WHERE type LIKE 'INCREASE=_DAY=_777=_%' ESCAPE '='"
-                 " ORDER BY type,id FOR UPDATE")
-        assert 'idx_pays_order_ref_v1' in expl and 'idx_pays_type_ref_v1' in expl,expl
+                 " WHERE order_id IN (777) ORDER BY order_id,id FOR UPDATE")
+        assert 'idx_pays_order_ref_v1' in expl,expl
         # EXPLAIN must say range/ref, never PRIMARY or global index access.
         rows=[x.split('\t') for x in expl.splitlines() if '\t' in x]
-        assert len(rows)==2,expl
-        assert rows[0][3] in ('range','ref') and rows[1][3] in ('range','ref'),expl
-        checks.append('mariadb_forced_indexed_order_and_literal_addon_prefix_ranges')
+        assert len(rows)==1,expl
+        assert rows[0][3] in ('range','ref'),expl
+        checks.append('mariadb_forced_canonical_order_index')
         driver=runner.fixture_work/'scoped-locked-invoices.php'
         driver.write_text(PHP)
         command=['php','-n','-d','extension=mysqlnd','-d','extension=mysqli',
@@ -83,7 +80,7 @@ def main():
         result=json.loads(normal.stdout)
         assert set(map(int,result['ids']))==expected,result
         assert unrelated not in result['ids'] and neighbor not in result['ids']
-        checks.append('exact_original_order_and_null_legacy_addon_only')
+        checks.append('canonical_order_only_unbound_legacy_addon_inert')
         p=subprocess.Popen(command+['hold'],cwd=runner.fixture_work,
                            env=runner.fixture_env,stdout=subprocess.PIPE,
                            stderr=subprocess.PIPE,text=True)
@@ -92,7 +89,7 @@ def main():
             assert signal=='LOCKED',signal
             # A different payment row cannot be X-locked by this service guard.
             sql("SET innodb_lock_wait_timeout=1; UPDATE pays SET description='not-blocked' "
-                f"WHERE id={unrelated}; SET innodb_lock_wait_timeout=50")
+                f"WHERE id IN ({unrelated},{id_of('lock-addon-zero')}); SET innodb_lock_wait_timeout=50")
             checks.append('unrelated_existing_payment_write_completes_while_guard_holds')
             # But a relevant row is actually locked, not just a nonlocking
             # snapshot check. The independent UPDATE must time out.

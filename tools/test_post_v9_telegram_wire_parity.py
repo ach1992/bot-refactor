@@ -87,9 +87,10 @@ def canonical(sources):
 
 
 def compare(before, after):
-    assert sorted(after.keys() - before.keys()) == AUDIT["added_without_direct_send"]
+    assert sorted(after.keys() - before.keys()) == sorted(AUDIT["added_without_direct_send"]+AUDIT["added_with_direct_send"])
     assert sorted(before.keys() - after.keys()) == AUDIT["removed"]
-    assert all(not after[name] for name in after.keys() - before.keys())
+    assert all(not after[name] for name in AUDIT["added_without_direct_send"])
+    assert all(after[name] for name in AUDIT["added_with_direct_send"])
     changes = set()
     counts = Counter()
     for name in sorted(before.keys() | after.keys()):

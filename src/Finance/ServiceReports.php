@@ -295,14 +295,13 @@ function achbotServiceStageResolutionReportsLocked(mysqli $db,array $op,array $q
     $e=achbotServiceResolutionEvidenceLocked($db,$op,$quote);
     $stage='service_resolution';$id=(int)$op['id'];
     $values=['id'=>$id,'amount'=>number_format($e['amount']),'retained'=>$e['retained'],'cancelled'=>$e['cancelled']];
-    $key=$op['resolution_kind']==='closed'?'resolution_closed_notice':
-        ($op['kind']==='BUY'?'resolution_buy_notice':'resolution_refunded_notice');
-    $params=match($key) {
-        'resolution_closed_notice'=>['id'=>$id],
-        'resolution_refunded_notice'=>array_intersect_key($values,array_flip(['id','amount'])),
-        default=>$values,
-    };
-    $content=['text'=>achbotMessageHtml('automatic_gateway_review.'.$key,$params),'keys'=>null,'mode'=>'HTML'];
+    $text=$op['resolution_kind']==='closed'?
+        achbotMessageHtml('automatic_gateway_review.resolution_closed_notice',['id'=>$id]):
+        ($op['kind']==='BUY'?
+            achbotMessageHtml('automatic_gateway_review.resolution_buy_notice',$values):
+            achbotMessageHtml('automatic_gateway_review.resolution_refunded_notice',
+                ['id'=>$id,'amount'=>$values['amount']]));
+    $content=['text'=>$text,'keys'=>null,'mode'=>'HTML'];
     achbotFollowupStoreLocked($db,null,$id,$stage,'service_customer','send',
         (string)$op['userid'],null,$e['fingerprint'],$content);
     $content['text'].="\n".achbotMessageHtml('automatic_gateway_review.resolution_admin_context',[

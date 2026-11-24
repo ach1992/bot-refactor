@@ -1,22 +1,233 @@
 {
-  "bot.bot.manage_marzban_panel_groups.message.59d5170317": {
-    "before": "🗂 گروه‌های مشترک پنل: فقط سرورهای متصل به یک پنل واقعی و از یک نوع (مرزبان یا پاسارگارد) را هم‌گروه کنید. صرفاً مشابه بودن آدرس، نام یا نوع پنل به‌تنهایی دلیل یکسان بودن پنل فیزیکی نیست. تشخیص پنل واقعی برعهده ادمین است.",
-    "after": "🗂 گروه‌های مشترک پنل: فقط سرورهای متصل به یک پنل واقعی پاسارگارد را هم‌گروه کنید. مشابه بودن آدرس یا نام، دلیل یکسان بودن پنل فیزیکی نیست. تشخیص پنل واقعی بر عهدهٔ ادمین است."
+  "addon_scopes.filter_blocked": {
+    "after": "⚠️ یک ویرایش فعال دارید؛ ابتدا آن را ثبت یا لغو کنید.",
+    "before": "⚠️ یک ویرایش فعال دارید؛ ابتدا آن را ثبت یا لغو کنید، سپس فهرست را فیلتر کنید."
+  },
+  "automatic_gateway_review.archive_notice": {
+    "after": "🗂 آرشیو فقط پروندهٔ پرداخت را می‌بندد و وجهی برنمی‌گرداند. عملیات سرویس تأمین‌شده از پروندهٔ مستقل خود رسیدگی می‌شود.",
+    "before": "🗂 پس از بررسی مستقل وجه و نتیجهٔ سرویس، آرشیو تصمیم نهایی محلی است؛ هیچ عملیات نامطمئنی را لغو، موفق یا مسترد اعلام نمی‌کند."
+  },
+  "automatic_gateway_review.empty": {
+    "after": "✅ عملیاتی نیازمند رسیدگی نیست.",
+    "before": "✅ پرداخت ناتمامی برای بررسی وجود ندارد."
+  },
+  "automatic_gateway_review.menu": {
+    "after": "🛠 عملیات نیازمند رسیدگی",
+    "before": "💳 پرداخت‌های نیازمند بررسی"
+  },
+  "automatic_gateway_review.redrive_confirm": {
+    "after": {
+      "parameters": [
+        "user",
+        "payment",
+        "ordinal"
+      ],
+      "text": "📨 تأیید ارسال مجدد پیام مشتری\n\n🎫 شناسه مشتری: <code>{user}</code>\n🧾 شناسهٔ پرونده: <code>{payment}</code>\n🔢 شماره پیام سفارش: {ordinal}\n\n⚠️ ممکن است پیام قبلی به مشتری رسیده باشد. فقط همان پیام ذخیره‌شده دوباره ارسال می‌شود؛ پرداخت، کیف پول، حجم و تاریخ انقضا تغییر نمی‌کنند."
+    },
+    "before": {
+      "parameters": [
+        "user",
+        "payment",
+        "ordinal"
+      ],
+      "text": "📨 تأیید ارسال مجدد پیام مشتری\n\n🎫 شناسه مشتری: <code>{user}</code>\n🧾 پرداخت: <code>{payment}</code>\n🔢 شماره پیام سفارش: {ordinal}\n\n⚠️ ممکن است پیام قبلی به مشتری رسیده باشد. فقط همان پیام ذخیره‌شده دوباره ارسال می‌شود؛ پرداخت، کیف پول، حجم و تاریخ انقضا تغییر نمی‌کنند."
+    }
+  },
+  "automatic_gateway_review.redrive_stale": {
+    "after": "⚠️ وضعیت پرونده یا تلاش ارسال تغییر کرده است. پیام جدیدی ارسال نشد.",
+    "before": "⚠️ وضعیت پرونده تغییر کرده یا یک ارسال دستی قبلاً ثبت شده است. پیام جدیدی ارسال نشد."
+  },
+  "automatic_gateway_review.redrive_unknown": {
+    "after": "⚠️ تلاش ارسال مجدد ثبت شد، اما تأیید Telegram نامشخص است. پیش از تلاش مجدد، احتمال تحویل قبلی را بررسی کنید.",
+    "before": "⚠️ تلاش ارسال مجدد ثبت شد، اما تأیید Telegram نامشخص است. برای جلوگیری از تکرار احتمالی، ارسال دیگری از این پرونده انجام نمی‌شود."
+  },
+  "automatic_gateway_review.resolution_admin_context": {
+    "after": {
+      "parameters": [
+        "user",
+        "actor"
+      ],
+      "text": "👤 کاربر: <code>{user}</code> | مدیر: <code>{actor}</code>"
+    },
+    "before": null
+  },
+  "automatic_gateway_review.resolution_buy_notice": {
+    "after": {
+      "parameters": [
+        "id",
+        "retained",
+        "cancelled",
+        "amount"
+      ],
+      "text": "📋 نتیجهٔ عملیات خرید #{id}\n✅ اشتراک ثبت‌شده: {retained}\n❌ لغوشده: {cancelled}\n💰 بازگشت به کیف پول: {amount} تومان"
+    },
+    "before": null
+  },
+  "automatic_gateway_review.resolution_closed_notice": {
+    "after": {
+      "parameters": [
+        "id"
+      ],
+      "text": "🗂 عملیات سرویس #{id} با تصمیم مدیر خاتمه یافت. وجهی به کیف پول بازنگشت."
+    },
+    "before": null
+  },
+  "automatic_gateway_review.resolution_refunded_notice": {
+    "after": {
+      "parameters": [
+        "id",
+        "amount"
+      ],
+      "text": "💰 عملیات سرویس #{id} لغو شد و {amount} تومان به کیف پول برگشت."
+    },
+    "before": null
+  },
+  "automatic_gateway_review.service_account_exists": {
+    "after": {
+      "parameters": [
+        "name"
+      ],
+      "text": "⚠️ اشتراک {name} در پنل وجود دارد. ابتدا عملیات را ادامه دهید یا پس از بررسی مستقل، اثر لغوشده را برطرف کنید."
+    },
+    "before": null
+  },
+  "automatic_gateway_review.service_applied": {
+    "after": "⚠️ نتیجهٔ تغییر در پنل مشاهده شد. عملیات را ادامه دهید یا بدون بازگشت وجه خاتمه دهید.",
+    "before": null
+  },
+  "automatic_gateway_review.service_close": {
+    "after": "🗂 خاتمه بدون بازگشت وجه",
+    "before": null
+  },
+  "automatic_gateway_review.service_close_confirm": {
+    "after": "⚠️ با تأیید شما عملیات خاتمه می‌یابد، هیچ وجهی برگشت نمی‌خورد و ربات دیگر این درخواست را اجرا نمی‌کند. فقط اگر تغییر سرویس را خودتان انجام داده‌اید یا تصمیم قطعی به خاتمه گرفته‌اید تأیید کنید.",
+    "before": null
+  },
+  "automatic_gateway_review.service_confirm": {
+    "after": "✅ تأیید تصمیم نهایی",
+    "before": {
+      "parameters": [
+        "payment"
+      ],
+      "text": "📋 تکمیل عملیات سرویس\n\n🧾 شماره پرداخت: <code>{payment}</code>\n\n⚠️ ابتدا وضعیت واقعی حساب را در پنل بررسی کنید. در صورت نیاز، ربات ادامهٔ همان عملیات یا تلاش مجدد را انجام می‌دهد. پرداخت دوباره دریافت نمی‌شود."
+    }
+  },
+  "automatic_gateway_review.service_continue": {
+    "after": "🔄 ادامه عملیات",
+    "before": null
+  },
+  "automatic_gateway_review.service_details": {
+    "after": {
+      "parameters": [
+        "quantity",
+        "retained",
+        "amount"
+      ],
+      "text": "📦 تعداد درخواست‌شده: {quantity}\n✅ ثبت‌شده: {retained}\n💰 مبلغ قابل استرداد: {amount} تومان"
+    },
+    "before": null
+  },
+  "automatic_gateway_review.service_open": {
+    "after": "⚙️ رسیدگی به عملیات سرویس",
+    "before": null
+  },
+  "automatic_gateway_review.service_refund": {
+    "after": "💰 لغو و بازگشت وجه",
+    "before": null
+  },
+  "automatic_gateway_review.service_refund_confirm": {
+    "after": {
+      "parameters": [
+        "amount"
+      ],
+      "text": "⚠️ مبلغ {amount} تومان به کیف پول کاربر برمی‌گردد.\nاشتراک‌های ثبت‌شده حفظ می‌شوند و بخش باقی‌مانده لغو خواهد شد.\nتأیید کنید که سرویس لغوشده اعمال نشده یا اثر آن را به‌صورت مستقل برطرف کرده‌اید. قطع ارتباط به‌تنهایی دلیل عدم اعمال نیست."
+    },
+    "before": null
+  },
+  "automatic_gateway_review.service_resolution_required": {
+    "after": "⚠️ عملیات سرویس از قبل تأمین شده است. از پروندهٔ عملیات سرویس رسیدگی کنید.",
+    "before": null
+  },
+  "automatic_gateway_review.service_title": {
+    "after": {
+      "parameters": [
+        "id",
+        "user",
+        "kind",
+        "amount",
+        "stage",
+        "error",
+        "updated"
+      ],
+      "text": "⚙️ عملیات سرویس #{id}\n👤 کاربر: <code>{user}</code>\n🛍 نوع: {kind}\n💰 مبلغ: {amount} تومان\n📌 وضعیت: <code>{stage}</code>\n🛑 آخرین خطا: <code>{error}</code>\n🕒 آخرین تغییر: {updated}"
+    },
+    "before": null
+  },
+  "automatic_gateway_review.service_unlinked": {
+    "after": {
+      "parameters": [
+        "name"
+      ],
+      "text": "⚠️ وضعیت اشتراک {name} در پنل باید بررسی شود."
+    },
+    "before": null
+  },
+  "automatic_gateway_review.title": {
+    "after": "📋 عملیات نیازمند رسیدگی",
+    "before": "📋 پرداخت‌های نیازمند بررسی"
+  },
+  "automatic_gateway_review.view_receipt": {
+    "after": "🧾 مشاهده رسید ثبت‌شده",
+    "before": null
+  },
+  "automatic_gateway_review.wallet_report_confirm": {
+    "after": {
+      "parameters": [
+        "payment"
+      ],
+      "text": "⚠️ تأیید تلاش مجدد برای گزارش اصلی ادمین\n\n🧾 شناسهٔ پرونده: <code>{payment}</code>\n\nممکن است گزارش قبلی به بعضی مدیران رسیده باشد؛ تأیید دریافت Telegram قطعی نیست. در هر تلاش تأییدشده، همان گزارش اصلی ارسال می‌شود. هیچ پرداخت، اشتراک یا کیف پولی تغییر نمی‌کند."
+    },
+    "before": {
+      "parameters": [
+        "payment"
+      ],
+      "text": "⚠️ تأیید تلاش مجدد برای گزارش اصلی ادمین\n\n🧾 پرداخت: <code>{payment}</code>\n\nممکن است گزارش قبلی به بعضی مدیران رسیده باشد؛ تأیید دریافت Telegram قطعی نیست. تنها یک بار دیگر همان گزارش اصلی ارسال می‌شود. هیچ پرداخت، اشتراک یا کیف پولی تغییر نمی‌کند."
+    }
+  },
+  "automatic_gateway_review.wallet_report_hold": {
+    "after": "⚠️ وضعیت گزارش اصلی هنوز نامعلوم است. پردازش قبلی ممکن است انجام شده باشد؛ مدارک Telegram را مستقل بررسی کنید.",
+    "before": "⚠️ وضعیت گزارش اصلی هنوز نامعلوم است. ارسال دستی قبلاً استفاده شده یا پردازش قبلی ممکن است انجام شده باشد؛ مدارک Telegram را مستقل بررسی کنید."
+  },
+  "automatic_gateway_review.wallet_report_unknown": {
+    "after": "⚠️ تلاش دستی گزارش ثبت شد اما تحویل Telegram نامعلوم یا ناقص است. پرونده برای بررسی باقی می‌ماند. پیش از ارسال دوباره، احتمال تحویل قبلی را بررسی کنید.",
+    "before": "⚠️ تلاش دستی گزارش ثبت شد اما تحویل Telegram نامعلوم یا ناقص است. پرونده برای بررسی مستقل باقی می‌ماند؛ ارسال دیگری انجام نمی‌شود."
   },
   "bot.bot.add_marzban_panel_group.message.31116063c0": {
-    "before": "توجه: گروه مشترک فقط برای سرورهایی است که واقعاً به یک پنل فیزیکی با همان نوع متصل‌اند؛ بین پنل‌های متفاوت یا بین مرزبان و پاسارگارد نباید یک گروه انتخاب شود.",
-    "after": "توجه: گروه مشترک فقط برای سرورهایی است که واقعاً به یک پنل فیزیکی پاسارگارد متصل‌اند. سرورهای متصل به پنل‌های متفاوت را در یک گروه قرار ندهید."
+    "after": "توجه: گروه مشترک فقط برای سرورهایی است که واقعاً به یک پنل فیزیکی پاسارگارد متصل‌اند. سرورهای متصل به پنل‌های متفاوت را در یک گروه قرار ندهید.",
+    "before": "توجه: گروه مشترک فقط برای سرورهایی است که واقعاً به یک پنل فیزیکی با همان نوع متصل‌اند؛ بین پنل‌های متفاوت یا بین مرزبان و پاسارگارد نباید یک گروه انتخاب شود."
+  },
+  "bot.bot.manage_marzban_panel_groups.message.59d5170317": {
+    "after": "🗂 گروه‌های مشترک پنل: فقط سرورهای متصل به یک پنل واقعی پاسارگارد را هم‌گروه کنید. مشابه بودن آدرس یا نام، دلیل یکسان بودن پنل فیزیکی نیست. تشخیص پنل واقعی بر عهدهٔ ادمین است.",
+    "before": "🗂 گروه‌های مشترک پنل: فقط سرورهای متصل به یک پنل واقعی و از یک نوع (مرزبان یا پاسارگارد) را هم‌گروه کنید. صرفاً مشابه بودن آدرس، نام یا نوع پنل به‌تنهایی دلیل یکسان بودن پنل فیزیکی نیست. تشخیص پنل واقعی برعهده ادمین است."
+  },
+  "manual_receipt_final.status_delivery_unconfirmed": {
+    "after": "سرویس ثبت شد، اما تحویل همهٔ پیام‌های مشتری تأیید نشده است.",
+    "before": "سفارش ثبت شد، اما تأیید دریافت همهٔ پیام‌های مشتری موجود نیست؛ ارسال نامطمئن تکرار نمی‌شود."
+  },
+  "manual_receipt_final.status_service_pending": {
+    "after": "وجه ثبت شد و عملیات سرویس در انتظار تکمیل است. از پروندهٔ سرویس ادامه دهید.",
+    "before": null
+  },
+  "manual_receipt_final.status_wallet_credited": {
+    "after": "وجه به کیف پول کاربر اضافه شد؛ سرویس تازه‌ای از این پرداخت اجرا نشد.",
+    "before": null
   },
   "subscription.order_management.show_order_management_panel.alert.3e801d365f": {
-    "before": "⛔️ سفارش مرزبان معتبر نیست.",
-    "after": "⛔️ سفارش یا اتصال پاسارگارد معتبر نیست."
+    "after": "⛔️ سفارش یا اتصال پاسارگارد معتبر نیست.",
+    "before": "⛔️ سفارش مرزبان معتبر نیست."
   },
   "subscription.order_management.show_order_management_panel.alert.7a6ebab798": {
-    "before": "⚠️ هیچ سرور دیگری با همان پنل مرزبان وجود ندارد.",
-    "after": "⚠️ هیچ سرور دیگری متصل به همین پنل پاسارگارد وجود ندارد."
-  },
-  "addon_scopes.filter_blocked": {
-    "before": "⚠️ یک ویرایش فعال دارید؛ ابتدا آن را ثبت یا لغو کنید، سپس فهرست را فیلتر کنید.",
-    "after": "⚠️ یک ویرایش فعال دارید؛ ابتدا آن را ثبت یا لغو کنید."
+    "after": "⚠️ هیچ سرور دیگری متصل به همین پنل پاسارگارد وجود ندارد.",
+    "before": "⚠️ هیچ سرور دیگری با همان پنل مرزبان وجود ندارد."
   }
 }

@@ -1105,10 +1105,7 @@ function getGateWaysKeys(){
     $cryptoRows=[];
     foreach (['BEP20','TRC20','ERC20'] as $network) {
         $field='manualUsdtWallet'.$network;
-        $value=array_key_exists($field,$paymentKeys)
-            ? trim((string)$paymentKeys[$field])
-            : (((string)($paymentKeys['manualUsdtNetwork'] ?? 'BEP20'))===$network
-                ? trim((string)($paymentKeys['manualUsdtWallet'] ?? '')) : '');
+        $value=trim((string)($paymentKeys[$field]??''));
         $label=achbotManualUsdtWalletValid($value,$network) ? $value : \achbotMessage('admin_settings.config.get_gate_ways_keys.text.9fec3d676e');
         $cryptoRows[]=[
             ['text'=>$label,'callback_data'=>'changePaymentKeys'.$field],

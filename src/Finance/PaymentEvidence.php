@@ -196,10 +196,8 @@ function achbotPaymentEvidenceSchemaReady(mysqli $db): bool {
             'payment_attempts'=>['review_archived_at','evidence_profile','evidence_state','evidence_cursor_id','evidence_claim_token',
                 'evidence_claimed_at','evidence_next_check_at','evidence_invoice_chat_id',
                 'evidence_invoice_message_id','evidence_invoice_digest','evidence_code',
-                'evidence_code_sha256','evidence_review_claim_token',
-                'evidence_review_claimed_at','evidence_review_sent_at','evidence_projection_checked_at',
-                'evidence_report_digest','evidence_staff_digest','evidence_fulfillment_state',
-                'evidence_fulfillment_payload'],
+                'evidence_code_sha256','evidence_review_sent_at','evidence_projection_checked_at',
+                'evidence_staff_digest'],
             'payment_transactions'=>['evidence_state','evidence_operation','evidence_payload',
                 'evidence_dispatched_at','evidence_proven_at']];
         foreach ($required as $table=>$columns) {
@@ -763,7 +761,7 @@ function achbotPaymentEvidenceSaveGiftCode(mysqli $db,int $payId,int $actor,stri
         $q=$db->prepare('SELECT * FROM payment_attempts WHERE pay_row_id=? FOR UPDATE');
         $q->bind_param('i',$payId);$q->execute();$a=$q->get_result()->fetch_assoc();$q->close();
         $profile=$a?achbotPaymentEvidenceSnapshot($a):null;
-        if (!$pay || !$profile || $profile['method']!=='gift_card' ||
+        if (!$pay || !$profile || $a['review_archived_at']!==null || $profile['method']!=='gift_card' ||
             (int)$pay['user_id']!==$actor ||
             !in_array($pay['state'],['pending','have_sent'],true) ||
             !hash_equals($profile['pay_sha256'],achbotPaymentEvidencePayFingerprint($pay))) {
@@ -785,8 +783,7 @@ function achbotPaymentEvidenceSaveGiftCode(mysqli $db,int $payId,int $actor,stri
         if ($existing) { $db->rollback();return ['status'=>'locked']; }
         $sealed=achbotPaymentEvidenceProtect('code:'.$aid.':'.$payId,['code'=>$code,'actor'=>$actor]);
         $q=$db->prepare("UPDATE payment_attempts SET evidence_code=?,evidence_code_sha256=?,
-            evidence_state='monitoring',evidence_review_sent_at=NULL,
-            evidence_review_claim_token=NULL,evidence_review_claimed_at=NULL
+            evidence_state='monitoring',evidence_review_sent_at=NULL
             WHERE id=? AND evidence_profile IS NOT NULL");
         $q->bind_param('ssi',$sealed,$digest,$aid);$q->execute();$ok=$q->affected_rows===1;$q->close();
         if (!$ok || !$db->commit()) throw new RuntimeException('payment_evidence_code_commit_unknown');

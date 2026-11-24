@@ -111,9 +111,8 @@ function achbotUsdtRateForUser(mysqli $db,int $userId): ?float {
 }
 
 /**
- * All available manual-crypto destinations are independent. The existing
- * manualUsdtNetwork/manualUsdtWallet pair remains a read-compatible fallback
- * for already configured tenants; new per-network entries override it.
+ * All available manual-crypto destinations are independent. Read only the
+ * current per-network configuration, with no retired setting fallback.
  *
  * A rate and destination are required before an option appears. Neither a
  * screenshot nor an operator click is automatic blockchain settlement proof.
@@ -122,14 +121,14 @@ function achbotManualUsdtConfiguration(?string $network = null): ?array {
     global $paymentKeys;
     $keys = is_array($paymentKeys ?? null) ? $paymentKeys : [];
     if ($network === null) {
-        $network = (string)($keys['manualUsdtNetwork'] ?? 'BEP20');
+        $available=[];
+        foreach (['BEP20','TRC20','ERC20'] as $candidate)
+            if (($config=achbotManualUsdtConfiguration($candidate))!==null) $available[]=$config;
+        return count($available)===1?$available[0]:null;
     }
     if (!in_array($network, ['BEP20','TRC20','ERC20'], true)) return null;
     $field = 'manualUsdtWallet' . $network;
-    $wallet = array_key_exists($field, $keys)
-        ? trim((string)$keys[$field])
-        : ((string)($keys['manualUsdtNetwork'] ?? 'BEP20') === $network
-            ? trim((string)($keys['manualUsdtWallet'] ?? '')) : '');
+    $wallet = trim((string)($keys[$field]??''));
     if (!achbotManualUsdtWalletValid($wallet, $network)) return null;
     $rate=achbotUsdtRate($keys);
     if ($rate===null) return null;
@@ -337,7 +336,7 @@ function achbotManualReceiptAllowed(mysqli $connection, array $payInfo, string $
         $api=function_exists('achbotApiPaymentContext') ? achbotApiPaymentContext($connection,(string)$payInfo['hash_id'],$userId) : null;
         if (function_exists('achbotApiPaymentPinned') && achbotApiPaymentPinned($connection,(int)$payInfo['id']) && !$api) return false;
 
-        $stmt = $connection->prepare('SELECT provider,stage,checkout_url,provider_status,wallet_invoice_sha256,
+        $stmt = $connection->prepare('SELECT provider,stage,checkout_url,provider_status,wallet_invoice_sha256,review_archived_at,
             TIMESTAMPDIFF(SECOND,created_at,NOW()) AS age_seconds
             FROM payment_attempts WHERE pay_row_id=? LIMIT 1');
         $id = (int)$payInfo['id'];
@@ -345,7 +344,7 @@ function achbotManualReceiptAllowed(mysqli $connection, array $payInfo, string $
         $stmt->execute();
         $attempt = $stmt->get_result()->fetch_assoc();
         $stmt->close();
-        $validWindow=$attempt && achbotCurrentReceiptPin($attempt) && (
+        $validWindow=$attempt && $attempt['review_archived_at']===null && achbotCurrentReceiptPin($attempt) && (
             $api!==null || $attempt['stage']==='receiving' ||
             (string)($attempt['provider_status']??'')==='receipt_started' ||
             ((string)($attempt['provider_status']??'')==='' &&
@@ -384,14 +383,14 @@ function achbotManualBeginEvidence(mysqli $connection, array $payInfo, string $m
         $stmt->close();
         if (!$pay || (int)$pay['user_id'] !== $userId || $pay['state'] !== 'pending' ||
             (string)($pay['payid'] ?? '') !== '') { $connection->rollback(); return null; }
-        $stmt = $connection->prepare('SELECT id,provider,stage,checkout_url,provider_status,wallet_invoice_sha256,
+        $stmt = $connection->prepare('SELECT id,provider,stage,checkout_url,provider_status,wallet_invoice_sha256,review_archived_at,
             TIMESTAMPDIFF(SECOND,created_at,NOW()) AS age_seconds
             FROM payment_attempts WHERE pay_row_id=? LIMIT 1 FOR UPDATE');
         $stmt->bind_param('i', $id);
         $stmt->execute();
         $attempt = $stmt->get_result()->fetch_assoc();
         $stmt->close();
-        if (!$attempt || !achbotCurrentReceiptPin($attempt) || (string)$attempt['provider'] !== $method ||
+        if (!$attempt || $attempt['review_archived_at']!==null || !achbotCurrentReceiptPin($attempt) || (string)$attempt['provider'] !== $method ||
             !in_array((string)$attempt['stage'], ['pending','receiving'], true)) {
             $connection->rollback(); return null;
         }
@@ -468,13 +467,13 @@ function achbotManualFinishEvidence(mysqli $connection, string $hashId, string $
             $connection->rollback(); return false;
         }
         $id = (int)$pay['id'];
-        $stmt = $connection->prepare('SELECT id,provider,stage,checkout_url,review_notice_claim_token,wallet_invoice_sha256
+        $stmt = $connection->prepare('SELECT id,provider,stage,checkout_url,review_notice_claim_token,wallet_invoice_sha256,review_archived_at
             FROM payment_attempts WHERE pay_row_id=? LIMIT 1 FOR UPDATE');
         $stmt->bind_param('i', $id);
         $stmt->execute();
         $attempt = $stmt->get_result()->fetch_assoc();
         $stmt->close();
-        if (!$attempt || !achbotCurrentReceiptPin($attempt) || !in_array((string)$attempt['provider'],
+        if (!$attempt || $attempt['review_archived_at']!==null || !achbotCurrentReceiptPin($attempt) || !in_array((string)$attempt['provider'],
             ['bank_transfer','gift_card','manual_usdt','manual_trx'], true) ||
             $attempt['stage'] !== 'receiving' ||
             (string)$attempt['review_notice_claim_token'] !== $token) {
@@ -972,9 +971,9 @@ function buildAdminKeyboardWithStats(
     int $userId
 ): string {
 
-    $approvedCount = countUserPaysByState($connection, $userId, 'approved');
+    $approvedCount = countUserPaysByState($connection, $userId, 'paid');
     $declinedCount = countUserPaysByState($connection, $userId, 'declined');
-    $approvedSum   = sumUserPaysByState($connection, $userId, 'approved');
+    $approvedSum   = sumUserPaysByState($connection, $userId, 'paid');
 
     return inlineKeyboard([
         [
@@ -1154,8 +1153,8 @@ function achbotNonPayablePaymentSettledLocked(array $payment,?array $attempt): b
             in_array((string)($attempt['stage']??''),['pending','review'],true);
     if (in_array($state,['canceled','cancelled','rejected','expired'],true))
         return $attempt===null || in_array((string)($attempt['stage']??''),['expired','done'],true);
+    if ($state==='declined') return ($attempt===null && (string)($payment['payid']??'')==='') || ($attempt['stage']??null)==='done';
     if ((string)($payment['payid']??'')!=='' || $attempt!==null) return false;
-    if ($state==='declined') return true;
     return $state==='mismatched_plan' &&
         (string)($payment['type']??'')==='RENEW_ACCOUNT';
 }
@@ -1175,9 +1174,8 @@ function achbotUnclaimedServiceQuote(array $payment, ?array $attempt): bool {
  * FOR UPDATE: MariaDB may scan/lock the entire pays PRIMARY and deadlock
  * unrelated wallet edits (confirmed Hell #113346, InnoDB 2026-11-22).
  *
- * 023 provides independent order_id and literal type-prefix ranges. Separate
- * index ranges include historical add-on drafts with NULL/zero order_id;
- * collect the union without changing the original invoice/evidence semantics.
+ * Current service invoices must have their canonical order_id. Retired
+ * unbound add-on rows are never active ownership claims.
  * Every candidate is a CURRENT locking read, including its index gap: a
  * concurrent new invoice cannot silently appear behind the safety guard.
  */
@@ -1198,30 +1196,6 @@ function achbotServicePaymentRowsLocked(mysqli $db,array $orderIds): array {
         throw new RuntimeException('service_payment_order_index_unavailable');
     foreach ($query->fetch_all(MYSQLI_ASSOC) as $row) $rows[(int)$row['id']]=$row;
     $query->free();
-    // Literal underscores are escaped with '=' so the optimizer can seek the
-    // prefix of idx_pays_type_ref_v1 (no unindexed regexp or primary scan).
-    $patterns=[];
-    foreach ($ids as $id) {
-        $patterns[]='INCREASE=_DAY=_'.$id.'=_%';
-        $patterns[]='INCREASE=_VOLUME=_'.$id.'=_%';
-    }
-    // Batches cap statement size, not invoice count or operator work.
-    foreach (array_chunk($patterns,128) as $batch) {
-        $predicates=implode(' OR ',array_fill(0,count($batch),"type LIKE ? ESCAPE '='"));
-        $q=$db->prepare("SELECT id,state,type,payid,user_id,order_id
-            FROM pays FORCE INDEX (idx_pays_type_ref_v1)
-            WHERE ($predicates) ORDER BY type,id FOR UPDATE");
-        if (!$q) throw new RuntimeException('service_payment_type_index_unavailable');
-        $values=$batch;
-        $q->bind_param(str_repeat('s',count($values)),...$values);
-        if (!$q->execute()) {
-            $q->close();
-            throw new RuntimeException('service_payment_type_read_failed');
-        }
-        foreach ($q->get_result()->fetch_all(MYSQLI_ASSOC) as $row)
-            $rows[(int)$row['id']]=$row;
-        $q->close();
-    }
     ksort($rows,SORT_NUMERIC);
     return array_values($rows);
 }

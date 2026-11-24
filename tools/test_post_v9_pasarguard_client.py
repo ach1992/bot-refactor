@@ -323,6 +323,12 @@ INSERT INTO orders_list(id,userid,token,transid,fileid,server_id,inbound_id,rema
     # Deliberately construct incompatible storage in this disposable DB only;
     # the real FK otherwise prevents converting the payment/effect pair.
     native.sql(work,env,'ALTER TABLE service_effects DROP FOREIGN KEY fk_effect_pay',db)
+    # Aria cannot index a VIRTUAL generated column; keep the same expression
+    # as PERSISTENT for the negative engine fixture only.
+    def generated(storage):
+        native.sql(work,env,"ALTER TABLE service_effects DROP INDEX uq_effect_target_username, DROP COLUMN active_username",db)
+        native.sql(work,env,"ALTER TABLE service_effects ADD active_username VARCHAR(100) COLLATE utf8mb4_bin GENERATED ALWAYS AS (IF(state='cancelled',NULL,remote_username)) "+storage+", ADD UNIQUE KEY uq_effect_target_username (target_key,active_username)",db)
+    generated('PERSISTENT')
     for table in ['service_effects','users','pays',
                   'orders_list','server_info','server_plans','server_config','setting']:
         before=native.sql(work,env,'SELECT COUNT(*) FROM '+table,db)
@@ -334,6 +340,7 @@ INSERT INTO orders_list(id,userid,token,transid,fileid,server_id,inbound_id,rema
             cases.append('nontransactional_'+table+'_blocks_before_provider_dispatch')
         finally:
             native.sql(work,env,'ALTER TABLE '+table+' ENGINE=InnoDB',db)
+    generated('VIRTUAL')
     native.sql(work,env,'ALTER TABLE service_effects ADD CONSTRAINT fk_effect_pay FOREIGN KEY(pay_row_id) REFERENCES pays(id) ON DELETE RESTRICT ON UPDATE RESTRICT',db)
     # Replace the two retired-table engine cases with actual shared-storage
     # shape refusal at the same no-dispatch boundary.

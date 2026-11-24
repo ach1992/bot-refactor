@@ -562,18 +562,22 @@ function achbotApiPaymentCheckGift(mysqli $db,array $claim,callable $settle): st
     $proof=$consumed['proof']??achbotPaymentEvidenceGetProof($db,$id);
     return is_array($proof)?$settle($db,$id,$proof):'review';
 }
-/** Real text review uses a separate lease and the unchanged human callbacks. */
-function achbotApiPaymentReviewKeyboard(array $pay): string {
-    if($pay['state']!=='have_sent')return achbotPayUxStatusKeyboard((string)$pay['hash_id']);
-    $hash=(string)$pay['hash_id'];$t=(string)$pay['type'];
-    $prefix=match(true) {
+/** The approval callback identifies only the original invoice and subject. */
+function achbotManualApprovalPrefix(array $pay): string {
+    $t=(string)$pay['type'];
+    return match(true) {
         $t==='INCREASE_WALLET'=>'approvePayment',
         $t==='RENEW_ACCOUNT'=>'approveRenewAcc',
         str_starts_with($t,'INCREASE_DAY_')=>'approveIncreaseDay',
         str_starts_with($t,'INCREASE_VOLUME_')=>'approveIncreaseVolume',
-        (int)$pay['day']>0 || (int)$pay['volume']>0=>'accCustom',
-        default=>'accept'
+        $t==='BUY_SUB' && ((int)$pay['day']>0 || (int)$pay['volume']>0)=>'accCustom',
+        $t==='BUY_SUB'=>'accept',
+        default=>throw new DomainException('manual_review_subject_invalid'),
     };
+}
+function achbotApiPaymentReviewKeyboard(array $pay): string {
+    if($pay['state']!=='have_sent')return achbotPayUxStatusKeyboard((string)$pay['hash_id']);
+    $hash=(string)$pay['hash_id'];$prefix=achbotManualApprovalPrefix($pay);
     $db=$GLOBALS['connection']??null;
     if($db instanceof mysqli)return buildAdminKeyboardWithStats($db,$prefix.$hash,'declineAction_'.$hash,$hash,(int)$pay['user_id']);
     return inlineKeyboard([
@@ -684,7 +688,7 @@ function achbotApiPaymentMaintainWithinBudget(mysqli $db,int $limit=12): array {
             $c=achbotApiPaymentContext($db,(string)$row['hash_id']);if(!$c)continue;
             if(achbotApiPaymentSyncInvoice($db,$c))$edited++;
             $p=$c['pay'];$a=$c['attempt'];$proof=achbotPaymentEvidenceGetProof($db,(int)$p['id']);
-            if(achbotApiPaymentTerminal($p))achbotApiPaymentNotice($db,$p,($proof['mode']??'')==='evidence_only'?'evidence_only':(($a['evidence_fulfillment_state']??'')==='done'?'confirmed':'settled'));
+            if(achbotApiPaymentTerminal($p))achbotApiPaymentNotice($db,$p,($proof['mode']??'')==='evidence_only'?'evidence_only':(($a['wallet_credit_entry_id']??null)!==null?'confirmed':'settled'));
             elseif(($a['evidence_state']??'')==='invalid_code'){
                 $d=achbotPaymentEvidenceUnprotect('code:'.$a['id'].':'.$p['id'],(string)$a['evidence_code']);
                 if(in_array($d['last_status']??'',['used','revoked','expired','mismatch'],true))achbotApiPaymentNotice($db,$p,$d['last_status']);

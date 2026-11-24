@@ -38,11 +38,11 @@ mariadb --user=INSTALL_DB_USER --password NEW_EMPTY_DB < database/current-schema
 
 Replace both placeholders. The consolidated schema contains no customer data,
 credentials, migrations, import decisions or automatic upgrade code.
-It contains the complete current InnoDB schema through 035, excluding five
+It contains the complete current InnoDB schema through 036, excluding five
 unused historical tables (`admins`, `black_list`, `servers`,
 `bank_buy_invoice_claims`, `automatic_renewal_attempts`). Never apply it to an existing database.
 The disposable CI fresh-schema proof compares every retained table definition
-against the historical construction sequence, verifies the omitted tables
+against the historical construction sequence, verifies the omitted tables and six retired payment execution/review columns
 have no runtime SQL consumers or foreign keys, and checks current money,
 identity, delivery and service schema prerequisites.
 

@@ -19,6 +19,7 @@
     "src/Panel/AccountNaming.php",
     "src/Panel/PasarGuardServiceEdit.php",
     "src/Panel/PasarGuardServiceExecution.php",
+    "src/Panel/PasarGuardServiceResolution.php",
     "src/Panel/PasarGuardServiceTarget.php",
     "src/Presentation/MainMenu.php",
     "src/Services/AutomaticRenewal.php",
@@ -26,6 +27,7 @@
     "src/Services/Execution.php",
     "src/Services/Funding.php",
     "src/Services/Ownership.php",
+    "src/Services/Resolution.php",
     "src/Wallet/Ledger.php"
   ],
   "removed": [
@@ -110,11 +112,11 @@
       "reason": "Referral credit notices are durable source-owned reports."
     },
     "src/Finance/Routes/AutomaticGatewayReview.php": {
+      "reason": "Owner-approved unified receipt/service review, exact private receipt recovery and independent delivery/report redrive; retired direct wallet recovery callbacks removed.",
       "before_count": 49,
-      "after_count": 34,
+      "after_count": 30,
       "before_sha256": "4fb93a55e1bbfc7cdab723e0c4153b9d6f5e87c178b741f86ff79ed88a23c8af",
-      "after_sha256": "ebad254e4527ed4832ae79ed68eae5a974a834bade1090b6f0d5c21313d92116",
-      "reason": "Common resume and original packet confirmation replace payment-method-specific recovery actions."
+      "after_sha256": "405d954a2a3df3c558d73046e83ba4076448b4b34cbda7cac4699b2677f728b0"
     },
     "src/Finance/Routes/Checkout.php": {
       "before_count": 15,
@@ -138,11 +140,11 @@
       "reason": "Manual approval credits receipt, then advances same shared service command."
     },
     "src/Finance/Routes/ManualReceipts.php": {
+      "reason": "Retire obsolete API execution and override callbacks; result projection uses current credit and service delivery journals.",
       "before_count": 18,
-      "after_count": 12,
+      "after_count": 11,
       "before_sha256": "210476cf38cd0651367be92805048be760e098a4dba269cf5893ee268f8c7cee",
-      "after_sha256": "a56b96558c3b434e1187eb32b8938f4c539a34cd8357406a8b6c83f4c7783b4a",
-      "reason": "Shared review/approval and durable original receipt/customer/operator packets."
+      "after_sha256": "829c073cab573ddbe21cc13a8965f2bc56ccc4d579e51255522b5b8fe8683de2"
     },
     "src/Finance/Routes/RenewalCheckout.php": {
       "before_count": 24,
@@ -206,6 +208,16 @@
       "before_sha256": "fe9a847311992187e04f08d297d16ed5c025e2e40c0231c6e7db4a9d415d508d",
       "after_sha256": "ba451ca98ddd9a0053069ab702a93b24b073928fffe429f267832f2a53c670b2",
       "reason": "Remove old unscoped catalog creation and editing; current scoped editor is sole owner."
+    },
+    "src/Finance/Routes/ServiceAttention.php": {
+      "reason": "Owner-approved operation-owned private detail, resume, refund/closure preview and confirmation, independent delivery redrive navigation.",
+      "before_count": 0,
+      "after_count": 8,
+      "before_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "after_sha256": "d080909451050c8d3131fb6a5b515561babd9eb2a763e073f8f92b2f6864e43c"
     }
-  }
+  },
+  "added_with_direct_send": [
+    "src/Finance/Routes/ServiceAttention.php"
+  ]
 }

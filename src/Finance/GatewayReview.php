@@ -218,7 +218,8 @@ function achbotCheckoutArchive(mysqli $db,int $actor,int $payId,int $primary,int
             $a=achbotProviderRow($db,'SELECT * FROM payment_attempts WHERE pay_row_id=? FOR UPDATE','i',[$payId]);
             if ((int)$pay['checkout_operation_id']!==$opId ||
                 (!$a || (int)$a['id']!==$attemptId) ||
-                !achbotGatewayAttentionCaseOpen($db,$payId)) {$db->rollback();return 'stale';}
+                !achbotProviderRow($db,'SELECT p.id FROM pays p JOIN payment_attempts a ON a.pay_row_id=p.id
+                    WHERE p.id=? AND '.achbotGatewayAttentionReceiptScope(),'i',[$payId])) {$db->rollback();return 'stale';}
             if (!achbotAdminCanLocked($db,$actor,$primary,'payments')) {$db->rollback();return 'denied';}
             if ($opId>0) {
                 [$op]=achbotServiceReadLocked($db,(int)$loc['user_id'],$opId);

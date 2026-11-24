@@ -137,16 +137,3 @@ function achbotDeliveryMaintainPending(mysqli $db,int $limit=4,float $budgetSeco
             'elapsed_ms'=>(int)round((microtime(true)-$start)*1000)],'info');
     return $stats;
 }
-
-function achbotDeliveryAggregate(mysqli $db,int $payId): ?array {
-    if (!achbotDeliverySchemaReady($db)) return null;
-    $q=$db->prepare("SELECT COUNT(*) AS total,
-        COALESCE(SUM(state='acknowledged'),0) AS ack,
-        COALESCE(SUM(state='pending'),0) AS pending,
-        COALESCE(SUM(state='unknown'),0) AS unknown,
-        COALESCE(SUM(state='dispatching'),0) AS dispatching
-        FROM payment_delivery_intents WHERE service_operation_id=(SELECT checkout_operation_id FROM pays WHERE id=?)");
-    $q->bind_param('i',$payId);$q->execute();
-    $row=$q->get_result()->fetch_assoc();$q->close();
-    return $row?:null;
-}
