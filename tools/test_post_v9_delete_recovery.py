@@ -25,11 +25,13 @@ CREATED = '2026-10-26T05:00:00.123456Z'
 @contextlib.contextmanager
 def current_delete_sandbox():
     # This test exercises the current physical-service deletion guard, which
-    # uses two mandatory indexed locking reads. Keep the shared source-real
-    # provider fixture unchanged and install 023 only in this owned database.
+    # uses mandatory indexed locking reads and the current service ownership
+    # journal. Install these only in the disposable database.
     with api.sandbox() as fixture:
         sql=fixture[0]
-        sql((ROOT / 'migrations/post-v9/023_scoped_payment_lock_indexes.sql').read_text())
+        for name in ('023_scoped_payment_lock_indexes.sql','024_wallet_entries.sql',
+                     '025_wallet_receipt_credit.sql','026_service_operations.sql'):
+            sql((ROOT / 'migrations/post-v9' / name).read_text())
         assert 'idx_pays_order_ref_v1' in sql('SHOW INDEX FROM pays')
         assert 'idx_pays_type_ref_v1' in sql('SHOW INDEX FROM pays')
         yield fixture

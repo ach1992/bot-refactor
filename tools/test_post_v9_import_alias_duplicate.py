@@ -18,7 +18,6 @@ from pathlib import Path
 
 import provider_storage_fixture as storage
 import test_access_state as owned
-import test_post_v9_marzban_edits as marzban
 import test_unified_existing_subscriptions as imports
 import test_v6_native as native
 import test_v6_panels as bodies
@@ -35,12 +34,16 @@ DRIVER = imports.PHP.replace(
       (int)$spec['target'],(int)$from_id,true);
  } elseif($op==='copy'){""", 1)
 assert "elseif($op==='transfer')" in DRIVER
+# The shared historical fixture driver still loads the retired adapter.
+# Remove only its retired adapter include; the PG controllers are unmodified.
+DRIVER = DRIVER.replace("require_once $root.'/src/Panel/Accounts.php';", "")
+
 
 
 def run() -> list[str]:
     checks = []
-    for provider in ('marzban', 'pasarguard'):
-        fixture = imports.existing_marzban if provider == 'marzban' else imports.existing_panel
+    for provider in ('pasarguard',):
+        fixture = imports.existing_panel
         with owned.owned_database() as (work, env), fixture() as (vendor, url):
             purchase.init(work, env, url)
             def db(sql: str) -> str:
@@ -52,7 +55,8 @@ def run() -> list[str]:
                 '011_provider_identity.sql', '012_shared_provider_storage.sql',
                 '016_remove_pasarguard_server_groups.sql',
                 '017_shared_plan_changes.sql',
-                '023_scoped_payment_lock_indexes.sql'):
+                '023_scoped_payment_lock_indexes.sql', '024_wallet_entries.sql',
+                '025_wallet_receipt_credit.sql', '026_service_operations.sql'):
                 db((ROOT / 'migrations/post-v9' / migration).read_text())
             db("INSERT INTO users(userid,name,username,refcode,wallet,date,isAdmin,first_start,step)"
                " VALUES (1002,'B','b','0',50000,'1700000000',0,'sent','none'),"
@@ -65,39 +69,18 @@ def run() -> list[str]:
                "('ACHBOT_MARZBAN_PANEL_GROUP','reviewed shared panel');"
                "UPDATE server_info SET panel_group_id=(SELECT MAX(id) FROM setting"
                " WHERE type='ACHBOT_MARZBAN_PANEL_GROUP') WHERE id IN (2,5);")
-            if provider == 'pasarguard':
-                db(storage.connection(2, 1, url) + storage.connection(5, 1, url))
-                remark = 'existing_user_41'
-                bearer = vendor.users[41]['subscription_url']
-                def writes():
-                    return [(method, path) for method, path, *_ in vendor.trace if method != 'GET']
-                def current_native():
-                    return copy.deepcopy(vendor.users)
-            else:
-                vendor.mode = 'edit-reset-verified'
-                vendor.edit_account = copy.deepcopy(marzban.INITIAL)
-                remark = 'shared_alias_account'
-                bearer = url + '/sub/' + imports.mb_mint(remark, int(time.time()) - 60)
-                vendor.edit_account.update(username=remark,
-                    created_at='2026-10-26T05:00:00.123456', subscription_url='/sub/'+bearer.rsplit('/',1)[1],
-                    proxies={'vless':{'id':'aaaaaaaa-1111-4111-8111-111111111111',
-                                      'flow':'xtls-rprx-vision'}},
-                    inbounds={'vless':['inbound']},
-                    links=['vless://aaaaaaaa-1111-4111-8111-111111111111@host.invalid:443'],
-                    excluded_inbounds={}, next_plan=None, auto_delete_in_days=None,
-                    on_hold_expire_duration=None, on_hold_timeout=None)
-                def writes():
-                    return [(request['method'],request['path']) for request in vendor.trace
-                        if request['method'] in ('PUT','DELETE') or
-                        (request['method']=='POST' and not request['path'].endswith('/api/admin/token'))]
-                def current_native():
-                    return copy.deepcopy(vendor.edit_account)
+            db(storage.connection(2, 1, url) + storage.connection(5, 1, url))
+            remark = 'existing_user_41'
+            bearer = vendor.users[41]['subscription_url']
+            def writes():
+                return [(method, path) for method, path, *_ in vendor.trace if method != 'GET']
+            def current_native():
+                return copy.deepcopy(vendor.users)
 
             facade = bodies.function_bodies((ROOT / 'config.php').read_bytes(), [
                 'buildSubscriptionPresentation','buildConfigMessage','setUser',
                 'sumerize','getOrderDetailKeys','getUserOrderDetailKeys',
-                'getMarzbanToken','getMarzbanHosts','renewMarzbanUUID',
-                'deleteMarzban','changeMarzbanState','RandomString'])
+                'RandomString'])
             (work / 'facades.php').write_bytes(facade.replace(b'__DIR__', repr(str(ROOT)).encode()))
             driver = work / 'alias-import-controller.php'
             driver.write_text(DRIVER)
@@ -205,16 +188,12 @@ def run() -> list[str]:
             # A new native incarnation must not silently take over an active
             # old reference. Once the old references are retired, it may be
             # registered under its own new Native identity and immutable origin.
-            if provider=='pasarguard':
-                old=vendor.users.pop(41)
-                newer=copy.deepcopy(old)
-                newer.update(id=51,created_at='2026-10-27T05:00:00.123456Z')
-                newer['subscription_url']=url+'/native-subscriptions/'+imports.mint(51,int(time.time())-60)
-                vendor.users[51]=newer
-                new_bearer=newer['subscription_url']
-            else:
-                vendor.edit_account['created_at']='2026-10-27T05:00:00.123456'
-                new_bearer=url+'/sub/'+imports.mb_mint(remark,int(time.time())-60)
+            old=vendor.users.pop(41)
+            newer=copy.deepcopy(old)
+            newer.update(id=51,created_at='2026-10-27T05:00:00.123456Z')
+            newer['subscription_url']=url+'/native-subscriptions/'+imports.mint(51,int(time.time())-60)
+            vendor.users[51]=newer
+            new_bearer=newer['subscription_url']
             preview(1001,new_bearer)
             before=snapshot()
             _,log=call('manual',actor=1001,data='addToOrders2')
@@ -223,8 +202,7 @@ def run() -> list[str]:
             assert snapshot()==before,(provider,'active_incarnation_guard_changed_evidence')
             checks.append(provider+'_active_old_incarnation_refuses_new_identity_without_changes')
             db("UPDATE orders_list SET status=0 WHERE remark='"+remark+"'")
-            if provider=='pasarguard':
-                db("UPDATE service_effects SET provider_state='deleted' WHERE provider_reference_id IS NOT NULL")
+            db("UPDATE service_effects SET provider_state='deleted' WHERE provider_reference_id IS NOT NULL")
             result,log,_=import_for(1001,token=new_bearer)
             assert db("SELECT COUNT(*) FROM orders_list WHERE userid=1001 AND remark='"+remark+"' AND status=1")=='1',(
                 provider,'new_incarnation_after_retire',result,log)
