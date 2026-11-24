@@ -17,6 +17,24 @@ function achbotCheckoutCommandsPresent(mysqli $db): bool {
         $r['IS_NULLABLE']!=='YES' || !achbotWalletLedgerReady($db) ||
         !achbotServiceOperationsPresent($db))
         throw new RuntimeException('checkout_command_schema_invalid');
+    // 033 has multiple auto-committing DDL statements. The first ALTER
+    // alone is not permission to activate the new receipt coordinator.
+    $s=achbotProviderStatement($db,"SELECT COLUMN_NAME,DATA_TYPE,IS_NULLABLE,DATETIME_PRECISION
+        FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE()
+          AND TABLE_NAME='payment_transactions'
+          AND COLUMN_NAME IN ('merchant_checked_at','merchant_verified_at')");
+    $cols=$s->get_result()->fetch_all(MYSQLI_ASSOC);$s->close();
+    if (count($cols)!==2) throw new RuntimeException('checkout_command_schema_partial');
+    foreach ($cols as $c)
+        if ($c['DATA_TYPE']!=='datetime' || $c['IS_NULLABLE']!=='YES' || (int)$c['DATETIME_PRECISION']!==6)
+            throw new RuntimeException('checkout_command_schema_invalid');
+    $s=achbotProviderStatement($db,"SELECT COLUMN_NAME,NON_UNIQUE,SUB_PART
+        FROM information_schema.STATISTICS WHERE TABLE_SCHEMA=DATABASE()
+          AND TABLE_NAME='pays' AND INDEX_NAME='uq_checkout_operation'");
+    $idx=$s->get_result()->fetch_all(MYSQLI_ASSOC);$s->close();
+    if (count($idx)!==1 || $idx[0]['COLUMN_NAME']!=='checkout_operation_id' ||
+        (int)$idx[0]['NON_UNIQUE']!==0 || $idx[0]['SUB_PART']!==null)
+        throw new RuntimeException('checkout_command_schema_invalid');
     return true;
 }
 

@@ -107,7 +107,7 @@ function achbotCheckoutApproveReceipt(mysqli $db,string $hash,int $actor,int $pr
                 'volume'=>preg_match('/\AINCREASE_VOLUME_[1-9][0-9]*_[1-9][0-9]*\z/D',$pay['type'])===1,
                 default=>false,
             };
-            if (!$valid || $pay['hash_id']!==$hash || !in_array($pay['state'],['have_sent','paid'],true) ||
+            if (!$valid || $pay['hash_id']!==$hash || !in_array($pay['state'],['have_sent','service_superseded','paid'],true) ||
                 !achbotPayUxManualProvider($a['provider']) || ($a['review_archived_at']??null)!==null ||
                 !is_string($a['wallet_invoice_sha256']??null) || $a['wallet_invoice_sha256']==='')
                 throw new DomainException('manual_receipt_original_unadmitted');

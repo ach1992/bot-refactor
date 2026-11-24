@@ -58,9 +58,10 @@ try {
     $r=match ($c['op']) {
         'issue'=>achbotHostedReceiptIssue($db,$id,$owner,$c['method'],$c['service']??null,
             $c['quote']??[], $c['keys']??['nextpay'=>'next-original','zarinpal'=>'zarin-original','nowpayment'=>'np-original'],
-            'https://bot.fixture.invalid/','Fixture description'),
+            'https://bot.fixture.invalid/','Fixture description',$c['draft_states']??null,$c['ipn_secret']??'fixture-ipn'),
         'verify'=>achbotHostedReceiptVerify($db,$id,$owner,$c['method'],$c['ref']),
-        'ipn'=>achbotNpIngestIpn($db,'fixture-ipn',$c['raw'],$c['sig']),
+        'ipn'=>achbotNpIngestIpn($db,'changed-current-key',$c['raw'],$c['sig']),
+        'maintain'=>achbotHostedReceiptMaintain($db,3),
         default=>throw new RuntimeException('fixture_unknown_op')
     };
     if ($c['lost_ack']??false) exit(19);
@@ -89,7 +90,8 @@ def main():
                   '023_scoped_payment_lock_indexes.sql','024_wallet_entries.sql',
                   '025_wallet_receipt_credit.sql','026_service_operations.sql',
                   '008_referral_awards.sql','020_payment_followup_intents.sql','029_service_purchase_referral.sql',
-                  '030_service_followup_sources.sql','031_service_followup_attempts.sql'):
+                  '030_service_followup_sources.sql','031_service_followup_attempts.sql',
+                  '033_checkout_commands.sql'):
             sql((ROOT/'migrations/post-v9'/m).read_text())
         sql("""INSERT INTO server_config(id,panel_url,ip,sni,header_type,request_header,response_header,security,tlsSettings,type,username,password)
             VALUES (2,'https://fixture.invalid','127.0.0.1','','none','','','none','{}','pasarguard','fixture','fixture');
@@ -174,9 +176,9 @@ def main():
                 return result(mode,'verify',id=pid,method=method,ref=ref,**kw)
             def issue(mode,pid,method,**kw):
                 return result(mode,'issue',id=pid,method=method,**kw)
-            def sign(payload):
+            def sign(payload,secret=b'fixture-ipn'):
                 raw=json.dumps(payload,separators=(',',':'),sort_keys=True)
-                return dict(raw=raw,sig=hmac.new(b'fixture-ipn',raw.encode(),hashlib.sha512).hexdigest())
+                return dict(raw=raw,sig=hmac.new(secret,raw.encode(),hashlib.sha512).hexdigest())
             for mode in ('strict','off'):
                 def case(name):checks.append(mode+':'+name)
                 pid=seed(mode+'-next')
@@ -293,6 +295,34 @@ $id=achbotServiceIssueLocked($db,1001,'fixture',$argv[4],$q);$db->commit();echo 
                     rs=list(pool.map(lambda _:verify(mode,pid,'nextpay',ref),range(4)))
                 assert all(r['status']=='credited' for r in rs) and sum(not r['credit']['replayed'] for r in rs)==1 and bal()==b+100,rs
                 case('parallel_actual_hosted_verification')
+                # Production-style pinned method selection for a topup and
+                # lost invoice creation response recovered by original signed IPN.
+                sql("DELETE FROM setting WHERE type='BOT_STATES'; INSERT INTO setting(type,value) VALUES ('BOT_STATES','{\"nowPaymentWallet\":\"on\"}')")
+                pid=seed(mode+'-signed-recovery')
+                ref=mode+'-recovered-invoice';child=mode+'-recovered-child'
+                responses['/np/issue']=(503,dict(id=ref,invoice_url='https://nowpayments.io/payment/'+ref))
+                b=bal();start=len(calls)
+                r=issue(mode,pid,'nowpayments',quote={'usd':'2.05','local_price':100},draft_states={})
+                assert r['status']=='issuance_uncertain',r
+                assert issue(mode,pid,'nowpayments',quote={'local_price':100},draft_states={})['status']=='issuance_uncertain'
+                assert len(calls)==start+1
+                payload=dict(payment_id=child,invoice_id=ref,order_id=mode+'-signed-recovery',price_amount='2.05',price_currency='usd',payment_status='finished')
+                assert result(mode,'ipn',**sign(payload,b'changed-current-key'))==401
+                assert result(mode,'ipn',**sign(dict(payload,price_amount='2.04')))==422
+                assert result(mode,'ipn',**sign(payload))==200
+                assert result(mode,'ipn',**sign(payload))==200
+                assert bal()==b and len(calls)==start+1
+                assert sql(f"SELECT CONCAT(stage,':',provider_reference,':',IF(checkout_url IS NULL,'no-url','url')) FROM payment_attempts WHERE pay_row_id={pid}")=='review:'+ref+':no-url'
+                responses['/np/payment/'+child]=(200,payload)
+                # Isolate this due item from unrelated pending fixture rows.
+                sql("UPDATE payment_attempts SET last_checked_at=NOW()")
+                sql("UPDATE payment_transactions SET merchant_checked_at=NOW()")
+                sql(f"UPDATE payment_transactions SET merchant_checked_at=NULL WHERE payment_id='{child}'")
+                r=result(mode,'maintain')
+                assert r['completed']==1 and bal()==b+100 and calls[-1][3]=='np-original',r
+                assert sql(f"SELECT merchant_verified_at IS NOT NULL FROM payment_transactions WHERE payment_id='{child}'")=='1'
+                assert result(mode,'maintain')['completed']==0 and bal()==b+100
+                case('actual_admission_lost_creation_original_secret_ipn_recovery_and_poll_once')
             assert not errors,errors
         finally:server.shutdown();server.server_close();thread.join(timeout=5)
     report=dict(complete=True,cases=len(checks),checks=checks,owned_loopback_requests=len(calls),

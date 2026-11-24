@@ -163,7 +163,7 @@ function achbotServiceReferralMaintainPending(mysqli $db,int $owner,int $limit,f
         throw new InvalidArgumentException('service_referral_budget_invalid');
     $deadline=hrtime(true)/1000000000+$budgetSeconds;
     $s=achbotProviderStatement($db,"SELECT service_operation_id FROM referral_awards
-        WHERE state='NOT_ATTEMPTED' AND next_attempt_at<=NOW(6)
+        WHERE service_operation_id IS NOT NULL AND state='NOT_ATTEMPTED' AND next_attempt_at<=NOW(6)
         ORDER BY next_attempt_at,id LIMIT ?",'i',[$limit]);
     $rows=$s->get_result()->fetch_all(MYSQLI_ASSOC);$s->close();$out=[];
     foreach ($rows as $r) {

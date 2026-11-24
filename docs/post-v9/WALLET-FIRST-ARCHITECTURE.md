@@ -1082,3 +1082,54 @@ relabel reproduction as safety. The new edit executor is implemented in this dra
 activated by production callers. Use PasarGuard only and continue financial, service,
 migration and caller convergence work using existing APIs only.
 PR #233 retains its separate review/integration gate.
+
+### Checkout commands and opening-balance rehearsal (033/034; inactive draft)
+
+The persisted checkout draft is the command reference. 033 binds it to
+one service operation and protects the original provider/account pin,
+plan, amount, quantity, and operation kind. The Wallet button funds and
+reserves that command atomically. A declined Wallet attempt does not
+consume the draft or block selection of another payment method. Manual
+receipt issuance and approval share this admission and settlement path.
+The checkout callback entry points for purchase (standard/custom),
+renewal, volume/time add-ons and Wallet recharge, bank timer/API checking,
+and automatic renewal have source-level connections to the shared
+financial/service worker. The services Cron can advance due commands.
+A held live service lease must not occupy every bounded worker batch.
+
+New hosted invoices persist their original merchant credential/profile
+before issuance. A repeated issuance request never creates a second
+invoice when the first response is uncertain. A signed NOWPayments IPN
+under the original merchant secret can identify that exact original
+invoice and child, including recovery of an unacknowledged creation;
+the worker still obtains authenticated merchant verification before
+credit. The child has separate check and verified timestamps. NextPay
+and Zarinpal verification use the pinned original merchant context.
+Browser-return data alone is not payment evidence. The old invoice
+notification is emitted on original successful issuance, not on reopen.
+The full multi-method customer/operator UI workflow has not yet passed
+an end-to-end cutover acceptance gate.
+
+034 preserves the existing owner index name and requires unique userid;
+it does not guess how to merge duplicate owners. The CLI-only migration
+rehearsal in tools/wallet_first_cutover.php computes a deterministic
+per-owner signed balance digest, inventories unresolved legacy claims,
+and creates exact opening entries in a single transaction after explicit
+snapshot and unique-index checks. Zero and negative balances are preserved.
+Replay is read-only for the identical complete opening set. Stale
+snapshots, duplicate owners, incomplete existing journals and failed
+insertion are rejected. No receipt, debit, subscription or Native effect
+is recreated by that opening operation.
+
+**Activation is not authorized.** These migrations and source changes
+are development/rehearsal only. Legacy historical funded/processing
+payments, capacity reservations, automatic-renewal claims and uncertain
+Native effects must still be reconciled and adopted from actual original
+evidence without crediting or debiting twice. An inventory is not a
+historical-import result. The old source branches and direct writers
+remain in the candidate; schema absence still selects some legacy paths.
+Removal of those writers and the Marzban runtime, exact payment policy
+and UI parity, and the full historical adoption/retirement rehearsal
+remain required by #204. Do not install 033 or 034 separately on any bot.
+The prior delayed Native write counterexample remains an explicit
+limitation of the existing provider API, not a test of safe remote CAS.

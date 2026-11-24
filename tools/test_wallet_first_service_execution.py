@@ -128,7 +128,17 @@ try {
     $presentation=['bot_state'=>[],'bot_url'=>'https://bot.fixture.invalid','bot_username'=>'fixture_bot'];
     if ($x['op']==='step') $r=achbotServiceExecuteStep($db,$x['id'],$presentation);
     elseif ($x['op']==='auto') $r=achbotServiceAutoRenewAdmit($db,$x['order'],(int)($x['owner']??1001),$x['bot_state']??['renewAutoState'=>'on']);
-    elseif ($x['op']==='due') $r=achbotServiceExecuteDue($db,$x['limit'],10.0,$presentation);
+    elseif ($x['op']==='due') {
+        $other=null;
+        if (isset($x['block_service'])) {
+            $other=new mysqli('localhost','root','',$argv[3],0,$argv[2]);
+            $lock=achbotServiceExecutionLock($other,$x['block_service']);
+            if ((int)achbotProviderRow($other,'SELECT GET_LOCK(?,0) AS acquired','s',[$lock])['acquired']!==1)
+                throw new RuntimeException('fixture_block_due_service');
+        }
+        try {$r=achbotServiceExecuteDue($db,$x['limit'],10.0,$presentation);}
+        finally {if ($other!==null) $other->close();}
+    }
     elseif ($x['op']==='deliver') {
         $other=null;
         if ($x['block_account']??false) {
@@ -723,6 +733,15 @@ DELIMITER ;
                 assert r[str(first)]['status']=='pending' and r[str(second)]['status']=='applied',r
                 assert finance()==before
                 cases.append(mode+'_due_fair_progress')
+                sql("UPDATE service_operations SET next_attempt_at=DATE_ADD(NOW(6),INTERVAL 1 DAY) WHERE stage IN ('funded','prepared','dispatching','applied')")
+                first=issue(mode,'busy-first');fund(mode,first)
+                second=issue(mode,'busy-second');fund(mode,second)
+                before=finance()
+                r=php(mode,'due',limit=1,block_service=first)
+                assert set(r)=={str(second)} and r[str(second)]['status']=='applied',r
+                assert finance()==before
+                step(mode,first,'applied')
+                cases.append(mode+'_busy_due_head_does_not_starve_next_operation')
                 # A source-real CREATE and linked Order are the original
                 # account for every subsequent edit; no fabricated identity.
                 buy=issue(mode,'edit-source');fund(mode,buy)

@@ -7,3 +7,9 @@ ALTER TABLE pays
     ADD UNIQUE KEY uq_checkout_operation (checkout_operation_id),
     ADD CONSTRAINT fk_checkout_operation FOREIGN KEY (checkout_operation_id)
         REFERENCES service_operations(id) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+-- Signed IPN observations and actual merchant verification are different.
+ALTER TABLE payment_transactions
+    ADD merchant_checked_at DATETIME(6) DEFAULT NULL,
+    ADD merchant_verified_at DATETIME(6) DEFAULT NULL,
+    ADD KEY idx_merchant_due (provider,merchant_verified_at,merchant_checked_at,id);

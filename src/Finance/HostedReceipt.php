@@ -40,7 +40,7 @@ function achbotHostedMerchantSnapshot(array $pay,array $a): array {
  * the same issued invoice can return its original URL; an unresolved creation
  * must not generate another provider invoice. Caller owns the SQL transaction. */
 function achbotHostedReceiptReserveLocked(mysqli $db,int $payId,int $userId,string $method,
-    ?int $operationId,array $quote,string $credential): array {
+    ?int $operationId,array $quote,string $credential,?string $ipnSecret=null): array {
     $def=achbotHostedReceiptDefinition($method);
     if ($def===null) throw new DomainException('hosted_method_unavailable');
     $pay=achbotCheckoutPayLocked($db,$payId,$userId);
@@ -77,7 +77,7 @@ function achbotHostedReceiptReserveLocked(mysqli $db,int $payId,int $userId,stri
     $a=achbotProviderRow($db,'SELECT * FROM payment_attempts WHERE id=? FOR UPDATE','i',[$aid]);
     $profile=achbotPaymentEvidenceProtect(achbotHostedMerchantPurpose($a),[
         'v'=>1,'method'=>$method,'credential'=>$credential,
-        'identity'=>achbotHostedReservationIdentity($pay,$a)]);
+        'identity'=>achbotHostedReservationIdentity($pay,$a)] + ($ipnSecret===null?[]:['ipn_secret'=>$ipnSecret]));
     $marker='achbot_'.$method.'_creating_'.$payId;
     $s=achbotProviderStatement($db,'UPDATE payment_attempts SET wallet_merchant_profile=? WHERE id=?','si',[$profile,$aid]);
     $n=$s->affected_rows;$s->close();
@@ -124,7 +124,7 @@ function achbotHostedReceiptBindLocked(mysqli $db,int $payId,int $userId,array $
     return ['status'=>$pay['state']==='pending'?'issued':'closed','url'=>$url];
 }
 function achbotHostedReceiptIssue(mysqli $db,int $payId,int $userId,string $method,?int $operationId,
-    array $quote,array $paymentKeys,string $botUrl,string $description,?array $draftStates=null): array {
+    array $quote,array $paymentKeys,string $botUrl,string $description,?array $draftStates=null,?string $ipnSecret=null): array {
     achbotPaymentEvidenceRequireAutocommit($db);
     $def=achbotHostedReceiptDefinition($method);
     if ($def===null) throw new DomainException('hosted_method_unavailable');
@@ -137,9 +137,12 @@ function achbotHostedReceiptIssue(mysqli $db,int $payId,int $userId,string $meth
             if (!achbotCheckoutCommandsPresent($db)) throw new RuntimeException('checkout_command_schema_missing');
             $pay=achbotCheckoutPayLocked($db,$payId,$userId);
             $a=achbotProviderRow($db,'SELECT * FROM payment_attempts WHERE pay_row_id=? FOR UPDATE','i',[$payId]);
+            if ($a===null && ((int)$pay['price']!==($quote['local_price']??null) ||
+                ($method==='nowpayments' && trim((string)$ipnSecret)==='')))
+                throw new DomainException('hosted_draft_quote_changed');
             $operationId=achbotCheckoutAdmitDraftLocked($db,$pay,$a,$method,$draftStates);
         }
-        $r=achbotHostedReceiptReserveLocked($db,$payId,$userId,$method,$operationId,$quote,$credential);
+        $r=achbotHostedReceiptReserveLocked($db,$payId,$userId,$method,$operationId,$quote,$credential,$ipnSecret);
         if (!$db->commit()) throw new RuntimeException('hosted_reservation_commit');
     } catch (Throwable $e) {$db->rollback();throw $e;}
     if ($r['status']!=='reserved') return $r;
@@ -157,6 +160,7 @@ function achbotHostedReceiptIssue(mysqli $db,int $payId,int $userId,string $meth
     try {
         $result=achbotHostedReceiptBindLocked($db,$payId,$userId,$r,$remote);
         if (!$db->commit()) throw new RuntimeException('hosted_bind_commit');
+        if ($draftStates!==null) $result['newly_issued']=true;
         return $result;
     } catch (Throwable $e) {$db->rollback();throw $e;}
 }
@@ -205,7 +209,140 @@ function achbotHostedReceiptVerify(mysqli $db,int $payId,int $userId,string $met
             !hash_equals($a['wallet_invoice_sha256'],achbotCreditInvoiceFingerprint($current,$attempt)))
             throw new RuntimeException('hosted_invoice_changed_after_verify');
         $result=achbotCheckoutSettleReceiptLocked($db,$payId,$userId,$method,$proof);
+        if ($def['child_transactions'] && array_key_exists('checkout_operation_id',$current)) {
+            $s=achbotProviderStatement($db,"UPDATE payment_transactions SET merchant_verified_at=COALESCE(merchant_verified_at,NOW(6))
+                WHERE attempt_id=? AND provider=? AND payment_id=? AND observed_status='finished'",
+                'iss',[(int)$attempt['id'],$method,$reference]);$s->close();
+        }
         if (!$db->commit()) throw new RuntimeException('hosted_credit_commit');
         return ['status'=>'credited']+$result;
     } catch (Throwable $e) {$db->rollback();throw $e;}
+}
+
+/** Only the persisted original merchant secret may authenticate this invoice.
+ * The JSON is an untrusted locator until the exact signature is verified.
+ * A signed event never credits funds and never dispatches a Native effect. */
+function achbotHostedReceiptIngestIpn(mysqli $db,string $raw,string $signature): int {
+    if (strlen($raw)>65536 || strlen($raw)<2) return 401;
+    try {
+        $hint=json_decode($raw,true,32,JSON_THROW_ON_ERROR);
+        if (!is_array($hint) || !is_scalar($hint['order_id']??null)) return 422;
+        $hash=(string)$hint['order_id'];
+        if ($hash==='' || strlen($hash)>50) return 422;
+        $loc=achbotProviderRow($db,"SELECT a.pay_row_id,p.user_id FROM payment_attempts a
+            JOIN pays p ON p.id=a.pay_row_id WHERE a.provider='nowpayments' AND a.order_hash=?",'s',[$hash]);
+        if (!$loc) return 409;
+        $id=(int)$loc['pay_row_id'];$uid=(int)$loc['user_id'];
+        if (!$db->begin_transaction()) throw new RuntimeException('hosted_ipn_begin');
+        [$pay,$a]=achbotCreditInvoiceLocked($db,$id,$uid);
+        if ($a['provider']!=='nowpayments' || $a['order_hash']!==$hash)
+            throw new RuntimeException('hosted_ipn_locator_changed');
+        $profile=achbotHostedMerchantSnapshot($pay,$a);
+        $signed=achbotNpValidIpn($raw,$signature,(string)($profile['ipn_secret']??''));
+        if ($signed===null) {$db->rollback();return 401;}
+        foreach (['payment_id','invoice_id','order_id','price_amount','price_currency','payment_status'] as $key)
+            if (!isset($signed[$key]) || !is_scalar($signed[$key])) {$db->rollback();return 422;}
+        $child=(string)$signed['payment_id'];$invoice=(string)$signed['invoice_id'];$status=(string)$signed['payment_status'];
+        if (!achbotHostedReferenceSyntax($child) || !achbotHostedReferenceSyntax($invoice) ||
+            (string)$signed['order_id']!==$hash || strtolower((string)$signed['price_currency'])!=='usd' ||
+            !achbotNpDecimalAtLeast($signed['price_amount'],$a['quote_amount']) ||
+            !achbotNpDecimalAtLeast($a['quote_amount'],$signed['price_amount']) ||
+            !in_array($status,['waiting','confirming','confirmed','sending','partially_paid','finished','failed','expired','refunded'],true)) {
+            $db->rollback();return 422;
+        }
+        // A genuinely signed original IPN may identify an unresolved creation.
+        // Bind the exact provider identity but never invent a checkout URL or
+        // reopen a browser invoice. The worker still verifies money via GET.
+        if ($a['stage']==='creating' && $a['wallet_invoice_sha256']==='' &&
+            $a['provider_reference']===null && $pay['payid']==='achbot_nowpayments_creating_'.$id) {
+            if (achbotHasUnscopedPaymentReferenceCollision($db,$invoice,$id)) {$db->rollback();return 409;}
+            $s=achbotProviderStatement($db,"UPDATE pays SET payid=? WHERE id=? AND payid=?",
+                'sis',[$invoice,$id,$pay['payid']]);$n=$s->affected_rows;$s->close();
+            if ($n!==1) throw new RuntimeException('hosted_ipn_reference_write');
+            $pay['payid']=$invoice;$a['provider_reference']=$invoice;$a['checkout_url']=null;
+            $pin=achbotCreditInvoiceFingerprint($pay,$a);
+            $s=achbotProviderStatement($db,"UPDATE payment_attempts SET provider_reference=?,checkout_url=NULL,
+                stage='review',provider_status='signed_creation_recovered',wallet_invoice_sha256=?
+                WHERE id=? AND stage='creating' AND provider_reference IS NULL AND wallet_invoice_sha256=''",
+                'ssi',[$invoice,$pin,(int)$a['id']]);$n=$s->affected_rows;$s->close();
+            if ($n!==1) throw new RuntimeException('hosted_ipn_pin_write');
+            $a['wallet_invoice_sha256']=$pin;
+        }
+        if ($a['provider_reference']!==$invoice || $pay['payid']!==$invoice ||
+            !is_string($a['wallet_invoice_sha256']) ||
+            !hash_equals($a['wallet_invoice_sha256'],achbotCreditInvoiceFingerprint($pay,$a))) {
+            $db->rollback();return 409;
+        }
+        $existing=achbotProviderRow($db,"SELECT * FROM payment_transactions WHERE provider='nowpayments' AND payment_id=? FOR UPDATE",'s',[$child]);
+        if ($existing && (int)$existing['attempt_id']!==(int)$a['id']) {$db->rollback();return 409;}
+        if (!$existing) {
+            $s=achbotProviderStatement($db,"INSERT INTO payment_transactions(attempt_id,provider,payment_id,observed_status)
+                VALUES (?,'nowpayments',?,?)",'iss',[(int)$a['id'],$child,$status]);$s->close();
+        } elseif (achbotNpChildEvidenceRank($status)>achbotNpChildEvidenceRank($existing['observed_status']) ||
+            ($existing['observed_status']==='waiting' && in_array($status,['failed','expired'],true))) {
+            $s=achbotProviderStatement($db,'UPDATE payment_transactions SET observed_status=? WHERE id=?',
+                'si',[$status,(int)$existing['id']]);$s->close();
+        }
+        if ($a['payment_id']===null) {
+            $s=achbotProviderStatement($db,'UPDATE payment_attempts SET payment_id=? WHERE id=? AND payment_id IS NULL',
+                'si',[$child,(int)$a['id']]);$s->close();
+        }
+        if (!$db->commit()) throw new RuntimeException('hosted_ipn_commit');
+        return 200;
+    } catch (Throwable $e) {
+        $db->rollback();
+        achbotDiagnosticEvent('achbot.finance.hosted_ipn',['reason'=>'original_evidence_deferred','class'=>get_class($e)],'warning');
+        return 409;
+    }
+}
+
+/** Explicit bounded merchant reconciliation of admitted references. A known
+ * late child is polled even when the original invoice has already been paid
+ * or archived. An unknown issuance is NOT sent again. */
+function achbotHostedReceiptMaintain(mysqli $db,int $limit=3): array {
+    $limit=max(1,min(5,$limit));
+    $done=['examined'=>0,'completed'=>0,'pending'=>0,'review'=>0];
+    $q=$db->query("SELECT a.pay_row_id,p.user_id,a.provider,a.provider_reference AS reference,
+        NULL AS child_id,COALESCE(a.last_checked_at,a.created_at) AS due
+        FROM payment_attempts a JOIN pays p ON p.id=a.pay_row_id
+        WHERE a.provider IN ('nextpay','zarinpal') AND a.wallet_invoice_sha256<>'' AND a.wallet_credit_entry_id IS NULL
+          AND (a.last_checked_at IS NULL OR a.last_checked_at<DATE_SUB(NOW(),INTERVAL 60 SECOND))
+        UNION ALL
+        SELECT a.pay_row_id,p.user_id,a.provider,t.payment_id AS reference,t.id AS child_id,
+          COALESCE(t.merchant_checked_at,t.received_at) AS due
+        FROM payment_transactions t JOIN payment_attempts a ON a.id=t.attempt_id
+        JOIN pays p ON p.id=a.pay_row_id
+        WHERE t.provider='nowpayments' AND a.wallet_invoice_sha256<>'' AND t.merchant_verified_at IS NULL
+          AND t.observed_status NOT IN ('refunded','failed','expired')
+          AND (t.merchant_checked_at IS NULL OR t.merchant_checked_at<DATE_SUB(NOW(),INTERVAL 60 SECOND))
+        ORDER BY due,pay_row_id,child_id LIMIT ".$limit);
+    if (!$q) throw new RuntimeException('hosted_due_read');
+    $deadline=microtime(true)+25.0;
+    foreach ($q->fetch_all(MYSQLI_ASSOC) as $row) {
+        if (microtime(true)>=$deadline) break;
+        $id=(int)$row['pay_row_id'];
+        $lease=achbotOriginalDispatchLeaseBegin($db,$id);
+        if (!in_array($lease,['owned','borrowed'],true)) {
+            // Busy rows must not permanently occupy the head of the queue.
+            // Record scheduling only; never change evidence or the receipt.
+            if ($row['child_id']===null)
+                $s=achbotProviderStatement($db,'UPDATE payment_attempts SET last_checked_at=NOW() WHERE pay_row_id=?','i',[$id]);
+            else $s=achbotProviderStatement($db,'UPDATE payment_transactions SET merchant_checked_at=NOW(6) WHERE id=?','i',[(int)$row['child_id']]);
+            $s->close();
+            continue;
+        }
+        try {
+            $done['examined']++;
+            if ($row['child_id']===null)
+                $s=achbotProviderStatement($db,'UPDATE payment_attempts SET last_checked_at=NOW() WHERE pay_row_id=?','i',[$id]);
+            else $s=achbotProviderStatement($db,'UPDATE payment_transactions SET merchant_checked_at=NOW(6) WHERE id=?','i',[(int)$row['child_id']]);
+            $s->close();
+            $r=achbotHostedReceiptVerify($db,$id,(int)$row['user_id'],$row['provider'],(string)$row['reference']);
+            $done[($r['status']??null)==='credited'?'completed':'pending']++;
+        } catch (Throwable $e) {
+            $done['review']++;
+            achbotDiagnosticEvent('achbot.finance.hosted_reconcile',['pay_id'=>$id,'reason'=>'original_merchant_reconcile_deferred','class'=>get_class($e)],'warning');
+        } finally {achbotOriginalDispatchLeaseEnd($db,$id,$lease);}
+    }
+    return $done;
 }

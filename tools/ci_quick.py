@@ -25,6 +25,7 @@ ROOT = Path(__file__).resolve().parents[1]
 # Each native suite asserts against current PHP source using its own fixtures.
 NATIVE_TESTS = (
     ("wallet_first_ledger", "test_wallet_first_ledger.py"),
+    ("wallet_first_cutover_openings", "test_wallet_first_cutover.py"),
     ("wallet_first_credit", "test_wallet_first_credit.py"),
     ("wallet_first_funding", "test_wallet_first_funding.py"),
     ("wallet_first_hosted", "test_wallet_first_hosted.py"),

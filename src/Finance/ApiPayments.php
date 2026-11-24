@@ -1388,7 +1388,7 @@ function achbotApiPaymentMaintainWithinBudget(mysqli $db,int $limit=12): array {
                   AND a.wallet_invoice_sha256 IS NOT NULL AND a.wallet_invoice_sha256<>'' AND a.wallet_credit_entry_id IS NULL
                   AND (a.evidence_next_check_at IS NULL OR a.evidence_next_check_at<=NOW())
                   AND (a.evidence_state='proven' OR
-                       (a.review_archived_at IS NULL AND a.evidence_state NOT IN ('invalid_code','manual') AND
+                       (a.review_archived_at IS NULL AND (a.evidence_state IS NULL OR a.evidence_state NOT IN ('invalid_code','manual')) AND
                          (p.state='have_sent' OR EXISTS (SELECT 1 FROM payment_transactions t WHERE t.attempt_id=a.id AND t.evidence_operation IS NOT NULL))))
                 ORDER BY COALESCE(a.evidence_next_check_at,a.created_at),a.id LIMIT ".($limit+1));
         } else $q=$db->query("SELECT a.pay_row_id,p.hash_id FROM payment_attempts a JOIN pays p ON p.id=a.pay_row_id

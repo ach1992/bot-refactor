@@ -37,6 +37,11 @@ function achbotNpChildEvidenceRank($status): int {
  */
 function achbotNpIngestIpn(mysqli $connection, string $ipnSecret,
                            string $raw, string $signature): int {
+    require_once __DIR__.'/CheckoutAdmission.php';
+    if (achbotCheckoutCommandsPresent($connection)) {
+        require_once __DIR__.'/HostedReceipt.php';
+        return achbotHostedReceiptIngestIpn($connection,$raw,$signature);
+    }
     $payload=achbotNpValidIpn($raw,$signature,$ipnSecret);
     if ($payload===null) return 401;
     foreach (['payment_id','invoice_id','order_id','payment_status',
@@ -193,6 +198,11 @@ function achbotNpAlertOperator(mysqli $connection, $adminChatId,
  */
 function achbotNpReconcileBatch(mysqli $connection, array $paymentKeys,
                                int $maxItems = 3): array {
+    require_once __DIR__.'/CheckoutAdmission.php';
+    if (achbotCheckoutCommandsPresent($connection)) {
+        require_once __DIR__.'/HostedReceipt.php';
+        return achbotHostedReceiptMaintain($connection,$maxItems);
+    }
     $done = ['examined'=>0,'completed'=>0,'pending'=>0,'review'=>0];
     $apiKey = (string)($paymentKeys['nowpayment'] ?? '');
     if ($apiKey === '') return $done;
@@ -357,6 +367,49 @@ function achbotNpReconcileBatch(mysqli $connection, array $paymentKeys,
     return $done;
 }
 
+function achbotWalletFirstBrowserReturn(mysqli $db,string $method,string $reference,string $hash): void {
+    require_once __DIR__.'/HostedReceipt.php';
+    $state='review';
+    try {
+        if ($method==='nowpayments') {
+            // A browser never establishes a new child identity. Only the
+            // authenticated merchant IPN can admit the child for verification.
+            $p=achbotProviderRow($db,"SELECT p.state,a.wallet_credit_entry_id
+                FROM pays p JOIN payment_attempts a ON a.pay_row_id=p.id
+                WHERE p.hash_id=? AND a.order_hash=? AND a.provider='nowpayments'",'ss',[$hash,$hash]);
+            if ($p && $p['wallet_credit_entry_id']!==null && $p['state']==='paid') $state='paid';
+            elseif ($p && in_array($p['state'],['pending','send'],true)) $state='pending';
+        } elseif (in_array($method,['zarinpal','nextpay'],true) &&
+            achbotHostedReferenceSyntax($reference) &&
+            ($method!=='zarinpal' || $hash!=='')) {
+            $s=achbotProviderStatement($db,"SELECT p.id,p.user_id,p.hash_id FROM pays p
+                JOIN payment_attempts a ON a.pay_row_id=p.id
+                WHERE a.provider=? AND a.provider_reference=? LIMIT 2",'ss',[$method,$reference]);
+            $rows=$s->get_result()->fetch_all(MYSQLI_ASSOC);$s->close();
+            if (count($rows)===1 && ($hash==='' || $rows[0]['hash_id']===$hash)) {
+                $p=$rows[0];$id=(int)$p['id'];
+                $lease=achbotOriginalDispatchLeaseBegin($db,$id);
+                if (in_array($lease,['owned','borrowed'],true)) {
+                    try {
+                        $r=achbotHostedReceiptVerify($db,$id,(int)$p['user_id'],$method,$reference);
+                        if ($r['status']==='credited') $state='paid';
+                    } finally {achbotOriginalDispatchLeaseEnd($db,$id,$lease);}
+                }
+            }
+        }
+    } catch (Throwable $e) {
+        achbotDiagnosticEvent('achbot.finance.hosted_browser',['provider'=>$method,'reason'=>'original_merchant_return_deferred','class'=>get_class($e)],'warning');
+    }
+    if ($state==='paid')
+        showForm(achbotMessage('gateway.gateway_return.np_reconcile_batch.message.0116c30fc4'),
+            achbotMessage('gateway.gateway_return.np_reconcile_batch.message.5cf3e172d8'),true,'review');
+    elseif ($state==='pending')
+        showForm(achbotMessage('gateway.gateway_return.np_reconcile_batch.message.e46087af54'),
+            achbotMessage('gateway.gateway_return.np_reconcile_batch.message.f71cd91dad'),true,'pending');
+    else showForm(achbotMessage('gateway.gateway_return.np_reconcile_batch.message.c4374c5a30'),
+            achbotMessage('gateway.gateway_return.np_reconcile_batch.message.da0bc406d8'),false,'review');
+}
+
 if (defined('ACHBOT_NP_RECONCILE_ONLY')) {
     // Internal Cron and protected administrator-only read views do not
     // dispatch browser/IPN handlers from caller-supplied query strings.
@@ -372,6 +425,12 @@ if (defined('ACHBOT_NP_RECONCILE_ONLY')) {
     echo json_encode(['accepted'=>$code===200],JSON_UNESCAPED_SLASHES);
     return;
 } elseif (isset($_GET['nowpayment'])) {
+    require_once __DIR__.'/CheckoutAdmission.php';
+    if (achbotCheckoutCommandsPresent($connection)) {
+        achbotWalletFirstBrowserReturn($connection,'nowpayments',(string)($_GET['NP_id']??''),(string)($_GET['hash_id']??''));
+        return;
+    }
+
 
     if (isset($_GET['NP_id'])) {
         // Validate a local pending payment and its provider subject before
@@ -454,6 +513,12 @@ if (defined('ACHBOT_NP_RECONCILE_ONLY')) {
     }
 
 } elseif (isset($_GET['zarinpal'])) {
+    require_once __DIR__.'/CheckoutAdmission.php';
+    if (achbotCheckoutCommandsPresent($connection)) {
+        achbotWalletFirstBrowserReturn($connection,'zarinpal',(string)($_GET['Authority']??''),(string)($_GET['hash_id']??''));
+        return;
+    }
+
 
     $hash_id = $_GET['hash_id'];
 
@@ -600,6 +665,12 @@ if (defined('ACHBOT_NP_RECONCILE_ONLY')) {
     }
 
 } elseif (isset($_GET['nextpay'])) {
+    require_once __DIR__.'/CheckoutAdmission.php';
+    if (achbotCheckoutCommandsPresent($connection)) {
+        achbotWalletFirstBrowserReturn($connection,'nextpay',(string)($_GET['trans_id']??''),(string)($_GET['hash_id']??''));
+        return;
+    }
+
 
     $hash_id = (string)($_GET['trans_id'] ?? '');
     $payParam=null;

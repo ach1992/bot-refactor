@@ -148,8 +148,12 @@ function achbotServiceExecuteDue(mysqli $db,int $limit,float $budgetSeconds,arra
     if ($limit<=0 || !is_finite($budgetSeconds) || $budgetSeconds<=0)
         throw new InvalidArgumentException('service_worker_budget_invalid');
     $deadline=hrtime(true)/1000000000+$budgetSeconds;
+    // A stuck request holding its live session lease must not occupy
+    // every bounded pass. This is only a scheduling hint; ExecuteStep
+    // independently acquires and verifies the exact lock before any I/O.
     $s=achbotProviderStatement($db,"SELECT id FROM service_operations
         WHERE stage IN ('funded','prepared','dispatching','applied') AND next_attempt_at<=NOW(6)
+          AND IS_FREE_LOCK(CONCAT('achbot-service-',LEFT(SHA2(DATABASE(),256),20),'-',id))=1
         ORDER BY next_attempt_at,id LIMIT ?",'i',[$limit]);
     $rows=$s->get_result()->fetch_all(MYSQLI_ASSOC);$s->close();$out=[];
     foreach ($rows as $r) {
