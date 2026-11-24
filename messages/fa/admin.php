@@ -1782,9 +1782,6 @@ return [
         'gift2all.message.f4b87a5740' => '⚠️ هویت سفارش هدیه مبهم است؛ عملیات متوقف شد.',
         'gift2all.message.65625b8a59' => '⚠️ ثبت توقف امن هدیه تأیید نشد؛ سرویس تغییر نکرد.',
         'gift2all.message.1ea4ee3d49' => ['text' => '❌ اعمال هدیه برای ردیف {index} رد شد؛ هیچ موفقیتی اعلام نشد.', 'parameters' => ['index']],
-        'gift2all.message.07c38a54a9' => 'هدیه ثبت شد اما اعلان کاربر تأیید نشد. ',
-        'gift2all.message.9b87258e16' => ['text' => 'شناسه: {rowId}؛ کاربر: {remark}', 'parameters' => ['rowId', 'remark']],
-        'gift2all.message.4ba0cee07a' => 'هدیه ثبت شد اما ارسال اعلان کاربر ناموفق بود. ',
         'gift2all.message.e6f582671d' => ['text' => '📅 عملیات هدیه حجم و زمان سرور {serverName} به اتمام رسید.', 'parameters' => ['serverName']],
         'gift2all.message.4d3e24cb7c' => '⚠️ جمع‌بندی فهرست هدیه تأیید نشد؛ بررسی مدیر لازم است.',
         // reward_report.text

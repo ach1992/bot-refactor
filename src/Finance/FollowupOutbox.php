@@ -57,7 +57,7 @@ function achbotFollowupSchemaReady(mysqli $db): bool {
 }
 function achbotFollowupJournaled(array $r): bool {
     return (is_string($r['operational_ref']??null) &&
-        preg_match('/^operational_report(?:_p[1-9][0-9]*)?$/D',(string)($r['stage']??''))===1) || (int)($r['wallet_entry_id']??0)>0 || (int)($r['service_operation_id']??0)>0 ||
+        achbotFollowupOperationalStage((string)($r['stage']??''))) || (int)($r['wallet_entry_id']??0)>0 || (int)($r['service_operation_id']??0)>0 ||
         (in_array($r['stage']??null,['wallet_credit','manual_reject'],true) && (int)($r['pay_row_id']??0)>0);
 }
 function achbotFollowupPurpose(int $payId,string $stage,string $key): string {
@@ -109,9 +109,9 @@ function achbotFollowupStoreLocked(mysqli $db,?int $payId,?int $serviceId,string
         ($ref===null && $walletId===null && $payId===null && $serviceId===null) ||
         ($event!==null && (!achbotFollowupOperationalEventValid($event) ||
             $walletId!==null || $payId!==null || $serviceId!==null ||
-            !preg_match('/^operational_report(?:_p[1-9][0-9]*)?$/D',$stage) ||
+            !achbotFollowupOperationalStage($stage,$event) ||
             $kind!=='send' || !hash_equals(achbotFollowupOperationalFingerprint($event),$fingerprint))) ||
-        ($event===null && str_starts_with($stage,'operational_report')) ||
+        ($event===null && achbotFollowupOperationalStage($stage)) ||
         ($walletId!==null && ($walletId<=0 || $payId!==null || $serviceId!==null || $stage!=='wallet_movement')) ||
         ($stage==='wallet_movement' && $walletId===null) ||
         ($stage==='wallet_credit' && ($payId===null || $serviceId!==null || $walletId!==null)) ||
@@ -155,11 +155,24 @@ function achbotFollowupServicePurpose(int $id,string $stage,string $key): string
     return 'service-followup:v3:'.$id.':'.$stage.':'.$key;
 }
 function achbotFollowupOperationalEventValid(array $event): bool {
-    return array_keys($event)===['reference','actor','capability','user'] &&
-        is_string($event['reference']) && strlen($event['reference'])<=128 && preg_match('/^[a-z][a-z0-9_-]*:[A-Za-z0-9:_-]+$/D',$event['reference'])===1 &&
-        is_int($event['actor']) && $event['actor']>=0 &&
-        in_array($event['capability'],['orders','operations'],true) &&
-        is_int($event['user']) && $event['user']>=0;
+    $keys=array_keys($event);
+    $customer=$keys===['reference','actor','capability','user','order_id','order_sha256'];
+    if (!$customer && $keys!==['reference','actor','capability','user']) return false;
+    if (!is_string($event['reference']) || strlen($event['reference'])>128 ||
+        preg_match('/^[a-z][a-z0-9_-]*:[A-Za-z0-9:_-]+$/D',$event['reference'])!==1 ||
+        !is_int($event['actor']) || $event['actor']<0 ||
+        !in_array($event['capability'],['orders','operations'],true) ||
+        !is_int($event['user']) || $event['user']<0) return false;
+    return !$customer || (is_int($event['order_id']) && $event['order_id']>0 &&
+        is_string($event['order_sha256']) && preg_match('/^[a-f0-9]{64}$/D',$event['order_sha256'])===1 &&
+        $event['user']>0 && $event['capability']==='operations' &&
+        preg_match('/^(?:direct:[1-9][0-9]*|batch:[1-9][0-9]*:[0-9]+)$/D',$event['reference'])===1);
+}
+function achbotFollowupOperationalStage(string $stage,?array $event=null): bool {
+    if ($stage==='operational_customer_notice')
+        return $event===null || isset($event['order_id']);
+    return ($event===null || !isset($event['order_id'])) &&
+        preg_match('/^operational_report(?:_p[1-9][0-9]*)?$/D',$stage)===1;
 }
 function achbotFollowupOperationalFingerprint(array $event): string {
     return hash('sha256',json_encode($event,JSON_THROW_ON_ERROR));
@@ -228,7 +241,7 @@ function achbotFollowupDecodePacket(?array $pay,array $r,?string $sourceFingerpr
             $payId!==(int)$r['pay_row_id']) ||
         ($walletId!==null && ($payId!==null || $serviceId!==null || $r['stage']!=='wallet_movement')) ||
         ($ref!==null && ($walletId!==null || $payId!==null || $serviceId!==null ||
-            !preg_match('/^operational_report(?:_p[1-9][0-9]*)?$/D',$r['stage']))) ||
+            !achbotFollowupOperationalStage($r['stage']))) ||
         !is_string($fingerprint) ||
         !hash_equals((string)$r['pay_fingerprint'],$fingerprint) ||
         !hash_equals((string)$r['payload_sha256'],hash('sha256',(string)$r['sealed_payload'])) ||
@@ -254,7 +267,7 @@ function achbotFollowupDecodePacket(?array $pay,array $r,?string $sourceFingerpr
     if ($ref!==null) {
         $event=$body['operational_event']??null;
         if (!is_array($event) || !achbotFollowupOperationalEventValid($event) ||
-            $event['reference']!==$ref ||
+            $event['reference']!==$ref || !achbotFollowupOperationalStage($r['stage'],$event) ||
             !hash_equals(achbotFollowupOperationalFingerprint($event),$fingerprint)) return null;
     }
     $packet=$body['content']??null;

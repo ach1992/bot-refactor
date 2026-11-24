@@ -159,13 +159,40 @@ ensure(achbotGiftReportActor($connection,$receipt)===9002 &&
     achbotGiftReportActor($connection,array_replace($receipt,['gift_id'=>106]))===0 &&
     achbotGiftReportActor($connection,array_replace($receipt,['days'=>2]))===0,
     'scheduled_gift_actor_from_original_enqueue_not_worker');
+query("INSERT INTO orders_list (id,userid,token,transid,fileid,server_id,inbound_id,remark,uuid,expire_date,link,amount,status,date)
+    VALUES (101,1001,REPEAT('a',30),'fixture',7,2,0,'fixture-gift','fixture-uuid',1800000100,'[]',0,1,'fixture')");
+$order=achbotGiftOrder($connection,101);
 $connection->begin_transaction();
 achbotGiftStageReportLocked($connection,'batch:105:0','fixture-gift',1,1024,
-    [['id'=>101,'userid'=>1001]],achbotGiftReportActor($connection,$receipt));
+    [$order],achbotGiftReportActor($connection,$receipt));
 $connection->commit();
+ensure((int)row("SELECT COUNT(*) AS n FROM payment_followup_intents WHERE operational_ref='batch:105:0' AND state='pending'")['n']===4,
+    'gift_customer_and_report_commit_before_any_telegram');
+$n=count($events);
 ensure(achbotOperationalReportDispatch($connection,'batch:105:0') &&
-    (int)row("SELECT COUNT(*) AS n FROM payment_followup_intents WHERE operational_ref='batch:105:0' AND state='acknowledged'")['n']===3,
+    (int)row("SELECT COUNT(*) AS n FROM payment_followup_intents WHERE operational_ref='batch:105:0' AND state='acknowledged'")['n']===4 &&
+    count($events)===$n+4 && $events[$n+3]['to']===1001,
     'scheduled_gift_report_shares_committed_outbox_and_actual_actor');
+$connection->begin_transaction();
+achbotGiftStageReportLocked($connection,'direct:106','fixture-gift',1,1024,[$order],9002);
+$connection->commit();
+$r=reportRow('direct:106','1001');$id=(int)$r['id'];
+$reply=(object)['ok'=>false,'error_code'=>500,'description'=>'Internal error'];
+ensure(achbotFollowupDispatchOne($connection,$id)==='unknown','gift_customer_unknown_has_original_attempt');
+$n=count($events);
+ensure(achbotFollowupDispatchOne($connection,$id)==='unknown' && count($events)===$n,'gift_customer_unknown_never_automatic_replay');
+$reply=(object)['ok'=>true];
+$r=reportRow('direct:106','1001');$token=achbotFollowupRedriveToken($r,9001);
+ensure(achbotFollowupDispatchOne($connection,$id,9001,$token)==='acknowledged' &&
+    count($events)===$n+1 && $events[$n]['to']===1001,'gift_customer_explicit_original_redrive');
+$connection->begin_transaction();
+achbotGiftStageReportLocked($connection,'direct:107','fixture-gift',1,1024,[$order],9002);
+$connection->commit();
+$r=reportRow('direct:107','1001');$id=(int)$r['id'];$n=count($events);
+query("UPDATE orders_list SET userid=9002 WHERE id=101");
+ensure(achbotFollowupDispatchOne($connection,$id)==='skipped' && count($events)===$n,
+    'gift_customer_changed_attachment_never_retargeted');
+query("UPDATE orders_list SET userid=1001 WHERE id=101");
 ensure(row('SELECT SUM(wallet) AS balance FROM users')['balance']===$baseWallet &&
     countRows('pays')===0 && countRows('wallet_entries')===0 && countRows('service_operations')===0,
     'all_report_recovery_has_no_financial_or_native_effect');

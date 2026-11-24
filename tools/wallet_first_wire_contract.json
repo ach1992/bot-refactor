@@ -224,6 +224,13 @@
       "before_sha256": "d3ad36766eb6a66ecb40cc49aa666ea5ea573b6ef7919f4f0f1458893d85b5e1",
       "after_sha256": "b55d1346e086c045be04cb4874ddb32f3d91e15b9ef9fa564dd25c2c67b5cc0b",
       "reason": "Unify committed delete reporting with normal owner/actor/channel fanout; remove standalone owner send and escape dynamic remarks in HTML UI."
+    },
+    "src/Subscription/GiftBatch.php": {
+      "reason": "Original gift customer text is sealed with the verified gift and dispatched through the existing common durable followup sender; no direct send or duplicate notice path remains.",
+      "before_count": 1,
+      "after_count": 0,
+      "before_sha256": "bea9782d701af416213500d452e96958f40b09133a70eadbe91ae48c6a6e6b64",
+      "after_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
     }
   },
   "added_with_direct_send": [

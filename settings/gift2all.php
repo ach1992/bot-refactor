@@ -660,18 +660,9 @@ foreach ($rosterNames as $index=>$remark) {
         $notifyHold($remark,$index,'gift_requires_operator_reconciliation');
         return;
     }
-    // Notification composition/transport is outside native-effect failure handling.
-    $notices=achbotGiftDeliverNotices($connection,(int)$holdId,'batch:'.$rowId.':'.$index,
-        $orders,$remark,$volume,$day);
-    if ($notices['unconfirmed']) {
-        try {
-            $noticeFailure=$notices['send_exceptions']
-                ? \achbotMessage('jobs.gift2all.message.4ba0cee07a')
-                : \achbotMessage('jobs.gift2all.message.07c38a54a9');
-            $notifyAdmin($noticeFailure.
-                \achbotMessage('jobs.gift2all.message.9b87258e16',['rowId'=>$rowId,'remark'=>$remark]));
-        } catch (Throwable $ignored) {}
-    }
+    // The committed outbox owns both original staff reports and customer
+    // notice attempts, including recovery after interruption.
+    achbotOperationalReportDispatch($connection,'batch:'.$rowId.':'.$index);
 }
 if (!$processedThisTick && $offset===count($rosterNames)) {
     if ($closeRoster($rosterId,$rosterMeta,count($rosterNames))) {

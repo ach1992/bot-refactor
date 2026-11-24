@@ -211,15 +211,24 @@ if (preg_match('/^attentionReport([CS])_([1-9][0-9]{0,17})(?:_([a-f0-9]{20}))?$/
             achbotFollowupJournaled($r)) {
             $back='attentionInbox';$payId=$r['operational_ref'];
         } else throw new RuntimeException('followup_review_stale');
+        $customerNotice=$r['stage']==='operational_customer_notice';
         $token=achbotFollowupRedriveToken($r,$actor);$rows=[];
         if ($reviewAction[1]==='C' && !isset($reviewAction[3])) {
-            $body=achbotMessageHtml('automatic_gateway_review.wallet_report_confirm',['payment'=>$payId]);
-            $rows[]=[['text'=>achbotMessage('automatic_gateway_review.wallet_report_send'),
+            $body=$customerNotice?achbotMessageHtml('automatic_gateway_review.redrive_confirm',[
+                'user'=>$r['recipient'],'payment'=>$payId,'ordinal'=>1]):
+                achbotMessageHtml('automatic_gateway_review.wallet_report_confirm',['payment'=>$payId]);
+            $rows[]=[['text'=>$customerNotice?achbotMessage('automatic_gateway_review.redrive_send'):
+                achbotMessage('automatic_gateway_review.wallet_report_send'),
                 'callback_data'=>'attentionReportS_'.$id.'_'.$token]];
         } elseif ($reviewAction[1]==='S' && hash_equals($token,(string)($reviewAction[3]??''))) {
             answerCallbackQuery($callbackId,achbotMessage('automatic_gateway_review.checking'));
             $status=achbotFollowupDispatchOne($connection,$id,$actor,$token);
-            $body=achbotMessage(match($status) {
+            $body=$customerNotice?achbotMessage(match($status) {
+                'acknowledged'=>'automatic_gateway_review.redrive_ack',
+                'unknown'=>'automatic_gateway_review.redrive_unknown',
+                'busy'=>'automatic_gateway_review.redrive_busy',
+                default=>'automatic_gateway_review.redrive_stale',
+            }):achbotMessage(match($status) {
                 'acknowledged'=>'automatic_gateway_review.wallet_report_ack',
                 'unknown'=>'automatic_gateway_review.wallet_report_unknown',
                 'busy'=>'automatic_gateway_review.redrive_busy',
@@ -296,7 +305,7 @@ if (preg_match('/^attention(?:Inbox(?:_[1-9][0-9]{0,17})?|Case_[1-9][0-9]{0,17})
                   FROM payment_followup_intents f JOIN wallet_entries w ON w.id=f.wallet_entry_id
                   WHERE f.stage='wallet_movement' AND f.state IN ('unknown','rejected')
                 UNION ALL
-                SELECT f.id,0,0,f.operational_ref,'operational_report',f.id*4+3
+                SELECT f.id,0,0,f.operational_ref,IF(f.stage='operational_customer_notice','operational_customer','operational_report'),f.id*4+3
                   FROM payment_followup_intents f
                   WHERE f.operational_ref IS NOT NULL AND f.state IN ('unknown','rejected')
                 ) AS cases WHERE (?=0 OR cursor<?) ORDER BY cursor DESC LIMIT 13",
@@ -309,8 +318,10 @@ if (preg_match('/^attention(?:Inbox(?:_[1-9][0-9]{0,17})?|Case_[1-9][0-9]{0,17})
                 'ADD_VOLUME'=>achbotMessage('automatic_gateway_review.volume')];
             foreach ($items as $item) {
                 $service=$item['source']==='service';
-                if ($item['source']==='operational_report') {
-                    $rows[]=[['text'=>achbotMessage('automatic_gateway_review.wallet_report_action').' | '.$item['provider'],
+                if (in_array($item['source'],['operational_report','operational_customer'],true)) {
+                    $rows[]=[['text'=>($item['source']==='operational_customer'?
+                        achbotMessage('automatic_gateway_review.redrive_action'):
+                        achbotMessage('automatic_gateway_review.wallet_report_action')).' | '.$item['provider'],
                         'callback_data'=>'attentionReportC_'.(int)$item['id']]];
                     continue;
                 }

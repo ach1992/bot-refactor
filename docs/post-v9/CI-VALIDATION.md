@@ -208,4 +208,11 @@ customer/owner/actor/channel delivery, duplicate source and worker replay,
 and an uncertain write that holds without a second write or success report.
 Recipient tests distinguish definitive permission denial (terminal skipped)
 from SQL contention (deferred) and preserve original unknown attempts.
-Live provider/Telegram and production acceptance remain separate gates.
+The 64-case operational outbox suite also exercises the sealed original
+gift customer notice, known/unknown Telegram outcomes, explicit redrive
+and changed attachments in both MySQLi modes. Direct gift (34 cases) and
+scheduled gift (4 cases) source-real suites use the common sender. Copy
+retirement pins exactly three additional source-dead gift warnings; the
+wire contract records removal of the old direct customer send. Retained
+gift copy is unchanged. Live provider/Telegram and production acceptance
+remain separate gates.

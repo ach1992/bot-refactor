@@ -1322,10 +1322,19 @@ seals and the unchanged audience and cannot replace an attempted message.
 If the process stops before compaction, the individual committed packets
 remain deliverable, with no Native recreation.
 
-Customer-facing trial/bulk QR and gift notices are not yet part of this
-administrator report journal; ordinary UI and diagnostics stay separate.
-The existing attention inbox now includes unknown/rejected operational
-report deliveries and allows explicit recovery of their original packet.
+Direct and scheduled gift customer notices now commit with the verified
+gift and staff reports, using the same followup journal and attempt engine.
+Each original recipient has one sealed text packet bound to the exact local
+subscription attachment. A changed or removed attachment is terminally
+skipped; transient SQL failures defer. Interrupted post-commit dispatch
+can resume without repeating a Native gift, and ambiguous Telegram writes
+require an explicit original-packet redrive. The old best-effort customer
+send and notice projection are removed; their three obsolete warning copy
+keys are retired, not replaced with a separate notification system.
+The existing attention inbox distinguishes customer redrive from staff
+report recovery using existing confirmation copy. Trial/bulk QR delivery
+still uses the existing direct path; its multipart durable recovery is a
+separate remaining acceptance gap. Ordinary UI and diagnostics stay separate.
 Owner decision (24 Nov 2026): a definitively ineligible report recipient
 is terminally skipped without redirection, another Telegram attempt, or
 manufactured acknowledgement. Incomplete permission reads remain retryable;

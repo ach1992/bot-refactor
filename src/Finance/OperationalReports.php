@@ -27,11 +27,43 @@ function achbotOperationalReportStageLocked(mysqli $db,string $reference,int $us
         (string)($GLOBALS['botState']['rewardChannel']??''),['text'=>$text,'keys'=>null,'mode'=>'HTML'],
         $actor,null,null,$pages,$event,$staffKeys);
 }
+/** An original gift text is a distinct customer delivery, never an admin copy.
+ * Seal the verified local attachment with the event; no new table or worker. */
+function achbotOperationalGiftCustomerStageLocked(mysqli $db,string $reference,int $actor,array $order,string $text): void {
+    $event=['reference'=>$reference,'actor'=>$actor,'capability'=>'operations',
+        'user'=>$order['userid'],'order_id'=>$order['id'],
+        'order_sha256'=>hash('sha256',json_encode($order,JSON_THROW_ON_ERROR))];
+    achbotOperationalReportRequireReady($db);
+    achbotFollowupStoreLocked($db,null,null,'operational_customer_notice','customer','send',
+        (string)$event['user'],null,achbotFollowupOperationalFingerprint($event),
+        ['text'=>$text,'keys'=>null,'mode'=>'HTML'],null,$event);
+}
+function achbotOperationalGiftCustomerAllowedLocked(mysqli $db,array $r,array $event): bool {
+    if ($r['role']!=='customer' || $r['kind']!=='send' || $r['message_id']!==null ||
+        $r['recipient']!==(string)$event['user']) return false;
+    require_once __DIR__.'/../Subscription/GiftBatch.php';
+    try {$order=achbotGiftOrder($db,$event['order_id'],true);}
+    catch (Throwable $error) {
+        if (in_array($error->getMessage(),['gift_order_missing','gift_order_ineligible','gift_recipient_identity_invalid'],true))
+            return achbotFollowupRequireRecipient(false);
+        throw $error;
+    }
+    if ($order['userid']!==$event['user'] ||
+        !hash_equals($event['order_sha256'],hash('sha256',json_encode($order,JSON_THROW_ON_ERROR))))
+        return achbotFollowupRequireRecipient(false);
+    $s=achbotProviderStatement($db,'SELECT id FROM users WHERE BINARY userid=BINARY ? LIMIT 2 LOCK IN SHARE MODE NOWAIT',
+        's',[(string)$event['user']]);
+    $rows=$s->get_result()->fetch_all(MYSQLI_ASSOC);$s->close();
+    return achbotFollowupRequireRecipient(count($rows)===1);
+}
 function achbotOperationalReportValidateLocked(mysqli $db,array $r): ?array {
     $event=null;
     $packet=achbotFollowupDecodePacket(null,$r,(string)$r['pay_fingerprint'],$event);
-    return $packet!==null && $event!==null &&
-        achbotFollowupAdminReportAllowed($db,$r,$event['actor'],$event['capability'])?$packet:null;
+    if ($packet===null || $event===null) return null;
+    $allowed=$r['stage']==='operational_customer_notice'
+        ?achbotOperationalGiftCustomerAllowedLocked($db,$r,$event)
+        :achbotFollowupAdminReportAllowed($db,$r,$event['actor'],$event['capability']);
+    return $allowed?$packet:null;
 }
 function achbotOperationalReportLock(mysqli $db,string $reference): string {
     $name=achbotProviderRow($db,'SELECT DATABASE() AS db')['db'];

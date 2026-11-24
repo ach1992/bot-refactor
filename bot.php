@@ -1745,9 +1745,7 @@ if (is_string($userInfo['step']??null) &&
         }
         return;
     }
-    achbotGiftDeliverNotices($connection,$directClaim['id'],'direct:'.$directClaim['id'],
-        $directClaim['references'],$directClaim['order']['remark'],
-        $directClaim['volume_mb'],$directClaim['days']);
+    achbotOperationalReportDispatch($connection,'direct:'.$directClaim['id']);
     try {
         sendMessage(\achbotMessage('bot.bot.gift_volume_and_day.message.df8d2180ae').
             $directClaim['id'].').',$removeKeyboard, 'HTML');

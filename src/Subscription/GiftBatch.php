@@ -20,6 +20,7 @@ function achbotGiftOrder(mysqli $db,int $id,bool $lock=false): array {
     if (!$stmt) throw new RuntimeException('gift_order_prepare');
     $stmt->bind_param('i',$id);
     $ok=$stmt->execute();$row=$ok?$stmt->get_result()->fetch_assoc():null;$stmt->close();
+    if (!$ok) throw new RuntimeException('gift_order_read_failed');
     if (!$row) throw new RuntimeException('gift_order_missing');
     // Legacy userid is VARCHAR: never let numeric coercion redirect a notice.
     $rawUserid=$row['userid']??null;
@@ -187,6 +188,16 @@ function achbotGiftStageReportLocked(mysqli $db,string $reference,string $remark
     ]);
     if ($actor>0) $text.="\n".achbotMessageHtml('operational_reports.actor',['actor'=>$actor]);
     achbotOperationalReportStageLocked($db,$reference,0,$actor,'operations',$text);
+    $customerMessage=\achbotMessage('jobs.gift2all.message.1bf0942a3d',[
+        'remark'=>htmlspecialchars($remark,ENT_QUOTES|ENT_SUBSTITUTE,'UTF-8'),
+        'giftText'=>achbotGiftCustomerText($volume,$days)]);
+    $seen=[];
+    foreach ($references as $order) {
+        $uid=$order['userid'];
+        if (isset($seen[$uid])) continue;
+        $seen[$uid]=true;
+        achbotOperationalGiftCustomerStageLocked($db,$reference,$actor,$order,$customerMessage);
+    }
 }
 
 /** Resolve the actual administrator from the original durable enqueue claim.
@@ -208,47 +219,12 @@ function achbotGiftReportActor(mysqli $db,array $receipt): int {
     } catch (Throwable $e) {return 0;}
 }
 
-function achbotGiftDeliverNotices(mysqli $db,int $journalId,string $reference,
-    array $orders,string $remark,int $volume,int $days): array {
-    $notices=['acknowledged'=>[],'unconfirmed'=>achbotGiftReferenceProof($orders)['recipient_userids'],'send_exceptions'=>[]];
-    try {$notices=achbotGiftNotifyCustomers($db,$orders,$remark,achbotGiftCustomerText($volume,$days));}
-    catch (Throwable $error) {error_log('achbot_gift_customer_text_unconfirmed source_id='.$journalId);}
-    require_once __DIR__.'/../Finance/OperationalReports.php';
-    achbotOperationalReportDispatch($db,$reference);
-    achbotGiftRecordNotices($db,$journalId,$notices);
-    return $notices;
-}
-
-
 function achbotGiftCustomerText(int $volume,int $days): string {
     $text='';
     if ($volume>0) $text.=\achbotMessage('jobs.gift2all.gift_text.8f714dee13',['volume'=>$volume]);
     if ($days>0) $text.=($text===''?'':\achbotMessage('jobs.gift2all.text.1a51e219ec')).
         \achbotMessage('jobs.gift2all.text.b70363d685',['day'=>$days]);
     return $text;
-}
-
-/** Best effort notice projection, separate from the already committed native outcome. */
-function achbotGiftRecordNotices(mysqli $db,int $id,array $notices): void {
-    try {
-        $stmt=$db->prepare('SELECT value FROM setting WHERE id=?');
-        if (!$stmt) throw new RuntimeException('gift_notice_journal_prepare');
-        $stmt->bind_param('i',$id);$ok=$stmt->execute();
-        $row=$ok?$stmt->get_result()->fetch_assoc():null;$stmt->close();
-        $record=$row?json_decode($row['value'],true):null;
-        if (!is_array($record) || ($record['state']??null)!=='completed' ||
-            array_key_exists('customer_notices',$record))
-            throw new RuntimeException('gift_notice_journal_changed');
-        $record['customer_notices']=$notices;$record['notices_recorded_at']=gmdate('c');
-        $json=json_encode($record,JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE);
-        $stmt=$db->prepare('UPDATE setting SET value=? WHERE id=? AND BINARY value=BINARY ?');
-        if (!$stmt) throw new RuntimeException('gift_notice_journal_update_prepare');
-        $stmt->bind_param('sis',$json,$id,$row['value']);
-        $ok=$stmt->execute();$changed=$stmt->affected_rows;$stmt->close();
-        if (!$ok || $changed!==1) throw new RuntimeException('gift_notice_journal_unconfirmed');
-    } catch (Throwable $error) {
-        error_log('achbot_gift_notice_journal_unconfirmed source_id='.$id);
-    }
 }
 
 /** Only lifecycle warning state is local. Native expiry/quota and purchase facts stay intact. */
@@ -266,39 +242,6 @@ function achbotGiftFinishReferences(mysqli $db,array $expected,bool $resetWarnin
     }
 }
 
-/** A failed/lost Telegram acknowledgement never reopens native gift admission. */
-function achbotGiftNotifyCustomers(mysqli $db,array $orders,string $remark,string $giftText): array {
-    $sent=[];$failed=[];$sendExceptions=[];
-    foreach ($orders as $order) {
-        $uid=$order['userid'];
-        if (isset($sent[$uid]) || isset($failed[$uid])) continue;
-        try {
-            if (achbotGiftOrder($db,$order['id'])!==$order)
-                throw new RuntimeException('gift_notice_reference_changed');
-            $stmt=$db->prepare('SELECT id FROM users WHERE BINARY userid=BINARY ? LIMIT 2');
-            if (!$stmt) throw new RuntimeException('gift_notice_customer_prepare');
-            $uidText=(string)$uid;
-            $stmt->bind_param('s',$uidText);$ok=$stmt->execute();
-            $rows=$ok?$stmt->get_result()->fetch_all(MYSQLI_ASSOC):[];$stmt->close();
-            if (count($rows)!==1) throw new RuntimeException('gift_notice_customer_ambiguous');
-            $customerMessage=\achbotMessage('jobs.gift2all.message.1bf0942a3d',[
-                'remark'=>htmlspecialchars($remark,ENT_QUOTES|ENT_SUBSTITUTE,'UTF-8'),'giftText'=>$giftText]);
-            try {$response=sendMessage($customerMessage,null,'HTML',$uid);}
-            catch (Throwable $sendError) {
-                $sendExceptions[$uid]=true;
-                throw $sendError;
-            }
-            if (!is_object($response) || ($response->ok??false)!==true)
-                throw new RuntimeException('gift_notice_unacknowledged');
-            $sent[$uid]=true;
-        } catch (Throwable $error) {
-            $failed[$uid]=true;
-            error_log('achbot_gift_customer_notice_unconfirmed order_id='.$order['id'].' userid='.$uid);
-        }
-    }
-    return ['acknowledged'=>array_keys($sent),'unconfirmed'=>array_keys($failed),
-        'send_exceptions'=>array_keys($sendExceptions)];
-}
 if (!function_exists('achbotGiftPhysicalTarget')) {
     function achbotGiftPhysicalTarget(mysqli $db, int $serverId,
                                       bool $lock=false): array {
