@@ -199,19 +199,13 @@ Hosts/Groups, linked order rows, and unsettled payment effects. Logs should
 carry bounded order/journal IDs and error codes, not credentials or tokens.
 Never mark a journal settled based on an unchecked HTTP response.
 
-## Source-only schema migrations
+## Fresh installation and existing-instance boundary
 
-* Migration 016_remove_pasarguard_server_groups.sql removes only the obsolete
-  test-era column server_info.provider_group_ids after checking all active
-  PasarGuard plans have explicit native provider_group_ids values.
-  No order, plan, finance, wallet, native account or effect data are deleted.
-* Migration 017_shared_plan_changes.sql introduces the durable plan journal.
-  Both are one-time, non-replayable migration assets. Historical migrations
-  001 through 015 remain untouched.
-* On any separately authorized real tenant: inspect active runtime and actual
-  schema, prove backup/restore on an isolated copy, gate webhook/Cron,
-  apply only missing migrations in documented order, and verify new runtime.
-  In particular, **never replay** completed migrations 012/013/014/015 on NL.
-* Exact-source current PHP 8.5 acceptance plus independent source review is
-  required before integration. This work does not deploy to NL Chili or call
-  actual payment/native providers.
+The consolidated current schema includes the mandatory plan journal and
+explicit per-plan native Groups. It has no old 016/017 migration prerequisite.
+See [fresh installation](FRESH-INSTALL.md) and the
+[Wallet-first cutover decision](WALLET-FIRST-ARCHITECTURE.md#cutover-decision--controlled-manual-database-transfer-owner-2026-11-24).
+Earlier schema transitions are historical evidence, not executable deployment
+steps. Current PHP 8.5 acceptance and independent review are required;
+installed data transfer and real provider/payment actions require separate
+authorization.

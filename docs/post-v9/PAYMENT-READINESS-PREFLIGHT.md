@@ -20,14 +20,17 @@ column order, no prefixes), named constraint kinds and foreign-key endpoints.
 It also runs the current checkout, Native, wallet, payment evidence, delivery,
 report, service mutation, add-on and transfer storage guards. These checks
 are read-only, not a full DDL/type/check-expression/row-integrity certificate.
-Extra database objects or unexpected files are not deleted; reconcile them
-separately against the release and actual webroot.
+Unlisted PHP entries in package-owned directories or at the runtime root,
+extra directory symlinks there, and a root index.html shadow block the source
+check without opening their contents. Extra database objects and files are not
+deleted; reconcile them separately against the release and actual webroot.
+This is not a full web-server routing or arbitrary extension audit.
 
 The tool reads only BOT_STATES and PAYMENT_KEYS for configuration checks.
 Missing settings on a newly initialized database mean unconfigured, not
 invalid schema. Duplicate or malformed documents and invalid current gateway
 rules are reported. A method is potentially offerable only with its switch,
-required local settings and an effective policy allowing some audience.
+required local settings and an effective policy allowing some audience or an explicit valid user exemption.
 It uses the current manual destination/rate helpers and current gateway-rule
 parser. It does not test a real customer's eligibility, balance or merchant.
 API credentials are checked only for local configuration/envelope presence,

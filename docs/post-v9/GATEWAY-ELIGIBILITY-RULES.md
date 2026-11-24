@@ -56,12 +56,12 @@ A local active-order category requires status=1 and either a future finite expir
 
 ## Exact meanings of dates and counts
 
-The five history dimensions query **one row per successful pays transaction**:
+The five history dimensions count one original confirmed wallet recharge or completed service command. Retained successful unbound payment rows remain historical evidence. Current checkout rows use the following original invoice types:
 
 | Criterion | Matching `pays.type` |
 |---|---|
 | Initial purchase | `BUY_SUB` |
-| Renewal | `RENEW_ACCOUNT`, `RENEW_SCONFIG` |
+| Renewal | `RENEW_ACCOUNT` |
 | Volume extension | `INCREASE_VOLUME_*` |
 | Time extension | `INCREASE_DAY_*` |
 | Wallet recharge | `INCREASE_WALLET` |
@@ -69,7 +69,7 @@ The five history dimensions query **one row per successful pays transaction**:
 Only `paid`, `approved`, `auto_cart_approved` and `paid_with_wallet`
 count. Pending, declined, review, unresolved and processing states do not.
 A bulk invoice does not become multiple purchases based on the quantity of
-subscriptions. The historical `pays.request_date` is the **request creation
+subscriptions. For a current linked checkout, a terminal receipt alone is not successful service history: its original matching service operation must be completed. Automatic renewal counts a completed original automatic-renewal service operation without a synthetic invoice; refused, funded-only and cancelled operations do not count. Its original creation time is the request-time anchor. A partially fulfilled BUY resolved with retained accounts counts as one original purchase. The historical `pays.request_date` is the **request creation
 timestamp** and must not be called payment settlement or service delivery.
 Original `users.date` is Unix registration time as a string.
 

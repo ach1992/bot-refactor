@@ -153,14 +153,16 @@ function flag(array $state, string $key): bool {
 function policyCheck(array $state): bool {
     $methods = achbotPayUxAudienceMethods();
     $modes = achbotPayUxAudienceModes();
-    $legacy = $state['gatewayAudience'] ?? [];
+    $legacy = array_key_exists('gatewayAudience',$state) ? $state['gatewayAudience'] : [];
     if (!is_array($legacy)) return false;
     foreach ($legacy as $method => $mode) {
         if (!is_string($method) || !array_key_exists($method, $methods) ||
             !is_string($mode) || !array_key_exists($mode, $modes)) return false;
     }
-    return !array_key_exists('gatewayRules', $state) ||
-        achbotGatewayRulesDecode($state['gatewayRules']) !== null;
+    return (!array_key_exists('gatewayRules', $state) ||
+        achbotGatewayRulesDecode($state['gatewayRules']) !== null) &&
+        achbotGatewayRuleExemptUsersDecode(array_key_exists('gatewayRuleExemptUsers',$state)
+            ? $state['gatewayRuleExemptUsers'] : []) !== null;
 }
 /**
  * Static policy opportunity only. Do not query any customer or infer their
@@ -168,6 +170,9 @@ function policyCheck(array $state): bool {
  * a method key (including []) overrides the legacy audience for that method.
  */
 function achbotPreflightPolicyPotential(array $state, string $method): bool {
+    // policyCheck already validated the complete documents. An exemption
+    // is a possible audience, not proof that the user exists or can pay.
+    if (!empty($state['gatewayRuleExemptUsers'][$method])) return true;
     if (array_key_exists('gatewayRules', $state)) {
         $document = achbotGatewayRulesDecode($state['gatewayRules']);
         if ($document === null) return false;
@@ -178,7 +183,7 @@ function achbotPreflightPolicyPotential(array $state, string $method): bool {
             return false;
         }
     }
-    $legacy = $state['gatewayAudience'] ?? [];
+    $legacy = array_key_exists('gatewayAudience',$state) ? $state['gatewayAudience'] : [];
     if (!is_array($legacy)) return false;
     $mode = $legacy[$method] ?? 'all';
     return is_string($mode) && array_key_exists($mode, achbotPayUxAudienceModes()) &&
@@ -192,12 +197,8 @@ function achbotPreflightUsdtConfiguration(array $keys): array {
     $configured=false;$address=false;
     foreach (['BEP20','TRC20','ERC20'] as $network) {
         if (achbotManualUsdtConfiguration($network)!==null) $configured=true;
-        // Isolate destination validity without pretending a private rate exists.
-        $probe=$keys;
-        $probe['manualUsdtRateToman']='1000';
-        $GLOBALS['paymentKeys']=$probe;
-        if (achbotManualUsdtConfiguration($network)!==null) $address=true;
-        $GLOBALS['paymentKeys']=$keys;
+        $wallet=$keys['manualUsdtWallet'.$network]??null;
+        if (is_string($wallet) && achbotManualUsdtWalletValid(trim($wallet),$network)) $address=true;
     }
     $invalid=array_key_exists('manualUsdtRateToman',$keys) &&
         $keys['manualUsdtRateToman']!=='' &&

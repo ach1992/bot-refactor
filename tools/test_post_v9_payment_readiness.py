@@ -103,6 +103,15 @@ def main():
         seed({"walletState":"on","gatewayRules":{"version":2,"methods":{}}},{})
         assert has(invoke(3),"gateway_policies","BLOCK")
         cases.append("current_gateway_rule_precedence_and_invalid_policy_denied")
+        seed({"walletState":"on","gatewayRules":{"version":1,"methods":{"wallet":[]}},
+              "gatewayRuleExemptUsers":{"wallet":[123]}},{})
+        assert invoke(0)["methods"]["wallet"]["offerability"]=="potentially_offerable"
+        for invalid in (None,{"wallet":[0]},{"wallet":[123,123]},{"retired":[123]}):
+            seed({"walletState":"on","gatewayRuleExemptUsers":invalid},{})
+            assert has(invoke(3),"gateway_policies","BLOCK")
+        seed({"walletState":"on","gatewayAudience":None},{})
+        assert has(invoke(3),"gateway_policies","BLOCK")
+        cases.append("explicit_exemptions_are_potential_not_actual_authorization")
         seed({"manualUsdtState":"on"},{"manualUsdtWalletBEP20":"0x"+"a"*40,"manualUsdtRateToman":"1000"})
         r=invoke(0)
         assert r["methods"]["manual_trx"]["offerability"]=="not_offered"
@@ -162,6 +171,17 @@ def main():
         member.unlink();member.write_bytes(original)
         assert invoke(0)["structure_ready"]
         cases.append("tampered_and_symlinked_runtime_member_blocked")
+        for extra in ("index.html","settings/warnusers.php","pay/index.php","old.php"):
+            stale=runtime/extra
+            stale.write_text(SECRET)
+            source_failure()
+            stale.unlink()
+        extra_link=runtime/"settings"/"retired"
+        extra_link.symlink_to(work, target_is_directory=True)
+        source_failure()
+        extra_link.unlink()
+        assert invoke(0)["structure_ready"]
+        cases.append("unexpected_executables_and_index_shadow_rejected_without_reading_contents")
         assert sql("SELECT COUNT(*) FROM users")=="0" and sql("SELECT COUNT(*) FROM wallet_entries")=="0"
         assert sql("SELECT COUNT(*) FROM service_operations")=="0" and sql("SELECT COUNT(*) FROM pays")=="0"
         cases.append("no_financial_or_service_effects")

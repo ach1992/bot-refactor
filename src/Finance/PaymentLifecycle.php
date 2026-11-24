@@ -568,16 +568,9 @@ function achbotPayUxAudienceAllowed(mysqli $db, string $method, int $userId,
         if ($mode==='agents') return (int)$people[0]['is_agent']===1;
         if ($mode==='non_agents') return (int)$people[0]['is_agent']!==1;
         if ($mode==='buyers' || $mode==='non_buyers') {
-            $paysIndex=$final ? ' FORCE INDEX (idx_pays_user_v1)' : '';
-            $stmt=$db->prepare("SELECT id FROM pays".$paysIndex." WHERE user_id=?
-                AND type='BUY_SUB'
-                AND state IN ('paid','approved','auto_cart_approved','paid_with_wallet')
-                LIMIT 1".($final?' FOR UPDATE':''));
-            if (!$stmt) throw new RuntimeException('audience_buyer_prepare_failed');
-            $stmt->bind_param('i',$userId);
-            if (!$stmt->execute()) throw new RuntimeException('audience_buyer_lookup');
-            $bought=$stmt->get_result()->fetch_assoc()!==null;$stmt->close();
-            return $mode==='buyers' ? $bought : !$bought;
+            $purchased=achbotGatewayRuleHistoryCount(
+                $db,$userId,'buy',0,'older',$final,time());
+            return $purchased!==null && ($purchased>0)===($mode==='buyers');
         }
         $now=time();
         $ordersIndex=$final ? ' FORCE INDEX (idx_orders_userid_v1)' : '';

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from pathlib import Path
 import re
 import subprocess
@@ -58,6 +59,41 @@ def schema_contract() -> dict:
     return tables
 
 
+
+def unexpected_runtime_entries(root: Path, expected: set[str]) -> list[dict]:
+    """Inspect names only in package-owned locations; never follow extra links.
+
+    Preserve the old preflight's stale executable/shadow rejection without a
+    second hardcoded list of historical filenames. baseInfo.php is private.
+    """
+    found = []
+    def report(path):
+        found.append({"file": path, "reason": "unexpected_runtime_entry"})
+    for entry in root.iterdir():
+        if entry.name == "baseInfo.php":
+            continue
+        if entry.name.lower() == "index.html" or (
+                entry.suffix.lower() == ".php" and entry.name not in expected):
+            report(entry.name)
+    for directory in package_current.RUNTIME_DIRS:
+        location = root / directory
+        if location.is_symlink():
+            report(directory.rstrip("/"))
+            continue
+        def fail(error):
+            raise error
+        for current, dirs, files, fd in os.fwalk(location, follow_symlinks=False, onerror=fail):
+            for name in dirs:
+                path = Path(current) / name
+                if path.is_symlink():
+                    report(path.relative_to(root).as_posix())
+            for name in files:
+                path = (Path(current) / name).relative_to(root).as_posix()
+                if name.lower().endswith(".php") and path not in expected:
+                    report(path)
+    return sorted(found, key=lambda item: item["file"])
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--manifest", type=Path, required=True)
@@ -84,6 +120,10 @@ def main() -> int:
             if not verified["verified"]:
                 report["source_differences"] = verified["differences"]
                 raise ValueError("source mismatch")
+        unexpected = unexpected_runtime_entries(args.runtime_dir, set(metadata["files"]))
+        if unexpected:
+            report["source_differences"] = unexpected
+            raise ValueError("unexpected executable or index shadow")
         contract = schema_contract()
     except (OSError, ValueError, RuntimeError, subprocess.SubprocessError):
         report["checks"].append({"id": "source_identity", "status": "BLOCK",
