@@ -72,9 +72,56 @@ function achbotServiceBuyDeliveryInsertLocked(mysqli $db,array $op,array $quote,
     $b=achbotServiceBuyDeliveryBinding($op,$quote,$e,$o);
     if (!achbotServiceBuyPacketValid($packet,$b['user_id']))
         throw new RuntimeException('service_delivery_packet_invalid');
+    achbotServiceDeliveryInsertBindingLocked($db,$b,$packet);
+}
+
+/** A text completion notice is historical evidence, not current entitlement
+ * or a credential packet. It remains valid after later legitimate edits. */
+function achbotServiceEditDeliveryBindingLocked(mysqli $db,array $op,array $quote,array $m): array {
+    $q=$quote['request'];$kind=$op['kind'];$owner=(int)$op['userid'];$id=(int)$op['id'];
+    if (!in_array($kind,['RENEW','ADD_VOLUME','ADD_TIME'],true) ||
+        !in_array($op['stage'],['applied','completed'],true) ||
+        (int)$m['service_operation_id']!==$id || $m['phase']!=='completed' ||
+        !is_string($m['result_payload']) || !is_string($m['intent_payload']) ||
+        !hash_equals($m['result_sha256'],hash('sha256',$m['result_payload'])) ||
+        !hash_equals($m['intent_sha256'],hash('sha256',$m['intent_payload'])))
+        throw new RuntimeException('service_delivery_edit_result_invalid');
+    $intent=json_decode($m['intent_payload'],true,64,JSON_THROW_ON_ERROR);
+    $result=json_decode($m['result_payload'],true,64,JSON_THROW_ON_ERROR);
+    if (($intent['quote_sha256']??null)!==$op['quote_sha256'] ||
+        ($result['quote_sha256']??null)!==$op['quote_sha256'] ||
+        ($result['intent_sha256']??null)!==$m['intent_sha256'] ||
+        !isset($intent['target'],$result['entitlement']) || $intent['target']!==$result['entitlement'] ||
+        ($kind==='RENEW')!==($m['reset_ack_at']!==null))
+        throw new RuntimeException('service_delivery_edit_evidence_conflict');
+    $audit=achbotProviderRow($db,'SELECT * FROM increase_order WHERE id=? FOR UPDATE','i',[(int)$m['audit_id']]);
+    if (!$audit || (int)$audit['userid']!==$owner || (int)$audit['server_id']!==$q['server_id'] ||
+        (int)$audit['inbound_id']!==0 || $audit['remark']!==$q['remark'] ||
+        (int)$audit['amount']!==$q['price'] ||
+        ($kind==='ADD_TIME'?(int)$audit['day']!==$q['days']:$audit['day']!==null) ||
+        ($kind==='ADD_VOLUME'?(int)$audit['volume']!==$q['volume']:$audit['volume']!==null))
+        throw new RuntimeException('service_delivery_edit_audit_invalid');
+    return ['v'=>2,'service_id'=>$id,'quote_sha256'=>$op['quote_sha256'],'ordinal'=>1,
+        'user_id'=>$owner,'effect_id'=>null,'order_id'=>$q['order_id'],'server_id'=>$q['server_id'],
+        'native_operation'=>null,'native_target_key'=>null,
+        'account_effect_id'=>(int)$m['account_effect_id'],'audit_id'=>(int)$m['audit_id'],
+        'intent_sha256'=>$m['intent_sha256'],'result_sha256'=>$m['result_sha256']];
+}
+function achbotServiceTextPacketValid(array $packet,int $owner): bool {
+    return ($packet['kind']??null)==='text' && ($packet['uid']??null)===$owner &&
+        is_string($packet['text']??null) && trim($packet['text'])!=='' &&
+        in_array($packet['mode']??null,['HTML','plain'],true);
+}
+function achbotServiceEditDeliveryInsertLocked(mysqli $db,array $op,array $quote,array $m,array $packet): void {
+    $b=achbotServiceEditDeliveryBindingLocked($db,$op,$quote,$m);
+    if (!achbotServiceTextPacketValid($packet,$b['user_id']))
+        throw new RuntimeException('service_delivery_packet_invalid');
+    achbotServiceDeliveryInsertBindingLocked($db,$b,$packet);
+}
+function achbotServiceDeliveryInsertBindingLocked(mysqli $db,array $b,array $packet): void {
     $source=hash('sha256',achbotServiceJson($b));
     $sealed=achbotPaymentEvidenceProtect(achbotServiceDeliveryPurpose(
-        $b['service_id'],$b['ordinal'],$b['effect_id'],$b['order_id']),['binding'=>$b,'packet'=>$packet]);
+        $b['service_id'],$b['ordinal'],$b['effect_id']??0,$b['order_id']),['binding'=>$b,'packet'=>$packet]);
     $s=achbotProviderStatement($db,"INSERT INTO payment_delivery_intents
         (service_operation_id,ordinal,effect_id,order_id,user_id,server_id,source_digest,
          native_operation,native_target_key,sealed_payload,payload_sha256)
@@ -94,18 +141,26 @@ function achbotServiceDeliveryValidateLocked(mysqli $db,array $op,array $quote,a
         $d['attempt_id']!==null || $d['pay_type']!==null || $d['pay_fingerprint']!==null ||
         !hash_equals($d['payload_sha256'],hash('sha256',$d['sealed_payload'])))
         throw new RuntimeException('service_delivery_source_unavailable');
-    $e=achbotProviderRow($db,'SELECT * FROM service_effects WHERE id=? FOR UPDATE','i',[(int)$d['effect_id']]);
-    $o=achbotProviderRow($db,'SELECT * FROM orders_list WHERE id=? FOR UPDATE','i',[(int)$d['order_id']]);
-    if (!$e || !$o) throw new RuntimeException('service_delivery_order_unavailable');
-    $b=achbotServiceBuyDeliveryBinding($op,$quote,$e,$o);
+    if ($op['kind']==='BUY') {
+        $e=achbotProviderRow($db,'SELECT * FROM service_effects WHERE id=? FOR UPDATE','i',[(int)$d['effect_id']]);
+        $o=achbotProviderRow($db,'SELECT * FROM orders_list WHERE id=? FOR UPDATE','i',[(int)$d['order_id']]);
+        if (!$e || !$o) throw new RuntimeException('service_delivery_order_unavailable');
+        $b=achbotServiceBuyDeliveryBinding($op,$quote,$e,$o);
+    } else {
+        $m=achbotProviderRow($db,'SELECT * FROM service_mutations WHERE service_operation_id=? FOR UPDATE','i',[(int)$op['id']]);
+        if (!$m || $d['effect_id']!==null) throw new RuntimeException('service_delivery_edit_missing');
+        $b=achbotServiceEditDeliveryBindingLocked($db,$op,$quote,$m);
+    }
     if ($b['ordinal']!==(int)$d['ordinal'] || $b['server_id']!==(int)$d['server_id'] ||
+        $b['order_id']!==(int)$d['order_id'] ||
         $b['native_operation']!==$d['native_operation'] || $b['native_target_key']!==$d['native_target_key'] ||
         !hash_equals($d['source_digest'],hash('sha256',achbotServiceJson($b))))
         throw new RuntimeException('service_delivery_source_conflict');
     $body=achbotPaymentEvidenceUnprotect(achbotServiceDeliveryPurpose(
-        $b['service_id'],$b['ordinal'],$b['effect_id'],$b['order_id']),$d['sealed_payload']);
+        $b['service_id'],$b['ordinal'],$b['effect_id']??0,$b['order_id']),$d['sealed_payload']);
     if (!is_array($body) || ($body['binding']??null)!==$b || !is_array($body['packet']??null) ||
-        !achbotServiceBuyPacketValid($body['packet'],$b['user_id']))
+        !($op['kind']==='BUY'?achbotServiceBuyPacketValid($body['packet'],$b['user_id']):
+            achbotServiceTextPacketValid($body['packet'],$b['user_id'])))
         throw new RuntimeException('service_delivery_packet_invalid');
     return $body['packet'];
 }

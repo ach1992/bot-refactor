@@ -671,6 +671,65 @@ Telegram effects. The remaining direct financial writers are in
 their real receipt/service/referral ownership, not a mechanical SQL wrapper
 that preserves the duplicate execution model.
 
+### Shared RENEW / ADD_VOLUME / ADD_TIME and scheduled admission slice
+
+Migration 028 records the original mutation as one normalized row per service
+operation. Its immutable, hashed initial observation and absolute target,
+verified reset acknowledgement, verified result, and original local audit ID
+replace growing mutation-key lists for the new executor. The real existing
+physical account effect is claimed as \`mutating\` under the common
+\`service:<id>\` marker, with a nonblocking session lease on that account
+shared with existing plan/reassignment operations. Local aliases therefore
+cannot execute conflicting operations concurrently. The old historical
+snapshot/key are not rewritten as a new purchase. During the claim, the
+historical migrated-account validator recognizes only a matching new journal
+and nonterminal operation; original provenance remains required.
+
+The PasarGuard adapter owns authenticated observations, Native identity,
+scope, reset and absolute PUT. RENEW freezes the original expiry/quota;
+ADD_VOLUME writes only the fixed byte target and ADD_TIME only the fixed
+expiry. A verified reset ACK does not require traffic to remain zero
+afterwards. Once the ACK is recorded, later retry does not reset again.
+Current target readback is sufficient to finish an original unresolved
+edit; a conflicting entitlement does not authorize another relative
+increment or a blind overwrite. The provider-neutral local edit finalizer
+records the original Order change, one increase_order audit, the verified
+result, and one sealed customer intent in a transaction with release of the
+physical ownership. A local/Telegram failure does not restart Native I/O.
+Existing 018 packets and schema semantics are preserved.
+
+New scheduled-renewal admission (\`src/Services/AutomaticRenewal.php\`) reads
+the existing auto-renew setting, original Order/cycle, server eligibility,
+and exact agent discount; observes the actual authenticated account while
+holding its shared physical lease **before** entering the money transaction.
+Under the owner lock it revalidates the exact target/cycle and commits the
+original command, one debit (or explicit zero-price funding), physical claim
+and frozen Native renewal target together. No synthetic pay or attempt is
+created. Competing aliases cannot reserve a second renewal. Insufficient
+balance disables that original auto-renew setting without a debit or
+mutation; 100% discount keeps the accepted signed-debt behavior. The
+customer success packet uses the original real service reference and
+committed balance transition; administrative/report-channel followup and
+the existing low-wallet notice still need source-neutral outbox/caller
+convergence. The old scheduler/Telegram entrypoints remain inactive with
+respect to these new commands until the coherent cutover.
+
+Disposable PHP/MySQLi (strict and report-off), MariaDB and loopback Native
+contract tests: \`test_wallet_first_service_execution.py\` 46/46 cases, 270
+actual HTTP requests including 32 original CREATE POSTs. Includes reset
+ACK with later traffic and PUT outage, uncertain PUT readback, fixed ADD
+targets, alias serialization, independent drift, atomic finalization failure
+and COMMIT ACK loss, independent delivery, concurrent automatic-cycle
+admission, low balance, funded observation drift and full agent discount
+with existing debt. No deployed Native service, actual Telegram delivery or
+production money was used. These are actual new source paths in an isolated
+candidate, not completed end-to-end production route/migration acceptance.
+The known delayed older PUT limitation below still requires explicit
+recovery/reconciliation evidence, including stale arrival after a later
+successful update. Real new-route tests for migrated identities, scoped
+add-ons and other current account policies, report/referral convergence and
+all remaining activation/removal gates are still required.
+
 ### Verified Native limitation of existing APIs, not an accepted retry contract
 
 `python3 tools/test_wallet_first_native_write_fence.py --run-disposable`
@@ -697,7 +756,7 @@ The Owner subsequently ruled out provider-side development. This evidence
 remains valid, but the earlier remote-side conditional/idempotent or proven
 quiescence prerequisite is superseded by the existing-API recovery contract
 in section 5. The counterexample must remain visible in acceptance; do not
-relabel reproduction as safety. No new edit executor or retry behavior has
-yet been enabled. Use PasarGuard only and continue financial, service,
+relabel reproduction as safety. The new edit executor is implemented in this draft but has not been
+activated by production callers. Use PasarGuard only and continue financial, service,
 migration and caller convergence work using existing APIs only.
 PR #233 retains its separate review/integration gate.

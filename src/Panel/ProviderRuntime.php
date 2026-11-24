@@ -5,6 +5,7 @@ require_once __DIR__.'/../Diagnostics/EventLog.php';
 require_once __DIR__.'/ProviderImport.php';
 require_once __DIR__.'/PasarGuardServiceTarget.php';
 require_once __DIR__.'/PasarGuardServiceExecution.php';
+require_once __DIR__.'/PasarGuardServiceEdit.php';
 
 function achbotProviderType(mysqli $db,int $serverId): string {
     $s=$db->prepare('SELECT type FROM server_config WHERE id=?');
@@ -1405,10 +1406,19 @@ function achbotProviderRegistry(): array {
             'dispatch'=>'achbotPasarGuardDispatchEffectAdapter','link'=>'achbotPasarGuardLinkEffectAdapter',
             'import_lookup'=>'achbotPasarGuardExistingUser','import_adopt'=>'achbotPasarGuardAdoptExistingLocked',
             'service_target'=>'achbotPasarGuardServiceTargetLocked',
+            'service_account_lock'=>'achbotPgServiceAccountLock',
+            'service_auto_observe'=>'achbotPgServiceAutoObserve',
+            'service_auto_reserve'=>'achbotPgServiceAutoReserveLocked',
             'service_execution'=>['BUY'=>['prepare'=>'achbotPasarGuardBuyPrepareLocked',
-                'perform'=>'achbotPasarGuardBuyPerform','apply'=>'achbotPasarGuardBuyApplyLocked']],
+                'perform'=>'achbotPasarGuardBuyPerform','apply'=>'achbotPasarGuardBuyApplyLocked']]
+                +array_fill_keys(['RENEW','ADD_VOLUME','ADD_TIME'],[
+                    'prepare'=>'achbotPgServiceEditPrepareLocked','perform'=>'achbotPgServiceEditPerform',
+                    'apply'=>'achbotPgServiceEditApplyLocked']),
             'service_finalization'=>['BUY'=>['prepare'=>'achbotPasarGuardBuyFinalizePrepareLocked',
                 'perform'=>'achbotPasarGuardBuyFinalizePerform','apply'=>'achbotPasarGuardBuyFinalizeApplyLocked']]
+                +array_fill_keys(['RENEW','ADD_VOLUME','ADD_TIME'],[
+                    'prepare'=>'achbotPgServiceEditFinalizePrepareLocked','perform'=>'achbotServiceEditFinalizePerform',
+                    'apply'=>'achbotPgServiceEditFinalizeApplyLocked'])
         ]
     ];
 }
@@ -1417,13 +1427,17 @@ function achbotProviderRegistryEntryValid($type,$adapter): bool {
         !is_array($adapter) || !is_string($adapter['label']??null) ||
         preg_match('/^[a-z][a-z0-9_.]+$/D',$adapter['label'])!==1) return false;
     $required=achbotProviderRequiredOperations();
-    if (array_diff(array_keys($adapter),array_merge(['label','import_lookup','import_adopt','service_target','service_execution','service_finalization'],$required))) return false;
+    if (array_diff(array_keys($adapter),array_merge(['label','import_lookup','import_adopt','service_target','service_execution','service_finalization','service_account_lock','service_auto_observe','service_auto_reserve'],$required))) return false;
     foreach ($required as $operation)
         if (!is_string($adapter[$operation]??null) || !is_callable($adapter[$operation]))
             return false;
     // During the refactor legacy adapters have no new service admission.
-    if (array_key_exists('service_target',$adapter) &&
-        (!is_string($adapter['service_target']) || !is_callable($adapter['service_target']))) return false;
+    foreach (['service_target','service_account_lock','service_auto_observe','service_auto_reserve'] as $operation)
+        if (array_key_exists($operation,$adapter) &&
+            (!is_string($adapter[$operation]) || !is_callable($adapter[$operation]))) return false;
+    if (isset($adapter['service_auto_observe'])!==isset($adapter['service_auto_reserve']) ||
+        (isset($adapter['service_auto_observe']) && !isset($adapter['service_account_lock'],
+            $adapter['service_execution']['RENEW'],$adapter['service_finalization']['RENEW']))) return false;
     foreach (['service_execution','service_finalization'] as $phase) if (array_key_exists($phase,$adapter)) {
         if (!is_array($adapter[$phase]) || !$adapter[$phase]) return false;
         foreach ($adapter[$phase] as $kind=>$callbacks) {

@@ -25,7 +25,9 @@ declare(strict_types=1);
 mysqli_report($argv[4]==='strict'?MYSQLI_REPORT_ERROR|MYSQLI_REPORT_STRICT:MYSQLI_REPORT_OFF);
 define('ACHBOT_PG_TEST_LOOPBACK',true);
 require $argv[1].'/src/Services/Execution.php';
+require $argv[1].'/src/Services/AutomaticRenewal.php';
 require $argv[1].'/src/Finance/ServiceDelivery.php';
+require $argv[1].'/src/Purchase/OrderWrites.php';
 $GLOBALS['telegramWebhookSecret']='SyntheticServiceDeliveryKey_2026';
 function sendQrFromLink(string $qr,string $caption,string $keys,string $botUrl,int $uid): bool {
     global $db,$x;
@@ -41,11 +43,35 @@ function sendQrFromLink(string $qr,string $caption,string $keys,string $botUrl,i
     return !($x['unknown_ack']??false);
 }
 
+function sendMessage($text,$keys=null,$mode=null,$uid=null) {
+    global $db,$x;
+    if ((int)achbotProviderRow($db,'SELECT @@in_transaction AS tx')['tx']!==0)
+        throw new RuntimeException('fixture_telegram_inside_transaction');
+    $ctx=$GLOBALS['achbotTelegramDiagnosticContext'];
+    $d=achbotProviderRow($db,'SELECT id,state,attempt_count FROM payment_delivery_intents WHERE service_operation_id=? AND ordinal=?','ii',
+        [$ctx['service_operation_id'],$ctx['delivery_ordinal']]);
+    if ($d['state']!=='dispatching' || (int)$d['attempt_count']!==1)
+        throw new RuntimeException('fixture_telegram_claim_not_committed');
+    $s=achbotProviderStatement($db,'INSERT INTO fixture_telegram(intent_id,user_id,caption) VALUES (?,?,?)',
+        'iis',[$d['id'],$uid,$text]);$s->close();
+    return (object)['ok'=>!($x['unknown_ack']??false)];
+}
+function fixtureAlias(mysqli $db,int $order): int {
+    $ctx=achbotPgOrderContext($db,$order,true);$o=$ctx['order'];$a=$ctx['account'];
+    $id=insertOrder($db,9002,'',0,2,0,$o['remark'],'alias-'.$o['uuid'],
+        (int)$o['expire_date'],$o['link'],0,time(),0,true);
+    achbotRecordImportedOrderOriginLocked($db,$id,9002,9002,'pasarguard',2,$o['remark'],
+        str_repeat('a',64),['remote_user_id'=>$a['remote_user_id'],'remote_created_at'=>$a['remote_created_at'],
+            'remote_username'=>$a['remote_username']],$a['id']);
+    achbotProviderBindOrder($db,$a,$id);
+    return $id;
+}
 $db=new mysqli('localhost','root','',$argv[3],0,$argv[2]);
 $x=json_decode($argv[5],true,512,JSON_THROW_ON_ERROR);
 try {
     $presentation=['bot_state'=>[],'bot_url'=>'https://bot.fixture.invalid','bot_username'=>'fixture_bot'];
     if ($x['op']==='step') $r=achbotServiceExecuteStep($db,$x['id'],$presentation);
+    elseif ($x['op']==='auto') $r=achbotServiceAutoRenewAdmit($db,$x['order'],(int)($x['owner']??1001),$x['bot_state']??['renewAutoState'=>'on']);
     elseif ($x['op']==='due') $r=achbotServiceExecuteDue($db,$x['limit'],10.0,$presentation);
     elseif ($x['op']==='deliver') $r=achbotServiceDeliveryDispatch($db,$x['id']);
     elseif ($x['op']==='maintain_delivery') $r=achbotDeliveryMaintainPending($db,$x['limit'],10.0);
@@ -57,8 +83,9 @@ try {
     else {
         if (!$db->begin_transaction()) throw new RuntimeException('fixture_begin');
         $r=match($x['op']) {
-            'issue'=>achbotServiceIssueLocked($db,1001,'fixture',$x['ref'],$x['quote']),
-            'fund'=>achbotServiceFundLocked($db,1001,$x['id']),
+            'issue'=>achbotServiceIssueLocked($db,(int)($x['owner']??1001),'fixture',$x['ref'],$x['quote']),
+            'fund'=>achbotServiceFundLocked($db,(int)($x['owner']??1001),$x['id']),
+            'alias'=>fixtureAlias($db,$x['order']),
         };
         if (!$db->commit()) throw new RuntimeException('fixture_commit');
     }
@@ -113,6 +140,13 @@ def main():
                         requests.append(('GET',self.path))
                         if faults and faults[0]=='get_unavailable':
                             faults.pop(0);return self.reply(503,{})
+                        if self.path=='/api/system':
+                            return self.reply(200,{'version':'fixture'})
+                        if self.path=='/api/admin':
+                            return self.reply(200,{'role':{'is_owner':True,'access':{'require_template':False,'allowed_group_ids':[1,2]}}})
+                        if self.path.startswith('/api/groups?'):
+                            return self.reply(200,{'total':2,'groups':[
+                                {'id':i,'name':'group','is_disabled':False,'inbound_tags':['vless']} for i in (1,2)]})
                         if self.path.startswith('/api/user/by-username/'):
                             u=users.get(unquote(self.path.rsplit('/',1)[1]))
                         elif re.fullmatch(r'/api/user/[0-9]+/subscription/links',self.path):
@@ -125,7 +159,41 @@ def main():
                     self.reply(200,u) if u is not None else self.reply(404,{})
                 except Exception as e:
                     errors.append(repr(e));self.reply(500,{})
+            def do_edit(self):
+                try:
+                    assert self.headers['X-Api-Key']=='fixture'
+                    path=self.path.split('/')
+                    native_id=int(path[4])
+                    phase='reset' if self.command=='POST' else 'modify'
+                    state=sql("SELECT CONCAT(e.provider_state,':',m.phase,':',o.stage) "
+                        "FROM service_effects e JOIN service_mutations m "
+                        "ON m.account_effect_id=e.id AND e.provider_mutation_key=CONCAT('service:',m.service_operation_id) "
+                        "JOIN service_operations o ON o.id=m.service_operation_id "
+                        f"WHERE e.provider_remote_user_id={native_id}")
+                    assert state=='mutating:'+phase+':dispatching',state
+                    body=json.loads(self.rfile.read(int(self.headers.get('Content-Length',0)))) if self.command=='PUT' else {}
+                    with lock:
+                        u=next(v for v in users.values() if v['id']==native_id)
+                        requests.append(('RESET' if phase=='reset' else 'PUT',body.copy()))
+                        fault=faults.pop(0) if faults else ''
+                        if fault==phase+'_unavailable':return self.reply(503,{})
+                        if phase=='reset':
+                            assert path[-1]=='reset'
+                            u['used_traffic']=0
+                        else:
+                            assert set(body)<={'data_limit','expire','status'}
+                            u.update(body)
+                        ack=u.copy()
+                        if fault=='reset_traffic':
+                            u['used_traffic']=123
+                    if fault==phase+'_lost':return self.reply(503,{})
+                    self.reply(200,ack)
+                except Exception as e:
+                    errors.append(repr(e));self.reply(500,{})
+            def do_PUT(self):
+                self.do_edit()
             def do_POST(self):
+                if self.path.endswith('/reset'):return self.do_edit()
                 try:
                     assert self.path=='/api/user' and self.headers['X-Api-Key']=='fixture'
                     body=json.loads(self.rfile.read(int(self.headers['Content-Length'])))
@@ -167,6 +235,7 @@ def main():
                 FROM pays p JOIN payment_attempts a ON a.pay_row_id=p.id WHERE p.hash_id='legacy-delivery-fixture';""")
             original=sql("SELECT id,pay_row_id,attempt_id,pay_type,sealed_payload,state FROM payment_delivery_intents")
             sql((ROOT/'migrations/post-v9/027_service_delivery_sources.sql').read_text())
+            sql((ROOT/'migrations/post-v9/028_service_mutations.sql').read_text())
             assert sql("SELECT id,pay_row_id,attempt_id,pay_type,sealed_payload,state FROM payment_delivery_intents")==original
             sql("""CREATE TABLE fixture_telegram (
                 id INT AUTO_INCREMENT PRIMARY KEY, intent_id BIGINT UNSIGNED NOT NULL,
@@ -179,6 +248,7 @@ def main():
                     provider_version='5.5.1',provider_enabled=1 WHERE id=2;
                 INSERT INTO server_plans(id,fileid,catid,server_id,inbound_id,acount,title,protocol,days,volume,type,price,descr,pic,active,step,date,custom_sni,provider_group_ids)
                 VALUES (7,'7',1,2,0,6,'Fixture PG','vless',30,2,'normal',100,'description','',1,0,'fixture',NULL,'[1,2]');""")
+            sql('UPDATE users SET wallet=50000 WHERE userid=9002')
             driver=work/'execution.php';driver.write_text(PHP)
             def php(mode,op,**kw):
                 p=subprocess.run(['php','-n','-d','extension=mysqlnd','-d','extension=mysqli','-d','extension=curl',
@@ -213,6 +283,19 @@ def main():
                 return sql(f"SELECT ordinal,operation_id,remote_username,requested_expire,requested_bytes,state,COALESCE(provider_remote_user_id,0) FROM service_effects WHERE source_kind='service_operation' AND source_ref='{id}' ORDER BY ordinal").splitlines()
             def posts():
                 return sum(v[0]=='POST' for v in requests)
+            def edit(mode,ref,order,kind,days=0,volume=0,owner=1001,policy=None):
+                sid,plan,remark,uuid=sql(f"SELECT server_id,fileid,remark,uuid FROM orders_list WHERE id={order}").split('\t')
+                return php(mode,'issue',owner=owner,ref=mode+'-'+ref,
+                    quote=dict(kind=kind,variant='managed',price=100,server_id=int(sid),plan_id=int(plan),
+                        order_id=order,quantity=1,days=days,volume=volume,remark=remark,uuid=uuid,
+                        policy=policy or {}))
+            def mutation(id):
+                return sql(f"SELECT phase,COALESCE(intent_sha256,''),COALESCE(reset_ack_at,''),COALESCE(audit_id,0) FROM service_mutations WHERE service_operation_id={id}")
+            def writes():
+                return [v for v in requests if v[0] in ('RESET','PUT')]
+            def native(order):
+                remark=sql(f"SELECT remark FROM orders_list WHERE id={order}")
+                return users[remark]
             for mode in ('strict','off'):
                 # Isolate each test mode's scheduler from previously deferred
                 # conflict fixtures; no terminal evidence is changed.
@@ -372,6 +455,160 @@ DELIMITER ;
                 assert r[str(first)]['status']=='pending' and r[str(second)]['status']=='applied',r
                 assert finance()==before
                 cases.append(mode+'_due_fair_progress')
+                # A source-real CREATE and linked Order are the original
+                # account for every subsequent edit; no fabricated identity.
+                buy=issue(mode,'edit-source');fund(mode,buy)
+                step(mode,buy,'applied');step(mode,buy,'completed')
+                order=int(sql(f"SELECT order_id FROM service_effects WHERE source_kind='service_operation' AND source_ref='{buy}'"))
+                effect=int(sql(f"SELECT provider_effect_id FROM orders_list WHERE id={order}"))
+                native(order)['used_traffic']=456
+                native(order)['expire']=1800000000
+                renewal=edit(mode,'edit-renew',order,'RENEW',days=30,volume=2)
+                fund(mode,renewal);before=finance();n=len(writes())
+                step(mode,renewal,'progressed');original=mutation(renewal).split('\t')[1]
+                assert mutation(renewal).startswith('reset\t')
+                faults.append('reset_traffic')
+                step(mode,renewal,'progressed')
+                assert mutation(renewal).startswith('modify\t') and mutation(renewal).split('\t')[2]
+                assert native(order)['used_traffic']==123
+                faults.append('modify_unavailable')
+                # Freeze a different expiry to ensure a real PUT is needed:
+                # the provider's valid current baseline has already been
+                # observed; use its existing expiry, not an injected drift.
+                step(mode,renewal,'pending','pg_vendor_unavailable')
+                retry(renewal);step(mode,renewal,'applied')
+                assert mutation(renewal).split('\t')[1]==original
+                assert [v[0] for v in writes()[n:]]==['RESET','PUT','PUT']
+                cases.append(mode+'_reset_ack_with_new_traffic_no_repeat_on_put_outage')
+                # Force local completion rollback after verified Native target.
+                sql("CREATE TRIGGER fixture_edit_delivery_fail BEFORE INSERT ON payment_delivery_intents FOR EACH ROW SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='fixture rollback'")
+                try:
+                    step(mode,renewal,'pending','provider_storage_unavailable')
+                    assert mutation(renewal).startswith('verified\t') and mutation(renewal).endswith('\t0')
+                finally:sql('DROP TRIGGER fixture_edit_delivery_fail')
+                reqs=len(requests)
+                retry(renewal);php(mode,'step',id=renewal,lost_ack=True)
+                step(mode,renewal,'completed')
+                assert len(requests)==reqs and finance()==before
+                assert mutation(renewal).startswith('completed\t')
+                assert sql(f"SELECT CONCAT(provider_state,':',COALESCE(provider_mutation_key,'')) FROM service_effects WHERE id={effect}")=='linked:'
+                delivery=int(sql(f"SELECT id FROM payment_delivery_intents WHERE service_operation_id={renewal}"))
+                assert php(mode,'deliver',id=delivery)=='acknowledged'
+                assert php(mode,'deliver',id=delivery)=='acknowledged'
+                assert sql(f"SELECT COUNT(*) FROM fixture_telegram WHERE intent_id={delivery}")=='1'
+                cases.append(mode+'_edit_local_atomic_finality_no_remote_replay')
+                # Another local reference to the same physical account
+                # uses exactly the same anchor and waits without HTTP.
+                alias=php(mode,'alias',order=order)
+                volume=edit(mode,'edit-volume',order,'ADD_VOLUME',volume=1)
+                time_edit=edit(mode,'edit-time',alias,'ADD_TIME',days=3,owner=9002)
+                fund(mode,volume);assert php(mode,'fund',owner=9002,id=time_edit)=='funded'
+                before=finance();n=len(writes())
+                step(mode,volume,'progressed');original=mutation(volume).split('\t')[1]
+                reqs=len(requests)
+                step(mode,time_edit,'pending','service_edit_account_busy')
+                assert len(requests)==reqs
+                faults.append('modify_lost')
+                quota=native(order)['data_limit']
+                step(mode,volume,'pending','pg_vendor_unavailable')
+                assert native(order)['data_limit']==quota+1073741824
+                retry(volume);step(mode,volume,'applied');step(mode,volume,'completed')
+                assert mutation(volume).split('\t')[1]==original
+                assert writes()[n:]==[('PUT',{'data_limit':quota+1073741824})]
+                retry(time_edit);step(mode,time_edit,'progressed')
+                step(mode,time_edit,'applied');step(mode,time_edit,'completed')
+                assert len(writes())==n+2 and set(writes()[-1][1])=={'expire'}
+                assert native(order)['data_limit']==quota+1073741824 and finance()==before
+                cases.append(mode+'_alias_fence_and_lost_put_absolute_addons')
+                # A different authoritative entitlement is never overwritten.
+                conflict=edit(mode,'edit-drift',order,'ADD_VOLUME',volume=1)
+                fund(mode,conflict);step(mode,conflict,'progressed')
+                native(order)['data_limit']+=7
+                n=len(writes());before=finance()
+                step(mode,conflict,'pending','pg_service_edit_entitlement_conflict')
+                assert len(writes())==n and finance()==before
+                cases.append(mode+'_edit_external_drift_no_blind_overwrite')
+                # Scheduled renewal uses the exact same operation/physical
+                # journal, without creating a synthetic payment or attempt.
+                buy=issue(mode,'auto-source');fund(mode,buy)
+                step(mode,buy,'applied');step(mode,buy,'completed')
+                ao=int(sql(f"SELECT order_id FROM service_effects WHERE source_kind='service_operation' AND source_ref='{buy}'"))
+                alias=php(mode,'alias',order=ao)
+                sql(f"UPDATE orders_list SET fileid=7,notif=1,autoRenew='on' WHERE id IN ({ao},{alias})")
+                native(ao)['used_traffic']=native(ao)['data_limit']
+                # Force a different actual expiry, irrespective of test speed.
+                native(ao)['expire']=1800000000
+                n=len(writes());pays=sql("SELECT COUNT(*) FROM pays");attempts=sql("SELECT COUNT(*) FROM payment_attempts")
+                f0=finance()
+                assert php(mode,'auto',order=ao,bot_state={'renewAutoState':'off'})['status']=='ineligible'
+                assert finance()==f0
+                # Both competing owners hold active local aliases.
+                with ThreadPoolExecutor(max_workers=2) as ex:
+                    a=ex.submit(php,mode,'auto',order=ao)
+                    b=ex.submit(php,mode,'auto',order=alias,owner=9002)
+                    results=[a.result(),b.result()]
+                assert sorted(r['status'] for r in results)==['account_busy','funded'],results
+                winner=next(r['id'] for r in results if r['status']=='funded')
+                owner_order=ao if results[0]['status']=='funded' else alias
+                uid=1001 if owner_order==ao else 9002
+                assert php(mode,'auto',order=owner_order,owner=uid)=={'status':'already_claimed','id':winner}
+                assert len(writes())==n and mutation(winner).startswith('reset')
+                before=finance()
+                step(mode,winner,'progressed');step(mode,winner,'applied')
+                step(mode,winner,'completed')
+                assert finance()==before and len(writes())==n+2
+                assert sql("SELECT COUNT(*) FROM pays")==pays and sql("SELECT COUNT(*) FROM payment_attempts")==attempts
+                assert sql(f"SELECT COUNT(*) FROM wallet_entries WHERE source_kind='service_debit' AND source_ref='{winner}'")== '1'
+                loser=alias if owner_order==ao else ao
+                assert php(mode,'auto',order=loser,owner=9002 if loser==alias else 1001)['status']=='ineligible'
+                did=int(sql(f"SELECT id FROM payment_delivery_intents WHERE service_operation_id={winner}"))
+                assert php(mode,'deliver',id=did)=='acknowledged'
+                assert sql(f"SELECT COUNT(*) FROM fixture_telegram WHERE intent_id={did} AND user_id={uid} AND caption LIKE '%rn_%'")=='1'
+                cases.append(mode+'_automatic_renewal_alias_single_charge_original_notice')
+                # Original low-balance policy: disable auto renewal, no debit,
+                # and no synthetic paid invoice or remote write.
+                buy=issue(mode,'auto-low');fund(mode,buy);step(mode,buy,'applied');step(mode,buy,'completed')
+                lo=int(sql(f"SELECT order_id FROM service_effects WHERE source_kind='service_operation' AND source_ref='{buy}'"))
+                sql(f"UPDATE orders_list SET notif=1,autoRenew='on' WHERE id={lo}")
+                native(lo)['used_traffic']=native(lo)['data_limit']
+                saved=sql("SELECT wallet FROM users WHERE userid=1001")
+                sql("UPDATE users SET wallet=0 WHERE userid=1001")
+                before=finance();n=len(writes())
+                r=php(mode,'auto',order=lo)
+                assert r['status']=='insufficient_funds' and r['amount']==100 and r['wallet']==0,r
+                assert sql(f"SELECT autoRenew FROM orders_list WHERE id={lo}")=='off'
+                assert finance()==before and len(writes())==n
+                sql(f"UPDATE users SET wallet={saved} WHERE userid=1001")
+                cases.append(mode+'_automatic_renewal_low_wallet_no_charge')
+                # The original fresh observation is frozen with funding,
+                # rather than recomputed after an independent native edit.
+                buy=issue(mode,'auto-drift');fund(mode,buy);step(mode,buy,'applied');step(mode,buy,'completed')
+                od=int(sql(f"SELECT order_id FROM service_effects WHERE source_kind='service_operation' AND source_ref='{buy}'"))
+                sql(f"UPDATE orders_list SET notif=1,autoRenew='on' WHERE id={od}")
+                native(od)['used_traffic']=native(od)['data_limit']
+                r=php(mode,'auto',order=od);assert r['status']=='funded',r
+                aid=r['id'];assert mutation(aid).startswith('reset')
+                native(od)['data_limit']+=7
+                before=finance();n=len(writes())
+                step(mode,aid,'pending','pg_service_reset_baseline_conflict')
+                assert finance()==before and len(writes())==n
+                cases.append(mode+'_automatic_renewal_funded_baseline_not_recomputed')
+                # Full agent discount is allowed even with signed debt.
+                buy=issue(mode,'auto-free');fund(mode,buy);step(mode,buy,'applied');step(mode,buy,'completed')
+                od=int(sql(f"SELECT order_id FROM service_effects WHERE source_kind='service_operation' AND source_ref='{buy}'"))
+                sql(f"UPDATE orders_list SET notif=1,autoRenew='on' WHERE id={od}")
+                saved=sql("SELECT wallet FROM users WHERE userid=1001")
+                sql("UPDATE users SET wallet=-10,is_agent=1,discount_percent='"+json.dumps({'normal':100})+"' WHERE userid=1001")
+                native(od)['used_traffic']=native(od)['data_limit'];native(od)['expire']=1800000000
+                before=finance();n=len(writes())
+                r=php(mode,'auto',order=od);assert r['status']=='funded',r
+                aid=r['id'];step(mode,aid,'progressed');step(mode,aid,'applied');step(mode,aid,'completed')
+                assert finance()==before and len(writes())==n+2
+                assert sql(f"SELECT price_toman,debit_entry_id FROM service_operations WHERE id={aid}")=='0\tNULL'
+                did=int(sql(f"SELECT id FROM payment_delivery_intents WHERE service_operation_id={aid}"))
+                assert php(mode,'deliver',id=did)=='acknowledged'
+                sql(f"UPDATE users SET wallet={saved},is_agent=0,discount_percent='' WHERE userid=1001")
+                cases.append(mode+'_automatic_renewal_full_discount_signed_debt_no_wallet_write')
                 assert not faults and not errors,(faults,errors)
         finally:
             release.set();server.shutdown();server.server_close();thread.join(5)

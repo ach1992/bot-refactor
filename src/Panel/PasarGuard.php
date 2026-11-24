@@ -282,7 +282,7 @@ function achbotPgModify(array $panel,array $identity,array $absoluteChanges,
     } catch (Throwable $e) {return achbotPgFailure($dispatched?'pg_modify_unconfirmed':'pg_modify_invalid',$dispatched);}
 }
 function achbotPgAction(array $panel,array $identity,string $action,
-                       ?array $expectedNativeEntitlement=null): array {
+                       ?array $expectedNativeEntitlement=null,?callable $beforeWrite=null): array {
     $before=achbotPgRead($panel,$identity);
     if (!$before['success']) return $before;
     if (!achbotPgManaged($before['user'])) return achbotPgFailure('pg_native_schedule_conflict');
@@ -290,6 +290,7 @@ function achbotPgAction(array $panel,array $identity,string $action,
         ($action!=='reset' ||
          !achbotPgExpectedEntitlementMatches($before['user'],$expectedNativeEntitlement)))
         return achbotPgFailure('pg_recovery_native_drift_before_reset');
+    if ($beforeWrite!==null) $beforeWrite();
     $r=achbotPgRequest($panel,$action==='delete'?'DELETE':'POST',
         '/api/user/by-id/'.$identity['remote_user_id'].($action==='delete'?'':'/'.$action));
     if (!$r['success']) return $r;
@@ -315,7 +316,7 @@ function achbotPgAction(array $panel,array $identity,string $action,
     foreach (['data_limit','expire','group_ids'] as $key) if ($read['user'][$key]!==$before['user'][$key])
         return achbotPgFailure('pg_action_entitlement_changed',true,$read['http']);
     if (!achbotPgManaged($read['user'])) return achbotPgFailure('pg_native_schedule_conflict',true,$read['http']);
-    if ($action==='reset' && ($ack['user']['used_traffic']!==0 || $read['user']['used_traffic']!==0))
+    if ($action==='reset' && $ack['user']['used_traffic']!==0)
         return achbotPgFailure('pg_reset_unconfirmed',true,$read['http']);
     if ($action==='revoke_sub' && ($read['user']['proxy_settings']===$before['user']['proxy_settings'] ||
         $ack['user']['proxy_settings']!==$read['user']['proxy_settings']))
@@ -323,8 +324,8 @@ function achbotPgAction(array $panel,array $identity,string $action,
     return $read;
 }
 function achbotPgReset(array $panel,array $identity,
-                       ?array $expectedNativeEntitlement=null): array {
-    return achbotPgAction($panel,$identity,'reset',$expectedNativeEntitlement);
+                       ?array $expectedNativeEntitlement=null,?callable $beforeWrite=null): array {
+    return achbotPgAction($panel,$identity,'reset',$expectedNativeEntitlement,$beforeWrite);
 }
 function achbotPgRevoke(array $panel,array $identity): array {return achbotPgAction($panel,$identity,'revoke_sub');}
 function achbotPgDelete(array $panel,array $identity): array {return achbotPgAction($panel,$identity,'delete');}

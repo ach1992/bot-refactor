@@ -33,7 +33,7 @@ function achbotServiceExecuteStep(mysqli $db,int $id,array $presentation=[]): ar
     $name=achbotServiceExecutionLock($db,$id);
     $held=achbotProviderRow($db,'SELECT GET_LOCK(?,0) AS acquired','s',[$name]);
     if ((int)($held['acquired']??0)!==1) return ['status'=>'busy'];
-    $owner=null;
+    $owner=null;$physicalLock=null;
     try {
         $locator=achbotProviderRow($db,'SELECT userid FROM service_operations WHERE id=?','i',[$id]);
         if (!$locator) return ['status'=>'missing'];
@@ -50,6 +50,12 @@ function achbotServiceExecuteStep(mysqli $db,int $id,array $presentation=[]): ar
         if (achbotServiceFundLocked($db,$owner,$id)!=='already_funded')
             throw new RuntimeException('service_worker_funding_missing');
         $adapter=achbotProviderDefinition($quote['target']['provider']??null);
+        if ($op['kind']!=='BUY' && isset($adapter['service_account_lock'])) {
+            $lock=($adapter['service_account_lock'])($db,$quote['request']['order_id']);
+            $held=achbotProviderRow($db,'SELECT GET_LOCK(?,0) AS acquired','s',[$lock]);
+            if ((int)($held['acquired']??0)!==1) throw new RuntimeException('service_edit_account_busy');
+            $physicalLock=$lock;
+        }
         $finalizing=$op['stage']==='applied';
         $def=$adapter[$finalizing?'service_finalization':'service_execution'][$op['kind']]??null;
         if (!$def) throw new DomainException($finalizing?'service_finalizer_unavailable':'service_executor_unavailable');
@@ -69,12 +75,14 @@ function achbotServiceExecuteStep(mysqli $db,int $id,array $presentation=[]): ar
             claim_token=?,claim_until=DATE_ADD(NOW(6),INTERVAL 2 MINUTE),attempt_count=attempt_count+1,
             failure_code=NULL,updated_at=NOW(6) WHERE id=?",'ssi',[$claimStage,$token,$id]);$s->close();
         if (!$db->commit()) throw new RuntimeException('service_worker_dispatch_commit');
-        if (!achbotServiceExecutionOwnsLock($db,$name))
+        if (!achbotServiceExecutionOwnsLock($db,$name) ||
+            ($physicalLock!==null && !achbotServiceExecutionOwnsLock($db,$physicalLock)))
             throw new RuntimeException('service_worker_ownership_lost');
         $result=$finalizing?($def['perform'])($db,$op,$quote,$work,$presentation):($def['perform'])($db,$op,$quote,$work);
         if (!$db->begin_transaction()) throw new RuntimeException('service_worker_result_begin');
         [$current,$original]=achbotServiceReadLocked($db,$owner,$id);
-        if (!achbotServiceExecutionOwnsLock($db,$name) || $current['stage']!==$claimStage ||
+        if (!achbotServiceExecutionOwnsLock($db,$name) ||
+            ($physicalLock!==null && !achbotServiceExecutionOwnsLock($db,$physicalLock)) || $current['stage']!==$claimStage ||
             $current['claim_token']!==$token || $original!==$quote)
             throw new RuntimeException('service_worker_result_stale');
         if (($result['success']??false)===true) {
@@ -115,6 +123,10 @@ function achbotServiceExecuteStep(mysqli $db,int $id,array $presentation=[]): ar
             'service_operation_id'=>$id,'reason'=>$reason,'class'=>get_class($e)],'error');
         return ['status'=>'pending','reason'=>$reason];
     } finally {
+        if ($physicalLock!==null) {
+            try {$s=achbotProviderStatement($db,'SELECT RELEASE_LOCK(?)','s',[$physicalLock]);$s->close();}
+            catch (Throwable $ignored) {}
+        }
         try {$s=achbotProviderStatement($db,'SELECT RELEASE_LOCK(?)','s',[$name]);$s->close();}
         catch (Throwable $ignored) {}
     }

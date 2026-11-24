@@ -200,7 +200,7 @@ function achbotProviderAccountRow(?array $r): ?array {
  * remains unchanged. Validate that the held mutation is attached to precisely
  * this historical physical identity, without making it a new purchase.
  */
-function achbotProviderLegacyCutoverMutationValid(array $e,array $account): bool {
+function achbotProviderLegacyCutoverMutationValid(mysqli $db,array $e,array $account): bool {
     $state=$e['provider_state']??null;
     if ($state==='linked') return true;
     if (!in_array($state,['mutating','deleted'],true)) return false;
@@ -208,6 +208,17 @@ function achbotProviderLegacyCutoverMutationValid(array $e,array $account): bool
         $key=$e['provider_mutation_key']??null;
         if (!is_string($key) || $key==='' || strlen($key)>100)
             return false;
+        // New service claims keep the original historical snapshot intact.
+        // Their actual normalized journal, not a fabricated legacy history,
+        // proves the temporary physical ownership.
+        if ($state==='mutating' && preg_match('/^service:([1-9][0-9]*)$/D',$key,$m)) {
+            $claim=achbotProviderRow($db,"SELECT m.account_effect_id,m.phase,o.stage
+                FROM service_mutations m JOIN service_operations o ON o.id=m.service_operation_id
+                WHERE m.service_operation_id=?", 'i',[(int)$m[1]]);
+            return $claim && (int)$claim['account_effect_id']===(int)$e['id'] &&
+                in_array($claim['phase'],['observe','reset','modify','verified'],true) &&
+                in_array($claim['stage'],['funded','prepared','dispatching','applied'],true);
+        }
         $held=json_decode((string)($e['provider_mutation_snapshot']??''),true,64,JSON_THROW_ON_ERROR);
         if (!is_array($held) || ($held['version']??null)!==1 ||
             ($held['key']??null)!==$key ||
@@ -240,7 +251,7 @@ function achbotProviderLegacyCutoverMutationValid(array $e,array $account): bool
  * references. Nothing here authorizes a Native CREATE or a financial replay.
  * This validator pins the exact source and target ledger shape before use.
  */
-function achbotProviderLegacyCutoverEvidence(array $e,array $account): array {
+function achbotProviderLegacyCutoverEvidence(mysqli $db,array $e,array $account): array {
     try {
         $snap=json_decode((string)($e['provider_snapshot']??''),true,64,JSON_THROW_ON_ERROR);
         $native=json_decode((string)($e['provider_entitlement_snapshot']??''),true,64,JSON_THROW_ON_ERROR);
@@ -285,7 +296,7 @@ function achbotProviderLegacyCutoverEvidence(array $e,array $account): array {
             $e['pay_row_id']!==null || $e['actor_userid']!==null ||
             (int)$e['ordinal']!==1 || (int)$e['reserved_count']!==0 ||
             $e['state']!=='local_recorded' ||
-            !achbotProviderLegacyCutoverMutationValid($e,$account) ||
+            !achbotProviderLegacyCutoverMutationValid($db,$e,$account) ||
             (int)$e['provider_reference_id']!==(int)$e['id'] ||
             $e['source_ref']!=='legacy:'.$migration['source_server_id'].':'.hash('sha256',$account['remote_username']) ||
             (int)$e['target_server_id']!==$migration['source_server_id'] ||
@@ -336,7 +347,7 @@ function achbotProviderAccountByOrder(mysqli $db,int $orderId,bool $lock=false):
         $anchor['remote_user_id']!==(int)$order['provider_remote_user_id'] ||
         $anchor['remote_created_at']!==$order['provider_remote_created_at']) throw new RuntimeException('provider_order_identity_invalid');
     $historical=($effect['source_kind']??null)==='legacy_migration'?
-        achbotProviderLegacyCutoverEvidence($effect,$anchor):null;
+        achbotProviderLegacyCutoverEvidence($db,$effect,$anchor):null;
     require_once __DIR__.'/../Purchase/OrderWrites.php';
     $origin=achbotOrderImportOrigin($db,$order,$lock);
     if ($historical!==null && isset($historical[$orderId])) {
@@ -493,7 +504,7 @@ function achbotProviderAccountIdentity(mysqli $db,array $account,bool $lock=fals
         throw new RuntimeException('provider_account_provenance_invalid');
     $e=achbotProviderRow($db,'SELECT * FROM service_effects WHERE id=?'.($lock?' LOCK IN SHARE MODE':''),'i',[(int)$account['effect_id']]);
     if (($e['source_kind']??null)==='legacy_migration') {
-        achbotProviderLegacyCutoverEvidence($e,$account);
+        achbotProviderLegacyCutoverEvidence($db,$e,$account);
         return $identity+['identity_mode'=>'adopted','remote_username'=>$account['remote_username'],
             'adoption_sha256'=>hash('sha256',(string)$e['provider_snapshot'])];
     }

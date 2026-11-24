@@ -3,6 +3,13 @@ declare(strict_types=1);
 
 if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '')===__FILE__) {http_response_code(404);exit;}
 
+function achbotPgServiceOrderTarget(array $ctx): array {
+    $p=$ctx['panel'];$o=$ctx['order'];
+    return ['provider'=>'pasarguard','endpoint'=>hash('sha256',rtrim($p['api_url'],'/')),
+        'physical'=>'pg:'.$p['instance_key'],'panel_id'=>$p['id'],
+        'account'=>['remark'=>$o['remark'],'uuid'=>(string)$o['uuid'],'native'=>$ctx['identity']]];
+}
+
 /** PasarGuard's local, locked service-admission contract. No HTTP, money,
  * service dispatch or Telegram. Known business/identity refusals must be
  * distinguished from DB/invariant errors, which roll back the caller. */
@@ -25,7 +32,7 @@ function achbotPasarGuardServiceTargetLocked(mysqli $db,array $q,?array $o,?arra
             // A pending mutation is not cancellation proof. The execution
             // worker serializes it using the pinned physical identity.
             $ctx=achbotPgOrderContext($db,$q['order_id'],true,true);
-            $target['account']=['remark'=>$o['remark'],'uuid'=>(string)$o['uuid'],'native'=>$ctx['identity']];
+            $target['account']=achbotPgServiceOrderTarget($ctx)['account'];
         }
         if ($p!==null) {
             if ((int)$p['inbound_id']!==0) throw new DomainException('service_plan_unavailable');
