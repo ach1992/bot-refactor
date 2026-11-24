@@ -24,7 +24,7 @@ $root=$argv[1];$spec=json_decode($argv[4],true,512,JSON_THROW_ON_ERROR);
 $connection=new mysqli('localhost','root','',$argv[3],0,$argv[2]);
 $connection->set_charset('utf8mb4');
 $actor=(int)($spec['actor']??1001);
-$from_id=$actor;$admin=9001;$telegramWebhookSecret='FixtureNonpaidReportSecret2026';$chat_id=$actor;$message_id=92;
+$from_id=$actor;$admin=9001;$telegramWebhookSecret='FixtureNonpaidReportSecret2026';$chat_id=(int)($spec['wire_chat']??$actor);$message_id=92;$callbackId='fixture-callback';
 $data=(string)($spec['data']??'freeTrial8_normal');
 $text=(string)($spec['text']??'');
 $updateId=(int)($spec['update_id']??987650);
@@ -33,7 +33,7 @@ $chat=(object)['id'=>(int)($spec['wire_chat']??$actor),
     'type'=>(string)($spec['chat_type']??'private')];
 $message=(object)['message_id'=>92,'chat'=>$chat,'from'=>$sender];
 $update=(object)['update_id'=>$updateId];
-if (($spec['route']??'trial')==='trial') {
+if (in_array(($spec['route']??'trial'),['trial','attention'],true)) {
     $message->text='Previously delivered bot menu';
     $update->callback_query=(object)['data'=>$data,'from'=>$sender,
         'message'=>$message];
@@ -61,6 +61,12 @@ register_shutdown_function(static function(){
 });
 function alert(...$args){$GLOBALS['events'][]=['name'=>'ALERT','text'=>$args[0]??''];}
 function delMessage(...$a){$GLOBALS['events'][]=['name'=>'DELETE_MESSAGE'];}
+function answerCallbackQuery(...$args){$GLOBALS['events'][]=['name'=>'ANSWER','args'=>$args];return (object)['ok'=>true];}
+function editText($id,$body,$keys=null,$mode=null,$to=null){
+    $GLOBALS['events'][]=['name'=>'REVIEW','body'=>$body,'keys'=>json_decode($keys??'null',true),
+        'mode'=>$mode,'to'=>$to];
+    return (object)['ok'=>true];
+}
 function setUser($value='none',$field='step'){
     global $connection,$from_id;
     if (!in_array($field,['step','temp','freetrial'],true)) throw new RuntimeException('bad_column');
@@ -149,6 +155,9 @@ if (($spec['route']??'trial')==='trial') {
         'plan_copy'=>achbotMessage('renewal.extensions.message.143c7f81f1'),
         'purchase_report'=>achbotMessages('legacy_messages')['sent_config_to_user'],
         'pasarguard_base'=>$first];
+} elseif ($spec['route']==='attention') {
+    require $root.'/src/Finance/Routes/AutomaticGatewayReview.php';
+    if ($connection->errno) throw new RuntimeException('fixture_attention_sql: '.$connection->error);
 } elseif ($spec['route']==='delivery_recovery') {
     require_once $root.'/src/Finance/ServiceDelivery.php';
     achbotDeliveryMaintainPending($connection);
@@ -402,8 +411,38 @@ def check():
         assert len([e for e in recovery if e['name']=='DELIVER'])==1,recovery
         assert sql(work,env,"SELECT state FROM payment_delivery_intents ORDER BY ordinal")=='unknown\nacknowledged'
         unknown=sql(work,env,"SELECT d.id,p.part_no FROM payment_delivery_intents d JOIN payment_delivery_parts p ON p.intent_id=d.id WHERE p.state='unknown'").split()
-        redrive=php(work,env,driver,route='delivery_redrive',actor=9001,intent=int(unknown[0]),part=int(unknown[1]))
-        assert any(e['name']=='REDRIVE' and e['status']=='acknowledged' for e in redrive),redrive
+        # Exercise the real staff inbox and actor-bound confirmation, not
+        # only a direct call into the recovery engine.
+        callback='attentionDeliveryC_'+unknown[0]+'_'+unknown[1]
+        def attention(data,actor=9001,**kw):
+            return php(work,env,driver,route='attention',actor=actor,data=data,**kw)
+        def review_keys(events):
+            edits=[e for e in events if e['name']=='REVIEW']
+            assert len(edits)==1,events
+            assert edits[0]['mode']=='HTML' and edits[0]['to']==9001,edits
+            return [button['callback_data'] for row in edits[0]['keys']['inline_keyboard'] for button in row]
+        before=sql(work,env,"SELECT COUNT(*) FROM payment_delivery_attempts")
+        inbox=attention('attentionInbox')
+        assert callback in review_keys(inbox),inbox
+        for forbidden in (attention(callback,actor=1001),attention(callback,wire_chat=-100123,chat_type='supergroup')):
+            assert not any(e['name'] in ('REVIEW','DELIVER','DELIVER_PART') for e in forbidden),forbidden
+        confirmation=attention(callback)
+        assert ref in next(e['body'] for e in confirmation if e['name']=='REVIEW'),confirmation
+        keys=review_keys(confirmation)
+        confirm=[key for key in keys if key.startswith('attentionDeliveryS_')]
+        assert len(confirm)==1 and 'attentionInbox' in keys,keys
+        confirm=confirm[0]
+        tampered=confirm[:-1]+('a' if confirm[-1]!='a' else 'b')
+        for forbidden in (attention(tampered),attention(confirm,actor=1001)):
+            assert not any(e['name'] in ('DELIVER','DELIVER_PART') for e in forbidden),forbidden
+        assert sql(work,env,"SELECT COUNT(*) FROM payment_delivery_attempts")==before
+        redrive=attention(confirm)
+        assert len([e for e in redrive if e['name'] in ('DELIVER','DELIVER_PART')])==1,redrive
+        assert int(sql(work,env,"SELECT COUNT(*) FROM payment_delivery_attempts"))==int(before)+1
+        assert not any(e['name'] in ('DELIVER','DELIVER_PART') for e in attention(confirm))
+        assert callback not in review_keys(attention('attentionInbox'))
+        assert int(sql(work,env,"SELECT COUNT(*) FROM payment_delivery_attempts"))==int(before)+1
+        cases.append('actual_nonpaid_attention_inbox_actor_bound_redrive_and_replay_denial')
         sql(work,env,"UPDATE payment_delivery_intents SET updated_at=DATE_SUB(NOW(),INTERVAL 3 MINUTE)")
         php(work,env,driver,route='delivery_recovery',actor=9001)
         assert sql(work,env,"SELECT COUNT(*) FROM payment_delivery_intents WHERE state='acknowledged'")=='2'

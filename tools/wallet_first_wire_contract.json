@@ -51,11 +51,11 @@
   ],
   "changes": {
     "bot.php": {
-      "reason": "Remove source-dead legacy server editing handlers; current ManagementFlow remains the single writer.",
+      "reason": "Remove obsolete no-effect bot setting callback.",
       "before_count": 200,
-      "after_count": 176,
+      "after_count": 175,
       "before_sha256": "cff48d8a700a865d62d8c96389da43e7a2d34431deff1f650f3bd4b107808baa",
-      "after_sha256": "d780d435163a004f878bd8e03f22601f5511f3a879026eb6b0fd529ab3ec1101"
+      "after_sha256": "5b2bbac648f7a3f4b824355a96f7d4952688775b2aa90707cae189c30019c56e"
     },
     "src/Finance/ApiPaymentPresentation.php": {
       "before_count": 1,
@@ -238,6 +238,13 @@
       "after_count": 16,
       "before_sha256": "3dd3773833d6d1001eb2967ff89317f8e1db3902af1e9921d5644a5aac9dd877",
       "after_sha256": "d10828d5c75b32eb6a9b85b13d559b09259ebc53583899f2395a11972b77b0c0"
+    },
+    "src/Finance/Routes/AdminWallet.php": {
+      "reason": "Current credit/debit reason prompt excludes unreachable pre-upgrade direct debt wording; confirmation of negative balance remains unchanged.",
+      "before_count": 16,
+      "after_count": 16,
+      "before_sha256": "6e6a0f519cbdc4e6e430dc2236b14cbea688ffc4ff1905082f9f02ddeadf9127",
+      "after_sha256": "cf764205db4590e33259730717dfee5c755d9629df5fbfcd9c3c4c5bdf8e9658"
     }
   },
   "added_with_direct_send": [

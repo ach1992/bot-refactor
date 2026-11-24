@@ -271,8 +271,8 @@ CREATE TABLE `payment_delivery_attempts` (
   `result` varchar(24) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL DEFAULT 'dispatching',
   `started_at` datetime NOT NULL DEFAULT current_timestamp(),
   `finished_at` datetime DEFAULT NULL,
-  `part_no` int(10) unsigned DEFAULT NULL,
-  `claim_state` varchar(24) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL,
+  `part_no` int(10) unsigned NOT NULL,
+  `claim_state` varchar(24) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
   `telegram_error_code` smallint(5) unsigned DEFAULT NULL,
   `retry_after_seconds` int(10) unsigned DEFAULT NULL,
   PRIMARY KEY (`id`),
@@ -287,15 +287,11 @@ CREATE TABLE `payment_delivery_attempts` (
 /*!40101 SET character_set_client = utf8mb4 */;
 CREATE TABLE `payment_delivery_intents` (
   `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
-  `pay_row_id` int(11) DEFAULT NULL,
   `ordinal` int(10) unsigned NOT NULL,
-  `attempt_id` bigint(20) unsigned DEFAULT NULL,
   `effect_id` bigint(20) unsigned DEFAULT NULL,
-  `order_id` int(11) DEFAULT NULL,
+  `order_id` int(11) NOT NULL,
   `user_id` bigint(20) NOT NULL,
   `server_id` int(11) NOT NULL DEFAULT 0,
-  `pay_type` varchar(120) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL,
-  `pay_fingerprint` char(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL,
   `source_digest` char(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
   `native_operation` char(32) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL,
   `native_target_key` varchar(48) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL,
@@ -311,20 +307,16 @@ CREATE TABLE `payment_delivery_intents` (
   `created_at` datetime NOT NULL DEFAULT current_timestamp(),
   `updated_at` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
   `service_operation_id` bigint(20) unsigned DEFAULT NULL,
-  `part_count` int(10) unsigned DEFAULT NULL,
+  `part_count` int(10) unsigned NOT NULL,
   `next_attempt_at` datetime(6) DEFAULT NULL,
   PRIMARY KEY (`id`),
-  UNIQUE KEY `uq_delivery_pay_ordinal` (`pay_row_id`,`ordinal`),
   UNIQUE KEY `uq_delivery_effect` (`effect_id`),
   UNIQUE KEY `uq_delivery_service_ordinal` (`service_operation_id`,`ordinal`),
   KEY `idx_delivery_work` (`state`,`updated_at`),
-  KEY `fk_delivery_attempt` (`attempt_id`),
   KEY `idx_delivery_due` (`state`,`next_attempt_at`,`id`),
-  CONSTRAINT `fk_delivery_attempt` FOREIGN KEY (`attempt_id`) REFERENCES `payment_attempts` (`id`),
   CONSTRAINT `fk_delivery_effect` FOREIGN KEY (`effect_id`) REFERENCES `service_effects` (`id`),
-  CONSTRAINT `fk_delivery_payment` FOREIGN KEY (`pay_row_id`) REFERENCES `pays` (`id`),
   CONSTRAINT `fk_delivery_service_operation` FOREIGN KEY (`service_operation_id`) REFERENCES `service_operations` (`id`),
-  CONSTRAINT `ck_delivery_source_current` CHECK (`service_operation_id` is null and `pay_row_id` is not null and `attempt_id` is not null and `pay_type` is not null and `pay_fingerprint` is not null or (`service_operation_id` is not null or `effect_id` is not null) and `pay_row_id` is null and `attempt_id` is null and `pay_type` is null and `pay_fingerprint` is null)
+  CONSTRAINT `ck_delivery_source_v2` CHECK ((`service_operation_id` is not null or `effect_id` is not null) and `part_count` > 0 and `order_id` > 0)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;

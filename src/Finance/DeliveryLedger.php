@@ -1,55 +1,13 @@
 <?php
-/**
- * Issue #117: immutable, payment-bound customer delivery intent and
- * one-way Telegram acknowledgement journal. No merchant/native calls here.
- * 018 is an explicitly gated forward migration; no runtime DDL or backfill.
- */
+/** Current service/effect-owned customer delivery maintenance. No merchant
+ * or Native effects, runtime DDL, or historical-packet reconstruction. */
 if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) { http_response_code(404); exit; }
 require_once __DIR__.'/PaymentEvidence.php';
 require_once __DIR__.'/../Admin/Access.php';
 
-/** Fail closed before ANY new external service effect if 018 is unavailable. */
-function achbotDeliverySchemaReady(mysqli $db): bool {
-    try {
-        // The pre-CREATE gate must prove crypto readiness, not just the
-        // presence of tables. Never CREATE a paid remote account when the
-        // original packet cannot be sealed before terminal COMMIT.
-        if (!function_exists('openssl_encrypt') || !function_exists('openssl_decrypt') ||
-            strlen(achbotPaymentEvidenceKey())!==32) return false;
-        $probe=$db->query('SELECT id,pay_row_id,ordinal,attempt_id,effect_id,order_id,user_id,server_id,'.
-            'pay_type,pay_fingerprint,source_digest,native_operation,native_target_key,'.
-            'sealed_payload,payload_sha256,state,attempt_count,dispatch_token,dispatched_at,'.
-            'acknowledged_at,last_actor,last_result FROM payment_delivery_intents LIMIT 0');
-        if (!$probe) return false;
-        $probe->free();
-        $engine=$db->query("SHOW TABLE STATUS WHERE Name='payment_delivery_intents'");
-        if (!$engine || strtolower((string)($engine->fetch_assoc()['Engine']??''))!=='innodb')
-            return false;
-        $keys=[];
-        $indexes=$db->query('SHOW INDEX FROM payment_delivery_intents');
-        while ($indexes && ($r=$indexes->fetch_assoc())) {
-            if ((int)$r['Non_unique']===0)
-                $keys[(string)$r['Key_name']][(int)$r['Seq_in_index']]=(string)$r['Column_name'];
-        }
-        foreach (['uq_delivery_pay_ordinal'=>['pay_row_id','ordinal'],
-                  'uq_delivery_effect'=>['effect_id']] as $key=>$fields) {
-            if (!isset($keys[$key])) return false;
-            ksort($keys[$key]);
-            if (array_values($keys[$key])!==$fields) return false;
-        }
-        $probe=$db->query('SELECT id,intent_id,attempt_no,dispatch_token,actor_userid,'.
-            'result,started_at,finished_at FROM payment_delivery_attempts LIMIT 0');
-        if (!$probe) return false;
-        $probe->free();
-        $engine=$db->query("SHOW TABLE STATUS WHERE Name='payment_delivery_attempts'");
-        if (!$engine || strtolower((string)($engine->fetch_assoc()['Engine']??''))!=='innodb')
-            return false;
-        return true;
-    } catch (Throwable $error) { return false; }
-}
 /**
  * Recover due current service
- * message parts after a committed order. The 018/032 journal has an exact
+ * message parts after a committed order. The current multipart journal has an exact
  * claim and attempt history; this sweep never changes money or Native
  * provider state and never resends UNKNOWN parts. Abandoned service claims
  * are reconciled, not replayed.
@@ -62,7 +20,6 @@ function achbotDeliverySchemaReady(mysqli $db): bool {
  */
 function achbotDeliveryMaintainPending(mysqli $db,int $limit=4,float $budgetSeconds=8.0): array {
     $stats=['checked'=>0,'acknowledged'=>0,'unknown'=>0,'deferred'=>0];
-    if (!achbotDeliverySchemaReady($db)) return $stats;
     $limit=max(1,min(8,$limit));
     $budgetSeconds=max(1.0,min(15.0,$budgetSeconds));
     $start=microtime(true);
@@ -77,10 +34,10 @@ function achbotDeliveryMaintainPending(mysqli $db,int $limit=4,float $budgetSeco
         $q=$db->query("SELECT d.id,d.service_operation_id,d.effect_id,d.ordinal
             FROM payment_delivery_intents d LEFT JOIN service_operations o ON o.id=d.service_operation_id
             LEFT JOIN service_effects e ON e.id=d.effect_id
-            WHERE d.state IN ('pending','dispatching') AND d.pay_row_id IS NULL
+            WHERE d.state IN ('pending','dispatching')
                 AND (o.stage='completed' OR (d.service_operation_id IS NULL AND e.source_kind IN ('free_trial','admin_bulk')
                     AND e.state='local_recorded'))
-                AND d.part_count IS NOT NULL AND ((d.next_attempt_at IS NULL
+                AND ((d.next_attempt_at IS NULL
                     AND d.updated_at<=DATE_SUB(NOW(),INTERVAL 2 MINUTE)) OR d.next_attempt_at<=NOW(6))
             ORDER BY COALESCE(d.next_attempt_at,d.updated_at),d.id LIMIT {$limit}");
         if (!$q) throw new RuntimeException('delivery_maintenance_scan_failed');
@@ -123,8 +80,7 @@ function achbotDeliveryMaintainPending(mysqli $db,int $limit=4,float $budgetSeco
                 $q=$db->prepare("UPDATE payment_delivery_intents
                     SET updated_at=NOW(),next_attempt_at=CASE WHEN next_attempt_at<=NOW(6)
                         THEN DATE_ADD(NOW(6),INTERVAL 2 MINUTE) ELSE next_attempt_at END
-                    WHERE id=? AND pay_row_id IS NULL
-                        AND part_count IS NOT NULL AND state IN ('pending','dispatching')");
+                    WHERE id=? AND state IN ('pending','dispatching')");
                 $q->bind_param('i',$id);
                 $q->execute();$q->close();
             } catch (Throwable $error) {

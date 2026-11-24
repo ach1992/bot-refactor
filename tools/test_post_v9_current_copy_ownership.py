@@ -31,6 +31,8 @@ RETIRED = (
     "editServerNames", "editDestName", "editSpiderX", "editFlow", "editPFlow",
     "wizwizplanslimit", "wizwizplansinobundid",
     "cantEditTrojan", "changesServerIp", "editsServer", "changesServerLoginInfo", "cantEditGrpc", "changeCustomPort", "changeCustomSni", "changeCustomPath",
+    "createUserWalletDebt", "debtWalletUser", "changeProtocolState",
+    "changeUpdateConfigLinkState", "updateConnectionState", "switchLocationState",
 )
 RETIRED_KEYS = (
     "admin_settings.config.get_plan_details_keys.server_names.649d37195b",
@@ -105,7 +107,7 @@ def classify_unowned_copy(tokens: list[dict]) -> tuple[list[str], int]:
 
 
 def assert_retired_absent(sources: dict[str, str]) -> None:
-    for path in ("src/Plans/Administration.php", "src/Admin/Access.php", "bot.php", "src/Admin/ManagementFlow.php", "src/Subscription/CustomerRoutes.php"):
+    for path in ("src/Plans/Administration.php", "src/Admin/Access.php", "bot.php", "src/Admin/ManagementFlow.php", "src/Subscription/CustomerRoutes.php", "config.php", "src/Finance/Routes/AdminWallet.php"):
         content = sources[path]
         for marker in RETIRED:
             check(marker not in content, "retired_handler_reintroduced:" + marker)

@@ -421,9 +421,10 @@ validated receipt registry.
 
 Generalize existing 018/020 delivery journals rather than invent independent
 senders. New delivery identity is stable source (payment credit or service
-operation) plus purpose/ordinal/audience as needed; old pay/attempt/effect
-references remain historical. New service delivery must not require a fake
-external attempt. Complete service and create durable first delivery in the
+operation or verified nonpaid effect) plus purpose/ordinal/audience as needed.
+Payment and Native evidence remain with their original owners. The current
+customer delivery journal does not carry old pay/attempt columns or require a
+fake external attempt. Complete service and create durable first delivery in the
 same local commit. Render existing catalog/packet without changing native
 config bytes; send outside transaction. Known failures retry; ACK loss remains
 unknown (Telegram send does not provide server-side client idempotency).
@@ -728,10 +729,9 @@ attempts remain unchanged; no synthetic pay or attempt. Automatic dispatch
 shares the original claim and acknowledgement primitives and sender. An
 abandoned service delivery claim becomes unknown after session loss; it
 never authorizes another automatic send. Source changes prevent obsolete
-packets from being sent. The existing maintenance worker can select both
-historical payment packets and completed service packets fairly. The
-existing whole-packet QR/text acknowledgement contract is preserved; explicit
-per-part definite-rejection retry and operator retry convergence remain work.
+packets from being sent. At that development checkpoint the maintenance worker and whole-packet
+contract were still transitional. The final fresh runtime described below
+dispatches only current multipart service/effect sources.
 
 Source-real PHP/MariaDB/loopback execution suite now passes 30 cases
 (118 owned HTTP requests / 22 POSTs), including a forward 018→027 migration
@@ -1101,10 +1101,11 @@ authorized UNKNOWN redrive is allowed per part. Permission and source
 identity are rechecked at dispatch. Existing quiet-window maintenance and
 bounded selection include due parts and abandoned service claims.
 
-The original 018 pay-only records retain their whole-packet contract and
-history. Migration 032 does not backfill part boundaries, manufacture ACKs,
-or replay old uncertain packets. Pre-032 service draft records without
-verified part evidence are not admitted by the new sender. There are no
+At this development checkpoint, migration 032 preserved original 018 pay-only
+records without backfilling part boundaries, manufacturing ACKs or replaying
+old uncertain packets. The final fresh schema (043) omits these historical
+transport-only fields altogether and requires actual current source and part
+identities. It is not an in-place migration of historical packets. There are no
 new callback routes, no production migration, and no live cutover in this
 slice. Existing rendering/keyboard/copy and one-shot legacy callers are
 retained; PHP 8.5 QR encoder deprecations are corrected without changing the
@@ -1341,10 +1342,27 @@ effect identity, never a synthetic payment or wallet debit. The shared
 attention inbox exposes uncertain nonpaid parts using the same confirmation
 copy. Ordinary on-demand subscription display and diagnostics stay separate.
 Fresh schema construction 041 admits the effect-owned delivery source;
-042 removes nineteen unused Native transport and gift cursor columns. Old
-server and custom-plan editing handlers, stale compatibility routes and
-their unreferenced Persian text are removed. Original financial and Native
-provenance fields remain evidence, not runnable historical operations.
+042 removes nineteen unused Native transport and gift cursor columns.
+043 completes the current-only delivery schema: remove obsolete pay_row_id,
+attempt_id, pay_type and pay_fingerprint from the delivery intent (not from
+the original financial journals); require a current operation/effect, order
+and positive part count, and a real part/claim identity on every attempt.
+The one readiness check verifies the current tables, source/attempt uniqueness
+and source constraint. Historical whole-packet evidence stays outside fresh
+install; the construction-only DDL refuses incompatible existing rows rather
+than deleting or converting them. Never run the construction sequence on a
+deployed database.
+Old server and custom-plan editing handlers, the old direct debt wizard
+aliases, two ineffective bot settings (protocol switching and old link-update
+location) and their unreferenced Persian text are removed. Debt is still
+available through the current debit/negative-balance confirmation flow.
+The staff attention inbox uses a non-reserved pagination alias and the same
+actor-bound part confirmation for paid and nonpaid messages. Empty or partial
+settings documents render without empty keyboard rows, implicit writes or
+enabling unconfigured gateways. The robot switch displays its existing
+operational default and its first toggle actually changes it.
+Original financial and Native provenance fields remain evidence, not runnable
+historical operations.
 Owner decision (24 Nov 2026): a definitively ineligible report recipient
 is terminally skipped without redirection, another Telegram attempt, or
 manufactured acknowledgement. Incomplete permission reads remain retryable;

@@ -308,16 +308,14 @@ $stmt->close();
  
 $stmt = $connection->prepare("SELECT * FROM `setting` WHERE `type` = 'PAYMENT_KEYS'");
 $stmt->execute();
-$paymentKeys = $stmt->get_result()->fetch_assoc()['value'];
-if(!is_null($paymentKeys)) $paymentKeys = json_decode($paymentKeys,true);
-else $paymentKeys = array();
+$paymentKeys = json_decode((string)($stmt->get_result()->fetch_assoc()['value'] ?? '{}'),true);
+if (!is_array($paymentKeys)) $paymentKeys = [];
 $stmt->close();
 
 $stmt = $connection->prepare("SELECT * FROM `setting` WHERE `type` = 'BOT_STATES'");
 $stmt->execute();
-$botState = $stmt->get_result()->fetch_assoc()['value'];
-if(!is_null($botState)) $botState = json_decode($botState,true);
-else $botState = array();
+$botState = json_decode((string)($stmt->get_result()->fetch_assoc()['value'] ?? '{}'),true);
+if (!is_array($botState)) $botState = [];
 $stmt->close();
 
 // Enforce the same staff level before bootstrap callbacks or outgoing reads.
@@ -326,8 +324,8 @@ if (defined('ACHBOT_VERIFIED_WEBHOOK_ENTRYPOINT') &&
     achbotAdminDeny();exit;
 }
 
-$supportID = $botState['supportID'];
-$channelLock = $botState['lockChannel'];
+$supportID = $botState['supportID']??'';
+$channelLock = $botState['lockChannel']??'';
 $joniedState = null;
 $joinMembershipVerified = false;
 // A configured mandatory channel is not bypassed when Telegram cannot verify
@@ -534,16 +532,16 @@ function setSettings($field, $value): bool {
     // A future accidental writer cannot resurrect unsupported BOT_STATES flags.
     static $editable = [
         'agencyState','agencyPlanDiscount','individualExistence',
-        'sharedExistence','testAccount','changeProtocolState',
+        'sharedExistence','testAccount',
         'renewAccountState','renewAutoState','plandelkhahState',
-        'switchLocationState','changePlanState','increaseTimeState','increaseVolumeState',
+        'changePlanState','increaseTimeState','increaseVolumeState',
         'requirePhone','requireIranPhone','sellState','botState',
         'searchState',
         'renewConfigLinkState','updateConfigLinkState','qrConfigState',
         'qrSubState','cartToCartAutoAcceptState','cartToCartAutoAcceptType',
         'giftCardState','manualUsdtState','cartToCartState',
         'nextpay','zarinpal','nowPaymentWallet','nowPaymentOther',
-        'walletState','updateConnectionState','remark','rewaredTime',
+        'walletState','remark','rewaredTime',
         'cartToCartAutoAcceptTime','gbPrice','dayPrice',
         'rewardChannel','lockChannel','supportID','lastRewardMessage',
         'instanceMessages','cooperationUrl','helpChannel','lockChannelJoinUrl',
@@ -1069,30 +1067,26 @@ function getGateWaysKeys(){
     global $connection;
     $stmt = $connection->prepare("SELECT * FROM `setting` WHERE `type` = 'BOT_STATES'");
     $stmt->execute();
-    $botState = $stmt->get_result()->fetch_assoc()['value'];
-    if(!is_null($botState)) $botState = json_decode($botState,true);
-    else $botState = array();
+    $botState = json_decode((string)($stmt->get_result()->fetch_assoc()['value'] ?? '{}'),true);
+    if (!is_array($botState)) $botState = [];
     $stmt->close();
     
-    $cartToCartState = $botState['cartToCartState']=="on"?\achbotMessage('legacy_buttons.on'):\achbotMessage('legacy_buttons.off');
-    $walletState = $botState['walletState']=="on"?\achbotMessage('legacy_buttons.on'):\achbotMessage('legacy_buttons.off');
-    $sellState = $botState['sellState']=="on"?\achbotMessage('legacy_buttons.on'):\achbotMessage('legacy_buttons.off');
+    $cartToCartState = ($botState['cartToCartState']??'off')=="on"?\achbotMessage('legacy_buttons.on'):\achbotMessage('legacy_buttons.off');
+    $walletState = ($botState['walletState']??'off')=="on"?\achbotMessage('legacy_buttons.on'):\achbotMessage('legacy_buttons.off');
     $giftCardState = ($botState['giftCardState'] ?? 'off')==='on'?\achbotMessage('legacy_buttons.on'):\achbotMessage('legacy_buttons.off');
     $manualUsdtState = ($botState['manualUsdtState'] ?? 'off')==='on'?\achbotMessage('legacy_buttons.on'):\achbotMessage('legacy_buttons.off');
-    $robotState = $botState['botState']=="on"?\achbotMessage('legacy_buttons.on'):\achbotMessage('legacy_buttons.off');
-    $nowPaymentWallet = $botState['nowPaymentWallet']=="on"?\achbotMessage('legacy_buttons.on'):\achbotMessage('legacy_buttons.off');
-    $nowPaymentOther = $botState['nowPaymentOther']=="on"?\achbotMessage('legacy_buttons.on'):\achbotMessage('legacy_buttons.off');
-    $zarinpal = $botState['zarinpal']=="on"?\achbotMessage('legacy_buttons.on'):\achbotMessage('legacy_buttons.off');
-    $nextpay = $botState['nextpay']=="on"?\achbotMessage('legacy_buttons.on'):\achbotMessage('legacy_buttons.off');
+    $nowPaymentWallet = ($botState['nowPaymentWallet']??'off')=="on"?\achbotMessage('legacy_buttons.on'):\achbotMessage('legacy_buttons.off');
+    $nowPaymentOther = ($botState['nowPaymentOther']??'off')=="on"?\achbotMessage('legacy_buttons.on'):\achbotMessage('legacy_buttons.off');
+    $zarinpal = ($botState['zarinpal']??'off')=="on"?\achbotMessage('legacy_buttons.on'):\achbotMessage('legacy_buttons.off');
+    $nextpay = ($botState['nextpay']??'off')=="on"?\achbotMessage('legacy_buttons.on'):\achbotMessage('legacy_buttons.off');
     $rewaredChannel = $botState['rewardChannel']??" ";
     $lockChannel = $botState['lockChannel']??" ";
 	$supportID = $botState['supportID']??" ";
 
     $stmt = $connection->prepare("SELECT * FROM `setting` WHERE `type` = 'PAYMENT_KEYS'");
     $stmt->execute();
-    $paymentKeys = $stmt->get_result()->fetch_assoc()['value'];
-    if(!is_null($paymentKeys)) $paymentKeys = json_decode($paymentKeys,true);
-    else $paymentKeys = array();
+    $paymentKeys = json_decode((string)($stmt->get_result()->fetch_assoc()['value'] ?? '{}'),true);
+    if (!is_array($paymentKeys)) $paymentKeys = [];
     $stmt->close();
     require_once __DIR__ . '/src/Finance/ReceiptHelpers.php';
     $giftSellerUrl = trim((string)($paymentKeys['giftCardUrl'] ?? ''));
@@ -1226,36 +1220,33 @@ function getBotSettingKeys(){
     global $connection;
     $stmt = $connection->prepare("SELECT * FROM `setting` WHERE `type` = 'BOT_STATES'");
     $stmt->execute();
-    $botState = $stmt->get_result()->fetch_assoc()['value'];
-    if(!is_null($botState)) $botState = json_decode($botState,true);
-    else $botState = array();
+    $botState = json_decode((string)($stmt->get_result()->fetch_assoc()['value'] ?? '{}'),true);
+    if (!is_array($botState)) $botState = [];
     $stmt->close();
 
-    $changeProtocole = $botState['changeProtocolState']=="on"?\achbotMessage('legacy_buttons.on'):\achbotMessage('legacy_buttons.off');
     // Backward compatible: customer plan selection was previously available.
     $customerPlanSwitch = ($botState['changePlanState'] ?? 'on')==='on'?\achbotMessage('legacy_buttons.on'):\achbotMessage('legacy_buttons.off');
-    $renewAccount = $botState['renewAccountState']=="on"?\achbotMessage('legacy_buttons.on'):\achbotMessage('legacy_buttons.off');
-    $plandelkhahwiz = $botState['plandelkhahState']=="on"?\achbotMessage('legacy_buttons.on'):\achbotMessage('legacy_buttons.off');
-    $increaseTime = $botState['increaseTimeState']=="on"?\achbotMessage('legacy_buttons.on'):\achbotMessage('legacy_buttons.off');
-    $increaseVolume = $botState['increaseVolumeState']=="on"?\achbotMessage('legacy_buttons.on'):\achbotMessage('legacy_buttons.off');
-    $renewConfigLink = $botState['renewConfigLinkState']=="on"?\achbotMessage('legacy_buttons.on'):\achbotMessage('legacy_buttons.off');
-    $updateConfigLink = $botState['updateConfigLinkState']=="on"?\achbotMessage('legacy_buttons.on'):\achbotMessage('legacy_buttons.off');
-    $individualExistence = $botState['individualExistence']=="on"?\achbotMessage('legacy_buttons.on'):\achbotMessage('legacy_buttons.off');
-    $sharedExistence = $botState['sharedExistence']=="on"?\achbotMessage('legacy_buttons.on'):\achbotMessage('legacy_buttons.off');
-    $testAccount = $botState['testAccount']=="on"?\achbotMessage('legacy_buttons.on'):\achbotMessage('legacy_buttons.off');
-    $agency = $botState['agencyState']=="on"?\achbotMessage('legacy_buttons.on'):\achbotMessage('legacy_buttons.off');
-    $agencyPlanDiscount = $botState['agencyPlanDiscount']=="on"?\achbotMessage('legacy_buttons.plan_discount'):\achbotMessage('legacy_buttons.server_discount');
-    $qrConfig = $botState['qrConfigState']=="on"?\achbotMessage('legacy_buttons.on'):\achbotMessage('legacy_buttons.off');
-    $qrSub = $botState['qrSubState']=="on"?\achbotMessage('legacy_buttons.on'):\achbotMessage('legacy_buttons.off');
-	$renewAuto = $botState['renewAutoState'] == "on" ? \achbotMessage('legacy_buttons.on') : \achbotMessage('legacy_buttons.off');
-    $requirePhone = $botState['requirePhone']=="on"?\achbotMessage('legacy_buttons.on'):\achbotMessage('legacy_buttons.off');
-    $requireIranPhone = $botState['requireIranPhone']=="on"?\achbotMessage('legacy_buttons.on'):\achbotMessage('legacy_buttons.off');
-    $sellState = $botState['sellState']=="on"?\achbotMessage('legacy_buttons.on'):\achbotMessage('legacy_buttons.off');
-    $robotState = $botState['botState']=="on"?\achbotMessage('legacy_buttons.on'):\achbotMessage('legacy_buttons.off');
-    $searchState = $botState['searchState']=="on"?\achbotMessage('legacy_buttons.on'):\achbotMessage('legacy_buttons.off');
-    $updateConnectionState = $botState['updateConnectionState']=="robot"?\achbotMessage('admin_settings.config.get_bot_setting_keys.text.0fbe848798'):\achbotMessage('admin_settings.config.get_bot_setting_keys.text.c840773241');
+    $renewAccount = ($botState['renewAccountState']??'off')=="on"?\achbotMessage('legacy_buttons.on'):\achbotMessage('legacy_buttons.off');
+    $plandelkhahwiz = ($botState['plandelkhahState']??'off')=="on"?\achbotMessage('legacy_buttons.on'):\achbotMessage('legacy_buttons.off');
+    $increaseTime = ($botState['increaseTimeState']??'off')=="on"?\achbotMessage('legacy_buttons.on'):\achbotMessage('legacy_buttons.off');
+    $increaseVolume = ($botState['increaseVolumeState']??'off')=="on"?\achbotMessage('legacy_buttons.on'):\achbotMessage('legacy_buttons.off');
+    $renewConfigLink = ($botState['renewConfigLinkState']??'off')=="on"?\achbotMessage('legacy_buttons.on'):\achbotMessage('legacy_buttons.off');
+    $updateConfigLink = ($botState['updateConfigLinkState']??'off')=="on"?\achbotMessage('legacy_buttons.on'):\achbotMessage('legacy_buttons.off');
+    $individualExistence = ($botState['individualExistence']??'off')=="on"?\achbotMessage('legacy_buttons.on'):\achbotMessage('legacy_buttons.off');
+    $sharedExistence = ($botState['sharedExistence']??'off')=="on"?\achbotMessage('legacy_buttons.on'):\achbotMessage('legacy_buttons.off');
+    $testAccount = ($botState['testAccount']??'off')=="on"?\achbotMessage('legacy_buttons.on'):\achbotMessage('legacy_buttons.off');
+    $agency = ($botState['agencyState']??'off')=="on"?\achbotMessage('legacy_buttons.on'):\achbotMessage('legacy_buttons.off');
+    $agencyPlanDiscount = ($botState['agencyPlanDiscount']??'off')=="on"?\achbotMessage('legacy_buttons.plan_discount'):\achbotMessage('legacy_buttons.server_discount');
+    $qrConfig = ($botState['qrConfigState']??'off')=="on"?\achbotMessage('legacy_buttons.on'):\achbotMessage('legacy_buttons.off');
+    $qrSub = ($botState['qrSubState']??'off')=="on"?\achbotMessage('legacy_buttons.on'):\achbotMessage('legacy_buttons.off');
+	$renewAuto = ($botState['renewAutoState']??'off') == "on" ? \achbotMessage('legacy_buttons.on') : \achbotMessage('legacy_buttons.off');
+    $requirePhone = ($botState['requirePhone']??'off')=="on"?\achbotMessage('legacy_buttons.on'):\achbotMessage('legacy_buttons.off');
+    $requireIranPhone = ($botState['requireIranPhone']??'off')=="on"?\achbotMessage('legacy_buttons.on'):\achbotMessage('legacy_buttons.off');
+    $sellState = ($botState['sellState']??'off')=="on"?\achbotMessage('legacy_buttons.on'):\achbotMessage('legacy_buttons.off');
+    $robotState = ($botState['botState']??'on')=="on"?\achbotMessage('legacy_buttons.on'):\achbotMessage('legacy_buttons.off');
+    $searchState = ($botState['searchState']??'off')=="on"?\achbotMessage('legacy_buttons.on'):\achbotMessage('legacy_buttons.off');
     $rewaredTime = ($botState['rewaredTime']??0) . \achbotMessage('admin_settings.config.get_bot_setting_keys.text.69419edd93');
-    switch($botState['remark']){
+    switch($botState['remark']??''){
         case "digits":
             $remarkType = \achbotMessage('admin_settings.config.get_bot_setting_keys.remark_type.af25c56d42');
             break;
@@ -1267,20 +1258,10 @@ function getBotSettingKeys(){
             break;
     }
     
-    $stmt = $connection->prepare("SELECT * FROM `setting` WHERE `type` = 'PAYMENT_KEYS'");
-    $stmt->execute();
-    $paymentKeys = $stmt->get_result()->fetch_assoc()['value'];
-    if(!is_null($paymentKeys)) $paymentKeys = json_decode($paymentKeys,true);
-    else $paymentKeys = array();
-    $stmt->close();
     return json_encode(['inline_keyboard'=>[
         [['text'=>achbotMessage('instance_content.settings_button'),'callback_data'=>'ic|m']],
         [
             ['text'=>\achbotMessage('admin_settings.config.get_bot_setting_keys.button.f386be17f5'),'callback_data'=>"inviteSetting"]
-            ],
-        [
-            ['text'=> $updateConnectionState,'callback_data'=>"changeUpdateConfigLinkState"],
-            ['text'=>\achbotMessage('admin_settings.config.get_bot_setting_keys.button.fc7f747159'),'callback_data'=>"wizwizch"]
             ],
         [
             ['text'=> $agency,'callback_data'=>"changeBotagencyState"],
@@ -1301,10 +1282,6 @@ function getBotSettingKeys(){
         [
             ['text'=>$testAccount,'callback_data'=>"changeBottestAccount"],
             ['text'=>\achbotMessage('admin_settings.config.get_bot_setting_keys.button.11ee94f26d'),'callback_data'=>"wizwizch"]
-        ],
-        [
-            ['text'=>$changeProtocole,'callback_data'=>"changeBotchangeProtocolState"],
-            ['text'=>\achbotMessage('admin_settings.config.get_bot_setting_keys.button.5705eee73b'),'callback_data'=>"wizwizch"]
         ],
         [
             ['text'=>$customerPlanSwitch,'callback_data'=>'changeBotchangePlanState'],
@@ -1375,17 +1352,17 @@ function getBotSettingKeys(){
             ['text'=>\achbotMessage('admin_settings.config.get_bot_setting_keys.button.2d0dc535a6'), 'callback_data'=>'wizwizch']
             ],
         [
-            ['text'=>$botState['cartToCartAutoAcceptState']=="on"?\achbotMessage('legacy_buttons.on'):\achbotMessage('legacy_buttons.off'),'callback_data'=>"changeBotcartToCartAutoAcceptState"],
+            ['text'=>($botState['cartToCartAutoAcceptState']??'off')=="on"?\achbotMessage('legacy_buttons.on'):\achbotMessage('legacy_buttons.off'),'callback_data'=>"changeBotcartToCartAutoAcceptState"],
             ['text'=>\achbotMessage('admin_settings.config.get_bot_setting_keys.button.f5d3c64f2a'),'callback_data'=>"wizwizch"]
         ],
-        ($botState['cartToCartAutoAcceptState']=="on"?[
-            ['text'=>($botState['cartToCartAutoAcceptType'] == "0"?\achbotMessage('admin_settings.config.get_bot_setting_keys.text.62c92fb90c'):($botState['cartToCartAutoAcceptType'] == "1"?\achbotMessage('admin_settings.config.get_bot_setting_keys.text.5bf4b36161'):\achbotMessage('admin_settings.config.get_bot_setting_keys.text.15270886ea'))),'callback_data'=>"changeBotcartToCartAutoAcceptType"],
+        ...(($botState['cartToCartAutoAcceptState']??'off')=="on"?[[
+            ['text'=>(($botState['cartToCartAutoAcceptType']??'2') == "0"?\achbotMessage('admin_settings.config.get_bot_setting_keys.text.62c92fb90c'):(($botState['cartToCartAutoAcceptType']??'2') == "1"?\achbotMessage('admin_settings.config.get_bot_setting_keys.text.5bf4b36161'):\achbotMessage('admin_settings.config.get_bot_setting_keys.text.15270886ea'))),'callback_data'=>"changeBotcartToCartAutoAcceptType"],
             ['text'=>\achbotMessage('admin_settings.config.get_bot_setting_keys.button.aaeffd7e20'),'callback_data'=>"wizwizch"]
-        ]:[]),
-        ($botState['cartToCartAutoAcceptState']=="on"?[
+        ]]:[]),
+        ...(($botState['cartToCartAutoAcceptState']??'off')=="on"?[[
             ['text'=>($botState['cartToCartAutoAcceptTime']??"10") . \achbotMessage('admin_settings.config.get_bot_setting_keys.text.5e2c83ade1'),'callback_data'=>"editcartToCartAutoAcceptTime"],
             ['text'=>\achbotMessage('admin_settings.config.get_bot_setting_keys.button.333513e744'),'callback_data'=>"wizwizch"]
-        ]:[]),
+        ]]:[]),
         [['text'=>\achbotMessage('legacy_buttons.back_button'),'callback_data'=>"managePanel"]]
         ]]);
 }

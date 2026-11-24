@@ -18,8 +18,80 @@ require_once $argv[1].'/src/Finance/ServiceDelivery.php';
 require_once $argv[1].'/src/Finance/FollowupOutbox.php';
 require_once $argv[1].'/src/Services/EditFinalization.php';
 $db=new mysqli('localhost','root','','fresh_single',0,$argv[2]);
+if (($argv[4]??'')==='missing_delivery_contract') {
+    echo achbotServiceDeliverySchemaReady($db)?'UNSAFE':'REJECTED';exit;
+}
 if (($argv[4]??'')==='missing_followup_index') {
     echo achbotFollowupSchemaReady($db)?'UNSAFE':'REJECTED';exit;
+}
+if (($argv[4]??'')==='settings_menu') {
+    set_error_handler(static function($severity,$message){
+        if ($severity & (E_WARNING|E_NOTICE|E_USER_WARNING))
+            throw new ErrorException($message,0,$severity);
+        return true;
+    });
+    $root=$argv[1];$connection=$db;
+    require_once $root.'/tools/source_scan.php';
+    require_once $root.'/src/Admin/InstanceContent.php';
+    require_once $root.'/src/Finance/PaymentKeyAdmin.php';
+    foreach (['getBotSettingKeys','getGateWaysKeys','achbotMutateBotStates','setSettings'] as $name)
+        eval(str_replace('__DIR__',var_export($root,true),achbotExtractFunction($root.'/config.php',$name)));
+    $before=(int)achbotProviderRow($db,'SELECT COUNT(*) AS n FROM setting')['n'];
+    foreach ([false,true] as $configured) {
+        if ($configured) $db->query("INSERT INTO setting(type,value) VALUES ('BOT_STATES','{\"cartToCartAutoAcceptState\":\"on\",\"botState\":\"off\"}')");
+        foreach (['getBotSettingKeys','getGateWaysKeys'] as $name) {
+            $rows=json_decode($name(),true,512,JSON_THROW_ON_ERROR)['inline_keyboard'];
+            $buttons=[];
+            foreach ($rows as $row) {
+                if (!$row) throw new RuntimeException('empty_keyboard_row');
+                foreach ($row as $button) {
+                    if (isset($button['callback_data'])) {
+                        if (strlen($button['callback_data'])>64) throw new RuntimeException('callback_length');
+                        $buttons[$button['callback_data']]=$button['text'];
+                    }
+                }
+            }
+            foreach (['changeBotchangeProtocolState','changeUpdateConfigLinkState'] as $old)
+                if (isset($buttons[$old])) throw new RuntimeException('retired_settings_button');
+            if ($name==='getBotSettingKeys') {
+                if ($buttons['changeBotbotState']!==achbotMessage($configured?'legacy_buttons.off':'legacy_buttons.on') ||
+                    $buttons['changeBotchangePlanState']!==achbotMessage('legacy_buttons.on') ||
+                    isset($buttons['changeBotcartToCartAutoAcceptType'])!==$configured ||
+                    isset($buttons['editcartToCartAutoAcceptTime'])!==$configured)
+                    throw new RuntimeException('bot_settings_current_defaults');
+            } else {
+                foreach (['walletState','nextpay','zarinpal','giftCardState','cartToCartState','smsApiVerifyState','giftApiVerifyState'] as $field)
+                    if ($buttons['changeGateWays'.$field]!==achbotMessage('legacy_buttons.off'))
+                        throw new RuntimeException('unconfigured_gateway_enabled');
+            }
+        }
+    }
+    if ((int)achbotProviderRow($db,'SELECT COUNT(*) AS n FROM setting')['n']!==$before+1)
+        throw new RuntimeException('menu_mutated_settings');
+    $db->query("DELETE FROM setting WHERE type='BOT_STATES'");
+    // Exercise the actual toggle route and writer on the empty document.
+    // No real webhook or Telegram requests leave the disposable harness.
+    $source=file_get_contents($root.'/bot.php');
+    $start=strpos($source,'if(($data=="botSettings"');
+    $end=strpos($source,'if(($data=="gateWays_Channels"',$start);
+    if ($start===false || $end===false) throw new RuntimeException('settings_route_missing');
+    $route=substr($source,$start,$end-$start);
+    $admin=$from_id=9001;$message_id=92;$userInfo=['isAdmin'=>1];$callbackId='fixture';$botState=[];
+    $GLOBALS['settings_events']=[];
+    function answerCallbackQuery(...$args) {$GLOBALS['settings_events'][]='denied';}
+    function editText(...$args) {$GLOBALS['settings_events'][]='edited';}
+    $data='changeBotchangeProtocolState';eval($route);
+    if ($GLOBALS['settings_events']!==['denied'] || setSettings('updateConnectionState','site') ||
+        setSettings('switchLocationState','on') || (int)achbotProviderRow($db,'SELECT COUNT(*) AS n FROM setting')['n']!==$before)
+        throw new RuntimeException('retired_settings_writer');
+    $data='changeBotbotState';eval($route);
+    if ($botState!==['botState'=>'off'] || $GLOBALS['settings_events']!==['denied','edited'])
+        throw new RuntimeException('first_robot_toggle_does_not_disable');
+    eval($route);
+    if ($botState!==['botState'=>'on'] || $GLOBALS['settings_events']!==['denied','edited','edited'])
+        throw new RuntimeException('second_robot_toggle_does_not_enable');
+    $db->query("DELETE FROM setting WHERE type='BOT_STATES'");
+    echo 'PASS';exit;
 }
 achbotCheckoutRequireSchema($db);
 achbotProviderRequireSchema($db);
@@ -46,6 +118,23 @@ def main():
         sql(None,'CREATE DATABASE fresh_chain CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci; CREATE DATABASE fresh_single CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci')
         sql('fresh_chain',(ROOT/'database/legacy-schema.sql').read_text())
         for migration in migrations:
+            if migration.name=='043_current_only_delivery.sql':
+                # Historical transport evidence is not migrated by a fresh
+                # install. The construction DDL must fail before dropping it.
+                sql('fresh_chain', '''INSERT INTO pays(hash_id,user_id,type,price,request_date,state)
+                    VALUES ('old-delivery-fixture',1001,'INCREASE_WALLET',100,1700000000,'paid');
+                    INSERT INTO payment_attempts(pay_row_id,provider,order_hash,quote_amount,quote_currency,local_amount_toman,stage)
+                    SELECT id,'nextpay',hash_id,price,'toman',price,'done' FROM pays WHERE hash_id='old-delivery-fixture';
+                    INSERT INTO payment_delivery_intents(pay_row_id,ordinal,attempt_id,user_id,pay_type,pay_fingerprint,source_digest,sealed_payload,payload_sha256,state)
+                    SELECT p.id,1,a.id,p.user_id,p.type,REPEAT('a',64),REPEAT('b',64),'original-packet',REPEAT('c',64),'unknown'
+                    FROM pays p JOIN payment_attempts a ON a.pay_row_id=p.id WHERE p.hash_id='old-delivery-fixture';''')
+                before=sql('fresh_chain','SELECT * FROM payment_delivery_intents')
+                preflight=migration.read_text().split(';',1)[0]+';'
+                rejected=subprocess.run(cli+['fresh_chain'],input=preflight,text=True,env=env,capture_output=True,timeout=30)
+                assert rejected.returncode!=0 and 'ck_delivery_no_historical_rows' in rejected.stderr,rejected.stderr
+                assert sql('fresh_chain','SELECT * FROM payment_delivery_intents')==before
+                checks.append('construction_refuses_historical_delivery_without_mutating_evidence')
+                sql('fresh_chain','DELETE FROM payment_delivery_intents; DELETE FROM payment_attempts; DELETE FROM pays')
             sql('fresh_chain',migration.read_text())
         sql('fresh_single',(ROOT/'database/current-schema.sql').read_text())
         old=set(sql('fresh_chain','SHOW TABLES').splitlines())
@@ -73,12 +162,43 @@ def main():
             for column in columns:
                 assert sql('fresh_single',"SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='"+table+"' AND COLUMN_NAME='"+column+"'")=='0',(table,column)
                 checks.append('retired_native_column:'+table+'.'+column)
+        for column in ('pay_row_id','attempt_id','pay_type','pay_fingerprint'):
+            assert sql('fresh_single',"SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='payment_delivery_intents' AND COLUMN_NAME='"+column+"'")=='0'
+            checks.append('retired_delivery_column:'+column)
+        for table,columns in [('payment_delivery_intents',['part_count','order_id']),
+                              ('payment_delivery_attempts',['part_no','claim_state'])]:
+            for column in columns:
+                assert sql('fresh_single',"SELECT IS_NULLABLE FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='"+table+"' AND COLUMN_NAME='"+column+"'")=='NO'
+                checks.append('required_delivery_column:'+table+'.'+column)
         path=work/'fresh.php';path.write_text(PHP)
         for mode in ('strict','off'):
             p=subprocess.run(['php',str(path),str(ROOT),str(work/'mysql.sock'),mode],
                 env=env,capture_output=True,text=True,timeout=20)
             assert p.returncode==0 and p.stdout=='PASS' and not p.stderr,(p.stdout,p.stderr)
             checks.append(mode+':current_schema_gates')
+            p=subprocess.run(['php',str(path),str(ROOT),str(work/'mysql.sock'),mode,'settings_menu'],
+                env=env,capture_output=True,text=True,timeout=20)
+            assert p.returncode==0 and p.stdout=='PASS' and not p.stderr,(p.stdout,p.stderr)
+            checks.append(mode+':fresh_and_partial_settings_menus_and_current_toggle_routes')
+        for table,key,columns in (
+            ('payment_delivery_intents','uq_delivery_effect','effect_id'),
+            ('payment_delivery_intents','uq_delivery_service_ordinal','service_operation_id,ordinal'),
+            ('payment_delivery_attempts','uq_delivery_attempt_no','intent_id,attempt_no'),
+            ('payment_delivery_attempts','uq_delivery_dispatch_token','dispatch_token'),
+        ):
+            sql('fresh_single',f'ALTER TABLE {table} ADD INDEX fixture_fk ({columns}); ALTER TABLE {table} DROP INDEX {key}')
+            for mode in ('strict','off'):
+                p=subprocess.run(['php',str(path),str(ROOT),str(work/'mysql.sock'),mode,'missing_delivery_contract'],
+                    env=env,capture_output=True,text=True,timeout=20)
+                assert p.returncode==0 and p.stdout=='REJECTED' and not p.stderr,(p.stdout,p.stderr)
+                checks.append(mode+':missing_'+key+'_denied')
+            sql('fresh_single',f'ALTER TABLE {table} ADD UNIQUE INDEX {key} ({columns}); ALTER TABLE {table} DROP INDEX fixture_fk')
+        sql('fresh_single','ALTER TABLE payment_delivery_intents DROP CONSTRAINT ck_delivery_source_v2')
+        for mode in ('strict','off'):
+            p=subprocess.run(['php',str(path),str(ROOT),str(work/'mysql.sock'),mode,'missing_delivery_contract'],
+                env=env,capture_output=True,text=True,timeout=20)
+            assert p.returncode==0 and p.stdout=='REJECTED' and not p.stderr,(p.stdout,p.stderr)
+            checks.append(mode+':missing_delivery_source_constraint_denied')
         for table,key,columns in (
             ('payment_followup_intents','uq_followup_wallet_key','wallet_entry_id,intent_key'),
             ('payment_followup_intents','uq_followup_operational_key','operational_ref,intent_key'),

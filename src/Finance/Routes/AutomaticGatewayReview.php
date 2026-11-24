@@ -150,7 +150,7 @@ if (preg_match('/^attentionDelivery([CS])_([1-9][0-9]{0,17})_([1-9][0-9]{0,8})(?
         $d=achbotProviderRow($connection,'SELECT * FROM payment_delivery_intents WHERE id=?','i',[$id]);
         $p=achbotProviderRow($connection,'SELECT * FROM payment_delivery_parts WHERE intent_id=? AND part_no=?','ii',[$id,$part]);
         $opId=(int)($d['service_operation_id']??0);
-        if (!$d || !$p || $d['pay_row_id']!==null)
+        if (!$d || !$p)
             throw new RuntimeException('delivery_review_stale');
         $back='attentionInbox';
         if ($opId>0) {
@@ -307,7 +307,7 @@ if (preg_match('/^attention(?:Inbox(?:_[1-9][0-9]{0,17})?|Case_[1-9][0-9]{0,17})
             $before=(int)($inbox[1]??0);
             $serviceScope=achbotServiceAttentionScope();
             $q=achbotProviderStatement($connection,"SELECT * FROM (
-                SELECT p.id,p.user_id,p.price,COALESCE(a.provider,'wallet') AS provider,'receipt' AS source,p.id*5 AS cursor
+                SELECT p.id,p.user_id,p.price,COALESCE(a.provider,'wallet') AS provider,'receipt' AS source,p.id*5 AS case_cursor
                   FROM pays p LEFT JOIN payment_attempts a ON a.pay_row_id=p.id WHERE $scope
                 UNION ALL
                 SELECT o.id,o.userid,o.price_toman,o.kind,'service',o.id*5+1
@@ -324,11 +324,11 @@ if (preg_match('/^attention(?:Inbox(?:_[1-9][0-9]{0,17})?|Case_[1-9][0-9]{0,17})
                 SELECT d.id,d.user_id,MIN(dp.part_no),e.source_ref,'nonpaid_delivery',d.id*5+4
                   FROM payment_delivery_intents d JOIN service_effects e ON e.id=d.effect_id
                   JOIN payment_delivery_parts dp ON dp.intent_id=d.id
-                  WHERE d.service_operation_id IS NULL AND d.pay_row_id IS NULL
+                  WHERE d.service_operation_id IS NULL
                     AND e.source_kind IN ('free_trial','admin_bulk') AND e.state='local_recorded'
                     AND dp.state IN ('unknown','rejected')
                   GROUP BY d.id,d.user_id,e.source_ref
-                ) AS cases WHERE (?=0 OR cursor<?) ORDER BY cursor DESC LIMIT 13",
+                ) AS cases WHERE (?=0 OR case_cursor<?) ORDER BY case_cursor DESC LIMIT 13",
                 'ii',[$before,$before]);
             $items=$q->get_result()->fetch_all(MYSQLI_ASSOC);$q->close();
             $more=count($items)>12;$items=array_slice($items,0,12);
@@ -358,7 +358,7 @@ if (preg_match('/^attention(?:Inbox(?:_[1-9][0-9]{0,17})?|Case_[1-9][0-9]{0,17})
                 $rows[]=[['text'=>$label,'callback_data'=>($walletReport?'attentionReportC_':($service?'attentionService_':'attentionCase_')).(int)$item['id']]];
             }
             if ($more && $items) $rows[]=[['text'=>achbotMessage('automatic_gateway_review.older'),
-                'callback_data'=>'attentionInbox_'.(int)end($items)['cursor']]];
+                'callback_data'=>'attentionInbox_'.(int)end($items)['case_cursor']]];
             if ($before>0) $rows[]=[['text'=>achbotMessage('automatic_gateway_review.newest'),
                 'callback_data'=>'attentionInbox']];
             $rows[]=[['text'=>achbotMessage('automatic_gateway_review.back_admin'),
@@ -600,8 +600,10 @@ if (preg_match('/^attention(?:Inbox(?:_[1-9][0-9]{0,17})?|Case_[1-9][0-9]{0,17})
         answerCallbackQuery($callbackId);
         $send($body,$rows);
     } catch (Throwable $error) {
+        $cause=$error->getPrevious()??$error;
         error_log('achbot_automatic_gateway_inbox_unavailable class='.get_class($error).
-            ' code='.(int)$error->getCode());
+            ' code='.(int)$error->getCode().' cause='.get_class($cause).
+            ' cause_code='.(int)$cause->getCode());
         answerCallbackQuery($callbackId,achbotMessage('automatic_gateway_review.unavailable'),true);
     }
     return;

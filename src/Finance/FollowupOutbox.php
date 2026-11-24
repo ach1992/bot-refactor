@@ -544,7 +544,7 @@ function achbotFollowupMaintainOriginalPending(mysqli $db,int $limit,float $budg
                OR f.next_attempt_at<=NOW(6))
           AND (f.state='dispatching' OR f.stage<>'service_delivered' OR NOT EXISTS (
               SELECT 1 FROM payment_delivery_intents d WHERE d.service_operation_id=f.service_operation_id
-              AND (d.state<>'acknowledged' OR d.part_count IS NULL)))
+              AND d.state<>'acknowledged'))
         ORDER BY COALESCE(f.next_attempt_at,f.updated_at),f.id LIMIT ?",'i',[$limit]);
     $rows=$s->get_result()->fetch_all(MYSQLI_ASSOC);$s->close();$out=[];
     foreach ($rows as $r) {

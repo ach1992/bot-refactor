@@ -5,26 +5,45 @@ require_once __DIR__.'/DeliveryLedger.php';
 require_once __DIR__.'/DeliveryParts.php';
 require_once __DIR__.'/../Services/Funding.php';
 
-/** Reuse the existing 018 journal with an actual service source, never a
- * synthetic pays row. Old 018 packets remain byte-identical. */
+/** One readiness contract for current delivery, including durable parts and
+ * the unique original source and attempt identities. No optional old schema. */
 function achbotServiceDeliverySchemaReady(mysqli $db): bool {
     try {
-        if (!achbotDeliverySchemaReady($db)) return false;
-        $q=$db->query('SELECT service_operation_id FROM payment_delivery_intents LIMIT 0');
-        if (!$q) return false;
-        $q->free();
-        $q=$db->query("SHOW INDEX FROM payment_delivery_intents WHERE Key_name='uq_delivery_service_ordinal'");
-        if (!$q) return false;
-        $keys=[];
-        while ($row=$q->fetch_assoc()) {
-            if ((int)$row['Non_unique']!==0 || $row['Sub_part']!==null) return false;
-            $keys[(int)$row['Seq_in_index']]=$row['Column_name'];
+        if (!function_exists('openssl_encrypt') || !function_exists('openssl_decrypt') ||
+            strlen(achbotPaymentEvidenceKey())!==32) return false;
+        $tables=[
+            'payment_delivery_intents'=>[
+                'columns'=>'id,ordinal,effect_id,order_id,user_id,server_id,source_digest,native_operation,native_target_key,sealed_payload,payload_sha256,state,attempt_count,dispatch_token,dispatched_at,acknowledged_at,last_actor,last_result,created_at,updated_at,service_operation_id,part_count,next_attempt_at',
+                'keys'=>['PRIMARY'=>['id'],'uq_delivery_effect'=>['effect_id'],'uq_delivery_service_ordinal'=>['service_operation_id','ordinal']]],
+            'payment_delivery_parts'=>[
+                'columns'=>'intent_id,part_no,payload_sha256,state,last_attempt_no,next_attempt_at',
+                'keys'=>['PRIMARY'=>['intent_id','part_no']]],
+            'payment_delivery_attempts'=>[
+                'columns'=>'id,intent_id,attempt_no,dispatch_token,actor_userid,result,started_at,finished_at,part_no,claim_state,telegram_error_code,retry_after_seconds',
+                'keys'=>['PRIMARY'=>['id'],'uq_delivery_attempt_no'=>['intent_id','attempt_no'],'uq_delivery_dispatch_token'=>['dispatch_token']]],
+        ];
+        foreach ($tables as $table=>$spec) {
+            $probe=$db->query('SELECT '.$spec['columns'].' FROM '.$table.' LIMIT 0');
+            if (!$probe) return false;
+            $probe->free();
+            $engine=achbotProviderRow($db,"SHOW TABLE STATUS WHERE Name='".$table."'");
+            if (strcasecmp((string)($engine['Engine']??''),'InnoDB')!==0) return false;
+            $q=$db->query('SHOW INDEX FROM '.$table);
+            if (!$q) return false;
+            $keys=[];
+            while ($r=$q->fetch_assoc())
+                if ((int)$r['Non_unique']===0 && $r['Sub_part']===null)
+                    $keys[$r['Key_name']][(int)$r['Seq_in_index']]=$r['Column_name'];
+            $q->free();
+            foreach ($spec['keys'] as $key=>$fields) {
+                if (!isset($keys[$key])) return false;
+                ksort($keys[$key]);
+                if (array_values($keys[$key])!==$fields) return false;
+            }
         }
-        $q->free();ksort($keys);
-        if (array_values($keys)!==['service_operation_id','ordinal'] || !achbotDeliveryPartsSchemaReady($db)) return false;
         $constraint=achbotProviderRow($db,"SELECT CONSTRAINT_NAME FROM information_schema.TABLE_CONSTRAINTS
             WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='payment_delivery_intents'
-            AND CONSTRAINT_NAME='ck_delivery_source_current' AND CONSTRAINT_TYPE='CHECK'");
+            AND CONSTRAINT_NAME='ck_delivery_source_v2' AND CONSTRAINT_TYPE='CHECK'");
         return $constraint!==null;
     } catch (Throwable $e) {return false;}
 }
@@ -179,8 +198,7 @@ function achbotNonpaidDeliveryInsertLocked(mysqli $db,int $effectId,int $orderId
     return achbotServiceDeliveryInsertBindingLocked($db,$b,$packet);
 }
 function achbotNonpaidDeliveryValidateLocked(mysqli $db,array $d): array {
-    if ($d['service_operation_id']!==null || $d['pay_row_id']!==null ||
-        $d['attempt_id']!==null || $d['pay_type']!==null || $d['pay_fingerprint']!==null ||
+    if ($d['service_operation_id']!==null ||
         (int)$d['effect_id']<=0 || (int)$d['order_id']<=0 ||
         !hash_equals($d['payload_sha256'],hash('sha256',$d['sealed_payload'])))
         throw new RuntimeException('delivery_nonpaid_intent_invalid');
@@ -208,8 +226,6 @@ function achbotServiceDeliveryOriginalBody(array $op,array $quote,array $d,int $
         $ordinal>($buy?$q['quantity']-(int)$op['cancelled_count']:1) || (int)$d['ordinal']!==$ordinal ||
         (int)$d['user_id']!==$uid || (int)$d['server_id']!==$q['server_id'] || $order<=0 ||
         ($buy?($effect===null || $effect<=0):($effect!==null || $order!==$q['order_id'])) ||
-        $d['pay_row_id']!==null || $d['attempt_id']!==null ||
-        $d['pay_type']!==null || $d['pay_fingerprint']!==null ||
         !hash_equals($d['payload_sha256'],hash('sha256',$d['sealed_payload'])))
         throw new RuntimeException('service_delivery_original_line_conflict');
     $body=achbotPaymentEvidenceUnprotect(achbotServiceDeliveryPurpose($id,$ordinal,$effect??0,$order),
@@ -278,6 +294,7 @@ function achbotServiceDeliveryDispatch(mysqli $db,int $id,int $actor=0,int $part
         ($partNo<=0 || $confirmation===null)))
         throw new InvalidArgumentException('service_delivery_dispatch_context');
     achbotPaymentEvidenceRequireAutocommit($db);
+    if (!achbotServiceDeliverySchemaReady($db)) return 'deferred';
     $dbName=achbotProviderRow($db,'SELECT DATABASE() AS name')['name']??null;
     if (!is_string($dbName) || $dbName==='') throw new RuntimeException('service_delivery_database');
     $lock='achbot-delivery-'.substr(hash('sha256',$dbName),0,20).'-'.$id;
@@ -286,9 +303,9 @@ function achbotServiceDeliveryDispatch(mysqli $db,int $id,int $actor=0,int $part
     $serviceId=0;$claim=null;$physicalLock=null;$serviceLock=null;$cursor=0;
     $priorContext=$GLOBALS['achbotTelegramDiagnosticContext']??null;
     try {
-        $loc=achbotProviderRow($db,'SELECT service_operation_id,user_id,effect_id,pay_row_id,part_count
+        $loc=achbotProviderRow($db,'SELECT service_operation_id,user_id,effect_id
             FROM payment_delivery_intents WHERE id=?','i',[$id]);
-        if (!$loc || $loc['pay_row_id']!==null || $loc['part_count']===null ||
+        if (!$loc ||
             ($loc['service_operation_id']===null && (int)$loc['effect_id']<=0)) return 'missing';
         $serviceId=(int)$loc['service_operation_id'];$owner=(int)$loc['user_id'];
         $nonpaid=$serviceId===0;
@@ -305,12 +322,8 @@ function achbotServiceDeliveryDispatch(mysqli $db,int $id,int $actor=0,int $part
             if (!$nonpaid) [$op,$quote,$walletOwner]=achbotServiceReadLocked($db,$owner,$serviceId);
             $d=achbotProviderRow($db,'SELECT * FROM payment_delivery_intents WHERE id=? FOR UPDATE','i',[$id]);
             if (!$d || (int)$d['service_operation_id']!==$serviceId || (int)$d['user_id']!==$owner ||
-                $d['pay_row_id']!==null || $d['effect_id']!==$loc['effect_id'])
+                $d['effect_id']!==$loc['effect_id'])
                 throw new RuntimeException('service_delivery_source_changed');
-            // Source-only pre-032 service drafts have no verified part
-            // boundaries. Never fabricate part outcomes from old claims.
-            if (!isset($d['part_count']))
-                throw new RuntimeException('service_delivery_parts_unadmitted');
             if ($d['state']==='dispatching') {
                 $r=achbotDeliveryPartFinishLocked($db,$id,(string)$d['dispatch_token'],
                     ['result'=>'unknown','code'=>null,'retry_after'=>null]);

@@ -7,29 +7,6 @@ require_once __DIR__.'/../Telegram/Response.php';
 require_once __DIR__.'/PaymentEvidence.php';
 require_once __DIR__.'/../Admin/Access.php';
 
-/** 032 extends the existing 018 intent and attempt journal. No separate
- * sender or synthetic payment; historical whole-packet evidence is untouched. */
-function achbotDeliveryPartsSchemaReady(mysqli $db): bool {
-    try {
-        foreach ([
-            'SELECT part_count,next_attempt_at FROM payment_delivery_intents LIMIT 0',
-            'SELECT part_no,claim_state,telegram_error_code,retry_after_seconds FROM payment_delivery_attempts LIMIT 0',
-            'SELECT intent_id,part_no,payload_sha256,state,last_attempt_no,next_attempt_at FROM payment_delivery_parts LIMIT 0',
-        ] as $sql) {
-            $s=achbotProviderStatement($db,$sql);$s->close();
-        }
-        $engine=achbotProviderRow($db,"SHOW TABLE STATUS WHERE Name='payment_delivery_parts'");
-        if (strcasecmp((string)($engine['Engine']??''),'InnoDB')!==0) return false;
-        $s=achbotProviderStatement($db,"SHOW INDEX FROM payment_delivery_parts WHERE Key_name='PRIMARY'");
-        $keys=[];
-        foreach ($s->get_result()->fetch_all(MYSQLI_ASSOC) as $row)
-            if ((int)$row['Non_unique']===0 && $row['Sub_part']===null)
-                $keys[(int)$row['Seq_in_index']]=$row['Column_name'];
-        $s->close();ksort($keys);
-        return array_values($keys)===['intent_id','part_no'];
-    } catch (Throwable $e) {return false;}
-}
-
 function achbotDeliveryPartDigest(array $part): string {
     return hash('sha256',json_encode($part,JSON_THROW_ON_ERROR|JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE));
 }

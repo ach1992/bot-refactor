@@ -275,10 +275,10 @@ if (!function_exists('achbotAdminWalletIsPendingStep')) {
     function achbotAdminWalletIsPendingStep(string $step): bool
     {
         return in_array($step, [
-            'increaseUserWallet', 'decreaseUserWallet', 'createUserWalletDebt'
+            'increaseUserWallet', 'decreaseUserWallet'
         ], true) ||
-            preg_match('/^(increaseWalletUser|decreaseWalletUser|debtWalletUser)[1-9][0-9]{0,18}$/D', $step) === 1 ||
-            str_starts_with($step, 'achbotWalletReason:') ||
+            preg_match('/^(increaseWalletUser|decreaseWalletUser)[1-9][0-9]{0,18}$/D', $step) === 1 ||
+            preg_match('/^achbotWalletReason:(credit|debit):/D', $step) === 1 ||
             str_starts_with($step, 'achbotWalletDebt:');
     }
 }
@@ -444,9 +444,7 @@ if (!function_exists('achbotAdminWalletReportResult')) {
 $achbotWalletCanAdmin = achbotAdminCan('operations',(int)$from_id);
 $achbotWalletModes = [
     'increaseUserWallet' => ['credit', 'increaseWalletUser', 'enter_increase_amount'],
-    'decreaseUserWallet' => ['debit', 'decreaseWalletUser', 'enter_decrease_amount'],
-    // Old inline buttons restart the safe Decrease flow, never debt consent.
-    'createUserWalletDebt' => ['debit', 'decreaseWalletUser', 'enter_decrease_amount']
+    'decreaseUserWallet' => ['debit', 'decreaseWalletUser', 'enter_decrease_amount']
 ];
 $achbotWalletStep = (string)($userInfo['step'] ?? 'none');
 $achbotWalletInput = trim((string)($text ?? ''));
@@ -464,7 +462,7 @@ if ($achbotWalletCanAdmin && isset($achbotWalletModes[$data]) &&
     } else {
         delMessage();
         sendMessage(\achbotMessage('legacy_messages.send_user_id'), $cancelKey, 'HTML');
-        setUser($data === 'createUserWalletDebt' ? 'decreaseUserWallet' : $data);
+        setUser($data);
     }
 }
 
@@ -497,10 +495,9 @@ if ($achbotWalletCanAdmin && isset($achbotWalletModes[$achbotWalletStep]) &&
 
 if ($achbotWalletCanAdmin && $achbotWalletFreshText !== null &&
     $achbotWalletInput !== $achbotWalletCancel &&
-    preg_match('/^(increaseWalletUser|decreaseWalletUser|debtWalletUser)([1-9][0-9]{0,18})$/D',
+    preg_match('/^(increaseWalletUser|decreaseWalletUser)([1-9][0-9]{0,18})$/D',
         $achbotWalletStep, $match)) {
-    $kind = ['increaseWalletUser'=>'credit', 'decreaseWalletUser'=>'debit',
-             'debtWalletUser'=>'debit'][$match[1]];
+    $kind = $match[1]==='increaseWalletUser'?'credit':'debit';
     if (!preg_match('/^[1-9][0-9]{0,9}$/D', $achbotWalletInput) ||
         (float)$achbotWalletInput > 2147483647) {
         sendMessage(\achbotMessage('wallet.admin_wallet.admin_wallet_report_result.message.5022bf056a'), null, 'HTML');
@@ -512,14 +509,13 @@ if ($achbotWalletCanAdmin && $achbotWalletFreshText !== null &&
         setUser('achbotWalletReason:' . $kind . ':' . $target . ':' . $amount
             . ':' . $update->message->message_id . ':' . $update->update_id);
         sendMessage(\achbotMessage('wallet.admin_wallet.admin_wallet_report_result.message.b890d4f5e3')
-            . \achbotMessage('wallet.admin_wallet.admin_wallet_report_result.message.e8ac1326af')
-            . ($kind === 'debt' ? \achbotMessage('wallet.admin_wallet.admin_wallet_report_result.message.ff1e51077f') : ''), null, 'HTML');
+            . \achbotMessage('wallet.admin_wallet.admin_wallet_report_result.message.e8ac1326af'), null, 'HTML');
     }
 }
 
 if ($achbotWalletCanAdmin && $achbotWalletFreshText !== null &&
     $achbotWalletInput !== $achbotWalletCancel &&
-    preg_match('/^achbotWalletReason:(credit|debit|debt):([1-9][0-9]{0,18}):([1-9][0-9]{0,9}):([1-9][0-9]{0,18}):([1-9][0-9]{0,18})$/D',
+    preg_match('/^achbotWalletReason:(credit|debit):([1-9][0-9]{0,18}):([1-9][0-9]{0,9}):([1-9][0-9]{0,18}):([1-9][0-9]{0,18})$/D',
         $achbotWalletStep, $match) &&
     $update->message->message_id > (int)$match[4] &&
     $update->update_id > (int)$match[5]) {
@@ -530,12 +526,10 @@ if ($achbotWalletCanAdmin && $achbotWalletFreshText !== null &&
         $updateId = filter_var($update->update_id ?? null, FILTER_VALIDATE_INT);
         $message = filter_var($message_id ?? null, FILTER_VALIDATE_INT);
         $chat = filter_var($chat_id ?? null, FILTER_VALIDATE_INT);
-        // Pre-upgrade saved debt reasons carry no current consent.
-        // Treat them as Decrease and require a fresh negative preview.
         $result = achbotApplyAdminWalletAdjustment(
             $connection, (int)$from_id, (int)$match[2], (int)($updateId ?: 0),
             (int)($chat ?: 0), (int)($message ?: 0),
-            $match[1] === 'debt' ? 'debit' : $match[1],
+            $match[1],
             (int)$match[3], $reason, $achbotWalletStep, (int)$admin, $operation
         );
         achbotAdminWalletReportResult($result, $operation, (int)($updateId ?: 0));

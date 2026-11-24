@@ -552,10 +552,7 @@ def main():
             sql("""INSERT INTO pays(hash_id,user_id,type,price,request_date,state)
                 VALUES ('legacy-delivery-fixture',1001,'INCREASE_WALLET',100,1700000000,'paid');
                 INSERT INTO payment_attempts(pay_row_id,provider,order_hash,quote_amount,quote_currency,local_amount_toman,stage)
-                SELECT id,'nextpay',hash_id,price,'toman',price,'done' FROM pays WHERE hash_id='legacy-delivery-fixture';
-                INSERT INTO payment_delivery_intents(pay_row_id,ordinal,attempt_id,user_id,pay_type,pay_fingerprint,source_digest,sealed_payload,payload_sha256,state)
-                SELECT p.id,1,a.id,p.user_id,p.type,REPEAT('a',64),REPEAT('b',64),'original-packet',REPEAT('c',64),'unknown'
-                FROM pays p JOIN payment_attempts a ON a.pay_row_id=p.id WHERE p.hash_id='legacy-delivery-fixture';""")
+                SELECT id,'nextpay',hash_id,price,'toman',price,'done' FROM pays WHERE hash_id='legacy-delivery-fixture';""")
             sql("""INSERT INTO referral_awards(pay_row_id,buyer_userid,inviter_userid,amount_toman,state,before_balance,after_balance)
                 SELECT id,1001,9002,50,'CONFIRMED',0,50 FROM pays WHERE hash_id='legacy-delivery-fixture';
                 INSERT INTO payment_followup_intents(pay_row_id,intent_key,stage,kind,role,recipient,pay_fingerprint,sealed_payload,payload_sha256,state)
@@ -563,14 +560,9 @@ def main():
                 FROM pays WHERE hash_id='legacy-delivery-fixture'""")
             original_award=sql("SELECT id,pay_row_id,amount_toman,state,before_balance,after_balance FROM referral_awards")
             original_report=sql("SELECT id,pay_row_id,sealed_payload,state FROM payment_followup_intents")
-            sql("UPDATE payment_delivery_intents SET attempt_count=1 WHERE pay_row_id IS NOT NULL")
-            sql("INSERT INTO payment_delivery_attempts(intent_id,attempt_no,dispatch_token,result) SELECT id,1,REPEAT('d',32),'unknown' FROM payment_delivery_intents WHERE pay_row_id IS NOT NULL")
-            original_delivery=sql("SELECT id,pay_row_id,attempt_id,sealed_payload,state,attempt_count FROM payment_delivery_intents")
-            original_attempt=sql("SELECT id,intent_id,attempt_no,dispatch_token,result FROM payment_delivery_attempts")
-            assert sql("SELECT id,pay_row_id,attempt_id,sealed_payload,state,attempt_count FROM payment_delivery_intents")==original_delivery
-            assert sql("SELECT id,intent_id,attempt_no,dispatch_token,result FROM payment_delivery_attempts")==original_attempt
+            assert sql("SELECT COUNT(*) FROM payment_delivery_intents")=='0'
             assert sql("SELECT COUNT(*) FROM payment_delivery_parts")=='0'
-            assert sql("SELECT COUNT(*) FROM payment_delivery_attempts WHERE part_no IS NOT NULL")=='0'
+            assert sql("SELECT COUNT(*) FROM payment_delivery_attempts")=='0'
             assert sql("SELECT id,pay_row_id,amount_toman,state,before_balance,after_balance FROM referral_awards")==original_award
             assert sql("SELECT id,pay_row_id,sealed_payload,state FROM payment_followup_intents")==original_report
             assert sql("SELECT COUNT(*) FROM referral_awards WHERE service_operation_id IS NOT NULL")=='0'
@@ -1089,7 +1081,7 @@ def main():
                 step(mode,id,'completed')
                 assert posts()==n+3 and finance()==before
                 assert sql(f"SELECT COUNT(*),SUM(o.amount),SUM(o.provider_effect_id=e.id) FROM service_effects e JOIN orders_list o ON o.id=e.order_id WHERE e.source_kind='service_operation' AND e.source_ref='{id}'")=='3\t100\t3'
-                assert sql(f"SELECT COUNT(*) FROM payment_delivery_intents WHERE service_operation_id={id} AND pay_row_id IS NULL AND attempt_id IS NULL AND state='pending'")=='3'
+                assert sql(f"SELECT COUNT(*) FROM payment_delivery_intents WHERE service_operation_id={id} AND state='pending'")=='3'
                 assert all('\tlocal_recorded\t' in row for row in rows(id))
                 reports=sql(f"SELECT id,role FROM payment_followup_intents WHERE service_operation_id={id} AND stage='service_completed' AND pay_row_id IS NULL ORDER BY role").splitlines()
                 assert len(reports)==2,reports

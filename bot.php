@@ -198,7 +198,7 @@ if ($isStart) {
     $text = '/start';
 }
 
-if($userInfo['phone'] == null && $from_id != $admin && $userInfo['isAdmin'] != true && $botState['requirePhone'] == "on"){
+if($userInfo['phone'] == null && $from_id != $admin && $userInfo['isAdmin'] != true && ($botState['requirePhone']??'off') == "on"){
     if(isset($update->message->contact)){
         $contact = $update->message->contact;
         $phone_number = $contact->phone_number;
@@ -207,7 +207,7 @@ if($userInfo['phone'] == null && $from_id != $admin && $userInfo['isAdmin'] != t
             sendMessage(\achbotMessage('legacy_messages.please_select_from_below_buttons'), null, 'HTML');
             exit();
         }else{
-            if(!preg_match('/^\+98(\d+)/',$phone_number) && !preg_match('/^98(\d+)/',$phone_number) && !preg_match('/^0098(\d+)/',$phone_number) && $botState['requireIranPhone'] == 'on'){
+            if(!preg_match('/^\+98(\d+)/',$phone_number) && !preg_match('/^98(\d+)/',$phone_number) && !preg_match('/^0098(\d+)/',$phone_number) && ($botState['requireIranPhone']??'off') == 'on'){
                 sendMessage(\achbotMessage('legacy_messages.use_iranian_number_only'), null, 'HTML');
                 exit();
             }
@@ -459,7 +459,7 @@ if(($data=="botSettings" or preg_match('/^changeBot([A-Za-z0-9_]+)$/D',$data,$ma
         // Keep this explicit list in sync with getBotSettingKeys().
         $editableBotToggles=[
             'agencyState','agencyPlanDiscount','individualExistence',
-            'sharedExistence','testAccount','changeProtocolState','changePlanState',
+            'sharedExistence','testAccount','changePlanState',
             'renewAccountState','renewAutoState','plandelkhahState',
             'increaseTimeState','increaseVolumeState',
             'requirePhone','requireIranPhone','sellState','botState',
@@ -471,15 +471,10 @@ if(($data=="botSettings" or preg_match('/^changeBot([A-Za-z0-9_]+)$/D',$data,$ma
             answerCallbackQuery($callbackId,\achbotMessage('bot.bot.webhook_ingress_authenticated.alert.c0889a8ad7'),true);
             return;
         }
-        if($match[1] == "cartToCartAutoAcceptType") $newValue = $botState[$match[1]] == "0"?"1":($botState[$match[1]] == "1"?"2":0);
-        else $newValue = ($botState[$match[1]] ?? ($match[1] === 'changePlanState' ? 'on' : 'off')) === "on" ? "off" : "on";
+        if($match[1] == "cartToCartAutoAcceptType") $newValue = ($botState[$match[1]]??'2') == "0"?"1":(($botState[$match[1]]??'2') == "1"?"2":0);
+        else $newValue = ($botState[$match[1]] ?? (in_array($match[1],['changePlanState','botState'],true) ? 'on' : 'off')) === "on" ? "off" : "on";
         setSettings($match[1], $newValue);
     }
-    editText($message_id,\achbotMessage('legacy_messages.change_bot_settings_message'),getBotSettingKeys());
-}
-if($data=="changeUpdateConfigLinkState" && ($from_id == $admin || $userInfo['isAdmin'] == true)){
-    $newValue = $botState['updateConnectionState']=="robot"?"site":"robot";
-    setSettings('updateConnectionState', $newValue);
     editText($message_id,\achbotMessage('legacy_messages.change_bot_settings_message'),getBotSettingKeys());
 }
 if(($data=="gateWays_Channels" or preg_match('/^changeGateWays([A-Za-z0-9_]+)$/D',$data,$match)) && ($from_id == $admin || $userInfo['isAdmin'] == true)){
@@ -689,7 +684,7 @@ if (($from_id == $admin || (int)($userInfo['isAdmin']??0)===1) &&
     return;
 }
 if($data=="changeConfigRemarkType"){
-    switch($botState['remark']){
+    switch($botState['remark']??''){
         case "digits":
             $newValue = "manual";
             break;
@@ -1214,7 +1209,7 @@ function processCallbackQuery($data, $chat_id, $from_id) {
 
         $isRealAdmin = ($from_id == $admin || $userInfo['isAdmin'] == true);
 
-        if ($botState['sellState'] == "on" || $isRealAdmin) {
+        if (($botState['sellState']??'off') == "on" || $isRealAdmin) {
 
             if (($botState['cartToCartState'] ?? 'off') == "off" && ($botState['giftCardState'] ?? 'off') == "off" && ($botState['manualUsdtState'] ?? 'off') == "off" && ($botState['walletState'] ?? 'off') == "off") {
                 sendMessage(\achbotMessage('bot.bot.process_callback_query.message.616c172303'), null, "HTML", $chat_id);

@@ -398,11 +398,11 @@ def main():
         cases.append('routine_debit_guarded_and_audited')
 
         # Explicit privileged debt mode may cross below zero.
-        move_to_reason(work,env,'debt',50400)
+        move_to_reason(work,env,'debit',50400)
         debt_callback=execute(work,env,update_kind='callback',data='managePanel',
             wire_text='Old admin debt confirmation',update_id=704)
         assert_state(work,env,50300,2)
-        assert step(work,env)=='achbotWalletReason:debt:1001:50400:90:1'
+        assert step(work,env)=='achbotWalletReason:debit:1001:50400:90:1'
         assert not any('✅' in m for m in messages(debt_callback))
         cases.append('f1_privileged_debt_needs_new_message_reason')
         preview=execute(work,env,text='contractually approved debt',update_id=704)
@@ -449,7 +449,7 @@ def main():
         execute(work,env,text='overflow attempt',update_id=720)
         assert_state(work,env,2147483647,4)
         sql(work,env,'UPDATE users SET wallet=-2147483648 WHERE userid=1001')
-        move_to_reason(work,env,'debt',1)
+        move_to_reason(work,env,'debit',1)
         execute(work,env,text='underflow attempt',update_id=721)
         assert_state(work,env,-2147483648,4)
         cases.append('int32_signed_bounds_preserved')
@@ -726,7 +726,7 @@ def main():
         assert not any('دلیل' in m for m in messages(group_amount))
         cases.append('r1_group_amount_cannot_advance_adjustment')
 
-        move_to_reason(work,env,'debt',10)
+        move_to_reason(work,env,'debit',10)
         pending=step(work,env)
         group_reason=execute(work,env,text='unrelated genuine group message',
             update_id=813,wire_chat=group_chat,wire_chat_type='supergroup')
@@ -754,8 +754,7 @@ def main():
         assert not any('✅' in m for m in messages(group_reentry))
         cases.append('r1_group_reentry_cannot_override_pending_debt')
 
-        # A legacy saved debt mode in the correct DM is now ordinary
-        # Decrease when its result stays nonnegative; new reason required.
+        # The current Decrease flow can commit in the genuine private DM.
         real_private=execute(work,env,text='Explicit fresh debt reason',
             update_id=816,message_id=91)
         assert step(work,env)=='none'
@@ -819,11 +818,9 @@ def main():
         for idx,pending_step in enumerate([
             'increaseUserWallet',
             'decreaseUserWallet',
-            'createUserWalletDebt',
             'increaseWalletUser1001',
             'decreaseWalletUser1001',
-            'debtWalletUser1001',
-            'achbotWalletReason:debt:1001:99:90:1'
+            'achbotWalletReason:debit:1001:99:90:1'
         ]):
             setstep(work,env,9001,pending_step)
             out=execute(work,env,update_kind='callback',
@@ -835,6 +832,22 @@ def main():
             assert len(edits)==1 and 'لغو شد' in edits[0],pending_step
             assert not any('✅' in m for m in messages(out))
         cases.append('r2_actual_managepanel_cancels_every_financial_stage')
+        # Fresh installation must not re-enter removed debt alias routes.
+        for index, retired in enumerate(['createUserWalletDebt','debtWalletUser1001',
+                'achbotWalletReason:debt:1001:99:90:1']):
+            setstep(work,env,9001,'none' if index==0 else retired)
+            if index==0:
+                result=execute(work,env,update_kind='callback',data=retired,update_id=838)
+                assert step(work,env)=='none'
+            else:
+                result=execute(work,env,text='123' if index==1 else 'old reason',
+                               update_id=839,message_id=92)
+                assert step(work,env)==retired
+            assert_state(work,env,current_wallet,current_rows)
+            assert not any('✅' in m for m in messages(result))
+        setstep(work,env,9001,'none')
+        cases.append('retired_debt_aliases_never_activate_or_debit')
+
 
         # An old unrelated callback is NOT managePanel; when only the
         # finance route is executed it does not consume its pending step.
@@ -893,7 +906,7 @@ def main():
 
         # NAVIGATION FIRST: finance reason worker has cached the pending
         # flow, then conditional cancellation wins the lock/step claim.
-        move_to_reason(work,env,'debt',19)
+        move_to_reason(work,env,'debit',19)
         before_balance=balance(work,env)
         before_rows=nledger(work,env)
         finance,finance_barrier=start_worker_with_cached_step(
