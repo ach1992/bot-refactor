@@ -106,6 +106,16 @@ function sendMessage($text,$keys=null,$mode=null,$uid=null) {
     if ($x['op']==='checkout_discount') return (object)['ok'=>true];
     return fixtureDeliverySend('text',$uid,$text,$keys,$mode);
 }
+function bot($method,$data=[]) {
+    global $db,$x;
+    if (!in_array($x['op'],['plan','reassign'],true) || $method!=='editMessageReplyMarkup' ||
+        array_keys($data)!==['chat_id','message_id'] ||
+        (int)achbotProviderRow($db,'SELECT @@in_transaction AS tx')['tx']!==0)
+        throw new RuntimeException('fixture_unexpected_bot_markup');
+    $s=achbotProviderStatement($db,'INSERT INTO fixture_markup(chat_id,message_id) VALUES (?,?)',
+        'ii',[(int)$data['chat_id'],(int)$data['message_id']]);$s->close();
+    return (object)['ok'=>true];
+}
 function achbotNotifyAdmins(...$args) {return true;}
 function editKeys($keys,$msgId,$ci) {return sendMessage($keys,null,'edit:'.$msgId,$ci);}
 function editText($msgId,$text,$keys=null,$mode=null,$uid=null) {
@@ -235,6 +245,10 @@ try {
         $display=achbotProviderRow($db,'SELECT days,volume FROM server_plans WHERE id=?','i',[$plan]);
         $r=achbotPayUxInsertDraft($db,$uid,$stmt,$scoped,$display,['remark'=>'digits']);
         $stmt->close();
+    }
+    elseif ($x['op']==='attention_receipt') {
+        require_once $argv[1].'/src/Finance/GatewayClient.php';
+        $r=achbotGatewayAttentionCaseOpen($db,(int)$x['pay']);
     }
     elseif ($x['op']==='receipt_outcome') {
         require_once $argv[1].'/src/Finance/CheckoutRoutes.php';
@@ -535,6 +549,8 @@ def main():
             assert sql("SELECT COUNT(*) FROM referral_awards WHERE service_operation_id IS NOT NULL")=='0'
             assert sql("SELECT COUNT(*) FROM pays WHERE checkout_operation_id IS NOT NULL")=='0'
 
+            sql("""CREATE TABLE fixture_markup(id INT AUTO_INCREMENT PRIMARY KEY,
+                chat_id BIGINT NOT NULL,message_id BIGINT NOT NULL) ENGINE=InnoDB""")
             sql("""CREATE TABLE fixture_followup(id INT AUTO_INCREMENT PRIMARY KEY,intent_id BIGINT UNSIGNED NOT NULL,
                 recipient VARCHAR(128),text TEXT,mode VARCHAR(20),keys_json TEXT) ENGINE=InnoDB""")
             sql("""CREATE TABLE fixture_telegram (
@@ -1968,8 +1984,12 @@ DELIMITER ;
                 prior=int(sql(f"SELECT checkout_operation_id FROM pays WHERE id={pid}"))
                 sql(f"INSERT INTO pays(hash_id,user_id,type,price,request_date,state,server_id,plan_id,order_id) VALUES ('{mode}-historical-bound',1001,'RENEW_ACCOUNT',100,UNIX_TIMESTAMP(),'processing',2,7,{order})")
                 before=finance()
+                markups=int(sql('SELECT COUNT(*) FROM fixture_markup'))
                 r=php(mode,'plan',order=order,plan=8);assert r['success'],r
+                assert int(sql('SELECT COUNT(*) FROM fixture_markup'))==markups+1
+                assert sql('SELECT chat_id,message_id FROM fixture_markup ORDER BY id DESC LIMIT 1')=='9001\t222'
                 assert sql(f"SELECT state FROM pays WHERE id={pid}")=='service_superseded'
+                assert php(mode,'attention_receipt',pay=pid) is True
                 assert sql(f"SELECT stage FROM service_operations WHERE id={prior}")=='cancelled'
                 assert sql(f"SELECT state FROM pays WHERE hash_id='{mode}-historical-bound'")=='processing'
                 r=php(mode,'plan',order=order,plan=7);assert r['success'],r
