@@ -151,7 +151,7 @@ def write_runtime(w: Path) -> None:
     files={
         "auth.php": '<?php\n'+extract_function(ROOT/"bot.php","achbotWebhookIngressAuthenticated"),
         "set-user.php": '<?php\n'+extract_function(ROOT/"config.php","setUser"),
-        "get-main-keys.php": '<?php\n'+extract_function(ROOT/"src/Presentation/MainMenu.php","achbotMainMenuForContext")+'\n'+extract_function(ROOT/"config.php","getMainKeys"),
+        "get-main-keys.php": '<?php\n'+extract_function(ROOT/"src/Presentation/MainMenu.php","achbotMainButtonNamespace")+'\n'+extract_function(ROOT/"src/Presentation/MainMenu.php","achbotMainMenuForContext")+'\n'+extract_function(ROOT/"config.php","getMainKeys"),
         "membership-source.php":current_section("config.php",
             "$joniedState = null;", "// Channel exemption is dispatched"),
         "onboarding-source.php":current_section("bot.php",

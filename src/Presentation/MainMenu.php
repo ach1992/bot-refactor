@@ -4,6 +4,10 @@ if (realpath($_SERVER['SCRIPT_FILENAME']??'')===__FILE__) {http_response_code(40
 require_once __DIR__.'/Text.php';
 require_once __DIR__.'/../../messages/loader.php';
 
+function achbotMainButtonNamespace(): string {
+    return "BINARY LEFT(type,12)=BINARY 'MAIN_BUTTONS' AND CHAR_LENGTH(type)>12";
+}
+
 function achbotMainMenuForContext($connection,$userInfo,$from_id,$admin,$botState){
     $mainKeys = array();
     $temp = array();
@@ -50,13 +54,7 @@ function achbotMainMenuForContext($connection,$userInfo,$from_id,$admin,$botStat
             ['text'=>\achbotMessage('legacy_buttons.invite_friends'),'callback_data'=>"inviteFriends"],
             ['text'=>\achbotMessage('legacy_buttons.application_links'),'callback_data'=>"reciveApplications"]
         ] : []),
-        ((($botState['sharedExistence'] ?? 'off') == "on" && ($botState['individualExistence'] ?? 'off') == "on")?
-            [['text'=>\achbotMessage('legacy_buttons.shared_existence'),'callback_data'=>"availableServers"],['text'=>\achbotMessage('legacy_buttons.individual_existence'),'callback_data'=>"availableServers2"]] : []
-        ),
-        ((($botState['sharedExistence'] ?? 'off') == "on" && ($botState['individualExistence'] ?? 'off') != "on")?
-            [['text'=>\achbotMessage('legacy_buttons.shared_existence'),'callback_data'=>"availableServers"]] : []
-        ),
-        ((($botState['sharedExistence'] ?? 'off') != "on" && ($botState['individualExistence'] ?? 'off') == "on")?
+        ((($botState['individualExistence'] ?? 'off') == "on")?
             [['text'=>\achbotMessage('legacy_buttons.individual_existence'),'callback_data'=>"availableServers2"]] : []
         ),
         // Keep the optional customer import action above the configured
@@ -75,14 +73,14 @@ function achbotMainMenuForContext($connection,$userInfo,$from_id,$admin,$botStat
 		),
     ]);
 
-    $stmt = $connection->prepare("SELECT * FROM `setting` WHERE `type` LIKE '%MAIN_BUTTONS%'");
+    $stmt = $connection->prepare("SELECT * FROM `setting` WHERE ".achbotMainButtonNamespace());
     $stmt->execute();
     $buttons = $stmt->get_result();
     $stmt->close();
     if($buttons->num_rows > 0){
         while($row = $buttons->fetch_assoc()){
             $rowId = $row['id'];
-            $title = str_replace("MAIN_BUTTONS","",$row['type']);
+            $title = substr($row['type'],12);
 
             $temp[] = ['text'=>$title,'callback_data'=>"showMainButtonAns" . $rowId];
             if(count($temp) >= 2){

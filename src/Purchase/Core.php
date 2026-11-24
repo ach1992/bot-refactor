@@ -386,3 +386,20 @@ require_once __DIR__.'/OrderWrites.php';
 require_once __DIR__.'/../Finance/ReferralReward.php';
 require_once __DIR__.'/AgentPricing.php';
 require_once __DIR__.'/../Finance/ReceiptHelpers.php';
+
+/** Customer catalogue and capacity screen share one saleable plan set.
+ * Provider-specific validity remains owned by the registered adapter. */
+function achbotSaleablePlans(mysqli $db,?int $server=null,?int $category=null): array {
+    require_once __DIR__.'/../Panel/ProviderRuntime.php';
+    $sql="SELECT p.*,si.title AS server_title,si.flag AS server_flag,si.ucount AS capacity
+        FROM server_plans p JOIN server_config sc ON sc.id=p.server_id
+        JOIN server_info si ON si.id=p.server_id JOIN server_categories cat ON cat.id=p.catid
+        WHERE sc.type IN (".achbotProviderSqlTypes().")
+        AND si.active=1 AND si.state=1 AND si.ucount>0 AND p.active=1 AND cat.active=1";
+    $types='';$values=[];
+    if ($server!==null) {$sql.=' AND p.server_id=?';$types.='i';$values[]=$server;}
+    if ($category!==null) {$sql.=' AND p.catid=?';$types.='i';$values[]=$category;}
+    $s=achbotProviderStatement($db,$sql.' ORDER BY p.id',$types,$values);
+    $rows=$s->get_result()->fetch_all(MYSQLI_ASSOC);$s->close();
+    return array_values(array_filter($rows,static fn($p)=>achbotSupportsPlan($db,(int)$p['id'],(int)$p['inbound_id'],(int)$p['server_id'])));
+}

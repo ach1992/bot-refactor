@@ -25,33 +25,42 @@ function achbotCustomerHasPaymentMethod(mysqli $db,int $userId,array $state): bo
     return false;
 }
 
-if(($data == "agentOneBuy" || $data=='buySubscription' || $data == "agentMuchBuy") && ($botState['sellState']=="on" || ($from_id == $admin || $userInfo['isAdmin'] == true))){
-    if(!achbotCustomerHasPaymentMethod($connection,(int)$from_id,$botState)){
-        alert(\achbotMessage('legacy_messages.selling_is_off'));
-        exit();
+if(in_array($data,['agentOneBuy','buySubscription','agentMuchBuy'],true)){
+    $shortcut=($customerShortcut??null)==='buy';
+    $isAdmin=$from_id==$admin || !empty($userInfo['isAdmin']);
+    if ((($botState['sellState']??'off')!=='on' && !$isAdmin) ||
+        !achbotCustomerHasPaymentMethod($connection,(int)$from_id,$botState)){
+        if ($shortcut) sendMessage(\achbotMessage('legacy_messages.selling_is_off'),null,'HTML');
+        else alert(\achbotMessage('legacy_messages.selling_is_off'));
+        return;
     }
-    if($data=="buySubscription") $buyType = "none";
-    elseif($data=="agentOneBuy") $buyType = "one";
-    elseif($data== "agentMuchBuy") $buyType = "much";
-    
-    $stmt = $connection->prepare("SELECT si.* FROM `server_info` si INNER JOIN `server_config` sc ON sc.`id`=si.`id` AND sc.`type` IN (".achbotProviderSqlTypes().") WHERE si.`active`=1 and si.`state`=1 and si.`ucount` > 0 ORDER BY si.`id` ASC");
-    $stmt->execute();
-    $respd = $stmt->get_result();
-    $stmt->close();
-    if($respd->num_rows==0){
-        alert(\achbotMessage('legacy_messages.no_server_available'));
-        exit;
+    if ($shortcut && ($botState['agencyState']??'off')==='on' && (int)$userInfo['is_agent']===1) {
+        $keyboard=[[
+            ['text'=>\achbotMessage('legacy_buttons.agent_one_buy'),'callback_data'=>'agentOneBuy'],
+            ['text'=>\achbotMessage('legacy_buttons.agent_much_buy'),'callback_data'=>'agentMuchBuy']
+        ],[['text'=>\achbotMessage('legacy_buttons.back_to_main'),'callback_data'=>'mainMenu']]];
+        sendMessage(\achbotMessage('admin_settings.config.get_callback_from_command.message.ce7759512b'),json_encode(['inline_keyboard'=>$keyboard]),'HTML');
+        return;
     }
-    $keyboard = [];
-    while($cat = $respd->fetch_assoc()){
-        $id = $cat['id'];
-        $name = $cat['title'];
-        $flag = $cat['flag'];
-        $keyboard[] = ['text' => "$flag $name", 'callback_data' => "selectServer{$id}_{$buyType}"];
+    $buyType=match($data){'agentOneBuy'=>'one','agentMuchBuy'=>'much',default=>'none'};
+    if ($buyType!=='none' && (int)$userInfo['is_agent']!==1) return;
+    $servers=[];
+    foreach (achbotSaleablePlans($connection) as $p) $servers[(int)$p['server_id']]=$p;
+    ksort($servers);
+    if(!$servers){
+        if ($shortcut) sendMessage(\achbotMessage('legacy_messages.no_server_available'),null,'HTML');
+        else alert(\achbotMessage('legacy_messages.no_server_available'));
+        return;
     }
-    $keyboard = array_chunk($keyboard,1);
+    $keyboard=[];
+    foreach($servers as $id=>$p){
+        $keyboard[] = [['text'=>$p['server_flag'].' '.$p['server_title'],'callback_data'=>"selectServer{$id}_{$buyType}"]];
+    }
     $keyboard[] = [['text'=>\achbotMessage('legacy_buttons.back_to_main'),'callback_data'=>"mainMenu"]];
-    editText($message_id, \achbotMessage('legacy_messages.buy_sub_select_location'), json_encode(['inline_keyboard'=>$keyboard]));
+    $markup=json_encode(['inline_keyboard'=>$keyboard]);
+    if ($shortcut) sendMessage(\achbotMessage('legacy_messages.buy_sub_select_location'),$markup,'HTML');
+    else editText($message_id, \achbotMessage('legacy_messages.buy_sub_select_location'), $markup);
+    return;
 }
 
 if($data=='createMultipleAccounts' && ($from_id == $admin || $userInfo['isAdmin'] == true)){

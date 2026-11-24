@@ -114,7 +114,6 @@ return [
         'my_info' => '🔐 حساب کاربری',
         'my_subscriptions' => '🔄 مشاهده اشتراک‌ها',
         'buy_subscriptions' => '🛍 خرید اشتراک جدید',
-        'shared_existence' => '❕موجودی اشتراکی',
         'individual_existence' => '❗️موجودی اختصاصی',
         'application_links' => '📚 آموزش و قوانین',
         'search_config' => '➕ افزودن اشتراک',
@@ -157,8 +156,6 @@ return [
         'bot.my_info.button.2aa445c2af' => '🔀 جابجایی موجودی',
         'bot.my_info.message.4fb6af58ae' => ['text' => '' . "\n" . '📊 اطلاعات حساب شما:' . "\n" . '' . "\n" . '🎫 شناسه عددی: <code>{from_id}</code>' . "\n" . '🔖 نام کاربری: @{username}' . "\n" . '👤 اسم: {first_name}' . "\n" . '💰 موجودی: <b>{myWallet}</b>' . "\n" . '' . "\n" . '🌐 تعداد کل اشتراک ها: <b>{totalBuys}</b> عدد' . "\n" . '' . "\n" . '💡 پیشنهاد می کنیم همیشه کیف پول خودتون رو قبل از پایان اکانت یا تمام شدن حجم شارژ کنید تا هر زمان که خواستید بدون نیاز به تایید ادمین بتوانید اکانت خود را تمدید کنید.' . "\n" . '', 'parameters' => ['from_id', 'username', 'first_name', 'myWallet', 'totalBuys']],
         // bot.process_callback_query
-        'bot.process_callback_query.message.616c172303' => '⛔️ سیستم فروش غیرفعال است.',
-        'bot.process_callback_query.message.dda719f1cb' => '🟢 موجودی پلن اشتراکی:',
         'bot.process_callback_query.message.8386c28679' => '📋 نام کاربری اشتراک موردنظر را وارد کنید:',
         'bot.process_callback_query.message.a4712f82bb' => 'ℹ️ این درخواست قبلاً ثبت شده است. برای شروع جدید دوباره دکمه را انتخاب کنید.',
         // bot.recive_applications
@@ -967,7 +964,6 @@ return [
         // config.get_gate_ways_keys
         'config.get_gate_ways_keys.text.2cc98f7f7c' => ' تومان',
         // config.get_callback_from_command
-        'config.get_callback_from_command.message.616c172303' => '⛔️ سیستم فروش غیرفعال است.',
         'config.get_callback_from_command.message.ce7759512b' => '⛔️ لطفا از دکمه خرید تکی یا خرید انبوه استفاده کنید.',
         // config.get_order_detail_keys
         'config.get_order_detail_keys.alert.8338c921ca' => '⚠️ امکان فعالسازی تمدید خودکار برای این نوع اشتراک وجود ندارد.',

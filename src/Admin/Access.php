@@ -200,6 +200,36 @@ function achbotAdminDeny(): void {
     if (!empty($GLOBALS['callbackId'])) answerCallbackQuery($GLOBALS['callbackId'],$message,true);
     else sendMessage($message,null,'HTML');
 }
+/** Content operations never authorize arbitrary configuration objects.
+ * Recheck role inside the mutation transaction using the existing role lock. */
+function achbotDeleteContentSetting(mysqli $db,int $actor,int $primary,int $id,string $kind): bool {
+    if ($id<=0) return false;
+    require_once __DIR__.'/../Presentation/MainMenu.php';
+    $scope=match($kind) {
+        'main'=>achbotMainButtonNamespace(),
+        'ticket'=>"BINARY type=BINARY 'TICKETS_CATEGORY'",
+        default=>null,
+    };
+    if ($scope===null) return false;
+    $begun=false;
+    try {
+        if (!$db->begin_transaction()) return false;
+        $begun=true;
+        if (!achbotAdminCanLocked($db,$actor,$primary,'operations'))
+            throw new DomainException('content_setting_denied');
+        $s=$db->prepare('DELETE FROM setting WHERE id=? AND '.$scope);
+        if (!$s || !$s->bind_param('i',$id) || !$s->execute())
+            throw new RuntimeException('content_setting_delete_failed');
+        $deleted=$s->affected_rows===1;$s->close();
+        if (!$db->commit()) throw new RuntimeException('content_setting_commit_unconfirmed');
+        return $deleted;
+    } catch (Throwable $e) {
+        if ($begun) try {$db->rollback();} catch (Throwable $ignored) {}
+        error_log('achbot_content_setting_delete_deferred actor='.$actor.' id='.$id.' class='.get_class($e));
+        return false;
+    }
+}
+
 /** Owner-only idempotent staff assignment; no new tables or private config edits. */
 function achbotAdminAssignLevel(mysqli $db,int $owner,int $primary,int $target,?string $level): bool {
     if ($owner<=0 || $owner!==$primary || $target<=0 || $target===$primary ||
@@ -219,7 +249,7 @@ function achbotAdminAssignLevel(mysqli $db,int $owner,int $primary,int $target,?
         if ($level===null) {
             $s=$db->prepare('DELETE FROM setting WHERE type=?');$s->bind_param('s',$key);
         } elseif ($roles) {
-            $s=$db->prepare('UPDATE setting SET value=? WHERE id=?');$roleId=(int)$roles[0]['id'];$s->bind_param('si',$level,$roleId);
+            $s=$db->prepare('UPDATE setting SET value=? WHERE id=? AND type=?');$roleId=(int)$roles[0]['id'];$s->bind_param('sis',$level,$roleId,$key);
         } else {
             $s=$db->prepare('INSERT INTO setting(type,value) VALUES(?,?)');$s->bind_param('ss',$key,$level);
         }

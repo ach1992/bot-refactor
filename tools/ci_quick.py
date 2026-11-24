@@ -32,6 +32,7 @@ NATIVE_TESTS = (
     ("wallet_first_fresh_schema", "test_wallet_first_fresh_schema.py"),
     ("current_payment_readiness", "test_post_v9_payment_readiness.py"),
     ("current_sales_discount", "test_current_sales_discount.py"),
+    ("current_customer_routes", "test_current_customer_routes.py"),
     ("wallet_first_hosted", "test_wallet_first_hosted.py"),
     ("wallet_first_manual", "test_wallet_first_manual.py"),
     ("wallet_first_service_execution", "test_wallet_first_service_execution.py"),
@@ -215,6 +216,17 @@ REQUIRED_SCENARIOS = {
     ),
     "gateway_rules": (
         "current_service_history_funding_only_excluded_auto_renew_counted_once",
+    ),
+    "current_customer_routes": (
+        "actual_public_content_namespace_exact_and_no_private_values",
+        "actual_content_deletion_scope_and_staff_capability",
+        "actual_capacity_entry_catalogue_share_current_native_saleability",
+        "actual_standard_agent_single_and_bulk_discount_to_wallet_admission",
+        "actual_custom_discount_uses_original_plan_units_and_name",
+        "actual_full_discount_zero_price_wallet_admission_and_no_replay",
+        "actual_invalid_discount_preserves_card_and_stale_target_consumes_nothing",
+        "actual_shortcuts_and_callback_share_purchase_methods_and_entry_gates",
+        "actual_owned_renewal_discount_and_subscription_shortcut",
     ),
     "current_sales_discount": (
         "actual_sales_keyboard_net_completed_value_wallet_origin_and_original_windows",

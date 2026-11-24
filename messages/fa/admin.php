@@ -328,9 +328,6 @@ return [
         'bot.edit_support_i_d.message.2e136a38a2' => '🔗 نشانی پشتیبانی را بفرستید؛ نام کاربری تلگرام یا نشانی کامل وب پذیرفته می‌شود.' . "\n" . 'نمونهٔ تلگرام: @example_support' . "\n" . 'نمونهٔ وب: https://example.com/support' . "\n" . 'برای پاک‌کردن نشانی، دستور /clear را بفرستید.',
         'bot.edit_support_i_d.message.6279ae207e' => '✅ آیدی پشتیبانی با موفقیت ذخیره شد.',
         // bot.process_callback_query
-        'bot.process_callback_query.text_to_send.6f1f09466a' => '🧭 مرحلهٔ اول' . "\n" . '' . "\n" . '➕ لطفا یک مورد را انتخاب کنید.' . "\n" . '💡 شما می توانید کیف پول خودتون رو قبل از پایان اکانت یا اتمام حجم شارژ کنید تا هر زمان که خواستید بدون نیاز به تایید ادمین بتوانید اکانت جدید خریداری کنید یا تمدید کنید.',
-        'bot.process_callback_query.button.68f5beb4a0' => '⬅️',
-        'bot.process_callback_query.button.b32013f76e' => '➡️',
         'bot.process_callback_query.message.d57aef02e2' => '📨 پیامی که می خواهید کاربر دریافت کند را ارسال کنید.',
         'bot.process_callback_query.button.423ff3a159' => '🔢 تعداد باقیمانده',
         'bot.process_callback_query.button.d9772fd001' => '📋 پلن',
@@ -1196,7 +1193,6 @@ return [
         'config.get_bot_setting_keys.button.3b878712ee' => '🤝 همکاری',
         'config.get_bot_setting_keys.button.c2df8234c5' => '🎁 نوع تخفیف همکاری',
         'config.get_bot_setting_keys.button.546c2c8acc' => '💰 موجودی اختصاصی',
-        'config.get_bot_setting_keys.button.bbc39b9150' => '💰 موجودی اشتراکی',
         'config.get_bot_setting_keys.button.11ee94f26d' => '🎁 اکانت تست',
         'config.get_bot_setting_keys.button.df1c62b99e' => '♻️ تمدید اشتراک',
         'config.get_bot_setting_keys.button.f9a77f614a' => '♻️ تمدید خودکار اشتراک',

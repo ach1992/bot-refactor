@@ -532,7 +532,7 @@ function setSettings($field, $value): bool {
     // A future accidental writer cannot resurrect unsupported BOT_STATES flags.
     static $editable = [
         'agencyState','agencyPlanDiscount','individualExistence',
-        'sharedExistence','testAccount',
+        'testAccount',
         'renewAccountState','renewAutoState','plandelkhahState',
         'changePlanState','increaseTimeState','increaseVolumeState',
         'requirePhone','requireIranPhone','sellState','botState',
@@ -1233,7 +1233,6 @@ function getBotSettingKeys(){
     $renewConfigLink = ($botState['renewConfigLinkState']??'off')=="on"?\achbotMessage('legacy_buttons.on'):\achbotMessage('legacy_buttons.off');
     $updateConfigLink = ($botState['updateConfigLinkState']??'off')=="on"?\achbotMessage('legacy_buttons.on'):\achbotMessage('legacy_buttons.off');
     $individualExistence = ($botState['individualExistence']??'off')=="on"?\achbotMessage('legacy_buttons.on'):\achbotMessage('legacy_buttons.off');
-    $sharedExistence = ($botState['sharedExistence']??'off')=="on"?\achbotMessage('legacy_buttons.on'):\achbotMessage('legacy_buttons.off');
     $testAccount = ($botState['testAccount']??'off')=="on"?\achbotMessage('legacy_buttons.on'):\achbotMessage('legacy_buttons.off');
     $agency = ($botState['agencyState']??'off')=="on"?\achbotMessage('legacy_buttons.on'):\achbotMessage('legacy_buttons.off');
     $agencyPlanDiscount = ($botState['agencyPlanDiscount']??'off')=="on"?\achbotMessage('legacy_buttons.plan_discount'):\achbotMessage('legacy_buttons.server_discount');
@@ -1274,10 +1273,6 @@ function getBotSettingKeys(){
         [
             ['text'=>$individualExistence,'callback_data'=>"changeBotindividualExistence"],
             ['text'=>\achbotMessage('admin_settings.config.get_bot_setting_keys.button.546c2c8acc'),'callback_data'=>"wizwizch"]
-        ],
-        [
-            ['text'=>$sharedExistence,'callback_data'=>"changeBotsharedExistence"],
-            ['text'=>\achbotMessage('admin_settings.config.get_bot_setting_keys.button.bbc39b9150'),'callback_data'=>"wizwizch"]
         ],
         [
             ['text'=>$testAccount,'callback_data'=>"changeBottestAccount"],
@@ -2904,111 +2899,11 @@ function achbotLegacyModerationTransition(
 
 //---
 
-function getCallbackFromCommand($command) {
-    global $connection, $userInfo, $from_id, $admin, $botState, $chat_id;
-    $isRealAdmin = ($from_id == $admin || !empty($userInfo['isAdmin']));
-
-    switch ($command) {
-        case '/buy':
-            if (($botState['sellState'] ?? 'off') !== "on" && !$isRealAdmin) {
-                sendMessage(\achbotMessage('admin_settings.config.get_callback_from_command.message.616c172303'), null, "HTML", $chat_id);
-                exit();
-            }
-
-            if (($botState['cartToCartState'] ?? 'off') == "off" && ($botState['giftCardState'] ?? 'off') == "off" && ($botState['manualUsdtState'] ?? 'off') == "off" && ($botState['walletState'] ?? 'off') == "off") {
-                sendMessage(\achbotMessage('admin_settings.config.get_callback_from_command.message.616c172303'), null, "HTML", $chat_id);
-                exit();
-            }
-
-            if (($botState['agencyState'] ?? 'off') == "on" && !empty($userInfo['is_agent']) && $userInfo['is_agent'] == 1) {
-                $keyboard = [
-                    [
-                        ['text' => \achbotMessage('legacy_buttons.agent_one_buy'), 'callback_data' => "agentOneBuy"],
-                        ['text' => \achbotMessage('legacy_buttons.agent_much_buy'), 'callback_data' => "agentMuchBuy"]
-                    ],
-                    [['text' => \achbotMessage('legacy_buttons.back_to_main'), 'callback_data' => "mainMenu"]]
-                ];
-
-                sendMessage(
-                    \achbotMessage('admin_settings.config.get_callback_from_command.message.ce7759512b'),
-                    json_encode(['inline_keyboard' => $keyboard]),
-                    "HTML",
-                    $chat_id
-                );
-                exit();
-            }
-
-            return 'buySubscription';
-
-        case '/mysubs':
-            if (($botState['agencyState'] ?? 'off') == "on" && !empty($userInfo['is_agent']) && $userInfo['is_agent'] == 1) {
-                return 'agentConfigsList';
-            } else {
-                return 'mySubscriptions';
-            }
-
-        default:
-            return null;
-    }
-}
-
-// Reuse the authenticated update decoded above. Never reparse arbitrary
-// payment/Cron request bodies as Telegram messages or callbacks.
-// Administrative toggle dispatch is intentionally deferred to bot.php AFTER check().
-
-if (isset($update->message->text)) {
-    $txt = trim($update->message->text);
-    $mappedText = null;
-
-    if (strpos($txt, "/start ") === 0) {
-        $payload = trim(substr($txt, 7));
-
-        if (!ctype_digit($payload)) {
-            $cmd = strtolower(explode("_", $payload, 2)[0]);
-
-            if ($cmd === "mysubs") {
-                $mappedText = "/mysubs";
-            } elseif ($cmd === "buy") {
-                $mappedText = "/buy";
-            }
-        }
-    } elseif ($txt === "/mysubs" || $txt === "/buy") {
-        $mappedText = $txt;
-    }
-
-    if ($mappedText !== null && isset($update->message)) {
-        $from_id = $update->message->from->id ?? null;
-        $chat_id = $update->message->chat->id ?? null;
-
-        $isRealAdmin = ($from_id == $admin || !empty($userInfo['isAdmin']));
-
-        if ($mappedText === "/buy") {
-            if (($botState['sellState'] ?? 'off') !== "on" && !$isRealAdmin) {
-                sendMessage(\achbotMessage('admin_settings.config.get_callback_from_command.message.616c172303'), null, "HTML", $chat_id);
-                exit;
-            }
-
-            if (($botState['cartToCartState'] ?? 'off') == "off" && ($botState['giftCardState'] ?? 'off') == "off" && ($botState['manualUsdtState'] ?? 'off') == "off" && ($botState['walletState'] ?? 'off') == "off") {
-                sendMessage(\achbotMessage('admin_settings.config.get_callback_from_command.message.616c172303'), null, "HTML", $chat_id);
-                exit;
-            }
-        }
-
-        $callback_data = getCallbackFromCommand($mappedText);
-
-        if ($callback_data) {
-            processCallbackQuery($callback_data, $chat_id, $from_id);
-            exit;
-        }
-    }
-}
-// END By ACh
-
 // BEGIN Apply Discount
 require_once __DIR__ . '/src/Finance/Discounts.php';
 function getMainMenuButtonsKeys(){
     global $connection;
-    $stmt = $connection->prepare("SELECT * FROM `setting` WHERE `type` LIKE '%MAIN_BUTTONS%'");
+    $stmt = $connection->prepare("SELECT * FROM `setting` WHERE ".achbotMainButtonNamespace());
     $stmt->execute();
     $buttons = $stmt->get_result();
     $stmt->close();
@@ -3017,7 +2912,7 @@ function getMainMenuButtonsKeys(){
     if($buttons->num_rows > 0){
         while($row = $buttons->fetch_assoc()){
             $rowId = $row['id'];
-            $title = str_replace("MAIN_BUTTONS","", $row['type']);
+            $title = substr($row['type'],12);
             $answer = $row['value'];
             $keys[] = [
                         ['text'=>\achbotMessage('admin_settings.config.get_agents_list.button.2b2966a54e'),'callback_data'=>"delMainButton" . $rowId],

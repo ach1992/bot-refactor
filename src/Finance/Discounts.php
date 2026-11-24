@@ -216,12 +216,10 @@ function applyDiscountToPay($connection, $rowId, $discountCode, $from_id, $usern
         $started=true;
         achbotPayUxLockDraftOwner($connection,(int)$from_id);
         $current=achbotProviderRow($connection,'SELECT * FROM pays WHERE id=? FOR UPDATE','i',[(int)$rowId]);
-        if (!$current || $current!==$payInfo || $current['checkout_operation_id']!==null ||
-            !achbotPayUxCurrentDraft($current) ||
-            !achbotPayUxUnclaimedDraftUsable($connection,$current,true) ||
-            achbotProviderRow($connection,'SELECT id FROM payment_attempts WHERE pay_row_id=? LIMIT 1 FOR UPDATE','i',[(int)$rowId]) ||
-            achbotProviderRow($connection,'SELECT id FROM service_effects WHERE pay_row_id=? LIMIT 1 FOR UPDATE','i',[(int)$rowId]))
-            throw new DomainException('discount_draft_closed');
+        if (!$current || $current!==$payInfo) throw new DomainException('discount_draft_changed');
+        $view=achbotCheckoutDraftViewLocked($connection,$current,(int)$from_id,$botState);
+        if (!empty($view['context']['discount_applied']))
+            throw new DomainException('discount_already_applied');
         $locked=achbotProviderRow($connection,'SELECT * FROM discounts WHERE id=? FOR UPDATE','i',[(int)$discountInfo['id']]);
         if (!$locked || $locked!==$discountInfo ||
             ((int)$locked['expire_date']!==0 && (int)$locked['expire_date']<=time()) ||
@@ -237,17 +235,24 @@ function applyDiscountToPay($connection, $rowId, $discountCode, $from_id, $usern
         if ($maxDiscount>0) $discountValue=min($maxDiscount,$discountValue);
         $discountValue=max(0,min($price,$discountValue));
         $newPrice=$price-$discountValue;
+        if ($newPrice===0 && !achbotPayUxAudienceAllowed($connection,'wallet',(int)$from_id,true,$current['type']))
+            throw new DomainException('discount_zero_price_wallet_unavailable');
+        $view['context']['discount_applied']=true;
+        $encodedContext=achbotServiceJson($view['context']);
+
         $query=$count!=-1
             ? 'UPDATE discounts SET expire_count=expire_count-1,used_by=? WHERE id=?'
             : 'UPDATE discounts SET used_by=? WHERE id=?';
         $stmt=achbotProviderStatement($connection,$query,'si',[$encodeUsedBy,(int)$discountInfo['id']]);
         $n=$stmt->affected_rows;$stmt->close();
         if ($n!==1) throw new RuntimeException('discount_counter_failed');
-        $stmt=achbotProviderStatement($connection,'UPDATE pays SET price=? WHERE id=?','ii',[$newPrice,(int)$rowId]);
+        $stmt=achbotProviderStatement($connection,'UPDATE pays SET price=?,checkout_draft_context=? WHERE id=?','isi',[$newPrice,$encodedContext,(int)$rowId]);
         $stmt->close();
         if (!$connection->commit()) throw new RuntimeException('discount_commit_unknown');
         $started=false;
         $price=$newPrice;
+        $payInfo['price']=$newPrice;$payInfo['checkout_draft_context']=$encodedContext;
+        $view['pay']=$payInfo;
     } catch (Throwable $e) {
         if ($started) {try {$connection->rollback();} catch (Throwable $ignored) {}}
         sendMessage(\achbotMessage('legacy_messages.not_valid_discount_code'),null,'HTML');
@@ -287,6 +292,7 @@ function applyDiscountToPay($connection, $rowId, $discountCode, $from_id, $usern
         'success'        => true,
         'price'          => $price,
         'hash_id'        => $hash_id,
+        'view'           => $view,
         'discount_value' => $discountValue,
         'discount_text'  => $discountText,
         'payInfo'        => $payInfo,

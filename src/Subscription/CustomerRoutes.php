@@ -54,7 +54,8 @@ if (
     $stmt->close();
 
     if ($orders->num_rows == 0) {
-        alert(\achbotMessage('legacy_messages.you_dont_have_config'));
+        if (($customerShortcut??null)==='mysubs') sendMessage(\achbotMessage('legacy_messages.you_dont_have_config'),null,'HTML');
+        else alert(\achbotMessage('legacy_messages.you_dont_have_config'));
         exit;
     }
 
@@ -109,7 +110,7 @@ if (
         'callback_data' => "mainMenu"
     ]];
 
-    if (isset($data)) {
+    if (($customerShortcut??null)!=='mysubs') {
         editText(
             $message_id,
             \achbotMessage('legacy_messages.select_one_to_show_detail'),

@@ -1440,3 +1440,28 @@ Discount buyer/non-buyer audiences reuse the same completed-purchase fact
 as gateway eligibility. Eligibility and target restrictions are checked again
 inside the owner/draft/discount transaction before consumption. A stored-order
 audience remains distinct from gateway active-entitlement classification.
+
+### Current customer continuation and settings namespace
+
+- Public custom-menu content is limited to the literal case-sensitive
+  MAIN_BUTTONS prefix with a nonempty label. Operator content deletion
+  rechecks the operations capability under lock and deletes only the
+  exact authorized main-menu or TICKETS_CATEGORY record. Numeric IDs
+  never grant access to unrelated settings.
+- Standard, custom, bulk and renewal checkout presentation uses the
+  original owned unclaimed draft and its pinned entitlement and target.
+  A single discount redemption route rechecks that same draft and its
+  current admissible target before atomic price/counter updates. A
+  redeemed draft cannot consume a second code; a zero-priced result
+  requires the existing Wallet admission. The renderer uses the
+  original quantity, price and purchase mode, including Back navigation.
+- The retired shared-inbound availability menu and settings toggle have
+  no supported Native saleable-plan meaning. Individual capacity and
+  purchase selection share the current provider-validated active
+  catalogue with available server capacity. Retained provenance is
+  not deleted merely because a historical UI classification is retired.
+- Genuine private /buy and /mysubs (including supported /start payloads
+  and membership continuation) use normal authenticated navigation,
+  registration, membership, bot-state and phone gates, followed by the
+  existing purchase or subscription route. No configuration-time
+  customer dispatch remains. No additional financial executor is added.

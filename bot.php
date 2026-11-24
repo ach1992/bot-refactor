@@ -76,6 +76,10 @@ if(is_numeric($checkSpam)){
     exit();
 }
 
+// Interpret genuine private shortcuts as Home navigation before payment-step dispatch.
+require_once __DIR__.'/src/Telegram/UserProfile.php';
+if (is_object($update->message??null) && achbotCustomerShortcut($update,(int)$from_id)!==null) $text='/start';
+
 // Reject malformed direct wallet and manual-choice callback frames before
 // another payment route can interpret a substring as a different action.
 if (is_string($data) && preg_match(
@@ -101,8 +105,10 @@ if ($achbotManualCryptoResult === null) return;
 
 // "عضو شدم" is a navigation continuation, not proof of membership. Only
 // the current authenticated getChatMember response can clear the join gate.
+require_once __DIR__.'/src/Telegram/UserProfile.php';
+$customerShortcut=achbotCustomerShortcut($update??null,(int)$from_id);
 $isJoinCallback = is_string($data) &&
-    preg_match('/\AhaveJoined(?:\/start(?: [1-9][0-9]{0,18})?)?\z/D', $data) === 1;
+    (preg_match('/\AhaveJoined(?:\/start(?: [1-9][0-9]{0,18})?)?\z/D', $data) === 1 || ($customerShortcut!==null && is_object($update->callback_query??null)));
 if ($isJoinCallback) {
     // The join button is usable only in the same actor's private bot chat.
     // Validate before potentially deleting its message or writing identity.
@@ -140,6 +146,7 @@ if ($joinRequired) {
         $startContinuation = is_string($text) &&
             preg_match('/\A\/[Ss]tart(?: [1-9][0-9]{0,18})?\z/D', $text) === 1
                 ? '/start' . substr($text, strlen('/start')) : '/start';
+        if ($customerShortcut!==null) $startContinuation='/start '.$customerShortcut;
         $joinKeyboard = [];
         if ($joinUrl !== '') {
             $joinKeyboard[] = [
@@ -163,8 +170,8 @@ if ($robotState === "off" && $from_id != $admin) {
 // Registration belongs after verified forced membership, but before the
 // existing phone gate and first-start menu. The helper owns all concurrent
 // first-start/referral writes; prior users retain their existing state.
-$isStart = is_string($text) &&
-    preg_match('/\A\/[Ss]tart(?:@[A-Za-z0-9_]{1,32})?(?:\s|$)/D', $text) === 1;
+$isStart = $customerShortcut!==null || (is_string($text) &&
+    preg_match('/\A\/[Ss]tart(?:@[A-Za-z0-9_]{1,32})?(?:\s|$)/D', $text) === 1);
 if ($isStart) {
     $inviteFromStart = 0;
     if (preg_match('/\A\/[Ss]tart ([1-9][0-9]{0,18})\z/D', trim($text), $startMatch) === 1) {
@@ -262,7 +269,7 @@ if (preg_match('/^\/([Ss]tart)/', $text) || $text == \achbotMessage('legacy_butt
     $isRealAdmin  = ($from_id == $admin || (!empty($userInfo['isAdmin']) && $userInfo['isAdmin'] == true));
     $canBuy       = (($botState['sellState'] ?? 'off') == "on" || $isRealAdmin);
 
-    if (isset($data) && ($data == "mainMenu" || $data == "evidenceHome" || $paymentHome)) {
+    if ($customerShortcut===null && isset($data) && ($data == "mainMenu" || $data == "evidenceHome" || $paymentHome)) {
         // Legacy Home buttons can be on untracked financial/support evidence.
         // Always send the actor's own menu; never edit/delete the source or
         // read another customer's invoice merely to navigate Home.
@@ -312,7 +319,7 @@ if (preg_match('/^\/([Ss]tart)/', $text) || $text == \achbotMessage('legacy_butt
             achbotNotifyAdmins('sendMessage', ['text'=>$msg, 'reply_markup'=>$keys, 'parse_mode'=>'HTML']);
         }
 
-        sendMessage(\achbotCurrentMessage('start_message'), getMainKeys(), 'HTML');
+        if ($customerShortcut===null || $isFirstStart) sendMessage(\achbotCurrentMessage('start_message'), getMainKeys(), 'HTML');
 
         if ($isFirstStart) {
 
@@ -338,6 +345,12 @@ if (preg_match('/^\/([Ss]tart)/', $text) || $text == \achbotMessage('legacy_butt
         }
     }
 
+    if ($customerShortcut!==null) {
+        $userInfo['step']='none';$text='';
+        $data=$customerShortcut==='buy'?'buySubscription':(!empty($userInfo['is_agent'])?'agentConfigsList':'mySubscriptions');
+        if ($customerShortcut==='buy') require __DIR__.'/src/Purchase/EntryAndBulk.php';
+        else require __DIR__.'/src/Subscription/CustomerRoutes.php';
+    }
     exit;
 }
 
@@ -459,7 +472,7 @@ if(($data=="botSettings" or preg_match('/^changeBot([A-Za-z0-9_]+)$/D',$data,$ma
         // Keep this explicit list in sync with getBotSettingKeys().
         $editableBotToggles=[
             'agencyState','agencyPlanDiscount','individualExistence',
-            'sharedExistence','testAccount','changePlanState',
+            'testAccount','changePlanState',
             'renewAccountState','renewAutoState','plandelkhahState',
             'increaseTimeState','increaseVolumeState',
             'requirePhone','requireIranPhone','sellState','botState',
@@ -1201,156 +1214,6 @@ if($userInfo['step'] == "editSupportID" && ($from_id == $admin || $userInfo['isA
     exit();
 }
 
-// Command Created by ACh
-
-function processCallbackQuery($data, $chat_id, $from_id) {
-    global $connection, $userInfo, $from_id, $admin, $botState;
-    if ($data == 'buySubscription') {
-
-        $isRealAdmin = ($from_id == $admin || $userInfo['isAdmin'] == true);
-
-        if (($botState['sellState']??'off') == "on" || $isRealAdmin) {
-
-            if (($botState['cartToCartState'] ?? 'off') == "off" && ($botState['giftCardState'] ?? 'off') == "off" && ($botState['manualUsdtState'] ?? 'off') == "off" && ($botState['walletState'] ?? 'off') == "off") {
-                sendMessage(\achbotMessage('bot.bot.process_callback_query.message.616c172303'), null, "HTML", $chat_id);
-                exit();
-            }
-
-            $buyType = "none";
-
-            $stmt = $connection->prepare("SELECT * FROM `server_info` WHERE `active`=1 AND `state`=1 AND `ucount`>0 ORDER BY `id` ASC");
-            $stmt->execute();
-            $respd = $stmt->get_result();
-            $stmt->close();
-
-            if ($respd->num_rows == 0) {
-                sendMessage(\achbotMessage('legacy_messages.no_server_available'), null, "HTML", $chat_id);
-                exit();
-            }
-
-            $keyboard = [];
-            while ($cat = $respd->fetch_assoc()) {
-                $id   = $cat['id'];
-                $name = $cat['title'];
-                $flag = $cat['flag'];
-
-                $keyboard[] = [
-                    'text' => "$flag $name",
-                    'callback_data' => "selectServer{$id}_{$buyType}"
-                ];
-            }
-
-            $keyboard = array_chunk($keyboard, 1);
-            $keyboard[] = [['text' => \achbotMessage('legacy_buttons.back_to_main'), 'callback_data' => "mainMenu"]];
-
-            $textToSend = \achbotMessage('bot.bot.process_callback_query.text_to_send.6f1f09466a');
-
-            sendMessage($textToSend, json_encode(['inline_keyboard' => $keyboard]), "HTML", $chat_id);
-
-        } else {
-            sendMessage(\achbotMessage('bot.bot.process_callback_query.message.616c172303'), null, "HTML", $chat_id);
-        }
-    }
-
-    elseif (
-        $data == 'mySubscriptions' ||
-        $data == "agentConfigsList" ||
-        preg_match('/(changeAgentOrder|changeOrdersPage)(\d+)/', $data, $match)
-    ) {
-        $results_per_page = 50;
-
-        if (!isset($match) || !is_array($match)) {
-            $match = [];
-        }
-
-        $page = isset($match[2]) ? (int)$match[2] : 1;
-        if ($page < 1) {
-            $page = 1;
-        }
-
-        $isAgentView = (
-            $data == "agentConfigsList" ||
-            (isset($match[1]) && $match[1] == "changeAgentOrder")
-        );
-
-        $stmt = $connection->prepare("SELECT * FROM `orders_list` WHERE `userid`=? AND `status`=1");
-        $stmt->bind_param("i", $from_id);
-        $stmt->execute();
-        $number_of_result = $stmt->get_result()->num_rows;
-        $stmt->close();
-
-        $number_of_page = ceil($number_of_result / $results_per_page);
-        $page_first_result = ($page - 1) * $results_per_page;
-
-        $stmt = $connection->prepare("SELECT * FROM `orders_list` WHERE `userid`=? AND `status`=1 ORDER BY `id` DESC LIMIT ?, ?");
-        $stmt->bind_param("iii", $from_id, $page_first_result, $results_per_page);
-        $stmt->execute();
-        $orders = $stmt->get_result();
-        $stmt->close();
-
-        if ($orders->num_rows == 0) {
-            sendMessage(\achbotMessage('legacy_messages.you_dont_have_config'), null, "HTML", $chat_id);
-            exit;
-        }
-
-        $keyboard = [];
-        while ($cat = $orders->fetch_assoc()) {
-            $id     = $cat['id'];
-            $remark = $cat['remark'];
-
-            $keyboard[] = [
-                'text' => $remark,
-                'callback_data' => "orderDetails$id"
-            ];
-        }
-
-        $keyboard = array_chunk($keyboard, 1);
-
-        $prev = $page - 1;
-        $next = $page + 1;
-
-        $buttons = [];
-
-        if ($prev > 0) {
-            $buttons[] = [
-                'text' => \achbotMessage('bot.bot.process_callback_query.button.68f5beb4a0'),
-                'callback_data' => $isAgentView ? "changeAgentOrder$prev" : "changeOrdersPage$prev"
-            ];
-        }
-
-        if ($page < $number_of_page) {
-            $buttons[] = [
-                'text' => \achbotMessage('bot.bot.process_callback_query.button.b32013f76e'),
-                'callback_data' => $isAgentView ? "changeAgentOrder$next" : "changeOrdersPage$next"
-            ];
-        }
-
-        if (!empty($buttons)) {
-            $keyboard[] = $buttons;
-        }
-
-        if ($isAgentView) {
-            $keyboard[] = [[
-                'text' => \achbotMessage('legacy_buttons.search_agent_config'),
-                'callback_data' => "searchAgentConfig"
-            ]];
-        }
-
-        $keyboard[] = [[
-            'text' => \achbotMessage('legacy_buttons.back_to_main'),
-            'callback_data' => "mainMenu"
-        ]];
-
-        $textToSend   = \achbotMessage('legacy_messages.select_one_to_show_detail');
-        $keyboardData = json_encode(['inline_keyboard' => $keyboard]);
-
-        sendMessage($textToSend, $keyboardData, "HTML", $chat_id);
-        exit;
-    }
-}
-
-// End Command Created by ACh
-
 if ((require __DIR__ . '/src/Purchase/EntryAndBulk.php') === null) return;
 if($data=="messageToSpeceficUser" && ($from_id == $admin || $userInfo['isAdmin'] == true)){
     delMessage();
@@ -1384,81 +1247,22 @@ if ((require __DIR__ . '/src/Purchase/TrialCatalogue.php') === null) return;
 if ((require __DIR__ . '/src/Purchase/SelectPlan.php') === null) return;
 if (($achbotV8Result = require __DIR__ . '/src/Finance/Routes/Checkout.php') === null) return;
 if ($achbotV8Result === '__ACHBOT_V8_GOTO_START__') goto GOTOSTART;
-if($data=="availableServers"){
-    $stmt = $connection->prepare("SELECT * FROM `server_plans` WHERE `acount` != 0 AND `inbound_id` != 0");
-    $stmt->execute();
-    $serversList = $stmt->get_result();
-    $stmt->close();
-
-    $keys = array();
-    $keys[] = [
+if($data=="availableServers2" && ($botState['individualExistence']??'off')==='on'){
+    $keys = [[
         ['text'=>\achbotMessage('bot.bot.process_callback_query.button.423ff3a159'),'callback_data'=>"wizwizch"],
         ['text'=>\achbotMessage('bot.bot.process_callback_query.button.d9772fd001'),'callback_data'=>"wizwizch"],
         ['text'=>\achbotMessage('bot.bot.process_callback_query.button.0b29754285'),'callback_data'=>"wizwizch"]
+    ]];
+    foreach (achbotSaleablePlans($connection) as $plan) {
+        $keys[] = [
+            ['text'=>$plan['capacity'].\achbotMessage('bot.bot.process_callback_query.text.d789169bd3'),'callback_data'=>"wizwizch"],
+            ['text'=>$plan['title'],'callback_data'=>"wizwizch"],
+            ['text'=>$plan['server_title'],'callback_data'=>"wizwizch"]
         ];
-    while($file_detail = $serversList->fetch_assoc()){
-        $days = $file_detail['days'];
-        $title = $file_detail['title'];
-        $server_id = $file_detail['server_id'];
-        $acount = $file_detail['acount'];
-        $inbound_id = $file_detail['inbound_id'];
-        $stmt = $connection->prepare("SELECT * FROM `server_info` WHERE `id` = ?");
-        $stmt->bind_param("i", $server_id);
-        $stmt->execute();
-        $name = $stmt->get_result();
-        $stmt->close();
-
-        if($name->num_rows>0){
-            $name = $name->fetch_assoc()['title'];
-
-            $keys[] = [
-                ['text'=>$acount . \achbotMessage('bot.bot.process_callback_query.text.d789169bd3'),'callback_data'=>"wizwizch"],
-                ['text'=>$title??" ",'callback_data'=>"wizwizch"],
-                ['text'=>$name??" ",'callback_data'=>"wizwizch"]
-                ];
-        }
     }
     $keys[] = [['text'=>\achbotMessage('legacy_buttons.back_button'),'callback_data'=>"mainMenu"]];
-    $keys = json_encode(['inline_keyboard'=>$keys]);
-    editText($message_id, \achbotMessage('bot.bot.process_callback_query.message.dda719f1cb'), $keys);
-}
-if($data=="availableServers2"){
-    $stmt = $connection->prepare("SELECT * FROM `server_plans` WHERE `inbound_id` = 0");
-    $stmt->execute();
-    $serversList = $stmt->get_result();
-    $stmt->close();
-
-    $keys = array();
-    $keys[] = [
-        ['text'=>\achbotMessage('bot.bot.process_callback_query.button.423ff3a159'),'callback_data'=>"wizwizch"],
-        ['text'=>\achbotMessage('bot.bot.process_callback_query.button.0b29754285'),'callback_data'=>"wizwizch"]
-        ];
-    while($file_detail2 = $serversList->fetch_assoc()){
-        $days2 = $file_detail2['days'];
-        $title2 = $file_detail2['title'];
-        $server_id2 = $file_detail2['server_id'];
-        $inbound_id2 = $file_detail2['inbound_id'];
-
-        $stmt = $connection->prepare("SELECT * FROM `server_info` WHERE `id` = ?");
-        $stmt->bind_param("i", $server_id2);
-        $stmt->execute();
-        $name = $stmt->get_result();
-        $stmt->close();
-
-        if($name->num_rows>0){
-            $sInfo = $name->fetch_assoc();
-            $name = $sInfo['title'];
-            $acount2 = $sInfo['ucount'];
-
-            $keys[] = [
-                ['text'=>$acount2 . \achbotMessage('bot.bot.process_callback_query.text.d789169bd3'),'callback_data'=>"wizwizch"],
-                ['text'=>$title2??" ",'callback_data'=>"wizwizch"],
-                ];
-        }
-    }
-    $keys[] = [['text'=>\achbotMessage('legacy_buttons.back_button'),'callback_data'=>"mainMenu"]];
-    $keys = json_encode(['inline_keyboard'=>$keys]);
-    editText($message_id, \achbotMessage('bot.bot.process_callback_query.message.e8f25aae49'), $keys);
+    editText($message_id, \achbotMessage('bot.bot.process_callback_query.message.e8f25aae49'), json_encode(['inline_keyboard'=>$keys]));
+    return;
 }
 require __DIR__ . '/src/Agent/Applications.php';
 if (($achbotV8Result = require __DIR__ . '/src/Finance/Routes/ManualApproval.php') === null) return;
@@ -1472,11 +1276,8 @@ require __DIR__ . '/src/Admin/Bans.php';
 if($data=="mainMenuButtons" && ($from_id == $admin || $userInfo['isAdmin'] == true)){
     editText($message_id,\achbotMessage('bot.bot.process_callback_query.message.70afb19fd8'),getMainMenuButtonsKeys());
 }
-if(preg_match('/^delMainButton(\d+)/',$data,$match) && ($from_id == $admin || $userInfo['isAdmin'] == true)){
-    $stmt = $connection->prepare("DELETE FROM `setting` WHERE `id` = ?");
-    $stmt->bind_param("i", $match[1]);
-    $stmt->execute();
-    $stmt->close();
+if(preg_match('/\AdelMainButton([1-9][0-9]*)\z/D',$data,$match) && ($from_id == $admin || $userInfo['isAdmin'] == true)){
+    if (!achbotDeleteContentSetting($connection,(int)$from_id,(int)$admin,(int)$match[1],'main')) return;
 
     alert(\achbotMessage('bot.bot.process_callback_query.alert.e1e7245408'));
     editText($message_id,\achbotMessage('bot.bot.process_callback_query.message.70afb19fd8'),getMainMenuButtonsKeys());
@@ -1518,12 +1319,13 @@ if (preg_match('/^setMainButtonAnswer(.*)/', $userInfo['step'], $match) && ($fro
 require __DIR__ . '/src/Admin/Unban.php';
 require __DIR__ . '/src/Support/AdminReply.php';
 if ((require __DIR__ . '/src/Purchase/TrialProvision.php') === null) return;
-if (preg_match('/^showMainButtonAns(\d+)/', $data, $match)) {
-    $stmt = $connection->prepare("SELECT * FROM `setting` WHERE `id` = ?");
+if (preg_match('/\AshowMainButtonAns([1-9][0-9]*)\z/D', $data, $match)) {
+    $stmt = $connection->prepare("SELECT value FROM setting WHERE id=? AND ".achbotMainButtonNamespace());
     $stmt->bind_param("i", $match[1]);
     $stmt->execute();
     $info = $stmt->get_result()->fetch_assoc();
     $stmt->close();
+    if (!$info) return;
 
     $keys = json_encode([
         'inline_keyboard' => [

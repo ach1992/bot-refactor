@@ -74,6 +74,12 @@ function achbotCheckoutSealDraftLocked(mysqli $db,int $id,array $pay,array $disp
     $standard=$pay['type']==='BUY_SUB' && (float)$pay['day']===0.0 && (float)$pay['volume']===0.0;
     // NULL is an inactive historical draft, never a current command.
     $context=['version'=>1];
+    if ($pay['type']==='BUY_SUB') {
+        $plan=achbotProviderRow($db,'SELECT catid FROM server_plans WHERE id=? FOR UPDATE','i',[(int)$pay['plan_id']]);
+        if (!$plan) throw new DomainException('checkout_plan_changed');
+        $context['category_id']=(int)$plan['catid'];
+    }
+
     if ($standard || $pay['type']==='RENEW_ACCOUNT') {
         $plan=achbotProviderRow($db,'SELECT days,volume FROM server_plans WHERE id=? FOR UPDATE','i',[(int)$pay['plan_id']]);
         $server=achbotProviderRow($db,'SELECT remark FROM server_info WHERE id=? FOR UPDATE','i',[(int)$pay['server_id']]);
@@ -161,6 +167,61 @@ function achbotCheckoutDraftRequestLocked(mysqli $db,array $pay,array $states): 
     }
     if ($q['days']===null || $q['volume']===null) throw new DomainException('checkout_units_invalid');
     return achbotServiceQuoteRequest($q);
+}
+
+/** Read original unclaimed checkout, validate its actual local admission,
+ * and capture the exact display context. Caller holds owner and pay locks.
+ * No external I/O, no new operation, no Wallet write. */
+function achbotCheckoutDraftViewLocked(mysqli $db,array $pay,int $actor,array $states): array {
+    $id=(int)$pay['id'];
+    if ((int)$pay['user_id']!==$actor || $pay['checkout_operation_id']!==null ||
+        !achbotPayUxCurrentDraft($pay) || !achbotPayUxUnclaimedDraftUsable($db,$pay,true) ||
+        achbotProviderRow($db,'SELECT id FROM payment_attempts WHERE pay_row_id=? LIMIT 1 FOR UPDATE','i',[$id]) ||
+        achbotProviderRow($db,'SELECT id FROM service_effects WHERE pay_row_id=? LIMIT 1 FOR UPDATE','i',[$id]))
+        throw new DomainException('checkout_view_closed');
+    $mode=null;
+    foreach (['standard','custom','renew'] as $candidate)
+        if (achbotCheckoutModeMatchesRequest($pay,$candidate)) {$mode=$candidate;break;}
+    if ($mode===null) throw new DomainException('checkout_view_subject_invalid');
+    $q=achbotCheckoutDraftRequestLocked($db,$pay,$states);
+    $local=achbotServiceLocalTargetLocked($db,$actor,$q,true);
+    $target=$local['identity'];$adapter=achbotProviderDefinition($target['provider']);
+    if (!$adapter || !isset($adapter['service_checkout_pin']) ||
+        !($adapter['service_checkout_pin'])($pay,$target,$q) ||
+        ($q['kind']==='BUY' && (int)$local['capacity']<$q['quantity']))
+        throw new DomainException('checkout_view_target_unavailable');
+    $plan=achbotProviderRow($db,'SELECT * FROM server_plans WHERE id=? FOR UPDATE','i',[$q['plan_id']]);
+    if (!$plan) throw new DomainException('checkout_view_plan_missing');
+    $context=json_decode((string)$pay['checkout_draft_context'],true,32,JSON_THROW_ON_ERROR);
+    $category=null;
+    if ($mode!=='renew') {
+        if (($context['category_id']??null)!==(int)$plan['catid'])
+            throw new DomainException('checkout_view_category_changed');
+        $category=achbotProviderRow($db,'SELECT title FROM server_categories WHERE id=? AND active=1 FOR UPDATE','i',[(int)$plan['catid']]);
+        if (!$category) throw new DomainException('checkout_view_category_unavailable');
+    }
+    return ['pay'=>$pay,'mode'=>$mode,'quote'=>$q,'plan'=>$plan,'category'=>$category,
+        'context'=>$context];
+}
+
+/** Safe snapshot for a prompt or an initial/invalid-code card. The definitive
+ * redemption repeats the same checks under its own transaction. */
+function achbotCheckoutDraftView(mysqli $db,int $id,int $actor,array $states): ?array {
+    $begun=false;
+    try {
+        if (!$db->begin_transaction()) throw new RuntimeException('checkout_view_begin');
+        $begun=true;
+        achbotPayUxLockDraftOwner($db,$actor);
+        $pay=achbotProviderRow($db,'SELECT * FROM pays WHERE id=? AND user_id=? FOR UPDATE','ii',[$id,$actor]);
+        if (!$pay) throw new DomainException('checkout_view_missing');
+        $view=achbotCheckoutDraftViewLocked($db,$pay,$actor,$states);
+        $db->rollback();return $view;
+    } catch (Throwable $e) {
+        if ($begun) try {$db->rollback();} catch (Throwable $ignored) {}
+        if (!($e instanceof DomainException))
+            error_log('achbot_checkout_view_deferred pay_id='.$id.' actor='.$actor.' class='.get_class($e));
+        return null;
+    }
 }
 
 /** First method selection owns the command. Original receipt reopens do

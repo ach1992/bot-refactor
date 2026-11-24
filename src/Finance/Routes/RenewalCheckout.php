@@ -31,18 +31,15 @@ if (preg_match('/^renewAccountAsk(\d+)$/', $data, $match)) {
 }
 
 if (
-    (
-        preg_match('/^discountRenew(\d+)_(\d+)$/', $userInfo['step'], $match) ||
-        preg_match('/^renewAccount(\d+)$/', $data, $match)
-    ) &&
+    preg_match('/^renewAccount(\d+)$/', $data, $match) &&
     $text != \achbotMessage('legacy_buttons.cancel')
 ) {
 
     // اضافه کردن بررسی برای ستون fileid
     $oid = $match[1];
 
-    $stmt = $connection->prepare("SELECT * FROM `orders_list` WHERE `id` = ?");
-    $stmt->bind_param("i", $oid);
+    $stmt = $connection->prepare("SELECT * FROM `orders_list` WHERE `id` = ? AND userid=?");
+    $stmt->bind_param("ii", $oid,$from_id);
     $stmt->execute();
     $order = $stmt->get_result();
     $stmt->close();
@@ -68,28 +65,7 @@ if (
 	$serverId = $order['server_id'];
     $agentBought = $order['agent_bought'];
 
-    if(preg_match('/^discountRenew/', $userInfo['step'])){
-        $rowId = $match[2];
-        
-        // استفاده از تابع مشترک تخفیف
-        $discountResult = applyDiscountToPay(
-            $connection,
-            $rowId,
-            $text,
-            $from_id,
-            $username,
-            $first_name,
-            $admin,
-            $botState
-        );
-
-        // قیمت بعد از تخفیف (یا همان قیمت قبلی در صورت نامعتبر بودن کد)
-        $afterDiscount = $discountResult['price'];
-		$hash_id = $discountResult['hash_id'];
-        if ($hash_id==='') { setUser(); return; }
-
-        setUser();
-    }else delMessage();
+    delMessage();
 
     $stmt = $connection->prepare("SELECT * FROM `server_plans` WHERE `id` = ?");
     $stmt->bind_param("i", $fid);
@@ -99,11 +75,10 @@ if (
     $price = $respd['price'];
     if($agentBought == true){
         $discounts = json_decode($userInfo['discount_percent'],true);
-        if($botState['agencyPlanDiscount']=="on") $discount = $discounts['plans'][$fid]?? $discounts['normal'];
+        if(($botState['agencyPlanDiscount']??'off')=="on") $discount = $discounts['plans'][$fid]?? $discounts['normal'];
         else $discount = $discounts['servers'][$serverId]?? $discounts['normal'];
         $price -= floor($price * $discount / 100);
     }
-    if(!preg_match('/^discountRenew/', $userInfo['step'])){
         $hash_id = RandomString();
 
         
@@ -117,26 +92,10 @@ if (
             alert(\achbotMessage('renewal.renewal_checkout.alert.201380d8bf'),true);
             return;
         }
-    }else $price = $afterDiscount;
-
-    if($price == 0) $price = \achbotMessage('renewal.extensions.price.dda7ff2974');
-    else $price .= \achbotMessage('renewal.extensions.text.2cc98f7f7c');
-	
-	$keyboard = [];
-	if (achbotManualEnabled('bank_transfer') && achbotPayUxAudienceAllowed($connection,'bank_transfer',(int)$from_id)) $keyboard[] = [['text' => \achbotMessage('renewal.renewal_checkout.button.5b3252c790', ['price' => $price]), 'callback_data' => "payRenewWithCartToCart$hash_id"]];
-	if (achbotManualEnabled('gift_card') && achbotPayUxAudienceAllowed($connection,'gift_card',(int)$from_id)) $keyboard[] = [['text' => \achbotMessage('renewal.renewal_checkout.button.cf580700a3', ['price' => $price]), 'callback_data' => "payRenewWithGiftCard$hash_id"]];
-	if (achbotManualCryptoEnabled((int)$from_id) && (achbotPayUxAudienceAllowed($connection,'manual_usdt',(int)$from_id) || achbotPayUxAudienceAllowed($connection,'manual_trx',(int)$from_id))) $keyboard[] = [['text' => \achbotMessage('renewal.renewal_checkout.button.73f7c8deeb', ['price' => $price]), 'callback_data' => "mcm_$hash_id"]];
-	if (($botState['nowPaymentOther'] == "on" && achbotPayUxAudienceAllowed($connection,'nowpayments',(int)$from_id) && achbotUsdtRateForUser($connection,(int)$from_id)!==null)) $keyboard[] = [['text' => \achbotMessage('legacy_buttons.now_payment_gateway'), 'callback_data' => "renewPay_nowpayment_$hash_id"]];
-	if (($botState['zarinpal'] == "on" && achbotPayUxAudienceAllowed($connection,'zarinpal',(int)$from_id))) $keyboard[] = [['text' => \achbotMessage('legacy_buttons.zarinpal_gateway'), 'callback_data' => "renewPay_zarinpal_$hash_id"]];
-	if (($botState['nextpay'] == "on" && achbotPayUxAudienceAllowed($connection,'nextpay',(int)$from_id))) $keyboard[] = [['text' => \achbotMessage('legacy_buttons.nextpay_gateway'), 'callback_data' => "renewPay_nextpay_$hash_id"]];
-	if (($botState['walletState'] == "on" && achbotPayUxAudienceAllowed($connection,'wallet',(int)$from_id))) $keyboard[] = [['text' => \achbotMessage('renewal.renewal_checkout.button.0eed1dd8e8', ['price' => $price]), 'callback_data' => "payRenewWithWallet$hash_id"]];
-	if (!preg_match('/^discountRenew/', $userInfo['step'])) $keyboard[] = [['text' => \achbotMessage('renewal.renewal_checkout.button.05c3a1e3f4'), 'callback_data' => "haveDiscountRenew_{$match[1]}_{$rowId}"]];
-	
-	$keyboard[] = [['text' => \achbotMessage('legacy_buttons.cancel'), 'callback_data' => "mainMenu"]];
-	
-    $sent=sendMessage(\achbotMessage('renewal.renewal_checkout.message.24ae8c4399'), json_encode(['inline_keyboard' => $keyboard]), 'HTML');
-    require_once __DIR__ . '/../PaymentLifecycle.php';
-    achbotPayUxTrackByHash($connection,(string)$hash_id,(int)$from_id,$sent);
+    require_once __DIR__.'/../../Purchase/CheckoutPresentation.php';
+    if (!achbotRenderNewCheckoutDraft($connection,$rowId,(int)$from_id,$botState,$botUrl))
+        alert(achbotMessage('renewal.renewal_checkout.alert.201380d8bf'),true);
+    return;
 }
 
 if (is_string($data) && (str_contains($data,'WithManualUsdt') ? ($GLOBALS['achbotManualCryptoVerifiedDispatch'] ?? null) === $data : strlen($data) <= 64) && preg_match('/\ApayRenewWith(?:CartToCart|GiftCard|ManualUsdt)([A-Za-z0-9_-]{1,50})\z/D', $data, $match)) {

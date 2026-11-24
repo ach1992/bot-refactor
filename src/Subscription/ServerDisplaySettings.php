@@ -257,8 +257,8 @@ function achbotServerDisplayEdit(mysqli $db,int $serverId,int $actor,int $primar
                 $s=$db->prepare('INSERT INTO setting(type,value) VALUES (?,?)');$s->bind_param('ss',$type,$value);
             } else {
                 $id=(int)$row['id'];$old=(string)$row['value'];
-                $s=$db->prepare('UPDATE setting SET value=? WHERE id=? AND BINARY value=BINARY ?');
-                $s->bind_param('sis',$value,$id,$old);
+                $s=$db->prepare('UPDATE setting SET value=? WHERE id=? AND BINARY type=BINARY ? AND BINARY value=BINARY ?');
+                $type=achbotServerDisplayType($serverId);$s->bind_param('siss',$value,$id,$type,$old);
             }
             $ok=$s->execute();$count=$s->affected_rows;$s->close();
             if (!$ok || $count!==1) throw new RuntimeException('display_write_unconfirmed');

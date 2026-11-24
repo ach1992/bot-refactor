@@ -52,11 +52,11 @@
   ],
   "changes": {
     "bot.php": {
-      "reason": "Remove obsolete no-effect bot setting callback.",
       "before_count": 200,
-      "after_count": 175,
+      "after_count": 168,
       "before_sha256": "cff48d8a700a865d62d8c96389da43e7a2d34431deff1f650f3bd4b107808baa",
-      "after_sha256": "5b2bbac648f7a3f4b824355a96f7d4952688775b2aa90707cae189c30019c56e"
+      "after_sha256": "cf34a27ec6ca20f494932efa29eb14e2e5bcef14c37234254b2c5c147fbd879e",
+      "reason": "F7 retire unsupported shared availability, F8 dispatch authenticated shortcuts through canonical Home and customer routes; F6 denied content reads do not send values"
     },
     "src/Finance/ApiPaymentPresentation.php": {
       "before_count": 1,
@@ -151,10 +151,10 @@
     },
     "src/Finance/Routes/RenewalCheckout.php": {
       "before_count": 24,
-      "after_count": 15,
+      "after_count": 14,
       "before_sha256": "9ed2ba8682b3d73714fdb16169453d6e192042357453cba395fa3733c4398809",
-      "after_sha256": "b6cf507f335fd82ada65e473e857f54fa80e5975185d427604c3bf3618b94174",
-      "reason": "Shared renewal service and delivery replace old inline recovery and unsupported external branch. Current payment selection and admission replace old pre-payment flow."
+      "after_sha256": "0eab38bb2d62e5e7ca8eafc453e1a2c2c7e1a4fedf874e6a8ce9674d993b2d9a",
+      "reason": "F5 use shared original renewal draft presentation"
     },
     "src/Finance/Routes/RenewalPlan.php": {
       "before_count": 1,
@@ -172,10 +172,10 @@
     },
     "src/Purchase/Catalogue.php": {
       "before_count": 18,
-      "after_count": 17,
+      "after_count": 15,
       "before_sha256": "f834fa0961d4d1557238d2cf9efe9d2bb94b7bbf971887697ace11d9258b7400",
-      "after_sha256": "55584b55c58f78387f0db9c0e7efb2e2433954f67b768d821e42c687fc2c7a79",
-      "reason": "Remove duplicate invalid naming branch."
+      "after_sha256": "7e907329875dbb1a33d8b4ed408ee81319662f29f8daf65ccdd7e67e1faa31d0",
+      "reason": "F5 render original custom draft through shared presentation; remove duplicate discount continuation"
     },
     "src/Subscription/Delivery.php": {
       "before_count": 2,
@@ -234,11 +234,11 @@
       "after_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
     },
     "src/Subscription/CustomerRoutes.php": {
-      "reason": "Remove obsolete custom port/SNI/path and gRPC callbacks. Native provider groups own transport configuration.",
       "before_count": 23,
-      "after_count": 16,
+      "after_count": 17,
       "before_sha256": "3dd3773833d6d1001eb2967ff89317f8e1db3902af1e9921d5644a5aac9dd877",
-      "after_sha256": "d10828d5c75b32eb6a9b85b13d559b09259ebc53583899f2395a11972b77b0c0"
+      "after_sha256": "33de233b7bbc17d46ba9a8f01853a3108d76db98a241bbd03377f13c32080aa8",
+      "reason": "F8 send own subscription menu for a genuine shortcut"
     },
     "src/Finance/Routes/AdminWallet.php": {
       "reason": "Current credit/debit reason prompt excludes unreachable pre-upgrade direct debt wording; confirmation of negative balance remains unchanged.",
@@ -246,9 +246,38 @@
       "after_count": 16,
       "before_sha256": "6e6a0f519cbdc4e6e430dc2236b14cbea688ffc4ff1905082f9f02ddeadf9127",
       "after_sha256": "cf764205db4590e33259730717dfee5c755d9629df5fbfcd9c3c4c5bdf8e9658"
+    },
+    "src/Purchase/EntryAndBulk.php": {
+      "before_count": 16,
+      "after_count": 20,
+      "before_sha256": "fb1144f3c00f379edcd82d9fcb14c9db57098d66d633ac88cd2745c1e764db59",
+      "after_sha256": "6b365e3485da5b97c2d6c00f287eee2d7a0a954aa3445dce2eea92358f01986a",
+      "reason": "F8 canonical purchase entry for callbacks and shortcuts; same catalogue availability"
+    },
+    "config.php": {
+      "before_count": 23,
+      "after_count": 18,
+      "before_sha256": "f10f2b6ae51d9503f2cce6cb4dbf30d12caed7abc89c91dba6688e931cbaae20",
+      "after_sha256": "45c021ec895e1f5d1da17c217057c79854bc2ccba75117a432c235f3bca512ad",
+      "reason": "F8 remove duplicate configuration-time shortcut dispatch; F7 retire shared availability toggle"
+    },
+    "src/Purchase/CheckoutPresentation.php": {
+      "before_count": 0,
+      "after_count": 1,
+      "before_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "after_sha256": "a1a498d9a696d7b2dc3d24e0effad0977a931ddc3e738a7afe4626addc825f80",
+      "reason": "F5 one shared current draft card and method menu for standard, custom, bulk and renew"
+    },
+    "src/Finance/Routes/DiscountEntry.php": {
+      "before_count": 1,
+      "after_count": 2,
+      "before_sha256": "33676f503ea1ccf762f477c6859b83364dccf586e77187d6e9d18de2d30fb189",
+      "after_sha256": "cfe11fabe110a52587ec2622207974ff3add4956c83a2a945ad26a5bf8e555cb",
+      "reason": "F5 one owned current draft prompt and redemption route with exact continuation"
     }
   },
   "added_with_direct_send": [
-    "src/Finance/Routes/ServiceAttention.php"
+    "src/Finance/Routes/ServiceAttention.php",
+    "src/Purchase/CheckoutPresentation.php"
   ]
 }

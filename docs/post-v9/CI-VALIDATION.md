@@ -246,3 +246,18 @@ discount consumer tests buyer/non-buyer parity, unchanged ineligible
 price/counters, target restrictions and an owner-lock race. The service
 execution suite additionally verifies sales deltas from real checkout,
 automatic renewal, full/partial resolution and delivery/report retries.
+
+### Current customer route and content authorization
+
+The required current_customer_routes suite executes the actual current
+route handlers against disposable MariaDB with recorded Telegram sends
+and network access disabled. It verifies exact public content namespaces,
+scoped operations-staff deletion, Native catalogue/availability agreement,
+original standard/custom/agent-bulk/renewal discount continuation and
+Wallet admission, zero-price and replay behavior, price preservation
+after catalog repricing, stale-target rejection, and customer shortcut
+entry gates including method audiences, membership and phone requirements.
+The renewal case uses a synthetic already-linked Native account;
+no live provider is accessed. The separate full service-execution suite
+continues to exercise the real service engine against its loopback
+provider. Source/transport fixtures are not installed Telegram acceptance.

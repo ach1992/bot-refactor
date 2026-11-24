@@ -63,7 +63,8 @@ class Statement {
 class DB {
     public function prepare($query):Statement {
         $sql=str_replace(chr(96),'',trim($query));
-        if (!preg_match("/\ASELECT\s+\*\s+FROM\s+setting\s+WHERE\s+type\s+LIKE\s+'%MAIN_BUTTONS%'\z/i",$sql))
+        if ($sql!=="SELECT * FROM setting WHERE BINARY LEFT(type,12)=BINARY 'MAIN_BUTTONS' AND CHAR_LENGTH(type)>12" &&
+            !preg_match("/\ASELECT\s+\*\s+FROM\s+setting\s+WHERE\s+type\s+LIKE\s+'%MAIN_BUTTONS%'\z/i",$sql))
             throw new RuntimeException('unexpected_custom_button_query');
         return new Statement();
     }
@@ -75,7 +76,7 @@ $end=strpos($source,'function getAgentKeys(){',$start);
 if ($start===false || $end===false) throw new RuntimeException('getMainKeys source missing');
 $wrapper=substr($source,$start,$end-$start);
 $helper=file_get_contents($root.'/src/Presentation/MainMenu.php');
-$start=strpos($helper,'function achbotMainMenuForContext(');
+$start=strpos($helper,'function achbotMainButtonNamespace(');
 if ($start===false) throw new RuntimeException('main menu context source missing');
 $current=substr($helper,$start);
 // Mutations affect only the current function; the accepted Git baseline stays unchanged.
@@ -126,6 +127,12 @@ def check(root: Path = ROOT) -> dict:
     end=prior_source.index('function getAgentKeys(){',start)
     prior_function=prior_source[start:end].replace(
         'function getMainKeys(){','function getMainKeysBaseline(){',1)
+    start=prior_function.index("        ((($botState['sharedExistence']")
+    end=prior_function.index("        // Keep the optional customer import",start)
+    prior_function=prior_function[:start]+"""        ((($botState['individualExistence'] ?? 'off') == "on")?
+            [['text'=>$buttonValues['individual_existence'],'callback_data'=>"availableServers2"]] : []
+        ),
+"""+prior_function[end:]
     prior_arg=base64.b64encode(prior_function.encode()).decode('ascii')
     with tempfile.TemporaryDirectory(prefix='achbot-main-menu-') as temp:
         driver=Path(temp)/'menu.php'
