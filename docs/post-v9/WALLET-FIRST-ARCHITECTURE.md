@@ -611,7 +611,8 @@ existing catalog, links, QR and keyboard. Each original ordinal commits its
 local order, provider linkage and sealed delivery intent together, with
 integer amount allocation summing to the original paid price. Last ordinal
 and completed state commit together. The original capacity reservation is
-unchanged; deletion capacity/referral/report convergence is still pending.
+unchanged; deletion capacity convergence is documented in the later
+subscription lifecycle slice. Referral/report convergence is still pending.
 
 Draft 027 extends the original 018 journal with the real service operation
 source and nullable legacy payment references. Existing payment packets and
@@ -739,6 +740,48 @@ recovery/reconciliation evidence, including stale arrival after a later
 successful update. Expanded new-route tests for scoped add-ons and other
 current account policies, report/referral convergence and
 all remaining activation/removal gates are still required.
+
+### Subscription lifecycle ownership and original capacity
+
+The new operations journal is now consulted by the existing shared-account
+plan, logical-server reassignment and deletion gates. Before dispatch, a
+funded operation has exactly the same local ownership as a prepared,
+dispatching or applied operation. The guard covers all current account
+references and protects a locally recorded bulk BUY ordinal until the whole
+original BUY completes. Reuse the existing physical account and order locks;
+no new reservation ledger or second mutation coordinator. Endpoint rebind
+also checks funded reservations before their first order exists; ordinary
+credential rotation retains its existing policy. Keep the explicitly
+authorized local server hard-delete policy unchanged.
+
+Draft 026 (not installed) derives indexed subject_order_id and target_server_id
+from the immutable quote. There is no additional writable target projection.
+Funding/readback cross-check those fields. The indexed current reads share
+the order/server row locks used by funding; no table-wide JSON scan.
+Missing 026 remains supported only for the inactive legacy test/runtime
+boundary. Final activation must require the new schema. Known incomplete
+plan journals and non-service Native mutation claims refuse new funding.
+A real plan change or reassignment atomically cancels only awaiting-funds
+quotes for the affected references; deletion cancels the selected reference's
+unfunded quotes within its original claim transaction. No credit, debit or
+capacity movement occurs on this cancellation. The receipt sink credits a
+verified late payment once, even after the original plan returns.
+
+New purchase deletion resolves one ordinal's capacity from its completed
+original service reservation, even if current plan is zero or the logical
+server changed. The authorized UI restoration increments only that original
+server in the same transaction that removes the local order, after verifying
+Native absence. A deliberately removed original server has no inventory to
+restore; never increment a different server. Existing Cron/local-only
+no-restoration policy and historical provenance remain unchanged. Imported
+references do not own a purchased slot. A new-source DELETE pins the exact
+local order, owner and server in the original Native claim, so a sole
+remaining independently proven import can recover its own delete without
+pretending to be the original BUY order. Recovery rejects a changed subject.
+
+This package does not activate the new payment/service callers or complete
+migration of historical pending claims. The existing-provider delayed PUT
+limitation remains as documented below.
 
 ### Verified Native limitation of existing APIs, not an accepted retry contract
 

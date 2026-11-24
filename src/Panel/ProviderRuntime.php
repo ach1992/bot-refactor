@@ -444,6 +444,9 @@ function achbotPgClaimOriginalDelete(mysqli $db,array $order,array $target,
     $peers->bind_param('ii',$effectId,$orderId);
     $peers->execute();$other=$peers->get_result()->fetch_assoc();$peers->close();
     if ($other) throw new RuntimeException('pg_delete_shared_account_reference');
+    // Prove the original capacity disposition before the irreversible
+    // Native request, not only after the remote account has gone.
+    if ($restoreCapacity && $ctx['account']['source_kind']==='service_operation') achbotOrderCapacityServerLocked($db,$ctx['order']);
     $key='delete:'.(int)$ctx['account']['id'];
     achbotPgBeginMutation($db,$ctx,$key,'delete',['phase'=>'claimed'],true,$restoreCapacity);
 }
@@ -466,10 +469,18 @@ function achbotPgResumeDelete(mysqli $db,int $orderId,int $serverId,string $rema
             !in_array($account['state'],['mutating','deleted'],true))
             throw new RuntimeException('pg_delete_recovery_order_changed');
         require_once __DIR__.'/ProviderRecovery.php';
-        if (!achbotPgRecoveryOrderOriginMatches($db,$ctx,$orderId))
-            throw new RuntimeException('pg_delete_recovery_origin_changed');
         $key='delete:'.(int)$account['id'];
         $saved=json_decode((string)$account['mutation_snapshot'],true,64,JSON_THROW_ON_ERROR);
+        // For new purchased accounts the deletion claim pins its own local
+        // subject, not necessarily the originating BUY order. OrderContext
+        // has independently verified the original reference or import proof.
+        // Preserve the historical recovery contract for old purchase rows.
+        if ($account['source_kind']==='service_operation') {
+            if (($saved['delete_subject']??null)!==[
+                'order_id'=>$orderId,'userid'=>(int)$order['userid'],'server_id'=>$serverId])
+                throw new RuntimeException('pg_delete_recovery_origin_changed');
+        } elseif (!achbotPgRecoveryOrderOriginMatches($db,$ctx,$orderId))
+            throw new RuntimeException('pg_delete_recovery_origin_changed');
         // A committed claim has no top-level phase until the original
         // outbound intent is durably persisted; never infer dispatch from it.
         $phase=$saved['phase']??null;
@@ -919,8 +930,13 @@ function achbotPgBeginMutation(mysqli $db,array $ctx,string $key,string $action,
         $consumed[]=$key;
         $intent=['version'=>1,'key'=>$key,'consumed_keys'=>$consumed,'action'=>$action,'changes'=>$changes,'identity'=>$ctx['identity'],
             'requested_at'=>gmdate('c')];
-        if ($deleteRestoreCapacity!==null)
+        if ($deleteRestoreCapacity!==null) {
             $intent['delete_restore_capacity']=$deleteRestoreCapacity;
+            if ($ctx['account']['source_kind']==='service_operation')
+                $intent['delete_subject']=[
+                    'order_id'=>(int)$ctx['order_id'],'userid'=>(int)$ctx['order']['userid'],
+                    'server_id'=>(int)$ctx['order_server_id']];
+        }
         $json=json_encode($intent,JSON_THROW_ON_ERROR);
         $s=$db->prepare("UPDATE service_effects SET provider_state='mutating',provider_mutation_key=?,provider_mutation_snapshot=?,provider_evidence_updated_at=UTC_TIMESTAMP(),updated_at=updated_at WHERE provider_reference_id=? AND provider_state='linked'");
         $s->bind_param('ssi',$key,$json,$id);

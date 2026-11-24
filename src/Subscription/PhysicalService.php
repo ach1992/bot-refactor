@@ -57,6 +57,9 @@ function achbotPhysicalAssertRebindSafe(mysqli $db,int $serverId,
             ORDER BY id LIMIT 1 FOR UPDATE");
         if (!$r || $r->num_rows>0) throw new RuntimeException('physical_rebind_active_references');
         $r->free();
+        require_once __DIR__.'/../Services/Ownership.php';
+        if (!achbotServiceServerWorkSettledLocked($db,$ids))
+            throw new RuntimeException('physical_rebind_pending_service_operation');
     }
     $r=$db->query("SELECT TABLE_TYPE,ENGINE FROM information_schema.TABLES
         WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='service_plan_changes'");
@@ -567,6 +570,8 @@ function achbotPhysicalNoPendingPayments(mysqli $db,array $rows,
         achbotPhysicalRetireOpenPaymentsLocked($db,$rows,$nativeVerifiedFinal):[];
     if (!achbotSharedAccountWorkSettledLocked($db,$rows,0,0,$retireOpen,true,
         $nativeVerifiedFinal?[]:$eligible))
+        throw new RuntimeException('physical_pending_financial_effect');
+    if ($retireOpen && $nativeVerifiedFinal && !achbotServiceSubjectWorkSettledLocked($db,$rows,true))
         throw new RuntimeException('physical_pending_financial_effect');
 }
 

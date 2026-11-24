@@ -10,6 +10,10 @@ CREATE TABLE service_operations (
     kind VARCHAR(16) COLLATE utf8mb4_bin NOT NULL,
     quote_payload LONGTEXT COLLATE utf8mb4_bin NOT NULL,
     quote_sha256 CHAR(64) COLLATE utf8mb4_bin NOT NULL,
+    -- Index immutable quote subjects without a second writable copy of the
+    -- original target. Order ID zero denotes BUY (no existing order).
+    subject_order_id INT AS (CAST(JSON_VALUE(quote_payload,'$.request.order_id') AS UNSIGNED)) PERSISTENT,
+    target_server_id INT AS (CAST(JSON_VALUE(quote_payload,'$.request.server_id') AS UNSIGNED)) PERSISTENT,
     price_toman INT UNSIGNED NOT NULL,
     stage VARCHAR(24) COLLATE utf8mb4_bin NOT NULL DEFAULT 'awaiting_funds',
     debit_entry_id BIGINT UNSIGNED DEFAULT NULL,
@@ -26,11 +30,16 @@ CREATE TABLE service_operations (
     UNIQUE KEY uq_service_debit (debit_entry_id),
     KEY idx_service_due (stage,next_attempt_at,id),
     KEY idx_service_owner (userid,id),
+    KEY idx_service_subject_stage (subject_order_id,stage,id),
+    KEY idx_service_target_stage (target_server_id,stage,id),
     CONSTRAINT fk_service_debit FOREIGN KEY (debit_entry_id)
         REFERENCES wallet_entries(id) ON DELETE RESTRICT ON UPDATE RESTRICT,
     CONSTRAINT ck_service_kind CHECK (kind IN ('BUY','RENEW','ADD_VOLUME','ADD_TIME')),
     CONSTRAINT ck_service_price CHECK (price_toman<=2147483647),
-    CONSTRAINT ck_service_quote CHECK (JSON_VALID(quote_payload)),
+    CONSTRAINT ck_service_quote CHECK (JSON_VALID(quote_payload) AND
+        subject_order_id IS NOT NULL AND subject_order_id>=0 AND
+        target_server_id IS NOT NULL AND target_server_id>0 AND
+        ((kind='BUY')=(subject_order_id=0))),
     CONSTRAINT ck_service_stage CHECK (stage IN ('awaiting_funds','funded','prepared','dispatching','applied','completed','cancelled')),
     CONSTRAINT ck_service_unfunded CHECK (
         stage<>'awaiting_funds' OR (debit_entry_id IS NULL AND reserved_count=0)),

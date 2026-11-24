@@ -11,6 +11,7 @@ require_once __DIR__.'/../Admin/Access.php';
 require_once __DIR__.'/ManualReceiptIntent.php';
 require_once __DIR__.'/../Panel/ProviderRuntime.php';
 require_once __DIR__.'/../Purchase/OrderWrites.php';
+require_once __DIR__.'/../Services/Ownership.php';
 
 
 if (!function_exists('payTypeToDescription')) {
@@ -2582,7 +2583,7 @@ function achbotSharedAccountWorkSettledLocked(mysqli $db,array $peers,int $ownAt
         if ((int)($row['id']??0)<=0 || (int)($row['status']??0)!==1) return false;
         $ids[]=(int)$row['id'];
     }
-    if (!$ids) return false;
+    if (!$ids || !achbotServiceSubjectWorkSettledLocked($db,$peers)) return false;
     $list=implode(',',array_values(array_unique($ids)));
     $schema=achbotAutoRenewSchemaState($db);
     if ($schema==='incompatible') return false;
@@ -2758,6 +2759,10 @@ function achbotAutoRenewPrepareDeletion(mysqli $db, int $orderId,?array $expecte
         // For PasarGuard, atomically persist the original Native claim with
         // this local fence. A crash before remote preflight/DELETE is resumable
         // without guessing whether an unmarked external write happened.
+        if (!achbotServiceSubjectWorkSettledLocked($db,array_values(array_filter($peerOrders,
+            static fn($r)=>(int)$r['id']===$orderId)),true)) {
+            $db->rollback();return false;
+        }
         if ($nativeClaim!==null) $nativeClaim($db,$order);
         // Durable deletion fence before remote DELETE. Any uncertain remote
         // result cannot cause an unattended repeated delete or new renewal.
@@ -2780,9 +2785,11 @@ function achbotAutoRenewPrepareDeletion(mysqli $db, int $orderId,?array $expecte
     }
 }
 
-/** Imported accounts never held a bot capacity slot, even after a later plan assignment. */
-function achbotOrderRestoresCapacity(mysqli $db,array $order): bool {
-    if ((int)($order['id']??0)<=0) return false;
+/** Resolve the actual restoration target, not a guess from current plan
+ * or current server. Historical orders keep their established disposition. */
+function achbotOrderCapacityServerLocked(mysqli $db,array $order,bool $finalizing=false): ?int {
+    if ((int)($order['id']??0)<=0 || (int)($order['server_id']??0)<=0) return null;
+    $server=(int)$order['server_id'];
     // Explicit nonfinancial origin survives plan assignment even without007.
     $origin=achbotOrderImportOrigin($db,$order,true);
     $positivePlan=(int)($order['fileid']??0)>0;
@@ -2793,12 +2800,11 @@ function achbotOrderRestoresCapacity(mysqli $db,array $order): bool {
         $table=$r->fetch_assoc();
         // Original-schema positive-plan history keeps its established behavior;
         // new imported references have explicit no-reservation provenance.
-        if ($table===null) return $origin===null && $positivePlan;
+        if ($table===null) return $origin===null && $positivePlan?$server:null;
         if ($r->num_rows!==1 || $table['TABLE_TYPE']!=='BASE TABLE' ||
             strcasecmp((string)$table['ENGINE'],'InnoDB')!==0) throw new RuntimeException('deletion_capacity_schema_invalid');
         $id=(int)$order['id'];
-        $q=$db->prepare("SELECT effect_kind,source_kind,pay_row_id,reserved_count,state
-            FROM service_effects WHERE order_id=? LIMIT 2");
+        $q=$db->prepare("SELECT * FROM service_effects WHERE order_id=? LIMIT 2 FOR UPDATE");
         if (!$q) throw new RuntimeException('deletion_capacity_read_unavailable');
         $q->bind_param('i',$id);
         if (!$q->execute()) {$q->close();throw new RuntimeException('deletion_capacity_read_unavailable');}
@@ -2810,37 +2816,53 @@ function achbotOrderRestoresCapacity(mysqli $db,array $order): bool {
             // ordinary order_id lookup above cannot see this immutable link.
             $linkedId=(int)($order['provider_effect_id']??0);
             if ($linkedId>0) {
-                $q=$db->prepare('SELECT source_kind,effect_kind,reserved_count,state,order_id,pay_row_id
-                    FROM service_effects WHERE id=? LIMIT 1');
+                $q=$db->prepare('SELECT * FROM service_effects WHERE id=? FOR UPDATE');
                 $q->bind_param('i',$linkedId);$q->execute();
                 $linked=$q->get_result()->fetch_assoc();$q->close();
                 if (!$linked) throw new RuntimeException('deletion_capacity_link_missing');
+                // A later imported reference to an original bot-created
+                // account did not reserve a slot of its own.
+                if ($linked['source_kind']==='service_operation' && $origin!==null &&
+                    ($origin['provider_account_id']??null)===(int)$linked['provider_reference_id'] &&
+                    ($origin['native_identity']['remote_user_id']??null)===(int)$linked['provider_remote_user_id'] &&
+                    ($origin['native_identity']['remote_created_at']??null)===$linked['provider_remote_created_at'] &&
+                    ($origin['native_identity']['remote_username']??null)===$linked['remote_username'])
+                    return null;
                 if (in_array($linked['source_kind'],['legacy_migration','external_import'],true) &&
                     $linked['effect_kind']==='adopt' && $linked['state']==='local_recorded' &&
                     $linked['order_id']===null && $linked['pay_row_id']===null &&
-                    (int)$linked['reserved_count']===0) return false;
+                    (int)$linked['reserved_count']===0) return null;
                 throw new RuntimeException('deletion_capacity_link_unverified');
             }
-            return $origin===null && $positivePlan;
+            return $origin===null && $positivePlan?$server:null;
         }
         if (count($rows)!==1) throw new RuntimeException('deletion_capacity_identity_ambiguous');
         $effect=$rows[0];
         if ($effect['state']!=='local_recorded') throw new RuntimeException('deletion_capacity_effect_unconfirmed');
+        if ($effect['source_kind']==='service_operation') {
+            if ($origin!==null) throw new RuntimeException('deletion_capacity_original_buy_origin_conflict');
+            return achbotServiceBuyCapacityServerLocked($db,$order,$effect,$finalizing);
+        }
         if ($effect['effect_kind']==='adopt' && $effect['source_kind']==='external_import' &&
-            $effect['pay_row_id']===null && (int)$effect['reserved_count']===0) return false;
+            $effect['pay_row_id']===null && (int)$effect['reserved_count']===0) return null;
         // Native accounts created for trials and administrative bulk work
         // consumed one real slot despite their nonfinancial source kind.
         // Preserve the historical CREATE rule while distinguishing the paid,
         // auditable replacement journal from all imported/adopted accounts.
         if ($origin===null && $positivePlan && $effect['effect_kind']==='create' &&
-            $effect['source_kind']!=='external_import') return true;
+            $effect['source_kind']!=='external_import') return $server;
         if ($origin===null && $positivePlan && $effect['effect_kind']==='replacement' &&
             $effect['source_kind']===null && (int)$effect['pay_row_id']>0)
-            return true;
+            return $server;
         throw new RuntimeException('deletion_capacity_effect_invalid');
     } catch (Throwable $error) {
-        throw new RuntimeException('deletion_capacity_provenance_unavailable');
+        throw new RuntimeException('deletion_capacity_provenance_unavailable',0,$error);
     }
+}
+
+/** Legacy unpinned DELETE classification needs only the yes/no answer. */
+function achbotOrderRestoresCapacity(mysqli $db,array $order): bool {
+    return achbotOrderCapacityServerLocked($db,$order)!==null;
 }
 
 /**
@@ -2866,17 +2888,17 @@ function achbotAutoRenewFinalizeDeletion(
             (int)$row['server_id']!==$serverId) {
             $db->rollback(); return false;
         }
-        $restoreSlot=$restoreCapacity && achbotOrderRestoresCapacity($db,$row);
+        $restoreServer=$restoreCapacity?achbotOrderCapacityServerLocked($db,$row,true):null;
         $stmt=$db->prepare("DELETE FROM orders_list WHERE id=? AND status=0");
         $stmt->bind_param('i',$orderId);
         $stmt->execute();
         $removed=$stmt->affected_rows;
         $stmt->close();
         if ($removed!==1) { $db->rollback(); return false; }
-        if ($restoreSlot) {
+        if ($restoreServer!==null) {
             $stmt=$db->prepare("UPDATE server_info SET ucount=ucount+1
                 WHERE id=? AND ucount<2147483647");
-            $stmt->bind_param('i',$serverId);
+            $stmt->bind_param('i',$restoreServer);
             $stmt->execute();
             $saved=$stmt->affected_rows;
             $stmt->close();
@@ -2886,7 +2908,9 @@ function achbotAutoRenewFinalizeDeletion(
         return true;
     } catch (Throwable $error) {
         try {$db->rollback();} catch (Throwable $ignored) {}
-        error_log('achbot_auto_renew_local_deletion_deferred');
+        $reason=$error->getMessage();
+        if (preg_match('/^[a-z][a-z0-9_]{2,90}$/D',$reason)!==1) $reason='local_deletion_failed';
+        error_log('achbot_auto_renew_local_deletion_deferred order_id='.$orderId.' code='.$reason);
         return false;
     }
 }

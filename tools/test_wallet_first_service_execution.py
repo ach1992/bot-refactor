@@ -28,6 +28,9 @@ require $argv[1].'/src/Services/Execution.php';
 require $argv[1].'/src/Services/AutomaticRenewal.php';
 require $argv[1].'/src/Finance/ServiceDelivery.php';
 require $argv[1].'/src/Purchase/OrderWrites.php';
+require_once $argv[1].'/src/Finance/FundingCheckout.php';
+$data='';
+require_once $argv[1].'/src/Subscription/AccountDeletion.php';
 $GLOBALS['telegramWebhookSecret']='SyntheticServiceDeliveryKey_2026';
 function sendQrFromLink(string $qr,string $caption,string $keys,string $botUrl,int $uid): bool {
     global $db,$x;
@@ -67,6 +70,7 @@ function fixtureAlias(mysqli $db,int $order): int {
     return $id;
 }
 $db=new mysqli('localhost','root','',$argv[3],0,$argv[2]);
+$connection=$db;$GLOBALS['admin']=9001;
 $x=json_decode($argv[5],true,512,JSON_THROW_ON_ERROR);
 try {
     $presentation=['bot_state'=>[],'bot_url'=>'https://bot.fixture.invalid','bot_username'=>'fixture_bot'];
@@ -75,6 +79,20 @@ try {
     elseif ($x['op']==='due') $r=achbotServiceExecuteDue($db,$x['limit'],10.0,$presentation);
     elseif ($x['op']==='deliver') $r=achbotServiceDeliveryDispatch($db,$x['id']);
     elseif ($x['op']==='maintain_delivery') $r=achbotDeliveryMaintainPending($db,$x['limit'],10.0);
+    elseif ($x['op']==='plan') $r=achbotPhysicalSelectPlan($db,$x['order'],$x['plan'],1001);
+    elseif ($x['op']==='reassign') $r=achbotReassignLogicalServer($db,$x['order'],$x['server'],9001,true);
+    elseif (in_array($x['op'],['delete','local_delete'],true)) {
+        $o=achbotProviderRow($db,'SELECT * FROM orders_list WHERE id=?','i',[$x['order']]);
+        if (!$o) $r='missing';
+        elseif ($x['op']==='delete') $r=achbotSubscriptionDeleteConfirmed($db,$o,true);
+        else $r=achbotAutoRenewPrepareDeletion($db,(int)$o['id']) &&
+            achbotAutoRenewFinalizeDeletion($db,(int)$o['id'],(int)$o['server_id'],false);
+    }
+    elseif ($x['op']==='rebind') {
+        $db->begin_transaction();
+        achbotPhysicalAssertRebindSafe($db,$x['server'],false,$x['deny_active']);
+        $db->rollback();$r=true;
+    }
     elseif ($x['op']==='claim_delivery') {
         $db->begin_transaction();
         $d=achbotProviderRow($db,'SELECT * FROM payment_delivery_intents WHERE id=? FOR UPDATE','i',[$x['id']]);
@@ -86,6 +104,10 @@ try {
             'issue'=>achbotServiceIssueLocked($db,(int)($x['owner']??1001),'fixture',$x['ref'],$x['quote']),
             'fund'=>achbotServiceFundLocked($db,(int)($x['owner']??1001),$x['id']),
             'alias'=>fixtureAlias($db,$x['order']),
+            'pin'=>achbotCheckoutPinReceiptLocked($db,$x['pay'],1001),
+            'settle'=>achbotCheckoutSettleReceiptLocked($db,$x['pay'],1001,'nextpay',
+                ['reference'=>$x['reference'],'status'=>0,'amount'=>100]),
+
         };
         if (!$db->commit()) throw new RuntimeException('fixture_commit');
     }
@@ -112,10 +134,13 @@ def main():
         lock=threading.Lock()
         users={};requests=[];faults=[];errors=[]
         entered=threading.Event();release=threading.Event()
+        next_native_id=0
         def make_user(body,note=None):
-            return dict(body,id=len(users)+1,created_at='2026-01-01T00:00:00Z',
+            nonlocal next_native_id
+            next_native_id+=1
+            return dict(body,id=next_native_id,created_at='2026-01-01T00:00:00Z',
                 note=body['note'] if note is None else note,used_traffic=0,
-                subscription_url='https://fixture.invalid/sub/'+str(len(users)+1),
+                subscription_url='https://fixture.invalid/sub/'+str(next_native_id),
                 proxy_settings={'vless':{'id':'fixture'}})
         class Handler(BaseHTTPRequestHandler):
             def log_message(self,*a):pass
@@ -190,6 +215,21 @@ def main():
                     self.reply(200,ack)
                 except Exception as e:
                     errors.append(repr(e));self.reply(500,{})
+            def do_DELETE(self):
+                try:
+                    assert self.headers['X-Api-Key']=='fixture'
+                    native_id=int(self.path.rsplit('/',1)[1])
+                    state=sql("SELECT CONCAT(e.provider_state,':',o.status) FROM service_effects e "
+                        "JOIN orders_list o ON o.provider_effect_id=e.id "
+                        f"WHERE e.provider_remote_user_id={native_id}")
+                    assert state=='mutating:0',state
+                    with lock:
+                        requests.append(('DELETE',native_id))
+                        name=next(k for k,v in users.items() if v['id']==native_id)
+                        del users[name]
+                    self.send_response(204);self.end_headers()
+                except Exception as e:
+                    errors.append(repr(e));self.reply(500,{})
             def do_PUT(self):
                 self.do_edit()
             def do_POST(self):
@@ -221,7 +261,7 @@ def main():
         try:
             for m in ('001_marzban_panel_group_id.sql','003_payment_attempts.sql',
                       '007_service_effects.sql','011_provider_identity.sql','012_shared_provider_storage.sql',
-                      '014_api_payment_evidence.sql','018_payment_delivery_intents.sql','022_gateway_review_archive.sql',
+                      '014_api_payment_evidence.sql','017_shared_plan_changes.sql','018_payment_delivery_intents.sql','022_gateway_review_archive.sql',
                       '023_scoped_payment_lock_indexes.sql','024_wallet_entries.sql',
                       '025_wallet_receipt_credit.sql','026_service_operations.sql'):
                 sql((ROOT/'migrations/post-v9'/m).read_text())
@@ -248,6 +288,14 @@ def main():
                     provider_version='5.5.1',provider_enabled=1 WHERE id=2;
                 INSERT INTO server_plans(id,fileid,catid,server_id,inbound_id,acount,title,protocol,days,volume,type,price,descr,pic,active,step,date,custom_sni,provider_group_ids)
                 VALUES (7,'7',1,2,0,6,'Fixture PG','vless',30,2,'normal',100,'description','',1,0,'fixture',NULL,'[1,2]');""")
+            sql(f"""INSERT INTO server_config(id,panel_url,ip,sni,header_type,request_header,response_header,security,tlsSettings,type,username,password,provider_connection_id,provider_instance_key,provider_version,provider_enabled)
+                VALUES (3,'{base}','127.0.0.1','','none','','','none','{{}}','pasarguard','fixture','fixture',2,REPEAT('a',32),'5.5.1',1);
+                INSERT INTO server_info(id,title,ucount,remark,flag,active,state) VALUES (3,'Fixture alias','200','pgalias','',1,1);
+                INSERT INTO setting(type,value) VALUES ('ACHBOT_MARZBAN_PANEL_GROUP','fixture group');
+                UPDATE server_info SET panel_group_id=LAST_INSERT_ID() WHERE id IN (2,3);
+                INSERT INTO server_plans(id,fileid,catid,server_id,inbound_id,acount,title,protocol,days,volume,type,price,descr,pic,active,step,date,custom_sni,provider_group_ids)
+                VALUES (8,'8',1,2,0,6,'Fixture PG next','vless',30,2,'normal',100,'description','',1,0,'fixture',NULL,'[1,2]'),
+                       (9,'9',1,3,0,6,'Fixture PG alias','vless',30,2,'normal',100,'description','',1,0,'fixture',NULL,'[1,2]');""")
             sql('UPDATE users SET wallet=50000 WHERE userid=9002')
             driver=work/'execution.php';driver.write_text(PHP)
             def php(mode,op,**kw):
@@ -260,12 +308,16 @@ def main():
                     return None
                 assert p.returncode==0,(p.returncode,p.stdout,p.stderr)
                 for line in p.stderr.splitlines():
-                    assert line.startswith('[AChBot] '),line
-                r=json.loads(p.stdout);assert r['ok'],r
+                    assert line.startswith(('[AChBot] ','achbot_auto_renew_','achbot_shared_plan_','achbot_shared_transfer_','achbot_subscription_delete_')),line
+                r=json.loads(p.stdout)
+                if 'expect_error' in kw:
+                    assert not r['ok'] and r['reason']==kw['expect_error'],r
+                    return r['reason']
+                assert r['ok'],r
                 return r['result']
-            def issue(mode,ref,quantity=1):
+            def issue(mode,ref,quantity=1,server=2,plan=7):
                 return php(mode,'issue',ref=mode+'-'+ref,quote=dict(kind='BUY',variant='standard',price=100,
-                    server_id=2,plan_id=7,order_id=0,quantity=quantity,days=30,volume=2,
+                    server_id=server,plan_id=plan,order_id=0,quantity=quantity,days=30,volume=2,
                     remark=mode+'-'+ref+'-12345',uuid='',naming_mode='digits',explicit_name=False))
             def step(mode,id,status,reason=None):
                 r=php(mode,'step',id=id)
@@ -301,6 +353,18 @@ def main():
                 # conflict fixtures; no terminal evidence is changed.
                 sql("UPDATE service_operations SET next_attempt_at=DATE_ADD(NOW(6),INTERVAL 1 DAY) WHERE stage IN ('funded','prepared','dispatching','applied')")
                 sql("UPDATE payment_delivery_intents SET updated_at=NOW() WHERE service_operation_id IS NOT NULL AND state='pending'")
+                # No order exists yet. The committed reservation must block
+                # endpoint rebinding, but not ordinary credential rotation.
+                original=issue(mode,'rebind-buy',server=3,plan=9);fund(mode,original)
+                before=finance()
+                assert php(mode,'rebind',server=3,deny_active=True,expect_error='physical_rebind_pending_service_operation')
+                assert php(mode,'rebind',server=3,deny_active=False) is True
+                assert finance()==before
+                step(mode,original,'applied');step(mode,original,'completed')
+                rebind_order=int(sql(f"SELECT order_id FROM service_effects WHERE source_kind='service_operation' AND source_ref='{original}'"))
+                assert php(mode,'delete',order=rebind_order)=='complete'
+                assert php(mode,'rebind',server=3,deny_active=True) is True
+                cases.append(mode+'_funded_buy_before_first_order_blocks_endpoint_rebind')
                 id=issue(mode,'bulk',3);n=len(requests)
                 step(mode,id,'awaiting_funds');assert len(requests)==n and not rows(id)
                 cases.append(mode+'_unfunded_no_io')
@@ -332,6 +396,12 @@ def main():
                 assert sql(f"SELECT COUNT(*) FROM payment_delivery_intents WHERE service_operation_id={id}")=='1'
                 first_delivery=int(sql(f"SELECT id FROM payment_delivery_intents WHERE service_operation_id={id} AND ordinal=1"))
                 assert php(mode,'deliver',id=first_delivery)=='not_ready'
+                first_order=int(sql(f"SELECT order_id FROM service_effects WHERE source_kind='service_operation' AND source_ref='{id}' AND ordinal=1"))
+                reqs=len(requests)
+                assert php(mode,'local_delete',order=first_order) is False
+                assert php(mode,'plan',order=first_order,plan=8)['reason']=='physical_pending_financial_effect'
+                assert finance()==before and len(requests)==reqs
+                cases.append(mode+'_unfinished_bulk_ordinal_keeps_ownership')
                 step(mode,id,'progressed')
                 # The last ordinal and completed state commit together.
                 php(mode,'step',id=id,lost_ack=True)
@@ -609,6 +679,111 @@ DELIMITER ;
                 assert php(mode,'deliver',id=did)=='acknowledged'
                 sql(f"UPDATE users SET wallet={saved},is_agent=0,discount_percent='' WHERE userid=1001")
                 cases.append(mode+'_automatic_renewal_full_discount_signed_debt_no_wallet_write')
+                # A funded edit owns the original subject even BEFORE a
+                # Native mutation journal exists. Shared plan/transfer and
+                # deletion must consult that same durable ownership.
+                buy=issue(mode,'lifecycle');fund(mode,buy);step(mode,buy,'applied');step(mode,buy,'completed')
+                order=int(sql(f"SELECT order_id FROM service_effects WHERE source_kind='service_operation' AND source_ref='{buy}'"))
+                pending=edit(mode,'lifecycle-edit',order,'ADD_VOLUME',volume=1);fund(mode,pending)
+                assert not mutation(pending)
+                f=finance();n=len(writes());deletes=lambda:sum(v[0]=='DELETE' for v in requests)
+                d=deletes()
+                assert php(mode,'delete',order=order)=='review'
+                assert php(mode,'local_delete',order=order) is False
+                assert php(mode,'plan',order=order,plan=8)['reason']=='physical_pending_financial_effect'
+                assert php(mode,'reassign',order=order,server=3) is None
+                assert sql(f'SELECT stage FROM service_operations WHERE id={pending}')=='funded'
+                assert finance()==f and len(writes())==n and deletes()==d
+                step(mode,pending,'progressed');step(mode,pending,'applied');step(mode,pending,'completed')
+                cases.append(mode+'_funded_before_dispatch_blocks_lifecycle_changes')
+
+                # A successful plan change retires only unpaid original
+                # quotes. Returning to the old plan cannot resurrect one.
+                unpaid=edit(mode,'unpaid-plan',order,'ADD_TIME',days=1)
+                other=edit(mode,'unpaid-unrelated',ao,'ADD_TIME',days=1)
+                ref=mode+'-late-lifecycle'
+                sql(f"""INSERT INTO pays(hash_id,user_id,type,price,request_date,state,payid)
+                    VALUES ('{ref}',1001,'INCREASE_WALLET',100,UNIX_TIMESTAMP(),'pending','inv-{ref}');
+                    INSERT INTO payment_attempts(pay_row_id,provider,order_hash,provider_reference,quote_amount,quote_currency,local_amount_toman,checkout_url,wallet_invoice_sha256,service_operation_id)
+                    SELECT id,'nextpay',hash_id,'inv-{ref}',100,'toman',100,'https://fixture.invalid/checkout','',{unpaid} FROM pays WHERE hash_id='{ref}';""")
+                pid=int(sql(f"SELECT id FROM pays WHERE hash_id='{ref}'"))
+                php(mode,'pin',pay=pid)
+                f=finance()
+                r=php(mode,'plan',order=order,plan=8);assert r['success'],r
+                assert sql(f'SELECT stage FROM service_operations WHERE id={unpaid}')=='cancelled'
+                assert sql(f'SELECT stage FROM service_operations WHERE id={other}')=='awaiting_funds'
+                r=php(mode,'plan',order=order,plan=7);assert r['success'],r
+                assert finance()==f
+                r=php(mode,'settle',pay=pid,reference='inv-'+ref);assert r['funding']=='request_invalidated' and not r['credit']['replayed'],r
+                f=finance()
+                r=php(mode,'settle',pay=pid,reference='inv-'+ref);assert r['funding']=='request_invalidated' and r['credit']['replayed'],r
+                assert finance()==f
+                assert sql(f"SELECT COUNT(*) FROM wallet_entries WHERE source_kind='service_debit' AND source_ref='{unpaid}'")=='0'
+                cases.append(mode+'_verified_late_receipt_credits_cancelled_quote_once')
+
+                # Real relocation, not a fabricated order row: capacity
+                # remains tied to the original BUY reservation. Inject SQL
+                # failure after Native DELETE and recover local finality.
+                r=php(mode,'reassign',order=order,server=3);assert r is not None,r
+                assert sql(f'SELECT CONCAT(server_id,":",fileid) FROM orders_list WHERE id={order}')=='3:0'
+                counts=tuple(int(sql(f'SELECT ucount FROM server_info WHERE id={sid}')) for sid in (2,3))
+                f=finance();d=deletes()
+                sql("CREATE TRIGGER fixture_capacity_fail BEFORE UPDATE ON server_info FOR EACH ROW SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='fixture rollback'")
+                try:
+                    assert php(mode,'delete',order=order)=='local'
+                    assert finance()==f and deletes()==d+1
+                    assert sql(f'SELECT status FROM orders_list WHERE id={order}')=='0'
+                finally:sql('DROP TRIGGER fixture_capacity_fail')
+                # Recovery is tied to the actual claimed local subject, not
+                # merely a matching physical Native account.
+                eid=int(sql(f'SELECT provider_effect_id FROM orders_list WHERE id={order}'))
+                reqs=len(requests)
+                sql(f"UPDATE service_effects SET provider_mutation_snapshot=JSON_SET(provider_mutation_snapshot,'$.delete_subject.userid',9002) WHERE id={eid}")
+                assert php(mode,'delete',order=order)=='review'
+                assert finance()==f and len(requests)==reqs
+                sql(f"UPDATE service_effects SET provider_mutation_snapshot=JSON_SET(provider_mutation_snapshot,'$.delete_subject.userid',1001) WHERE id={eid}")
+                cases.append(mode+'_delete_recovery_subject_mismatch_no_io')
+                assert php(mode,'delete',order=order)=='complete'
+                assert deletes()==d+1 and finance()[:2]==f[:2]
+                assert tuple(int(sql(f'SELECT ucount FROM server_info WHERE id={sid}')) for sid in (2,3))==(counts[0]+1,counts[1])
+                f=finance()
+                assert php(mode,'delete',order=order)=='missing' and finance()==f and deletes()==d+1
+                cases.append(mode+'_relocated_delete_restores_original_slot_once_after_sql_failure')
+
+                buy=issue(mode,'lifecycle-alias');fund(mode,buy);step(mode,buy,'applied');step(mode,buy,'completed')
+                order=int(sql(f"SELECT order_id FROM service_effects WHERE source_kind='service_operation' AND source_ref='{buy}'"))
+                alias=php(mode,'alias',order=order)
+                pending=edit(mode,'alias-funded',alias,'ADD_TIME',days=1,owner=9002)
+                assert php(mode,'fund',id=pending,owner=9002)=='funded'
+                f=finance();n=len(requests)
+                assert php(mode,'local_delete',order=order) is False
+                assert php(mode,'plan',order=order,plan=8)['reason']=='physical_pending_financial_effect'
+                assert php(mode,'reassign',order=order,server=3) is None
+                assert finance()==f and len(requests)==n
+                step(mode,pending,'progressed');step(mode,pending,'applied');step(mode,pending,'completed')
+                own=edit(mode,'alias-original-unpaid',order,'ADD_TIME',days=1)
+                peer=edit(mode,'alias-other-unpaid',alias,'ADD_TIME',days=1,owner=9002)
+                f=finance();d=deletes()
+                assert php(mode,'local_delete',order=order) is True
+                assert sql(f'SELECT stage FROM service_operations WHERE id={own}')=='cancelled'
+                assert sql(f'SELECT stage FROM service_operations WHERE id={peer}')=='awaiting_funds'
+                assert finance()==f and deletes()==d
+                assert php(mode,'delete',order=alias)=='complete'
+                assert sql(f'SELECT stage FROM service_operations WHERE id={peer}')=='cancelled'
+                assert finance()==f and deletes()==d+1
+                cases.append(mode+'_funded_alias_protects_shared_account_no_unreserved_slot')
+
+                # A real plan attempt commits its journal before Native
+                # readback. Its unresolved journal is not a new sale target.
+                buy=issue(mode,'pending-plan');fund(mode,buy);step(mode,buy,'applied');step(mode,buy,'completed')
+                order=int(sql(f"SELECT order_id FROM service_effects WHERE source_kind='service_operation' AND source_ref='{buy}'"))
+                unpaid=edit(mode,'pending-plan-edit',order,'ADD_TIME',days=1)
+                faults.append('get_unavailable')
+                r=php(mode,'plan',order=order,plan=8);assert not r['success'],r
+                assert sql(f"SELECT COUNT(*) FROM service_plan_changes WHERE source_order_id={order} AND state<>'committed'")=='1'
+                f=finance()
+                assert php(mode,'fund',id=unpaid)=='request_invalidated' and finance()==f
+                cases.append(mode+'_unresolved_plan_intent_blocks_new_debit')
                 assert not faults and not errors,(faults,errors)
         finally:
             release.set();server.shutdown();server.server_close();thread.join(5)

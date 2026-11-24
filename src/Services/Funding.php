@@ -112,6 +112,8 @@ function achbotServiceReadLocked(mysqli $db,int $userId,int $operationId): array
     $quote=json_decode($payload,true,512,JSON_THROW_ON_ERROR);
     if (!is_array($quote['request']??null) || !is_array($quote['target']??null) ||
         $op['kind']!==($quote['request']['kind']??null) ||
+        (int)$op['subject_order_id']!==($quote['request']['order_id']??null) ||
+        (int)$op['target_server_id']!==($quote['request']['server_id']??null) ||
         (int)$op['price_toman']!==($quote['request']['price']??null))
         throw new RuntimeException('service_quote_inconsistent');
     return [$op,$quote,$owner];
