@@ -6,13 +6,9 @@ require_once __DIR__.'/FollowupOutbox.php';
 require_once __DIR__.'/ReceiptHelpers.php';
 require_once __DIR__.'/ApiPaymentPresentation.php';
 
-/** Preserve the actual registered hosted label, including the historical
- * NOWPayments callback spelling. A new method can specify its display label
- * in its source definition, not branch in the shared settlement engine. */
-function achbotReceiptReportGateway(array $attempt): ?string {
-    $def=achbotCreditMethodDefinition((string)$attempt['provider']);
-    if (!$def || !isset($def['hosted'])) return null;
-    return $def['hosted']['report_gateway']??(string)$attempt['provider'];
+/** Presentation follows registered method capability, not provider names. */
+function achbotReceiptIsHosted(array $attempt): bool {
+    return achbotCreditMethodHas((string)$attempt['provider'],'hosted');
 }
 
 /** Original receipt copies have a distinct audience from unsolicited
@@ -20,7 +16,7 @@ function achbotReceiptReportGateway(array $attempt): ?string {
  * both hold. A late verified credit updates the original payment receipt. */
 function achbotReceiptReportEditAllowed(mysqli $db,array $source,array $r): bool {
     $pay=$source['pay'];$a=$source['attempt'];$role=$r['role'];
-    if (achbotReceiptReportGateway($a)!==null ||
+    if (achbotReceiptIsHosted($a) ||
         $r['kind']!=='edit' || (int)$r['message_id']<=0 ||
         !in_array($role,['receipt_primary','receipt_mirror'],true)) return false;
     $who=(int)$r['recipient'];$message=(int)$r['message_id'];
@@ -41,7 +37,7 @@ function achbotReceiptReportEditAllowed(mysqli $db,array $source,array $r): bool
 function achbotReceiptReportStageEditsLocked(mysqli $db,array $source,?int $payId,?int $serviceId,
     string $stage,string $fingerprint,string $subject,bool $walletOnly=false): void {
     $pay=$source['pay'];$a=$source['attempt'];$basis=$a['wallet_credit_basis'];
-    if (achbotReceiptReportGateway($a)!==null) return;
+    if (achbotReceiptIsHosted($a)) return;
     if ($basis==='bank_timer') {
         $keys=json_encode(['inline_keyboard'=>[[[
             'text'=>achbotMessage('manual_payment.automatic_receipts.text.2898f8f112'),
@@ -62,8 +58,12 @@ function achbotReceiptReportStageEditsLocked(mysqli $db,array $source,?int $payI
         if ($chat<=0 || $message<=0 || isset($seen[$chat.':'.$message])) continue;
         $seen[$chat.':'.$message]=true;$complete=true;
         $allowed=achbotAdminStoredRecipientAllowed($db,$chat,$owner,true,$complete);
-        if (!$complete) throw new RuntimeException('payment_credit_report_staff_unavailable');
-        if (!$allowed) continue;
+        // The original receipt/message pair is already durable. A contended
+        // optional staff lookup cannot prevent money settlement. Revalidate
+        // current permission at dispatch; a definite denial is not staged.
+        if (!$complete) achbotDiagnosticEvent('achbot.finance.receipt_edit_permission_deferred',
+            ['pay_id'=>(int)$pay['id'],'service_operation_id'=>$serviceId,'actor_id'=>$chat],'warning');
+        if ($complete && !$allowed) continue;
         achbotFollowupStoreLocked($db,$payId,$serviceId,$stage,$target['role'],'edit',
             (string)$chat,$message,$fingerprint,['text'=>$keys,'keys'=>null,'mode'=>null]);
     }
@@ -72,9 +72,7 @@ function achbotReceiptReportStageEditsLocked(mysqli $db,array $source,?int $payI
 /** Method is distinct from approval authority. A hosted exception can
  * be human-approved; a bank receipt can be confirmed by API or timer. */
 function achbotReceiptReportMethod(array $attempt): string {
-    $method=(string)$attempt['provider'];
-    return achbotReceiptReportGateway($attempt)??(in_array($method,['bank_transfer','gift_card','manual_usdt','manual_trx'],true)?
-        achbotManualLabel($method):$method);
+    return achbotCreditMethodLabel((string)$attempt['provider']);
 }
 function achbotReceiptReportBasis(array $attempt): string {
     return achbotMessage(match($attempt['wallet_credit_basis']) {
@@ -94,12 +92,12 @@ function achbotReceiptReportStageLocked(mysqli $db,int $payId,int $userId,string
     $pay=$source['pay'];$a=$source['attempt'];$entry=$source['entry'];
     $funded=$a['wallet_funding_result']==='funded';
     $stage='wallet_credit';$fingerprint=$source['fingerprint'];
-    $gateway=achbotReceiptReportGateway($a);$basis=$a['wallet_credit_basis'];
+    $hosted=achbotReceiptIsHosted($a);$basis=$a['wallet_credit_basis'];
     $amount=number_format((int)$pay['price']);
     if (!$funded) {
         $support=['supportID'=>(string)($GLOBALS['supportID']??'')];
         $mode='HTML';
-        if ($gateway!==null) {
+        if ($hosted) {
             $text=achbotMessage('gateway.gateway_return.perform_payment_effect.message.a5b15e454e').$amount.
                 achbotMessageHtml('gateway.gateway_return.perform_payment_effect.message.dd866497c7',$support);
         } elseif ($basis==='bank_timer') {

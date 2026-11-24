@@ -18,6 +18,9 @@ require_once $argv[1].'/src/Finance/ServiceDelivery.php';
 require_once $argv[1].'/src/Finance/FollowupOutbox.php';
 require_once $argv[1].'/src/Services/EditFinalization.php';
 $db=new mysqli('localhost','root','','fresh_single',0,$argv[2]);
+if (($argv[4]??'')==='missing_followup_index') {
+    echo achbotFollowupSchemaReady($db)?'UNSAFE':'REJECTED';exit;
+}
 achbotCheckoutRequireSchema($db);
 achbotProviderRequireSchema($db);
 foreach (['achbotWalletLedgerReady','achbotPaymentEvidenceSchemaReady','achbotServiceDeliverySchemaReady',
@@ -68,6 +71,17 @@ def main():
                 env=env,capture_output=True,text=True,timeout=20)
             assert p.returncode==0 and p.stdout=='PASS' and not p.stderr,(p.stdout,p.stderr)
             checks.append(mode+':current_schema_gates')
+        for table,key,columns in (
+            ('payment_followup_intents','uq_followup_wallet_key','wallet_entry_id,intent_key'),
+            ('payment_followup_attempts','uq_followup_attempt_no','intent_id,attempt_no'),
+        ):
+            sql('fresh_single',f'ALTER TABLE {table} ADD INDEX fixture_fk ({columns}); ALTER TABLE {table} DROP INDEX {key}')
+            for mode in ('strict','off'):
+                p=subprocess.run(['php',str(path),str(ROOT),str(work/'mysql.sock'),mode,'missing_followup_index'],
+                    env=env,capture_output=True,text=True,timeout=20)
+                assert p.returncode==0 and p.stdout=='REJECTED' and not p.stderr,(p.stdout,p.stderr)
+                checks.append(mode+':missing_'+key+'_denied')
+            sql('fresh_single',f'ALTER TABLE {table} ADD UNIQUE INDEX {key} ({columns}); ALTER TABLE {table} DROP INDEX fixture_fk')
     result=dict(complete=True,status='PASS',cases=len(checks),tables=len(new),
                 migrations=len(migrations),checks=checks,external_requests=0)
     if args.report:args.report.write_text(json.dumps(result,indent=2)+'\n')

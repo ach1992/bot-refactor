@@ -11,7 +11,7 @@ return [
 
     'operational_reports' => [
         'resolution_subject' => ['text'=>'اشتراک: {remark} | شناسه: {order}','parameters'=>['remark','order']],
-        'import_report' => ['text'=>"📥 ثبت اشتراک موجود\nکاربر: {user}\nاشتراک: {remark}\nشناسه سفارش: {order}\nسرور: {server}\nثبت‌کننده: {actor}",'parameters'=>['user','remark','order','server','actor']],
+        'import_report' => ['text'=>"📥 ثبت اشتراک موجود\nکاربر: {user}\nاشتراک: {remark}\nشناسهٔ اشتراک: {order}\nسرور: {server}\nثبت‌کننده: {actor}",'parameters'=>['user','remark','order','server','actor']],
         'credit_title' => '💰 افزایش موجودی کیف پول',
         'funded_title' => '💳 ثبت پرداخت و تأمین مالی سرویس',
         'debit_title' => '💸 کاهش موجودی کیف پول',
@@ -34,9 +34,12 @@ return [
         'service_days' => '📅 افزایش زمان اشتراک تکمیل شد',
         'service_volume' => '📦 افزایش حجم اشتراک تکمیل شد',
         'service_context' => ['text' => "👤 شناسهٔ کاربر: <code>{user}</code>\n💳 روش پرداخت: {method}\n💵 مبلغ: {amount} تومان\n🎈 اشتراک: <code>{remark}</code>\n🚦 سرور: <code>{server}</code> | پلن: <code>{plan}</code>\nشناسهٔ پرداخت/درخواست: <code>{reference}</code>\nشناسهٔ عملیات: <code>svc_{service}</code>", 'parameters' => ['user','method','amount','remark','server','plan','reference','service']],
-        'service_units' => ['text' => "📦 حجم: {volume} گیگابایت\n📅 مدت: {days} روز", 'parameters' => ['volume','days']],
+        'service_units' => ['text' => "📦 حجم: {volume}\n📅 مدت: {days} روز", 'parameters' => ['volume','days']],
+        'unlimited_volume' => 'نامحدود',
+        'finite_volume' => ['text' => '{volume} گیگابایت', 'parameters' => ['volume']],
         'service_added_days' => ['text' => '📅 زمان اضافه‌شده: {days} روز', 'parameters' => ['days']],
         'service_added_volume' => ['text' => '📦 حجم اضافه‌شده: {volume} گیگابایت', 'parameters' => ['volume']],
+        'service_wallet' => ['text' => "شناسهٔ کسر از کیف پول: <code>W{entry}</code>\nموجودی پیش از کسر: {before} تومان\nموجودی پس از کسر: {after} تومان", 'parameters' => ['entry','before','after']],
         'service_order' => ['text' => 'شناسهٔ اشتراک: <code>{order}</code>', 'parameters' => ['order']],
         'source_adjustment' => 'تغییر موجودی توسط ادمین',
         'source_transfer' => 'انتقال موجودی کیف پول',
@@ -161,7 +164,7 @@ return [
 
     // #147 — Verified bulk source reports (source-pinned in test catalog).
     'bulk_reporting' => [
-        'resolved_retained' => ['text' => '✅ پرونده خرید گروهی تعیین تکلیف شد؛ اشتراک‌های ساخته‌شده و حفظ‌شده: {confirmed} از {requested}', 'parameters' => ['confirmed', 'requested']],
+        'resolved_retained' => ['text' => '✅ پروندهٔ خرید گروهی تعیین تکلیف شد؛ اشتراک‌های ساخته‌شده و حفظ‌شده: {confirmed} از {requested}', 'parameters' => ['confirmed', 'requested']],
         'complete' => ['text' => '✅ ساخت و ثبت اکانت‌ها: {confirmed} از {requested}', 'parameters' => ['confirmed', 'requested']],
         'needs_review' => ['text' => '⚠️ ساخت گروهی نیازمند بررسی است. ثبت محلی تأییدشده: {confirmed} از {requested}. عملیات نامشخص را تکرار نکنید.', 'parameters' => ['confirmed', 'requested']],
         'names' => '🧩 اکانت‌های ثبت و تأییدشده:',
@@ -233,9 +236,6 @@ return [
     // ── شروع، حساب و تنظیمات ربات ──
     'bot' => [
         // bot.webhook_ingress_authenticated
-        'bot.webhook_ingress_authenticated.admin_msg.a511ccf2ec' => ['text' => '👥 <b>دعوت موفق توسط <code>{inviter}</code> انجام شد.</b>' . "\n" . '' . "\n" . '', 'parameters' => ['inviter']],
-        'bot.webhook_ingress_authenticated.text.c69814bacf' => ['text' => '🎫 شناسه کاربر جدید: <code>{from_id}</code>' . "\n" . '', 'parameters' => ['from_id']],
-        'bot.webhook_ingress_authenticated.text.5f8f2b70e9' => '💸 پاداش داده‌شده: ',
         'bot.webhook_ingress_authenticated.message.305cb98154' => '✉️ لطفا پیام خود را بنویسید.',
         'bot.webhook_ingress_authenticated.message.21095e090c' => ['text' => '💬 پیام شما برای کاربر <code>{match_1}</code> ارسال شد.', 'parameters' => ['match_1']],
         'bot.webhook_ingress_authenticated.message.4e0fd88f4b' => '📅 لطفاً تاریخ شروع و پایان فروش را وارد کنید:' . "\n" . '' . "\n" . '',
@@ -458,13 +458,6 @@ return [
         'wallet_transfer.wallet_transfer_restart.sender.3d56306cdd' => 'فرستنده: <code>',
         'wallet_transfer.wallet_transfer_restart.recipient_to_id.5b5f69f5c8' => ['text' => 'گیرنده: <code>{to_id}</code>' . "\n" . '', 'parameters' => ['to_id']],
         'wallet_transfer.wallet_transfer_restart.amount__toman_amount.615f9f4c22' => ['text' => 'مبلغ (تومان): <code>{amount}</code>', 'parameters' => ['amount']],
-        'wallet_transfer.wallet_transfer_restart.channel_message.4dcd886908' => '🔀 <b>گزارش جابجایی موجودی</b>' . "\n" . '',
-        'wallet_transfer.wallet_transfer_restart.text.f7c8f1486f' => '━━━━━━━━━━━━' . "\n" . '',
-        'wallet_transfer.wallet_transfer_restart.text.1c463d5538' => ['text' => '🎫 <b>مبدأ</b>: <code>{from_id}</code>' . "\n" . '', 'parameters' => ['from_id']],
-        'wallet_transfer.wallet_transfer_restart.text.d6da19205d' => '🧾 نام: <b>',
-        'wallet_transfer.wallet_transfer_restart.text.0abd13e218' => '🔖 نام کاربری: <b>',
-        'wallet_transfer.wallet_transfer_restart.text.3a7e183abf' => '💼 قبل: <b>',
-        'wallet_transfer.wallet_transfer_restart.text.77d4a377ae' => '🔄 بعد: <b>',
         'wallet_transfer.wallet_transfer_restart.a_ch_bot_wallet_transfer_notification_failure.9a285d7145' => '⚠️ <b>خطا در اطلاع‌رسانی انتقال کیف پول AChBot</b>' . "\n" . '',
         'wallet_transfer.wallet_transfer_restart.reference_notice_reference.f81164ea0b' => ['text' => 'شناسه پیگیری: <code>{noticeReference}</code>' . "\n" . '', 'parameters' => ['noticeReference']],
         'wallet_transfer.wallet_transfer_restart.reason_reason_code.a18553cad8' => ['text' => 'علت: <code>{reason_code}</code>' . "\n" . '', 'parameters' => ['reason_code']],
@@ -542,7 +535,6 @@ return [
         // manual_accounts.detect_server_id_from_remark
         'manual_accounts.detect_server_id_from_remark.alert.ecf2df32d7' => '✅ اشتراک با موفقیت به لیست اضافه شد.',
         'manual_accounts.detect_server_id_from_remark.button.48f23552b7' => '💡مشاهده مشخصات اشتراک',
-        'manual_accounts.detect_server_id_from_remark.admin_message.7e7a367cc0' => ['text' => '' . "\n" . '➕ اشتراک جدید اضافه شد' . "\n" . '' . "\n" . '🎫 شناسه عددی: <code>{finalUserId}</code>' . "\n" . '👤 اسم کاربر: {first_name}' . "\n" . '🔖 نام کاربری: @{username}' . "\n" . '🔄 نام کاربری اشتراک: <code>{remark}</code>' . "\n" . '', 'parameters' => ['finalUserId', 'first_name', 'username', 'remark']],
         'order_management.title.b4f29204c1' => ['text' => '🔄 <b>لیست اشتراک های کاربر</b>' . "\n" . '🎫 شناسه عددی: <code>{userId}</code>', 'parameters' => ['userId']],
         // order_management.message
         'order_management.message.6e1cf97901' => '⚠️ هیچ اشتراکی برای این کاربر موجود نیست.',
@@ -645,9 +637,7 @@ return [
                              'days','volume','payment_ref']
         ],
         // automatic_renewal.auto_renew_alert_review
-        'extensions.msg.bfc1b46322' => ['text' => '' . "\n" . '🔋 افزایش زمان با (کیف پول)' . "\n" . '' . "\n" . '🎫 شناسه عددی: {from_id}' . "\n" . '👤 اسم کاربر: {first_name}' . "\n" . '🔖 نام کاربری: @{username}' . "\n" . '🔄 نام کاربری اشتراک: {remark}' . "\n" . '📅 مدت افزایش: {volume} روز' . "\n" . '💰 قیمت: {price} تومان' . "\n" . '', 'parameters' => ['from_id', 'first_name', 'username', 'remark', 'volume', 'price']],
         // extensions.admin_err
-        'extensions.msg.0e12e9ce3d' => ['text' => '' . "\n" . '🔋 افزایش حجم با (کیف پول)' . "\n" . '' . "\n" . '🎫 شناسه عددی: {from_id}' . "\n" . '👤 اسم کاربر: {first_name}' . "\n" . '🔖 نام کاربری: @{username}' . "\n" . '🔄 نام کاربری اشتراک: {remark}' . "\n" . '📦 حجم افزایش: {volume} گیگ' . "\n" . '💰 قیمت: {price} تومان' . "\n" . '', 'parameters' => ['from_id', 'first_name', 'username', 'remark', 'volume', 'price']],
         // extensions.admin_err
     ],
 
@@ -850,10 +840,7 @@ return [
         'manual_receipts.alert.9e5ae0bfa1' => '⛔️ اطلاعات پرداخت پیدا نشد.',
         'manual_receipts.alert.2d252fd96f' => '⛔️ این رسید قبلاً بررسی شده، قابل تأیید نیست یا به بررسی پشتیبانی نیاز دارد.',
         // manual_receipts.admin_messages
-        'manual_receipts.admin_messages.31d90c5e69' => ['text' => '✅ تأیید دستی {methodName} و افزایش موجودی کاربر {userId} انجام شد.' . "\n" . '' . "\n" . '💰 موجودی قدیم: ', 'parameters' => ['methodName', 'userId']],
         // manual_receipts.text
-        'manual_receipts.text.c0780ce268' => ' تومان' . "\n" . '💼 موجودی جدید: ',
-        'manual_receipts.text.89a4910ebe' => ['text' => ' تومان' . "\n" . '🎫 شناسه پرداخت: {hash_id}', 'parameters' => ['hash_id']],
         // manual_receipts.hash__i_d_hash_id
         'manual_receipts.hash__i_d_hash_id.0ce5b30b71' => ['text' => '🎫 شناسه پیگیری: <code>{hash_id}</code>', 'parameters' => ['hash_id']],
         // manual_receipts.alert
@@ -877,12 +864,7 @@ return [
     // ── درگاه‌ها و صفحه وضعیت پرداخت ──
     'gateway' => [
         // gateway_return.np_alert_operator
-        'gateway_return.perform_payment_effect.msg.8205ac68fa' => ['text' => '' . "\n" . '🛍 خرید جدید (درگاه {gateType})' . "\n" . '' . "\n" . '🎫 آیدی کاربر: {user_id}' . "\n" . '👤 نام کاربر: {first_name}' . "\n" . '🔖 نام کاربری تلگرام: @{username}' . "\n" . '💰 مبلغ پرداختی: {amount} تومان' . "\n" . '🎈 نام اشتراک: {remark}' . "\n" . '📦 حجم اشتراک: {volume} گیگ' . "\n" . '📅 مدت اشتراک: {days} روز' . "\n" . '', 'parameters' => ['gateType', 'user_id', 'first_name', 'username', 'amount', 'remark', 'volume', 'days']],
         'gateway_return.perform_payment_effect.message.a5b15e454e' => '✅ مبلغ ',
-        'gateway_return.perform_payment_effect.text.3908dcee07' => ['text' => ' تومان به کیف پول کاربر {user_id} توسط درگاه {gateType} اضافه شد.', 'parameters' => ['user_id', 'gateType']],
-        'gateway_return.perform_payment_effect.msg.c281132242' => ['text' => '' . "\n" . '♻️ تمدید اشتراک (درگاه {gateType})' . "\n" . '' . "\n" . '🎫 آیدی کاربر: {user_id}' . "\n" . '👤 نام کاربر: {first_name}' . "\n" . '🔖 نام کاربری تلگرام: @{username}' . "\n" . '💰 مبلغ پرداختی: {amount} تومان' . "\n" . '🎈 نام اشتراک: {remark}' . "\n" . '📦 حجم اشتراک: {volume} گیگ' . "\n" . '📅 مدت اشتراک: {days} روز' . "\n" . '' . "\n" . '', 'parameters' => ['gateType', 'user_id', 'first_name', 'username', 'amount', 'remark', 'volume', 'days']],
-        'gateway_return.perform_payment_effect.msg.3337e72606' => ['text' => '' . "\n" . '📅 افزایش زمان اشتراک (درگاه {gateType})' . "\n" . '' . "\n" . '🎫 آیدی کاربر: {user_id}' . "\n" . '👤 نام کاربر: {first_name}' . "\n" . '🔖 نام کاربری تلگرام: @{username}' . "\n" . '💰 مبلغ پرداختی: {amount} تومان' . "\n" . '🎈 نام اشتراک: {remark}' . "\n" . '🕚 زمان اضافه شده: {plusDays} روز' . "\n" . '', 'parameters' => ['gateType', 'user_id', 'first_name', 'username', 'amount', 'remark', 'plusDays']],
-        'gateway_return.perform_payment_effect.msg.05d5688689' => ['text' => '' . "\n" . '📦 افزایش حجم اشتراک (درگاه {gateType})' . "\n" . '' . "\n" . '🎫 آیدی کاربر: {user_id}' . "\n" . '👤 نام کاربر: {first_name}' . "\n" . '🔖 نام کاربری تلگرام: @{username}' . "\n" . '💰 مبلغ پرداختی: {amount} تومان' . "\n" . '🎈 نام اشتراک: {remark}' . "\n" . 'حجم اضافه شده: {plusVolume} گیگ' . "\n" . '', 'parameters' => ['gateType', 'user_id', 'first_name', 'username', 'amount', 'remark', 'plusVolume']],
     ],
 
     // ── اعلان‌های اشتراک ──

@@ -233,13 +233,13 @@ if (preg_match('/^declineActionReason_(.+)_(\d+)$/', (string)($userInfo['step']?
             \achbotMessageHtml('manual_payment.manual_receipts.message.df4f415ed5',
                 ['hash_id'=>$hash_id]);
     };
-    $operatorNotice=static function(string $name) use ($payId,$uid,$payInfo,$hash_id): string {
+    $operatorNotice=static function(string $name) use ($payId,$uid,$payInfo,$hash_id,$from_id): string {
         return \achbotMessage('manual_receipt_final.status_rejected')."\n".
             \achbotMessageHtml('manual_receipt_final.rejected_report',[
                 'id'=>$payId,'user'=>(int)$uid,
                 'amount'=>number_format((int)$payInfo['price']),'hash'=>$hash_id])."\n".
             \achbotMessageHtml('manual_payment.manual_receipts.message.61d75413a2',
-                ['remark'=>$name]);
+                ['remark'=>$name])."\n".achbotMessageHtml('operational_reports.actor',['actor'=>(int)$from_id]);
     };
     // Telegram bounds parsed HTML in UTF-16 units (4096); escaping an
     // otherwise valid reason/name can exceed that limit. Never COMMIT a
@@ -331,9 +331,9 @@ if (preg_match('/^declineActionReason_(.+)_(\d+)$/', (string)($userInfo['step']?
         achbotFollowupInsertLocked($connection,$locked,'manual_reject',
             'customer','send',(string)(int)$uid,null,
             ['text'=>$message,'keys'=>$retryButton,'mode'=>'HTML']);
-        achbotFollowupInsertLocked($connection,$locked,'manual_reject',
-            'operator','send',(string)$actor,null,
-            ['text'=>$adminReport,'keys'=>$adminAfterSendKeys,'mode'=>'HTML']);
+        achbotFollowupStageAdminReportLocked($connection,$payId,null,'manual_reject',
+            achbotPaymentEvidencePayFingerprint($locked),(int)$admin,(string)($GLOBALS['botState']['rewardChannel']??''),
+            ['text'=>$adminReport,'keys'=>null,'mode'=>'HTML'],$actor,null,$adminAfterSendKeys);
         if (!$connection->commit()) throw new RuntimeException('manual_reject_commit_unknown');
         $opened=false;
     } catch(Throwable $error) {

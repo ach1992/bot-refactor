@@ -13,21 +13,45 @@ function achbotFollowupSchemaReady(mysqli $db): bool {
     try {
         if (!function_exists('openssl_encrypt') ||
             strlen(achbotPaymentEvidenceKey())!==32) return false;
-        $q=$db->query('SELECT id,pay_row_id,intent_key,stage,kind,role,recipient,'.
-            'message_id,pay_fingerprint,sealed_payload,payload_sha256,state,'.
-            'attempt_count,dispatch_token,dispatched_at,acknowledged_at,last_result '.
-            'FROM payment_followup_intents LIMIT 0');
-        if (!$q) return false;$q->free();
-        $q=$db->query("SHOW TABLE STATUS WHERE Name='payment_followup_intents'");
-        if (!$q || strtoupper((string)($q->fetch_assoc()['Engine']??''))!=='INNODB') return false;
-        $q=$db->query("SHOW INDEX FROM payment_followup_intents WHERE Key_name='uq_followup_pay_key'");
-        if (!$q) return false;$indexes=[];
-        while ($r=$q->fetch_assoc()) {
-            if ((int)$r['Non_unique']!==0) return false;
-            $indexes[(int)$r['Seq_in_index']]=(string)$r['Column_name'];
+        $tables=[
+            'payment_followup_intents'=>[
+                'columns'=>'id,pay_row_id,service_operation_id,wallet_entry_id,intent_key,stage,kind,role,recipient,'.
+                    'message_id,pay_fingerprint,sealed_payload,payload_sha256,state,attempt_count,dispatch_token,'.
+                    'dispatched_at,acknowledged_at,last_result,created_at,updated_at,next_attempt_at',
+                'unique'=>['uq_followup_pay_key'=>['pay_row_id','intent_key'],
+                    'uq_followup_service_key'=>['service_operation_id','intent_key'],
+                    'uq_followup_wallet_key'=>['wallet_entry_id','intent_key']]],
+            'payment_followup_attempts'=>[
+                'columns'=>'id,intent_id,attempt_no,dispatch_token,actor_userid,claim_state,result,'.
+                    'telegram_error_code,retry_after_seconds,started_at,finished_at',
+                'unique'=>['uq_followup_attempt_no'=>['intent_id','attempt_no'],
+                    'uq_followup_attempt_token'=>['dispatch_token']]]
+        ];
+        $q=$db->query("SHOW TABLE STATUS WHERE Name IN ('payment_followup_intents','payment_followup_attempts')");
+        if (!$q) return false;
+        $engines=[];
+        while ($r=$q->fetch_assoc()) $engines[$r['Name']]=strtoupper((string)$r['Engine']);
+        $q->free();
+        foreach ($tables as $table=>$contract) {
+            if (($engines[$table]??'')!=='INNODB') return false;
+            $q=$db->query('SELECT '.$contract['columns'].' FROM '.$table.' LIMIT 0');
+            if (!$q) return false;$q->free();
+            $q=$db->query('SHOW INDEX FROM '.$table);
+            if (!$q) return false;$indexes=[];
+            while ($r=$q->fetch_assoc()) {
+                $key=(string)$r['Key_name'];
+                if (!isset($contract['unique'][$key])) continue;
+                if ((int)$r['Non_unique']!==0 || $r['Sub_part']!==null) return false;
+                $indexes[$key][(int)$r['Seq_in_index']]=(string)$r['Column_name'];
+            }
+            $q->free();
+            foreach ($contract['unique'] as $key=>$columns) {
+                if (!isset($indexes[$key])) return false;
+                ksort($indexes[$key]);
+                if (array_values($indexes[$key])!==$columns) return false;
+            }
         }
-        ksort($indexes);
-        return array_values($indexes)===['pay_row_id','intent_key'];
+        return true;
     } catch(Throwable $error) {return false;}
 }
 function achbotFollowupJournaled(array $r): bool {
@@ -45,15 +69,14 @@ function achbotFollowupIntentKey(string $stage,string $role,string $kind,
 function achbotFollowupInsertLocked(mysqli $db,array $pay,string $stage,string $role,
                                     string $kind,string $recipient,?int $messageId,
                                     array $content,?int $serviceId=null): void {
-    if ($serviceId!==null && ($serviceId<=0 || $stage!=='referral_reward' ||
-        !in_array($role,['referral_inviter','referral_admin','referral_channel'],true) ||
-        $kind!=='send' || ($pay['state']??null)!=='paid'))
-        throw new RuntimeException('followup_service_source_invalid');
-    if (!in_array($stage,['manual_reject','referral_reward'],true) ||
-        !in_array($role,['customer','operator','receipt_primary','receipt_mirror',
-                          'referral_admin','referral_channel','referral_inviter',
-                          'purchase_owner','purchase_channel'],true) ||
-        !in_array($kind,['send','edit'],true) ||
+    if ($serviceId!==null) {
+        if ($serviceId<=0 || $stage!=='referral_reward' || $role!=='referral_inviter' ||
+            $kind!=='send' || ($pay['state']??null)!=='paid')
+            throw new RuntimeException('followup_service_source_invalid');
+    } elseif ($stage!=='manual_reject' ||
+        !in_array($role,['customer','receipt_primary','receipt_mirror'],true))
+        throw new RuntimeException('followup_pay_source_invalid');
+    if (!in_array($kind,['send','edit'],true) ||
         preg_match('/^(?:-?[0-9]{1,19}|@[A-Za-z0-9_]{3,64})$/D',$recipient)!==1 ||
         ($kind==='edit'?($messageId===null || $messageId<=0):$messageId!==null) ||
         !is_string($content['text']??null) || $content['text']==='' ||
@@ -68,9 +91,7 @@ function achbotFollowupInsertLocked(mysqli $db,array $pay,string $stage,string $
         ($role==='customer' && $recipient!==(string)(int)$pay['user_id']) ||
         ($role==='receipt_primary' &&
             ($recipient!==(string)(int)$pay['chat_id'] ||
-             $messageId!==(int)$pay['message_id'])) ||
-        ($role==='operator' && (int)($pay['approved_by']??0)>0 &&
-            $recipient!==(string)(int)$pay['approved_by']))
+             $messageId!==(int)$pay['message_id'])))
         throw new RuntimeException('followup_pay_target_invalid');
     achbotFollowupStoreLocked($db,$payId,$serviceId,$stage,$role,$kind,$recipient,$messageId,
         achbotPaymentEvidencePayFingerprint($pay),$content);
@@ -144,8 +165,8 @@ function achbotFollowupRecipientAllowed(mysqli $db,array $pay,array $r): bool {
     $owner=(int)($GLOBALS['admin']??0);
     $recipient=(string)$r['recipient'];$who=(int)$recipient;
     $role=(string)$r['role'];
-    if ($r['stage']==='manual_reject' && in_array($role,['service_admin','service_channel'],true))
-        return achbotFollowupAdminReportAllowed($db,$r);
+    if ($r['stage']==='manual_reject' && in_array($role,['service_admin','service_channel','report_actor'],true))
+        return achbotFollowupAdminReportAllowed($db,$r,(int)$pay['approved_by']);
     if ($role==='customer') return $recipient===(string)(int)$pay['user_id'];
     if ($role==='receipt_primary')
         return achbotAdminStoredRecipientAllowed($db,$who,$owner) && $who===(int)$pay['chat_id'] && (int)$r['message_id']===(int)$pay['message_id'];
@@ -157,26 +178,6 @@ function achbotFollowupRecipientAllowed(mysqli $db,array $pay,array $r): bool {
             if ((int)($copy['chat_id']??0)===$who &&
                 (int)($copy['message_id']??0)===(int)$r['message_id']) return true;
         return false;
-    }
-    if ($role==='operator') return $who===(int)$pay['approved_by'] &&
-        achbotAdminCanFor($db,$who,$owner,'payments');
-    if ($role==='purchase_owner') return $owner>0 && $who===$owner;
-    if ($role==='purchase_channel') {
-        $channel=(string)($GLOBALS['botState']['rewardChannel']??'');
-        return $channel!=='' && $recipient===$channel;
-    }
-    if ($role==='referral_inviter') {
-        $q=$db->prepare("SELECT inviter_userid,state FROM referral_awards
-            WHERE pay_row_id=? AND state='CONFIRMED'");
-        $id=(int)$pay['id'];$q->bind_param('i',$id);$q->execute();
-        $award=$q->get_result()->fetch_assoc();$q->close();
-        return $award && $who===(int)$award['inviter_userid'];
-    }
-    if ($role==='referral_admin') return $who===$owner ||
-        achbotAdminNotificationAllowed($db,$who,$owner,'general');
-    if ($role==='referral_channel') {
-        $channel=(string)($GLOBALS['botState']['rewardChannel']??'');
-        return $channel!=='' && $recipient===$channel;
     }
     return false;
 }
@@ -225,8 +226,7 @@ function achbotFollowupValidateLocked(mysqli $db,array $pay,array $r): ?array {
     }
     if (isset($r['service_operation_id'])) {
         require_once __DIR__.'/ServicePurchaseReferral.php';
-        if (!achbotServiceReferralReportValid($db,$pay,$r) ||
-            !achbotFollowupRecipientAllowed($db,$pay,$r)) return null;
+        if (!achbotServiceReferralReportValid($db,$pay,$r)) return null;
         return achbotFollowupDecodePacket($pay,$r);
     }
     // Historical approved-purchase/edit and referral notices are evidence
@@ -475,10 +475,30 @@ function achbotFollowupMaintainOriginalPending(mysqli $db,int $limit,float $budg
     return $out;
 }
 
+/** Normalize only an actual configured Telegram destination. Bad configuration
+ * must not veto a verified credit, refund, or completed Native operation.
+ * The mandatory owner still gets the report; do not guess a destination.
+ * When staging, record the exact source for operational diagnostics. */
+function achbotFollowupReportChannel(string $raw,string $stage='',?int $payId=null,
+    ?int $serviceId=null,?int $walletId=null): string {
+    $channel=trim($raw);
+    if ($channel==='') return '';
+    if (preg_match('/^@[A-Za-z0-9_]{3,64}$/D',$channel)===1) return strtolower($channel);
+    if (preg_match('/^-?[0-9]{1,19}$/D',$channel)===1) {
+        $id=filter_var($channel,FILTER_VALIDATE_INT);
+        if ($id!==false && $id!==0) return (string)$id;
+    }
+    if ($stage!=='') achbotDiagnosticEvent('achbot.finance.report_channel_invalid',[
+        'stage'=>$stage,'pay_id'=>$payId,'service_operation_id'=>$serviceId,
+        'wallet_entry_id'=>$walletId,'reason'=>'followup_channel_invalid'],'warning');
+    return '';
+}
+
 /** Stage a general report to the existing authorized owner/staff audience.
  * A caller explicitly supplies the existing channel policy (empty = none). */
 function achbotFollowupStageAdminReportLocked(mysqli $db,?int $payId,?int $serviceId,
-    string $stage,string $fingerprint,int $owner,string $channel,array $content,int $actor=0,?int $walletId=null): void {
+    string $stage,string $fingerprint,int $owner,string $channel,array $content,int $actor=0,?int $walletId=null,
+    ?string $actorKeys=null): void {
     if ($owner<=0) throw new RuntimeException('followup_report_owner_missing');
     $complete=false;$staff=achbotAdminRecipientCandidates($db,$owner,$complete);
     if (!$complete) error_log('achbot_report_optional_staff_deferred stage='.$stage);
@@ -493,9 +513,13 @@ function achbotFollowupStageAdminReportLocked(mysqli $db,?int $payId,?int $servi
     // their unsolicited general-report preference is off. Do not duplicate
     // a manager or the primary owner who is also the original actor.
     if ($actor>0 && $actor!==$owner) $targets[(string)$actor]='report_actor';
-    foreach ($targets as $recipient=>$role)
+    foreach ($targets as $recipient=>$role) {
+        $packet=$content;
+        if ($actorKeys!==null && (string)$recipient===(string)$actor) $packet['keys']=$actorKeys;
         achbotFollowupStoreLocked($db,$payId,$serviceId,$stage,$role===true?'service_admin':$role,'send',
-            (string)$recipient,null,$fingerprint,$content,$walletId);
+            (string)$recipient,null,$fingerprint,$packet,$walletId);
+    }
+    $channel=achbotFollowupReportChannel($channel,$stage,$payId,$serviceId,$walletId);
     if ($channel!=='' && !isset($targets[$channel]))
         achbotFollowupStoreLocked($db,$payId,$serviceId,$stage,'service_channel','send',
             $channel,null,$fingerprint,$content,$walletId);
@@ -509,7 +533,7 @@ function achbotFollowupAdminReportAllowed(mysqli $db,array $r,int $actor=0,strin
     if ($r['role']==='service_admin')
         return $owner>0 && achbotAdminNotificationAllowed($db,(int)$recipient,$owner,'general');
     if ($r['role']==='service_channel') {
-        $channel=(string)($GLOBALS['botState']['rewardChannel']??'');
+        $channel=achbotFollowupReportChannel((string)($GLOBALS['botState']['rewardChannel']??''));
         return $channel!=='' && $recipient===$channel;
     }
     return false;

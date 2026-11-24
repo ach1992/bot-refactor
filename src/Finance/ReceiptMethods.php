@@ -7,6 +7,7 @@ require_once __DIR__.'/PaymentEvidence.php';
 require_once __DIR__.'/ManualReceiptIntent.php';
 require_once __DIR__.'/GatewayClient.php';
 require_once __DIR__.'/HostedMethods.php';
+require_once __DIR__.'/../../messages/loader.php';
 
 /**
  * Source-owned receipt admission and verification definitions. Callbacks
@@ -25,23 +26,26 @@ function achbotCreditMethodRegistry(): array {
     $bank['api_checker']='achbotCreditCheckBankApi';
     $api['api_checker']='achbotCreditCheckGiftApi';
     return [
-        'bank_transfer'=>$bank,
-        'gift_card'=>$api,
-        'manual_usdt'=>$manual,
-        'manual_trx'=>$manual,
-        'nowpayments'=>['invoice'=>'achbotCreditValidateUsdInvoice','proofs'=>[
+        'bank_transfer'=>$bank+['label'=>static fn()=>achbotMessage('manual_payment.receipt_helpers.manual_label.text.ace4b5ad89')],
+        'gift_card'=>$api+['label'=>static fn()=>achbotMessage('manual_payment.receipt_helpers.manual_label.text.3904ef0f3d')],
+        'manual_usdt'=>$manual+['label'=>static fn()=>achbotMessage('manual_payment.receipt_helpers.manual_label.text.2f1fd66193')],
+        'manual_trx'=>$manual+['label'=>static fn()=>achbotMessage('manual_payment.receipt_helpers.manual_label.text.ea9faa7b63')],
+        'nowpayments'=>['label'=>static fn()=>achbotMessage('automatic_gateway_review.provider_nowpayments'),
+            'invoice'=>'achbotCreditValidateUsdInvoice','proofs'=>[
             'nowpayments'=>'achbotCreditVerifyNowpaymentsLocked','manual'=>'achbotCreditVerifyHostedAttestationLocked'],'additional_evidence'=>true,
-            'hosted'=>['credential_setting'=>'nowpayment','report_gateway'=>'nowpayment','quote'=>'achbotHostedUsdQuote',
+            'hosted'=>['credential_setting'=>'nowpayment','quote'=>'achbotHostedUsdQuote',
                 'issue'=>'achbotHostedNowpaymentsIssue','verify'=>'achbotHostedNowpaymentsVerify',
                 'url'=>'achbotHostedNowpaymentsUrl','reference'=>'achbotHostedChildReference',
                 'child_transactions'=>true]],
-        'nextpay'=>['invoice'=>'achbotCreditValidateTomanInvoice','proofs'=>[
+        'nextpay'=>['label'=>static fn()=>achbotMessage('automatic_gateway_review.provider_nextpay'),
+            'invoice'=>'achbotCreditValidateTomanInvoice','proofs'=>[
             'nextpay'=>'achbotCreditVerifyNextpayLocked','manual'=>'achbotCreditVerifyHostedAttestationLocked'],'additional_evidence'=>true,
             'hosted'=>['credential_setting'=>'nextpay','quote'=>'achbotHostedTomanQuote',
                 'issue'=>'achbotHostedNextpayIssue','verify'=>'achbotHostedNextpayVerify',
                 'url'=>'achbotHostedNextpayUrl','reference'=>'achbotHostedExactReference',
                 'child_transactions'=>false]],
-        'zarinpal'=>['invoice'=>'achbotCreditValidateTomanInvoice','proofs'=>[
+        'zarinpal'=>['label'=>static fn()=>achbotMessage('automatic_gateway_review.provider_zarinpal'),
+            'invoice'=>'achbotCreditValidateTomanInvoice','proofs'=>[
             'zarinpal'=>'achbotCreditVerifyZarinpalLocked','manual'=>'achbotCreditVerifyHostedAttestationLocked'],'additional_evidence'=>true,
             'hosted'=>['credential_setting'=>'zarinpal','quote'=>'achbotHostedTomanQuote',
                 'issue'=>'achbotHostedZarinpalIssue','verify'=>'achbotHostedZarinpalVerify',
@@ -52,7 +56,7 @@ function achbotCreditMethodRegistry(): array {
 function achbotCreditMethodDefinition(string $key): ?array {
     if (!preg_match('/\A[a-z][a-z0-9_]{0,31}\z/D',$key)) return null;
     $method=achbotCreditMethodRegistry()[$key]??null;
-    if (!is_array($method) || !is_callable($method['invoice']??null) ||
+    if (!is_array($method) || !is_callable($method['label']??null) || !is_callable($method['invoice']??null) ||
         !is_bool($method['additional_evidence']??null) ||
         !is_array($method['proofs']??null) || !$method['proofs']) return null;
     foreach ($method['proofs'] as $basis=>$verify) {
@@ -70,6 +74,12 @@ function achbotCreditMethodDefinition(string $key): ?array {
             if (!is_callable($h[$callback]??null)) return null;
     }
     return $method;
+}
+
+/** One source-owned method label for receipt presentation and reports. */
+function achbotCreditMethodLabel(string $key): string {
+    $method=achbotCreditMethodRegistry()[$key]??null;
+    return $method!==null?($method['label'])():($key!==''?$key:'-');
 }
 
 /** Shared classification and SQL selectors derive from the same registered

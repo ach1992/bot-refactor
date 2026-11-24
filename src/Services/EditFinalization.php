@@ -35,7 +35,7 @@ function achbotServiceEditCustomerPacketLocked(mysqli $db,array $op,array $quote
             achbotServiceAutoRenewNoticeValues($db,$op,$quote));
     } else {
         $receipt=achbotServiceFundingReceiptLocked($db,$op);
-        if ($receipt!==null && achbotReceiptReportGateway($receipt['attempt'])!==null) {
+        if ($receipt!==null && achbotReceiptIsHosted($receipt['attempt'])) {
             $text=match($kind) {
                 'RENEW'=>achbotMessage('gateway.gateway_return.perform_payment_effect.message.a3b46e7d37',['remark'=>$q['remark']]),
                 'ADD_TIME'=>achbotMessage('gateway.gateway_return.perform_payment_effect.message.8ab1d455cf',['plusDays'=>$q['days']]),

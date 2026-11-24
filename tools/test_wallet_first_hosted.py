@@ -314,11 +314,15 @@ $id=achbotServiceIssueLocked($db,1001,'fixture',$argv[4],$q);$db->commit();echo 
                 aid=int(sql(f'SELECT id FROM payment_attempts WHERE pay_row_id={pid}'))
                 b=bal()
                 assert result(mode,'review',attempt=aid,decision='reject',actor=1001)['status']=='denied'
-                r=result(mode,'review',attempt=aid,decision='reject')
+                sql("INSERT INTO setting(type,value) VALUES ('ADMIN_NOTIFY_9002','off')")
+                r=result(mode,'review',attempt=aid,decision='reject',actor=9002)
                 assert r['status']=='rejected',r
                 assert result(mode,'review',attempt=aid,decision='reject')['status']=='stale'
                 assert sql(f"SELECT stage FROM service_operations WHERE id={oid}")=='cancelled'
-                assert sql(f"SELECT COUNT(*) FROM payment_followup_intents WHERE pay_row_id={pid} AND stage='manual_reject'")=='3'
+                assert sql(f"SELECT GROUP_CONCAT(CONCAT(role,':',recipient) ORDER BY role) FROM payment_followup_intents WHERE pay_row_id={pid} AND stage='manual_reject'")=='customer:1001,report_actor:9002,service_admin:9001,service_channel:@fixture_report'
+                assert sql(f"SELECT COUNT(*) FROM payment_followup_intents WHERE pay_row_id={pid} AND stage='manual_reject' AND state<>'acknowledged'")=='0'
+                sql("DELETE FROM setting WHERE type='ADMIN_NOTIFY_9002'")
+                case('hosted_rejection_actual_actor_owner_channel')
                 assert bal()==b
                 # A later unverified observation cannot reopen the declined receipt.
                 assert verify(mode,pid,'nextpay',ref)['status']=='unavailable'

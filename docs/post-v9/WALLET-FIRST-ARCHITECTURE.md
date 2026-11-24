@@ -1247,4 +1247,53 @@ independent review and installed acceptance remain separate gates.
 - Service result: BUY/RENEW/ADD_TIME/ADD_VOLUME all emit source-neutral completion reports after verified local finality, independently of Telegram customer delivery; original manual receipt edit and delivery-dependent confirmation remain separate. Automatic renewal retains its dedicated report with the service and order identifiers.
 - Other Wallet credits: original ledger-backed adjustment, transfer and onboarding reward use a wallet_entry_id followup source (039, no synthetic invoice); purchase referral and resolution use their existing verified sources with the Wallet entry correlation. Administrative debits and refund/close decisions are also searchable. Transfer sender is not a fabricated administrator; report both original balance movements. A primary recipient who also approved receives one report.
 - Other useful service events: manual/existing subscription import now uses the general report audience for both customer/admin registration. Trial, administrator bulk creation, plan change, transfer/reassignment, direct gift and deletion retain their existing notification paths; their direct reports are best-effort and are not upgraded to financial outbox sources in this slice. Failure diagnostics remain private to authorized administrators.
-- Report channels are the configured rewardChannel. Channel/role changes do not silently redirect sealed reports; the same original attempt journal and attention inbox support explicit redrive of unknown/rejected packets. Optional general-manager copies do not block mandatory owner/actor/channel staging on a contended preference read. No credentials, original receipt image, or private subscription URLs in financial/service summary reports.
+- Report channels are the configured rewardChannel. New configuration stores the resolved Telegram numeric chat ID; username casing is canonicalized and malformed destinations are logged without vetoing a financial decision. Missing/invalid destinations cannot receive a report. Channel/role changes do not silently redirect sealed reports; the same original attempt journal and attention inbox support explicit redrive of unknown/rejected packets. Optional general-manager copies do not block mandatory owner/actor/channel staging on a contended preference read. No credentials, original receipt image, or private subscription URLs in financial/service summary reports.
+
+
+### Final-audit remediation on #204 / #234 (2026-11-24)
+
+This slice follows the last red candidate 557f7276b876cdabcfe1b7e8f108ae50546e751e
+(base 484c80e6ee030e8656da96edc3000311d10327b5, tree
+b6e2c10eb397b0a3338d8b318bd2ddc2ef6acb75). It does not authorize activation.
+
+- Current receipt, service-completion, wallet-movement, rejection and
+  purchase-referral admin reports share the same recipient staging policy.
+  Deduplicate owner, authorized optional staff, real human actor and
+  configured channel; preserve the acting operator's private moderation
+  keyboard on manual rejection. Purchase-referral customer notice remains
+  separate from administrator reports. The original funding ledger actor,
+  not a guessed administrator or the reward worker, identifies a human
+  approval. No invented actor for automatic financial confirmation.
+- Current payment method display labels are owned by the receipt registry.
+  Reports derive hosted capability from that registry rather than a second
+  provider-specific report map. Ordinary service completion reports carry
+  the original payment/request ID and hash, operation ID, subscription
+  identity, and immutable debit entry/before/after values; report unlimited
+  volume as unlimited, not zero gigabytes.
+- Outbox admission requires both InnoDB tables, current source/attempt
+  columns and exact non-prefix unique source and attempt identities.
+  Missing current Wallet or attempt-journal unique keys fail closed.
+  The current schema itself is unchanged by this audit slice.
+- An unavailable optional staff preference read no longer aborts a valid
+  credit or referral. Existing receipt-copy identity can be staged when
+  permission discovery is contended, but dispatch must revalidate current
+  authorization. An invalid channel is not guessed or silently redirected.
+- Explicit UTF-8/utf8mb4 fixture connections and SQL output, and a stored
+  byte round-trip assertion, address the observed Persian report encoding
+  mismatch. The exact CI environment must still pass. Removed 32 proven
+  unused catalog keys; changed/new texts are individually pinned, not a
+  blanket snapshot acceptance. Direct Telegram-wire parity remains required.
+
+The current functional suite uses real PHP, disposable MariaDB and owned
+loopback peers, and validates rendered source packets and callbacks. It is
+not installed/live acceptance, nor a proof of every possible user-facing
+message or external Native ordering. Non-financial trial, direct gift,
+admin bulk creation, subscription import, plan change, transfer/reassignment
+and deletion notifications still include best-effort direct reporting paths;
+complete durable fanout and deliberate per-event recovery acceptance of
+those paths is a remaining audit requirement, not established by a green
+financial CI. Large bulk summaries may omit names that do not fit a single
+Telegram message; omitted counts are shown but not every omitted name is
+searchable in that report. The prior delayed-write counterexample remains
+an explicit Native API limitation. Keep the independent review, owner
+decision and installed acceptance gates separate.

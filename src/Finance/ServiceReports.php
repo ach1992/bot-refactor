@@ -131,18 +131,18 @@ function achbotServiceStageCompletionReportsLocked(mysqli $db,array $op,array $q
     $source=achbotServiceCompletionReportSourceLocked($db,$op,$quote);
     $q=$quote['request'];$kind=$op['kind'];$id=(int)$op['id'];$uid=(int)$op['userid'];
     $receipt=$source['receipt'];$accounts=$source['accounts'];$stage='service_completed';
-    $reference=$receipt===null?'svc_'.$id:(string)$receipt['pay']['hash_id'];
+    $reference=$receipt===null?'svc_'.$id:'P'.$receipt['pay']['id'].' / '.$receipt['pay']['hash_id'];
     if ($op['command_kind']==='checkout') {
         require_once __DIR__.'/CheckoutAdmission.php';
         $original=achbotProviderRow($db,'SELECT * FROM pays WHERE checkout_operation_id=? FOR UPDATE','i',[$id]);
         if (!$original) throw new RuntimeException('checkout_original_command_missing');
         achbotCheckoutOriginalCommandLocked($db,$original);
-        $reference=(string)$original['hash_id'];
+        $reference='P'.$original['id'].' / '.$original['hash_id'];
     }
     $remark=$kind!=='BUY'?$q['remark']:
         ($q['quantity']>1?achbotMessage('bulk_reporting.bulk_subject'):$accounts[0]['name']);
-    $gateway=$receipt===null?null:achbotReceiptReportGateway($receipt['attempt']);
-    if ($receipt!==null && $gateway===null) {
+    $hosted=$receipt!==null && achbotReceiptIsHosted($receipt['attempt']);
+    if ($receipt!==null && !$hosted) {
         $subject=match($kind) {
             'ADD_TIME'=>achbotMessage('manual_receipt_final.day_subject',['remark'=>$remark,'units'=>$q['days']]),
             'ADD_VOLUME'=>achbotMessage('manual_receipt_final.volume_subject',['remark'=>$remark,'units'=>$q['volume']]),
@@ -162,13 +162,20 @@ function achbotServiceStageCompletionReportsLocked(mysqli $db,array $op,array $q
         'user'=>$uid,'method'=>$method,'amount'=>number_format($q['price']),'remark'=>$remark,
         'server'=>$q['server_id'],'plan'=>$q['plan_id'],'reference'=>$reference,'service'=>$id
     ])."\n".match($kind) {
-        'BUY','RENEW'=>achbotMessageHtml('operational_reports.service_units',['volume'=>$q['volume'],'days'=>$q['days']]),
+        'BUY','RENEW'=>achbotMessageHtml('operational_reports.service_units',['volume'=>$q['volume']===0?achbotMessage('operational_reports.unlimited_volume'):achbotMessage('operational_reports.finite_volume',['volume'=>number_format($q['volume'])]),'days'=>number_format($q['days'])]),
         'ADD_TIME'=>achbotMessageHtml('operational_reports.service_added_days',['days'=>$q['days']]),
         'ADD_VOLUME'=>achbotMessageHtml('operational_reports.service_added_volume',['volume'=>$q['volume']])
     };
     if ($kind!=='BUY' || $q['quantity']===1)
         $text.="\n".achbotMessageHtml('operational_reports.service_order',
             ['order'=>$kind==='BUY'?$accounts[0]['order_id']:$q['order_id']]);
+    if ($op['debit_entry_id']!==null) {
+        require_once __DIR__.'/WalletReports.php';
+        $debit=achbotWalletReportEntryLocked($db,(int)$op['debit_entry_id']);
+        $text.="\n".achbotMessageHtml('operational_reports.service_wallet',[
+            'entry'=>$debit['id'],'before'=>number_format((int)$debit['balance_before']),
+            'after'=>number_format((int)$debit['balance_after'])]);
+    }
     $actor=$receipt===null?0:$receipt['entry']['actor'];
     if ($actor>0) $text.="\n".achbotMessageHtml('operational_reports.actor',['actor'=>$actor]);
     if ($kind==='BUY' && $q['quantity']>1)
@@ -186,7 +193,7 @@ function achbotServiceStageCompletionReportsLocked(mysqli $db,array $op,array $q
 function achbotServiceManualNoticeActor(array $source): ?int {
     $receipt=$source['receipt'];
     if ($receipt===null || $receipt['attempt']['wallet_credit_basis']!=='manual' ||
-        achbotReceiptReportGateway($receipt['attempt'])!==null) return null;
+        achbotReceiptIsHosted($receipt['attempt'])) return null;
     $actor=$receipt['entry']['actor'];
     return $actor>0?$actor:null;
 }
@@ -215,7 +222,7 @@ function achbotServiceStageManualNoticesLocked(mysqli $db,array $op,array $quote
     if ($owner!==$actor)
         achbotFollowupStoreLocked($db,null,$id,$stage,'purchase_owner','send',(string)$owner,null,
             $source['fingerprint'],$content);
-    $channel=(string)($GLOBALS['botState']['rewardChannel']??'');
+    $channel=achbotFollowupReportChannel((string)($GLOBALS['botState']['rewardChannel']??''),$stage,null,$id);
     if ($channel!=='' && $channel!==(string)$actor && $channel!==(string)$owner)
         achbotFollowupStoreLocked($db,null,$id,$stage,'purchase_channel','send',$channel,null,
             $source['fingerprint'],$content);
@@ -232,7 +239,7 @@ function achbotServiceManualNoticeAllowedLocked(mysqli $db,array $op,array $quot
     if (!$buy || $quote['request']['quantity']<=1) return false;
     if ($r['role']==='purchase_owner') return $owner!==$actor && $recipient===(string)$owner;
     if ($r['role']==='purchase_channel') {
-        $channel=(string)($GLOBALS['botState']['rewardChannel']??'');
+        $channel=achbotFollowupReportChannel((string)($GLOBALS['botState']['rewardChannel']??''));
         return $channel!=='' && $recipient===$channel && $channel!==(string)$actor &&
             $channel!==(string)$owner;
     }
@@ -320,7 +327,7 @@ function achbotServiceReportValidateLocked(mysqli $db,array $op,array $quote,arr
         $requiresAck=$r['stage']==='service_delivered';
         $source=achbotServiceCompletionReportSourceLocked($db,$op,$quote,$requiresAck);
         $receipt=$source['receipt'];
-        $manual=$receipt!==null && achbotReceiptReportGateway($receipt['attempt'])===null;
+        $manual=$receipt!==null && !achbotReceiptIsHosted($receipt['attempt']);
         if (in_array($r['role'],['operator','purchase_owner','purchase_channel'],true)) {
             if (!$manual || !achbotServiceManualNoticeAllowedLocked($db,$op,$quote,$source,$r)) return null;
             if ($requiresAck && !$source['delivered'])
@@ -338,7 +345,7 @@ function achbotServiceReportValidateLocked(mysqli $db,array $op,array $quote,arr
         if ($r['role']==='service_admin') {
             if ($owner<=0 || !achbotAdminNotificationAllowed($db,(int)$recipient,$owner,'general')) return null;
         } elseif ($r['role']==='service_channel') {
-            $channel=(string)($GLOBALS['botState']['rewardChannel']??'');
+            $channel=achbotFollowupReportChannel((string)($GLOBALS['botState']['rewardChannel']??''));
             if ($channel==='' || $channel!==$recipient) return null;
         } else return null;
     } elseif ($r['stage']==='auto_renewal_low_wallet') {

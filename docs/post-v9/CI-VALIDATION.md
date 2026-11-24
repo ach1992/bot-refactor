@@ -171,3 +171,17 @@ The current-schema service suite exercises actual plan PUT, committed pre-dispat
 
 
 Reporting coverage: the existing strict/non-strict native suites verify manual, API, timer and hosted credit recipient matrices, actual independent approval-actor delivery when general notifications are disabled, superseded API credit content, funded vs retained receipts, original service completion reports, refund/partial retention and referral source evidence. The admin Wallet, transfer and onboarding route suites verify actual standalone source staging and independent Telegram delivery; the empty-schema equivalence test includes 039. No live Telegram or provider calls.
+
+
+### Additional final-audit gates
+
+The current Wallet-first suites additionally require malformed-channel
+financial finality and channel/owner deduplication, case-normalized
+channel authorization, rendered manual rejection with the real actor's
+private moderation keyboard, delegated hosted rejection, purchase
+referral with the original funding actor, and completed-service report
+correlation to its original receipt and immutable Wallet debit. Fresh
+schema negative checks independently remove Wallet and attempt uniqueness
+while retaining the supporting foreign-key indexes. Persian resolution
+fixtures explicitly negotiate utf8mb4 with both clients and verify stored
+bytes as well as returned text; retain the semantic Persian assertions.

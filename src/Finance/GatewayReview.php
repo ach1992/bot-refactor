@@ -130,8 +130,9 @@ function achbotGatewayReviewCommit(mysqli $db,int $actor,int $attemptId,
                     achbotFollowupStageAdminReportLocked($db,$id,null,'manual_reject',
                         achbotPaymentEvidencePayFingerprint($pay),$primaryOwner,(string)($GLOBALS['botState']['rewardChannel']??''),
                         ['text'=>achbotMessageHtml('automatic_gateway_review.rejected_report',[
-                            'id'=>$attemptId,'user'=>$uid,'amount'=>number_format((int)$pay['price']),'hash'=>$pay['hash_id']]),
-                            'keys'=>null,'mode'=>'HTML']);
+                            'id'=>$attemptId,'user'=>$uid,'amount'=>number_format((int)$pay['price']),'hash'=>$pay['hash_id']])."\n".
+                            achbotMessageHtml('operational_reports.actor',['actor'=>$actor]),
+                            'keys'=>null,'mode'=>'HTML'],$actor);
                 }
                 if (!$db->commit()) throw new RuntimeException('gateway_review_commit');
             } catch (Throwable $e) {$db->rollback();throw $e;}

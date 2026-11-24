@@ -16,6 +16,7 @@
     "src/Finance/ServiceDelivery.php",
     "src/Finance/ServicePurchaseReferral.php",
     "src/Finance/ServiceReports.php",
+    "src/Finance/WalletReports.php",
     "src/Panel/AccountNaming.php",
     "src/Panel/PasarGuardServiceEdit.php",
     "src/Panel/PasarGuardServiceExecution.php",

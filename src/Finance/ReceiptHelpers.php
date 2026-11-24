@@ -76,12 +76,7 @@ function generateHigherRandomizedAmount(int $amountToman): array {
 }
 
 function achbotManualLabel(string $method): string {
-    return match ($method) {
-        'gift_card' => \achbotMessage('manual_payment.receipt_helpers.manual_label.text.3904ef0f3d'),
-        'manual_usdt' => \achbotMessage('manual_payment.receipt_helpers.manual_label.text.2f1fd66193'),
-        'manual_trx' => \achbotMessage('manual_payment.receipt_helpers.manual_label.text.ea9faa7b63'),
-        default => \achbotMessage('manual_payment.receipt_helpers.manual_label.text.ace4b5ad89')
-    };
+    return achbotCreditMethodLabel($method);
 }
 
 /** Validated explicit bot-setting rate; no private or network fallback. */

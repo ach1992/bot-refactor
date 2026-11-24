@@ -30,6 +30,11 @@ function sendMessage(...$args) {
     return (object)['ok'=>!($GLOBALS['spec']['fail_send']??false),'result'=>(object)['message_id'=>333]];
 }
 function answerCallbackQuery(...$args) {$GLOBALS['review_alerts'][]=$args;}
+function alert(...$args) {$GLOBALS['review_alerts'][]=$args;}
+function editKeys(...$args) {
+    $GLOBALS['review_sends'][]=['kind'=>'edit_keys','args'=>$args];
+    return (object)['ok'=>true];
+}
 function editText(...$args) {
     $GLOBALS['review_sends'][]=['kind'=>'edit','args'=>$args];
     return (object)['ok'=>true];
@@ -37,7 +42,8 @@ function editText(...$args) {
 function fixtureReview(mysqli $db,array $spec): array {
     $connection=$db;$admin=9001;$from_id=(int)($spec['actor']??9001);
     $chat_id=(int)($spec['chat']??$from_id);$message_id=111;$callbackId='test-review';
-    $data=$spec['callback'];$text='';$userInfo=['step'=>'none'];
+    $data=$spec['callback'];$text=$spec['text']??'';$userInfo=['step'=>$spec['step']??'none'];
+    $botUsername='fixture_bot';$cancelKey=null;
     $GLOBALS['from_id']=$from_id;$GLOBALS['chat_id']=$chat_id;$GLOBALS['data']=$data;$GLOBALS['callbackId']=$callbackId;
     $GLOBALS['review_sends']=[];$GLOBALS['review_alerts']=[];
     require dirname($GLOBALS['argv'][1]).'/Routes/ManualReceipts.php';
@@ -50,6 +56,7 @@ $GLOBALS['paymentKeys']=$keys+['bankAccount'=>'fixture-bank','holderName'=>'fixt
     'manualUsdtWalletERC20'=>'0x'.str_repeat('1',40),'manualUsdtRateToman'=>100000,
     'manualTrxWallet'=>'TJRabPrwbZy45sbavfcjinPJC18kjpRTv8','manualTrxRateToman'=>10000];
 $GLOBALS['botState']=$states+['cartToCartState'=>'on','giftCardState'=>'on','manualUsdtState'=>'on','rewardChannel'=>'@fixture_report'];
+if (array_key_exists('report_channel',$spec)) $GLOBALS['botState']['rewardChannel']=$spec['report_channel'];
 if (!($spec['api']??false)) {$GLOBALS['botState']['smsApiVerifyState']='off';$GLOBALS['botState']['giftApiVerifyState']='off';}
 try {
     $result=match ($spec['op']) {
@@ -101,9 +108,9 @@ def main():
     ap.add_argument('--report',type=Path)
     args=ap.parse_args();cases=[]
     with owned.owned_database(ROOT/'database/current-schema.sql') as (work,env):
-        cli=['mariadb','--no-defaults','--protocol=SOCKET','--socket='+str(work/'mysql.sock'),'-uroot','--batch','--skip-column-names',DB]
+        cli=['mariadb','--no-defaults','--default-character-set=utf8mb4','--protocol=SOCKET','--socket='+str(work/'mysql.sock'),'-uroot','--batch','--skip-column-names',DB]
         def sql(q):
-            return subprocess.run(cli,input="SET time_zone='+00:00';"+q,text=True,env=env,check=True,capture_output=True,timeout=20).stdout.strip()
+            return subprocess.run(cli,input="SET time_zone='+00:00';"+q,text=True,encoding="utf-8",env=env,check=True,capture_output=True,timeout=20).stdout.strip()
         sql("""INSERT INTO setting(type,value) VALUES ('BOT_STATES','{"cartToCartAutoAcceptState":"on","cartToCartAutoAcceptTime":5,"cartToCartAutoAcceptType":2}');
             INSERT INTO server_config(id,panel_url,ip,sni,header_type,request_header,response_header,security,tlsSettings,type,username,password)
             VALUES (2,'https://fixture.invalid','127.0.0.1','','none','','','none','{}','pasarguard','fixture','fixture');
@@ -178,6 +185,61 @@ def main():
                 assert balance()==b+1000
                 sql("DELETE FROM setting WHERE type='ADMIN_NOTIFY_9002'")
                 case('actual_approver_owner_channel_reports_without_duplicate_money')
+                # A malformed, missing, or overlapping configured channel
+                # cannot veto an authenticated credit or duplicate the owner.
+                for channel_case,destination in (('blank',' '),('malformed','not-a-telegram-destination'),('overflow','9223372036854775808'),('owner_overlap','9001')):
+                    pid=seed(mode+'-channel-'+str(len(cases)))
+                    result(mode,'issue',pid,method='bank_transfer')
+                    submit(mode,pid,'bank_transfer','fixture-report-channel')
+                    b=balance()
+                    r=result(mode,'approve',pid,report_channel=destination)
+                    assert r['funding']=='wallet_only' and balance()==b+1000,r
+                    assert result(mode,'approve',pid,report_channel=destination)['credit']['replayed']
+                    targets=sql(f"SELECT CONCAT(role,':',recipient) FROM payment_followup_intents WHERE pay_row_id={pid} AND kind='send' ORDER BY role").splitlines()
+                    assert targets==['customer:1001','service_admin:9001'],(destination,targets)
+                    rid=int(sql(f"SELECT id FROM payment_followup_intents WHERE pay_row_id={pid} AND role='service_admin'"))
+                    report=result(mode,'report',pid,report=rid,report_channel=destination)
+                    assert report['status']=='acknowledged' and len(report['sends'])==1,report
+                    assert balance()==b+1000
+                    case('report_channel_'+channel_case+'_financial_finality')
+                # Telegram usernames are case insensitive; one immutable
+                # recipient remains valid if only casing changes.
+                pid=seed(mode+'-report-case')
+                result(mode,'issue',pid,method='gift_card')
+                submit(mode,pid,'gift_card','fixture-report-case')
+                assert result(mode,'approve',pid,report_channel='@Fixture_Report')['funding']=='wallet_only'
+                rid=int(sql(f"SELECT id FROM payment_followup_intents WHERE pay_row_id={pid} AND role='service_channel' AND recipient='@fixture_report'"))
+                assert result(mode,'report',pid,report=rid,report_channel='@FIXTURE_REPORT')['status']=='acknowledged'
+                case('configured_username_case_normalization')
+                # Real typed manual rejection: one report per authorized recipient,
+                # moderation control for the acting operator only, no Wallet credit.
+                sql("INSERT INTO setting(type,value) VALUES ('ADMIN_NOTIFY_9002','off')")
+                for actor in (9001,9002):
+                    h=mode+'-reject-report-'+str(actor)
+                    pid=seed(h)
+                    result(mode,'issue',pid,method='bank_transfer')
+                    submit(mode,pid,'bank_transfer','fixture-reject-report')
+                    editor='declineActionReason_'+h+'_222'
+                    sql(f"UPDATE users SET step='{editor}' WHERE userid={actor}")
+                    b=balance()
+                    rendered=result(mode,'review',pid,callback='',text='fixture <reason>',step=editor,actor=actor)
+                    assert sql(f"SELECT CONCAT(state,':',approved_by) FROM pays WHERE id={pid}")==f'declined:{actor}'
+                    targets=sql(f"SELECT recipient FROM payment_followup_intents WHERE pay_row_id={pid} AND stage='manual_reject' AND kind='send' ORDER BY recipient").splitlines()
+                    assert targets==(['1001','9001','9002','@fixture_report'] if actor==9002 else ['1001','9001','@fixture_report']),targets
+                    assert sql(f"SELECT COUNT(*) FROM payment_followup_intents WHERE pay_row_id={pid} AND stage='manual_reject' AND state<>'acknowledged'")=='0',(rendered,sql(f"SELECT role,recipient,state,last_result FROM payment_followup_intents WHERE pay_row_id={pid}"))
+                    sends=[v['args'] for v in rendered['sends'] if v['kind']=='message']
+                    assert sorted(str(v[3]) for v in sends)==targets,(rendered,targets)
+                    for body,keys,parse_mode,recipient in sends:
+                        assert parse_mode=='HTML'
+                        if recipient==1001: assert '&lt;reason&gt;' in body and '<reason>' not in body
+                        else:
+                            assert str(actor) in body and h in body
+                            assert ('banUserDirect_' in (keys or ''))==(recipient==actor),(keys,recipient,actor)
+                    result(mode,'review',pid,callback='',text='fixture <reason>',step=editor,actor=actor)
+                    assert balance()==b
+                    assert int(sql(f"SELECT COUNT(*) FROM payment_followup_intents WHERE pay_row_id={pid} AND stage='manual_reject' AND kind='send'"))==len(targets)
+                    case('manual_rejection_dedup_owner_actor_channel_'+str(actor))
+                sql("DELETE FROM setting WHERE type='ADMIN_NOTIFY_9002'")
                 # Real private recovery route, lost ACK and independent delivery.
                 for method in ('bank_transfer','gift_card','manual_usdt','manual_trx'):
                     pid=seed(mode+'-recover-'+method)

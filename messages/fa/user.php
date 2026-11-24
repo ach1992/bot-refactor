@@ -219,11 +219,7 @@ return [
         'wallet_transfer.wallet_transfer_restart.message.6924ce253f' => '⚠️ وضعیت درخواست انتقال شما نیاز به بررسی دارد. ',
         'wallet_transfer.wallet_transfer_restart.message.f933fbcd9d' => 'لطفاً موجودی کیف پول را بررسی کنید و در صورت نیاز ',
         'wallet_transfer.wallet_transfer_restart.message.e9940862a9' => ['text' => 'کد پیگیری {reference} را به پشتیبانی بدهید.', 'parameters' => ['reference']],
-        'wallet_transfer.wallet_transfer_restart.text.bda050585a' => '—',
         'wallet_transfer.wallet_transfer_restart.text.ecbce64eed' => ['text' => ' تومان به کیف پول شما توسط کاربر {from_id} انتقال یافت.', 'parameters' => ['from_id']],
-        'wallet_transfer.wallet_transfer_restart.text.f7206f6d33' => ['text' => '📥 <b>مقصد</b>: <code>{to_id}</code>' . "\n" . '', 'parameters' => ['to_id']],
-        'wallet_transfer.wallet_transfer_restart.text.431f74945a' => '💰 مبلغ انتقال: <b>',
-        'wallet_transfer.wallet_transfer_restart.text.b971f2d37a' => '</b> تومان',
         'wallet_transfer.wallet_transfer_restart.text.8e5e1ee663' => ' تومان به کیف پول کاربر مورد نظر شما انتقال یافت.',
         'wallet_transfer.wallet_transfer_restart.text.b059640ccc' => 'لطفا یکی از کلید های زیر را انتخاب کنید.',
         // wallet_settlement.process_wallet_payment
@@ -491,7 +487,6 @@ return [
         // extensions.message
         'extensions.message.c346a0d62e' => '📥 تصویر برای پیگیری ثبت شده اما تأیید ارسال به مدیر دریافت نشده است. لطفاً همان تصویر را دوباره بفرستید یا با پشتیبانی تماس بگیرید. پرداخت مجدد انجام ندهید.',
         // extensions.alert
-        'extensions.hash_id.2899228604' => ['text' => '🆔 {hash_id}', 'parameters' => ['hash_id']],
         // extensions.message
         'extensions.message.24dea9b122' => ['text' => '✅ مدت <b>{volume}</b> روز به مدت زمان اشتراک <code>{remark}</code> اضافه شد.', 'parameters' => ['volume', 'remark']],
         // extensions.alert
@@ -500,7 +495,6 @@ return [
         // extensions.message
         'extensions.message.cce260f97e' => ['text' => '✅ مدت {volume} روز به مدت زمان اشتراک شما اضافه شد.', 'parameters' => ['volume']],
         // extensions.button
-        'extensions.button.aba3054570' => '⏳ افزایش زمان اشتراک',
         // extensions.message
         'extensions.alert.65fc393064' => '⚠️ امکان تغییر پلن برای این نوع اشتراک وجود ندارد.',
         // extensions.message
@@ -529,7 +523,6 @@ return [
         // extensions.alert
         'extensions.message.2d27ba4eea' => ['text' => '✅ حجم {volume} گیگ به حجم اشتراک شما اضافه شد.', 'parameters' => ['volume']],
         // extensions.button
-        'extensions.button.9a3cb8176f' => '⏳ افزایش حجم اشتراک',
         // renewal_checkout.button
         'renewal_checkout.button.faa57a99b5' => '✅ تأیید تمدید',
         'renewal_checkout.button.1fe862ea18' => '❌ انصراف',
@@ -556,7 +549,6 @@ return [
         // renewal_checkout.alert
         'renewal_checkout.message.cca1075329' => ['text' => '✅ اشتراک {remark} با موفقیت تمدید شد.', 'parameters' => ['remark']],
         // renewal_checkout.button
-        'renewal_checkout.button.7deb81ef97' => '♻️ تمدید اشتراک',
         // renewal_checkout.text
     ],
 
@@ -621,7 +613,6 @@ return [
         'referral_reward.give_referral_reward.text.b87aec1eb7' => ' تومان ثبت شد.' . "\n" . '💰 موجودی قبلی: ',
         'referral_reward.give_referral_reward.text.c0780ce268' => ' تومان' . "\n" . '💼 موجودی جدید: ',
         // checkout.button
-        'checkout.button.e401f3d5a2' => '🛍 خرید اشتراک جدید',
         // checkout.hash_id_local
         'checkout.alert.7f1f245514' => '⛔️ اطلاعات این اشتراک در حال حاضر قابل نمایش نیست.',
         'checkout.alert.bfa5553444' => '⛔️ لینک اشتراک در حال حاضر در دسترس نیست.',
@@ -754,8 +745,6 @@ return [
         'gateway_return.np_reconcile_batch.message.1d15981671' => 'درگاه پرداخت شناسایی نشد.',
         // gateway_return.np_defer_uncertain_remote_effect
         'gateway_return.perform_payment_effect.text.275b4903d9' => '↪️ بازگشت به منوی اصلی',
-        'gateway_return.perform_payment_effect.button.b9d052f74c' => ['text' => '💳 خرید از درگاه {gateType}', 'parameters' => ['gateType']],
-        'gateway_return.perform_payment_effect.hash_id.2899228604' => ['text' => '🆔 {hash_id}', 'parameters' => ['hash_id']],
         'gateway_return.perform_payment_effect.message.dd866497c7' => ['text' => ' تومان به حساب شما اضافه شد.' . "\n" . '' . "\n" . '<blockquote>' . "\n" . '⚠️ لطفا دقت کنید شما فقط کیف پول خودتان را شارژ کرده‌اید، برای خرید یا تمدید باید از دکمه های زیر استفاده کنید:' . "\n" . '' . "\n" . '🛒 <b>خرید اشتراک جدید</b>' . "\n" . 'یا <b>🔄 مشاهده اشتراک‌ها</b>' . "\n" . '' . "\n" . 'و در مرحله پرداخت روی دکمه زیر بزنید:' . "\n" . '' . "\n" . '💰 <b>پرداخت با موجودی</b>' . "\n" . '' . "\n" . '</blockquote>' . "\n" . '💬 پشتیبانی: {supportID}', 'parameters' => ['supportID']],
         'gateway_return.perform_payment_effect.message.a3b46e7d37' => ['text' => '✅ پرداخت شما با موفقیت انجام شد. اشتراک {remark} با موفقیت تمدید شد.', 'parameters' => ['remark']],
         'gateway_return.perform_payment_effect.message.8ab1d455cf' => ['text' => '✅ پرداخت شما با موفقیت انجام شد. {plusDays} روز به مدت زمان اشتراک شما اضافه شد.', 'parameters' => ['plusDays']],

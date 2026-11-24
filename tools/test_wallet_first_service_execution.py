@@ -136,6 +136,7 @@ function fixtureAlias(mysqli $db,int $order): int {
     return $id;
 }
 $db=new mysqli('localhost','root','',$argv[3],0,$argv[2]);
+if (!$db->set_charset('utf8mb4')) throw new RuntimeException('fixture_charset');
 $connection=$db;$GLOBALS['admin']=9001;
 $x=json_decode($argv[5],true,512,JSON_THROW_ON_ERROR);
 if ($x['short_lock_timeout']??false) $db->query('SET SESSION innodb_lock_wait_timeout=2');
@@ -165,6 +166,7 @@ try {
         $other=null;
         if (isset($x['block_service'])) {
             $other=new mysqli('localhost','root','',$argv[3],0,$argv[2]);
+            if (!$other->set_charset('utf8mb4')) throw new RuntimeException('fixture_charset');
             $lock=achbotServiceExecutionLock($other,$x['block_service']);
             if ((int)achbotProviderRow($other,'SELECT GET_LOCK(?,0) AS acquired','s',[$lock])['acquired']!==1)
                 throw new RuntimeException('fixture_block_due_service');
@@ -176,6 +178,7 @@ try {
         $other=null;
         if ($x['block_account']??false) {
             $other=new mysqli('localhost','root','',$argv[3],0,$argv[2]);
+            if (!$other->set_charset('utf8mb4')) throw new RuntimeException('fixture_charset');
             $d=achbotProviderRow($db,'SELECT order_id FROM payment_delivery_intents WHERE id=?','i',[$x['id']]);
             $name=achbotPgServiceAccountLock($other,(int)$d['order_id']);
             if ((int)achbotProviderRow($other,'SELECT GET_LOCK(?,0) AS acquired','s',[$name])['acquired']!==1)
@@ -331,6 +334,7 @@ try {
         $other=null;
         if (isset($x['block_service'])) {
             $other=new mysqli('localhost','root','',$argv[3],0,$argv[2]);
+            if (!$other->set_charset('utf8mb4')) throw new RuntimeException('fixture_charset');
             $lock=achbotServiceExecutionLock($other,$x['block_service']);
             if ((int)achbotProviderRow($other,'SELECT GET_LOCK(?,0) AS acquired','s',[$lock])['acquired']!==1)
                 throw new RuntimeException('fixture_block_service');
@@ -396,11 +400,12 @@ def main():
     args=ap.parse_args()
     cases=[]
     with owned.owned_database(ROOT/'database/current-schema.sql') as (work,env):
-        client=['mariadb','--no-defaults','--protocol=SOCKET','--socket='+str(work/'mysql.sock'),'-uroot','--batch','--skip-column-names',DB]
+        client=['mariadb','--no-defaults','--default-character-set=utf8mb4','--protocol=SOCKET','--socket='+str(work/'mysql.sock'),'-uroot','--batch','--skip-column-names',DB]
         def sql(q):
-            p=subprocess.run(client,input=q,text=True,env=env,capture_output=True,timeout=15)
+            p=subprocess.run(client,input=q,text=True,encoding="utf-8",env=env,capture_output=True,timeout=15)
             assert p.returncode==0,(q,p.stderr)
             return p.stdout.strip()
+        assert sql('SELECT @@character_set_client,@@character_set_connection,@@character_set_results')=='utf8mb4\tutf8mb4\tutf8mb4'
         lock=threading.Lock()
         users={};requests=[];faults=[];errors=[]
         entered=threading.Event();release=threading.Event()
@@ -599,7 +604,7 @@ def main():
                 p=subprocess.run(['php','-n','-d','extension=mysqlnd','-d','extension=mysqli','-d','extension=curl','-d','extension=gd',
                     '-d','allow_url_fopen=0','-d','disable_functions=exec,shell_exec,system,passthru,popen,proc_open,mail',
                     str(driver),str(ROOT),str(work/'mysql.sock'),DB,mysqli_mode,json.dumps(dict(op=op,**kw))],
-                    env=env,text=True,capture_output=True,timeout=25)
+                    env=env,text=True,encoding="utf-8",capture_output=True,timeout=25)
                 if kw.get('crash_after_part'):
                     assert p.returncode==29 and not p.stdout,(p.returncode,p.stdout,p.stderr)
                     return None
@@ -705,6 +710,29 @@ def main():
                 assert int(sql("SELECT wallet FROM users WHERE userid=9002"))==before+75
                 assert sql(f"SELECT COUNT(*) FROM wallet_entries WHERE source_kind='purchase_referral' AND source_ref='{op}'")=='1'
                 cases.append(mode+'_referral_customer_purchase_agent_inviter_eligible')
+                # Reuse the actual receipt-funded BUY engine; no fabricated
+                # actor for the automatic reward, but retain the real funding actor.
+                prior_role=sql("SELECT value FROM setting WHERE type='ADMIN_ROLE_9002'")
+                prior_admin=sql("SELECT isAdmin FROM users WHERE userid=9002")
+                sql("UPDATE users SET isAdmin=1 WHERE userid=9002; DELETE FROM setting WHERE type IN ('ADMIN_ROLE_9002','ADMIN_NOTIFY_9002'); INSERT INTO setting(type,value) VALUES ('ADMIN_ROLE_9002','operator'),('ADMIN_NOTIFY_9002','off')")
+                op=issue(mode,'manual-referral-actor')
+                h=mode+'-manual-referral-actor'
+                sql(f"INSERT INTO pays(hash_id,user_id,type,price,request_date,state) VALUES ('{h}',1001,'BUY_SUB',100,UNIX_TIMESTAMP(),'pending')")
+                pid=int(sql(f"SELECT id FROM pays WHERE hash_id='{h}'"))
+                assert php(mode,'manual_receipt',pay=pid,id=op,actor=9002)['funding']=='funded'
+                step(mode,op,'applied');step(mode,op,'completed')
+                assert php(mode,'referral',id=op)=='confirmed'
+                target_rows=sql(f"SELECT role,recipient,id FROM payment_followup_intents WHERE service_operation_id={op} AND stage='referral_reward' ORDER BY role").splitlines()
+                assert [v.split('\t')[:2] for v in target_rows]==[['referral_inviter','9002'],['report_actor','9002'],['service_admin','9001'],['service_channel','@fixture_report']],target_rows
+                rid=int(target_rows[1].split('\t')[2])
+                assert php(mode,'followup',id=rid)=='acknowledged'
+                wire=sql(f"SELECT text FROM fixture_followup WHERE intent_id={rid}")
+                assert '9002' in wire and h in wire and f'P{pid}' in wire,wire
+                assert php(mode,'referral',id=op)=='confirmed'
+                assert sql(f"SELECT COUNT(*) FROM wallet_entries WHERE source_kind='purchase_referral' AND source_ref='{op}'")=='1'
+                sql(f"UPDATE users SET isAdmin={prior_admin} WHERE userid=9002; DELETE FROM setting WHERE type IN ('ADMIN_ROLE_9002','ADMIN_NOTIFY_9002')")
+                if prior_role: sql(f"INSERT INTO setting(type,value) VALUES ('ADMIN_ROLE_9002','{prior_role}')")
+                cases.append(mode+'_referral_actual_funding_actor_common_audience')
                 sql("UPDATE users SET refered_by=0,is_agent=0 WHERE userid=1001; "
                     "UPDATE users SET is_agent=0 WHERE userid=9002; "
                     "DELETE FROM setting WHERE type='INVITE_BANNER_AMOUNT'")
@@ -793,6 +821,8 @@ def main():
                 assert php(mode,'followup',id=report_id)=='acknowledged'
                 wire=sql(f"SELECT text FROM fixture_followup WHERE intent_id={report_id}")
                 assert 'تعیین تکلیف شد' in wire and 'نیازمند بررسی است' not in wire,wire
+                stored=bytes.fromhex(sql(f'SELECT HEX(text) FROM fixture_followup WHERE intent_id={report_id}')).decode('utf-8')
+                assert 'تعیین تکلیف شد' in stored and 'نیازمند بررسی است' not in stored,stored
                 assert rows(op)[0].split('\t')[2] in wire,wire
                 cases.append(mode+'_resolution_partial_buy_exact_allocation_and_delivery')
 
@@ -1599,6 +1629,11 @@ DELIMITER ;
                 assert php(mode,'followup',id=report_id)=='acknowledged'
                 wire=sql(f"SELECT text FROM fixture_followup WHERE intent_id={report_id}")
                 assert 'nextpay' in wire.lower() and all(row.split('\t')[2] in wire for row in rows(op)),wire
+                debit=sql(f"SELECT w.id,w.balance_before,w.balance_after FROM service_operations s JOIN wallet_entries w ON w.id=s.debit_entry_id WHERE s.id={op}").split('\t')
+                assert f'P{first[0]}' in wire and f'W{debit[0]}' in wire,wire
+                assert f"موجودی پیش از کسر: {int(debit[1]):,} تومان" in wire,wire
+                assert f"موجودی پس از کسر: {int(debit[2]):,} تومان" in wire,wire
+                cases.append(mode+'_service_report_original_receipt_and_wallet_debit')
                 credit_id=int(sql(f"SELECT id FROM payment_followup_intents WHERE pay_row_id={late[0]} AND stage='wallet_credit' AND role='customer'"))
                 assert php(mode,'followup',id=credit_id,response=dict(ok=False,error_code=429,description='Too Many Requests',parameters=dict(retry_after=35)))=='pending'
                 assert php(mode,'followup',id=credit_id)=='not_due'
@@ -1631,8 +1666,8 @@ DELIMITER ;
                 assert len(requests)==n
                 cases.append(mode+'_referral_credit_outbox_rollback_frozen_policy_concurrency_lost_ack')
                 targets=dict(line.split('	') for line in sql(f"SELECT role,id FROM payment_followup_intents WHERE service_operation_id={op} AND stage='referral_reward'").splitlines())
-                assert set(targets)=={'referral_inviter','referral_admin','referral_channel'},targets
-                rid=int(targets['referral_admin'])
+                assert set(targets)=={'referral_inviter','service_admin','service_channel'},targets
+                rid=int(targets['service_admin'])
                 with ThreadPoolExecutor(max_workers=3) as pool:
                     results=list(pool.map(lambda _:php(mode,'followup',id=rid),range(3)))
                 assert 'acknowledged' in results and set(results)<={'acknowledged','busy'},results
@@ -1651,7 +1686,7 @@ DELIMITER ;
                 assert sql(f"SELECT COUNT(*) FROM fixture_followup WHERE intent_id={rid}")=='3'
                 cases.append(mode+'_followup_unknown_manual_attempt_not_repeated')
                 sql("UPDATE payment_followup_intents SET updated_at=NOW() WHERE state='pending' AND next_attempt_at IS NULL")
-                rid=int(targets['referral_channel'])
+                rid=int(targets['service_channel'])
                 assert php(mode,'claim_followup',id=rid)['status']=='claimed'
                 sql(f"UPDATE payment_followup_intents SET updated_at=DATE_SUB(NOW(),INTERVAL 3 MINUTE) WHERE id={rid}")
                 assert php(mode,'maintain_followups',limit=10)=={str(rid):'unknown'}

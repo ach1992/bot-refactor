@@ -1136,7 +1136,7 @@ if (
 
     $result = bot('getChatMember', ['chat_id' => $chatId, 'user_id' => $botId]);
     if ($result && !empty($result->ok) && isset($result->result->status) && $result->result->status === "administrator") {
-        setSettings('rewardChannel', $text);
+        setSettings('rewardChannel', (string)$chatId);
         sendMessage(\achbotMessage('legacy_messages.change_bot_settings_message'), getGateWaysKeys(), 'HTML');
         setUser();
         exit;

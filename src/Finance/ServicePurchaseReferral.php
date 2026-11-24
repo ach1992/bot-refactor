@@ -81,7 +81,8 @@ function achbotServiceReferralComplete(mysqli $db,int $id,int $owner): string {
             throw new RuntimeException('service_referral_claim_changed');
         $payId=(int)$claim['pay_row_id'];
         if ($claim['state']!=='NOT_ATTEMPTED') {$db->rollback();return strtolower($claim['state']);}
-        $pay=achbotServiceReferralReceiptLocked($db,$op);
+        $source=achbotServiceFundingReceiptLocked($db,$op);
+        $pay=$source['pay']??null;
         if (!$pay || (int)$pay['id']!==$payId)
             throw new RuntimeException('service_referral_original_receipt_changed');
         $inviter=(int)$claim['inviter_userid'];$amount=(int)$claim['amount_toman'];
@@ -110,7 +111,7 @@ function achbotServiceReferralComplete(mysqli $db,int $id,int $owner): string {
         $n=$s->affected_rows;$s->close();
         if ($n!==1) throw new RuntimeException('service_referral_confirm_failed');
         achbotPurchaseReferralStageReportsLocked($db,$pay,$buyer,$inviter,$amount,
-            $entry['before'],$entry['after'],$owner,$id,$entry['id']);
+            $entry['before'],$entry['after'],$owner,$id,$entry['id'],(int)$source['entry']['actor']);
         if (!$db->commit()) throw new RuntimeException('service_referral_commit');
         return 'confirmed';
     } catch (Throwable $e) {
@@ -136,9 +137,9 @@ function achbotServiceReferralComplete(mysqli $db,int $id,int $owner): string {
 function achbotServiceReferralReportValid(mysqli $db,array $pay,array $r): bool {
     $id=(int)$r['service_operation_id'];$payId=(int)$pay['id'];
     if ($id<=0 || $r['stage']!=='referral_reward' || $r['kind']!=='send' ||
-        $r['message_id']!==null || !in_array($r['role'],['referral_inviter','referral_admin','referral_channel'],true))
+        $r['message_id']!==null || !in_array($r['role'],['referral_inviter','service_admin','service_channel','report_actor'],true))
         return false;
-    $award=achbotProviderRow($db,"SELECT a.inviter_userid,a.inviter_user_row_id FROM referral_awards a
+    $award=achbotProviderRow($db,"SELECT a.inviter_userid,a.inviter_user_row_id,c.actor_userid AS credit_actor FROM referral_awards a
         JOIN service_operations o ON o.id=a.service_operation_id
         JOIN payment_attempts p ON p.pay_row_id=a.pay_row_id AND p.service_operation_id=o.id
         JOIN wallet_entries c ON c.id=p.wallet_credit_entry_id
@@ -155,13 +156,14 @@ function achbotServiceReferralReportValid(mysqli $db,array $pay,array $r): bool 
           AND w.balance_after=a.after_balance",'iiii',[$id,$payId,(int)$pay['user_id'],(int)$pay['price']]);
     if (!$award || $pay['state']!=='paid') return false;
     if ($r['role']==='referral_inviter') {
+        if ((string)$r['recipient']!==(string)$award['inviter_userid']) return false;
         $q=achbotProviderStatement($db,'SELECT id FROM users FORCE INDEX (idx_users_userid_v1)
             WHERE userid=? ORDER BY id LIMIT 2 LOCK IN SHARE MODE NOWAIT',
             'i',[(int)$award['inviter_userid']]);
         $current=$q->get_result()->fetch_all(MYSQLI_ASSOC);$q->close();
-        if (count($current)!==1 || (int)$current[0]['id']!==(int)$award['inviter_user_row_id']) return false;
+        return count($current)===1 && (int)$current[0]['id']===(int)$award['inviter_user_row_id'];
     }
-    return true;
+    return achbotFollowupAdminReportAllowed($db,$r,(int)$award['credit_actor']);
 }
 
 /** Fair bounded local work, independent of the Native and Telegram workers.
