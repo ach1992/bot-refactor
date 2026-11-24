@@ -29,6 +29,7 @@ NATIVE_TESTS = (
     ("wallet_first_funding", "test_wallet_first_funding.py"),
     ("wallet_first_hosted", "test_wallet_first_hosted.py"),
     ("wallet_first_manual", "test_wallet_first_manual.py"),
+    ("wallet_first_service_execution", "test_wallet_first_service_execution.py"),
     # PASS characterizes the current unsafe remote ordering; not acceptance.
     ("native_write_counterexample", "test_wallet_first_native_write_fence.py"),
     ("api_payments", "test_post_v9_scoped_api_pg.py"),

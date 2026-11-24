@@ -556,6 +556,50 @@ Automatic fair receipt polling, gateway issuance uncertainty disposition,
 receiving-account identity scoping, Native execution, final delivery,
 writer/caller convergence and migration remain acceptance work.
 
+### Source-neutral Native BUY execution slice
+
+The new `src/Services/Execution.php` owns due-time selection, one active
+database session per original operation, committed dispatch intent and
+claim-token result fencing. It calls registered prepare/perform/apply
+capabilities, not payment-specific executors. No transaction holds the Wallet
+owner across HTTP; a worker that loses its session cannot finalize a successor's
+claim. A failure retains the original phase and a due retry with a classified
+reason. The worker is deliberately inactive until the cohesive cutover.
+
+PasarGuard BUY reuses the existing physical CREATE evidence and the unique
+source/ordinal and physical-panel/username keys. Reserve each missing ordinal's
+original name, marker, expiry and exact bytes before POST. Read the exact
+authenticated name first; only an authenticated 404 permits CREATE with that
+same original unique name. A 409 or uncertain response is reconciled by
+readback, never a different name or another capacity reservation/debit.
+Matching name alone is insufficient: verify marker, incarnation, group
+membership, exact entitlement, managed state and by-ID readback. Existing
+verified ordinals never cause another POST. Changed local entitlement evidence
+and repointed panel identities block execution with a concrete diagnostic.
+
+`python3 tools/test_wallet_first_service_execution.py --run-disposable`
+passed 20 cases (strict/report-off PHP MySQLi, disposable MariaDB and actual
+loopback HTTP: 76 requests / 20 POSTs), including three-account partial
+completion and lost response, 409 after creation, definite dependency outage,
+SQL rollback after remote success, foreign same-name identity, panel repoint,
+locally changed entitlement, concurrent worker exclusion, due-batch progress,
+and financial/capacity invariance throughout replay. A second SQL connection
+writes the Wallet owner during HTTP to exercise the no-open-transaction
+boundary. These tests prove the current BUY-to-applied slice, not full order
+completion or a deployed provider.
+
+Next dependencies for BUY: atomic local order linkage and source-neutral
+018/020 delivery/referral/report finality, capacity restoration using the
+original service-operation reservation rather than per-line debit, immutable
+rendering evidence, correct completion and independent delivery retries.
+Implement RENEW and both ADD operations through the same coordinator, with
+a persistent physical-account fence covering all aliases and other mutation
+callers. Do not use the old ever-growing mutation-key array as the new
+replay authority. Admission, worker and registry must reject unsupported
+operation kinds before activation; temporary incomplete adapters are only
+a development boundary. The legacy runtime, writers and Cron entrypoints
+remain unconverted; migration rehearsal and independent review are pending.
+
 ### Verified Native limitation of existing APIs, not an accepted retry contract
 
 `python3 tools/test_wallet_first_native_write_fence.py --run-disposable`

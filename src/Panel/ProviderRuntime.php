@@ -4,6 +4,7 @@ if (realpath($_SERVER['SCRIPT_FILENAME']??'')===__FILE__) { http_response_code(4
 require_once __DIR__.'/../Diagnostics/EventLog.php';
 require_once __DIR__.'/ProviderImport.php';
 require_once __DIR__.'/PasarGuardServiceTarget.php';
+require_once __DIR__.'/PasarGuardServiceExecution.php';
 
 function achbotProviderType(mysqli $db,int $serverId): string {
     $s=$db->prepare('SELECT type FROM server_config WHERE id=?');
@@ -1403,7 +1404,9 @@ function achbotProviderRegistry(): array {
             'target'=>'achbotPasarGuardEffectTargetAdapter','reserve'=>'achbotPasarGuardReserveEffectAdapter',
             'dispatch'=>'achbotPasarGuardDispatchEffectAdapter','link'=>'achbotPasarGuardLinkEffectAdapter',
             'import_lookup'=>'achbotPasarGuardExistingUser','import_adopt'=>'achbotPasarGuardAdoptExistingLocked',
-            'service_target'=>'achbotPasarGuardServiceTargetLocked'
+            'service_target'=>'achbotPasarGuardServiceTargetLocked',
+            'service_execution'=>['BUY'=>['prepare'=>'achbotPasarGuardBuyPrepareLocked',
+                'perform'=>'achbotPasarGuardBuyPerform','apply'=>'achbotPasarGuardBuyApplyLocked']]
         ]
     ];
 }
@@ -1412,13 +1415,22 @@ function achbotProviderRegistryEntryValid($type,$adapter): bool {
         !is_array($adapter) || !is_string($adapter['label']??null) ||
         preg_match('/^[a-z][a-z0-9_.]+$/D',$adapter['label'])!==1) return false;
     $required=achbotProviderRequiredOperations();
-    if (array_diff(array_keys($adapter),array_merge(['label','import_lookup','import_adopt','service_target'],$required))) return false;
+    if (array_diff(array_keys($adapter),array_merge(['label','import_lookup','import_adopt','service_target','service_execution'],$required))) return false;
     foreach ($required as $operation)
         if (!is_string($adapter[$operation]??null) || !is_callable($adapter[$operation]))
             return false;
     // During the refactor legacy adapters have no new service admission.
     if (array_key_exists('service_target',$adapter) &&
         (!is_string($adapter['service_target']) || !is_callable($adapter['service_target']))) return false;
+    if (array_key_exists('service_execution',$adapter)) {
+        if (!is_array($adapter['service_execution']) || !$adapter['service_execution']) return false;
+        foreach ($adapter['service_execution'] as $kind=>$callbacks) {
+            if (!in_array($kind,['BUY','RENEW','ADD_VOLUME','ADD_TIME'],true) ||
+                !is_array($callbacks) || count($callbacks)!==3) return false;
+            foreach (['prepare','perform','apply'] as $callback)
+                if (!is_string($callbacks[$callback]??null) || !is_callable($callbacks[$callback])) return false;
+        }
+    }
     $lookup=array_key_exists('import_lookup',$adapter);$adopt=array_key_exists('import_adopt',$adapter);
     if ($lookup!==$adopt) return false;
     if ($lookup) foreach (['import_lookup','import_adopt'] as $operation)

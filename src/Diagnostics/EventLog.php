@@ -47,7 +47,7 @@ function achbotDiagnosticEvent(string $name,array $context=[],string $level='inf
             'instance'=>preg_replace('/[^A-Za-z0-9_-]/','_',
                 basename(dirname(__DIR__,2)))
         ];
-        $numeric=['pay_id','attempt_id','effect_id','order_id','server_id',
+        $numeric=['pay_id','attempt_id','effect_id','order_id','server_id','service_operation_id',
             'actor_id','ordinal','http_status','curl_errno','retry_after',
             'page','checked','selected','projected','deferred','due_unchecked',
             'elapsed_ms','batch_ms','message_count','candidate_count',

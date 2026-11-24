@@ -1,0 +1,133 @@
+<?php
+declare(strict_types=1);
+if (realpath($_SERVER['SCRIPT_FILENAME']??'')===__FILE__) {http_response_code(404);exit;}
+require_once __DIR__.'/Funding.php';
+
+/** The database-local session owner serializes actual live workers without
+ * holding an InnoDB transaction across HTTP. A persisted claim token fences
+ * local finalization after connection loss; neither is a remote CAS. */
+function achbotServiceExecutionLock(mysqli $db,int $id): string {
+    $r=achbotProviderRow($db,'SELECT DATABASE() AS db');
+    if ($id<=0 || !is_string($r['db']??null) || $r['db']==='')
+        throw new RuntimeException('service_worker_identity');
+    return 'achbot-service-'.substr(hash('sha256',$r['db']),0,20).'-'.$id;
+}
+function achbotServiceExecutionOwnsLock(mysqli $db,string $name): bool {
+    $r=achbotProviderRow($db,'SELECT IS_USED_LOCK(?)=CONNECTION_ID() AS owned','s',[$name]);
+    return (int)($r['owned']??0)===1;
+}
+function achbotServiceExecutionReason(Throwable $e): string {
+    $reason=$e->getMessage();
+    return ($e instanceof RuntimeException || $e instanceof DomainException) &&
+        preg_match('/\A(?:service|provider|pg)_[a-z0-9_]{1,86}\z/D',$reason)
+        ?$reason:'service_local_execution_failed';
+}
+
+/** Run at most one prepared Native step. An adapter supplies local immutable
+ * preparation, actual authenticated execution/readback and local result
+ * persistence. Only this owner schedules the original funded operation.
+ * No payment method, Telegram, price calculation or extra debit here. */
+function achbotServiceExecuteStep(mysqli $db,int $id): array {
+    $tx=achbotProviderRow($db,'SELECT @@in_transaction AS tx');
+    if ((int)($tx['tx']??1)!==0) throw new LogicException('service_worker_requires_autocommit');
+    $name=achbotServiceExecutionLock($db,$id);
+    $held=achbotProviderRow($db,'SELECT GET_LOCK(?,0) AS acquired','s',[$name]);
+    if ((int)($held['acquired']??0)!==1) return ['status'=>'busy'];
+    $owner=null;
+    try {
+        $locator=achbotProviderRow($db,'SELECT userid FROM service_operations WHERE id=?','i',[$id]);
+        if (!$locator) return ['status'=>'missing'];
+        $owner=(int)$locator['userid'];
+        if (!$db->begin_transaction()) throw new RuntimeException('service_worker_begin');
+        [$op,$quote]=achbotServiceReadLocked($db,$owner,$id);
+        if (!in_array($op['stage'],['funded','prepared','dispatching'],true)) {
+            $db->rollback();return ['status'=>$op['stage']];
+        }
+        $due=achbotProviderRow($db,'SELECT next_attempt_at IS NOT NULL AND next_attempt_at<=NOW(6) AS due FROM service_operations WHERE id=?','i',[$id]);
+        if ((int)$due['due']!==1) {$db->rollback();return ['status'=>'not_due'];}
+        // Read-only exact replay checks the already committed debit, never
+        // calls admission or funds another operation in these stages.
+        if (achbotServiceFundLocked($db,$owner,$id)!=='already_funded')
+            throw new RuntimeException('service_worker_funding_missing');
+        $adapter=achbotProviderDefinition($quote['target']['provider']??null);
+        $def=$adapter['service_execution'][$op['kind']]??null;
+        if (!$def) throw new DomainException('service_executor_unavailable');
+        $work=($def['prepare'])($db,$op,$quote);
+        $token=bin2hex(random_bytes(16));
+        if ($work===null) {
+            // The adapter has already verified that all original Native
+            // results are durably recorded. Local order/delivery is next.
+            $s=achbotProviderStatement($db,"UPDATE service_operations SET stage='applied',next_attempt_at=NULL,
+                claim_token=NULL,claim_until=NULL,failure_code=NULL,updated_at=NOW(6) WHERE id=?",'i',[$id]);$s->close();
+            if (!$db->commit()) throw new RuntimeException('service_worker_commit');
+            return ['status'=>'applied'];
+        }
+        $s=achbotProviderStatement($db,"UPDATE service_operations SET stage='dispatching',
+            claim_token=?,claim_until=DATE_ADD(NOW(6),INTERVAL 2 MINUTE),attempt_count=attempt_count+1,
+            failure_code=NULL,updated_at=NOW(6) WHERE id=?",'si',[$token,$id]);$s->close();
+        if (!$db->commit()) throw new RuntimeException('service_worker_dispatch_commit');
+        if (!achbotServiceExecutionOwnsLock($db,$name))
+            throw new RuntimeException('service_worker_ownership_lost');
+        $result=($def['perform'])($db,$op,$quote,$work);
+        if (!$db->begin_transaction()) throw new RuntimeException('service_worker_result_begin');
+        [$current,$original]=achbotServiceReadLocked($db,$owner,$id);
+        if (!achbotServiceExecutionOwnsLock($db,$name) || $current['stage']!=='dispatching' ||
+            $current['claim_token']!==$token || $original!==$quote)
+            throw new RuntimeException('service_worker_result_stale');
+        if (($result['success']??false)===true) {
+            $done=($def['apply'])($db,$current,$original,$work,$result);
+            if (!is_bool($done)) throw new RuntimeException('service_worker_result_invalid');
+            $stage=$done?'applied':'dispatching';
+            $s=achbotProviderStatement($db,"UPDATE service_operations SET stage=?,
+                next_attempt_at=IF(?=1,NULL,NOW(6)),claim_token=NULL,claim_until=NULL,
+                failure_code=NULL,updated_at=NOW(6) WHERE id=? AND claim_token=?",'siis',[$stage,(int)$done,$id,$token]);$s->close();
+            if (!$db->commit()) throw new RuntimeException('service_worker_result_commit');
+            return ['status'=>$done?'applied':'progressed'];
+        }
+        $reason=$result['reason']??'service_native_unconfirmed';
+        if (!is_string($reason) || !preg_match('/\A[a-z0-9_]{1,96}\z/D',$reason)) $reason='service_native_unconfirmed';
+        $delay=($result['http']??0)===429?60:20;
+        $s=achbotProviderStatement($db,"UPDATE service_operations SET next_attempt_at=DATE_ADD(NOW(6),INTERVAL ? SECOND),
+            claim_token=NULL,claim_until=NULL,failure_code=?,updated_at=NOW(6)
+            WHERE id=? AND claim_token=?",'isis',[$delay,$reason,$id,$token]);$s->close();
+        if (!$db->commit()) throw new RuntimeException('service_worker_defer_commit');
+        return ['status'=>'pending','reason'=>$reason];
+    } catch (Throwable $e) {
+        try {$db->rollback();} catch (Throwable $ignored) {}
+        $reason=achbotServiceExecutionReason($e);
+        // Even a failed preparation must not monopolize the first due row.
+        // Do not overwrite a new owner's claim after losing this connection.
+        try {
+            if ($owner!==null && achbotServiceExecutionOwnsLock($db,$name)) {
+                $s=achbotProviderStatement($db,"UPDATE service_operations SET
+                    next_attempt_at=DATE_ADD(NOW(6),INTERVAL 60 SECOND),claim_token=NULL,
+                    claim_until=NULL,failure_code=?,updated_at=NOW(6)
+                    WHERE id=? AND userid=? AND stage IN ('funded','prepared','dispatching')",
+                    'sii',[$reason,$id,$owner]);$s->close();
+            }
+        } catch (Throwable $ignored) {}
+        achbotDiagnosticEvent('achbot.service.execution',[
+            'service_operation_id'=>$id,'reason'=>$reason,'class'=>get_class($e)],'error');
+        return ['status'=>'pending','reason'=>$reason];
+    } finally {
+        try {$s=achbotProviderStatement($db,'SELECT RELEASE_LOCK(?)','s',[$name]);$s->close();}
+        catch (Throwable $ignored) {}
+    }
+}
+
+/** Bounded work per invocation, never a lifetime retry cap. Older deferred
+ * operations remain due, with one step per original operation per pass. */
+function achbotServiceExecuteDue(mysqli $db,int $limit,float $budgetSeconds): array {
+    if ($limit<=0 || !is_finite($budgetSeconds) || $budgetSeconds<=0)
+        throw new InvalidArgumentException('service_worker_budget_invalid');
+    $deadline=hrtime(true)/1000000000+$budgetSeconds;
+    $s=achbotProviderStatement($db,"SELECT id FROM service_operations
+        WHERE stage IN ('funded','prepared','dispatching') AND next_attempt_at<=NOW(6)
+        ORDER BY next_attempt_at,id LIMIT ?",'i',[$limit]);
+    $rows=$s->get_result()->fetch_all(MYSQLI_ASSOC);$s->close();$out=[];
+    foreach ($rows as $r) {
+        if (hrtime(true)/1000000000>=$deadline) break;
+        $out[(int)$r['id']]=achbotServiceExecuteStep($db,(int)$r['id']);
+    }
+    return $out;
+}

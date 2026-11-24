@@ -122,7 +122,7 @@ def main():
         thread=threading.Thread(target=server.serve_forever,daemon=True);thread.start()
         base='http://127.0.0.1:'+str(server.server_port)
         try:
-            source=work/'source';members=set(package.members())|{'src/Finance/HostedMethods.php','src/Finance/HostedReceipt.php'}
+            source=work/'source';members=set(package.members())|{'src/Panel/PasarGuardServiceExecution.php','src/Finance/HostedMethods.php','src/Finance/HostedReceipt.php'}
             for member in members:
                 target=source/member;target.parent.mkdir(parents=True,exist_ok=True);shutil.copyfile(ROOT/member,target)
             for file,replacements in {
