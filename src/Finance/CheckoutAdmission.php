@@ -68,6 +68,30 @@ function achbotCheckoutOriginalCommandLocked(mysqli $db,array $pay): array {
     return [$op,$quote,$owner];
 }
 
+/** No monetary method is needed for an explicitly authorized original
+ * zero-price standard commercial purchase. Unlike a discount-code outcome,
+ * this authorization comes from the current primary-admin or agency policy.
+ * The owner and target remain locked through actual reservation. */
+function achbotCheckoutZeroCommercialLocked(mysqli $db,array $pay): ?string {
+    if ($pay['type']!=='BUY_SUB' || (int)$pay['price']!==0 ||
+        (float)$pay['day']!==0.0 || (float)$pay['volume']!==0.0) return null;
+    $actor=(int)$pay['user_id'];$primary=(int)($GLOBALS['admin']??0);
+    $owner=achbotProviderRow($db,'SELECT is_agent,discount_percent,step FROM users FORCE INDEX (idx_users_userid_v1) WHERE userid=? FOR UPDATE','i',[$actor]);
+    $plan=achbotProviderRow($db,'SELECT p.*,cat.active AS category_active,cat.parent AS category_parent FROM server_plans p JOIN server_categories cat ON cat.id=p.catid WHERE p.id=? FOR UPDATE','i',[(int)$pay['plan_id']]);
+    if (!$owner || $owner['step']==='banned' || !$plan ||
+        (int)$plan['price']<=0 || (int)$plan['active']!==1 ||
+        (int)$plan['category_active']!==1 || (int)$plan['category_parent']!==0 ||
+        (int)$plan['server_id']!==(int)$pay['server_id']) return null;
+    if ($primary>0 && $actor===$primary) return 'primary_admin';
+    $state=achbotPayUxCurrentStatesLocked($db);
+    if (!$state || ($state['sellState']??'off')!=='on' ||
+        ($state['agencyState']??'off')!=='on' || (int)$owner['is_agent']!==1 ||
+        (int)$pay['agent_bought']!==1) return null;
+    require_once __DIR__.'/../Purchase/AgentPricing.php';
+    [,,$percent]=calculateAgentPrice($owner,$state,(int)$plan['id'],(int)$plan['server_id'],'one',(int)$plan['price']);
+    return $percent===100?'agency':null;
+}
+
 /** Seal the entitlement and naming policy before the customer sees a standard
  * purchase/renewal quote. NULL is never permission to rebuild a stale quote. */
 function achbotCheckoutSealDraftLocked(mysqli $db,int $id,array $pay,array $display,array $states): void {
@@ -75,9 +99,15 @@ function achbotCheckoutSealDraftLocked(mysqli $db,int $id,array $pay,array $disp
     // NULL is an inactive historical draft, never a current command.
     $context=['version'=>1];
     if ($pay['type']==='BUY_SUB') {
-        $plan=achbotProviderRow($db,'SELECT catid FROM server_plans WHERE id=? FOR UPDATE','i',[(int)$pay['plan_id']]);
+        $plan=achbotProviderRow($db,'SELECT catid,price FROM server_plans WHERE id=? FOR UPDATE','i',[(int)$pay['plan_id']]);
         if (!$plan) throw new DomainException('checkout_plan_changed');
         $context['category_id']=(int)$plan['catid'];
+        if ($standard && (int)$plan['price']<=0) throw new DomainException('checkout_standard_offering_invalid');
+        if ($standard && (int)$pay['price']===0) {
+            $authorization=achbotCheckoutZeroCommercialLocked($db,$pay);
+            if ($authorization===null) throw new DomainException('checkout_zero_commercial_denied');
+            $context['zero_commercial']=$authorization;
+        }
     }
 
     if ($standard || $pay['type']==='RENEW_ACCOUNT') {
@@ -193,6 +223,9 @@ function achbotCheckoutDraftViewLocked(mysqli $db,array $pay,int $actor,array $s
     $plan=achbotProviderRow($db,'SELECT * FROM server_plans WHERE id=? FOR UPDATE','i',[$q['plan_id']]);
     if (!$plan) throw new DomainException('checkout_view_plan_missing');
     $context=json_decode((string)$pay['checkout_draft_context'],true,32,JSON_THROW_ON_ERROR);
+    if (isset($context['zero_commercial']) &&
+        achbotCheckoutZeroCommercialLocked($db,$pay)!==$context['zero_commercial'])
+        throw new DomainException('checkout_zero_commercial_changed');
     $category=null;
     if ($mode!=='renew') {
         if (($context['category_id']??null)!==(int)$plan['catid'])
@@ -240,8 +273,13 @@ function achbotCheckoutAdmitDraftLocked(mysqli $db,array $pay,?array $attempt,
         elseif ($pay['type']!=='INCREASE_WALLET') throw new DomainException('checkout_original_command_missing');
         return $pay['checkout_operation_id']===null?null:(int)$pay['checkout_operation_id'];
     }
+    $context=json_decode((string)$pay['checkout_draft_context'],true,32,JSON_THROW_ON_ERROR);
+    $freeCommercial=isset($context['zero_commercial']);
+    if ($freeCommercial && ($method!=='wallet' ||
+        achbotCheckoutZeroCommercialLocked($db,$pay)!==$context['zero_commercial']))
+        throw new DomainException('checkout_zero_commercial_changed');
     if (!achbotPayUxUnclaimedDraftUsable($db,$pay,true) ||
-        !achbotPayUxAudienceAllowed($db,$method,$uid,true,$pay['type']) ||
+        (!$freeCommercial && !achbotPayUxAudienceAllowed($db,$method,$uid,true,$pay['type'])) ||
         ((int)$pay['price']<0 || ($method!=='wallet' && (int)$pay['price']===0)) || !preg_match('/\A[A-Za-z0-9_-]{1,50}\z/D',$pay['hash_id']))
         throw new DomainException('checkout_draft_unavailable');
     if (achbotProviderRow($db,'SELECT id FROM service_effects WHERE pay_row_id=? LIMIT 1 FOR UPDATE','i',[$id]))

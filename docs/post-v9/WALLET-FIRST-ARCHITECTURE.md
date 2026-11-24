@@ -1465,3 +1465,28 @@ audience remains distinct from gateway active-entitlement classification.
   registration, membership, bot-state and phone gates, followed by the
   existing purchase or subscription route. No configuration-time
   customer dispatch remains. No additional financial executor is added.
+
+### Offering purpose and nonpaid admission
+
+Provider-supported active root-category plans and available servers share
+one structural offering query. A positive base price identifies standard
+purchase offerings; a zero base price identifies dedicated trials. A
+configured, enabled custom purchase may use either as a template, with
+its own units and price. The administrative bulk catalogue uses the same
+structural eligibility, not the ordinary commercial price filter.
+
+Ordinary free trials require the current enabled trial setting, the
+eligible zero-price plan and an unused owner entitlement, rechecked before
+capacity reservation in the existing nonpaid effect transaction.
+Primary-admin trials use their own exact update reference; administrative
+bulk provisioning rechecks the operations capability under the owner lock.
+Neither a stale button nor a caller-supplied admin flag authorizes creation.
+
+Standard zero-price commercial checkout for the primary administrator or
+a configured 100-percent agency discount is an original service command,
+not a trial. It preserves its plan, quantity and naming context. Its
+authorization is pinned at draft creation and rechecked under lock at
+first admission; no Wallet debit or trial consumption is required, even
+if Wallet is disabled. The existing confirmation button and service
+engine are reused. An already funded command retains its recovery
+semantics. Discount-code zero checkout retains its existing Wallet gate.

@@ -28,7 +28,9 @@ function achbotRenderCheckoutDraft(mysqli $db,array $view,array $states,string $
             $keyboard[]=[$button];
         }
     }
-    if (($states['walletState']??'off')==='on' && achbotPayUxAudienceAllowed($db,'wallet',$actor))
+    if (isset($view['context']['zero_commercial'])) {
+        $keyboard[]=[['text'=>achbotMessage('purchase.select_plan.button.8719396e1e'),'callback_data'=>$prefix.'WithWallet'.$hash_id]];
+    } elseif (($states['walletState']??'off')==='on' && achbotPayUxAudienceAllowed($db,'wallet',$actor))
         $keyboard[]=[['text'=>$renew?achbotMessage('renewal.renewal_checkout.button.0eed1dd8e8',['price'=>$price]):achbotMessage('legacy_buttons.pay_with_wallet'),'callback_data'=>$prefix.'WithWallet'.$hash_id]];
     if ($offerDiscount && $amount>0 && empty($view['context']['discount_applied']))
         $keyboard[]=[['text'=>($renew?achbotMessage('renewal.renewal_checkout.button.05c3a1e3f4'):achbotMessage('purchase.catalogue.button.05c3a1e3f4')),'callback_data'=>'haveDiscountCheckout_'.$pay['id']]];

@@ -41,7 +41,7 @@ if (in_array(($spec['route']??'trial'),['trial','attention'],true)) {
     $message->text=$text;
     $update->message=$message;
 }
-$botState=['remark'=>(string)($spec['remark_mode']??'digits'),'rewardChannel'=>'@fixtureReport'];
+$botState=['remark'=>(string)($spec['remark_mode']??'digits'),'rewardChannel'=>'@fixtureReport','testAccount'=>'on'];
 $buttonValues=['cancel'=>'cancel','start_bot'=>'start','back_to_main'=>'back'];
 $mainValues=['sending_config_to_user'=>'Working',
  'send_only_number'=>'Enter integer','can_create_specific_account'=>'Limit AMOUNT',
@@ -103,9 +103,6 @@ function sendPhoto($photo,$caption,$keys,$format,$to) {
     return fixtureDeliveryTransport($to);
 }
 function getMainKeys(){return '{}';}
-function calculateAgentPrice($userInfo,$botState,$planId,$serverId,$buyType,$price){
-    return [(int)$price,false,0];
-}
 function getServerInfoAndConfig($connection,$sid) {
     $stmt=$connection->prepare("SELECT i.remark,c.* FROM server_info i
         JOIN server_config c ON c.id=i.id WHERE i.id=?");
@@ -122,7 +119,17 @@ function ensureAccountCreationSucceeded($response,$serverInfo,$inbound,$admin,$t
 require_once $root.'/src/Purchase/Core.php';
 require_once $root.'/src/Purchase/OrderWrites.php';
 require_once $root.'/src/Finance/ServiceEffects.php';
-if (($spec['route']??'trial')==='trial') {
+if (($spec['route']??'trial')==='boundary') {
+    $kind=$spec['kind']??'free_trial';
+    $ref=$kind==='free_trial'?'trial:'.$actor:'bulk:'.$actor.':'.$updateId;
+    try {
+        achbotCreateNonPaymentAccount($connection,$kind,$ref,$actor,1,1,[
+            'is_primary_admin'=>true,'user_id'=>$actor,'server_type'=>'pasarguard',
+            'server_id'=>2,'inbound_id'=>0,'plan_id'=>(int)($spec['plan']??8),
+            'remark'=>'fixture-denied','volume'=>2,'days'=>30]);
+        $GLOBALS['events'][]=['name'=>'ADMITTED'];
+    } catch (DomainException $e) {$GLOBALS['events'][]=['name'=>'DENIED','reason'=>$e->getMessage()];}
+} elseif (($spec['route']??'trial')==='trial') {
     require $root.'/src/Purchase/TrialProvision.php';
 } elseif (($spec['route']??'trial')==='alias_identity') {
     mt_srand(1234);
@@ -292,6 +299,7 @@ def check():
             sql(work,env,"UPDATE users SET step='none',freetrial=NULL,temp=NULL,wallet=50000,is_agent=0,discount_percent=NULL; "
                 "UPDATE users SET is_agent=1,discount_percent='{\"normal\":10,\"plans\":{},\"servers\":{}}' WHERE userid=9002")
         configure_pg()
+        sql(work,env,"INSERT INTO setting(type,value) VALUES ('BOT_STATES','{\"testAccount\":\"on\"}')")
         driver=work/'nonpaid-route.php';driver.write_text(PHP)
         observed=php(work,env,driver,route='alias_identity')
         assert len(observed)==1 and observed[0]['name']=='STYLE_IDENTITY',observed
@@ -369,6 +377,35 @@ def check():
         assert not any(e['name']=='POST' for e in denied)
         assert capacity()==10
         cases.append('forged_trial_update_no_dispatch')
+        def no_new_effect(events):
+            assert not any(e['name'] in ('POST','ADMITTED','DELIVER') for e in events),events
+            assert capacity()==10 and effects('free_trial')=='' and effects('admin_bulk')==''
+            for table in ('orders_list','payment_delivery_intents','wallet_entries','pays'):
+                assert sql(work,env,'SELECT COUNT(*) FROM '+table)=='0',table
+        no_new_effect(php(work,env,driver,route='trial',data='freeTrial7_normal'))
+        no_new_effect(php(work,env,driver,route='trial',data='freeTrial7_one'))
+        no_new_effect(php(work,env,driver,route='boundary',plan=7))
+        cases.append('commercial_positive_price_denied_at_nonpaid_reservation')
+        sql(work,env,"UPDATE setting SET value='{\"testAccount\":\"off\"}' WHERE type='BOT_STATES'")
+        # Cached request flag remains ON; current persisted reservation denies.
+        no_new_effect(php(work,env,driver,route='trial'))
+        no_new_effect(php(work,env,driver,route='boundary'))
+        sql(work,env,"UPDATE setting SET value='{\"testAccount\":\"on\"}' WHERE type='BOT_STATES'")
+        sql(work,env,"UPDATE server_plans SET days=31 WHERE id=8")
+        no_new_effect(php(work,env,driver,route='boundary'))
+        sql(work,env,"UPDATE server_plans SET days=30 WHERE id=8")
+        cases.append('trial_current_policy_and_entitlement_rechecked_before_reservation')
+        sql(work,env,"UPDATE users SET freetrial='used' WHERE userid=1001")
+        no_new_effect(php(work,env,driver,route='boundary'))
+        sql(work,env,"UPDATE users SET freetrial=NULL WHERE userid=1001")
+        cases.append('consumed_trial_entitlement_denied_at_reservation')
+        sql(work,env,"INSERT INTO setting(type,value) VALUES ('ADMIN_ROLE_9002','support')")
+        no_new_effect(php(work,env,driver,route='boundary',kind='admin_bulk',actor=9002,plan=7))
+        sql(work,env,"DELETE FROM setting WHERE type='ADMIN_ROLE_9002'; UPDATE users SET isAdmin=0 WHERE userid=9002")
+        no_new_effect(php(work,env,driver,route='boundary',kind='admin_bulk',actor=9002,plan=7))
+        sql(work,env,"UPDATE users SET isAdmin=1 WHERE userid=9002")
+        cases.append('restricted_or_revoked_bulk_staff_denied_at_reservation')
+
 
         reset()
         sql(work,env,"UPDATE users SET step='createAccAmount7_30_2' WHERE userid=9001")

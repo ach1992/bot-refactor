@@ -387,19 +387,43 @@ require_once __DIR__.'/../Finance/ReferralReward.php';
 require_once __DIR__.'/AgentPricing.php';
 require_once __DIR__.'/../Finance/ReceiptHelpers.php';
 
-/** Customer catalogue and capacity screen share one saleable plan set.
- * Provider-specific validity remains owned by the registered adapter. */
-function achbotSaleablePlans(mysqli $db,?int $server=null,?int $category=null): array {
+/** Shared current structural offering selection. The purpose determines
+ * commercial eligibility, not provider compatibility alone. */
+function achbotAvailablePlans(mysqli $db,?int $server=null,?int $category=null,string $purpose='standard'): array {
     require_once __DIR__.'/../Panel/ProviderRuntime.php';
-    $sql="SELECT p.*,si.title AS server_title,si.flag AS server_flag,si.ucount AS capacity
+    $price=match($purpose) {
+        'standard'=>' AND p.price>0',
+        'trial'=>' AND p.price=0',
+        'custom','admin'=>' AND p.price>=0',
+        default=>throw new InvalidArgumentException('offering_purpose_invalid')
+    };
+    $sql="SELECT p.*,si.title AS server_title,si.flag AS server_flag,si.ucount AS capacity,
+        cat.title AS category_title
         FROM server_plans p JOIN server_config sc ON sc.id=p.server_id
         JOIN server_info si ON si.id=p.server_id JOIN server_categories cat ON cat.id=p.catid
         WHERE sc.type IN (".achbotProviderSqlTypes().")
-        AND si.active=1 AND si.state=1 AND si.ucount>0 AND p.active=1 AND cat.active=1";
+        AND si.active=1 AND si.state=1 AND si.ucount>0 AND p.active=1 AND cat.active=1 AND cat.parent=0".$price;
     $types='';$values=[];
     if ($server!==null) {$sql.=' AND p.server_id=?';$types.='i';$values[]=$server;}
     if ($category!==null) {$sql.=' AND p.catid=?';$types.='i';$values[]=$category;}
     $s=achbotProviderStatement($db,$sql.' ORDER BY p.id',$types,$values);
     $rows=$s->get_result()->fetch_all(MYSQLI_ASSOC);$s->close();
     return array_values(array_filter($rows,static fn($p)=>achbotSupportsPlan($db,(int)$p['id'],(int)$p['inbound_id'],(int)$p['server_id'])));
+}
+
+/** Existing custom purchasing is a separate enabled offering, with configured
+ * per-unit prices, never implied by a standard plan or a trial. */
+function achbotCustomPurchaseEnabled(array $states,string $mode): bool {
+    if (($states['plandelkhahState']??'off')!=='on' || !in_array($mode,['none','one'],true))
+        return false;
+    foreach (['gbPrice','dayPrice'] as $key)
+        if (!isset($states[$key]) || filter_var($states[$key],FILTER_VALIDATE_INT,
+            ['options'=>['min_range'=>0]])===false) return false;
+    return true;
+}
+function achbotSaleablePlans(mysqli $db,?int $server=null,?int $category=null): array {
+    return achbotAvailablePlans($db,$server,$category,'standard');
+}
+function achbotPurchaseOfferings(mysqli $db,array $states,string $mode,?int $server=null,?int $category=null): array {
+    return achbotAvailablePlans($db,$server,$category,achbotCustomPurchaseEnabled($states,$mode)?'custom':'standard');
 }

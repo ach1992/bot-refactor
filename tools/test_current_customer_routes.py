@@ -82,6 +82,8 @@ case 'capacity':
     eval(fixtureSection('if($data=="availableServers2"', "require __DIR__ . '/src/Agent/Applications.php'"));break;
 case 'entry':
     require $root.'/src/Purchase/EntryAndBulk.php';break;
+case 'trial_catalogue':
+    require $root.'/src/Purchase/TrialCatalogue.php';break;
 case 'catalogue':
     require $root.'/src/Purchase/Catalogue.php';break;
 case 'standard':
@@ -105,7 +107,9 @@ case 'renew':
 case 'discount':
     require $root.'/src/Finance/Routes/DiscountEntry.php';break;
 case 'wallet':
-    $events[]=['wallet',achbotCheckoutWallet($connection,$spec['hash'],$from_id,$spec['mode'], $botState)];break;
+    try {$events[]=['wallet',achbotCheckoutWallet($connection,$spec['hash'],$from_id,$spec['mode'], $botState)];}
+    catch (DomainException $e) {if (empty($spec['expect_denied'])) throw $e; $events[]=['denied',$e->getMessage()];}
+    break;
 case 'shortcut':
     // Actual current ban and membership/registration/phone/home source.
     eval(fixtureSection("if ((\$userInfo['step'] ?? null) ===", '$checkSpam = checkSpam();'));
@@ -261,6 +265,66 @@ def main():
         r=run('shortcut',actor=2019,text='/start buy')
         assert r['user'] and 'selectServer2_none' in callbacks(r),r
         cases.append('actual_shortcuts_and_callback_share_purchase_methods_and_entry_gates')
+        # Trial-only category and server, with an explicit custom purpose.
+        sql("INSERT INTO server_categories(id,server_id,title,parent,step,active) VALUES (3,'0','Trial category',0,0,1)")
+        sql("INSERT INTO server_info(id,title,ucount,remark,flag,active,state) VALUES (8,'Trial server','10','fixture','',1,1); INSERT INTO server_config(id,panel_url,type,username,password,provider_connection_id,provider_instance_key,provider_version,provider_enabled) VALUES (8,'https://fixture.invalid','pasarguard','fixture','fixture',8,REPEAT('b',32),'5.5.1',1)")
+        sql("INSERT INTO server_plans(id,fileid,catid,server_id,inbound_id,acount,title,protocol,days,volume,type,price,descr,pic,active,step,date,provider_group_ids) VALUES (80,'80',3,8,0,0,'Trial only','vless',1,1,'normal',0,'description','',1,0,'fixture','[1]'),(81,'81',1,2,0,0,'Mixed trial','vless',1,1,'normal',0,'description','',1,0,'fixture','[1]'),(82,'82',3,2,0,0,'Only trial category','vless',1,1,'normal',0,'description','',1,0,'fixture','[1]')")
+        state(plandelkhahState='off',testAccount='on')
+        assert 'selectServer8_none' not in callbacks(run('entry',callback='buySubscription'))
+        assert 'selectCategory3_2_none' not in callbacks(run('catalogue',callback='selectServer2_none'))
+        assert 'selectPlan81_1_none' not in callbacks(run('catalogue',callback='selectCategory1_2_none'))
+        assert 'freeTrial80_normal' in callbacks(run('trial_catalogue',callback='getTestAccount'))
+        assert 'freeTrial81_normal' in callbacks(run('trial_catalogue',callback='getTestAccount'))
+        assert 'freeTrial7_normal' not in callbacks(run('trial_catalogue',callback='getTestAccount'))
+        assert 'Trial only' not in json.dumps(run('capacity',callback='availableServers2'))
+        before=sql('SELECT COUNT(*) FROM pays')
+        run('standard',callback='selectPlan80_3_none')
+        assert sql('SELECT COUNT(*) FROM pays')==before
+        state(plandelkhahState='on')
+        assert 'selectServer8_none' in callbacks(run('entry',callback='buySubscription'))
+        assert 'selectCategory3_2_none' in callbacks(run('catalogue',callback='selectServer2_none'))
+        assert 'selectCustomPlan3_8_none' in callbacks(run('catalogue',callback='selectCategory3_8_none'))
+        assert 'selectCustomePlan80_3_none' in callbacks(run('catalogue',callback='selectCustomPlan3_8_none'))
+        assert 'selectServer8_much' not in callbacks(run('entry',actor=2002,callback='agentMuchBuy'))
+        cases.append('actual_trial_only_and_mixed_catalogue_purpose_and_custom_gate')
+        # Configured zero-price agent and primary owner use exact service
+        # command, not trial entitlement or a fabricated monetary debit.
+        state(walletState='off',zarinpal='on')
+        sql("UPDATE users SET discount_percent='{\"normal\":100}' WHERE userid=2002")
+        def free_checkout(uid,r,count):
+            pid,h,price,qty=latest(uid)
+            assert int(price)==0 and max(1,int(qty))==count,r
+            assert 'payBuyWithWallet'+h in callbacks(r),r
+            assert not any(x.startswith('freeTrial') for x in callbacks(r)),r
+            before=sql(f'SELECT wallet,freetrial FROM users WHERE userid={uid}')
+            debit_count=sql('SELECT COUNT(*) FROM wallet_entries')
+            funded=run('wallet',actor=uid,hash=h,mode='standard')['events'][0][1]
+            assert funded['status']=='funded',funded
+            quote=json.loads(sql(f"SELECT quote_payload FROM service_operations WHERE id={funded['operation']}"))['request']
+            assert quote['price']==0 and quote['quantity']==count and quote['plan_id']==7,quote
+            assert sql(f'SELECT debit_entry_id IS NULL FROM service_operations WHERE id={funded["operation"]}')=='1'
+            assert sql('SELECT COUNT(*) FROM wallet_entries')==debit_count
+            assert sql(f'SELECT wallet,freetrial FROM users WHERE userid={uid}')==before
+            assert run('wallet',actor=uid,hash=h,mode='standard')['events'][0][1]['status']=='already_funded'
+        free_checkout(2002,run('standard',actor=2002,callback='selectPlan7_1_one'),1)
+        run('standard',actor=2002,callback='selectPlan7_1_much')
+        free_checkout(2002,run('standard',actor=2002,text='3'),3)
+        free_checkout(9001,run('standard',actor=9001,callback='selectPlan7_1_none'),1)
+        cases.append('actual_zero_agent_single_bulk_and_primary_commercial_no_money_or_trial')
+        # An originally authorized zero commercial draft is not a grant after
+        # its configured agency entitlement changes before reservation.
+        r=run('standard',actor=2002,callback='selectPlan7_1_one')
+        _,h,price,_=latest(2002)
+        assert int(price)==0 and 'payBuyWithWallet'+h in callbacks(r),r
+        before=tuple(sql(q) for q in ['SELECT COUNT(*) FROM service_operations','SELECT COUNT(*) FROM service_effects','SELECT COUNT(*) FROM wallet_entries','SELECT ucount FROM server_info WHERE id=2','SELECT wallet,freetrial FROM users WHERE userid=2002'])
+        for value in [50,"100junk"]:
+            sql("UPDATE users SET discount_percent='"+json.dumps({'normal':value})+"' WHERE userid=2002")
+            denied=run('wallet',actor=2002,hash=h,mode='standard',expect_denied=True)
+            assert denied['events'][0]==['denied','checkout_zero_commercial_changed'],denied
+            assert before==tuple(sql(q) for q in ['SELECT COUNT(*) FROM service_operations','SELECT COUNT(*) FROM service_effects','SELECT COUNT(*) FROM wallet_entries','SELECT ucount FROM server_info WHERE id=2','SELECT wallet,freetrial FROM users WHERE userid=2002'])
+        cases.append('zero_commercial_current_agency_authorization_rechecked_before_reservation')
+
+
     result={'status':'PASS','complete':True,'cases':len(cases),'scenarios':cases,'external_requests':0,'production_mutations':0}
     if a.report:a.report.write_text(json.dumps(result))
     print(json.dumps(result))

@@ -261,3 +261,18 @@ The renewal case uses a synthetic already-linked Native account;
 no live provider is accessed. The separate full service-execution suite
 continues to exercise the real service engine against its loopback
 provider. Source/transport fixtures are not installed Telegram acceptance.
+
+The customer-route and nonpaid suites also cover purpose-specific
+trial-only and mixed catalogues, enabled custom selection, standard
+zero-price agency and primary-admin commands (including quantity and
+no-debit reservation), forged positive-price trial callbacks, persisted
+trial policy and entitlement changes, consumed trials and revoked or
+restricted bulk staff. The latter suite uses the real nonpaid provider
+loopback. Zero-price commercial funding tests do not by themselves prove
+end-to-end provider creation and delivery.
+
+Current CI uses ci_quick.py; current packaging uses package_current.py.
+The removed legacy matrix and bank-buy/recovery drivers are historical
+source evidence available in Git. Imported historical helpers must be
+reconciled before removal; historical migration construction and genuine
+provenance are not obsolete runtime execution.

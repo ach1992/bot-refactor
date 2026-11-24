@@ -805,7 +805,7 @@ then verify operator review, capacity reconciliation and a forward
 recovery plan. A runtime rollback does not undo provider CREATE,
 wallet credits or reservations and cannot safely discard the ledgers.
 
-**Source-only mandatory regression gates:** actual PHP/MariaDB
+**Historical source-only regression gates (not current executable requirements):** actual PHP/MariaDB
 `test_post_v9_service_effects.py`,
 `test_post_v9_wallet_creation.py`,
 `test_post_v9_wallet_checkout.py` (actual single/multi-wallet
@@ -885,14 +885,14 @@ contract. Full unattended post-crash reconciliation, partial multi-account
 refund/fulfillment policy, lost notification delivery and live installed
 operator acceptance remain separately Owner-gated.
 
-Source tests run the actual PHP module + Telegram route against private,
+Historical source tests ran the actual PHP module + Telegram route against private,
 disposable socket-only MariaDB with simulated account GET, concurrent
 endpoint drift, authorization rejection, malformed ledger indexes,
 MYSQLI_REPORT_OFF, partial account line paging and zero payment mutations.
 An additional isolated authenticated loopback HTTP server exercises the
 ACTUAL production curl login and account GET, including target drift during
 authentication, both redirect stages, malformed/oversized responses and
-credential/non-owner confinement. Run
+credential/non-owner confinement. Historical commands (recover the corresponding Git revision, not current HEAD):
 python3 tools/test_post_v9_recovery_inspection.py --run-disposable,
 python3 tools/test_post_v9_recovery_transport.py --run-disposable
 and the aggregate tools/check_post_v9.py at exact candidate HEAD.

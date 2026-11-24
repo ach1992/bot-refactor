@@ -173,7 +173,7 @@ function achbotPayUxInsertDraft(mysqli $db, int $actor, mysqli_stmt $insert, boo
         require_once __DIR__.'/../Panel/ProviderRuntime.php';
         achbotProviderPinPayment($db,$draftId);
         // Stale buttons cannot issue new invoices on disabled/deleted servers.
-        $s=$db->prepare('SELECT type,server_id,plan_id,user_id,order_id,day,volume FROM pays WHERE id=? FOR UPDATE');
+        $s=$db->prepare('SELECT * FROM pays WHERE id=? FOR UPDATE');
         $s->bind_param('i',$draftId);$s->execute();$pay=$s->get_result()->fetch_assoc();$s->close();
         if (!$pay) throw new RuntimeException('draft_service_missing');
         $type=(string)$pay['type'];
@@ -456,6 +456,30 @@ function achbotPayUxAudienceMethods(): array {
         'manual_usdt'=>\achbotMessage('payment.payment_lifecycle.pay_ux_audience_methods.text.4fafcb549d'),'manual_trx'=>\achbotMessage('payment.payment_lifecycle.pay_ux_audience_methods.text.349ece736f'),'wallet'=>\achbotMessage('payment.payment_lifecycle.pay_ux_audience_methods.text.6295c35212')
     ];
 }
+/** Current exact settings row under the existing owner/setting lock order.
+ * Call only inside the caller's admission transaction. */
+function achbotPayUxCurrentStatesLocked(mysqli $db): ?array {
+    $stmt=$db->prepare("SELECT id FROM setting
+        WHERE type='BOT_STATES' ORDER BY id LIMIT 2");
+    if (!$stmt || !$stmt->execute())
+        throw new RuntimeException('audience_settings_locate_failed');
+    $ids=$stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+    $stmt->close();
+    if (count($ids)!==1) return null;
+    $id=(int)$ids[0]['id'];
+    $stmt=$db->prepare("SELECT type,value FROM setting
+        WHERE id=? LOCK IN SHARE MODE");
+    if (!$stmt) throw new RuntimeException('audience_settings_lock_prepare');
+    $stmt->bind_param('i',$id);
+    if (!$stmt->execute())
+        throw new RuntimeException('audience_settings_lock_failed');
+    $row=$stmt->get_result()->fetch_assoc();
+    $stmt->close();
+    if (!$row || $row['type']!=='BOT_STATES') return null;
+    $states=json_decode((string)$row['value'],true);
+    return is_array($states)?$states:null;
+}
+
 /**
  * $final is permitted only inside an already-open owner-locked financial
  * transaction. It uses CURRENT locking reads of BOT_STATES and the cohort.
@@ -468,34 +492,7 @@ function achbotPayUxAudienceAllowed(mysqli $db, string $method, int $userId,
     if ($userId<=0 || !array_key_exists($method,achbotPayUxAudienceMethods()))
         return false;
     try {
-        if ($final) {
-            // The historical setting.type is not indexed. A locking scan
-            // would lock unrelated Marzban group rows and invert the admin
-            // server_config -> setting dependency order. Locate the unique
-            // identity WITHOUT row locks, then CURRENT-lock its PRIMARY key.
-            // All application BOT_STATES writers serialize by advisory lock
-            // and retain the existing row ID; missing/ambiguous rows deny.
-            $stmt=$db->prepare("SELECT id FROM setting
-                WHERE type='BOT_STATES' ORDER BY id LIMIT 2");
-            if (!$stmt || !$stmt->execute())
-                throw new RuntimeException('audience_settings_locate_failed');
-            $ids=$stmt->get_result()->fetch_all(MYSQLI_ASSOC);
-            $stmt->close();
-            if (count($ids)!==1) return false;
-            $id=(int)$ids[0]['id'];
-            $stmt=$db->prepare("SELECT type,value FROM setting
-                WHERE id=? LOCK IN SHARE MODE");
-            if (!$stmt) throw new RuntimeException('audience_settings_lock_prepare');
-            $stmt->bind_param('i',$id);
-            if (!$stmt->execute())
-                throw new RuntimeException('audience_settings_lock_failed');
-            $row=$stmt->get_result()->fetch_assoc();
-            $stmt->close();
-            if (!$row || $row['type']!=='BOT_STATES') return false;
-            $states=json_decode((string)$row['value'],true);
-        } else {
-            $states=$GLOBALS['botState']??[];
-        }
+        $states=$final?achbotPayUxCurrentStatesLocked($db):($GLOBALS['botState']??[]);
         if (!is_array($states)) return false;
         // Gateway availability is independent from the audience rule.
         // Only a final financial authorization requires persisted flags;

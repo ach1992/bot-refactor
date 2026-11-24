@@ -154,7 +154,7 @@ issuance. Prior verified or uncertain paid claims, manual receipts, wallet
 effects and external service states remain evidence for recovery, never
 retroactively cancelled or refunded.
 
-## Source acceptance and rollout
+## Source acceptance and rollout (historical evidence; retired driver names refer to the corresponding Git revision)
 
 From a clean exact candidate run:
 

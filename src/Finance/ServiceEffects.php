@@ -236,35 +236,43 @@ function achbotCreateNonPaymentAccount(
         !achbotEffectValidUsername($remark,(string)($p['server_type']??''))) {
         throw new RuntimeException('nonpaid_effect_invalid_request');
     }
-    if (($kind==='free_trial' && !str_starts_with($sourceRef,'trial:') &&
-         !str_starts_with($sourceRef,'trial_admin:')) ||
-        ($kind==='admin_bulk' && !str_starts_with($sourceRef,'bulk:')) ||
-        !str_starts_with($sourceRef,explode(':',$sourceRef)[0].':'.$actor)) {
-        throw new RuntimeException('nonpaid_effect_source_binding_invalid');
-    }
+    $primary=(int)($GLOBALS['admin']??0);
+    $isPrimaryAdmin=$primary>0 && $actor===$primary;
+    if ($kind==='free_trial') {
+        $sourceValid=$isPrimaryAdmin
+            ? preg_match('/\Atrial_admin:'.$actor.':[1-9][0-9]*\z/D',$sourceRef)===1
+            : $sourceRef==='trial:'.$actor;
+    } else $sourceValid=preg_match('/\Abulk:'.$actor.':[1-9][0-9]*\z/D',$sourceRef)===1;
+    if (!$sourceValid) throw new RuntimeException('nonpaid_effect_source_binding_invalid');
     achbotRequireServerDisplay($db,$serverId,(string)$p['server_type']);
     if ($db->begin_transaction()!==true)
         throw new RuntimeException('nonpaid_effect_begin');
     try {
-        $user=$db->prepare('SELECT freetrial,isAdmin FROM users WHERE userid=? FOR UPDATE');
+        $user=$db->prepare('SELECT freetrial,isAdmin,step FROM users FORCE INDEX (idx_users_userid_v1) WHERE userid=? FOR UPDATE');
         if (!$user) throw new RuntimeException('nonpaid_effect_user_prepare');
         $user->bind_param('i',$actor);
         if (!$user->execute()) throw new RuntimeException('nonpaid_effect_user_read');
         $owners=$user->get_result()->fetch_all(MYSQLI_ASSOC);$user->close();
         if (count($owners)!==1)
             throw new RuntimeException('nonpaid_effect_owner_ambiguous');
-        $isPrimaryAdmin=!empty($p['is_primary_admin']);
-        if ($kind==='admin_bulk' && !$isPrimaryAdmin &&
-            (int)$owners[0]['isAdmin']!==1)
-            throw new RuntimeException('nonpaid_effect_admin_required');
-        if ($kind==='free_trial' && str_starts_with($sourceRef,'trial:') &&
-            in_array($owners[0]['freetrial'],['reserved','used'],true))
-            throw new RuntimeException('nonpaid_effect_trial_already_claimed');
+        require_once __DIR__.'/../Admin/Access.php';
+        require_once __DIR__.'/PaymentLifecycle.php';
+        if ($owners[0]['step']==='banned' ||
+            ($kind==='admin_bulk' && !achbotAdminCanLocked($db,$actor,$primary,'operations')))
+            throw new DomainException('nonpaid_effect_admin_required');
+        if ($kind==='free_trial') {
+            $state=achbotPayUxCurrentStatesLocked($db);
+            if (($state['testAccount']??'off')!=='on')
+                throw new DomainException('nonpaid_trial_disabled');
+            if (!$isPrimaryAdmin && in_array($owners[0]['freetrial'],['reserved','used'],true))
+                throw new DomainException('nonpaid_effect_trial_already_claimed');
+        }
 
         achbotEffectLockTargetRows($db,$serverId,$planId);
-        $plan=$db->prepare("SELECT s.server_id,s.inbound_id,c.type,c.panel_url
+        $plan=$db->prepare("SELECT s.server_id,s.inbound_id,s.price,s.days,s.volume,cat.active AS category_active,cat.parent AS category_parent,c.type,c.panel_url
             FROM server_plans s
             JOIN server_info i ON i.id=s.server_id
+            JOIN server_categories cat ON cat.id=s.catid
             JOIN server_config c ON c.id=i.id
             WHERE s.id=? AND s.active=1 AND i.active=1 AND i.state=1
             LIMIT 1 FOR UPDATE");
@@ -276,6 +284,10 @@ function achbotCreateNonPaymentAccount(
             (int)$locked['inbound_id']!==0 || !achbotSupportsAccount($locked['type'],0) ||
             (string)$locked['panel_url']==='')
             throw new RuntimeException('nonpaid_effect_target_changed');
+        if ((int)$locked['category_active']!==1 || (int)$locked['category_parent']!==0 ||
+            ($kind==='free_trial' && ((int)$locked['price']!==0 ||
+                (float)$locked['days']!==(float)$days || (float)$locked['volume']!==(float)$volume)))
+            throw new DomainException('nonpaid_offering_denied');
         $targetIdentity=achbotEffectTargetIdentity($db,$serverId,$planId,$locked);
         $group=$targetIdentity['group'];$endpoint=$targetIdentity['endpoint'];
         $credentials=$targetIdentity['credentials'];$targetKey=$targetIdentity['key'];

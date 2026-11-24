@@ -204,6 +204,12 @@ REQUIRED_CURRENT_CASES = {
 
 # These suites expose single-scenario evidence rather than strict/off pairs.
 REQUIRED_SCENARIOS = {
+    "nonpaid_trial_bulk": (
+        "commercial_positive_price_denied_at_nonpaid_reservation",
+        "trial_current_policy_and_entitlement_rechecked_before_reservation",
+        "consumed_trial_entitlement_denied_at_reservation",
+        "restricted_or_revoked_bulk_staff_denied_at_reservation",
+    ),
     "current_payment_readiness": (
         "fresh_empty_structure_ready_not_payment_configured",
         "select_only_account_cannot_write",
@@ -227,6 +233,9 @@ REQUIRED_SCENARIOS = {
         "actual_invalid_discount_preserves_card_and_stale_target_consumes_nothing",
         "actual_shortcuts_and_callback_share_purchase_methods_and_entry_gates",
         "actual_owned_renewal_discount_and_subscription_shortcut",
+        "actual_trial_only_and_mixed_catalogue_purpose_and_custom_gate",
+        "actual_zero_agent_single_bulk_and_primary_commercial_no_money_or_trial",
+        "zero_commercial_current_agency_authorization_rechecked_before_reservation",
     ),
     "current_sales_discount": (
         "actual_sales_keyboard_net_completed_value_wallet_origin_and_original_windows",

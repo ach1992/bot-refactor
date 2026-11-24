@@ -20,21 +20,26 @@ if (!function_exists('calculateAgentPrice')) {
                 $discounts = [];
             }
 
-            $normal = isset($discounts['normal']) ? (int)$discounts['normal'] : 0;
+            $normal = $discounts['normal'] ?? 0;
 
             if (($botState['agencyPlanDiscount'] ?? '') === "on") {
                 if (isset($discounts['plans'][$planId])) {
-                    $discountPercent = (int)$discounts['plans'][$planId];
+                    $discountPercent = $discounts['plans'][$planId];
                 } else {
                     $discountPercent = $normal;
                 }
             } else {
                 if (isset($discounts['servers'][$serverId])) {
-                    $discountPercent = (int)$discounts['servers'][$serverId];
+                    $discountPercent = $discounts['servers'][$serverId];
                 } else {
                     $discountPercent = $normal;
                 }
             }
+
+            // Only configured integer percentages authorize commercial discounts.
+            if (!(is_int($discountPercent) || (is_string($discountPercent) && preg_match('/^[0-9]{1,3}$/D',$discountPercent))) ||
+                (int)$discountPercent<0 || (int)$discountPercent>100) $discountPercent=0;
+            $discountPercent=(int)$discountPercent;
 
             if ($discountPercent > 0) {
                 $price -= floor($price * $discountPercent / 100);

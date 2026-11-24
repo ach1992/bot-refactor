@@ -251,8 +251,8 @@
       "before_count": 16,
       "after_count": 20,
       "before_sha256": "fb1144f3c00f379edcd82d9fcb14c9db57098d66d633ac88cd2745c1e764db59",
-      "after_sha256": "6b365e3485da5b97c2d6c00f287eee2d7a0a954aa3445dce2eea92358f01986a",
-      "reason": "F8 canonical purchase entry for callbacks and shortcuts; same catalogue availability"
+      "after_sha256": "a4ba3da0d0d34208f645622af9630788748ed42d3ae4cdcf2cbee2562d2d5c03",
+      "reason": "F7 shared admin and customer purpose-appropriate catalogue"
     },
     "config.php": {
       "before_count": 23,
@@ -274,6 +274,20 @@
       "before_sha256": "33676f503ea1ccf762f477c6859b83364dccf586e77187d6e9d18de2d30fb189",
       "after_sha256": "cfe11fabe110a52587ec2622207974ff3add4956c83a2a945ad26a5bf8e555cb",
       "reason": "F5 one owned current draft prompt and redemption route with exact continuation"
+    },
+    "src/Purchase/TrialCatalogue.php": {
+      "before_count": 1,
+      "after_count": 1,
+      "before_sha256": "b75425b15803007c3b921e1b81cefe8785d145f699ed5cf5847f0d1ed223d649",
+      "after_sha256": "2d353c3999e8b08c46730616c8d66307118215a6014dd39d875a809f8e304510",
+      "reason": "F7/F9 dedicated current zero-price trial catalogue"
+    },
+    "src/Purchase/SelectPlan.php": {
+      "before_count": 5,
+      "after_count": 4,
+      "before_sha256": "39dc221acd00a309063d3ac87c0577a8096e470325d3ed1cb1da82182a484420",
+      "after_sha256": "50d21e50e22027fdcc52f74f9fd5250b64a66c6da9841c7974bab5617b49f277",
+      "reason": "F9 original free commercial command instead of one-account trial; remove duplicate presentation"
     }
   },
   "added_with_direct_send": [

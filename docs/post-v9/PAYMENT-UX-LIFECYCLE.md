@@ -136,12 +136,12 @@ merchant credentials. Any installed historical exposure assessment or
 credential rotation is a separate Owner/operator action; no rotation
 or production webhook was performed in source acceptance.
 
-**Required source-real regression:** `python3
+**Historical source-real regression (not a current executable gate):** `python3
 tools/test_post_v9_payment_key_admin.py --run-disposable` extracts the
 actual `bot.php` route and `config.php` menu and uses an isolated
 original 23-table MariaDB, independent PHP/MySQLi sessions, synthetic
-Telegram updates and no provider/network effects. This suite is mandatory
-in the exact-candidate `tools/check_post_v9.py` CI matrix alongside existing
+Telegram updates and no provider/network effects. This suite was mandatory
+in the historical exact-candidate `tools/check_post_v9.py` CI matrix alongside existing
 gateway/admin/financial tests. Source-only CI never proves installed
 configuration, merchant verification, payment settlement or production
 authorization. No SQL migration is needed for these editor changes.
