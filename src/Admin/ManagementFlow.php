@@ -190,9 +190,8 @@ function achbotManagementHome(string $kind,?int $id=null,string $prefix=''): voi
 function achbotHandleManagement(): bool {
     global $connection, $from_id, $admin, $data, $text, $update, $userInfo, $cancelKey, $message_id, $chat_id;    $data=is_string($data??null)?$data:'';
     $text=is_string($text??null)?$text:null;
-    $starts=in_array($data,['addManagedServer','pgConnections','pgAddConnection',
-        'addManagedPlan'],true) ||
-        preg_match('/^(?:pgNewServer|newPlanForServer)([1-9][0-9]*)$/D',$data);
+    $starts=in_array($data,['addManagedServer','addManagedPlan'],true) ||
+        preg_match('/^newPlanForServer([1-9][0-9]*)$/D',$data);
     $owned=str_starts_with((string)($userInfo['step']??''),'achbotManage|');
     $callback=str_starts_with($data,'am|');
     if (!$starts && !$owned && !$callback) return false;
@@ -218,10 +217,6 @@ function achbotHandleManagement(): bool {
                 str_starts_with($data,'newPlanForServer')?'plan':'server';
             $draft=['version'=>1,'kind'=>$kind,'nonce'=>bin2hex(random_bytes(6)),
                 'rev'=>0,'source'=>$source,'stage'=>$kind==='server'?'provider':'title','values'=>[],'history'=>[]];
-            if ($data==='pgAddConnection') {$draft['values']['provider']='pasarguard';$draft['stage']='title';}
-            if (preg_match('/^pgNewServer([1-9][0-9]*)$/D',$data,$m)) {
-                $draft['values']=['provider'=>'pasarguard','panel_id'=>(int)$m[1]];$draft['stage']='title';
-            }
             if (preg_match('/^newPlanForServer([1-9][0-9]*)$/D',$data,$m))
                 $draft['values']['preferred_server']=(int)$m[1];
             if ($draft['kind']==='server') achbotServerWizardPrepare($connection,$draft);

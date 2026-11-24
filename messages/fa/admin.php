@@ -360,7 +360,6 @@ return [
         'bot.addserver_name.alert.9ee9f25355' => '⚠️ این نوع پنل پشتیبانی نمی‌شود یا سرور معتبر نیست.',
         'bot.addserver_name.alert.a5625b915f' => '⛔️ ذخیره گروه پنل انجام نشد. معتبر بودن گروه و سرور را بررسی کنید و دوباره تلاش کنید.',
         'bot.addserver_name.message.9495c6622a' => '✅ گروه پنل سرور به‌روزرسانی شد.',
-        'bot.addserver_name.message.8dc219842f' => 'روش گروه‌بندی تغییر کرده است؛ گروه را از فهرست تعریف‌شده انتخاب کنید.',
         'bot.addserver_name.button.13159f8c74' => '✅ بله',
         'bot.addserver_name.button.f47dddc181' => '❌ نخير',
         'bot.addserver_name.txt.437acc9f7f' => 'اسم',

@@ -1918,20 +1918,20 @@ if(preg_match('/^changesServerIp(\d+)/',$userInfo['step'],$match) && ($from_id =
 // Define real-panel identity groups centrally, before assigning them to
 // logical server entries. A group is trusted admin configuration, never
 // inferred from endpoint aliases or Marzban admin credential equality.
-if (in_array($data,['managePanelGroups','manageMarzbanPanelGroups'],true) &&
+if ($data === 'managePanelGroups' &&
     ($from_id == $admin || ($userInfo['isAdmin'] ?? false))) {
     editText($message_id, \achbotMessage('bot.bot.manage_marzban_panel_groups.message.59d5170317'),
-        getMarzbanPanelGroupsManagementKeys());
+        getPanelGroupsManagementKeys());
     return;
 }
-if ($data === 'addMarzbanPanelGroup' &&
+if ($data === 'addPanelGroup' &&
     ($from_id == $admin || ($userInfo['isAdmin'] ?? false))) {
-    setUser('newMarzbanPanelGroup');
+    setUser('newPanelGroup');
     sendMessage(\achbotMessage('bot.bot.add_marzban_panel_group.message.01f02c2ac6')
         . \achbotMessage('bot.bot.add_marzban_panel_group.message.31116063c0'), $cancelKey, 'HTML');
     return;
 }
-if (($userInfo['step'] ?? '') === 'newMarzbanPanelGroup' &&
+if (($userInfo['step'] ?? '') === 'newPanelGroup' &&
     $text != \achbotMessage('legacy_buttons.cancel') &&
     ($from_id == $admin || ($userInfo['isAdmin'] ?? false))) {
     if (!achbotGroupNameValid((string)$text)) {
@@ -1950,10 +1950,10 @@ if (($userInfo['step'] ?? '') === 'newMarzbanPanelGroup' &&
         return;
     }
     setUser();
-    sendMessage(\achbotMessage('bot.bot.add_marzban_panel_group.message.1de4f68601'), getMarzbanPanelGroupsManagementKeys(), 'HTML');
+    sendMessage(\achbotMessage('bot.bot.add_marzban_panel_group.message.1de4f68601'), getPanelGroupsManagementKeys(), 'HTML');
     return;
 }
-if (preg_match('/^deleteMarzbanPanelGroup_(\d+)$/D', (string)($data ?? ''), $groupMatch) &&
+if (preg_match('/^deletePanelGroup_(\d+)$/D', (string)($data ?? ''), $groupMatch) &&
     ($from_id == $admin || ($userInfo['isAdmin'] ?? false))) {
     $connection->begin_transaction();
     try {
@@ -1974,13 +1974,13 @@ if (preg_match('/^deleteMarzbanPanelGroup_(\d+)$/D', (string)($data ?? ''), $gro
     }
     alert($removed ? \achbotMessage('bot.bot.add_marzban_panel_group.alert.2b2b180a96') :
         \achbotMessage('bot.bot.add_marzban_panel_group.alert.cc8538eba9'), true);
-    editText($message_id, \achbotMessage('bot.bot.add_marzban_panel_group.message.def9f141f2'), getMarzbanPanelGroupsManagementKeys());
+    editText($message_id, \achbotMessage('bot.bot.add_marzban_panel_group.message.def9f141f2'), getPanelGroupsManagementKeys());
     return;
 }
 // Server creation uses the actor-owned management wizard above.
 // Admin server settings: select an EXISTING panel group, never a
 // free-text value or automatic URL/username-based identity.
-if (preg_match('/^(?:editPanelGroup|editMarzbanGroup)(\d+)$/D', (string)($data ?? ''), $groupMatch) &&
+if (preg_match('/^editPanelGroup(\d+)$/D', (string)($data ?? ''), $groupMatch) &&
     ($from_id == $admin || ($userInfo['isAdmin'] ?? false))) {
     $id = (int)$groupMatch[1];
     $stmt = $connection->prepare("SELECT type FROM server_config WHERE id = ?");
@@ -1993,7 +1993,7 @@ if (preg_match('/^(?:editPanelGroup|editMarzbanGroup)(\d+)$/D', (string)($data ?
         return;
     }
     sendMessage(\achbotMessage('bot.bot.addserver_name.message.c31e264971'),
-        getMarzbanPanelGroupKeys('edit', $id), 'HTML');
+        getPanelGroupKeys($id), 'HTML');
     return;
 }
 if (preg_match('/^setServerPanelGroup_(\d+)_(\d+)$/D', (string)($data ?? ''), $groupMatch) &&
@@ -2024,15 +2024,6 @@ if (preg_match('/^setServerPanelGroup_(\d+)_(\d+)$/D', (string)($data ?? ''), $g
         return;
     }
     sendMessage(\achbotMessage('bot.bot.addserver_name.message.9495c6622a'), getServerConfigKeys($id), 'HTML');
-    return;
-}
-// Refuse an older in-flight R3 free-text group step rather than
-// accepting an arbitrary new group not defined by the administrator.
-if (preg_match('/^editMarzbanGroup\d+$/D', (string)($userInfo['step'] ?? '')) &&
-    $text != \achbotMessage('legacy_buttons.cancel') &&
-    ($from_id == $admin || ($userInfo['isAdmin'] ?? false))) {
-    setUser();
-    sendMessage(\achbotMessage('bot.bot.addserver_name.message.8dc219842f'), null, 'HTML');
     return;
 }
 if ((require __DIR__ . '/src/Subscription/SubLinkSettings.php') === null) return;

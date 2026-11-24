@@ -50,10 +50,10 @@
   "changes": {
     "bot.php": {
       "before_count": 200,
-      "after_count": 191,
+      "after_count": 190,
       "before_sha256": "cff48d8a700a865d62d8c96389da43e7a2d34431deff1f650f3bd4b107808baa",
-      "after_sha256": "ae449b9a6289bcd27264ef2b8d4d8649d0269259094e21d9678a4a666466d8af",
-      "reason": "Retired Marzban wizard and external renewal selection."
+      "after_sha256": "5c129b242e412cefd818f590bd43b6950489adcf3cd8bd566304829463246cab",
+      "reason": "Retired Marzban wizard and external renewal selection. Retire old physical-group alias/free-text step; use current provider-neutral group selectors."
     },
     "src/Finance/ApiPaymentPresentation.php": {
       "before_count": 1,

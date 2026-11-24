@@ -48,7 +48,7 @@ $config=file_get_contents($root.'/config.php');
 foreach ([
     ['function getServerConfigKeys(','function getServerListKeys('],
     ['function getServerListKeys(','function getCategoriesKeys('],
-    ['function getMarzbanPanelGroupKeys(','function getServerConfigKeys('],
+    ['function getPanelGroupKeys(','function getServerConfigKeys('],
     ['function getPlanDetailsKeys(','// BEGIN create user and admin get order detail'],
 ] as [$start,$end]) {
     $a=strpos($config,$start);$b=strpos($config,$end,$a);
@@ -116,15 +116,9 @@ yes(achbotPanelGroup($connection,2)['name']==='Physical PasarGuard fixture',
     'pasarguard_group_membership_is_visible');
 yes(achbotPanelGroup($connection,3)===null,
     'unsupported_panel_cannot_acquire_shared_group_identity');
-$addGroups=callbacks(getMarzbanPanelGroupKeys('add'));
-containsAll($addGroups,['selectNewPanelGroup_'.$marzbanGroup,
-    'selectNewPanelGroup_'.$pgGroup,'selectNewPanelGroup_0','serversSetting'],
-    'common_add_server_group_selector_has_both_group_choices_and_none');
-noCallbacks($addGroups,'/^setServerPanelGroup_/',
-    'new_server_group_selector_has_no_existing_server_mutation');
 foreach ([2] as $sid) {
     $assigned=$sid===1?$marzbanGroup:$pgGroup;
-    $groupMenu=callbacks(getMarzbanPanelGroupKeys('edit',$sid));
+    $groupMenu=callbacks(getPanelGroupKeys($sid));
     containsAll($groupMenu,[
         'setServerPanelGroup_'.$sid.'_'.$marzbanGroup,
         'setServerPanelGroup_'.$sid.'_'.$pgGroup,
@@ -146,11 +140,29 @@ foreach ([2] as $sid) {
     noCallbacks($keys,'/^pgServerGroups/',
         'native_pg_server_group_stays_retired_on_both_providers_'.$sid);
 }
-$groupManagement=callbacks(getMarzbanPanelGroupsManagementKeys());
+// Retired wizard starts are inert and old group aliases are absent.
+require_once $root.'/src/Admin/ManagementFlow.php';
+$userInfo=['step'=>'none'];$text=null;
+$botSource=file_get_contents($root.'/bot.php');
+foreach (['manageMarzbanPanelGroups','editMarzbanGroup','addMarzbanPanelGroup',
+    'newMarzbanPanelGroup','deleteMarzbanPanelGroup_'] as $old) {
+    yes(!str_contains($botSource,$old),'retired_group_route_absent_'.$old);
+}
+foreach (['pgConnections','pgAddConnection','pgNewServer2'] as $old) {
+    $data=$old;
+    yes(achbotHandleManagement()===false,'retired_management_start_inert_'.$old);
+    yes(achbotAdminRequestCapability($old)===null,'retired_capability_absent_'.$old);
+}
+foreach (['managePanelGroups','addPanelGroup','newPanelGroup','deletePanelGroup_2',
+    'editPanelGroup2','setServerPanelGroup_2_0'] as $current) {
+    yes(achbotAdminRequestCapability($current)==='servers','current_group_capability_'.$current);
+}
+$data='';
+$groupManagement=callbacks(getPanelGroupsManagementKeys());
 containsAll($groupManagement,[
-    'deleteMarzbanPanelGroup_'.$marzbanGroup,
-    'deleteMarzbanPanelGroup_'.$pgGroup,
-    'addMarzbanPanelGroup','serversSetting'],
+    'deletePanelGroup_'.$marzbanGroup,
+    'deletePanelGroup_'.$pgGroup,
+    'addPanelGroup','serversSetting'],
     'shared_group_management_can_add_remove_and_return');
 noCallbacks($groupManagement,'/^pgServerGroups/',
     'common_group_management_has_no_legacy_native_server_groups');

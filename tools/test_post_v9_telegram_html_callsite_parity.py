@@ -114,7 +114,7 @@ AUDITED = {
     'src/Plans/Administration.php': (13, '7bc479ac209460e9f3270644655a881cda730f9ed5e18f529047d36187404587'),
     'src/Plans/AddonAdmin.php': (5, '77eb5d7a03d05ab9da955a61f38be342857f3d08f620ec7d0c07b6f1cac1bc22'),
     'src/Plans/Categories.php': (3, 'f5e5f232dab62ecb5bd39adf2a808bf03672d109e5d58f9a8eff2ab1b387f82e'),
-    'bot.php': (93, '9a331984ad962622a27ce161ee8bd0cee9beb67b0042eea205e1551c457d8b6c'),
+    'bot.php': (92, 'eaa016bea50a4347cc4dac82dcfdc9567bb7a6090da391066d6d1dac1654e515'),
     'config.php': (15, '71f4e61ba9ffd3e4cf7b789a1cbca6a46033add9ae00407f5495cee2986ac920'),
     'src/Subscription/CustomerRoutes.php': (18, '874a1a9e3baf6d83ce9e5a866ab62911f1ba1cca0457482429a88438ce16ae38'),
     'src/Purchase/Catalogue.php': (11, '0c1795dc5ccbc348a06e6d49baaa4f881b31aa5786e15e452a6db55df9c88306'),

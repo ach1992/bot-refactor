@@ -881,34 +881,30 @@ function getAgentsList($offset = 0){
 }
 require_once __DIR__ . '/src/Finance/AgentDiscounts.php';
 require_once __DIR__ . '/src/Finance/GatewayClient.php';
-function getMarzbanPanelGroupKeys($mode, $serverId = 0) {
+function getPanelGroupKeys(int $serverId) {
     global $connection;    $keys = [];
     foreach (achbotPanelGroups($connection) as $group) {
         $id = (int)$group['id'];
-        $cb = $mode === 'add'
-            ? "selectNewPanelGroup_$id"
-            : "setServerPanelGroup_{$serverId}_{$id}";
+        $cb = "setServerPanelGroup_{$serverId}_{$id}";
         $keys[] = [['text'=>\achbotMessage('admin_settings.config.get_marzban_panel_group_keys.button.62b58eccfe') . $group['name'], 'callback_data'=>$cb]];
     }
-    $none = $mode === 'add'
-        ? 'selectNewPanelGroup_0'
-        : "setServerPanelGroup_{$serverId}_0";
+    $none = "setServerPanelGroup_{$serverId}_0";
     $keys[] = [['text'=>\achbotMessage('admin_settings.config.get_marzban_panel_group_keys.button.9bdffdaedc'), 'callback_data'=>$none]];
     $keys[] = [['text'=>\achbotMessage('legacy_buttons.back_button') ?? \achbotMessage('admin_settings.config.get_marzban_panel_group_keys.text.b35a2352f5'),
-                'callback_data'=>$mode === 'add' ? 'serversSetting' : "showServerSettings{$serverId}_0"]];
+                'callback_data'=>"showServerSettings{$serverId}_0"]];
     return json_encode(['inline_keyboard'=>$keys], JSON_UNESCAPED_UNICODE);
 }
-function getMarzbanPanelGroupsManagementKeys() {
+function getPanelGroupsManagementKeys() {
     global $connection;    $keys = [];
     foreach (achbotPanelGroups($connection) as $group) {
         $id = (int)$group['id'];
         $keys[] = [
             ['text'=>\achbotMessage('admin_settings.config.get_marzban_panel_group_keys.button.62b58eccfe') . $group['name'], 'callback_data'=>'wizwizch'],
-            ['text'=>\achbotMessage('admin_settings.config.get_marzban_panel_groups_management_keys.button.eb25cfbc94'), 'callback_data'=>"deleteMarzbanPanelGroup_$id"],
+            ['text'=>\achbotMessage('admin_settings.config.get_marzban_panel_groups_management_keys.button.eb25cfbc94'), 'callback_data'=>"deletePanelGroup_$id"],
         ];
     }
     if (!$keys) $keys[] = [['text'=>\achbotMessage('admin_settings.config.get_marzban_panel_groups_management_keys.button.d376787114'), 'callback_data'=>'wizwizch']];
-    $keys[] = [['text'=>\achbotMessage('admin_settings.config.get_marzban_panel_groups_management_keys.button.a6b2138672'), 'callback_data'=>'addMarzbanPanelGroup']];
+    $keys[] = [['text'=>\achbotMessage('admin_settings.config.get_marzban_panel_groups_management_keys.button.a6b2138672'), 'callback_data'=>'addPanelGroup']];
     $keys[] = [['text'=>\achbotMessage('legacy_buttons.back_button') ?? \achbotMessage('admin_settings.config.get_marzban_panel_group_keys.text.b35a2352f5'), 'callback_data'=>'serversSetting']];
     return json_encode(['inline_keyboard'=>$keys], JSON_UNESCAPED_UNICODE);
 }
