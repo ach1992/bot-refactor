@@ -24,6 +24,7 @@ ROOT = Path(__file__).resolve().parents[1]
 # Expensive cases go first to minimize the tail of a finite parallel pool.
 # Each native suite asserts against current PHP source using its own fixtures.
 NATIVE_TESTS = (
+    ("wallet_first_ledger", "test_wallet_first_ledger.py"),
     ("api_payments", "test_post_v9_scoped_api_pg.py"),
     ("postcutover_recovery", "test_post_v9_pg_cutover_recovery.py"),
     ("native_import_name_reuse", "test_post_v9_import_name_reuse.py"),
