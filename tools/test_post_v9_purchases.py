@@ -438,6 +438,9 @@ def stage_source(stage:Path,current:bool)->dict:
         canonical_import="require_once __DIR__ . '/src/Purchase/Core.php';"
         assert fixture.count(legacy_import)==1
         fixture=fixture.replace(legacy_import,canonical_import,1)
+        retired_import="require __DIR__.'/src/Panel/Accounts.php';"
+        assert fixture.count(retired_import)==1
+        fixture=fixture.replace(retired_import,"",1)
         (stage/'presentation-under-test.php').write_bytes(panel_functions.function_bodies((ROOT/'config.php').read_bytes(),['buildSubscriptionPresentation']))
         # Production config loads the real Jalali/date helpers before admin redraws.
         # Bootstrap that candidate dependency here; the frozen V7 driver stays byte-identical.

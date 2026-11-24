@@ -171,6 +171,31 @@ try {
             'legacy_reserve'=>fixtureLegacyReserve($db,$x['pay'])
         };
     }
+    elseif ($x['op']==='checkout_insert') {
+        require_once $argv[1].'/src/Finance/CheckoutAdmission.php';
+        $h=$x['hash'];$uid=1001;$type=$x['type'];$price=$x['price'];$sid=2;$plan=7;
+        $order=(int)($x['order']??0);$days=(int)($x['days']??0);$volume=(int)($x['volume']??0);
+        $count=(int)($x['quantity']??1);$description=(string)($x['description']??'fixture');
+        $snapshot=null;$scoped=false;
+        if (isset($x['addon_kind'])) {
+            $o=achbotProviderRow($db,'SELECT * FROM orders_list WHERE id=?','i',[$order]);
+            $context=achbotAddonContext($db,$o);
+            $offer=achbotAddonOfferById($db,$x['addon_kind'],$context,(int)$x['offer']);
+            if (!$offer) throw new RuntimeException('fixture_offer_missing');
+            $snapshot=achbotAddonQuote($o,$context,$x['addon_kind'],$offer,$price);
+            $scoped=true;
+        }
+        $stmt=$db->prepare("INSERT INTO pays(hash_id,user_id,type,price,request_date,state,server_id,plan_id,order_id,day,volume,agent_count,description,addon_scope_snapshot)
+            VALUES (?,?,?,?,UNIX_TIMESTAMP(),'pending',?,?,?,?,?,?,?,?)");
+        $stmt->bind_param('sisiiiiiiiss',$h,$uid,$type,$price,$sid,$plan,$order,$days,$volume,$count,$description,$snapshot);
+        $display=achbotProviderRow($db,'SELECT days,volume FROM server_plans WHERE id=?','i',[$plan]);
+        $r=achbotPayUxInsertDraft($db,$uid,$stmt,$scoped,$display,['remark'=>'digits']);
+        $stmt->close();
+    }
+    elseif ($x['op']==='gateway_review_status') {
+        require_once $argv[1].'/src/Finance/GatewayReview.php';
+        $r=achbotGatewayReviewCompletionStatus($db,$x['operation']);
+    }
     elseif ($x['op']==='checkout_pin') {
         require_once $argv[1].'/src/Finance/CheckoutAdmission.php';
         $db->begin_transaction();
@@ -422,7 +447,7 @@ def main():
         try:
             for m in ('001_marzban_panel_group_id.sql','003_payment_attempts.sql','004_automatic_renewal_attempts.sql',
                       '007_service_effects.sql','008_referral_awards.sql','011_provider_identity.sql','012_shared_provider_storage.sql',
-                      '014_api_payment_evidence.sql','017_shared_plan_changes.sql','018_payment_delivery_intents.sql','020_payment_followup_intents.sql','022_gateway_review_archive.sql',
+                      '014_api_payment_evidence.sql','015_scoped_addons.sql','017_shared_plan_changes.sql','018_payment_delivery_intents.sql','020_payment_followup_intents.sql','022_gateway_review_archive.sql',
                       '023_scoped_payment_lock_indexes.sql','024_wallet_entries.sql',
                       '025_wallet_receipt_credit.sql','026_service_operations.sql'):
                 sql((ROOT/'migrations/post-v9'/m).read_text())
@@ -1545,7 +1570,7 @@ DELIMITER ;
                 ord_id=int(sql(f"SELECT order_id FROM payment_delivery_intents WHERE id={dids[0]}"))
                 eid=edit(mode,'manual-renew-notice',ord_id,'RENEW',days=30,volume=2)
                 ref=mode+'-manual-renew-notice'
-                sql(f"INSERT INTO pays(hash_id,user_id,type,price,request_date,state) VALUES ('{ref}',1001,'RENEW_SCONFIG',100,UNIX_TIMESTAMP(),'pending')")
+                sql(f"INSERT INTO pays(hash_id,user_id,type,price,request_date,state) VALUES ('{ref}',1001,'RENEW_ACCOUNT',100,UNIX_TIMESTAMP(),'pending')")
                 pid=int(sql(f"SELECT id FROM pays WHERE hash_id='{ref}'"))
                 assert php(mode,'manual_receipt',pay=pid,id=eid,actor=9002)['funding']=='funded'
                 for stage in ['progressed','progressed','applied','completed']:step(mode,eid,stage)
@@ -1555,7 +1580,7 @@ DELIMITER ;
                 assert php(mode,'followup',id=rid)=='acknowledged'
                 assert sql(f"SELECT state FROM payment_delivery_intents WHERE id={did}")=='pending'
                 assert php(mode,'deliver',id=did)=='acknowledged'
-                assert sql(f"SELECT mode FROM fixture_telegram WHERE intent_id={did}")=='NULL'
+                assert sql(f"SELECT mode FROM fixture_telegram WHERE intent_id={did}")=='HTML'
                 assert sql(f"SELECT COUNT(*) FROM fixture_followup WHERE intent_id={rid} AND recipient='9002'")=='1'
                 assert finance()==before and len(requests)==n
                 cases.append(mode+'_manual_renewal_operator_independent_of_delivery_ack')
@@ -1625,6 +1650,50 @@ DELIMITER ;
                 assert sql(f"SELECT COUNT(*) FROM wallet_entries WHERE source_kind='payment_credit' AND source_ref='{pid}'")=='1'
                 for stage in ('applied','completed'):step(mode,op,stage)
                 cases.append(mode+'_declined_wallet_switches_to_manual_exactly_once')
+                # Use the same transactional draft insert as the Telegram
+                # checkout controller, not only a synthetic service quote.
+                sql("UPDATE users SET wallet=50000 WHERE userid=1001; UPDATE server_info SET ucount=100 WHERE id=2")
+                def insert_checkout(suffix,typ,**kw):
+                    h=mode+'-ui-'+suffix
+                    pid=php(mode,'checkout_insert',hash=h,type=typ,price=100,**kw)
+                    assert pid>0,(h,typ,pid)
+                    return h,pid
+                h,pid=insert_checkout('custom','BUY_SUB',days=10,volume=3,description=mode+'-custom-checkout')
+                r=php(mode,'checkout_wallet',hash=h,mode='custom')
+                assert r['status']=='funded',r
+                op=r['operation']
+                assert php(mode,'gateway_review_status',operation=op)=='unknown'
+                for stage in ('applied','completed'):step(mode,op,stage)
+                assert php(mode,'gateway_review_status',operation=op)=='completed'
+                assert php(mode,'gateway_review_status',operation=None)=='completed'
+                order=int(sql(f"SELECT order_id FROM service_effects WHERE source_kind='service_operation' AND source_ref='{op}'"))
+                cases.append(mode+'_actual_custom_draft_and_review_completion_truth')
+                h,pid=insert_checkout('bulk','BUY_SUB',quantity=2)
+                r=php(mode,'checkout_wallet',hash=h)
+                assert r['status']=='funded',r
+                op=r['operation']
+                for stage in ('applied','applied','completed'):step(mode,op,stage)
+                assert sql(f"SELECT COUNT(*) FROM service_effects WHERE source_kind='service_operation' AND source_ref='{op}' AND state='local_recorded'")=='2'
+                cases.append(mode+'_actual_bulk_checkout_draft')
+                h,pid=insert_checkout('renew','RENEW_ACCOUNT',order=order)
+                r=php(mode,'checkout_wallet',hash=h,mode='renew')
+                assert r['status']=='funded',r
+                op=r['operation']
+                for stage in ('progressed','progressed','applied','completed'):step(mode,op,stage)
+                cases.append(mode+'_actual_renew_checkout_draft')
+                for kind,table in [('day','increase_day'),('volume','increase_plan')]:
+                    sql(f"INSERT INTO {table}(volume,price) VALUES (97,100) ON DUPLICATE KEY UPDATE price=100")
+                    offer=int(sql(f"SELECT id FROM {table} WHERE volume=97 AND server_id IS NULL"))
+                    typ=f"INCREASE_{kind.upper()}_{order}_{offer}"
+                    h,pid=insert_checkout(kind,typ,order=order,days=97 if kind=='day' else 0,
+                        volume=97 if kind=='volume' else 0,addon_kind=kind,offer=offer)
+                    assert php(mode,'checkout_manual',pay=pid,submit=True)
+                    r=php(mode,'checkout_approve',hash=h,mode=kind)
+                    assert r['funding']=='funded',r
+                    op=r['operation']
+                    for stage in ('progressed','applied','completed'):step(mode,op,stage)
+                    assert php(mode,'checkout_approve',hash=h,mode=kind)['credit']['replayed']
+                    cases.append(mode+'_actual_scoped_'+kind+'_manual_checkout_draft')
                 assert not faults and not errors,(faults,errors)
         finally:
             release.set();server.shutdown();server.server_close();thread.join(5)

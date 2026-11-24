@@ -61,26 +61,15 @@ function achbotSubscriptionDeleteConfirmed(mysqli $db,array $original,bool $owne
                     ' server_id='.$serverId);
                 return 'review';
             }
-            // Native PasarGuard preflight already verified the same account.
-            if ($ownerView && $provider==='marzban') {
-                $remote=achbotProviderUser($serverId,$remark,false);
-                if (!achbotServiceObservation($remote,$remark)['verified'])
-                    return 'review';
-            }
             if (!achbotProviderDeletionTargetMatches($db,$serverId,$remark,$target))
                 return 'blocked';
-            $claim=null;
-            if ($provider==='pasarguard') {
-                $claim=static function(mysqli $db,array $lockedOrder) use ($target): void {
-                    achbotPgClaimOriginalDelete($db,$lockedOrder,$target,true);
-                };
-            }
+            $claim=static function(mysqli $db,array $lockedOrder) use ($target): void {
+                achbotPgClaimOriginalDelete($db,$lockedOrder,$target,true);
+            };
             if (!achbotAutoRenewPrepareDeletion($db,$orderId,null,$claim))
                 return 'review';
             $stage='remote';
-            $result=$provider==='pasarguard'?
-                achbotPgResumeDelete($db,$orderId,$serverId,$remark):
-                achbotProviderDelete($serverId,$remark,$target);
+            $result=achbotPgResumeDelete($db,$orderId,$serverId,$remark);
         } elseif ((int)$fresh['status']===0 && $fresh['autoRenew']==='off' &&
             $provider==='pasarguard') {
             $stage='recovery';
@@ -92,8 +81,7 @@ function achbotSubscriptionDeleteConfirmed(mysqli $db,array $original,bool $owne
                 'retry':'review';
         }
         $stage='local';
-        $restoreCapacity=$provider==='pasarguard'?
-            ($result->delete_restore_capacity??null):true;
+        $restoreCapacity=$result->delete_restore_capacity??null;
         if (!is_bool($restoreCapacity)) return 'review';
         if (!achbotAutoRenewFinalizeDeletion($db,$orderId,$serverId,$restoreCapacity))
             return $provider==='pasarguard'?'local':'review';

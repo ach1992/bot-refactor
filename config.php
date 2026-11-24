@@ -926,30 +926,8 @@ function getServerConfigKeys($serverId,$offset = 0){
             [['text'=>\achbotMessage('admin_settings.config.get_server_config_keys.button.a726d3f27d'),'callback_data'=>'wizwizch']],$back
         ]],JSON_UNESCAPED_UNICODE);
     }
-    if ($config['type']==='pasarguard') {
-        require_once __DIR__.'/src/Panel/ProviderAdmin.php';
-        return achbotPgServerAdminKeys($info,$config,$offset);
-    }
-    $id=(int)$info['id'];$group=achbotPanelGroup($connection,$id);
-    $keys=[
-        [['text'=>$config['panel_url'],'callback_data'=>'wizwizch']],
-        [['text'=>$info['title'],'callback_data'=>'editServerName'.$id],
-         ['text'=>\achbotMessage('admin_settings.config.get_server_config_keys.button.2f6b3d0d80'),'callback_data'=>'wizwizch']],
-        [['text'=>$info['flag'],'callback_data'=>'editServerFlag'.$id],
-         ['text'=>\achbotMessage('admin_settings.config.get_server_config_keys.button.d004e8d654'),'callback_data'=>'wizwizch']],
-        [['text'=>\achbotMessage('admin_settings.management.capacity',['value'=>$info['ucount']]),'callback_data'=>'editServerMax'.$id]],
-        [['text'=>\achbotMessage('admin_settings.management.remark',['value'=>$info['remark']]),'callback_data'=>'editServerRemark'.$id]],
-        [['text'=>$group['name']??\achbotMessage('admin_settings.config.get_server_config_keys.text.176dbab285'),'callback_data'=>'editPanelGroup'.$id],
-         ['text'=>\achbotMessage('admin_settings.config.get_server_config_keys.button.e2c055db59'),'callback_data'=>'wizwizch']],
-        [['text'=>\achbotMessage('admin_settings.management.connection'),'callback_data'=>'changesServerLoginInfo'.$id]],
-        [['text'=>\achbotMessage('admin_settings.management.display'),'callback_data'=>'serverDisplay'.$id]],
-        [['text'=>\achbotMessage('admin_settings.config.get_server_config_keys.button.7ae29940f8'),'callback_data'=>'editSubLinks'.$id]],
-        [['text'=>\achbotMessage('admin_settings.management.plans'),'callback_data'=>'plansList'.$id],
-         ['text'=>\achbotMessage('admin_settings.management.add_plan'),'callback_data'=>'newPlanForServer'.$id]],
-        [['text'=>\achbotMessage('admin_settings.management.server_delete'),'callback_data'=>'wizwizdeleteserver'.$id]],
-        $back
-    ];
-    return json_encode(['inline_keyboard'=>$keys],JSON_UNESCAPED_UNICODE);
+    require_once __DIR__.'/src/Panel/ProviderAdmin.php';
+    return achbotPgServerAdminKeys($info,$config,$offset);
 }
 function getServerListKeys($offset = 0){
     global $connection;

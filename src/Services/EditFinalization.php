@@ -45,8 +45,7 @@ function achbotServiceEditCustomerPacketLocked(mysqli $db,array $op,array $quote
                 'callback_data'=>'mainMenu']]]);
             $mode='plain';
         } elseif ($receipt!==null) {
-            if ($kind==='RENEW' && ($receipt['pay']['type']==='RENEW_SCONFIG' ||
-                $receipt['attempt']['wallet_credit_basis']==='bank_timer')) {
+            if ($kind==='RENEW' && $receipt['attempt']['wallet_credit_basis']==='bank_timer') {
                 $text=achbotMessage('manual_payment.automatic_receipts.message.cca1075329',['remark'=>$q['remark']]);
                 $mode='plain';
             } else {

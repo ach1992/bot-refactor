@@ -118,6 +118,13 @@ function achbotGatewayReviewEligible(mysqli $db,int $attemptId,
     return ['pay'=>$pay,'attempt'=>$a,'digest'=>$digest,'provider'=>$provider];
 }
 
+/** A committed receipt is not proof of completed service execution. */
+function achbotGatewayReviewCompletionStatus(mysqli $db,?int $operation): string {
+    if ($operation===null) return 'completed';
+    $row=achbotProviderRow($db,'SELECT stage FROM service_operations WHERE id=?','i',[$operation]);
+    return ($row['stage']??null)==='completed'?'completed':'unknown';
+}
+
 /** One human decision, serialized against receipt verification and using
  * the original immutable invoice. Approval goes through common credit. */
 function achbotGatewayReviewCommit(mysqli $db,int $actor,int $attemptId,
@@ -156,7 +163,7 @@ function achbotGatewayReviewCommit(mysqli $db,int $actor,int $attemptId,
             } catch (Throwable $e) {$db->rollback();throw $e;}
             if ($decision==='reject') return ['status'=>'rejected','pay'=>$pay];
             achbotCheckoutAdvance($db,$r['operation'],$id);
-            return ['status'=>'completed','pay'=>$pay];
+            return ['status'=>achbotGatewayReviewCompletionStatus($db,$r['operation']),'pay'=>$pay];
         } finally {achbotOriginalDispatchLeaseEnd($db,$id,$lease);}
     } catch (Throwable $e) {
         achbotDiagnosticEvent('achbot.finance.gateway_review',['attempt_id'=>$attemptId,'class'=>get_class($e)],'warning');
@@ -182,7 +189,7 @@ function achbotGatewayReviewRecover(mysqli $db,int $actor,int $attemptId,
         $result=achbotHostedReceiptVerify($db,$id,(int)$r['user_id'],$r['provider'],$reference);
         if ($result['status']!=='credited') return ['status'=>'unknown'];
         achbotCheckoutAdvance($db,$result['operation'],$id);
-        return ['status'=>'completed'];
+        return ['status'=>achbotGatewayReviewCompletionStatus($db,$result['operation'])];
     } catch (Throwable $e) {return ['status'=>'unavailable'];}
     finally {achbotOriginalDispatchLeaseEnd($db,$id,$lease);}
 }

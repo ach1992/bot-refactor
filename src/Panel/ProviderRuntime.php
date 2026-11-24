@@ -727,7 +727,6 @@ function achbotPgValidMutationKey($key): bool {
 }
 function achbotPgOperationKey(string $action,array $change=[]): string {
     if (achbotPgValidMutationKey($change['operation_key']??null)) return $change['operation_key'];
-    if ((int)($change['pay_id']??0)>0) return 'pay:'.(int)$change['pay_id'];
     $update=$GLOBALS['update']??null;
     if (is_object($update) && is_int($update->update_id??null) && $update->update_id>0)
         return 'telegram:'.$update->update_id.':'.$action;
@@ -850,18 +849,6 @@ function achbotPinnedAddonUnits(array $pay): ?int {
     if (achbotWholeServiceUnits($pay[$other]??null,2147483647,true)!==0) return null;
     return achbotWholeServiceUnits($pay[$field]??null,$field==='day'?36500:achbotServiceVolumeMax());
 }
-function achbotServiceEditMatchesPay(mysqli $db,int $payId,array $change): bool {
-    $s=$db->prepare('SELECT type,volume,day FROM pays WHERE id=?');
-    if (!$s) return false;
-    $s->bind_param('i',$payId);$ok=$s->execute();$pay=$ok?$s->get_result()->fetch_assoc():null;$s->close();
-    if (!$pay) return false;
-    if (preg_match('/^INCREASE_(DAY|VOLUME)_/',(string)$pay['type'],$m)!==1) return true;
-    $units=achbotPinnedAddonUnits($pay);
-    $field=$m[1]==='DAY'?'plus_day':'plus_volume';
-    $seen=array_intersect(array_keys($change),['days','plus_day','volume','plus_volume']);
-    return $units!==null && count($seen)===1 &&
-        achbotWholeServiceUnits($change[$field]??null,$field==='plus_day'?36500:achbotServiceVolumeMax())===$units;
-}
 /** Pure validation runs before an account claim or provider GET. */
 function achbotPgEditInputUnits(array $change): array {
     $units=[];
@@ -904,165 +891,68 @@ function achbotPgEditChanges(array $user,array $change,?int $clock=null): array 
     return $out;
 }
 function achbotPgServiceEdit(mysqli $db,int $serverId,array $change,?array $giftTarget=null): object {
+    $referenceOrder=(int)($change['order_id']??0);
+    $lease=null;$transaction=false;
     try {
+        // This adapter is only the existing free gift workflow. All paid
+        // BUY/RENEW/ADD operations use Services/Execution.php.
+        if ($giftTarget===null || $referenceOrder<=0 ||
+            array_diff(array_keys($change),['remark','order_id','plus_day','plus_volume','operation_key']) ||
+            !achbotPgValidMutationKey($change['operation_key']??null))
+            throw new RuntimeException('pg_gift_request_invalid');
         $requestUnits=achbotPgEditInputUnits($change);
-        $referenceOrder=(int)($change['order_id']??0);
-        $originalWalletAddon=false;
-        $deferApiFence=($change['_api_defer_account_finality']??false)===true;
-        if ($deferApiFence) {
-            // A caller-supplied marker alone must never defer unrelated
-            // account operations. Prove an original, dispatched, financially
-            // proven bank/gift API claim before Native side effects.
-            $pid=(int)($change['pay_id']??0);
-            $q=$db->prepare('SELECT p.state,p.type,a.provider,a.evidence_fulfillment_state
-                FROM pays p JOIN payment_attempts a ON a.pay_row_id=p.id
-                WHERE p.id=?');
-            $q->bind_param('i',$pid);$q->execute();
-            $rows=$q->get_result()->fetch_all(MYSQLI_ASSOC);$q->close();
-            if ($pid<=0 || count($rows)!==1 ||
-                $rows[0]['state']!=='processing' ||
-                !in_array($rows[0]['provider'],['bank_transfer','gift_card'],true) ||
-                $rows[0]['evidence_fulfillment_state']!=='dispatched' ||
-                !($rows[0]['type']==='RENEW_ACCOUNT' ||
-                    preg_match('/^INCREASE_(?:DAY|VOLUME)_[1-9][0-9]*_[1-9][0-9]*$/D',
-                        $rows[0]['type'])===1) ||
-                achbotPaymentEvidenceGetProof($db,$pid)===null)
-                throw new RuntimeException('pg_api_original_dispatch_not_proven');
-        }
-        if ((int)($change['pay_id']??0)>0) {
-            $payId=(int)$change['pay_id'];
-            $s=$db->prepare('SELECT order_id,type,state FROM pays WHERE id=?');
-            $s->bind_param('i',$payId);$s->execute();$payment=$s->get_result()->fetch_assoc();$s->close();
-            // This original Wallet claim/debit was committed before Native
-            // HTTP. Do not release its account mutation key before original
-            // payment, order, audit and durable notifications COMMIT.
-            $originalWalletAddon=($payment['state']??null)==='processing_wallet'
-                && preg_match('/^INCREASE_(?:DAY|VOLUME)_[1-9][0-9]*_[1-9][0-9]*$/D',
-                    (string)($payment['type']??''))===1;
-            if (!$payment) throw new RuntimeException('pg_edit_payment_missing');
-            $referenceOrder=(int)$payment['order_id'];
-            if ($referenceOrder<=0 && preg_match('/^INCREASE_(?:DAY|VOLUME)_([1-9][0-9]*)_/',(string)$payment['type'],$m))
-                $referenceOrder=(int)$m[1];
-            if ($referenceOrder<=0) throw new RuntimeException('pg_edit_payment_reference_missing');
-        }
-        $ctx=$referenceOrder>0?achbotPgOrderContext($db,$referenceOrder):
-            achbotPgRemarkContext($db,$serverId,$change['remark']);
-        if ($ctx['order_server_id']!==$serverId || $ctx['order']['remark']!==$change['remark'])
-            throw new RuntimeException('pg_edit_reference_changed');
-        if ($giftTarget!==null && !achbotGiftTargetMatches($db,$serverId,$giftTarget))
+        $ctx=achbotPgOrderContext($db,$referenceOrder);
+        if ($ctx['order_server_id']!==$serverId || $ctx['order']['remark']!==$change['remark'] ||
+            !achbotGiftTargetMatches($db,$serverId,$giftTarget))
             throw new RuntimeException('pg_gift_target_changed');
-        $key=achbotPgOperationKey('edit',$change);
-        $manualOrigin=[];
-        if (str_starts_with($key,'manual:pay:')) {
-            $pid=(int)($change['pay_id']??0);
-            $approver=(int)($change['manual_approver_id']??0);
-            $amount=(int)($change['manual_local_amount_toman']??0);
-            if ($pid<=0 || $key!=='manual:pay:'.$pid || $approver<=0 || $amount<=0)
-                throw new RuntimeException('pg_manual_edit_origin_missing');
-            $manualOrigin=['original_approver_id'=>$approver,'original_amount_toman'=>$amount];
-        }
+        require_once __DIR__.'/../Subscription/PhysicalService.php';
+        require_once __DIR__.'/../Services/Ownership.php';
+        $name=achbotPhysicalLockName($db,$ctx['order']);
+        achbotPhysicalAcquireLock($db,$name);$lease=$name;
+        $key=$change['operation_key'];
         achbotPgMutationAdmission($ctx['account'],$key);
-        if ((int)($change['pay_id']??0)>0) achbotPgQuote($db,(int)$change['pay_id']);
-        else {
-            $preflight=achbotPgRead($ctx['panel'],$ctx['identity']);
-            if (($preflight['success']??false)!==true) throw new RuntimeException('pg_edit_read_unverified');
-            if (!achbotPgManaged($preflight['user'])) throw new RuntimeException('pg_native_schedule_conflict');
-        }
-        // Own the durable account fence BEFORE calculating limits. Eligibility
-        // preflight is not used for arithmetic; a completed competing edit is
-        // included by the fresh observation below.
+        $preflight=achbotPgRead($ctx['panel'],$ctx['identity']);
+        if (($preflight['success']??false)!==true || !achbotPgManaged($preflight['user']))
+            throw new RuntimeException('pg_gift_preflight_unverified');
+        if (!$db->begin_transaction()) throw new RuntimeException('pg_gift_begin');
+        $transaction=true;
+        $peers=achbotPhysicalActiveOrders($db,$ctx['order'],true);
+        if (!achbotServiceSubjectWorkSettledLocked($db,$peers) ||
+            achbotServicePlanChangePendingLocked($db,$lease))
+            throw new RuntimeException('pg_gift_financial_work_pending');
+        $current=achbotPgOrderContext($db,$referenceOrder,true);
+        if ($current['identity']!==$ctx['identity'] ||
+            $current['order_server_id']!==$serverId ||
+            !achbotGiftTargetMatches($db,$serverId,$giftTarget))
+            throw new RuntimeException('pg_gift_target_changed');
+        $ctx=$current;
         $intent=achbotPgBeginMutation($db,$ctx,$key,'edit',
-            ['phase'=>'claimed','requested_units'=>$requestUnits]+$manualOrigin);
+            ['phase'=>'claimed','requested_units'=>$requestUnits],true);
+        if (!$db->commit()) throw new RuntimeException('pg_gift_claim_commit_unknown');
+        $transaction=false;
         $read=achbotPgRead($ctx['panel'],$ctx['identity']);
         if (($read['success']??false)!==true) throw new RuntimeException('pg_edit_read_unverified');
-        // The durable account fence is already owned. Compare fresh native
-        // Groups again before composing ANY remote mutation; a change after
-        // quote preflight must be deferred for reconciliation, not repriced.
-        $scopedGroups=null;
-        if ((int)($change['pay_id']??0)>0 && achbotAddonSchema($db)) {
-            $pid=(int)$change['pay_id'];
-            $q=$db->prepare('SELECT addon_scope_snapshot FROM pays WHERE id=?');
-            $q->bind_param('i',$pid);$q->execute();
-            $lockedQuote=$q->get_result()->fetch_assoc();$q->close();
-            if (!$lockedQuote) throw new RuntimeException('pg_addon_quote_unavailable');
-            if (($lockedQuote['addon_scope_snapshot']??null)!==null) {
-                $scoped=json_decode($lockedQuote['addon_scope_snapshot'],true,32,JSON_THROW_ON_ERROR);
-                if (!is_array($scoped) || ($scoped['version']??null)!==1 ||
-                    ($scoped['provider']??null)!=='pasarguard' ||
-                    !is_array($scoped['native_groups']??null) ||
-                    $scoped['native_groups']!==$read['user']['group_ids'])
-                    throw new RuntimeException('pg_addon_groups_changed_after_claim');
-                $scopedGroups=$scoped['native_groups'];
-            }
-        }
         $absolute=achbotPgEditChanges($read['user'],$change);
         $intent=achbotPgPersistMutationIntent($db,$ctx,$intent,[
-            // Preserve the issued operation's actual units and local order
-            // baseline in the EXISTING mutation evidence for source-only
-            // recovery if PHP dies after native verification, before pay COMMIT.
-            'requested_units'=>$requestUnits,
-            'order_expire_before'=>(int)$ctx['order']['expire_date'],
-            'absolute'=>$absolute,'reset_usage'=>isset($change['volume']),
-            'before'=>array_intersect_key($read['user'],array_flip(['data_limit','expire','status','group_ids','used_traffic']))]+$manualOrigin);
-        if (isset($change['volume'])) {
-            $reset=achbotPgReset($ctx['panel'],$ctx['identity']);
-            if (($reset['success']??false)!==true) throw new RuntimeException('pg_reset_requires_review');
-        }
-        $r=achbotPgModify($ctx['panel'],$ctx['identity'],$absolute,$scopedGroups);
-        if (($r['success']??false)!==true ||
-            ($r['user']['group_ids']??null)!==$read['user']['group_ids']) {
-            // The outbound PUT may ALREADY have succeeded. Preserve the
-            // original operation fence and log the bounded provider failure
-            // code, rather than reducing every readback/ACK to one opaque
-            // exception. This is diagnostics, never authority to replay.
-            $reason=($r['success']??false)===true?'pg_edit_groups_changed':
-                (string)($r['reason']??'pg_edit_response_unverified');
-            if (preg_match('/^pg_[a-z0-9_]{2,90}$/D',$reason)!==1)
-                $reason='pg_edit_response_unverified';
-            achbotDiagnosticEvent('achbot.native.edit_result_unverified',[
-                'pay_id'=>(int)($change['pay_id']??0),
-                'order_id'=>$referenceOrder,'server_id'=>$serverId,
-                'reason'=>$reason,'stage'=>'native_result',
-                'http_status'=>(int)($r['http']??0),
-                'result'=>'review'],'warning');
+            'requested_units'=>$requestUnits,'order_expire_before'=>(int)$ctx['order']['expire_date'],
+            'absolute'=>$absolute,'reset_usage'=>false,
+            'before'=>array_intersect_key($read['user'],array_flip(['data_limit','expire','status','group_ids','used_traffic']))]);
+        $r=achbotPgModify($ctx['panel'],$ctx['identity'],$absolute);
+        if (($r['success']??false)!==true || ($r['user']['group_ids']??null)!==$read['user']['group_ids'])
             throw new RuntimeException('pg_edit_readback_requires_review');
-        }
-        // API evidence and Wallet debit have distinct original finality owners.
-        // Preserve the same pay:ID account fence until the respective SQL COMMIT.
-        $deferFinality=$deferApiFence || $originalWalletAddon;
-        if (!$deferFinality) achbotPgFinishMutation($db,$ctx,$intent,$r);
+        achbotPgFinishMutation($db,$ctx,$intent,$r);
         return (object)['success'=>true,'verified'=>true,
             'before_expire'=>$read['user']['expire'],'applied_expire'=>$r['user']['expire'],
-            'applied_bytes'=>$r['user']['data_limit'],
-            'native_fence_deferred'=>$deferFinality,
-            'observed_group_ids'=>$deferApiFence?$r['user']['group_ids']:null];
+            'applied_bytes'=>$r['user']['data_limit']];
     } catch (Throwable $error) {
-        // A post-claim provider edit may already have crossed the remote
-        // boundary. Keep the held result; preserve only bounded internal
-        // diagnostics for the operator, not remote bodies or credentials.
-        // A failure before achbotPgBeginMutation can leave a finance
-        // DISPATCHED marker with no Native claim. Make that stage observable
-        // so the safe pre-dispatch reconciler can be distinguished from a
-        // genuine unknown HTTP result without exposing provider credentials.
-        if ((int)($change['pay_id']??0)>0) {
-            $reason=(string)$error->getMessage();
-            if (preg_match('/\A(?:pg|provider|addon|effect|service|recovery|payment|api)_[a-z0-9_]{2,90}\z/D',$reason)!==1)
-                $reason='internal_exception';
-            achbotDiagnosticEvent('achbot.native.edit_deferred',[
-                'pay_id'=>(int)$change['pay_id'],'server_id'=>$serverId,
-                'reason'=>$reason,'stage'=>'native_claim_or_write'],'warning');
-        }
-        // Preserve existing legacy PG error/log contracts. Only the scoped
-        // add-on path also emits its historic operator diagnostic.
-        if (($scopedGroups??null)!==null && (int)($change['pay_id']??0)>0) {
-            $reason=(string)$error->getMessage();
-            if (preg_match('/\\A(?:pg|provider|addon|service|effect|api|payment)_[a-z0-9_]{2,90}\\z/D',$reason)!==1)
-                $reason='internal_exception';
-            error_log('achbot_pg_edit_needs_review pay_id='.(int)$change['pay_id'].
-                ' code='.$reason.' class='.get_class($error));
-        }
+        if ($transaction) {try {$db->rollback();} catch (Throwable $ignored) {}}
+        $reason=(string)$error->getMessage();
+        if (preg_match('/\A(?:pg|provider|gift)_[a-z0-9_]{2,90}\z/D',$reason)!==1)
+            $reason='internal_exception';
+        achbotDiagnosticEvent('achbot.native.gift_deferred',[
+            'order_id'=>$referenceOrder,'server_id'=>$serverId,'reason'=>$reason],'warning');
         return achbotProviderFailure('pg_edit_requires_review');
-    }
+    } finally {if ($lease!==null) achbotPhysicalReleaseLock($db,$lease);}
 }
 /** One explicit physical-group admission rule for both supported providers. */
 function achbotProviderRelocationTargets(mysqli $db,int $sourceId): array {

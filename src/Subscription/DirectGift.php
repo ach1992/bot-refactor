@@ -532,7 +532,6 @@ function achbotDirectGiftClaim(mysqli $db,array $source,int $primary,
         }
         $referenceProof=achbotGiftReferenceProof($references);
         $referenceProof['native_identity_sha256']=achbotGiftIdentityHash($db,$references);
-        $target=achbotGiftPinNativeIdentity($db,$references,$target);
         $publicTarget=achbotGiftPublicTarget($target);
         $record=[
             'version'=>1,'kind'=>'achbot_direct_gift_v1','state'=>'pending',

@@ -435,8 +435,9 @@ if (!function_exists('achbotApplyServiceEdit')) {
             return (object)['success'=>false,'uncertain'=>false,
                 'msg'=>'service_edit_invalid_request'];
 
-        if ((int)($change['pay_id']??0)>0 && !achbotServiceEditMatchesPay($db,(int)$change['pay_id'],$change))
-            return (object)['success'=>false,'uncertain'=>true,'msg'=>'service_quote_units_unverified'];
+        // Paid edits have exactly one entry point: the funded service engine.
+        if ($giftTarget===null || array_diff(array_keys($change),['remark','order_id','plus_day','plus_volume','operation_key']))
+            return (object)['success'=>false,'uncertain'=>false,'msg'=>'service_edit_invalid_request'];
         $stmt=$db->prepare('SELECT type FROM server_config WHERE id=?');
         if (!$stmt) return (object)['success'=>false,'uncertain'=>true,
                                    'msg'=>'service_adapter_lookup_unavailable'];

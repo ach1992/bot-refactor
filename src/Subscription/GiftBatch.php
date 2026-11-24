@@ -114,8 +114,8 @@ function achbotGiftReferences(mysqli $db,int $serverId,string $remark,bool $lock
     $stmt->bind_param('s',$remark);
     $ok=$stmt->execute();$ids=$ok?$stmt->get_result()->fetch_all(MYSQLI_ASSOC):null;$stmt->close();
     if ($ids===null) throw new RuntimeException('gift_references_unreadable');
-    $provider=achbotProviderType($db,$serverId);$orders=[];$identity=null;$originIdentity=null;
-    if (!in_array($provider,['marzban','pasarguard'],true))
+    $provider=achbotProviderType($db,$serverId);$orders=[];$identity=null;
+    if ($provider!=='pasarguard')
         throw new RuntimeException('gift_provider_unsupported');
     foreach ($ids as $id) {
         $sid=(int)$id['server_id'];
@@ -127,18 +127,9 @@ function achbotGiftReferences(mysqli $db,int $serverId,string $remark,bool $lock
     }
     if ($lock) achbotGiftLockReferences($db,$orders);
     foreach ($orders as $order) {
-        $origin=achbotGiftReferenceOrigin($db,$order);
-        if ($provider==='pasarguard') {
-            $ctx=achbotGiftPgOrderContext($db,$order['id'],$lock);
-            $candidate=[$ctx['account']['id'],$ctx['identity']];
-        } else {
-            $candidate=[$order['remark']];
-            if ($origin!==null) {
-                if ($originIdentity!==null && $originIdentity!==$origin['native_identity'])
-                    throw new RuntimeException('gift_native_identity_conflict');
-                $originIdentity=$origin['native_identity'];
-            }
-        }
+        achbotGiftReferenceOrigin($db,$order);
+        $ctx=achbotGiftPgOrderContext($db,$order['id'],$lock);
+        $candidate=[$ctx['account']['id'],$ctx['identity']];
         if ($identity!==null && $identity!==$candidate)
             throw new RuntimeException('gift_native_identity_conflict');
         $identity=$candidate;
@@ -156,53 +147,26 @@ function achbotGiftReferenceProof(array $orders): array {
 
 function achbotGiftValidateReferences(mysqli $db,array $expected,bool $lock=false): void {
     if ($lock) achbotGiftLockReferences($db,$expected);
-    $identity=null;$originIdentity=null;
+    $identity=null;
     foreach ($expected as $order) {
         if (achbotGiftOrder($db,$order['id'],$lock)!==$order)
             throw new RuntimeException('gift_reference_changed_after_claim');
-        $origin=achbotGiftReferenceOrigin($db,$order);
-        if (achbotProviderType($db,$order['server_id'])==='pasarguard') {
-            $ctx=achbotGiftPgOrderContext($db,$order['id'],$lock);
-            $candidate=[$ctx['account']['id'],$ctx['identity']];
-        } else {
-            $candidate=[$order['remark']];
-            if ($origin!==null) {
-                if ($originIdentity!==null && $originIdentity!==$origin['native_identity'])
-                    throw new RuntimeException('gift_native_identity_conflict');
-                $originIdentity=$origin['native_identity'];
-            }
-        }
+        achbotGiftReferenceOrigin($db,$order);
+        $ctx=achbotGiftPgOrderContext($db,$order['id'],$lock);
+        $candidate=[$ctx['account']['id'],$ctx['identity']];
         if ($identity!==null && $identity!==$candidate)
             throw new RuntimeException('gift_native_identity_conflict');
         $identity=$candidate;
     }
 }
 
-/** SQL-only identity digest pins the provider incarnation independently of local plan/cache. */
-function achbotGiftPinNativeIdentity(mysqli $db,array $orders,array $target): array {
-    if (($target['provider']??'marzban')!=='marzban') return $target;
-    $identity=null;
-    foreach ($orders as $order) {
-        $origin=achbotGiftReferenceOrigin($db,$order);
-        if ($origin===null) continue;
-        if ($identity!==null && $identity!==$origin['native_identity'])
-            throw new RuntimeException('gift_native_identity_conflict');
-        $identity=$origin['native_identity'];
-    }
-    if ($identity!==null) $target['marzban_native_identity']=$identity;
-    return $target;
-}
-
 function achbotGiftIdentityHash(mysqli $db,array $orders): string {
     $proof=[];$targets=[];
     foreach ($orders as $order) {
-        $origin=achbotGiftReferenceOrigin($db,$order);
+        achbotGiftReferenceOrigin($db,$order);
         $type=achbotProviderType($db,$order['server_id']);
-        $identity=$origin['native_identity']??null;
-        if ($type==='pasarguard') {
-            $ctx=achbotPgOrderContext($db,$order['id']);
-            $identity=[$ctx['account']['id'],$ctx['panel']['id'],$ctx['panel']['instance_key'],$ctx['identity']];
-        }
+        $ctx=achbotPgOrderContext($db,$order['id']);
+        $identity=[$ctx['account']['id'],$ctx['panel']['id'],$ctx['panel']['instance_key'],$ctx['identity']];
         $sid=$order['server_id'];
         if (!isset($targets[$sid]))
             $targets[$sid]=achbotGiftPublicTarget(achbotGiftPhysicalTarget($db,$sid));
@@ -339,91 +303,20 @@ if (!function_exists('achbotGiftPhysicalTarget')) {
                 'panel_url'=>$panel['api_url'],'credential_hash'=>hash('sha256',$panel['api_key']),
                 'group_id'=>null,'has_group_column'=>false];
         }
-        if (!$row || ($row['type']??null)!=='marzban')
-            throw new RuntimeException('gift_target_unsupported');
-        $url=rtrim((string)($row['panel_url']??''),'/');
-        $urlParts=parse_url($url);
-        if (!is_array($urlParts) ||
-            !in_array($urlParts['scheme']??null,['http','https'],true) ||
-            empty($urlParts['host']) ||
-            (isset($urlParts['user']) || isset($urlParts['pass'])) ||
-            isset($urlParts['query']) || isset($urlParts['fragment']) ||
-            $url==='') throw new RuntimeException('gift_target_url_invalid');
-        $username=(string)($row['username']??'');
-        $password=(string)($row['password']??'');
-        if ($username==='' || $password==='')
-            throw new RuntimeException('gift_target_credentials_missing');
-
-        // Legacy schema has no panel_group_id column; an installed 001
-        // migration may add it. Mirror the CREATE/edit transport semantics.
-        $columns=$db->query("SHOW COLUMNS FROM server_info LIKE 'panel_group_id'");
-        if (!$columns) throw new RuntimeException('gift_group_schema_unverified');
-        $hasGroup=$columns->num_rows===1;
-        $columns->free();
-        $group=null;
-        if (!$hasGroup) {
-            $stmt=$db->prepare('SELECT id FROM server_info WHERE id=?'.$suffix);
-            if (!$stmt) throw new RuntimeException('gift_server_inventory_prepare');
-            $stmt->bind_param('i',$serverId);
-            $ok=$stmt->execute();
-            $inventory=$ok?$stmt->get_result()->fetch_assoc():null;
-            $stmt->close();
-            if (!$inventory) throw new RuntimeException('gift_server_inventory_missing');
-        }
-        if ($hasGroup) {
-            $stmt=$db->prepare('SELECT panel_group_id FROM server_info WHERE id=?'.$suffix);
-            if (!$stmt) throw new RuntimeException('gift_group_prepare');
-            $stmt->bind_param('i',$serverId);
-            $ok=$stmt->execute();
-            $record=$ok?$stmt->get_result()->fetch_assoc():null;
-            $stmt->close();
-            if (!$record) throw new RuntimeException('gift_group_missing');
-            if ($record['panel_group_id']!==null) {
-                $group=(int)$record['panel_group_id'];
-                if ($group<=0) throw new RuntimeException('gift_group_invalid');
-                $stmt=$db->prepare(
-                    "SELECT id FROM setting WHERE id=? AND type='ACHBOT_MARZBAN_PANEL_GROUP'");
-                if (!$stmt) throw new RuntimeException('gift_group_identity_prepare');
-                $stmt->bind_param('i',$group);
-                $ok=$stmt->execute();
-                $present=$ok?$stmt->get_result()->fetch_assoc():null;
-                $stmt->close();
-                if (!$present) throw new RuntimeException('gift_group_identity_missing');
-            }
-        }
-        $credentialHash=hash('sha256',json_encode(
-            [$username,$password],JSON_THROW_ON_ERROR));
-        return [
-            'panel_url'=>$url,'username'=>$username,'password'=>$password,
-            'credential_hash'=>$credentialHash,'group_id'=>$group,
-            'has_group_column'=>$hasGroup
-        ];
+        throw new RuntimeException('gift_target_unsupported');
     }
 
     function achbotGiftPublicTarget(array $target): array {
-        if (($target['provider']??'')==='pasarguard') return array_intersect_key($target,array_flip([
+        if (($target['provider']??'')!=='pasarguard')
+            throw new RuntimeException('gift_target_unsupported');
+        return array_intersect_key($target,array_flip([
             'provider','panel_id','instance_key','panel_url','credential_hash','group_id','has_group_column']));
-        return [
-            'panel_url'=>$target['panel_url'],
-            'credential_hash'=>$target['credential_hash'],
-            'group_id'=>$target['group_id'],
-            'has_group_column'=>$target['has_group_column'],
-        ]+(isset($target['marzban_native_identity'])?
-            ['marzban_native_identity'=>$target['marzban_native_identity']]:[]);
     }
 
     function achbotGiftTargetMatches(mysqli $db,int $serverId,array $original): bool {
         try {
-            $current=achbotGiftPhysicalTarget($db,$serverId);
-            $expected=achbotGiftPublicTarget($original);
-            unset($expected['marzban_native_identity']);
-            $actual=achbotGiftPublicTarget($current);
-            if (($expected['provider']??'')==='pasarguard') return $expected===$actual;
-            return is_string($expected['credential_hash']??null) &&
-                hash_equals($expected['credential_hash'],$actual['credential_hash']) &&
-                $expected['panel_url']===$actual['panel_url'] &&
-                $expected['group_id']===$actual['group_id'] &&
-                $expected['has_group_column']===$actual['has_group_column'];
+            return achbotGiftPublicTarget($original)===
+                achbotGiftPublicTarget(achbotGiftPhysicalTarget($db,$serverId));
         } catch (Throwable $e) {
             return false;
         }

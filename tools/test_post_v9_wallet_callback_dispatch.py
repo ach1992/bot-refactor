@@ -73,15 +73,11 @@ def main() -> None:
     # Every button family used by the existing attention-case renderer,
     # including confirmation callbacks, must reach the real top-level route.
     actions = [
-        f'attentionWalletInspect_{PAY}',
-        f'attentionWalletComplete_{PAY}_{TOKEN}',
-        f'attentionWalletRetry_{PAY}_{TOKEN}',
-        f'attWOriginalI_{PAY}',
-        f'attWOriginalC_{PAY}_{TOKEN}',
-        f'attWAddI_{PAY}',
-        f'attWAddC_{PAY}_{TOKEN}',
-        f'attWReportI_{PAY}',
-        f'attWReportS_{PAY}_{TOKEN}',
+        f'attentionWalletResume_{PAY}',
+        f'attentionDeliveryC_{PAY}_1',
+        f'attentionDeliveryS_{PAY}_1_{TOKEN}',
+        f'attentionReportC_{PAY}',
+        f'attentionReportS_{PAY}_{TOKEN}',
     ]
     checked = 0
     for callback in actions:
@@ -95,8 +91,7 @@ def main() -> None:
         checked += 1
     # A forged current-user or group callback is not allowed to edit a case;
     # the same real dispatcher must produce an explicit denial callback.
-    for callback in (f'attentionWalletInspect_{PAY}', f'attWOriginalI_{PAY}',
-                     f'attWAddI_{PAY}', f'attWReportI_{PAY}'):
+    for callback in actions:
         for mode in ('customer', 'group'):
             result = invoke(callback, mode)
             if result['capability'] != 'payments' or not result['events'] or any(

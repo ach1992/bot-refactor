@@ -125,7 +125,7 @@ def setup(root: Path) -> tuple[Path, Path]:
         target.write_bytes((ROOT/'messages'/part).read_bytes())
     (root/'config.php').write_text(
         "<?php require_once __DIR__.'/messages/loader.php';"
-        "$botUsername='fixture';$connection=null;")
+        "$botUsername='fixture';$connection=null;$admin=9001;")
     (settings/'jdf.php').write_text('<?php /* owned fixture */')
     for rel in ['src/Jobs','src/Notifications','src/Finance']:
         (root/rel).mkdir(parents=True,exist_ok=True)
@@ -143,15 +143,15 @@ def setup(root: Path) -> tuple[Path, Path]:
         .replace('"delivery\\n"','"followup\\n"')
         .replace('.delivery-failure','.followup-failure'))
 
-    # The services worker also invokes two Wallet maintenance functions.
-    # These are inert stand-ins for the Cron coordination fixture.
-    (root/'src/Finance/CheckoutRoutes.php').write_text('<?php function achbotCheckoutCommandsPresent($db){return false;}')
-    (root/'src/Finance/WalletEditRecovery.php').write_text(
-        '<?php function achbotWalletAddonMaintain($db){return [];}' )
-    (root/'src/Finance/WalletRenewalRecovery.php').write_text(
-        '<?php function achbotWalletPgRenewMaintain($db){return [];}' )
-    (root/'src/Finance/WalletAddonNotices.php').write_text(
-        '<?php function achbotWalletAddonMaintainReports($db){return [];}' )
+    # Current service maintenance replaces the retired per-payment recovery
+    # workers. These inert stand-ins exercise the same Cron isolation.
+    (root/'src/Services').mkdir(parents=True,exist_ok=True)
+    (root/'src/Finance/CheckoutRoutes.php').write_text(
+        '<?php function achbotCheckoutRequireSchema($db){} function achbotCheckoutPresentation(){return [];}')
+    (root/'src/Services/Execution.php').write_text(
+        '<?php function achbotServiceExecuteDue($db,$limit,$budget,$presentation){return [];}')
+    (root/'src/Finance/ServicePurchaseReferral.php').write_text(
+        '<?php function achbotServiceReferralMaintainPending($db,$owner,$limit,$budget){return [];}')
 
     work = root / "owned-cwd"
     work.mkdir()

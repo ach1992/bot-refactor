@@ -145,17 +145,17 @@ if (preg_match('/^attentionReport([CS])_([1-9][0-9]{0,17})(?:_([a-f0-9]{20}))?$/
             throw new RuntimeException('followup_review_stale');
         $token=achbotFollowupRedriveToken($r,$actor);$payId=(int)$pay['id'];$rows=[];
         if ($reviewAction[1]==='C' && !isset($reviewAction[3])) {
-            $body=achbotMessage('automatic_gateway_review.archive_notice');
-            $rows[]=[['text'=>achbotMessage('automatic_gateway_review.redrive_send'),
+            $body=achbotMessageHtml('automatic_gateway_review.wallet_report_confirm',['payment'=>$payId]);
+            $rows[]=[['text'=>achbotMessage('automatic_gateway_review.wallet_report_send'),
                 'callback_data'=>'attentionReportS_'.$id.'_'.$token]];
         } elseif ($reviewAction[1]==='S' && hash_equals($token,(string)($reviewAction[3]??''))) {
             answerCallbackQuery($callbackId,achbotMessage('automatic_gateway_review.checking'));
             $status=achbotFollowupDispatchOne($connection,$id,$actor,$token);
             $body=achbotMessage(match($status) {
-                'acknowledged'=>'automatic_gateway_review.status_completed',
-                'unknown'=>'automatic_gateway_review.status_unknown',
-                'busy'=>'automatic_gateway_review.status_busy',
-                default=>'automatic_gateway_review.status_stale',
+                'acknowledged'=>'automatic_gateway_review.wallet_report_ack',
+                'unknown'=>'automatic_gateway_review.wallet_report_unknown',
+                'busy'=>'automatic_gateway_review.redrive_busy',
+                default=>'automatic_gateway_review.wallet_report_hold',
             });
         } else throw new RuntimeException('followup_review_stale');
         $rows[]=[['text'=>achbotMessage('automatic_gateway_review.redrive_cancel'),'callback_data'=>'attentionCase_'.$payId]];

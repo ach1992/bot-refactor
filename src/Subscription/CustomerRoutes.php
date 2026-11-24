@@ -388,15 +388,7 @@ if(preg_match('/changAccountConnectionLink(\d+)/', $data,$match)){
         }
         $vraylink = $res->links;
         $newUuid=$order['uuid'];$newToken=$order['token'];
-        if ($serverType==='marzban') {
-            $nativeUrl=(string)$res->subscription_url;
-            if (str_starts_with($nativeUrl,'/')) $nativeUrl=rtrim((string)$server_info['panel_url'],'/').$nativeUrl;
-            $nativeParts=achbotProviderImportParts($nativeUrl);
-            if ($nativeParts===null) {
-                alert(\achbotMessage('subscription.customer_routes.cancel_search_keyboard.alert.001c06ff23'),true);return;
-            }
-            $newUuid=$newToken=$nativeParts['token'];
-        }
+
     }else{
         alert(\achbotMessage('subscription.customer_routes.cancel_search_keyboard.alert.724ff90245'), true);
         return;

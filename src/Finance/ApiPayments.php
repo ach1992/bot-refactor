@@ -91,7 +91,6 @@ function achbotApiPaymentReceiptPrefixes(array $pay,string $method='bank_transfe
     $t=(string)$pay['type'];$gift=$method==='gift_card';
     if ($t==='INCREASE_WALLET') return [$gift?'sendIncreaseWalletGiftReceipt':'sendIncreaseWalletReceipt','cancelIncreaseWalletReceipt'];
     if ($t==='RENEW_ACCOUNT') return [$gift?'sendRenewGiftReceipt':'sendRenewCartReceipt','cancelRenewCartReceipt'];
-    if ($t==='RENEW_SCONFIG') return [$gift?'sendBuyGiftReceipt':'sendBuyCartReceipt','cancelBuyCartReceipt'];
     if (str_starts_with($t,'INCREASE_DAY_')) return [$gift?'sendIncreaseDayGiftReceipt':'sendIncreaseDayReceipt','cancelIncreaseDayReceipt'];
     if (str_starts_with($t,'INCREASE_VOLUME_')) return [$gift?'sendIncreaseVolumeGiftReceipt':'sendIncreaseVolumeReceipt','cancelIncreaseVolumeReceipt'];
     if ((int)$pay['day']>0 || (int)$pay['volume']>0) return [$gift?'sendCustomGiftReceipt':'sendCustomCartReceipt','cancelCustomCartReceipt'];
@@ -578,7 +577,6 @@ function achbotApiPaymentReviewKeyboard(array $pay): string {
     $prefix=match(true) {
         $t==='INCREASE_WALLET'=>'approvePayment',
         $t==='RENEW_ACCOUNT'=>'approveRenewAcc',
-        $t==='RENEW_SCONFIG'=>'accept',
         str_starts_with($t,'INCREASE_DAY_')=>'approveIncreaseDay',
         str_starts_with($t,'INCREASE_VOLUME_')=>'approveIncreaseVolume',
         (int)$pay['day']>0 || (int)$pay['volume']>0=>'accCustom',

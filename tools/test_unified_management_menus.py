@@ -20,7 +20,7 @@ require $root.'/messages/loader.php';
 require_once $root.'/src/Purchase/Core.php';
 require $root.'/src/Panel/ProviderAdmin.php';
 require $root.'/src/Subscription/ServerDisplaySettings.php';
-function achbotSupportsPanel($type) {return in_array($type,['marzban','pasarguard'],true);}
+function achbotSupportsPanel($type) {return achbotSupportsProviderType($type);}
 $events=[];$checks=0;
 function sendMessage(...$args) {$GLOBALS['events'][]=$args;return (object)['ok'=>true];}
 function alert(...$args) {$GLOBALS['events'][]=['alert',...$args];}
@@ -73,7 +73,7 @@ $list=callbacks(getServerListKeys());
 yes(count(array_filter($list,static fn($value)=>$value==='addManagedServer'))===1,'one common server entry');
 noCallbacks($list,'/^(?:addNewMarzbanPanel|pgConnections|pgAddConnection)$/','no connection hierarchy in main list');
 containsAll($list,['showServerSettings1_0','showServerSettings2_0'],'server names open management');
-foreach ([1,2] as $sid) {
+foreach ([2] as $sid) {
     $keys=callbacks(getServerConfigKeys($sid,15));
     containsAll($keys,['editServerName'.$sid,'editServerFlag'.$sid,'editServerMax'.$sid,
         'editServerRemark'.$sid,'serverDisplay'.$sid,'plansList'.$sid,'newPlanForServer'.$sid,
@@ -84,19 +84,19 @@ $pg=callbacks(getServerConfigKeys(2));
 containsAll($pg,['editPanelGroup2','pgRotateServerKey2'],'physical group shared; native groups only on plan');
 noCallbacks($pg,'/^pgServerGroups/','PG server-native group selector retired');
 noCallbacks($pg,'/^(?:changesServerLoginInfo|editSubLinks)/','PG omits Marzban-only credentials and backup-link synthesis');
-$mb=callbacks(getPlanDetailsKeys(41));$pg=callbacks(getPlanDetailsKeys(42));
-foreach ([$mb,$pg] as $index=>$keys) {
-    $id=$index===0?41:42;
-    containsAll($keys,['planDays'.$id,'planVolume'.$id,'wizwizplanname'.$id,
-        'wizwizplanrial'.$id,'wizwizplaneditdes'.$id],'common editable product fields');
-    noCallbacks($keys,'/^(?:changeCustom|editDestName|editServerNames|editSpiderX|editFlow|wizwizplanslimit|wizwizplansinobundid)/',
-        'retired fields absent even when old row flags remain set');
-}
-containsAll($mb,['marzbanHostSettings41'],'Marzban offers native inbounds');
-containsAll($pg,['pgPlanGroups42'],'PG offers native Groups');
-noCallbacks($pg,'/^marzbanHostSettings/','PG never offers Marzban inbounds');
-yes(getPlanDetailsKeys(999)===null && getPlanDetailsKeys(43)===null && getPlanDetailsKeys(44)===null,
-    'missing unsupported and retired-inbound plans fail closed');
+$pg=callbacks(getPlanDetailsKeys(42));
+containsAll($pg,['planDays42','planVolume42','wizwizplanname42',
+    'wizwizplanrial42','wizwizplaneditdes42','pgPlanGroups42'],
+    'PG keeps the existing editable product fields and native Groups');
+noCallbacks($pg,'/^(?:marzbanHostSettings|changeCustom|editDestName|editServerNames|editSpiderX|editFlow|wizwizplanslimit|wizwizplansinobundid)/',
+    'retired plan fields absent even when old row flags remain set');
+yes(getPlanDetailsKeys(41)===null && getPlanDetailsKeys(999)===null &&
+    getPlanDetailsKeys(43)===null && getPlanDetailsKeys(44)===null,
+    'retired Marzban and unsupported plans have no management action');
+$mb=callbacks(getServerConfigKeys(1));
+containsAll($mb,['nextServerPage0'],'historical Marzban record retains safe navigation');
+noCallbacks($mb,'/^(?:editPanelGroup|editServer|changesServerLoginInfo|editSubLinks|newPlanForServer|plansList)/',
+    'retired Marzban record has no active provider administration');
 // Shared physical-panel grouping is independent of native plan access and
 // has a single provider-neutral administrator selector (not a PG server Group).
 $connection->query("INSERT INTO setting(type,value) VALUES
@@ -110,8 +110,8 @@ yes($marzbanGroup>0 && $pgGroup>0 && $marzbanGroup!==$pgGroup,
     'two_distinct_manual_physical_panel_groups');
 $connection->query("UPDATE server_info SET panel_group_id=$marzbanGroup WHERE id=1");
 $connection->query("UPDATE server_info SET panel_group_id=$pgGroup WHERE id=2");
-yes(achbotPanelGroup($connection,1)['name']==='Physical Marzban fixture',
-    'marzban_group_membership_is_visible');
+yes(achbotPanelGroup($connection,1)===null,
+    'retired provider cannot acquire physical group identity');
 yes(achbotPanelGroup($connection,2)['name']==='Physical PasarGuard fixture',
     'pasarguard_group_membership_is_visible');
 yes(achbotPanelGroup($connection,3)===null,
@@ -122,7 +122,7 @@ containsAll($addGroups,['selectNewPanelGroup_'.$marzbanGroup,
     'common_add_server_group_selector_has_both_group_choices_and_none');
 noCallbacks($addGroups,'/^setServerPanelGroup_/',
     'new_server_group_selector_has_no_existing_server_mutation');
-foreach ([1,2] as $sid) {
+foreach ([2] as $sid) {
     $assigned=$sid===1?$marzbanGroup:$pgGroup;
     $groupMenu=callbacks(getMarzbanPanelGroupKeys('edit',$sid));
     containsAll($groupMenu,[
@@ -167,15 +167,10 @@ noCallbacks($missing,'/^(?:editPanelGroup|pgServerGroups|pgPlanGroups)/',
 noCallbacks($list,'/^switchLocationState/',
     'admin_server_listing_does_not_expose_retired_transfer_toggle');
 $pgPlanKeyboard=callbacks(getPlanDetailsKeys(42));
-$mbPlanKeyboard=callbacks(getPlanDetailsKeys(41));
 containsAll($pgPlanKeyboard,['pgPlanGroups42'],
     'native_pg_groups_remain_plan_only_even_when_panel_group_assigned');
-containsAll($mbPlanKeyboard,['marzbanHostSettings41'],
-    'native_marzban_hosts_remain_plan_only_even_when_panel_group_assigned');
 noCallbacks($pgPlanKeyboard,'/^editPanelGroup/',
     'physical_group_changes_never_start_from_pg_plan_access');
-noCallbacks($mbPlanKeyboard,'/^editPanelGroup/',
-    'physical_group_changes_never_start_from_marzban_plan_access');
 $before=$connection->query('SHOW CREATE TABLE server_info')->fetch_row()[1];
 $events=[];achbotServerDisplayShow($connection,2);
 yes(str_contains($events[0][0],'PG &lt;title&gt;') && !str_contains($events[0][0],'PG <title>') &&

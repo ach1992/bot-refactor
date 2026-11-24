@@ -1706,6 +1706,7 @@ if (is_string($userInfo['step']??null) &&
     }
     $directChange=['remark'=>$directClaim['order']['remark']];
     $directChange['order_id']=$directClaim['order']['id'];
+    $directChange['operation_key']='telegram:'.(int)$directSource['update_id'].':edit';
     if ($directClaim['days']>0) $directChange['plus_day']=$directClaim['days'];
     if ($directClaim['volume_mb']>0)
         $directChange['plus_volume']=intdiv($directClaim['volume_mb'],1024);
