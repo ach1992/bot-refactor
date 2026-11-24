@@ -6,6 +6,7 @@
 -- No runtime activation or live execution is authorized by this migration.
 ALTER TABLE payment_attempts
  ADD wallet_invoice_sha256 CHAR(64) COLLATE utf8mb4_bin DEFAULT NULL,
+ ADD wallet_merchant_profile TEXT COLLATE utf8mb4_bin DEFAULT NULL,
  ADD wallet_credit_entry_id BIGINT UNSIGNED DEFAULT NULL,
  ADD wallet_credit_basis VARCHAR(32) COLLATE utf8mb4_bin DEFAULT NULL,
  ADD wallet_credit_transaction_id BIGINT UNSIGNED DEFAULT NULL,

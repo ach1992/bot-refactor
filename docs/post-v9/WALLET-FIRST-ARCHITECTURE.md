@@ -511,6 +511,51 @@ hosted gateway and manual method; common engine files remain byte-identical.
 Unknown registrations, invalid proof, mismatched evidence and unauthorized
 manual proof are refused; valid new methods settle and fund once on replay.
 
+### Receipt adapter execution slice
+
+New original hosted issuance and verification are implemented in
+`HostedReceipt.php` / `HostedMethods.php` and selected by the receipt
+registry. Reserve the original attempt, quote and protected receiving
+merchant credential before transport. The reference and checkout URL are
+bound before publication; a creation with no confirmed reference does not
+silently create another remote invoice. Known references can be verified
+without a Native subject preflight. NOWPayments uses a signed, durably
+known child and authenticated lookup; NextPay verifies the original
+reference/amount; Zarinpal verifies the same pinned merchant and reference,
+including already-verified status 101 after local rollback (see
+[ZarinPal-Lab legacy WebGate sample](https://github.com/ZarinPal-Lab/SampleCode-Python-Flask)
+and [official GravityForms integration](https://github.com/ZarinPal-Lab/GravityForms)).
+Do not reinterpret unpinned historical 101 results.
+
+New manual issuance shares the existing method-specific destination/quote
+policy; the API profiles pin proof independently of the service subject.
+Existing receipt acquisition and protected bank/gift evidence transport
+enter the common receipt sink. Staff decisions, the explicit existing
+bank timer, and API proof commit one credit and the optional funded
+service continuation. A service invoice cannot be issued without its
+original service operation. Archive cannot authorize another consume, nor
+discard definitive evidence from a previously dispatched operation. An
+uncertain gift restored to active still cannot be automatically re-consumed
+without authoritative proof of the original consumption epoch.
+
+Local financial projections become paid/done in the same commit as the
+receipt and handoff. They do not assert service completion. No receipt
+HTTP call holds a financial SQL transaction. The 025 draft schema now
+includes the protected merchant profile and the invoice fingerprint binds
+it and the original minimum-settlement metadata. No installed migration.
+
+Source-real PHP 8.5 / owned MariaDB checks: credit 78, funding 54, hosted
+18 (46 owned loopback HTTP requests, WebGate SOAP argument/response spy),
+manual 16 (actual receipt acknowledgement contract and existing SMS/gift
+HTTP evidence paths). Includes concurrent exact verify, local commit loss,
+remote consume ACK loss, provider unavailability, bank/gift proof recovery
+after service invalidation/Archive, exact method quotes and actor refusal.
+SOAP wire interoperability and actual merchant production behavior were
+not exercised. The existing route/UI/Cron entrypoints are not yet switched.
+Automatic fair receipt polling, gateway issuance uncertainty disposition,
+receiving-account identity scoping, Native execution, final delivery,
+writer/caller convergence and migration remain acceptance work.
+
 ### Verified Native limitation of existing APIs, not an accepted retry contract
 
 `python3 tools/test_wallet_first_native_write_fence.py --run-disposable`

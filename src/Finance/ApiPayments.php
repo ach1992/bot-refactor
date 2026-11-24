@@ -1007,12 +1007,13 @@ function achbotApiPaymentSmsUniqueLocked(mysqli $db,array $evidence,int $id): bo
     return count($matches)===1 && $matches[0]===$id;
 }
 /** A bounded page is revisited from its start. No unpersisted cursor can lose evidence. */
-function achbotApiPaymentCheckBank(mysqli $db,array $claim): string {
+function achbotApiPaymentCheckBank(mysqli $db,array $claim,?callable $settle=null): string {
+    $settle??='achbotApiPaymentSettle';
     $p=$claim['pay'];$a=$claim['attempt'];$profile=$claim['profile'];$id=(int)$p['id'];
     $existing=achbotPaymentEvidenceGetProof($db,$id);
     if($existing) {
         if(achbotApiPaymentTerminal($p))return 'settled';
-        return achbotApiPaymentSettle($db,$id,$existing);
+        return $settle($db,$id,$existing);
     }
     $pending=achbotPaymentEvidencePending($db,$id);
     if($pending) {
@@ -1020,11 +1021,11 @@ function achbotApiPaymentCheckBank(mysqli $db,array $claim): string {
         if(($r['status']??'')!=='proven')return (string)($r['status']??'review');
         $fresh=achbotApiPaymentRow($db,$id);if($fresh && achbotApiPaymentTerminal($fresh))return 'settled';
         $proof=$r['proof']??achbotPaymentEvidenceGetProof($db,$id);
-        return is_array($proof)?achbotApiPaymentSettle($db,$id,$proof):'review';
+        return is_array($proof)?$settle($db,$id,$proof):'review';
     }
     if(time()>(int)$profile['issued_at']+(int)$profile['horizon_seconds'])return 'manual';
     // Keep original proof/uniqueness/admission logic independent from search.
-    $inspect=static function(array $rows) use ($db,$a,$profile,$id): ?string {
+    $inspect=static function(array $rows) use ($db,$a,$profile,$id,$settle): ?string {
         foreach($rows as $raw) {
             if(!is_array($raw))continue;
             $e=achbotPaymentEvidenceSmsNormalize($raw,$profile);
@@ -1042,7 +1043,7 @@ function achbotApiPaymentCheckBank(mysqli $db,array $claim): string {
             $fresh=achbotApiPaymentRow($db,$id);
             if($fresh && achbotApiPaymentTerminal($fresh))return 'settled';
             $proof=$consumed['proof']??achbotPaymentEvidenceGetProof($db,$id);
-            return is_array($proof)?achbotApiPaymentSettle($db,$id,$proof):'review';
+            return is_array($proof)?$settle($db,$id,$proof):'review';
         }
         return null;
     };
@@ -1143,17 +1144,18 @@ function achbotApiPaymentGiftPreviouslyProven(mysqli $db,int $payId,?string $cod
 }
 
 /** Customer code is encrypted before verification HTTP. Never log or fan it out. */
-function achbotApiPaymentCheckGift(mysqli $db,array $claim): string {
+function achbotApiPaymentCheckGift(mysqli $db,array $claim,?callable $settle=null): string {
+    $settle??='achbotApiPaymentSettle';
     $pay=$claim['pay'];$id=(int)$pay['id'];
     if(achbotApiPaymentTerminal($pay))return 'settled';
-    $proof=achbotPaymentEvidenceGetProof($db,$id);if($proof)return achbotApiPaymentSettle($db,$id,$proof);
+    $proof=achbotPaymentEvidenceGetProof($db,$id);if($proof)return $settle($db,$id,$proof);
     $pending=achbotPaymentEvidencePending($db,$id);
     if($pending) {
         $r=achbotPaymentEvidenceConsume($db,$pending);
         if(($r['status']??'')!=='proven')return (string)($r['status']??'review');
         $fresh=achbotApiPaymentRow($db,$id);if($fresh && achbotApiPaymentTerminal($fresh))return 'settled';
         $proof=$r['proof']??achbotPaymentEvidenceGetProof($db,$id);
-        return is_array($proof)?achbotApiPaymentSettle($db,$id,$proof):'review';
+        return is_array($proof)?$settle($db,$id,$proof):'review';
     }
     $code=achbotPaymentEvidenceReadGiftCode($db,$id);if($code===null)return 'monitoring';
     // Legacy malformed sealed evidence is kept for human reconciliation,
@@ -1184,7 +1186,7 @@ function achbotApiPaymentCheckGift(mysqli $db,array $claim): string {
     if(($consumed['status']??'')!=='proven')return (string)($consumed['status']??'review');
     $fresh=achbotApiPaymentRow($db,$id);if($fresh && achbotApiPaymentTerminal($fresh))return 'settled';
     $proof=$consumed['proof']??achbotPaymentEvidenceGetProof($db,$id);
-    return is_array($proof)?achbotApiPaymentSettle($db,$id,$proof):'review';
+    return is_array($proof)?$settle($db,$id,$proof):'review';
 }
 /** Real text review uses a separate lease and the unchanged human callbacks. */
 function achbotApiPaymentReviewKeyboard(array $pay): string {

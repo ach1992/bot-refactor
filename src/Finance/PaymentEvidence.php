@@ -985,9 +985,13 @@ function achbotPaymentEvidenceStoreOutcome(mysqli $db,array $handle,string $stat
         $payId=(int)$handle['pay_id'];$tid=(int)$handle['transaction_id'];$op=(string)$handle['operation'];
         $q=$db->prepare('SELECT id FROM pays WHERE id=? FOR UPDATE');
         $q->bind_param('i',$payId);$q->execute();$q->get_result();$q->close();
-        $q=$db->prepare('SELECT id FROM payment_attempts WHERE pay_row_id=? FOR UPDATE');
+        $q=$db->prepare('SELECT * FROM payment_attempts WHERE pay_row_id=? FOR UPDATE');
         $q->bind_param('i',$payId);$q->execute();$a=$q->get_result()->fetch_assoc();$q->close();
-        if (!$a || ($a['review_archived_at']??null)!==null) {$db->rollback();return false;}
+        // Archive must prevent further dispatch, not discard a definitive
+        // response to an already-dispatched original evidence operation.
+        if (!$a || (($a['review_archived_at']??null)!==null && $state!=='proven')) {
+            $db->rollback();return false;
+        }
         $q=$db->prepare('SELECT * FROM payment_transactions WHERE id=? AND attempt_id=? AND evidence_operation=? FOR UPDATE');
         $q->bind_param('iis',$tid,$a['id'],$op);$q->execute();$t=$q->get_result()->fetch_assoc();$q->close();
         if (!$t) {$db->rollback();return false;}

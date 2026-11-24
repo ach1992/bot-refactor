@@ -6,6 +6,7 @@ require_once __DIR__.'/../Admin/Access.php';
 require_once __DIR__.'/PaymentEvidence.php';
 require_once __DIR__.'/ManualReceiptIntent.php';
 require_once __DIR__.'/GatewayClient.php';
+require_once __DIR__.'/HostedMethods.php';
 
 /**
  * Source-owned receipt admission and verification definitions. Callbacks
@@ -17,20 +18,35 @@ require_once __DIR__.'/GatewayClient.php';
  */
 function achbotCreditMethodRegistry(): array {
     $manual=['invoice'=>'achbotCreditValidateManualInvoice','proofs'=>[
-        'manual'=>'achbotCreditVerifyManualLocked'],'additional_evidence'=>false];
+        'manual'=>'achbotCreditVerifyManualLocked'],'additional_evidence'=>false,
+        'manual_quote'=>'achbotManualBuildQuote'];
     $api=$manual;$api['proofs']['api']='achbotCreditVerifyApiLocked';
     $bank=$api;$bank['proofs']['bank_timer']='achbotCreditVerifyTimerLocked';
+    $bank['api_checker']='achbotCreditCheckBankApi';
+    $api['api_checker']='achbotCreditCheckGiftApi';
     return [
         'bank_transfer'=>$bank,
         'gift_card'=>$api,
         'manual_usdt'=>$manual,
         'manual_trx'=>$manual,
         'nowpayments'=>['invoice'=>'achbotCreditValidateUsdInvoice','proofs'=>[
-            'nowpayments'=>'achbotCreditVerifyNowpaymentsLocked'],'additional_evidence'=>true],
+            'nowpayments'=>'achbotCreditVerifyNowpaymentsLocked'],'additional_evidence'=>true,
+            'hosted'=>['credential_setting'=>'nowpayment','quote'=>'achbotHostedUsdQuote',
+                'issue'=>'achbotHostedNowpaymentsIssue','verify'=>'achbotHostedNowpaymentsVerify',
+                'url'=>'achbotHostedNowpaymentsUrl','reference'=>'achbotHostedChildReference',
+                'child_transactions'=>true]],
         'nextpay'=>['invoice'=>'achbotCreditValidateTomanInvoice','proofs'=>[
-            'nextpay'=>'achbotCreditVerifyNextpayLocked'],'additional_evidence'=>true],
+            'nextpay'=>'achbotCreditVerifyNextpayLocked'],'additional_evidence'=>true,
+            'hosted'=>['credential_setting'=>'nextpay','quote'=>'achbotHostedTomanQuote',
+                'issue'=>'achbotHostedNextpayIssue','verify'=>'achbotHostedNextpayVerify',
+                'url'=>'achbotHostedNextpayUrl','reference'=>'achbotHostedExactReference',
+                'child_transactions'=>false]],
         'zarinpal'=>['invoice'=>'achbotCreditValidateTomanInvoice','proofs'=>[
-            'zarinpal'=>'achbotCreditVerifyZarinpalLocked'],'additional_evidence'=>true],
+            'zarinpal'=>'achbotCreditVerifyZarinpalLocked'],'additional_evidence'=>true,
+            'hosted'=>['credential_setting'=>'zarinpal','quote'=>'achbotHostedTomanQuote',
+                'issue'=>'achbotHostedZarinpalIssue','verify'=>'achbotHostedZarinpalVerify',
+                'url'=>'achbotHostedZarinpalUrl','reference'=>'achbotHostedExactReference',
+                'child_transactions'=>false]],
     ];
 }
 function achbotCreditMethodDefinition(string $key): ?array {
@@ -42,6 +58,16 @@ function achbotCreditMethodDefinition(string $key): ?array {
     foreach ($method['proofs'] as $basis=>$verify) {
         if (!is_string($basis) || !preg_match('/\A[a-z][a-z0-9_]{0,31}\z/D',$basis) ||
             !is_callable($verify)) return null;
+    }
+    if (isset($method['api_checker']) && !is_callable($method['api_checker'])) return null;
+    if (isset($method['manual_quote']) && !is_callable($method['manual_quote'])) return null;
+    if (array_key_exists('hosted',$method)) {
+        $h=$method['hosted'];
+        if (!is_array($h) || !is_string($h['credential_setting']??null) ||
+            $h['credential_setting']==='' || !is_bool($h['child_transactions']??null) ||
+            !isset($method['proofs'][$key])) return null;
+        foreach (['quote','issue','verify','url','reference'] as $callback)
+            if (!is_callable($h[$callback]??null)) return null;
     }
     return $method;
 }
@@ -213,5 +239,21 @@ function achbotCreditVerifyNextpayLocked(mysqli $db,array $pay,array $attempt,ar
 }
 function achbotCreditVerifyZarinpalLocked(mysqli $db,array $pay,array $attempt,array $proof,int $actor,int $primary): ?int {
     $status=$proof['status']??null;
-    return achbotCreditVerifyReferenceLocked($db,$pay,$attempt,$proof,$actor,$status===100 || $status==='100');
+    // 101 recovery is permitted only for the newly issued merchant-pinned
+    // contract. The common credit path also checks the captured profile.
+    $verified=in_array($status,[100,'100'],true) ||
+        (in_array($status,[101,'101'],true) && !empty($attempt['wallet_merchant_profile']));
+    return achbotCreditVerifyReferenceLocked($db,$pay,$attempt,$proof,$actor,$verified);
+}
+
+
+/** Existing authenticated evidence transport, with the new receipt sink.
+ * Provider-specific matching/redemption stays in its original single owner. */
+function achbotCreditCheckBankApi(mysqli $db,array $claim,callable $settle): string {
+    require_once __DIR__.'/ApiPayments.php';
+    return achbotApiPaymentCheckBank($db,$claim,$settle);
+}
+function achbotCreditCheckGiftApi(mysqli $db,array $claim,callable $settle): string {
+    require_once __DIR__.'/ApiPayments.php';
+    return achbotApiPaymentCheckGift($db,$claim,$settle);
 }

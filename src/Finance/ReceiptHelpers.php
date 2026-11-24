@@ -1523,48 +1523,9 @@ function achbotManualClaim(mysqli $connection, array $payInfo, string $method, i
             $connection->rollback();
             return false;
         }
-        $quote = (string)$price;
-        $currency = 'toman';
-        $settlementNetwork = null;
-        $intent = ['method'=>$method];
-        if ($method === 'bank_transfer') {
-            $bank = achbotManualBankIdentity();
-            if ($bank === null) { $connection->rollback(); return false; }
-            $intent += $bank;
-            $quote = (string)generateHigherRandomizedAmount($price)['toman'];
-        } elseif ($method === 'gift_card') {
-            $url = achbotManualSellerUrl();
-            if ($url === null) { $connection->rollback(); return false; }
-            $intent['seller_url'] = $url;
-        } elseif ($method === 'manual_usdt' || $method === 'manual_trx') {
-            $config = $method === 'manual_trx' ? achbotManualTrxConfiguration()
-                : achbotManualUsdtConfiguration($chosenNetwork);
-            if ($config === null || ($chosenNetwork !== null &&
-                $config['network'] !== $chosenNetwork)) {
-                $connection->rollback();
-                return false;
-            }
-            $rate=$method==='manual_trx' ? $config['rate']
-                : achbotUsdtRateForUser($connection,$userId);
-            if ($rate===null) { $connection->rollback(); return false; }
-            $precision = $method === 'manual_trx' ? 6 : 2;
-            $factor = $method === 'manual_trx' ? 1000000 : 100;
-            $rawQuote=$price/$rate;
-            if (!is_finite($rate) || $rate <= 0 || !is_finite($rawQuote) ||
-                $rawQuote <= 0 || $rawQuote > 1000000000000) {
-                $connection->rollback();
-                return false;
-            }
-            $quote = number_format(ceil($rawQuote * $factor) / $factor,
-                                   $precision, '.', '');
-            $settlementNetwork = $config['network'];
-            $intent['network'] = $config['network'];
-            $intent['wallet'] = $config['wallet'];
-            $intent['rate_toman'] = (string)$rate;
-            $currency = $method === 'manual_trx' ? 'TRX' : 'USDT';
-        }
-        $destination = achbotManualIntentEncode($intent);
-        if ($destination === null) { $connection->rollback(); return false; }
+        $money=achbotManualBuildQuote($connection,$userId,$price,$method,$chosenNetwork);
+        $quote=$money['amount'];$currency=$money['currency'];
+        $settlementNetwork=$money['settlement_currency'];$destination=$money['destination'];
         $stmt = $connection->prepare("INSERT INTO payment_attempts
             (pay_row_id,provider,order_hash,quote_amount,quote_currency,local_amount_toman,
              settlement_currency,checkout_url,stage)

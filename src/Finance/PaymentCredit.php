@@ -36,6 +36,8 @@ function achbotCreditInvoiceFingerprint(array $pay,array $attempt): string {
         $payId,(int)$pay['user_id'],(string)$pay['hash_id'],(int)$pay['price'],
         achbotPaymentEvidenceQuoteFingerprint($attempt),
         hash('sha256',(string)($attempt['evidence_profile']??'')),
+        hash('sha256',(string)($attempt['wallet_merchant_profile']??'')),
+        (string)($attempt['minimum_settlement_amount']??'0'),
         (int)($attempt['service_operation_id']??0),
     ],JSON_THROW_ON_ERROR));
 }
@@ -121,6 +123,9 @@ function achbotPaymentCreditLocked(mysqli $db,int $payId,int $userId,
         // A verified additional child is retained as evidence, not a second
         // credit. A conflicting later response never reverses this journal.
     }
+    if (!empty($attempt['wallet_merchant_profile']) &&
+        !hash_equals(hash('sha256',$attempt['wallet_merchant_profile']),(string)($proof['merchant_profile_sha256']??'')))
+        throw new RuntimeException('payment_credit_merchant_proof_mismatch');
     $verify=$method['proofs'][$basis]??null;
     if ($verify===null) throw new InvalidArgumentException('payment_credit_basis_invalid');
     $tid=$verify($db,$pay,$attempt,$proof,$actor,$primary);

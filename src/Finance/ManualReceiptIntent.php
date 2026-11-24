@@ -87,3 +87,53 @@ function achbotManualIntentDecode(string $saved, string $method): ?array {
     }
     return null;
 }
+
+/** Method-specific destination and commercial quote, shared with the original
+ * issuance path during refactoring. The existing validated configuration
+ * readers are supplied by ReceiptHelpers; no SQL transaction or Native I/O
+ * is owned here. */
+function achbotManualBuildQuote(mysqli $connection,int $userId,int $price,string $method,?string $chosenNetwork=null): array {
+    if ($price<=0 || !in_array($method,['bank_transfer','gift_card','manual_usdt','manual_trx'],true))
+        throw new DomainException('manual_quote_unavailable');
+    $quote = (string)$price;
+    $currency = 'toman';
+    $settlementNetwork = null;
+    $intent = ['method'=>$method];
+    if ($method === 'bank_transfer') {
+        $bank = achbotManualBankIdentity();
+        if ($bank === null) { throw new DomainException('manual_quote_unavailable'); }
+        $intent += $bank;
+        $quote = (string)generateHigherRandomizedAmount($price)['toman'];
+    } elseif ($method === 'gift_card') {
+        $url = achbotManualSellerUrl();
+        if ($url === null) { throw new DomainException('manual_quote_unavailable'); }
+        $intent['seller_url'] = $url;
+    } elseif ($method === 'manual_usdt' || $method === 'manual_trx') {
+        $config = $method === 'manual_trx' ? achbotManualTrxConfiguration()
+            : achbotManualUsdtConfiguration($chosenNetwork);
+        if ($config === null || ($chosenNetwork !== null &&
+            $config['network'] !== $chosenNetwork)) {
+            throw new DomainException('manual_quote_unavailable');
+        }
+        $rate=$method==='manual_trx' ? $config['rate']
+            : achbotUsdtRateForUser($connection,$userId);
+        if ($rate===null) { throw new DomainException('manual_quote_unavailable'); }
+        $precision = $method === 'manual_trx' ? 6 : 2;
+        $factor = $method === 'manual_trx' ? 1000000 : 100;
+        $rawQuote=$price/$rate;
+        if (!is_finite($rate) || $rate <= 0 || !is_finite($rawQuote) ||
+            $rawQuote <= 0 || $rawQuote > 1000000000000) {
+            throw new DomainException('manual_quote_unavailable');
+        }
+        $quote = number_format(ceil($rawQuote * $factor) / $factor,
+                               $precision, '.', '');
+        $settlementNetwork = $config['network'];
+        $intent['network'] = $config['network'];
+        $intent['wallet'] = $config['wallet'];
+        $intent['rate_toman'] = (string)$rate;
+        $currency = $method === 'manual_trx' ? 'TRX' : 'USDT';
+    }
+    $destination = achbotManualIntentEncode($intent);
+    if ($destination === null) { throw new DomainException('manual_quote_unavailable'); }
+    return ['amount'=>$quote,'currency'=>$currency,'settlement_currency'=>$settlementNetwork,'destination'=>$destination];
+}
