@@ -121,33 +121,44 @@ function achbotServiceSubjectWorkSettledLocked(mysqli $db,array $peers,bool $ret
     return true;
 }
 
-/** A prepared plan journal precedes its Native mutation marker. A new
- * monetary claim must not get between that intent and local finality.
- * Missing current journal storage fails closed. */
+/** A prepared current journal proves no possible outbound write. Only
+ * the holder of the exact physical lease can retire an abandoned intent. */
+function achbotServiceRetirePreparedPlansLocked(mysqli $db,string $lock): void {
+    $owner=achbotProviderRow($db,'SELECT IS_USED_LOCK(?)=CONNECTION_ID() AS owned','s',[$lock]);
+    if ((int)($owner['owned']??0)!==1)
+        throw new RuntimeException('service_plan_lease_required');
+    $s=achbotProviderStatement($db,"UPDATE service_plan_changes FORCE INDEX(idx_shared_plan_lock_state)
+        SET state='cancelled' WHERE lock_key=? AND state='prepared'",'s',[$lock]);
+    $s->close();
+}
+
+/** A live preparation or an actually dispatched Native mutation fences only
+ * its physical account. A dead preflight cannot hold it indefinitely.
+ * Do not wait on a session lease while owning SQL locks. */
 function achbotServicePlanChangePendingLocked(mysqli $db,string $lock): bool {
     $r=achbotProviderRow($db,"SELECT TABLE_TYPE,ENGINE FROM information_schema.TABLES
         WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='service_plan_changes'");
     if (!$r) throw new RuntimeException('service_plan_journal_missing');
     if ($r['TABLE_TYPE']!=='BASE TABLE' || strcasecmp((string)$r['ENGINE'],'InnoDB')!==0)
         throw new RuntimeException('service_plan_journal_invalid');
-    return achbotProviderRow($db,"SELECT id FROM service_plan_changes FORCE INDEX(idx_shared_plan_lock_state)
-        WHERE lock_key=? AND state<>'committed' LIMIT 1 FOR UPDATE",'s',[$lock])!==null;
-}
-
-/** Rebinding a logical endpoint must not strand a charged purchase before
- * its first order exists. Ordinary credential rotation remains allowed. */
-function achbotServiceServerWorkSettledLocked(mysqli $db,array $serverIds): bool {
-    achbotServiceOperationsPresent($db);
-    $ids=[];
-    foreach ($serverIds as $id) {
-        if (!is_int($id) || $id<=0) throw new RuntimeException('service_ownership_server_invalid');
-        $ids[$id]=$id;
+    $pending=static fn()=>achbotProviderRow($db,"SELECT id,state FROM service_plan_changes FORCE INDEX(idx_shared_plan_lock_state)
+        WHERE lock_key=? AND state NOT IN ('committed','cancelled')
+        ORDER BY state='prepared',id LIMIT 1 FOR UPDATE",'s',[$lock]);
+    $row=$pending();
+    if (!$row) return false;
+    if ($row['state']!=='prepared') return true;
+    // A lease owned by this connection can be the live original plan
+    // preflight; only a genuinely free lease permits automatic retirement.
+    $free=achbotProviderRow($db,'SELECT IS_FREE_LOCK(?) AS free','s',[$lock]);
+    if ((int)($free['free']??0)!==1) return true;
+    $lease=achbotProviderRow($db,'SELECT GET_LOCK(?,0) AS acquired','s',[$lock]);
+    if ((int)($lease['acquired']??0)!==1) return true;
+    try {
+        achbotServiceRetirePreparedPlansLocked($db,$lock);
+        return $pending()!==null;
+    } finally {
+        $s=achbotProviderStatement($db,'SELECT RELEASE_LOCK(?)','s',[$lock]);$s->close();
     }
-    if (!$ids) throw new RuntimeException('service_ownership_server_invalid');
-    $list=implode(',',$ids);
-    return achbotProviderRow($db,"SELECT id FROM service_operations FORCE INDEX(idx_service_target_stage)
-        WHERE target_server_id IN ($list) AND stage IN ('funded','prepared','dispatching','applied')
-        LIMIT 1 FOR UPDATE")===null;
 }
 
 /** One newly purchased original ordinal consumed one slot of its parent
@@ -165,7 +176,11 @@ function achbotServiceBuyCapacityServerLocked(mysqli $db,array $order,array $eff
         $order['remark']!==$effect['remote_username'] ||
         ($finalizing && $effect['provider_state']!=='deleted'))
         throw new RuntimeException('deletion_capacity_original_buy_unverified');
-    $sid=(int)$op['target_server_id'];
+    return achbotServiceCapacityServerLocked($db,(int)$op['target_server_id']);
+}
+
+/** Original capacity only; a deliberately removed logical server has no inventory. */
+function achbotServiceCapacityServerLocked(mysqli $db,int $sid): ?int {
     $r=achbotProviderRow($db,'SELECT id FROM server_info WHERE id=? FOR UPDATE','i',[$sid]);
     if ($r!==null) return $sid;
     // A deliberately hard-deleted original logical server has no inventory

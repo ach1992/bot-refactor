@@ -119,7 +119,7 @@ the retired service. The canonical indexed subject locking read remains
 scoped to the affected orders; no old pay/attempt stage classifier or
 second scheduled-deletion ownership engine is required.
 
-Payment evidence, service-effect table and shared plan journal are mandatory current storage; both receipt archive columns are retired. Missing schema cannot authorize a mutation. Only current plan intent format 2 is executable; earlier plans are not replayed.
+Payment evidence, service-effect table and shared plan journal are mandatory current storage; both receipt archive columns are retired. Missing schema cannot authorize a mutation. Only current fresh-install plan intent format 2 is executable; earlier plans are not replayed. Its immutable target identifies the connection instance, endpoint and Native account, not replaceable credentials.
 
 035–038 are schema construction evidence only. Fresh installations use the consolidated empty current schema, not a migration chain. Preserve real account provenance and financial history during the separately authorized manual transfer; do not import obsolete interaction state as runnable work.
 
@@ -858,10 +858,7 @@ funded operation has exactly the same local ownership as a prepared,
 dispatching or applied operation. The guard covers all current account
 references and protects a locally recorded bulk BUY ordinal until the whole
 original BUY completes. Reuse the existing physical account and order locks;
-no new reservation ledger or second mutation coordinator. Endpoint rebind
-also checks funded reservations before their first order exists; ordinary
-credential rotation retains its existing policy. Keep the explicitly
-authorized local server hard-delete policy unchanged.
+no new reservation ledger or second mutation coordinator. The current UI does not offer endpoint rebinding. Credential rotation authenticates the new key and updates the same connection aliases atomically; unfinished journals never prevent repairing authentication. Keep the explicitly authorized local server hard-delete policy unchanged.
 
 Draft 026 (not installed) derives indexed subject_order_id and target_server_id
 from the immutable quote. There is no additional writable target projection.
@@ -870,14 +867,13 @@ the order/server row locks used by funding; no table-wide JSON scan.
 The current schema is required. Draft creation and service admission use
 the same physical-account plan-journal key, including aliases; an unrelated
 unresolved or locked journal cannot hold a different account's draft.
-Known incomplete plan journals and non-service Native mutation claims refuse
-new funding. The retired pay-bound quote/preflight adapter is not in the
+Live preparation and actually dispatched, unresolved plan journals, and non-service Native mutation claims refuse new funding. Abandoned prepared plan/correction journals prove no possible Native dispatch and are cancelled under the original physical lease. The original plan journal and Native fence commit together at the final pre-PUT callback. GET-only failures do not consume a corrective dispatch. A paid receipt arriving during a live plan fence credits Wallet without waiting for that Native operation; a fresh service request may be needed even if the plan subsequently fails. Group-only changes compare only owned Groups and account identity, without freezing unrelated quota/expiry. The retired pay-bound quote/preflight adapter is not in the
 Native registry; nonpaid effects retain their plan-only target adapter.
 A real plan change or reassignment atomically cancels only awaiting-funds
 quotes for the affected references; deletion cancels the selected reference's
 unfunded quotes within its original claim transaction. No credit, debit or
 capacity movement occurs on this cancellation. The receipt sink credits a
-verified late payment once, even after the original plan returns.
+verified late payment once, even after the original plan returns. A submitted receipt remains reviewable, with a direct case link in its original administrator message; never revive the old service. A deliberately removed server does not prevent an explicitly authorized refund of unperformed BUY units: no capacity is restored to a nonexistent server or a different logical server.
 
 New purchase deletion resolves one ordinal's capacity from its completed
 original service reservation, even if current plan is zero or the logical

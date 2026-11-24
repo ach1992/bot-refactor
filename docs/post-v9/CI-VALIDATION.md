@@ -164,3 +164,7 @@ for both Toman and Rial. The shared Native import/alias regression also
 uses the canonical installation schema, including checkout draft
 invalidation. Tests inject faults and use owned loopback fixtures; no
 real customer, merchant or Native account is mutated.
+
+### Wallet-first plan lifecycle and repair acceptance (Issue #204)
+
+The current-schema service suite exercises actual plan PUT, committed pre-dispatch markers, no-effect GET outage and abandoned preparation cleanup, >4096 original mutation keys, scoped journal locking, current administrator credential rotation and GET-only recovery after lost ACK, direct receipt case links, corrective preflight retry without a dispatch, and exact refund after local server deletion. The credit suite uses the current atomic manual-evidence route, including typed gift-card evidence. No real panel, Telegram, customer money or production database is used.

@@ -26,6 +26,14 @@ PHP = evidence.DRIVER.replace(
     'mysqli_report(MYSQLI_REPORT_ERROR|MYSQLI_REPORT_STRICT);',
     'mysqli_report(($argv[5]??"strict")==="strict" ? MYSQLI_REPORT_ERROR|MYSQLI_REPORT_STRICT : MYSQLI_REPORT_OFF);'
 ).replace(
+    "case 'save':\n $result=achbotPaymentEvidenceSaveGiftCode($db,$id,1001,$spec['code']);break;", r"""
+case 'save':
+ require_once dirname($argv[1]).'/ApiPayments.php';
+ $token=achbotManualBeginEvidence($db,$pay,'gift_card',1001,$spec['code']);
+ $result=['status'=>$token && achbotManualFinishEvidence($db,$pay['hash_id'],$spec['code'],$token,222,9001)?'saved':'invalid'];
+ break;
+"""
+).replace(
     "case 'ready':", r"""
 case 'issue':
 case 'credit':
@@ -242,7 +250,7 @@ def main():
                 assert php('consume',pid,mode)['status']=='proven'
                 rejected('tampered_api_proof',pid,mode,'payment_credit_api_proof',basis='api',stored_proof=True,tamper=True)
                 accept('consumed_sms_proven',pid,mode,basis='api',stored_proof=True)
-                pid,_=seed('gift_card',mode+'-giftapi',api=True)
+                pid,_=seed('gift_card',mode+'-giftapi',api=True,receipt=False)
                 code=evidence.fixture_gift_code(mode+'-gift')
                 server.card=dict(card_uuid='CARD_'+mode,status='active',game_key='fixture',redeem_value_id=42,
                     redeem_amount=100001,display_amount=999999,face_value=10,currency_label='fixture',

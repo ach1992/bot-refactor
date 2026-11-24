@@ -2,6 +2,7 @@
 declare(strict_types=1);
 if (realpath($_SERVER['SCRIPT_FILENAME']??'')===__FILE__) {http_response_code(404);exit;}
 require_once __DIR__.'/Execution.php';
+require_once __DIR__.'/Ownership.php';
 require_once __DIR__.'/../Admin/Access.php';
 require_once __DIR__.'/../Purchase/OrderWrites.php';
 
@@ -144,9 +145,10 @@ function achbotServiceResolve(mysqli $db,int $id,int $actor,int $primary,string 
             if ($e['replayed']) throw new RuntimeException('service_resolution_orphan_refund');
             $entry=$e['id'];
         }
-        if ($op['kind']==='BUY') {
+        if ($op['kind']==='BUY' &&
+            ($capacityServer=achbotServiceCapacityServerLocked($db,(int)$quote['request']['server_id']))!==null) {
             $s=achbotProviderStatement($db,'UPDATE server_info SET ucount=ucount+? WHERE id=?',
-                'ii',[$plan['cancel_count'],$quote['request']['server_id']]);
+                'ii',[$plan['cancel_count'],$capacityServer]);
             $n=$s->affected_rows;$s->close();
             if ($n!==1) throw new RuntimeException('service_resolution_capacity_release');
         }

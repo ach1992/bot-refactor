@@ -35,6 +35,7 @@ $data='';
 require_once $argv[1].'/src/Subscription/AccountDeletion.php';
 $GLOBALS['telegramWebhookSecret']='SyntheticServiceDeliveryKey_2026';
 function setUser(...$args) {}
+function getServerListKeys() {return '{}';}
 function alert(...$args) {$GLOBALS['fixtureAlerts'][]=$args;}
 function answerCallbackQuery(...$args) {$GLOBALS['fixtureAlerts'][]=$args;}
 function fixtureDeliverySend(string $kind,int $uid,?string $text,?string $keys,?string $mode,$photo=null) {
@@ -103,17 +104,17 @@ function sendMessage($text,$keys=null,$mode=null,$uid=null) {
         if (isset($x['response'])) return json_decode(json_encode($x['response'],JSON_THROW_ON_ERROR),false,64,JSON_THROW_ON_ERROR);
         return (object)['ok'=>!($x['unknown_ack']??false)];
     }
-    if ($x['op']==='checkout_discount') return (object)['ok'=>true];
+    if (in_array($x['op'],['checkout_discount','rotate_key'],true)) return (object)['ok'=>true];
     return fixtureDeliverySend('text',$uid,$text,$keys,$mode);
 }
 function bot($method,$data=[]) {
     global $db,$x;
-    if (!in_array($x['op'],['plan','reassign'],true) || $method!=='editMessageReplyMarkup' ||
-        array_keys($data)!==['chat_id','message_id'] ||
+    if (!in_array($x['op'],['plan','plan_recover','plan_correct','reassign'],true) || $method!=='editMessageReplyMarkup' ||
+        !in_array(array_keys($data),[['chat_id','message_id'],['chat_id','message_id','reply_markup']],true) ||
         (int)achbotProviderRow($db,'SELECT @@in_transaction AS tx')['tx']!==0)
         throw new RuntimeException('fixture_unexpected_bot_markup');
-    $s=achbotProviderStatement($db,'INSERT INTO fixture_markup(chat_id,message_id) VALUES (?,?)',
-        'ii',[(int)$data['chat_id'],(int)$data['message_id']]);$s->close();
+    $s=achbotProviderStatement($db,'INSERT INTO fixture_markup(chat_id,message_id,markup) VALUES (?,?,?)',
+        'iis',[(int)$data['chat_id'],(int)$data['message_id'],$data['reply_markup']??null]);$s->close();
     return (object)['ok'=>true];
 }
 function achbotNotifyAdmins(...$args) {return true;}
@@ -338,6 +339,16 @@ try {
         finally {if ($other!==null) $other->close();}
     }
     elseif ($x['op']==='plan') $r=achbotPhysicalSelectPlan($db,$x['order'],$x['plan'],1001);
+    elseif ($x['op']==='plan_recover') $r=achbotPhysicalRecoverPlan($db,$x['journal'],9001,$x['order']);
+    elseif ($x['op']==='plan_correct') $r=achbotPhysicalCorrectPlan($db,$x['journal'],9001,$x['order']);
+    elseif ($x['op']==='rotate_key') {
+        require_once $argv[1].'/src/Panel/ProviderAdmin.php';
+        $from_id=9001;$data='';$text=$x['key'];$cancelKey='{}';$message_id=1;$chat_id=9001;
+        $userInfo=achbotProviderRow($db,'SELECT * FROM users WHERE userid=9001');
+        $update=(object)['update_id'=>1234,'message'=>(object)['text'=>$text,
+            'from'=>(object)['id'=>9001],'chat'=>(object)['type'=>'private','id'=>9001]]];
+        $r=achbotHandleProviderAdmin();
+    }
     elseif ($x['op']==='reassign') $r=achbotReassignLogicalServer($db,$x['order'],$x['server'],9001,true);
     elseif (in_array($x['op'],['delete','local_delete'],true)) {
         $o=achbotProviderRow($db,'SELECT * FROM orders_list WHERE id=?','i',[$x['order']]);
@@ -345,11 +356,6 @@ try {
         elseif ($x['op']==='delete') $r=achbotSubscriptionDeleteConfirmed($db,$o,true);
         else $r=achbotAutoRenewPrepareDeletion($db,(int)$o['id']) &&
             achbotAutoRenewFinalizeDeletion($db,(int)$o['id'],(int)$o['server_id'],false);
-    }
-    elseif ($x['op']==='rebind') {
-        $db->begin_transaction();
-        achbotPhysicalAssertRebindSafe($db,$x['server'],false,$x['deny_active']);
-        $db->rollback();$r=true;
     }
     elseif ($x['op']==='claim_delivery') {
         $db->begin_transaction();
@@ -384,6 +390,7 @@ def main():
     ap.add_argument('--run-disposable',required=True,action='store_true')
     ap.add_argument('--report',type=Path)
     focus=ap.add_mutually_exclusive_group()
+    focus.add_argument('--plan-recovery-only',action='store_true',help='Run focused plan recovery cases')
     focus.add_argument('--resolution-only',action='store_true',help='Run focused current-schema resolution cases during development')
     focus.add_argument('--referral-agent-only',action='store_true',help='Run focused agent purchase referral cases')
     args=ap.parse_args()
@@ -420,13 +427,13 @@ def main():
                 self.wfile.write(data)
             def do_GET(self):
                 try:
-                    assert self.headers['X-Api-Key']=='fixture'
+                    assert self.headers['X-Api-Key'] in ('fixture','fixture-rotated')
                     # Actual SQL writer on another connection proves no open
                     # InnoDB owner/effect lock spans the authenticated request.
                     sql('SET SESSION innodb_lock_wait_timeout=2; UPDATE users SET wallet=wallet WHERE userid=1001')
                     with lock:
                         requests.append(('GET',self.path))
-                        if faults and faults[0]=='get_unavailable':
+                        if faults and (faults[0]=='get_unavailable' or (faults[0]=='correction_prewrite_get_unavailable' and sql("SELECT COUNT(*) FROM service_plan_changes WHERE provider='pasarguard_correction' AND state='prepared'")!='0')):
                             faults.pop(0);return self.reply(503,{})
                         if self.path=='/api/system':
                             return self.reply(200,{'version':'fixture'})
@@ -449,17 +456,30 @@ def main():
                     errors.append(repr(e));self.reply(500,{})
             def do_edit(self):
                 try:
-                    assert self.headers['X-Api-Key']=='fixture'
+                    assert self.headers['X-Api-Key'] in ('fixture','fixture-rotated')
                     path=self.path.split('/')
                     native_id=int(path[4])
                     phase='reset' if self.command=='POST' else 'modify'
+                    body=json.loads(self.rfile.read(int(self.headers.get('Content-Length',0)))) if self.command=='PUT' else {}
+                    if set(body)=={'group_ids'}:
+                        state=sql("SELECT CONCAT(e.provider_state,':',j.state,':',JSON_UNQUOTE(JSON_EXTRACT(e.provider_mutation_snapshot,'$.phase'))) "
+                            "FROM service_effects e JOIN service_plan_changes j ON e.provider_mutation_key=CONCAT('plan:',j.id) "
+                            f"WHERE e.provider_remote_user_id={native_id}")
+                        assert state=='mutating:dispatching:dispatching',state
+                        with lock:
+                            u=next(v for v in users.values() if v['id']==native_id)
+                            requests.append(('PLAN_PUT',body.copy()))
+                            fault=faults.pop(0) if faults else ''
+                            if fault=='plan_put_unavailable':return self.reply(503,{})
+                            u.update(body)
+                            ack=u.copy()
+                        return self.reply(503 if fault=='plan_put_lost' else 200,{} if fault=='plan_put_lost' else ack)
                     state=sql("SELECT CONCAT(e.provider_state,':',m.phase,':',o.stage,':',m.dispatch_started_at IS NOT NULL) "
                         "FROM service_effects e JOIN service_mutations m "
                         "ON m.account_effect_id=e.id AND e.provider_mutation_key=CONCAT('service:',m.service_operation_id) "
                         "JOIN service_operations o ON o.id=m.service_operation_id "
                         f"WHERE e.provider_remote_user_id={native_id}")
                     assert state=='mutating:'+phase+':dispatching:1',state
-                    body=json.loads(self.rfile.read(int(self.headers.get('Content-Length',0)))) if self.command=='PUT' else {}
                     with lock:
                         u=next(v for v in users.values() if v['id']==native_id)
                         requests.append(('RESET' if phase=='reset' else 'PUT',body.copy()))
@@ -550,7 +570,7 @@ def main():
             assert sql("SELECT COUNT(*) FROM pays WHERE checkout_operation_id IS NOT NULL")=='0'
 
             sql("""CREATE TABLE fixture_markup(id INT AUTO_INCREMENT PRIMARY KEY,
-                chat_id BIGINT NOT NULL,message_id BIGINT NOT NULL) ENGINE=InnoDB""")
+                chat_id BIGINT NOT NULL,message_id BIGINT NOT NULL,markup TEXT NULL) ENGINE=InnoDB""")
             sql("""CREATE TABLE fixture_followup(id INT AUTO_INCREMENT PRIMARY KEY,intent_id BIGINT UNSIGNED NOT NULL,
                 recipient VARCHAR(128),text TEXT,mode VARCHAR(20),keys_json TEXT) ENGINE=InnoDB""")
             sql("""CREATE TABLE fixture_telegram (
@@ -571,7 +591,8 @@ def main():
                 UPDATE server_info SET panel_group_id=LAST_INSERT_ID() WHERE id IN (2,3);
                 INSERT INTO server_plans(id,fileid,catid,server_id,inbound_id,acount,title,protocol,days,volume,type,price,descr,pic,active,step,date,custom_sni,provider_group_ids)
                 VALUES (8,'8',1,2,0,6,'Fixture PG next','vless',30,2,'normal',100,'description','',1,0,'fixture',NULL,'[1,2]'),
-                       (9,'9',1,3,0,6,'Fixture PG alias','vless',30,2,'normal',100,'description','',1,0,'fixture',NULL,'[1,2]');""")
+                       (9,'9',1,3,0,6,'Fixture PG alias','vless',30,2,'normal',100,'description','',1,0,'fixture',NULL,'[1,2]'),
+                       (10,'10',1,2,0,6,'Fixture PG group change','vless',30,2,'normal',100,'description','',1,0,'fixture',NULL,'[1]');""")
             sql('UPDATE users SET wallet=50000 WHERE userid=9002')
             driver=work/'execution.php';driver.write_text(PHP)
             def php(mysqli_mode,op,**kw):
@@ -587,7 +608,7 @@ def main():
                     return None
                 assert p.returncode==0,(p.returncode,p.stdout,p.stderr)
                 for line in p.stderr.splitlines():
-                    assert line.startswith(('[AChBot] ','achbot_auto_renew_','achbot_shared_plan_','achbot_shared_transfer_','achbot_subscription_delete_')) or (op=='telegram_wallet' and line.startswith(('achbot_checkout_wallet_route_deferred','achbot_admin_'))) or (op=='checkout_insert' and line=='achbot_customer_draft_creation_deferred') or re.fullmatch(r'achbot_followup_ack_unknown id=[1-9][0-9]*|achbot_qr_prepare_failed class=RuntimeException',line),line
+                    assert line.startswith(('[AChBot] ','achbot_auto_renew_','achbot_shared_plan_','achbot_shared_transfer_','achbot_subscription_delete_','achbot_plan_correction_')) or (op=='telegram_wallet' and line.startswith(('achbot_checkout_wallet_route_deferred','achbot_admin_'))) or (op=='checkout_insert' and line=='achbot_customer_draft_creation_deferred') or re.fullmatch(r'achbot_followup_ack_unknown id=[1-9][0-9]*|achbot_qr_prepare_failed class=RuntimeException',line),line
                 try:r=json.loads(p.stdout)
                 except ValueError as e:raise AssertionError((op,p.stdout,p.stderr)) from e
                 if 'expect_error' in kw:
@@ -727,6 +748,23 @@ def main():
                     assert php(mode,'followup',id=int(rid))=='acknowledged'
                 cases.append(mode+'_resolution_full_refund_once_and_reports')
 
+                # An operator may deliberately delete a logical server.
+                # The missing inventory must not prevent an original refund.
+                sid=31 if mode=='strict' else 32
+                sql(f"""INSERT INTO server_config(id,panel_url,ip,sni,header_type,request_header,response_header,security,tlsSettings,type,username,password,provider_connection_id,provider_instance_key,provider_version,provider_enabled)
+                    SELECT {sid},panel_url,ip,sni,header_type,request_header,response_header,security,tlsSettings,type,username,password,provider_connection_id,provider_instance_key,provider_version,provider_enabled FROM server_config WHERE id=2;
+                    INSERT INTO server_info(id,title,ucount,remark,flag,active,state) VALUES ({sid},'Fixture removed','10','removed','',1,1);
+                    INSERT INTO server_plans(id,fileid,catid,server_id,inbound_id,acount,title,protocol,days,volume,type,price,descr,pic,active,step,date,custom_sni,provider_group_ids)
+                    VALUES ({sid},'{sid}',1,{sid},0,6,'Fixture removed','vless',30,2,'normal',100,'description','',1,0,'fixture',NULL,'[1,2]');""")
+                op=issue(mode,'resolution-removed-server',server=sid,plan=sid);fund(mode,op)
+                sql(f"START TRANSACTION; DELETE FROM server_config WHERE id={sid}; DELETE FROM server_info WHERE id={sid}; COMMIT")
+                before=finance();bal=int(sql('SELECT wallet FROM users WHERE userid=1001'));wire=len(requests)
+                assert resolve_op(op)==dict(status='refunded',refund=100,retained=0,cancelled=1)
+                assert int(sql('SELECT wallet FROM users WHERE userid=1001'))==bal+100
+                assert finance()[2]==before[2] and len(requests)==wire
+                assert sql(f"SELECT COUNT(*) FROM wallet_entries WHERE source_kind='service_refund' AND source_ref='{op}' AND delta_toman=100")=='1'
+                cases.append(mode+'_resolution_refund_after_logical_server_delete')
+
                 # A failed second ordinal does not strand or refund the first.
                 op=issue(mode,'resolution-partial',3);fund(mode,op)
                 step(mode,op,'applied');step(mode,op,'progressed')
@@ -838,6 +876,104 @@ def main():
                 assert resolve_op(r['id'],'closed')['status']=='closed'
                 cases.append(mode+'_resolution_auto_renewal_service_only_and_reenable')
 
+            def rotate(mode,key):
+                sql("UPDATE users SET step='pg:key:2:2' WHERE userid=9001")
+                before=sum(x[0]=='PLAN_PUT' for x in requests)
+                assert php(mode,'rotate_key',key=key) is True
+                assert sql("SELECT DISTINCT password FROM server_config WHERE provider_connection_id=2")==key
+                assert sql("SELECT step FROM users WHERE userid=9001")=='none'
+                assert sum(x[0]=='PLAN_PUT' for x in requests)==before
+            def plan_recovery_cases(mode):
+                # A real plan attempt commits its journal before Native
+                # readback. Its unresolved journal is not a new sale target.
+                buy=issue(mode,'pending-plan');fund(mode,buy);step(mode,buy,'applied');step(mode,buy,'completed')
+                order=int(sql(f"SELECT order_id FROM service_effects WHERE source_kind='service_operation' AND source_ref='{buy}'"))
+                unpaid=edit(mode,'pending-plan-edit',order,'ADD_TIME',days=1)
+                unrelated_buy=issue(mode,'unrelated-plan-draft');fund(mode,unrelated_buy)
+                step(mode,unrelated_buy,'applied');step(mode,unrelated_buy,'completed')
+                unrelated_order=int(sql(f"SELECT order_id FROM service_effects WHERE source_kind='service_operation' AND source_ref='{unrelated_buy}'"))
+                # A read outage before any PUT must not create a permanent
+                # hold, consume money or invalidate an otherwise valid quote.
+                f=finance();n=sum(x[0]=='PLAN_PUT' for x in requests)
+                faults.append('get_unavailable')
+                r=php(mode,'plan',order=order,plan=8);assert not r['success'],r
+                assert sql(f"SELECT state FROM service_plan_changes WHERE source_order_id={order} ORDER BY id DESC LIMIT 1")=='cancelled'
+                assert finance()==f and sum(x[0]=='PLAN_PUT' for x in requests)==n
+                # Simulate process loss after the original prepared commit.
+                # No lease is held; the next original funding safely retires it.
+                sql(f"INSERT INTO service_plan_changes(lock_key,source_order_id,plan_id,server_id,provider,state,intent_json) SELECT lock_key,source_order_id,plan_id,server_id,provider,'prepared',intent_json FROM service_plan_changes WHERE source_order_id={order} ORDER BY id DESC LIMIT 1")
+                assert php(mode,'fund',id=unpaid)=='funded'
+                assert sql(f"SELECT state FROM service_plan_changes WHERE source_order_id={order} ORDER BY id DESC LIMIT 1")=='cancelled'
+                for stage in ('progressed','applied','completed'):step(mode,unpaid,stage)
+                assert php(mode,'plan',order=order,plan=8)['success']
+                cases.append(mode+'_plan_prewrite_outage_and_abandoned_preparation_recover_without_manual_hold')
+                # Actual group-changing PUT with lost ACK must retain a
+                # durable hold. Exceed the former lifetime replay ceiling.
+                unpaid=edit(mode,'actual-plan-pending-edit',order,'ADD_TIME',days=1)
+                keys=['fixture-history:'+str(i) for i in range(4096)]
+                snapshot=json.dumps({'version':1,'key':keys[-1],'consumed_keys':keys},separators=(',',':'))
+                sql(f"UPDATE service_effects e JOIN orders_list o ON o.provider_effect_id=e.id SET e.provider_mutation_key='{keys[-1]}',e.provider_mutation_snapshot='{snapshot}' WHERE o.id={order}")
+                f=finance();n=sum(x[0]=='PLAN_PUT' for x in requests)
+                faults.append('plan_put_lost')
+                r=php(mode,'plan',order=order,plan=10);assert not r['success'],r
+                assert sum(x[0]=='PLAN_PUT' for x in requests)==n+1
+                assert sql(f"SELECT COUNT(*) FROM service_plan_changes WHERE source_order_id={order} AND state='dispatching'")=='1'
+                assert php(mode,'fund',id=unpaid)=='request_invalidated' and finance()==f
+                cases.append(mode+'_unresolved_plan_intent_blocks_new_debit')
+                cases.append(mode+'_native_mutation_replay_history_has_no_lifetime_count_ceiling')
+                rejected_hash=mode+'-blocked-plan-draft'
+                assert php(mode,'checkout_insert',hash=rejected_hash,type='RENEW_ACCOUNT',price=100,order=order)==0
+                assert sql(f"SELECT COUNT(*) FROM pays WHERE hash_id='{rejected_hash}'")=='0'
+                # Lock the other account's actual unresolved journal using a
+                # separate connection. The old global FOR UPDATE scan could
+                # not create this unrelated draft within its short deadline.
+                journal=int(sql(f"SELECT id FROM service_plan_changes WHERE source_order_id={order} AND state='dispatching'"))
+                hold_php=('mysqli_report(MYSQLI_REPORT_ERROR|MYSQLI_REPORT_STRICT);'
+                    '$db=new mysqli("localhost","root","",$argv[2],0,$argv[1]);'
+                    '$db->begin_transaction();'
+                    '$r=$db->query("SELECT id FROM service_plan_changes WHERE id=".(int)$argv[3]." FOR UPDATE");'
+                    'if ($r->num_rows!==1) exit(3);echo "LOCKED\\n";flush();fgets(STDIN);$db->rollback();')
+                holder=subprocess.Popen(['php','-n','-d','extension=mysqlnd','-d','extension=mysqli','-r',hold_php,
+                    str(work/'mysql.sock'),DB,str(journal)],env=env,text=True,stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+                try:
+                    assert holder.stdout.readline().strip()=='LOCKED'
+                    accepted=php(mode,'checkout_insert',hash=mode+'-unrelated-plan-draft',type='RENEW_ACCOUNT',
+                        price=100,order=unrelated_order,short_lock_timeout=True)
+                    assert accepted>0 and finance()==f
+                finally:
+                    _,err=holder.communicate('release\n',timeout=10)
+                    assert holder.returncode==0 and not err,err
+                cases.append(mode+'_current_draft_scoped_to_own_plan_journal')
+                # Credentials can rotate while a verified plan result is
+                # awaiting local completion. Recover the exact account using
+                # fresh credentials; never require the retired secret.
+                rotate(mode,'fixture-rotated')
+                r=php(mode,'plan_recover',order=order,journal=journal)
+                assert r['success'],r
+                assert sum(x[0]=='PLAN_PUT' for x in requests)==n+1 and finance()==f
+                assert sql(f"SELECT fileid FROM orders_list WHERE id={order}")=='10'
+                assert sql(f"SELECT state FROM service_plan_changes WHERE id={journal}")=='committed'
+                rotate(mode,'fixture')
+                cases.append(mode+'_plan_lost_ack_recovers_with_current_rotated_credential')
+
+
+                # A corrective preflight that never dispatches must not consume
+                # the authorized one-shot write, including after restart.
+                faults.append('plan_put_unavailable')
+                r=php(mode,'plan',order=order,plan=7);assert not r['success'],r
+                original=int(sql(f"SELECT id FROM service_plan_changes WHERE source_order_id={order} AND provider='pasarguard' AND state='dispatching'"))
+                n=sum(x[0]=='PLAN_PUT' for x in requests);before=finance()
+                faults.append('correction_prewrite_get_unavailable')
+                r=php(mode,'plan_correct',order=order,journal=original);assert not r['success'],r
+                assert sum(x[0]=='PLAN_PUT' for x in requests)==n and finance()==before
+                assert sql(f"SELECT state FROM service_plan_changes WHERE source_order_id={order} AND provider='pasarguard_correction' ORDER BY id DESC LIMIT 1")=='cancelled'
+                r=php(mode,'plan_correct',order=order,journal=original);assert r['success'],r
+                assert sum(x[0]=='PLAN_PUT' for x in requests)==n+1 and finance()==before
+                assert sql(f"SELECT fileid FROM orders_list WHERE id={order}")=='7'
+                assert sql(f"SELECT state FROM service_plan_changes WHERE id={original}")=='committed'
+                assert sql(f"SELECT state FROM service_plan_changes WHERE source_order_id={order} AND provider='pasarguard_correction' ORDER BY id DESC LIMIT 1")=='committed'
+                cases.append(mode+'_plan_correction_prewrite_outage_does_not_consume_dispatch')
+
             # Old prepaid claims are historical only. Neither the current
             # wallet callback nor a worker may adopt/replay them. Keep the
             # actual debit/capacity evidence for separate manual reconciliation.
@@ -860,23 +996,20 @@ def main():
                 assert sql(f"SELECT state FROM service_effects WHERE pay_row_id={pid}")=='reserved'
                 assert finance()==before and len(requests)==n
                 cases.append(mode+'_historical_prepaid_claim_no_adoption_or_new_effect')
-            for mode in (() if args.resolution_only or args.referral_agent_only else ('strict','off')):
+            for mode in (() if args.resolution_only or args.referral_agent_only or args.plan_recovery_only else ('strict','off')):
                 # Isolate each test mode's scheduler from previously deferred
                 # conflict fixtures; no terminal evidence is changed.
                 sql("UPDATE service_operations SET next_attempt_at=DATE_ADD(NOW(6),INTERVAL 1 DAY) WHERE stage IN ('funded','prepared','dispatching','applied')")
                 sql("UPDATE payment_delivery_intents SET updated_at=NOW() WHERE service_operation_id IS NOT NULL AND state='pending'")
-                # No order exists yet. The committed reservation must block
-                # endpoint rebinding, but not ordinary credential rotation.
-                original=issue(mode,'rebind-buy',server=3,plan=9);fund(mode,original)
+                original=issue(mode,'rotate-funded-buy',server=3,plan=9);fund(mode,original)
                 before=finance()
-                assert php(mode,'rebind',server=3,deny_active=True,expect_error='physical_rebind_pending_service_operation')
-                assert php(mode,'rebind',server=3,deny_active=False) is True
+                rotate(mode,'fixture-rotated')
+                rotate(mode,'fixture')
                 assert finance()==before
                 step(mode,original,'applied');step(mode,original,'completed')
                 rebind_order=int(sql(f"SELECT order_id FROM service_effects WHERE source_kind='service_operation' AND source_ref='{original}'"))
                 assert php(mode,'delete',order=rebind_order)=='complete'
-                assert php(mode,'rebind',server=3,deny_active=True) is True
-                cases.append(mode+'_funded_buy_before_first_order_blocks_endpoint_rebind')
+                cases.append(mode+'_funded_buy_allows_actual_credential_rotation')
                 id=issue(mode,'bulk',3);n=len(requests)
                 step(mode,id,'awaiting_funds');assert len(requests)==n and not rows(id)
                 cases.append(mode+'_unfunded_no_io')
@@ -1439,43 +1572,8 @@ DELIMITER ;
                 assert finance()==f and deletes()==d+1
                 cases.append(mode+'_funded_alias_protects_shared_account_no_unreserved_slot')
 
-                # A real plan attempt commits its journal before Native
-                # readback. Its unresolved journal is not a new sale target.
-                buy=issue(mode,'pending-plan');fund(mode,buy);step(mode,buy,'applied');step(mode,buy,'completed')
-                order=int(sql(f"SELECT order_id FROM service_effects WHERE source_kind='service_operation' AND source_ref='{buy}'"))
-                unpaid=edit(mode,'pending-plan-edit',order,'ADD_TIME',days=1)
-                unrelated_buy=issue(mode,'unrelated-plan-draft');fund(mode,unrelated_buy)
-                step(mode,unrelated_buy,'applied');step(mode,unrelated_buy,'completed')
-                unrelated_order=int(sql(f"SELECT order_id FROM service_effects WHERE source_kind='service_operation' AND source_ref='{unrelated_buy}'"))
-                faults.append('get_unavailable')
-                r=php(mode,'plan',order=order,plan=8);assert not r['success'],r
-                assert sql(f"SELECT COUNT(*) FROM service_plan_changes WHERE source_order_id={order} AND state<>'committed'")=='1'
-                f=finance()
-                assert php(mode,'fund',id=unpaid)=='request_invalidated' and finance()==f
-                cases.append(mode+'_unresolved_plan_intent_blocks_new_debit')
-                rejected_hash=mode+'-blocked-plan-draft'
-                assert php(mode,'checkout_insert',hash=rejected_hash,type='RENEW_ACCOUNT',price=100,order=order)==0
-                assert sql(f"SELECT COUNT(*) FROM pays WHERE hash_id='{rejected_hash}'")=='0'
-                # Lock the other account's actual unresolved journal using a
-                # separate connection. The old global FOR UPDATE scan could
-                # not create this unrelated draft within its short deadline.
-                journal=int(sql(f"SELECT id FROM service_plan_changes WHERE source_order_id={order} AND state<>'committed'"))
-                hold_php=('mysqli_report(MYSQLI_REPORT_ERROR|MYSQLI_REPORT_STRICT);'
-                    '$db=new mysqli("localhost","root","",$argv[2],0,$argv[1]);'
-                    '$db->begin_transaction();'
-                    '$r=$db->query("SELECT id FROM service_plan_changes WHERE id=".(int)$argv[3]." FOR UPDATE");'
-                    'if ($r->num_rows!==1) exit(3);echo "LOCKED\\n";flush();fgets(STDIN);$db->rollback();')
-                holder=subprocess.Popen(['php','-n','-d','extension=mysqlnd','-d','extension=mysqli','-r',hold_php,
-                    str(work/'mysql.sock'),DB,str(journal)],env=env,text=True,stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
-                try:
-                    assert holder.stdout.readline().strip()=='LOCKED'
-                    accepted=php(mode,'checkout_insert',hash=mode+'-unrelated-plan-draft',type='RENEW_ACCOUNT',
-                        price=100,order=unrelated_order,short_lock_timeout=True)
-                    assert accepted>0 and finance()==f
-                finally:
-                    _,err=holder.communicate('release\n',timeout=10)
-                    assert holder.returncode==0 and not err,err
-                cases.append(mode+'_current_draft_scoped_to_own_plan_journal')
+                plan_recovery_cases(mode)
+
                 # Actual externally funded BUY: one frozen reward for all
                 # ordinals, no reward on another late receipt or wallet BUY.
                 sql("UPDATE users SET refered_by=9002 WHERE userid=1001; INSERT INTO setting(type,value) VALUES ('INVITE_BANNER_AMOUNT','75')")
@@ -1988,6 +2086,8 @@ DELIMITER ;
                 r=php(mode,'plan',order=order,plan=8);assert r['success'],r
                 assert int(sql('SELECT COUNT(*) FROM fixture_markup'))==markups+1
                 assert sql('SELECT chat_id,message_id FROM fixture_markup ORDER BY id DESC LIMIT 1')=='9001\t222'
+                markup=json.loads(sql('SELECT markup FROM fixture_markup ORDER BY id DESC LIMIT 1'))
+                assert markup['inline_keyboard'][0][0]['callback_data']==f'attentionCase_{pid}',markup
                 assert sql(f"SELECT state FROM pays WHERE id={pid}")=='service_superseded'
                 assert php(mode,'attention_receipt',pay=pid) is True
                 assert sql(f"SELECT stage FROM service_operations WHERE id={prior}")=='cancelled'
@@ -2154,6 +2254,10 @@ DELIMITER ;
                 agent_referral_cases(mode)
 
                 assert not faults and not errors,(faults,errors)
+            if args.plan_recovery_only:
+                for mode in ('strict','off'):
+                    plan_recovery_cases(mode)
+                    assert not faults and not errors,(faults,errors)
             if args.referral_agent_only:
                 for mode in ('strict','off'):
                     agent_referral_cases(mode)

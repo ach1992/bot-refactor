@@ -709,8 +709,7 @@ function achbotPgMutationHistory(array $account): array {
         $prior=(array)$decoded;
         if (($prior['version']??null)!==1 ||
             ($prior['key']??null)!==$lastKey || !is_array($prior['consumed_keys']??null) ||
-            !array_is_list($prior['consumed_keys']) || count($prior['consumed_keys'])<1 ||
-            count($prior['consumed_keys'])>4096)
+            !array_is_list($prior['consumed_keys']) || count($prior['consumed_keys'])<1)
             throw new RuntimeException('pg_mutation_history_invalid');
         $seen=[];
         foreach ($prior['consumed_keys'] as $consumedKey) {
@@ -727,7 +726,7 @@ function achbotPgMutationHistory(array $account): array {
 function achbotPgMutationAdmission(array $account,string $key): array {
     if (!achbotPgValidMutationKey($key)) throw new RuntimeException('pg_mutation_source_invalid');
     $history=achbotPgMutationHistory($account);$consumed=$history['consumed_keys'];
-    if ($history['last_key']===$key || in_array($key,$consumed,true) || count($consumed)>=4096)
+    if ($history['last_key']===$key || in_array($key,$consumed,true))
         throw new RuntimeException('pg_account_mutation_requires_review');
     return $consumed;
 }
@@ -977,11 +976,9 @@ function achbotReassignLogicalServer(mysqli $db,int $orderId,int $targetId,int $
         $all=achbotPhysicalActiveOrders($db,$order,true);
         // A plan PUT with unknown local/native completion cannot be bypassed
         // through a transfer. Ignore completed audit receipts only.
-        $held=$db->prepare("SELECT id FROM service_plan_changes
-            WHERE lock_key=? AND state<>'committed' LIMIT 1 FOR UPDATE");
-        $held->bind_param('s',$lease);$held->execute();
-        $blocked=$held->get_result()->num_rows!==0;$held->close();
-        if ($blocked) throw new RuntimeException('physical_transfer_pending_plan_review');
+        achbotServiceRetirePreparedPlansLocked($db,$lease);
+        if (achbotServicePlanChangePendingLocked($db,$lease))
+            throw new RuntimeException('physical_transfer_pending_plan_review');
         // The local reassignment itself is the verified service-change commit.
         // Retire eligible original-service quotes in THIS SQL transaction,
         // never during a tentative preflight or outside the rollback boundary.
