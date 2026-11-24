@@ -793,6 +793,49 @@ This package does not activate the new payment/service callers or complete
 migration of historical pending claims. The existing-provider delayed PUT
 limitation remains as documented below.
 
+### Purchase referral and durable reward-report convergence
+
+Draft 029 extends existing 008 and 020 journals without changing historical
+rows or sealed packets. A completed original BUY qualifies only if its
+actual verified receipt atomically funded the original operation. Direct
+Wallet purchases, later receipts for already-funded or cancelled commands,
+unrelated top-ups, and zero-cost operations do not earn a purchase referral.
+The existing fixed amount and original inviter are captured at final local
+completion, once per entire purchase, not once per bulk ordinal. Preserve
+disabled decisions; a missing or replaced inviter row is contradictory
+identity evidence, never permission to pay a replacement account.
+
+The due reward worker locks the original claim, verifies completed service
+and actual receipt/debit journals, and applies one purchase_referral entry
+through the shared Wallet primitive. Credit, 008 finality and existing
+catalog reports to inviter, owner, authorized staff and report channel
+commit together. No Telegram or Native I/O occurs during this transaction.
+Failure before commit leaves the same claim pending with deferred due time;
+loss of commit acknowledgement does not repeat a credit. 020 v2 packets
+bind the real service ID and real receipt ID, while v1 historical validators
+remain in place. Report dispatch reuses the existing payment lease and sender;
+a lost/abandoned claim becomes UNKNOWN, never automatically resends, and
+cannot reopen the service or Wallet. Each report is separately claimed.
+This is not yet general report convergence: Wallet-only service reports,
+receipt-credit reports, automatic-renewal and low-wallet reports, confirmed
+Telegram rejection/redrive, and scheduler/actual route cutover are outstanding.
+
+Local disposable execution: 74/74 cases in strict and report-off MySQLi,
+450 loopback HTTP requests, 52 CREATE POSTs. Twelve added cases cover
+forward 008/020 migration with historical rows, original bulk completion
+and duplicate/late receipt, immutable policy/recipient, transactional
+rollback on report insert, concurrent workers and lost commit ACK, one
+report attempt and abandoned dispatch, direct Wallet exclusion, disabled
+reward, and replaced inviter. Legacy award journal 16/16 passes. Optional
+legacy referral route-order suite fails identically on exact baseline
+d508e3fe14a40b9a5f1932a8f47291028b9ed11b and this candidate: its manual
+route stderr allowlist rejects structured achbot.delivery diagnostics
+before later assertions. Do not claim that suite passed. Previous CI
+45355547656 failed the automatic-renewal fixture's diagnostic allowlist;
+the exact local-deletion-deferred reason is now admitted without changing
+rollback assertions, and automatic-renewal suite passes 77/77. No
+production funds, provider account or Telegram message touched.
+
 ### Verified Native limitation of existing APIs, not an accepted retry contract
 
 `python3 tools/test_wallet_first_native_write_fence.py --run-disposable`

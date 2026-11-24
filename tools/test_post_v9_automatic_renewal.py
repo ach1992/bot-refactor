@@ -280,8 +280,12 @@ def run(w,e,s):
     timeout_diagnostic=re.compile(
         rb'^achbot_subscription_delete_deferred order_id=[1-9][0-9]*'
         rb' server_id=2 stage=remote code=fixture_marzban_timeout class=RuntimeException$')
+    deletion_diagnostic=re.compile(
+        rb'^achbot_auto_renew_local_deletion_deferred order_id=[1-9][0-9]*'
+        rb' code=local_deletion_failed$')
     unexpected=[line for line in p.stderr.splitlines()
                 if line not in expected and not diagnostic.fullmatch(line)
+                and not deletion_diagnostic.fullmatch(line)
                 and not notification_diagnostic.fullmatch(line)
                 and not timeout_diagnostic.fullmatch(line)
                 and not known_native_diagnostic(line)]

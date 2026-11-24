@@ -178,23 +178,8 @@ if (!function_exists('giveReferralReward')) {
         }
         $started=false;
         try {
-            $q=$db->query("SELECT value FROM setting
-                WHERE type='INVITE_BANNER_AMOUNT'");
-            if (!$q) throw new RuntimeException('referral_policy_unavailable');
-            $rows=$q->fetch_all(MYSQLI_ASSOC);
-            $disabled=count($rows)===0 || (count($rows)===1 &&
-                (string)$rows[0]['value']==='0');
-            if (!$disabled && count($rows)!==1)
-                throw new RuntimeException('referral_policy_ambiguous');
-            $amount=0;
-            if (!$disabled) {
-                $raw=(string)$rows[0]['value'];
-                if (!preg_match('/^[1-9][0-9]*$/D',$raw) ||
-                    filter_var($raw,FILTER_VALIDATE_INT)===false ||
-                    (int)$raw>2147483647)
-                    throw new RuntimeException('referral_policy_invalid');
-                $amount=(int)$raw;
-            }
+            $amount=achbotPurchaseReferralPolicyAmount($db);
+            $disabled=$amount===0;
 
             // Durable no-replay claim FIRST, before any credit. All locks use
             // buyer -> payment -> inviter, compatible with existing owner-first
@@ -380,6 +365,21 @@ if (!function_exists('giveReferralReward')) {
     }
 }
 
+/** The accepted fixed reward is per original qualifying purchase, not per
+ * ordinal, and zero/missing configuration disables it. */
+function achbotPurchaseReferralPolicyAmount(mysqli $db,string $prefix='referral_policy'): int {
+    $q=$db->query("SELECT value FROM setting WHERE type='INVITE_BANNER_AMOUNT'");
+    if (!$q) throw new RuntimeException($prefix.'_unavailable');
+    $settings=$q->fetch_all(MYSQLI_ASSOC);$q->free();
+    if (!$settings || (count($settings)===1 && (string)$settings[0]['value']==='0')) return 0;
+    if (count($settings)!==1) throw new RuntimeException($prefix.'_ambiguous');
+    $raw=(string)$settings[0]['value'];
+    if (!preg_match('/^[1-9][0-9]*$/D',$raw) ||
+        filter_var($raw,FILTER_VALIDATE_INT)===false || (int)$raw>2147483647)
+        throw new RuntimeException($prefix.'_invalid');
+    return (int)$raw;
+}
+
 /**
  * #117: A manually reviewed standard BUY_SUB reserves the 008 referral
  * decision in the SAME COMMIT as its orders, payment and delivery manifest.
@@ -401,22 +401,8 @@ function achbotReferralReserveManualLocked(mysqli $db,array $pay): void {
     if (count($rows)!==1) throw new RuntimeException('manual_referral_buyer_missing');
     $inviter=(int)$rows[0]['refered_by'];
     if ($inviter<=0 || $inviter===$buyer) return;
-    $q=$db->query("SELECT value FROM setting WHERE type='INVITE_BANNER_AMOUNT'");
-    if (!$q) throw new RuntimeException('manual_referral_policy_unavailable');
-    $settings=$q->fetch_all(MYSQLI_ASSOC);
-    $disabled=count($settings)===0 ||
-        (count($settings)===1 && (string)$settings[0]['value']==='0');
-    if (!$disabled && count($settings)!==1)
-        throw new RuntimeException('manual_referral_policy_ambiguous');
-    $amount=0;
-    if (!$disabled) {
-        $raw=(string)$settings[0]['value'];
-        if (!preg_match('/^[1-9][0-9]*$/D',$raw) ||
-            filter_var($raw,FILTER_VALIDATE_INT)===false ||
-            (int)$raw>2147483647)
-            throw new RuntimeException('manual_referral_policy_invalid');
-        $amount=(int)$raw;
-    }
+    $amount=achbotPurchaseReferralPolicyAmount($db,'manual_referral_policy');
+    $disabled=$amount===0;
     $status=$disabled?'DISABLED':'NOT_ATTEMPTED';
     $q=$db->prepare('INSERT INTO referral_awards
         (pay_row_id,buyer_userid,inviter_userid,amount_toman,state)
@@ -504,35 +490,7 @@ function achbotReferralCompleteManualReserved(mysqli $db,int $payId,int $owner):
         $q->bind_param('iii',$before,$after,$payId);
         $ok=$q->execute() && $q->affected_rows===1;$q->close();
         if (!$ok) throw new RuntimeException('manual_referral_credit_unknown');
-        $buyerMsg=\achbotMessage('payment.referral_reward.give_referral_reward.buyer_msg.51caba68b5').
-            number_format($amount).
-            \achbotMessage('payment.referral_reward.give_referral_reward.text.b87aec1eb7').
-            number_format($before).
-            \achbotMessage('payment.referral_reward.give_referral_reward.text.c0780ce268').
-            number_format($after).
-            \achbotMessage('payment.discounts.apply_discount_to_pay.text.2cc98f7f7c');
-        $operatorMsg=\achbotMessage('payment.referral_reward.give_referral_reward.operator_msg.7c8cfd9d4f').
-            $payId.\achbotMessage('payment.referral_reward.give_referral_reward.text.23d0786d9b').
-            $buyer.\achbotMessage('payment.referral_reward.give_referral_reward.text.6aaba1c235').
-            $inviter.\achbotMessage('payment.referral_reward.give_referral_reward.text.534fd54cb9').
-            number_format($amount).\achbotMessage('payment.discounts.apply_discount_to_pay.text.2cc98f7f7c');
-        achbotFollowupInsertLocked($db,$pay,'referral_reward','referral_inviter',
-            'send',(string)$inviter,null,['text'=>$buyerMsg,'keys'=>null,'mode'=>null]);
-        $complete=false;$staff=achbotAdminRecipientCandidates($db,$owner,$complete);
-        if (!$complete) throw new RuntimeException('manual_referral_staff_targets_uncertain');
-        achbotFollowupInsertLocked($db,$pay,'referral_reward','referral_admin',
-            'send',(string)$owner,null,['text'=>$operatorMsg,'keys'=>null,'mode'=>'HTML']);
-        foreach ($staff as $id) {
-            $ok=true;
-            if (achbotAdminNotificationAllowed($db,$id,$owner,'general',$ok))
-                achbotFollowupInsertLocked($db,$pay,'referral_reward','referral_admin',
-                    'send',(string)(int)$id,null,['text'=>$operatorMsg,'keys'=>null,'mode'=>'HTML']);
-            if (!$ok) throw new RuntimeException('manual_referral_staff_permission_uncertain');
-        }
-        $channel=(string)($GLOBALS['botState']['rewardChannel']??'');
-        if ($channel!=='' && $channel!==(string)$owner)
-            achbotFollowupInsertLocked($db,$pay,'referral_reward','referral_channel',
-                'send',$channel,null,['text'=>$operatorMsg,'keys'=>null,'mode'=>'HTML']);
+        achbotPurchaseReferralStageReportsLocked($db,$pay,$buyer,$inviter,$amount,$before,$after,$owner);
         if (!$db->commit()) throw new RuntimeException('manual_referral_commit_unknown');
         $started=false;return 'acknowledged';
     } catch(Throwable $error) {
@@ -541,4 +499,45 @@ function achbotReferralCompleteManualReserved(mysqli $db,int $payId,int $owner):
             ' class='.get_class($error));
         return 'unknown';
     }
+}
+
+/** Stage exactly the existing referral notice and authorized report fanout
+ * with the credit. The optional service ID identifies the real completed
+ * source, while the displayed pay ID is the real funding receipt. */
+function achbotPurchaseReferralStageReportsLocked(mysqli $db,array $pay,int $buyer,int $inviter,
+    int $amount,int $before,int $after,int $owner,?int $serviceId=null): void {
+    $payId=(int)$pay['id'];
+    $buyerMsg=\achbotMessage('payment.referral_reward.give_referral_reward.buyer_msg.51caba68b5').
+        number_format($amount).
+        \achbotMessage('payment.referral_reward.give_referral_reward.text.b87aec1eb7').
+        number_format($before).
+        \achbotMessage('payment.referral_reward.give_referral_reward.text.c0780ce268').
+        number_format($after).
+        \achbotMessage('payment.discounts.apply_discount_to_pay.text.2cc98f7f7c');
+    $operatorMsg=\achbotMessage('payment.referral_reward.give_referral_reward.operator_msg.7c8cfd9d4f').
+        $payId.\achbotMessage('payment.referral_reward.give_referral_reward.text.23d0786d9b').
+        $buyer.\achbotMessage('payment.referral_reward.give_referral_reward.text.6aaba1c235').
+        $inviter.\achbotMessage('payment.referral_reward.give_referral_reward.text.534fd54cb9').
+        number_format($amount).\achbotMessage('payment.discounts.apply_discount_to_pay.text.2cc98f7f7c');
+    achbotFollowupInsertLocked($db,$pay,'referral_reward','referral_inviter',
+        'send',(string)$inviter,null,['text'=>$buyerMsg,'keys'=>null,'mode'=>null],$serviceId);
+    $complete=false;$staff=achbotAdminRecipientCandidates($db,$owner,$complete);
+    if (!$complete) throw new RuntimeException('manual_referral_staff_targets_uncertain');
+    achbotFollowupInsertLocked($db,$pay,'referral_reward','referral_admin',
+        'send',(string)$owner,null,['text'=>$operatorMsg,'keys'=>null,'mode'=>'HTML'],$serviceId);
+    $seen=[(string)$owner=>true];
+    foreach ($staff as $id) {
+        $ok=true;
+        $recipient=(string)(int)$id;
+        if (achbotAdminNotificationAllowed($db,$id,$owner,'general',$ok) && !isset($seen[$recipient])) {
+            achbotFollowupInsertLocked($db,$pay,'referral_reward','referral_admin',
+                'send',$recipient,null,['text'=>$operatorMsg,'keys'=>null,'mode'=>'HTML'],$serviceId);
+            $seen[$recipient]=true;
+        }
+        if (!$ok) throw new RuntimeException('manual_referral_staff_permission_uncertain');
+    }
+    $channel=(string)($GLOBALS['botState']['rewardChannel']??'');
+    if ($channel!=='' && !isset($seen[$channel]))
+        achbotFollowupInsertLocked($db,$pay,'referral_reward','referral_channel',
+            'send',$channel,null,['text'=>$operatorMsg,'keys'=>null,'mode'=>'HTML'],$serviceId);
 }
