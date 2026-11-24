@@ -228,3 +228,11 @@ retirement pins exactly three additional source-dead gift warnings; the
 wire contract records removal of the old direct customer send. Retained
 gift copy is unchanged. Live provider/Telegram and production acceptance
 remain separate gates.
+
+The current gateway-rule suite uses the consolidated schema. It distinguishes
+confirmed receipt funding from completed original service commands, including
+automatic renewals without a synthetic payment row. The actual Native service
+execution suite also checks the same renewal-history query before funding and
+after verified completion, counting only the original charged owner. The
+readiness gate additionally tests valid per-method exemptions and rejects extra
+PHP runtime entries and root index shadows without opening their contents.

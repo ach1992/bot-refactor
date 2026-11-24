@@ -316,9 +316,9 @@ def main():
             cases.append('new_category_'+category)
         sql(w,e,("INSERT INTO orders_list "
             "(userid,token,transid,fileid,server_id,inbound_id,remark,uuid,"
-            "protocol,expire_date,link,amount,status,date) "
+            "expire_date,link,amount,status,date) "
             "VALUES(1001,'synthetic','',7,2,0,'rules-active-order',"
-            "'rules-active-uuid','vless',2000000000,'[]',100,1,'synthetic')"))
+            "'rules-active-uuid',2000000000,'[]',100,1,'synthetic')"))
         assert allowed(policy('wallet',[blank('has_active_order')]))
         assert not allowed(policy('wallet',[blank('no_active_order')]))
         for shape,expiry,status,expected in [('unlimited',0,1,True),('disabled_unlimited',0,0,False),
@@ -406,10 +406,14 @@ def main():
         cases.append('or_valid_history_with_invalid_age_and_default_and_fail')
         sql(w,e,f"UPDATE users SET date='{now-140*86400}' WHERE userid=1001")
         s=policy('wallet',[blank('all')])
+        # The current schema prohibits duplicate IDs. Deliberately degrade
+        # only this isolated index for the corrupt-schema denial regression.
+        sql(w,e,"ALTER TABLE users DROP INDEX idx_users_userid_v1, ADD INDEX idx_users_userid_v1(userid)")
         sql(w,e,"INSERT INTO users(userid,name,username,refcode,wallet,date) "
             "VALUES (1001,'Duplicate','duplicate','0',0,'1700000000')")
         assert not allowed(s)
         sql(w,e,"DELETE FROM users WHERE username='duplicate'")
+        sql(w,e,"ALTER TABLE users DROP INDEX idx_users_userid_v1, ADD UNIQUE INDEX idx_users_userid_v1(userid)")
         cases.append('duplicate_customer_rejected')
         # Exact cutoff inclusive on both sides; +/- one second matters.
         for offset,older,recent in [(0,1,1),(-1,1,0),(1,0,1)]:

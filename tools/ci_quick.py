@@ -119,6 +119,7 @@ REQUIRED_CURRENT_CASES = {
         "historical_prepaid_claim_no_adoption_or_new_effect",
         "automatic_renewal_without_historical_table",
         "automatic_renewal_alias_single_charge_original_notice",
+        "gateway_history_counts_only_actual_completed_automatic_renewal",
         "alias_fence_and_lost_put_absolute_addons",
         "local_commit_failure_recovery",
         "reset_ack_with_new_traffic_no_repeat_on_put_outage",
@@ -137,6 +138,19 @@ REQUIRED_CURRENT_CASES = {
         "referral_excludes_agent_bulk",
         "referral_customer_purchase_agent_inviter_eligible",
         "referral_actual_funding_actor_common_audience",
+    ),
+    "current_payment_readiness": (
+        "fresh_empty_structure_ready_not_payment_configured",
+        "select_only_account_cannot_write",
+        "configured_current_methods_and_no_private_output_or_database_writes",
+        "explicit_exemptions_are_potential_not_actual_authorization",
+        "missing_check_nonunique_command_and_missing_foreign_key_block",
+        "untrusted_manifest_commit_or_private_member_rejected_before_db",
+        "tampered_and_symlinked_runtime_member_blocked",
+        "unexpected_executables_and_index_shadow_rejected_without_reading_contents",
+    ),
+    "gateway_rules": (
+        "current_service_history_funding_only_excluded_auto_renew_counted_once",
     ),
     "wallet_first_manual": (
         "bank_transfer_actual_issue_and_manual_approval",

@@ -163,6 +163,7 @@ try {
     elseif ($x['op']==='resolve') $r=achbotServiceResolve($db,$x['id'],(int)($x['actor']??9001),9001,$x['decision'],$x['token']);
     elseif ($x['op']==='service_attention') $r=achbotServiceAttentionCaseOpen($db,$x['id']);
     elseif ($x['op']==='auto') $r=achbotServiceAutoRenewAdmit($db,$x['order'],(int)($x['owner']??1001),$x['bot_state']??['renewAutoState'=>'on']);
+    elseif ($x['op']==='gateway_history') $r=achbotGatewayRuleHistoryCount($db,(int)$x['owner'],(string)$x['metric'],0,'older',false,time());
     elseif ($x['op']==='due') {
         $other=null;
         if (isset($x['block_service'])) {
@@ -1339,6 +1340,8 @@ DELIMITER ;
                 native(ao)['expire']=1800000000
                 n=len(writes());pays=sql("SELECT COUNT(*) FROM pays");attempts=sql("SELECT COUNT(*) FROM payment_attempts")
                 f0=finance()
+                histories={u:php(mode,'gateway_history',owner=u,metric='renew') for u in (1001,9002)}
+                assert all(isinstance(x,int) for x in histories.values()),histories
                 assert php(mode,'auto',order=ao,bot_state={'renewAutoState':'off'})['status']=='ineligible'
                 assert finance()==f0
                 # Both competing owners hold active local aliases.
@@ -1352,6 +1355,7 @@ DELIMITER ;
                 uid=1001 if owner_order==ao else 9002
                 assert php(mode,'auto',order=owner_order,owner=uid)=={'status':'already_claimed','id':winner}
                 assert len(writes())==n and mutation(winner).startswith('reset')
+                assert all(php(mode,'gateway_history',owner=u,metric='renew')==v for u,v in histories.items())
                 before=finance()
                 step(mode,winner,'progressed');step(mode,winner,'applied')
                 reqs=len(requests)
@@ -1369,6 +1373,8 @@ DELIMITER ;
                 cases.append(mode+'_auto_report_rollback_local_only_recovery')
                 assert sql("SELECT COUNT(*) FROM pays")==pays and sql("SELECT COUNT(*) FROM payment_attempts")==attempts
                 assert sql(f"SELECT COUNT(*) FROM wallet_entries WHERE source_kind='service_debit' AND source_ref='{winner}'")== '1'
+                assert all(php(mode,'gateway_history',owner=u,metric='renew')==v+int(u==uid) for u,v in histories.items())
+                cases.append(mode+'_gateway_history_counts_only_actual_completed_automatic_renewal')
                 loser=alias if owner_order==ao else ao
                 assert php(mode,'auto',order=loser,owner=9002 if loser==alias else 1001)['status']=='ineligible'
                 did=int(sql(f"SELECT id FROM payment_delivery_intents WHERE service_operation_id={winner}"))
