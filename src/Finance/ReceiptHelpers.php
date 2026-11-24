@@ -252,64 +252,6 @@ function achbotManualCryptoReceiptProviderByHash(mysqli $db, string $hashId): st
     }
 }
 
-/**
- * Historical evidence remains readable only through a verified ledger schema.
- * Missing or partially installed payment tables cannot authorize service changes.
- */
-function achbotManualLedgerMode(mysqli $db): string {
-    try {
-        $result=$db->query('SHOW TABLES');
-        if (!($result instanceof mysqli_result)) return 'invalid';
-        $tables=[];
-        while ($row=$result->fetch_row()) $tables[(string)$row[0]]=true;
-        $result->free();
-        $hasAttempt=isset($tables['payment_attempts']);
-        $hasTransaction=isset($tables['payment_transactions']);
-        if (!$hasAttempt || !$hasTransaction) return 'invalid';
-
-        $columns=[
-            'payment_attempts'=>'id,pay_row_id,provider,stage,checkout_url,order_hash,provider_reference,payment_id',
-            'payment_transactions'=>'id,attempt_id,provider,payment_id',
-        ];
-        foreach ($columns as $table=>$fields) {
-            $probe=$db->query("SELECT $fields FROM `$table` LIMIT 0");
-            if (!($probe instanceof mysqli_result)) return 'invalid';
-            $probe->free();
-        }
-        $requiredIndexes=[
-            'payment_attempts'=>[
-                'PRIMARY'=>['id'],
-                'uq_payment_attempt_pay_row'=>['pay_row_id'],
-                'uq_payment_attempt_order_hash'=>['order_hash'],
-                'uq_payment_attempt_ref'=>['provider','provider_reference'],
-                'uq_payment_attempt_payment'=>['provider','payment_id'],
-            ],
-            'payment_transactions'=>[
-                'PRIMARY'=>['id'],
-                'uq_payment_transaction_reference'=>['provider','payment_id'],
-            ],
-        ];
-        foreach ($requiredIndexes as $table=>$required) {
-            $indexes=$db->query("SHOW INDEX FROM `$table`");
-            if (!($indexes instanceof mysqli_result)) return 'invalid';
-            $actual=[];
-            while ($idx=$indexes->fetch_assoc()) {
-                if ((int)$idx['Non_unique']!==0) continue;
-                $actual[(string)$idx['Key_name']][(int)$idx['Seq_in_index']]=(string)$idx['Column_name'];
-            }
-            $indexes->free();
-            foreach ($required as $name=>$columns) {
-                if (!isset($actual[$name])) return 'invalid';
-                ksort($actual[$name]);
-                if (array_values($actual[$name])!==$columns) return 'invalid';
-            }
-        }
-        return 'current';
-    } catch (Throwable $ignored) {
-        return 'invalid';
-    }
-}
-
 function achbotManualClaim(mysqli $connection, array $payInfo, string $method, int $userId,
                            ?string $chosenNetwork = null,?string $expectedMode=null): bool {
     if (!in_array($method, ['bank_transfer', 'gift_card', 'manual_usdt','manual_trx'], true) ||
@@ -1134,125 +1076,14 @@ function achbotSharedAccountReferencesLocked(mysqli $db,int $orderId,int $server
     return $peers;
 }
 
-/**
- * Shared non-payable terminal classification, reused by plan/transfer and
- * scheduled deletion. Manual "declined" and invalidated RENEW_ACCOUNT drafts
- * can be final without payment, but ONLY if no issued payid and no provider
- * attempt exists. A current-schema attempt also owns all child transactions
- * through its restrictive FK; absence proves no child claim is present.
- * Retain the established behavior of other canceled/expired outcomes.
- */
-function achbotNonPayablePaymentSettledLocked(array $payment,?array $attempt): bool {
-    $state=(string)($payment['state']??'');
-    // A locked service change retires only previously unclaimed original
-    // invoices. These are terminal for the OLD service, even when issued
-    // externally. A later actual fulfillment stage must still block cleanup.
-    if ($state==='service_superseded')
-        return $attempt===null ||
-            in_array((string)($attempt['stage']??''),['pending','review'],true);
-    if (in_array($state,['canceled','cancelled','rejected','expired'],true))
-        return $attempt===null || in_array((string)($attempt['stage']??''),['expired','done'],true);
-    if ($state==='declined') return ($attempt===null && (string)($payment['payid']??'')==='') || ($attempt['stage']??null)==='done';
-    if ((string)($payment['payid']??'')!=='' || $attempt!==null) return false;
-    return $state==='mismatched_plan' &&
-        (string)($payment['type']??'')==='RENEW_ACCOUNT';
-}
-
-/** An unissued local quote has no payment or provider claim to serialize.
- * Receipts, issued gateways and uncertain work are NOT unclaimed quotes.
- * Keep this separate from terminal states so a physical plan change still
- * retires stale original-service invoices under its own committed journal.
- */
-function achbotUnclaimedServiceQuote(array $payment, ?array $attempt): bool {
-    return $attempt===null && (string)($payment['payid']??'')==='' &&
-        in_array((string)($payment['state']??''),['pending','send','low_wallet'],true);
-}
-
-/**
- * Lock only service-bound payments. Never combine an unindexed REGEXP with
- * FOR UPDATE: MariaDB may scan/lock the entire pays PRIMARY and deadlock
- * unrelated wallet edits (confirmed Hell #113346, InnoDB 2026-11-22).
- *
- * Current service invoices must have their canonical order_id. Retired
- * unbound add-on rows are never active ownership claims.
- * Every candidate is a CURRENT locking read, including its index gap: a
- * concurrent new invoice cannot silently appear behind the safety guard.
- */
-function achbotServicePaymentRowsLocked(mysqli $db,array $orderIds): array {
-    $ids=[];
-    foreach ($orderIds as $id) {
-        if (!is_int($id) || $id<=0) throw new RuntimeException('service_payment_order_invalid');
-        $ids[$id]=$id;
-    }
-    if (!$ids) return [];
-    ksort($ids,SORT_NUMERIC);
-    $list=implode(',',$ids);
-    $rows=[];
-    $query=$db->query("SELECT id,state,type,payid,user_id,order_id
-        FROM pays FORCE INDEX (idx_pays_order_ref_v1)
-        WHERE order_id IN ($list) ORDER BY order_id,id FOR UPDATE");
-    if (!($query instanceof mysqli_result))
-        throw new RuntimeException('service_payment_order_index_unavailable');
-    foreach ($query->fetch_all(MYSQLI_ASSOC) as $row) $rows[(int)$row['id']]=$row;
-    $query->free();
-    ksort($rows,SORT_NUMERIC);
-    return array_values($rows);
-}
-
 /** Pending claims serialize a shared account; completed references are not an ownership restriction. */
-function achbotSharedAccountWorkSettledLocked(mysqli $db,array $peers,bool $blockUnclaimedQuotes=false,bool $strictCompletion=false,
-    array $preverifiedUnclaimedQuoteIds=[]): bool {
-    $ids=[];
-    foreach ($peers as $row) {
+function achbotSharedAccountWorkSettledLocked(mysqli $db,array $peers): bool {
+    if (!$peers) return false;
+    foreach ($peers as $row)
         if ((int)($row['id']??0)<=0 || (int)($row['status']??0)!==1) return false;
-        $ids[]=(int)$row['id'];
-    }
-    if (!$ids || !achbotServiceSubjectWorkSettledLocked($db,$peers)) return false;
-    $mode=achbotManualLedgerMode($db);
-    if ($mode==='invalid') return false;
-    $payments=achbotServicePaymentRowsLocked($db,$ids);
-    foreach ($payments as $payment) {
-        $id=(int)$payment['id'];
-        $q=$db->prepare('SELECT stage FROM payment_attempts WHERE pay_row_id=? FOR UPDATE');
-        $q->bind_param('i',$id);$q->execute();$attempt=$q->get_result()->fetch_assoc();$q->close();
-        // Only the physical plan-change transaction may pass these exact
-        // still-unpaid, identity-checked, 003/014-checked invoice IDs. They
-        // remain in their ORIGINAL states until the verified local/native
-        // final commit; the pending plan journal fences callbacks meanwhile.
-        $id=(int)$payment['id'];
-        if (isset($preverifiedUnclaimedQuoteIds[$id])) {
-            if ((int)$preverifiedUnclaimedQuoteIds[$id]!==$id ||
-                !in_array($payment['state'],['pending','send','have_sent','low_wallet'],true) ||
-                ($attempt!==null && !in_array($attempt['stage'],['pending','review'],true)))
-                return false;
-            continue;
-        }
-        // This explicit state is created only by the locked physical
-        // service-change boundary, never by an unverified provider callback.
-        // The old invoice may receive late *funds evidence*, but not a new
-        // fulfillment of its previous order. Started Native/API operations
-        // are excluded from retirement and retain their original hold.
-        if ($payment['state']==='service_superseded') {
-            if (!achbotNonPayablePaymentSettledLocked($payment,$attempt)) return false;
-            continue;
-        }
-        // Even paid/approved evidence cannot release an account if a gateway
-        // attempt still claims fulfillment/review. Historical completed rows
-        // and normal automatic-renewal semantics remain unchanged.
-        if ($strictCompletion && $attempt!==null &&
-            !in_array($attempt['stage'],['done','expired'],true)) return false;
-        if (in_array($payment['state'],['approved','auto_cart_approved','paid_with_wallet'],true)) {
-            if ($strictCompletion && ($attempt['stage']??null)==='expired') return false;
-            continue;
-        }
-        if ($payment['state']==='paid' && ($attempt['stage']??null)==='done') continue;
-        if (achbotNonPayablePaymentSettledLocked($payment,$attempt)) continue;
-        // Only a claim that can affect this service keeps the fence. An
-        // unissued pending/send/low_wallet quote has never owned funds or
-        // provider evidence and cannot starve a later independent action.
-        if (!$blockUnclaimedQuotes && achbotUnclaimedServiceQuote($payment,$attempt)) continue;
-        return false;
-    }
+    if (!achbotServiceSubjectWorkSettledLocked($db,$peers)) return false;
+    // The service operation owns monetary work. Other actual in-flight
+    // Native effects (for example nonpaid creation) still own their claim.
     $result=$db->query("SELECT TABLE_TYPE,ENGINE FROM information_schema.TABLES
         WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='service_effects'");
     if (!($result instanceof mysqli_result)) return false;
@@ -1265,64 +1096,6 @@ function achbotSharedAccountWorkSettledLocked(mysqli $db,array $peers,bool $bloc
     $q->bind_param('s',$remark);$q->execute();$effects=$q->get_result()->fetch_all(MYSQLI_ASSOC);$q->close();
     foreach ($effects as $effect)
         if (achbotAutoRenewSameAccount($db,(int)$peers[0]['server_id'],(int)$effect['target_server_id'])) return false;
-    return true;
-}
-
-/** Compatibility entrypoint now fences actual work, not multiple registrations. */
-function achbotAutoRenewAccountExclusiveLocked(mysqli $db,int $orderId,int $serverId,string $remark,
-    ?array &$peers=null,bool $blockUnclaimedQuotes=false): bool {
-    $peers=achbotSharedAccountReferencesLocked($db,$orderId,$serverId,$remark);
-    return achbotSharedAccountWorkSettledLocked($db,$peers,$blockUnclaimedQuotes);
-}
-
-/**
- * Scheduled deletion must not race an unfinished local payment/effect.
- * Existing completed payment evidence remains untouched. Called only while the
- * exact order row and cycle are locked by the scheduled-deletion reservation.
- */
-function achbotScheduledDeletionEffectsSettled(mysqli $db,array $order): bool {
-    $mode=achbotManualLedgerMode($db);
-    if ($mode==='invalid') return false;
-    $id=(int)$order['id'];
-    $payments=achbotServicePaymentRowsLocked($db,[$id]);
-    foreach ($payments as $payment) {
-        // These states are committed only with the verified local effect.
-        // A manual receipt's attempt can legitimately remain stage=review.
-        if (in_array($payment['state'],['approved','paid_with_wallet'],true)) continue;
-        $payId=(int)$payment['id'];
-        $stmt=$db->prepare('SELECT stage FROM payment_attempts WHERE pay_row_id=? FOR UPDATE');
-        if (!$stmt) return false;
-        $stmt->bind_param('i',$payId);
-        if (!$stmt->execute()) {$stmt->close();return false;}
-        $attempt=$stmt->get_result()->fetch_assoc();$stmt->close();
-        // Unlike historical manual approvals, an auto-cart result needs
-        // matching completed provider-attempt evidence if an attempt exists.
-        // A contradictory unfinished attempt remains an actual deletion hold.
-        if ($payment['state']==='auto_cart_approved' &&
-            ($attempt===null || ($attempt['stage']??null)==='done'))continue;
-        if ($payment['state']==='paid' && ($attempt['stage']??null)==='done') continue;
-        if (achbotNonPayablePaymentSettledLocked($payment,$attempt) ||
-            achbotUnclaimedServiceQuote($payment,$attempt)) continue;
-        // An actual provider/receipt claim, processing or uncertain result
-        // retains the service until its effect has been reconciled.
-        return false;
-    }
-    $result=$db->query("SELECT TABLE_TYPE,ENGINE FROM information_schema.TABLES
-        WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='service_effects'");
-    if (!($result instanceof mysqli_result)) return false;
-    $table=$result->fetch_assoc();
-    if ($table===null || $result->num_rows!==1 || $table['TABLE_TYPE']!=='BASE TABLE' ||
-        strcasecmp((string)$table['ENGINE'],'InnoDB')!==0) return false;
-    $remark=(string)$order['remark'];
-    $stmt=$db->prepare("SELECT target_server_id FROM service_effects
-        WHERE remote_username=? AND state NOT IN ('local_recorded','cancelled') FOR UPDATE");
-    if (!$stmt) return false;
-    $stmt->bind_param('s',$remark);
-    if (!$stmt->execute()) {$stmt->close();return false;}
-    $effects=$stmt->get_result()->fetch_all(MYSQLI_ASSOC);$stmt->close();
-    foreach ($effects as $effect)
-        if (achbotAutoRenewSameAccount($db,(int)$order['server_id'],(int)$effect['target_server_id']))
-            return false;
     return true;
 }
 
@@ -1341,12 +1114,12 @@ function achbotAutoRenewPrepareDeletion(mysqli $db, int $orderId,?array $expecte
             ($expected!==null && ((int)$order['expire_date']!==(int)$expected['expire_date'] ||
                 (int)$order['notif']!==(int)$expected['notif'] ||
                 (int)$order['server_id']!==(int)$expected['server_id'] ||
-                $order['remark']!==$expected['remark'])) ||
-            !achbotAutoRenewAccountExclusiveLocked($db,$orderId,
-            (int)$order['server_id'],(string)$order['remark'],$peerOrders)) {
+                $order['remark']!==$expected['remark']))) {
             $db->rollback(); return false;
         }
-        if ($expected!==null && !achbotScheduledDeletionEffectsSettled($db,$order)) {
+        $peerOrders=achbotSharedAccountReferencesLocked($db,$orderId,
+            (int)$order['server_id'],(string)$order['remark']);
+        if (!achbotSharedAccountWorkSettledLocked($db,$peerOrders)) {
             $db->rollback();return false;
         }
         // For PasarGuard, atomically persist the original Native claim with

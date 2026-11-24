@@ -97,6 +97,7 @@ REQUIRED_CURRENT_CASES = {
         "actual_custom_draft_and_review_completion_truth",
         "receipt_projection_original_funding_service_and_delivery",
         "receipt_projection_resolved_original_never_reopened",
+        "physical_change_retires_current_draft_not_historical_receipt",
         "pre_dispatch_native_target_equality_not_our_effect",
         "actual_renew_checkout_draft",
         "actual_scoped_day_manual_checkout_draft",

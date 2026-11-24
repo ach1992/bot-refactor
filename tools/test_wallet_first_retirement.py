@@ -39,7 +39,9 @@ check(!achbotProviderRegistryEntryValid("pg' OR 1=1",$registry['pasarguard']),'i
 try {achbotCheckoutRequireSchema($db);$reason='accepted';}
 catch(Throwable $e){$reason=$e->getMessage();}
 check($reason===$argv[5],'schema_'.$reason);
-check(achbotManualLedgerMode($db)===($argv[6]==='missing'?'invalid':'current'),'physical_ledger_fail_closed');
+try {achbotServiceOperationsPresent($db);$ownership=true;}
+catch(Throwable $e){$ownership=false;}
+check($ownership===($argv[6]!=='missing'),'physical_current_ownership_schema_gate');
 if ($reason!=='accepted') {
     try {achbotCheckoutWallet($db,'never-issue',1001,'standard',[]);$reason='accepted';}
     catch(Throwable $e){$reason=$e->getMessage();}

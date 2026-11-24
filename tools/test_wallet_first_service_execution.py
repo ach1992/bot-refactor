@@ -1933,6 +1933,26 @@ DELIMITER ;
                 op=r['operation']
                 for stage in ('progressed','progressed','applied','completed'):step(mode,op,stage)
                 cases.append(mode+'_actual_renew_checkout_draft')
+                # A submitted current receipt is a financial claim, not
+                # physical ownership. Supersede its original unpaid quote
+                # on a verified plan change; preserve and credit late proof.
+                h,pid=insert_checkout('plan-unpaid-receipt','RENEW_ACCOUNT',order=order)
+                assert php(mode,'checkout_manual',pay=pid,submit=True)
+                prior=int(sql(f"SELECT checkout_operation_id FROM pays WHERE id={pid}"))
+                sql(f"INSERT INTO pays(hash_id,user_id,type,price,request_date,state,server_id,plan_id,order_id) VALUES ('{mode}-historical-bound',1001,'RENEW_ACCOUNT',100,UNIX_TIMESTAMP(),'processing',2,7,{order})")
+                before=finance()
+                r=php(mode,'plan',order=order,plan=8);assert r['success'],r
+                assert sql(f"SELECT state FROM pays WHERE id={pid}")=='service_superseded'
+                assert sql(f"SELECT stage FROM service_operations WHERE id={prior}")=='cancelled'
+                assert sql(f"SELECT state FROM pays WHERE hash_id='{mode}-historical-bound'")=='processing'
+                r=php(mode,'plan',order=order,plan=7);assert r['success'],r
+                assert finance()==before
+                r=php(mode,'checkout_approve',hash=h,mode='renew')
+                assert r['funding']=='request_invalidated',r
+                assert sql(f"SELECT stage FROM service_operations WHERE id={prior}")=='cancelled'
+                assert sql(f"SELECT COUNT(*) FROM wallet_entries WHERE source_kind='service_debit' AND source_ref='{prior}'")=='0'
+                assert php(mode,'checkout_approve',hash=h,mode='renew')['credit']['replayed']
+                cases.append(mode+'_physical_change_retires_current_draft_not_historical_receipt')
                 for kind,table in [('day','increase_day'),('volume','increase_plan')]:
                     sql(f"INSERT INTO {table}(volume,price) VALUES (97,100) ON DUPLICATE KEY UPDATE price=100")
                     offer=int(sql(f"SELECT id FROM {table} WHERE volume=97 AND server_id IS NULL"))

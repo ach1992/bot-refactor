@@ -293,111 +293,6 @@ function achbotPhysicalPlanResult(bool $ok,string $reason='',int $count=0): arra
     return ['success'=>$ok,'reason'=>$reason,'shared_count'=>$count];
 }
 
-/**
- * Retire only unclaimed, service-bound quotes inside an already-open
- * administrator/customer plan-change or transfer transaction.
- *
- * Durable pays/003 identity and original signed/provider/manual evidence are
- * never deleted, rewritten or marked paid/refunded. All old callbacks must
- * fail their normal state CAS after the same transaction changes the service
- * (transfer) or commits its nonreplayable Native intent (plan selection).
- * An in-flight claim/native effect is NOT an old quote: it keeps the hold.
- */
-function achbotPhysicalRetireOpenPaymentsLocked(mysqli $db,array $rows,
-    bool $commitRetirement=false): array {
-    require_once __DIR__.'/../Finance/ReceiptHelpers.php';
-    $ids=[];$owners=[];
-    foreach ($rows as $row) {
-        $id=(int)($row['id']??0);
-        $user=(int)($row['userid']??0);
-        if (!is_array($row) || $id<=0 || $user<=0 ||
-            (int)($row['status']??0)!==1 ||
-            (isset($owners[$id]) && $owners[$id]!==$user))
-            throw new RuntimeException('physical_payment_subject_invalid');
-        $ids[]=$id;$owners[$id]=$user;
-    }
-    $ids=array_values(array_unique($ids));
-    if (!$ids || count($ids)>10000)
-        throw new RuntimeException('physical_payment_subject_invalid');
-    $mode=achbotManualLedgerMode($db);
-    if ($mode!=='current')
-        throw new RuntimeException('physical_payment_ledger_unavailable');
-    require_once __DIR__.'/../Finance/PaymentEvidence.php';
-    if (!achbotPaymentEvidenceSchemaReady($db))
-        throw new RuntimeException('physical_payment_evidence_unavailable');
-    // Current invoices bind the exact order_id before they can be issued.
-    $payments=achbotServicePaymentRowsLocked($db,$ids);
-    $retired=[];
-    foreach ($payments as $payment) {
-        $state=(string)$payment['state'];
-        // Insufficient-wallet invoices are also unfinished original-service
-        // quotes: a later wallet recharge cannot revive old-plan pricing.
-        if (!in_array($state,['pending','send','have_sent','low_wallet'],true)) continue;
-        if ($state==='low_wallet' && (string)($payment['payid']??'')!=='')
-            throw new RuntimeException('physical_pending_financial_effect');
-        $type=(string)$payment['type'];
-        $target=0;
-        if ($type==='RENEW_ACCOUNT') $target=(int)$payment['order_id'];
-        elseif (preg_match('/^INCREASE_(?:DAY|VOLUME)_([1-9][0-9]*)_([1-9][0-9]*)$/D',$type,$m)===1) {
-            $target=(int)$m[1];
-            if ((int)$payment['order_id']!==$target)
-                throw new RuntimeException('physical_payment_subject_invalid');
-        } else continue; // Unrelated payment type never silently retired.
-        if (!isset($owners[$target]) ||
-            (int)$payment['user_id']!==$owners[$target])
-            throw new RuntimeException('physical_payment_subject_invalid');
-        // Lock the exact attempt after its pays parent, in the same order
-        // as authenticated provider/webhook/manual/finance claims.
-        $payId=(int)$payment['id'];
-        $fields='id,stage,provider_status,evidence_claim_token,wallet_credit_entry_id';
-        $q=$db->prepare("SELECT $fields FROM payment_attempts
-            WHERE pay_row_id=? FOR UPDATE");
-        $q->bind_param('i',$payId);$q->execute();
-        $attempt=$q->get_result()->fetch_assoc();$q->close();
-        if ($attempt) {
-            $stage=(string)$attempt['stage'];
-            $status=(string)($attempt['provider_status']??'');
-            // The original claim may already be inside Native/financial
-            // execution even if the parent payment was not finalized.
-            // Fail closed for any unrecognized state/progress marker.
-            $readOnlyStatuses=['','waiting','confirming','partially_paid',
-                'pending','finished','failed','expired','receipt_started'];
-            $reviewOnlyStatuses=['verification_uncertain','multiple_payments',
-                'identity_mismatch','amount_mismatch','receipt_started'];
-            if (($stage==='pending' && !in_array($status,$readOnlyStatuses,true)) ||
-                ($stage==='review' && !in_array($status,$reviewOnlyStatuses,true)) ||
-                !in_array($stage,['pending','review'],true))
-                throw new RuntimeException('physical_pending_financial_effect');
-            if ($attempt['evidence_claim_token']!==null ||
-                $attempt['wallet_credit_entry_id']!==null)
-                throw new RuntimeException('physical_pending_financial_effect');
-            $aid=(int)$attempt['id'];
-            $q=$db->prepare('SELECT id FROM payment_transactions
-                WHERE attempt_id=? AND evidence_operation IS NOT NULL
-                LIMIT 1 FOR UPDATE');
-            $q->bind_param('i',$aid);$q->execute();
-            $operation=$q->get_result()->num_rows>0;$q->close();
-            if ($operation)
-                throw new RuntimeException('physical_pending_financial_effect');
-        }
-        // An issued merchant payid or submitted receipt is *not* a refund.
-        // Keep both immutable, only end this original product fulfillment.
-        $id=(int)$payment['id'];
-        $retired[$id]=$id;
-        if ($commitRetirement) {
-            // Only the VERIFIED native-change finalization may end the old
-            // invoice. The change + original journal commit in the SAME txn.
-            $q=$db->prepare("UPDATE pays SET state='service_superseded',updated_at=NOW()
-                WHERE id=? AND state=?");
-            $q->bind_param('is',$id,$state);$q->execute();
-            $changed=$q->affected_rows;$q->close();
-            if ($changed!==1)
-                throw new RuntimeException('physical_payment_retirement_unconfirmed');
-        }
-    }
-    return $retired;
-}
-
 /** After a committed REAL service change, remove stale manual receipt
  * approval/rejection buttons from their original administrator messages.
  * This is display cleanup ONLY: state='service_superseded' has already
@@ -418,7 +313,7 @@ function achbotPhysicalHideRetiredReceiptActions(mysqli $db,array $rows): void {
         $userIds=implode(',',array_unique(array_values($owners)));
         $q=$db->prepare("SELECT id,type,order_id,user_id,chat_id,message_id,
             admins_messages FROM pays WHERE state='service_superseded'
-            AND user_id IN ($userIds)
+            AND checkout_draft_context IS NOT NULL AND user_id IN ($userIds)
             AND order_id IN ($list) ORDER BY id");
         $q->execute();$pays=$q->get_result()->fetch_all(MYSQLI_ASSOC);$q->close();
         $sent=[];$ownerAdmin=(int)($GLOBALS['admin']??0);
@@ -470,14 +365,10 @@ function achbotPhysicalPlanChangesLocalPlan(array $rows,int $planId): bool {
 function achbotPhysicalNoPendingPayments(mysqli $db,array $rows,
     bool $retireOpen=false,bool $nativeVerifiedFinal=false): void {
     require_once __DIR__.'/../Finance/ReceiptHelpers.php';
-    // An unclaimed old invoice is safe to FENCE (by the durable plan journal)
-    // before Native GET/PUT, but NOT to terminally retire. Probe its original
-    // payment/003/014 evidence under the same locks without changing pays.
-    // Terminal retirement occurs only during the verified local plan commit.
-    $eligible=$retireOpen?
-        achbotPhysicalRetireOpenPaymentsLocked($db,$rows,$nativeVerifiedFinal):[];
-    if (!achbotSharedAccountWorkSettledLocked($db,$rows,$retireOpen,true,
-        $nativeVerifiedFinal?[]:$eligible))
+    // Only an actual in-flight service or Native effect owns this account.
+    // A verified change retires current unpaid service drafts through the
+    // same ownership boundary; receipt verification remains independent.
+    if (!achbotSharedAccountWorkSettledLocked($db,$rows))
         throw new RuntimeException('physical_pending_financial_effect');
     if ($retireOpen && $nativeVerifiedFinal && !achbotServiceSubjectWorkSettledLocked($db,$rows,true))
         throw new RuntimeException('physical_pending_financial_effect');

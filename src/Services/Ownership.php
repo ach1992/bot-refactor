@@ -44,6 +44,27 @@ function achbotServiceOriginalBuyLocked(mysqli $db,array $effect): array {
     return $op;
 }
 
+/** Current draft references are invalidated by a verified subject change.
+ * Historical rows with no sealed draft are accounting evidence only.
+ * The canonical order index scopes locking to this subject and its gap. */
+function achbotServiceDraftRowsLocked(mysqli $db,array $orderIds): array {
+    $ids=[];
+    foreach ($orderIds as $id) {
+        if (!is_int($id) || $id<=0) throw new RuntimeException('service_draft_order_invalid');
+        $ids[$id]=$id;
+    }
+    if (!$ids) return [];
+    ksort($ids,SORT_NUMERIC);
+    $list=implode(',',$ids);
+    $s=achbotProviderStatement($db,"SELECT id,state,type,user_id,order_id,checkout_draft_context
+        FROM pays FORCE INDEX (idx_pays_order_ref_v1)
+        WHERE order_id IN ($list) AND checkout_draft_context IS NOT NULL
+            AND state IN ('pending','send','have_sent','low_wallet')
+        ORDER BY order_id,id FOR UPDATE");
+    $rows=$s->get_result()->fetch_all(MYSQLI_ASSOC);$s->close();
+    return $rows;
+}
+
 /** Call while holding ALL current order references. Funding also locks its
  * original order before changing awaiting_funds -> funded. The indexed
  * current read and those row locks serialize the two decisions without a
@@ -51,11 +72,11 @@ function achbotServiceOriginalBuyLocked(mysqli $db,array $effect): array {
  * holds the subject; unpaid quotes are retired in the real change commit. */
 function achbotServiceSubjectWorkSettledLocked(mysqli $db,array $peers,bool $retire=false): bool {
     achbotServiceOperationsPresent($db);
-    $ids=[];$anchors=[];
+    $ids=[];$anchors=[];$owners=[];
     foreach ($peers as $o) {
         $id=(int)($o['id']??0);
         if ($id<=0) throw new RuntimeException('service_ownership_order_invalid');
-        $ids[$id]=$id;
+        $ids[$id]=$id;$owners[$id]=(int)($o['userid']??0);
         $anchor=(int)($o['provider_effect_id']??0);
         if ($anchor>0) $anchors[$anchor]=$anchor;
     }
@@ -80,6 +101,22 @@ function achbotServiceSubjectWorkSettledLocked(mysqli $db,array $peers,bool $ret
             WHERE subject_order_id IN ($list) AND stage='awaiting_funds'
                 AND debit_entry_id IS NULL AND reserved_count=0");
         $s->close();
+        // The financial receipt and its proof remain intact. Invalidating an
+        // unpaid service quote never rejects money or prevents late credit.
+        require_once __DIR__.'/../Finance/PaymentLifecycle.php';
+        foreach (achbotServiceDraftRowsLocked($db,array_values($ids)) as $draft) {
+            if (!achbotPayUxCurrentDraft($draft)) continue;
+            $order=(int)$draft['order_id'];$type=(string)$draft['type'];
+            if ($type!=='RENEW_ACCOUNT' &&
+                !preg_match('/^INCREASE_(?:DAY|VOLUME)_([1-9][0-9]*)_[1-9][0-9]*$/D',$type,$m)) continue;
+            if (($type!=='RENEW_ACCOUNT' && (int)$m[1]!==$order) ||
+                ($owners[$order]??0)<=0 || $owners[$order]!==(int)$draft['user_id'])
+                throw new RuntimeException('service_draft_subject_invalid');
+            $s=achbotProviderStatement($db,"UPDATE pays SET state='service_superseded',updated_at=NOW()
+                WHERE id=? AND state=?",'is',[(int)$draft['id'],$draft['state']]);
+            $changed=$s->affected_rows;$s->close();
+            if ($changed!==1) throw new RuntimeException('service_draft_retirement_unconfirmed');
+        }
     }
     return true;
 }

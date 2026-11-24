@@ -30,7 +30,7 @@ def current_delete_sandbox():
     with api.sandbox() as fixture:
         sql=fixture[0]
         for name in ('023_scoped_payment_lock_indexes.sql','024_wallet_entries.sql',
-                     '025_wallet_receipt_credit.sql','026_service_operations.sql','035_service_resolution.sql'):
+                     '025_wallet_receipt_credit.sql','026_service_operations.sql','033_checkout_commands.sql','035_service_resolution.sql'):
             sql((ROOT / 'migrations/post-v9' / name).read_text())
         assert 'idx_pays_order_ref_v1' in sql('SHOW INDEX FROM pays')
         assert 'idx_pays_type_ref_v1' in sql('SHOW INDEX FROM pays')

@@ -108,6 +108,17 @@ The common service attention surface is keyed by service operation, including sc
 
 Resolution, refund entry, capacity release, physical ownership release and reports are committed together. No archive action or state remains for receipts or services. Unverified receipts use explicit approval/rejection or evidence recheck; unresolved funded operations remain visible until an actual resolution. Subsequent verified receipts may credit the wallet but must not resurrect a resolved operation. Delivery and report recovery reuses immutable payloads, with a fresh actor-bound confirmation for an unknown send.
 
+Physical lifecycle changes (plan, transfer and deletion) use the same
+service ownership decision. Funded or unfinished Native work holds the
+account; an unpaid or independently verified receipt does not own Native.
+A verified subject change retires only current awaiting-funds operations and
+sealed current checkout drafts bound to that exact subject. Preserve
+historical unsealed rows, receipt proof and ledger history unchanged.
+Subsequent authentic proof credits the original Wallet without reviving
+the retired service. The canonical indexed subject locking read remains
+scoped to the affected orders; no old pay/attempt stage classifier or
+second scheduled-deletion ownership engine is required.
+
 Payment evidence, service-effect table and shared plan journal are mandatory current storage; both receipt archive columns are retired. Missing schema cannot authorize a mutation. Only current plan intent format 2 is executable; earlier plans are not replayed.
 
 035–038 are schema construction evidence only. Fresh installations use the consolidated empty current schema, not a migration chain. Preserve real account provenance and financial history during the separately authorized manual transfer; do not import obsolete interaction state as runnable work.
