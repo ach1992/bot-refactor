@@ -77,7 +77,7 @@ function achbotCheckoutSealDraftLocked(mysqli $db,int $id,array $pay,array $disp
     if ($standard || $pay['type']==='RENEW_ACCOUNT') {
         $plan=achbotProviderRow($db,'SELECT days,volume FROM server_plans WHERE id=? FOR UPDATE','i',[(int)$pay['plan_id']]);
         $server=achbotProviderRow($db,'SELECT remark FROM server_info WHERE id=? FOR UPDATE','i',[(int)$pay['server_id']]);
-        $days=achbotWholeServiceUnits($display['days']??null,3650);
+        $days=achbotWholeServiceUnits($display['days']??null,achbotServiceDaysMax());
         $volume=achbotWholeServiceUnits($display['volume']??null,achbotServiceVolumeMax(),!$standard);
         if (!$plan || !$server || $days===null || $volume===null ||
             (float)$plan['days']!==(float)$days || (float)$plan['volume']!==(float)$volume)
@@ -117,7 +117,7 @@ function achbotCheckoutDraftRequestLocked(mysqli $db,array $pay,array $states): 
         $q['kind']='BUY';$q['variant']=$custom?'custom':'standard';
         $q['quantity']=max(1,(int)$pay['agent_count']);
         $context=$custom?null:achbotCheckoutReadDraftContext($pay);
-        $q['days']=achbotWholeServiceUnits($custom?$pay['day']:$context['days'],3650);
+        $q['days']=achbotWholeServiceUnits($custom?$pay['day']:$context['days'],achbotServiceDaysMax());
         $q['volume']=achbotWholeServiceUnits($custom?$pay['volume']:$context['volume'],achbotServiceVolumeMax());
         $mode=$custom?'manual':$context['naming_mode'];
         if ($custom) {$q['remark']=(string)$pay['description'];$q['explicit_name']=true;}
@@ -155,7 +155,7 @@ function achbotCheckoutDraftRequestLocked(mysqli $db,array $pay,array $states): 
             if (!$p) throw new DomainException('checkout_plan_changed');
             $q['kind']='RENEW';
             $context=achbotCheckoutReadDraftContext($pay);
-            $q['days']=achbotWholeServiceUnits($context['days'],3650);
+            $q['days']=achbotWholeServiceUnits($context['days'],achbotServiceDaysMax());
             $q['volume']=achbotWholeServiceUnits($context['volume'],achbotServiceVolumeMax(),true);
         }
     }

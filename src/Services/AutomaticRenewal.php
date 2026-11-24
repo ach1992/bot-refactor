@@ -12,16 +12,6 @@ function achbotServiceAutoRenewOrderEligible(?array $o,int $owner): bool {
         (int)$o['inbound_id']===0 && (int)$o['fileid']>0 &&
         (int)$o['notif']!==0 && $o['autoRenew']==='on' && $o['remark']!=='';
 }
-function achbotServiceAutoRenewUnits($value): ?int {
-    // Historical plan columns are FLOAT. Accept their exact integral values;
-    // do not silently truncate a malformed/nonintegral entitlement.
-    if (is_float($value)) {
-        if (!is_finite($value) || $value<0 || $value>achbotServiceVolumeMax() ||
-            floor($value)!==$value) return null;
-        return (int)$value;
-    }
-    return achbotServiceNonnegative($value);
-}
 function achbotServiceAutoRenewAdmit(mysqli $db,int $orderId,int $userId,array $botState): array {
     if (($botState['renewAutoState']??'off')!=='on' || $orderId<=0 || $userId<=0)
         return ['status'=>'ineligible'];
@@ -77,11 +67,10 @@ function achbotServiceAutoRenewAdmit(mysqli $db,int $orderId,int $userId,array $
         $planId=(int)$o['fileid'];
         $p=achbotProviderRow($db,'SELECT * FROM server_plans WHERE id=? FOR UPDATE','i',[$planId]);
         $amount=achbotServiceNonnegative($p['price']??null);
-        $days=achbotServiceAutoRenewUnits($p['days']??null);
-        $volume=achbotServiceAutoRenewUnits($p['volume']??null);
+        $days=achbotWholeServiceUnits($p['days']??null,achbotServiceDaysMax());
+        $volume=achbotWholeServiceUnits($p['volume']??null,achbotServiceVolumeMax(),true);
         if (!$p || (int)$p['inbound_id']!==0 || $amount===null || $amount<=0 || $amount>2147483647 ||
-            $days===null || $days<=0 || $days>3650 || time()>2147483647-$days*86400 ||
-            $volume===null || $volume>achbotServiceVolumeMax()) {
+            $days===null || $volume===null) {
             $db->rollback();return ['status'=>'invalid_plan'];
         }
         $u=achbotProviderRow($db,'SELECT is_agent,discount_percent FROM users WHERE id=?','i',[$owner['id']]);

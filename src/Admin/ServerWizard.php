@@ -115,7 +115,7 @@ function achbotServerWizardAdvance(mysqli $db,array &$d,string $action,string $i
         }
         if ($action!=='text') throw new RuntimeException('management_input');
         $input=trim($input);
-        if ($stage==='capacity') $v['capacity']=achbotManagementInteger($input,1,100000000);
+        if ($stage==='capacity') $v['capacity']=achbotManagementInteger($input);
         elseif ($stage==='url') {
             $v['url']=achbotManagementUrl($input,1000);unset($v['panel_id'],$v['api_key'],$v['password'],$v['username'],$v['panel_fingerprint'],$d['choices'],$d['page']);
         } elseif ($stage==='remark') {

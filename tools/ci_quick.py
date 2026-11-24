@@ -89,6 +89,8 @@ OTHER_TESTS = (
 # not merely removed from the roster. See docs/post-v9/CI-VALIDATION.md.
 REQUIRED_CURRENT_CASES = {
     "wallet_first_service_execution": (
+        "missing_current_report_attempt_no_legacy_fallback",
+        "actual_long_checkout_and_auto_renew_storage_bound",
         "current_schema_source_execution_without_migrations",
         "five_real_wallet_callbacks_owner_schema_and_replay_fences",
         "actual_low_wallet_callback_switch_to_manual",
@@ -176,6 +178,8 @@ REQUIRED_CURRENT_CASES = {
         "actual_admission_lost_creation_original_secret_ipn_recovery_and_poll_once",
     ),
     "wallet_first_funding": (
+        "duration_storage_boundary_before_wallet_debit",
+        "custom_duration_overflow_refused",
         "registered_native_gateway_same_engines_once",
         "registered_gateway_foreign_evidence_rejected_by_core",
         "registered_new_manual_method_same_credit_once",

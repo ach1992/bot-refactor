@@ -22,6 +22,11 @@ function check(bool $pass,string $name): void {
     if (!$pass) throw new RuntimeException($name);
     $GLOBALS['checks'][]=$name;
 }
+check(achbotCatalogServiceUnits('1000001',achbotServiceVolumeMax())===1000001,'catalog_no_arbitrary_million_cap');
+check(achbotCatalogServiceUnits('16777217',achbotServiceVolumeMax())===null,'catalog_float_rounding_rejected');
+check(achbotCatalogServiceUnits('16777218',achbotServiceVolumeMax())===16777218,'catalog_exact_large_whole_units');
+check(achbotWholeServiceUnits('1.5',achbotServiceDaysMax())===null,'fractional_day_rejected');
+check(achbotWholeServiceUnits('1e1',achbotServiceDaysMax())===10,'exact_numeric_input_normalized');
 $registry=achbotProviderRegistry();
 check(achbotProviderRegistryValid($registry) && array_keys($registry)===['pasarguard'],'single_current_provider');
 check(!achbotSupportsProviderType('marzban') && !achbotSupportsProviderType('xui'),'retired_and_unknown_provider_denied');

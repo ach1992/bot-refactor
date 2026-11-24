@@ -121,7 +121,7 @@ function achbotAddonCatalog(mysqli $db,string $kind,array $context,?array $rows=
     }
     $found=[];$verifiedPgGroups=null;
     foreach($rows as $r) {
-        $units=achbotWholeServiceUnits($r['volume'],$kind==='day'?36500:achbotServiceVolumeMax());
+        $units=achbotWholeServiceUnits($r['volume'],$kind==='day'?achbotServiceDaysMax():achbotServiceVolumeMax());
         if ($units===null || !is_numeric($r['price']) || (int)$r['price']<0 ||
             (int)$r['price']>2147483647) continue;
         $scope=achbotAddonScopeRow($r);
@@ -247,7 +247,7 @@ function achbotAddonPayLocal(mysqli $db,array $pay,array $order): bool {
         return false;
     $row=$db->prepare("SELECT * FROM ".achbotAddonTable($kind)." WHERE id=?");
     $row->bind_param('i',$offerId);$row->execute();$offer=$row->get_result()->fetch_assoc();$row->close();
-    if (!$offer || achbotWholeServiceUnits($offer['volume'],$kind==='day'?36500:achbotServiceVolumeMax())!==$units)
+    if (!$offer || achbotWholeServiceUnits($offer['volume'],$kind==='day'?achbotServiceDaysMax(0):achbotServiceVolumeMax())!==$units)
         return false;
     $scope=achbotAddonScopeRow($offer);
     return hash_equals($scope['scope_hash'],$s['scope_hash']);

@@ -230,7 +230,7 @@ if(preg_match('/^changeDayPlanDay([1-9][0-9]*)_[a-f0-9]{20}$/D',$data,$match) an
     exit;
 }
 if($achbotIntervalMessage && preg_match('/^changeDayPlanDay([1-9][0-9]*)_[a-f0-9]{20}$/D',$userInfo['step'],$match) && ($from_id == $admin || $userInfo['isAdmin'] == true) and $text != \achbotMessage('legacy_buttons.cancel')) {
-    $days=achbotWholeServiceUnits($text,36500);
+    $days=achbotWholeServiceUnits($text,achbotServiceDaysMax());
     if ($days===null) {sendMessage(\achbotMessage('plans.intervals.add_new_day_plan.message.a2684ce4cc'),$cancelKey, 'HTML');return;}
     if (!achbotIntervalWrite($connection,"UPDATE `increase_day` SET `volume` = ? WHERE `id` = ?",'ii',[$days,(int)$match[1]],true)) {achbotIntervalWriteNotice();return;}
     sendMessage(\achbotMessage('plans.intervals.add_new_day_plan.message.d03501095b'),$removeKeyboard, 'HTML');
@@ -262,7 +262,7 @@ if(preg_match('/^changeVolumePlanVolume([1-9][0-9]*)_[a-f0-9]{20}$/D',$data) and
     exit;
 }
 if($achbotIntervalMessage && preg_match('/^changeVolumePlanVolume([1-9][0-9]*)_[a-f0-9]{20}$/D',$userInfo['step'], $match) and $text != \achbotMessage('legacy_buttons.cancel') && ($from_id == $admin || $userInfo['isAdmin'] == true)) {
-    $volume=achbotWholeServiceUnits($text,achbotServiceVolumeMax());
+    $volume=achbotCatalogServiceUnits($text,achbotServiceVolumeMax());
     if ($volume===null) {sendMessage(\achbotMessage('plans.intervals.add_new_day_plan.message.a2684ce4cc'),$cancelKey, 'HTML');return;}
     if (!achbotIntervalWrite($connection,"UPDATE `increase_plan` SET `volume` = ? WHERE `id` = ?",'ii',[$volume,(int)$match[1]],true)) {achbotIntervalWriteNotice();return;}
     sendMessage(\achbotMessage('plans.intervals.add_new_day_plan.message.d03501095b'),$removeKeyboard, 'HTML');

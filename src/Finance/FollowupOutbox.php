@@ -329,7 +329,7 @@ function achbotFollowupDispatchOne(mysqli $db,int $id,int $actor=0,?string $conf
             throw new RuntimeException('followup_owner_changed');
         if ($r['state']==='dispatching') {
             $state=achbotFollowupAttemptFinishLocked($db,$id,(string)$r['dispatch_token'],
-                ['result'=>'unknown','code'=>null,'retry_after'=>null],true);
+                ['result'=>'unknown','code'=>null,'retry_after'=>null]);
             if (!$db->commit()) throw new RuntimeException('followup_abandoned_commit');
             $opened=false;return $state;
         }
@@ -441,9 +441,8 @@ function achbotFollowupMaintainOriginalPending(mysqli $db,int $limit,float $budg
     if ($limit<=0 || !is_finite($budgetSeconds) || $budgetSeconds<=0)
         throw new InvalidArgumentException('followup_original_budget_invalid');
     require_once __DIR__.'/../Services/Ownership.php';
-    // The existing services Cron also runs before the Wallet-first cutover.
-    // With no 026 schema there cannot be any new original-source work.
-    if (!achbotServiceOperationsPresent($db)) return [];
+    // This runtime requires its current transactional service schema.
+    achbotServiceOperationsPresent($db);
     $deadline=hrtime(true)/1000000000+$budgetSeconds;
     $s=achbotProviderStatement($db,"SELECT f.id FROM payment_followup_intents f
         WHERE (f.service_operation_id IS NOT NULL OR f.wallet_entry_id IS NOT NULL OR f.stage IN ('wallet_credit','manual_reject'))

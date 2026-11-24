@@ -136,7 +136,7 @@ function validPlanForOrder(\mysqli $db,array $order,int $planId,bool $lock=false
     $stmt->bind_param('i',$planId);$stmt->execute();$plan=$stmt->get_result()->fetch_assoc();$stmt->close();
     if (!$plan || (int)$plan['server_active']!==1 ||
         !achbotSupportsAccount($plan['provider_type'], $plan['inbound_id']) ||
-        achbotWholeServiceUnits($plan['days'],36500)===null ||
+        achbotWholeServiceUnits($plan['days'],achbotServiceDaysMax())===null ||
         achbotWholeServiceUnits($plan['volume'],achbotServiceVolumeMax())===null ||
         !achbotSupportsPlan($db,$planId,0,(int)$plan['server_id'],$lock,$historical) ||
         !achbotServerCommerceAvailable($db,(int)$plan['server_id'],false,$lock))

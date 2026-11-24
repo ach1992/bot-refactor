@@ -220,16 +220,15 @@ function achbotCreateNonPaymentAccount(
     $serverId=(int)($p['server_id']??0);
     $planId=(int)($p['plan_id']??0);
     $remark=(string)($p['remark']??'');
-    $volume=(int)($p['volume']??0);
-    $days=(int)($p['days']??0);
+    $volume=achbotWholeServiceUnits($p['volume']??null,achbotServiceVolumeMax());
+    $days=achbotWholeServiceUnits($p['days']??null,achbotServiceDaysMax());
     if (!in_array($kind,['free_trial','admin_bulk'],true) ||
         !preg_match('/^(trial|trial_admin|bulk):[1-9][0-9]*(?::[1-9][0-9]*)?$/D',$sourceRef) ||
         $actor<=0 || $ordinal<1 || $count<1 || $ordinal>$count ||
         ($kind==='free_trial' && $count!==1) ||
         $serverId<=0 || $planId<=0 || !achbotSupportsAccount($p['server_type']??'',0) ||
         (int)($p['inbound_id']??-1)!==0 ||
-        $volume<=0 || $days<=0 || $days>36500 ||
-        $volume>intdiv(PHP_INT_MAX,1073741824) ||
+        $volume===null || $days===null ||
         !achbotEffectValidUsername($remark,(string)($p['server_type']??''))) {
         throw new RuntimeException('nonpaid_effect_invalid_request');
     }
@@ -259,14 +258,10 @@ function achbotCreateNonPaymentAccount(
             throw new RuntimeException('nonpaid_effect_trial_already_claimed');
 
         achbotEffectLockTargetRows($db,$serverId,$planId);
-        $plan=$db->prepare("SELECT s.server_id,s.inbound_id,c.type,i.panel_group_id,
-            c.panel_url,c.username AS panel_username,
-            c.password AS panel_password,g.id AS valid_group
+        $plan=$db->prepare("SELECT s.server_id,s.inbound_id,c.type,c.panel_url
             FROM server_plans s
             JOIN server_info i ON i.id=s.server_id
             JOIN server_config c ON c.id=i.id
-            LEFT JOIN setting g ON g.id=i.panel_group_id
-                AND g.type='ACHBOT_MARZBAN_PANEL_GROUP'
             WHERE s.id=? AND s.active=1 AND i.active=1 AND i.state=1
             LIMIT 1 FOR UPDATE");
         if (!$plan) throw new RuntimeException('nonpaid_effect_plan_prepare');
@@ -281,7 +276,9 @@ function achbotCreateNonPaymentAccount(
         $group=$targetIdentity['group'];$endpoint=$targetIdentity['endpoint'];
         $credentials=$targetIdentity['credentials'];$targetKey=$targetIdentity['key'];
         $operation=bin2hex(random_bytes(16));
-        $expiry=time()+86400*$days;
+        $now=time();
+        if ($days>achbotServiceDaysMax($now)) throw new RuntimeException('nonpaid_effect_invalid_request');
+        $expiry=$now+86400*$days;
         $bytes=$volume*1073741824;
         $fingerprint=hash('sha256',json_encode([
             $kind,$sourceRef,$actor,$ordinal,$count,$planId,$serverId,

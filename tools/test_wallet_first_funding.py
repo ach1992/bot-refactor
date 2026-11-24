@@ -8,6 +8,7 @@ import json
 from pathlib import Path
 import subprocess
 import shutil
+import time
 
 import package_current as package
 
@@ -183,6 +184,21 @@ function achbotFixtureVerifyGatewayLocked(mysqli $db,array $pay,array $attempt,a
 
         for mode in ('strict','off'):
             def case(name):cases.append(mode+':'+name)
+            # Current SQL storage, not a fixed ten-year business cap.
+            max_days=(2147483647-int(time.time()))//86400
+            sql(f'UPDATE server_plans SET days={max_days+1} WHERE id=7')
+            fail(mode,cmd('issue',ref=mode+'-expiry-overflow',quote=quote(days=max_days+1)),
+                 'service_expiry_unrepresentable')
+            sql(f'UPDATE server_plans SET days={max_days} WHERE id=7')
+            oid=issue(mode,mode+'-expiry-valid',days=max_days,price=0)
+            b=balance();c=capacity();fund(mode,oid)
+            assert (balance(),capacity())==(b,c-1)
+            sql('UPDATE server_plans SET days=30,volume=2 WHERE id=7')
+            case('duration_storage_boundary_before_wallet_debit')
+            fail(mode,cmd('issue',ref=mode+'-custom-expiry-overflow',quote=quote(
+                variant='custom',days=max_days+1,explicit_name=True,remark='custom_fixture')),
+                 'service_expiry_unrepresentable')
+            case('custom_duration_overflow_refused')
             b=balance();c=capacity()
             oid=issue(mode,mode+'-buy',quantity=3)
             assert issue(mode,mode+'-buy',quantity=3)==oid

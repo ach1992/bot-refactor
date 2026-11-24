@@ -13,7 +13,7 @@ require_once __DIR__.'/../Presentation/Text.php';
 // Every local-record management callback is privileged. A forged old button
 // or stale cached role must not disclose or mutate another customer's order.
 $achbotOrderAdminRoute=is_string($data??null) &&
-    ($data==='manageorderdatabase' || preg_match('/^(?:showUserSubscriptions|selectOrderByRemark_userid_|returnToPanel_|deleteOrder_|confirmDeleteOrder_|toggleAgent_|toggleNotif_|orderWarningStatus_|changeExpireDate_|changeServerId_|selectServerId_|changeFileId_|selectFileId_|recoverPlanJournal_|reviewPlanCorrection_|confirmPlanCorrection_|quickUserOrderDetails_)/D',$data));
+    ($data==='manageorderdatabase' || preg_match('/^(?:showUserSubscriptions|selectOrderByRemark_userid_|returnToPanel_|deleteOrder_|confirmDeleteOrder_|toggleAgent_|orderWarningStatus_|changeExpireDate_|changeServerId_|selectServerId_|changeFileId_|selectFileId_|recoverPlanJournal_|reviewPlanCorrection_|confirmPlanCorrection_|quickUserOrderDetails_)/D',$data));
 $achbotOrderAdminStep=preg_match('/^(?:awaitingOrderRemarkOnly$|awaitingUserIdSelection_|manageOrderById_|awaitingExpireChange_)/D',(string)($userInfo['step']??''));
 if (($achbotOrderAdminRoute || $achbotOrderAdminStep) &&
     !\AchBot\Subscription\AccountDetails\canReadAdminOrderDetails()) {
@@ -404,9 +404,8 @@ if (preg_match('/^toggleAgent_(\\d+)/', $data, $match)) {
     }
 }
 
-// Previously sent toggle buttons now observe the current lifecycle state.
-// Neither new nor legacy callbacks may reset a grace deadline or mark a warning.
-if (preg_match('/^(?:orderWarningStatus_|toggleNotif_)([1-9][0-9]*)$/D',(string)$data,$match)) {
+// This read-only action observes the current lifecycle state.
+if (preg_match('/^orderWarningStatus_([1-9][0-9]*)$/D',(string)$data,$match)) {
     $id=(int)$match[1];
     $stmt=$connection->prepare('SELECT * FROM orders_list WHERE id=?');
     $stmt->bind_param('i',$id);$stmt->execute();$order=$stmt->get_result()->fetch_assoc();$stmt->close();
@@ -427,7 +426,7 @@ if (preg_match('/^changeExpireDate_(\\d+)/', $data, $match)) {
 
 if (preg_match('/^awaitingExpireChange_(\\d+)/', $userInfo['step'], $match) && $text!=\achbotMessage('legacy_buttons.cancel')) {
     $id = intval($match[1]);
-    if (!is_string($text) || preg_match('/^-?[1-9][0-9]{0,4}$/D',$text)!==1 || abs((int)$text)>36500) {
+    if (!is_string($text) || preg_match('/^-?[1-9][0-9]{0,4}$/D',$text)!==1 || abs((int)$text)>achbotServiceDaysMax(0)) {
         sendMessage(\achbotMessage('admin_settings.management.local_expiry_prompt'),$cancelKey,'HTML');return;
     }
     $days=(int)$text;

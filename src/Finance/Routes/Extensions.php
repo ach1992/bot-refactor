@@ -43,7 +43,7 @@ if(preg_match('/increaseADay(.*)/', $data, $match)){
     }
     $keyboard = [];
     foreach ($catalog as $cat){
-        if (achbotWholeServiceUnits($cat['volume'],36500)===null) continue;
+        if (achbotWholeServiceUnits($cat['volume'],achbotServiceDaysMax())===null) continue;
         $id = $cat['id'];
         $title = $cat['volume'];
         $price = $cat['price'];
@@ -70,7 +70,7 @@ if(preg_match('/selectPlanDayIncrease(?<orderId>.+)_(?<dayId>.+)/',$data,$match)
     $stmt->execute();
     $res = $stmt->get_result()->fetch_assoc();
     $stmt->close();
-    $quotedUnits=$res?achbotWholeServiceUnits($res['volume'],36500):null;
+    $quotedUnits=$res?achbotWholeServiceUnits($res['volume'],achbotServiceDaysMax()):null;
     if ($quotedUnits===null) {alert(\achbotMessage('renewal.extensions.alert.584426a8a8'),true);return;}
     $planprice = $res['price'];
 

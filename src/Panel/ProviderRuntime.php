@@ -675,6 +675,7 @@ function achbotPgLinkEffect(mysqli $db,int $effectId,int $orderId): bool {
     $owner=$pay>0?(int)($o['paid_user']??0):(int)$e['actor_userid'];
     if (!$o || (int)$o['userid']!==$owner || (int)$o['fileid']!==(int)$e['plan_id'] ||
         (int)$o['server_id']!==(int)$e['target_server_id'] || (int)$o['inbound_id']!==0 ||
+        (int)$o['expire_date']!==(int)$e['requested_expire'] ||
         $o['remark']!==$e['remote_username']) throw new RuntimeException('pg_effect_order_mismatch');
     achbotProviderPanelForSnapshot($db,$e['provider_snapshot']);
     $s=$db->prepare("UPDATE service_effects SET order_id=?,state='local_recorded' WHERE id=? AND state='verified' AND order_id IS NULL");
@@ -803,12 +804,23 @@ function achbotWholeServiceUnits($raw,int $max,bool $allowZero=false): ?int {
         $number<($allowZero?0:1) || $number>$max) return null;
     return (int)$number;
 }
+/** orders_list.expire_date is a signed INT Unix timestamp. A duration
+ * is bounded by the actual anchor, not a separate purchase/renewal cap. */
+function achbotServiceDaysMax(?int $anchor=null): int {
+    $anchor=max(0,$anchor??time());
+    return $anchor>=2147483647?0:intdiv(2147483647-$anchor,86400);
+}
 function achbotServiceVolumeMax(): int {return min(2147483647,intdiv(PHP_INT_MAX,1073741824));}
+/** Catalog FLOAT columns must preserve the requested whole integer exactly. */
+function achbotCatalogServiceUnits($raw,int $max): ?int {
+    $units=achbotWholeServiceUnits($raw,$max);
+    return $units!==null && unpack('G',pack('G',(float)$units))[1]===(float)$units?$units:null;
+}
 function achbotPinnedAddonUnits(array $pay): ?int {
     if (preg_match('/^INCREASE_(DAY|VOLUME)_([1-9][0-9]*)_([1-9][0-9]*)$/D',(string)($pay['type']??''),$m)!==1) return null;
     $field=$m[1]==='DAY'?'day':'volume';$other=$field==='day'?'volume':'day';
     if (achbotWholeServiceUnits($pay[$other]??null,2147483647,true)!==0) return null;
-    return achbotWholeServiceUnits($pay[$field]??null,$field==='day'?36500:achbotServiceVolumeMax());
+    return achbotWholeServiceUnits($pay[$field]??null,$field==='day'?achbotServiceDaysMax(0):achbotServiceVolumeMax());
 }
 /** Pure validation runs before an account claim or provider GET. */
 function achbotPgEditInputUnits(array $change): array {
@@ -816,7 +828,7 @@ function achbotPgEditInputUnits(array $change): array {
     foreach (['days','plus_day','volume','plus_volume'] as $field) {
         if (!array_key_exists($field,$change)) continue;
         $days=in_array($field,['days','plus_day'],true);
-        $value=achbotWholeServiceUnits($change[$field],$days?36500:achbotServiceVolumeMax(),$field==='volume');
+        $value=achbotWholeServiceUnits($change[$field],$days?achbotServiceDaysMax(0):achbotServiceVolumeMax(),$field==='volume');
         if ($value===null) throw new RuntimeException('pg_edit_units_invalid');
         $units[$field]=$value;
     }

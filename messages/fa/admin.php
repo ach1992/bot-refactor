@@ -300,7 +300,7 @@ return [
         'bot.user_reports.message.b1c793c917' => '🔢 لطفا شناسه عددی کاربر رو وارد کنید.',
         'bot.user_reports.message.e55e5591d2' => ['text' => '📊 اطلاعات کاربر' . "\n" . '' . "\n" . '<code>🎫 {text}</code>', 'parameters' => ['text']],
         'bot.user_reports.message.c1d7ab477b' => '⚠️ کاربری با این آیدی یافت نشد.',
-        'bot.user_reports.message.a5e5f6a89b' => '😡 لطفا فقط عدد ارسال کنید.',
+        'bot.user_reports.message.a5e5f6a89b' => '⚠️ لطفاً فقط شناسهٔ عددی را ارسال کنید.',
         // bot.invite_setting
         'bot.invite_setting.button.e5798de28e' => '❗️بنر دعوت',
         'bot.invite_setting.button.0854688c71' => '💰 مقدار پورسانت',
@@ -320,7 +320,7 @@ return [
         'bot.edit_reward_channel.message.1f35a73f71' => '⚠️ لطفا ربات را در کانال ادمین کنید و آیدی کانال را بفرستید.',
         'bot.edit_reward_channel.message.eef6d10f94' => '❗️اختلال شبکه؛ لطفاً دوباره تلاش کنید.',
         'bot.edit_reward_channel.message.2f497eef41' => '❗️آیدی کانال صحیح نیست یا ربات به کانال دسترسی ندارد.',
-        'bot.edit_reward_channel.message.f400fa3a23' => '😡 ای بابا، ربات هنوز تو کانال عضو/ادمین نشده، اول ربات رو تو کانال ادمین کن و آیدیش رو بفرست.',
+        'bot.edit_reward_channel.message.f400fa3a23' => '⚠️ ابتدا ربات را به‌عنوان مدیر به کانال اضافه کنید، سپس شناسهٔ کانال را ارسال کنید.',
         // bot.edit_lock_channel
         'bot.edit_lock_channel.message.b324b87609' => '🤗 لطفاً ربات رو در کانال ادمین کن و آیدی کانال رو بفرست',
         'bot.edit_lock_channel.message.949fda751f' => '❗️ربات در کانال ادمین نیست یا دسترسی کافی ندارد.',
@@ -354,7 +354,7 @@ return [
         'bot.gift_volume_and_day.message.e0e7fe8fcb' => '⚠️ لغو درخواست تأیید نشد؛ وضعیت را بررسی کنید.',
         'bot.gift_volume_and_day.message.ceaba67bc5' => '📅 تعداد روز هدیه را به عدد صحیح وارد کنید (صفر مجاز است):',
         'bot.gift_volume_and_day.message.2ff3f6e643' => '📦 حجم هدیه را به مگابایت وارد کنید؛ عدد صحیح و مضرب 1024 (صفر مجاز است):',
-        'bot.gift_volume_and_day.message.430119925b' => '⚠️ ورودی نامعتبر است. روز باید عدد صحیح 0 تا 36500 باشد؛ حجم باید عدد صحیح غیرمنفی و مضرب 1024 مگابایت باشد و هر دو نمی‌توانند صفر باشند.',
+        'bot.gift_volume_and_day.message.430119925b' => '⚠️ مدت را با تعداد روزهای صحیح و غیرمنفی (در محدودهٔ قابل‌ثبت) و حجم را با عدد صحیح غیرمنفی و مضرب ۱۰۲۴ مگابایت وارد کنید. مدت و حجم نمی‌توانند هم‌زمان صفر باشند.',
         'bot.gift_volume_and_day.message.e411fd7a97' => '⚠️ وضعیت درخواست تأیید نشد. از ارسال دوباره تا بررسی وضعیت خودداری کنید.',
         'bot.gift_volume_and_day.message.71a178ae08' => 'این اشتراک هدیهٔ در انتظار بررسی دارد (شناسه ',
         'bot.gift_volume_and_day.message.f988eb99dc' => '). پیش از درخواست جدید، وضعیت ثبت و اثر واقعی را دستی تطبیق دهید.',
@@ -953,7 +953,7 @@ return [
     // ── مدیریت کاربران و دسترسی‌ها ──
     'admin' => [
         // bans.ban_user
-        'bans.ban_user.message.e2ecb94a9c' => '😡 کی باز شلوغی کرده شناسه عددی شو بفرس تا برم ...... آرهههه:',
+        'bans.ban_user.message.e2ecb94a9c' => '🚫 شناسهٔ عددی کاربری را که می‌خواهید مسدود کنید ارسال کنید:',
         // bans.unban_user
         'bans.unban_user.message.450fb58659' => '🔢 شناسه عددیشو بفرست تا آزادش کنم',
         'bans.unban_user.message.8921035044' => '❌ خب خب برید کنار که مسدودش کردم 😎',

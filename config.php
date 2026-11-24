@@ -2514,12 +2514,7 @@ function achbotHandleChannelExemption($data, $text, $cached): bool {
     $start=($data==='addExemptUser');
     $step=is_array($cached)?(string)($cached['step']??''):'';
     $continuing=str_starts_with($step,'achbotExempt:');
-    $legacy=($step==='awaitingExemptUserID');
-    if (!$start && !$continuing && !$legacy) return false;
-
-    // An installed pre-upgrade wizard has no verifiable update/nonce
-    // provenance. Require a fresh authenticated admin callback to restart.
-    if ($legacy && !$start) return true;
+    if (!$start && !$continuing) return false;
     $begun=false;
     try {
         if (!function_exists('achbotWebhookIngressAuthenticated') ||

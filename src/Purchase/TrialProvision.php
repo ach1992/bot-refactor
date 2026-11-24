@@ -47,8 +47,6 @@ if (preg_match('/freeTrial(\d+)_(?<buyType>\w+)/', $data, $match)) {
     $days             = $planDetails['days'];
     $volume           = $planDetails['volume'];
     $date             = $planDetails['date'];
-    $expire_microdate = $planDetails['expire_microdate'];
-    $expire_date      = $planDetails['expire_date'];
 
     $type       = $plan['type'];
     $protocol   = $plan['protocol'];
@@ -101,12 +99,13 @@ if (preg_match('/freeTrial(\d+)_(?<buyType>\w+)/', $data, $match)) {
                 'server_id'=>$server_id,'inbound_id'=>$inbound_id,
                 'plan_id'=>$planId,'remark'=>$remark,'volume'=>$volume,
                 'days'=>$days,'uniqid'=>$uniqid,'protocol'=>$protocol,
-                'port'=>$port,'expire_microdate'=>$expire_microdate,
+                'port'=>$port,
                 'net_type'=>$netType,'rahgozar'=>$rahgozar,'limitip'=>$limitip
             ]);
 
     // چک موفقیت ساخت اکانت
     ensureAccountCreationSucceeded($response, $serverInfo, $inbound_id, $admin);
+    $expire_date=(int)$response->expire;
 
     alert(\achbotMessage('legacy_messages.sending_config_to_user'));
 

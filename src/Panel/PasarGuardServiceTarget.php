@@ -19,6 +19,11 @@ function achbotPasarGuardServiceTargetLocked(mysqli $db,array $q,?array $o,?arra
     require_once __DIR__.'/../Services/Ownership.php';
     try {
         $sid=$q['server_id'];$buy=$q['kind']==='BUY';
+        // Refuse even the earliest possible unrepresentable expiry before
+        // issuing or funding. An extension also rechecks its live anchor
+        // before the Native mutation; a stale local expiry is not authority.
+        if ($q['days']>achbotServiceDaysMax())
+            throw new DomainException('service_expiry_unrepresentable');
         $s=achbotProviderRow($db,'SELECT type,panel_url,provider_connection_id FROM server_config WHERE id=? FOR UPDATE','i',[$sid]);
         if (!$s || $s['type']!=='pasarguard')
             throw new DomainException('service_server_unavailable');

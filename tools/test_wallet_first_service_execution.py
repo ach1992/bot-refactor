@@ -13,6 +13,7 @@ import json
 from pathlib import Path
 import subprocess
 import threading
+import time
 import re
 from urllib.parse import unquote
 
@@ -1506,6 +1507,16 @@ DELIMITER ;
                     assert sql(f"SELECT result FROM payment_followup_attempts WHERE intent_id={rid}")=='dispatching'
                     assert sql(f"SELECT COUNT(*) FROM fixture_followup WHERE intent_id={rid}")=='1'
                 finally:sql('DROP TRIGGER fixture_followup_result_fail')
+                # Missing attempt evidence is corruption, not a historical
+                # report compatibility mode. Keep the dispatch state intact.
+                sql(f"CREATE TABLE fixture_saved_attempt LIKE payment_followup_attempts; INSERT INTO fixture_saved_attempt SELECT * FROM payment_followup_attempts WHERE intent_id={rid}; DELETE FROM payment_followup_attempts WHERE intent_id={rid}")
+                try:
+                    assert php(mode,'followup',id=rid)=='unavailable'
+                    assert sql(f"SELECT state FROM payment_followup_intents WHERE id={rid}")=='dispatching'
+                    assert sql(f"SELECT COUNT(*) FROM fixture_followup WHERE intent_id={rid}")=='1'
+                finally:
+                    sql("INSERT INTO payment_followup_attempts SELECT * FROM fixture_saved_attempt; DROP TABLE fixture_saved_attempt")
+                cases.append(mode+'_missing_current_report_attempt_no_legacy_fallback')
                 assert php(mode,'followup',id=rid)=='unknown'
                 assert sql(f"SELECT result FROM payment_followup_attempts WHERE intent_id={rid}")=='unknown'
                 assert php(mode,'followup',id=rid)=='unknown'
@@ -2063,6 +2074,30 @@ DELIMITER ;
                     pid=php(mode,'checkout_insert',hash=h,type=typ,price=100,**kw)
                     assert pid>0,(h,typ,pid)
                     return h,pid
+                # Exercise the actual persisted UI route with the same limit
+                # as management, funding and the Native absolute expiry.
+                max_days=(2147483647-int(time.time()))//86400
+                long_days=max_days-1
+                sql(f"UPDATE server_plans SET days={max_days+1} WHERE id=7")
+                before=finance();request_count=len(requests)
+                assert php(mode,'checkout_insert',hash=mode+'-ui-overflow',type='BUY_SUB',price=100)==0
+                assert finance()==before and len(requests)==request_count
+                sql(f"UPDATE server_plans SET days={long_days} WHERE id=7")
+                lh,lpid=insert_checkout('long','BUY_SUB')
+                lr=php(mode,'checkout_wallet',hash=lh)
+                assert lr['status']=='funded',lr
+                long_op=lr['operation']
+                assert json.loads(sql(f'SELECT quote_payload FROM service_operations WHERE id={long_op}'))['request']['days']==long_days
+                for stage in ('applied','completed'):step(mode,long_op,stage)
+                long_order=int(sql(f"SELECT order_id FROM service_effects WHERE source_kind='service_operation' AND source_ref='{long_op}'"))
+                sql(f"UPDATE orders_list SET notif=1,autoRenew='on' WHERE id={long_order}")
+                native(long_order)['used_traffic']=native(long_order)['data_limit']
+                ar=php(mode,'auto',order=long_order)
+                assert ar['status']=='funded',ar
+                assert json.loads(sql(f"SELECT quote_payload FROM service_operations WHERE id={ar['id']}"))['request']['days']==long_days
+                for stage in ('progressed','applied','completed'):step(mode,ar['id'],stage)
+                sql('UPDATE server_plans SET days=30 WHERE id=7')
+                cases.append(mode+'_actual_long_checkout_and_auto_renew_storage_bound')
                 h,pid=insert_checkout('custom','BUY_SUB',days=10,volume=3,description=mode+'-custom-checkout')
                 r=php(mode,'checkout_wallet',hash=h,mode='custom')
                 assert r['status']=='funded',r

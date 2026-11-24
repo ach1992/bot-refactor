@@ -331,7 +331,7 @@ function achbotDirectGiftAdvance(mysqli $db,array $source,int $primary,
                 $source['update_id']<=$payload['last_update_id'] ||
                 $source['message_id']<=$payload['last_message_id'])
                 throw new RuntimeException('direct_gift_old_update');
-            $days=achbotDirectGiftInt($text,0,36500);
+            $days=achbotDirectGiftInt($text,0,achbotServiceDaysMax());
             if ($days===null) throw new InvalidArgumentException('direct_gift_days_invalid');
             $payload['last_update_id']=$source['update_id'];
             $payload['last_message_id']=$source['message_id'];
@@ -452,7 +452,7 @@ function achbotDirectGiftClaim(mysqli $db,array $source,int $primary,
     if (!preg_match('/\AachbotDirectGiftVolume:([A-Za-z0-9_-]+):([0-9]+)\z/D',$step,$m))
         throw new RuntimeException('direct_gift_claim_step_invalid');
     $payload=achbotDirectGiftDecode($m[1]);
-    $days=achbotDirectGiftInt($m[2],0,36500);
+    $days=achbotDirectGiftInt($m[2],0,achbotServiceDaysMax());
     $volume=achbotDirectGiftInt($text,0,2147483647);
     if ($days===null || $volume===null || ($days===0 && $volume===0) ||
         ($volume>0 && $volume%1024!==0))

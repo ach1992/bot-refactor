@@ -315,6 +315,8 @@ def check():
         assert [e['name'] for e in trial if e['name'] in ('POST','GET','DELIVER')]==['POST','GET','DELIVER'],trial
         assert sql(work,env,'SELECT freetrial FROM users WHERE userid=1001')=='used'
         assert capacity()==9 and effects('free_trial')=='1\tlocal_recorded\t1'
+        assert sql(work,env,"SELECT COUNT(*) FROM service_effects e JOIN orders_list o ON o.id=e.order_id WHERE e.source_kind='free_trial' AND e.requested_expire=o.expire_date")=='1'
+        cases.append('actual_trial_local_expiry_matches_verified_effect')
         assert not any(e['name']=='POST' for e in php(work,env,driver,route='trial',update_id=987651))
         cases.append('actual_trial_route_reserved_once_with_real_order_and_delivery')
 
@@ -339,6 +341,8 @@ def check():
         assert len([e for e in bulk if e['name']=='POST'])==2,bulk
         assert len([e for e in bulk if e['name']=='DELIVER'])==2
         assert capacity()==8 and effects('admin_bulk')=='1\tlocal_recorded\t2\n2\tlocal_recorded\t0'
+        assert sql(work,env,"SELECT COUNT(*) FROM service_effects e JOIN orders_list o ON o.id=e.order_id WHERE e.source_kind='admin_bulk' AND e.requested_expire=o.expire_date")=='2'
+        cases.append('actual_bulk_local_expiry_matches_each_verified_effect')
         assert not any(e['name']=='POST' for e in php(work,env,driver,route='bulk',
             actor=9001,text='2',force_cached_step=True))
         reports=[e for e in bulk if e['name']=='MESSAGE' and 'ساخت گروهی اکانت' in e['text']]

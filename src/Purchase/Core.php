@@ -23,12 +23,10 @@ if (!function_exists('getPlanDetails')) {
             exit;
         }
 
-        $days   = (int)$plan['days'];
-        $vol    = (int)$plan['volume'];
+        $days   = achbotWholeServiceUnits($plan['days'],achbotServiceDaysMax());
+        $vol    = achbotWholeServiceUnits($plan['volume'],achbotServiceVolumeMax());
         $price  = isset($plan['price']) ? (int)$plan['price'] : 0;
         $date   = time();
-        $expire_microdate = floor(microtime(true) * 1000) + (864000 * $days * 100);
-        $expire_date      = $date + (86400 * $days);
 
         return [
             'plan'             => $plan,
@@ -36,8 +34,6 @@ if (!function_exists('getPlanDetails')) {
             'volume'           => $vol,
             'price'            => $price,
             'date'             => $date,
-            'expire_microdate' => $expire_microdate,
-            'expire_date'      => $expire_date,
         ];
     }
 }

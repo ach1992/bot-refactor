@@ -61,9 +61,12 @@ function achbotPlanWizardAdvance(mysqli $db,array &$d,string $action,string $inp
         $input=trim($input);
         if ($stage==='price') $v['price']=achbotManagementInteger($input,0);
         elseif ($stage==='days') {
-            $v['days']=achbotManagementInteger($input,1,36500);
-            if (time()+$v['days']*86400>2147483647) throw new RuntimeException('management_input');
-        } elseif ($stage==='volume') $v['volume']=achbotManagementInteger($input,1,1000000);
+            $v['days']=achbotManagementInteger($input,1,achbotServiceDaysMax());
+        } elseif ($stage==='volume') {
+            $v['volume']=achbotManagementInteger($input,1,achbotServiceVolumeMax());
+            if (achbotCatalogServiceUnits($v['volume'],achbotServiceVolumeMax())===null)
+                throw new RuntimeException('management_input');
+        }
         else {
             if ($input==='' || mb_strlen($input)>($stage==='description'?1000:150))
                 throw new RuntimeException('management_input');

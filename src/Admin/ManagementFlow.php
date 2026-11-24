@@ -386,8 +386,9 @@ function achbotHandleManagementFields(): bool {
             $field=$d['field'];$input=trim($text);$save=true;
             if ($field==='login') throw new RuntimeException('management_targets');
             if (in_array($field,['max','days','volume'],true)) {
-                $input=achbotManagementInteger($input,1,$field==='days'?36500:($field==='volume'?1000000:100000000));
-                if ($field==='days' && time()+$input*86400>2147483647) throw new RuntimeException('management_input');
+                $input=achbotManagementInteger($input,1,$field==='days'?achbotServiceDaysMax():($field==='volume'?achbotServiceVolumeMax():2147483647));
+                if ($field==='volume' && achbotCatalogServiceUnits($input,achbotServiceVolumeMax())===null)
+                    throw new RuntimeException('management_input');
             } elseif ($input==='' || mb_strlen($input)>100 ||
                 ($field==='remark' && preg_match('/^[a-zA-Z0-9_-]{1,60}$/D',$input)!==1)) throw new RuntimeException('management_input');
             if ($save) {

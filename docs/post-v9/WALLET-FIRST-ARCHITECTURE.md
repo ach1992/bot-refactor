@@ -1325,3 +1325,33 @@ These are remaining operational acceptance limitations, not proven
 by green financial CI. The prior delayed-write counterexample remains
 an explicit Native API limitation. Keep the independent review, owner
 decision and installed acceptance gates separate.
+
+### Forward-only runtime and entitlement bounds
+
+The owner explicitly retired old Telegram messages, callback flows and
+historical report recovery as compatibility requirements. New report
+attempts must have their own durable attempt identity; a missing attempt
+record cannot be finalized using a pre-upgrade exception. The current
+service schema is mandatory. Retained financial evidence and active account
+provenance are data, not an alternative execution path.
+
+Purchase, renewal, automatic renewal, plan administration, extensions and
+new gifts use the shared whole-unit rules. The expiry bound is derived from
+the signed INT Unix timestamp in orders_list (2038 boundary) and the
+operation's relevant clock, not a ten-year/36500-day product cap.
+Absolute Native mutation validates its actual anchor again. Catalog writes
+cannot silently round whole units in the current FLOAT columns; values
+above the previous million-GiB UI cap are permitted if exactly representable.
+Server capacity uses the shared signed integer quantity range. Administrator
+bulk input is canonicalized before advancing the wizard, not truncated on
+a later callback. Trial/bulk order expiry must match its verified Native
+create effect; obsolete millisecond arguments and the former Marzban target
+join are no longer used. The old warning-toggle alias and exemption-wizard
+compatibility branch are retired. Current error messages are corrected in
+the explicit catalog delta, rather than preserving abusive old wording.
+
+The current admission and execution tests cover the real representable
+duration, an overflow rejected before funding, successful long renewal,
+missing current report attempts, and exact catalog integer boundaries.
+These changes require fresh exact-candidate CI and independent review;
+they do not remove the operational acceptance limitations above.

@@ -130,7 +130,7 @@ function achbotAddonAdminHandle(mysqli $db): bool {
                 if (!hash_equals(achbotAddonOfferRevision($kind,$row),$edit[3]))
                     throw new RuntimeException('addon_admin_stale_callback');
                 $scope=achbotAddonScopeRow($row);
-                $units=achbotWholeServiceUnits($row['volume'],$kind==='day'?36500:achbotServiceVolumeMax());
+                $units=achbotWholeServiceUnits($row['volume'],$kind==='day'?achbotServiceDaysMax(0):achbotServiceVolumeMax());
                 if ($units===null || (int)$row['price']<0) throw new RuntimeException('addon_admin_offer_invalid');
                 $flow['original']=['id'=>$id,'scope_hash'=>$scope['scope_hash'],
                     'volume'=>$units,'price'=>(int)$row['price']];
@@ -201,7 +201,7 @@ function achbotAddonAdminHandle(mysqli $db): bool {
         if ($step==='addon:units') {
             $input=explode('-',trim($text));
             if (count($input)!==2) throw new RuntimeException('addon_admin_units_invalid');
-            $units=achbotWholeServiceUnits($input[0],$flow['kind']==='day'?36500:achbotServiceVolumeMax());
+            $units=achbotCatalogServiceUnits($input[0],$flow['kind']==='day'?achbotServiceDaysMax():achbotServiceVolumeMax());
             $price=achbotIntervalPrice($input[1]);
             if ($units===null || $price===null || $flow['action']!=='create')
                 throw new RuntimeException('addon_admin_units_invalid');
